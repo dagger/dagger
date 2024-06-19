@@ -4,8 +4,9 @@ displayed_sidebar: "current"
 toc_max_heading_level: 2
 title: "Custom Types"
 ---
-import Tabs from '@theme/Tabs';
-import TabItem from '@theme/TabItem';
+
+import TabItem from "@theme/TabItem"
+import Tabs from "@theme/Tabs"
 
 # Custom Types
 
@@ -19,6 +20,7 @@ that returns a custom `Organization` type, itself containing a collection of
 `Account` types:
 
 ```go file=./snippets/custom-types/go/main.go
+
 ```
 
 </TabItem>
@@ -29,6 +31,7 @@ that returns a custom `Organization` type, itself containing a collection of
 `Account` types:
 
 ```python file=./snippets/custom-types/python/main.py
+
 ```
 
 The [`dagger.field`](https://dagger-io.readthedocs.io/en/latest/module.html#dagger.field) descriptors expose getter functions without arguments, for their [attributes](./state-functions.mdx).
@@ -41,16 +44,18 @@ that returns a custom `Organization` type, itself containing a collection of
 `Account` types:
 
 ```typescript file=./snippets/custom-types/typescript/index.ts
+
 ```
 
-TypeScript has multiple ways to support complex data types. However, the Dagger TypeScript SDK only supports it through fields (decorated with `@field()`) inside classes because `type` and `interface` keywords do not allows decorators.
+TypeScript has multiple ways to support complex data types. However, the Dagger TypeScript SDK only supports it through fields (decorated with `@func()`) inside classes because `type` and `interface` keywords do not allows decorators.
+
 </TabItem>
 </Tabs>
-
 
 :::note
 When the Dagger Engine extends the Dagger API schema with these types, it prefixes
 their names with the name of the main object:
+
 - Github
 - GithubAccount
 - GithubOrganization

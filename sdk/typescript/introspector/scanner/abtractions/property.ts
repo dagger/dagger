@@ -5,7 +5,7 @@ import { UnknownDaggerError } from "../../../common/errors/UnknownDaggerError.js
 import { FieldTypeDef, TypeDef } from "../typeDefs.js"
 import { typeToTypedef } from "../utils.js"
 
-const PROPERTY_DECORATOR = "field"
+const PROPERTY_DECORATOR = "func"
 
 export type Properties = { [name: string]: Property }
 

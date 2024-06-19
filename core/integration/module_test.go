@@ -1586,14 +1586,14 @@ class Test:
  *
  * Long description, with full sentences.
  */
-import { object, field } from '@dagger.io/dagger'
+import { object, func } from '@dagger.io/dagger'
 
 /**
  * Test object, short description
  */
 @object()
 class Test {
-    @field()
+    @func()
     foo: string = "foo"
 }
 `,
@@ -1609,11 +1609,11 @@ class Test {
 /**
  * Not the main file
  */
-import { object, field } from '@dagger.io/dagger'
+import { object, func } from '@dagger.io/dagger'
 
 @object()
 export class Foo {
-    @field()
+    @func()
     bar = "bar"
 }
 `,
@@ -1626,7 +1626,7 @@ export class Foo {
  *
  * Long description, with full sentences.
  */
-import { object, field } from '@dagger.io/dagger'
+import { object, func } from '@dagger.io/dagger'
 import { Foo } from "./foo"
 
 /**
@@ -1727,11 +1727,11 @@ class Minimal:
 		{
 			sdk: "typescript",
 			source: `
-import { object, func, field } from "@dagger.io/dagger"
+import { object, func, func } from "@dagger.io/dagger"
 
 @object()
 class Minimal {
-  @field()
+  @func()
   foo: string
 
   bar?: string
@@ -1843,7 +1843,7 @@ class Test:
 		},
 		{
 			sdk: "typescript",
-			source: `import { object, func, field } from "@dagger.io/dagger"
+			source: `import { object, func, func } from "@dagger.io/dagger"
 
 @object()
 class Test {
@@ -2063,14 +2063,14 @@ def repeater(msg: str, times: int) -> Repeater:
 		{
 			sdk: "typescript",
 			source: `
-import { object, func, field } from "@dagger.io/dagger"
+import { object, func, func } from "@dagger.io/dagger"
 
 @object()
 class Repeater {
-  @field()
+  @func()
   message: string
 
-  @field()
+  @func()
   times: number
 
   constructor(message: string, times: number) {
@@ -2150,11 +2150,11 @@ def my_function() -> X:
 		{
 			sdk: "typescript",
 			source: `
-import { object, func, field } from "@dagger.io/dagger"
+import { object, func, func } from "@dagger.io/dagger"
 
 @object()
 class X {
-  @field()
+  @func()
   message: string
 
   constructor(message: string) {
@@ -2239,20 +2239,20 @@ class Foo:
 		{
 			sdk: "typescript",
 			source: `
-import { object, func, field } from "@dagger.io/dagger"
+import { object, func, func } from "@dagger.io/dagger"
 
 @object()
 class X {
-  @field()
+  @func()
   message: string
 
-  @field()
+  @func()
   timestamp: string
 
-  @field()
+  @func()
   recipient: string
 
-  @field()
+  @func()
   from: string
 
   constructor(message: string, timestamp: string, recipient: string, from: string) {
@@ -2342,11 +2342,11 @@ class Playground:
 		{
 			sdk: "typescript",
 			source: `
-import { object, func, field } from "@dagger.io/dagger"
+import { object, func, func } from "@dagger.io/dagger"
 
 @object()
 class Bar {
-  @field()
+  @func()
   msg: string;
 
   constructor(msg: string) {
@@ -2356,7 +2356,7 @@ class Bar {
 
 @object()
 class Foo {
-  @field()
+  @func()
   msgContainer: Bar;
 
   constructor(msgContainer: Bar) {
@@ -2447,14 +2447,14 @@ class Playground:
 		{
 			sdk: "typescript",
 			source: `
-import { dag, Container, File, object, func, field } from "@dagger.io/dagger"
+import { dag, Container, File, object, func, func } from "@dagger.io/dagger"
 
 @object()
 class Foo {
-  @field()
+  @func()
   con: Container
 
-  @field()
+  @func()
   unsetFile?: File
 
   constructor(con: Container, unsetFile?: File) {
@@ -2576,14 +2576,14 @@ class Playground:
 		{
 			sdk: "typescript",
 			source: `
-import { dag, Container, object, func, field } from "@dagger.io/dagger"
+import { dag, Container, object, func, func } from "@dagger.io/dagger"
 
 @object()
 class ScanReport {
-  @field()
+  @func()
   contents: string
 
-  @field()
+  @func()
   authors: string[]
 
   constructor(contents: string, authors: string[]) {
@@ -2594,10 +2594,10 @@ class ScanReport {
 
 @object()
 class ScanResult {
-  @field("targets")
+  @func("targets")
   containers: Container[]
 
-  @field()
+  @func()
   report: ScanReport
 
   constructor(containers: Container[], report: ScanReport) {
@@ -2885,11 +2885,11 @@ class Foo:
 		{
 			sdk: "typescript",
 			source: `
-import { object, func, field } from "@dagger.io/dagger"
+import { object, func, func } from "@dagger.io/dagger"
 
 @object()
 class Message {
-  @field()
+  @func()
   content: string
 
   constructor(content: string) {
@@ -4100,23 +4100,23 @@ class Test:
 			{
 				sdk: "typescript",
 				source: `
-import { Directory, object, func, field } from '@dagger.io/dagger';
+import { Directory, object, func, func } from '@dagger.io/dagger';
 
 @object()
 class Test {
-	@field()
+	@func()
 	foo: string
 
-	@field()
+	@func()
 	dir: Directory
 
-	@field()
+	@func()
 	bar: number
 
-	@field()
+	@func()
 	baz: string[]
 
-	@field()
+	@func()
 	neverSetDir?: Directory
 
 	constructor(foo: string, dir: Directory, bar = 42, baz: string[] = []) {
@@ -4243,11 +4243,11 @@ class Test:
 			{
 				sdk: "typescript",
 				source: `
-import { dag, object, field } from "@dagger.io/dagger"
+import { dag, object, func } from "@dagger.io/dagger"
 
 @object()
 class Test {
-  @field()
+  @func()
   alpineVersion: string
 
   // NOTE: this is not standard to do async operations in the constructor.
@@ -4318,11 +4318,11 @@ class Test:
 			{
 				sdk: "typescript",
 				source: `
-import { object, field } from "@dagger.io/dagger"
+import { object, func } from "@dagger.io/dagger"
 
 @object()
 class Test {
-  @field()
+  @func()
   foo: string
 
   constructor() {
@@ -4404,14 +4404,14 @@ class Test:
 			WithWorkdir("/work/test").
 			With(daggerExec("init", "--name=test", "--sdk=typescript")).
 			With(sdkSource("typescript", fmt.Sprintf(`
-import { dag, File, object, field } from "@dagger.io/dagger"
+import { dag, File, object, func } from "@dagger.io/dagger"
 
 @object()
 class Test {
-  @field()
+  @func()
   foo: File = dag.directory().withNewFile("foo.txt", "%s").file("foo.txt")
 
-  @field()
+  @func()
   bar: string[] = []
 
   // Allow foo to be set through the constructor
@@ -4528,11 +4528,11 @@ class Wrapper:
 		{
 			sdk: "typescript",
 			source: `
-import { dag, Container, object, func, field } from "@dagger.io/dagger"
+import { dag, Container, object, func, func } from "@dagger.io/dagger"
 
 @object()
 class WrappedContainer {
-  @field()
+  @func()
   unwrap: Container
 
   constructor(unwrap: Container) {

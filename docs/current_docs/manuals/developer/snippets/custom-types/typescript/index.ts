@@ -1,11 +1,11 @@
-import { dag, object, field, func, GitRepository } from "@dagger.io/dagger"
+import { dag, object, func, GitRepository } from "@dagger.io/dagger"
 
 @object()
 class Account {
-  @field()
+  @func()
   username: string
 
-  @field()
+  @func()
   email: string
 
   constructor(username: string, email: string) {
@@ -21,13 +21,13 @@ class Account {
 
 @object()
 class Organization {
-  @field()
+  @func()
   url: string
 
-  @field()
+  @func()
   repositories: GitRepository[]
 
-  @field()
+  @func()
   members: Account[]
 }
 
