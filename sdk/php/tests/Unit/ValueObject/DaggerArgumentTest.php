@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Dagger\tests\Unit\ValueObject;
+namespace Dagger\Tests\Unit\ValueObject;
 
 use Dagger\Container;
 use Dagger\File;
@@ -13,12 +13,14 @@ use Dagger\ValueObject\Type;
 use Generator;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
 use ReflectionNamedType;
 use ReflectionParameter;
 
+#[Group('unit')]
 #[CoversClass(DaggerArgument::class)]
 class DaggerArgumentTest extends TestCase
 {

@@ -1,11 +1,13 @@
 <?php
 
-namespace Dagger\Tests\GraphQl;
+namespace Dagger\Tests\Integration\GraphQl;
 
 use Dagger\GraphQl\QueryBuilderChain;
 use GraphQL\QueryBuilder\QueryBuilder;
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
+#[Group('integration')]
 class QueryBuilderChainTest extends TestCase
 {
     public function testChain(): void

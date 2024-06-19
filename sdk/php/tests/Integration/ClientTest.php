@@ -1,13 +1,15 @@
 <?php
 
-namespace Dagger\Tests;
+namespace Dagger\Tests\Integration;
 
 use Dagger\Client;
 use Dagger\Dagger;
 use Dagger\PipelineLabel;
 use GraphQL\QueryBuilder\QueryBuilder;
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
+#[Group('integration')]
 class ClientTest extends TestCase
 {
     public function newClient(): Client

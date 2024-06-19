@@ -15,6 +15,7 @@ use Dagger\TypeDef;
 use Dagger\TypeDefKind;
 use Dagger\ValueObject\Type;
 use ReflectionMethod;
+use RuntimeException;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -120,42 +121,36 @@ class EntrypointCommand extends Command
     private function getTypeDef(Type $type): TypeDef
     {
         $typeDef = $this->daggerClient->typeDef();
-        // See: https://github.com/dagger/dagger/blob/main/sdk/typescript/introspector/scanner/utils.ts#L95-L117
-        //@TODO support arrays via additional attribute to define the array subtype
-        switch ($type->name) {
-            case 'string':
-                return $typeDef->withKind(TypeDefKind::STRING_KIND);
-            case 'int':
-                return $typeDef->withKind(TypeDefKind::INTEGER_KIND);
-            case 'bool':
-                return $typeDef->withKind(TypeDefKind::BOOLEAN_KIND);
-            case 'float':
-            case 'array':
-            throw new \RuntimeException('cant support type: ' . $type->name);
-            case 'void':
-                return $typeDef->withKind(TypeDefKind::VOID_KIND);
-            case Container::class:
-                return $typeDef->withObject('Container');
-            case Directory::class:
-                return $typeDef->withObject('Directory');
-            case File::class:
-                return $typeDef->withObject('File');
+        /**
+         * @TODO Support arrays:
+         * - Create additional attribute to define the array subtype
+         * See: https://github.com/dagger/dagger/blob/main/sdk/typescript/introspector/scanner/utils.ts#L95-L117
+         */
+
+        switch ($type->typeDefKind) {
+            case TypeDefKind::BOOLEAN_KIND:
+            case TypeDefKind::INTEGER_KIND:
+            case TypeDefKind::STRING_KIND:
+            case TypeDefKind::VOID_KIND:
+                return $typeDef->withKind($type->typeDefKind);
+            case TypeDefKind::LIST_KIND:
+                throw new RuntimeException('Currently cannot handle arrays');
+            case TypeDefKind::INTERFACE_KIND:
+                throw new RuntimeException(sprintf(
+                    'Currently cannot handle custom interfaces: %s',
+                    $type->name
+                ));
+            case TypeDefKind::OBJECT_KIND:
+                if ($type->isIdable()) {
+                    return $typeDef->withObject($type->getShortName());
+                }
+
+                throw new RuntimeException(sprintf(
+                    'Currently cannot handle custom classes: %s',
+                    $type->name
+                ));
             default:
-                if (class_exists($type->name)) {
-                    throw new \RuntimeException(sprintf(
-                        'Currently cannot handle custom classes: %s',
-                        $type->name
-                    ));
-                }
-
-                if (interface_exists($type->name)) {
-                    throw new \RuntimeException(sprintf(
-                        'Currently cannot handle custom interfaces: %s',
-                        $type->name
-                    ));
-                }
-
-                throw new \RuntimeException('dont know what to do with: ' . $type->name);
+                throw new RuntimeException("No support exists for $type->name");
         }
     }
 
@@ -180,18 +175,19 @@ class EntrypointCommand extends Command
             ->getParameters();
 
         $result = [];
-        $formatsValue = new DecodesValue($this->daggerClient);
+        $decodesValue = new DecodesValue($this->daggerClient);
         foreach ($parameters as $parameter) {
+            $type = new Type($parameter->getType()->getName());
+
             foreach ($arguments as $argument) {
                 if ($parameter->name === $argument['Name']) {
-                    $result[$parameter->name] = $formatsValue(
+                    $result[$parameter->name] = $decodesValue(
                         $argument['Value'],
-                        $parameter->getType()->getName()
+                        $type
                     );
                     continue 2;
                 }
             }
-            // todo if no argument matched && default === null,
         }
 
         return $result;

@@ -1,6 +1,6 @@
 <?php
 
-namespace Dagger\tests\Unit\Service;
+namespace Dagger\Tests\Unit\Service;
 
 use Dagger\Service\FindsDaggerObjects;
 use Dagger\Tests\Unit\Fixture\DaggerObjectWithDaggerFunctions;
@@ -9,9 +9,11 @@ use Dagger\ValueObject\DaggerObject;
 use Generator;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
+#[Group('unit')]
 #[CoversClass(FindsDaggerObjects::class)]
 class FindsDaggerObjectsTest extends TestCase
 {
