@@ -32,7 +32,7 @@ on:
 
 jobs:
   check:
-    runs-on: "${{ github.repository == 'dagger/dagger' && (inputs.dev-engine && 'dagger-v0-11-8-dind' || 'dagger-v0-11-8-4c-nvme') || 'ubuntu-latest' }}"
+    runs-on: "${{ github.repository == 'dagger/dagger' && (inputs.dev-engine && 'dagger-v0-11-8-8c-dind' || 'dagger-v0-11-8-4c-nvme') || 'ubuntu-latest' }}"
     timeout-minutes: "${{ inputs.timeout }}"
     steps:
       - uses: actions/checkout@v4
