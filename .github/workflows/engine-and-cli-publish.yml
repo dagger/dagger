@@ -20,7 +20,7 @@ jobs:
   publish:
     if: ${{ github.repository == 'dagger/dagger' && github.event_name == 'push' }}
     # Use our own Dagger runner when running in the dagger/dagger repo (including PRs)
-    runs-on: dagger-v0-11-7-16c-nvme
+    runs-on: dagger-v0-11-8-16c-nvme
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -115,7 +115,7 @@ jobs:
           discord-webhook: ${{ secrets.NEW_RELEASE_DISCORD_WEBHOOK }}
 
   scan-engine:
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-v0-11-7-4c-nvme' || 'ubuntu-latest' }}"
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-v0-11-8-4c-nvme' || 'ubuntu-latest' }}"
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4

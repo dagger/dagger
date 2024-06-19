@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   test:
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-v0-11-7-4c-nvme' || 'ubuntu-latest' }}"
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-v0-11-8-4c-nvme' || 'ubuntu-latest' }}"
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -27,7 +27,7 @@ jobs:
     # only run this on tag push events, not in PRs
     if: github.event_name == 'push' && github.repository == 'dagger/dagger' && github.ref_type == 'tag'
     needs: test
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-v0-11-7-4c-nvme' || 'ubuntu-latest' }}"
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-v0-11-8-4c-nvme' || 'ubuntu-latest' }}"
     steps:
       - uses: actions/checkout@v4
       - name: "helm publish"
