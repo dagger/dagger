@@ -104,7 +104,7 @@ func (db *DB) WalkSpans(spans []*Span, f func(*TraceTree)) {
 		if span.Base != nil && lastRow != nil {
 			row.Chained = span.Base.Digest == lastRow.Span.Digest
 		}
-		if span.IsRunning() || span.Failed() {
+		if span.IsRunning() {
 			row.setRunning()
 		}
 		f(row)
@@ -127,7 +127,7 @@ func (db *DB) WalkSpans(spans []*Span, f func(*TraceTree)) {
 				// reparent so we can step out of the effect
 				effect.ParentSpan = row.Span
 				walk(effect, row)
-				if effect.IsRunning() || effect.Failed() {
+				if effect.IsRunning() {
 					row.setRunning()
 				}
 			}
