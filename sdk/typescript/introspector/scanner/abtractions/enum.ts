@@ -1,10 +1,10 @@
 import ts from "typescript"
 
 import { UnknownDaggerError } from "../../../common/errors/UnknownDaggerError.js"
-import { daggerEnum } from "../../decorators/decorators.js"
+import { enumType } from "../../decorators/decorators.js"
 import { DaggerEnumValue, DaggerEnumValues } from "./enumValue.js"
 
-export const ENUM_DECORATOR = daggerEnum.name
+export const ENUM_DECORATOR = enumType.name
 
 /**
  * Return true if the given class declaration has the decorator @enum() on

@@ -1,9 +1,9 @@
-import { func, object, field, daggerEnum } from "../../../decorators/decorators.js"
+import { func, object, field, enumType } from "../../../decorators/decorators.js"
 
 /**
  * Enum for Status
  */
-@daggerEnum()
+@enumType()
 class Status {
   /**
    * Active status

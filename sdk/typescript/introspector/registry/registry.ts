@@ -51,7 +51,7 @@ export class Registry {
    * The definition of the @enum decorator that should be on top of any
    * class module that must be exposed to the Dagger API as enumeration.
    */
-  daggerEnum = (): (<T extends Class>(constructor: T) => T) => {
+  enumType = (): (<T extends Class>(constructor: T) => T) => {
     return <T extends Class>(constructor: T): T => {
       return constructor
     }

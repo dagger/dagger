@@ -9,4 +9,4 @@ export const func = registry.func
  * @deprecated In favor of `@func`
  */
 export const field = registry.field
-export const daggerEnum = registry.daggerEnum
+export const enumType = registry.enumType

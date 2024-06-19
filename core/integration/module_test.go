@@ -3238,12 +3238,12 @@ class Test:
 		},
 		{
 			sdk: "typescript",
-			source: `import { func, object, field, daggerEnum } from "@dagger.io/dagger"
+			source: `import { func, object, field, enumType } from "@dagger.io/dagger"
 
 /**
  * Enum for Status
  */
-@daggerEnum()
+@enumType()
 class Status {
   /**
    * Active status
