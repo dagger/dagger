@@ -2,7 +2,7 @@ module github.com/dagger/dagger/ci
 
 go 1.22
 
-require github.com/dagger/dagger/engine/distconsts v0.11.7
+require github.com/dagger/dagger/engine/distconsts v0.11.8
 
 replace github.com/dagger/dagger/engine/distconsts => ../engine/distconsts
 
