@@ -23,6 +23,7 @@ spec:
       {{- end }}
       labels:
         name: {{ include "dagger.fullname" . }}-engine
+        {{- include "dagger.labels" . | nindent 8 }}
     spec:
       {{- with .Values.engine.tolerations }}
       tolerations:
