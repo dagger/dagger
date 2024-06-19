@@ -5,8 +5,6 @@ defmodule Dagger.Core.EngineConn do
 
   defstruct [:port, :token, :session_pid]
 
-  @dagger_cli_version "0.12.3"
-
   @doc false
   def get(opts) do
     case from_session_env(opts) do
@@ -56,7 +54,7 @@ defmodule Dagger.Core.EngineConn do
 
   @doc false
   def from_remote_cli(opts) do
-    case Downloader.download(@dagger_cli_version) do
+    case Downloader.download(Dagger.Core.Version.engine_version()) do
       {:ok, bin_path} ->
         start_cli_session(bin_path, opts)
 
@@ -95,5 +93,7 @@ defmodule Dagger.Core.EngineConn do
     Dagger.Session.stop(pid)
   end
 
-  def engine_version(), do: @dagger_cli_version
+  def engine_version() do
+    Dagger.Core.Version.engine_version()
+  end
 end
