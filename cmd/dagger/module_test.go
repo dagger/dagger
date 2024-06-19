@@ -211,6 +211,20 @@ func TestParseGit(t *testing.T) {
 				Remote: "git@github.com:sipsma/daggerverse.git",
 			},
 		},
+		{
+			urlStr: "ssh://github.com/sipsma/daggerverse.git#v0.9.1:subdir1/subdir2",
+			want: &gitutil.GitURL{
+				Scheme: "ssh",
+				User:   (*url.Userinfo)(nil),
+				Host:   "github.com",
+				Path:   "/sipsma/daggerverse.git",
+				Fragment: &gitutil.GitURLFragment{
+					Ref:    "v0.9.1",
+					Subdir: "subdir1/subdir2",
+				},
+				Remote: "ssh://github.com/sipsma/daggerverse.git",
+			},
+		},
 	} {
 		tc := tc
 		t.Run(tc.urlStr, func(t *testing.T) {

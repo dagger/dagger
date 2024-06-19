@@ -160,6 +160,21 @@ func parseRefString(ctx context.Context, bk buildkitClient, refString string) pa
 	var parsed parsedRefString
 	parsed.modPath, parsed.modVersion, parsed.hasVersion = strings.Cut(refString, "@")
 
+	// BuildKit-kind form for now, to test 🎃, with subpath for now, amd .git at repo
+	//e.g. ssh://github.com/username/repo.git:dir@sha
+	if strings.HasPrefix(parsed.modPath, "ssh://") {
+		ref := strings.TrimPrefix(parsed.modPath, "ssh://")
+		root, subdir, found := strings.Cut(ref, ":")
+		if found {
+			parsed.kind = core.ModuleSourceKindGit
+			parsed.repoRoot = &vcs.RepoRoot{
+				Repo: strings.TrimSuffix("https://"+root, ".git"),
+				Root: "ssh://git@" + root,
+			}
+			parsed.repoRootSubdir = subdir
+		}
+	}
+
 	// We do a stat in case the mod path github.com/username is a local directory
 	stat, err := bk.StatCallerHostPath(ctx, parsed.modPath, false)
 	if err == nil {
