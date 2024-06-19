@@ -130,10 +130,12 @@ func (tc T) WithLogger(logger func(*T, string)) *T {
 	return &tc
 }
 
-func (tc *T) WithTimeout(timeout time.Duration) *T {
-	ctx, cancel := context.WithTimeout(tc.Context(), timeout)
-	tc.Cleanup(cancel)
-	return tc.WithContext(ctx)
+func (t *T) WithTimeout(timeout time.Duration) *T {
+	return t.BeforeEach(func(t *T) *T {
+		ctx, cancel := context.WithTimeout(t.Context(), timeout)
+		t.Cleanup(cancel)
+		return t.WithContext(ctx)
+	})
 }
 
 // BeforeAll calls f immediately with itself and returns the result.
