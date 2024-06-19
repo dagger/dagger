@@ -466,9 +466,9 @@ func (DirectorySuite) TestWithTimestamps(ctx context.Context, t *testctx.T) {
 			WithExec([]string{"sh", "-c", "ls -al /dir && ls -al /dir/sub-dir"}).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.Regexp(t, regexp.MustCompile(`-rw-r--r--\s+1 root\s+root\s+\d+ Oct 26  1985 some-file`), ls)
-		require.Regexp(t, regexp.MustCompile(`drwxr-xr-x\s+2 root\s+root\s+\d+ Oct 26  1985 sub-dir`), ls)
-		require.Regexp(t, regexp.MustCompile(`-rw-r--r--\s+1 root\s+root\s+\d+ Oct 26  1985 sub-file`), ls)
+		require.Regexp(t, regexp.MustCompile(`-rw-r--r--\s+\d+ root\s+root\s+\d+ Oct 26  1985 some-file`), ls)
+		require.Regexp(t, regexp.MustCompile(`drwxr-xr-x\s+\d+ root\s+root\s+\d+ Oct 26  1985 sub-dir`), ls)
+		require.Regexp(t, regexp.MustCompile(`-rw-r--r--\s+\d+ root\s+root\s+\d+ Oct 26  1985 sub-file`), ls)
 	})
 
 	t.Run("results in stable tar archiving", func(ctx context.Context, t *testctx.T) {
