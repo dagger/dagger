@@ -610,7 +610,6 @@ func TestModuleDaggerDevelop(t *testing.T) {
 	})
 
 	testOnMultipleVCS(t, func(t *testing.T, tc vcsTestCase) {
-		t.Parallel()
 		t.Run("fails on git", func(t *testing.T) {
 			t.Parallel()
 			c, ctx := connect(t)
@@ -830,8 +829,6 @@ func TestModuleDaggerInstall(t *testing.T) {
 	})
 
 	testOnMultipleVCS(t, func(t *testing.T, tc vcsTestCase) {
-		t.Parallel()
-
 		t.Run("git", func(t *testing.T) {
 			t.Parallel()
 			t.Run("happy", func(t *testing.T) {
@@ -886,7 +883,7 @@ func (m *Test) Fn(ctx context.Context) (string, error) {
 				out, err := goGitBase(t, c).
 					WithWorkdir("/work").
 					With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
-					With(daggerExec("install", tc.gitTestRepoURL)).
+					With(daggerExec("install", tc.gitTestRepoRef)).
 					File("/work/dagger.json").
 					Contents(ctx)
 				require.NoError(t, err)
@@ -895,7 +892,7 @@ func (m *Test) Fn(ctx context.Context) (string, error) {
 				require.Len(t, modCfg.Dependencies, 1)
 				url, commit, ok := strings.Cut(modCfg.Dependencies[0].Source, "@")
 				require.True(t, ok)
-				require.Equal(t, tc.gitTestRepoURL, url)
+				require.Equal(t, tc.gitTestRepoRef, url)
 				require.NotEmpty(t, commit)
 			})
 		})
@@ -1184,70 +1181,63 @@ func (m *Test) Fn() ([]string, error) {
 // VCS to test behavior against
 type vcsTestCase struct {
 	name              string
-	gitTestRepoURL    string
+	gitTestRepoRef    string
 	gitTestRepoCommit string
-	// introduced because some VCS do generate different HTML URLs based on repo URL
-	baseHTMLURL string
-
-	// url path expected when checking a VCS tree URL:
-	// e.g. bitbucket.org/dagger-modules/dagger-test-modules-public/src/2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94/
-	// - `src` for bitbucket
-	// - `tree` for GitLab / GitHub
-	urlPathComponent string
-
-	rootRepo string
+	baseHTMLURL       string // expected base HTML URLs, might differs from ref (e.g. not contain .git)
+	urlPathComponent  string // path separator to access `tree` view of src at commit, per provider
+	host              string // host component of repoURL
 }
 
 var vcsTestCases = []vcsTestCase{
 	// public repos
 	{
-		name:              "GitHub",
-		gitTestRepoURL:    "github.com/dagger/dagger-test-modules",
+		name:              "GitHub without .git",
+		gitTestRepoRef:    "github.com/dagger/dagger-test-modules",
 		gitTestRepoCommit: "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
-		rootRepo:          "github.com",
+		host:              "github.com",
 		baseHTMLURL:       "github.com/dagger/dagger-test-modules",
 		urlPathComponent:  "tree",
 	},
-	// {
-	// 	name:              "GitLab",
-	// 	gitTestRepoURL:    "gitlab.com/dagger-modules/test/more/dagger-test-modules-public",
-	// 	gitTestRepoCommit: "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
-	// 	rootRepo:          "gitlab.com",
-	// 	baseHTMLURL:       "gitlab.com/dagger-modules/test/more/dagger-test-modules-public",
-	// 	urlPathComponent:  "tree",
-	// },
-	// {
-	// 	name:              "GitHub with .git",
-	// 	gitTestRepoURL:    "github.com/dagger/dagger-test-modules.git",
-	// 	gitTestRepoCommit: "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
-	// 	rootRepo:          "github.com",
-	// 	baseHTMLURL:       "github.com/dagger/dagger-test-modules",
-	// 	urlPathComponent:  "tree",
-	// },
-	// {
-	// 	name:              "GitLab with .git",
-	// 	gitTestRepoURL:    "gitlab.com/dagger-modules/test/more/dagger-test-modules-public.git",
-	// 	gitTestRepoCommit: "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
-	// 	rootRepo:          "gitlab.com",
-	// 	baseHTMLURL:       "gitlab.com/dagger-modules/test/more/dagger-test-modules-public",
-	// 	urlPathComponent:  "tree",
-	// },
-	// {
-	// 	name:              "BitBucket",
-	// 	gitTestRepoURL:    "bitbucket.org/dagger-modules/dagger-test-modules-public",
-	// 	gitTestRepoCommit: "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
-	// 	rootRepo:          "bitbucket.org",
-	// 	baseHTMLURL:       "bitbucket.org/dagger-modules/dagger-test-modules-public",
-	// 	urlPathComponent:  "src",
-	// },
-	// {
-	// 	name:              "BitBucket with .git",
-	// 	gitTestRepoURL:    "bitbucket.org/dagger-modules/dagger-test-modules-public.git",
-	// 	gitTestRepoCommit: "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
-	// 	rootRepo:          "bitbucket.org",
-	// 	baseHTMLURL:       "bitbucket.org/dagger-modules/dagger-test-modules-public",
-	// 	urlPathComponent:  "src",
-	// },
+	{
+		name:              "GitLab without .git",
+		gitTestRepoRef:    "gitlab.com/dagger-modules/test/more/dagger-test-modules-public",
+		gitTestRepoCommit: "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
+		host:              "gitlab.com",
+		baseHTMLURL:       "gitlab.com/dagger-modules/test/more/dagger-test-modules-public",
+		urlPathComponent:  "tree",
+	},
+	{
+		name:              "GitHub with .git",
+		gitTestRepoRef:    "github.com/dagger/dagger-test-modules.git",
+		gitTestRepoCommit: "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
+		host:              "github.com",
+		baseHTMLURL:       "github.com/dagger/dagger-test-modules",
+		urlPathComponent:  "tree",
+	},
+	{
+		name:              "GitLab with .git",
+		gitTestRepoRef:    "gitlab.com/dagger-modules/test/more/dagger-test-modules-public.git",
+		gitTestRepoCommit: "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
+		host:              "gitlab.com",
+		baseHTMLURL:       "gitlab.com/dagger-modules/test/more/dagger-test-modules-public",
+		urlPathComponent:  "tree",
+	},
+	{
+		name:              "BitBucket without .git",
+		gitTestRepoRef:    "bitbucket.org/dagger-modules/dagger-test-modules-public",
+		gitTestRepoCommit: "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
+		host:              "bitbucket.org",
+		baseHTMLURL:       "bitbucket.org/dagger-modules/dagger-test-modules-public",
+		urlPathComponent:  "src",
+	},
+	{
+		name:              "BitBucket with .git",
+		gitTestRepoRef:    "bitbucket.org/dagger-modules/dagger-test-modules-public.git",
+		gitTestRepoCommit: "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
+		host:              "bitbucket.org",
+		baseHTMLURL:       "bitbucket.org/dagger-modules/dagger-test-modules-public",
+		urlPathComponent:  "src",
+	},
 }
 
 func testOnMultipleVCS(t *testing.T, testFunc func(t *testing.T, tc vcsTestCase)) {
@@ -1261,7 +1251,7 @@ func testOnMultipleVCS(t *testing.T, testFunc func(t *testing.T, tc vcsTestCase)
 }
 
 func testGitModuleRef(tc vcsTestCase, subpath string) string {
-	url := tc.gitTestRepoURL
+	url := tc.gitTestRepoRef
 	if subpath != "" {
 		if !strings.HasPrefix(subpath, "/") {
 			subpath = "/" + subpath
@@ -1284,7 +1274,6 @@ func TestGitTestRepoCommit(t *testing.T) {
 				rootModSrc := c.ModuleSource(testGitModuleRef(tc, ""))
 
 				htmlURL, err := rootModSrc.AsGitSource().HTMLURL(ctx)
-				fmt.Printf("🎃 rootMod: |%s|\n", htmlURL)
 				require.NoError(t, err)
 				require.Equal(t, fmt.Sprintf("https://%s/%s/%s", tc.baseHTMLURL, tc.urlPathComponent, tc.gitTestRepoCommit), htmlURL)
 				resp, err := http.Get(htmlURL)
@@ -1356,10 +1345,10 @@ func TestGitTestRepoCommit(t *testing.T) {
 			t.Run("stable arg", func(t *testing.T) {
 				t.Parallel()
 
-				_, err := c.ModuleSource(tc.gitTestRepoURL, dagger.ModuleSourceOpts{
+				_, err := c.ModuleSource(tc.gitTestRepoRef, dagger.ModuleSourceOpts{
 					Stable: true,
 				}).AsString(ctx)
-				require.ErrorContains(t, err, fmt.Sprintf(`no version provided for stable remote ref: %s`, tc.gitTestRepoURL))
+				require.ErrorContains(t, err, fmt.Sprintf(`no version provided for stable remote ref: %s`, tc.gitTestRepoRef))
 
 				_, err = c.ModuleSource(testGitModuleRef(tc, "top-level"), dagger.ModuleSourceOpts{
 					Stable: true,

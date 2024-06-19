@@ -363,13 +363,13 @@ func TestContainerSystemProxies(t *testing.T) {
 
 	testOnMultipleVCS(t, func(t *testing.T, tc vcsTestCase) {
 		t.Run("git uses proxy", func(t *testing.T) {
-			t.Parallel()
+			// cannot parellelize, as it becomes flaky
 			c, ctx := connect(t)
 
 			customProxyTests(ctx, t, c, 104, false,
 				proxyTest{name: "git",
 					run: func(t *testing.T, c *dagger.Client, _ proxyTestFixtures) {
-						_, err := c.Git("https://" + tc.gitTestRepoURL).Ref(tc.gitTestRepoCommit).Tree().Sync(ctx)
+						_, err := c.Git("https://" + tc.gitTestRepoRef).Ref(tc.gitTestRepoCommit).Tree().Sync(ctx)
 						require.NoError(t, err)
 					},
 					proxyLogTest: func(t *testing.T, _ *dagger.Client, getProxyLogs getProxyLogsFunc) {
@@ -379,12 +379,12 @@ func TestContainerSystemProxies(t *testing.T) {
 							var err error
 							proxyLogs, err = getProxyLogs(ctx)
 							require.NoError(t, err)
-							if strings.Contains(proxyLogs, fmt.Sprintf("CONNECT %s:443", tc.rootRepo)) {
+							if strings.Contains(proxyLogs, fmt.Sprintf("CONNECT %s:443", tc.host)) {
 								return
 							}
 							time.Sleep(1 * time.Second)
 						}
-						require.Fail(t, fmt.Sprintf("expected CONNECT to %s in proxy logs", tc.rootRepo), proxyLogs)
+						require.Fail(t, fmt.Sprintf("expected CONNECT to %s in proxy logs", tc.host), proxyLogs)
 					},
 				},
 			)
