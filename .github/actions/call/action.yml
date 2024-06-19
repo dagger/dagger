@@ -73,9 +73,10 @@ runs:
         echo "::endgroup::"
       env:
         # create separate outputs and containers for each workflow (to prevent
-        # collisions with shared docker containers)
-        _EXPERIMENTAL_DAGGER_DEV_OUTPUT: ./bin/dev-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}-${{ github.job }}
-        _EXPERIMENTAL_DAGGER_DEV_CONTAINER: dagger-engine.dev-${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}-${{ github.job }}
+        # collisions with shared docker containers). With `arc` the runner name
+        # is the name of the pod, and each pod runs a single dedicated job.
+        _EXPERIMENTAL_DAGGER_DEV_OUTPUT: ./bin/dev-${{ runner.name }}
+        _EXPERIMENTAL_DAGGER_DEV_CONTAINER: dagger-engine.dev-${{ runner.name }}
 
     - name: Wait for dagger to be ready
       shell: bash
