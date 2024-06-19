@@ -47,8 +47,15 @@ export class DaggerEnumValue {
     }
   }
 
+  // LoadName load the value of the enum value from the property initializer.
+  // If the initializer is not set, it will throw an error.
+  // We do not use the actual property name because it may varies between SDKs languages conventions.
   private loadName(): string {
-    return this.property.name.getText()
+    if (!this.property.initializer) {
+      throw new Error("Dagger enum value has no value set")
+    }
+
+    return JSON.parse(this.property.initializer.getText())
   }
 
   private loadDescription(): string {
