@@ -9,6 +9,7 @@ _default_mod = Module()
 object_type = _default_mod.object_type
 function = _default_mod.function
 field = _default_mod.field
+enum_type = _default_mod.enum_type
 
 
 def default_module() -> Module:

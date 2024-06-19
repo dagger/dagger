@@ -1,5 +1,6 @@
 import dataclasses
 import functools
+import enum
 import inspect
 import logging
 import typing
@@ -76,7 +77,7 @@ def to_typedef(annotation: type) -> "TypeDef":  # noqa: C901,PLR0911
     import dagger
     from dagger import dag
     from dagger.client._guards import is_id_type_subclass
-    from dagger.client.base import Enum, Scalar
+    from dagger.client.base import Scalar
 
     td = dag.type_def()
 
@@ -107,7 +108,10 @@ def to_typedef(annotation: type) -> "TypeDef":  # noqa: C901,PLR0911
     if typ.hint in builtins:
         return td.with_kind(builtins[typ.hint])
 
-    if issubclass(cls := typ.hint, Scalar | Enum):
+    if issubclass(cls := typ.hint, enum.Enum):
+        return td.with_enum(cls.__name__, description=get_doc(cls))
+
+    if issubclass(cls := typ.hint, Scalar):
         return td.with_scalar(cls.__name__, description=get_doc(cls))
 
     # NB: str is a Collection, but we've handled it above.

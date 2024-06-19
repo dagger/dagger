@@ -1,6 +1,7 @@
 # ruff: noqa: BLE001
 import contextlib
 import dataclasses
+import enum
 import functools
 import inspect
 import json
@@ -10,7 +11,7 @@ import types
 import typing
 from collections import Counter, defaultdict
 from collections.abc import Callable, Mapping, MutableMapping
-from typing import Any, TypeAlias, TypeVar
+from typing import Any, TypeAlias, TypeVar, cast
 
 import anyio
 import cattrs
@@ -76,6 +77,7 @@ class Module:
         self._resolvers: list[Resolver] = []
         self._fn_call = dag.current_function_call()
         self._mod = dag.module()
+        self._enums: dict[str, type[enum.Enum]] = {}
 
     def with_description(self, description: str | None) -> Self:
         if description:
@@ -246,6 +248,16 @@ class Module:
                 logger.debug("registered => %s", str(r))
 
             mod = mod.with_object(typedef)
+
+        for name, cls in self._enums.items():
+            typedef = dag.type_def().with_enum(name, description=get_doc(cls))
+            for member in cls:
+                # TODO: Support descriptions. Codegen adds a string literal
+                # below attributes in enums. They're seen as the docstrings
+                # for those attributes in the IDE, but there's no programatic
+                # access to them at runtime, unless we go low level through the AST.
+                typedef = typedef.with_enum_value(str(member.value))
+            mod = mod.with_enum(typedef)
 
         return await mod.id()
 
@@ -548,3 +560,37 @@ class Module:
         self.function(name="")(cls)
 
         return cls
+
+    @overload
+    def enum_type(self, cls: T) -> T:
+        ...
+
+    @overload
+    def enum_type(self) -> Callable[[T], T]:
+        ...
+
+    def enum_type(self, cls: T | None = None) -> T | Callable[[T], T]:
+        """Exposes a Python enum.Enum as a :py:class:`dagger.EnumTypeDef`.
+
+        Example usage:
+
+        >>> @dagger.enum_type
+        >>> class Foo(enum.Enum):
+        >>>     FOO = "FOO"
+        >>>     BAR = "BAR"
+        """
+        def wrapper(cls: T) -> T:
+            if not inspect.isclass(cls):
+                msg = f"Expected an enum, got {type(cls)}"
+                raise UserError(msg)
+
+            if not issubclass(cls, enum.Enum):
+                msg = f"Class {cls.__name__} is not an enum.Enum"
+                raise UserError(msg)
+
+            cls = cast(T, enum.unique(cls))
+            self._enums.setdefault(cls.__name__, cls)
+
+            return cls
+
+        return wrapper(cls) if cls else wrapper

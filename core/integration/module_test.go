@@ -3181,7 +3181,7 @@ func TestCustomModuleEnumType(t *testing.T) {
 		{
 			sdk: "go",
 			source: `package main
-			
+
 type Status string
 
 const (
@@ -3198,6 +3198,42 @@ func (m *Test) FromStatus(status Status) string {
 func (m *Test) ToStatus(status string) Status {
 	return Status(status)
 }
+`,
+		},
+		{
+			sdk: "python",
+			source: `import enum
+
+import dagger
+
+@dagger.enum_type
+class Status(enum.Enum):
+    """Enum for Status"""
+
+    Active = "ACTIVE"
+    """Active status"""
+
+    Inactive = "INACTIVE"
+    """Inactive status"""
+
+
+@dagger.object_type
+class Test:
+    @dagger.function
+    def from_status(self, status: Status) -> str:
+        return str(status.value)
+
+    @dagger.function
+    def to_status(self, status: str) -> Status:
+        # Doing "Status(proto)" will fail in Python, so mock
+        # it to force sending the invalid value back to the server.
+        from dagger.client.base import Enum
+
+        class MockEnum(Enum):
+            INACTIVE = "INACTIVE"
+            INVALID = "INVALID"
+
+        return MockEnum(status)
 `,
 		},
 		{
