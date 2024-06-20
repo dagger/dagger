@@ -1,7 +1,6 @@
 package core
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -271,10 +270,8 @@ func (svc *Service) startContainer(
 	}()
 
 	ctx, span := svc.startSpan(ctx, id, strings.Join(execOp.Meta.Args, " "))
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
 	defer func() {
 		if rerr != nil {
-			stdio.Close()
 			// NB: this is intentionally conditional; we only complete if there was
 			// an error starting. span.End is called when the service exits.
 			telemetry.End(span, func() error { return rerr })
@@ -346,7 +343,6 @@ func (svc *Service) startContainer(
 	env := append([]string{}, execOp.Meta.Env...)
 	env = append(env, telemetry.PropagationEnv(ctx)...)
 
-	outBuf := new(bytes.Buffer)
 	var stdinCtr, stdoutClient, stderrClient io.ReadCloser
 	var stdinClient, stdoutCtr, stderrCtr io.WriteCloser
 	if forwardStdin != nil {
@@ -355,14 +351,10 @@ func (svc *Service) startContainer(
 
 	if forwardStdout != nil {
 		stdoutClient, stdoutCtr = io.Pipe()
-	} else {
-		stdoutCtr = nopCloser{io.MultiWriter(stdio.Stdout, outBuf)}
 	}
 
 	if forwardStderr != nil {
 		stderrClient, stderrCtr = io.Pipe()
-	} else {
-		stderrCtr = nopCloser{io.MultiWriter(stdio.Stderr, outBuf)}
 	}
 
 	svcProc, err := gc.Start(ctx, bkgw.StartRequest{
@@ -397,7 +389,6 @@ func (svc *Service) startContainer(
 		// terminate the span; we're not interested in setting an error, since
 		// services return a benign error like `exit status 1` on exit
 		defer span.End()
-		defer stdio.Close()
 
 		defer func() {
 			if stdinClient != nil {
@@ -469,7 +460,7 @@ func (svc *Service) startContainer(
 		}, nil
 	case <-exited:
 		if exitErr != nil {
-			return nil, fmt.Errorf("exited: %w\noutput: %s", exitErr, outBuf.String())
+			return nil, fmt.Errorf("exited: %w", exitErr)
 		}
 		return nil, fmt.Errorf("service exited before healthcheck")
 	}
