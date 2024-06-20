@@ -967,7 +967,7 @@ func (*EnumValueTypeDef) TypeDescription() string {
 
 func NewEnumValueTypeDef(name, description string) *EnumValueTypeDef {
 	return &EnumValueTypeDef{
-		Name:         strcase.ToCamel(name),
+		Name:         strcase.ToScreamingSnake(name),
 		OriginalName: name,
 		Description:  description,
 	}
