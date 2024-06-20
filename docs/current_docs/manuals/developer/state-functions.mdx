@@ -38,7 +38,7 @@ In a future version of the Python SDK, the `dagger.function` decorator will be u
 
 </TabItem>
 <TabItem value="TypeScript">
-TypeScript already offers `private`, `protected` and `public` keywords to handle member visibility in a class. However, Dagger will only expose those members of a Dagger module that are explicitly decorated with the `@field()` decorator. Others will remain private.
+TypeScript already offers `private`, `protected` and `public` keywords to handle member visibility in a class. However, Dagger will only expose those members of a Dagger module that are explicitly decorated with the `@func()` decorator. Others will remain private.
 
 Here's an example where one field is exposed as a Dagger Function, while the other is not:
 
@@ -46,7 +46,7 @@ Here's an example where one field is exposed as a Dagger Function, while the oth
 ```
 
 :::note
-In a future version of the TypeScript SDK, the `@function()` decorator will be used as a descriptor in place of `@field()` to make the distinction clearer.
+In a future version of the TypeScript SDK, the `@function()` decorator will be used as a descriptor in place of `@func()` to make the distinction clearer.
 :::
 
 </TabItem>

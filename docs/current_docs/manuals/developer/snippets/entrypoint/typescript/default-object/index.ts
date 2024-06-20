@@ -1,8 +1,8 @@
-import { dag, Container, object, func, field } from "@dagger.io/dagger"
+import { dag, Container, object, func } from "@dagger.io/dagger"
 
 @object()
 class MyModule {
-  @field()
+  @func()
   ctr: Container
 
   constructor(ctr?: Container) {
