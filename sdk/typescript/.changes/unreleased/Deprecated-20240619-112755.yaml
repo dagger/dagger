@@ -1,0 +1,6 @@
+kind: Deprecated
+body: '`@field` in favor of `@func`'
+time: 2024-06-19T11:27:55.420008+02:00
+custom:
+  Author: TomChv
+  PR: "7701"

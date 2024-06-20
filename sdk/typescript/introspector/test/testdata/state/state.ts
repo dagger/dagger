@@ -4,7 +4,7 @@
  * Warning: Do not reproduce in production.
  */
 import { dag, Container } from "../../../../api/client.gen.js"
-import { func, object, field } from "../../../decorators/decorators.js"
+import { func, object } from "../../../decorators/decorators.js"
 
 /**
  * State module
@@ -18,10 +18,10 @@ export class State {
   /**
    * packages to install
    */
-  @field()
+  @func()
   public packages: string[] = []
 
-  @field()
+  @func()
   ctr?: Container = undefined
 
   /**

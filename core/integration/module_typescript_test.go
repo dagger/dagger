@@ -652,7 +652,7 @@ func TestModuleTypescriptWithOtherModuleTypes(t *testing.T) {
 		WithWorkdir("/work/dep").
 		With(daggerExec("init", "--name=dep", "--sdk=typescript")).
 		With(sdkSource("typescript", `
-	import {  object, func, field } from "@dagger.io/dagger"
+	import {  object, func, func } from "@dagger.io/dagger"
 
 @object()
 class Dep {
@@ -664,7 +664,7 @@ class Dep {
 
 @object()
 class Obj {
-  @field()
+  @func()
   foo: string = ""
 
   constructor(foo: string) {
@@ -789,7 +789,7 @@ class Test {
 
 @object()
 class Obj {
-  @field()
+  @func()
   foo: DepObj
 }
 			`)).
@@ -818,7 +818,7 @@ class Test {
 
 @object()
 class Obj {
-  @field()
+  @func()
   foo: DepObj[]
 }
 			`)).
@@ -914,32 +914,32 @@ class Alias {
 			WithWorkdir("/work").
 			With(daggerExec("init", "--name=alias", "--sdk=typescript")).
 			With(sdkSource("typescript", `
-import { object, func, field } from "@dagger.io/dagger"
+import { object, func, func } from "@dagger.io/dagger"
 
 @object()
 class SuperSubSub {
-	@field("farFarNested")
+	@func("farFarNested")
 	far = true
 }
 
 @object()
 class SubSub {
-	@field("zoo")
+	@func("zoo")
 	a = 4
 
-	@field("hey")
+	@func("hey")
 	b = [true, false, true]
 
-	@field("far")
+	@func("far")
 	subsubsub = new SuperSubSub()
 }
 
 @object()
 class Sub {
-	@field("hello")
+	@func("hello")
 	hey = "a"
 
-	@field("foo")
+	@func("foo")
 	sub = new SubSub()
 }
 
@@ -971,7 +971,7 @@ func TestModuleTypeScriptPrototype(t *testing.T) {
 			WithWorkdir("/work").
 			With(daggerExec("init", "--name=test", "--sdk=typescript")).
 			With(sdkSource("typescript", `
-import { field, func, object } from "@dagger.io/dagger"
+import { func, object } from "@dagger.io/dagger"
 
 @object()
 class Test {
@@ -983,7 +983,7 @@ class Test {
 
 @object()
 class PCheck {
-  @field() 
+  @func() 
   value: number
 
   constructor(value: number) {
@@ -997,7 +997,7 @@ class PCheck {
 
 @object()
 class PModule {
-  @field() 
+  @func() 
   value: PCheck
   
   constructor(value: PCheck) {
@@ -1111,5 +1111,36 @@ class Test {
 
 		_, err := modGen.With(daggerQuery(`{test{bool(false)}}`)).Stdout(ctx)
 		require.ErrorContains(t, err, "Use of primitive Boolean type detected, did you mean boolean?")
+	})
+}
+
+func TestModuleTypeScriptDeprecatedFieldDecorator(t *testing.T) {
+	t.Parallel()
+
+	t.Run("@field still working", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=test", "--sdk=typescript")).
+			With(sdkSource("typescript", `
+import { field, object } from "@dagger.io/dagger"
+
+@object()
+class Test {
+  @field() 
+  foo: string = "bar"
+
+	constructor() {}
+}
+`,
+			))
+
+		out, err := modGen.With(daggerQuery(`{test{foo}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"test": {"foo": "bar"}}`, out)
 	})
 }

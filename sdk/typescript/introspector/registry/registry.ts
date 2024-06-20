@@ -26,7 +26,7 @@ type RegistryClass = {
  *
  * The decorator @object store the class into the Registry, but also all the
  * users method's name.
- * It doesn't consider the `@func` or `field` decorators because this is
+ * It doesn't consider the `@func` decorator because this is
  * used by the Dagger API to know what to expose or not.
  * This might lead to unnecessary data register into the registry, but
  * we use map as datastructure to optimize the searching process
@@ -51,6 +51,7 @@ export class Registry {
    * The definition of @field decorator that should be on top of any
    * class' property that must be exposed to the Dagger API.
    *
+   * @deprecated In favor of `@func`
    * @param alias The alias to use for the field when exposed on the API.
    */
   field = (alias?: string): ((target: object, propertyKey: string) => void) => {
@@ -68,12 +69,12 @@ export class Registry {
   ): ((
     target: object,
     propertyKey: string | symbol,
-    descriptor: PropertyDescriptor,
+    descriptor?: PropertyDescriptor,
   ) => void) => {
     return (
       target: object,
       propertyKey: string | symbol,
-      descriptor: PropertyDescriptor,
+      descriptor?: PropertyDescriptor,
     ) => {
       // The logic is done in the object constructor since it's not possible to
       // access the class parent's name from a method constructor without calling

@@ -4,7 +4,6 @@ import {
   Directory,
   object,
   func,
-  field,
   CacheVolume,
 } from "@dagger.io/dagger"
 
@@ -12,10 +11,10 @@ import { Commands } from "./commands"
 
 @object()
 class Node {
-  @field()
+  @func()
   version = "18-alpine"
 
-  @field()
+  @func()
   container: Container
 
   constructor(version?: string, ctr?: Container) {
