@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/iancoleman/strcase"
@@ -489,6 +490,19 @@ func (typeDef *TypeDef) WithEnum(name, desc string) *TypeDef {
 func (typeDef *TypeDef) WithEnumValue(name, desc string) (*TypeDef, error) {
 	if !typeDef.AsEnum.Valid {
 		return nil, fmt.Errorf("cannot add value to non-enum type: %s", typeDef.Kind)
+	}
+
+	// Validate if the enum follows GraphQL spec.
+	// A GraphQL enum should be: only letters, digits and underscores, and has to start with a letter or a single underscore.
+	// To do so, we can use a regular expression.
+	// ^            : Start of the string
+	// [a-zA-Z_]    : First character must be a letter or underscore
+	// [a-zA-Z0-9_]*: Following characters can be letters, digits, or underscores (zero or more times)
+	// $            : End of the string
+	pattern := `^[a-zA-Z_][a-zA-Z0-9_]*$`
+
+	if !regexp.MustCompile(pattern).MatchString(name) {
+		return nil, fmt.Errorf("enum value %s is not a valid GraphQL value (only letters, digits and underscores are allowed)", name)
 	}
 
 	// Verify if the enum value is duplicated.

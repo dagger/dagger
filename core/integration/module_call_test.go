@@ -1420,11 +1420,15 @@ func (m *Chain) Echo(msg string) string {
 	})
 }
 
-func TestModuleCallDuplicatedEnum(t *testing.T) {
+func TestModuleCallInvalidEnum(t *testing.T) {
 	t.Parallel()
-	c, ctx := connect(t)
 
-	modGen := modInit(t, c, "go", `package main
+	t.Run("duplicated enum value", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		modGen := modInit(t, c, "go", `package main
 
 type Status string
 
@@ -1445,6 +1449,60 @@ func (m *Test) ToStatus(status string) Status {
 }
 	`)
 
-	_, err := modGen.With(daggerCall("--help")).Stdout(ctx)
-	require.ErrorContains(t, err, "enum value ACTIVE is already defined")
+		_, err := modGen.With(daggerCall("--help")).Stdout(ctx)
+		require.ErrorContains(t, err, "enum value ACTIVE is already defined")
+	})
+
+	t.Run("invalid value", func(t *testing.T) {
+		t.Parallel()
+
+		type testCase struct {
+			enumValue string
+		}
+
+		// Test few invalid values
+		for _, tc := range []testCase{
+			{
+				enumValue: "1ACTIVE",
+			},
+			{
+				enumValue: "#ACTIVE",
+			},
+			{
+				enumValue: " ACTIVE",
+			},
+			{
+				enumValue: "ACTI#E",
+			},
+			{
+				enumValue: "ACTIVE ",
+			},
+		} {
+			tc := tc
+
+			t.Run(tc.enumValue, func(t *testing.T) {
+				t.Parallel()
+
+				c, ctx := connect(t)
+
+				modGen := modInit(t, c, "go", fmt.Sprintf(`package main
+
+type Status string
+
+const (
+	Value Status = "%s"
+)
+
+type Test struct{}
+
+func (m *Test) FromStatus(status Status) string {
+	return string(status)
+}
+	`, tc.enumValue))
+
+				_, err := modGen.With(daggerCall("--help")).Stdout(ctx)
+				require.ErrorContains(t, err, fmt.Sprintf("enum value %s is not a valid GraphQL value (only letters, digits and underscores are allowed)", tc.enumValue))
+			})
+		}
+	})
 }
