@@ -11,6 +11,8 @@ export class DaggerEnumValue {
 
   private symbol: ts.Symbol
 
+  private _name: string
+
   private _value: string
 
   private _description: string
@@ -28,8 +30,13 @@ export class DaggerEnumValue {
     }
 
     this.symbol = propertySymbol
+    this._name = this.loadName()
     this._value = this.loadValue()
     this._description = this.loadDescription()
+  }
+
+  get name(): string {
+    return this._name
   }
 
   get value(): string {
@@ -45,6 +52,10 @@ export class DaggerEnumValue {
       name: this.value,
       description: this.description,
     }
+  }
+
+  private loadName(): string {
+    return this.symbol.getName()
   }
 
   // LoadValue load the value of the enum value from the property initializer.
