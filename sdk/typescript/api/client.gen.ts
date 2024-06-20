@@ -1029,11 +1029,6 @@ export type ServiceID = string & { __ServiceID: never }
  */
 export type SocketID = string & { __SocketID: never }
 
-/**
- * The `TerminalID` scalar type represents an identifier for an object of type Terminal.
- */
-export type TerminalID = string & { __TerminalID: never }
-
 export type TypeDefWithEnumOpts = {
   /**
    * A doc string for the enum, if any

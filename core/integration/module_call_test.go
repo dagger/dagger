@@ -1443,7 +1443,7 @@ func (m *Test) FromStatus(status Status) string {
 func (m *Test) ToStatus(status string) Status {
 	return Status(status)
 }
-	`,)
+	`)
 
 	_, err := modGen.With(daggerCall("--help")).Stdout(ctx)
 	require.ErrorContains(t, err, "enum value ACTIVE is already defined")
