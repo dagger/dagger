@@ -585,10 +585,6 @@ func (srv *Server) getOrInitClient(
 			return nil
 		}
 
-		// notify the telemetry pub/sub to clean up draining for any of the
-		// client's unfinished spans/log streams
-		sess.telemetryPubSub.ClientDisconnected(client.clientID)
-
 		// if the main client caller has no more active calls, cleanup the whole session
 		if clientID != sess.mainClientCallerID {
 			return nil
