@@ -22,7 +22,6 @@ import (
 
 type frontendPlain struct {
 	FrontendOpts
-	spanFilter
 
 	// db stores info about all the spans
 	db   *DB
@@ -100,11 +99,6 @@ func NewPlain() Frontend {
 		db:   db,
 		data: make(map[trace.SpanID]*spanData),
 
-		spanFilter: spanFilter{
-			db:               db,
-			tooFastThreshold: 100 * time.Millisecond,
-		},
-
 		profile:     ColorProfile(),
 		output:      NewOutput(os.Stderr),
 		contextHold: 1 * time.Second,
@@ -126,7 +120,7 @@ func (fe *frontendPlain) ConnectedToCloud(ctx context.Context, url string, msg s
 		return
 	}
 	fe.addVirtualLog(trace.SpanFromContext(ctx), "cloud", "url", url)
-	fmt.Fprintln(&fe.msgsBuffer, traceMessage(fe.output, url, msg))
+	fmt.Fprintln(&fe.msgsBuffer, traceMessage(fe.profile, url, msg))
 }
 
 // addVirtualLog attaches a fake log row to a given span
@@ -153,14 +147,10 @@ func (fe *frontendPlain) addVirtualLog(span trace.Span, name string, fields ...s
 }
 
 func (fe *frontendPlain) Run(ctx context.Context, opts FrontendOpts, run func(context.Context) error) error {
-	fe.FrontendOpts = opts
-
-	// redirect slog to the logs pane
-	level := slog.LevelInfo
-	if fe.Debug {
-		level = slog.LevelDebug
+	if opts.TooFastThreshold == 0 {
+		opts.TooFastThreshold = 100 * time.Millisecond
 	}
-	slog.SetDefault(slog.PrettyLogger(os.Stderr, fe.profile, level))
+	fe.FrontendOpts = opts
 
 	if !fe.Silent {
 		go func() {
@@ -247,7 +237,9 @@ func (fe plainLogExporter) Export(ctx context.Context, logs []sdklog.Record) err
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
 
-	slog.Debug("frontend exporting logs", "logs", len(logs))
+	// NOTE: if we log in here we'll just go into a loop, so...
+	// let's just hope everything is working by now :D
+	// slog.Debug("frontend exporting logs", "logs", len(logs))
 
 	err := fe.db.LogExporter().Export(ctx, logs)
 	if err != nil {
@@ -337,9 +329,7 @@ func (fe *frontendPlain) finalRender() {
 }
 
 func (fe *frontendPlain) renderProgress() {
-	steps := CollectSpans(fe.db, trace.TraceID{})
-	rows := CollectRows(steps)
-	logsView := CollectRowsView(rows)
+	rowsView := fe.db.RowsView(fe.db.PrimarySpan)
 
 	// quickly sanity check the context - if a span from it has gone missing
 	// from the db, or has been marked as passthrough, it will no longer appear
@@ -363,20 +353,20 @@ func (fe *frontendPlain) renderProgress() {
 		fe.lastContextLock = newLock
 	}
 
-	for _, row := range logsView.Body {
+	for _, row := range rowsView.Body {
 		fe.renderRow(row)
 	}
 }
 
-func (fe *frontendPlain) renderRow(row *TraceRow) {
+func (fe *frontendPlain) renderRow(row *TraceTree) {
 	span := row.Span
-	spanDt := fe.data[span.SpanContext().SpanID()]
+	spanDt := fe.data[span.ID]
 	if !spanDt.ready {
 		// don't render! this span hasn't been exported yet
 		return
 	}
 
-	if !spanDt.mustShow && !fe.shouldShow(fe.FrontendOpts, row) {
+	if !fe.ShouldShow(row) && !spanDt.mustShow {
 		return
 	}
 
@@ -403,12 +393,12 @@ func (fe *frontendPlain) renderRow(row *TraceRow) {
 		if !ok {
 			return
 		}
-		if row.Span.SpanContext().SpanID() != lastVertex {
+		if row.Span.ID != lastVertex {
 			fe.renderStep(span, depth, spanDt.ended)
 		}
 		fe.renderLogs(row, depth)
 	}
-	if !spanDt.ended && !row.IsRunning {
+	if !spanDt.ended && !row.IsRunningOrChildRunning {
 		// render! this span has finished
 		// this renders last, so that we have the chance to render logs and
 		// finished children first - this ensures we get a LIFO structure
@@ -425,19 +415,19 @@ func (fe *frontendPlain) renderRow(row *TraceRow) {
 		if row.Parent == nil {
 			fe.lastContextLock = trace.SpanID{}
 		} else {
-			fe.lastContextLock = row.Parent.Span.SpanContext().SpanID()
+			fe.lastContextLock = row.Parent.Span.ID
 		}
 	}
 }
 
 func (fe *frontendPlain) renderStep(span *Span, depth int, done bool) {
-	spanDt := fe.data[span.SpanContext().SpanID()]
+	spanDt := fe.data[span.ID]
 	if spanDt.idx == 0 {
 		fe.idx++
 		spanDt.idx = fe.idx
 	}
 
-	r := renderer{db: fe.db, width: -1, FrontendOpts: fe.FrontendOpts}
+	r := newRenderer(fe.db, -1, fe.FrontendOpts)
 
 	prefix := fe.stepPrefix(span, spanDt)
 	if span.Call != nil {
@@ -451,9 +441,9 @@ func (fe *frontendPlain) renderStep(span *Span, depth int, done bool) {
 			call.Args = nil
 			call.Type = nil
 		}
-		r.renderCall(fe.output, nil, call, prefix, depth, false, span.Internal)
+		r.renderCall(fe.output, nil, call, prefix, depth, false, span.Internal, false)
 	} else {
-		r.renderVertex(fe.output, nil, span.Name(), prefix, depth)
+		r.renderSpan(fe.output, nil, span.Name(), prefix, depth, false)
 	}
 	if done {
 		if span.Status().Code == codes.Error {
@@ -478,18 +468,18 @@ func (fe *frontendPlain) renderStep(span *Span, depth int, done bool) {
 	fmt.Fprintln(fe.output)
 }
 
-func (fe *frontendPlain) renderLogs(row *TraceRow, depth int) {
+func (fe *frontendPlain) renderLogs(row *TraceTree, depth int) {
 	out := fe.output
 
 	span := row.Span
-	spanDt := fe.data[span.SpanContext().SpanID()]
+	spanDt := fe.data[span.ID]
 
-	r := renderer{db: fe.db, width: -1, FrontendOpts: fe.FrontendOpts}
+	r := newRenderer(fe.db, -1, fe.FrontendOpts)
 
 	prefix := fe.stepPrefix(span, spanDt)
 
 	var logs []logLine
-	if spanDt.logsPending && len(spanDt.logs) > 0 && row.IsRunning {
+	if spanDt.logsPending && len(spanDt.logs) > 0 && row.IsRunningOrChildRunning {
 		logs = spanDt.logs[:len(spanDt.logs)-1]
 		spanDt.logs = spanDt.logs[len(spanDt.logs)-1:]
 	} else {
@@ -513,22 +503,22 @@ func (fe *frontendPlain) renderLogs(row *TraceRow, depth int) {
 func (fe *frontendPlain) stepPrefix(span *Span, dt *spanData) string {
 	prefix := fe.output.String(fmt.Sprintf("%-4d: ", dt.idx)).Foreground(termenv.ANSIBrightMagenta).String()
 	if fe.Debug {
-		prefix += fe.output.String(fmt.Sprintf("%s: ", span.SpanContext().SpanID().String())).Foreground(termenv.ANSIBrightBlack).String()
+		prefix += fe.output.String(fmt.Sprintf("%s: ", span.ID.String())).Foreground(termenv.ANSIBrightBlack).String()
 	}
 	return prefix
 }
 
-func (fe *frontendPlain) renderContext(row *TraceRow) (int, bool) {
-	if row.Span.SpanContext().SpanID() == fe.lastVertex() {
+func (fe *frontendPlain) renderContext(row *TraceTree) (int, bool) {
+	if row.Span.ID == fe.lastVertex() {
 		// this is the last vertex we rendered, we're already in the right context
 		return fe.lastContextDepth, true
 	}
 
 	// determine the current context
 	switchContext := fe.lastContextLock.IsValid()
-	currentContext := []*TraceRow{}
+	currentContext := []*TraceTree{}
 	for parent := row; parent != nil; parent = parent.Parent {
-		if switchContext && parent.Span.SpanContext().SpanID() == fe.lastContextLock {
+		if switchContext && parent.Span.ID == fe.lastContextLock {
 			// this span is a child to the last context
 			switchContext = false
 		}
@@ -547,7 +537,7 @@ func (fe *frontendPlain) renderContext(row *TraceRow) (int, bool) {
 	}
 
 	// insert whitespace when changing top-most context span
-	if len(fe.lastContext) > 0 && len(currentContext) > 0 && currentContext[0].Span.SpanContext().SpanID() != fe.lastContext[0] {
+	if len(fe.lastContext) > 0 && len(currentContext) > 0 && currentContext[0].Span.ID != fe.lastContext[0] {
 		fmt.Fprintln(fe.output)
 	}
 
@@ -558,7 +548,7 @@ func (fe *frontendPlain) renderContext(row *TraceRow) (int, bool) {
 
 		show := true
 		if i < len(fe.lastContext) {
-			show = call.Span.SpanContext().SpanID() != fe.lastContext[i]
+			show = call.Span.ID != fe.lastContext[i]
 		}
 		if show {
 			fe.renderStep(call.Span, depth, false)
@@ -568,7 +558,7 @@ func (fe *frontendPlain) renderContext(row *TraceRow) (int, bool) {
 
 	fe.lastContext = make([]trace.SpanID, 0, len(currentContext))
 	for _, row := range currentContext {
-		fe.lastContext = append(fe.lastContext, row.Span.SpanContext().SpanID())
+		fe.lastContext = append(fe.lastContext, row.Span.ID)
 	}
 	fe.lastContextLock = fe.lastVertex()
 	fe.lastContextDepth = depth
@@ -584,7 +574,7 @@ func (fe *frontendPlain) lastVertex() trace.SpanID {
 }
 
 // sampleContext selects vertices from a row context to display
-func sampleContext(rows []*TraceRow) []int {
+func sampleContext(rows []*TraceTree) []int {
 	if len(rows) == 0 {
 		return nil
 	}

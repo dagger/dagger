@@ -11,7 +11,9 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
+	"github.com/pkg/browser"
 	"go.opentelemetry.io/otel/codes"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -23,7 +25,6 @@ import (
 
 type frontendPretty struct {
 	FrontendOpts
-	spanFilter
 
 	// updated by Run
 	program     *tea.Program
@@ -39,11 +40,17 @@ type frontendPretty struct {
 	logs         *prettyLogs
 	eof          bool
 	backgrounded bool
+	autoFocus    bool
+	focused      trace.SpanID
+	zoomed       trace.SpanID
+	focusedIdx   int
 	rowsView     *RowsView
+	rows         *Rows
+	pressedKey   string
+	pressedKeyAt time.Time
 
-	// panels
-	logsPanel *panel
-	msgsPanel *panel
+	// set when authenticated to Cloud
+	cloudURL string
 
 	// TUI state/config
 	restore func()  // restore terminal
@@ -51,49 +58,27 @@ type frontendPretty struct {
 	profile termenv.Profile
 	window  tea.WindowSizeMsg // set by BubbleTea
 	view    *strings.Builder  // rendered async
+	viewOut *termenv.Output
 
 	// held to synchronize tea.Model with updates
 	mu sync.Mutex
 }
 
-type panel struct {
-	*termenv.Output
-	vterm *Vterm
-	buf   *strings.Builder
-}
-
-func newPanel(profile termenv.Profile) *panel {
-	vterm := NewVterm()
-	buf := new(strings.Builder)
-	return &panel{
-		Output: NewOutput(io.MultiWriter(vterm, buf), termenv.WithProfile(profile)),
-		vterm:  vterm,
-		buf:    buf,
-	}
-}
-
 func New() Frontend {
 	db := NewDB()
-
 	profile := ColorProfile()
-
+	view := new(strings.Builder)
 	return &frontendPretty{
 		db:   db,
 		logs: newPrettyLogs(),
 
-		spanFilter: spanFilter{
-			db:               db,
-			tooFastThreshold: 100 * time.Millisecond,
-			gcThreshold:      1 * time.Second,
-		},
+		autoFocus: true,
 
-		fps:     30, // sane default, fine-tune if needed
-		profile: profile,
 		window:  tea.WindowSizeMsg{Width: -1, Height: -1}, // be clear that it's not set
-		view:    new(strings.Builder),
-
-		logsPanel: newPanel(profile),
-		msgsPanel: newPanel(profile),
+		fps:     30,                                       // sane default, fine-tune if needed
+		profile: profile,
+		view:    view,
+		viewOut: NewOutput(view, termenv.WithProfile(profile)),
 	}
 }
 
@@ -102,12 +87,17 @@ func (fe *frontendPretty) ConnectedToEngine(ctx context.Context, name string, ve
 }
 
 func (fe *frontendPretty) ConnectedToCloud(ctx context.Context, url string, msg string) {
-	out := NewOutput(nil, termenv.WithProfile(fe.profile))
-	fmt.Fprintln(fe.msgsPanel, traceMessage(out, url, msg))
+	fe.mu.Lock()
+	fe.cloudURL = url
+	if msg != "" {
+		slog.Warn(msg)
+	}
+	fe.mu.Unlock()
 }
 
-func traceMessage(out *termenv.Output, url string, msg string) string {
+func traceMessage(profile termenv.Profile, url string, msg string) string {
 	buffer := &bytes.Buffer{}
+	out := NewOutput(buffer, termenv.WithProfile(profile))
 
 	fmt.Fprint(buffer, out.String("Full trace at ").Bold().String())
 	if out.Profile == termenv.Ascii {
@@ -125,14 +115,13 @@ func traceMessage(out *termenv.Output, url string, msg string) string {
 // Run starts the TUI, calls the run function, stops the TUI, and finally
 // prints the primary output to the appropriate stdout/stderr streams.
 func (fe *frontendPretty) Run(ctx context.Context, opts FrontendOpts, run func(context.Context) error) error {
-	fe.FrontendOpts = opts
-
-	// redirect slog to the logs pane
-	level := slog.LevelInfo
-	if fe.Debug {
-		level = slog.LevelDebug
+	if opts.TooFastThreshold == 0 {
+		opts.TooFastThreshold = 100 * time.Millisecond
 	}
-	slog.SetDefault(slog.PrettyLogger(fe.logsPanel, fe.profile, level))
+	if opts.GCThreshold == 0 {
+		opts.GCThreshold = 1 * time.Second
+	}
+	fe.FrontendOpts = opts
 
 	// find a TTY anywhere in stdio. stdout might be redirected, in which case we
 	// can show the TUI on stderr.
@@ -142,7 +131,7 @@ func (fe *frontendPretty) Run(ctx context.Context, opts FrontendOpts, run func(c
 	if fe.Silent {
 		// no TTY found; set a reasonable screen size for logs, and just run the
 		// function
-		fe.SetWindowSize(tea.WindowSizeMsg{
+		fe.setWindowSizeLocked(tea.WindowSizeMsg{
 			Width:  300, // influences vterm width
 			Height: 100, // theoretically noop, since we always render full logs
 		})
@@ -163,7 +152,8 @@ func (fe *frontendPretty) Run(ctx context.Context, opts FrontendOpts, run func(c
 
 func (fe *frontendPretty) SetPrimary(spanID trace.SpanID) {
 	fe.mu.Lock()
-	fe.db.PrimarySpan = spanID
+	fe.db.SetPrimarySpan(spanID)
+	fe.zoomed = spanID
 	fe.mu.Unlock()
 }
 
@@ -195,6 +185,7 @@ func (fe *frontendPretty) runWithTUI(ctx context.Context, ttyIn *os.File, ttyOut
 		// We set up the TTY ourselves, so Bubbletea's panic handler becomes
 		// counter-productive.
 		tea.WithoutCatchPanics(),
+		tea.WithMouseCellMotion(),
 	)
 
 	// run the program, which starts the callback async
@@ -218,42 +209,29 @@ func (fe *frontendPretty) finalRender() error {
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
 
-	fe.recalculateView()
-
-	out := NewOutput(os.Stderr, termenv.WithProfile(fe.profile))
+	// Render the full trace.
+	fe.zoomed = fe.db.PrimarySpan
+	fe.focused = trace.SpanID{}
+	fe.focusedIdx = -1
+	if fe.Verbosity < 1 {
+		// likely only intended to filter out noise, so print as we normally would
+		fe.Verbosity = 1
+	}
+	fe.recalculateViewLocked()
 
 	if fe.Debug || fe.Verbosity > 0 || fe.err != nil {
-		if fe.msgsPanel.buf.Len() > 0 {
-			fmt.Fprintln(out, fe.msgsPanel.buf.String())
+		// Render progress to stderr so stdout stays clean.
+		out := NewOutput(os.Stderr, termenv.WithProfile(fe.profile))
+		if fe.renderProgress(out, true, fe.window.Height, "") {
+			logs := fe.logs.Logs[fe.db.PrimarySpan]
+			if logs != nil && logs.UsedHeight() > 0 {
+				fmt.Fprintln(os.Stderr)
+			}
 		}
 	}
 
-	if fe.logsPanel.buf.Len() > 0 {
-		fmt.Fprintln(out, fe.logsPanel.buf.String())
-	}
-
-	if fe.Debug || fe.Verbosity > 0 || fe.err != nil {
-		if renderedAny, err := fe.renderProgress(out); err != nil {
-			return err
-		} else if renderedAny {
-			fmt.Fprintln(out)
-		}
-	}
-
+	// Replay the primary output log to stdout/stderr.
 	return renderPrimaryOutput(fe.db)
-}
-
-func (fe *frontendPretty) renderPanel(out *termenv.Output, panel *panel, full bool) error {
-	if panel.vterm.UsedHeight() == 0 {
-		return nil
-	}
-	if full {
-		panel.vterm.SetHeight(fe.logsPanel.vterm.UsedHeight())
-	} else {
-		panel.vterm.SetHeight(10)
-	}
-	_, err := fmt.Fprintln(out, panel.vterm.View())
-	return err
 }
 
 func (fe *frontendPretty) SpanExporter() sdktrace.SpanExporter {
@@ -267,16 +245,8 @@ type FrontendSpanExporter struct {
 func (fe FrontendSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
-	slog.Debug("frontend exporting", "spans", len(spans))
-	for _, span := range spans {
-		slog.Debug("frontend exporting span",
-			"trace", span.SpanContext().TraceID(),
-			"id", span.SpanContext().SpanID(),
-			"parent", span.Parent().SpanID(),
-			"span", span.Name(),
-		)
-	}
-
+	defer fe.recalculateViewLocked() // recalculate view *after* updating the db
+	slog.Debug("frontend exporting spans", "spans", len(spans))
 	return fe.db.ExportSpans(ctx, spans)
 }
 
@@ -332,50 +302,248 @@ func (fe *frontendPretty) Background(cmd tea.ExecCommand) error {
 	return <-errs
 }
 
+var KeymapStyle = lipgloss.NewStyle().
+	Foreground(lipgloss.ANSIColor(termenv.ANSIBrightBlack))
+
+func (fe *frontendPretty) renderKeymap(out *termenv.Output, style lipgloss.Style) int {
+	w := new(strings.Builder)
+	type keyHelp struct {
+		label string
+		keys  []string
+		show  bool
+	}
+	var quitMsg string
+	if fe.interrupted {
+		quitMsg = "quit!"
+	} else {
+		quitMsg = "quit"
+	}
+
+	// Blank line prior to keymap
+	for i, key := range []keyHelp{
+		{out.Hyperlink(fe.cloudURL, "Cloud"), []string{"c"}, fe.cloudURL != ""},
+		{"move", []string{"←↑↓→", "up", "down", "left", "right", "h", "j", "k", "l"}, true},
+		{"first", []string{"home"}, true},
+		{"last", []string{"end", " "}, true},
+		{"zoom", []string{"enter"}, true},
+		{"unzoom", []string{"esc"}, fe.zoomed.IsValid() && fe.zoomed != fe.db.PrimarySpan},
+		{fmt.Sprintf("verbosity=%d", fe.Verbosity), []string{"+/-", "+", "-"}, true},
+		{quitMsg, []string{"q", "ctrl+c"}, true},
+	} {
+		if !key.show {
+			continue
+		}
+		mainKey := key.keys[0]
+		if i > 0 {
+			fmt.Fprint(w, style.Render("  "))
+		}
+		keyStyle := style
+		if time.Since(fe.pressedKeyAt) < 500*time.Millisecond {
+			for _, k := range key.keys {
+				if k == fe.pressedKey {
+					keyStyle = keyStyle.Foreground(nil)
+					// Reverse(true)
+				}
+			}
+		}
+		fmt.Fprint(w, keyStyle.Bold(true).Render(mainKey))
+		fmt.Fprint(w, keyStyle.Render(": "+key.label))
+	}
+	res := w.String()
+	fmt.Fprint(out, res)
+	return lipgloss.Width(res)
+}
+
 func (fe *frontendPretty) Render(out *termenv.Output) error {
-	fe.recalculateView()
-	if err := fe.renderPanel(out, fe.msgsPanel, false); err != nil {
-		return err
+	progHeight := fe.window.Height
+
+	var progPrefix string
+	if fe.rowsView != nil && fe.rowsView.Zoomed != nil && fe.rowsView.Zoomed.ID != fe.db.PrimarySpan {
+		fe.renderStep(out, fe.rowsView.Zoomed, 0, "")
+		progHeight -= 1
+		progPrefix = "  "
 	}
-	if err := fe.renderPanel(out, fe.logsPanel, false); err != nil {
-		return err
+
+	below := new(strings.Builder)
+	countOut := NewOutput(below, termenv.WithProfile(fe.profile))
+
+	fmt.Fprint(countOut, KeymapStyle.Render(strings.Repeat(HorizBar, 1)))
+	fmt.Fprint(countOut, KeymapStyle.Render(" "))
+	fe.renderKeymap(countOut, KeymapStyle)
+	fmt.Fprint(countOut, KeymapStyle.Render(" "))
+	if rest := fe.window.Width - lipgloss.Width(below.String()); rest > 0 {
+		fmt.Fprint(countOut, KeymapStyle.Render(strings.Repeat(HorizBar, rest)))
 	}
-	if _, err := fe.renderProgress(out); err != nil {
-		return err
+
+	if logs := fe.logs.Logs[fe.zoomed]; logs != nil && logs.UsedHeight() > 0 {
+		fmt.Fprintln(below)
+		fe.renderLogs(countOut, logs, -1, fe.window.Height/3, progPrefix)
 	}
+
+	belowOut := strings.TrimRight(below.String(), "\n")
+	progHeight -= lipgloss.Height(belowOut)
+
+	fe.renderProgress(out, false, progHeight, progPrefix)
+	fmt.Fprintln(out)
+
+	fmt.Fprint(out, belowOut)
 	return nil
 }
 
-func (fe *frontendPretty) recalculateView() {
-	steps := CollectSpans(fe.db, trace.TraceID{})
-	rows := CollectRows(steps)
-	fe.rowsView = CollectRowsView(rows)
+func (fe *frontendPretty) recalculateViewLocked() {
+	fe.rowsView = fe.db.RowsView(fe.zoomed)
+	fe.rows = fe.rowsView.Rows(fe.FrontendOpts)
+	fe.focus(fe.rows.BySpan[fe.focused])
 }
 
-func (fe *frontendPretty) renderProgress(out *termenv.Output) (bool, error) {
+func (fe *frontendPretty) renderedRowLines(row *TraceRow, prefix string) []string {
+	buf := new(strings.Builder)
+	out := NewOutput(buf, termenv.WithProfile(fe.profile))
+	fe.renderRow(out, row, false, prefix)
+	return strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
+}
+
+func (fe *frontendPretty) renderProgress(out *termenv.Output, full bool, height int, prefix string) bool {
 	var renderedAny bool
 	if fe.rowsView == nil {
-		return false, nil
+		return false
 	}
-	for _, row := range fe.rowsView.Body {
-		if fe.shouldShow(fe.FrontendOpts, row) {
-			if err := fe.renderRow(out, row, 0); err != nil {
-				return renderedAny, err
+
+	rows := fe.rows
+
+	if full {
+		for _, row := range rows.Order {
+			fe.renderRow(out, row, full, "")
+			renderedAny = true
+		}
+		return renderedAny
+	}
+
+	if !fe.autoFocus {
+		// must be manually focused
+		// NOTE: it's possible for the focused span to go away
+		lostFocus := true
+		if row := rows.BySpan[fe.focused]; row != nil {
+			fe.focusedIdx = row.Index
+			lostFocus = false
+		}
+		if lostFocus {
+			fe.autoFocus = true
+		}
+	}
+
+	if len(rows.Order) < fe.focusedIdx {
+		// durability: everything disappeared?
+		fe.autoFocus = true
+	}
+
+	if len(rows.Order) == 0 {
+		// NB: this is a bit redundant with above, but feels better to decouple
+		return renderedAny
+	}
+
+	if fe.autoFocus && len(rows.Order) > 0 {
+		fe.focusedIdx = len(rows.Order) - 1
+		fe.focused = rows.Order[fe.focusedIdx].Span.ID
+	}
+
+	lines := fe.renderLines(height, prefix)
+
+	fmt.Fprint(out, strings.Join(lines, "\n"))
+	renderedAny = true
+
+	return renderedAny
+}
+
+func (fe *frontendPretty) renderLines(height int, prefix string) []string {
+	rows := fe.rows
+	before, focused, after := rows.Order[:fe.focusedIdx], rows.Order[fe.focusedIdx], rows.Order[fe.focusedIdx+1:]
+
+	beforeLines := []string{}
+	focusedLines := fe.renderedRowLines(focused, prefix)
+	afterLines := []string{}
+	renderBefore := func() {
+		row := before[len(before)-1]
+		before = before[:len(before)-1]
+		beforeLines = append(fe.renderedRowLines(row, prefix), beforeLines...)
+	}
+	renderAfter := func() {
+		row := after[0]
+		after = after[1:]
+		afterLines = append(afterLines, fe.renderedRowLines(row, prefix)...)
+	}
+	totalLines := func() int {
+		return len(beforeLines) + len(focusedLines) + len(afterLines)
+	}
+
+	// fill in context surrounding the focused row
+	contextLines := (height - len(focusedLines))
+	if contextLines <= 0 {
+		// lines already meets/exceeds height, just show them
+		return focusedLines
+	}
+
+	beforeTargetLines := contextLines / 2
+	var afterTargetLines int
+	if contextLines%2 == 0 {
+		afterTargetLines = beforeTargetLines
+	} else {
+		afterTargetLines = beforeTargetLines + 1
+	}
+	for len(beforeLines) < beforeTargetLines && len(before) > 0 {
+		renderBefore()
+	}
+	for len(afterLines) < afterTargetLines && len(after) > 0 {
+		renderAfter()
+	}
+
+	if total := totalLines(); total > height {
+		extra := total - height
+		if len(beforeLines) >= beforeTargetLines && len(afterLines) >= afterTargetLines {
+			// exceeded the height, so trim the context
+			if len(beforeLines) > beforeTargetLines {
+				beforeLines = beforeLines[len(beforeLines)-beforeTargetLines:]
 			}
-			renderedAny = true
+			if len(afterLines) > afterTargetLines {
+				afterLines = afterLines[:afterTargetLines]
+			}
+		} else if len(beforeLines) >= beforeTargetLines {
+			beforeLines = beforeLines[extra:]
+		} else if len(afterLines) >= afterTargetLines {
+			afterLines = afterLines[:len(afterLines)-extra]
+		}
+	} else {
+		// fill in the rest of the screen if there's not enough to fill both sides
+		for totalLines() < height && (len(before) > 0 || len(after) > 0) {
+			switch {
+			case len(before) > 0:
+				renderBefore()
+				if total := totalLines(); total > height {
+					extra := total - height
+					beforeLines = beforeLines[extra:]
+				}
+			case len(after) > 0:
+				renderAfter()
+				if total := totalLines(); total > height {
+					extra := total - height
+					afterLines = afterLines[:len(afterLines)-extra]
+				}
+			}
 		}
 	}
-	if fe.rowsView.Primary != nil && !fe.done {
-		if renderedAny {
-			fmt.Fprintln(out)
-		}
-		renderLogs := fe.renderLogs(out, fe.rowsView.Primary, -1)
-		if renderLogs {
-			fmt.Fprintln(out)
-			renderedAny = true
-		}
+
+	// finally, print all the lines
+	focusedLines = append(beforeLines, focusedLines...)
+	focusedLines = append(focusedLines, afterLines...)
+	return focusedLines
+}
+
+func (fe *frontendPretty) focus(row *TraceRow) {
+	if row == nil {
+		return
 	}
-	return renderedAny, nil
+	fe.focused = row.Span.ID
+	fe.focusedIdx = row.Index
 }
 
 func (fe *frontendPretty) Init() tea.Cmd {
@@ -383,6 +551,35 @@ func (fe *frontendPretty) Init() tea.Cmd {
 		frame(fe.fps),
 		fe.spawn,
 	)
+}
+
+func (fe *frontendPretty) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	fe.mu.Lock()
+	defer fe.mu.Unlock()
+	var cmds []tea.Cmd
+
+	fe, cmd := fe.update(msg)
+	cmds = append(cmds, cmd)
+
+	// fe.viewport, cmd = fe.viewport.Update(msg)
+	// cmds = append(cmds, cmd)
+	//
+	return fe, tea.Batch(cmds...)
+}
+
+func (fe *frontendPretty) View() string {
+	fe.mu.Lock()
+	defer fe.mu.Unlock()
+	if fe.backgrounded {
+		// if we've been backgrounded, show nothing, so a user's shell session
+		// doesn't have any garbage before/after
+		return ""
+	}
+	if fe.done && fe.eof {
+		// print nothing; make way for the pristine output in the final render
+		return ""
+	}
+	return fe.view.String()
 }
 
 type doneMsg struct {
@@ -401,7 +598,7 @@ func (fe *frontendPretty) spawn() (msg tea.Msg) {
 
 type backgroundDoneMsg struct{}
 
-func (fe *frontendPretty) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nolint: gocyclo
 	switch msg := msg.(type) {
 	case doneMsg: // run finished
 		slog.Debug("run finished", "err", msg.err)
@@ -430,9 +627,24 @@ func (fe *frontendPretty) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case backgroundDoneMsg:
 		return fe, nil
 
+	case tea.MouseMsg:
+		switch msg.Button {
+		case tea.MouseButtonWheelDown:
+			fe.goDown()
+			fe.pressedKey = "down"
+			fe.pressedKeyAt = time.Now()
+		case tea.MouseButtonWheelUp:
+			fe.goUp()
+			fe.pressedKey = "up"
+			fe.pressedKeyAt = time.Now()
+		}
+		return fe, nil
+
 	case tea.KeyMsg:
+		fe.pressedKey = msg.String()
+		fe.pressedKeyAt = time.Now()
 		switch msg.String() {
-		case "q", "esc", "ctrl+c":
+		case "q", "ctrl+c":
 			if fe.interrupted {
 				slog.Warn("exiting immediately")
 				return fe, tea.Quit
@@ -446,16 +658,67 @@ func (fe *frontendPretty) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			fe.restore()
 			sigquit()
 			return fe, nil
+		case "down", "j":
+			fe.goDown()
+			return fe, nil
+		case "up", "k":
+			fe.goUp()
+			return fe, nil
+		case "left", "h":
+			fe.goOut()
+			return fe, nil
+		case "right", "l":
+			fe.goIn()
+			return fe, nil
+		case "home":
+			fe.goStart()
+			return fe, nil
+		case "end", " ":
+			fe.goEnd()
+			return fe, nil
+		case "esc":
+			fe.zoomed = fe.db.PrimarySpan
+			fe.recalculateViewLocked()
+			return fe, nil
+		case "+":
+			fe.FrontendOpts.Verbosity++
+			fe.recalculateViewLocked()
+			return fe, nil
+		case "-":
+			fe.FrontendOpts.Verbosity--
+			if fe.FrontendOpts.Verbosity < 0 {
+				fe.FrontendOpts.Verbosity = 0
+			}
+			fe.recalculateViewLocked()
+			return fe, nil
+		case "c":
+			if fe.cloudURL == "" {
+				return fe, nil
+			}
+			url := fe.cloudURL
+			if fe.zoomed.IsValid() && fe.zoomed != fe.db.PrimarySpan {
+				url += "?span=" + fe.zoomed.String()
+			}
+			return fe, func() tea.Msg {
+				if err := browser.OpenURL(url); err != nil {
+					slog.Warn("failed to open URL", "url", url, "err", err)
+				}
+				return nil
+			}
+		case "enter":
+			fe.zoomed = fe.focused
+			fe.recalculateViewLocked()
+			return fe, nil
 		default:
 			return fe, nil
 		}
 
 	case tea.WindowSizeMsg:
-		fe.SetWindowSize(msg)
+		fe.setWindowSizeLocked(msg)
 		return fe, nil
 
 	case frameMsg:
-		fe.render()
+		fe.renderLocked()
 		// NB: take care not to forward Frame downstream, since that will result
 		// in runaway ticks. instead inner components should send a SetFpsMsg to
 		// adjust the outermost layer.
@@ -466,90 +729,147 @@ func (fe *frontendPretty) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 }
 
-func (fe *frontendPretty) SetWindowSize(msg tea.WindowSizeMsg) {
-	fe.window = msg
-	fe.logs.SetWidth(msg.Width)
-	fe.logsPanel.vterm.SetWidth(msg.Width)
-	fe.msgsPanel.vterm.SetWidth(msg.Width)
+func (fe *frontendPretty) goStart() {
+	fe.autoFocus = false
+	if len(fe.rows.Order) > 0 {
+		fe.focus(fe.rows.Order[0])
+	}
 }
 
-func (fe *frontendPretty) render() {
-	fe.mu.Lock()
-	fe.view.Reset()
-	fe.Render(NewOutput(fe.view, termenv.WithProfile(fe.profile)))
-	fe.mu.Unlock()
+func (fe *frontendPretty) goEnd() {
+	fe.autoFocus = true
+	if len(fe.rows.Order) > 0 {
+		fe.focus(fe.rows.Order[len(fe.rows.Order)-1])
+	}
 }
 
-func (fe *frontendPretty) View() string {
-	fe.mu.Lock()
-	defer fe.mu.Unlock()
-	view := fe.view.String()
-	if fe.backgrounded {
-		// if we've been backgrounded, show nothing, so a user's shell session
-		// doesn't have any garbage before/after
-		return ""
+func (fe *frontendPretty) goUp() {
+	fe.autoFocus = false
+	newIdx := fe.focusedIdx - 1
+	if newIdx < 0 || newIdx >= len(fe.rows.Order) {
+		return
 	}
-	if fe.done && fe.eof {
-		// print nothing; make way for the pristine output in the final render
-		return ""
-	}
-	return view
+	fe.focus(fe.rows.Order[newIdx])
 }
 
-func (fe *frontendPretty) renderRow(out *termenv.Output, row *TraceRow, depth int) error {
-	if !fe.shouldShow(fe.FrontendOpts, row) {
-		return nil
+func (fe *frontendPretty) goDown() {
+	fe.autoFocus = false
+	newIdx := fe.focusedIdx + 1
+	if newIdx >= len(fe.rows.Order) {
+		// at bottom
+		return
 	}
-	if !row.Span.Passthrough {
-		fe.renderStep(out, row.Span, depth)
-		fe.renderLogs(out, row.Span, depth)
-		depth++
+	fe.focus(fe.rows.Order[newIdx])
+}
+
+func (fe *frontendPretty) goOut() {
+	fe.autoFocus = false
+	focused := fe.db.Spans[fe.focused]
+	if focused.ParentSpan == nil {
+		return
 	}
-	for _, child := range row.Children {
-		if err := fe.renderRow(out, child, depth); err != nil {
-			return err
+	fe.focused = focused.ParentSpan.ID
+	if fe.focused == fe.zoomed {
+		// targeted the zoomed span; zoom on its parent isntead
+		zoomedParent := fe.db.Spans[fe.zoomed].ParentSpan
+		for zoomedParent != nil && zoomedParent.Passthrough {
+			zoomedParent = zoomedParent.ParentSpan
+		}
+		if zoomedParent != nil {
+			fe.zoomed = zoomedParent.ID
+		} else {
+			fe.zoomed = trace.SpanID{}
 		}
 	}
-	return nil
+	fe.recalculateViewLocked()
 }
 
-func (fe *frontendPretty) renderStep(out *termenv.Output, span *Span, depth int) error {
-	r := renderer{db: fe.db, width: fe.window.Width, FrontendOpts: fe.FrontendOpts}
+func (fe *frontendPretty) goIn() {
+	fe.autoFocus = false
+	newIdx := fe.focusedIdx + 1
+	if newIdx >= len(fe.rows.Order) {
+		// at bottom
+		return
+	}
+	cur := fe.rows.Order[fe.focusedIdx]
+	next := fe.rows.Order[newIdx]
+	if next.Depth <= cur.Depth {
+		// has no children
+		return
+	}
+	fe.focus(next)
+}
+
+func (fe *frontendPretty) setWindowSizeLocked(msg tea.WindowSizeMsg) {
+	fe.window = msg
+	fe.logs.SetWidth(msg.Width)
+}
+
+func (fe *frontendPretty) renderLocked() {
+	fe.view.Reset()
+	fe.Render(fe.viewOut)
+}
+
+func (fe *frontendPretty) renderRow(out *termenv.Output, row *TraceRow, full bool, prefix string) {
+	fe.renderStep(out, row.Span, row.Depth, prefix)
+	if row.IsRunningOrChildRunning || row.Span.Failed() || fe.Verbosity >= ShowSpammyVerbosity {
+		if logs := fe.logs.Logs[row.Span.ID]; logs != nil {
+			logLimit := fe.window.Height / 3
+			if full {
+				logLimit = logs.UsedHeight()
+			}
+			fe.renderLogs(out,
+				logs,
+				row.Depth,
+				logLimit,
+				prefix,
+			)
+		}
+	}
+}
+
+func (fe *frontendPretty) renderStep(out *termenv.Output, span *Span, depth int, prefix string) error {
+	r := newRenderer(fe.db, fe.window.Width, fe.FrontendOpts)
+
+	isFocused := span.ID == fe.focused
 
 	id := span.Call
 	if id != nil {
-		if err := r.renderCall(out, span, id, "", depth, false, span.Internal); err != nil {
+		if err := r.renderCall(out, span, id, prefix, depth, false, span.Internal, isFocused); err != nil {
 			return err
 		}
 	} else if span != nil {
-		if err := r.renderVertex(out, span, span.Name(), "", depth); err != nil {
+		if err := r.renderSpan(out, span, span.Name(), prefix, depth, isFocused); err != nil {
 			return err
 		}
 	}
 	fmt.Fprintln(out)
 
 	if span.Status().Code == codes.Error && span.Status().Description != "" {
+		// only print the first line
+		line := strings.Split(span.Status().Description, "\n")[0]
+		fmt.Fprint(out, prefix)
 		r.indent(out, depth)
-		// print error description above it
 		fmt.Fprintf(out,
-			out.String("! %s\n").Foreground(termenv.ANSIYellow).String(),
-			span.Status().Description,
+			out.String("! %s").Foreground(termenv.ANSIYellow).String(),
+			line,
 		)
+		fmt.Fprintln(out)
 	}
+
 	return nil
 }
 
-func (fe *frontendPretty) renderLogs(out *termenv.Output, span *Span, depth int) bool {
-	if logs, ok := fe.logs.Logs[span.SpanContext().SpanID()]; ok {
-		pipe := out.String(VertBoldBar).Foreground(termenv.ANSIBrightBlack)
-		if depth != -1 {
-			logs.SetPrefix(strings.Repeat("  ", depth) + pipe.String() + " ")
-		}
-		logs.SetHeight(fe.window.Height / 3)
-		fmt.Fprint(out, logs.View())
-		return logs.UsedHeight() > 0
+func (fe *frontendPretty) renderLogs(out *termenv.Output, logs *Vterm, depth int, height int, prefix string) {
+	pipe := out.String(VertBoldBar).Foreground(termenv.ANSIBrightBlack)
+	if depth == -1 {
+		// clear prefix when zoomed
+		logs.SetPrefix(prefix)
+	} else {
+		logs.SetPrefix(prefix + strings.Repeat("  ", depth) + pipe.String() + " ")
 	}
-	return false
+	logs.SetHeight(height)
+	fmt.Fprint(out, logs.View())
 }
 
 type prettyLogs struct {

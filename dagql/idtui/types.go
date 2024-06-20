@@ -1,7 +1,6 @@
 package idtui
 
 import (
-	"sort"
 	"time"
 
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -19,17 +18,6 @@ func (trace *Trace) HexID() string {
 	return trace.ID.String()
 }
 
-func (trace *Trace) Name() string {
-	if span := trace.db.PrimarySpanForTrace(trace.ID); span != nil {
-		return span.Name()
-	}
-	return "unknown"
-}
-
-func (trace *Trace) PrimarySpan() *Span {
-	return trace.db.PrimarySpanForTrace(trace.ID)
-}
-
 type Task struct {
 	Span      sdktrace.ReadOnlySpan
 	Name      string
@@ -39,26 +27,9 @@ type Task struct {
 	Completed time.Time
 }
 
-func CollectSpans(db *DB, traceID trace.TraceID) []*Span {
-	var spans []*Span //nolint:prealloc
-	for _, span := range db.Spans {
-		if span.Ignore {
-			continue
-		}
-		if traceID.IsValid() && span.SpanContext().TraceID() != traceID {
-			continue
-		}
-		spans = append(spans, span)
-	}
-	sort.Slice(spans, func(i, j int) bool {
-		return spans[i].IsBefore(spans[j])
-	})
-	return spans
-}
-
-func CollectRows(steps []*Span) []*TraceRow {
-	var rows []*TraceRow
-	WalkSteps(steps, func(row *TraceRow) {
+func CollectTree(spans []*Span) []*TraceTree {
+	var rows []*TraceTree
+	WalkSpans(spans, func(row *TraceTree) {
 		if row.Parent != nil {
 			row.Parent.Children = append(row.Parent.Children, row)
 		} else {
@@ -68,107 +39,129 @@ func CollectRows(steps []*Span) []*TraceRow {
 	return rows
 }
 
-type TraceRow struct {
+type TraceTree struct {
 	Span *Span
 
-	Parent *TraceRow
+	Parent *TraceTree
 
-	IsRunning bool
-	Chained   bool
+	IsRunningOrChildRunning bool
+	Chained                 bool
 
-	Children  []*TraceRow
-	Collapsed bool
+	Children []*TraceTree
 }
 
-type Pipeline []*TraceRow
-
-func CollectPipelines(rows []*TraceRow) []Pipeline {
-	pls := []Pipeline{}
-	var cur Pipeline
-	for _, r := range rows {
-		switch {
-		case len(cur) == 0:
-			cur = append(cur, r)
-		case r.Chained:
-			cur = append(cur, r)
-		case len(cur) > 0:
-			pls = append(pls, cur)
-			cur = Pipeline{r}
-		}
-	}
-	if len(cur) > 0 {
-		pls = append(pls, cur)
-	}
-	return pls
+// TraceRow is the flattened representation of the tree so we can easily walk
+// it backwards and render only the parts that will fit on screen. Otherwise
+// large traces get giga slow.
+type TraceRow struct {
+	Index                   int
+	Span                    *Span
+	Depth                   int
+	IsRunningOrChildRunning bool
 }
 
 type RowsView struct {
-	Primary *Span
-	Body    []*TraceRow
+	Zoomed *Span
+	Body   []*TraceTree
 }
 
-func CollectRowsView(rows []*TraceRow) *RowsView {
-	view := &RowsView{}
-	for _, row := range rows {
-		if row.Span.Primary {
-			// promote children of primary vertex to the top-level
-			for _, child := range row.Children {
-				child.Parent = nil
-			}
-			view.Primary = row.Span
-			// reveal anything 'extra' below the primary content
-			view.Body = append(row.Children, view.Body...)
-		} else {
-			// reveal anything 'extra' by default (fail open)
-			view.Body = append(view.Body, row)
-		}
+func (db *DB) RowsView(zoomedID trace.SpanID) *RowsView {
+	view := &RowsView{
+		Zoomed: db.Spans[zoomedID],
 	}
+	var spans []*Span
+	if view.Zoomed != nil {
+		spans = view.Zoomed.ChildSpans
+	} else {
+		spans = db.SpanOrder
+	}
+	view.Body = CollectTree(spans)
 	return view
 }
 
-func (row *TraceRow) Depth() int {
+type Rows struct {
+	Order  []*TraceRow
+	BySpan map[trace.SpanID]*TraceRow
+}
+
+func (lv *RowsView) Rows(opts FrontendOpts) *Rows {
+	rows := &Rows{
+		BySpan: make(map[trace.SpanID]*TraceRow, len(lv.Body)),
+	}
+	var walk func(*TraceTree, int)
+	walk = func(tree *TraceTree, depth int) {
+		if !opts.ShouldShow(tree) {
+			return
+		}
+		if !tree.Span.Passthrough {
+			row := &TraceRow{
+				Index:                   len(rows.Order),
+				Span:                    tree.Span,
+				Depth:                   depth,
+				IsRunningOrChildRunning: tree.IsRunningOrChildRunning,
+			}
+			rows.Order = append(rows.Order, row)
+			rows.BySpan[tree.Span.ID] = row
+			depth++
+		}
+		if tree.IsRunningOrChildRunning || tree.Span.Failed() {
+			for _, child := range tree.Children {
+				walk(child, depth)
+			}
+		}
+	}
+	for _, row := range lv.Body {
+		walk(row, 0)
+	}
+	return rows
+}
+
+func (row *TraceTree) Depth() int {
 	if row.Parent == nil {
 		return 0
 	}
 	return row.Parent.Depth() + 1
 }
 
-func (row *TraceRow) setRunning() {
-	row.IsRunning = true
-	if row.Parent != nil && !row.Parent.IsRunning {
+func (row *TraceTree) setRunning() {
+	row.IsRunningOrChildRunning = true
+	if row.Parent != nil && !row.Parent.IsRunningOrChildRunning {
 		row.Parent.setRunning()
 	}
 }
 
-func WalkSteps(spans []*Span, f func(*TraceRow)) {
-	var lastRow *TraceRow
-	seen := map[trace.SpanID]bool{}
-	var walk func(*Span, *TraceRow)
-	walk = func(span *Span, parent *TraceRow) {
-		spanID := span.SpanContext().SpanID()
+func WalkSpans(spans []*Span, f func(*TraceTree)) {
+	var lastRow *TraceTree
+	seen := make(map[trace.SpanID]bool, len(spans))
+	var walk func(*Span, *TraceTree)
+	walk = func(span *Span, parent *TraceTree) {
+		if span.Ignore {
+			return
+		}
+		spanID := span.ID
 		if seen[spanID] {
 			return
 		}
 		if span.Passthrough {
-			for _, child := range span.Children() {
+			for _, child := range span.ChildSpans {
 				walk(child, parent)
 			}
 			return
 		}
-		row := &TraceRow{
+		row := &TraceTree{
 			Span:   span,
 			Parent: parent,
 		}
-		if base, ok := span.Base(); ok && lastRow != nil {
-			row.Chained = base.Digest == lastRow.Span.Digest
+		if span.Base != nil && lastRow != nil {
+			row.Chained = span.Base.Digest == lastRow.Span.Digest
 		}
-		if span.IsRunning() {
+		if span.IsRunning {
 			row.setRunning()
 		}
 		f(row)
 		lastRow = row
 		seen[spanID] = true
-		for _, child := range span.Children() {
+		for _, child := range span.ChildSpans {
 			walk(child, row)
 		}
 		lastRow = row

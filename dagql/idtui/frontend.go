@@ -20,6 +20,7 @@ import (
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
+	"github.com/dagger/dagger/engine/slog"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
 
@@ -32,6 +33,12 @@ type FrontendOpts struct {
 
 	// Verbosity is the level of detail to show in the TUI.
 	Verbosity int
+
+	// Don't show things that completed beneath this duration. (default 100ms)
+	TooFastThreshold time.Duration
+
+	// Remove completed things after this duration. (default 1s)
+	GCThreshold time.Duration
 }
 
 type Frontend interface {
@@ -70,19 +77,25 @@ func DumpID(out *termenv.Output, id *call.ID) error {
 	for dig, call := range dag.CallsByDigest {
 		db.Calls[dig] = call
 	}
-	r := renderer{
-		db:    db,
-		width: -1,
-	}
-	return r.renderCall(out, nil, id.Call(), "", 0, false, false)
+	r := newRenderer(db, -1, FrontendOpts{})
+	return r.renderCall(out, nil, id.Call(), "", 0, false, false, false)
 }
 
 type renderer struct {
 	FrontendOpts
 
-	db *DB
+	db        *DB
+	width     int
+	rendering map[string]bool
+}
 
-	width int
+func newRenderer(db *DB, width int, fe FrontendOpts) renderer {
+	return renderer{
+		FrontendOpts: fe,
+		db:           db,
+		width:        width,
+		rendering:    map[string]bool{},
+	}
 }
 
 const (
@@ -95,33 +108,46 @@ func (r renderer) indent(out io.Writer, depth int) {
 	fmt.Fprint(out, strings.Repeat("  ", depth))
 }
 
-func (r renderer) renderIDBase(out *termenv.Output, call *callpbv1.Call) error {
+func (r renderer) renderIDBase(out *termenv.Output, call *callpbv1.Call) {
 	typeName := call.Type.ToAST().Name()
 	parent := out.String(typeName)
 	if call.Module != nil {
 		parent = parent.Foreground(moduleColor)
 	}
 	fmt.Fprint(out, parent.String())
-	if r.Verbosity > 2 && call.ReceiverDigest != "" {
+	if r.Verbosity > ShowDigestsVerbosity && call.ReceiverDigest != "" {
 		fmt.Fprint(out, out.String(fmt.Sprintf("@%s", call.ReceiverDigest)).Foreground(faintColor))
 	}
-	return nil
 }
 
-func (r renderer) renderCall(out *termenv.Output, span *Span, call *callpbv1.Call, prefix string, depth int, inline bool, internal bool) error {
+func (r renderer) renderCall(
+	out *termenv.Output,
+	span *Span,
+	call *callpbv1.Call,
+	prefix string,
+	depth int,
+	inline bool,
+	internal bool,
+	focused bool,
+) error {
+	if r.rendering[call.Digest] {
+		slog.Warn("cycle detected while rendering call", "span", span.Name(), "call", call.String())
+		return nil
+	}
+	r.rendering[call.Digest] = true
+	defer func() { delete(r.rendering, call.Digest) }()
+
 	if !inline {
 		fmt.Fprint(out, prefix)
 		r.indent(out, depth)
 	}
 
 	if span != nil {
-		r.renderStatus(out, span)
+		r.renderStatus(out, span, focused)
 	}
 
 	if call.ReceiverDigest != "" {
-		if err := r.renderIDBase(out, r.db.MustCall(call.ReceiverDigest)); err != nil {
-			return err
-		}
+		r.renderIDBase(out, r.db.MustCall(call.ReceiverDigest))
 		fmt.Fprint(out, ".")
 	}
 
@@ -158,7 +184,7 @@ func (r renderer) renderCall(out *termenv.Output, span *Span, call *callpbv1.Cal
 						}
 					}
 					argCall := r.db.Simplify(r.db.MustCall(argDig), forceSimplify)
-					if err := r.renderCall(out, argSpan, argCall, prefix, depth-1, true, internal); err != nil {
+					if err := r.renderCall(out, argSpan, argCall, prefix, depth-1, true, internal, false); err != nil {
 						return err
 					}
 				} else {
@@ -187,7 +213,7 @@ func (r renderer) renderCall(out *termenv.Output, span *Span, call *callpbv1.Cal
 		fmt.Fprint(out, typeStr)
 	}
 
-	if r.Verbosity > 2 {
+	if r.Verbosity > ShowDigestsVerbosity {
 		fmt.Fprint(out, out.String(fmt.Sprintf(" = %s", call.Digest)).Foreground(faintColor))
 	}
 
@@ -198,12 +224,19 @@ func (r renderer) renderCall(out *termenv.Output, span *Span, call *callpbv1.Cal
 	return nil
 }
 
-func (r renderer) renderVertex(out *termenv.Output, span *Span, name string, prefix string, depth int) error {
+func (r renderer) renderSpan(
+	out *termenv.Output,
+	span *Span,
+	name string,
+	prefix string,
+	depth int,
+	focused bool,
+) error {
 	fmt.Fprint(out, prefix)
 	r.indent(out, depth)
 
 	if span != nil {
-		r.renderStatus(out, span)
+		r.renderStatus(out, span, focused)
 	}
 
 	fmt.Fprint(out, name)
@@ -260,11 +293,11 @@ func (r renderer) renderLiteral(out *termenv.Output, lit *callpbv1.Literal) {
 	}
 }
 
-func (r renderer) renderStatus(out *termenv.Output, span *Span) {
+func (r renderer) renderStatus(out *termenv.Output, span *Span, focused bool) {
 	var symbol string
 	var color termenv.Color
 	switch {
-	case span.IsRunning():
+	case span.IsRunning:
 		symbol = DotFilled
 		color = termenv.ANSIYellow
 	case span.Canceled:
@@ -278,21 +311,23 @@ func (r renderer) renderStatus(out *termenv.Output, span *Span) {
 		color = termenv.ANSIGreen
 	}
 
-	symbol = out.String(symbol).Foreground(color).String()
+	style := out.String(symbol).Foreground(color)
+	if focused {
+		style = style.Reverse()
+	}
+	symbol = style.String()
 
 	fmt.Fprintf(out, "%s ", symbol)
 
 	if r.Debug {
-		fmt.Fprintf(out, "%s ", out.String(
-			span.SpanContext().SpanID().String(),
-		).Foreground(termenv.ANSIBrightBlack))
+		fmt.Fprintf(out, "%s ", out.String(span.ID.String()).Foreground(termenv.ANSIBrightBlack))
 	}
 }
 
 func (r renderer) renderDuration(out *termenv.Output, span *Span) {
 	fmt.Fprint(out, " ")
 	duration := out.String(fmtDuration(span.Duration()))
-	if span.IsRunning() {
+	if span.IsRunning {
 		duration = duration.Foreground(termenv.ANSIYellow)
 	} else {
 		duration = duration.Faint()
@@ -340,23 +375,27 @@ func (r renderer) renderDuration(out *termenv.Output, span *Span) {
 // 	return nil
 // }
 
-type spanFilter struct {
-	db               *DB
-	gcThreshold      time.Duration
-	tooFastThreshold time.Duration
-}
+const (
+	ShowCompletedVerbosity    = 1
+	ShowInternalVerbosity     = 2
+	ShowEncapsulatedVerbosity = 2
+	ShowSpammyVerbosity       = 3
+	ShowDigestsVerbosity      = 3
 
-func (sf spanFilter) shouldShow(opts FrontendOpts, row *TraceRow) bool {
+	DefaultVerbosity = ShowCompletedVerbosity
+)
+
+func (opts FrontendOpts) ShouldShow(tree *TraceTree) bool {
 	if opts.Debug {
 		// debug reveals all
 		return true
 	}
-	span := row.Span
-	if span.IsInternal() && opts.Verbosity < 2 {
+	span := tree.Span
+	if span.IsInternal() && opts.Verbosity < ShowInternalVerbosity {
 		// internal steps are hidden by default
 		return false
 	}
-	if row.Parent != nil && (span.Encapsulated || row.Parent.Span.Encapsulate) && row.Parent.Span.Err() == nil && opts.Verbosity < 2 {
+	if tree.Parent != nil && (span.Encapsulated || tree.Parent.Span.Encapsulate) && tree.Parent.Span.Err() == nil && opts.Verbosity < ShowEncapsulatedVerbosity {
 		// encapsulated steps are hidden (even on error) unless their parent errors
 		return false
 	}
@@ -364,17 +403,15 @@ func (sf spanFilter) shouldShow(opts FrontendOpts, row *TraceRow) bool {
 		// show errors
 		return true
 	}
-	if sf.tooFastThreshold > 0 && span.Duration() < sf.tooFastThreshold && opts.Verbosity < 3 {
-		// ignore fast leaf steps; signal:noise is too poor
-		if row.Parent != nil && row.Parent.Span.SpanContext().SpanID() != sf.db.PrimarySpan {
-			return false
-		}
+	if tree.Parent != nil && (opts.TooFastThreshold > 0 && span.Duration() < opts.TooFastThreshold && opts.Verbosity < ShowSpammyVerbosity) {
+		// ignore fast steps; signal:noise is too poor
+		return false
 	}
-	if row.IsRunning {
+	if tree.IsRunningOrChildRunning {
 		// show running steps
 		return true
 	}
-	if sf.gcThreshold > 0 && time.Since(span.EndTime()) > sf.gcThreshold && opts.Verbosity < 1 {
+	if opts.GCThreshold > 0 && time.Since(span.EndTime()) > opts.GCThreshold && opts.Verbosity < ShowCompletedVerbosity {
 		// stop showing steps that ended after a given threshold
 		return false
 	}

@@ -50,7 +50,7 @@ var (
 	workdir string
 
 	debug     bool
-	verbosity int
+	verbosity int = idtui.DefaultVerbosity
 	silent    bool
 	progress  string
 
@@ -242,9 +242,12 @@ func main() {
 	parseGlobalFlags()
 
 	opts := idtui.FrontendOpts{
-		Debug:     debug,
-		Silent:    silent,
-		Verbosity: verbosity,
+		Debug:  debug,
+		Silent: silent,
+
+		// NOTE: the verbosity flag is actually a delta to apply to the
+		// internal default verbosity level
+		Verbosity: idtui.DefaultVerbosity + verbosity,
 	}
 
 	if progress == "auto" {
@@ -302,6 +305,9 @@ func main() {
 		ctx, span := Tracer().Start(ctx, strings.Join(os.Args, " "))
 		defer telemetry.End(span, func() error { return rerr })
 
+		// Set up global slog to log to the primary span output.
+		slog.SetDefault(slog.SpanLogger(ctx, InstrumentationLibrary))
+
 		// Set the span as the primary span for the frontend.
 		Frontend.SetPrimary(span.SpanContext().SpanID())
 
@@ -316,6 +322,8 @@ func main() {
 		var exit ExitError
 		if errors.As(err, &exit) {
 			os.Exit(exit.Code)
+		} else if errors.Is(err, context.Canceled) {
+			os.Exit(2)
 		} else {
 			fmt.Fprintln(os.Stderr, rootCmd.ErrPrefix(), err)
 			os.Exit(1)

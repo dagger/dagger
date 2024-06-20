@@ -3,13 +3,13 @@ package idtui
 import (
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
 	"github.com/a-h/templ"
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 )
@@ -17,16 +17,22 @@ import (
 type Span struct {
 	sdktrace.ReadOnlySpan
 
-	Digest string
+	ParentSpan *Span
+	ChildSpans []*Span
 
-	Call *callpbv1.Call
+	ID trace.SpanID
+
+	IsRunning bool
+
+	Digest string
+	Call   *callpbv1.Call
+	Base   *callpbv1.Call
 
 	Internal bool
 	Cached   bool
 	Canceled bool
 	Inputs   []string
 
-	Primary      bool
 	Encapsulate  bool
 	Encapsulated bool
 	Mask         bool
@@ -37,23 +43,14 @@ type Span struct {
 	trace *Trace
 }
 
-func (span *Span) Base() (*callpbv1.Call, bool) {
-	if span.Call == nil {
-		return nil, false
+func (span *Span) HasParent(parent *Span) bool {
+	if span.ParentSpan == nil {
+		return false
 	}
-	if span.Call.ReceiverDigest == "" {
-		return nil, false
+	if span.ParentSpan == parent {
+		return true
 	}
-	call, ok := span.db.Calls[span.Call.ReceiverDigest]
-	if !ok {
-		return nil, false
-	}
-	return span.db.Simplify(call, span.Internal), true
-}
-
-func (span *Span) IsRunning() bool {
-	inner := span.ReadOnlySpan
-	return inner.EndTime().Before(inner.StartTime())
+	return span.ParentSpan.HasParent(parent)
 }
 
 func (span *Span) Name() string {
@@ -71,6 +68,11 @@ func (span *Span) Name() string {
 // 	return nil
 // }
 
+func (span *Span) Failed() bool {
+	status := span.Status()
+	return status.Code == codes.Error
+}
+
 func (span *Span) Err() error {
 	status := span.Status()
 	if status.Code == codes.Error {
@@ -86,7 +88,7 @@ func (span *Span) IsInternal() bool {
 func (span *Span) Duration() time.Duration {
 	inner := span.ReadOnlySpan
 	var dur time.Duration
-	if span.IsRunning() {
+	if span.IsRunning {
 		dur = time.Since(inner.StartTime())
 	} else {
 		dur = inner.EndTime().Sub(inner.StartTime())
@@ -95,7 +97,7 @@ func (span *Span) Duration() time.Duration {
 }
 
 func (span *Span) EndTime() time.Time {
-	if span.IsRunning() {
+	if span.IsRunning {
 		return time.Now()
 	}
 	return span.ReadOnlySpan.EndTime()
@@ -103,23 +105,6 @@ func (span *Span) EndTime() time.Time {
 
 func (span *Span) IsBefore(other *Span) bool {
 	return span.StartTime().Before(other.StartTime())
-}
-
-func (span *Span) Children() []*Span {
-	children := []*Span{}
-	for childID := range span.db.Children[span.SpanContext().SpanID()] {
-		child, ok := span.db.Spans[childID]
-		if !ok {
-			continue
-		}
-		if !child.Ignore {
-			children = append(children, child)
-		}
-	}
-	sort.Slice(children, func(i, j int) bool {
-		return children[i].IsBefore(children[j])
-	})
-	return children
 }
 
 type SpanBar struct {
