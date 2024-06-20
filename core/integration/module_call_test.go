@@ -654,7 +654,7 @@ func (m *Test) ToProto(proto string) NetworkProtocol {
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 				Contents: `package main
-				
+
 type Status string
 
 const (
@@ -1450,7 +1450,7 @@ func (m *Test) ToStatus(status string) Status {
 	`)
 
 		_, err := modGen.With(daggerCall("--help")).Stdout(ctx)
-		require.ErrorContains(t, err, "enum value ACTIVE is already defined")
+		require.ErrorContains(t, err, `enum value "ACTIVE" is already defined`)
 	})
 
 	t.Run("invalid value", func(t *testing.T) {
@@ -1477,6 +1477,9 @@ func (m *Test) ToStatus(status string) Status {
 			{
 				enumValue: "ACTIVE ",
 			},
+			{
+				enumValue: "foo bar",
+			},
 		} {
 			tc := tc
 
@@ -1498,11 +1501,36 @@ type Test struct{}
 func (m *Test) FromStatus(status Status) string {
 	return string(status)
 }
-	`, tc.enumValue))
+`, tc.enumValue))
 
 				_, err := modGen.With(daggerCall("--help")).Stdout(ctx)
-				require.ErrorContains(t, err, fmt.Sprintf("enum value %s is not a valid GraphQL value (only letters, digits and underscores are allowed)", tc.enumValue))
+				require.ErrorContains(t, err, fmt.Sprintf("enum value %q is not valid", tc.enumValue))
 			})
 		}
+	})
+
+	t.Run("empty value", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		modGen := modInit(t, c, "go", fmt.Sprintf(`package main
+
+type Status string
+
+const (
+	Value Status = ""
+)
+
+type Test struct{}
+
+func (m *Test) FromStatus(status Status) string {
+	return string(status)
+}
+`,
+		))
+
+		_, err := modGen.With(daggerCall("--help")).Stdout(ctx)
+		require.ErrorContains(t, err, "enum value must not be empty")
 	})
 }

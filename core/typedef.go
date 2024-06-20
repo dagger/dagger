@@ -502,13 +502,13 @@ func (typeDef *TypeDef) WithEnumValue(name, desc string) (*TypeDef, error) {
 	pattern := `^[a-zA-Z_][a-zA-Z0-9_]*$`
 
 	if !regexp.MustCompile(pattern).MatchString(name) {
-		return nil, fmt.Errorf("enum value %s is not a valid GraphQL value (only letters, digits and underscores are allowed)", name)
+		return nil, fmt.Errorf("enum value %q is not valid (only letters, digits and underscores are allowed)", name)
 	}
 
 	// Verify if the enum value is duplicated.
 	for _, v := range typeDef.AsEnum.Value.Values {
 		if v.OriginalName == name {
-			return nil, fmt.Errorf("enum value %s is already defined", name)
+			return nil, fmt.Errorf("enum value %q is already defined", name)
 		}
 	}
 

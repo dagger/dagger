@@ -417,7 +417,7 @@ func (s *moduleSchema) typeDefWithEnumValue(ctx context.Context, def *core.TypeD
 	Description string `default:""`
 }) (*core.TypeDef, error) {
 	if args.Value == "" {
-		return nil, fmt.Errorf("enum value must have a name")
+		return nil, fmt.Errorf("enum value must not be empty")
 	}
 
 	return def.WithEnumValue(args.Value, args.Description)
