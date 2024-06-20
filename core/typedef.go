@@ -492,7 +492,7 @@ func (typeDef *TypeDef) WithEnumValue(name, desc string) (*TypeDef, error) {
 	}
 
 	// Verify if the enum value is duplicated.
-	for _, v := range typeDef.AsEnum.Value.Values{
+	for _, v := range typeDef.AsEnum.Value.Values {
 		if v.OriginalName == name {
 			return nil, fmt.Errorf("enum value %s is already defined", name)
 		}
