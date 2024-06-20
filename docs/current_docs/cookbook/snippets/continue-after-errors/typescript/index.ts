@@ -1,4 +1,4 @@
-import { dag, object, func, File } from "@dagger.io/dagger"
+import { dag, object, field, func, File } from "@dagger.io/dagger"
 
 const SCRIPT = `#!/bin/sh
 echo "Test Suite"
@@ -11,10 +11,10 @@ exit 1
 
 @object()
 class TestResult {
-  @func()
+  @field()
   report: File
 
-  @func()
+  @field()
   exitCode: string
 }
 
