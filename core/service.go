@@ -386,10 +386,6 @@ func (svc *Service) startContainer(
 	var exitErr error
 	exited := make(chan struct{})
 	go func() {
-		// terminate the span; we're not interested in setting an error, since
-		// services return a benign error like `exit status 1` on exit
-		defer span.End()
-
 		defer func() {
 			if stdinClient != nil {
 				stdinClient.Close()
@@ -402,6 +398,10 @@ func (svc *Service) startContainer(
 			}
 			close(exited)
 		}()
+
+		// terminate the span; we're not interested in setting an error, since
+		// services return a benign error like `exit status 1` on exit
+		defer span.End()
 
 		exitErr = svcProc.Wait()
 
