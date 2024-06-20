@@ -3182,10 +3182,14 @@ func TestCustomModuleEnumType(t *testing.T) {
 			sdk: "go",
 			source: `package main
 
+// Enum for Status
 type Status string
 
 const (
+	// Active status
 	Active Status = "ACTIVE"
+
+	// Inactive status
 	Inactive Status = "INACTIVE"
 )
 
@@ -3284,6 +3288,15 @@ export class Test {
 
 			_, err = modGen.With(daggerQuery(`{test{toStatus(status: "INVALID")}}`)).Sync(ctx)
 			require.ErrorContains(t, err, "invalid enum value")
+
+			mod := inspectModule(ctx, t, modGen)
+			statusEnum := mod.Get("enums.#.asEnum|#(name=TestStatus)")
+			require.Equal(t, "Enum for Status", statusEnum.Get("description").String())
+			require.Len(t, statusEnum.Get("values").Array(), 2)
+			require.Equal(t, "Active", statusEnum.Get("values.0.name").String())
+			require.Equal(t, "Inactive", statusEnum.Get("values.1.name").String())
+			require.Equal(t, "Active status", statusEnum.Get("values.0.description").String())
+			require.Equal(t, "Inactive status", statusEnum.Get("values.1.description").String())
 		})
 	}
 }
@@ -6423,6 +6436,16 @@ query { host { directory(path: ".") { asModule { initialize {
                 name
                 description
             }
+        }
+    }
+    enums {
+        asEnum {
+            name
+            description
+            values {
+                name
+				description
+			}
         }
     }
 } } } } }

@@ -753,13 +753,13 @@ type method struct {
 	paramSpecs []paramSpec
 }
 
-// astSpecForNamedType returns the *ast* type spec for the given Named type. This is needed
-// because the types.Named object does not have the comments associated with the type, which
-// we want to parse.
-func (ps *parseState) astSpecForNamedType(namedType *types.Named) (*ast.TypeSpec, error) {
-	tokenFile := ps.fset.File(namedType.Obj().Pos())
+// astSpecForObj returns the *ast* type spec for the given object. This is
+// needed because the object does not have the comments associated with the
+// type, which we want to parse.
+func (ps *parseState) astSpecForObj(obj types.Object) (ast.Spec, error) {
+	tokenFile := ps.fset.File(obj.Pos())
 	if tokenFile == nil {
-		return nil, fmt.Errorf("no file for %s", namedType.Obj().Name())
+		return nil, fmt.Errorf("no file for %s", obj.Name())
 	}
 	for _, f := range ps.pkg.Syntax {
 		if ps.fset.File(f.Pos()) != tokenFile {
@@ -771,20 +771,44 @@ func (ps *parseState) astSpecForNamedType(namedType *types.Named) (*ast.TypeSpec
 				continue
 			}
 			for _, spec := range genDecl.Specs {
-				typeSpec, ok := spec.(*ast.TypeSpec)
-				if !ok {
-					continue
-				}
-				if typeSpec.Name.Name == namedType.Obj().Name() {
-					if typeSpec.Doc == nil {
-						typeSpec.Doc = genDecl.Doc
+				switch spec := spec.(type) {
+				case *ast.TypeSpec:
+					if spec.Name.Name == obj.Name() {
+						if spec.Doc == nil {
+							spec.Doc = genDecl.Doc
+						}
+						return spec, nil
 					}
-					return typeSpec, nil
+				case *ast.ValueSpec:
+					for _, name := range spec.Names {
+						if name.Name == obj.Name() {
+							if spec.Doc == nil {
+								spec.Doc = genDecl.Doc
+							}
+							return spec, nil
+						}
+					}
 				}
 			}
 		}
 	}
-	return nil, fmt.Errorf("no decl for %s", namedType.Obj().Name())
+	return nil, fmt.Errorf("no decl for %s", obj.Name())
+}
+
+func docForAstSpec(spec ast.Spec) *ast.CommentGroup {
+	if spec == nil {
+		return nil
+	}
+	switch spec := spec.(type) {
+	case *ast.TypeSpec:
+		return spec.Doc
+	case *ast.ValueSpec:
+		return spec.Doc
+	case *ast.ImportSpec:
+		return spec.Doc
+	default:
+		return nil
+	}
 }
 
 // declForFunc returns the *ast* func decl for the given Func type. This is needed

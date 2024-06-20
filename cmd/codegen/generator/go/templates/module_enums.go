@@ -42,10 +42,19 @@ func (ps *parseState) parseGoEnum(t *types.Basic, named *types.Named) (*parsedEn
 		} else {
 			value = objConst.Val().ExactString()
 		}
-		spec.values = append(spec.values, &parsedEnumValue{
+
+		astSpec, err := ps.astSpecForObj(objConst)
+		if err != nil {
+			return nil, fmt.Errorf("failed to find decl for object %s: %w", spec.name, err)
+		}
+
+		valueSpec := &parsedEnumValue{
 			value: value,
-			// doc: ???,
-		})
+		}
+		if doc := docForAstSpec(astSpec); doc != nil {
+			valueSpec.doc = doc.Text()
+		}
+		spec.values = append(spec.values, valueSpec)
 	}
 	if len(spec.values) == 0 {
 		// no values, this isn't an enum, it's a scalar alias
@@ -53,11 +62,13 @@ func (ps *parseState) parseGoEnum(t *types.Basic, named *types.Named) (*parsedEn
 	}
 
 	// get the comment above the struct (if any)
-	astSpec, err := ps.astSpecForNamedType(named)
+	astSpec, err := ps.astSpecForObj(named.Obj())
 	if err != nil {
 		return nil, fmt.Errorf("failed to find decl for named type %s: %w", spec.name, err)
 	}
-	spec.doc = astSpec.Doc.Text()
+	if doc := docForAstSpec(astSpec); doc != nil {
+		spec.doc = doc.Text()
+	}
 
 	return spec, nil
 }
@@ -100,10 +111,10 @@ func (spec *parsedEnumType) TypeDefCode() (*Statement, error) {
 		if val.doc != "" {
 			fnTypeDefCode = append(fnTypeDefCode,
 				Id("TypeDefWithEnumValueOpts").Values(
-					Id("Description").Op(":").Lit(val.doc),
+					Id("Description").Op(":").Lit(strings.TrimSpace(val.doc)),
 				))
 		}
-		typeDefCode = dotLine(typeDefCode, "WithEnumValue").Call(Add(fnTypeDefCode...))
+		typeDefCode = dotLine(typeDefCode, "WithEnumValue").Call(fnTypeDefCode...)
 	}
 
 	return typeDefCode, nil

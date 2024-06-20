@@ -72,15 +72,21 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 	}
 
 	// get the comment above the struct (if any)
-	astSpec, err := ps.astSpecForNamedType(named)
+	astSpec, err := ps.astSpecForObj(named.Obj())
 	if err != nil {
 		return nil, fmt.Errorf("failed to find decl for named type %s: %w", spec.name, err)
 	}
-	spec.doc = astSpec.Doc.Text()
+	if doc := docForAstSpec(astSpec); doc != nil {
+		spec.doc = doc.Text()
+	}
 
-	astStructType, ok := astSpec.Type.(*ast.StructType)
+	astTypeSpec, ok := astSpec.(*ast.TypeSpec)
 	if !ok {
-		return nil, fmt.Errorf("expected type spec to be a struct, got %T", astSpec.Type)
+		return nil, fmt.Errorf("expected type spec, got %T", astSpec)
+	}
+	astStructType, ok := astTypeSpec.Type.(*ast.StructType)
+	if !ok {
+		return nil, fmt.Errorf("expected type spec to be a struct, got %T", astTypeSpec.Type)
 	}
 
 	// Fill out the static fields of the struct (if any)
