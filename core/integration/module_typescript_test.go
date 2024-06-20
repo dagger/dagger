@@ -1113,3 +1113,34 @@ class Test {
 		require.ErrorContains(t, err, "Use of primitive Boolean type detected, did you mean boolean?")
 	})
 }
+
+func TestModuleTypeScriptDeprecatedFieldDecorator(t *testing.T) {
+	t.Parallel()
+
+	t.Run("@field still working", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=test", "--sdk=typescript")).
+			With(sdkSource("typescript", `
+import { field, object } from "@dagger.io/dagger"
+
+@object()
+class Test {
+  @field() 
+  foo: string = "bar"
+
+	constructor() {}
+}
+`,
+			))
+
+		out, err := modGen.With(daggerQuery(`{test{foo}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"test": {"foo": "bar"}}`, out)
+	})
+}

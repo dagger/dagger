@@ -43,7 +43,7 @@ export function toPascalCase(input: string): string {
 }
 
 /**
- * Return true if the given method has the decorator @fct() on top
+ * Return true if the given method has the decorator @func() on top
  * of its declaration.
  *
  * @param method The method to check

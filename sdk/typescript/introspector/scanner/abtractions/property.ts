@@ -5,6 +5,7 @@ import { UnknownDaggerError } from "../../../common/errors/UnknownDaggerError.js
 import { FieldTypeDef, TypeDef } from "../typeDefs.js"
 import { typeToTypedef } from "../utils.js"
 
+const DEPRECATED_PROPERTY_DECORATOR = "field"
 const PROPERTY_DECORATOR = "func"
 
 export type Properties = { [name: string]: Property }
@@ -47,7 +48,10 @@ export class Property {
 
     this.decorator = ts.getDecorators(property)?.find((d) => {
       if (ts.isCallExpression(d.expression)) {
-        return d.expression.expression.getText() === PROPERTY_DECORATOR
+        return (
+          d.expression.expression.getText() === PROPERTY_DECORATOR ||
+          d.expression.expression.getText() === DEPRECATED_PROPERTY_DECORATOR
+        )
       }
 
       return false
