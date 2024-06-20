@@ -1727,7 +1727,7 @@ class Minimal:
 		{
 			sdk: "typescript",
 			source: `
-import { object, func, func } from "@dagger.io/dagger"
+import { object, func } from "@dagger.io/dagger"
 
 @object()
 class Minimal {
@@ -1843,7 +1843,7 @@ class Test:
 		},
 		{
 			sdk: "typescript",
-			source: `import { object, func, func } from "@dagger.io/dagger"
+			source: `import { object, func } from "@dagger.io/dagger"
 
 @object()
 class Test {
@@ -2063,7 +2063,7 @@ def repeater(msg: str, times: int) -> Repeater:
 		{
 			sdk: "typescript",
 			source: `
-import { object, func, func } from "@dagger.io/dagger"
+import { object, func } from "@dagger.io/dagger"
 
 @object()
 class Repeater {
@@ -2150,7 +2150,7 @@ def my_function() -> X:
 		{
 			sdk: "typescript",
 			source: `
-import { object, func, func } from "@dagger.io/dagger"
+import { object, func } from "@dagger.io/dagger"
 
 @object()
 class X {
@@ -2239,7 +2239,7 @@ class Foo:
 		{
 			sdk: "typescript",
 			source: `
-import { object, func, func } from "@dagger.io/dagger"
+import { object, func } from "@dagger.io/dagger"
 
 @object()
 class X {
@@ -2342,7 +2342,7 @@ class Playground:
 		{
 			sdk: "typescript",
 			source: `
-import { object, func, func } from "@dagger.io/dagger"
+import { object, func } from "@dagger.io/dagger"
 
 @object()
 class Bar {
@@ -2447,7 +2447,7 @@ class Playground:
 		{
 			sdk: "typescript",
 			source: `
-import { dag, Container, File, object, func, func } from "@dagger.io/dagger"
+import { dag, Container, File, object, func } from "@dagger.io/dagger"
 
 @object()
 class Foo {
@@ -2576,7 +2576,7 @@ class Playground:
 		{
 			sdk: "typescript",
 			source: `
-import { dag, Container, object, func, func } from "@dagger.io/dagger"
+import { dag, Container, object, func } from "@dagger.io/dagger"
 
 @object()
 class ScanReport {
@@ -2885,7 +2885,7 @@ class Foo:
 		{
 			sdk: "typescript",
 			source: `
-import { object, func, func } from "@dagger.io/dagger"
+import { object, func } from "@dagger.io/dagger"
 
 @object()
 class Message {
@@ -4100,7 +4100,7 @@ class Test:
 			{
 				sdk: "typescript",
 				source: `
-import { Directory, object, func, func } from '@dagger.io/dagger';
+import { Directory, object, func } from '@dagger.io/dagger';
 
 @object()
 class Test {
@@ -4528,7 +4528,7 @@ class Wrapper:
 		{
 			sdk: "typescript",
 			source: `
-import { dag, Container, object, func, func } from "@dagger.io/dagger"
+import { dag, Container, object, func } from "@dagger.io/dagger"
 
 @object()
 class WrappedContainer {
