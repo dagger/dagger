@@ -3245,12 +3245,12 @@ class Status {
   /**
    * Active status
    */
-  static readonly ACTIVE: string = "ACTIVE"
+  static readonly Active: string = "ACTIVE"
 
   /**
    * Inactive status
    */
-  static readonly INACTIVE: string = "INACTIVE"
+  static readonly Inactive: string = "INACTIVE"
 }
 
 @object()

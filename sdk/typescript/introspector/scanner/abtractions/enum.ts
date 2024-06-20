@@ -112,7 +112,7 @@ export class DaggerEnum {
           member as ts.PropertyDeclaration,
         )
 
-        return { ...acc, [value.name]: value }
+        return { ...acc, [value.value]: value }
       }, {})
   }
 }

@@ -11,7 +11,7 @@ export class DaggerEnumValue {
 
   private symbol: ts.Symbol
 
-  private _name: string
+  private _value: string
 
   private _description: string
 
@@ -28,12 +28,12 @@ export class DaggerEnumValue {
     }
 
     this.symbol = propertySymbol
-    this._name = this.loadName()
+    this._value = this.loadValue()
     this._description = this.loadDescription()
   }
 
-  get name(): string {
-    return this._name
+  get value(): string {
+    return this._value
   }
 
   get description(): string {
@@ -42,15 +42,15 @@ export class DaggerEnumValue {
 
   toJSON() {
     return {
-      name: this.name,
+      name: this.value,
       description: this.description,
     }
   }
 
-  // LoadName load the value of the enum value from the property initializer.
+  // LoadValue load the value of the enum value from the property initializer.
   // If the initializer is not set, it will throw an error.
   // We do not use the actual property name because it may varies between SDKs languages conventions.
-  private loadName(): string {
+  private loadValue(): string {
     if (!this.property.initializer) {
       throw new Error("Dagger enum value has no value set")
     }

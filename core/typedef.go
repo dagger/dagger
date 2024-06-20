@@ -491,6 +491,13 @@ func (typeDef *TypeDef) WithEnumValue(name, desc string) (*TypeDef, error) {
 		return nil, fmt.Errorf("cannot add value to non-enum type: %s", typeDef.Kind)
 	}
 
+	// Verify if the enum value is duplicated.
+	for _, v := range typeDef.AsEnum.Value.Values{
+		if v.OriginalName == name {
+			return nil, fmt.Errorf("enum value %s is already defined", name)
+		}
+	}
+
 	typeDef = typeDef.Clone()
 	typeDef.AsEnum.Value.Values = append(typeDef.AsEnum.Value.Values, NewEnumValueTypeDef(name, desc))
 
