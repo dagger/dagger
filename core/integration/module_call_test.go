@@ -1419,3 +1419,32 @@ func (m *Chain) Echo(msg string) string {
 		require.ErrorContains(t, err, `unknown flag: --matrix`)
 	})
 }
+
+func TestModuleCallDuplicatedEnum(t *testing.T) {
+	t.Parallel()
+	c, ctx := connect(t)
+
+	modGen := modInit(t, c, "go", `package main
+
+type Status string
+
+const (
+	Active Status = "ACTIVE"
+	Inactive Status = "INACTIVE"
+	Duplicated Status = "ACTIVE"
+)
+
+type Test struct{}
+
+func (m *Test) FromStatus(status Status) string {
+	return string(status)
+}
+
+func (m *Test) ToStatus(status string) Status {
+	return Status(status)
+}
+	`,)
+
+	_, err := modGen.With(daggerCall("--help")).Stdout(ctx)
+	require.ErrorContains(t, err, "enum value ACTIVE is already defined")
+}
