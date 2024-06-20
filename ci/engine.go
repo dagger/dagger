@@ -261,12 +261,7 @@ func (e *Engine) TestPublish(
 	return eg.Wait()
 }
 
-func (e *Engine) Scan(ctx context.Context) (string, error) {
-	target, err := e.Container(ctx, "")
-	if err != nil {
-		return "", err
-	}
-
+func (e *Engine) Scan(ctx context.Context) error {
 	ignoreFiles := dag.Directory().WithDirectory("/", e.Dagger.Source, DirectoryWithDirectoryOpts{
 		Include: []string{
 			".trivyignore",
@@ -276,28 +271,76 @@ func (e *Engine) Scan(ctx context.Context) (string, error) {
 	})
 	ignoreFileNames, err := ignoreFiles.Entries(ctx)
 	if err != nil {
-		return "", err
+		return err
 	}
 
 	ctr := dag.Container().
-		From("aquasec/trivy:0.50.4").
-		WithMountedFile("/mnt/engine.tar", target.AsTarball()).
+		From("aquasec/trivy:0.52.2").
 		WithMountedDirectory("/mnt/ignores", ignoreFiles).
 		WithMountedCache("/root/.cache/", dag.CacheVolume("trivy-cache"))
 
-	args := []string{
-		"image",
-		"--format=json",
-		"--no-progress",
-		"--exit-code=1",
-		"--vuln-type=os,library",
-		"--severity=CRITICAL,HIGH",
-		"--show-suppressed",
-	}
-	if len(ignoreFileNames) > 0 {
-		args = append(args, "--ignorefile=/mnt/ignores/"+ignoreFileNames[0])
-	}
-	args = append(args, "--input", "/mnt/engine.tar")
+	eg, ctx := errgroup.WithContext(ctx)
 
-	return ctr.WithExec(args).Stdout(ctx)
+	eg.Go(func() error {
+		// scan the source code
+		args := []string{
+			"fs",
+			"--format=json",
+			"--no-progress",
+			"--exit-code=1",
+			"--vuln-type=os,library",
+			"--severity=CRITICAL,HIGH",
+			"--show-suppressed",
+		}
+		if len(ignoreFileNames) > 0 {
+			args = append(args, "--ignorefile=/mnt/ignores/"+ignoreFileNames[0])
+		}
+		args = append(args, "/mnt/src")
+
+		// HACK: filter out directories that present occasional issues
+		src := e.Dagger.Source
+		src = src.WithoutDirectory("docs")
+		src = src.WithoutDirectory("examples/sdk/nodejs")
+		src = src.WithoutDirectory("sdk/rust/crates/dagger-sdk/examples")
+
+		_, err := ctr.
+			WithMountedDirectory("/mnt/src", src).
+			WithExec(args).
+			Sync(ctx)
+		return err
+	})
+
+	eg.Go(func() error {
+		// scan the engine image
+		//
+		// this can catch dependencies that are only discoverable in the final
+		// build (because some dependencies may be dynamically instrumented with
+		// dagger codeg)
+		args := []string{
+			"image",
+			"--format=json",
+			"--no-progress",
+			"--exit-code=1",
+			"--vuln-type=os,library",
+			"--severity=CRITICAL,HIGH",
+			"--show-suppressed",
+		}
+		if len(ignoreFileNames) > 0 {
+			args = append(args, "--ignorefile=/mnt/ignores/"+ignoreFileNames[0])
+		}
+		args = append(args, "--input", "/mnt/engine.tar")
+
+		target, err := e.Container(ctx, "")
+		if err != nil {
+			return err
+		}
+
+		_, err = ctr.
+			WithMountedFile("/mnt/engine.tar", target.AsTarball()).
+			WithExec(args).
+			Sync(ctx)
+		return err
+	})
+
+	return eg.Wait()
 }
