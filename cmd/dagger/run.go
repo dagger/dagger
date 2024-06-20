@@ -36,7 +36,7 @@ jq -n '{query:"{container{id}}"}' | \
     -u $DAGGER_SESSION_TOKEN: \
     -H "content-type:application/json" \
     -d @- \
-    http://127.0.0.1:$DAGGER_SESSION_PORT/query
+    http://127.0.0.1:$DAGGER_SESSION_PORT/query'
 ´´´`,
 		"´",
 		"`",
