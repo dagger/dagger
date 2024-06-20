@@ -3173,14 +3173,16 @@ class Test {
 func TestCustomModuleEnumType(t *testing.T) {
 	t.Parallel()
 
-	type testCase struct {
-		sdk    string
-		source string
-	}
-	for _, tc := range []testCase{
-		{
-			sdk: "go",
-			source: `package main
+	t.Run("custom enum type", func(t *testing.T) {
+		t.Parallel()
+		type testCase struct {
+			sdk    string
+			source string
+		}
+		for _, tc := range []testCase{
+			{
+				sdk: "go",
+				source: `package main
 
 // Enum for Status
 type Status string
@@ -3203,10 +3205,10 @@ func (m *Test) ToStatus(status string) Status {
 	return Status(status)
 }
 `,
-		},
-		{
-			sdk: "python",
-			source: `import dagger
+			},
+			{
+				sdk: "python",
+				source: `import dagger
 
 @dagger.enum_type
 class Status(dagger.Enum):
@@ -3232,10 +3234,10 @@ class Test:
 
         return MockEnum(status)
 `,
-		},
-		{
-			sdk: "typescript",
-			source: `import { func, object, field, enumType } from "@dagger.io/dagger"
+			},
+			{
+				sdk: "typescript",
+				source: `import { func, object, enumType } from "@dagger.io/dagger"
 
 /**
  * Enum for Status
@@ -3266,39 +3268,139 @@ export class Test {
   }
 }
 `,
-		},
-	} {
-		tc := tc
+			},
+		} {
+			tc := tc
 
-		t.Run(tc.sdk, func(t *testing.T) {
-			t.Parallel()
-			c, ctx := connect(t)
-			modGen := modInit(t, c, tc.sdk, tc.source)
+			t.Run(tc.sdk, func(t *testing.T) {
+				t.Parallel()
+				c, ctx := connect(t)
+				modGen := modInit(t, c, tc.sdk, tc.source)
 
-			out, err := modGen.With(daggerQuery(`{test{fromStatus(status: "ACTIVE")}}`)).Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "ACTIVE", gjson.Get(out, "test.fromStatus").String())
+				out, err := modGen.With(daggerQuery(`{test{fromStatus(status: "ACTIVE")}}`)).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "ACTIVE", gjson.Get(out, "test.fromStatus").String())
 
-			_, err = modGen.With(daggerQuery(`{test{fromStatus(status: "INVALID")}}`)).Stdout(ctx)
-			require.ErrorContains(t, err, "invalid enum value")
+				_, err = modGen.With(daggerQuery(`{test{fromStatus(status: "INVALID")}}`)).Stdout(ctx)
+				require.ErrorContains(t, err, "invalid enum value")
 
-			out, err = modGen.With(daggerQuery(`{test{toStatus(status: "INACTIVE")}}`)).Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "INACTIVE", gjson.Get(out, "test.toStatus").String())
+				out, err = modGen.With(daggerQuery(`{test{toStatus(status: "INACTIVE")}}`)).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "INACTIVE", gjson.Get(out, "test.toStatus").String())
 
-			_, err = modGen.With(daggerQuery(`{test{toStatus(status: "INVALID")}}`)).Sync(ctx)
-			require.ErrorContains(t, err, "invalid enum value")
+				_, err = modGen.With(daggerQuery(`{test{toStatus(status: "INVALID")}}`)).Sync(ctx)
+				require.ErrorContains(t, err, "invalid enum value")
 
-			mod := inspectModule(ctx, t, modGen)
-			statusEnum := mod.Get("enums.#.asEnum|#(name=TestStatus)")
-			require.Equal(t, "Enum for Status", statusEnum.Get("description").String())
-			require.Len(t, statusEnum.Get("values").Array(), 2)
-			require.Equal(t, "Active", statusEnum.Get("values.0.name").String())
-			require.Equal(t, "Inactive", statusEnum.Get("values.1.name").String())
-			require.Equal(t, "Active status", statusEnum.Get("values.0.description").String())
-			require.Equal(t, "Inactive status", statusEnum.Get("values.1.description").String())
-		})
-	}
+				mod := inspectModule(ctx, t, modGen)
+				statusEnum := mod.Get("enums.#.asEnum|#(name=TestStatus)")
+				require.Equal(t, "Enum for Status", statusEnum.Get("description").String())
+				require.Len(t, statusEnum.Get("values").Array(), 2)
+				require.Equal(t, "Active", statusEnum.Get("values.0.name").String())
+				require.Equal(t, "Inactive", statusEnum.Get("values.1.name").String())
+				require.Equal(t, "Active status", statusEnum.Get("values.0.description").String())
+				require.Equal(t, "Inactive status", statusEnum.Get("values.1.description").String())
+			})
+		}
+	})
+
+	t.Run("raise error on duplication", func(t *testing.T) {
+		t.Parallel()
+
+		type testCase struct {
+			sdk    string
+			source string
+		}
+
+		for _, tc := range []testCase{
+			{
+				sdk: "go",
+				source: `package main
+
+type Status string
+
+const (
+	Active Status = "ACTIVE"
+	Inactive Status = "INACTIVE"
+	Duplicate Status = "ACTIVE"
+)
+
+type Test struct{}
+
+func (m *Test) FromStatus(status Status) string {
+	return string(status)
+}
+
+func (m *Test) ToStatus(status string) Status {
+	return Status(status)
+}				
+				`,
+			},
+			{
+				sdk: "python",
+				source: `import dagger
+
+@dagger.enum_type
+class Status(dagger.Enum):
+    ACTIVE = "ACTIVE"
+    INACTIVE = "INACTIVE"
+    DUPLICATE = "ACTIVE"
+
+
+@dagger.object_type
+class Test:
+    @dagger.function
+    def from_status(self, status: Status) -> str:
+        return str(status)
+
+    @dagger.function
+    def to_status(self, status: str) -> Status:
+        # Doing "Status(proto)" will fail in Python, so mock
+        # it to force sending the invalid value back to the server.
+        class MockEnum(dagger.Enum):
+            INACTIVE = "INACTIVE"
+            INVALID = "INVALID"
+
+        return MockEnum(status)				
+				`,
+			},
+			{
+				sdk: "typescript",
+				source: `import { object, func } from "@dagger.io/dagger";
+
+@enumType()
+class Status {
+  static readonly Active: string = "ACTIVE"
+  static readonly Inactive: string = "INACTIVE"
+	static readonly Duplicate: string = "ACTIVE"
+}
+
+@object()
+export class Test {
+  @func()
+  fromStatus(status: Status): string {
+    return status as string
+  }
+
+  @func()
+  toStatus(status: string): Status {
+    return status as Status
+  }
+}
+`,
+			},
+		} {
+			tc := tc
+
+			t.Run(tc.sdk, func(t *testing.T) {
+				t.Parallel()
+				c, ctx := connect(t)
+				modGen := modInit(t, c, tc.sdk, tc.source)
+
+				_, err := modGen.With(daggerQuery(`{test{fromStatus(status: "ACTIVE")}}`)).Stdout(ctx)
+				require.ErrorContains(t, err, "enum value ACTIVE is already defined")
+			})
+		}
+	})
 }
 
 func TestModuleConflictingSameNameDeps(t *testing.T) {
