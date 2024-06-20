@@ -39,6 +39,7 @@ func withEngine(
 	params.EngineLogs = telemetry.LogForwarder{
 		Processors: telemetry.LogProcessors,
 	}
+	params.WithTerminal = withTerminal
 
 	sess, ctx, err := client.Connect(ctx, params)
 	if err != nil {

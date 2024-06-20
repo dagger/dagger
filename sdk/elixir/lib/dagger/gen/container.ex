@@ -442,12 +442,12 @@ defmodule Dagger.Container do
     execute(selection, container.client)
   end
 
-  @doc "Return an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default)."
+  @doc "Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default)."
   @spec terminal(t(), [
           {:cmd, [String.t()]},
           {:experimental_privileged_nesting, boolean() | nil},
           {:insecure_root_capabilities, boolean() | nil}
-        ]) :: Dagger.Terminal.t()
+        ]) :: Dagger.Container.t()
   def terminal(%__MODULE__{} = container, optional_args \\ []) do
     selection =
       container.selection
@@ -459,7 +459,7 @@ defmodule Dagger.Container do
       )
       |> maybe_put_arg("insecureRootCapabilities", optional_args[:insecure_root_capabilities])
 
-    %Dagger.Terminal{
+    %Dagger.Container{
       selection: selection,
       client: container.client
     }

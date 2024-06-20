@@ -366,13 +366,13 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Return an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
+     * Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
      */
     public function terminal(
         ?array $cmd = null,
         ?bool $experimentalPrivilegedNesting = false,
         ?bool $insecureRootCapabilities = false,
-    ): Terminal
+    ): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('terminal');
         if (null !== $cmd) {
@@ -384,7 +384,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
         if (null !== $insecureRootCapabilities) {
         $innerQueryBuilder->setArgument('insecureRootCapabilities', $insecureRootCapabilities);
         }
-        return new \Dagger\Terminal($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

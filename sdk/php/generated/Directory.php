@@ -155,6 +155,32 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Opens an interactive terminal in new container with this directory mounted inside.
+     */
+    public function terminal(
+        ?array $cmd = null,
+        ?bool $experimentalPrivilegedNesting = false,
+        ?bool $insecureRootCapabilities = false,
+        ContainerId|Container|null $container = null,
+    ): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('terminal');
+        if (null !== $cmd) {
+        $innerQueryBuilder->setArgument('cmd', $cmd);
+        }
+        if (null !== $experimentalPrivilegedNesting) {
+        $innerQueryBuilder->setArgument('experimentalPrivilegedNesting', $experimentalPrivilegedNesting);
+        }
+        if (null !== $insecureRootCapabilities) {
+        $innerQueryBuilder->setArgument('insecureRootCapabilities', $insecureRootCapabilities);
+        }
+        if (null !== $container) {
+        $innerQueryBuilder->setArgument('container', $container);
+        }
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Retrieves this directory plus a directory written at the given path.
      */
     public function withDirectory(

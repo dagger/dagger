@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+option go_package = "session";
+
+service Terminal {
+  rpc Session(stream SessionRequest) returns (stream SessionResponse);
+}
+
+message SessionRequest {
+	oneof msg {
+		bytes stdout = 1;
+		bytes stderr = 2;
+		int32 exit = 3;
+	}
+}
+
+message SessionResponse {
+	oneof msg {
+		bytes stdin = 1;
+		Resize resize = 2;
+	}
+}
+
+message Resize {
+	int32 Width = 1;
+	int32 Height = 2;
+}

@@ -1107,39 +1107,6 @@ impl SocketId {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
-pub struct TerminalId(pub String);
-impl From<&str> for TerminalId {
-    fn from(value: &str) -> Self {
-        Self(value.to_string())
-    }
-}
-impl From<String> for TerminalId {
-    fn from(value: String) -> Self {
-        Self(value)
-    }
-}
-impl IntoID<TerminalId> for Terminal {
-    fn into_id(
-        self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<TerminalId, DaggerError>> + Send>>
-    {
-        Box::pin(async move { self.id().await })
-    }
-}
-impl IntoID<TerminalId> for TerminalId {
-    fn into_id(
-        self,
-    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<TerminalId, DaggerError>> + Send>>
-    {
-        Box::pin(async move { Ok::<TerminalId, DaggerError>(self) })
-    }
-}
-impl TerminalId {
-    fn quote(&self) -> String {
-        format!("\"{}\"", self.0.clone())
-    }
-}
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct TypeDefId(pub String);
 impl From<&str> for TypeDefId {
     fn from(value: &str) -> Self {
@@ -1946,25 +1913,25 @@ impl Container {
         let query = self.selection.select("sync");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Return an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
+    /// Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
     ///
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn terminal(&self) -> Terminal {
+    pub fn terminal(&self) -> Container {
         let query = self.selection.select("terminal");
-        Terminal {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Return an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
+    /// Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
     ///
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn terminal_opts<'a>(&self, opts: ContainerTerminalOpts<'a>) -> Terminal {
+    pub fn terminal_opts<'a>(&self, opts: ContainerTerminalOpts<'a>) -> Container {
         let mut query = self.selection.select("terminal");
         if let Some(cmd) = opts.cmd {
             query = query.arg("cmd", cmd);
@@ -1978,7 +1945,7 @@ impl Container {
         if let Some(insecure_root_capabilities) = opts.insecure_root_capabilities {
             query = query.arg("insecureRootCapabilities", insecure_root_capabilities);
         }
-        Terminal {
+        Container {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -3309,6 +3276,22 @@ pub struct DirectoryPipelineOpts<'a> {
     pub labels: Option<Vec<PipelineLabel>>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct DirectoryTerminalOpts<'a> {
+    /// If set, override the container's default terminal command and invoke these command arguments instead.
+    #[builder(setter(into, strip_option), default)]
+    pub cmd: Option<Vec<&'a str>>,
+    /// If set, override the default container used for the terminal.
+    #[builder(setter(into, strip_option), default)]
+    pub container: Option<ContainerId>,
+    /// Provides Dagger access to the executed command.
+    /// Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
+    #[builder(setter(into, strip_option), default)]
+    pub experimental_privileged_nesting: Option<bool>,
+    /// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
+    #[builder(setter(into, strip_option), default)]
+    pub insecure_root_capabilities: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryWithDirectoryOpts<'a> {
     /// Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
     #[builder(setter(into, strip_option), default)]
@@ -3572,6 +3555,47 @@ impl Directory {
     pub async fn sync(&self) -> Result<DirectoryId, DaggerError> {
         let query = self.selection.select("sync");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// Opens an interactive terminal in new container with this directory mounted inside.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn terminal(&self) -> Directory {
+        let query = self.selection.select("terminal");
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Opens an interactive terminal in new container with this directory mounted inside.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn terminal_opts<'a>(&self, opts: DirectoryTerminalOpts<'a>) -> Directory {
+        let mut query = self.selection.select("terminal");
+        if let Some(cmd) = opts.cmd {
+            query = query.arg("cmd", cmd);
+        }
+        if let Some(experimental_privileged_nesting) = opts.experimental_privileged_nesting {
+            query = query.arg(
+                "experimentalPrivilegedNesting",
+                experimental_privileged_nesting,
+            );
+        }
+        if let Some(insecure_root_capabilities) = opts.insecure_root_capabilities {
+            query = query.arg("insecureRootCapabilities", insecure_root_capabilities);
+        }
+        if let Some(container) = opts.container {
+            query = query.arg("container", container);
+        }
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// Retrieves this directory plus a directory written at the given path.
     ///
@@ -6396,22 +6420,6 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Load a Terminal from its ID.
-    pub fn load_terminal_from_id(&self, id: impl IntoID<TerminalId>) -> Terminal {
-        let mut query = self.selection.select("loadTerminalFromID");
-        query = query.arg_lazy(
-            "id",
-            Box::new(move || {
-                let id = id.clone();
-                Box::pin(async move { id.into_id().await.unwrap().quote() })
-            }),
-        );
-        Terminal {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
     /// Load a TypeDef from its ID.
     pub fn load_type_def_from_id(&self, id: impl IntoID<TypeDefId>) -> TypeDef {
         let mut query = self.selection.select("loadTypeDefFromID");
@@ -6833,24 +6841,6 @@ impl Socket {
     /// A unique identifier for this Socket.
     pub async fn id(&self) -> Result<SocketId, DaggerError> {
         let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-}
-#[derive(Clone)]
-pub struct Terminal {
-    pub proc: Option<Arc<Child>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
-}
-impl Terminal {
-    /// A unique identifier for this Terminal.
-    pub async fn id(&self) -> Result<TerminalId, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// An http endpoint at which this terminal can be connected to over a websocket.
-    pub async fn websocket_endpoint(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("websocketEndpoint");
         query.execute(self.graphql_client.clone()).await
     }
 }

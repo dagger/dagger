@@ -76,6 +76,8 @@ type Params struct {
 
 	// Log level (0 = INFO)
 	LogLevel slog.Level
+
+	WithTerminal session.WithTerminalFunc
 }
 
 type Client struct {
@@ -341,6 +343,8 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 		authprovider.NewDockerAuthProvider(config.LoadDefaultConfigFile(os.Stderr), nil),
 		// host=>container networking
 		session.NewTunnelListenerAttachable(ctx, nil),
+		// terminal
+		session.NewTerminalAttachable(ctx, c.Params.WithTerminal),
 	}
 	// filesync
 	if !c.DisableHostRW {

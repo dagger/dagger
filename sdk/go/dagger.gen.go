@@ -210,9 +210,6 @@ type ServiceID string
 // The `SocketID` scalar type represents an identifier for an object of type Socket.
 type SocketID string
 
-// The `TerminalID` scalar type represents an identifier for an object of type Terminal.
-type TerminalID string
-
 // The `TypeDefID` scalar type represents an identifier for an object of type TypeDef.
 type TypeDefID string
 
@@ -924,8 +921,8 @@ type ContainerTerminalOpts struct {
 	InsecureRootCapabilities bool
 }
 
-// Return an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
-func (r *Container) Terminal(opts ...ContainerTerminalOpts) *Terminal {
+// Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
+func (r *Container) Terminal(opts ...ContainerTerminalOpts) *Container {
 	q := r.query.Select("terminal")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `cmd` optional argument
@@ -942,7 +939,7 @@ func (r *Container) Terminal(opts ...ContainerTerminalOpts) *Terminal {
 		}
 	}
 
-	return &Terminal{
+	return &Container{
 		query: q,
 	}
 }
@@ -2100,6 +2097,47 @@ func (r *Directory) Sync(ctx context.Context) (*Directory, error) {
 	q := r.query.Select("sync")
 
 	return r, q.Execute(ctx)
+}
+
+// DirectoryTerminalOpts contains options for Directory.Terminal
+type DirectoryTerminalOpts struct {
+	// If set, override the container's default terminal command and invoke these command arguments instead.
+	Cmd []string
+	// Provides Dagger access to the executed command.
+	//
+	// Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
+	ExperimentalPrivilegedNesting bool
+	// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
+	InsecureRootCapabilities bool
+	// If set, override the default container used for the terminal.
+	Container *Container
+}
+
+// Opens an interactive terminal in new container with this directory mounted inside.
+func (r *Directory) Terminal(opts ...DirectoryTerminalOpts) *Directory {
+	q := r.query.Select("terminal")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `cmd` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Cmd) {
+			q = q.Arg("cmd", opts[i].Cmd)
+		}
+		// `experimentalPrivilegedNesting` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
+			q = q.Arg("experimentalPrivilegedNesting", opts[i].ExperimentalPrivilegedNesting)
+		}
+		// `insecureRootCapabilities` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InsecureRootCapabilities) {
+			q = q.Arg("insecureRootCapabilities", opts[i].InsecureRootCapabilities)
+		}
+		// `container` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Container) {
+			q = q.Arg("container", opts[i].Container)
+		}
+	}
+
+	return &Directory{
+		query: q,
+	}
 }
 
 // DirectoryWithDirectoryOpts contains options for Directory.WithDirectory
@@ -5950,16 +5988,6 @@ func (r *Client) LoadSocketFromID(id SocketID) *Socket {
 	}
 }
 
-// Load a Terminal from its ID.
-func (r *Client) LoadTerminalFromID(id TerminalID) *Terminal {
-	q := r.query.Select("loadTerminalFromID")
-	q = q.Arg("id", id)
-
-	return &Terminal{
-		query: q,
-	}
-}
-
 // Load a TypeDef from its ID.
 func (r *Client) LoadTypeDefFromID(id TypeDefID) *TypeDef {
 	q := r.query.Select("loadTypeDefFromID")
@@ -6545,73 +6573,6 @@ func (r *Socket) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
-}
-
-// An interactive terminal that clients can connect to.
-type Terminal struct {
-	query *querybuilder.Selection
-
-	id                *TerminalID
-	websocketEndpoint *string
-}
-
-func (r *Terminal) WithGraphQLQuery(q *querybuilder.Selection) *Terminal {
-	return &Terminal{
-		query: q,
-	}
-}
-
-// A unique identifier for this Terminal.
-func (r *Terminal) ID(ctx context.Context) (TerminalID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response TerminalID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *Terminal) XXX_GraphQLType() string {
-	return "Terminal"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *Terminal) XXX_GraphQLIDType() string {
-	return "TerminalID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *Terminal) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *Terminal) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-
-// An http endpoint at which this terminal can be connected to over a websocket.
-func (r *Terminal) WebsocketEndpoint(ctx context.Context) (string, error) {
-	if r.websocketEndpoint != nil {
-		return *r.websocketEndpoint, nil
-	}
-	q := r.query.Select("websocketEndpoint")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
 }
 
 // A definition of a parameter or return type in a Module.

@@ -25,7 +25,6 @@ const (
 	File         string = "File"
 	Secret       string = "Secret"
 	Service      string = "Service"
-	Terminal     string = "Terminal"
 	PortForward  string = "PortForward"
 	CacheVolume  string = "CacheVolume"
 	ModuleSource string = "ModuleSource"

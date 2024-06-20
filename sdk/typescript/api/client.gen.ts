@@ -545,6 +545,30 @@ export type DirectoryPipelineOpts = {
   labels?: PipelineLabel[]
 }
 
+export type DirectoryTerminalOpts = {
+  /**
+   * If set, override the container's default terminal command and invoke these command arguments instead.
+   */
+  cmd?: string[]
+
+  /**
+   * Provides Dagger access to the executed command.
+   *
+   * Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
+   */
+  experimentalPrivilegedNesting?: boolean
+
+  /**
+   * Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
+   */
+  insecureRootCapabilities?: boolean
+
+  /**
+   * If set, override the default container used for the terminal.
+   */
+  container?: Container
+}
+
 export type DirectoryWithDirectoryOpts = {
   /**
    * Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
@@ -994,11 +1018,6 @@ export type ServiceID = string & { __ServiceID: never }
  * The `SocketID` scalar type represents an identifier for an object of type Socket.
  */
 export type SocketID = string & { __SocketID: never }
-
-/**
- * The `TerminalID` scalar type represents an identifier for an object of type Terminal.
- */
-export type TerminalID = string & { __TerminalID: never }
 
 export type TypeDefWithFieldOpts = {
   /**
@@ -1842,15 +1861,15 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Return an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
+   * Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
    * @param opts.cmd If set, override the container's default terminal command and invoke these command arguments instead.
    * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
    *
    * Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
    * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
    */
-  terminal = (opts?: ContainerTerminalOpts): Terminal => {
-    return new Terminal({
+  terminal = (opts?: ContainerTerminalOpts): Container => {
+    return new Container({
       queryTree: [
         ...this._queryTree,
         {
@@ -3082,6 +3101,28 @@ export class Directory extends BaseClient {
     )
 
     return this
+  }
+
+  /**
+   * Opens an interactive terminal in new container with this directory mounted inside.
+   * @param opts.cmd If set, override the container's default terminal command and invoke these command arguments instead.
+   * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
+   *
+   * Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
+   * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
+   * @param opts.container If set, override the default container used for the terminal.
+   */
+  terminal = (opts?: DirectoryTerminalOpts): Directory => {
+    return new Directory({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "terminal",
+          args: { ...opts },
+        },
+      ],
+      ctx: this._ctx,
+    })
   }
 
   /**
@@ -7808,22 +7849,6 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Load a Terminal from its ID.
-   */
-  loadTerminalFromID = (id: TerminalID): Terminal => {
-    return new Terminal({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "loadTerminalFromID",
-          args: { id },
-        },
-      ],
-      ctx: this._ctx,
-    })
-  }
-
-  /**
    * Load a TypeDef from its ID.
    */
   loadTypeDefFromID = (id: TypeDefID): TypeDef => {
@@ -8447,70 +8472,6 @@ export class Socket extends BaseClient {
         ...this._queryTree,
         {
           operation: "id",
-        },
-      ],
-      await this._ctx.connection(),
-    )
-
-    return response
-  }
-}
-
-/**
- * An interactive terminal that clients can connect to.
- */
-export class Terminal extends BaseClient {
-  private readonly _id?: TerminalID = undefined
-  private readonly _websocketEndpoint?: string = undefined
-
-  /**
-   * Constructor is used for internal usage only, do not create object from it.
-   */
-  constructor(
-    parent?: { queryTree?: QueryTree[]; ctx: Context },
-    _id?: TerminalID,
-    _websocketEndpoint?: string,
-  ) {
-    super(parent)
-
-    this._id = _id
-    this._websocketEndpoint = _websocketEndpoint
-  }
-
-  /**
-   * A unique identifier for this Terminal.
-   */
-  id = async (): Promise<TerminalID> => {
-    if (this._id) {
-      return this._id
-    }
-
-    const response: Awaited<TerminalID> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "id",
-        },
-      ],
-      await this._ctx.connection(),
-    )
-
-    return response
-  }
-
-  /**
-   * An http endpoint at which this terminal can be connected to over a websocket.
-   */
-  websocketEndpoint = async (): Promise<string> => {
-    if (this._websocketEndpoint) {
-      return this._websocketEndpoint
-    }
-
-    const response: Awaited<string> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "websocketEndpoint",
         },
       ],
       await this._ctx.connection(),
