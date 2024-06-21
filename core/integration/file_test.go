@@ -197,17 +197,17 @@ func (FileSuite) TestWithName(ctx context.Context, t *testctx.T) {
 }
 
 func (FileSuite) TestExport(ctx context.Context, t *testctx.T) {
-	wd := t.TempDir()
-	targetDir := t.TempDir()
-
-	c := connect(ctx, t, dagger.WithWorkdir(wd))
-
-	file := c.Container().From(alpineImage).File("/etc/alpine-release")
+	file := func(c *dagger.Client) *dagger.File {
+		return c.Container().From(alpineImage).File("/etc/alpine-release")
+	}
 
 	t.Run("to absolute path", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		targetDir := t.TempDir()
 		dest := filepath.Join(targetDir, "some-file")
 
-		ok, err := file.Export(ctx, dest)
+		ok, err := file(c).Export(ctx, dest)
 		require.NoError(t, err)
 		require.True(t, ok)
 
@@ -221,7 +221,9 @@ func (FileSuite) TestExport(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("to relative path", func(ctx context.Context, t *testctx.T) {
-		ok, err := file.Export(ctx, "some-file")
+		wd := t.TempDir()
+		c := connect(ctx, t, dagger.WithWorkdir(wd))
+		ok, err := file(c).Export(ctx, "some-file")
 		require.NoError(t, err)
 		require.True(t, ok)
 
@@ -235,24 +237,32 @@ func (FileSuite) TestExport(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("to path in outer dir", func(ctx context.Context, t *testctx.T) {
-		ok, err := file.Export(ctx, "../some-file")
+		wd := t.TempDir()
+		c := connect(ctx, t, dagger.WithWorkdir(wd))
+		ok, err := file(c).Export(ctx, "../some-file")
 		require.Error(t, err)
 		require.False(t, ok)
 	})
 
 	t.Run("to absolute dir", func(ctx context.Context, t *testctx.T) {
-		ok, err := file.Export(ctx, targetDir)
+		targetDir := t.TempDir()
+		c := connect(ctx, t)
+		ok, err := file(c).Export(ctx, targetDir)
 		require.Error(t, err)
 		require.False(t, ok)
 	})
 
 	t.Run("to workdir", func(ctx context.Context, t *testctx.T) {
-		ok, err := file.Export(ctx, ".")
+		wd := t.TempDir()
+		c := connect(ctx, t, dagger.WithWorkdir(wd))
+		ok, err := file(c).Export(ctx, ".")
 		require.Error(t, err)
 		require.False(t, ok)
 	})
 
 	t.Run("file under subdir", func(ctx context.Context, t *testctx.T) {
+		targetDir := t.TempDir()
+		c := connect(ctx, t)
 		dir := c.Directory().
 			WithNewFile("/file", "content1").
 			WithNewFile("/subdir/file", "content2")
@@ -277,6 +287,8 @@ func (FileSuite) TestExport(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("file larger than max chunk size", func(ctx context.Context, t *testctx.T) {
+		wd := t.TempDir()
+		c := connect(ctx, t, dagger.WithWorkdir(wd))
 		maxChunkSize := buildkit.MaxFileContentsChunkSize
 		fileSizeBytes := maxChunkSize*4 + 1 // +1 so it's not an exact number of chunks, to ensure we cover that case
 
@@ -298,6 +310,8 @@ func (FileSuite) TestExport(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("file permissions are retained", func(ctx context.Context, t *testctx.T) {
+		wd := t.TempDir()
+		c := connect(ctx, t, dagger.WithWorkdir(wd))
 		_, err := c.Directory().WithNewFile("/file", "#!/bin/sh\necho hello", dagger.DirectoryWithNewFileOpts{
 			Permissions: 0o744,
 		}).File("/file").Export(ctx, "some-executable-file")

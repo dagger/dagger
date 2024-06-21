@@ -24,13 +24,13 @@ func TestHost(t *testing.T) {
 }
 
 func (HostSuite) TestWorkdir(ctx context.Context, t *testctx.T) {
-	dir := t.TempDir()
-	err := os.WriteFile(filepath.Join(dir, "foo"), []byte("bar"), 0o600)
-	require.NoError(t, err)
-
-	c := connect(ctx, t, dagger.WithWorkdir(dir))
-
 	t.Run("contains the workdir's content", func(ctx context.Context, t *testctx.T) {
+		dir := t.TempDir()
+		err := os.WriteFile(filepath.Join(dir, "foo"), []byte("bar"), 0o600)
+		require.NoError(t, err)
+
+		c := connect(ctx, t, dagger.WithWorkdir(dir))
+
 		contents, err := c.Container().
 			From(alpineImage).
 			WithMountedDirectory("/host", c.Host().Directory(".")).
@@ -41,10 +41,24 @@ func (HostSuite) TestWorkdir(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("does NOT re-sync on each call", func(ctx context.Context, t *testctx.T) {
-		err := os.WriteFile(filepath.Join(dir, "fizz"), []byte("buzz"), 0o600)
+		dir := t.TempDir()
+		err := os.WriteFile(filepath.Join(dir, "foo"), []byte("bar"), 0o600)
 		require.NoError(t, err)
 
+		c := connect(ctx, t, dagger.WithWorkdir(dir))
+
 		contents, err := c.Container().
+			From(alpineImage).
+			WithMountedDirectory("/host", c.Host().Directory(".")).
+			WithExec([]string{"ls", "/host"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "foo\n", contents)
+
+		err = os.WriteFile(filepath.Join(dir, "fizz"), []byte("buzz"), 0o600)
+		require.NoError(t, err)
+
+		contents, err = c.Container().
 			From(alpineImage).
 			WithMountedDirectory("/host", c.Host().Directory(".")).
 			WithExec([]string{"ls", "/host"}).
