@@ -189,20 +189,21 @@ func TestRepoRootForImportPath(t *testing.T) {
 		// https://gitlab.com/gitlab-org/gitlab-foss/-/blob/master/lib/gitlab/middleware/go.rb#L114-126
 		// it relies on gitcredentials to authenticate
 		// todo(guillaume): rely on a dagger GitLab repo with a read-only PAT to test this
-		// {
-		// 	"gitlab.com/testguigui1/awesomesubgroup/mywork/depth1/depth2", // private subgroup
-		// 	&RepoRoot{
-		// 		VCS:  vcsGit,
-		// 		Repo: "https://gitlab.com/testguigui1/awesomesubgroup.git", // false positive returned by GitLab for privacy purpose
-		// 	},
-		// },
-		// {
-		// 	"gitlab.com/testguigui1/awesomesubgroup/mywork.git/depth1/depth2", // private subgroup
-		// 	&RepoRoot{
-		// 		VCS:  vcsGit,
-		// 		Repo: "https://gitlab.com/testguigui1/awesomesubgroup/mywork",
-		// 	},
-		// },
+		{
+			"gitlab.com/testguigui1/awesomesubgroup/mywork/depth1/depth2", // private subgroup
+			&RepoRoot{
+				VCS:  vcsGit,
+				Repo: "https://gitlab.com/testguigui1/awesomesubgroup", // false positive returned by GitLab for privacy purpose
+			},
+		},
+		{
+			"gitlab.com/testguigui1/awesomesubgroup/mywork.git/depth1/depth2", // private subgroup
+			&RepoRoot{
+				VCS:  vcsGit,
+				Repo: "https://gitlab.com/testguigui1/awesomesubgroup/mywork",
+				Root: "gitlab.com/testguigui1/awesomesubgroup/mywork.git",
+			},
+		},
 		{ // vanity URL, TODO: improve test by changing dagger's redirection
 			"dagger.io/dagger",
 			&RepoRoot{

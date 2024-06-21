@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-git/go-git/v5"
 	"github.com/iancoleman/strcase"
+	"github.com/moby/buildkit/util/bklog"
 	"github.com/moby/buildkit/util/gitutil"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -202,10 +203,13 @@ var moduleInstallCmd = &cobra.Command{
 			}
 
 			depRefStr := extraArgs[0]
+			bklog.G(ctx).Debug(fmt.Sprintf("🥶🥶 depRefStr: |%s|\n", depRefStr))
+			fmt.Printf("😱 depRefStr: |%s|\n", depRefStr)
 			depSrc := dag.ModuleSource(depRefStr)
+			fmt.Printf("😱 depRefStr: |%+v|\n", depSrc.AsGitSource())
 			depSrcKind, err := depSrc.Kind(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to get module ref kind: %w", err)
+				return fmt.Errorf("🎉 failed to get module ref kind: %w", err)
 			}
 			if depSrcKind == dagger.LocalSource {
 				// need to ensure that local dep paths are relative to the parent root source
@@ -587,7 +591,7 @@ func getModuleConfigurationForSourceRef(
 	var err error
 	conf.SourceKind, err = conf.Source.Kind(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get module ref kind: %w", err)
+		return nil, fmt.Errorf("😈failed to get module ref kind: %w", err)
 	}
 
 	if conf.SourceKind == dagger.GitSource {

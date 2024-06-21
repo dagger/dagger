@@ -18,6 +18,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/vcs"
+	"github.com/moby/buildkit/util/bklog"
 	"github.com/tonistiigi/fsutil/types"
 )
 
@@ -29,6 +30,44 @@ type moduleSourceArgs struct {
 }
 
 func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args moduleSourceArgs) (*core.ModuleSource, error) {
+	// helper functions to mount sock to Git
+	// sessionCaller, err := query.Buildkit.GetMainClientCaller()
+	// if err != nil {
+	// 	bklog.G(ctx).Debug(fmt.Sprintf("🎃 foo: |%s|\n", err))
+	// 	return nil, err
+	// }
+	// usr, err := user.Current()
+	// if err != nil {
+	// 	bklog.G(ctx).Debug(fmt.Sprintf("🎃🎃 bar: |%s|\n", err))
+	// 	return nil, err
+	// }
+
+	// // best effort, default to root
+	// uid, _ := strconv.Atoi(usr.Uid)
+	// gid, _ := strconv.Atoi(usr.Gid)
+
+	// clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	// if err != nil {
+	// 	bklog.G(ctx).Debug(fmt.Sprintf("🎃🎃🎃 baz: |%s|\n", err))
+	// 	return nil, err
+	// }
+	// authSock := core.NewHostUnixSocket(clientMetadata.SSHAuthSocketPath)
+
+	// sshID := authSock.SSHID()
+
+	// _, cleanup, err := sshforward.MountSSHSocket(ctx, sessionCaller, sshforward.SocketOpt{
+	// 	ID:   sshID,
+	// 	UID:  uid,
+	// 	GID:  gid,
+	// 	Mode: 0700,
+	// })
+	// if err != nil {
+	// 	bklog.G(ctx).Debug(fmt.Sprintf("🎃🎃🎃🎃 biz: |%s|\n", err))
+	// 	return nil, err
+	// }
+	// defer cleanup()
+
+	// .GetMainClientCaller()
 	parsed := parseRefString(ctx, query.Buildkit, args.RefString)
 	if args.Stable && !parsed.hasVersion && parsed.kind == core.ModuleSourceKindGit {
 		return nil, fmt.Errorf("no version provided for stable remote ref: %s", args.RefString)
@@ -55,16 +94,24 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 		src.AsGitSource.Value.Root = parsed.repoRoot.Root
 		src.AsGitSource.Value.CloneURL = parsed.repoRoot.Repo
 
+		url := parsed.repoRoot.Repo
+		if strings.HasSuffix(parsed.repoRoot.Root, ".git") {
+			url = "ssh://git@" + parsed.repoRoot.Root
+		}
+
 		var modVersion string
 		if parsed.hasVersion {
 			modVersion = parsed.modVersion
+			bklog.G(ctx).Debug(fmt.Sprintf("🥶 hasversion: |%s|\n", parsed.modVersion))
 		} else {
 			if args.Stable {
 				return nil, fmt.Errorf("no version provided for stable remote ref: %s", args.RefString)
 			}
+			bklog.G(ctx).Debug(fmt.Sprintf("🥶🥶 url: |%s|\n", url))
 			var err error
-			modVersion, err = defaultBranch(ctx, parsed.repoRoot.Repo)
+			modVersion, err = defaultBranch(ctx, url)
 			if err != nil {
+				bklog.G(ctx).Debug(fmt.Sprintf("🥶🥶🥶 failed to determine default branch |%s|\n", err))
 				return nil, fmt.Errorf("determine default branch: %w", err)
 			}
 		}
@@ -77,7 +124,8 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 
 		commitRef := modVersion
 		if parsed.hasVersion && isSemver(modVersion) {
-			allTags, err := gitTags(ctx, parsed.repoRoot.Repo)
+			bklog.G(ctx).Debug(fmt.Sprintf("🥶🥶🥶🥶 has version semver |%s|\n", commitRef))
+			allTags, err := gitTags(ctx, url)
 			if err != nil {
 				return nil, fmt.Errorf("get git tags: %w", err)
 			}
@@ -94,7 +142,7 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 			dagql.Selector{
 				Field: "git",
 				Args: []dagql.NamedInput{
-					{Name: "url", Value: dagql.String(parsed.repoRoot.Repo)},
+					{Name: "url", Value: dagql.String(url)},
 				},
 			},
 			dagql.Selector{
@@ -160,20 +208,23 @@ func parseRefString(ctx context.Context, bk buildkitClient, refString string) pa
 	var parsed parsedRefString
 	parsed.modPath, parsed.modVersion, parsed.hasVersion = strings.Cut(refString, "@")
 
-	// BuildKit-kind form for now, to test 🎃, with subpath for now, amd .git at repo
-	//e.g. ssh://github.com/username/repo.git:dir@sha
-	if strings.HasPrefix(parsed.modPath, "ssh://") {
-		ref := strings.TrimPrefix(parsed.modPath, "ssh://")
-		root, subdir, found := strings.Cut(ref, ":")
-		if found {
-			parsed.kind = core.ModuleSourceKindGit
-			parsed.repoRoot = &vcs.RepoRoot{
-				Repo: strings.TrimSuffix("https://"+root, ".git"),
-				Root: "ssh://git@" + root,
-			}
-			parsed.repoRootSubdir = subdir
-		}
-	}
+	// // BuildKit-kind form for now, to test 🎃, with subpath for now, amd .git at repo
+	// //e.g. ssh://github.com/username/repo.git:dir@sha
+	// if strings.HasPrefix(parsed.modPath, "ssh://") {
+	// 	bklog.G(ctx).Debug(fmt.Sprintf("😈 repoRoot: |%+v|%+v|\n", parsed.modPath, refString))
+	// 	ref := strings.TrimPrefix(parsed.modPath, "ssh://")
+	// 	root, subdir, found := strings.Cut(ref, ":")
+	// 	if found {
+	// 		parsed.kind = core.ModuleSourceKindGit
+	// 		parsed.repoRoot = &vcs.RepoRoot{
+	// 			Repo: strings.TrimSuffix("https://"+root, ".git"),
+	// 			Root: "ssh://git@" + root,
+	// 		}
+	// 		parsed.repoRootSubdir = subdir
+	// 		bklog.G(ctx).Debug(fmt.Sprintf("😈😈 repoRoot: |%+v|%+v|\n", parsed, parsed.repoRoot))
+	// 		return parsed
+	// 	}
+	// }
 
 	// We do a stat in case the mod path github.com/username is a local directory
 	stat, err := bk.StatCallerHostPath(ctx, parsed.modPath, false)
@@ -184,15 +235,20 @@ func parseRefString(ctx context.Context, bk buildkitClient, refString string) pa
 		}
 	}
 
-	// we try to isolate the root of the git repo
 	repoRoot, err := vcs.RepoRootForImportPath(parsed.modPath, false)
 	if err == nil && repoRoot != nil && repoRoot.VCS != nil && repoRoot.VCS.Name == "Git" {
+		bklog.G(ctx).Debug(fmt.Sprintf("🎃🔥🔥 repoRoot: |%+v|\n", repoRoot))
 		parsed.kind = core.ModuleSourceKindGit
 		parsed.repoRoot = repoRoot
 		parsed.repoRootSubdir = strings.TrimPrefix(parsed.modPath, repoRoot.Root)
 		// the extra "/" is important as subpath traversal such as /../ are being cleaned by filePath.Clean
 		parsed.repoRootSubdir = strings.TrimPrefix(parsed.repoRootSubdir, "/")
+		// parsed.repoRoot.Root = "ssh://git@" + repoRoot.Root
+		bklog.G(ctx).Debug(fmt.Sprintf("🎃🔥🔥 parsed: |%+v|\n", parsed))
+		bklog.G(ctx).Debug(fmt.Sprintf("🎃🔥🔥🔥 parsed: |%+v|\n", parsed.repoRoot))
 		return parsed
+	} else {
+		bklog.G(ctx).Debug(fmt.Sprintf("🎃🔥 vcsRepo: |%s|\n", err))
 	}
 
 	parsed.kind = core.ModuleSourceKindLocal

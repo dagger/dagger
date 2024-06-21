@@ -3,8 +3,8 @@
   "sdk": "go",
   "dependencies": [
     {
-      "name": "shellcheck",
-      "source": "ci/std/shellcheck"
+      "name": "root-mod",
+      "source": "gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git@2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94"
     },
     {
       "name": "docusaurus",
@@ -17,10 +17,14 @@
     {
       "name": "graphql",
       "source": "ci/std/graphql"
+    },
+    {
+      "name": "shellcheck",
+      "source": "ci/std/shellcheck"
     }
   ],
   "source": "ci",
-  "engineVersion": "v0.11.7",
+  "engineVersion": "dev-435e729fd2ddac7758e5358e0fdb0263066549a9",
   "views": [
     {
       "name": "default",

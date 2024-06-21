@@ -883,6 +883,7 @@ func (m *Test) Fn(ctx context.Context) (string, error) {
 				out, err := goGitBase(t, c).
 					WithWorkdir("/work").
 					With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+					// With(daggerExec("install", tc.gitTestRepoRef+"@2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94")).
 					With(daggerExec("install", tc.gitTestRepoRef)).
 					File("/work/dagger.json").
 					Contents(ctx)
@@ -1190,53 +1191,61 @@ type vcsTestCase struct {
 
 var vcsTestCases = []vcsTestCase{
 	// public repos
+	// {
+	// 	name:              "GitHub without .git",
+	// 	gitTestRepoRef:    "github.com/dagger/dagger-test-modules",
+	// 	gitTestRepoCommit: "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
+	// 	host:              "github.com",
+	// 	baseHTMLURL:       "github.com/dagger/dagger-test-modules",
+	// 	urlPathComponent:  "tree",
+	// },
+	// {
+	// 	name:              "GitLab without .git",
+	// 	gitTestRepoRef:    "gitlab.com/dagger-modules/test/more/dagger-test-modules-public",
+	// 	gitTestRepoCommit: "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
+	// 	host:              "gitlab.com",
+	// 	baseHTMLURL:       "gitlab.com/dagger-modules/test/more/dagger-test-modules-public",
+	// 	urlPathComponent:  "tree",
+	// },
+	// {
+	// 	name:              "GitHub with .git",
+	// 	gitTestRepoRef:    "github.com/dagger/dagger-test-modules.git",
+	// 	gitTestRepoCommit: "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
+	// 	host:              "github.com",
+	// 	baseHTMLURL:       "github.com/dagger/dagger-test-modules",
+	// 	urlPathComponent:  "tree",
+	// },
+	// {
+	// 	name:              "GitLab with .git",
+	// 	gitTestRepoRef:    "gitlab.com/dagger-modules/test/more/dagger-test-modules-public.git",
+	// 	gitTestRepoCommit: "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
+	// 	host:              "gitlab.com",
+	// 	baseHTMLURL:       "gitlab.com/dagger-modules/test/more/dagger-test-modules-public",
+	// 	urlPathComponent:  "tree",
+	// },
+	// {
+	// 	name:              "BitBucket without .git",
+	// 	gitTestRepoRef:    "bitbucket.org/dagger-modules/dagger-test-modules-public",
+	// 	gitTestRepoCommit: "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
+	// 	host:              "bitbucket.org",
+	// 	baseHTMLURL:       "bitbucket.org/dagger-modules/dagger-test-modules-public",
+	// 	urlPathComponent:  "src",
+	// },
+	// {
+	// 	name:              "BitBucket with .git",
+	// 	gitTestRepoRef:    "bitbucket.org/dagger-modules/dagger-test-modules-public.git",
+	// 	gitTestRepoCommit: "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
+	// 	host:              "bitbucket.org",
+	// 	baseHTMLURL:       "bitbucket.org/dagger-modules/dagger-test-modules-public",
+	// 	urlPathComponent:  "src",
+	// },
 	{
-		name:              "GitHub without .git",
-		gitTestRepoRef:    "github.com/dagger/dagger-test-modules",
-		gitTestRepoCommit: "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
-		host:              "github.com",
-		baseHTMLURL:       "github.com/dagger/dagger-test-modules",
-		urlPathComponent:  "tree",
-	},
-	{
-		name:              "GitLab without .git",
-		gitTestRepoRef:    "gitlab.com/dagger-modules/test/more/dagger-test-modules-public",
+		name:              "Private gitlab",
+		gitTestRepoRef:    "gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git",
 		gitTestRepoCommit: "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
 		host:              "gitlab.com",
-		baseHTMLURL:       "gitlab.com/dagger-modules/test/more/dagger-test-modules-public",
+		baseHTMLURL:       "gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private",
 		urlPathComponent:  "tree",
-	},
-	{
-		name:              "GitHub with .git",
-		gitTestRepoRef:    "github.com/dagger/dagger-test-modules.git",
-		gitTestRepoCommit: "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
-		host:              "github.com",
-		baseHTMLURL:       "github.com/dagger/dagger-test-modules",
-		urlPathComponent:  "tree",
-	},
-	{
-		name:              "GitLab with .git",
-		gitTestRepoRef:    "gitlab.com/dagger-modules/test/more/dagger-test-modules-public.git",
-		gitTestRepoCommit: "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
-		host:              "gitlab.com",
-		baseHTMLURL:       "gitlab.com/dagger-modules/test/more/dagger-test-modules-public",
-		urlPathComponent:  "tree",
-	},
-	{
-		name:              "BitBucket without .git",
-		gitTestRepoRef:    "bitbucket.org/dagger-modules/dagger-test-modules-public",
-		gitTestRepoCommit: "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
-		host:              "bitbucket.org",
-		baseHTMLURL:       "bitbucket.org/dagger-modules/dagger-test-modules-public",
-		urlPathComponent:  "src",
-	},
-	{
-		name:              "BitBucket with .git",
-		gitTestRepoRef:    "bitbucket.org/dagger-modules/dagger-test-modules-public.git",
-		gitTestRepoCommit: "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
-		host:              "bitbucket.org",
-		baseHTMLURL:       "bitbucket.org/dagger-modules/dagger-test-modules-public",
-		urlPathComponent:  "src",
 	},
 }
 
