@@ -23,7 +23,7 @@ var callCmd = &FuncCommand{
 	Init: func(cmd *cobra.Command) {
 		cmd.PersistentFlags().StringVarP(&outputPath, "output", "o", "", "Save the result to a local file or directory")
 
-		cmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Present result as JSON")
+		cmd.PersistentFlags().BoolVarP(&jsonOutput, "json", "j", false, "Present result as JSON")
 	},
 	OnSelectObjectLeaf: func(fc *FuncCommand, obj functionProvider) error {
 		typeName := obj.ProviderName()
@@ -81,8 +81,10 @@ var callCmd = &FuncCommand{
 
 			// Use yaml when printing scalars because it's more human-readable
 			// and handles lists and multiline strings well.
-			if outputFormat == "" {
+			if stdoutIsTTY {
 				outputFormat = "yaml"
+			} else {
+				outputFormat = "json"
 			}
 		}
 
