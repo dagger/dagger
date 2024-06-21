@@ -209,7 +209,7 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 60*time.Second)
 	defer cancel()
 
-	if err := sess.services.StopClientServices(ctx, sess.sessionID); err != nil {
+	if err := sess.services.StopSessionServices(ctx, sess.sessionID); err != nil {
 		errs = errors.Join(errs, fmt.Errorf("stop client services: %w", err))
 	}
 
@@ -842,7 +842,7 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 	if client.clientID == sess.mainClientCallerID {
 		// Stop services, since the main client is going away, and we
 		// want the client to see them stop.
-		sess.services.StopClientServices(ctx, sess.sessionID)
+		sess.services.StopSessionServices(ctx, sess.sessionID)
 
 		// Start draining telemetry
 		srv.telemetryPubSub.Drain(sess.mainClientCallerID, immediate)
