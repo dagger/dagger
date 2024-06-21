@@ -24,10 +24,10 @@ func WithParallel(t *T) *T {
 		})
 }
 
-func Run(ctx context.Context, t *testing.T, suite any, middleware ...Middleware) {
-	tc := New(ctx, t)
+func Run(ctx context.Context, testingT *testing.T, suite any, middleware ...Middleware) {
+	t := New(ctx, testingT)
 	for _, m := range middleware {
-		tc = m(tc)
+		t = m(t)
 	}
 
 	suiteT := reflect.TypeOf(suite)
@@ -42,12 +42,12 @@ func Run(ctx context.Context, t *testing.T, suite any, middleware ...Middleware)
 		methV := suiteV.Method(i)
 		tf, ok := methV.Interface().(func(context.Context, *T))
 		if !ok {
-			t.Fatalf("suite method %s does not have the right signature; must be func(testctx.T); have %T",
+			testingT.Fatalf("suite method %s does not have the right signature; must be func(testctx.T); have %T",
 				methT.Name,
 				methV.Interface())
 		}
 
-		tc.Run(methT.Name, tf)
+		t.Run(methT.Name, tf)
 	}
 }
 
@@ -125,119 +125,119 @@ func (t T) WithContext(ctx context.Context) *T {
 	return &t
 }
 
-func (tc T) WithLogger(logger func(*T, string)) *T {
-	tc.logger = logger
-	return &tc
+func (t T) WithLogger(logger func(*T, string)) *T {
+	t.logger = logger
+	return &t
 }
 
 func (t *T) WithTimeout(timeout time.Duration) *T {
-	return t.BeforeEach(func(t *T) *T {
-		ctx, cancel := context.WithTimeout(t.Context(), timeout)
-		t.Cleanup(cancel)
-		return t.WithContext(ctx)
+	return t.BeforeEach(func(t2 *T) *T {
+		ctx, cancel := context.WithTimeout(t2.Context(), timeout)
+		t2.Cleanup(cancel)
+		return t2.WithContext(ctx)
 	})
 }
 
 // BeforeAll calls f immediately with itself and returns the result.
 //
 // It is not inherited by subtests.
-func (tc *T) BeforeAll(f func(*T) *T) *T {
-	return f(tc)
+func (t *T) BeforeAll(f func(*T) *T) *T {
+	return f(t)
 }
 
 // BeforeEach configures f to run prior to each subtest.
-func (tc T) BeforeEach(f Middleware) *T {
-	cpM := make([]Middleware, len(tc.beforeEach))
-	copy(cpM, tc.beforeEach)
+func (t T) BeforeEach(f Middleware) *T {
+	cpM := make([]Middleware, len(t.beforeEach))
+	copy(cpM, t.beforeEach)
 	cpM = append(cpM, f)
-	tc.beforeEach = cpM
-	return &tc
+	t.beforeEach = cpM
+	return &t
 }
 
-func (tc *T) Run(name string, f func(context.Context, *T)) bool {
-	return tc.T.Run(name, func(t *testing.T) {
-		sub := tc.sub(name, t)
-		for _, setup := range tc.beforeEach {
+func (t *T) Run(name string, f func(context.Context, *T)) bool {
+	return t.T.Run(name, func(testingT *testing.T) {
+		sub := t.sub(name, testingT)
+		for _, setup := range t.beforeEach {
 			sub = setup(sub)
 		}
 		f(sub.Context(), sub)
 	})
 }
 
-func (tc *T) sub(name string, t *testing.T) *T {
-	sub := New(tc.ctx, t)
+func (t *T) sub(name string, testingT *testing.T) *T {
+	sub := New(t.ctx, testingT)
 	sub.baseName = name
-	sub.logger = tc.logger
-	sub.beforeEach = tc.beforeEach
+	sub.logger = t.logger
+	sub.beforeEach = t.beforeEach
 	return sub
 }
 
-func (tc *T) Log(vals ...any) {
-	tc.log(fmt.Sprintln(vals...))
-	tc.T.Log(vals...)
+func (t *T) Log(vals ...any) {
+	t.log(fmt.Sprintln(vals...))
+	t.T.Log(vals...)
 }
 
-func (tc *T) Logf(format string, vals ...any) {
-	tc.logf(format, vals...)
-	tc.T.Logf(format, vals...)
+func (t *T) Logf(format string, vals ...any) {
+	t.logf(format, vals...)
+	t.T.Logf(format, vals...)
 }
 
-func (tc *T) Error(vals ...any) {
+func (t *T) Error(vals ...any) {
 	msg := fmt.Sprint(vals...)
-	tc.errors = append(tc.errors, msg)
-	tc.log(msg)
-	tc.T.Error(vals...)
+	t.errors = append(t.errors, msg)
+	t.log(msg)
+	t.T.Error(vals...)
 }
 
-func (tc *T) Errorf(format string, vals ...any) {
-	tc.logf(format, vals...)
-	tc.errors = append(tc.errors, fmt.Sprintf(format, vals...))
-	tc.T.Errorf(format, vals...)
+func (t *T) Errorf(format string, vals ...any) {
+	t.logf(format, vals...)
+	t.errors = append(t.errors, fmt.Sprintf(format, vals...))
+	t.T.Errorf(format, vals...)
 }
 
-func (tc *T) Fatal(vals ...any) {
-	tc.log(fmt.Sprintln(vals...))
-	tc.errors = append(tc.errors, fmt.Sprint(vals...))
-	tc.T.Fatal(vals...)
+func (t *T) Fatal(vals ...any) {
+	t.log(fmt.Sprintln(vals...))
+	t.errors = append(t.errors, fmt.Sprint(vals...))
+	t.T.Fatal(vals...)
 }
 
-func (tc *T) Fatalf(format string, vals ...any) {
-	tc.logf(format, vals...)
-	tc.errors = append(tc.errors, fmt.Sprintf(format, vals...))
-	tc.T.Fatalf(format, vals...)
+func (t *T) Fatalf(format string, vals ...any) {
+	t.logf(format, vals...)
+	t.errors = append(t.errors, fmt.Sprintf(format, vals...))
+	t.T.Fatalf(format, vals...)
 }
 
-func (tc *T) Skip(vals ...any) {
-	tc.log(fmt.Sprintln(vals...))
-	tc.T.Skip(vals...)
+func (t *T) Skip(vals ...any) {
+	t.log(fmt.Sprintln(vals...))
+	t.T.Skip(vals...)
 }
 
-func (tc *T) Skipf(format string, vals ...any) {
-	tc.logf(format, vals...)
-	tc.T.Skipf(format, vals...)
+func (t *T) Skipf(format string, vals ...any) {
+	t.logf(format, vals...)
+	t.T.Skipf(format, vals...)
 }
 
-func (tc *T) Errors() string {
-	return strings.Join(tc.errors, "\n")
+func (t *T) Errors() string {
+	return strings.Join(t.errors, "\n")
 }
 
-func (tc *T) log(out string) {
-	if tc.logger != nil {
+func (t *T) log(out string) {
+	if t.logger != nil {
 		if !strings.HasSuffix(out, "\n") {
 			out += "\n"
 		}
-		tc.logger(tc, out)
+		t.logger(t, out)
 		return
 	}
 }
 
-func (tc *T) logf(format string, vals ...any) {
-	if tc.logger != nil {
+func (t *T) logf(format string, vals ...any) {
+	if t.logger != nil {
 		out := fmt.Sprintf(format, vals...)
 		if !strings.HasSuffix(out, "\n") {
 			out += "\n"
 		}
-		tc.logger(tc, out)
+		t.logger(t, out)
 		return
 	}
 }
