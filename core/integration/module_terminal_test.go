@@ -143,6 +143,9 @@ type Test struct {
 		err = cmd.Start()
 		require.NoError(t, err)
 
+		_, err = console.ExpectString(" $ ")
+		require.NoError(t, err)
+
 		_, err = console.SendLine("pwd")
 		require.NoError(t, err)
 

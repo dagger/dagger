@@ -69,11 +69,15 @@ func New() Frontend {
 	profile := ColorProfile()
 	view := new(strings.Builder)
 	return &frontendPretty{
-		db:   db,
-		logs: newPrettyLogs(),
-
+		db:        db,
+		logs:      newPrettyLogs(),
 		autoFocus: true,
 
+		// set empty initial row state to avoid nil checks
+		rowsView: &RowsView{},
+		rows:     &Rows{BySpan: map[trace.SpanID]*TraceRow{}},
+
+		// initial TUI state
 		window:  tea.WindowSizeMsg{Width: -1, Height: -1}, // be clear that it's not set
 		fps:     30,                                       // sane default, fine-tune if needed
 		profile: profile,
