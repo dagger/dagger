@@ -1514,7 +1514,7 @@ func (m *Test) FromStatus(status Status) string {
 
 		c, ctx := connect(t)
 
-		modGen := modInit(t, c, "go", fmt.Sprintf(`package main
+		modGen := modInit(t, c, "go", `package main
 
 type Status string
 
@@ -1527,8 +1527,7 @@ type Test struct{}
 func (m *Test) FromStatus(status Status) string {
 	return string(status)
 }
-`,
-		))
+`)
 
 		_, err := modGen.With(daggerCall("--help")).Stdout(ctx)
 		require.ErrorContains(t, err, "enum value must not be empty")
