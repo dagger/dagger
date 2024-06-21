@@ -12,6 +12,7 @@ import (
 	"github.com/moby/buildkit/identity"
 	"github.com/sourcegraph/conc/pool"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -717,15 +718,17 @@ func (c *activeClient) finishSpan(span sdktrace.ReadOnlySpan) {
 
 func (c *activeClient) finishAndAbandonChildrenLocked(span sdktrace.ReadOnlySpan) {
 	delete(c.spans, span.SpanContext().SpanID())
-	for _, s := range c.spans {
-		if s.Parent().SpanID() == span.SpanContext().SpanID() {
-			slog.ExtraDebug("abandoning child span",
-				"parent", span.Name(),
-				"parentID", span.SpanContext().SpanID(),
-				"span", s.Name(),
-				"spanID", s.SpanContext().SpanID(),
-			)
-			c.finishAndAbandonChildrenLocked(s)
+	if span.Status().Code == codes.Error {
+		for _, s := range c.spans {
+			if s.Parent().SpanID() == span.SpanContext().SpanID() {
+				slog.ExtraDebug("abandoning child span due to failed parent",
+					"parent", span.Name(),
+					"parentID", span.SpanContext().SpanID(),
+					"span", s.Name(),
+					"spanID", s.SpanContext().SpanID(),
+				)
+				c.finishAndAbandonChildrenLocked(s)
+			}
 		}
 	}
 }
