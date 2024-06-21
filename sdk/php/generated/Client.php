@@ -242,6 +242,26 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Load a EnumTypeDef from its ID.
+     */
+    public function loadEnumTypeDefFromID(EnumTypeDefId|EnumTypeDef $id): EnumTypeDef
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadEnumTypeDefFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\EnumTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a EnumValueTypeDef from its ID.
+     */
+    public function loadEnumValueTypeDefFromID(EnumValueTypeDefId|EnumValueTypeDef $id): EnumValueTypeDef
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadEnumValueTypeDefFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\EnumValueTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a EnvVariable from its ID.
      */
     public function loadEnvVariableFromID(EnvVariableId|EnvVariable $id): EnvVariable

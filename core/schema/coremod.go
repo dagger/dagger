@@ -84,6 +84,13 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 			return nil, false, nil
 		}
 		modType = &CoreModObject{coreMod: m, name: typeDef.AsObject.Value.Name}
+	case core.TypeDefKindEnum:
+		_, ok := m.Dag.ScalarType(typeDef.AsEnum.Value.Name)
+		if !ok {
+			return nil, false, nil
+		}
+
+		modType = &CoreModEnum{coreMod: m, typeDef: typeDef.AsEnum.Value}
 
 	case core.TypeDefKindInterface:
 		// core does not yet defined any interfaces
@@ -203,6 +210,23 @@ func (m *CoreMod) TypeDefs(ctx context.Context) ([]*core.TypeDef, error) {
 				Kind:    core.TypeDefKindInput,
 				AsInput: dagql.NonNull(typeDef),
 			})
+		case introspection.TypeKindEnum:
+			typedef := &core.EnumTypeDef{
+				Name:        introspectionType.Name,
+				Description: introspectionType.Description,
+			}
+
+			for _, value := range introspectionType.EnumValues {
+				typedef.Values = append(typedef.Values, &core.EnumValueTypeDef{
+					Name:        value.Name,
+					Description: value.Description,
+				})
+			}
+
+			typeDefs = append(typeDefs, &core.TypeDef{
+				Kind:   core.TypeDefKindEnum,
+				AsEnum: dagql.NonNull(typedef),
+			})
 
 		default:
 			continue
@@ -311,6 +335,40 @@ func (obj *CoreModObject) TypeDef() *core.TypeDef {
 	}
 }
 
+type CoreModEnum struct {
+	coreMod *CoreMod
+	typeDef *core.EnumTypeDef
+}
+
+var _ core.ModType = (*CoreModEnum)(nil)
+
+func (enum *CoreModEnum) ConvertFromSDKResult(ctx context.Context, value any) (dagql.Typed, error) {
+	s, ok := enum.coreMod.Dag.ScalarType(enum.typeDef.Name)
+	if !ok {
+		return nil, fmt.Errorf("CoreModEnum.ConvertFromSDKResult: found no enum type")
+	}
+	return s.DecodeInput(value)
+}
+
+func (enum *CoreModEnum) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error) {
+	s, ok := enum.coreMod.Dag.ScalarType(enum.typeDef.Name)
+	if !ok {
+		return nil, fmt.Errorf("CoreModEnum.ConvertToSDKInput: found no enum type")
+	}
+	return s.DecodeInput(value)
+}
+
+func (enum *CoreModEnum) SourceMod() core.Mod {
+	return enum.coreMod
+}
+
+func (enum *CoreModEnum) TypeDef() *core.TypeDef {
+	return &core.TypeDef{
+		Kind:   core.TypeDefKindEnum,
+		AsEnum: dagql.NonNull(enum.typeDef),
+	}
+}
+
 func introspectionRefToTypeDef(introspectionType *introspection.TypeRef, nonNull, isInput bool) (*core.TypeDef, bool, error) {
 	switch introspectionType.Kind {
 	case introspection.TypeKindNonNull:
@@ -349,9 +407,11 @@ func introspectionRefToTypeDef(introspectionType *introspection.TypeRef, nonNull
 
 	case introspection.TypeKindEnum:
 		return &core.TypeDef{
-			// just call it a string for now
-			Kind:     core.TypeDefKindString,
+			Kind:     core.TypeDefKindEnum,
 			Optional: !nonNull,
+			AsEnum: dagql.NonNull(&core.EnumTypeDef{
+				Name: introspectionType.Name,
+			}),
 		}, true, nil
 
 	case introspection.TypeKindList:

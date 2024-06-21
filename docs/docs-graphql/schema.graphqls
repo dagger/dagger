@@ -1187,6 +1187,48 @@ The `DirectoryID` scalar type represents an identifier for an object of type Dir
 """
 scalar DirectoryID
 
+"""A definition of a custom enum defined in a Module."""
+type EnumTypeDef {
+  """A doc string for the enum, if any."""
+  description: String!
+
+  """A unique identifier for this EnumTypeDef."""
+  id: EnumTypeDefID!
+
+  """The name of the enum."""
+  name: String!
+
+  """
+  If this EnumTypeDef is associated with a Module, the name of the module. Unset otherwise.
+  """
+  sourceModuleName: String!
+
+  """The values of the enum."""
+  values: [EnumValueTypeDef!]!
+}
+
+"""
+The `EnumTypeDefID` scalar type represents an identifier for an object of type EnumTypeDef.
+"""
+scalar EnumTypeDefID
+
+"""A definition of a value in a custom enum defined in a Module."""
+type EnumValueTypeDef {
+  """A doc string for the enum value, if any."""
+  description: String!
+
+  """A unique identifier for this EnumValueTypeDef."""
+  id: EnumValueTypeDefID!
+
+  """The name of the enum value."""
+  name: String!
+}
+
+"""
+The `EnumValueTypeDefID` scalar type represents an identifier for an object of type EnumValueTypeDef.
+"""
+scalar EnumValueTypeDefID
+
 """An environment variable name and value."""
 type EnvVariable {
   """A unique identifier for this EnvVariable."""
@@ -1782,6 +1824,9 @@ type Module {
   """The doc string of the module, if any"""
   description: String!
 
+  """Enumerations served by this module."""
+  enums: [TypeDef!]!
+
   """
   The generated files and directories made on top of the module source's context directory.
   """
@@ -1834,6 +1879,9 @@ type Module {
     """The description to set"""
     description: String!
   ): Module!
+
+  """This module plus the given Enum type and associated values"""
+  withEnum(enum: TypeDefID!): Module!
 
   """This module plus the given Interface type and associated functions"""
   withInterface(iface: TypeDefID!): Module!
@@ -2281,6 +2329,12 @@ type Query {
   """Load a Directory from its ID."""
   loadDirectoryFromID(id: DirectoryID!): Directory!
 
+  """Load a EnumTypeDef from its ID."""
+  loadEnumTypeDefFromID(id: EnumTypeDefID!): EnumTypeDef!
+
+  """Load a EnumValueTypeDef from its ID."""
+  loadEnumValueTypeDefFromID(id: EnumValueTypeDefID!): EnumValueTypeDef!
+
   """Load a EnvVariable from its ID."""
   loadEnvVariableFromID(id: EnvVariableID!): EnvVariable!
 
@@ -2548,6 +2602,11 @@ scalar SocketID
 """A definition of a parameter or return type in a Module."""
 type TypeDef {
   """
+  If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null.
+  """
+  asEnum: EnumTypeDef
+
+  """
   If kind is INPUT, the input-specific type definition. If kind is not INPUT, this will be null.
   """
   asInput: InputTypeDef
@@ -2585,6 +2644,32 @@ type TypeDef {
   Adds a function for constructing a new instance of an Object TypeDef, failing if the type is not an object.
   """
   withConstructor(function: FunctionID!): TypeDef!
+
+  """
+  Returns a TypeDef of kind Enum with the provided name.
+  
+  Note that an enum's values may be omitted if the intent is only to refer to an
+  enum. This is how functions are able to return their own, or any other
+  circular reference.
+  """
+  withEnum(
+    """A doc string for the enum, if any"""
+    description: String = ""
+
+    """The name of the enum"""
+    name: String!
+  ): TypeDef!
+
+  """
+  Adds a static value for an Enum TypeDef, failing if the type is not an enum.
+  """
+  withEnumValue(
+    """A doc string for the value, if any"""
+    description: String = ""
+
+    """The name of the value in the enum"""
+    value: String!
+  ): TypeDef!
 
   """
   Adds a static field for an Object TypeDef, failing if the type is not an object.
@@ -2684,6 +2769,13 @@ enum TypeDefKind {
   specifying this Kind is always Optional, as the Void is never actually represented.
   """
   VOID_KIND
+
+  """
+  A GraphQL enum type and its values
+  
+  Always paired with an EnumTypeDef.
+  """
+  ENUM_KIND
 }
 
 """

@@ -73,11 +73,13 @@ func (ps *parseState) parseGoIface(t *types.Interface, named *types.Named) (*par
 	}
 
 	// get the comment above the interface (if any)
-	astSpec, err := ps.astSpecForNamedType(named)
+	astSpec, err := ps.astSpecForObj(named.Obj())
 	if err != nil {
 		return nil, fmt.Errorf("failed to find decl for named type %s: %w", spec.name, err)
 	}
-	spec.doc = astSpec.Doc.Text()
+	if doc := docForAstSpec(astSpec); doc != nil {
+		spec.doc = doc.Text()
+	}
 
 	return spec, nil
 }

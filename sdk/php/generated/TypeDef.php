@@ -14,6 +14,15 @@ namespace Dagger;
 class TypeDef extends Client\AbstractObject implements Client\IdAble
 {
     /**
+     * If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null.
+     */
+    public function asEnum(): EnumTypeDef
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asEnum');
+        return new \Dagger\EnumTypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * If kind is INPUT, the input-specific type definition. If kind is not INPUT, this will be null.
      */
     public function asInput(): InputTypeDef
@@ -92,6 +101,34 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withConstructor');
         $innerQueryBuilder->setArgument('function', $function);
+        return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Returns a TypeDef of kind Enum with the provided name.
+     *
+     * Note that an enum's values may be omitted if the intent is only to refer to an enum. This is how functions are able to return their own, or any other circular reference.
+     */
+    public function withEnum(string $name, ?string $description = ''): TypeDef
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEnum');
+        $innerQueryBuilder->setArgument('name', $name);
+        if (null !== $description) {
+        $innerQueryBuilder->setArgument('description', $description);
+        }
+        return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Adds a static value for an Enum TypeDef, failing if the type is not an enum.
+     */
+    public function withEnumValue(string $value, ?string $description = ''): TypeDef
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEnumValue');
+        $innerQueryBuilder->setArgument('value', $value);
+        if (null !== $description) {
+        $innerQueryBuilder->setArgument('description', $description);
+        }
         return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

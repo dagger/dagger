@@ -493,4 +493,54 @@ describe("Invoke typescript function", function () {
     assert.equal(resultList.length, 3)
     assert.deepEqual(resultList, [{ value: -1 }, { value: 2 }, { value: 3 }])
   })
+
+  it("Should correctly handle enums values", async function () {
+    const files = await listFiles(`${rootDirectory}/enums`)
+
+    // Load function
+    try {
+      await load(files)
+    } catch (e) {
+      assert.fail("failed to load files")
+    }
+
+    const module = scan(files)
+
+    const inputDefault = {
+      parentName: "Enums",
+      fnName: "getStatus",
+      parentArgs: {
+        status: "ACTIVE",
+      },
+      fnArgs: {},
+    }
+
+    const resultDefault = await invoke(module, inputDefault)
+
+    assert.equal(resultDefault, "ACTIVE")
+
+    const inputSet = {
+      parentName: "Enums", // class name
+      fnName: "setStatus", // helloWorld
+      parentArgs: {
+        status: "ACTIVE",
+      },
+      fnArgs: {
+        status: "INACTIVE",
+      },
+    }
+
+    const resultSet = await invoke(module, inputSet)
+
+    const inputAfterSet = {
+      parentName: "Enums",
+      fnName: "getStatus",
+      parentArgs: JSON.parse(JSON.stringify(resultSet)),
+      fnArgs: {},
+    }
+
+    const resultAfterSet = await invoke(module, inputAfterSet)
+
+    assert.equal(resultAfterSet, "INACTIVE")
+  })
 })

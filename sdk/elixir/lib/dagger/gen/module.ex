@@ -59,6 +59,26 @@ defmodule Dagger.Module do
     execute(selection, module.client)
   end
 
+  @doc "Enumerations served by this module."
+  @spec enums(t()) :: {:ok, [Dagger.TypeDef.t()]} | {:error, term()}
+  def enums(%__MODULE__{} = module) do
+    selection =
+      module.selection |> select("enums") |> select("id")
+
+    with {:ok, items} <- execute(selection, module.client) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.TypeDef{
+           selection:
+             query()
+             |> select("loadTypeDefFromID")
+             |> arg("id", id),
+           client: module.client
+         }
+       end}
+    end
+  end
+
   @doc "The generated files and directories made on top of the module source's context directory."
   @spec generated_context_diff(t()) :: Dagger.Directory.t()
   def generated_context_diff(%__MODULE__{} = module) do
@@ -204,6 +224,18 @@ defmodule Dagger.Module do
   def with_description(%__MODULE__{} = module, description) do
     selection =
       module.selection |> select("withDescription") |> put_arg("description", description)
+
+    %Dagger.Module{
+      selection: selection,
+      client: module.client
+    }
+  end
+
+  @doc "This module plus the given Enum type and associated values"
+  @spec with_enum(t(), Dagger.TypeDef.t()) :: Dagger.Module.t()
+  def with_enum(%__MODULE__{} = module, enum) do
+    selection =
+      module.selection |> select("withEnum") |> put_arg("enum", Dagger.ID.id!(enum))
 
     %Dagger.Module{
       selection: selection,

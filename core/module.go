@@ -58,6 +58,9 @@ type Module struct {
 	// The module's interfaces
 	InterfaceDefs []*TypeDef `field:"true" name:"interfaces" doc:"Interfaces served by this module."`
 
+	// The module's enumerations
+	EnumDefs []*TypeDef `field:"true" name:"enums" doc:"Enumerations served by this module."`
+
 	// InstanceID is the ID of the initialized module.
 	InstanceID *call.ID
 }
@@ -164,6 +167,13 @@ func (mod *Module) Initialize(ctx context.Context, oldID *call.ID, newID *call.I
 			return nil, fmt.Errorf("failed to add interface to module %q: %w", modName, err)
 		}
 	}
+	for _, enum := range inst.Self.EnumDefs {
+		newMod, err = newMod.WithEnum(ctx, enum)
+		if err != nil {
+			return nil, fmt.Errorf("failed to add enum to module %q: %w", mod.Name(), err)
+		}
+	}
+	newMod.InstanceID = newID
 
 	return newMod, nil
 }
@@ -217,11 +227,23 @@ func (mod *Module) Install(ctx context.Context, dag *dagql.Server) error {
 		}
 	}
 
+	for _, def := range mod.EnumDefs {
+		enumDef := def.AsEnum.Value
+
+		slog.ExtraDebug("installing enum", "name", mod.Name(), "enum", enumDef.Name, "values", len(enumDef.Values))
+
+		enum := &ModuleEnum{
+			TypeDef: enumDef,
+		}
+		enum.Install(dag)
+	}
+
 	return nil
 }
 
 func (mod *Module) TypeDefs(ctx context.Context) ([]*TypeDef, error) {
-	typeDefs := make([]*TypeDef, 0, len(mod.ObjectDefs)+len(mod.InterfaceDefs))
+	typeDefs := make([]*TypeDef, 0, len(mod.ObjectDefs)+len(mod.InterfaceDefs)+len(mod.EnumDefs))
+
 	for _, def := range mod.ObjectDefs {
 		typeDef := def.Clone()
 		if typeDef.AsObject.Valid {
@@ -229,6 +251,7 @@ func (mod *Module) TypeDefs(ctx context.Context) ([]*TypeDef, error) {
 		}
 		typeDefs = append(typeDefs, typeDef)
 	}
+
 	for _, def := range mod.InterfaceDefs {
 		typeDef := def.Clone()
 		if typeDef.AsInterface.Valid {
@@ -236,58 +259,36 @@ func (mod *Module) TypeDefs(ctx context.Context) ([]*TypeDef, error) {
 		}
 		typeDefs = append(typeDefs, typeDef)
 	}
+
+	for _, def := range mod.EnumDefs {
+		typeDef := def.Clone()
+		if typeDef.AsEnum.Valid {
+			typeDef.AsEnum.Value.SourceModuleName = mod.Name()
+		}
+		typeDefs = append(typeDefs, typeDef)
+	}
+
 	return typeDefs, nil
 }
 
 func (mod *Module) ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirectDeps bool) (ModType, bool, error) {
 	var modType ModType
+	var ok bool
+	var err error
+
 	switch typeDef.Kind {
 	case TypeDefKindString, TypeDefKindInteger, TypeDefKindBoolean, TypeDefKindVoid:
-		modType = &PrimitiveType{typeDef}
-
+		modType, ok = mod.modTypeForPrimitive(ctx, typeDef, checkDirectDeps)
 	case TypeDefKindList:
-		underlyingType, ok, err := mod.ModTypeFor(ctx, typeDef.AsList.Value.ElementTypeDef, checkDirectDeps)
-		if err != nil {
-			return nil, false, fmt.Errorf("failed to get underlying type: %w", err)
-		}
-		if !ok {
-			return nil, false, nil
-		}
-		modType = &ListType{
-			Elem:       typeDef.AsList.Value.ElementTypeDef,
-			Underlying: underlyingType,
-		}
-
+		modType, ok, err = mod.modTypeForList(ctx, typeDef, checkDirectDeps)
 	case TypeDefKindObject:
-		if checkDirectDeps {
-			// check to see if this is from a *direct* dependency
-			depType, ok, err := mod.Deps.ModTypeFor(ctx, typeDef)
-			if err != nil {
-				return nil, false, fmt.Errorf("failed to get type from dependency: %w", err)
-			}
-			if ok {
-				return depType, true, nil
-			}
-		}
-
-		var found bool
-		// otherwise it must be from this module
-		for _, obj := range mod.ObjectDefs {
-			if obj.AsObject.Value.Name == typeDef.AsObject.Value.Name {
-				modType = &ModuleObjectType{
-					typeDef: obj.AsObject.Value,
-					mod:     mod,
-				}
-				found = true
-				break
-			}
-		}
-		if !found {
-			slog.ExtraDebug("module did not find object", "mod", mod.Name(), "object", typeDef.AsObject.Value.Name)
-			return nil, false, nil
+		modType, ok, err = mod.modTypeForObject(ctx, typeDef, checkDirectDeps)
+		if checkDirectDeps && ok {
+			return modType, true, nil
 		}
 
 	case TypeDefKindInterface:
+		// For some reason, if we do this logic inside `modTypeForInferface`, it doesn't work...
 		if checkDirectDeps {
 			// check to see if this is from a *direct* dependency
 			depType, ok, err := mod.Deps.ModTypeFor(ctx, typeDef)
@@ -299,40 +300,27 @@ func (mod *Module) ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirect
 			}
 		}
 
-		var found bool
-		// otherwise it must be from this module
-		for _, iface := range mod.InterfaceDefs {
-			if iface.AsInterface.Value.Name == typeDef.AsInterface.Value.Name {
-				modType = &InterfaceType{
-					mod:     mod,
-					typeDef: iface.AsInterface.Value,
-				}
-				found = true
-				break
-			}
-		}
-		if !found {
-			slog.ExtraDebug("module did not find interface", "mod", mod.Name(), "interface", typeDef.AsInterface.Value.Name)
-			return nil, false, nil
-		}
-
+		modType, ok = mod.modTypeForInterface(ctx, typeDef, checkDirectDeps)
 	case TypeDefKindScalar:
-		if checkDirectDeps {
-			// check to see if this is from a *direct* dependency
-			depType, ok, err := mod.Deps.ModTypeFor(ctx, typeDef)
-			if err != nil {
-				return nil, false, fmt.Errorf("failed to get type from dependency: %w", err)
-			}
-			if ok {
-				return depType, true, nil
-			}
+		modType, ok, err = mod.modTypeForScalar(ctx, typeDef, checkDirectDeps)
+		if checkDirectDeps && ok {
+			return modType, true, nil
 		}
-
-		slog.ExtraDebug("module did not find scalar", "mod", mod.Name(), "scalar", typeDef.AsScalar.Value.Name)
-		return nil, false, nil
-
+	case TypeDefKindEnum:
+		modType, ok, err = mod.modTypeForEnum(ctx, typeDef, checkDirectDeps)
+		if checkDirectDeps && ok {
+			return modType, true, nil
+		}
 	default:
 		return nil, false, fmt.Errorf("unexpected type def kind %s", typeDef.Kind)
+	}
+
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to get mod type: %w", err)
+	}
+
+	if !ok {
+		return nil, false, nil
 	}
 
 	if typeDef.Optional {
@@ -343,6 +331,108 @@ func (mod *Module) ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirect
 	}
 
 	return modType, true, nil
+}
+
+func (mod *Module) modTypeForPrimitive(_ context.Context, typedef *TypeDef, _ bool) (ModType, bool) {
+	return &PrimitiveType{typedef}, true
+}
+
+func (mod *Module) modTypeForList(ctx context.Context, typedef *TypeDef, checkDirectDeps bool) (ModType, bool, error) {
+	underlyingType, ok, err := mod.ModTypeFor(ctx, typedef.AsList.Value.ElementTypeDef, checkDirectDeps)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to get underlying type: %w", err)
+	}
+	if !ok {
+		return nil, false, nil
+	}
+
+	return &ListType{
+		Elem:       typedef.AsList.Value.ElementTypeDef,
+		Underlying: underlyingType,
+	}, true, nil
+}
+
+func (mod *Module) modTypeForObject(ctx context.Context, typeDef *TypeDef, checkDirectDeps bool) (ModType, bool, error) {
+	if checkDirectDeps {
+		// check to see if this is from a *direct* dependency
+		depType, ok, err := mod.Deps.ModTypeFor(ctx, typeDef)
+		if err != nil {
+			return nil, false, fmt.Errorf("failed to get object type from dependency: %w", err)
+		}
+		if ok {
+			return depType, true, nil
+		}
+	}
+
+	// otherwise it must be from this module
+	for _, obj := range mod.ObjectDefs {
+		if obj.AsObject.Value.Name == typeDef.AsObject.Value.Name {
+			return &ModuleObjectType{
+				typeDef: obj.AsObject.Value,
+				mod:     mod,
+			}, true, nil
+		}
+	}
+
+	slog.ExtraDebug("module did not find object", "mod", mod.Name(), "object", typeDef.AsObject.Value.Name)
+	return nil, false, nil
+}
+
+func (mod *Module) modTypeForInterface(_ context.Context, typeDef *TypeDef, _ bool) (ModType, bool) {
+	// otherwise it must be from this module
+	for _, iface := range mod.InterfaceDefs {
+		if iface.AsInterface.Value.Name == typeDef.AsInterface.Value.Name {
+			return &InterfaceType{
+				typeDef: iface.AsInterface.Value,
+				mod:     mod,
+			}, true
+		}
+	}
+
+	slog.ExtraDebug("module did not find interface", "mod", mod.Name(), "interface", typeDef.AsInterface.Value.Name)
+	return nil, false
+}
+
+func (mod *Module) modTypeForScalar(ctx context.Context, typeDef *TypeDef, checkDirectDeps bool) (ModType, bool, error) {
+	if checkDirectDeps {
+		// check to see if this is from a *direct* dependency
+		depType, ok, err := mod.Deps.ModTypeFor(ctx, typeDef)
+		if err != nil {
+			return nil, false, fmt.Errorf("failed to get scalar type from dependency: %w", err)
+		}
+		if ok {
+			return depType, true, nil
+		}
+	}
+
+	slog.ExtraDebug("module did not find scalar", "mod", mod.Name(), "scalar", typeDef.AsScalar.Value.Name)
+	return nil, false, nil
+}
+
+func (mod *Module) modTypeForEnum(ctx context.Context, typeDef *TypeDef, checkDirectDeps bool) (ModType, bool, error) {
+	if checkDirectDeps {
+		// check to see if this is from a *direct* dependency
+		depType, ok, err := mod.Deps.ModTypeFor(ctx, typeDef)
+		if err != nil {
+			return nil, false, fmt.Errorf("failed to get enum type from dependency: %w", err)
+		}
+		if ok {
+			return depType, true, nil
+		}
+	}
+
+	// otherwise it must be from this module
+	for _, enum := range mod.EnumDefs {
+		if enum.AsEnum.Value.Name == typeDef.AsEnum.Value.Name {
+			return &ModuleEnumType{
+				typeDef: enum.AsEnum.Value,
+				mod:     mod,
+			}, true, nil
+		}
+	}
+
+	slog.ExtraDebug("module did not find enum", "mod", mod.Name(), "enum", typeDef.AsEnum.Value.Name)
+	return nil, false, nil
 }
 
 // verify the typedef is has no reserved names
@@ -535,6 +625,18 @@ func (mod *Module) namespaceTypeDef(ctx context.Context, typeDef *TypeDef) error
 				}
 			}
 		}
+	case TypeDefKindEnum:
+		enum := typeDef.AsEnum.Value
+
+		// only namespace enums defined in this module
+		_, ok, err := mod.Deps.ModTypeFor(ctx, typeDef)
+		if err != nil {
+			return fmt.Errorf("failed to get mod type for type def: %w", err)
+		}
+
+		if !ok {
+			enum.Name = namespaceObject(enum.OriginalName, mod.Name(), mod.OriginalName)
+		}
 	}
 	return nil
 }
@@ -646,6 +748,11 @@ func (mod Module) Clone() *Module {
 		cp.InterfaceDefs[i] = def.Clone()
 	}
 
+	cp.EnumDefs = make([]*TypeDef, len(mod.EnumDefs))
+	for i, def := range mod.EnumDefs {
+		cp.EnumDefs[i] = def.Clone()
+	}
+
 	return &cp
 }
 
@@ -702,6 +809,32 @@ func (mod *Module) WithInterface(ctx context.Context, def *TypeDef) (*Module, er
 	}
 
 	mod.InterfaceDefs = append(mod.InterfaceDefs, def)
+	return mod, nil
+}
+
+func (mod *Module) WithEnum(ctx context.Context, def *TypeDef) (*Module, error) {
+	mod = mod.Clone()
+	if !def.AsEnum.Valid {
+		return nil, fmt.Errorf("expected enum type def, got %s: %+v", def.Kind, def)
+	}
+
+	// skip validation+namespacing for module objects being constructed by SDK with* calls
+	// they will be validated when merged into the real final module
+
+	if mod.Deps != nil {
+		if err := mod.validateTypeDef(ctx, def); err != nil {
+			return nil, fmt.Errorf("failed to validate type def: %w", err)
+		}
+	}
+	if mod.NameField != "" {
+		def = def.Clone()
+		if err := mod.namespaceTypeDef(ctx, def); err != nil {
+			return nil, fmt.Errorf("failed to namespace type def: %w", err)
+		}
+	}
+
+	mod.EnumDefs = append(mod.EnumDefs, def)
+
 	return mod, nil
 }
 

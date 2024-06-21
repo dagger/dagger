@@ -148,6 +148,76 @@ impl DirectoryId {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct EnumTypeDefId(pub String);
+impl From<&str> for EnumTypeDefId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+impl From<String> for EnumTypeDefId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl IntoID<EnumTypeDefId> for EnumTypeDef {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<EnumTypeDefId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<EnumTypeDefId> for EnumTypeDefId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<EnumTypeDefId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<EnumTypeDefId, DaggerError>(self) })
+    }
+}
+impl EnumTypeDefId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct EnumValueTypeDefId(pub String);
+impl From<&str> for EnumValueTypeDefId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+impl From<String> for EnumValueTypeDefId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl IntoID<EnumValueTypeDefId> for EnumValueTypeDef {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<EnumValueTypeDefId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<EnumValueTypeDefId> for EnumValueTypeDefId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<EnumValueTypeDefId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<EnumValueTypeDefId, DaggerError>(self) })
+    }
+}
+impl EnumValueTypeDefId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct EnvVariableId(pub String);
 impl From<&str> for EnvVariableId {
     fn from(value: &str) -> Self {
@@ -3879,6 +3949,66 @@ impl Directory {
     }
 }
 #[derive(Clone)]
+pub struct EnumTypeDef {
+    pub proc: Option<Arc<Child>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl EnumTypeDef {
+    /// A doc string for the enum, if any.
+    pub async fn description(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("description");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A unique identifier for this EnumTypeDef.
+    pub async fn id(&self) -> Result<EnumTypeDefId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The name of the enum.
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// If this EnumTypeDef is associated with a Module, the name of the module. Unset otherwise.
+    pub async fn source_module_name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("sourceModuleName");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The values of the enum.
+    pub fn values(&self) -> Vec<EnumValueTypeDef> {
+        let query = self.selection.select("values");
+        return vec![EnumValueTypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }];
+    }
+}
+#[derive(Clone)]
+pub struct EnumValueTypeDef {
+    pub proc: Option<Arc<Child>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl EnumValueTypeDef {
+    /// A doc string for the enum value, if any.
+    pub async fn description(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("description");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A unique identifier for this EnumValueTypeDef.
+    pub async fn id(&self) -> Result<EnumValueTypeDefId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The name of the enum value.
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+#[derive(Clone)]
 pub struct EnvVariable {
     pub proc: Option<Arc<Child>>,
     pub selection: Selection,
@@ -4927,6 +5057,15 @@ impl Module {
         let query = self.selection.select("description");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Enumerations served by this module.
+    pub fn enums(&self) -> Vec<TypeDef> {
+        let query = self.selection.select("enums");
+        return vec![TypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }];
+    }
     /// The generated files and directories made on top of the module source's context directory.
     pub fn generated_context_diff(&self) -> Directory {
         let query = self.selection.select("generatedContextDiff");
@@ -5019,6 +5158,22 @@ impl Module {
     pub fn with_description(&self, description: impl Into<String>) -> Module {
         let mut query = self.selection.select("withDescription");
         query = query.arg("description", description.into());
+        Module {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// This module plus the given Enum type and associated values
+    pub fn with_enum(&self, r#enum: impl IntoID<TypeDefId>) -> Module {
+        let mut query = self.selection.select("withEnum");
+        query = query.arg_lazy(
+            "enum",
+            Box::new(move || {
+                let r#enum = r#enum.clone();
+                Box::pin(async move { r#enum.into_id().await.unwrap().quote() })
+            }),
+        );
         Module {
             proc: self.proc.clone(),
             selection: query,
@@ -5970,6 +6125,41 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Load a EnumTypeDef from its ID.
+    pub fn load_enum_type_def_from_id(&self, id: impl IntoID<EnumTypeDefId>) -> EnumTypeDef {
+        let mut query = self.selection.select("loadEnumTypeDefFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        EnumTypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a EnumValueTypeDef from its ID.
+    pub fn load_enum_value_type_def_from_id(
+        &self,
+        id: impl IntoID<EnumValueTypeDefId>,
+    ) -> EnumValueTypeDef {
+        let mut query = self.selection.select("loadEnumValueTypeDefFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        EnumValueTypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Load a EnvVariable from its ID.
     pub fn load_env_variable_from_id(&self, id: impl IntoID<EnvVariableId>) -> EnvVariable {
         let mut query = self.selection.select("loadEnvVariableFromID");
@@ -6851,6 +7041,18 @@ pub struct TypeDef {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct TypeDefWithEnumOpts<'a> {
+    /// A doc string for the enum, if any
+    #[builder(setter(into, strip_option), default)]
+    pub description: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct TypeDefWithEnumValueOpts<'a> {
+    /// A doc string for the value, if any
+    #[builder(setter(into, strip_option), default)]
+    pub description: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct TypeDefWithFieldOpts<'a> {
     /// A doc string for the field, if any
     #[builder(setter(into, strip_option), default)]
@@ -6872,6 +7074,15 @@ pub struct TypeDefWithScalarOpts<'a> {
     pub description: Option<&'a str>,
 }
 impl TypeDef {
+    /// If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null.
+    pub fn as_enum(&self) -> EnumTypeDef {
+        let query = self.selection.select("asEnum");
+        EnumTypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// If kind is INPUT, the input-specific type definition. If kind is not INPUT, this will be null.
     pub fn as_input(&self) -> InputTypeDef {
         let query = self.selection.select("asInput");
@@ -6942,6 +7153,82 @@ impl TypeDef {
                 Box::pin(async move { function.into_id().await.unwrap().quote() })
             }),
         );
+        TypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Returns a TypeDef of kind Enum with the provided name.
+    /// Note that an enum's values may be omitted if the intent is only to refer to an enum. This is how functions are able to return their own, or any other circular reference.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the enum
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_enum(&self, name: impl Into<String>) -> TypeDef {
+        let mut query = self.selection.select("withEnum");
+        query = query.arg("name", name.into());
+        TypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Returns a TypeDef of kind Enum with the provided name.
+    /// Note that an enum's values may be omitted if the intent is only to refer to an enum. This is how functions are able to return their own, or any other circular reference.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the enum
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_enum_opts<'a>(
+        &self,
+        name: impl Into<String>,
+        opts: TypeDefWithEnumOpts<'a>,
+    ) -> TypeDef {
+        let mut query = self.selection.select("withEnum");
+        query = query.arg("name", name.into());
+        if let Some(description) = opts.description {
+            query = query.arg("description", description);
+        }
+        TypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Adds a static value for an Enum TypeDef, failing if the type is not an enum.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The name of the value in the enum
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_enum_value(&self, value: impl Into<String>) -> TypeDef {
+        let mut query = self.selection.select("withEnumValue");
+        query = query.arg("value", value.into());
+        TypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Adds a static value for an Enum TypeDef, failing if the type is not an enum.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The name of the value in the enum
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_enum_value_opts<'a>(
+        &self,
+        value: impl Into<String>,
+        opts: TypeDefWithEnumValueOpts<'a>,
+    ) -> TypeDef {
+        let mut query = self.selection.select("withEnumValue");
+        query = query.arg("value", value.into());
+        if let Some(description) = opts.description {
+            query = query.arg("description", description);
+        }
         TypeDef {
             proc: self.proc.clone(),
             selection: query,
@@ -7207,6 +7494,8 @@ pub enum NetworkProtocol {
 pub enum TypeDefKind {
     #[serde(rename = "BOOLEAN_KIND")]
     BooleanKind,
+    #[serde(rename = "ENUM_KIND")]
+    EnumKind,
     #[serde(rename = "INPUT_KIND")]
     InputKind,
     #[serde(rename = "INTEGER_KIND")]

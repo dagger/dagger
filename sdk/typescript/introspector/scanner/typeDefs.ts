@@ -16,6 +16,14 @@ export type ObjectTypeDef = BaseTypeDef & {
 }
 
 /**
+ * Extends the base type def if it's an enum to add its name.
+ */
+export type EnumTypeDef = BaseTypeDef & {
+  kind: TypeDefKind.EnumKind
+  name: string
+}
+
+/**
  * Extends the base typedef if it's a scalar to add its name and real type.
  */
 export type ScalarTypeDef = BaseTypeDef & {
@@ -46,53 +54,6 @@ export type TypeDef<T extends BaseTypeDef["kind"]> =
       ? ObjectTypeDef
       : T extends TypeDefKind.ListKind
         ? ListTypeDef
-        : BaseTypeDef
-
-/**
- * The type of field in a class
- */
-export type FieldTypeDef = {
-  name: string
-  alias?: string
-  description: string
-  typeDef: TypeDef<TypeDefKind>
-  isExposed: boolean
-}
-
-/**
- * The type of function argument in a method or function.
- */
-export type FunctionArgTypeDef = {
-  name: string
-  description: string
-  optional: boolean
-  defaultValue?: string
-  isVariadic: boolean
-  typeDef: TypeDef<TypeDefKind>
-}
-
-/**
- * The type of function, it can be a method from a class or an actual function.
- */
-export type FunctionTypedef = {
-  name: string
-  description: string
-  alias?: string
-  args: { [name: string]: FunctionArgTypeDef }
-  returnType: TypeDef<TypeDefKind>
-}
-
-export type ConstructorTypeDef = {
-  args: { [name: string]: FunctionArgTypeDef }
-}
-
-/**
- * A type of Class.
- */
-export type ClassTypeDef = {
-  name: string
-  description: string
-  fields: { [name: string]: FieldTypeDef }
-  constructor?: ConstructorTypeDef
-  methods: { [name: string]: FunctionTypedef }
-}
+        : T extends TypeDefKind.EnumKind
+          ? EnumTypeDef
+          : BaseTypeDef

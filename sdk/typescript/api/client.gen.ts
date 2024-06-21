@@ -615,6 +615,16 @@ export type DirectoryWithNewFileOpts = {
 export type DirectoryID = string & { __DirectoryID: never }
 
 /**
+ * The `EnumTypeDefID` scalar type represents an identifier for an object of type EnumTypeDef.
+ */
+export type EnumTypeDefID = string & { __EnumTypeDefID: never }
+
+/**
+ * The `EnumValueTypeDefID` scalar type represents an identifier for an object of type EnumValueTypeDef.
+ */
+export type EnumValueTypeDefID = string & { __EnumValueTypeDefID: never }
+
+/**
  * The `EnvVariableID` scalar type represents an identifier for an object of type EnvVariable.
  */
 export type EnvVariableID = string & { __EnvVariableID: never }
@@ -1019,6 +1029,20 @@ export type ServiceID = string & { __ServiceID: never }
  */
 export type SocketID = string & { __SocketID: never }
 
+export type TypeDefWithEnumOpts = {
+  /**
+   * A doc string for the enum, if any
+   */
+  description?: string
+}
+
+export type TypeDefWithEnumValueOpts = {
+  /**
+   * A doc string for the value, if any
+   */
+  description?: string
+}
+
 export type TypeDefWithFieldOpts = {
   /**
    * A doc string for the field, if any
@@ -1051,6 +1075,13 @@ export enum TypeDefKind {
    * A boolean value.
    */
   BooleanKind = "BOOLEAN_KIND",
+
+  /**
+   * A GraphQL enum type and its values
+   *
+   * Always paired with an EnumTypeDef.
+   */
+  EnumKind = "ENUM_KIND",
 
   /**
    * A graphql input type, used only when representing the core API via TypeDefs.
@@ -3299,6 +3330,244 @@ export class Directory extends BaseClient {
    */
   with = (arg: (param: Directory) => Directory) => {
     return arg(this)
+  }
+}
+
+/**
+ * A definition of a custom enum defined in a Module.
+ */
+export class EnumTypeDef extends BaseClient {
+  private readonly _id?: EnumTypeDefID = undefined
+  private readonly _description?: string = undefined
+  private readonly _name?: string = undefined
+  private readonly _sourceModuleName?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: EnumTypeDefID,
+    _description?: string,
+    _name?: string,
+    _sourceModuleName?: string,
+  ) {
+    super(parent)
+
+    this._id = _id
+    this._description = _description
+    this._name = _name
+    this._sourceModuleName = _sourceModuleName
+  }
+
+  /**
+   * A unique identifier for this EnumTypeDef.
+   */
+  id = async (): Promise<EnumTypeDefID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<EnumTypeDefID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * A doc string for the enum, if any.
+   */
+  description = async (): Promise<string> => {
+    if (this._description) {
+      return this._description
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "description",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * The name of the enum.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "name",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * If this EnumTypeDef is associated with a Module, the name of the module. Unset otherwise.
+   */
+  sourceModuleName = async (): Promise<string> => {
+    if (this._sourceModuleName) {
+      return this._sourceModuleName
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "sourceModuleName",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * The values of the enum.
+   */
+  values = async (): Promise<EnumValueTypeDef[]> => {
+    type values = {
+      id: EnumValueTypeDefID
+    }
+
+    const response: Awaited<values[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "values",
+        },
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response.map(
+      (r) =>
+        new EnumValueTypeDef(
+          {
+            queryTree: [
+              {
+                operation: "loadEnumValueTypeDefFromID",
+                args: { id: r.id },
+              },
+            ],
+            ctx: this._ctx,
+          },
+          r.id,
+        ),
+    )
+  }
+}
+
+/**
+ * A definition of a value in a custom enum defined in a Module.
+ */
+export class EnumValueTypeDef extends BaseClient {
+  private readonly _id?: EnumValueTypeDefID = undefined
+  private readonly _description?: string = undefined
+  private readonly _name?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: EnumValueTypeDefID,
+    _description?: string,
+    _name?: string,
+  ) {
+    super(parent)
+
+    this._id = _id
+    this._description = _description
+    this._name = _name
+  }
+
+  /**
+   * A unique identifier for this EnumValueTypeDef.
+   */
+  id = async (): Promise<EnumValueTypeDefID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<EnumValueTypeDefID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * A doc string for the enum value, if any.
+   */
+  description = async (): Promise<string> => {
+    if (this._description) {
+      return this._description
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "description",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * The name of the enum value.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "name",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
   }
 }
 
@@ -5650,6 +5919,44 @@ export class Module_ extends BaseClient {
   }
 
   /**
+   * Enumerations served by this module.
+   */
+  enums = async (): Promise<TypeDef[]> => {
+    type enums = {
+      id: TypeDefID
+    }
+
+    const response: Awaited<enums[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "enums",
+        },
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response.map(
+      (r) =>
+        new TypeDef(
+          {
+            queryTree: [
+              {
+                operation: "loadTypeDefFromID",
+                args: { id: r.id },
+              },
+            ],
+            ctx: this._ctx,
+          },
+          r.id,
+        ),
+    )
+  }
+
+  /**
    * The generated files and directories made on top of the module source's context directory.
    */
   generatedContextDiff = (): Directory => {
@@ -5876,6 +6183,24 @@ export class Module_ extends BaseClient {
         {
           operation: "withDescription",
           args: { description },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * This module plus the given Enum type and associated values
+   */
+  withEnum = (enum_: TypeDef): Module_ => {
+    return new Module_({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withEnum",
+          args: {
+            enum: enum_,
+          },
         },
       ],
       ctx: this._ctx,
@@ -7413,6 +7738,38 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Load a EnumTypeDef from its ID.
+   */
+  loadEnumTypeDefFromID = (id: EnumTypeDefID): EnumTypeDef => {
+    return new EnumTypeDef({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "loadEnumTypeDefFromID",
+          args: { id },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Load a EnumValueTypeDef from its ID.
+   */
+  loadEnumValueTypeDefFromID = (id: EnumValueTypeDefID): EnumValueTypeDef => {
+    return new EnumValueTypeDef({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "loadEnumValueTypeDefFromID",
+          args: { id },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
    * Load a EnvVariable from its ID.
    */
   loadEnvVariableFromID = (id: EnvVariableID): EnvVariable => {
@@ -8527,6 +8884,21 @@ export class TypeDef extends BaseClient {
   }
 
   /**
+   * If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null.
+   */
+  asEnum = (): EnumTypeDef => {
+    return new EnumTypeDef({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "asEnum",
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
    * If kind is INPUT, the input-specific type definition. If kind is not INPUT, this will be null.
    */
   asInput = (): InputTypeDef => {
@@ -8655,6 +9027,44 @@ export class TypeDef extends BaseClient {
           args: {
             function: function_,
           },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Returns a TypeDef of kind Enum with the provided name.
+   *
+   * Note that an enum's values may be omitted if the intent is only to refer to an enum. This is how functions are able to return their own, or any other circular reference.
+   * @param name The name of the enum
+   * @param opts.description A doc string for the enum, if any
+   */
+  withEnum = (name: string, opts?: TypeDefWithEnumOpts): TypeDef => {
+    return new TypeDef({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withEnum",
+          args: { name, ...opts },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Adds a static value for an Enum TypeDef, failing if the type is not an enum.
+   * @param value The name of the value in the enum
+   * @param opts.description A doc string for the value, if any
+   */
+  withEnumValue = (value: string, opts?: TypeDefWithEnumValueOpts): TypeDef => {
+    return new TypeDef({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withEnumValue",
+          args: { value, ...opts },
         },
       ],
       ctx: this._ctx,

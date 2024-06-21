@@ -2,8 +2,8 @@ import ts from "typescript"
 
 import { TypeDefKind } from "../../../api/client.gen.js"
 import { UnknownDaggerError } from "../../../common/errors/UnknownDaggerError.js"
-import { FunctionArgTypeDef, TypeDef } from "../typeDefs.js"
-import { typeToTypedef } from "../utils.js"
+import { TypeDef } from "../typeDefs.js"
+import { typeToTypedef } from "./typeToTypedef.js"
 
 export type Arguments = { [name: string]: Argument }
 
@@ -19,6 +19,15 @@ export class Argument {
   private checker: ts.TypeChecker
 
   private param: ts.ParameterDeclaration
+
+  // Preloaded values.
+  private _name: string
+  private _description: string
+  private _type: TypeDef<TypeDefKind>
+  private _defaultValue: string | undefined
+  private _isOptional: boolean
+  private _isNullable: boolean
+  private _isVariadic: boolean
 
   /**
    * Create a new Argument instance.
@@ -50,22 +59,86 @@ export class Argument {
     }
 
     this.param = parameterDeclaration
+
+    // Preload to optimize the introspection.
+    this._name = this.loadName()
+    this._description = this.loadDescription()
+    this._type = this.loadType()
+    this._defaultValue = this.loadDefaultValue()
+    this._isNullable = this.loadIsNullable()
+    this._isVariadic = this.loadIsVariadic()
+    this._isOptional = this.loadIsOptional()
   }
 
   get name(): string {
-    return this.symbol.getName()
+    return this._name
   }
 
   get description(): string {
-    return ts.displayPartsToString(
-      this.symbol.getDocumentationComment(this.checker),
-    )
+    return this._description
   }
 
   /**
    * Return the type of the argument in a Dagger TypeDef format.
    */
   get type(): TypeDef<TypeDefKind> {
+    return this._type
+  }
+
+  get defaultValue(): string | undefined {
+    return this._defaultValue
+  }
+
+  /**
+   * Return true if the parameter is optional.
+   *
+   * A parameter is considered optional if he fits one of the following:
+   * - It has a question token (e.g. `foo?: <type>`).
+   * - It's variadic (e.g. `...foo: <type>[]`).
+   * - It's nullable (e.g. `foo: <type> | null`).
+   */
+  get isOptional(): boolean {
+    return this._isOptional
+  }
+
+  /**
+   * Return true if the parameter is nullable.
+   *
+   * A parameter is considered nullable if itstype is a union type with `null`
+   * on the list of types.
+   * Example: `foo: string | null`.
+   */
+  get isNullable(): boolean {
+    return this._isNullable
+  }
+
+  get isVariadic(): boolean {
+    return this._isVariadic
+  }
+
+  toJSON() {
+    return {
+      name: this.name,
+      description: this.description,
+      type: this.type,
+      isVariadic: this.isVariadic,
+      isNullable: this.isNullable,
+      isOptional: this.isOptional,
+      defaultValue: this.defaultValue,
+    }
+  }
+
+  private loadName(): string {
+    return this.symbol.getName()
+  }
+
+  private loadDescription(): string {
+    return ts.displayPartsToString(
+      this.symbol.getDocumentationComment(this.checker),
+    )
+  }
+
+  private loadType(): TypeDef<TypeDefKind> {
     if (!this.symbol.valueDeclaration) {
       throw new UnknownDaggerError(
         "could not find symbol value declaration",
@@ -81,7 +154,7 @@ export class Argument {
     return typeToTypedef(this.checker, type)
   }
 
-  get defaultValue(): string | undefined {
+  private loadDefaultValue(): string | undefined {
     if (this.param.initializer === undefined) {
       return undefined
     }
@@ -89,15 +162,7 @@ export class Argument {
     return this.formatDefaultValue(this.param.initializer.getText())
   }
 
-  /**
-   * Return true if the parameter is optional.
-   *
-   * A parameter is considered optional if he fits one of the following:
-   * - It has a question token (e.g. `foo?: <type>`).
-   * - It's variadic (e.g. `...foo: <type>[]`).
-   * - It's nullable (e.g. `foo: <type> | null`).
-   */
-  get isOptional(): boolean {
+  private loadIsOptional(): boolean {
     return (
       this.param.questionToken !== undefined ||
       this.isVariadic ||
@@ -105,14 +170,7 @@ export class Argument {
     )
   }
 
-  /**
-   * Return true if the parameter is nullable.
-   *
-   * A parameter is considered nullable if itstype is a union type with `null`
-   * on the list of types.
-   * Example: `foo: string | null`.
-   */
-  get isNullable(): boolean {
+  private loadIsNullable(): boolean {
     if (!this.param.type) {
       return false
     }
@@ -128,33 +186,8 @@ export class Argument {
     return false
   }
 
-  get isVariadic(): boolean {
+  private loadIsVariadic(): boolean {
     return this.param.dotDotDotToken !== undefined
-  }
-
-  // TODO(TomChv): replace with `ToJson` method
-  // after the refactor is complete.
-  get typeDef(): FunctionArgTypeDef {
-    return {
-      name: this.name,
-      description: this.description,
-      optional: this.isOptional,
-      defaultValue: this.defaultValue,
-      isVariadic: this.isVariadic,
-      typeDef: this.type,
-    }
-  }
-
-  toJSON() {
-    return {
-      name: this.name,
-      description: this.description,
-      type: this.type,
-      isVariadic: this.isVariadic,
-      isNullable: this.isNullable,
-      isOptional: this.isOptional,
-      defaultValue: this.defaultValue,
-    }
   }
 
   /**

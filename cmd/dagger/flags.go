@@ -163,6 +163,40 @@ func (v *sliceValue[T]) Set(s string) error {
 	return nil
 }
 
+type enumValue struct {
+	value   string
+	typedef *modEnum
+}
+
+var _ DaggerValue = &enumValue{}
+
+func (v *enumValue) Type() string {
+	vs := make([]string, 0, len(v.typedef.Values))
+	for _, v := range v.typedef.Values {
+		vs = append(vs, v.Name)
+	}
+	return strings.Join(vs, ",")
+}
+
+func (v *enumValue) String() string {
+	return v.value
+}
+
+func (v *enumValue) Get(ctx context.Context, dag *dagger.Client, modSrc *dagger.ModuleSource) (any, error) {
+	return v.value, nil
+}
+
+func (v *enumValue) Set(s string) error {
+	for _, allow := range v.typedef.Values {
+		if strings.EqualFold(s, allow.Name) {
+			v.value = allow.Name
+			return nil
+		}
+	}
+
+	return fmt.Errorf("value should be one of %s", v.Type())
+}
+
 // containerValue is a pflag.Value that builds a dagger.Container from a
 // base image name.
 type containerValue struct {
@@ -689,6 +723,18 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) error {
 		flags.String(name, val, usage)
 		return nil
 
+	case dagger.EnumKind:
+		enumName := r.TypeDef.AsEnum.Name
+
+		if val := GetCustomFlagValue(enumName); val != nil {
+			flags.Var(val, name, usage)
+			return nil
+		}
+
+		val := &enumValue{typedef: r.TypeDef.AsEnum}
+		flags.Var(val, name, usage)
+
+		return nil
 	case dagger.ObjectKind:
 		objName := r.TypeDef.AsObject.Name
 

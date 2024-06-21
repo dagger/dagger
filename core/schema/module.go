@@ -201,6 +201,9 @@ func (s *moduleSchema) Install() {
 		dagql.Func("withInterface", s.moduleWithInterface).
 			Doc(`This module plus the given Interface type and associated functions`),
 
+		dagql.Func("withEnum", s.moduleWithEnum).
+			Doc(`This module plus the given Enum type and associated values`),
+
 		dagql.NodeFunc("serve", s.moduleServe).
 			Impure(`Mutates the calling session's global schema.`).
 			Doc(`Serve a module's API in the current session.`,
@@ -277,6 +280,18 @@ func (s *moduleSchema) Install() {
 
 		dagql.Func("withConstructor", s.typeDefWithObjectConstructor).
 			Doc(`Adds a function for constructing a new instance of an Object TypeDef, failing if the type is not an object.`),
+
+		dagql.Func("withEnum", s.typeDefWithEnum).
+			Doc(`Returns a TypeDef of kind Enum with the provided name.`,
+				`Note that an enum's values may be omitted if the intent is only to refer to an enum.
+				This is how functions are able to return their own, or any other circular reference.`).
+			ArgDoc("name", `The name of the enum`).
+			ArgDoc("description", `A doc string for the enum, if any`),
+
+		dagql.Func("withEnumValue", s.typeDefWithEnumValue).
+			Doc(`Adds a static value for an Enum TypeDef, failing if the type is not an enum.`).
+			ArgDoc("value", `The name of the value in the enum`).
+			ArgDoc("description", `A doc string for the value, if any`),
 	}.Install(s.dag)
 
 	dagql.Fields[*core.ObjectTypeDef]{}.Install(s.dag)
@@ -285,6 +300,8 @@ func (s *moduleSchema) Install() {
 	dagql.Fields[*core.FieldTypeDef]{}.Install(s.dag)
 	dagql.Fields[*core.ListTypeDef]{}.Install(s.dag)
 	dagql.Fields[*core.ScalarTypeDef]{}.Install(s.dag)
+	dagql.Fields[*core.EnumTypeDef]{}.Install(s.dag)
+	dagql.Fields[*core.EnumValueTypeDef]{}.Install(s.dag)
 
 	dagql.Fields[*core.GeneratedCode]{
 		dagql.Func("withVCSGeneratedPaths", s.generatedCodeWithVCSGeneratedPaths).
@@ -382,6 +399,28 @@ func (s *moduleSchema) typeDefWithObjectConstructor(ctx context.Context, def *co
 	fn.Name = ""
 	fn.OriginalName = ""
 	return def.WithObjectConstructor(fn)
+}
+
+func (s *moduleSchema) typeDefWithEnum(ctx context.Context, def *core.TypeDef, args struct {
+	Name        string
+	Description string `default:""`
+}) (*core.TypeDef, error) {
+	if args.Name == "" {
+		return nil, fmt.Errorf("enum type def must have a name")
+	}
+
+	return def.WithEnum(args.Name, args.Description), nil
+}
+
+func (s *moduleSchema) typeDefWithEnumValue(ctx context.Context, def *core.TypeDef, args struct {
+	Value       string
+	Description string `default:""`
+}) (*core.TypeDef, error) {
+	if args.Value == "" {
+		return nil, fmt.Errorf("enum value must not be empty")
+	}
+
+	return def.WithEnumValue(args.Value, args.Description)
 }
 
 func (s *moduleSchema) generatedCode(ctx context.Context, _ *core.Query, args struct {
@@ -489,7 +528,8 @@ func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, _ 
 
 func (s *moduleSchema) functionCallReturnValue(ctx context.Context, fnCall *core.FunctionCall, args struct {
 	Value core.JSON
-}) (dagql.Nullable[core.Void], error) {
+},
+) (dagql.Nullable[core.Void], error) {
 	// TODO: error out if caller is not coming from a module
 	return dagql.Null[core.Void](), fnCall.ReturnValue(ctx, args.Value)
 }
@@ -518,6 +558,17 @@ func (s *moduleSchema) moduleWithInterface(ctx context.Context, mod *core.Module
 		return nil, err
 	}
 	return mod.WithInterface(ctx, def.Self)
+}
+
+func (s *moduleSchema) moduleWithEnum(ctx context.Context, mod *core.Module, args struct {
+	Enum core.TypeDefID
+}) (_ *core.Module, rerr error) {
+	def, err := args.Enum.Load(ctx, s.dag)
+	if err != nil {
+		return nil, err
+	}
+
+	return mod.WithEnum(ctx, def.Self)
 }
 
 func (s *moduleSchema) currentModuleName(
@@ -652,7 +703,8 @@ func (s *moduleSchema) moduleInitialize(
 
 func (s *moduleSchema) moduleWithSource(ctx context.Context, mod *core.Module, args struct {
 	Source core.ModuleSourceID
-}) (*core.Module, error) {
+},
+) (*core.Module, error) {
 	src, err := args.Source.Load(ctx, s.dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode module source: %w", err)
@@ -865,7 +917,7 @@ func (s *moduleSchema) updateCodegenAndRuntime(
 				Args: []dagql.NamedInput{
 					{Name: "path", Value: dagql.String(gitAttrsPath)},
 					{Name: "contents", Value: dagql.String(gitAttrsContents)},
-					{Name: "permissions", Value: dagql.Int(0600)},
+					{Name: "permissions", Value: dagql.Int(0o600)},
 				},
 			},
 		)
@@ -913,7 +965,7 @@ func (s *moduleSchema) updateCodegenAndRuntime(
 				Args: []dagql.NamedInput{
 					{Name: "path", Value: dagql.String(gitIgnorePath)},
 					{Name: "contents", Value: dagql.String(gitIgnoreContents)},
-					{Name: "permissions", Value: dagql.Int(0600)},
+					{Name: "permissions", Value: dagql.Int(0o600)},
 				},
 			},
 		)
@@ -1038,7 +1090,7 @@ func (s *moduleSchema) updateDaggerConfig(
 			Args: []dagql.NamedInput{
 				{Name: "path", Value: dagql.String(modCfgPath)},
 				{Name: "contents", Value: dagql.String(updatedModCfgBytes)},
-				{Name: "permissions", Value: dagql.Int(0644)},
+				{Name: "permissions", Value: dagql.Int(0o644)},
 			},
 		},
 	)

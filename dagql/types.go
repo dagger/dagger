@@ -904,6 +904,8 @@ func (e *EnumValues[T]) DecodeInput(val any) (Input, error) {
 	switch x := val.(type) {
 	case string:
 		return e.Lookup(x)
+	case Scalar[String]:
+		return e.Lookup(string(x.Value))
 	default:
 		return nil, fmt.Errorf("cannot create Enum from %T", x)
 	}
@@ -917,6 +919,7 @@ func (e *EnumValues[T]) PossibleValues() ast.EnumValueList {
 			Description: e.descriptions[i],
 		})
 	}
+
 	return values
 }
 
