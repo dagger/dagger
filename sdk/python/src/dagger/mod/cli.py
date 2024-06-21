@@ -9,9 +9,10 @@ from typing import cast
 import rich.traceback
 from rich.console import Console
 
-from . import default_module
-from ._exceptions import FatalError, UserError
-from ._module import Module
+from dagger.log import configure_logging
+from dagger.mod import default_module
+from dagger.mod._exceptions import FatalError, UserError
+from dagger.mod._module import Module
 
 errors = Console(stderr=True, style="red")
 logger = logging.getLogger(__name__)
@@ -47,9 +48,14 @@ def import_module(module_name: str = "main") -> types.ModuleType:
     except ModuleNotFoundError as e:
         if e.name != module_name:
             raise
+        # If the main module isn't found the user won't be able to set debug level.
+        # TODO: Allow setting debug level with a pyproject.toml setting.
+        if not logger.isEnabledFor(logging.DEBUG):
+            configure_logging(logging.DEBUG)
         msg = (
             f'The "{module_name}" module could not be found. '
-            f'Did you create a "src/{module_name}.py" file in the root of your project?'
+            f'Did you create a "src/{module_name}" module or package and '
+            "correctly set it up in pyproject.toml to be included in the build?"
         )
         raise UserError(msg) from e
 
