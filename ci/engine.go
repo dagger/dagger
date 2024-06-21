@@ -159,31 +159,16 @@ func (e *Engine) Service(
 }
 
 // Lint the engine
-func (e *Engine) Lint(
-	ctx context.Context,
-	// +optional
-	all bool,
-) error {
-	// Packages to lint
-	packages := []string{
-		"",
-		// FIXME: should the CI lint itself?
-		"ci",
-		"ci/dirdiff",
-		"ci/std/go",
-		"ci/std/graphql",
+func (e *Engine) Lint(ctx context.Context) error {
+	src, err := e.Dagger.Generate(ctx)
+	if err != nil {
+		return err
 	}
-	// Packages that need codegen
-	codegen := []string{
-		"",
-		"ci/dirdiff",
-		"ci/std/go",
-		"ci/std/graphql",
+	report, err := new(GoLint).Lint(ctx, src)
+	if err != nil {
+		return err
 	}
-
-	return e.Dagger.Go().
-		WithCodegen(codegen).
-		Lint(ctx, packages, all)
+	return report.AssertPass(ctx)
 }
 
 // Publish all engine images to a registry

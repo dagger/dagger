@@ -7,6 +7,10 @@
       "source": "ci/std/shellcheck"
     },
     {
+      "name": "dirdiff",
+      "source": "ci/dirdiff"
+    },
+    {
       "name": "docusaurus",
       "source": "github.com/levlaz/daggerverse/docusaurus@72ec19206da7dbe2815da94c62e491b54935b633"
     },
@@ -17,10 +21,14 @@
     {
       "name": "graphql",
       "source": "ci/std/graphql"
+    },
+    {
+      "name": "wolfi",
+      "source": "github.com/shykes/daggerverse/wolfi@dfb1f91fa463b779021d65011f0060f7decda0ba"
     }
   ],
   "source": "ci",
-  "engineVersion": "v0.11.7",
+  "engineVersion": "v0.11.8",
   "views": [
     {
       "name": "default",
