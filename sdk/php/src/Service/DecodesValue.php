@@ -49,7 +49,7 @@ final readonly class DecodesValue
                     $method = sprintf('load%sFromId', $type->getShortName());
                     $id = sprintf('%sId', $type->name);
 
-                    $this->client->$method(new $id($value));
+                    return $this->client->$method(new $id(json_decode($value)));
                 }
 
                 throw new RuntimeException(sprintf(
