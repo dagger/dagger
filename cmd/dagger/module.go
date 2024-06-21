@@ -66,6 +66,7 @@ func init() {
 	moduleInitCmd.Flags().StringVar(&moduleName, "name", "", "Name of the new module (defaults to parent directory name)")
 	moduleInitCmd.Flags().StringVar(&moduleSourcePath, "source", "", "Directory to store the module implementation source code in (defaults to \"dagger/ if \"--sdk\" is provided)")
 	moduleInitCmd.Flags().StringVar(&licenseID, "license", "", "License identifier to generate - see https://spdx.org/licenses/")
+	moduleInitCmd.Flags().Lookup("license").NoOptDefVal = "Apache-2.0"
 
 	modulePublishCmd.Flags().BoolVarP(&force, "force", "f", false, "Force publish even if the git repository is not clean")
 	modulePublishCmd.Flags().AddFlagSet(moduleFlags)
@@ -75,6 +76,9 @@ func init() {
 
 	moduleDevelopCmd.Flags().StringVar(&developSDK, "sdk", "", "New SDK for the module")
 	moduleDevelopCmd.Flags().StringVar(&developSourcePath, "source", "", "Directory to store the module implementation source code in")
+	moduleDevelopCmd.Flags().StringVar(&licenseID, "license", "", "License identifier to generate - see https://spdx.org/licenses/")
+	moduleDevelopCmd.Flags().Lookup("license").NoOptDefVal = "Apache-2.0"
+
 	moduleDevelopCmd.PersistentFlags().AddFlagSet(moduleFlags)
 }
 
@@ -162,7 +166,7 @@ The "--source" flag allows controlling the directory in which the actual module 
 				return fmt.Errorf("failed to generate code: %w", err)
 			}
 
-			if sdk != "" {
+			if sdk != "" && licenseID != "" {
 				// If we're generating code by setting a SDK, we should also generate a license
 				// if it doesn't already exists.
 				if err := findOrCreateLicense(ctx, modConf.LocalRootSourcePath); err != nil {
@@ -380,9 +384,11 @@ If not updating source or SDK, this is only required for IDE auto-completion/LSP
 				return fmt.Errorf("failed to generate code: %w", err)
 			}
 
-			// If no license has been created yet, we should create one.
-			if err := findOrCreateLicense(ctx, modConf.LocalRootSourcePath); err != nil {
-				return err
+			// If a license flag is set, we should create one.
+			if licenseID != "" {
+				if err := findOrCreateLicense(ctx, modConf.LocalRootSourcePath); err != nil {
+					return err
+				}
 			}
 
 			return nil

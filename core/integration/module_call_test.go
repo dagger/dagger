@@ -702,7 +702,7 @@ func (m *Test) ToStatus(status string) Status {
 		modGen := goGitBase(t, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go", "--license")).
 			WithNewFile("foo.txt", dagger.ContainerWithNewFileOpts{
 				Contents: "foo",
 			}).
