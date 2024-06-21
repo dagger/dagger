@@ -94,7 +94,7 @@ type Test struct {
 		require.NoError(t, err)
 
 		cmd := hostDaggerCommand(ctx, t, modDir, "call", "ctr", "as-service", "up", "--random")
-		cmd.Env = append(os.Environ(), "NO_COLOR=true")
+		cmd.Env = append(cmd.Env, "NO_COLOR=true")
 		cmd.Stdin = nil
 		cmd.Stdout = tty
 		cmd.Stderr = tty
