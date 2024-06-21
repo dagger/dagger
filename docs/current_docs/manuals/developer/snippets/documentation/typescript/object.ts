@@ -18,7 +18,7 @@ class MyModule {
     /**
      * The age of the user.
      */
-    name: string
+    name: string,
   ) {
     this.name = name
     this.age = age

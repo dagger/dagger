@@ -21,7 +21,7 @@ class MyModule {
     /**
      * Who to greet
      */
-    name: string = "World"
+    name: string = "World",
   ) {
     this.greeting = greeting
     this.name = name
