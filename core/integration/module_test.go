@@ -493,6 +493,14 @@ func TestModuleInitLICENSE(t *testing.T) {
 		require.NoError(t, err)
 		require.NotContains(t, content, "LICENSE")
 
+		t.Run("do not bootstrap LICENSE file if no sdk is specified", func(t *testing.T) {
+			modGen = modGen.With(daggerExec("develop", "--source=dagger"))
+
+			content, err := modGen.Directory(".").Entries(ctx)
+			require.NoError(t, err)
+			require.NotContains(t, content, "LICENSE")
+		})
+
 		t.Run("bootstrap a license after sdk is set on dagger develop", func(t *testing.T) {
 			modGen = modGen.With(daggerExec("develop", "--sdk=go"))
 

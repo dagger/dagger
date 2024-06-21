@@ -380,9 +380,11 @@ If not updating source or SDK, this is only required for IDE auto-completion/LSP
 				return fmt.Errorf("failed to generate code: %w", err)
 			}
 
-			// If no license has been created yet, we should create one.
-			if err := findOrCreateLicense(ctx, modConf.LocalRootSourcePath); err != nil {
-				return err
+			// If no license has been created yet, and SDK is set, we should create one.
+			if developSDK != "" {
+				if err := findOrCreateLicense(ctx, modConf.LocalRootSourcePath); err != nil {
+					return err
+				}
 			}
 
 			return nil
