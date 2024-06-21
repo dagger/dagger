@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/dagger/engine/distconsts"
@@ -206,6 +207,10 @@ func (e *Engine) Publish(
 	}
 
 	ref := fmt.Sprintf("%s:%s", image, e.Dagger.Version)
+	if strings.Contains(e.ImageBase, "wolfi") {
+		ref += "-wolfi"
+	}
+
 	if e.GPUSupport {
 		ref += "-gpu"
 	}
