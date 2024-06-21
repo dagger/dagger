@@ -2821,7 +2821,7 @@ func (ContainerSuite) TestExport(ctx context.Context, t *testctx.T) {
 	t.Run("to absolute dir", func(ctx context.Context, t *testctx.T) {
 		for _, useAsTarball := range []bool{true, false} {
 			t.Run(fmt.Sprintf("useAsTarball=%t", useAsTarball), func(ctx context.Context, t *testctx.T) {
-				imagePath := filepath.Join(dest, "image.tar")
+				imagePath := filepath.Join(dest, identity.NewID()+".tar")
 
 				if useAsTarball {
 					tarFile := ctr.AsTarball()
@@ -2864,27 +2864,29 @@ func (ContainerSuite) TestExport(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("to workdir", func(ctx context.Context, t *testctx.T) {
-		ok, err := ctr.Export(ctx, "./image.tar")
+		relPath := "./" + identity.NewID() + ".tar"
+		ok, err := ctr.Export(ctx, relPath)
 		require.NoError(t, err)
 		require.True(t, ok)
 
-		stat, err := os.Stat(filepath.Join(wd, "image.tar"))
+		stat, err := os.Stat(filepath.Join(wd, relPath))
 		require.NoError(t, err)
 		require.NotZero(t, stat.Size())
 		require.EqualValues(t, 0o600, stat.Mode().Perm())
 
-		entries := tarEntries(t, filepath.Join(wd, "image.tar"))
+		entries := tarEntries(t, filepath.Join(wd, relPath))
 		require.Contains(t, entries, "oci-layout")
 		require.Contains(t, entries, "index.json")
 		require.Contains(t, entries, "manifest.json")
 	})
 
 	t.Run("to subdir", func(ctx context.Context, t *testctx.T) {
-		ok, err := ctr.Export(ctx, "./foo/image.tar")
+		relPath := "./foo/" + identity.NewID() + ".tar"
+		ok, err := ctr.Export(ctx, relPath)
 		require.NoError(t, err)
 		require.True(t, ok)
 
-		entries := tarEntries(t, filepath.Join(wd, "foo", "image.tar"))
+		entries := tarEntries(t, filepath.Join(wd, relPath))
 		require.Contains(t, entries, "oci-layout")
 		require.Contains(t, entries, "index.json")
 		require.Contains(t, entries, "manifest.json")
