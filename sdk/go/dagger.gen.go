@@ -2977,6 +2977,8 @@ type FunctionWithArgOpts struct {
 	Description string
 	// A default value to use for this argument if not explicitly set by the caller, if any
 	DefaultValue JSON
+	// If the argument is a Directory or File type, default to load path from context directory, relative to root directory.
+	DefaultPathFromContext string
 }
 
 // Returns the function with the provided argument
@@ -2991,6 +2993,10 @@ func (r *Function) WithArg(name string, typeDef *TypeDef, opts ...FunctionWithAr
 		// `defaultValue` optional argument
 		if !querybuilder.IsZeroValue(opts[i].DefaultValue) {
 			q = q.Arg("defaultValue", opts[i].DefaultValue)
+		}
+		// `defaultPathFromContext` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DefaultPathFromContext) {
+			q = q.Arg("defaultPathFromContext", opts[i].DefaultPathFromContext)
 		}
 	}
 	q = q.Arg("name", name)
@@ -3017,16 +3023,30 @@ func (r *Function) WithDescription(description string) *Function {
 type FunctionArg struct {
 	query *querybuilder.Selection
 
-	defaultValue *JSON
-	description  *string
-	id           *FunctionArgID
-	name         *string
+	defaultPathFromContext *string
+	defaultValue           *JSON
+	description            *string
+	id                     *FunctionArgID
+	name                   *string
 }
 
 func (r *FunctionArg) WithGraphQLQuery(q *querybuilder.Selection) *FunctionArg {
 	return &FunctionArg{
 		query: q,
 	}
+}
+
+// If the argument is a Directory or File type, default to load path from context directory, relative to root directory.
+func (r *FunctionArg) DefaultPathFromContext(ctx context.Context) (string, error) {
+	if r.defaultPathFromContext != nil {
+		return *r.defaultPathFromContext, nil
+	}
+	q := r.query.Select("defaultPathFromContext")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // A default value to use for this argument when not explicitly set by the caller, if any.

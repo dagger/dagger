@@ -162,6 +162,29 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 			Name:  name,
 			Value: arg.DefaultValue,
 		})
+
+		hasArg[name] = true
+	}
+
+	// Load contextual arguments
+	for _, arg := range fn.metadata.Args {
+		name := arg.OriginalName
+
+		// Skip contextual arguments if already set.
+		if hasArg[name] || arg.DefaultPathFromContext == "" {
+			continue
+		}
+
+		// Load contextual argument value.
+		ctxVal, err := fn.loadContextualArg(ctx, arg)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load contextual arg %q: %w", arg.Name, err)
+		}
+
+		callInputs = append(callInputs, &FunctionCallArgValue{
+			Name:  name,
+			Value: ctxVal,
+		})
 	}
 
 	bklog.G(ctx).Debug("function call")
@@ -346,4 +369,21 @@ func (fn *ModuleFunction) linkDependencyBlobs(ctx context.Context, cacheResult *
 		return fmt.Errorf("failed to add dependency blob: %w", err)
 	}
 	return nil
+}
+
+func (fn *ModuleFunction) loadContextualArg(ctx context.Context, arg *FunctionArg) (JSON, error) {
+	if arg.TypeDef.Kind != TypeDefKindObject {
+		return nil, fmt.Errorf("contextual argument %q must be a Directory or a File", arg.OriginalName)
+	}
+
+	switch arg.TypeDef.AsObject.Value.Name {
+	case "Directory":
+		// Load contextual directory.
+		panic("not implemented")
+	case "File":
+		// Load contextual file.
+		panic("not implemented")
+	default:
+		return nil, fmt.Errorf("unknown contextual argument type %q", arg.TypeDef.AsObject.Value.Name)
+	}
 }

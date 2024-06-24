@@ -68,6 +68,7 @@ class Function_ extends Client\AbstractObject implements Client\IdAble
         TypeDefId|TypeDef $typeDef,
         ?string $description = '',
         ?Json $defaultValue = null,
+        ?string $defaultPathFromContext = '',
     ): Function_
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withArg');
@@ -78,6 +79,9 @@ class Function_ extends Client\AbstractObject implements Client\IdAble
         }
         if (null !== $defaultValue) {
         $innerQueryBuilder->setArgument('defaultValue', $defaultValue);
+        }
+        if (null !== $defaultPathFromContext) {
+        $innerQueryBuilder->setArgument('defaultPathFromContext', $defaultPathFromContext);
         }
         return new \Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

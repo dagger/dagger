@@ -4169,6 +4169,9 @@ pub struct Function {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct FunctionWithArgOpts<'a> {
+    /// If the argument is a Directory or File type, default to load path from context directory, relative to root directory.
+    #[builder(setter(into, strip_option), default)]
+    pub default_path_from_context: Option<&'a str>,
     /// A default value to use for this argument if not explicitly set by the caller, if any
     #[builder(setter(into, strip_option), default)]
     pub default_value: Option<Json>,
@@ -4261,6 +4264,9 @@ impl Function {
         if let Some(default_value) = opts.default_value {
             query = query.arg("defaultValue", default_value);
         }
+        if let Some(default_path_from_context) = opts.default_path_from_context {
+            query = query.arg("defaultPathFromContext", default_path_from_context);
+        }
         Function {
             proc: self.proc.clone(),
             selection: query,
@@ -4289,6 +4295,11 @@ pub struct FunctionArg {
     pub graphql_client: DynGraphQLClient,
 }
 impl FunctionArg {
+    /// If the argument is a Directory or File type, default to load path from context directory, relative to root directory.
+    pub async fn default_path_from_context(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("defaultPathFromContext");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// A default value to use for this argument when not explicitly set by the caller, if any.
     pub async fn default_value(&self) -> Result<Json, DaggerError> {
         let query = self.selection.select("defaultValue");
