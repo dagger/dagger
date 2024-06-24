@@ -199,6 +199,11 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 		"session", sess.sessionID,
 	)
 
+	// check if the local cache needs pruning after session is removed, prune if so
+	defer func() {
+		time.AfterFunc(time.Second, srv.throttledGC)
+	}()
+
 	srv.daggerSessionsMu.Lock()
 	delete(srv.daggerSessions, sess.sessionID)
 	srv.daggerSessionsMu.Unlock()
