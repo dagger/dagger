@@ -574,7 +574,7 @@ func TestModuleInitLICENSE(t *testing.T) {
 		require.NoError(t, err)
 		require.NotContains(t, files, "LICENSE")
 
-		// Check that the parent directory actualy has a LICENSE file.
+		// Check that the parent directory actually has a LICENSE file.
 		files, err = modGen.Directory("/work").Entries(ctx)
 		require.NoError(t, err)
 		require.Contains(t, files, "LICENSE")
