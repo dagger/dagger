@@ -9,9 +9,9 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
-	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
@@ -235,11 +235,15 @@ func (r renderer) renderSpan(
 	fmt.Fprint(out, prefix)
 	r.indent(out, depth)
 
+	style := lipgloss.NewStyle()
 	if span != nil {
 		r.renderStatus(out, span, focused)
-	}
 
-	fmt.Fprint(out, name)
+		if span.EffectID != "" {
+			style = style.Italic(true)
+		}
+	}
+	fmt.Fprint(out, style.Render(name))
 
 	if span != nil {
 		// TODO: when a span has child spans that have progress, do 2-d progress
@@ -297,13 +301,13 @@ func (r renderer) renderStatus(out *termenv.Output, span *Span, focused bool) {
 	var symbol string
 	var color termenv.Color
 	switch {
-	case span.IsRunning:
+	case span.IsRunning():
 		symbol = DotFilled
 		color = termenv.ANSIYellow
 	case span.Canceled:
 		symbol = IconSkipped
 		color = termenv.ANSIBrightBlack
-	case span.Status().Code == codes.Error:
+	case span.Failed():
 		symbol = IconFailure
 		color = termenv.ANSIRed
 	default:
@@ -327,7 +331,7 @@ func (r renderer) renderStatus(out *termenv.Output, span *Span, focused bool) {
 func (r renderer) renderDuration(out *termenv.Output, span *Span) {
 	fmt.Fprint(out, " ")
 	duration := out.String(fmtDuration(span.Duration()))
-	if span.IsRunning {
+	if span.IsRunning() {
 		duration = duration.Foreground(termenv.ANSIYellow)
 	} else {
 		duration = duration.Faint()
@@ -403,13 +407,13 @@ func (opts FrontendOpts) ShouldShow(tree *TraceTree) bool {
 		// show errors
 		return true
 	}
-	if tree.Parent != nil && (opts.TooFastThreshold > 0 && span.Duration() < opts.TooFastThreshold && opts.Verbosity < ShowSpammyVerbosity) {
-		// ignore fast steps; signal:noise is too poor
-		return false
-	}
 	if tree.IsRunningOrChildRunning {
 		// show running steps
 		return true
+	}
+	if tree.Parent != nil && (opts.TooFastThreshold > 0 && span.Duration() < opts.TooFastThreshold && opts.Verbosity < ShowSpammyVerbosity) {
+		// ignore fast steps; signal:noise is too poor
+		return false
 	}
 	if opts.GCThreshold > 0 && time.Since(span.EndTime()) > opts.GCThreshold && opts.Verbosity < ShowCompletedVerbosity {
 		// stop showing steps that ended after a given threshold

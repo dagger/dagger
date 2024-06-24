@@ -22,7 +22,7 @@ type Span struct {
 
 	ID trace.SpanID
 
-	IsRunning bool
+	IsSelfRunning bool
 
 	Digest string
 	Call   *callpbv1.Call
@@ -31,7 +31,12 @@ type Span struct {
 	Internal bool
 	Cached   bool
 	Canceled bool
-	Inputs   []string
+	EffectID string
+
+	Inputs         []string
+	Effects        []string
+	RunningEffects map[string]*Span
+	FailedEffects  map[string]*Span
 
 	Encapsulate  bool
 	Encapsulated bool
@@ -41,6 +46,10 @@ type Span struct {
 
 	db    *DB
 	trace *Trace
+}
+
+func (span *Span) IsRunning() bool {
+	return span.IsSelfRunning || len(span.RunningEffects) > 0
 }
 
 func (span *Span) HasParent(parent *Span) bool {
@@ -68,9 +77,26 @@ func (span *Span) Name() string {
 // 	return nil
 // }
 
+func (span *Span) ChildrenAndEffects() []*Span {
+	var children []*Span
+	children = append(children, span.ChildSpans...)
+	children = append(children, span.EffectSpans()...)
+	return children
+}
+
+func (span *Span) EffectSpans() []*Span {
+	var effects []*Span
+	for _, e := range span.Effects {
+		if s, ok := span.db.Effects[e]; ok {
+			effects = append(effects, s)
+		}
+	}
+	return effects
+}
+
 func (span *Span) Failed() bool {
-	status := span.Status()
-	return status.Code == codes.Error
+	return span.Status().Code == codes.Error ||
+		len(span.FailedEffects) > 0
 }
 
 func (span *Span) Err() error {
@@ -88,7 +114,7 @@ func (span *Span) IsInternal() bool {
 func (span *Span) Duration() time.Duration {
 	inner := span.ReadOnlySpan
 	var dur time.Duration
-	if span.IsRunning {
+	if span.IsRunning() {
 		dur = time.Since(inner.StartTime())
 	} else {
 		dur = inner.EndTime().Sub(inner.StartTime())
@@ -97,7 +123,7 @@ func (span *Span) Duration() time.Duration {
 }
 
 func (span *Span) EndTime() time.Time {
-	if span.IsRunning {
+	if span.IsRunning() {
 		return time.Now()
 	}
 	return span.ReadOnlySpan.EndTime()

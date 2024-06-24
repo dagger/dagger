@@ -15,6 +15,8 @@ import (
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/vektah/gqlparser/v2/ast"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core/pipeline"
@@ -201,6 +203,11 @@ func (svc *Service) Start(
 	}
 }
 
+func (svc *Service) startSpan(ctx context.Context, id *call.ID, name string) (context.Context, trace.Span) {
+	return Tracer().Start(ctx, "start "+name, trace.WithAttributes(
+		attribute.String(telemetry.EffectIDAttr, serviceEffect(id))))
+}
+
 //nolint:gocyclo
 func (svc *Service) startContainer(
 	ctx context.Context,
@@ -263,7 +270,7 @@ func (svc *Service) startContainer(
 		}
 	}()
 
-	ctx, span := Tracer().Start(ctx, "start "+strings.Join(execOp.Meta.Args, " "))
+	ctx, span := svc.startSpan(ctx, id, strings.Join(execOp.Meta.Args, " "))
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
 	defer func() {
 		if rerr != nil {
@@ -592,7 +599,7 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 		})
 	}
 
-	ctx, span := Tracer().Start(ctx, strings.Join(descs, ", "))
+	ctx, span := svc.startSpan(ctx, id, strings.Join(descs, ", "))
 	defer func() {
 		if rerr != nil {
 			// NB: this is intentionally conditional; we only complete if there was

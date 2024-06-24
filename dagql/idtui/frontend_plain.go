@@ -70,8 +70,11 @@ type spanData struct {
 	idx uint
 
 	// if set to true, overrides the heuristic from shouldShow
-	// NOTE: currently doesn't work with deeply nested spans
+	// NOTE: be sure to wake up the parentID, too
 	mustShow bool
+
+	// the parent span ID, if the span has a parent
+	parentID trace.SpanID
 
 	// ready indicates that the span is ready to be displayed - this allows to
 	// start bufferings logs before we've actually exported the span itself
@@ -137,13 +140,14 @@ func (fe *frontendPlain) addVirtualLog(span trace.Span, name string, fields ...s
 		line += " " + fe.output.String(fields[i]+"=").Faint().String() + fields[i+1]
 	}
 
-	spanDt, ok := fe.data[span.SpanContext().SpanID()]
+	spanID := span.SpanContext().SpanID()
+	spanDt, ok := fe.data[spanID]
 	if !ok {
 		spanDt = &spanData{}
 		fe.data[span.SpanContext().SpanID()] = spanDt
 	}
 	spanDt.logs = append(spanDt.logs, logLine{line: line})
-	spanDt.mustShow = true
+	fe.wakeUpSpan(spanID)
 }
 
 func (fe *frontendPlain) Run(ctx context.Context, opts FrontendOpts, run func(context.Context) error) error {
@@ -205,24 +209,36 @@ func (fe plainSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.Re
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
 
-	slog.Debug("frontend exporting", "spans", len(spans))
-	for _, span := range spans {
-		slog.Debug("frontend exporting span",
-			"trace", span.SpanContext().TraceID(),
-			"id", span.SpanContext().SpanID(),
-			"parent", span.Parent().SpanID(),
-			"span", span.Name(),
-		)
-
-		spanDt, ok := fe.data[span.SpanContext().SpanID()]
-		if !ok {
-			spanDt = &spanData{}
-			fe.data[span.SpanContext().SpanID()] = spanDt
-		}
-		spanDt.ready = true
+	if err := fe.db.ExportSpans(ctx, spans); err != nil {
+		return err
 	}
 
-	return fe.db.ExportSpans(ctx, spans)
+	if fe.Debug {
+		spanIDs := make([]string, len(spans))
+		for i, span := range spans {
+			spanIDs[i] = span.SpanContext().SpanID().String()
+		}
+		slog.Debug("frontend exporting spans", "spans", len(spanIDs))
+	}
+
+	for _, span := range spans {
+		spanID := span.SpanContext().SpanID()
+
+		spanDt, ok := fe.data[spanID]
+		if !ok {
+			spanDt = &spanData{}
+			fe.data[spanID] = spanDt
+		}
+
+		// NOTE: assign parent ID unconditionally in case it was initialized at
+		// a time that we didn't have it (i.e. from a log)
+		spanDt.parentID = span.Parent().SpanID()
+
+		fe.maybeWakeUpEffectCause(spanID)
+
+		spanDt.ready = true
+	}
+	return nil
 }
 
 func (fe *frontendPlain) LogExporter() sdklog.Exporter {
@@ -251,6 +267,8 @@ func (fe plainLogExporter) Export(ctx context.Context, logs []sdklog.Record) err
 			spanDt = &spanData{}
 			fe.data[log.SpanID()] = spanDt
 		}
+
+		fe.maybeWakeUpEffectCause(log.SpanID())
 
 		body := log.Body().AsString()
 		if body == "" {
@@ -301,6 +319,23 @@ func (fe plainLogExporter) Export(ctx context.Context, logs []sdklog.Record) err
 
 func (fe *frontendPlain) ForceFlush(context.Context) error {
 	return nil
+}
+
+// if the span is an effect, wake up the effect site (i.e. withExec)
+func (fe *frontendPlain) maybeWakeUpEffectCause(spanID trace.SpanID) {
+	dbSpan := fe.db.Spans[spanID]
+	if dbSpan != nil && dbSpan.EffectID != "" {
+		if cause := fe.db.EffectSite[dbSpan.EffectID]; cause != nil {
+			fe.wakeUpSpan(cause.ID)
+		}
+	}
+}
+
+// wake up all spans up to the root span
+func (fe *frontendPlain) wakeUpSpan(spanID trace.SpanID) {
+	for sleeper := fe.data[spanID]; sleeper != nil; sleeper = fe.data[sleeper.parentID] {
+		sleeper.mustShow = true
+	}
 }
 
 func (fe *frontendPlain) render() {

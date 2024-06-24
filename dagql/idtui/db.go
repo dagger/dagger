@@ -30,6 +30,9 @@ type DB struct {
 	Outputs   map[string]map[string]struct{}
 	OutputOf  map[string]map[string]struct{}
 	Intervals map[string]map[time.Time]*Span
+
+	Effects    map[string]*Span
+	EffectSite map[string]*Span
 }
 
 func NewDB() *DB {
@@ -42,10 +45,12 @@ func NewDB() *DB {
 		Children:      make(map[trace.SpanID]map[trace.SpanID]struct{}),
 		ChildrenOrder: make(map[trace.SpanID][]trace.SpanID),
 
-		Calls:     make(map[string]*callpbv1.Call),
-		OutputOf:  make(map[string]map[string]struct{}),
-		Outputs:   make(map[string]map[string]struct{}),
-		Intervals: make(map[string]map[time.Time]*Span),
+		Calls:      make(map[string]*callpbv1.Call),
+		OutputOf:   make(map[string]map[string]struct{}),
+		Outputs:    make(map[string]map[string]struct{}),
+		Intervals:  make(map[string]map[time.Time]*Span),
+		Effects:    make(map[string]*Span),
+		EffectSite: make(map[string]*Span),
 	}
 }
 
@@ -147,6 +152,9 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) { //
 		spanData = &Span{
 			ID: spanID,
 
+			FailedEffects:  map[string]*Span{},
+			RunningEffects: map[string]*Span{},
+
 			db:    db,
 			trace: traceData,
 		}
@@ -168,7 +176,7 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) { //
 	}
 
 	spanData.ReadOnlySpan = span
-	spanData.IsRunning = span.EndTime().Before(span.StartTime())
+	spanData.IsSelfRunning = span.EndTime().Before(span.StartTime())
 
 	slog.Debug("recording span", "span", span.Name(), "id", spanID)
 
@@ -260,6 +268,14 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) { //
 		case telemetry.DagInputsAttr:
 			spanData.Inputs = attr.Value.AsStringSlice()
 
+		case telemetry.EffectIDsAttr:
+			spanData.Effects = attr.Value.AsStringSlice()
+			for _, digest := range spanData.Effects {
+				if db.EffectSite[digest] == nil {
+					db.EffectSite[digest] = spanData
+				}
+			}
+
 		case telemetry.DagOutputAttr:
 			output := attr.Value.AsString()
 			if digest == "" {
@@ -280,7 +296,26 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) { //
 				db.OutputOf[output][digest] = struct{}{}
 			}
 
+		case telemetry.EffectIDAttr:
+			spanData.EffectID = attr.Value.AsString()
+			db.Effects[spanData.EffectID] = spanData
+			if dependentSpan := db.EffectSite[spanData.EffectID]; dependentSpan != nil {
+				if spanData.IsRunning() {
+					dependentSpan.RunningEffects[spanData.EffectID] = spanData
+				} else {
+					delete(dependentSpan.RunningEffects, spanData.EffectID)
+				}
+				if spanData.Failed() {
+					dependentSpan.FailedEffects[spanData.EffectID] = spanData
+				}
+			}
+
 		case "rpc.service":
+			// TODO: rather than special-casing this, we should just switch
+			// the telemetry pipeline over to HTTP.
+			// I tried adding attributes like 'internal' to the spans we care about
+			// but the OTel API is broken and stuck in bikeshedding:
+			// https://github.com/open-telemetry/opentelemetry-go-contrib/pull/5431#pullrequestreview-2024891968
 			spanData.Passthrough = true
 		}
 	}
@@ -310,7 +345,7 @@ func (db *DB) MostInterestingSpan(dig string) *Span {
 	for _, span := range db.Intervals[dig] {
 		// a running vertex is always most interesting, and these are already in
 		// order
-		if span.IsRunning {
+		if span.IsRunning() {
 			return span
 		}
 		switch {

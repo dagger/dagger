@@ -117,14 +117,16 @@ func (q *Query) NewModule() *Module {
 	}
 }
 
-func (q *Query) NewContainerService(ctr *Container) *Service {
+func (q *Query) NewContainerService(ctx context.Context, ctr *Container) *Service {
+	connectServiceEffect(ctx)
 	return &Service{
 		Query:     q,
 		Container: ctr,
 	}
 }
 
-func (q *Query) NewTunnelService(upstream dagql.Instance[*Service], ports []PortForward) *Service {
+func (q *Query) NewTunnelService(ctx context.Context, upstream dagql.Instance[*Service], ports []PortForward) *Service {
+	connectServiceEffect(ctx)
 	return &Service{
 		Query:          q,
 		TunnelUpstream: &upstream,
@@ -132,7 +134,8 @@ func (q *Query) NewTunnelService(upstream dagql.Instance[*Service], ports []Port
 	}
 }
 
-func (q *Query) NewHostService(upstream string, ports []PortForward, sessionID string) *Service {
+func (q *Query) NewHostService(ctx context.Context, upstream string, ports []PortForward, sessionID string) *Service {
+	connectServiceEffect(ctx)
 	return &Service{
 		Query:         q,
 		HostUpstream:  upstream,
