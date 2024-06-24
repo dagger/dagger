@@ -35,6 +35,9 @@ var (
 	moduleURL   string
 	moduleFlags = pflag.NewFlagSet("module", pflag.ContinueOnError)
 
+	loadCoreFuncs bool
+	functionFlags = pflag.NewFlagSet("functions", pflag.ContinueOnError)
+
 	sdk       string
 	licenseID string
 
@@ -58,9 +61,16 @@ const (
 func init() {
 	moduleFlags.StringVarP(&moduleURL, "mod", "m", "", "Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. \"/path/to/some/dir\") or a github repo (e.g. \"github.com/dagger/dagger/path/to/some/subdir\")")
 
+	functionFlags.BoolVarP(&loadCoreFuncs, "core", "c", false, "Load core functions instead of a module (mutually exclusive with -m)")
+
+	for _, c := range funcCmds.All() {
+		c.PersistentFlags().AddFlagSet(moduleFlags)
+		c.PersistentFlags().AddFlagSet(functionFlags)
+		c.MarkFlagsMutuallyExclusive("core", "mod")
+	}
+
 	listenCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	queryCmd.PersistentFlags().AddFlagSet(moduleFlags)
-	funcCmds.AddFlagSet(moduleFlags)
 	configCmd.PersistentFlags().AddFlagSet(moduleFlags)
 
 	moduleInitCmd.Flags().StringVar(&sdk, "sdk", "", "Optionally initialize module for development in the given SDK")
