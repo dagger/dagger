@@ -4,6 +4,8 @@ package main
 
 import (
 	"context"
+	"path/filepath"
+	"strings"
 
 	"github.com/dagger/dagger/ci/internal/dagger"
 )
@@ -45,7 +47,7 @@ func (ci *Dagger) Check(ctx context.Context) error {
 	if err := ci.Docs().Lint(ctx); err != nil {
 		return err
 	}
-	if err := ci.Engine().Lint(ctx, false); err != nil {
+	if err := ci.Engine().Lint(ctx); err != nil {
 		return err
 	}
 	if err := ci.Test().All(
@@ -66,6 +68,36 @@ func (ci *Dagger) Check(ctx context.Context) error {
 	}
 	// FIXME: port all other function calls from Github Actions YAML
 	return nil
+}
+
+// Generate all source files, across all dagger modules in the source
+func (ci *Dagger) Generate(ctx context.Context) (*Directory, error) {
+	// Find all dagger modules in the source
+	src := ci.Source
+	daggerJSONs, err := src.Glob(ctx, "**/dagger.json")
+	if err != nil {
+		return nil, err
+	}
+	// FIXME: parallelize
+	for _, daggerJSON := range daggerJSONs {
+		// Skip test data, which contains test modules
+		if strings.HasPrefix(daggerJSON, "core/integration/testdata") {
+			continue
+		}
+		modPath := filepath.Dir(daggerJSON)
+		mod := src.AsModule(DirectoryAsModuleOpts{SourceRootPath: modPath})
+		src = src.WithDirectory("/", mod.GeneratedContextDirectory())
+	}
+	return src, nil
+}
+
+func isSubPath(basePath, checkPath string) bool {
+	basePath = filepath.Clean(basePath)
+	checkPath = filepath.Clean(checkPath)
+	if basePath != "/" {
+		basePath = basePath + string(filepath.Separator)
+	}
+	return strings.HasPrefix(checkPath, basePath)
 }
 
 // Develop the Dagger CLI
@@ -99,18 +131,6 @@ func (gtc *GoToolchain) WithCodegen(subdirs []string) *GoToolchain {
 
 func (gtc *GoToolchain) Env() *Container {
 	return gtc.Go.Env()
-}
-
-func (gtc *GoToolchain) Lint(
-	ctx context.Context,
-	packages []string,
-	// +optional
-	all bool,
-) error {
-	_, err := gtc.Go.Lint(ctx, packages, dagger.GoLintOpts{
-		All: all,
-	})
-	return err
 }
 
 // Develop the Dagger engine container

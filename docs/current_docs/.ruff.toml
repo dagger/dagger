@@ -2,7 +2,7 @@
 # and very doc specific rules in the SDK's pyproject.toml.
 extend = "../../sdk/python/pyproject.toml"
 
-ignore = [
+lint.ignore = [
     "D1",    # docstrings
     "E501",  # line too long
     "S108",  # probable insecure usage of temporary file or directory
