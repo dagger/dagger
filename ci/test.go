@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
-	"runtime"
 
 	"github.com/moby/buildkit/identity"
 
@@ -88,24 +87,19 @@ func (t *Test) test(
 ) error {
 	cgoEnabledEnv := "0"
 	args := []string{
-		"gotestsum",
-		"--format", "testname",
-		"--no-color=false",
-		"--jsonfile=./tests.log",
-	}
-
-	if failfast {
-		args = append(args, "--max-fails=1")
+		"go",
+		"test",
 	}
 
 	// All following are go test flags
-	args = append(args, "--")
-
-	// Default parallel to number of CPUs
-	if parallel == 0 {
-		parallel = runtime.NumCPU()
+	if failfast {
+		args = append(args, "-failfast")
 	}
-	args = append(args, fmt.Sprintf("-parallel=%d", parallel))
+
+	// Go will default parallel to number of CPUs, so only pass if set
+	if parallel != 0 {
+		args = append(args, fmt.Sprintf("-parallel=%d", parallel))
+	}
 
 	// Default timeout to 30m
 	// No test suite should take more than 30 minutes to run
@@ -119,7 +113,7 @@ func (t *Test) test(
 		cgoEnabledEnv = "1"
 	}
 
-	// Disable test caching
+	// Disable test caching, since these are integration tests
 	args = append(args, fmt.Sprintf("-count=%d", count))
 
 	if testRegex != "" {
@@ -136,7 +130,6 @@ func (t *Test) test(
 	_, err = cmd.
 		WithEnvVariable("CGO_ENABLED", cgoEnabledEnv).
 		WithExec(args).
-		WithExec([]string{"gotestsum", "tool", "slowest", "--jsonfile=./tests.log", "--threshold=1s"}).
 		Sync(ctx)
 	return err
 }
@@ -192,7 +185,6 @@ func (t *Test) testCmd(ctx context.Context) (*Container, error) {
 
 	utilDirPath := "/dagger-dev"
 	tests := t.Dagger.Go().Env().
-		WithExec([]string{"go", "install", "gotest.tools/gotestsum@v1.10.0"}).
 		WithMountedDirectory(utilDirPath, testEngineUtils).
 		WithEnvVariable("_DAGGER_TESTS_ENGINE_TAR", filepath.Join(utilDirPath, "engine.tar")).
 		WithServiceBinding("dagger-engine", devEngineSvc).
