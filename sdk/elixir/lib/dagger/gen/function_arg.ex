@@ -14,6 +14,15 @@ defmodule Dagger.FunctionArg do
 
   @type t() :: %__MODULE__{}
 
+  @doc "Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory"
+  @spec default_path(t()) :: {:ok, String.t()} | {:error, term()}
+  def default_path(%__MODULE__{} = function_arg) do
+    selection =
+      function_arg.selection |> select("defaultPath")
+
+    execute(selection, function_arg.client)
+  end
+
   @doc "A default value to use for this argument when not explicitly set by the caller, if any."
   @spec default_value(t()) :: {:ok, Dagger.JSON.t()} | {:error, term()}
   def default_value(%__MODULE__{} = function_arg) do
@@ -37,6 +46,15 @@ defmodule Dagger.FunctionArg do
   def id(%__MODULE__{} = function_arg) do
     selection =
       function_arg.selection |> select("id")
+
+    execute(selection, function_arg.client)
+  end
+
+  @doc "Only applies to arguments of type Directory. The ignore patterns are applied to the input directory, and matching entries are filtered out, in a cache-efficient manner."
+  @spec ignore(t()) :: {:ok, [String.t()]} | {:error, term()}
+  def ignore(%__MODULE__{} = function_arg) do
+    selection =
+      function_arg.selection |> select("ignore")
 
     execute(selection, function_arg.client)
   end

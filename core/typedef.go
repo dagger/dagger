@@ -112,7 +112,7 @@ func (fn *Function) WithDescription(desc string) *Function {
 	return fn
 }
 
-func (fn *Function) WithArg(name string, typeDef *TypeDef, desc string, defaultValue JSON) *Function {
+func (fn *Function) WithArg(name string, typeDef *TypeDef, desc string, defaultValue JSON, defaultPath string, ignore []string) *Function {
 	fn = fn.Clone()
 	fn.Args = append(fn.Args, &FunctionArg{
 		Name:         strcase.ToLowerCamel(name),
@@ -120,6 +120,8 @@ func (fn *Function) WithArg(name string, typeDef *TypeDef, desc string, defaultV
 		TypeDef:      typeDef,
 		DefaultValue: defaultValue,
 		OriginalName: name,
+		DefaultPath:  defaultPath,
+		Ignore:       ignore,
 	})
 	return fn
 }
@@ -183,6 +185,8 @@ type FunctionArg struct {
 	Description  string   `field:"true" doc:"A doc string for the argument, if any."`
 	TypeDef      *TypeDef `field:"true" doc:"The type of the argument."`
 	DefaultValue JSON     `field:"true" doc:"A default value to use for this argument when not explicitly set by the caller, if any."`
+	DefaultPath  string   `field:"true" doc:"Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory"`
+	Ignore       []string `field:"true" doc:"Only applies to arguments of type Directory. The ignore patterns are applied to the input directory, and matching entries are filtered out, in a cache-efficient manner."`
 
 	// Below are not in public API
 

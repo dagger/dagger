@@ -119,6 +119,13 @@ function addArg(args: Arguments): (fct: Function_) => Function_ {
         typeDef = typeDef.withOptional(true)
       }
 
+      // Check if both values are used, return an error if so.
+      if (arg.defaultValue && arg.defaultPath) {
+        throw new Error(
+          "cannot set both default value and default path from context",
+        )
+      }
+
       // We do not set the default value if it's not a primitive type, we let TypeScript
       // resolve the default value during the runtime instead.
       // If it has a default value but is not primitive, we set the value as optional
@@ -130,6 +137,16 @@ function addArg(args: Arguments): (fct: Function_) => Function_ {
         } else {
           typeDef = typeDef.withOptional(true)
         }
+      }
+
+      // If the argument is a contextual argument, it becomes optional.
+      if (arg.defaultPath) {
+        opts.defaultPath = arg.defaultPath
+        typeDef = typeDef.withOptional(true)
+      }
+
+      if (arg.ignore) {
+        opts.ignore = arg.ignore
       }
 
       fct = fct.withArg(arg.name, typeDef, opts)
