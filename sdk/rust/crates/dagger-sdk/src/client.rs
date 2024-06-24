@@ -36,8 +36,20 @@ pub async fn connect_opts(cfg: Config) -> Result<DaggerConn, ConnectError> {
 mod test {
     use super::connect;
 
+    //#[tokio::test(flavor = "multi_thread")]
     #[tokio::test]
-    async fn test_connect() {
-        let _ = connect().await.unwrap();
+    async fn test_connect() -> eyre::Result<()> {
+        tracing_subscriber::fmt::init();
+
+        let something = connect().await?;
+
+        something
+            .container()
+            .from("alpine:latest")
+            .with_exec(vec!["echo", "1"])
+            .sync()
+            .await?;
+
+        Ok(())
     }
 }

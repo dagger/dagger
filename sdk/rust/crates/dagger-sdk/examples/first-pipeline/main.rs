@@ -1,5 +1,7 @@
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
+    tracing_subscriber::fmt::init();
+
     let client = dagger_sdk::connect().await?;
 
     let version = client
