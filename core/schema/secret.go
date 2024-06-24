@@ -51,7 +51,7 @@ func (s *secretSchema) secret(ctx context.Context, parent *core.Query, args secr
 	accessor := string(args.Accessor.GetOr(""))
 	if accessor == "" {
 		var err error
-		accessor, err = core.GetLocalSecretAccessor(ctx, parent, args.Name)
+		accessor, err = core.GetClientResourceName(ctx, parent, args.Name)
 		if err != nil {
 			return nil, err
 		}
@@ -66,7 +66,7 @@ type setSecretArgs struct {
 }
 
 func (s *secretSchema) setSecret(ctx context.Context, parent *core.Query, args setSecretArgs) (i dagql.Instance[*core.Secret], err error) {
-	accessor, err := core.GetLocalSecretAccessor(ctx, parent, args.Name)
+	accessor, err := core.GetClientResourceName(ctx, parent, args.Name)
 	if err != nil {
 		return i, err
 	}

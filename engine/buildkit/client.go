@@ -25,7 +25,6 @@ import (
 	"github.com/moby/buildkit/util/entitlements"
 	bkworker "github.com/moby/buildkit/worker"
 	"github.com/opencontainers/go-digest"
-	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/metadata"
 
@@ -65,8 +64,6 @@ type Opts struct {
 	RefsMu       *sync.Mutex
 	Containers   map[bkgw.Container]struct{}
 	ContainersMu *sync.Mutex
-
-	SpanCtx trace.SpanContext
 }
 
 type ResolveCacheExporterFunc func(ctx context.Context, g bksession.Group) (remotecache.Exporter, error)

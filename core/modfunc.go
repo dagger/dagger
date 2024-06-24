@@ -283,6 +283,9 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 			if err := fn.root.AddSecretsFromID(ctx, id, execMD.ClientID, false); err != nil {
 				return nil, fmt.Errorf("failed to add secrets from ID: %w", err)
 			}
+			if err := fn.root.AddSocketsFromID(ctx, id, execMD.ClientID, false); err != nil {
+				return nil, fmt.Errorf("failed to add sockets from ID: %w", err)
+			}
 		}
 	}
 

@@ -404,7 +404,7 @@ func (container *Container) Build(
 	// FIXME: ew, this is a terrible way to pass this around
 	//nolint:staticcheck
 	solveCtx := context.WithValue(ctx, "secret-translator", func(name string) (string, error) {
-		return GetLocalSecretAccessor(ctx, container.Query, name)
+		return GetClientResourceName(ctx, container.Query, name)
 	})
 
 	res, err := bk.Solve(solveCtx, bkgw.SolveRequest{

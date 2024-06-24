@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"fmt"
 	"io/fs"
 
 	"github.com/dagger/dagger/core"
@@ -285,7 +286,10 @@ func (s *directorySchema) export(ctx context.Context, parent *core.Directory, ar
 	if err != nil {
 		return "", err
 	}
-	bk := parent.Query.Buildkit
+	bk, err := parent.Query.Buildkit(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get buildkit client: %w", err)
+	}
 	stat, err := bk.StatCallerHostPath(ctx, args.Path, true)
 	if err != nil {
 		return "", err

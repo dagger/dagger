@@ -32,7 +32,7 @@ func (srv *Server) newBuildkitSession(ctx context.Context, c *daggerClient) (*bk
 	}
 
 	sess.Allow(secretsprovider.NewSecretProvider(c.secretStore))
-	sess.Allow(&socketProxy{c, srv.bkSessionManager})
+	sess.Allow(c.socketStore)
 	sess.Allow(&authProxy{c, srv.bkSessionManager})
 	sess.Allow(sessioncontent.NewAttachable(map[string]content.Store{
 		// the "oci:" prefix is actually interpreted by buildkit, not just for show

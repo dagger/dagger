@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/moby/buildkit/session/sshforward"
@@ -19,13 +20,14 @@ type c2hTunnel struct {
 	upstreamHost       string
 	tunnelServiceHost  string
 	tunnelServicePorts []PortForward
-	sessionID          string
+	buildkitSessionID  string
 }
 
 func (d *c2hTunnel) Tunnel(ctx context.Context) (rerr error) {
-	hostCaller, err := d.bk.SessionManager.Get(ctx, d.sessionID, true)
+	// TODO: have this use the new plumbing, shouldn't be getting caller directly
+	hostCaller, err := d.bk.SessionManager.Get(ctx, d.buildkitSessionID, true)
 	if err != nil {
-		return fmt.Errorf("failed to get buildkit session caller %s: %w", d.sessionID, err)
+		return fmt.Errorf("failed to get buildkit session caller %s: %w", d.buildkitSessionID, err)
 	}
 
 	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
@@ -41,7 +43,7 @@ func (d *c2hTunnel) Tunnel(ctx context.Context) (rerr error) {
 			upstreamSock := NewHostIPSocket(
 				port.Protocol.Network(),
 				fmt.Sprintf("%s:%d", d.upstreamHost, port.Backend),
-				d.sessionID,
+				d.buildkitSessionID,
 			)
 
 			frontend := port.FrontendOrBackendPort()
@@ -81,14 +83,11 @@ func (d *c2hTunnel) Tunnel(ctx context.Context) (rerr error) {
 
 				connSlog.Debug("handling connection")
 
-				upstreamClient, err := sshforward.NewSSHClient(hostCaller.Conn()).ForwardAgent(
-					metadata.NewOutgoingContext(ctx, map[string][]string{
-						sshforward.KeySSHID: {upstreamSock.SSHID()},
-					}),
-				)
+				ctx = metadata.AppendToOutgoingContext(ctx, engine.SocketURLEncodedKey, upstreamSock.URLEncoded())
+				upstreamClient, err := sshforward.NewSSHClient(hostCaller.Conn()).ForwardAgent(ctx)
 				if err != nil {
-					connSlog.Error("failed to create upstream client", "id", upstreamSock.SSHID(), "error", err)
-					return fmt.Errorf("failed to create upstream client %s: %w", upstreamSock.SSHID(), err)
+					connSlog.Error("failed to create upstream client", "id", upstreamSock.URLEncoded(), "error", err)
+					return fmt.Errorf("failed to create upstream client %s: %w", upstreamSock.URLEncoded(), err)
 				}
 
 				proxyConnPool.Go(func(ctx context.Context) error {

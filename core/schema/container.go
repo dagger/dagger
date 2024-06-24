@@ -1221,7 +1221,10 @@ func (s *containerSchema) export(ctx context.Context, parent *core.Container, ar
 	if err != nil {
 		return "", err
 	}
-	bk := parent.Query.Buildkit
+	bk, err := parent.Query.Buildkit(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get buildkit: %w", err)
+	}
 	stat, err := bk.StatCallerHostPath(ctx, args.Path, true)
 	if err != nil {
 		return "", err

@@ -57,6 +57,21 @@ type Server interface {
 	// The secret store for the current client
 	Secrets(context.Context) (*SecretStore, error)
 
+	// TODO: doc
+	// TODO: doc
+	// TODO: doc
+	// TODO: doc
+	AddSecretsFromID(ctx context.Context, id *call.ID, sourceClientID string, skipTopLevel bool) error
+
+	// The socket store for the current client
+	Sockets(context.Context) (*SocketStore, error)
+
+	// TODO: doc
+	// TODO: doc
+	// TODO: doc
+	// TODO: doc
+	AddSocketsFromID(ctx context.Context, id *call.ID, sourceClientID string, skipTopLevel bool) error
+
 	// The auth provider for the current client
 	Auth(context.Context) (*auth.RegistryAuthProvider, error)
 
@@ -65,12 +80,6 @@ type Server interface {
 
 	// The services for the current client's session
 	Services(context.Context) (*Services, error)
-
-	// TODO: doc
-	// TODO: doc
-	// TODO: doc
-	// TODO: doc
-	AddSecretsFromID(ctx context.Context, id *call.ID, sourceClientID string, skipTopLevel bool) error
 
 	// The default platform for the engine as a whole
 	Platform() Platform
@@ -154,13 +163,13 @@ func (q *Query) NewTunnelService(ctx context.Context, upstream dagql.Instance[*S
 	}
 }
 
-func (q *Query) NewHostService(ctx context.Context, upstream string, ports []PortForward, sessionID string) *Service {
+func (q *Query) NewHostService(ctx context.Context, upstream string, ports []PortForward, buildkitSessionID string) *Service {
 	connectServiceEffect(ctx)
 	return &Service{
-		Query:         q,
-		HostUpstream:  upstream,
-		HostPorts:     ports,
-		HostSessionID: sessionID,
+		Query:                 q,
+		HostUpstream:          upstream,
+		HostPorts:             ports,
+		HostBuildkitSessionID: buildkitSessionID,
 	}
 }
 

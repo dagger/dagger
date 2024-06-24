@@ -140,7 +140,11 @@ func (s *hostSchema) Install() {
 
 		dagql.Func("unixSocket", s.socket).
 			Doc(`Accesses a Unix socket on the host.`).
+			Impure("Value depends on the caller as it points to their host.").
 			ArgDoc("path", `Location of the Unix socket (e.g., "/var/run/docker.sock").`),
+
+		dagql.Func("__internalUnixSocket", s.internalSocket).
+			Doc(`(Internal-only) Accesses a Unix socket on the host with the given internal client resource name.`),
 
 		dagql.Func("tunnel", s.tunnel).
 			Doc(`Creates a tunnel that forwards traffic from the host to a service.`).
@@ -207,7 +211,40 @@ type hostSocketArgs struct {
 	Path string
 }
 
-func (s *hostSchema) socket(ctx context.Context, host *core.Host, args hostSocketArgs) (*core.Socket, error) {
+func (s *hostSchema) socket(ctx context.Context, host *core.Host, args hostSocketArgs) (inst dagql.Instance[*core.Socket], err error) {
+	name, err := core.GetClientResourceName(ctx, host.Query, args.Path)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get client resource name: %w", err)
+	}
+	if err := s.srv.Select(ctx, s.srv.Root(), &inst,
+		dagql.Selector{
+			Field: "host",
+		},
+		dagql.Selector{
+			Field: "__internalUnixSocket",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.NewString(args.Path),
+				},
+				{
+					Name:  "name",
+					Value: dagql.NewString(name),
+				},
+			},
+		},
+	); err != nil {
+		return inst, err
+	}
+	return inst, nil
+}
+
+type hostInternalSocketArgs struct {
+	Path string
+	Name string
+}
+
+func (s *hostSchema) internalSocket(ctx context.Context, host *core.Host, args hostInternalSocketArgs) (*core.Socket, error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get client metadata: %w", err)
@@ -217,10 +254,20 @@ func (s *hostSchema) socket(ctx context.Context, host *core.Host, args hostSocke
 		return nil, fmt.Errorf("failed to get main client caller ID: %w", err)
 	}
 	if clientMetadata.ClientID != mainClientCallerID {
-		return nil, fmt.Errorf("only the main client can access the host's unix sockets")
+		return nil, fmt.Errorf("only the main client can provide unix sockets")
 	}
 
-	return host.Socket(args.Path), nil
+	sock := host.Socket(args.Name, args.Path, clientMetadata.ClientID)
+
+	socketStore, err := host.Query.Sockets(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get socket store: %w", err)
+	}
+	if err := socketStore.AddSocket(args.Name, sock); err != nil {
+		return nil, fmt.Errorf("failed to add socket: %w", err)
+	}
+
+	return sock, nil
 }
 
 type hostFileArgs struct {

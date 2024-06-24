@@ -378,6 +378,10 @@ func (enum *CoreModEnum) ConvertToSDKInput(ctx context.Context, value dagql.Type
 	return s.DecodeInput(value)
 }
 
+func (obj *CoreModEnum) CollectIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*call.ID) error {
+	return nil
+}
+
 func (enum *CoreModEnum) SourceMod() core.Mod {
 	return enum.coreMod
 }

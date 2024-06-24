@@ -46,8 +46,8 @@ type Service struct {
 	HostUpstream string `json:"reverse_tunnel_upstream_addr,omitempty"`
 	// HostPorts configures the port forwarding rules for the host.
 	HostPorts []PortForward `json:"host_ports,omitempty"`
-	// HostSessionID is the session ID of the host (could differ from main client in the case of nested execs).
-	HostSessionID string `json:"host_session_id,omitempty"`
+	// HostBuildkitSessionID is the buildkit session ID of the host (could differ from main client in the case of nested execs).
+	HostBuildkitSessionID string `json:"host_buildkit_session_id,omitempty"`
 }
 
 func (*Service) Type() *ast.Type {
@@ -222,15 +222,20 @@ func (svc *Service) Start(
 	}
 }
 
-func (svc *Service) startSpan(ctx context.Context, id *call.ID, name string) (context.Context, trace.Span) {
-	return Tracer().Start(ctx, "start "+name, trace.WithAttributes(
+func (svc *Service) startSpan(ctx context.Context, id *call.ID, name string) (context.Context, trace.Span, error) {
+	mainClientCallerID, err := svc.Query.MainClientCallerID(ctx)
+	if err != nil {
+		return ctx, nil, fmt.Errorf("failed to get main client caller ID: %w", err)
+	}
+	ctx, span := Tracer().Start(ctx, "start "+name, trace.WithAttributes(
 		// assign service spans to the _main_ client caller, since their lifespan is tied
 		// to the session level, independent of which client happened to start it.
 		//
 		// otherwise, this span gets associated to whichever client happened to start it.
 		// when that client goes away, we don't want to reap this span.
-		attribute.String(telemetry.ClientIDAttr, svc.Query.MainClientCallerID),
+		attribute.String(telemetry.ClientIDAttr, mainClientCallerID),
 		attribute.String(telemetry.EffectIDAttr, serviceEffect(id))))
+	return ctx, span, nil
 }
 
 //nolint:gocyclo
@@ -299,7 +304,10 @@ func (svc *Service) startContainer(
 		}
 	}()
 
-	ctx, span := svc.startSpan(ctx, id, strings.Join(execOp.Meta.Args, " "))
+	ctx, span, err := svc.startSpan(ctx, id, strings.Join(execOp.Meta.Args, " "))
+	if err != nil {
+		return nil, fmt.Errorf("start span: %w", err)
+	}
 	defer func() {
 		if rerr != nil {
 			// NB: this is intentionally conditional; we only complete if there was
@@ -632,7 +640,10 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 		})
 	}
 
-	ctx, span := svc.startSpan(ctx, id, strings.Join(descs, ", "))
+	ctx, span, err := svc.startSpan(ctx, id, strings.Join(descs, ", "))
+	if err != nil {
+		return nil, fmt.Errorf("start span: %w", err)
+	}
 	defer func() {
 		if rerr != nil {
 			// NB: this is intentionally conditional; we only complete if there was
@@ -647,7 +658,7 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 		upstreamHost:       svc.HostUpstream,
 		tunnelServiceHost:  fullHost,
 		tunnelServicePorts: svc.HostPorts,
-		sessionID:          svc.HostSessionID,
+		buildkitSessionID:  svc.HostBuildkitSessionID,
 	}
 
 	// NB: decouple from the incoming ctx cancel and add our own

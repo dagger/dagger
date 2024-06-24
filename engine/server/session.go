@@ -102,6 +102,7 @@ type daggerClient struct {
 	activeCount int
 
 	secretStore *core.SecretStore
+	socketStore *core.SocketStore
 
 	dagqlRoot *core.Query
 
@@ -303,14 +304,25 @@ func (srv *Server) initializeDaggerClient(
 	failureCleanups *buildkit.Cleanups,
 	opts *ClientInitOpts,
 ) error {
-	// initialize all the buildkit state for the client
+	// TODO: I think this is wrong
+	// TODO: I think this is wrong
+	// TODO: I think this is wrong
+	// TODO: I think this is wrong
+	// TODO: I think this is wrong
+	client.spanCtx = trace.SpanContextFromContext(ctx)
+
+	// initialize all the buildkit+session attachable state for the client
 	client.secretStore = core.NewSecretStore()
+	client.socketStore = core.NewSocketStore(srv.bkSessionManager, client.spanCtx)
 	if opts.CallID != nil {
 		if opts.CallerClientID == "" {
 			return fmt.Errorf("caller client ID is not set")
 		}
 		if err := srv.addSecretsFromID(ctx, client, opts.CallID, opts.CallerClientID, true); err != nil {
 			return fmt.Errorf("failed to add secrets from ID: %w", err)
+		}
+		if err := srv.addSocketsFromID(ctx, client, opts.CallID, opts.CallerClientID, true); err != nil {
+			return fmt.Errorf("failed to add sockets from ID: %w", err)
 		}
 	}
 
@@ -409,8 +421,6 @@ func (srv *Server) initializeDaggerClient(
 		RefsMu:       &client.daggerSession.refsMu,
 		Containers:   client.daggerSession.containers,
 		ContainersMu: &client.daggerSession.containersMu,
-
-		SpanCtx: client.spanCtx,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create buildkit client: %w", err)
@@ -975,6 +985,15 @@ func (srv *Server) Secrets(ctx context.Context) (*core.SecretStore, error) {
 		return nil, err
 	}
 	return client.secretStore, nil
+}
+
+// The socket store for the current client
+func (srv *Server) Sockets(ctx context.Context) (*core.SocketStore, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return client.socketStore, nil
 }
 
 // The auth provider for the current client

@@ -28,6 +28,9 @@ const (
 	localDirImportIncludePatternsMetaKey = "include-patterns"
 	localDirImportExcludePatternsMetaKey = "exclude-patterns"
 	localDirImportFollowPathsMetaKey     = "followpaths"
+
+	// socket session attachable keys
+	SocketURLEncodedKey = "X-Dagger-Socket-URLEncoded"
 )
 
 type ClientMetadata struct {

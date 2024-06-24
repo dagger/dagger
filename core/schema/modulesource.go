@@ -46,7 +46,7 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 	switch src.Kind {
 	case core.ModuleSourceKindLocal:
 		if filepath.IsAbs(parsed.modPath) {
-			cwdStat, err := query.Buildkit.StatCallerHostPath(ctx, ".", true)
+			cwdStat, err := bk.StatCallerHostPath(ctx, ".", true)
 			if err != nil {
 				return nil, fmt.Errorf("failed to stat caller's current working directory: %w", err)
 			}

@@ -203,7 +203,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		}
 
 		socketOpts := []llb.SSHOption{
-			llb.SSHID(ctrSocket.Source.SSHID()),
+			llb.SSHID(ctrSocket.Source.LLBID()),
 			llb.SSHSocketTarget(ctrSocket.ContainerPath),
 		}
 

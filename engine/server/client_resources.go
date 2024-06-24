@@ -46,3 +46,41 @@ func (srv *Server) addSecretsFromID(ctx context.Context, destClient *daggerClien
 
 	return nil
 }
+
+// TODO: dedupe with above with generics or callback?
+func (srv *Server) AddSocketsFromID(ctx context.Context, id *call.ID, sourceClientID string, skipTopLevel bool) error {
+	destClient, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get client from context: %w", err)
+	}
+
+	return srv.addSocketsFromID(ctx, destClient, id, sourceClientID, skipTopLevel)
+}
+
+func (srv *Server) addSocketsFromID(ctx context.Context, destClient *daggerClient, id *call.ID, sourceClientID string, skipTopLevel bool) error {
+	srcClient, err := srv.clientFromIDs(destClient.daggerSession.sessionID, sourceClientID)
+	if err != nil {
+		return fmt.Errorf("failed to get source client: %w", err)
+	}
+
+	srcDag, err := srcClient.deps.Schema(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get source schema: %w", err)
+	}
+	sockets, err := dagql.ReferencedTypes[*core.Socket](ctx, id, srcDag, skipTopLevel)
+	if err != nil {
+		return fmt.Errorf("failed to get referenced types: %w", err)
+	}
+
+	for _, socket := range sockets {
+		srcSocketVal, err := srcClient.socketStore.GetSocket(socket.Name)
+		if err != nil {
+			return fmt.Errorf("failed to get socket: %w", err)
+		}
+		if err := destClient.socketStore.AddSocket(socket.Name, srcSocketVal); err != nil {
+			return fmt.Errorf("failed to add socket: %w", err)
+		}
+	}
+
+	return nil
+}

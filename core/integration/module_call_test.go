@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -693,6 +694,46 @@ func (m *Test) Mod(ctx context.Context, module *Module) *Module {
 		require.NoError(t, err)
 		require.Equal(t, testGitModuleRef("top-level"), out)
 	})
+}
+
+func (ModuleSuite) TestDaggerCallSocketArg(ctx context.Context, t *testctx.T) {
+	// needs to run on host since sockets can currently only be passed by the main client caller
+
+	// TODO: NOT PORTABLE, RUN CUSTOM UNIX SOCK SERVICE FROM HERE INSTEAD
+	// TODO: NOT PORTABLE, RUN CUSTOM UNIX SOCK SERVICE FROM HERE INSTEAD
+	// TODO: NOT PORTABLE, RUN CUSTOM UNIX SOCK SERVICE FROM HERE INSTEAD
+
+	modDir := t.TempDir()
+	err := os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
+
+import (
+	"context"
+)
+
+type Test struct {}
+
+func (m *Test) Fn(ctx context.Context, sock *Socket) (string, error) {
+	return dag.Container().From("docker:24.0-cli").
+		WithUnixSocket("/var/run/docker.sock", sock).
+		WithExec([]string{"docker", "version"}).
+		Stdout(ctx)
+}
+`), 0o644)
+	require.NoError(t, err)
+
+	_, err = hostDaggerExec(ctx, t, modDir, "--debug", "init", "--source=.", "--name=test", "--sdk=go")
+	require.NoError(t, err)
+
+	cmd := hostDaggerCommand(ctx, t, modDir, "call", "fn", "--sock", "/var/run/docker.sock")
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	err = cmd.Run()
+	require.NoError(t, err)
+
+	// TODO:
+	// TODO: actual assertions, just verifying manually by looking at output rn
 }
 
 func (ModuleSuite) TestDaggerCallReturnTypes(ctx context.Context, t *testctx.T) {

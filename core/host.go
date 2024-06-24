@@ -121,7 +121,7 @@ func (host *Host) File(ctx context.Context, srv *dagql.Server, filePath string) 
 }
 
 func (host *Host) SetSecretFile(ctx context.Context, srv *dagql.Server, secretName string, path string) (i dagql.Instance[*Secret], err error) {
-	accessor, err := GetLocalSecretAccessor(ctx, host.Query, secretName)
+	accessor, err := GetClientResourceName(ctx, host.Query, secretName)
 	if err != nil {
 		return i, err
 	}
@@ -160,6 +160,6 @@ func (host *Host) SetSecretFile(ctx context.Context, srv *dagql.Server, secretNa
 	return
 }
 
-func (host *Host) Socket(sockPath string) *Socket {
-	return NewHostUnixSocket(sockPath)
+func (host *Host) Socket(name string, sockPath string, buildkitSessionID string) *Socket {
+	return NewHostUnixSocket(name, sockPath, buildkitSessionID)
 }
