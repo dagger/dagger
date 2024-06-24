@@ -45,6 +45,9 @@ func (s *gitSchema) Install() {
 		dagql.Func("tag", s.tag).
 			Doc(`Returns details of a tag.`).
 			ArgDoc("name", `Tag's name (e.g., "v0.3.9").`),
+		dagql.Func("tags", s.tags).
+			Doc(`tags that match any of the given glob patterns.`).
+			ArgDoc("patterns", `Glob patterns (e.g., "refs/tags/v*").`),
 		dagql.Func("commit", s.commit).
 			Doc(`Returns details of a commit.`).
 			// TODO: id is normally a reserved word; we should probably rename this
@@ -165,6 +168,51 @@ func (s *gitSchema) tag(ctx context.Context, parent *core.GitRepository, args ta
 		Ref:   args.Name,
 		Repo:  parent,
 	}, nil
+}
+
+type tagsArgs struct {
+	Patterns dagql.Optional[dagql.ArrayInput[dagql.String]] `name:"patterns"`
+}
+
+func (s *gitSchema) tags(ctx context.Context, parent *core.GitRepository, args tagsArgs) ([]string, error) {
+	// TODO: exec git with an equivalent of gitdns.git(), to inherently handle auth via the socket
+	queryArgs := []string{
+		"ls-remote",
+		"--tags", // we only want tags
+		"--refs", // we don't want to include ^{} entries for annotated tags
+		parent.URL,
+	}
+
+	if args.Patterns.Valid {
+		val := args.Patterns.Value.ToArray()
+
+		for _, p := range val {
+			queryArgs = append(queryArgs, p.String())
+		}
+	}
+
+	output, err := exec.CommandContext(ctx, "git", queryArgs...).Output()
+	if err != nil {
+		return nil, err
+	}
+
+	scanner := bufio.NewScanner(bytes.NewBuffer(output))
+
+	tags := []string{}
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) < 2 {
+			continue
+		}
+
+		// this API is to fetch tags, not refs, so we can drop the `refs/tags/`
+		// prefix
+		tag := strings.TrimPrefix(fields[1], "refs/tags/")
+
+		tags = append(tags, tag)
+	}
+
+	return tags, nil
 }
 
 type withAuthTokenArgs struct {
