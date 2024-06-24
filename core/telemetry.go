@@ -46,9 +46,9 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 		}
 		attrs = append(attrs, attribute.StringSlice(telemetry.DagInputsAttr, inputs))
 	}
-	// if dagql.IsInternal(ctx) {
-	// 	attrs = append(attrs, attribute.Bool(telemetry.UIInternalAttr, true))
-	// }
+	if dagql.IsInternal(ctx) {
+		attrs = append(attrs, attribute.Bool(telemetry.UIInternalAttr, true))
+	}
 
 	ctx, span := dagql.Tracer().Start(ctx, spanName, trace.WithAttributes(attrs...))
 

@@ -378,9 +378,30 @@ func (s *Server) ExecOp(ctx context.Context, gqlOp *graphql.OperationContext) (m
 			if err != nil {
 				return nil, fmt.Errorf("query:\n%s\n\nerror: parse selections: %w", gqlOp.RawQuery, err)
 			}
-			results, err = s.Resolve(ctx, s.root, sels...)
-			if err != nil {
-				return nil, err
+
+			if idRes, err := s.generateID(ctx, s.root.ID(), s.root.ObjectType(), sels); err == nil {
+				results = idRes
+			} else {
+				// preload all IDs asap
+				eg := new(errgroup.Group)
+				ids := s.findIDs(sels)
+				if len(ids) > 0 {
+					slog.Warn("!!! PRELOADING IDS", "ids", ids)
+				}
+				for _, id := range ids {
+					id := id
+					eg.Go(func() error {
+						slog.Warn("!!! PRELOADING ID", "digest", id.Digest(), "id", id.PathNamesOnly())
+						_, err := s.Load(ctx, id)
+						return err
+					})
+				}
+				// eg.Wait()
+
+				results, err = s.Resolve(ctx, s.root, sels...)
+				if err != nil {
+					return nil, err
+				}
 			}
 		case ast.Mutation:
 			// TODO
@@ -420,6 +441,11 @@ func (s *Server) findIDs(sels []Selection) []*call.ID {
 func (s *Server) generateID(ctx context.Context, id *call.ID, selfT ObjectType, sels []Selection) (map[string]any, error) {
 	if len(sels) != 1 { // sanity check
 		return nil, fmt.Errorf("expected 1 selection in ID shaped query")
+	}
+
+	idT, ok := selfT.IDType()
+	if !ok {
+		return nil, fmt.Errorf("%s does not have an ID type", selfT.TypeName())
 	}
 
 	sel := sels[0]
@@ -472,6 +498,23 @@ func (s *Server) generateID(ctx context.Context, id *call.ID, selfT ObjectType, 
 		return nil, err
 	}
 
+	// "fake" telemetry so all the call DAG values still get sent over
+	if s.telemetry != nil {
+		// we want to send spans for these so client side still gets a full DAG,
+		// but we don't want to actually show these spans, so hide'em
+		ctx = withInternal(ctx)
+
+		wrappedCtx, done := s.telemetry(ctx, nil, id)
+		ctx = wrappedCtx
+		defer func() { done(NewDynamicID(id, idT), true, nil) }()
+
+		for id := id.Base(); id != nil; id = id.Base() {
+			wrappedCtx, done := s.telemetry(ctx, nil, id)
+			defer func() { done(nil, true, nil) }()
+			ctx = wrappedCtx
+		}
+	}
+
 	return map[string]any{
 		sel.Name(): res,
 	}, nil
@@ -482,26 +525,6 @@ func (s *Server) generateID(ctx context.Context, id *call.ID, selfT ObjectType, 
 // Each selection is resolved in parallel, and the results are returned in a
 // map whose keys correspond to the selection's field name or alias.
 func (s *Server) Resolve(ctx context.Context, self Object, sels ...Selection) (map[string]any, error) {
-	if idRes, err := s.generateID(ctx, self.ID(), self.ObjectType(), sels); err == nil {
-		return idRes, nil
-	}
-
-	// preload all IDs asap
-	eg := new(errgroup.Group)
-	ids := s.findIDs(sels)
-	if len(ids) > 0 {
-		slog.Warn("!!! PRELOADING IDS", "ids", ids)
-	}
-	for _, id := range ids {
-		id := id
-		eg.Go(func() error {
-			slog.Warn("!!! PRELOADING ID", "digest", id.Digest(), "id", id.PathNamesOnly())
-			_, err := s.Load(ctx, id)
-			return err
-		})
-	}
-	eg.Wait()
-
 	results := new(sync.Map)
 
 	pool := pool.New().WithErrors()
