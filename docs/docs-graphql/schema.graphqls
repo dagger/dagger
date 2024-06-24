@@ -1348,6 +1348,11 @@ type Function {
   """Returns the function with the provided argument"""
   withArg(
     """
+    If the argument is a Directory or File type, default to load path from context directory, relative to root directory.
+    """
+    defaultPathFromContext: String = ""
+
+    """
     A default value to use for this argument if not explicitly set by the caller, if any
     """
     defaultValue: JSON
@@ -1375,6 +1380,11 @@ An argument accepted by a function.
 This is a specification for an argument at function definition time, not an argument passed at function call time.
 """
 type FunctionArg {
+  """
+  If the argument is a Directory or File type, default to load path from context directory, relative to root directory.
+  """
+  defaultPathFromContext: String!
+
   """
   A default value to use for this argument when not explicitly set by the caller, if any.
   """
