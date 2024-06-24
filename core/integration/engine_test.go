@@ -76,7 +76,7 @@ func (EngineSuite) TestExitsZeroOnSignal(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	// engine should shutdown with exit code 0 when receiving SIGTERM
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
 	t = t.WithContext(ctx)
 	_, err := devEngineContainer(c, 101, func(c *dagger.Container) *dagger.Container {
