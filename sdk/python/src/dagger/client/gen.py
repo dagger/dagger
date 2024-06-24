@@ -3631,6 +3631,8 @@ class Function(Type):
         *,
         description: str | None = "",
         default_value: JSON | None = None,
+        default_path: str | None = "",
+        ignore: list[str] | None = None,
     ) -> Self:
         """Returns the function with the provided argument
 
@@ -3645,12 +3647,19 @@ class Function(Type):
         default_value:
             A default value to use for this argument if not explicitly set by
             the caller, if any
+        default_path:
+            If the argument is a Directory or File type, default to load path
+            from context directory, relative to root directory.
+        ignore:
+            Patterns to ignore when loading the contextual argument value.
         """
         _args = [
             Arg("name", name),
             Arg("typeDef", type_def),
             Arg("description", description, ""),
             Arg("defaultValue", default_value, None),
+            Arg("defaultPath", default_path, ""),
+            Arg("ignore", [] if ignore is None else ignore),
         ]
         _ctx = self._select("withArg", _args)
         return Function(_ctx)
@@ -3682,6 +3691,28 @@ class FunctionArg(Type):
     """An argument accepted by a function.  This is a specification for an
     argument at function definition time, not an argument passed at
     function call time."""
+
+    async def default_path(self) -> str:
+        """Only applies to arguments of type File or Directory. If the argument
+        is not set, load it from the given path in the context directory
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("defaultPath", _args)
+        return await _ctx.execute(str)
 
     async def default_value(self) -> JSON:
         """A default value to use for this argument when not explicitly set by
@@ -3747,6 +3778,29 @@ class FunctionArg(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(FunctionArgID)
+
+    async def ignore(self) -> list[str]:
+        """Only applies to arguments of type Directory. The ignore patterns are
+        applied to the input directory, and matching entries are filtered out,
+        in a cache-efficient manner.
+
+        Returns
+        -------
+        list[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("ignore", _args)
+        return await _ctx.execute(list[str])
 
     async def name(self) -> str:
         """The name of the argument in lowerCamelCase format.

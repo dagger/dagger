@@ -1444,12 +1444,20 @@ type Function {
   """Returns the function with the provided argument"""
   withArg(
     """
+    If the argument is a Directory or File type, default to load path from context directory, relative to root directory.
+    """
+    defaultPath: String = ""
+
+    """
     A default value to use for this argument if not explicitly set by the caller, if any
     """
     defaultValue: JSON
 
     """A doc string for the argument, if any"""
     description: String = ""
+
+    """Patterns to ignore when loading the contextual argument value."""
+    ignore: [String!] = []
 
     """The name of the argument"""
     name: String!
@@ -1472,6 +1480,12 @@ This is a specification for an argument at function definition time, not an argu
 """
 type FunctionArg {
   """
+  Only applies to arguments of type File or Directory. If the argument is not
+  set, load it from the given path in the context directory
+  """
+  defaultPath: String!
+
+  """
   A default value to use for this argument when not explicitly set by the caller, if any.
   """
   defaultValue: JSON!
@@ -1481,6 +1495,13 @@ type FunctionArg {
 
   """A unique identifier for this FunctionArg."""
   id: FunctionArgID!
+
+  """
+  Only applies to arguments of type Directory. The ignore patterns are applied
+  to the input directory, and matching entries are filtered out, in a
+  cache-efficient manner.
+  """
+  ignore: [String!]!
 
   """The name of the argument in lowerCamelCase format."""
   name: String!

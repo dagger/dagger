@@ -4514,12 +4514,18 @@ pub struct Function {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct FunctionWithArgOpts<'a> {
+    /// If the argument is a Directory or File type, default to load path from context directory, relative to root directory.
+    #[builder(setter(into, strip_option), default)]
+    pub default_path: Option<&'a str>,
     /// A default value to use for this argument if not explicitly set by the caller, if any
     #[builder(setter(into, strip_option), default)]
     pub default_value: Option<Json>,
     /// A doc string for the argument, if any
     #[builder(setter(into, strip_option), default)]
     pub description: Option<&'a str>,
+    /// Patterns to ignore when loading the contextual argument value.
+    #[builder(setter(into, strip_option), default)]
+    pub ignore: Option<Vec<&'a str>>,
 }
 impl Function {
     /// Arguments accepted by the function, if any.
@@ -4606,6 +4612,12 @@ impl Function {
         if let Some(default_value) = opts.default_value {
             query = query.arg("defaultValue", default_value);
         }
+        if let Some(default_path) = opts.default_path {
+            query = query.arg("defaultPath", default_path);
+        }
+        if let Some(ignore) = opts.ignore {
+            query = query.arg("ignore", ignore);
+        }
         Function {
             proc: self.proc.clone(),
             selection: query,
@@ -4634,6 +4646,11 @@ pub struct FunctionArg {
     pub graphql_client: DynGraphQLClient,
 }
 impl FunctionArg {
+    /// Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory
+    pub async fn default_path(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("defaultPath");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// A default value to use for this argument when not explicitly set by the caller, if any.
     pub async fn default_value(&self) -> Result<Json, DaggerError> {
         let query = self.selection.select("defaultValue");
@@ -4647,6 +4664,11 @@ impl FunctionArg {
     /// A unique identifier for this FunctionArg.
     pub async fn id(&self) -> Result<FunctionArgId, DaggerError> {
         let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Only applies to arguments of type Directory. The ignore patterns are applied to the input directory, and matching entries are filtered out, in a cache-efficient manner.
+    pub async fn ignore(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("ignore");
         query.execute(self.graphql_client.clone()).await
     }
     /// The name of the argument in lowerCamelCase format.

@@ -12,10 +12,14 @@ import (
 
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/vektah/gqlparser/v2/ast"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 type ModuleSourceKind string
@@ -264,6 +268,150 @@ func (src *ModuleSource) AutomaticGitignore(ctx context.Context) (*bool, error) 
 		return nil, nil
 	}
 	return modCfg.Codegen.AutomaticGitignore, nil
+}
+
+// LoadContext loads a directory from the module context directory.
+//
+// If the module is local, it will load the directory from the local source
+// directly from the host.
+//
+// If the module is git, it will load the directory from the git repository
+// using its context directory.
+//
+// The path is relative to the module context directory, even if it's absolute.
+//
+// Improvement for later: use `.gitignore` to excludes paths from the context.
+func (src *ModuleSource) LoadContext(ctx context.Context, dag *dagql.Server, path string, ignore []string) (inst dagql.Instance[*Directory], err error) {
+	// We exclude .git by default because it's not useful and tends to invalidate the cache.
+	excludes := []string{"**/.git"}
+	includes := []string{}
+
+	for _, p := range ignore {
+		if strings.HasPrefix(p, "!") {
+			includes = append(includes, p[1:])
+		} else {
+			excludes = append(excludes, p)
+		}
+	}
+
+	// If path is not absolute, it's relative to the module root directory.
+	if !filepath.IsAbs(path) {
+		moduleRootPath, err := src.SourceRootSubpath()
+		if err != nil {
+			return inst, fmt.Errorf("failed to get source root subpath for relative context path: %w", err)
+		}
+
+		path = filepath.Join(moduleRootPath, path)
+	}
+
+	switch src.Kind {
+	case ModuleSourceKindLocal:
+		bk, err := src.Query.Buildkit(ctx)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get buildkit api: %w", err)
+		}
+
+		slog.Debug("moduleSource.LoadContext: loading contextual directory from local source", "path", path, "kind", src.Kind)
+
+		ctxPath, err := src.resolveContextPath(ctx, bk)
+		if err != nil {
+			return inst, fmt.Errorf("failed to resolve context path: %w", err)
+		}
+
+		// Add the context path to the path to load
+		path = filepath.Join(ctxPath, path)
+
+		path, err = filepath.Rel(ctxPath, path)
+		if err != nil {
+			return inst, fmt.Errorf("path should be relative to the context path: %w", err)
+		}
+
+		_, desc, err := bk.LocalImport(ctx, src.Query.Platform().Spec(), path, excludes, includes)
+		if err != nil {
+			return inst, fmt.Errorf("failed to import local module src: %w", err)
+		}
+
+		inst, err = LoadBlob(ctx, dag, desc)
+		if err != nil {
+			return inst, fmt.Errorf("failed to load local module src: %w", err)
+		}
+
+		return inst, nil
+	case ModuleSourceKindGit:
+		slog.Debug("moduleSource.LoadContext: loading contextual directory from git", "path", path, "kind", src.Kind, "repo", src.AsGitSource.Value.HTMLURL())
+
+		// Use the Git context directory.
+		ctxDir := src.AsGitSource.Value.ContextDirectory.Self
+
+		dir, err := ctxDir.Directory(ctx, path)
+		if err != nil {
+			return inst, fmt.Errorf("failed to load contextual directory %q: %w", path, err)
+		}
+
+		loadedDir, err := dir.AsBlob(ctx, dag)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get dir instance: %w", err)
+		}
+
+		return loadedDir, nil
+	default:
+		return inst, fmt.Errorf("unsupported module src kind: %q", src.Kind)
+	}
+}
+
+// resolveContextPaths returns the context path to the .git directory
+// if it exists. Otherwise, it returns the source root directory.
+func (src *ModuleSource) resolveContextPath(ctx context.Context, bk *buildkit.Client) (string, error) {
+	if src.Kind != ModuleSourceKindLocal {
+		return "", fmt.Errorf("cannot resolve non-local module source from caller")
+	}
+
+	rootSubpath, err := src.SourceRootSubpath()
+	if err != nil {
+		return "", fmt.Errorf("failed to get source root subpath: %w", err)
+	}
+
+	sourceRootStat, err := bk.StatCallerHostPath(ctx, rootSubpath, true)
+	if err != nil {
+		return "", fmt.Errorf("failed to stat source root: %w", err)
+	}
+
+	sourceRootAbsPath := sourceRootStat.Path
+
+	contextAbsPath, contextFound, err := callerHostFindUpContext(ctx, bk, sourceRootAbsPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to find up root: %w", err)
+	}
+
+	if !contextFound {
+		// default to restricting to the source root dir, make it abs though for consistency
+		contextAbsPath = sourceRootAbsPath
+	}
+
+	return contextAbsPath, nil
+}
+
+// context path is the parent dir containing .git
+func callerHostFindUpContext(
+	ctx context.Context,
+	bk *buildkit.Client,
+	curDirPath string,
+) (string, bool, error) {
+	_, err := bk.StatCallerHostPath(ctx, filepath.Join(curDirPath, ".git"), false)
+	if err == nil {
+		return curDirPath, true, nil
+	}
+	// TODO: remove the strings.Contains check here (which aren't cross-platform),
+	// since we now set NotFound (since v0.11.2)
+	if status.Code(err) != codes.NotFound && !strings.Contains(err.Error(), "no such file or directory") {
+		return "", false, fmt.Errorf("failed to lstat .git: %w", err)
+	}
+
+	nextDirPath := filepath.Dir(curDirPath)
+	if curDirPath == nextDirPath {
+		return "", false, nil
+	}
+	return callerHostFindUpContext(ctx, bk, nextDirPath)
 }
 
 func (src *ModuleSource) ContextDirectory() (inst dagql.Instance[*Directory], err error) {

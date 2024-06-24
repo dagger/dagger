@@ -83,6 +83,10 @@ describe("scan static TypeScript", function () {
       name: "Should correctly scan core enums",
       directory: "coreEnums",
     },
+    {
+      name: "Should correctly scan contextual arguments",
+      directory: "context",
+    },
   ]
 
   for (const test of testCases) {

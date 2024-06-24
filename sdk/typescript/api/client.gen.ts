@@ -692,6 +692,16 @@ export type FunctionWithArgOpts = {
    * A default value to use for this argument if not explicitly set by the caller, if any
    */
   defaultValue?: JSON
+
+  /**
+   * If the argument is a Directory or File type, default to load path from context directory, relative to root directory.
+   */
+  defaultPath?: string
+
+  /**
+   * Patterns to ignore when loading the contextual argument value.
+   */
+  ignore?: string[]
 }
 
 /**
@@ -4659,6 +4669,8 @@ export class Function_ extends BaseClient {
    * @param typeDef The type of the argument
    * @param opts.description A doc string for the argument, if any
    * @param opts.defaultValue A default value to use for this argument if not explicitly set by the caller, if any
+   * @param opts.defaultPath If the argument is a Directory or File type, default to load path from context directory, relative to root directory.
+   * @param opts.ignore Patterns to ignore when loading the contextual argument value.
    */
   withArg = (
     name: string,
@@ -4711,6 +4723,7 @@ export class Function_ extends BaseClient {
  */
 export class FunctionArg extends BaseClient {
   private readonly _id?: FunctionArgID = undefined
+  private readonly _defaultPath?: string = undefined
   private readonly _defaultValue?: JSON = undefined
   private readonly _description?: string = undefined
   private readonly _name?: string = undefined
@@ -4721,6 +4734,7 @@ export class FunctionArg extends BaseClient {
   constructor(
     parent?: { queryTree?: QueryTree[]; ctx: Context },
     _id?: FunctionArgID,
+    _defaultPath?: string,
     _defaultValue?: JSON,
     _description?: string,
     _name?: string,
@@ -4728,6 +4742,7 @@ export class FunctionArg extends BaseClient {
     super(parent)
 
     this._id = _id
+    this._defaultPath = _defaultPath
     this._defaultValue = _defaultValue
     this._description = _description
     this._name = _name
@@ -4746,6 +4761,27 @@ export class FunctionArg extends BaseClient {
         ...this._queryTree,
         {
           operation: "id",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory
+   */
+  defaultPath = async (): Promise<string> => {
+    if (this._defaultPath) {
+      return this._defaultPath
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "defaultPath",
         },
       ],
       await this._ctx.connection(),
@@ -4788,6 +4824,23 @@ export class FunctionArg extends BaseClient {
         ...this._queryTree,
         {
           operation: "description",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * Only applies to arguments of type Directory. The ignore patterns are applied to the input directory, and matching entries are filtered out, in a cache-efficient manner.
+   */
+  ignore = async (): Promise<string[]> => {
+    const response: Awaited<string[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "ignore",
         },
       ],
       await this._ctx.connection(),

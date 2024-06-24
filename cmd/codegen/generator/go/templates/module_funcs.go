@@ -135,6 +135,19 @@ func (spec *funcTypeSpec) TypeDefCode() (*Statement, error) {
 			argOptsCode = append(argOptsCode, Id("DefaultValue").Op(":").Id("dagger").Dot("JSON").Call(Lit(argSpec.defaultValue)))
 		}
 
+		if argSpec.defaultPath != "" {
+			argOptsCode = append(argOptsCode, Id("DefaultPath").Op(":").Lit(argSpec.defaultPath))
+		}
+
+		if len(argSpec.ignore) > 0 {
+			ignores := make([]Code, 0, len(argSpec.ignore))
+			for _, pattern := range argSpec.ignore {
+				ignores = append(ignores, Lit(pattern))
+			}
+
+			argOptsCode = append(argOptsCode, Id("Ignore").Op(":").Index().String().Values(ignores...))
+		}
+
 		// arguments to WithArg (args to arg... ugh, at least the name of the variable is honest?)
 		argTypeDefArgCode := []Code{Lit(argSpec.name), argTypeDefCode}
 		if len(argOptsCode) > 0 {
@@ -276,6 +289,26 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, docComment string, lin
 			optional, _ = strconv.ParseBool(v)
 		}
 	}
+	defaultPath := ""
+	if v, ok := pragmas["defaultPath"]; ok {
+		defaultPath = v
+		if strings.HasPrefix(v, `"`) && strings.HasSuffix(v, `"`) {
+			defaultPath = v[1 : len(v)-1]
+		}
+
+		optional = true // If defaultPath is set, the argument becomes optional
+	}
+
+	ignore := []string{}
+	if v, ok := pragmas["ignore"]; ok {
+		if strings.HasPrefix(v, `"`) && strings.HasSuffix(v, `"`) {
+			v = v[1 : len(v)-1]
+		}
+
+		if err := json.Unmarshal([]byte(v), &ignore); err != nil {
+			return paramSpec{}, fmt.Errorf("ignore pragma '%s', must be a valid JSON array: %w", v, err)
+		}
+	}
 
 	// ignore ctx arg for parsing type reference
 	isContext := paramType.String() == contextTypename
@@ -302,6 +335,8 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, docComment string, lin
 		isContext:    isContext,
 		defaultValue: defaultValue,
 		description:  comment,
+		defaultPath:  defaultPath,
+		ignore:       ignore,
 	}, nil
 }
 
@@ -314,6 +349,7 @@ type paramSpec struct {
 	// isContext is true if the type is context.Context
 	isContext bool
 
+	// Set a default value for the argument. Value must be a json-encoded literal value
 	defaultValue string
 
 	// paramType is the full type declared in the function signature, which may
@@ -326,4 +362,13 @@ type paramSpec struct {
 	// parent is set if this paramSpec is nested inside a parent inline struct,
 	// and is used to create a declaration of the entire inline struct
 	parent *paramSpec
+
+	// Only applies to arguments of type File or Directory.
+	// If the argument is not set, load it from the given path in the context directory
+	defaultPath string
+
+	// Only applies to arguments of type Directory.
+	// The ignore patterns are applied to the input directory, and
+	// matching entries are filtered out, in a cache-efficient manner.
+	ignore []string
 }
