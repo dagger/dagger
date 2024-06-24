@@ -479,6 +479,20 @@ func TestModuleInitLICENSE(t *testing.T) {
 		require.Contains(t, content, "Apache License, Version 2.0")
 	})
 
+	t.Run("do not boostrap LICENSE file if license is set empty", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=empty-license", "--sdk=go", "--license="))
+
+		_, err := modGen.File("LICENSE").Contents(ctx)
+		require.Error(t, err)
+	})
+
 	t.Run("do not bootstrap LICENSE file if no sdk is specified", func(t *testing.T) {
 		t.Parallel()
 
@@ -501,12 +515,28 @@ func TestModuleInitLICENSE(t *testing.T) {
 			require.NotContains(t, content, "LICENSE")
 		})
 
+		t.Run("do not bootstrap LICENSE file if license is empty", func(t *testing.T) {
+			modGen = modGen.With(daggerExec("develop", "--source=dagger", `--license=""`))
+
+			content, err := modGen.Directory(".").Entries(ctx)
+			require.NoError(t, err)
+			require.NotContains(t, content, "LICENSE")
+		})
+
 		t.Run("bootstrap a license after sdk is set on dagger develop", func(t *testing.T) {
 			modGen = modGen.With(daggerExec("develop", "--sdk=go"))
 
 			content, err := modGen.File("LICENSE").Contents(ctx)
 			require.NoError(t, err)
 			require.Contains(t, content, "Apache License, Version 2.0")
+		})
+
+		t.Run("boostrap custom LICENSE file if sdk and license are specified", func(t *testing.T) {
+			modGen = modGen.With(daggerExec("develop", "--sdk=go", `--license=MIT`))
+
+			content, err := modGen.File("LICENSE").Contents(ctx)
+			require.NoError(t, err)
+			require.Contains(t, content, "MIT License")
 		})
 	})
 
@@ -537,7 +567,7 @@ func TestModuleInitLICENSE(t *testing.T) {
 				Contents: "doesnt matter",
 			}).
 			WithWorkdir("/work/sub").
-			With(daggerExec("init", "--name=licensed-to-ill", "--sdk=go"))
+			With(daggerExec("init", "--name=licensed-to-ill", "--sdk=go", `--license=""`))
 
 		_, err := modGen.File("LICENSE").Contents(ctx)
 		require.Error(t, err)
