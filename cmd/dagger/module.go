@@ -36,6 +36,9 @@ var (
 	moduleURL   string
 	moduleFlags = pflag.NewFlagSet("module", pflag.ContinueOnError)
 
+	loadCoreFuncs bool
+	functionFlags = pflag.NewFlagSet("functions", pflag.ContinueOnError)
+
 	sdk           string
 	licenseID     string
 	compatVersion string
@@ -60,9 +63,16 @@ const (
 func init() {
 	moduleFlags.StringVarP(&moduleURL, "mod", "m", "", "Path to the module directory. Either local path or a remote git repo")
 
+	functionFlags.BoolVarP(&loadCoreFuncs, "core", "c", false, "Load core functions instead of a module (mutually exclusive with -m)")
+
+	for _, c := range funcCmds.All() {
+		c.PersistentFlags().AddFlagSet(moduleFlags)
+		c.PersistentFlags().AddFlagSet(functionFlags)
+		c.MarkFlagsMutuallyExclusive("core", "mod")
+	}
+
 	listenCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	queryCmd.PersistentFlags().AddFlagSet(moduleFlags)
-	funcCmds.AddFlagSet(moduleFlags)
 	configCmd.PersistentFlags().AddFlagSet(moduleFlags)
 
 	moduleInitCmd.Flags().StringVar(&sdk, "sdk", "", "Optionally install a Dagger SDK")

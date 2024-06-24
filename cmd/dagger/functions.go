@@ -32,9 +32,6 @@ const (
 	Platform     string = "Platform"
 	Socket       string = "Socket"
 	Terminal     string = "Terminal"
-
-	// coreModRef is the exact value for `-m` to call fields from Query.
-	coreModRef string = "-"
 )
 
 var (
@@ -128,16 +125,6 @@ available functions.
 }
 
 type FuncCommands []*FuncCommand
-
-func (fcs FuncCommands) AddFlagSet(flags *pflag.FlagSet) {
-	for _, cmd := range fcs.All() {
-		cmd.PersistentFlags().AddFlagSet(flags)
-	}
-}
-
-func (fcs FuncCommands) AddParent(rootCmd *cobra.Command) {
-	rootCmd.AddCommand(fcs.All()...)
-}
 
 func (fcs FuncCommands) All() []*cobra.Command {
 	cmds := make([]*cobra.Command, len(fcs))
@@ -404,8 +391,7 @@ func (fc *FuncCommand) initializeModule(ctx context.Context) (rerr error) {
 	ctx, span := Tracer().Start(ctx, "initialize")
 	defer telemetry.End(span, func() error { return rerr })
 
-	srcRefStr, ok := getExplicitModuleSourceRef()
-	if ok && srcRefStr == coreModRef {
+	if loadCoreFuncs {
 		fc.mod = &moduleDef{}
 	} else {
 		resolveCtx, resolveSpan := Tracer().Start(ctx, "resolving module ref", telemetry.Encapsulate())
