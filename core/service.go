@@ -1,7 +1,6 @@
 package core
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -205,6 +204,12 @@ func (svc *Service) Start(
 
 func (svc *Service) startSpan(ctx context.Context, id *call.ID, name string) (context.Context, trace.Span) {
 	return Tracer().Start(ctx, "start "+name, trace.WithAttributes(
+		// assign service spans to the _main_ client caller, since their lifespan is tied
+		// to the session level, independent of which client happened to start it.
+		//
+		// otherwise, this span gets associated to whichever client happened to start it.
+		// when that client goes away, we don't want to reap this span.
+		attribute.String(telemetry.ClientIDAttr, svc.Query.MainClientCallerID),
 		attribute.String(telemetry.EffectIDAttr, serviceEffect(id))))
 }
 
@@ -271,10 +276,8 @@ func (svc *Service) startContainer(
 	}()
 
 	ctx, span := svc.startSpan(ctx, id, strings.Join(execOp.Meta.Args, " "))
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
 	defer func() {
 		if rerr != nil {
-			stdio.Close()
 			// NB: this is intentionally conditional; we only complete if there was
 			// an error starting. span.End is called when the service exits.
 			telemetry.End(span, func() error { return rerr })
@@ -346,7 +349,6 @@ func (svc *Service) startContainer(
 	env := append([]string{}, execOp.Meta.Env...)
 	env = append(env, telemetry.PropagationEnv(ctx)...)
 
-	outBuf := new(bytes.Buffer)
 	var stdinCtr, stdoutClient, stderrClient io.ReadCloser
 	var stdinClient, stdoutCtr, stderrCtr io.WriteCloser
 	if forwardStdin != nil {
@@ -355,14 +357,10 @@ func (svc *Service) startContainer(
 
 	if forwardStdout != nil {
 		stdoutClient, stdoutCtr = io.Pipe()
-	} else {
-		stdoutCtr = nopCloser{io.MultiWriter(stdio.Stdout, outBuf)}
 	}
 
 	if forwardStderr != nil {
 		stderrClient, stderrCtr = io.Pipe()
-	} else {
-		stderrCtr = nopCloser{io.MultiWriter(stdio.Stderr, outBuf)}
 	}
 
 	svcProc, err := gc.Start(ctx, bkgw.StartRequest{
@@ -394,11 +392,6 @@ func (svc *Service) startContainer(
 	var exitErr error
 	exited := make(chan struct{})
 	go func() {
-		// terminate the span; we're not interested in setting an error, since
-		// services return a benign error like `exit status 1` on exit
-		defer span.End()
-		defer stdio.Close()
-
 		defer func() {
 			if stdinClient != nil {
 				stdinClient.Close()
@@ -411,6 +404,10 @@ func (svc *Service) startContainer(
 			}
 			close(exited)
 		}()
+
+		// terminate the span; we're not interested in setting an error, since
+		// services return a benign error like `exit status 1` on exit
+		defer span.End()
 
 		exitErr = svcProc.Wait()
 
@@ -469,7 +466,7 @@ func (svc *Service) startContainer(
 		}, nil
 	case <-exited:
 		if exitErr != nil {
-			return nil, fmt.Errorf("exited: %w\noutput: %s", exitErr, outBuf.String())
+			return nil, fmt.Errorf("exited: %w", exitErr)
 		}
 		return nil, fmt.Errorf("service exited before healthcheck")
 	}
