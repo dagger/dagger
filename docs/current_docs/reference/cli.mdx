@@ -147,9 +147,10 @@ dagger develop [options]
 ### Options
 
 ```
-  -m, --mod string      Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
-      --sdk string      New SDK for the module
-      --source string   Directory to store the module implementation source code in
+      --license string   License identifier to generate - see https://spdx.org/licenses/ (default "Apache-2.0")
+  -m, --mod string       Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
+      --sdk string       New SDK for the module
+      --source string    Directory to store the module implementation source code in
 ```
 
 ### Options inherited from parent commands
@@ -231,7 +232,7 @@ dagger init --name=hello --sdk=python --source=some/subdir
 ### Options
 
 ```
-      --license string   License identifier to generate - see https://spdx.org/licenses/
+      --license string   License identifier to generate - see https://spdx.org/licenses/ (default "Apache-2.0")
       --name string      Name of the new module (defaults to parent directory name)
       --sdk string       Optionally initialize module for development in the given SDK
       --source string    Directory to store the module implementation source code in (defaults to "dagger/ if "--sdk" is provided)
