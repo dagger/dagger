@@ -567,10 +567,17 @@ func TestModuleInitLICENSE(t *testing.T) {
 				Contents: "doesnt matter",
 			}).
 			WithWorkdir("/work/sub").
-			With(daggerExec("init", "--name=licensed-to-ill", "--sdk=go", `--license=""`))
+			With(daggerExec("init", "--name=licensed-to-ill", "--sdk=go"))
 
-		_, err := modGen.File("LICENSE").Contents(ctx)
-		require.Error(t, err)
+		// Check that the license file is not generated in the sub directory.
+		files, err := modGen.Directory("/work/sub").Entries(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, files, "LICENSE")
+
+		// Check that the parent directory actualy has a LICENSE file.
+		files, err = modGen.Directory("/work").Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, files, "LICENSE")
 	})
 
 	t.Run("does not bootstrap LICENSE file if it exists in an arbitrary parent dir", func(t *testing.T) {

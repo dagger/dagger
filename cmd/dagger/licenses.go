@@ -64,7 +64,7 @@ func findOrCreateLicense(ctx context.Context, dir string) error {
 	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
 
 	id := licenseID
-	if id == "" {
+	if id == defaultLicense {
 		if foundLicense, err := searchForLicense(dir); err == nil {
 			slog.Debug("found existing LICENSE file", "path", foundLicense)
 			return nil
