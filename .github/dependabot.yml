@@ -43,9 +43,6 @@ updates:
     labels:
       - "kind/dependencies"
       - "area/sdk/typescript"
-    ignore:
-      - dependency-name: "*"
-        update-types: ["version-update:semver-patch"]
     groups:
       sdk-typescript:
         applies-to: version-updates
@@ -62,9 +59,6 @@ updates:
     labels:
       - "kind/dependencies"
       - "area/documentation"
-    ignore:
-      - dependency-name: "*"
-        update-types: ["version-update:semver-patch"]
     groups:
       website:
         applies-to: version-updates
@@ -81,9 +75,6 @@ updates:
     labels:
       - "kind/dependencies"
       - "area/sdk/go"
-    ignore:
-      - dependency-name: "*"
-        update-types: ["version-update:semver-patch"]
     groups:
       sdk-go:
         applies-to: version-updates
@@ -100,9 +91,6 @@ updates:
     labels:
       - "kind/dependencies"
       - "area/sdk/python"
-    ignore:
-      - dependency-name: "*"
-        update-types: ["version-update:semver-patch"]
     groups:
       sdk-python:
         applies-to: version-updates
@@ -120,8 +108,6 @@ updates:
       - "kind/dependencies"
       - "area/sdk/java"
     ignore:
-      - dependency-name: "*"
-        update-types: ["version-update:semver-patch"]
       # ignore maven dependencies (API, plugins, etc)
       - dependency-name: "org.apache.maven*"
     groups:
