@@ -1,0 +1,6 @@
+kind: Fixed
+body: 'tui: plain progress output should not use hyperlinks (these are not visible in GitHub actions and similar providers)'
+time: 2024-06-25T16:16:26.06113027+01:00
+custom:
+  Author: jedevc
+  PR: "7754"
