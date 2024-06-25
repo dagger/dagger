@@ -368,7 +368,7 @@ git push "${DAGGER_REPO_REMOTE:?must be set}" "sdk/go/${GO_SDK_VERSION:?must be 
 ```
 
 This will trigger the [`publish-sdk-go`
-workflow](https://github.com/dagger/dagger/actions/workflows/publish-sdk-go.yml)
+workflow](https://github.com/dagger/dagger/actions/workflows/sdk-go-publish.yml)
 which publishes to [🐙
 github.com/dagger/dagger-go-sdk](https://github.com/dagger/dagger-go-sdk/tags).
 
@@ -457,7 +457,7 @@ git push "${DAGGER_REPO_REMOTE:?must be set}" sdk/python/${PYTHON_SDK_VERSION}
 ```
 
 This will trigger the [`Publish Python SDK`
-workflow](https://github.com/dagger/dagger/actions/workflows/publish-sdk-python.yml)
+workflow](https://github.com/dagger/dagger/actions/workflows/sdk-python-publish.yml)
 which publishes [dagger-io to 🐍 PyPI](https://pypi.org/project/dagger-io)
 
 - [ ] Upload the release notes by running:
@@ -484,7 +484,7 @@ git push "${DAGGER_REPO_REMOTE:?must be set}" sdk/typescript/${TYPESCRIPT_SDK_VE
 ```
 
 This will trigger the [`Publish TypeScript SDK`
-workflow](https://github.com/dagger/dagger/actions/workflows/publish-sdk-typescript.yml)
+workflow](https://github.com/dagger/dagger/actions/workflows/sdk-typescript-publish.yml)
 which publishes a new version to [⬢ npmjs.com/package/@dagger.io/dagger](https://www.npmjs.com/package/@dagger.io/dagger)
 
 - [ ] Upload the release notes by running:
@@ -510,7 +510,7 @@ git push "${DAGGER_REPO_REMOTE:?must be set}" sdk/elixir/${ELIXIR_SDK_VERSION}
 ```
 
 This will trigger the [`Publish Elixir SDK`
-workflow](https://github.com/dagger/dagger/actions/workflows/publish-sdk-elixir.yml)
+workflow](https://github.com/dagger/dagger/actions/workflows/sdk-elixir-publish.yml)
 which publishes a new version to [🧪 hex.pm/packages/dagger](https://hex.pm/packages/dagger)
 
 - [ ] Upload the release notes by running:
@@ -536,7 +536,7 @@ git push "${DAGGER_REPO_REMOTE:?must be set}" sdk/php/${PHP_SDK_VERSION}
 ```
 
 This will trigger the [`Publish PHP SDK`
-workflow](https://github.com/dagger/dagger/actions/workflows/publish-sdk-php.yml)
+workflow](https://github.com/dagger/dagger/actions/workflows/sdk-php-publish.yml)
 which publishes to
 [github.com/dagger/dagger-php-sdk](https://github.com/dagger/dagger-php-sdk/tags).
 
@@ -563,7 +563,7 @@ git push "${DAGGER_REPO_REMOTE:?must be set}" "helm/chart/v${HELM_CHART_VERSION:
 ```
 
 This will trigger the [`publish-helm-chart`
-workflow](https://github.com/dagger/dagger/actions/workflows/publish-helm-chart.yml)
+workflow](https://github.com/dagger/dagger/actions/workflows/helm-publish.yml)
 which publishes to [🐙
 registry.dagger.io/dagger-helm](https://github.com/dagger/dagger/pkgs/container/dagger-helm).
 
