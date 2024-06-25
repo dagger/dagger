@@ -165,7 +165,7 @@ export class Argument {
   /**
    * Return true if the parameter is optional.
    *
-   * A parameter is considered optional if he fits one of the following:
+   * A parameter is considered optional if:
    * - It has a question token (e.g. `foo?: <type>`).
    * - It's variadic (e.g. `...foo: <type>[]`).
    * - It's nullable (e.g. `foo: <type> | null`).
