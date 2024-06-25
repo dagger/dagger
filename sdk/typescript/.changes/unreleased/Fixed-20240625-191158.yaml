@@ -1,0 +1,6 @@
+kind: Fixed
+body: Correctly resolve non-primitive default value
+time: 2024-06-25T19:11:58.349957+02:00
+custom:
+  Author: TomChv
+  PR: "7740"
