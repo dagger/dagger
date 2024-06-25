@@ -27,8 +27,7 @@ class MyModule {
     const container = dag
       .container()
       .from("nginx:1.23-alpine")
-      .withNewFile("/usr/share/nginx/html/index.html", {
-        contents: "Hello from Dagger!",
+      .withNewFile("/usr/share/nginx/html/index.html", "Hello from Dagger!", {
         permissions: 0o400,
       })
       .withRegistryAuth(registry, username, password)

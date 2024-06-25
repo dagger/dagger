@@ -23,9 +23,11 @@ func (m *MyModule) Publish(
 	addr := []string{}
 	ctr := dag.Container().
 		From("nginx:1.23-alpine").
-		WithNewFile("/usr/share/nginx/html/index.html", "Hello from Dagger!", dagger.ContainerWithNewFileOpts{
-			Permissions: 0o400,
-		}).
+		WithNewFile(
+			"/usr/share/nginx/html/index.html",
+			"Hello from Dagger!",
+			dagger.ContainerWithNewFileOpts{Permissions: 0o400},
+		).
 		WithRegistryAuth(registry, username, password)
 
 	for _, tag := range tags {

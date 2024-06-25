@@ -29,9 +29,7 @@ func (m *MyModule) Test(ctx context.Context) (*TestResult, error) {
 		Container().
 		From("alpine").
 		// add script with execution permission to simulate a testing tool
-		WithNewFile("run-tests", script, dagger.ContainerWithNewFileOpts{
-			Permissions: 0o750,
-		}).
+		WithNewFile("run-tests", script, dagger.ContainerWithNewFileOpts{Permissions: 0o750}).
 		// if the exit code isn't needed: "run-tests; true"
 		WithExec([]string{"sh", "-c", "/run-tests; echo -n $? > /exit_code"}).
 		// the result of `sync` is the container, which allows continued chaining

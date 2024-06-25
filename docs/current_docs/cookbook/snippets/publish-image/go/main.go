@@ -21,9 +21,11 @@ func (m *MyModule) Publish(
 ) (string, error) {
 	return dag.Container().
 		From("nginx:1.23-alpine").
-		WithNewFile("/usr/share/nginx/html/index.html", "Hello from Dagger!", dagger.ContainerWithNewFileOpts{
-			Permissions: 0o400,
-		}).
+		WithNewFile(
+			"/usr/share/nginx/html/index.html",
+			"Hello from Dagger!",
+			dagger.ContainerWithNewFileOpts{Permissions: 0o400},
+		).
 		WithRegistryAuth(registry, username, password).
 		Publish(ctx, fmt.Sprintf("%s/%s/my-nginx", registry, username))
 }
