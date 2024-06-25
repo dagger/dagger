@@ -469,7 +469,7 @@ func (ModuleSuite) TestInitLICENSE(ctx context.Context, t *testctx.T) {
 		require.NotContains(t, files, "LICENSE")
 
 		t.Run("do not bootstrap LICENSE file if no sdk is specified", func(ctx context.Context, t *testctx.T) {
-			modGen = modGen.With(daggerExec("develop", "--source=dagger"))
+			modGen := modGen.With(daggerExec("develop", "--source=dagger"))
 
 			files, err := modGen.Directory(".").Entries(ctx)
 			require.NoError(t, err)
@@ -477,7 +477,7 @@ func (ModuleSuite) TestInitLICENSE(ctx context.Context, t *testctx.T) {
 		})
 
 		t.Run("do not bootstrap LICENSE file if license is empty", func(ctx context.Context, t *testctx.T) {
-			modGen = modGen.With(daggerExec("develop", "--source=dagger", `--license=""`))
+			modGen := modGen.With(daggerExec("develop", "--source=dagger", `--license=""`))
 
 			files, err := modGen.Directory(".").Entries(ctx)
 			require.NoError(t, err)
@@ -485,7 +485,7 @@ func (ModuleSuite) TestInitLICENSE(ctx context.Context, t *testctx.T) {
 		})
 
 		t.Run("bootstrap a license after sdk is set on dagger develop", func(ctx context.Context, t *testctx.T) {
-			modGen = modGen.With(daggerExec("develop", "--sdk=go"))
+			modGen := modGen.With(daggerExec("develop", "--sdk=go"))
 
 			content, err := modGen.File("LICENSE").Contents(ctx)
 			require.NoError(t, err)
@@ -493,7 +493,7 @@ func (ModuleSuite) TestInitLICENSE(ctx context.Context, t *testctx.T) {
 		})
 
 		t.Run("boostrap custom LICENSE file if sdk and license are specified", func(ctx context.Context, t *testctx.T) {
-			modGen = modGen.With(daggerExec("develop", "--sdk=go", `--license=MIT`))
+			modGen := modGen.With(daggerExec("develop", "--sdk=go", `--license=MIT`))
 
 			content, err := modGen.File("LICENSE").Contents(ctx)
 			require.NoError(t, err)
