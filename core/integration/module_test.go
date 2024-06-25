@@ -489,8 +489,9 @@ func TestModuleInitLICENSE(t *testing.T) {
 			WithWorkdir("/work").
 			With(daggerExec("init", "--name=empty-license", "--sdk=go", "--license="))
 
-		_, err := modGen.File("LICENSE").Contents(ctx)
-		require.Error(t, err)
+		files, err := modGen.Directory(".").Entries(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, files, "LICENSE")
 	})
 
 	t.Run("do not bootstrap LICENSE file if no sdk is specified", func(t *testing.T) {
@@ -503,24 +504,24 @@ func TestModuleInitLICENSE(t *testing.T) {
 			WithWorkdir("/work").
 			With(daggerExec("init", "--name=no-license"))
 
-		content, err := modGen.Directory(".").Entries(ctx)
+		files, err := modGen.Directory(".").Entries(ctx)
 		require.NoError(t, err)
-		require.NotContains(t, content, "LICENSE")
+		require.NotContains(t, files, "LICENSE")
 
 		t.Run("do not bootstrap LICENSE file if no sdk is specified", func(t *testing.T) {
 			modGen = modGen.With(daggerExec("develop", "--source=dagger"))
 
-			content, err := modGen.Directory(".").Entries(ctx)
+			files, err := modGen.Directory(".").Entries(ctx)
 			require.NoError(t, err)
-			require.NotContains(t, content, "LICENSE")
+			require.NotContains(t, files, "LICENSE")
 		})
 
 		t.Run("do not bootstrap LICENSE file if license is empty", func(t *testing.T) {
 			modGen = modGen.With(daggerExec("develop", "--source=dagger", `--license=""`))
 
-			content, err := modGen.Directory(".").Entries(ctx)
+			files, err := modGen.Directory(".").Entries(ctx)
 			require.NoError(t, err)
-			require.NotContains(t, content, "LICENSE")
+			require.NotContains(t, files, "LICENSE")
 		})
 
 		t.Run("bootstrap a license after sdk is set on dagger develop", func(t *testing.T) {

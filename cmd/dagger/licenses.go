@@ -60,25 +60,27 @@ var licenseFiles = []string{
 	"UNLICENCE",
 }
 
-func findOrCreateLicense(ctx context.Context, dir string) error {
+func findOrCreateLicense(ctx context.Context, dir string, searchExisting bool) error {
+	// Empty license means no license
+	if licenseID == "" {
+		return nil
+	}
+
 	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
 
-	id := licenseID
-	if id == defaultLicense {
+	if searchExisting {
 		if foundLicense, err := searchForLicense(dir); err == nil {
 			slog.Debug("found existing LICENSE file", "path", foundLicense)
 			return nil
 		}
-
-		id = defaultLicense
 	}
 
 	slog.Warn("no LICENSE file found; generating one for you, feel free to change or remove",
-		"license", id)
+		"license", licenseID)
 
-	license, err := spdx.License(id)
+	license, err := spdx.License(licenseID)
 	if err != nil {
-		return fmt.Errorf("failed to get license: %w", err)
+		return fmt.Errorf("failed to get license %q: %w", licenseID, err)
 	}
 
 	newLicense := filepath.Join(dir, "LICENSE")
