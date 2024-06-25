@@ -18,6 +18,7 @@ import (
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 type ModuleFunction struct {
@@ -378,10 +379,61 @@ func (fn *ModuleFunction) loadContextualArg(ctx context.Context, arg *FunctionAr
 
 	switch arg.TypeDef.AsObject.Value.Name {
 	case "Directory":
-		// Load contextual directory.
-		panic("not implemented")
+		slog.Error("function call arg: loading contextual directory", "fn", arg.Name, "dir", arg.DefaultPathFromContext)
+
+		ctxDir, err := fn.mod.Source.Self.ContextDirectory()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get context directory: %w", err)
+		}
+
+		// TODO: path resolution later.
+		dir, err := ctxDir.Self.Directory(ctx, arg.DefaultPathFromContext)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load contextual directory %q: %w", arg.DefaultPathFromContext, err)
+		}
+
+		// for debug purpose, will remove that later
+		files, err := dir.Entries(ctx, ".")
+		if err != nil {
+			return nil, fmt.Errorf("failed to list contextual directory %q: %w", arg.DefaultPathFromContext, err)
+		}
+
+		for _, file := range files {
+			slog.Error("function call arg: loading contextual file from contextDir", "fn", arg.Name, "path", file)
+		}
+
+		server, err := fn.mod.Deps.Schema(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get schema: %w", err)
+		}
+		
+		// Todo: replace with something better and less resource intensif
+		dirInstance, err := dir.AsBlob(ctx, server)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get dir instance: %w", err)
+		}
+
+		dirID, err := dirInstance.ID().Encode()
+		if err != nil {
+			return nil, fmt.Errorf("failed to encode dir ID: %w", err)
+		}
+
+		return JSON(fmt.Sprintf(`"%s"`, dirID)), nil		
 	case "File":
-		// Load contextual file.
+		slog.Error("function call arg: loading contextual file", "fn", arg.Name, "file", arg.DefaultPathFromContext)
+		file, err := fn.mod.GeneratedContextDirectory.Self.File(ctx, arg.DefaultPathFromContext)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load contextual file %q: %w", arg.DefaultPathFromContext, err)
+		}
+
+		content, err := file.Contents(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read contextual file %q: %w", arg.DefaultPathFromContext, err)
+		}
+
+		slog.Error("function call arg: loading contextual file", "fn", arg.Name, "file", arg.DefaultPathFromContext, "content", string(content))
+
+		// TODO: convert it to an ID
 		panic("not implemented")
 	default:
 		return nil, fmt.Errorf("unknown contextual argument type %q", arg.TypeDef.AsObject.Value.Name)
