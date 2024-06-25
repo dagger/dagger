@@ -27,7 +27,7 @@ The runtime container is currently hardcoded to run in Go 1.21  (although this m
 The runtime container is currently hardcoded to run in Python 3.11.1 using the [python:3.11-slim](https://hub.docker.com/_/python/tags?name=3.11-slim) base image by default. This can be overridden in `pyproject.toml` since [Dagger v0.11][v11]:
 
 ```toml
-[dagger.tool]
+[tool.dagger]
 base-image = "acme/python:3.11"
 ```
 
