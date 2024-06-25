@@ -119,8 +119,8 @@ function addArg(args: Arguments): (fct: Function_) => Function_ {
         typeDef = typeDef.withOptional(true)
       }
 
-      // We do not set the default value if it's not a primitive type, we let typescript
-      // resolves the default value during the runtime instead.
+      // We do not set the default value if it's not a primitive type, we let TypeScript
+      // resolve the default value during the runtime instead.
       // If it has a default value but is not primitive, we set the value as optional
       // to workaround the fact that the API isn't aware of the default value and will
       // expect it to be set as required input.
