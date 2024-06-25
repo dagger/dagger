@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"strings"
 
 	"golang.org/x/sync/errgroup"
@@ -128,27 +127,10 @@ func (r RustSDK) Publish(
 }
 
 // Bump the Rust SDK's Engine dependency
+//
+// Deprecated: this is now included in the Publish step
 func (r RustSDK) Bump(ctx context.Context, version string) (*Directory, error) {
-	versionStr := `pub const DAGGER_ENGINE_VERSION: &'static str = "([0-9\.-a-zA-Z]+)";`
-	versionStrf := `pub const DAGGER_ENGINE_VERSION: &'static str = "%s";`
-	version = strings.TrimPrefix(version, "v")
-
-	versionContents, err := r.Dagger.Source.File(rustVersionFilePath).Contents(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	versionRe, err := regexp.Compile(versionStr)
-	if err != nil {
-		return nil, err
-	}
-
-	versionBumpedContents := versionRe.ReplaceAllString(
-		versionContents,
-		fmt.Sprintf(versionStrf, version),
-	)
-
-	return dag.Directory().WithNewFile(rustVersionFilePath, versionBumpedContents), nil
+	return bumpSDK("rust", version, r.Dagger.Source), nil
 }
 
 func (r RustSDK) rustBase(image string) *Container {

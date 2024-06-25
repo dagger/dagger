@@ -99,10 +99,8 @@ func (t JavaSDK) Publish(
 	return err
 }
 
-var javaVersionRe = regexp.MustCompile(`<daggerengine\.version>([0-9\.\-a-zA-Z]+)<\/daggerengine\.version>`)
-
-// Bump the Java SDK's Engine dependency
 func (t JavaSDK) Bump(ctx context.Context, version string) (*Directory, error) {
+	var javaVersionRe = regexp.MustCompile(`<daggerengine\.version>([0-9\.\-a-zA-Z]+)<\/daggerengine\.version>`)
 	contents, err := t.Dagger.Source.File(javaSDKVersionPomPath).Contents(ctx)
 	if err != nil {
 		return nil, err
