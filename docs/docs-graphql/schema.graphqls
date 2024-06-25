@@ -2219,14 +2219,6 @@ type Query {
   ): CacheVolume!
 
   """
-  Checks if the current Dagger Engine is compatible with an SDK's required version.
-  """
-  checkVersionCompatibility(
-    """Version required by the SDK."""
-    version: String!
-  ): Boolean!
-
-  """
   Creates a scratch container.
   
   Optional platform argument initializes new containers to execute and publish

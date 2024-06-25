@@ -25,8 +25,6 @@ type Config struct {
 	Workdir   string
 	LogOutput io.Writer
 	Conn      EngineConn
-
-	SkipCompatibilityCheck bool
 }
 
 type ConnectParams struct {

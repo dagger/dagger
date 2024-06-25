@@ -49,15 +49,6 @@ defmodule Dagger.Client do
     }
   end
 
-  @doc "Checks if the current Dagger Engine is compatible with an SDK's required version."
-  @spec check_version_compatibility(t(), String.t()) :: {:ok, boolean()} | {:error, term()}
-  def check_version_compatibility(%__MODULE__{} = client, version) do
-    selection =
-      client.selection |> select("checkVersionCompatibility") |> put_arg("version", version)
-
-    execute(selection, client.client)
-  end
-
   @doc """
   Creates a scratch container.
 
