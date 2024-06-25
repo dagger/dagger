@@ -104,11 +104,7 @@ func traceMessage(profile termenv.Profile, url string, msg string) string {
 	out := NewOutput(buffer, termenv.WithProfile(profile))
 
 	fmt.Fprint(buffer, out.String("Full trace at ").Bold().String())
-	if out.Profile == termenv.Ascii {
-		fmt.Fprint(buffer, url)
-	} else {
-		fmt.Fprint(buffer, out.Hyperlink(url, url))
-	}
+	fmt.Fprint(buffer, url)
 	if msg != "" {
 		fmt.Fprintf(buffer, " (%s)", msg)
 	}
