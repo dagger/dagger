@@ -14,13 +14,18 @@ use Dagger\Service\FindsSrcDirectory;
 use Dagger\TypeDef;
 use Dagger\TypeDefKind;
 use Dagger\ValueObject\Type;
+use GraphQL\Exception\QueryError;
+use GraphQL\Results;
+use GuzzleHttp\Exception\ClientException;
 use ReflectionMethod;
 use RuntimeException;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Output\ConsoleOutputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
+use Throwable;
 
 #[AsCommand('dagger:entrypoint')]
 class EntrypointCommand extends Command
@@ -41,19 +46,21 @@ class EntrypointCommand extends Command
         $parentName = $functionCall->parentName();
 
         try {
-            $parentName === '' ?
-                $this->registerModule($functionCall) :
-                $this->callFunctionOnParent($functionCall, $parentName);
+                return $parentName === '' ?
+                    $this->registerModule($functionCall) :
+                    $this->callFunctionOnParent(
+                        $output,
+                        $functionCall,
+                        $parentName,
+                    );
         } catch (\Throwable $t) {
             $this->outputErrorInformation($input, $output, $t);
 
             return Command::FAILURE;
         }
-
-        return Command::SUCCESS;
     }
 
-    private function registerModule(Dagger\FunctionCall $functionCall): void
+    private function registerModule(Dagger\FunctionCall $functionCall): int
     {
         $daggerModule = $this->daggerClient->module();
 
@@ -93,12 +100,19 @@ class EntrypointCommand extends Command
         $functionCall->returnValue(new Dagger\Json(json_encode(
             (string) $daggerModule->id()
         )));
+
+        return Command::SUCCESS;
     }
 
     private function callFunctionOnParent(
+        OutputInterface $output,
         Dagger\FunctionCall $functionCall,
         string $parentName
-    ): void {
+    ): int {
+        $errorOutput = $output instanceof ConsoleOutputInterface ?
+            $output->getErrorOutput() :
+            $output;
+
         $className = "DaggerModule\\$parentName";
         $functionName = $functionCall->name();
         $class = new $className();
@@ -110,12 +124,28 @@ class EntrypointCommand extends Command
             json_decode(json_encode($functionCall->inputArgs()), true)
         );
 
-        $result = ($class)->$functionName(...$args);
+        try {
+            $result = ($class)->$functionName(...$args);
+        } catch (QueryError $e) {
+            if (!isset($e->getErrorDetails()['extensions'])) {
+                throw $e;
+            }
+
+            $errorOutput->writeln($e->getMessage());
+            $output->writeln($e->getErrorDetails()['extensions']['stdout'] ?? '');
+            $errorOutput->writeln($e->getErrorDetails()['extensions']['stderr'] ?? '');
+
+            return $e->getErrorDetails()['extensions']['exitCode'] ??
+                Command::FAILURE;
+        }
+
         if ($result instanceof Dagger\Client\IdAble) {
             $result = (string) $result->id();
         }
 
         $functionCall->returnValue(new Dagger\Json(json_encode($result)));
+
+        return Command::SUCCESS;
     }
 
     private function getTypeDef(Type $type): TypeDef
