@@ -27,15 +27,16 @@ Dagger is a tool that lets you replace your software project's artisanal scripts
 
 ## Learn more
 
-* [How does it work?](https://docs.dagger.io/#how-does-it-work)
-* [Getting started](https://docs.dagger.io/#getting-started)
-* [Examples](https://github.com/dagger/dagger/tree/main/examples)
+* [How does it work?](https://docs.dagger.io/#how-does-dagger-work)
+* [Quickstart](https://docs.dagger.io/quickstart)
+* [Cookbook](https://docs.dagger.io/cookbook)
 
 ## Join the community
 
 * Join the [Dagger community server](https://discord.gg/ufnyBtc8uY)
 * Follow us on [Twitter](https://twitter.com/dagger_io)
 * Check out our [community activities](https://dagger.io/community)
+* Read more in our [documentation](https://docs.dagger.io)
 
 ## Contributing
 
