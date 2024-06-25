@@ -30,7 +30,7 @@ class MyModule {
         .container()
         .from("alpine")
         // add script with execution permission to simulate a testing tool.
-        .withNewFile("run-tests", { contents: SCRIPT, permissions: 0o750 })
+        .withNewFile("run-tests", SCRIPT, { permissions: 0o750 })
         // if the exit code isn't needed: "run-tests; true
         .withExec(["sh", "-c", "/run-tests; echo -n $? > /exit_code"])
         // the result of `sync` is the container, which allows continued chaining

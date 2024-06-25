@@ -15,7 +15,7 @@ func (m *HelloDagger) Publish(ctx context.Context, source *Directory) (string, e
 	if err != nil {
 		return "", err
 	}
-	return  m.Build(source).
+	return m.Build(source).
 		Publish(ctx, fmt.Sprintf("ttl.sh/hello-dagger-%.0f", math.Floor(rand.Float64()*10000000))) //#nosec
 }
 

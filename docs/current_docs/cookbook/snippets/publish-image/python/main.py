@@ -19,7 +19,7 @@ class MyModule:
             .from_("nginx:1.23-alpine")
             .with_new_file(
                 "/usr/share/nginx/html/index.html",
-                contents="Hello from Dagger!",
+                "Hello from Dagger!",
                 permissions=0o400,
             )
             .with_registry_auth(registry, username, password)
