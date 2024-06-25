@@ -114,13 +114,22 @@ function addArg(args: Arguments): (fct: Function_) => Function_ {
         description: arg.description,
       }
 
-      if (arg.defaultValue) {
-        opts.defaultValue = arg.defaultValue as string & { __JSON: never }
-      }
-
       let typeDef = addTypeDef(arg.type)
       if (arg.isOptional) {
         typeDef = typeDef.withOptional(true)
+      }
+
+      // We do not set the default value if it's not a primitive type, we let TypeScript
+      // resolve the default value during the runtime instead.
+      // If it has a default value but is not primitive, we set the value as optional
+      // to workaround the fact that the API isn't aware of the default value and will
+      // expect it to be set as required input.
+      if (arg.defaultValue) {
+        if (isPrimitiveType(arg.type)) {
+          opts.defaultValue = arg.defaultValue as string & { __JSON: never }
+        } else {
+          typeDef = typeDef.withOptional(true)
+        }
       }
 
       fct = fct.withArg(arg.name, typeDef, opts)
@@ -155,4 +164,13 @@ function addTypeDef(type: ScannerTypeDef<TypeDefKind>): TypeDef {
     default:
       return dag.typeDef().withKind(type.kind)
   }
+}
+
+function isPrimitiveType(type: ScannerTypeDef<TypeDefKind>): boolean {
+  return (
+    type.kind === TypeDefKind.BooleanKind ||
+    type.kind === TypeDefKind.IntegerKind ||
+    type.kind === TypeDefKind.StringKind ||
+    type.kind === TypeDefKind.EnumKind
+  )
 }

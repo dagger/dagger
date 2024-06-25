@@ -162,6 +162,14 @@ export class Argument {
     return this.formatDefaultValue(this.param.initializer.getText())
   }
 
+  /**
+   * Return true if the parameter is optional.
+   *
+   * A parameter is considered optional if:
+   * - It has a question token (e.g. `foo?: <type>`).
+   * - It's variadic (e.g. `...foo: <type>[]`).
+   * - It's nullable (e.g. `foo: <type> | null`).
+   */
   private loadIsOptional(): boolean {
     return (
       this.param.questionToken !== undefined ||

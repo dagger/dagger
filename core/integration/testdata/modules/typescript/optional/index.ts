@@ -1,4 +1,4 @@
-import { Directory, object, func } from "@dagger.io/dagger";
+import { dag, Directory, object, func } from "@dagger.io/dagger";
 
 @object()
 class Minimal {
@@ -28,5 +28,10 @@ class Minimal {
     }
 
     return "";
+  }
+
+  @func()
+  async resolveValue(dir: Directory = dag.directory().withNewFile("foo.txt", "hello world")): Promise<string> {
+    return dir.file("foo.txt").contents();
   }
 }

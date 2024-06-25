@@ -486,6 +486,10 @@ func TestModuleTypescriptOptional(t *testing.T) {
 	out, err = modGen.With(daggerQuery(`{minimal{isEmpty}}`)).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"minimal": {"isEmpty": true}}`, out)
+
+	out, err = modGen.With(daggerQuery(`{minimal{resolveValue}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"minimal": {"resolveValue": "hello world"}}`, out)
 }
 
 func TestModuleTypescriptRuntimeDetection(t *testing.T) {
