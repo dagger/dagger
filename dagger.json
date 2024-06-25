@@ -3,10 +3,6 @@
   "sdk": "go",
   "dependencies": [
     {
-      "name": "shellcheck",
-      "source": "ci/std/shellcheck"
-    },
-    {
       "name": "docusaurus",
       "source": "github.com/levlaz/daggerverse/docusaurus@72ec19206da7dbe2815da94c62e491b54935b633"
     },
@@ -17,10 +13,14 @@
     {
       "name": "graphql",
       "source": "ci/std/graphql"
+    },
+    {
+      "name": "shellcheck",
+      "source": "ci/std/shellcheck"
     }
   ],
   "source": "ci",
-  "engineVersion": "v0.11.7",
+  "engineVersion": "v0.11.8",
   "views": [
     {
       "name": "default",
