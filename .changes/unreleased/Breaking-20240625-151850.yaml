@@ -1,0 +1,6 @@
+kind: Breaking
+body: 'api: removed checkVersionCompatibility field (versioning checks are now automatically performed on all connections)'
+time: 2024-06-25T15:18:50.201460548+01:00
+custom:
+  Author: jedevc
+  PR: "7751"
