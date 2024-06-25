@@ -70,6 +70,7 @@ func (t PHPSDK) Publish(
 	githubToken *Secret,
 ) error {
 	return gitPublish(ctx, gitPublishOpts{
+		sdk:         "php",
 		source:      "https://github.com/dagger/dagger.git",
 		sourcePath:  "sdk/php/",
 		sourceTag:   tag,

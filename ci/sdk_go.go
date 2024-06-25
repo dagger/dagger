@@ -85,6 +85,7 @@ func (t GoSDK) Publish(
 	githubToken *Secret,
 ) error {
 	return gitPublish(ctx, gitPublishOpts{
+		sdk:          "go",
 		source:       "https://github.com/dagger/dagger.git",
 		sourceTag:    tag,
 		sourcePath:   "sdk/go/",
@@ -107,6 +108,8 @@ func (t GoSDK) Bump(ctx context.Context, version string) (*Directory, error) {
 }
 
 type gitPublishOpts struct {
+	sdk string
+
 	source, dest       string
 	sourceTag, destTag string
 	sourcePath         string
@@ -122,11 +125,11 @@ type gitPublishOpts struct {
 
 func gitPublish(ctx context.Context, opts gitPublishOpts) error {
 	base := opts.sourceEnv
-	if base == nil {
-		base = dag.Container().
-			From(consts.AlpineImage).
-			WithExec([]string{"apk", "add", "-U", "--no-cache", "git"})
-	}
+	// if base == nil {
+	base = dag.Container().
+		From(consts.AlpineImage).
+		WithExec([]string{"apk", "add", "-U", "--no-cache", "git", "go", "python3"})
+	// }
 
 	// FIXME: move this into std modules
 	git := base.
@@ -149,6 +152,8 @@ func gitPublish(ctx context.Context, opts gitPublishOpts) error {
 		WithWorkdir("/src/dagger").
 		WithExec([]string{"git", "clone", opts.source, "."}).
 		WithExec([]string{"git", "fetch", "origin", "-v", "--update-head-ok", fmt.Sprintf("refs/*%[1]s:refs/*%[1]s", strings.TrimPrefix(opts.sourceTag, "refs/"))}).
+		WithMountedFile("/opt/version-update.py", dag.CurrentModule().Source().File("version-update.py")).
+		WithExec([]string{"python", "/opt/version-update.py", "--sdk", opts.sdk, "git", "--ref", opts.sourceTag}).
 		WithEnvVariable("FILTER_BRANCH_SQUELCH_WARNING", "1").
 		WithExec([]string{
 			"git", "filter-branch", "-f", "--prune-empty",
