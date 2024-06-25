@@ -361,32 +361,34 @@ func TestContainerSystemProxies(t *testing.T) {
 		)
 	})
 
-	t.Run("git uses proxy", func(t *testing.T) {
-		t.Parallel()
-		c, ctx := connect(t)
+	testOnMultipleVCS(t, func(t *testing.T, tc vcsTestCase) {
+		t.Run("git uses proxy", func(t *testing.T) {
+			// cannot parellelize, as it becomes flaky
+			c, ctx := connect(t)
 
-		customProxyTests(ctx, t, c, 104, false,
-			proxyTest{name: "git",
-				run: func(t *testing.T, c *dagger.Client, _ proxyTestFixtures) {
-					_, err := c.Git("https://" + gitTestRepoURL).Ref(gitTestRepoCommit).Tree().Sync(ctx)
-					require.NoError(t, err)
-				},
-				proxyLogTest: func(t *testing.T, _ *dagger.Client, getProxyLogs getProxyLogsFunc) {
-					// retry a few times in case logs haven't been flushed yet
-					var proxyLogs string
-					for i := 0; i < 5; i++ {
-						var err error
-						proxyLogs, err = getProxyLogs(ctx)
+			customProxyTests(ctx, t, c, 104, false,
+				proxyTest{name: "git",
+					run: func(t *testing.T, c *dagger.Client, _ proxyTestFixtures) {
+						_, err := c.Git("https://" + tc.gitTestRepoRef).Ref(tc.gitTestRepoCommit).Tree().Sync(ctx)
 						require.NoError(t, err)
-						if strings.Contains(proxyLogs, "CONNECT github.com:443") {
-							return
+					},
+					proxyLogTest: func(t *testing.T, _ *dagger.Client, getProxyLogs getProxyLogsFunc) {
+						// retry a few times in case logs haven't been flushed yet
+						var proxyLogs string
+						for i := 0; i < 5; i++ {
+							var err error
+							proxyLogs, err = getProxyLogs(ctx)
+							require.NoError(t, err)
+							if strings.Contains(proxyLogs, fmt.Sprintf("CONNECT %s:443", tc.host)) {
+								return
+							}
+							time.Sleep(1 * time.Second)
 						}
-						time.Sleep(1 * time.Second)
-					}
-					require.Fail(t, "expected CONNECT to github.com in proxy logs", proxyLogs)
+						require.Fail(t, fmt.Sprintf("expected CONNECT to %s in proxy logs", tc.host), proxyLogs)
+					},
 				},
-			},
-		)
+			)
+		})
 	})
 }
 
@@ -491,11 +493,17 @@ func TestContainerSystemGoProxy(t *testing.T) {
 	ctr := goGitBase(t, c).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
 
-	out, err := ctr.
-		With(daggerCallAt(testGitModuleRef("top-level"), "fn")).
-		Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "hi from top level hi from dep hi from dep2", strings.TrimSpace(out))
+	testOnMultipleVCS(t, func(t *testing.T, tc vcsTestCase) {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			out, err := ctr.
+				With(daggerCallAt(testGitModuleRef(tc, "top-level"), "fn")).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "hi from top level hi from dep hi from dep2", strings.TrimSpace(out))
+		})
+	})
 }
 
 type goProxyFetcher struct {
