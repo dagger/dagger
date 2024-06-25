@@ -132,6 +132,10 @@ function addArg(args: Arguments): (fct: Function_) => Function_ {
         }
       }
 
+      if (arg.defaultPathFromContext) {
+        opts.defaultPathFromContext = arg.defaultPathFromContext
+      }
+
       fct = fct.withArg(arg.name, typeDef, opts)
     })
 
