@@ -1,3 +1,0 @@
-name: dagger-pulumi-demo-ecr
-runtime: nodejs
-description: A minimal TypeScript Pulumi program
