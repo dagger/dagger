@@ -531,7 +531,7 @@ func (c *Client) daggerConnect(ctx context.Context) error {
 	c.daggerClient, err = dagger.Connect(
 		context.WithoutCancel(ctx),
 		dagger.WithConn(EngineConn(c)),
-		dagger.WithSkipCompatibilityCheck())
+	)
 	return err
 }
 

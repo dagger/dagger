@@ -3,7 +3,6 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
-import warnings
 
 from typing_extensions import Self
 
@@ -16,7 +15,6 @@ from dagger.client._session import (
     SingleConnection,
 )
 
-from ._version import CLI_VERSION
 from .download import Downloader
 from .progress import Progress
 from .session import start_cli_session
@@ -43,7 +41,6 @@ class Engine:
         self.progress = Progress(cfg.console)
         self.connect_params = None
         self.connect_config = None
-        self.version_mismatch_msg = ""
         self.has_provisioned = False
 
     async def provision(self) -> Self:
@@ -80,14 +77,6 @@ class Engine:
     async def get_cli(self) -> str:
         """Get path to CLI."""
         if cli_bin := os.getenv("_EXPERIMENTAL_DAGGER_CLI_BIN"):
-            # Warn if engine version is incompatible only if an explicit
-            # binary is provided. It's already done by the API when
-            # using the TUI, and using the Downloader ensures the correct
-            # version is used.
-            self.version_mismatch_msg = (
-                f'Dagger CLI version mismatch (required {CLI_VERSION}): "{cli_bin}"'
-            )
-
             return cli_bin
 
         # Get from cache or download.
@@ -126,9 +115,7 @@ class Engine:
         """Check if the Dagger CLI version is compatible with the engine."""
         await self.progress.update("Checking version compatibility")
         try:
-            msg = self.version_mismatch_msg
-            if not await client.check_version_compatibility(CLI_VERSION) and msg:
-                warnings.warn(msg, dagger.VersionMismatch, stacklevel=2)
+            await client.version()
         except dagger.QueryError as e:
             logger.warning("Failed to check Dagger engine version compatibility: %s", e)
 

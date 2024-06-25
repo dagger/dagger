@@ -58,12 +58,6 @@ func CacheVolume(key string) *dagger.CacheVolume {
 	return client.CacheVolume(key)
 }
 
-// Checks if the current Dagger Engine is compatible with an SDK's required version.
-func CheckVersionCompatibility(ctx context.Context, version string) (bool, error) {
-	client := initClient()
-	return client.CheckVersionCompatibility(ctx, version)
-}
-
 // Creates a scratch container.
 //
 // Optional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.

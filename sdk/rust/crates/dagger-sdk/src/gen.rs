@@ -5803,19 +5803,6 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Checks if the current Dagger Engine is compatible with an SDK's required version.
-    ///
-    /// # Arguments
-    ///
-    /// * `version` - Version required by the SDK.
-    pub async fn check_version_compatibility(
-        &self,
-        version: impl Into<String>,
-    ) -> Result<bool, DaggerError> {
-        let mut query = self.selection.select("checkVersionCompatibility");
-        query = query.arg("version", version.into());
-        query.execute(self.graphql_client.clone()).await
-    }
     /// Creates a scratch container.
     /// Optional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.
     ///

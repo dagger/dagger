@@ -7336,7 +7336,6 @@ export class Port extends BaseClient {
  * The root of the DAG.
  */
 export class Client extends BaseClient {
-  private readonly _checkVersionCompatibility?: boolean = undefined
   private readonly _defaultPlatform?: Platform = undefined
   private readonly _version?: string = undefined
 
@@ -7345,13 +7344,11 @@ export class Client extends BaseClient {
    */
   constructor(
     parent?: { queryTree?: QueryTree[]; ctx: Context },
-    _checkVersionCompatibility?: boolean,
     _defaultPlatform?: Platform,
     _version?: string,
   ) {
     super(parent)
 
-    this._checkVersionCompatibility = _checkVersionCompatibility
     this._defaultPlatform = _defaultPlatform
     this._version = _version
   }
@@ -7420,25 +7417,6 @@ export class Client extends BaseClient {
       ],
       ctx: this._ctx,
     })
-  }
-
-  /**
-   * Checks if the current Dagger Engine is compatible with an SDK's required version.
-   * @param version Version required by the SDK.
-   */
-  checkVersionCompatibility = async (version: string): Promise<boolean> => {
-    const response: Awaited<boolean> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "checkVersionCompatibility",
-          args: { version },
-        },
-      ],
-      await this._ctx.connection(),
-    )
-
-    return response
   }
 
   /**

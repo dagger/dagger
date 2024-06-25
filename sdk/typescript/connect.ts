@@ -3,7 +3,6 @@ import * as opentelemetry from "@opentelemetry/api"
 import { Client } from "./api/client.gen.js"
 import { ConnectOpts } from "./connectOpts.js"
 import { Context, defaultContext } from "./context/context.js"
-import { CLI_VERSION } from "./provisioning/index.js"
 import * as telemetry from "./telemetry/telemetry.js"
 
 export type CallbackFct = (client: Client) => Promise<void>
@@ -70,7 +69,7 @@ export async function connect(
 
   // Warning shall be throw if versions are not compatible
   try {
-    await client.checkVersionCompatibility(CLI_VERSION)
+    await client.version()
   } catch (e) {
     console.error("failed to check version compatibility:", e)
   }

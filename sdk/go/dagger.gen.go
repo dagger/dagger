@@ -5709,17 +5709,6 @@ func (r *Client) CacheVolume(key string) *CacheVolume {
 	}
 }
 
-// Checks if the current Dagger Engine is compatible with an SDK's required version.
-func (r *Client) CheckVersionCompatibility(ctx context.Context, version string) (bool, error) {
-	q := r.query.Select("checkVersionCompatibility")
-	q = q.Arg("version", version)
-
-	var response bool
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
 // ContainerOpts contains options for Client.Container
 type ContainerOpts struct {
 	// DEPRECATED: Use `loadContainerFromID` instead.

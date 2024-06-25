@@ -47,16 +47,6 @@ class Client extends Client\AbstractClient
     }
 
     /**
-     * Checks if the current Dagger Engine is compatible with an SDK's required version.
-     */
-    public function checkVersionCompatibility(string $version): bool
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('checkVersionCompatibility');
-        $leafQueryBuilder->setArgument('version', $version);
-        return (bool)$this->queryLeaf($leafQueryBuilder, 'checkVersionCompatibility');
-    }
-
-    /**
      * Creates a scratch container.
      *
      * Optional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.
