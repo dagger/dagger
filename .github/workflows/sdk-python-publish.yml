@@ -8,7 +8,7 @@ jobs:
     runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-v0-11-9-4c-nvme' || 'ubuntu-latest' }}"
     steps:
       - uses: actions/checkout@v4
-      - name: "go publish"
+      - name: "python publish"
         uses: ./.github/actions/call
         env:
           RELEASE_PYPI_TOKEN: ${{ secrets.RELEASE_PYPI_TOKEN }}
