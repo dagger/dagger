@@ -56,7 +56,7 @@ func Middleware() []testctx.Middleware {
 
 func connect(ctx context.Context, t *testctx.T, opts ...dagger.ClientOpt) *dagger.Client {
 	opts = append([]dagger.ClientOpt{
-		dagger.WithLogOutput(testutil.NewTWriter(t)),
+		dagger.WithLogOutput(testutil.NewTWriter(t.T)),
 	}, opts...)
 	client, err := dagger.Connect(ctx, opts...)
 	require.NoError(t, err)

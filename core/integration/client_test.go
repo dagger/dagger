@@ -35,7 +35,7 @@ func (ClientSuite) TestMultiSameTrace(ctx context.Context, t *testctx.T) {
 	newClient := func(ctx context.Context, name string) (*dagger.Client, *safeBuffer) {
 		out := new(safeBuffer)
 		c, err := dagger.Connect(ctx,
-			dagger.WithLogOutput(io.MultiWriter(prefixw.New(testutil.NewTWriter(t), name+": "), out)))
+			dagger.WithLogOutput(io.MultiWriter(prefixw.New(testutil.NewTWriter(t.T), name+": "), out)))
 		require.NoError(t, err)
 		t.Cleanup(func() { c.Close() })
 		return c, out

@@ -28,7 +28,7 @@ func Query(t *testctx.T, query string, res any, opts *QueryOptions, clientOpts .
 	}
 
 	clientOpts = append([]dagger.ClientOpt{
-		dagger.WithLogOutput(NewTWriter(t)),
+		dagger.WithLogOutput(NewTWriter(t.T)),
 	}, clientOpts...)
 
 	c, err := dagger.Connect(ctx, clientOpts...)

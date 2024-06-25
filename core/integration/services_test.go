@@ -1587,7 +1587,7 @@ func (ServiceSuite) TestSearchDomainAlwaysSet(ctx context.Context, t *testctx.T)
 	// verify that even if the engine doesn't have any search domains to propagate to execs, we still
 	// set search domains in those execs
 
-	c, err := dagger.Connect(ctx, dagger.WithLogOutput(testutil.NewTWriter(t)))
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(testutil.NewTWriter(t.T)))
 	require.NoError(t, err)
 	t.Cleanup(func() { c.Close() })
 
@@ -1628,7 +1628,7 @@ func (ServiceSuite) TestSearchDomainAlwaysSet(ctx context.Context, t *testctx.T)
 
 	c2, err := dagger.Connect(ctx,
 		dagger.WithRunnerHost("tcp://127.0.0.1:32132"),
-		dagger.WithLogOutput(testutil.NewTWriter(t)))
+		dagger.WithLogOutput(testutil.NewTWriter(t.T)))
 	require.NoError(t, err)
 	t.Cleanup(func() { c2.Close() })
 
