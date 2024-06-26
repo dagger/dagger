@@ -709,21 +709,23 @@ func (ContainerSuite) TestExecWithEntrypoint(ctx context.Context, t *testctx.T) 
 	})
 
 	t.Run("used", func(ctx context.Context, t *testctx.T) {
-		used, err := withEntry.WithExec([]string{"-c", "echo $HOME"}).Stdout(ctx)
+		used, err := withEntry.WithExec([]string{"-c", "echo $HOME"}, dagger.ContainerWithExecOpts{
+			UseEntrypoint: true,
+		}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "/root\n", used)
 	})
 
 	t.Run("prepended to exec", func(ctx context.Context, t *testctx.T) {
-		_, err := withEntry.WithExec([]string{"sh", "-c", "echo $HOME"}).Sync(ctx)
+		_, err := withEntry.WithExec([]string{"sh", "-c", "echo $HOME"}, dagger.ContainerWithExecOpts{
+			UseEntrypoint: true,
+		}).Sync(ctx)
 		require.Error(t, err)
 		require.ErrorContains(t, err, "can't open 'sh'")
 	})
 
 	t.Run("skipped", func(ctx context.Context, t *testctx.T) {
-		skipped, err := withEntry.WithExec([]string{"sh", "-c", "echo $HOME"}, dagger.ContainerWithExecOpts{
-			SkipEntrypoint: true,
-		}).Stdout(ctx)
+		skipped, err := withEntry.WithExec([]string{"sh", "-c", "echo $HOME"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "/root\n", skipped)
 	})
@@ -732,6 +734,9 @@ func (ContainerSuite) TestExecWithEntrypoint(ctx context.Context, t *testctx.T) 
 		removed, err := base.
 			WithDefaultArgs([]string{"foobar"}).
 			WithEntrypoint([]string{"echo"}).
+			WithExec(nil, dagger.ContainerWithExecOpts{
+				UseEntrypoint: true,
+			}).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "\n", removed)
@@ -742,6 +747,9 @@ func (ContainerSuite) TestExecWithEntrypoint(ctx context.Context, t *testctx.T) 
 			WithDefaultArgs([]string{"foobar"}).
 			WithEntrypoint([]string{"echo"}, dagger.ContainerWithEntrypointOpts{
 				KeepDefaultArgs: true,
+			}).
+			WithExec(nil, dagger.ContainerWithExecOpts{
+				UseEntrypoint: true,
 			}).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -765,7 +773,9 @@ func (ContainerSuite) TestExecWithoutEntrypoint(ctx context.Context, t *testctx.
 			// if not unset this would return an error
 			WithEntrypoint([]string{"foo"}).
 			WithoutEntrypoint().
-			WithExec([]string{"echo", "-n", "foobar"}).
+			WithExec([]string{"echo", "-n", "foobar"}, dagger.ContainerWithExecOpts{
+				UseEntrypoint: true,
+			}).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "foobar", res)
@@ -842,7 +852,7 @@ func (ContainerSuite) TestWithDefaultArgs(ctx context.Context, t *testctx.T) {
 						entrypoint
 						defaultArgs
 
-						withExec(args: ["echo $HOME"]) {
+						withExec(args: ["echo $HOME"], useEntrypoint: true) {
 							stdout
 						}
 
@@ -850,7 +860,7 @@ func (ContainerSuite) TestWithDefaultArgs(ctx context.Context, t *testctx.T) {
 							entrypoint
 							defaultArgs
 
-							withExec(args: []) {
+							withExec(args: [], useEntrypoint: true) {
 								stdout
 							}
 						}
@@ -894,7 +904,9 @@ func (ContainerSuite) TestExecWithoutDefaultArgs(ctx context.Context, t *testctx
 		WithEntrypoint([]string{"echo", "-n"}).
 		WithDefaultArgs([]string{"foo"}).
 		WithoutDefaultArgs().
-		WithExec([]string{}).
+		WithExec(nil, dagger.ContainerWithExecOpts{
+			UseEntrypoint: true,
+		}).
 		Stdout(ctx)
 
 	require.NoError(t, err)
@@ -2747,9 +2759,8 @@ func (ContainerSuite) TestPublish(ctx context.Context, t *testctx.T) {
 
 	testRef := registryRef("container-publish")
 
-	entrypoint := []string{"echo", "im-a-entrypoint"}
-	ctr := c.Container().From(alpineImage).
-		WithEntrypoint(entrypoint)
+	args := []string{"echo", "im-a-default-arg"}
+	ctr := c.Container().From(alpineImage).WithDefaultArgs(args)
 	pushedRef, err := ctr.Publish(ctx, testRef)
 	require.NoError(t, err)
 	require.NotEqual(t, testRef, pushedRef)
@@ -2762,7 +2773,7 @@ func (ContainerSuite) TestPublish(ctx context.Context, t *testctx.T) {
 
 	output, err := pulledCtr.WithExec(nil).Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "im-a-entrypoint\n", output)
+	require.Equal(t, "im-a-default-arg\n", output)
 }
 
 func (ContainerSuite) TestExecFromScratch(ctx context.Context, t *testctx.T) {
@@ -2950,6 +2961,7 @@ func (ContainerSuite) TestImport(ctx context.Context, t *testctx.T) {
 
 		imageFile := apko.
 			WithExec([]string{
+				"apko",
 				"build",
 				"config.yml", "latest", "output.tar",
 			}).
@@ -3080,7 +3092,7 @@ func (ContainerSuite) TestMultiPlatformPublish(ctx context.Context, t *testctx.T
 		ctr := c.Container(dagger.ContainerOpts{Platform: platform}).
 			From(alpineImage).
 			WithExec([]string{"uname", "-m"}).
-			WithEntrypoint([]string{"echo", uname})
+			WithDefaultArgs([]string{"echo", uname})
 		variants = append(variants, ctr)
 	}
 

@@ -1103,8 +1103,10 @@ func (r *Container) WithEnvVariable(name string, value string, opts ...Container
 
 // ContainerWithExecOpts contains options for Container.WithExec
 type ContainerWithExecOpts struct {
-	// If the container has an entrypoint, ignore it for args rather than using it to wrap them.
+	// DEPRECATED: For true this can be removed. For false, use `useEntrypoint` instead.
 	SkipEntrypoint bool
+	// If the container has an entrypoint, prepend it to the args.
+	UseEntrypoint bool
 	// Content to write to the command's standard input before closing (e.g., "Hello world").
 	Stdin string
 	// Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
@@ -1126,6 +1128,10 @@ func (r *Container) WithExec(args []string, opts ...ContainerWithExecOpts) *Cont
 		// `skipEntrypoint` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SkipEntrypoint) {
 			q = q.Arg("skipEntrypoint", opts[i].SkipEntrypoint)
+		}
+		// `useEntrypoint` optional argument
+		if !querybuilder.IsZeroValue(opts[i].UseEntrypoint) {
+			q = q.Arg("useEntrypoint", opts[i].UseEntrypoint)
 		}
 		// `stdin` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Stdin) {

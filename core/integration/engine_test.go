@@ -55,6 +55,7 @@ func devEngineContainer(c *dagger.Client, withs ...func(*dagger.Container) *dagg
 			"--network-name", deviceName,
 			"--network-cidr", cidr,
 		}, dagger.ContainerWithExecOpts{
+			UseEntrypoint:            true,
 			InsecureRootCapabilities: true,
 		})
 }

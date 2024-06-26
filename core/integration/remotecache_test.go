@@ -180,7 +180,7 @@ func (RemoteCacheSuite) TestS3(ctx context.Context, t *testctx.T) {
 		s3 := c.Pipeline("s3").Container().From("minio/minio").
 			WithMountedCache("/data", c.CacheVolume("minio-cache")).
 			WithExposedPort(9000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
-			WithExec([]string{"server", "/data"}).
+			WithExec([]string{"minio", "server", "/data"}).
 			AsService()
 
 		s3Endpoint, err := s3.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 9000, Scheme: "http"})
@@ -188,8 +188,7 @@ func (RemoteCacheSuite) TestS3(ctx context.Context, t *testctx.T) {
 
 		minioStdout, err := c.Container().From("minio/mc").
 			WithServiceBinding("s3", s3).
-			WithEntrypoint([]string{"sh"}).
-			WithExec([]string{"-c", "mc alias set minio http://s3:9000 minioadmin minioadmin && mc mb minio/" + bucket}).
+			WithExec([]string{"sh", "-c", "mc alias set minio http://s3:9000 minioadmin minioadmin && mc mb minio/" + bucket}).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, minioStdout, "Bucket created successfully")

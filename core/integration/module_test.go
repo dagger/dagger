@@ -6138,6 +6138,7 @@ func daggerCallAt(modPath string, args ...string) dagger.WithContainerFunc {
 			execArgs = append(execArgs, "-m", modPath)
 		}
 		return c.WithExec(append(execArgs, args...), dagger.ContainerWithExecOpts{
+			UseEntrypoint:                 true,
 			ExperimentalPrivilegedNesting: true,
 		})
 	}

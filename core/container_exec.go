@@ -21,8 +21,11 @@ type ContainerExecOpts struct {
 	Args []string
 
 	// If the container has an entrypoint, ignore it for this exec rather than
-	// calling it with args.
-	SkipEntrypoint bool `default:"false"`
+	// calling it with args
+	SkipEntrypoint *bool `default:"true"`
+
+	// If the container has an entrypoint, prepend it to this exec's args
+	UseEntrypoint bool `default:"false"`
 
 	// Content to write to the command's standard input before closing
 	Stdin string `default:""`
@@ -316,7 +319,9 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 
 func (container *Container) MetaFileContents(ctx context.Context, filePath string) (string, error) {
 	if container.Meta == nil {
-		ctr, err := container.WithExec(ctx, ContainerExecOpts{})
+		ctr, err := container.WithExec(ctx, ContainerExecOpts{
+			UseEntrypoint: true,
+		})
 		if err != nil {
 			return "", err
 		}

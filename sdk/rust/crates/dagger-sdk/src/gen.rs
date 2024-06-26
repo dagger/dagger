@@ -1587,12 +1587,15 @@ pub struct ContainerWithExecOpts<'a> {
     /// Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
     #[builder(setter(into, strip_option), default)]
     pub redirect_stdout: Option<&'a str>,
-    /// If the container has an entrypoint, ignore it for args rather than using it to wrap them.
+    /// DEPRECATED: For true this can be removed. For false, use `useEntrypoint` instead.
     #[builder(setter(into, strip_option), default)]
     pub skip_entrypoint: Option<bool>,
     /// Content to write to the command's standard input before closing (e.g., "Hello world").
     #[builder(setter(into, strip_option), default)]
     pub stdin: Option<&'a str>,
+    /// If the container has an entrypoint, prepend it to the args.
+    #[builder(setter(into, strip_option), default)]
+    pub use_entrypoint: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithExposedPortOpts<'a> {
@@ -2465,6 +2468,9 @@ impl Container {
         );
         if let Some(skip_entrypoint) = opts.skip_entrypoint {
             query = query.arg("skipEntrypoint", skip_entrypoint);
+        }
+        if let Some(use_entrypoint) = opts.use_entrypoint {
+            query = query.arg("useEntrypoint", use_entrypoint);
         }
         if let Some(stdin) = opts.stdin {
             query = query.arg("stdin", stdin);

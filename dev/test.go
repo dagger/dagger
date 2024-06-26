@@ -172,6 +172,9 @@ func (t *Test) testCmd(ctx context.Context) (*Container, error) {
 		WithExposedPort(1234, ContainerWithExposedPortOpts{Protocol: Tcp}).
 		WithMountedCache(distconsts.EngineDefaultStateDir, dag.CacheVolume("dagger-dev-engine-test-state"+identity.NewID())).
 		WithExec(nil, ContainerWithExecOpts{
+            // FIXME: Replace the following line after https://github.com/dagger/dagger/pull/7136 is released:
+			// UseEntrypoint:            true,
+			SkipEntrypoint:           false,
 			InsecureRootCapabilities: true,
 		}).
 		AsService()
