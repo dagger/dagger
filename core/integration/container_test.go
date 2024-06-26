@@ -764,6 +764,40 @@ func (ContainerSuite) TestExecWithEntrypoint(ctx context.Context, t *testctx.T) 
 	})
 }
 
+func (ContainerSuite) TestExecWithSkipEntrypointCompat(ctx context.Context, t *testctx.T) {
+	// Tests backwards compatibility with `skipEntrypoint: false` option.
+	// Doesn't work on Go because it can't distinguish between unset and
+	// empty value.
+
+	res := struct {
+		Container struct {
+			From struct {
+				WithEntrypoint struct {
+					WithExec struct {
+						Stdout string
+					}
+				}
+			}
+		}
+	}{}
+
+	err := testutil.Query(t,
+		`{
+            container {
+                from(address: "`+alpineImage+`") {
+                    withEntrypoint(args: ["sh", "-c"]) {
+                        withExec(args: ["echo $HOME"], skipEntrypoint: false) {
+                            stdout
+                        }
+                    }
+                }
+			}
+		}`, &res, nil)
+
+	require.NoError(t, err)
+	require.Equal(t, "/root\n", res.Container.From.WithEntrypoint.WithExec.Stdout)
+}
+
 func (ContainerSuite) TestExecWithoutEntrypoint(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
