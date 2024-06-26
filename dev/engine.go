@@ -169,17 +169,20 @@ func (e *Engine) Lint(
 	packages := []string{
 		"",
 		// FIXME: should the CI lint itself?
-		"ci",
-		"ci/dirdiff",
-		"ci/std/go",
-		"ci/std/graphql",
+		// FIXME: unsustainable to require keeping this list up to date by hand
+		"dev",
+		"dev/dirdiff",
+		"dev/std/go",
+		"dev/std/graphql",
+		"dev/std/shellcheck",
 	}
 	// Packages that need codegen
 	codegen := []string{
 		"",
-		"ci/dirdiff",
-		"ci/std/go",
-		"ci/std/graphql",
+		"dev/dirdiff",
+		"dev/std/go",
+		"dev/std/graphql",
+		"dev/std/shellcheck",
 	}
 
 	return e.Dagger.Go().

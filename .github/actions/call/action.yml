@@ -8,7 +8,7 @@ inputs:
 
   module:
     description: "The Dagger module to call"
-    default: "."
+    default: "dev"
     required: false
 
   version:
@@ -97,12 +97,12 @@ runs:
         source /tmp/actions/call/local-envs
 
         set -x
-        if [[ "${{ inputs.module }}" == "." ]]; then
+        if [[ "${{ inputs.module }}" == "dev" ]]; then
           # set some sane defaults for the current module
           if [[ -f $HOME/.docker/config.json ]]; then
-            dagger -m . call --source=".:default" --host-docker-config=file:"$HOME/.docker/config.json" ${{ inputs.function }}
+            dagger -m "${{ inputs.module }}" call --source=".:default" --host-docker-config=file:"$HOME/.docker/config.json" ${{ inputs.function }}
           else
-            dagger -m . call --source=".:default" ${{ inputs.function }}
+            dagger -m "${{ inputs.module }}" call --source=".:default" ${{ inputs.function }}
           fi
         else
           dagger -m "${{ inputs.module }}" call ${{ inputs.function }}

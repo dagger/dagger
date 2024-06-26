@@ -1,7 +1,6 @@
-# CI
+# Dagger dev module
 
-This dagger module is used to define the CI for the dagger project itself,
-including building and releasing the CLI, engine and SDKs themselves.
+This module defines pipelines to develop the Dagger itself, including building and releasing the CLI, engine and SDKs.
 
 Available functionality:
 
@@ -32,7 +31,6 @@ Available functionality:
 If you want to develop this module following a repository clone, remember to
 run the following one-off command:
 
-    cd ..
     dagger develop
 
 This will re-create all the files required by your code editor - see

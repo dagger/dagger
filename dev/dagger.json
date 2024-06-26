@@ -8,18 +8,18 @@
     },
     {
       "name": "go",
-      "source": "ci/std/go"
+      "source": "std/go"
     },
     {
       "name": "graphql",
-      "source": "ci/std/graphql"
+      "source": "std/graphql"
     },
     {
       "name": "shellcheck",
-      "source": "ci/std/shellcheck"
+      "source": "std/shellcheck"
     }
   ],
-  "source": "ci",
+  "source": ".",
   "engineVersion": "v0.11.8",
   "views": [
     {
