@@ -468,11 +468,11 @@ func (s *moduleSchema) functionWithDescription(ctx context.Context, fn *core.Fun
 }
 
 func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, args struct {
-	Name         string
-	TypeDef      core.TypeDefID
-	Description  string    `default:""`
-	DefaultValue core.JSON `default:""`
-	DefaultPathFromContext string `default:""`
+	Name                   string
+	TypeDef                core.TypeDefID
+	Description            string    `default:""`
+	DefaultValue           core.JSON `default:""`
+	DefaultPathFromContext string    `default:""`
 }) (*core.Function, error) {
 	argType, err := args.TypeDef.Load(ctx, s.dag)
 	if err != nil {
@@ -696,7 +696,7 @@ func (s *moduleSchema) moduleInitialize(
 	if inst.Self.NameField == "" || inst.Self.SDKConfig == "" {
 		return nil, fmt.Errorf("module name and SDK must be set")
 	}
-	mod, err := inst.Self.Initialize(ctx, inst.ID(), dagql.CurrentID(ctx))
+	mod, err := inst.Self.Initialize(ctx, inst.ID(), dagql.CurrentID(ctx), s.dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize module: %w", err)
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -372,6 +373,12 @@ func (fn *ModuleFunction) linkDependencyBlobs(ctx context.Context, cacheResult *
 	return nil
 }
 
+// loadContextualArg loads a contextual argument from the module context directory.
+//
+// For Directory, it will load the directory from the module context directory.
+// For file, it will loa the directory containing the file and then query the file ID from this directory.
+//
+// This functions returns the ID of the loaded object.
 func (fn *ModuleFunction) loadContextualArg(ctx context.Context, arg *FunctionArg) (JSON, error) {
 	if arg.TypeDef.Kind != TypeDefKindObject {
 		return nil, fmt.Errorf("contextual argument %q must be a Directory or a File", arg.OriginalName)
@@ -379,62 +386,57 @@ func (fn *ModuleFunction) loadContextualArg(ctx context.Context, arg *FunctionAr
 
 	switch arg.TypeDef.AsObject.Value.Name {
 	case "Directory":
-		slog.Error("function call arg: loading contextual directory", "fn", arg.Name, "dir", arg.DefaultPathFromContext)
+		slog.Debug("function call arg: loading contextual directory", "fn", arg.Name, "dir", arg.DefaultPathFromContext)
 
-		ctxDir, err := fn.mod.Source.Self.ContextDirectory()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get context directory: %w", err)
-		}
-
-		// TODO: path resolution later.
-		dir, err := ctxDir.Self.Directory(ctx, arg.DefaultPathFromContext)
+		dir, err := fn.mod.Source.Self.LoadContext(ctx, arg.DefaultPathFromContext, fn.mod.Server)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load contextual directory %q: %w", arg.DefaultPathFromContext, err)
 		}
 
-		// for debug purpose, will remove that later
-		files, err := dir.Entries(ctx, ".")
-		if err != nil {
-			return nil, fmt.Errorf("failed to list contextual directory %q: %w", arg.DefaultPathFromContext, err)
-		}
-
-		for _, file := range files {
-			slog.Error("function call arg: loading contextual file from contextDir", "fn", arg.Name, "path", file)
-		}
-
-		server, err := fn.mod.Deps.Schema(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get schema: %w", err)
-		}
-		
-		// Todo: replace with something better and less resource intensif
-		dirInstance, err := dir.AsBlob(ctx, server)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get dir instance: %w", err)
-		}
-
-		dirID, err := dirInstance.ID().Encode()
+		dirID, err := dir.ID().Encode()
 		if err != nil {
 			return nil, fmt.Errorf("failed to encode dir ID: %w", err)
 		}
 
-		return JSON(fmt.Sprintf(`"%s"`, dirID)), nil		
+		return JSON(fmt.Sprintf(`"%s"`, dirID)), nil
 	case "File":
-		slog.Error("function call arg: loading contextual file", "fn", arg.Name, "file", arg.DefaultPathFromContext)
-		file, err := fn.mod.GeneratedContextDirectory.Self.File(ctx, arg.DefaultPathFromContext)
+		slog.Debug("function call arg: loading contextual file", "fn", arg.Name, "file", arg.DefaultPathFromContext)
+
+		// We first load the directory from the context path, then we load the file from the path relative to the directory.
+		dirPath := filepath.Dir(arg.DefaultPathFromContext)
+		filePath := filepath.Base(arg.DefaultPathFromContext)
+
+		// Load the directory containing the file.
+		dir, err := fn.mod.Source.Self.LoadContext(ctx, dirPath, fn.mod.Server)
 		if err != nil {
-			return nil, fmt.Errorf("failed to load contextual file %q: %w", arg.DefaultPathFromContext, err)
+			return nil, fmt.Errorf("failed to load contextual directory %q: %w", dirPath, err)
 		}
 
-		content, err := file.Contents(ctx)
+		var fileID FileID
+
+		// We need to load the fileID from the directory itself, because `*File` doesn't have a `ID` field,
+		// we use select instead.
+		err = fn.mod.Server.Select(ctx, dir, &fileID,
+			dagql.Selector{
+				Field: "file",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.String(filePath)},
+				},
+			},
+			dagql.Selector{
+				Field: "id",
+			},
+		)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read contextual file %q: %w", arg.DefaultPathFromContext, err)
+			return nil, fmt.Errorf("failed to load contextual file %q: %w", filePath, err)
 		}
 
-		slog.Error("function call arg: loading contextual file", "fn", arg.Name, "file", arg.DefaultPathFromContext, "content", string(content))
+		encodedFileID, err := fileID.Encode()
+		if err != nil {
+			return nil, fmt.Errorf("failed to encode file ID: %w", err)
+		}
 
-		// TODO: convert it to an ID
-		panic("not implemented")
+		return JSON(fmt.Sprintf(`"%s"`, encodedFileID)), nil
 	default:
 		return nil, fmt.Errorf("unknown contextual argument type %q", arg.TypeDef.AsObject.Value.Name)
 	}

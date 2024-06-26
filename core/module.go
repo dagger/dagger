@@ -63,6 +63,9 @@ type Module struct {
 
 	// InstanceID is the ID of the initialized module.
 	InstanceID *call.ID
+
+	// Server is the dagql server
+	Server *dagql.Server
 }
 
 func (*Module) Type() *ast.Type {
@@ -122,10 +125,11 @@ func (mod *Module) IDModule() *call.Module {
 	return call.NewModule(mod.InstanceID, mod.Name(), ref)
 }
 
-func (mod *Module) Initialize(ctx context.Context, oldID *call.ID, newID *call.ID) (*Module, error) {
+func (mod *Module) Initialize(ctx context.Context, oldID *call.ID, newID *call.ID, dag *dagql.Server) (*Module, error) {
 	modName := mod.Name()
 	newMod := mod.Clone()
 	newMod.InstanceID = oldID // updated to newID once the call to initialize is done
+	newMod.Server = dag
 
 	// construct a special function with no object or function name, which tells
 	// the SDK to return the module's definition (in terms of objects, fields and
