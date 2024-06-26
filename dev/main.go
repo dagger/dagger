@@ -10,8 +10,10 @@ import (
 
 // A dev environment for the DaggerDev Engine
 type DaggerDev struct {
-	Source  *Directory // +private
-	Version *VersionInfo
+	Source    *Directory // +private
+	Version   *VersionInfo
+	GitBranch string
+	TagSuffix string
 
 	// Can be used by nested clients to forward docker credentials to avoid
 	// rate limits
@@ -25,9 +27,13 @@ func New(
 	// +optional
 	version string,
 	// +optional
+	gitBranch string,
+	// +optional
+	tagSuffix string,
+	// +optional
 	dockerCfg *Secret,
 ) (*DaggerDev, error) {
-	versionInfo, err := newVersion(ctx, source, version)
+	versionInfo, err := newVersion(ctx, source, version, tagSuffix)
 	if err != nil {
 		return nil, err
 	}
@@ -35,6 +41,8 @@ func New(
 	return &DaggerDev{
 		Source:    source,
 		Version:   versionInfo,
+		GitBranch: gitBranch,
+		TagSuffix: tagSuffix,
 		DockerCfg: dockerCfg,
 	}, nil
 }
