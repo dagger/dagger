@@ -11,7 +11,7 @@ import (
 )
 
 type CLI struct {
-	Dagger *Dagger // +private
+	Dagger *DaggerDev // +private
 }
 
 // Build the CLI binary

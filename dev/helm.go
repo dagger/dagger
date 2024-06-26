@@ -8,7 +8,7 @@ import (
 )
 
 type Helm struct {
-	Dagger *Dagger // +private
+	Dagger *DaggerDev // +private
 }
 
 func (h *Helm) Test(ctx context.Context) error {

@@ -52,13 +52,13 @@ func (sdk *SDK) allSDKs() []sdkBase {
 	}
 }
 
-func (ci *Dagger) installer(ctx context.Context, name string) (func(*Container) *Container, error) {
-	engineSvc, err := ci.Engine().Service(ctx, name, ci.Version)
+func (dev *DaggerDev) installer(ctx context.Context, name string) (func(*Container) *Container, error) {
+	engineSvc, err := dev.Engine().Service(ctx, name, dev.Version)
 	if err != nil {
 		return nil, err
 	}
 
-	cliBinary, err := ci.CLI().File(ctx, "")
+	cliBinary, err := dev.CLI().File(ctx, "")
 	if err != nil {
 		return nil, err
 	}
@@ -71,16 +71,16 @@ func (ci *Dagger) installer(ctx context.Context, name string) (func(*Container) 
 			WithMountedFile(cliBinaryPath, cliBinary).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinaryPath).
 			WithExec([]string{"ln", "-s", cliBinaryPath, "/usr/local/bin/dagger"})
-		if ci.DockerCfg != nil {
+		if dev.DockerCfg != nil {
 			// this avoids rate limiting in our ci tests
-			ctr = ctr.WithMountedSecret("/root/.docker/config.json", ci.DockerCfg)
+			ctr = ctr.WithMountedSecret("/root/.docker/config.json", dev.DockerCfg)
 		}
 		return ctr
 	}, nil
 }
 
-func (ci *Dagger) introspection(ctx context.Context, installer func(*Container) *Container) (*File, error) {
-	builder, err := build.NewBuilder(ctx, ci.Source)
+func (dev *DaggerDev) introspection(ctx context.Context, installer func(*Container) *Container) (*File, error) {
+	builder, err := build.NewBuilder(ctx, dev.Source)
 	if err != nil {
 		return nil, err
 	}

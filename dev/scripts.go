@@ -5,7 +5,7 @@ import (
 )
 
 type Scripts struct {
-	Dagger *Dagger // +private
+	Dagger *DaggerDev // +private
 }
 
 // Lint scripts files

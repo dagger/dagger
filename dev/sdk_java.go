@@ -19,7 +19,7 @@ const (
 )
 
 type JavaSDK struct {
-	Dagger *Dagger // +private
+	Dagger *DaggerDev // +private
 }
 
 // Lint the Java SDK

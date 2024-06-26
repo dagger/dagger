@@ -21,7 +21,7 @@ const (
 )
 
 type RustSDK struct {
-	Dagger *Dagger // +private
+	Dagger *DaggerDev // +private
 }
 
 // Lint the Rust SDK

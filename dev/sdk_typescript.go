@@ -26,7 +26,7 @@ const (
 )
 
 type TypescriptSDK struct {
-	Dagger *Dagger // +private
+	Dagger *DaggerDev // +private
 }
 
 // Lint the Typescript SDK

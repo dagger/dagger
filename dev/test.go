@@ -11,7 +11,7 @@ import (
 )
 
 type Test struct {
-	Dagger *Dagger // +private
+	Dagger *DaggerDev // +private
 
 	CacheConfig string // +private
 }

@@ -10,7 +10,7 @@ import (
 )
 
 type Docs struct {
-	Dagger *Dagger // +private
+	Dagger *DaggerDev // +private
 }
 
 const (

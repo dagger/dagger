@@ -26,7 +26,7 @@ const (
 )
 
 type ElixirSDK struct {
-	Dagger *Dagger // +private
+	Dagger *DaggerDev // +private
 }
 
 // Lint the Elixir SDK

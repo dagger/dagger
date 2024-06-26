@@ -17,7 +17,7 @@ const (
 )
 
 type PHPSDK struct {
-	Dagger *Dagger // +private
+	Dagger *DaggerDev // +private
 }
 
 // Lint the PHP SDK

@@ -25,7 +25,7 @@ var (
 )
 
 type PythonSDK struct {
-	Dagger *Dagger // +private
+	Dagger *DaggerDev // +private
 }
 
 // Lint the Python SDK

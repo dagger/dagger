@@ -16,7 +16,7 @@ import (
 )
 
 type Engine struct {
-	Dagger *Dagger // +private
+	Dagger *DaggerDev // +private
 
 	Args   []string // +private
 	Config []string // +private

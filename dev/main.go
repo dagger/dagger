@@ -8,8 +8,8 @@ import (
 	"github.com/dagger/dagger/ci/internal/dagger"
 )
 
-// A dev environment for the Dagger Engine
-type Dagger struct {
+// A dev environment for the DaggerDev Engine
+type DaggerDev struct {
 	Source  *Directory // +private
 	Version *VersionInfo
 
@@ -26,13 +26,13 @@ func New(
 	version string,
 	// +optional
 	dockerCfg *Secret,
-) (*Dagger, error) {
+) (*DaggerDev, error) {
 	versionInfo, err := newVersion(ctx, source, version)
 	if err != nil {
 		return nil, err
 	}
 
-	return &Dagger{
+	return &DaggerDev{
 		Source:    source,
 		Version:   versionInfo,
 		DockerCfg: dockerCfg,
@@ -40,15 +40,15 @@ func New(
 }
 
 // Check that everything works. Use this as CI entrypoint.
-func (ci *Dagger) Check(ctx context.Context) error {
+func (dev *DaggerDev) Check(ctx context.Context) error {
 	// FIXME: run concurrently
-	if err := ci.Docs().Lint(ctx); err != nil {
+	if err := dev.Docs().Lint(ctx); err != nil {
 		return err
 	}
-	if err := ci.Engine().Lint(ctx, false); err != nil {
+	if err := dev.Engine().Lint(ctx, false); err != nil {
 		return err
 	}
-	if err := ci.Test().All(
+	if err := dev.Test().All(
 		ctx,
 		// failfast
 		false,
@@ -61,7 +61,7 @@ func (ci *Dagger) Check(ctx context.Context) error {
 	); err != nil {
 		return err
 	}
-	if err := ci.CLI().TestPublish(ctx); err != nil {
+	if err := dev.CLI().TestPublish(ctx); err != nil {
 		return err
 	}
 	// FIXME: port all other function calls from Github Actions YAML
@@ -69,13 +69,13 @@ func (ci *Dagger) Check(ctx context.Context) error {
 }
 
 // Develop the Dagger CLI
-func (ci *Dagger) CLI() *CLI {
-	return &CLI{Dagger: ci}
+func (dev *DaggerDev) CLI() *CLI {
+	return &CLI{Dagger: dev}
 }
 
 // Dagger's Go toolchain
-func (ci *Dagger) Go() *GoToolchain {
-	return &GoToolchain{Go: dag.Go(ci.Source)}
+func (dev *DaggerDev) Go() *GoToolchain {
+	return &GoToolchain{Go: dag.Go(dev.Source)}
 }
 
 type GoToolchain struct {
@@ -114,45 +114,45 @@ func (gtc *GoToolchain) Lint(
 }
 
 // Develop the Dagger engine container
-func (ci *Dagger) Engine() *Engine {
-	return &Engine{Dagger: ci}
+func (dev *DaggerDev) Engine() *Engine {
+	return &Engine{Dagger: dev}
 }
 
 // Develop the Dagger documentation
-func (ci *Dagger) Docs() *Docs {
-	return &Docs{Dagger: ci}
+func (dev *DaggerDev) Docs() *Docs {
+	return &Docs{Dagger: dev}
 }
 
 // Run Dagger scripts
-func (ci *Dagger) Scripts() *Scripts {
-	return &Scripts{Dagger: ci}
+func (dev *DaggerDev) Scripts() *Scripts {
+	return &Scripts{Dagger: dev}
 }
 
 // Run all tests
-func (ci *Dagger) Test() *Test {
-	return &Test{Dagger: ci}
+func (dev *DaggerDev) Test() *Test {
+	return &Test{Dagger: dev}
 }
 
 // Develop Dagger SDKs
-func (ci *Dagger) SDK() *SDK {
+func (dev *DaggerDev) SDK() *SDK {
 	return &SDK{
-		Go:         &GoSDK{Dagger: ci},
-		Python:     &PythonSDK{Dagger: ci},
-		Typescript: &TypescriptSDK{Dagger: ci},
-		Rust:       &RustSDK{Dagger: ci},
-		Elixir:     &ElixirSDK{Dagger: ci},
-		PHP:        &PHPSDK{Dagger: ci},
-		Java:       &JavaSDK{Dagger: ci},
+		Go:         &GoSDK{Dagger: dev},
+		Python:     &PythonSDK{Dagger: dev},
+		Typescript: &TypescriptSDK{Dagger: dev},
+		Rust:       &RustSDK{Dagger: dev},
+		Elixir:     &ElixirSDK{Dagger: dev},
+		PHP:        &PHPSDK{Dagger: dev},
+		Java:       &JavaSDK{Dagger: dev},
 	}
 }
 
 // Develop the Dagger helm chart
-func (ci *Dagger) Helm() *Helm {
-	return &Helm{Dagger: ci}
+func (dev *DaggerDev) Helm() *Helm {
+	return &Helm{Dagger: dev}
 }
 
 // Creates a dev container that has a running CLI connected to a dagger engine
-func (ci *Dagger) Dev(
+func (dev *DaggerDev) Dev(
 	ctx context.Context,
 	// Mount a directory into the container's workdir, for convenience
 	// +optional
@@ -165,12 +165,12 @@ func (ci *Dagger) Dev(
 		target = dag.Directory()
 	}
 
-	engine := ci.Engine()
+	engine := dev.Engine()
 	if experimentalGPUSupport {
 		img := "ubuntu"
 		engine = engine.WithBase(&img, &experimentalGPUSupport)
 	}
-	svc, err := engine.Service(ctx, "", ci.Version)
+	svc, err := engine.Service(ctx, "", dev.Version)
 	if err != nil {
 		return nil, err
 	}
@@ -179,12 +179,12 @@ func (ci *Dagger) Dev(
 		return nil, err
 	}
 
-	client, err := ci.CLI().File(ctx, "")
+	client, err := dev.CLI().File(ctx, "")
 	if err != nil {
 		return nil, err
 	}
 
-	return ci.Go().Env().
+	return dev.Go().Env().
 		WithMountedDirectory("/mnt", target).
 		WithMountedFile("/usr/bin/dagger", client).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/usr/bin/dagger").
