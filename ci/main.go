@@ -10,8 +10,9 @@ import (
 
 // A dev environment for the Dagger Engine
 type Dagger struct {
-	Source  *Directory // +private
-	Version *VersionInfo
+	Source    *Directory // +private
+	Version   *VersionInfo
+	GitBranch string
 
 	// Can be used by nested clients to forward docker credentials to avoid
 	// rate limits
@@ -25,6 +26,8 @@ func New(
 	// +optional
 	version string,
 	// +optional
+	gitBranch string,
+	// +optional
 	hostDockerConfig *Secret,
 ) (*Dagger, error) {
 	versionInfo, err := newVersion(ctx, source, version)
@@ -35,6 +38,7 @@ func New(
 	return &Dagger{
 		Source:           source,
 		Version:          versionInfo,
+		GitBranch:        gitBranch,
 		HostDockerConfig: hostDockerConfig,
 	}, nil
 }
