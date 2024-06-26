@@ -8,12 +8,13 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"testing"
 	"time"
 
 	"github.com/Netflix/go-expect"
 	"github.com/containerd/continuity/fs"
 	"github.com/creack/pty"
+	"github.com/dagger/dagger/internal/testutil"
+	"github.com/dagger/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
 
@@ -21,11 +22,8 @@ import (
 // directly interact with the dagger shell tui without resorting to embedding more go code
 // into a container for driving it.
 
-func TestModuleDaggerTerminal(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	t.Run("default arg /bin/sh", func(t *testing.T) {
+func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
+	t.Run("default arg /bin/sh", func(ctx context.Context, t *testctx.T) {
 		modDir := t.TempDir()
 		err := os.WriteFile(filepath.Join(modDir, "main.go"), []byte(fmt.Sprintf(`package main
 import "context"
@@ -94,7 +92,7 @@ type Test struct {
 		require.NoError(t, err)
 	})
 
-	t.Run("basic", func(t *testing.T) {
+	t.Run("basic", func(ctx context.Context, t *testctx.T) {
 		modDir := t.TempDir()
 		err := os.WriteFile(filepath.Join(modDir, "main.go"), []byte(fmt.Sprintf(`package main
 	import "context"
@@ -167,7 +165,7 @@ type Test struct {
 		require.NoError(t, err)
 	})
 
-	t.Run("override args", func(t *testing.T) {
+	t.Run("override args", func(ctx context.Context, t *testctx.T) {
 		modDir := t.TempDir()
 		err := os.WriteFile(filepath.Join(modDir, "main.go"), []byte(fmt.Sprintf(`package main
 	import "context"
@@ -238,7 +236,7 @@ type Test struct {
 		require.NoError(t, err)
 	})
 
-	t.Run("nested client", func(t *testing.T) {
+	t.Run("nested client", func(ctx context.Context, t *testctx.T) {
 		modDir := t.TempDir()
 		err := os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
 	import "context"
@@ -325,7 +323,7 @@ type Test struct {
 		require.NoError(t, err)
 	})
 
-	t.Run("directory", func(t *testing.T) {
+	t.Run("directory", func(ctx context.Context, t *testctx.T) {
 		modDir := t.TempDir()
 		err := os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
 import "context"
@@ -397,10 +395,10 @@ type tuiConsole struct {
 	output            *bytes.Buffer
 }
 
-func newTUIConsole(t *testing.T, expectLineTimeout time.Duration) (*tuiConsole, error) {
+func newTUIConsole(t *testctx.T, expectLineTimeout time.Duration) (*tuiConsole, error) {
 	output := bytes.NewBuffer(nil)
 	console, err := expect.NewConsole(
-		expect.WithStdout(io.MultiWriter(newTWriter(t), output)),
+		expect.WithStdout(io.MultiWriter(testutil.NewTWriter(t), output)),
 		expect.WithDefaultTimeout(expectLineTimeout),
 	)
 	if err != nil {

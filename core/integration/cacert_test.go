@@ -6,19 +6,17 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"testing"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
 
-func TestContainerSystemCACerts(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	customCACertTests(ctx, t, c, 100,
-		caCertsTest{"alpine basic", func(t *testing.T, c *dagger.Client, f caCertsTestFixtures) {
+		caCertsTest{"alpine basic", func(t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			ctr := c.Container().From(alpineImage).
 				WithExec([]string{"apk", "add", "curl"})
 			initialBundleContents, err := ctr.File("/etc/ssl/certs/ca-certificates.crt").Contents(ctx)
@@ -40,7 +38,7 @@ func TestContainerSystemCACerts(t *testing.T) {
 			require.Equal(t, initialBundleContents, bundleContents)
 		}},
 
-		caCertsTest{"alpine empty diff", func(t *testing.T, c *dagger.Client, f caCertsTestFixtures) {
+		caCertsTest{"alpine empty diff", func(t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			ctr := c.Container().From(alpineImage)
 			diff := ctr.Rootfs().Diff(ctr.WithExec([]string{"true"}).Rootfs())
 			ents, err := diff.Glob(ctx, "**/*")
@@ -54,7 +52,7 @@ func TestContainerSystemCACerts(t *testing.T) {
 			require.Empty(t, ents)
 		}},
 
-		caCertsTest{"alpine non-root user", func(t *testing.T, c *dagger.Client, f caCertsTestFixtures) {
+		caCertsTest{"alpine non-root user", func(t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			ctr := c.Container().From(alpineImage).
 				WithExec([]string{"apk", "add", "curl"})
 			initialBundleContents, err := ctr.File("/etc/ssl/certs/ca-certificates.crt").Contents(ctx)
@@ -77,7 +75,7 @@ func TestContainerSystemCACerts(t *testing.T) {
 			require.Equal(t, initialBundleContents, bundleContents)
 		}},
 
-		caCertsTest{"alpine install ca-certificates and curl at once", func(t *testing.T, c *dagger.Client, f caCertsTestFixtures) {
+		caCertsTest{"alpine install ca-certificates and curl at once", func(t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			ctr, err := c.Container().From(alpineImage).
 				WithExec([]string{"sh", "-c", "apk add curl && curl https://server"}).
 				Sync(ctx)
@@ -94,7 +92,7 @@ func TestContainerSystemCACerts(t *testing.T) {
 			require.NotContains(t, bundleContents, f.caCertContents)
 		}},
 
-		caCertsTest{"alpine ca-certificates not installed", func(t *testing.T, c *dagger.Client, f caCertsTestFixtures) {
+		caCertsTest{"alpine ca-certificates not installed", func(t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			ctr := c.Container().From(golangImage).
 				WithExec([]string{"apk", "del", "ca-certificates"})
 
@@ -133,7 +131,8 @@ func TestContainerSystemCACerts(t *testing.T) {
 							panic("unexpected response: " + string(bs))
 						}
 					}
-					`}).
+					`,
+				}).
 				WithWorkdir("/src").
 				WithExec([]string{"go", "mod", "init", "test"}).
 				WithExec([]string{"go", "run", "main.go"}).
@@ -150,7 +149,7 @@ func TestContainerSystemCACerts(t *testing.T) {
 			require.NotContains(t, bundleContents, f.caCertContents)
 		}},
 
-		caCertsTest{"debian basic", func(t *testing.T, c *dagger.Client, f caCertsTestFixtures) {
+		caCertsTest{"debian basic", func(t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			ctr := c.Container().From(debianImage).
 				WithExec([]string{"apt", "update"}).
 				WithExec([]string{"apt", "install", "-y", "curl"})
@@ -173,7 +172,7 @@ func TestContainerSystemCACerts(t *testing.T) {
 			require.Equal(t, initialBundleContents, bundleContents)
 		}},
 
-		caCertsTest{"debian empty diff", func(t *testing.T, c *dagger.Client, f caCertsTestFixtures) {
+		caCertsTest{"debian empty diff", func(t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			ctr := c.Container().From(debianImage)
 			diff := ctr.Rootfs().Diff(ctr.WithExec([]string{"true"}).Rootfs())
 			ents, err := diff.Glob(ctx, "**/*")
@@ -187,7 +186,7 @@ func TestContainerSystemCACerts(t *testing.T) {
 			require.Empty(t, ents)
 		}},
 
-		caCertsTest{"debian non-root user", func(t *testing.T, c *dagger.Client, f caCertsTestFixtures) {
+		caCertsTest{"debian non-root user", func(t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			ctr := c.Container().From(debianImage).
 				WithExec([]string{"apt", "update"}).
 				WithExec([]string{"apt", "install", "-y", "curl"})
@@ -211,7 +210,7 @@ func TestContainerSystemCACerts(t *testing.T) {
 			require.Equal(t, initialBundleContents, bundleContents)
 		}},
 
-		caCertsTest{"debian install ca-certificates and curl at once", func(t *testing.T, c *dagger.Client, f caCertsTestFixtures) {
+		caCertsTest{"debian install ca-certificates and curl at once", func(t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			ctr, err := c.Container().From(debianImage).
 				WithExec([]string{"apt", "update"}).
 				WithExec([]string{"sh", "-c", "apt install -y curl && curl https://server"}).
@@ -229,7 +228,7 @@ func TestContainerSystemCACerts(t *testing.T) {
 			require.NotContains(t, bundleContents, f.caCertContents)
 		}},
 
-		caCertsTest{"debian ca-certificates not installed", func(t *testing.T, c *dagger.Client, f caCertsTestFixtures) {
+		caCertsTest{"debian ca-certificates not installed", func(t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			ctr, err := c.Container().From(debianImage).
 				WithExec([]string{"apt", "update"}).
 				WithExec([]string{"apt", "install", "-y", "golang"}).
@@ -258,7 +257,8 @@ func TestContainerSystemCACerts(t *testing.T) {
 								panic("unexpected response: " + string(bs))
 							}
 						}
-						`}).
+						`,
+				}).
 				WithWorkdir("/src").
 				WithExec([]string{"go", "mod", "init", "test"}).
 				WithExec([]string{"go", "run", "main.go"}).
@@ -273,7 +273,7 @@ func TestContainerSystemCACerts(t *testing.T) {
 			require.ErrorContains(t, err, "no such file or directory")
 		}},
 
-		caCertsTest{"rhel basic", func(t *testing.T, c *dagger.Client, f caCertsTestFixtures) {
+		caCertsTest{"rhel basic", func(t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			ctr := c.Container().From(rhelImage)
 			initialBundleContents, err := ctr.File("/etc/pki/tls/certs/ca-bundle.crt").Contents(ctx)
 			require.NoError(t, err)
@@ -294,7 +294,7 @@ func TestContainerSystemCACerts(t *testing.T) {
 			require.Equal(t, initialBundleContents, bundleContents)
 		}},
 
-		caCertsTest{"rhel empty diff", func(t *testing.T, c *dagger.Client, f caCertsTestFixtures) {
+		caCertsTest{"rhel empty diff", func(t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			ctr := c.Container().From(rhelImage)
 			diff := ctr.Rootfs().Diff(ctr.WithExec([]string{"true"}).Rootfs())
 			ents, err := diff.Glob(ctx, "**/*")
@@ -302,7 +302,7 @@ func TestContainerSystemCACerts(t *testing.T) {
 			require.Empty(t, ents)
 		}},
 
-		caCertsTest{"rhel non-root user", func(t *testing.T, c *dagger.Client, f caCertsTestFixtures) {
+		caCertsTest{"rhel non-root user", func(t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			ctr := c.Container().From(rhelImage)
 			initialBundleContents, err := ctr.File("/etc/pki/tls/certs/ca-bundle.crt").Contents(ctx)
 			require.NoError(t, err)
@@ -324,7 +324,7 @@ func TestContainerSystemCACerts(t *testing.T) {
 			require.Equal(t, initialBundleContents, bundleContents)
 		}},
 
-		caCertsTest{"go module", func(t *testing.T, c *dagger.Client, f caCertsTestFixtures) {
+		caCertsTest{"go module", func(t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			out, err := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work").
@@ -361,7 +361,7 @@ func (m *Test) GetHttp(ctx context.Context) (string, error) {
 			require.Equal(t, "hello", strings.TrimSpace(out))
 		}},
 
-		caCertsTest{"python module", func(t *testing.T, c *dagger.Client, f caCertsTestFixtures) {
+		caCertsTest{"python module", func(t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			out, err := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work").
@@ -380,7 +380,7 @@ def get_http() -> str:
 			require.Equal(t, "hello", strings.TrimSpace(out))
 		}},
 
-		caCertsTest{"typescript module", func(t *testing.T, c *dagger.Client, f caCertsTestFixtures) {
+		caCertsTest{"typescript module", func(t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			out, err := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work").
@@ -425,7 +425,7 @@ class Test {
 
 type caCertsTest struct {
 	name string
-	run  func(*testing.T, *dagger.Client, caCertsTestFixtures)
+	run  func(*testctx.T, *dagger.Client, caCertsTestFixtures)
 }
 
 type caCertsTestFixtures struct {
@@ -434,7 +434,7 @@ type caCertsTestFixtures struct {
 
 func customCACertTests(
 	ctx context.Context,
-	t *testing.T,
+	t *testctx.T,
 	c *dagger.Client,
 	netID uint8,
 	tests ...caCertsTest,
@@ -480,7 +480,8 @@ func customCACertTests(
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://engine:1234").
 			WithEnvVariable(executeTestEnvName, "ya").
-			WithExec([]string{"go", "test",
+			WithExec([]string{
+				"go", "test",
 				"-v",
 				"-timeout", "20m",
 				"-count", "1",
@@ -496,8 +497,7 @@ func customCACertTests(
 
 	for _, test := range tests {
 		test := test
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
+		t.Run(test.name, func(ctx context.Context, t *testctx.T) {
 			test.run(t, c, caCertsTestFixtures{
 				caCertContents: caCertContents,
 			})
@@ -523,19 +523,22 @@ func newGeneratedCerts(c *dagger.Client, caHostname string) *generatedCerts {
 	const password = "hunter4"
 	ctr := c.Container().From(alpineImage).
 		WithExec([]string{"apk", "add", "openssl"}).
-		WithExec([]string{"sh", "-c", strings.Join([]string{"openssl", "dhparam",
+		WithExec([]string{"sh", "-c", strings.Join([]string{
+			"openssl", "dhparam",
 			"-out", "/dhparam.pem",
 			"2048",
 			// suppress extremely noisy+useless output
 			"&> /dev/null",
 		}, " ")}).
-		WithExec([]string{"openssl", "genrsa",
+		WithExec([]string{
+			"openssl", "genrsa",
 			"-des3",
 			"-out", "/ca.key",
 			"-passout", "pass:" + password,
 			"2048",
 		}).
-		WithExec([]string{"openssl", "req",
+		WithExec([]string{
+			"openssl", "req",
 			"-new",
 			"-key", "/ca.key",
 			"-out", "/ca.csr",
@@ -553,7 +556,8 @@ subjectAltName=@alt_names
 DNS.1 = %s
 `, caHostname),
 		}).
-		WithExec([]string{"openssl", "x509",
+		WithExec([]string{
+			"openssl", "x509",
 			"-req",
 			"-in", "/ca.csr",
 			"-signkey", "/ca.key",
@@ -573,18 +577,20 @@ DNS.1 = %s
 		password:   password,
 		printPasswordScript: c.Directory().WithNewFile("printpass", fmt.Sprintf(`#!/bin/sh
 echo -n %s
-`, password), dagger.DirectoryWithNewFileOpts{Permissions: 0755}).File("printpass"),
+`, password), dagger.DirectoryWithNewFileOpts{Permissions: 0o755}).File("printpass"),
 	}
 }
 
 // returns Files for cert and key
 func (g *generatedCerts) newServerCerts(serverHostname string) (*dagger.File, *dagger.File) {
 	ctr := g.ctr.
-		WithExec([]string{"openssl", "genrsa",
+		WithExec([]string{
+			"openssl", "genrsa",
 			"-out", "/server.key",
 			"2048",
 		}).
-		WithExec([]string{"openssl", "req",
+		WithExec([]string{
+			"openssl", "req",
 			"-new",
 			"-key", "/server.key",
 			"-out", "/server.csr",
@@ -601,7 +607,8 @@ subjectAltName = @alt_names
 DNS.1 = %s
 `, serverHostname),
 		}).
-		WithExec([]string{"openssl", "x509",
+		WithExec([]string{
+			"openssl", "x509",
 			"-req",
 			"-in", "/server.csr",
 			"-CA", "/ca.pem",
@@ -636,7 +643,8 @@ func nginxWithCerts(c *dagger.Client, opts nginxWithCertsOpts) *dagger.Container
 		WithNewFile("/etc/nginx/snippets/self-signed.conf", dagger.ContainerWithNewFileOpts{
 			Contents: `ssl_certificate /etc/ssl/certs/server.crt;
 ssl_certificate_key /etc/ssl/private/server.key;
-`}).WithNewFile("/etc/nginx/snippets/ssl-params.conf", dagger.ContainerWithNewFileOpts{
+`,
+		}).WithNewFile("/etc/nginx/snippets/ssl-params.conf", dagger.ContainerWithNewFileOpts{
 		Contents: fmt.Sprintf(`ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
 ssl_prefer_server_ciphers on;
 ssl_ciphers 'EECDH+AESGCM:EDH+AESGCM:AES256+EECDH:AES256+EDH';
@@ -650,7 +658,8 @@ add_header Strict-Transport-Security "max-age=63072000; includeSubdomains; prelo
 add_header X-Frame-Options DENY;
 add_header X-Content-Type-Options nosniff;
 ssl_dhparam /etc/ssl/certs/dhparam.pem;
-`, opts.netID)})
+`, opts.netID),
+	})
 
 	conf := fmt.Sprintf(`server {
 	listen 443 ssl http2 default_server;

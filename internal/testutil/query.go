@@ -5,6 +5,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/testctx"
 )
 
 type QueryOptions struct {
@@ -13,8 +14,8 @@ type QueryOptions struct {
 	Secrets   map[string]string
 }
 
-func Query(query string, res any, opts *QueryOptions, clientOpts ...dagger.ClientOpt) error {
-	ctx := context.Background()
+func Query(t *testctx.T, query string, res any, opts *QueryOptions, clientOpts ...dagger.ClientOpt) error {
+	ctx := t.Context()
 
 	if opts == nil {
 		opts = &QueryOptions{}
@@ -25,6 +26,10 @@ func Query(query string, res any, opts *QueryOptions, clientOpts ...dagger.Clien
 	if opts.Secrets == nil {
 		opts.Secrets = make(map[string]string)
 	}
+
+	clientOpts = append([]dagger.ClientOpt{
+		dagger.WithLogOutput(NewTWriter(t.T)),
+	}, clientOpts...)
 
 	c, err := dagger.Connect(ctx, clientOpts...)
 	if err != nil {

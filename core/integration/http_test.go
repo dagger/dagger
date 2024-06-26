@@ -4,16 +4,21 @@ import (
 	"context"
 	"testing"
 
+	"github.com/dagger/dagger/testctx"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"
 )
 
-func TestHTTP(t *testing.T) {
-	t.Parallel()
+type HTTPSuite struct{}
 
-	c, ctx := connect(t)
+func TestHTTP(t *testing.T) {
+	testctx.Run(testCtx, t, HTTPSuite{}, Middleware()...)
+}
+
+func (HTTPSuite) TestHTTP(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	// do two in a row to ensure each gets downloaded correctly
 	url := "https://raw.githubusercontent.com/dagger/dagger/main/CONTRIBUTING.md"
@@ -27,10 +32,8 @@ func TestHTTP(t *testing.T) {
 	require.Contains(t, contents, "Dagger")
 }
 
-func TestHTTPService(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (HTTPSuite) TestHTTPService(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	svc, url := httpService(ctx, t, c, "Hello, world!")
 
@@ -41,11 +44,9 @@ func TestHTTPService(t *testing.T) {
 	require.Equal(t, contents, "Hello, world!")
 }
 
-func TestHTTPServiceStableDigest(t *testing.T) {
-	t.Parallel()
-
+func (HTTPSuite) TestHTTPServiceStableDigest(ctx context.Context, t *testctx.T) {
 	content := identity.NewID()
-	hostname := func(ctx context.Context, c *dagger.Client) string {
+	hostname := func(c *dagger.Client) string {
 		svc, url := httpService(ctx, t, c, content)
 
 		hn, err := c.Container().
@@ -59,7 +60,7 @@ func TestHTTPServiceStableDigest(t *testing.T) {
 		return hn
 	}
 
-	c1, ctx1 := connect(t)
-	c2, ctx2 := connect(t)
-	require.Equal(t, hostname(ctx1, c1), hostname(ctx2, c2))
+	c1 := connect(ctx, t)
+	c2 := connect(ctx, t)
+	require.Equal(t, hostname(c1), hostname(c2))
 }

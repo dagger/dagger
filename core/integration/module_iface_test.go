@@ -1,18 +1,17 @@
 package core
 
 import (
+	"context"
 	"strings"
-	"testing"
 
+	"github.com/dagger/dagger/testctx"
 	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"
 )
 
-func TestModuleIfaceBasic(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ModuleSuite) TestIfaceBasic(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	_, err := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -23,13 +22,10 @@ func TestModuleIfaceBasic(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestModuleIfaceGoSadPaths(t *testing.T) {
-	t.Parallel()
-
-	t.Run("no dagger object embed", func(t *testing.T) {
-		t.Parallel()
+func (ModuleSuite) TestIfaceGoSadPaths(ctx context.Context, t *testctx.T) {
+	t.Run("no dagger object embed", func(ctx context.Context, t *testctx.T) {
 		var logs safeBuffer
-		c, ctx := connect(t, dagger.WithLogOutput(&logs))
+		c := connect(ctx, t, dagger.WithLogOutput(&logs))
 
 		_, err := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -56,10 +52,8 @@ func (m *Test) Fn() BadIface {
 	})
 }
 
-func TestModuleIfaceGoDanglingInterface(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ModuleSuite) TestIfaceGoDanglingInterface(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	modGen, err := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -94,10 +88,8 @@ type DanglingIface interface {
 	require.JSONEq(t, `{"test":{"hello":"hello"}}`, out)
 }
 
-func TestModuleIfaceDaggerCall(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ModuleSuite) TestIfaceDaggerCall(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	out, err := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).

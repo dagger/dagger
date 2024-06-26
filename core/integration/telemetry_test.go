@@ -1,25 +1,29 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
 
+	"github.com/dagger/dagger/testctx"
 	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"
 )
 
-func TestInternalVertexes(t *testing.T) {
-	t.Parallel()
+type TelemetrySuite struct{}
 
+func TestTelemetry(t *testing.T) {
+	testctx.Run(testCtx, t, TelemetrySuite{}, Middleware()...)
+}
+
+func (TelemetrySuite) TestInternalVertexes(ctx context.Context, t *testctx.T) {
 	cacheBuster := fmt.Sprintf("%d", time.Now().UTC().UnixNano())
 
-	t.Run("merge pipeline", func(t *testing.T) {
-		t.Parallel()
-
+	t.Run("merge pipeline", func(ctx context.Context, t *testctx.T) {
 		var logs safeBuffer
-		c, ctx := connect(t, dagger.WithLogOutput(&logs))
+		c := connect(ctx, t, dagger.WithLogOutput(&logs))
 
 		dirA := c.Directory().WithNewFile("/foo", "foo")
 		dirB := c.Directory().WithNewFile("/bar", "bar")

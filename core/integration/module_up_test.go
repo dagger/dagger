@@ -6,21 +6,23 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"testing"
 	"time"
 
 	"github.com/creack/pty"
+	"github.com/dagger/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
 
-func TestModuleDaggerUp(t *testing.T) {
-	ctx := context.Background()
-
+func (ModuleSuite) TestDaggerUp(ctx context.Context, t *testctx.T) {
 	modDir := t.TempDir()
 	err := os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
-import "context"
+import  "strconv"
 
-func New(ctx context.Context) *Test {
+func New(
+	// +optional
+	// +default=23457
+	port int,
+) *Test {
 	return &Test{
 		Ctr: dag.Container().
 			From("python").
@@ -29,15 +31,15 @@ func New(ctx context.Context) *Test {
 				dag.Directory().WithNewFile("index.html", "hey there"),
 			).
 			WithWorkdir("/srv/www").
-			WithExposedPort(23457).
-			WithExec([]string{"python", "-m", "http.server", "23457"}),
+			WithExposedPort(port).
+			WithExec([]string{"python", "-m", "http.server", strconv.Itoa(port)}),
 	}
 }
 
 type Test struct {
 	Ctr *Container
 }
-`), 0644)
+`), 0o644)
 	require.NoError(t, err)
 
 	_, err = hostDaggerExec(ctx, t, modDir, "--debug", "init", "--source=.", "--name=test", "--sdk=go")
@@ -47,10 +49,9 @@ type Test struct {
 	_, err = hostDaggerExec(ctx, t, modDir, "--debug", "functions")
 	require.NoError(t, err)
 
-	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
-	defer cancel()
+	t = t.WithTimeout(3 * time.Minute)
 
-	t.Run("native", func(t *testing.T) {
+	t.Run("native", func(ctx context.Context, t *testctx.T) {
 		cmd := hostDaggerCommand(ctx, t, modDir, "call", "ctr", "as-service", "up")
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
@@ -58,7 +59,7 @@ type Test struct {
 
 		err = cmd.Start()
 		require.NoError(t, err)
-		defer cmd.Process.Kill()
+		cleanupExec(t, cmd)
 
 		for {
 			select {
@@ -83,7 +84,7 @@ type Test struct {
 		}
 	})
 
-	t.Run("random", func(t *testing.T) {
+	t.Run("random", func(ctx context.Context, t *testctx.T) {
 		console, err := newTUIConsole(t, time.Minute)
 		require.NoError(t, err)
 
@@ -93,14 +94,14 @@ type Test struct {
 		require.NoError(t, err)
 
 		cmd := hostDaggerCommand(ctx, t, modDir, "call", "ctr", "as-service", "up", "--random")
-		cmd.Env = append(os.Environ(), "NO_COLOR=true")
+		cmd.Env = append(cmd.Env, "NO_COLOR=true")
 		cmd.Stdin = nil
 		cmd.Stdout = tty
 		cmd.Stderr = tty
 
 		err = cmd.Start()
 		require.NoError(t, err)
-		defer cmd.Process.Kill()
+		cleanupExec(t, cmd)
 
 		_, matches, err := console.MatchLine(ctx, `tunnel started port=(\d+)`)
 		require.NoError(t, err)
@@ -131,7 +132,7 @@ type Test struct {
 		}
 	})
 
-	t.Run("port map", func(t *testing.T) {
+	t.Run("port map", func(ctx context.Context, t *testctx.T) {
 		cmd := hostDaggerCommand(ctx, t, modDir, "call", "ctr", "as-service", "up", "--ports", "23458:23457")
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
@@ -139,7 +140,7 @@ type Test struct {
 
 		err = cmd.Start()
 		require.NoError(t, err)
-		defer cmd.Process.Kill()
+		cleanupExec(t, cmd)
 
 		for {
 			select {
@@ -164,15 +165,15 @@ type Test struct {
 		}
 	})
 
-	t.Run("port map with same front+back", func(t *testing.T) {
-		cmd := hostDaggerCommand(ctx, t, modDir, "call", "ctr", "as-service", "up", "--ports", "23457:23457")
+	t.Run("port map with same front+back", func(ctx context.Context, t *testctx.T) {
+		cmd := hostDaggerCommand(ctx, t, modDir, "call", "--port", "23459", "ctr", "as-service", "up", "--ports", "23459:23459")
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 
 		err = cmd.Start()
 		require.NoError(t, err)
-		defer cmd.Process.Kill()
+		cleanupExec(t, cmd)
 
 		for {
 			select {
@@ -181,7 +182,7 @@ type Test struct {
 			default:
 			}
 
-			resp, err := http.Get("http://127.0.0.1:23457")
+			resp, err := http.Get("http://127.0.0.1:23459")
 			if err != nil {
 				t.Logf("waiting for container to start: %s", err)
 				time.Sleep(time.Second)

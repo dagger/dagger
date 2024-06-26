@@ -2,6 +2,7 @@ package core
 
 import (
 	"bytes"
+	"context"
 	_ "embed"
 	"encoding/base64"
 	"encoding/json"
@@ -28,11 +29,16 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/internal/testutil"
+	"github.com/dagger/dagger/testctx"
 )
 
-func TestContainerScratch(t *testing.T) {
-	t.Parallel()
+type ContainerSuite struct{}
 
+func TestContainer(t *testing.T) {
+	testctx.Run(testCtx, t, ContainerSuite{}, Middleware()...)
+}
+
+func (ContainerSuite) TestScratch(ctx context.Context, t *testctx.T) {
 	res := struct {
 		Container struct {
 			ID     string
@@ -42,7 +48,7 @@ func TestContainerScratch(t *testing.T) {
 		}
 	}{}
 
-	err := testutil.Query(
+	err := testutil.Query(t,
 		`{
 			container {
 				id
@@ -55,9 +61,7 @@ func TestContainerScratch(t *testing.T) {
 	require.Empty(t, res.Container.Rootfs.Entries)
 }
 
-func TestContainerFrom(t *testing.T) {
-	t.Parallel()
-
+func (ContainerSuite) TestFrom(ctx context.Context, t *testctx.T) {
 	res := struct {
 		Container struct {
 			From struct {
@@ -68,7 +72,7 @@ func TestContainerFrom(t *testing.T) {
 		}
 	}{}
 
-	err := testutil.Query(
+	err := testutil.Query(t,
 		`{
 			container {
 				from(address: "`+alpineImage+`") {
@@ -84,8 +88,8 @@ func TestContainerFrom(t *testing.T) {
 	require.Equal(t, distconsts.AlpineVersion, strings.TrimSpace(releaseStr))
 }
 
-func TestContainerBuild(t *testing.T) {
-	c, ctx := connect(t)
+func (ContainerSuite) TestBuild(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	contextDir := c.Directory().
 		WithNewFile("main.go",
@@ -98,7 +102,7 @@ func main() {
 	}
 }`)
 
-	t.Run("default Dockerfile location", func(t *testing.T) {
+	t.Run("default Dockerfile location", func(ctx context.Context, t *testctx.T) {
 		src := contextDir.
 			WithNewFile("Dockerfile",
 				`FROM golang:1.18.2-alpine
@@ -115,7 +119,7 @@ CMD goenv
 		require.Contains(t, env, "FOO=bar\n")
 	})
 
-	t.Run("with syntax pragma", func(t *testing.T) {
+	t.Run("with syntax pragma", func(ctx context.Context, t *testctx.T) {
 		src := contextDir.
 			WithNewFile("Dockerfile",
 				`# syntax = docker/dockerfile:1
@@ -133,7 +137,7 @@ CMD goenv
 		require.Contains(t, env, "FOO=bar\n")
 	})
 
-	t.Run("custom Dockerfile location", func(t *testing.T) {
+	t.Run("custom Dockerfile location", func(ctx context.Context, t *testctx.T) {
 		src := contextDir.
 			WithNewFile("subdir/Dockerfile.whee",
 				`FROM golang:1.18.2-alpine
@@ -152,7 +156,7 @@ CMD goenv
 		require.Contains(t, env, "FOO=bar\n")
 	})
 
-	t.Run("subdirectory with default Dockerfile location", func(t *testing.T) {
+	t.Run("subdirectory with default Dockerfile location", func(ctx context.Context, t *testctx.T) {
 		src := contextDir.
 			WithNewFile("Dockerfile",
 				`FROM golang:1.18.2-alpine
@@ -171,7 +175,7 @@ CMD goenv
 		require.Contains(t, env, "FOO=bar\n")
 	})
 
-	t.Run("subdirectory with custom Dockerfile location", func(t *testing.T) {
+	t.Run("subdirectory with custom Dockerfile location", func(ctx context.Context, t *testctx.T) {
 		src := contextDir.
 			WithNewFile("subdir/Dockerfile.whee",
 				`FROM golang:1.18.2-alpine
@@ -192,7 +196,7 @@ CMD goenv
 		require.Contains(t, env, "FOO=bar\n")
 	})
 
-	t.Run("with build args", func(t *testing.T) {
+	t.Run("with build args", func(ctx context.Context, t *testctx.T) {
 		src := contextDir.
 			WithNewFile("Dockerfile",
 				`FROM golang:1.18.2-alpine
@@ -214,7 +218,7 @@ CMD goenv
 		require.Contains(t, env, "FOO=barbar\n")
 	})
 
-	t.Run("with target", func(t *testing.T) {
+	t.Run("with target", func(ctx context.Context, t *testctx.T) {
 		src := contextDir.
 			WithNewFile("Dockerfile",
 				`FROM golang:1.18.2-alpine AS base
@@ -237,7 +241,7 @@ CMD echo "stage2"
 		require.NotContains(t, output, "stage2\n")
 	})
 
-	t.Run("with build secrets", func(t *testing.T) {
+	t.Run("with build secrets", func(ctx context.Context, t *testctx.T) {
 		sec := c.SetSecret("my-secret", "barbar")
 
 		dockerfile := `FROM golang:1.18.2-alpine
@@ -247,7 +251,7 @@ RUN --mount=type=secret,id=my-secret,required=true cp /run/secrets/my-secret /se
 CMD cat /secret && (cat /secret | tr "[a-z]" "[A-Z]")
 `
 
-		t.Run("builtin frontend", func(t *testing.T) {
+		t.Run("builtin frontend", func(ctx context.Context, t *testctx.T) {
 			src := contextDir.WithNewFile("Dockerfile", dockerfile)
 
 			stdout, err := c.Container().Build(src, dagger.ContainerBuildOpts{
@@ -258,7 +262,7 @@ CMD cat /secret && (cat /secret | tr "[a-z]" "[A-Z]")
 			require.Contains(t, stdout, "BARBAR")
 		})
 
-		t.Run("remote frontend", func(t *testing.T) {
+		t.Run("remote frontend", func(ctx context.Context, t *testctx.T) {
 			src := contextDir.WithNewFile("Dockerfile", "#syntax=docker/dockerfile:1\n"+dockerfile)
 
 			stdout, err := c.Container().Build(src, dagger.ContainerBuildOpts{
@@ -270,7 +274,7 @@ CMD cat /secret && (cat /secret | tr "[a-z]" "[A-Z]")
 		})
 	})
 
-	t.Run("prevent duplicate secret transform", func(t *testing.T) {
+	t.Run("prevent duplicate secret transform", func(ctx context.Context, t *testctx.T) {
 		sec := c.SetSecret("my-secret", "barbar")
 
 		// src is a directory that has a secret dependency in it's build graph
@@ -291,7 +295,7 @@ CMD cat /secret && (cat /secret | tr "[a-z]" "[A-Z]")
 		require.NoError(t, err)
 	})
 
-	t.Run("just build, don't execute", func(t *testing.T) {
+	t.Run("just build, don't execute", func(ctx context.Context, t *testctx.T) {
 		src := contextDir.
 			WithNewFile("Dockerfile", "FROM "+alpineImage+"\nCMD false")
 
@@ -303,7 +307,7 @@ CMD cat /secret && (cat /secret | tr "[a-z]" "[A-Z]")
 		require.NotEmpty(t, err)
 	})
 
-	t.Run("just build, short-circuit", func(t *testing.T) {
+	t.Run("just build, short-circuit", func(ctx context.Context, t *testctx.T) {
 		src := contextDir.
 			WithNewFile("Dockerfile", "FROM "+alpineImage+"\nRUN false")
 
@@ -312,10 +316,8 @@ CMD cat /secret && (cat /secret | tr "[a-z]" "[A-Z]")
 	})
 }
 
-func TestContainerWithRootFS(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ContainerSuite) TestWithRootFS(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	alpine316 := c.Container().From(alpineImage)
 
@@ -357,10 +359,8 @@ func TestContainerWithRootFS(t *testing.T) {
 //go:embed testdata/hello.go
 var helloSrc string
 
-func TestContainerWithRootFSSubdir(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ContainerSuite) TestWithRootFSSubdir(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	hello := c.Directory().WithNewFile("main.go", helloSrc).File("main.go")
 
@@ -378,13 +378,11 @@ func TestContainerWithRootFSSubdir(t *testing.T) {
 	require.Equal(t, "Hello, world!\n", out)
 }
 
-func TestContainerExecSync(t *testing.T) {
-	t.Parallel()
-
+func (ContainerSuite) TestExecSync(ctx context.Context, t *testctx.T) {
 	// A successful sync doesn't prove anything. As soon as you call other
 	// leaves to check things, they could be the ones triggering execution.
 	// Still, sync can be useful for short-circuiting.
-	err := testutil.Query(
+	err := testutil.Query(t,
 		`{
 			container {
 				from(address: "`+alpineImage+`") {
@@ -397,9 +395,7 @@ func TestContainerExecSync(t *testing.T) {
 	require.Contains(t, err.Error(), `process "false" did not complete successfully`)
 }
 
-func TestContainerExecStdoutStderr(t *testing.T) {
-	t.Parallel()
-
+func (ContainerSuite) TestExecStdoutStderr(ctx context.Context, t *testctx.T) {
 	res := struct {
 		Container struct {
 			From struct {
@@ -411,7 +407,7 @@ func TestContainerExecStdoutStderr(t *testing.T) {
 		}
 	}{}
 
-	err := testutil.Query(
+	err := testutil.Query(t,
 		`{
 			container {
 				from(address: "`+alpineImage+`") {
@@ -427,9 +423,7 @@ func TestContainerExecStdoutStderr(t *testing.T) {
 	require.Equal(t, res.Container.From.WithExec.Stderr, "goodbye\n")
 }
 
-func TestContainerExecStdin(t *testing.T) {
-	t.Parallel()
-
+func (ContainerSuite) TestExecStdin(ctx context.Context, t *testctx.T) {
 	res := struct {
 		Container struct {
 			From struct {
@@ -440,7 +434,7 @@ func TestContainerExecStdin(t *testing.T) {
 		}
 	}{}
 
-	err := testutil.Query(
+	err := testutil.Query(t,
 		`{
 			container {
 				from(address: "`+alpineImage+`") {
@@ -454,9 +448,7 @@ func TestContainerExecStdin(t *testing.T) {
 	require.Equal(t, res.Container.From.WithExec.Stdout, "hello")
 }
 
-func TestContainerExecRedirectStdoutStderr(t *testing.T) {
-	t.Parallel()
-
+func (ContainerSuite) TestExecRedirectStdoutStderr(ctx context.Context, t *testctx.T) {
 	res := struct {
 		Container struct {
 			From struct {
@@ -469,7 +461,7 @@ func TestContainerExecRedirectStdoutStderr(t *testing.T) {
 		}
 	}{}
 
-	err := testutil.Query(
+	err := testutil.Query(t,
 		`{
 			container {
 				from(address: "`+alpineImage+`") {
@@ -493,7 +485,7 @@ func TestContainerExecRedirectStdoutStderr(t *testing.T) {
 	require.Equal(t, res.Container.From.WithExec.Out.Contents, "hello\n")
 	require.Equal(t, res.Container.From.WithExec.Err.Contents, "goodbye\n")
 
-	c, ctx := connect(t)
+	c := connect(ctx, t)
 
 	execWithMount := c.Container().From(alpineImage).
 		WithMountedDirectory("/mnt", c.Directory()).
@@ -518,9 +510,7 @@ func TestContainerExecRedirectStdoutStderr(t *testing.T) {
 	require.Equal(t, "goodbye\n", stderr)
 }
 
-func TestContainerExecWithWorkdir(t *testing.T) {
-	t.Parallel()
-
+func (ContainerSuite) TestExecWithWorkdir(ctx context.Context, t *testctx.T) {
 	res := struct {
 		Container struct {
 			From struct {
@@ -533,7 +523,7 @@ func TestContainerExecWithWorkdir(t *testing.T) {
 		}
 	}{}
 
-	err := testutil.Query(
+	err := testutil.Query(t,
 		`{
 			container {
 				from(address: "`+alpineImage+`") {
@@ -549,9 +539,8 @@ func TestContainerExecWithWorkdir(t *testing.T) {
 	require.Equal(t, res.Container.From.WithWorkdir.WithExec.Stdout, "/usr\n")
 }
 
-func TestContainerExecWithoutWorkdir(t *testing.T) {
-	t.Parallel()
-	c, ctx := connect(t)
+func (ContainerSuite) TestExecWithoutWorkdir(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	res, err := c.Container().
 		From(alpineImage).
@@ -564,10 +553,8 @@ func TestContainerExecWithoutWorkdir(t *testing.T) {
 	require.Equal(t, "/\n", res)
 }
 
-func TestContainerExecWithUser(t *testing.T) {
-	t.Parallel()
-
-	res := struct {
+func (ContainerSuite) TestExecWithUser(ctx context.Context, t *testctx.T) {
+	type resType struct {
 		Container struct {
 			From struct {
 				User string
@@ -580,10 +567,11 @@ func TestContainerExecWithUser(t *testing.T) {
 				}
 			}
 		}
-	}{}
+	}
 
-	t.Run("user name", func(t *testing.T) {
-		err := testutil.Query(
+	t.Run("user name", func(ctx context.Context, t *testctx.T) {
+		var res resType
+		err := testutil.Query(t,
 			`{
 			container {
 				from(address: "`+alpineImage+`") {
@@ -603,8 +591,9 @@ func TestContainerExecWithUser(t *testing.T) {
 		require.Equal(t, "daemon\n", res.Container.From.WithUser.WithExec.Stdout)
 	})
 
-	t.Run("user and group name", func(t *testing.T) {
-		err := testutil.Query(
+	t.Run("user and group name", func(ctx context.Context, t *testctx.T) {
+		var res resType
+		err := testutil.Query(t,
 			`{
 			container {
 				from(address: "`+alpineImage+`") {
@@ -624,8 +613,9 @@ func TestContainerExecWithUser(t *testing.T) {
 		require.Equal(t, "daemon\nfloppy\n", res.Container.From.WithUser.WithExec.Stdout)
 	})
 
-	t.Run("user ID", func(t *testing.T) {
-		err := testutil.Query(
+	t.Run("user ID", func(ctx context.Context, t *testctx.T) {
+		var res resType
+		err := testutil.Query(t,
 			`{
 			container {
 				from(address: "`+alpineImage+`") {
@@ -645,8 +635,9 @@ func TestContainerExecWithUser(t *testing.T) {
 		require.Equal(t, "daemon\n", res.Container.From.WithUser.WithExec.Stdout)
 	})
 
-	t.Run("user and group ID", func(t *testing.T) {
-		err := testutil.Query(
+	t.Run("user and group ID", func(ctx context.Context, t *testctx.T) {
+		var res resType
+		err := testutil.Query(t,
 			`{
 			container {
 				from(address: "`+alpineImage+`") {
@@ -666,8 +657,9 @@ func TestContainerExecWithUser(t *testing.T) {
 		require.Equal(t, "daemon\nfloppy\n", res.Container.From.WithUser.WithExec.Stdout)
 	})
 
-	t.Run("stdin", func(t *testing.T) {
-		err := testutil.Query(
+	t.Run("stdin", func(ctx context.Context, t *testctx.T) {
+		var res resType
+		err := testutil.Query(t,
 			`{
 			container {
 				from(address: "`+alpineImage+`") {
@@ -684,9 +676,8 @@ func TestContainerExecWithUser(t *testing.T) {
 	})
 }
 
-func TestContainerExecWithoutUser(t *testing.T) {
-	t.Parallel()
-	c, ctx := connect(t)
+func (ContainerSuite) TestExecWithoutUser(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	res, err := c.Container().
 		From(alpineImage).
@@ -699,39 +690,37 @@ func TestContainerExecWithoutUser(t *testing.T) {
 	require.Equal(t, "root\n", res)
 }
 
-func TestContainerExecWithEntrypoint(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ContainerSuite) TestExecWithEntrypoint(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	base := c.Container().From(alpineImage)
 	withEntry := base.WithEntrypoint([]string{"sh"})
 
-	t.Run("before", func(t *testing.T) {
+	t.Run("before", func(ctx context.Context, t *testctx.T) {
 		before, err := base.Entrypoint(ctx)
 		require.NoError(t, err)
 		require.Empty(t, before)
 	})
 
-	t.Run("after", func(t *testing.T) {
+	t.Run("after", func(ctx context.Context, t *testctx.T) {
 		after, err := withEntry.Entrypoint(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{"sh"}, after)
 	})
 
-	t.Run("used", func(t *testing.T) {
+	t.Run("used", func(ctx context.Context, t *testctx.T) {
 		used, err := withEntry.WithExec([]string{"-c", "echo $HOME"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "/root\n", used)
 	})
 
-	t.Run("prepended to exec", func(t *testing.T) {
+	t.Run("prepended to exec", func(ctx context.Context, t *testctx.T) {
 		_, err := withEntry.WithExec([]string{"sh", "-c", "echo $HOME"}).Sync(ctx)
 		require.Error(t, err)
 		require.ErrorContains(t, err, "can't open 'sh'")
 	})
 
-	t.Run("skipped", func(t *testing.T) {
+	t.Run("skipped", func(ctx context.Context, t *testctx.T) {
 		skipped, err := withEntry.WithExec([]string{"sh", "-c", "echo $HOME"}, dagger.ContainerWithExecOpts{
 			SkipEntrypoint: true,
 		}).Stdout(ctx)
@@ -739,7 +728,7 @@ func TestContainerExecWithEntrypoint(t *testing.T) {
 		require.Equal(t, "/root\n", skipped)
 	})
 
-	t.Run("unset default args", func(t *testing.T) {
+	t.Run("unset default args", func(ctx context.Context, t *testctx.T) {
 		removed, err := base.
 			WithDefaultArgs([]string{"foobar"}).
 			WithEntrypoint([]string{"echo"}).
@@ -748,7 +737,7 @@ func TestContainerExecWithEntrypoint(t *testing.T) {
 		require.Equal(t, "\n", removed)
 	})
 
-	t.Run("kept default args", func(t *testing.T) {
+	t.Run("kept default args", func(ctx context.Context, t *testctx.T) {
 		kept, err := base.
 			WithDefaultArgs([]string{"foobar"}).
 			WithEntrypoint([]string{"echo"}, dagger.ContainerWithEntrypointOpts{
@@ -759,7 +748,7 @@ func TestContainerExecWithEntrypoint(t *testing.T) {
 		require.Equal(t, "foobar\n", kept)
 	})
 
-	t.Run("cleared", func(t *testing.T) {
+	t.Run("cleared", func(ctx context.Context, t *testctx.T) {
 		withoutEntry := withEntry.WithEntrypoint(nil)
 		removed, err := withoutEntry.Entrypoint(ctx)
 		require.NoError(t, err)
@@ -767,11 +756,10 @@ func TestContainerExecWithEntrypoint(t *testing.T) {
 	})
 }
 
-func TestContainerExecWithoutEntrypoint(t *testing.T) {
-	t.Parallel()
-	c, ctx := connect(t)
+func (ContainerSuite) TestExecWithoutEntrypoint(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
-	t.Run("cleared entrypoint", func(t *testing.T) {
+	t.Run("cleared entrypoint", func(ctx context.Context, t *testctx.T) {
 		res, err := c.Container().
 			From(alpineImage).
 			// if not unset this would return an error
@@ -783,7 +771,7 @@ func TestContainerExecWithoutEntrypoint(t *testing.T) {
 		require.Equal(t, "foobar", res)
 	})
 
-	t.Run("cleared entrypoint with default args", func(t *testing.T) {
+	t.Run("cleared entrypoint with default args", func(ctx context.Context, t *testctx.T) {
 		res, err := c.Container().
 			From(alpineImage).
 			WithEntrypoint([]string{"foo"}).
@@ -794,7 +782,7 @@ func TestContainerExecWithoutEntrypoint(t *testing.T) {
 		require.Empty(t, res)
 	})
 
-	t.Run("cleared entrypoint without default args", func(t *testing.T) {
+	t.Run("cleared entrypoint without default args", func(ctx context.Context, t *testctx.T) {
 		res, err := c.Container().
 			From(alpineImage).
 			WithEntrypoint([]string{"foo"}).
@@ -808,9 +796,7 @@ func TestContainerExecWithoutEntrypoint(t *testing.T) {
 	})
 }
 
-func TestContainerWithDefaultArgs(t *testing.T) {
-	t.Parallel()
-
+func (ContainerSuite) TestWithDefaultArgs(ctx context.Context, t *testctx.T) {
 	res := struct {
 		Container struct {
 			From struct {
@@ -841,7 +827,7 @@ func TestContainerWithDefaultArgs(t *testing.T) {
 		}
 	}{}
 
-	err := testutil.Query(
+	err := testutil.Query(t,
 		`{
 			container {
 				from(address: "`+alpineImage+`") {
@@ -872,27 +858,27 @@ func TestContainerWithDefaultArgs(t *testing.T) {
 				}
 			}
 		}`, &res, nil)
-	t.Run("default alpine (no entrypoint)", func(t *testing.T) {
+	t.Run("default alpine (no entrypoint)", func(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Empty(t, res.Container.From.Entrypoint)
 		require.Equal(t, []string{"/bin/sh"}, res.Container.From.DefaultArgs)
 	})
 
-	t.Run("with nil default args", func(t *testing.T) {
+	t.Run("with nil default args", func(ctx context.Context, t *testctx.T) {
 		require.Empty(t, res.Container.From.WithDefaultArgs.Entrypoint)
 		require.Empty(t, res.Container.From.WithDefaultArgs.DefaultArgs)
 	})
 
-	t.Run("with entrypoint set", func(t *testing.T) {
+	t.Run("with entrypoint set", func(ctx context.Context, t *testctx.T) {
 		require.Equal(t, []string{"sh", "-c"}, res.Container.From.WithEntrypoint.Entrypoint)
 		require.Empty(t, res.Container.From.WithEntrypoint.DefaultArgs)
 	})
 
-	t.Run("with exec args", func(t *testing.T) {
+	t.Run("with exec args", func(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "/root\n", res.Container.From.WithEntrypoint.WithExec.Stdout)
 	})
 
-	t.Run("with default args set", func(t *testing.T) {
+	t.Run("with default args set", func(ctx context.Context, t *testctx.T) {
 		require.Equal(t, []string{"sh", "-c"}, res.Container.From.WithEntrypoint.WithDefaultArgs.Entrypoint)
 		require.Equal(t, []string{"id"}, res.Container.From.WithEntrypoint.WithDefaultArgs.DefaultArgs)
 
@@ -900,9 +886,8 @@ func TestContainerWithDefaultArgs(t *testing.T) {
 	})
 }
 
-func TestContainerExecWithoutDefaultArgs(t *testing.T) {
-	t.Parallel()
-	c, ctx := connect(t)
+func (ContainerSuite) TestExecWithoutDefaultArgs(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	res, err := c.Container().
 		From(alpineImage).
@@ -916,9 +901,7 @@ func TestContainerExecWithoutDefaultArgs(t *testing.T) {
 	require.Equal(t, "", res)
 }
 
-func TestContainerExecWithEnvVariable(t *testing.T) {
-	t.Parallel()
-
+func (ContainerSuite) TestExecWithEnvVariable(ctx context.Context, t *testctx.T) {
 	res := struct {
 		Container struct {
 			From struct {
@@ -931,7 +914,7 @@ func TestContainerExecWithEnvVariable(t *testing.T) {
 		}
 	}{}
 
-	err := testutil.Query(
+	err := testutil.Query(t,
 		`{
 			container {
 				from(address: "`+alpineImage+`") {
@@ -947,9 +930,7 @@ func TestContainerExecWithEnvVariable(t *testing.T) {
 	require.Contains(t, res.Container.From.WithEnvVariable.WithExec.Stdout, "FOO=bar\n")
 }
 
-func TestContainerVariables(t *testing.T) {
-	t.Parallel()
-
+func (ContainerSuite) TestVariables(ctx context.Context, t *testctx.T) {
 	res := struct {
 		Container struct {
 			From struct {
@@ -961,7 +942,7 @@ func TestContainerVariables(t *testing.T) {
 		}
 	}{}
 
-	err := testutil.Query(
+	err := testutil.Query(t,
 		`{
 			container {
 				from(address: "golang:1.18.2-alpine") {
@@ -984,9 +965,7 @@ func TestContainerVariables(t *testing.T) {
 	require.Contains(t, res.Container.From.WithExec.Stdout, "GOPATH=/go\n")
 }
 
-func TestContainerVariable(t *testing.T) {
-	t.Parallel()
-
+func (ContainerSuite) TestVariable(ctx context.Context, t *testctx.T) {
 	res := struct {
 		Container struct {
 			From struct {
@@ -995,7 +974,7 @@ func TestContainerVariable(t *testing.T) {
 		}
 	}{}
 
-	err := testutil.Query(
+	err := testutil.Query(t,
 		`{
 			container {
 				from(address: "golang:1.18.2-alpine") {
@@ -1007,7 +986,7 @@ func TestContainerVariable(t *testing.T) {
 	require.NotNil(t, res.Container.From.EnvVariable)
 	require.Equal(t, "1.18.2", *res.Container.From.EnvVariable)
 
-	err = testutil.Query(
+	err = testutil.Query(t,
 		`{
 			container {
 				from(address: "golang:1.18.2-alpine") {
@@ -1019,9 +998,7 @@ func TestContainerVariable(t *testing.T) {
 	require.Nil(t, res.Container.From.EnvVariable)
 }
 
-func TestContainerWithoutVariable(t *testing.T) {
-	t.Parallel()
-
+func (ContainerSuite) TestWithoutVariable(ctx context.Context, t *testctx.T) {
 	res := struct {
 		Container struct {
 			From struct {
@@ -1035,7 +1012,7 @@ func TestContainerWithoutVariable(t *testing.T) {
 		}
 	}{}
 
-	err := testutil.Query(
+	err := testutil.Query(t,
 		`{
 			container {
 				from(address: "golang:1.18.2-alpine") {
@@ -1059,9 +1036,7 @@ func TestContainerWithoutVariable(t *testing.T) {
 	require.NotContains(t, res.Container.From.WithoutEnvVariable.WithExec.Stdout, "GOLANG_VERSION")
 }
 
-func TestContainerEnvVariablesReplace(t *testing.T) {
-	t.Parallel()
-
+func (ContainerSuite) TestEnvVariablesReplace(ctx context.Context, t *testctx.T) {
 	res := struct {
 		Container struct {
 			From struct {
@@ -1075,7 +1050,7 @@ func TestContainerEnvVariablesReplace(t *testing.T) {
 		}
 	}{}
 
-	err := testutil.Query(
+	err := testutil.Query(t,
 		`{
 			container {
 				from(address: "golang:1.18.2-alpine") {
@@ -1100,11 +1075,10 @@ func TestContainerEnvVariablesReplace(t *testing.T) {
 	require.Contains(t, res.Container.From.WithEnvVariable.WithExec.Stdout, "GOPATH=/gone\n")
 }
 
-func TestContainerWithEnvVariableExpand(t *testing.T) {
-	t.Parallel()
-	c, ctx := connect(t)
+func (ContainerSuite) TestWithEnvVariableExpand(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
-	t.Run("add env var without expansion", func(t *testing.T) {
+	t.Run("add env var without expansion", func(ctx context.Context, t *testctx.T) {
 		out, err := c.Container().
 			From(alpineImage).
 			WithEnvVariable("FOO", "foo:$PATH").
@@ -1115,7 +1089,7 @@ func TestContainerWithEnvVariableExpand(t *testing.T) {
 		require.Equal(t, "foo:$PATH\n", out)
 	})
 
-	t.Run("add env var with expansion", func(t *testing.T) {
+	t.Run("add env var with expansion", func(ctx context.Context, t *testctx.T) {
 		out, err := c.Container().
 			From(alpineImage).
 			WithEnvVariable("USER_PATH", "/opt").
@@ -1137,10 +1111,10 @@ func TestContainerWithEnvVariableExpand(t *testing.T) {
 	})
 }
 
-func TestContainerLabel(t *testing.T) {
-	c, ctx := connect(t)
+func (ContainerSuite) TestLabel(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
-	t.Run("container with new label", func(t *testing.T) {
+	t.Run("container with new label", func(ctx context.Context, t *testctx.T) {
 		label, err := c.Container().From(alpineImage).WithLabel("FOO", "BAR").Label(ctx, "FOO")
 
 		require.NoError(t, err)
@@ -1149,7 +1123,7 @@ func TestContainerLabel(t *testing.T) {
 
 	// implementing this test as GraphQL query until
 	// https://github.com/dagger/dagger/issues/4398 gets resolved
-	t.Run("container labels", func(t *testing.T) {
+	t.Run("container labels", func(ctx context.Context, t *testctx.T) {
 		res := struct {
 			Container struct {
 				From struct {
@@ -1158,7 +1132,7 @@ func TestContainerLabel(t *testing.T) {
 			}
 		}{}
 
-		err := testutil.Query(
+		err := testutil.Query(t,
 			`{
 				container {
 				  from(address: "nginx") {
@@ -1175,35 +1149,35 @@ func TestContainerLabel(t *testing.T) {
 		}, res.Container.From.Labels)
 	})
 
-	t.Run("container without label", func(t *testing.T) {
+	t.Run("container without label", func(ctx context.Context, t *testctx.T) {
 		label, err := c.Container().From("nginx").WithoutLabel("maintainer").Label(ctx, "maintainer")
 
 		require.NoError(t, err)
 		require.Empty(t, label)
 	})
 
-	t.Run("container replace label", func(t *testing.T) {
+	t.Run("container replace label", func(ctx context.Context, t *testctx.T) {
 		label, err := c.Container().From("nginx").WithLabel("maintainer", "bar").Label(ctx, "maintainer")
 
 		require.NoError(t, err)
 		require.Contains(t, label, "bar")
 	})
 
-	t.Run("container with new label - nil panics", func(t *testing.T) {
+	t.Run("container with new label - nil panics", func(ctx context.Context, t *testctx.T) {
 		label, err := c.Container().WithLabel("FOO", "BAR").Label(ctx, "FOO")
 
 		require.NoError(t, err)
 		require.Contains(t, label, "BAR")
 	})
 
-	t.Run("container label - nil panics", func(t *testing.T) {
+	t.Run("container label - nil panics", func(ctx context.Context, t *testctx.T) {
 		label, err := c.Container().Label(ctx, "FOO")
 
 		require.NoError(t, err)
 		require.Empty(t, label)
 	})
 
-	t.Run("container without label - nil panics", func(t *testing.T) {
+	t.Run("container without label - nil panics", func(ctx context.Context, t *testctx.T) {
 		label, err := c.Container().WithoutLabel("maintainer").Label(ctx, "maintainer")
 
 		require.NoError(t, err)
@@ -1212,7 +1186,7 @@ func TestContainerLabel(t *testing.T) {
 
 	// implementing this test as GraphQL query until
 	// https://github.com/dagger/dagger/issues/4398 gets resolved
-	t.Run("container labels - nil panics", func(t *testing.T) {
+	t.Run("container labels - nil panics", func(ctx context.Context, t *testctx.T) {
 		res := struct {
 			Container struct {
 				From struct {
@@ -1221,7 +1195,7 @@ func TestContainerLabel(t *testing.T) {
 			}
 		}{}
 
-		err := testutil.Query(
+		err := testutil.Query(t,
 			`{
 				container {
 				  labels {
@@ -1235,9 +1209,7 @@ func TestContainerLabel(t *testing.T) {
 	})
 }
 
-func TestContainerWorkdir(t *testing.T) {
-	t.Parallel()
-
+func (ContainerSuite) TestWorkdir(ctx context.Context, t *testctx.T) {
 	res := struct {
 		Container struct {
 			From struct {
@@ -1249,7 +1221,7 @@ func TestContainerWorkdir(t *testing.T) {
 		}
 	}{}
 
-	err := testutil.Query(
+	err := testutil.Query(t,
 		`{
 			container {
 			  from(address: "golang:1.18.2-alpine") {
@@ -1265,9 +1237,7 @@ func TestContainerWorkdir(t *testing.T) {
 	require.Equal(t, res.Container.From.WithExec.Stdout, "/go\n")
 }
 
-func TestContainerWithWorkdir(t *testing.T) {
-	t.Parallel()
-
+func (ContainerSuite) TestWithWorkdir(ctx context.Context, t *testctx.T) {
 	res := struct {
 		Container struct {
 			From struct {
@@ -1281,7 +1251,7 @@ func TestContainerWithWorkdir(t *testing.T) {
 		}
 	}{}
 
-	err := testutil.Query(
+	err := testutil.Query(t,
 		`{
 			container {
 				from(address: "golang:1.18.2-alpine") {
@@ -1299,9 +1269,7 @@ func TestContainerWithWorkdir(t *testing.T) {
 	require.Equal(t, res.Container.From.WithWorkdir.WithExec.Stdout, "/usr\n")
 }
 
-func TestContainerWithMountedDirectory(t *testing.T) {
-	t.Parallel()
-
+func (ContainerSuite) TestWithMountedDirectory(ctx context.Context, t *testctx.T) {
 	dirRes := struct {
 		Directory struct {
 			WithNewFile struct {
@@ -1312,7 +1280,7 @@ func TestContainerWithMountedDirectory(t *testing.T) {
 		}
 	}{}
 
-	err := testutil.Query(
+	err := testutil.Query(t,
 		`{
 			directory {
 				withNewFile(path: "some-file", contents: "some-content") {
@@ -1341,7 +1309,7 @@ func TestContainerWithMountedDirectory(t *testing.T) {
 			}
 		}
 	}{}
-	err = testutil.Query(
+	err = testutil.Query(t,
 		`query Test($id: DirectoryID!) {
 			container {
 				from(address: "`+alpineImage+`") {
@@ -1364,9 +1332,7 @@ func TestContainerWithMountedDirectory(t *testing.T) {
 	require.Equal(t, "sub-content", execRes.Container.From.WithMountedDirectory.WithExec.WithExec.Stdout)
 }
 
-func TestContainerWithMountedDirectorySourcePath(t *testing.T) {
-	t.Parallel()
-
+func (ContainerSuite) TestWithMountedDirectorySourcePath(ctx context.Context, t *testctx.T) {
 	dirRes := struct {
 		Directory struct {
 			WithNewFile struct {
@@ -1379,7 +1345,7 @@ func TestContainerWithMountedDirectorySourcePath(t *testing.T) {
 		}
 	}{}
 
-	err := testutil.Query(
+	err := testutil.Query(t,
 		`{
 			directory {
 				withNewFile(path: "some-file", contents: "some-content") {
@@ -1408,7 +1374,7 @@ func TestContainerWithMountedDirectorySourcePath(t *testing.T) {
 			}
 		}
 	}{}
-	err = testutil.Query(
+	err = testutil.Query(t,
 		`query Test($id: DirectoryID!) {
 			container {
 				from(address: "`+alpineImage+`") {
@@ -1428,9 +1394,7 @@ func TestContainerWithMountedDirectorySourcePath(t *testing.T) {
 	require.Equal(t, "sub-content\nmore-content", execRes.Container.From.WithMountedDirectory.WithExec.WithExec.Stdout)
 }
 
-func TestContainerWithMountedDirectoryPropagation(t *testing.T) {
-	t.Parallel()
-
+func (ContainerSuite) TestWithMountedDirectoryPropagation(ctx context.Context, t *testctx.T) {
 	dirRes := struct {
 		Directory struct {
 			WithNewFile struct {
@@ -1439,7 +1403,7 @@ func TestContainerWithMountedDirectoryPropagation(t *testing.T) {
 		}
 	}{}
 
-	err := testutil.Query(
+	err := testutil.Query(t,
 		`{
 			directory {
 				withNewFile(path: "some-file", contents: "some-content") {
@@ -1475,7 +1439,7 @@ func TestContainerWithMountedDirectoryPropagation(t *testing.T) {
 			}
 		}
 	}{}
-	err = testutil.Query(
+	err = testutil.Query(t,
 		`query Test($id: DirectoryID!) {
 			container {
 				from(address: "`+alpineImage+`") {
@@ -1526,9 +1490,7 @@ func TestContainerWithMountedDirectoryPropagation(t *testing.T) {
 		execRes.Container.From.WithMountedDirectory.WithExec.WithExec.WithExec.WithMountedDirectory.WithExec.WithExec.Stdout)
 }
 
-func TestContainerWithMountedFile(t *testing.T) {
-	t.Parallel()
-
+func (ContainerSuite) TestWithMountedFile(ctx context.Context, t *testctx.T) {
 	dirRes := struct {
 		Directory struct {
 			WithNewFile struct {
@@ -1539,7 +1501,7 @@ func TestContainerWithMountedFile(t *testing.T) {
 		}
 	}{}
 
-	err := testutil.Query(
+	err := testutil.Query(t,
 		`{
 			directory {
 				withNewFile(path: "some-dir/sub-file", contents: "sub-content") {
@@ -1564,7 +1526,7 @@ func TestContainerWithMountedFile(t *testing.T) {
 			}
 		}
 	}{}
-	err = testutil.Query(
+	err = testutil.Query(t,
 		`query Test($id: FileID!) {
 			container {
 				from(address: "`+alpineImage+`") {
@@ -1582,9 +1544,7 @@ func TestContainerWithMountedFile(t *testing.T) {
 	require.Equal(t, "sub-content", execRes.Container.From.WithMountedFile.WithExec.Stdout)
 }
 
-func TestContainerWithMountedCache(t *testing.T) {
-	t.Parallel()
-
+func (ContainerSuite) TestWithMountedCache(ctx context.Context, t *testctx.T) {
 	cacheID := newCache(t)
 
 	execRes := struct {
@@ -1616,7 +1576,7 @@ func TestContainerWithMountedCache(t *testing.T) {
 		}`
 
 	rand1 := identity.NewID()
-	err := testutil.Query(query, &execRes, &testutil.QueryOptions{Variables: map[string]any{
+	err := testutil.Query(t, query, &execRes, &testutil.QueryOptions{Variables: map[string]any{
 		"cache": cacheID,
 		"rand":  rand1,
 	}})
@@ -1624,7 +1584,7 @@ func TestContainerWithMountedCache(t *testing.T) {
 	require.Equal(t, rand1+"\n", execRes.Container.From.WithEnvVariable.WithMountedCache.WithExec.Stdout)
 
 	rand2 := identity.NewID()
-	err = testutil.Query(query, &execRes, &testutil.QueryOptions{Variables: map[string]any{
+	err = testutil.Query(t, query, &execRes, &testutil.QueryOptions{Variables: map[string]any{
 		"cache": cacheID,
 		"rand":  rand2,
 	}})
@@ -1632,9 +1592,7 @@ func TestContainerWithMountedCache(t *testing.T) {
 	require.Equal(t, rand1+"\n"+rand2+"\n", execRes.Container.From.WithEnvVariable.WithMountedCache.WithExec.Stdout)
 }
 
-func TestContainerWithMountedCacheFromDirectory(t *testing.T) {
-	t.Parallel()
-
+func (ContainerSuite) TestWithMountedCacheFromDirectory(ctx context.Context, t *testctx.T) {
 	dirRes := struct {
 		Directory struct {
 			WithNewFile struct {
@@ -1645,7 +1603,7 @@ func TestContainerWithMountedCacheFromDirectory(t *testing.T) {
 		}
 	}{}
 
-	err := testutil.Query(
+	err := testutil.Query(t,
 		`{
 			directory {
 				withNewFile(path: "some-dir/sub-file", contents: "initial-content\n") {
@@ -1690,7 +1648,7 @@ func TestContainerWithMountedCacheFromDirectory(t *testing.T) {
 		}`
 
 	rand1 := identity.NewID()
-	err = testutil.Query(query, &execRes, &testutil.QueryOptions{Variables: map[string]any{
+	err = testutil.Query(t, query, &execRes, &testutil.QueryOptions{Variables: map[string]any{
 		"init":  initialID,
 		"rand":  rand1,
 		"cache": cacheID,
@@ -1699,7 +1657,7 @@ func TestContainerWithMountedCacheFromDirectory(t *testing.T) {
 	require.Equal(t, "initial-content\n"+rand1+"\n", execRes.Container.From.WithEnvVariable.WithMountedCache.WithExec.Stdout)
 
 	rand2 := identity.NewID()
-	err = testutil.Query(query, &execRes, &testutil.QueryOptions{Variables: map[string]any{
+	err = testutil.Query(t, query, &execRes, &testutil.QueryOptions{Variables: map[string]any{
 		"init":  initialID,
 		"rand":  rand2,
 		"cache": cacheID,
@@ -1708,9 +1666,7 @@ func TestContainerWithMountedCacheFromDirectory(t *testing.T) {
 	require.Equal(t, "initial-content\n"+rand1+"\n"+rand2+"\n", execRes.Container.From.WithEnvVariable.WithMountedCache.WithExec.Stdout)
 }
 
-func TestContainerWithMountedTemp(t *testing.T) {
-	t.Parallel()
-
+func (ContainerSuite) TestWithMountedTemp(ctx context.Context, t *testctx.T) {
 	execRes := struct {
 		Container struct {
 			From struct {
@@ -1723,7 +1679,7 @@ func TestContainerWithMountedTemp(t *testing.T) {
 		}
 	}{}
 
-	err := testutil.Query(`{
+	err := testutil.Query(t, `{
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedTemp(path: "/mnt/tmp") {
@@ -1738,10 +1694,8 @@ func TestContainerWithMountedTemp(t *testing.T) {
 	require.Contains(t, execRes.Container.From.WithMountedTemp.WithExec.Stdout, "tmpfs /mnt/tmp tmpfs")
 }
 
-func TestContainerWithDirectory(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ContainerSuite) TestWithDirectory(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	dir := c.Directory().
 		WithNewFile("some-file", "some-content").
@@ -1797,10 +1751,8 @@ func TestContainerWithDirectory(t *testing.T) {
 	require.Equal(t, "some-content", contents)
 }
 
-func TestContainerWithFile(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ContainerSuite) TestWithFile(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	file := c.Directory().
 		WithNewFile("some-file", "some-content").
@@ -1822,10 +1774,8 @@ func TestContainerWithFile(t *testing.T) {
 	require.Equal(t, "some-content", contents)
 }
 
-func TestContainerWithoutPath(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ContainerSuite) TestWithoutPath(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	ctr := c.Container().
 		From(alpineImage).
@@ -1836,7 +1786,7 @@ func TestContainerWithoutPath(t *testing.T) {
 		WithNewFile("bat/man").
 		WithNewFile("/ual")
 
-	t.Run("no error if not exists", func(t *testing.T) {
+	t.Run("no error if not exists", func(ctx context.Context, t *testctx.T) {
 		out, err := ctr.
 			WithoutFile("not-exists").
 			WithExec([]string{"ls", "-1"}).
@@ -1845,7 +1795,7 @@ func TestContainerWithoutPath(t *testing.T) {
 		require.Equal(t, "bar\nbat\nfoo\nmoo\n", out)
 	})
 
-	t.Run("files, with pattern", func(t *testing.T) {
+	t.Run("files, with pattern", func(ctx context.Context, t *testctx.T) {
 		out, err := ctr.
 			WithoutFile("*oo").
 			WithExec([]string{"ls", "-1"}).
@@ -1854,7 +1804,7 @@ func TestContainerWithoutPath(t *testing.T) {
 		require.Equal(t, "bar\nbat\n", out)
 	})
 
-	t.Run("directory", func(t *testing.T) {
+	t.Run("directory", func(ctx context.Context, t *testctx.T) {
 		out, err := ctr.
 			WithoutDirectory("bar").
 			WithExec([]string{"ls", "-1"}).
@@ -1863,7 +1813,7 @@ func TestContainerWithoutPath(t *testing.T) {
 		require.Equal(t, "bat\nfoo\nmoo\n", out)
 	})
 
-	t.Run("current dir", func(t *testing.T) {
+	t.Run("current dir", func(ctx context.Context, t *testctx.T) {
 		out, err := ctr.
 			WithoutDirectory("").
 			WithExec([]string{"find", "/workdir"}).
@@ -1872,7 +1822,7 @@ func TestContainerWithoutPath(t *testing.T) {
 		require.Equal(t, "/workdir\n", out)
 	})
 
-	t.Run("absolute", func(t *testing.T) {
+	t.Run("absolute", func(ctx context.Context, t *testctx.T) {
 		out, err := ctr.
 			WithoutFile("/ual").
 			WithExec([]string{"ls", "-1", "/"}).
@@ -1883,10 +1833,8 @@ func TestContainerWithoutPath(t *testing.T) {
 	})
 }
 
-func TestContainerWithFiles(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ContainerSuite) TestWithFiles(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	file1 := c.Directory().
 		WithNewFile("first-file", "file1 content").
@@ -1911,10 +1859,8 @@ func TestContainerWithFiles(t *testing.T) {
 	require.Equal(t, "file2 content", contents)
 }
 
-func TestContainerWithFilesAbsolute(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ContainerSuite) TestWithFilesAbsolute(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	file1 := c.Directory().
 		WithNewFile("first-file", "file1 content").
@@ -1942,10 +1888,8 @@ func TestContainerWithFilesAbsolute(t *testing.T) {
 	require.Equal(t, "file2 content", contents)
 }
 
-func TestContainerWithNewFile(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ContainerSuite) TestWithNewFile(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	ctr := c.Container().
 		From(alpineImage).
@@ -1965,10 +1909,8 @@ func TestContainerWithNewFile(t *testing.T) {
 	require.Equal(t, "some-content", contents)
 }
 
-func TestContainerMountsWithoutMount(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ContainerSuite) TestMountsWithoutMount(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	scratchID, err := c.Directory().ID(ctx)
 	require.NoError(t, err)
@@ -1983,7 +1925,7 @@ func TestContainerMountsWithoutMount(t *testing.T) {
 		}
 	}{}
 
-	err = testutil.Query(
+	err = testutil.Query(t,
 		`{
 			directory {
 				withNewFile(path: "some-file", contents: "some-content") {
@@ -2020,7 +1962,7 @@ func TestContainerMountsWithoutMount(t *testing.T) {
 			}
 		}
 	}{}
-	err = testutil.Query(
+	err = testutil.Query(t,
 		`query Test($id: DirectoryID!, $scratch: DirectoryID!) {
 			container {
 				from(address: "`+alpineImage+`") {
@@ -2055,10 +1997,8 @@ func TestContainerMountsWithoutMount(t *testing.T) {
 	require.Equal(t, []string{"/mnt/tmp"}, execRes.Container.From.WithDirectory.WithMountedTemp.WithMountedDirectory.WithExec.WithoutMount.Mounts)
 }
 
-func TestContainerReplacedMounts(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ContainerSuite) TestReplacedMounts(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	lower := c.Directory().WithNewFile("some-file", "lower-content")
 
@@ -2068,7 +2008,7 @@ func TestContainerReplacedMounts(t *testing.T) {
 		From(alpineImage).
 		WithMountedDirectory("/mnt/dir", lower)
 
-	t.Run("initial content is lower", func(t *testing.T) {
+	t.Run("initial content is lower", func(ctx context.Context, t *testctx.T) {
 		mnts, err := ctr.Mounts(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{"/mnt/dir"}, mnts)
@@ -2080,7 +2020,7 @@ func TestContainerReplacedMounts(t *testing.T) {
 
 	replaced := ctr.WithMountedDirectory("/mnt/dir", upper)
 
-	t.Run("mounts of same path are replaced", func(t *testing.T) {
+	t.Run("mounts of same path are replaced", func(ctx context.Context, t *testctx.T) {
 		mnts, err := replaced.Mounts(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{"/mnt/dir"}, mnts)
@@ -2090,7 +2030,7 @@ func TestContainerReplacedMounts(t *testing.T) {
 		require.Equal(t, "upper-content", out)
 	})
 
-	t.Run("removing a replaced mount does not reveal previous mount", func(t *testing.T) {
+	t.Run("removing a replaced mount does not reveal previous mount", func(ctx context.Context, t *testctx.T) {
 		removed := replaced.WithoutMount("/mnt/dir")
 		mnts, err := removed.Mounts(ctx)
 		require.NoError(t, err)
@@ -2100,7 +2040,7 @@ func TestContainerReplacedMounts(t *testing.T) {
 	clobberedDir := c.Directory().WithNewFile("some-file", "clobbered-content")
 	clobbered := replaced.WithMountedDirectory("/mnt", clobberedDir)
 
-	t.Run("replacing parent of a mount clobbers child", func(t *testing.T) {
+	t.Run("replacing parent of a mount clobbers child", func(ctx context.Context, t *testctx.T) {
 		mnts, err := clobbered.Mounts(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{"/mnt"}, mnts)
@@ -2113,7 +2053,7 @@ func TestContainerReplacedMounts(t *testing.T) {
 	clobberedSubDir := c.Directory().WithNewFile("some-file", "clobbered-sub-content")
 	clobberedSub := clobbered.WithMountedDirectory("/mnt/dir", clobberedSubDir)
 
-	t.Run("restoring mount under clobbered mount", func(t *testing.T) {
+	t.Run("restoring mount under clobbered mount", func(ctx context.Context, t *testctx.T) {
 		mnts, err := clobberedSub.Mounts(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []string{"/mnt", "/mnt/dir"}, mnts)
@@ -2124,9 +2064,7 @@ func TestContainerReplacedMounts(t *testing.T) {
 	})
 }
 
-func TestContainerDirectory(t *testing.T) {
-	t.Parallel()
-
+func (ContainerSuite) TestDirectory(ctx context.Context, t *testctx.T) {
 	dirRes := struct {
 		Directory struct {
 			WithNewFile struct {
@@ -2137,7 +2075,7 @@ func TestContainerDirectory(t *testing.T) {
 		}
 	}{}
 
-	err := testutil.Query(
+	err := testutil.Query(t,
 		`{
 			directory {
 				withNewFile(path: "some-file", contents: "some-content") {
@@ -2166,7 +2104,7 @@ func TestContainerDirectory(t *testing.T) {
 			}
 		}
 	}{}
-	err = testutil.Query(
+	err = testutil.Query(t,
 		`query Test($id: DirectoryID!) {
 			container {
 				from(address: "`+alpineImage+`") {
@@ -2199,7 +2137,7 @@ func TestContainerDirectory(t *testing.T) {
 			}
 		}
 	}{}
-	err = testutil.Query(
+	err = testutil.Query(t,
 		`query Test($id: DirectoryID!) {
 			container {
 				from(address: "`+alpineImage+`") {
@@ -2218,9 +2156,7 @@ func TestContainerDirectory(t *testing.T) {
 	require.Equal(t, "hello\n", execRes.Container.From.WithMountedDirectory.WithExec.Stdout)
 }
 
-func TestContainerDirectoryErrors(t *testing.T) {
-	t.Parallel()
-
+func (ContainerSuite) TestDirectoryErrors(ctx context.Context, t *testctx.T) {
 	dirRes := struct {
 		Directory struct {
 			WithNewFile struct {
@@ -2231,7 +2167,7 @@ func TestContainerDirectoryErrors(t *testing.T) {
 		}
 	}{}
 
-	err := testutil.Query(
+	err := testutil.Query(t,
 		`{
 			directory {
 				withNewFile(path: "some-file", contents: "some-content") {
@@ -2245,7 +2181,7 @@ func TestContainerDirectoryErrors(t *testing.T) {
 
 	id := dirRes.Directory.WithNewFile.WithNewFile.ID
 
-	err = testutil.Query(
+	err = testutil.Query(t,
 		`query Test($id: DirectoryID!) {
 			container {
 				from(address: "`+alpineImage+`") {
@@ -2262,7 +2198,7 @@ func TestContainerDirectoryErrors(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "path /mnt/dir/some-file is a file, not a directory")
 
-	err = testutil.Query(
+	err = testutil.Query(t,
 		`query Test($id: DirectoryID!) {
 			container {
 				from(address: "`+alpineImage+`") {
@@ -2279,7 +2215,7 @@ func TestContainerDirectoryErrors(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "bogus: no such file or directory")
 
-	err = testutil.Query(
+	err = testutil.Query(t,
 		`{
 			container {
 				from(address: "`+alpineImage+`") {
@@ -2295,7 +2231,7 @@ func TestContainerDirectoryErrors(t *testing.T) {
 	require.Contains(t, err.Error(), "bogus: cannot retrieve path from tmpfs")
 
 	cacheID := newCache(t)
-	err = testutil.Query(
+	err = testutil.Query(t,
 		`query Test($cache: CacheVolumeID!) {
 			container {
 				from(address: "`+alpineImage+`") {
@@ -2313,9 +2249,7 @@ func TestContainerDirectoryErrors(t *testing.T) {
 	require.Contains(t, err.Error(), "bogus: cannot retrieve path from cache")
 }
 
-func TestContainerDirectorySourcePath(t *testing.T) {
-	t.Parallel()
-
+func (ContainerSuite) TestDirectorySourcePath(ctx context.Context, t *testctx.T) {
 	dirRes := struct {
 		Directory struct {
 			WithNewFile struct {
@@ -2326,7 +2260,7 @@ func TestContainerDirectorySourcePath(t *testing.T) {
 		}
 	}{}
 
-	err := testutil.Query(
+	err := testutil.Query(t,
 		`{
 			directory {
 				withNewFile(path: "some-dir/sub-dir/sub-file", contents: "sub-content\n") {
@@ -2353,7 +2287,7 @@ func TestContainerDirectorySourcePath(t *testing.T) {
 			}
 		}
 	}{}
-	err = testutil.Query(
+	err = testutil.Query(t,
 		`query Test($id: DirectoryID!) {
 			container {
 				from(address: "`+alpineImage+`") {
@@ -2384,7 +2318,7 @@ func TestContainerDirectorySourcePath(t *testing.T) {
 			}
 		}
 	}{}
-	err = testutil.Query(
+	err = testutil.Query(t,
 		`query Test($id: DirectoryID!) {
 			container {
 				from(address: "`+alpineImage+`") {
@@ -2403,9 +2337,7 @@ func TestContainerDirectorySourcePath(t *testing.T) {
 	require.Equal(t, "sub-content\nmore-content\n", execRes.Container.From.WithMountedDirectory.WithExec.Stdout)
 }
 
-func TestContainerFile(t *testing.T) {
-	t.Parallel()
-
+func (ContainerSuite) TestFile(ctx context.Context, t *testctx.T) {
 	id := newDirWithFile(t, "some-file", "some-content-")
 
 	writeRes := struct {
@@ -2423,7 +2355,7 @@ func TestContainerFile(t *testing.T) {
 			}
 		}
 	}{}
-	err := testutil.Query(
+	err := testutil.Query(t,
 		`query Test($id: DirectoryID!) {
 			container {
 				from(address: "`+alpineImage+`") {
@@ -2456,7 +2388,7 @@ func TestContainerFile(t *testing.T) {
 			}
 		}
 	}{}
-	err = testutil.Query(
+	err = testutil.Query(t,
 		`query Test($id: FileID!) {
 			container {
 				from(address: "`+alpineImage+`") {
@@ -2475,13 +2407,12 @@ func TestContainerFile(t *testing.T) {
 	require.Equal(t, "some-content-appended", execRes.Container.From.WithMountedFile.WithExec.Stdout)
 }
 
-func TestContainerFileErrors(t *testing.T) {
-	t.Parallel()
-
+func (ContainerSuite) TestFileErrors(ctx context.Context, t *testctx.T) {
 	id := newDirWithFile(t, "some-file", "some-content")
 
-	err := testutil.Query(
-		`query Test($id: DirectoryID!) {
+	t.Run("path not found", func(ctx context.Context, t *testctx.T) {
+		err := testutil.Query(t,
+			`query Test($id: DirectoryID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
@@ -2492,13 +2423,15 @@ func TestContainerFileErrors(t *testing.T) {
 				}
 			}
 		}`, nil, &testutil.QueryOptions{Variables: map[string]any{
-			"id": id,
-		}})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "bogus: no such file or directory")
+				"id": id,
+			}})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "bogus: no such file or directory")
+	})
 
-	err = testutil.Query(
-		`query Test($id: DirectoryID!) {
+	t.Run("get directory as file", func(ctx context.Context, t *testctx.T) {
+		err := testutil.Query(t,
+			`query Test($id: DirectoryID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
@@ -2509,13 +2442,15 @@ func TestContainerFileErrors(t *testing.T) {
 				}
 			}
 		}`, nil, &testutil.QueryOptions{Variables: map[string]any{
-			"id": id,
-		}})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "path /mnt/dir is a directory, not a file")
+				"id": id,
+			}})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "path /mnt/dir is a directory, not a file")
+	})
 
-	err = testutil.Query(
-		`{
+	t.Run("get path under tmpfs", func(ctx context.Context, t *testctx.T) {
+		err := testutil.Query(t,
+			`{
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedTemp(path: "/mnt/tmp") {
@@ -2526,12 +2461,14 @@ func TestContainerFileErrors(t *testing.T) {
 				}
 			}
 		}`, nil, nil)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "bogus: cannot retrieve path from tmpfs")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "bogus: cannot retrieve path from tmpfs")
+	})
 
-	cacheID := newCache(t)
-	err = testutil.Query(
-		`query Test($cache: CacheVolumeID!) {
+	t.Run("get path under cache", func(ctx context.Context, t *testctx.T) {
+		cacheID := newCache(t)
+		err := testutil.Query(t,
+			`query Test($cache: CacheVolumeID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedCache(path: "/mnt/cache", cache: $cache) {
@@ -2542,13 +2479,15 @@ func TestContainerFileErrors(t *testing.T) {
 				}
 			}
 		}`, nil, &testutil.QueryOptions{Variables: map[string]any{
-			"cache": cacheID,
-		}})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "bogus: cannot retrieve path from cache")
+				"cache": cacheID,
+			}})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "bogus: cannot retrieve path from cache")
+	})
 
-	err = testutil.Query(
-		`query Test($secret: SecretID!) {
+	t.Run("get secret mount contents", func(ctx context.Context, t *testctx.T) {
+		err := testutil.Query(t,
+			`query Test($secret: SecretID!) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withMountedSecret(path: "/sekret", source: $secret) {
@@ -2559,15 +2498,14 @@ func TestContainerFileErrors(t *testing.T) {
 				}
 			}
 		}`, nil, &testutil.QueryOptions{Secrets: map[string]string{
-			"secret": "some-secret",
-		}})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "sekret: no such file or directory")
+				"secret": "some-secret",
+			}})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "sekret: no such file or directory")
+	})
 }
 
-func TestContainerFSDirectory(t *testing.T) {
-	t.Parallel()
-
+func (ContainerSuite) TestFSDirectory(ctx context.Context, t *testctx.T) {
 	dirRes := struct {
 		Container struct {
 			From struct {
@@ -2577,7 +2515,7 @@ func TestContainerFSDirectory(t *testing.T) {
 			}
 		}
 	}{}
-	err := testutil.Query(
+	err := testutil.Query(t,
 		`{
 			container {
 				from(address: "`+alpineImage+`") {
@@ -2602,7 +2540,7 @@ func TestContainerFSDirectory(t *testing.T) {
 			}
 		}
 	}{}
-	err = testutil.Query(
+	err = testutil.Query(t,
 		`query Test($id: DirectoryID!) {
 			container {
 				from(address: "`+alpineImage+`") {
@@ -2622,9 +2560,7 @@ func TestContainerFSDirectory(t *testing.T) {
 	require.Equal(t, distconsts.AlpineVersion, strings.TrimSpace(releaseStr))
 }
 
-func TestContainerRelativePaths(t *testing.T) {
-	t.Parallel()
-
+func (ContainerSuite) TestRelativePaths(ctx context.Context, t *testctx.T) {
 	dirRes := struct {
 		Directory struct {
 			WithNewFile struct {
@@ -2633,7 +2569,7 @@ func TestContainerRelativePaths(t *testing.T) {
 		}
 	}{}
 
-	err := testutil.Query(
+	err := testutil.Query(t,
 		`{
 			directory {
 				withNewFile(path: "some-file", contents: "some-content") {
@@ -2675,7 +2611,7 @@ func TestContainerRelativePaths(t *testing.T) {
 	}{}
 
 	cacheID := newCache(t)
-	err = testutil.Query(
+	err = testutil.Query(t,
 		`query Test($id: DirectoryID!, $cache: CacheVolumeID!) {
 			container {
 				from(address: "`+alpineImage+`") {
@@ -2730,7 +2666,7 @@ func TestContainerRelativePaths(t *testing.T) {
 			}
 		}
 	}{}
-	err = testutil.Query(
+	err = testutil.Query(t,
 		`query Test($id: DirectoryID!) {
 			container {
 				from(address: "`+alpineImage+`") {
@@ -2749,16 +2685,14 @@ func TestContainerRelativePaths(t *testing.T) {
 	require.Equal(t, "another-file\nsome-file\n", execRes.Container.From.WithMountedDirectory.WithExec.Stdout)
 }
 
-func TestContainerMultiFrom(t *testing.T) {
-	t.Parallel()
-
+func (ContainerSuite) TestMultiFrom(ctx context.Context, t *testctx.T) {
 	dirRes := struct {
 		Directory struct {
 			ID core.DirectoryID
 		}
 	}{}
 
-	err := testutil.Query(
+	err := testutil.Query(t,
 		`{
 			directory {
 				id
@@ -2785,7 +2719,7 @@ func TestContainerMultiFrom(t *testing.T) {
 			}
 		}
 	}{}
-	err = testutil.Query(
+	err = testutil.Query(t,
 		`query Test($id: DirectoryID!) {
 			container {
 				from(address: "node:18.10.0-alpine") {
@@ -2810,8 +2744,8 @@ func TestContainerMultiFrom(t *testing.T) {
 	require.Contains(t, execRes.Container.From.WithMountedDirectory.WithExec.From.WithExec.WithExec.Stdout, "go version go1.18.2")
 }
 
-func TestContainerPublish(t *testing.T) {
-	c, ctx := connect(t)
+func (ContainerSuite) TestPublish(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	testRef := registryRef("container-publish")
 
@@ -2833,8 +2767,8 @@ func TestContainerPublish(t *testing.T) {
 	require.Equal(t, "im-a-entrypoint\n", output)
 }
 
-func TestExecFromScratch(t *testing.T) {
-	c, ctx := connect(t)
+func (ContainerSuite) TestExecFromScratch(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	// execute it from scratch, where there is no default platform, make sure it works and can be pushed
 	execBusybox := c.Container().
@@ -2848,8 +2782,8 @@ func TestExecFromScratch(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestContainerMultipleMounts(t *testing.T) {
-	c, ctx := connect(t)
+func (ContainerSuite) TestMultipleMounts(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "one"), []byte("1"), 0o600))
@@ -2874,22 +2808,20 @@ func TestContainerMultipleMounts(t *testing.T) {
 	require.Equal(t, "123", out)
 }
 
-func TestContainerExport(t *testing.T) {
-	t.Parallel()
-
+func (ContainerSuite) TestExport(ctx context.Context, t *testctx.T) {
 	wd := t.TempDir()
 	dest := t.TempDir()
 
-	c, ctx := connect(t, dagger.WithWorkdir(wd))
+	c := connect(ctx, t, dagger.WithWorkdir(wd))
 
 	entrypoint := []string{"sh", "-c", "im-a-entrypoint"}
 	ctr := c.Container().From(alpineImage).
 		WithEntrypoint(entrypoint)
 
-	t.Run("to absolute dir", func(t *testing.T) {
+	t.Run("to absolute dir", func(ctx context.Context, t *testctx.T) {
 		for _, useAsTarball := range []bool{true, false} {
-			t.Run(fmt.Sprintf("useAsTarball=%t", useAsTarball), func(t *testing.T) {
-				imagePath := filepath.Join(dest, "image.tar")
+			t.Run(fmt.Sprintf("useAsTarball=%t", useAsTarball), func(ctx context.Context, t *testctx.T) {
+				imagePath := filepath.Join(dest, identity.NewID()+".tar")
 
 				if useAsTarball {
 					tarFile := ctr.AsTarball()
@@ -2931,34 +2863,36 @@ func TestContainerExport(t *testing.T) {
 		}
 	})
 
-	t.Run("to workdir", func(t *testing.T) {
-		ok, err := ctr.Export(ctx, "./image.tar")
+	t.Run("to workdir", func(ctx context.Context, t *testctx.T) {
+		relPath := "./" + identity.NewID() + ".tar"
+		ok, err := ctr.Export(ctx, relPath)
 		require.NoError(t, err)
 		require.True(t, ok)
 
-		stat, err := os.Stat(filepath.Join(wd, "image.tar"))
+		stat, err := os.Stat(filepath.Join(wd, relPath))
 		require.NoError(t, err)
 		require.NotZero(t, stat.Size())
 		require.EqualValues(t, 0o600, stat.Mode().Perm())
 
-		entries := tarEntries(t, filepath.Join(wd, "image.tar"))
+		entries := tarEntries(t, filepath.Join(wd, relPath))
 		require.Contains(t, entries, "oci-layout")
 		require.Contains(t, entries, "index.json")
 		require.Contains(t, entries, "manifest.json")
 	})
 
-	t.Run("to subdir", func(t *testing.T) {
-		ok, err := ctr.Export(ctx, "./foo/image.tar")
+	t.Run("to subdir", func(ctx context.Context, t *testctx.T) {
+		relPath := "./foo/" + identity.NewID() + ".tar"
+		ok, err := ctr.Export(ctx, relPath)
 		require.NoError(t, err)
 		require.True(t, ok)
 
-		entries := tarEntries(t, filepath.Join(wd, "foo", "image.tar"))
+		entries := tarEntries(t, filepath.Join(wd, relPath))
 		require.Contains(t, entries, "oci-layout")
 		require.Contains(t, entries, "index.json")
 		require.Contains(t, entries, "manifest.json")
 	})
 
-	t.Run("to outer dir", func(t *testing.T) {
+	t.Run("to outer dir", func(ctx context.Context, t *testctx.T) {
 		ok, err := ctr.Export(ctx, "../")
 		require.Error(t, err)
 		require.False(t, ok)
@@ -2966,10 +2900,8 @@ func TestContainerExport(t *testing.T) {
 }
 
 // NOTE: more test coverage of Container.AsTarball are in TestContainerExport and TestContainerMultiPlatformExport
-func TestContainerAsTarball(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ContainerSuite) TestAsTarball(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 	ctr := c.Container().From(alpineImage)
 	output, err := ctr.
 		WithMountedFile("/foo.tar", ctr.AsTarball()).
@@ -2980,12 +2912,10 @@ func TestContainerAsTarball(t *testing.T) {
 	require.Equal(t, "/foo.tar: POSIX tar archive\n", output)
 }
 
-func TestContainerImport(t *testing.T) {
-	t.Parallel()
+func (ContainerSuite) TestImport(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
-	c, ctx := connect(t)
-
-	t.Run("OCI", func(t *testing.T) {
+	t.Run("OCI", func(ctx context.Context, t *testctx.T) {
 		pf, err := c.DefaultPlatform(ctx)
 		require.NoError(t, err)
 
@@ -3036,7 +2966,7 @@ func TestContainerImport(t *testing.T) {
 		require.Equal(t, "bar\n", out)
 	})
 
-	t.Run("Docker", func(t *testing.T) {
+	t.Run("Docker", func(ctx context.Context, t *testctx.T) {
 		out, err := c.Container().
 			Import(c.Container().From(alpineImage).WithEnvVariable("FOO", "bar").AsTarball(dagger.ContainerAsTarballOpts{
 				MediaTypes: dagger.Dockermediatypes,
@@ -3047,8 +2977,8 @@ func TestContainerImport(t *testing.T) {
 	})
 }
 
-func TestContainerFromImagePlatform(t *testing.T) {
-	c, ctx := connect(t)
+func (ContainerSuite) TestFromImagePlatform(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	var desiredPlatform dagger.Platform = "linux/arm64"
 
@@ -3058,8 +2988,8 @@ func TestContainerFromImagePlatform(t *testing.T) {
 	require.Equal(t, desiredPlatform, ctrPlatform)
 }
 
-func TestContainerFromIDPlatform(t *testing.T) {
-	c, ctx := connect(t)
+func (ContainerSuite) TestFromIDPlatform(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	var targetPlatform dagger.Platform = "linux/arm64/v8"
 	var desiredPlatform dagger.Platform = "linux/arm64"
@@ -3074,10 +3004,10 @@ func TestContainerFromIDPlatform(t *testing.T) {
 	require.Equal(t, desiredPlatform, platform)
 }
 
-func TestContainerMultiPlatformExport(t *testing.T) {
+func (ContainerSuite) TestMultiPlatformExport(ctx context.Context, t *testctx.T) {
 	for _, useAsTarball := range []bool{true, false} {
-		t.Run(fmt.Sprintf("useAsTarball=%t", useAsTarball), func(t *testing.T) {
-			c, ctx := connect(t)
+		t.Run(fmt.Sprintf("useAsTarball=%t", useAsTarball), func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
 
 			variants := make([]*dagger.Container, 0, len(platformToUname))
 			for platform, uname := range platformToUname {
@@ -3146,8 +3076,8 @@ func TestContainerMultiPlatformExport(t *testing.T) {
 }
 
 // Multiplatform publish is also tested in more complicated scenarios in platform_test.go
-func TestContainerMultiPlatformPublish(t *testing.T) {
-	c, ctx := connect(t)
+func (ContainerSuite) TestMultiPlatformPublish(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	variants := make([]*dagger.Container, 0, len(platformToUname))
 	for platform, uname := range platformToUname {
@@ -3174,8 +3104,8 @@ func TestContainerMultiPlatformPublish(t *testing.T) {
 	}
 }
 
-func TestContainerMultiPlatformImport(t *testing.T) {
-	c, ctx := connect(t)
+func (ContainerSuite) TestMultiPlatformImport(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	variants := make([]*dagger.Container, 0, len(platformToUname))
 	for platform := range platformToUname {
@@ -3204,10 +3134,8 @@ func TestContainerMultiPlatformImport(t *testing.T) {
 	}
 }
 
-func TestContainerWithDirectoryToMount(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ContainerSuite) TestWithDirectoryToMount(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	mnt := c.Directory().
 		WithNewDirectory("/top/sub-dir/sub-file").
@@ -3232,17 +3160,15 @@ func TestContainerWithDirectoryToMount(t *testing.T) {
 	}, strings.Split(strings.Trim(contents, "\n"), "\n"))
 }
 
-func TestContainerExecError(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ContainerSuite) TestExecError(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	outMsg := "THIS SHOULD GO TO STDOUT"
 	encodedOutMsg := base64.StdEncoding.EncodeToString([]byte(outMsg))
 	errMsg := "THIS SHOULD GO TO STDERR"
 	encodedErrMsg := base64.StdEncoding.EncodeToString([]byte(errMsg))
 
-	t.Run("includes output of failed exec in error", func(t *testing.T) {
+	t.Run("includes output of failed exec in error", func(ctx context.Context, t *testctx.T) {
 		_, err := c.Container().
 			From(alpineImage).
 			WithExec([]string{"sh", "-c", fmt.Sprintf(
@@ -3257,7 +3183,7 @@ func TestContainerExecError(t *testing.T) {
 		require.Equal(t, errMsg, exErr.Stderr)
 	})
 
-	t.Run("includes output of failed exec in error when redirects are enabled", func(t *testing.T) {
+	t.Run("includes output of failed exec in error when redirects are enabled", func(ctx context.Context, t *testctx.T) {
 		_, err := c.Container().
 			From(alpineImage).
 			WithExec(
@@ -3278,7 +3204,7 @@ func TestContainerExecError(t *testing.T) {
 		require.Equal(t, errMsg, exErr.Stderr)
 	})
 
-	t.Run("truncates output past a maximum size", func(t *testing.T) {
+	t.Run("truncates output past a maximum size", func(ctx context.Context, t *testctx.T) {
 		// fill a byte buffer with a string that is slightly over the size of the max output
 		// size, then base64 encode it
 		var stdoutBuf bytes.Buffer
@@ -3314,10 +3240,8 @@ func TestContainerExecError(t *testing.T) {
 	})
 }
 
-func TestContainerWithRegistryAuth(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ContainerSuite) TestWithRegistryAuth(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	testRef := privateRegistryRef("container-with-registry-auth")
 	container := c.Container().From(alpineImage)
@@ -3339,10 +3263,8 @@ func TestContainerWithRegistryAuth(t *testing.T) {
 	require.Contains(t, pushedRef, "@sha256:")
 }
 
-func TestContainerImageRef(t *testing.T) {
-	t.Parallel()
-
-	t.Run("should test query returning imageRef", func(t *testing.T) {
+func (ContainerSuite) TestImageRef(ctx context.Context, t *testctx.T) {
+	t.Run("should test query returning imageRef", func(ctx context.Context, t *testctx.T) {
 		res := struct {
 			Container struct {
 				From struct {
@@ -3351,7 +3273,7 @@ func TestContainerImageRef(t *testing.T) {
 			}
 		}{}
 
-		err := testutil.Query(
+		err := testutil.Query(t,
 			`{
 				container {
 					from(address: "`+alpineImage+`") {
@@ -3363,7 +3285,7 @@ func TestContainerImageRef(t *testing.T) {
 		require.Contains(t, res.Container.From.ImageRef, "docker.io/library/"+alpineImage+"@sha256:")
 	})
 
-	t.Run("should throw error after the container image modification with exec", func(t *testing.T) {
+	t.Run("should throw error after the container image modification with exec", func(ctx context.Context, t *testctx.T) {
 		res := struct {
 			Container struct {
 				From struct {
@@ -3372,7 +3294,7 @@ func TestContainerImageRef(t *testing.T) {
 			}
 		}{}
 
-		err := testutil.Query(
+		err := testutil.Query(t,
 			`{
 				container {
 					from(address:"hello-world") {
@@ -3386,7 +3308,7 @@ func TestContainerImageRef(t *testing.T) {
 		require.Contains(t, err.Error(), "Image reference can only be retrieved immediately after the 'Container.From' call. Error in fetching imageRef as the container image is changed")
 	})
 
-	t.Run("should throw error after the container image modification with exec", func(t *testing.T) {
+	t.Run("should throw error after the container image modification with exec", func(ctx context.Context, t *testctx.T) {
 		res := struct {
 			Container struct {
 				From struct {
@@ -3395,7 +3317,7 @@ func TestContainerImageRef(t *testing.T) {
 			}
 		}{}
 
-		err := testutil.Query(
+		err := testutil.Query(t,
 			`{
 				container {
 					from(address:"hello-world") {
@@ -3409,8 +3331,8 @@ func TestContainerImageRef(t *testing.T) {
 		require.Contains(t, err.Error(), "Image reference can only be retrieved immediately after the 'Container.From' call. Error in fetching imageRef as the container image is changed")
 	})
 
-	t.Run("should throw error after the container image modification with directory", func(t *testing.T) {
-		c, ctx := connect(t)
+	t.Run("should throw error after the container image modification with directory", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		dir := c.Directory().
 			WithNewFile("some-file", "some-content").
@@ -3429,11 +3351,9 @@ func TestContainerImageRef(t *testing.T) {
 	})
 }
 
-func TestContainerBuildNilContextError(t *testing.T) {
-	t.Parallel()
-
+func (ContainerSuite) TestBuildNilContextError(ctx context.Context, t *testctx.T) {
 	// regression test, this previously caused the engine to panic
-	err := testutil.Query(
+	err := testutil.Query(t,
 		`{
 			container {
 				build(context: "") {
@@ -3444,8 +3364,8 @@ func TestContainerBuildNilContextError(t *testing.T) {
 	require.ErrorContains(t, err, "cannot decode empty string as ID")
 }
 
-func TestContainerInsecureRootCapabilites(t *testing.T) {
-	c, ctx := connect(t)
+func (ContainerSuite) TestInsecureRootCapabilites(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	// This isn't exhaustive, but it's the major important ones. Being exhaustive
 	// is trickier since the full list of caps is host dependent based on the kernel version.
@@ -3484,8 +3404,8 @@ func TestContainerInsecureRootCapabilites(t *testing.T) {
 	}
 }
 
-func TestContainerInsecureRootCapabilitesWithService(t *testing.T) {
-	c, ctx := connect(t)
+func (ContainerSuite) TestInsecureRootCapabilitesWithService(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	// verify the root capabilities setting works by executing dockerd with it and
 	// testing it can startup, create containers and bind mount from its filesystem to
@@ -3525,8 +3445,8 @@ func TestContainerInsecureRootCapabilitesWithService(t *testing.T) {
 	require.Equal(t, fmt.Sprintf("%s-from-outside\n%s-from-inside\n", randID, randID), out)
 }
 
-func TestContainerNoExec(t *testing.T) {
-	c, ctx := connect(t)
+func (ContainerSuite) TestNoExec(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	stdout, err := c.Container().From(alpineImage).Stdout(ctx)
 	require.NoError(t, err)
@@ -3545,10 +3465,10 @@ func TestContainerNoExec(t *testing.T) {
 	require.Contains(t, err.Error(), "no command has been set")
 }
 
-func TestContainerWithMountedFileOwner(t *testing.T) {
-	c, ctx := connect(t)
+func (ContainerSuite) TestWithMountedFileOwner(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
-	t.Run("simple file", func(t *testing.T) {
+	t.Run("simple file", func(ctx context.Context, t *testctx.T) {
 		tmp := t.TempDir()
 
 		err := os.WriteFile(filepath.Join(tmp, "message.txt"), []byte("hello world"), 0o600)
@@ -3556,14 +3476,14 @@ func TestContainerWithMountedFileOwner(t *testing.T) {
 
 		file := c.Host().Directory(tmp).File("message.txt")
 
-		testOwnership(ctx, t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
+		testOwnership(t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
 			return ctr.WithMountedFile(name, file, dagger.ContainerWithMountedFileOpts{
 				Owner: owner,
 			})
 		})
 	})
 
-	t.Run("file from subdirectory", func(t *testing.T) {
+	t.Run("file from subdirectory", func(ctx context.Context, t *testctx.T) {
 		tmp := t.TempDir()
 
 		err := os.Mkdir(filepath.Join(tmp, "subdir"), 0o755)
@@ -3574,7 +3494,7 @@ func TestContainerWithMountedFileOwner(t *testing.T) {
 
 		file := c.Host().Directory(tmp).Directory("subdir").File("message.txt")
 
-		testOwnership(ctx, t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
+		testOwnership(t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
 			return ctr.WithMountedFile(name, file, dagger.ContainerWithMountedFileOpts{
 				Owner: owner,
 			})
@@ -3582,10 +3502,10 @@ func TestContainerWithMountedFileOwner(t *testing.T) {
 	})
 }
 
-func TestContainerWithMountedDirectoryOwner(t *testing.T) {
-	c, ctx := connect(t)
+func (ContainerSuite) TestWithMountedDirectoryOwner(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
-	t.Run("simple directory", func(t *testing.T) {
+	t.Run("simple directory", func(ctx context.Context, t *testctx.T) {
 		tmp := t.TempDir()
 
 		err := os.WriteFile(filepath.Join(tmp, "message.txt"), []byte("hello world"), 0o600)
@@ -3593,14 +3513,14 @@ func TestContainerWithMountedDirectoryOwner(t *testing.T) {
 
 		dir := c.Host().Directory(tmp)
 
-		testOwnership(ctx, t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
+		testOwnership(t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
 			return ctr.WithMountedDirectory(name, dir, dagger.ContainerWithMountedDirectoryOpts{
 				Owner: owner,
 			})
 		})
 	})
 
-	t.Run("subdirectory", func(t *testing.T) {
+	t.Run("subdirectory", func(ctx context.Context, t *testctx.T) {
 		tmp := t.TempDir()
 
 		err := os.Mkdir(filepath.Join(tmp, "subdir"), 0o755)
@@ -3611,14 +3531,14 @@ func TestContainerWithMountedDirectoryOwner(t *testing.T) {
 
 		dir := c.Host().Directory(tmp).Directory("subdir")
 
-		testOwnership(ctx, t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
+		testOwnership(t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
 			return ctr.WithMountedDirectory(name, dir, dagger.ContainerWithMountedDirectoryOpts{
 				Owner: owner,
 			})
 		})
 	})
 
-	t.Run("permissions", func(t *testing.T) {
+	t.Run("permissions", func(ctx context.Context, t *testctx.T) {
 		dir := c.Directory().
 			WithNewDirectory("perms", dagger.DirectoryWithNewDirectoryOpts{
 				Permissions: 0o745,
@@ -3647,10 +3567,10 @@ func TestContainerWithMountedDirectoryOwner(t *testing.T) {
 	})
 }
 
-func TestContainerWithFileOwner(t *testing.T) {
-	c, ctx := connect(t)
+func (ContainerSuite) TestWithFileOwner(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
-	t.Run("simple file", func(t *testing.T) {
+	t.Run("simple file", func(ctx context.Context, t *testctx.T) {
 		tmp := t.TempDir()
 
 		err := os.WriteFile(filepath.Join(tmp, "message.txt"), []byte("hello world"), 0o600)
@@ -3658,14 +3578,14 @@ func TestContainerWithFileOwner(t *testing.T) {
 
 		file := c.Host().Directory(tmp).File("message.txt")
 
-		testOwnership(ctx, t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
+		testOwnership(t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
 			return ctr.WithFile(name, file, dagger.ContainerWithFileOpts{
 				Owner: owner,
 			})
 		})
 	})
 
-	t.Run("file from subdirectory", func(t *testing.T) {
+	t.Run("file from subdirectory", func(ctx context.Context, t *testctx.T) {
 		tmp := t.TempDir()
 
 		err := os.Mkdir(filepath.Join(tmp, "subdir"), 0o755)
@@ -3676,7 +3596,7 @@ func TestContainerWithFileOwner(t *testing.T) {
 
 		file := c.Host().Directory(tmp).Directory("subdir").File("message.txt")
 
-		testOwnership(ctx, t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
+		testOwnership(t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
 			return ctr.WithFile(name, file, dagger.ContainerWithFileOpts{
 				Owner: owner,
 			})
@@ -3684,10 +3604,10 @@ func TestContainerWithFileOwner(t *testing.T) {
 	})
 }
 
-func TestContainerWithDirectoryOwner(t *testing.T) {
-	c, ctx := connect(t)
+func (ContainerSuite) TestWithDirectoryOwner(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
-	t.Run("simple directory", func(t *testing.T) {
+	t.Run("simple directory", func(ctx context.Context, t *testctx.T) {
 		tmp := t.TempDir()
 
 		err := os.WriteFile(filepath.Join(tmp, "message.txt"), []byte("hello world"), 0o600)
@@ -3695,14 +3615,14 @@ func TestContainerWithDirectoryOwner(t *testing.T) {
 
 		dir := c.Host().Directory(tmp)
 
-		testOwnership(ctx, t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
+		testOwnership(t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
 			return ctr.WithDirectory(name, dir, dagger.ContainerWithDirectoryOpts{
 				Owner: owner,
 			})
 		})
 	})
 
-	t.Run("subdirectory", func(t *testing.T) {
+	t.Run("subdirectory", func(ctx context.Context, t *testctx.T) {
 		tmp := t.TempDir()
 
 		err := os.Mkdir(filepath.Join(tmp, "subdir"), 0o755)
@@ -3713,7 +3633,7 @@ func TestContainerWithDirectoryOwner(t *testing.T) {
 
 		dir := c.Host().Directory(tmp).Directory("subdir")
 
-		testOwnership(ctx, t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
+		testOwnership(t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
 			return ctr.WithDirectory(name, dir, dagger.ContainerWithDirectoryOpts{
 				Owner: owner,
 			})
@@ -3721,28 +3641,28 @@ func TestContainerWithDirectoryOwner(t *testing.T) {
 	})
 }
 
-func TestContainerWithNewFileOwner(t *testing.T) {
-	c, ctx := connect(t)
+func (ContainerSuite) TestWithNewFileOwner(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
-	testOwnership(ctx, t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
+	testOwnership(t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
 		return ctr.WithNewFile(name, dagger.ContainerWithNewFileOpts{
 			Owner: owner,
 		})
 	})
 }
 
-func TestContainerWithMountedCacheOwner(t *testing.T) {
-	c, ctx := connect(t)
+func (ContainerSuite) TestWithMountedCacheOwner(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	cache := c.CacheVolume("test")
 
-	testOwnership(ctx, t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
+	testOwnership(t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
 		return ctr.WithMountedCache(name, cache, dagger.ContainerWithMountedCacheOpts{
 			Owner: owner,
 		})
 	})
 
-	t.Run("permissions (empty)", func(t *testing.T) {
+	t.Run("permissions (empty)", func(ctx context.Context, t *testctx.T) {
 		ctr := c.Container().From(alpineImage).
 			WithExec([]string{"adduser", "-D", "inherituser"}).
 			WithExec([]string{"adduser", "-u", "1234", "-D", "auser"}).
@@ -3757,7 +3677,7 @@ func TestContainerWithMountedCacheOwner(t *testing.T) {
 		require.Equal(t, "755:auser:agroup\n", out)
 	})
 
-	t.Run("permissions (source)", func(t *testing.T) {
+	t.Run("permissions (source)", func(ctx context.Context, t *testctx.T) {
 		dir := c.Directory().
 			WithNewDirectory("perms", dagger.DirectoryWithNewDirectoryOpts{
 				Permissions: 0o745,
@@ -3787,21 +3707,19 @@ func TestContainerWithMountedCacheOwner(t *testing.T) {
 	})
 }
 
-func TestContainerWithMountedSecretOwner(t *testing.T) {
-	c, ctx := connect(t)
+func (ContainerSuite) TestWithMountedSecretOwner(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	secret := c.SetSecret("test", "hunter2")
 
-	testOwnership(ctx, t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
+	testOwnership(t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
 		return ctr.WithMountedSecret(name, secret, dagger.ContainerWithMountedSecretOpts{
 			Owner: owner,
 		})
 	})
 }
 
-func TestContainerParallelMutation(t *testing.T) {
-	t.Parallel()
-
+func (ContainerSuite) TestParallelMutation(ctx context.Context, t *testctx.T) {
 	res := struct {
 		Container struct {
 			A struct {
@@ -3811,7 +3729,7 @@ func TestContainerParallelMutation(t *testing.T) {
 		}
 	}{}
 
-	err := testutil.Query(
+	err := testutil.Query(t,
 		`{
 			container {
 				a: withEnvVariable(name: "FOO", value: "BAR") {
@@ -3825,9 +3743,7 @@ func TestContainerParallelMutation(t *testing.T) {
 	require.Empty(t, res.Container.B, "BAR")
 }
 
-func TestContainerForceCompression(t *testing.T) {
-	t.Parallel()
-
+func (ContainerSuite) TestForceCompression(ctx context.Context, t *testctx.T) {
 	for _, tc := range []struct {
 		compression          dagger.ImageLayerCompression
 		expectedOCIMediaType string
@@ -3850,10 +3766,8 @@ func TestContainerForceCompression(t *testing.T) {
 		},
 	} {
 		tc := tc
-		t.Run(string(tc.compression), func(t *testing.T) {
-			t.Parallel()
-
-			c, ctx := connect(t)
+		t.Run(string(tc.compression), func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
 
 			ref := registryRef("testcontainerpublishforcecompression" + strings.ToLower(string(tc.compression)))
 			_, err := c.Container().
@@ -3905,9 +3819,7 @@ func TestContainerForceCompression(t *testing.T) {
 	}
 }
 
-func TestContainerMediaTypes(t *testing.T) {
-	t.Parallel()
-
+func (ContainerSuite) TestMediaTypes(ctx context.Context, t *testctx.T) {
 	for _, tc := range []struct {
 		mediaTypes           dagger.ImageMediaTypes
 		expectedOCIMediaType string
@@ -3926,10 +3838,8 @@ func TestContainerMediaTypes(t *testing.T) {
 		},
 	} {
 		tc := tc
-		t.Run(string(tc.mediaTypes), func(t *testing.T) {
-			t.Parallel()
-
-			c, ctx := connect(t)
+		t.Run(string(tc.mediaTypes), func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
 
 			ref := registryRef("testcontainerpublishmediatypes" + strings.ToLower(string(tc.mediaTypes)))
 			_, err := c.Container().
@@ -3956,7 +3866,7 @@ func TestContainerMediaTypes(t *testing.T) {
 
 			for _, useAsTarball := range []bool{true, false} {
 				useAsTarball := useAsTarball
-				t.Run(fmt.Sprintf("useAsTarball=%t", useAsTarball), func(t *testing.T) {
+				t.Run(fmt.Sprintf("useAsTarball=%t", useAsTarball), func(ctx context.Context, t *testctx.T) {
 					tarPath := filepath.Join(t.TempDir(), "export.tar")
 					if useAsTarball {
 						_, err := c.Container().
@@ -3996,10 +3906,8 @@ func TestContainerMediaTypes(t *testing.T) {
 	}
 }
 
-func TestContainerBuildMergesWithParent(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ContainerSuite) TestBuildMergesWithParent(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	// Create a builder container
 	builderCtr := c.Directory().WithNewFile("Dockerfile",
@@ -4048,7 +3956,7 @@ EXPOSE 8080
 		} `json:"loadContainerFromID"`
 	}{}
 
-	err = testutil.Query(`
+	err = testutil.Query(t, `
         query Test($id: ContainerID!) {
             loadContainerFromID(id: $id) {
                 exposedPorts {
@@ -4083,10 +3991,8 @@ EXPOSE 8080
 	}
 }
 
-func TestContainerFromMergesWithParent(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ContainerSuite) TestFromMergesWithParent(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	// Create a container with envs and pull alpine image on it
 	testCtr := c.Container().
@@ -4125,9 +4031,8 @@ func TestContainerFromMergesWithParent(t *testing.T) {
 	require.Equal(t, 5000, port)
 }
 
-func TestContainerImageLoadCompatibility(t *testing.T) {
-	t.Parallel()
-	c, ctx := connect(t)
+func (ContainerSuite) TestImageLoadCompatibility(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	for i, dockerVersion := range []string{"20.10", "23.0", "24.0"} {
 		dockerVersion := dockerVersion
@@ -4155,8 +4060,7 @@ func TestContainerImageLoadCompatibility(t *testing.T) {
 			mediaType := mediaType
 			for _, compression := range []dagger.ImageLayerCompression{dagger.Gzip, dagger.Zstd, dagger.Uncompressed} {
 				compression := compression
-				t.Run(fmt.Sprintf("%s-%s-%s-%s", t.Name(), dockerVersion, mediaType, compression), func(t *testing.T) {
-					t.Parallel()
+				t.Run(fmt.Sprintf("%s-%s-%s-%s", t.Name(), dockerVersion, mediaType, compression), func(ctx context.Context, t *testctx.T) {
 					tmpdir := t.TempDir()
 					tmpfile := filepath.Join(tmpdir, fmt.Sprintf("test-%s-%s-%s.tar", dockerVersion, mediaType, compression))
 					_, err := c.Container().From(alpineImage).
@@ -4202,10 +4106,8 @@ func TestContainerImageLoadCompatibility(t *testing.T) {
 	}
 }
 
-func TestContainerWithMountedSecretMode(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ContainerSuite) TestWithMountedSecretMode(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 	t.Cleanup(func() { c.Close() })
 
 	secret := c.SetSecret("test", "secret")
@@ -4220,9 +4122,8 @@ func TestContainerWithMountedSecretMode(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestContainerNestedExec(t *testing.T) {
-	t.Parallel()
-	c, ctx := connect(t)
+func (ContainerSuite) TestNestedExec(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	_, err := c.Container().From(alpineImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -4236,11 +4137,11 @@ func TestContainerNestedExec(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestContainerEmptyExecDiff(t *testing.T) {
+func (ContainerSuite) TestEmptyExecDiff(ctx context.Context, t *testctx.T) {
 	// if an exec makes no changes, the diff should be empty, including of files
 	// mounted in by the engine like the init/resolv.conf/etc.
-	t.Parallel()
-	c, ctx := connect(t)
+
+	c := connect(ctx, t)
 
 	base := c.Container().From(alpineImage)
 	ents, err := base.Rootfs().Diff(base.WithExec([]string{"true"}).Rootfs()).Entries(ctx)

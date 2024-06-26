@@ -10,11 +10,18 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/engine/distconsts"
+	"github.com/dagger/dagger/testctx"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"
 )
+
+type EngineSuite struct{}
+
+func TestEngine(t *testing.T) {
+	testctx.Run(testCtx, t, EngineSuite{}, Middleware()...)
+}
 
 // devEngineContainer returns a nested dev engine.
 //
@@ -50,7 +57,7 @@ func devEngineContainer(c *dagger.Client, engineInstance uint8, withs ...func(*d
 		})
 }
 
-func engineClientContainer(ctx context.Context, t *testing.T, c *dagger.Client, devEngine *dagger.Service) (*dagger.Container, error) {
+func engineClientContainer(ctx context.Context, t *testctx.T, c *dagger.Client, devEngine *dagger.Service) (*dagger.Container, error) {
 	daggerCli := daggerCliFile(t, c)
 
 	cliBinPath := "/bin/dagger"
@@ -65,13 +72,13 @@ func engineClientContainer(ctx context.Context, t *testing.T, c *dagger.Client, 
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint), nil
 }
 
-func TestEngineExitsZeroOnSignal(t *testing.T) {
-	t.Parallel()
-	c, ctx := connect(t)
+func (EngineSuite) TestExitsZeroOnSignal(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	// engine should shutdown with exit code 0 when receiving SIGTERM
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
+	t = t.WithContext(ctx)
 	_, err := devEngineContainer(c, 101, func(c *dagger.Container) *dagger.Container {
 		return c.WithNewFile("/usr/local/bin/dagger-entrypoint.sh", dagger.ContainerWithNewFileOpts{
 			Contents: `#!/bin/sh
@@ -90,10 +97,8 @@ exit $?
 	require.NoError(t, err)
 }
 
-func TestClientWaitsForEngine(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ClientSuite) TestWaitsForEngine(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	devEngine := devEngineContainer(c, 102, func(c *dagger.Container) *dagger.Container {
 		return c.
@@ -121,9 +126,8 @@ func TestClientWaitsForEngine(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestEngineSetsNameFromEnv(t *testing.T) {
-	t.Parallel()
-	c, ctx := connect(t)
+func (EngineSuite) TestSetsNameFromEnv(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	engineName := "my-special-engine"
 	engineVersion := "v1000.0.0-special"
@@ -152,10 +156,8 @@ func TestEngineSetsNameFromEnv(t *testing.T) {
 	require.Contains(t, stdout, engineVersion)
 }
 
-func TestDaggerRun(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (EngineSuite) TestDaggerRun(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	devEngine := devEngineContainer(c, 104).AsService()
 
@@ -188,9 +190,8 @@ func TestDaggerRun(t *testing.T) {
 	require.Contains(t, stderr, "Container.from")
 }
 
-func TestClientSendsLabelsInTelemetry(t *testing.T) {
-	t.Parallel()
-	c, ctx := connect(t)
+func (ClientSuite) TestSendsLabelsInTelemetry(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	devEngine := devEngineContainer(c, 105).AsService()
 	thisRepoPath, err := filepath.Abs("../..")
@@ -257,9 +258,8 @@ func TestClientSendsLabelsInTelemetry(t *testing.T) {
 	require.Contains(t, receivedEvents, "init test repo")
 }
 
-func TestEngineVersionCompat(t *testing.T) {
-	t.Parallel()
-	c, ctx := connect(t)
+func (EngineSuite) TestVersionCompat(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	devEngineVersion := "v2.0.0"
 	devEngineSvc := devEngineContainer(c, 106, func(c *dagger.Container) *dagger.Container {
