@@ -263,6 +263,16 @@ func (src *ModuleSource) LoadContext(ctx context.Context, path string, dag *dagq
 	// We exclude .git by default because it's not useful and tends to invalidate the cache.
 	exclude := []string{"**/.git"}
 
+	// If path is not absolute, it's relative to the module root directory.
+	if !filepath.IsAbs(path) {
+		moduleRootPath, err := src.SourceRootSubpath()
+		if err != nil {
+			return inst, fmt.Errorf("failed to get source root subpath for relative context path: %w", err)
+		}
+
+		path = filepath.Join(moduleRootPath, path)
+	}
+
 	switch src.Kind {
 	case ModuleSourceKindLocal:
 		slog.Debug("moduleSource.LoadContext: loading contextual directory from local source", "path", path, "kind", src.Kind)
