@@ -329,7 +329,7 @@ func (s *directorySchema) terminal(
 	ctx context.Context,
 	dir dagql.Instance[*core.Directory],
 	args directoryTerminalArgs,
-) (*core.Directory, error) {
+) (dagql.Instance[*core.Directory], error) {
 	if len(args.Cmd) == 0 {
 		args.Cmd = []string{"sh"}
 	}
@@ -339,15 +339,15 @@ func (s *directorySchema) terminal(
 	if args.Container.Valid {
 		inst, err := args.Container.Value.Load(ctx, s.srv)
 		if err != nil {
-			return nil, err
+			return dir, err
 		}
 		ctr = inst.Self
 	}
 
 	err := dir.Self.Terminal(ctx, dir.ID(), ctr, &args.TerminalArgs)
 	if err != nil {
-		return nil, err
+		return dir, err
 	}
 
-	return dir.Self, nil
+	return dir, nil
 }

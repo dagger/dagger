@@ -1411,7 +1411,7 @@ func (s *containerSchema) terminal(
 	ctx context.Context,
 	ctr dagql.Instance[*core.Container],
 	args containerTerminalArgs,
-) (*core.Container, error) {
+) (dagql.Instance[*core.Container], error) {
 	if args.Cmd == nil || len(args.Cmd) == 0 {
 		args.Cmd = ctr.Self.DefaultTerminalCmd.Args
 	}
@@ -1431,8 +1431,8 @@ func (s *containerSchema) terminal(
 
 	err := ctr.Self.Terminal(ctx, ctr.ID(), &args.TerminalArgs)
 	if err != nil {
-		return nil, err
+		return ctr, err
 	}
 
-	return ctr.Self, nil
+	return ctr, nil
 }
