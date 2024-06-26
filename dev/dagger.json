@@ -8,15 +8,15 @@
     },
     {
       "name": "go",
-      "source": "std/go"
+      "source": "go"
     },
     {
       "name": "graphql",
-      "source": "std/graphql"
+      "source": "graphql"
     },
     {
       "name": "shellcheck",
-      "source": "std/shellcheck"
+      "source": "shellcheck"
     }
   ],
   "source": ".",

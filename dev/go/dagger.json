@@ -4,7 +4,7 @@
   "dependencies": [
     {
       "name": "dirdiff",
-      "source": "../../dirdiff"
+      "source": "../dirdiff"
     },
     {
       "name": "wolfi",

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/dagger/dagger/ci/std/shellcheck/internal/dagger"
+	"github.com/dagger/dagger/dev/shellcheck/internal/dagger"
 )
 
 type Shellcheck struct{}

@@ -172,17 +172,17 @@ func (e *Engine) Lint(
 		// FIXME: unsustainable to require keeping this list up to date by hand
 		"dev",
 		"dev/dirdiff",
-		"dev/std/go",
-		"dev/std/graphql",
-		"dev/std/shellcheck",
+		"dev/go",
+		"dev/graphql",
+		"dev/shellcheck",
 	}
 	// Packages that need codegen
 	codegen := []string{
 		"",
 		"dev/dirdiff",
-		"dev/std/go",
-		"dev/std/graphql",
-		"dev/std/shellcheck",
+		"dev/go",
+		"dev/graphql",
+		"dev/shellcheck",
 	}
 
 	return e.Dagger.Go().

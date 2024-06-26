@@ -1,4 +1,4 @@
-module github.com/dagger/dagger/ci/std/graphql
+module github.com/dagger/dagger/dev/graphql
 
 go 1.21.7
 
