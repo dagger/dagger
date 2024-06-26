@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
-	"strings"
 
 	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/dagger/engine/distconsts"
@@ -207,7 +206,7 @@ func (e *Engine) Publish(
 	}
 
 	engineImageRef := build.EngineImageRef{
-		Wolfi:   strings.Contains(e.ImageBase, "wolfi"),
+		OS:      e.ImageBase,
 		GPU:     e.GPUSupport,
 		Image:   image,
 		Version: e.Dagger.Version.String(),

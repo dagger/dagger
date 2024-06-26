@@ -52,7 +52,7 @@ func (build *Builder) pythonSDKContent(ctx context.Context) (*sdkContent, error)
 		})
 
 	sdkDir := dag.Container().
-		From(consts.AlpineImage).
+		From(consts.WolfiImage).
 		WithMountedDirectory("/out", dag.Directory()).
 		WithMountedFile("/sdk.tar", sdkCtrTarball).
 		WithExec([]string{"tar", "xf", "/sdk.tar", "-C", "/out"}).
@@ -99,7 +99,7 @@ func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, er
 			ForcedCompression: dagger.Uncompressed,
 		})
 
-	sdkDir := dag.Container().From("alpine:"+consts.AlpineVersion).
+	sdkDir := dag.Container().From(consts.WolfiImage).
 		WithMountedDirectory("/out", dag.Directory()).
 		WithMountedFile("/sdk.tar", sdkCtrTarball).
 		WithExec([]string{"tar", "xf", "/sdk.tar", "-C", "/out"}).

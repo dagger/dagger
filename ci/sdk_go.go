@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"dagger.io/dagger/dag"
 	"github.com/moby/buildkit/identity"
 	"golang.org/x/sync/errgroup"
 
@@ -135,7 +136,7 @@ func gitPublish(ctx context.Context, opts gitPublishOpts) error {
 	base := opts.sourceEnv
 	if base == nil {
 		base = dag.Container().
-			From(consts.AlpineImage).
+			From(consts.WolfiImage).
 			WithExec([]string{"apk", "add", "-U", "--no-cache", "git"})
 	}
 

@@ -7,6 +7,7 @@ require github.com/dagger/dagger/engine/distconsts v0.11.9
 replace github.com/dagger/dagger/engine/distconsts => ../engine/distconsts
 
 require (
+	dagger.io/dagger v0.11.9
 	github.com/99designs/gqlgen v0.17.44
 	github.com/Khan/genqlient v0.7.0
 	github.com/containerd/containerd v1.7.17
@@ -32,15 +33,16 @@ require (
 
 require (
 	github.com/Microsoft/hcsshim v0.11.5 // indirect
+	github.com/adrg/xdg v0.4.0 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/containerd/log v0.1.0 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.20.0 // indirect
+	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
-	github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/sosodev/duration v1.3.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.27.0 // indirect

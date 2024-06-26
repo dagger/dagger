@@ -45,7 +45,25 @@ jobs:
           DAGGER_ENGINE_IMAGE_REGISTRY: ghcr.io
           DAGGER_ENGINE_IMAGE_USERNAME: ${{ github.actor }}
           DAGGER_ENGINE_IMAGE_PASSWORD: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
-      - name: "Publish Engine - Ubuntu with NVIDIA variant"
+      - name: "Publish Engine with GPU support (NVIDIA only)"
+        uses: ./.github/actions/call
+        with:
+          function: |
+            --version="${{ github.ref_name == 'main' && github.sha || github.ref_name }}" \
+            --git-branch="${{ github.ref_name }}" \
+            engine --gpu-support=true \
+            publish \
+            --platform="linux/amd64" \
+            --image="$DAGGER_ENGINE_IMAGE" \
+            --registry="$DAGGER_ENGINE_IMAGE_REGISTRY" \
+            --registry-username="$DAGGER_ENGINE_IMAGE_USERNAME" \
+            --registry-password=env:DAGGER_ENGINE_IMAGE_PASSWORD
+        env:
+          DAGGER_ENGINE_IMAGE: ${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}
+          DAGGER_ENGINE_IMAGE_REGISTRY: ghcr.io
+          DAGGER_ENGINE_IMAGE_USERNAME: ${{ github.actor }}
+          DAGGER_ENGINE_IMAGE_PASSWORD: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
+      - name: "Publish Engine - Ubuntu variant with GPU support (NVIDIA only)"
         uses: ./.github/actions/call
         with:
           function: |
@@ -63,31 +81,13 @@ jobs:
           DAGGER_ENGINE_IMAGE_REGISTRY: ghcr.io
           DAGGER_ENGINE_IMAGE_USERNAME: ${{ github.actor }}
           DAGGER_ENGINE_IMAGE_PASSWORD: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
-      - name: "Publish Engine - Wolfi variant"
+      - name: "Publish Engine - Alpine variant"
         uses: ./.github/actions/call
         with:
           function: |
             --version="${{ github.ref_name == 'main' && github.sha || github.ref_name }}" \
             --git-branch="${{ github.ref_name }}" \
-            engine with-base --image=wolfi \
-            publish \
-            --platform="linux/amd64" \
-            --image="$DAGGER_ENGINE_IMAGE" \
-            --registry="$DAGGER_ENGINE_IMAGE_REGISTRY" \
-            --registry-username="$DAGGER_ENGINE_IMAGE_USERNAME" \
-            --registry-password=env:DAGGER_ENGINE_IMAGE_PASSWORD
-        env:
-          DAGGER_ENGINE_IMAGE: ${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}
-          DAGGER_ENGINE_IMAGE_REGISTRY: ghcr.io
-          DAGGER_ENGINE_IMAGE_USERNAME: ${{ github.actor }}
-          DAGGER_ENGINE_IMAGE_PASSWORD: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
-      - name: "Publish Engine - Wolfi with NVIDIA variant"
-        uses: ./.github/actions/call
-        with:
-          function: |
-            --version="${{ github.ref_name == 'main' && github.sha || github.ref_name }}" \
-            --branch="${{ github.ref_name }}" \
-            engine with-base --image=wolfi --gpu-support=true \
+            engine with-base --image=alpine \
             publish \
             --platform="linux/amd64" \
             --image="$DAGGER_ENGINE_IMAGE" \

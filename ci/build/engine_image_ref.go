@@ -1,7 +1,7 @@
 package build
 
 type EngineImageRef struct {
-	Wolfi   bool
+	OS      string
 	GPU     bool
 	Image   string
 	Version string
@@ -16,8 +16,9 @@ func (e *EngineImageRef) String(explicitVersion string) string {
 		ref += e.Version
 	}
 
-	if e.Wolfi {
-		ref += "-wolfi"
+	// Wolfi is the default image, skip adding the OS
+	if e.OS != "wolfi" {
+		ref += "-" + e.OS
 	}
 
 	if e.GPU {

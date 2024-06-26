@@ -171,7 +171,7 @@ func (ci *Dagger) Dev(
 
 	engine := ci.Engine()
 	if experimentalGPUSupport {
-		img := "ubuntu"
+		img := "wolfi"
 		engine = engine.WithBase(&img, &experimentalGPUSupport)
 	}
 	svc, err := engine.Service(ctx, "", ci.Version)
