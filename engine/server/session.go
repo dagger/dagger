@@ -84,7 +84,8 @@ type daggerSession struct {
 	containers   map[bkgw.Container]struct{}
 	containersMu sync.Mutex
 
-	dagqlCache dagql.Cache
+	dagqlCache       dagql.Cache
+	cacheEntrySetMap *sync.Map
 }
 
 type daggerSessionState string
@@ -158,6 +159,7 @@ func (srv *Server) initializeDaggerSession(
 	sess.refs = map[buildkit.Reference]struct{}{}
 	sess.containers = map[bkgw.Container]struct{}{}
 	sess.dagqlCache = dagql.NewCache()
+	sess.cacheEntrySetMap = &sync.Map{}
 	sess.telemetryPubSub = srv.telemetryPubSub
 
 	sess.analytics = analytics.New(analytics.Config{
@@ -210,10 +212,10 @@ func (sess *daggerSession) withShutdownCancel(ctx context.Context) context.Conte
 
 // requires that sess.stateMu is held
 func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession) error {
-	slog.ExtraDebug("session closing; stopping client services and flushing",
+	slog.Debug("session closing; stopping client services and flushing",
 		"session", sess.sessionID,
 	)
-	defer slog.ExtraDebug("session closed",
+	defer slog.Debug("session closed",
 		"session", sess.sessionID,
 	)
 
@@ -225,6 +227,8 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	srv.daggerSessionsMu.Lock()
 	delete(srv.daggerSessions, sess.sessionID)
 	srv.daggerSessionsMu.Unlock()
+
+	sess.state = sessionStateRemoved
 
 	var errs error
 
@@ -981,6 +985,16 @@ func (srv *Server) Secrets(ctx context.Context) (*core.SecretStore, error) {
 		return nil, err
 	}
 	return client.daggerSession.secretStore, nil
+}
+
+// A map of unique IDs for the result of a given cache entry set query, allowing further queries on the result
+// to operate on a stable result rather than the live state.
+func (srv *Server) EngineCacheEntrySetMap(ctx context.Context) (*sync.Map, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return client.daggerSession.cacheEntrySetMap, nil
 }
 
 // The auth provider for the current client

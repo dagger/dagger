@@ -2,45 +2,54 @@ package server
 
 import (
 	"context"
+	"fmt"
+	"sync"
 	"time"
 
-	controlapi "github.com/moby/buildkit/api/services/control"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/cmd/buildkitd/config"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/moby/buildkit/util/imageutil"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/dagger/dagger/core"
 )
 
-func (srv *Server) DiskUsage(ctx context.Context, r *controlapi.DiskUsageRequest) (*controlapi.DiskUsageResponse, error) {
-	resp := &controlapi.DiskUsageResponse{}
-	du, err := srv.baseWorker.DiskUsage(ctx, bkclient.DiskUsageInfo{
-		Filter: r.Filter,
-	})
-	if err != nil {
-		return nil, err
-	}
-	for _, r := range du {
-		resp.Record = append(resp.Record, &controlapi.UsageRecord{
-			ID:          r.ID,
-			Mutable:     r.Mutable,
-			InUse:       r.InUse,
-			Size_:       r.Size,
-			Parents:     r.Parents,
-			UsageCount:  int64(r.UsageCount),
-			Description: r.Description,
-			CreatedAt:   r.CreatedAt,
-			LastUsedAt:  r.LastUsedAt,
-			RecordType:  string(r.RecordType),
-			Shared:      r.Shared,
-		})
-	}
-	return resp, nil
+const DefaultDiskSpacePercentage int64 = 75
+
+// The KeepBytes setting to use for automatic local cache GC.
+func (srv *Server) EngineLocalCacheKeepBytes() int64 {
+	return srv.workerGCKeepBytes
 }
 
-func (srv *Server) Prune(req *controlapi.PruneRequest, stream controlapi.Control_PruneServer) error {
-	eg, ctx := errgroup.WithContext(stream.Context())
+// Return all the cache entries in the local cache. No support for filtering yet.
+func (srv *Server) EngineLocalCacheEntries(ctx context.Context) (*core.EngineCacheEntrySet, error) {
+	du, err := srv.baseWorker.DiskUsage(ctx, bkclient.DiskUsageInfo{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get disk usage from worker: %w", err)
+	}
 
+	set := &core.EngineCacheEntrySet{}
+	for _, r := range du {
+		cacheEnt := &core.EngineCacheEntry{
+			Description:         r.Description,
+			DiskSpaceBytes:      int(r.Size),
+			ActivelyUsed:        r.InUse,
+			CreatedTimeUnixNano: int(r.CreatedAt.UnixNano()),
+		}
+		if r.LastUsedAt != nil {
+			cacheEnt.MostRecentUseTimeUnixNano = int(r.LastUsedAt.UnixNano())
+		}
+		set.EntriesList = append(set.EntriesList, cacheEnt)
+		set.DiskSpaceBytes += int(r.Size)
+	}
+	set.EntryCount = len(set.EntriesList)
+
+	return set, nil
+}
+
+// Prune everything that is releasable in the local cache. No support for filtering yet.
+func (srv *Server) PruneEngineLocalCacheEntries(ctx context.Context) (*core.EngineCacheEntrySet, error) {
 	srv.daggerSessionsMu.RLock()
 	cancelLeases := len(srv.daggerSessions) == 0
 	srv.daggerSessionsMu.RUnlock()
@@ -48,59 +57,54 @@ func (srv *Server) Prune(req *controlapi.PruneRequest, stream controlapi.Control
 		imageutil.CancelCacheLeases()
 	}
 
-	didPrune := false
-	defer func() {
-		if didPrune {
-			if e, ok := srv.SolverCache.(interface {
-				ReleaseUnreferenced(context.Context) error
-			}); ok {
-				if err := e.ReleaseUnreferenced(ctx); err != nil {
-					bklog.G(ctx).Errorf("failed to release cache metadata: %+v", err)
-				}
-			}
+	wg := &sync.WaitGroup{}
+	ch := make(chan bkclient.UsageInfo, 32)
+	var pruned []bkclient.UsageInfo
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for r := range ch {
+			pruned = append(pruned, r)
 		}
 	}()
 
-	ch := make(chan bkclient.UsageInfo, 32)
+	err := srv.baseWorker.Prune(ctx, ch, bkclient.PruneInfo{All: true})
+	if err != nil {
+		return nil, fmt.Errorf("worker failed to prune local cache: %w", err)
+	}
+	close(ch)
+	wg.Wait()
 
-	eg.Go(func() error {
-		defer close(ch)
-		return srv.baseWorker.Prune(ctx, ch, bkclient.PruneInfo{
-			Filter:       req.Filter,
-			All:          req.All,
-			KeepDuration: time.Duration(req.KeepDuration),
-			KeepBytes:    req.KeepBytes,
-		})
-	})
+	if len(pruned) == 0 {
+		return &core.EngineCacheEntrySet{}, nil
+	}
 
-	eg.Go(func() error {
-		defer func() {
-			// drain channel on error
-			for range ch {
-			}
-		}()
-		for r := range ch {
-			didPrune = true
-			if err := stream.Send(&controlapi.UsageRecord{
-				ID:          r.ID,
-				Mutable:     r.Mutable,
-				InUse:       r.InUse,
-				Size_:       r.Size,
-				Parents:     r.Parents,
-				UsageCount:  int64(r.UsageCount),
-				Description: r.Description,
-				CreatedAt:   r.CreatedAt,
-				LastUsedAt:  r.LastUsedAt,
-				RecordType:  string(r.RecordType),
-				Shared:      r.Shared,
-			}); err != nil {
-				return err
-			}
+	if e, ok := srv.SolverCache.(interface {
+		ReleaseUnreferenced(context.Context) error
+	}); ok {
+		if err := e.ReleaseUnreferenced(ctx); err != nil {
+			bklog.G(ctx).Errorf("failed to release cache metadata: %+v", err)
 		}
-		return nil
-	})
+	}
 
-	return eg.Wait()
+	set := &core.EngineCacheEntrySet{}
+	for _, r := range pruned {
+		// buildkit's Prune doesn't set RecordType currently, so can't include kind here
+		ent := &core.EngineCacheEntry{
+			Description:         r.Description,
+			DiskSpaceBytes:      int(r.Size),
+			CreatedTimeUnixNano: int(r.CreatedAt.UnixNano()),
+			ActivelyUsed:        r.InUse,
+		}
+		if r.LastUsedAt != nil {
+			ent.MostRecentUseTimeUnixNano = int(r.LastUsedAt.UnixNano())
+		}
+		set.EntriesList = append(set.EntriesList, ent)
+		set.DiskSpaceBytes += int(r.Size)
+	}
+	set.EntryCount = len(set.EntriesList)
+
+	return set, nil
 }
 
 func (srv *Server) gc() {
@@ -156,7 +160,7 @@ func getGCPolicy(cfg config.GCConfig, root string) []bkclient.PruneInfo {
 
 func defaultGCPolicy(keep config.DiskSpace) []config.GCPolicy {
 	if keep == (config.DiskSpace{}) {
-		keep = config.DiskSpace{Percentage: DiskSpacePercentage}
+		keep = config.DiskSpace{Percentage: DefaultDiskSpacePercentage}
 	}
 	return []config.GCPolicy{
 		// if build cache uses more than 512MB delete the most easily reproducible data after it has not been used for 2 days
@@ -182,4 +186,9 @@ func defaultGCPolicy(keep config.DiskSpace) []config.GCPolicy {
 	}
 }
 
-const DiskSpacePercentage int64 = 75
+func getGCKeepBytesFromConfig(keep config.DiskSpace, root string) int64 {
+	if keep == (config.DiskSpace{}) {
+		keep = config.DiskSpace{Percentage: DefaultDiskSpacePercentage}
+	}
+	return keep.AsBytes(root)
+}

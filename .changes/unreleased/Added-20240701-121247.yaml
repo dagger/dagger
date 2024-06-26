@@ -1,0 +1,6 @@
+kind: Added
+body: Add core APIs for local cache state
+time: 2024-07-01T12:12:47.763263245-07:00
+custom:
+  Author: sipsma
+  PR: "7767"

@@ -479,6 +479,30 @@ export type CurrentModuleWorkdirOpts = {
  */
 export type CurrentModuleID = string & { __CurrentModuleID: never }
 
+/**
+ * The `DaggerEngineCacheEntryID` scalar type represents an identifier for an object of type DaggerEngineCacheEntry.
+ */
+export type DaggerEngineCacheEntryID = string & {
+  __DaggerEngineCacheEntryID: never
+}
+
+/**
+ * The `DaggerEngineCacheEntrySetID` scalar type represents an identifier for an object of type DaggerEngineCacheEntrySet.
+ */
+export type DaggerEngineCacheEntrySetID = string & {
+  __DaggerEngineCacheEntrySetID: never
+}
+
+/**
+ * The `DaggerEngineCacheID` scalar type represents an identifier for an object of type DaggerEngineCache.
+ */
+export type DaggerEngineCacheID = string & { __DaggerEngineCacheID: never }
+
+/**
+ * The `DaggerEngineID` scalar type represents an identifier for an object of type DaggerEngine.
+ */
+export type DaggerEngineID = string & { __DaggerEngineID: never }
+
 export type DirectoryAsModuleOpts = {
   /**
    * An optional subpath of the directory which contains the module's configuration file.
@@ -2895,6 +2919,450 @@ export class CurrentModule extends BaseClient {
       ],
       ctx: this._ctx,
     })
+  }
+}
+
+/**
+ * The Dagger engine configuration and state
+ */
+export class DaggerEngine extends BaseClient {
+  private readonly _id?: DaggerEngineID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: DaggerEngineID,
+  ) {
+    super(parent)
+
+    this._id = _id
+  }
+
+  /**
+   * A unique identifier for this DaggerEngine.
+   */
+  id = async (): Promise<DaggerEngineID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<DaggerEngineID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * The local (on-disk) cache for the Dagger engine
+   */
+  localCache = (): DaggerEngineCache => {
+    return new DaggerEngineCache({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "localCache",
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+}
+
+/**
+ * A cache storage for the Dagger engine
+ */
+export class DaggerEngineCache extends BaseClient {
+  private readonly _id?: DaggerEngineCacheID = undefined
+  private readonly _keepBytes?: number = undefined
+  private readonly _prune?: Void = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: DaggerEngineCacheID,
+    _keepBytes?: number,
+    _prune?: Void,
+  ) {
+    super(parent)
+
+    this._id = _id
+    this._keepBytes = _keepBytes
+    this._prune = _prune
+  }
+
+  /**
+   * A unique identifier for this DaggerEngineCache.
+   */
+  id = async (): Promise<DaggerEngineCacheID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<DaggerEngineCacheID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * The current set of entries in the cache
+   */
+  entrySet = (): DaggerEngineCacheEntrySet => {
+    return new DaggerEngineCacheEntrySet({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "entrySet",
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * The maximum bytes to keep in the cache without pruning, after which automatic pruning may kick in.
+   */
+  keepBytes = async (): Promise<number> => {
+    if (this._keepBytes) {
+      return this._keepBytes
+    }
+
+    const response: Awaited<number> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "keepBytes",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * Prune the cache of releaseable entries
+   */
+  prune = async (): Promise<Void> => {
+    if (this._prune) {
+      return this._prune
+    }
+
+    const response: Awaited<Void> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "prune",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+}
+
+/**
+ * An individual cache entry in a cache entry set
+ */
+export class DaggerEngineCacheEntry extends BaseClient {
+  private readonly _id?: DaggerEngineCacheEntryID = undefined
+  private readonly _activelyUsed?: boolean = undefined
+  private readonly _createdTimeUnixNano?: number = undefined
+  private readonly _description?: string = undefined
+  private readonly _diskSpaceBytes?: number = undefined
+  private readonly _mostRecentUseTimeUnixNano?: number = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: DaggerEngineCacheEntryID,
+    _activelyUsed?: boolean,
+    _createdTimeUnixNano?: number,
+    _description?: string,
+    _diskSpaceBytes?: number,
+    _mostRecentUseTimeUnixNano?: number,
+  ) {
+    super(parent)
+
+    this._id = _id
+    this._activelyUsed = _activelyUsed
+    this._createdTimeUnixNano = _createdTimeUnixNano
+    this._description = _description
+    this._diskSpaceBytes = _diskSpaceBytes
+    this._mostRecentUseTimeUnixNano = _mostRecentUseTimeUnixNano
+  }
+
+  /**
+   * A unique identifier for this DaggerEngineCacheEntry.
+   */
+  id = async (): Promise<DaggerEngineCacheEntryID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<DaggerEngineCacheEntryID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * Whether the cache entry is actively being used.
+   */
+  activelyUsed = async (): Promise<boolean> => {
+    if (this._activelyUsed) {
+      return this._activelyUsed
+    }
+
+    const response: Awaited<boolean> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "activelyUsed",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * The time the cache entry was created, in Unix nanoseconds.
+   */
+  createdTimeUnixNano = async (): Promise<number> => {
+    if (this._createdTimeUnixNano) {
+      return this._createdTimeUnixNano
+    }
+
+    const response: Awaited<number> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "createdTimeUnixNano",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * The description of the cache entry.
+   */
+  description = async (): Promise<string> => {
+    if (this._description) {
+      return this._description
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "description",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * The disk space used by the cache entry.
+   */
+  diskSpaceBytes = async (): Promise<number> => {
+    if (this._diskSpaceBytes) {
+      return this._diskSpaceBytes
+    }
+
+    const response: Awaited<number> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "diskSpaceBytes",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * The most recent time the cache entry was used, in Unix nanoseconds.
+   */
+  mostRecentUseTimeUnixNano = async (): Promise<number> => {
+    if (this._mostRecentUseTimeUnixNano) {
+      return this._mostRecentUseTimeUnixNano
+    }
+
+    const response: Awaited<number> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "mostRecentUseTimeUnixNano",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+}
+
+/**
+ * A set of cache entries returned by a query to a cache
+ */
+export class DaggerEngineCacheEntrySet extends BaseClient {
+  private readonly _id?: DaggerEngineCacheEntrySetID = undefined
+  private readonly _diskSpaceBytes?: number = undefined
+  private readonly _entryCount?: number = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: DaggerEngineCacheEntrySetID,
+    _diskSpaceBytes?: number,
+    _entryCount?: number,
+  ) {
+    super(parent)
+
+    this._id = _id
+    this._diskSpaceBytes = _diskSpaceBytes
+    this._entryCount = _entryCount
+  }
+
+  /**
+   * A unique identifier for this DaggerEngineCacheEntrySet.
+   */
+  id = async (): Promise<DaggerEngineCacheEntrySetID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<DaggerEngineCacheEntrySetID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * The total disk space used by the cache entries in this set.
+   */
+  diskSpaceBytes = async (): Promise<number> => {
+    if (this._diskSpaceBytes) {
+      return this._diskSpaceBytes
+    }
+
+    const response: Awaited<number> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "diskSpaceBytes",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * The list of individual cache entries in the set
+   */
+  entries = async (): Promise<DaggerEngineCacheEntry[]> => {
+    type entries = {
+      id: DaggerEngineCacheEntryID
+    }
+
+    const response: Awaited<entries[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "entries",
+        },
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response.map(
+      (r) =>
+        new DaggerEngineCacheEntry(
+          {
+            queryTree: [
+              {
+                operation: "loadDaggerEngineCacheEntryFromID",
+                args: { id: r.id },
+              },
+            ],
+            ctx: this._ctx,
+          },
+          r.id,
+        ),
+    )
+  }
+
+  /**
+   * The number of cache entries in this set.
+   */
+  entryCount = async (): Promise<number> => {
+    if (this._entryCount) {
+      return this._entryCount
+    }
+
+    const response: Awaited<number> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "entryCount",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
   }
 }
 
@@ -7534,6 +8002,21 @@ export class Client extends BaseClient {
   }
 
   /**
+   * The Dagger engine container configuration and state
+   */
+  daggerEngine = (): DaggerEngine => {
+    return new DaggerEngine({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "daggerEngine",
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
    * The default platform of the engine.
    */
   defaultPlatform = async (): Promise<Platform> => {
@@ -7716,6 +8199,76 @@ export class Client extends BaseClient {
         ...this._queryTree,
         {
           operation: "loadCurrentModuleFromID",
+          args: { id },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Load a DaggerEngineCacheEntry from its ID.
+   */
+  loadDaggerEngineCacheEntryFromID = (
+    id: DaggerEngineCacheEntryID,
+  ): DaggerEngineCacheEntry => {
+    return new DaggerEngineCacheEntry({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "loadDaggerEngineCacheEntryFromID",
+          args: { id },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Load a DaggerEngineCacheEntrySet from its ID.
+   */
+  loadDaggerEngineCacheEntrySetFromID = (
+    id: DaggerEngineCacheEntrySetID,
+  ): DaggerEngineCacheEntrySet => {
+    return new DaggerEngineCacheEntrySet({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "loadDaggerEngineCacheEntrySetFromID",
+          args: { id },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Load a DaggerEngineCache from its ID.
+   */
+  loadDaggerEngineCacheFromID = (
+    id: DaggerEngineCacheID,
+  ): DaggerEngineCache => {
+    return new DaggerEngineCache({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "loadDaggerEngineCacheFromID",
+          args: { id },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Load a DaggerEngine from its ID.
+   */
+  loadDaggerEngineFromID = (id: DaggerEngineID): DaggerEngine => {
+    return new DaggerEngine({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "loadDaggerEngineFromID",
           args: { id },
         },
       ],

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sync"
 
 	"github.com/containerd/containerd/content"
 	"github.com/moby/buildkit/util/leaseutil"
@@ -13,6 +14,7 @@ import (
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 )
 
@@ -74,6 +76,19 @@ type Server interface {
 
 	// The lease manager for the engine as a whole
 	LeaseManager() *leaseutil.Manager
+
+	// Return all the cache entries in the local cache. No support for filtering yet.
+	EngineLocalCacheEntries(context.Context) (*EngineCacheEntrySet, error)
+
+	// Prune everything that is releasable in the local cache. No support for filtering yet.
+	PruneEngineLocalCacheEntries(context.Context) (*EngineCacheEntrySet, error)
+
+	// The KeepBytes setting to use for automatic local cache GC.
+	EngineLocalCacheKeepBytes() int64
+
+	// A map of unique IDs for the result of a given cache entry set query, allowing further queries on the result
+	// to operate on a stable result rather than the live state.
+	EngineCacheEntrySetMap(context.Context) (*sync.Map, error)
 }
 
 func NewRoot(srv Server) *Query {
@@ -181,4 +196,19 @@ func (q *Query) IDDeps(ctx context.Context, id *call.ID) (*ModDeps, error) {
 		deps = deps.Append(mod.Self)
 	}
 	return deps, nil
+}
+
+func (q *Query) RequireMainClient(ctx context.Context) error {
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get client metadata: %w", err)
+	}
+	mainClientCallerID, err := q.MainClientCallerID(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get main client caller ID: %w", err)
+	}
+	if clientMetadata.ClientID != mainClientCallerID {
+		return fmt.Errorf("only the main client can call this function")
+	}
+	return nil
 }
