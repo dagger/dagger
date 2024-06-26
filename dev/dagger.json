@@ -20,7 +20,7 @@
     }
   ],
   "source": ".",
-  "engineVersion": "v0.11.8",
+  "engineVersion": "v0.11.6",
   "views": [
     {
       "name": "default",

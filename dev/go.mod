@@ -15,20 +15,17 @@ require (
 	github.com/opencontainers/image-spec v1.1.0
 	github.com/vektah/gqlparser/v2 v2.5.11
 	go.opentelemetry.io/otel v1.27.0
-	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.0.0-20240616151512-499785e13488
-	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.3.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.27.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.27.0
-	go.opentelemetry.io/otel/log v0.3.0
 	go.opentelemetry.io/otel/sdk v1.27.0
-	go.opentelemetry.io/otel/sdk/log v0.3.0
 	go.opentelemetry.io/otel/trace v1.27.0
-	go.opentelemetry.io/proto/otlp v1.3.1
 	golang.org/x/exp v0.0.0-20240506185415-9bf2ced13842
 	golang.org/x/mod v0.17.0
 	golang.org/x/sync v0.7.0
 	google.golang.org/grpc v1.64.0
 )
+
+require go.opentelemetry.io/proto/otlp v1.3.1 // indirect
 
 require (
 	github.com/Microsoft/hcsshim v0.11.5 // indirect
