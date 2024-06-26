@@ -5270,6 +5270,31 @@ func (ModuleSuite) TestHostError(ctx context.Context, t *testctx.T) {
 	require.ErrorContains(t, err, "dag.Host undefined")
 }
 
+// TestModuleEngineError verifies the engine api is not exposed to modules
+func (ModuleSuite) TestEngineError(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	_, err := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+		WithNewFile("/work/main.go", dagger.ContainerWithNewFileOpts{
+			Contents: `package main
+ 			import (
+ 				"context"
+ 			)
+ 			type Test struct {}
+ 			func (m *Test) Fn(ctx context.Context) error {
+ 				_, _ = dag.DaggerEngine().LocalCache().EntrySet().Entries(ctx)
+				return nil
+ 			}
+ 			`,
+		}).
+		With(daggerCall("fn")).
+		Sync(ctx)
+	require.ErrorContains(t, err, "dag.DaggerEngine undefined")
+}
+
 func (ModuleSuite) TestDaggerListen(ctx context.Context, t *testctx.T) {
 	t.Run("with mod", func(ctx context.Context, t *testctx.T) {
 		modDir := t.TempDir()

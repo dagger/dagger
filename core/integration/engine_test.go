@@ -9,13 +9,15 @@ import (
 	"testing"
 	"time"
 
+	bkconfig "github.com/moby/buildkit/cmd/buildkitd/config"
+	"github.com/moby/buildkit/identity"
+	"github.com/pelletier/go-toml"
+
+	"dagger.io/dagger"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/dagger/testctx"
-	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
-
-	"dagger.io/dagger"
 )
 
 type EngineSuite struct{}
@@ -55,6 +57,27 @@ func devEngineContainer(c *dagger.Client, withs ...func(*dagger.Container) *dagg
 		}, dagger.ContainerWithExecOpts{
 			InsecureRootCapabilities: true,
 		})
+}
+
+func engineWithConfig(ctx context.Context, t *testctx.T, cfgFns ...func(context.Context, *testctx.T, bkconfig.Config) bkconfig.Config) func(*dagger.Container) *dagger.Container {
+	return func(ctr *dagger.Container) *dagger.Container {
+		t.Helper()
+		existingCfgStr, err := ctr.File("/etc/dagger/engine.toml").Contents(ctx)
+		require.NoError(t, err)
+
+		cfg, err := bkconfig.Load(strings.NewReader(existingCfgStr))
+		require.NoError(t, err)
+		for _, cfgFn := range cfgFns {
+			cfg = cfgFn(ctx, t, cfg)
+		}
+
+		newCfgBytes, err := toml.Marshal(cfg)
+		require.NoError(t, err)
+
+		return ctr.WithNewFile("/etc/dagger/engine.toml", dagger.ContainerWithNewFileOpts{
+			Contents: string(newCfgBytes),
+		})
+	}
 }
 
 func engineClientContainer(ctx context.Context, t *testctx.T, c *dagger.Client, devEngine *dagger.Service) (*dagger.Container, error) {
