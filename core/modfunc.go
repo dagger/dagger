@@ -386,7 +386,7 @@ func (fn *ModuleFunction) loadContextualArg(ctx context.Context, arg *FunctionAr
 
 	switch arg.TypeDef.AsObject.Value.Name {
 	case "Directory":
-		slog.Debug("function call arg: loading contextual directory", "fn", arg.Name, "dir", arg.DefaultPathFromContext)
+		slog.Debug("moduleFunction.loadContextualArg: loading contextual directory", "fn", arg.Name, "dir", arg.DefaultPathFromContext)
 
 		dir, err := fn.mod.Source.Self.LoadContext(ctx, arg.DefaultPathFromContext, fn.mod.Server)
 		if err != nil {
@@ -400,7 +400,7 @@ func (fn *ModuleFunction) loadContextualArg(ctx context.Context, arg *FunctionAr
 
 		return JSON(fmt.Sprintf(`"%s"`, dirID)), nil
 	case "File":
-		slog.Debug("function call arg: loading contextual file", "fn", arg.Name, "file", arg.DefaultPathFromContext)
+		slog.Debug("moduleFunction.loadContextualArg: loading contextual file", "fn", arg.Name, "file", arg.DefaultPathFromContext)
 
 		// We first load the directory from the context path, then we load the file from the path relative to the directory.
 		dirPath := filepath.Dir(arg.DefaultPathFromContext)

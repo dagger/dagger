@@ -285,6 +285,11 @@ func (src *ModuleSource) LoadContext(ctx context.Context, path string, dag *dagq
 		// Add the context path to the path to load
 		path = filepath.Join(ctxPath, path)
 
+		path, err = filepath.Rel(ctxPath, path)
+		if err != nil {
+			return inst, fmt.Errorf("path should be relative to the context path: %w", err)
+		}
+
 		_, desc, err := src.Query.Buildkit.LocalImport(ctx, src.Query.Platform.Spec(), path, exclude, nil)
 		if err != nil {
 			return inst, fmt.Errorf("failed to import local module src: %w", err)
