@@ -2,8 +2,12 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
+	"time"
 
+	"github.com/pkg/browser"
 	"github.com/spf13/cobra"
 
 	"github.com/dagger/dagger/internal/cloud"
@@ -36,8 +40,7 @@ func init() {
 	rootCmd.AddCommand(logoutCmd)
 }
 
-type CloudCLI struct {
-}
+type CloudCLI struct{}
 
 func (cli *CloudCLI) Client(ctx context.Context) (*cloud.Client, error) {
 	return cloud.NewClient(ctx)
@@ -70,8 +73,16 @@ func (cli *CloudCLI) Login(cmd *cobra.Command, args []string) error {
 	var selectedOrg *auth.Org
 	switch len(user.Orgs) {
 	case 0:
-		fmt.Fprintln(errW, "You are not a member of any organizations.")
-		return Fail
+		fmt.Fprintln(errW, "You are not a member of any organizations, creating a new one...")
+		selectedOrg, err = createNewOrg(ctx, client, errW)
+		if err != nil {
+			// logging out user here so terminal is not filled with 403
+			// errors the next time `dagger login` is called since the user
+			// still doesn't have an org set
+			auth.Logout()
+			fmt.Fprintf(errW, "Error setting up new organization: %v", err)
+			return Fail
+		}
 	case 1:
 		selectedOrg = &user.Orgs[0]
 	default:
@@ -102,6 +113,42 @@ func (cli *CloudCLI) Login(cmd *cobra.Command, args []string) error {
 	fmt.Fprintln(outW, "Success.")
 
 	return nil
+}
+
+func createNewOrg(ctx context.Context, cli *cloud.Client, w io.Writer) (*auth.Org, error) {
+	url := "https://dagger.cloud/signup?quickstart=true"
+	err := browser.OpenURL(url)
+	if err != nil {
+		fmt.Fprintf(w, "Unable to open browser automatically, please visit %s to create an organization.\n", url)
+	}
+
+	timer := time.After(15 * time.Second)
+	t := time.NewTicker(1 * time.Second)
+
+	defer t.Stop()
+
+	for {
+		select {
+		case <-timer:
+			return nil, errors.New("timed out waiting to create an organization")
+		case <-t.C:
+			u, err := cli.User(ctx)
+			if err != nil {
+				return nil, err
+			}
+			if len(u.Orgs) == 0 {
+				continue
+			}
+
+			user, err := cli.User(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return &user.Orgs[0], nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
 }
 
 func (cli *CloudCLI) Logout(cmd *cobra.Command, args []string) error {
