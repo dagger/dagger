@@ -6742,6 +6742,11 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Get the current schema version.
+    pub async fn schema_version(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("schemaVersion");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Reference a secret by name.
     ///
     /// # Arguments
