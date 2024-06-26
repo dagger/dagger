@@ -26,6 +26,26 @@ class CurrentModuleID(Scalar):
     object of type CurrentModule."""
 
 
+class DaggerEngineCacheEntryID(Scalar):
+    """The `DaggerEngineCacheEntryID` scalar type represents an identifier
+    for an object of type DaggerEngineCacheEntry."""
+
+
+class DaggerEngineCacheEntrySetID(Scalar):
+    """The `DaggerEngineCacheEntrySetID` scalar type represents an
+    identifier for an object of type DaggerEngineCacheEntrySet."""
+
+
+class DaggerEngineCacheID(Scalar):
+    """The `DaggerEngineCacheID` scalar type represents an identifier for
+    an object of type DaggerEngineCache."""
+
+
+class DaggerEngineID(Scalar):
+    """The `DaggerEngineID` scalar type represents an identifier for an
+    object of type DaggerEngine."""
+
+
 class DirectoryID(Scalar):
     """The `DirectoryID` scalar type represents an identifier for an
     object of type Directory."""
@@ -2079,6 +2099,342 @@ class CurrentModule(Type):
         ]
         _ctx = self._select("workdirFile", _args)
         return File(_ctx)
+
+
+@typecheck
+class DaggerEngine(Type):
+    """The Dagger engine configuration and state"""
+
+    async def id(self) -> DaggerEngineID:
+        """A unique identifier for this DaggerEngine.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        DaggerEngineID
+            The `DaggerEngineID` scalar type represents an identifier for an
+            object of type DaggerEngine.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(DaggerEngineID)
+
+    def local_cache(self) -> "DaggerEngineCache":
+        """The local (on-disk) cache for the Dagger engine"""
+        _args: list[Arg] = []
+        _ctx = self._select("localCache", _args)
+        return DaggerEngineCache(_ctx)
+
+
+@typecheck
+class DaggerEngineCache(Type):
+    """A cache storage for the Dagger engine"""
+
+    def entry_set(self) -> "DaggerEngineCacheEntrySet":
+        """The current set of entries in the cache"""
+        _args: list[Arg] = []
+        _ctx = self._select("entrySet", _args)
+        return DaggerEngineCacheEntrySet(_ctx)
+
+    async def id(self) -> DaggerEngineCacheID:
+        """A unique identifier for this DaggerEngineCache.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        DaggerEngineCacheID
+            The `DaggerEngineCacheID` scalar type represents an identifier for
+            an object of type DaggerEngineCache.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(DaggerEngineCacheID)
+
+    async def keep_bytes(self) -> int:
+        """The maximum bytes to keep in the cache without pruning, after which
+        automatic pruning may kick in.
+
+        Returns
+        -------
+        int
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("keepBytes", _args)
+        return await _ctx.execute(int)
+
+    async def prune(self) -> Void | None:
+        """Prune the cache of releaseable entries
+
+        Returns
+        -------
+        Void | None
+            The absence of a value.  A Null Void is used as a placeholder for
+            resolvers that do not return anything.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("prune", _args)
+        return await _ctx.execute(Void | None)
+
+
+@typecheck
+class DaggerEngineCacheEntry(Type):
+    """An individual cache entry in a cache entry set"""
+
+    async def actively_used(self) -> bool:
+        """Whether the cache entry is actively being used.
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("activelyUsed", _args)
+        return await _ctx.execute(bool)
+
+    async def created_time_unix_nano(self) -> int:
+        """The time the cache entry was created, in Unix nanoseconds.
+
+        Returns
+        -------
+        int
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("createdTimeUnixNano", _args)
+        return await _ctx.execute(int)
+
+    async def description(self) -> str:
+        """The description of the cache entry.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("description", _args)
+        return await _ctx.execute(str)
+
+    async def disk_space_bytes(self) -> int:
+        """The disk space used by the cache entry.
+
+        Returns
+        -------
+        int
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("diskSpaceBytes", _args)
+        return await _ctx.execute(int)
+
+    async def id(self) -> DaggerEngineCacheEntryID:
+        """A unique identifier for this DaggerEngineCacheEntry.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        DaggerEngineCacheEntryID
+            The `DaggerEngineCacheEntryID` scalar type represents an
+            identifier for an object of type DaggerEngineCacheEntry.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(DaggerEngineCacheEntryID)
+
+    async def most_recent_use_time_unix_nano(self) -> int:
+        """The most recent time the cache entry was used, in Unix nanoseconds.
+
+        Returns
+        -------
+        int
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("mostRecentUseTimeUnixNano", _args)
+        return await _ctx.execute(int)
+
+
+@typecheck
+class DaggerEngineCacheEntrySet(Type):
+    """A set of cache entries returned by a query to a cache"""
+
+    async def disk_space_bytes(self) -> int:
+        """The total disk space used by the cache entries in this set.
+
+        Returns
+        -------
+        int
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("diskSpaceBytes", _args)
+        return await _ctx.execute(int)
+
+    async def entries(self) -> list[DaggerEngineCacheEntry]:
+        """The list of individual cache entries in the set"""
+        _args: list[Arg] = []
+        _ctx = self._select("entries", _args)
+        _ctx = DaggerEngineCacheEntry(_ctx)._select("id", [])
+
+        @dataclass
+        class Response:
+            id: DaggerEngineCacheEntryID
+
+        _ids = await _ctx.execute(list[Response])
+        return [
+            DaggerEngineCacheEntry(
+                Client.from_context(_ctx)._select(
+                    "loadDaggerEngineCacheEntryFromID",
+                    [Arg("id", v.id)],
+                )
+            )
+            for v in _ids
+        ]
+
+    async def entry_count(self) -> int:
+        """The number of cache entries in this set.
+
+        Returns
+        -------
+        int
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("entryCount", _args)
+        return await _ctx.execute(int)
+
+    async def id(self) -> DaggerEngineCacheEntrySetID:
+        """A unique identifier for this DaggerEngineCacheEntrySet.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        DaggerEngineCacheEntrySetID
+            The `DaggerEngineCacheEntrySetID` scalar type represents an
+            identifier for an object of type DaggerEngineCacheEntrySet.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(DaggerEngineCacheEntrySetID)
 
 
 @typecheck
@@ -5862,6 +6218,12 @@ class Client(Root):
             for v in _ids
         ]
 
+    def dagger_engine(self) -> DaggerEngine:
+        """The Dagger engine container configuration and state"""
+        _args: list[Arg] = []
+        _ctx = self._select("daggerEngine", _args)
+        return DaggerEngine(_ctx)
+
     async def default_platform(self) -> Platform:
         """The default platform of the engine.
 
@@ -6028,6 +6390,44 @@ class Client(Root):
         ]
         _ctx = self._select("loadCurrentModuleFromID", _args)
         return CurrentModule(_ctx)
+
+    def load_dagger_engine_cache_entry_from_id(
+        self, id: DaggerEngineCacheEntryID
+    ) -> DaggerEngineCacheEntry:
+        """Load a DaggerEngineCacheEntry from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadDaggerEngineCacheEntryFromID", _args)
+        return DaggerEngineCacheEntry(_ctx)
+
+    def load_dagger_engine_cache_entry_set_from_id(
+        self, id: DaggerEngineCacheEntrySetID
+    ) -> DaggerEngineCacheEntrySet:
+        """Load a DaggerEngineCacheEntrySet from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadDaggerEngineCacheEntrySetFromID", _args)
+        return DaggerEngineCacheEntrySet(_ctx)
+
+    def load_dagger_engine_cache_from_id(
+        self, id: DaggerEngineCacheID
+    ) -> DaggerEngineCache:
+        """Load a DaggerEngineCache from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadDaggerEngineCacheFromID", _args)
+        return DaggerEngineCache(_ctx)
+
+    def load_dagger_engine_from_id(self, id: DaggerEngineID) -> DaggerEngine:
+        """Load a DaggerEngine from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadDaggerEngineFromID", _args)
+        return DaggerEngine(_ctx)
 
     def load_directory_from_id(self, id: DirectoryID) -> Directory:
         """Load a Directory from its ID."""
@@ -7146,6 +7546,14 @@ __all__ = [
     "ContainerID",
     "CurrentModule",
     "CurrentModuleID",
+    "DaggerEngine",
+    "DaggerEngineCache",
+    "DaggerEngineCacheEntry",
+    "DaggerEngineCacheEntryID",
+    "DaggerEngineCacheEntrySet",
+    "DaggerEngineCacheEntrySetID",
+    "DaggerEngineCacheID",
+    "DaggerEngineID",
     "Directory",
     "DirectoryID",
     "EnumTypeDef",

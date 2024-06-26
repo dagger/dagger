@@ -119,6 +119,18 @@ defmodule Dagger.Client do
     end
   end
 
+  @doc "The Dagger engine container configuration and state"
+  @spec dagger_engine(t()) :: Dagger.DaggerEngine.t()
+  def dagger_engine(%__MODULE__{} = client) do
+    selection =
+      client.selection |> select("daggerEngine")
+
+    %Dagger.DaggerEngine{
+      selection: selection,
+      client: client.client
+    }
+  end
+
   @doc "The default platform of the engine."
   @spec default_platform(t()) :: {:ok, Dagger.Platform.t()} | {:error, term()}
   def default_platform(%__MODULE__{} = client) do
@@ -262,6 +274,57 @@ defmodule Dagger.Client do
       client.selection |> select("loadCurrentModuleFromID") |> put_arg("id", id)
 
     %Dagger.CurrentModule{
+      selection: selection,
+      client: client.client
+    }
+  end
+
+  @doc "Load a DaggerEngineCacheEntry from its ID."
+  @spec load_dagger_engine_cache_entry_from_id(t(), Dagger.DaggerEngineCacheEntryID.t()) ::
+          Dagger.DaggerEngineCacheEntry.t()
+  def load_dagger_engine_cache_entry_from_id(%__MODULE__{} = client, id) do
+    selection =
+      client.selection |> select("loadDaggerEngineCacheEntryFromID") |> put_arg("id", id)
+
+    %Dagger.DaggerEngineCacheEntry{
+      selection: selection,
+      client: client.client
+    }
+  end
+
+  @doc "Load a DaggerEngineCacheEntrySet from its ID."
+  @spec load_dagger_engine_cache_entry_set_from_id(t(), Dagger.DaggerEngineCacheEntrySetID.t()) ::
+          Dagger.DaggerEngineCacheEntrySet.t()
+  def load_dagger_engine_cache_entry_set_from_id(%__MODULE__{} = client, id) do
+    selection =
+      client.selection |> select("loadDaggerEngineCacheEntrySetFromID") |> put_arg("id", id)
+
+    %Dagger.DaggerEngineCacheEntrySet{
+      selection: selection,
+      client: client.client
+    }
+  end
+
+  @doc "Load a DaggerEngineCache from its ID."
+  @spec load_dagger_engine_cache_from_id(t(), Dagger.DaggerEngineCacheID.t()) ::
+          Dagger.DaggerEngineCache.t()
+  def load_dagger_engine_cache_from_id(%__MODULE__{} = client, id) do
+    selection =
+      client.selection |> select("loadDaggerEngineCacheFromID") |> put_arg("id", id)
+
+    %Dagger.DaggerEngineCache{
+      selection: selection,
+      client: client.client
+    }
+  end
+
+  @doc "Load a DaggerEngine from its ID."
+  @spec load_dagger_engine_from_id(t(), Dagger.DaggerEngineID.t()) :: Dagger.DaggerEngine.t()
+  def load_dagger_engine_from_id(%__MODULE__{} = client, id) do
+    selection =
+      client.selection |> select("loadDaggerEngineFromID") |> put_arg("id", id)
+
+    %Dagger.DaggerEngine{
       selection: selection,
       client: client.client
     }

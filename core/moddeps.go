@@ -25,6 +25,7 @@ const (
 // the introspection JSON that module SDKs use for codegen.
 var typesHiddenFromModuleSDKs = []dagql.Typed{
 	&Host{},
+	&Engine{},
 }
 
 /*
