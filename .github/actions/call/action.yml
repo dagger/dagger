@@ -100,7 +100,7 @@ runs:
         if [[ "${{ inputs.module }}" == "dev" ]]; then
           # set some sane defaults for the current module
           if [[ -f $HOME/.docker/config.json ]]; then
-            dagger -m "${{ inputs.module }}" call --source=".:default" --host-docker-config=file:"$HOME/.docker/config.json" ${{ inputs.function }}
+            dagger -m "${{ inputs.module }}" call --source=".:default" --docker-cfg=file:"$HOME/.docker/config.json" ${{ inputs.function }}
           else
             dagger -m "${{ inputs.module }}" call --source=".:default" ${{ inputs.function }}
           fi

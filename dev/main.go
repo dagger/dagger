@@ -15,7 +15,7 @@ type Dagger struct {
 
 	// Can be used by nested clients to forward docker credentials to avoid
 	// rate limits
-	HostDockerConfig *Secret // +private
+	DockerCfg *Secret // +private
 }
 
 func New(
@@ -25,7 +25,7 @@ func New(
 	// +optional
 	version string,
 	// +optional
-	hostDockerConfig *Secret,
+	dockerCfg *Secret,
 ) (*Dagger, error) {
 	versionInfo, err := newVersion(ctx, source, version)
 	if err != nil {
@@ -33,9 +33,9 @@ func New(
 	}
 
 	return &Dagger{
-		Source:           source,
-		Version:          versionInfo,
-		HostDockerConfig: hostDockerConfig,
+		Source:    source,
+		Version:   versionInfo,
+		DockerCfg: dockerCfg,
 	}, nil
 }
 

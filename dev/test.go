@@ -199,9 +199,9 @@ func (t *Test) testCmd(ctx context.Context) (*Container, error) {
 		WithMountedFile(cliBinPath, devBinary).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint)
-	if t.Dagger.HostDockerConfig != nil {
+	if t.Dagger.DockerCfg != nil {
 		// this avoids rate limiting in our ci tests
-		tests = tests.WithMountedSecret("/root/.docker/config.json", t.Dagger.HostDockerConfig)
+		tests = tests.WithMountedSecret("/root/.docker/config.json", t.Dagger.DockerCfg)
 	}
 	return tests, nil
 }
