@@ -422,12 +422,13 @@ func (srv *Server) initializeDaggerClient(
 	dag.Cache = client.daggerSession.dagqlCache
 	dag.Around(core.AroundFunc)
 	coreMod := &schema.CoreMod{Dag: dag}
-	if err := coreMod.Install(ctx, dag); err != nil {
+	if err := coreMod.Install(ctx, dag, ""); err != nil {
 		return fmt.Errorf("failed to install core module: %w", err)
 	}
-	client.dagqlRoot.DefaultDeps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
+	client.dagqlRoot.DefaultDeps = core.NewModDeps(client.dagqlRoot, "", []core.Mod{coreMod})
 
-	client.deps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
+	client.deps = core.NewModDeps(client.dagqlRoot, "", []core.Mod{coreMod})
+
 	if opts.EncodedModuleID != "" {
 		modID := new(call.ID)
 		if err := modID.Decode(opts.EncodedModuleID); err != nil {
@@ -444,6 +445,12 @@ func (srv *Server) initializeDaggerClient(
 		if len(client.mod.ObjectDefs) > 0 {
 			client.deps = client.deps.Append(client.mod)
 		}
+
+		engineVersion, err := client.mod.Source.Self.ModuleEngineVersion(ctx)
+		if err != nil {
+			return err
+		}
+		client.deps.Version = engineVersion
 	}
 
 	if opts.EncodedFunctionCall != nil {
@@ -879,9 +886,19 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module) error {
 	if err != nil {
 		return err
 	}
+
+	engineVersion, err := mod.Source.Self.ModuleEngineVersion(ctx)
+	if err != nil {
+		return err
+	}
+
 	client.stateMu.Lock()
 	defer client.stateMu.Unlock()
+
 	client.deps = client.deps.Append(mod)
+	if engineVersion != "" {
+		client.deps.Version = engineVersion
+	}
 	return nil
 }
 

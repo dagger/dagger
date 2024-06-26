@@ -13,7 +13,7 @@ import (
 )
 
 type SchemaResolvers interface {
-	Install()
+	Install(version string)
 }
 
 type Evaluatable interface {

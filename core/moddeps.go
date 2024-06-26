@@ -32,8 +32,9 @@ ModDeps represents a set of dependencies for a module or for a caller depending 
 particular set of modules to be served.
 */
 type ModDeps struct {
-	root *Query
-	Mods []Mod // TODO hide
+	root    *Query
+	Mods    []Mod // TODO hide
+	Version string
 
 	// should not be read directly, call Schema and SchemaIntrospectionJSON instead
 	lazilyLoadedSchema         *dagql.Server
@@ -42,23 +43,24 @@ type ModDeps struct {
 	loadSchemaLock             sync.Mutex
 }
 
-func NewModDeps(root *Query, mods []Mod) *ModDeps {
+func NewModDeps(root *Query, version string, mods []Mod) *ModDeps {
 	return &ModDeps{
-		root: root,
-		Mods: mods,
+		root:    root,
+		Mods:    mods,
+		Version: version,
 	}
 }
 
 func (d *ModDeps) Prepend(mods ...Mod) *ModDeps {
 	deps := append([]Mod{}, mods...)
 	deps = append(deps, d.Mods...)
-	return NewModDeps(d.root, deps)
+	return NewModDeps(d.root, d.Version, deps)
 }
 
 func (d *ModDeps) Append(mods ...Mod) *ModDeps {
 	deps := append([]Mod{}, d.Mods...)
 	deps = append(deps, mods...)
-	return NewModDeps(d.root, deps)
+	return NewModDeps(d.root, d.Version, deps)
 }
 
 // The combined schema exposed by each mod in this set of dependencies
@@ -136,7 +138,7 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (
 	var objects []*ModuleObjectType
 	var ifaces []*InterfaceType
 	for _, mod := range d.Mods {
-		err := mod.Install(ctx, dag)
+		err := mod.Install(ctx, dag, d.Version)
 		if err != nil {
 			return nil, loadedSchemaJSONFile, fmt.Errorf("failed to get schema for module %q: %w", mod.Name(), err)
 		}

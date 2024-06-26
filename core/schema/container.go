@@ -26,7 +26,7 @@ type containerSchema struct {
 
 var _ SchemaResolvers = &containerSchema{}
 
-func (s *containerSchema) Install() {
+func (s *containerSchema) Install(version string) {
 	dagql.Fields[*core.Query]{
 		dagql.Func("container", s.container).
 			Doc(`Creates a scratch container.`,

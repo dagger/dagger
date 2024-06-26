@@ -16,7 +16,7 @@ type serviceSchema struct {
 
 var _ SchemaResolvers = &serviceSchema{}
 
-func (s *serviceSchema) Install() {
+func (s *serviceSchema) Install(version string) {
 	dagql.Fields[*core.Container]{
 		dagql.Func("asService", s.containerAsService).
 			Doc(`Turn the container into a Service.`,

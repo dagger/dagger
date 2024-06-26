@@ -30,7 +30,7 @@ func (m *CoreMod) Dependencies() []core.Mod {
 	return nil
 }
 
-func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server) error {
+func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server, version string) error {
 	for _, schema := range []SchemaResolvers{
 		&querySchema{dag},
 		&directorySchema{dag},
@@ -46,7 +46,7 @@ func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server) error {
 		&socketSchema{dag},
 		&moduleSchema{dag},
 	} {
-		schema.Install()
+		schema.Install(version)
 	}
 	return nil
 }

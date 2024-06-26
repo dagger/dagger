@@ -21,7 +21,7 @@ type moduleSchema struct {
 
 var _ SchemaResolvers = &moduleSchema{}
 
-func (s *moduleSchema) Install() {
+func (s *moduleSchema) Install(version string) {
 	dagql.Fields[*core.Query]{
 		dagql.Func("module", s.module).
 			Doc(`Create a new module.`),
@@ -820,7 +820,11 @@ func (s *moduleSchema) updateDeps(
 		return fmt.Errorf("failed to initialize dependency modules: %w", err)
 	}
 
-	mod.Deps = core.NewModDeps(src.Self.Query, src.Self.Query.DefaultDeps.Mods)
+	engineVersion, err := mod.Source.Self.ModuleEngineVersion(ctx)
+	if err != nil {
+		return err
+	}
+	mod.Deps = core.NewModDeps(src.Self.Query, engineVersion, src.Self.Query.DefaultDeps.Mods)
 	for _, dep := range mod.DependenciesField {
 		mod.Deps = mod.Deps.Append(dep.Self)
 	}

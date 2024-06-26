@@ -27,7 +27,7 @@ type hostSchema struct {
 
 var _ SchemaResolvers = &hostSchema{}
 
-func (s *hostSchema) Install() {
+func (s *hostSchema) Install(version string) {
 	dagql.Fields[*core.Query]{
 		dagql.Func("host", func(ctx context.Context, parent *core.Query, args struct{}) (*core.Host, error) {
 			return parent.NewHost(), nil

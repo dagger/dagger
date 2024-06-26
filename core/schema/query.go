@@ -15,7 +15,7 @@ type querySchema struct {
 
 var _ SchemaResolvers = &querySchema{}
 
-func (s *querySchema) Install() {
+func (s *querySchema) Install(version string) {
 	introspection.Install[*core.Query](s.srv)
 
 	s.srv.InstallScalar(core.JSON{})

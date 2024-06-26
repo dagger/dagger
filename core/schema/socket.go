@@ -13,7 +13,7 @@ type socketSchema struct {
 
 var _ SchemaResolvers = &socketSchema{}
 
-func (s *socketSchema) Install() {
+func (s *socketSchema) Install(version string) {
 	dagql.Fields[*core.Query]{
 		dagql.Func("socket", s.socket).
 			Doc("Loads a socket by its ID.").

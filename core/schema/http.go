@@ -18,7 +18,7 @@ type httpSchema struct {
 	srv *dagql.Server
 }
 
-func (s *httpSchema) Install() {
+func (s *httpSchema) Install(version string) {
 	dagql.Fields[*core.Query]{
 		dagql.Func("http", s.http).
 			Doc(`Returns a file containing an http remote url content.`).
