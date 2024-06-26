@@ -41,6 +41,19 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 
 	switch src.Kind {
 	case core.ModuleSourceKindLocal:
+		if filepath.IsAbs(parsed.modPath) {
+			cwdStat, err := query.Buildkit.StatCallerHostPath(ctx, ".", true)
+			if err != nil {
+				return nil, fmt.Errorf("failed to stat caller's current working directory: %w", err)
+			}
+
+			relPath, err := filepath.Rel(cwdStat.Path, parsed.modPath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to make path relative: %w", err)
+			}
+			parsed.modPath = relPath
+		}
+
 		src.AsLocalSource = dagql.NonNull(&core.LocalModuleSource{
 			RootSubpath: parsed.modPath,
 		})
