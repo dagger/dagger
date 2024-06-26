@@ -164,6 +164,16 @@ and improve it. We want small, constant improvements which compound. Therefore:
 > not the implementation. If you ever had to migrate from Chef/Puppet to
 > Ansible/Terraform, you know what it was like to migrate the implementation.
 
+## Workflow for releases off non-main branch
+
+Currently, some of the steps here vary depending on whether we are running a release off of `main` vs. off of a separate branch.
+
+They are marked with 🚨 in the steps below.
+
+We do this process when we need to do a patch release but don't want to include every commit that has been merged to `main` since the last release.
+
+In the long term we should strive to make the process the same regardless of the branch we are releasing off of, but for now, we need to be aware of the differences.
+
 ## 🚙 Engine + 🚗 CLI ⏱ `30mins`
 
 > [!WARNING]
@@ -172,33 +182,91 @@ and improve it. We want small, constant improvements which compound. Therefore:
 > SDK. This will ensure that all the APIs in the SDK are also available in the
 > Engine it depends on.
 
-- [ ] Create e.g. `.changes/v0.11.8.md` by either running `changie batch patch`
-      (or `changie batch minor` if this is a new minor).
-
 > [!NOTE]
 >
 > If you do not have `changie` installed, see https://changie.dev
 
-- [ ] Make any necessary edits to the newly generated file, e.g.
-      `.changes/v0.11.8.md`
-- [ ] Update `CHANGELOG.md` by running `changie merge`.
-- [ ] `30 mins` Submit a PR - e.g. `add-v0.11.8-release-notes` with the new release notes
-      so that they can be used in the new release. Get the PR reviewed & merged.
-      The merge commit is what gets tagged in the next step.
-- [ ] Ensure that all checks are green ✅ for the `<ENGINE_GIT_SHA>` on the
-      `main` branch that you are about to release.
-- [ ] `30mins` When you have confirmed that all checks are green, run the following:
+Setup some variables used throughout the release process:
 
 ```console
-git checkout main
+# 🚨 change this from `main` to `release-vX.Y.Z` if releasing off a non-main branch
+export RELEASE_BRANCH=main
 
 # If not named "origin" in your local checkout, replace "origin" with whatever the
 # github.com/dagger/dagger repo is named for you locally
 export DAGGER_REPO_REMOTE=origin
+```
 
-git pull $DAGGER_REPO_REMOTE main
+> [!NOTE]
+>
+> This process involves direct pushes to the github.com/dagger/dagger repository. Recently there have been permission issues here that result in errors like
+>
+> `refusing to allow an OAuth App to create or update workflow` when pushing.
+>
+> If you encounter this, you may need to change your git remote from https to ssh, e.g.
+>
+> `git remote set-url $DAGGER_REPO_REMOTE git@github.com:dagger/dagger.git`
+>
+> It's advisable to go back to https after the release is complete to not retain excessive permissions longer than necessary, e.g. to go back run
+>
+> `git remote set-url $DAGGER_REPO_REMOTE https://github.com/dagger/dagger.git`
+
+<details>
+<summary>🚨 Non-main branch release only:</summary>
+
+Create a new branch off of the previous git tag being patched named `release-vX.Y.Z` (e.g. `release-v0.11.9`)
+
+```console
+git switch -c ${RELEASE_BRANCH:?must be set}
+
+# e.g. if creating a new v0.11.9 release off of v0.11.8, use v0.11.8 here
+git reset --hard <previous tag being patched>
+
+git push --set-upstream $DAGGER_REPO_REMOTE "${RELEASE_BRANCH:?must be set}"
+```
+
+</details>
+
+Setup the local branch to align with the remote branch being released
+
+```console
+git checkout "${RELEASE_BRANCH:?must be set}"
+
+git pull $DAGGER_REPO_REMOTE "${RELEASE_BRANCH:?must be set}"
 
 export ENGINE_GIT_SHA="$(git rev-parse --verify HEAD)"
+```
+
+<details>
+<summary>🚨 Non-main branch release only:</summary>
+
+`git cherry-pick <commit-hash>` the commits you want to include in the release from `main` to the release branch.
+
+You will also want to ensure you _always_ cherry-pick a few special commits:
+
+- [ ] The SDK bump PR for the release being patched.
+  - e.g. if we are creating a `v0.11.9` release based off of `v0.11.8`, you want to ensure you cherry-pick [this PR](https://github.com/dagger/dagger/pull/7690).
+- [ ] The PR that bumps CI to use the new Engine version.
+  - e.g. if we are creating a `v0.11.9` release based off of `v0.11.8`, you want to ensure you cherry-pick [this PR](https://github.com/dagger/dagger/pull/7702) that upgrades CI to use `v0.11.8` engines.
+
+</details>
+
+- [ ] Create e.g. `.changes/v0.11.9.md` by either running `changie batch patch`
+      (or `changie batch minor` if this is a new minor).
+
+- [ ] Make any necessary edits to the newly generated file, e.g.
+      `.changes/v0.11.9.md`
+- [ ] Update `CHANGELOG.md` by running `changie merge`.
+- [ ] `30 mins` Submit a PR - e.g. `add-v0.11.9-release-notes` with the new release notes so that they can be used in the new release.
+  - 🚨 Non-main branch release only: This PR will also include the cherry-picked commits mentioned above.
+- [ ] Get the PR reviewed & merged. The merge commit is what gets tagged in the next step.
+  - 🚨 Non-main branch release only: Ideally use "Rebase and Merge" rather than squashing commits when merging so we can more easily preserve the history of the cherry-picked commits.
+- [ ] Ensure that all checks are green ✅ for the `<ENGINE_GIT_SHA>` on the
+      `<RELEASE_BRANCH>` that you are about to release.
+  - 🚨 Non-main branch release only: currently, CI does not run on non-main branches and some of the workflows are currently hardcoded with `main` so it's not safe to manually run them. So for now this has to be skipped in this case.
+- [ ] `30mins` When you have confirmed that all checks are green, run the following:
+
+```console
 export ENGINE_VERSION="$(changie latest)"
 git tag "${ENGINE_VERSION:?must be set}" "${ENGINE_GIT_SHA:?must be set}"
 
@@ -212,6 +280,21 @@ This will kick off
 [`.github./workflows/publish.yml`](https://github.com/dagger/dagger/actions/workflows/publish.yml).
 After the `publish` job in this workflow passes, a new `draft` PR will
 automatically be created to bump the Engine version in the various SDKs.
+
+<details>
+<summary>🚨 Non-main branch release only:</summary>
+
+Currently, the bump-engine PR will be created against `main` by default and also include commits from main rather than just the ones you cherry-picked.
+
+You will want to leave this PR open, but need to manually create a new PR against the release branch, with an additional cherry-pick on the engine bump commit.
+
+- ‼️ Be sure to change the branch being merged into from `main` to the release branch when opening the PR.
+
+This PR will also need the extra commits described below for SDK changelogs, helm chart version bump, etc.
+
+An example PR used while releasing `v0.11.9` off of `v0.11.8` can be found [here](https://github.com/dagger/dagger/pull/7746).
+
+</details>
 
 - [ ] Checkout the `bump-engine` branch locally & generate changelogs for all SDKs:
 
@@ -263,12 +346,13 @@ cd ../..
 
 ## 🐹 Go SDK ⏱ `30mins`
 
-- [ ] Ensure that all checks are green ✅ for the `<SDK_GIT_SHA>` on the `main`
+- [ ] Ensure that all checks are green ✅ for the `<SDK_GIT_SHA>` on the `<RELEASE_BRANCH>`
       branch that you are about to release. This will usually be the commit that
       bumps the Engine version, the one that you merged earlier.
+  - 🚨 Non-main branch release only: currently, CI does not run on non-main branches and some of the workflows are currently hardcoded with `main` so it's not safe to manually run them. So for now this has to be skipped in this case.
 
 ```console
-git checkout main
+git checkout "${RELEASE_BRANCH:?must be set}"
 git pull "${DAGGER_REPO_REMOTE:?must be set}"
 git branch -D bump-engine
 
@@ -284,7 +368,7 @@ git push "${DAGGER_REPO_REMOTE:?must be set}" "sdk/go/${GO_SDK_VERSION:?must be 
 ```
 
 This will trigger the [`publish-sdk-go`
-workflow](https://github.com/dagger/dagger/actions/workflows/publish-sdk-go.yml)
+workflow](https://github.com/dagger/dagger/actions/workflows/sdk-go-publish.yml)
 which publishes to [🐙
 github.com/dagger/dagger-go-sdk](https://github.com/dagger/dagger-go-sdk/tags).
 
@@ -304,8 +388,9 @@ cd ..
 ```
 
 - [ ] Update all dagger versions in `.github/` to `$ENGINE_VERSION`
-      - The version numbers (of the form `<major>.<minor>.<patch>`) should be updated to the new version
-      - The worker runner versions (of the form `dagger-v<major>-<minor>-<patch>-<worker>`)
+
+  - The version numbers (of the form `<major>.<minor>.<patch>`) should be updated to the new version
+  - The worker runner versions (of the form `dagger-v<major>-<minor>-<patch>-<worker>`)
 
 - [ ] Open a PR with the title `Improve Releasing during $ENGINE_VERSION`
 
@@ -313,8 +398,15 @@ cd ..
 git checkout -b improve-releasing-during-${ENGINE_VERSION:?must be set}
 git add .  # or any other files changed during the last few steps
 git commit -s -m "Improve releasing during $ENGINE_VERSION"
-git push 
+git push
 ```
+
+<details>
+<summary>🚨 Non-main branch release only:</summary>
+
+Change the branch the PR is being merged into from `main` to the `release-vX.Y.Z` branch.
+
+</details>
 
 Ensure that all the workflows succeed before continuing (specifically `test` and `testdev`)!
 
@@ -322,10 +414,10 @@ Ensure that all the workflows succeed before continuing (specifically `test` and
       release process using the just-released CLI.
 
 ```console
-curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=0.11.8 sh
-# install the cli to dagger-0.11.8, and symlink dagger to it
-mv ~/.local/bin/dagger{,-0.11.8}
-ln -s ~/.local/bin/dagger{-0.11.8,}
+curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=0.11.9 sh
+# install the cli to dagger-0.11.9, and symlink dagger to it
+mv ~/.local/bin/dagger{,-0.11.9}
+ln -s ~/.local/bin/dagger{-0.11.9,}
 
 dagger version
 ```
@@ -358,14 +450,14 @@ gh release create "sdk/go/${GO_SDK_VERSION:?must be set}" \
 - [ ] Tag & publish:
 
 ```console
-git checkout main
+git checkout "${RELEASE_BRANCH:?must be set}"
 cd sdk/python && export PYTHON_SDK_VERSION=$(changie latest) && cd ../..
 git tag "sdk/python/${PYTHON_SDK_VERSION:?must be set}" "${SDK_GIT_SHA:?must be set}"
 git push "${DAGGER_REPO_REMOTE:?must be set}" sdk/python/${PYTHON_SDK_VERSION}
 ```
 
 This will trigger the [`Publish Python SDK`
-workflow](https://github.com/dagger/dagger/actions/workflows/publish-sdk-python.yml)
+workflow](https://github.com/dagger/dagger/actions/workflows/sdk-python-publish.yml)
 which publishes [dagger-io to 🐍 PyPI](https://pypi.org/project/dagger-io)
 
 - [ ] Upload the release notes by running:
@@ -392,7 +484,7 @@ git push "${DAGGER_REPO_REMOTE:?must be set}" sdk/typescript/${TYPESCRIPT_SDK_VE
 ```
 
 This will trigger the [`Publish TypeScript SDK`
-workflow](https://github.com/dagger/dagger/actions/workflows/publish-sdk-typescript.yml)
+workflow](https://github.com/dagger/dagger/actions/workflows/sdk-typescript-publish.yml)
 which publishes a new version to [⬢ npmjs.com/package/@dagger.io/dagger](https://www.npmjs.com/package/@dagger.io/dagger)
 
 - [ ] Upload the release notes by running:
@@ -418,7 +510,7 @@ git push "${DAGGER_REPO_REMOTE:?must be set}" sdk/elixir/${ELIXIR_SDK_VERSION}
 ```
 
 This will trigger the [`Publish Elixir SDK`
-workflow](https://github.com/dagger/dagger/actions/workflows/publish-sdk-elixir.yml)
+workflow](https://github.com/dagger/dagger/actions/workflows/sdk-elixir-publish.yml)
 which publishes a new version to [🧪 hex.pm/packages/dagger](https://hex.pm/packages/dagger)
 
 - [ ] Upload the release notes by running:
@@ -444,7 +536,7 @@ git push "${DAGGER_REPO_REMOTE:?must be set}" sdk/php/${PHP_SDK_VERSION}
 ```
 
 This will trigger the [`Publish PHP SDK`
-workflow](https://github.com/dagger/dagger/actions/workflows/publish-sdk-php.yml)
+workflow](https://github.com/dagger/dagger/actions/workflows/sdk-php-publish.yml)
 which publishes to
 [github.com/dagger/dagger-php-sdk](https://github.com/dagger/dagger-php-sdk/tags).
 
@@ -471,9 +563,23 @@ git push "${DAGGER_REPO_REMOTE:?must be set}" "helm/chart/v${HELM_CHART_VERSION:
 ```
 
 This will trigger the [`publish-helm-chart`
-workflow](https://github.com/dagger/dagger/actions/workflows/publish-helm-chart.yml)
+workflow](https://github.com/dagger/dagger/actions/workflows/helm-publish.yml)
 which publishes to [🐙
 registry.dagger.io/dagger-helm](https://github.com/dagger/dagger/pkgs/container/dagger-helm).
+
+## 🚨 Non-main branch release only
+
+After the Engine+SDKs are all released from the `release-vX.Y.Z` branch, you will need to "forward-port" a few of the commits there up to `main`. Namely:
+
+- The commits from the release notes PR, e.g. when patching `v0.11.8` to `v0.11.9`, [this commit](https://github.com/dagger/dagger/commit/18fd28cfa8f2e5d5f2ccc58fb15a4a975a3660dd)
+- The commits from the SDK engine version bump PR, e.g. when patching `v0.11.8` to `v0.11.9`, the commits from [this PR](https://github.com/dagger/dagger/pull/7746)
+- The commits from the CI engine version bump PR, e.g. when patching `v0.11.8` to `v0.11.9`, [this commit](https://github.com/dagger/dagger/commit/58b1865969426357f7c38f2052a93789bd324534)
+
+One easy way to do this is to re-use the engine version bump PR that was created against `main` earlier, cherry-picking in the missing commits.
+
+Be sure to use "Rebase and Merge" when merging the PR to `main` to preserve the history of the cherry-picked commits.
+
+- [Example of this here for `v0.11.9`](https://github.com/dagger/dagger/pull/7745)
 
 ## 📒 Documentation ⏱ `5mins`
 
@@ -536,29 +642,29 @@ The [Dagger Playground](https://play.dagger.cloud) is set to automatically
 update once there's a new release of the Dagger Engine.
 
 - [ ] Mention in the release thread on Discord that Playground can be updated
-  to the just-released version. cc @marcosnils @matipan @gerhard
+      to the just-released version. cc @marcosnils @matipan @gerhard
 
 ## 🌌 Daggerverse ⏱ `2mins`
 
 - [ ] Mention in the release thread on Discord that Playground can be updated
-  to the just-released version. cc @marcosnils @matipan @grouville
+      to the just-released version. cc @marcosnils @matipan @grouville
 
 ## ☁️ Dagger Cloud ⏱ `2mins`
 
 - [ ] Mention in the release thread on Discord that Dagger Cloud can be updated
-  to the just-released version. cc @marcosnils @matipan @sipsma
+      to the just-released version. cc @marcosnils @matipan @sipsma
 
 ## 🪣 Install scripts ⏱ `2mins`
 
 - [ ] If the install scripts `install.sh` or `install.ps1` have changed since
-  the last release, they must be manually updated on Amazon S3 (CloudFront
-  should also be manually invalidated). cc @gerhard
+      the last release, they must be manually updated on Amazon S3 (CloudFront
+      should also be manually invalidated). cc @gerhard
 
 ## 🐙 dagger-for-github ⏱ `10mins`
 
 - [ ] Submit PR with the version bump, e.g.
-  https://github.com/dagger/dagger-for-github/pull/123
-- [ ] Ask @gerhard or @jpadams to review it 
+      https://github.com/dagger/dagger-for-github/pull/123
+- [ ] Ask @gerhard or @jpadams to review it
 
 > [!TIP]
 > We should automate the above mentioned steps same as we do with the PR which
@@ -575,25 +681,25 @@ git push origin v5 --force
 - [ ] Once this PR is merged, tag the new version
 
 ```console
-# Find the latest released patch https://github.com/dagger/dagger-for-github/releases 
+# Find the latest released patch https://github.com/dagger/dagger-for-github/releases
 git tag --sign <NEXT_PATCH_VERSION>
 # Use the date as the comment, e.g. 2024-05-08
 git push origin <NEXT_PATCH_VERSION> --force
 ```
 
 - [ ] Create a new release from the patch tag (auto-fill release notes via the
-  GitHub UI)
+      GitHub UI)
 
 ## 🍺 dagger Homebrew ⏱ `2mins`
 
 - [ ] Check that Dagger Homebrew formula has been updated to latest, e.g.
-  [dagger 0.10.2](https://github.com/Homebrew/homebrew-core/pull/165904).
-  This is automated, but note that it may take several hours to trigger.
+      [dagger 0.10.2](https://github.com/Homebrew/homebrew-core/pull/165904).
+      This is automated, but note that it may take several hours to trigger.
 
 ## ❄️ nix ⏱ `2mins`
 
 - [ ] Check that Dagger nix flake has been updated to latest, e.g. [dagger: ->
-  v0.10.2](https://github.com/dagger/nix/commit/26a1fee07e8b466b30da6be53c5e8f1566c33797)
+      v0.10.2](https://github.com/dagger/nix/commit/26a1fee07e8b466b30da6be53c5e8f1566c33797)
 
 ## Last step
 
