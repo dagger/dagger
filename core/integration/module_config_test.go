@@ -455,6 +455,38 @@ func (ModuleSuite) TestDaggerInit(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, "yo", strings.TrimSpace(out))
 	})
+
+	t.Run("init with absolute path", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		absPath := "/work/mymodule"
+		ctr := goGitBase(t, c).
+			WithWorkdir("/").
+			With(daggerExec("init", "--source="+absPath, "--name=test", "--sdk=go", absPath)).
+			WithNewFile(absPath+"/main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+				type Test struct {}
+				func (m *Test) Fn() string { return "hello from absolute path" }`,
+			}).
+			With(daggerCallAt(absPath, "fn"))
+
+		out, err := ctr.Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello from absolute path", strings.TrimSpace(out))
+	})
+
+	t.Run("init with absolute path and src .", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		absPath := "/work/mymodule"
+		ctr := goGitBase(t, c).
+			WithWorkdir("/").
+			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go", absPath))
+
+		_, err := ctr.Stdout(ctx)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "source subdir path \"../..\" escapes context")
+	})
 }
 
 func (ModuleSuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
@@ -586,6 +618,52 @@ func (ModuleSuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 			Sync(ctx)
 		require.ErrorContains(t, err, `module must be local`)
 	})
+
+	t.Run("source is made rel to source root by engine with absolute path", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		absPath := "/work"
+		ctr := goGitBase(t, c).
+			WithWorkdir(absPath+"/dep").
+			With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
+			WithNewFile(absPath+"/dep/main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+        import "context"
+
+        type Dep struct {}
+
+        func (m *Dep) Fn(ctx context.Context) string {
+            return "hi from dep"
+        }
+        `,
+			}).
+			WithWorkdir(absPath).
+			With(daggerExec("init")).
+			With(daggerExec("install", "./dep")).
+			WithWorkdir("/var").
+			With(daggerExec("develop", "-m", absPath, "--source="+absPath+"/some/subdir", "--sdk=go")).
+			WithNewFile(absPath+"/some/subdir/main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+        import "context"
+
+        type Work struct {}
+
+        func (m *Work) Fn(ctx context.Context) (string, error) {
+            depStr, err := dag.Dep().Fn(ctx)
+            if err != nil {
+                return "", err
+            }
+            return "hi from work " + depStr, nil
+        }
+        `,
+			})
+
+		out, err := ctr.With(daggerCallAt(absPath, "fn")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hi from work hi from dep", strings.TrimSpace(out))
+	})
 }
 
 func (ModuleSuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
@@ -650,6 +728,57 @@ func (ModuleSuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 			out, err := base.WithWorkdir("/work/subdir/dep").With(daggerCallAt("../../test", "fn")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "hi dep", strings.TrimSpace(out))
+		})
+		t.Run("from src dir with absolute path", func(ctx context.Context, t *testctx.T) {
+			out, err := base.WithWorkdir("/work/test").With(daggerCall("fn")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "hi dep", strings.TrimSpace(out))
+		})
+
+		t.Run("from src root with absolute path", func(ctx context.Context, t *testctx.T) {
+			out, err := base.With(daggerCallAt("/work/test", "fn")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "hi dep", strings.TrimSpace(out))
+		})
+
+		t.Run("from root with absolute path", func(ctx context.Context, t *testctx.T) {
+			out, err := base.WithWorkdir("/").With(daggerCallAt("/work/test", "fn")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "hi dep", strings.TrimSpace(out))
+		})
+
+		t.Run("from dep parent with absolute path", func(ctx context.Context, t *testctx.T) {
+			out, err := base.WithWorkdir("/work/subdir").With(daggerCallAt("/work/test", "fn")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "hi dep", strings.TrimSpace(out))
+		})
+
+		t.Run("from dep dir with absolute path", func(ctx context.Context, t *testctx.T) {
+			out, err := base.WithWorkdir("/work/subdir/dep").With(daggerCallAt("/work/test", "fn")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "hi dep", strings.TrimSpace(out))
+		})
+
+		// Test installing with absolute paths
+		t.Run("install with absolute paths", func(ctx context.Context, t *testctx.T) {
+			ctr := base.
+				WithWorkdir("/").
+				With(daggerExec("init", "--source=/work/test2", "--name=test2", "--sdk=go", "/work/test2")).
+				With(daggerExec("install", "-m=/work/test2", "/work/subdir/dep")).
+				WithNewFile("/work/test2/main.go", dagger.ContainerWithNewFileOpts{
+					Contents: `package main
+
+            import "context"
+
+            type Test2 struct {}
+
+            func (m *Test2) Fn(ctx context.Context) (string, error) { return dag.Dep().DepFn(ctx, "hi from test2") }
+            `,
+				})
+
+			out, err := ctr.With(daggerCallAt("/work/test2", "fn")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "hi from test2", strings.TrimSpace(out))
 		})
 	})
 
@@ -736,6 +865,38 @@ func (ModuleSuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 			require.NoError(t, err)
 			require.Equal(t, "hi dep", strings.TrimSpace(out))
 		})
+
+		t.Run("from src dir with absolute paths", func(ctx context.Context, t *testctx.T) {
+			out, err := base.
+				WithWorkdir("/work/test").
+				With(daggerExec("install", "/work/subdir/dep")).
+				With(daggerCall("fn")).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "hi dep", strings.TrimSpace(out))
+		})
+
+		t.Run("from root with absolute paths", func(ctx context.Context, t *testctx.T) {
+			out, err := base.
+				WithWorkdir("/").
+				With(daggerExec("install", "-m=/work/test", "/work/subdir/dep")).
+				WithWorkdir("/work/test").
+				With(daggerCall("fn")).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "hi dep", strings.TrimSpace(out))
+		})
+
+		t.Run("from random place with absolute paths", func(ctx context.Context, t *testctx.T) {
+			out, err := base.
+				WithWorkdir("/var").
+				With(daggerExec("install", "-m=/work/test", "/work/subdir/dep")).
+				WithWorkdir("/work/test").
+				With(daggerCall("fn")).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "hi dep", strings.TrimSpace(out))
+		})
 	})
 
 	t.Run("install out of tree dep fails", func(ctx context.Context, t *testctx.T) {
@@ -756,6 +917,14 @@ func (ModuleSuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 			require.ErrorContains(t, err, `local module dep source path "../play/dep" escapes context "/work"`)
 		})
 
+		t.Run("from src dir with absolute path", func(ctx context.Context, t *testctx.T) {
+			_, err := base.
+				WithWorkdir("/work/test").
+				With(daggerExec("install", "/play/dep")).
+				Sync(ctx)
+			require.ErrorContains(t, err, `local module dep source path "../play/dep" escapes context "/work"`)
+		})
+
 		t.Run("from dep dir", func(ctx context.Context, t *testctx.T) {
 			_, err := base.
 				WithWorkdir("/play/dep").
@@ -764,10 +933,26 @@ func (ModuleSuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 			require.ErrorContains(t, err, `module dep source path "../play/dep" escapes context "/work"`)
 		})
 
+		t.Run("from dep dir with absolute path", func(ctx context.Context, t *testctx.T) {
+			_, err := base.
+				WithWorkdir("/play/dep").
+				With(daggerExec("install", "-m=/work/test", ".")).
+				Sync(ctx)
+			require.ErrorContains(t, err, `module dep source path "../play/dep" escapes context "/work"`)
+		})
+
 		t.Run("from root", func(ctx context.Context, t *testctx.T) {
 			_, err := base.
 				WithWorkdir("/").
 				With(daggerExec("install", "-m=work/test", "play/dep")).
+				Sync(ctx)
+			require.ErrorContains(t, err, `module dep source path "../play/dep" escapes context "/work"`)
+		})
+
+		t.Run("from root with absolute path", func(ctx context.Context, t *testctx.T) {
+			_, err := base.
+				WithWorkdir("/").
+				With(daggerExec("install", "-m=/work/test", "play/dep")).
 				Sync(ctx)
 			require.ErrorContains(t, err, `module dep source path "../play/dep" escapes context "/work"`)
 		})
