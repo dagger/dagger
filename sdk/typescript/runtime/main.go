@@ -171,12 +171,10 @@ func (t *TypescriptSdk) Base(runtime SupportedTSRuntime) (*Container, error) {
 	case Bun:
 		return dag.Container().
 			From(bunImageRef).
-			WithoutEntrypoint().
 			WithMountedCache("/root/.bun/install/cache", dag.CacheVolume(fmt.Sprintf("mod-bun-cache-%s", bunVersion))), nil
 	case Node:
 		return dag.Container().
 			From(nodeImageRef).
-			WithoutEntrypoint().
 			// Install default CA certificates and configure node to use them instead of its compiled in CA bundle.
 			// This enables use of custom CA certificates if configured in the dagger engine.
 			WithExec([]string{"apk", "add", "ca-certificates"}).

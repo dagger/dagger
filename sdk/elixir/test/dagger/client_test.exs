@@ -58,7 +58,7 @@ defmodule Dagger.ClientTest do
              client
              |> Client.container()
              |> Container.build(repo)
-             |> Container.with_exec(["version"])
+             |> Container.with_exec(["dagger", "version"])
              |> Container.stdout()
 
     assert ["dagger" | _] = out |> String.trim() |> String.split(" ")

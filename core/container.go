@@ -1445,7 +1445,9 @@ func (container *Container) ImageRefOrErr(ctx context.Context) (string, error) {
 func (container *Container) Service(ctx context.Context) (*Service, error) {
 	if container.Meta == nil {
 		var err error
-		container, err = container.WithExec(ctx, ContainerExecOpts{})
+		container, err = container.WithExec(ctx, ContainerExecOpts{
+			UseEntrypoint: true,
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -1476,7 +1478,7 @@ func (container *Container) command(opts ContainerExecOpts) ([]string, error) {
 		args = cfg.Cmd
 	}
 
-	if len(cfg.Entrypoint) > 0 && !opts.SkipEntrypoint {
+	if len(cfg.Entrypoint) > 0 && opts.UseEntrypoint {
 		args = append(cfg.Entrypoint, args...)
 	}
 

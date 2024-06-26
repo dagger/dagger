@@ -53,6 +53,7 @@ func devEngineContainer(c *dagger.Client, engineInstance uint8, withs ...func(*d
 			"--network-name", fmt.Sprintf("dagger%d", engineInstance),
 			"--network-cidr", fmt.Sprintf("10.88.%d.0/24", engineInstance),
 		}, dagger.ContainerWithExecOpts{
+			UseEntrypoint:            true,
 			InsecureRootCapabilities: true,
 		})
 }

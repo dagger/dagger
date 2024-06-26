@@ -359,10 +359,6 @@ func (sdk *goSDK) Runtime(
 						".",
 					},
 				},
-				{
-					Name:  "skipEntrypoint",
-					Value: dagql.NewBoolean(true),
-				},
 			},
 		},
 		dagql.Selector{
@@ -508,6 +504,7 @@ func (sdk *goSDK) baseWithCodegen(
 			{
 				Name: "args",
 				Value: dagql.ArrayInput[dagql.String]{
+					"codegen",
 					"--output", dagql.String(goSDKUserModContextDirPath),
 					"--module-context-path", dagql.String(filepath.Join(goSDKUserModContextDirPath, srcSubpath)),
 					"--module-name", dagql.String(modName),
