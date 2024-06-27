@@ -25,8 +25,8 @@ func (m *MyModule) Build(
 		DockerBuild(dagger.DirectoryDockerBuildOpts{
 			Dockerfile: "Dockerfile",
 			BuildArgs: []BuildArg{
-					{Name: "gh-secret", Value: secretName},
-				},
-			Secrets:    []*dagger.Secret{secret},
+				{Name: "gh-secret", Value: secretName},
+			},
+			Secrets: []*dagger.Secret{secret},
 		})
 }

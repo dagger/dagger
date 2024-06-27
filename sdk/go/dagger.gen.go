@@ -1415,8 +1415,6 @@ func (r *Container) WithMountedTemp(path string) *Container {
 
 // ContainerWithNewFileOpts contains options for Container.WithNewFile
 type ContainerWithNewFileOpts struct {
-	// Content of the file to write (e.g., "Hello world!").
-	Contents string
 	// Permission given to the written file (e.g., 0600).
 	Permissions int
 	// A user:group to set for the file.
@@ -1428,13 +1426,9 @@ type ContainerWithNewFileOpts struct {
 }
 
 // Retrieves this container plus a new file written at the given path.
-func (r *Container) WithNewFile(path string, opts ...ContainerWithNewFileOpts) *Container {
+func (r *Container) WithNewFile(path string, contents string, opts ...ContainerWithNewFileOpts) *Container {
 	q := r.query.Select("withNewFile")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `contents` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Contents) {
-			q = q.Arg("contents", opts[i].Contents)
-		}
 		// `permissions` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Permissions) {
 			q = q.Arg("permissions", opts[i].Permissions)
@@ -1445,6 +1439,7 @@ func (r *Container) WithNewFile(path string, opts ...ContainerWithNewFileOpts) *
 		}
 	}
 	q = q.Arg("path", path)
+	q = q.Arg("contents", contents)
 
 	return &Container{
 		query: q,
