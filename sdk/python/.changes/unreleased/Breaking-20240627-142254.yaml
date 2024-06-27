@@ -1,0 +1,6 @@
+kind: Breaking
+body: "codegen: don't return `Void`"
+time: 2024-06-27T14:22:54.515212Z
+custom:
+    Author: helderco
+    PR: "7773"
