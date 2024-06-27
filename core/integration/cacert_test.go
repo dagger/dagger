@@ -15,7 +15,7 @@ import (
 func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	customCACertTests(ctx, t, c, 100,
+	customCACertTests(ctx, t, c,
 		caCertsTest{"alpine basic", func(t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {
 			ctr := c.Container().From(alpineImage).
 				WithExec([]string{"apk", "add", "curl"})
@@ -436,7 +436,6 @@ func customCACertTests(
 	ctx context.Context,
 	t *testctx.T,
 	c *dagger.Client,
-	netID uint8,
 	tests ...caCertsTest,
 ) {
 	t.Helper()
@@ -451,13 +450,12 @@ func customCACertTests(
 			serverCert:          serverCert,
 			serverKey:           serverKey,
 			dhParam:             certGen.dhParam,
-			netID:               netID,
 			dnsName:             "server",
 			msg:                 "hello",
 			redirectHTTPToHTTPS: true,
 		})
 
-		devEngine := devEngineContainer(c, netID, func(ctr *dagger.Container) *dagger.Container {
+		devEngine := devEngineContainer(c, func(ctr *dagger.Container) *dagger.Container {
 			return ctr.
 				WithMountedFile("/usr/local/share/ca-certificates/dagger-test-custom-ca.crt", certGen.caRootCert).
 				WithServiceBinding("server", serverCtr.AsService())
@@ -628,7 +626,6 @@ type nginxWithCertsOpts struct {
 	serverCert          *dagger.File
 	serverKey           *dagger.File
 	dhParam             *dagger.File
-	netID               uint8
 	dnsName             string
 	msg                 string
 	redirectHTTPToHTTPS bool
@@ -645,20 +642,18 @@ func nginxWithCerts(c *dagger.Client, opts nginxWithCertsOpts) *dagger.Container
 ssl_certificate_key /etc/ssl/private/server.key;
 `,
 		}).WithNewFile("/etc/nginx/snippets/ssl-params.conf", dagger.ContainerWithNewFileOpts{
-		Contents: fmt.Sprintf(`ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
+		Contents: `ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
 ssl_prefer_server_ciphers on;
 ssl_ciphers 'EECDH+AESGCM:EDH+AESGCM:AES256+EECDH:AES256+EDH';
 ssl_ecdh_curve secp384r1;
 ssl_session_cache shared:SSL:10m;
 ssl_session_tickets off;
 ssl_stapling_verify on;
-resolver 10.%d.0.1 valid=300s;
-resolver_timeout 5s;
 add_header Strict-Transport-Security "max-age=63072000; includeSubdomains; preload";
 add_header X-Frame-Options DENY;
 add_header X-Content-Type-Options nosniff;
 ssl_dhparam /etc/ssl/certs/dhparam.pem;
-`, opts.netID),
+`,
 	})
 
 	conf := fmt.Sprintf(`server {

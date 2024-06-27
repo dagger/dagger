@@ -45,7 +45,6 @@ func customProxyTests(
 	ctx context.Context,
 	t *testctx.T,
 	c *dagger.Client,
-	netID uint8,
 	useAuth bool,
 	tests ...proxyTest,
 ) {
@@ -64,7 +63,6 @@ func customProxyTests(
 		serverCert: httpServerCert,
 		serverKey:  httpServerKey,
 		dhParam:    certGen.dhParam,
-		netID:      netID,
 		dnsName:    httpServerAlias,
 		msg:        "whatup",
 	})
@@ -82,7 +80,6 @@ func customProxyTests(
 		serverCert: noproxyHTTPServerCert,
 		serverKey:  noproxyHTTPServerKey,
 		dhParam:    certGen.dhParam,
-		netID:      netID,
 		dnsName:    noproxyHTTPServerAlias,
 		msg:        "whatup",
 	})
@@ -189,7 +186,7 @@ http_access allow localhost
 			squidSvc.Stop(stopCtx, dagger.ServiceStopOpts{Kill: true})
 		})
 
-		devEngine := devEngineContainer(c, netID, func(ctr *dagger.Container) *dagger.Container {
+		devEngine := devEngineContainer(c, func(ctr *dagger.Container) *dagger.Container {
 			return ctr.
 				// go right to /etc/ssl/certs to avoid testing the custom CA cert support (covered elsewhere)
 				WithMountedFile("/etc/ssl/certs/myCA.pem", certGen.caRootCert).
@@ -269,7 +266,7 @@ func (ContainerSuite) TestSystemProxies(ctx context.Context, t *testctx.T) {
 	t.Run("basic", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		customProxyTests(ctx, t, c, 101, false,
+		customProxyTests(ctx, t, c, false,
 			proxyTest{name: "http", run: func(t *testctx.T, c *dagger.Client, f proxyTestFixtures) {
 				out, err := c.Container().From(alpineImage).
 					WithExec([]string{"apk", "add", "curl"}).
@@ -307,7 +304,7 @@ func (ContainerSuite) TestSystemProxies(ctx context.Context, t *testctx.T) {
 	t.Run("auth", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		customProxyTests(ctx, t, c, 102, true,
+		customProxyTests(ctx, t, c, true,
 			proxyTest{name: "http", run: func(t *testctx.T, c *dagger.Client, f proxyTestFixtures) {
 				base := c.Container().From(alpineImage).
 					WithExec([]string{"apk", "add", "curl"})
@@ -360,7 +357,7 @@ func (ContainerSuite) TestSystemProxies(ctx context.Context, t *testctx.T) {
 	t.Run("git uses proxy", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		customProxyTests(ctx, t, c, 104, false,
+		customProxyTests(ctx, t, c, false,
 			proxyTest{name: "git",
 				run: func(t *testctx.T, c *dagger.Client, _ proxyTestFixtures) {
 					_, err := c.Git("https://" + gitTestRepoURL).Ref(gitTestRepoCommit).Tree().Sync(ctx)
@@ -399,7 +396,6 @@ func (ContainerSuite) TestSystemGoProxy(ctx context.Context, t *testctx.T) {
 
 	executeTestEnvName := fmt.Sprintf("DAGGER_TEST_%s", strings.ToUpper(t.Name()))
 	if os.Getenv(executeTestEnvName) == "" {
-		const netID = 103
 		const goProxyAlias = "goproxy"
 		const goProxyPort = 8080
 		goProxySetting := fmt.Sprintf("http://%s:%d", goProxyAlias, goProxyPort)
@@ -437,7 +433,7 @@ func (ContainerSuite) TestSystemGoProxy(ctx context.Context, t *testctx.T) {
 			Frontend: goProxyPort,
 		}})
 
-		devEngine := devEngineContainer(c, netID, func(ctr *dagger.Container) *dagger.Container {
+		devEngine := devEngineContainer(c, func(ctr *dagger.Container) *dagger.Container {
 			return ctr.
 				WithServiceBinding(goProxyAlias, goProxySvc).
 				WithEnvVariable("_DAGGER_ENGINE_SYSTEMENV_GOPROXY", goProxySetting)
