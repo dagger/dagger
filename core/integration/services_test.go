@@ -1608,7 +1608,7 @@ func (ServiceSuite) TestSearchDomainAlwaysSet(ctx context.Context, t *testctx.T)
 		WithNewFile("resolv.conf", newResolvContents, dagger.DirectoryWithNewFileOpts{Permissions: 0644}).
 		File("resolv.conf")
 
-	devEngine := devEngineContainer(c, 120, func(ctr *dagger.Container) *dagger.Container {
+	devEngine := devEngineContainer(c, func(ctr *dagger.Container) *dagger.Container {
 		return ctr.WithMountedFile("/etc/resolv.conf", newResolvConf)
 	}).AsService()
 	t.Cleanup(func() {
