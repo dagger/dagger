@@ -331,7 +331,7 @@ func dispatch(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("marshal: %w", err)
 	}
-	_, err = fnCall.ReturnValue(ctx, JSON(resultBytes))
+	err = fnCall.ReturnValue(ctx, JSON(resultBytes))
 	if err != nil {
 		return fmt.Errorf("store return value: %w", err)
 	}
