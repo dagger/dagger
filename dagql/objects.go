@@ -88,6 +88,16 @@ func (class Class[T]) Field(name string) (Field[T], bool) {
 	return *field, ok
 }
 
+func (class Class[T]) FieldSpec(name string) (FieldSpec, bool) {
+	class.fieldsL.Lock()
+	defer class.fieldsL.Unlock()
+	field, ok := class.fields[name]
+	if !ok {
+		return FieldSpec{}, false
+	}
+	return field.Spec, ok
+}
+
 func (class Class[T]) Install(fields ...Field[T]) {
 	class.fieldsL.Lock()
 	defer class.fieldsL.Unlock()

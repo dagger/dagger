@@ -163,6 +163,15 @@ func (id *ID) Modules() []*Module {
 	return deduped
 }
 
+func (id *ID) PathNamesOnly() string {
+	buf := new(bytes.Buffer)
+	if id.base != nil {
+		fmt.Fprintf(buf, "%s.", id.base.PathNamesOnly())
+	}
+	fmt.Fprint(buf, id.Field())
+	return buf.String()
+}
+
 func (id *ID) Path() string {
 	buf := new(bytes.Buffer)
 	if id.base != nil {

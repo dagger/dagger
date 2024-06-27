@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"reflect"
 	"runtime/debug"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/99designs/gqlgen/graphql"
@@ -376,9 +378,30 @@ func (s *Server) ExecOp(ctx context.Context, gqlOp *graphql.OperationContext) (m
 			if err != nil {
 				return nil, fmt.Errorf("query:\n%s\n\nerror: parse selections: %w", gqlOp.RawQuery, err)
 			}
-			results, err = s.Resolve(ctx, s.root, sels...)
-			if err != nil {
-				return nil, err
+
+			if idRes, err := s.generateID(ctx, s.root.ID(), s.root.ObjectType(), sels); err == nil {
+				results = idRes
+			} else {
+				// preload all IDs asap
+				eg := new(errgroup.Group)
+				ids := s.findIDs(sels)
+				if len(ids) > 0 {
+					slog.Warn("!!! PRELOADING IDS", "ids", ids)
+				}
+				for _, id := range ids {
+					id := id
+					eg.Go(func() error {
+						slog.Warn("!!! PRELOADING ID", "digest", id.Digest(), "id", id.PathNamesOnly())
+						_, err := s.Load(ctx, id)
+						return err
+					})
+				}
+				// eg.Wait()
+
+				results, err = s.Resolve(ctx, s.root, sels...)
+				if err != nil {
+					return nil, err
+				}
 			}
 		case ast.Mutation:
 			// TODO
@@ -389,6 +412,112 @@ func (s *Server) ExecOp(ctx context.Context, gqlOp *graphql.OperationContext) (m
 		}
 	}
 	return results, nil
+}
+
+func (s *Server) findIDs(sels []Selection) []*call.ID {
+	var ids []*call.ID
+	for _, sel := range sels {
+		for _, arg := range sel.Selector.Args {
+			if idAble, ok := arg.Value.(IDable); ok {
+				ids = append(ids, idAble.ID())
+			}
+			if enum, ok := arg.Value.(Enumerable); ok {
+				for i := 1; i <= enum.Len(); i++ {
+					val, err := enum.Nth(1)
+					if err != nil {
+						continue
+					}
+					if idAble, ok := val.(IDable); ok {
+						ids = append(ids, idAble.ID())
+					}
+				}
+			}
+		}
+		ids = append(ids, s.findIDs(sel.Subselections)...)
+	}
+	return ids
+}
+
+func (s *Server) generateID(ctx context.Context, id *call.ID, selfT ObjectType, sels []Selection) (map[string]any, error) {
+	if len(sels) != 1 { // sanity check
+		return nil, fmt.Errorf("expected 1 selection in ID shaped query")
+	}
+
+	idT, ok := selfT.IDType()
+	if !ok {
+		return nil, fmt.Errorf("%s does not have an ID type", selfT.TypeName())
+	}
+
+	sel := sels[0]
+
+	field := sel.Selector.Field
+	if strings.HasPrefix(field, "load") && strings.HasSuffix(field, "FromID") {
+		var foundID bool
+		for _, arg := range sel.Selector.Args {
+			if arg.Name == "id" {
+				if idAble, ok := arg.Value.(IDable); ok {
+					id = idAble.ID()
+					foundID = true
+				}
+			}
+		}
+		if !foundID {
+			return nil, fmt.Errorf("expected id argument in %q", field)
+		}
+	}
+
+	var res any
+	var err error
+	if field == "id" && len(sel.Selector.Args) == 0 {
+		if id == nil {
+			return nil, fmt.Errorf("nil id?")
+		} else {
+			res, err = id.Encode()
+			slog.Warn("!!! GENERATED ID STATICALLY", "id", id.PathNamesOnly())
+		}
+	} else if field, ok := selfT.FieldSpec(sel.Selector.Field); ok {
+		if field.ImpurityReason != "" {
+			return nil, fmt.Errorf("field %q is impure; can't optimize", field.Name)
+		}
+		if field.Module != nil {
+			return nil, fmt.Errorf("field %q is a module; can't optimize", field.Name)
+		}
+		id = sel.Selector.AppendTo(id, field)
+		if field.Type.Type().Elem != nil {
+			return nil, fmt.Errorf("field %q is a list; can't optimize", field.Name)
+		}
+		fieldT := s.objects[field.Type.Type().Name()]
+		if fieldT == nil {
+			return nil, fmt.Errorf("field type %q not found", field.Type.Type().Name())
+		}
+		res, err = s.generateID(ctx, id, fieldT, sel.Subselections)
+	} else {
+		return nil, fmt.Errorf("field %q not found", sel.Selector.Field)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	// "fake" telemetry so all the call DAG values still get sent over
+	if s.telemetry != nil {
+		// we want to send spans for these so client side still gets a full DAG,
+		// but we don't want to actually show these spans, so hide'em
+		ctx = withInternal(ctx)
+
+		wrappedCtx, done := s.telemetry(ctx, nil, id)
+		ctx = wrappedCtx
+		defer func() { done(NewDynamicID(id, idT), true, nil) }()
+
+		for id := id.Base(); id != nil; id = id.Base() {
+			wrappedCtx, done := s.telemetry(ctx, nil, id)
+			defer func() { done(nil, true, nil) }()
+			ctx = wrappedCtx
+		}
+	}
+
+	return map[string]any{
+		sel.Name(): res,
+	}, nil
 }
 
 // Resolve resolves the given selections on the given object.
