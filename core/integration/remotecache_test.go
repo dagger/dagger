@@ -16,8 +16,8 @@ import (
 
 const cliBinPath = "/.dagger-cli"
 
-func getDevEngineForRemoteCache(ctx context.Context, c *dagger.Client, cache *dagger.Service, cacheName string, index uint8) (devEngineSvc *dagger.Service, endpoint string, err error) {
-	devEngineSvc = devEngineContainer(c, 50+index, func(c *dagger.Container) *dagger.Container {
+func getDevEngineForRemoteCache(ctx context.Context, c *dagger.Client, cache *dagger.Service, cacheName string) (devEngineSvc *dagger.Service, endpoint string, err error) {
+	devEngineSvc = devEngineContainer(c, func(c *dagger.Container) *dagger.Container {
 		return c.WithServiceBinding(cacheName, cache)
 	}).AsService()
 
@@ -45,7 +45,7 @@ func (RemoteCacheSuite) TestRegistry(ctx context.Context, t *testctx.T) {
 
 	cacheEnv := "type=registry,ref=registry:5000/test-cache,mode=max"
 
-	devEngineA, endpointA, err := getDevEngineForRemoteCache(ctx, c, registry, "registry", 0)
+	devEngineA, endpointA, err := getDevEngineForRemoteCache(ctx, c, registry, "registry")
 	require.NoError(t, err)
 
 	daggerCli := daggerCliFile(t, c)
@@ -74,7 +74,7 @@ func (RemoteCacheSuite) TestRegistry(ctx context.Context, t *testctx.T) {
 	shaA := strings.TrimSpace(gjson.Get(outputA, "container.from.withExec.stdout").String())
 	require.NotEmpty(t, shaA, "shaA is empty")
 
-	devEngineB, endpointB, err := getDevEngineForRemoteCache(ctx, c, registry, "registry", 1)
+	devEngineB, endpointB, err := getDevEngineForRemoteCache(ctx, c, registry, "registry")
 	require.NoError(t, err)
 
 	outputB, err := c.Container().From(alpineImage).
@@ -124,7 +124,7 @@ func (RemoteCacheSuite) TestLazyBlobs(ctx context.Context, t *testctx.T) {
 
 	cacheEnv := "type=registry,ref=registry:5000/test-cache,mode=max"
 
-	devEngineA, endpointA, err := getDevEngineForRemoteCache(ctx, c, registry, "registry", 10)
+	devEngineA, endpointA, err := getDevEngineForRemoteCache(ctx, c, registry, "registry")
 	require.NoError(t, err)
 
 	daggerCli := daggerCliFile(t, c)
@@ -150,7 +150,7 @@ func (RemoteCacheSuite) TestLazyBlobs(ctx context.Context, t *testctx.T) {
 		}).Stdout(ctx)
 	require.NoErrorf(t, err, "outputA: %s", outputA)
 
-	devEngineB, endpointB, err := getDevEngineForRemoteCache(ctx, c, registry, "registry", 11)
+	devEngineB, endpointB, err := getDevEngineForRemoteCache(ctx, c, registry, "registry")
 	require.NoError(t, err)
 
 	outputB, err := c.Container().From(alpineImage).
@@ -200,7 +200,7 @@ func (RemoteCacheSuite) TestS3(ctx context.Context, t *testctx.T) {
 
 		s3Env := "type=s3,mode=max,endpoint_url=" + s3Endpoint + ",access_key_id=minioadmin,secret_access_key=minioadmin,region=mars,use_path_style=true,bucket=" + bucket
 
-		devEngineA, endpointA, err := getDevEngineForRemoteCache(ctx, c, s3, "s3", 0)
+		devEngineA, endpointA, err := getDevEngineForRemoteCache(ctx, c, s3, "s3")
 		require.NoError(t, err)
 
 		daggerCli := c.Host().Directory("/dagger-dev/", dagger.HostDirectoryOpts{Include: []string{"dagger"}}).File("dagger")
@@ -229,7 +229,7 @@ func (RemoteCacheSuite) TestS3(ctx context.Context, t *testctx.T) {
 		shaA := strings.TrimSpace(gjson.Get(outputA, "container.from.withExec.stdout").String())
 		require.NotEmpty(t, shaA, "shaA is empty")
 
-		devEngineB, endpointB, err := getDevEngineForRemoteCache(ctx, c, s3, "s3", 1)
+		devEngineB, endpointB, err := getDevEngineForRemoteCache(ctx, c, s3, "s3")
 		require.NoError(t, err)
 
 		outputB, err := c.Container().From(alpineImage).
@@ -273,7 +273,7 @@ func (RemoteCacheSuite) TestRegistryMultipleConfigs(ctx context.Context, t *test
 	cacheConfigEnv2 := "type=registry,ref=registry:5000/test-cache-b:latest,mode=max"
 	cacheEnv := strings.Join([]string{cacheConfigEnv1, cacheConfigEnv2}, ";")
 
-	devEngineA, endpointA, err := getDevEngineForRemoteCache(ctx, c, registry, "registry", 20)
+	devEngineA, endpointA, err := getDevEngineForRemoteCache(ctx, c, registry, "registry")
 	require.NoError(t, err)
 
 	daggerCli := daggerCliFile(t, c)
@@ -302,7 +302,7 @@ func (RemoteCacheSuite) TestRegistryMultipleConfigs(ctx context.Context, t *test
 	shaA := strings.TrimSpace(gjson.Get(outputA, "container.from.withExec.stdout").String())
 	require.NotEmpty(t, shaA, "shaA is empty")
 
-	devEngineB, endpointB, err := getDevEngineForRemoteCache(ctx, c, registry, "registry", 21)
+	devEngineB, endpointB, err := getDevEngineForRemoteCache(ctx, c, registry, "registry")
 	require.NoError(t, err)
 
 	outputB, err := c.Container().From(alpineImage).
@@ -331,7 +331,7 @@ func (RemoteCacheSuite) TestRegistryMultipleConfigs(ctx context.Context, t *test
 
 	require.Equal(t, shaA, shaB)
 
-	devEngineC, endpointC, err := getDevEngineForRemoteCache(ctx, c, registry, "registry", 22)
+	devEngineC, endpointC, err := getDevEngineForRemoteCache(ctx, c, registry, "registry")
 	require.NoError(t, err)
 
 	outputC, err := c.Container().From(alpineImage).
@@ -376,7 +376,7 @@ func (RemoteCacheSuite) TestRegistrySeparateImportExport(ctx context.Context, t 
 	cacheEnvB := "type=registry,ref=registry:5000/test-cache-b:latest,mode=max"
 	cacheEnvC := "type=registry,ref=registry:5000/test-cache-c:latest,mode=max"
 
-	devEngineA, endpointA, err := getDevEngineForRemoteCache(ctx, c, registry, "registry", 0)
+	devEngineA, endpointA, err := getDevEngineForRemoteCache(ctx, c, registry, "registry")
 	require.NoError(t, err)
 	outputA, err := c.Container().From(alpineImage).
 		WithServiceBinding("dev-engine", devEngineA).
@@ -402,7 +402,7 @@ func (RemoteCacheSuite) TestRegistrySeparateImportExport(ctx context.Context, t 
 	shaA := strings.TrimSpace(gjson.Get(outputA, "container.from.withExec.stdout").String())
 	require.NotEmpty(t, shaA, "shaA is empty")
 
-	devEngineB, endpointB, err := getDevEngineForRemoteCache(ctx, c, registry, "registry", 1)
+	devEngineB, endpointB, err := getDevEngineForRemoteCache(ctx, c, registry, "registry")
 	require.NoError(t, err)
 	outputB, err := c.Container().From(alpineImage).
 		WithServiceBinding("dev-engine", devEngineB).
@@ -428,7 +428,7 @@ func (RemoteCacheSuite) TestRegistrySeparateImportExport(ctx context.Context, t 
 	shaB := strings.TrimSpace(gjson.Get(outputB, "container.from.withExec.stdout").String())
 	require.NotEmpty(t, shaB, "shaB is empty")
 
-	devEngineC, endpointC, err := getDevEngineForRemoteCache(ctx, c, registry, "registry", 2)
+	devEngineC, endpointC, err := getDevEngineForRemoteCache(ctx, c, registry, "registry")
 	require.NoError(t, err)
 
 	ctrC := c.Container().From(alpineImage).
@@ -465,7 +465,7 @@ func (RemoteCacheSuite) TestRegistrySeparateImportExport(ctx context.Context, t 
 	shaC := strings.TrimSpace(gjson.Get(outputC, "container.from.outputC.stdout").String())
 	require.NotEmpty(t, shaC, "shaC is empty")
 
-	devEngineD, endpointD, err := getDevEngineForRemoteCache(ctx, c, registry, "registry", 3)
+	devEngineD, endpointD, err := getDevEngineForRemoteCache(ctx, c, registry, "registry")
 	require.NoError(t, err)
 	outputD, err := c.Container().From(alpineImage).
 		WithServiceBinding("dev-engine", devEngineD).
@@ -504,7 +504,7 @@ func (RemoteCacheSuite) TestRegistryFastCacheBlobSource(ctx context.Context, t *
 
 	cacheConfig := "type=registry,ref=registry:5000/test-cache:latest,mode=max"
 
-	devEngineA, endpointA, err := getDevEngineForRemoteCache(ctx, c, registry, "registry", 0)
+	devEngineA, endpointA, err := getDevEngineForRemoteCache(ctx, c, registry, "registry")
 	require.NoError(t, err)
 
 	daggerCli := daggerCliFile(t, c)
@@ -552,7 +552,7 @@ func (RemoteCacheSuite) TestRegistryFastCacheBlobSource(ctx context.Context, t *
 	shaA := strings.TrimSpace(gjson.Get(outputA, "container.from.withMountedDirectory.withExec.stdout").String())
 	require.NotEmpty(t, shaA, "shaA is empty")
 
-	devEngineB, endpointB, err := getDevEngineForRemoteCache(ctx, c, registry, "registry", 1)
+	devEngineB, endpointB, err := getDevEngineForRemoteCache(ctx, c, registry, "registry")
 	require.NoError(t, err)
 
 	b := c.Container().From(alpineImage).
