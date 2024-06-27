@@ -245,9 +245,12 @@ func (funcs goTemplateFuncs) fieldFunction(f introspection.Field, topLevel bool,
 	if err != nil {
 		return "", err
 	}
-	if f.TypeRef.IsScalar() || f.TypeRef.IsList() {
+	switch {
+	case f.TypeRef.IsVoid():
+		retType = "error"
+	case f.TypeRef.IsScalar() || f.TypeRef.IsList():
 		retType = fmt.Sprintf("(%s, error)", retType)
-	} else {
+	default:
 		retType = "*" + retType
 	}
 	signature += " " + retType

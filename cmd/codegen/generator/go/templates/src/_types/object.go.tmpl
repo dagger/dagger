@@ -66,7 +66,11 @@ type {{ $field | FieldOptionsStructName }} struct {
 
     {{- if and ($field.TypeRef.IsScalar) (ne $field.ParentObject.Name "Query") (not $convertID) }}
     if r.{{ $field.Name }} != nil {
+        {{- if $field.TypeRef.IsVoid }}
+        return nil
+        {{- else }}
         return *r.{{ $field.Name }}, nil
+        {{- end }}
     }
     {{- end }}
 	q := r.query.Select("{{ $field.Name }}")
@@ -91,14 +95,16 @@ type {{ $field | FieldOptionsStructName }} struct {
 	{{- end }}
 	{{- end }}
 	{{- $typeName := $field.TypeRef | FormatOutputType }}
-    {{ if $convertID }}
-    var id {{ $typeName }}
-    if err := q.Bind(&id).Execute(ctx); err != nil {
-        return nil, err
-    }
+	{{ if $field.TypeRef.IsVoid }}
+    return q.Execute(ctx)
+	{{- else if $convertID }}
+	var id {{ $typeName }}
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
 	return &{{ $field.ParentObject.Name }} {
-        query: q.Root().Select("load{{ $field.ParentObject.Name }}FromID").Arg("id", id),
-    }, nil
+		query: q.Root().Select("load{{ $field.ParentObject.Name }}FromID").Arg("id", id),
+	}, nil
 
 	{{- else if $field.TypeRef.IsObject }}
 	return &{{ $typeName }} {

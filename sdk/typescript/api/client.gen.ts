@@ -3074,12 +3074,12 @@ export class DaggerEngineCache extends BaseClient {
   /**
    * Prune the cache of releaseable entries
    */
-  prune = async (): Promise<Void> => {
+  prune = async (): Promise<void> => {
     if (this._prune) {
-      return this._prune
+      return
     }
 
-    const response: Awaited<Void> = await computeQuery(
+    await computeQuery(
       [
         ...this._queryTree,
         {
@@ -3088,8 +3088,6 @@ export class DaggerEngineCache extends BaseClient {
       ],
       await this._ctx.connection(),
     )
-
-    return response
   }
 }
 
@@ -4949,12 +4947,12 @@ export class FunctionCall extends BaseClient {
    * Set the return value of the function call to the provided value.
    * @param value JSON serialization of the return value.
    */
-  returnValue = async (value: JSON): Promise<Void> => {
+  returnValue = async (value: JSON): Promise<void> => {
     if (this._returnValue) {
-      return this._returnValue
+      return
     }
 
-    const response: Awaited<Void> = await computeQuery(
+    await computeQuery(
       [
         ...this._queryTree,
         {
@@ -4964,8 +4962,6 @@ export class FunctionCall extends BaseClient {
       ],
       await this._ctx.connection(),
     )
-
-    return response
   }
 }
 
@@ -6658,12 +6654,12 @@ export class Module_ extends BaseClient {
    *
    * Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.
    */
-  serve = async (): Promise<Void> => {
+  serve = async (): Promise<void> => {
     if (this._serve) {
-      return this._serve
+      return
     }
 
-    const response: Awaited<Void> = await computeQuery(
+    await computeQuery(
       [
         ...this._queryTree,
         {
@@ -6672,8 +6668,6 @@ export class Module_ extends BaseClient {
       ],
       await this._ctx.connection(),
     )
-
-    return response
   }
 
   /**
@@ -9359,12 +9353,12 @@ export class Service extends BaseClient {
    * Frontend is the port accepting traffic on the host, backend is the service port.
    * @param opts.random Bind each tunnel port to a random port on the host.
    */
-  up = async (opts?: ServiceUpOpts): Promise<Void> => {
+  up = async (opts?: ServiceUpOpts): Promise<void> => {
     if (this._up) {
-      return this._up
+      return
     }
 
-    const response: Awaited<Void> = await computeQuery(
+    await computeQuery(
       [
         ...this._queryTree,
         {
@@ -9374,8 +9368,6 @@ export class Service extends BaseClient {
       ],
       await this._ctx.connection(),
     )
-
-    return response
   }
 }
 
