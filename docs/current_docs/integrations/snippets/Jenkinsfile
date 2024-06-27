@@ -7,14 +7,12 @@ pipeline {
     DAGGER_CLOUD_TOKEN =  credentials('DAGGER_CLOUD_TOKEN')
   }
 
-  // assumes a Go project
-  // modify to use different function(s) as needed
   stages {
     stage("dagger") {
       steps {
         sh '''
-            curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
-            dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=. --args=.
+            curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=bin sh
+            bin/dagger call -m github.com/shykes/daggerverse/hello@v0.1.2 hello --greeting "bonjour" --name "from jenkins"
         '''
       }
     }

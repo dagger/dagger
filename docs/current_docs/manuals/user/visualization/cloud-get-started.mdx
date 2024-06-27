@@ -166,10 +166,17 @@ When using self-hosted CI runners on AWS infrastructure, NAT Gateways are a comm
 
 1. Update your Jenkins Pipeline and add the variable to the CI environment. The environment variable must be named `DAGGER_CLOUD_TOKEN` and can be referenced in the Pipeline environment using the format `DAGGER_CLOUD_TOKEN = credentials('DAGGER_CLOUD_TOKEN')`. Refer to the Jenkins documentation on [handling credentials](https://www.jenkins.io/doc/book/pipeline/jenkinsfile/#handling-credentials).
 
-    [See an example of a sample Jenkins Pipeline](../../../integrations/jenkins.mdx)
+1. Jenkins performs a checkout to a detached HEAD state by default. In order to visualize Jenkins builds in Dagger Cloud, ensure that your pipeline is configured to check out to matching local branch. 
+    1. For a Multibranch pipeline project this can be configured in the Jenkins UI by navigating to Configuration -> Branch Sources -> General -> Add -> **Check out to matching local branch**
+    1. For a Pipeline project this can be configured in the Jenkins UI by navigating to Configure -> Pipeline ->  Pipeline script from SCM -> Definition -> SCM -> Additional Behaviors -> Add -> **Check out to specific local branch** -> Branch name -> `**`
+    1. For all cases, you can also add this directly to your Jenkinsfile by adding the following stage to your pipeline file. Be sure to replace `$org` and `$repo` with project specific values. 
+
+      ```groovy title="Jenkinsfile" file=../../../integrations/snippets/Jenkinsfile_checkout
+      ```
+
+[See an example of a sample Jenkins Pipeline](../../../integrations/jenkins.mdx)
 
 :::note
-- This Jenkins Pipeline assumes that the Dagger CLI is pre-installed on the Jenkins runner(s), together with other required dependencies.
 - If you use the same Jenkins server for more than one Dagger Cloud organization, create distinct credentials for each organization and link them to their respective Dagger Cloud tokens.
 - Typically, Jenkins servers are non-ephemeral and therefore it is not necessary to adjust the `docker stop` timeout.
 :::
