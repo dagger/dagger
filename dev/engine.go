@@ -11,8 +11,8 @@ import (
 	"github.com/moby/buildkit/identity"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/dagger/dagger/ci/build"
-	"github.com/dagger/dagger/ci/internal/dagger"
+	"github.com/dagger/dagger/dev/build"
+	"github.com/dagger/dagger/dev/internal/dagger"
 )
 
 type Engine struct {
@@ -178,7 +178,7 @@ func (e *Engine) Lint(
 	}
 	// Packages that need codegen
 	codegen := []string{
-		"",
+		"dev",
 		"dev/dirdiff",
 		"dev/go",
 		"dev/graphql",

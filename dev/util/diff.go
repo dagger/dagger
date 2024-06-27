@@ -4,7 +4,7 @@ import (
 	"context"
 	"path/filepath"
 
-	"github.com/dagger/dagger/ci/internal/dagger"
+	"github.com/dagger/dagger/dev/internal/dagger"
 )
 
 func DiffDirectory(ctx context.Context, original *dagger.Directory, modified *dagger.Directory, paths ...string) error {

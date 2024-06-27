@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"regexp"
 
-	"github.com/dagger/dagger/ci/internal/dagger"
+	"github.com/dagger/dagger/dev/internal/dagger"
 	"golang.org/x/mod/semver"
 )
 

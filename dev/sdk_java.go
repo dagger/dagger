@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/dagger/dagger/ci/internal/dagger"
+	"github.com/dagger/dagger/dev/internal/dagger"
 )
 
 const (

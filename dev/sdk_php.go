@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dagger/dagger/ci/internal/dagger"
-	"github.com/dagger/dagger/ci/util"
+	"github.com/dagger/dagger/dev/internal/dagger"
+	"github.com/dagger/dagger/dev/util"
 )
 
 const (

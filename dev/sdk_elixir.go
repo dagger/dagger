@@ -6,9 +6,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/dagger/dagger/ci/internal/dagger"
-
 	"golang.org/x/sync/errgroup"
+
+	"github.com/dagger/dagger/dev/internal/dagger"
 )
 
 const (

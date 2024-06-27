@@ -5,7 +5,7 @@ package main
 import (
 	"context"
 
-	"github.com/dagger/dagger/ci/internal/dagger"
+	"github.com/dagger/dagger/dev/internal/dagger"
 )
 
 // A dev environment for the DaggerDev Engine

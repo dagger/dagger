@@ -3,8 +3,8 @@ package main
 import (
 	"context"
 
-	"github.com/dagger/dagger/ci/build"
-	"github.com/dagger/dagger/ci/consts"
+	"github.com/dagger/dagger/dev/build"
+	"github.com/dagger/dagger/dev/consts"
 )
 
 // A dev environment for the official Dagger SDKs

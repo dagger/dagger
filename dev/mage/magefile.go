@@ -5,5 +5,5 @@ package main
 
 import (
 	//mage:import
-	_ "github.com/dagger/dagger/ci/mage"
+	_ "github.com/dagger/dagger/dev/mage"
 )

@@ -8,7 +8,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/dagger/dagger/ci/util"
+	"github.com/dagger/dagger/dev/util"
 )
 
 const (

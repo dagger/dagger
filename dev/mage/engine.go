@@ -12,7 +12,7 @@ import (
 	"github.com/containerd/containerd/platforms"
 	"github.com/magefile/mage/mg"
 
-	"github.com/dagger/dagger/ci/mage/util"
+	"github.com/dagger/dagger/dev/mage/util"
 	"github.com/dagger/dagger/engine/distconsts"
 )
 

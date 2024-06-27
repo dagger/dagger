@@ -3,7 +3,7 @@ package util
 import (
 	"strings"
 
-	"github.com/dagger/dagger/ci/internal/dagger"
+	"github.com/dagger/dagger/dev/internal/dagger"
 )
 
 func ShellCmd(cmd string) dagger.WithContainerFunc {

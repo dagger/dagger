@@ -2,7 +2,7 @@
 // dependent code (e.g. SDKs).
 //
 // These are kept separate from all other code to avoid breakage from
-// backwards-incompatible changes (ci/ uses stable SDK, core/ uses dev).
+// backwards-incompatible changes (dev/ uses stable SDK, core/ uses dev).
 package distconsts
 
 const (

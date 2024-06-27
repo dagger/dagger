@@ -25,7 +25,7 @@ Available functionality:
 
 > [!NOTE]
 >
-> This step is only required for make changes to the ci/ module itself, it's
+> This step is only required for make changes to the dev/ module itself, it's
 > not required to run tests/linting/etc.
 
 If you want to develop this module following a repository clone, remember to

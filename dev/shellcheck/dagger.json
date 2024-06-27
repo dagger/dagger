@@ -2,5 +2,5 @@
   "name": "shellcheck",
   "sdk": "go",
   "source": ".",
-  "engineVersion": "v0.11.6"
+  "engineVersion": "3dfbb7db81aa82db37a11d92cf4fa41239e173f0"
 }

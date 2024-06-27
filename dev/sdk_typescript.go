@@ -8,9 +8,9 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/dagger/dagger/ci/build"
-	"github.com/dagger/dagger/ci/internal/dagger"
-	"github.com/dagger/dagger/ci/util"
+	"github.com/dagger/dagger/dev/build"
+	"github.com/dagger/dagger/dev/internal/dagger"
+	"github.com/dagger/dagger/dev/util"
 )
 
 // TODO: use dev module (this is just the mage port)
