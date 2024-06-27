@@ -15,7 +15,7 @@ import (
 
 	"github.com/dagger/dagger/dev/internal/consts"
 	"github.com/dagger/dagger/dev/internal/dagger"
-	"github.com/dagger/dagger/dev/util"
+	"github.com/dagger/dagger/dev/internal/util"
 )
 
 var dag = dagger.Connect()

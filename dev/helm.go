@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/dagger/dagger/dev/util"
+	"github.com/dagger/dagger/dev/internal/util"
 )
 
 type Helm struct {

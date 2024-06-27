@@ -10,7 +10,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/dev/internal/consts"
-	"github.com/dagger/dagger/dev/util"
+	"github.com/dagger/dagger/dev/internal/util"
 )
 
 type GoSDK struct {

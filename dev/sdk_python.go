@@ -8,7 +8,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/dev/internal/dagger"
-	"github.com/dagger/dagger/dev/util"
+	"github.com/dagger/dagger/dev/internal/util"
 )
 
 // TODO: use dev module (this is just the mage port)
