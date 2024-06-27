@@ -24,12 +24,6 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - name: Setup
-      shell: bash
-      run: |
-        mkdir -p /tmp/actions/call
-        touch /tmp/actions/call/local-envs
-
     - name: Install dagger
       shell: bash
       env:
@@ -49,40 +43,9 @@ runs:
           echo "::endgroup::"
         fi
 
-    - name: Install go
-      uses: actions/setup-go@v5
-      if: inputs.dev-engine == 'true'
-      with:
-        go-version: "1.22"
-        cache-dependency-path: "dev/go.sum"
-
-    - name: Start dev dagger
-      shell: bash
-      if: inputs.dev-engine == 'true'
-      run: |
-        echo "::group::Starting dev engine"
-        if ! [[ -x "$(command -v docker)" ]]; then
-          echo "docker is not installed"
-          exit 1
-        fi
-
-        # put env variables in /tmp/actions/call/local-envs instead of
-        # $GITHUB_ENV to avoid leaking into parent workflow
-        (cd dev/mage; go run main.go -w ../.. engine:dev) | tee /tmp/actions/call/local-envs
-
-        echo "::endgroup::"
-      env:
-        # create separate outputs and containers for each workflow (to prevent
-        # collisions with shared docker containers). With `arc` the runner name
-        # is the name of the pod, and each pod runs a single dedicated job.
-        _EXPERIMENTAL_DAGGER_DEV_OUTPUT: ./bin/dev-${{ runner.name }}
-        _EXPERIMENTAL_DAGGER_DEV_CONTAINER: dagger-engine.dev-${{ runner.name }}
-
     - name: Wait for dagger to be ready
       shell: bash
       run: |
-        source /tmp/actions/call/local-envs
-
         echo "::group::Dagger client version"
         dagger --silent version
         echo "::endgroup::"
@@ -91,26 +54,43 @@ runs:
         echo "{version}" | dagger --silent query
         echo "::endgroup::"
 
+    # normal function run
     - name: ${{ inputs.function }}
       shell: bash
+      if: inputs.dev-engine != 'true'
       run: |
-        source /tmp/actions/call/local-envs
-
         set -x
+
         if [[ "${{ inputs.module }}" == "dev" ]]; then
-          # set some sane defaults for the current module
+          flags="--source=.:default"
           if [[ -f $HOME/.docker/config.json ]]; then
-            dagger -m "${{ inputs.module }}" call --source=".:default" --docker-cfg=file:"$HOME/.docker/config.json" ${{ inputs.function }}
-          else
-            dagger -m "${{ inputs.module }}" call --source=".:default" ${{ inputs.function }}
+            flags="$flags --docker-cfg=file:${HOME}/.docker/config.json"
           fi
-        else
-          dagger -m "${{ inputs.module }}" call ${{ inputs.function }}
         fi
+
+        dagger -m ${{ inputs.module }} call ${flags} ${{ inputs.function }}
       env:
         DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
 
-    - name: Cleanup
+    # nested dev function run
+    - name: ${{ inputs.function }}
       shell: bash
+      if: inputs.dev-engine == 'true'
       run: |
-        rm -rf /tmp/actions/call
+        set -x
+
+        if [[ "${{ inputs.module }}" == "." ]]; then
+          flags="--source=.:default"
+          flagsdev="--source=.:default"
+          if [[ -f $HOME/.docker/config.json ]]; then
+            # don't evaluate env vars in internal command...
+            flags="$flags "'--host-docker-config=file:${HOME}/.docker/config.json'
+            # ...but do for the external wrapper
+            flagsdev="$flagsdev --host-docker-config=file:${HOME}/.docker/config.json"
+          fi
+        fi
+
+        cmd="dagger -m ${{ inputs.module }} call ${flags} ${{ inputs.function }}"
+        dagger -m . call ${flagsdev} dev --target=".:default" --cmd "${cmd}" directory --path=. -o .
+      env:
+        DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
