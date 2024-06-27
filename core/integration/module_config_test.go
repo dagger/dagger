@@ -71,6 +71,8 @@ func (ModuleSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 
 		base := goGitBase(t, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/tmp/foo").
+			With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
 			WithWorkdir("/work/dep").
 			With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
 			WithNewFile("/work/dep/main.go", dagger.ContainerWithNewFileOpts{
@@ -105,6 +107,24 @@ func (ModuleSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 
 				_, err = base.With(daggerExec("install", "./dep")).Sync(ctx)
 				require.ErrorContains(t, err, `local module source path ".." escapes context "/work"`)
+			})
+
+			t.Run("local with absolute path", func(ctx context.Context, t *testctx.T) {
+				base := base.
+					With(configFile(".", &modules.ModuleConfig{
+						Name:   "evil",
+						SDK:    "go",
+						Source: "/tmp",
+					}))
+
+				_, err := base.With(daggerCall("container-echo", "--string-arg", "plz fail")).Sync(ctx)
+				require.ErrorContains(t, err, `source path "/tmp" contains parent directory components`)
+
+				_, err = base.With(daggerExec("develop")).Sync(ctx)
+				require.ErrorContains(t, err, `source path "/tmp" contains parent directory components`)
+
+				_, err = base.With(daggerExec("install", "./dep")).Sync(ctx)
+				require.ErrorContains(t, err, `source path "/tmp" contains parent directory components`)
 			})
 
 			t.Run("git", func(ctx context.Context, t *testctx.T) {
@@ -152,6 +172,46 @@ func (ModuleSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 
 				_, err = base.With(daggerExec("install", "./dep")).Sync(ctx)
 				require.ErrorContains(t, err, `module dep source root path "../work/dep" escapes root`)
+			})
+
+			t.Run("local with absolute path", func(ctx context.Context, t *testctx.T) {
+				base := base.
+					With(configFile(".", &modules.ModuleConfig{
+						Name: "evil",
+						SDK:  "go",
+						Dependencies: []*modules.ModuleConfigDependency{{
+							Name:   "escape",
+							Source: "/tmp/foo",
+						}},
+					}))
+
+				_, err := base.With(daggerCall("container-echo", "--string-arg", "plz fail")).Sync(ctx)
+				require.ErrorContains(t, err, `missing config file /work/tmp/foo/dagger.json`)
+
+				_, err = base.With(daggerExec("develop")).Sync(ctx)
+				require.ErrorContains(t, err, `missing config file /work/tmp/foo/dagger.json`)
+
+				_, err = base.With(daggerExec("install", "./dep")).Sync(ctx)
+				require.ErrorContains(t, err, `missing config file /work/tmp/foo/dagger.json`)
+
+				base = base.
+					With(configFile(".", &modules.ModuleConfig{
+						Name: "evil",
+						SDK:  "go",
+						Dependencies: []*modules.ModuleConfigDependency{{
+							Name:   "escape",
+							Source: "/./dep",
+						}},
+					}))
+
+				_, err = base.With(daggerCall("container-echo", "--string-arg", "plz fail")).Sync(ctx)
+				require.ErrorContains(t, err, `module dep source root path "../dep" escapes root`)
+
+				_, err = base.With(daggerExec("develop")).Sync(ctx)
+				require.ErrorContains(t, err, `module dep source root path "../dep" escapes root`)
+
+				_, err = base.With(daggerExec("install", "./dep")).Sync(ctx)
+				require.ErrorContains(t, err, `module dep source root path "../dep" escapes root`)
 			})
 
 			t.Run("git", func(ctx context.Context, t *testctx.T) {
