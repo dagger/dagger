@@ -175,6 +175,7 @@ func (e *Engine) Lint(
 		"dev/go",
 		"dev/graphql",
 		"dev/shellcheck",
+		"dev/markdown",
 	}
 	// Packages that need codegen
 	codegen := []string{
@@ -183,6 +184,7 @@ func (e *Engine) Lint(
 		"dev/go",
 		"dev/graphql",
 		"dev/shellcheck",
+		"dev/markdown",
 	}
 
 	return e.Dagger.Go().

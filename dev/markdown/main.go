@@ -72,7 +72,6 @@ type Report struct {
 }
 
 func (r *Report) Checks(
-	ctx context.Context,
 	// Only return the first N checks
 	// +optional
 	// +default=0
@@ -94,8 +93,8 @@ func (r *Report) Checks(
 	return checks, nil
 }
 
-func (r *Report) Files(ctx context.Context) (*Directory, error) {
-	checks, err := r.Checks(ctx, 0)
+func (r *Report) Files() (*Directory, error) {
+	checks, err := r.Checks(0)
 	if err != nil {
 		return nil, err
 	}
