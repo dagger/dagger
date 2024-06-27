@@ -1,0 +1,6 @@
+kind: Fixed
+body: 'core: correctly set new engine gc policy defaults'
+time: 2024-06-25T11:04:28.792928791+01:00
+custom:
+  Author: jedevc
+  PR: "7749"
