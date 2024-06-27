@@ -9,7 +9,7 @@ import (
 
 	"golang.org/x/exp/maps"
 
-	"github.com/dagger/dagger/dev/consts"
+	"github.com/dagger/dagger/dev/internal/consts"
 	"github.com/dagger/dagger/dev/internal/dagger"
 )
 

@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/dagger/dagger/dev/internal/build"
-	"github.com/dagger/dagger/dev/consts"
+	"github.com/dagger/dagger/dev/internal/consts"
 )
 
 // A dev environment for the official Dagger SDKs

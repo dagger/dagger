@@ -9,7 +9,7 @@ import (
 	"github.com/moby/buildkit/identity"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/dagger/dagger/dev/consts"
+	"github.com/dagger/dagger/dev/internal/consts"
 	"github.com/dagger/dagger/dev/util"
 )
 

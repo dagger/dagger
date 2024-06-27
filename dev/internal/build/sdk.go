@@ -7,7 +7,7 @@ import (
 	"github.com/dagger/dagger/engine/distconsts"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 
-	"github.com/dagger/dagger/dev/consts"
+	"github.com/dagger/dagger/dev/internal/consts"
 	"github.com/dagger/dagger/dev/internal/dagger"
 )
 

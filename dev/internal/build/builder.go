@@ -13,7 +13,7 @@ import (
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/dagger/dagger/dev/consts"
+	"github.com/dagger/dagger/dev/internal/consts"
 	"github.com/dagger/dagger/dev/internal/dagger"
 	"github.com/dagger/dagger/dev/util"
 )
