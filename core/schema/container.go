@@ -16,6 +16,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/slog"
 )
@@ -473,22 +474,6 @@ func (s *containerSchema) Install(version string) {
 			guarantees when using this option. It should only be used when
 			absolutely necessary and only with trusted commands.`),
 
-		dagql.NodeFunc("terminal", s.terminal).
-			Impure("Nondeterministic.").
-			Doc(`Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).`).
-			ArgDoc("cmd", `If set, override the container's default terminal command and invoke these command arguments instead.`).
-			ArgDoc("experimentalPrivilegedNesting",
-				`Provides Dagger access to the executed command.`,
-				`Do not use this option unless you trust the command being executed;
-		the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST
-		FILESYSTEM.`).
-			ArgDoc("insecureRootCapabilities",
-				`Execute the command with all root capabilities. This is similar to
-		running a command with "sudo" or executing "docker run" with the
-		"--privileged" flag. Containerization does not provide any security
-		guarantees when using this option. It should only be used when
-		absolutely necessary and only with trusted commands.`),
-
 		dagql.Func("experimentalWithGPU", s.withGPU).
 			Doc(`EXPERIMENTAL API! Subject to change/removal at any time.`,
 				`Configures the provided list of devices to be accessible to this container.`,
@@ -500,6 +485,51 @@ func (s *containerSchema) Install(version string) {
 				`Configures all available GPUs on the host to be accessible to this container.`,
 				`This currently works for Nvidia devices only.`),
 	}.Install(s.srv)
+
+	if engine.CheckVersionCompatibility(version, "v0.12.0") == nil {
+		dagql.Fields[*core.Container]{
+			dagql.Func("foo", s.withExec),
+
+			dagql.NodeFunc("terminal", s.terminal).
+				Impure("Nondeterministic.").
+				Doc(`Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).`).
+				ArgDoc("cmd", `If set, override the container's default terminal command and invoke these command arguments instead.`).
+				ArgDoc("experimentalPrivilegedNesting",
+					`Provides Dagger access to the executed command.`,
+					`Do not use this option unless you trust the command being executed;
+		the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST
+		FILESYSTEM.`).
+				ArgDoc("insecureRootCapabilities",
+					`Execute the command with all root capabilities. This is similar to
+		running a command with "sudo" or executing "docker run" with the
+		"--privileged" flag. Containerization does not provide any security
+		guarantees when using this option. It should only be used when
+		absolutely necessary and only with trusted commands.`),
+		}.Install(s.srv)
+	} else {
+		dagql.Fields[*core.Container]{
+			dagql.NodeFunc("terminal", s.terminalLegacy).
+				Impure("Nondeterministic.").
+				Doc(`Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).`).
+				ArgDoc("cmd", `If set, override the container's default terminal command and invoke these command arguments instead.`).
+				ArgDoc("experimentalPrivilegedNesting",
+					`Provides Dagger access to the executed command.`,
+					`Do not use this option unless you trust the command being executed;
+		the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST
+		FILESYSTEM.`).
+				ArgDoc("insecureRootCapabilities",
+					`Execute the command with all root capabilities. This is similar to
+		running a command with "sudo" or executing "docker run" with the
+		"--privileged" flag. Containerization does not provide any security
+		guarantees when using this option. It should only be used when
+		absolutely necessary and only with trusted commands.`),
+		}.Install(s.srv)
+
+		dagql.Fields[*coreTerminalLegacy]{
+			dagql.Func("websocketEndpoint", s.terminalLegacyWebsocketEndpoint).
+				Doc(`An http endpoint at which this terminal can be connected to over a websocket.`),
+		}.Install(s.srv)
+	}
 }
 
 type containerArgs struct {
@@ -1439,4 +1469,32 @@ func (s *containerSchema) terminal(
 	}
 
 	return ctr, nil
+}
+
+func (s *containerSchema) terminalLegacy(
+	ctx context.Context,
+	ctr dagql.Instance[*core.Container],
+	args containerTerminalArgs,
+) (*coreTerminalLegacy, error) {
+	if _, err := s.terminal(ctx, ctr, args); err != nil {
+		return nil, err
+	}
+	return &coreTerminalLegacy{}, nil
+}
+
+type coreTerminalLegacy struct{}
+
+func (*coreTerminalLegacy) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "Terminal",
+		NonNull:   true,
+	}
+}
+
+func (*coreTerminalLegacy) TypeDescription() string {
+	return "An interactive terminal that clients can connect to."
+}
+
+func (s *containerSchema) terminalLegacyWebsocketEndpoint(ctx context.Context, parent *coreTerminalLegacy, args struct{}) (string, error) {
+	return "", fmt.Errorf("lol no")
 }

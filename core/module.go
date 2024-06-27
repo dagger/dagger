@@ -178,7 +178,7 @@ func (mod *Module) Initialize(ctx context.Context, oldID *call.ID, newID *call.I
 	return newMod, nil
 }
 
-func (mod *Module) Install(ctx context.Context, dag *dagql.Server, version string) error {
+func (mod *Module) Install(ctx context.Context, dag *dagql.Server) error {
 	slog.ExtraDebug("installing module", "name", mod.Name())
 	start := time.Now()
 	defer func() { slog.ExtraDebug("done installing module", "name", mod.Name(), "took", time.Since(start)) }()
@@ -653,7 +653,7 @@ type Mod interface {
 	Dependencies() []Mod
 
 	// TODO describe
-	Install(ctx context.Context, dag *dagql.Server, version string) error
+	Install(ctx context.Context, dag *dagql.Server) error
 
 	// ModTypeFor returns the ModType for the given typedef based on this module's schema.
 	// The returned type will have any namespacing already applied.

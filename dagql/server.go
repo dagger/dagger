@@ -96,6 +96,26 @@ func NewServer[T Typed](root T) *Server {
 	return srv
 }
 
+func (s *Server) New() *Server {
+	srv := &Server{
+		Cache:       NewCache(),
+		root:        s.root,
+		objects:     map[string]ObjectType{},
+		scalars:     map[string]ScalarType{},
+		typeDefs:    map[string]TypeDef{},
+		directives:  map[string]DirectiveSpec{},
+		installLock: &sync.Mutex{},
+	}
+	srv.InstallObject(s.root.ObjectType())
+	for _, scalar := range coreScalars {
+		srv.InstallScalar(scalar)
+	}
+	for _, directive := range coreDirectives {
+		srv.InstallDirective(directive)
+	}
+	return srv
+}
+
 var coreScalars = []ScalarType{
 	Boolean(false),
 	Int(0),

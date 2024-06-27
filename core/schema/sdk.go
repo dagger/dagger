@@ -114,11 +114,11 @@ func (s *moduleSchema) newModuleSDK(
 ) (*moduleSDK, error) {
 	dag := dagql.NewServer(root)
 	dag.Cache = root.Cache
-	if err := sdkModMeta.Self.Install(ctx, dag, sdkModMeta.Self.Query.DefaultDeps.Version); err != nil {
+	if err := sdkModMeta.Self.Install(ctx, dag); err != nil {
 		return nil, fmt.Errorf("failed to install sdk module %s: %w", sdkModMeta.Self.Name(), err)
 	}
 	for _, defaultDep := range sdkModMeta.Self.Query.DefaultDeps.Mods {
-		if err := defaultDep.Install(ctx, dag, sdkModMeta.Self.Query.DefaultDeps.Version); err != nil {
+		if err := defaultDep.Install(ctx, dag); err != nil {
 			return nil, fmt.Errorf("failed to install default dep %s for sdk module %s: %w", defaultDep.Name(), sdkModMeta.Self.Name(), err)
 		}
 	}

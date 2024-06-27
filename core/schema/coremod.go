@@ -17,7 +17,8 @@ import (
 // but can be treated as one in terms of dependencies. It has no dependencies itself and is currently an
 // implicit dependency of every user module.
 type CoreMod struct {
-	Dag *dagql.Server
+	Dag     *dagql.Server
+	Version string
 }
 
 var _ core.Mod = (*CoreMod)(nil)
@@ -30,7 +31,7 @@ func (m *CoreMod) Dependencies() []core.Mod {
 	return nil
 }
 
-func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server, version string) error {
+func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server) error {
 	for _, schema := range []SchemaResolvers{
 		&querySchema{dag},
 		&directorySchema{dag},
@@ -46,7 +47,7 @@ func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server, version string
 		&socketSchema{dag},
 		&moduleSchema{dag},
 	} {
-		schema.Install(version)
+		schema.Install(m.Version)
 	}
 	return nil
 }

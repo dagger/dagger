@@ -824,9 +824,27 @@ func (s *moduleSchema) updateDeps(
 	if err != nil {
 		return err
 	}
-	mod.Deps = core.NewModDeps(src.Self.Query, engineVersion, src.Self.Query.DefaultDeps.Mods)
+	mod.Deps = core.NewModDeps(src.Self.Query, src.Self.Query.DefaultDeps.Mods)
 	for _, dep := range mod.DependenciesField {
 		mod.Deps = mod.Deps.Append(dep.Self)
+	}
+	for i, depMod := range mod.Deps.Mods {
+		if coreMod, ok := depMod.(*CoreMod); ok {
+			if coreMod.Version == engineVersion {
+				continue
+			}
+
+			// this is needed so that a module's dependency on the core
+			// uses the correct schema version
+			clone := *coreMod
+			clone.Version = engineVersion
+			clone.Dag = coreMod.Dag.New()
+			err := clone.Install(ctx, clone.Dag)
+			if err != nil {
+				return err
+			}
+			mod.Deps.Mods[i] = &clone
+		}
 	}
 
 	return nil

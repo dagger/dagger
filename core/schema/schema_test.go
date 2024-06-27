@@ -15,8 +15,8 @@ func TestCoreModTypeDefs(t *testing.T) {
 	root := &core.Query{}
 	dag := dagql.NewServer(root)
 	coreMod := &CoreMod{Dag: dag}
-	coreModDeps := core.NewModDeps(root, "", []core.Mod{coreMod})
-	require.NoError(t, coreMod.Install(ctx, dag, ""))
+	coreModDeps := core.NewModDeps(root, []core.Mod{coreMod})
+	require.NoError(t, coreMod.Install(ctx, dag))
 	typeDefs, err := coreModDeps.TypeDefs(ctx)
 	require.NoError(t, err)
 

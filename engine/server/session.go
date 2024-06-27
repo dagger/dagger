@@ -418,39 +418,64 @@ func (srv *Server) initializeDaggerClient(
 		MainClientCallerID: client.daggerSession.mainClientCallerID,
 	})
 
-	dag := dagql.NewServer(client.dagqlRoot)
-	dag.Cache = client.daggerSession.dagqlCache
-	dag.Around(core.AroundFunc)
-	coreMod := &schema.CoreMod{Dag: dag}
-	if err := coreMod.Install(ctx, dag, ""); err != nil {
-		return fmt.Errorf("failed to install core module: %w", err)
+	makeCoreMod := func(version string) (*schema.CoreMod, error) {
+		dag := dagql.NewServer(client.dagqlRoot)
+		dag.Cache = client.daggerSession.dagqlCache
+		dag.Around(core.AroundFunc)
+		coreMod := &schema.CoreMod{Dag: dag, Version: version}
+		if err := coreMod.Install(ctx, dag); err != nil {
+			return nil, fmt.Errorf("failed to install core module: %w", err)
+		}
+		return coreMod, nil
 	}
-	client.dagqlRoot.DefaultDeps = core.NewModDeps(client.dagqlRoot, "", []core.Mod{coreMod})
 
-	client.deps = core.NewModDeps(client.dagqlRoot, "", []core.Mod{coreMod})
+	coreMod, err := makeCoreMod("")
+	if err != nil {
+		return err
+	}
 
-	if opts.EncodedModuleID != "" {
+	if opts.EncodedModuleID == "" {
+		client.dagqlRoot.DefaultDeps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
+		client.deps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
+	} else {
 		modID := new(call.ID)
 		if err := modID.Decode(opts.EncodedModuleID); err != nil {
 			return fmt.Errorf("failed to decode module ID: %w", err)
 		}
-		modInst, err := dagql.NewID[*core.Module](modID).Load(ctx, dag)
+		modInst, err := dagql.NewID[*core.Module](modID).Load(ctx, coreMod.Dag)
 		if err != nil {
 			return fmt.Errorf("failed to load module: %w", err)
 		}
 		client.mod = modInst.Self
+
+		engineVersion, err := client.mod.Source.Self.ModuleEngineVersion(ctx)
+		if err != nil {
+			return err
+		}
+		if engineVersion != "" {
+			// if the module we're connecting from defines a schema version,
+			// reload the core module (and )
+			coreMod, err = makeCoreMod(engineVersion)
+			if err != nil {
+				return err
+			}
+
+			// NOTE: *technically* we should reload the module here, so that we can
+			// use the new typedefs api - but at this point we likely would
+			// have failed to load the module in the first place anyways
+			// modInst, err = dagql.NewID[*core.Module](modID).Load(ctx, coreMod.Dag)
+			// if err != nil {
+			// 	return fmt.Errorf("failed to load module: %w", err)
+			// }
+			// client.mod = modInst.Self
+		}
 
 		client.deps = client.mod.Deps
 		// if the module has any of it's own objects defined, serve its schema to itself too
 		if len(client.mod.ObjectDefs) > 0 {
 			client.deps = client.deps.Append(client.mod)
 		}
-
-		engineVersion, err := client.mod.Source.Self.ModuleEngineVersion(ctx)
-		if err != nil {
-			return err
-		}
-		client.deps.Version = engineVersion
+		client.dagqlRoot.DefaultDeps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
 	}
 
 	if opts.EncodedFunctionCall != nil {
@@ -896,8 +921,23 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module) error {
 	defer client.stateMu.Unlock()
 
 	client.deps = client.deps.Append(mod)
-	if engineVersion != "" {
-		client.deps.Version = engineVersion
+	for i, depMod := range client.deps.Mods {
+		if coreMod, ok := depMod.(*schema.CoreMod); ok {
+			if coreMod.Version == engineVersion {
+				continue
+			}
+
+			// this is needed so that when the cli serves a module, that we
+			// serve the coreMod schema associated with that module
+			clone := *coreMod
+			clone.Version = engineVersion
+			clone.Dag = coreMod.Dag.New()
+			err := clone.Install(ctx, clone.Dag)
+			if err != nil {
+				return err
+			}
+			mod.Deps.Mods[i] = &clone
+		}
 	}
 	return nil
 }
