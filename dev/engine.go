@@ -11,7 +11,7 @@ import (
 	"github.com/moby/buildkit/identity"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/dagger/dagger/dev/build"
+	"github.com/dagger/dagger/dev/internal/build"
 	"github.com/dagger/dagger/dev/internal/dagger"
 )
 

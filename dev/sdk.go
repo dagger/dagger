@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 
-	"github.com/dagger/dagger/dev/build"
+	"github.com/dagger/dagger/dev/internal/build"
 	"github.com/dagger/dagger/dev/consts"
 )
 
