@@ -141,7 +141,7 @@ func (t *Test) testCmd(ctx context.Context) (*Container, error) {
 		WithConfig(`registry."docker.io"`, `mirrors = ["mirror.gcr.io"]`).
 		WithConfig(`grpc`, `address=["unix:///var/run/buildkit/buildkitd.sock", "tcp://0.0.0.0:1234"]`).
 		WithArg(`network-name`, `dagger-dev`).
-		WithArg(`network-cidr`, `10.88.0.0/16`)
+		WithArg(`network-cidr`, `10.89.0.0/16`)
 	devEngine, err := engine.Container(ctx, "")
 	if err != nil {
 		return nil, err

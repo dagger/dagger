@@ -125,6 +125,9 @@ func (e *Engine) Service(
 	name string,
 	// +optional
 	version *VersionInfo,
+	// +optional
+	// +default="10.88.0.0/16"
+	networkCIDR string,
 ) (*Service, error) {
 	var cacheVolumeName string
 	if version != nil {
@@ -139,7 +142,7 @@ func (e *Engine) Service(
 	e = e.
 		WithConfig("grpc", `address=["unix:///var/run/buildkit/buildkitd.sock", "tcp://0.0.0.0:1234"]`).
 		WithArg(`network-name`, `dagger-dev`).
-		WithArg(`network-cidr`, `10.88.0.0/16`)
+		WithArg(`network-cidr`, networkCIDR)
 	devEngine, err := e.Container(ctx, "")
 	if err != nil {
 		return nil, err
