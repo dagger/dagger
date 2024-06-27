@@ -484,7 +484,8 @@ class Container extends Client\AbstractObject implements Client\IdAble
      */
     public function withExec(
         array $args,
-        ?bool $skipEntrypoint = false,
+        ?bool $skipEntrypoint = true,
+        ?bool $useEntrypoint = false,
         ?string $stdin = '',
         ?string $redirectStdout = '',
         ?string $redirectStderr = '',
@@ -496,6 +497,9 @@ class Container extends Client\AbstractObject implements Client\IdAble
         $innerQueryBuilder->setArgument('args', $args);
         if (null !== $skipEntrypoint) {
         $innerQueryBuilder->setArgument('skipEntrypoint', $skipEntrypoint);
+        }
+        if (null !== $useEntrypoint) {
+        $innerQueryBuilder->setArgument('useEntrypoint', $useEntrypoint);
         }
         if (null !== $stdin) {
         $innerQueryBuilder->setArgument('stdin', $stdin);

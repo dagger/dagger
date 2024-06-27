@@ -218,6 +218,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 	ctr, err = ctr.WithExec(ctx, ContainerExecOpts{
 		ExperimentalPrivilegedNesting: true,
 		NestedExecMetadata:            &execMD,
+		UseEntrypoint:                 true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to exec function: %w", err)

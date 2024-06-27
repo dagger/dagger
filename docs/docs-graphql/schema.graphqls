@@ -493,14 +493,17 @@ type Container {
     redirectStdout: String = ""
 
     """
-    If the container has an entrypoint, ignore it for args rather than using it to wrap them.
+    DEPRECATED: For true this can be removed. For false, use `useEntrypoint` instead.
     """
-    skipEntrypoint: Boolean = false
+    skipEntrypoint: Boolean = true
 
     """
     Content to write to the command's standard input before closing (e.g., "Hello world").
     """
     stdin: String = ""
+
+    """If the container has an entrypoint, prepend it to the args."""
+    useEntrypoint: Boolean = false
   ): Container!
 
   """

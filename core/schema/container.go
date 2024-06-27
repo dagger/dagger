@@ -302,8 +302,9 @@ func (s *containerSchema) Install() {
 			ArgDoc("args",
 				`Command to run instead of the container's default command (e.g., ["run", "main.go"]).`,
 				`If empty, the container's default command is used.`).
-			ArgDoc("skipEntrypoint",
-				`If the container has an entrypoint, ignore it for args rather than using it to wrap them.`).
+			ArgDoc("useEntrypoint",
+				`If the container has an entrypoint, prepend it to the args.`).
+			ArgDeprecated("skipEntrypoint", "For true this can be removed. For false, use `useEntrypoint` instead.").
 			ArgDoc("stdin",
 				`Content to write to the command's standard input before closing (e.g.,
 				"Hello world").`).
@@ -593,6 +594,12 @@ type containerExecArgs struct {
 }
 
 func (s *containerSchema) withExec(ctx context.Context, parent *core.Container, args containerExecArgs) (*core.Container, error) {
+	if args.ContainerExecOpts.SkipEntrypoint != nil {
+		slog.Warn("The 'skipEntrypoint' argument is deprecated. Use 'useEntrypoint' instead.")
+		if !args.ContainerExecOpts.UseEntrypoint && !*args.ContainerExecOpts.SkipEntrypoint {
+			args.ContainerExecOpts.UseEntrypoint = true
+		}
+	}
 	return parent.WithExec(ctx, args.ContainerExecOpts)
 }
 
