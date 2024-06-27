@@ -51,7 +51,7 @@ func devEngineContainer(c *dagger.Client, engineInstance uint8, withs ...func(*d
 			"--addr", "unix:///var/run/buildkit/buildkitd.sock",
 			// avoid network conflicts with other tests
 			"--network-name", fmt.Sprintf("dagger%d", engineInstance),
-			"--network-cidr", fmt.Sprintf("10.88.%d.0/24", engineInstance),
+			"--network-cidr", fmt.Sprintf("10.89.%d.0/24", engineInstance),
 		}, dagger.ContainerWithExecOpts{
 			InsecureRootCapabilities: true,
 		})
