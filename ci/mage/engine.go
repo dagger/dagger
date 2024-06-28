@@ -45,7 +45,7 @@ func (t Engine) Dev(ctx context.Context) error {
 
 	args := []string{"engine"}
 	if gpuSupport {
-		args = append(args, "with-base", "--image=ubuntu", "--gpu-support=true")
+		args = append(args, "--gpu-support=true")
 	}
 	if trace {
 		args = append(args, "with-trace")

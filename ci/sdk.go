@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 
+	"dagger.io/dagger/dag"
 	"github.com/dagger/dagger/ci/build"
 	"github.com/dagger/dagger/ci/consts"
 )
@@ -85,7 +86,7 @@ func (ci *Dagger) introspection(ctx context.Context, installer func(*Container) 
 		return nil, err
 	}
 	return dag.Container().
-		From(consts.AlpineImage).
+		From(consts.WolfiImage).
 		With(installer).
 		WithFile("/usr/local/bin/codegen", builder.CodegenBinary()).
 		WithExec([]string{"codegen", "introspect", "-o", "/schema.json"}).

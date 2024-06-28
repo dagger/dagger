@@ -12,11 +12,9 @@ const (
 	GolangVersion = distconsts.GolangVersion
 	GolangImage   = distconsts.GolangImage
 
-	AlpineVersion = distconsts.AlpineVersion
-	AlpineImage   = distconsts.AlpineImage
+	AlpineImage = distconsts.AlpineImage
 
-	WolfiImage   = "cgr.dev/chainguard/wolfi-base"
-	WolfiVersion = "latest" // Wolfi is a rolling distro; no release to pin to
+	WolfiImage = distconsts.WolfiImage
 
 	UbuntuVersion   = "22.04"
 	RuncVersion     = "v1.1.12"

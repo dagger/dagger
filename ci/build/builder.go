@@ -146,7 +146,47 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 
 	var base *dagger.Container
 	switch build.base {
-	case "alpine", "":
+	case "", "wolfi":
+		base = dag.
+			Container(dagger.ContainerOpts{Platform: build.platform}).
+			From(consts.WolfiImage).
+			// NOTE: wrapping the apk installs with this time based env ensures that the cache is invalidated
+			// once-per day. This is a very unfortunate workaround for the poor caching "apk add" as an exec
+			// gives us.
+			// Fortunately, better approaches are on the horizon w/ Zenith, for which there are already apk
+			// modules that fix this problem and always result in the latest apk packages for the given alpine
+			// version being used (with optimal caching).
+			WithEnvVariable("DAGGER_APK_CACHE_BUSTER", fmt.Sprintf("%d", time.Now().Truncate(24*time.Hour).Unix())).
+			WithExec([]string{"apk", "upgrade"}).
+			WithExec([]string{
+				"apk", "add", "--no-cache",
+				// for Buildkit
+				"git", "openssh", "pigz", "xz",
+				// for CNI
+				"iptables", "ip6tables", "dnsmasq",
+			}).
+			WithoutEnvVariable("DAGGER_APK_CACHE_BUSTER")
+	case "ubuntu":
+		base = dag.Container(dagger.ContainerOpts{Platform: build.platform}).
+			From("ubuntu:"+consts.UbuntuVersion).
+			WithEnvVariable("DEBIAN_FRONTEND", "noninteractive").
+			WithEnvVariable("DAGGER_APT_CACHE_BUSTER", fmt.Sprintf("%d", time.Now().Truncate(24*time.Hour).Unix())).
+			WithExec([]string{"apt-get", "update"}).
+			WithExec([]string{
+				"apt-get", "install", "-y",
+				"iptables", "git", "dnsmasq-base", "network-manager",
+				"gpg", "curl",
+			}).
+			WithExec([]string{
+				"update-alternatives",
+				"--set", "iptables", "/usr/sbin/iptables-legacy",
+			}).
+			WithExec([]string{
+				"update-alternatives",
+				"--set", "ip6tables", "/usr/sbin/ip6tables-legacy",
+			}).
+			WithoutEnvVariable("DAGGER_APT_CACHE_BUSTER")
+	case "alpine":
 		base = dag.
 			Container(dagger.ContainerOpts{Platform: build.platform}).
 			From(consts.AlpineImage).
@@ -174,46 +214,6 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 				ln -s /sbin/ip6tables-legacy-save /usr/sbin/ip6tables-save
 				ln -s /sbin/ip6tables-legacy-restore /usr/sbin/ip6tables-restore
 			`}).
-			WithoutEnvVariable("DAGGER_APK_CACHE_BUSTER")
-	case "ubuntu":
-		base = dag.Container(dagger.ContainerOpts{Platform: build.platform}).
-			From("ubuntu:"+consts.UbuntuVersion).
-			WithEnvVariable("DEBIAN_FRONTEND", "noninteractive").
-			WithEnvVariable("DAGGER_APT_CACHE_BUSTER", fmt.Sprintf("%d", time.Now().Truncate(24*time.Hour).Unix())).
-			WithExec([]string{"apt-get", "update"}).
-			WithExec([]string{
-				"apt-get", "install", "-y",
-				"iptables", "git", "dnsmasq-base", "network-manager",
-				"gpg", "curl",
-			}).
-			WithExec([]string{
-				"update-alternatives",
-				"--set", "iptables", "/usr/sbin/iptables-legacy",
-			}).
-			WithExec([]string{
-				"update-alternatives",
-				"--set", "ip6tables", "/usr/sbin/ip6tables-legacy",
-			}).
-			WithoutEnvVariable("DAGGER_APT_CACHE_BUSTER")
-	case "wolfi":
-		base = dag.
-			Container(dagger.ContainerOpts{Platform: build.platform}).
-			From(consts.WolfiImage).
-			// NOTE: wrapping the apk installs with this time based env ensures that the cache is invalidated
-			// once-per day. This is a very unfortunate workaround for the poor caching "apk add" as an exec
-			// gives us.
-			// Fortunately, better approaches are on the horizon w/ Zenith, for which there are already apk
-			// modules that fix this problem and always result in the latest apk packages for the given alpine
-			// version being used (with optimal caching).
-			WithEnvVariable("DAGGER_APK_CACHE_BUSTER", fmt.Sprintf("%d", time.Now().Truncate(24*time.Hour).Unix())).
-			WithExec([]string{"apk", "upgrade"}).
-			WithExec([]string{
-				"apk", "add", "--no-cache",
-				// for Buildkit
-				"git", "openssh", "pigz", "xz",
-				// for CNI
-				"iptables", "ip6tables", "dnsmasq",
-			}).
 			WithoutEnvVariable("DAGGER_APK_CACHE_BUSTER")
 	default:
 		return nil, fmt.Errorf("unsupported engine base %q", build.base)
@@ -266,16 +266,16 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 		}
 
 		switch build.base {
-		case "ubuntu":
-			ctr = ctr.With(util.ShellCmd(`curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg`))
-			ctr = ctr.With(util.ShellCmd(`curl -s -L https://nvidia.github.io/libnvidia-container/experimental/"$(. /etc/os-release;echo $ID$VERSION_ID)"/libnvidia-container.list | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | tee /etc/apt/sources.list.d/nvidia-container-toolkit.list`))
-			ctr = ctr.With(util.ShellCmd(`apt-get update && apt-get install -y nvidia-container-toolkit`))
 		case "wolfi":
 			ctr = ctr.With(util.ShellCmd(`apk add chainguard-keys`))
 			ctr = ctr.With(util.ShellCmd(`echo "https://packages.cgr.dev/extras" >> /etc/apk/repositories`))
 			ctr = ctr.With(util.ShellCmd(`apk update && apk add nvidia-driver nvidia-tools`))
+		case "ubuntu":
+			ctr = ctr.With(util.ShellCmd(`curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg`))
+			ctr = ctr.With(util.ShellCmd(`curl -s -L https://nvidia.github.io/libnvidia-container/experimental/"$(. /etc/os-release;echo $ID$VERSION_ID)"/libnvidia-container.list | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | tee /etc/apt/sources.list.d/nvidia-container-toolkit.list`))
+			ctr = ctr.With(util.ShellCmd(`apt-get update && apt-get install -y nvidia-container-toolkit`))
 		default:
-			return nil, fmt.Errorf("gpu support requires %q base, not %q", "ubuntu or wolfi", build.base)
+			return nil, fmt.Errorf("gpu support requires %q base, not %q", "wolfi or ubuntu", build.base)
 		}
 	}
 
@@ -389,17 +389,17 @@ func (build *Builder) cniPlugins() []*dagger.File {
 	// If GPU support is enabled use a Debian image:
 	ctr := dag.Container()
 	switch build.base {
-	case "alpine", "":
-		ctr = ctr.From(consts.GolangImage).
-			WithExec([]string{"apk", "add", "build-base", "git"})
+	case "", "wolfi":
+		ctr = ctr.From(consts.WolfiImage).
+			WithExec([]string{"apk", "add", "build-base", "go", "git"})
 	case "ubuntu":
-		// TODO: there's no guarantee the bullseye libc is compatible with the ubuntu image w/ rebase this onto
-		ctr = ctr.From(fmt.Sprintf("golang:%s-bullseye", consts.GolangVersion)).
+		// TODO: there's no guarantee the debian 12 (a.k.a. bookworm) glibc (2.33) is compatible with the ubuntu 22.04 glbic (2.35) w/ rebase this onto
+		ctr = ctr.From(fmt.Sprintf("golang:%s-bookworm", consts.GolangVersion)).
 			WithExec([]string{"apt-get", "update"}).
 			WithExec([]string{"apt-get", "install", "-y", "git", "build-essential"})
-	case "wolfi":
-		ctr = ctr.From(fmt.Sprintf("%s:%s", consts.WolfiImage, consts.WolfiVersion)).
-			WithExec([]string{"apk", "add", "build-base", "go", "git"})
+	case "alpine":
+		ctr = ctr.From(consts.GolangImage).
+			WithExec([]string{"apk", "add", "build-base", "git"})
 	}
 
 	ctr = ctr.WithMountedCache("/root/go/pkg/mod", dag.CacheVolume("go-mod")).
@@ -429,7 +429,7 @@ func (build *Builder) dumbInit() *dagger.File {
 	// dumb init is static, so we can use it on any base image
 	return dag.
 		Container(dagger.ContainerOpts{Platform: build.platform}).
-		From(consts.AlpineImage).
+		From(consts.WolfiImage).
 		WithExec([]string{"apk", "add", "build-base", "bash"}).
 		WithMountedDirectory("/src", dag.Git("github.com/yelp/dumb-init").Ref(consts.DumbInitVersion).Tree()).
 		WithWorkdir("/src").
@@ -459,7 +459,7 @@ func (build *Builder) verifyPlatform(ctx context.Context, bin *dagger.File) erro
 		return fmt.Errorf("failed to get name of binary: %w", err)
 	}
 	mntPath := filepath.Join("/mnt", name)
-	out, err := dag.Container().From(consts.AlpineImage).
+	out, err := dag.Container().From(consts.WolfiImage).
 		WithExec([]string{"apk", "add", "file"}).
 		WithMountedFile(mntPath, bin).
 		WithExec([]string{"file", mntPath}).

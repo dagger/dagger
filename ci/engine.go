@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
-	"strings"
 
 	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/dagger/engine/distconsts"
@@ -201,25 +200,23 @@ func (e *Engine) Publish(
 	registryUsername *string,
 	// +optional
 	registryPassword *Secret,
-) (string, error) {
+) ([]string, error) {
 	if len(platform) == 0 {
 		platform = []Platform{Platform(platforms.DefaultString())}
 	}
 
-	ref := fmt.Sprintf("%s:%s", image, e.Dagger.Version)
-	if strings.Contains(e.ImageBase, "wolfi") {
-		ref += "-wolfi"
-	}
-
-	if e.GPUSupport {
-		ref += "-gpu"
+	engineImageRef := build.EngineImageRef{
+		OS:      e.ImageBase,
+		GPU:     e.GPUSupport,
+		Image:   image,
+		Version: e.Dagger.Version.String(),
 	}
 
 	engines := make([]*Container, 0, len(platform))
 	for _, platform := range platform {
 		ctr, err := e.Container(ctx, platform)
 		if err != nil {
-			return "", err
+			return []string{}, err
 		}
 		engines = append(engines, ctr)
 	}
@@ -229,15 +226,24 @@ func (e *Engine) Publish(
 		ctr = ctr.WithRegistryAuth(*registry, *registryUsername, registryPassword)
 	}
 
-	digest, err := ctr.
-		Publish(ctx, ref, dagger.ContainerPublishOpts{
-			PlatformVariants:  engines,
-			ForcedCompression: dagger.Gzip, // use gzip to avoid incompatibility w/ older docker versions
-		})
-	if err != nil {
-		return "", err
+	refs := []string{engineImageRef.String("")}
+	if e.Dagger.GitBranch == "main" {
+		refs = append(refs, engineImageRef.String(e.Dagger.GitBranch))
 	}
-	return digest, nil
+
+	digests := []string{}
+	for _, ref := range refs {
+		digest, err := ctr.
+			Publish(ctx, ref, dagger.ContainerPublishOpts{
+				PlatformVariants:  engines,
+				ForcedCompression: dagger.Gzip, // use gzip to avoid incompatibility w/ older docker versions
+			})
+		if err != nil {
+			return digests, err
+		}
+		digests = append(digests, digest)
+	}
+	return digests, nil
 }
 
 // Verify that the engine builds without actually publishing anything
