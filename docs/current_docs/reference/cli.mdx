@@ -36,36 +36,16 @@ The Dagger CLI provides a command-line interface to Dagger.
 
 Call a module function
 
-### Synopsis
-
-Call a module function and print the result.
-
-If the last argument is either a Container, Directory, or File, the pipeline
-will be evaluated (the result of calling `sync`) without presenting any output.
-Providing the `--output` option (shorthand: `-o`) is equivalent to calling
-`export` instead. To print a property of these core objects, continue chaining
-by appending it to the end of the command (for example, `stdout`, `entries`, or
-`contents`).
-
-
 ```
 dagger call [options]
-```
-
-### Examples
-
-```
-dagger call test
-dagger call build -o ./bin/myapp
-dagger call lint stdout
 ```
 
 ### Options
 
 ```
-      --json            Present result as JSON
+  -j, --json            Present result as JSON
   -m, --mod string      Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
-  -o, --output string   Path in the host to save the result to
+  -o, --output string   Save the result to a local file or directory
 ```
 
 ### Options inherited from parent commands
