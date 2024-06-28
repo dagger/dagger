@@ -12,7 +12,7 @@ pipeline {
       steps {
         sh '''
             curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=bin sh
-            bin/dagger call -m github.com/shykes/daggerverse/hello@v0.1.2 hello --greeting "bonjour" --name "from jenkins"
+            bin/dagger call -m github.com/shykes/hello hello --greeting "bonjour" --name "from jenkins"
         '''
       }
     }
