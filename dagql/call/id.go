@@ -77,6 +77,11 @@ func (id *ID) Field() string {
 	return id.pb.Field
 }
 
+// GraphQL view.
+func (id *ID) View() string {
+	return id.pb.View
+}
+
 // GraphQL field arguments, always in alphabetical order.
 // NOTE: use with caution, any inplace writes to elements of the returned slice
 // can corrupt the ID
@@ -200,6 +205,7 @@ func (id *ID) SelectNth(nth int) *ID {
 	return id.base.Append(
 		id.pb.Type.Elem.ToAST(),
 		id.pb.Field,
+		id.pb.View,
 		id.module,
 		id.pb.Tainted,
 		nth,
@@ -210,6 +216,7 @@ func (id *ID) SelectNth(nth int) *ID {
 func (id *ID) Append(
 	ret *ast.Type,
 	field string,
+	view string,
 	mod *Module,
 	tainted bool,
 	nth int,
@@ -219,6 +226,7 @@ func (id *ID) Append(
 		pb: &callpbv1.Call{
 			ReceiverDigest: string(id.Digest()),
 			Field:          field,
+			View:           view,
 			Args:           make([]*callpbv1.Argument, len(args)),
 			Tainted:        tainted,
 			Nth:            int64(nth),

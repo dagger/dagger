@@ -125,6 +125,13 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (
 	}()
 
 	dag := dagql.NewServer[*Query](d.root)
+	for _, mod := range d.Mods {
+		if version := mod.View(); version != nil {
+			dag.DefaultView = *version
+			fmt.Printf("setting engineVersion from lazilyLoadSchema %s\n", *version)
+			break
+		}
+	}
 
 	dag.Around(AroundFunc)
 

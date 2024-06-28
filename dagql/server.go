@@ -25,19 +25,26 @@ import (
 // Server represents a GraphQL server whose schema is dynamically modified at
 // runtime.
 type Server struct {
-	root        Object
-	telemetry   AroundFunc
-	objects     map[string]ObjectType
-	scalars     map[string]ScalarType
-	typeDefs    map[string]TypeDef
-	directives  map[string]DirectiveSpec
-	installLock *sync.Mutex
+	root       Object
+	telemetry  AroundFunc
+	objects    map[string]ObjectType
+	scalars    map[string]ScalarType
+	typeDefs   map[string]TypeDef
+	directives map[string]DirectiveSpec
+	installMu  *sync.Mutex
+
+	DefaultView string
 
 	// Cache is the inner cache used by the server. It can be replicated to
 	// another *Server to inherit and share caches.
 	//
 	// TODO: copy-on-write
 	Cache Cache
+}
+
+type serverView struct {
+	srv  *Server
+	view string
 }
 
 // AroundFunc is a function that is called around every non-cached selection.
@@ -80,11 +87,11 @@ func NewServer[T Typed](root T) *Server {
 			Self:  root,
 			Class: rootClass,
 		},
-		objects:     map[string]ObjectType{},
-		scalars:     map[string]ScalarType{},
-		typeDefs:    map[string]TypeDef{},
-		directives:  map[string]DirectiveSpec{},
-		installLock: &sync.Mutex{},
+		objects:    map[string]ObjectType{},
+		scalars:    map[string]ScalarType{},
+		typeDefs:   map[string]TypeDef{},
+		directives: map[string]DirectiveSpec{},
+		installMu:  &sync.Mutex{},
 	}
 	srv.InstallObject(rootClass)
 	for _, scalar := range coreScalars {
@@ -96,24 +103,41 @@ func NewServer[T Typed](root T) *Server {
 	return srv
 }
 
-func (s *Server) New() *Server {
-	srv := &Server{
-		Cache:       NewCache(),
-		root:        s.root,
-		objects:     map[string]ObjectType{},
-		scalars:     map[string]ScalarType{},
-		typeDefs:    map[string]TypeDef{},
-		directives:  map[string]DirectiveSpec{},
-		installLock: &sync.Mutex{},
-	}
-	srv.InstallObject(s.root.ObjectType())
-	for _, scalar := range coreScalars {
-		srv.InstallScalar(scalar)
-	}
-	for _, directive := range coreDirectives {
-		srv.InstallDirective(directive)
-	}
-	return srv
+func View(server *Server, view string, f func(srv ServerView)) {
+	f(&serverView{
+		srv:  server,
+		view: view,
+	})
+}
+
+type ServerView interface {
+	installObject(class ObjectType)
+	getObject(name string) (ObjectType, bool)
+	field(FieldSpec) FieldSpec
+	installLock()
+	installUnlock()
+}
+
+func (s *serverView) installObject(class ObjectType) {
+	panic("cannot install standalone object in view")
+}
+
+func (s *serverView) getObject(name string) (ObjectType, bool) {
+	obj, ok := s.srv.objects[name]
+	return obj, ok
+}
+
+func (s *serverView) field(spec FieldSpec) FieldSpec {
+	spec.View = s.view
+	return spec
+}
+
+func (s *serverView) installLock() {
+	s.srv.installMu.Lock()
+}
+
+func (s *serverView) installUnlock() {
+	s.srv.installMu.Unlock()
 }
 
 var coreScalars = []ScalarType{
@@ -193,12 +217,12 @@ type Loadable interface {
 
 // InstallObject installs the given Object type into the schema.
 func (s *Server) InstallObject(class ObjectType) {
-	s.installLock.Lock()
-	defer s.installLock.Unlock()
-	s.installObjectLocked(class)
+	s.installMu.Lock()
+	defer s.installMu.Unlock()
+	s.installObject(class)
 }
 
-func (s *Server) installObjectLocked(class ObjectType) {
+func (s *Server) installObject(class ObjectType) {
 	s.objects[class.TypeName()] = class
 
 	if idType, hasID := class.IDType(); hasID {
@@ -235,47 +259,64 @@ func (s *Server) installObjectLocked(class ObjectType) {
 	}
 }
 
+func (s *Server) getObject(name string) (ObjectType, bool) {
+	obj, ok := s.objects[name]
+	return obj, ok
+}
+
+func (s *Server) field(spec FieldSpec) FieldSpec {
+	return spec
+}
+
+func (s *Server) installLock() {
+	s.installMu.Lock()
+}
+
+func (s *Server) installUnlock() {
+	s.installMu.Unlock()
+}
+
 // InstallScalar installs the given Scalar type into the schema.
 func (s *Server) InstallScalar(scalar ScalarType) {
-	s.installLock.Lock()
-	defer s.installLock.Unlock()
+	s.installMu.Lock()
+	defer s.installMu.Unlock()
 	s.scalars[scalar.TypeName()] = scalar
 }
 
 // InstallDirective installs the given Directive type into the schema.
 func (s *Server) InstallDirective(directive DirectiveSpec) {
-	s.installLock.Lock()
-	defer s.installLock.Unlock()
+	s.installMu.Lock()
+	defer s.installMu.Unlock()
 	s.directives[directive.Name] = directive
 }
 
 // InstallTypeDef installs an arbitrary type definition into the schema.
 func (s *Server) InstallTypeDef(def TypeDef) {
-	s.installLock.Lock()
-	defer s.installLock.Unlock()
+	s.installMu.Lock()
+	defer s.installMu.Unlock()
 	s.typeDefs[def.TypeName()] = def
 }
 
 // ObjectType returns the ObjectType with the given name, if it exists.
 func (s *Server) ObjectType(name string) (ObjectType, bool) {
-	s.installLock.Lock()
-	defer s.installLock.Unlock()
+	s.installMu.Lock()
+	defer s.installMu.Unlock()
 	t, ok := s.objects[name]
 	return t, ok
 }
 
 // ScalarType returns the ScalarType with the given name, if it exists.
 func (s *Server) ScalarType(name string) (ScalarType, bool) {
-	s.installLock.Lock()
-	defer s.installLock.Unlock()
+	s.installMu.Lock()
+	defer s.installMu.Unlock()
 	t, ok := s.scalars[name]
 	return t, ok
 }
 
 // InputType returns the InputType with the given name, if it exists.
 func (s *Server) TypeDef(name string) (TypeDef, bool) {
-	s.installLock.Lock()
-	defer s.installLock.Unlock()
+	s.installMu.Lock()
+	defer s.installMu.Unlock()
 	t, ok := s.typeDefs[name]
 	return t, ok
 }
@@ -299,23 +340,23 @@ var _ graphql.ExecutableSchema = (*Server)(nil)
 
 // Schema returns the current schema of the server.
 func (s *Server) Schema() *ast.Schema { // TODO: change this to be updated whenever something is installed, instead
-	s.installLock.Lock()
-	defer s.installLock.Unlock()
+	s.installMu.Lock()
+	defer s.installMu.Unlock()
 	// TODO track when the schema changes, cache until it changes again
 	queryType := s.Root().Type().Name()
 	schema := &ast.Schema{}
 	for _, t := range s.objects { // TODO stable order
-		def := definition(ast.Object, t)
+		def := definition(ast.Object, s.DefaultView, t) // XXX: default
 		if def.Name == queryType {
 			schema.Query = def
 		}
 		schema.AddTypes(def)
 	}
 	for _, t := range s.scalars {
-		schema.AddTypes(definition(ast.Scalar, t))
+		schema.AddTypes(definition(ast.Scalar, "", t))
 	}
 	for _, t := range s.typeDefs {
-		schema.AddTypes(t.TypeDefinition())
+		schema.AddTypes(t.TypeDefinition(""))
 	}
 	schema.Directives = map[string]*ast.DirectiveDefinition{}
 	for n, d := range s.directives {
@@ -344,6 +385,9 @@ func (s *Server) Exec(ctx1 context.Context) graphql.ResponseHandler {
 		if err := gqlOp.Validate(ctx); err != nil {
 			return graphql.ErrorResponse(ctx, "validate: %s", err)
 		}
+
+		fmt.Println(">>> ", gqlOp.RawQuery)
+		fmt.Println("default view =", s.DefaultView)
 
 		results, err := s.ExecOp(ctx, gqlOp)
 		if err != nil {
@@ -468,7 +512,7 @@ func (s *Server) Load(ctx context.Context, id *call.ID) (Object, error) {
 			},
 		})
 	}
-	sel, _, err := base.ObjectType().ParseField(ctx, astField, vars)
+	sel, _, err := base.ObjectType().ParseField(ctx, id.View(), astField, vars)
 	if err != nil {
 		return nil, fmt.Errorf("parse field %q: %w", astField.Name, err)
 	}
@@ -753,7 +797,7 @@ func (s *Server) parseASTSelections(ctx context.Context, gqlOp *graphql.Operatio
 	for _, sel := range astSels {
 		switch x := sel.(type) {
 		case *ast.Field:
-			sel, resType, err := class.ParseField(ctx, x, vars)
+			sel, resType, err := class.ParseField(ctx, s.DefaultView, x, vars) // XXX: default view?
 			if err != nil {
 				return nil, fmt.Errorf("parse field %q: %w", x.Name, err)
 			}
@@ -810,6 +854,7 @@ type Selector struct {
 	Field string
 	Args  []NamedInput
 	Nth   int
+	View  string
 }
 
 func (sel Selector) String() string {
@@ -857,6 +902,7 @@ func (sel Selector) AppendTo(id *call.ID, spec FieldSpec) *call.ID {
 	return id.Append(
 		astType,
 		sel.Field,
+		sel.View,
 		spec.Module,
 		tainted,
 		sel.Nth,

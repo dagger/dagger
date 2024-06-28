@@ -16,7 +16,7 @@ type secretSchema struct {
 
 var _ SchemaResolvers = &secretSchema{}
 
-func (s *secretSchema) Install(version string) {
+func (s *secretSchema) Install() {
 	dagql.Fields[*core.Query]{
 		dagql.Func("setSecret", s.setSecret).
 			Impure("`setSecret` mutates state in the internal secret store.").

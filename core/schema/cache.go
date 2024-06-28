@@ -17,7 +17,7 @@ func (s *cacheSchema) Name() string {
 	return "cache"
 }
 
-func (s *cacheSchema) Install(version string) {
+func (s *cacheSchema) Install() {
 	dagql.Fields[*core.Query]{
 		dagql.Func("cacheVolume", s.cacheVolume).
 			Doc("Constructs a cache volume for a given cache key.").

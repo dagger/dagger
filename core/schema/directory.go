@@ -14,7 +14,7 @@ type directorySchema struct {
 
 var _ SchemaResolvers = &directorySchema{}
 
-func (s *directorySchema) Install(version string) {
+func (s *directorySchema) Install() {
 	dagql.Fields[*core.Query]{
 		dagql.Func("directory", s.directory).
 			Doc(`Creates an empty directory.`).

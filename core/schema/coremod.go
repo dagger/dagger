@@ -18,7 +18,7 @@ import (
 // implicit dependency of every user module.
 type CoreMod struct {
 	Dag     *dagql.Server
-	Version string
+	Version *string
 }
 
 var _ core.Mod = (*CoreMod)(nil)
@@ -29,6 +29,22 @@ func (m *CoreMod) Name() string {
 
 func (m *CoreMod) Dependencies() []core.Mod {
 	return nil
+}
+
+func (m *CoreMod) WithVersion(version string) *CoreMod {
+	// dag := *m.Dag
+	// dag.DefaultView = version
+
+	m.Dag.DefaultView = version
+
+	return &CoreMod{
+		Dag:     m.Dag,
+		Version: &version,
+	}
+}
+
+func (m *CoreMod) View() *string {
+	return m.Version
 }
 
 func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server) error {
@@ -47,7 +63,7 @@ func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server) error {
 		&socketSchema{dag},
 		&moduleSchema{dag},
 	} {
-		schema.Install(m.Version)
+		schema.Install()
 	}
 	return nil
 }

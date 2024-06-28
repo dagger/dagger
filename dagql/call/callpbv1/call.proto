@@ -80,6 +80,8 @@ message Call {
   // A unique digest of this Call. Note that this must not be set when
   // calculating the Call's digest.
   string digest = 9;
+  
+  string view = 10;
 }
 
 // Module represents a self-contained logical module that can be dynamically

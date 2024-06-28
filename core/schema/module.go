@@ -21,7 +21,7 @@ type moduleSchema struct {
 
 var _ SchemaResolvers = &moduleSchema{}
 
-func (s *moduleSchema) Install(version string) {
+func (s *moduleSchema) Install() {
 	dagql.Fields[*core.Query]{
 		dagql.Func("module", s.module).
 			Doc(`Create a new module.`),
@@ -830,20 +830,9 @@ func (s *moduleSchema) updateDeps(
 	}
 	for i, depMod := range mod.Deps.Mods {
 		if coreMod, ok := depMod.(*CoreMod); ok {
-			if coreMod.Version == engineVersion {
-				continue
-			}
-
 			// this is needed so that a module's dependency on the core
 			// uses the correct schema version
-			clone := *coreMod
-			clone.Version = engineVersion
-			clone.Dag = coreMod.Dag.New()
-			err := clone.Install(ctx, clone.Dag)
-			if err != nil {
-				return err
-			}
-			mod.Deps.Mods[i] = &clone
+			mod.Deps.Mods[i] = coreMod.WithVersion(engineVersion)
 		}
 	}
 

@@ -15,7 +15,7 @@ type querySchema struct {
 
 var _ SchemaResolvers = &querySchema{}
 
-func (s *querySchema) Install(version string) {
+func (s *querySchema) Install() {
 	introspection.Install[*core.Query](s.srv)
 
 	s.srv.InstallScalar(core.JSON{})
@@ -48,7 +48,7 @@ func (s *querySchema) Install(version string) {
 		dagql.Func("version", s.version).
 			Doc(`Get the current Dagger Engine version.`),
 
-		dagql.Func("schemaVersion", s.schemaVersion(version)).
+		dagql.NodeFunc("schemaVersion", s.schemaVersion).
 			Impure("Changes based on what module is currently being evaluated.").
 			Doc(`Get the current schema version.`),
 	}.Install(s.srv)
@@ -68,8 +68,6 @@ func (s *querySchema) version(_ context.Context, _ *core.Query, args struct{}) (
 	return engine.Version, nil
 }
 
-func (s *querySchema) schemaVersion(version string) func(context.Context, *core.Query, struct{}) (string, error) {
-	return func(_ context.Context, _ *core.Query, args struct{}) (string, error) {
-		return version, nil
-	}
+func (s *querySchema) schemaVersion(ctx context.Context, parent dagql.Instance[*core.Query], _ struct{}) (string, error) {
+	return parent.ID().View(), nil
 }

@@ -418,20 +418,12 @@ func (srv *Server) initializeDaggerClient(
 		MainClientCallerID: client.daggerSession.mainClientCallerID,
 	})
 
-	makeCoreMod := func(version string) (*schema.CoreMod, error) {
-		dag := dagql.NewServer(client.dagqlRoot)
-		dag.Cache = client.daggerSession.dagqlCache
-		dag.Around(core.AroundFunc)
-		coreMod := &schema.CoreMod{Dag: dag, Version: version}
-		if err := coreMod.Install(ctx, dag); err != nil {
-			return nil, fmt.Errorf("failed to install core module: %w", err)
-		}
-		return coreMod, nil
-	}
-
-	coreMod, err := makeCoreMod("")
-	if err != nil {
-		return err
+	dag := dagql.NewServer(client.dagqlRoot)
+	dag.Cache = client.daggerSession.dagqlCache
+	dag.Around(core.AroundFunc)
+	coreMod := &schema.CoreMod{Dag: dag}
+	if err := coreMod.Install(ctx, dag); err != nil {
+		return fmt.Errorf("failed to install core module: %w", err)
 	}
 
 	if opts.EncodedModuleID == "" {
@@ -452,13 +444,9 @@ func (srv *Server) initializeDaggerClient(
 		if err != nil {
 			return err
 		}
+		fmt.Println("setting engineVersion", engineVersion)
 		if engineVersion != "" {
-			// if the module we're connecting from defines a schema version,
-			// reload the core module (and )
-			coreMod, err = makeCoreMod(engineVersion)
-			if err != nil {
-				return err
-			}
+			coreMod = coreMod.WithVersion(engineVersion)
 
 			// NOTE: *technically* we should reload the module here, so that we can
 			// use the new typedefs api - but at this point we likely would
@@ -923,20 +911,10 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module) error {
 	client.deps = client.deps.Append(mod)
 	for i, depMod := range client.deps.Mods {
 		if coreMod, ok := depMod.(*schema.CoreMod); ok {
-			if coreMod.Version == engineVersion {
-				continue
-			}
-
 			// this is needed so that when the cli serves a module, that we
 			// serve the coreMod schema associated with that module
-			clone := *coreMod
-			clone.Version = engineVersion
-			clone.Dag = coreMod.Dag.New()
-			err := clone.Install(ctx, clone.Dag)
-			if err != nil {
-				return err
-			}
-			mod.Deps.Mods[i] = &clone
+			fmt.Println("setting engineVersion from serveModule", engineVersion)
+			client.deps.Mods[i] = coreMod.WithVersion(engineVersion)
 		}
 	}
 	return nil

@@ -19,7 +19,7 @@ type gitSchema struct {
 	srv *dagql.Server
 }
 
-func (s *gitSchema) Install(version string) {
+func (s *gitSchema) Install() {
 	dagql.Fields[*core.Query]{
 		dagql.Func("git", s.git).
 			Doc(`Queries a Git repository.`).

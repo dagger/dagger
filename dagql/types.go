@@ -42,7 +42,7 @@ type ObjectType interface {
 	New(*call.ID, Typed) (Object, error)
 	// ParseField parses the given field and returns a Selector and an expected
 	// return type.
-	ParseField(context.Context, *ast.Field, map[string]any) (Selector, *ast.Type, error)
+	ParseField(context.Context, string, *ast.Field, map[string]any) (Selector, *ast.Type, error)
 	// Extend registers an additional field onto the type.
 	//
 	// Unlike natively added fields, the extended func is limited to the external
@@ -131,7 +131,7 @@ func (Int) TypeName() string {
 	return "Int"
 }
 
-func (i Int) TypeDefinition() *ast.Definition {
+func (i Int) TypeDefinition(view string) *ast.Definition {
 	return &ast.Definition{
 		Kind:        ast.Scalar,
 		Name:        i.TypeName(),
@@ -228,7 +228,7 @@ func (Float) TypeName() string {
 	return "Float"
 }
 
-func (f Float) TypeDefinition() *ast.Definition {
+func (f Float) TypeDefinition(view string) *ast.Definition {
 	return &ast.Definition{
 		Kind:        ast.Scalar,
 		Name:        f.TypeName(),
@@ -329,7 +329,7 @@ func (Boolean) TypeName() string {
 	return "Boolean"
 }
 
-func (b Boolean) TypeDefinition() *ast.Definition {
+func (b Boolean) TypeDefinition(view string) *ast.Definition {
 	return &ast.Definition{
 		Kind:        ast.Scalar,
 		Name:        b.TypeName(),
@@ -414,7 +414,7 @@ func (String) TypeName() string {
 	return "String"
 }
 
-func (s String) TypeDefinition() *ast.Definition {
+func (s String) TypeDefinition(view string) *ast.Definition {
 	return &ast.Definition{
 		Kind:        ast.Scalar,
 		Name:        s.TypeName(),
@@ -501,7 +501,7 @@ func (s Scalar[T]) TypeName() string {
 	return s.Name
 }
 
-func (s Scalar[T]) TypeDefinition() *ast.Definition {
+func (s Scalar[T]) TypeDefinition(view string) *ast.Definition {
 	def := &ast.Definition{
 		Kind: ast.Scalar,
 		Name: s.TypeName(),
@@ -588,7 +588,7 @@ func (i ID[T]) ID() *call.ID {
 var _ ScalarType = ID[Typed]{}
 
 // TypeDefinition returns the GraphQL definition of the type.
-func (i ID[T]) TypeDefinition() *ast.Definition {
+func (i ID[T]) TypeDefinition(view string) *ast.Definition {
 	return &ast.Definition{
 		Kind: ast.Scalar,
 		Name: i.TypeName(),
@@ -887,7 +887,7 @@ func (e *EnumValues[T]) TypeName() string {
 	return e.Type().Name()
 }
 
-func (e *EnumValues[T]) TypeDefinition() *ast.Definition {
+func (e *EnumValues[T]) TypeDefinition(view string) *ast.Definition {
 	def := &ast.Definition{
 		Kind:       ast.Enum,
 		Name:       e.TypeName(),
@@ -984,7 +984,7 @@ func (spec InputObjectSpec) TypeName() string {
 	return spec.Name
 }
 
-func (spec InputObjectSpec) TypeDefinition() *ast.Definition {
+func (spec InputObjectSpec) TypeDefinition(view string) *ast.Definition {
 	return &ast.Definition{
 		Kind:        ast.InputObject,
 		Name:        spec.Name,
