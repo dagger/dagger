@@ -1096,6 +1096,11 @@ var skipLeaves = map[string][]string{
 		// hard to check for here.
 		"imageRef",
 	},
+	"File": {
+		// This could be a binary file, so until we can tell which type of
+		// file it is, best to skip it for now.
+		"contents",
+	},
 }
 
 // GetLeafFunctions returns the leaf functions of a function provider, which are
