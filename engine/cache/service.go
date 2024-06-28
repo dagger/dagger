@@ -204,6 +204,7 @@ type GetCacheMountUploadURLRequest struct {
 type GetCacheMountUploadURLResponse struct {
 	URL     string
 	Headers map[string]string
+	Skip    bool
 }
 
 type client struct {
