@@ -1412,6 +1412,8 @@ func (s *containerSchema) terminal(
 	ctr dagql.Instance[*core.Container],
 	args containerTerminalArgs,
 ) (dagql.Instance[*core.Container], error) {
+	copyCtr := dagql.Instance[*core.Container]{Self: ctr.Self.Clone()}
+
 	if args.Cmd == nil || len(args.Cmd) == 0 {
 		args.Cmd = ctr.Self.DefaultTerminalCmd.Args
 	}
@@ -1431,7 +1433,7 @@ func (s *containerSchema) terminal(
 
 	err := ctr.Self.Terminal(ctx, ctr.ID(), &args.TerminalArgs)
 	if err != nil {
-		return ctr, err
+		return copyCtr, err
 	}
 
 	return ctr, nil
