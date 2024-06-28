@@ -721,12 +721,12 @@ func (m *Minimal) Fn() []*Foo {
 
 		logGen(ctx, t, modGen.Directory("."))
 		expected := "0\n1\n2\n"
-		expectedJson := `[{"bar": 0}, {"bar": 1}, {"bar": 2}]`
+		expectedJSON := `[{"bar": 0}, {"bar": 1}, {"bar": 2}]`
 
 		t.Run("default", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("fn")).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, expectedJson, gjson.Get(out, "#.{bar}").Raw)
+			require.JSONEq(t, expectedJSON, gjson.Get(out, "#.{bar}").Raw)
 		})
 
 		t.Run("print", func(ctx context.Context, t *testctx.T) {
@@ -749,7 +749,7 @@ func (m *Minimal) Fn() []*Foo {
 				With(daggerCall("fn", "bar", "--json")).
 				Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, expectedJson, out)
+			require.JSONEq(t, expectedJSON, out)
 		})
 	})
 
