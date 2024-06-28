@@ -57,7 +57,7 @@ type Test struct {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 
-		err = cmd.Start()
+		err := cmd.Start()
 		require.NoError(t, err)
 		cleanupExec(t, cmd)
 
@@ -138,7 +138,7 @@ type Test struct {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 
-		err = cmd.Start()
+		err := cmd.Start()
 		require.NoError(t, err)
 		cleanupExec(t, cmd)
 
@@ -171,7 +171,7 @@ type Test struct {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 
-		err = cmd.Start()
+		err := cmd.Start()
 		require.NoError(t, err)
 		cleanupExec(t, cmd)
 
