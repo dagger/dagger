@@ -1,0 +1,6 @@
+kind: Breaking
+body: Terminal type removed, Container.Terminal now returns a Container
+time: 2024-06-26T11:10:38.615555729+01:00
+custom:
+  Author: aluzzardi
+  PR: "7586"
