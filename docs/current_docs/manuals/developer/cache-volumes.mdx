@@ -1,0 +1,42 @@
+---
+slug: /manuals/developer/cache-volumes
+displayed_sidebar: "current"
+toc_max_heading_level: 2
+title: "Cache Volumes"
+---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Cache Volumes
+
+One of Dagger's most powerful features is its ability to cache data across pipeline runs.
+
+Dagger caches two types of data:
+
+1. Layers: This refers to build instructions and the results of some API calls. This cache is implemented by Buildkit.
+2. Volumes: This refers to the contents of a Dagger filesystem volume and is persisted across Dagger Engine sessions. This cache is maintained locally and, where applicable, [replicated to Dagger Cloud](../administrator/cloud/caching.mdx). It is implemented by Dagger (distinct from Buildkit).
+
+Volume caching is especially useful when dealing with package managers such as `npm`, `maven`, `pip` and similar. For these tools to cache properly, they need their own cache data (usually a directory) to be persisted between runs. By using a cache volume for this data, Dagger can reuse the cached contents across Dagger Function runs and reduce execution time.
+
+Cache volumes must be explicitly defined and used in your Dagger Function. Here is an example:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=../../cookbook/snippets/cache-dependencies/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=../../cookbook/snippets/cache-dependencies/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=../../cookbook/snippets/cache-dependencies/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>

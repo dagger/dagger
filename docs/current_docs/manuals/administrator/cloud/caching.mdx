@@ -4,11 +4,7 @@ slug: /manuals/administrator/caching
 
 # Caching
 
-
-Dagger has two distinct caching mechanisms:
-
-1. The layers cache: This caches build instructions and the results of `withExec()` API calls. It is implemented by Buildkit.
-2. The volumes cache: This caches the contents of a Dagger volume and is persisted across Dagger Engine sessions. It is maintained locally and, where applicable, [replicated to Dagger Cloud](../../user/visualization/cloud-get-started.mdx#step-4-use-cache-volumes-with-the-experimental-dagger-cloud-cache). It is implemented by Dagger (distinct from Buildkit).
+Dagger has two distinct caching mechanisms: the layers cache and the volumes cache. These are maintained locally and, where applicable, [replicated to Dagger Cloud](../../user/visualization/cloud-get-started.mdx#step-4-use-cache-volumes-with-the-experimental-dagger-cloud-cache).
 
 ## Implementation
 
