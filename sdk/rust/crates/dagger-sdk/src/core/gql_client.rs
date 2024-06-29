@@ -182,6 +182,7 @@ impl GQLClient {
         if let Some(proxy) = &self.config.proxy {
             builder = builder.proxy(proxy.clone().try_into()?);
         }
+
         builder
             .build()
             .map_err(|e| GraphQLError::with_text(format!("Can not create client: {:?}", e)))

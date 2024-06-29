@@ -11,14 +11,14 @@ use crate::utility::OptionExt;
 
 pub fn render_object(funcs: &CommonFunctions, t: &FullType) -> eyre::Result<rust::Tokens> {
     let selection = rust::import("crate::querybuilder", "Selection");
-    let child = rust::import("tokio::process", "Child");
+    let session_proc = rust::import("crate::core::cli_session", "DaggerSessionProc");
     let graphql_client = rust::import("crate::core::graphql_client", "DynGraphQLClient");
     let arc = rust::import("std::sync", "Arc");
 
     Ok(quote! {
         #[derive(Clone)]
         pub struct $(t.name.pipe(|s| format_name(s))) {
-            pub proc: Option<$arc<$child>>,
+            pub proc: Option<$arc<$session_proc>>,
             pub selection: $selection,
             pub graphql_client: $graphql_client
         }

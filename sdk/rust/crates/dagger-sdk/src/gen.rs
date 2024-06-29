@@ -1,3 +1,4 @@
+use crate::core::cli_session::DaggerSessionProc;
 use crate::core::graphql_client::DynGraphQLClient;
 use crate::errors::DaggerError;
 use crate::id::IntoID;
@@ -5,7 +6,6 @@ use crate::querybuilder::Selection;
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tokio::process::Child;
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct CacheVolumeId(pub String);
@@ -1244,7 +1244,7 @@ pub struct PortForward {
 }
 #[derive(Clone)]
 pub struct CacheVolume {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -1257,7 +1257,7 @@ impl CacheVolume {
 }
 #[derive(Clone)]
 pub struct Container {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -3201,7 +3201,7 @@ impl Container {
 }
 #[derive(Clone)]
 pub struct CurrentModule {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -3291,7 +3291,7 @@ impl CurrentModule {
 }
 #[derive(Clone)]
 pub struct Directory {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -3948,7 +3948,7 @@ impl Directory {
 }
 #[derive(Clone)]
 pub struct EnumTypeDef {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -3985,7 +3985,7 @@ impl EnumTypeDef {
 }
 #[derive(Clone)]
 pub struct EnumValueTypeDef {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -4008,7 +4008,7 @@ impl EnumValueTypeDef {
 }
 #[derive(Clone)]
 pub struct EnvVariable {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -4031,7 +4031,7 @@ impl EnvVariable {
 }
 #[derive(Clone)]
 pub struct FieldTypeDef {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -4063,7 +4063,7 @@ impl FieldTypeDef {
 }
 #[derive(Clone)]
 pub struct File {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -4161,7 +4161,7 @@ impl File {
 }
 #[derive(Clone)]
 pub struct Function {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -4282,7 +4282,7 @@ impl Function {
 }
 #[derive(Clone)]
 pub struct FunctionArg {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -4319,7 +4319,7 @@ impl FunctionArg {
 }
 #[derive(Clone)]
 pub struct FunctionCall {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -4366,7 +4366,7 @@ impl FunctionCall {
 }
 #[derive(Clone)]
 pub struct FunctionCallArgValue {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -4389,7 +4389,7 @@ impl FunctionCallArgValue {
 }
 #[derive(Clone)]
 pub struct GeneratedCode {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -4447,7 +4447,7 @@ impl GeneratedCode {
 }
 #[derive(Clone)]
 pub struct GitModuleSource {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -4499,7 +4499,7 @@ impl GitModuleSource {
 }
 #[derive(Clone)]
 pub struct GitRef {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -4558,7 +4558,7 @@ impl GitRef {
 }
 #[derive(Clone)]
 pub struct GitRepository {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -4676,7 +4676,7 @@ impl GitRepository {
 }
 #[derive(Clone)]
 pub struct Host {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -4891,7 +4891,7 @@ impl Host {
 }
 #[derive(Clone)]
 pub struct InputTypeDef {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -4918,7 +4918,7 @@ impl InputTypeDef {
 }
 #[derive(Clone)]
 pub struct InterfaceTypeDef {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -4955,7 +4955,7 @@ impl InterfaceTypeDef {
 }
 #[derive(Clone)]
 pub struct Label {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -4978,7 +4978,7 @@ impl Label {
 }
 #[derive(Clone)]
 pub struct ListTypeDef {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -5000,7 +5000,7 @@ impl ListTypeDef {
 }
 #[derive(Clone)]
 pub struct LocalModuleSource {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -5027,7 +5027,7 @@ impl LocalModuleSource {
 }
 #[derive(Clone)]
 pub struct Module {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -5233,7 +5233,7 @@ impl Module {
 }
 #[derive(Clone)]
 pub struct ModuleDependency {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -5260,7 +5260,7 @@ impl ModuleDependency {
 }
 #[derive(Clone)]
 pub struct ModuleSource {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -5569,7 +5569,7 @@ impl ModuleSource {
 }
 #[derive(Clone)]
 pub struct ModuleSourceView {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -5592,7 +5592,7 @@ impl ModuleSourceView {
 }
 #[derive(Clone)]
 pub struct ObjectTypeDef {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -5647,7 +5647,7 @@ impl ObjectTypeDef {
 }
 #[derive(Clone)]
 pub struct Port {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -5680,7 +5680,7 @@ impl Port {
 }
 #[derive(Clone)]
 pub struct Query {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -6823,7 +6823,7 @@ impl Query {
 }
 #[derive(Clone)]
 pub struct ScalarTypeDef {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -6851,7 +6851,7 @@ impl ScalarTypeDef {
 }
 #[derive(Clone)]
 pub struct Secret {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -6874,7 +6874,7 @@ impl Secret {
 }
 #[derive(Clone)]
 pub struct Service {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -7008,7 +7008,7 @@ impl Service {
 }
 #[derive(Clone)]
 pub struct Socket {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -7021,7 +7021,7 @@ impl Socket {
 }
 #[derive(Clone)]
 pub struct TypeDef {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
