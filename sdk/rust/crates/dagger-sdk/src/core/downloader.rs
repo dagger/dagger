@@ -2,7 +2,7 @@ use std::{
     fs::File,
     io::{copy, Write},
     os::unix::prelude::PermissionsExt,
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 use eyre::Context;
@@ -50,16 +50,15 @@ pub struct TempFile {
 
 #[allow(dead_code)]
 impl TempFile {
-    pub fn new(prefix: &str, directory: &PathBuf) -> eyre::Result<Self> {
+    pub fn new(prefix: &str, directory: &Path) -> eyre::Result<Self> {
         let prefix = prefix.to_string();
-        let directory = directory.clone();
 
         let file = tempfile()?;
 
         Ok(Self {
             prefix,
-            directory,
             file,
+            directory: directory.to_path_buf(),
         })
     }
 }

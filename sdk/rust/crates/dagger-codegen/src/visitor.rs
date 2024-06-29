@@ -67,7 +67,7 @@ impl Visitor {
             .types
             .as_ref()
             .unwrap()
-            .into_iter()
+            .iter()
             .map(|t| t.as_ref().unwrap())
             .filter(|t| match t.full_type.kind.as_ref().unwrap() == &item.kind {
                 true => match (item.ignore.as_ref(), t.full_type.name.as_ref()) {
@@ -79,13 +79,13 @@ impl Visitor {
                             return false;
                         }
 
-                        return true;
+                        true
                     }
                     (None, Some(name)) => {
                         if name.starts_with("__") {
                             return false;
                         }
-                        return true;
+                        true
                     }
                     _ => false,
                 },
@@ -96,7 +96,7 @@ impl Visitor {
                     .name
                     .as_ref()
                     .unwrap()
-                    .cmp(&b.full_type.name.as_ref().unwrap())
+                    .cmp(b.full_type.name.as_ref().unwrap())
             })
             .map(|t| (*item.handler)(&t.full_type))
             .collect::<eyre::Result<Vec<_>>>()?;

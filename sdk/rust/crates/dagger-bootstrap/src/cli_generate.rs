@@ -30,7 +30,7 @@ impl GenerateCommand {
 
         if let Some(output) = arg_matches.get_one::<String>("output") {
             let mut file = std::fs::File::create(output)?;
-            file.write(code.as_bytes())?;
+            file.write_all(code.as_bytes())?;
         } else {
             println!("{}", code);
         }
