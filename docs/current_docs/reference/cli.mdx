@@ -43,6 +43,7 @@ dagger call [options]
 ### Options
 
 ```
+  -c, --core            Load core functions instead of a module (mutually exclusive with -m)
   -j, --json            Present result as JSON
   -m, --mod string      Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
   -o, --output string   Save the result to a local file or directory
@@ -165,6 +166,7 @@ dagger functions [options] [function]...
 ### Options
 
 ```
+  -c, --core         Load core functions instead of a module (mutually exclusive with -m)
   -m, --mod string   Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
 ```
 

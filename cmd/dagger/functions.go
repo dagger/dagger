@@ -124,16 +124,6 @@ available functions.
 
 type FuncCommands []*FuncCommand
 
-func (fcs FuncCommands) AddFlagSet(flags *pflag.FlagSet) {
-	for _, cmd := range fcs.All() {
-		cmd.PersistentFlags().AddFlagSet(flags)
-	}
-}
-
-func (fcs FuncCommands) AddParent(rootCmd *cobra.Command) {
-	rootCmd.AddCommand(fcs.All()...)
-}
-
 func (fcs FuncCommands) All() []*cobra.Command {
 	cmds := make([]*cobra.Command, len(fcs))
 	for i, fc := range fcs {
@@ -393,27 +383,31 @@ func (fc *FuncCommand) initializeModule(ctx context.Context) (rerr error) {
 	ctx, span := Tracer().Start(ctx, "initialize", telemetry.Encapsulate())
 	defer telemetry.End(span, func() error { return rerr })
 
-	modConf, err := getDefaultModuleConfiguration(ctx, dag, true, true)
-	if err != nil {
-		return fmt.Errorf("failed to get configured module: %w", err)
-	}
-	if !modConf.FullyInitialized() {
-		return fmt.Errorf("module at source dir %q doesn't exist or is invalid", modConf.LocalRootSourcePath)
-	}
-	mod := modConf.Source.AsModule().Initialize()
-	_, err = mod.Serve(ctx)
-	if err != nil {
-		return err
-	}
+	if loadCoreFuncs {
+		fc.mod = &moduleDef{}
+	} else {
+		modConf, err := getDefaultModuleConfiguration(ctx, dag, true, true)
+		if err != nil {
+			return fmt.Errorf("failed to get configured module: %w", err)
+		}
+		if !modConf.FullyInitialized() {
+			return fmt.Errorf("module at source dir %q doesn't exist or is invalid", modConf.LocalRootSourcePath)
+		}
+		mod := modConf.Source.AsModule().Initialize()
+		_, err = mod.Serve(ctx)
+		if err != nil {
+			return err
+		}
 
-	name, err := mod.Name(ctx)
-	if err != nil {
-		return fmt.Errorf("get module name: %w", err)
-	}
+		name, err := mod.Name(ctx)
+		if err != nil {
+			return fmt.Errorf("get module name: %w", err)
+		}
 
-	fc.mod = &moduleDef{
-		Name:   name,
-		Source: modConf.Source,
+		fc.mod = &moduleDef{
+			Name:   name,
+			Source: modConf.Source,
+		}
 	}
 
 	if err := fc.mod.loadTypeDefs(ctx, dag); err != nil {
@@ -508,6 +502,14 @@ func (fc *FuncCommand) cobraBuilder(ctx context.Context, fn *modFunction) func(*
 		}
 		if err := c.ValidateFlagGroups(); err != nil {
 			return err
+		}
+
+		// The function name can be empty if it's the mocked constructor for
+		// the root type (Query). That constructor has `fn.ReturnType` set to
+		// the root type itself, but empty name so we can exclude a selection
+		// in the query builder here.
+		if fn.Name == "" {
+			return nil
 		}
 
 		// Easier to add query builder selections as we traverse the command tree.

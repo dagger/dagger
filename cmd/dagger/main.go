@@ -83,7 +83,7 @@ func init() {
 		newGenCmd(),
 	)
 
-	funcCmds.AddParent(rootCmd)
+	rootCmd.AddCommand(funcCmds.All()...)
 
 	rootCmd.AddGroup(moduleGroup)
 	rootCmd.AddGroup(execGroup)
