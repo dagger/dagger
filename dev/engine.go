@@ -152,7 +152,10 @@ func (e *Engine) Service(
 			// one, which gets us best-effort cache re-use for these nested engine services
 			Sharing: Private,
 		}).
-		WithExec(nil, ContainerWithExecOpts{
+		WithExec([]string{engineEntrypointPath}, ContainerWithExecOpts{
+			// FIXME: Replace the entrypoint with the following line after
+			// https://github.com/dagger/dagger/pull/7136 is released:
+			// UseEntrypoint:            true,
 			InsecureRootCapabilities: true,
 		})
 
