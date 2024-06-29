@@ -1,0 +1,6 @@
+kind: Changed
+body: 'cli: print module object fields with `dagger call`'
+time: 2024-06-28T14:11:05.367066Z
+custom:
+    Author: helderco
+    PR: "7479"

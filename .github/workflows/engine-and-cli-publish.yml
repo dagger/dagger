@@ -26,7 +26,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.22"
-          cache-dependency-path: "ci/go.sum"
+          cache-dependency-path: "dev/go.sum"
       - name: "Publish Engine"
         uses: ./.github/actions/call
         with:

@@ -364,6 +364,10 @@ module.exports = {
         },
         {
           "type": "doc",
+          "id": "manuals/developer/cache-volumes"
+        },
+        {
+          "type": "doc",
           "id": "manuals/developer/custom-types"
         },
         {

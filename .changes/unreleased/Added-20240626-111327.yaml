@@ -1,0 +1,7 @@
+kind: Added
+body: Terminal can be inserted into the middle of a pipeline to pop an interactive
+  shell
+time: 2024-06-26T11:13:27.872604891+01:00
+custom:
+  Author: aluzzardi
+  PR: "7586"

@@ -1,0 +1,36 @@
+{
+  "name": "dagger-dev",
+  "sdk": "go",
+  "dependencies": [
+    {
+      "name": "docusaurus",
+      "source": "github.com/levlaz/daggerverse/docusaurus@72ec19206da7dbe2815da94c62e491b54935b633"
+    },
+    {
+      "name": "go",
+      "source": "go"
+    },
+    {
+      "name": "graphql",
+      "source": "graphql"
+    },
+    {
+      "name": "shellcheck",
+      "source": "shellcheck"
+    }
+  ],
+  "source": ".",
+  "engineVersion": "v0.11.6",
+  "views": [
+    {
+      "name": "default",
+      "patterns": [
+        "!bin",
+        "!.git",
+        "!**/node_modules",
+        "!**/.venv",
+        "!**/__pycache__"
+      ]
+    }
+  ]
+}

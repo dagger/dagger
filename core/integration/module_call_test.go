@@ -10,6 +10,7 @@ import (
 	"github.com/dagger/dagger/testctx"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 
 	"dagger.io/dagger"
 )
@@ -720,6 +721,13 @@ func (m *Minimal) Fn() []*Foo {
 
 		logGen(ctx, t, modGen.Directory("."))
 		expected := "0\n1\n2\n"
+		expectedJSON := `[{"bar": 0}, {"bar": 1}, {"bar": 2}]`
+
+		t.Run("default", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCall("fn")).Stdout(ctx)
+			require.NoError(t, err)
+			require.JSONEq(t, expectedJSON, gjson.Get(out, "#.{bar}").Raw)
+		})
 
 		t.Run("print", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("fn", "bar")).Stdout(ctx)
@@ -741,7 +749,7 @@ func (m *Minimal) Fn() []*Foo {
 				With(daggerCall("fn", "bar", "--json")).
 				Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `[{"bar": 0}, {"bar": 1}, {"bar": 2}]`, out)
+			require.JSONEq(t, expectedJSON, out)
 		})
 	})
 
@@ -768,13 +776,10 @@ type Test struct {
 		logGen(ctx, t, modGen.Directory("."))
 
 		t.Run("default", func(ctx context.Context, t *testctx.T) {
-			ctr := modGen.With(daggerCall("ctr"))
-			out, err := ctr.Stdout(ctx)
+			out, err := modGen.With(daggerCall("ctr")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Empty(t, out)
-			out, err = ctr.Stderr(ctx)
-			require.NoError(t, err)
-			require.Contains(t, out, "Container evaluated")
+			actual := gjson.Get(out, "[@this].#(_type==Container).stdout").String()
+			require.Equal(t, "hello world\n", actual)
 		})
 
 		t.Run("output", func(ctx context.Context, t *testctx.T) {
@@ -813,13 +818,12 @@ type Test struct {
 		logGen(ctx, t, modGen.Directory("."))
 
 		t.Run("default", func(ctx context.Context, t *testctx.T) {
-			ctr := modGen.With(daggerCall("dir"))
-			out, err := ctr.Stdout(ctx)
+			out, err := modGen.With(daggerCall("dir")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Empty(t, out)
-			out, err = ctr.Stderr(ctx)
-			require.NoError(t, err)
-			require.Contains(t, out, "Directory evaluated")
+			actual := gjson.Get(out, "[@this].#(_type==Directory).entries").Array()
+			require.Len(t, actual, 2)
+			require.Equal(t, "bar.txt", actual[0].String())
+			require.Equal(t, "foo.txt", actual[1].String())
 		})
 
 		t.Run("output", func(ctx context.Context, t *testctx.T) {
@@ -865,13 +869,10 @@ type Test struct {
 		logGen(ctx, t, modGen.Directory("."))
 
 		t.Run("default", func(ctx context.Context, t *testctx.T) {
-			ctr := modGen.With(daggerCall("file"))
-			out, err := ctr.Stdout(ctx)
+			out, err := modGen.With(daggerCall("file")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Empty(t, out)
-			out, err = ctr.Stderr(ctx)
-			require.NoError(t, err)
-			require.Contains(t, out, "File evaluated")
+			actual := gjson.Get(out, "[@this].#(_type==File).name").String()
+			require.Equal(t, "foo.txt", actual)
 		})
 
 		t.Run("output", func(ctx context.Context, t *testctx.T) {
@@ -1019,6 +1020,67 @@ type Test struct {
 			require.NoError(t, err)
 			require.Equal(t, "foo", contents)
 		})
+	})
+}
+
+func (ModuleSuite) TestDaggerCallReturnObject(ctx context.Context, t *testctx.T) {
+	// NB: Container, Directory and File are tested in TestDaggerCallReturnTypes.
+
+	c := connect(ctx, t)
+
+	modGen := modInit(t, c, "go", `package main
+
+func New() *Test {
+    return &Test{
+        BaseImage: "`+alpineImage+`",
+    }
+}
+
+type Test struct {
+    BaseImage string
+}
+
+func (t *Test) Foo() *Foo {
+    return &Foo{Ctr: dag.Container().From(t.BaseImage)}
+}
+
+func (t *Test) Files() []*File {
+    return []*File{
+        dag.Directory().WithNewFile("foo.txt", "foo").File("foo.txt"),
+        dag.Directory().WithNewFile("bar.txt", "bar").File("bar.txt"),
+    }
+}
+
+type Foo struct {
+    Ctr *Container
+}
+`,
+	)
+
+	t.Run("main object", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(daggerCall()).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Test", gjson.Get(out, "_type").String())
+		require.Equal(t, alpineImage, gjson.Get(out, "baseImage").String())
+	})
+
+	t.Run("no scalars", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(daggerCall("foo")).Stdout(ctx)
+		require.NoError(t, err)
+		// At minimum should print the type of the object
+		require.JSONEq(t, `{"_type": "TestFoo"}`, out)
+	})
+
+	t.Run("list of objects", func(ctx context.Context, t *testctx.T) {
+		expected := []string{"foo.txt", "bar.txt"}
+		out, err := modGen.With(daggerCall("files")).Stdout(ctx)
+		require.NoError(t, err)
+		actual := gjson.Get(out, "@this").Array()
+		require.Len(t, actual, len(expected))
+		for i, res := range actual {
+			require.Equal(t, "File", res.Get("_type").String())
+			require.Equal(t, expected[i], res.Get("name").String())
+		}
 	})
 }
 

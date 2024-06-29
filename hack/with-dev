@@ -3,10 +3,10 @@
 set -e -u
 
 export DAGGER_SRC_ROOT="$(cd $(dirname $(realpath "${BASH_SOURCE[0]}"))/.. && pwd)"
-export MAGEDIR="$DAGGER_SRC_ROOT/ci/mage"
+export MAGEDIR="$DAGGER_SRC_ROOT/dev/mage"
 
-pushd $MAGEDIR
+pushd $MAGEDIR > /dev/null
 eval $(go run main.go -w $DAGGER_SRC_ROOT engine:devenv)
-popd
+popd > /dev/null
 
 exec "$@"

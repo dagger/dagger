@@ -177,7 +177,7 @@ type FuncCommand struct {
 	// If set, it should make another selection on the object that results
 	// return no error. Otherwise if it doesn't handle the object, it should
 	// return an error.
-	OnSelectObjectLeaf func(*FuncCommand, string) error
+	OnSelectObjectLeaf func(*FuncCommand, functionProvider) error
 
 	// BeforeRequest is called before making the request with the query that
 	// contains the whole chain of functions.
@@ -378,9 +378,9 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 		return fc.Execute(fc, cmd)
 	}
 
-	// No args to the parent command, default to showing help.
+	// No args to the parent command
 	if cmd == c {
-		return fc.Help(cmd)
+		return fc.RunE(ctx, fc.mod.MainObject)(cmd, flags)
 	}
 
 	return cmd.RunE(cmd, flags)
@@ -480,8 +480,6 @@ func (fc *FuncCommand) traverse(c *cobra.Command, a []string, build func(*cobra.
 // cobraBuilder returns a PreRunE compatible function to add the next set of
 // flags and sub-commands to the command tree, based on a function definition.
 func (fc *FuncCommand) cobraBuilder(ctx context.Context, fn *modFunction) func(*cobra.Command, []string) error {
-	dag := fc.c.Dagger()
-
 	return func(c *cobra.Command, a []string) error {
 		if err := fc.addFlagsForFunction(c, fn); err != nil {
 			return err
@@ -493,7 +491,7 @@ func (fc *FuncCommand) cobraBuilder(ctx context.Context, fn *modFunction) func(*
 			return c.FlagErrorFunc()(c, err)
 		}
 
-		fc.addSubCommands(ctx, c, dag, fn.ReturnType)
+		fc.addSubCommands(ctx, c, fn.ReturnType)
 
 		if fc.needsHelp {
 			// May be too noisy to always show a warning for skipped functions
@@ -513,7 +511,7 @@ func (fc *FuncCommand) cobraBuilder(ctx context.Context, fn *modFunction) func(*
 		}
 
 		// Easier to add query builder selections as we traverse the command tree.
-		return fc.selectFunc(fn, c, dag)
+		return fc.selectFunc(fn, c)
 	}
 }
 
@@ -554,7 +552,7 @@ func (fc *FuncCommand) addFlagsForFunction(cmd *cobra.Command, fn *modFunction) 
 
 // addSubCommands creates sub-commands for the functions in an object or
 // interface type definition.
-func (fc *FuncCommand) addSubCommands(ctx context.Context, cmd *cobra.Command, dag *dagger.Client, typeDef *modTypeDef) {
+func (fc *FuncCommand) addSubCommands(ctx context.Context, cmd *cobra.Command, typeDef *modTypeDef) {
 	fc.mod.LoadTypeDef(typeDef)
 
 	fnProvider := typeDef.AsFunctionProvider()
@@ -575,7 +573,7 @@ func (fc *FuncCommand) addSubCommands(ctx context.Context, cmd *cobra.Command, d
 			skipped = append(skipped, cliName(fn.Name))
 			continue
 		}
-		subCmd := fc.makeSubCmd(ctx, dag, fn)
+		subCmd := fc.makeSubCmd(ctx, fn)
 		cmd.AddCommand(subCmd)
 	}
 
@@ -589,7 +587,7 @@ func (fc *FuncCommand) addSubCommands(ctx context.Context, cmd *cobra.Command, d
 }
 
 // makeSubCmd creates a sub-command for a function definition.
-func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *modFunction) *cobra.Command {
+func (fc *FuncCommand) makeSubCmd(ctx context.Context, fn *modFunction) *cobra.Command {
 	newCmd := &cobra.Command{
 		Use:                   cliName(fn.Name),
 		Short:                 strings.SplitN(fn.Description, "\n", 2)[0],
@@ -607,62 +605,7 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *m
 		PreRunE: fc.cobraBuilder(ctx, fn),
 		// This is going to be executed in the "execution" vertex, when
 		// we have the final/leaf command.
-		RunE: func(cmd *cobra.Command, args []string) (err error) {
-			switch fn.ReturnType.Kind {
-			case dagger.ObjectKind, dagger.InterfaceKind:
-				if fc.OnSelectObjectLeaf == nil {
-					// there is no handling of this object and no further selections, error out
-					return fmt.Errorf("%q requires a sub-command", cmd.Name())
-				}
-
-				// the top-level command may handle this via OnSelectObjectLeaf
-				err := fc.OnSelectObjectLeaf(fc, fn.ReturnType.Name())
-				if err != nil {
-					return fmt.Errorf("invalid selection for command %q: %w", cmd.Name(), err)
-				}
-
-			case dagger.ListKind:
-				fnProvider := fn.ReturnType.AsList.ElementTypeDef.AsFunctionProvider()
-				if fnProvider != nil && len(fnProvider.GetFunctions()) > 0 {
-					// we don't handle lists of objects/interfaces w/ extra functions on any commands right now
-					return fmt.Errorf("%q requires a sub-command", cmd.Name())
-				}
-			}
-
-			// Silence usage from this point on as errors don't likely come
-			// from wrong CLI usage.
-			fc.showUsage = false
-
-			if fc.BeforeRequest != nil {
-				if err = fc.BeforeRequest(fc, cmd, fn.ReturnType); err != nil {
-					return err
-				}
-			}
-
-			query, _ := fc.q.Build(ctx)
-
-			slog.Debug("executing query", "query", query)
-
-			var response any
-
-			q := fc.q.Bind(&response).Client(dag.GraphQLClient())
-
-			if err := q.Execute(cmd.Context()); err != nil {
-				return fmt.Errorf("response from query: %w", err)
-			}
-
-			if fn.ReturnType.Kind == dagger.VoidKind {
-				return nil
-			}
-
-			if fc.AfterResponse != nil {
-				return fc.AfterResponse(fc, cmd, fn.ReturnType, response)
-			}
-
-			cmd.Println(response)
-
-			return nil
-		},
+		RunE: fc.RunE(ctx, fn.ReturnType),
 	}
 
 	newCmd.Flags().SetInterspersed(false)
@@ -672,7 +615,9 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, dag *dagger.Client, fn *m
 }
 
 // selectFunc adds the function selection to the query.
-func (fc *FuncCommand) selectFunc(fn *modFunction, cmd *cobra.Command, dag *dagger.Client) error {
+func (fc *FuncCommand) selectFunc(fn *modFunction, cmd *cobra.Command) error {
+	dag := fc.c.Dagger()
+
 	fc.Select(fn.Name)
 
 	for _, arg := range fn.SupportedArgs() {
@@ -710,13 +655,79 @@ func (fc *FuncCommand) selectFunc(fn *modFunction, cmd *cobra.Command, dag *dagg
 	return nil
 }
 
-func (fc *FuncCommand) Select(name string) {
+func (fc *FuncCommand) Select(name ...string) {
 	if fc.q == nil {
 		fc.q = querybuilder.Query()
 	}
-	fc.q = fc.q.Select(name)
+	fc.q = fc.q.Select(name...)
 }
 
 func (fc *FuncCommand) Arg(name string, value any) {
 	fc.q = fc.q.Arg(name, value)
+}
+
+func (fc *FuncCommand) RunE(ctx context.Context, typeDef *modTypeDef) func(*cobra.Command, []string) error {
+	return func(cmd *cobra.Command, args []string) error {
+		t := typeDef
+		if t.AsList != nil {
+			t = t.AsList.ElementTypeDef
+		}
+
+		switch t.Kind {
+		case dagger.ObjectKind, dagger.InterfaceKind:
+			origSel := fc.q
+			obj := t.AsFunctionProvider()
+
+			if fc.OnSelectObjectLeaf != nil {
+				if err := fc.OnSelectObjectLeaf(fc, obj); err != nil {
+					return fmt.Errorf("invalid selection for command %q: %w", cmd.Name(), err)
+				}
+			}
+
+			// If the selection didn't change, it means OnSelectObjectLeaf
+			// didn't handle it. Rather than error, just simulate an empty
+			// response for AfterResponse.
+			if origSel == fc.q {
+				if fc.AfterResponse == nil {
+					return fmt.Errorf("%q requires a sub-command", cmd.Name())
+				}
+				response := map[string]any{}
+				return fc.AfterResponse(fc, cmd, typeDef, response)
+			}
+		}
+
+		// Silence usage from this point on as errors don't likely come
+		// from wrong CLI usage.
+		fc.showUsage = false
+
+		if fc.BeforeRequest != nil {
+			if err := fc.BeforeRequest(fc, cmd, typeDef); err != nil {
+				return err
+			}
+		}
+
+		query, _ := fc.q.Build(ctx)
+
+		slog.Debug("executing query", "query", query)
+
+		var response any
+
+		q := fc.q.Bind(&response).Client(fc.c.Dagger().GraphQLClient())
+
+		if err := q.Execute(ctx); err != nil {
+			return fmt.Errorf("response from query: %w", err)
+		}
+
+		if typeDef.Kind == dagger.VoidKind {
+			return nil
+		}
+
+		if fc.AfterResponse != nil {
+			return fc.AfterResponse(fc, cmd, typeDef, response)
+		}
+
+		cmd.Println(response)
+
+		return nil
+	}
 }
