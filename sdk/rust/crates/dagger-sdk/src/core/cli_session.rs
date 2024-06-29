@@ -1,5 +1,6 @@
 use std::{fs::canonicalize, path::Path, process::Stdio, sync::Arc};
 
+use eyre::Context;
 use tokio::{io::AsyncBufReadExt, sync::broadcast};
 
 use crate::core::{config::Config, connect_params::ConnectParams};
@@ -34,41 +35,30 @@ impl CliSession {
 pub struct DaggerSessionProc {
     shutdown: broadcast::Sender<()>,
 
-    inner: tokio::process::Child,
+    inner: tokio::sync::Mutex<tokio::process::Child>,
 }
 
 impl DaggerSessionProc {
     pub fn subscribe_shutdown(&self) -> broadcast::Receiver<()> {
         self.shutdown.subscribe()
     }
-}
 
-impl Drop for DaggerSessionProc {
-    fn drop(&mut self) {
-        std::thread::scope(|s| {
-            s.spawn(|| {
-                // FIXME: This is a bit of a hack, we spawn a neutral runtime, which doesn't automatically prune blocking tasks.
-                // This should be removed when async_drop is made stable
+    pub async fn shutdown(&self) -> eyre::Result<()> {
+        let mut proc = self.inner.lock().await;
 
-                let runtime = tokio::runtime::Builder::new_multi_thread().build().unwrap();
+        tracing::trace!("waiting for dagger subprocess to shutdown");
 
-                runtime.block_on(async move {
-                    tracing::trace!("waiting for dagger subprocess to shutdown");
+        tracing::trace!("sending shutdown signal");
+        if let Err(e) = self.shutdown.send(()) {
+            tracing::warn!("failed to send shutdown signal: {}", e);
+        }
 
-                    // tracing::trace!("sending shutdown signal");
-                    // if let Err(e) = self.shutdown.send(()) {
-                    //     tracing::warn!("failed to send shutdown signal: {}", e);
-                    // }
+        tracing::trace!("closing stdin");
+        proc.wait().await.context("failed to shutdown session")?;
 
-                    // tracing::trace!("closing stdin");
-                    if let Err(e) = self.inner.wait().await {
-                        tracing::warn!("failed to shutdown session: {}", e);
-                    }
+        tracing::trace!("dagger subprocess shutdown");
 
-                    tracing::trace!("dagger subprocess shutdown");
-                });
-            });
-        })
+        Ok(())
     }
 }
 
@@ -77,7 +67,7 @@ impl From<tokio::process::Child> for DaggerSessionProc {
         let (tx, _) = broadcast::channel::<()>(1);
 
         Self {
-            inner: value,
+            inner: tokio::sync::Mutex::new(value),
             shutdown: tx,
         }
     }
