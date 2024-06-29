@@ -1,0 +1,6 @@
+kind: Added
+body: 'cli: allow calling core functions directly'
+time: 2024-06-29T00:03:42.175445Z
+custom:
+    Author: helderco
+    PR: "7310"
