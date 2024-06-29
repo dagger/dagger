@@ -153,8 +153,6 @@ class Container extends Client\AbstractObject implements Client\IdAble
     /**
      * Writes the container as an OCI tarball to the destination file path on the host.
      *
-     * Return true on success.
-     *
      * It can also export platform variants.
      */
     public function export(
@@ -162,7 +160,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
         ?array $platformVariants = null,
         ?ImageLayerCompression $forcedCompression = null,
         ?ImageMediaTypes $mediaTypes = null,
-    ): bool
+    ): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('export');
         $leafQueryBuilder->setArgument('path', $path);
@@ -175,7 +173,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
         if (null !== $mediaTypes) {
         $leafQueryBuilder->setArgument('mediaTypes', $mediaTypes);
         }
-        return (bool)$this->queryLeaf($leafQueryBuilder, 'export');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'export');
     }
 
     /**

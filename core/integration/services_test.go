@@ -738,9 +738,9 @@ func (ContainerSuite) TestExportServices(ctx context.Context, t *testctx.T) {
 		WithExec([]string{"wget", httpURL})
 
 	filePath := filepath.Join(t.TempDir(), "image.tar")
-	ok, err := client.Export(ctx, filePath)
+	actual, err := client.Export(ctx, filePath)
 	require.NoError(t, err)
-	require.True(t, ok)
+	require.Equal(t, filePath, actual)
 }
 
 func (ContainerSuite) TestMultiPlatformExportServices(ctx context.Context, t *testctx.T) {
@@ -760,11 +760,11 @@ func (ContainerSuite) TestMultiPlatformExportServices(ctx context.Context, t *te
 	}
 
 	dest := filepath.Join(t.TempDir(), "image.tar")
-	ok, err := c.Container().Export(ctx, dest, dagger.ContainerExportOpts{
+	actual, err := c.Container().Export(ctx, dest, dagger.ContainerExportOpts{
 		PlatformVariants: variants,
 	})
 	require.NoError(t, err)
-	require.True(t, ok)
+	require.Equal(t, dest, actual)
 }
 
 func (ServiceSuite) TestContainerPublish(ctx context.Context, t *testctx.T) {
@@ -872,9 +872,9 @@ func (ContainerSuite) TestDirectoryServices(ctx context.Context, t *testctx.T) {
 	t.Run("runs services for Container.Directory.Export", func(ctx context.Context, t *testctx.T) {
 		dest := t.TempDir()
 
-		ok, err := wget.Directory(".").Export(ctx, dest)
+		actual, err := wget.Directory(".").Export(ctx, dest)
 		require.NoError(t, err)
-		require.True(t, ok)
+		require.Equal(t, dest, actual)
 
 		fileContent, err := os.ReadFile(filepath.Join(dest, "index.html"))
 		require.NoError(t, err)
@@ -1040,12 +1040,12 @@ func (ServiceSuite) TestDirectoryExport(ctx context.Context, t *testctx.T) {
 
 	dest := t.TempDir()
 
-	ok, err := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
+	actual, err := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
 		Branch("main").
 		Tree().
 		Export(ctx, dest)
 	require.NoError(t, err)
-	require.True(t, ok)
+	require.Equal(t, dest, actual)
 
 	exportedContent, err := os.ReadFile(filepath.Join(dest, "README.md"))
 	require.NoError(t, err)
@@ -1110,13 +1110,13 @@ func (FileSuite) TestServiceExport(ctx context.Context, t *testctx.T) {
 	dest := t.TempDir()
 	filePath := filepath.Join(dest, "README.md")
 
-	ok, err := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
+	actual, err := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
 		Branch("main").
 		Tree().
 		File("README.md").
 		Export(ctx, filePath)
 	require.NoError(t, err)
-	require.True(t, ok)
+	require.Equal(t, filePath, actual)
 
 	exportedContent, err := os.ReadFile(filePath)
 	require.NoError(t, err)

@@ -1702,7 +1702,6 @@ impl Container {
         }
     }
     /// Writes the container as an OCI tarball to the destination file path on the host.
-    /// Return true on success.
     /// It can also export platform variants.
     ///
     /// # Arguments
@@ -1711,13 +1710,12 @@ impl Container {
     ///
     /// Path can be relative to the engine's workdir or absolute.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn export(&self, path: impl Into<String>) -> Result<bool, DaggerError> {
+    pub async fn export(&self, path: impl Into<String>) -> Result<String, DaggerError> {
         let mut query = self.selection.select("export");
         query = query.arg("path", path.into());
         query.execute(self.graphql_client.clone()).await
     }
     /// Writes the container as an OCI tarball to the destination file path on the host.
-    /// Return true on success.
     /// It can also export platform variants.
     ///
     /// # Arguments
@@ -1730,7 +1728,7 @@ impl Container {
         &self,
         path: impl Into<String>,
         opts: ContainerExportOpts,
-    ) -> Result<bool, DaggerError> {
+    ) -> Result<String, DaggerError> {
         let mut query = self.selection.select("export");
         query = query.arg("path", path.into());
         if let Some(platform_variants) = opts.platform_variants {
@@ -3529,7 +3527,7 @@ impl Directory {
     ///
     /// * `path` - Location of the copied directory (e.g., "logs/").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn export(&self, path: impl Into<String>) -> Result<bool, DaggerError> {
+    pub async fn export(&self, path: impl Into<String>) -> Result<String, DaggerError> {
         let mut query = self.selection.select("export");
         query = query.arg("path", path.into());
         query.execute(self.graphql_client.clone()).await
@@ -3544,7 +3542,7 @@ impl Directory {
         &self,
         path: impl Into<String>,
         opts: DirectoryExportOpts,
-    ) -> Result<bool, DaggerError> {
+    ) -> Result<String, DaggerError> {
         let mut query = self.selection.select("export");
         query = query.arg("path", path.into());
         if let Some(wipe) = opts.wipe {
@@ -4087,7 +4085,7 @@ impl File {
     ///
     /// * `path` - Location of the written directory (e.g., "output.txt").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn export(&self, path: impl Into<String>) -> Result<bool, DaggerError> {
+    pub async fn export(&self, path: impl Into<String>) -> Result<String, DaggerError> {
         let mut query = self.selection.select("export");
         query = query.arg("path", path.into());
         query.execute(self.graphql_client.clone()).await
@@ -4102,7 +4100,7 @@ impl File {
         &self,
         path: impl Into<String>,
         opts: FileExportOpts,
-    ) -> Result<bool, DaggerError> {
+    ) -> Result<String, DaggerError> {
         let mut query = self.selection.select("export");
         query = query.arg("path", path.into());
         if let Some(allow_parent_dir_path) = opts.allow_parent_dir_path {

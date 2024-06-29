@@ -25,14 +25,14 @@ class File extends Client\AbstractObject implements Client\IdAble
     /**
      * Writes the file to a file path on the host.
      */
-    public function export(string $path, ?bool $allowParentDirPath = false): bool
+    public function export(string $path, ?bool $allowParentDirPath = false): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('export');
         $leafQueryBuilder->setArgument('path', $path);
         if (null !== $allowParentDirPath) {
         $leafQueryBuilder->setArgument('allowParentDirPath', $allowParentDirPath);
         }
-        return (bool)$this->queryLeaf($leafQueryBuilder, 'export');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'export');
     }
 
     /**

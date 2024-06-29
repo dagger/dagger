@@ -93,13 +93,17 @@ type fileExportArgs struct {
 	AllowParentDirPath bool `default:"false"`
 }
 
-func (s *fileSchema) export(ctx context.Context, parent *core.File, args fileExportArgs) (dagql.Boolean, error) {
+func (s *fileSchema) export(ctx context.Context, parent *core.File, args fileExportArgs) (dagql.String, error) {
 	err := parent.Export(ctx, args.Path, args.AllowParentDirPath)
 	if err != nil {
-		return false, err
+		return "", err
 	}
-
-	return true, nil
+	bk := parent.Query.Buildkit
+	stat, err := bk.StatCallerHostPath(ctx, args.Path, true)
+	if err != nil {
+		return "", err
+	}
+	return dagql.String(stat.Path), err
 }
 
 type fileWithTimestampsArgs struct {
