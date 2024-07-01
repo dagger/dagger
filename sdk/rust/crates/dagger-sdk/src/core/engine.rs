@@ -14,6 +14,7 @@ impl Engine {
         Self {}
     }
 
+    #[allow(clippy::wrong_self_convention)]
     async fn from_cli(&self, cfg: &Config) -> eyre::Result<(ConnectParams, DaggerSessionProc)> {
         let cli = Downloader::new(DAGGER_ENGINE_VERSION.into())
             .get_cli()
@@ -43,6 +44,7 @@ impl Engine {
         Ok((conn, Some(proc)))
     }
 
+    #[allow(clippy::wrong_self_convention)]
     async fn from_session_env(&self) -> eyre::Result<ConnectParams> {
         let port = std::env::var("DAGGER_SESSION_PORT").map(|p| p.parse::<u64>())??;
         let token = std::env::var("DAGGER_SESSION_TOKEN")?;
@@ -53,6 +55,7 @@ impl Engine {
         })
     }
 
+    #[allow(clippy::wrong_self_convention)]
     async fn from_local_cli(
         &self,
         cfg: &Config,

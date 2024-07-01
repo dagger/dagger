@@ -43,7 +43,7 @@ impl DefaultGraphQLClient {
 impl GraphQLClient for DefaultGraphQLClient {
     async fn query(&self, query: &str) -> Result<Option<serde_json::Value>, GraphQLError> {
         let res: Option<serde_json::Value> =
-            self.client.query(&query).await.map_err(map_graphql_error)?;
+            self.client.query(query).await.map_err(map_graphql_error)?;
 
         return Ok(res);
     }

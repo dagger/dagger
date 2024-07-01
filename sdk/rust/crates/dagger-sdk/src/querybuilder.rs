@@ -189,6 +189,7 @@ impl Selection {
         }
     }
 
+    #[allow(clippy::only_used_in_recursion)]
     fn unpack_resp_value<D>(&self, r: serde_json::Value) -> Result<D, DaggerError>
     where
         D: for<'de> Deserialize<'de>,
