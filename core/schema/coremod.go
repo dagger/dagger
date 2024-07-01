@@ -17,8 +17,7 @@ import (
 // but can be treated as one in terms of dependencies. It has no dependencies itself and is currently an
 // implicit dependency of every user module.
 type CoreMod struct {
-	Dag     *dagql.Server
-	Version *string
+	Dag *dagql.Server
 }
 
 var _ core.Mod = (*CoreMod)(nil)
@@ -32,20 +31,15 @@ func (m *CoreMod) Dependencies() []core.Mod {
 }
 
 func (m *CoreMod) WithVersion(version string) *CoreMod {
-	// dag := *m.Dag
-	// dag.DefaultView = version
-
-	// XXX: hm is this always needed? can we simplify?
-	m.Dag.DefaultView = version
-
+	dag := *m.Dag
+	dag.DefaultView = version
 	return &CoreMod{
-		Dag:     m.Dag,
-		Version: &version,
+		Dag: &dag,
 	}
 }
 
-func (m *CoreMod) View() *string {
-	return m.Version
+func (m *CoreMod) View() string {
+	return m.Dag.DefaultView
 }
 
 func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server) error {
@@ -129,10 +123,12 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 }
 
 func (m *CoreMod) TypeDefs(ctx context.Context) ([]*core.TypeDef, error) {
+	fmt.Println("getting core mod typedefs view =", m.Dag.DefaultView)
 	introspectionJSON, err := SchemaIntrospectionJSON(ctx, m.Dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema introspection JSON for core: %w", err)
 	}
+	fmt.Println(string(introspectionJSON))
 	var schemaResp introspection.Response
 	if err := json.Unmarshal([]byte(introspectionJSON), &schemaResp); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal introspection JSON: %w", err)

@@ -141,12 +141,9 @@ func (cls Class[T]) TypeDefinition(view string) *ast.Definition {
 	if isType, ok := val.(Descriptive); ok {
 		def.Description = isType.TypeDescription()
 	}
-	fmt.Printf("getting type def for %s with view %s\n", cls.TypeName(), view)
 	for _, fields := range cls.fields {
 		for _, field := range fields {
-			fmt.Println(field.Spec.View)
 			if field.Spec.View == nil || field.Spec.View(view) {
-				fmt.Printf("def %v\n", *field.FieldDefinition())
 				def.Fields = append(def.Fields, field.FieldDefinition())
 				break
 			}

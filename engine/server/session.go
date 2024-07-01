@@ -425,9 +425,9 @@ func (srv *Server) initializeDaggerClient(
 	if err := coreMod.Install(ctx, dag); err != nil {
 		return fmt.Errorf("failed to install core module: %w", err)
 	}
+	client.dagqlRoot.DefaultDeps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
 
 	if opts.EncodedModuleID == "" {
-		client.dagqlRoot.DefaultDeps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
 		client.deps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
 	} else {
 		modID := new(call.ID)
@@ -444,9 +444,8 @@ func (srv *Server) initializeDaggerClient(
 		if err != nil {
 			return err
 		}
-		fmt.Println("setting engineVersion", engineVersion)
 		if engineVersion != "" {
-			coreMod = coreMod.WithVersion(engineVersion)
+			coreMod.Dag.DefaultView = engineVersion
 
 			// NOTE: *technically* we should reload the module here, so that we can
 			// use the new typedefs api - but at this point we likely would
@@ -909,12 +908,12 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module) error {
 	defer client.stateMu.Unlock()
 
 	client.deps = client.deps.Append(mod)
-	for i, depMod := range client.deps.Mods {
+	for _, depMod := range client.deps.Mods {
 		if coreMod, ok := depMod.(*schema.CoreMod); ok {
 			// this is needed so that when the cli serves a module, that we
 			// serve the coreMod schema associated with that module
-			fmt.Println("setting engineVersion from serveModule", engineVersion)
-			client.deps.Mods[i] = coreMod.WithVersion(engineVersion)
+			coreMod.Dag.DefaultView = engineVersion
+			break
 		}
 	}
 	return nil

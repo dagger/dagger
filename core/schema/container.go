@@ -526,6 +526,7 @@ func (s *containerSchema) Install() {
 
 		dagql.Fields[*coreTerminalLegacy]{
 			dagql.Func("websocketEndpoint", s.terminalLegacyWebsocketEndpoint).
+				Deprecated("Use newer dagger to access the terminal").
 				Doc(`An http endpoint at which this terminal can be connected to over a websocket.`),
 		}.Install(srv)
 	})
@@ -1475,6 +1476,9 @@ func (s *containerSchema) terminalLegacy(
 	ctr dagql.Instance[*core.Container],
 	args containerTerminalArgs,
 ) (*coreTerminalLegacy, error) {
+	// HACK: when attempting to construct a legacy terminal, just spin up a new
+	// terminal attachable. The returned terminal is definitely invalid, but,
+	// the intention was probably to debug it anyways, so we're probably okay.
 	if _, err := s.terminal(ctx, ctr, args); err != nil {
 		return nil, err
 	}
@@ -1495,5 +1499,5 @@ func (*coreTerminalLegacy) TypeDescription() string {
 }
 
 func (s *containerSchema) terminalLegacyWebsocketEndpoint(ctx context.Context, parent *coreTerminalLegacy, args struct{}) (string, error) {
-	return "", fmt.Errorf("lol no")
+	return "", nil
 }

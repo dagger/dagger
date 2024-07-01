@@ -271,8 +271,8 @@ func (mod *Module) TypeDefs(ctx context.Context) ([]*TypeDef, error) {
 	return typeDefs, nil
 }
 
-func (mod *Module) View() *string {
-	return nil
+func (mod *Module) View() string {
+	return ""
 }
 
 func (mod *Module) ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirectDeps bool) (ModType, bool, error) {
@@ -667,8 +667,7 @@ type Mod interface {
 	// All the TypeDefs exposed by this module (does not include dependencies)
 	TypeDefs(ctx context.Context) ([]*TypeDef, error)
 
-	// The direct dependencies of this module
-	View() *string
+	View() string
 }
 
 /*
