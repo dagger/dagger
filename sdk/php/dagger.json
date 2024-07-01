@@ -4,6 +4,16 @@
   "include": [
     "."
   ],
+  "exclude": [
+    ".changes",
+    ".changie.yaml",
+    "docker",
+    "docker-compose.yml",
+    "tests",
+    "phpunit.xml.dist",
+    "psalm.xml",
+    ".php-cs-fixer.dist.php"
+  ],
   "source": "runtime",
   "engineVersion": "v0.11.6"
 }
