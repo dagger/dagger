@@ -126,8 +126,8 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (
 
 	dag := dagql.NewServer[*Query](d.root)
 	for _, mod := range d.Mods {
-		if version := mod.View(); version != "" { // XXX: this is hacky
-			dag.DefaultView = version
+		if version, ok := mod.View(); ok {
+			dag.View = version
 			break
 		}
 	}

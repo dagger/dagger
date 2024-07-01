@@ -86,7 +86,7 @@ func (class Class[T]) Field(name string, view string) (Field[T], bool) {
 		return Field[T]{}, false
 	}
 	for _, field := range fields {
-		if field.Spec.View == nil || field.Spec.View(view) {
+		if field.Spec.ViewFilter == nil || field.Spec.ViewFilter(view) {
 			return *field, true
 		}
 	}
@@ -143,7 +143,7 @@ func (cls Class[T]) TypeDefinition(view string) *ast.Definition {
 	}
 	for _, fields := range cls.fields {
 		for _, field := range fields {
-			if field.Spec.View == nil || field.Spec.View(view) {
+			if field.Spec.ViewFilter == nil || field.Spec.ViewFilter(view) {
 				def.Fields = append(def.Fields, field.FieldDefinition())
 				break
 			}
@@ -389,8 +389,8 @@ type FieldSpec struct {
 	DeprecatedReason string
 	// Module is the module that provides the field's implementation.
 	Module *call.Module
-	// View is the view that this field is a component of
-	View ViewFilter
+	// ViewFilter determines whether the field is included in a view
+	ViewFilter ViewFilter
 }
 
 func (spec FieldSpec) FieldDefinition() *ast.FieldDefinition {

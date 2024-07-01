@@ -271,8 +271,8 @@ func (mod *Module) TypeDefs(ctx context.Context) ([]*TypeDef, error) {
 	return typeDefs, nil
 }
 
-func (mod *Module) View() string {
-	return ""
+func (mod *Module) View() (string, bool) {
+	return "", false
 }
 
 func (mod *Module) ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirectDeps bool) (ModType, bool, error) {
@@ -653,6 +653,9 @@ type Mod interface {
 	// The name of the module
 	Name() string
 
+	// The view that this module has of it's respective underlying schema
+	View() (string, bool)
+
 	// The direct dependencies of this module
 	Dependencies() []Mod
 
@@ -666,8 +669,6 @@ type Mod interface {
 
 	// All the TypeDefs exposed by this module (does not include dependencies)
 	TypeDefs(ctx context.Context) ([]*TypeDef, error)
-
-	View() string
 }
 
 /*

@@ -33,7 +33,8 @@ type Server struct {
 	directives map[string]DirectiveSpec
 	installMu  *sync.Mutex
 
-	DefaultView string
+	// View is the view that is applied to all queries on this server
+	View string
 
 	// Cache is the inner cache used by the server. It can be replicated to
 	// another *Server to inherit and share caches.
@@ -43,8 +44,8 @@ type Server struct {
 }
 
 type serverView struct {
-	srv  *Server
-	view ViewFilter
+	srv        *Server
+	viewFilter ViewFilter
 }
 
 // AroundFunc is a function that is called around every non-cached selection.
@@ -105,10 +106,10 @@ func NewServer[T Typed](root T) *Server {
 
 type ViewFilter func(view string) bool
 
-func View(server *Server, view ViewFilter, f func(srv ServerView)) {
+func View(server *Server, filter ViewFilter, f func(srv ServerView)) {
 	f(&serverView{
-		srv:  server,
-		view: view,
+		srv:        server,
+		viewFilter: filter,
 	})
 }
 
@@ -130,7 +131,7 @@ func (s *serverView) getObject(name string) (ObjectType, bool) {
 }
 
 func (s *serverView) field(spec FieldSpec) FieldSpec {
-	spec.View = s.view
+	spec.ViewFilter = s.viewFilter
 	return spec
 }
 
@@ -348,7 +349,7 @@ func (s *Server) Schema() *ast.Schema { // TODO: change this to be updated whene
 	queryType := s.Root().Type().Name()
 	schema := &ast.Schema{}
 	for _, t := range s.objects { // TODO stable order
-		def := definition(ast.Object, s.DefaultView, t)
+		def := definition(ast.Object, s.View, t)
 		if def.Name == queryType {
 			schema.Query = def
 		}
@@ -796,7 +797,7 @@ func (s *Server) parseASTSelections(ctx context.Context, gqlOp *graphql.Operatio
 	for _, sel := range astSels {
 		switch x := sel.(type) {
 		case *ast.Field:
-			sel, resType, err := class.ParseField(ctx, s.DefaultView, x, vars)
+			sel, resType, err := class.ParseField(ctx, s.View, x, vars)
 			if err != nil {
 				return nil, fmt.Errorf("parse field %q: %w", x.Name, err)
 			}

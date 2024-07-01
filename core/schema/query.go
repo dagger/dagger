@@ -69,5 +69,5 @@ func (s *querySchema) version(_ context.Context, _ *core.Query, args struct{}) (
 }
 
 func (s *querySchema) schemaVersion(ctx context.Context, parent dagql.Instance[*core.Query], _ struct{}) (string, error) {
-	return s.srv.DefaultView, nil
+	return s.srv.View, nil
 }

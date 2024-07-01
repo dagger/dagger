@@ -30,16 +30,8 @@ func (m *CoreMod) Dependencies() []core.Mod {
 	return nil
 }
 
-func (m *CoreMod) WithVersion(version string) *CoreMod {
-	dag := *m.Dag
-	dag.DefaultView = version
-	return &CoreMod{
-		Dag: &dag,
-	}
-}
-
-func (m *CoreMod) View() string {
-	return m.Dag.DefaultView
+func (m *CoreMod) View() (string, bool) {
+	return m.Dag.View, true
 }
 
 func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server) error {
@@ -123,7 +115,7 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 }
 
 func (m *CoreMod) TypeDefs(ctx context.Context) ([]*core.TypeDef, error) {
-	fmt.Println("getting core mod typedefs view =", m.Dag.DefaultView)
+	fmt.Println("getting core mod typedefs view =", m.Dag.View)
 	introspectionJSON, err := SchemaIntrospectionJSON(ctx, m.Dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema introspection JSON for core: %w", err)
