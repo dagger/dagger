@@ -246,7 +246,7 @@
         <jakarta.json.bind-api.version>3.0.1</jakarta.json.bind-api.version>
         <javapoet.version>1.13.0</javapoet.version>
         <json-path.version>2.9.0</json-path.version>
-        <junit.version>5.10.2</junit.version>
+        <junit.version>5.10.3</junit.version>
         <maven-assembly-plugin.version>3.6.0</maven-assembly-plugin.version>
         <maven-compiler-plugin.version>3.11.0</maven-compiler-plugin.version>
         <maven-failsafe-plugin.version>3.0.0</maven-failsafe-plugin.version>
@@ -260,7 +260,7 @@
         <mockito-core.version>5.12.0</mockito-core.version>
         <slf4j-api.version>2.0.13</slf4j-api.version>
         <slf4j-simple.version>2.0.13</slf4j-simple.version>
-        <smallrye-graphql.version>2.8.4</smallrye-graphql.version>
+        <smallrye-graphql.version>2.8.6</smallrye-graphql.version>
         <system-stubs-jupiter.version>2.1.6</system-stubs-jupiter.version>
         <xdg-java.version>0.1.1</xdg-java.version>
         <yasson.version>3.0.3</yasson.version>
