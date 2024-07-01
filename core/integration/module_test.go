@@ -6058,6 +6058,12 @@ func (m *Foo) GetVersion(ctx context.Context) (string, error) {
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"foo":{"getVersion": "v2.0.0"}}`, out)
+
+		out, err = work.
+			With(daggerCall("get-version")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "v2.0.0")
 	})
 
 	t.Run("module deps", func(ctx context.Context, t *testctx.T) {
@@ -6114,6 +6120,12 @@ func (m *Foo) GetVersion(ctx context.Context) (string, error) {
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"foo":{"getVersion": "v3.0.0 v2.0.0"}}`, out)
+
+		out, err = work.
+			With(daggerCall("get-version")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "v3.0.0 v2.0.0")
 	})
 }
 

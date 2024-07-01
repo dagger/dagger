@@ -15,7 +15,7 @@ func main() {
 	root := &core.Query{}
 	dag := dagql.NewServer(root)
 	coreMod := &schema.CoreMod{Dag: dag}
-	if err := coreMod.Install(ctx, dag, ""); err != nil {
+	if err := coreMod.Install(ctx, dag); err != nil {
 		panic(err)
 	}
 
