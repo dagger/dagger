@@ -488,6 +488,7 @@ type Descriptive interface {
 
 // Definitive is a type that knows how to define itself in the schema.
 type Definitive interface {
+	// XXX: can the view be removed from here?
 	TypeDefinition(view string) *ast.Definition
 }
 

@@ -445,11 +445,13 @@ func (srv *Server) initializeDaggerClient(
 			return err
 		}
 		if engineVersion != "" {
+			// this is needed to set the view of the core api as compatible
+			// with the module we're currently calling from
 			coreMod.Dag.View = engineVersion
 
 			// NOTE: *technically* we should reload the module here, so that we can
 			// use the new typedefs api - but at this point we likely would
-			// have failed to load the module in the first place anyways
+			// have failed to load the module in the first place anyways?
 			// modInst, err = dagql.NewID[*core.Module](modID).Load(ctx, coreMod.Dag)
 			// if err != nil {
 			// 	return fmt.Errorf("failed to load module: %w", err)

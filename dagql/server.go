@@ -113,6 +113,7 @@ func View(server *Server, filter ViewFilter, f func(srv ServerView)) {
 	})
 }
 
+// XXX: simplify!
 type ServerView interface {
 	installObject(class ObjectType)
 	getObject(name string) (ObjectType, bool)

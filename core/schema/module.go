@@ -832,7 +832,6 @@ func (s *moduleSchema) updateDeps(
 		if coreMod, ok := depMod.(*CoreMod); ok {
 			// this is needed so that a module's dependency on the core
 			// uses the correct schema version
-
 			dag := *coreMod.Dag
 			dag.View = engineVersion
 			mod.Deps.Mods[i] = &CoreMod{Dag: &dag}

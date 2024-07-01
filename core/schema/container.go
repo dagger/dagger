@@ -487,7 +487,7 @@ func (s *containerSchema) Install() {
 
 	dagql.Fields[*coreTerminalLegacy]{}.Install(s.srv)
 
-	dagql.View(s.srv, inVersion("v0.12.0"), func(srv dagql.ServerView) {
+	dagql.View(s.srv, containsVersion("v0.12.0"), func(srv dagql.ServerView) {
 		dagql.Fields[*core.Container]{
 			dagql.NodeFunc("terminal", s.terminal).
 				Impure("Nondeterministic.").

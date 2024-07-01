@@ -1764,7 +1764,7 @@ func debugID(t *testing.T, msgf string, idStr string, args ...any) {
 }
 
 func InstallViewer(srv *dagql.Server) {
-	getView := func(ctx context.Context, _ Query, args struct{}) (string, error) {
+	getView := func(_ context.Context, _ Query, _ struct{}) (string, error) {
 		return srv.View, nil
 	}
 	isEqual := func(target string) func(string) bool {

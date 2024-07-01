@@ -39,15 +39,15 @@ type ObjectType interface {
 	// IDType returns the scalar type for the object's IDs.
 	IDType() (IDType, bool)
 	// New creates a new instance of the type.
-	New(*call.ID, Typed) (Object, error)
+	New(id *call.ID, val Typed) (Object, error)
 	// ParseField parses the given field and returns a Selector and an expected
 	// return type.
-	ParseField(context.Context, string, *ast.Field, map[string]any) (Selector, *ast.Type, error)
+	ParseField(ctx context.Context, view string, astField *ast.Field, vars map[string]any) (Selector, *ast.Type, error)
 	// Extend registers an additional field onto the type.
 	//
 	// Unlike natively added fields, the extended func is limited to the external
 	// Object interface.
-	Extend(FieldSpec, FieldFunc)
+	Extend(spec FieldSpec, fun FieldFunc)
 }
 
 type IDType interface {

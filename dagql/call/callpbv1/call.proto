@@ -81,6 +81,10 @@ message Call {
   // calculating the Call's digest.
   string digest = 9;
   
+  // The view that this call was made in. Since a graphql server may present
+  // slightly different views depending on the specified view, to be able to
+  // evaluate calls wherever, we need to track which view the call was actually
+  // called in.
   string view = 10;
 }
 
