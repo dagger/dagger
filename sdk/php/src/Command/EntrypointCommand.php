@@ -30,19 +30,19 @@ use Throwable;
 #[AsCommand('dagger:entrypoint')]
 class EntrypointCommand extends Command
 {
-    private Dagger\Client $daggerClient;
+    private Dagger\Client $dag;
 
     public function __construct()
     {
         parent::__construct();
-        $this->daggerClient = Dagger\Dagger::connect();
+        $this->dag = Dagger\Dagger::connect();
     }
 
     protected function execute(
         InputInterface $input,
         OutputInterface $output
     ): int {
-        $functionCall = $this->daggerClient->currentFunctionCall();
+        $functionCall = $this->dag->currentFunctionCall();
         $parentName = $functionCall->parentName();
 
         try {
@@ -62,18 +62,18 @@ class EntrypointCommand extends Command
 
     private function registerModule(Dagger\FunctionCall $functionCall): int
     {
-        $daggerModule = $this->daggerClient->module();
+        $daggerModule = $this->dag->module();
 
         $src = (new FindsSrcDirectory())();
         $daggerObjects = (new FindsDaggerObjects())($src);
 
         foreach ($daggerObjects as $daggerObject) {
-            $objectTypeDef = $this->daggerClient
+            $objectTypeDef = $this->dag
                 ->typeDef()
                 ->withObject($this->normalizeClassname($daggerObject->name));
 
             foreach ($daggerObject->daggerFunctions as $daggerFunction) {
-                $func = $this->daggerClient->function(
+                $func = $this->dag->function(
                     $daggerFunction->name,
                     $this->getTypeDef($daggerFunction->returnType)
                 );
@@ -116,7 +116,7 @@ class EntrypointCommand extends Command
         $className = "DaggerModule\\$parentName";
         $functionName = $functionCall->name();
         $class = new $className();
-        $class->client = $this->daggerClient;
+        $class->client = $this->dag;
 
         $args = $this->formatArguments(
             $className,
@@ -150,7 +150,7 @@ class EntrypointCommand extends Command
 
     private function getTypeDef(Type $type): TypeDef
     {
-        $typeDef = $this->daggerClient->typeDef();
+        $typeDef = $this->dag->typeDef();
         /**
          * @TODO Support arrays:
          * - Create additional attribute to define the array subtype
@@ -205,7 +205,7 @@ class EntrypointCommand extends Command
             ->getParameters();
 
         $result = [];
-        $decodesValue = new DecodesValue($this->daggerClient);
+        $decodesValue = new DecodesValue($this->dag);
         foreach ($parameters as $parameter) {
             $type = new Type($parameter->getType()->getName());
 
