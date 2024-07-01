@@ -175,7 +175,6 @@ type tagsArgs struct {
 }
 
 func (s *gitSchema) tags(ctx context.Context, parent *core.GitRepository, args tagsArgs) ([]string, error) {
-	// TODO: exec git with an equivalent of gitdns.git(), to inherently handle auth via the socket
 	queryArgs := []string{
 		"ls-remote",
 		"--tags", // we only want tags
@@ -297,28 +296,6 @@ func defaultBranch(ctx context.Context, repoURL string) (string, error) {
 	}
 
 	return "", fmt.Errorf("could not deduce default branch from output:\n%s", string(stdoutBytes))
-}
-
-// find all git tags for a given repo
-func gitTags(ctx context.Context, repoURL string) ([]string, error) {
-	stdoutBytes, err := exec.CommandContext(ctx, "git", "ls-remote", "--refs", "--tags", "--symref", repoURL).Output()
-	if err != nil {
-		return nil, fmt.Errorf("failed to run git: %w", err)
-	}
-
-	scanner := bufio.NewScanner(bytes.NewBuffer(stdoutBytes))
-
-	tags := []string{}
-	for scanner.Scan() {
-		fields := strings.Fields(scanner.Text())
-		if len(fields) < 2 {
-			continue
-		}
-
-		tags = append(tags, strings.TrimPrefix(fields[1], "refs/tags/"))
-	}
-
-	return tags, nil
 }
 
 func isSemver(ver string) bool {
