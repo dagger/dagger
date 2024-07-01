@@ -141,7 +141,9 @@ func (sdk *PhpSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSource, i
 			"php", "composer.phar", "install",
 		})
 
-	filepath.Join(ModSourceDirPath, subPath, RuntimeExecutablePath)
-
-	return ctr.WithEntrypoint([]string{filepath.Join(ModSourceDirPath, subPath, "dagger")}), nil
+	return ctr.WithEntrypoint([]string{filepath.Join(
+		ModSourceDirPath,
+		subPath,
+		RuntimeExecutablePath,
+	)}), nil
 }
