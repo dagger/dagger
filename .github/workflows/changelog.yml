@@ -7,6 +7,10 @@ on:
       - synchronize
       - labeled
       - unlabeled
+      
+permissions:
+  contents: read
+  pull-requests: write
 
 jobs:
   check-for-changelog:
@@ -23,7 +27,7 @@ jobs:
           set -x
           shopt -s globstar
 
-          diff=$(git diff --name-only origin/$GITHUB_BASE_REF...origin/$GITHUB_HEAD_REF -- **/.changes/unreleased)
+          diff=$(git diff --name-only origin/$GITHUB_BASE_REF...origin/$GITHUB_REF -- **/.changes/unreleased)
           diffReturn=$?
           if [ $diffReturn -ne 0 ]; then
             exit $diffReturn
