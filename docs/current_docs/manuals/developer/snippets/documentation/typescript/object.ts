@@ -1,13 +1,13 @@
-import { object, field } from "@dagger.io/dagger"
+import { object } from "@dagger.io/dagger"
 
 /**
  * The object represents a single user of the system.
  */
 @object()
 class MyModule {
-  @field()
+  @func()
   name: string
-  @field()
+  @func()
   age: number
 
   constructor(
