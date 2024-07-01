@@ -87,10 +87,27 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 
 		commitRef := modVersion
 		if parsed.hasVersion && isSemver(modVersion) {
-			allTags, err := gitTags(ctx, parsed.repoRoot.Repo)
+			var tags dagql.Array[dagql.String]
+			err := s.dag.Select(ctx, s.dag.Root(), &tags,
+				dagql.Selector{
+					Field: "git",
+					Args: []dagql.NamedInput{
+						{Name: "url", Value: dagql.String(parsed.repoRoot.Repo)},
+					},
+				},
+				dagql.Selector{
+					Field: "tags",
+				},
+			)
 			if err != nil {
-				return nil, fmt.Errorf("get git tags: %w", err)
+				return nil, fmt.Errorf("failed to resolve git tags: %w", err)
 			}
+
+			allTags := make([]string, len(tags))
+			for i, tag := range tags {
+				allTags[i] = tag.String()
+			}
+
 			matched, err := matchVersion(allTags, modVersion, subPath)
 			if err != nil {
 				return nil, fmt.Errorf("matching version to tags: %w", err)
