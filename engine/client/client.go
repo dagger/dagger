@@ -482,6 +482,7 @@ type BuildkitSessionServer struct {
 
 func (srv *BuildkitSessionServer) Run(ctx context.Context) {
 	defer srv.Conn.Close()
+	defer srv.Stop()
 
 	doneCh := make(chan struct{})
 	go func() {

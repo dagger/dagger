@@ -57,6 +57,10 @@ type daggerSession struct {
 	clients  map[string]*daggerClient // clientID -> client
 	clientMu sync.RWMutex
 
+	// closed after the shutdown endpoint is called
+	shutdownCh        chan struct{}
+	closeShutdownOnce sync.Once
+
 	// the http endpoints being served (as a map since APIs like shellEndpoint can add more)
 	endpoints  map[string]http.Handler
 	endpointMu sync.RWMutex
@@ -147,6 +151,7 @@ func (srv *Server) initializeDaggerSession(
 	sess.mainClientCallerID = clientMetadata.ClientID
 	sess.clients = map[string]*daggerClient{}
 	sess.endpoints = map[string]http.Handler{}
+	sess.shutdownCh = make(chan struct{})
 	sess.services = core.NewServices()
 	sess.secretStore = core.NewSecretStore()
 	sess.authProvider = auth.NewRegistryAuthProvider()
@@ -192,6 +197,15 @@ func (srv *Server) initializeDaggerSession(
 
 	sess.state = sessionStateInitialized
 	return nil
+}
+
+func (sess *daggerSession) withShutdownCancel(ctx context.Context) context.Context {
+	ctx, cancel := context.WithCancel(ctx)
+	go func() {
+		<-sess.shutdownCh
+		cancel()
+	}()
+	return ctx
 }
 
 // requires that sess.stateMu is held
@@ -752,6 +766,7 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 		panic(fmt.Errorf("failed to read ack: %w", err))
 	}
 
+	ctx = client.daggerSession.withShutdownCancel(ctx)
 	err = srv.bkSessionManager.HandleConn(ctx, conn, map[string][]string{
 		engine.SessionIDMetaKey:         {client.clientID},
 		engine.SessionNameMetaKey:       {client.clientID},
@@ -863,6 +878,10 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 	}
 
 	telemetry.Flush(ctx)
+
+	sess.closeShutdownOnce.Do(func() {
+		close(sess.shutdownCh)
+	})
 	return nil
 }
 
