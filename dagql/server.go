@@ -44,7 +44,7 @@ type Server struct {
 
 type serverView struct {
 	srv  *Server
-	view string
+	view ViewFilter
 }
 
 // AroundFunc is a function that is called around every non-cached selection.
@@ -103,7 +103,9 @@ func NewServer[T Typed](root T) *Server {
 	return srv
 }
 
-func View(server *Server, view string, f func(srv ServerView)) {
+type ViewFilter func(view string) bool
+
+func View(server *Server, view ViewFilter, f func(srv ServerView)) {
 	f(&serverView{
 		srv:  server,
 		view: view,
@@ -346,7 +348,7 @@ func (s *Server) Schema() *ast.Schema { // TODO: change this to be updated whene
 	queryType := s.Root().Type().Name()
 	schema := &ast.Schema{}
 	for _, t := range s.objects { // TODO stable order
-		def := definition(ast.Object, s.DefaultView, t) // XXX: default
+		def := definition(ast.Object, s.DefaultView, t)
 		if def.Name == queryType {
 			schema.Query = def
 		}
@@ -385,9 +387,6 @@ func (s *Server) Exec(ctx1 context.Context) graphql.ResponseHandler {
 		if err := gqlOp.Validate(ctx); err != nil {
 			return graphql.ErrorResponse(ctx, "validate: %s", err)
 		}
-
-		fmt.Println(">>> ", gqlOp.RawQuery)
-		fmt.Println("default view =", s.DefaultView)
 
 		results, err := s.ExecOp(ctx, gqlOp)
 		if err != nil {
@@ -797,7 +796,7 @@ func (s *Server) parseASTSelections(ctx context.Context, gqlOp *graphql.Operatio
 	for _, sel := range astSels {
 		switch x := sel.(type) {
 		case *ast.Field:
-			sel, resType, err := class.ParseField(ctx, s.DefaultView, x, vars) // XXX: default view?
+			sel, resType, err := class.ParseField(ctx, s.DefaultView, x, vars)
 			if err != nil {
 				return nil, fmt.Errorf("parse field %q: %w", x.Name, err)
 			}

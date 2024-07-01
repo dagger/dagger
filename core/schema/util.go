@@ -9,6 +9,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/introspection"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 )
 
@@ -75,4 +76,16 @@ func SchemaIntrospectionJSON(ctx context.Context, dag *dagql.Server) (json.RawMe
 func gqlFieldName(name string) string {
 	// gql field name is uncapitalized camel case
 	return strcase.ToLowerCamel(name)
+}
+
+func inVersion(minVersion string) dagql.ViewFilter {
+	return func(version string) bool {
+		return engine.CheckVersionCompatibility(version, minVersion) == nil
+	}
+}
+
+func uptoVersion(maxVersion string) dagql.ViewFilter {
+	return func(version string) bool {
+		return engine.CheckVersionCompatibility(version, maxVersion) != nil
+	}
 }

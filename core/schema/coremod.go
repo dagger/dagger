@@ -35,6 +35,7 @@ func (m *CoreMod) WithVersion(version string) *CoreMod {
 	// dag := *m.Dag
 	// dag.DefaultView = version
 
+	// XXX: hm is this always needed? can we simplify?
 	m.Dag.DefaultView = version
 
 	return &CoreMod{
