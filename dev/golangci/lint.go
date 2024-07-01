@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sync"
+	"strings"
 )
 
 const (
@@ -31,6 +31,67 @@ type LintRun struct {
 	Source *Directory
 	// +private
 	Packages []string
+}
+
+func (run LintRun) Issues(ctx context.Context) ([]Issue, error) {
+	report, err := run.parseReport(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return report.Issues, nil
+}
+
+func (run LintRun) Assert(ctx context.Context) error {
+	issues, err := run.Issues(ctx)
+	if err != nil {
+		return err
+	}
+	var (
+		errCount  int
+		summaries []string
+	)
+	for _, iss := range issues {
+		if iss.Severity != "error" {
+			continue
+		}
+		errCount += 1
+		summaries = append(summaries, iss.Summary())
+	}
+	if errCount > 0 {
+		return fmt.Errorf("Linting failed with %d issues:\n%s",
+			errCount,
+			strings.Join(summaries, "\n"),
+		)
+	}
+	return nil
+}
+
+func (run LintRun) ErrorCount(ctx context.Context) (int, error) {
+	var count int
+	issues, err := run.Issues(ctx)
+	if err != nil {
+		return count, err
+	}
+	for _, issue := range issues {
+		if issue.Severity == "error" {
+			count += 1
+		}
+	}
+	return count, nil
+}
+
+func (run LintRun) WarningCount(ctx context.Context) (int, error) {
+	var count int
+	issues, err := run.Issues(ctx)
+	if err != nil {
+		return count, err
+	}
+	for _, issue := range issues {
+		if issue.Severity != "error" {
+			count += 1
+		}
+	}
+	return count, nil
 }
 
 // Return a JSON report file for this run
@@ -80,6 +141,15 @@ type Issue struct {
 	Severity       string       `json:"Severity"`
 }
 
+func (issue Issue) Summary() string {
+	return fmt.Sprintf("%s:%s %s: %s",
+		issue.Pos.Filename,
+		issue.Pos.Line,
+		issue.Severity,
+		issue.Text,
+	)
+}
+
 // Low-level report schema
 // We don't expose this type directly, for flexibility to:
 // 1) mix lazy and non-lazy functions
@@ -95,134 +165,4 @@ func (run LintRun) parseReport(ctx context.Context) (*reportSchema, error) {
 	}
 	var report reportSchema
 	return &report, json.Unmarshal([]byte(reportJSON), &report)
-}
-
-func (run LintRun) Issues(ctx context.Context) ([]Issue, error) {
-	report, err := run.parseReport(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return report.Issues, nil
-}
-
-func (run LintRun) ErrorCount(ctx context.Context) (int, error) {
-	var count int
-	issues, err := run.Issues(ctx)
-	if err != nil {
-		return count, err
-	}
-	for _, issue := range issues {
-		if issue.Severity == "error" {
-			count += 1
-		}
-	}
-	return count, nil
-}
-
-func (run LintRun) WarningCount(ctx context.Context) (int, error) {
-	var count int
-	issues, err := run.Issues(ctx)
-	if err != nil {
-		return count, err
-	}
-	for _, issue := range issues {
-		if issue.Severity != "error" {
-			count += 1
-		}
-	}
-	return count, nil
-}
-
-// A linting report
-type LintReport struct {
-	mu     sync.Mutex
-	Issues []LintIssue
-	// +private
-	LLReport *File `json:"-"`
-}
-
-// An individual linting issue
-type LintIssue struct {
-	// The name of the tool that produced the issue
-	Tool string
-	// True if the issue is an error, false if it's a warning'
-	IsError bool
-	// The text explaining the issue
-	Text string
-	// FIXME add more fields
-}
-
-// Return the linting report as a JSON file
-func (lr *LintReport) JSON(
-	ctx context.Context,
-	// Return the low-level linting tool's report instead of the high-level one
-	// +optional
-	ll bool,
-) (*File, error) {
-	if ll {
-		if lr.LLReport == nil {
-			return nil, fmt.Errorf("no low-level report available")
-		}
-		return lr.LLReport, nil
-	}
-	data, err := json.MarshalIndent(lr, "", "  ")
-	if err != nil {
-		return nil, err
-	}
-	f := dag.
-		Directory().
-		WithNewFile("lint.json", string(data)).
-		File("lint.json")
-	return f, nil
-}
-
-// Return the total number of linting errors
-func (lr *LintReport) ErrorCount() int {
-	var count int
-	for _, issue := range lr.Issues {
-		if issue.IsError {
-			count += 1
-		}
-	}
-	return count
-}
-
-// Return the total number of linting warnings
-func (lr *LintReport) WarningCount() int {
-	var count int
-	for _, issue := range lr.Issues {
-		if !issue.IsError {
-			count += 1
-		}
-	}
-	return count
-}
-
-// Return the total number of linting issues (errors and warnings)
-func (lr *LintReport) IssueCount() int {
-	return len(lr.Issues)
-}
-
-// Return an error if there are errors
-func (lr *LintReport) AssertPass(ctx context.Context) error {
-	if count := lr.ErrorCount(); count > 0 {
-		return fmt.Errorf("linting failed with %d errors", count)
-	}
-	return nil
-}
-
-func (lr *LintReport) merge(other *LintReport) error {
-	lr.mu.Lock()
-	defer lr.mu.Unlock()
-	lr.Issues = append(lr.Issues, other.Issues...)
-	return nil
-}
-
-func (lr *LintReport) WithIssue(text string, isError bool) *LintReport {
-	return &LintReport{
-		Issues: append(lr.Issues, LintIssue{
-			IsError: isError,
-			Text:    text,
-		}),
-	}
 }
