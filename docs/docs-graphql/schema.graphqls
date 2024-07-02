@@ -690,7 +690,7 @@ type Container {
   """Retrieves this container plus a new file written at the given path."""
   withNewFile(
     """Content of the file to write (e.g., "Hello world!")."""
-    contents: String = ""
+    contents: String!
 
     """
     A user:group to set for the file.

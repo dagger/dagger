@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
-
-	"github.com/dagger/dagger/dev/shellcheck/internal/dagger"
 )
 
 type Shellcheck struct{}
@@ -117,9 +115,14 @@ func (r *Report) Fixed(ctx context.Context) (*File, error) {
 	f := base().
 		WithExec([]string{"apk", "add", "patch"}).
 		WithWorkdir("/src").
-		WithNewFile(filename+".patch", dagger.ContainerWithNewFileOpts{
-			Contents: r.FixedDiff,
-		}).
+		// FIXME: Container.withNewFile is changing signature in
+		// https://github.com/dagger/dagger/pull/7293. Until that's released
+		// we're avoiding using it here for compatibility with dev and stable.
+		// .WithNewFile(filename+".patch", r.FixedDiff).
+		WithFile(filename+".patch", dag.Directory().
+			WithNewFile("patch", r.FixedDiff).
+			File("path"),
+		).
 		WithFile(filename, r.Target).
 		WithExec([]string{"patch", filename, filename + ".patch"}).
 		File(filename)

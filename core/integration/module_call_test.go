@@ -65,8 +65,7 @@ func (ModuleSuite) TestDaggerCallArgTypes(ctx context.Context, t *testctx.T) {
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work").
 				With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-				WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-					Contents: fmt.Sprintf(`package main
+				WithNewFile("main.go", fmt.Sprintf(`package main
 import (
 	"context"
 )
@@ -80,7 +79,7 @@ func (m *Test) Fn(ctx context.Context, svc *Service) (string, error) {
 		Stdout(ctx)
 }
 `, alpineImage),
-				})
+				)
 
 			logGen(ctx, t, modGen.Directory("."))
 
@@ -102,8 +101,7 @@ func (m *Test) Fn(ctx context.Context, svc *Service) (string, error) {
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work").
 				With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-				WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-					Contents: `package main
+				WithNewFile("main.go", `package main
 import (
 	"context"
 	"fmt"
@@ -129,7 +127,7 @@ func (m *Test) Fn(ctx context.Context, svc *Service) (string, error) {
 	return strings.Join(out, "\n"), nil
 }
 `,
-				})
+				)
 
 			logGen(ctx, t, modGen.Directory("."))
 
@@ -152,11 +150,8 @@ func (m *Test) Fn(ctx context.Context, svc *Service) (string, error) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=minimal", "--sdk=go")).
-			WithNewFile("foo.txt", dagger.ContainerWithNewFileOpts{
-				Contents: "bar",
-			}).
-			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("foo.txt", "bar").
+			WithNewFile("main.go", `package main
 import (
 	"context"
 	"strings"
@@ -180,7 +175,7 @@ func (m *Minimal) Reads(ctx context.Context, files []File) (string, error) {
 	return strings.Join(contents, "+"), nil
 }
 `,
-			})
+			)
 
 		logGen(ctx, t, modGen.Directory("."))
 
@@ -202,21 +197,16 @@ func (m *Minimal) Reads(ctx context.Context, files []File) (string, error) {
 					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 					WithWorkdir("/work").
 					With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-					WithNewFile("/dir/subdir/foo.txt", dagger.ContainerWithNewFileOpts{
-						Contents: "foo",
-					}).
-					WithNewFile("/dir/subdir/bar.txt", dagger.ContainerWithNewFileOpts{
-						Contents: "bar",
-					}).
-					WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-						Contents: `package main
+					WithNewFile("/dir/subdir/foo.txt", "foo").
+					WithNewFile("/dir/subdir/bar.txt", "bar").
+					WithNewFile("main.go", `package main
 type Test struct {}
 
 func (m *Test) Fn(dir *Directory) *Directory {
 	return dir
 }
 	`,
-					})
+					)
 
 				out, err := modGen.With(daggerCall("fn", "--dir", "/dir/subdir", "entries")).Stdout(ctx)
 				require.NoError(t, err)
@@ -234,24 +224,17 @@ func (m *Test) Fn(dir *Directory) *Directory {
 					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 					WithWorkdir("/work/dir").
 					With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-					WithNewFile("/work/otherdir/foo.txt", dagger.ContainerWithNewFileOpts{
-						Contents: "foo",
-					}).
-					WithNewFile("/work/otherdir/bar.txt", dagger.ContainerWithNewFileOpts{
-						Contents: "bar",
-					}).
-					WithNewFile("/work/dir/subdir/blah.txt", dagger.ContainerWithNewFileOpts{
-						Contents: "blah",
-					}).
-					WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-						Contents: `package main
+					WithNewFile("/work/otherdir/foo.txt", "foo").
+					WithNewFile("/work/otherdir/bar.txt", "bar").
+					WithNewFile("/work/dir/subdir/blah.txt", "blah").
+					WithNewFile("main.go", `package main
 type Test struct {}
 
 func (m *Test) Fn(dir *Directory) *Directory {
 	return dir
 }
 	`,
-					})
+					)
 
 				out, err := modGen.With(daggerCall("fn", "--dir", "../otherdir", "entries")).Stdout(ctx)
 				require.NoError(t, err)
@@ -278,8 +261,7 @@ func (m *Test) Fn(dir *Directory) *Directory {
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work").
 				With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-				WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-					Contents: `package main
+				WithNewFile("main.go", `package main
 type Test struct {}
 
 func (m *Test) Fn(
@@ -292,7 +274,7 @@ func (m *Test) Fn(
 	return dir.Directory(subpath)
 }
 	`,
-				})
+				)
 
 			for _, tc := range []struct {
 				baseURL string
@@ -343,18 +325,15 @@ func (m *Test) Fn(
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work").
 				With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-				WithNewFile("/dir/subdir/foo.txt", dagger.ContainerWithNewFileOpts{
-					Contents: "foo",
-				}).
-				WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-					Contents: `package main
+				WithNewFile("/dir/subdir/foo.txt", "foo").
+				WithNewFile("main.go", `package main
 type Test struct {}
 
 func (m *Test) Fn(file *File) *File {
 	return file
 }
 	`,
-				})
+				)
 
 			out, err := modGen.With(daggerCall("fn", "--file", "/dir/subdir/foo.txt", "contents")).Stdout(ctx)
 			require.NoError(t, err)
@@ -372,21 +351,16 @@ func (m *Test) Fn(file *File) *File {
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work/dir").
 				With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-				WithNewFile("/work/otherdir/foo.txt", dagger.ContainerWithNewFileOpts{
-					Contents: "foo",
-				}).
-				WithNewFile("/work/dir/subdir/blah.txt", dagger.ContainerWithNewFileOpts{
-					Contents: "blah",
-				}).
-				WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-					Contents: `package main
+				WithNewFile("/work/otherdir/foo.txt", "foo").
+				WithNewFile("/work/dir/subdir/blah.txt", "blah").
+				WithNewFile("main.go", `package main
 type Test struct {}
 
 func (m *Test) Fn(file *File) *File {
 	return file
 }
 	`,
-				})
+				)
 
 			out, err := modGen.With(daggerCall("fn", "--file", "../otherdir/foo.txt", "contents")).Stdout(ctx)
 			require.NoError(t, err)
@@ -413,8 +387,7 @@ func (m *Test) Fn(file *File) *File {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("main.go", `package main
 
 import "context"
 
@@ -424,9 +397,9 @@ func (m *Test) Insecure(ctx context.Context, token *Secret) (string, error) {
 	return token.Plaintext(ctx)
 }
 `,
-			}).
+			).
 			WithEnvVariable("TOPSECRET", "shhh").
-			WithNewFile("/mysupersecret", dagger.ContainerWithNewFileOpts{Contents: "file shhh"})
+			WithNewFile("/mysupersecret", "file shhh")
 
 		t.Run("explicit env", func(ctx context.Context, t *testctx.T) {
 			t.Run("happy", func(ctx context.Context, t *testctx.T) {
@@ -491,8 +464,7 @@ func (m *Test) Insecure(ctx context.Context, token *Secret) (string, error) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("main.go", `package main
 
 import (
 	"context"
@@ -502,14 +474,14 @@ type Test struct {}
 
 func (m *Test) Cacher(ctx context.Context, cache *CacheVolume, val string) (string, error) {
 	return dag.Container().
-		From("` + alpineImage + `").
+		From("`+alpineImage+`").
 		WithMountedCache("/cache", cache).
 		WithExec([]string{"sh", "-c", "echo $0 >> /cache/vals", val}).
 		WithExec([]string{"cat", "/cache/vals"}).
 		Stdout(ctx)
 }
 `,
-			})
+			)
 
 		out, err := modGen.With(daggerCall("cacher", "--cache", volName, "--val", "foo")).Stdout(ctx)
 		require.NoError(t, err)
@@ -526,8 +498,7 @@ func (m *Test) Cacher(ctx context.Context, cache *CacheVolume, val string) (stri
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("main.go", `package main
 
 type Test struct {}
 
@@ -539,7 +510,7 @@ func (m *Test) ToPlatform(platform string) Platform {
 	return Platform(platform)
 }
 `,
-			})
+			)
 
 		out, err := modGen.With(daggerCall("from-platform", "--platform", "linux/amd64")).Stdout(ctx)
 		require.NoError(t, err)
@@ -564,8 +535,7 @@ func (m *Test) ToPlatform(platform string) Platform {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("main.go", `package main
 
 type Test struct {}
 
@@ -577,7 +547,7 @@ func (m *Test) ToProto(proto string) NetworkProtocol {
 	return NetworkProtocol(proto)
 }
 `,
-			})
+			)
 
 		out, err := modGen.With(daggerCall("from-proto", "--proto", "TCP")).Stdout(ctx)
 		require.NoError(t, err)
@@ -606,8 +576,7 @@ func (m *Test) ToProto(proto string) NetworkProtocol {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("main.go", `package main
 
 type Status string
 
@@ -626,7 +595,7 @@ func (m *Test) ToStatus(status string) Status {
 	return Status(status)
 }
 `,
-			})
+			)
 
 		out, err := modGen.With(daggerCall("from-status", "--status", "ACTIVE")).Stdout(ctx)
 		require.NoError(t, err)
@@ -655,11 +624,8 @@ func (m *Test) ToStatus(status string) Status {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-			WithNewFile("foo.txt", dagger.ContainerWithNewFileOpts{
-				Contents: "foo",
-			}).
-			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("foo.txt", "foo").
+			WithNewFile("main.go", `package main
 
 import (
 	"context"
@@ -675,7 +641,7 @@ func (m *Test) Mod(ctx context.Context, module *Module) *Module {
 	return module
 }
 `,
-			})
+			)
 
 		out, err := modGen.With(daggerCall("mod-src", "--mod-src", ".", "directory", "--path", ".", "entries")).Stdout(ctx)
 		require.NoError(t, err)
@@ -703,12 +669,11 @@ func (ModuleSuite) TestDaggerCallReturnTypes(ctx context.Context, t *testctx.T) 
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=minimal", "--sdk=go")).
-			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("main.go", `package main
 type Minimal struct {}
 
 type Foo struct {
-	Bar int ` + "`" + `json:"bar"` + "`" + `
+	Bar int `+"`"+`json:"bar"`+"`"+`
 }
 
 func (m *Minimal) Fn() []*Foo {
@@ -719,7 +684,7 @@ func (m *Minimal) Fn() []*Foo {
 	return foos
 }
 `,
-			})
+			)
 
 		logGen(ctx, t, modGen.Directory("."))
 		expected := "0\n1\n2\n"
@@ -762,8 +727,7 @@ func (m *Minimal) Fn() []*Foo {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-				Contents: fmt.Sprintf(`package main
+			WithNewFile("main.go", fmt.Sprintf(`package main
 
 func New() *Test {
 	return &Test{Ctr: dag.Container().From("%s").WithExec([]string{"echo", "hello", "world"})}
@@ -773,7 +737,7 @@ type Test struct {
 	Ctr *Container
 }
 `, alpineImage),
-			})
+			)
 
 		logGen(ctx, t, modGen.Directory("."))
 
@@ -802,8 +766,7 @@ type Test struct {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("main.go", `package main
 
 func New() *Test {
 	return &Test{
@@ -815,7 +778,7 @@ type Test struct {
 	Dir *Directory
 }
 `,
-			})
+			)
 
 		logGen(ctx, t, modGen.Directory("."))
 
@@ -853,8 +816,7 @@ type Test struct {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("main.go", `package main
 
 func New() *Test {
 	return &Test{
@@ -866,7 +828,7 @@ type Test struct {
 	File *File
 }
 `,
-			})
+			)
 
 		logGen(ctx, t, modGen.Directory("."))
 
@@ -894,8 +856,7 @@ type Test struct {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-				Contents: fmt.Sprintf(`package main
+			WithNewFile("main.go", fmt.Sprintf(`package main
 
 func New() *Test {
 	return &Test{Ctr: dag.Container().From("%s").WithExec([]string{"echo", "hello", "world"})}
@@ -905,7 +866,7 @@ type Test struct {
 	Ctr *Container
 }
 `, alpineImage),
-			})
+			)
 
 		// adding sync disables the default behavior of **not** printing the ID
 		// just verify it works without error for now
@@ -922,8 +883,7 @@ func (ModuleSuite) TestDaggerCallCoreChaining(ctx context.Context, t *testctx.T)
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-				Contents: fmt.Sprintf(`package main
+			WithNewFile("main.go", fmt.Sprintf(`package main
 
 func New() *Test {
 	return &Test{Ctr: dag.Container().From("%s")}
@@ -933,7 +893,7 @@ type Test struct {
 	Ctr *Container
 }
 `, alpineImage),
-			})
+			)
 
 		t.Run("file", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("ctr", "file", "--path=/etc/alpine-release", "contents")).Stdout(ctx)
@@ -957,8 +917,7 @@ type Test struct {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("main.go", `package main
 
 func New() *Test {
 	return &Test{
@@ -970,7 +929,7 @@ type Test struct {
 	Dir *Directory
 }
 `,
-			})
+			)
 
 		t.Run("file", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("dir", "file", "--path=foo.txt", "contents")).Stdout(ctx)
@@ -994,8 +953,7 @@ type Test struct {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("main.go", `package main
 
 func New() *Test {
 	return &Test{
@@ -1007,7 +965,7 @@ type Test struct {
 	File *File
 }
 `,
-			})
+			)
 
 		t.Run("size", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("file", "size")).Stdout(ctx)
@@ -1095,8 +1053,7 @@ func (ModuleSuite) TestDaggerCallSaveOutput(ctx context.Context, t *testctx.T) {
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
 		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-			Contents: `package main
+		WithNewFile("main.go", `package main
 
 type Test struct {
 }
@@ -1109,15 +1066,13 @@ func (t *Test) File() *File {
     return dag.Directory().WithNewFile("foo.txt", "foo").File("foo.txt")
 }
 `,
-		})
+		)
 
 	logGen(ctx, t, modGen.Directory("."))
 
 	t.Run("truncate file", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.
-			WithNewFile("foo.txt", dagger.ContainerWithNewFileOpts{
-				Contents: "foobar",
-			}).
+			WithNewFile("foo.txt", "foobar").
 			With(daggerCall("hello", "-o", "foo.txt")).
 			File("foo.txt").
 			Contents(ctx)
@@ -1165,13 +1120,14 @@ func (t *Test) File() *File {
 
 	t.Run("check umask", func(ctx context.Context, t *testctx.T) {
 		ctr, err := modGen.
-			WithNewFile("/entrypoint.sh", dagger.ContainerWithNewFileOpts{
-				Contents: `#!/bin/sh
+			WithNewFile(
+				"/entrypoint.sh",
+				`#!/bin/sh
 umask 027
 exec "$@"
 `,
-				Permissions: 0o750,
-			}).
+				dagger.ContainerWithNewFileOpts{Permissions: 0o750},
+			).
 			WithEntrypoint([]string{"/entrypoint.sh"}).
 			With(daggerCall("hello", "-o", "/tmp/foo/bar.txt")).
 			Sync(ctx)
@@ -1199,8 +1155,7 @@ func (ModuleSuite) TestCallByName(ctx context.Context, t *testctx.T) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/mod-a").
 			With(daggerExec("init", "--source=.", "--name=mod-a", "--sdk=go")).
-			WithNewFile("/work/mod-a/main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("/work/mod-a/main.go", `package main
 
 			import "context"
 
@@ -1210,11 +1165,10 @@ func (ModuleSuite) TestCallByName(ctx context.Context, t *testctx.T) {
 				return "hi from mod-a"
 			}
 			`,
-			}).
+			).
 			WithWorkdir("/work/mod-b").
 			With(daggerExec("init", "--source=.", "--name=mod-b", "--sdk=go")).
-			WithNewFile("/work/mod-b/main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("/work/mod-b/main.go", `package main
 
 			import "context"
 
@@ -1224,7 +1178,7 @@ func (ModuleSuite) TestCallByName(ctx context.Context, t *testctx.T) {
 				return "hi from mod-b"
 			}
 			`,
-			}).
+			).
 			WithWorkdir("/work").
 			With(daggerExec("init")).
 			With(daggerExec("install", "--name", "foo", "./mod-a")).
@@ -1246,8 +1200,7 @@ func (ModuleSuite) TestCallByName(ctx context.Context, t *testctx.T) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/mod-a").
 			With(daggerExec("init", "--source=.", "--name=mod-a", "--sdk=go")).
-			WithNewFile("/work/mod-a/main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("/work/mod-a/main.go", `package main
 
 			import "context"
 
@@ -1257,11 +1210,10 @@ func (ModuleSuite) TestCallByName(ctx context.Context, t *testctx.T) {
 				return "hi from mod-a"
 			}
 			`,
-			}).
+			).
 			WithWorkdir("/work/mod-b").
 			With(daggerExec("init", "--source=.", "--name=mod-b", "--sdk=go")).
-			WithNewFile("/work/mod-b/main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("/work/mod-b/main.go", `package main
 
 			import "context"
 
@@ -1271,7 +1223,7 @@ func (ModuleSuite) TestCallByName(ctx context.Context, t *testctx.T) {
 				return "hi from mod-b"
 			}
 			`,
-			}).
+			).
 			WithWorkdir("/work").
 			With(daggerExec("init")).
 			With(daggerExec("install", "--name", "foo", "/work/mod-a")).
@@ -1324,8 +1276,7 @@ func (ModuleSuite) TestCallByName(ctx context.Context, t *testctx.T) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/outside/mod-a").
 			With(daggerExec("init", "--source=.", "--name=mod-a", "--sdk=go")).
-			WithNewFile("/outside/mod-a/main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("/outside/mod-a/main.go", `package main
 
 			import "context"
 
@@ -1335,7 +1286,7 @@ func (ModuleSuite) TestCallByName(ctx context.Context, t *testctx.T) {
 				return "hi from mod-a"
 			}
 			`,
-			}).
+			).
 			WithWorkdir("/work").
 			With(daggerExec("init")).
 			With(daggerExec("install", "--name", "foo", "/outside/mod-a"))
