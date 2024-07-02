@@ -656,6 +656,11 @@ export type FunctionWithArgOpts = {
    * A default value to use for this argument if not explicitly set by the caller, if any
    */
   defaultValue?: JSON
+
+  /**
+   * If the argument is a Directory or File type, default to load path from context directory, relative to root directory.
+   */
+  defaultPathFromContext?: string
 }
 
 /**
@@ -4114,6 +4119,7 @@ export class Function_ extends BaseClient {
    * @param typeDef The type of the argument
    * @param opts.description A doc string for the argument, if any
    * @param opts.defaultValue A default value to use for this argument if not explicitly set by the caller, if any
+   * @param opts.defaultPathFromContext If the argument is a Directory or File type, default to load path from context directory, relative to root directory.
    */
   withArg = (
     name: string,
@@ -4166,6 +4172,7 @@ export class Function_ extends BaseClient {
  */
 export class FunctionArg extends BaseClient {
   private readonly _id?: FunctionArgID = undefined
+  private readonly _defaultPathFromContext?: string = undefined
   private readonly _defaultValue?: JSON = undefined
   private readonly _description?: string = undefined
   private readonly _name?: string = undefined
@@ -4176,6 +4183,7 @@ export class FunctionArg extends BaseClient {
   constructor(
     parent?: { queryTree?: QueryTree[]; ctx: Context },
     _id?: FunctionArgID,
+    _defaultPathFromContext?: string,
     _defaultValue?: JSON,
     _description?: string,
     _name?: string,
@@ -4183,6 +4191,7 @@ export class FunctionArg extends BaseClient {
     super(parent)
 
     this._id = _id
+    this._defaultPathFromContext = _defaultPathFromContext
     this._defaultValue = _defaultValue
     this._description = _description
     this._name = _name
@@ -4201,6 +4210,27 @@ export class FunctionArg extends BaseClient {
         ...this._queryTree,
         {
           operation: "id",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * If the argument is a Directory or File type, default to load path from context directory, relative to root directory.
+   */
+  defaultPathFromContext = async (): Promise<string> => {
+    if (this._defaultPathFromContext) {
+      return this._defaultPathFromContext
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "defaultPathFromContext",
         },
       ],
       await this._ctx.connection(),

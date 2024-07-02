@@ -2,8 +2,11 @@ import ts from "typescript"
 
 import { TypeDefKind } from "../../../api/client.gen.js"
 import { UnknownDaggerError } from "../../../common/errors/UnknownDaggerError.js"
+import { context } from "../../decorators/decorators.js"
 import { TypeDef } from "../typeDefs.js"
 import { typeToTypedef } from "./typeToTypedef.js"
+
+export const CONTEXT_DECORATOR = context.name
 
 export type Arguments = { [name: string]: Argument }
 
@@ -28,6 +31,7 @@ export class Argument {
   private _isOptional: boolean
   private _isNullable: boolean
   private _isVariadic: boolean
+  private _defaultPathFromContext?: string
 
   /**
    * Create a new Argument instance.
@@ -68,6 +72,7 @@ export class Argument {
     this._isNullable = this.loadIsNullable()
     this._isVariadic = this.loadIsVariadic()
     this._isOptional = this.loadIsOptional()
+    this._defaultPathFromContext = this.loadDefaultPathFromContext()
   }
 
   get name(): string {
@@ -116,6 +121,10 @@ export class Argument {
     return this._isVariadic
   }
 
+  get defaultPathFromContext(): string | undefined {
+    return this._defaultPathFromContext
+  }
+
   toJSON() {
     return {
       name: this.name,
@@ -125,6 +134,7 @@ export class Argument {
       isNullable: this.isNullable,
       isOptional: this.isOptional,
       defaultValue: this.defaultValue,
+      defaultPathFromContext: this.defaultPathFromContext,
     }
   }
 
@@ -218,5 +228,28 @@ export class Argument {
     }
 
     return value
+  }
+
+  private loadDefaultPathFromContext(): string | undefined {
+    const contextDecorator = ts.getDecorators(this.param)?.find((d) => {
+      if (ts.isCallExpression(d.expression)) {
+        return d.expression.expression.getText() === CONTEXT_DECORATOR
+      }
+
+      return false
+    })
+
+    if (!contextDecorator) {
+      return undefined
+    }
+
+    const expression = contextDecorator.expression as ts.CallExpression
+    const pathArg = expression.arguments[0]
+
+    if (!pathArg) {
+      return undefined
+    }
+
+    return JSON.parse(pathArg.getText().replace(/'/g, '"'))
   }
 }

@@ -16,6 +16,15 @@ namespace Dagger;
 class FunctionArg extends Client\AbstractObject implements Client\IdAble
 {
     /**
+     * If the argument is a Directory or File type, default to load path from context directory, relative to root directory.
+     */
+    public function defaultPathFromContext(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('defaultPathFromContext');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'defaultPathFromContext');
+    }
+
+    /**
      * A default value to use for this argument when not explicitly set by the caller, if any.
      */
     public function defaultValue(): Json

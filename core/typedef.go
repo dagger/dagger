@@ -112,14 +112,15 @@ func (fn *Function) WithDescription(desc string) *Function {
 	return fn
 }
 
-func (fn *Function) WithArg(name string, typeDef *TypeDef, desc string, defaultValue JSON) *Function {
+func (fn *Function) WithArg(name string, typeDef *TypeDef, desc string, defaultValue JSON, defaultPathFromContext string) *Function {
 	fn = fn.Clone()
 	fn.Args = append(fn.Args, &FunctionArg{
-		Name:         strcase.ToLowerCamel(name),
-		Description:  desc,
-		TypeDef:      typeDef,
-		DefaultValue: defaultValue,
-		OriginalName: name,
+		Name:                   strcase.ToLowerCamel(name),
+		Description:            desc,
+		TypeDef:                typeDef,
+		DefaultValue:           defaultValue,
+		OriginalName:           name,
+		DefaultPathFromContext: defaultPathFromContext,
 	})
 	return fn
 }
@@ -179,10 +180,11 @@ func (fn *Function) LookupArg(name string) (*FunctionArg, bool) {
 
 type FunctionArg struct {
 	// Name is the standardized name of the argument (lowerCamelCase), as used for the resolver in the graphql schema
-	Name         string   `field:"true" doc:"The name of the argument in lowerCamelCase format."`
-	Description  string   `field:"true" doc:"A doc string for the argument, if any."`
-	TypeDef      *TypeDef `field:"true" doc:"The type of the argument."`
-	DefaultValue JSON     `field:"true" doc:"A default value to use for this argument when not explicitly set by the caller, if any."`
+	Name                   string   `field:"true" doc:"The name of the argument in lowerCamelCase format."`
+	Description            string   `field:"true" doc:"A doc string for the argument, if any."`
+	TypeDef                *TypeDef `field:"true" doc:"The type of the argument."`
+	DefaultValue           JSON     `field:"true" doc:"A default value to use for this argument when not explicitly set by the caller, if any."`
+	DefaultPathFromContext string   `field:"true" doc:"If the argument is a Directory or File type, default to load path from context directory, relative to root directory."`
 
 	// Below are not in public API
 

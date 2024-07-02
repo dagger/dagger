@@ -240,7 +240,8 @@ func (s *moduleSchema) Install() {
 			ArgDoc("name", `The name of the argument`).
 			ArgDoc("typeDef", `The type of the argument`).
 			ArgDoc("description", `A doc string for the argument, if any`).
-			ArgDoc("defaultValue", `A default value to use for this argument if not explicitly set by the caller, if any`),
+			ArgDoc("defaultValue", `A default value to use for this argument if not explicitly set by the caller, if any`).
+			ArgDoc("defaultPathFromContext", `If the argument is a Directory or File type, default to load path from context directory, relative to root directory.`),
 	}.Install(s.dag)
 
 	dagql.Fields[*core.FunctionArg]{}.Install(s.dag)
@@ -467,16 +468,17 @@ func (s *moduleSchema) functionWithDescription(ctx context.Context, fn *core.Fun
 }
 
 func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, args struct {
-	Name         string
-	TypeDef      core.TypeDefID
-	Description  string    `default:""`
-	DefaultValue core.JSON `default:""`
+	Name                   string
+	TypeDef                core.TypeDefID
+	Description            string    `default:""`
+	DefaultValue           core.JSON `default:""`
+	DefaultPathFromContext string    `default:""`
 }) (*core.Function, error) {
 	argType, err := args.TypeDef.Load(ctx, s.dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode arg type: %w", err)
 	}
-	return fn.WithArg(args.Name, argType.Self, args.Description, args.DefaultValue), nil
+	return fn.WithArg(args.Name, argType.Self, args.Description, args.DefaultValue, args.DefaultPathFromContext), nil
 }
 
 func (s *moduleSchema) moduleDependency(
@@ -694,7 +696,7 @@ func (s *moduleSchema) moduleInitialize(
 	if inst.Self.NameField == "" || inst.Self.SDKConfig == "" {
 		return nil, fmt.Errorf("module name and SDK must be set")
 	}
-	mod, err := inst.Self.Initialize(ctx, inst.ID(), dagql.CurrentID(ctx))
+	mod, err := inst.Self.Initialize(ctx, inst.ID(), dagql.CurrentID(ctx), s.dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize module: %w", err)
 	}

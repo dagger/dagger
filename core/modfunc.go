@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -18,6 +19,7 @@ import (
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 type ModuleFunction struct {
@@ -161,6 +163,29 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		callInputs = append(callInputs, &FunctionCallArgValue{
 			Name:  name,
 			Value: arg.DefaultValue,
+		})
+
+		hasArg[name] = true
+	}
+
+	// Load contextual arguments
+	for _, arg := range fn.metadata.Args {
+		name := arg.OriginalName
+
+		// Skip contextual arguments if already set.
+		if hasArg[name] || arg.DefaultPathFromContext == "" {
+			continue
+		}
+
+		// Load contextual argument value.
+		ctxVal, err := fn.loadContextualArg(ctx, arg)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load contextual arg %q: %w", arg.Name, err)
+		}
+
+		callInputs = append(callInputs, &FunctionCallArgValue{
+			Name:  name,
+			Value: ctxVal,
 		})
 	}
 
@@ -346,4 +371,73 @@ func (fn *ModuleFunction) linkDependencyBlobs(ctx context.Context, cacheResult *
 		return fmt.Errorf("failed to add dependency blob: %w", err)
 	}
 	return nil
+}
+
+// loadContextualArg loads a contextual argument from the module context directory.
+//
+// For Directory, it will load the directory from the module context directory.
+// For file, it will loa the directory containing the file and then query the file ID from this directory.
+//
+// This functions returns the ID of the loaded object.
+func (fn *ModuleFunction) loadContextualArg(ctx context.Context, arg *FunctionArg) (JSON, error) {
+	if arg.TypeDef.Kind != TypeDefKindObject {
+		return nil, fmt.Errorf("contextual argument %q must be a Directory or a File", arg.OriginalName)
+	}
+
+	switch arg.TypeDef.AsObject.Value.Name {
+	case "Directory":
+		slog.Debug("moduleFunction.loadContextualArg: loading contextual directory", "fn", arg.Name, "dir", arg.DefaultPathFromContext)
+
+		dir, err := fn.mod.Source.Self.LoadContext(ctx, arg.DefaultPathFromContext, fn.mod.Server)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load contextual directory %q: %w", arg.DefaultPathFromContext, err)
+		}
+
+		dirID, err := dir.ID().Encode()
+		if err != nil {
+			return nil, fmt.Errorf("failed to encode dir ID: %w", err)
+		}
+
+		return JSON(fmt.Sprintf(`"%s"`, dirID)), nil
+	case "File":
+		slog.Debug("moduleFunction.loadContextualArg: loading contextual file", "fn", arg.Name, "file", arg.DefaultPathFromContext)
+
+		// We first load the directory from the context path, then we load the file from the path relative to the directory.
+		dirPath := filepath.Dir(arg.DefaultPathFromContext)
+		filePath := filepath.Base(arg.DefaultPathFromContext)
+
+		// Load the directory containing the file.
+		dir, err := fn.mod.Source.Self.LoadContext(ctx, dirPath, fn.mod.Server)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load contextual directory %q: %w", dirPath, err)
+		}
+
+		var fileID FileID
+
+		// We need to load the fileID from the directory itself, because `*File` doesn't have a `ID` field,
+		// we use select instead.
+		err = fn.mod.Server.Select(ctx, dir, &fileID,
+			dagql.Selector{
+				Field: "file",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.String(filePath)},
+				},
+			},
+			dagql.Selector{
+				Field: "id",
+			},
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load contextual file %q: %w", filePath, err)
+		}
+
+		encodedFileID, err := fileID.Encode()
+		if err != nil {
+			return nil, fmt.Errorf("failed to encode file ID: %w", err)
+		}
+
+		return JSON(fmt.Sprintf(`"%s"`, encodedFileID)), nil
+	default:
+		return nil, fmt.Errorf("unknown contextual argument type %q", arg.TypeDef.AsObject.Value.Name)
+	}
 }

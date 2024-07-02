@@ -4,6 +4,7 @@ import { fileURLToPath } from "url"
 
 import { scan } from "../../scanner/scan.js"
 import { listFiles } from "../../utils/files.js"
+import { DaggerModule } from "../../scanner/abtractions/module.js"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -20,7 +21,14 @@ async function generateExpectedScan() {
 
     console.info(`* Generating expected scan file for directory: ${entry}`)
     const files = await listFiles(`${__dirname}/${entry}`)
-    const result = scan(files, `${entry}`)
+
+    let result: DaggerModule
+    try {
+      result = scan(files, `${entry}`)
+    } catch (e) {
+      console.error(`Failed to scan ${entry}: ${e}`)
+      continue
+    }
 
     const expectedPath = path.join(__dirname, entry, expectedFilename)
     const diffExpectedPath = path.join(__dirname, entry, diffExpectedFileName)

@@ -1,0 +1,34 @@
+{
+  "name": "Context",
+  "objects": {
+    "Context": {
+      "name": "Context",
+      "description": "",
+      "methods": {
+        "helloWorld": {
+          "name": "helloWorld",
+          "description": "",
+          "arguments": {
+            "dir": {
+              "name": "dir",
+              "description": "",
+              "type": {
+                "kind": "OBJECT_KIND",
+                "name": "Directory"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false,
+              "defaultPathFromContext": "."
+            }
+          },
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        }
+      },
+      "properties": {}
+    }
+  },
+  "enums": {}
+}

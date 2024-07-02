@@ -58,6 +58,24 @@ export class Registry {
   }
 
   /**
+   * Add a `@context` decorator to an argument of type `Directory` or `File` to load
+   * its contents from the module context directory.
+   *
+   * @param path The path to the directory or file to load.
+   */
+  context = (
+    path: string,
+  ): ((
+    target: object,
+    propertyKey: string,
+    parameterIndex: number,
+  ) => void) => {
+    return (target: object, propertyKey: string, parameterIndex: number) => {
+      // A placeholder to declare a contextual argument.
+    }
+  }
+
+  /**
    * The definition of @field decorator that should be on top of any
    * class' property that must be exposed to the Dagger API.
    *
