@@ -17,7 +17,7 @@ from gql.transport.httpx import HTTPXAsyncTransport
 from opentelemetry import propagate
 from typing_extensions import Self
 
-from dagger import ClientConnectionError
+from dagger import ClientConnectionError, telemetry
 from dagger._config import ConnectConfig, Retry
 from dagger._managers import ResourceManager
 
@@ -172,6 +172,7 @@ class BaseConnection:
         return self.connect().__await__()
 
     async def __aenter__(self) -> Self:
+        telemetry.initialize()
         return await self.connect()
 
     async def __aexit__(self, *_) -> None:

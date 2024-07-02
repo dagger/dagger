@@ -521,7 +521,7 @@ func (s *containerSchema) container(ctx context.Context, parent *core.Query, arg
 	if args.Platform.Valid {
 		platform = args.Platform.Value
 	} else {
-		platform = parent.Platform
+		platform = parent.Platform()
 	}
 	return parent.NewContainer(platform), nil
 }
@@ -1221,7 +1221,10 @@ func (s *containerSchema) export(ctx context.Context, parent *core.Container, ar
 	if err != nil {
 		return "", err
 	}
-	bk := parent.Query.Buildkit
+	bk, err := parent.Query.Buildkit(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get buildkit: %w", err)
+	}
 	stat, err := bk.StatCallerHostPath(ctx, args.Path, true)
 	if err != nil {
 		return "", err
@@ -1277,12 +1280,20 @@ func (s *containerSchema) withRegistryAuth(ctx context.Context, parent *core.Con
 		return nil, err
 	}
 
-	secretBytes, err := parent.Query.Secrets.GetSecret(ctx, secret.Self.Accessor)
+	secretStore, err := parent.Query.Secrets(ctx)
+	if err != nil {
+		return nil, err
+	}
+	secretBytes, err := secretStore.GetSecret(ctx, secret.Self.Accessor)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := parent.Query.Auth.AddCredential(args.Address, args.Username, string(secretBytes)); err != nil {
+	auth, err := parent.Query.Auth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := auth.AddCredential(args.Address, args.Username, string(secretBytes)); err != nil {
 		return nil, err
 	}
 
@@ -1293,8 +1304,12 @@ type containerWithoutRegistryAuthArgs struct {
 	Address string
 }
 
-func (s *containerSchema) withoutRegistryAuth(_ context.Context, parent *core.Container, args containerWithoutRegistryAuthArgs) (*core.Container, error) {
-	if err := parent.Query.Auth.RemoveCredential(args.Address); err != nil {
+func (s *containerSchema) withoutRegistryAuth(ctx context.Context, parent *core.Container, args containerWithoutRegistryAuthArgs) (*core.Container, error) {
+	auth, err := parent.Query.Auth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := auth.RemoveCredential(args.Address); err != nil {
 		return nil, err
 	}
 

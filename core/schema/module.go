@@ -820,7 +820,11 @@ func (s *moduleSchema) updateDeps(
 		return fmt.Errorf("failed to initialize dependency modules: %w", err)
 	}
 
-	mod.Deps = core.NewModDeps(src.Self.Query, src.Self.Query.DefaultDeps.Mods)
+	defaultDeps, err := src.Self.Query.DefaultDeps(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get default dependencies: %w", err)
+	}
+	mod.Deps = core.NewModDeps(src.Self.Query, defaultDeps.Mods)
 	for _, dep := range mod.DependenciesField {
 		mod.Deps = mod.Deps.Append(dep.Self)
 	}

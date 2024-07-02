@@ -281,7 +281,10 @@ func (mnts ContainerMounts) With(newMnt ContainerMount) ContainerMounts {
 }
 
 func (container *Container) From(ctx context.Context, addr string) (*Container, error) {
-	bk := container.Query.Buildkit
+	bk, err := container.Query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
 
 	container = container.Clone()
 
@@ -357,8 +360,14 @@ func (container *Container) Build(
 	// set image ref to empty string
 	container.ImageRef = ""
 
-	svcs := container.Query.Services
-	bk := container.Query.Buildkit
+	svcs, err := container.Query.Services(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get services: %w", err)
+	}
+	bk, err := container.Query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
 
 	detach, _, err := svcs.StartBindings(ctx, container.Services)
 	if err != nil {
@@ -757,8 +766,14 @@ func (container *Container) Directory(ctx context.Context, dirPath string) (*Dir
 		return nil, err
 	}
 
-	svcs := container.Query.Services
-	bk := container.Query.Buildkit
+	svcs, err := container.Query.Services(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get services: %w", err)
+	}
+	bk, err := container.Query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
 
 	// check that the directory actually exists so the user gets an error earlier
 	// rather than when the dir is used
@@ -912,7 +927,11 @@ func (container *Container) chown(
 			return nil, "", err
 		}
 
-		ref, err := bkRef(ctx, container.Query.Buildkit, def.ToPB())
+		bk, err := container.Query.Buildkit(ctx)
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to get buildkit client: %w", err)
+		}
+		ref, err := bkRef(ctx, bk, def.ToPB())
 		if err != nil {
 			return nil, "", err
 		}
@@ -1010,9 +1029,11 @@ func (container Container) Evaluate(ctx context.Context) (*buildkit.Result, erro
 		return nil, nil
 	}
 
-	root := container.Query
-
-	detach, _, err := root.Services.StartBindings(ctx, container.Services)
+	svcs, err := container.Query.Services(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get services: %w", err)
+	}
+	detach, _, err := svcs.StartBindings(ctx, container.Services)
 	if err != nil {
 		return nil, err
 	}
@@ -1028,7 +1049,11 @@ func (container Container) Evaluate(ctx context.Context) (*buildkit.Result, erro
 		return nil, err
 	}
 
-	return root.Buildkit.Solve(ctx, bkgw.SolveRequest{
+	bk, err := container.Query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+	return bk.Solve(ctx, bkgw.SolveRequest{
 		Evaluate:   true,
 		Definition: def.ToPB(),
 	})
@@ -1089,8 +1114,14 @@ func (container *Container) Publish(
 		opts[string(exptypes.OptKeyForceCompression)] = strconv.FormatBool(true)
 	}
 
-	svcs := container.Query.Services
-	bk := container.Query.Buildkit
+	svcs, err := container.Query.Services(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get services: %w", err)
+	}
+	bk, err := container.Query.Buildkit(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get buildkit client: %w", err)
+	}
 
 	detach, _, err := svcs.StartBindings(ctx, services)
 	if err != nil {
@@ -1133,8 +1164,14 @@ func (container *Container) Export(
 	forcedCompression ImageLayerCompression,
 	mediaTypes ImageMediaTypes,
 ) error {
-	svcs := container.Query.Services
-	bk := container.Query.Buildkit
+	svcs, err := container.Query.Services(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get services: %w", err)
+	}
+	bk, err := container.Query.Buildkit(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get buildkit client: %w", err)
+	}
 
 	if mediaTypes == "" {
 		// Modern registry implementations support oci types and docker daemons
@@ -1200,9 +1237,15 @@ func (container *Container) AsTarball(
 	forcedCompression ImageLayerCompression,
 	mediaTypes ImageMediaTypes,
 ) (*File, error) {
-	bk := container.Query.Buildkit
-	svcs := container.Query.Services
-	engineHostPlatform := container.Query.Platform
+	bk, err := container.Query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+	svcs, err := container.Query.Services(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get services: %w", err)
+	}
+	engineHostPlatform := container.Query.Platform()
 
 	if mediaTypes == "" {
 		mediaTypes = OCIMediaTypes
@@ -1266,9 +1309,12 @@ func (container *Container) Import(
 	source *File,
 	tag string,
 ) (*Container, error) {
-	bk := container.Query.Buildkit
-	store := container.Query.OCIStore
-	lm := container.Query.LeaseManager
+	bk, err := container.Query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+	store := container.Query.OCIStore()
+	lm := container.Query.LeaseManager()
 
 	container = container.Clone()
 
@@ -1464,7 +1510,11 @@ func (container *Container) ownership(ctx context.Context, owner string) (*Owner
 		return nil, err
 	}
 
-	return resolveUIDGID(ctx, fsSt, container.Query.Buildkit, container.Platform, owner)
+	bk, err := container.Query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+	return resolveUIDGID(ctx, fsSt, bk, container.Platform, owner)
 }
 
 func (container *Container) command(opts ContainerExecOpts) ([]string, error) {

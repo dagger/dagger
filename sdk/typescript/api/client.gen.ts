@@ -707,6 +707,13 @@ export type GitRefTreeOpts = {
  */
 export type GitRefID = string & { __GitRefID: never }
 
+export type GitRepositoryTagsOpts = {
+  /**
+   * Glob patterns (e.g., "refs/tags/v*").
+   */
+  patterns?: string[]
+}
+
 /**
  * The `GitRepositoryID` scalar type represents an identifier for an object of type GitRepository.
  */
@@ -5083,6 +5090,25 @@ export class GitRepository extends BaseClient {
       ],
       ctx: this._ctx,
     })
+  }
+
+  /**
+   * tags that match any of the given glob patterns.
+   * @param opts.patterns Glob patterns (e.g., "refs/tags/v*").
+   */
+  tags = async (opts?: GitRepositoryTagsOpts): Promise<string[]> => {
+    const response: Awaited<string[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "tags",
+          args: { ...opts },
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
   }
 
   /**
