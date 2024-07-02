@@ -17,6 +17,7 @@ use crate::core::{
 )]
 struct IntrospectionQuery;
 
+#[derive(Default)]
 pub struct Session;
 
 impl Session {

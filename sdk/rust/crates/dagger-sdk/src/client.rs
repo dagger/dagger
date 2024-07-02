@@ -1,7 +1,4 @@
-use std::pin::Pin;
 use std::sync::Arc;
-
-use futures::Future;
 
 use crate::core::config::Config;
 use crate::core::engine::Engine as DaggerEngine;

@@ -6,13 +6,8 @@ pub fn default_logging() -> eyre::Result<()> {
     Ok(())
 }
 
+#[derive(Default)]
 pub struct StdLogger {}
-
-impl Default for StdLogger {
-    fn default() -> Self {
-        Self {}
-    }
-}
 
 impl Logger for StdLogger {
     fn stdout(&self, output: &str) -> eyre::Result<()> {
@@ -28,13 +23,8 @@ impl Logger for StdLogger {
     }
 }
 
+#[derive(Default)]
 pub struct TracingLogger {}
-
-impl Default for TracingLogger {
-    fn default() -> Self {
-        Self {}
-    }
-}
 
 impl Logger for TracingLogger {
     fn stdout(&self, output: &str) -> eyre::Result<()> {
@@ -50,16 +40,9 @@ impl Logger for TracingLogger {
     }
 }
 
+#[derive(Default)]
 pub struct AggregateLogger {
     pub loggers: Vec<DynLogger>,
-}
-
-impl Default for AggregateLogger {
-    fn default() -> Self {
-        Self {
-            loggers: Vec::new(),
-        }
-    }
 }
 
 impl Logger for AggregateLogger {

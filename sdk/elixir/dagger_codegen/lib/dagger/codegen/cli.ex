@@ -34,18 +34,21 @@ defmodule Dagger.Codegen.CLI do
   def handle_generate(%{outdir: outdir, introspection: introspection}) do
     %{"__schema" => schema} = introspection |> File.read!() |> Jason.decode!()
 
-    IO.puts("Generate code to #{Path.expand(outdir)}")
+    IO.puts("Generate code to #{outdir}")
 
     File.mkdir_p!(outdir)
 
     Dagger.Codegen.generate(
       Dagger.Codegen.ElixirGenerator,
-      Nestru.decode_from_map!(schema, Dagger.Codegen.Introspection.Types.Schema)
+      Dagger.Codegen.Introspection.Types.Schema.from_map(schema)
     )
-    |> Enum.flat_map(& &1)
-    |> Enum.each(fn {file, code} ->
-      Path.join(outdir, file)
-      |> File.write!(code)
-    end)
+    |> Task.async_stream(
+      fn {:ok, {file, code}} ->
+        Path.join(outdir, file)
+        |> File.write!(code)
+      end,
+      ordered: false
+    )
+    |> Stream.run()
   end
 end

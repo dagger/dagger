@@ -2,7 +2,9 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/containerd/containerd/platforms"
@@ -1235,6 +1237,113 @@ func (ModuleSuite) TestCallByName(ctx context.Context, t *testctx.T) {
 		out, err = ctr.With(daggerCallAt("bar", "fn")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "hi from mod-b", strings.TrimSpace(out))
+	})
+
+	t.Run("local with absolute paths", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		ctr := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/mod-a").
+			With(daggerExec("init", "--source=.", "--name=mod-a", "--sdk=go")).
+			WithNewFile("/work/mod-a/main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+			import "context"
+
+			type ModA struct {}
+
+			func (m *ModA) Fn(ctx context.Context) string {
+				return "hi from mod-a"
+			}
+			`,
+			}).
+			WithWorkdir("/work/mod-b").
+			With(daggerExec("init", "--source=.", "--name=mod-b", "--sdk=go")).
+			WithNewFile("/work/mod-b/main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+			import "context"
+
+			type ModB struct {}
+
+			func (m *ModB) Fn(ctx context.Context) string {
+				return "hi from mod-b"
+			}
+			`,
+			}).
+			WithWorkdir("/work").
+			With(daggerExec("init")).
+			With(daggerExec("install", "--name", "foo", "/work/mod-a")).
+			With(daggerExec("install", "--name", "bar", "/work/mod-b"))
+
+		// Check dagger.json for absolute paths
+		jsonContent, err := ctr.File("/work/dagger.json").Contents(ctx)
+		require.NoError(t, err)
+
+		var config map[string]interface{}
+		err = json.Unmarshal([]byte(jsonContent), &config)
+		require.NoError(t, err)
+
+		dependencies, ok := config["dependencies"].([]interface{})
+		require.True(t, ok, "dependencies should be an array")
+
+		for _, dep := range dependencies {
+			depMap, ok := dep.(map[string]interface{})
+			require.True(t, ok, "each dependency should be a map")
+
+			source, ok := depMap["source"].(string)
+			require.True(t, ok, "source should be a string")
+
+			require.False(t, filepath.IsAbs(source), "dependency source should not be an absolute path")
+		}
+
+		// call main module at /work path
+		out, err := ctr.With(daggerCallAt("foo", "fn")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hi from mod-a", strings.TrimSpace(out))
+
+		out, err = ctr.With(daggerCallAt("bar", "fn")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hi from mod-b", strings.TrimSpace(out))
+
+		// call submodules module with absolute path
+		out, err = ctr.With(daggerCallAt("/work/mod-a", "fn")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hi from mod-a", strings.TrimSpace(out))
+
+		out, err = ctr.With(daggerCallAt("/work/mod-b", "fn")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hi from mod-b", strings.TrimSpace(out))
+	})
+
+	t.Run("local with absolute paths linking to modules outside of root", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		ctr := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/outside/mod-a").
+			With(daggerExec("init", "--source=.", "--name=mod-a", "--sdk=go")).
+			WithNewFile("/outside/mod-a/main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+			import "context"
+
+			type ModA struct {}
+
+			func (m *ModA) Fn(ctx context.Context) string {
+				return "hi from mod-a"
+			}
+			`,
+			}).
+			WithWorkdir("/work").
+			With(daggerExec("init")).
+			With(daggerExec("install", "--name", "foo", "/outside/mod-a"))
+
+		// call main module at /work path
+		_, err := ctr.With(daggerCallAt("foo", "fn")).Stdout(ctx)
+		require.Error(t, err)
+		require.ErrorContains(t, err, `local module dep source path "../outside/mod-a" escapes context "/work"`)
 	})
 
 	t.Run("git", func(ctx context.Context, t *testctx.T) {

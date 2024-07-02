@@ -329,6 +329,7 @@ dependencies = [
  "serde",
  "serde_graphql_input",
  "serde_json",
+ "tracing",
 ]
 
 [[package]]

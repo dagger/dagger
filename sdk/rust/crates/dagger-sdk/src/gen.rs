@@ -1,3 +1,5 @@
+#![allow(clippy::needless_lifetimes)]
+
 use crate::core::cli_session::DaggerSessionProc;
 use crate::core::graphql_client::DynGraphQLClient;
 use crate::errors::DaggerError;
@@ -1695,11 +1697,11 @@ impl Container {
     /// Retrieves the list of environment variables passed to commands.
     pub fn env_variables(&self) -> Vec<EnvVariable> {
         let query = self.selection.select("envVariables");
-        return vec![EnvVariable {
+        vec![EnvVariable {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        }];
+        }]
     }
     /// EXPERIMENTAL API! Subject to change/removal at any time.
     /// Configures all available GPUs on the host to be accessible to this container.
@@ -1779,11 +1781,11 @@ impl Container {
     /// This includes ports already exposed by the image, even if not explicitly added with dagger.
     pub fn exposed_ports(&self) -> Vec<Port> {
         let query = self.selection.select("exposedPorts");
-        return vec![Port {
+        vec![Port {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        }];
+        }]
     }
     /// Retrieves a file at the given path.
     /// Mounts are included.
@@ -1888,11 +1890,11 @@ impl Container {
     /// Retrieves the list of labels passed to container.
     pub fn labels(&self) -> Vec<Label> {
         let query = self.selection.select("labels");
-        return vec![Label {
+        vec![Label {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        }];
+        }]
     }
     /// Retrieves the list of paths where a directory is mounted.
     pub async fn mounts(&self) -> Result<Vec<String>, DaggerError> {
@@ -4009,11 +4011,11 @@ impl EnumTypeDef {
     /// The values of the enum.
     pub fn values(&self) -> Vec<EnumValueTypeDef> {
         let query = self.selection.select("values");
-        return vec![EnumValueTypeDef {
+        vec![EnumValueTypeDef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        }];
+        }]
     }
 }
 #[derive(Clone)]
@@ -4211,11 +4213,11 @@ impl Function {
     /// Arguments accepted by the function, if any.
     pub fn args(&self) -> Vec<FunctionArg> {
         let query = self.selection.select("args");
-        return vec![FunctionArg {
+        vec![FunctionArg {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        }];
+        }]
     }
     /// A doc string for the function, if any.
     pub async fn description(&self) -> Result<String, DaggerError> {
@@ -4365,11 +4367,11 @@ impl FunctionCall {
     /// The argument values the function is being invoked with.
     pub fn input_args(&self) -> Vec<FunctionCallArgValue> {
         let query = self.selection.select("inputArgs");
-        return vec![FunctionCallArgValue {
+        vec![FunctionCallArgValue {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        }];
+        }]
     }
     /// The name of the function being called.
     pub async fn name(&self) -> Result<String, DaggerError> {
@@ -4932,11 +4934,11 @@ impl InputTypeDef {
     /// Static fields defined on this input object, if any.
     pub fn fields(&self) -> Vec<FieldTypeDef> {
         let query = self.selection.select("fields");
-        return vec![FieldTypeDef {
+        vec![FieldTypeDef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        }];
+        }]
     }
     /// A unique identifier for this InputTypeDef.
     pub async fn id(&self) -> Result<InputTypeDefId, DaggerError> {
@@ -4964,11 +4966,11 @@ impl InterfaceTypeDef {
     /// Functions defined on this interface, if any.
     pub fn functions(&self) -> Vec<Function> {
         let query = self.selection.select("functions");
-        return vec![Function {
+        vec![Function {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        }];
+        }]
     }
     /// A unique identifier for this InterfaceTypeDef.
     pub async fn id(&self) -> Result<InterfaceTypeDefId, DaggerError> {
@@ -5068,20 +5070,20 @@ impl Module {
     /// Modules used by this module.
     pub fn dependencies(&self) -> Vec<Module> {
         let query = self.selection.select("dependencies");
-        return vec![Module {
+        vec![Module {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        }];
+        }]
     }
     /// The dependencies as configured by the module.
     pub fn dependency_config(&self) -> Vec<ModuleDependency> {
         let query = self.selection.select("dependencyConfig");
-        return vec![ModuleDependency {
+        vec![ModuleDependency {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        }];
+        }]
     }
     /// The doc string of the module, if any
     pub async fn description(&self) -> Result<String, DaggerError> {
@@ -5091,11 +5093,11 @@ impl Module {
     /// Enumerations served by this module.
     pub fn enums(&self) -> Vec<TypeDef> {
         let query = self.selection.select("enums");
-        return vec![TypeDef {
+        vec![TypeDef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        }];
+        }]
     }
     /// The generated files and directories made on top of the module source's context directory.
     pub fn generated_context_diff(&self) -> Directory {
@@ -5132,11 +5134,11 @@ impl Module {
     /// Interfaces served by this module.
     pub fn interfaces(&self) -> Vec<TypeDef> {
         let query = self.selection.select("interfaces");
-        return vec![TypeDef {
+        vec![TypeDef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        }];
+        }]
     }
     /// The name of the module
     pub async fn name(&self) -> Result<String, DaggerError> {
@@ -5146,11 +5148,11 @@ impl Module {
     /// Objects served by this module.
     pub fn objects(&self) -> Vec<TypeDef> {
         let query = self.selection.select("objects");
-        return vec![TypeDef {
+        vec![TypeDef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        }];
+        }]
     }
     /// The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
     pub fn runtime(&self) -> Container {
@@ -5353,11 +5355,11 @@ impl ModuleSource {
     /// The dependencies of the module source. Includes dependencies from the configuration and any extras from withDependencies calls.
     pub fn dependencies(&self) -> Vec<ModuleDependency> {
         let query = self.selection.select("dependencies");
-        return vec![ModuleDependency {
+        vec![ModuleDependency {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        }];
+        }]
     }
     /// The directory containing the module configuration and source code (source code may be in a subdir).
     ///
@@ -5491,11 +5493,11 @@ impl ModuleSource {
     /// The named views defined for this module source, which are sets of directory filters that can be applied to directory arguments provided to functions.
     pub fn views(&self) -> Vec<ModuleSourceView> {
         let query = self.selection.select("views");
-        return vec![ModuleSourceView {
+        vec![ModuleSourceView {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        }];
+        }]
     }
     /// Update the module source with a new context directory. Only valid for local sources.
     ///
@@ -5647,20 +5649,20 @@ impl ObjectTypeDef {
     /// Static fields defined on this object, if any.
     pub fn fields(&self) -> Vec<FieldTypeDef> {
         let query = self.selection.select("fields");
-        return vec![FieldTypeDef {
+        vec![FieldTypeDef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        }];
+        }]
     }
     /// Functions defined on this object, if any.
     pub fn functions(&self) -> Vec<Function> {
         let query = self.selection.select("functions");
-        return vec![Function {
+        vec![Function {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        }];
+        }]
     }
     /// A unique identifier for this ObjectTypeDef.
     pub async fn id(&self) -> Result<ObjectTypeDefId, DaggerError> {
@@ -5890,11 +5892,11 @@ impl Query {
     /// The TypeDef representations of the objects currently being served in the session.
     pub fn current_type_defs(&self) -> Vec<TypeDef> {
         let query = self.selection.select("currentTypeDefs");
-        return vec![TypeDef {
+        vec![TypeDef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        }];
+        }]
     }
     /// The default platform of the engine.
     pub async fn default_platform(&self) -> Result<Platform, DaggerError> {
@@ -7002,11 +7004,11 @@ impl Service {
     /// Retrieves the list of ports provided by the service.
     pub fn ports(&self) -> Vec<Port> {
         let query = self.selection.select("ports");
-        return vec![Port {
+        vec![Port {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        }];
+        }]
     }
     /// Start the service and wait for its health checks to succeed.
     /// Services bound to a Container do not need to be manually started.

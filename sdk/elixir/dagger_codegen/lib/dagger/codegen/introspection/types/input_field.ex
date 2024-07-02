@@ -1,8 +1,4 @@
 defmodule Dagger.Codegen.Introspection.Types.InputValue do
-  @derive [
-    {Nestru.PreDecoder, translate: %{"defaultValue" => :default_value}},
-    {Nestru.Decoder, hint: %{type: Dagger.Codegen.Introspection.Types.TypeRef}}
-  ]
   defstruct [
     :default_value,
     :description,
@@ -12,5 +8,19 @@ defmodule Dagger.Codegen.Introspection.Types.InputValue do
 
   def is_optional?(%__MODULE__{} = input_value) do
     input_value.type.kind != "NON_NULL"
+  end
+
+  def from_map(%{
+        "defaultValue" => default_value,
+        "description" => description,
+        "name" => name,
+        "type" => type
+      }) do
+    %__MODULE__{
+      default_value: default_value,
+      description: description,
+      name: name,
+      type: Dagger.Codegen.Introspection.Types.TypeRef.from_map(type)
+    }
   end
 end

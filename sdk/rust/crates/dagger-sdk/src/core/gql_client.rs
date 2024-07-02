@@ -208,7 +208,6 @@ impl GQLClient {
         let _headers: HashMap<String, String> = headers
             .iter()
             .map(|(name, value)| (name.to_string(), value.to_string()))
-            .into_iter()
             .collect();
         Self {
             config: ClientConfig {
