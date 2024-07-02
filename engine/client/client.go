@@ -323,6 +323,9 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 	if c.CloudCallback != nil {
 		if url, msg, ok := enginetel.URLForTrace(ctx); ok {
 			c.CloudCallback(ctx, url, msg)
+		} else {
+			// fallback to quickstart flow if the user is not logged in.
+			c.CloudCallback(ctx, "https://dagger.cloud/traces/"+uuid.NewString(), "logged out")
 		}
 	}
 

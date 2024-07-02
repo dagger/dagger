@@ -15,6 +15,8 @@ import (
 	"unicode"
 
 	"dagger.io/dagger/telemetry"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/google/uuid"
 	"github.com/mattn/go-isatty"
 	"github.com/muesli/reflow/indent"
 	"github.com/muesli/reflow/wordwrap"
@@ -165,6 +167,24 @@ var rootCmd = &cobra.Command{
 		}
 
 		return nil
+	},
+	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		highlight := lipgloss.NewStyle().
+			Bold(true).
+			Underline(true)
+		borders := lipgloss.NewStyle()
+		_, _, ok := enginetel.URLForTrace(cmd.Context())
+		switch {
+		case !ok &&
+			cmd.Flags().Changed("verbose") ||
+			cmd.Flags().Changed("debug") ||
+			cmd == moduleInitCmd:
+			fmt.Fprintln(cmd.OutOrStderr(), borders.Render(fmt.Sprintf(`
+
+Log-in or create an account to visualize %s in Dagger Cloud:
+https://dagger.cloud/traces/%s
+`, highlight.Render(`pipeline traces`), uuid.NewString())))
+		}
 	},
 }
 
