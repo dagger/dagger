@@ -1,0 +1,6 @@
+kind: Added
+body: 'core(git): add git tags API '
+time: 2024-07-02T17:13:23.775184623Z
+custom:
+    Author: grouville
+    PR: "7742"
