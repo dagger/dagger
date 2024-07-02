@@ -37,7 +37,7 @@ async def test_container_build():
     repo = dag.git("https://github.com/dagger/dagger").tag("v0.3.0").tree()
     dagger_img = dag.container().build(repo)
 
-    out = await dagger_img.with_exec(["version"]).stdout()
+    out = await dagger_img.with_exec(["dagger", "version"]).stdout()
 
     words = out.strip().split(" ")
 
