@@ -1,0 +1,6 @@
+kind: Fixed
+body: Allow absolute paths for local module paths
+time: 2024-05-27T12:04:11.058062922-06:00
+custom:
+    Author: Michael Albers
+    PR: "7476"

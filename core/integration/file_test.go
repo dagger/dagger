@@ -207,9 +207,9 @@ func (FileSuite) TestExport(ctx context.Context, t *testctx.T) {
 		targetDir := t.TempDir()
 		dest := filepath.Join(targetDir, "some-file")
 
-		ok, err := file(c).Export(ctx, dest)
+		actual, err := file(c).Export(ctx, dest)
 		require.NoError(t, err)
-		require.True(t, ok)
+		require.Equal(t, dest, actual)
 
 		contents, err := os.ReadFile(dest)
 		require.NoError(t, err)
@@ -223,9 +223,9 @@ func (FileSuite) TestExport(ctx context.Context, t *testctx.T) {
 	t.Run("to relative path", func(ctx context.Context, t *testctx.T) {
 		wd := t.TempDir()
 		c := connect(ctx, t, dagger.WithWorkdir(wd))
-		ok, err := file(c).Export(ctx, "some-file")
+		actual, err := file(c).Export(ctx, "some-file")
 		require.NoError(t, err)
-		require.True(t, ok)
+		require.Equal(t, filepath.Join(wd, "some-file"), actual)
 
 		contents, err := os.ReadFile(filepath.Join(wd, "some-file"))
 		require.NoError(t, err)
@@ -239,25 +239,25 @@ func (FileSuite) TestExport(ctx context.Context, t *testctx.T) {
 	t.Run("to path in outer dir", func(ctx context.Context, t *testctx.T) {
 		wd := t.TempDir()
 		c := connect(ctx, t, dagger.WithWorkdir(wd))
-		ok, err := file(c).Export(ctx, "../some-file")
+		actual, err := file(c).Export(ctx, "../some-file")
 		require.Error(t, err)
-		require.False(t, ok)
+		require.Empty(t, actual)
 	})
 
 	t.Run("to absolute dir", func(ctx context.Context, t *testctx.T) {
 		targetDir := t.TempDir()
 		c := connect(ctx, t)
-		ok, err := file(c).Export(ctx, targetDir)
+		actual, err := file(c).Export(ctx, targetDir)
 		require.Error(t, err)
-		require.False(t, ok)
+		require.Empty(t, actual)
 	})
 
 	t.Run("to workdir", func(ctx context.Context, t *testctx.T) {
 		wd := t.TempDir()
 		c := connect(ctx, t, dagger.WithWorkdir(wd))
-		ok, err := file(c).Export(ctx, ".")
+		actual, err := file(c).Export(ctx, ".")
 		require.Error(t, err)
-		require.False(t, ok)
+		require.Empty(t, actual)
 	})
 
 	t.Run("file under subdir", func(ctx context.Context, t *testctx.T) {

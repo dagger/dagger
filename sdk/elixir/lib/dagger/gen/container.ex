@@ -183,15 +183,13 @@ defmodule Dagger.Container do
   @doc """
   Writes the container as an OCI tarball to the destination file path on the host.
 
-  Return true on success.
-
   It can also export platform variants.
   """
   @spec export(t(), String.t(), [
           {:platform_variants, [Dagger.ContainerID.t()]},
           {:forced_compression, Dagger.ImageLayerCompression.t() | nil},
           {:media_types, Dagger.ImageMediaTypes.t() | nil}
-        ]) :: {:ok, boolean()} | {:error, term()}
+        ]) :: {:ok, String.t()} | {:error, term()}
   def export(%__MODULE__{} = container, path, optional_args \\ []) do
     selection =
       container.selection

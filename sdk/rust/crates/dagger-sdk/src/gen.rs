@@ -1,3 +1,6 @@
+#![allow(clippy::needless_lifetimes)]
+
+use crate::core::cli_session::DaggerSessionProc;
 use crate::core::graphql_client::DynGraphQLClient;
 use crate::errors::DaggerError;
 use crate::id::IntoID;
@@ -5,7 +8,6 @@ use crate::querybuilder::Selection;
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tokio::process::Child;
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct CacheVolumeId(pub String);
@@ -1244,7 +1246,7 @@ pub struct PortForward {
 }
 #[derive(Clone)]
 pub struct CacheVolume {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -1257,7 +1259,7 @@ impl CacheVolume {
 }
 #[derive(Clone)]
 pub struct Container {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -1662,11 +1664,11 @@ impl Container {
     /// Retrieves the list of environment variables passed to commands.
     pub fn env_variables(&self) -> Vec<EnvVariable> {
         let query = self.selection.select("envVariables");
-        return vec![EnvVariable {
+        vec![EnvVariable {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        }];
+        }]
     }
     /// EXPERIMENTAL API! Subject to change/removal at any time.
     /// Configures all available GPUs on the host to be accessible to this container.
@@ -1702,7 +1704,6 @@ impl Container {
         }
     }
     /// Writes the container as an OCI tarball to the destination file path on the host.
-    /// Return true on success.
     /// It can also export platform variants.
     ///
     /// # Arguments
@@ -1711,13 +1712,12 @@ impl Container {
     ///
     /// Path can be relative to the engine's workdir or absolute.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn export(&self, path: impl Into<String>) -> Result<bool, DaggerError> {
+    pub async fn export(&self, path: impl Into<String>) -> Result<String, DaggerError> {
         let mut query = self.selection.select("export");
         query = query.arg("path", path.into());
         query.execute(self.graphql_client.clone()).await
     }
     /// Writes the container as an OCI tarball to the destination file path on the host.
-    /// Return true on success.
     /// It can also export platform variants.
     ///
     /// # Arguments
@@ -1730,7 +1730,7 @@ impl Container {
         &self,
         path: impl Into<String>,
         opts: ContainerExportOpts,
-    ) -> Result<bool, DaggerError> {
+    ) -> Result<String, DaggerError> {
         let mut query = self.selection.select("export");
         query = query.arg("path", path.into());
         if let Some(platform_variants) = opts.platform_variants {
@@ -1748,11 +1748,11 @@ impl Container {
     /// This includes ports already exposed by the image, even if not explicitly added with dagger.
     pub fn exposed_ports(&self) -> Vec<Port> {
         let query = self.selection.select("exposedPorts");
-        return vec![Port {
+        vec![Port {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        }];
+        }]
     }
     /// Retrieves a file at the given path.
     /// Mounts are included.
@@ -1857,11 +1857,11 @@ impl Container {
     /// Retrieves the list of labels passed to container.
     pub fn labels(&self) -> Vec<Label> {
         let query = self.selection.select("labels");
-        return vec![Label {
+        vec![Label {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        }];
+        }]
     }
     /// Retrieves the list of paths where a directory is mounted.
     pub async fn mounts(&self) -> Result<Vec<String>, DaggerError> {
@@ -3203,7 +3203,7 @@ impl Container {
 }
 #[derive(Clone)]
 pub struct CurrentModule {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -3293,7 +3293,7 @@ impl CurrentModule {
 }
 #[derive(Clone)]
 pub struct Directory {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -3529,7 +3529,7 @@ impl Directory {
     ///
     /// * `path` - Location of the copied directory (e.g., "logs/").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn export(&self, path: impl Into<String>) -> Result<bool, DaggerError> {
+    pub async fn export(&self, path: impl Into<String>) -> Result<String, DaggerError> {
         let mut query = self.selection.select("export");
         query = query.arg("path", path.into());
         query.execute(self.graphql_client.clone()).await
@@ -3544,7 +3544,7 @@ impl Directory {
         &self,
         path: impl Into<String>,
         opts: DirectoryExportOpts,
-    ) -> Result<bool, DaggerError> {
+    ) -> Result<String, DaggerError> {
         let mut query = self.selection.select("export");
         query = query.arg("path", path.into());
         if let Some(wipe) = opts.wipe {
@@ -3950,7 +3950,7 @@ impl Directory {
 }
 #[derive(Clone)]
 pub struct EnumTypeDef {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -3978,16 +3978,16 @@ impl EnumTypeDef {
     /// The values of the enum.
     pub fn values(&self) -> Vec<EnumValueTypeDef> {
         let query = self.selection.select("values");
-        return vec![EnumValueTypeDef {
+        vec![EnumValueTypeDef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        }];
+        }]
     }
 }
 #[derive(Clone)]
 pub struct EnumValueTypeDef {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -4010,7 +4010,7 @@ impl EnumValueTypeDef {
 }
 #[derive(Clone)]
 pub struct EnvVariable {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -4033,7 +4033,7 @@ impl EnvVariable {
 }
 #[derive(Clone)]
 pub struct FieldTypeDef {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -4065,7 +4065,7 @@ impl FieldTypeDef {
 }
 #[derive(Clone)]
 pub struct File {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -4087,7 +4087,7 @@ impl File {
     ///
     /// * `path` - Location of the written directory (e.g., "output.txt").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn export(&self, path: impl Into<String>) -> Result<bool, DaggerError> {
+    pub async fn export(&self, path: impl Into<String>) -> Result<String, DaggerError> {
         let mut query = self.selection.select("export");
         query = query.arg("path", path.into());
         query.execute(self.graphql_client.clone()).await
@@ -4102,7 +4102,7 @@ impl File {
         &self,
         path: impl Into<String>,
         opts: FileExportOpts,
-    ) -> Result<bool, DaggerError> {
+    ) -> Result<String, DaggerError> {
         let mut query = self.selection.select("export");
         query = query.arg("path", path.into());
         if let Some(allow_parent_dir_path) = opts.allow_parent_dir_path {
@@ -4163,7 +4163,7 @@ impl File {
 }
 #[derive(Clone)]
 pub struct Function {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -4180,11 +4180,11 @@ impl Function {
     /// Arguments accepted by the function, if any.
     pub fn args(&self) -> Vec<FunctionArg> {
         let query = self.selection.select("args");
-        return vec![FunctionArg {
+        vec![FunctionArg {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        }];
+        }]
     }
     /// A doc string for the function, if any.
     pub async fn description(&self) -> Result<String, DaggerError> {
@@ -4284,7 +4284,7 @@ impl Function {
 }
 #[derive(Clone)]
 pub struct FunctionArg {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -4321,7 +4321,7 @@ impl FunctionArg {
 }
 #[derive(Clone)]
 pub struct FunctionCall {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -4334,11 +4334,11 @@ impl FunctionCall {
     /// The argument values the function is being invoked with.
     pub fn input_args(&self) -> Vec<FunctionCallArgValue> {
         let query = self.selection.select("inputArgs");
-        return vec![FunctionCallArgValue {
+        vec![FunctionCallArgValue {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        }];
+        }]
     }
     /// The name of the function being called.
     pub async fn name(&self) -> Result<String, DaggerError> {
@@ -4368,7 +4368,7 @@ impl FunctionCall {
 }
 #[derive(Clone)]
 pub struct FunctionCallArgValue {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -4391,7 +4391,7 @@ impl FunctionCallArgValue {
 }
 #[derive(Clone)]
 pub struct GeneratedCode {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -4449,7 +4449,7 @@ impl GeneratedCode {
 }
 #[derive(Clone)]
 pub struct GitModuleSource {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -4501,7 +4501,7 @@ impl GitModuleSource {
 }
 #[derive(Clone)]
 pub struct GitRef {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -4560,7 +4560,7 @@ impl GitRef {
 }
 #[derive(Clone)]
 pub struct GitRepository {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -4678,7 +4678,7 @@ impl GitRepository {
 }
 #[derive(Clone)]
 pub struct Host {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -4893,7 +4893,7 @@ impl Host {
 }
 #[derive(Clone)]
 pub struct InputTypeDef {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -4901,11 +4901,11 @@ impl InputTypeDef {
     /// Static fields defined on this input object, if any.
     pub fn fields(&self) -> Vec<FieldTypeDef> {
         let query = self.selection.select("fields");
-        return vec![FieldTypeDef {
+        vec![FieldTypeDef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        }];
+        }]
     }
     /// A unique identifier for this InputTypeDef.
     pub async fn id(&self) -> Result<InputTypeDefId, DaggerError> {
@@ -4920,7 +4920,7 @@ impl InputTypeDef {
 }
 #[derive(Clone)]
 pub struct InterfaceTypeDef {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -4933,11 +4933,11 @@ impl InterfaceTypeDef {
     /// Functions defined on this interface, if any.
     pub fn functions(&self) -> Vec<Function> {
         let query = self.selection.select("functions");
-        return vec![Function {
+        vec![Function {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        }];
+        }]
     }
     /// A unique identifier for this InterfaceTypeDef.
     pub async fn id(&self) -> Result<InterfaceTypeDefId, DaggerError> {
@@ -4957,7 +4957,7 @@ impl InterfaceTypeDef {
 }
 #[derive(Clone)]
 pub struct Label {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -4980,7 +4980,7 @@ impl Label {
 }
 #[derive(Clone)]
 pub struct ListTypeDef {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -5002,7 +5002,7 @@ impl ListTypeDef {
 }
 #[derive(Clone)]
 pub struct LocalModuleSource {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -5029,7 +5029,7 @@ impl LocalModuleSource {
 }
 #[derive(Clone)]
 pub struct Module {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -5037,20 +5037,20 @@ impl Module {
     /// Modules used by this module.
     pub fn dependencies(&self) -> Vec<Module> {
         let query = self.selection.select("dependencies");
-        return vec![Module {
+        vec![Module {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        }];
+        }]
     }
     /// The dependencies as configured by the module.
     pub fn dependency_config(&self) -> Vec<ModuleDependency> {
         let query = self.selection.select("dependencyConfig");
-        return vec![ModuleDependency {
+        vec![ModuleDependency {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        }];
+        }]
     }
     /// The doc string of the module, if any
     pub async fn description(&self) -> Result<String, DaggerError> {
@@ -5060,11 +5060,11 @@ impl Module {
     /// Enumerations served by this module.
     pub fn enums(&self) -> Vec<TypeDef> {
         let query = self.selection.select("enums");
-        return vec![TypeDef {
+        vec![TypeDef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        }];
+        }]
     }
     /// The generated files and directories made on top of the module source's context directory.
     pub fn generated_context_diff(&self) -> Directory {
@@ -5101,11 +5101,11 @@ impl Module {
     /// Interfaces served by this module.
     pub fn interfaces(&self) -> Vec<TypeDef> {
         let query = self.selection.select("interfaces");
-        return vec![TypeDef {
+        vec![TypeDef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        }];
+        }]
     }
     /// The name of the module
     pub async fn name(&self) -> Result<String, DaggerError> {
@@ -5115,11 +5115,11 @@ impl Module {
     /// Objects served by this module.
     pub fn objects(&self) -> Vec<TypeDef> {
         let query = self.selection.select("objects");
-        return vec![TypeDef {
+        vec![TypeDef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        }];
+        }]
     }
     /// The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile.
     pub fn runtime(&self) -> Container {
@@ -5235,7 +5235,7 @@ impl Module {
 }
 #[derive(Clone)]
 pub struct ModuleDependency {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -5262,7 +5262,7 @@ impl ModuleDependency {
 }
 #[derive(Clone)]
 pub struct ModuleSource {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -5322,11 +5322,11 @@ impl ModuleSource {
     /// The dependencies of the module source. Includes dependencies from the configuration and any extras from withDependencies calls.
     pub fn dependencies(&self) -> Vec<ModuleDependency> {
         let query = self.selection.select("dependencies");
-        return vec![ModuleDependency {
+        vec![ModuleDependency {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        }];
+        }]
     }
     /// The directory containing the module configuration and source code (source code may be in a subdir).
     ///
@@ -5460,11 +5460,11 @@ impl ModuleSource {
     /// The named views defined for this module source, which are sets of directory filters that can be applied to directory arguments provided to functions.
     pub fn views(&self) -> Vec<ModuleSourceView> {
         let query = self.selection.select("views");
-        return vec![ModuleSourceView {
+        vec![ModuleSourceView {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        }];
+        }]
     }
     /// Update the module source with a new context directory. Only valid for local sources.
     ///
@@ -5571,7 +5571,7 @@ impl ModuleSource {
 }
 #[derive(Clone)]
 pub struct ModuleSourceView {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -5594,7 +5594,7 @@ impl ModuleSourceView {
 }
 #[derive(Clone)]
 pub struct ObjectTypeDef {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -5616,20 +5616,20 @@ impl ObjectTypeDef {
     /// Static fields defined on this object, if any.
     pub fn fields(&self) -> Vec<FieldTypeDef> {
         let query = self.selection.select("fields");
-        return vec![FieldTypeDef {
+        vec![FieldTypeDef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        }];
+        }]
     }
     /// Functions defined on this object, if any.
     pub fn functions(&self) -> Vec<Function> {
         let query = self.selection.select("functions");
-        return vec![Function {
+        vec![Function {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        }];
+        }]
     }
     /// A unique identifier for this ObjectTypeDef.
     pub async fn id(&self) -> Result<ObjectTypeDefId, DaggerError> {
@@ -5649,7 +5649,7 @@ impl ObjectTypeDef {
 }
 #[derive(Clone)]
 pub struct Port {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -5682,7 +5682,7 @@ impl Port {
 }
 #[derive(Clone)]
 pub struct Query {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -5859,11 +5859,11 @@ impl Query {
     /// The TypeDef representations of the objects currently being served in the session.
     pub fn current_type_defs(&self) -> Vec<TypeDef> {
         let query = self.selection.select("currentTypeDefs");
-        return vec![TypeDef {
+        vec![TypeDef {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        }];
+        }]
     }
     /// The default platform of the engine.
     pub async fn default_platform(&self) -> Result<Platform, DaggerError> {
@@ -6825,7 +6825,7 @@ impl Query {
 }
 #[derive(Clone)]
 pub struct ScalarTypeDef {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -6853,7 +6853,7 @@ impl ScalarTypeDef {
 }
 #[derive(Clone)]
 pub struct Secret {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -6876,7 +6876,7 @@ impl Secret {
 }
 #[derive(Clone)]
 pub struct Service {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -6950,11 +6950,11 @@ impl Service {
     /// Retrieves the list of ports provided by the service.
     pub fn ports(&self) -> Vec<Port> {
         let query = self.selection.select("ports");
-        return vec![Port {
+        vec![Port {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
-        }];
+        }]
     }
     /// Start the service and wait for its health checks to succeed.
     /// Services bound to a Container do not need to be manually started.
@@ -7010,7 +7010,7 @@ impl Service {
 }
 #[derive(Clone)]
 pub struct Socket {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -7023,7 +7023,7 @@ impl Socket {
 }
 #[derive(Clone)]
 pub struct TypeDef {
-    pub proc: Option<Arc<Child>>,
+    pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }

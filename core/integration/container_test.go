@@ -2825,13 +2825,13 @@ func (ContainerSuite) TestExport(ctx context.Context, t *testctx.T) {
 
 				if useAsTarball {
 					tarFile := ctr.AsTarball()
-					ok, err := tarFile.Export(ctx, imagePath)
+					actual, err := tarFile.Export(ctx, imagePath)
 					require.NoError(t, err)
-					require.True(t, ok)
+					require.Equal(t, imagePath, actual)
 				} else {
-					ok, err := ctr.Export(ctx, imagePath)
+					actual, err := ctr.Export(ctx, imagePath)
 					require.NoError(t, err)
-					require.True(t, ok)
+					require.Equal(t, imagePath, actual)
 				}
 
 				stat, err := os.Stat(imagePath)
@@ -2865,9 +2865,9 @@ func (ContainerSuite) TestExport(ctx context.Context, t *testctx.T) {
 
 	t.Run("to workdir", func(ctx context.Context, t *testctx.T) {
 		relPath := "./" + identity.NewID() + ".tar"
-		ok, err := ctr.Export(ctx, relPath)
+		actual, err := ctr.Export(ctx, relPath)
 		require.NoError(t, err)
-		require.True(t, ok)
+		require.Equal(t, filepath.Join(wd, relPath), actual)
 
 		stat, err := os.Stat(filepath.Join(wd, relPath))
 		require.NoError(t, err)
@@ -2882,9 +2882,9 @@ func (ContainerSuite) TestExport(ctx context.Context, t *testctx.T) {
 
 	t.Run("to subdir", func(ctx context.Context, t *testctx.T) {
 		relPath := "./foo/" + identity.NewID() + ".tar"
-		ok, err := ctr.Export(ctx, relPath)
+		actual, err := ctr.Export(ctx, relPath)
 		require.NoError(t, err)
-		require.True(t, ok)
+		require.Equal(t, filepath.Join(wd, relPath), actual)
 
 		entries := tarEntries(t, filepath.Join(wd, relPath))
 		require.Contains(t, entries, "oci-layout")
@@ -2893,9 +2893,9 @@ func (ContainerSuite) TestExport(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("to outer dir", func(ctx context.Context, t *testctx.T) {
-		ok, err := ctr.Export(ctx, "../")
+		actual, err := ctr.Export(ctx, "../")
 		require.Error(t, err)
-		require.False(t, ok)
+		require.Empty(t, actual)
 	})
 }
 
@@ -3024,15 +3024,15 @@ func (ContainerSuite) TestMultiPlatformExport(ctx context.Context, t *testctx.T)
 				tarFile := c.Container().AsTarball(dagger.ContainerAsTarballOpts{
 					PlatformVariants: variants,
 				})
-				ok, err := tarFile.Export(ctx, dest)
+				actual, err := tarFile.Export(ctx, dest)
 				require.NoError(t, err)
-				require.True(t, ok)
+				require.Equal(t, dest, actual)
 			} else {
-				ok, err := c.Container().Export(ctx, dest, dagger.ContainerExportOpts{
+				actual, err := c.Container().Export(ctx, dest, dagger.ContainerExportOpts{
 					PlatformVariants: variants,
 				})
 				require.NoError(t, err)
-				require.True(t, ok)
+				require.Equal(t, dest, actual)
 			}
 
 			entries := tarEntries(t, dest)
@@ -3118,11 +3118,11 @@ func (ContainerSuite) TestMultiPlatformImport(ctx context.Context, t *testctx.T)
 	tmp := t.TempDir()
 	imagePath := filepath.Join(tmp, "image.tar")
 
-	ok, err := c.Container().Export(ctx, imagePath, dagger.ContainerExportOpts{
+	actual, err := c.Container().Export(ctx, imagePath, dagger.ContainerExportOpts{
 		PlatformVariants: variants,
 	})
 	require.NoError(t, err)
-	require.True(t, ok)
+	require.Equal(t, imagePath, actual)
 
 	for platform, uname := range platformToUname {
 		imported := c.Container(dagger.ContainerOpts{Platform: platform}).

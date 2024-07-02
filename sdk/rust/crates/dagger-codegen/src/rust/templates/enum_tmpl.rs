@@ -13,15 +13,14 @@ fn render_enum_values(values: &FullType) -> Option<rust::Tokens> {
         .enum_values
         .as_ref()
         .into_iter()
-        .map(|values| {
-            values.into_iter().sorted_by_key(|a| &a.name).map(|val| {
+        .flat_map(|values| {
+            values.iter().sorted_by_key(|a| &a.name).map(|val| {
                 quote! {
                     #[serde(rename = $(val.name.as_ref().map(|n| format!("\"{}\"", n))))]
                     $(val.name.as_ref().map(|n| format_name(n))),
                 }
             })
         })
-        .flatten()
         .collect::<Vec<_>>();
 
     let mut tokens = rust::Tokens::new();

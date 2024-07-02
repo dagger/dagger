@@ -164,8 +164,6 @@ type Container {
   """
   Writes the container as an OCI tarball to the destination file path on the host.
   
-  Return true on success.
-  
   It can also export platform variants.
   """
   export(
@@ -200,7 +198,7 @@ type Container {
     Used for multi-platform image.
     """
     platformVariants: [ContainerID!] = []
-  ): Boolean!
+  ): String!
 
   """
   Retrieves the list of exposed ports.
@@ -1025,7 +1023,7 @@ type Directory {
     aren't in the exported directory alone.
     """
     wipe: Boolean = false
-  ): Boolean!
+  ): String!
 
   """Retrieves a file at the given path."""
   file(
@@ -1286,7 +1284,7 @@ type File {
 
     """Location of the written directory (e.g., "output.txt")."""
     path: String!
-  ): Boolean!
+  ): String!
 
   """A unique identifier for this File."""
   id: FileID!

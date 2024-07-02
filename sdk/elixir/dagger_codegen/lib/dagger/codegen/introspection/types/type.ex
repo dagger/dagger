@@ -1,55 +1,30 @@
 defmodule Dagger.Codegen.Introspection.Types.Type do
-  @derive [
-    {Nestru.PreDecoder,
-     translate: %{
-       "enumValues" => :enum_values,
-       "inputFields" => :input_fields,
-       "possibleTypes" => :possible_types
-     }}
-  ]
   defstruct [
     :description,
     :enum_values,
     :fields,
     :input_fields,
-    :interfaces,
     :kind,
-    :name,
-    :possible_types
+    :name
   ]
 
-  defimpl Nestru.Decoder do
-    def from_map_hint(_value, _context, map) do
-      hint =
-        %{}
-        |> put_hint(
-          map["inputFields"],
-          :input_fields,
-          [Dagger.Codegen.Introspection.Types.InputValue]
-        )
-        |> put_hint(
-          map["enumValues"],
-          :enum_values,
-          [Dagger.Codegen.Introspection.Types.EnumValue]
-        )
-        |> put_hint(
-          map["fields"],
-          :fields,
-          [Dagger.Codegen.Introspection.Types.Field]
-        )
-
-      {:ok, hint}
-    end
-
-    # Nestru cannot convert `null` value into a list. So we need to
-    # add hint if the value is present
-
-    defp put_hint(hint, value, _hint_key, _hint_fun) when is_nil(value) do
-      hint
-    end
-
-    defp put_hint(hint, _value, hint_key, hint_fun) do
-      Map.put(hint, hint_key, hint_fun)
-    end
+  def from_map(%{
+        "description" => description,
+        "enumValues" => enum_values,
+        "fields" => fields,
+        "inputFields" => input_fields,
+        "kind" => kind,
+        "name" => name
+      }) do
+    %__MODULE__{
+      description: description,
+      enum_values:
+        Enum.map(enum_values, &Dagger.Codegen.Introspection.Types.EnumValue.from_map/1),
+      fields: Enum.map(fields, &Dagger.Codegen.Introspection.Types.Field.from_map/1),
+      input_fields:
+        Enum.map(input_fields, &Dagger.Codegen.Introspection.Types.InputValue.from_map/1),
+      kind: kind,
+      name: name
+    }
   end
 end

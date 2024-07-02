@@ -280,13 +280,17 @@ type dirExportArgs struct {
 	Wipe bool `default:"false"`
 }
 
-func (s *directorySchema) export(ctx context.Context, parent *core.Directory, args dirExportArgs) (dagql.Boolean, error) {
+func (s *directorySchema) export(ctx context.Context, parent *core.Directory, args dirExportArgs) (dagql.String, error) {
 	err := parent.Export(ctx, args.Path, !args.Wipe)
 	if err != nil {
-		return false, err
+		return "", err
 	}
-
-	return true, nil
+	bk := parent.Query.Buildkit
+	stat, err := bk.StatCallerHostPath(ctx, args.Path, true)
+	if err != nil {
+		return "", err
+	}
+	return dagql.String(stat.Path), err
 }
 
 type dirDockerBuildArgs struct {

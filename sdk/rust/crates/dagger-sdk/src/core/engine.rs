@@ -4,6 +4,9 @@ use crate::core::{
 };
 use std::path::PathBuf;
 
+use super::cli_session::DaggerSessionProc;
+
+#[derive(Default)]
 pub struct Engine {}
 
 impl Engine {
@@ -11,27 +14,28 @@ impl Engine {
         Self {}
     }
 
-    async fn from_cli(&self, cfg: &Config) -> eyre::Result<(ConnectParams, tokio::process::Child)> {
+    #[allow(clippy::wrong_self_convention)]
+    async fn from_cli(&self, cfg: &Config) -> eyre::Result<(ConnectParams, DaggerSessionProc)> {
         let cli = Downloader::new(DAGGER_ENGINE_VERSION.into())
             .get_cli()
             .await?;
 
         let cli_session = CliSession::new();
 
-        Ok(cli_session.connect(cfg, &cli).await?)
+        cli_session.connect(cfg, &cli).await
     }
 
     pub async fn start(
         &self,
         cfg: &Config,
-    ) -> eyre::Result<(ConnectParams, Option<tokio::process::Child>)> {
+    ) -> eyre::Result<(ConnectParams, Option<DaggerSessionProc>)> {
         tracing::info!("starting dagger-engine");
 
         if let Ok(conn) = self.from_session_env().await {
             return Ok((conn, None));
         }
 
-        if let Some((conn, child)) = self.from_local_cli(cfg).await.ok() {
+        if let Ok((conn, child)) = self.from_local_cli(cfg).await {
             return Ok((conn, Some(child)));
         }
 
@@ -40,6 +44,7 @@ impl Engine {
         Ok((conn, Some(proc)))
     }
 
+    #[allow(clippy::wrong_self_convention)]
     async fn from_session_env(&self) -> eyre::Result<ConnectParams> {
         let port = std::env::var("DAGGER_SESSION_PORT").map(|p| p.parse::<u64>())??;
         let token = std::env::var("DAGGER_SESSION_TOKEN")?;
@@ -50,12 +55,14 @@ impl Engine {
         })
     }
 
+    #[allow(clippy::wrong_self_convention)]
     async fn from_local_cli(
         &self,
         cfg: &Config,
-    ) -> eyre::Result<(ConnectParams, tokio::process::Child)> {
+    ) -> eyre::Result<(ConnectParams, DaggerSessionProc)> {
         let bin: PathBuf = std::env::var("_EXPERIMENTAL_DAGGER_CLI_BIN")?.into();
         let cli_session = CliSession::new();
-        Ok(cli_session.connect(cfg, &bin).await?)
+
+        cli_session.connect(cfg, &bin).await
     }
 }

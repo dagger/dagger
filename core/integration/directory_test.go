@@ -654,9 +654,9 @@ func (DirectorySuite) TestExport(ctx context.Context, t *testctx.T) {
 	dir := c.Container().From(alpineImage).Directory("/etc/profile.d")
 
 	t.Run("to absolute dir", func(ctx context.Context, t *testctx.T) {
-		ok, err := dir.Export(ctx, dest)
+		actual, err := dir.Export(ctx, dest)
 		require.NoError(t, err)
-		require.True(t, ok)
+		require.Equal(t, dest, actual)
 
 		entries, err := ls(dest)
 		require.NoError(t, err)
@@ -664,9 +664,9 @@ func (DirectorySuite) TestExport(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("to workdir", func(ctx context.Context, t *testctx.T) {
-		ok, err := dir.Export(ctx, ".")
+		actual, err := dir.Export(ctx, ".")
 		require.NoError(t, err)
-		require.True(t, ok)
+		require.Equal(t, wd, actual)
 
 		entries, err := ls(wd)
 		require.NoError(t, err)
@@ -676,17 +676,17 @@ func (DirectorySuite) TestExport(ctx context.Context, t *testctx.T) {
 			dir := dir.WithoutFile("README")
 
 			// by default a delete in the source dir won't overwrite the destination on the host
-			ok, err := dir.Export(ctx, ".")
+			actual, err := dir.Export(ctx, ".")
 			require.NoError(t, err)
-			require.True(t, ok)
+			require.Contains(t, wd, actual)
 			entries, err = ls(wd)
 			require.NoError(t, err)
 			require.Equal(t, []string{"20locale.sh", "README", "color_prompt.sh.disabled"}, entries)
 
 			// wipe results in the destination being replaced with the source entirely, including deletes
-			ok, err = dir.Export(ctx, ".", dagger.DirectoryExportOpts{Wipe: true})
+			actual, err = dir.Export(ctx, ".", dagger.DirectoryExportOpts{Wipe: true})
 			require.NoError(t, err)
-			require.True(t, ok)
+			require.Equal(t, wd, actual)
 			entries, err = ls(wd)
 			require.NoError(t, err)
 			require.Equal(t, []string{"20locale.sh", "color_prompt.sh.disabled"}, entries)
@@ -694,9 +694,9 @@ func (DirectorySuite) TestExport(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("to outer dir", func(ctx context.Context, t *testctx.T) {
-		ok, err := dir.Export(ctx, "../")
+		actual, err := dir.Export(ctx, "../")
 		require.Error(t, err)
-		require.False(t, ok)
+		require.Empty(t, actual)
 	})
 }
 

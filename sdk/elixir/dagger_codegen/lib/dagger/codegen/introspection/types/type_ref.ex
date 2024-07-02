@@ -1,13 +1,20 @@
 defmodule Dagger.Codegen.Introspection.Types.TypeRef do
-  @derive [
-    {Nestru.PreDecoder, translate: %{"ofType" => :of_type}},
-    {Nestru.Decoder, hint: %{of_type: Dagger.Codegen.Introspection.Types.TypeRef}}
-  ]
   defstruct [
     :kind,
     :name,
     :of_type
   ]
+
+  def from_map(%{"kind" => kind, "name" => name, "ofType" => of_type}) do
+    %__MODULE__{
+      kind: kind,
+      name: name,
+      of_type:
+        unless is_nil(of_type) do
+          Dagger.Codegen.Introspection.Types.TypeRef.from_map(of_type)
+        end
+    }
+  end
 
   def is_scalar?(%__MODULE__{kind: "NON_NULL", of_type: type}), do: is_scalar?(type)
   def is_scalar?(%__MODULE__{kind: "SCALAR"}), do: true

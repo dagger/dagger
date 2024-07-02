@@ -1192,7 +1192,7 @@ export class CacheVolume extends BaseClient {
 export class Container extends BaseClient {
   private readonly _id?: ContainerID = undefined
   private readonly _envVariable?: string = undefined
-  private readonly _export?: boolean = undefined
+  private readonly _export?: string = undefined
   private readonly _imageRef?: string = undefined
   private readonly _label?: string = undefined
   private readonly _platform?: Platform = undefined
@@ -1210,7 +1210,7 @@ export class Container extends BaseClient {
     parent?: { queryTree?: QueryTree[]; ctx: Context },
     _id?: ContainerID,
     _envVariable?: string,
-    _export?: boolean,
+    _export?: string,
     _imageRef?: string,
     _label?: string,
     _platform?: Platform,
@@ -1487,8 +1487,6 @@ export class Container extends BaseClient {
   /**
    * Writes the container as an OCI tarball to the destination file path on the host.
    *
-   * Return true on success.
-   *
    * It can also export platform variants.
    * @param path Host's destination path (e.g., "./tarball").
    *
@@ -1506,7 +1504,7 @@ export class Container extends BaseClient {
   export = async (
     path: string,
     opts?: ContainerExportOpts,
-  ): Promise<boolean> => {
+  ): Promise<string> => {
     if (this._export) {
       return this._export
     }
@@ -1516,7 +1514,7 @@ export class Container extends BaseClient {
       mediaTypes: { is_enum: true },
     }
 
-    const response: Awaited<boolean> = await computeQuery(
+    const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -2898,7 +2896,7 @@ export class CurrentModule extends BaseClient {
  */
 export class Directory extends BaseClient {
   private readonly _id?: DirectoryID = undefined
-  private readonly _export?: boolean = undefined
+  private readonly _export?: string = undefined
   private readonly _sync?: DirectoryID = undefined
 
   /**
@@ -2907,7 +2905,7 @@ export class Directory extends BaseClient {
   constructor(
     parent?: { queryTree?: QueryTree[]; ctx: Context },
     _id?: DirectoryID,
-    _export?: boolean,
+    _export?: string,
     _sync?: DirectoryID,
   ) {
     super(parent)
@@ -3043,12 +3041,12 @@ export class Directory extends BaseClient {
   export = async (
     path: string,
     opts?: DirectoryExportOpts,
-  ): Promise<boolean> => {
+  ): Promise<string> => {
     if (this._export) {
       return this._export
     }
 
-    const response: Awaited<boolean> = await computeQuery(
+    const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -3770,7 +3768,7 @@ export class FieldTypeDef extends BaseClient {
 export class File extends BaseClient {
   private readonly _id?: FileID = undefined
   private readonly _contents?: string = undefined
-  private readonly _export?: boolean = undefined
+  private readonly _export?: string = undefined
   private readonly _name?: string = undefined
   private readonly _size?: number = undefined
   private readonly _sync?: FileID = undefined
@@ -3782,7 +3780,7 @@ export class File extends BaseClient {
     parent?: { queryTree?: QueryTree[]; ctx: Context },
     _id?: FileID,
     _contents?: string,
-    _export?: boolean,
+    _export?: string,
     _name?: string,
     _size?: number,
     _sync?: FileID,
@@ -3844,12 +3842,12 @@ export class File extends BaseClient {
    * @param path Location of the written directory (e.g., "output.txt").
    * @param opts.allowParentDirPath If allowParentDirPath is true, the path argument can be a directory path, in which case the file will be created in that directory.
    */
-  export = async (path: string, opts?: FileExportOpts): Promise<boolean> => {
+  export = async (path: string, opts?: FileExportOpts): Promise<string> => {
     if (this._export) {
       return this._export
     }
 
-    const response: Awaited<boolean> = await computeQuery(
+    const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
         {

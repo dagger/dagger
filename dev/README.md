@@ -40,17 +40,17 @@ This will re-create all the files required by your code editor - see
 
 Run all tests:
 
-    dagger call --source=.:default test all
+    dagger call -m dev --source=.:default test all
 
 Run a specific test (e.g. `TestModuleNamespacing`):
 
-    dagger call --source=.:default test custom --pkg="./core/integration" --run="^TestModuleNamespacing"
+    dagger call -m dev --source=.:default test custom --pkg="./core/integration" --run="^TestModuleNamespacing"
 
 ## Dev environment
 
 Start a little dev shell with dagger-in-dagger:
 
-    dagger call --source=.:default dev
+    dagger call -m dev --source=.:default dev
 
 ## Engine & CLI
 
@@ -58,19 +58,19 @@ Start a little dev shell with dagger-in-dagger:
 
 Run the engine linter:
 
-    dagger call --source=.:default engine lint
+    dagger call -m dev --source=.:default engine lint
 
 ### Build the CLI
 
 Build the CLI:
 
-    dagger call --source=.:default cli file -o ./bin/dagger
+    dagger call -m dev --source=.:default cli file -o ./bin/dagger
 
 ### Run the engine service
 
 Run the engine as a service:
 
-    dagger call --source=.:default engine service --name=dagger-engine up --ports=1234:1234
+    dagger call -m dev --source=.:default engine service --name=dagger-engine up --ports=1234:1234
 
 Connect to it from a dagger cli:
 
@@ -82,11 +82,11 @@ Connect to it from a dagger cli:
 
 Lint the docs:
 
-    dagger call --source=.:default docs lint
+    dagger call -m dev --source=.:default docs lint
 
 Auto-generate docs components:
 
-    dagger call --source=.:default docs generate export --path=.
+    dagger call -m dev --source=.:default docs generate export --path=.
 
 ## SDKs
 
@@ -115,28 +115,28 @@ All SDKs have the same functions defined:
 
 Run an SDK linter (replace `<sdk>` with one of the supported SDKs):
 
-    dagger call --source=.:default sdk <sdk> lint
+    dagger call -m dev --source=.:default sdk <sdk> lint
 
 ### Tests
 
 Run SDK tests (replace `<sdk>` with one of the supported SDKs):
 
-    dagger call --source=.:default sdk <sdk> test
+    dagger call -m dev --source=.:default sdk <sdk> test
 
 ### Generate
 
 Generate SDK static files (replace `<sdk>` with one of the supported SDKs):
 
-    dagger call --source=.:default sdk <sdk> generate export --path=.
+    dagger call -m dev --source=.:default sdk <sdk> generate export --path=.
 
 ### Publish
 
 Dry-run an SDK publishing step (replace `<sdk>` with one of the supported SDKs):
 
-    dagger call --source=.:default sdk <sdk> publish --dry-run
+    dagger call -m dev --source=.:default sdk <sdk> publish --dry-run
 
 ### Bump
 
 Bump an SDK version for releasing (replace `<sdk>` with one of the supported SDKs):
 
-    dagger call --source=.:default sdk <sdk> bump --version=$VERSION export --path=.
+    dagger call -m dev --source=.:default sdk <sdk> bump --version=$VERSION export --path=.
