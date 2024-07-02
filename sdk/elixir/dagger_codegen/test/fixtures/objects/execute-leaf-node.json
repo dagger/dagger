@@ -1,0 +1,27 @@
+{
+  "description": "An environment variable name and value.",
+  "enumValues": [],
+  "fields": [
+    {
+      "args": [],
+      "deprecationReason": null,
+      "description": "The environment variable name.",
+      "isDeprecated": false,
+      "name": "name",
+      "type": {
+        "kind": "NON_NULL",
+        "name": null,
+        "ofType": {
+          "kind": "SCALAR",
+          "name": "String",
+          "ofType": null
+        }
+      }
+    }
+  ],
+  "inputFields": [],
+  "interfaces": [],
+  "kind": "OBJECT",
+  "name": "EnvVariable",
+  "possibleTypes": []
+}
