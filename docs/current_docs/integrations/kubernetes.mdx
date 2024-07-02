@@ -4,6 +4,8 @@ slug: /integrations/kubernetes
 
 # Kubernetes
 
+You can check out the Kubernetes Dagger Modules [here](https://daggerverse.dev/search?q=kubernetes). 
+
 ## Deployment with Helm
 
 Dagger provides a Helm chart to create a Dagger Engine DaemonSet on a Kubernetes cluster. A DaemonSet ensures that all matching nodes run an instance of Dagger Engine.
@@ -132,3 +134,13 @@ The Dagger Engine cache is used to store intermediate build artifacts, which can
 #### Runner nodes appropriately sized for your workloads
 
 Although this will obviously vary based on workloads, a minimum of 2 vCPUs and 8GB of RAM is a good place to start. One approach is to set up the CI runners with various sizes so that the Dagger Engine can consume resources from the runners on the same node if needed.
+
+## Resources 
+
+Below are some resources from the Dagger community that may help as well. If you have any questions about additional ways to use Kubernetes with Dagger, join our [Discord](https://discord.gg/dagger-io) and ask your questions in our [Kubernetes channel](https://discord.com/channels/707636530424053791/1122942037096927353). 
+
+- [Dagger and Kubernetes Repo Example](https://github.com/developer-guy/kcd-munich-2024-demo) by Batuhan Apaydın and Koray Oksay - The goal of this repository is to demonstrate how to use Dagger in a Kubernetes environment to manage the deployment of applications. They use a simple Go application that exposes a REST API. The application is going to be deployed in a Kubernetes cluster using Dagger with a pipeline-as-code approach.
+- [On-Demand Dagger Engines with Argo CD, EKS, and Karpenter](https://dagger.io/blog/argo-cd-kubernetes)
+- [Argo Workflows with Dagger Functions](https://youtu.be/FWOJO2PAQIo) 
+
+
