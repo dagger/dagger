@@ -1,0 +1,6 @@
+kind: Fixed
+body: Restore telemetry initialization in modules
+time: 2024-07-02T18:57:48.66427Z
+custom:
+    Author: helderco
+    PR: "7811"
