@@ -99,9 +99,6 @@ func NewServer[T Typed](root T) *Server {
 	return srv
 }
 
-// XXX: huh
-type ViewFilter func(view string) bool
-
 var coreScalars = []ScalarType{
 	Boolean(false),
 	Int(0),
@@ -291,17 +288,17 @@ func (s *Server) Schema() *ast.Schema { // TODO: change this to be updated whene
 	queryType := s.Root().Type().Name()
 	schema := &ast.Schema{}
 	for _, t := range s.objects { // TODO stable order
-		def := definition(ast.Object, s.View, t)
+		def := definition(ast.Object, t, s.View)
 		if def.Name == queryType {
 			schema.Query = def
 		}
 		schema.AddTypes(def)
 	}
 	for _, t := range s.scalars {
-		schema.AddTypes(definition(ast.Scalar, "", t))
+		schema.AddTypes(definition(ast.Scalar, t, s.View))
 	}
 	for _, t := range s.typeDefs {
-		schema.AddTypes(t.TypeDefinition(""))
+		schema.AddTypes(t.TypeDefinition(s.View))
 	}
 	schema.Directives = map[string]*ast.DirectiveDefinition{}
 	for n, d := range s.directives {

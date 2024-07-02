@@ -115,12 +115,10 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 }
 
 func (m *CoreMod) TypeDefs(ctx context.Context) ([]*core.TypeDef, error) {
-	fmt.Println("getting core mod typedefs view =", m.Dag.View)
 	introspectionJSON, err := SchemaIntrospectionJSON(ctx, m.Dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema introspection JSON for core: %w", err)
 	}
-	fmt.Println(string(introspectionJSON))
 	var schemaResp introspection.Response
 	if err := json.Unmarshal([]byte(introspectionJSON), &schemaResp); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal introspection JSON: %w", err)

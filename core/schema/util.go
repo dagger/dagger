@@ -78,18 +78,26 @@ func gqlFieldName(name string) string {
 	return strcase.ToLowerCamel(name)
 }
 
-// containsVersion returns a view filter that checks if a target version is
-// greater than *or* equal to the filtered version.
-func containsVersion(minVersion string) dagql.FuncOpt {
-	return dagql.View(func(version string) bool {
-		return engine.CheckVersionCompatibility(version, minVersion) == nil
-	})
+// afterVersion is a view that checks if a target version is greater than *or*
+// equal to the filtered version.
+type afterVersion string
+
+func (minVersion afterVersion) Contains(version string) bool {
+	return engine.CheckVersionCompatibility(version, string(minVersion)) == nil
 }
 
-// uptoVersion returns a view filter that checks if a target version is
-// less than the filtered version.
-func uptoVersion(maxVersion string) dagql.FuncOpt {
-	return dagql.View(func(version string) bool {
-		return engine.CheckVersionCompatibility(version, maxVersion) != nil
-	})
+func WithAfterVersion(v string) dagql.FuncOpt {
+	return dagql.WithView(afterVersion(v))
+}
+
+// beforeVersion is a view that checks if a target version is less than the
+// filtered version.
+type beforeVersion string
+
+func (maxVersion beforeVersion) Contains(version string) bool {
+	return engine.CheckVersionCompatibility(version, string(maxVersion)) != nil
+}
+
+func WithBeforeVersion(v string) dagql.FuncOpt {
+	return dagql.WithView(beforeVersion(v))
 }

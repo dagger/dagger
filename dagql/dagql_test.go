@@ -1767,11 +1767,6 @@ func InstallViewer(srv *dagql.Server) {
 	getView := func(_ context.Context, _ Query, _ struct{}) (string, error) {
 		return srv.View, nil
 	}
-	view := func(target string) dagql.FuncOpt {
-		return dagql.View(func(s string) bool {
-			return s == target
-		})
-	}
 
 	dagql.Fields[Query]{
 		dagql.Func("all", getView).
@@ -1779,15 +1774,15 @@ func InstallViewer(srv *dagql.Server) {
 		dagql.Func("override", getView).
 			Doc("available on all views"),
 
-		dagql.Func("shared", getView, view("firstView")).
+		dagql.Func("shared", getView, dagql.WithExactView("firstView")).
 			Doc("available on first+second views"),
-		dagql.Func("firstExclusive", getView, view("firstView")).
+		dagql.Func("firstExclusive", getView, dagql.WithExactView("firstView")).
 			Doc("available on first view"),
 
-		dagql.Func("shared", getView, view("secondView"), dagql.Extend()),
-		dagql.Func("secondExclusive", getView, view("secondView")).
+		dagql.Func("shared", getView, dagql.WithExactView("secondView"), dagql.WithExtends()),
+		dagql.Func("secondExclusive", getView, dagql.WithExactView("secondView")).
 			Doc("available on second view"),
-		dagql.Func("override", getView, view("secondView")).
+		dagql.Func("override", getView, dagql.WithExactView("secondView")).
 			Doc("available on second view"),
 	}.Install(srv)
 }
