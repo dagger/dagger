@@ -3799,6 +3799,28 @@ func (r *GitRepository) Tag(name string) *GitRef {
 	}
 }
 
+// GitRepositoryTagsOpts contains options for GitRepository.Tags
+type GitRepositoryTagsOpts struct {
+	// Glob patterns (e.g., "refs/tags/v*").
+	Patterns []string
+}
+
+// tags that match any of the given glob patterns.
+func (r *GitRepository) Tags(ctx context.Context, opts ...GitRepositoryTagsOpts) ([]string, error) {
+	q := r.query.Select("tags")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `patterns` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Patterns) {
+			q = q.Arg("patterns", opts[i].Patterns)
+		}
+	}
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // Header to authenticate the remote with.
 func (r *GitRepository) WithAuthHeader(header *Secret) *GitRepository {
 	assertNotNil("header", header)

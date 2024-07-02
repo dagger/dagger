@@ -79,6 +79,17 @@ defmodule Dagger.GitRepository do
     }
   end
 
+  @doc "tags that match any of the given glob patterns."
+  @spec tags(t(), [{:patterns, [String.t()]}]) :: {:ok, [String.t()]} | {:error, term()}
+  def tags(%__MODULE__{} = git_repository, optional_args \\ []) do
+    selection =
+      git_repository.selection
+      |> select("tags")
+      |> maybe_put_arg("patterns", optional_args[:patterns])
+
+    execute(selection, git_repository.client)
+  end
+
   @doc "Header to authenticate the remote with."
   @spec with_auth_header(t(), Dagger.Secret.t()) :: Dagger.GitRepository.t()
   def with_auth_header(%__MODULE__{} = git_repository, header) do

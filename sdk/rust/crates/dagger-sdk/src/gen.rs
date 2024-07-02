@@ -4564,6 +4564,12 @@ pub struct GitRepository {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct GitRepositoryTagsOpts<'a> {
+    /// Glob patterns (e.g., "refs/tags/v*").
+    #[builder(setter(into, strip_option), default)]
+    pub patterns: Option<Vec<&'a str>>,
+}
 impl GitRepository {
     /// Returns details of a branch.
     ///
@@ -4634,6 +4640,30 @@ impl GitRepository {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
+    }
+    /// tags that match any of the given glob patterns.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn tags(&self) -> Result<Vec<String>, DaggerError> {
+        let query = self.selection.select("tags");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// tags that match any of the given glob patterns.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn tags_opts<'a>(
+        &self,
+        opts: GitRepositoryTagsOpts<'a>,
+    ) -> Result<Vec<String>, DaggerError> {
+        let mut query = self.selection.select("tags");
+        if let Some(patterns) = opts.patterns {
+            query = query.arg("patterns", patterns);
+        }
+        query.execute(self.graphql_client.clone()).await
     }
     /// Header to authenticate the remote with.
     ///

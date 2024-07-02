@@ -322,3 +322,41 @@ func (GitSuite) TestServiceStableDigest(ctx context.Context, t *testctx.T) {
 	c2 := connect(ctx, t)
 	require.Equal(t, hostname(c1), hostname(c2))
 }
+
+func (GitSuite) TestGitTags(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("all tags", func(ctx context.Context, t *testctx.T) {
+		tags, err := c.Git("https://github.com/dagger/dagger").Tags(ctx)
+		require.NoError(t, err)
+		require.Contains(t, tags, "v0.9.3")
+		require.Contains(t, tags, "sdk/go/v0.9.3")
+	})
+
+	t.Run("tag pattern", func(ctx context.Context, t *testctx.T) {
+		tags, err := c.Git("https://github.com/dagger/dagger").Tags(ctx, dagger.GitRepositoryTagsOpts{
+			Patterns: []string{"v*"},
+		})
+		require.NoError(t, err)
+		require.Contains(t, tags, "v0.9.3")
+		require.Contains(t, tags, "sdk/go/v0.9.3")
+	})
+
+	t.Run("ref-qualified tag pattern", func(ctx context.Context, t *testctx.T) {
+		tags, err := c.Git("https://github.com/dagger/dagger").Tags(ctx, dagger.GitRepositoryTagsOpts{
+			Patterns: []string{"refs/tags/v*"},
+		})
+		require.NoError(t, err)
+		require.Contains(t, tags, "v0.9.3")
+		require.NotContains(t, tags, "sdk/go/v0.9.3")
+	})
+
+	t.Run("prefix-qualified tag pattern", func(ctx context.Context, t *testctx.T) {
+		tags, err := c.Git("https://github.com/dagger/dagger").Tags(ctx, dagger.GitRepositoryTagsOpts{
+			Patterns: []string{"sdk/go/v*"},
+		})
+		require.NoError(t, err)
+		require.NotContains(t, tags, "v0.9.3")
+		require.Contains(t, tags, "sdk/go/v0.9.3")
+	})
+}

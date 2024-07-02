@@ -1578,6 +1578,12 @@ type GitRepository {
     name: String!
   ): GitRef!
 
+  """tags that match any of the given glob patterns."""
+  tags(
+    """Glob patterns (e.g., "refs/tags/v*")."""
+    patterns: [String!]
+  ): [String!]!
+
   """Header to authenticate the remote with."""
   withAuthHeader(
     """Secret used to populate the Authorization HTTP header"""
