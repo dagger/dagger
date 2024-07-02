@@ -101,7 +101,7 @@ You can use Dagger Cloud whether you're hosting your own CI runners and infrastr
 When using self-hosted CI runners on AWS infrastructure, NAT Gateways are a common source of unexpected network charges. It's advisable to setup an Amazon S3 Gateway for these cases. Refer to the [AWS documentation](https://docs.aws.amazon.com/vpc/latest/privatelink/vpc-endpoints-s3.html) for detailed information on how to do this.
 :::
 
-<Tabs groupId="ci">
+<Tabs groupId="ci" queryString>
 <TabItem value="GitHub Actions">
 
 1. Create a new secret for your GitHub repository named `DAGGER_CLOUD_TOKEN`, and set it to the value of the token obtained in [Step 1](#step-1-sign-up-for-dagger-cloud). Refer to the GitHub documentation [on creating repository secrets](https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions#creating-secrets-for-a-repository).
@@ -169,7 +169,7 @@ When using self-hosted CI runners on AWS infrastructure, NAT Gateways are a comm
 1. Jenkins performs a checkout to a detached HEAD state by default. In order to visualize Jenkins builds in Dagger Cloud, ensure that your pipeline is configured to check out to matching local branch. 
     1. For a Multibranch pipeline project this can be configured in the Jenkins UI by navigating to Configuration -> Branch Sources -> General -> Add -> **Check out to matching local branch**
     1. For a Pipeline project this can be configured in the Jenkins UI by navigating to Configure -> Pipeline ->  Pipeline script from SCM -> Definition -> SCM -> Additional Behaviors -> Add -> **Check out to specific local branch** -> Branch name -> `**`
-    1. For all cases, you can also add this directly to your Jenkinsfile by adding the following stage to your pipeline file. Be sure to replace `$org` and `$repo` with project specific values. 
+    1. If the UI based options described above do not work for you, you can also add the following configuration directly to your Jenkinsfile. Be sure to replace `$org` and `$repo` with project specific values. 
 
       ```groovy title="Jenkinsfile" file=../../../integrations/snippets/Jenkinsfile_checkout
       ```
