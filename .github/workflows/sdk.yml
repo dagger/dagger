@@ -25,15 +25,30 @@ jobs:
     uses: ./.github/workflows/_sdk_check.yml
     with:
       sdk: go
+  go-dev:
+    if: github.ref_name == 'main'
+    uses: ./.github/workflows/_sdk_check.yml
+    with:
+      sdk: go
       dev-engine: true
 
   python:
     uses: ./.github/workflows/_sdk_check.yml
     with:
       sdk: python
+  python-dev:
+    if: github.ref_name == 'main'
+    uses: ./.github/workflows/_sdk_check.yml
+    with:
+      sdk: python
       dev-engine: true
 
   typescript:
+    uses: ./.github/workflows/_sdk_check.yml
+    with:
+      sdk: typescript
+  typescript-dev:
+    if: github.ref_name == 'main'
     uses: ./.github/workflows/_sdk_check.yml
     with:
       sdk: typescript
@@ -44,15 +59,31 @@ jobs:
     with:
       sdk: java
       test-publish: false # java doesn't have an automated publish step to test
+  java-dev:
+    if: github.ref_name == 'main'
+    uses: ./.github/workflows/_sdk_check.yml
+    with:
+      sdk: java
+      test-publish: false # java doesn't have an automated publish step to test
       dev-engine: true
 
   elixir:
     uses: ./.github/workflows/_sdk_check.yml
     with:
       sdk: elixir
+  elixir-dev:
+    if: github.ref_name == 'main'
+    uses: ./.github/workflows/_sdk_check.yml
+    with:
+      sdk: elixir
       dev-engine: true
 
   rust:
+    uses: ./.github/workflows/_sdk_check.yml
+    with:
+      sdk: rust
+  rust-dev:
+    if: github.ref_name == 'main'
     uses: ./.github/workflows/_sdk_check.yml
     with:
       sdk: rust
