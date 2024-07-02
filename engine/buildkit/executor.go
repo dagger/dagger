@@ -46,6 +46,8 @@ type ExecutionMetadata struct {
 	SecretToken string
 	Hostname    string
 
+	Internal bool
+
 	EncodedModuleID     string
 	EncodedFunctionCall json.RawMessage
 

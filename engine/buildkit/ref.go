@@ -343,7 +343,7 @@ func wrapError(ctx context.Context, baseErr error, client *Client) error {
 	}
 
 	// Start a debug container if the exec failed
-	if err := debugContainer(ctx, execOp.Exec, execErr, client); err != nil {
+	if err := debugContainer(ctx, execOp.Exec, execErr, opErr, client); err != nil {
 		bklog.G(ctx).Debugf("debug terminal error: %v", err)
 	}
 
@@ -356,16 +356,22 @@ func wrapError(ctx context.Context, baseErr error, client *Client) error {
 	}
 }
 
-func debugContainer(ctx context.Context, execOp *bksolverpb.ExecOp, execErr *llberror.ExecError, client *Client) error {
+func debugContainer(ctx context.Context, execOp *bksolverpb.ExecOp, execErr *llberror.ExecError, opErr *solvererror.OpError, client *Client) error {
 	if !client.Opts.Interactive {
 		return nil
 	}
 
+	execMd, ok, err := ExecutionMetadataFromDescription(opErr.Description)
+	if err != nil {
+		return fmt.Errorf("failed to retrieve execution metadata: %w", err)
+	}
+	if !ok {
+		// containers created by buildkit internals like the dockerfile frontend
+		return nil
+	}
 	// If this is the (internal) exec of the module itself, we don't want to spawn a terminal.
-	for _, env := range execOp.Meta.Env {
-		if strings.HasPrefix(env, "_DAGGER_CALL_DIGEST=") {
-			return nil
-		}
+	if execMd.Internal {
+		return nil
 	}
 
 	mounts := []ContainerMount{}

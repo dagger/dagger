@@ -179,6 +179,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 
 	execMD := buildkit.ExecutionMetadata{
 		CachePerSession: !opts.Cache,
+		Internal:        true,
 	}
 	if spanCtx := trace.SpanContextFromContext(ctx); spanCtx.IsValid() {
 		execMD.SpanContext = propagation.MapCarrier{}
