@@ -20,17 +20,5 @@
     }
   ],
   "source": ".",
-  "engineVersion": "v0.11.6",
-  "views": [
-    {
-      "name": "default",
-      "patterns": [
-        "!bin",
-        "!.git",
-        "!**/node_modules",
-        "!**/.venv",
-        "!**/__pycache__"
-      ]
-    }
-  ]
+  "engineVersion": "v0.11.6"
 }
