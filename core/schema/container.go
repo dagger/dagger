@@ -465,14 +465,14 @@ func (s *containerSchema) Install() {
 			ArgDoc("experimentalPrivilegedNesting",
 				`Provides Dagger access to the executed command.`,
 				`Do not use this option unless you trust the command being executed;
-			the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST
-			FILESYSTEM.`).
+				the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST
+				FILESYSTEM.`).
 			ArgDoc("insecureRootCapabilities",
 				`Execute the command with all root capabilities. This is similar to
-			running a command with "sudo" or executing "docker run" with the
-			"--privileged" flag. Containerization does not provide any security
-			guarantees when using this option. It should only be used when
-			absolutely necessary and only with trusted commands.`),
+				running a command with "sudo" or executing "docker run" with the
+				"--privileged" flag. Containerization does not provide any security
+				guarantees when using this option. It should only be used when
+				absolutely necessary and only with trusted commands.`),
 
 		dagql.NodeFunc("terminal", s.terminal, containsVersion("v0.12.0")).
 			Impure("Nondeterministic.").
@@ -481,15 +481,28 @@ func (s *containerSchema) Install() {
 			ArgDoc("experimentalPrivilegedNesting",
 				`Provides Dagger access to the executed command.`,
 				`Do not use this option unless you trust the command being executed;
-		the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST
-		FILESYSTEM.`).
+				the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST
+				FILESYSTEM.`).
 			ArgDoc("insecureRootCapabilities",
 				`Execute the command with all root capabilities. This is similar to
-		running a command with "sudo" or executing "docker run" with the
-		"--privileged" flag. Containerization does not provide any security
-		guarantees when using this option. It should only be used when
-		absolutely necessary and only with trusted commands.`),
-		dagql.NodeFunc("terminal", s.terminalLegacy, dagql.Extend(), uptoVersion("v0.12.0")),
+				running a command with "sudo" or executing "docker run" with the
+				"--privileged" flag. Containerization does not provide any security
+				guarantees when using this option. It should only be used when
+				absolutely necessary and only with trusted commands.`),
+		dagql.NodeFunc("terminal", s.terminalLegacy, uptoVersion("v0.12.0")).
+			Doc(`Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).`).
+			ArgDoc("cmd", `If set, override the container's default terminal command and invoke these command arguments instead.`).
+			ArgDoc("experimentalPrivilegedNesting",
+				`Provides Dagger access to the executed command.`,
+				`Do not use this option unless you trust the command being executed;
+				the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST
+				FILESYSTEM.`).
+			ArgDoc("insecureRootCapabilities",
+				`Execute the command with all root capabilities. This is similar to
+				running a command with "sudo" or executing "docker run" with the
+				"--privileged" flag. Containerization does not provide any security
+				guarantees when using this option. It should only be used when
+				absolutely necessary and only with trusted commands.`),
 
 		dagql.Func("experimentalWithGPU", s.withGPU).
 			Doc(`EXPERIMENTAL API! Subject to change/removal at any time.`,
@@ -1465,7 +1478,32 @@ func (s *containerSchema) terminalLegacy(
 	// HACK: when attempting to construct a legacy terminal, just spin up a new
 	// terminal attachable. The returned terminal is definitely invalid, but,
 	// the intention was probably to debug it anyways, so we're probably okay.
-	if _, err := s.terminal(ctx, ctr, args); err != nil {
+	var inputs []dagql.NamedInput
+	if args.Cmd != nil {
+		inputs = append(inputs, dagql.NamedInput{
+			Name:  "cmd",
+			Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(args.Cmd...)),
+		})
+	}
+	if args.ExperimentalPrivilegedNesting != nil {
+		inputs = append(inputs, dagql.NamedInput{
+			Name:  "experimentalPrivilegedNesting",
+			Value: dagql.NewBoolean(*args.ExperimentalPrivilegedNesting),
+		})
+	}
+	if args.InsecureRootCapabilities != nil {
+		inputs = append(inputs, dagql.NamedInput{
+			Name:  "insecureRootCapabilities",
+			Value: dagql.NewBoolean(*args.InsecureRootCapabilities),
+		})
+	}
+	err := s.srv.Select(ctx, ctr, &dagql.Instance[*core.Container]{},
+		dagql.Selector{
+			Field: "terminal",
+			Args:  inputs,
+		},
+	)
+	if err != nil {
 		return nil, err
 	}
 	return &coreTerminalLegacy{}, nil

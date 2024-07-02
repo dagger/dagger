@@ -119,6 +119,7 @@ func (class Class[T]) Install(fields ...Field[T]) {
 
 			field.Spec = fields[len(fields)-1].Spec
 			field.Spec.Type = oldSpec.Type // a little hacky, but preserve the return type
+			field.Spec.ImpurityReason = "" // XXX: nope
 		}
 		class.fields[field.Spec.Name] = append(class.fields[field.Spec.Name], &field)
 	}
@@ -952,6 +953,12 @@ func assign(field reflect.Value, val any) error {
 		field.Set(reflect.ValueOf(val))
 		return nil
 	} else if setter, ok := val.(Setter); ok {
+		for field.Kind() == reflect.Pointer {
+			if field.IsZero() {
+				field = reflect.New(field.Type().Elem())
+			}
+			field = field.Elem()
+		}
 		return setter.SetField(field)
 	} else {
 		return fmt.Errorf("cannot assign %T to %s", val, field.Type())
