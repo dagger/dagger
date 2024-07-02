@@ -33,7 +33,11 @@ func (container *Container) Terminal(
 	svcID *call.ID,
 	args *TerminalArgs,
 ) error {
-	term, err := container.Query.Buildkit.OpenTerminal(ctx)
+	bk, err := container.Query.Buildkit(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+	term, err := bk.OpenTerminal(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to open terminal: %w", err)
 	}

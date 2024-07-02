@@ -66,5 +66,5 @@ func (s *httpSchema) http(ctx context.Context, parent *core.Query, args httpArgs
 	}
 
 	st := httpdns.HTTP(args.URL, clientMetadata.SessionID, opts...)
-	return core.NewFileSt(ctx, parent, st, filename, parent.Platform, svcs)
+	return core.NewFileSt(ctx, parent, st, filename, parent.Platform(), svcs)
 }

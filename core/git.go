@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/moby/buildkit/client/llb"
 	"github.com/pkg/errors"
@@ -66,7 +67,10 @@ func (ref *GitRef) Tree(ctx context.Context) (*Directory, error) {
 }
 
 func (ref *GitRef) Commit(ctx context.Context) (string, error) {
-	bk := ref.Query.Buildkit
+	bk, err := ref.Query.Buildkit(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get buildkit client: %w", err)
+	}
 	st, err := ref.getState(ctx)
 	if err != nil {
 		return "", err

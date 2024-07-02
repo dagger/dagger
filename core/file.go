@@ -118,8 +118,14 @@ func (file *File) State() (llb.State, error) {
 }
 
 func (file *File) Evaluate(ctx context.Context) (*buildkit.Result, error) {
-	svcs := file.Query.Services
-	bk := file.Query.Buildkit
+	svcs, err := file.Query.Services(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get services: %w", err)
+	}
+	bk, err := file.Query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
 
 	detach, _, err := svcs.StartBindings(ctx, file.Services)
 	if err != nil {
@@ -135,8 +141,14 @@ func (file *File) Evaluate(ctx context.Context) (*buildkit.Result, error) {
 
 // Contents handles file content retrieval
 func (file *File) Contents(ctx context.Context) ([]byte, error) {
-	svcs := file.Query.Services
-	bk := file.Query.Buildkit
+	svcs, err := file.Query.Services(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get services: %w", err)
+	}
+	bk, err := file.Query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
 
 	detach, _, err := svcs.StartBindings(ctx, file.Services)
 	if err != nil {
@@ -188,8 +200,14 @@ func (file *File) Contents(ctx context.Context) ([]byte, error) {
 }
 
 func (file *File) Stat(ctx context.Context) (*fstypes.Stat, error) {
-	svcs := file.Query.Services
-	bk := file.Query.Buildkit
+	svcs, err := file.Query.Services(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get services: %w", err)
+	}
+	bk, err := file.Query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
 
 	detach, _, err := svcs.StartBindings(ctx, file.Services)
 	if err != nil {
@@ -253,8 +271,14 @@ func (file *File) WithTimestamps(ctx context.Context, unix int) (*File, error) {
 }
 
 func (file *File) Open(ctx context.Context) (io.ReadCloser, error) {
-	bk := file.Query.Buildkit
-	svcs := file.Query.Services
+	bk, err := file.Query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+	svcs, err := file.Query.Services(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get services: %w", err)
+	}
 
 	detach, _, err := svcs.StartBindings(ctx, file.Services)
 	if err != nil {
@@ -271,8 +295,14 @@ func (file *File) Open(ctx context.Context) (io.ReadCloser, error) {
 }
 
 func (file *File) Export(ctx context.Context, dest string, allowParentDirPath bool) (rerr error) {
-	svcs := file.Query.Services
-	bk := file.Query.Buildkit
+	svcs, err := file.Query.Services(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get services: %w", err)
+	}
+	bk, err := file.Query.Buildkit(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get buildkit client: %w", err)
+	}
 
 	src, err := file.State()
 	if err != nil {

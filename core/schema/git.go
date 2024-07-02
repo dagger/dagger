@@ -111,7 +111,7 @@ func (s *gitSchema) git(ctx context.Context, parent *core.Query, args gitArgs) (
 		SSHKnownHosts: args.SSHKnownHosts,
 		SSHAuthSocket: authSock,
 		Services:      svcs,
-		Platform:      parent.Platform,
+		Platform:      parent.Platform(),
 	}, nil
 }
 

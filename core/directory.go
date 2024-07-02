@@ -164,8 +164,14 @@ func (dir *Directory) Evaluate(ctx context.Context) (*buildkit.Result, error) {
 		return nil, nil
 	}
 
-	svcs := dir.Query.Services
-	bk := dir.Query.Buildkit
+	svcs, err := dir.Query.Services(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get services: %w", err)
+	}
+	bk, err := dir.Query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
 
 	detach, _, err := svcs.StartBindings(ctx, dir.Services)
 	if err != nil {
@@ -220,8 +226,14 @@ func (dir *Directory) Stat(ctx context.Context, bk *buildkit.Client, svcs *Servi
 func (dir *Directory) Entries(ctx context.Context, src string) ([]string, error) {
 	src = path.Join(dir.Dir, src)
 
-	svcs := dir.Query.Services
-	bk := dir.Query.Buildkit
+	svcs, err := dir.Query.Services(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get services: %w", err)
+	}
+	bk, err := dir.Query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
 
 	detach, _, err := svcs.StartBindings(ctx, dir.Services)
 	if err != nil {
@@ -270,8 +282,14 @@ func (dir *Directory) Entries(ctx context.Context, src string) ([]string, error)
 // However, this requires to maintain buildkit code and is not mandatory for now until
 // we hit performances issues.
 func (dir *Directory) Glob(ctx context.Context, src string, pattern string) ([]string, error) {
-	svcs := dir.Query.Services
-	bk := dir.Query.Buildkit
+	svcs, err := dir.Query.Services(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get services: %w", err)
+	}
+	bk, err := dir.Query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
 
 	detach, _, err := svcs.StartBindings(ctx, dir.Services)
 	if err != nil {
@@ -377,8 +395,14 @@ func (dir *Directory) WithNewFile(ctx context.Context, dest string, content []by
 func (dir *Directory) Directory(ctx context.Context, subdir string) (*Directory, error) {
 	dir = dir.Clone()
 
-	svcs := dir.Query.Services
-	bk := dir.Query.Buildkit
+	svcs, err := dir.Query.Services(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get services: %w", err)
+	}
+	bk, err := dir.Query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
 
 	dir.Dir = path.Join(dir.Dir, subdir)
 
@@ -397,10 +421,16 @@ func (dir *Directory) Directory(ctx context.Context, subdir string) (*Directory,
 }
 
 func (dir *Directory) File(ctx context.Context, file string) (*File, error) {
-	svcs := dir.Query.Services
-	bk := dir.Query.Buildkit
+	svcs, err := dir.Query.Services(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get services: %w", err)
+	}
+	bk, err := dir.Query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
 
-	err := validateFileName(file)
+	err = validateFileName(file)
 	if err != nil {
 		return nil, err
 	}
@@ -696,8 +726,14 @@ func (dir *Directory) Without(ctx context.Context, path string) (*Directory, err
 }
 
 func (dir *Directory) Export(ctx context.Context, destPath string, merge bool) (rerr error) {
-	svcs := dir.Query.Services
-	bk := dir.Query.Buildkit
+	svcs, err := dir.Query.Services(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get services: %w", err)
+	}
+	bk, err := dir.Query.Buildkit(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get buildkit client: %w", err)
+	}
 
 	var defPB *pb.Definition
 	if dir.Dir != "" {
@@ -758,7 +794,11 @@ func (dir *Directory) AsBlob(
 	}
 	pbDef := def.ToPB()
 
-	_, desc, err := dir.Query.Buildkit.DefToBlob(ctx, pbDef, compression.Zstd)
+	bk, err := dir.Query.Buildkit(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+	_, desc, err := bk.DefToBlob(ctx, pbDef, compression.Zstd)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get blob descriptor: %w", err)
 	}
