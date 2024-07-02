@@ -290,7 +290,7 @@ func (svc *Service) startContainer(
 
 	pbPlatform := pb.PlatformFromSpec(ctr.Platform.Spec())
 
-	mounts := make([]bkgw.Mount, len(execOp.Mounts))
+	mounts := make([]buildkit.ContainerMount, len(execOp.Mounts))
 	for i, m := range execOp.Mounts {
 		mount := bkgw.Mount{
 			Selector:  m.Selector,
@@ -322,7 +322,9 @@ func (svc *Service) startContainer(
 			mount.Ref = res.Ref
 		}
 
-		mounts[i] = mount
+		mounts[i] = buildkit.ContainerMount{
+			Mount: &mount,
+		}
 	}
 
 	gc, err := bk.NewContainer(ctx, buildkit.NewContainerRequest{
