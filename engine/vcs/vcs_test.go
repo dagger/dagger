@@ -31,13 +31,15 @@ func TestRepoRootForImportPath(t *testing.T) {
 			&RepoRoot{
 				VCS:  vcsGit,
 				Repo: "https://github.com/golang/groupcache",
+				Root: "github.com/golang/groupcache",
 			},
 		},
 		{
 			"github.com/golang/groupcache.git/foo",
 			&RepoRoot{
 				VCS:  vcsGit,
-				Repo: "https://github.com/golang/groupcache.git",
+				Repo: "https://github.com/golang/groupcache",
+				Root: "github.com/golang/groupcache.git",
 			},
 		},
 		{
@@ -45,6 +47,7 @@ func TestRepoRootForImportPath(t *testing.T) {
 			&RepoRoot{
 				VCS:  vcsGit,
 				Repo: "https://github.com/dagger/dagger-test-modules",
+				Root: "github.com/dagger/dagger-test-modules",
 			},
 		},
 		{
@@ -52,6 +55,7 @@ func TestRepoRootForImportPath(t *testing.T) {
 			&RepoRoot{
 				VCS:  vcsGit,
 				Repo: "https://github.com/dagger/dagger-test-modules",
+				Root: "github.com/dagger/dagger-test-modules",
 			},
 		},
 		// Unicode letters are allowed in import paths.
@@ -61,6 +65,7 @@ func TestRepoRootForImportPath(t *testing.T) {
 			&RepoRoot{
 				VCS:  vcsGit,
 				Repo: "https://github.com/user/unicode",
+				Root: "github.com/user/unicode",
 			},
 		},
 		// IBM DevOps Services tests
@@ -69,6 +74,7 @@ func TestRepoRootForImportPath(t *testing.T) {
 			&RepoRoot{
 				VCS:  vcsGit,
 				Repo: "https://hub.jazz.net/git/user1/pkgname",
+				Root: "hub.jazz.net/git/user1/pkgname",
 			},
 		},
 		{
@@ -76,6 +82,7 @@ func TestRepoRootForImportPath(t *testing.T) {
 			&RepoRoot{
 				VCS:  vcsGit,
 				Repo: "https://hub.jazz.net/git/user1/pkgname",
+				Root: "hub.jazz.net/git/user1/pkgname",
 			},
 		},
 		// Trailing .git is less preferred but included for
@@ -86,6 +93,7 @@ func TestRepoRootForImportPath(t *testing.T) {
 			&RepoRoot{
 				VCS:  vcsGit,
 				Repo: "https://git.openstack.org/openstack/swift.git",
+				Root: "git.openstack.org/openstack/swift.git",
 			},
 		},
 		{
@@ -93,6 +101,7 @@ func TestRepoRootForImportPath(t *testing.T) {
 			&RepoRoot{
 				VCS:  vcsGit,
 				Repo: "https://git.openstack.org/openstack/swift",
+				Root: "git.openstack.org/openstack/swift",
 			},
 		},
 		{
@@ -100,6 +109,7 @@ func TestRepoRootForImportPath(t *testing.T) {
 			&RepoRoot{
 				VCS:  vcsGit,
 				Repo: "https://git.apache.org/package-name.git",
+				Root: "git.apache.org/package-name.git",
 			},
 		},
 		{
@@ -107,6 +117,7 @@ func TestRepoRootForImportPath(t *testing.T) {
 			&RepoRoot{
 				VCS:  vcsGit,
 				Repo: "https://git.apache.org/package-name_2.x.git",
+				Root: "git.apache.org/package-name_2.x.git",
 			},
 		},
 		{
@@ -114,6 +125,7 @@ func TestRepoRootForImportPath(t *testing.T) {
 			&RepoRoot{
 				VCS:  vcsGit,
 				Repo: "https://git.sr.ht/~jacqueline/tangara-fw",
+				Root: "git.sr.ht/~jacqueline/tangara-fw",
 			},
 		},
 		// { FAILS as returns 404 without tags
@@ -128,6 +140,7 @@ func TestRepoRootForImportPath(t *testing.T) {
 			&RepoRoot{
 				VCS:  vcsGit,
 				Repo: "https://bitbucket.org/workspace/pkgname",
+				Root: "bitbucket.org/workspace/pkgname",
 			},
 		},
 		{
@@ -135,6 +148,7 @@ func TestRepoRootForImportPath(t *testing.T) {
 			&RepoRoot{
 				VCS:  vcsGit,
 				Repo: "https://bitbucket.org/workspace/pkgname",
+				Root: "bitbucket.org/workspace/pkgname",
 			},
 		},
 		{
@@ -142,13 +156,15 @@ func TestRepoRootForImportPath(t *testing.T) {
 			&RepoRoot{
 				VCS:  vcsGit,
 				Repo: "https://bitbucket.org/workspace/pkgname",
+				Root: "bitbucket.org/workspace/pkgname",
 			},
 		},
 		{
 			"bitbucket.org/workspace/pkgname.git",
 			&RepoRoot{
 				VCS:  vcsGit,
-				Repo: "https://bitbucket.org/workspace/pkgname.git",
+				Repo: "https://bitbucket.org/workspace/pkgname",
+				Root: "bitbucket.org/workspace/pkgname.git",
 			},
 		},
 		// GitLab public repo
@@ -156,14 +172,16 @@ func TestRepoRootForImportPath(t *testing.T) {
 			"gitlab.com/testguigui1/dagger-public-sub/mywork/depth1/depth2",
 			&RepoRoot{
 				VCS:  vcsGit,
-				Repo: "https://gitlab.com/testguigui1/dagger-public-sub/mywork.git",
+				Repo: "https://gitlab.com/testguigui1/dagger-public-sub/mywork",
+				Root: "gitlab.com/testguigui1/dagger-public-sub/mywork",
 			},
 		},
 		{
-			"gitlab.com/testguigui1/dagger-public-sub/mywork/depth1/depth2",
+			"gitlab.com/testguigui1/dagger-public-sub/mywork.git/depth1/depth2",
 			&RepoRoot{
 				VCS:  vcsGit,
-				Repo: "https://gitlab.com/testguigui1/dagger-public-sub/mywork.git",
+				Repo: "https://gitlab.com/testguigui1/dagger-public-sub/mywork",
+				Root: "gitlab.com/testguigui1/dagger-public-sub/mywork.git",
 			},
 		},
 		// GitLab private repo
@@ -190,6 +208,7 @@ func TestRepoRootForImportPath(t *testing.T) {
 			&RepoRoot{
 				VCS:  vcsGit,
 				Repo: "https://github.com/dagger/dagger-go-sdk",
+				Root: "dagger.io/dagger",
 			},
 		},
 		{
@@ -197,6 +216,7 @@ func TestRepoRootForImportPath(t *testing.T) {
 			&RepoRoot{
 				VCS:  vcsGit,
 				Repo: "https://bitbucket.org/workspace/pkgname",
+				Root: "bitbucket.org/workspace/pkgname",
 			},
 		},
 		{
@@ -204,6 +224,7 @@ func TestRepoRootForImportPath(t *testing.T) {
 			&RepoRoot{
 				VCS:  vcsGit,
 				Repo: "https://codeberg.org/workspace/pkgname",
+				Root: "codeberg.org/workspace/pkgname",
 			},
 		},
 	}
