@@ -401,7 +401,7 @@ func (fc *FuncCommand) initializeModule(ctx context.Context) (rerr error) {
 		return fmt.Errorf("module at source dir %q doesn't exist or is invalid", modConf.LocalRootSourcePath)
 	}
 	mod := modConf.Source.AsModule().Initialize()
-	_, err = mod.Serve(ctx)
+	err = mod.Serve(ctx)
 	if err != nil {
 		return err
 	}
