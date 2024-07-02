@@ -1,10 +1,12 @@
 <?php
 
-namespace Dagger\Tests\Connection;
+namespace Dagger\Tests\Integration\Connection;
 
 use Dagger\Connection;
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
+#[Group('integration')]
 class ConnectionTest extends TestCase
 {
     private static array $daggerEnvVars = [];

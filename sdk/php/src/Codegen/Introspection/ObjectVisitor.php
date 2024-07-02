@@ -29,7 +29,9 @@ class ObjectVisitor extends AbstractVisitor
 
         $objectClass = new ClassType(Helpers::formatPhpClassName($className));
         $objectClass->setExtends($parentClass);
-        $objectClass->addComment($type->description);
+        if ($type->description !== null) {
+            $objectClass->addComment($type->description);
+        }
 
         if ($type->hasField('id')) {
             $objectClass->addImplement(IdAble::class);

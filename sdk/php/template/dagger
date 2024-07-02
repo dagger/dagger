@@ -1,10 +1,13 @@
 #!/usr/bin/env php
 <?php declare(strict_types=1);
 
-use Dagger\Command\GenerateModuleClassnameCommand;
+/**
+ * This is the entry point for the module, called from the dagger engine.
+ * Editing this file is highly discouraged and may stop your module from functioning entirely.
+ */
+
 use Symfony\Component\Console\Application;
-use Dagger\Command\CodegenCommand;
-use Dagger\Command\SchemaGeneratorCommand;
+use Dagger\Command\EntrypointCommand;
 
 if (file_exists(__DIR__.'/../../autoload.php')) {
     // The usual location, since this file will reside in vendor/bin
@@ -16,9 +19,7 @@ if (file_exists(__DIR__.'/../../autoload.php')) {
 
 $console = new Application();
 
-$console->add(new CodegenCommand());
-$console->setDefaultCommand('dagger:codegen');
-$console->add(new SchemaGeneratorCommand());
-$console->add(new GenerateModuleClassnameCommand());
+$console->add(new EntrypointCommand());
+$console->setDefaultCommand('dagger:entrypoint');
 
 $console->run();
