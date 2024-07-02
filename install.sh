@@ -298,6 +298,20 @@ tarball() {
 }
 
 install_shell_completion() {
+  # don't prompt shell completion installations in CI
+  if [ -n "$CI" ]; then
+    # GitHub Actions, Travis CI, CircleCI, Cirrus CI, GitLab CI, AppVeyor, CodeShip, dsari
+    return 0
+  fi
+  if [ -n "$BUILD_NUMBER" ]; then
+    # Jenkins, TeamCity
+    return 0
+  fi
+  if [ -n "$RUN_ID" ]; then
+    # TaskCluster, dsari
+    return 0
+  fi
+
   echo "
 ${binexe} has built-in shell completion. This is how you can install it for:
 
