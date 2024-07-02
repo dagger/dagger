@@ -21,20 +21,25 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Fetch refs
+        run: |
+          git fetch origin $GITHUB_BASE_REF:$GITHUB_BASE_REF
+          git fetch origin $GITHUB_REF:$GITHUB_REF
+
       - name: Check if PR needs a changelog
         id: check
         run: |
           set -x
           shopt -s globstar
 
-          diff=$(git diff --name-only origin/$GITHUB_BASE_REF...origin/$GITHUB_REF -- **/.changes/unreleased)
+          diff=$(git diff --name-only $GITHUB_BASE_REF...$GITHUB_REF -- **/.changes/unreleased)
           diffReturn=$?
           if [ $diffReturn -ne 0 ]; then
             exit $diffReturn
           fi
 
-          if [ -z "$diff" ]; then
-            echo 'Changelog is required, but was not created.
+          if [[ -z "$diff" ]]; then
+            echo "Changelog is required, but was not created."
             exit 1
           else
             echo "Changelog exists."
