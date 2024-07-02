@@ -17,13 +17,15 @@ import (
 	"golang.org/x/oauth2"
 )
 
-var configuredCloudSpanExporter sdktrace.SpanExporter
-var configuredCloudLogsExporter sdklog.Exporter
-var configuredCloudTelemetry bool
-var ocnfiguredCloudExportersOnce sync.Once
+var (
+	configuredCloudSpanExporter  sdktrace.SpanExporter
+	configuredCloudLogsExporter  sdklog.Exporter
+	configuredCloudTelemetry     bool
+	configuredCloudExportersOnce sync.Once
+)
 
 func ConfiguredCloudExporters(ctx context.Context) (sdktrace.SpanExporter, sdklog.Exporter, bool) {
-	ocnfiguredCloudExportersOnce.Do(func() {
+	configuredCloudExportersOnce.Do(func() {
 		var (
 			authHeader string
 			token      *oauth2.Token

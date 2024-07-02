@@ -5284,7 +5284,7 @@ func (ModuleSuite) TestDaggerListen(ctx context.Context, t *testctx.T) {
 		for range limitTicker(time.Second, 60) {
 			callCmd := hostDaggerCommand(ctx, t, modDir, "--debug", "call", "container-echo", "--string-arg=hi", "stdout")
 			callCmd.Env = append(callCmd.Env, "DAGGER_SESSION_PORT=12456", "DAGGER_SESSION_TOKEN=lol")
-			out, err = callCmd.CombinedOutput()
+			out, err = callCmd.Output()
 			if err == nil {
 				lines := strings.Split(string(out), "\n")
 				lastLine := lines[len(lines)-2]
@@ -5313,7 +5313,7 @@ func (ModuleSuite) TestDaggerListen(ctx context.Context, t *testctx.T) {
 				callCmd := hostDaggerCommand(ctx, t, modDir, "--debug", "query")
 				callCmd.Stdin = strings.NewReader(fmt.Sprintf(`query{container{from(address:"%s"){file(path:"/etc/alpine-release"){contents}}}}`, alpineImage))
 				callCmd.Env = append(callCmd.Env, "DAGGER_SESSION_PORT=12457", "DAGGER_SESSION_TOKEN=lol")
-				out, err = callCmd.CombinedOutput()
+				out, err = callCmd.Output()
 				if err == nil {
 					require.Contains(t, string(out), distconsts.AlpineVersion)
 					return
@@ -5336,7 +5336,7 @@ func (ModuleSuite) TestDaggerListen(ctx context.Context, t *testctx.T) {
 				callCmd := hostDaggerCommand(ctx, t, tmpdir, "--debug", "query")
 				callCmd.Stdin = strings.NewReader(fmt.Sprintf(`query{container{from(address:"%s"){file(path:"/etc/alpine-release"){contents}}}}`, alpineImage))
 				callCmd.Env = append(callCmd.Env, "DAGGER_SESSION_PORT=12458", "DAGGER_SESSION_TOKEN=lol")
-				out, err = callCmd.CombinedOutput()
+				out, err = callCmd.Output()
 				if err == nil {
 					require.Contains(t, string(out), distconsts.AlpineVersion)
 					return
