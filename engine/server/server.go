@@ -86,6 +86,7 @@ const (
 )
 
 type Server struct {
+	controlapi.UnimplementedControlServer
 	engineName string
 
 	//
@@ -112,6 +113,7 @@ type Server struct {
 	workerCacheMetaDB   *metadata.Store
 	workerCache         bkcache.Manager
 	workerSourceManager *source.Manager
+	workerGCKeepBytes   int64
 
 	bkSessionManager *bksession.Manager
 
@@ -397,6 +399,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	}
 	srv.workerCache = srv.baseWorker.CacheMgr
 	srv.workerSourceManager = srv.baseWorker.SourceManager
+	srv.workerGCKeepBytes = getGCKeepBytesFromConfig(ociCfg.GCConfig.GCKeepStorage, srv.rootDir)
 
 	logrus.Infof("found worker %q, labels=%v, platforms=%v", workerID, baseLabels, FormatPlatforms(srv.enabledPlatforms))
 	archutil.WarnIfUnsupported(srv.enabledPlatforms)
@@ -595,24 +598,4 @@ func (srv *Server) Register(server *grpc.Server) {
 	metricsSrv := &enginetel.MetricsServer{PubSub: srv.telemetryPubSub}
 	metricsv1.RegisterMetricsServiceServer(server, metricsSrv)
 	enginetel.RegisterMetricsSourceServer(server, metricsSrv)
-}
-
-func (srv *Server) Session(controlapi.Control_SessionServer) error {
-	return fmt.Errorf("session not implemented")
-}
-
-func (srv *Server) Solve(context.Context, *controlapi.SolveRequest) (*controlapi.SolveResponse, error) {
-	return nil, fmt.Errorf("solve not implemented")
-}
-
-func (srv *Server) Status(*controlapi.StatusRequest, controlapi.Control_StatusServer) error {
-	return fmt.Errorf("status not implemented")
-}
-
-func (srv *Server) ListenBuildHistory(*controlapi.BuildHistoryRequest, controlapi.Control_ListenBuildHistoryServer) error {
-	return fmt.Errorf("listen build history not implemented")
-}
-
-func (srv *Server) UpdateBuildHistory(context.Context, *controlapi.UpdateBuildHistoryRequest) (*controlapi.UpdateBuildHistoryResponse, error) {
-	return nil, fmt.Errorf("update build history not implemented")
 }

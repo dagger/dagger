@@ -212,7 +212,7 @@ func addFlags(app *cli.App) {
 			Value: func() int64 {
 				keep := defaultConf.Workers.OCI.GCKeepStorage.AsBytes(defaultConf.Root)
 				if keep == 0 {
-					keep = config.DiskSpace{Percentage: server.DiskSpacePercentage}.AsBytes(defaultConf.Root)
+					keep = config.DiskSpace{Percentage: server.DefaultDiskSpacePercentage}.AsBytes(defaultConf.Root)
 				}
 				return keep / 1e6
 			}(),

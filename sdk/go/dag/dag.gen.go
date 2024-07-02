@@ -86,6 +86,12 @@ func CurrentTypeDefs(ctx context.Context) ([]dagger.TypeDef, error) {
 	return client.CurrentTypeDefs(ctx)
 }
 
+// The Dagger engine container configuration and state
+func DaggerEngine() *dagger.DaggerEngine {
+	client := initClient()
+	return client.DaggerEngine()
+}
+
 // The default platform of the engine.
 func DefaultPlatform(ctx context.Context) (dagger.Platform, error) {
 	client := initClient()
@@ -150,6 +156,30 @@ func LoadContainerFromID(id dagger.ContainerID) *dagger.Container {
 func LoadCurrentModuleFromID(id dagger.CurrentModuleID) *dagger.CurrentModule {
 	client := initClient()
 	return client.LoadCurrentModuleFromID(id)
+}
+
+// Load a DaggerEngineCacheEntry from its ID.
+func LoadDaggerEngineCacheEntryFromID(id dagger.DaggerEngineCacheEntryID) *dagger.DaggerEngineCacheEntry {
+	client := initClient()
+	return client.LoadDaggerEngineCacheEntryFromID(id)
+}
+
+// Load a DaggerEngineCacheEntrySet from its ID.
+func LoadDaggerEngineCacheEntrySetFromID(id dagger.DaggerEngineCacheEntrySetID) *dagger.DaggerEngineCacheEntrySet {
+	client := initClient()
+	return client.LoadDaggerEngineCacheEntrySetFromID(id)
+}
+
+// Load a DaggerEngineCache from its ID.
+func LoadDaggerEngineCacheFromID(id dagger.DaggerEngineCacheID) *dagger.DaggerEngineCache {
+	client := initClient()
+	return client.LoadDaggerEngineCacheFromID(id)
+}
+
+// Load a DaggerEngine from its ID.
+func LoadDaggerEngineFromID(id dagger.DaggerEngineID) *dagger.DaggerEngine {
+	client := initClient()
+	return client.LoadDaggerEngineFromID(id)
 }
 
 // Load a Directory from its ID.

@@ -55,6 +55,10 @@ type daggerSession struct {
 	clients  map[string]*daggerClient // clientID -> client
 	clientMu sync.RWMutex
 
+	// closed after the shutdown endpoint is called
+	shutdownCh        chan struct{}
+	closeShutdownOnce sync.Once
+
 	// the http endpoints being served (as a map since APIs like shellEndpoint can add more)
 	endpoints  map[string]http.Handler
 	endpointMu sync.RWMutex
@@ -78,7 +82,8 @@ type daggerSession struct {
 	containers   map[bkgw.Container]struct{}
 	containersMu sync.Mutex
 
-	dagqlCache dagql.Cache
+	dagqlCache       dagql.Cache
+	cacheEntrySetMap *sync.Map
 }
 
 type daggerSessionState string
@@ -143,12 +148,14 @@ func (srv *Server) initializeDaggerSession(
 	sess.mainClientCallerID = clientMetadata.ClientID
 	sess.clients = map[string]*daggerClient{}
 	sess.endpoints = map[string]http.Handler{}
+	sess.shutdownCh = make(chan struct{})
 	sess.services = core.NewServices()
 	sess.secretStore = core.NewSecretStore()
 	sess.authProvider = auth.NewRegistryAuthProvider()
 	sess.refs = map[buildkit.Reference]struct{}{}
 	sess.containers = map[bkgw.Container]struct{}{}
 	sess.dagqlCache = dagql.NewCache()
+	sess.cacheEntrySetMap = &sync.Map{}
 	sess.telemetryPubSub = srv.telemetryPubSub
 
 	sess.analytics = analytics.New(analytics.Config{
@@ -190,12 +197,21 @@ func (srv *Server) initializeDaggerSession(
 	return nil
 }
 
+func (sess *daggerSession) withShutdownCancel(ctx context.Context) context.Context {
+	ctx, cancel := context.WithCancel(ctx)
+	go func() {
+		<-sess.shutdownCh
+		cancel()
+	}()
+	return ctx
+}
+
 // requires that sess.stateMu is held
 func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession) error {
-	slog.ExtraDebug("session closing; stopping client services and flushing",
+	slog.Debug("session closing; stopping client services and flushing",
 		"session", sess.sessionID,
 	)
-	defer slog.ExtraDebug("session closed",
+	defer slog.Debug("session closed",
 		"session", sess.sessionID,
 	)
 
@@ -207,6 +223,8 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	srv.daggerSessionsMu.Lock()
 	delete(srv.daggerSessions, sess.sessionID)
 	srv.daggerSessionsMu.Unlock()
+
+	sess.state = sessionStateRemoved
 
 	var errs error
 
@@ -759,6 +777,7 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 		panic(fmt.Errorf("failed to read ack: %w", err))
 	}
 
+	ctx = client.daggerSession.withShutdownCancel(ctx)
 	err = srv.bkSessionManager.HandleConn(ctx, conn, map[string][]string{
 		engine.SessionIDMetaKey:         {client.clientID},
 		engine.SessionNameMetaKey:       {client.clientID},
@@ -870,6 +889,10 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 	}
 
 	telemetry.Flush(ctx)
+
+	sess.closeShutdownOnce.Do(func() {
+		close(sess.shutdownCh)
+	})
 	return nil
 }
 
@@ -932,6 +955,16 @@ func (srv *Server) MuxEndpoint(ctx context.Context, path string, handler http.Ha
 	defer client.daggerSession.endpointMu.Unlock()
 	client.daggerSession.endpoints[path] = handler
 	return nil
+}
+
+// A map of unique IDs for the result of a given cache entry set query, allowing further queries on the result
+// to operate on a stable result rather than the live state.
+func (srv *Server) EngineCacheEntrySetMap(ctx context.Context) (*sync.Map, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return client.daggerSession.cacheEntrySetMap, nil
 }
 
 type httpError struct {

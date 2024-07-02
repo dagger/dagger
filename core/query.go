@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sync"
 
 	"github.com/containerd/containerd/content"
 	"github.com/moby/buildkit/util/leaseutil"
@@ -13,6 +14,7 @@ import (
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 )
 
@@ -60,6 +62,11 @@ type Server interface {
 	CurrentFunctionCall(context.Context) (*FunctionCall, error)
 	CurrentServedDeps(context.Context) (*ModDeps, error)
 	MuxEndpoint(context.Context, string, http.Handler) error
+
+	EngineLocalCacheEntries(context.Context) (*EngineCacheEntrySet, error)
+	PruneEngineLocalCacheEntries(context.Context) (*EngineCacheEntrySet, error)
+	EngineLocalCacheKeepBytes() int64
+	EngineCacheEntrySetMap(context.Context) (*sync.Map, error)
 }
 
 func NewRoot(opts QueryOpts) *Query {
@@ -162,4 +169,15 @@ func (q *Query) IDDeps(ctx context.Context, id *call.ID) (*ModDeps, error) {
 		deps = deps.Append(mod.Self)
 	}
 	return deps, nil
+}
+
+func (q *Query) RequireMainClient(ctx context.Context) error {
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get client metadata: %w", err)
+	}
+	if clientMetadata.ClientID != q.MainClientCallerID {
+		return fmt.Errorf("only the main client can call this function")
+	}
+	return nil
 }
