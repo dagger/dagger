@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"path"
 
 	"go.opentelemetry.io/otel/codes"
@@ -16,18 +15,13 @@ func New(
 	// +optional
 	// +default="1.22.4"
 	version string,
-	// Go linter version
-	// +optional
-	// +default="1.59"
-	lintVersion string,
 ) *Go {
 	if source == nil {
 		source = dag.Directory()
 	}
 	return &Go{
-		Version:     version,
-		LintVersion: lintVersion,
-		Source:      source,
+		Version: version,
+		Source:  source,
 	}
 }
 
@@ -35,8 +29,6 @@ func New(
 type Go struct {
 	// Go version
 	Version string
-	// Go linter version
-	LintVersion string
 
 	// Project source directory
 	Source *Directory
@@ -85,33 +77,19 @@ func (p *Go) Env() *Container {
 func (p *Go) Lint(
 	ctx context.Context,
 
-	pkgs []string,
+	pkgs []string, // +optional
 	all bool, // +optional
 ) error {
 	eg, ctx := errgroup.WithContext(ctx)
-
-	cmd := []string{"golangci-lint", "run", "-v", "--timeout", "5m"}
-	if all {
-		cmd = append(cmd, "--max-issues-per-linter=0", "--max-same-issues=0")
-	}
-	// FIXME: consider using the same base container in Lint() and Env()
-	base := dag.
-		Container().
-		From(fmt.Sprintf("golangci/golangci-lint:v%s-alpine", p.LintVersion)).
-		WithMountedDirectory("/app", p.Source).
-		WithWorkdir("/app")
+	eg.Go(func() error {
+		_, err := dag.
+			Golangci().
+			Lint(p.Source, GolangciLintOpts{Packages: pkgs}).
+			Assert(ctx)
+		return err
+	})
 	for _, pkg := range pkgs {
 		pkg := pkg
-		golangci := base.WithWorkdir(pkg).WithExec(cmd)
-		eg.Go(func() error {
-			ctx, span := Tracer().Start(ctx, "lint "+path.Clean(pkg))
-			defer span.End()
-			_, err := golangci.Sync(ctx)
-			if err != nil {
-				span.SetStatus(codes.Error, err.Error())
-			}
-			return err
-		})
 		eg.Go(func() error {
 			ctx, span := Tracer().Start(ctx, "tidy "+path.Clean(pkg))
 			defer span.End()

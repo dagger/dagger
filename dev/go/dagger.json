@@ -7,6 +7,10 @@
       "source": "../dirdiff"
     },
     {
+      "name": "golangci",
+      "source": "../golangci"
+    },
+    {
       "name": "wolfi",
       "source": "github.com/shykes/daggerverse/wolfi@dfb1f91fa463b779021d65011f0060f7decda0ba"
     }
