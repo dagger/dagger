@@ -80,6 +80,7 @@ func (s *directorySchema) Install() {
 			Doc(`Writes the contents of the directory to a path on the host.`).
 			ArgDoc("path", `Location of the copied directory (e.g., "logs/").`).
 			ArgDoc("wipe", `If true, then the host directory will be wiped clean before exporting so that it exactly matches the directory being exported; this means it will delete any files on the host that aren't in the exported dir. If false (the default), the contents of the directory will be merged with any existing contents of the host directory, leaving any existing files on the host that aren't in the exported directory alone.`),
+		dagql.Func("export", s.exportLegacy, dagql.Extend(), uptoVersion("v0.12.0")),
 		dagql.Func("dockerBuild", s.dockerBuild).
 			Doc(`Builds a new Docker container from this directory.`).
 			ArgDoc("dockerfile", `Path to the Dockerfile to use (e.g., "frontend.Dockerfile").`).
@@ -92,28 +93,24 @@ func (s *directorySchema) Install() {
 			Doc(`Retrieves this directory with all file/dir timestamps set to the given time.`).
 			ArgDoc("timestamp", `Timestamp to set dir/files in.`,
 				`Formatted in seconds following Unix epoch (e.g., 1672531199).`),
-	}.Install(s.srv)
-
-	dagql.View(s.srv, containsVersion("v0.12.0"), func(srv dagql.ServerView) {
-		dagql.Fields[*core.Directory]{
-			dagql.NodeFunc("terminal", s.terminal).
-				Impure("Nondeterministic.").
-				Doc(`Opens an interactive terminal in new container with this directory mounted inside.`).
-				ArgDoc("container", `If set, override the default container used for the terminal.`).
-				ArgDoc("cmd", `If set, override the container's default terminal command and invoke these command arguments instead.`).
-				ArgDoc("experimentalPrivilegedNesting",
-					`Provides Dagger access to the executed command.`,
-					`Do not use this option unless you trust the command being executed;
+		dagql.NodeFunc("terminal", s.terminal, containsVersion("v0.12.0")).
+			Impure("Nondeterministic.").
+			Doc(`Opens an interactive terminal in new container with this directory mounted inside.`).
+			ArgDoc("container", `If set, override the default container used for the terminal.`).
+			ArgDoc("cmd", `If set, override the container's default terminal command and invoke these command arguments instead.`).
+			ArgDoc("experimentalPrivilegedNesting",
+				`Provides Dagger access to the executed command.`,
+				`Do not use this option unless you trust the command being executed;
 			the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST
 			FILESYSTEM.`).
-				ArgDoc("insecureRootCapabilities",
-					`Execute the command with all root capabilities. This is similar to
+			ArgDoc("insecureRootCapabilities",
+				`Execute the command with all root capabilities. This is similar to
 			running a command with "sudo" or executing "docker run" with the
 			"--privileged" flag. Containerization does not provide any security
 			guarantees when using this option. It should only be used when
 			absolutely necessary and only with trusted commands.`),
-		}.Install(srv)
-	})
+	}.Install(s.srv)
+
 }
 
 type directoryPipelineArgs struct {
@@ -296,6 +293,14 @@ func (s *directorySchema) export(ctx context.Context, parent *core.Directory, ar
 		return "", err
 	}
 	return dagql.String(stat.Path), err
+}
+
+func (s *directorySchema) exportLegacy(ctx context.Context, parent *core.Directory, args dirExportArgs) (dagql.Boolean, error) {
+	_, err := s.export(ctx, parent, args)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 type dirDockerBuildArgs struct {

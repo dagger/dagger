@@ -43,11 +43,6 @@ type Server struct {
 	Cache Cache
 }
 
-type serverView struct {
-	srv        *Server
-	viewFilter ViewFilter
-}
-
 // AroundFunc is a function that is called around every non-cached selection.
 //
 // It's a little funny looking. I may have goofed it. This will be cleaned up
@@ -104,45 +99,8 @@ func NewServer[T Typed](root T) *Server {
 	return srv
 }
 
+// XXX: huh
 type ViewFilter func(view string) bool
-
-func View(server *Server, filter ViewFilter, f func(srv ServerView)) {
-	f(&serverView{
-		srv:        server,
-		viewFilter: filter,
-	})
-}
-
-// XXX: simplify!
-type ServerView interface {
-	installObject(class ObjectType)
-	getObject(name string) (ObjectType, bool)
-	field(FieldSpec) FieldSpec
-	installLock()
-	installUnlock()
-}
-
-func (s *serverView) installObject(class ObjectType) {
-	panic("cannot install standalone object in view")
-}
-
-func (s *serverView) getObject(name string) (ObjectType, bool) {
-	obj, ok := s.srv.objects[name]
-	return obj, ok
-}
-
-func (s *serverView) field(spec FieldSpec) FieldSpec {
-	spec.ViewFilter = s.viewFilter
-	return spec
-}
-
-func (s *serverView) installLock() {
-	s.srv.installMu.Lock()
-}
-
-func (s *serverView) installUnlock() {
-	s.srv.installMu.Unlock()
-}
 
 var coreScalars = []ScalarType{
 	Boolean(false),
@@ -261,23 +219,6 @@ func (s *Server) installObject(class ObjectType) {
 			},
 		)
 	}
-}
-
-func (s *Server) getObject(name string) (ObjectType, bool) {
-	obj, ok := s.objects[name]
-	return obj, ok
-}
-
-func (s *Server) field(spec FieldSpec) FieldSpec {
-	return spec
-}
-
-func (s *Server) installLock() {
-	s.installMu.Lock()
-}
-
-func (s *Server) installUnlock() {
-	s.installMu.Unlock()
 }
 
 // InstallScalar installs the given Scalar type into the schema.

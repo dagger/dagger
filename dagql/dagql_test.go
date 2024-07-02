@@ -1767,29 +1767,29 @@ func InstallViewer(srv *dagql.Server) {
 	getView := func(_ context.Context, _ Query, _ struct{}) (string, error) {
 		return srv.View, nil
 	}
-	isEqual := func(target string) func(string) bool {
-		return func(s string) bool {
+	view := func(target string) dagql.FuncOpt {
+		return dagql.View(func(s string) bool {
 			return s == target
-		}
+		})
 	}
 
 	dagql.Fields[Query]{
-		dagql.Func("all", getView),
+		dagql.Func("all", getView).
+			Doc("available on all views"),
+		dagql.Func("override", getView).
+			Doc("available on all views"),
+
+		dagql.Func("shared", getView, view("firstView")).
+			Doc("available on first+second views"),
+		dagql.Func("firstExclusive", getView, view("firstView")).
+			Doc("available on first view"),
+
+		dagql.Func("shared", getView, view("secondView"), dagql.Extend()),
+		dagql.Func("secondExclusive", getView, view("secondView")).
+			Doc("available on second view"),
+		dagql.Func("override", getView, view("secondView")).
+			Doc("available on second view"),
 	}.Install(srv)
-
-	dagql.View(srv, isEqual("firstView"), func(srv dagql.ServerView) {
-		dagql.Fields[Query]{
-			dagql.Func("shared", getView),
-			dagql.Func("firstExclusive", getView),
-		}.Install(srv)
-	})
-
-	dagql.View(srv, isEqual("secondView"), func(srv dagql.ServerView) {
-		dagql.Fields[Query]{
-			dagql.Func("shared", getView),
-			dagql.Func("secondExclusive", getView),
-		}.Install(srv)
-	})
 }
 
 func TestViews(t *testing.T) {
@@ -1802,12 +1802,15 @@ func TestViews(t *testing.T) {
 		srv.View = ""
 
 		var res struct {
-			All string
+			All      string
+			Override string
 		}
 		req(t, gql, `query {
 			all
+			override
 		}`, &res)
 		assert.Equal(t, "", res.All)
+		assert.Equal(t, "", res.Override)
 
 		reqFail(t, gql, `query {
 			shared
@@ -1818,10 +1821,12 @@ func TestViews(t *testing.T) {
 		srv.View = "unknownView"
 
 		var res struct {
-			All string
+			All      string
+			Override string
 		}
 		req(t, gql, `query {
 			all
+			override
 		}`, &res)
 		assert.Equal(t, "unknownView", res.All)
 
@@ -1835,15 +1840,18 @@ func TestViews(t *testing.T) {
 
 		var res struct {
 			All            string
+			Override       string
 			Shared         string
 			FirstExclusive string
 		}
 		req(t, gql, `query {
 			all
+			override
 			shared
 			firstExclusive
 		}`, &res)
 		assert.Equal(t, "firstView", res.All)
+		assert.Equal(t, "firstView", res.Override)
 		assert.Equal(t, "firstView", res.Shared)
 		assert.Equal(t, "firstView", res.FirstExclusive)
 
@@ -1857,15 +1865,18 @@ func TestViews(t *testing.T) {
 
 		var res struct {
 			All             string
+			Override        string
 			Shared          string
 			SecondExclusive string
 		}
 		req(t, gql, `query {
 			all
+			override
 			shared
 			secondExclusive
 		}`, &res)
 		assert.Equal(t, "secondView", res.All)
+		assert.Equal(t, "secondView", res.Override)
 		assert.Equal(t, "secondView", res.Shared)
 		assert.Equal(t, "secondView", res.SecondExclusive)
 
@@ -1887,14 +1898,16 @@ func TestViewsIntrospection(t *testing.T) {
 
 		var res introspection.Response
 		req(t, gql, introspection.Query, &res)
-		fields := res.Schema.Types.Get("Query").Fields
-		var fieldNames []string
-		for _, field := range fields {
-			fieldNames = append(fieldNames, field.Name)
+		fields := make(map[string]string)
+		for _, field := range res.Schema.Types.Get("Query").Fields {
+			fields[field.Name] = field.Description
 		}
 
-		require.Contains(t, fieldNames, "all")
-		require.NotContains(t, fieldNames, "shared")
+		require.Contains(t, fields, "all")
+		require.Equal(t, "available on all views", fields["all"])
+		require.Contains(t, fields, "override")
+		require.Equal(t, "available on all views", fields["override"])
+		require.NotContains(t, fields, "shared")
 	})
 
 	t.Run("in unknown view", func(t *testing.T) {
@@ -1902,14 +1915,16 @@ func TestViewsIntrospection(t *testing.T) {
 
 		var res introspection.Response
 		req(t, gql, introspection.Query, &res)
-		fields := res.Schema.Types.Get("Query").Fields
-		var fieldNames []string
-		for _, field := range fields {
-			fieldNames = append(fieldNames, field.Name)
+		fields := make(map[string]string)
+		for _, field := range res.Schema.Types.Get("Query").Fields {
+			fields[field.Name] = field.Description
 		}
 
-		require.Contains(t, fieldNames, "all")
-		require.NotContains(t, fieldNames, "shared")
+		require.Contains(t, fields, "all")
+		require.Equal(t, "available on all views", fields["all"])
+		require.Contains(t, fields, "override")
+		require.Equal(t, "available on all views", fields["override"])
+		require.NotContains(t, fields, "shared")
 	})
 
 	t.Run("in first view", func(t *testing.T) {
@@ -1917,16 +1932,20 @@ func TestViewsIntrospection(t *testing.T) {
 
 		var res introspection.Response
 		req(t, gql, introspection.Query, &res)
-		fields := res.Schema.Types.Get("Query").Fields
-		var fieldNames []string
-		for _, field := range fields {
-			fieldNames = append(fieldNames, field.Name)
+		fields := make(map[string]string)
+		for _, field := range res.Schema.Types.Get("Query").Fields {
+			fields[field.Name] = field.Description
 		}
 
-		require.Contains(t, fieldNames, "all")
-		require.Contains(t, fieldNames, "shared")
-		require.Contains(t, fieldNames, "firstExclusive")
-		require.NotContains(t, fieldNames, "secondExclusive")
+		require.Contains(t, fields, "all")
+		require.Equal(t, "available on all views", fields["all"])
+		require.Contains(t, fields, "override")
+		require.Equal(t, "available on all views", fields["override"])
+		require.Contains(t, fields, "shared")
+		require.Equal(t, "available on first+second views", fields["shared"])
+		require.Contains(t, fields, "firstExclusive")
+		require.Equal(t, "available on first view", fields["firstExclusive"])
+		require.NotContains(t, fields, "secondExclusive")
 	})
 
 	t.Run("in second view", func(t *testing.T) {
@@ -1934,15 +1953,19 @@ func TestViewsIntrospection(t *testing.T) {
 
 		var res introspection.Response
 		req(t, gql, introspection.Query, &res)
-		fields := res.Schema.Types.Get("Query").Fields
-		var fieldNames []string
-		for _, field := range fields {
-			fieldNames = append(fieldNames, field.Name)
+		fields := make(map[string]string)
+		for _, field := range res.Schema.Types.Get("Query").Fields {
+			fields[field.Name] = field.Description
 		}
 
-		require.Contains(t, fieldNames, "all")
-		require.Contains(t, fieldNames, "shared")
-		require.NotContains(t, fieldNames, "firstExclusive")
-		require.Contains(t, fieldNames, "secondExclusive")
+		require.Contains(t, fields, "all")
+		require.Equal(t, "available on all views", fields["all"])
+		require.Contains(t, fields, "override")
+		require.Equal(t, "available on second view", fields["override"])
+		require.Contains(t, fields, "shared")
+		require.Equal(t, "available on first+second views", fields["shared"])
+		require.NotContains(t, fields, "firstExclusive")
+		require.Contains(t, fields, "secondExclusive")
+		require.Equal(t, "available on second view", fields["secondExclusive"])
 	})
 }
