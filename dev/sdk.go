@@ -52,8 +52,8 @@ func (sdk *SDK) allSDKs() []sdkBase {
 	}
 }
 
-func (ci *Dagger) installer(ctx context.Context, name string) (func(*Container) *Container, error) {
-	engineSvc, err := ci.Engine().Service(ctx, name, dev.Version, "10.89.0.0/16")
+func (dev *DaggerDev) installer(ctx context.Context, name string) (func(*Container) *Container, error) {
+	engineSvc, err := dev.Engine().Service(ctx, name, dev.Version, "10.89.0.0/16")
 	if err != nil {
 		return nil, err
 	}

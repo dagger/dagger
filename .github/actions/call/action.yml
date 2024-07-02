@@ -79,18 +79,18 @@ runs:
       run: |
         set -x
 
-        if [[ "${{ inputs.module }}" == "." ]]; then
+        if [[ "${{ inputs.module }}" == "dev" ]]; then
           flags="--source=.:default"
           flagsdev="--source=.:default"
           if [[ -f $HOME/.docker/config.json ]]; then
             # don't evaluate env vars in internal command...
-            flags="$flags "'--host-docker-config=file:${HOME}/.docker/config.json'
+            flags="$flags "'--docker-cfg=file:${HOME}/.docker/config.json'
             # ...but do for the external wrapper
-            flagsdev="$flagsdev --host-docker-config=file:${HOME}/.docker/config.json"
+            flagsdev="$flagsdev --docker-cfg=file:${HOME}/.docker/config.json"
           fi
         fi
 
         cmd="dagger -m ${{ inputs.module }} call ${flags} ${{ inputs.function }}"
-        dagger -m . call ${flagsdev} dev --target=".:default" --cmd "${cmd}" directory --path=. -o .
+        dagger -m dev call ${flagsdev} dev --target=. --cmd "${cmd}" directory --path=. -o .
       env:
         DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"

@@ -196,7 +196,7 @@ func (dev *DaggerDev) Dev(
 		WithWorkdir("/mnt")
 	if dev.DockerCfg != nil {
 		// this avoids rate limiting in our dev engine
-		ctr = ctr.WithMountedSecret("/root/.docker/config.json", ci.HostDockerConfig)
+		ctr = ctr.WithMountedSecret("/root/.docker/config.json", dev.DockerCfg)
 	}
 	if cmd != nil {
 		ctr = ctr.WithExec([]string{"sh", "-c", *cmd})
