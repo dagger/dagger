@@ -585,11 +585,11 @@ func (DirectorySuite) TestDiff(ctx context.Context, t *testctx.T) {
 				Diff struct {
 					Entries []string
 				}
-			}
+			} `json:"loadDirectoryFromID"`
 		}
 
 		diff := `query Diff($id: DirectoryID!, $other: DirectoryID!) {
-			directory(id: $id) {
+			loadDirectoryFromID(id: $id) {
 				diff(other: $other) {
 					entries
 				}
