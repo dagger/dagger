@@ -5,9 +5,6 @@ declare(strict_types=1);
 namespace Dagger\Command;
 
 use Dagger;
-use Dagger\Container;
-use Dagger\Directory;
-use Dagger\File;
 use Dagger\Service\DecodesValue;
 use Dagger\Service\FindsDaggerObjects;
 use Dagger\Service\FindsSrcDirectory;
@@ -15,8 +12,6 @@ use Dagger\TypeDef;
 use Dagger\TypeDefKind;
 use Dagger\ValueObject\Type;
 use GraphQL\Exception\QueryError;
-use GraphQL\Results;
-use GuzzleHttp\Exception\ClientException;
 use ReflectionMethod;
 use RuntimeException;
 use Symfony\Component\Console\Attribute\AsCommand;
@@ -25,7 +20,6 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\ConsoleOutputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
-use Throwable;
 
 #[AsCommand('dagger:entrypoint')]
 class EntrypointCommand extends Command
@@ -150,7 +144,8 @@ class EntrypointCommand extends Command
 
     private function getTypeDef(Type $type): TypeDef
     {
-        $typeDef = $this->dag->typeDef();
+        $typeDef = $this->dag->typeDef()->withOptional($type->nullable);
+        
         /**
          * @TODO Support arrays:
          * - Create additional attribute to define the array subtype
