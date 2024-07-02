@@ -1,0 +1,25 @@
+stage("checkout") {
+    steps {
+        checkout ([
+        changelog: false, 
+        poll: false, 
+        scm: scmGit(
+            branches: [[name: '**']], 
+            browser: github('https://github.com/$org/$repo'), 
+            extensions: [
+            cloneOption(
+                honorRefspec: true, 
+                noTags: true, 
+                reference: '', 
+                shallow: false
+                ), 
+                lfs(), 
+                localBranch('**')
+            ], 
+            userRemoteConfigs: [
+                [url: 'https://github.com/$org/$repo']
+            ]
+        )
+        ])
+    }
+}
