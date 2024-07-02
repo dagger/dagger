@@ -524,6 +524,16 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Load a Terminal from its ID.
+     */
+    public function loadTerminalFromID(TerminalId|Terminal $id): Terminal
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadTerminalFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\Terminal($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Load a TypeDef from its ID.
      */
     public function loadTypeDefFromID(TypeDefId|TypeDef $id): TypeDef
@@ -582,6 +592,15 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder->setArgument('labels', $labels);
         }
         return new \Dagger\Client($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Get the current schema version.
+     */
+    public function schemaVersion(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('schemaVersion');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'schemaVersion');
     }
 
     /**

@@ -9,6 +9,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/introspection"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 )
 
@@ -75,4 +76,28 @@ func SchemaIntrospectionJSON(ctx context.Context, dag *dagql.Server) (json.RawMe
 func gqlFieldName(name string) string {
 	// gql field name is uncapitalized camel case
 	return strcase.ToLowerCamel(name)
+}
+
+// afterVersion is a view that checks if a target version is greater than *or*
+// equal to the filtered version.
+type afterVersion string
+
+func (minVersion afterVersion) Contains(version string) bool {
+	return engine.CheckVersionCompatibility(version, string(minVersion)) == nil
+}
+
+func WithAfterVersion(v string) dagql.FuncOpt {
+	return dagql.WithView(afterVersion(v))
+}
+
+// beforeVersion is a view that checks if a target version is less than the
+// filtered version.
+type beforeVersion string
+
+func (maxVersion beforeVersion) Contains(version string) bool {
+	return engine.CheckVersionCompatibility(version, string(maxVersion)) != nil
+}
+
+func WithBeforeVersion(v string) dagql.FuncOpt {
+	return dagql.WithView(beforeVersion(v))
 }

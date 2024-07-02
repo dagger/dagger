@@ -332,6 +332,12 @@ func LoadSocketFromID(id dagger.SocketID) *dagger.Socket {
 	return client.LoadSocketFromID(id)
 }
 
+// Load a Terminal from its ID.
+func LoadTerminalFromID(id dagger.TerminalID) *dagger.Terminal {
+	client := initClient()
+	return client.LoadTerminalFromID(id)
+}
+
 // Load a TypeDef from its ID.
 func LoadTypeDefFromID(id dagger.TypeDefID) *dagger.TypeDef {
 	client := initClient()
@@ -360,6 +366,12 @@ func ModuleSource(refString string, opts ...dagger.ModuleSourceOpts) *dagger.Mod
 func Pipeline(name string, opts ...dagger.PipelineOpts) *dagger.Client {
 	client := initClient()
 	return client.Pipeline(name, opts...)
+}
+
+// Get the current schema version.
+func SchemaVersion(ctx context.Context) (string, error) {
+	client := initClient()
+	return client.SchemaVersion(ctx)
 }
 
 // Reference a secret by name.

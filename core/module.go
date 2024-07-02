@@ -271,6 +271,10 @@ func (mod *Module) TypeDefs(ctx context.Context) ([]*TypeDef, error) {
 	return typeDefs, nil
 }
 
+func (mod *Module) View() (string, bool) {
+	return "", false
+}
+
 func (mod *Module) ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirectDeps bool) (ModType, bool, error) {
 	var modType ModType
 	var ok bool
@@ -646,21 +650,25 @@ Mod is a module in loaded into the server's DAG of modules; it's the vertex type
 It's an interface so we can abstract over user modules and core and treat them the same.
 */
 type Mod interface {
-	// The name of the module
+	// Name gets the name of the module
 	Name() string
 
-	// The direct dependencies of this module
+	// View gets the name of the module's view of its underlying schema
+	View() (string, bool)
+
+	// Dependencies returns the direct dependencies of this module
 	Dependencies() []Mod
 
-	// TODO describe
-	Install(context.Context, *dagql.Server) error
+	// Install modifies the provided server to install the contents of the
+	// modules declared fields.
+	Install(ctx context.Context, dag *dagql.Server) error
 
 	// ModTypeFor returns the ModType for the given typedef based on this module's schema.
 	// The returned type will have any namespacing already applied.
 	// If checkDirectDeps is true, then its direct dependencies will also be checked.
 	ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirectDeps bool) (ModType, bool, error)
 
-	// All the TypeDefs exposed by this module (does not include dependencies)
+	// TypeDefs gets the TypeDefs exposed by this module (not including dependencies)
 	TypeDefs(ctx context.Context) ([]*TypeDef, error)
 }
 

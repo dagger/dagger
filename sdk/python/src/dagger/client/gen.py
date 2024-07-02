@@ -186,6 +186,11 @@ class SocketID(Scalar):
     of type Socket."""
 
 
+class TerminalID(Scalar):
+    """The `TerminalID` scalar type represents an identifier for an object
+    of type Terminal."""
+
+
 class TypeDefID(Scalar):
     """The `TypeDefID` scalar type represents an identifier for an object
     of type TypeDef."""
@@ -6249,6 +6254,14 @@ class Client(Root):
         _ctx = self._select("loadSocketFromID", _args)
         return Socket(_ctx)
 
+    def load_terminal_from_id(self, id: TerminalID) -> "Terminal":
+        """Load a Terminal from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadTerminalFromID", _args)
+        return Terminal(_ctx)
+
     def load_type_def_from_id(self, id: TypeDefID) -> "TypeDef":
         """Load a TypeDef from its ID."""
         _args = [
@@ -6336,6 +6349,27 @@ class Client(Root):
         ]
         _ctx = self._select("pipeline", _args)
         return Client(_ctx)
+
+    async def schema_version(self) -> str:
+        """Get the current schema version.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("schemaVersion", _args)
+        return await _ctx.execute(str)
 
     def secret(
         self,
@@ -6811,6 +6845,35 @@ class Socket(Type):
 
 
 @typecheck
+class Terminal(Type):
+    """An interactive terminal that clients can connect to."""
+
+    async def id(self) -> TerminalID:
+        """A unique identifier for this Terminal.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        TerminalID
+            The `TerminalID` scalar type represents an identifier for an
+            object of type Terminal.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(TerminalID)
+
+
+@typecheck
 class TypeDef(Type):
     """A definition of a parameter or return type in a Module."""
 
@@ -7182,6 +7245,8 @@ __all__ = [
     "ServiceID",
     "Socket",
     "SocketID",
+    "Terminal",
+    "TerminalID",
     "TypeDef",
     "TypeDefID",
     "TypeDefKind",

@@ -634,6 +634,18 @@ defmodule Dagger.Client do
     }
   end
 
+  @doc "Load a Terminal from its ID."
+  @spec load_terminal_from_id(t(), Dagger.TerminalID.t()) :: Dagger.Terminal.t()
+  def load_terminal_from_id(%__MODULE__{} = client, id) do
+    selection =
+      client.selection |> select("loadTerminalFromID") |> put_arg("id", id)
+
+    %Dagger.Terminal{
+      selection: selection,
+      client: client.client
+    }
+  end
+
   @doc "Load a TypeDef from its ID."
   @spec load_type_def_from_id(t(), Dagger.TypeDefID.t()) :: Dagger.TypeDef.t()
   def load_type_def_from_id(%__MODULE__{} = client, id) do
@@ -706,6 +718,15 @@ defmodule Dagger.Client do
       selection: selection,
       client: client.client
     }
+  end
+
+  @doc "Get the current schema version."
+  @spec schema_version(t()) :: {:ok, String.t()} | {:error, term()}
+  def schema_version(%__MODULE__{} = client) do
+    selection =
+      client.selection |> select("schemaVersion")
+
+    execute(selection, client.client)
   end
 
   @doc "Reference a secret by name."

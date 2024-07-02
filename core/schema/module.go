@@ -820,9 +820,22 @@ func (s *moduleSchema) updateDeps(
 		return fmt.Errorf("failed to initialize dependency modules: %w", err)
 	}
 
+	engineVersion, err := mod.Source.Self.ModuleEngineVersion(ctx)
+	if err != nil {
+		return err
+	}
 	mod.Deps = core.NewModDeps(src.Self.Query, src.Self.Query.DefaultDeps.Mods)
 	for _, dep := range mod.DependenciesField {
 		mod.Deps = mod.Deps.Append(dep.Self)
+	}
+	for i, depMod := range mod.Deps.Mods {
+		if coreMod, ok := depMod.(*CoreMod); ok {
+			// this is needed so that a module's dependency on the core
+			// uses the correct schema version
+			dag := *coreMod.Dag
+			dag.View = engineVersion
+			mod.Deps.Mods[i] = &CoreMod{Dag: &dag}
+		}
 	}
 
 	return nil

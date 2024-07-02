@@ -22,7 +22,7 @@ import (
 type Class[T Typed] struct {
 	inner   T
 	idable  bool
-	fields  map[string]*Field[T]
+	fields  map[string][]*Field[T]
 	fieldsL *sync.Mutex
 }
 
@@ -45,7 +45,7 @@ func NewClass[T Typed](opts_ ...ClassOpts[T]) Class[T] {
 	}
 	class := Class[T]{
 		inner:   opts.Typed,
-		fields:  map[string]*Field[T]{},
+		fields:  map[string][]*Field[T]{},
 		fieldsL: new(sync.Mutex),
 	}
 	if !opts.NoIDs {
@@ -78,14 +78,34 @@ func (class Class[T]) IDType() (IDType, bool) {
 	}
 }
 
-func (class Class[T]) Field(name string) (Field[T], bool) {
+func (class Class[T]) Field(name string, views ...string) (Field[T], bool) {
 	class.fieldsL.Lock()
 	defer class.fieldsL.Unlock()
-	field, ok := class.fields[name]
+	return class.fieldLocked(name, views...)
+}
+
+func (class Class[T]) fieldLocked(name string, views ...string) (Field[T], bool) {
+	fields, ok := class.fields[name]
 	if !ok {
 		return Field[T]{}, false
 	}
-	return *field, ok
+	var backup *Field[T]
+	for _, field := range fields {
+		if field.ViewFilter == nil {
+			// prefer a specific view if one exists
+			backup = field
+			continue
+		}
+		for _, view := range views {
+			if field.ViewFilter.Contains(view) {
+				return *field, true
+			}
+		}
+	}
+	if backup != nil {
+		return *backup, true
+	}
+	return Field[T]{}, false
 }
 
 func (class Class[T]) Install(fields ...Field[T]) {
@@ -93,7 +113,18 @@ func (class Class[T]) Install(fields ...Field[T]) {
 	defer class.fieldsL.Unlock()
 	for _, field := range fields {
 		field := field
-		class.fields[field.Spec.Name] = &field
+
+		if field.Spec.extend {
+			fields := class.fields[field.Spec.Name]
+			if len(fields) == 0 {
+				panic(fmt.Sprintf("field %q cannot be extended, as it has not been defined", field.Spec.Name))
+			}
+			oldSpec := field.Spec
+
+			field.Spec = fields[len(fields)-1].Spec
+			field.Spec.Type = oldSpec.Type // a little hacky, but preserve the return type
+		}
+		class.fields[field.Spec.Name] = append(class.fields[field.Spec.Name], &field)
 	}
 }
 
@@ -106,12 +137,12 @@ func (cls Class[T]) TypeName() string {
 func (cls Class[T]) Extend(spec FieldSpec, fun FieldFunc) {
 	cls.fieldsL.Lock()
 	defer cls.fieldsL.Unlock()
-	cls.fields[spec.Name] = &Field[T]{
+	cls.fields[spec.Name] = append(cls.fields[spec.Name], &Field[T]{
 		Spec: spec,
 		Func: func(ctx context.Context, self Instance[T], args map[string]Input) (Typed, error) {
 			return fun(ctx, self, args)
 		},
-	}
+	})
 }
 
 // TypeDefinition returns the schema definition of the class.
@@ -120,13 +151,13 @@ func (cls Class[T]) Extend(spec FieldSpec, fun FieldFunc) {
 // type may implement Definitive or Descriptive to provide more information.
 //
 // Each currently defined field is installed on the returned definition.
-func (cls Class[T]) TypeDefinition() *ast.Definition {
+func (cls Class[T]) TypeDefinition(views ...string) *ast.Definition {
 	cls.fieldsL.Lock()
 	defer cls.fieldsL.Unlock()
 	var val any = cls.inner
 	var def *ast.Definition
 	if isType, ok := val.(Definitive); ok {
-		def = isType.TypeDefinition()
+		def = isType.TypeDefinition(views...)
 	} else {
 		def = &ast.Definition{
 			Kind: ast.Object,
@@ -136,8 +167,10 @@ func (cls Class[T]) TypeDefinition() *ast.Definition {
 	if isType, ok := val.(Descriptive); ok {
 		def.Description = isType.TypeDescription()
 	}
-	for _, field := range cls.fields {
-		def.Fields = append(def.Fields, field.FieldDefinition())
+	for name := range cls.fields {
+		if field, ok := cls.fieldLocked(name, views...); ok {
+			def.Fields = append(def.Fields, field.FieldDefinition())
+		}
 	}
 	// TODO preserve order
 	sort.Slice(def.Fields, func(i, j int) bool {
@@ -147,8 +180,8 @@ func (cls Class[T]) TypeDefinition() *ast.Definition {
 }
 
 // ParseField parses a field selection into a Selector and return type.
-func (cls Class[T]) ParseField(ctx context.Context, astField *ast.Field, vars map[string]any) (Selector, *ast.Type, error) {
-	field, ok := cls.Field(astField.Name)
+func (cls Class[T]) ParseField(ctx context.Context, view string, astField *ast.Field, vars map[string]any) (Selector, *ast.Type, error) {
+	field, ok := cls.Field(astField.Name, view)
 	if !ok {
 		return Selector{}, nil, fmt.Errorf("%s has no such field: %q", cls.TypeName(), astField.Name)
 	}
@@ -178,6 +211,7 @@ func (cls Class[T]) ParseField(ctx context.Context, astField *ast.Field, vars ma
 	return Selector{
 		Field: astField.Name,
 		Args:  args,
+		View:  view,
 	}, field.Spec.Type.Type(), nil
 }
 
@@ -196,8 +230,8 @@ func (cls Class[T]) New(id *call.ID, val Typed) (Object, error) {
 }
 
 // Call calls a field on the class against an instance.
-func (cls Class[T]) Call(ctx context.Context, node Instance[T], fieldName string, args map[string]Input) (Typed, error) {
-	field, ok := cls.Field(fieldName)
+func (cls Class[T]) Call(ctx context.Context, node Instance[T], fieldName string, view string, args map[string]Input) (Typed, error) {
+	field, ok := cls.Field(fieldName, view)
 	if !ok {
 		return nil, fmt.Errorf("Call: %s has no such field: %q", cls.inner.Type().Name(), fieldName)
 	}
@@ -249,7 +283,7 @@ func (r Instance[T]) String() string {
 }
 
 func (r Instance[T]) IDFor(ctx context.Context, sel Selector) (*call.ID, error) {
-	field, ok := r.Class.Field(sel.Field)
+	field, ok := r.Class.Field(sel.Field, sel.View)
 	if !ok {
 		return nil, fmt.Errorf("IDFor: %s has no such field: %q", r.Class.inner.Type().Name(), sel.Field)
 	}
@@ -258,7 +292,7 @@ func (r Instance[T]) IDFor(ctx context.Context, sel Selector) (*call.ID, error) 
 
 // Select calls a field on the instance.
 func (r Instance[T]) Select(ctx context.Context, sel Selector) (val Typed, err error) {
-	field, ok := r.Class.Field(sel.Field)
+	field, ok := r.Class.Field(sel.Field, sel.View)
 	if !ok {
 		return nil, fmt.Errorf("Select: %s has no such field: %q", r.Class.TypeName(), sel.Field)
 	}
@@ -267,7 +301,7 @@ func (r Instance[T]) Select(ctx context.Context, sel Selector) (val Typed, err e
 		return nil, fmt.Errorf("%s.%s: %w", r.Class.TypeName(), sel.Field, err)
 	}
 
-	val, err = r.Class.Call(ctx, r, sel.Field, args)
+	val, err = r.Class.Call(ctx, r, sel.Field, sel.View, args)
 	if err != nil {
 		return nil, err
 	}
@@ -296,6 +330,54 @@ func (r Instance[T]) Select(ctx context.Context, sel Selector) (val Typed, err e
 	return val, nil
 }
 
+type funcOpts struct {
+	view   View
+	extend bool
+}
+
+func (f *funcOpts) apply(opts ...FuncOpt) *funcOpts {
+	for _, opt := range opts {
+		opt.apply(f)
+	}
+	return f
+}
+
+type FuncOpt interface {
+	apply(*funcOpts)
+}
+
+type FuncOptF func(*funcOpts)
+
+func (f FuncOptF) apply(opts *funcOpts) {
+	f(opts)
+}
+
+func WithExtends() FuncOpt {
+	return FuncOptF(func(opts *funcOpts) {
+		opts.extend = true
+	})
+}
+
+func WithView(view View) FuncOpt {
+	return FuncOptF(func(opts *funcOpts) {
+		opts.view = view
+	})
+}
+
+type View interface {
+	Contains(string) bool
+}
+
+type exactView string
+
+func (v exactView) Contains(s string) bool {
+	return s == string(v)
+}
+
+func WithExactView(s string) FuncOpt {
+	return WithView(exactView(s))
+}
+
 // Func is a helper for defining a field resolver and schema.
 //
 // The function must accept a context.Context, the receiver, and a struct of
@@ -314,32 +396,37 @@ func (r Instance[T]) Select(ctx context.Context, sel Selector) (val Typed, err e
 //
 // To configure a description for the field in the schema, call .Doc on the
 // result.
-func Func[T Typed, A any, R any](name string, fn func(ctx context.Context, self T, args A) (R, error)) Field[T] {
+func Func[T Typed, A any, R any](name string, fn func(ctx context.Context, self T, args A) (R, error), opts ...FuncOpt) Field[T] {
 	return NodeFunc(name, func(ctx context.Context, self Instance[T], args A) (R, error) {
 		return fn(ctx, self.Self, args)
-	})
+	}, opts...)
 }
 
 // NodeFunc is the same as Func, except it passes the Instance instead of the
 // receiver so that you can access its ID.
-func NodeFunc[T Typed, A any, R any](name string, fn func(ctx context.Context, self Instance[T], args A) (R, error)) Field[T] {
+func NodeFunc[T Typed, A any, R any](name string, fn func(ctx context.Context, self Instance[T], args A) (R, error), opts ...FuncOpt) Field[T] {
+	opt := new(funcOpts).apply(opts...)
+
 	var zeroArgs A
 	inputs, argsErr := inputSpecsForType(zeroArgs, true)
 	if argsErr != nil {
 		var zeroSelf T
 		slog.Error("failed to parse args", "type", zeroSelf.Type(), "field", name, "error", argsErr)
 	}
+
 	var zeroRet R
 	ret, err := builtinOrTyped(zeroRet)
 	if err != nil {
 		var zeroSelf T
 		slog.Error("failed to parse return type", "type", zeroSelf.Type(), "field", name, "error", err)
 	}
+
 	return Field[T]{
 		Spec: FieldSpec{
-			Name: name,
-			Args: inputs,
-			Type: ret,
+			Name:   name,
+			Args:   inputs,
+			Type:   ret,
+			extend: opt.extend,
 		},
 		Func: func(ctx context.Context, self Instance[T], argVals map[string]Input) (Typed, error) {
 			if argsErr != nil {
@@ -357,6 +444,7 @@ func NodeFunc[T Typed, A any, R any](name string, fn func(ctx context.Context, s
 			}
 			return builtinOrTyped(res)
 		},
+		ViewFilter: opt.view,
 	}
 }
 
@@ -378,6 +466,10 @@ type FieldSpec struct {
 	DeprecatedReason string
 	// Module is the module that provides the field's implementation.
 	Module *call.Module
+
+	// extend is used during installation to copy the spec of a previous field
+	// with the same name
+	extend bool
 }
 
 func (spec FieldSpec) FieldDefinition() *ast.FieldDefinition {
@@ -475,7 +567,7 @@ type Descriptive interface {
 
 // Definitive is a type that knows how to define itself in the schema.
 type Definitive interface {
-	TypeDefinition() *ast.Definition
+	TypeDefinition(views ...string) *ast.Definition
 }
 
 // Fields defines a set of fields for an Object type.
@@ -484,8 +576,8 @@ type Fields[T Typed] []Field[T]
 // Install installs the field's Object type if needed, and installs all fields
 // into the type.
 func (fields Fields[T]) Install(server *Server) {
-	server.installLock.Lock()
-	defer server.installLock.Unlock()
+	server.installMu.Lock()
+	defer server.installMu.Unlock()
 	var t T
 	typeName := t.Type().Name()
 	class := fields.findOrInitializeType(server, typeName)
@@ -522,7 +614,7 @@ func (fields Fields[T]) findOrInitializeType(server *Server, typeName string) Cl
 	class, ok := server.objects[typeName]
 	if !ok {
 		classT = NewClass[T]()
-		server.installObjectLocked(classT)
+		server.installObject(classT)
 	} else {
 		classT = class.(Class[T])
 	}
@@ -531,18 +623,25 @@ func (fields Fields[T]) findOrInitializeType(server *Server, typeName string) Cl
 
 // Field defines a field of an Object type.
 type Field[T Typed] struct {
-	Spec FieldSpec
-	Func func(context.Context, Instance[T], map[string]Input) (Typed, error)
+	Spec       FieldSpec
+	Func       func(context.Context, Instance[T], map[string]Input) (Typed, error)
+	ViewFilter View
 }
 
 // Doc sets the description of the field. Each argument is joined by two empty
 // lines.
 func (field Field[T]) Doc(paras ...string) Field[T] {
+	if field.Spec.extend {
+		panic("cannot call on extended field")
+	}
 	field.Spec.Description = FormatDescription(paras...)
 	return field
 }
 
 func (field Field[T]) ArgDoc(name string, paras ...string) Field[T] {
+	if field.Spec.extend {
+		panic("cannot call on extended field")
+	}
 	for i, arg := range field.Spec.Args {
 		if arg.Name == name {
 			field.Spec.Args[i].Description = FormatDescription(paras...)
@@ -553,6 +652,9 @@ func (field Field[T]) ArgDoc(name string, paras ...string) Field[T] {
 }
 
 func (field Field[T]) ArgSensitive(name string) Field[T] {
+	if field.Spec.extend {
+		panic("cannot call on extended field")
+	}
 	for i, arg := range field.Spec.Args {
 		if arg.Name == name {
 			field.Spec.Args[i].Sensitive = true
@@ -563,6 +665,9 @@ func (field Field[T]) ArgSensitive(name string) Field[T] {
 }
 
 func (field Field[T]) ArgDeprecated(name string, paras ...string) Field[T] {
+	if field.Spec.extend {
+		panic("cannot call on extended field")
+	}
 	for i, arg := range field.Spec.Args {
 		if arg.Name == name {
 			reason := FormatDescription(paras...)
@@ -583,14 +688,12 @@ func FormatDescription(paras ...string) string {
 	return strings.Join(paras, "\n\n")
 }
 
-func (field Field[T]) DynamicReturnType(ret Typed) Field[T] {
-	field.Spec.Type = ret
-	return field
-}
-
 // Deprecated marks the field as deprecated, meaning it should not be used by
 // new code.
 func (field Field[T]) Deprecated(paras ...string) Field[T] {
+	if field.Spec.extend {
+		panic("cannot call on extended field")
+	}
 	field.Spec.DeprecatedReason = FormatDescription(paras...)
 	return field
 }
@@ -598,12 +701,18 @@ func (field Field[T]) Deprecated(paras ...string) Field[T] {
 // Impure marks the field as "impure", meaning its result may change over time,
 // or it has side effects.
 func (field Field[T]) Impure(reason string, paras ...string) Field[T] {
+	if field.Spec.extend {
+		panic("cannot call on extended field")
+	}
 	field.Spec.ImpurityReason = FormatDescription(append([]string{reason}, paras...)...)
 	return field
 }
 
 // Meta indicates that the field has no impact on the field's result.
 func (field Field[T]) Meta() Field[T] {
+	if field.Spec.extend {
+		panic("cannot call on extended field")
+	}
 	field.Spec.Meta = true
 	return field
 }
@@ -617,10 +726,10 @@ func (field Field[T]) FieldDefinition() *ast.FieldDefinition {
 	return field.Spec.FieldDefinition()
 }
 
-func definition(kind ast.DefinitionKind, val Type) *ast.Definition {
+func definition(kind ast.DefinitionKind, val Type, views ...string) *ast.Definition {
 	var def *ast.Definition
 	if isType, ok := val.(Definitive); ok {
-		def = isType.TypeDefinition()
+		def = isType.TypeDefinition(views...)
 	} else {
 		def = &ast.Definition{
 			Kind: kind,
@@ -860,6 +969,12 @@ func assign(field reflect.Value, val any) error {
 		field.Set(reflect.ValueOf(val))
 		return nil
 	} else if setter, ok := val.(Setter); ok {
+		for field.Kind() == reflect.Pointer {
+			if field.IsZero() {
+				field = reflect.New(field.Type().Elem())
+			}
+			field = field.Elem()
+		}
 		return setter.SetField(field)
 	} else {
 		return fmt.Errorf("cannot assign %T to %s", val, field.Type())
