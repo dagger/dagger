@@ -29,7 +29,11 @@ type moduleSourceArgs struct {
 }
 
 func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args moduleSourceArgs) (*core.ModuleSource, error) {
-	parsed := parseRefString(ctx, query.Buildkit, args.RefString)
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+	parsed := parseRefString(ctx, bk, args.RefString)
 	if args.Stable && !parsed.hasVersion && parsed.kind == core.ModuleSourceKindGit {
 		return nil, fmt.Errorf("no version provided for stable remote ref: %s", args.RefString)
 	}
@@ -42,7 +46,7 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 	switch src.Kind {
 	case core.ModuleSourceKindLocal:
 		if filepath.IsAbs(parsed.modPath) {
-			cwdStat, err := query.Buildkit.StatCallerHostPath(ctx, ".", true)
+			cwdStat, err := bk.StatCallerHostPath(ctx, ".", true)
 			if err != nil {
 				return nil, fmt.Errorf("failed to stat caller's current working directory: %w", err)
 			}
@@ -679,13 +683,17 @@ func (s *moduleSchema) resolveContextPathFromCaller(
 		return "", "", fmt.Errorf("failed to get source root subpath: %w", err)
 	}
 
-	sourceRootStat, err := src.Query.Buildkit.StatCallerHostPath(ctx, rootSubpath, true)
+	bk, err := src.Query.Buildkit(ctx)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+	sourceRootStat, err := bk.StatCallerHostPath(ctx, rootSubpath, true)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to stat source root: %w", err)
 	}
 	sourceRootAbsPath = sourceRootStat.Path
 
-	contextAbsPath, contextFound, err := callerHostFindUpContext(ctx, src.Query.Buildkit, sourceRootAbsPath)
+	contextAbsPath, contextFound, err := callerHostFindUpContext(ctx, bk, sourceRootAbsPath)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to find up root: %w", err)
 	}
@@ -839,9 +847,13 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 		excludes = append(excludes, exclude)
 	}
 
-	_, desc, err := src.Query.Buildkit.LocalImport(
+	bk, err := src.Query.Buildkit(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+	_, desc, err := bk.LocalImport(
 		ctx,
-		src.Query.Platform.Spec(),
+		src.Query.Platform().Spec(),
 		contextAbsPath,
 		excludes,
 		includes,
@@ -995,9 +1007,13 @@ func (s *moduleSchema) collectCallerLocalDeps(
 			return nil, fmt.Errorf("local module dep source path %q escapes context %q", sourceRootRelPath, contextAbsPath)
 		}
 
+		bk, err := query.Buildkit(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+		}
 		var modCfg modules.ModuleConfig
 		configPath := filepath.Join(sourceRootAbsPath, modules.Filename)
-		configBytes, err := query.Buildkit.ReadCallerHostFile(ctx, configPath)
+		configBytes, err := bk.ReadCallerHostFile(ctx, configPath)
 		switch {
 		case err == nil:
 			if err := json.Unmarshal(configBytes, &modCfg); err != nil {
@@ -1045,7 +1061,7 @@ func (s *moduleSchema) collectCallerLocalDeps(
 		}
 
 		for _, depCfg := range modCfg.Dependencies {
-			parsed := parseRefString(ctx, query.Buildkit, depCfg.Source)
+			parsed := parseRefString(ctx, bk, depCfg.Source)
 			if parsed.kind != core.ModuleSourceKindLocal {
 				continue
 			}
@@ -1066,7 +1082,7 @@ func (s *moduleSchema) collectCallerLocalDeps(
 		switch {
 		case err == nil:
 		case errors.Is(err, errUnknownBuiltinSDK):
-			parsed := parseRefString(ctx, query.Buildkit, modCfg.SDK)
+			parsed := parseRefString(ctx, bk, modCfg.SDK)
 			switch parsed.kind {
 			case core.ModuleSourceKindLocal:
 				// SDK is a local custom one, it needs to be included
@@ -1079,7 +1095,7 @@ func (s *moduleSchema) collectCallerLocalDeps(
 
 				// TODO: this is inefficient, leads to extra local loads, but only for case
 				// of local custom SDK.
-				callerCwdStat, err := query.Buildkit.StatCallerHostPath(ctx, ".", true)
+				callerCwdStat, err := bk.StatCallerHostPath(ctx, ".", true)
 				if err != nil {
 					return nil, fmt.Errorf("failed to stat caller cwd: %w", err)
 				}
@@ -1165,7 +1181,12 @@ func (s *moduleSchema) moduleSourceResolveDirectoryFromCaller(
 	},
 ) (inst dagql.Instance[*core.Directory], err error) {
 	path := args.Path
-	stat, err := src.Query.Buildkit.StatCallerHostPath(ctx, path, true)
+
+	bk, err := src.Query.Buildkit(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+	stat, err := bk.StatCallerHostPath(ctx, path, true)
 	if err != nil {
 		return inst, fmt.Errorf("failed to stat caller path: %w", err)
 	}
@@ -1187,8 +1208,8 @@ func (s *moduleSchema) moduleSourceResolveDirectoryFromCaller(
 		}
 	}
 
-	_, desc, err := src.Query.Buildkit.LocalImport(
-		ctx, src.Query.Platform.Spec(),
+	_, desc, err := bk.LocalImport(
+		ctx, src.Query.Platform().Spec(),
 		path,
 		excludes,
 		includes,

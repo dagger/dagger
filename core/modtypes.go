@@ -5,7 +5,9 @@ import (
 	"fmt"
 
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/opencontainers/go-digest"
 )
 
 // ModType wraps the core TypeDef type with schema specific concerns like ID conversion
@@ -19,6 +21,16 @@ type ModType interface {
 	// ConvertToSDKInput converts a value from the server into a value expected
 	// by the SDK, which may include converting objects to their IDs
 	ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error)
+
+	// CollectIDs collects all the call IDs in the given value, whether it's idable itself
+	// or is a list/object containing idable values
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO: RENAME TO BE SPECIFIC THAT IT COLLECTS CORE IDS
+	// TODO: RENAME TO BE SPECIFIC THAT IT COLLECTS CORE IDS
+	CollectIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*call.ID) error
 
 	// SourceMod is the module in which this type was originally defined
 	SourceMod() Mod
@@ -39,6 +51,10 @@ func (t *PrimitiveType) ConvertFromSDKResult(ctx context.Context, value any) (da
 
 func (t *PrimitiveType) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error) {
 	return value, nil
+}
+
+func (t *PrimitiveType) CollectIDs(context.Context, dagql.Typed, map[digest.Digest]*call.ID) error {
+	return nil
 }
 
 func (t *PrimitiveType) SourceMod() Mod {
@@ -100,6 +116,26 @@ func (t *ListType) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (an
 	return resultList, nil
 }
 
+func (t *ListType) CollectIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*call.ID) error {
+	if value == nil {
+		return nil
+	}
+	list, ok := value.(dagql.Enumerable)
+	if !ok {
+		return fmt.Errorf("%T.CollectIDs: expected Enumerable, got %T: %#v", t, value, value)
+	}
+	for i := 1; i <= list.Len(); i++ {
+		item, err := list.Nth(i)
+		if err != nil {
+			return err
+		}
+		if err := t.Underlying.CollectIDs(ctx, item, ids); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (t *ListType) SourceMod() Mod {
 	return t.Underlying.SourceMod()
 }
@@ -150,6 +186,21 @@ func (t *NullableType) ConvertToSDKInput(ctx context.Context, value dagql.Typed)
 		return nil, err
 	}
 	return result, nil
+}
+
+func (t *NullableType) CollectIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*call.ID) error {
+	if value == nil {
+		return nil
+	}
+	opt, ok := value.(dagql.Derefable)
+	if !ok {
+		return fmt.Errorf("%T.CollectIDs: expected Derefable, got %T: %#v", t, value, value)
+	}
+	val, present := opt.Deref()
+	if !present {
+		return nil
+	}
+	return t.Inner.CollectIDs(ctx, val, ids)
 }
 
 func (t *NullableType) SourceMod() Mod {

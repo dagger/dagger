@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -17,6 +18,7 @@ import (
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/buildkit"
 )
 
@@ -178,6 +180,8 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 	}
 
 	execMD := buildkit.ExecutionMetadata{
+		ClientID:        identity.NewID(),
+		CallID:          dagql.CurrentID(ctx),
 		CachePerSession: !opts.Cache,
 	}
 	if spanCtx := trace.SpanContextFromContext(ctx); spanCtx.IsValid() {
@@ -208,7 +212,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 
 	ctr := fn.runtime
 
-	metaDir := NewScratchDirectory(mod.Query, mod.Query.Platform)
+	metaDir := NewScratchDirectory(mod.Query, mod.Query.Platform())
 	ctr, err = ctr.WithMountedDirectory(ctx, modMetaDirPath, metaDir, "", false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to mount mod metadata directory: %w", err)
@@ -267,6 +271,22 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 	returnValueTyped, err := fn.returnType.ConvertFromSDKResult(ctx, returnValue)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert return value: %w", err)
+	}
+
+	// TODO: doc what's goin on
+	if fn.metadata.Name != "" {
+		returnedIDs := map[digest.Digest]*call.ID{}
+		if err := fn.returnType.CollectIDs(ctx, returnValueTyped, returnedIDs); err != nil {
+			return nil, fmt.Errorf("failed to collect IDs: %w", err)
+		}
+		for _, id := range returnedIDs {
+			if err := fn.root.AddSecretsFromID(ctx, id, execMD.ClientID, false); err != nil {
+				return nil, fmt.Errorf("failed to add secrets from ID: %w", err)
+			}
+			if err := fn.root.AddSocketsFromID(ctx, id, execMD.ClientID, false); err != nil {
+				return nil, fmt.Errorf("failed to add sockets from ID: %w", err)
+			}
+		}
 	}
 
 	if err := fn.linkDependencyBlobs(ctx, result, returnValueTyped); err != nil {

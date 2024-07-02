@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/url"
 
+	"github.com/dagger/dagger/engine"
 	"github.com/moby/buildkit/session/sshforward"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -46,18 +47,19 @@ func (p SocketProvider) ForwardAgent(stream sshforward.SSH_ForwardAgentServer) e
 	if !p.EnableHostNetworkAccess {
 		return status.Errorf(codes.PermissionDenied, "host access is disabled")
 	}
-	opts, ok := metadata.FromIncomingContext(stream.Context()) // if no metadata continue with empty object
+	opts, ok := metadata.FromIncomingContext(stream.Context())
 	if !ok {
 		return status.Errorf(codes.InvalidArgument, "no metadata")
 	}
-	var connURL *url.URL
-	if v, ok := opts[sshforward.KeySSHID]; ok && len(v) > 0 && v[0] != "" {
-		var err error
-		connURL, err = url.Parse(v[0])
-		if err != nil {
-			return status.Errorf(codes.InvalidArgument, "invalid id: %s", err)
-		}
+	v := opts.Get(engine.SocketURLEncodedKey)
+	if len(v) == 0 || v[0] == "" {
+		return status.Errorf(codes.InvalidArgument, "missing socket url")
 	}
+	connURL, err := url.Parse(v[0])
+	if err != nil {
+		return status.Errorf(codes.InvalidArgument, "invalid socket url %q: %s", v[0], err)
+	}
+
 	var network, addr string
 	switch connURL.Scheme {
 	case "unix":
@@ -67,7 +69,7 @@ func (p SocketProvider) ForwardAgent(stream sshforward.SSH_ForwardAgentServer) e
 		network = connURL.Scheme
 		addr = connURL.Host
 	default:
-		return status.Errorf(codes.InvalidArgument, "invalid id: unsupported scheme %q", connURL.Scheme)
+		return status.Errorf(codes.InvalidArgument, "invalid socket url: unsupported scheme %q", connURL.Scheme)
 	}
 
 	dialer := p.Dialer

@@ -21,6 +21,7 @@ import (
 
 	"github.com/containerd/console"
 	runc "github.com/containerd/go-runc"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/executor"
 	"github.com/moby/buildkit/executor/oci"
@@ -46,8 +47,11 @@ type ExecutionMetadata struct {
 	SecretToken string
 	Hostname    string
 
+	// TODO: can rm EncodedModuleID now
+	CallID              *call.ID
 	EncodedModuleID     string
 	EncodedFunctionCall json.RawMessage
+	CallerClientID      string
 
 	CachePerSession bool
 

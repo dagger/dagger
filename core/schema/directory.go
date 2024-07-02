@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"fmt"
 	"io/fs"
 
 	"github.com/dagger/dagger/core"
@@ -133,7 +134,7 @@ func (s *directorySchema) directory(ctx context.Context, parent *core.Query, arg
 		}
 		return inst.Self, nil
 	}
-	platform := parent.Platform
+	platform := parent.Platform()
 	return core.NewScratchDirectory(parent, platform), nil
 }
 
@@ -285,7 +286,10 @@ func (s *directorySchema) export(ctx context.Context, parent *core.Directory, ar
 	if err != nil {
 		return "", err
 	}
-	bk := parent.Query.Buildkit
+	bk, err := parent.Query.Buildkit(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get buildkit client: %w", err)
+	}
 	stat, err := bk.StatCallerHostPath(ctx, args.Path, true)
 	if err != nil {
 		return "", err
@@ -302,7 +306,7 @@ type dirDockerBuildArgs struct {
 }
 
 func (s *directorySchema) dockerBuild(ctx context.Context, parent *core.Directory, args dirDockerBuildArgs) (*core.Container, error) {
-	platform := parent.Query.Platform
+	platform := parent.Query.Platform()
 	if args.Platform.Valid {
 		platform = args.Platform.Value
 	}

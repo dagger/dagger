@@ -113,11 +113,21 @@ func (s *moduleSchema) newModuleSDK(
 	optionalFullSDKSourceDir dagql.Instance[*core.Directory],
 ) (*moduleSDK, error) {
 	dag := dagql.NewServer(root)
-	dag.Cache = root.Cache
+
+	var err error
+	dag.Cache, err = root.Cache(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cache for sdk module %s: %w", sdkModMeta.Self.Name(), err)
+	}
+
 	if err := sdkModMeta.Self.Install(ctx, dag); err != nil {
 		return nil, fmt.Errorf("failed to install sdk module %s: %w", sdkModMeta.Self.Name(), err)
 	}
-	for _, defaultDep := range sdkModMeta.Self.Query.DefaultDeps.Mods {
+	defaultDeps, err := sdkModMeta.Self.Query.DefaultDeps(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get default deps for sdk module %s: %w", sdkModMeta.Self.Name(), err)
+	}
+	for _, defaultDep := range defaultDeps.Mods {
 		if err := defaultDep.Install(ctx, dag); err != nil {
 			return nil, fmt.Errorf("failed to install default dep %s for sdk module %s: %w", defaultDep.Name(), sdkModMeta.Self.Name(), err)
 		}

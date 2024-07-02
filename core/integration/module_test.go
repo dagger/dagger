@@ -5599,8 +5599,6 @@ func (t *Toplevel) Attempt(ctx context.Context, uniq string) error {
 		// check that modules can't access each other's global secret stores,
 		// even when we know the underlying IDs
 
-		t.Skip("this protection is not yet implemented")
-
 		var logs safeBuffer
 		c := connect(ctx, t, dagger.WithLogOutput(io.MultiWriter(os.Stderr, &logs)))
 
