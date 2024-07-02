@@ -189,39 +189,31 @@ class Module:
 
     async def _run(self):
         async with await dagger.connect():
-            mod_name = await dag.current_module().name()
-            parent_name = await self._fn_call.parent_name()
-            fn = (
-                functools.partial(self._invoke, parent_name)
-                if parent_name
-                else self._register
-            )
-            await fn(mod_name)
+            await self.serve()
 
-    @staticmethod
-    def serve():
-        def _serve(func):
-            @functools.wraps(func)
-            async def wrapper(*args, **kwargs):
-                result = await func(*args, **kwargs)
+    async def serve(self):
+        mod_name = await dag.current_module().name()
+        parent_name = await self._fn_call.parent_name()
+        fn = (
+            functools.partial(self._invoke, parent_name)
+            if parent_name
+            else self._register
+        )
 
-                try:
-                    output = json.dumps(result)
-                except (TypeError, ValueError) as e:
-                    msg = f"Failed to serialize result: {e}"
-                    raise InternalError(msg) from e
+        result = await fn(mod_name)
 
-                logger.debug(
-                    "output => %s",
-                    textwrap.shorten(repr(output), 144),
-                )
-                await dag.current_function_call().return_value(dagger.JSON(output))
+        try:
+            output = json.dumps(result)
+        except (TypeError, ValueError) as e:
+            msg = f"Failed to serialize result: {e}"
+            raise InternalError(msg) from e
 
-            return wrapper
+        logger.debug(
+            "output => %s",
+            textwrap.shorten(repr(output), 144),
+        )
+        await dag.current_function_call().return_value(dagger.JSON(output))
 
-        return _serve
-
-    @serve()
     async def _register(self, mod_name: str) -> dagger.ModuleID:
         resolvers = self.get_resolvers(mod_name)
         mod_name = to_pascal_case(mod_name)
@@ -260,7 +252,6 @@ class Module:
 
         return await mod.id()
 
-    @serve()
     async def _invoke(self, parent_name: str, mod_name: str) -> Any:
         resolvers = self.get_resolvers(mod_name)
         name = await self._fn_call.name()
