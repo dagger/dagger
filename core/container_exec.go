@@ -73,6 +73,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	if opts.NestedExecMetadata != nil {
 		execMD = *opts.NestedExecMetadata
 	}
+	execMD.ExecID = identity.NewID()
 	execMD.SessionID = clientMetadata.SessionID
 	if execMD.HostAliases == nil {
 		execMD.HostAliases = make(map[string][]string)

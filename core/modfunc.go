@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -178,6 +179,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 	}
 
 	execMD := buildkit.ExecutionMetadata{
+		ExecID:          identity.NewID(),
 		CachePerSession: !opts.Cache,
 		Internal:        true,
 	}

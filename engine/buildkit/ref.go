@@ -369,6 +369,14 @@ func debugContainer(ctx context.Context, execOp *bksolverpb.ExecOp, execErr *llb
 		// containers created by buildkit internals like the dockerfile frontend
 		return nil
 	}
+
+	// Ensure we only spawn one terminal per exec.
+	if execMd.ExecID != "" {
+		if _, exists := client.execMap.LoadOrStore(execMd.ExecID, struct{}{}); exists {
+			return nil
+		}
+	}
+
 	// If this is the (internal) exec of the module itself, we don't want to spawn a terminal.
 	if execMd.Internal {
 		return nil

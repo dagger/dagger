@@ -12,6 +12,7 @@ import (
 	"time"
 
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
@@ -285,6 +286,7 @@ func (svc *Service) startContainer(
 	}
 	if !ok {
 		execMD = &buildkit.ExecutionMetadata{
+			ExecID:    identity.NewID(),
 			SessionID: clientMetadata.SessionID,
 		}
 	}

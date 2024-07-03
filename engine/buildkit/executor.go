@@ -46,6 +46,12 @@ type ExecutionMetadata struct {
 	SecretToken string
 	Hostname    string
 
+	// Unique (random) ID for this execution.
+	// This is used to deduplicate the same execution that gets evaluated multiple times.
+	ExecID string
+
+	// Internal execution initiated by dagger and not the user.
+	// Used when executing the module runtime itself.
 	Internal bool
 
 	EncodedModuleID     string

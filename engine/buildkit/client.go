@@ -88,6 +88,7 @@ type Client struct {
 	closeCtx context.Context
 	cancel   context.CancelFunc
 	closeMu  sync.RWMutex
+	execMap  sync.Map
 }
 
 func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
@@ -97,6 +98,7 @@ func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
 		Opts:     opts,
 		closeCtx: ctx,
 		cancel:   cancel,
+		execMap:  sync.Map{},
 	}
 
 	return client, nil
