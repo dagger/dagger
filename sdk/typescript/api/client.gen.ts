@@ -1060,6 +1060,11 @@ export type ServiceID = string & { __ServiceID: never }
  */
 export type SocketID = string & { __SocketID: never }
 
+/**
+ * The `TerminalID` scalar type represents an identifier for an object of type Terminal.
+ */
+export type TerminalID = string & { __TerminalID: never }
+
 export type TypeDefWithEnumOpts = {
   /**
    * A doc string for the enum, if any
@@ -8764,6 +8769,22 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Load a Terminal from its ID.
+   */
+  loadTerminalFromID = (id: TerminalID): Terminal => {
+    return new Terminal({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "loadTerminalFromID",
+          args: { id },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
    * Load a TypeDef from its ID.
    */
   loadTypeDefFromID = (id: TypeDefID): TypeDef => {
@@ -9400,6 +9421,46 @@ export class Socket extends BaseClient {
     }
 
     const response: Awaited<SocketID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+}
+
+/**
+ * An interactive terminal that clients can connect to.
+ */
+export class Terminal extends BaseClient {
+  private readonly _id?: TerminalID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: TerminalID,
+  ) {
+    super(parent)
+
+    this._id = _id
+  }
+
+  /**
+   * A unique identifier for this Terminal.
+   */
+  id = async (): Promise<TerminalID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<TerminalID> = await computeQuery(
       [
         ...this._queryTree,
         {

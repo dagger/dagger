@@ -18,13 +18,4 @@ defmodule Dagger.Terminal do
 
     execute(selection, terminal.client)
   end
-
-  @doc "An http endpoint at which this terminal can be connected to over a websocket."
-  @spec websocket_endpoint(t()) :: {:ok, String.t()} | {:error, term()}
-  def websocket_endpoint(%__MODULE__{} = terminal) do
-    selection =
-      terminal.selection |> select("websocketEndpoint")
-
-    execute(selection, terminal.client)
-  end
 end

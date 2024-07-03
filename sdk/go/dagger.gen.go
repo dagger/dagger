@@ -228,6 +228,9 @@ type ServiceID string
 // The `SocketID` scalar type represents an identifier for an object of type Socket.
 type SocketID string
 
+// The `TerminalID` scalar type represents an identifier for an object of type Terminal.
+type TerminalID string
+
 // The `TypeDefID` scalar type represents an identifier for an object of type TypeDef.
 type TypeDefID string
 
@@ -6726,6 +6729,16 @@ func (r *Client) LoadSocketFromID(id SocketID) *Socket {
 	}
 }
 
+// Load a Terminal from its ID.
+func (r *Client) LoadTerminalFromID(id TerminalID) *Terminal {
+	q := r.query.Select("loadTerminalFromID")
+	q = q.Arg("id", id)
+
+	return &Terminal{
+		query: q,
+	}
+}
+
 // Load a TypeDef from its ID.
 func (r *Client) LoadTypeDefFromID(id TypeDefID) *TypeDef {
 	q := r.query.Select("loadTypeDefFromID")
@@ -7316,6 +7329,59 @@ func (r *Socket) XXX_GraphQLID(ctx context.Context) (string, error) {
 }
 
 func (r *Socket) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// An interactive terminal that clients can connect to.
+type Terminal struct {
+	query *querybuilder.Selection
+
+	id *TerminalID
+}
+
+func (r *Terminal) WithGraphQLQuery(q *querybuilder.Selection) *Terminal {
+	return &Terminal{
+		query: q,
+	}
+}
+
+// A unique identifier for this Terminal.
+func (r *Terminal) ID(ctx context.Context) (TerminalID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response TerminalID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Terminal) XXX_GraphQLType() string {
+	return "Terminal"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Terminal) XXX_GraphQLIDType() string {
+	return "TerminalID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Terminal) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Terminal) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err

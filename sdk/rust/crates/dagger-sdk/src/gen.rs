@@ -1329,6 +1329,39 @@ impl SocketId {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct TerminalId(pub String);
+impl From<&str> for TerminalId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+impl From<String> for TerminalId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl IntoID<TerminalId> for Terminal {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<TerminalId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<TerminalId> for TerminalId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<TerminalId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { Ok::<TerminalId, DaggerError>(self) })
+    }
+}
+impl TerminalId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct TypeDefId(pub String);
 impl From<&str> for TypeDefId {
     fn from(value: &str) -> Self {
@@ -6983,6 +7016,22 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Load a Terminal from its ID.
+    pub fn load_terminal_from_id(&self, id: impl IntoID<TerminalId>) -> Terminal {
+        let mut query = self.selection.select("loadTerminalFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        Terminal {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Load a TypeDef from its ID.
     pub fn load_type_def_from_id(&self, id: impl IntoID<TypeDefId>) -> TypeDef {
         let mut query = self.selection.select("loadTypeDefFromID");
@@ -7408,6 +7457,19 @@ pub struct Socket {
 impl Socket {
     /// A unique identifier for this Socket.
     pub async fn id(&self) -> Result<SocketId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+#[derive(Clone)]
+pub struct Terminal {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl Terminal {
+    /// A unique identifier for this Terminal.
+    pub async fn id(&self) -> Result<TerminalId, DaggerError> {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }

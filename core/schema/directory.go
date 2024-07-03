@@ -97,6 +97,7 @@ func (s *directorySchema) Install() {
 			ArgDoc("timestamp", `Timestamp to set dir/files in.`,
 				`Formatted in seconds following Unix epoch (e.g., 1672531199).`),
 		dagql.NodeFunc("terminal", s.terminal).
+			View(AfterVersion("v0.12.0")).
 			Impure("Nondeterministic.").
 			Doc(`Opens an interactive terminal in new container with this directory mounted inside.`).
 			ArgDoc("container", `If set, override the default container used for the terminal.`).

@@ -2509,6 +2509,9 @@ type Query {
   """Load a Socket from its ID."""
   loadSocketFromID(id: SocketID!): Socket!
 
+  """Load a Terminal from its ID."""
+  loadTerminalFromID(id: TerminalID!): Terminal!
+
   """Load a TypeDef from its ID."""
   loadTypeDefFromID(id: TypeDefID!): TypeDef!
 
@@ -2694,6 +2697,17 @@ type Socket {
 The `SocketID` scalar type represents an identifier for an object of type Socket.
 """
 scalar SocketID
+
+"""An interactive terminal that clients can connect to."""
+type Terminal {
+  """A unique identifier for this Terminal."""
+  id: TerminalID!
+}
+
+"""
+The `TerminalID` scalar type represents an identifier for an object of type Terminal.
+"""
+scalar TerminalID
 
 """A definition of a parameter or return type in a Module."""
 type TypeDef {
