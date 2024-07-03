@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -447,11 +448,17 @@ func (src *GitModuleSource) Symbolic() string {
 }
 
 func (src *GitModuleSource) HTMLURL() string {
-	u := "https://" + src.Root + "/tree/" + src.Commit
-	if subPath := src.RootSubpath; subPath != "" {
-		u += "/" + subPath
+	parsedURL, err := url.Parse(src.CloneURL)
+	if err != nil {
+		return src.CloneURL + path.Join("/src", src.Commit, src.RootSubpath)
 	}
-	return u
+
+	pathPrefix := "/src"
+	if parsedURL.Host == "github.com" || parsedURL.Host == "gitlab.com" {
+		pathPrefix = "/tree"
+	}
+
+	return src.CloneURL + path.Join(pathPrefix, src.Commit, src.RootSubpath)
 }
 
 type ModuleSourceView struct {
