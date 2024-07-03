@@ -84,17 +84,17 @@ func DumpID(out *termenv.Output, id *call.ID) error {
 type renderer struct {
 	FrontendOpts
 
-	db        *DB
-	width     int
-	rendering map[string]bool
+	db            *DB
+	maxLiteralLen int
+	rendering     map[string]bool
 }
 
-func newRenderer(db *DB, width int, fe FrontendOpts) renderer {
+func newRenderer(db *DB, maxLiteralLen int, fe FrontendOpts) renderer {
 	return renderer{
-		FrontendOpts: fe,
-		db:           db,
-		width:        width,
-		rendering:    map[string]bool{},
+		FrontendOpts:  fe,
+		db:            db,
+		maxLiteralLen: maxLiteralLen,
+		rendering:     map[string]bool{},
 	}
 }
 
@@ -263,7 +263,7 @@ func (r renderer) renderLiteral(out *termenv.Output, lit *callpbv1.Literal) {
 	case *callpbv1.Literal_Float:
 		fmt.Fprint(out, out.String(fmt.Sprintf("%f", val.Float)).Foreground(termenv.ANSIRed))
 	case *callpbv1.Literal_String_:
-		if r.width != -1 && len(val.Value()) > r.width {
+		if r.maxLiteralLen != -1 && len(val.Value()) > r.maxLiteralLen {
 			display := string(digest.FromString(val.Value()))
 			fmt.Fprint(out, out.String("ETOOBIG:"+display).Foreground(termenv.ANSIYellow))
 			return
