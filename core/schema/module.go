@@ -829,6 +829,20 @@ func (s *moduleSchema) updateDeps(
 		mod.Deps = mod.Deps.Append(dep.Self)
 	}
 
+	engineVersion, err := mod.Source.Self.ModuleEngineVersion(ctx)
+	if err != nil {
+		return err
+	}
+	for i, depMod := range mod.Deps.Mods {
+		if coreMod, ok := depMod.(*CoreMod); ok {
+			// this is needed so that a module's dependency on the core
+			// uses the correct schema version
+			dag := *coreMod.Dag
+			dag.View = engineVersion
+			mod.Deps.Mods[i] = &CoreMod{Dag: &dag}
+		}
+	}
+
 	return nil
 }
 

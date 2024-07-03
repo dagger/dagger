@@ -438,23 +438,44 @@ func (srv *Server) initializeDaggerClient(
 	}
 	client.defaultDeps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
 
-	client.deps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
-	if opts.EncodedModuleID != "" {
+	if opts.EncodedModuleID == "" {
+		client.deps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
+	} else {
 		modID := new(call.ID)
 		if err := modID.Decode(opts.EncodedModuleID); err != nil {
 			return fmt.Errorf("failed to decode module ID: %w", err)
 		}
-		modInst, err := dagql.NewID[*core.Module](modID).Load(ctx, dag)
+		modInst, err := dagql.NewID[*core.Module](modID).Load(ctx, coreMod.Dag)
 		if err != nil {
 			return fmt.Errorf("failed to load module: %w", err)
 		}
 		client.mod = modInst.Self
+
+		engineVersion, err := client.mod.Source.Self.ModuleEngineVersion(ctx)
+		if err != nil {
+			return err
+		}
+		if engineVersion != "" {
+			// this is needed to set the view of the core api as compatible
+			// with the module we're currently calling from
+			coreMod.Dag.View = engineVersion
+
+			// NOTE: *technically* we should reload the module here, so that we can
+			// use the new typedefs api - but at this point we likely would
+			// have failed to load the module in the first place anyways?
+			// modInst, err = dagql.NewID[*core.Module](modID).Load(ctx, coreMod.Dag)
+			// if err != nil {
+			// 	return fmt.Errorf("failed to load module: %w", err)
+			// }
+			// client.mod = modInst.Self
+		}
 
 		client.deps = client.mod.Deps
 		// if the module has any of it's own objects defined, serve its schema to itself too
 		if len(client.mod.ObjectDefs) > 0 {
 			client.deps = client.deps.Append(client.mod)
 		}
+		client.defaultDeps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
 	}
 
 	if opts.EncodedFunctionCall != nil {
@@ -896,9 +917,24 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module) error {
 	if err != nil {
 		return err
 	}
+
+	engineVersion, err := mod.Source.Self.ModuleEngineVersion(ctx)
+	if err != nil {
+		return err
+	}
+
 	client.stateMu.Lock()
 	defer client.stateMu.Unlock()
+
 	client.deps = client.deps.Append(mod)
+	for _, depMod := range client.deps.Mods {
+		if coreMod, ok := depMod.(*schema.CoreMod); ok {
+			// this is needed so that when the cli serves a module, that we
+			// serve the coreMod schema associated with that module
+			coreMod.Dag.View = engineVersion
+			break
+		}
+	}
 	return nil
 }
 
