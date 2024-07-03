@@ -423,7 +423,11 @@ func debugContainer(ctx context.Context, execOp *bksolverpb.ExecOp, execErr *llb
 
 	output := idtui.NewOutput(term.Stderr)
 	fmt.Fprintf(term.Stderr,
-		output.String(idtui.IconFailure).Foreground(termenv.ANSIRed).String()+" Exec failed, attaching terminal\r\n")
+		output.String(idtui.IconFailure).Foreground(termenv.ANSIRed).String()+" Exec failed, attaching terminal: ")
+	if err := idtui.DumpID(output, execMd.CallID); err != nil {
+		return fmt.Errorf("failed to serialize service ID: %w", err)
+	}
+	fmt.Fprintf(term.Stderr, "\r\n")
 	fmt.Fprintf(term.Stderr,
 		output.String("! %s\r\n\n").Foreground(termenv.ANSIYellow).String(), execErr.Error())
 

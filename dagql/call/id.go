@@ -276,6 +276,22 @@ func (id *ID) Encode() (string, error) {
 	return base64.StdEncoding.EncodeToString(proto), nil
 }
 
+func (id ID) MarshalJSON() ([]byte, error) {
+	enc, err := id.Encode()
+	if err != nil {
+		return nil, err
+	}
+	return []byte(`"` + enc + `"`), nil
+}
+
+func (id *ID) UnmarshalJSON(data []byte) error {
+	if len(data) < 2 || data[0] != '"' || data[len(data)-1] != '"' {
+		return fmt.Errorf("invalid JSON string")
+	}
+	enc := string(data[1 : len(data)-1])
+	return id.Decode(enc)
+}
+
 // NOTE: use with caution, any mutations to the returned proto can corrupt the ID
 func (id *ID) ToProto() (*callpbv1.DAG, error) {
 	dagPB := &callpbv1.DAG{

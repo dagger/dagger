@@ -73,6 +73,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	if opts.NestedExecMetadata != nil {
 		execMD = *opts.NestedExecMetadata
 	}
+	execMD.CallID = dagql.CurrentID(ctx)
 	execMD.ExecID = identity.NewID()
 	execMD.SessionID = clientMetadata.SessionID
 	if execMD.HostAliases == nil {
