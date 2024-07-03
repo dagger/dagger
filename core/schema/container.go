@@ -383,6 +383,9 @@ func (s *containerSchema) Install() {
 				`Defaults to OCI, which is largely compatible with most recent
 				container runtimes, but Docker may be needed for older runtimes without
 				OCI support.`),
+		dagql.Func("export", s.exportLegacy).
+			View(BeforeVersion("v0.12.0")).
+			Extend(),
 
 		dagql.Func("asTarball", s.asTarball).
 			Doc(`Returns a File representing the container serialized to a tarball.`).
@@ -1230,6 +1233,14 @@ func (s *containerSchema) export(ctx context.Context, parent *core.Container, ar
 		return "", err
 	}
 	return dagql.String(stat.Path), err
+}
+
+func (s *containerSchema) exportLegacy(ctx context.Context, parent *core.Container, args containerExportArgs) (dagql.Boolean, error) {
+	_, err := s.export(ctx, parent, args)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 type containerAsTarballArgs struct {

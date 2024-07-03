@@ -40,6 +40,9 @@ func (s *fileSchema) Install() {
 			ArgDoc("allowParentDirPath",
 				`If allowParentDirPath is true, the path argument can be a directory
 				path, in which case the file will be created in that directory.`),
+		dagql.Func("export", s.exportLegacy).
+			View(BeforeVersion("v0.12.0")).
+			Extend(),
 		dagql.Func("withTimestamps", s.withTimestamps).
 			Doc(`Retrieves this file with its created/modified timestamps set to the given time.`).
 			ArgDoc("timestamp", `Timestamp to set dir/files in.`,
@@ -108,6 +111,14 @@ func (s *fileSchema) export(ctx context.Context, parent *core.File, args fileExp
 		return "", err
 	}
 	return dagql.String(stat.Path), err
+}
+
+func (s *fileSchema) exportLegacy(ctx context.Context, parent *core.File, args fileExportArgs) (dagql.Boolean, error) {
+	_, err := s.export(ctx, parent, args)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 type fileWithTimestampsArgs struct {
