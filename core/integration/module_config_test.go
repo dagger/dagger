@@ -127,9 +127,11 @@ func (ModuleSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 				require.ErrorContains(t, err, `source path "/tmp" contains parent directory components`)
 			})
 
-			t.Run("git", func(ctx context.Context, t *testctx.T) {
-				_, err := base.With(daggerCallAt(testGitModuleRef("invalid/bad-source"), "container-echo", "--string-arg", "plz fail")).Sync(ctx)
-				require.ErrorContains(t, err, `source path "../../../" contains parent directory components`)
+			testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
+				t.Run("git", func(ctx context.Context, t *testctx.T) {
+					_, err := base.With(daggerCallAt(testGitModuleRef(tc, "invalid/bad-source"), "container-echo", "--string-arg", "plz fail")).Sync(ctx)
+					require.ErrorContains(t, err, `source path "../../../" contains parent directory components`)
+				})
 			})
 		})
 
@@ -214,9 +216,11 @@ func (ModuleSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 				require.ErrorContains(t, err, `module dep source root path "../dep" escapes root`)
 			})
 
-			t.Run("git", func(ctx context.Context, t *testctx.T) {
-				_, err := base.With(daggerCallAt(testGitModuleRef("invalid/bad-dep"), "container-echo", "--string-arg", "plz fail")).Sync(ctx)
-				require.ErrorContains(t, err, `module dep source root path "../../../foo" escapes root`)
+			testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
+				t.Run("git", func(ctx context.Context, t *testctx.T) {
+					_, err := base.With(daggerCallAt(testGitModuleRef(tc, "invalid/bad-dep"), "container-echo", "--string-arg", "plz fail")).Sync(ctx)
+					require.ErrorContains(t, err, `module dep source root path "../../../foo" escapes root`)
+				})
 			})
 		})
 	})
@@ -670,13 +674,15 @@ func (ModuleSuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 		require.Contains(t, ents, "main.go")
 	})
 
-	t.Run("fails on git", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
+	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
+		t.Run("fails on git", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
 
-		_, err := goGitBase(t, c).
-			With(daggerExec("develop", "-m", testGitModuleRef("top-level"))).
-			Sync(ctx)
-		require.ErrorContains(t, err, `module must be local`)
+			_, err := goGitBase(t, c).
+				With(daggerExec("develop", "-m", testGitModuleRef(tc, "top-level"))).
+				Sync(ctx)
+			require.ErrorContains(t, err, `module must be local`)
+		})
 	})
 
 	t.Run("source is made rel to source root by engine with absolute path", func(ctx context.Context, t *testctx.T) {
@@ -1018,16 +1024,17 @@ func (ModuleSuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 		})
 	})
 
-	t.Run("git", func(ctx context.Context, t *testctx.T) {
-		t.Run("happy", func(ctx context.Context, t *testctx.T) {
-			c := connect(ctx, t)
+	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
+		t.Run("git", func(ctx context.Context, t *testctx.T) {
+			t.Run("happy", func(ctx context.Context, t *testctx.T) {
+				c := connect(ctx, t)
 
-			out, err := goGitBase(t, c).
-				WithWorkdir("/work").
-				With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
-				With(daggerExec("install", testGitModuleRef("top-level"))).
-				WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-					Contents: `package main
+				out, err := goGitBase(t, c).
+					WithWorkdir("/work").
+					With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+					With(daggerExec("install", testGitModuleRef(tc, "top-level"))).
+					WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+						Contents: `package main
 
 import "context"
 
@@ -1037,48 +1044,49 @@ func (m *Test) Fn(ctx context.Context) (string, error) {
 	return dag.TopLevel().Fn(ctx)
 }
 `,
-				}).
-				With(daggerCall("fn")).
-				Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "hi from top level hi from dep hi from dep2", strings.TrimSpace(out))
-		})
+					}).
+					With(daggerCall("fn")).
+					Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "hi from top level hi from dep hi from dep2", strings.TrimSpace(out))
+			})
 
-		t.Run("sad", func(ctx context.Context, t *testctx.T) {
-			c := connect(ctx, t)
+			t.Run("sad", func(ctx context.Context, t *testctx.T) {
+				c := connect(ctx, t)
 
-			_, err := goGitBase(t, c).
-				WithWorkdir("/work").
-				With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
-				With(daggerExec("install", testGitModuleRef("../../"))).
-				Sync(ctx)
-			require.ErrorContains(t, err, `git module source subpath points out of root: "../.."`)
+				_, err := goGitBase(t, c).
+					WithWorkdir("/work").
+					With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+					With(daggerExec("install", testGitModuleRef(tc, "../../"))).
+					Sync(ctx)
+				require.ErrorContains(t, err, `git module source subpath points out of root: "../.."`)
 
-			_, err = goGitBase(t, c).
-				WithWorkdir("/work").
-				With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
-				With(daggerExec("install", testGitModuleRef("this/just/does/not/exist"))).
-				Sync(ctx)
-			require.ErrorContains(t, err, `module "test" dependency "" with source root path "this/just/does/not/exist" does not exist or does not have a configuration file`)
-		})
+				_, err = goGitBase(t, c).
+					WithWorkdir("/work").
+					With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+					With(daggerExec("install", testGitModuleRef(tc, "this/just/does/not/exist"))).
+					Sync(ctx)
+				require.ErrorContains(t, err, `module "test" dependency "" with source root path "this/just/does/not/exist" does not exist or does not have a configuration file`)
+			})
 
-		t.Run("unpinned gets pinned", func(ctx context.Context, t *testctx.T) {
-			c := connect(ctx, t)
+			t.Run("unpinned gets pinned", func(ctx context.Context, t *testctx.T) {
+				c := connect(ctx, t)
 
-			out, err := goGitBase(t, c).
-				WithWorkdir("/work").
-				With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
-				With(daggerExec("install", gitTestRepoURL)).
-				File("/work/dagger.json").
-				Contents(ctx)
-			require.NoError(t, err)
-			var modCfg modules.ModuleConfig
-			require.NoError(t, json.Unmarshal([]byte(out), &modCfg))
-			require.Len(t, modCfg.Dependencies, 1)
-			url, commit, ok := strings.Cut(modCfg.Dependencies[0].Source, "@")
-			require.True(t, ok)
-			require.Equal(t, gitTestRepoURL, url)
-			require.NotEmpty(t, commit)
+				out, err := goGitBase(t, c).
+					WithWorkdir("/work").
+					With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+					With(daggerExec("install", tc.gitTestRepoRef)).
+					File("/work/dagger.json").
+					Contents(ctx)
+				require.NoError(t, err)
+				var modCfg modules.ModuleConfig
+				require.NoError(t, json.Unmarshal([]byte(out), &modCfg))
+				require.Len(t, modCfg.Dependencies, 1)
+				url, commit, ok := strings.Cut(modCfg.Dependencies[0].Source, "@")
+				require.True(t, ok)
+				require.Equal(t, tc.gitTestRepoRef, url)
+				require.NotEmpty(t, commit)
+			})
 		})
 	})
 }
@@ -1354,125 +1362,175 @@ func (m *Test) Fn() ([]string, error) {
 	require.Contains(t, strings.TrimSpace(out), "random-file")
 }
 
-const (
-	gitTestRepoURL    = "github.com/dagger/dagger-test-modules"
-	gitTestRepoCommit = "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94"
-)
+// VCS to test behavior against
+type vcsTestCase struct {
+	name              string
+	gitTestRepoRef    string
+	gitTestRepoCommit string
+	// host component of repoURL
+	expectedHost string
+	// base HTML URL might differ from ref (e.g. not contain .git ; vanity URLs )
+	expectedBaseHTMLURL string
+	// path separator to access `tree` view of src at commit, per provider
+	expectedURLPathComponent string
+}
 
-func testGitModuleRef(subpath string) string {
-	url := gitTestRepoURL
+var vcsTestCases = []vcsTestCase{
+	// public repos
+	{
+		name:                     "GitHub without .git",
+		gitTestRepoRef:           "github.com/dagger/dagger-test-modules",
+		gitTestRepoCommit:        "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
+		expectedHost:             "github.com",
+		expectedBaseHTMLURL:      "github.com/dagger/dagger-test-modules",
+		expectedURLPathComponent: "tree",
+	},
+	{
+		name:                     "GitLab without .git",
+		gitTestRepoRef:           "gitlab.com/dagger-modules/test/more/dagger-test-modules-public",
+		gitTestRepoCommit:        "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
+		expectedHost:             "gitlab.com",
+		expectedBaseHTMLURL:      "gitlab.com/dagger-modules/test/more/dagger-test-modules-public",
+		expectedURLPathComponent: "tree",
+	},
+	{
+		name:                     "BitBucket without .git",
+		gitTestRepoRef:           "bitbucket.org/dagger-modules/dagger-test-modules-public",
+		gitTestRepoCommit:        "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
+		expectedHost:             "bitbucket.org",
+		expectedBaseHTMLURL:      "bitbucket.org/dagger-modules/dagger-test-modules-public",
+		expectedURLPathComponent: "src",
+	},
+}
+
+func testOnMultipleVCS(t *testctx.T, testFunc func(ctx context.Context, t *testctx.T, tc vcsTestCase)) {
+	for _, tc := range vcsTestCases {
+		tc := tc
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			testFunc(ctx, t, tc)
+		})
+	}
+}
+
+func testGitModuleRef(tc vcsTestCase, subpath string) string {
+	url := tc.gitTestRepoRef
 	if subpath != "" {
 		if !strings.HasPrefix(subpath, "/") {
 			subpath = "/" + subpath
 		}
 		url += subpath
 	}
-	return fmt.Sprintf("%s@%s", url, gitTestRepoCommit)
+	return fmt.Sprintf("%s@%s", url, tc.gitTestRepoCommit)
 }
 
 func (ModuleSuite) TestDaggerGitRefs(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	t.Run("root module", func(ctx context.Context, t *testctx.T) {
-		rootModSrc := c.ModuleSource(testGitModuleRef(""))
+	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
+		t.Run("root module", func(ctx context.Context, t *testctx.T) {
+			rootModSrc := c.ModuleSource(testGitModuleRef(tc, ""))
 
-		htmlURL, err := rootModSrc.AsGitSource().HTMLURL(ctx)
-		require.NoError(t, err)
-		require.Equal(t, fmt.Sprintf("https://%s/tree/%s", gitTestRepoURL, gitTestRepoCommit), htmlURL)
-		resp, err := http.Get(htmlURL)
-		require.NoError(t, err)
-		defer resp.Body.Close()
-		require.Equal(t, http.StatusOK, resp.StatusCode)
+			htmlURL, err := rootModSrc.AsGitSource().HTMLURL(ctx)
+			require.NoError(t, err)
+			require.Equal(t, fmt.Sprintf("https://%s/%s/%s", tc.expectedBaseHTMLURL, tc.expectedURLPathComponent, tc.gitTestRepoCommit), htmlURL)
+			resp, err := http.Get(htmlURL)
+			require.NoError(t, err)
+			defer resp.Body.Close()
+			require.Equal(t, http.StatusOK, resp.StatusCode)
 
-		cloneURL, err := rootModSrc.AsGitSource().CloneURL(ctx)
-		require.NoError(t, err)
-		require.Equal(t, fmt.Sprintf("https://%s", gitTestRepoURL), cloneURL)
+			cloneURL, err := rootModSrc.AsGitSource().CloneURL(ctx)
+			require.NoError(t, err)
+			require.Equal(t, fmt.Sprintf("https://%s", tc.expectedBaseHTMLURL), cloneURL)
 
-		commit, err := rootModSrc.AsGitSource().Commit(ctx)
-		require.NoError(t, err)
-		require.Equal(t, gitTestRepoCommit, commit)
+			commit, err := rootModSrc.AsGitSource().Commit(ctx)
+			require.NoError(t, err)
+			require.Equal(t, tc.gitTestRepoCommit, commit)
 
-		refStr, err := rootModSrc.AsString(ctx)
-		require.NoError(t, err)
-		require.Equal(t, testGitModuleRef(""), refStr)
-	})
+			refStr, err := rootModSrc.AsString(ctx)
+			require.NoError(t, err)
+			require.Equal(t, testGitModuleRef(tc, ""), refStr)
+		})
 
-	t.Run("top-level module", func(ctx context.Context, t *testctx.T) {
-		topLevelModSrc := c.ModuleSource(testGitModuleRef("top-level"))
-		htmlURL, err := topLevelModSrc.AsGitSource().HTMLURL(ctx)
-		require.NoError(t, err)
-		require.Equal(t, fmt.Sprintf("https://%s/tree/%s/top-level", gitTestRepoURL, gitTestRepoCommit), htmlURL)
-		resp, err := http.Get(htmlURL)
-		require.NoError(t, err)
-		defer resp.Body.Close()
-		require.Equal(t, http.StatusOK, resp.StatusCode)
+		t.Run("top-level module", func(ctx context.Context, t *testctx.T) {
+			topLevelModSrc := c.ModuleSource(testGitModuleRef(tc, "top-level"))
+			htmlURL, err := topLevelModSrc.AsGitSource().HTMLURL(ctx)
+			require.NoError(t, err)
+			require.Equal(t, fmt.Sprintf("https://%s/%s/%s/top-level", tc.expectedBaseHTMLURL, tc.expectedURLPathComponent, tc.gitTestRepoCommit), htmlURL)
 
-		cloneURL, err := topLevelModSrc.AsGitSource().CloneURL(ctx)
-		require.NoError(t, err)
-		require.Equal(t, fmt.Sprintf("https://%s", gitTestRepoURL), cloneURL)
+			resp, err := http.Get(htmlURL)
+			require.NoError(t, err)
+			defer resp.Body.Close()
+			require.Equal(t, http.StatusOK, resp.StatusCode)
 
-		commit, err := topLevelModSrc.AsGitSource().Commit(ctx)
-		require.NoError(t, err)
-		require.Equal(t, gitTestRepoCommit, commit)
+			cloneURL, err := topLevelModSrc.AsGitSource().CloneURL(ctx)
+			require.NoError(t, err)
+			require.Equal(t, fmt.Sprintf("https://%s", tc.expectedBaseHTMLURL), cloneURL)
 
-		refStr, err := topLevelModSrc.AsString(ctx)
-		require.NoError(t, err)
-		require.Equal(t, testGitModuleRef("top-level"), refStr)
-	})
+			commit, err := topLevelModSrc.AsGitSource().Commit(ctx)
+			require.NoError(t, err)
+			require.Equal(t, tc.gitTestRepoCommit, commit)
 
-	t.Run("subdir dep2 module", func(ctx context.Context, t *testctx.T) {
-		subdirDepModSrc := c.ModuleSource(testGitModuleRef("subdir/dep2"))
-		htmlURL, err := subdirDepModSrc.AsGitSource().HTMLURL(ctx)
-		require.NoError(t, err)
-		require.Equal(t, fmt.Sprintf("https://%s/tree/%s/subdir/dep2", gitTestRepoURL, gitTestRepoCommit), htmlURL)
-		resp, err := http.Get(htmlURL)
-		require.NoError(t, err)
-		defer resp.Body.Close()
-		require.Equal(t, http.StatusOK, resp.StatusCode)
+			refStr, err := topLevelModSrc.AsString(ctx)
+			require.NoError(t, err)
+			require.Equal(t, testGitModuleRef(tc, "top-level"), refStr)
+		})
 
-		cloneURL, err := subdirDepModSrc.AsGitSource().CloneURL(ctx)
-		require.NoError(t, err)
-		require.Equal(t, fmt.Sprintf("https://%s", gitTestRepoURL), cloneURL)
+		t.Run("subdir dep2 module", func(ctx context.Context, t *testctx.T) {
+			subdirDepModSrc := c.ModuleSource(testGitModuleRef(tc, "subdir/dep2"))
+			htmlURL, err := subdirDepModSrc.AsGitSource().HTMLURL(ctx)
+			require.NoError(t, err)
+			require.Equal(t, fmt.Sprintf("https://%s/%s/%s/subdir/dep2", tc.expectedBaseHTMLURL, tc.expectedURLPathComponent, tc.gitTestRepoCommit), htmlURL)
 
-		commit, err := subdirDepModSrc.AsGitSource().Commit(ctx)
-		require.NoError(t, err)
-		require.Equal(t, gitTestRepoCommit, commit)
+			resp, err := http.Get(htmlURL)
+			require.NoError(t, err)
+			defer resp.Body.Close()
+			require.Equal(t, http.StatusOK, resp.StatusCode)
 
-		refStr, err := subdirDepModSrc.AsString(ctx)
-		require.NoError(t, err)
-		require.Equal(t, testGitModuleRef("subdir/dep2"), refStr)
-	})
+			cloneURL, err := subdirDepModSrc.AsGitSource().CloneURL(ctx)
+			require.NoError(t, err)
+			require.Equal(t, fmt.Sprintf("https://%s", tc.expectedBaseHTMLURL), cloneURL)
 
-	t.Run("stable arg", func(ctx context.Context, t *testctx.T) {
-		_, err := c.ModuleSource(gitTestRepoURL, dagger.ModuleSourceOpts{
-			Stable: true,
-		}).AsString(ctx)
-		require.ErrorContains(t, err, fmt.Sprintf(`no version provided for stable remote ref: %s`, gitTestRepoURL))
+			commit, err := subdirDepModSrc.AsGitSource().Commit(ctx)
+			require.NoError(t, err)
+			require.Equal(t, tc.gitTestRepoCommit, commit)
 
-		_, err = c.ModuleSource(testGitModuleRef("top-level"), dagger.ModuleSourceOpts{
-			Stable: true,
-		}).AsString(ctx)
-		require.NoError(t, err)
+			refStr, err := subdirDepModSrc.AsString(ctx)
+			require.NoError(t, err)
+			require.Equal(t, testGitModuleRef(tc, "subdir/dep2"), refStr)
+		})
+
+		t.Run("stable arg", func(ctx context.Context, t *testctx.T) {
+			_, err := c.ModuleSource(tc.gitTestRepoRef, dagger.ModuleSourceOpts{
+				Stable: true,
+			}).AsString(ctx)
+			require.ErrorContains(t, err, fmt.Sprintf(`no version provided for stable remote ref: %s`, tc.gitTestRepoRef))
+
+			_, err = c.ModuleSource(testGitModuleRef(tc, "top-level"), dagger.ModuleSourceOpts{
+				Stable: true,
+			}).AsString(ctx)
+			require.NoError(t, err)
+		})
 	})
 }
 
 func (ModuleSuite) TestDaggerGitWithSources(ctx context.Context, t *testctx.T) {
-	for _, modSubpath := range []string{"samedir", "subdir"} {
-		modSubpath := modSubpath
-		t.Run(modSubpath, func(ctx context.Context, t *testctx.T) {
-			c := connect(ctx, t)
-			ctr := goGitBase(t, c).
-				WithWorkdir("/work").
-				With(daggerExec("init")).
-				With(daggerExec("install", "--name", "foo", testGitModuleRef("various-source-values/"+modSubpath)))
+	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
+		for _, modSubpath := range []string{"samedir", "subdir"} {
+			modSubpath := modSubpath
+			t.Run(modSubpath, func(ctx context.Context, t *testctx.T) {
+				c := connect(ctx, t)
+				ctr := goGitBase(t, c).
+					WithWorkdir("/work").
+					With(daggerExec("init")).
+					With(daggerExec("install", "--name", "foo", testGitModuleRef(tc, "various-source-values/"+modSubpath)))
 
-			out, err := ctr.With(daggerCallAt("foo", "container-echo", "--string-arg", "hi", "stdout")).Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "hi", strings.TrimSpace(out))
+				out, err := ctr.With(daggerCallAt("foo", "container-echo", "--string-arg", "hi", "stdout")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "hi", strings.TrimSpace(out))
 
-			ctr = ctr.With(daggerExec("develop", "--sdk=go", "--source=.")).
-				WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-					Contents: `package main
+				ctr = ctr.With(daggerExec("develop", "--sdk=go", "--source=.")).
+					WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+						Contents: `package main
 
 import "context"
 
@@ -1482,17 +1540,18 @@ func (m *Work) Fn(ctx context.Context) (string, error) {
 	return dag.Foo().ContainerEcho("hi").Stdout(ctx)
 }
 `,
-				})
+					})
 
-			out, err = ctr.With(daggerCall("fn")).Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "hi", strings.TrimSpace(out))
+				out, err = ctr.With(daggerCall("fn")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "hi", strings.TrimSpace(out))
 
-			out, err = ctr.With(daggerCallAt(testGitModuleRef("various-source-values/"+modSubpath), "container-echo", "--string-arg", "hi", "stdout")).Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "hi", strings.TrimSpace(out))
-		})
-	}
+				out, err = ctr.With(daggerCallAt(testGitModuleRef(tc, "various-source-values/"+modSubpath), "container-echo", "--string-arg", "hi", "stdout")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "hi", strings.TrimSpace(out))
+			})
+		}
+	})
 }
 
 func (ModuleSuite) TestViews(ctx context.Context, t *testctx.T) {

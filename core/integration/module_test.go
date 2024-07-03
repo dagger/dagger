@@ -5217,15 +5217,16 @@ func (m *Test) Fn() string {
 		require.Equal(t, "true", strings.TrimSpace(out))
 	})
 
-	t.Run("git", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
+	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
+		t.Run("git", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
 
-		ctr := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec("init", "--source=.", "--name=test", "--sdk="+testGitModuleRef("cool-sdk"))).
-			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			ctr := c.Container().From(golangImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				WithWorkdir("/work").
+				With(daggerExec("init", "--source=.", "--name=test", "--sdk="+testGitModuleRef(tc, "cool-sdk"))).
+				WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+					Contents: `package main
 
 import "os"
 
@@ -5235,14 +5236,15 @@ func (m *Test) Fn() string {
 	return os.Getenv("COOL")
 }
 `,
-			})
+				})
 
-		out, err := ctr.
-			With(daggerCall("fn")).
-			Stdout(ctx)
+			out, err := ctr.
+				With(daggerCall("fn")).
+				Stdout(ctx)
 
-		require.NoError(t, err)
-		require.Equal(t, "true", strings.TrimSpace(out))
+			require.NoError(t, err)
+			require.Equal(t, "true", strings.TrimSpace(out))
+		})
 	})
 }
 
