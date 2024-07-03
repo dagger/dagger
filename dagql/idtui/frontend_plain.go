@@ -20,6 +20,8 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+const plainMaxLiteralLen = 256 // same value as cloud currently
+
 type frontendPlain struct {
 	FrontendOpts
 
@@ -462,7 +464,7 @@ func (fe *frontendPlain) renderStep(span *Span, depth int, done bool) {
 		spanDt.idx = fe.idx
 	}
 
-	r := newRenderer(fe.db, -1, fe.FrontendOpts)
+	r := newRenderer(fe.db, plainMaxLiteralLen, fe.FrontendOpts)
 
 	prefix := fe.stepPrefix(span, spanDt)
 	if span.Call != nil {
@@ -509,7 +511,7 @@ func (fe *frontendPlain) renderLogs(row *TraceTree, depth int) {
 	span := row.Span
 	spanDt := fe.data[span.ID]
 
-	r := newRenderer(fe.db, -1, fe.FrontendOpts)
+	r := newRenderer(fe.db, plainMaxLiteralLen, fe.FrontendOpts)
 
 	prefix := fe.stepPrefix(span, spanDt)
 
