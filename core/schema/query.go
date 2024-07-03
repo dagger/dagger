@@ -49,7 +49,7 @@ func (s *querySchema) Install() {
 			Doc(`Get the current Dagger Engine version.`),
 
 		dagql.NodeFunc("schemaVersion", s.schemaVersion).
-			Impure("Changes based on what module is currently being evaluated.").
+			View(dagql.AllView{}).
 			Doc(`Get the current schema version.`),
 	}.Install(s.srv)
 }

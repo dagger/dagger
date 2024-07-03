@@ -77,6 +77,7 @@ func (s *directorySchema) Install() {
 			Doc(`Gets the difference between this directory and an another directory.`).
 			ArgDoc("other", `Identifier of the directory to compare.`),
 		dagql.Func("export", s.export).
+			View(AllVersion).
 			Impure("Writes to the local host.").
 			Doc(`Writes the contents of the directory to a path on the host.`).
 			ArgDoc("path", `Location of the copied directory (e.g., "logs/").`).

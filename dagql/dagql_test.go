@@ -1769,9 +1769,11 @@ func InstallViewer(srv *dagql.Server) {
 	}
 
 	dagql.Fields[Query]{
-		dagql.Func("all", getView).
+		dagql.Func("global", getView).
+			View(dagql.GlobalView).
 			Doc("available on all views"),
-		dagql.Func("override", getView).
+		dagql.Func("all", getView).
+			View(dagql.AllView{}).
 			Doc("available on all views"),
 
 		dagql.Func("shared", getView).
@@ -1787,7 +1789,7 @@ func InstallViewer(srv *dagql.Server) {
 		dagql.Func("secondExclusive", getView).
 			View(dagql.ExactView("secondView")).
 			Doc("available on second view"),
-		dagql.Func("override", getView).
+		dagql.Func("all", getView).
 			View(dagql.ExactView("secondView")).
 			Doc("available on second view"),
 	}.Install(srv)
@@ -1803,15 +1805,12 @@ func TestViews(t *testing.T) {
 		srv.View = ""
 
 		var res struct {
-			All      string
-			Override string
+			All string
 		}
 		req(t, gql, `query {
 			all
-			override
 		}`, &res)
 		assert.Equal(t, "", res.All)
-		assert.Equal(t, "", res.Override)
 
 		reqFail(t, gql, `query {
 			shared
@@ -1822,12 +1821,10 @@ func TestViews(t *testing.T) {
 		srv.View = "unknownView"
 
 		var res struct {
-			All      string
-			Override string
+			All string
 		}
 		req(t, gql, `query {
 			all
-			override
 		}`, &res)
 		assert.Equal(t, "unknownView", res.All)
 
@@ -1841,18 +1838,15 @@ func TestViews(t *testing.T) {
 
 		var res struct {
 			All            string
-			Override       string
 			Shared         string
 			FirstExclusive string
 		}
 		req(t, gql, `query {
 			all
-			override
 			shared
 			firstExclusive
 		}`, &res)
 		assert.Equal(t, "firstView", res.All)
-		assert.Equal(t, "firstView", res.Override)
 		assert.Equal(t, "firstView", res.Shared)
 		assert.Equal(t, "firstView", res.FirstExclusive)
 
@@ -1866,18 +1860,15 @@ func TestViews(t *testing.T) {
 
 		var res struct {
 			All             string
-			Override        string
 			Shared          string
 			SecondExclusive string
 		}
 		req(t, gql, `query {
 			all
-			override
 			shared
 			secondExclusive
 		}`, &res)
 		assert.Equal(t, "secondView", res.All)
-		assert.Equal(t, "secondView", res.Override)
 		assert.Equal(t, "secondView", res.Shared)
 		assert.Equal(t, "secondView", res.SecondExclusive)
 
@@ -1885,6 +1876,34 @@ func TestViews(t *testing.T) {
 			firstExclusive
 		}`, "no such field")
 	})
+}
+
+func TestViewsCaching(t *testing.T) {
+	srv := dagql.NewServer(Query{})
+	gql := client.New(handler.NewDefaultServer(srv))
+
+	InstallViewer(srv)
+
+	var res struct {
+		All    string
+		Global string
+	}
+
+	srv.View = "firstView"
+	req(t, gql, `query {
+		all
+		global
+	}`, &res)
+	assert.Equal(t, "firstView", res.All)
+	assert.Equal(t, "firstView", res.Global)
+
+	srv.View = "secondView"
+	req(t, gql, `query {
+		all
+		global
+	}`, &res)
+	assert.Equal(t, "secondView", res.All)
+	assert.Equal(t, "firstView", res.Global) // this is cached from the first query!
 }
 
 func TestViewsIntrospection(t *testing.T) {
@@ -1906,8 +1925,8 @@ func TestViewsIntrospection(t *testing.T) {
 
 		require.Contains(t, fields, "all")
 		require.Equal(t, "available on all views", fields["all"])
-		require.Contains(t, fields, "override")
-		require.Equal(t, "available on all views", fields["override"])
+		require.Contains(t, fields, "global")
+		require.Equal(t, "available on all views", fields["global"])
 		require.NotContains(t, fields, "shared")
 	})
 
@@ -1923,8 +1942,8 @@ func TestViewsIntrospection(t *testing.T) {
 
 		require.Contains(t, fields, "all")
 		require.Equal(t, "available on all views", fields["all"])
-		require.Contains(t, fields, "override")
-		require.Equal(t, "available on all views", fields["override"])
+		require.Contains(t, fields, "global")
+		require.Equal(t, "available on all views", fields["global"])
 		require.NotContains(t, fields, "shared")
 	})
 
@@ -1940,8 +1959,8 @@ func TestViewsIntrospection(t *testing.T) {
 
 		require.Contains(t, fields, "all")
 		require.Equal(t, "available on all views", fields["all"])
-		require.Contains(t, fields, "override")
-		require.Equal(t, "available on all views", fields["override"])
+		require.Contains(t, fields, "global")
+		require.Equal(t, "available on all views", fields["global"])
 		require.Contains(t, fields, "shared")
 		require.Equal(t, "available on first+second views", fields["shared"])
 		require.Contains(t, fields, "firstExclusive")
@@ -1960,9 +1979,9 @@ func TestViewsIntrospection(t *testing.T) {
 		}
 
 		require.Contains(t, fields, "all")
-		require.Equal(t, "available on all views", fields["all"])
-		require.Contains(t, fields, "override")
-		require.Equal(t, "available on second view", fields["override"])
+		require.Equal(t, "available on second view", fields["all"])
+		require.Contains(t, fields, "global")
+		require.Equal(t, "available on all views", fields["global"])
 		require.Contains(t, fields, "shared")
 		require.Equal(t, "available on first+second views", fields["shared"])
 		require.NotContains(t, fields, "firstExclusive")

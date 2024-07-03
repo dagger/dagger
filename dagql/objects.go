@@ -89,21 +89,18 @@ func (class Class[T]) fieldLocked(name string, views ...string) (Field[T], bool)
 	if !ok {
 		return Field[T]{}, false
 	}
-	var backup *Field[T]
-	for _, field := range fields {
+	for i := len(fields) - 1; i >= 0; i-- {
+		// iterate backwards to allow last-defined field to have precedence
+		field := fields[i]
+
 		if field.ViewFilter == nil {
-			// prefer a specific view if one exists
-			backup = field
-			continue
+			return *field, true
 		}
 		for _, view := range views {
 			if field.ViewFilter.Contains(view) {
 				return *field, true
 			}
 		}
-	}
-	if backup != nil {
-		return *backup, true
 	}
 	return Field[T]{}, false
 }
@@ -124,6 +121,16 @@ func (class Class[T]) Install(fields ...Field[T]) {
 			field.Spec = fields[len(fields)-1].Spec
 			field.Spec.Type = oldSpec.Type // a little hacky, but preserve the return type
 		}
+
+		for _, other := range class.fields[field.Spec.Name] {
+			if field.ViewFilter == nil && other.ViewFilter != nil {
+				panic(fmt.Sprintf("field %q cannot be added to the global view, it already has a view", field.Spec.Name))
+			}
+			if field.ViewFilter != nil && other.ViewFilter == nil {
+				panic(fmt.Sprintf("field %q cannot be added with a view, it's already in the global view", field.Spec.Name))
+			}
+		}
+
 		class.fields[field.Spec.Name] = append(class.fields[field.Spec.Name], &field)
 	}
 }
@@ -207,6 +214,11 @@ func (cls Class[T]) ParseField(ctx context.Context, view string, astField *ast.F
 			Name:  arg.Name,
 			Value: input,
 		}
+	}
+	if field.ViewFilter == nil {
+		// fields in the global view shouldn't attach the current view to the
+		// selector (since they're global from all perspectives)
+		view = ""
 	}
 	return Selector{
 		Field: astField.Name,
@@ -334,6 +346,23 @@ type View interface {
 	Contains(string) bool
 }
 
+// GlobalView is the default global view. Everyone can see it, and it behaves
+// identically everywhere.
+var GlobalView View = nil
+
+// AllView is similar to the global view, however, instead of being an empty
+// view, it's still counted as a view.
+//
+// This means that each call for a field is associated with the server view,
+// which results in slightly different caching behavior. Additionally, it can
+// be overridden in different views.
+type AllView struct{}
+
+func (v AllView) Contains(s string) bool {
+	return true
+}
+
+// ExactView contains exactly one view.
 type ExactView string
 
 func (v ExactView) Contains(s string) bool {
@@ -581,8 +610,11 @@ func (fields Fields[T]) findOrInitializeType(server *Server, typeName string) Cl
 
 // Field defines a field of an Object type.
 type Field[T Typed] struct {
-	Spec       FieldSpec
-	Func       func(context.Context, Instance[T], map[string]Input) (Typed, error)
+	Spec FieldSpec
+	Func func(context.Context, Instance[T], map[string]Input) (Typed, error)
+
+	// ViewFilter is filter that specifies under which views this field is
+	// accessible. If not view is present, the default is the "global" view.
 	ViewFilter View
 }
 
@@ -591,6 +623,7 @@ func (field Field[T]) Extend() Field[T] {
 	return field
 }
 
+// View sets a view for this field.
 func (field Field[T]) View(view View) Field[T] {
 	field.ViewFilter = view
 	return field

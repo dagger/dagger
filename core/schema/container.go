@@ -362,6 +362,7 @@ func (s *containerSchema) Install() {
 			Doc(`The platform this container executes and publishes as.`),
 
 		dagql.Func("export", s.export).
+			View(AllVersion).
 			Impure("Writes to the local host.").
 			Doc(`Writes the container as an OCI tarball to the destination file path on the host.`,
 				`It can also export platform variants.`).
