@@ -3205,23 +3205,34 @@ func (ContainerSuite) TestExecError(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("truncates output past a maximum size", func(ctx context.Context, t *testctx.T) {
+		const extraByteCount = 50
+
 		// fill a byte buffer with a string that is slightly over the size of the max output
 		// size, then base64 encode it
+		// include some newlines to avoid https://github.com/dagger/dagger/issues/7786
 		var stdoutBuf bytes.Buffer
-		for i := 0; i < buildkit.MaxExecErrorOutputBytes+50; i++ {
-			stdoutBuf.WriteByte('a')
+		for i := range buildkit.MaxExecErrorOutputBytes + extraByteCount {
+			if i > 0 && i%100 == 0 {
+				stdoutBuf.WriteByte('\n')
+			} else {
+				stdoutBuf.WriteByte('a')
+			}
 		}
 		stdoutStr := stdoutBuf.String()
 		encodedOutMsg := base64.StdEncoding.EncodeToString(stdoutBuf.Bytes())
 
 		var stderrBuf bytes.Buffer
-		for i := 0; i < buildkit.MaxExecErrorOutputBytes+50; i++ {
-			stderrBuf.WriteByte('b')
+		for i := range buildkit.MaxExecErrorOutputBytes + extraByteCount {
+			if i > 0 && i%100 == 0 {
+				stderrBuf.WriteByte('\n')
+			} else {
+				stderrBuf.WriteByte('b')
+			}
 		}
 		stderrStr := stderrBuf.String()
 		encodedErrMsg := base64.StdEncoding.EncodeToString(stderrBuf.Bytes())
 
-		truncMsg := fmt.Sprintf(buildkit.TruncationMessage, 50)
+		truncMsg := fmt.Sprintf(buildkit.TruncationMessage, extraByteCount)
 
 		_, err := c.Container().
 			From(alpineImage).
@@ -3235,8 +3246,8 @@ func (ContainerSuite) TestExecError(ctx context.Context, t *testctx.T) {
 		var exErr *dagger.ExecError
 
 		require.ErrorAs(t, err, &exErr)
-		require.Equal(t, truncMsg+stdoutStr[:buildkit.MaxExecErrorOutputBytes-len(truncMsg)], exErr.Stdout)
-		require.Equal(t, truncMsg+stderrStr[:buildkit.MaxExecErrorOutputBytes-len(truncMsg)], exErr.Stderr)
+		require.Equal(t, truncMsg+stdoutStr[extraByteCount+len(truncMsg):], exErr.Stdout)
+		require.Equal(t, truncMsg+stderrStr[extraByteCount+len(truncMsg):], exErr.Stderr)
 	})
 }
 
