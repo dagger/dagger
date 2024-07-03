@@ -47,6 +47,10 @@ func (s *querySchema) Install() {
 
 		dagql.Func("version", s.version).
 			Doc(`Get the current Dagger Engine version.`),
+
+		dagql.NodeFunc("schemaVersion", s.schemaVersion).
+			Impure("Changes based on what module is currently being evaluated.").
+			Doc(`Get the current schema version.`),
 	}.Install(s.srv)
 }
 
@@ -62,4 +66,8 @@ func (s *querySchema) pipeline(ctx context.Context, parent *core.Query, args pip
 
 func (s *querySchema) version(_ context.Context, _ *core.Query, args struct{}) (string, error) {
 	return engine.Version, nil
+}
+
+func (s *querySchema) schemaVersion(ctx context.Context, parent dagql.Instance[*core.Query], _ struct{}) (string, error) {
+	return s.srv.View, nil
 }

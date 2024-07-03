@@ -2552,6 +2552,9 @@ type Query {
     name: String!
   ): Query!
 
+  """Get the current schema version."""
+  schemaVersion: String!
+
   """Reference a secret by name."""
   secret(accessor: String, name: String!): Secret!
 

@@ -638,6 +638,15 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Get the current schema version.
+     */
+    public function schemaVersion(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('schemaVersion');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'schemaVersion');
+    }
+
+    /**
      * Reference a secret by name.
      */
     public function secret(string $name, ?string $accessor = null): Secret

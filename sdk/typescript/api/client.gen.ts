@@ -7829,6 +7829,7 @@ export class Port extends BaseClient {
  */
 export class Client extends BaseClient {
   private readonly _defaultPlatform?: Platform = undefined
+  private readonly _schemaVersion?: string = undefined
   private readonly _version?: string = undefined
 
   /**
@@ -7837,11 +7838,13 @@ export class Client extends BaseClient {
   constructor(
     parent?: { queryTree?: QueryTree[]; ctx: Context },
     _defaultPlatform?: Platform,
+    _schemaVersion?: string,
     _version?: string,
   ) {
     super(parent)
 
     this._defaultPlatform = _defaultPlatform
+    this._schemaVersion = _schemaVersion
     this._version = _version
   }
 
@@ -8850,6 +8853,23 @@ export class Client extends BaseClient {
       ],
       ctx: this._ctx,
     })
+  }
+
+  /**
+   * Get the current schema version.
+   */
+  schemaVersion = async (): Promise<string> => {
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "schemaVersion",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
   }
 
   /**
