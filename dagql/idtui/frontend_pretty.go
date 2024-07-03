@@ -268,7 +268,6 @@ type prettyLogExporter struct {
 func (fe prettyLogExporter) Export(ctx context.Context, logs []sdklog.Record) error {
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
-	slog.Debug("frontend exporting logs", "logs", len(logs))
 	if err := fe.db.LogExporter().Export(ctx, logs); err != nil {
 		return err
 	}
@@ -886,8 +885,6 @@ func newPrettyLogs() *prettyLogs {
 
 func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 	for _, log := range logs {
-		slog.Debug("exporting log", "span", log.SpanID, "body", log.Body().AsString())
-
 		// render vterm for TUI
 		_, _ = fmt.Fprint(l.spanLogs(log.SpanID()), log.Body().AsString())
 	}
