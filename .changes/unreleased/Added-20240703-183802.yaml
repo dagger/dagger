@@ -1,0 +1,6 @@
+kind: Added
+body: "core: introduced module versioning compatibility - older modules will be served emulated APIs based on their declared `engineVersion`"
+time: 2024-07-03T18:38:02.757483295+01:00
+custom:
+  Author: jedevc
+  PR: "7759"
