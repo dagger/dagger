@@ -19,11 +19,11 @@ var (
 
 	// MinimumEngineVersion is used by the client to determine the minimum
 	// allowed engine version that can be used by that client.
-	MinimumEngineVersion = "v0.11.8"
+	MinimumEngineVersion = "v0.12.0"
 
 	// MinimumClientVersion is used by the engine to determine the minimum
 	// allowed client version that can connect to that engine.
-	MinimumClientVersion = "v0.11.8"
+	MinimumClientVersion = "v0.12.0"
 )
 
 func init() {
