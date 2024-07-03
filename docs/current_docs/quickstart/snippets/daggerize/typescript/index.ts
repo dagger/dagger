@@ -25,7 +25,7 @@ class HelloDagger {
       .container()
       .from("nginx:1.25-alpine")
       .withDirectory("/usr/share/nginx/html", build)
-      .withExposedPort(8080)
+      .withExposedPort(80)
   }
 
   /**
