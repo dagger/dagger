@@ -2450,6 +2450,7 @@ class Directory(Type):
         self,
         *,
         source_root_path: str | None = ".",
+        engine_version: str | None = None,
     ) -> "Module":
         """Load the directory as a Dagger module
 
@@ -2464,9 +2465,12 @@ class Directory(Type):
             package.json, etc. file from a parent directory.
             If not set, the module source code is loaded from the root of the
             directory.
+        engine_version:
+            The engine version to upgrade to.
         """
         _args = [
             Arg("sourceRootPath", source_root_path, "."),
+            Arg("engineVersion", engine_version, None),
         ]
         _ctx = self._select("asModule", _args)
         return Module(_ctx)
@@ -5247,16 +5251,24 @@ class Module(Type):
         _ctx = self._select("withObject", _args)
         return Module(_ctx)
 
-    def with_source(self, source: "ModuleSource") -> Self:
+    def with_source(
+        self,
+        source: "ModuleSource",
+        *,
+        engine_version: str | None = None,
+    ) -> Self:
         """Retrieves the module with basic configuration loaded if present.
 
         Parameters
         ----------
         source:
             The module source to initialize from.
+        engine_version:
+            The engine version to upgrade to.
         """
         _args = [
             Arg("source", source),
+            Arg("engineVersion", engine_version, None),
         ]
         _ctx = self._select("withSource", _args)
         return Module(_ctx)
@@ -5342,11 +5354,22 @@ class ModuleSource(Type):
         _ctx = self._select("asLocalSource", _args)
         return LocalModuleSource(_ctx)
 
-    def as_module(self) -> Module:
+    def as_module(
+        self,
+        *,
+        engine_version: str | None = None,
+    ) -> Module:
         """Load the source as a module. If this is a local source, the parent
         directory must have been provided during module source creation
+
+        Parameters
+        ----------
+        engine_version:
+            The engine version to upgrade to.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("engineVersion", engine_version, None),
+        ]
         _ctx = self._select("asModule", _args)
         return Module(_ctx)
 

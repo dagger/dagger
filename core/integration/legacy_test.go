@@ -35,7 +35,7 @@ func (LegacySuite) TestLegacyExportAbsolutePath(ctx context.Context, t *testctx.
 	modGen := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
-		With(daggerExec("init", "--name=bare", "--sdk=go")).
+		With(daggerExec("init", "--name=bare", "--source=.", "--sdk=go")).
 		WithNewFile("dagger.json", dagger.ContainerWithNewFileOpts{
 			Contents: `{"name": "bare", "sdk": "go", "source": ".", "engineVersion": "v0.11.9"}`,
 		}).

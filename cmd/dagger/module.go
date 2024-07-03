@@ -158,7 +158,7 @@ The "--source" flag allows controlling the directory in which the actual module 
 				WithSDK(sdk).
 				WithSourceSubpath(moduleSourcePath).
 				ResolveFromCaller().
-				AsModule().
+				AsModule(dagger.ModuleSourceAsModuleOpts{EngineVersion: modules.EngineVersionLatest}).
 				GeneratedContextDiff().
 				Export(ctx, modConf.LocalContextPath)
 			if err != nil {
@@ -376,7 +376,7 @@ If not updating source or SDK, this is only required for IDE auto-completion/LSP
 			}
 
 			_, err = src.ResolveFromCaller().
-				AsModule().
+				AsModule(dagger.ModuleSourceAsModuleOpts{EngineVersion: modules.EngineVersionLatest}).
 				GeneratedContextDiff().
 				Export(ctx, modConf.LocalContextPath)
 			if err != nil {

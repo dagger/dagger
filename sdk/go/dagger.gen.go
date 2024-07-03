@@ -2278,6 +2278,8 @@ type DirectoryAsModuleOpts struct {
 	//
 	// If not set, the module source code is loaded from the root of the directory.
 	SourceRootPath string
+	// The engine version to upgrade to.
+	EngineVersion string
 }
 
 // Load the directory as a Dagger module
@@ -2287,6 +2289,10 @@ func (r *Directory) AsModule(opts ...DirectoryAsModuleOpts) *Module {
 		// `sourceRootPath` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SourceRootPath) {
 			q = q.Arg("sourceRootPath", opts[i].SourceRootPath)
+		}
+		// `engineVersion` optional argument
+		if !querybuilder.IsZeroValue(opts[i].EngineVersion) {
+			q = q.Arg("engineVersion", opts[i].EngineVersion)
 		}
 	}
 
@@ -5242,10 +5248,22 @@ func (r *Module) WithObject(object *TypeDef) *Module {
 	}
 }
 
+// ModuleWithSourceOpts contains options for Module.WithSource
+type ModuleWithSourceOpts struct {
+	// The engine version to upgrade to.
+	EngineVersion string
+}
+
 // Retrieves the module with basic configuration loaded if present.
-func (r *Module) WithSource(source *ModuleSource) *Module {
+func (r *Module) WithSource(source *ModuleSource, opts ...ModuleWithSourceOpts) *Module {
 	assertNotNil("source", source)
 	q := r.query.Select("withSource")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `engineVersion` optional argument
+		if !querybuilder.IsZeroValue(opts[i].EngineVersion) {
+			q = q.Arg("engineVersion", opts[i].EngineVersion)
+		}
+	}
 	q = q.Arg("source", source)
 
 	return &Module{
@@ -5376,9 +5394,21 @@ func (r *ModuleSource) AsLocalSource() *LocalModuleSource {
 	}
 }
 
+// ModuleSourceAsModuleOpts contains options for ModuleSource.AsModule
+type ModuleSourceAsModuleOpts struct {
+	// The engine version to upgrade to.
+	EngineVersion string
+}
+
 // Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation
-func (r *ModuleSource) AsModule() *Module {
+func (r *ModuleSource) AsModule(opts ...ModuleSourceAsModuleOpts) *Module {
 	q := r.query.Select("asModule")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `engineVersion` optional argument
+		if !querybuilder.IsZeroValue(opts[i].EngineVersion) {
+			q = q.Arg("engineVersion", opts[i].EngineVersion)
+		}
+	}
 
 	return &Module{
 		query: q,
