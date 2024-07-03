@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"reflect"
 	"strconv"
@@ -286,6 +287,7 @@ func (v *directoryValue) Get(ctx context.Context, dag *dagger.Client, modSrc *da
 	// https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_282
 	path, viewName, _ := strings.Cut(path, ":")
 	path = filepath.ToSlash(path) // make windows paths usable in the Linux engine container
+
 	return modSrc.ResolveDirectoryFromCaller(path, dagger.ModuleSourceResolveDirectoryFromCallerOpts{
 		ViewName: viewName,
 	}).Sync(ctx)
@@ -423,7 +425,16 @@ func (v *secretValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.Modul
 		plaintext = envPlaintext
 
 	case fileSecretSource:
-		filePlaintext, err := os.ReadFile(v.sourceVal)
+		sourceVal := v.sourceVal
+		// For unix, automatic expand tilde (~) to $HOME
+		if strings.HasPrefix(sourceVal, "~") {
+			usr, err := user.Current()
+			if err != nil {
+				return nil, err
+			}
+			sourceVal = strings.Replace(sourceVal, "~", usr.HomeDir, 1)
+		}
+		filePlaintext, err := os.ReadFile(sourceVal)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read secret file %q: %w", v.sourceVal, err)
 		}
