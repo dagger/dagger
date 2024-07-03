@@ -60,12 +60,21 @@ defmodule Dagger.File do
   end
 
   @doc "Force evaluation in the engine."
-  @spec sync(t()) :: {:ok, Dagger.FileID.t()} | {:error, term()}
+  @spec sync(t()) :: {:ok, Dagger.File.t()} | {:error, term()}
   def sync(%__MODULE__{} = file) do
     selection =
       file.selection |> select("sync")
 
-    execute(selection, file.client)
+    with {:ok, id} <- execute(selection, file.client) do
+      {:ok,
+       %Dagger.File{
+         selection:
+           query()
+           |> select("loadFileFromID")
+           |> arg("id", id),
+         client: file.client
+       }}
+    end
   end
 
   @doc "Retrieves this file with its name set to the given name."

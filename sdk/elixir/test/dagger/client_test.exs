@@ -13,8 +13,7 @@ defmodule Dagger.ClientTest do
     Host,
     QueryError,
     Secret,
-    Sync,
-    ID
+    Sync
   }
 
   setup_all do

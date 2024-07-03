@@ -150,12 +150,21 @@ defmodule Dagger.Directory do
   end
 
   @doc "Force evaluation in the engine."
-  @spec sync(t()) :: {:ok, Dagger.DirectoryID.t()} | {:error, term()}
+  @spec sync(t()) :: {:ok, Dagger.Directory.t()} | {:error, term()}
   def sync(%__MODULE__{} = directory) do
     selection =
       directory.selection |> select("sync")
 
-    execute(selection, directory.client)
+    with {:ok, id} <- execute(selection, directory.client) do
+      {:ok,
+       %Dagger.Directory{
+         selection:
+           query()
+           |> select("loadDirectoryFromID")
+           |> arg("id", id),
+         client: directory.client
+       }}
+    end
   end
 
   @doc "Opens an interactive terminal in new container with this directory mounted inside."

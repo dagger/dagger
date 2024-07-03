@@ -432,12 +432,21 @@ defmodule Dagger.Container do
 
   It doesn't run the default command if no exec has been set.
   """
-  @spec sync(t()) :: {:ok, Dagger.ContainerID.t()} | {:error, term()}
+  @spec sync(t()) :: {:ok, Dagger.Container.t()} | {:error, term()}
   def sync(%__MODULE__{} = container) do
     selection =
       container.selection |> select("sync")
 
-    execute(selection, container.client)
+    with {:ok, id} <- execute(selection, container.client) do
+      {:ok,
+       %Dagger.Container{
+         selection:
+           query()
+           |> select("loadContainerFromID")
+           |> arg("id", id),
+         client: container.client
+       }}
+    end
   end
 
   @doc "Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default)."
