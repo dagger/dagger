@@ -253,10 +253,6 @@ func (fe plainLogExporter) Export(ctx context.Context, logs []sdklog.Record) err
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
 
-	// NOTE: if we log in here we'll just go into a loop, so...
-	// let's just hope everything is working by now :D
-	// slog.Debug("frontend exporting logs", "logs", len(logs))
-
 	err := fe.db.LogExporter().Export(ctx, logs)
 	if err != nil {
 		return err
