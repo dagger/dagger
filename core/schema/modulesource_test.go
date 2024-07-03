@@ -42,7 +42,7 @@ func TestParsePublicRefString(t *testing.T) {
 			want: &parsedRefString{
 				modPath:        "github.com/shykes/daggerverse.git/ci",
 				kind:           core.ModuleSourceKindGit,
-				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse.git", Repo: "https://github.com/shykes/daggerverse.git"},
+				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse.git", Repo: "https://github.com/shykes/daggerverse"},
 				repoRootSubdir: "ci",
 			},
 		},
@@ -51,7 +51,7 @@ func TestParsePublicRefString(t *testing.T) {
 			want: &parsedRefString{
 				modPath:        "github.com/shykes/daggerverse.git/../../",
 				kind:           core.ModuleSourceKindGit,
-				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse.git", Repo: "https://github.com/shykes/daggerverse.git"},
+				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse.git", Repo: "https://github.com/shykes/daggerverse"},
 				repoRootSubdir: "../../",
 			},
 		},
@@ -61,7 +61,7 @@ func TestParsePublicRefString(t *testing.T) {
 			want: &parsedRefString{
 				modPath:        "gitlab.com/testguigui1/dagger-public-sub/mywork/depth1/depth2",
 				kind:           core.ModuleSourceKindGit,
-				repoRoot:       &vcs.RepoRoot{Root: "gitlab.com/testguigui1/dagger-public-sub/mywork", Repo: "https://gitlab.com/testguigui1/dagger-public-sub/mywork.git"},
+				repoRoot:       &vcs.RepoRoot{Root: "gitlab.com/testguigui1/dagger-public-sub/mywork", Repo: "https://gitlab.com/testguigui1/dagger-public-sub/mywork"},
 				repoRootSubdir: "depth1/depth2",
 			},
 		},
@@ -89,7 +89,7 @@ func TestParsePublicRefString(t *testing.T) {
 			want: &parsedRefString{
 				modPath:        "bitbucket.org/test-travail/test.git/depth1",
 				kind:           core.ModuleSourceKindGit,
-				repoRoot:       &vcs.RepoRoot{Root: "bitbucket.org/test-travail/test.git", Repo: "https://bitbucket.org/test-travail/test.git"},
+				repoRoot:       &vcs.RepoRoot{Root: "bitbucket.org/test-travail/test.git", Repo: "https://bitbucket.org/test-travail/test"},
 				repoRootSubdir: "depth1",
 			},
 		},
