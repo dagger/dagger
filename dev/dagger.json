@@ -3,6 +3,10 @@
   "sdk": "go",
   "dependencies": [
     {
+      "name": "dirdiff",
+      "source": "dirdiff"
+    },
+    {
       "name": "docusaurus",
       "source": "github.com/levlaz/daggerverse/docusaurus@72ec19206da7dbe2815da94c62e491b54935b633"
     },
@@ -20,7 +24,7 @@
     }
   ],
   "source": ".",
-  "engineVersion": "v0.11.6",
+  "engineVersion": "3767c8f0b3076a41c218c545c96641080b0e819b",
   "views": [
     {
       "name": "default",

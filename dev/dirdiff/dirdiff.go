@@ -21,6 +21,9 @@ func (dd *Dirdiff) AssertEqual(
 	ctr := dag.
 		Wolfi().
 		Container().
+		WithExec([]string{"apk", "update"}).
+		// install diffutils, since busybox diff -r sometimes doesn't output anything
+		WithExec([]string{"apk", "add", "diffutils"}).
 		WithMountedDirectory("/mnt/a", a).
 		WithMountedDirectory("/mnt/b", b).
 		WithWorkdir("/mnt")
