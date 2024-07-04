@@ -61,10 +61,14 @@ type Frontend interface {
 	ConnectedToCloud(ctx context.Context, url string, msg string)
 }
 
-// DumpID is exposed for troubleshooting.
-func DumpID(out *termenv.Output, id *call.ID) error {
+type Dump struct {
+	Newline string
+	Prefix  string
+}
+
+func (d *Dump) DumpID(out *termenv.Output, id *call.ID) error {
 	if id.Base() != nil {
-		if err := DumpID(out, id.Base()); err != nil {
+		if err := d.DumpID(out, id.Base()); err != nil {
 			return err
 		}
 	}
@@ -78,11 +82,18 @@ func DumpID(out *termenv.Output, id *call.ID) error {
 		db.Calls[dig] = call
 	}
 	r := newRenderer(db, -1, FrontendOpts{})
-	return r.renderCall(out, nil, id.Call(), "", 0, false, false, false)
+	if d.Newline != "" {
+		r.newline = d.Newline
+	}
+	err = r.renderCall(out, nil, id.Call(), d.Prefix, 0, false, false, false)
+	fmt.Fprint(out, r.newline)
+	return err
 }
 
 type renderer struct {
 	FrontendOpts
+
+	newline string
 
 	db            *DB
 	maxLiteralLen int
@@ -95,6 +106,7 @@ func newRenderer(db *DB, maxLiteralLen int, fe FrontendOpts) renderer {
 		db:            db,
 		maxLiteralLen: maxLiteralLen,
 		rendering:     map[string]bool{},
+		newline:       "\n",
 	}
 }
 
@@ -163,7 +175,7 @@ func (r renderer) renderCall(
 			}
 		}
 		if needIndent {
-			fmt.Fprintln(out)
+			fmt.Fprint(out, r.newline)
 			depth++
 			depth++
 			for _, arg := range call.Args {
@@ -190,7 +202,7 @@ func (r renderer) renderCall(
 				} else {
 					r.renderLiteral(out, arg.GetValue())
 				}
-				fmt.Fprintln(out)
+				fmt.Fprint(out, r.newline)
 			}
 			depth--
 			fmt.Fprint(out, prefix)
