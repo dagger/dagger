@@ -879,13 +879,14 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 			}
 			bklog.G(ctx).Debugf("done running cache export for client %s", client.clientID)
 		}
+
+		sess.closeShutdownOnce.Do(func() {
+			close(sess.shutdownCh)
+		})
 	}
 
 	telemetry.Flush(ctx)
 
-	sess.closeShutdownOnce.Do(func() {
-		close(sess.shutdownCh)
-	})
 	return nil
 }
 
