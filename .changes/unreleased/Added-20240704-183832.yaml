@@ -1,0 +1,6 @@
+kind: Added
+body: "cli: add -q flag and DAGGER_QUIET=1 to restore previous verbosity default"
+time: 2024-07-04T18:38:32.603222928-04:00
+custom:
+  Author: vito
+  PR: "7822"
