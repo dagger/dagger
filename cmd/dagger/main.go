@@ -11,6 +11,7 @@ import (
 	"runtime/pprof"
 	runtimetrace "runtime/trace"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -50,11 +51,11 @@ var (
 
 	workdir string
 
-	debug     bool
-	verbosity int
-	silent    bool
-	quiet     bool = os.Getenv("DAGGER_QUIET") != ""
-	progress  string
+	silent   bool
+	verbose  int
+	quiet, _ = strconv.Atoi(os.Getenv("DAGGER_QUIET"))
+	debug    bool
+	progress string
 
 	stdoutIsTTY = isatty.IsTerminal(os.Stdout.Fd())
 	stderrIsTTY = isatty.IsTerminal(os.Stderr.Fd())
@@ -193,11 +194,11 @@ https://dagger.cloud/signup?quickstart=true
 
 func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.StringVar(&workdir, "workdir", ".", "The host workdir loaded into dagger")
-	flags.CountVarP(&verbosity, "verbose", "v", "increase verbosity (use -vv or -vvv for more)")
-	flags.BoolVarP(&debug, "debug", "d", debug, "show debug logs and full verbosity")
-	flags.BoolVarP(&silent, "silent", "s", silent, "do not show progress")
-	flags.BoolVarP(&quiet, "quiet", "q", quiet, "show progress, clean it up at the end")
-	flags.StringVar(&progress, "progress", "auto", "progress output format (auto, plain, tty)")
+	flags.CountVarP(&verbose, "verbose", "v", "Increase verbosity (use -vv or -vvv for more)")
+	flags.CountVarP(&quiet, "quiet", "q", "Reduce verbosity (show progress, but clean up at the end)")
+	flags.BoolVarP(&silent, "silent", "s", silent, "Do not show progress at all")
+	flags.BoolVarP(&debug, "debug", "d", debug, "Show debug logs and full verbosity")
+	flags.StringVar(&progress, "progress", "auto", "Progress output format (auto, plain, tty)")
 
 	for _, fl := range []string{"workdir"} {
 		if err := flags.MarkHidden(fl); err != nil {
@@ -262,20 +263,15 @@ func (e ExitError) Error() string {
 
 const InstrumentationLibrary = "dagger.io/cli"
 
+var opts idtui.FrontendOpts
+
 func main() {
 	parseGlobalFlags()
-
-	var baseVerbosity int
-	if quiet {
-		baseVerbosity = idtui.HideCompletedVerbosity
-	} else {
-		baseVerbosity = idtui.ShowCompletedVerbosity
-	}
-	opts := idtui.FrontendOpts{
-		Silent:    silent,
-		Verbosity: baseVerbosity + verbosity,
-		Debug:     debug,
-	}
+	opts.Verbosity += idtui.ShowCompletedVerbosity // keep progress by default
+	opts.Verbosity += verbose                      // raise verbosity with -v
+	opts.Verbosity -= quiet                        // lower verbosity with -q
+	opts.Silent = silent                           // show no progress
+	opts.Debug = debug                             // show everything
 	if progress == "auto" {
 		if hasTTY {
 			progress = "tty"
