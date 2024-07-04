@@ -53,7 +53,7 @@ var (
 	debug     bool
 	verbosity int
 	silent    bool
-	quiet     bool
+	quiet     bool = os.Getenv("DAGGER_QUIET") != ""
 	progress  string
 
 	stdoutIsTTY = isatty.IsTerminal(os.Stdout.Fd())
