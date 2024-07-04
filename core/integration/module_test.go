@@ -6423,11 +6423,11 @@ func sdkSource(sdk, contents string) dagger.WithContainerFunc {
 func sdkSourceFile(sdk string) string {
 	switch sdk {
 	case "go":
-		return "dagger/main.go"
+		return "main.go"
 	case "python":
-		return "dagger/" + pythonSourcePath
+		return pythonSourcePath
 	case "typescript":
-		return "dagger/src/index.ts"
+		return "src/index.ts"
 	default:
 		panic(fmt.Errorf("unknown sdk %q", sdk))
 	}
@@ -6439,11 +6439,11 @@ func sdkCodegenFile(t *testctx.T, sdk string) string {
 	case "go":
 		// FIXME: go codegen is split up into dagger/dagger.gen.go and
 		// dagger/internal/dagger/dagger.gen.go
-		return "dagger/internal/dagger/dagger.gen.go"
+		return "internal/dagger/dagger.gen.go"
 	case "python":
-		return "dagger/sdk/src/dagger/client/gen.py"
+		return "sdk/src/dagger/client/gen.py"
 	case "typescript":
-		return "dagger/sdk/api/client.gen.ts"
+		return "sdk/api/client.gen.ts"
 	default:
 		panic(fmt.Errorf("unknown sdk %q", sdk))
 	}
