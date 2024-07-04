@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -13,10 +12,12 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var outputFormat string
-var outputPath string
-var jsonOutput bool
-var responsePayload map[string]any
+var (
+	outputFormat    string
+	outputPath      string
+	jsonOutput      bool
+	responsePayload map[string]any
+)
 
 var callCmd = &FuncCommand{
 	Name:  "call [options]",
@@ -68,11 +69,7 @@ var callCmd = &FuncCommand{
 		switch modType.Name() {
 		case Container, Directory, File:
 			if outputPath != "" {
-				respPath, ok := response.(string)
-				if !ok {
-					return fmt.Errorf("unexpected response %T: %+v", response, response)
-				}
-				cmd.PrintErrf("Saved to %q.\n", respPath)
+				logOutputSuccess(cmd, outputPath)
 				return nil
 			}
 		}
@@ -128,13 +125,7 @@ var callCmd = &FuncCommand{
 			if err := writeOutputFile(outputPath, buf); err != nil {
 				return fmt.Errorf("couldn't write output to file: %w", err)
 			}
-			path, err := filepath.Abs(outputPath)
-			if err != nil {
-				// don't fail because at this point the output has been saved successfully
-				slog.Warn("Failed to get absolute path", "error", err)
-				path = outputPath
-			}
-			cmd.PrintErrf("Saved output to %q.\n", path)
+			logOutputSuccess(cmd, outputPath)
 		}
 
 		writer := cmd.OutOrStdout()
@@ -189,6 +180,17 @@ func writeOutputFile(path string, buf *bytes.Buffer) error {
 		return err
 	}
 	return os.WriteFile(path, buf.Bytes(), 0o644) //nolint: gosec
+}
+
+// logOutputSuccess prints to stderr the output path to the user.
+func logOutputSuccess(cmd *cobra.Command, path string) {
+	path, err := filepath.Abs(path)
+	if err != nil {
+		// don't fail because at this point the output has been saved successfully
+		cmd.PrintErrf("WARNING: failed to get absolute path: %s\n", err)
+		path = outputPath
+	}
+	cmd.PrintErrf("Saved output to %q.\n", path)
 }
 
 func printFunctionResult(w io.Writer, r any) error {

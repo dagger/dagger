@@ -288,7 +288,6 @@ var moduleInstallCmd = &cobra.Command{
 					"source_kind":   "local",
 					"local_subpath": depRootSubpath,
 				})
-
 			}
 
 			return nil
