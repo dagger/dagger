@@ -1,9 +1,10 @@
 from typing_extensions import Doc
 
+from dagger.mod._arguments import Arg
+from dagger.mod._arguments import Name
+from dagger.mod._module import Module
+from dagger.mod._types import Enum
 
-from ._arguments import Arg as Arg
-from ._module import Module as Module
-from ._types import Enum as Enum
 
 _default_mod = Module()
 
@@ -22,6 +23,7 @@ __all__ = [
     "Arg",
     "Doc",  # Only re-exported because it's in `typing_extensions`.
     "Enum",
+    "Name",
     "enum_type",
     "field",
     "function",

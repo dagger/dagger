@@ -18,8 +18,8 @@ import typing_extensions
 from beartype.door import TypeHint, UnionTypeHint
 from graphql.pyutils import snake_to_camel
 
-from ._arguments import Arg
-from ._types import ObjectDefinition
+from dagger.mod._arguments import Name
+from dagger.mod._types import ObjectDefinition
 
 asyncify = anyio.to_thread.run_sync
 syncify = anyio.from_thread.run
@@ -75,17 +75,20 @@ def normalize_name(name: str) -> str:
     return name
 
 
+def get_meta(obj: Any, match: type[T]) -> T | None:
+    """Get metadata from an annotated type."""
+    if not is_annotated(obj):
+        return None
+    return next(
+        (arg for arg in reversed(typing.get_args(obj)) if isinstance(arg, match)),
+        None,
+    )
+
+
 def get_doc(obj: Any) -> str | None:
     """Get the last Doc() in an annotated type or the docstring of an object."""
-    if is_annotated(obj):
-        return next(
-            (
-                arg.documentation
-                for arg in reversed(typing.get_args(obj))
-                if isinstance(arg, typing_extensions.Doc)
-            ),
-            None,
-        )
+    if annotated := get_meta(obj, typing_extensions.Doc):
+        return annotated.documentation
     if inspect.getmodule(obj) != builtins and (
         inspect.isclass(obj) or inspect.isroutine(obj)
     ):
@@ -103,18 +106,9 @@ def get_doc(obj: Any) -> str | None:
     return None
 
 
-def get_arg_name(annotation: type) -> str | None:
-    """Get an alternative name in last Arg() of an annotated type."""
-    if is_annotated(annotation):
-        return next(
-            (
-                arg.name
-                for arg in reversed(typing.get_args(annotation))
-                if isinstance(arg, Arg)
-            ),
-            None,
-        )
-    return None
+def get_alt_name(annotation: type) -> str | None:
+    """Get an alternative name in last Name() of an annotated type."""
+    return annotated.name if (annotated := get_meta(annotation, Name)) else None
 
 
 def is_union(th: TypeHint) -> bool:
