@@ -69,7 +69,9 @@ func init() {
 	moduleInitCmd.Flags().StringVar(&licenseID, "license", defaultLicense, "License identifier to generate - see https://spdx.org/licenses/")
 
 	modulePublishCmd.Flags().BoolVarP(&force, "force", "f", false, "Force publish even if the git repository is not clean")
-	modulePublishCmd.Flags().AddFlagSet(moduleFlags)
+	modFlag := *moduleFlags.Lookup("mod")
+	modFlag.Usage = modFlag.Usage[:strings.Index(modFlag.Usage, "containing that file.")-1]
+	modulePublishCmd.Flags().AddFlag(&modFlag)
 
 	moduleInstallCmd.Flags().StringVarP(&installName, "name", "n", "", "Name to use for the dependency in the module. Defaults to the name of the module being installed.")
 	moduleInstallCmd.Flags().AddFlagSet(moduleFlags)
@@ -288,7 +290,6 @@ var moduleInstallCmd = &cobra.Command{
 					"source_kind":   "local",
 					"local_subpath": depRootSubpath,
 				})
-
 			}
 
 			return nil
