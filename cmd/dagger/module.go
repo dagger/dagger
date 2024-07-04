@@ -53,7 +53,7 @@ var (
 const (
 	moduleURLDefault = "."
 
-	defaultModuleSourceDirName = "dagger"
+	defaultModuleSourceDirName = "."
 )
 
 func init() {
@@ -66,7 +66,7 @@ func init() {
 
 	moduleInitCmd.Flags().StringVar(&sdk, "sdk", "", "Optionally initialize module for development in the given SDK")
 	moduleInitCmd.Flags().StringVar(&moduleName, "name", "", "Name of the new module (defaults to parent directory name)")
-	moduleInitCmd.Flags().StringVar(&moduleSourcePath, "source", "", "Directory to store the module implementation source code in (defaults to \"dagger/ if \"--sdk\" is provided)")
+	moduleInitCmd.Flags().StringVar(&moduleSourcePath, "source", "", "Directory to store the module implementation source code in (defaults to \".\"/ if \"--sdk\" is provided)")
 	moduleInitCmd.Flags().StringVar(&licenseID, "license", defaultLicense, "License identifier to generate - see https://spdx.org/licenses/")
 
 	modulePublishCmd.Flags().BoolVarP(&force, "force", "f", false, "Force publish even if the git repository is not clean")
