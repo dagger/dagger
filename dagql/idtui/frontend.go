@@ -93,8 +93,8 @@ func (d *Dump) DumpID(out *termenv.Output, id *call.ID) error {
 type renderer struct {
 	FrontendOpts
 
-	newline string
-
+	now           time.Time
+	newline       string
 	db            *DB
 	maxLiteralLen int
 	rendering     map[string]bool
@@ -103,6 +103,7 @@ type renderer struct {
 func newRenderer(db *DB, maxLiteralLen int, fe FrontendOpts) renderer {
 	return renderer{
 		FrontendOpts:  fe,
+		now:           time.Now(),
 		db:            db,
 		maxLiteralLen: maxLiteralLen,
 		rendering:     map[string]bool{},
@@ -342,7 +343,7 @@ func (r renderer) renderStatus(out *termenv.Output, span *Span, focused bool) {
 
 func (r renderer) renderDuration(out *termenv.Output, span *Span) {
 	fmt.Fprint(out, " ")
-	duration := out.String(fmtDuration(span.Duration()))
+	duration := out.String(fmtDuration(span.ActiveDuration(r.now)))
 	if span.IsRunning() {
 		duration = duration.Foreground(termenv.ANSIYellow)
 	} else {
