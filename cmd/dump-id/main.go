@@ -19,7 +19,7 @@ func main() {
 		panic(err)
 	}
 
-	if err := idtui.DumpID(idtui.NewOutput(os.Stdout), &idp); err != nil {
+	if err := new(idtui.Dump).DumpID(idtui.NewOutput(os.Stdout), &idp); err != nil {
 		panic(err)
 	}
 }

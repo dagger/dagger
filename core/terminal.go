@@ -42,14 +42,16 @@ func (container *Container) Terminal(
 		return fmt.Errorf("failed to open terminal: %w", err)
 	}
 	output := idtui.NewOutput(term.Stderr)
-	fmt.Fprintf(
+	fmt.Fprint(
 		term.Stderr,
 		output.String(idtui.DotFilled).Foreground(termenv.ANSIYellow).String()+" Attaching terminal: ",
 	)
-	if err := idtui.DumpID(output, svcID); err != nil {
+	dump := idtui.Dump{Newline: "\r\n", Prefix: "    "}
+	fmt.Fprint(term.Stderr, dump.Newline)
+	if err := dump.DumpID(output, svcID); err != nil {
 		return fmt.Errorf("failed to serialize service ID: %w", err)
 	}
-	fmt.Fprintf(term.Stderr, "\r\n\n")
+	fmt.Fprint(term.Stderr, dump.Newline)
 
 	container = container.Clone()
 	// Inject a custom shell prompt `dagger:<cwd>$`
