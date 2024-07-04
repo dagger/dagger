@@ -392,13 +392,12 @@ func (r renderer) renderDuration(out *termenv.Output, span *Span) {
 // }
 
 const (
+	HideCompletedVerbosity    = 0
 	ShowCompletedVerbosity    = 1
 	ShowInternalVerbosity     = 2
 	ShowEncapsulatedVerbosity = 2
 	ShowSpammyVerbosity       = 3
 	ShowDigestsVerbosity      = 3
-
-	DefaultVerbosity = ShowCompletedVerbosity
 )
 
 func (opts FrontendOpts) ShouldShow(tree *TraceTree) bool {
