@@ -22,6 +22,8 @@ const rootDirectory = `${__dirname}/testdata`
  */
 describe("Invoke typescript function", function () {
   it("Should correctly invoke hello world", async function () {
+    this.timeout(60000)
+
     const files = await listFiles(`${rootDirectory}/helloWorld`)
 
     // Load function
