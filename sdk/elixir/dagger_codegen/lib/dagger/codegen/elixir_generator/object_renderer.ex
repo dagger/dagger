@@ -33,14 +33,14 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
       ?\n,
       for field <- type.fields do
         [
-          render_function(field, module_var),
+          render_function(type, field, module_var),
           ?\n
         ]
       end
     ]
   end
 
-  def render_function(field, module_var) do
+  def render_function(type, field, module_var) do
     fun_name = Formatter.format_function_name(field.name)
     {optional_args, required_args} = Enum.split_with(field.args, &InputValue.is_optional?/1)
 
@@ -49,7 +49,7 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
       ?\n,
       Renderer.render_doc(field),
       ?\n,
-      render_spec(field, required_args, optional_args),
+      render_spec(type, field, required_args, optional_args),
       ?\n,
       "def #{fun_name}(",
       render_function_args(module_var, required_args, optional_args),
@@ -59,33 +59,71 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
       ?\n,
       render_selection_chain(field, module_var, required_args, optional_args),
       ?\n,
-      if TypeRef.is_list_of?(field.type, "OBJECT") do
-        output_type = Formatter.format_output_type(field.type.of_type)
-        load_type_name = field.type.of_type.of_type.of_type.name
+      cond do
+        TypeRef.is_list_of?(field.type, "OBJECT") ->
+          output_type = Formatter.format_output_type(field.type.of_type)
+          load_type_name = field.type.of_type.of_type.of_type.name
 
-        [
-          "with {:ok, items} <- execute(selection, #{module_var}.client) do",
-          ?\n,
-          "  {:ok, for %{\"id\" => id} <- items do",
-          ?\n,
-          """
-                %#{output_type}{
-                  selection:
+          [
+            "with {:ok, items} <- execute(selection, #{module_var}.client) do",
+            ?\n,
+            "  {:ok, for %{\"id\" => id} <- items do",
+            ?\n,
+            """
+                  %#{output_type}{
+                    selection:
+                      query()
+                      |> select("load#{load_type_name}FromID")
+                      |> arg("id", id),
+                    client: #{module_var}.client
+                  }
+            """,
+            ?\n,
+            "  end}",
+            ?\n,
+            "end"
+          ]
+
+        TypeRef.is_scalar?(field.type) ->
+          type_name =
+            case field.type.of_type do
+              nil -> ""
+              type -> type.name
+            end
+
+          id_of_type = String.trim_trailing(type_name, "ID")
+
+          if String.ends_with?(type_name, "ID") and id_of_type == type.name and field.name != "id" do
+            type = %{
+              field.type
+              | of_type: %{field.type.of_type | kind: "OBJECT", name: id_of_type}
+            }
+
+            output_type = Formatter.format_output_type(type)
+
+            [
+              "with {:ok, id} <- execute(selection, #{module_var}.client) do",
+              ?\n,
+              """
+                {:ok, %#{output_type}{
+                  selection: 
                     query()
-                    |> select("load#{load_type_name}FromID")
+                    |> select("load#{id_of_type}FromID")
                     |> arg("id", id),
                   client: #{module_var}.client
-                }
-          """,
-          ?\n,
-          "  end}",
-          ?\n,
-          "end"
-        ]
-      else
-        if TypeRef.is_scalar?(field.type) or TypeRef.is_list_of?(field.type, "SCALAR") do
+                }}
+              """,
+              ?\n,
+              "end"
+            ]
+          else
+            "execute(selection, #{module_var}.client)"
+          end
+
+        TypeRef.is_list_of?(field.type, "SCALAR") ->
           "execute(selection, #{module_var}.client)"
-        else
+
+        true ->
           output_type = Formatter.format_output_type(field.type)
 
           """
@@ -94,7 +132,6 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
             client: #{module_var}.client
           }
           """
-        end
       end,
       ?\n,
       "end"
@@ -123,7 +160,7 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
   @doc """
   Render `@spec` module attribute.
   """
-  def render_spec(%Field{name: name} = field, required_args, optional_args) do
+  def render_spec(type, %Field{name: name} = field, required_args, optional_args) do
     map_arg = fn arg ->
       if convert_id?(arg) do
         arg.type.of_type.name
@@ -178,7 +215,29 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
       optional_args,
       ?),
       " :: ",
-      Formatter.format_typespec_output_type(field.type)
+      cond do
+        TypeRef.is_scalar?(field.type) ->
+          type_name =
+            case field.type.of_type do
+              nil -> ""
+              type -> type.name
+            end
+
+          id_of_type = String.trim_trailing(type_name, "ID")
+
+          type =
+            if String.ends_with?(type_name, "ID") and id_of_type == type.name and
+                 field.name != "id" do
+              %{field.type | of_type: %{field.type.of_type | name: id_of_type}}
+            else
+              field.type
+            end
+
+          Formatter.format_typespec_output_type(type)
+
+        true ->
+          Formatter.format_typespec_output_type(field.type)
+      end
     ]
   end
 

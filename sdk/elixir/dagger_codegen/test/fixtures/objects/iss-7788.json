@@ -1,0 +1,27 @@
+{
+  "description": "The root of the DAG.",
+  "enumValues": [],
+  "fields": [
+    {
+      "args": [],
+      "deprecationReason": null,
+      "description": "Forces evaluation of the pipeline in the engine.\n\nIt doesn't run the default command if no exec has been set.",
+      "isDeprecated": false,
+      "name": "sync",
+      "type": {
+        "kind": "NON_NULL",
+        "name": null,
+        "ofType": {
+          "kind": "SCALAR",
+          "name": "ContainerID",
+          "ofType": null
+        }
+      }
+    }
+  ],
+  "inputFields": [],
+  "interfaces": [],
+  "kind": "OBJECT",
+  "name": "Container",
+  "possibleTypes": []
+}

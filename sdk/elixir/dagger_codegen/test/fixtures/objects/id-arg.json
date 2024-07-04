@@ -1,0 +1,42 @@
+{
+  "description": "The root of the DAG.",
+  "enumValues": [],
+  "fields": [
+    {
+      "args": [
+        {
+          "defaultValue": null,
+          "description": "",
+          "name": "id",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "ContainerID",
+              "ofType": null
+            }
+          }
+        }
+      ],
+      "deprecationReason": null,
+      "description": "Load a Container from its ID.",
+      "isDeprecated": false,
+      "name": "loadContainerFromID",
+      "type": {
+        "kind": "NON_NULL",
+        "name": null,
+        "ofType": {
+          "kind": "OBJECT",
+          "name": "Container",
+          "ofType": null
+        }
+      }
+    }
+  ],
+  "inputFields": [],
+  "interfaces": [],
+  "kind": "OBJECT",
+  "name": "Query",
+  "possibleTypes": []
+}
