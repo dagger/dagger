@@ -394,10 +394,11 @@ func (r renderer) renderDuration(out *termenv.Output, span *Span) {
 const (
 	HideCompletedVerbosity    = 0
 	ShowCompletedVerbosity    = 1
-	ShowInternalVerbosity     = 2
-	ShowEncapsulatedVerbosity = 2
-	ShowSpammyVerbosity       = 3
-	ShowDigestsVerbosity      = 3
+	ExpandCompletedVerbosity  = 2
+	ShowInternalVerbosity     = 3
+	ShowEncapsulatedVerbosity = 3
+	ShowSpammyVerbosity       = 4
+	ShowDigestsVerbosity      = 4
 )
 
 func (opts FrontendOpts) ShouldShow(tree *TraceTree) bool {
@@ -422,7 +423,7 @@ func (opts FrontendOpts) ShouldShow(tree *TraceTree) bool {
 		// show running steps
 		return true
 	}
-	if tree.Parent != nil && (opts.TooFastThreshold > 0 && span.Duration() < opts.TooFastThreshold && opts.Verbosity < ShowSpammyVerbosity) {
+	if tree.Parent != nil && (opts.TooFastThreshold > 0 && span.ActiveDuration(time.Now()) < opts.TooFastThreshold && opts.Verbosity < ShowSpammyVerbosity) {
 		// ignore fast steps; signal:noise is too poor
 		return false
 	}
