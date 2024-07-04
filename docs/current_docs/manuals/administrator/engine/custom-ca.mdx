@@ -1,0 +1,30 @@
+---
+slug: /manuals/administrator/custom-ca
+---
+
+# Configure the Engine to use Custom Certificate Authorities
+
+The Dagger Engine can be configured to use custom certificate authorities (CAs) when communicating with external services like container registries, Git repositories, etc.
+
+There is additional *best-effort* support for automatic installation of these custom CAs in user containers.
+
+Configuring the engine with custom CAs currently requires [provisioning a custom engine](./custom-runner.mdx).
+
+To be applied, the custom CAs should be placed in the `/usr/local/share/ca-certificates/` directory of the Engine container. No further commands are necessary; the CAs will be automatically installed on Engine startup if found in that directory.
+
+## Configuration Applied to User Containers
+
+As mentioned above, there is *best-effort* support for automatically installing the Engine's custom CAs in all Containers created by user pipelines (i.e. those created via a `withExec` API call).
+
+This is useful so that Dagger code you are not in direct control of (e.g. an external Module dependency) does not need to be forked and updated to use your custom CAs in order to operate in your network where those CAs may be strictly required.
+
+The support is best-effort because CAs are not standardized, which means the exact way they are configured depends on base image of the Container.
+
+Currently, the Engine supports automatically installing custom CAs in images with the following base distributions:
+- Alpine
+- Debian-based (e.g. `debian` and `ubuntu`)
+- Redhat-based (e.g. `rhel`, `fedora`, `centos`, etc.)
+
+If custom CAs are installed and the engine detects one of these base images are being used, it will attempt to install the custom CAs into the container before executing it.
+* If the installation fails, the error is logged but execution continues without the CA being installed.
+* When the container exits, the CAs are also automatically removed to prevent them from leaking into the cache or into any published images.

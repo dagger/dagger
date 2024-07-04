@@ -1,0 +1,28 @@
+---
+slug: /manuals/administrator/proxy
+---
+
+# Configure the Engine to use Proxies
+
+The Dagger Engine can be configured to use HTTP(S) proxies to connect to external HTTP services. This configuration applies to "core" operations like pulling container images, cloning Git repositories, etc. and is also supplied to user containers in the form of standard environment variables.
+
+The engine supports the following standard environment variables:
+- `HTTP_PROXY`
+- `HTTPS_PROXY`
+- `NO_PROXY`
+- `ALL_PROXY`
+- `FTP_PROXY`
+
+Configuring the engine with these settings currently requires [provisioning a custom engine](./custom-runner.mdx).
+
+To be applied, one or more of the environment variables listed above just need to be set on the custom engine container.
+
+## Configuration Applied to User Containers
+
+As mentioned above, these proxy environment variables set on the Engine will also be automatically set on all Containers created by user pipelines (i.e. those created via a `withExec` API call).
+
+This is useful so that Dagger code you are not in direct control of (e.g. an external Module dependency) does not need to be forked and updated to use your proxies in order to operate in your network where those proxy settings may be strictly required.
+
+The values of these environment variables do *not* impact the caching of those containers and are not persisted in Dagger's cache. Changing the value of the settings won't invalidate the cache of the container's execution.
+
+Additionally, if the `withEnvVariable` API is used to explicitly set any of those proxy environment variable values, those will override any settings inherited from the Engine's proxy configuration.
