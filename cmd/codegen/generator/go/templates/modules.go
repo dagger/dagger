@@ -287,7 +287,12 @@ func mainSrc(checkVersionCompatibility func(string) bool) string {
 	})))
 
 	if err := dispatch(ctx); err != nil {
-		fmt.Println(err.Error())
+		var gqlErr *gqlerror.Error
+		if !errors.As(err, &gqlErr) {
+			// only print non-gql errors, since gql errors are better represented
+			// by the trace visualization
+			fmt.Println(err.Error())
+		}
 		os.Exit(2)
 	}
 }
@@ -338,7 +343,11 @@ func dispatch(ctx context.Context) error {
 
 	result, err := invoke(ctx, []byte(parentJson), parentName, fnName, inputArgs)
 	if err != nil {
-		return fmt.Errorf("invoke: %w", err)
+		var exec *dagger.ExecError
+		if errors.As(err, &exec) {
+			return exec.Unwrap()
+		}
+		return err
 	}
 	resultBytes, err := json.Marshal(result)
 	if err != nil {

@@ -671,7 +671,7 @@ func (fc *FuncCommand) Request(ctx context.Context, response any) error {
 	q := fc.q.Bind(&response)
 
 	if err := q.Execute(ctx); err != nil {
-		return fmt.Errorf("response from query: %w", err)
+		return err
 	}
 
 	return nil
