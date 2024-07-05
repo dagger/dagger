@@ -1224,13 +1224,13 @@ func (m *Coolsdk) RequiredPaths() []string {
 					WithWorkdir("/work")
 			}
 
-			ctr = ctr.With(daggerExec("init", "--name=test", "--sdk="+tc.sdk))
+			ctr = ctr.With(daggerExec("init", "--name=test", "--source=dagger", "--sdk="+tc.sdk))
 
 			if tc.customSDKSource != "" {
 				// TODO: hardcoding that underlying sdk is go right now, could be generalized
 				ctr = ctr.WithNewFile("dagger/main.go", tc.mainSource)
 			} else {
-				ctr = ctr.With(sdkSource(tc.sdk, tc.mainSource))
+				ctr = ctr.WithWorkdir("/work/dagger").With(sdkSource(tc.sdk, tc.mainSource)).WithWorkdir("/work")
 			}
 
 			// TODO: use cli to configure include/exclude once supported
