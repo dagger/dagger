@@ -51,11 +51,13 @@ type TraceRow struct {
 type RowsView struct {
 	Zoomed *Span
 	Body   []*TraceTree
+	BySpan map[trace.SpanID]*TraceTree
 }
 
 func (db *DB) RowsView(zoomedID trace.SpanID) *RowsView {
 	view := &RowsView{
 		Zoomed: db.Spans[zoomedID],
+		BySpan: make(map[trace.SpanID]*TraceTree),
 	}
 	var spans []*Span
 	if view.Zoomed != nil {
@@ -63,20 +65,15 @@ func (db *DB) RowsView(zoomedID trace.SpanID) *RowsView {
 	} else {
 		spans = db.SpanOrder
 	}
-	view.Body = db.CollectTree(spans)
-	return view
-}
-
-func (db *DB) CollectTree(spans []*Span) []*TraceTree {
-	var rows []*TraceTree
 	db.WalkSpans(spans, func(row *TraceTree) {
 		if row.Parent != nil {
 			row.Parent.Children = append(row.Parent.Children, row)
 		} else {
-			rows = append(rows, row)
+			view.Body = append(view.Body, row)
 		}
+		view.BySpan[row.Span.ID] = row
 	})
-	return rows
+	return view
 }
 
 func (db *DB) WalkSpans(spans []*Span, f func(*TraceTree)) {
@@ -124,10 +121,16 @@ func (db *DB) WalkSpans(spans []*Span, f func(*TraceTree)) {
 				continue
 			}
 			if effect, ok := db.Effects[effectID]; ok {
+				unlazier := effect.ParentSpan
+				// keep track of the original unlazier for this effect
+				db.UnlaziedEffects[unlazier.ID] = append(
+					db.UnlaziedEffects[unlazier.ID],
+					effect,
+				)
 				// reparent so we can step out of the effect
 				effect.ParentSpan = row.Span
 				walk(effect, row)
-				if effect.IsRunning() {
+				if effect.IsRunning() || unlazier.Failed() {
 					row.setRunning()
 				}
 			}
