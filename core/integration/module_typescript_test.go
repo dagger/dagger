@@ -113,7 +113,7 @@ func (ModuleSuite) TestTypescriptInit(ctx context.Context, t *testctx.T) {
 		require.JSONEq(t, `{"hasTsConfig":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 
 		t.Run("Add dagger paths to the existing tsconfig.json", func(ctx context.Context, t *testctx.T) {
-			tsConfig, err := modGen.File("/work/dagger/tsconfig.json").Contents(ctx)
+			tsConfig, err := modGen.File("/work/tsconfig.json").Contents(ctx)
 			require.NoError(t, err)
 			require.Contains(t, tsConfig, `"@dagger.io/dagger":`)
 		})
@@ -487,7 +487,7 @@ func (ModuleSuite) TestTypescriptRuntimeDetection(ctx context.Context, t *testct
 	})
 
 	t.Run("should use package.json configuration node", func(ctx context.Context, t *testctx.T) {
-		modGen := modGen.WithNewFile("/work/dagger/package.json", `{
+		modGen := modGen.WithNewFile("/work/package.json", `{
 				"dagger": {
 					"runtime": "node"
 				}
@@ -500,7 +500,7 @@ func (ModuleSuite) TestTypescriptRuntimeDetection(ctx context.Context, t *testct
 	})
 
 	t.Run("should use package.json configuration bun", func(ctx context.Context, t *testctx.T) {
-		modGen := modGen.WithNewFile("/work/dagger/package.json", `{
+		modGen := modGen.WithNewFile("/work/package.json", `{
 				"dagger": {
 					"runtime": "bun"
 				}
@@ -529,7 +529,7 @@ func (ModuleSuite) TestTypescriptRuntimeDetection(ctx context.Context, t *testct
 				  }
 				}
 			`)).
-			WithExec([]string{"npm", "install", "--package-lock-only", "-C", "./dagger"})
+			WithExec([]string{"npm", "install", "--package-lock-only"})
 
 		out, err := modGen.With(daggerQuery(`{runtimeDetection{echoRuntime}}`)).Stdout(ctx)
 		require.NoError(t, err)
@@ -553,7 +553,7 @@ func (ModuleSuite) TestTypescriptRuntimeDetection(ctx context.Context, t *testct
 				  }
 				}
 			`)).
-			WithExec([]string{"bun", "install", "--cwd", "./dagger"})
+			WithExec([]string{"bun", "install"})
 
 		out, err := modGen.With(daggerQuery(`{runtimeDetection{echoRuntime}}`)).Stdout(ctx)
 		require.NoError(t, err)
@@ -583,7 +583,7 @@ func (ModuleSuite) TestTypescriptRuntimeDetection(ctx context.Context, t *testct
 					}
 				}`,
 			).
-			WithExec([]string{"npm", "install", "--package-lock-only", "-C", "./dagger"})
+			WithExec([]string{"npm", "install", "--package-lock-only"})
 
 		out, err := modGen.With(daggerQuery(`{runtimeDetection{echoRuntime}}`)).Stdout(ctx)
 		require.NoError(t, err)
@@ -591,7 +591,7 @@ func (ModuleSuite) TestTypescriptRuntimeDetection(ctx context.Context, t *testct
 	})
 
 	t.Run("should error if configured runtime is unknown", func(ctx context.Context, t *testctx.T) {
-		modGen := modGen.WithNewFile("/work/dagger/package.json", `{
+		modGen := modGen.WithNewFile("/work/package.json", `{
 				"dagger": {
 					"runtime": "xyz"
 				}

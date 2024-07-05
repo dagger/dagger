@@ -464,7 +464,7 @@ func (ModuleSuite) TestDaggerInit(ctx context.Context, t *testctx.T) {
 				srcRootEnts, err := srcRootDir.Entries(ctx)
 				require.NoError(t, err)
 				require.Contains(t, srcRootEnts, "dagger.json")
-				require.NotContains(t, srcRootEnts, tc.sourceDirEnt)
+				require.Contains(t, srcRootEnts, tc.sourceDirEnt)
 				srcDirEnts, err := srcRootDir.Directory(".").Entries(ctx)
 				require.NoError(t, err)
 				require.Contains(t, srcDirEnts, tc.sourceDirEnt)
