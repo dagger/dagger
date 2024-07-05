@@ -6035,10 +6035,10 @@ func (ModuleSuite) TestModuleSchemaVersion(ctx context.Context, t *testctx.T) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work")
 		out, err := work.
-			With(daggerQuery("{schemaVersion}")).
+			With(daggerQuery("{__schemaVersion}")).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"schemaVersion":""}`, out)
+		require.JSONEq(t, `{"__schemaVersion":""}`, out)
 	})
 
 	t.Run("cli", func(ctx context.Context, t *testctx.T) {
@@ -6052,10 +6052,10 @@ func (ModuleSuite) TestModuleSchemaVersion(ctx context.Context, t *testctx.T) {
 				Contents: `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v2.0.0"}`,
 			})
 		out, err := work.
-			With(daggerQuery("{schemaVersion}")).
+			With(daggerQuery("{__schemaVersion}")).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"schemaVersion":"v2.0.0"}`, out)
+		require.JSONEq(t, `{"__schemaVersion":"v2.0.0"}`, out)
 	})
 
 	t.Run("module", func(ctx context.Context, t *testctx.T) {
@@ -6071,12 +6071,26 @@ func (ModuleSuite) TestModuleSchemaVersion(ctx context.Context, t *testctx.T) {
 			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 				Contents: `package main
 
-import "context"
+import (
+	"context"
+	"github.com/Khan/genqlient/graphql"
+)
 
 type Foo struct {}
 
 func (m *Foo) GetVersion(ctx context.Context) (string, error) {
-	return dag.SchemaVersion(ctx)
+	return schemaVersion(ctx)
+}
+
+func schemaVersion(ctx context.Context) (string, error) {
+	resp := &graphql.Response{}
+	err := dag.GraphQLClient().MakeRequest(ctx, &graphql.Request{
+		Query: "{__schemaVersion}",
+	}, resp)
+	if err != nil {
+		return "", err
+	}
+	return resp.Data.(map[string]any)["__schemaVersion"].(string), nil
 }
 `,
 			})
@@ -6106,12 +6120,26 @@ func (m *Foo) GetVersion(ctx context.Context) (string, error) {
 			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 				Contents: `package main
 
-import "context"
+import (
+	"context"
+	"github.com/Khan/genqlient/graphql"
+)
 
 type Dep struct {}
 
 func (m *Dep) GetVersion(ctx context.Context) (string, error) {
-	return dag.SchemaVersion(ctx)
+	return schemaVersion(ctx)
+}
+
+func schemaVersion(ctx context.Context) (string, error) {
+	resp := &graphql.Response{}
+	err := dag.GraphQLClient().MakeRequest(ctx, &graphql.Request{
+		Query: "{__schemaVersion}",
+	}, resp)
+	if err != nil {
+		return "", err
+	}
+	return resp.Data.(map[string]any)["__schemaVersion"].(string), nil
 }
 `,
 			}).
@@ -6124,12 +6152,15 @@ func (m *Dep) GetVersion(ctx context.Context) (string, error) {
 			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 				Contents: `package main
 
-import "context"
+import (
+	"context"
+	"github.com/Khan/genqlient/graphql"
+)
 
 type Foo struct {}
 
 func (m *Foo) GetVersion(ctx context.Context) (string, error) {
-	myVersion, err := dag.SchemaVersion(ctx)
+	myVersion, err := schemaVersion(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -6138,6 +6169,17 @@ func (m *Foo) GetVersion(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return myVersion + " " + depVersion, nil
+}
+
+func schemaVersion(ctx context.Context) (string, error) {
+	resp := &graphql.Response{}
+	err := dag.GraphQLClient().MakeRequest(ctx, &graphql.Request{
+		Query: "{__schemaVersion}",
+	}, resp)
+	if err != nil {
+		return "", err
+	}
+	return resp.Data.(map[string]any)["__schemaVersion"].(string), nil
 }
 `,
 			})

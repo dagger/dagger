@@ -398,12 +398,6 @@ func Pipeline(name string, opts ...dagger.PipelineOpts) *dagger.Client {
 	return client.Pipeline(name, opts...)
 }
 
-// Get the current schema version.
-func SchemaVersion(ctx context.Context) (string, error) {
-	client := initClient()
-	return client.SchemaVersion(ctx)
-}
-
 // Reference a secret by name.
 func Secret(name string, opts ...dagger.SecretOpts) *dagger.Secret {
 	client := initClient()

@@ -6862,16 +6862,6 @@ func (r *Client) Pipeline(name string, opts ...PipelineOpts) *Client {
 	}
 }
 
-// Get the current schema version.
-func (r *Client) SchemaVersion(ctx context.Context) (string, error) {
-	q := r.query.Select("schemaVersion")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
 // SecretOpts contains options for Client.Secret
 type SecretOpts struct {
 	Accessor string

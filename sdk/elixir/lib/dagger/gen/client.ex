@@ -783,15 +783,6 @@ defmodule Dagger.Client do
     }
   end
 
-  @doc "Get the current schema version."
-  @spec schema_version(t()) :: {:ok, String.t()} | {:error, term()}
-  def schema_version(%__MODULE__{} = client) do
-    selection =
-      client.selection |> select("schemaVersion")
-
-    execute(selection, client.client)
-  end
-
   @doc "Reference a secret by name."
   @spec secret(t(), String.t(), [{:accessor, String.t() | nil}]) :: Dagger.Secret.t()
   def secret(%__MODULE__{} = client, name, optional_args \\ []) do
