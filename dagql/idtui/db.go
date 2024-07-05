@@ -31,8 +31,9 @@ type DB struct {
 	OutputOf  map[string]map[string]struct{}
 	Intervals map[string]map[time.Time]*Span
 
-	Effects    map[string]*Span
-	EffectSite map[string]*Span
+	Effects         map[string]*Span
+	EffectSite      map[string]*Span
+	UnlaziedEffects map[trace.SpanID][]*Span
 }
 
 func NewDB() *DB {
@@ -45,12 +46,14 @@ func NewDB() *DB {
 		Children:      make(map[trace.SpanID]map[trace.SpanID]struct{}),
 		ChildrenOrder: make(map[trace.SpanID][]trace.SpanID),
 
-		Calls:      make(map[string]*callpbv1.Call),
-		OutputOf:   make(map[string]map[string]struct{}),
-		Outputs:    make(map[string]map[string]struct{}),
-		Intervals:  make(map[string]map[time.Time]*Span),
-		Effects:    make(map[string]*Span),
-		EffectSite: make(map[string]*Span),
+		Calls:     make(map[string]*callpbv1.Call),
+		OutputOf:  make(map[string]map[string]struct{}),
+		Outputs:   make(map[string]map[string]struct{}),
+		Intervals: make(map[string]map[time.Time]*Span),
+
+		Effects:         make(map[string]*Span),
+		EffectSite:      make(map[string]*Span),
+		UnlaziedEffects: make(map[trace.SpanID][]*Span),
 	}
 }
 
@@ -489,4 +492,88 @@ func getAttr(attrs []attribute.KeyValue, key attribute.Key) (attribute.Value, bo
 		}
 	}
 	return attribute.Value{}, false
+}
+
+// Function to check if a row is or contains a target row
+func isOrContains(row, target *TraceTree) bool {
+	if row == target {
+		return true
+	}
+	for _, child := range row.Children {
+		if isOrContains(child, target) {
+			return true
+		}
+	}
+	return false
+}
+
+func WalkTree(tree []*TraceTree, f func(*TraceTree, int) bool) {
+	var walk func([]*TraceTree, int)
+	walk = func(rows []*TraceTree, depth int) {
+		for _, row := range rows {
+			if f(row, depth) {
+				return
+			}
+			walk(row.Children, depth+1)
+		}
+	}
+	walk(tree, 0)
+}
+
+func (db *DB) CollectErrors(rows *RowsView) []*TraceTree {
+	reveal := make(map[*TraceTree]struct{})
+	var collect func(row *TraceTree)
+
+	collect = func(row *TraceTree) {
+		if !row.Span.Failed() {
+			return
+		}
+		reveal[row] = struct{}{}
+		unlazied, ok := db.UnlaziedEffects[row.Span.ID]
+		if ok {
+			for _, effect := range unlazied {
+				if !effect.Failed() {
+					continue
+				}
+				effectRow, ok := rows.BySpan[effect.ID]
+				if ok {
+					reveal[effectRow] = struct{}{}
+					for _, child := range effectRow.Children {
+						collect(child)
+					}
+				}
+			}
+		}
+		for _, child := range row.Children {
+			collect(child)
+		}
+	}
+
+	for _, row := range rows.Body {
+		collect(row)
+	}
+
+	return collectParents(rows.Body, reveal)
+}
+
+func collectParents(rows []*TraceTree, targets map[*TraceTree]struct{}) []*TraceTree {
+	var result []*TraceTree
+
+	for _, row := range rows {
+		contains := false
+		for target := range targets {
+			if isOrContains(row, target) {
+				contains = true
+				break
+			}
+		}
+		if !contains {
+			continue
+		}
+		rowCopy := *row
+		rowCopy.Children = collectParents(row.Children, targets)
+		result = append(result, &rowCopy)
+	}
+
+	return result
 }
