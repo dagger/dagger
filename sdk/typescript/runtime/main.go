@@ -91,6 +91,7 @@ func (t *TypescriptSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSour
 		return ctr.
 			// Install dependencies
 			WithExec([]string{"yarn", "install"}).
+			WithExec([]string{"npm", "pkg", "set", "type=module"}).
 			// need to specify --tsconfig because final runtime container will change working directory to a separate scratch
 			// dir, without this the paths mapped in the tsconfig.json will not be used and js module loading will fail
 			// need to specify --no-deprecation because the default package.json has no main field which triggers a warning
