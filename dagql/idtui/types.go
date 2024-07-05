@@ -164,7 +164,7 @@ func (lv *RowsView) Rows(opts FrontendOpts) *Rows {
 			rows.BySpan[tree.Span.ID] = row
 			depth++
 		}
-		if tree.IsRunningOrChildRunning || tree.Span.Failed() {
+		if tree.IsRunningOrChildRunning || tree.Span.Failed() || opts.Verbosity >= ExpandCompletedVerbosity {
 			for _, child := range tree.Children {
 				walk(child, depth)
 			}

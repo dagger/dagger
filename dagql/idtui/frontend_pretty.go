@@ -215,6 +215,13 @@ func (fe *frontendPretty) finalRender() error {
 		}
 	}
 
+	if fe.err != nil {
+		// Counter-intuitively, we don't want to render the primary output
+		// when there's an error, because the error is better represented by
+		// the progress output.
+		return nil
+	}
+
 	// Replay the primary output log to stdout/stderr.
 	return renderPrimaryOutput(fe.db)
 }

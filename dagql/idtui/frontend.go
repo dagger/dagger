@@ -93,8 +93,8 @@ func (d *Dump) DumpID(out *termenv.Output, id *call.ID) error {
 type renderer struct {
 	FrontendOpts
 
-	newline string
-
+	now           time.Time
+	newline       string
 	db            *DB
 	maxLiteralLen int
 	rendering     map[string]bool
@@ -103,6 +103,7 @@ type renderer struct {
 func newRenderer(db *DB, maxLiteralLen int, fe FrontendOpts) renderer {
 	return renderer{
 		FrontendOpts:  fe,
+		now:           time.Now(),
 		db:            db,
 		maxLiteralLen: maxLiteralLen,
 		rendering:     map[string]bool{},
@@ -342,7 +343,7 @@ func (r renderer) renderStatus(out *termenv.Output, span *Span, focused bool) {
 
 func (r renderer) renderDuration(out *termenv.Output, span *Span) {
 	fmt.Fprint(out, " ")
-	duration := out.String(fmtDuration(span.Duration()))
+	duration := out.String(fmtDuration(span.ActiveDuration(r.now)))
 	if span.IsRunning() {
 		duration = duration.Foreground(termenv.ANSIYellow)
 	} else {
@@ -394,10 +395,11 @@ func (r renderer) renderDuration(out *termenv.Output, span *Span) {
 const (
 	HideCompletedVerbosity    = 0
 	ShowCompletedVerbosity    = 1
-	ShowInternalVerbosity     = 2
-	ShowEncapsulatedVerbosity = 2
-	ShowSpammyVerbosity       = 3
-	ShowDigestsVerbosity      = 3
+	ExpandCompletedVerbosity  = 2
+	ShowInternalVerbosity     = 3
+	ShowEncapsulatedVerbosity = 3
+	ShowSpammyVerbosity       = 4
+	ShowDigestsVerbosity      = 4
 )
 
 func (opts FrontendOpts) ShouldShow(tree *TraceTree) bool {
@@ -422,7 +424,7 @@ func (opts FrontendOpts) ShouldShow(tree *TraceTree) bool {
 		// show running steps
 		return true
 	}
-	if tree.Parent != nil && (opts.TooFastThreshold > 0 && span.Duration() < opts.TooFastThreshold && opts.Verbosity < ShowSpammyVerbosity) {
+	if tree.Parent != nil && (opts.TooFastThreshold > 0 && span.ActiveDuration(time.Now()) < opts.TooFastThreshold && opts.Verbosity < ShowSpammyVerbosity) {
 		// ignore fast steps; signal:noise is too poor
 		return false
 	}
