@@ -22,5 +22,5 @@ func GetUniqueNestedEngineNetwork() (deviceName string, cidr string) {
 		panic("nestedEngineCount overflow")
 	}
 
-	return fmt.Sprintf("dagger%d", cur), fmt.Sprintf("10.89.%d.0/24", cur)
+	return fmt.Sprintf("dagger%d", cur), fmt.Sprintf("10.90.%d.0/24", cur)
 }
