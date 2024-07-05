@@ -113,7 +113,8 @@ func (labels Labels) WithVCSLabels(workdir string) Labels {
 		WithGitLabels(workdir).
 		WithGitHubLabels().
 		WithGitLabLabels().
-		WithCircleCILabels()
+		WithCircleCILabels().
+		WithJenkinsLabels()
 }
 
 func (labels Labels) WithGitLabels(workdir string) Labels {
@@ -362,6 +363,21 @@ func (labels Labels) WithCircleCILabels() Labels {
 	return labels
 }
 
+func (labels Labels) WithJenkinsLabels() Labels {
+	if len(os.Getenv("JENKINS_HOME")) == 0 {
+		return labels
+	}
+	remoteBranch := os.Getenv("GIT_BRANCH")
+	if remoteBranch != "" {
+		if _, branch, ok := strings.Cut(remoteBranch, "/"); ok {
+			labels["dagger.io/vcs.change.branch"] = branch
+		}
+	}
+	labels["dagger.io/vcs.change.head_sha"] = os.Getenv("GIT_COMMIT")
+
+	return labels
+}
+
 type repoIsh interface {
 	GetFullName() string
 	GetHTMLURL() string
@@ -395,6 +411,8 @@ func (labels Labels) WithCILabels() Labels {
 		vendor = "CircleCI"
 	case os.Getenv("GITLAB_CI") == "true": //nolint:goconst
 		vendor = "GitLab"
+	case len(os.Getenv("JENKINS_HOME")) > 0:
+		vendor = "Jenkins"
 	}
 	if vendor != "" {
 		labels["dagger.io/ci.vendor"] = vendor

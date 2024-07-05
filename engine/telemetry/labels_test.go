@@ -389,6 +389,48 @@ func TestLoadCircleCILabels(t *testing.T) {
 	}
 }
 
+func TestLoadJenkinsLabels(t *testing.T) {
+	type Example struct {
+		Name   string
+		Env    map[string]string
+		Labels telemetry.Labels
+	}
+
+	for _, example := range []Example{
+		{
+			Name: "Jenkins",
+			Env: map[string]string{
+				"JENKINS_HOME": "/var/lib/jenkins",
+				"GIT_BRANCH":   "origin/test-feature",
+				"GIT_COMMIT":   "abc123",
+			},
+			Labels: telemetry.Labels{
+				"dagger.io/vcs.change.branch":   "test-feature",
+				"dagger.io/vcs.change.head_sha": "abc123",
+			},
+		},
+	} {
+		example := example
+		t.Run(example.Name, func(t *testing.T) {
+			// Set environment variables
+			for k, v := range example.Env {
+				t.Setenv(k, v)
+			}
+
+			// Run the function and collect the result
+			labels := telemetry.Labels{}.WithJenkinsLabels()
+
+			// Clean up environment variables
+			for k := range example.Env {
+				os.Unsetenv(k)
+			}
+
+			// Make assertions
+			require.Subset(t, labels, example.Labels)
+		})
+	}
+}
+
 func run(t *testing.T, exe string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command(exe, args...)
