@@ -22,6 +22,8 @@ const rootDirectory = `${__dirname}/testdata`
  */
 describe("Invoke typescript function", function () {
   it("Should correctly invoke hello world", async function () {
+    this.timeout(60000)
+
     const files = await listFiles(`${rootDirectory}/helloWorld`)
 
     // Load function
@@ -222,8 +224,6 @@ describe("Invoke typescript function", function () {
   })
 
   describe("Should correctly invoke variadic functions", async function () {
-    this.timeout(60000)
-
     type Case = {
       [name: string]: { ctx: InvokeCtx; expected: string | number }
     }
@@ -279,6 +279,8 @@ describe("Invoke typescript function", function () {
 
     for (const [name, { ctx, expected }] of Object.entries(cases)) {
       it(name, async function () {
+        this.timeout(60000)
+
         const files = await listFiles(`${rootDirectory}/variadic`)
 
         // Load function
@@ -298,10 +300,10 @@ describe("Invoke typescript function", function () {
   })
 
   describe("Should correctly handle aliases", async function () {
-    this.timeout(60000)
-
     // Mocking the fetch from the dagger API
     it("Should correctly invoke hello world", async function () {
+      this.timeout(60000)
+
       const files = await listFiles(`${rootDirectory}/alias`)
 
       // Load function
@@ -339,6 +341,8 @@ describe("Invoke typescript function", function () {
     })
 
     it("Should correctly invoke hello world with custom prefix", async function () {
+      this.timeout(60000)
+
       const files = await listFiles(`${rootDirectory}/alias`)
 
       // Load function
@@ -376,6 +380,8 @@ describe("Invoke typescript function", function () {
 
   describe("Should correctly handle optional arguments", async function () {
     it("Should correctly use default and nullable values", async function () {
+      this.timeout(60000)
+
       const files = await listFiles(`${rootDirectory}/optionalParameter`)
 
       // Load function
@@ -398,6 +404,8 @@ describe("Invoke typescript function", function () {
     })
 
     it("Should correctly use overwritten values", async function () {
+      this.timeout(60000)
+
       const files = await listFiles(`${rootDirectory}/optionalParameter`)
 
       // Load function
@@ -427,6 +435,8 @@ describe("Invoke typescript function", function () {
   })
 
   it("Should correctly handle object arguments", async function () {
+    this.timeout(60000)
+
     const files = await listFiles(`${rootDirectory}/objectParam`)
 
     // Load function
@@ -472,6 +482,8 @@ describe("Invoke typescript function", function () {
   })
 
   it("Should correctly handle list of returned object", async function () {
+    this.timeout(60000)
+
     const files = await listFiles(`${rootDirectory}/list`)
 
     // Load function
@@ -495,6 +507,8 @@ describe("Invoke typescript function", function () {
   })
 
   it("Should correctly handle enums values", async function () {
+    this.timeout(60000)
+
     const files = await listFiles(`${rootDirectory}/enums`)
 
     // Load function
