@@ -12,7 +12,6 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
-	"os/user"
 	"path/filepath"
 	"reflect"
 	"strconv"
@@ -427,12 +426,12 @@ func (v *secretValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.Modul
 	case fileSecretSource:
 		sourceVal := v.sourceVal
 		// For unix, automatic expand tilde (~) to $HOME
-		if strings.HasPrefix(sourceVal, "~") {
-			usr, err := user.Current()
+		if sourceVal[0] == '~' {
+			homeDir, err := os.UserHomeDir()
 			if err != nil {
 				return nil, err
 			}
-			sourceVal = strings.Replace(sourceVal, "~", usr.HomeDir, 1)
+			sourceVal = strings.Replace(sourceVal, "~", homeDir, 1)
 		}
 		filePlaintext, err := os.ReadFile(sourceVal)
 		if err != nil {

@@ -426,7 +426,8 @@ func (m *Test) Insecure(ctx context.Context, token *Secret) (string, error) {
 `,
 			}).
 			WithEnvVariable("TOPSECRET", "shhh").
-			WithNewFile("/mysupersecret", dagger.ContainerWithNewFileOpts{Contents: "file shhh"})
+			WithNewFile("/mysupersecret", dagger.ContainerWithNewFileOpts{Contents: "file shhh"}).
+			WithNewFile("/root/homesupersecret", dagger.ContainerWithNewFileOpts{Contents: "file shhh"})
 
 		t.Run("explicit env", func(ctx context.Context, t *testctx.T) {
 			t.Run("happy", func(ctx context.Context, t *testctx.T) {
@@ -457,6 +458,11 @@ func (m *Test) Insecure(ctx context.Context, token *Secret) (string, error) {
 				out, err := modGen.With(daggerCall("insecure", "--token", "file:/mysupersecret")).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, "file shhh", out)
+
+				out, err = modGen.With(daggerCall("insecure", "--token", "file:~/homesupersecret")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "file shhh", out)
+
 			})
 			t.Run("sad", func(ctx context.Context, t *testctx.T) {
 				_, err := modGen.With(daggerCall("insecure", "--token", "file:/nowheretobefound")).Stdout(ctx)
