@@ -257,7 +257,6 @@ func (m *Test) Fn(dir *Directory) *Directory {
 				out, err = modGen.With(daggerCall("fn", "--dir", "~/subdir", "entries")).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, "bar.txt\n", out)
-
 			})
 
 			t.Run("rel path", func(ctx context.Context, t *testctx.T) {
@@ -423,7 +422,6 @@ func (m *Test) Fn(file *File) *File {
 			out, err := modGen.With(daggerCall("fn", "--file", "~/foo.txt", "contents")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "foo", out)
-
 		})
 
 		t.Run("rel path", func(ctx context.Context, t *testctx.T) {
@@ -523,7 +521,6 @@ func (m *Test) Insecure(ctx context.Context, token *Secret) (string, error) {
 				out, err = modGen.With(daggerCall("insecure", "--token", "file:~/homesupersecret")).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, "file shhh", out)
-
 			})
 			t.Run("sad", func(ctx context.Context, t *testctx.T) {
 				_, err := modGen.With(daggerCall("insecure", "--token", "file:/nowheretobefound")).Stdout(ctx)
