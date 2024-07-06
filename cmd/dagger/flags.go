@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/csv"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -285,6 +286,10 @@ func (v *directoryValue) Get(ctx context.Context, dag *dagger.Client, modSrc *da
 	// POSIX "portable filename character set":
 	// https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_282
 	path, viewName, _ := strings.Cut(path, ":")
+	path, err = expandHomeDir(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to expand home directory: %w", err)
+	}
 	path = filepath.ToSlash(path) // make windows paths usable in the Linux engine container
 
 	return modSrc.ResolveDirectoryFromCaller(path, dagger.ModuleSourceResolveDirectoryFromCallerOpts{
@@ -359,11 +364,16 @@ func (v *fileValue) Get(_ context.Context, dag *dagger.Client, _ *dagger.ModuleS
 	vStr = strings.TrimPrefix(vStr, "file://")
 	if !filepath.IsAbs(vStr) {
 		var err error
+		vStr, err = expandHomeDir(vStr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to expand home directory: %w", err)
+		}
 		vStr, err = filepath.Abs(vStr)
 		if err != nil {
 			return nil, fmt.Errorf("failed to resolve absolute path: %w", err)
 		}
 	}
+
 	vStr = filepath.ToSlash(vStr) // make windows paths usable in the Linux engine container
 	return dag.Host().File(vStr), nil
 }
@@ -424,14 +434,9 @@ func (v *secretValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.Modul
 		plaintext = envPlaintext
 
 	case fileSecretSource:
-		sourceVal := v.sourceVal
-		// For unix, automatic expand tilde (~) to $HOME
-		if sourceVal[0] == '~' {
-			homeDir, err := os.UserHomeDir()
-			if err != nil {
-				return nil, err
-			}
-			sourceVal = strings.Replace(sourceVal, "~", homeDir, 1)
+		sourceVal, err := expandHomeDir(v.sourceVal)
+		if err != nil {
+			return nil, err
 		}
 		filePlaintext, err := os.ReadFile(sourceVal)
 		if err != nil {
@@ -861,4 +866,19 @@ func writeAsCSV(vals []string) (string, error) {
 	}
 	w.Flush()
 	return strings.TrimSuffix(b.String(), "\n"), nil
+}
+
+func expandHomeDir(path string) (string, error) {
+	if path[0] != '~' {
+		return path, nil
+	}
+	if len(path) > 1 && path[1] != '/' && path[1] != '\\' {
+		return "", errors.New("cannot expand home directory")
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return strings.Replace(path, "~", homeDir, 1), nil
 }

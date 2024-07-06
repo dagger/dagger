@@ -227,6 +227,39 @@ func (m *Test) Fn(dir *Directory) *Directory {
 				require.Equal(t, "bar.txt\nfoo.txt\n", out)
 			})
 
+			t.Run("expand home directory", func(ctx context.Context, t *testctx.T) {
+				c := connect(ctx, t)
+
+				modGen := c.Container().From(golangImage).
+					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+					WithWorkdir("/work").
+					With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+					WithNewFile("/root/foo.txt", dagger.ContainerWithNewFileOpts{
+						Contents: "foo",
+					}).
+					WithNewFile("/root/subdir/bar.txt", dagger.ContainerWithNewFileOpts{
+						Contents: "bar",
+					}).
+					WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+						Contents: `package main
+type Test struct {}
+
+func (m *Test) Fn(dir *Directory) *Directory {
+	return dir
+}
+	`,
+					})
+
+				out, err := modGen.With(daggerCall("fn", "--dir", "~", "entries")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "foo.txt\nsubdir\n", out)
+
+				out, err = modGen.With(daggerCall("fn", "--dir", "~/subdir", "entries")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "bar.txt\n", out)
+
+			})
+
 			t.Run("rel path", func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
@@ -346,6 +379,9 @@ func (m *Test) Fn(
 				WithNewFile("/dir/subdir/foo.txt", dagger.ContainerWithNewFileOpts{
 					Contents: "foo",
 				}).
+				WithNewFile("/root/foo.txt", dagger.ContainerWithNewFileOpts{
+					Contents: "foo",
+				}).
 				WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
 					Contents: `package main
 type Test struct {}
@@ -363,6 +399,31 @@ func (m *Test) Fn(file *File) *File {
 			out, err = modGen.With(daggerCall("fn", "--file", "file:///dir/subdir/foo.txt", "contents")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "foo", out)
+		})
+
+		t.Run("expand home directory", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			modGen := c.Container().From(golangImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				WithWorkdir("/work").
+				With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+				WithNewFile("/root/foo.txt", dagger.ContainerWithNewFileOpts{
+					Contents: "foo",
+				}).
+				WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+					Contents: `package main
+type Test struct {}
+
+func (m *Test) Fn(file *File) *File {
+	return file
+}
+	`,
+				})
+			out, err := modGen.With(daggerCall("fn", "--file", "~/foo.txt", "contents")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "foo", out)
+
 		})
 
 		t.Run("rel path", func(ctx context.Context, t *testctx.T) {
