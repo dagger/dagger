@@ -596,10 +596,10 @@ func (c *Client) exportTraces() error {
 
 			spans := telemetry.SpansFromPB(req.GetResourceSpans())
 
-			slog.Debug("received spans from engine", "len", len(spans))
+			slog.ExtraDebug("received spans from engine", "len", len(spans))
 
 			for _, span := range spans {
-				slog.Debug("received span from engine", "span", span.Name(), "id", span.SpanContext().SpanID(), "endTime", span.EndTime())
+				slog.ExtraDebug("received span from engine", "span", span.Name(), "id", span.SpanContext().SpanID(), "endTime", span.EndTime())
 			}
 
 			if err := c.Params.EngineTrace.ExportSpans(ctx, spans); err != nil {
@@ -635,6 +635,7 @@ func (c *Client) exportLogs() error {
 	if res.StatusCode != http.StatusOK {
 		return fmt.Errorf("get trace: %s", res.Status)
 	}
+
 	slog.Debug("exporting logs from engine")
 
 	dec := lencode.NewDecoder(res.Body, lencode.SeparatorOpt(nil))
@@ -658,7 +659,7 @@ func (c *Client) exportLogs() error {
 
 			logs := telemetry.LogsFromPB(req.GetResourceLogs())
 
-			slog.Debug("received logs from engine", "len", len(logs))
+			slog.ExtraDebug("received logs from engine", "len", len(logs))
 
 			if err := c.EngineLogs.Export(ctx, logs); err != nil {
 				return fmt.Errorf("export %d logs: %w", len(logs), err)
