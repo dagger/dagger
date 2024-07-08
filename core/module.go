@@ -746,6 +746,10 @@ func (mod Module) Clone() *Module {
 		cp.DependenciesField[i].Self = dep.Self.Clone()
 	}
 
+	if mod.Deps != nil {
+		cp.Deps = mod.Deps.Clone()
+	}
+
 	cp.ObjectDefs = make([]*TypeDef, len(mod.ObjectDefs))
 	for i, def := range mod.ObjectDefs {
 		cp.ObjectDefs[i] = def.Clone()
