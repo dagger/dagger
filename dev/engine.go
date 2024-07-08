@@ -223,7 +223,8 @@ func (e *Engine) Generate() *Directory {
 	generated = generated.
 		WithExec([]string{"go", "generate", "-v", "./..."})
 
-	return generated.Directory(".")
+	return generated.Directory(".").
+		WithoutDirectory("engine/telemetry/opentelemetry-proto")
 }
 
 // Lint any generated engine-related files
