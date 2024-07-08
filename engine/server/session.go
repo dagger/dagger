@@ -451,26 +451,24 @@ func (srv *Server) initializeDaggerClient(
 		}
 		client.mod = modInst.Self
 
+		// this is needed to set the view of the core api as compatible
+		// with the module we're currently calling from
 		engineVersion, err := client.mod.Source.Self.ModuleEngineVersion(ctx)
 		if err != nil {
 			return err
 		}
-		if engineVersion != "" {
-			// this is needed to set the view of the core api as compatible
-			// with the module we're currently calling from
-			coreMod.Dag.View = engineVersion
+		coreMod.Dag.View = engineVersion
 
-			// NOTE: *technically* we should reload the module here, so that we can
-			// use the new typedefs api - but at this point we likely would
-			// have failed to load the module in the first place anyways?
-			// modInst, err = dagql.NewID[*core.Module](modID).Load(ctx, coreMod.Dag)
-			// if err != nil {
-			// 	return fmt.Errorf("failed to load module: %w", err)
-			// }
-			// client.mod = modInst.Self
-		}
+		// NOTE: *technically* we should reload the module here, so that we can
+		// use the new typedefs api - but at this point we likely would
+		// have failed to load the module in the first place anyways?
+		// modInst, err = dagql.NewID[*core.Module](modID).Load(ctx, coreMod.Dag)
+		// if err != nil {
+		// 	return fmt.Errorf("failed to load module: %w", err)
+		// }
+		// client.mod = modInst.Self
 
-		client.deps = client.mod.Deps
+		client.deps = core.NewModDeps(client.dagqlRoot, client.mod.Deps.Mods)
 		// if the module has any of it's own objects defined, serve its schema to itself too
 		if len(client.mod.ObjectDefs) > 0 {
 			client.deps = client.deps.Append(client.mod)
@@ -991,7 +989,7 @@ func (srv *Server) DefaultDeps(ctx context.Context) (*core.ModDeps, error) {
 	if err != nil {
 		return nil, err
 	}
-	return client.defaultDeps, nil
+	return client.defaultDeps.Clone(), nil
 }
 
 // The DagQL query cache for the current client's session

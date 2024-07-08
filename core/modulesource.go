@@ -226,6 +226,13 @@ func (src *ModuleSource) ModuleEngineVersion(ctx context.Context) (string, error
 	if !ok {
 		return "", nil
 	}
+	if cfg.EngineVersion == "" {
+		// older versions of dagger might not produce an engine version - so
+		// return the version that engineVersion was introduced in
+		// TODO: replace once dagger/dagger#7692 is merged
+		// return engine.MinimumModuleVersion, nil
+		return "v0.9.9", nil
+	}
 	if !semver.IsValid(cfg.EngineVersion) {
 		// filter out non-semver values to simplify calling code
 		return "", nil

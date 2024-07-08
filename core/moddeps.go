@@ -46,8 +46,12 @@ type ModDeps struct {
 func NewModDeps(root *Query, mods []Mod) *ModDeps {
 	return &ModDeps{
 		root: root,
-		Mods: mods,
+		Mods: append([]Mod{}, mods...),
 	}
+}
+
+func (d *ModDeps) Clone() *ModDeps {
+	return NewModDeps(d.root, append([]Mod{}, d.Mods...))
 }
 
 func (d *ModDeps) Prepend(mods ...Mod) *ModDeps {
