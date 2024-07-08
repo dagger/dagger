@@ -121,16 +121,16 @@ func (db *DB) WalkSpans(spans []*Span, f func(*TraceTree)) {
 				continue
 			}
 			if effect, ok := db.Effects[effectID]; ok {
-				unlazier := effect.ParentSpan
+				unlazier := effect.Parent()
 				// keep track of the original unlazier for this effect
-				db.UnlaziedEffects[unlazier.ID] = append(
-					db.UnlaziedEffects[unlazier.ID],
+				db.UnlaziedEffects[unlazier.SpanID()] = append(
+					db.UnlaziedEffects[unlazier.SpanID()],
 					effect,
 				)
 				// reparent so we can step out of the effect
 				effect.ParentSpan = row.Span
 				walk(effect, row)
-				if effect.IsRunning() || unlazier.Failed() {
+				if effect.IsRunning() || effect.Failed() {
 					row.setRunning()
 				}
 			}
