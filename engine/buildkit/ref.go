@@ -422,14 +422,17 @@ func debugContainer(ctx context.Context, execOp *bksolverpb.ExecOp, execErr *llb
 	}
 
 	output := idtui.NewOutput(term.Stderr)
-	fmt.Fprintf(term.Stderr,
+	fmt.Fprint(term.Stderr,
 		output.String(idtui.IconFailure).Foreground(termenv.ANSIRed).String()+" Exec failed, attaching terminal: ")
-	if err := idtui.DumpID(output, execMd.CallID); err != nil {
+	dump := idtui.Dump{Newline: "\r\n", Prefix: "    "}
+	fmt.Fprint(term.Stderr, dump.Newline)
+	if err := dump.DumpID(output, execMd.CallID); err != nil {
 		return fmt.Errorf("failed to serialize service ID: %w", err)
 	}
-	fmt.Fprintf(term.Stderr, "\r\n")
+	fmt.Fprint(term.Stderr, dump.Newline)
 	fmt.Fprintf(term.Stderr,
-		output.String("! %s\r\n\n").Foreground(termenv.ANSIYellow).String(), execErr.Error())
+		output.String("! %s").Foreground(termenv.ANSIYellow).String(), execErr.Error())
+	fmt.Fprint(term.Stderr, dump.Newline)
 
 	dbgShell, err := dbgCtr.Start(ctx, bkgw.StartRequest{
 		// We need to hardcode a shell since we don't have access to `withDefaultTerminalCmd` here.
