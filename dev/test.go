@@ -218,14 +218,7 @@ func privateRegistry() *Service {
 	const htpasswd = "john:$2y$05$/iP8ud0Fs8o3NLlElyfVVOp6LesJl3oRLYoc3neArZKWX10OhynSC" //nolint:gosec
 	return dag.Container().
 		From("registry:2").
-		// FIXME: Container.withNewFile is changing signature in
-		// https://github.com/dagger/dagger/pull/7293. Until that's released
-		// we're avoiding using it here for compatibility with dev and stable.
-		// WithNewFile("/auth/htpasswd", htpasswd).
-		WithFile("/auth/htpasswd", dag.Directory().
-			WithNewFile("htpasswd", htpasswd).
-			File("htpasswd"),
-		).
+		WithNewFile("/auth/htpasswd", ContainerWithNewFileOpts{Contents: htpasswd}).
 		WithEnvVariable("REGISTRY_AUTH", "htpasswd").
 		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_REALM", "Registry Realm").
 		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_PATH", "/auth/htpasswd").

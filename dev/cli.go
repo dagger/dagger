@@ -159,14 +159,9 @@ func publishEnv(ctx context.Context) (*dagger.Container, error) {
 	ctr = ctr.
 		WithExec([]string{"apk", "add", "xz"}).
 		WithDirectory("/nix", dag.Directory()).
-		// FIXME: Container.withNewFile is changing signature in
-		// https://github.com/dagger/dagger/pull/7293. Until that's released
-		// we're avoiding using it here for compatibility with dev and stable.
-		// WithNewFile("/etc/nix/nix.conf", `build-users-group =`).
-		WithFile("/etc/nix/nix.conf", dag.Directory().
-			WithNewFile("nix.conf", `build-users-group =`).
-			File("nix.conf"),
-		).
+		WithNewFile("/etc/nix/nix.conf", dagger.ContainerWithNewFileOpts{
+			Contents: `build-users-group =`,
+		}).
 		WithExec([]string{"sh", "-c", "curl -L https://nixos.org/nix/install | sh -s -- --no-daemon"})
 	path, err := ctr.EnvVariable(ctx, "PATH")
 	if err != nil {
