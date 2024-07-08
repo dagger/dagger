@@ -36,6 +36,7 @@ jobs:
             publish \
             --platform="linux/amd64" --platform="linux/arm64" \
             --image="$DAGGER_ENGINE_IMAGE" \
+            --tags="${{ github.ref_name}},${{ github.sha}}"
             --registry="$DAGGER_ENGINE_IMAGE_REGISTRY" \
             --registry-username="$DAGGER_ENGINE_IMAGE_USERNAME" \
             --registry-password=env:DAGGER_ENGINE_IMAGE_PASSWORD
@@ -53,6 +54,7 @@ jobs:
             publish \
             --platform="linux/amd64" \
             --image="$DAGGER_ENGINE_IMAGE" \
+            --tags="${{ github.ref_name}}-gpu,${{ github.sha}}-gpu"
             --registry="$DAGGER_ENGINE_IMAGE_REGISTRY" \
             --registry-username="$DAGGER_ENGINE_IMAGE_USERNAME" \
             --registry-password=env:DAGGER_ENGINE_IMAGE_PASSWORD
@@ -70,6 +72,7 @@ jobs:
             publish \
             --platform="linux/amd64" \
             --image="$DAGGER_ENGINE_IMAGE" \
+            --tags="${{ github.ref_name}}-wolfi,${{ github.sha}}-wolfi"
             --registry="$DAGGER_ENGINE_IMAGE_REGISTRY" \
             --registry-username="$DAGGER_ENGINE_IMAGE_USERNAME" \
             --registry-password=env:DAGGER_ENGINE_IMAGE_PASSWORD
@@ -87,6 +90,7 @@ jobs:
             publish \
             --platform="linux/amd64" \
             --image="$DAGGER_ENGINE_IMAGE" \
+            --tags="${{ github.ref_name}}-wolfi-gpu,${{ github.sha}}-wolfi-gpu"
             --registry="$DAGGER_ENGINE_IMAGE_REGISTRY" \
             --registry-username="$DAGGER_ENGINE_IMAGE_USERNAME" \
             --registry-password=env:DAGGER_ENGINE_IMAGE_PASSWORD
