@@ -165,31 +165,73 @@ func (e *Engine) Lint(
 	// +optional
 	all bool,
 ) error {
-	// Packages to lint
-	packages := []string{
-		"",
-		// FIXME: should the CI lint itself?
-		// FIXME: unsustainable to require keeping this list up to date by hand
-		"dev",
-		"dev/dirdiff",
-		"dev/go",
-		"dev/graphql",
-		"dev/shellcheck",
-		"dev/markdown",
-	}
-	// Packages that need codegen
-	codegen := []string{
-		"dev",
-		"dev/dirdiff",
-		"dev/go",
-		"dev/graphql",
-		"dev/shellcheck",
-		"dev/markdown",
-	}
+	eg, ctx := errgroup.WithContext(ctx)
 
-	return e.Dagger.Go().
-		WithCodegen(codegen).
-		Lint(ctx, packages, all)
+	eg.Go(func() error {
+		// Packages to lint
+		packages := []string{
+			"",
+			// FIXME: should the CI lint itself?
+			// FIXME: unsustainable to require keeping this list up to date by hand
+			"dev",
+			"dev/dirdiff",
+			"dev/go",
+			"dev/graphql",
+			"dev/shellcheck",
+			"dev/markdown",
+		}
+		// Packages that need codegen
+		codegen := []string{
+			"dev",
+			"dev/dirdiff",
+			"dev/go",
+			"dev/graphql",
+			"dev/shellcheck",
+			"dev/markdown",
+		}
+
+		return e.Dagger.Go().
+			WithCodegen(codegen).
+			Lint(ctx, packages, all)
+	})
+
+	eg.Go(func() error {
+		return e.LintGenerate(ctx)
+	})
+
+	return eg.Wait()
+}
+
+// Generate any engine-related files
+func (e *Engine) Generate() *Directory {
+	generated := e.Dagger.Go().Env().
+		WithoutDirectory("sdk") // sdk generation happens separately
+
+	// protobuf dependencies
+	generated = generated.
+		WithMountedDirectory(
+			"engine/telemetry/opentelemetry-proto",
+			dag.Git("https://github.com/open-telemetry/opentelemetry-proto.git").
+				Commit("9d139c87b52669a3e2825b835dd828b57a455a55").
+				Tree(),
+		).
+		WithExec([]string{"apk", "add", "protoc=~3.21.12"}).
+		WithExec([]string{"go", "install", "google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.2"}).
+		WithExec([]string{"go", "install", "github.com/gogo/protobuf/protoc-gen-gogoslick@v1.3.2"}).
+		WithExec([]string{"go", "install", "google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.4.0"})
+
+	generated = generated.
+		WithExec([]string{"go", "generate", "-v", "./..."})
+
+	return generated.Directory(".")
+}
+
+// Lint any generated engine-related files
+func (e *Engine) LintGenerate(ctx context.Context) error {
+	before := e.Dagger.Go().Env().WithoutDirectory("sdk").Directory(".")
+	after := e.Generate()
+	_, err := dag.Dirdiff().AssertEqual(ctx, before, after, []string{"."})
+	return err
 }
 
 // Publish all engine images to a registry

@@ -206,6 +206,11 @@ class SocketID(Scalar):
     of type Socket."""
 
 
+class TerminalID(Scalar):
+    """The `TerminalID` scalar type represents an identifier for an object
+    of type Terminal."""
+
+
 class TypeDefID(Scalar):
     """The `TypeDefID` scalar type represents an identifier for an object
     of type TypeDef."""
@@ -2445,6 +2450,7 @@ class Directory(Type):
         self,
         *,
         source_root_path: str | None = ".",
+        engine_version: str | None = None,
     ) -> "Module":
         """Load the directory as a Dagger module
 
@@ -2459,9 +2465,12 @@ class Directory(Type):
             package.json, etc. file from a parent directory.
             If not set, the module source code is loaded from the root of the
             directory.
+        engine_version:
+            The engine version to upgrade to.
         """
         _args = [
             Arg("sourceRootPath", source_root_path, "."),
+            Arg("engineVersion", engine_version, None),
         ]
         _ctx = self._select("asModule", _args)
         return Module(_ctx)
@@ -5242,16 +5251,24 @@ class Module(Type):
         _ctx = self._select("withObject", _args)
         return Module(_ctx)
 
-    def with_source(self, source: "ModuleSource") -> Self:
+    def with_source(
+        self,
+        source: "ModuleSource",
+        *,
+        engine_version: str | None = None,
+    ) -> Self:
         """Retrieves the module with basic configuration loaded if present.
 
         Parameters
         ----------
         source:
             The module source to initialize from.
+        engine_version:
+            The engine version to upgrade to.
         """
         _args = [
             Arg("source", source),
+            Arg("engineVersion", engine_version, None),
         ]
         _ctx = self._select("withSource", _args)
         return Module(_ctx)
@@ -5337,11 +5354,22 @@ class ModuleSource(Type):
         _ctx = self._select("asLocalSource", _args)
         return LocalModuleSource(_ctx)
 
-    def as_module(self) -> Module:
+    def as_module(
+        self,
+        *,
+        engine_version: str | None = None,
+    ) -> Module:
         """Load the source as a module. If this is a local source, the parent
         directory must have been provided during module source creation
+
+        Parameters
+        ----------
+        engine_version:
+            The engine version to upgrade to.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("engineVersion", engine_version, None),
+        ]
         _ctx = self._select("asModule", _args)
         return Module(_ctx)
 
@@ -6681,6 +6709,14 @@ class Client(Root):
         _ctx = self._select("loadSocketFromID", _args)
         return Socket(_ctx)
 
+    def load_terminal_from_id(self, id: TerminalID) -> "Terminal":
+        """Load a Terminal from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadTerminalFromID", _args)
+        return Terminal(_ctx)
+
     def load_type_def_from_id(self, id: TypeDefID) -> "TypeDef":
         """Load a TypeDef from its ID."""
         _args = [
@@ -7243,6 +7279,35 @@ class Socket(Type):
 
 
 @typecheck
+class Terminal(Type):
+    """An interactive terminal that clients can connect to."""
+
+    async def id(self) -> TerminalID:
+        """A unique identifier for this Terminal.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        TerminalID
+            The `TerminalID` scalar type represents an identifier for an
+            object of type Terminal.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(TerminalID)
+
+
+@typecheck
 class TypeDef(Type):
     """A definition of a parameter or return type in a Module."""
 
@@ -7622,6 +7687,8 @@ __all__ = [
     "ServiceID",
     "Socket",
     "SocketID",
+    "Terminal",
+    "TerminalID",
     "TypeDef",
     "TypeDefID",
     "TypeDefKind",

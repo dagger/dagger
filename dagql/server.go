@@ -33,6 +33,9 @@ type Server struct {
 	directives  map[string]DirectiveSpec
 	installLock *sync.Mutex
 
+	// View is the view that is applied to all queries on this server
+	View string
+
 	// Cache is the inner cache used by the server. It can be replicated to
 	// another *Server to inherit and share caches.
 	//
@@ -175,10 +178,10 @@ type Loadable interface {
 func (s *Server) InstallObject(class ObjectType) {
 	s.installLock.Lock()
 	defer s.installLock.Unlock()
-	s.installObjectLocked(class)
+	s.installObject(class)
 }
 
-func (s *Server) installObjectLocked(class ObjectType) {
+func (s *Server) installObject(class ObjectType) {
 	s.objects[class.TypeName()] = class
 
 	if idType, hasID := class.IDType(); hasID {
@@ -285,17 +288,17 @@ func (s *Server) Schema() *ast.Schema { // TODO: change this to be updated whene
 	queryType := s.Root().Type().Name()
 	schema := &ast.Schema{}
 	for _, t := range s.objects { // TODO stable order
-		def := definition(ast.Object, t)
+		def := definition(ast.Object, t, s.View)
 		if def.Name == queryType {
 			schema.Query = def
 		}
 		schema.AddTypes(def)
 	}
 	for _, t := range s.scalars {
-		schema.AddTypes(definition(ast.Scalar, t))
+		schema.AddTypes(definition(ast.Scalar, t, s.View))
 	}
 	for _, t := range s.typeDefs {
-		schema.AddTypes(t.TypeDefinition())
+		schema.AddTypes(t.TypeDefinition(s.View))
 	}
 	schema.Directives = map[string]*ast.DirectiveDefinition{}
 	for n, d := range s.directives {
@@ -448,7 +451,7 @@ func (s *Server) Load(ctx context.Context, id *call.ID) (Object, error) {
 			},
 		})
 	}
-	sel, _, err := base.ObjectType().ParseField(ctx, astField, vars)
+	sel, _, err := base.ObjectType().ParseField(ctx, id.View(), astField, vars)
 	if err != nil {
 		return nil, fmt.Errorf("parse field %q: %w", astField.Name, err)
 	}
@@ -733,7 +736,7 @@ func (s *Server) parseASTSelections(ctx context.Context, gqlOp *graphql.Operatio
 	for _, sel := range astSels {
 		switch x := sel.(type) {
 		case *ast.Field:
-			sel, resType, err := class.ParseField(ctx, x, vars)
+			sel, resType, err := class.ParseField(ctx, s.View, x, vars)
 			if err != nil {
 				return nil, fmt.Errorf("parse field %q: %w", x.Name, err)
 			}
@@ -790,6 +793,7 @@ type Selector struct {
 	Field string
 	Args  []NamedInput
 	Nth   int
+	View  string
 }
 
 func (sel Selector) String() string {
@@ -837,6 +841,7 @@ func (sel Selector) AppendTo(id *call.ID, spec FieldSpec) *call.ID {
 	return id.Append(
 		astType,
 		sel.Field,
+		sel.View,
 		spec.Module,
 		tainted,
 		sel.Nth,

@@ -12,6 +12,7 @@ import (
 
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/vektah/gqlparser/v2/ast"
+	"golang.org/x/mod/semver"
 
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
@@ -215,6 +216,21 @@ func (src *ModuleSource) ModuleOriginalName(ctx context.Context) (string, error)
 		return src.WithName, nil
 	}
 	return cfg.Name, nil
+}
+
+func (src *ModuleSource) ModuleEngineVersion(ctx context.Context) (string, error) {
+	cfg, ok, err := src.ModuleConfig(ctx)
+	if err != nil {
+		return "", fmt.Errorf("module config: %w", err)
+	}
+	if !ok {
+		return "", nil
+	}
+	if !semver.IsValid(cfg.EngineVersion) {
+		// filter out non-semver values to simplify calling code
+		return "", nil
+	}
+	return cfg.EngineVersion, nil
 }
 
 func (src *ModuleSource) SDK(ctx context.Context) (string, error) {

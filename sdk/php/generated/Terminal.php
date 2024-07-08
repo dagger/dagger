@@ -21,13 +21,4 @@ class Terminal extends Client\AbstractObject implements Client\IdAble
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
         return new \Dagger\TerminalId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
-
-    /**
-     * An http endpoint at which this terminal can be connected to over a websocket.
-     */
-    public function websocketEndpoint(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('websocketEndpoint');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'websocketEndpoint');
-    }
 }

@@ -12,6 +12,7 @@ import (
 
 	"github.com/99designs/gqlgen/client"
 	"github.com/99designs/gqlgen/graphql/handler"
+	"github.com/stretchr/testify/require"
 	"github.com/vektah/gqlparser/v2/ast"
 	"gotest.tools/v3/assert"
 	"gotest.tools/v3/assert/cmp"
@@ -50,6 +51,12 @@ func req(t *testing.T, gql *client.Client, query string, res any) {
 	t.Helper()
 	err := gql.Post(query, res)
 	assert.NilError(t, err)
+}
+
+func reqFail(t *testing.T, gql *client.Client, query string, substring string) {
+	t.Helper()
+	err := gql.Post(query, &struct{}{})
+	assert.ErrorContains(t, err, substring)
 }
 
 func TestBasic(t *testing.T) {
@@ -94,7 +101,7 @@ func TestBasic(t *testing.T) {
 
 	pointT := (&points.Point{}).Type()
 	expectedID := call.New().
-		Append(pointT, "point", nil, false, 0,
+		Append(pointT, "point", "", nil, false, 0,
 			call.NewArgument(
 				"x",
 				call.NewLiteralInt(6),
@@ -104,7 +111,7 @@ func TestBasic(t *testing.T) {
 				call.NewLiteralInt(7),
 			),
 		).
-		Append(pointT, "shiftLeft", nil, false, 0)
+		Append(pointT, "shiftLeft", "", nil, false, 0)
 	expectedEnc, err := dagql.NewID[*points.Point](expectedID).Encode()
 	assert.NilError(t, err)
 	assert.Equal(t, 6, res.Point.X)
@@ -559,7 +566,7 @@ func TestIDsReflectQuery(t *testing.T) {
 
 	pointT := (&points.Point{}).Type()
 	expectedID := call.New().
-		Append(pointT, "point", nil, false, 0,
+		Append(pointT, "point", "", nil, false, 0,
 			call.NewArgument(
 				"x",
 				call.NewLiteralInt(6),
@@ -569,7 +576,7 @@ func TestIDsReflectQuery(t *testing.T) {
 				call.NewLiteralInt(7),
 			),
 		).
-		Append(pointT, "shiftLeft", nil, false, 0)
+		Append(pointT, "shiftLeft", "", nil, false, 0)
 	expectedEnc, err := dagql.NewID[*points.Point](expectedID).Encode()
 	assert.NilError(t, err)
 	eqIDs(t, res.Point.ShiftLeft.ID, expectedEnc)
@@ -657,7 +664,7 @@ func TestIDsDoNotContainSensitiveValues(t *testing.T) {
 
 	pointT := (&points.Point{}).Type()
 	expectedID := call.New().
-		Append(pointT, "point", nil, false, 0,
+		Append(pointT, "point", "", nil, false, 0,
 			call.NewArgument(
 				"x",
 				call.NewLiteralInt(6),
@@ -667,14 +674,14 @@ func TestIDsDoNotContainSensitiveValues(t *testing.T) {
 				call.NewLiteralInt(7),
 			),
 		).
-		Append(pointT, "loginTag", nil, false, 0)
+		Append(pointT, "loginTag", "", nil, false, 0)
 
 	expectedEnc, err := dagql.NewID[*points.Point](expectedID).Encode()
 	assert.NilError(t, err)
 	eqIDs(t, res.Point.LoginTag.ID, expectedEnc)
 
 	expectedID = call.New().
-		Append(pointT, "point", nil, false, 0,
+		Append(pointT, "point", "", nil, false, 0,
 			call.NewArgument(
 				"x",
 				call.NewLiteralInt(6),
@@ -684,14 +691,14 @@ func TestIDsDoNotContainSensitiveValues(t *testing.T) {
 				call.NewLiteralInt(7),
 			),
 		).
-		Append(pointT, "loginChain", nil, false, 0)
+		Append(pointT, "loginChain", "", nil, false, 0)
 
 	expectedEnc, err = dagql.NewID[*points.Point](expectedID).Encode()
 	assert.NilError(t, err)
 	eqIDs(t, res.Point.LoginChain.ID, expectedEnc)
 
 	expectedID = call.New().
-		Append(pointT, "point", nil, false, 0,
+		Append(pointT, "point", "", nil, false, 0,
 			call.NewArgument(
 				"x",
 				call.NewLiteralInt(6),
@@ -701,7 +708,7 @@ func TestIDsDoNotContainSensitiveValues(t *testing.T) {
 				call.NewLiteralInt(7),
 			),
 		).
-		Append(pointT, "loginTagFalse", nil, false, 0,
+		Append(pointT, "loginTagFalse", "", nil, false, 0,
 			call.NewArgument(
 				"password",
 				call.NewLiteralString("hunter2"),
@@ -1754,4 +1761,231 @@ func debugID(t *testing.T, msgf string, idStr string, args ...any) {
 	err := id.Decode(idStr)
 	assert.NilError(t, err)
 	t.Logf(msgf, append([]any{id.Display()}, args...)...)
+}
+
+func InstallViewer(srv *dagql.Server) {
+	getView := func(_ context.Context, _ Query, _ struct{}) (string, error) {
+		return srv.View, nil
+	}
+
+	dagql.Fields[Query]{
+		dagql.Func("global", getView).
+			View(dagql.GlobalView).
+			Doc("available on all views"),
+		dagql.Func("all", getView).
+			View(dagql.AllView{}).
+			Doc("available on all views"),
+
+		dagql.Func("shared", getView).
+			View(dagql.ExactView("firstView")).
+			Doc("available on first+second views"),
+		dagql.Func("firstExclusive", getView).
+			View(dagql.ExactView("firstView")).
+			Doc("available on first view"),
+
+		dagql.Func("shared", getView).
+			View(dagql.ExactView("secondView")).
+			Extend(),
+		dagql.Func("secondExclusive", getView).
+			View(dagql.ExactView("secondView")).
+			Doc("available on second view"),
+		dagql.Func("all", getView).
+			View(dagql.ExactView("secondView")).
+			Doc("available on second view"),
+	}.Install(srv)
+}
+
+func TestViews(t *testing.T) {
+	srv := dagql.NewServer(Query{})
+	gql := client.New(handler.NewDefaultServer(srv))
+
+	InstallViewer(srv)
+
+	t.Run("in default view", func(t *testing.T) {
+		srv.View = ""
+
+		var res struct {
+			All string
+		}
+		req(t, gql, `query {
+			all
+		}`, &res)
+		assert.Equal(t, "", res.All)
+
+		reqFail(t, gql, `query {
+			shared
+		}`, "no such field")
+	})
+
+	t.Run("in unknown view", func(t *testing.T) {
+		srv.View = "unknownView"
+
+		var res struct {
+			All string
+		}
+		req(t, gql, `query {
+			all
+		}`, &res)
+		assert.Equal(t, "unknownView", res.All)
+
+		reqFail(t, gql, `query {
+			shared
+		}`, "no such field")
+	})
+
+	t.Run("in first view", func(t *testing.T) {
+		srv.View = "firstView"
+
+		var res struct {
+			All            string
+			Shared         string
+			FirstExclusive string
+		}
+		req(t, gql, `query {
+			all
+			shared
+			firstExclusive
+		}`, &res)
+		assert.Equal(t, "firstView", res.All)
+		assert.Equal(t, "firstView", res.Shared)
+		assert.Equal(t, "firstView", res.FirstExclusive)
+
+		reqFail(t, gql, `query {
+			secondExclusive
+		}`, "no such field")
+	})
+
+	t.Run("in second view", func(t *testing.T) {
+		srv.View = "secondView"
+
+		var res struct {
+			All             string
+			Shared          string
+			SecondExclusive string
+		}
+		req(t, gql, `query {
+			all
+			shared
+			secondExclusive
+		}`, &res)
+		assert.Equal(t, "secondView", res.All)
+		assert.Equal(t, "secondView", res.Shared)
+		assert.Equal(t, "secondView", res.SecondExclusive)
+
+		reqFail(t, gql, `query {
+			firstExclusive
+		}`, "no such field")
+	})
+}
+
+func TestViewsCaching(t *testing.T) {
+	srv := dagql.NewServer(Query{})
+	gql := client.New(handler.NewDefaultServer(srv))
+
+	InstallViewer(srv)
+
+	var res struct {
+		All    string
+		Global string
+	}
+
+	srv.View = "firstView"
+	req(t, gql, `query {
+		all
+		global
+	}`, &res)
+	assert.Equal(t, "firstView", res.All)
+	assert.Equal(t, "firstView", res.Global)
+
+	srv.View = "secondView"
+	req(t, gql, `query {
+		all
+		global
+	}`, &res)
+	assert.Equal(t, "secondView", res.All)
+	assert.Equal(t, "firstView", res.Global) // this is cached from the first query!
+}
+
+func TestViewsIntrospection(t *testing.T) {
+	srv := dagql.NewServer(Query{})
+	introspection.Install[Query](srv)
+	gql := client.New(handler.NewDefaultServer(srv))
+
+	InstallViewer(srv)
+
+	t.Run("in default view", func(t *testing.T) {
+		srv.View = ""
+
+		var res introspection.Response
+		req(t, gql, introspection.Query, &res)
+		fields := make(map[string]string)
+		for _, field := range res.Schema.Types.Get("Query").Fields {
+			fields[field.Name] = field.Description
+		}
+
+		require.Contains(t, fields, "all")
+		require.Equal(t, "available on all views", fields["all"])
+		require.Contains(t, fields, "global")
+		require.Equal(t, "available on all views", fields["global"])
+		require.NotContains(t, fields, "shared")
+	})
+
+	t.Run("in unknown view", func(t *testing.T) {
+		srv.View = "unknownView"
+
+		var res introspection.Response
+		req(t, gql, introspection.Query, &res)
+		fields := make(map[string]string)
+		for _, field := range res.Schema.Types.Get("Query").Fields {
+			fields[field.Name] = field.Description
+		}
+
+		require.Contains(t, fields, "all")
+		require.Equal(t, "available on all views", fields["all"])
+		require.Contains(t, fields, "global")
+		require.Equal(t, "available on all views", fields["global"])
+		require.NotContains(t, fields, "shared")
+	})
+
+	t.Run("in first view", func(t *testing.T) {
+		srv.View = "firstView"
+
+		var res introspection.Response
+		req(t, gql, introspection.Query, &res)
+		fields := make(map[string]string)
+		for _, field := range res.Schema.Types.Get("Query").Fields {
+			fields[field.Name] = field.Description
+		}
+
+		require.Contains(t, fields, "all")
+		require.Equal(t, "available on all views", fields["all"])
+		require.Contains(t, fields, "global")
+		require.Equal(t, "available on all views", fields["global"])
+		require.Contains(t, fields, "shared")
+		require.Equal(t, "available on first+second views", fields["shared"])
+		require.Contains(t, fields, "firstExclusive")
+		require.Equal(t, "available on first view", fields["firstExclusive"])
+		require.NotContains(t, fields, "secondExclusive")
+	})
+
+	t.Run("in second view", func(t *testing.T) {
+		srv.View = "secondView"
+
+		var res introspection.Response
+		req(t, gql, introspection.Query, &res)
+		fields := make(map[string]string)
+		for _, field := range res.Schema.Types.Get("Query").Fields {
+			fields[field.Name] = field.Description
+		}
+
+		require.Contains(t, fields, "all")
+		require.Equal(t, "available on second view", fields["all"])
+		require.Contains(t, fields, "global")
+		require.Equal(t, "available on all views", fields["global"])
+		require.Contains(t, fields, "shared")
+		require.Equal(t, "available on first+second views", fields["shared"])
+		require.NotContains(t, fields, "firstExclusive")
+		require.Contains(t, fields, "secondExclusive")
+		require.Equal(t, "available on second view", fields["secondExclusive"])
+	})
 }

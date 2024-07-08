@@ -228,6 +228,9 @@ type ServiceID string
 // The `SocketID` scalar type represents an identifier for an object of type Socket.
 type SocketID string
 
+// The `TerminalID` scalar type represents an identifier for an object of type Terminal.
+type TerminalID string
+
 // The `TypeDefID` scalar type represents an identifier for an object of type TypeDef.
 type TypeDefID string
 
@@ -2275,6 +2278,8 @@ type DirectoryAsModuleOpts struct {
 	//
 	// If not set, the module source code is loaded from the root of the directory.
 	SourceRootPath string
+	// The engine version to upgrade to.
+	EngineVersion string
 }
 
 // Load the directory as a Dagger module
@@ -2284,6 +2289,10 @@ func (r *Directory) AsModule(opts ...DirectoryAsModuleOpts) *Module {
 		// `sourceRootPath` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SourceRootPath) {
 			q = q.Arg("sourceRootPath", opts[i].SourceRootPath)
+		}
+		// `engineVersion` optional argument
+		if !querybuilder.IsZeroValue(opts[i].EngineVersion) {
+			q = q.Arg("engineVersion", opts[i].EngineVersion)
 		}
 	}
 
@@ -5239,10 +5248,22 @@ func (r *Module) WithObject(object *TypeDef) *Module {
 	}
 }
 
+// ModuleWithSourceOpts contains options for Module.WithSource
+type ModuleWithSourceOpts struct {
+	// The engine version to upgrade to.
+	EngineVersion string
+}
+
 // Retrieves the module with basic configuration loaded if present.
-func (r *Module) WithSource(source *ModuleSource) *Module {
+func (r *Module) WithSource(source *ModuleSource, opts ...ModuleWithSourceOpts) *Module {
 	assertNotNil("source", source)
 	q := r.query.Select("withSource")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `engineVersion` optional argument
+		if !querybuilder.IsZeroValue(opts[i].EngineVersion) {
+			q = q.Arg("engineVersion", opts[i].EngineVersion)
+		}
+	}
 	q = q.Arg("source", source)
 
 	return &Module{
@@ -5373,9 +5394,21 @@ func (r *ModuleSource) AsLocalSource() *LocalModuleSource {
 	}
 }
 
+// ModuleSourceAsModuleOpts contains options for ModuleSource.AsModule
+type ModuleSourceAsModuleOpts struct {
+	// The engine version to upgrade to.
+	EngineVersion string
+}
+
 // Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation
-func (r *ModuleSource) AsModule() *Module {
+func (r *ModuleSource) AsModule(opts ...ModuleSourceAsModuleOpts) *Module {
 	q := r.query.Select("asModule")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `engineVersion` optional argument
+		if !querybuilder.IsZeroValue(opts[i].EngineVersion) {
+			q = q.Arg("engineVersion", opts[i].EngineVersion)
+		}
+	}
 
 	return &Module{
 		query: q,
@@ -6726,6 +6759,16 @@ func (r *Client) LoadSocketFromID(id SocketID) *Socket {
 	}
 }
 
+// Load a Terminal from its ID.
+func (r *Client) LoadTerminalFromID(id TerminalID) *Terminal {
+	q := r.query.Select("loadTerminalFromID")
+	q = q.Arg("id", id)
+
+	return &Terminal{
+		query: q,
+	}
+}
+
 // Load a TypeDef from its ID.
 func (r *Client) LoadTypeDefFromID(id TypeDefID) *TypeDef {
 	q := r.query.Select("loadTypeDefFromID")
@@ -7306,6 +7349,59 @@ func (r *Socket) XXX_GraphQLID(ctx context.Context) (string, error) {
 }
 
 func (r *Socket) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// An interactive terminal that clients can connect to.
+type Terminal struct {
+	query *querybuilder.Selection
+
+	id *TerminalID
+}
+
+func (r *Terminal) WithGraphQLQuery(q *querybuilder.Selection) *Terminal {
+	return &Terminal{
+		query: q,
+	}
+}
+
+// A unique identifier for this Terminal.
+func (r *Terminal) ID(ctx context.Context) (TerminalID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response TerminalID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Terminal) XXX_GraphQLType() string {
+	return "Terminal"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Terminal) XXX_GraphQLIDType() string {
+	return "TerminalID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Terminal) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Terminal) MarshalJSON() ([]byte, error) {
 	id, err := r.ID(marshalCtx)
 	if err != nil {
 		return nil, err

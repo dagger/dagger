@@ -193,10 +193,13 @@ class Module extends Client\AbstractObject implements Client\IdAble
     /**
      * Retrieves the module with basic configuration loaded if present.
      */
-    public function withSource(ModuleSourceId|ModuleSource $source): Module
+    public function withSource(ModuleSourceId|ModuleSource $source, ?string $engineVersion = null): Module
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSource');
         $innerQueryBuilder->setArgument('source', $source);
+        if (null !== $engineVersion) {
+        $innerQueryBuilder->setArgument('engineVersion', $engineVersion);
+        }
         return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

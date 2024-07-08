@@ -1039,6 +1039,9 @@ scalar DaggerEngineID
 type Directory {
   """Load the directory as a Dagger module"""
   asModule(
+    """The engine version to upgrade to."""
+    engineVersion: String
+
     """
     An optional subpath of the directory which contains the module's configuration file.
     
@@ -1977,6 +1980,9 @@ type Module {
 
   """Retrieves the module with basic configuration loaded if present."""
   withSource(
+    """The engine version to upgrade to."""
+    engineVersion: String
+
     """The module source to initialize from."""
     source: ModuleSourceID!
   ): Module!
@@ -2018,7 +2024,10 @@ type ModuleSource {
   Load the source as a module. If this is a local source, the parent directory
   must have been provided during module source creation
   """
-  asModule: Module!
+  asModule(
+    """The engine version to upgrade to."""
+    engineVersion: String
+  ): Module!
 
   """A human readable ref string representation of this module source."""
   asString: String!
@@ -2509,6 +2518,9 @@ type Query {
   """Load a Socket from its ID."""
   loadSocketFromID(id: SocketID!): Socket!
 
+  """Load a Terminal from its ID."""
+  loadTerminalFromID(id: TerminalID!): Terminal!
+
   """Load a TypeDef from its ID."""
   loadTypeDefFromID(id: TypeDefID!): TypeDef!
 
@@ -2691,6 +2703,17 @@ type Socket {
 The `SocketID` scalar type represents an identifier for an object of type Socket.
 """
 scalar SocketID
+
+"""An interactive terminal that clients can connect to."""
+type Terminal {
+  """A unique identifier for this Terminal."""
+  id: TerminalID!
+}
+
+"""
+The `TerminalID` scalar type represents an identifier for an object of type Terminal.
+"""
+scalar TerminalID
 
 """A definition of a parameter or return type in a Module."""
 type TypeDef {

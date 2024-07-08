@@ -30,6 +30,10 @@ func (m *CoreMod) Dependencies() []core.Mod {
 	return nil
 }
 
+func (m *CoreMod) View() (string, bool) {
+	return m.Dag.View, true
+}
+
 func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server) error {
 	for _, schema := range []SchemaResolvers{
 		&querySchema{dag},

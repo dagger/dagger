@@ -35,10 +35,12 @@ defmodule Dagger.ModuleSource do
   end
 
   @doc "Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation"
-  @spec as_module(t()) :: Dagger.Module.t()
-  def as_module(%__MODULE__{} = module_source) do
+  @spec as_module(t(), [{:engine_version, String.t() | nil}]) :: Dagger.Module.t()
+  def as_module(%__MODULE__{} = module_source, optional_args \\ []) do
     selection =
-      module_source.selection |> select("asModule")
+      module_source.selection
+      |> select("asModule")
+      |> maybe_put_arg("engineVersion", optional_args[:engine_version])
 
     %Dagger.Module{
       selection: selection,
