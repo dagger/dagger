@@ -51,11 +51,12 @@ var (
 
 	workdir string
 
-	silent   bool
-	verbose  int
-	quiet, _ = strconv.Atoi(os.Getenv("DAGGER_QUIET"))
-	debug    bool
-	progress string
+	silent      bool
+	verbose     int
+	quiet, _    = strconv.Atoi(os.Getenv("DAGGER_QUIET"))
+	debug       bool
+	progress    string
+	interactive bool
 
 	stdoutIsTTY = isatty.IsTerminal(os.Stdout.Fd())
 	stderrIsTTY = isatty.IsTerminal(os.Stderr.Fd())
@@ -199,6 +200,7 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.BoolVarP(&silent, "silent", "s", silent, "Do not show progress at all")
 	flags.BoolVarP(&debug, "debug", "d", debug, "Show debug logs and full verbosity")
 	flags.StringVar(&progress, "progress", "auto", "Progress output format (auto, plain, tty)")
+	flags.BoolVarP(&interactive, "interactive", "i", false, "interactive mode will spawn a terminal on container exec failure")
 
 	for _, fl := range []string{"workdir"} {
 		if err := flags.MarkHidden(fl); err != nil {

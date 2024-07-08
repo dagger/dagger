@@ -9,10 +9,12 @@ import (
 	"strings"
 
 	"github.com/containerd/containerd/leases"
+	"github.com/dagger/dagger/dagql/idtui"
 	bkcache "github.com/moby/buildkit/cache"
 	cacheutil "github.com/moby/buildkit/cache/util"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	bkgwpb "github.com/moby/buildkit/frontend/gateway/pb"
 	bksession "github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/snapshot"
 	bksolver "github.com/moby/buildkit/solver"
@@ -23,6 +25,7 @@ import (
 	solverresult "github.com/moby/buildkit/solver/result"
 	"github.com/moby/buildkit/util/bklog"
 	bkworker "github.com/moby/buildkit/worker"
+	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	fstypes "github.com/tonistiigi/fsutil/types"
@@ -201,7 +204,7 @@ func (r *ref) Result(ctx context.Context) (bksolver.CachedResult, error) {
 	ctx = withOutgoingContext(ctx)
 	res, err := r.resultProxy.Result(ctx)
 	if err != nil {
-		return nil, wrapError(ctx, err, r.c.ID())
+		return nil, wrapError(ctx, err, r.c)
 	}
 	return res, nil
 }
@@ -254,7 +257,7 @@ func ConvertToWorkerCacheResult(ctx context.Context, res *solverresult.Result[*r
 	})
 }
 
-func wrapError(ctx context.Context, baseErr error, sessionID string) error {
+func wrapError(ctx context.Context, baseErr error, client *Client) error {
 	var slowCacheErr *bksolver.SlowCacheError
 	if errors.As(baseErr, &slowCacheErr) {
 		if slowCacheErr.Result != nil {
@@ -313,7 +316,7 @@ func wrapError(ctx context.Context, baseErr error, sessionID string) error {
 	if !ok {
 		return errors.Join(baseErr, fmt.Errorf("invalid ref type: %T", metaMountResult.Sys()))
 	}
-	mntable, err := workerRef.ImmutableRef.Mount(ctx, true, bksession.NewGroup(sessionID))
+	mntable, err := workerRef.ImmutableRef.Mount(ctx, true, bksession.NewGroup(client.ID()))
 	if err != nil {
 		return errors.Join(err, baseErr)
 	}
@@ -339,6 +342,11 @@ func wrapError(ctx context.Context, baseErr error, sessionID string) error {
 		}
 	}
 
+	// Start a debug container if the exec failed
+	if err := debugContainer(ctx, execOp.Exec, execErr, opErr, client); err != nil {
+		bklog.G(ctx).Debugf("debug terminal error: %v", err)
+	}
+
 	return &ExecError{
 		original: baseErr,
 		Cmd:      execOp.Exec.Meta.Args,
@@ -346,6 +354,122 @@ func wrapError(ctx context.Context, baseErr error, sessionID string) error {
 		Stdout:   strings.TrimSpace(string(stdoutBytes)),
 		Stderr:   strings.TrimSpace(string(stderrBytes)),
 	}
+}
+
+func debugContainer(ctx context.Context, execOp *bksolverpb.ExecOp, execErr *llberror.ExecError, opErr *solvererror.OpError, client *Client) error {
+	if !client.Opts.Interactive {
+		return nil
+	}
+
+	execMd, ok, err := ExecutionMetadataFromDescription(opErr.Description)
+	if err != nil {
+		return fmt.Errorf("failed to retrieve execution metadata: %w", err)
+	}
+	if !ok {
+		// containers created by buildkit internals like the dockerfile frontend
+		return nil
+	}
+
+	// Ensure we only spawn one terminal per exec.
+	if execMd.ExecID != "" {
+		if _, exists := client.execMap.LoadOrStore(execMd.ExecID, struct{}{}); exists {
+			return nil
+		}
+	}
+
+	// If this is the (internal) exec of the module itself, we don't want to spawn a terminal.
+	if execMd.Internal {
+		return nil
+	}
+
+	mounts := []ContainerMount{}
+	for i, m := range execOp.Mounts {
+		mountID := execErr.Mounts[i]
+		if mountID == nil {
+			continue
+		}
+
+		workerRef, ok := mountID.Sys().(*bkworker.WorkerRef)
+		if !ok {
+			continue
+		}
+
+		mounts = append(mounts, ContainerMount{
+			WorkerRef: workerRef,
+			Mount: &bkgw.Mount{
+				Dest:      m.Dest,
+				Selector:  m.Selector,
+				Readonly:  m.Readonly,
+				MountType: m.MountType,
+				CacheOpt:  m.CacheOpt,
+				SecretOpt: m.SecretOpt,
+				SSHOpt:    m.SSHOpt,
+				ResultID:  mountID.ID(),
+			},
+		})
+	}
+
+	dbgCtr, err := client.NewContainer(ctx, NewContainerRequest{
+		Hostname: execOp.Meta.Hostname,
+		Mounts:   mounts,
+	})
+	if err != nil {
+		return err
+	}
+	term, err := client.OpenTerminal(ctx)
+	if err != nil {
+		return err
+	}
+
+	output := idtui.NewOutput(term.Stderr)
+	fmt.Fprint(term.Stderr,
+		output.String(idtui.IconFailure).Foreground(termenv.ANSIRed).String()+" Exec failed, attaching terminal: ")
+	dump := idtui.Dump{Newline: "\r\n", Prefix: "    "}
+	fmt.Fprint(term.Stderr, dump.Newline)
+	if err := dump.DumpID(output, execMd.CallID); err != nil {
+		return fmt.Errorf("failed to serialize service ID: %w", err)
+	}
+	fmt.Fprint(term.Stderr, dump.Newline)
+	fmt.Fprintf(term.Stderr,
+		output.String("! %s").Foreground(termenv.ANSIYellow).String(), execErr.Error())
+	fmt.Fprint(term.Stderr, dump.Newline)
+
+	dbgShell, err := dbgCtr.Start(ctx, bkgw.StartRequest{
+		// We need to hardcode a shell since we don't have access to `withDefaultTerminalCmd` here.
+		//
+		// We could use `sh` instead of `/bin/sh`, but then we'd be relying on $PATH to be set up correctly.
+		// It's more likely for `sh` to be in `/bin/sh` than for the container to have a correct $PATH.
+		Args: []string{"/bin/sh"},
+
+		Env:          execOp.Meta.Env,
+		Cwd:          execOp.Meta.Cwd,
+		User:         execOp.Meta.User,
+		SecurityMode: execOp.Security,
+		SecretEnv:    execOp.Secretenv,
+
+		Tty:    true,
+		Stdin:  term.Stdin,
+		Stdout: term.Stdout,
+		Stderr: term.Stderr,
+	})
+	if err != nil {
+		return err
+	}
+	go func() {
+		for resize := range term.ResizeCh {
+			dbgShell.Resize(ctx, resize)
+		}
+	}()
+	waitErr := dbgShell.Wait()
+	termExitCode := 0
+	if waitErr != nil {
+		termExitCode = 1
+		var exitErr *bkgwpb.ExitError
+		if errors.As(waitErr, &exitErr) {
+			termExitCode = int(exitErr.ExitCode)
+		}
+	}
+	return term.Close(termExitCode)
 }
 
 func getExecMetaFile(ctx context.Context, mntable snapshot.Mountable, fileName string) ([]byte, error) {

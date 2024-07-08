@@ -12,6 +12,7 @@ import (
 	"time"
 
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
@@ -285,6 +286,7 @@ func (svc *Service) startContainer(
 	}
 	if !ok {
 		execMD = &buildkit.ExecutionMetadata{
+			ExecID:    identity.NewID(),
 			SessionID: clientMetadata.SessionID,
 		}
 	}
@@ -325,7 +327,7 @@ func (svc *Service) startContainer(
 
 	pbPlatform := pb.PlatformFromSpec(ctr.Platform.Spec())
 
-	mounts := make([]bkgw.Mount, len(execOp.Mounts))
+	mounts := make([]buildkit.ContainerMount, len(execOp.Mounts))
 	for i, m := range execOp.Mounts {
 		mount := bkgw.Mount{
 			Selector:  m.Selector,
@@ -357,7 +359,9 @@ func (svc *Service) startContainer(
 			mount.Ref = res.Ref
 		}
 
-		mounts[i] = mount
+		mounts[i] = buildkit.ContainerMount{
+			Mount: &mount,
+		}
 	}
 
 	gc, err := bk.NewContainer(ctx, buildkit.NewContainerRequest{

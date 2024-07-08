@@ -74,6 +74,8 @@ type Opts struct {
 	Containers   map[bkgw.Container]struct{}
 	ContainersMu *sync.Mutex
 
+	Interactive bool
+
 	SpanCtx trace.SpanContext
 }
 
@@ -86,6 +88,7 @@ type Client struct {
 	closeCtx context.Context
 	cancel   context.CancelFunc
 	closeMu  sync.RWMutex
+	execMap  sync.Map
 }
 
 func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
@@ -95,6 +98,7 @@ func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
 		Opts:     opts,
 		closeCtx: ctx,
 		cancel:   cancel,
+		execMap:  sync.Map{},
 	}
 
 	return client, nil
@@ -143,7 +147,7 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 	if err != nil {
 		// writing log w/ %+v so that we can see stack traces embedded in err by buildkit's usage of pkg/errors
 		bklog.G(ctx).Errorf("solve error: %+v", err)
-		return nil, wrapError(ctx, err, c.ID())
+		return nil, wrapError(ctx, err, c)
 	}
 
 	res, err := solverresult.ConvertResult(llbRes, func(rp bksolver.ResultProxy) (*ref, error) {
@@ -190,8 +194,13 @@ func (c *Client) ResolveSourceMetadata(ctx context.Context, op *bksolverpb.Sourc
 	return c.LLBBridge.ResolveSourceMetadata(ctx, op, opt)
 }
 
+type ContainerMount struct {
+	*bkgw.Mount
+	WorkerRef *bkworker.WorkerRef
+}
+
 type NewContainerRequest struct {
-	Mounts   []bkgw.Mount
+	Mounts   []ContainerMount
 	Platform *bksolverpb.Platform
 	Hostname string
 	ExecutionMetadata
@@ -227,8 +236,8 @@ func (c *Client) NewContainer(ctx context.Context, req NewContainerRequest) (*Co
 	for i, m := range req.Mounts {
 		i, m := i, m
 		eg.Go(func() error {
-			var workerRef *bkworker.WorkerRef
-			if m.Ref != nil {
+			workerRef := m.WorkerRef
+			if workerRef == nil && m.Ref != nil {
 				ref, ok := m.Ref.(*ref)
 				if !ok {
 					return fmt.Errorf("dagger: unexpected ref type: %T", m.Ref)
@@ -254,6 +263,7 @@ func (c *Client) NewContainer(ctx context.Context, req NewContainerRequest) (*Co
 					CacheOpt:  m.CacheOpt,
 					SecretOpt: m.SecretOpt,
 					SSHOpt:    m.SSHOpt,
+					ResultID:  m.ResultID,
 				},
 			}
 			return nil
