@@ -367,14 +367,18 @@ func (labels Labels) WithJenkinsLabels() Labels {
 	if len(os.Getenv("JENKINS_HOME")) == 0 {
 		return labels
 	}
-	remoteBranch := os.Getenv("GIT_BRANCH")
-	if remoteBranch != "" {
-		if _, branch, ok := strings.Cut(remoteBranch, "/"); ok {
-			labels["dagger.io/vcs.change.branch"] = branch
-		}
-	}
-	labels["dagger.io/vcs.change.head_sha"] = os.Getenv("GIT_COMMIT")
+	// in Jenkins, vcs labels take precedence over provider env variables
+	_, ok := labels["dagger.io/git.branch"]
 
+	if !ok {
+		remoteBranch := os.Getenv("GIT_BRANCH")
+		if remoteBranch != "" {
+			if _, branch, ok := strings.Cut(remoteBranch, "/"); ok {
+				labels["dagger.io/git.branch"] = branch
+			}
+		}
+		labels["dagger.io/git.ref"] = os.Getenv("GIT_COMMIT")
+	}
 	return labels
 }
 

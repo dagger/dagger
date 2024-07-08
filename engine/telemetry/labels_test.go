@@ -405,8 +405,8 @@ func TestLoadJenkinsLabels(t *testing.T) {
 				"GIT_COMMIT":   "abc123",
 			},
 			Labels: telemetry.Labels{
-				"dagger.io/vcs.change.branch":   "test-feature",
-				"dagger.io/vcs.change.head_sha": "abc123",
+				"dagger.io/git.branch":   "test-feature",
+				"dagger.io/git.ref": "abc123",
 			},
 		},
 	} {
