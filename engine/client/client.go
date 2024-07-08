@@ -124,6 +124,9 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	c := &Client{Params: params}
 
 	if c.ID == "" {
+		c.ID = os.Getenv("DAGGER_SESSION_CLIENT_ID")
+	}
+	if c.ID == "" {
 		c.ID = identity.NewID()
 	}
 	configuredSessionID := c.SessionID

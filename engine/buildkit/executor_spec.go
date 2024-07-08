@@ -55,8 +55,9 @@ const (
 	DaggerRedirectStderrEnv  = "_DAGGER_REDIRECT_STDERR"
 	DaggerHostnameAliasesEnv = "_DAGGER_HOSTNAME_ALIASES"
 
-	DaggerSessionPortEnv  = "DAGGER_SESSION_PORT"
-	DaggerSessionTokenEnv = "DAGGER_SESSION_TOKEN"
+	DaggerSessionPortEnv     = "DAGGER_SESSION_PORT"
+	DaggerSessionTokenEnv    = "DAGGER_SESSION_TOKEN"
+	DaggerSessionClientIDEnv = "DAGGER_SESSION_CLIENT_ID"
 
 	// this is set by buildkit, we cannot change
 	BuildkitSessionIDHeader = "x-docker-expose-session-uuid"
@@ -875,7 +876,11 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 		w.execMD.Hostname = state.spec.Hostname
 	}
 
-	state.spec.Process.Env = append(state.spec.Process.Env, DaggerSessionTokenEnv+"="+w.execMD.SecretToken)
+	state.spec.Process.Env = append(state.spec.Process.Env,
+		DaggerSessionClientIDEnv+"="+w.execMD.ClientID)
+
+	state.spec.Process.Env = append(state.spec.Process.Env,
+		DaggerSessionTokenEnv+"="+w.execMD.SecretToken)
 
 	filesyncer, err := client.NewFilesyncer(
 		state.rootfsPath,
@@ -967,7 +972,8 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	if !ok {
 		return fmt.Errorf("unexpected listener address type: %T", httpListener.Addr())
 	}
-	state.spec.Process.Env = append(state.spec.Process.Env, DaggerSessionPortEnv+"="+strconv.Itoa(tcpAddr.Port))
+	state.spec.Process.Env = append(state.spec.Process.Env,
+		DaggerSessionPortEnv+"="+strconv.Itoa(tcpAddr.Port))
 
 	http2Srv := &http2.Server{}
 	httpSrv := &http.Server{
