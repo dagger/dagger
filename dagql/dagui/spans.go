@@ -1,7 +1,6 @@
 package dagui
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -96,14 +95,6 @@ func (span *Span) EffectSpans() []*Span {
 func (span *Span) Failed() bool {
 	return span.Status().Code == codes.Error ||
 		len(span.FailedEffects) > 0
-}
-
-func (span *Span) Err() error {
-	status := span.Status()
-	if status.Code == codes.Error {
-		return errors.New(status.Description)
-	}
-	return nil
 }
 
 func (span *Span) IsInternal() bool {
@@ -214,7 +205,7 @@ func (span *Span) Classes() string {
 	if span.Canceled {
 		classes = append(classes, "canceled")
 	}
-	if span.Err() != nil {
+	if span.Failed() {
 		classes = append(classes, "errored")
 	}
 	if span.Internal {

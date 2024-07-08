@@ -58,11 +58,11 @@ func (opts FrontendOpts) ShouldShow(tree *TraceTree) bool {
 		// internal steps are hidden by default
 		return false
 	}
-	if tree.Parent != nil && (span.Encapsulated || tree.Parent.Span.Encapsulate) && tree.Parent.Span.Err() == nil && opts.Verbosity < ShowEncapsulatedVerbosity {
+	if tree.Parent != nil && (span.Encapsulated || tree.Parent.Span.Encapsulate) && tree.Parent.Span.Failed() && opts.Verbosity < ShowEncapsulatedVerbosity {
 		// encapsulated steps are hidden (even on error) unless their parent errors
 		return false
 	}
-	if span.Err() != nil {
+	if span.Failed() {
 		// show errors
 		return true
 	}
