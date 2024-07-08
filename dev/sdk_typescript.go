@@ -109,7 +109,7 @@ func (t TypescriptSDK) Test(ctx context.Context) error {
 }
 
 // Regenerate the Typescript SDK API
-func (t TypescriptSDK) Generate(ctx context.Context) (*Directory, error) {
+func (t TypescriptSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 	installer, err := t.Dagger.installer(ctx, "sdk-typescript-generate")
 	if err != nil {
 		return nil, err
@@ -136,7 +136,7 @@ func (t TypescriptSDK) Publish(
 	// +optional
 	dryRun bool,
 	// +optional
-	npmToken *Secret,
+	npmToken *dagger.Secret,
 ) error {
 	version := strings.TrimPrefix(tag, "sdk/typescript/v")
 	if dryRun {
@@ -167,7 +167,7 @@ always-auth=true`, plaintext)
 }
 
 // Bump the Typescript SDK's Engine dependency
-func (t TypescriptSDK) Bump(ctx context.Context, version string) (*Directory, error) {
+func (t TypescriptSDK) Bump(ctx context.Context, version string) (*dagger.Directory, error) {
 	// trim leading v from version
 	version = strings.TrimPrefix(version, "v")
 
@@ -179,12 +179,12 @@ func (t TypescriptSDK) Bump(ctx context.Context, version string) (*Directory, er
 	return dag.Directory().WithNewFile("sdk/typescript/provisioning/default.ts", engineReference), nil
 }
 
-func (t TypescriptSDK) nodeJsBase() *Container {
+func (t TypescriptSDK) nodeJsBase() *dagger.Container {
 	// Use the LTS version by default
 	return t.nodeJsBaseFromVersion(nodeVersionMaintenance)
 }
 
-func (t TypescriptSDK) nodeJsBaseFromVersion(nodeVersion string) *Container {
+func (t TypescriptSDK) nodeJsBaseFromVersion(nodeVersion string) *dagger.Container {
 	appDir := "sdk/typescript"
 	src := t.Dagger.Source.Directory(appDir)
 
@@ -205,7 +205,7 @@ func (t TypescriptSDK) nodeJsBaseFromVersion(nodeVersion string) *Container {
 		WithDirectory(mountPath, src)
 }
 
-func (t TypescriptSDK) bunJsBase() *Container {
+func (t TypescriptSDK) bunJsBase() *dagger.Container {
 	appDir := "sdk/typescript"
 	src := t.Dagger.Source.Directory(appDir)
 

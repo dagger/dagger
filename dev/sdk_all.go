@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 
+	"github.com/dagger/dagger/dev/internal/dagger"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -34,9 +35,9 @@ func (t AllSDK) Test(ctx context.Context) error {
 	return eg.Wait()
 }
 
-func (t AllSDK) Generate(ctx context.Context) (*Directory, error) {
+func (t AllSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 	eg, ctx := errgroup.WithContext(ctx)
-	dirs := make([]*Directory, len(t.SDK.allSDKs()))
+	dirs := make([]*dagger.Directory, len(t.SDK.allSDKs()))
 	for i, sdk := range t.SDK.allSDKs() {
 		i, sdk := i, sdk
 		eg.Go(func() error {
@@ -64,9 +65,9 @@ func (t AllSDK) Generate(ctx context.Context) (*Directory, error) {
 	return dir, nil
 }
 
-func (t AllSDK) Bump(ctx context.Context, version string) (*Directory, error) {
+func (t AllSDK) Bump(ctx context.Context, version string) (*dagger.Directory, error) {
 	eg, ctx := errgroup.WithContext(ctx)
-	dirs := make([]*Directory, len(t.SDK.allSDKs()))
+	dirs := make([]*dagger.Directory, len(t.SDK.allSDKs()))
 	for i, sdk := range t.SDK.allSDKs() {
 		i, sdk := i, sdk
 		eg.Go(func() error {

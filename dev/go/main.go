@@ -7,11 +7,13 @@ import (
 
 	"go.opentelemetry.io/otel/codes"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/dagger/dagger/dev/go/internal/dagger"
 )
 
 func New(
 	// Project source directory
-	source *Directory,
+	source *dagger.Directory,
 	// Go version
 	// +optional
 	// +default="1.22.4"
@@ -39,14 +41,14 @@ type Go struct {
 	LintVersion string
 
 	// Project source directory
-	Source *Directory
+	Source *dagger.Directory
 }
 
 // Build a base container with Go installed and configured
-func (p *Go) Base() *Container {
+func (p *Go) Base() *dagger.Container {
 	return dag.
 		Wolfi().
-		Container(WolfiContainerOpts{Packages: []string{
+		Container(dagger.WolfiContainerOpts{Packages: []string{
 			"go~" + p.Version,
 			// gcc is needed to run go test -race https://github.com/golang/go/issues/9918 (???)
 			"build-base",
@@ -56,7 +58,7 @@ func (p *Go) Base() *Container {
 		}}).
 		WithEnvVariable("GOLANG_VERSION", p.Version).
 		WithEnvVariable("GOPATH", "/go").
-		WithEnvVariable("PATH", "${GOPATH}/bin:${PATH}", ContainerWithEnvVariableOpts{Expand: true}).
+		WithEnvVariable("PATH", "${GOPATH}/bin:${PATH}", dagger.ContainerWithEnvVariableOpts{Expand: true}).
 		WithDirectory("/usr/local/bin", dag.Directory()).
 		WithMountedCache("/go/pkg/mod", dag.CacheVolume("go-mod")).
 		// include a cache for go build
@@ -67,13 +69,13 @@ func (p *Go) Base() *Container {
 //   - Build a base container with Go tooling installed and configured
 //   - Mount the source code
 //   - Download dependencies
-func (p *Go) Env() *Container {
+func (p *Go) Env() *dagger.Container {
 	return p.
 		Base().
 		WithEnvVariable("CGO_ENABLED", "0").
 		WithWorkdir("/app").
 		// run `go mod download` with only go.mod files (re-run only if mod files have changed)
-		WithDirectory("/app", p.Source, ContainerWithDirectoryOpts{
+		WithDirectory("/app", p.Source, dagger.ContainerWithDirectoryOpts{
 			Include: []string{"**/go.mod", "**/go.sum"},
 		}).
 		WithExec([]string{"go", "mod", "download"}).

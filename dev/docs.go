@@ -28,17 +28,17 @@ pagination_prev: null
 `
 
 // Build the docs website
-func (d Docs) Site() *Directory {
+func (d Docs) Site() *dagger.Directory {
 	return dag.
 		Docusaurus(
 			d.Dagger.Source,
-			DocusaurusOpts{Dir: "/src/docs", DisableCache: true},
+			dagger.DocusaurusOpts{Dir: "/src/docs", DisableCache: true},
 		).
 		Build()
 }
 
 // Build the docs server
-func (d Docs) Server() *Container {
+func (d Docs) Server() *dagger.Container {
 	nginxConfig := dag.CurrentModule().Source().File("docs-nginx.conf")
 	return dag.
 		Container().
@@ -118,7 +118,7 @@ func (d Docs) Generate(ctx context.Context) (*dagger.Directory, error) {
 }
 
 // Regenerate the API schema
-func (d Docs) GenerateSdl() *Directory {
+func (d Docs) GenerateSdl() *dagger.Directory {
 	introspectionJSON := dag.
 		Go(d.Dagger.Source).
 		Env().
@@ -132,7 +132,7 @@ func (d Docs) GenerateSdl() *Directory {
 }
 
 // Regenerate the CLI reference docs
-func (d Docs) GenerateCli() *Directory {
+func (d Docs) GenerateCli() *dagger.Directory {
 	// Should we keep `--include-experimental`?
 	generated := d.Dagger.Go().Env().
 		WithExec([]string{"go", "run", "./cmd/dagger", "gen", "--frontmatter=" + cliZenFrontmatter, "--output=cli.mdx", "--include-experimental"}).

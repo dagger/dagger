@@ -49,7 +49,7 @@ insecure-entitlements = ["security.insecure"]
 {{ end -}}
 `
 
-func generateEntrypoint(kvs []string) (*File, error) {
+func generateEntrypoint(kvs []string) (*dagger.File, error) {
 	opts := map[string]string{}
 	for _, kv := range kvs {
 		k, v, ok := strings.Cut(kv, "=")
@@ -88,7 +88,7 @@ func generateEntrypoint(kvs []string) (*File, error) {
 	return entrypoint, nil
 }
 
-func generateConfig(trace bool, kvs []string) (*File, error) {
+func generateConfig(trace bool, kvs []string) (*dagger.File, error) {
 	opts := map[string]string{}
 	for _, kv := range kvs {
 		k, v, ok := strings.Cut(kv, "=")

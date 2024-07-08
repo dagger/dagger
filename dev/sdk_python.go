@@ -144,7 +144,7 @@ func (t PythonSDK) Publish(
 	// +optional
 	pypiRepo string,
 	// +optional
-	pypiToken *Secret,
+	pypiToken *dagger.Secret,
 ) error {
 	version := strings.TrimPrefix(tag, "sdk/python/v")
 	if dryRun {
@@ -181,7 +181,7 @@ func (t PythonSDK) Bump(ctx context.Context, version string) (*dagger.Directory,
 
 // pythonBase returns a python container with the Python SDK source files
 // added and dependencies installed.
-func (t PythonSDK) pythonBase(version string, install bool) *Container {
+func (t PythonSDK) pythonBase(version string, install bool) *dagger.Container {
 	src := t.Dagger.Source.Directory(pythonSubdir)
 
 	pipx := dag.HTTP("https://github.com/pypa/pipx/releases/download/1.2.0/pipx.pyz")
