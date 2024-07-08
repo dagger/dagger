@@ -80,7 +80,7 @@ func (e *Engine) Container(
 		return nil, err
 	}
 
-	builder, err := build.NewBuilder(ctx, e.Dagger.Source)
+	builder, err := build.NewBuilder(ctx, e.Dagger.Source())
 	if err != nil {
 		return nil, err
 	}
@@ -165,35 +165,21 @@ func (e *Engine) Lint(
 	ctx context.Context,
 ) error {
 	eg, ctx := errgroup.WithContext(ctx)
-
 	eg.Go(func() error {
-		// Packages to lint
-		packages := []string{
-			"",
-			// FIXME: should the CI lint itself?
-			// FIXME: unsustainable to require keeping this list up to date by hand
-			"dev",
-			"dev/dirdiff",
-			"dev/go",
-			"dev/graphql",
-			"dev/shellcheck",
-			"dev/markdown",
-		}
-		// Packages that need codegen
-		codegen := []string{
-			"dev",
-			"dev/dirdiff",
-			"dev/go",
-			"dev/graphql",
-			"dev/shellcheck",
-			"dev/markdown",
-		}
-
-		return e.Dagger.Go().
-			WithCodegen(codegen).
-			Lint(ctx, packages)
+		return dag.
+			Go(e.Dagger.WithModCodegen().Source()).
+			Lint(ctx, dagger.GoLintOpts{Packages: []string{
+				".",
+				// FIXME: should the CI lint itself?
+				// FIXME: unsustainable to require keeping this list up to date by hand
+				"dev",
+				"dev/dirdiff",
+				"dev/go",
+				"dev/graphql",
+				"dev/shellcheck",
+				"dev/markdown",
+			}})
 	})
-
 	eg.Go(func() error {
 		return e.LintGenerate(ctx)
 	})
@@ -202,6 +188,7 @@ func (e *Engine) Lint(
 }
 
 // Generate any engine-related files
+// Note: this is codegen of the 'go generate' variety, not 'dagger develop'
 func (e *Engine) Generate() *dagger.Directory {
 	generated := e.Dagger.Go().Env().
 		WithoutDirectory("sdk") // sdk generation happens separately
@@ -319,7 +306,7 @@ func (e *Engine) Scan(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	ignoreFiles := dag.Directory().WithDirectory("/", e.Dagger.Source, dagger.DirectoryWithDirectoryOpts{
+	ignoreFiles := dag.Directory().WithDirectory("/", e.Dagger.Source(), dagger.DirectoryWithDirectoryOpts{
 		Include: []string{
 			".trivyignore",
 			".trivyignore.yml",

@@ -45,7 +45,7 @@ func (r RustSDK) Lint(ctx context.Context) error {
 	})
 
 	eg.Go(func() error {
-		return util.DiffDirectoryF(ctx, r.Dagger.Source, r.Generate, "sdk/rust")
+		return util.DiffDirectoryF(ctx, r.Dagger.Source(), r.Generate, "sdk/rust")
 	})
 
 	return eg.Wait()
@@ -80,7 +80,7 @@ func (r RustSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 		File(strings.TrimPrefix(rustGeneratedAPIPath, "sdk/rust/"))
 
 	return dag.Directory().
-		WithDirectory("sdk/rust", r.Dagger.Source.Directory("sdk/rust")).
+		WithDirectory("sdk/rust", r.Dagger.Source().Directory("sdk/rust")).
 		WithFile(rustGeneratedAPIPath, generated), nil
 }
 
@@ -134,7 +134,7 @@ func (r RustSDK) Bump(ctx context.Context, version string) (*dagger.Directory, e
 	versionStrf := `pub const DAGGER_ENGINE_VERSION: &'static str = "%s";`
 	version = strings.TrimPrefix(version, "v")
 
-	versionContents, err := r.Dagger.Source.File(rustVersionFilePath).Contents(ctx)
+	versionContents, err := r.Dagger.Source().File(rustVersionFilePath).Contents(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -155,7 +155,7 @@ func (r RustSDK) Bump(ctx context.Context, version string) (*dagger.Directory, e
 func (r RustSDK) rustBase(image string) *dagger.Container {
 	const appDir = "sdk/rust"
 
-	src := dag.Directory().WithDirectory("/", r.Dagger.Source.Directory(appDir))
+	src := dag.Directory().WithDirectory("/", r.Dagger.Source().Directory(appDir))
 
 	mountPath := fmt.Sprintf("/%s", appDir)
 

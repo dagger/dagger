@@ -6,12 +6,15 @@ import (
 	"context"
 
 	"github.com/dagger/dagger/dev/internal/dagger"
+	"golang.org/x/sync/errgroup"
 )
 
 // A dev environment for the DaggerDev Engine
 type DaggerDev struct {
-	Source  *dagger.Directory // +private
+	Src     *dagger.Directory // +private
 	Version *VersionInfo
+	// When set, module codegen is automatically applied when retrieving the Dagger source code
+	ModCodegen bool
 
 	// Can be used by nested clients to forward docker credentials to avoid
 	// rate limits
@@ -33,10 +36,16 @@ func New(
 	}
 
 	return &DaggerDev{
-		Source:    source,
+		Src:       source,
 		Version:   versionInfo,
 		DockerCfg: dockerCfg,
 	}, nil
+}
+
+// Enable module auto-codegen when retrieving the dagger source code
+func (dev *DaggerDev) WithModCodegen() *DaggerDev {
+	dev.ModCodegen = true
+	return dev
 }
 
 // Check that everything works. Use this as CI entrypoint.
@@ -73,28 +82,60 @@ func (dev *DaggerDev) CLI() *CLI {
 	return &CLI{Dagger: dev}
 }
 
+// Return the Dagger source code
+func (dev *DaggerDev) Source() *dagger.Directory {
+	if !dev.ModCodegen {
+		return dev.Src
+	}
+	// FIXME: build this list dynamically, by scanning the source for modules
+	modules := []string{
+		"dev",
+		"dev/dirdiff",
+		"dev/go",
+		"dev/golangci",
+		"dev/graphql",
+		"dev/markdown",
+		"dev/shellcheck",
+		"sdk/elixir/runtime",
+		// FIXME: broken
+		// "sdk/python/dev",
+		"sdk/python/runtime",
+		"sdk/typescript/dev",
+		"sdk/typescript/dev/node",
+		"sdk/typescript/runtime",
+	}
+	eg, _ := errgroup.WithContext(context.TODO())
+	layers := make(chan *dagger.Directory, len(modules))
+	for _, module := range modules {
+		module := module
+		eg.Go(func() error {
+			layers <- dev.Src.
+				AsModule(dagger.DirectoryAsModuleOpts{
+					SourceRootPath: module,
+				}).
+				GeneratedContextDirectory()
+			return nil
+		})
+	}
+	go func() {
+		eg.Wait()
+		close(layers)
+	}()
+	src := dev.Src
+	for layer := range layers {
+		src = src.WithDirectory("", layer)
+	}
+	return src
+}
+
 // Dagger's Go toolchain
 func (dev *DaggerDev) Go() *GoToolchain {
-	return &GoToolchain{Go: dag.Go(dev.Source)}
+	return &GoToolchain{Go: dag.Go(dev.Source())}
 }
 
 type GoToolchain struct {
 	// +private
 	*dagger.Go
-}
-
-// Run codegen (equivalent to `dagger develop`) in the specified subdirectories
-func (gtc *GoToolchain) WithCodegen(subdirs []string) *GoToolchain {
-	src := gtc.Source()
-	for _, subdir := range subdirs {
-		codegen := src.
-			AsModule(dagger.DirectoryAsModuleOpts{
-				SourceRootPath: subdir,
-			}).
-			GeneratedContextDirectory()
-		src = src.WithDirectory("", codegen)
-	}
-	return &GoToolchain{Go: dag.Go(src)}
 }
 
 func (gtc *GoToolchain) Env() *dagger.Container {
@@ -105,9 +146,7 @@ func (gtc *GoToolchain) Lint(
 	ctx context.Context,
 	packages []string,
 ) error {
-	return gtc.Go.Lint(ctx, dagger.GoLintOpts{
-		Pkgs: packages,
-	})
+	return gtc.Go.Lint(ctx, dagger.GoLintOpts{Packages: packages})
 }
 
 // Develop the Dagger engine container
@@ -145,7 +184,7 @@ func (dev *DaggerDev) SDK() *SDK {
 
 // Develop the Dagger helm chart
 func (dev *DaggerDev) Helm() *Helm {
-	return &Helm{Source: dev.Source.Directory("helm/dagger")}
+	return &Helm{Source: dev.Source().Directory("helm/dagger")}
 }
 
 // Creates a dev container that has a running CLI connected to a dagger engine

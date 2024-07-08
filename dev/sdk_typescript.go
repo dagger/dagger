@@ -45,7 +45,7 @@ func (t TypescriptSDK) Lint(ctx context.Context) error {
 		_, err := base.
 			WithDirectory(
 				fmt.Sprintf("/%s", path),
-				t.Dagger.Source.Directory(path),
+				t.Dagger.Source().Directory(path),
 				dagger.ContainerWithDirectoryOpts{
 					Include: []string{
 						"**/*.mts",
@@ -63,14 +63,13 @@ func (t TypescriptSDK) Lint(ctx context.Context) error {
 	})
 
 	eg.Go(func() error {
-		return util.DiffDirectoryF(ctx, t.Dagger.Source, t.Generate, typescriptGeneratedAPIPath)
+		return util.DiffDirectoryF(ctx, t.Dagger.Source(), t.Generate, typescriptGeneratedAPIPath)
 	})
 
 	eg.Go(func() error {
-		return t.Dagger.
-			Go().
-			WithCodegen([]string{typescriptRuntimeSubdir}).
-			Lint(ctx, []string{typescriptRuntimeSubdir})
+		return dag.
+			Go(t.Dagger.WithModCodegen().Source()).
+			Lint(ctx, dagger.GoLintOpts{Packages: []string{typescriptRuntimeSubdir}})
 	})
 
 	return eg.Wait()
@@ -114,7 +113,7 @@ func (t TypescriptSDK) Generate(ctx context.Context) (*dagger.Directory, error) 
 	if err != nil {
 		return nil, err
 	}
-	build, err := build.NewBuilder(ctx, t.Dagger.Source)
+	build, err := build.NewBuilder(ctx, t.Dagger.Source())
 	if err != nil {
 		return nil, err
 	}
@@ -186,7 +185,7 @@ func (t TypescriptSDK) nodeJsBase() *dagger.Container {
 
 func (t TypescriptSDK) nodeJsBaseFromVersion(nodeVersion string) *dagger.Container {
 	appDir := "sdk/typescript"
-	src := t.Dagger.Source.Directory(appDir)
+	src := t.Dagger.Source().Directory(appDir)
 
 	// Mirror the same dir structure from the repo because of the
 	// relative paths in eslint (for docs linting).
@@ -207,7 +206,7 @@ func (t TypescriptSDK) nodeJsBaseFromVersion(nodeVersion string) *dagger.Contain
 
 func (t TypescriptSDK) bunJsBase() *dagger.Container {
 	appDir := "sdk/typescript"
-	src := t.Dagger.Source.Directory(appDir)
+	src := t.Dagger.Source().Directory(appDir)
 
 	// Mirror the same dir structure from the repo because of the
 	// relative paths in eslint (for docs linting).

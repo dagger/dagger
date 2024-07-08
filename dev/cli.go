@@ -21,7 +21,7 @@ func (cli *CLI) File(
 	// +optional
 	platform dagger.Platform,
 ) (*dagger.File, error) {
-	builder, err := build.NewBuilder(ctx, cli.Dagger.Source)
+	builder, err := build.NewBuilder(ctx, cli.Dagger.Source())
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +72,7 @@ func (cli *CLI) Publish(
 	}
 	_, err = ctr.
 		WithWorkdir("/app").
-		WithMountedDirectory("/app", cli.Dagger.Source).
+		WithMountedDirectory("/app", cli.Dagger.Source()).
 		WithDirectory("/app/.git", gitDir).
 		WithEnvVariable("GH_ORG_NAME", githubOrgName).
 		WithSecretVariable("GITHUB_TOKEN", githubToken).
@@ -106,7 +106,7 @@ func (cli *CLI) TestPublish(ctx context.Context) error {
 	oses := []string{"linux", "windows", "darwin"}
 	arches := []string{"amd64", "arm64", "arm"}
 
-	builder, err := build.NewBuilder(ctx, cli.Dagger.Source)
+	builder, err := build.NewBuilder(ctx, cli.Dagger.Source())
 	if err != nil {
 		return err
 	}
