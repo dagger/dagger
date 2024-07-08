@@ -425,12 +425,12 @@ func (svc *Service) startContainer(
 			close(exited)
 		}()
 
-		// terminate the span; we're not interested in setting an error, since
-		// services return a benign error like `exit status 1` on exit
-		defer span.End()
-
 		exitErr = svcProc.Wait()
 		slog.Info("service exited", "err", exitErr)
+
+		// show the exit status; doing so won't fail anything, and is
+		// helpful for troubleshooting
+		defer telemetry.End(span, func() error { return exitErr })
 
 		// detach dependent services when process exits
 		detachDeps()
