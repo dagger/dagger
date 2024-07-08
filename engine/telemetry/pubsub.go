@@ -5,14 +5,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 	"sync"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/moby/buildkit/identity"
+	"github.com/psanford/lencode"
 	"github.com/sourcegraph/conc/pool"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	"go.opentelemetry.io/otel/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -20,6 +21,8 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
+	otlplogsv1 "go.opentelemetry.io/proto/otlp/logs/v1"
+	otlptracev1 "go.opentelemetry.io/proto/otlp/trace/v1"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/dagger/dagger/engine"
@@ -73,9 +76,9 @@ func NewPubSub() *PubSub {
 		spanClients: map[spanKey]string{},
 		spanParents: map[spanKey]trace.SpanID{},
 	}
-	mux.HandleFunc("/v1/traces", ps.TracesHandler)
-	mux.HandleFunc("/v1/logs", ps.LogsHandler)
-	mux.HandleFunc("/v1/metrics", ps.MetricsHandler)
+	mux.HandleFunc("POST /v1/traces", ps.TracesHandler)
+	mux.HandleFunc("POST /v1/logs", ps.LogsHandler)
+	mux.HandleFunc("POST /v1/metrics", ps.MetricsHandler)
 	return ps
 }
 
@@ -222,6 +225,69 @@ func (ps *PubSub) TracesHandler(rw http.ResponseWriter, r *http.Request) { //nol
 	rw.WriteHeader(http.StatusCreated)
 }
 
+func (ps *PubSub) SubscribeTracesHandler(rw http.ResponseWriter, r *http.Request) { //nolint: dupl
+	var topic Topic
+
+	topic.ClientID = r.URL.Query().Get("client")
+
+	if traceIDHex := r.URL.Query().Get("trace"); traceIDHex != "" {
+		var err error
+		topic.TraceID, err = trace.TraceIDFromHex(traceIDHex)
+		if err != nil {
+			http.Error(rw, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+
+	slog := slog.With("topic", topic.String())
+
+	flusher, ok := rw.(http.Flusher)
+	if !ok {
+		http.Error(rw, "cannot flush", http.StatusInternalServerError)
+		return
+	}
+
+	flusher.Flush()
+
+	exp, err := otlptrace.New(r.Context(), &otlpTraceExporter{
+		enc:     lencode.NewEncoder(rw, lencode.SeparatorOpt(nil)),
+		flusher: flusher,
+	})
+	if err != nil {
+		http.Error(rw, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if err := ps.SubscribeToSpans(r.Context(), topic, exp); err != nil {
+		slog.Warn("error subscribing to spans", "err", err)
+	}
+}
+
+type otlpTraceExporter struct {
+	enc     *lencode.Encoder
+	flusher http.Flusher
+	mu      sync.Mutex
+}
+
+var _ otlptrace.Client = (*otlpTraceExporter)(nil)
+
+func (s *otlpTraceExporter) UploadTraces(ctx context.Context, spans []*otlptracev1.ResourceSpans) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	msg, err := proto.Marshal(&coltracepb.ExportTraceServiceRequest{
+		ResourceSpans: spans,
+	})
+	if err != nil {
+		return err
+	}
+	defer s.flusher.Flush()
+	return s.enc.Encode(msg)
+}
+
+func (s *otlpTraceExporter) Start(ctx context.Context) error { return nil }
+
+func (s *otlpTraceExporter) Stop(ctx context.Context) error { return nil }
+
 func (ps *PubSub) LogsHandler(rw http.ResponseWriter, r *http.Request) { //nolint: dupl
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -245,6 +311,61 @@ func (ps *PubSub) LogsHandler(rw http.ResponseWriter, r *http.Request) { //nolin
 
 	rw.WriteHeader(http.StatusCreated)
 }
+
+func (ps *PubSub) SubscribeLogsHandler(rw http.ResponseWriter, r *http.Request) { //nolint: dupl
+	var topic Topic
+
+	topic.ClientID = r.URL.Query().Get("client")
+
+	if traceIDHex := r.URL.Query().Get("trace"); traceIDHex != "" {
+		var err error
+		topic.TraceID, err = trace.TraceIDFromHex(traceIDHex)
+		if err != nil {
+			http.Error(rw, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+
+	flusher, ok := rw.(http.Flusher)
+	if !ok {
+		http.Error(rw, "cannot flush", http.StatusInternalServerError)
+		return
+	}
+
+	flusher.Flush()
+
+	if err := ps.SubscribeToLogs(r.Context(), topic, &otlpLogExporter{
+		enc:     lencode.NewEncoder(rw, lencode.SeparatorOpt(nil)),
+		flusher: flusher,
+	}); err != nil {
+		slog.Warn("error subscribing to spans", "err", err)
+	}
+}
+
+type otlpLogExporter struct {
+	enc     *lencode.Encoder
+	flusher http.Flusher
+	mu      sync.Mutex
+}
+
+var _ sdklog.Exporter = (*otlpLogExporter)(nil)
+
+func (s *otlpLogExporter) Export(ctx context.Context, logs []sdklog.Record) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	msg, err := proto.Marshal(&otlplogsv1.LogsData{
+		ResourceLogs: telemetry.LogsToPB(logs),
+	})
+	if err != nil {
+		return err
+	}
+	defer s.flusher.Flush()
+	return s.enc.Encode(msg)
+}
+
+func (s *otlpLogExporter) ForceFlush(ctx context.Context) error { return nil }
+
+func (s *otlpLogExporter) Shutdown(ctx context.Context) error { return nil }
 
 func (ps *PubSub) MetricsHandler(rw http.ResponseWriter, r *http.Request) {
 	// TODO
@@ -401,11 +522,7 @@ func (ps SpansPubSub) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnly
 					continue
 				}
 
-				if strings.HasSuffix(TracesSource_Subscribe_FullMethodName, s.Name()) ||
-					strings.HasSuffix(LogsSource_Subscribe_FullMethodName, s.Name()) {
-					// HACK: don't get stuck waiting on ourselves
-					slog.ExtraDebug("avoiding waiting for ourselves")
-				} else if clientID == selfClient {
+				if clientID == selfClient {
 					if s.EndTime().Before(s.StartTime()) {
 						slog.Trace("starting span", "client", client.id)
 						client.startSpan(s)

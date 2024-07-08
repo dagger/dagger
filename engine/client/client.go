@@ -18,8 +18,6 @@ import (
 	"time"
 
 	"github.com/Khan/genqlient/graphql"
-	"github.com/cenkalti/backoff/v4"
-	"github.com/containerd/containerd/defaults"
 	"github.com/docker/cli/cli/config"
 	"github.com/google/uuid"
 	controlapi "github.com/moby/buildkit/api/services/control"
@@ -29,18 +27,21 @@ import (
 	"github.com/moby/buildkit/session/auth/authprovider"
 	"github.com/moby/buildkit/util/grpcerrors"
 	"github.com/moby/buildkit/util/tracing"
+	"github.com/psanford/lencode"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
+	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
+	otlplogsv1 "go.opentelemetry.io/proto/otlp/logs/v1"
 	"golang.org/x/net/http2"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/protobuf/proto"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
@@ -98,8 +99,7 @@ type Client struct {
 	closeRequests context.CancelFunc
 	closeMu       sync.RWMutex
 
-	telemetry     *errgroup.Group
-	telemetryConn *grpc.ClientConn
+	telemetry *errgroup.Group
 
 	httpClient *httpClient
 	bkClient   *bkclient.Client
@@ -272,53 +272,6 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 	c.bkClient = bkClient
 	c.bkVersion = bkInfo.BuildkitVersion.Version
 
-	if err := retry(ctx, 10*time.Millisecond, func(elapsed time.Duration, ctx context.Context) error {
-		slog.Debug("subscribing to telemetry", "remote", c.RunnerHost)
-
-		// Open a separate connection for telemetry.
-		telemetryConn, err := grpc.NewClient(
-			"passthrough:"+c.RunnerHost,
-			grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
-				return c.connector.Connect(c.internalCtx)
-			}),
-			// Propagate the session ID to the server (via baggage).
-			grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
-			// Same defaults as Buildkit. I hit the default 4MB limit pretty quickly.
-			// Shrinking IDs might help.
-			grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(defaults.DefaultMaxRecvMsgSize)),
-			grpc.WithDefaultCallOptions(grpc.MaxCallSendMsgSize(defaults.DefaultMaxSendMsgSize)),
-			// Uncomment to measure telemetry traffic.
-			// grpc.WithUnaryInterceptor(telemetry.MeasuringUnaryClientInterceptor()),
-			// grpc.WithStreamInterceptor(telemetry.MeasuringStreamClientInterceptor()),
-			grpc.WithTransportCredentials(insecure.NewCredentials()))
-		if err != nil {
-			slog.Error("failed to dial telemetry", "error", err, "elapsed", elapsed)
-			return fmt.Errorf("telemetry grpc dial: %w", err)
-		}
-		c.telemetryConn = telemetryConn
-		c.telemetry = new(errgroup.Group)
-
-		if c.EngineTrace != nil {
-			if err := c.exportTraces(enginetel.NewTracesSourceClient(telemetryConn)); err != nil {
-				slog.Error("failed to subscribe to traces", "error", err, "elapsed", elapsed)
-				return fmt.Errorf("export traces: %w", err)
-			}
-		}
-
-		if c.EngineLogs != nil {
-			if err := c.exportLogs(enginetel.NewLogsSourceClient(telemetryConn)); err != nil {
-				slog.Error("failed to subscribe to logs", "error", err, "elapsed", elapsed)
-				return fmt.Errorf("export logs: %w", err)
-			}
-		}
-
-		slog.Debug("subscribed to telemetry", "elapsed", elapsed)
-
-		return nil
-	}); err != nil {
-		return fmt.Errorf("attach to telemetry: %w", err)
-	}
-
 	if c.EngineCallback != nil {
 		c.EngineCallback(ctx, bkInfo.BuildkitVersion.Revision, bkInfo.BuildkitVersion.Version, c.ID)
 	}
@@ -329,6 +282,30 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 			c.CloudURLCallback(ctx, "https://dagger.cloud/traces/setup", "", ok)
 		}
 	}
+
+	return nil
+}
+
+func (c *Client) subscribeTelemetry() (rerr error) {
+	slog.Debug("subscribing to telemetry", "remote", c.RunnerHost)
+
+	c.telemetry = new(errgroup.Group)
+
+	if c.EngineTrace != nil {
+		if err := c.exportTraces(); err != nil {
+			slog.Error("failed to subscribe to traces", "error", err)
+			return fmt.Errorf("export traces: %w", err)
+		}
+	}
+
+	if c.EngineLogs != nil {
+		if err := c.exportLogs(); err != nil {
+			slog.Error("failed to subscribe to logs", "error", err)
+			return fmt.Errorf("export logs: %w", err)
+		}
+	}
+
+	slog.Debug("subscribed to telemetry")
 
 	return nil
 }
@@ -503,35 +480,10 @@ func (srv *BuildkitSessionServer) Run(ctx context.Context) {
 	}
 }
 
-func retry(ctx context.Context, initialInterval time.Duration, fn func(time.Duration, context.Context) error) error {
-	bo := backoff.NewExponentialBackOff()
-	bo.InitialInterval = initialInterval
-
-	connectRetryCtx, connectRetryCancel := context.WithTimeout(ctx, 300*time.Second)
-	defer connectRetryCancel()
-
-	start := time.Now()
-
-	var lastErr error
-	err := backoff.Retry(func() error {
-		if err := ctx.Err(); err != nil {
-			return backoff.Permanent(err)
-		}
-
-		nextBackoff := bo.NextBackOff()
-		ctx, cancel := context.WithTimeout(connectRetryCtx, nextBackoff)
-		defer cancel()
-
-		lastErr = fn(time.Since(start), ctx)
-		return lastErr
-	}, backoff.WithContext(bo, connectRetryCtx))
-	if err != nil {
-		return errors.Join(ctx.Err(), lastErr)
-	}
-	return nil
-}
-
 func (c *Client) daggerConnect(ctx context.Context) error {
+	if err := c.subscribeTelemetry(); err != nil {
+		return fmt.Errorf("subscribe to telemetry: %w", err)
+	}
 	var err error
 	c.daggerClient, err = dagger.Connect(
 		context.WithoutCancel(ctx),
@@ -593,27 +545,40 @@ func (c *Client) Close() (rerr error) {
 	return rerr
 }
 
-func (c *Client) exportTraces(tracesClient enginetel.TracesSourceClient) error {
+func (c *Client) exportTraces() error {
 	// NB: we never actually want to interrupt this, since it's relied upon for
 	// seeing what's going on, even during shutdown
 	ctx := context.WithoutCancel(c.internalCtx)
 
-	traceID := trace.SpanContextFromContext(ctx).TraceID()
-	spans, err := tracesClient.Subscribe(ctx, &enginetel.SubscribeRequest{
-		TraceId:  traceID[:],
-		ClientId: c.ID,
+	res, err := c.httpClient.Do(&http.Request{
+		Method: http.MethodGet,
+		URL: &url.URL{
+			Scheme: "http",
+			Host:   "dagger",
+			Path:   "/v1/traces",
+			RawQuery: url.Values{
+				"trace":  []string{trace.SpanContextFromContext(ctx).TraceID().String()},
+				"client": []string{c.ID},
+			}.Encode(),
+		},
 	})
 	if err != nil {
-		return fmt.Errorf("subscribe to spans: %w", err)
+		return fmt.Errorf("get trace: %w", err)
+	}
+
+	if res.StatusCode != http.StatusOK {
+		return fmt.Errorf("get trace: %s", res.Status)
 	}
 
 	slog.Debug("exporting spans from engine")
+
+	dec := lencode.NewDecoder(res.Body, lencode.SeparatorOpt(nil))
 
 	c.telemetry.Go(func() error {
 		defer slog.Debug("done exporting spans from engine", "ctxErr", ctx.Err())
 
 		for {
-			data, err := spans.Recv()
+			data, err := dec.Decode()
 			if err != nil {
 				if errors.Is(err, context.Canceled) {
 					return nil
@@ -621,7 +586,12 @@ func (c *Client) exportTraces(tracesClient enginetel.TracesSourceClient) error {
 				return fmt.Errorf("recv spans: %w", err)
 			}
 
-			spans := telemetry.SpansFromPB(data.GetResourceSpans())
+			var req coltracepb.ExportTraceServiceRequest
+			if err := proto.Unmarshal(data, &req); err != nil {
+				return fmt.Errorf("unmarshal spans: %w", err)
+			}
+
+			spans := telemetry.SpansFromPB(req.GetResourceSpans())
 
 			slog.Debug("received spans from engine", "len", len(spans))
 
@@ -638,35 +608,52 @@ func (c *Client) exportTraces(tracesClient enginetel.TracesSourceClient) error {
 	return nil
 }
 
-func (c *Client) exportLogs(logsClient enginetel.LogsSourceClient) error {
+func (c *Client) exportLogs() error {
 	// NB: we never actually want to interrupt this, since it's relied upon for
 	// seeing what's going on, even during shutdown
 	ctx := context.WithoutCancel(c.internalCtx)
 
-	traceID := trace.SpanContextFromContext(ctx).TraceID()
-	logs, err := logsClient.Subscribe(ctx, &enginetel.SubscribeRequest{
-		TraceId:  traceID[:],
-		ClientId: c.ID,
+	res, err := c.httpClient.Do(&http.Request{
+		Method: http.MethodGet,
+		URL: &url.URL{
+			Scheme: "http",
+			Host:   "dagger",
+			Path:   "/v1/logs",
+			RawQuery: url.Values{
+				"trace":  []string{trace.SpanContextFromContext(ctx).TraceID().String()},
+				"client": []string{c.ID},
+			}.Encode(),
+		},
 	})
 	if err != nil {
-		return fmt.Errorf("subscribe to logs: %w", err)
+		return fmt.Errorf("get trace: %w", err)
 	}
 
+	if res.StatusCode != http.StatusOK {
+		return fmt.Errorf("get trace: %s", res.Status)
+	}
 	slog.Debug("exporting logs from engine")
+
+	dec := lencode.NewDecoder(res.Body, lencode.SeparatorOpt(nil))
 
 	c.telemetry.Go(func() error {
 		defer slog.Debug("done exporting logs from engine", "ctxErr", ctx.Err())
 
 		for {
-			data, err := logs.Recv()
+			data, err := dec.Decode()
 			if err != nil {
 				if errors.Is(err, context.Canceled) {
 					return nil
 				}
-				return fmt.Errorf("recv log: %w", err)
+				return fmt.Errorf("recv spans: %w", err)
 			}
 
-			logs := telemetry.LogsFromPB(data.GetResourceLogs())
+			var req otlplogsv1.LogsData
+			if err := proto.Unmarshal(data, &req); err != nil {
+				return fmt.Errorf("unmarshal spans: %w", err)
+			}
+
+			logs := telemetry.LogsFromPB(req.GetResourceLogs())
 
 			slog.Debug("received logs from engine", "len", len(logs))
 
@@ -1044,6 +1031,9 @@ type httpClient struct {
 
 func (c *httpClient) Do(req *http.Request) (*http.Response, error) {
 	for k, v := range c.headers {
+		if req.Header == nil {
+			req.Header = http.Header{}
+		}
 		req.Header[k] = v
 	}
 	otel.GetTextMapPropagator().Inject(req.Context(), propagation.HeaderCarrier(req.Header))

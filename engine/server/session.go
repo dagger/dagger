@@ -742,6 +742,8 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 	mux.Handle(engine.SessionAttachablesEndpoint, httpHandlerFunc(srv.serveSessionAttachables, client))
 	mux.Handle(engine.QueryEndpoint, httpHandlerFunc(srv.serveQuery, client))
 	mux.Handle(engine.ShutdownEndpoint, httpHandlerFunc(srv.serveShutdown, client))
+	mux.HandleFunc("GET /v1/traces", srv.telemetryPubSub.SubscribeTracesHandler)
+	mux.HandleFunc("GET /v1/logs", srv.telemetryPubSub.SubscribeLogsHandler)
 	sess.endpointMu.RLock()
 	for path, handler := range sess.endpoints {
 		mux.Handle(path, handler)
