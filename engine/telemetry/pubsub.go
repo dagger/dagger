@@ -225,7 +225,7 @@ func (ps *PubSub) TracesHandler(rw http.ResponseWriter, r *http.Request) { //nol
 	rw.WriteHeader(http.StatusCreated)
 }
 
-func (ps *PubSub) SubscribeTracesHandler(rw http.ResponseWriter, r *http.Request) { //nolint: dupl
+func (ps *PubSub) SubscribeTracesHandler(rw http.ResponseWriter, r *http.Request) {
 	var topic Topic
 
 	topic.ClientID = r.URL.Query().Get("client")
@@ -312,7 +312,7 @@ func (ps *PubSub) LogsHandler(rw http.ResponseWriter, r *http.Request) { //nolin
 	rw.WriteHeader(http.StatusCreated)
 }
 
-func (ps *PubSub) SubscribeLogsHandler(rw http.ResponseWriter, r *http.Request) { //nolint: dupl
+func (ps *PubSub) SubscribeLogsHandler(rw http.ResponseWriter, r *http.Request) {
 	var topic Topic
 
 	topic.ClientID = r.URL.Query().Get("client")

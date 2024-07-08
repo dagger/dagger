@@ -578,6 +578,7 @@ func (c *Client) exportTraces() error {
 	dec := lencode.NewDecoder(res.Body, lencode.SeparatorOpt(nil))
 
 	c.telemetry.Go(func() error {
+		defer res.Body.Close()
 		defer slog.Debug("done exporting spans from engine", "ctxErr", ctx.Err())
 
 		for {
@@ -641,6 +642,7 @@ func (c *Client) exportLogs() error {
 	dec := lencode.NewDecoder(res.Body, lencode.SeparatorOpt(nil))
 
 	c.telemetry.Go(func() error {
+		defer res.Body.Close()
 		defer slog.Debug("done exporting logs from engine", "ctxErr", ctx.Err())
 
 		for {

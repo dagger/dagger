@@ -212,9 +212,9 @@ func (fe *frontendPretty) runWithTUI(ctx context.Context, ttyIn *os.File, ttyOut
 	return fe.err
 }
 
-func (fe *frontendPretty) renderErrorLogs(out *termenv.Output) error {
+func (fe *frontendPretty) renderErrorLogs(out *termenv.Output) {
 	if fe.rowsView == nil {
-		return nil
+		return
 	}
 	errTree := fe.db.CollectErrors(fe.rowsView)
 	var anyHasLogs bool
@@ -239,7 +239,6 @@ func (fe *frontendPretty) renderErrorLogs(out *termenv.Output) error {
 		}
 		return false
 	})
-	return nil
 }
 
 // finalRender is called after the program has finished running and prints the
@@ -267,10 +266,11 @@ func (fe *frontendPretty) finalRender() error {
 
 	// If there are errors, show log output.
 	if fe.err != nil && renderedProgress {
+		fe.renderErrorLogs(out)
 		// Counter-intuitively, we don't want to render the primary output
 		// when there's an error, because the error is better represented by
 		// the progress output and error summary.
-		return fe.renderErrorLogs(out)
+		return nil
 	}
 
 	if renderedProgress {
