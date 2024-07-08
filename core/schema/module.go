@@ -1073,6 +1073,11 @@ func (s *moduleSchema) updateDaggerConfig(
 	case modules.EngineVersionLatest:
 		modCfg.EngineVersion = engine.Version
 	case "":
+		engineVersion, err := src.Self.ModuleEngineVersion(ctx)
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to get module config: %w", err)
+		}
+		modCfg.EngineVersion = engineVersion
 		if modCfg.EngineVersion == "" {
 			modCfg.EngineVersion = engine.Version
 		}
