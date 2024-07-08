@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+
+	"dagger/main/internal/dagger"
 )
 
 type Test struct {
@@ -41,14 +43,14 @@ type CustomIface interface {
 	BoolList(ctx context.Context) ([]bool, error)
 	WithBoolList(ctx context.Context, boolListArg []bool) CustomIface
 
-	Obj() *Directory
-	WithObj(objArg *Directory) CustomIface
+	Obj() *dagger.Directory
+	WithObj(objArg *dagger.Directory) CustomIface
 	WithOptionalPragmaObj(
 		// +optional
-		objArg *Directory,
+		objArg *dagger.Directory,
 	) CustomIface
-	ObjList(ctx context.Context) ([]*Directory, error)
-	WithObjList(ctx context.Context, objListArg []*Directory) CustomIface
+	ObjList(ctx context.Context) ([]*dagger.Directory, error)
+	WithObjList(ctx context.Context, objListArg []*dagger.Directory) CustomIface
 
 	SelfIface() CustomIface
 	SelfIfaceList(ctx context.Context) ([]CustomIface, error)
@@ -129,27 +131,27 @@ func (m *Test) WithBoolList(ctx context.Context, ifaceArg CustomIface, boolList 
 	return ifaceArg.WithBoolList(ctx, boolList)
 }
 
-func (m *Test) Obj(ifaceArg CustomIface) *Directory {
+func (m *Test) Obj(ifaceArg CustomIface) *dagger.Directory {
 	return ifaceArg.Obj()
 }
 
-func (m *Test) WithObj(ifaceArg CustomIface, objArg *Directory) CustomIface {
+func (m *Test) WithObj(ifaceArg CustomIface, objArg *dagger.Directory) CustomIface {
 	return ifaceArg.WithObj(objArg)
 }
 
 func (m *Test) WithOptionalPragmaObj(
 	ifaceArg CustomIface,
 	// +optional
-	objArg *Directory,
+	objArg *dagger.Directory,
 ) CustomIface {
 	return ifaceArg.WithOptionalPragmaObj(objArg)
 }
 
-func (m *Test) ObjList(ctx context.Context, ifaceArg CustomIface) ([]*Directory, error) {
+func (m *Test) ObjList(ctx context.Context, ifaceArg CustomIface) ([]*dagger.Directory, error) {
 	return ifaceArg.ObjList(ctx)
 }
 
-func (m *Test) WithObjList(ctx context.Context, ifaceArg CustomIface, objList []*Directory) CustomIface {
+func (m *Test) WithObjList(ctx context.Context, ifaceArg CustomIface, objList []*dagger.Directory) CustomIface {
 	return ifaceArg.WithObjList(ctx, objList)
 }
 

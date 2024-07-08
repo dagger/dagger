@@ -22,17 +22,21 @@ func (ModuleSuite) TestDaggerCallHelp(ctx context.Context, t *testctx.T) {
 
 	modGen := modInit(t, c, "go", `package main
 
-func New(source *Directory) *Test {
+import (
+	"dagger/test/internal/dagger"
+)
+
+func New(source *dagger.Directory) *Test {
     return &Test{
         Source: source,
     }
 }
 
 type Test struct {
-    Source *Directory
+    Source *dagger.Directory
 }
 
-func (m *Test) Container() *Container {
+func (m *Test) Container() *dagger.Container {
     return dag.
         Container().
         From("`+alpineImage+`").
@@ -68,11 +72,12 @@ func (ModuleSuite) TestDaggerCallArgTypes(ctx context.Context, t *testctx.T) {
 				WithNewFile("main.go", fmt.Sprintf(`package main
 import (
 	"context"
+	"dagger/test/internal/dagger"
 )
 
 type Test struct {}
 
-func (m *Test) Fn(ctx context.Context, svc *Service) (string, error) {
+func (m *Test) Fn(ctx context.Context, svc *dagger.Service) (string, error) {
 	return dag.Container().From("%s").WithExec([]string{"apk", "add", "curl"}).
 		WithServiceBinding("daserver", svc).
 		WithExec([]string{"curl", "http://daserver:8000"}).
@@ -106,11 +111,12 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"dagger/test/internal/dagger"
 )
 
 type Test struct {}
 
-func (m *Test) Fn(ctx context.Context, svc *Service) (string, error) {
+func (m *Test) Fn(ctx context.Context, svc *dagger.Service) (string, error) {
 	ports, err := svc.Ports(ctx)
 	if err != nil {
 		return "", err
@@ -155,6 +161,7 @@ func (m *Test) Fn(ctx context.Context, svc *Service) (string, error) {
 import (
 	"context"
 	"strings"
+	"dagger/minimal/internal/dagger"
 )
 
 type Minimal struct {}
@@ -163,7 +170,7 @@ func (m *Minimal) Hello(msgs []string) string {
 	return strings.Join(msgs, "+")
 }
 
-func (m *Minimal) Reads(ctx context.Context, files []File) (string, error) {
+func (m *Minimal) Reads(ctx context.Context, files []dagger.File) (string, error) {
 	var contents []string
 	for _, f := range files {
 		content, err := f.Contents(ctx)
@@ -200,9 +207,14 @@ func (m *Minimal) Reads(ctx context.Context, files []File) (string, error) {
 					WithNewFile("/dir/subdir/foo.txt", "foo").
 					WithNewFile("/dir/subdir/bar.txt", "bar").
 					WithNewFile("main.go", `package main
+
+import (
+	"dagger/test/internal/dagger"
+)
+
 type Test struct {}
 
-func (m *Test) Fn(dir *Directory) *Directory {
+func (m *Test) Fn(dir *dagger.Directory) *dagger.Directory {
 	return dir
 }
 	`,
@@ -227,9 +239,13 @@ func (m *Test) Fn(dir *Directory) *Directory {
 					WithNewFile("/root/foo.txt", "foo").
 					WithNewFile("/root/subdir/bar.txt", "bar").
 					WithNewFile("main.go", `package main
+
+import (
+	"dagger/test/internal/dagger"
+)
 type Test struct {}
 
-func (m *Test) Fn(dir *Directory) *Directory {
+func (m *Test) Fn(dir *dagger.Directory) *dagger.Directory {
 	return dir
 }
 `,
@@ -255,9 +271,12 @@ func (m *Test) Fn(dir *Directory) *Directory {
 					WithNewFile("/work/otherdir/bar.txt", "bar").
 					WithNewFile("/work/dir/subdir/blah.txt", "blah").
 					WithNewFile("main.go", `package main
+import (
+	"dagger/test/internal/dagger"
+)
 type Test struct {}
 
-func (m *Test) Fn(dir *Directory) *Directory {
+func (m *Test) Fn(dir *dagger.Directory) *dagger.Directory {
 	return dir
 }
 	`,
@@ -289,12 +308,16 @@ func (m *Test) Fn(dir *Directory) *Directory {
 				WithWorkdir("/work").
 				With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 				WithNewFile("main.go", `package main
+import (
+	"dagger/test/internal/dagger"
+)
+
 type Test struct {}
 
 func (m *Test) Fn(
-	dir *Directory,
+	dir *dagger.Directory,
 	subpath string, // +optional
-) *Directory {
+) *dagger.Directory {
 	if subpath == "" {
 		subpath = "."
 	}
@@ -355,9 +378,12 @@ func (m *Test) Fn(
 				WithNewFile("/dir/subdir/foo.txt", "foo").
 				WithNewFile("/root/foo.txt", "foo").
 				WithNewFile("main.go", `package main
+import (
+	"dagger/test/internal/dagger"
+)
 type Test struct {}
 
-func (m *Test) Fn(file *File) *File {
+func (m *Test) Fn(file *dagger.File) *dagger.File {
 	return file
 }
 `,
@@ -381,9 +407,12 @@ func (m *Test) Fn(file *File) *File {
 				With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 				WithNewFile("/root/foo.txt", "foo").
 				WithNewFile("main.go", `package main
+import (
+	"dagger/test/internal/dagger"
+)
 type Test struct {}
 
-func (m *Test) Fn(file *File) *File {
+func (m *Test) Fn(file *dagger.File) *dagger.File {
 	return file
 }
 `,
@@ -403,9 +432,12 @@ func (m *Test) Fn(file *File) *File {
 				WithNewFile("/work/otherdir/foo.txt", "foo").
 				WithNewFile("/work/dir/subdir/blah.txt", "blah").
 				WithNewFile("main.go", `package main
+import (
+	"dagger/test/internal/dagger"
+)
 type Test struct {}
 
-func (m *Test) Fn(file *File) *File {
+func (m *Test) Fn(file *dagger.File) *dagger.File {
 	return file
 }
 	`,
@@ -438,11 +470,14 @@ func (m *Test) Fn(file *File) *File {
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 			WithNewFile("main.go", `package main
 
-import "context"
+import (
+	"context"
+	"dagger/test/internal/dagger"
+)
 
 type Test struct {}
 
-func (m *Test) Insecure(ctx context.Context, token *Secret) (string, error) {
+func (m *Test) Insecure(ctx context.Context, token *dagger.Secret) (string, error) {
 	return token.Plaintext(ctx)
 }
 `,
@@ -522,11 +557,12 @@ func (m *Test) Insecure(ctx context.Context, token *Secret) (string, error) {
 
 import (
 	"context"
+	"dagger/test/internal/dagger"
 )
 
 type Test struct {}
 
-func (m *Test) Cacher(ctx context.Context, cache *CacheVolume, val string) (string, error) {
+func (m *Test) Cacher(ctx context.Context, cache *dagger.CacheVolume, val string) (string, error) {
 	return dag.Container().
 		From("`+alpineImage+`").
 		WithMountedCache("/cache", cache).
@@ -553,15 +589,16 @@ func (m *Test) Cacher(ctx context.Context, cache *CacheVolume, val string) (stri
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 			WithNewFile("main.go", `package main
+import "dagger/test/internal/dagger"
 
 type Test struct {}
 
-func (m *Test) FromPlatform(platform Platform) string {
+func (m *Test) FromPlatform(platform dagger.Platform) string {
 	return string(platform)
 }
 
-func (m *Test) ToPlatform(platform string) Platform {
-	return Platform(platform)
+func (m *Test) ToPlatform(platform string) dagger.Platform {
+	return dagger.Platform(platform)
 }
 `,
 			)
@@ -591,14 +628,16 @@ func (m *Test) ToPlatform(platform string) Platform {
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 			WithNewFile("main.go", `package main
 
+import "dagger/test/internal/dagger"
+
 type Test struct {}
 
-func (m *Test) FromProto(proto NetworkProtocol) string {
+func (m *Test) FromProto(proto dagger.NetworkProtocol) string {
 	return string(proto)
 }
 
-func (m *Test) ToProto(proto string) NetworkProtocol {
-	return NetworkProtocol(proto)
+func (m *Test) ToProto(proto string) dagger.NetworkProtocol {
+	return dagger.NetworkProtocol(proto)
 }
 `,
 			)
@@ -684,15 +723,16 @@ func (m *Test) ToStatus(status string) Status {
 
 import (
 	"context"
+	"dagger/test/internal/dagger"
 )
 
 type Test struct {}
 
-func (m *Test) ModSrc(ctx context.Context, modSrc *ModuleSource) *ModuleSource {
+func (m *Test) ModSrc(ctx context.Context, modSrc *dagger.ModuleSource) *dagger.ModuleSource {
 	return modSrc
 }
 
-func (m *Test) Mod(ctx context.Context, module *Module) *Module {
+func (m *Test) Mod(ctx context.Context, module *dagger.Module) *dagger.Module {
 	return module
 }
 `,
@@ -785,16 +825,20 @@ func (m *Minimal) Fn() []*Foo {
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 			WithNewFile("main.go", fmt.Sprintf(`package main
 
+import (
+	"dagger/test/internal/dagger"
+)
+
 type Test struct {}
 
-func (m *Test) Ctr() *Container {
+func (m *Test) Ctr() *dagger.Container {
     return dag.Container().
         From("%[1]s").
         WithDefaultArgs([]string{"echo", "hello"}).
         WithExec([]string{})
 }
 
-func (m *Test) Fail() *Container {
+func (m *Test) Fail() *dagger.Container {
     return dag.Container().
         From("%[1]s").
         WithExec([]string{"sh", "-c", "echo goodbye; exit 127"})
@@ -840,6 +884,10 @@ func (m *Test) Fail() *Container {
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 			WithNewFile("main.go", `package main
 
+import (
+	"dagger/test/internal/dagger"
+)
+
 func New() *Test {
 	return &Test{
 		Dir: dag.Directory().WithNewFile("foo.txt", "foo").WithNewFile("bar.txt", "bar"),
@@ -847,7 +895,7 @@ func New() *Test {
 }
 
 type Test struct {
-	Dir *Directory
+	Dir *dagger.Directory
 }
 `,
 			)
@@ -890,6 +938,10 @@ type Test struct {
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 			WithNewFile("main.go", `package main
 
+import (
+	"dagger/test/internal/dagger"
+)
+
 func New() *Test {
 	return &Test{
 		File: dag.Directory().WithNewFile("foo.txt", "foo").File("foo.txt"),
@@ -897,7 +949,7 @@ func New() *Test {
 }
 
 type Test struct {
-	File *File
+	File *dagger.File
 }
 `,
 			)
@@ -930,12 +982,16 @@ type Test struct {
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 			WithNewFile("main.go", fmt.Sprintf(`package main
 
+import (
+	"dagger/test/internal/dagger"
+)
+
 func New() *Test {
 	return &Test{Ctr: dag.Container().From("%s").WithExec([]string{"echo", "hello", "world"})}
 }
 
 type Test struct {
-	Ctr *Container
+	Ctr *dagger.Container
 }
 `, alpineImage),
 			)
@@ -957,12 +1013,16 @@ func (ModuleSuite) TestDaggerCallCoreChaining(ctx context.Context, t *testctx.T)
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 			WithNewFile("main.go", fmt.Sprintf(`package main
 
+import (
+	"dagger/test/internal/dagger"
+)
+
 func New() *Test {
 	return &Test{Ctr: dag.Container().From("%s")}
 }
 
 type Test struct {
-	Ctr *Container
+	Ctr *dagger.Container
 }
 `, alpineImage),
 			)
@@ -991,6 +1051,10 @@ type Test struct {
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 			WithNewFile("main.go", `package main
 
+import (
+	"dagger/test/internal/dagger"
+)
+
 func New() *Test {
 	return &Test{
 		Dir: dag.Directory().WithNewFile("foo.txt", "foo").WithNewFile("bar.txt", "bar"),
@@ -998,7 +1062,7 @@ func New() *Test {
 }
 
 type Test struct {
-	Dir *Directory
+	Dir *dagger.Directory
 }
 `,
 			)
@@ -1027,6 +1091,10 @@ type Test struct {
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 			WithNewFile("main.go", `package main
 
+import (
+	"dagger/test/internal/dagger"
+)
+
 func New() *Test {
 	return &Test{
 		File: dag.Directory().WithNewFile("foo.txt", "foo").File("foo.txt"),
@@ -1034,7 +1102,7 @@ func New() *Test {
 }
 
 type Test struct {
-	File *File
+	File *dagger.File
 }
 `,
 			)
@@ -1062,6 +1130,10 @@ func (ModuleSuite) TestDaggerCallReturnObject(ctx context.Context, t *testctx.T)
 
 	modGen := modInit(t, c, "go", `package main
 
+import (
+	"dagger/test/internal/dagger"
+)
+
 func New() *Test {
     return &Test{
         BaseImage: "`+alpineImage+`",
@@ -1076,15 +1148,15 @@ func (t *Test) Foo() *Foo {
     return &Foo{Ctr: dag.Container().From(t.BaseImage)}
 }
 
-func (t *Test) Files() []*File {
-    return []*File{
+func (t *Test) Files() []*dagger.File {
+    return []*dagger.File{
         dag.Directory().WithNewFile("foo.txt", "foo").File("foo.txt"),
         dag.Directory().WithNewFile("bar.txt", "bar").File("bar.txt"),
     }
 }
 
 type Foo struct {
-    Ctr *Container
+    Ctr *dagger.Container
 }
 `,
 	)
@@ -1127,6 +1199,10 @@ func (ModuleSuite) TestDaggerCallSaveOutput(ctx context.Context, t *testctx.T) {
 		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 		WithNewFile("main.go", `package main
 
+import (
+	"dagger/test/internal/dagger"
+)
+
 type Test struct {
 }
 
@@ -1134,7 +1210,7 @@ func (t *Test) Hello() string {
     return "hello"
 }
 
-func (t *Test) File() *File {
+func (t *Test) File() *dagger.File {
     return dag.Directory().WithNewFile("foo.txt", "foo").File("foo.txt")
 }
 `,

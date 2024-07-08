@@ -19,12 +19,14 @@ func (ModuleSuite) TestDaggerCLIFunctions(ctx context.Context, t *testctx.T) {
 
 import (
 	"context"
+	
+	"dagger/test/internal/dagger"
 )
 
 type Test struct{}
 
 // doc for FnA
-func (m *Test) FnA() *Container {
+func (m *Test) FnA() *dagger.Container {
 	return nil
 }
 
@@ -51,7 +53,7 @@ func (m *Test) Prim() string {
 
 type Obj struct {
 	// doc for FieldA
-	FieldA *Container
+	FieldA *dagger.Container
 	// doc for FieldB
 	FieldB string
 	// doc for FieldC
@@ -61,13 +63,13 @@ type Obj struct {
 }
 
 // doc for FnD
-func (m *Obj) FnD() *Container {
+func (m *Obj) FnD() *dagger.Container {
 	return nil
 }
 
 type OtherObj struct {
 	// doc for OtherFieldA
-	OtherFieldA *Container
+	OtherFieldA *dagger.Container
 	// doc for OtherFieldB
 	OtherFieldB string
 	// doc for OtherFieldC
@@ -77,7 +79,7 @@ type OtherObj struct {
 }
 
 // doc for FnE
-func (m *OtherObj) FnE() *Container {
+func (m *OtherObj) FnE() *dagger.Container {
 	return nil
 }
 

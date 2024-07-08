@@ -71,7 +71,10 @@ func (LegacySuite) TestLegacyTerminal(ctx context.Context, t *testctx.T) {
 	// process these types as before.
 
 	src := []byte(fmt.Sprintf(`package main
-import "context"
+import (
+	"context"
+	"dagger/test/internal/dagger"
+)
 
 func New(ctx context.Context) *Test {
 	return &Test{
@@ -83,10 +86,10 @@ func New(ctx context.Context) *Test {
 }
 
 type Test struct {
-	Ctr *Container
+	Ctr *dagger.Container
 }
 
-func (t *Test) Debug() *Terminal {
+func (t *Test) Debug() *dagger.Terminal {
 	return t.Ctr.Terminal()
 }
 `, alpineImage))
