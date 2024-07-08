@@ -203,3 +203,44 @@ func (t *Test) Debug() *Terminal {
 		require.NoError(t, err)
 	})
 }
+
+func (LegacySuite) TestContainerWithNewFile(ctx context.Context, t *testctx.T) {
+	// Changed in dagger/dagger#7293
+	//
+	// Ensure that the old schemas have an optional "contents" argument
+	// instead of required.
+
+	c := connect(ctx, t)
+
+	out, err := daggerCliBase(t, c).
+		With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+		WithNewFile("dagger.json", `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.11.9"}`).
+		WithNewFile("main.go", `package main
+
+import "context"
+
+type Test struct {}
+
+func (m *Test) Container(ctx context.Context) (string, error) {
+    return dag.Container().
+        WithNewFile("./foo", ContainerWithNewFileOpts{
+            Contents: "bar",
+        }).
+        File("./foo").
+        Contents(ctx)
+}
+
+func (m *Test) Default(ctx context.Context) (string, error) {
+    return dag.Container().
+        WithNewFile("./foo").
+        File("./foo").
+        Contents(ctx)
+}
+`,
+		).
+		With(daggerQuery(`{test{container default}}`)).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+	require.JSONEq(t, `{"test": {"container": "bar", "default": ""}}`, out)
+}

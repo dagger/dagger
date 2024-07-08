@@ -167,7 +167,9 @@ func (m *PythonSdk) WithBase() *PythonSdk {
 	if m.UseUv() {
 		uv := base.
 			WithEnvVariable("PYTHONDONTWRITEBYTECODE", "1").
-			WithNewFile("reqs.txt", "uv"+m.Discovery.UserConfig().UvVersion).
+			WithNewFile("reqs.txt", ContainerWithNewFileOpts{
+				Contents: "uv" + m.Discovery.UserConfig().UvVersion,
+			}).
 			WithExec([]string{"pip", "install", "-r", "/reqs.txt"}).
 			File("/usr/local/bin/uv")
 		base = base.
