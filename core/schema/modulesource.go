@@ -16,7 +16,6 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/vcs"
 	"github.com/go-git/go-git/v5/plumbing/transport"
@@ -743,44 +742,8 @@ func (s *moduleSchema) moduleSourceResolveContextPathFromCaller(
 	src *core.ModuleSource,
 	args struct{},
 ) (string, error) {
-	contextAbsPath, _, err := s.resolveContextPathFromCaller(ctx, src)
+	contextAbsPath, _, err := src.ResolveContextPathFromCaller(ctx)
 	return contextAbsPath, err
-}
-
-func (s *moduleSchema) resolveContextPathFromCaller(
-	ctx context.Context,
-	src *core.ModuleSource,
-) (contextRootAbsPath, sourceRootAbsPath string, _ error) {
-	if src.Kind != core.ModuleSourceKindLocal {
-		return "", "", fmt.Errorf("cannot resolve non-local module source from caller")
-	}
-
-	rootSubpath, err := src.SourceRootSubpath()
-	if err != nil {
-		return "", "", fmt.Errorf("failed to get source root subpath: %w", err)
-	}
-
-	bk, err := src.Query.Buildkit(ctx)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-	sourceRootStat, err := bk.StatCallerHostPath(ctx, rootSubpath, true)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to stat source root: %w", err)
-	}
-	sourceRootAbsPath = sourceRootStat.Path
-
-	contextAbsPath, contextFound, err := callerHostFindUpContext(ctx, bk, sourceRootAbsPath)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to find up root: %w", err)
-	}
-
-	if !contextFound {
-		// default to restricting to the source root dir, make it abs though for consistency
-		contextAbsPath = sourceRootAbsPath
-	}
-
-	return contextAbsPath, sourceRootAbsPath, nil
 }
 
 //nolint:gocyclo // it's already been split up where it makes sense, more would just create indirection in reading it
@@ -789,7 +752,7 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 	src *core.ModuleSource,
 	args struct{},
 ) (inst dagql.Instance[*core.ModuleSource], err error) {
-	contextAbsPath, sourceRootAbsPath, err := s.resolveContextPathFromCaller(ctx, src)
+	contextAbsPath, sourceRootAbsPath, err := src.ResolveContextPathFromCaller(ctx)
 	if err != nil {
 		return inst, err
 	}
@@ -1239,29 +1202,6 @@ func (s *moduleSchema) collectCallerLocalDeps(
 		return fmt.Errorf("local module at %q has a circular dependency", sourceRootAbsPath)
 	}
 	return err
-}
-
-// context path is the parent dir containing .git
-func callerHostFindUpContext(
-	ctx context.Context,
-	bk *buildkit.Client,
-	curDirPath string,
-) (string, bool, error) {
-	_, err := bk.StatCallerHostPath(ctx, filepath.Join(curDirPath, ".git"), false)
-	if err == nil {
-		return curDirPath, true, nil
-	}
-	// TODO: remove the strings.Contains check here (which aren't cross-platform),
-	// since we now set NotFound (since v0.11.2)
-	if status.Code(err) != codes.NotFound && !strings.Contains(err.Error(), "no such file or directory") {
-		return "", false, fmt.Errorf("failed to lstat .git: %w", err)
-	}
-
-	nextDirPath := filepath.Dir(curDirPath)
-	if curDirPath == nextDirPath {
-		return "", false, nil
-	}
-	return callerHostFindUpContext(ctx, bk, nextDirPath)
 }
 
 func (s *moduleSchema) moduleSourceResolveDirectoryFromCaller(

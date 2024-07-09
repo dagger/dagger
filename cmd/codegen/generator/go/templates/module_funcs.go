@@ -301,10 +301,6 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, docComment string, lin
 
 	ignore := []string{}
 	if v, ok := pragmas["ignore"]; ok {
-		if strings.HasPrefix(v, `"`) && strings.HasSuffix(v, `"`) {
-			v = v[1 : len(v)-1]
-		}
-
 		if err := json.Unmarshal([]byte(v), &ignore); err != nil {
 			return paramSpec{}, fmt.Errorf("ignore pragma '%s', must be a valid JSON array: %w", v, err)
 		}

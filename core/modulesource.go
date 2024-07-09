@@ -313,7 +313,7 @@ func (src *ModuleSource) LoadContext(ctx context.Context, dag *dagql.Server, pat
 
 		slog.Debug("moduleSource.LoadContext: loading contextual directory from local source", "path", path, "kind", src.Kind)
 
-		ctxPath, err := src.resolveContextPath(ctx, bk)
+		ctxPath, _, err := src.ResolveContextPathFromCaller(ctx)
 		if err != nil {
 			return inst, fmt.Errorf("failed to resolve context path: %w", err)
 		}
@@ -361,26 +361,29 @@ func (src *ModuleSource) LoadContext(ctx context.Context, dag *dagql.Server, pat
 
 // resolveContextPaths returns the context path to the .git directory
 // if it exists. Otherwise, it returns the source root directory.
-func (src *ModuleSource) resolveContextPath(ctx context.Context, bk *buildkit.Client) (string, error) {
+func (src *ModuleSource) ResolveContextPathFromCaller(ctx context.Context) (contextRootAbsPath, sourceRootAbsPath string, _ error) {
 	if src.Kind != ModuleSourceKindLocal {
-		return "", fmt.Errorf("cannot resolve non-local module source from caller")
+		return "", "", fmt.Errorf("cannot resolve non-local module source from caller")
 	}
 
 	rootSubpath, err := src.SourceRootSubpath()
 	if err != nil {
-		return "", fmt.Errorf("failed to get source root subpath: %w", err)
+		return "", "", fmt.Errorf("failed to get source root subpath: %w", err)
 	}
 
+	bk, err := src.Query.Buildkit(ctx)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get buildkit client: %w", err)
+	}
 	sourceRootStat, err := bk.StatCallerHostPath(ctx, rootSubpath, true)
 	if err != nil {
-		return "", fmt.Errorf("failed to stat source root: %w", err)
+		return "", "", fmt.Errorf("failed to stat source root: %w", err)
 	}
-
-	sourceRootAbsPath := sourceRootStat.Path
+	sourceRootAbsPath = sourceRootStat.Path
 
 	contextAbsPath, contextFound, err := callerHostFindUpContext(ctx, bk, sourceRootAbsPath)
 	if err != nil {
-		return "", fmt.Errorf("failed to find up root: %w", err)
+		return "", "", fmt.Errorf("failed to find up root: %w", err)
 	}
 
 	if !contextFound {
@@ -388,7 +391,7 @@ func (src *ModuleSource) resolveContextPath(ctx context.Context, bk *buildkit.Cl
 		contextAbsPath = sourceRootAbsPath
 	}
 
-	return contextAbsPath, nil
+	return contextAbsPath, sourceRootAbsPath, nil
 }
 
 // context path is the parent dir containing .git

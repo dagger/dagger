@@ -6813,11 +6813,11 @@ func (t *Test) DirsIgnore(
   ctx context.Context,
 
   // +defaultPath="/"
-  // +ignore="["!backend", "!frontend"]"
+  // +ignore=["!backend", "!frontend"]
   root *Directory,
 
   // +defaultPath="."
-  // +ignore="["dagger.json", "LICENSE"]"
+  // +ignore=["dagger.json", "LICENSE"]
   relativeRoot *Directory,
 ) ([]string, error) {
   res, err := root.Entries(ctx)
