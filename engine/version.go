@@ -3,6 +3,8 @@ package engine
 import (
 	"fmt"
 	"os"
+	"slices"
+	"strings"
 
 	"golang.org/x/mod/semver"
 )
@@ -61,14 +63,24 @@ func normalizeVersion(v string) string {
 }
 
 func CheckVersionCompatibility(version string, minVersion string) error {
-	if !semver.IsValid(version) {
-		return nil // probably a dev version
+	if isDevVersion(version) || isDevVersion(minVersion) {
+		// assume that a dev version in either direction is *always* compatible
+		return nil
 	}
-	if !semver.IsValid(minVersion) {
-		return nil // probably a dev version
-	}
+
 	if semver.Compare(version, minVersion) < 0 {
 		return fmt.Errorf("version %s does not meet required version %s", version, minVersion)
 	}
 	return nil
+}
+
+func isDevVersion(version string) bool {
+	if !semver.IsValid(version) {
+		// probably an old dev version
+		return true
+	}
+
+	// a more "modern" dev version
+	parts := strings.Split(semver.Prerelease(version), "-")
+	return slices.Contains(parts, "dev")
 }
