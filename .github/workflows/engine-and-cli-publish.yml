@@ -128,7 +128,12 @@ jobs:
         if: github.ref_name != 'main'
         uses: ./.github/actions/call
         with:
-          function: sdk all bump --version="${{ github.ref_name == 'main' && github.sha || github.ref_name }}" -o ./
+          function: sdk all bump --version="${{ github.ref_name }}" -o ./
+      - name: "Set Engine version in Helm Chart"
+        if: github.ref_name != 'main'
+        uses: ./.github/actions/call
+        with:
+          function: helm set-version --version="${{ github.ref_name }}" -o ./helm/dagger/Chart.yaml
       - name: "Open SDK Engine Dependencies PR"
         uses: peter-evans/create-pull-request@v3
         if: github.ref_name != 'main'

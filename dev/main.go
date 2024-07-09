@@ -148,7 +148,7 @@ func (dev *DaggerDev) SDK() *SDK {
 
 // Develop the Dagger helm chart
 func (dev *DaggerDev) Helm() *Helm {
-	return &Helm{Dagger: dev}
+	return &Helm{Source: dev.Source.Directory("helm/dagger")}
 }
 
 // Creates a dev container that has a running CLI connected to a dagger engine
