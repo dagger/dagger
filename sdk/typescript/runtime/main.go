@@ -322,16 +322,12 @@ func (t *TypescriptSdk) detectRuntime(ctx context.Context, modSource *ModuleSour
 	if err == nil {
 		value := gjson.Get(json, "dagger.runtime").String()
 		if value != "" {
-			version := ""
-			runtimeConfig := strings.Split(value, "@")
+			// Retrieve the runtime and version from the value (e.g., node@lts, bun@1)
+			// If version isn't specified, version will be an empty string and only the runtime will be used in Base.
+			runtime, version, _ := strings.Cut(value, "@")
 
-			switch runtime := SupportedTSRuntime(runtimeConfig[0]); runtime {
+			switch runtime := SupportedTSRuntime(runtime); runtime {
 			case Bun, Node:
-				// Set version if it's specified
-				if len(runtimeConfig) == 2 {
-					version = runtimeConfig[1]
-				}
-
 				return runtime, version, nil
 			default:
 				return "", "", fmt.Errorf("detected unknown runtime: %s", runtime)
