@@ -10,8 +10,8 @@ High-level description of benefit or purpose of the integration ie. why should y
 
 More technical explanation. Points to cover:
 
-* Where does it fit in <name of integration>'s standard workflow?
-* Where does it fit in <name of integration>'s architecture?
+* Where does it fit in <name-of-integration>'s standard workflow?
+* Where does it fit in <name-of-integration>'s architecture?
 * How do you trigger Dagger?
 * What additional deps are needed?
 * Are there any limitations or caveats?
