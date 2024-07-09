@@ -294,7 +294,7 @@ func main() {
 		defer stop()
 
 		telemetryCfg := telemetry.Config{
-			Detect:   true,
+			Detect:   os.Getenv("DAGGER_SESSION_PORT") == "",
 			Resource: Resource(),
 
 			LiveTraceExporters: []sdktrace.SpanExporter{Frontend.SpanExporter()},
