@@ -57,6 +57,7 @@ async def test_input_arg(alpine_image: str):
             dag.directory().with_new_file("Dockerfile", dockerfile),
             build_args=[dagger.BuildArg("SPAM", "egg")],
         )
+        .with_exec([])
         .stdout()
     )
     assert "SPAM=egg" in out

@@ -726,7 +726,7 @@ ENV FOO=bar
 CMD goenv
 `)
 
-		env, err := src.DockerBuild().Stdout(ctx)
+		env, err := src.DockerBuild().WithExec(nil).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, env, "FOO=bar\n")
 	})
@@ -745,7 +745,9 @@ CMD goenv
 
 		env, err := src.DockerBuild(dagger.DirectoryDockerBuildOpts{
 			Dockerfile: "subdir/Dockerfile.whee",
-		}).Stdout(ctx)
+		}).
+			WithExec(nil).
+			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, env, "FOO=bar\n")
 	})
@@ -764,7 +766,7 @@ CMD goenv
 
 		sub := c.Directory().WithDirectory("subcontext", src).Directory("subcontext")
 
-		env, err := sub.DockerBuild().Stdout(ctx)
+		env, err := sub.DockerBuild().WithExec(nil).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, env, "FOO=bar\n")
 	})
@@ -785,7 +787,9 @@ CMD goenv
 
 		env, err := sub.DockerBuild(dagger.DirectoryDockerBuildOpts{
 			Dockerfile: "subdir/Dockerfile.whee",
-		}).Stdout(ctx)
+		}).
+			WithExec(nil).
+			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, env, "FOO=bar\n")
 	})
@@ -803,11 +807,15 @@ ENV FOO=$FOOARG
 CMD goenv
 `)
 
-		env, err := src.DockerBuild().Stdout(ctx)
+		env, err := src.DockerBuild().WithExec(nil).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, env, "FOO=bar\n")
 
-		env, err = src.DockerBuild(dagger.DirectoryDockerBuildOpts{BuildArgs: []dagger.BuildArg{{Name: "FOOARG", Value: "barbar"}}}).Stdout(ctx)
+		env, err = src.DockerBuild(dagger.DirectoryDockerBuildOpts{
+			BuildArgs: []dagger.BuildArg{{Name: "FOOARG", Value: "barbar"}},
+		}).
+			WithExec(nil).
+			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, env, "FOO=barbar\n")
 	})
@@ -825,13 +833,13 @@ FROM base AS stage2
 CMD echo "stage2"
 `)
 
-		output, err := src.DockerBuild().Stdout(ctx)
+		output, err := src.DockerBuild().WithExec(nil).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, output, "stage2\n")
 
-		output, err = src.DockerBuild(dagger.DirectoryDockerBuildOpts{
-			Target: "stage1",
-		}).Stdout(ctx)
+		output, err = src.DockerBuild(dagger.DirectoryDockerBuildOpts{Target: "stage1"}).
+			WithExec(nil).
+			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, output, "stage1\n")
 		require.NotContains(t, output, "stage2\n")
@@ -849,7 +857,11 @@ RUN --mount=type=secret,id=my-secret cp /run/secrets/my-secret  /secret
 CMD cat /secret
 `)
 
-		stdout, err := src.DockerBuild(dagger.DirectoryDockerBuildOpts{Secrets: []*dagger.Secret{sec}}).Stdout(ctx)
+		stdout, err := src.DockerBuild(dagger.DirectoryDockerBuildOpts{
+			Secrets: []*dagger.Secret{sec},
+		}).
+			WithExec(nil).
+			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, stdout, "***")
 	})

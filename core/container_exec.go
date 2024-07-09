@@ -16,6 +16,8 @@ import (
 	"github.com/pkg/errors"
 )
 
+var ErrNoCommand = errors.New("no command has been set")
+
 type ContainerExecOpts struct {
 	// Command to run instead of the container's default command
 	Args []string
@@ -319,13 +321,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 
 func (container *Container) MetaFileContents(ctx context.Context, filePath string) (string, error) {
 	if container.Meta == nil {
-		ctr, err := container.WithExec(ctx, ContainerExecOpts{
-			UseEntrypoint: true,
-		})
-		if err != nil {
-			return "", err
-		}
-		return ctr.MetaFileContents(ctx, filePath)
+		return "", fmt.Errorf("%w: include an exec step with empty arguments to use the default command", ErrNoCommand)
 	}
 
 	file := NewFile(

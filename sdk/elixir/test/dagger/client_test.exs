@@ -80,6 +80,7 @@ defmodule Dagger.ClientTest do
                |> Directory.with_new_file("Dockerfile", dockerfile),
                build_args: [%BuildArg{name: "SPAM", value: "egg"}]
              )
+             |> Container.with_exec([])
              |> Container.stdout()
 
     assert out =~ "SPAM=egg"

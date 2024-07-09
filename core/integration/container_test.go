@@ -114,7 +114,7 @@ ENV FOO=bar
 CMD goenv
 `)
 
-		env, err := c.Container().Build(src).Stdout(ctx)
+		env, err := c.Container().Build(src).WithExec(nil).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, env, "FOO=bar\n")
 	})
@@ -132,7 +132,7 @@ ENV FOO=bar
 CMD goenv
 `)
 
-		env, err := c.Container().Build(src).Stdout(ctx)
+		env, err := c.Container().Build(src).WithExec(nil).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, env, "FOO=bar\n")
 	})
@@ -149,9 +149,12 @@ ENV FOO=bar
 CMD goenv
 `)
 
-		env, err := c.Container().Build(src, dagger.ContainerBuildOpts{
-			Dockerfile: "subdir/Dockerfile.whee",
-		}).Stdout(ctx)
+		env, err := c.Container().
+			Build(src, dagger.ContainerBuildOpts{
+				Dockerfile: "subdir/Dockerfile.whee",
+			}).
+			WithExec(nil).
+			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, env, "FOO=bar\n")
 	})
@@ -170,7 +173,7 @@ CMD goenv
 
 		sub := c.Directory().WithDirectory("subcontext", src).Directory("subcontext")
 
-		env, err := c.Container().Build(sub).Stdout(ctx)
+		env, err := c.Container().Build(sub).WithExec(nil).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, env, "FOO=bar\n")
 	})
@@ -189,9 +192,12 @@ CMD goenv
 
 		sub := c.Directory().WithDirectory("subcontext", src).Directory("subcontext")
 
-		env, err := c.Container().Build(sub, dagger.ContainerBuildOpts{
-			Dockerfile: "subdir/Dockerfile.whee",
-		}).Stdout(ctx)
+		env, err := c.Container().
+			Build(sub, dagger.ContainerBuildOpts{
+				Dockerfile: "subdir/Dockerfile.whee",
+			}).
+			WithExec(nil).
+			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, env, "FOO=bar\n")
 	})
@@ -209,11 +215,16 @@ ENV FOO=$FOOARG
 CMD goenv
 `)
 
-		env, err := c.Container().Build(src).Stdout(ctx)
+		env, err := c.Container().Build(src).WithExec(nil).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, env, "FOO=bar\n")
 
-		env, err = c.Container().Build(src, dagger.ContainerBuildOpts{BuildArgs: []dagger.BuildArg{{Name: "FOOARG", Value: "barbar"}}}).Stdout(ctx)
+		env, err = c.Container().
+			Build(src, dagger.ContainerBuildOpts{
+				BuildArgs: []dagger.BuildArg{{Name: "FOOARG", Value: "barbar"}},
+			}).
+			WithExec(nil).
+			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, env, "FOO=barbar\n")
 	})
@@ -231,11 +242,14 @@ FROM base AS stage2
 CMD echo "stage2"
 `)
 
-		output, err := c.Container().Build(src).Stdout(ctx)
+		output, err := c.Container().Build(src).WithExec(nil).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, output, "stage2\n")
 
-		output, err = c.Container().Build(src, dagger.ContainerBuildOpts{Target: "stage1"}).Stdout(ctx)
+		output, err = c.Container().
+			Build(src, dagger.ContainerBuildOpts{Target: "stage1"}).
+			WithExec(nil).
+			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, output, "stage1\n")
 		require.NotContains(t, output, "stage2\n")
@@ -254,9 +268,12 @@ CMD cat /secret && (cat /secret | tr "[a-z]" "[A-Z]")
 		t.Run("builtin frontend", func(ctx context.Context, t *testctx.T) {
 			src := contextDir.WithNewFile("Dockerfile", dockerfile)
 
-			stdout, err := c.Container().Build(src, dagger.ContainerBuildOpts{
-				Secrets: []*dagger.Secret{sec},
-			}).Stdout(ctx)
+			stdout, err := c.Container().
+				Build(src, dagger.ContainerBuildOpts{
+					Secrets: []*dagger.Secret{sec},
+				}).
+				WithExec(nil).
+				Stdout(ctx)
 			require.NoError(t, err)
 			require.Contains(t, stdout, "***")
 			require.Contains(t, stdout, "BARBAR")
@@ -265,9 +282,12 @@ CMD cat /secret && (cat /secret | tr "[a-z]" "[A-Z]")
 		t.Run("remote frontend", func(ctx context.Context, t *testctx.T) {
 			src := contextDir.WithNewFile("Dockerfile", "#syntax=docker/dockerfile:1\n"+dockerfile)
 
-			stdout, err := c.Container().Build(src, dagger.ContainerBuildOpts{
-				Secrets: []*dagger.Secret{sec},
-			}).Stdout(ctx)
+			stdout, err := c.Container().
+				Build(src, dagger.ContainerBuildOpts{
+					Secrets: []*dagger.Secret{sec},
+				}).
+				WithExec(nil).
+				Stdout(ctx)
 			require.NoError(t, err)
 			require.Contains(t, stdout, "***")
 			require.Contains(t, stdout, "BARBAR")
@@ -396,31 +416,39 @@ func (ContainerSuite) TestExecSync(ctx context.Context, t *testctx.T) {
 }
 
 func (ContainerSuite) TestExecStdoutStderr(ctx context.Context, t *testctx.T) {
-	res := struct {
-		Container struct {
-			From struct {
-				WithExec struct {
-					Stdout string
-					Stderr string
-				}
-			}
-		}
-	}{}
+	c := connect(ctx, t)
 
-	err := testutil.Query(t,
-		`{
-			container {
-				from(address: "`+alpineImage+`") {
-					withExec(args: ["sh", "-c", "echo hello; echo goodbye >/dev/stderr"]) {
-						stdout
-						stderr
-					}
-				}
-			}
-		}`, &res, nil)
-	require.NoError(t, err)
-	require.Equal(t, res.Container.From.WithExec.Stdout, "hello\n")
-	require.Equal(t, res.Container.From.WithExec.Stderr, "goodbye\n")
+	t.Run("stdout", func(ctx context.Context, t *testctx.T) {
+		out, err := c.Container().
+			From(alpineImage).
+			WithExec([]string{"echo", "hello"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello\n", out)
+	})
+
+	t.Run("stderr", func(ctx context.Context, t *testctx.T) {
+		out, err := c.Container().
+			From(alpineImage).
+			WithExec([]string{"sh", "-c", "echo goodbye > /dev/stderr"}).
+			Stderr(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "goodbye\n", out)
+	})
+
+	t.Run("stdout without exec", func(ctx context.Context, t *testctx.T) {
+		_, err := c.Container().
+			From(alpineImage).
+			Stdout(ctx)
+		require.ErrorContains(t, err, "no command has been set")
+	})
+
+	t.Run("stderr without exec", func(ctx context.Context, t *testctx.T) {
+		_, err := c.Container().
+			From(alpineImage).
+			Stderr(ctx)
+		require.ErrorContains(t, err, "no command has been set")
+	})
 }
 
 func (ContainerSuite) TestExecStdin(ctx context.Context, t *testctx.T) {
@@ -834,6 +862,7 @@ func (ContainerSuite) TestExecWithoutEntrypoint(ctx context.Context, t *testctx.
 			WithoutEntrypoint(dagger.ContainerWithoutEntrypointOpts{
 				KeepDefaultArgs: true,
 			}).
+			WithExec(nil).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "foobar", res)
@@ -3496,26 +3525,6 @@ func (ContainerSuite) TestInsecureRootCapabilitesWithService(ctx context.Context
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, fmt.Sprintf("%s-from-outside\n%s-from-inside\n", randID, randID), out)
-}
-
-func (ContainerSuite) TestNoExec(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
-	stdout, err := c.Container().From(alpineImage).Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "", stdout)
-
-	stderr, err := c.Container().From(alpineImage).Stderr(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "", stderr)
-
-	_, err = c.Container().
-		From(alpineImage).
-		WithoutDefaultArgs().
-		Stdout(ctx)
-
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "no command has been set")
 }
 
 func (ContainerSuite) TestWithMountedFileOwner(ctx context.Context, t *testctx.T) {
