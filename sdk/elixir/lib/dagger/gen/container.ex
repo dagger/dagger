@@ -788,17 +788,16 @@ defmodule Dagger.Container do
   end
 
   @doc "Retrieves this container plus a new file written at the given path."
-  @spec with_new_file(t(), String.t(), [
-          {:contents, String.t() | nil},
+  @spec with_new_file(t(), String.t(), String.t(), [
           {:permissions, integer() | nil},
           {:owner, String.t() | nil}
         ]) :: Dagger.Container.t()
-  def with_new_file(%__MODULE__{} = container, path, optional_args \\ []) do
+  def with_new_file(%__MODULE__{} = container, path, contents, optional_args \\ []) do
     selection =
       container.selection
       |> select("withNewFile")
       |> put_arg("path", path)
-      |> maybe_put_arg("contents", optional_args[:contents])
+      |> put_arg("contents", contents)
       |> maybe_put_arg("permissions", optional_args[:permissions])
       |> maybe_put_arg("owner", optional_args[:owner])
 

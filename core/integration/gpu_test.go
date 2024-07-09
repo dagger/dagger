@@ -175,9 +175,7 @@ func (GPUSuite) TestGPUAccessWithPython(ctx context.Context, t *testctx.T) {
 		ctr := c.Container().From("pytorch/pytorch:latest")
 		contents, err := ctr.
 			ExperimentalWithAllGPUs().
-			WithNewFile("/tmp/tensors.py", dagger.ContainerWithNewFileOpts{
-				Contents: torchTensorsSample,
-			}).
+			WithNewFile("/tmp/tensors.py", torchTensorsSample).
 			WithExec([]string{"python3", "/tmp/tensors.py"}).
 			Stdout(ctx)
 		require.NoError(t, err)

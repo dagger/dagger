@@ -1602,8 +1602,8 @@ class Container(Type):
     def with_new_file(
         self,
         path: str,
+        contents: str,
         *,
-        contents: str | None = "",
         permissions: int | None = 420,
         owner: str | None = "",
     ) -> Self:
@@ -1625,7 +1625,7 @@ class Container(Type):
         """
         _args = [
             Arg("path", path),
-            Arg("contents", contents, ""),
+            Arg("contents", contents),
             Arg("permissions", permissions, 420),
             Arg("owner", owner, ""),
         ]

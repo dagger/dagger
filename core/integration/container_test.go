@@ -283,10 +283,10 @@ CMD cat /secret && (cat /secret | tr "[a-z]" "[A-Z]")
 			WithWorkdir("/src").
 			WithMountedSecret("/run/secret", sec).
 			WithExec([]string{"cat", "/run/secret"}).
-			WithNewFile("Dockerfile", dagger.ContainerWithNewFileOpts{Contents: `
+			WithNewFile("Dockerfile", `
 			FROM alpine
 			COPY / /
-			`}).
+			`).
 			Directory("/src")
 
 		// building src should only transform the secrets from the raw
@@ -1780,11 +1780,11 @@ func (ContainerSuite) TestWithoutPath(ctx context.Context, t *testctx.T) {
 	ctr := c.Container().
 		From(alpineImage).
 		WithWorkdir("/workdir").
-		WithNewFile("moo").
-		WithNewFile("foo").
-		WithNewFile("bar/man").
-		WithNewFile("bat/man").
-		WithNewFile("/ual")
+		WithNewFile("moo", "").
+		WithNewFile("foo", "").
+		WithNewFile("bar/man", "").
+		WithNewFile("bat/man", "").
+		WithNewFile("/ual", "")
 
 	t.Run("no error if not exists", func(ctx context.Context, t *testctx.T) {
 		out, err := ctr.
@@ -1894,9 +1894,7 @@ func (ContainerSuite) TestWithNewFile(ctx context.Context, t *testctx.T) {
 	ctr := c.Container().
 		From(alpineImage).
 		WithWorkdir("/workdir").
-		WithNewFile("some-file", dagger.ContainerWithNewFileOpts{
-			Contents: "some-content",
-		})
+		WithNewFile("some-file", "some-content")
 
 	contents, err := ctr.WithExec([]string{"cat", "some-file"}).
 		Stdout(ctx)
@@ -2948,9 +2946,7 @@ func (ContainerSuite) TestImport(ctx context.Context, t *testctx.T) {
 
 		apko := c.Container().
 			From("cgr.dev/chainguard/apko:latest").
-			WithNewFile("config.yml", dagger.ContainerWithNewFileOpts{
-				Contents: string(cfgYaml),
-			})
+			WithNewFile("config.yml", string(cfgYaml))
 
 		imageFile := apko.
 			WithExec([]string{
@@ -3656,9 +3652,7 @@ func (ContainerSuite) TestWithNewFileOwner(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	testOwnership(t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
-		return ctr.WithNewFile(name, dagger.ContainerWithNewFileOpts{
-			Owner: owner,
-		})
+		return ctr.WithNewFile(name, "", dagger.ContainerWithNewFileOpts{Owner: owner})
 	})
 }
 
@@ -4138,9 +4132,7 @@ func (ContainerSuite) TestNestedExec(ctx context.Context, t *testctx.T) {
 
 	_, err := c.Container().From(alpineImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithNewFile("/query.graphql", dagger.ContainerWithNewFileOpts{
-			Contents: `{ defaultPlatform }`,
-		}). // arbitrary valid query
+		WithNewFile("/query.graphql", `{ defaultPlatform }`). // arbitrary valid query
 		WithExec([]string{"dagger", "query", "--debug", "--doc", "/query.graphql"}, dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		}).

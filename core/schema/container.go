@@ -273,6 +273,17 @@ func (s *containerSchema) Install() {
 				`If the group is omitted, it defaults to the same as the user.`),
 
 		dagql.Func("withNewFile", s.withNewFile).
+			View(AllVersion).
+			Doc(`Retrieves this container plus a new file written at the given path.`).
+			ArgDoc("path", `Location of the written file (e.g., "/tmp/file.txt").`).
+			ArgDoc("contents", `Content of the file to write (e.g., "Hello world!").`).
+			ArgDoc("permissions", `Permission given to the written file (e.g., 0600).`).
+			ArgDoc("owner",
+				`A user:group to set for the file.`,
+				`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
+				`If the group is omitted, it defaults to the same as the user.`),
+		dagql.Func("withNewFile", s.withNewFileLegacy).
+			View(BeforeVersion("v0.12.0")).
 			Doc(`Retrieves this container plus a new file written at the given path.`).
 			ArgDoc("path", `Location of the written file (e.g., "/tmp/file.txt").`).
 			ArgDoc("contents", `Content of the file to write (e.g., "Hello world!").`).
@@ -1191,12 +1202,23 @@ func (s *containerSchema) withoutFile(ctx context.Context, parent *core.Containe
 
 type containerWithNewFileArgs struct {
 	Path        string
-	Contents    string `default:""`
+	Contents    string
 	Permissions int    `default:"0644"`
 	Owner       string `default:""`
 }
 
 func (s *containerSchema) withNewFile(ctx context.Context, parent *core.Container, args containerWithNewFileArgs) (*core.Container, error) {
+	return parent.WithNewFile(ctx, args.Path, []byte(args.Contents), fs.FileMode(args.Permissions), args.Owner)
+}
+
+type containerWithNewFileArgsLegacy struct {
+	Path        string
+	Contents    string `default:""`
+	Permissions int    `default:"0644"`
+	Owner       string `default:""`
+}
+
+func (s *containerSchema) withNewFileLegacy(ctx context.Context, parent *core.Container, args containerWithNewFileArgsLegacy) (*core.Container, error) {
 	return parent.WithNewFile(ctx, args.Path, []byte(args.Contents), fs.FileMode(args.Permissions), args.Owner)
 }
 

@@ -74,9 +74,7 @@ func engineWithConfig(ctx context.Context, t *testctx.T, cfgFns ...func(context.
 		newCfgBytes, err := toml.Marshal(cfg)
 		require.NoError(t, err)
 
-		return ctr.WithNewFile("/etc/dagger/engine.toml", dagger.ContainerWithNewFileOpts{
-			Contents: string(newCfgBytes),
-		})
+		return ctr.WithNewFile("/etc/dagger/engine.toml", string(newCfgBytes))
 	}
 }
 
@@ -103,8 +101,9 @@ func (EngineSuite) TestExitsZeroOnSignal(ctx context.Context, t *testctx.T) {
 	defer cancel()
 	t = t.WithContext(ctx)
 	_, err := devEngineContainer(c, func(c *dagger.Container) *dagger.Container {
-		return c.WithNewFile("/usr/local/bin/dagger-entrypoint.sh", dagger.ContainerWithNewFileOpts{
-			Contents: `#!/bin/sh
+		return c.WithNewFile(
+			"/usr/local/bin/dagger-entrypoint.sh",
+			`#!/bin/sh
 set -ex
 /usr/local/bin/dagger-engine --debug &
 engine_pid=$!
@@ -114,8 +113,8 @@ kill -TERM $engine_pid
 wait $engine_pid
 exit $?
 `,
-			Permissions: 0o700,
-		})
+			dagger.ContainerWithNewFileOpts{Permissions: 0o700},
+		)
 	}).Sync(ctx)
 	require.NoError(t, err)
 }
@@ -125,25 +124,24 @@ func (ClientSuite) TestWaitsForEngine(ctx context.Context, t *testctx.T) {
 
 	devEngine := devEngineContainer(c, func(c *dagger.Container) *dagger.Container {
 		return c.
-			WithNewFile("/usr/local/bin/slow-entrypoint.sh", dagger.ContainerWithNewFileOpts{
-				Contents: strings.Join([]string{
+			WithNewFile(
+				"/usr/local/bin/slow-entrypoint.sh",
+				strings.Join([]string{
 					`#!/bin/sh`,
 					`set -eux`,
 					`sleep 15`,
 					`echo my hostname is $(hostname)`,
 					`exec /usr/local/bin/dagger-entrypoint.sh "$@"`,
 				}, "\n"),
-				Permissions: 0o700,
-			}).
+				dagger.ContainerWithNewFileOpts{Permissions: 0o700},
+			).
 			WithEntrypoint([]string{"/usr/local/bin/slow-entrypoint.sh"})
 	})
 
 	clientCtr, err := engineClientContainer(ctx, t, c, devEngine.AsService())
 	require.NoError(t, err)
 	_, err = clientCtr.
-		WithNewFile("/query.graphql", dagger.ContainerWithNewFileOpts{
-			Contents: `{ defaultPlatform }`,
-		}). // arbitrary valid query
+		WithNewFile("/query.graphql", `{ version }`). // arbitrary valid query
 		WithExec([]string{"dagger", "query", "--debug", "--doc", "/query.graphql"}).Sync(ctx)
 
 	require.NoError(t, err)
@@ -164,9 +162,7 @@ func (EngineSuite) TestSetsNameFromEnv(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 
 	clientCtr = clientCtr.
-		WithNewFile("/query.graphql", dagger.ContainerWithNewFileOpts{
-			Contents: `{ version }`,
-		}).
+		WithNewFile("/query.graphql", `{ version }`).
 		WithExec([]string{"dagger", "query", "--debug", "--doc", "/query.graphql"})
 	stdout, err := clientCtr.Stdout(ctx)
 	require.NoError(t, err)
@@ -298,9 +294,7 @@ func (EngineSuite) TestVersionCompat(ctx context.Context, t *testctx.T) {
 	stderr, err := clientCtr.
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", "v2.0.0").
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", "v2.0.0").
-		WithNewFile("/query.graphql", dagger.ContainerWithNewFileOpts{
-			Contents: `{ version }`,
-		}).
+		WithNewFile("/query.graphql", `{ version }`).
 		WithExec([]string{"sh", "-c", "dagger query --debug --doc /query.graphql"}).
 		Stderr(ctx)
 	require.NoError(t, err)
@@ -310,9 +304,7 @@ func (EngineSuite) TestVersionCompat(ctx context.Context, t *testctx.T) {
 	stderr, err = clientCtr.
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", "foobar").
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", "v2.0.0").
-		WithNewFile("/query.graphql", dagger.ContainerWithNewFileOpts{
-			Contents: `{ version }`,
-		}).
+		WithNewFile("/query.graphql", `{ version }`).
 		WithExec([]string{"sh", "-c", "dagger query --debug --doc /query.graphql"}).
 		Stderr(ctx)
 	require.NoError(t, err)
@@ -322,9 +314,7 @@ func (EngineSuite) TestVersionCompat(ctx context.Context, t *testctx.T) {
 	stderr, err = clientCtr.
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", "v1.0.0").
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", "v2.0.0").
-		WithNewFile("/query.graphql", dagger.ContainerWithNewFileOpts{
-			Contents: `{ version }`,
-		}).
+		WithNewFile("/query.graphql", `{ version }`).
 		WithExec([]string{"sh", "-c", "! dagger query --debug --doc /query.graphql"}).
 		Stderr(ctx)
 	require.NoError(t, err)
@@ -334,9 +324,7 @@ func (EngineSuite) TestVersionCompat(ctx context.Context, t *testctx.T) {
 	stderr, err = clientCtr.
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", "v2.0.0").
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", "v3.0.0").
-		WithNewFile("/query.graphql", dagger.ContainerWithNewFileOpts{
-			Contents: `{ version }`,
-		}).
+		WithNewFile("/query.graphql", `{ version }`).
 		WithExec([]string{"sh", "-c", "! dagger query --debug --doc /query.graphql"}).
 		Stderr(ctx)
 	require.NoError(t, err)
@@ -346,9 +334,7 @@ func (EngineSuite) TestVersionCompat(ctx context.Context, t *testctx.T) {
 	stderr, err = clientCtr.
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", "v1.0.0").
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", "v3.0.0").
-		WithNewFile("/query.graphql", dagger.ContainerWithNewFileOpts{
-			Contents: `{ version }`,
-		}).
+		WithNewFile("/query.graphql", `{ version }`).
 		WithExec([]string{"sh", "-c", "! dagger query --debug --doc /query.graphql"}).
 		Stderr(ctx)
 	require.NoError(t, err)

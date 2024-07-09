@@ -6,8 +6,6 @@ import (
 
 	"github.com/dagger/dagger/testctx"
 	"github.com/stretchr/testify/require"
-
-	"dagger.io/dagger"
 )
 
 func (ModuleSuite) TestDaggerCLIFunctions(ctx context.Context, t *testctx.T) {
@@ -17,8 +15,7 @@ func (ModuleSuite) TestDaggerCLIFunctions(ctx context.Context, t *testctx.T) {
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
 		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-			Contents: `package main
+		WithNewFile("main.go", `package main
 
 import (
 	"context"
@@ -85,7 +82,7 @@ func (m *OtherObj) FnE() *Container {
 }
 
 `,
-		})
+		)
 
 	t.Run("top-level", func(ctx context.Context, t *testctx.T) {
 		out, err := ctr.With(daggerFunctions()).Stdout(ctx)

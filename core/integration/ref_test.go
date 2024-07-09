@@ -4,7 +4,6 @@ import (
 	"context"
 	"strings"
 
-	"dagger.io/dagger"
 	"github.com/dagger/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -22,8 +21,7 @@ func (ModuleSuite) TestRefIntegration(ctx context.Context, t *testctx.T) {
 			WithWorkdir("/work/github.com/dagger/dagger").
 			WithExec([]string{"pwd"}).
 			With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
-			WithNewFile("/work/github.com/dagger/dagger/main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("/work/github.com/dagger/dagger/main.go", `package main
 
 				import "context"
 
@@ -33,7 +31,7 @@ func (ModuleSuite) TestRefIntegration(ctx context.Context, t *testctx.T) {
 					return "hello"
 				}
 				`,
-			}).
+			).
 			WithWorkdir("/work").
 			With(daggerCallAt("github.com/dagger/dagger", "get-source")).
 			Stdout(ctx)
