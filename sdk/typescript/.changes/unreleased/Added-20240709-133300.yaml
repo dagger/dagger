@@ -1,0 +1,6 @@
+kind: Added
+body: Support runtime version configuration from `package.json`
+time: 2024-07-09T13:33:00.602961+02:00
+custom:
+  Author: TomChv
+  PR: "7852"
