@@ -1,0 +1,9 @@
+kind: Breaking
+body: |-
+  Remove top level type alises for modules
+
+  Modules must now use `*dagger.Container` (and similar) instead of `*Container` directly.
+time: 2024-07-09T14:30:29.172836029+01:00
+custom:
+  Author: jedevc
+  PR: "7831"
