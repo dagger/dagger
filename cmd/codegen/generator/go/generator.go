@@ -44,7 +44,7 @@ type GoGenerator struct {
 	Config generator.Config
 }
 
-func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema) (*generator.GeneratedState, error) {
+func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema, schemaVersion string) (*generator.GeneratedState, error) {
 	generator.SetSchema(schema)
 
 	// 1. if no go.mod, generate go.mod
@@ -105,7 +105,7 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 		pkgInfo.PackageName = "main"
 
 		// generate an initial dagger.gen.go from the base Dagger API
-		if err := generateCode(ctx, g.Config, schema, mfs, pkgInfo, nil, nil, 0); err != nil {
+		if err := generateCode(ctx, g.Config, schema, schemaVersion, mfs, pkgInfo, nil, nil, 0); err != nil {
 			return nil, fmt.Errorf("generate code: %w", err)
 		}
 
@@ -114,7 +114,7 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 
 	if len(initialGoFiles) == 0 {
 		// write an initial main.go if no main pkg exists yet
-		if err := mfs.WriteFile(StarterTemplateFile, []byte(g.baseModuleSource()), 0600); err != nil {
+		if err := mfs.WriteFile(StarterTemplateFile, []byte(g.baseModuleSource(pkgInfo)), 0600); err != nil {
 			return nil, err
 		}
 
@@ -135,7 +135,7 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 	// respect existing package name
 	pkgInfo.PackageName = pkg.Name
 
-	if err := generateCode(ctx, g.Config, schema, mfs, pkgInfo, pkg, fset, 1); err != nil {
+	if err := generateCode(ctx, g.Config, schema, schemaVersion, mfs, pkgInfo, pkg, fset, 1); err != nil {
 		return nil, fmt.Errorf("generate code: %w", err)
 	}
 
@@ -264,6 +264,7 @@ func generateCode(
 	ctx context.Context,
 	cfg generator.Config,
 	schema *introspection.Schema,
+	schemaVersion string,
 	mfs *memfs.FS,
 	pkgInfo *PackageInfo,
 	pkg *packages.Package,
@@ -274,7 +275,7 @@ func generateCode(
 	tmpls := templates.Templates(funcs)
 
 	for k, tmpl := range tmpls {
-		dt, err := renderFile(cfg, schema, pkgInfo, tmpl)
+		dt, err := renderFile(cfg, schema, schemaVersion, pkgInfo, tmpl)
 		if err != nil {
 			return err
 		}
@@ -296,17 +297,20 @@ func generateCode(
 func renderFile(
 	cfg generator.Config,
 	schema *introspection.Schema,
+	schemaVersion string,
 	pkgInfo *PackageInfo,
 	tmpl *template.Template,
 ) ([]byte, error) {
 	data := struct {
 		*PackageInfo
-		Schema *introspection.Schema
-		Types  []*introspection.Type
+		Schema        *introspection.Schema
+		SchemaVersion string
+		Types         []*introspection.Type
 	}{
-		PackageInfo: pkgInfo,
-		Schema:      schema,
-		Types:       schema.Visit(),
+		PackageInfo:   pkgInfo,
+		Schema:        schema,
+		SchemaVersion: schemaVersion,
+		Types:         schema.Visit(),
 	}
 
 	var render bytes.Buffer
@@ -364,7 +368,7 @@ func loadPackage(ctx context.Context, dir string) (*packages.Package, *token.Fil
 	}
 }
 
-func (g *GoGenerator) baseModuleSource() string {
+func (g *GoGenerator) baseModuleSource(pkgInfo *PackageInfo) string {
 	moduleStructName := strcase.ToCamel(g.Config.ModuleName)
 
 	return fmt.Sprintf(`// A generated module for %[1]s functions
@@ -385,17 +389,22 @@ package main
 
 import (
 	"context"
+	"%[2]s/internal/dagger"
 )
 
 type %[1]s struct{}
 
+func (m *%[1]s) Echo(stringArg string) string {
+	return stringArg
+}
+
 // Returns a container that echoes whatever string argument is provided
-func (m *%[1]s) ContainerEcho(stringArg string) *Container {
+func (m *%[1]s) ContainerEcho(stringArg string) *dagger.Container {
 	return dag.Container().From("alpine:latest").WithExec([]string{"echo", stringArg})
 }
 
 // Returns lines that match a pattern in the files of the provided Directory
-func (m *%[1]s) GrepDir(ctx context.Context, directoryArg *Directory, pattern string) (string, error) {
+func (m *%[1]s) GrepDir(ctx context.Context, directoryArg *dagger.Directory, pattern string) (string, error) {
 	return dag.Container().
 		From("alpine:latest").
 		WithMountedDirectory("/mnt", directoryArg).
@@ -403,5 +412,5 @@ func (m *%[1]s) GrepDir(ctx context.Context, directoryArg *Directory, pattern st
 		WithExec([]string{"grep", "-R", pattern, "."}).
 		Stdout(ctx)
 }
-`, moduleStructName)
+`, moduleStructName, pkgInfo.PackageImport)
 }

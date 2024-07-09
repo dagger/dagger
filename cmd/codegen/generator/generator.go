@@ -41,7 +41,7 @@ type Config struct {
 
 type Generator interface {
 	// Generate runs codegen and returns a map of default filename to content for that file.
-	Generate(ctx context.Context, schema *introspection.Schema) (*GeneratedState, error)
+	Generate(ctx context.Context, schema *introspection.Schema, schemaVersion string) (*GeneratedState, error)
 }
 
 type GeneratedState struct {
@@ -71,7 +71,7 @@ func SetSchemaParents(schema *introspection.Schema) {
 }
 
 // Introspect gets the Dagger Schema
-func Introspect(ctx context.Context, dag *dagger.Client) (*introspection.Schema, error) {
+func Introspect(ctx context.Context, dag *dagger.Client) (*introspection.Schema, string, error) {
 	var introspectionResp introspection.Response
 	err := dag.Do(ctx, &dagger.Request{
 		Query:  introspection.Query,
@@ -80,10 +80,10 @@ func Introspect(ctx context.Context, dag *dagger.Client) (*introspection.Schema,
 		Data: &introspectionResp,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("introspection query: %w", err)
+		return nil, "", fmt.Errorf("introspection query: %w", err)
 	}
 
-	return introspectionResp.Schema, nil
+	return introspectionResp.Schema, introspectionResp.SchemaVersion, nil
 }
 
 func Overlay(ctx context.Context, logsW io.Writer, overlay fs.FS, outputDir string) (rerr error) {
