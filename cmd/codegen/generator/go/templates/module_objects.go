@@ -419,6 +419,14 @@ func (spec *parsedObjectType) concreteFieldTypeCode(typeSpec ParsedType) (*State
 		if typeSpec.alias != "" {
 			s.Id(typeSpec.alias)
 		} else {
+			tp := typeSpec.GoType()
+			if basic, ok := tp.(*types.Basic); ok {
+				if basic.Kind() == types.Invalid {
+					s.Id("any")
+					break
+				}
+			}
+
 			s.Id(typeSpec.GoType().String())
 		}
 
