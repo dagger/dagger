@@ -5,13 +5,18 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
+	"os/user"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/sources/gitdns"
+	"github.com/moby/buildkit/session/sshforward"
 )
 
 var _ SchemaResolvers = &gitSchema{}
@@ -200,15 +205,44 @@ func (s *gitSchema) tags(ctx context.Context, parent *core.GitRepository, args t
 			queryArgs = append(queryArgs, p.String())
 		}
 	}
+	cmd := exec.CommandContext(ctx, "git", queryArgs...)
 
-	output, err := exec.CommandContext(ctx, "git", queryArgs...).Output()
-	if err != nil {
-		return nil, err
+	// clientMetada retrieved the SSH_AUTH_SOCK value
+	if parent.SSHAuthSocket != nil && parent.SSHAuthSocket.HostPath != "" {
+		sock, err := mountSSHSocket(ctx, parent)
+		if err != nil {
+			return nil, fmt.Errorf("failed to mount SSH socket: %w", err)
+		}
+		defer sock.cleanup()
+
+		cmd.Env = append(cmd.Env, "SSH_AUTH_SOCK="+sock.path)
 	}
 
-	scanner := bufio.NewScanner(bytes.NewBuffer(output))
+	// Handle known hosts
+	var knownHostsPath string
+	if parent.SSHKnownHosts != "" {
+		var err error
+		knownHostsPath, err = mountKnownHosts(parent.SSHKnownHosts)
+		if err != nil {
+			return nil, fmt.Errorf("failed to mount known hosts: %w", err)
+		}
+		defer os.Remove(knownHostsPath)
+	}
+
+	// Set GIT_SSH_COMMAND
+	cmd.Env = append(cmd.Env, "GIT_SSH_COMMAND="+gitdns.GetGitSSHCommand(knownHostsPath))
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	if err != nil {
+		return nil, fmt.Errorf("git command failed: %w\nstdout: %s\nstderr: %s", err, stdout.String(), stderr.String())
+	}
 
 	tags := []string{}
+	scanner := bufio.NewScanner(&stdout)
 	for scanner.Scan() {
 		fields := strings.Fields(scanner.Text())
 		if len(fields) < 2 {
@@ -222,7 +256,84 @@ func (s *gitSchema) tags(ctx context.Context, parent *core.GitRepository, args t
 		tags = append(tags, tag)
 	}
 
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("error scanning git output: %w", err)
+	}
+
 	return tags, nil
+}
+
+type sshSocket struct {
+	path    string
+	cleanup func() error
+}
+
+func mountSSHSocket(ctx context.Context, parent *core.GitRepository) (*sshSocket, error) {
+	sshID := parent.SSHAuthSocket.SSHID()
+	if sshID == "" {
+		return nil, fmt.Errorf("sshID is empty")
+	}
+
+	client, err := parent.Query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get Buildkit client: %w", err)
+	}
+
+	caller, err := client.GetSessionCaller(ctx, false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get session caller: %w", err)
+	}
+
+	uid, gid, err := getUIDGID()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get UID and GID: %w", err)
+	}
+
+	sock, cleanup, err := sshforward.MountSSHSocket(ctx, caller, sshforward.SocketOpt{
+		ID:   sshID,
+		UID:  uid,
+		GID:  gid,
+		Mode: 0700,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to mount SSH socket: %w", err)
+	}
+
+	return &sshSocket{path: sock, cleanup: cleanup}, nil
+}
+
+func getUIDGID() (int, int, error) {
+	usr, err := user.Current()
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to get current user: %w", err)
+	}
+
+	// best effort, default to root
+	uid, _ := strconv.Atoi(usr.Uid)
+	gid, _ := strconv.Atoi(usr.Gid)
+
+	return uid, gid, nil
+}
+
+func mountKnownHosts(knownHosts string) (string, error) {
+	tempFile, err := os.CreateTemp("", "known_hosts")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temporary known_hosts file: %w", err)
+	}
+
+	_, err = tempFile.WriteString(knownHosts)
+	if err != nil {
+		os.Remove(tempFile.Name())
+		return "", fmt.Errorf("failed to write known_hosts content: %w", err)
+	}
+
+	err = tempFile.Close()
+	if err != nil {
+		os.Remove(tempFile.Name())
+		return "", fmt.Errorf("failed to close temporary known_hosts file: %w", err)
+	}
+
+	return tempFile.Name(), nil
 }
 
 type withAuthTokenArgs struct {
