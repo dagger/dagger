@@ -466,6 +466,22 @@ func (ModuleSuite) TestTypescriptRuntimeDetection(ctx context.Context, t *testct
 			    const isBunRuntime = typeof Bun === "object";
 			    return isBunRuntime ? "bun" : "node";
 			  }
+				
+				@func()
+				version(): string {
+          const isBunRuntime = typeof Bun === "object";
+          const runtime = isBunRuntime ? "bun" : "node";
+          let version = "";
+
+          if (!isBunRuntime) {
+            const [major, minor, patch] = process.versions.node.split(".").map(Number);
+            version = major + "." + minor + "." + patch;
+          } else {
+            version = Bun.version
+          }
+
+          return runtime + "@" + version;
+				}
 			}
 		`))
 
@@ -592,6 +608,50 @@ func (ModuleSuite) TestTypescriptRuntimeDetection(ctx context.Context, t *testct
 		})
 		_, err := modGen.With(daggerQuery(`{runtimeDetection{echoRuntime}}`)).Stdout(ctx)
 		require.Error(t, err)
+	})
+
+	// This test will need to be updated when a new lts version is released
+	// https://nodejs.org/en/about/previous-releases
+	t.Run("should detect pinned lts node version", func(ctx context.Context, t *testctx.T) {
+		modGen := modGen.WithNewFile("/work/dagger/package.json", dagger.ContainerWithNewFileOpts{
+			Contents: `{
+				"dagger": {
+					"runtime": "node@lts"
+				}
+			}`,
+		})
+
+		out, err := modGen.With(daggerQuery(`{runtimeDetection{version}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"runtimeDetection":{"version":"node@20.15.0"}}`, out)
+	})
+
+	t.Run("should detect a specific pinned node version", func(ctx context.Context, t *testctx.T) {
+		modGen := modGen.WithNewFile("/work/dagger/package.json", dagger.ContainerWithNewFileOpts{
+			Contents: `{
+				"dagger": {
+					"runtime": "node@22.4.0"
+				}
+			}`,
+		})
+
+		out, err := modGen.With(daggerQuery(`{runtimeDetection{version}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"runtimeDetection":{"version":"node@22.4.0"}}`, out)
+	})
+
+	t.Run("should detect a specific pinned bun version", func(ctx context.Context, t *testctx.T) {
+		modGen := modGen.WithNewFile("/work/dagger/package.json", dagger.ContainerWithNewFileOpts{
+			Contents: `{
+				"dagger": {
+					"runtime": "bun@1.0.11"
+				}
+			}`,
+		})
+
+		out, err := modGen.With(daggerQuery(`{runtimeDetection{version}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"runtimeDetection":{"version":"bun@1.0.11"}}`, out)
 	})
 }
 

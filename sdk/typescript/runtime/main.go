@@ -6,6 +6,7 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/iancoleman/strcase"
 	"github.com/tidwall/gjson"
@@ -71,7 +72,7 @@ func (t *TypescriptSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSour
 		return nil, fmt.Errorf("could not load module config: %w", err)
 	}
 
-	detectedRuntime, err := t.detectRuntime(ctx, modSource, subPath)
+	detectedRuntime, _, err := t.detectRuntime(ctx, modSource, subPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create module runtime: %w", err)
 	}
@@ -137,12 +138,12 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 		return nil, fmt.Errorf("could not load module config: %w", err)
 	}
 
-	detectedRuntime, err := t.detectRuntime(ctx, modSource, subPath)
+	detectedRuntime, version, err := t.detectRuntime(ctx, modSource, subPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to detect runtime: %w", err)
 	}
 
-	base, err := t.Base(detectedRuntime)
+	base, err := t.Base(detectedRuntime, version)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create codegen base: %w", err)
 	}
@@ -166,16 +167,28 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 }
 
 // Base returns a Node or Bun container with cache setup for yarn or bun
-func (t *TypescriptSdk) Base(runtime SupportedTSRuntime) (*Container, error) {
+func (t *TypescriptSdk) Base(runtime SupportedTSRuntime, version string) (*Container, error) {
+	ctr := dag.Container()
+
 	switch runtime {
 	case Bun:
-		return dag.Container().
-			From(bunImageRef).
+		if version != "" {
+			ctr = ctr.From(fmt.Sprintf("oven/%s:%s-alpine", Bun, version))
+		} else {
+			ctr = ctr.From(bunImageRef)
+		}
+
+		return ctr.
 			WithoutEntrypoint().
 			WithMountedCache("/root/.bun/install/cache", dag.CacheVolume(fmt.Sprintf("mod-bun-cache-%s", bunVersion))), nil
 	case Node:
-		return dag.Container().
-			From(nodeImageRef).
+		if version != "" {
+			ctr = ctr.From(fmt.Sprintf("%s:%s-alpine", Node, version))
+		} else {
+			ctr = ctr.From(nodeImageRef)
+		}
+
+		return ctr.
 			WithoutEntrypoint().
 			// Install default CA certificates and configure node to use them instead of its compiled in CA bundle.
 			// This enables use of custom CA certificates if configured in the dagger engine.
@@ -298,7 +311,9 @@ func (t *TypescriptSdk) generateClient(ctr *Container, name string, introspectio
 // If a package-lock.json, yarn.lock, or pnpm-lock.yaml is present, node will be used.
 // If a bun.lockb is present, bun will be used.
 // If none of the above is present, node will be used.
-func (t *TypescriptSdk) detectRuntime(ctx context.Context, modSource *ModuleSource, subPath string) (SupportedTSRuntime, error) {
+//
+// If the runtime is detected and pinned to a specific version, it will also return the pinned version.
+func (t *TypescriptSdk) detectRuntime(ctx context.Context, modSource *ModuleSource, subPath string) (SupportedTSRuntime, string, error) {
 	// Try to detect runtime from package.json
 	source := modSource.ContextDirectory().Directory(subPath)
 
@@ -307,11 +322,19 @@ func (t *TypescriptSdk) detectRuntime(ctx context.Context, modSource *ModuleSour
 	if err == nil {
 		value := gjson.Get(json, "dagger.runtime").String()
 		if value != "" {
-			switch runtime := SupportedTSRuntime(value); runtime {
+			version := ""
+			runtimeConfig := strings.Split(value, "@")
+
+			switch runtime := SupportedTSRuntime(runtimeConfig[0]); runtime {
 			case Bun, Node:
-				return runtime, nil
+				// Set version if it's specified
+				if len(runtimeConfig) == 2 {
+					version = runtimeConfig[1]
+				}
+
+				return runtime, version, nil
 			default:
-				return "", fmt.Errorf("detected unknown runtime: %s", runtime)
+				return "", "", fmt.Errorf("detected unknown runtime: %s", runtime)
 			}
 		}
 	}
@@ -322,13 +345,13 @@ func (t *TypescriptSdk) detectRuntime(ctx context.Context, modSource *ModuleSour
 		if slices.Contains(entries, "package-lock.json") ||
 			slices.Contains(entries, "yarn.lock") ||
 			slices.Contains(entries, "pnpm-lock.yaml") {
-			return Node, nil
+			return Node, "", nil
 		}
 		if slices.Contains(entries, "bun.lockb") {
-			return Bun, nil
+			return Bun, "", nil
 		}
 	}
 
 	// Default to node
-	return Node, nil
+	return Node, "", nil
 }
