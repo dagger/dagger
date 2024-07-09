@@ -266,6 +266,7 @@ func (ps *PubSub) SubscribeTracesHandler(rw http.ResponseWriter, r *http.Request
 type otlpTraceExporter struct {
 	enc     *lencode.Encoder
 	flusher http.Flusher
+	stopped bool
 	mu      sync.Mutex
 }
 
@@ -274,6 +275,10 @@ var _ otlptrace.Client = (*otlpTraceExporter)(nil)
 func (s *otlpTraceExporter) UploadTraces(ctx context.Context, spans []*otlptracev1.ResourceSpans) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.stopped {
+		slog.ExtraDebug("dropping traces for shut-down exporter")
+		return nil
+	}
 	msg, err := proto.Marshal(&coltracepb.ExportTraceServiceRequest{
 		ResourceSpans: spans,
 	})
@@ -286,7 +291,10 @@ func (s *otlpTraceExporter) UploadTraces(ctx context.Context, spans []*otlptrace
 
 func (s *otlpTraceExporter) Start(ctx context.Context) error { return nil }
 
-func (s *otlpTraceExporter) Stop(ctx context.Context) error { return nil }
+func (s *otlpTraceExporter) Stop(ctx context.Context) error {
+	s.stopped = true
+	return nil
+}
 
 func (ps *PubSub) LogsHandler(rw http.ResponseWriter, r *http.Request) { //nolint: dupl
 	body, err := io.ReadAll(r.Body)
@@ -343,9 +351,10 @@ func (ps *PubSub) SubscribeLogsHandler(rw http.ResponseWriter, r *http.Request) 
 }
 
 type otlpLogExporter struct {
-	enc     *lencode.Encoder
-	flusher http.Flusher
-	mu      sync.Mutex
+	enc      *lencode.Encoder
+	flusher  http.Flusher
+	shutdown bool
+	mu       sync.Mutex
 }
 
 var _ sdklog.Exporter = (*otlpLogExporter)(nil)
@@ -353,6 +362,10 @@ var _ sdklog.Exporter = (*otlpLogExporter)(nil)
 func (s *otlpLogExporter) Export(ctx context.Context, logs []sdklog.Record) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.shutdown {
+		slog.ExtraDebug("dropping logs for shut-down exporter")
+		return nil
+	}
 	msg, err := proto.Marshal(&otlplogsv1.LogsData{
 		ResourceLogs: telemetry.LogsToPB(logs),
 	})
@@ -365,7 +378,12 @@ func (s *otlpLogExporter) Export(ctx context.Context, logs []sdklog.Record) erro
 
 func (s *otlpLogExporter) ForceFlush(ctx context.Context) error { return nil }
 
-func (s *otlpLogExporter) Shutdown(ctx context.Context) error { return nil }
+func (s *otlpLogExporter) Shutdown(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.shutdown = true
+	return nil
+}
 
 func (ps *PubSub) MetricsHandler(rw http.ResponseWriter, r *http.Request) {
 	// TODO
@@ -579,7 +597,7 @@ func (ps *PubSub) SubscribeToSpans(ctx context.Context, topic Topic, exp sdktrac
 	ps.traceSubsL.Unlock()
 	defer ps.unsubSpans(topic, exp)
 	client.wait(ctx)
-	return nil
+	return exp.Shutdown(ctx)
 }
 
 func (ps *PubSub) SpanSubscribers(topic Topic) []sdktrace.SpanExporter {
@@ -671,7 +689,7 @@ func (ps *PubSub) SubscribeToLogs(ctx context.Context, topic Topic, exp sdklog.E
 	ps.logSubsL.Unlock()
 	defer ps.unsubLogs(topic, exp)
 	client.wait(ctx)
-	return nil
+	return exp.Shutdown(ctx)
 }
 
 func (ps *PubSub) LogSubscribers(topic Topic) []sdklog.Exporter {
