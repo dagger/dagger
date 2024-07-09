@@ -54,7 +54,10 @@ func (d *portHealthChecker) Check(ctx context.Context) (rerr error) {
 	}
 
 	for _, port := range ports {
-		retry := backoff.NewExponentialBackOff(backoff.WithInitialInterval(100 * time.Millisecond))
+		retry := backoff.NewExponentialBackOff(
+			backoff.WithInitialInterval(100*time.Millisecond),
+			backoff.WithMaxInterval(10*time.Second),
+		)
 		endpoint, err := backoff.RetryWithData(func() (string, error) {
 			return buildkit.RunInNetNS(ctx, d.bk, d.ns, func() (string, error) {
 				// NB(vito): it's a _little_ silly to dial a UDP network to see that it's

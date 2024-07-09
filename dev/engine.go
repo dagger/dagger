@@ -165,31 +165,74 @@ func (e *Engine) Lint(
 	// +optional
 	all bool,
 ) error {
-	// Packages to lint
-	packages := []string{
-		"",
-		// FIXME: should the CI lint itself?
-		// FIXME: unsustainable to require keeping this list up to date by hand
-		"dev",
-		"dev/dirdiff",
-		"dev/go",
-		"dev/graphql",
-		"dev/shellcheck",
-		"dev/markdown",
-	}
-	// Packages that need codegen
-	codegen := []string{
-		"dev",
-		"dev/dirdiff",
-		"dev/go",
-		"dev/graphql",
-		"dev/shellcheck",
-		"dev/markdown",
-	}
+	eg, ctx := errgroup.WithContext(ctx)
 
-	return e.Dagger.Go().
-		WithCodegen(codegen).
-		Lint(ctx, packages, all)
+	eg.Go(func() error {
+		// Packages to lint
+		packages := []string{
+			"",
+			// FIXME: should the CI lint itself?
+			// FIXME: unsustainable to require keeping this list up to date by hand
+			"dev",
+			"dev/dirdiff",
+			"dev/go",
+			"dev/graphql",
+			"dev/shellcheck",
+			"dev/markdown",
+		}
+		// Packages that need codegen
+		codegen := []string{
+			"dev",
+			"dev/dirdiff",
+			"dev/go",
+			"dev/graphql",
+			"dev/shellcheck",
+			"dev/markdown",
+		}
+
+		return e.Dagger.Go().
+			WithCodegen(codegen).
+			Lint(ctx, packages, all)
+	})
+
+	eg.Go(func() error {
+		return e.LintGenerate(ctx)
+	})
+
+	return eg.Wait()
+}
+
+// Generate any engine-related files
+func (e *Engine) Generate() *Directory {
+	generated := e.Dagger.Go().Env().
+		WithoutDirectory("sdk") // sdk generation happens separately
+
+	// protobuf dependencies
+	generated = generated.
+		WithMountedDirectory(
+			"engine/telemetry/opentelemetry-proto",
+			dag.Git("https://github.com/open-telemetry/opentelemetry-proto.git").
+				Commit("9d139c87b52669a3e2825b835dd828b57a455a55").
+				Tree(),
+		).
+		WithExec([]string{"apk", "add", "protoc=~3.21.12"}).
+		WithExec([]string{"go", "install", "google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.2"}).
+		WithExec([]string{"go", "install", "github.com/gogo/protobuf/protoc-gen-gogoslick@v1.3.2"}).
+		WithExec([]string{"go", "install", "google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.4.0"})
+
+	generated = generated.
+		WithExec([]string{"go", "generate", "-v", "./..."})
+
+	return generated.Directory(".").
+		WithoutDirectory("engine/telemetry/opentelemetry-proto")
+}
+
+// Lint any generated engine-related files
+func (e *Engine) LintGenerate(ctx context.Context) error {
+	before := e.Dagger.Go().Env().WithoutDirectory("sdk").Directory(".")
+	after := e.Generate()
+	_, err := dag.Dirdiff().AssertEqual(ctx, before, after, []string{"."})
+	return err
 }
 
 // Publish all engine images to a registry
@@ -197,6 +240,10 @@ func (e *Engine) Publish(
 	ctx context.Context,
 
 	image string,
+
+	// Comma-separated list of tags to use
+	tags string,
+
 	// +optional
 	platform []Platform,
 
@@ -206,25 +253,18 @@ func (e *Engine) Publish(
 	registryUsername *string,
 	// +optional
 	registryPassword *Secret,
-) (string, error) {
+) ([]string, error) {
 	if len(platform) == 0 {
 		platform = []Platform{Platform(platforms.DefaultString())}
 	}
 
-	ref := fmt.Sprintf("%s:%s", image, e.Dagger.Version)
-	if strings.Contains(e.ImageBase, "wolfi") {
-		ref += "-wolfi"
-	}
-
-	if e.GPUSupport {
-		ref += "-gpu"
-	}
+	refs := strings.Split(tags, ",")
 
 	engines := make([]*Container, 0, len(platform))
 	for _, platform := range platform {
 		ctr, err := e.Container(ctx, platform)
 		if err != nil {
-			return "", err
+			return []string{}, err
 		}
 		engines = append(engines, ctr)
 	}
@@ -234,15 +274,19 @@ func (e *Engine) Publish(
 		ctr = ctr.WithRegistryAuth(*registry, *registryUsername, registryPassword)
 	}
 
-	digest, err := ctr.
-		Publish(ctx, ref, dagger.ContainerPublishOpts{
-			PlatformVariants:  engines,
-			ForcedCompression: dagger.Gzip, // use gzip to avoid incompatibility w/ older docker versions
-		})
-	if err != nil {
-		return "", err
+	digests := []string{}
+	for _, ref := range refs {
+		digest, err := ctr.
+			Publish(ctx, fmt.Sprintf("%s:%s", image, ref), dagger.ContainerPublishOpts{
+				PlatformVariants:  engines,
+				ForcedCompression: dagger.Gzip, // use gzip to avoid incompatibility w/ older docker versions
+			})
+		if err != nil {
+			return digests, err
+		}
+		digests = append(digests, digest)
 	}
-	return digest, nil
+	return digests, nil
 }
 
 // Verify that the engine builds without actually publishing anything

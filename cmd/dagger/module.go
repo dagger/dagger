@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -159,7 +160,7 @@ The "--source" flag allows controlling the directory in which the actual module 
 				WithSDK(sdk).
 				WithSourceSubpath(moduleSourcePath).
 				ResolveFromCaller().
-				AsModule().
+				AsModule(dagger.ModuleSourceAsModuleOpts{EngineVersion: modules.EngineVersionLatest}).
 				GeneratedContextDiff().
 				Export(ctx, modConf.LocalContextPath)
 			if err != nil {
@@ -377,7 +378,7 @@ If not updating source or SDK, this is only required for IDE auto-completion/LSP
 			}
 
 			_, err = src.ResolveFromCaller().
-				AsModule().
+				AsModule(dagger.ModuleSourceAsModuleOpts{EngineVersion: modules.EngineVersionLatest}).
 				GeneratedContextDiff().
 				Export(ctx, modConf.LocalContextPath)
 			if err != nil {
@@ -764,122 +765,17 @@ type moduleDef struct {
 	Source *dagger.ModuleSource
 }
 
+//go:embed typedefs.graphql
+var loadTypeDefsQuery string
+
 // loadModTypeDefs loads the objects defined by the given module in an easier to use data structure.
 func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client) error {
 	var res struct {
 		TypeDefs []*modTypeDef
 	}
 
-	const query = `
-fragment TypeDefRefParts on TypeDef {
-	kind
-	optional
-	asObject {
-		name
-	}
-	asInterface {
-		name
-	}
-	asInput {
-		name
-	}
-	asScalar {
-		name
-	}
-	asEnum {
-		name
-	}
-	asList {
-		elementTypeDef {
-			kind
-			asObject {
-				name
-			}
-			asInterface {
-				name
-			}
-			asInput {
-				name
-			}
-			asScalar {
-				name
-			}
-			asEnum {
-				name
-			}
-		}
-	}
-}
-
-fragment FunctionParts on Function {
-	name
-	description
-	returnType {
-		...TypeDefRefParts
-	}
-	args {
-		name
-		description
-		defaultValue
-		typeDef {
-			...TypeDefRefParts
-		}
-	}
-}
-
-fragment FieldParts on FieldTypeDef {
-	name
-	description
-	typeDef {
-		...TypeDefRefParts
-	}
-}
-
-query TypeDefs {
-	typeDefs: currentTypeDefs {
-		kind
-		optional
-		asObject {
-			name
-			sourceModuleName
-			constructor {
-				...FunctionParts
-			}
-			functions {
-				...FunctionParts
-			}
-			fields {
-				...FieldParts
-			}
-		}
-		asScalar {
-			name
-		}
-		asEnum {
-			name
-			values {
-				name
-			}
-		}
-		asInterface {
-			name
-			sourceModuleName
-			functions {
-				...FunctionParts
-			}
-		}
-		asInput {
-			name
-			fields {
-				...FieldParts
-			}
-		}
-	}
-}
-`
-
 	err := dag.Do(ctx, &dagger.Request{
-		Query: query,
+		Query: loadTypeDefsQuery,
 	}, &dagger.Response{
 		Data: &res,
 	})

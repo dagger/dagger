@@ -121,6 +121,7 @@ func isIntrospection(id *call.ID) bool {
 	if id.Base() == nil {
 		switch id.Field() {
 		case "__schema",
+			"__schemaVersion",
 			"currentTypeDefs",
 			"currentFunctionCall",
 			"currentModule":

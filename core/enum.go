@@ -119,7 +119,7 @@ func (e *ModuleEnum) TypeDescription() string {
 	return formatGqlDescription(e.TypeDef.Description)
 }
 
-func (e *ModuleEnum) TypeDefinition() *ast.Definition {
+func (e *ModuleEnum) TypeDefinition(views ...string) *ast.Definition {
 	return &ast.Definition{
 		Kind:        ast.Enum,
 		Name:        e.TypeName(),

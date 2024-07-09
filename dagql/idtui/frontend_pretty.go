@@ -127,19 +127,8 @@ func (fe *frontendPretty) Run(ctx context.Context, opts FrontendOpts, run func(c
 	// can show the TUI on stderr.
 	ttyIn, ttyOut := findTTYs()
 
-	var runErr error
-	if fe.Silent {
-		// no TTY found; set a reasonable screen size for logs, and just run the
-		// function
-		fe.setWindowSizeLocked(tea.WindowSizeMsg{
-			Width:  300, // influences vterm width
-			Height: 100, // theoretically noop, since we always render full logs
-		})
-		runErr = run(ctx)
-	} else {
-		// run the TUI until it exits and cleans up the TTY
-		runErr = fe.runWithTUI(ctx, ttyIn, ttyOut, run)
-	}
+	// run the function wrapped in the TUI
+	runErr := fe.runWithTUI(ctx, ttyIn, ttyOut, run)
 
 	// print the final output display to stderr
 	if renderErr := fe.finalRender(); renderErr != nil {
@@ -213,13 +202,9 @@ func (fe *frontendPretty) finalRender() error {
 	fe.zoomed = fe.db.PrimarySpan
 	fe.focused = trace.SpanID{}
 	fe.focusedIdx = -1
-	if fe.Verbosity < 1 {
-		// likely only intended to filter out noise, so print as we normally would
-		fe.Verbosity = 1
-	}
 	fe.recalculateViewLocked()
 
-	if fe.Debug || fe.Verbosity > 0 || fe.err != nil {
+	if fe.Debug || fe.Verbosity >= ShowCompletedVerbosity || fe.err != nil {
 		// Render progress to stderr so stdout stays clean.
 		out := NewOutput(os.Stderr, termenv.WithProfile(fe.profile))
 		if fe.renderProgress(out, true, fe.window.Height, "") {
@@ -228,6 +213,13 @@ func (fe *frontendPretty) finalRender() error {
 				fmt.Fprintln(os.Stderr)
 			}
 		}
+	}
+
+	if fe.err != nil {
+		// Counter-intuitively, we don't want to render the primary output
+		// when there's an error, because the error is better represented by
+		// the progress output.
+		return nil
 	}
 
 	// Replay the primary output log to stdout/stderr.

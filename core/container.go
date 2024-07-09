@@ -42,10 +42,10 @@ type DefaultTerminalCmdOpts struct {
 	// Provide dagger access to the executed command
 	// Do not use this option unless you trust the command being executed.
 	// The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
-	ExperimentalPrivilegedNesting bool `default:"false"`
+	ExperimentalPrivilegedNesting dagql.Optional[dagql.Boolean] `default:"false"`
 
 	// Grant the process all root capabilities
-	InsecureRootCapabilities bool `default:"false"`
+	InsecureRootCapabilities dagql.Optional[dagql.Boolean] `default:"false"`
 }
 
 // Container is a content-addressed container.

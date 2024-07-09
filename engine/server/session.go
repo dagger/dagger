@@ -86,6 +86,8 @@ type daggerSession struct {
 
 	dagqlCache       dagql.Cache
 	cacheEntrySetMap *sync.Map
+
+	interactive bool
 }
 
 type daggerSessionState string
@@ -161,6 +163,7 @@ func (srv *Server) initializeDaggerSession(
 	sess.dagqlCache = dagql.NewCache()
 	sess.cacheEntrySetMap = &sync.Map{}
 	sess.telemetryPubSub = srv.telemetryPubSub
+	sess.interactive = clientMetadata.Interactive
 
 	sess.analytics = analytics.New(analytics.Config{
 		DoNotTrack: clientMetadata.DoNotTrack || analytics.DoNotTrack(),
@@ -420,6 +423,8 @@ func (srv *Server) initializeDaggerClient(
 		ContainersMu: &client.daggerSession.containersMu,
 
 		SpanCtx: client.spanCtx,
+
+		Interactive: client.daggerSession.interactive,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create buildkit client: %w", err)
@@ -438,23 +443,42 @@ func (srv *Server) initializeDaggerClient(
 	}
 	client.defaultDeps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
 
-	client.deps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
-	if opts.EncodedModuleID != "" {
+	if opts.EncodedModuleID == "" {
+		client.deps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
+	} else {
 		modID := new(call.ID)
 		if err := modID.Decode(opts.EncodedModuleID); err != nil {
 			return fmt.Errorf("failed to decode module ID: %w", err)
 		}
-		modInst, err := dagql.NewID[*core.Module](modID).Load(ctx, dag)
+		modInst, err := dagql.NewID[*core.Module](modID).Load(ctx, coreMod.Dag)
 		if err != nil {
 			return fmt.Errorf("failed to load module: %w", err)
 		}
 		client.mod = modInst.Self
 
-		client.deps = client.mod.Deps
+		// this is needed to set the view of the core api as compatible
+		// with the module we're currently calling from
+		engineVersion, err := client.mod.Source.Self.ModuleEngineVersion(ctx)
+		if err != nil {
+			return err
+		}
+		coreMod.Dag.View = engineVersion
+
+		// NOTE: *technically* we should reload the module here, so that we can
+		// use the new typedefs api - but at this point we likely would
+		// have failed to load the module in the first place anyways?
+		// modInst, err = dagql.NewID[*core.Module](modID).Load(ctx, coreMod.Dag)
+		// if err != nil {
+		// 	return fmt.Errorf("failed to load module: %w", err)
+		// }
+		// client.mod = modInst.Self
+
+		client.deps = core.NewModDeps(client.dagqlRoot, client.mod.Deps.Mods)
 		// if the module has any of it's own objects defined, serve its schema to itself too
 		if len(client.mod.ObjectDefs) > 0 {
 			client.deps = client.deps.Append(client.mod)
 		}
+		client.defaultDeps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
 	}
 
 	if opts.EncodedFunctionCall != nil {
@@ -879,13 +903,14 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 			}
 			bklog.G(ctx).Debugf("done running cache export for client %s", client.clientID)
 		}
+
+		sess.closeShutdownOnce.Do(func() {
+			close(sess.shutdownCh)
+		})
 	}
 
 	telemetry.Flush(ctx)
 
-	sess.closeShutdownOnce.Do(func() {
-		close(sess.shutdownCh)
-	})
 	return nil
 }
 
@@ -895,9 +920,24 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module) error {
 	if err != nil {
 		return err
 	}
+
+	engineVersion, err := mod.Source.Self.ModuleEngineVersion(ctx)
+	if err != nil {
+		return err
+	}
+
 	client.stateMu.Lock()
 	defer client.stateMu.Unlock()
+
 	client.deps = client.deps.Append(mod)
+	for _, depMod := range client.deps.Mods {
+		if coreMod, ok := depMod.(*schema.CoreMod); ok {
+			// this is needed so that when the cli serves a module, that we
+			// serve the coreMod schema associated with that module
+			coreMod.Dag.View = engineVersion
+			break
+		}
+	}
 	return nil
 }
 
@@ -954,7 +994,7 @@ func (srv *Server) DefaultDeps(ctx context.Context) (*core.ModDeps, error) {
 	if err != nil {
 		return nil, err
 	}
-	return client.defaultDeps, nil
+	return client.defaultDeps.Clone(), nil
 }
 
 // The DagQL query cache for the current client's session

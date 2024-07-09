@@ -268,10 +268,14 @@ defmodule Dagger.Module do
   end
 
   @doc "Retrieves the module with basic configuration loaded if present."
-  @spec with_source(t(), Dagger.ModuleSource.t()) :: Dagger.Module.t()
-  def with_source(%__MODULE__{} = module, source) do
+  @spec with_source(t(), Dagger.ModuleSource.t(), [{:engine_version, String.t() | nil}]) ::
+          Dagger.Module.t()
+  def with_source(%__MODULE__{} = module, source, optional_args \\ []) do
     selection =
-      module.selection |> select("withSource") |> put_arg("source", Dagger.ID.id!(source))
+      module.selection
+      |> select("withSource")
+      |> put_arg("source", Dagger.ID.id!(source))
+      |> maybe_put_arg("engineVersion", optional_args[:engine_version])
 
     %Dagger.Module{
       selection: selection,

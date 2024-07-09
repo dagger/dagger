@@ -61,10 +61,14 @@ type Frontend interface {
 	ConnectedToCloud(ctx context.Context, url string, msg string)
 }
 
-// DumpID is exposed for troubleshooting.
-func DumpID(out *termenv.Output, id *call.ID) error {
+type Dump struct {
+	Newline string
+	Prefix  string
+}
+
+func (d *Dump) DumpID(out *termenv.Output, id *call.ID) error {
 	if id.Base() != nil {
-		if err := DumpID(out, id.Base()); err != nil {
+		if err := d.DumpID(out, id.Base()); err != nil {
 			return err
 		}
 	}
@@ -78,12 +82,19 @@ func DumpID(out *termenv.Output, id *call.ID) error {
 		db.Calls[dig] = call
 	}
 	r := newRenderer(db, -1, FrontendOpts{})
-	return r.renderCall(out, nil, id.Call(), "", 0, false, false, false)
+	if d.Newline != "" {
+		r.newline = d.Newline
+	}
+	err = r.renderCall(out, nil, id.Call(), d.Prefix, 0, false, false, false)
+	fmt.Fprint(out, r.newline)
+	return err
 }
 
 type renderer struct {
 	FrontendOpts
 
+	now           time.Time
+	newline       string
 	db            *DB
 	maxLiteralLen int
 	rendering     map[string]bool
@@ -92,9 +103,11 @@ type renderer struct {
 func newRenderer(db *DB, maxLiteralLen int, fe FrontendOpts) renderer {
 	return renderer{
 		FrontendOpts:  fe,
+		now:           time.Now(),
 		db:            db,
 		maxLiteralLen: maxLiteralLen,
 		rendering:     map[string]bool{},
+		newline:       "\n",
 	}
 }
 
@@ -163,7 +176,7 @@ func (r renderer) renderCall(
 			}
 		}
 		if needIndent {
-			fmt.Fprintln(out)
+			fmt.Fprint(out, r.newline)
 			depth++
 			depth++
 			for _, arg := range call.Args {
@@ -190,7 +203,7 @@ func (r renderer) renderCall(
 				} else {
 					r.renderLiteral(out, arg.GetValue())
 				}
-				fmt.Fprintln(out)
+				fmt.Fprint(out, r.newline)
 			}
 			depth--
 			fmt.Fprint(out, prefix)
@@ -330,7 +343,7 @@ func (r renderer) renderStatus(out *termenv.Output, span *Span, focused bool) {
 
 func (r renderer) renderDuration(out *termenv.Output, span *Span) {
 	fmt.Fprint(out, " ")
-	duration := out.String(fmtDuration(span.Duration()))
+	duration := out.String(fmtDuration(span.ActiveDuration(r.now)))
 	if span.IsRunning() {
 		duration = duration.Foreground(termenv.ANSIYellow)
 	} else {
@@ -380,13 +393,13 @@ func (r renderer) renderDuration(out *termenv.Output, span *Span) {
 // }
 
 const (
+	HideCompletedVerbosity    = 0
 	ShowCompletedVerbosity    = 1
-	ShowInternalVerbosity     = 2
-	ShowEncapsulatedVerbosity = 2
-	ShowSpammyVerbosity       = 3
-	ShowDigestsVerbosity      = 3
-
-	DefaultVerbosity = ShowCompletedVerbosity
+	ExpandCompletedVerbosity  = 2
+	ShowInternalVerbosity     = 3
+	ShowEncapsulatedVerbosity = 3
+	ShowSpammyVerbosity       = 4
+	ShowDigestsVerbosity      = 4
 )
 
 func (opts FrontendOpts) ShouldShow(tree *TraceTree) bool {
@@ -411,7 +424,7 @@ func (opts FrontendOpts) ShouldShow(tree *TraceTree) bool {
 		// show running steps
 		return true
 	}
-	if tree.Parent != nil && (opts.TooFastThreshold > 0 && span.Duration() < opts.TooFastThreshold && opts.Verbosity < ShowSpammyVerbosity) {
+	if tree.Parent != nil && (opts.TooFastThreshold > 0 && span.ActiveDuration(time.Now()) < opts.TooFastThreshold && opts.Verbosity < ShowSpammyVerbosity) {
 		// ignore fast steps; signal:noise is too poor
 		return false
 	}

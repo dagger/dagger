@@ -11,10 +11,12 @@ import (
 	"runtime/pprof"
 	runtimetrace "runtime/trace"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 
 	"dagger.io/dagger/telemetry"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-isatty"
 	"github.com/muesli/reflow/indent"
 	"github.com/muesli/reflow/wordwrap"
@@ -49,10 +51,12 @@ var (
 
 	workdir string
 
-	debug     bool
-	verbosity int = idtui.DefaultVerbosity
-	silent    bool
-	progress  string
+	silent      bool
+	verbose     int
+	quiet, _    = strconv.Atoi(os.Getenv("DAGGER_QUIET"))
+	debug       bool
+	progress    string
+	interactive bool
 
 	stdoutIsTTY = isatty.IsTerminal(os.Stdout.Fd())
 	stderrIsTTY = isatty.IsTerminal(os.Stderr.Fd())
@@ -170,14 +174,33 @@ var rootCmd = &cobra.Command{
 
 		return nil
 	},
+	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		highlight := lipgloss.NewStyle().
+			Bold(true).
+			Underline(true)
+		_, _, ok := enginetel.URLForTrace(cmd.Context())
+		switch {
+		case !ok &&
+			cmd.Flags().Changed("verbose") ||
+			cmd.Flags().Changed("debug") ||
+			cmd == moduleInitCmd:
+			fmt.Fprintf(cmd.ErrOrStderr(), `
+Log-in or create an account to visualize %s in Dagger Cloud:
+https://dagger.cloud/signup?quickstart=true
+
+`, highlight.Render(`pipeline traces`))
+		}
+	},
 }
 
 func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.StringVar(&workdir, "workdir", ".", "The host workdir loaded into dagger")
-	flags.CountVarP(&verbosity, "verbose", "v", "increase verbosity (use -vv or -vvv for more)")
-	flags.BoolVarP(&debug, "debug", "d", debug, "show debug logs and full verbosity")
-	flags.BoolVarP(&silent, "silent", "s", silent, "disable terminal UI and progress output")
-	flags.StringVar(&progress, "progress", "auto", "progress output format (auto, plain, tty)")
+	flags.CountVarP(&verbose, "verbose", "v", "Increase verbosity (use -vv or -vvv for more)")
+	flags.CountVarP(&quiet, "quiet", "q", "Reduce verbosity (show progress, but clean up at the end)")
+	flags.BoolVarP(&silent, "silent", "s", silent, "Do not show progress at all")
+	flags.BoolVarP(&debug, "debug", "d", debug, "Show debug logs and full verbosity")
+	flags.StringVar(&progress, "progress", "auto", "Progress output format (auto, plain, tty)")
+	flags.BoolVarP(&interactive, "interactive", "i", false, "interactive mode will spawn a terminal on container exec failure")
 
 	for _, fl := range []string{"workdir"} {
 		if err := flags.MarkHidden(fl); err != nil {
@@ -242,24 +265,25 @@ func (e ExitError) Error() string {
 
 const InstrumentationLibrary = "dagger.io/cli"
 
+var opts idtui.FrontendOpts
+
 func main() {
 	parseGlobalFlags()
-
-	opts := idtui.FrontendOpts{
-		Debug:  debug,
-		Silent: silent,
-
-		// NOTE: the verbosity flag is actually a delta to apply to the
-		// internal default verbosity level
-		Verbosity: idtui.DefaultVerbosity + verbosity,
-	}
-
+	opts.Verbosity += idtui.ShowCompletedVerbosity // keep progress by default
+	opts.Verbosity += verbose                      // raise verbosity with -v
+	opts.Verbosity -= quiet                        // lower verbosity with -q
+	opts.Silent = silent                           // show no progress
+	opts.Debug = debug                             // show everything
 	if progress == "auto" {
 		if hasTTY {
 			progress = "tty"
 		} else {
 			progress = "plain"
 		}
+	}
+	if silent {
+		// if silent, don't even bother with the pretty frontend
+		progress = "plain"
 	}
 	switch progress {
 	case "plain":

@@ -3,10 +3,9 @@ package idtui
 import (
 	"context"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
-
-	"os"
 	"sync"
 	"time"
 

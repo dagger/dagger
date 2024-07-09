@@ -11,7 +11,8 @@ var Query string
 
 // Response is the introspection query response
 type Response struct {
-	Schema *Schema `json:"__schema"`
+	Schema        *Schema `json:"__schema"`
+	SchemaVersion string  `json:"__schemaVersion"`
 }
 
 type Schema struct {

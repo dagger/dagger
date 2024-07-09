@@ -1329,6 +1329,39 @@ impl SocketId {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct TerminalId(pub String);
+impl From<&str> for TerminalId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+impl From<String> for TerminalId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl IntoID<TerminalId> for Terminal {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<TerminalId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<TerminalId> for TerminalId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<TerminalId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { Ok::<TerminalId, DaggerError>(self) })
+    }
+}
+impl TerminalId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct TypeDefId(pub String);
 impl From<&str> for TypeDefId {
     fn from(value: &str) -> Self {
@@ -3573,6 +3606,9 @@ pub struct Directory {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryAsModuleOpts<'a> {
+    /// The engine version to upgrade to.
+    #[builder(setter(into, strip_option), default)]
+    pub engine_version: Option<&'a str>,
     /// An optional subpath of the directory which contains the module's configuration file.
     /// This is needed when the module code is in a subdirectory but requires parent directories to be loaded in order to execute. For example, the module source code may need a go.mod, project.toml, package.json, etc. file from a parent directory.
     /// If not set, the module source code is loaded from the root of the directory.
@@ -3691,6 +3727,9 @@ impl Directory {
         let mut query = self.selection.select("asModule");
         if let Some(source_root_path) = opts.source_root_path {
             query = query.arg("sourceRootPath", source_root_path);
+        }
+        if let Some(engine_version) = opts.engine_version {
+            query = query.arg("engineVersion", engine_version);
         }
         Module {
             proc: self.proc.clone(),
@@ -5337,6 +5376,12 @@ pub struct Module {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct ModuleWithSourceOpts<'a> {
+    /// The engine version to upgrade to.
+    #[builder(setter(into, strip_option), default)]
+    pub engine_version: Option<&'a str>,
+}
 impl Module {
     /// Modules used by this module.
     pub fn dependencies(&self) -> Vec<Module> {
@@ -5521,6 +5566,7 @@ impl Module {
     /// # Arguments
     ///
     /// * `source` - The module source to initialize from.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_source(&self, source: impl IntoID<ModuleSourceId>) -> Module {
         let mut query = self.selection.select("withSource");
         query = query.arg_lazy(
@@ -5530,6 +5576,34 @@ impl Module {
                 Box::pin(async move { source.into_id().await.unwrap().quote() })
             }),
         );
+        Module {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves the module with basic configuration loaded if present.
+    ///
+    /// # Arguments
+    ///
+    /// * `source` - The module source to initialize from.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_source_opts<'a>(
+        &self,
+        source: impl IntoID<ModuleSourceId>,
+        opts: ModuleWithSourceOpts<'a>,
+    ) -> Module {
+        let mut query = self.selection.select("withSource");
+        query = query.arg_lazy(
+            "source",
+            Box::new(move || {
+                let source = source.clone();
+                Box::pin(async move { source.into_id().await.unwrap().quote() })
+            }),
+        );
+        if let Some(engine_version) = opts.engine_version {
+            query = query.arg("engineVersion", engine_version);
+        }
         Module {
             proc: self.proc.clone(),
             selection: query,
@@ -5571,6 +5645,12 @@ pub struct ModuleSource {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct ModuleSourceAsModuleOpts<'a> {
+    /// The engine version to upgrade to.
+    #[builder(setter(into, strip_option), default)]
+    pub engine_version: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct ModuleSourceResolveDirectoryFromCallerOpts<'a> {
     /// If set, the name of the view to apply to the path.
     #[builder(setter(into, strip_option), default)]
@@ -5596,8 +5676,28 @@ impl ModuleSource {
         }
     }
     /// Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn as_module(&self) -> Module {
         let query = self.selection.select("asModule");
+        Module {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn as_module_opts<'a>(&self, opts: ModuleSourceAsModuleOpts<'a>) -> Module {
+        let mut query = self.selection.select("asModule");
+        if let Some(engine_version) = opts.engine_version {
+            query = query.arg("engineVersion", engine_version);
+        }
         Module {
             proc: self.proc.clone(),
             selection: query,
@@ -6983,6 +7083,22 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Load a Terminal from its ID.
+    pub fn load_terminal_from_id(&self, id: impl IntoID<TerminalId>) -> Terminal {
+        let mut query = self.selection.select("loadTerminalFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        Terminal {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Load a TypeDef from its ID.
     pub fn load_type_def_from_id(&self, id: impl IntoID<TypeDefId>) -> TypeDef {
         let mut query = self.selection.select("loadTypeDefFromID");
@@ -7403,6 +7519,19 @@ pub struct Socket {
 impl Socket {
     /// A unique identifier for this Socket.
     pub async fn id(&self) -> Result<SocketId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+#[derive(Clone)]
+pub struct Terminal {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl Terminal {
+    /// A unique identifier for this Terminal.
+    pub async fn id(&self) -> Result<TerminalId, DaggerError> {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }

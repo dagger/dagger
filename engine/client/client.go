@@ -77,6 +77,8 @@ type Params struct {
 	// Log level (0 = INFO)
 	LogLevel slog.Level
 
+	Interactive bool
+
 	WithTerminal session.WithTerminalFunc
 }
 
@@ -1009,6 +1011,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		Labels:                    c.labels,
 		CloudToken:                os.Getenv("DAGGER_CLOUD_TOKEN"),
 		DoNotTrack:                analytics.DoNotTrack(),
+		Interactive:               c.Interactive,
 	}
 }
 

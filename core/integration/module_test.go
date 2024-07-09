@@ -5311,7 +5311,7 @@ func (ModuleSuite) TestDaggerListen(ctx context.Context, t *testctx.T) {
 		for range limitTicker(time.Second, 60) {
 			callCmd := hostDaggerCommand(ctx, t, modDir, "--debug", "call", "container-echo", "--string-arg=hi", "stdout")
 			callCmd.Env = append(callCmd.Env, "DAGGER_SESSION_PORT=12456", "DAGGER_SESSION_TOKEN=lol")
-			out, err = callCmd.CombinedOutput()
+			out, err = callCmd.Output()
 			if err == nil {
 				lines := strings.Split(string(out), "\n")
 				lastLine := lines[len(lines)-2]
@@ -5340,7 +5340,7 @@ func (ModuleSuite) TestDaggerListen(ctx context.Context, t *testctx.T) {
 				callCmd := hostDaggerCommand(ctx, t, modDir, "--debug", "query")
 				callCmd.Stdin = strings.NewReader(fmt.Sprintf(`query{container{from(address:"%s"){file(path:"/etc/alpine-release"){contents}}}}`, alpineImage))
 				callCmd.Env = append(callCmd.Env, "DAGGER_SESSION_PORT=12457", "DAGGER_SESSION_TOKEN=lol")
-				out, err = callCmd.CombinedOutput()
+				out, err = callCmd.Output()
 				if err == nil {
 					require.Contains(t, string(out), distconsts.AlpineVersion)
 					return
@@ -5363,7 +5363,7 @@ func (ModuleSuite) TestDaggerListen(ctx context.Context, t *testctx.T) {
 				callCmd := hostDaggerCommand(ctx, t, tmpdir, "--debug", "query")
 				callCmd.Stdin = strings.NewReader(fmt.Sprintf(`query{container{from(address:"%s"){file(path:"/etc/alpine-release"){contents}}}}`, alpineImage))
 				callCmd.Env = append(callCmd.Env, "DAGGER_SESSION_PORT=12458", "DAGGER_SESSION_TOKEN=lol")
-				out, err = callCmd.CombinedOutput()
+				out, err = callCmd.Output()
 				if err == nil {
 					require.Contains(t, string(out), distconsts.AlpineVersion)
 					return
@@ -6025,6 +6025,177 @@ func (m *Test) Fn() string {
 		With(daggerCall("fn")).
 		Sync(ctx)
 	require.NoError(t, err)
+}
+
+func (ModuleSuite) TestModuleSchemaVersion(ctx context.Context, t *testctx.T) {
+	t.Run("standalone", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		work := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work")
+		out, err := work.
+			With(daggerQuery("{__schemaVersion}")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"__schemaVersion":""}`, out)
+	})
+
+	t.Run("cli", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		work := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=foo", "--sdk=go", "--source=.")).
+			WithNewFile("dagger.json", dagger.ContainerWithNewFileOpts{
+				Contents: `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v2.0.0"}`,
+			})
+		out, err := work.
+			With(daggerQuery("{__schemaVersion}")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"__schemaVersion":"v2.0.0"}`, out)
+	})
+
+	t.Run("module", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		work := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=foo", "--sdk=go", "--source=.")).
+			WithNewFile("dagger.json", dagger.ContainerWithNewFileOpts{
+				Contents: `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v2.0.0"}`,
+			}).
+			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+import (
+	"context"
+	"github.com/Khan/genqlient/graphql"
+)
+
+type Foo struct {}
+
+func (m *Foo) GetVersion(ctx context.Context) (string, error) {
+	return schemaVersion(ctx)
+}
+
+func schemaVersion(ctx context.Context) (string, error) {
+	resp := &graphql.Response{}
+	err := dag.GraphQLClient().MakeRequest(ctx, &graphql.Request{
+		Query: "{__schemaVersion}",
+	}, resp)
+	if err != nil {
+		return "", err
+	}
+	return resp.Data.(map[string]any)["__schemaVersion"].(string), nil
+}
+`,
+			})
+		out, err := work.
+			With(daggerQuery("{foo{getVersion}}")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"foo":{"getVersion": "v2.0.0"}}`, out)
+
+		out, err = work.
+			With(daggerCall("get-version")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "v2.0.0")
+	})
+
+	t.Run("module deps", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		work := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/dep").
+			With(daggerExec("init", "--name=dep", "--sdk=go", "--source=.")).
+			WithNewFile("dagger.json", dagger.ContainerWithNewFileOpts{
+				Contents: `{"name": "dep", "sdk": "go", "source": ".", "engineVersion": "v2.0.0"}`,
+			}).
+			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+import (
+	"context"
+	"github.com/Khan/genqlient/graphql"
+)
+
+type Dep struct {}
+
+func (m *Dep) GetVersion(ctx context.Context) (string, error) {
+	return schemaVersion(ctx)
+}
+
+func schemaVersion(ctx context.Context) (string, error) {
+	resp := &graphql.Response{}
+	err := dag.GraphQLClient().MakeRequest(ctx, &graphql.Request{
+		Query: "{__schemaVersion}",
+	}, resp)
+	if err != nil {
+		return "", err
+	}
+	return resp.Data.(map[string]any)["__schemaVersion"].(string), nil
+}
+`,
+			}).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=foo", "--sdk=go", "--source=.")).
+			With(daggerExec("install", "./dep")).
+			WithNewFile("dagger.json", dagger.ContainerWithNewFileOpts{
+				Contents: `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v3.0.0", "dependencies": [{"name": "dep", "source": "dep"}]}`,
+			}).
+			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
+				Contents: `package main
+
+import (
+	"context"
+	"github.com/Khan/genqlient/graphql"
+)
+
+type Foo struct {}
+
+func (m *Foo) GetVersion(ctx context.Context) (string, error) {
+	myVersion, err := schemaVersion(ctx)
+	if err != nil {
+		return "", err
+	}
+	depVersion, err := dag.Dep().GetVersion(ctx)
+	if err != nil {
+		return "", err
+	}
+	return myVersion + " " + depVersion, nil
+}
+
+func schemaVersion(ctx context.Context) (string, error) {
+	resp := &graphql.Response{}
+	err := dag.GraphQLClient().MakeRequest(ctx, &graphql.Request{
+		Query: "{__schemaVersion}",
+	}, resp)
+	if err != nil {
+		return "", err
+	}
+	return resp.Data.(map[string]any)["__schemaVersion"].(string), nil
+}
+`,
+			})
+
+		out, err := work.
+			With(daggerQuery("{foo{getVersion}}")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"foo":{"getVersion": "v3.0.0 v2.0.0"}}`, out)
+
+		out, err = work.
+			With(daggerCall("get-version")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "v3.0.0 v2.0.0")
+	})
 }
 
 func daggerExec(args ...string) dagger.WithContainerFunc {

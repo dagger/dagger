@@ -8,6 +8,9 @@ import (
 // Filename is the name of the module config file.
 const Filename = "dagger.json"
 
+// EngineVersionLatest is replaced by the current engine.Version during module init.
+const EngineVersionLatest string = "latest"
+
 // ModuleConfig is the config for a single module as loaded from a dagger.json file.
 type ModuleConfig struct {
 	// The name of the module.

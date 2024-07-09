@@ -11,12 +11,16 @@ defmodule Dagger.Directory do
   @type t() :: %__MODULE__{}
 
   @doc "Load the directory as a Dagger module"
-  @spec as_module(t(), [{:source_root_path, String.t() | nil}]) :: Dagger.Module.t()
+  @spec as_module(t(), [
+          {:source_root_path, String.t() | nil},
+          {:engine_version, String.t() | nil}
+        ]) :: Dagger.Module.t()
   def as_module(%__MODULE__{} = directory, optional_args \\ []) do
     selection =
       directory.selection
       |> select("asModule")
       |> maybe_put_arg("sourceRootPath", optional_args[:source_root_path])
+      |> maybe_put_arg("engineVersion", optional_args[:engine_version])
 
     %Dagger.Module{
       selection: selection,

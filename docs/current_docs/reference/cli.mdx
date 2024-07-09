@@ -12,10 +12,12 @@ The Dagger CLI provides a command-line interface to Dagger.
 ### Options
 
 ```
-  -d, --debug             show debug logs and full verbosity
-      --progress string   progress output format (auto, plain, tty) (default "auto")
-  -s, --silent            disable terminal UI and progress output
-  -v, --verbose count     increase verbosity (use -vv or -vvv for more)
+  -d, --debug             Show debug logs and full verbosity
+  -i, --interactive       interactive mode will spawn a terminal on container exec failure
+      --progress string   Progress output format (auto, plain, tty) (default "auto")
+  -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent            Do not show progress at all
+  -v, --verbose count     Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -51,10 +53,12 @@ dagger call [options]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug             show debug logs and full verbosity
-      --progress string   progress output format (auto, plain, tty) (default "auto")
-  -s, --silent            disable terminal UI and progress output
-  -v, --verbose count     increase verbosity (use -vv or -vvv for more)
+  -d, --debug             Show debug logs and full verbosity
+  -i, --interactive       interactive mode will spawn a terminal on container exec failure
+      --progress string   Progress output format (auto, plain, tty) (default "auto")
+  -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent            Do not show progress at all
+  -v, --verbose count     Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -90,10 +94,12 @@ dagger config -m github.com/dagger/hello-dagger
 ### Options inherited from parent commands
 
 ```
-  -d, --debug             show debug logs and full verbosity
-      --progress string   progress output format (auto, plain, tty) (default "auto")
-  -s, --silent            disable terminal UI and progress output
-  -v, --verbose count     increase verbosity (use -vv or -vvv for more)
+  -d, --debug             Show debug logs and full verbosity
+  -i, --interactive       interactive mode will spawn a terminal on container exec failure
+      --progress string   Progress output format (auto, plain, tty) (default "auto")
+  -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent            Do not show progress at all
+  -v, --verbose count     Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -136,10 +142,12 @@ dagger develop [options]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug             show debug logs and full verbosity
-      --progress string   progress output format (auto, plain, tty) (default "auto")
-  -s, --silent            disable terminal UI and progress output
-  -v, --verbose count     increase verbosity (use -vv or -vvv for more)
+  -d, --debug             Show debug logs and full verbosity
+  -i, --interactive       interactive mode will spawn a terminal on container exec failure
+      --progress string   Progress output format (auto, plain, tty) (default "auto")
+  -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent            Do not show progress at all
+  -v, --verbose count     Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -171,10 +179,12 @@ dagger functions [options] [function]...
 ### Options inherited from parent commands
 
 ```
-  -d, --debug             show debug logs and full verbosity
-      --progress string   progress output format (auto, plain, tty) (default "auto")
-  -s, --silent            disable terminal UI and progress output
-  -v, --verbose count     increase verbosity (use -vv or -vvv for more)
+  -d, --debug             Show debug logs and full verbosity
+  -i, --interactive       interactive mode will spawn a terminal on container exec failure
+      --progress string   Progress output format (auto, plain, tty) (default "auto")
+  -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent            Do not show progress at all
+  -v, --verbose count     Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -221,10 +231,12 @@ dagger init --name=hello --sdk=python --source=some/subdir
 ### Options inherited from parent commands
 
 ```
-  -d, --debug             show debug logs and full verbosity
-      --progress string   progress output format (auto, plain, tty) (default "auto")
-  -s, --silent            disable terminal UI and progress output
-  -v, --verbose count     increase verbosity (use -vv or -vvv for more)
+  -d, --debug             Show debug logs and full verbosity
+  -i, --interactive       interactive mode will spawn a terminal on container exec failure
+      --progress string   Progress output format (auto, plain, tty) (default "auto")
+  -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent            Do not show progress at all
+  -v, --verbose count     Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -259,10 +271,12 @@ dagger install github.com/shykes/daggerverse/ttlsh@16e40ec244966e55e36a13cb6e1ff
 ### Options inherited from parent commands
 
 ```
-  -d, --debug             show debug logs and full verbosity
-      --progress string   progress output format (auto, plain, tty) (default "auto")
-  -s, --silent            disable terminal UI and progress output
-  -v, --verbose count     increase verbosity (use -vv or -vvv for more)
+  -d, --debug             Show debug logs and full verbosity
+  -i, --interactive       interactive mode will spawn a terminal on container exec failure
+      --progress string   Progress output format (auto, plain, tty) (default "auto")
+  -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent            Do not show progress at all
+  -v, --verbose count     Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -280,10 +294,12 @@ dagger login [options] [org]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug             show debug logs and full verbosity
-      --progress string   progress output format (auto, plain, tty) (default "auto")
-  -s, --silent            disable terminal UI and progress output
-  -v, --verbose count     increase verbosity (use -vv or -vvv for more)
+  -d, --debug             Show debug logs and full verbosity
+  -i, --interactive       interactive mode will spawn a terminal on container exec failure
+      --progress string   Progress output format (auto, plain, tty) (default "auto")
+  -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent            Do not show progress at all
+  -v, --verbose count     Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -301,10 +317,12 @@ dagger logout
 ### Options inherited from parent commands
 
 ```
-  -d, --debug             show debug logs and full verbosity
-      --progress string   progress output format (auto, plain, tty) (default "auto")
-  -s, --silent            disable terminal UI and progress output
-  -v, --verbose count     increase verbosity (use -vv or -vvv for more)
+  -d, --debug             Show debug logs and full verbosity
+  -i, --interactive       interactive mode will spawn a terminal on container exec failure
+      --progress string   Progress output format (auto, plain, tty) (default "auto")
+  -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent            Do not show progress at all
+  -v, --verbose count     Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -358,10 +376,12 @@ EOF
 ### Options inherited from parent commands
 
 ```
-  -d, --debug             show debug logs and full verbosity
-      --progress string   progress output format (auto, plain, tty) (default "auto")
-  -s, --silent            disable terminal UI and progress output
-  -v, --verbose count     increase verbosity (use -vv or -vvv for more)
+  -d, --debug             Show debug logs and full verbosity
+  -i, --interactive       interactive mode will spawn a terminal on container exec failure
+      --progress string   Progress output format (auto, plain, tty) (default "auto")
+  -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent            Do not show progress at all
+  -v, --verbose count     Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -412,10 +432,12 @@ dagger run python main.py
 ### Options inherited from parent commands
 
 ```
-  -d, --debug             show debug logs and full verbosity
-      --progress string   progress output format (auto, plain, tty) (default "auto")
-  -s, --silent            disable terminal UI and progress output
-  -v, --verbose count     increase verbosity (use -vv or -vvv for more)
+  -d, --debug             Show debug logs and full verbosity
+  -i, --interactive       interactive mode will spawn a terminal on container exec failure
+      --progress string   Progress output format (auto, plain, tty) (default "auto")
+  -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent            Do not show progress at all
+  -v, --verbose count     Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO
@@ -433,10 +455,12 @@ dagger version
 ### Options inherited from parent commands
 
 ```
-  -d, --debug             show debug logs and full verbosity
-      --progress string   progress output format (auto, plain, tty) (default "auto")
-  -s, --silent            disable terminal UI and progress output
-  -v, --verbose count     increase verbosity (use -vv or -vvv for more)
+  -d, --debug             Show debug logs and full verbosity
+  -i, --interactive       interactive mode will spawn a terminal on container exec failure
+      --progress string   Progress output format (auto, plain, tty) (default "auto")
+  -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent            Do not show progress at all
+  -v, --verbose count     Increase verbosity (use -vv or -vvv for more)
 ```
 
 ### SEE ALSO

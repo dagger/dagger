@@ -111,22 +111,66 @@ func (span *Span) IsInternal() bool {
 	return span.Internal
 }
 
-func (span *Span) Duration() time.Duration {
-	inner := span.ReadOnlySpan
-	var dur time.Duration
+type SpanActivity struct {
+	Duration time.Duration
+	Min      time.Time
+	Max      time.Time
+}
+
+func (span *Span) SelfDuration(fallbackEnd time.Time) time.Duration {
 	if span.IsRunning() {
-		dur = time.Since(inner.StartTime())
-	} else {
-		dur = inner.EndTime().Sub(inner.StartTime())
+		return fallbackEnd.Sub(span.StartTime())
 	}
-	return dur
+	return span.EndTimeOrFallback(fallbackEnd).Sub(span.StartTime())
+}
+
+func (span *Span) ActiveDuration(fallbackEnd time.Time) time.Duration {
+	facts := SpanActivity{
+		Min: span.StartTime(),
+		Max: span.EndTimeOrFallback(fallbackEnd),
+	}
+	facts.Duration = facts.Max.Sub(span.StartTime())
+
+	currentEnd := facts.Max
+
+	for _, effect := range span.EffectSpans() {
+		start := effect.StartTime()
+		end := effect.EndTimeOrFallback(fallbackEnd)
+		duration := end.Sub(start)
+
+		if start.Before(facts.Min) {
+			facts.Min = start
+		}
+		if end.After(facts.Max) {
+			facts.Max = end
+		}
+
+		if start.Before(currentEnd) {
+			// If we started before the last completion, the only case we care about
+			// is if we exceed past it.
+			if end.After(currentEnd) {
+				facts.Duration += end.Sub(currentEnd)
+				currentEnd = end
+			}
+		} else {
+			// Started after the last completion, so we just add the duration.
+			facts.Duration += duration
+			currentEnd = end
+		}
+	}
+
+	return facts.Duration
+}
+
+func (span *Span) EndTimeOrFallback(fallbackEnd time.Time) time.Time {
+	if span.IsRunning() {
+		return fallbackEnd
+	}
+	return span.ReadOnlySpan.EndTime()
 }
 
 func (span *Span) EndTime() time.Time {
-	if span.IsRunning() {
-		return time.Now()
-	}
-	return span.ReadOnlySpan.EndTime()
+	return span.EndTimeOrFallback(time.Now())
 }
 
 func (span *Span) IsBefore(other *Span) bool {

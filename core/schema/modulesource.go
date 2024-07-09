@@ -269,17 +269,23 @@ func parseRefString(ctx context.Context, bk buildkitClient, refString string) pa
 func (s *moduleSchema) moduleSourceAsModule(
 	ctx context.Context,
 	src dagql.Instance[*core.ModuleSource],
-	args struct{},
+	args struct {
+		EngineVersion dagql.Optional[dagql.String]
+	},
 ) (inst dagql.Instance[*core.Module], err error) {
+	withSourceInputs := []dagql.NamedInput{
+		{Name: "source", Value: dagql.NewID[*core.ModuleSource](src.ID())},
+	}
+	if args.EngineVersion.Valid {
+		withSourceInputs = append(withSourceInputs, dagql.NamedInput{Name: "engineVersion", Value: args.EngineVersion})
+	}
 	err = s.dag.Select(ctx, s.dag.Root(), &inst,
 		dagql.Selector{
 			Field: "module",
 		},
 		dagql.Selector{
 			Field: "withSource",
-			Args: []dagql.NamedInput{
-				{Name: "source", Value: dagql.NewID[*core.ModuleSource](src.ID())},
-			},
+			Args:  withSourceInputs,
 		},
 	)
 	if err != nil {

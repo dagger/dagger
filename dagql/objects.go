@@ -22,7 +22,7 @@ import (
 type Class[T Typed] struct {
 	inner   T
 	idable  bool
-	fields  map[string]*Field[T]
+	fields  map[string][]*Field[T]
 	fieldsL *sync.Mutex
 }
 
@@ -45,7 +45,7 @@ func NewClass[T Typed](opts_ ...ClassOpts[T]) Class[T] {
 	}
 	class := Class[T]{
 		inner:   opts.Typed,
-		fields:  map[string]*Field[T]{},
+		fields:  map[string][]*Field[T]{},
 		fieldsL: new(sync.Mutex),
 	}
 	if !opts.NoIDs {
@@ -78,14 +78,31 @@ func (class Class[T]) IDType() (IDType, bool) {
 	}
 }
 
-func (class Class[T]) Field(name string) (Field[T], bool) {
+func (class Class[T]) Field(name string, views ...string) (Field[T], bool) {
 	class.fieldsL.Lock()
 	defer class.fieldsL.Unlock()
-	field, ok := class.fields[name]
+	return class.fieldLocked(name, views...)
+}
+
+func (class Class[T]) fieldLocked(name string, views ...string) (Field[T], bool) {
+	fields, ok := class.fields[name]
 	if !ok {
 		return Field[T]{}, false
 	}
-	return *field, ok
+	for i := len(fields) - 1; i >= 0; i-- {
+		// iterate backwards to allow last-defined field to have precedence
+		field := fields[i]
+
+		if field.ViewFilter == nil {
+			return *field, true
+		}
+		for _, view := range views {
+			if field.ViewFilter.Contains(view) {
+				return *field, true
+			}
+		}
+	}
+	return Field[T]{}, false
 }
 
 func (class Class[T]) Install(fields ...Field[T]) {
@@ -93,7 +110,28 @@ func (class Class[T]) Install(fields ...Field[T]) {
 	defer class.fieldsL.Unlock()
 	for _, field := range fields {
 		field := field
-		class.fields[field.Spec.Name] = &field
+
+		if field.Spec.extend {
+			fields := class.fields[field.Spec.Name]
+			if len(fields) == 0 {
+				panic(fmt.Sprintf("field %q cannot be extended, as it has not been defined", field.Spec.Name))
+			}
+			oldSpec := field.Spec
+
+			field.Spec = fields[len(fields)-1].Spec
+			field.Spec.Type = oldSpec.Type // a little hacky, but preserve the return type
+		}
+
+		for _, other := range class.fields[field.Spec.Name] {
+			if field.ViewFilter == nil && other.ViewFilter != nil {
+				panic(fmt.Sprintf("field %q cannot be added to the global view, it already has a view", field.Spec.Name))
+			}
+			if field.ViewFilter != nil && other.ViewFilter == nil {
+				panic(fmt.Sprintf("field %q cannot be added with a view, it's already in the global view", field.Spec.Name))
+			}
+		}
+
+		class.fields[field.Spec.Name] = append(class.fields[field.Spec.Name], &field)
 	}
 }
 
@@ -106,12 +144,12 @@ func (cls Class[T]) TypeName() string {
 func (cls Class[T]) Extend(spec FieldSpec, fun FieldFunc) {
 	cls.fieldsL.Lock()
 	defer cls.fieldsL.Unlock()
-	cls.fields[spec.Name] = &Field[T]{
+	cls.fields[spec.Name] = append(cls.fields[spec.Name], &Field[T]{
 		Spec: spec,
 		Func: func(ctx context.Context, self Instance[T], args map[string]Input) (Typed, error) {
 			return fun(ctx, self, args)
 		},
-	}
+	})
 }
 
 // TypeDefinition returns the schema definition of the class.
@@ -120,13 +158,13 @@ func (cls Class[T]) Extend(spec FieldSpec, fun FieldFunc) {
 // type may implement Definitive or Descriptive to provide more information.
 //
 // Each currently defined field is installed on the returned definition.
-func (cls Class[T]) TypeDefinition() *ast.Definition {
+func (cls Class[T]) TypeDefinition(views ...string) *ast.Definition {
 	cls.fieldsL.Lock()
 	defer cls.fieldsL.Unlock()
 	var val any = cls.inner
 	var def *ast.Definition
 	if isType, ok := val.(Definitive); ok {
-		def = isType.TypeDefinition()
+		def = isType.TypeDefinition(views...)
 	} else {
 		def = &ast.Definition{
 			Kind: ast.Object,
@@ -136,8 +174,10 @@ func (cls Class[T]) TypeDefinition() *ast.Definition {
 	if isType, ok := val.(Descriptive); ok {
 		def.Description = isType.TypeDescription()
 	}
-	for _, field := range cls.fields {
-		def.Fields = append(def.Fields, field.FieldDefinition())
+	for name := range cls.fields {
+		if field, ok := cls.fieldLocked(name, views...); ok {
+			def.Fields = append(def.Fields, field.FieldDefinition())
+		}
 	}
 	// TODO preserve order
 	sort.Slice(def.Fields, func(i, j int) bool {
@@ -147,8 +187,8 @@ func (cls Class[T]) TypeDefinition() *ast.Definition {
 }
 
 // ParseField parses a field selection into a Selector and return type.
-func (cls Class[T]) ParseField(ctx context.Context, astField *ast.Field, vars map[string]any) (Selector, *ast.Type, error) {
-	field, ok := cls.Field(astField.Name)
+func (cls Class[T]) ParseField(ctx context.Context, view string, astField *ast.Field, vars map[string]any) (Selector, *ast.Type, error) {
+	field, ok := cls.Field(astField.Name, view)
 	if !ok {
 		return Selector{}, nil, fmt.Errorf("%s has no such field: %q", cls.TypeName(), astField.Name)
 	}
@@ -175,9 +215,15 @@ func (cls Class[T]) ParseField(ctx context.Context, astField *ast.Field, vars ma
 			Value: input,
 		}
 	}
+	if field.ViewFilter == nil {
+		// fields in the global view shouldn't attach the current view to the
+		// selector (since they're global from all perspectives)
+		view = ""
+	}
 	return Selector{
 		Field: astField.Name,
 		Args:  args,
+		View:  view,
 	}, field.Spec.Type.Type(), nil
 }
 
@@ -196,8 +242,8 @@ func (cls Class[T]) New(id *call.ID, val Typed) (Object, error) {
 }
 
 // Call calls a field on the class against an instance.
-func (cls Class[T]) Call(ctx context.Context, node Instance[T], fieldName string, args map[string]Input) (Typed, error) {
-	field, ok := cls.Field(fieldName)
+func (cls Class[T]) Call(ctx context.Context, node Instance[T], fieldName string, view string, args map[string]Input) (Typed, error) {
+	field, ok := cls.Field(fieldName, view)
 	if !ok {
 		return nil, fmt.Errorf("Call: %s has no such field: %q", cls.inner.Type().Name(), fieldName)
 	}
@@ -249,7 +295,7 @@ func (r Instance[T]) String() string {
 }
 
 func (r Instance[T]) IDFor(ctx context.Context, sel Selector) (*call.ID, error) {
-	field, ok := r.Class.Field(sel.Field)
+	field, ok := r.Class.Field(sel.Field, sel.View)
 	if !ok {
 		return nil, fmt.Errorf("IDFor: %s has no such field: %q", r.Class.inner.Type().Name(), sel.Field)
 	}
@@ -258,7 +304,7 @@ func (r Instance[T]) IDFor(ctx context.Context, sel Selector) (*call.ID, error) 
 
 // Select calls a field on the instance.
 func (r Instance[T]) Select(ctx context.Context, sel Selector) (val Typed, err error) {
-	field, ok := r.Class.Field(sel.Field)
+	field, ok := r.Class.Field(sel.Field, sel.View)
 	if !ok {
 		return nil, fmt.Errorf("Select: %s has no such field: %q", r.Class.TypeName(), sel.Field)
 	}
@@ -267,7 +313,7 @@ func (r Instance[T]) Select(ctx context.Context, sel Selector) (val Typed, err e
 		return nil, fmt.Errorf("%s.%s: %w", r.Class.TypeName(), sel.Field, err)
 	}
 
-	val, err = r.Class.Call(ctx, r, sel.Field, args)
+	val, err = r.Class.Call(ctx, r, sel.Field, sel.View, args)
 	if err != nil {
 		return nil, err
 	}
@@ -294,6 +340,33 @@ func (r Instance[T]) Select(ctx context.Context, sel Selector) (val Typed, err e
 		}
 	}
 	return val, nil
+}
+
+type View interface {
+	Contains(string) bool
+}
+
+// GlobalView is the default global view. Everyone can see it, and it behaves
+// identically everywhere.
+var GlobalView View = nil
+
+// AllView is similar to the global view, however, instead of being an empty
+// view, it's still counted as a view.
+//
+// This means that each call for a field is associated with the server view,
+// which results in slightly different caching behavior. Additionally, it can
+// be overridden in different views.
+type AllView struct{}
+
+func (v AllView) Contains(s string) bool {
+	return true
+}
+
+// ExactView contains exactly one view.
+type ExactView string
+
+func (v ExactView) Contains(s string) bool {
+	return s == string(v)
 }
 
 // Func is a helper for defining a field resolver and schema.
@@ -329,12 +402,14 @@ func NodeFunc[T Typed, A any, R any](name string, fn func(ctx context.Context, s
 		var zeroSelf T
 		slog.Error("failed to parse args", "type", zeroSelf.Type(), "field", name, "error", argsErr)
 	}
+
 	var zeroRet R
 	ret, err := builtinOrTyped(zeroRet)
 	if err != nil {
 		var zeroSelf T
 		slog.Error("failed to parse return type", "type", zeroSelf.Type(), "field", name, "error", err)
 	}
+
 	return Field[T]{
 		Spec: FieldSpec{
 			Name: name,
@@ -378,6 +453,10 @@ type FieldSpec struct {
 	DeprecatedReason string
 	// Module is the module that provides the field's implementation.
 	Module *call.Module
+
+	// extend is used during installation to copy the spec of a previous field
+	// with the same name
+	extend bool
 }
 
 func (spec FieldSpec) FieldDefinition() *ast.FieldDefinition {
@@ -475,7 +554,7 @@ type Descriptive interface {
 
 // Definitive is a type that knows how to define itself in the schema.
 type Definitive interface {
-	TypeDefinition() *ast.Definition
+	TypeDefinition(views ...string) *ast.Definition
 }
 
 // Fields defines a set of fields for an Object type.
@@ -522,7 +601,7 @@ func (fields Fields[T]) findOrInitializeType(server *Server, typeName string) Cl
 	class, ok := server.objects[typeName]
 	if !ok {
 		classT = NewClass[T]()
-		server.installObjectLocked(classT)
+		server.installObject(classT)
 	} else {
 		classT = class.(Class[T])
 	}
@@ -533,16 +612,37 @@ func (fields Fields[T]) findOrInitializeType(server *Server, typeName string) Cl
 type Field[T Typed] struct {
 	Spec FieldSpec
 	Func func(context.Context, Instance[T], map[string]Input) (Typed, error)
+
+	// ViewFilter is filter that specifies under which views this field is
+	// accessible. If not view is present, the default is the "global" view.
+	ViewFilter View
+}
+
+func (field Field[T]) Extend() Field[T] {
+	field.Spec.extend = true
+	return field
+}
+
+// View sets a view for this field.
+func (field Field[T]) View(view View) Field[T] {
+	field.ViewFilter = view
+	return field
 }
 
 // Doc sets the description of the field. Each argument is joined by two empty
 // lines.
 func (field Field[T]) Doc(paras ...string) Field[T] {
+	if field.Spec.extend {
+		panic("cannot call on extended field")
+	}
 	field.Spec.Description = FormatDescription(paras...)
 	return field
 }
 
 func (field Field[T]) ArgDoc(name string, paras ...string) Field[T] {
+	if field.Spec.extend {
+		panic("cannot call on extended field")
+	}
 	for i, arg := range field.Spec.Args {
 		if arg.Name == name {
 			field.Spec.Args[i].Description = FormatDescription(paras...)
@@ -553,6 +653,9 @@ func (field Field[T]) ArgDoc(name string, paras ...string) Field[T] {
 }
 
 func (field Field[T]) ArgSensitive(name string) Field[T] {
+	if field.Spec.extend {
+		panic("cannot call on extended field")
+	}
 	for i, arg := range field.Spec.Args {
 		if arg.Name == name {
 			field.Spec.Args[i].Sensitive = true
@@ -563,6 +666,9 @@ func (field Field[T]) ArgSensitive(name string) Field[T] {
 }
 
 func (field Field[T]) ArgDeprecated(name string, paras ...string) Field[T] {
+	if field.Spec.extend {
+		panic("cannot call on extended field")
+	}
 	for i, arg := range field.Spec.Args {
 		if arg.Name == name {
 			reason := FormatDescription(paras...)
@@ -583,14 +689,12 @@ func FormatDescription(paras ...string) string {
 	return strings.Join(paras, "\n\n")
 }
 
-func (field Field[T]) DynamicReturnType(ret Typed) Field[T] {
-	field.Spec.Type = ret
-	return field
-}
-
 // Deprecated marks the field as deprecated, meaning it should not be used by
 // new code.
 func (field Field[T]) Deprecated(paras ...string) Field[T] {
+	if field.Spec.extend {
+		panic("cannot call on extended field")
+	}
 	field.Spec.DeprecatedReason = FormatDescription(paras...)
 	return field
 }
@@ -598,12 +702,18 @@ func (field Field[T]) Deprecated(paras ...string) Field[T] {
 // Impure marks the field as "impure", meaning its result may change over time,
 // or it has side effects.
 func (field Field[T]) Impure(reason string, paras ...string) Field[T] {
+	if field.Spec.extend {
+		panic("cannot call on extended field")
+	}
 	field.Spec.ImpurityReason = FormatDescription(append([]string{reason}, paras...)...)
 	return field
 }
 
 // Meta indicates that the field has no impact on the field's result.
 func (field Field[T]) Meta() Field[T] {
+	if field.Spec.extend {
+		panic("cannot call on extended field")
+	}
 	field.Spec.Meta = true
 	return field
 }
@@ -617,10 +727,10 @@ func (field Field[T]) FieldDefinition() *ast.FieldDefinition {
 	return field.Spec.FieldDefinition()
 }
 
-func definition(kind ast.DefinitionKind, val Type) *ast.Definition {
+func definition(kind ast.DefinitionKind, val Type, views ...string) *ast.Definition {
 	var def *ast.Definition
 	if isType, ok := val.(Definitive); ok {
-		def = isType.TypeDefinition()
+		def = isType.TypeDefinition(views...)
 	} else {
 		def = &ast.Definition{
 			Kind: kind,

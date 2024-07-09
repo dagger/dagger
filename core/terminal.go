@@ -11,6 +11,7 @@ import (
 	"github.com/muesli/termenv"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/distconsts"
@@ -22,10 +23,10 @@ type TerminalArgs struct {
 	// Provide dagger access to the executed command
 	// Do not use this option unless you trust the command being executed.
 	// The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
-	ExperimentalPrivilegedNesting *bool `default:"false"`
+	ExperimentalPrivilegedNesting dagql.Optional[dagql.Boolean] `default:"false"`
 
 	// Grant the process all root capabilities
-	InsecureRootCapabilities *bool `default:"false"`
+	InsecureRootCapabilities dagql.Optional[dagql.Boolean] `default:"false"`
 }
 
 func (container *Container) Terminal(
@@ -42,14 +43,16 @@ func (container *Container) Terminal(
 		return fmt.Errorf("failed to open terminal: %w", err)
 	}
 	output := idtui.NewOutput(term.Stderr)
-	fmt.Fprintf(
+	fmt.Fprint(
 		term.Stderr,
 		output.String(idtui.DotFilled).Foreground(termenv.ANSIYellow).String()+" Attaching terminal: ",
 	)
-	if err := idtui.DumpID(output, svcID); err != nil {
+	dump := idtui.Dump{Newline: "\r\n", Prefix: "    "}
+	fmt.Fprint(term.Stderr, dump.Newline)
+	if err := dump.DumpID(output, svcID); err != nil {
 		return fmt.Errorf("failed to serialize service ID: %w", err)
 	}
-	fmt.Fprintf(term.Stderr, "\r\n\n")
+	fmt.Fprint(term.Stderr, dump.Newline)
 
 	container = container.Clone()
 	// Inject a custom shell prompt `dagger:<cwd>$`
@@ -60,8 +63,8 @@ func (container *Container) Terminal(
 	container, err = container.WithExec(ctx, ContainerExecOpts{
 		Args:                          args.Cmd,
 		SkipEntrypoint:                true,
-		ExperimentalPrivilegedNesting: *args.ExperimentalPrivilegedNesting,
-		InsecureRootCapabilities:      *args.InsecureRootCapabilities,
+		ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting.Value.Bool(),
+		InsecureRootCapabilities:      args.InsecureRootCapabilities.Value.Bool(),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create container for interactive terminal: %w", err)

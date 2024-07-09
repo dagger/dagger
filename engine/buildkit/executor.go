@@ -21,6 +21,7 @@ import (
 
 	"github.com/containerd/console"
 	runc "github.com/containerd/go-runc"
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/executor"
 	"github.com/moby/buildkit/executor/oci"
@@ -46,6 +47,16 @@ type ExecutionMetadata struct {
 	SecretToken string
 	Hostname    string
 
+	// Unique (random) ID for this execution.
+	// This is used to deduplicate the same execution that gets evaluated multiple times.
+	ExecID string
+
+	// Internal execution initiated by dagger and not the user.
+	// Used when executing the module runtime itself.
+	Internal bool
+
+	// TODO: can rm EncodedModuleID now
+	CallID              *call.ID
 	EncodedModuleID     string
 	EncodedFunctionCall json.RawMessage
 

@@ -512,6 +512,11 @@ export type DirectoryAsModuleOpts = {
    * If not set, the module source code is loaded from the root of the directory.
    */
   sourceRootPath?: string
+
+  /**
+   * The engine version to upgrade to.
+   */
+  engineVersion?: string
 }
 
 export type DirectoryDockerBuildOpts = {
@@ -842,6 +847,13 @@ export type ListTypeDefID = string & { __ListTypeDefID: never }
  */
 export type LocalModuleSourceID = string & { __LocalModuleSourceID: never }
 
+export type ModuleWithSourceOpts = {
+  /**
+   * The engine version to upgrade to.
+   */
+  engineVersion?: string
+}
+
 /**
  * The `ModuleDependencyID` scalar type represents an identifier for an object of type ModuleDependency.
  */
@@ -851,6 +863,13 @@ export type ModuleDependencyID = string & { __ModuleDependencyID: never }
  * The `ModuleID` scalar type represents an identifier for an object of type Module.
  */
 export type ModuleID = string & { __ModuleID: never }
+
+export type ModuleSourceAsModuleOpts = {
+  /**
+   * The engine version to upgrade to.
+   */
+  engineVersion?: string
+}
 
 export type ModuleSourceResolveDirectoryFromCallerOpts = {
   /**
@@ -1059,6 +1078,11 @@ export type ServiceID = string & { __ServiceID: never }
  * The `SocketID` scalar type represents an identifier for an object of type Socket.
  */
 export type SocketID = string & { __SocketID: never }
+
+/**
+ * The `TerminalID` scalar type represents an identifier for an object of type Terminal.
+ */
+export type TerminalID = string & { __TerminalID: never }
 
 export type TypeDefWithEnumOpts = {
   /**
@@ -3418,6 +3442,7 @@ export class Directory extends BaseClient {
    * This is needed when the module code is in a subdirectory but requires parent directories to be loaded in order to execute. For example, the module source code may need a go.mod, project.toml, package.json, etc. file from a parent directory.
    *
    * If not set, the module source code is loaded from the root of the directory.
+   * @param opts.engineVersion The engine version to upgrade to.
    */
   asModule = (opts?: DirectoryAsModuleOpts): Module_ => {
     return new Module_({
@@ -6734,14 +6759,15 @@ export class Module_ extends BaseClient {
   /**
    * Retrieves the module with basic configuration loaded if present.
    * @param source The module source to initialize from.
+   * @param opts.engineVersion The engine version to upgrade to.
    */
-  withSource = (source: ModuleSource): Module_ => {
+  withSource = (source: ModuleSource, opts?: ModuleWithSourceOpts): Module_ => {
     return new Module_({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withSource",
-          args: { source },
+          args: { source, ...opts },
         },
       ],
       ctx: this._ctx,
@@ -6932,13 +6958,15 @@ export class ModuleSource extends BaseClient {
 
   /**
    * Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation
+   * @param opts.engineVersion The engine version to upgrade to.
    */
-  asModule = (): Module_ => {
+  asModule = (opts?: ModuleSourceAsModuleOpts): Module_ => {
     return new Module_({
       queryTree: [
         ...this._queryTree,
         {
           operation: "asModule",
+          args: { ...opts },
         },
       ],
       ctx: this._ctx,
@@ -8761,6 +8789,22 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Load a Terminal from its ID.
+   */
+  loadTerminalFromID = (id: TerminalID): Terminal => {
+    return new Terminal({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "loadTerminalFromID",
+          args: { id },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
    * Load a TypeDef from its ID.
    */
   loadTypeDefFromID = (id: TypeDefID): TypeDef => {
@@ -9380,6 +9424,46 @@ export class Socket extends BaseClient {
     }
 
     const response: Awaited<SocketID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+}
+
+/**
+ * An interactive terminal that clients can connect to.
+ */
+export class Terminal extends BaseClient {
+  private readonly _id?: TerminalID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: TerminalID,
+  ) {
+    super(parent)
+
+    this._id = _id
+  }
+
+  /**
+   * A unique identifier for this Terminal.
+   */
+  id = async (): Promise<TerminalID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<TerminalID> = await computeQuery(
       [
         ...this._queryTree,
         {
