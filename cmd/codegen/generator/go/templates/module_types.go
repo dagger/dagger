@@ -31,6 +31,13 @@ func loadFromIDGQLFieldName(spec NamedParsedType) string {
 	return fmt.Sprintf("load%s%sFromID", strcase.ToCamel(spec.ModuleName()), spec.Name())
 }
 
+func typeName(spec NamedParsedType) string {
+	if spec.ModuleName() == "" {
+		return fmt.Sprintf("dagger.%s", spec.Name())
+	}
+	return spec.Name()
+}
+
 // parseGoTypeReference parses a Go type and returns a TypeSpec for the type *reference* only.
 // So if the type is a struct or interface, the returned TypeSpec will not have all the fields,
 // only the type name and kind.

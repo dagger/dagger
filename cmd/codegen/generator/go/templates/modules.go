@@ -331,7 +331,7 @@ func dispatch(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("marshal: %w", err)
 	}
-	_, err = fnCall.ReturnValue(ctx, JSON(resultBytes))
+	_, err = fnCall.ReturnValue(ctx, dagger.JSON(resultBytes))
 	if err != nil {
 		return fmt.Errorf("store return value: %w", err)
 	}
@@ -395,12 +395,12 @@ func invokeSrc(objFunctionCases map[string][]Code, createMod Code) string {
 }
 
 // TODO: use jennifer for generating this magical typedef
-func renderNameOrStruct(t types.Type) string {
+func (ps *parseState) renderNameOrStruct(t types.Type) string {
 	if ptr, ok := t.(*types.Pointer); ok {
-		return "*" + renderNameOrStruct(ptr.Elem())
+		return "*" + ps.renderNameOrStruct(ptr.Elem())
 	}
 	if sl, ok := t.(*types.Slice); ok {
-		return "[]" + renderNameOrStruct(sl.Elem())
+		return "[]" + ps.renderNameOrStruct(sl.Elem())
 	}
 	if st, ok := t.(*types.Struct); ok {
 		result := "struct {\n"
@@ -408,7 +408,7 @@ func renderNameOrStruct(t types.Type) string {
 			if !st.Field(i).Embedded() {
 				result += st.Field(i).Name() + " "
 			}
-			result += renderNameOrStruct(st.Field(i).Type())
+			result += ps.renderNameOrStruct(st.Field(i).Type())
 			if tag := st.Tag(i); tag != "" {
 				result += " `" + tag + "`"
 			}
@@ -430,17 +430,25 @@ func renderNameOrStruct(t types.Type) string {
 		// this to a graphql type that all langs can convert to their native
 		// representation.
 		base := named.Obj().Name()
+		if ps.isDaggerGenerated(named.Obj()) {
+			base = named.Obj().Pkg().Name() + "." + base
+		}
 		if typeArgs := named.TypeArgs(); typeArgs.Len() > 0 {
 			base += "["
 			for i := 0; i < typeArgs.Len(); i++ {
 				if i > 0 {
 					base += ", "
 				}
-				base += renderNameOrStruct(typeArgs.At(i))
+				base += ps.renderNameOrStruct(typeArgs.At(i))
 			}
 			base += "]"
 		}
 		return base
+	}
+	if basic, ok := t.(*types.Basic); ok {
+		if basic.Kind() == types.Invalid {
+			return "any"
+		}
 	}
 	// HACK(vito): this is passed to Id(), which is a bit weird, but works
 	return t.String()
@@ -621,7 +629,7 @@ func (ps *parseState) fillObjectFunctionCase(
 				fnCallArgCode = fnCallArgCode2
 			}
 
-			statements = append(statements, Var().Id(varName).Id(renderNameOrStruct(tp)))
+			statements = append(statements, Var().Id(varName).Id(ps.renderNameOrStruct(tp)))
 			if spec.variadic {
 				fnCallArgs = append(fnCallArgs, fnCallArgCode.Op("..."))
 			} else {

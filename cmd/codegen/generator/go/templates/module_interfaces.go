@@ -105,7 +105,7 @@ func (spec *parsedIfaceType) TypeDefCode() (*Statement, error) {
 		withIfaceOptsCode = append(withIfaceOptsCode, Id("Description").Op(":").Lit(strings.TrimSpace(spec.doc)))
 	}
 	if len(withIfaceOptsCode) > 0 {
-		withIfaceArgsCode = append(withIfaceArgsCode, Id("TypeDefWithInterfaceOpts").Values(withIfaceOptsCode...))
+		withIfaceArgsCode = append(withIfaceArgsCode, Id("dagger").Dot("TypeDefWithInterfaceOpts").Values(withIfaceOptsCode...))
 	}
 
 	typeDefCode := Qual("dag", "TypeDef").Call().Dot("WithInterface").Call(withIfaceArgsCode...)
@@ -232,7 +232,7 @@ func (spec *parsedIfaceType) concreteStructDefCode() *Statement {
 /*
 The Load*FromID method attached to the top-level Client struct for this interface. e.g.:
 
-	func LoadCustomIfaceFromID(r *Client, id CustomIfaceID) CustomIface {
+	func LoadCustomIfaceFromID(r *dagger.Client, id CustomIfaceID) CustomIface {
 		q = querybuilder.Query().Client(r.GraphQLClient())
 		q = q.Select("loadTestCustomIfaceFromID")
 		q = q.Arg("id", id)
@@ -244,7 +244,7 @@ The Load*FromID method attached to the top-level Client struct for this interfac
 func (spec *parsedIfaceType) loadFromIDMethodCode() *Statement {
 	return Func().
 		Id(spec.loadFromIDMethodName()).
-		Params(Id("r").Op("*").Id("Client"), Id("id").Id(spec.idTypeName())).
+		Params(Id("r").Op("*").Id("dagger").Dot("Client"), Id("id").Id(spec.idTypeName())).
 		Params(Id(spec.name)).
 		BlockFunc(func(g *Group) {
 			g.Id("q").Op(":=").Id("querybuilder").Dot("Query").Call().Dot("Client").Call(Id("r").Dot("GraphQLClient").Call())
@@ -539,7 +539,7 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 
 					q = q.Select("id")
 					var idResults []struct {
-						Id DirectoryID
+						Id dagger.DirectoryID
 					}
 					q = q.Bind(&idResults)
 					err := q.Execute(ctx)
@@ -550,7 +550,7 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 					for _, idResult := range idResults {
 						id := idResult.Id
 
-						results = append(results, &Directory{
+						results = append(results, &dagger.Directory{
 							query:  q.query.Root().Select("loadDirectoryFromID").Arg("id", id),
 						})
 					}
@@ -558,7 +558,7 @@ func (spec *parsedIfaceType) concreteMethodExecuteQueryCode(method *funcTypeSpec
 			*/
 
 			// TODO: if iface is from this module then it needs namespacing...
-			idScalarName := fmt.Sprintf("%sID", strcase.ToCamel(underlyingReturnType.Name()))
+			idScalarName := typeName(underlyingReturnType) + "ID"
 			loadFromIDQueryName := loadFromIDGQLFieldName(underlyingReturnType)
 
 			s.Id("q").Op("=").Id("q").Dot("Select").Call(Lit("id")).Line()
@@ -669,10 +669,10 @@ func (spec *parsedIfaceType) concreteMethodSigTypeCode(argTypeSpec ParsedType) (
 		if argTypeSpec.isPtr {
 			s.Op("*")
 		}
-		s.Id(argTypeSpec.name)
+		s.Id(typeName(argTypeSpec))
 
 	case *parsedIfaceTypeReference:
-		s.Id(argTypeSpec.name)
+		s.Id(typeName(argTypeSpec))
 
 	default:
 		return nil, fmt.Errorf("unsupported method signature type %T", argTypeSpec)
@@ -690,7 +690,7 @@ func (spec *parsedIfaceType) concreteMethodImplTypeCode(returnTypeSpec ParsedTyp
 	s := Empty()
 	switch returnTypeSpec := returnTypeSpec.(type) {
 	case nil:
-		s.Id("Void")
+		s.Id("dagger").Dot("Void")
 
 	case *parsedPrimitiveType:
 		if returnTypeSpec.alias != "" {
@@ -707,10 +707,10 @@ func (spec *parsedIfaceType) concreteMethodImplTypeCode(returnTypeSpec ParsedTyp
 		s.Index().Add(underlyingTypeCode)
 
 	case *parsedObjectTypeReference:
-		s.Id(returnTypeSpec.name)
+		s.Id(typeName(returnTypeSpec))
 
 	case *parsedIfaceTypeReference:
-		s.Id(formatIfaceImplName(returnTypeSpec.name))
+		s.Id(formatIfaceImplName(typeName(returnTypeSpec)))
 
 	default:
 		return nil, fmt.Errorf("unsupported method concrete return type %T", returnTypeSpec)
