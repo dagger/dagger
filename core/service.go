@@ -668,9 +668,11 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 	// NB: decouple from the incoming ctx cancel and add our own
 	svcCtx, stop := context.WithCancel(context.WithoutCancel(ctx))
 
-	exited := make(chan error, 1)
+	exited := make(chan struct{}, 1)
+	var exitErr error
 	go func() {
-		exited <- tunnel.Tunnel(svcCtx)
+		defer close(exited)
+		exitErr = tunnel.Tunnel(svcCtx)
 	}()
 
 	checked := make(chan error, 1)
@@ -703,15 +705,18 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 				select {
 				case <-waitCtx.Done():
 					return fmt.Errorf("timeout waiting for tunnel to stop: %w", waitCtx.Err())
-				case err := <-exited:
-					return err
+				case <-exited:
+					return nil
 				}
 			},
 		}, nil
-	case err := <-exited:
+	case <-exited:
 		netNS.Release(svcCtx)
 		stop()
-		return nil, fmt.Errorf("proxy exited: %w", err)
+		if exitErr != nil {
+			return nil, fmt.Errorf("proxy exited: %w", exitErr)
+		}
+		return nil, fmt.Errorf("proxy exited before healthcheck")
 	}
 }
 
