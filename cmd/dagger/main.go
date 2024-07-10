@@ -293,8 +293,12 @@ func main() {
 		ctx, stop := signal.NotifyContext(ctx, os.Interrupt)
 		defer stop()
 
+		isInDagger := os.Getenv("OTEL_EXPORTER_OTLP_TRACES_LIVE") != ""
+		isNestedDagger := os.Getenv("DAGGER_SESSION_PORT") != ""
+
 		telemetryCfg := telemetry.Config{
-			Detect:   os.Getenv("DAGGER_SESSION_PORT") == "",
+			// don't export if we're nested
+			Detect:   !(isInDagger && isNestedDagger),
 			Resource: Resource(),
 
 			LiveTraceExporters: []sdktrace.SpanExporter{Frontend.SpanExporter()},
