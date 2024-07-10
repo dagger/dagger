@@ -1860,14 +1860,7 @@ class Test {
 
 // this is no longer allowed, but verify the SDK errors out
 func (ModuleSuite) TestGoExtendCore(ctx context.Context, t *testctx.T) {
-	var logs safeBuffer
-	c := connect(ctx, t, dagger.WithLogOutput(&logs))
-
-	_, err := c.Container().From(golangImage).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work").
-		With(daggerExec("init", "--source=.", "--name=container", "--sdk=go")).
-		WithNewFile("internal/dagger/more.go", `package dagger
+	moreContents := `package dagger
 
 import (
 	"context"
@@ -1876,14 +1869,39 @@ import (
 func (c *Container) Echo(ctx context.Context, msg string) (string, error) {
 	return c.WithExec([]string{"echo", msg}).Stdout(ctx)
 }
-`,
-		).
-		With(daggerQuery(`{container{from(address:"` + alpineImage + `"){echo(msg:"echo!"){stdout}}}}`)).
-		Sync(ctx)
-	require.Error(t, err)
-	require.NoError(t, c.Close())
-	t.Log(logs.String())
-	require.Contains(t, logs.String(), "cannot define methods on objects from outside this module")
+`
+
+	t.Run("in different mod name", func(ctx context.Context, t *testctx.T) {
+		var logs safeBuffer
+		c := connect(ctx, t, dagger.WithLogOutput(&logs))
+		_, err := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+			WithNewFile("/work/internal/dagger/more.go", moreContents).
+			With(daggerQuery(`{container{from(address:"` + alpineImage + `"){echo(msg:"echo!"){stdout}}}}`)).
+			Sync(ctx)
+		require.Error(t, err)
+		require.NoError(t, c.Close())
+		t.Log(logs.String())
+		require.Contains(t, logs.String(), "cannot define methods on objects from outside this module")
+	})
+
+	t.Run("in same mod name", func(ctx context.Context, t *testctx.T) {
+		var logs safeBuffer
+		c := connect(ctx, t, dagger.WithLogOutput(&logs))
+		_, err := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--source=.", "--name=container", "--sdk=go")).
+			WithNewFile("/work/internal/dagger/more.go", moreContents).
+			With(daggerQuery(`{container{from(address:"` + alpineImage + `"){echo(msg:"echo!"){stdout}}}}`)).
+			Sync(ctx)
+		require.Error(t, err)
+		require.NoError(t, c.Close())
+		t.Log(logs.String())
+		require.Contains(t, logs.String(), "cannot define methods on objects from outside this module")
+	})
 }
 
 func (ModuleSuite) TestGoBadCtx(ctx context.Context, t *testctx.T) {

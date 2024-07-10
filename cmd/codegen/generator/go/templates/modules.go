@@ -148,7 +148,7 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) { //nolint: gocyclo
 			}
 
 			// avoid adding a struct definition twice (if it's referenced in two function signatures)
-			if _, ok := added[obj.Name()]; ok {
+			if _, ok := added[obj.Pkg().Path()+"/"+obj.Name()]; ok {
 				continue
 			}
 
@@ -175,7 +175,7 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) { //nolint: gocyclo
 					return "", fmt.Errorf("failed to generate type def code for %s: %w", obj.Name(), err)
 				}
 				createMod = dotLine(createMod, "WithObject").Call(Add(Line(), objTypeDefCode))
-				added[obj.Name()] = struct{}{}
+				added[obj.Pkg().Path()+"/"+obj.Name()] = struct{}{}
 
 				implCode, err := objTypeSpec.ImplementationCode()
 				if err != nil {
@@ -204,7 +204,7 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) { //nolint: gocyclo
 					return "", fmt.Errorf("failed to generate type def code for %s: %w", obj.Name(), err)
 				}
 				createMod = dotLine(createMod, "WithInterface").Call(Add(Line(), ifaceTypeDefCode))
-				added[obj.Name()] = struct{}{}
+				added[obj.Pkg().Path()+"/"+obj.Name()] = struct{}{}
 
 				implCode, err := ifaceTypeSpec.ImplementationCode()
 				if err != nil {
@@ -233,7 +233,7 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) { //nolint: gocyclo
 					return "", fmt.Errorf("failed to generate type def code for %s: %w", obj.Name(), err)
 				}
 				createMod = dotLine(createMod, "WithEnum").Call(Add(Line(), enumTypeDefCode))
-				added[obj.Name()] = struct{}{}
+				added[obj.Pkg().Path()+"/"+obj.Name()] = struct{}{}
 
 				implCode, err := enumTypeSpec.ImplementationCode()
 				if err != nil {
