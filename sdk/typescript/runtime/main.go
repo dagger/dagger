@@ -369,13 +369,14 @@ func (t *TypescriptSdk) detectRuntime(ctx context.Context, modSource *ModuleSour
 	// Try to detect runtime from lock files
 	entries, err := source.Entries(ctx)
 	if err == nil {
+		if slices.Contains(entries, "bun.lockb") {
+			return Bun, "", nil
+		}
+
 		if slices.Contains(entries, "package-lock.json") ||
 			slices.Contains(entries, "yarn.lock") ||
 			slices.Contains(entries, "pnpm-lock.yaml") {
 			return Node, "", nil
-		}
-		if slices.Contains(entries, "bun.lockb") {
-			return Bun, "", nil
 		}
 	}
 
@@ -422,6 +423,10 @@ func (t *TypescriptSdk) detectPackageManager(ctx context.Context, modSource *Mod
 	// Try to detect package manager from lock files
 	entries, err := source.Entries(ctx)
 	if err == nil {
+		if slices.Contains(entries, "bun.lockb") {
+			return BunManager, "", nil
+		}
+
 		if slices.Contains(entries, "package-lock.json") {
 			return Npm, "", nil
 		}
@@ -432,10 +437,6 @@ func (t *TypescriptSdk) detectPackageManager(ctx context.Context, modSource *Mod
 
 		if slices.Contains(entries, "pnpm-lock.yaml") {
 			return Pnpm, "", nil
-		}
-
-		if slices.Contains(entries, "bun.lockb") {
-			return BunManager, "", nil
 		}
 	}
 
