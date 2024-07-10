@@ -289,28 +289,18 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 	return nil
 }
 
-func (c *Client) subscribeTelemetry() (rerr error) {
+func (c *Client) subscribeTelemetry() {
 	slog.Debug("subscribing to telemetry", "remote", c.RunnerHost)
 
 	c.telemetry = new(errgroup.Group)
 
 	if c.EngineTrace != nil {
-		if err := c.exportTraces(); err != nil {
-			slog.Error("failed to subscribe to traces", "error", err)
-			return fmt.Errorf("export traces: %w", err)
-		}
+		c.exportTraces()
 	}
 
 	if c.EngineLogs != nil {
-		if err := c.exportLogs(); err != nil {
-			slog.Error("failed to subscribe to logs", "error", err)
-			return fmt.Errorf("export logs: %w", err)
-		}
+		c.exportLogs()
 	}
-
-	slog.Debug("subscribed to telemetry")
-
-	return nil
 }
 
 func (c *Client) startSession(ctx context.Context) (rerr error) {
@@ -484,9 +474,8 @@ func (srv *BuildkitSessionServer) Run(ctx context.Context) {
 }
 
 func (c *Client) daggerConnect(ctx context.Context) error {
-	if err := c.subscribeTelemetry(); err != nil {
-		return fmt.Errorf("subscribe to telemetry: %w", err)
-	}
+	c.subscribeTelemetry()
+
 	var err error
 	c.daggerClient, err = dagger.Connect(
 		context.WithoutCancel(ctx),
@@ -548,51 +537,81 @@ func (c *Client) Close() (rerr error) {
 	return rerr
 }
 
+type otlpConsumer struct {
+	httpClient *httpClient
+	path       string
+	traceID    trace.TraceID
+	clientID   string
+}
+
+func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte) error) error {
+	slog := slog.With("path", c.path, "traceID", c.traceID, "clientID", c.clientID)
+
+	res, err := c.httpClient.Do((&http.Request{
+		Method: http.MethodGet,
+		URL: &url.URL{
+			Scheme: "http",
+			Host:   "dagger",
+			Path:   c.path,
+			RawQuery: url.Values{
+				"trace":  []string{c.traceID.String()},
+				"client": []string{c.clientID},
+			}.Encode(),
+		},
+		Header: http.Header{
+			"X-Dagger-Telemetry": []string{"true"},
+		},
+	}).WithContext(ctx))
+	if err != nil {
+		return fmt.Errorf("get trace: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		return fmt.Errorf("consume %s: %s", c.path, res.Status)
+	}
+
+	slog.Debug("consuming")
+
+	dec := lencode.NewDecoder(res.Body, lencode.SeparatorOpt(nil))
+
+	defer slog.Debug("done", "ctxErr", ctx.Err())
+
+	for {
+		data, err := dec.Decode()
+		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				return nil
+			}
+			return fmt.Errorf("decode: %w", err)
+		}
+
+		slog.ExtraDebug("consuming data", "bytes", len(data))
+
+		if len(data) == 0 {
+			continue
+		}
+
+	}
+}
+
 func (c *Client) exportTraces() error {
 	// NB: we never actually want to interrupt this, since it's relied upon for
 	// seeing what's going on, even during shutdown
 	ctx := context.WithoutCancel(c.internalCtx)
 
-	res, err := c.httpClient.Do(&http.Request{
-		Method: http.MethodGet,
-		URL: &url.URL{
-			Scheme: "http",
-			Host:   "dagger",
-			Path:   "/v1/traces",
-			RawQuery: url.Values{
-				"trace":  []string{trace.SpanContextFromContext(ctx).TraceID().String()},
-				"client": []string{c.ID},
-			}.Encode(),
-		},
-	})
-	if err != nil {
-		return fmt.Errorf("get trace: %w", err)
+	exp := &otlpConsumer{
+		path:       "/v1/traces",
+		traceID:    trace.SpanContextFromContext(ctx).TraceID(),
+		clientID:   c.ID,
+		httpClient: c.httpClient,
 	}
-
-	if res.StatusCode != http.StatusOK {
-		return fmt.Errorf("get trace: %s", res.Status)
-	}
-
-	slog.Debug("exporting spans from engine")
-
-	dec := lencode.NewDecoder(res.Body, lencode.SeparatorOpt(nil))
 
 	c.telemetry.Go(func() error {
-		defer res.Body.Close()
-		defer slog.Debug("done exporting spans from engine", "ctxErr", ctx.Err())
-
-		for {
-			data, err := dec.Decode()
-			if err != nil {
-				if errors.Is(err, context.Canceled) {
-					return nil
-				}
-				return fmt.Errorf("recv spans: %w", err)
-			}
-
+		return exp.Consume(ctx, func(data []byte) error {
 			var req coltracepb.ExportTraceServiceRequest
 			if err := proto.Unmarshal(data, &req); err != nil {
-				return fmt.Errorf("unmarshal spans: %w", err)
+				return fmt.Errorf("unmarshal: %w", err)
 			}
 
 			spans := telemetry.SpansFromPB(req.GetResourceSpans())
@@ -606,54 +625,28 @@ func (c *Client) exportTraces() error {
 			if err := c.Params.EngineTrace.ExportSpans(ctx, spans); err != nil {
 				return fmt.Errorf("export %d spans: %w", len(spans), err)
 			}
-		}
+
+			return nil
+		})
 	})
 
 	return nil
 }
 
-func (c *Client) exportLogs() error {
+func (c *Client) exportLogs() {
 	// NB: we never actually want to interrupt this, since it's relied upon for
 	// seeing what's going on, even during shutdown
 	ctx := context.WithoutCancel(c.internalCtx)
 
-	res, err := c.httpClient.Do(&http.Request{
-		Method: http.MethodGet,
-		URL: &url.URL{
-			Scheme: "http",
-			Host:   "dagger",
-			Path:   "/v1/logs",
-			RawQuery: url.Values{
-				"trace":  []string{trace.SpanContextFromContext(ctx).TraceID().String()},
-				"client": []string{c.ID},
-			}.Encode(),
-		},
-	})
-	if err != nil {
-		return fmt.Errorf("get trace: %w", err)
+	exp := &otlpConsumer{
+		path:       "/v1/logs",
+		traceID:    trace.SpanContextFromContext(ctx).TraceID(),
+		clientID:   c.ID,
+		httpClient: c.httpClient,
 	}
-
-	if res.StatusCode != http.StatusOK {
-		return fmt.Errorf("get trace: %s", res.Status)
-	}
-
-	slog.Debug("exporting logs from engine")
-
-	dec := lencode.NewDecoder(res.Body, lencode.SeparatorOpt(nil))
 
 	c.telemetry.Go(func() error {
-		defer res.Body.Close()
-		defer slog.Debug("done exporting logs from engine", "ctxErr", ctx.Err())
-
-		for {
-			data, err := dec.Decode()
-			if err != nil {
-				if errors.Is(err, context.Canceled) {
-					return nil
-				}
-				return fmt.Errorf("recv spans: %w", err)
-			}
-
+		return exp.Consume(ctx, func(data []byte) error {
 			var req otlplogsv1.LogsData
 			if err := proto.Unmarshal(data, &req); err != nil {
 				return fmt.Errorf("unmarshal spans: %w", err)
@@ -666,10 +659,9 @@ func (c *Client) exportLogs() error {
 			if err := c.EngineLogs.Export(ctx, logs); err != nil {
 				return fmt.Errorf("export %d logs: %w", len(logs), err)
 			}
-		}
+			return nil
+		})
 	})
-
-	return nil
 }
 
 func (c *Client) shutdownServer() error {

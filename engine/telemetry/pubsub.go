@@ -247,10 +247,17 @@ func (ps *PubSub) SubscribeTracesHandler(rw http.ResponseWriter, r *http.Request
 		return
 	}
 
+	enc := lencode.NewEncoder(rw, lencode.SeparatorOpt(nil))
+
+	if err := enc.Encode(nil); err != nil {
+		slog.Warn("error encoding initial message", "err", err)
+		return
+	}
+
 	flusher.Flush()
 
 	exp, err := otlptrace.New(r.Context(), &otlpTraceExporter{
-		enc:     lencode.NewEncoder(rw, lencode.SeparatorOpt(nil)),
+		enc:     enc,
 		flusher: flusher,
 	})
 	if err != nil {
@@ -340,10 +347,16 @@ func (ps *PubSub) SubscribeLogsHandler(rw http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	enc := lencode.NewEncoder(rw, lencode.SeparatorOpt(nil))
+
+	if err := enc.Encode(nil); err != nil {
+		slog.Warn("error encoding initial message", "err", err)
+		return
+	}
 	flusher.Flush()
 
 	if err := ps.SubscribeToLogs(r.Context(), topic, &otlpLogExporter{
-		enc:     lencode.NewEncoder(rw, lencode.SeparatorOpt(nil)),
+		enc:     enc,
 		flusher: flusher,
 	}); err != nil {
 		slog.Warn("error subscribing to spans", "err", err)
