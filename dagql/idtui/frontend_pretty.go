@@ -53,12 +53,13 @@ type frontendPretty struct {
 	cloudURL string
 
 	// TUI state/config
-	restore func()  // restore terminal
-	fps     float64 // frames per second
-	profile termenv.Profile
-	window  tea.WindowSizeMsg // set by BubbleTea
-	view    *strings.Builder  // rendered async
-	viewOut *termenv.Output
+	restore    func()  // restore terminal
+	fps        float64 // frames per second
+	profile    termenv.Profile
+	window     tea.WindowSizeMsg // set by BubbleTea
+	view       *strings.Builder  // rendered async
+	viewOut    *termenv.Output
+	browserBuf *strings.Builder // logs if browser fails
 
 	// held to synchronize tea.Model with updates
 	mu sync.Mutex
@@ -78,11 +79,12 @@ func New() Frontend {
 		rows:     &Rows{BySpan: map[trace.SpanID]*TraceRow{}},
 
 		// initial TUI state
-		window:  tea.WindowSizeMsg{Width: -1, Height: -1}, // be clear that it's not set
-		fps:     30,                                       // sane default, fine-tune if needed
-		profile: profile,
-		view:    view,
-		viewOut: NewOutput(view, termenv.WithProfile(profile)),
+		window:     tea.WindowSizeMsg{Width: -1, Height: -1}, // be clear that it's not set
+		fps:        30,                                       // sane default, fine-tune if needed
+		profile:    profile,
+		view:       view,
+		viewOut:    NewOutput(view, termenv.WithProfile(profile)),
+		browserBuf: new(strings.Builder),
 	}
 }
 
@@ -176,6 +178,10 @@ func (fe *frontendPretty) runWithTUI(ctx context.Context, ttyIn *os.File, ttyOut
 		tea.WithoutCatchPanics(),
 		tea.WithMouseCellMotion(),
 	)
+
+	// prevent browser.OpenURL from breaking the TUI if it fails
+	browser.Stdout = fe.browserBuf
+	browser.Stderr = fe.browserBuf
 
 	// run the program, which starts the callback async
 	if _, err := fe.program.Run(); err != nil {
@@ -692,7 +698,10 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 			}
 			return fe, func() tea.Msg {
 				if err := browser.OpenURL(url); err != nil {
-					slog.Warn("failed to open URL", "url", url, "err", err)
+					slog.Warn("failed to open URL",
+						"url", url,
+						"err", err,
+						"output", fe.browserBuf.String())
 				}
 				return nil
 			}
