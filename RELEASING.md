@@ -332,11 +332,15 @@ changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --cust
 changie batch patch
 changie merge
 
+cd ../../helm/dagger
+changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom "Author=github-actions" --custom "PR=${BUMP_ENGINE_PR:?must be set}"
+changie batch patch
+changie merge
+
 cd ../..
 ```
 
 - [ ] Commit and push the changes with the message `Add SDK release notes`
-- [ ] For the Helm chart, bump `version` & `appVersion` in `helm/dagger/Chart.yaml`
 - [ ] Update all dagger versions in `docs/current_docs/partials/_install-cli.mdx` to `$ENGINE_VERSION`
 - [ ] `30mins` Open this draft PR in
       [github.com/dagger/dagger/pulls](https://github.com/dagger/dagger/pulls) &

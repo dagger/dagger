@@ -1,6 +1,8 @@
 module github.com/dagger/dagger/dev
 
-go 1.22
+go 1.22.0
+
+toolchain go1.22.4
 
 require github.com/dagger/dagger/engine/distconsts v0.11.9
 
@@ -26,6 +28,12 @@ require (
 )
 
 require go.opentelemetry.io/proto/otlp v1.3.1
+
+require (
+	github.com/Masterminds/semver/v3 v3.2.1 // indirect
+	helm.sh/helm/v3 v3.15.2 // indirect
+	sigs.k8s.io/yaml v1.4.0 // indirect
+)
 
 require (
 	github.com/Microsoft/hcsshim v0.11.5 // indirect

@@ -1,0 +1,6 @@
+kind: Changed
+body: Align app version with chart version
+time: 2024-07-09T16:15:30.265148+01:00
+custom:
+    Author: gerhard
+    PR: "7854"

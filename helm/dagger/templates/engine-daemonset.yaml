@@ -44,7 +44,7 @@ spec:
       {{- end }}
       containers:
         - name: dagger-engine
-          image: {{ .Values.engine.image.repository }}:{{ if .Values.engine.image.tag }}{{ .Values.engine.image.tag }}{{ else }}{{ .Chart.AppVersion }}{{ end }}
+          image: {{ .Values.engine.image.repository }}:{{ if .Values.engine.image.tag }}{{ .Values.engine.image.tag }}{{ else }}v{{ .Chart.AppVersion }}{{ end }}
           imagePullPolicy: {{ .Values.engine.image.pullPolicy }}
           {{- if .Values.engine.args }}
           args:
