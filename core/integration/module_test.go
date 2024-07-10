@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"go/format"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/MakeNowJust/heredoc/v2"
+	"github.com/cenkalti/backoff/v4"
 	"github.com/iancoleman/strcase"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
@@ -29,6 +31,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/distconsts"
+	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/dagger/testctx"
 )
 
@@ -5407,24 +5410,32 @@ func (ModuleSuite) TestDaggerListen(ctx context.Context, t *testctx.T) {
 		_, err := hostDaggerExec(ctx, t, modDir, "--debug", "init", "--source=.", "--name=test", "--sdk=go")
 		require.NoError(t, err)
 
-		listenCmd := hostDaggerCommand(ctx, t, modDir, "--debug", "listen", "--listen", "127.0.0.1:12456")
+		addr := "127.0.0.1:12456"
+		listenCmd := hostDaggerCommand(ctx, t, modDir, "--debug", "listen", "--listen", addr)
 		listenCmd.Env = append(listenCmd.Env, "DAGGER_SESSION_TOKEN=lol")
+		listenCmd.Stdout = testutil.NewTWriter(t)
+		listenCmd.Stderr = testutil.NewTWriter(t)
 		require.NoError(t, listenCmd.Start())
 
-		var out []byte
-		for range limitTicker(time.Second, 60) {
-			callCmd := hostDaggerCommand(ctx, t, modDir, "--debug", "call", "container-echo", "--string-arg=hi", "stdout")
-			callCmd.Env = append(callCmd.Env, "DAGGER_SESSION_PORT=12456", "DAGGER_SESSION_TOKEN=lol")
-			out, err = callCmd.Output()
-			if err == nil {
-				lines := strings.Split(string(out), "\n")
-				lastLine := lines[len(lines)-2]
-				require.Equal(t, "hi", lastLine)
-				return
+		backoff.Retry(func() error {
+			c, err := net.Dial("tcp", addr)
+			t.Log("dial", addr, c, err)
+			if err != nil {
+				return err
 			}
-			time.Sleep(1 * time.Second)
-		}
-		t.Fatalf("failed to call container-echo: %s err: %v", string(out), err)
+			return c.Close()
+		}, backoff.NewExponentialBackOff(
+			backoff.WithMaxElapsedTime(time.Minute),
+		))
+
+		callCmd := hostDaggerCommand(ctx, t, modDir, "--debug", "call", "container-echo", "--string-arg=hi", "stdout")
+		callCmd.Env = append(callCmd.Env, "DAGGER_SESSION_PORT=12456", "DAGGER_SESSION_TOKEN=lol")
+		callCmd.Stderr = testutil.NewTWriter(t)
+		out, err := callCmd.Output()
+		require.NoError(t, err)
+		lines := strings.Split(string(out), "\n")
+		lastLine := lines[len(lines)-2]
+		require.Equal(t, "hi", lastLine)
 	})
 
 	t.Run("disable read write", func(ctx context.Context, t *testctx.T) {
