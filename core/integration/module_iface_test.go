@@ -31,8 +31,7 @@ func (ModuleSuite) TestIfaceGoSadPaths(ctx context.Context, t *testctx.T) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("main.go", `package main
 type Test struct {}
 
 type BadIface interface {
@@ -43,7 +42,7 @@ func (m *Test) Fn() BadIface {
 	return nil
 }
 	`,
-			}).
+			).
 			With(daggerFunctions()).
 			Sync(ctx)
 		require.Error(t, err)
@@ -59,8 +58,7 @@ func (ModuleSuite) TestIfaceGoDanglingInterface(ctx context.Context, t *testctx.
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
 		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-			Contents: `package main
+		WithNewFile("main.go", `package main
 type Test struct {}
 
 func (test *Test) Hello() string {
@@ -77,7 +75,7 @@ type DanglingIface interface {
 	DoThing() (error)
 }
 	`,
-		}).
+		).
 		Sync(ctx)
 	require.NoError(t, err)
 
@@ -95,19 +93,17 @@ func (ModuleSuite) TestIfaceDaggerCall(ctx context.Context, t *testctx.T) {
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work/mallard").
 		With(daggerExec("init", "--source=.", "--name=mallard", "--sdk=go")).
-		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-			Contents: `package main
+		WithNewFile("main.go", `package main
 type Mallard struct {}
 
 func (m *Mallard) Quack() string {
 	return "mallard quack"
 }
 	`,
-		}).
+		).
 		WithWorkdir("/work").
 		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-			Contents: `package main
+		WithNewFile("main.go", `package main
 
 import (
 	"context"
@@ -124,7 +120,7 @@ func (m *Test) GetDuck() Duck {
 	return dag.Mallard()
 }
 	`,
-		}).
+		).
 		With(daggerExec("install", "./mallard")).
 		With(daggerCall("get-duck", "quack")).
 		Stdout(ctx)

@@ -21,7 +21,7 @@ func init() {
 		panic(err)
 	}
 
-	currentSchema, err = generator.Introspect(ctx, c)
+	currentSchema, _, err = generator.Introspect(ctx, c)
 	if err != nil {
 		panic(err)
 	}

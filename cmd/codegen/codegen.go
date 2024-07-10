@@ -25,21 +25,23 @@ func Generate(ctx context.Context, cfg generator.Config, dag *dagger.Client) (er
 	}
 
 	var introspectionSchema *introspection.Schema
+	var introspectionSchemaVersion string
 	if cfg.IntrospectionJSON != "" {
 		var resp introspection.Response
 		if err := json.Unmarshal([]byte(cfg.IntrospectionJSON), &resp); err != nil {
 			return fmt.Errorf("unmarshal introspection json: %w", err)
 		}
 		introspectionSchema = resp.Schema
+		introspectionSchemaVersion = resp.SchemaVersion
 	} else {
-		introspectionSchema, err = generator.Introspect(ctx, dag)
+		introspectionSchema, introspectionSchemaVersion, err = generator.Introspect(ctx, dag)
 		if err != nil {
 			return err
 		}
 	}
 
 	for ctx.Err() == nil {
-		generated, err := generate(ctx, introspectionSchema, cfg)
+		generated, err := generate(ctx, introspectionSchema, introspectionSchemaVersion, cfg)
 		if err != nil {
 			return err
 		}
@@ -74,7 +76,7 @@ func Generate(ctx context.Context, cfg generator.Config, dag *dagger.Client) (er
 	return ctx.Err()
 }
 
-func generate(ctx context.Context, introspectionSchema *introspection.Schema, cfg generator.Config) (*generator.GeneratedState, error) {
+func generate(ctx context.Context, introspectionSchema *introspection.Schema, introspectionSchemaVersion string, cfg generator.Config) (*generator.GeneratedState, error) {
 	generator.SetSchemaParents(introspectionSchema)
 
 	var gen generator.Generator
@@ -96,5 +98,5 @@ func generate(ctx context.Context, introspectionSchema *introspection.Schema, cf
 		return nil, fmt.Errorf("use target SDK language: %s: %w", sdks, generator.ErrUnknownSDKLang)
 	}
 
-	return gen.Generate(ctx, introspectionSchema)
+	return gen.Generate(ctx, introspectionSchema, introspectionSchemaVersion)
 }

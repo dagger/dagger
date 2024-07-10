@@ -90,12 +90,18 @@ type {{ $field | FieldOptionsStructName }} struct {
 	q = q.Arg("{{ $arg.Name }}", {{ $arg.Name }})
 	{{- end }}
 	{{- end }}
+	{{- $typeName := $field.TypeRef | FormatOutputType }}
     {{ if $convertID }}
-	return r, q.Execute(ctx)
+    var id {{ $typeName }}
+    if err := q.Bind(&id).Execute(ctx); err != nil {
+        return nil, err
+    }
+	return &{{ $field.ParentObject.Name }} {
+        query: q.Root().Select("load{{ $field.ParentObject.Name }}FromID").Arg("id", id),
+    }, nil
 
 	{{- else if $field.TypeRef.IsObject }}
-	{{ $typeName := $field.TypeRef | FormatOutputType }}
-	return &{{ $field.TypeRef | FormatOutputType }} {
+	return &{{ $typeName }} {
 		query: q,
 		{{- if eq $typeName "Client" }}
 		client: r.client,

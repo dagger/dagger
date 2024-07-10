@@ -57,7 +57,7 @@ const (
 )
 
 func init() {
-	moduleFlags.StringVarP(&moduleURL, "mod", "m", "", "Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. \"/path/to/some/dir\") or a github repo (e.g. \"github.com/dagger/dagger/path/to/some/subdir\")")
+	moduleFlags.StringVarP(&moduleURL, "mod", "m", "", "Path to the module directory containing the dagger.json config file. Either local path (e.g. \"/path/to/some/dir\") or a github repo (e.g. \"github.com/dagger/dagger/path/to/some/subdir\")")
 
 	listenCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	queryCmd.PersistentFlags().AddFlagSet(moduleFlags)
@@ -992,6 +992,9 @@ var skipLeaves = map[string][]string{
 		// imageRef should only be requested right after a `from`, and that's
 		// hard to check for here.
 		"imageRef",
+		// stdout and stderr may be arbitrarily large and jarring to see (e.g. test suites)
+		"stdout",
+		"stderr",
 	},
 	"File": {
 		// This could be a binary file, so until we can tell which type of

@@ -7,12 +7,14 @@ import (
 	"context"
 	"encoding/json"
 	"text/template"
+
+	"github.com/dagger/dagger/dev/markdown/internal/dagger"
 )
 
 type Markdown struct{}
 
 // Return the markdown linting rules file
-func (m *Markdown) Rules() *File {
+func (m *Markdown) Rules() *dagger.File {
 	return dag.
 		CurrentModule().
 		Source().
@@ -22,8 +24,8 @@ func (m *Markdown) Rules() *File {
 // Build a container with a markdown linter tool installed
 func (m *Markdown) Container(
 	// Source directory to lint
-	source *Directory,
-) *Container {
+	source *dagger.Directory,
+) *dagger.Container {
 	return dag.
 		Container().
 		From("tmknom/markdownlint:0.31.1").
@@ -35,7 +37,7 @@ func (m *Markdown) Container(
 }
 
 // Fix simple markdown errors
-func (m *Markdown) Fix(source *Directory) *Directory {
+func (m *Markdown) Fix(source *dagger.Directory) *dagger.Directory {
 	return m.
 		Container(source).
 		WithExec([]string{
@@ -48,7 +50,7 @@ func (m *Markdown) Fix(source *Directory) *Directory {
 func (m *Markdown) Lint(
 	ctx context.Context,
 	// Source directory to lint
-	source *Directory,
+	source *dagger.Directory,
 ) (*Report, error) {
 	raw, err := m.
 		Container(source).
@@ -68,7 +70,7 @@ func (m *Markdown) Lint(
 type Report struct {
 	JSON string
 	// +private
-	Source *Directory
+	Source *dagger.Directory
 }
 
 func (r *Report) Checks(
@@ -93,7 +95,7 @@ func (r *Report) Checks(
 	return checks, nil
 }
 
-func (r *Report) Files() (*Directory, error) {
+func (r *Report) Files() (*dagger.Directory, error) {
 	checks, err := r.Checks(0)
 	if err != nil {
 		return nil, err
@@ -131,14 +133,14 @@ func (c *Check) JSON() (string, error) {
 	return string(b), err
 }
 
-func (c *Check) File() *File {
+func (c *Check) File() *dagger.File {
 	if c.FileName == "" {
 		return nil
 	}
 	return c.Report.Source.File(c.FileName)
 }
 
-func (c *Check) Fix() *File {
+func (c *Check) Fix() *dagger.File {
 	if c.FileName == "" {
 		return nil
 	}

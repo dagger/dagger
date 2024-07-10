@@ -1731,9 +1731,7 @@ server {
 
 	gitDaemon := c.Container().
 		From("nginx").
-		WithNewFile("/etc/nginx/conf.d/default.conf", dagger.ContainerWithNewFileOpts{
-			Contents: config.String(),
-		}).
+		WithNewFile("/etc/nginx/conf.d/default.conf", config.String()).
 		WithMountedDirectory("/usr/share/nginx/html", makeGitDir(c, content, branchName)).
 		WithMountedSecret("/usr/share/nginx/htpasswd", c.SetSecret("htpasswd", "x-access-token:{PLAIN}"+tokenPlaintext), dagger.ContainerWithMountedSecretOpts{
 			Owner: "nginx",
@@ -1754,8 +1752,7 @@ func makeGitDir(c *dagger.Client, content *dagger.Directory, branchName string) 
 		From(alpineImage).
 		WithExec([]string{"apk", "add", "git"}).
 		WithDirectory("/root/repo", content).
-		WithNewFile("/root/create.sh", dagger.ContainerWithNewFileOpts{
-			Contents: fmt.Sprintf(`#!/bin/sh
+		WithNewFile("/root/create.sh", fmt.Sprintf(`#!/bin/sh
 
 set -e -u -x
 
@@ -1780,7 +1777,7 @@ cd srv
 	cd ..
 cd ..
 `, branchName),
-		}).
+		).
 		WithExec([]string{"sh", "/root/create.sh"}).
 		Directory("/root/srv")
 }
@@ -1792,7 +1789,7 @@ func signalService(ctx context.Context, t *testctx.T, c *dagger.Client) (*dagger
 
 	srv := c.Container().
 		From("python").
-		WithNewFile("/signals.py", dagger.ContainerWithNewFileOpts{Contents: `
+		WithNewFile("/signals.py", `
 import http.server
 import signal
 import socketserver
@@ -1808,11 +1805,11 @@ for sig in [signal.SIGINT, signal.SIGTERM]:
 with socketserver.TCPServer(("", 8000), http.server.SimpleHTTPRequestHandler) as httpd:
     print("serving at port 8000")
     httpd.serve_forever()
-`}).
+`).
 		WithWorkdir("/srv/www").
-		WithNewFile("signals.txt").
+		WithNewFile("signals.txt", "").
 		WithExposedPort(8000).
-		WithExec([]string{"python", "/signals.py"}, dagger.ContainerWithExecOpts{SkipEntrypoint: true}).
+		WithExec([]string{"python", "/signals.py"}).
 		AsService()
 
 	httpURL, err := srv.Endpoint(ctx, dagger.ServiceEndpointOpts{

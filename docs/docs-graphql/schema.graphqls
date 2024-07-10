@@ -491,14 +491,17 @@ type Container {
     redirectStdout: String = ""
 
     """
-    If the container has an entrypoint, ignore it for args rather than using it to wrap them.
+    DEPRECATED: For true this can be removed. For false, use `useEntrypoint` instead.
     """
-    skipEntrypoint: Boolean = false
+    skipEntrypoint: Boolean = true
 
     """
     Content to write to the command's standard input before closing (e.g., "Hello world").
     """
     stdin: String = ""
+
+    """If the container has an entrypoint, prepend it to the args."""
+    useEntrypoint: Boolean = false
   ): Container!
 
   """
@@ -690,7 +693,7 @@ type Container {
   """Retrieves this container plus a new file written at the given path."""
   withNewFile(
     """Content of the file to write (e.g., "Hello world!")."""
-    contents: String = ""
+    contents: String!
 
     """
     A user:group to set for the file.
@@ -1613,13 +1616,7 @@ type GitRef {
   id: GitRefID!
 
   """The filesystem tree at this ref."""
-  tree(
-    """DEPRECATED: This option should be passed to `git` instead."""
-    sshAuthSocket: SocketID
-
-    """DEPRECATED: This option should be passed to `git` instead."""
-    sshKnownHosts: String
-  ): Directory!
+  tree: Directory!
 }
 
 """
@@ -2320,9 +2317,6 @@ type Query {
   as that platform. Platform defaults to that of the builder's host.
   """
   container(
-    """DEPRECATED: Use `loadContainerFromID` instead."""
-    id: ContainerID
-
     """Platform to initialize the container with."""
     platform: Platform
   ): Container!
@@ -2349,11 +2343,7 @@ type Query {
   defaultPlatform: Platform!
 
   """Creates an empty directory."""
-  directory(
-    """DEPRECATED: Use `loadDirectoryFromID` instead."""
-    id: DirectoryID
-  ): Directory!
-  file(id: FileID!): File! @deprecated(reason: "Use `loadFileFromID` instead.")
+  directory: Directory!
 
   """Creates a function."""
   function(
@@ -2579,9 +2569,6 @@ type Query {
     """The plaintext of the secret"""
     plaintext: String!
   ): Secret!
-
-  """Loads a socket by its ID."""
-  socket(id: SocketID!): Socket! @deprecated(reason: "Use `loadSocketFromID` instead.")
 
   """Create a new TypeDef."""
   typeDef: TypeDef!

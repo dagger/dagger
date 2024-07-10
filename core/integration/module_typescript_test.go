@@ -8,8 +8,6 @@ import (
 	"github.com/dagger/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
-
-	"dagger.io/dagger"
 )
 
 func (ModuleSuite) TestTypescriptInit(ctx context.Context, t *testctx.T) {
@@ -64,8 +62,7 @@ func (ModuleSuite) TestTypescriptInit(ctx context.Context, t *testctx.T) {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			WithNewFile("/work/package.json", dagger.ContainerWithNewFileOpts{
-				Contents: `{
+			WithNewFile("/work/package.json", `{
   "name": "my-module",
   "version": "1.0.0",
   "description": "My module",
@@ -76,7 +73,7 @@ func (ModuleSuite) TestTypescriptInit(ctx context.Context, t *testctx.T) {
   "author": "John doe",
   "license": "MIT"
 	}`,
-			}).
+			).
 			With(daggerExec("init", "--source=.", "--name=hasPkgJson", "--sdk=typescript"))
 
 		out, err := modGen.
@@ -99,15 +96,14 @@ func (ModuleSuite) TestTypescriptInit(ctx context.Context, t *testctx.T) {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			WithNewFile("/work/tsconfig.json", dagger.ContainerWithNewFileOpts{
-				Contents: `{
+			WithNewFile("/work/tsconfig.json", `{
 	"compilerOptions": {
 	  "target": "ES2022",
 	  "moduleResolution": "Node",
 	  "experimentalDecorators": true
 	}
 		}`,
-			}).
+			).
 			With(daggerExec("init", "--name=hasTsConfig", "--sdk=typescript"))
 
 		out, err := modGen.
@@ -130,8 +126,7 @@ func (ModuleSuite) TestTypescriptInit(ctx context.Context, t *testctx.T) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			WithDirectory("/work/src", c.Directory()).
-			WithNewFile("/work/src/index.ts", dagger.ContainerWithNewFileOpts{
-				Contents: `
+			WithNewFile("/work/src/index.ts", `
 				import { dag, Container, object, func } from "@dagger.io/dagger"
 
 				@object()
@@ -143,7 +138,7 @@ func (ModuleSuite) TestTypescriptInit(ctx context.Context, t *testctx.T) {
 				}
 
 				`,
-			}).
+			).
 			With(daggerExec("init", "--source=.", "--name=existingSource", "--sdk=typescript"))
 
 		out, err := modGen.
@@ -466,6 +461,22 @@ func (ModuleSuite) TestTypescriptRuntimeDetection(ctx context.Context, t *testct
 			    const isBunRuntime = typeof Bun === "object";
 			    return isBunRuntime ? "bun" : "node";
 			  }
+
+				@func()
+				version(): string {
+          const isBunRuntime = typeof Bun === "object";
+          const runtime = isBunRuntime ? "bun" : "node";
+          let version = "";
+
+          if (!isBunRuntime) {
+            const [major, minor, patch] = process.versions.node.split(".").map(Number);
+            version = major + "." + minor + "." + patch;
+          } else {
+            version = Bun.version
+          }
+
+          return runtime + "@" + version;
+				}
 			}
 		`))
 
@@ -476,13 +487,12 @@ func (ModuleSuite) TestTypescriptRuntimeDetection(ctx context.Context, t *testct
 	})
 
 	t.Run("should use package.json configuration node", func(ctx context.Context, t *testctx.T) {
-		modGen := modGen.WithNewFile("/work/dagger/package.json", dagger.ContainerWithNewFileOpts{
-			Contents: `{
+		modGen := modGen.WithNewFile("/work/dagger/package.json", `{
 				"dagger": {
 					"runtime": "node"
 				}
 			}`,
-		})
+		)
 
 		out, err := modGen.With(daggerQuery(`{runtimeDetection{echoRuntime}}`)).Stdout(ctx)
 		require.NoError(t, err)
@@ -490,13 +500,12 @@ func (ModuleSuite) TestTypescriptRuntimeDetection(ctx context.Context, t *testct
 	})
 
 	t.Run("should use package.json configuration bun", func(ctx context.Context, t *testctx.T) {
-		modGen := modGen.WithNewFile("/work/dagger/package.json", dagger.ContainerWithNewFileOpts{
-			Contents: `{
+		modGen := modGen.WithNewFile("/work/dagger/package.json", `{
 				"dagger": {
 					"runtime": "bun"
 				}
 			}`,
-		})
+		)
 
 		out, err := modGen.With(daggerQuery(`{runtimeDetection{echoRuntime}}`)).Stdout(ctx)
 		require.NoError(t, err)
@@ -568,13 +577,12 @@ func (ModuleSuite) TestTypescriptRuntimeDetection(ctx context.Context, t *testct
 				  }
 				}
 			`)).
-			WithNewFile("/work/dagger/package.json", dagger.ContainerWithNewFileOpts{
-				Contents: `{
+			WithNewFile("/work/dagger/package.json", `{
 					"dagger": {
 						"runtime": "bun"
 					}
 				}`,
-			}).
+			).
 			WithExec([]string{"npm", "install", "--package-lock-only", "-C", "./dagger"})
 
 		out, err := modGen.With(daggerQuery(`{runtimeDetection{echoRuntime}}`)).Stdout(ctx)
@@ -583,15 +591,53 @@ func (ModuleSuite) TestTypescriptRuntimeDetection(ctx context.Context, t *testct
 	})
 
 	t.Run("should error if configured runtime is unknown", func(ctx context.Context, t *testctx.T) {
-		modGen := modGen.WithNewFile("/work/dagger/package.json", dagger.ContainerWithNewFileOpts{
-			Contents: `{
+		modGen := modGen.WithNewFile("/work/dagger/package.json", `{
 				"dagger": {
 					"runtime": "xyz"
 				}
 			}`,
-		})
+		)
 		_, err := modGen.With(daggerQuery(`{runtimeDetection{echoRuntime}}`)).Stdout(ctx)
 		require.Error(t, err)
+	})
+
+	t.Run("should detect specificpinned node version 20.15.0", func(ctx context.Context, t *testctx.T) {
+		modGen := modGen.WithNewFile("/work/dagger/package.json", `{
+				"dagger": {
+					"runtime": "node@20.15.0"
+				}
+			}`,
+		)
+
+		out, err := modGen.With(daggerQuery(`{runtimeDetection{version}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"runtimeDetection":{"version":"node@20.15.0"}}`, out)
+	})
+
+	t.Run("should detect a specific pinned node version 22.4.0", func(ctx context.Context, t *testctx.T) {
+		modGen := modGen.WithNewFile("/work/dagger/package.json", `{
+				"dagger": {
+					"runtime": "node@22.4.0"
+				}
+			}`,
+		)
+
+		out, err := modGen.With(daggerQuery(`{runtimeDetection{version}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"runtimeDetection":{"version":"node@22.4.0"}}`, out)
+	})
+
+	t.Run("should detect a specific pinned bun version", func(ctx context.Context, t *testctx.T) {
+		modGen := modGen.WithNewFile("/work/dagger/package.json", `{
+				"dagger": {
+					"runtime": "bun@1.0.11"
+				}
+			}`,
+		)
+
+		out, err := modGen.With(daggerQuery(`{runtimeDetection{version}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"runtimeDetection":{"version":"bun@1.0.11"}}`, out)
 	})
 }
 

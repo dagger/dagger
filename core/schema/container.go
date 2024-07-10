@@ -33,8 +33,7 @@ func (s *containerSchema) Install() {
 				`Optional platform argument initializes new containers to execute and
 				publish as that platform. Platform defaults to that of the builder's
 				host.`).
-			ArgDoc("platform", `Platform to initialize the container with.`).
-			ArgDeprecated("id", "Use `loadContainerFromID` instead."),
+			ArgDoc("platform", `Platform to initialize the container with.`),
 	}.Install(s.srv)
 
 	dagql.Fields[*core.Container]{
@@ -273,6 +272,17 @@ func (s *containerSchema) Install() {
 				`If the group is omitted, it defaults to the same as the user.`),
 
 		dagql.Func("withNewFile", s.withNewFile).
+			View(AllVersion).
+			Doc(`Retrieves this container plus a new file written at the given path.`).
+			ArgDoc("path", `Location of the written file (e.g., "/tmp/file.txt").`).
+			ArgDoc("contents", `Content of the file to write (e.g., "Hello world!").`).
+			ArgDoc("permissions", `Permission given to the written file (e.g., 0600).`).
+			ArgDoc("owner",
+				`A user:group to set for the file.`,
+				`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
+				`If the group is omitted, it defaults to the same as the user.`),
+		dagql.Func("withNewFile", s.withNewFileLegacy).
+			View(BeforeVersion("v0.12.0")).
 			Doc(`Retrieves this container plus a new file written at the given path.`).
 			ArgDoc("path", `Location of the written file (e.g., "/tmp/file.txt").`).
 			ArgDoc("contents", `Content of the file to write (e.g., "Hello world!").`).
@@ -298,6 +308,37 @@ func (s *containerSchema) Install() {
 			ArgDoc("path", `Location of the directory to remove (e.g., ".github/").`),
 
 		dagql.Func("withExec", s.withExec).
+			View(AllVersion).
+			Doc(`Retrieves this container after executing the specified command inside it.`).
+			ArgDoc("args",
+				`Command to run instead of the container's default command (e.g., ["run", "main.go"]).`,
+				`If empty, the container's default command is used.`).
+			ArgDoc("useEntrypoint",
+				`If the container has an entrypoint, prepend it to the args.`).
+			ArgDeprecated("skipEntrypoint", "For true this can be removed. For false, use `useEntrypoint` instead.").
+			ArgDoc("stdin",
+				`Content to write to the command's standard input before closing (e.g.,
+				"Hello world").`).
+			ArgDoc("redirectStdout",
+				`Redirect the command's standard output to a file in the container (e.g.,
+			"/tmp/stdout").`).
+			ArgDoc("redirectStderr",
+				`Redirect the command's standard error to a file in the container (e.g.,
+			"/tmp/stderr").`).
+			ArgDoc("experimentalPrivilegedNesting",
+				`Provides Dagger access to the executed command.`,
+				`Do not use this option unless you trust the command being executed;
+				the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST
+				FILESYSTEM.`).
+			ArgDoc("insecureRootCapabilities",
+				`Execute the command with all root capabilities. This is similar to
+				running a command with "sudo" or executing "docker run" with the
+				"--privileged" flag. Containerization does not provide any security
+				guarantees when using this option. It should only be used when
+				absolutely necessary and only with trusted commands.`),
+
+		dagql.Func("withExec", s.withExecLegacy).
+			View(BeforeVersion("v0.12.0")).
 			Doc(`Retrieves this container after executing the specified command inside it.`).
 			ArgDoc("args",
 				`Command to run instead of the container's default command (e.g., ["run", "main.go"]).`,
@@ -530,20 +571,10 @@ func (s *containerSchema) Install() {
 }
 
 type containerArgs struct {
-	ID       dagql.Optional[core.ContainerID]
 	Platform dagql.Optional[core.Platform]
 }
 
 func (s *containerSchema) container(ctx context.Context, parent *core.Query, args containerArgs) (_ *core.Container, rerr error) {
-	if args.ID.Valid {
-		inst, err := args.ID.Value.Load(ctx, s.srv)
-		if err != nil {
-			return nil, err
-		}
-		// NB: what we kind of want is to return an Instance[*core.Container] in
-		// this case, but this API is deprecated anyhow
-		return inst.Self, nil
-	}
 	var platform core.Platform
 	if args.Platform.Valid {
 		platform = args.Platform.Value
@@ -619,7 +650,55 @@ type containerExecArgs struct {
 }
 
 func (s *containerSchema) withExec(ctx context.Context, parent *core.Container, args containerExecArgs) (*core.Container, error) {
+	if args.ContainerExecOpts.SkipEntrypoint != nil {
+		slog.Warn("The 'skipEntrypoint' argument is deprecated. Use 'useEntrypoint' instead.")
+		if !args.ContainerExecOpts.UseEntrypoint && !*args.ContainerExecOpts.SkipEntrypoint {
+			args.ContainerExecOpts.UseEntrypoint = true
+		}
+	}
 	return parent.WithExec(ctx, args.ContainerExecOpts)
+}
+
+type containerExecArgsLegacy struct {
+	// Command to run instead of the container's default command
+	Args []string
+
+	// If the container has an entrypoint, ignore it for this exec rather than
+	// calling it with args
+	SkipEntrypoint bool `default:"false"`
+
+	// Content to write to the command's standard input before closing
+	Stdin string `default:""`
+
+	// Redirect the command's standard output to a file in the container
+	RedirectStdout string `default:""`
+
+	// Redirect the command's standard error to a file in the container
+	RedirectStderr string `default:""`
+
+	// Provide the executed command access back to the Dagger API
+	ExperimentalPrivilegedNesting bool `default:"false"`
+
+	// Grant the process all root capabilities
+	InsecureRootCapabilities bool `default:"false"`
+
+	// (Internal-only) If this is a nested exec, exec metadata to use for it
+	NestedExecMetadata *buildkit.ExecutionMetadata `name:"-"`
+}
+
+func (s *containerSchema) withExecLegacy(ctx context.Context, parent *core.Container, args containerExecArgsLegacy) (*core.Container, error) {
+	opts := core.ContainerExecOpts{
+		Args:                          args.Args,
+		UseEntrypoint:                 !args.SkipEntrypoint,
+		SkipEntrypoint:                &args.SkipEntrypoint,
+		Stdin:                         args.Stdin,
+		RedirectStdout:                args.RedirectStdout,
+		RedirectStderr:                args.RedirectStderr,
+		ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting,
+		InsecureRootCapabilities:      args.InsecureRootCapabilities,
+		NestedExecMetadata:            args.NestedExecMetadata,
+	}
+	return parent.WithExec(ctx, opts)
 }
 
 func (s *containerSchema) stdout(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {
@@ -1191,12 +1270,23 @@ func (s *containerSchema) withoutFile(ctx context.Context, parent *core.Containe
 
 type containerWithNewFileArgs struct {
 	Path        string
-	Contents    string `default:""`
+	Contents    string
 	Permissions int    `default:"0644"`
 	Owner       string `default:""`
 }
 
 func (s *containerSchema) withNewFile(ctx context.Context, parent *core.Container, args containerWithNewFileArgs) (*core.Container, error) {
+	return parent.WithNewFile(ctx, args.Path, []byte(args.Contents), fs.FileMode(args.Permissions), args.Owner)
+}
+
+type containerWithNewFileArgsLegacy struct {
+	Path        string
+	Contents    string `default:""`
+	Permissions int    `default:"0644"`
+	Owner       string `default:""`
+}
+
+func (s *containerSchema) withNewFileLegacy(ctx context.Context, parent *core.Container, args containerWithNewFileArgsLegacy) (*core.Container, error) {
 	return parent.WithNewFile(ctx, args.Path, []byte(args.Contents), fs.FileMode(args.Permissions), args.Owner)
 }
 

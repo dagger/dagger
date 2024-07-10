@@ -8,6 +8,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"github.com/dagger/dagger/dev/internal/dagger"
 	"github.com/dagger/dagger/dev/internal/util"
 )
 
@@ -65,7 +66,7 @@ func (r RustSDK) Test(ctx context.Context) error {
 }
 
 // Regenerate the Rust SDK API
-func (r RustSDK) Generate(ctx context.Context) (*Directory, error) {
+func (r RustSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 	installer, err := r.Dagger.installer(ctx, "sdk-rust-generate")
 	if err != nil {
 		return nil, err
@@ -92,7 +93,7 @@ func (r RustSDK) Publish(
 	dryRun bool,
 
 	// +optional
-	cargoRegistryToken *Secret,
+	cargoRegistryToken *dagger.Secret,
 ) error {
 	version := strings.TrimPrefix(tag, "sdk/rust/v")
 	if dryRun {
@@ -128,7 +129,7 @@ func (r RustSDK) Publish(
 }
 
 // Bump the Rust SDK's Engine dependency
-func (r RustSDK) Bump(ctx context.Context, version string) (*Directory, error) {
+func (r RustSDK) Bump(ctx context.Context, version string) (*dagger.Directory, error) {
 	versionStr := `pub const DAGGER_ENGINE_VERSION: &'static str = "([0-9\.-a-zA-Z]+)";`
 	versionStrf := `pub const DAGGER_ENGINE_VERSION: &'static str = "%s";`
 	version = strings.TrimPrefix(version, "v")
@@ -151,7 +152,7 @@ func (r RustSDK) Bump(ctx context.Context, version string) (*Directory, error) {
 	return dag.Directory().WithNewFile(rustVersionFilePath, versionBumpedContents), nil
 }
 
-func (r RustSDK) rustBase(image string) *Container {
+func (r RustSDK) rustBase(image string) *dagger.Container {
 	const appDir = "sdk/rust"
 
 	src := dag.Directory().WithDirectory("/", r.Dagger.Source.Directory(appDir))
@@ -160,7 +161,7 @@ func (r RustSDK) rustBase(image string) *Container {
 
 	base := dag.Container().
 		From(image).
-		WithDirectory(mountPath, src, ContainerWithDirectoryOpts{
+		WithDirectory(mountPath, src, dagger.ContainerWithDirectoryOpts{
 			Include: []string{
 				"**/Cargo.toml",
 				"**/Cargo.lock",

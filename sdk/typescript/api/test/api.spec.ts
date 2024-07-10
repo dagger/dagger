@@ -176,17 +176,13 @@ describe("TypeScript SDK api", function () {
         .container()
         .build(image)
         .withWorkdir("/")
-        .withEntrypoint(["sh", "-c"])
-        .withExec(["echo htrshtrhrthrts > file.txt"])
-        .withExec(["cat file.txt"])
+        .withExec(["echo", "htrshtrhrthrts"], { redirectStdout: "file.txt" })
 
       const copiedFile = await client
         .container()
         .from("alpine:3.16.2")
         .withWorkdir("/")
         .withFile("/copied-file.txt", builder.file("/file.txt"))
-        .withEntrypoint(["sh", "-c"])
-        .withExec(["cat copied-file.txt"])
         .file("copied-file.txt")
         .contents()
 
@@ -387,7 +383,7 @@ describe("TypeScript SDK api", function () {
 
     await connect(
       async (client) => {
-        const ctr = await client
+        const ctr = client
           .container()
           .from("alpine:3.16.2")
           .withEnvVariable("FOO", "BAR")

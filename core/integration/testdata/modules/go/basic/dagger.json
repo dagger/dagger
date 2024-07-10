@@ -1,5 +1,6 @@
 {
-  "root": ".",
   "name": "basic",
-  "sdk": "go"
+  "sdk": "go",
+  "source": ".",
+  "engineVersion": "dev-23ef60a27c63d534ac02534ea4bd9e204bbec5f0"
 }

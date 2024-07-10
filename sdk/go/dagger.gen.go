@@ -925,7 +925,13 @@ func (r *Container) Stdout(ctx context.Context) (string, error) {
 func (r *Container) Sync(ctx context.Context) (*Container, error) {
 	q := r.query.Select("sync")
 
-	return r, q.Execute(ctx)
+	var id ContainerID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Container{
+		query: q.Root().Select("loadContainerFromID").Arg("id", id),
+	}, nil
 }
 
 // ContainerTerminalOpts contains options for Container.Terminal
@@ -1103,8 +1109,10 @@ func (r *Container) WithEnvVariable(name string, value string, opts ...Container
 
 // ContainerWithExecOpts contains options for Container.WithExec
 type ContainerWithExecOpts struct {
-	// If the container has an entrypoint, ignore it for args rather than using it to wrap them.
+	// DEPRECATED: For true this can be removed. For false, use `useEntrypoint` instead.
 	SkipEntrypoint bool
+	// If the container has an entrypoint, prepend it to the args.
+	UseEntrypoint bool
 	// Content to write to the command's standard input before closing (e.g., "Hello world").
 	Stdin string
 	// Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
@@ -1126,6 +1134,10 @@ func (r *Container) WithExec(args []string, opts ...ContainerWithExecOpts) *Cont
 		// `skipEntrypoint` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SkipEntrypoint) {
 			q = q.Arg("skipEntrypoint", opts[i].SkipEntrypoint)
+		}
+		// `useEntrypoint` optional argument
+		if !querybuilder.IsZeroValue(opts[i].UseEntrypoint) {
+			q = q.Arg("useEntrypoint", opts[i].UseEntrypoint)
 		}
 		// `stdin` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Stdin) {
@@ -1428,8 +1440,6 @@ func (r *Container) WithMountedTemp(path string) *Container {
 
 // ContainerWithNewFileOpts contains options for Container.WithNewFile
 type ContainerWithNewFileOpts struct {
-	// Content of the file to write (e.g., "Hello world!").
-	Contents string
 	// Permission given to the written file (e.g., 0600).
 	Permissions int
 	// A user:group to set for the file.
@@ -1441,13 +1451,9 @@ type ContainerWithNewFileOpts struct {
 }
 
 // Retrieves this container plus a new file written at the given path.
-func (r *Container) WithNewFile(path string, opts ...ContainerWithNewFileOpts) *Container {
+func (r *Container) WithNewFile(path string, contents string, opts ...ContainerWithNewFileOpts) *Container {
 	q := r.query.Select("withNewFile")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `contents` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Contents) {
-			q = q.Arg("contents", opts[i].Contents)
-		}
 		// `permissions` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Permissions) {
 			q = q.Arg("permissions", opts[i].Permissions)
@@ -1458,6 +1464,7 @@ func (r *Container) WithNewFile(path string, opts ...ContainerWithNewFileOpts) *
 		}
 	}
 	q = q.Arg("path", path)
+	q = q.Arg("contents", contents)
 
 	return &Container{
 		query: q,
@@ -2510,7 +2517,13 @@ func (r *Directory) Pipeline(name string, opts ...DirectoryPipelineOpts) *Direct
 func (r *Directory) Sync(ctx context.Context) (*Directory, error) {
 	q := r.query.Select("sync")
 
-	return r, q.Execute(ctx)
+	var id DirectoryID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Directory{
+		query: q.Root().Select("loadDirectoryFromID").Arg("id", id),
+	}, nil
 }
 
 // DirectoryTerminalOpts contains options for Directory.Terminal
@@ -3223,7 +3236,13 @@ func (r *File) Size(ctx context.Context) (int, error) {
 func (r *File) Sync(ctx context.Context) (*File, error) {
 	q := r.query.Select("sync")
 
-	return r, q.Execute(ctx)
+	var id FileID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &File{
+		query: q.Root().Select("loadFileFromID").Arg("id", id),
+	}, nil
 }
 
 // Retrieves this file with its name set to the given name.
@@ -4072,27 +4091,9 @@ func (r *GitRef) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// GitRefTreeOpts contains options for GitRef.Tree
-type GitRefTreeOpts struct {
-	// DEPRECATED: This option should be passed to `git` instead.
-	SSHKnownHosts string
-	// DEPRECATED: This option should be passed to `git` instead.
-	SSHAuthSocket *Socket
-}
-
 // The filesystem tree at this ref.
-func (r *GitRef) Tree(opts ...GitRefTreeOpts) *Directory {
+func (r *GitRef) Tree() *Directory {
 	q := r.query.Select("tree")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `sshKnownHosts` optional argument
-		if !querybuilder.IsZeroValue(opts[i].SSHKnownHosts) {
-			q = q.Arg("sshKnownHosts", opts[i].SSHKnownHosts)
-		}
-		// `sshAuthSocket` optional argument
-		if !querybuilder.IsZeroValue(opts[i].SSHAuthSocket) {
-			q = q.Arg("sshAuthSocket", opts[i].SSHAuthSocket)
-		}
-	}
 
 	return &Directory{
 		query: q,
@@ -6165,8 +6166,6 @@ func (r *Client) CacheVolume(key string) *CacheVolume {
 
 // ContainerOpts contains options for Client.Container
 type ContainerOpts struct {
-	// DEPRECATED: Use `loadContainerFromID` instead.
-	ID ContainerID
 	// Platform to initialize the container with.
 	Platform Platform
 }
@@ -6177,10 +6176,6 @@ type ContainerOpts struct {
 func (r *Client) Container(opts ...ContainerOpts) *Container {
 	q := r.query.Select("container")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `id` optional argument
-		if !querybuilder.IsZeroValue(opts[i].ID) {
-			q = q.Arg("id", opts[i].ID)
-		}
 		// `platform` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Platform) {
 			q = q.Arg("platform", opts[i].Platform)
@@ -6264,33 +6259,11 @@ func (r *Client) DefaultPlatform(ctx context.Context) (Platform, error) {
 	return response, q.Execute(ctx)
 }
 
-// DirectoryOpts contains options for Client.Directory
-type DirectoryOpts struct {
-	// DEPRECATED: Use `loadDirectoryFromID` instead.
-	ID DirectoryID
-}
-
 // Creates an empty directory.
-func (r *Client) Directory(opts ...DirectoryOpts) *Directory {
+func (r *Client) Directory() *Directory {
 	q := r.query.Select("directory")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `id` optional argument
-		if !querybuilder.IsZeroValue(opts[i].ID) {
-			q = q.Arg("id", opts[i].ID)
-		}
-	}
 
 	return &Directory{
-		query: q,
-	}
-}
-
-// Deprecated: Use LoadFileFromID instead.
-func (r *Client) File(id FileID) *File {
-	q := r.query.Select("file")
-	q = q.Arg("id", id)
-
-	return &File{
 		query: q,
 	}
 }
@@ -6896,18 +6869,6 @@ func (r *Client) SetSecret(name string, plaintext string) *Secret {
 	}
 }
 
-// Loads a socket by its ID.
-//
-// Deprecated: Use LoadSocketFromID instead.
-func (r *Client) Socket(id SocketID) *Socket {
-	q := r.query.Select("socket")
-	q = q.Arg("id", id)
-
-	return &Socket{
-		query: q,
-	}
-}
-
 // Create a new TypeDef.
 func (r *Client) TypeDef() *TypeDef {
 	q := r.query.Select("typeDef")
@@ -7248,7 +7209,13 @@ func (r *Service) Ports(ctx context.Context) ([]Port, error) {
 func (r *Service) Start(ctx context.Context) (*Service, error) {
 	q := r.query.Select("start")
 
-	return r, q.Execute(ctx)
+	var id ServiceID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Service{
+		query: q.Root().Select("loadServiceFromID").Arg("id", id),
+	}, nil
 }
 
 // ServiceStopOpts contains options for Service.Stop
@@ -7267,7 +7234,13 @@ func (r *Service) Stop(ctx context.Context, opts ...ServiceStopOpts) (*Service, 
 		}
 	}
 
-	return r, q.Execute(ctx)
+	var id ServiceID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Service{
+		query: q.Root().Select("loadServiceFromID").Arg("id", id),
+	}, nil
 }
 
 // ServiceUpOpts contains options for Service.Up

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"dagger.io/dagger"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -26,7 +28,7 @@ var callCmd = &FuncCommand{
 
 		cmd.PersistentFlags().BoolVarP(&jsonOutput, "json", "j", false, "Present result as JSON")
 	},
-	OnSelectObjectLeaf: func(fc *FuncCommand, obj functionProvider) error {
+	OnSelectObjectLeaf: func(ctx context.Context, fc *FuncCommand, obj functionProvider) error {
 		typeName := obj.ProviderName()
 		switch typeName {
 		case Container, Directory, File:
@@ -38,6 +40,18 @@ var callCmd = &FuncCommand{
 				}
 				return nil
 			}
+		}
+
+		// There's no fields in `Container` that trigger container execution so
+		// we use `sync` first to evaluate, and then load the new `Container`
+		// from that response before continuing.
+		if typeName == Container {
+			var cid dagger.ContainerID
+			fc.Select("sync")
+			if err := fc.Request(ctx, &cid); err != nil {
+				return err
+			}
+			fc.q = fc.q.Root().Select("loadContainerFromID").Arg("id", cid)
 		}
 
 		// Add the object's name so we always have something to show.

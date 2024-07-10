@@ -12,7 +12,6 @@ import (
 	"github.com/creack/pty"
 	"github.com/stretchr/testify/require"
 
-	"dagger.io/dagger"
 	"github.com/dagger/dagger/testctx"
 )
 
@@ -36,11 +35,8 @@ func (LegacySuite) TestLegacyExportAbsolutePath(ctx context.Context, t *testctx.
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
 		With(daggerExec("init", "--name=bare", "--source=.", "--sdk=go")).
-		WithNewFile("dagger.json", dagger.ContainerWithNewFileOpts{
-			Contents: `{"name": "bare", "sdk": "go", "source": ".", "engineVersion": "v0.11.9"}`,
-		}).
-		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-			Contents: `package main
+		WithNewFile("dagger.json", `{"name": "bare", "sdk": "go", "source": ".", "engineVersion": "v0.11.9"}`).
+		WithNewFile("main.go", `package main
 
 import "context"
 
@@ -58,7 +54,7 @@ func (m *Bare) TestFile(ctx context.Context) (bool, error) {
 	return dag.Container().WithNewFile("./path").File("./path").Export(ctx, "./path")
 }
 `,
-		})
+		)
 
 	out, err := modGen.
 		With(daggerQuery(`{bare{testContainer, testDirectory, testFile}}`)).
@@ -75,7 +71,10 @@ func (LegacySuite) TestLegacyTerminal(ctx context.Context, t *testctx.T) {
 	// process these types as before.
 
 	src := []byte(fmt.Sprintf(`package main
-import "context"
+import (
+	"context"
+	"dagger/test/internal/dagger"
+)
 
 func New(ctx context.Context) *Test {
 	return &Test{
@@ -87,10 +86,10 @@ func New(ctx context.Context) *Test {
 }
 
 type Test struct {
-	Ctr *Container
+	Ctr *dagger.Container
 }
 
-func (t *Test) Debug() *Terminal {
+func (t *Test) Debug() *dagger.Terminal {
 	return t.Ctr.Terminal()
 }
 `, alpineImage))
@@ -206,4 +205,94 @@ func (t *Test) Debug() *Terminal {
 		err = cmd.Wait()
 		require.NoError(t, err)
 	})
+}
+
+func (LegacySuite) TestContainerWithNewFile(ctx context.Context, t *testctx.T) {
+	// Changed in dagger/dagger#7293
+	//
+	// Ensure that the old schemas have an optional "contents" argument
+	// instead of required.
+
+	c := connect(ctx, t)
+
+	out, err := daggerCliBase(t, c).
+		With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+		WithNewFile("dagger.json", `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.11.9"}`).
+		WithNewFile("main.go", `package main
+
+import "context"
+
+type Test struct {}
+
+func (m *Test) Container(ctx context.Context) (string, error) {
+    return dag.Container().
+        WithNewFile("./foo", ContainerWithNewFileOpts{
+            Contents: "bar",
+        }).
+        File("./foo").
+        Contents(ctx)
+}
+
+func (m *Test) Default(ctx context.Context) (string, error) {
+    return dag.Container().
+        WithNewFile("./foo").
+        File("./foo").
+        Contents(ctx)
+}
+`,
+		).
+		With(daggerQuery(`{test{container default}}`)).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+	require.JSONEq(t, `{"test": {"container": "bar", "default": ""}}`, out)
+}
+
+func (LegacySuite) TestExecWithEntrypoint(ctx context.Context, t *testctx.T) {
+	// Changed in dagger/dagger#7136
+	//
+	// Ensure that the old schemas default to use the entrypoint.
+
+	c := connect(ctx, t)
+
+	modGen := daggerCliBase(t, c).
+		With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+		WithNewFile("dagger.json", `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.11.9"}`).
+		WithNewFile("main.go", fmt.Sprintf(`package main
+
+import "dagger/test/internal/dagger"
+
+func New() *Test {
+    return &Test{
+        Container: dag.Container().
+            From("%s").
+            WithEntrypoint([]string{"echo"}),
+    }
+}
+
+type Test struct {
+    Container *dagger.Container
+}
+
+func (m *Test) Use() *dagger.Container {
+    return m.Container.WithExec([]string{"hello"})
+
+}
+
+func (m *Test) Skip() *dagger.Container {
+    return m.Container.WithExec([]string{"echo", "hello"}, dagger.ContainerWithExecOpts{
+        SkipEntrypoint: true,
+    })
+}
+`, alpineImage),
+		)
+
+	out, err := modGen.With(daggerCall("use", "stdout")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "hello\n", out)
+
+	out, err = modGen.With(daggerCall("skip", "stdout")).Stdout(ctx)
+	require.NoError(t, err)
+	// if the entrypoint was not skipped, it would return "echo hello\n"
+	require.Equal(t, "hello\n", out)
 }

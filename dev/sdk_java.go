@@ -45,7 +45,7 @@ func (t JavaSDK) Test(ctx context.Context) error {
 }
 
 // Regenerate the Java SDK API
-func (t JavaSDK) Generate(ctx context.Context) (*Directory, error) {
+func (t JavaSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 	installer, err := t.Dagger.installer(ctx, "sdk-java-generate")
 	if err != nil {
 		return nil, err
@@ -102,7 +102,7 @@ func (t JavaSDK) Publish(
 var javaVersionRe = regexp.MustCompile(`<daggerengine\.version>([0-9\.\-a-zA-Z]+)<\/daggerengine\.version>`)
 
 // Bump the Java SDK's Engine dependency
-func (t JavaSDK) Bump(ctx context.Context, version string) (*Directory, error) {
+func (t JavaSDK) Bump(ctx context.Context, version string) (*dagger.Directory, error) {
 	contents, err := t.Dagger.Source.File(javaSDKVersionPomPath).Contents(ctx)
 	if err != nil {
 		return nil, err

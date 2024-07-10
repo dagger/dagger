@@ -1,0 +1,6 @@
+kind: Breaking
+body: 'api: skip entrypoint by default in `withExec`'
+time: 2024-05-29T10:20:31.747277Z
+custom:
+  Author: helderco
+  PR: "7136"

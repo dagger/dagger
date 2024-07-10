@@ -106,8 +106,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 			require.NotContains(t, bundleContents, f.caCertContents)
 
 			ctr, err = ctr.
-				WithNewFile("/src/main.go", dagger.ContainerWithNewFileOpts{
-					Contents: `package main
+				WithNewFile("/src/main.go", `package main
 
 					import (
 						"fmt"
@@ -131,8 +130,8 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 							panic("unexpected response: " + string(bs))
 						}
 					}
-					`,
-				}).
+                    `,
+				).
 				WithWorkdir("/src").
 				WithExec([]string{"go", "mod", "init", "test"}).
 				WithExec([]string{"go", "run", "main.go"}).
@@ -232,8 +231,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 			ctr, err := c.Container().From(debianImage).
 				WithExec([]string{"apt", "update"}).
 				WithExec([]string{"apt", "install", "-y", "golang"}).
-				WithNewFile("/src/main.go", dagger.ContainerWithNewFileOpts{
-					Contents: `package main
+				WithNewFile("/src/main.go", `package main
 
 						import (
 							"fmt"
@@ -258,7 +256,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 							}
 						}
 						`,
-				}).
+				).
 				WithWorkdir("/src").
 				WithExec([]string{"go", "mod", "init", "test"}).
 				WithExec([]string{"go", "run", "main.go"}).
@@ -543,8 +541,7 @@ func newGeneratedCerts(c *dagger.Client, caHostname string) *generatedCerts {
 			"-passin", "pass:" + password,
 			"-subj", "/C=US/ST=CA/L=San Francisco/O=Example/CN=" + caHostname,
 		}).
-		WithNewFile("/ca.ext", dagger.ContainerWithNewFileOpts{
-			Contents: fmt.Sprintf(`basicConstraints=critical,CA:TRUE,pathlen:0
+		WithNewFile("/ca.ext", fmt.Sprintf(`basicConstraints=critical,CA:TRUE,pathlen:0
 keyUsage=critical,keyCertSign,cRLSign
 subjectKeyIdentifier=hash
 authorityKeyIdentifier=keyid:always,issuer:always
@@ -553,7 +550,7 @@ subjectAltName=@alt_names
 [alt_names]
 DNS.1 = %s
 `, caHostname),
-		}).
+		).
 		WithExec([]string{
 			"openssl", "x509",
 			"-req",
@@ -595,8 +592,7 @@ func (g *generatedCerts) newServerCerts(serverHostname string) (*dagger.File, *d
 			"-passin", "pass:" + g.password,
 			"-subj", "/C=US/ST=CA/L=San Francisco/O=Example/CN=" + serverHostname,
 		}).
-		WithNewFile("/server.ext", dagger.ContainerWithNewFileOpts{
-			Contents: fmt.Sprintf(`authorityKeyIdentifier=keyid,issuer
+		WithNewFile("/server.ext", fmt.Sprintf(`authorityKeyIdentifier=keyid,issuer
 basicConstraints=CA:FALSE
 keyUsage = digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment
 subjectAltName = @alt_names
@@ -604,7 +600,7 @@ subjectAltName = @alt_names
 [alt_names]
 DNS.1 = %s
 `, serverHostname),
-		}).
+		).
 		WithExec([]string{
 			"openssl", "x509",
 			"-req",
@@ -637,12 +633,11 @@ func nginxWithCerts(c *dagger.Client, opts nginxWithCertsOpts) *dagger.Container
 		WithMountedFile("/etc/ssl/certs/server.crt", opts.serverCert).
 		WithMountedFile("/etc/ssl/certs/dhparam.pem", opts.dhParam).
 		WithMountedFile("/etc/ssl/private/server.key", opts.serverKey).
-		WithNewFile("/etc/nginx/snippets/self-signed.conf", dagger.ContainerWithNewFileOpts{
-			Contents: `ssl_certificate /etc/ssl/certs/server.crt;
+		WithNewFile("/etc/nginx/snippets/self-signed.conf", `ssl_certificate /etc/ssl/certs/server.crt;
 ssl_certificate_key /etc/ssl/private/server.key;
 `,
-		}).WithNewFile("/etc/nginx/snippets/ssl-params.conf", dagger.ContainerWithNewFileOpts{
-		Contents: `ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
+		).
+		WithNewFile("/etc/nginx/snippets/ssl-params.conf", `ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
 ssl_prefer_server_ciphers on;
 ssl_ciphers 'EECDH+AESGCM:EDH+AESGCM:AES256+EECDH:AES256+EDH';
 ssl_ecdh_curve secp384r1;
@@ -654,7 +649,7 @@ add_header X-Frame-Options DENY;
 add_header X-Content-Type-Options nosniff;
 ssl_dhparam /etc/ssl/certs/dhparam.pem;
 `,
-	})
+		)
 
 	conf := fmt.Sprintf(`server {
 	listen 443 ssl http2 default_server;
@@ -689,7 +684,7 @@ ssl_dhparam /etc/ssl/certs/dhparam.pem;
 	}
 
 	return ctr.
-		WithNewFile("/etc/nginx/conf.d/default.conf", dagger.ContainerWithNewFileOpts{Contents: conf}).
+		WithNewFile("/etc/nginx/conf.d/default.conf", conf).
 		WithExec([]string{"nginx", "-t"}).
 		WithExposedPort(80).
 		WithExposedPort(443).

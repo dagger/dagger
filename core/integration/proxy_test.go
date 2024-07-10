@@ -172,7 +172,7 @@ http_access allow localhost
 	squidConf += "http_access deny all\n"
 
 	squidSvc := squid.
-		WithNewFile("/etc/squid/squid.conf", dagger.ContainerWithNewFileOpts{Contents: squidConf}).
+		WithNewFile("/etc/squid/squid.conf", squidConf).
 		WithServiceBinding(httpServerAlias, httpServer.AsService()).
 		WithServiceBinding(noproxyHTTPServerAlias, noproxyHTTPServer.AsService()).
 		WithExec([]string{"sh", "-c", "chmod -R a+rw /var/log/squidaccess && exec squid --foreground"}).
@@ -190,7 +190,7 @@ http_access allow localhost
 			return ctr.
 				// go right to /etc/ssl/certs to avoid testing the custom CA cert support (covered elsewhere)
 				WithMountedFile("/etc/ssl/certs/myCA.pem", certGen.caRootCert).
-				WithExec([]string{"update-ca-certificates"}, dagger.ContainerWithExecOpts{SkipEntrypoint: true}).
+				WithExec([]string{"update-ca-certificates"}).
 				WithEnvVariable("HTTP_PROXY", squidHTTPURL.String()).
 				WithEnvVariable("HTTPS_PROXY", squidHTTPSURL.String()).
 				WithEnvVariable("NO_PROXY", noproxyHTTPServerAlias).

@@ -20,7 +20,7 @@ func (cli *CLI) File(
 
 	// +optional
 	platform dagger.Platform,
-) (*File, error) {
+) (*dagger.File, error) {
 	builder, err := build.NewBuilder(ctx, cli.Dagger.Source)
 	if err != nil {
 		return nil, err
@@ -41,19 +41,19 @@ const (
 func (cli *CLI) Publish(
 	ctx context.Context,
 
-	gitDir *Directory,
+	gitDir *dagger.Directory,
 
 	githubOrgName string,
-	githubToken *Secret,
+	githubToken *dagger.Secret,
 
-	goreleaserKey *Secret,
+	goreleaserKey *dagger.Secret,
 
-	awsAccessKeyID *Secret,
-	awsSecretAccessKey *Secret,
-	awsRegion *Secret,
-	awsBucket *Secret,
+	awsAccessKeyID *dagger.Secret,
+	awsSecretAccessKey *dagger.Secret,
+	awsRegion *dagger.Secret,
+	awsBucket *dagger.Secret,
 
-	artefactsFQDN *Secret,
+	artefactsFQDN *dagger.Secret,
 ) error {
 	args := []string{"release", "--clean", "--skip-validate", "--debug"}
 	if cli.Dagger.Version.Tag != "" {
@@ -126,7 +126,7 @@ func (cli *CLI) TestPublish(ctx context.Context) error {
 
 			eg.Go(func() error {
 				f, err := builder.
-					WithPlatform(Platform(platform)).
+					WithPlatform(dagger.Platform(platform)).
 					CLI(ctx)
 				if err != nil {
 					return err

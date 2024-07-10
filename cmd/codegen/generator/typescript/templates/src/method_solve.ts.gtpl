@@ -62,7 +62,7 @@
 	{{- end }}
 
 	{{- if .TypeRef }}
-    {{ if not $convertID }}const response: Awaited<{{ $promiseRetType }}> = {{ end }}await computeQuery(
+    const response: Awaited<{{ if $convertID }}{{ .TypeRef | FormatOutputType }}{{ else }}{{ $promiseRetType }}{{ end }}> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -93,7 +93,15 @@
     )
 
     {{ if $convertID -}}
-    return this
+    return new {{ $promiseRetType }}({
+      queryTree: [
+        {
+          operation: "load{{ $promiseRetType }}FromID",
+          args: { id: response },
+        },
+      ],
+      ctx: this._ctx,
+    })
     {{- else -}}
         {{- if and .TypeRef.IsList (IsListOfObject .TypeRef) }}
     return response.map(

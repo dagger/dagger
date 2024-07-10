@@ -56,17 +56,16 @@ func (RemoteCacheSuite) TestRegistry(ctx context.Context, t *testctx.T) {
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpointA).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", cacheEnv).
-		WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
-			Contents: `{
+		WithNewFile("/.dagger-query.txt", `{
 				container {
-					from(address: "` + alpineImage + `") {
+					from(address: "`+alpineImage+`") {
 						withExec(args: ["sh", "-c", "head -c 128 /dev/random | sha256sum"]) {
 							stdout
 						}
 					}
 				}
 			}`,
-		}).
+		).
 		WithExec([]string{
 			"sh", "-c", cliBinPath + ` query --doc .dagger-query.txt`,
 		}).Stdout(ctx)
@@ -83,17 +82,16 @@ func (RemoteCacheSuite) TestRegistry(ctx context.Context, t *testctx.T) {
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpointB).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", cacheEnv).
-		WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
-			Contents: `{
+		WithNewFile("/.dagger-query.txt", `{
 				container {
-					from(address: "` + alpineImage + `") {
+					from(address: "`+alpineImage+`") {
 						withExec(args: ["sh", "-c", "head -c 128 /dev/random | sha256sum"]) {
 							stdout
 						}
 					}
 				}
 			}`,
-		}).
+		).
 		WithExec([]string{
 			"sh", "-c", cliBinPath + " query --doc .dagger-query.txt",
 		}).Stdout(ctx)
@@ -136,15 +134,14 @@ func (RemoteCacheSuite) TestLazyBlobs(ctx context.Context, t *testctx.T) {
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpointA).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", cacheEnv).
-		WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
-			Contents: `{
+		WithNewFile("/.dagger-query.txt", `{
 				host {
 					directory(path: "/foo/bar") {
 						entries
 					}
 				}
 			}`,
-		}).
+		).
 		WithExec([]string{
 			"sh", "-c", cliBinPath + ` query --doc .dagger-query.txt`,
 		}).Stdout(ctx)
@@ -160,15 +157,14 @@ func (RemoteCacheSuite) TestLazyBlobs(ctx context.Context, t *testctx.T) {
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpointB).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", cacheEnv).
-		WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
-			Contents: `{
+		WithNewFile("/.dagger-query.txt", `{
 				host {
 					directory(path: "/foo/bar") {
 						entries
 					}
 				}
 			}`,
-		}).
+		).
 		WithExec([]string{
 			"sh", "-c", cliBinPath + " query --doc .dagger-query.txt",
 		}).Stdout(ctx)
@@ -184,7 +180,7 @@ func (RemoteCacheSuite) TestS3(ctx context.Context, t *testctx.T) {
 		s3 := c.Pipeline("s3").Container().From("minio/minio").
 			WithMountedCache("/data", c.CacheVolume("minio-cache")).
 			WithExposedPort(9000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
-			WithExec([]string{"server", "/data"}).
+			WithExec([]string{"minio", "server", "/data"}).
 			AsService()
 
 		s3Endpoint, err := s3.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 9000, Scheme: "http"})
@@ -192,8 +188,7 @@ func (RemoteCacheSuite) TestS3(ctx context.Context, t *testctx.T) {
 
 		minioStdout, err := c.Container().From("minio/mc").
 			WithServiceBinding("s3", s3).
-			WithEntrypoint([]string{"sh"}).
-			WithExec([]string{"-c", "mc alias set minio http://s3:9000 minioadmin minioadmin && mc mb minio/" + bucket}).
+			WithExec([]string{"sh", "-c", "mc alias set minio http://s3:9000 minioadmin minioadmin && mc mb minio/" + bucket}).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, minioStdout, "Bucket created successfully")
@@ -211,17 +206,16 @@ func (RemoteCacheSuite) TestS3(ctx context.Context, t *testctx.T) {
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpointA).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", s3Env).
-			WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
-				Contents: `{
+			WithNewFile("/.dagger-query.txt", `{
 						container {
-							from(address: "` + alpineImage + `") {
+							from(address: "`+alpineImage+`") {
 								withExec(args: ["sh", "-c", "head -c 128 /dev/random | sha256sum"]) {
 									stdout
 								}
 							}
 						}
 					}`,
-			}).
+			).
 			WithExec([]string{
 				"sh", "-c", cliBinPath + ` query --doc .dagger-query.txt`,
 			}).Stdout(ctx)
@@ -238,17 +232,16 @@ func (RemoteCacheSuite) TestS3(ctx context.Context, t *testctx.T) {
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpointB).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", s3Env).
-			WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
-				Contents: `{
+			WithNewFile("/.dagger-query.txt", `{
 						container {
-							from(address: "` + alpineImage + `") {
+							from(address: "`+alpineImage+`") {
 								withExec(args: ["sh", "-c", "head -c 128 /dev/random | sha256sum"]) {
 									stdout
 								}
 							}
 						}
 					}`,
-			}).
+			).
 			WithExec([]string{
 				"sh", "-c", cliBinPath + " query --doc .dagger-query.txt",
 			}).Stdout(ctx)
@@ -284,17 +277,16 @@ func (RemoteCacheSuite) TestRegistryMultipleConfigs(ctx context.Context, t *test
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpointA).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", cacheEnv).
-		WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
-			Contents: `{
+		WithNewFile("/.dagger-query.txt", `{
  				container {
- 					from(address: "` + alpineImage + `") {
+ 					from(address: "`+alpineImage+`") {
  						withExec(args: ["sh", "-c", "head -c 128 /dev/random | sha256sum"]) {
  							stdout
  						}
  					}
  				}
  			}`,
-		}).
+		).
 		WithExec([]string{
 			"sh", "-c", cliBinPath + ` query --doc .dagger-query.txt`,
 		}).Stdout(ctx)
@@ -311,17 +303,16 @@ func (RemoteCacheSuite) TestRegistryMultipleConfigs(ctx context.Context, t *test
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpointB).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", cacheConfigEnv1).
-		WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
-			Contents: `{
+		WithNewFile("/.dagger-query.txt", `{
  				container {
- 					from(address: "` + alpineImage + `") {
+ 					from(address: "`+alpineImage+`") {
  						withExec(args: ["sh", "-c", "head -c 128 /dev/random | sha256sum"]) {
  							stdout
  						}
  					}
  				}
  			}`,
-		}).
+		).
 		WithExec([]string{
 			"sh", "-c", cliBinPath + " query --doc .dagger-query.txt",
 		}).Stdout(ctx)
@@ -340,17 +331,16 @@ func (RemoteCacheSuite) TestRegistryMultipleConfigs(ctx context.Context, t *test
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpointC).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", cacheConfigEnv2).
-		WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
-			Contents: `{
+		WithNewFile("/.dagger-query.txt", `{
  				container {
- 					from(address: "` + alpineImage + `") {
+ 					from(address: "`+alpineImage+`") {
  						withExec(args: ["sh", "-c", "head -c 128 /dev/random | sha256sum"]) {
  							stdout
  						}
  					}
  				}
  			}`,
-		}).
+		).
 		WithExec([]string{
 			"sh", "-c", cliBinPath + " query --doc .dagger-query.txt",
 		}).Stdout(ctx)
@@ -384,17 +374,16 @@ func (RemoteCacheSuite) TestRegistrySeparateImportExport(ctx context.Context, t 
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpointA).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_EXPORT_CONFIG", cacheEnvA).
-		WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
-			Contents: `{
+		WithNewFile("/.dagger-query.txt", `{
 				container {
-					from(address: "` + alpineImage + `") {
+					from(address: "`+alpineImage+`") {
 						withExec(args: ["sh", "-c", "echo A >/dev/null; head -c 128 /dev/random | sha256sum"]) {
 							stdout
 						}
 					}
 				}
 			}`,
-		}).
+		).
 		WithExec([]string{
 			"sh", "-c", cliBinPath + ` query --doc .dagger-query.txt`,
 		}).Stdout(ctx)
@@ -410,17 +399,16 @@ func (RemoteCacheSuite) TestRegistrySeparateImportExport(ctx context.Context, t 
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpointB).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_EXPORT_CONFIG", cacheEnvB).
-		WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
-			Contents: `{
+		WithNewFile("/.dagger-query.txt", `{
 				container {
-					from(address: "` + alpineImage + `") {
+					from(address: "`+alpineImage+`") {
 						withExec(args: ["sh", "-c", "echo B >/dev/null; head -c 128 /dev/random | sha256sum"]) {
 							stdout
 						}
 					}
 				}
 			}`,
-		}).
+		).
 		WithExec([]string{
 			"sh", "-c", cliBinPath + ` query --doc .dagger-query.txt`,
 		}).Stdout(ctx)
@@ -438,10 +426,9 @@ func (RemoteCacheSuite) TestRegistrySeparateImportExport(ctx context.Context, t 
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpointC).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_IMPORT_CONFIG", strings.Join([]string{cacheEnvA, cacheEnvB}, ";")).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_EXPORT_CONFIG", cacheEnvC)
-	outputC, err := ctrC.WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
-		Contents: `{
+	outputC, err := ctrC.WithNewFile("/.dagger-query.txt", `{
 			container {
-				from(address: "` + alpineImage + `") {
+				from(address: "`+alpineImage+`") {
 					outputA: withExec(args: ["sh", "-c", "echo A >/dev/null; head -c 128 /dev/random | sha256sum"]) {
 						stdout
 					}
@@ -454,7 +441,7 @@ func (RemoteCacheSuite) TestRegistrySeparateImportExport(ctx context.Context, t 
 				}
 			}
 		}`,
-	}).WithExec([]string{
+	).WithExec([]string{
 		"sh", "-c", cliBinPath + ` query --doc .dagger-query.txt`,
 	}).Stdout(ctx)
 	require.NoError(t, err)
@@ -473,17 +460,16 @@ func (RemoteCacheSuite) TestRegistrySeparateImportExport(ctx context.Context, t 
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpointD).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_IMPORT_CONFIG", cacheEnvC).
-		WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
-			Contents: `{
+		WithNewFile("/.dagger-query.txt", `{
 				container {
-					from(address: "` + alpineImage + `") {
+					from(address: "`+alpineImage+`") {
 						outputC: withExec(args: ["sh", "-c", "echo C >/dev/null; head -c 128 /dev/random | sha256sum"]) {
 							stdout
 						}
 					}
 				}
 			}`,
-		}).
+		).
 		WithExec([]string{
 			"sh", "-c", cliBinPath + ` query --doc .dagger-query.txt`,
 		}).Stdout(ctx)
@@ -534,9 +520,9 @@ func (RemoteCacheSuite) TestRegistryFastCacheBlobSource(ctx context.Context, t *
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpointA).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_EXPORT_CONFIG", cacheConfig).
-		WithNewFile("/foo/bar")
+		WithNewFile("/foo/bar", "")
 	dirA, err := a.
-		WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{Contents: dir}).
+		WithNewFile("/.dagger-query.txt", dir).
 		WithExec([]string{
 			"sh", "-c", cliBinPath + ` query --doc .dagger-query.txt`,
 		}).Stdout(ctx)
@@ -544,7 +530,7 @@ func (RemoteCacheSuite) TestRegistryFastCacheBlobSource(ctx context.Context, t *
 	dirAID := strings.TrimSpace(gjson.Get(dirA, "host.directory.id").String())
 	require.NotEmpty(t, dirAID)
 	outputA, err := a.
-		WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{Contents: fmt.Sprintf(query, dirAID)}).
+		WithNewFile("/.dagger-query.txt", fmt.Sprintf(query, dirAID)).
 		WithExec([]string{
 			"sh", "-c", cliBinPath + ` query --doc .dagger-query.txt`,
 		}).Stdout(ctx)
@@ -561,9 +547,9 @@ func (RemoteCacheSuite) TestRegistryFastCacheBlobSource(ctx context.Context, t *
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpointB).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_IMPORT_CONFIG", cacheConfig).
-		WithNewFile("/foo/bar")
+		WithNewFile("/foo/bar", "")
 	dirB, err := b.
-		WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{Contents: dir}).
+		WithNewFile("/.dagger-query.txt", dir).
 		WithExec([]string{
 			"sh", "-c", cliBinPath + ` query --doc .dagger-query.txt`,
 		}).Stdout(ctx)
@@ -571,7 +557,7 @@ func (RemoteCacheSuite) TestRegistryFastCacheBlobSource(ctx context.Context, t *
 	dirBID := strings.TrimSpace(gjson.Get(dirB, "host.directory.id").String())
 	require.NotEmpty(t, dirBID)
 	outputB, err := b.
-		WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{Contents: fmt.Sprintf(query, dirBID)}).
+		WithNewFile("/.dagger-query.txt", fmt.Sprintf(query, dirBID)).
 		WithExec([]string{
 			"sh", "-c", cliBinPath + " query --doc .dagger-query.txt",
 		}).Stdout(ctx)

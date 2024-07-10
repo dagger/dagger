@@ -62,7 +62,6 @@ func (container *Container) Terminal(
 	))
 	container, err = container.WithExec(ctx, ContainerExecOpts{
 		Args:                          args.Cmd,
-		SkipEntrypoint:                true,
 		ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting.Value.Bool(),
 		InsecureRootCapabilities:      args.InsecureRootCapabilities.Value.Bool(),
 	})

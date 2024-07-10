@@ -267,9 +267,14 @@ export type ContainerWithEnvVariableOpts = {
 
 export type ContainerWithExecOpts = {
   /**
-   * If the container has an entrypoint, ignore it for args rather than using it to wrap them.
+   * DEPRECATED: For true this can be removed. For false, use `useEntrypoint` instead.
    */
   skipEntrypoint?: boolean
+
+  /**
+   * If the container has an entrypoint, prepend it to the args.
+   */
+  useEntrypoint?: boolean
 
   /**
    * Content to write to the command's standard input before closing (e.g., "Hello world").
@@ -412,11 +417,6 @@ export type ContainerWithMountedSecretOpts = {
 }
 
 export type ContainerWithNewFileOpts = {
-  /**
-   * Content of the file to write (e.g., "Hello world!").
-   */
-  contents?: string
-
   /**
    * Permission given to the written file (e.g., 0600).
    */
@@ -719,18 +719,6 @@ export type GeneratedCodeID = string & { __GeneratedCodeID: never }
  */
 export type GitModuleSourceID = string & { __GitModuleSourceID: never }
 
-export type GitRefTreeOpts = {
-  /**
-   * DEPRECATED: This option should be passed to `git` instead.
-   */
-  sshKnownHosts?: string
-
-  /**
-   * DEPRECATED: This option should be passed to `git` instead.
-   */
-  sshAuthSocket?: Socket
-}
-
 /**
  * The `GitRefID` scalar type represents an identifier for an object of type GitRef.
  */
@@ -950,21 +938,9 @@ export type PortID = string & { __PortID: never }
 
 export type ClientContainerOpts = {
   /**
-   * DEPRECATED: Use `loadContainerFromID` instead.
-   */
-  id?: ContainerID
-
-  /**
    * Platform to initialize the container with.
    */
   platform?: Platform
-}
-
-export type ClientDirectoryOpts = {
-  /**
-   * DEPRECATED: Use `loadDirectoryFromID` instead.
-   */
-  id?: DirectoryID
 }
 
 export type ClientGitOpts = {
@@ -1931,7 +1907,7 @@ export class Container extends BaseClient {
    * It doesn't run the default command if no exec has been set.
    */
   sync = async (): Promise<Container> => {
-    await computeQuery(
+    const response: Awaited<ContainerID> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -1941,7 +1917,15 @@ export class Container extends BaseClient {
       await this._ctx.connection(),
     )
 
-    return this
+    return new Container({
+      queryTree: [
+        {
+          operation: "loadContainerFromID",
+          args: { id: response },
+        },
+      ],
+      ctx: this._ctx,
+    })
   }
 
   /**
@@ -2105,7 +2089,8 @@ export class Container extends BaseClient {
    * @param args Command to run instead of the container's default command (e.g., ["run", "main.go"]).
    *
    * If empty, the container's default command is used.
-   * @param opts.skipEntrypoint If the container has an entrypoint, ignore it for args rather than using it to wrap them.
+   * @param opts.skipEntrypoint DEPRECATED: For true this can be removed. For false, use `useEntrypoint` instead.
+   * @param opts.useEntrypoint If the container has an entrypoint, prepend it to the args.
    * @param opts.stdin Content to write to the command's standard input before closing (e.g., "Hello world").
    * @param opts.redirectStdout Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
    * @param opts.redirectStderr Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
@@ -2388,7 +2373,7 @@ export class Container extends BaseClient {
   /**
    * Retrieves this container plus a new file written at the given path.
    * @param path Location of the written file (e.g., "/tmp/file.txt").
-   * @param opts.contents Content of the file to write (e.g., "Hello world!").
+   * @param contents Content of the file to write (e.g., "Hello world!").
    * @param opts.permissions Permission given to the written file (e.g., 0600).
    * @param opts.owner A user:group to set for the file.
    *
@@ -2396,13 +2381,17 @@ export class Container extends BaseClient {
    *
    * If the group is omitted, it defaults to the same as the user.
    */
-  withNewFile = (path: string, opts?: ContainerWithNewFileOpts): Container => {
+  withNewFile = (
+    path: string,
+    contents: string,
+    opts?: ContainerWithNewFileOpts,
+  ): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withNewFile",
-          args: { path, ...opts },
+          args: { path, contents, ...opts },
         },
       ],
       ctx: this._ctx,
@@ -3619,7 +3608,7 @@ export class Directory extends BaseClient {
    * Force evaluation in the engine.
    */
   sync = async (): Promise<Directory> => {
-    await computeQuery(
+    const response: Awaited<DirectoryID> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -3629,7 +3618,15 @@ export class Directory extends BaseClient {
       await this._ctx.connection(),
     )
 
-    return this
+    return new Directory({
+      queryTree: [
+        {
+          operation: "loadDirectoryFromID",
+          args: { id: response },
+        },
+      ],
+      ctx: this._ctx,
+    })
   }
 
   /**
@@ -4407,7 +4404,7 @@ export class File extends BaseClient {
    * Force evaluation in the engine.
    */
   sync = async (): Promise<File> => {
-    await computeQuery(
+    const response: Awaited<FileID> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -4417,7 +4414,15 @@ export class File extends BaseClient {
       await this._ctx.connection(),
     )
 
-    return this
+    return new File({
+      queryTree: [
+        {
+          operation: "loadFileFromID",
+          args: { id: response },
+        },
+      ],
+      ctx: this._ctx,
+    })
   }
 
   /**
@@ -5446,16 +5451,13 @@ export class GitRef extends BaseClient {
 
   /**
    * The filesystem tree at this ref.
-   * @param opts.sshKnownHosts DEPRECATED: This option should be passed to `git` instead.
-   * @param opts.sshAuthSocket DEPRECATED: This option should be passed to `git` instead.
    */
-  tree = (opts?: GitRefTreeOpts): Directory => {
+  tree = (): Directory => {
     return new Directory({
       queryTree: [
         ...this._queryTree,
         {
           operation: "tree",
-          args: { ...opts },
         },
       ],
       ctx: this._ctx,
@@ -7943,7 +7945,6 @@ export class Client extends BaseClient {
    * Creates a scratch container.
    *
    * Optional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.
-   * @param opts.id DEPRECATED: Use `loadContainerFromID` instead.
    * @param opts.platform Platform to initialize the container with.
    */
   container = (opts?: ClientContainerOpts): Container => {
@@ -8063,31 +8064,13 @@ export class Client extends BaseClient {
 
   /**
    * Creates an empty directory.
-   * @param opts.id DEPRECATED: Use `loadDirectoryFromID` instead.
    */
-  directory = (opts?: ClientDirectoryOpts): Directory => {
+  directory = (): Directory => {
     return new Directory({
       queryTree: [
         ...this._queryTree,
         {
           operation: "directory",
-          args: { ...opts },
-        },
-      ],
-      ctx: this._ctx,
-    })
-  }
-
-  /**
-   * @deprecated Use loadFileFromID instead.
-   */
-  file = (id: FileID): File => {
-    return new File({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "file",
-          args: { id },
         },
       ],
       ctx: this._ctx,
@@ -8933,23 +8916,6 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Loads a socket by its ID.
-   * @deprecated Use loadSocketFromID instead.
-   */
-  socket = (id: SocketID): Socket => {
-    return new Socket({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "socket",
-          args: { id },
-        },
-      ],
-      ctx: this._ctx,
-    })
-  }
-
-  /**
    * Create a new TypeDef.
    */
   typeDef = (): TypeDef => {
@@ -9338,7 +9304,7 @@ export class Service extends BaseClient {
    * Services bound to a Container do not need to be manually started.
    */
   start = async (): Promise<Service> => {
-    await computeQuery(
+    const response: Awaited<ServiceID> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -9348,7 +9314,15 @@ export class Service extends BaseClient {
       await this._ctx.connection(),
     )
 
-    return this
+    return new Service({
+      queryTree: [
+        {
+          operation: "loadServiceFromID",
+          args: { id: response },
+        },
+      ],
+      ctx: this._ctx,
+    })
   }
 
   /**
@@ -9356,7 +9330,7 @@ export class Service extends BaseClient {
    * @param opts.kill Immediately kill the service without waiting for a graceful exit
    */
   stop = async (opts?: ServiceStopOpts): Promise<Service> => {
-    await computeQuery(
+    const response: Awaited<ServiceID> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -9367,7 +9341,15 @@ export class Service extends BaseClient {
       await this._ctx.connection(),
     )
 
-    return this
+    return new Service({
+      queryTree: [
+        {
+          operation: "loadServiceFromID",
+          args: { id: response },
+        },
+      ],
+      ctx: this._ctx,
+    })
   }
 
   /**

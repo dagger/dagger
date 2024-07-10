@@ -1587,12 +1587,15 @@ pub struct ContainerWithExecOpts<'a> {
     /// Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
     #[builder(setter(into, strip_option), default)]
     pub redirect_stdout: Option<&'a str>,
-    /// If the container has an entrypoint, ignore it for args rather than using it to wrap them.
+    /// DEPRECATED: For true this can be removed. For false, use `useEntrypoint` instead.
     #[builder(setter(into, strip_option), default)]
     pub skip_entrypoint: Option<bool>,
     /// Content to write to the command's standard input before closing (e.g., "Hello world").
     #[builder(setter(into, strip_option), default)]
     pub stdin: Option<&'a str>,
+    /// If the container has an entrypoint, prepend it to the args.
+    #[builder(setter(into, strip_option), default)]
+    pub use_entrypoint: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithExposedPortOpts<'a> {
@@ -1673,9 +1676,6 @@ pub struct ContainerWithMountedSecretOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithNewFileOpts<'a> {
-    /// Content of the file to write (e.g., "Hello world!").
-    #[builder(setter(into, strip_option), default)]
-    pub contents: Option<&'a str>,
     /// A user:group to set for the file.
     /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
     /// If the group is omitted, it defaults to the same as the user.
@@ -2469,6 +2469,9 @@ impl Container {
         if let Some(skip_entrypoint) = opts.skip_entrypoint {
             query = query.arg("skipEntrypoint", skip_entrypoint);
         }
+        if let Some(use_entrypoint) = opts.use_entrypoint {
+            query = query.arg("useEntrypoint", use_entrypoint);
+        }
         if let Some(stdin) = opts.stdin {
             query = query.arg("stdin", stdin);
         }
@@ -2929,10 +2932,12 @@ impl Container {
     /// # Arguments
     ///
     /// * `path` - Location of the written file (e.g., "/tmp/file.txt").
+    /// * `contents` - Content of the file to write (e.g., "Hello world!").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_new_file(&self, path: impl Into<String>) -> Container {
+    pub fn with_new_file(&self, path: impl Into<String>, contents: impl Into<String>) -> Container {
         let mut query = self.selection.select("withNewFile");
         query = query.arg("path", path.into());
+        query = query.arg("contents", contents.into());
         Container {
             proc: self.proc.clone(),
             selection: query,
@@ -2944,17 +2949,17 @@ impl Container {
     /// # Arguments
     ///
     /// * `path` - Location of the written file (e.g., "/tmp/file.txt").
+    /// * `contents` - Content of the file to write (e.g., "Hello world!").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_new_file_opts<'a>(
         &self,
         path: impl Into<String>,
+        contents: impl Into<String>,
         opts: ContainerWithNewFileOpts<'a>,
     ) -> Container {
         let mut query = self.selection.select("withNewFile");
         query = query.arg("path", path.into());
-        if let Some(contents) = opts.contents {
-            query = query.arg("contents", contents);
-        }
+        query = query.arg("contents", contents.into());
         if let Some(permissions) = opts.permissions {
             query = query.arg("permissions", permissions);
         }
@@ -4818,15 +4823,6 @@ pub struct GitRef {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
-#[derive(Builder, Debug, PartialEq)]
-pub struct GitRefTreeOpts<'a> {
-    /// DEPRECATED: This option should be passed to `git` instead.
-    #[builder(setter(into, strip_option), default)]
-    pub ssh_auth_socket: Option<SocketId>,
-    /// DEPRECATED: This option should be passed to `git` instead.
-    #[builder(setter(into, strip_option), default)]
-    pub ssh_known_hosts: Option<&'a str>,
-}
 impl GitRef {
     /// The resolved commit id at this ref.
     pub async fn commit(&self) -> Result<String, DaggerError> {
@@ -4839,31 +4835,8 @@ impl GitRef {
         query.execute(self.graphql_client.clone()).await
     }
     /// The filesystem tree at this ref.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn tree(&self) -> Directory {
         let query = self.selection.select("tree");
-        Directory {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// The filesystem tree at this ref.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn tree_opts<'a>(&self, opts: GitRefTreeOpts<'a>) -> Directory {
-        let mut query = self.selection.select("tree");
-        if let Some(ssh_known_hosts) = opts.ssh_known_hosts {
-            query = query.arg("sshKnownHosts", ssh_known_hosts);
-        }
-        if let Some(ssh_auth_socket) = opts.ssh_auth_socket {
-            query = query.arg("sshAuthSocket", ssh_auth_socket);
-        }
         Directory {
             proc: self.proc.clone(),
             selection: query,
@@ -6092,18 +6065,9 @@ pub struct Query {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryContainerOpts {
-    /// DEPRECATED: Use `loadContainerFromID` instead.
-    #[builder(setter(into, strip_option), default)]
-    pub id: Option<ContainerId>,
     /// Platform to initialize the container with.
     #[builder(setter(into, strip_option), default)]
     pub platform: Option<Platform>,
-}
-#[derive(Builder, Debug, PartialEq)]
-pub struct QueryDirectoryOpts {
-    /// DEPRECATED: Use `loadDirectoryFromID` instead.
-    #[builder(setter(into, strip_option), default)]
-    pub id: Option<DirectoryId>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryGitOpts<'a> {
@@ -6229,9 +6193,6 @@ impl Query {
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn container_opts(&self, opts: QueryContainerOpts) -> Container {
         let mut query = self.selection.select("container");
-        if let Some(id) = opts.id {
-            query = query.arg("id", id);
-        }
         if let Some(platform) = opts.platform {
             query = query.arg("platform", platform);
         }
@@ -6284,44 +6245,9 @@ impl Query {
         query.execute(self.graphql_client.clone()).await
     }
     /// Creates an empty directory.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn directory(&self) -> Directory {
         let query = self.selection.select("directory");
         Directory {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Creates an empty directory.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn directory_opts(&self, opts: QueryDirectoryOpts) -> Directory {
-        let mut query = self.selection.select("directory");
-        if let Some(id) = opts.id {
-            query = query.arg("id", id);
-        }
-        Directory {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    pub fn file(&self, id: impl IntoID<FileId>) -> File {
-        let mut query = self.selection.select("file");
-        query = query.arg_lazy(
-            "id",
-            Box::new(move || {
-                let id = id.clone();
-                Box::pin(async move { id.into_id().await.unwrap().quote() })
-            }),
-        );
-        File {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -7289,22 +7215,6 @@ impl Query {
         query = query.arg("name", name.into());
         query = query.arg("plaintext", plaintext.into());
         Secret {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Loads a socket by its ID.
-    pub fn socket(&self, id: impl IntoID<SocketId>) -> Socket {
-        let mut query = self.selection.select("socket");
-        query = query.arg_lazy(
-            "id",
-            Box::new(move || {
-                let id = id.clone();
-                Box::pin(async move { id.into_id().await.unwrap().quote() })
-            }),
-        );
-        Socket {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),

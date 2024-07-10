@@ -7,6 +7,7 @@ import (
 
 	"github.com/moby/buildkit/identity"
 
+	"github.com/dagger/dagger/dev/internal/dagger"
 	"github.com/dagger/dagger/engine/distconsts"
 )
 
@@ -134,7 +135,7 @@ func (t *Test) test(
 	return err
 }
 
-func (t *Test) testCmd(ctx context.Context) (*Container, error) {
+func (t *Test) testCmd(ctx context.Context) (*dagger.Container, error) {
 	engine := t.Dagger.Engine().
 		WithConfig(`registry."registry:5000"`, `http = true`).
 		WithConfig(`registry."privateregistry:5000"`, `http = true`).
@@ -161,7 +162,7 @@ func (t *Test) testCmd(ctx context.Context) (*Container, error) {
 	// These are used by core/integration/remotecache_test.go
 	testEngineUtils := dag.Directory().
 		WithFile("engine.tar", devEngine.AsTarball()).
-		WithFile("dagger", devBinary, DirectoryWithFileOpts{
+		WithFile("dagger", devBinary, dagger.DirectoryWithFileOpts{
 			Permissions: 0755,
 		})
 
@@ -169,14 +170,14 @@ func (t *Test) testCmd(ctx context.Context) (*Container, error) {
 	devEngineSvc := devEngine.
 		WithServiceBinding("registry", registrySvc).
 		WithServiceBinding("privateregistry", privateRegistry()).
-		WithExposedPort(1234, ContainerWithExposedPortOpts{Protocol: Tcp}).
+		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
 		WithMountedCache(distconsts.EngineDefaultStateDir, dag.CacheVolume("dagger-dev-engine-test-state"+identity.NewID())).
-		WithExec(nil, ContainerWithExecOpts{
+		WithExec(nil, dagger.ContainerWithExecOpts{
 			InsecureRootCapabilities: true,
 		}).
 		AsService()
 
-	endpoint, err := devEngineSvc.Endpoint(ctx, ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
+	endpoint, err := devEngineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
 	if err != nil {
 		return nil, err
 	}
@@ -206,23 +207,23 @@ func (t *Test) testCmd(ctx context.Context) (*Container, error) {
 	return tests, nil
 }
 
-func registry() *Service {
+func registry() *dagger.Service {
 	return dag.Container().
 		From("registry:2").
-		WithExposedPort(5000, ContainerWithExposedPortOpts{Protocol: Tcp}).
+		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
 		WithExec(nil).
 		AsService()
 }
 
-func privateRegistry() *Service {
+func privateRegistry() *dagger.Service {
 	const htpasswd = "john:$2y$05$/iP8ud0Fs8o3NLlElyfVVOp6LesJl3oRLYoc3neArZKWX10OhynSC" //nolint:gosec
 	return dag.Container().
 		From("registry:2").
-		WithNewFile("/auth/htpasswd", ContainerWithNewFileOpts{Contents: htpasswd}).
+		WithNewFile("/auth/htpasswd", dagger.ContainerWithNewFileOpts{Contents: htpasswd}).
 		WithEnvVariable("REGISTRY_AUTH", "htpasswd").
 		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_REALM", "Registry Realm").
 		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_PATH", "/auth/htpasswd").
-		WithExposedPort(5000, ContainerWithExposedPortOpts{Protocol: Tcp}).
+		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
 		WithExec(nil).
 		AsService()
 }

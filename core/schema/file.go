@@ -16,11 +16,6 @@ type fileSchema struct {
 var _ SchemaResolvers = &fileSchema{}
 
 func (s *fileSchema) Install() {
-	dagql.Fields[*core.Query]{
-		dagql.Func("file", s.file).
-			Deprecated("Use `loadFileFromID` instead."),
-	}.Install(s.srv)
-
 	dagql.Fields[*core.File]{
 		Syncer[*core.File]().
 			Doc(`Force evaluation in the engine.`),
@@ -49,18 +44,6 @@ func (s *fileSchema) Install() {
 			ArgDoc("timestamp", `Timestamp to set dir/files in.`,
 				`Formatted in seconds following Unix epoch (e.g., 1672531199).`),
 	}.Install(s.srv)
-}
-
-type fileArgs struct {
-	ID core.FileID
-}
-
-func (s *fileSchema) file(ctx context.Context, parent *core.Query, args fileArgs) (*core.File, error) {
-	val, err := args.ID.Load(ctx, s.srv)
-	if err != nil {
-		return nil, err
-	}
-	return val.Self, nil
 }
 
 func (s *fileSchema) contents(ctx context.Context, file *core.File, args struct{}) (dagql.String, error) {

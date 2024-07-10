@@ -16,7 +16,10 @@ import (
 func (ModuleSuite) TestDaggerUp(ctx context.Context, t *testctx.T) {
 	modDir := t.TempDir()
 	err := os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
-import  "strconv"
+import (
+	"strconv"
+	"dagger/test/internal/dagger"
+)
 
 func New(
 	// +optional
@@ -37,7 +40,7 @@ func New(
 }
 
 type Test struct {
-	Ctr *Container
+	Ctr *dagger.Container
 }
 `), 0o644)
 	require.NoError(t, err)

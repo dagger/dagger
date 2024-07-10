@@ -4,9 +4,9 @@
   "dependencies": [
     {
       "name": "wolfi",
-      "source": "github.com/shykes/daggerverse/wolfi@dfb1f91fa463b779021d65011f0060f7decda0ba"
+      "source": "../wolfi"
     }
   ],
   "source": ".",
-  "engineVersion": "3dfbb7db81aa82db37a11d92cf4fa41239e173f0"
+  "engineVersion": "v0.11.9"
 }

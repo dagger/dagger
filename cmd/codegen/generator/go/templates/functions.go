@@ -48,18 +48,19 @@ type goTemplateFuncs struct {
 func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 	return template.FuncMap{
 		// common
-		"FormatReturnType": funcs.FormatReturnType,
-		"FormatInputType":  funcs.FormatInputType,
-		"FormatOutputType": funcs.FormatOutputType,
-		"GetArrayField":    funcs.GetArrayField,
-		"IsListOfObject":   funcs.IsListOfObject,
-		"ToLowerCase":      funcs.ToLowerCase,
-		"ToUpperCase":      funcs.ToUpperCase,
-		"ConvertID":        funcs.ConvertID,
-		"IsSelfChainable":  funcs.IsSelfChainable,
-		"IsIDableObject":   funcs.IsIDableObject,
-		"InnerType":        funcs.InnerType,
-		"ObjectName":       funcs.ObjectName,
+		"FormatReturnType":          funcs.FormatReturnType,
+		"FormatInputType":           funcs.FormatInputType,
+		"FormatOutputType":          funcs.FormatOutputType,
+		"GetArrayField":             funcs.GetArrayField,
+		"IsListOfObject":            funcs.IsListOfObject,
+		"ToLowerCase":               funcs.ToLowerCase,
+		"ToUpperCase":               funcs.ToUpperCase,
+		"ConvertID":                 funcs.ConvertID,
+		"IsSelfChainable":           funcs.IsSelfChainable,
+		"IsIDableObject":            funcs.IsIDableObject,
+		"InnerType":                 funcs.InnerType,
+		"ObjectName":                funcs.ObjectName,
+		"CheckVersionCompatibility": funcs.CheckVersionCompatibility,
 
 		// go specific
 		"Comment":                 funcs.comment,

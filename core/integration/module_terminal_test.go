@@ -26,7 +26,10 @@ func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 	t.Run("default arg /bin/sh", func(ctx context.Context, t *testctx.T) {
 		modDir := t.TempDir()
 		err := os.WriteFile(filepath.Join(modDir, "main.go"), []byte(fmt.Sprintf(`package main
-import "context"
+import (
+	"context"
+	"dagger/test/internal/dagger"
+)
 
 func New(ctx context.Context) *Test {
 	return &Test{
@@ -38,7 +41,7 @@ func New(ctx context.Context) *Test {
 }
 
 type Test struct {
-	Ctr *Container
+	Ctr *dagger.Container
 }
 `, alpineImage)), 0644)
 		require.NoError(t, err)
@@ -95,7 +98,11 @@ type Test struct {
 	t.Run("basic", func(ctx context.Context, t *testctx.T) {
 		modDir := t.TempDir()
 		err := os.WriteFile(filepath.Join(modDir, "main.go"), []byte(fmt.Sprintf(`package main
-	import "context"
+
+	import (
+		"context"
+		"dagger/test/internal/dagger"
+	)
 
 	func New(ctx context.Context) *Test {
 		return &Test{
@@ -108,7 +115,7 @@ type Test struct {
 	}
 
 	type Test struct {
-		Ctr *Container
+		Ctr *dagger.Container
 	}
 	`, alpineImage)), 0644)
 		require.NoError(t, err)
@@ -168,7 +175,11 @@ type Test struct {
 	t.Run("attachable", func(ctx context.Context, t *testctx.T) {
 		modDir := t.TempDir()
 		err := os.WriteFile(filepath.Join(modDir, "main.go"), []byte(fmt.Sprintf(`package main
-	import "context"
+
+	import (
+		"context"
+		"dagger/test/internal/dagger"
+	)
 
 	func New(ctx context.Context) *Test {
 		return &Test{
@@ -181,10 +192,10 @@ type Test struct {
 	}
 
 	type Test struct {
-		Ctr *Container
+		Ctr *dagger.Container
 	}
 
-	func (t *Test) Debug() *Container {
+	func (t *Test) Debug() *dagger.Container {
 		return t.Ctr.WithEnvVariable("COOLENV", "xoo").Terminal().WithEnvVariable("COOLENV", "yoo")
 	}
 	`, alpineImage)), 0644)
@@ -245,8 +256,10 @@ type Test struct {
 	t.Run("override args", func(ctx context.Context, t *testctx.T) {
 		modDir := t.TempDir()
 		err := os.WriteFile(filepath.Join(modDir, "main.go"), []byte(fmt.Sprintf(`package main
-	import "context"
-
+	import (
+		"context"
+		"dagger/test/internal/dagger"
+	)
 
 	func New(ctx context.Context) *Test {
 		return &Test{
@@ -260,7 +273,7 @@ type Test struct {
 	}
 
 	type Test struct {
-		Ctr *Container
+		Ctr *dagger.Container
 	}
 	`, alpineImage)), 0644)
 		require.NoError(t, err)
@@ -316,8 +329,11 @@ type Test struct {
 	t.Run("nested client", func(ctx context.Context, t *testctx.T) {
 		modDir := t.TempDir()
 		err := os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
-	import "context"
-	func New(ctx context.Context, nestedSrc *Directory) *Test {
+	import (
+		"context"
+		"dagger/test/internal/dagger"
+	)
+	func New(ctx context.Context, nestedSrc *dagger.Directory) *Test {
 		return &Test{
 			Ctr: dag.Container().
 				From("`+golangImage+`").
@@ -327,7 +343,7 @@ type Test struct {
 		}
 	}
 	type Test struct {
-		Ctr *Container
+		Ctr *dagger.Container
 	}
 	 `), 0644)
 		require.NoError(t, err)
@@ -403,7 +419,10 @@ type Test struct {
 	t.Run("directory", func(ctx context.Context, t *testctx.T) {
 		modDir := t.TempDir()
 		err := os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
-import "context"
+import (
+	"context"
+	"dagger/test/internal/dagger"
+)
 
 func New(ctx context.Context) *Test {
 	return &Test{
@@ -414,7 +433,7 @@ func New(ctx context.Context) *Test {
 }
 
 type Test struct {
-	Dir *Directory
+	Dir *dagger.Directory
 }
 `), 0644)
 		require.NoError(t, err)
@@ -465,7 +484,10 @@ type Test struct {
 	t.Run("on failure", func(ctx context.Context, t *testctx.T) {
 		modDir := t.TempDir()
 		err := os.WriteFile(filepath.Join(modDir, "main.go"), []byte(fmt.Sprintf(`package main
-	import "context"
+	import (
+		"context"
+		"dagger/test/internal/dagger"
+	)
 
 	func New(ctx context.Context) *Test {
 		return &Test{
@@ -476,7 +498,7 @@ type Test struct {
 	}
 
 	type Test struct {
-		Ctr *Container
+		Ctr *dagger.Container
 	}
 	`, alpineImage)), 0644)
 		require.NoError(t, err)
