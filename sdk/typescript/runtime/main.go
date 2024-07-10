@@ -34,9 +34,10 @@ const (
 type SupportedPackageManager string
 
 const (
-	Yarn SupportedPackageManager = "yarn"
-	Pnpm SupportedPackageManager = "pnpm"
-	Npm  SupportedPackageManager = "npm"
+	Yarn       SupportedPackageManager = "yarn"
+	Pnpm       SupportedPackageManager = "pnpm"
+	Npm        SupportedPackageManager = "npm"
+	BunManager SupportedPackageManager = "bun"
 )
 
 const YarnDefaultVersion = "1.22.22"
@@ -398,7 +399,13 @@ func (t *TypescriptSdk) detectPackageManager(ctx context.Context, modSource *Mod
 	// read contents of package.json
 	json, err := source.File("package.json").Contents(ctx)
 	if err == nil {
-		value := gjson.Get(json, "packageManager").String()
+		// Check if the dagger.runtime field is set to "bun" first
+		value := gjson.Get(json, "dagger.runtime").String()
+		if value != "" && strings.Contains(value, "bun") {
+			return BunManager, "", nil
+		}
+
+		value = gjson.Get(json, "packageManager").String()
 		if value != "" {
 			// Retrieve the package manager and version from the value (e.g., yarn@4.2.0, pnpm@8.5.1)
 			packageManager, version, _ := strings.Cut(value, "@")
@@ -426,6 +433,10 @@ func (t *TypescriptSdk) detectPackageManager(ctx context.Context, modSource *Mod
 		if slices.Contains(entries, "pnpm-lock.yaml") {
 			return Pnpm, "", nil
 		}
+
+		if slices.Contains(entries, "bun.lockb") {
+			return BunManager, "", nil
+		}
 	}
 
 	return Yarn, YarnDefaultVersion, nil
@@ -438,8 +449,8 @@ func generateLockFile(ctx context.Context, ctr *Container, packageManager Suppor
 		// So we use npm to generate the lockfile and then import it into yarn.
 		return ctr.
 			WithExec([]string{"corepack", "enable"}).
-			WithExec([]string{"corepack", "use", fmt.Sprintf("yarn@%s", version)}).			
-			WithExec([]string{"yarn", "install", "--mode" ,"update-lockfile"}), nil
+			WithExec([]string{"corepack", "use", fmt.Sprintf("yarn@%s", version)}).
+			WithExec([]string{"yarn", "install", "--mode", "update-lockfile"}), nil
 	case Pnpm:
 		return ctr.
 			WithExec([]string{"npm", "install", "-g", fmt.Sprintf("pnpm@%s", version)}).
@@ -448,6 +459,9 @@ func generateLockFile(ctx context.Context, ctr *Container, packageManager Suppor
 		return ctr.
 			WithExec([]string{"npm", "install", "-g", fmt.Sprintf("npm@%s", version)}).
 			WithExec([]string{"npm", "install", "--package-lock-only"}), nil
+	case BunManager:
+		return ctr.
+			WithExec([]string{"bun", "install", "--no-verify", "--no-progress"}), nil
 	default:
 		return nil, fmt.Errorf("detected unknown package manager: %s", packageManager)
 	}
@@ -474,6 +488,9 @@ func installNodeDependencies(ctx context.Context, ctr *Container, packageManager
 	case Npm:
 		return ctr.
 			WithExec([]string{"npm", "install"}), nil
+	case BunManager:
+		return ctr.
+			WithExec([]string{"bun", "install", "--no-verify", "--no-progress"}), nil
 	default:
 		return nil, fmt.Errorf("detected unknown package manager: %s", packageManager)
 	}
