@@ -1907,7 +1907,7 @@ export class Container extends BaseClient {
    * It doesn't run the default command if no exec has been set.
    */
   sync = async (): Promise<Container> => {
-    await computeQuery(
+    const response: Awaited<ContainerID> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -1917,7 +1917,15 @@ export class Container extends BaseClient {
       await this._ctx.connection(),
     )
 
-    return this
+    return new Container({
+      queryTree: [
+        {
+          operation: "loadContainerFromID",
+          args: { id: response },
+        },
+      ],
+      ctx: this._ctx,
+    })
   }
 
   /**
@@ -3600,7 +3608,7 @@ export class Directory extends BaseClient {
    * Force evaluation in the engine.
    */
   sync = async (): Promise<Directory> => {
-    await computeQuery(
+    const response: Awaited<DirectoryID> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -3610,7 +3618,15 @@ export class Directory extends BaseClient {
       await this._ctx.connection(),
     )
 
-    return this
+    return new Directory({
+      queryTree: [
+        {
+          operation: "loadDirectoryFromID",
+          args: { id: response },
+        },
+      ],
+      ctx: this._ctx,
+    })
   }
 
   /**
@@ -4388,7 +4404,7 @@ export class File extends BaseClient {
    * Force evaluation in the engine.
    */
   sync = async (): Promise<File> => {
-    await computeQuery(
+    const response: Awaited<FileID> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -4398,7 +4414,15 @@ export class File extends BaseClient {
       await this._ctx.connection(),
     )
 
-    return this
+    return new File({
+      queryTree: [
+        {
+          operation: "loadFileFromID",
+          args: { id: response },
+        },
+      ],
+      ctx: this._ctx,
+    })
   }
 
   /**
@@ -9280,7 +9304,7 @@ export class Service extends BaseClient {
    * Services bound to a Container do not need to be manually started.
    */
   start = async (): Promise<Service> => {
-    await computeQuery(
+    const response: Awaited<ServiceID> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -9290,7 +9314,15 @@ export class Service extends BaseClient {
       await this._ctx.connection(),
     )
 
-    return this
+    return new Service({
+      queryTree: [
+        {
+          operation: "loadServiceFromID",
+          args: { id: response },
+        },
+      ],
+      ctx: this._ctx,
+    })
   }
 
   /**
@@ -9298,7 +9330,7 @@ export class Service extends BaseClient {
    * @param opts.kill Immediately kill the service without waiting for a graceful exit
    */
   stop = async (opts?: ServiceStopOpts): Promise<Service> => {
-    await computeQuery(
+    const response: Awaited<ServiceID> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -9309,7 +9341,15 @@ export class Service extends BaseClient {
       await this._ctx.connection(),
     )
 
-    return this
+    return new Service({
+      queryTree: [
+        {
+          operation: "loadServiceFromID",
+          args: { id: response },
+        },
+      ],
+      ctx: this._ctx,
+    })
   }
 
   /**

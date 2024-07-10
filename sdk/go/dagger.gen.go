@@ -925,7 +925,13 @@ func (r *Container) Stdout(ctx context.Context) (string, error) {
 func (r *Container) Sync(ctx context.Context) (*Container, error) {
 	q := r.query.Select("sync")
 
-	return r, q.Execute(ctx)
+	var id ContainerID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Container{
+		query: q.Root().Select("loadContainerFromID").Arg("id", id),
+	}, nil
 }
 
 // ContainerTerminalOpts contains options for Container.Terminal
@@ -2511,7 +2517,13 @@ func (r *Directory) Pipeline(name string, opts ...DirectoryPipelineOpts) *Direct
 func (r *Directory) Sync(ctx context.Context) (*Directory, error) {
 	q := r.query.Select("sync")
 
-	return r, q.Execute(ctx)
+	var id DirectoryID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Directory{
+		query: q.Root().Select("loadDirectoryFromID").Arg("id", id),
+	}, nil
 }
 
 // DirectoryTerminalOpts contains options for Directory.Terminal
@@ -3224,7 +3236,13 @@ func (r *File) Size(ctx context.Context) (int, error) {
 func (r *File) Sync(ctx context.Context) (*File, error) {
 	q := r.query.Select("sync")
 
-	return r, q.Execute(ctx)
+	var id FileID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &File{
+		query: q.Root().Select("loadFileFromID").Arg("id", id),
+	}, nil
 }
 
 // Retrieves this file with its name set to the given name.
@@ -7191,7 +7209,13 @@ func (r *Service) Ports(ctx context.Context) ([]Port, error) {
 func (r *Service) Start(ctx context.Context) (*Service, error) {
 	q := r.query.Select("start")
 
-	return r, q.Execute(ctx)
+	var id ServiceID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Service{
+		query: q.Root().Select("loadServiceFromID").Arg("id", id),
+	}, nil
 }
 
 // ServiceStopOpts contains options for Service.Stop
@@ -7210,7 +7234,13 @@ func (r *Service) Stop(ctx context.Context, opts ...ServiceStopOpts) (*Service, 
 		}
 	}
 
-	return r, q.Execute(ctx)
+	var id ServiceID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Service{
+		query: q.Root().Select("loadServiceFromID").Arg("id", id),
+	}, nil
 }
 
 // ServiceUpOpts contains options for Service.Up
