@@ -50,7 +50,7 @@ Run a specific test (e.g. `TestModuleNamespacing`):
 
 Start a little dev shell with dagger-in-dagger:
 
-    dagger call -m dev --source=.:default dev
+    dagger call -m dev --source=.:default dev terminal
 
 ## Engine & CLI
 
