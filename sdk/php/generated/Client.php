@@ -51,12 +51,9 @@ class Client extends Client\AbstractClient
      *
      * Optional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.
      */
-    public function container(ContainerId|Container|null $id = null, ?Platform $platform = null): Container
+    public function container(?Platform $platform = null): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('container');
-        if (null !== $id) {
-        $innerQueryBuilder->setArgument('id', $id);
-        }
         if (null !== $platform) {
         $innerQueryBuilder->setArgument('platform', $platform);
         }
@@ -113,20 +110,10 @@ class Client extends Client\AbstractClient
     /**
      * Creates an empty directory.
      */
-    public function directory(DirectoryId|Directory|null $id = null): Directory
+    public function directory(): Directory
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('directory');
-        if (null !== $id) {
-        $innerQueryBuilder->setArgument('id', $id);
-        }
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    public function file(FileId|File $id): File
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('file');
-        $innerQueryBuilder->setArgument('id', $id);
-        return new \Dagger\File($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -671,16 +658,6 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder->setArgument('name', $name);
         $innerQueryBuilder->setArgument('plaintext', $plaintext);
         return new \Dagger\Secret($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Loads a socket by its ID.
-     */
-    public function socket(SocketId|Socket $id): Socket
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('socket');
-        $innerQueryBuilder->setArgument('id', $id);
-        return new \Dagger\Socket($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

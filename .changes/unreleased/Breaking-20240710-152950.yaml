@@ -1,0 +1,7 @@
+kind: Breaking
+body: Removed deprecated sshAuthSocket and sshKnownHosts args from GitRef.Tree (use
+  these args on Git)
+time: 2024-07-10T15:29:50.914518383+01:00
+custom:
+  Author: jedevc
+  PR: "6934"

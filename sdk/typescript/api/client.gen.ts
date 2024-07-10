@@ -719,18 +719,6 @@ export type GeneratedCodeID = string & { __GeneratedCodeID: never }
  */
 export type GitModuleSourceID = string & { __GitModuleSourceID: never }
 
-export type GitRefTreeOpts = {
-  /**
-   * DEPRECATED: This option should be passed to `git` instead.
-   */
-  sshKnownHosts?: string
-
-  /**
-   * DEPRECATED: This option should be passed to `git` instead.
-   */
-  sshAuthSocket?: Socket
-}
-
 /**
  * The `GitRefID` scalar type represents an identifier for an object of type GitRef.
  */
@@ -950,21 +938,9 @@ export type PortID = string & { __PortID: never }
 
 export type ClientContainerOpts = {
   /**
-   * DEPRECATED: Use `loadContainerFromID` instead.
-   */
-  id?: ContainerID
-
-  /**
    * Platform to initialize the container with.
    */
   platform?: Platform
-}
-
-export type ClientDirectoryOpts = {
-  /**
-   * DEPRECATED: Use `loadDirectoryFromID` instead.
-   */
-  id?: DirectoryID
 }
 
 export type ClientGitOpts = {
@@ -5451,16 +5427,13 @@ export class GitRef extends BaseClient {
 
   /**
    * The filesystem tree at this ref.
-   * @param opts.sshKnownHosts DEPRECATED: This option should be passed to `git` instead.
-   * @param opts.sshAuthSocket DEPRECATED: This option should be passed to `git` instead.
    */
-  tree = (opts?: GitRefTreeOpts): Directory => {
+  tree = (): Directory => {
     return new Directory({
       queryTree: [
         ...this._queryTree,
         {
           operation: "tree",
-          args: { ...opts },
         },
       ],
       ctx: this._ctx,
@@ -7948,7 +7921,6 @@ export class Client extends BaseClient {
    * Creates a scratch container.
    *
    * Optional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.
-   * @param opts.id DEPRECATED: Use `loadContainerFromID` instead.
    * @param opts.platform Platform to initialize the container with.
    */
   container = (opts?: ClientContainerOpts): Container => {
@@ -8068,31 +8040,13 @@ export class Client extends BaseClient {
 
   /**
    * Creates an empty directory.
-   * @param opts.id DEPRECATED: Use `loadDirectoryFromID` instead.
    */
-  directory = (opts?: ClientDirectoryOpts): Directory => {
+  directory = (): Directory => {
     return new Directory({
       queryTree: [
         ...this._queryTree,
         {
           operation: "directory",
-          args: { ...opts },
-        },
-      ],
-      ctx: this._ctx,
-    })
-  }
-
-  /**
-   * @deprecated Use loadFileFromID instead.
-   */
-  file = (id: FileID): File => {
-    return new File({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "file",
-          args: { id },
         },
       ],
       ctx: this._ctx,
@@ -8931,23 +8885,6 @@ export class Client extends BaseClient {
         {
           operation: "setSecret",
           args: { name, plaintext },
-        },
-      ],
-      ctx: this._ctx,
-    })
-  }
-
-  /**
-   * Loads a socket by its ID.
-   * @deprecated Use loadSocketFromID instead.
-   */
-  socket = (id: SocketID): Socket => {
-    return new Socket({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "socket",
-          args: { id },
         },
       ],
       ctx: this._ctx,

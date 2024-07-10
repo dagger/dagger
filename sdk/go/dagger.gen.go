@@ -4073,27 +4073,9 @@ func (r *GitRef) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// GitRefTreeOpts contains options for GitRef.Tree
-type GitRefTreeOpts struct {
-	// DEPRECATED: This option should be passed to `git` instead.
-	SSHKnownHosts string
-	// DEPRECATED: This option should be passed to `git` instead.
-	SSHAuthSocket *Socket
-}
-
 // The filesystem tree at this ref.
-func (r *GitRef) Tree(opts ...GitRefTreeOpts) *Directory {
+func (r *GitRef) Tree() *Directory {
 	q := r.query.Select("tree")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `sshKnownHosts` optional argument
-		if !querybuilder.IsZeroValue(opts[i].SSHKnownHosts) {
-			q = q.Arg("sshKnownHosts", opts[i].SSHKnownHosts)
-		}
-		// `sshAuthSocket` optional argument
-		if !querybuilder.IsZeroValue(opts[i].SSHAuthSocket) {
-			q = q.Arg("sshAuthSocket", opts[i].SSHAuthSocket)
-		}
-	}
 
 	return &Directory{
 		query: q,
@@ -6166,8 +6148,6 @@ func (r *Client) CacheVolume(key string) *CacheVolume {
 
 // ContainerOpts contains options for Client.Container
 type ContainerOpts struct {
-	// DEPRECATED: Use `loadContainerFromID` instead.
-	ID ContainerID
 	// Platform to initialize the container with.
 	Platform Platform
 }
@@ -6178,10 +6158,6 @@ type ContainerOpts struct {
 func (r *Client) Container(opts ...ContainerOpts) *Container {
 	q := r.query.Select("container")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `id` optional argument
-		if !querybuilder.IsZeroValue(opts[i].ID) {
-			q = q.Arg("id", opts[i].ID)
-		}
 		// `platform` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Platform) {
 			q = q.Arg("platform", opts[i].Platform)
@@ -6265,33 +6241,11 @@ func (r *Client) DefaultPlatform(ctx context.Context) (Platform, error) {
 	return response, q.Execute(ctx)
 }
 
-// DirectoryOpts contains options for Client.Directory
-type DirectoryOpts struct {
-	// DEPRECATED: Use `loadDirectoryFromID` instead.
-	ID DirectoryID
-}
-
 // Creates an empty directory.
-func (r *Client) Directory(opts ...DirectoryOpts) *Directory {
+func (r *Client) Directory() *Directory {
 	q := r.query.Select("directory")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `id` optional argument
-		if !querybuilder.IsZeroValue(opts[i].ID) {
-			q = q.Arg("id", opts[i].ID)
-		}
-	}
 
 	return &Directory{
-		query: q,
-	}
-}
-
-// Deprecated: Use LoadFileFromID instead.
-func (r *Client) File(id FileID) *File {
-	q := r.query.Select("file")
-	q = q.Arg("id", id)
-
-	return &File{
 		query: q,
 	}
 }
@@ -6893,18 +6847,6 @@ func (r *Client) SetSecret(name string, plaintext string) *Secret {
 	q = q.Arg("plaintext", plaintext)
 
 	return &Secret{
-		query: q,
-	}
-}
-
-// Loads a socket by its ID.
-//
-// Deprecated: Use LoadSocketFromID instead.
-func (r *Client) Socket(id SocketID) *Socket {
-	q := r.query.Select("socket")
-	q = q.Arg("id", id)
-
-	return &Socket{
 		query: q,
 	}
 }

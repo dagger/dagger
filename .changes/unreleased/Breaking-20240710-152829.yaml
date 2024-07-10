@@ -1,0 +1,7 @@
+kind: Breaking
+body: Removed ID parameters for Container, Directory and Socket (use loadContainerFromID,
+  loadDirectoryFromID and loadSocketFromID respectively)
+time: 2024-07-10T15:28:29.729470217+01:00
+custom:
+  Author: jedevc
+  PR: "6934"
