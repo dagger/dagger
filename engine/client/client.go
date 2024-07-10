@@ -68,8 +68,8 @@ type Params struct {
 
 	DisableHostRW bool
 
-	EngineCallback func(context.Context, string, string, string)
-	CloudCallback  func(context.Context, string, string)
+	EngineCallback   func(context.Context, string, string, string)
+	CloudURLCallback func(context.Context, string, string, bool)
 
 	EngineTrace sdktrace.SpanExporter
 	EngineLogs  sdklog.Exporter
@@ -322,9 +322,11 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 	if c.EngineCallback != nil {
 		c.EngineCallback(ctx, bkInfo.BuildkitVersion.Revision, bkInfo.BuildkitVersion.Version, c.ID)
 	}
-	if c.CloudCallback != nil {
+	if c.CloudURLCallback != nil {
 		if url, msg, ok := enginetel.URLForTrace(ctx); ok {
-			c.CloudCallback(ctx, url, msg)
+			c.CloudURLCallback(ctx, url, msg, ok)
+		} else {
+			c.CloudURLCallback(ctx, "https://dagger.cloud/traces/setup", "", ok)
 		}
 	}
 

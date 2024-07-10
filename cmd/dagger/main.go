@@ -16,7 +16,6 @@ import (
 	"unicode"
 
 	"dagger.io/dagger/telemetry"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-isatty"
 	"github.com/muesli/reflow/indent"
 	"github.com/muesli/reflow/wordwrap"
@@ -57,6 +56,7 @@ var (
 	debug       bool
 	progress    string
 	interactive bool
+	web         bool
 
 	stdoutIsTTY = isatty.IsTerminal(os.Stdout.Fd())
 	stderrIsTTY = isatty.IsTerminal(os.Stderr.Fd())
@@ -171,25 +171,7 @@ var rootCmd = &cobra.Command{
 				"name": cmdName,
 			})
 		}
-
 		return nil
-	},
-	PersistentPostRun: func(cmd *cobra.Command, args []string) {
-		highlight := lipgloss.NewStyle().
-			Bold(true).
-			Underline(true)
-		_, _, ok := enginetel.URLForTrace(cmd.Context())
-		switch {
-		case !ok &&
-			cmd.Flags().Changed("verbose") ||
-			cmd.Flags().Changed("debug") ||
-			cmd == moduleInitCmd:
-			fmt.Fprintf(cmd.ErrOrStderr(), `
-Log-in or create an account to visualize %s in Dagger Cloud:
-https://dagger.cloud/signup?quickstart=true
-
-`, highlight.Render(`pipeline traces`))
-		}
 	},
 }
 
@@ -201,6 +183,7 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.BoolVarP(&debug, "debug", "d", debug, "Show debug logs and full verbosity")
 	flags.StringVar(&progress, "progress", "auto", "Progress output format (auto, plain, tty)")
 	flags.BoolVarP(&interactive, "interactive", "i", false, "interactive mode will spawn a terminal on container exec failure")
+	flags.BoolVarP(&web, "web", "w", false, "open trace URL in default browser")
 
 	for _, fl := range []string{"workdir"} {
 		if err := flags.MarkHidden(fl); err != nil {
@@ -274,6 +257,7 @@ func main() {
 	opts.Verbosity -= quiet                        // lower verbosity with -q
 	opts.Silent = silent                           // show no progress
 	opts.Debug = debug                             // show everything
+	opts.OpenWeb = web
 	if progress == "auto" {
 		if hasTTY {
 			progress = "tty"

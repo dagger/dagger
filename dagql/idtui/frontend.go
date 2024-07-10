@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/rand"
 	"os"
 	"strings"
 	"time"
@@ -24,6 +25,12 @@ import (
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
 
+// having a bit of fun with these. cc @vito @jedevc
+var skipLoggedOutTraceMsgEnvs = []string{"NOTHANKS", "SHUTUP", "GOAWAY", "STOPIT"}
+
+var loggedOutTraceMsg = fmt.Sprintf("Setup full trace at %%s.\nTo turn this off, export %s=1",
+	skipLoggedOutTraceMsgEnvs[rand.Intn(len(skipLoggedOutTraceMsgEnvs))])
+
 type FrontendOpts struct {
 	// Debug tells the frontend to show everything and do one big final render.
 	Debug bool
@@ -39,6 +46,9 @@ type FrontendOpts struct {
 
 	// Remove completed things after this duration. (default 1s)
 	GCThreshold time.Duration
+
+	// Open web browser with the trace URL as soon as pipeline starts.
+	OpenWeb bool
 }
 
 type Frontend interface {
@@ -57,8 +67,8 @@ type Frontend interface {
 
 	// ConnectedToEngine is called when the CLI connects to an engine.
 	ConnectedToEngine(ctx context.Context, name string, version string, clientID string)
-	// ConnectedToCloud is called when the CLI has started emitting events to The Cloud.
-	ConnectedToCloud(ctx context.Context, url string, msg string)
+	// SetCloudURL is called after the CLI checks auth and sets the cloud URL.
+	SetCloudURL(ctx context.Context, url string, msg string, logged bool)
 }
 
 type Dump struct {
@@ -473,4 +483,13 @@ func renderPrimaryOutput(db *DB) error {
 		fmt.Fprintln(os.Stdout)
 	}
 	return nil
+}
+
+func skipLoggedOutTraceMsg() bool {
+	for _, env := range skipLoggedOutTraceMsgEnvs {
+		if os.Getenv(env) != "" {
+			return true
+		}
+	}
+	return false
 }
