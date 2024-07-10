@@ -71,7 +71,7 @@ func init() {
 
 	modulePublishCmd.Flags().BoolVarP(&force, "force", "f", false, "Force publish even if the git repository is not clean")
 	modFlag := *moduleFlags.Lookup("mod")
-	modFlag.Usage = modFlag.Usage[:strings.Index(modFlag.Usage, "containing that file.")-1]
+	modFlag.Usage = modFlag.Usage[:strings.Index(modFlag.Usage, " Either local path")-1]
 	modulePublishCmd.Flags().AddFlag(&modFlag)
 
 	moduleInstallCmd.Flags().StringVarP(&installName, "name", "n", "", "Name to use for the dependency in the module. Defaults to the name of the module being installed.")
