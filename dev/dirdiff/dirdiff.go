@@ -22,10 +22,10 @@ func (dd *Dirdiff) AssertEqual(
 ) error {
 	ctr := dag.
 		Wolfi().
-		Container().
-		WithExec([]string{"apk", "update"}).
-		// install diffutils, since busybox diff -r sometimes doesn't output anything
-		WithExec([]string{"apk", "add", "diffutils"}).
+		Container(dagger.WolfiContainerOpts{Packages: []string{
+			// install diffutils, since busybox diff -r sometimes doesn't output anything
+			"diffutils",
+		}}).
 		WithMountedDirectory("/mnt/a", a).
 		WithMountedDirectory("/mnt/b", b).
 		WithWorkdir("/mnt")
