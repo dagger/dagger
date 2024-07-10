@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"path/filepath"
+
+	"github.com/dagger/dagger/dev/dirdiff/internal/dagger"
 )
 
 type Dirdiff struct{}
@@ -12,9 +14,9 @@ type Dirdiff struct{}
 func (dd *Dirdiff) AssertEqual(
 	ctx context.Context,
 	// The first directory to compare
-	a *Directory,
+	a *dagger.Directory,
 	// The second directory to compare
-	b *Directory,
+	b *dagger.Directory,
 	// The paths to include in the comparison.
 	paths []string,
 ) error {

@@ -31,6 +31,13 @@ func loadFromIDGQLFieldName(spec NamedParsedType) string {
 	return fmt.Sprintf("load%s%sFromID", strcase.ToCamel(spec.ModuleName()), spec.Name())
 }
 
+func typeName(spec NamedParsedType) string {
+	if spec.ModuleName() == "" {
+		return fmt.Sprintf("dagger.%s", spec.Name())
+	}
+	return spec.Name()
+}
+
 // parseGoTypeReference parses a Go type and returns a TypeSpec for the type *reference* only.
 // So if the type is a struct or interface, the returned TypeSpec will not have all the fields,
 // only the type name and kind.
@@ -64,9 +71,6 @@ func (ps *parseState) parseGoTypeReference(typ types.Type, named *types.Named, i
 		}, nil
 
 	case *types.Basic:
-		if t.Kind() == types.Invalid {
-			return nil, fmt.Errorf("invalid type: %+v", t)
-		}
 		parsedType := &parsedPrimitiveType{goType: t, isPtr: isPtr}
 		if named != nil {
 			if enum, _ := ps.parseGoEnum(t, named); enum != nil {
@@ -153,15 +157,22 @@ var _ ParsedType = &parsedPrimitiveType{}
 
 func (spec *parsedPrimitiveType) TypeDefCode() (*Statement, error) {
 	var kind Code
-	switch spec.goType.Info() {
-	case types.IsString:
-		kind = Id("StringKind")
-	case types.IsInteger:
-		kind = Id("IntegerKind")
-	case types.IsBoolean:
-		kind = Id("BooleanKind")
-	default:
-		return nil, fmt.Errorf("unsupported basic type: %+v", spec.goType)
+	if spec.goType.Kind() == types.Invalid {
+		// NOTE: this is odd, but it doesn't matter, because the module won't
+		// pass the compilation step if there are invalid types - we just want
+		// to not error out horribly in codegen
+		kind = Id("dagger").Dot("VoidKind")
+	} else {
+		switch spec.goType.Info() {
+		case types.IsString:
+			kind = Id("dagger").Dot("StringKind")
+		case types.IsInteger:
+			kind = Id("dagger").Dot("IntegerKind")
+		case types.IsBoolean:
+			kind = Id("dagger").Dot("BooleanKind")
+		default:
+			return nil, fmt.Errorf("unsupported basic type: %+v", spec.goType)
+		}
 	}
 	var def *Statement
 	if spec.scalarType != nil {

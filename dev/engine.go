@@ -70,7 +70,7 @@ func (e *Engine) Container(
 
 	// +optional
 	platform dagger.Platform,
-) (*Container, error) {
+) (*dagger.Container, error) {
 	cfg, err := generateConfig(e.Trace, e.Config)
 	if err != nil {
 		return nil, err
@@ -125,7 +125,7 @@ func (e *Engine) Service(
 	name string,
 	// +optional
 	version *VersionInfo,
-) (*Service, error) {
+) (*dagger.Service, error) {
 	var cacheVolumeName string
 	if version != nil {
 		cacheVolumeName = "dagger-dev-engine-state-" + version.String()
@@ -145,14 +145,14 @@ func (e *Engine) Service(
 		return nil, err
 	}
 	devEngine = devEngine.
-		WithExposedPort(1234, ContainerWithExposedPortOpts{Protocol: Tcp}).
-		WithMountedCache(distconsts.EngineDefaultStateDir, dag.CacheVolume(cacheVolumeName), ContainerWithMountedCacheOpts{
+		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
+		WithMountedCache(distconsts.EngineDefaultStateDir, dag.CacheVolume(cacheVolumeName), dagger.ContainerWithMountedCacheOpts{
 			// only one engine can run off it's local state dir at a time; Private means that we will attempt to re-use
 			// these cache volumes if they are not already locked to another running engine but otherwise will create a new
 			// one, which gets us best-effort cache re-use for these nested engine services
-			Sharing: Private,
+			Sharing: dagger.Private,
 		}).
-		WithExec(nil, ContainerWithExecOpts{
+		WithExec(nil, dagger.ContainerWithExecOpts{
 			InsecureRootCapabilities: true,
 		})
 
@@ -203,7 +203,7 @@ func (e *Engine) Lint(
 }
 
 // Generate any engine-related files
-func (e *Engine) Generate() *Directory {
+func (e *Engine) Generate() *dagger.Directory {
 	generated := e.Dagger.Go().Env().
 		WithoutDirectory("sdk") // sdk generation happens separately
 
@@ -245,22 +245,22 @@ func (e *Engine) Publish(
 	tags string,
 
 	// +optional
-	platform []Platform,
+	platform []dagger.Platform,
 
 	// +optional
 	registry *string,
 	// +optional
 	registryUsername *string,
 	// +optional
-	registryPassword *Secret,
+	registryPassword *dagger.Secret,
 ) ([]string, error) {
 	if len(platform) == 0 {
-		platform = []Platform{Platform(platforms.DefaultString())}
+		platform = []dagger.Platform{dagger.Platform(platforms.DefaultString())}
 	}
 
 	refs := strings.Split(tags, ",")
 
-	engines := make([]*Container, 0, len(platform))
+	engines := make([]*dagger.Container, 0, len(platform))
 	for _, platform := range platform {
 		ctr, err := e.Container(ctx, platform)
 		if err != nil {
@@ -294,10 +294,10 @@ func (e *Engine) TestPublish(
 	ctx context.Context,
 
 	// +optional
-	platform []Platform,
+	platform []dagger.Platform,
 ) error {
 	if len(platform) == 0 {
-		platform = []Platform{Platform(platforms.DefaultString())}
+		platform = []dagger.Platform{dagger.Platform(platforms.DefaultString())}
 	}
 
 	var eg errgroup.Group
@@ -321,7 +321,7 @@ func (e *Engine) Scan(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	ignoreFiles := dag.Directory().WithDirectory("/", e.Dagger.Source, DirectoryWithDirectoryOpts{
+	ignoreFiles := dag.Directory().WithDirectory("/", e.Dagger.Source, dagger.DirectoryWithDirectoryOpts{
 		Include: []string{
 			".trivyignore",
 			".trivyignore.yml",

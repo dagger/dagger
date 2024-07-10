@@ -14,7 +14,7 @@ import (
 const errorTypeName = "error"
 
 var voidDef = Qual("dag", "TypeDef").Call().
-	Dot("WithKind").Call(Id("VoidKind")).
+	Dot("WithKind").Call(Id("dagger").Dot("VoidKind")).
 	Dot("WithOptional").Call(Lit(true))
 
 func (ps *parseState) parseGoFunc(parentType *types.Named, fn *types.Func) (*funcTypeSpec, error) {
@@ -132,13 +132,13 @@ func (spec *funcTypeSpec) TypeDefCode() (*Statement, error) {
 			if err := json.Unmarshal([]byte(argSpec.defaultValue), &v); err != nil {
 				return nil, fmt.Errorf("default value %q must be valid JSON: %w", argSpec.defaultValue, err)
 			}
-			argOptsCode = append(argOptsCode, Id("DefaultValue").Op(":").Id("JSON").Call(Lit(argSpec.defaultValue)))
+			argOptsCode = append(argOptsCode, Id("DefaultValue").Op(":").Id("dagger").Dot("JSON").Call(Lit(argSpec.defaultValue)))
 		}
 
 		// arguments to WithArg (args to arg... ugh, at least the name of the variable is honest?)
 		argTypeDefArgCode := []Code{Lit(argSpec.name), argTypeDefCode}
 		if len(argOptsCode) > 0 {
-			argTypeDefArgCode = append(argTypeDefArgCode, Id("FunctionWithArgOpts").Values(argOptsCode...))
+			argTypeDefArgCode = append(argTypeDefArgCode, Id("dagger").Dot("FunctionWithArgOpts").Values(argOptsCode...))
 		}
 		fnTypeDefCode = dotLine(fnTypeDefCode, "WithArg").Call(argTypeDefArgCode...)
 	}

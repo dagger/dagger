@@ -99,7 +99,7 @@ func (spec *parsedEnumType) TypeDefCode() (*Statement, error) {
 		withObjectOptsCode = append(withObjectOptsCode, Id("Description").Op(":").Lit(strings.TrimSpace(spec.doc)))
 	}
 	if len(withObjectOptsCode) > 0 {
-		withObjectArgsCode = append(withObjectArgsCode, Id("TypeDefWithEnumOpts").Values(withObjectOptsCode...))
+		withObjectArgsCode = append(withObjectArgsCode, Id("dagger").Dot("TypeDefWithEnumOpts").Values(withObjectOptsCode...))
 	}
 
 	typeDefCode := Qual("dag", "TypeDef").Call().Dot("WithEnum").Call(withObjectArgsCode...)
@@ -110,7 +110,7 @@ func (spec *parsedEnumType) TypeDefCode() (*Statement, error) {
 		}
 		if val.doc != "" {
 			fnTypeDefCode = append(fnTypeDefCode,
-				Id("TypeDefWithEnumValueOpts").Values(
+				Id("dagger").Dot("TypeDefWithEnumValueOpts").Values(
 					Id("Description").Op(":").Lit(strings.TrimSpace(val.doc)),
 				))
 		}

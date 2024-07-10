@@ -6,6 +6,7 @@ import (
 	"unicode"
 
 	"github.com/dagger/dagger/cmd/codegen/introspection"
+	"github.com/dagger/dagger/engine"
 )
 
 const (
@@ -224,4 +225,8 @@ func (c *CommonFunctions) formatType(r *introspection.TypeRef, scope string, inp
 	}
 
 	return "", fmt.Errorf("unexpected type kind %s", r.Kind)
+}
+
+func (c *CommonFunctions) CheckVersionCompatibility(version string, minVersion string) bool {
+	return engine.CheckVersionCompatibility(version, minVersion) == nil
 }

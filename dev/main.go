@@ -10,22 +10,22 @@ import (
 
 // A dev environment for the DaggerDev Engine
 type DaggerDev struct {
-	Source  *Directory // +private
+	Source  *dagger.Directory // +private
 	Version *VersionInfo
 
 	// Can be used by nested clients to forward docker credentials to avoid
 	// rate limits
-	DockerCfg *Secret // +private
+	DockerCfg *dagger.Secret // +private
 }
 
 func New(
 	ctx context.Context,
-	source *Directory,
+	source *dagger.Directory,
 
 	// +optional
 	version string,
 	// +optional
-	dockerCfg *Secret,
+	dockerCfg *dagger.Secret,
 ) (*DaggerDev, error) {
 	versionInfo, err := newVersion(ctx, source, version)
 	if err != nil {
@@ -80,7 +80,7 @@ func (dev *DaggerDev) Go() *GoToolchain {
 
 type GoToolchain struct {
 	// +private
-	*Go
+	*dagger.Go
 }
 
 // Run codegen (equivalent to `dagger develop`) in the specified subdirectories
@@ -97,7 +97,7 @@ func (gtc *GoToolchain) WithCodegen(subdirs []string) *GoToolchain {
 	return &GoToolchain{Go: dag.Go(src)}
 }
 
-func (gtc *GoToolchain) Env() *Container {
+func (gtc *GoToolchain) Env() *dagger.Container {
 	return gtc.Go.Env()
 }
 
@@ -156,11 +156,11 @@ func (dev *DaggerDev) Dev(
 	ctx context.Context,
 	// Mount a directory into the container's workdir, for convenience
 	// +optional
-	target *Directory,
+	target *dagger.Directory,
 	// Enable experimental GPU support
 	// +optional
 	experimentalGPUSupport bool,
-) (*Container, error) {
+) (*dagger.Container, error) {
 	if target == nil {
 		target = dag.Directory()
 	}

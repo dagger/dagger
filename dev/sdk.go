@@ -5,6 +5,7 @@ import (
 
 	"github.com/dagger/dagger/dev/internal/build"
 	"github.com/dagger/dagger/dev/internal/consts"
+	"github.com/dagger/dagger/dev/internal/dagger"
 )
 
 // A dev environment for the official Dagger SDKs
@@ -35,8 +36,8 @@ func (sdk *SDK) All() *AllSDK {
 type sdkBase interface {
 	Lint(ctx context.Context) error
 	Test(ctx context.Context) error
-	Generate(ctx context.Context) (*Directory, error)
-	Bump(ctx context.Context, version string) (*Directory, error)
+	Generate(ctx context.Context) (*dagger.Directory, error)
+	Bump(ctx context.Context, version string) (*dagger.Directory, error)
 }
 
 func (sdk *SDK) allSDKs() []sdkBase {
@@ -52,7 +53,7 @@ func (sdk *SDK) allSDKs() []sdkBase {
 	}
 }
 
-func (dev *DaggerDev) installer(ctx context.Context, name string) (func(*Container) *Container, error) {
+func (dev *DaggerDev) installer(ctx context.Context, name string) (func(*dagger.Container) *dagger.Container, error) {
 	engineSvc, err := dev.Engine().Service(ctx, name, dev.Version)
 	if err != nil {
 		return nil, err
@@ -64,7 +65,7 @@ func (dev *DaggerDev) installer(ctx context.Context, name string) (func(*Contain
 	}
 	cliBinaryPath := "/.dagger-cli"
 
-	return func(ctr *Container) *Container {
+	return func(ctr *dagger.Container) *dagger.Container {
 		ctr = ctr.
 			WithServiceBinding("dagger-engine", engineSvc).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://dagger-engine:1234").
@@ -79,7 +80,7 @@ func (dev *DaggerDev) installer(ctx context.Context, name string) (func(*Contain
 	}, nil
 }
 
-func (dev *DaggerDev) introspection(ctx context.Context, installer func(*Container) *Container) (*File, error) {
+func (dev *DaggerDev) introspection(ctx context.Context, installer func(*dagger.Container) *dagger.Container) (*dagger.File, error) {
 	builder, err := build.NewBuilder(ctx, dev.Source)
 	if err != nil {
 		return nil, err

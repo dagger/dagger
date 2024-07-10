@@ -12,7 +12,7 @@ import (
 type Shellcheck struct{}
 
 // Returns a container that echoes whatever string argument is provided
-func (m *Shellcheck) Check(ctx context.Context, file *File) (*Report, error) {
+func (m *Shellcheck) Check(ctx context.Context, file *dagger.File) (*Report, error) {
 	filename, err := file.Name(ctx)
 	if err != nil {
 		return nil, err
@@ -80,7 +80,7 @@ func (m *Shellcheck) Check(ctx context.Context, file *File) (*Report, error) {
 }
 
 type Report struct {
-	Target *File // +private
+	Target *dagger.File // +private
 
 	Issues    []Issue
 	JSON      string
@@ -107,7 +107,7 @@ func (r *Report) Assert() error {
 	return nil
 }
 
-func (r *Report) Fixed(ctx context.Context) (*File, error) {
+func (r *Report) Fixed(ctx context.Context) (*dagger.File, error) {
 	filename, err := r.Target.Name(ctx)
 	if err != nil {
 		return nil, err
@@ -140,7 +140,7 @@ func shellcheck(filename string, format string) []string {
 	}
 }
 
-func base() *Container {
+func base() *dagger.Container {
 	return dag.Container().
 		From("koalaman/shellcheck-alpine:v0.10.0").
 		WithoutEntrypoint()

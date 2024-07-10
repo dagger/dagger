@@ -78,7 +78,7 @@ func (ModuleSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 
 			type Dep struct {}
 
-			func (m *Dep) GetSource(ctx context.Context) *Directory {
+			func (m *Dep) GetSource(ctx context.Context) *dagger.Directory {
 				return dag.CurrentModule().Source()
 			}
 			`,
@@ -261,7 +261,10 @@ func (ModuleSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {
 			With(daggerExec("install", "--name", "foo", "./dep")).
 			WithNewFile("/work/main.go", `package main
 
-			import "context"
+			import (
+				"context"
+				"dagger/test/internal/dagger"
+			)
 
 			type Test struct {}
 
@@ -270,13 +273,13 @@ func (ModuleSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {
 			}
 
 			func (m *Test) GetObj(ctx context.Context) (string, error) {
-				var obj *FooObj
+				var obj *dagger.FooObj
 				obj = dag.Foo().GetDepObj()
 				return obj.Str(ctx)
 			}
 
 			func (m *Test) GetOtherObj(ctx context.Context) (string, error) {
-				var obj *FooOtherObj
+				var obj *dagger.FooOtherObj
 				obj = dag.Foo().GetOtherObj()
 				return obj.Str(ctx)
 			}
@@ -1125,9 +1128,13 @@ func (ModuleSuite) TestIncludeExclude(ctx context.Context, t *testctx.T) {
 		{
 			sdk: "go",
 			mainSource: `package main
+import (
+	"dagger/test/internal/dagger"
+)
+
 type Test struct {}
 
-func (m *Test) Fn() *Directory {
+func (m *Test) Fn() *dagger.Directory {
 	return dag.CurrentModule().Source()
 }
 			`,
@@ -1160,22 +1167,30 @@ class Test {
 		{
 			sdk: "coolsdk",
 			mainSource: `package main
+import (
+	"dagger/test/internal/dagger"
+)
+
 type Test struct {}
 
-func (m *Test) Fn() *Directory {
+func (m *Test) Fn() *dagger.Directory {
 	return dag.CurrentModule().Source()
 }
 `,
 			customSDKUnderlyingSDK: "go",
 			customSDKSource: `package main
 
+import (
+	"dagger/coolsdk/internal/dagger"
+)
+
 type Coolsdk struct {}
 
-func (m *Coolsdk) ModuleRuntime(modSource *ModuleSource, introspectionJson *File) *Container {
+func (m *Coolsdk) ModuleRuntime(modSource *dagger.ModuleSource, introspectionJson *dagger.File) *dagger.Container {
 	return modSource.WithSDK("go").AsModule().Runtime().WithEnvVariable("COOL", "true")
 }
 
-func (m *Coolsdk) Codegen(modSource *ModuleSource, introspectionJson *File) *GeneratedCode {
+func (m *Coolsdk) Codegen(modSource *dagger.ModuleSource, introspectionJson *dagger.File) *dagger.GeneratedCode {
 	return dag.GeneratedCode(modSource.WithSDK("go").AsModule().GeneratedContextDirectory())
 }
 
@@ -1278,14 +1293,18 @@ func (ModuleSuite) TestContextDefaultsToSourceRoot(ctx context.Context, t *testc
 		With(daggerExec("init", "--source=.", "--name=cool-sdk", "--sdk=go")).
 		WithNewFile("main.go", `package main
 
+import (
+	"dagger/cool-sdk/internal/dagger"
+)
+
 type CoolSdk struct {}
 
-func (m *CoolSdk) ModuleRuntime(modSource *ModuleSource, introspectionJson *File) *Container {
+func (m *CoolSdk) ModuleRuntime(modSource *dagger.ModuleSource, introspectionJson *dagger.File) *dagger.Container {
 	return modSource.WithSDK("go").AsModule().Runtime().
 		WithMountedDirectory("/da-context", modSource.ContextDirectory())
 }
 
-func (m *CoolSdk) Codegen(modSource *ModuleSource, introspectionJson *File) *GeneratedCode {
+func (m *CoolSdk) Codegen(modSource *dagger.ModuleSource, introspectionJson *dagger.File) *dagger.GeneratedCode {
 	return dag.GeneratedCode(modSource.WithSDK("go").AsModule().GeneratedContextDirectory())
 }
 
@@ -1350,7 +1369,7 @@ var vcsTestCases = []vcsTestCase{
 	{
 		name:                     "GitHub without .git",
 		gitTestRepoRef:           "github.com/dagger/dagger-test-modules",
-		gitTestRepoCommit:        "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
+		gitTestRepoCommit:        "8723e276a45b2e620ba3185cb07dc35e2be5bc86",
 		expectedHost:             "github.com",
 		expectedBaseHTMLURL:      "github.com/dagger/dagger-test-modules",
 		expectedURLPathComponent: "tree",
@@ -1358,7 +1377,7 @@ var vcsTestCases = []vcsTestCase{
 	{
 		name:                     "GitLab without .git",
 		gitTestRepoRef:           "gitlab.com/dagger-modules/test/more/dagger-test-modules-public",
-		gitTestRepoCommit:        "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
+		gitTestRepoCommit:        "8723e276a45b2e620ba3185cb07dc35e2be5bc86",
 		expectedHost:             "gitlab.com",
 		expectedBaseHTMLURL:      "gitlab.com/dagger-modules/test/more/dagger-test-modules-public",
 		expectedURLPathComponent: "tree",
@@ -1366,7 +1385,7 @@ var vcsTestCases = []vcsTestCase{
 	{
 		name:                     "BitBucket without .git",
 		gitTestRepoRef:           "bitbucket.org/dagger-modules/dagger-test-modules-public",
-		gitTestRepoCommit:        "2cb6cb4b0dba52c1e65b3ff46dd1a4a8f9a02f94",
+		gitTestRepoCommit:        "8723e276a45b2e620ba3185cb07dc35e2be5bc86",
 		expectedHost:             "bitbucket.org",
 		expectedBaseHTMLURL:      "bitbucket.org/dagger-modules/dagger-test-modules-public",
 		expectedURLPathComponent: "src",
@@ -1531,9 +1550,13 @@ func (ModuleSuite) TestViews(ctx context.Context, t *testctx.T) {
 		With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
 		WithNewFile("main.go", `package main
 
+import (
+	"dagger/test/internal/dagger"
+)
+
 type Test struct {}
 
-func (m *Test) Fn(dir *Directory) *Directory {
+func (m *Test) Fn(dir *dagger.Directory) *dagger.Directory {
 	return dir
 }
 `,

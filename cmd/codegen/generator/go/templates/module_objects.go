@@ -172,7 +172,7 @@ func (spec *parsedObjectType) TypeDefCode() (*Statement, error) {
 		withObjectOptsCode = append(withObjectOptsCode, Id("Description").Op(":").Lit(strings.TrimSpace(spec.doc)))
 	}
 	if len(withObjectOptsCode) > 0 {
-		withObjectArgsCode = append(withObjectArgsCode, Id("TypeDefWithObjectOpts").Values(withObjectOptsCode...))
+		withObjectArgsCode = append(withObjectArgsCode, Id("dagger").Dot("TypeDefWithObjectOpts").Values(withObjectOptsCode...))
 	}
 
 	typeDefCode := Qual("dag", "TypeDef").Call().Dot("WithObject").Call(withObjectArgsCode...)
@@ -200,7 +200,7 @@ func (spec *parsedObjectType) TypeDefCode() (*Statement, error) {
 		}
 		if field.doc != "" {
 			withFieldArgsCode = append(withFieldArgsCode,
-				Id("TypeDefWithFieldOpts").Values(
+				Id("dagger").Dot("TypeDefWithFieldOpts").Values(
 					Id("Description").Op(":").Lit(field.doc),
 				))
 		}
@@ -419,6 +419,14 @@ func (spec *parsedObjectType) concreteFieldTypeCode(typeSpec ParsedType) (*State
 		if typeSpec.alias != "" {
 			s.Id(typeSpec.alias)
 		} else {
+			tp := typeSpec.GoType()
+			if basic, ok := tp.(*types.Basic); ok {
+				if basic.Kind() == types.Invalid {
+					s.Id("any")
+					break
+				}
+			}
+
 			s.Id(typeSpec.GoType().String())
 		}
 
@@ -433,7 +441,7 @@ func (spec *parsedObjectType) concreteFieldTypeCode(typeSpec ParsedType) (*State
 		if typeSpec.isPtr {
 			s.Op("*")
 		}
-		s.Id(typeSpec.name)
+		s.Id(typeName(typeSpec))
 
 	case *parsedIfaceTypeReference:
 		s.Op("*").Id(formatIfaceImplName(typeSpec.name))

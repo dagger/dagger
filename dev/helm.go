@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/dagger/dagger/dev/internal/dagger"
 	"github.com/dagger/dagger/dev/internal/util"
 	"helm.sh/helm/v3/pkg/chart"
 	"sigs.k8s.io/yaml"
@@ -80,7 +81,7 @@ func (h *Helm) Publish(
 	tag string,
 
 	// +optional
-	githubToken *Secret,
+	githubToken *dagger.Secret,
 
 	// +optional
 	dryRun bool,

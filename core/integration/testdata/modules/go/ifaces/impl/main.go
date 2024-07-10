@@ -1,12 +1,16 @@
 package main
 
-import "context"
+import (
+	"context"
+
+	"dagger/main/internal/dagger"
+)
 
 func New(
 	strs []string,
 	ints []int,
 	bools []bool,
-	dirs []*Directory,
+	dirs []*dagger.Directory,
 ) *Impl {
 
 	return &Impl{
@@ -34,8 +38,8 @@ type Impl struct {
 	Bool     bool
 	BoolList []bool
 
-	Obj     *Directory
-	ObjList []*Directory
+	Obj     *dagger.Directory
+	ObjList []*dagger.Directory
 
 	Others      []*OtherImpl
 	OtherIfaces []LocalOtherIface
@@ -85,14 +89,14 @@ func (m Impl) WithBoolList(boolListArg []bool) *Impl {
 	return &m
 }
 
-func (m Impl) WithObj(objArg *Directory) *Impl {
+func (m Impl) WithObj(objArg *dagger.Directory) *Impl {
 	m.Obj = objArg
 	return &m
 }
 
 func (m Impl) WithOptionalPragmaObj(
 	// +optional
-	objArg *Directory,
+	objArg *dagger.Directory,
 ) *Impl {
 	if objArg != nil {
 		m.Obj = objArg
@@ -100,7 +104,7 @@ func (m Impl) WithOptionalPragmaObj(
 	return &m
 }
 
-func (m Impl) WithObjList(objListArg []*Directory) *Impl {
+func (m Impl) WithObjList(objListArg []*dagger.Directory) *Impl {
 	m.ObjList = objListArg
 	return &m
 }

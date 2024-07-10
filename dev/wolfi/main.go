@@ -4,6 +4,8 @@
 // https://wolfi.dev
 package main
 
+import "github.com/dagger/dagger/dev/wolfi/internal/dagger"
+
 // A Wolfi Linux configuration
 type Wolfi struct{}
 
@@ -15,8 +17,8 @@ func (w *Wolfi) Container(
 	// Overlay images to merge on top of the base.
 	// See https://twitter.com/ibuildthecloud/status/1721306361999597884
 	// +optional
-	overlays []*Container,
-) *Container {
+	overlays []*dagger.Container,
+) *dagger.Container {
 	ctr := dag.Apko().Wolfi(packages)
 	for _, overlay := range overlays {
 		ctr = ctr.WithDirectory("/", overlay.Rootfs())

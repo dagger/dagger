@@ -10,6 +10,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/dev/internal/consts"
+	"github.com/dagger/dagger/dev/internal/dagger"
 	"github.com/dagger/dagger/dev/internal/util"
 )
 
@@ -48,7 +49,7 @@ func (t GoSDK) Test(ctx context.Context) error {
 }
 
 // Regenerate the Go SDK API
-func (t GoSDK) Generate(ctx context.Context) (*Directory, error) {
+func (t GoSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 	installer, err := t.Dagger.installer(ctx, "sdk-go-generate")
 	if err != nil {
 		return nil, err
@@ -82,7 +83,7 @@ func (t GoSDK) Publish(
 	gitUserEmail string,
 
 	// +optional
-	githubToken *Secret,
+	githubToken *dagger.Secret,
 ) error {
 	return gitPublish(ctx, gitPublishOpts{
 		source:       "https://github.com/dagger/dagger.git",
@@ -100,7 +101,7 @@ func (t GoSDK) Publish(
 }
 
 // Bump the Go SDK's Engine dependency
-func (t GoSDK) Bump(ctx context.Context, version string) (*Directory, error) {
+func (t GoSDK) Bump(ctx context.Context, version string) (*dagger.Directory, error) {
 	// trim leading v from version
 	version = strings.TrimPrefix(version, "v")
 
@@ -122,11 +123,11 @@ type gitPublishOpts struct {
 	sourceTag, destTag string
 	sourcePath         string
 	sourceFilter       string
-	sourceEnv          *Container
+	sourceEnv          *dagger.Container
 
 	username    string
 	email       string
-	githubToken *Secret
+	githubToken *dagger.Secret
 
 	dryRun bool
 }

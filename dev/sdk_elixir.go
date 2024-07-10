@@ -65,7 +65,7 @@ func (t ElixirSDK) Test(ctx context.Context) error {
 }
 
 // Regenerate the Elixir SDK API
-func (t ElixirSDK) Generate(ctx context.Context) (*Directory, error) {
+func (t ElixirSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 	installer, err := t.Dagger.installer(ctx, "sdk-elixir-generate")
 	if err != nil {
 		return nil, err
@@ -133,7 +133,7 @@ func (t ElixirSDK) Publish(
 var elixirVersionRe = regexp.MustCompile(`@dagger_cli_version "([0-9\.-a-zA-Z]+)"`)
 
 // Bump the Elixir SDK's Engine dependency
-func (t ElixirSDK) Bump(ctx context.Context, version string) (*Directory, error) {
+func (t ElixirSDK) Bump(ctx context.Context, version string) (*dagger.Directory, error) {
 	contents, err := t.Dagger.Source.File(elixirSDKVersionFilePath).Contents(ctx)
 	if err != nil {
 		return nil, err
