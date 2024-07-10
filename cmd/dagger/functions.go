@@ -177,7 +177,7 @@ type FuncCommand struct {
 	// If set, it should make another selection on the object that results
 	// return no error. Otherwise if it doesn't handle the object, it should
 	// return an error.
-	OnSelectObjectLeaf func(*FuncCommand, functionProvider) error
+	OnSelectObjectLeaf func(context.Context, *FuncCommand, functionProvider) error
 
 	// BeforeRequest is called before making the request with the query that
 	// contains the whole chain of functions.
@@ -657,7 +657,7 @@ func (fc *FuncCommand) selectFunc(fn *modFunction, cmd *cobra.Command) error {
 
 func (fc *FuncCommand) Select(name ...string) {
 	if fc.q == nil {
-		fc.q = querybuilder.Query()
+		fc.q = querybuilder.Query().Client(fc.c.Dagger().GraphQLClient())
 	}
 	fc.q = fc.q.Select(name...)
 }
@@ -679,7 +679,7 @@ func (fc *FuncCommand) RunE(ctx context.Context, typeDef *modTypeDef) func(*cobr
 			obj := t.AsFunctionProvider()
 
 			if fc.OnSelectObjectLeaf != nil {
-				if err := fc.OnSelectObjectLeaf(fc, obj); err != nil {
+				if err := fc.OnSelectObjectLeaf(ctx, fc, obj); err != nil {
 					return fmt.Errorf("invalid selection for command %q: %w", cmd.Name(), err)
 				}
 			}
@@ -706,16 +706,10 @@ func (fc *FuncCommand) RunE(ctx context.Context, typeDef *modTypeDef) func(*cobr
 			}
 		}
 
-		query, _ := fc.q.Build(ctx)
-
-		slog.Debug("executing query", "query", query)
-
 		var response any
 
-		q := fc.q.Bind(&response).Client(fc.c.Dagger().GraphQLClient())
-
-		if err := q.Execute(ctx); err != nil {
-			return fmt.Errorf("response from query: %w", err)
+		if err := fc.Request(ctx, &response); err != nil {
+			return err
 		}
 
 		if typeDef.Kind == dagger.VoidKind {
@@ -730,4 +724,18 @@ func (fc *FuncCommand) RunE(ctx context.Context, typeDef *modTypeDef) func(*cobr
 
 		return nil
 	}
+}
+
+func (fc *FuncCommand) Request(ctx context.Context, response any) error {
+	query, _ := fc.q.Build(ctx)
+
+	slog.Debug("executing query", "query", query)
+
+	q := fc.q.Bind(&response)
+
+	if err := q.Execute(ctx); err != nil {
+		return fmt.Errorf("response from query: %w", err)
+	}
+
+	return nil
 }

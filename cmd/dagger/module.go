@@ -990,6 +990,9 @@ var skipLeaves = map[string][]string{
 		// imageRef should only be requested right after a `from`, and that's
 		// hard to check for here.
 		"imageRef",
+		// stdout and stderr may be arbitrarily large and jarring to see (e.g. test suites)
+		"stdout",
+		"stderr",
 	},
 	"File": {
 		// This could be a binary file, so until we can tell which type of

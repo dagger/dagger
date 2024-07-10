@@ -785,12 +785,19 @@ func (m *Minimal) Fn() []*Foo {
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 			WithNewFile("main.go", fmt.Sprintf(`package main
 
-func New() *Test {
-	return &Test{Ctr: dag.Container().From("%s").WithExec([]string{"echo", "hello", "world"})}
+type Test struct {}
+
+func (m *Test) Ctr() *Container {
+    return dag.Container().
+        From("%[1]s").
+        WithDefaultArgs([]string{"echo", "hello"}).
+        WithExec([]string{})
 }
 
-type Test struct {
-	Ctr *Container
+func (m *Test) Fail() *Container {
+    return dag.Container().
+        From("%[1]s").
+        WithExec([]string{"sh", "-c", "echo goodbye; exit 127"})
 }
 `, alpineImage),
 			)
@@ -800,8 +807,17 @@ type Test struct {
 		t.Run("default", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("ctr")).Stdout(ctx)
 			require.NoError(t, err)
-			actual := gjson.Get(out, "[@this].#(_type==Container).stdout").String()
-			require.Equal(t, "hello world\n", actual)
+			require.JSONEq(t,
+				`["echo", "hello"]`,
+				gjson.Get(out, "[@this].#(_type==Container).defaultArgs").Raw,
+			)
+		})
+
+		t.Run("exec", func(ctx context.Context, t *testctx.T) {
+			// Container doesn't show output but executes withExecs
+			out, err := modGen.With(daggerCall("fail")).Stdout(ctx)
+			require.ErrorContains(t, err, "goodbye")
+			require.NotContains(t, out, "goodbye")
 		})
 
 		t.Run("output", func(ctx context.Context, t *testctx.T) {
