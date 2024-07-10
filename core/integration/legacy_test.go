@@ -260,6 +260,8 @@ func (LegacySuite) TestExecWithEntrypoint(ctx context.Context, t *testctx.T) {
 		WithNewFile("dagger.json", `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.11.9"}`).
 		WithNewFile("main.go", fmt.Sprintf(`package main
 
+import "dagger/test/internal/dagger"
+
 func New() *Test {
     return &Test{
         Container: dag.Container().
@@ -269,16 +271,16 @@ func New() *Test {
 }
 
 type Test struct {
-    Container *Container
+    Container *dagger.Container
 }
 
-func (m *Test) Use() *Container {
+func (m *Test) Use() *dagger.Container {
     return m.Container.WithExec([]string{"hello"})
 
 }
 
-func (m *Test) Skip() *Container {
-    return m.Container.WithExec([]string{"echo", "hello"}, ContainerWithExecOpts{
+func (m *Test) Skip() *dagger.Container {
+    return m.Container.WithExec([]string{"echo", "hello"}, dagger.ContainerWithExecOpts{
         SkipEntrypoint: true,
     })
 }
