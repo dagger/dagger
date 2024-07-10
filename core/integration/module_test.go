@@ -6784,7 +6784,13 @@ func hostDaggerExec(ctx context.Context, t testing.TB, workdir string, args ...s
 
 func cleanupExec(t testing.TB, cmd *exec.Cmd) {
 	t.Cleanup(func() {
+		if cmd.Process == nil {
+			t.Logf("never started: %v", cmd.Args)
+			return
+		}
+		t.Logf("interrupting: %v", cmd.Args)
 		cmd.Process.Signal(os.Interrupt)
+		t.Logf("waiting: %v", cmd.Args)
 		cmd.Wait()
 	})
 }
