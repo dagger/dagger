@@ -131,9 +131,9 @@ func (fe *frontendPlain) SetCloudURL(ctx context.Context, url string, msg string
 	}
 	fe.addVirtualLog(trace.SpanFromContext(ctx), "cloud", "url", url)
 	if logged {
-		fmt.Fprintln(os.Stderr, traceMessage(fe.profile, url, msg))
+		fmt.Fprintln(os.Stderr, traceMessage(fe.profile, url, msg)+"\n")
 	} else if !skipLoggedOutTraceMsg() {
-		fmt.Fprintf(os.Stderr, loggedOutTraceMsg, url)
+		fmt.Fprintf(os.Stderr, loggedOutTraceMsg+"\n\n", url)
 	}
 }
 

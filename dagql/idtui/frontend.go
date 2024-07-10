@@ -28,6 +28,7 @@ import (
 // having a bit of fun with these. cc @vito @jedevc
 var skipLoggedOutTraceMsgEnvs = []string{"NOTHANKS", "SHUTUP", "GOAWAY", "STOPIT"}
 
+//nolint:gosec
 var loggedOutTraceMsg = fmt.Sprintf("Setup full trace at %%s.\nTo turn this off, export %s=1",
 	skipLoggedOutTraceMsgEnvs[rand.Intn(len(skipLoggedOutTraceMsgEnvs))])
 
