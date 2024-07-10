@@ -31,6 +31,16 @@ const (
 	Node SupportedTSRuntime = "node"
 )
 
+type SupportedPackageManager string
+
+const (
+	Yarn SupportedPackageManager = "yarn"
+	Pnpm SupportedPackageManager = "pnpm"
+	Npm  SupportedPackageManager = "npm"
+)
+
+const YarnDefaultVersion = "1.22.22"
+
 func New(
 	// +optional
 	sdkSourceDir *Directory,
@@ -75,7 +85,12 @@ func (t *TypescriptSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSour
 
 	detectedRuntime, _, err := t.detectRuntime(ctx, modSource, subPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create module runtime: %w", err)
+		return nil, fmt.Errorf("failed to detect module runtime: %w", err)
+	}
+
+	packageManager, _, err := t.detectPackageManager(ctx, modSource, subPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to detect package manager: %w", err)
 	}
 
 	entrypointPath := filepath.Join(ModSourceDirPath, subPath, SrcDir, EntrypointExecutableFile)
@@ -90,9 +105,13 @@ func (t *TypescriptSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSour
 			WithExec([]string{"bun", "install", "--no-verify", "--no-progress"}).
 			WithEntrypoint([]string{"bun", entrypointPath}), nil
 	case Node:
+		// Install dependencies
+		ctr, err = installNodeDependencies(ctx, ctr, packageManager)
+		if err != nil {
+			return nil, fmt.Errorf("failed to install dependencies: %w", err)
+		}
+
 		return ctr.
-			// Install dependencies
-			WithExec([]string{"yarn", "install"}).
 			// need to specify --tsconfig because final runtime container will change working directory to a separate scratch
 			// dir, without this the paths mapped in the tsconfig.json will not be used and js module loading will fail
 			// need to specify --no-deprecation because the default package.json has no main field which triggers a warning
@@ -139,12 +158,12 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 		return nil, fmt.Errorf("could not load module config: %w", err)
 	}
 
-	detectedRuntime, version, err := t.detectRuntime(ctx, modSource, subPath)
+	detectedRuntime, runtimeVersion, err := t.detectRuntime(ctx, modSource, subPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to detect runtime: %w", err)
 	}
 
-	base, err := t.Base(detectedRuntime, version)
+	base, err := t.Base(detectedRuntime, runtimeVersion)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create codegen base: %w", err)
 	}
@@ -164,7 +183,17 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 		).
 		WithWorkdir(filepath.Join(ModSourceDirPath, subPath))
 
-	return t.setupModule(ctx, base, detectedRuntime, name)
+	ctr, err := t.setupModule(ctx, base, detectedRuntime, name)
+	if err != nil {
+		return nil, fmt.Errorf("failed to setup module: %w", err)
+	}
+
+	packageManager, packageManagerVersion, err := t.detectPackageManager(ctx, modSource, subPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to detect package manager: %w", err)
+	}
+
+	return generateLockFile(ctx, ctr, packageManager, packageManagerVersion)
 }
 
 // Base returns a Node or Bun container with cache setup for yarn or bun
@@ -278,9 +307,7 @@ func (t *TypescriptSdk) installedSDK(ctr *Container, runtime SupportedTSRuntime)
 	case Node:
 		return ctr.
 			// Enable corepack so we can use yarn v4 which is supposed to be faster than npm or yarn v1.
-			WithExec([]string{"corepack", "enable"}).
-			WithExec([]string{"yarn", "set", "version", "stable"}).
-			WithExec([]string{"yarn", "workspaces", "focus", "--production"}).Directory(ModSourceDirPath)
+			WithExec([]string{"yarn", "install", "--production"}).Directory(ModSourceDirPath)
 	default:
 		// Should never happen since we verify the runtime before calling this function.
 		return nil
@@ -353,4 +380,101 @@ func (t *TypescriptSdk) detectRuntime(ctx context.Context, modSource *ModuleSour
 
 	// Default to node
 	return Node, "", nil
+}
+
+// detectPackageManager detects the package manager from the user's module.
+// If the package.json file has a field "packageManager", it will use that to
+// determine the package manager to use. Otherwise, it will use the default
+// package manager based on the lock files present in the module.
+//
+// If none of the above works, it will use yarn.
+//
+// Except if the package.json has an invalid value in field "packageManager", this
+// function should never return an error.
+func (t *TypescriptSdk) detectPackageManager(ctx context.Context, modSource *ModuleSource, subPath string) (SupportedPackageManager, string, error) {
+	// Try to detect package manager from package.json
+	source := modSource.ContextDirectory().Directory(subPath)
+
+	// read contents of package.json
+	json, err := source.File("package.json").Contents(ctx)
+	if err == nil {
+		value := gjson.Get(json, "packageManager").String()
+		if value != "" {
+			// Retrieve the package manager and version from the value (e.g., yarn@4.2.0, pnpm@8.5.1)
+			packageManager, version, _ := strings.Cut(value, "@")
+
+			switch SupportedPackageManager(packageManager) {
+			case Yarn, Pnpm, Npm:
+				return SupportedPackageManager(packageManager), version, nil
+			default:
+				return "", "", fmt.Errorf("detected unknown package manager: %s", packageManager)
+			}
+		}
+	}
+
+	// Try to detect package manager from lock files
+	entries, err := source.Entries(ctx)
+	if err == nil {
+		if slices.Contains(entries, "package-lock.json") {
+			return Npm, "", nil
+		}
+
+		if slices.Contains(entries, "yarn.lock") {
+			return Yarn, "", nil
+		}
+
+		if slices.Contains(entries, "pnpm-lock.yaml") {
+			return Pnpm, "", nil
+		}
+	}
+
+	return Yarn, YarnDefaultVersion, nil
+}
+
+func generateLockFile(ctx context.Context, ctr *Container, packageManager SupportedPackageManager, version string) (*Container, error) {
+	switch packageManager {
+	case Yarn:
+		// Sadly, yarn < v3 doesn't support generating a lockfile without installing the dependencies.
+		// So we use npm to generate the lockfile and then import it into yarn.
+		return ctr.
+			WithExec([]string{"corepack", "enable"}).
+			WithExec([]string{"corepack", "use", fmt.Sprintf("yarn@%s", version)}).			
+			WithExec([]string{"yarn", "install", "--mode" ,"update-lockfile"}), nil
+	case Pnpm:
+		return ctr.
+			WithExec([]string{"npm", "install", "-g", fmt.Sprintf("pnpm@%s", version)}).
+			WithExec([]string{"pnpm", "install", "--lockfile-only"}), nil
+	case Npm:
+		return ctr.
+			WithExec([]string{"npm", "install", "-g", fmt.Sprintf("npm@%s", version)}).
+			WithExec([]string{"npm", "install", "--package-lock-only"}), nil
+	default:
+		return nil, fmt.Errorf("detected unknown package manager: %s", packageManager)
+	}
+}
+
+// installDependencies installs the dependencies using the detected package manager.
+//
+// If the package.json file has a field "packageManager", it will use that to
+// determine the package manager to use. Otherwise, it will use the default
+// package manager based on the lock files present in the module.
+//
+// If none of the above works, it will use yarn.
+//
+// Except if the package.json has an invalid value in field "packageManager", this
+// // function should never return an error.
+func installNodeDependencies(ctx context.Context, ctr *Container, packageManager SupportedPackageManager) (*Container, error) {
+	switch packageManager {
+	case Yarn:
+		return ctr.
+			WithExec([]string{"yarn", "install"}), nil
+	case Pnpm:
+		return ctr.
+			WithExec([]string{"pnpm", "install"}), nil
+	case Npm:
+		return ctr.
+			WithExec([]string{"npm", "install"}), nil
+	default:
+		return nil, fmt.Errorf("detected unknown package manager: %s", packageManager)
+	}
 }
