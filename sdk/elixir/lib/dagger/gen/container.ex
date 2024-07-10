@@ -573,6 +573,7 @@ defmodule Dagger.Container do
   @doc "Retrieves this container after executing the specified command inside it."
   @spec with_exec(t(), [String.t()], [
           {:skip_entrypoint, boolean() | nil},
+          {:use_entrypoint, boolean() | nil},
           {:stdin, String.t() | nil},
           {:redirect_stdout, String.t() | nil},
           {:redirect_stderr, String.t() | nil},
@@ -585,6 +586,7 @@ defmodule Dagger.Container do
       |> select("withExec")
       |> put_arg("args", args)
       |> maybe_put_arg("skipEntrypoint", optional_args[:skip_entrypoint])
+      |> maybe_put_arg("useEntrypoint", optional_args[:use_entrypoint])
       |> maybe_put_arg("stdin", optional_args[:stdin])
       |> maybe_put_arg("redirectStdout", optional_args[:redirect_stdout])
       |> maybe_put_arg("redirectStderr", optional_args[:redirect_stderr])

@@ -129,7 +129,6 @@ func (build *Builder) goSDKContent(ctx context.Context) (*sdkContent, error) {
 	sdkCtrTarball := base.
 		WithEnvVariable("GOTOOLCHAIN", "auto").
 		WithFile("/usr/local/bin/codegen", build.CodegenBinary()).
-		WithEntrypoint([]string{"/usr/local/bin/codegen"}).
 		AsTarball(dagger.ContainerAsTarballOpts{
 			ForcedCompression: dagger.Uncompressed,
 		})

@@ -190,7 +190,7 @@ http_access allow localhost
 			return ctr.
 				// go right to /etc/ssl/certs to avoid testing the custom CA cert support (covered elsewhere)
 				WithMountedFile("/etc/ssl/certs/myCA.pem", certGen.caRootCert).
-				WithExec([]string{"update-ca-certificates"}, dagger.ContainerWithExecOpts{SkipEntrypoint: true}).
+				WithExec([]string{"update-ca-certificates"}).
 				WithEnvVariable("HTTP_PROXY", squidHTTPURL.String()).
 				WithEnvVariable("HTTPS_PROXY", squidHTTPSURL.String()).
 				WithEnvVariable("NO_PROXY", noproxyHTTPServerAlias).

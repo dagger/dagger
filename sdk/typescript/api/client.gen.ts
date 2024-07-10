@@ -267,9 +267,14 @@ export type ContainerWithEnvVariableOpts = {
 
 export type ContainerWithExecOpts = {
   /**
-   * If the container has an entrypoint, ignore it for args rather than using it to wrap them.
+   * DEPRECATED: For true this can be removed. For false, use `useEntrypoint` instead.
    */
   skipEntrypoint?: boolean
+
+  /**
+   * If the container has an entrypoint, prepend it to the args.
+   */
+  useEntrypoint?: boolean
 
   /**
    * Content to write to the command's standard input before closing (e.g., "Hello world").
@@ -2100,7 +2105,8 @@ export class Container extends BaseClient {
    * @param args Command to run instead of the container's default command (e.g., ["run", "main.go"]).
    *
    * If empty, the container's default command is used.
-   * @param opts.skipEntrypoint If the container has an entrypoint, ignore it for args rather than using it to wrap them.
+   * @param opts.skipEntrypoint DEPRECATED: For true this can be removed. For false, use `useEntrypoint` instead.
+   * @param opts.useEntrypoint If the container has an entrypoint, prepend it to the args.
    * @param opts.stdin Content to write to the command's standard input before closing (e.g., "Hello world").
    * @param opts.redirectStdout Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
    * @param opts.redirectStderr Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").

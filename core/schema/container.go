@@ -309,6 +309,37 @@ func (s *containerSchema) Install() {
 			ArgDoc("path", `Location of the directory to remove (e.g., ".github/").`),
 
 		dagql.Func("withExec", s.withExec).
+			View(AllVersion).
+			Doc(`Retrieves this container after executing the specified command inside it.`).
+			ArgDoc("args",
+				`Command to run instead of the container's default command (e.g., ["run", "main.go"]).`,
+				`If empty, the container's default command is used.`).
+			ArgDoc("useEntrypoint",
+				`If the container has an entrypoint, prepend it to the args.`).
+			ArgDeprecated("skipEntrypoint", "For true this can be removed. For false, use `useEntrypoint` instead.").
+			ArgDoc("stdin",
+				`Content to write to the command's standard input before closing (e.g.,
+				"Hello world").`).
+			ArgDoc("redirectStdout",
+				`Redirect the command's standard output to a file in the container (e.g.,
+			"/tmp/stdout").`).
+			ArgDoc("redirectStderr",
+				`Redirect the command's standard error to a file in the container (e.g.,
+			"/tmp/stderr").`).
+			ArgDoc("experimentalPrivilegedNesting",
+				`Provides Dagger access to the executed command.`,
+				`Do not use this option unless you trust the command being executed;
+				the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST
+				FILESYSTEM.`).
+			ArgDoc("insecureRootCapabilities",
+				`Execute the command with all root capabilities. This is similar to
+				running a command with "sudo" or executing "docker run" with the
+				"--privileged" flag. Containerization does not provide any security
+				guarantees when using this option. It should only be used when
+				absolutely necessary and only with trusted commands.`),
+
+		dagql.Func("withExec", s.withExecLegacy).
+			View(BeforeVersion("v0.12.0")).
 			Doc(`Retrieves this container after executing the specified command inside it.`).
 			ArgDoc("args",
 				`Command to run instead of the container's default command (e.g., ["run", "main.go"]).`,
@@ -630,7 +661,55 @@ type containerExecArgs struct {
 }
 
 func (s *containerSchema) withExec(ctx context.Context, parent *core.Container, args containerExecArgs) (*core.Container, error) {
+	if args.ContainerExecOpts.SkipEntrypoint != nil {
+		slog.Warn("The 'skipEntrypoint' argument is deprecated. Use 'useEntrypoint' instead.")
+		if !args.ContainerExecOpts.UseEntrypoint && !*args.ContainerExecOpts.SkipEntrypoint {
+			args.ContainerExecOpts.UseEntrypoint = true
+		}
+	}
 	return parent.WithExec(ctx, args.ContainerExecOpts)
+}
+
+type containerExecArgsLegacy struct {
+	// Command to run instead of the container's default command
+	Args []string
+
+	// If the container has an entrypoint, ignore it for this exec rather than
+	// calling it with args
+	SkipEntrypoint bool `default:"false"`
+
+	// Content to write to the command's standard input before closing
+	Stdin string `default:""`
+
+	// Redirect the command's standard output to a file in the container
+	RedirectStdout string `default:""`
+
+	// Redirect the command's standard error to a file in the container
+	RedirectStderr string `default:""`
+
+	// Provide the executed command access back to the Dagger API
+	ExperimentalPrivilegedNesting bool `default:"false"`
+
+	// Grant the process all root capabilities
+	InsecureRootCapabilities bool `default:"false"`
+
+	// (Internal-only) If this is a nested exec, exec metadata to use for it
+	NestedExecMetadata *buildkit.ExecutionMetadata `name:"-"`
+}
+
+func (s *containerSchema) withExecLegacy(ctx context.Context, parent *core.Container, args containerExecArgsLegacy) (*core.Container, error) {
+	opts := core.ContainerExecOpts{
+		Args:                          args.Args,
+		UseEntrypoint:                 !args.SkipEntrypoint,
+		SkipEntrypoint:                &args.SkipEntrypoint,
+		Stdin:                         args.Stdin,
+		RedirectStdout:                args.RedirectStdout,
+		RedirectStderr:                args.RedirectStderr,
+		ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting,
+		InsecureRootCapabilities:      args.InsecureRootCapabilities,
+		NestedExecMetadata:            args.NestedExecMetadata,
+	}
+	return parent.WithExec(ctx, opts)
 }
 
 func (s *containerSchema) stdout(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {

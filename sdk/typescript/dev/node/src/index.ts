@@ -105,7 +105,7 @@ class Node {
    */
   @func()
   install(pkgs: string[] = []): Node {
-    this.container = this.container.withExec(["install", ...pkgs])
+    this.container = this.container.withExec(["install", ...pkgs], {"useEntrypoint": true})
 
     return this
   }

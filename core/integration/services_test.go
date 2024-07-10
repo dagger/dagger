@@ -1809,7 +1809,7 @@ with socketserver.TCPServer(("", 8000), http.server.SimpleHTTPRequestHandler) as
 		WithWorkdir("/srv/www").
 		WithNewFile("signals.txt", "").
 		WithExposedPort(8000).
-		WithExec([]string{"python", "/signals.py"}, dagger.ContainerWithExecOpts{SkipEntrypoint: true}).
+		WithExec([]string{"python", "/signals.py"}).
 		AsService()
 
 	httpURL, err := srv.Endpoint(ctx, dagger.ServiceEndpointOpts{

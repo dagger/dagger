@@ -87,7 +87,7 @@ func ExampleContainer_Build() {
 
 	daggerImg := client.Container().Build(repo)
 
-	out, err := daggerImg.WithExec([]string{"version"}).Stdout(ctx)
+	out, err := daggerImg.WithExec([]string{"dagger", "version"}).Stdout(ctx)
 	if err != nil {
 		panic(err)
 	}

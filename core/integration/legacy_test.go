@@ -244,3 +244,50 @@ func (m *Test) Default(ctx context.Context) (string, error) {
 	require.NoError(t, err)
 	require.JSONEq(t, `{"test": {"container": "bar", "default": ""}}`, out)
 }
+
+func (LegacySuite) TestExecWithEntrypoint(ctx context.Context, t *testctx.T) {
+	// Changed in dagger/dagger#7136
+	//
+	// Ensure that the old schemas default to use the entrypoint.
+
+	c := connect(ctx, t)
+
+	modGen := daggerCliBase(t, c).
+		With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+		WithNewFile("dagger.json", `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.11.9"}`).
+		WithNewFile("main.go", fmt.Sprintf(`package main
+
+func New() *Test {
+    return &Test{
+        Container: dag.Container().
+            From("%s").
+            WithEntrypoint([]string{"echo"}),
+    }
+}
+
+type Test struct {
+    Container *Container
+}
+
+func (m *Test) Use() *Container {
+    return m.Container.WithExec([]string{"hello"})
+
+}
+
+func (m *Test) Skip() *Container {
+    return m.Container.WithExec([]string{"echo", "hello"}, ContainerWithExecOpts{
+        SkipEntrypoint: true,
+    })
+}
+`, alpineImage),
+		)
+
+	out, err := modGen.With(daggerCall("use", "stdout")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "hello\n", out)
+
+	out, err = modGen.With(daggerCall("skip", "stdout")).Stdout(ctx)
+	require.NoError(t, err)
+	// if the entrypoint was not skipped, it would return "echo hello\n"
+	require.Equal(t, "hello\n", out)
+}
