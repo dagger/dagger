@@ -354,3 +354,47 @@ func (m *Test) NoExec(ctx context.Context) *dagger.Container {
 	_, err = modGen.With(daggerCall("no-exec", "stderr")).Stdout(ctx)
 	require.ErrorContains(t, err, "no command has been set")
 }
+
+func (LegacySuite) TestReturnVoid(ctx context.Context, t *testctx.T) {
+	// Changed in dagger/dagger#7773
+	//
+	// Ensure that the old schemas return Void next to error, instead of
+    // just an error. Only Go is a breaking change. Not necessary to test
+    // the others.
+
+	c := connect(ctx, t)
+
+    out, err := daggerCliBase(t, c).
+		With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+		WithNewFile("dagger.json", `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.11.9"}`).
+		WithNewFile("main.go", `package main
+
+import "context"
+
+type Test struct {}
+
+func (m *Test) Test(ctx context.Context) (string, error) {
+    val, err := dag.Dep().Dummy(ctx)
+    return string(val), err
+}
+`,
+        ).
+        WithWorkdir("/work/dep").
+		With(daggerExec("init", "--name=dep", "--sdk=go")).
+		With(sdkSource("go", `package main
+
+type Dep struct {}
+
+func (m *Dep) Dummy() error {
+    return nil
+}
+`,
+        )).
+        WithWorkdir("/work").
+		With(daggerQuery(`{test{test}}`)).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+	require.JSONEq(t, `{"test": {"test": ""}}`, out)
+}
+
