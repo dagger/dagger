@@ -592,6 +592,9 @@ func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte) error) error
 			continue
 		}
 
+		if err := cb(data); err != nil {
+			slog.Warn("consume error", "err", err)
+		}
 	}
 }
 
