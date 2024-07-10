@@ -598,7 +598,7 @@ func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte) error) error
 	}
 }
 
-func (c *Client) exportTraces() error {
+func (c *Client) exportTraces() {
 	// NB: we never actually want to interrupt this, since it's relied upon for
 	// seeing what's going on, even during shutdown
 	ctx := context.WithoutCancel(c.internalCtx)
@@ -632,8 +632,6 @@ func (c *Client) exportTraces() error {
 			return nil
 		})
 	})
-
-	return nil
 }
 
 func (c *Client) exportLogs() {
