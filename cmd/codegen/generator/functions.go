@@ -227,6 +227,6 @@ func (c *CommonFunctions) formatType(r *introspection.TypeRef, scope string, inp
 	return "", fmt.Errorf("unexpected type kind %s", r.Kind)
 }
 
-func (c *CommonFunctions) CheckVersionCompatability(version string, minVersion string) bool {
+func (c *CommonFunctions) CheckVersionCompatibility(version string, minVersion string) bool {
 	return engine.CheckVersionCompatibility(version, minVersion) == nil
 }

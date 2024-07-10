@@ -44,7 +44,7 @@ var (
 		"ToUpperCase":               commonFunc.ToUpperCase,
 		"ToSingleType":              toSingleType,
 		"GetEnumValues":             getEnumValues,
-		"CheckVersionCompatability": commonFunc.CheckVersionCompatability,
+		"CheckVersionCompatibility": commonFunc.CheckVersionCompatibility,
 	}
 )
 

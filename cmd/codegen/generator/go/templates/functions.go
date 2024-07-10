@@ -60,7 +60,7 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 		"IsIDableObject":            funcs.IsIDableObject,
 		"InnerType":                 funcs.InnerType,
 		"ObjectName":                funcs.ObjectName,
-		"CheckVersionCompatibility": funcs.CheckVersionCompatability,
+		"CheckVersionCompatibility": funcs.CheckVersionCompatibility,
 
 		// go specific
 		"Comment":                 funcs.comment,
