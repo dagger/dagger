@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -436,6 +437,8 @@ func (svc *Service) startContainer(
 		forwardStderr(stderrClient)
 	}
 
+	var stopped int32
+
 	var exitErr error
 	exited := make(chan struct{})
 	go func() {
@@ -457,7 +460,13 @@ func (svc *Service) startContainer(
 
 		// show the exit status; doing so won't fail anything, and is
 		// helpful for troubleshooting
-		defer telemetry.End(span, func() error { return exitErr })
+		defer telemetry.End(span, func() error {
+			if atomic.LoadInt32(&stopped) == 1 {
+				// stopped; we don't care about the exit result (likely 137)
+				return nil
+			}
+			return exitErr
+		})
 
 		// detach dependent services when process exits
 		detachDeps()
@@ -471,6 +480,7 @@ func (svc *Service) startContainer(
 	}()
 
 	stopSvc := func(ctx context.Context, force bool) error {
+		atomic.StoreInt32(&stopped, 1)
 		sig := syscall.SIGTERM
 		if force {
 			sig = syscall.SIGKILL
