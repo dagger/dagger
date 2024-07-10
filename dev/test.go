@@ -171,10 +171,7 @@ func (t *Test) testCmd(ctx context.Context) (*Container, error) {
 		WithServiceBinding("privateregistry", privateRegistry()).
 		WithExposedPort(1234, ContainerWithExposedPortOpts{Protocol: Tcp}).
 		WithMountedCache(distconsts.EngineDefaultStateDir, dag.CacheVolume("dagger-dev-engine-test-state"+identity.NewID())).
-		WithExec([]string{engineEntrypointPath}, ContainerWithExecOpts{
-			// FIXME: Replace the entrypoint with the following line after
-			// https://github.com/dagger/dagger/pull/7136 is released:
-			// UseEntrypoint: true,
+		WithExec(nil, ContainerWithExecOpts{
 			InsecureRootCapabilities: true,
 		}).
 		AsService()
@@ -213,12 +210,7 @@ func registry() *Service {
 	return dag.Container().
 		From("registry:2").
 		WithExposedPort(5000, ContainerWithExposedPortOpts{Protocol: Tcp}).
-		WithExec([]string{"/entrypoint.sh", "/etc/docker/registry/config.yml"}, ContainerWithExecOpts{
-			SkipEntrypoint: true,
-			// FIXME: Replace the entrypoint with the following line after
-			// https://github.com/dagger/dagger/pull/7136 is released:
-			// UseEntrypoint: true,
-		}).
+		WithExec(nil).
 		AsService()
 }
 
@@ -231,11 +223,6 @@ func privateRegistry() *Service {
 		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_REALM", "Registry Realm").
 		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_PATH", "/auth/htpasswd").
 		WithExposedPort(5000, ContainerWithExposedPortOpts{Protocol: Tcp}).
-		WithExec([]string{"/entrypoint.sh", "/etc/docker/registry/config.yml"}, ContainerWithExecOpts{
-			SkipEntrypoint: true,
-			// FIXME: Replace the entrypoint with the following line after
-			// https://github.com/dagger/dagger/pull/7136 is released:
-			// UseEntrypoint: true,
-		}).
+		WithExec(nil).
 		AsService()
 }
