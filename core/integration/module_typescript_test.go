@@ -601,12 +601,10 @@ func (ModuleSuite) TestTypescriptRuntimeDetection(ctx context.Context, t *testct
 		require.Error(t, err)
 	})
 
-	// This test will need to be updated when a new lts version is released
-	// https://nodejs.org/en/about/previous-releases
-	t.Run("should detect pinned lts node version", func(ctx context.Context, t *testctx.T) {
+	t.Run("should detect specificpinned node version 20.15.0", func(ctx context.Context, t *testctx.T) {
 		modGen := modGen.WithNewFile("/work/dagger/package.json", `{
 				"dagger": {
-					"runtime": "node@lts"
+					"runtime": "node@20.15.0"
 				}
 			}`,
 		)
@@ -616,7 +614,7 @@ func (ModuleSuite) TestTypescriptRuntimeDetection(ctx context.Context, t *testct
 		require.JSONEq(t, `{"runtimeDetection":{"version":"node@20.15.0"}}`, out)
 	})
 
-	t.Run("should detect a specific pinned node version", func(ctx context.Context, t *testctx.T) {
+	t.Run("should detect a specific pinned node version 22.4.0", func(ctx context.Context, t *testctx.T) {
 		modGen := modGen.WithNewFile("/work/dagger/package.json", `{
 				"dagger": {
 					"runtime": "node@22.4.0"
