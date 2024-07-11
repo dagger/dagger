@@ -1371,6 +1371,36 @@ func (m *Minimal) IsEmpty() bool {
 	require.JSONEq(t, `{"minimal": {"isEmpty": true}}`, out)
 }
 
+func (ModuleSuite) TestGoJSONField(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--source=.", "--name=minimal", "--sdk=go")).
+		WithNewFile("main.go", `package main
+
+import (
+	"dagger/minimal/internal/dagger"
+)
+
+type Minimal struct {
+	Config dagger.JSON
+}
+
+func New() *Minimal {
+	return &Minimal{
+		Config: "{\"a\":1}",
+	}
+}
+`,
+		)
+
+	out, err := modGen.With(daggerQuery(`{minimal{config}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"minimal":{"config":"{\"a\":1}"}}`, out)
+}
+
 func (ModuleSuite) TestDescription(ctx context.Context, t *testctx.T) {
 	type source struct {
 		file     string
