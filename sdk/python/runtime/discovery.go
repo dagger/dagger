@@ -43,6 +43,7 @@ type Discovery struct {
 	ModName   string
 	ModSource *dagger.ModuleSource
 
+	// Images is a map of container image names to their addresses.
 	Images map[string]*Image
 
 	// ContextDir is a copy of the context directory from the module source.
@@ -90,6 +91,7 @@ func NewDiscovery(cfg UserConfig) *Discovery {
 	}
 }
 
+// GetImage returns the container image address for the given name.
 func (d *Discovery) GetImage(name string) (*Image, error) {
 	if len(d.Images) == 0 {
 		images, err := extractImages()
@@ -159,7 +161,7 @@ func (d *Discovery) Source() *dagger.Directory {
 // with concurrency early on, to avoid unnecessary blocking calls later.
 func (d *Discovery) Load(ctx context.Context, modSource *dagger.ModuleSource) (rerr error) {
 	// FIXME: This is only temporarily enabled to measure how long this step takes to run.
-	ctx, span := otel.Tracer("dagger.io/sdk.python").Start(ctx, "discovery.Load")
+	ctx, span := otel.Tracer("dagger.io/sdk.python").Start(ctx, "runtime configuration discovery")
 	defer telemetry.End(span, func() error { return rerr })
 
 	d.ModSource = modSource
@@ -325,11 +327,12 @@ func (d *Discovery) loadConfig(ctx context.Context) error {
 		return err
 	}
 
+	// Get image addresses from the Dockerfile to combine with possible
+	// overrides in pyproject.toml.
 	baseImage, err := d.GetImage(BaseImageName)
 	if err != nil {
 		return err
 	}
-
 	uvImage, err := d.GetImage(UvImageName)
 	if err != nil {
 		return err
@@ -337,14 +340,20 @@ func (d *Discovery) loadConfig(ctx context.Context) error {
 
 	cfg := d.UserConfig()
 
+	// The base image can change if the requested Python version is different
+	// than the default, or if the user has set a custom base image.
 	base, err := d.parseBaseImage(cfg.BaseImage, baseImage)
 	if err != nil {
 		return err
 	}
+
+	// If the image name and tag is the same as the default, reuse the default
+	// because of the digest.
 	if base != nil && !base.Equal(baseImage) {
 		baseImage = base
 	}
 
+	// Uv's image tag matches the version exactly.
 	if cfg.UvVersion != "" && cfg.UvVersion != uvImage.Tag() {
 		uv, err := uvImage.WithTag(cfg.UvVersion)
 		if err != nil {
@@ -359,12 +368,8 @@ func (d *Discovery) loadConfig(ctx context.Context) error {
 	return nil
 }
 
-// findPythonVersion returns the python version for the base container image.
-//
-// Overriding the default version is supported on a best effort:
-// 1. Check .python-version contents
-// 2. Check pinned version in requires-python (in pyproject.toml)
-// 3. Use the default version
+// findPythonVersion looks for a Python version pin in either `.python-version`
+// or `requires-python` in pyproject.toml.
 func (d *Discovery) findPythonVersion() string {
 	if version, ok := d.Files[".python-version"]; ok {
 		return version
@@ -385,16 +390,19 @@ func (d *Discovery) findPythonVersion() string {
 	return ""
 }
 
-// findBaseImage parses user configured base sets the image reference for the base container image
+// parseBaseImage parses user configuration to look for an override of the base image.
 //
-// If not configured, will use default image.
+// Base image is constructed on a best effort:
+// 1. Override in custom `base-image` setting (in pyproject.toml)
+// 2. Check `.python-version` contents
+// 3. Check pinned version in requires-python (in pyproject.toml)
+// 4. Use the default base image
 //
-// It's possible to override it in pyproject.toml:
+// To completely override the base image in pyproject.toml:
 // ```toml
 // [tool.dagger]
 // base-image = "acme/my-python:3.11"
 // ```
-//
 // This can be useful to add customizations to the base image, such as
 // additional system dependencies, or just to use a different Python
 // version with full image digest.
@@ -402,7 +410,6 @@ func (d *Discovery) findPythonVersion() string {
 // WARNING: Using an image that deviates from the official slim Python image
 // is not supported and may lead to unexpected behavior. Use at own risk.
 func (d *Discovery) parseBaseImage(ref string, defaultImage *Image) (*Image, error) {
-	// If `base-image` is not set in user config, check ,
 	if ref == "" {
 		version := d.findPythonVersion()
 		if version == "" {

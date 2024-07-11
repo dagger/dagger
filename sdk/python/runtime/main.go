@@ -39,36 +39,30 @@ type UserConfig struct {
 
 	// UvVersion is the version of the uv tool to use.
 	//
-	// By default, it's pinned to a specific version in each dagger version,
-	// can be useful to get a newer version to fix a bug or get a new feature.
+	// By default, it's pinned to a specific version in each dagger version.
+	// Can be useful to get a newer version to fix a bug or get a new feature.
 	UvVersion string `toml:"uv-version"`
 
-	// BaseImage is the image reference to use for the container.
+	// BaseImage is the image reference to use for the base container.
 	BaseImage string `toml:"base-image"`
 }
 
 func New(
 	// Directory with the Python SDK source code.
 	// +optional
-	// +defaultPath="."
-	// +ignore=["!src"]
 	sdkSourceDir *dagger.Directory,
 ) *PythonSdk {
 	if sdkSourceDir == nil {
+		// FIXME: Move `dagger.json` to the parent to get this or wait for
+		// *context directories*.
 		sdkSourceDir = dag.Directory()
 	}
 	return &PythonSdk{
 		Discovery: NewDiscovery(UserConfig{
 			UseUv: true,
 		}),
-		// TODO: get an sdist build of the SDK into the engine rather than
-		// duplicating which files to include in the engine's publishing task.
-		SdkSourceDir: sdkSourceDir.
-			WithoutDirectory("runtime").
-			WithoutDirectory(".venv").
-			WithoutDirectory("codegen/.venv").
-			WithoutDirectory("codegen/tests"),
-		Container: dag.Container(),
+		SdkSourceDir: sdkSourceDir.WithoutDirectory("runtime"),
+		Container:    dag.Container(),
 	}
 }
 
@@ -105,7 +99,6 @@ func (m *PythonSdk) Codegen(
 	if err != nil {
 		return nil, err
 	}
-	// TODO: inspect the result here
 	return dag.GeneratedCode(self.Container.Directory(ModSourceDirPath)).
 		WithVCSGeneratedPaths(
 			[]string{GenDir + "/**"},
@@ -131,7 +124,7 @@ func (m *PythonSdk) ModuleRuntime(
 		WithEntrypoint([]string{RuntimeExecutablePath}), nil
 }
 
-// Common steps for the ModuleRuntime and Codegen functions.
+// Common steps for the ModuleRuntime and Codegen functions
 func (m *PythonSdk) Common(
 	ctx context.Context,
 	modSource *dagger.ModuleSource,
@@ -168,7 +161,7 @@ func (m *PythonSdk) Load(ctx context.Context, modSource *dagger.ModuleSource) (*
 	return m, nil
 }
 
-// Initialize the container with the base image and installer
+// Initialize the base Python container
 //
 // Workdir is set to the module's source directory.
 func (m *PythonSdk) WithBase() (*PythonSdk, error) {
@@ -187,6 +180,8 @@ func (m *PythonSdk) WithBase() (*PythonSdk, error) {
 		return nil, err
 	}
 
+	// NB: Adding env vars with container images that were pulled allows
+	// modules to reuse them for performance benefits.
 	m.Container = dag.Container().
 		// Base Python
 		From(baseAddr).
@@ -198,12 +193,12 @@ func (m *PythonSdk) WithBase() (*PythonSdk, error) {
 		WithMountedCache("/root/.cache/pip", dag.CacheVolume("modpython-pip-"+baseTag)).
 		// Uv
 		WithDirectory(
-            "/usr/local/bin",
-            dag.Container().From(uvAddr).Rootfs(),
-            dagger.ContainerWithDirectoryOpts{
-                Include: []string{"uv*"},
-            },
-        ).
+			"/usr/local/bin",
+			dag.Container().From(uvAddr).Rootfs(),
+			dagger.ContainerWithDirectoryOpts{
+				Include: []string{"uv*"},
+			},
+		).
 		WithMountedCache("/root/.cache/uv", dag.CacheVolume("modpython-uv")).
 		WithEnvVariable("DAGGER_UV_IMAGE", uvAddr).
 		WithEnvVariable("UV_SYSTEM_PYTHON", "1").
@@ -213,7 +208,7 @@ func (m *PythonSdk) WithBase() (*PythonSdk, error) {
 	return m, nil
 }
 
-// Add the template files, to skafold a new module
+// Add the template files to skaffold a new module
 //
 // The following files are added:
 // - /runtime
@@ -281,7 +276,8 @@ func (m *PythonSdk) WithTemplate() *PythonSdk {
 
 // Add the SDK package to the source directory
 //
-// This includes regenerating the client for the current API schema.
+// This includes regenerating the client bindings for the current API schema
+// (codegen).
 func (m *PythonSdk) WithSDK(introspectionJSON *dagger.File) *PythonSdk {
 	// "codegen" dir included in the exported sdk directory to support
 	// extending the runtime module in a custom SDK.
@@ -307,7 +303,7 @@ func (m *PythonSdk) WithSDK(introspectionJSON *dagger.File) *PythonSdk {
 	return m
 }
 
-// Add the module's source files
+// Add the module's source code
 func (m *PythonSdk) WithSource() *PythonSdk {
 	toml := "pyproject.toml"
 	sdkToml := path.Join(GenDir, toml)
@@ -336,9 +332,9 @@ func (m *PythonSdk) WithSource() *PythonSdk {
 	return m
 }
 
-// Install the dependencies and the module
+// Install the module's package and dependencies
 func (m *PythonSdk) WithInstall() *PythonSdk {
-	// NB: We compile bytecode now to cache it in the image.
+	// NB: We compile bytecode now to cache it for later reuse.
 
 	ctr := m.Container
 
@@ -346,7 +342,7 @@ func (m *PythonSdk) WithInstall() *PythonSdk {
 	if m.UseUv() && m.Discovery.HasFile(UvLock) {
 		m.Container = ctr.
 			WithExec([]string{"uv", "sync", "--no-dev", "--compile-bytecode"}).
-			// Activate virtualenv for .venv to avoid having to prepend
+			// Activate virtualenv for ./.venv to avoid having to prepend
 			// `uv run` to the entrypoint.
 			WithEnvVariable("VIRTUAL_ENV", path.Join(ModSourceDirPath, m.Discovery.SubPath, ".venv")).
 			WithEnvVariable("PATH", "$VIRTUAL_ENV/bin:$PATH", dagger.ContainerWithEnvVariableOpts{

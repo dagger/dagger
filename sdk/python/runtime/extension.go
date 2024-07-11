@@ -31,7 +31,7 @@ func (m *PythonSdk) WithContainer(
 	return m
 }
 
-// Image reference for the base image
+// Image reference for the base container
 func (m *PythonSdk) BaseImage() (string, error) {
 	ref, err := m.Discovery.GetImage(BaseImageName)
 	if err != nil {
@@ -40,7 +40,7 @@ func (m *PythonSdk) BaseImage() (string, error) {
 	return ref.String(), nil
 }
 
-// Image reference for the uv image
+// Image reference where uv is fetched from
 func (m *PythonSdk) UvImage() (string, error) {
 	ref, err := m.Discovery.GetImage(UvImageName)
 	if err != nil {
@@ -49,7 +49,7 @@ func (m *PythonSdk) UvImage() (string, error) {
 	return ref.String(), nil
 }
 
-// Override the base image reference
+// Override the base container's image
 //
 // Needs to be called before Load.
 func (m *PythonSdk) WithBaseImage(
@@ -87,8 +87,8 @@ func (m *PythonSdk) UvVersion() string {
 // Needs to be called before Load. Enables uv if not already enabled.
 func (m *PythonSdk) WithUvVersion(
 	// The uv version
-	v string,
+	version string,
 ) *PythonSdk {
-	m.WithUv().Discovery.UserConfig().UvVersion = v
+	m.WithUv().Discovery.UserConfig().UvVersion = version
 	return m
 }
