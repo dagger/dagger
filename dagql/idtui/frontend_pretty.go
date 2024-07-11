@@ -224,25 +224,30 @@ func (fe *frontendPretty) finalRender() error {
 	fe.focusedIdx = -1
 	fe.recalculateViewLocked()
 
+	var renderedProgress bool
 	if fe.Debug || fe.Verbosity >= ShowCompletedVerbosity || fe.err != nil {
 		if fe.msgPreFinalRender.Len() > 0 {
 			fmt.Fprintf(os.Stderr, fe.msgPreFinalRender.String()+"\n\n")
 		}
 		// Render progress to stderr so stdout stays clean.
 		out := NewOutput(os.Stderr, termenv.WithProfile(fe.profile))
-		if fe.renderProgress(out, true, fe.window.Height, "") {
-			logs := fe.logs.Logs[fe.db.PrimarySpan]
-			if logs != nil && logs.UsedHeight() > 0 {
-				fmt.Fprintln(os.Stderr)
-			}
-		}
+		renderedProgress = fe.renderProgress(out, true, fe.window.Height, "")
 	}
 
-	if fe.err != nil {
+	if fe.err != nil && renderedProgress {
 		// Counter-intuitively, we don't want to render the primary output
 		// when there's an error, because the error is better represented by
 		// the progress output.
 		return nil
+	}
+
+	if renderedProgress {
+		// Print a blank line after progress if there is any primary output to
+		// show.
+		logs := fe.logs.Logs[fe.db.PrimarySpan]
+		if logs != nil && logs.UsedHeight() > 0 {
+			fmt.Fprintln(os.Stderr)
+		}
 	}
 
 	// Replay the primary output log to stdout/stderr.
