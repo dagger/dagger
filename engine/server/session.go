@@ -32,6 +32,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/mod/semver"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/analytics"
@@ -446,7 +447,11 @@ func (srv *Server) initializeDaggerClient(
 
 	if opts.EncodedModuleID == "" {
 		client.deps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
-		coreMod.Dag.View = client.clientVersion
+		clientVersion := client.clientVersion
+		if !semver.IsValid(clientVersion) {
+			clientVersion = ""
+		}
+		coreMod.Dag.View = clientVersion
 	} else {
 		modID := new(call.ID)
 		if err := modID.Decode(opts.EncodedModuleID); err != nil {

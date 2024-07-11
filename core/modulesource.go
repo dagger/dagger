@@ -17,6 +17,7 @@ import (
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 )
 
 type ModuleSourceKind string
@@ -225,6 +226,11 @@ func (src *ModuleSource) ModuleEngineVersion(ctx context.Context) (string, error
 	}
 	if !ok {
 		return "", nil
+	}
+	if cfg.EngineVersion == "" {
+		// older versions of dagger might not produce an engine version - so
+		// return the version that engineVersion was introduced in
+		return engine.MinimumModuleVersion, nil
 	}
 	if !semver.IsValid(cfg.EngineVersion) {
 		// filter out non-semver values to simplify calling code
