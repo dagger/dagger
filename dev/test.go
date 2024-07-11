@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/moby/buildkit/identity"
 
@@ -91,6 +92,12 @@ func (t *Test) test(
 		"go",
 		"test",
 	}
+
+	// Add ldflags
+	ldflags := []string{
+		"-X", "github.com/dagger/dagger/engine.Version=" + t.Dagger.Version.String(),
+	}
+	args = append(args, "-ldflags", strings.Join(ldflags, " "))
 
 	// All following are go test flags
 	if failfast {

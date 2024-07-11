@@ -333,7 +333,7 @@ If not updating source or SDK, this is only required for IDE auto-completion/LSP
 			// ResolveFromCaller call first
 			modConf.Source = modConf.Source.ResolveFromCaller()
 
-			modSDK, err := modConf.Source.AsModule().SDK(ctx)
+			modSDK, err := modConf.Source.AsModule(dagger.ModuleSourceAsModuleOpts{EngineVersion: modules.EngineVersionLatest}).SDK(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to get module SDK: %w", err)
 			}
