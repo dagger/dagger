@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 
+	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/dev/internal/dagger"
 )
 
@@ -217,4 +218,65 @@ func (dev *DaggerDev) Dev(
 		WithServiceBinding("dagger-engine", svc).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		WithWorkdir("/mnt"), nil
+}
+
+// Creates an static dev build
+func (dev *DaggerDev) DevExport(
+	ctx context.Context,
+	// +optional
+	platform dagger.Platform,
+	// +optional
+	race bool,
+	// +optional
+	trace bool,
+	// +optional
+	experimentalGPUSupport bool,
+) (*dagger.Directory, error) {
+	var platformSpec platforms.Platform
+	if platform == "" {
+		platformSpec = platforms.DefaultSpec()
+	} else {
+		var err error
+		platformSpec, err = platforms.Parse(string(platform))
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	engine := dev.Engine()
+	if experimentalGPUSupport {
+		img := "ubuntu"
+		engine = engine.WithBase(&img, &experimentalGPUSupport)
+	}
+	if race {
+		engine = engine.WithRace()
+	}
+	if trace {
+		engine = engine.WithTrace()
+	}
+	enginePlatformSpec := platformSpec
+	enginePlatformSpec.OS = "linux"
+	engineCtr, err := engine.Container(ctx, dagger.Platform(platforms.Format(enginePlatformSpec)))
+	if err != nil {
+		return nil, err
+	}
+	engineTar := engineCtr.AsTarball(dagger.ContainerAsTarballOpts{
+		// use gzip to avoid incompatibility w/ older docker versions
+		ForcedCompression: dagger.Gzip,
+	})
+
+	cli := dev.CLI()
+	cliBin, err := cli.File(ctx, platform)
+	if err != nil {
+		return nil, err
+	}
+	cliPath := "dagger"
+	if platformSpec.OS == "windows" {
+		cliPath += ".exe"
+	}
+
+	dir := dag.Directory().
+		WithFile("engine.tar", engineTar).
+		WithFile(cliPath, cliBin)
+	return dir, nil
 }

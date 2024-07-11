@@ -43,19 +43,17 @@ func (t Engine) Dev(ctx context.Context) error {
 	trace := os.Getenv(util.TraceEnvName) != ""
 	race := os.Getenv(util.RaceEnvName) != ""
 
-	args := []string{"engine"}
+	args := []string{"dev-export", "--platform=" + platforms.DefaultString()}
 	if gpuSupport {
-		args = append(args, "with-base", "--image=ubuntu", "--gpu-support=true")
+		args = append(args, "--experimental-gpu-support=true")
 	}
 	if trace {
-		args = append(args, "with-trace")
+		args = append(args, "--trace=true")
 	}
 	if race {
-		args = append(args, "with-race")
+		args = append(args, "--race=true")
 	}
-	tarPath := filepath.Join(binDir, "engine.tar")
-	args = append(args, "container", "export", "--path="+tarPath)
-	args = append(args, "--forced-compression=Gzip") // use gzip to avoid incompatibility w/ older docker versions
+	args = append(args, "export", "--path="+binDir)
 	err := util.DaggerCall(ctx, args...)
 	if err != nil {
 		return err
@@ -66,7 +64,7 @@ func (t Engine) Dev(ctx context.Context) error {
 	imageName := fmt.Sprintf("localhost/%s:latest", EngineContainerName)
 
 	// #nosec
-	loadCmd := exec.CommandContext(ctx, "docker", "load", "-i", tarPath)
+	loadCmd := exec.CommandContext(ctx, "docker", "load", "-i", filepath.Join(binDir, "engine.tar"))
 	output, err := loadCmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("docker load failed: %w: %s", err, output)
@@ -122,16 +120,9 @@ func (t Engine) Dev(ctx context.Context) error {
 		return fmt.Errorf("docker run: %w: %s", err, output)
 	}
 
-	// build the CLI and export locally so it can be used to connect to the Engine
 	binDest := filepath.Join(binDir, "dagger")
 	if runtime.GOOS == "windows" {
 		binDest += ".exe"
-	}
-	_ = os.Remove(binDest) // HACK(vito): avoid 'text file busy'.
-
-	err = util.DaggerCall(ctx, "cli", "file", "--platform="+platforms.DefaultString(), "export", "--path="+binDest)
-	if err != nil {
-		return err
 	}
 
 	fmt.Println("export _EXPERIMENTAL_DAGGER_CLI_BIN=" + binDest)
