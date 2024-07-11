@@ -514,6 +514,8 @@ class _ObjectField:
         self.is_leaf = is_output_leaf_type(field.type)
         self.is_list = is_list_of_objects_type(field.type)
         self.is_exec = self.is_leaf or self.is_list
+        self.is_void = self.is_leaf and self.named_type.name == "Void"
+        self.is_sync = self.is_leaf and self.name == "sync"
         self.type = format_output_type(field.type).replace("Query", "Client")
 
         # Currently, `sync` is the only field where the error is all we
@@ -540,7 +542,7 @@ class _ObjectField:
 
         # convenience to await any object that has a sync method
         # without having to call it explicitly
-        if self.is_leaf and self.name == "sync":
+        if self.is_sync:
             yield from (
                 "",
                 "def __await__(self):",
@@ -618,6 +620,8 @@ class _ObjectField:
                 f"return [{_target}(Client.from_context(_ctx)._select("
                 f'"load{_target}FromID", [Arg("id", v.id)],)) for v in _ids]'
             )
+        elif self.is_void:
+            yield "await _ctx.execute()"
         else:
             yield f"return await _ctx.execute({self.type})"
 

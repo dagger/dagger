@@ -26,7 +26,7 @@ func TestIface(t *testing.T) {
 
 	t.Run("void", func(t *testing.T) {
 		t.Parallel()
-		_, err := test.Void(ctx, impl.AsTestCustomIface())
+		err := test.Void(ctx, impl.AsTestCustomIface())
 		require.NoError(t, err)
 	})
 

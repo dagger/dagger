@@ -85,6 +85,7 @@ const (
 	ScalarFloat   = Scalar("Float")
 	ScalarString  = Scalar("String")
 	ScalarBoolean = Scalar("Boolean")
+	ScalarVoid    = Scalar("Void")
 )
 
 type Type struct {
@@ -223,6 +224,14 @@ func (r TypeRef) IsList() bool {
 		return true
 	}
 	return false
+}
+
+func (r TypeRef) IsVoid() bool {
+	ref := r
+	if r.Kind == TypeKindNonNull {
+		ref = *ref.OfType
+	}
+	return ref.Kind == TypeKindScalar && ref.Name == string(ScalarVoid)
 }
 
 func (r TypeRef) ReferencesType(typeName string) bool {

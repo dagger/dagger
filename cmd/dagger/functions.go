@@ -406,7 +406,7 @@ func (fc *FuncCommand) initializeModule(ctx context.Context) (rerr error) {
 	mod := modConf.Source.AsModule().Initialize()
 
 	serveCtx, serveSpan := Tracer().Start(ctx, "installing module", telemetry.Encapsulate())
-	_, err = mod.Serve(serveCtx)
+	err = mod.Serve(serveCtx)
 	telemetry.End(serveSpan, func() error { return err })
 	if err != nil {
 		return err

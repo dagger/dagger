@@ -2219,7 +2219,7 @@ class DaggerEngineCache(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("prune", _args)
-        return await _ctx.execute(Void | None)
+        await _ctx.execute()
 
 
 @typecheck
@@ -3863,7 +3863,7 @@ class FunctionCall(Type):
             Arg("value", value),
         ]
         _ctx = self._select("returnValue", _args)
-        return await _ctx.execute(Void | None)
+        await _ctx.execute()
 
 
 @typecheck
@@ -5193,7 +5193,7 @@ class Module(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("serve", _args)
-        return await _ctx.execute(Void | None)
+        await _ctx.execute()
 
     def source(self) -> "ModuleSource":
         """The source for the module."""
@@ -7190,7 +7190,7 @@ class Service(Type):
             Arg("random", random, False),
         ]
         _ctx = self._select("up", _args)
-        return await _ctx.execute(Void | None)
+        await _ctx.execute()
 
 
 @typecheck
