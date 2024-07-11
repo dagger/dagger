@@ -2219,7 +2219,7 @@ class DaggerEngineCache(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("prune", _args)
-        return await _ctx.execute(Void | None)
+        await _ctx.execute()
 
 
 @typecheck
