@@ -224,25 +224,30 @@ func (fe *frontendPretty) finalRender() error {
 	fe.focusedIdx = -1
 	fe.recalculateViewLocked()
 
+	var renderedProgress bool
 	if fe.Debug || fe.Verbosity >= ShowCompletedVerbosity || fe.err != nil {
 		if fe.msgPreFinalRender.Len() > 0 {
 			fmt.Fprintf(os.Stderr, fe.msgPreFinalRender.String()+"\n\n")
 		}
 		// Render progress to stderr so stdout stays clean.
 		out := NewOutput(os.Stderr, termenv.WithProfile(fe.profile))
-		if fe.renderProgress(out, true, fe.window.Height, "") {
-			logs := fe.logs.Logs[fe.db.PrimarySpan]
-			if logs != nil && logs.UsedHeight() > 0 {
-				fmt.Fprintln(os.Stderr)
-			}
-		}
+		renderedProgress = fe.renderProgress(out, true, fe.window.Height, "")
 	}
 
-	if fe.err != nil {
+	if fe.err != nil && renderedProgress {
 		// Counter-intuitively, we don't want to render the primary output
 		// when there's an error, because the error is better represented by
 		// the progress output.
 		return nil
+	}
+
+	if renderedProgress {
+		// Print a blank line after progress if there is any primary output to
+		// show.
+		logs := fe.logs.Logs[fe.db.PrimarySpan]
+		if logs != nil && logs.UsedHeight() > 0 {
+			fmt.Fprintln(os.Stderr)
+		}
 	}
 
 	// Replay the primary output log to stdout/stderr.
@@ -333,8 +338,9 @@ func (fe *frontendPretty) renderKeymap(out *termenv.Output, style lipgloss.Style
 		quitMsg = "quit"
 	}
 
+	var showedKey bool
 	// Blank line prior to keymap
-	for i, key := range []keyHelp{
+	for _, key := range []keyHelp{
 		{out.Hyperlink(fe.cloudURL, "web"), []string{"w"}, fe.cloudURL != ""},
 		{"move", []string{"←↑↓→", "up", "down", "left", "right", "h", "j", "k", "l"}, true},
 		{"first", []string{"home"}, true},
@@ -348,7 +354,7 @@ func (fe *frontendPretty) renderKeymap(out *termenv.Output, style lipgloss.Style
 			continue
 		}
 		mainKey := key.keys[0]
-		if i > 0 {
+		if showedKey {
 			fmt.Fprint(w, style.Render("  "))
 		}
 		keyStyle := style
@@ -362,6 +368,7 @@ func (fe *frontendPretty) renderKeymap(out *termenv.Output, style lipgloss.Style
 		}
 		fmt.Fprint(w, keyStyle.Bold(true).Render(mainKey))
 		fmt.Fprint(w, keyStyle.Render(": "+key.label))
+		showedKey = true
 	}
 	res := w.String()
 	fmt.Fprint(out, res)
