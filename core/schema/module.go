@@ -721,17 +721,6 @@ func (s *moduleSchema) moduleWithSource(ctx context.Context, mod *core.Module, a
 		return nil, fmt.Errorf("failed to decode module source: %w", err)
 	}
 
-	engineVersion, err := src.Self.ModuleEngineVersion(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load module config: %w", err)
-	}
-	if err := engine.CheckVersionCompatibility(engineVersion, engine.MinimumModuleVersion); err != nil {
-		return nil, fmt.Errorf("module requires incompatible engine version: %w", err)
-	}
-	if err := engine.CheckVersionCompatibility(engine.Version, engineVersion); err != nil {
-		return nil, fmt.Errorf("module requires newer engine version: %w", err)
-	}
-
 	mod = mod.Clone()
 	mod.Source = src
 	mod.NameField, err = src.Self.ModuleName(ctx)
@@ -751,6 +740,12 @@ func (s *moduleSchema) moduleWithSource(ctx context.Context, mod *core.Module, a
 	modCfg, modCfgPath, err := s.updateDaggerConfig(ctx, string(args.EngineVersion.Value), mod, src)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update dagger.json: %w", err)
+	}
+	if err := engine.CheckVersionCompatibility(modCfg.EngineVersion, engine.MinimumModuleVersion); err != nil {
+		return nil, fmt.Errorf("module requires incompatible engine version: %w", err)
+	}
+	if err := engine.CheckVersionCompatibility(engine.Version, modCfg.EngineVersion); err != nil {
+		return nil, fmt.Errorf("module requires newer engine version: %w", err)
 	}
 	if err := s.updateDeps(ctx, mod, modCfg, src); err != nil {
 		return nil, fmt.Errorf("failed to update module dependencies: %w", err)
