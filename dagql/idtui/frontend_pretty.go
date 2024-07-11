@@ -338,8 +338,9 @@ func (fe *frontendPretty) renderKeymap(out *termenv.Output, style lipgloss.Style
 		quitMsg = "quit"
 	}
 
+	var showedKey bool
 	// Blank line prior to keymap
-	for i, key := range []keyHelp{
+	for _, key := range []keyHelp{
 		{out.Hyperlink(fe.cloudURL, "web"), []string{"w"}, fe.cloudURL != ""},
 		{"move", []string{"←↑↓→", "up", "down", "left", "right", "h", "j", "k", "l"}, true},
 		{"first", []string{"home"}, true},
@@ -353,7 +354,7 @@ func (fe *frontendPretty) renderKeymap(out *termenv.Output, style lipgloss.Style
 			continue
 		}
 		mainKey := key.keys[0]
-		if i > 0 {
+		if showedKey {
 			fmt.Fprint(w, style.Render("  "))
 		}
 		keyStyle := style
@@ -367,6 +368,7 @@ func (fe *frontendPretty) renderKeymap(out *termenv.Output, style lipgloss.Style
 		}
 		fmt.Fprint(w, keyStyle.Bold(true).Render(mainKey))
 		fmt.Fprint(w, keyStyle.Render(": "+key.label))
+		showedKey = true
 	}
 	res := w.String()
 	fmt.Fprint(out, res)
