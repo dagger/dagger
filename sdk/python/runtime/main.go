@@ -7,22 +7,21 @@ import (
 	_ "embed"
 	"fmt"
 	"path"
+	"python-sdk/internal/dagger"
 	"strings"
 
 	"github.com/iancoleman/strcase"
 )
 
 const (
-	DefaultVersion        = "3.11"
-	DefaultImage          = "python:%s-slim"
-	DefaultDigest         = "sha256:ce81dc539f0aedc9114cae640f8352fad83d37461c24a3615b01f081d0c0583a"
 	ModSourceDirPath      = "/src"
 	RuntimeExecutablePath = "/runtime"
 	GenDir                = "sdk"
 	GenPath               = "src/dagger/client/gen.py"
 	SchemaPath            = "/schema.json"
 	VenvPath              = "/opt/venv"
-	LockFilePath          = "requirements.lock"
+	PipCompileLock        = "requirements.lock"
+	UvLock                = "uv.lock" // EXPERIMENTAL
 	MainFilePath          = "src/main/__init__.py"
 	MainObjectName        = "Main"
 )
@@ -51,20 +50,25 @@ type UserConfig struct {
 func New(
 	// Directory with the Python SDK source code.
 	// +optional
-	sdkSourceDir *Directory,
+	// +defaultPath="."
+	// +ignore=["!src"]
+	sdkSourceDir *dagger.Directory,
 ) *PythonSdk {
 	if sdkSourceDir == nil {
 		sdkSourceDir = dag.Directory()
 	}
 	return &PythonSdk{
 		Discovery: NewDiscovery(UserConfig{
-			UseUv:     true,
-			UvVersion: getRequirement("uv"),
+			UseUv: true,
 		}),
 		// TODO: get an sdist build of the SDK into the engine rather than
 		// duplicating which files to include in the engine's publishing task.
-		SDKSourceDir: sdkSourceDir.WithoutDirectory("runtime"),
-		Container:    dag.Container(),
+		SdkSourceDir: sdkSourceDir.
+			WithoutDirectory("runtime").
+			WithoutDirectory(".venv").
+			WithoutDirectory("codegen/.venv").
+			WithoutDirectory("codegen/tests"),
+		Container: dag.Container(),
 	}
 }
 
@@ -78,13 +82,13 @@ var tplMain string
 // creation of extension modules (custom SDKs that depend on this one).
 type PythonSdk struct {
 	// Directory with the Python SDK source code
-	SDKSourceDir *Directory
+	SdkSourceDir *dagger.Directory
 
-	// List of patterns to allways include when loading Python modules
+	// List of patterns to always include when loading Python modules
 	RequiredPaths []string
 
 	// Resulting container after each composing step
-	Container *Container
+	Container *dagger.Container
 
 	// Discovery holds the logic for getting more information from the target module
 	// +private
@@ -92,12 +96,17 @@ type PythonSdk struct {
 }
 
 // Generated code for the Python module
-func (m *PythonSdk) Codegen(ctx context.Context, modSource *ModuleSource, introspectionJSON *File) (*GeneratedCode, error) {
-	ctr, err := m.Common(ctx, modSource, introspectionJSON)
+func (m *PythonSdk) Codegen(
+	ctx context.Context,
+	modSource *dagger.ModuleSource,
+	introspectionJSON *dagger.File,
+) (*dagger.GeneratedCode, error) {
+	self, err := m.Common(ctx, modSource, introspectionJSON)
 	if err != nil {
 		return nil, err
 	}
-	return dag.GeneratedCode(ctr.Directory(ModSourceDirPath)).
+	// TODO: inspect the result here
+	return dag.GeneratedCode(self.Container.Directory(ModSourceDirPath)).
 		WithVCSGeneratedPaths(
 			[]string{GenDir + "/**"},
 		).
@@ -109,18 +118,25 @@ func (m *PythonSdk) Codegen(ctx context.Context, modSource *ModuleSource, intros
 // Container for executing the Python module runtime
 func (m *PythonSdk) ModuleRuntime(
 	ctx context.Context,
-	modSource *ModuleSource,
-	introspectionJSON *File,
-) (*Container, error) {
-	ctr, err := m.Common(ctx, modSource, introspectionJSON)
+	modSource *dagger.ModuleSource,
+	introspectionJSON *dagger.File,
+) (*dagger.Container, error) {
+	self, err := m.Common(ctx, modSource, introspectionJSON)
 	if err != nil {
 		return nil, err
 	}
-	return ctr.WithEntrypoint([]string{RuntimeExecutablePath}), nil
+	return self.
+		WithInstall().
+		Container.
+		WithEntrypoint([]string{RuntimeExecutablePath}), nil
 }
 
 // Common steps for the ModuleRuntime and Codegen functions.
-func (m *PythonSdk) Common(ctx context.Context, modSource *ModuleSource, introspectionJSON *File) (*Container, error) {
+func (m *PythonSdk) Common(
+	ctx context.Context,
+	modSource *dagger.ModuleSource,
+	introspectionJSON *dagger.File,
+) (*PythonSdk, error) {
 	// The following functions were built to be composable in a granular way,
 	// to allow a custom SDK to depend on this one and hook into before or
 	// after major steps in the process. For example, you can get the base
@@ -128,22 +144,24 @@ func (m *PythonSdk) Common(ctx context.Context, modSource *ModuleSource, introsp
 	// and then continue with the rest of the steps. Without this, you'd need
 	// to copy the entire function and modify it.
 
-	// In extension modules, Load is chainable.
-	m, err := m.Load(ctx, modSource)
+	// NB: In extension modules, Load is chainable.
+	_, err := m.Load(ctx, modSource)
 	if err != nil {
 		return nil, err
 	}
-	ctr := m.
-		WithBase().
+	_, err = m.WithBase()
+	if err != nil {
+		return nil, err
+	}
+	return m.
 		WithTemplate().
 		WithSDK(introspectionJSON).
-		WithSource().
-		Container
-	return ctr, nil
+		WithSource(), nil
+
 }
 
 // Get all the needed information from the module's metadata and source files
-func (m *PythonSdk) Load(ctx context.Context, modSource *ModuleSource) (*PythonSdk, error) {
+func (m *PythonSdk) Load(ctx context.Context, modSource *dagger.ModuleSource) (*PythonSdk, error) {
 	if err := m.Discovery.Load(ctx, modSource); err != nil {
 		return nil, fmt.Errorf("runtime module load: %w", err)
 	}
@@ -153,39 +171,46 @@ func (m *PythonSdk) Load(ctx context.Context, modSource *ModuleSource) (*PythonS
 // Initialize the container with the base image and installer
 //
 // Workdir is set to the module's source directory.
-func (m *PythonSdk) WithBase() *PythonSdk {
-	base := dag.Container().
-		From(m.BaseImage()).
-		WithEnvVariable("DAGGER_BASE_IMAGE", m.BaseImage()).
-		WithEnvVariable("PYTHONUNBUFFERED", "1").
-		WithEnvVariable("PIP_DISABLE_PIP_VERSION_CHECK", "1").
-		WithEnvVariable("PIP_ROOT_USER_ACTION", "ignore").
-		WithMountedCache("/root/.cache/pip", m.cacheVolume("pip")).
-		// for debugging
-		WithDefaultTerminalCmd([]string{"/bin/bash"})
+func (m *PythonSdk) WithBase() (*PythonSdk, error) {
+	baseImage, err := m.Discovery.GetImage(BaseImageName)
+	if err != nil {
+		return nil, err
+	}
+	baseAddr := baseImage.String()
+	baseTag := baseImage.Tag()
 
-	if m.UseUv() {
-		uv := base.
-			WithEnvVariable("PYTHONDONTWRITEBYTECODE", "1").
-			WithNewFile("reqs.txt", ContainerWithNewFileOpts{
-				Contents: "uv" + m.Discovery.UserConfig().UvVersion,
-			}).
-			WithExec([]string{"pip", "install", "-r", "/reqs.txt"}).
-			File("/usr/local/bin/uv")
-		base = base.
-			WithFile("/usr/local/bin/uv", uv).
-			WithMountedCache("/root/.cache/uv", m.cacheVolume("uv")).
-			// Use a clean venv with uv
-			WithExec([]string{"uv", "venv", VenvPath}).
-			WithEnvVariable("VIRTUAL_ENV", VenvPath).
-			WithEnvVariable("PATH", "$VIRTUAL_ENV/bin:$PATH", ContainerWithEnvVariableOpts{
-				Expand: true,
-			})
+	// NB: Always add uvImage to avoid a dynamic base pipeline as much as possible.
+	// Even if users don't use it, it's useful to create a faster virtual env
+	// and faster install for the codegen package.
+	uvAddr, err := m.UvImage()
+	if err != nil {
+		return nil, err
 	}
 
-	m.Container = base.WithWorkdir(path.Join(ModSourceDirPath, m.Discovery.SubPath))
+	m.Container = dag.Container().
+		// Base Python
+		From(baseAddr).
+		WithEnvVariable("PYTHONUNBUFFERED", "1").
+		WithEnvVariable("DAGGER_BASE_IMAGE", baseAddr).
+		// Pip
+		WithEnvVariable("PIP_DISABLE_PIP_VERSION_CHECK", "1").
+		WithEnvVariable("PIP_ROOT_USER_ACTION", "ignore").
+		WithMountedCache("/root/.cache/pip", dag.CacheVolume("modpython-pip-"+baseTag)).
+		// Uv
+		WithDirectory(
+            "/usr/local/bin",
+            dag.Container().From(uvAddr).Rootfs(),
+            dagger.ContainerWithDirectoryOpts{
+                Include: []string{"uv*"},
+            },
+        ).
+		WithMountedCache("/root/.cache/uv", dag.CacheVolume("modpython-uv")).
+		WithEnvVariable("DAGGER_UV_IMAGE", uvAddr).
+		WithEnvVariable("UV_SYSTEM_PYTHON", "1").
+		WithEnvVariable("UV_NATIVE_TLS", "1").
+		WithWorkdir(path.Join(ModSourceDirPath, m.Discovery.SubPath))
 
-	return m
+	return m, nil
 }
 
 // Add the template files, to skafold a new module
@@ -202,7 +227,7 @@ func (m *PythonSdk) WithTemplate() *PythonSdk {
 	m.Container = m.Container.WithFile(
 		RuntimeExecutablePath,
 		template.File("runtime.py"),
-		ContainerWithFileOpts{Permissions: 0o755},
+		dagger.ContainerWithFileOpts{Permissions: 0o755},
 	)
 
 	// NB: We can't detect if it's a new module with `dagger develop --sdk`
@@ -228,19 +253,18 @@ func (m *PythonSdk) WithTemplate() *PythonSdk {
 			d.AddFile(toml, template.File(toml))
 		}
 
-		if m.UseUv() && !d.HasFile(LockFilePath) {
+		if m.UseUv() && !d.HasFile(UvLock) && !d.HasFile(PipCompileLock) {
 			sdkToml := path.Join(GenDir, toml)
 			d.AddLockFile(m.Container.
-				WithMountedFile(sdkToml, m.SDKSourceDir.File(toml)).
+				WithMountedFile(sdkToml, m.SdkSourceDir.File(toml)).
 				WithMountedFile(toml, d.GetFile(toml)).
 				WithExec([]string{
 					"uv", "pip", "compile", "-q",
-					"--generate-hashes",
-					"-o", LockFilePath,
+					"-o", PipCompileLock,
 					sdkToml,
 					toml,
 				}).
-				File(LockFilePath),
+				File(PipCompileLock),
 			)
 		}
 
@@ -258,21 +282,22 @@ func (m *PythonSdk) WithTemplate() *PythonSdk {
 // Add the SDK package to the source directory
 //
 // This includes regenerating the client for the current API schema.
-func (m *PythonSdk) WithSDK(introspectionJSON *File) *PythonSdk {
+func (m *PythonSdk) WithSDK(introspectionJSON *dagger.File) *PythonSdk {
 	// "codegen" dir included in the exported sdk directory to support
 	// extending the runtime module in a custom SDK.
-	m.Discovery.AddDirectory(GenDir, m.SDKSourceDir)
+	m.Discovery.AddDirectory(GenDir, m.SdkSourceDir)
 
 	// Allow empty introspection to facilitate debugging the container with a
 	// `dagger call module-runtime terminal` command.
 	if introspectionJSON != nil {
 		genFile := m.Container.
-			WithMountedDirectory("/codegen", m.SDKSourceDir.Directory("codegen")).
 			WithWorkdir("/codegen").
-			With(m.install("-r", LockFilePath)).
+			WithMountedDirectory("", m.SdkSourceDir.Directory("codegen")).
 			WithMountedFile(SchemaPath, introspectionJSON).
 			WithExec([]string{
-				"python", "-m", "codegen", "generate", "-i", SchemaPath, "-o", "/gen.py",
+				"uv", "run", "--no-dev",
+				"python", "-m",
+				"codegen", "generate", "-i", SchemaPath, "-o", "/gen.py",
 			}).
 			File("/gen.py")
 
@@ -282,37 +307,75 @@ func (m *PythonSdk) WithSDK(introspectionJSON *File) *PythonSdk {
 	return m
 }
 
-// Add the module's source files and install
+// Add the module's source files
 func (m *PythonSdk) WithSource() *PythonSdk {
 	toml := "pyproject.toml"
 	sdkToml := path.Join(GenDir, toml)
 
 	ctr := m.Container.WithMountedDirectory(ModSourceDirPath, m.Discovery.ContextDir)
 
-	// Support installing directly from a requirements.lock file to allow
-	// pinning dependencies.
-	if m.Discovery.HasFile(LockFilePath) {
-		if m.UseUv() && !m.Discovery.IsInit {
+	// Update lock file but without upgrading dependencies.
+	if m.UseUv() && !m.Discovery.IsInit {
+		switch {
+		case m.Discovery.HasFile(UvLock):
+			// Support uv.lock.
+			ctr = ctr.WithExec([]string{"uv", "lock"})
+		case m.Discovery.HasFile(PipCompileLock):
+			// Support requirements.lock.
 			ctr = ctr.WithExec([]string{
 				"uv", "pip", "compile", "-q",
-				"--generate-hashes",
-				"-o", LockFilePath,
+				"-o", PipCompileLock,
 				sdkToml,
 				toml,
 			})
 		}
-		// Install from lock separately to editable installs because of hashes.
-		ctr = ctr.With(m.install("-r", LockFilePath))
 	}
 
-	// Install the SDK as editable because of the generated client
-	ctr = ctr.With(m.install("-e", "./sdk", "-e", "."))
+	m.Container = ctr
 
-	cmd := []string{"pip", "check"}
+	return m
+}
+
+// Install the dependencies and the module
+func (m *PythonSdk) WithInstall() *PythonSdk {
+	// NB: We compile bytecode now to cache it in the image.
+
+	ctr := m.Container
+
+	// Support uv.lock for simple and fast project management workflow.
+	if m.UseUv() && m.Discovery.HasFile(UvLock) {
+		m.Container = ctr.
+			WithExec([]string{"uv", "sync", "--no-dev", "--compile-bytecode"}).
+			// Activate virtualenv for .venv to avoid having to prepend
+			// `uv run` to the entrypoint.
+			WithEnvVariable("VIRTUAL_ENV", path.Join(ModSourceDirPath, m.Discovery.SubPath, ".venv")).
+			WithEnvVariable("PATH", "$VIRTUAL_ENV/bin:$PATH", dagger.ContainerWithEnvVariableOpts{
+				Expand: true,
+			})
+		return m
+	}
+
+	// Fallback to pip-compile workflow.
+	install := []string{"pip", "install", "-e", "./sdk", "-e", "."}
+	check := []string{"pip", "check"}
+
+	// uv has a compatible API with pip
 	if m.UseUv() {
-		cmd = append([]string{"uv"}, cmd...)
+		// Support requirements.lock.
+		if m.Discovery.HasFile(PipCompileLock) {
+			// If there's a lock file, we assume that all the dependencies are
+			// included in it so we can avoid resolving for them to get a faster
+			// install.
+			install = append(install, "--no-deps", "-r", PipCompileLock)
+		}
+		// pip compiles by default, but not uv
+		install = append([]string{"uv"}, append(install, "--compile-bytecode")...)
+		check = append([]string{"uv"}, check...)
 	}
-	m.Container = ctr.WithExec(cmd)
+
+	m.Container = ctr.
+		WithExec(install).
+		WithExec(check)
 
 	return m
 }

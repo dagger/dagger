@@ -38,7 +38,7 @@ func (build *Builder) pythonSDKContent(ctx context.Context) (*sdkContent, error)
 			"src/**/*.typed",
 			"codegen/src/**/*.py",
 			"codegen/pyproject.toml",
-			"codegen/requirements.lock",
+			"codegen/uv.lock",
 			"runtime/",
 			"LICENSE",
 			"README.md",

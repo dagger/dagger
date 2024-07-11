@@ -7,6 +7,8 @@
 // in the future. The public API is the ModuleRuntime and Codegen functions.
 package main
 
+import "python-sdk/internal/dagger"
+
 // Disable the discovery of custom configuration
 //
 // If it's not necessary, it's faster without it.
@@ -21,19 +23,40 @@ func (m *PythonSdk) WithoutUserConfig() *PythonSdk {
 // step, change it, and then set it with this function. Can be useful, for
 // example, to add system packages between the WithBase() and WithSource()
 // steps.
-func (m *PythonSdk) WithContainer(c *Container) *PythonSdk {
-	m.Container = c
+func (m *PythonSdk) WithContainer(
+	// The container to use
+	ctr *dagger.Container,
+) *PythonSdk {
+	m.Container = ctr
 	return m
 }
 
 // Image reference for the base image
-func (m *PythonSdk) BaseImage() string {
-	return m.Discovery.UserConfig().BaseImage
+func (m *PythonSdk) BaseImage() (string, error) {
+	ref, err := m.Discovery.GetImage(BaseImageName)
+	if err != nil {
+		return "", err
+	}
+	return ref.String(), nil
+}
+
+// Image reference for the uv image
+func (m *PythonSdk) UvImage() (string, error) {
+	ref, err := m.Discovery.GetImage(UvImageName)
+	if err != nil {
+		return "", err
+	}
+	return ref.String(), nil
 }
 
 // Override the base image reference
-func (m *PythonSdk) WithBaseImage(image string) *PythonSdk {
-	m.Discovery.UserConfig().BaseImage = image
+//
+// Needs to be called before Load.
+func (m *PythonSdk) WithBaseImage(
+	// The image reference
+	ref string,
+) *PythonSdk {
+	m.Discovery.UserConfig().BaseImage = ref
 	return m
 }
 
@@ -51,5 +74,21 @@ func (m *PythonSdk) WithUv() *PythonSdk {
 // Disable the use of uv
 func (m *PythonSdk) WithoutUv() *PythonSdk {
 	m.Discovery.UserConfig().UseUv = false
+	return m
+}
+
+// Version to use for uv
+func (m *PythonSdk) UvVersion() string {
+	return m.Discovery.UserConfig().UvVersion
+}
+
+// Override the uv version
+//
+// Needs to be called before Load. Enables uv if not already enabled.
+func (m *PythonSdk) WithUvVersion(
+	// The uv version
+	v string,
+) *PythonSdk {
+	m.WithUv().Discovery.UserConfig().UvVersion = v
 	return m
 }

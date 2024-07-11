@@ -97,6 +97,22 @@ updates:
         patterns:
           - "*"
 
+  - package-ecosystem: "docker"
+    directory: "/sdk/python"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:00"
+      timezone: "UTC"
+    labels:
+      - "kind/dependencies"
+      - "area/sdk/python"
+    groups:
+      sdk-python:
+        applies-to: version-updates
+        patterns:
+          - "*"
+
   - package-ecosystem: "maven"
     directory: "/sdk/java"
     schedule:
