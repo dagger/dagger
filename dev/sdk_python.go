@@ -123,11 +123,13 @@ func (t PythonSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 		return nil, err
 	}
 	generated := t.pythonBase(pythonDefaultVersion, true).
-		// codegen lock file has a relative `-e .` path
 		WithWorkdir("./codegen").
-		WithExec([]string{"pip", "install", "-r", "requirements.lock"}).
 		WithMountedFile("/schema.json", introspection).
-		WithExec([]string{"python", "-m", "codegen", "generate", "-i", "/schema.json", "-o", "gen.py"}).
+		WithExec([]string{
+            "uv", "run", "--no-dev",
+            "python", "-m",
+            "codegen", "generate", "-i", "/schema.json", "-o", "gen.py",
+        }).
 		WithExec([]string{"black", "gen.py"}).
 		File("gen.py")
 	return dag.Directory().WithFile(pythonGeneratedAPIPath, generated), nil
@@ -189,6 +191,19 @@ func (t PythonSDK) pythonBase(version string, install bool) *dagger.Container {
 
 	base := dag.Container().
 		From(fmt.Sprintf("python:%s-slim", version)).
+		// TODO: the way uv is installed here is temporary. The PythonSDK
+		// object will be refactored soon to use sdk/python/dev as a dependency.
+		WithDirectory(
+			"/usr/local/bin",
+			dag.Directory().
+				WithFile("", src.File("runtime/Dockerfile")).
+				DockerBuild(dagger.DirectoryDockerBuildOpts{Target: "uv"}).
+				Rootfs(),
+			dagger.ContainerWithDirectoryOpts{
+				Include: []string{"uv*"},
+			},
+		).
+		WithMountedCache("/root/.cache/uv", dag.CacheVolume("modpython-uv")).
 		WithEnvVariable("PIPX_BIN_DIR", "/usr/local/bin").
 		WithMountedCache("/root/.cache/pip", dag.CacheVolume("pip_cache_"+version)).
 		WithMountedCache("/root/.local/pipx/cache", dag.CacheVolume("pipx_cache_"+version)).
