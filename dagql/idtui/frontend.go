@@ -29,7 +29,8 @@ import (
 var skipLoggedOutTraceMsgEnvs = []string{"NOTHANKS", "SHUTUP", "GOAWAY", "STOPIT"}
 
 //nolint:gosec
-var loggedOutTraceMsg = fmt.Sprintf("Setup full trace at %%s.\nTo turn this off, export %s=1",
+// Keep this to one line, and 80 characters max (longest env var name is NOTHANKS)
+var loggedOutTraceMsg = fmt.Sprintf("Setup tracing at %%s. To hide: export %s=1",
 	skipLoggedOutTraceMsgEnvs[rand.Intn(len(skipLoggedOutTraceMsgEnvs))])
 
 type FrontendOpts struct {
