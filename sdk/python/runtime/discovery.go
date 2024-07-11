@@ -4,10 +4,13 @@ import (
 	"context"
 	"fmt"
 	"path"
+	"python-sdk/internal/dagger"
+	"python-sdk/internal/telemetry"
 	"strings"
 	"sync"
 
 	"github.com/pelletier/go-toml/v2"
+	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -38,7 +41,10 @@ type PyProject struct {
 type Discovery struct {
 	Config    *PyProject
 	ModName   string
-	ModSource *ModuleSource
+	ModSource *dagger.ModuleSource
+
+	// Images is a map of container image names to their addresses.
+	Images map[string]*Image
 
 	// ContextDir is a copy of the context directory from the module source.
 	//
@@ -47,7 +53,7 @@ type Discovery struct {
 	// but since we have to mount the context directory in the end, rather than
 	// mounting the context dir and then mounting the forked source dir on top,
 	// we fork the context dir instead so there's only one mount in the end.
-	ContextDir *Directory
+	ContextDir *dagger.Directory
 
 	// SubPath is the relative path from the context directory to the source directory.
 	SubPath string
@@ -85,6 +91,22 @@ func NewDiscovery(cfg UserConfig) *Discovery {
 	}
 }
 
+// GetImage returns the container image address for the given name.
+func (d *Discovery) GetImage(name string) (*Image, error) {
+	if len(d.Images) == 0 {
+		images, err := extractImages()
+		if err != nil {
+			return nil, fmt.Errorf("get container image addresses: %w", err)
+		}
+		d.Images = images
+	}
+	image, ok := d.Images[name]
+	if !ok {
+		return nil, fmt.Errorf("%q container image address not found", name)
+	}
+	return image, nil
+}
+
 // UserConfig is the configuration the user can set in pyproject.toml, under
 // the "tool.dagger" table.
 func (d *Discovery) UserConfig() *UserConfig {
@@ -103,25 +125,25 @@ func (d *Discovery) AddNewFile(name, contents string) {
 }
 
 // AddFile adds a file to the module's source.
-func (d *Discovery) AddFile(name string, file *File) {
+func (d *Discovery) AddFile(name string, file *dagger.File) {
 	d.ContextDir = d.ContextDir.WithFile(path.Join(d.SubPath, name), file)
 }
 
 // GetFile returns a file from the module's source.
-func (d *Discovery) GetFile(name string) *File {
+func (d *Discovery) GetFile(name string) *dagger.File {
 	return d.ContextDir.File(path.Join(d.SubPath, name))
 }
 
 // AddLockFile adds a lock file to the module's source.
 //
 // This also adds to the initial file set so it's detected by the SDK installation step.
-func (d *Discovery) AddLockFile(lock *File) {
-	d.AddFile(LockFilePath, lock)
-	d.FileSet[LockFilePath] = struct{}{}
+func (d *Discovery) AddLockFile(lock *dagger.File) {
+	d.AddFile(PipCompileLock, lock)
+	d.FileSet[PipCompileLock] = struct{}{}
 }
 
 // AddDirectory adds a directory to the module's source.
-func (d *Discovery) AddDirectory(name string, dir *Directory) {
+func (d *Discovery) AddDirectory(name string, dir *dagger.Directory) {
 	d.ContextDir = d.ContextDir.WithDirectory(path.Join(d.SubPath, name), dir)
 }
 
@@ -129,7 +151,7 @@ func (d *Discovery) AddDirectory(name string, dir *Directory) {
 // context directory in GeneratedCode later, so rather than trying
 // to replace the source directory in the context directory, we'll
 // just use the context directory with subpath everywhere.
-func (d *Discovery) Source() *Directory {
+func (d *Discovery) Source() *dagger.Directory {
 	return d.ContextDir.Directory(d.SubPath)
 }
 
@@ -137,7 +159,11 @@ func (d *Discovery) Source() *Directory {
 //
 // This is intended to make all the necessary API calls as efficiently as possibly
 // with concurrency early on, to avoid unnecessary blocking calls later.
-func (d *Discovery) Load(ctx context.Context, modSource *ModuleSource) error {
+func (d *Discovery) Load(ctx context.Context, modSource *dagger.ModuleSource) (rerr error) {
+	// FIXME: This is only temporarily enabled to measure how long this step takes to run.
+	ctx, span := otel.Tracer("dagger.io/sdk.python").Start(ctx, "runtime configuration discovery")
+	defer telemetry.End(span, func() error { return rerr })
+
 	d.ModSource = modSource
 	d.ContextDir = modSource.ContextDirectory()
 
@@ -154,8 +180,6 @@ func (d *Discovery) Load(ctx context.Context, modSource *ModuleSource) error {
 			return err
 		}
 	}
-
-	d.setBaseImage()
 
 	return nil
 }
@@ -294,18 +318,58 @@ func (d *Discovery) loadFiles(ctx context.Context) error {
 
 // loadConfig loads the pyproject.toml file.
 func (d *Discovery) loadConfig(ctx context.Context) error {
-	if contents, ok := d.Files["pyproject.toml"]; ok {
-		return toml.Unmarshal([]byte(contents), d.Config)
+	contents, ok := d.Files["pyproject.toml"]
+	if !ok {
+		return nil
 	}
+
+	if err := toml.Unmarshal([]byte(contents), d.Config); err != nil {
+		return err
+	}
+
+	// Get image addresses from the Dockerfile to combine with possible
+	// overrides in pyproject.toml.
+	baseImage, err := d.GetImage(BaseImageName)
+	if err != nil {
+		return err
+	}
+	uvImage, err := d.GetImage(UvImageName)
+	if err != nil {
+		return err
+	}
+
+	cfg := d.UserConfig()
+
+	// The base image can change if the requested Python version is different
+	// than the default, or if the user has set a custom base image.
+	base, err := d.parseBaseImage(cfg.BaseImage, baseImage)
+	if err != nil {
+		return err
+	}
+
+	// If the image name and tag is the same as the default, reuse the default
+	// because of the digest.
+	if base != nil && !base.Equal(baseImage) {
+		baseImage = base
+	}
+
+	// Uv's image tag matches the version exactly.
+	if cfg.UvVersion != "" && cfg.UvVersion != uvImage.Tag() {
+		uv, err := uvImage.WithTag(cfg.UvVersion)
+		if err != nil {
+			return err
+		}
+		uvImage = uv
+	}
+
+	d.Images[BaseImageName] = baseImage
+	d.Images[UvImageName] = uvImage
+
 	return nil
 }
 
-// findPythonVersion returns the python version for the base container image.
-//
-// Overriding the default version is supported on a best effort:
-// 1. Check .python-version contents
-// 2. Check pinned version in requires-python (in pyproject.toml)
-// 3. Use the default version
+// findPythonVersion looks for a Python version pin in either `.python-version`
+// or `requires-python` in pyproject.toml.
 func (d *Discovery) findPythonVersion() string {
 	if version, ok := d.Files[".python-version"]; ok {
 		return version
@@ -323,37 +387,36 @@ func (d *Discovery) findPythonVersion() string {
 		return strings.TrimSpace(minimum[2:])
 	}
 
-	return DefaultVersion
+	return ""
 }
 
-// setBaseImage sets the image reference for the base container image
+// parseBaseImage parses user configuration to look for an override of the base image.
 //
-// If not configured, will use default image.
+// Base image is constructed on a best effort:
+// 1. Override in custom `base-image` setting (in pyproject.toml)
+// 2. Check `.python-version` contents
+// 3. Check pinned version in requires-python (in pyproject.toml)
+// 4. Use the default base image
 //
-// It's possible to override it in pyproject.toml:
+// To completely override the base image in pyproject.toml:
 // ```toml
 // [tool.dagger]
 // base-image = "acme/my-python:3.11"
 // ```
-//
 // This can be useful to add customizations to the base image, such as
 // additional system dependencies, or just to use a different Python
 // version with full image digest.
 //
 // WARNING: Using an image that deviates from the official slim Python image
 // is not supported and may lead to unexpected behavior. Use at own risk.
-func (d *Discovery) setBaseImage() {
-	cfg := d.UserConfig()
-	imageRef := cfg.BaseImage
-
-	if imageRef == "" {
+func (d *Discovery) parseBaseImage(ref string, defaultImage *Image) (*Image, error) {
+	if ref == "" {
 		version := d.findPythonVersion()
-		imageRef = fmt.Sprintf(DefaultImage, version)
+		if version == "" {
+			return nil, nil
+		}
+		tag := fmt.Sprintf("%s-slim", version)
+		return defaultImage.WithTag(tag)
 	}
-
-	if imageRef == fmt.Sprintf(DefaultImage, DefaultVersion) {
-		imageRef = fmt.Sprintf("%s@%s", imageRef, DefaultDigest)
-	}
-
-	cfg.BaseImage = imageRef
+	return parseImageRef(ref)
 }

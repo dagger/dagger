@@ -28,8 +28,9 @@ import (
 // having a bit of fun with these. cc @vito @jedevc
 var skipLoggedOutTraceMsgEnvs = []string{"NOTHANKS", "SHUTUP", "GOAWAY", "STOPIT"}
 
-//nolint:gosec
 // Keep this to one line, and 80 characters max (longest env var name is NOTHANKS)
+//
+//nolint:gosec
 var loggedOutTraceMsg = fmt.Sprintf("Setup tracing at %%s. To hide: export %s=1",
 	skipLoggedOutTraceMsgEnvs[rand.Intn(len(skipLoggedOutTraceMsgEnvs))])
 

@@ -1,0 +1,11 @@
+kind: Changed
+body: |
+  Improvements in the runtime module
+
+  - Experimental uv.lock support for better project management workflow (in preview)
+  - Added global setting for uv to use the system's certificate store for TLS
+  - No longer installing dependencies in `dagger develop` to avoid a chicken and egg situation
+time: 2024-07-11T13:17:45.381896Z
+custom:
+    Author: helderco
+    PR: "7880"

@@ -23,6 +23,7 @@ class ExtPythonSdk:
     def module_runtime(self, mod_source: dagger.ModuleSource, introspection_json: dagger.File) -> dagger.Container:
         return (
             self.common(mod_source, introspection_json)
+            .with_install()
             .container()
             .with_entrypoint(["/runtime"])
         )
