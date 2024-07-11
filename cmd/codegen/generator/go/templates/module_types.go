@@ -93,6 +93,8 @@ func (ps *parseState) parseGoTypeReference(typ types.Type, named *types.Named, i
 				} else {
 					parsedType.scalarType = named
 				}
+			} else {
+				parsedType.moduleName = ps.moduleName
 			}
 
 			parsedType.alias = named.Obj().Name()
@@ -143,8 +145,9 @@ func (ps *parseState) parseGoTypeReference(typ types.Type, named *types.Named, i
 
 // parsedPrimitiveType is a parsed type that is a primitive type like string, int, bool, etc.
 type parsedPrimitiveType struct {
-	goType *types.Basic
-	isPtr  bool
+	goType     *types.Basic
+	isPtr      bool
+	moduleName string
 
 	scalarType *types.Named
 	enumType   *types.Named
