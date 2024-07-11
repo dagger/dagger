@@ -57,7 +57,7 @@ func (cli *CloudCLI) Login(cmd *cobra.Command, args []string) error {
 		orgName = args[0]
 	}
 
-	if err := auth.Login(ctx); err != nil {
+	if err := auth.Login(ctx, outW); err != nil {
 		return err
 	}
 
