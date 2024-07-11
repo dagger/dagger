@@ -101,6 +101,7 @@ const (
 type daggerClient struct {
 	daggerSession *daggerSession
 	clientID      string
+	clientVersion string
 	secretToken   string
 
 	state   daggerClientState
@@ -445,6 +446,7 @@ func (srv *Server) initializeDaggerClient(
 
 	if opts.EncodedModuleID == "" {
 		client.deps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
+		coreMod.Dag.View = client.clientVersion
 	} else {
 		modID := new(call.ID)
 		if err := modID.Decode(opts.EncodedModuleID); err != nil {
@@ -586,6 +588,7 @@ func (srv *Server) getOrInitClient(
 			state:         clientStateUninitialized,
 			daggerSession: sess,
 			clientID:      clientID,
+			clientVersion: opts.ClientVersion,
 			secretToken:   token,
 		}
 		sess.clients[clientID] = client
@@ -672,6 +675,7 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 	httpHandlerFunc(srv.serveHTTPToClient, &ClientInitOpts{
 		ClientMetadata: &engine.ClientMetadata{
 			ClientID:          execMD.ClientID,
+			ClientVersion:     engine.Version,
 			ClientSecretToken: execMD.SecretToken,
 			SessionID:         execMD.SessionID,
 			ClientHostname:    execMD.Hostname,
