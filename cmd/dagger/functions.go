@@ -390,21 +390,30 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 func (fc *FuncCommand) initializeModule(ctx context.Context) (rerr error) {
 	dag := fc.c.Dagger()
 
-	ctx, span := Tracer().Start(ctx, "initialize", telemetry.Encapsulate())
+	ctx, span := Tracer().Start(ctx, "initialize")
 	defer telemetry.End(span, func() error { return rerr })
 
-	modConf, err := getDefaultModuleConfiguration(ctx, dag, true, true)
+	resolveCtx, resolveSpan := Tracer().Start(ctx, "resolving module ref", telemetry.Encapsulate())
+	defer telemetry.End(resolveSpan, func() error { return rerr })
+	modConf, err := getDefaultModuleConfiguration(resolveCtx, dag, true, true)
 	if err != nil {
 		return fmt.Errorf("failed to get configured module: %w", err)
 	}
 	if !modConf.FullyInitialized() {
 		return fmt.Errorf("module at source dir %q doesn't exist or is invalid", modConf.LocalRootSourcePath)
 	}
+	resolveSpan.End()
 	mod := modConf.Source.AsModule().Initialize()
-	_, err = mod.Serve(ctx)
+
+	serveCtx, serveSpan := Tracer().Start(ctx, "installing module", telemetry.Encapsulate())
+	_, err = mod.Serve(serveCtx)
+	telemetry.End(serveSpan, func() error { return err })
 	if err != nil {
 		return err
 	}
+
+	ctx, loadSpan := Tracer().Start(ctx, "analyzing module", telemetry.Encapsulate())
+	defer telemetry.End(loadSpan, func() error { return rerr })
 
 	name, err := mod.Name(ctx)
 	if err != nil {
