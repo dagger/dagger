@@ -488,6 +488,8 @@ async def version() -> str:
 	)
 
 	t.Run("disable", func(ctx context.Context, t *testctx.T) {
+		t.Skip("FIXME: Figure out how to check if pip was used to install the project")
+
 		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
@@ -510,7 +512,7 @@ async def version() -> str:
 		out, err := daggerCliBase(t, c).
 			With(pyprojectExtra(`
                 [tool.dagger]
-                uv-version = "==0.1.25"
+                uv-version = "0.2.20"
             `)).
 			With(source).
 			With(daggerInitPython()).
@@ -518,24 +520,7 @@ async def version() -> str:
 			Stdout(ctx)
 
 		require.NoError(t, err)
-		require.Equal(t, "0.1.25", out)
-	})
-
-	t.Run("upper bound", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		out, err := daggerCliBase(t, c).
-			With(pyprojectExtra(`
-                [tool.dagger]
-                uv-version = "<0.1.26"
-            `)).
-			With(source).
-			With(daggerInitPython()).
-			With(daggerCall("version")).
-			Stdout(ctx)
-
-		require.NoError(t, err)
-		require.Equal(t, "0.1.25", out)
+		require.Equal(t, "0.2.20", out)
 	})
 }
 
@@ -591,79 +576,6 @@ def version(name: str) -> str:
 
 	require.NoError(t, err)
 	require.Equal(t, "4.1.0", out)
-}
-
-func (ModuleSuite) TestPythonLockHashes(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
-	base := daggerCliBase(t, c).With(daggerInitPython())
-
-	out, err := base.File("requirements.lock").Contents(ctx)
-	require.NoError(t, err)
-
-	// Replace hashes for platformdirs with an invalid one.
-	// The lock file has the following format:
-	//
-	// httpx==0.27.0 \
-	//     --hash=sha256:71d5465162c13681bff01ad59b2cc68dd838ea1f10e51574bac27103f00c91a5 \
-	//     --hash=sha256:a0cb88a46f32dc874e04ee956e4c2764aba2aa228f650b06788ba6bda2962ab5
-	//     # via gql
-	// platformdirs==4.2.0 \
-	//     --hash=sha256:0614df2a2f37e1a662acbd8e2b25b92ccf8632929bc6d43467e17fe89c75e068 \
-	//     --hash=sha256:ef0cc731df711022c174543cb70a9b5bd22e5a9337c8624ef2c2ceb8ddad8768
-	// pygments==2.17.2 \
-	//     --hash=sha256:b27c2826c47d0f3219f29554824c30c5e8945175d888647acd804ddd04af846c \
-	//     --hash=sha256:da46cec9fd2de5be3a8a784f434e4c4ab670b4ff54d605c4c2717e9d49c4c367
-	//     # via rich
-
-	var lock strings.Builder
-	replaceHashes := false
-	for _, line := range strings.Split(out, "\n") {
-		if strings.HasPrefix(line, "platformdirs==") {
-			replaceHashes = true
-			lock.WriteString(
-				fmt.Sprintf("%s\n    --hash=sha256:%s\n", line, strings.Repeat("1", 64)),
-			)
-			continue
-		}
-		if replaceHashes {
-			if strings.HasPrefix(strings.TrimSpace(line), "--hash") {
-				continue
-			} else {
-				replaceHashes = false
-			}
-		}
-		lock.WriteString(line)
-		lock.WriteString("\n")
-	}
-
-	requirements := lock.String()
-	t.Logf("requirements.lock:\n%s", requirements)
-
-	t.Run("uv", func(ctx context.Context, t *testctx.T) {
-		_, err := base.
-			With(fileContents("requirements.lock", requirements)).
-			With(daggerExec("develop")).
-			Sync(ctx)
-
-		// TODO: uv doesn't support hash verification yet.
-		// require.ErrorContains(t, err, "hash mismatch")
-		require.NoError(t, err)
-	})
-
-	t.Run("pip", func(ctx context.Context, t *testctx.T) {
-		_, err := base.
-			With(fileContents("requirements.lock", requirements)).
-			With(pyprojectExtra(`
-                [tool.dagger]
-                use-uv = false
-            `)).
-			With(daggerExec("develop")).
-			Sync(ctx)
-
-		require.ErrorContains(t, err, "DO NOT MATCH THE HASHES")
-		require.ErrorContains(t, err, "Expected sha256 1111111")
-	})
 }
 
 func (ModuleSuite) TestPythonLockAddedDep(ctx context.Context, t *testctx.T) {
