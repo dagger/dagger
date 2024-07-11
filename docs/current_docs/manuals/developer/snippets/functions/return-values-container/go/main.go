@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+
+	"main/internal/dagger"
 )
 
 type MyModule struct{}
 
-func (m *MyModule) Build(ctx context.Context, src *Directory, arch string, os string) *Container {
+func (m *MyModule) Build(ctx context.Context, src *dagger.Directory, arch string, os string) *dagger.Container {
 
 	dir := dag.Container().
 		From("golang:1.21").

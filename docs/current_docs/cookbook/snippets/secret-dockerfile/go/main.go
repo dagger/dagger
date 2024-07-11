@@ -12,10 +12,10 @@ type MyModule struct{}
 func (m *MyModule) Build(
 	ctx context.Context,
 	// The source code to build
-	source *Directory,
+	source *dagger.Directory,
 	// The secret to use in the Dockerfile
-	secret *Secret,
-) (*Container, error) {
+	secret *dagger.Secret,
+) (*dagger.Container, error) {
 	secretName, err := secret.Name(ctx)
 	if err != nil {
 		return nil, err
@@ -24,9 +24,9 @@ func (m *MyModule) Build(
 	return source.
 		DockerBuild(dagger.DirectoryDockerBuildOpts{
 			Dockerfile: "Dockerfile",
-			BuildArgs: []BuildArg{
-					{Name: "gh-secret", Value: secretName},
-				},
-			Secrets:    []*dagger.Secret{secret},
-		})
+			BuildArgs: []dagger.BuildArg{
+				{Name: "gh-secret", Value: secretName},
+			},
+			Secrets: []*dagger.Secret{secret},
+		}), nil
 }

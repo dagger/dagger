@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+
+	"dagger/my-module/internal/dagger"
 )
 
 type MyModule struct{}
@@ -11,7 +13,7 @@ func (m *MyModule) Build(
 	ctx context.Context,
 	// source code location
 	// can be local directory or remote Git repository
-	src *Directory,
+	src *dagger.Directory,
 ) (string, error) {
 	// build app
 	builder := dag.Container().

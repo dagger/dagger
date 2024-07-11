@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"main/internal/dagger"
 )
 
 type MyModule struct{}
@@ -10,7 +11,7 @@ type MyModule struct{}
 func (m *MyModule) UserList(
 	ctx context.Context,
 	// Host service
-	svc *Service,
+	svc *dagger.Service,
 ) (string, error) {
 	return dag.Container().
 		From("mariadb:10.11.2").

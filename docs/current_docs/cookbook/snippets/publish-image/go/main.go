@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+
+	"dagger/my-module/internal/dagger"
 )
 
 type MyModule struct{}
@@ -15,12 +17,11 @@ func (m *MyModule) Publish(
 	// Registry username
 	username string,
 	// Registry password
-	password *Secret,
+	password *dagger.Secret,
 ) (string, error) {
 	return dag.Container().
 		From("nginx:1.23-alpine").
-		WithNewFile("/usr/share/nginx/html/index.html", dagger.ContainerWithNewFileOpts{
-			Contents:    "Hello from Dagger!",
+		WithNewFile("/usr/share/nginx/html/index.html", "Hello from Dagger!", dagger.ContainerWithNewFileOpts{
 			Permissions: 0o400,
 		}).
 		WithRegistryAuth(registry, username, password).

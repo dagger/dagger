@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+
+	"dagger/my-module/internal/dagger"
 )
 
 type MyModule struct{}
@@ -24,8 +26,8 @@ func (m *MyModule) SetEnv(ctx context.Context) (string, error) {
 		Stdout(ctx)
 }
 
-func EnvVariables(envs []*EnvVar) WithContainerFunc {
-	return func(c *Container) *Container {
+func EnvVariables(envs []*EnvVar) dagger.WithContainerFunc {
+	return func(c *dagger.Container) *dagger.Container {
 		for _, e := range envs {
 			c = c.WithEnvVariable(e.Name, e.Value)
 		}

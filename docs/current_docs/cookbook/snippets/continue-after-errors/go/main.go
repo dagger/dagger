@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+
+	"dagger/my-module/internal/dagger"
 )
 
 type MyModule struct{}
@@ -17,7 +19,7 @@ exit 1
 `
 
 type TestResult struct {
-	Report   *File
+	Report   *dagger.File
 	ExitCode string
 }
 
@@ -27,8 +29,7 @@ func (m *MyModule) Test(ctx context.Context) (*TestResult, error) {
 		Container().
 		From("alpine").
 		// add script with execution permission to simulate a testing tool
-		WithNewFile("run-tests", ContainerWithNewFileOpts{
-			Contents:    script,
+		WithNewFile("run-tests", script, dagger.ContainerWithNewFileOpts{
 			Permissions: 0o750,
 		}).
 		// if the exit code isn't needed: "run-tests; true"

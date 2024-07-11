@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+
+	"dagger/my-module/internal/dagger"
 )
 
 type MyModule struct{}
@@ -11,10 +13,10 @@ func (m *MyModule) Build(
 	ctx context.Context,
 	// Source code location
 	// can be local directory or remote Git repository
-	src *Directory,
+	src *dagger.Directory,
 ) (string, error) {
 	// platforms to build for and push in a multi-platform image
-	var platforms = []Platform{
+	var platforms = []dagger.Platform{
 		"linux/amd64", // a.k.a. x86_64
 		"linux/arm64", // a.k.a. aarch64
 		"linux/s390x", // a.k.a. IBM S/390
@@ -23,10 +25,10 @@ func (m *MyModule) Build(
 	// container registry for the multi-platform image
 	const imageRepo = "ttl.sh/myapp:latest"
 
-	platformVariants := make([]*Container, 0, len(platforms))
+	platformVariants := make([]*dagger.Container, 0, len(platforms))
 	for _, platform := range platforms {
 		// pull golang image for this platform
-		ctr := dag.Container(ContainerOpts{Platform: platform}).
+		ctr := dag.Container(dagger.ContainerOpts{Platform: platform}).
 			From("golang:1.20-alpine").
 			// mount source code
 			WithDirectory("/src", src).
@@ -44,7 +46,7 @@ func (m *MyModule) Build(
 
 		// wrap the output directory in the new empty container marked
 		// with the same platform
-		binaryCtr := dag.Container(ContainerOpts{Platform: platform}).
+		binaryCtr := dag.Container(dagger.ContainerOpts{Platform: platform}).
 			WithRootfs(outputDir)
 
 		platformVariants = append(platformVariants, binaryCtr)
@@ -52,7 +54,7 @@ func (m *MyModule) Build(
 
 	// publish to registry
 	imageDigest, err := dag.Container().
-		Publish(ctx, imageRepo, ContainerPublishOpts{
+		Publish(ctx, imageRepo, dagger.ContainerPublishOpts{
 			PlatformVariants: platformVariants,
 		})
 
