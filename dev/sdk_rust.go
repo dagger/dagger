@@ -45,7 +45,12 @@ func (r RustSDK) Lint(ctx context.Context) error {
 	})
 
 	eg.Go(func() error {
-		return util.DiffDirectoryF(ctx, r.Dagger.Source(), r.Generate, "sdk/rust")
+		before := r.Dagger.Source()
+		after, err := r.Generate(ctx)
+		if err != nil {
+			return err
+		}
+		return dag.Dirdiff().AssertEqual(ctx, before, after, []string{"sdk/rust"})
 	})
 
 	return eg.Wait()

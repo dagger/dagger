@@ -6,7 +6,6 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/dev/internal/dagger"
-	"github.com/dagger/dagger/dev/internal/util"
 )
 
 type Docs struct {
@@ -75,18 +74,25 @@ func (d Docs) Lint(ctx context.Context) error {
 	})
 
 	eg.Go(func() error {
-		return util.DiffDirectoryF(ctx, d.Dagger.Source(), d.Generate, generatedSchemaPath, generatedCliZenPath)
+		before := d.Dagger.Source()
+		after, err := d.Generate(ctx)
+		if err != nil {
+			return err
+		}
+		return dag.Dirdiff().AssertEqual(ctx, before, after, []string{generatedSchemaPath, generatedCliZenPath})
 	})
 
 	eg.Go(func() error {
-		return util.DiffDirectoryF(ctx, d.Dagger.Source(), func(ctx context.Context) (*dagger.Directory, error) {
-			return dag.Container().
-				From("ghcr.io/miniscruff/changie").
-				WithMountedDirectory("/src", d.Dagger.Source()).
-				WithWorkdir("/src").
-				WithExec([]string{"/changie", "merge"}).
-				Directory("/src"), nil
-		}, "CHANGELOG.md")
+		before := d.Dagger.Source()
+		// FIXME: spin out a changie module
+		after := dag.
+			Container().
+			From("ghcr.io/miniscruff/changie").
+			WithMountedDirectory("/src", d.Dagger.Source()).
+			WithWorkdir("/src").
+			WithExec([]string{"/changie", "merge"}).
+			Directory("/src")
+		return dag.Dirdiff().AssertEqual(ctx, before, after, []string{"CHANGELOG.md"})
 	})
 
 	// Go is already linted by engine:lint
