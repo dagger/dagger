@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql"
@@ -11,6 +12,10 @@ import (
 )
 
 type JSON json.RawMessage
+
+func init() {
+	strcase.ConfigureAcronym("JSON", "JSON")
+}
 
 func (p JSON) Bytes() []byte {
 	return p
