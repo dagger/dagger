@@ -470,7 +470,55 @@ def version() -> str:
 }
 
 func (ModuleSuite) TestPythonUv(ctx context.Context, t *testctx.T) {
-	source := pythonSource(`
+	t.Run("disabled", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := daggerCliBase(t, c).
+			With(pyprojectExtra(`
+                [tool.dagger]
+                use-uv = false
+            `)).
+			With(daggerInitPython())
+
+		// Only uv creates a lock
+		files, err := modGen.Directory("").Entries(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, files, "requirements.lock")
+
+		// Should still work with pip
+		out, err := modGen.
+			With(daggerCall("container-echo", "--string-arg=hello", "stdout")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello\n", out)
+	})
+
+	t.Run("disabled, check pip install", func(ctx context.Context, t *testctx.T) {
+		// `pip check` fails if Requires-Python doesn't match the
+		// Python version in the container
+
+		c := connect(ctx, t)
+
+		out, err := daggerCliBase(t, c).
+			With(pyprojectExtra(`
+                requires-python = "<3.11"
+
+                [tool.dagger]
+                use-uv = false
+            `)).
+			With(daggerInitPython()).
+			With(daggerCall("container-echo", "--string-arg=hello", "stdout")).
+			Stdout(ctx)
+
+		t.Logf("out: %s", out)
+		require.ErrorContains(t, err, "pip is looking at multiple versions of main")
+		require.ErrorContains(t, err, "requires a different Python")
+	})
+
+	t.Run("pinned version", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		source := pythonSource(`
 import anyio
 from dagger import function
 
@@ -485,29 +533,7 @@ async def version() -> str:
     parts = r.stdout.decode().split(" ")
     return parts[1].strip()
 `,
-	)
-
-	t.Run("disable", func(ctx context.Context, t *testctx.T) {
-		t.Skip("FIXME: Figure out how to check if pip was used to install the project")
-
-		c := connect(ctx, t)
-
-		out, err := daggerCliBase(t, c).
-			With(pyprojectExtra(`
-                [tool.dagger]
-                use-uv = false
-            `)).
-			With(source).
-			With(daggerInitPython()).
-			With(daggerCall("version")).
-			Stdout(ctx)
-
-		require.NoError(t, err)
-		require.Equal(t, "n/d", out)
-	})
-
-	t.Run("pinned version", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
+		)
 
 		out, err := daggerCliBase(t, c).
 			With(pyprojectExtra(`
