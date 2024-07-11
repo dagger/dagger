@@ -18,6 +18,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/vcs"
+	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/tonistiigi/fsutil/types"
 )
 
@@ -219,6 +220,20 @@ func getDrive(path string) string {
 	return ""
 }
 
+type SchemeType int
+
+const (
+	NoScheme SchemeType = iota
+	SchemeGitHTTP
+	SchemeGitHTTPS
+	SchemeGitSSH
+	SchemeSSH
+)
+
+func (s SchemeType) String() string {
+	return [...]string{"", "git+http", "git+https", "git+ssh", "ssh"}[s]
+}
+
 type parsedRefString struct {
 	modPath        string
 	modVersion     string
@@ -226,6 +241,8 @@ type parsedRefString struct {
 	kind           core.ModuleSourceKind
 	repoRoot       *vcs.RepoRoot
 	repoRootSubdir string
+	scheme         SchemeType
+	username       string
 }
 
 // interface used for host interaction mocking
@@ -243,13 +260,46 @@ func parseRefString(ctx context.Context, bk buildkitClient, refString string) pa
 	parsed.modPath = refString
 
 	// We do a stat in case the mod path github.com/username is a local directory
+	// Local modules do not have versions
 	stat, err := bk.StatCallerHostPath(ctx, parsed.modPath, false)
 	if err == nil && stat.IsDir() {
 		parsed.kind = core.ModuleSourceKindLocal
 		return parsed
 	}
 
-	parsed.modPath, parsed.modVersion, parsed.hasVersion = strings.Cut(refString, "@")
+	// Clean and store scheme
+	if strings.HasPrefix(refString, "git+") {
+		refString = strings.TrimPrefix(refString, "git+")
+		if strings.HasPrefix(refString, "http://") {
+			parsed.scheme = SchemeGitHTTP
+		} else if strings.HasPrefix(refString, "https://") {
+			parsed.scheme = SchemeGitHTTPS
+		} else if strings.HasPrefix(refString, "ssh://") {
+			parsed.scheme = SchemeGitSSH
+		}
+	} else if strings.HasPrefix(refString, "ssh://") {
+		parsed.scheme = SchemeSSH
+	} else {
+		parsed.scheme = SchemeGitHTTPS
+	}
+
+	// Extract user / path and version from cleaned refString
+	endpoint, err := transport.NewEndpoint(refString)
+	if err != nil {
+		parsed.scheme = NoScheme
+		parsed.kind = core.ModuleSourceKindLocal
+		return parsed
+	}
+
+	parsed.username = endpoint.User
+	parsed.modPath = endpoint.Host + endpoint.Path
+
+	if strings.Contains(endpoint.Path, "@") {
+		parts := strings.Split(endpoint.Path, "@")
+		parsed.modPath = endpoint.Host + parts[0]
+		parsed.modVersion = parts[1]
+		parsed.hasVersion = true
+	}
 
 	// we try to isolate the root of the git repo
 	repoRoot, err := vcs.RepoRootForImportPath(parsed.modPath, false)
@@ -263,6 +313,7 @@ func parseRefString(ctx context.Context, bk buildkitClient, refString string) pa
 	}
 
 	parsed.modPath = refString
+	parsed.scheme = NoScheme
 	parsed.kind = core.ModuleSourceKindLocal
 	return parsed
 }

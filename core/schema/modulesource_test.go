@@ -35,6 +35,8 @@ func TestParsePublicRefString(t *testing.T) {
 				kind:           core.ModuleSourceKindGit,
 				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse", Repo: "https://github.com/shykes/daggerverse"},
 				repoRootSubdir: "ci",
+				scheme:         SchemeGitHTTPS,
+				username:       "",
 			},
 		},
 		{
@@ -44,6 +46,8 @@ func TestParsePublicRefString(t *testing.T) {
 				kind:           core.ModuleSourceKindGit,
 				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse.git", Repo: "https://github.com/shykes/daggerverse"},
 				repoRootSubdir: "ci",
+				scheme:         SchemeGitHTTPS,
+				username:       "",
 			},
 		},
 		{
@@ -53,9 +57,113 @@ func TestParsePublicRefString(t *testing.T) {
 				kind:           core.ModuleSourceKindGit,
 				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse.git", Repo: "https://github.com/shykes/daggerverse"},
 				repoRootSubdir: "../../",
+				scheme:         SchemeGitHTTPS,
+				username:       "",
 			},
 		},
-		// gitlab
+		{
+			urlStr: "git+https://github.com/shykes/daggerverse/ci",
+			want: &parsedRefString{
+				modPath:        "github.com/shykes/daggerverse/ci",
+				kind:           core.ModuleSourceKindGit,
+				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse", Repo: "https://github.com/shykes/daggerverse"},
+				repoRootSubdir: "ci",
+				scheme:         SchemeGitHTTPS,
+				username:       "",
+			},
+		},
+		{
+			urlStr: "git+http://github.com/shykes/daggerverse.git/ci",
+			want: &parsedRefString{
+				modPath:        "github.com/shykes/daggerverse.git/ci",
+				kind:           core.ModuleSourceKindGit,
+				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse.git", Repo: "https://github.com/shykes/daggerverse"},
+				repoRootSubdir: "ci",
+				scheme:         SchemeGitHTTP,
+				username:       "",
+			},
+		},
+		{
+			urlStr: "git+ssh://github.com/shykes/daggerverse.git/ci",
+			want: &parsedRefString{
+				modPath:        "github.com/shykes/daggerverse.git/ci",
+				kind:           core.ModuleSourceKindGit,
+				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse.git", Repo: "https://github.com/shykes/daggerverse"},
+				repoRootSubdir: "ci",
+				scheme:         SchemeGitSSH,
+				username:       "",
+			},
+		},
+		{
+			urlStr: "git+ssh://github.com/shykes/daggerverse/ci",
+			want: &parsedRefString{
+				modPath:        "github.com/shykes/daggerverse/ci",
+				kind:           core.ModuleSourceKindGit,
+				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse", Repo: "https://github.com/shykes/daggerverse"},
+				repoRootSubdir: "ci",
+				scheme:         SchemeGitSSH,
+				username:       "",
+			},
+		},
+		{
+			urlStr: "ssh://github.com/shykes/daggerverse.git/ci",
+			want: &parsedRefString{
+				modPath:        "github.com/shykes/daggerverse.git/ci",
+				kind:           core.ModuleSourceKindGit,
+				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse.git", Repo: "https://github.com/shykes/daggerverse"},
+				repoRootSubdir: "ci",
+				scheme:         SchemeSSH,
+				username:       "",
+			},
+		},
+		{
+			urlStr: "ssh://git@github.com/shykes/daggerverse.git/ci",
+			want: &parsedRefString{
+				modPath:        "github.com/shykes/daggerverse.git/ci",
+				kind:           core.ModuleSourceKindGit,
+				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse.git", Repo: "https://github.com/shykes/daggerverse"},
+				repoRootSubdir: "ci",
+				scheme:         SchemeSSH,
+				username:       "git",
+			},
+		},
+		{
+			urlStr: "git+ssh://user@github.com/shykes/daggerverse/ci",
+			want: &parsedRefString{
+				modPath:        "github.com/shykes/daggerverse/ci",
+				kind:           core.ModuleSourceKindGit,
+				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse", Repo: "https://github.com/shykes/daggerverse"},
+				repoRootSubdir: "ci",
+				scheme:         SchemeGitSSH,
+				username:       "user",
+			},
+		},
+		{
+			urlStr: "git+ssh://user@github.com/shykes/daggerverse/ci@version",
+			want: &parsedRefString{
+				modPath:        "github.com/shykes/daggerverse/ci",
+				kind:           core.ModuleSourceKindGit,
+				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse", Repo: "https://github.com/shykes/daggerverse"},
+				repoRootSubdir: "ci",
+				scheme:         SchemeGitSSH,
+				username:       "user",
+				modVersion:     "version",
+			},
+		},
+		{
+			urlStr: "git+ssh://github.com/shykes/daggerverse/ci@version",
+			want: &parsedRefString{
+				modPath:        "github.com/shykes/daggerverse/ci",
+				kind:           core.ModuleSourceKindGit,
+				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse", Repo: "https://github.com/shykes/daggerverse"},
+				repoRootSubdir: "ci",
+				scheme:         SchemeGitSSH,
+				username:       "",
+				modVersion:     "version",
+			},
+		},
+
+		// GitLab
 		{
 			urlStr: "gitlab.com/testguigui1/dagger-public-sub/mywork/depth1/depth2",
 			want: &parsedRefString{
@@ -63,6 +171,8 @@ func TestParsePublicRefString(t *testing.T) {
 				kind:           core.ModuleSourceKindGit,
 				repoRoot:       &vcs.RepoRoot{Root: "gitlab.com/testguigui1/dagger-public-sub/mywork", Repo: "https://gitlab.com/testguigui1/dagger-public-sub/mywork"},
 				repoRootSubdir: "depth1/depth2",
+				scheme:         SchemeGitHTTPS,
+				username:       "",
 			},
 		},
 		{
@@ -72,6 +182,35 @@ func TestParsePublicRefString(t *testing.T) {
 				kind:           core.ModuleSourceKindGit,
 				repoRoot:       &vcs.RepoRoot{Root: "gitlab.com/testguigui1/dagger-public-sub/mywork.git", Repo: "https://gitlab.com/testguigui1/dagger-public-sub/mywork"},
 				repoRootSubdir: "depth1/depth2",
+				scheme:         SchemeGitHTTPS,
+				username:       "",
+			},
+		},
+
+		// Edge case of RepoRootForImportPath
+		// private GitLab: go-get unauthenticated returns obfuscated repo root
+		// https://gitlab.com/gitlab-org/gitlab-foss/-/blob/master/lib/gitlab/middleware/go.rb#L210-221
+		{
+			urlStr: "ssh://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private/depth1/depth2",
+			want: &parsedRefString{
+				modPath:        "gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private/depth1/depth2",
+				kind:           core.ModuleSourceKindGit,
+				repoRoot:       &vcs.RepoRoot{Root: "gitlab.com/dagger-modules/private", Repo: "https://gitlab.com/dagger-modules/private"},
+				repoRootSubdir: "test/more/dagger-test-modules-private/depth1/depth2",
+				scheme:         SchemeSSH,
+				username:       "",
+			},
+		},
+		// private GitLab with ref including .git: here we declaratively know where the separation between repo and subdir is
+		{
+			urlStr: "ssh://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git/depth1/depth2",
+			want: &parsedRefString{
+				modPath:        "gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git/depth1/depth2",
+				kind:           core.ModuleSourceKindGit,
+				repoRoot:       &vcs.RepoRoot{Root: "gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git", Repo: "https://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private"},
+				repoRootSubdir: "depth1/depth2",
+				scheme:         SchemeSSH,
+				username:       "",
 			},
 		},
 		// bitbucket
@@ -82,6 +221,8 @@ func TestParsePublicRefString(t *testing.T) {
 				kind:           core.ModuleSourceKindGit,
 				repoRoot:       &vcs.RepoRoot{Root: "bitbucket.org/test-travail/test", Repo: "https://bitbucket.org/test-travail/test"},
 				repoRootSubdir: "depth1",
+				scheme:         SchemeGitHTTPS,
+				username:       "",
 			},
 		},
 		{
@@ -91,6 +232,8 @@ func TestParsePublicRefString(t *testing.T) {
 				kind:           core.ModuleSourceKindGit,
 				repoRoot:       &vcs.RepoRoot{Root: "bitbucket.org/test-travail/test.git", Repo: "https://bitbucket.org/test-travail/test"},
 				repoRootSubdir: "depth1",
+				scheme:         SchemeGitHTTPS,
+				username:       "",
 			},
 		},
 	} {
@@ -104,6 +247,8 @@ func TestParsePublicRefString(t *testing.T) {
 			require.Equal(t, parsed.repoRoot.Repo, tc.want.repoRoot.Repo)
 			require.Equal(t, parsed.repoRoot.Root, tc.want.repoRoot.Root)
 			require.Equal(t, parsed.repoRootSubdir, tc.want.repoRootSubdir)
+			require.Equal(t, parsed.scheme, tc.want.scheme)
+			require.Equal(t, parsed.username, tc.want.username)
 		})
 	}
 }
