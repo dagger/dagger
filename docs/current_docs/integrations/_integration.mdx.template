@@ -2,16 +2,16 @@
 slug: /integrations/<name-of-integration>
 ---
 
-# <Name of Integration>
+# <name of integration>
 
 High-level description of benefit or purpose of the integration ie. why should you consider it? 1-2 sentences max. This should explain why and what.
 
-# How it Works 
+# How it Works
 
 More technical explanation. Points to cover:
 
-* Where does it fit in XXX's standard workflow?
-* Where does it fit in XXX's architecture?
+* Where does it fit in <name of integration>'s standard workflow?
+* Where does it fit in <name of integration>'s architecture?
 * How do you trigger Dagger?
 * What additional deps are needed?
 * Are there any limitations or caveats?
@@ -20,11 +20,11 @@ More technical explanation. Points to cover:
 
 What should be already installed and configured? Links to third-party install/configuration docs.
 
-# Examples 
+# Examples
 
 List approach(es) and code sample(s).
 
-# Resources 
+# Resources
 
 Optional section, only include if there are external resources to add, like community call demos, additional docs, guides etc.
 
@@ -33,7 +33,6 @@ you have any questions about additional ways to use <name of integration> with
 Dagger, join our [Discord](https://discord.gg/dagger-io) and ask your questions
 in our [<name of integration> channel]().
 
-# About <Name of Integration>
+# About <name of integration>
 
-Brief description of what XXX is, link to learn more.
-
+Brief description of what <name-of-integration> is, link to learn more.
