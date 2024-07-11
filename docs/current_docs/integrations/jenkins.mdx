@@ -4,9 +4,41 @@ slug: /integrations/jenkins
 
 # Jenkins
 
-The following code sample demonstrates how to integrate Dagger with Jenkins.
+Dagger provides a programmable container engine that allows you to replace your Groovy-based Jenkins pipelines with a regular programming language. This allows you to execute your pipeline the same locally and in Jenkins, with intelligent caching, while keeping all of your existing Jenkins infrastructure.
 
-This requires `docker` client installed on your Jenkins agent, a Docker host available (can be `docker:dind`), and agents labeled in Jenkins with `dagger`.
+# How it Works
+
+There are many ways to run Dagger on Jenkins. The simplest way to get started is having a Jenkins agent with OCI compatible container runtime.
+
+The general workflow looks like this:
+
+1. Jenkins receives job trigger as usual
+1. Jenkins loads Jenkinsfile from repo or from UI config
+1. Jenkins parses the Groovy based Jenkinsfile and finds `dagger call $foo`
+1. Jenkins executes `dagger call $foo`
+1. Dagger CLI attempts to find an existing Dagger Engine or spins up a new one inside the Jenkins agent.
+1. Dagger Engine executes the pipeline called in `dagger call $foo` and sends telemetry to Dagger Cloud if the `DAGGER_CLOUD_TOKEN` environment variable is set.
+1. Job completes with success or failure, pipeline logs appear in Jenkins as usual
+
+# Prerequisites
+
+Running the examples shown below requires:
+
+1. At least one Jenkins agent with the `dagger` label
+1. A Docker host (can be `docker:dind`)
+1. The `docker` client installed on your Jenkins agent
+
+# Examples
+
+The following code sample demonstrates how to integrate Dagger with Jenkins.
 
 ```groovy title="Jenkinsfile" file=./snippets/Jenkinsfile
 ```
+
+# Resources
+
+If you have any questions about additional ways to use Jenkins with Dagger, join our [Discord](https://discord.gg/dagger-io) and ask your questions in our [Jenkins channel](https://discord.com/channels/707636530424053791/1149487212069670974).
+
+# About Jenkins
+
+[Jenkins](https://www.jenkins.io/) is an open-source automation server that enables teams to automate the build, test, and deploy processes of software projects. Jenkins supports many plugins that integrate with various tools, making it a popular choice for Continuous Integration and Continuous Deployment.
