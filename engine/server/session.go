@@ -813,7 +813,7 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 	// get the schema we're gonna serve to this client based on which modules they have loaded, if any
 	schema, err := client.deps.Schema(ctx)
 	if err != nil {
-		return httpErr(fmt.Errorf("failed to get schema: %w", err), http.StatusBadRequest)
+		return gqlErr(fmt.Errorf("failed to get schema: %w", err), http.StatusBadRequest)
 	}
 
 	gqlSrv := handler.NewDefaultServer(schema)
@@ -829,30 +829,14 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 	defer func() {
 		if v := recover(); v != nil {
 			bklog.G(ctx).Errorf("panic serving schema: %v %s", v, string(debug.Stack()))
-			// check whether this is a hijacked connection, if so we can't write any http errors to it
-			_, err := w.Write(nil)
-			if err == http.ErrHijacked {
-				return
-			}
-			gqlErr := &gqlerror.Error{
-				Message: "Internal Server Error",
-			}
-			code := http.StatusInternalServerError
 			switch v := v.(type) {
 			case error:
-				gqlErr.Err = v
-				gqlErr.Message = v.Error()
+				rerr = gqlErr(v, http.StatusInternalServerError)
 			case string:
-				gqlErr.Message = v
+				rerr = gqlErr(errors.New(v), http.StatusInternalServerError)
+			default:
+				rerr = gqlErr(errors.New("internal server error"), http.StatusInternalServerError)
 			}
-			res := graphql.Response{
-				Errors: gqlerror.List{gqlErr},
-			}
-			bytes, err := json.Marshal(res)
-			if err != nil {
-				panic(err)
-			}
-			http.Error(w, string(bytes), code)
 		}
 	}()
 
@@ -1088,6 +1072,34 @@ func httpErr(err error, code int) httpError {
 	return httpError{err, code}
 }
 
+func (e httpError) WriteTo(w http.ResponseWriter) {
+	http.Error(w, e.Error(), e.code)
+}
+
+type gqlError struct {
+	error
+	httpCode int
+}
+
+func gqlErr(err error, httpCode int) gqlError {
+	return gqlError{err, httpCode}
+}
+
+func (e gqlError) WriteTo(w http.ResponseWriter) {
+	gqlerr := &gqlerror.Error{
+		Err:     e.error,
+		Message: e.Error(),
+	}
+	res := graphql.Response{
+		Errors: gqlerror.List{gqlerr},
+	}
+	bytes, err := json.Marshal(res)
+	if err != nil {
+		panic(err)
+	}
+	http.Error(w, string(bytes), e.httpCode)
+}
+
 // httpHandlerFunc lets you write an http handler that just returns an error, which will be
 // turned into a 500 http response if non-nil, or a specific code if the error is of type httpError.
 // It also accepts a generic extra argument that will be passed to the handler function to support
@@ -1105,9 +1117,13 @@ func httpHandlerFunc[T any](fn func(http.ResponseWriter, *http.Request, T) error
 		}
 
 		var httpErr httpError
-		if errors.As(err, &httpErr) {
-			http.Error(w, httpErr.Error(), httpErr.code)
-		} else {
+		var gqlErr gqlError
+		switch {
+		case errors.As(err, &httpErr):
+			httpErr.WriteTo(w)
+		case errors.As(err, &gqlErr):
+			gqlErr.WriteTo(w)
+		default:
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	}
