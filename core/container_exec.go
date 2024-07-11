@@ -321,7 +321,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 
 func (container *Container) MetaFileContents(ctx context.Context, filePath string) (string, error) {
 	if container.Meta == nil {
-		return "", fmt.Errorf("%w: include an exec step with empty arguments to use the default command", ErrNoCommand)
+		return "", fmt.Errorf("%w: %s requires an exec", ErrNoCommand, filePath)
 	}
 
 	file := NewFile(
