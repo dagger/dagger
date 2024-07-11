@@ -1445,6 +1445,33 @@ func (ModuleSuite) TestCallByName(ctx context.Context, t *testctx.T) {
 		require.ErrorContains(t, err, `local module dep source path "../outside/mod-a" escapes context "/work"`)
 	})
 
+	t.Run("local ref with @", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		ctr := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/").
+			With(daggerExec("init", "--source=test@test", "--name=mod-a", "--sdk=go", "test@test")).
+			WithNewFile("/work/test@test/main.go", `package main
+
+			import "context"
+
+			type ModA struct {}
+
+			func (m *ModA) Fn(ctx context.Context) string {
+				return "hi from mod-a"
+			}
+			`,
+			).
+			With(daggerExec("init")).
+			With(daggerExec("install", "--name", "foo", "/work/test@test"))
+
+		// call main module at /work path
+		out, err := ctr.With(daggerCallAt("foo", "fn")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hi from mod-a", strings.TrimSpace(out))
+	})
+
 	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
 		t.Run("git", func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
