@@ -225,11 +225,9 @@ func (fe *frontendPretty) finalRender() error {
 	fe.recalculateViewLocked()
 
 	if fe.Debug || fe.Verbosity >= ShowCompletedVerbosity || fe.err != nil {
-		var msg string
 		if fe.msgPreFinalRender.Len() > 0 {
-			fmt.Fprintln(os.Stderr, fe.msgPreFinalRender.String())
+			fmt.Fprintf(os.Stderr, fe.msgPreFinalRender.String()+"\n\n")
 		}
-		fmt.Fprintln(os.Stderr, msg)
 		// Render progress to stderr so stdout stays clean.
 		out := NewOutput(os.Stderr, termenv.WithProfile(fe.profile))
 		if fe.renderProgress(out, true, fe.window.Height, "") {
