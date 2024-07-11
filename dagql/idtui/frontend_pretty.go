@@ -337,7 +337,7 @@ func (fe *frontendPretty) renderKeymap(out *termenv.Output, style lipgloss.Style
 
 	// Blank line prior to keymap
 	for i, key := range []keyHelp{
-		{out.Hyperlink(fe.cloudURL, "Web"), []string{"w"}, fe.cloudURL != ""},
+		{out.Hyperlink(fe.cloudURL, "web"), []string{"w"}, fe.cloudURL != ""},
 		{"move", []string{"←↑↓→", "up", "down", "left", "right", "h", "j", "k", "l"}, true},
 		{"first", []string{"home"}, true},
 		{"last", []string{"end", " "}, true},
