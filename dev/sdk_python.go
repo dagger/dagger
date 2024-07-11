@@ -126,10 +126,10 @@ func (t PythonSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 		WithWorkdir("./codegen").
 		WithMountedFile("/schema.json", introspection).
 		WithExec([]string{
-            "uv", "run", "--no-dev",
-            "python", "-m",
-            "codegen", "generate", "-i", "/schema.json", "-o", "gen.py",
-        }).
+			"uv", "run", "--no-dev",
+			"python", "-m",
+			"codegen", "generate", "-i", "/schema.json", "-o", "gen.py",
+		}).
 		WithExec([]string{"black", "gen.py"}).
 		File("gen.py")
 	return dag.Directory().WithFile(pythonGeneratedAPIPath, generated), nil
