@@ -1070,7 +1070,7 @@ func (s *moduleSchema) updateDaggerConfig(
 		return nil, "", fmt.Errorf("failed to get module config: %w", err)
 	}
 	if !ok {
-		modCfg = &modules.ModuleConfig{}
+		modCfg = &modules.ModuleConfig{EngineVersion: engine.Version}
 	}
 
 	modCfg.Name = mod.OriginalName
@@ -1079,13 +1079,9 @@ func (s *moduleSchema) updateDaggerConfig(
 	case modules.EngineVersionLatest:
 		modCfg.EngineVersion = engine.Version
 	case "":
-		engineVersion, err := src.Self.ModuleEngineVersion(ctx)
-		if err != nil {
-			return nil, "", fmt.Errorf("failed to get module config: %w", err)
-		}
-		modCfg.EngineVersion = engineVersion
 		if modCfg.EngineVersion == "" {
-			modCfg.EngineVersion = engine.Version
+			// only update engineVersion field if it's not set
+			modCfg.EngineVersion = engine.MinimumModuleVersion
 		}
 	default:
 		modCfg.EngineVersion = engineVersion
