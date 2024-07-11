@@ -32,7 +32,6 @@ import (
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
-	"golang.org/x/mod/semver"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/analytics"
@@ -482,11 +481,7 @@ func (srv *Server) initializeDaggerClient(
 
 	if opts.EncodedModuleID == "" {
 		client.deps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
-		clientVersion := client.clientVersion
-		if !semver.IsValid(clientVersion) {
-			clientVersion = ""
-		}
-		coreMod.Dag.View = clientVersion
+		coreMod.Dag.View = engine.BaseVersion(engine.NormalizeVersion(client.clientVersion))
 	} else {
 		modID := new(call.ID)
 		if err := modID.Decode(opts.EncodedModuleID); err != nil {
@@ -504,7 +499,7 @@ func (srv *Server) initializeDaggerClient(
 		if err != nil {
 			return err
 		}
-		coreMod.Dag.View = engineVersion
+		coreMod.Dag.View = engine.BaseVersion(engine.NormalizeVersion(engineVersion))
 
 		// NOTE: *technically* we should reload the module here, so that we can
 		// use the new typedefs api - but at this point we likely would
@@ -704,7 +699,7 @@ func (srv *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := engine.CheckVersionCompatibility(clientMetadata.ClientVersion, engine.MinimumClientVersion); err != nil {
+	if err := engine.CheckVersionCompatibility(engine.NormalizeVersion(clientMetadata.ClientVersion), engine.MinimumClientVersion); err != nil {
 		http.Error(w, fmt.Sprintf("incompatible client version: %s", err), http.StatusInternalServerError)
 		return
 	}

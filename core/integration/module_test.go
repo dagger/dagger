@@ -20,7 +20,6 @@ import (
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
-	"golang.org/x/mod/semver"
 	"golang.org/x/sync/errgroup"
 
 	"dagger.io/dagger"
@@ -6272,14 +6271,11 @@ func (ModuleSuite) TestModuleSchemaVersion(ctx context.Context, t *testctx.T) {
 			With(daggerQuery("{__schemaVersion}")).
 			Stdout(ctx)
 		require.NoError(t, err)
-		if semver.IsValid(engine.Version) {
-			require.JSONEq(t, `{"__schemaVersion":"`+engine.Version+`"}`, out)
-		} else {
-			require.JSONEq(t, `{"__schemaVersion":""}`, out)
-		}
+
+		require.NotEmpty(t, gjson.Get(out, "__schemaVersion").String())
 	})
 
-	t.Run("standalone dev", func(ctx context.Context, t *testctx.T) {
+	t.Run("standalone explicit", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		work := c.Container().From(golangImage).
@@ -6293,20 +6289,18 @@ func (ModuleSuite) TestModuleSchemaVersion(ctx context.Context, t *testctx.T) {
 		require.JSONEq(t, `{"__schemaVersion":"v2.0.0"}`, out)
 	})
 
-	t.Run("cli", func(ctx context.Context, t *testctx.T) {
+	t.Run("standalone explicit dev", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		work := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", "v3.0.0").
-			WithWorkdir("/work").
-			With(daggerExec("init", "--name=foo", "--sdk=go", "--source=.")).
-			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v2.0.0"}`)
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", "v2.0.0-dev-123").
+			WithWorkdir("/work")
 		out, err := work.
 			With(daggerQuery("{__schemaVersion}")).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"__schemaVersion":"v3.0.0"}`, out)
+		require.JSONEq(t, `{"__schemaVersion":"v2.0.0"}`, out)
 	})
 
 	t.Run("module", func(ctx context.Context, t *testctx.T) {
@@ -6316,7 +6310,7 @@ func (ModuleSuite) TestModuleSchemaVersion(ctx context.Context, t *testctx.T) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--name=foo", "--sdk=go", "--source=.")).
-			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v2.0.0"}`).
+			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v0.11.0"}`).
 			WithNewFile("main.go", `package main
 
 import (
@@ -6346,13 +6340,13 @@ func schemaVersion(ctx context.Context) (string, error) {
 			With(daggerQuery("{foo{getVersion}}")).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"foo":{"getVersion": "v2.0.0"}}`, out)
+		require.JSONEq(t, `{"foo":{"getVersion": "v0.11.0"}}`, out)
 
 		out, err = work.
 			With(daggerCall("get-version")).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "v2.0.0")
+		require.Contains(t, out, "v0.11.0")
 	})
 
 	t.Run("module deps", func(ctx context.Context, t *testctx.T) {
@@ -6362,7 +6356,7 @@ func schemaVersion(ctx context.Context) (string, error) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/dep").
 			With(daggerExec("init", "--name=dep", "--sdk=go", "--source=.")).
-			WithNewFile("dagger.json", `{"name": "dep", "sdk": "go", "source": ".", "engineVersion": "v2.0.0"}`).
+			WithNewFile("dagger.json", `{"name": "dep", "sdk": "go", "source": ".", "engineVersion": "v0.11.0"}`).
 			WithNewFile("main.go", `package main
 
 import (
@@ -6391,7 +6385,7 @@ func schemaVersion(ctx context.Context) (string, error) {
 			WithWorkdir("/work").
 			With(daggerExec("init", "--name=foo", "--sdk=go", "--source=.")).
 			With(daggerExec("install", "./dep")).
-			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v3.0.0", "dependencies": [{"name": "dep", "source": "dep"}]}`).
+			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v0.10.0", "dependencies": [{"name": "dep", "source": "dep"}]}`).
 			WithNewFile("main.go", `package main
 
 import (
@@ -6430,13 +6424,13 @@ func schemaVersion(ctx context.Context) (string, error) {
 			With(daggerQuery("{foo{getVersion}}")).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"foo":{"getVersion": "v3.0.0 v2.0.0"}}`, out)
+		require.JSONEq(t, `{"foo":{"getVersion": "v0.10.0 v0.11.0"}}`, out)
 
 		out, err = work.
 			With(daggerCall("get-version")).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, out, "v3.0.0 v2.0.0")
+		require.Contains(t, out, "v0.10.0 v0.11.0")
 	})
 }
 

@@ -6,7 +6,7 @@ import (
 	"unicode"
 
 	"github.com/dagger/dagger/cmd/codegen/introspection"
-	"github.com/dagger/dagger/engine"
+	"golang.org/x/mod/semver"
 )
 
 const (
@@ -229,5 +229,5 @@ func (c *CommonFunctions) formatType(r *introspection.TypeRef, scope string, inp
 }
 
 func (c *CommonFunctions) CheckVersionCompatibility(minVersion string) bool {
-	return engine.CheckVersionCompatibility(c.schemaVersion, minVersion) == nil
+	return semver.Compare(c.schemaVersion, minVersion) >= 0
 }
