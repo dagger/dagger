@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -35,7 +36,7 @@ var authConfig = &oauth2.Config{
 
 // Login logs the user in and stores the credentials for later use.
 // Interactive messages are printed to w.
-func Login(ctx context.Context) error {
+func Login(ctx context.Context, out io.Writer) error {
 	// If the user is already authenticated, skip the login process.
 	if _, err := Token(ctx); err == nil {
 		return nil
@@ -46,7 +47,7 @@ func Login(ctx context.Context) error {
 		return err
 	}
 
-	fmt.Fprintf(os.Stderr, "\nTo authenticate, visit:\n\t%s\n\n", deviceAuth.VerificationURIComplete)
+	fmt.Fprintf(out, "\nTo authenticate, visit:\n\t%s\n\n", deviceAuth.VerificationURIComplete)
 
 	token, err := authConfig.DeviceAccessToken(ctx, deviceAuth)
 	if err != nil {
