@@ -359,13 +359,14 @@ func (LegacySuite) TestReturnVoid(ctx context.Context, t *testctx.T) {
 	// Changed in dagger/dagger#7773
 	//
 	// Ensure that the old schemas return Void next to error, instead of
-    // just an error. Only Go is a breaking change. Not necessary to test
-    // the others.
+	// just an error. Only Go is a breaking change. Not necessary to test
+	// the others.
 
 	c := connect(ctx, t)
 
-    out, err := daggerCliBase(t, c).
+	out, err := daggerCliBase(t, c).
 		With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+		WithWorkdir("/work").
 		WithNewFile("dagger.json", `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.11.9"}`).
 		WithNewFile("main.go", `package main
 
@@ -378,8 +379,8 @@ func (m *Test) Test(ctx context.Context) (string, error) {
     return string(val), err
 }
 `,
-        ).
-        WithWorkdir("/work/dep").
+		).
+		WithWorkdir("/work/dep").
 		With(daggerExec("init", "--name=dep", "--sdk=go")).
 		With(sdkSource("go", `package main
 
@@ -389,12 +390,12 @@ func (m *Dep) Dummy() error {
     return nil
 }
 `,
-        )).
-        WithWorkdir("/work").
+		)).
+		WithWorkdir("/work").
+		With(daggerExec("install", "./dep")).
 		With(daggerQuery(`{test{test}}`)).
 		Stdout(ctx)
 
 	require.NoError(t, err)
 	require.JSONEq(t, `{"test": {"test": ""}}`, out)
 }
-

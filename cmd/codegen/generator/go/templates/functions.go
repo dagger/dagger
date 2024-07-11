@@ -19,30 +19,33 @@ import (
 func GoTemplateFuncs(
 	ctx context.Context,
 	schema *introspection.Schema,
+	schemaVersion string,
 	moduleName string,
 	pkg *packages.Package,
 	fset *token.FileSet,
 	pass int,
 ) template.FuncMap {
 	return goTemplateFuncs{
-		CommonFunctions: generator.NewCommonFunctions(&FormatTypeFunc{}),
+		CommonFunctions: generator.NewCommonFunctions(schemaVersion, &FormatTypeFunc{}),
 		ctx:             ctx,
 		moduleName:      moduleName,
 		modulePkg:       pkg,
 		moduleFset:      fset,
 		schema:          schema,
+		schemaVersion:   schemaVersion,
 		pass:            pass,
 	}.FuncMap()
 }
 
 type goTemplateFuncs struct {
 	*generator.CommonFunctions
-	ctx        context.Context
-	moduleName string
-	modulePkg  *packages.Package
-	moduleFset *token.FileSet
-	schema     *introspection.Schema
-	pass       int
+	ctx           context.Context
+	moduleName    string
+	modulePkg     *packages.Package
+	moduleFset    *token.FileSet
+	schema        *introspection.Schema
+	schemaVersion string
+	pass          int
 }
 
 func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
@@ -186,7 +189,7 @@ func (funcs goTemplateFuncs) fieldOptionsStructName(f introspection.Field, scope
 
 // fieldFunction converts a field into a function signature
 // Example: `contents: String!` -> `func (r *File) Contents(ctx context.Context) (string, error)`
-func (funcs goTemplateFuncs) fieldFunction(f introspection.Field, topLevel bool, scopes ...string) (string, error) {
+func (funcs goTemplateFuncs) fieldFunction(f introspection.Field, topLevel bool, supportsVoid bool, scopes ...string) (string, error) {
 	// don't create methods on query for the env itself,
 	// e.g. don't create `func (r *DAG) Go() *Go` in the Go env's codegen
 	// TODO(vito): still needed? we codegen against the module's schema view,
@@ -246,7 +249,7 @@ func (funcs goTemplateFuncs) fieldFunction(f introspection.Field, topLevel bool,
 		return "", err
 	}
 	switch {
-	case f.TypeRef.IsVoid():
+	case supportsVoid && f.TypeRef.IsVoid():
 		retType = "error"
 	case f.TypeRef.IsScalar() || f.TypeRef.IsList():
 		retType = fmt.Sprintf("(%s, error)", retType)

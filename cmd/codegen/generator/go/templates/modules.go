@@ -252,7 +252,7 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) { //nolint: gocyclo
 
 	return strings.Join([]string{
 		fmt.Sprintf("%#v", implementationCode),
-		mainSrc,
+		mainSrc(funcs.CheckVersionCompatibility),
 		invokeSrc(objFunctionCases, createMod),
 	}, "\n"), nil
 }
@@ -262,9 +262,18 @@ func dotLine(a *Statement, id string) *Statement {
 }
 
 const (
-	// The static part of the generated code. It calls out to the "invoke" func, which is the mostly
-	// dynamically generated code that actually calls the user's functions.
-	mainSrc = `func main() {
+	parentJSONVar  = "parentJSON"
+	parentNameVar  = "parentName"
+	fnNameVar      = "fnName"
+	inputArgsVar   = "inputArgs"
+	invokeFuncName = "invoke"
+)
+
+// mainSrc returns the static part of the generated code. It calls out to the
+// "invoke" func, which is the mostly dynamically generated code that actually
+// calls the user's functions.
+func mainSrc(checkVersionCompatibility func(string) bool) string {
+	main := `func main() {
 	ctx := context.Background()
 
 	// Direct slog to the new stderr. This is only for dev time debugging, and
@@ -330,19 +339,24 @@ func dispatch(ctx context.Context) error {
 	resultBytes, err := json.Marshal(result)
 	if err != nil {
 		return fmt.Errorf("marshal: %w", err)
-	}
+	}`
+
+	if checkVersionCompatibility("v0.12.0") {
+		main += `
 	if err = fnCall.ReturnValue(ctx, dagger.JSON(resultBytes)); err != nil {
 		return fmt.Errorf("store return value: %w", err)
+	}`
+	} else {
+		main += `
+	if _, err = fnCall.ReturnValue(ctx, dagger.JSON(resultBytes)); err != nil {
+		return fmt.Errorf("store return value: %w", err)
+	}`
 	}
+	main += `
 	return nil
+}`
+	return main
 }
-`
-	parentJSONVar  = "parentJSON"
-	parentNameVar  = "parentName"
-	fnNameVar      = "fnName"
-	inputArgsVar   = "inputArgs"
-	invokeFuncName = "invoke"
-)
 
 // the source code of the invoke func, which is the mostly dynamically generated code that actually calls the user's functions
 func invokeSrc(objFunctionCases map[string][]Code, createMod Code) string {

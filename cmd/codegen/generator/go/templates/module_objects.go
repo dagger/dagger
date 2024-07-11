@@ -448,7 +448,7 @@ func (spec *parsedObjectType) concreteFieldTypeCode(typeSpec ParsedType) (*State
 		s.Id(typeName(typeSpec))
 
 	case *parsedIfaceTypeReference:
-		s.Op("*").Id(formatIfaceImplName(typeSpec.name))
+		s.Op("*").Id(formatIfaceImplName(typeName(typeSpec)))
 
 	default:
 		return nil, fmt.Errorf("unsupported concrete field type %T", typeSpec)
