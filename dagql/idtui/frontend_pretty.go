@@ -63,6 +63,9 @@ type frontendPretty struct {
 
 	// held to synchronize tea.Model with updates
 	mu sync.Mutex
+
+	// messages to print before the final render
+	msgPreFinalRender strings.Builder
 }
 
 func New() Frontend {
@@ -92,11 +95,22 @@ func (fe *frontendPretty) ConnectedToEngine(ctx context.Context, name string, ve
 	// noisy, so suppress this for now
 }
 
-func (fe *frontendPretty) ConnectedToCloud(ctx context.Context, url string, msg string) {
+func (fe *frontendPretty) SetCloudURL(ctx context.Context, url string, msg string, logged bool) {
+	if fe.OpenWeb {
+		if err := browser.OpenURL(url); err != nil {
+			slog.Warn("failed to open URL", "url", url, "err", err)
+		}
+	}
 	fe.mu.Lock()
 	fe.cloudURL = url
 	if msg != "" {
 		slog.Warn(msg)
+	}
+
+	if logged {
+		fe.msgPreFinalRender.WriteString(traceMessage(fe.profile, url, msg))
+	} else if !skipLoggedOutTraceMsg() {
+		fe.msgPreFinalRender.WriteString(fmt.Sprintf(loggedOutTraceMsg, url))
 	}
 	fe.mu.Unlock()
 }
@@ -211,6 +225,9 @@ func (fe *frontendPretty) finalRender() error {
 	fe.recalculateViewLocked()
 
 	if fe.Debug || fe.Verbosity >= ShowCompletedVerbosity || fe.err != nil {
+		if fe.msgPreFinalRender.Len() > 0 {
+			fmt.Fprintf(os.Stderr, fe.msgPreFinalRender.String()+"\n\n")
+		}
 		// Render progress to stderr so stdout stays clean.
 		out := NewOutput(os.Stderr, termenv.WithProfile(fe.profile))
 		if fe.renderProgress(out, true, fe.window.Height, "") {
@@ -318,7 +335,7 @@ func (fe *frontendPretty) renderKeymap(out *termenv.Output, style lipgloss.Style
 
 	// Blank line prior to keymap
 	for i, key := range []keyHelp{
-		{out.Hyperlink(fe.cloudURL, "Cloud"), []string{"c"}, fe.cloudURL != ""},
+		{out.Hyperlink(fe.cloudURL, "web"), []string{"w"}, fe.cloudURL != ""},
 		{"move", []string{"←↑↓→", "up", "down", "left", "right", "h", "j", "k", "l"}, true},
 		{"first", []string{"home"}, true},
 		{"last", []string{"end", " "}, true},
@@ -688,7 +705,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 			}
 			fe.recalculateViewLocked()
 			return fe, nil
-		case "c":
+		case "w":
 			if fe.cloudURL == "" {
 				return fe, nil
 			}

@@ -31,7 +31,7 @@ func withEngine(
 	params.DisableHostRW = disableHostRW
 
 	params.EngineCallback = Frontend.ConnectedToEngine
-	params.CloudCallback = Frontend.ConnectedToCloud
+	params.CloudURLCallback = Frontend.SetCloudURL
 
 	params.EngineTrace = telemetry.SpanForwarder{
 		Processors: telemetry.SpanProcessors,

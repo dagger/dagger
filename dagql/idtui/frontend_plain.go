@@ -13,6 +13,7 @@ import (
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/muesli/termenv"
+	"github.com/pkg/browser"
 	"go.opentelemetry.io/otel/codes"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -119,12 +120,21 @@ func (fe *frontendPlain) ConnectedToEngine(ctx context.Context, name string, ver
 	fe.addVirtualLog(trace.SpanFromContext(ctx), "engine", "name", name, "version", version, "client", clientID)
 }
 
-func (fe *frontendPlain) ConnectedToCloud(ctx context.Context, url string, msg string) {
+func (fe *frontendPlain) SetCloudURL(ctx context.Context, url string, msg string, logged bool) {
+	if fe.OpenWeb {
+		if err := browser.OpenURL(url); err != nil {
+			slog.Warn("failed to open URL", "url", url, "err", err)
+		}
+	}
 	if fe.Silent {
 		return
 	}
 	fe.addVirtualLog(trace.SpanFromContext(ctx), "cloud", "url", url)
-	fmt.Fprintln(&fe.msgsBuffer, traceMessage(fe.profile, url, msg))
+	if logged {
+		fmt.Fprintln(os.Stderr, traceMessage(fe.profile, url, msg)+"\n")
+	} else if !skipLoggedOutTraceMsg() {
+		fmt.Fprintf(os.Stderr, loggedOutTraceMsg+"\n\n", url)
+	}
 }
 
 // addVirtualLog attaches a fake log row to a given span

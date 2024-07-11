@@ -116,7 +116,7 @@ func (cli *CloudCLI) Login(cmd *cobra.Command, args []string) error {
 }
 
 func createNewOrg(ctx context.Context, cli *cloud.Client, w io.Writer) (*auth.Org, error) {
-	url := "https://dagger.cloud/signup?quickstart=true"
+	url := "https://dagger.cloud/traces/setup"
 	err := browser.OpenURL(url)
 	if err != nil {
 		fmt.Fprintf(w, "Unable to open browser automatically, please visit %s to create an organization.\n", url)
