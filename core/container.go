@@ -1533,7 +1533,7 @@ func (container *Container) command(opts ContainerExecOpts) ([]string, error) {
 	}
 
 	if len(args) == 0 {
-		return nil, errors.New("no command has been set")
+		return nil, ErrNoCommand
 	}
 
 	return args, nil

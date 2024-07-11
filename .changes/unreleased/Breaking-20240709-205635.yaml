@@ -1,0 +1,6 @@
+kind: Breaking
+body: 'core: don''t fallback to the default command on `stdout` and `stderr`'
+time: 2024-07-09T20:56:35.338912Z
+custom:
+    Author: helderco
+    PR: "7857"

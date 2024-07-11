@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -367,10 +368,22 @@ func (s *containerSchema) Install() {
 				absolutely necessary and only with trusted commands.`),
 
 		dagql.Func("stdout", s.stdout).
+			View(AllVersion).
 			Doc(`The output stream of the last executed command.`,
 				`Will execute default command if none is set, or error if there's no default.`),
 
 		dagql.Func("stderr", s.stderr).
+			View(AllVersion).
+			Doc(`The error stream of the last executed command.`,
+				`Will execute default command if none is set, or error if there's no default.`),
+
+		dagql.Func("stdout", s.stdoutLegacy).
+			View(BeforeVersion("v0.12.0")).
+			Doc(`The output stream of the last executed command.`,
+				`Will execute default command if none is set, or error if there's no default.`),
+
+		dagql.Func("stderr", s.stderrLegacy).
+			View(BeforeVersion("v0.12.0")).
 			Doc(`The error stream of the last executed command.`,
 				`Will execute default command if none is set, or error if there's no default.`),
 
@@ -707,6 +720,34 @@ func (s *containerSchema) stdout(ctx context.Context, parent *core.Container, _ 
 
 func (s *containerSchema) stderr(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {
 	return parent.MetaFileContents(ctx, buildkit.MetaMountStderrPath)
+}
+
+func (s *containerSchema) stdoutLegacy(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {
+	out, err := parent.MetaFileContents(ctx, buildkit.MetaMountStdoutPath)
+	if errors.Is(err, core.ErrNoCommand) {
+		ctr, err := parent.WithExec(ctx, core.ContainerExecOpts{
+			UseEntrypoint: true,
+		})
+		if err != nil {
+			return "", err
+		}
+		return ctr.MetaFileContents(ctx, buildkit.MetaMountStdoutPath)
+	}
+	return out, err
+}
+
+func (s *containerSchema) stderrLegacy(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {
+	out, err := parent.MetaFileContents(ctx, buildkit.MetaMountStderrPath)
+	if errors.Is(err, core.ErrNoCommand) {
+		ctr, err := parent.WithExec(ctx, core.ContainerExecOpts{
+			UseEntrypoint: true,
+		})
+		if err != nil {
+			return "", err
+		}
+		return ctr.MetaFileContents(ctx, buildkit.MetaMountStderrPath)
+	}
+	return out, err
 }
 
 type containerGpuArgs struct {

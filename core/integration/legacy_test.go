@@ -296,3 +296,61 @@ func (m *Test) Skip() *dagger.Container {
 	// if the entrypoint was not skipped, it would return "echo hello\n"
 	require.Equal(t, "hello\n", out)
 }
+
+func (LegacySuite) TestLegacyNoExec(ctx context.Context, t *testctx.T) {
+	// Changed in dagger/dagger#7857
+	//
+	// Older schemas should continue to fallback to the default command on
+	// stdout and stderr.
+
+	c := connect(ctx, t)
+
+	modGen := daggerCliBase(t, c).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--name=test", "--source=.", "--sdk=go")).
+		WithNewFile("dagger.json", `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.11.9"}`).
+		WithNewFile("main.go", fmt.Sprintf(`package main
+
+import (
+    "context"
+    "dagger/test/internal/dagger"
+)
+
+func New() *Test {
+    return &Test{
+        Container: dag.Container().
+            From("%s").
+            WithDefaultArgs([]string{"sh", "-c", "echo hello; echo goodbye > /dev/stderr"}),
+    }
+}
+
+type Test struct {
+    Container *dagger.Container
+}
+
+func (m *Test) Stdout(ctx context.Context) (string, error) {
+    return m.Container.Stdout(ctx)
+}
+
+func (m *Test) Stderr(ctx context.Context) (string, error) {
+    return m.Container.Stderr(ctx)
+}
+
+func (m *Test) NoExec(ctx context.Context) *dagger.Container {
+	return m.Container.
+        WithoutDefaultArgs().
+        WithoutEntrypoint()
+}
+`, alpineImage),
+		)
+
+	out, err := modGen.With(daggerQuery(`{test{stdout stderr}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"test": {"stdout": "hello\n", "stderr": "goodbye\n"}}`, out)
+
+	_, err = modGen.With(daggerCall("no-exec", "stdout")).Stdout(ctx)
+	require.ErrorContains(t, err, "no command has been set")
+
+	_, err = modGen.With(daggerCall("no-exec", "stderr")).Stdout(ctx)
+	require.ErrorContains(t, err, "no command has been set")
+}
