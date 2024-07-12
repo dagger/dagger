@@ -3,4 +3,4 @@ appVersion: v0.12.0
 description: Dagger Helm chart
 name: dagger-helm
 type: application
-version: v0.12.0
+version: 0.12.0
