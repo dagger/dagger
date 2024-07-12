@@ -15,6 +15,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/engine/client"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
@@ -40,6 +41,10 @@ type connectParams struct {
 }
 
 func EngineSession(cmd *cobra.Command, args []string) error {
+	// show progress from everywhere, not just the primary span, since this
+	// command is purely in service of other spans
+	Frontend.SetPrimary(trace.SpanID{})
+
 	// discard SIGPIPE, which can happen when stdout or stderr are closed
 	// (possibly from the spawning process going away)
 	//
