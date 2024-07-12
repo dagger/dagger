@@ -33,6 +33,7 @@
         "!.git",
         "!**/node_modules",
         "!**/.venv",
+        "!**/dev/sdk",
         "!**/__pycache__"
       ]
     }

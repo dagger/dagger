@@ -5633,11 +5633,11 @@ func (t *Toplevel) Attempt(ctx context.Context, uniq string) error {
 	if err != nil {
 		return err
 	}
-	_, err = dag.Leaker().Leak(ctx)
+	err = dag.Leaker().Leak(ctx)
 	if err != nil {
 		return err
 	}
-	_, err = dag.LeakerBuild().Leak(ctx)
+	err = dag.LeakerBuild().Leak(ctx)
 	if err != nil {
 		return err
 	}

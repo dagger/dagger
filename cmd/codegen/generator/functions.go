@@ -32,11 +32,12 @@ type FormatTypeFuncs interface {
 
 // CommonFunctions formatting function with global shared template functions.
 type CommonFunctions struct {
+	schemaVersion   string
 	formatTypeFuncs FormatTypeFuncs
 }
 
-func NewCommonFunctions(formatTypeFuncs FormatTypeFuncs) *CommonFunctions {
-	return &CommonFunctions{formatTypeFuncs: formatTypeFuncs}
+func NewCommonFunctions(schemaVersion string, formatTypeFuncs FormatTypeFuncs) *CommonFunctions {
+	return &CommonFunctions{schemaVersion: schemaVersion, formatTypeFuncs: formatTypeFuncs}
 }
 
 // IsSelfChainable returns true if an object type has any fields that return that same type.
@@ -227,6 +228,6 @@ func (c *CommonFunctions) formatType(r *introspection.TypeRef, scope string, inp
 	return "", fmt.Errorf("unexpected type kind %s", r.Kind)
 }
 
-func (c *CommonFunctions) CheckVersionCompatibility(version string, minVersion string) bool {
-	return engine.CheckVersionCompatibility(version, minVersion) == nil
+func (c *CommonFunctions) CheckVersionCompatibility(minVersion string) bool {
+	return engine.CheckVersionCompatibility(c.schemaVersion, minVersion) == nil
 }

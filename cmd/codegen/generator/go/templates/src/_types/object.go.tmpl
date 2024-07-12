@@ -57,7 +57,8 @@ type {{ $field | FieldOptionsStructName }} struct {
 {{ $field.DeprecationReason | FormatDeprecation }}
 {{- end }}
 {{- $convertID := $field | ConvertID }}
-{{ FieldFunction $field false }} {
+{{- $supportsVoid := CheckVersionCompatibility "v0.12.0" }}
+{{ FieldFunction $field false $supportsVoid }} {
 	{{- range $arg := $field.Args }}
 	    {{- if and (IsPointer $arg) (not $arg.TypeRef.IsOptional) }}
         assertNotNil("{{ $arg.Name}}", {{ $arg.Name }})
@@ -66,7 +67,11 @@ type {{ $field | FieldOptionsStructName }} struct {
 
     {{- if and ($field.TypeRef.IsScalar) (ne $field.ParentObject.Name "Query") (not $convertID) }}
     if r.{{ $field.Name }} != nil {
+        {{- if and $supportsVoid $field.TypeRef.IsVoid }}
+        return nil
+        {{- else }}
         return *r.{{ $field.Name }}, nil
+        {{- end }}
     }
     {{- end }}
 	q := r.query.Select("{{ $field.Name }}")
@@ -91,14 +96,16 @@ type {{ $field | FieldOptionsStructName }} struct {
 	{{- end }}
 	{{- end }}
 	{{- $typeName := $field.TypeRef | FormatOutputType }}
-    {{ if $convertID }}
-    var id {{ $typeName }}
-    if err := q.Bind(&id).Execute(ctx); err != nil {
-        return nil, err
-    }
+	{{ if and $supportsVoid $field.TypeRef.IsVoid }}
+		return q.Execute(ctx)
+	{{- else if $convertID }}
+	var id {{ $typeName }}
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
 	return &{{ $field.ParentObject.Name }} {
-        query: q.Root().Select("load{{ $field.ParentObject.Name }}FromID").Arg("id", id),
-    }, nil
+		query: q.Root().Select("load{{ $field.ParentObject.Name }}FromID").Arg("id", id),
+	}, nil
 
 	{{- else if $field.TypeRef.IsObject }}
 	return &{{ $typeName }} {

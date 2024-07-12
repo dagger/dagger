@@ -234,13 +234,6 @@ func (fe *frontendPretty) finalRender() error {
 		renderedProgress = fe.renderProgress(out, true, fe.window.Height, "")
 	}
 
-	if fe.err != nil && renderedProgress {
-		// Counter-intuitively, we don't want to render the primary output
-		// when there's an error, because the error is better represented by
-		// the progress output.
-		return nil
-	}
-
 	if renderedProgress {
 		// Print a blank line after progress if there is any primary output to
 		// show.
