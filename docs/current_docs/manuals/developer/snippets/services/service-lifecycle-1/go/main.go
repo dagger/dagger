@@ -16,10 +16,10 @@ func (m *MyModule) RedisService(ctx context.Context) (string, error) {
 	// create Redis client container
 	redisCLI := dag.Container().
 		From("redis").
-		WithServiceBinding("redis-srv", redisSrv).
-		WithEntrypoint([]string{"redis-cli", "-h", "redis-srv"})
+		WithServiceBinding("redis-srv", redisSrv)
 
 	// send ping from client to server
-	ping := redisCLI.WithExec([]string{"ping"})
-	return ping.Stdout(ctx)
+	return redisCLI.
+		WithExec([]string{"redis-cli", "-h", "redis-srv", "ping"}).
+		Stdout(ctx)
 }

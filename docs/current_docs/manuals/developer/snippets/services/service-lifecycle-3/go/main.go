@@ -18,7 +18,7 @@ func (m *MyModule) RedisService(ctx context.Context) (string, error) {
 		From("redis").
 		WithServiceBinding("redis-srv", redisSrv)
 
-    args := []string{"redis-cli", "-h", "redis-srv"}
+	args := []string{"redis-cli", "-h", "redis-srv"}
 
 	// set and get value
 	return redisCLI.
