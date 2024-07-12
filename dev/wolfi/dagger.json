@@ -4,7 +4,7 @@
   "dependencies": [
     {
       "name": "apko",
-      "source": "github.com/vito/daggerverse/apko@3801f03b7eb6667e15a882e4fd8a2fb805b61db5"
+      "source": "github.com/vito/daggerverse/apko@36e8ce2f9eb52cd73c4d5397ed4ed65912d7b6ac"
     }
   ],
   "source": ".",
