@@ -19,6 +19,7 @@ import (
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
+	"golang.org/x/mod/semver"
 	"golang.org/x/sync/errgroup"
 
 	"dagger.io/dagger"
@@ -6075,6 +6076,20 @@ func (ModuleSuite) TestModuleSchemaVersion(ctx context.Context, t *testctx.T) {
 		}
 	})
 
+	t.Run("standalone dev", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		work := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", "v2.0.0").
+			WithWorkdir("/work")
+		out, err := work.
+			With(daggerQuery("{__schemaVersion}")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"__schemaVersion":"v2.0.0"}`, out)
+	})
+
 	t.Run("cli", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
@@ -6245,7 +6260,7 @@ func (ModuleSuite) TestModuleDevelopVersion(ctx context.Context, t *testctx.T) {
 		if semver.IsValid(engine.Version) {
 			require.JSONEq(t, `{"__schemaVersion":"`+engine.Version+`"}`, out)
 		} else {
-		require.JSONEq(t, `{"__schemaVersion":""}`, out)
+			require.JSONEq(t, `{"__schemaVersion":""}`, out)
 		}
 	})
 
@@ -6273,7 +6288,7 @@ func (ModuleSuite) TestModuleDevelopVersion(ctx context.Context, t *testctx.T) {
 		if semver.IsValid(engine.Version) {
 			require.JSONEq(t, `{"__schemaVersion":"`+engine.Version+`"}`, out)
 		} else {
-		require.JSONEq(t, `{"__schemaVersion":""}`, out)
+			require.JSONEq(t, `{"__schemaVersion":""}`, out)
 		}
 	})
 
@@ -6301,7 +6316,7 @@ func (ModuleSuite) TestModuleDevelopVersion(ctx context.Context, t *testctx.T) {
 		if semver.IsValid(engine.Version) {
 			require.JSONEq(t, `{"__schemaVersion":"`+engine.Version+`"}`, out)
 		} else {
-		require.JSONEq(t, `{"__schemaVersion":""}`, out)
+			require.JSONEq(t, `{"__schemaVersion":""}`, out)
 		}
 	})
 }
