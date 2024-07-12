@@ -27,5 +27,5 @@ dagger -m github.com/sagikazarmark/daggerverse/arc@40057665476af62e617cc8def9ef5
 `Container` objects expose a `WithExec()` function, which lets you execute a command in the corresponding container. Here is an example of chaining this function call to a container returned by a Wolfi container builder Dagger Function, to execute the `cowsay` command:
 
 ```shell
-dagger -m github.com/shykes/daggerverse/wolfi@v0.1.2 call container --packages=cowsay with-exec --args=cowsay,dagger stdout
+dagger -m github.com/shykes/daggerverse/wolfi@v0.1.4 call container --packages=cowsay with-exec --args=cowsay,dagger stdout
 ```
