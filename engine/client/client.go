@@ -734,7 +734,11 @@ func (c *Client) DialContext(ctx context.Context, _, _ string) (conn net.Conn, e
 }
 
 func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel, err := c.withClientCloseCancel(r.Context())
+	// propagate span from per-request client headers, otherwise all spans
+	// end up beneath the client session span
+	ctx := otel.GetTextMapPropagator().Extract(r.Context(), propagation.HeaderCarrier(r.Header))
+
+	ctx, cancel, err := c.withClientCloseCancel(ctx)
 	if err != nil {
 		w.WriteHeader(http.StatusBadGateway)
 		w.Write([]byte("client has closed: " + err.Error()))
