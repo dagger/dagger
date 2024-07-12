@@ -18,13 +18,17 @@ class MyModule {
       .container()
       .from("redis")
       .withServiceBinding("redis-srv", redisSrv)
-      .withEntrypoint(["redis-cli", "-h", "redis-srv"])
+      .withEntrypoint()
+
+    const args = ["redis-cli", "-h", "redis-srv"]
 
     // set value
-    const setter = await redisCLI.withExec(["set", "foo", "abc"]).stdout()
+    const setter = await redisCLI
+      .withExec([...args, "set", "foo", "abc"])
+      .stdout()
 
     // get value
-    const getter = await redisCLI.withExec(["get", "foo"]).stdout()
+    const getter = await redisCLI.withExec([...args, "get", "foo"]).stdout()
 
     return setter + getter
   }

@@ -25,7 +25,16 @@ dagger -m github.com/shykes/daggerverse/wolfi@v0.1.2 call container --packages=c
 Once the command completes, you should see this output:
 
 ```shell
-Container evaluated. Use "dagger call base with-package container --help" to see available sub-commands.
+_type: Container
+defaultArgs:
+    - /bin/sh
+entrypoint: []
+mounts:
+    - /tmp
+    - /dev/shm
+platform: linux/arm64
+user: ""
+workdir: /bass/work
 ```
 
 This means that the build succeeded, and a `Container` type representing the built container image was returned.

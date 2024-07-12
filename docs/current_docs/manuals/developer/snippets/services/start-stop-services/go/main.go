@@ -25,12 +25,13 @@ func (m *MyModule) RedisService(ctx context.Context) (string, error) {
 	// create Redis client container
 	redisCLI := dag.Container().
 		From("redis").
-		WithServiceBinding("redis-srv", redisSrv).
-		WithEntrypoint([]string{"redis-cli", "-h", "redis-srv"})
+		WithServiceBinding("redis-srv", redisSrv)
+
+	args := []string{"redis-cli", "-h", "redis-srv"}
 
 	// set value
 	setter, err := redisCLI.
-		WithExec([]string{"set", "foo", "abc"}).
+		WithExec(append(args, "set", "foo", "abc")).
 		Stdout(ctx)
 	if err != nil {
 		return "", err
@@ -38,7 +39,7 @@ func (m *MyModule) RedisService(ctx context.Context) (string, error) {
 
 	// get value
 	getter, err := redisCLI.
-		WithExec([]string{"get", "foo"}).
+		WithExec(append(args, "get", "foo")).
 		Stdout(ctx)
 	if err != nil {
 		return "", err

@@ -37,8 +37,8 @@ class MyModule:
         """Set key and value in Redis service"""
         return (
             await self.redis()
-            .with_exec(["set", key, value])
-            .with_exec(["save"])
+            .with_exec(["set", key, value], use_entrypoint=True)
+            .with_exec(["save"], use_entrypoint=True)
             .stdout()
         )
 
@@ -48,4 +48,4 @@ class MyModule:
         key: Annotated[str, Doc("The cache key to get")],
     ) -> str:
         """Get value from Redis service"""
-        return await self.redis().with_exec(["get", key]).stdout()
+        return await self.redis().with_exec(["get", key], use_entrypoint=True).stdout()
