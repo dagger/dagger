@@ -6068,7 +6068,11 @@ func (ModuleSuite) TestModuleSchemaVersion(ctx context.Context, t *testctx.T) {
 			With(daggerQuery("{__schemaVersion}")).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"__schemaVersion":""}`, out)
+		if semver.IsValid(engine.Version) {
+			require.JSONEq(t, `{"__schemaVersion":"`+engine.Version+`"}`, out)
+		} else {
+			require.JSONEq(t, `{"__schemaVersion":""}`, out)
+		}
 	})
 
 	t.Run("cli", func(ctx context.Context, t *testctx.T) {
@@ -6238,7 +6242,11 @@ func (ModuleSuite) TestModuleDevelopVersion(ctx context.Context, t *testctx.T) {
 
 		out, err := work.With(daggerQuery("{__schemaVersion}")).Stdout(ctx)
 		require.NoError(t, err)
+		if semver.IsValid(engine.Version) {
+			require.JSONEq(t, `{"__schemaVersion":"`+engine.Version+`"}`, out)
+		} else {
 		require.JSONEq(t, `{"__schemaVersion":""}`, out)
+		}
 	})
 
 	t.Run("from high", func(ctx context.Context, t *testctx.T) {
@@ -6262,7 +6270,11 @@ func (ModuleSuite) TestModuleDevelopVersion(ctx context.Context, t *testctx.T) {
 
 		out, err = work.With(daggerQuery("{__schemaVersion}")).Stdout(ctx)
 		require.NoError(t, err)
+		if semver.IsValid(engine.Version) {
+			require.JSONEq(t, `{"__schemaVersion":"`+engine.Version+`"}`, out)
+		} else {
 		require.JSONEq(t, `{"__schemaVersion":""}`, out)
+		}
 	})
 
 	t.Run("from missing", func(ctx context.Context, t *testctx.T) {
@@ -6286,7 +6298,11 @@ func (ModuleSuite) TestModuleDevelopVersion(ctx context.Context, t *testctx.T) {
 
 		out, err = work.With(daggerQuery("{__schemaVersion}")).Stdout(ctx)
 		require.NoError(t, err)
+		if semver.IsValid(engine.Version) {
+			require.JSONEq(t, `{"__schemaVersion":"`+engine.Version+`"}`, out)
+		} else {
 		require.JSONEq(t, `{"__schemaVersion":""}`, out)
+		}
 	})
 }
 
