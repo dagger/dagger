@@ -137,6 +137,10 @@ No. "Rootless mode" means running the Dagger Engine as a container without the `
 
 Yes. By replacing the `/etc/dagger/engine.toml` file with your custom configuration, you can configure the Dagger Engine with CA certs, registry mirrors or additional privileges. However, note that this is a temporary solution and may change in future. [Read more about Dagger Engine configuration](https://github.com/dagger/dagger/blob/main/core/docs/d7yxc-operator_manual.md).
 
+### Can I use Dagger Engine to build Windows Containers?
+
+Unfortunately, not right now. Dagger runs on top of BuildKit and support for Windows Containers is still experimental in BuildKit. In addition, Dagger has a lot of custom code written on top of BuildKit such as networking, init systems, and Linux namespace entries, that do not have exact parallels on Windows.
+
 ### I am stuck. How can I get help?
 
 Join us on [Discord](https://discord.com/invite/dagger-io), and ask your question in our [help forum](https://discord.com/channels/707636530424053791/1030538312508776540). Our team will be happy to help you there!
