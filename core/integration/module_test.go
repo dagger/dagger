@@ -1000,7 +1000,7 @@ func (b *bar) Hello(name string) string {
 	_, err := modGen.With(moduleIntrospection).Stderr(ctx)
 	require.Error(t, err)
 	require.NoError(t, c.Close())
-	require.Contains(t, logs.String(), "cannot code-generate unexported type bar")
+	require.Regexp(t, "cannot code-generate unexported type bar", logs.String())
 }
 
 func (ModuleSuite) TestGoSignaturesMixMatch(ctx context.Context, t *testctx.T) {
@@ -1025,7 +1025,7 @@ func (m *Minimal) Hello(name string, opts struct{}, opts2 struct{}) string {
 	require.Error(t, err)
 	require.NoError(t, c.Close())
 	t.Log(logs.String())
-	require.Contains(t, logs.String(), "nested structs are not supported")
+	require.Regexp(t, "nested structs are not supported", logs.String())
 }
 
 func (ModuleSuite) TestGoSignaturesNameConflict(ctx context.Context, t *testctx.T) {
@@ -1919,7 +1919,7 @@ func (c *Container) Echo(ctx context.Context, msg string) (string, error) {
 		require.Error(t, err)
 		require.NoError(t, c.Close())
 		t.Log(logs.String())
-		require.Contains(t, logs.String(), "cannot define methods on objects from outside this module")
+		require.Regexp(t, "cannot define methods on objects from outside this module", logs.String())
 	})
 
 	t.Run("in same mod name", func(ctx context.Context, t *testctx.T) {
@@ -1935,7 +1935,7 @@ func (c *Container) Echo(ctx context.Context, msg string) (string, error) {
 		require.Error(t, err)
 		require.NoError(t, c.Close())
 		t.Log(logs.String())
-		require.Contains(t, logs.String(), "cannot define methods on objects from outside this module")
+		require.Regexp(t, "cannot define methods on objects from outside this module", logs.String())
 	})
 }
 
@@ -1963,7 +1963,7 @@ func (f *Foo) Echo(ctx context.Context, ctx2 context.Context) (string, error) {
 	require.Error(t, err)
 	require.NoError(t, c.Close())
 	t.Log(logs.String())
-	require.Contains(t, logs.String(), "unexpected context type")
+	require.Regexp(t, "unexpected context type", logs.String())
 }
 
 func (ModuleSuite) TestCustomTypes(ctx context.Context, t *testctx.T) {
