@@ -12,9 +12,9 @@ type MyModule struct{}
 func (m *MyModule) Build(
 	ctx context.Context,
 	// location of source directory
-	src *Directory,
+	src *dagger.Directory,
 	// location of Dockerfile
-	dockerfile *File,
+	dockerfile *dagger.File,
 ) (string, error) {
 
 	// get build context with dockerfile added

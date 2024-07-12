@@ -2,5 +2,5 @@
   "name": "hello-dagger",
   "sdk": "go",
   "source": ".",
-  "engineVersion": "v0.11.3"
+  "engineVersion": "v0.12.0"
 }

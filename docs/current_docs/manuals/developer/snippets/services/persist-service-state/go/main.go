@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+
+	"main/internal/dagger"
 )
 
 type MyModule struct{}
 
 // Create Redis service and client
-func (m *MyModule) Redis(ctx context.Context) *Container {
+func (m *MyModule) Redis(ctx context.Context) *dagger.Container {
 	redisSrv := dag.Container().
 		From("redis").
 		WithExposedPort(6379).
