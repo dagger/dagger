@@ -1,10 +1,11 @@
+import os
 import time
 from typing import Annotated
 
 import anyio
 
 import dagger
-from dagger import Doc, dag, field, function, object_type
+from dagger import Doc, dag, field, function, object_type, telemetry
 from main.utils import mounted_workdir
 
 
@@ -22,13 +23,20 @@ class Debug:
         return await self.container.with_(mounted_workdir(src)).with_exec(["ruff", "check", "--show-files"]).stdout()
 
     @function
-    def workdir(self, src: dagger.Directory) -> dagger.Container:
-        return self.container.with_(mounted_workdir(src))
+    async def workdir(self, src: dagger.Directory) -> dagger.Container:
+        with telemetry.get_tracer().start_as_current_span("workdir span (async)"):
+            return await self.container.with_(mounted_workdir(src))
 
     @function
     def source(self) -> dagger.Directory:
         """The directory containing the module's sources."""
-        return dag.current_module().source()
+        with telemetry.get_tracer().start_as_current_span("source span (lazy)"):
+            return dag.current_module().source()
+
+    @function
+    def env(self) -> list[str]:
+        """Get the environment variables of the runtime container."""
+        return sorted(f"{k}={v}" for k, v in os.environ.items())
 
     @function
     async def cat(self, path: Annotated[str, Doc("The file path in the runtime container")]) -> str:

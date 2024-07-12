@@ -6,7 +6,7 @@ from dagger import Doc, dag, function, object_type
 
 
 @object_type
-class Test:
+class TestSuite:
     """Run the test suite."""
 
     container: dagger.Container

@@ -1,17 +1,20 @@
 [project]
 name = "main"
 version = "0.0.0"
-requires-python = ">= 3.11"
-
-[tool.rye]
-managed = true
-dev-dependencies = [
+dependencies = [
+    "dagger-io",
 ]
 
-[tool.rye.workspace]
+[tool.uv]
+preview = true
+
+[tool.uv.sources]
+dagger-io = { workspace = true }
+
+[tool.uv.workspace]
 members = ["sdk"]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling==1.25.0"]
 build-backend = "hatchling.build"
 

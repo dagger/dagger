@@ -17,7 +17,7 @@ const (
 	pythonSubdir           = "sdk/python"
 	pythonRuntimeSubdir    = "sdk/python/runtime"
 	pythonGeneratedAPIPath = "sdk/python/src/dagger/client/gen.py"
-	pythonDefaultVersion   = "3.11"
+	pythonDefaultVersion   = "3.12"
 )
 
 var (
@@ -47,7 +47,7 @@ func (t PythonSDK) Lint(ctx context.Context) error {
 					},
 				},
 			).
-            WithFile("/.ruff.toml", t.Dagger.Source.File(".ruff.toml")).
+			WithFile("/.ruff.toml", t.Dagger.Source.File(".ruff.toml")).
 			WithExec([]string{"hatch", "fmt", "--linter", "--check", ".", "/docs"}).
 			Sync(ctx)
 		return err
@@ -120,7 +120,7 @@ func (t PythonSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 		return nil, err
 	}
 	generated := t.pythonBase(pythonDefaultVersion, true).
-		WithWorkdir("./codegen").
+		WithWorkdir("codegen").
 		WithMountedFile("/schema.json", introspection).
 		WithExec([]string{
 			"uv", "run", "--no-dev",
@@ -183,12 +183,11 @@ func (t PythonSDK) Bump(ctx context.Context, version string) (*dagger.Directory,
 func (t PythonSDK) pythonBase(version string, install bool) *dagger.Container {
 	src := t.Dagger.Source().Directory(pythonSubdir)
 
-	pipx := dag.HTTP("https://github.com/pypa/pipx/releases/download/1.2.0/pipx.pyz")
 	venv := "/opt/venv"
 
 	base := dag.Container().
 		From(fmt.Sprintf("python:%s-slim", version)).
-        WithEnvVariable("PYTHONUNBUFFERED", "1").
+		WithEnvVariable("PYTHONUNBUFFERED", "1").
 		// TODO: the way uv is installed here is temporary. The PythonSDK
 		// object will be refactored soon to use sdk/python/dev as a dependency.
 		WithDirectory(
@@ -203,11 +202,17 @@ func (t PythonSDK) pythonBase(version string, install bool) *dagger.Container {
 		).
 		WithMountedCache("/root/.cache/uv", dag.CacheVolume("modpython-uv")).
 		WithEnvVariable("PIPX_BIN_DIR", "/usr/local/bin").
-		WithMountedCache("/root/.cache/pip", dag.CacheVolume("pip_cache_"+version)).
-		WithMountedCache("/root/.local/pipx/cache", dag.CacheVolume("pipx_cache_"+version)).
+		WithMountedDirectory("/opt/tools", src.Directory("dev/tools")).
+		WithMountedCache("/root/.cache/uv", dag.CacheVolume("uv_cache_"+version)).
 		WithMountedCache("/root/.cache/hatch", dag.CacheVolume("hatch_cache_"+version)).
-		WithMountedFile("/pipx.pyz", pipx).
-    	WithExec([]string{"python", "/pipx.pyz", "install", "hatch==1.12.3"}).
+		WithExec([]string{"uv", "venv", "/opt/hatch"}).
+		WithExec([]string{
+			"uv", "pip", "install",
+			"--no-deps",
+			"-p", "/opt/hatch/bin/python",
+			"-r", "/opt/tools/hatch/requirements.lock",
+		}).
+		WithExec([]string{"ln", "-s", "/opt/hatch/bin/hatch", "/usr/local/bin/hatch"}).
 		WithExec([]string{"uv", "venv", venv}).
 		WithEnvVariable("VIRTUAL_ENV", venv).
 		WithEnvVariable(
@@ -224,7 +229,7 @@ func (t PythonSDK) pythonBase(version string, install bool) *dagger.Container {
 	if install {
 		base = base.
 			WithMountedDirectory("", src).
-			WithExec([]string{"uv", "pip", "sync", "requirements-dev.lock"})
+			WithExec([]string{"uv", "sync", "--preview"})
 	}
 
 	return base
