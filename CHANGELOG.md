@@ -14,21 +14,21 @@ are captured [in this blog post](https://dagger.io/blog/dagger-0-12).
 
 ### 🔥 Breaking Changes
 
-- sdks: Various breaking changes to SDKs \
-  See SDK-specific release notes for more information
+- sdk: Various breaking changes to the Go SDK \
+  See the SDK-specific release notes for more information.
 - api: Align `Container.withNewFile` signature with `Directory.withNewFile` by @helderco in https://github.com/dagger/dagger/pull/7293 \
-  Callers of `Container.withNewFile` will need to be updated depending on SDK.
+  Callers of `Container.withNewFile` will need to change `contents` from optional to required argument.
 - api: Skip entrypoint by default in `withExec` by @helderco in https://github.com/dagger/dagger/pull/7136 \
-  Callers relying on a `Container`s default entrypoint will need to be updated
-  to opt-in with `UseEntrypoint`.
+  Callers relying on a `Container`'s entrypoint will need to be updated
+  to opt-in with `useEntrypoint`.
+- api: Don't fallback to the default command on `Container.stdout` and `Container.stderr` by @helderco in https://github.com/dagger/dagger/pull/7857 \
+  Callers of `stdout` and `stderr` without a previous `withExec` will need to
+  insert an explicit empty `withExec`.
 - api: `Container.terminal` now returns a `Container` by @aluzzardi in https://github.com/dagger/dagger/pull/7586 \
   Callers of `terminal` will need be updated to handle the updated type.
 - api: Return absolute path on export instead of boolean by @helderco in https://github.com/dagger/dagger/pull/7500 \
   Callers expecting a boolean return will need to be updated to instead
   handle a string path.
-- api: Don't fallback to the default command on `Container.stdout` and `Container.stderr` by @helderco in https://github.com/dagger/dagger/pull/7857 \
-  Callers of `stdout` and `stderr` without a previous `withExec` will need to
-  insert an explicit empty `withExec`.
 - api: Removed deprecated `sshAuthSocket` and `sshKnownHosts` args from `GitRef.tree` by @jedevc in https://github.com/dagger/dagger/pull/6934 \
   Callers should instead attach these arguments onto the top-level `git` call.
 - api: Removed `id` parameters for `container`, `directory` and `socket` by @jedevc in https://github.com/dagger/dagger/pull/6934 \
@@ -62,6 +62,7 @@ changes can be found in the PR descriptions linked above.
 
 - api: `terminal` can be inserted into the middle of `Container` and `Directory` pipelines to pop an interactive shell by @aluzzardi in https://github.com/dagger/dagger/pull/7586
 - api: Introduced module versioning compatibility by @jedevc in https://github.com/dagger/dagger/pull/7759
+- tui: Improved progress navigation and verbosity settings by @vito in https://github.com/dagger/dagger/pull/7671
 - cli: Add `-q` flag and `DAGGER_QUIET=1` to restore previous verbosity default by @vito in https://github.com/dagger/dagger/pull/7822
 - cli: Expand tilde (`~`) in file, directory and secret file argument by @wingyplus in https://github.com/dagger/dagger/pull/7818
 - api: Add git tags API by @grouville in https://github.com/dagger/dagger/pull/7742
@@ -69,7 +70,7 @@ changes can be found in the PR descriptions linked above.
 
 ### Changed
 
-- cli: print module object fields with `dagger call` by @helderco in https://github.com/dagger/dagger/pull/7479
+- cli: Print module object fields with `dagger call` by @helderco in https://github.com/dagger/dagger/pull/7479
 
 ### Fixed
 
