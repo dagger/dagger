@@ -408,6 +408,45 @@ func (src *LocalModuleSource) Symbolic() string {
 	return src.RefString()
 }
 
+type SchemeType int
+
+const (
+	NoScheme SchemeType = iota
+	SchemeGitHTTP
+	SchemeGitHTTPS
+	SchemeGitSSH
+	SchemeSSH
+	SchemeImplicitSSH
+)
+
+// func (s SchemeType) String() string {
+// 	return [...]string{"", "git+http", "git+https", "git+ssh", "ssh", ""}[s]
+// }
+
+func (s SchemeType) Prefix() string {
+	switch s {
+	case SchemeGitHTTP:
+		return "git+http://"
+	case SchemeGitHTTPS:
+		return "git+https://"
+	case SchemeGitSSH:
+		return "git+ssh://"
+	case SchemeSSH:
+		return "ssh://"
+	default:
+		return ""
+	}
+}
+
+func (s SchemeType) IsExplicitSSH() bool {
+	switch s {
+	case SchemeGitSSH, SchemeSSH:
+		return true
+	default:
+		return false
+	}
+}
+
 type GitModuleSource struct {
 	Root        string `field:"true" doc:"The clean module name of the root of the module"`
 	RootSubpath string `field:"true" doc:"The path to the root of the module source under the context directory. This directory contains its configuration file. It also contains its source code (possibly as a subdirectory)."`
@@ -416,6 +455,8 @@ type GitModuleSource struct {
 	Commit  string `field:"true" doc:"The resolved commit of the git repo this source points to."`
 
 	CloneURL string `field:"true" name:"cloneURL" doc:"The URL to clone the root of the git repo from"`
+	// CloneScheme SchemeType `name:"cloneScheme" doc:"The scheme used for cloning the repository (e.g., HTTP, HTTPS, SSH)"`
+	// SSHUsername string     `name:"sshUsername" doc:"The username to use when cloning via SSH. Only applicable when CloneScheme is set to SSH or Git+SSH"`
 
 	ContextDirectory dagql.Instance[*Directory] `field:"true" doc:"The directory containing everything needed to load load and use the module."`
 }

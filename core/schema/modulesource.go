@@ -220,20 +220,6 @@ func getDrive(path string) string {
 	return ""
 }
 
-type SchemeType int
-
-const (
-	NoScheme SchemeType = iota
-	SchemeGitHTTP
-	SchemeGitHTTPS
-	SchemeGitSSH
-	SchemeSSH
-)
-
-func (s SchemeType) String() string {
-	return [...]string{"", "git+http", "git+https", "git+ssh", "ssh"}[s]
-}
-
 type parsedRefString struct {
 	modPath        string
 	modVersion     string
@@ -241,8 +227,8 @@ type parsedRefString struct {
 	kind           core.ModuleSourceKind
 	repoRoot       *vcs.RepoRoot
 	repoRootSubdir string
-	scheme         SchemeType
-	username       string
+	scheme         core.SchemeType
+	sshusername    string
 }
 
 // interface used for host interaction mocking
@@ -256,66 +242,84 @@ type buildkitClient interface {
 // - if not, try to isolate root of git repo from the ref
 // - if nothing worked, fallback as local ref, as before
 func parseRefString(ctx context.Context, bk buildkitClient, refString string) parsedRefString {
-	var parsed parsedRefString
-	parsed.modPath = refString
+	localParsed := parsedRefString{
+		modPath: refString,
+		kind:    core.ModuleSourceKindLocal,
+		scheme:  core.NoScheme,
+	}
 
-	// We do a stat in case the mod path github.com/username is a local directory
-	// Local modules do not have versions
-	stat, err := bk.StatCallerHostPath(ctx, parsed.modPath, false)
+	// First, we stat ref in case the mod path github.com/username is a local directory
+	stat, err := bk.StatCallerHostPath(ctx, refString, false)
 	if err == nil && stat.IsDir() {
-		parsed.kind = core.ModuleSourceKindLocal
-		return parsed
+		return localParsed
 	}
 
-	// Clean and store scheme
-	if strings.HasPrefix(refString, "git+") {
-		refString = strings.TrimPrefix(refString, "git+")
-		if strings.HasPrefix(refString, "http://") {
-			parsed.scheme = SchemeGitHTTP
-		} else if strings.HasPrefix(refString, "https://") {
-			parsed.scheme = SchemeGitHTTPS
-		} else if strings.HasPrefix(refString, "ssh://") {
-			parsed.scheme = SchemeGitSSH
+	// Parse scheme and attempt to parse as git endpoint
+	gitParsed, err := parseGitEndpoint(refString)
+	if err == nil {
+		// Try to isolate the root of the git repo
+		repoRoot, err := vcs.RepoRootForImportPath(gitParsed.modPath, false)
+		if err == nil && repoRoot != nil && repoRoot.VCS != nil && repoRoot.VCS.Name == "Git" {
+			gitParsed.repoRoot = repoRoot
+			// the extra "/" trim is important as subpath traversal such as /../ are being cleaned by filePath.Clean
+			gitParsed.repoRootSubdir = strings.TrimPrefix(strings.TrimPrefix(gitParsed.modPath, repoRoot.Root), "/")
+			return gitParsed
 		}
-	} else if strings.HasPrefix(refString, "ssh://") {
-		parsed.scheme = SchemeSSH
-	} else {
-		parsed.scheme = SchemeGitHTTPS
 	}
 
-	// Extract user / path and version from cleaned refString
-	endpoint, err := transport.NewEndpoint(refString)
+	// Fallback to local reference
+	return localParsed
+}
+
+func parseGitEndpoint(refString string) (parsedRefString, error) {
+	scheme, schemelessRef := parseScheme(refString)
+
+	// we append "ssh" to ensure that NewEndPoint properly parses the host / path and user
+	// HTTP refs are valid SSH refs. Bonus: NewEndpoint library handles correctly implicit SSH refs
+	endpoint, err := transport.NewEndpoint("ssh://" + schemelessRef)
 	if err != nil {
-		parsed.scheme = NoScheme
-		parsed.kind = core.ModuleSourceKindLocal
-		return parsed
+		return parsedRefString{}, err
 	}
 
-	parsed.username = endpoint.User
-	parsed.modPath = endpoint.Host + endpoint.Path
-
-	if strings.Contains(endpoint.Path, "@") {
-		parts := strings.Split(endpoint.Path, "@")
-		parsed.modPath = endpoint.Host + parts[0]
-		parsed.modVersion = parts[1]
-		parsed.hasVersion = true
+	// handle implicit SSH
+	// e.g. git@host/path[@version]
+	if endpoint.User != "" && !scheme.IsExplicitSSH() {
+		scheme = core.SchemeImplicitSSH
 	}
 
-	// we try to isolate the root of the git repo
-	repoRoot, err := vcs.RepoRootForImportPath(parsed.modPath, false)
-	if err == nil && repoRoot != nil && repoRoot.VCS != nil && repoRoot.VCS.Name == "Git" {
-		parsed.kind = core.ModuleSourceKindGit
-		parsed.repoRoot = repoRoot
-		parsed.repoRootSubdir = strings.TrimPrefix(parsed.modPath, repoRoot.Root)
-		// the extra "/" is important as subpath traversal such as /../ are being cleaned by filePath.Clean
-		parsed.repoRootSubdir = strings.TrimPrefix(parsed.repoRootSubdir, "/")
-		return parsed
+	gitParsed := parsedRefString{
+		modPath:     endpoint.Host + endpoint.Path,
+		kind:        core.ModuleSourceKindGit,
+		scheme:      scheme,
+		sshusername: endpoint.User,
 	}
 
-	parsed.modPath = refString
-	parsed.scheme = NoScheme
-	parsed.kind = core.ModuleSourceKindLocal
-	return parsed
+	parts := strings.SplitN(endpoint.Path, "@", 2)
+	if len(parts) == 2 {
+		gitParsed.modPath = endpoint.Host + parts[0]
+		gitParsed.modVersion = parts[1]
+		gitParsed.hasVersion = true
+	}
+
+	return gitParsed, nil
+}
+
+func parseScheme(refString string) (core.SchemeType, string) {
+	schemes := []core.SchemeType{
+		core.SchemeGitHTTP,
+		core.SchemeGitHTTPS,
+		core.SchemeGitSSH,
+		core.SchemeSSH,
+	}
+
+	for _, scheme := range schemes {
+		prefix := scheme.Prefix()
+		if strings.HasPrefix(refString, prefix) {
+			return scheme, strings.TrimPrefix(refString, prefix)
+		}
+	}
+
+	return core.NoScheme, refString
 }
 
 func (s *moduleSchema) moduleSourceAsModule(

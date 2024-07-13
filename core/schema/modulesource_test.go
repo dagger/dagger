@@ -12,8 +12,7 @@ import (
 )
 
 // Test ParseRefString using an interface to control Host side effect
-// It only tests public repos
-func TestParsePublicRefString(t *testing.T) {
+func TestParseRefString(t *testing.T) {
 	ctx := context.Background()
 
 	bkClientDirFalse := &MockBuildkitClient{
@@ -35,8 +34,8 @@ func TestParsePublicRefString(t *testing.T) {
 				kind:           core.ModuleSourceKindGit,
 				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse", Repo: "https://github.com/shykes/daggerverse"},
 				repoRootSubdir: "ci",
-				scheme:         SchemeGitHTTPS,
-				username:       "",
+				scheme:         core.NoScheme,
+				sshusername:    "",
 			},
 		},
 		{
@@ -46,8 +45,8 @@ func TestParsePublicRefString(t *testing.T) {
 				kind:           core.ModuleSourceKindGit,
 				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse.git", Repo: "https://github.com/shykes/daggerverse"},
 				repoRootSubdir: "ci",
-				scheme:         SchemeGitHTTPS,
-				username:       "",
+				scheme:         core.NoScheme,
+				sshusername:    "",
 			},
 		},
 		{
@@ -57,8 +56,8 @@ func TestParsePublicRefString(t *testing.T) {
 				kind:           core.ModuleSourceKindGit,
 				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse.git", Repo: "https://github.com/shykes/daggerverse"},
 				repoRootSubdir: "../../",
-				scheme:         SchemeGitHTTPS,
-				username:       "",
+				scheme:         core.NoScheme,
+				sshusername:    "",
 			},
 		},
 		{
@@ -68,8 +67,8 @@ func TestParsePublicRefString(t *testing.T) {
 				kind:           core.ModuleSourceKindGit,
 				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse", Repo: "https://github.com/shykes/daggerverse"},
 				repoRootSubdir: "ci",
-				scheme:         SchemeGitHTTPS,
-				username:       "",
+				scheme:         core.SchemeGitHTTPS,
+				sshusername:    "",
 			},
 		},
 		{
@@ -79,8 +78,8 @@ func TestParsePublicRefString(t *testing.T) {
 				kind:           core.ModuleSourceKindGit,
 				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse.git", Repo: "https://github.com/shykes/daggerverse"},
 				repoRootSubdir: "ci",
-				scheme:         SchemeGitHTTP,
-				username:       "",
+				scheme:         core.SchemeGitHTTP,
+				sshusername:    "",
 			},
 		},
 		{
@@ -90,8 +89,8 @@ func TestParsePublicRefString(t *testing.T) {
 				kind:           core.ModuleSourceKindGit,
 				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse.git", Repo: "https://github.com/shykes/daggerverse"},
 				repoRootSubdir: "ci",
-				scheme:         SchemeGitSSH,
-				username:       "",
+				scheme:         core.SchemeGitSSH,
+				sshusername:    "",
 			},
 		},
 		{
@@ -101,8 +100,8 @@ func TestParsePublicRefString(t *testing.T) {
 				kind:           core.ModuleSourceKindGit,
 				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse", Repo: "https://github.com/shykes/daggerverse"},
 				repoRootSubdir: "ci",
-				scheme:         SchemeGitSSH,
-				username:       "",
+				scheme:         core.SchemeGitSSH,
+				sshusername:    "",
 			},
 		},
 		{
@@ -112,8 +111,8 @@ func TestParsePublicRefString(t *testing.T) {
 				kind:           core.ModuleSourceKindGit,
 				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse.git", Repo: "https://github.com/shykes/daggerverse"},
 				repoRootSubdir: "ci",
-				scheme:         SchemeSSH,
-				username:       "",
+				scheme:         core.SchemeSSH,
+				sshusername:    "",
 			},
 		},
 		{
@@ -123,8 +122,8 @@ func TestParsePublicRefString(t *testing.T) {
 				kind:           core.ModuleSourceKindGit,
 				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse.git", Repo: "https://github.com/shykes/daggerverse"},
 				repoRootSubdir: "ci",
-				scheme:         SchemeSSH,
-				username:       "git",
+				scheme:         core.SchemeSSH,
+				sshusername:    "git",
 			},
 		},
 		{
@@ -134,8 +133,8 @@ func TestParsePublicRefString(t *testing.T) {
 				kind:           core.ModuleSourceKindGit,
 				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse", Repo: "https://github.com/shykes/daggerverse"},
 				repoRootSubdir: "ci",
-				scheme:         SchemeGitSSH,
-				username:       "user",
+				scheme:         core.SchemeGitSSH,
+				sshusername:    "user",
 			},
 		},
 		{
@@ -145,8 +144,8 @@ func TestParsePublicRefString(t *testing.T) {
 				kind:           core.ModuleSourceKindGit,
 				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse", Repo: "https://github.com/shykes/daggerverse"},
 				repoRootSubdir: "ci",
-				scheme:         SchemeGitSSH,
-				username:       "user",
+				scheme:         core.SchemeGitSSH,
+				sshusername:    "user",
 				modVersion:     "version",
 			},
 		},
@@ -157,8 +156,8 @@ func TestParsePublicRefString(t *testing.T) {
 				kind:           core.ModuleSourceKindGit,
 				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse", Repo: "https://github.com/shykes/daggerverse"},
 				repoRootSubdir: "ci",
-				scheme:         SchemeGitSSH,
-				username:       "",
+				scheme:         core.SchemeGitSSH,
+				sshusername:    "",
 				modVersion:     "version",
 			},
 		},
@@ -171,8 +170,8 @@ func TestParsePublicRefString(t *testing.T) {
 				kind:           core.ModuleSourceKindGit,
 				repoRoot:       &vcs.RepoRoot{Root: "gitlab.com/testguigui1/dagger-public-sub/mywork", Repo: "https://gitlab.com/testguigui1/dagger-public-sub/mywork"},
 				repoRootSubdir: "depth1/depth2",
-				scheme:         SchemeGitHTTPS,
-				username:       "",
+				scheme:         core.NoScheme,
+				sshusername:    "",
 			},
 		},
 		{
@@ -182,8 +181,8 @@ func TestParsePublicRefString(t *testing.T) {
 				kind:           core.ModuleSourceKindGit,
 				repoRoot:       &vcs.RepoRoot{Root: "gitlab.com/testguigui1/dagger-public-sub/mywork.git", Repo: "https://gitlab.com/testguigui1/dagger-public-sub/mywork"},
 				repoRootSubdir: "depth1/depth2",
-				scheme:         SchemeGitHTTPS,
-				username:       "",
+				scheme:         core.NoScheme,
+				sshusername:    "",
 			},
 		},
 
@@ -197,8 +196,8 @@ func TestParsePublicRefString(t *testing.T) {
 				kind:           core.ModuleSourceKindGit,
 				repoRoot:       &vcs.RepoRoot{Root: "gitlab.com/dagger-modules/private", Repo: "https://gitlab.com/dagger-modules/private"},
 				repoRootSubdir: "test/more/dagger-test-modules-private/depth1/depth2",
-				scheme:         SchemeSSH,
-				username:       "",
+				scheme:         core.SchemeSSH,
+				sshusername:    "",
 			},
 		},
 		// private GitLab with ref including .git: here we declaratively know where the separation between repo and subdir is
@@ -209,8 +208,8 @@ func TestParsePublicRefString(t *testing.T) {
 				kind:           core.ModuleSourceKindGit,
 				repoRoot:       &vcs.RepoRoot{Root: "gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git", Repo: "https://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private"},
 				repoRootSubdir: "depth1/depth2",
-				scheme:         SchemeSSH,
-				username:       "",
+				scheme:         core.SchemeSSH,
+				sshusername:    "",
 			},
 		},
 		// bitbucket
@@ -221,8 +220,8 @@ func TestParsePublicRefString(t *testing.T) {
 				kind:           core.ModuleSourceKindGit,
 				repoRoot:       &vcs.RepoRoot{Root: "bitbucket.org/test-travail/test", Repo: "https://bitbucket.org/test-travail/test"},
 				repoRootSubdir: "depth1",
-				scheme:         SchemeGitHTTPS,
-				username:       "",
+				scheme:         core.NoScheme,
+				sshusername:    "",
 			},
 		},
 		{
@@ -232,8 +231,37 @@ func TestParsePublicRefString(t *testing.T) {
 				kind:           core.ModuleSourceKindGit,
 				repoRoot:       &vcs.RepoRoot{Root: "bitbucket.org/test-travail/test.git", Repo: "https://bitbucket.org/test-travail/test"},
 				repoRootSubdir: "depth1",
-				scheme:         SchemeGitHTTPS,
-				username:       "",
+				scheme:         core.NoScheme,
+				sshusername:    "",
+			},
+		},
+		{
+			urlStr: "git@github.com/shykes/daggerverse.git/ci",
+			want: &parsedRefString{
+				modPath:        "github.com/shykes/daggerverse.git/ci",
+				kind:           core.ModuleSourceKindGit,
+				repoRootSubdir: "ci",
+				sshusername:    "git",
+				scheme:         core.SchemeImplicitSSH,
+			},
+		},
+		{
+			urlStr: "git@github.com/shykes/daggerverse.git/ci@version",
+			want: &parsedRefString{
+				modPath:        "github.com/shykes/daggerverse.git/ci",
+				kind:           core.ModuleSourceKindGit,
+				repoRootSubdir: "ci",
+				sshusername:    "git",
+				scheme:         core.SchemeImplicitSSH,
+			},
+		},
+		{
+			urlStr: "git@github.com/shykes/daggerverse.git@version",
+			want: &parsedRefString{
+				modPath:     "github.com/shykes/daggerverse.git",
+				kind:        core.ModuleSourceKindGit,
+				sshusername: "git",
+				scheme:      core.SchemeImplicitSSH,
 			},
 		},
 	} {
@@ -242,13 +270,15 @@ func TestParsePublicRefString(t *testing.T) {
 			t.Parallel()
 			parsed := parseRefString(ctx, bkClientDirFalse, tc.urlStr)
 			require.NotNil(t, parsed)
-			require.Equal(t, parsed.modPath, tc.want.modPath)
-			require.Equal(t, parsed.kind, tc.want.kind)
-			require.Equal(t, parsed.repoRoot.Repo, tc.want.repoRoot.Repo)
-			require.Equal(t, parsed.repoRoot.Root, tc.want.repoRoot.Root)
-			require.Equal(t, parsed.repoRootSubdir, tc.want.repoRootSubdir)
-			require.Equal(t, parsed.scheme, tc.want.scheme)
-			require.Equal(t, parsed.username, tc.want.username)
+			require.Equal(t, tc.want.modPath, parsed.modPath)
+			require.Equal(t, tc.want.kind, parsed.kind)
+			if tc.want.repoRoot != nil {
+				require.Equal(t, tc.want.repoRoot.Repo, parsed.repoRoot.Repo)
+				require.Equal(t, tc.want.repoRoot.Root, parsed.repoRoot.Root)
+			}
+			require.Equal(t, tc.want.repoRootSubdir, parsed.repoRootSubdir)
+			require.Equal(t, tc.want.scheme, parsed.scheme)
+			require.Equal(t, tc.want.sshusername, parsed.sshusername)
 		})
 	}
 }
