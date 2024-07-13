@@ -392,7 +392,7 @@ func (srv *Server) initializeDaggerClient(
 	// write progress for extra debugging if configured
 	bkLogsW := srv.buildkitLogSink
 	if bkLogsW != nil {
-		prefix := fmt.Sprintf("[buildkit] [trace=%s] [client=%s] ", client.spanCtx.TraceID(), client.clientID)
+		prefix := fmt.Sprintf("[buildkit] [client=%s] ", client.clientID)
 		bkLogsW = prefixw.New(bkLogsW, prefix)
 		statusCh := make(chan *bkclient.SolveStatus, 8)
 		pw, err := progressui.NewDisplay(bkLogsW, progressui.PlainMode)

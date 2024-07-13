@@ -37,7 +37,7 @@ type Topic struct {
 }
 
 func (t Topic) String() string {
-	return fmt.Sprintf("Topic{traceID=%s, clientID=%s}", t.TraceID, t.ClientID)
+	return fmt.Sprintf("Topic{traceID=%s, clientID=%s, rootSpan=%s}", t.TraceID, t.ClientID, t.RootSpanID)
 }
 
 type PubSub struct {
@@ -670,17 +670,24 @@ func (ps LogsPubSub) Export(ctx context.Context, logs []sdklog.Record) error {
 
 		slog := slog.With("span", rec.SpanID())
 
+		stream := logStream{
+			span: spanKey{
+				TraceID: rec.TraceID(),
+				SpanID:  rec.SpanID(),
+			},
+			stream: -1,
+		}
+
+		var eof bool
 		rec.WalkAttributes(func(kv log.KeyValue) bool {
-			if kv.Key == telemetry.ClientIDAttr {
+			switch kv.Key {
+			case telemetry.ClientIDAttr:
 				slog.ExtraDebug("found client ID in log record", "clientID", kv.Value.AsString())
-				// if selfClient == "" {
 				selfClient = kv.Value.AsString()
-				// }
-				// topics[Topic{
-				// 	TraceID:  rec.TraceID(),
-				// 	ClientID: kv.Value.AsString(),
-				// }] = struct{}{}
-				return false
+			case telemetry.StdioStreamAttr:
+				stream.stream = kv.Value.AsInt64()
+			case telemetry.StdioEOFAttr:
+				eof = kv.Value.AsBool()
 			}
 			return true
 		})
@@ -690,11 +697,12 @@ func (ps LogsPubSub) Export(ctx context.Context, logs []sdklog.Record) error {
 		if selfClient != "" {
 			slog.Warn("gonna try to track log stream")
 			if client, found := ps.lookupClient(selfClient); found {
-				if client.rootSpanID == rec.SpanID() {
-					slog.Warn("!?! not waiting on self")
+				slog.Warn("found the client")
+				// TODO defer unregister
+				if eof {
+					defer client.finishStream(stream)
 				} else {
-					slog.Warn("found the client")
-					client.trackLogStream(rec)
+					client.trackStream(stream)
 				}
 			} else {
 				slog.Warn("client not found for log record")
@@ -723,8 +731,11 @@ func (ps LogsPubSub) Export(ctx context.Context, logs []sdklog.Record) error {
 		for topic := range topics {
 			slog := slog.With("topic", topic)
 			if client, found := ps.lookupClient(topic.ClientID); found {
-				slog.Warn("found subscribed client for topic")
-				client.trackLogStream(rec)
+				if eof {
+					defer client.finishStream(stream)
+				} else {
+					client.trackStream(stream)
+				}
 			} else {
 				slog.Warn("client not found for topic")
 			}
@@ -926,49 +937,39 @@ func (c *activeClient) spanIDs() []string {
 	return ids
 }
 
-func (c *activeClient) trackLogStream(rec sdklog.Record) {
-	slog := c.slogAttrs(slog.Default()).With("span", rec.SpanID().String())
-
-	// if c.rootSpanID == rec.SpanID() {
-	// 	slog.Debug("won't block on logs for root span")
-	// 	return
-	// }
-
-	stream := logStream{
-		span: spanKey{
-			TraceID: rec.TraceID(),
-			SpanID:  rec.SpanID(),
-		},
-		stream: -1,
-	}
-	var eof bool
-	rec.WalkAttributes(func(kv log.KeyValue) bool {
-		slog.ExtraDebug("log record attr", "key", kv.Key, "value", kv.Value)
-		switch kv.Key {
-		case telemetry.StdioStreamAttr:
-			stream.stream = kv.Value.AsInt64()
-		case telemetry.StdioEOFAttr:
-			eof = kv.Value.AsBool()
-		}
-		return true
-	})
-
+func (c *activeClient) trackStream(stream logStream) {
+	slog := c.slogAttrs(slog.Default()).With("stream", stream.span.SpanID)
 	if stream.stream == -1 {
 		slog.ExtraDebug("log record missing stream attribute")
 		// log record doesn't conform to this stream/EOF pattern, so just ignore it
 		return
 	}
-
-	c.cond.L.Lock()
-	if eof {
-		slog.ExtraDebug("removing log stream")
-		delete(c.logStreams, stream)
-		c.cond.Broadcast()
-	} else if _, active := c.logStreams[stream]; !active {
-		slog.ExtraDebug("registering log stream")
-		c.logStreams[stream] = struct{}{}
-		c.cond.Broadcast()
+	if c.rootSpanID == stream.span.SpanID {
+		slog.Warn("!?! not registering logs for own root span")
+		return
 	}
+	c.cond.L.Lock()
+	slog.ExtraDebug("registering log stream")
+	c.logStreams[stream] = struct{}{}
+	c.cond.Broadcast()
+	c.cond.L.Unlock()
+}
+
+func (c *activeClient) finishStream(stream logStream) {
+	slog := c.slogAttrs(slog.Default()).With("stream", stream.span.SpanID)
+	if stream.stream == -1 {
+		slog.ExtraDebug("log record missing stream attribute")
+		// log record doesn't conform to this stream/EOF pattern, so just ignore it
+		return
+	}
+	if c.rootSpanID == stream.span.SpanID {
+		slog.Warn("!?! not removing logs for own root span")
+		return
+	}
+	c.cond.L.Lock()
+	slog.ExtraDebug("removing log stream")
+	delete(c.logStreams, stream)
+	c.cond.Broadcast()
 	c.cond.L.Unlock()
 }
 
@@ -1006,6 +1007,7 @@ func (c *activeClient) wait(ctx context.Context) {
 
 func (c *activeClient) slogAttrs(slog *slog.Logger) *slog.Logger {
 	return slog.With(
+		"client", c.id,
 		"draining", c.draining,
 		"immediate", c.drainImmediately,
 		"activeSpans", len(c.spans),
