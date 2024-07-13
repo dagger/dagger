@@ -240,16 +240,16 @@ type buildkitClient interface {
 // - if nothing worked, fallback as local ref, as before
 func parseRefString(ctx context.Context, bk buildkitClient, refString string) parsedRefString {
 	var parsed parsedRefString
-	parsed.modPath, parsed.modVersion, parsed.hasVersion = strings.Cut(refString, "@")
+	parsed.modPath = refString
 
 	// We do a stat in case the mod path github.com/username is a local directory
 	stat, err := bk.StatCallerHostPath(ctx, parsed.modPath, false)
-	if err == nil {
-		if !parsed.hasVersion && stat.IsDir() {
-			parsed.kind = core.ModuleSourceKindLocal
-			return parsed
-		}
+	if err == nil && stat.IsDir() {
+		parsed.kind = core.ModuleSourceKindLocal
+		return parsed
 	}
+
+	parsed.modPath, parsed.modVersion, parsed.hasVersion = strings.Cut(refString, "@")
 
 	// we try to isolate the root of the git repo
 	repoRoot, err := vcs.RepoRootForImportPath(parsed.modPath, false)
@@ -262,6 +262,7 @@ func parseRefString(ctx context.Context, bk buildkitClient, refString string) pa
 		return parsed
 	}
 
+	parsed.modPath = refString
 	parsed.kind = core.ModuleSourceKindLocal
 	return parsed
 }

@@ -1,0 +1,6 @@
+kind: Fixed
+body: 'core: local module name can have @'
+time: 2024-07-11T22:14:46.605886241Z
+custom:
+    Author: grouville
+    PR: "7891"
