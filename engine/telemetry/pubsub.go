@@ -921,7 +921,7 @@ func (c *activeClient) finishAndAbandonChildrenLocked(span sdktrace.ReadOnlySpan
 	}
 }
 
-func (c *activeClient) spanNames() []string {
+func (c *activeClient) spanNamesLocked() []string {
 	var names []string
 	for _, span := range c.spans {
 		names = append(names, span.Name())
@@ -929,7 +929,7 @@ func (c *activeClient) spanNames() []string {
 	return names
 }
 
-func (c *activeClient) spanIDs() []string {
+func (c *activeClient) spanIDsLocked() []string {
 	var ids []string
 	for _, span := range c.spans {
 		ids = append(ids, span.SpanContext().SpanID().String())
@@ -986,7 +986,7 @@ func (c *activeClient) wait(ctx context.Context) {
 	defer c.cond.L.Unlock()
 
 	for !c.draining || len(c.spans) > 0 || len(c.logStreams) > 0 {
-		slog = c.slogAttrs(slog)
+		slog = c.slogAttrsLocked(slog)
 		if ctx.Err() != nil {
 			slog.ExtraDebug("wait interrupted", "cause", context.Cause(ctx))
 			break
@@ -1001,19 +1001,25 @@ func (c *activeClient) wait(ctx context.Context) {
 		c.cond.Wait()
 	}
 
-	slog = c.slogAttrs(slog)
+	slog = c.slogAttrsLocked(slog)
 	slog.Debug("done waiting", "ctxErr", ctx.Err())
 }
 
 func (c *activeClient) slogAttrs(slog *slog.Logger) *slog.Logger {
+	c.cond.L.Lock()
+	defer c.cond.L.Unlock()
+	return c.slogAttrsLocked(slog)
+}
+
+func (c *activeClient) slogAttrsLocked(slog *slog.Logger) *slog.Logger {
 	return slog.With(
 		"client", c.id,
 		"draining", c.draining,
 		"immediate", c.drainImmediately,
 		"activeSpans", len(c.spans),
 		"activeLogs", c.logStreams,
-		"spanNames", c.spanNames(),
-		"spanIDs", c.spanIDs(),
+		"spanNames", c.spanNamesLocked(),
+		"spanIDs", c.spanIDsLocked(),
 		"rootSpanID", c.rootSpanID,
 	)
 }
