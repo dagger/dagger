@@ -912,7 +912,7 @@ func (c *activeClient) wait(ctx context.Context) {
 	for !c.draining || len(c.spans) > 0 || len(c.logStreams) > 0 {
 		slog = c.slogAttrs(slog)
 		if ctx.Err() != nil {
-			slog.ExtraDebug("wait interrupted")
+			slog.ExtraDebug("wait interrupted", "cause", context.Cause(ctx))
 			break
 		}
 		if c.drainImmediately {

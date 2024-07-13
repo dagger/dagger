@@ -207,10 +207,10 @@ func (srv *Server) initializeDaggerSession(
 }
 
 func (sess *daggerSession) withShutdownCancel(ctx context.Context) context.Context {
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithCancelCause(ctx)
 	go func() {
 		<-sess.shutdownCh
-		cancel()
+		cancel(errors.New("session shutdown channel closed"))
 	}()
 	return ctx
 }
@@ -698,8 +698,8 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 
 func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opts *ClientInitOpts) (rerr error) {
 	ctx := r.Context()
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(errors.New("done serving HTTP to client"))
 
 	clientMetadata := opts.ClientMetadata
 	ctx = engine.ContextWithClientMetadata(ctx, clientMetadata)

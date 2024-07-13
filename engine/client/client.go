@@ -93,10 +93,10 @@ type Client struct {
 	connector drivers.Connector
 
 	internalCtx    context.Context
-	internalCancel context.CancelFunc
+	internalCancel context.CancelCauseFunc
 
 	closeCtx      context.Context
-	closeRequests context.CancelFunc
+	closeRequests context.CancelCauseFunc
 	closeMu       sync.RWMutex
 
 	telemetry *errgroup.Group
@@ -142,14 +142,14 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	c.rootCtx = ctx
 
 	// NB: decouple from the originator's cancel ctx
-	c.internalCtx, c.internalCancel = context.WithCancel(context.WithoutCancel(ctx))
-	c.closeCtx, c.closeRequests = context.WithCancel(context.WithoutCancel(ctx))
+	c.internalCtx, c.internalCancel = context.WithCancelCause(context.WithoutCancel(ctx))
+	c.closeCtx, c.closeRequests = context.WithCancelCause(context.WithoutCancel(ctx))
 
 	c.eg, c.internalCtx = errgroup.WithContext(c.internalCtx)
 
 	defer func() {
 		if rerr != nil {
-			c.internalCancel()
+			c.internalCancel(errors.New("Connect failed"))
 		}
 	}()
 
@@ -357,7 +357,7 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 		}
 		go func() {
 			<-ctx.Done()
-			cancel()
+			cancel(errors.New("startSession context done"))
 		}()
 		c.sessionSrv.Run(ctx)
 		return nil
@@ -502,10 +502,10 @@ func (c *Client) Close() (rerr error) {
 	default:
 	}
 
-	c.closeRequests()
+	c.closeRequests(errors.New("Client.Close"))
 
 	if c.internalCancel != nil {
-		c.internalCancel()
+		c.internalCancel(errors.New("Client.Close"))
 	}
 
 	if c.daggerClient != nil {
@@ -690,7 +690,7 @@ func (c *Client) shutdownServer() error {
 	return resp.Body.Close()
 }
 
-func (c *Client) withClientCloseCancel(ctx context.Context) (context.Context, context.CancelFunc, error) {
+func (c *Client) withClientCloseCancel(ctx context.Context) (context.Context, context.CancelCauseFunc, error) {
 	c.closeMu.RLock()
 	defer c.closeMu.RUnlock()
 	select {
@@ -698,11 +698,11 @@ func (c *Client) withClientCloseCancel(ctx context.Context) (context.Context, co
 		return nil, nil, errors.New("client closed")
 	default:
 	}
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithCancelCause(ctx)
 	go func() {
 		select {
 		case <-c.closeCtx.Done():
-			cancel()
+			cancel(fmt.Errorf("client closed: %w", context.Cause(c.closeCtx)))
 		case <-ctx.Done():
 		}
 	}()
@@ -720,7 +720,7 @@ func (c *Client) DialContext(ctx context.Context, _, _ string) (conn net.Conn, e
 	}
 	go func() {
 		<-c.closeCtx.Done()
-		cancel()
+		cancel(errors.New("dial context closed"))
 		conn.Close()
 	}()
 	return conn, nil
@@ -749,7 +749,7 @@ func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r = r.WithContext(ctx)
-	defer cancel()
+	defer cancel(errors.New("client done serving HTTP"))
 
 	if c.SecretToken != "" {
 		username, _, ok := r.BasicAuth()
@@ -795,7 +795,7 @@ func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (c *Client) serveHijackedHTTP(ctx context.Context, cancel context.CancelFunc, w http.ResponseWriter, r *http.Request) {
+func (c *Client) serveHijackedHTTP(ctx context.Context, cancel context.CancelCauseFunc, w http.ResponseWriter, r *http.Request) {
 	slog.Warn("serving hijacked HTTP with trace", "ctx", trace.SpanContextFromContext(ctx).TraceID())
 
 	serverConn, err := c.DialContext(ctx, "", "")
@@ -823,7 +823,7 @@ func (c *Client) serveHijackedHTTP(ctx context.Context, cancel context.CancelFun
 	}
 	go func() {
 		<-c.closeCtx.Done()
-		cancel()
+		cancel(errors.New("client closing hijacked HTTP"))
 		clientConn.Close()
 	}()
 
@@ -875,7 +875,7 @@ func (c *Client) Do(
 	if err != nil {
 		return err
 	}
-	defer cancel()
+	defer cancel(errors.New("Client.Do done"))
 
 	gqlClient := graphql.NewClient("http://dagger"+engine.QueryEndpoint, c.httpClient)
 
