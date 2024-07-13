@@ -409,6 +409,7 @@ func (sdk *goSDK) RequiredPaths(_ context.Context) ([]string, error) {
 		"**/vendor/",
 		// needed in order to re-use go.mod from any parent dir (otherwise it's an invalid go module)
 		"**/*.go",
+		"!**/*_test.go",
 	}, nil
 }
 

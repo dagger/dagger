@@ -78,6 +78,9 @@ const (
 	// The client ID that generated this telemetry.
 	ClientIDAttr = "dagger.io/client.id"
 
+	// Indicates that this span should not be waited on during telemetry draining.
+	NoDrainAttr = "dagger.io/nodrain"
+
 	// The stdio stream a log corresponds to (1 for stdout, 2 for stderr).
 	StdioStreamAttr = "stdio.stream"
 

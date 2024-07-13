@@ -162,6 +162,12 @@ func (fe *frontendPretty) SetPrimary(spanID trace.SpanID) {
 	fe.mu.Unlock()
 }
 
+func (fe *frontendPretty) SetRevealAllSpans(val bool) {
+	fe.mu.Lock()
+	fe.FrontendOpts.RevealAllSpans = val
+	fe.mu.Unlock()
+}
+
 func (fe *frontendPretty) runWithTUI(ctx context.Context, ttyIn *os.File, ttyOut *os.File, run func(context.Context) error) error {
 	var stdin io.Reader
 	if ttyIn != nil {
@@ -390,10 +396,12 @@ func (fe *frontendPretty) renderKeymap(out *termenv.Output, style lipgloss.Style
 			fmt.Fprint(w, style.Render("  "))
 		}
 		keyStyle := style
-		if time.Since(fe.pressedKeyAt) < 500*time.Millisecond {
+		sincePressed := time.Since(fe.pressedKeyAt)
+		if sincePressed < pressedHlDur {
 			for _, k := range key.keys {
 				if k == fe.pressedKey {
-					keyStyle = keyStyle.Foreground(nil)
+					keyStyle = keyStyle.
+						Foreground(nil)
 					// Reverse(true)
 				}
 			}
@@ -406,6 +414,8 @@ func (fe *frontendPretty) renderKeymap(out *termenv.Output, style lipgloss.Style
 	fmt.Fprint(out, res)
 	return lipgloss.Width(res)
 }
+
+const pressedHlDur = 500 * time.Millisecond
 
 func (fe *frontendPretty) Render(out *termenv.Output) error {
 	progHeight := fe.window.Height

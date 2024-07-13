@@ -16,6 +16,9 @@ func withEngine(
 	params client.Params,
 	fn runClientCallback,
 ) error {
+	params.ID = ClientID
+	params.RootSpanID = RootSpanID
+
 	if debug {
 		params.LogLevel = slog.LevelDebug
 	}

@@ -873,18 +873,17 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 		"clientID", client.clientID,
 		"mainClientID", sess.mainClientCallerID)
 
-	slog.Trace("shutting down server")
-	defer slog.Trace("done shutting down server")
+	slog.ExtraDebug("shutting down server")
+	defer slog.ExtraDebug("done shutting down server")
 
 	if client.clientID == sess.mainClientCallerID {
 		// Stop services, since the main client is going away, and we
 		// want the client to see them stop.
+		slog.Warn("stopping services")
 		sess.services.StopSessionServices(ctx, sess.sessionID)
 
-		// Start draining telemetry
-		srv.telemetryPubSub.Drain(sess.mainClientCallerID, immediate)
-
 		if len(sess.cacheExporterCfgs) > 0 {
+			slog.Warn("exporting caches")
 			bklog.G(ctx).Debugf("running cache export for client %s", client.clientID)
 			cacheExporterFuncs := make([]buildkit.ResolveCacheExporterFunc, len(sess.cacheExporterCfgs))
 			for i, cacheExportCfg := range sess.cacheExporterCfgs {
@@ -905,11 +904,18 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 		}
 
 		sess.closeShutdownOnce.Do(func() {
+			slog.Warn("shutting down session once")
 			close(sess.shutdownCh)
 		})
 	}
 
+	// Start draining telemetry
+	slog.Warn("draining telemetry")
+	srv.telemetryPubSub.Drain(client.clientID, immediate)
+
+	slog.Warn("forcing flush")
 	telemetry.Flush(ctx)
+	slog.Warn("forced flush")
 
 	return nil
 }

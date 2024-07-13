@@ -74,6 +74,7 @@ type Params struct {
 
 	EngineTrace sdktrace.SpanExporter
 	EngineLogs  sdklog.Exporter
+	RootSpanID  trace.SpanID
 
 	// Log level (0 = INFO)
 	LogLevel slog.Level
@@ -533,6 +534,7 @@ func (c *Client) Close() (rerr error) {
 	if c.telemetry != nil {
 		if err := c.telemetry.Wait(); err != nil {
 			rerr = errors.Join(rerr, fmt.Errorf("flush telemetry: %w", err))
+			slog.Warn("!!! WAITED ON TELEMETRY", "err", err)
 		}
 	}
 
@@ -543,11 +545,20 @@ type otlpConsumer struct {
 	httpClient *httpClient
 	path       string
 	traceID    trace.TraceID
+	rootSpanID trace.SpanID
 	clientID   string
 }
 
-func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte) error) error {
-	slog := slog.With("path", c.path, "traceID", c.traceID, "clientID", c.clientID)
+func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte) error) (rerr error) {
+	slog := slog.With("path", c.path, "traceID", c.traceID, "clientID", c.clientID, "self", c.rootSpanID)
+
+	defer func() {
+		if rerr != nil {
+			slog.Error("consume failed", "err", rerr)
+		} else {
+			slog.Warn("consumed", "ctxErr", ctx.Err())
+		}
+	}()
 
 	res, err := c.httpClient.Do((&http.Request{
 		Method: http.MethodGet,
@@ -557,6 +568,8 @@ func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte) error) error
 			Path:   c.path,
 			RawQuery: url.Values{
 				"trace":  []string{c.traceID.String()},
+				"root":   []string{c.rootSpanID.String()},
+				"cmd":    os.Args,
 				"client": []string{c.clientID},
 			}.Encode(),
 		},
@@ -570,19 +583,18 @@ func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte) error) error
 	defer res.Body.Close()
 
 	if res.StatusCode != http.StatusOK {
-		return fmt.Errorf("consume %s: %s", c.path, res.Status)
+		msg, _ := io.ReadAll(res.Body)
+		return fmt.Errorf("consume %s: %s: %s", c.path, res.Status, string(msg))
 	}
 
-	slog.Debug("consuming")
+	slog.Warn("consuming")
 
 	dec := lencode.NewDecoder(res.Body, lencode.SeparatorOpt(nil))
-
-	defer slog.Debug("done", "ctxErr", ctx.Err())
 
 	for {
 		data, err := dec.Decode()
 		if err != nil {
-			if errors.Is(err, context.Canceled) {
+			if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
 				return nil
 			}
 			return fmt.Errorf("decode: %w", err)
@@ -608,6 +620,7 @@ func (c *Client) exportTraces(httpClient *httpClient) {
 	exp := &otlpConsumer{
 		path:       "/v1/traces",
 		traceID:    trace.SpanContextFromContext(ctx).TraceID(),
+		rootSpanID: c.RootSpanID,
 		clientID:   c.ID,
 		httpClient: httpClient,
 	}
@@ -644,6 +657,7 @@ func (c *Client) exportLogs(httpClient *httpClient) {
 	exp := &otlpConsumer{
 		path:       "/v1/logs",
 		traceID:    trace.SpanContextFromContext(ctx).TraceID(),
+		rootSpanID: c.RootSpanID,
 		clientID:   c.ID,
 		httpClient: httpClient,
 	}
@@ -741,6 +755,10 @@ func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// propagate span from per-request client headers, otherwise all spans
 	// end up beneath the client session span
 	ctx := otel.GetTextMapPropagator().Extract(r.Context(), propagation.HeaderCarrier(r.Header))
+
+	// TODO: that breaks client logs
+
+	// otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(r.Header))
 
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
 	if err != nil {

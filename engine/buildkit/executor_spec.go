@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -981,6 +982,8 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	httpSrv := &http.Server{
 		ReadHeaderTimeout: 10 * time.Second,
 		Handler: h2c.NewHandler(http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
+			slog.Warn("!!! serving HTTP to nested client", "path", req.URL.Path)
+			defer slog.Warn("!!! DONE serving HTTP to nested client", "path", req.URL.Path)
 			w.sessionHandler.ServeHTTPToNestedClient(resp, req, w.execMD)
 		}), http2Srv),
 	}

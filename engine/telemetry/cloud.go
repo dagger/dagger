@@ -177,10 +177,11 @@ func (e *refreshingSpanExporter) refreshIfNecessary(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("get new token: %w", err)
 	}
-	e.exp, err = e.Factory(e.token)
+	exp, err := e.Factory(e.token)
 	if err != nil {
 		return fmt.Errorf("create new exporter: %w", err)
 	}
+	e.exp = exp
 	return nil
 }
 
@@ -234,9 +235,10 @@ func (e *refreshingLogExporter) refreshIfNecessary(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("get new token: %w", err)
 	}
-	e.exp, err = e.Factory(e.token)
+	exp, err := e.Factory(e.token)
 	if err != nil {
 		return fmt.Errorf("create new exporter: %w", err)
 	}
+	e.exp = exp
 	return nil
 }

@@ -31,8 +31,9 @@ import (
 )
 
 type Topic struct {
-	TraceID  trace.TraceID
-	ClientID string
+	TraceID    trace.TraceID
+	RootSpanID trace.SpanID
+	ClientID   string
 }
 
 func (t Topic) String() string {
@@ -126,30 +127,37 @@ func (clientTracker) Shutdown(context.Context) error { return nil }
 // ForceFlush does nothing.
 func (clientTracker) ForceFlush(context.Context) error { return nil }
 
-// clientsFor returns the relevant client IDs for a given span, traversing
-// through parents, in random order.
-func (ps *PubSub) clientsFor(traceID trace.TraceID, spanID trace.SpanID) []string {
+// clientsFor returns the subscribed clients for a given span, traversing
+// through parents, with the deepest client first.
+func (ps *PubSub) clientsFor(traceID trace.TraceID, spanID trace.SpanID) []*activeClient {
 	ps.spansL.Lock()
 	defer ps.spansL.Unlock()
 	key := spanKey{
 		TraceID: traceID,
 		SpanID:  spanID,
 	}
-	clients := map[string]struct{}{}
-	seen := map[spanKey]bool{}
+	var clients []*activeClient
+	seenSpans := map[spanKey]bool{}
+	seenClients := map[string]bool{}
 	for {
-		if seen[key] {
+		if seenSpans[key] {
 			// something horrible has happened, better than looping forever
 			slog.Error("cycle detected collecting span clients",
 				"originalSpanID", spanID,
 				"traceID", key.TraceID,
 				"spanID", key.SpanID,
-				"seen", seen)
+				"seen", seenSpans)
 			break
 		}
-		seen[key] = true
-		if client, ok := ps.spanClients[key]; ok {
-			clients[client] = struct{}{}
+		seenSpans[key] = true
+		if clientID, ok := ps.spanClients[key]; ok && !seenClients[clientID] {
+			client, found := ps.clients[clientID]
+			if found {
+				// TODO: with some tweaks we could support multiple subscribers per client,
+				// but not needed atm
+				clients = append(clients, client)
+				seenClients[clientID] = true
+			}
 		}
 		if parent, ok := ps.spanParents[key]; ok && parent.IsValid() {
 			key.SpanID = parent
@@ -157,11 +165,7 @@ func (ps *PubSub) clientsFor(traceID trace.TraceID, spanID trace.SpanID) []strin
 			break
 		}
 	}
-	var ids []string
-	for id := range clients {
-		ids = append(ids, id)
-	}
-	return ids
+	return clients
 }
 
 func (ps *PubSub) clientFor(traceID trace.TraceID, spanID trace.SpanID) string {
@@ -233,6 +237,16 @@ func (ps *PubSub) SubscribeTracesHandler(rw http.ResponseWriter, r *http.Request
 	if traceIDHex := r.URL.Query().Get("trace"); traceIDHex != "" {
 		var err error
 		topic.TraceID, err = trace.TraceIDFromHex(traceIDHex)
+		if err != nil {
+			http.Error(rw, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+
+	if spanIDHex := r.URL.Query().Get("root"); spanIDHex != "" {
+		var err error
+		topic.RootSpanID, err = trace.SpanIDFromHex(spanIDHex)
+		slog.Warn("!!! TRACES GOT ROOT SPAN ID", "spanID", topic.RootSpanID, "hex", spanIDHex, "cmd", r.URL.Query()["cmd"])
 		if err != nil {
 			http.Error(rw, err.Error(), http.StatusBadRequest)
 			return
@@ -341,6 +355,16 @@ func (ps *PubSub) SubscribeLogsHandler(rw http.ResponseWriter, r *http.Request) 
 		}
 	}
 
+	if spanIDHex := r.URL.Query().Get("root"); spanIDHex != "" {
+		var err error
+		topic.RootSpanID, err = trace.SpanIDFromHex(spanIDHex)
+		slog.Warn("!!! LOGS GOT ROOT SPAN ID", "spanID", topic.RootSpanID, "hex", spanIDHex, "cmd", r.URL.Query()["cmd"])
+		if err != nil {
+			http.Error(rw, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+
 	flusher, ok := rw.(http.Flusher)
 	if !ok {
 		http.Error(rw, "cannot flush", http.StatusInternalServerError)
@@ -437,6 +461,7 @@ func (ps *PubSub) initTopic(topic Topic) *activeClient {
 		c = &activeClient{
 			ps:         ps,
 			id:         clientID,
+			rootSpanID: topic.RootSpanID,
 			cond:       sync.NewCond(&sync.Mutex{}),
 			spans:      map[trace.SpanID]sdktrace.ReadOnlySpan{},
 			logStreams: map[logStream]struct{}{},
@@ -532,7 +557,7 @@ func (ps SpansPubSub) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnly
 			s.SpanContext().SpanID(),
 		)
 
-		selfClient := ps.clientFor(
+		spanClient := ps.clientFor(
 			s.SpanContext().TraceID(),
 			s.SpanContext().SpanID(),
 		)
@@ -547,18 +572,15 @@ func (ps SpansPubSub) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnly
 		var subs []sdktrace.SpanExporter
 
 		if len(affectedClients) > 0 {
-			for _, clientID := range affectedClients {
-				client, subscribed := ps.lookupClient(clientID)
-				if !subscribed {
-					continue
-				}
+			for _, client := range affectedClients {
+				slog := client.slogAttrs(slog)
 
-				if clientID == selfClient {
+				if client.id == spanClient && s.SpanContext().SpanID() != client.rootSpanID {
 					if s.EndTime().Before(s.StartTime()) {
-						slog.Trace("starting span", "client", client.id)
+						slog.ExtraDebug("starting span", "client", client.id)
 						client.startSpan(s)
 					} else {
-						slog.Trace("finishing span", "client", client.id)
+						slog.ExtraDebug("finishing span", "client", client.id)
 						// NOTE: finish *after* exporting to consumers
 						defer client.finishSpan(s)
 					}
@@ -567,8 +589,9 @@ func (ps SpansPubSub) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnly
 				updated[client] = struct{}{}
 
 				subs = append(subs, ps.SpanSubscribers(Topic{
-					TraceID:  s.SpanContext().TraceID(),
-					ClientID: clientID,
+					TraceID:    s.SpanContext().TraceID(),
+					RootSpanID: client.rootSpanID,
+					ClientID:   client.id,
 				})...)
 			}
 
@@ -645,33 +668,66 @@ func (ps LogsPubSub) Export(ctx context.Context, logs []sdklog.Record) error {
 			rec.SpanID(),
 		)
 
-		// Publish to all clients involved, or the full trace if none.
-		for _, clientID := range ps.clientsFor(rec.TraceID(), rec.SpanID()) {
-			topics[Topic{
-				TraceID:  rec.TraceID(),
-				ClientID: clientID,
-			}] = struct{}{}
-
-			if clientID == selfClient {
-				client, found := ps.lookupClient(clientID)
-				if found {
-					client.trackLogStream(rec)
-				}
-			}
-		}
+		slog := slog.With("span", rec.SpanID())
 
 		rec.WalkAttributes(func(kv log.KeyValue) bool {
 			if kv.Key == telemetry.ClientIDAttr {
-				topics[Topic{
-					TraceID:  rec.TraceID(),
-					ClientID: kv.Value.AsString(),
-				}] = struct{}{}
-				return true
+				slog.ExtraDebug("found client ID in log record", "clientID", kv.Value.AsString())
+				// if selfClient == "" {
+				selfClient = kv.Value.AsString()
+				// }
+				// topics[Topic{
+				// 	TraceID:  rec.TraceID(),
+				// 	ClientID: kv.Value.AsString(),
+				// }] = struct{}{}
+				return false
 			}
-			return false
+			return true
 		})
 
+		slog = slog.With("selfClient", selfClient)
+
+		if selfClient != "" {
+			slog.Warn("gonna try to track log stream")
+			if client, found := ps.lookupClient(selfClient); found {
+				if client.rootSpanID == rec.SpanID() {
+					slog.Warn("!?! not waiting on self")
+				} else {
+					slog.Warn("found the client")
+					client.trackLogStream(rec)
+				}
+			} else {
+				slog.Warn("client not found for log record")
+			}
+		}
+
+		clients := ps.clientsFor(rec.TraceID(), rec.SpanID())
+
+		slog.ExtraDebug("clients for log record",
+			"data", rec.Body().AsString(),
+			"span", rec.SpanID(),
+			"clients", clients,
+			"selfClient", selfClient)
+
+		for _, client := range clients {
+			if client.rootSpanID == rec.SpanID() {
+				continue
+			}
+			topics[Topic{
+				TraceID:    rec.TraceID(),
+				RootSpanID: client.rootSpanID,
+				ClientID:   client.id,
+			}] = struct{}{}
+		}
+
 		for topic := range topics {
+			slog := slog.With("topic", topic)
+			if client, found := ps.lookupClient(topic.ClientID); found {
+				slog.Warn("found subscribed client for topic")
+				client.trackLogStream(rec)
+			} else {
+				slog.Warn("client not found for topic")
+			}
 			for _, exp := range ps.LogSubscribers(topic) {
 				byExporter[exp] = append(byExporter[exp], rec)
 			}
@@ -811,12 +867,18 @@ type activeClient struct {
 
 	id string
 
+	rootSpanID trace.SpanID
+
 	spans      map[trace.SpanID]sdktrace.ReadOnlySpan
 	logStreams map[logStream]struct{}
 
 	draining         bool
 	drainImmediately bool
 	cond             *sync.Cond
+}
+
+func (c *activeClient) String() string {
+	return fmt.Sprintf("<Client %s>", c.id)
 }
 
 func (c *activeClient) startSpan(span sdktrace.ReadOnlySpan) {
@@ -865,6 +927,13 @@ func (c *activeClient) spanIDs() []string {
 }
 
 func (c *activeClient) trackLogStream(rec sdklog.Record) {
+	slog := c.slogAttrs(slog.Default()).With("span", rec.SpanID().String())
+
+	// if c.rootSpanID == rec.SpanID() {
+	// 	slog.Debug("won't block on logs for root span")
+	// 	return
+	// }
+
 	stream := logStream{
 		span: spanKey{
 			TraceID: rec.TraceID(),
@@ -874,6 +943,7 @@ func (c *activeClient) trackLogStream(rec sdklog.Record) {
 	}
 	var eof bool
 	rec.WalkAttributes(func(kv log.KeyValue) bool {
+		slog.ExtraDebug("log record attr", "key", kv.Key, "value", kv.Value)
 		switch kv.Key {
 		case telemetry.StdioStreamAttr:
 			stream.stream = kv.Value.AsInt64()
@@ -882,15 +952,20 @@ func (c *activeClient) trackLogStream(rec sdklog.Record) {
 		}
 		return true
 	})
+
 	if stream.stream == -1 {
+		slog.ExtraDebug("log record missing stream attribute")
 		// log record doesn't conform to this stream/EOF pattern, so just ignore it
 		return
 	}
+
 	c.cond.L.Lock()
 	if eof {
+		slog.ExtraDebug("removing log stream")
 		delete(c.logStreams, stream)
 		c.cond.Broadcast()
 	} else if _, active := c.logStreams[stream]; !active {
+		slog.ExtraDebug("registering log stream")
 		c.logStreams[stream] = struct{}{}
 		c.cond.Broadcast()
 	}
@@ -937,5 +1012,6 @@ func (c *activeClient) slogAttrs(slog *slog.Logger) *slog.Logger {
 		"activeLogs", c.logStreams,
 		"spanNames", c.spanNames(),
 		"spanIDs", c.spanIDs(),
+		"rootSpanID", c.rootSpanID,
 	)
 }
