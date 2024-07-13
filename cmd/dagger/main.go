@@ -343,8 +343,8 @@ func main() {
 		defer telemetry.End(span, func() error { return rerr })
 
 		// Set up global slog to log to the primary span output.
-		slog.SetDefault(slog.PrettyLogger(os.Stderr, termenv.ColorProfile(), slog.LevelDebug))
-		// slog.SetDefault(slog.SpanLogger(ctx, InstrumentationLibrary))
+		// slog.SetDefault(slog.PrettyLogger(os.Stderr, termenv.ColorProfile(), slog.LevelDebug))
+		slog.SetDefault(slog.SpanLogger(ctx, InstrumentationLibrary))
 
 		// Set the root span ID for the engine client.
 		if !RootSpanID.IsValid() {
