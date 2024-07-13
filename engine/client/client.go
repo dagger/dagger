@@ -294,12 +294,14 @@ func (c *Client) subscribeTelemetry() {
 
 	c.telemetry = new(errgroup.Group)
 
+	httpClient := c.newTelemetryHTTPClient()
+
 	if c.EngineTrace != nil {
-		c.exportTraces()
+		c.exportTraces(httpClient)
 	}
 
 	if c.EngineLogs != nil {
-		c.exportLogs()
+		c.exportLogs(httpClient)
 	}
 }
 
@@ -598,7 +600,7 @@ func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte) error) error
 	}
 }
 
-func (c *Client) exportTraces() {
+func (c *Client) exportTraces(httpClient *httpClient) {
 	// NB: we never actually want to interrupt this, since it's relied upon for
 	// seeing what's going on, even during shutdown
 	ctx := context.WithoutCancel(c.internalCtx)
@@ -607,7 +609,7 @@ func (c *Client) exportTraces() {
 		path:       "/v1/traces",
 		traceID:    trace.SpanContextFromContext(ctx).TraceID(),
 		clientID:   c.ID,
-		httpClient: c.httpClient,
+		httpClient: httpClient,
 	}
 
 	c.telemetry.Go(func() error {
@@ -634,7 +636,7 @@ func (c *Client) exportTraces() {
 	})
 }
 
-func (c *Client) exportLogs() {
+func (c *Client) exportLogs(httpClient *httpClient) {
 	// NB: we never actually want to interrupt this, since it's relied upon for
 	// seeing what's going on, even during shutdown
 	ctx := context.WithoutCancel(c.internalCtx)
@@ -643,7 +645,7 @@ func (c *Client) exportLogs() {
 		path:       "/v1/logs",
 		traceID:    trace.SpanContextFromContext(ctx).TraceID(),
 		clientID:   c.ID,
-		httpClient: c.httpClient,
+		httpClient: httpClient,
 	}
 
 	c.telemetry.Go(func() error {
@@ -712,25 +714,27 @@ func (c *Client) DialContext(ctx context.Context, _, _ string) (conn net.Conn, e
 	if err != nil {
 		return nil, err
 	}
-
-	isNestedSession := c.nestedSessionPort != 0
-	if isNestedSession {
-		conn, err = (&net.Dialer{
-			Cancel: ctx.Done(),
-		}).Dial("tcp", "127.0.0.1:"+strconv.Itoa(c.nestedSessionPort))
-	} else {
-		conn, err = c.connector.Connect(ctx)
-	}
+	conn, err = c.dialContextNoClientClose(ctx)
 	if err != nil {
 		return nil, err
 	}
-
 	go func() {
 		<-c.closeCtx.Done()
 		cancel()
 		conn.Close()
 	}()
 	return conn, nil
+}
+
+func (c *Client) dialContextNoClientClose(ctx context.Context) (net.Conn, error) {
+	isNestedSession := c.nestedSessionPort != 0
+	if isNestedSession {
+		return (&net.Dialer{
+			Cancel: ctx.Done(),
+		}).Dial("tcp", "127.0.0.1:"+strconv.Itoa(c.nestedSessionPort))
+	} else {
+		return c.connector.Connect(ctx)
+	}
 }
 
 func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -1018,6 +1022,21 @@ func (c *Client) newHTTPClient() *httpClient {
 				AllowHTTP: true,
 				DialTLSContext: func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
 					return c.DialContext(ctx, network, addr)
+				},
+			},
+		},
+		headers:     c.AppendHTTPRequestHeaders(http.Header{}),
+		secretToken: c.SecretToken,
+	}
+}
+
+func (c *Client) newTelemetryHTTPClient() *httpClient {
+	return &httpClient{
+		inner: &http.Client{
+			Transport: &http2.Transport{
+				AllowHTTP: true,
+				DialTLSContext: func(ctx context.Context, _, _ string, _ *tls.Config) (net.Conn, error) {
+					return c.dialContextNoClientClose(ctx)
 				},
 			},
 		},
