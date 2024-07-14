@@ -57,7 +57,7 @@ func (h *Helm) SetVersion(
 
 	version = strings.TrimPrefix(version, "v")
 	meta.Version = version
-	meta.AppVersion = "v" + version
+	meta.AppVersion = version
 
 	err = meta.Validate()
 	if err != nil {
