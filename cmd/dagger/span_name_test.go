@@ -25,6 +25,7 @@ func TestSpanName(t *testing.T) {
 			want: "test important --race=true --parallel=16",
 		},
 		{args: []string{"dagger", "call", "--source", ".:default", "foo"}, want: "foo"},
+		{args: []string{"dagger", "call", "--source=.:default", "foo"}, want: "foo"},
 		{args: []string{"dagger", "call", "--source", ".:default", "foo", "--fizz"}, want: "foo --fizz"},
 		{
 			name: "bool arg consumed call chain",
