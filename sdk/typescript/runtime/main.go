@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"main/internal/dagger"
 	"path"
 	"path/filepath"
 	"slices"
@@ -180,7 +181,9 @@ func (t *TypescriptSdk) Base(runtime SupportedTSRuntime, version string) (*Conta
 
 		return ctr.
 			WithoutEntrypoint().
-			WithMountedCache("/root/.bun/install/cache", dag.CacheVolume(fmt.Sprintf("mod-bun-cache-%s", bunVersion))), nil
+			WithMountedCache("/root/.bun/install/cache", dag.CacheVolume(fmt.Sprintf("mod-bun-cache-%s", bunVersion)), dagger.ContainerWithMountedCacheOpts{
+				Sharing: dagger.Private,
+			}), nil
 	case Node:
 		if version != "" {
 			ctr = ctr.From(fmt.Sprintf("%s:%s-alpine", Node, version))

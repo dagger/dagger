@@ -18,7 +18,7 @@ dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.8 call build --source=
 Here is an example of passing a host file to a container builder Dagger Function using the `WithFile()` function:
 
 ```shell
-dagger -m github.com/shykes/daggerverse/wolfi@v0.1.2 call container with-file --path=/README.md --source=./README.md with-exec --args="cat","/README.md" stdout
+dagger -m github.com/shykes/daggerverse/wolfi@v0.1.4 call container with-file --path=/README.md --source=./README.md with-exec --args="cat","/README.md" stdout
 ```
 
 Here is another example of passing a host file as argument to a checksum Dagger Function:

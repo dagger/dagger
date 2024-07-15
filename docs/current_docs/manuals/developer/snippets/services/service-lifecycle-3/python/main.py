@@ -10,15 +10,14 @@ class MyModule:
 
         # create Redis client container
         redis_cli = (
-            dag.container()
-            .from_("redis")
-            .with_service_binding("redis-srv", redis_srv)
-            .with_entrypoint(["redis-cli", "-h", "redis-srv"])
+            dag.container().from_("redis").with_service_binding("redis-srv", redis_srv)
         )
+
+        args = ["redis-cli", "-h", "redis-srv"]
 
         # set and get value
         return await (
-            redis_cli.with_exec(["set", "foo", "abc"])
-            .with_exec(["get", "foo"])
+            redis_cli.with_exec([*args, "set", "foo", "abc"])
+            .with_exec([*args, "get", "foo"])
             .stdout()
         )

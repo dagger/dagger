@@ -26,13 +26,14 @@ class MyModule:
                 dag.container()
                 .from_("redis")
                 .with_service_binding("redis-srv", redis_srv)
-                .with_entrypoint(["redis-cli", "-h", "redis-srv"])
             )
 
+            args = ["redis-cli", "-h", "redis-srv"]
+
             # set value
-            setter = await redis_cli.with_exec(["set", "foo", "abc"]).stdout()
+            setter = await redis_cli.with_exec([*args, "set", "foo", "abc"]).stdout()
 
             # get value
-            getter = await redis_cli.with_exec(["get", "foo"]).stdout()
+            getter = await redis_cli.with_exec([*args, "get", "foo"]).stdout()
 
             return setter + getter

@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+
+	"dagger/my-module/internal/dagger"
 )
 
 type MyModule struct{}
@@ -11,8 +13,8 @@ type MyModule struct{}
 func (m *MyModule) CopyFile(
 	ctx context.Context,
 	// Source file
-	f *File,
-) *Container {
+	f *dagger.File,
+) *dagger.Container {
 	name, _ := f.Name(ctx)
 	return dag.Container().
 		From("alpine:latest").

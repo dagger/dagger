@@ -150,13 +150,14 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRendererTest do
             container.selection |> select("sync")
 
           with {:ok, id} <- execute(selection, container.client) do
-            %Dagger.Container{
-              selection:
-                query()
-                |> select("loadContainerFromID")
-                |> arg("id", id),
-              client: container.client
-            }
+            {:ok,
+             %Dagger.Container{
+               selection:
+                 query()
+                 |> select("loadContainerFromID")
+                 |> arg("id", id),
+               client: container.client
+             }}
           end
         end
       end\

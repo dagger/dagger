@@ -23,7 +23,9 @@ dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project
 Once the command completes, you should see this output:
 
 ```shell
-Directory evaluated. Use "dagger call build --help" to see available sub-commands.
+_type: Directory
+entries:
+    - dagger
 ```
 
 This means that the build succeeded, and a `Directory` type representing the build directory was returned.

@@ -5,13 +5,13 @@ defmodule Dagger.Codegen.Introspection.Types.TypeRef do
     :of_type
   ]
 
-  def from_map(%{"kind" => kind, "name" => name, "ofType" => of_type}) do
+  def from_map(%{"kind" => kind} = type_ref) do
     %__MODULE__{
       kind: kind,
-      name: name,
+      name: type_ref["name"],
       of_type:
-        unless is_nil(of_type) do
-          Dagger.Codegen.Introspection.Types.TypeRef.from_map(of_type)
+        unless is_nil(type_ref["ofType"]) do
+          Dagger.Codegen.Introspection.Types.TypeRef.from_map(type_ref["ofType"])
         end
     }
   end

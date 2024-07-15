@@ -39,8 +39,8 @@ class MyModule {
     value: string,
   ): Promise<string> {
     return await this.redis()
-      .withExec(["set", key, value])
-      .withExec(["save"])
+      .withExec(["set", key, value], { useEntrypoint: true })
+      .withExec(["save"], { useEntrypoint: true })
       .stdout()
   }
 
@@ -55,6 +55,8 @@ class MyModule {
     key: string,
   ): Promise<string> {
     // set and save value
-    return await this.redis().withExec(["get", key]).stdout()
+    return await this.redis()
+      .withExec(["get", key], { useEntrypoint: true })
+      .stdout()
   }
 }

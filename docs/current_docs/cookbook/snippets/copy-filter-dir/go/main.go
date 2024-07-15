@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+
+	"dagger/my-module/internal/dagger"
 )
 
 type MyModule struct{}
@@ -10,14 +12,14 @@ type MyModule struct{}
 func (m *MyModule) CopyDirectoryWithExclusions(
 	ctx context.Context,
 	// Source directory
-	source *Directory,
+	source *dagger.Directory,
 	// Directory exclusion pattern
 	// +optional
 	excludeDirectoryPattern string,
 	// +optional
 	// File exclusion pattern
 	excludeFilePattern string,
-) *Container {
+) *dagger.Container {
 	filteredSource := source.
 		WithoutDirectory(excludeDirectoryPattern).
 		WithoutFile(excludeFilePattern)

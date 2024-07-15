@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+
+	"main/internal/dagger"
 )
 
 func New(
 	// +optional
-	ctr *Container,
+	ctr *dagger.Container,
 ) *MyModule {
 	if ctr == nil {
 		ctr = dag.Container().From("alpine:3.14.0")
@@ -17,7 +19,7 @@ func New(
 }
 
 type MyModule struct {
-	Ctr Container
+	Ctr dagger.Container
 }
 
 func (m *MyModule) Version(ctx context.Context) (string, error) {

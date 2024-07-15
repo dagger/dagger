@@ -41,7 +41,7 @@ func (h *Helm) chart() *Container {
 func (h *Helm) SetVersion(
 	ctx context.Context,
 
-	// Version to set the chart & app to, e.g. --version=0.12.0
+	// Version to set the chart & app to, e.g. --version=v0.12.0
 	version string,
 ) (*File, error) {
 	c := h.chart()
@@ -55,6 +55,7 @@ func (h *Helm) SetVersion(
 		return nil, err
 	}
 
+	version = strings.TrimPrefix(version, "v")
 	meta.Version = version
 	meta.AppVersion = version
 

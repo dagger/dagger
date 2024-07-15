@@ -1,9 +1,11 @@
 package main
 
+import "dagger/hello-dagger/internal/dagger"
+
 type HelloDagger struct{}
 
 // Build the application container
-func (m *HelloDagger) Build(source *Directory) *Container {
+func (m *HelloDagger) Build(source *dagger.Directory) *dagger.Container {
 	// get the build environment container
 	// by calling another Dagger Function
 	build := m.BuildEnv(source).
