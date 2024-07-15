@@ -151,7 +151,9 @@ func (ps *PubSub) clientsFor(traceID trace.TraceID, spanID trace.SpanID) []*acti
 		}
 		seenSpans[key] = true
 		if clientID, ok := ps.spanClients[key]; ok && !seenClients[clientID] {
+			ps.clientsL.Lock()
 			client, found := ps.clients[clientID]
+			ps.clientsL.Unlock()
 			if found {
 				// TODO: with some tweaks we could support multiple subscribers per client,
 				// but not needed atm
