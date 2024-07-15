@@ -1581,8 +1581,8 @@ scalar GeneratedCodeID
 
 """Module source originating from a git repo."""
 type GitModuleSource {
-  """The URL to clone the root of the git repo from"""
-  cloneURL: String!
+  """The ref to clone the root of the git repo from"""
+  cloneRef: String!
 
   """The resolved commit of the git repo this source points to."""
   commit: String!
@@ -1597,6 +1597,11 @@ type GitModuleSource {
 
   """A unique identifier for this GitModuleSource."""
   id: GitModuleSourceID!
+
+  """
+  The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket)
+  """
+  repositoryUrl: String!
 
   """The clean module name of the root of the module"""
   root: String!

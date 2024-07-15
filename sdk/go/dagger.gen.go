@@ -3906,13 +3906,14 @@ func (r *GeneratedCode) WithVCSIgnoredPaths(paths []string) *GeneratedCode {
 type GitModuleSource struct {
 	query *querybuilder.Selection
 
-	cloneURL    *string
-	commit      *string
-	htmlURL     *string
-	id          *GitModuleSourceID
-	root        *string
-	rootSubpath *string
-	version     *string
+	cloneRef      *string
+	commit        *string
+	htmlURL       *string
+	id            *GitModuleSourceID
+	repositoryUrl *string
+	root          *string
+	rootSubpath   *string
+	version       *string
 }
 
 func (r *GitModuleSource) WithGraphQLQuery(q *querybuilder.Selection) *GitModuleSource {
@@ -3921,12 +3922,12 @@ func (r *GitModuleSource) WithGraphQLQuery(q *querybuilder.Selection) *GitModule
 	}
 }
 
-// The URL to clone the root of the git repo from
-func (r *GitModuleSource) CloneURL(ctx context.Context) (string, error) {
-	if r.cloneURL != nil {
-		return *r.cloneURL, nil
+// The ref to clone the root of the git repo from
+func (r *GitModuleSource) CloneRef(ctx context.Context) (string, error) {
+	if r.cloneRef != nil {
+		return *r.cloneRef, nil
 	}
-	q := r.query.Select("cloneURL")
+	q := r.query.Select("cloneRef")
 
 	var response string
 
@@ -4007,6 +4008,19 @@ func (r *GitModuleSource) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+
+// The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket)
+func (r *GitModuleSource) RepositoryURL(ctx context.Context) (string, error) {
+	if r.repositoryUrl != nil {
+		return *r.repositoryUrl, nil
+	}
+	q := r.query.Select("repositoryUrl")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // The clean module name of the root of the module
