@@ -68,7 +68,27 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 		src.AsGitSource = dagql.NonNull(&core.GitModuleSource{})
 
 		src.AsGitSource.Value.Root = parsed.repoRoot.Root
-		src.AsGitSource.Value.CloneURL = parsed.repoRoot.Repo
+		src.AsGitSource.Value.RepositoryURL = parsed.repoRoot.Repo
+
+		// keep the username input intact
+		refUsername := parsed.sshusername
+		if refUsername != "" {
+			refUsername += "@"
+		}
+
+		// add git username if SSH ref does not contain it
+		cloneUsername := parsed.sshusername
+		if cloneUsername == "" && parsed.scheme.IsSSH() {
+			cloneUsername = "git"
+		}
+		if cloneUsername != "" {
+			cloneUsername += "@"
+		}
+
+		// Non destructive reference to the user input ref
+		src.AsGitSource.Value.Ref = parsed.scheme.Prefix() + refUsername + parsed.repoRoot.Root
+		// Ref used to clone the root of the repo (`git+` is removed)
+		src.AsGitSource.Value.CloneRef = parsed.scheme.CloneString() + cloneUsername + parsed.repoRoot.Root
 
 		var modVersion string
 		if parsed.hasVersion {
@@ -97,7 +117,7 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 				dagql.Selector{
 					Field: "git",
 					Args: []dagql.NamedInput{
-						{Name: "url", Value: dagql.String(parsed.repoRoot.Repo)},
+						{Name: "url", Value: dagql.String(src.AsGitSource.Value.CloneRef)},
 					},
 				},
 				dagql.Selector{
@@ -126,7 +146,7 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 			dagql.Selector{
 				Field: "git",
 				Args: []dagql.NamedInput{
-					{Name: "url", Value: dagql.String(parsed.repoRoot.Repo)},
+					{Name: "url", Value: dagql.String(src.AsGitSource.Value.CloneRef)},
 				},
 			},
 			dagql.Selector{

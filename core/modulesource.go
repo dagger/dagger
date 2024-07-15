@@ -413,22 +413,37 @@ type SchemeType int
 const (
 	NoScheme SchemeType = iota
 	SchemeGitHTTP
+	SchemeHTTP
 	SchemeGitHTTPS
+	SchemeHTTPS
 	SchemeGitSSH
 	SchemeSSH
 	SchemeImplicitSSH
 )
 
-// func (s SchemeType) String() string {
-// 	return [...]string{"", "git+http", "git+https", "git+ssh", "ssh", ""}[s]
-// }
+func (s SchemeType) CloneString() string {
+	switch s {
+	case SchemeGitHTTP, SchemeHTTP:
+		return "http://"
+	case SchemeGitHTTPS, SchemeHTTPS:
+		return "https://"
+	case SchemeGitSSH, SchemeSSH:
+		return "ssh://"
+	default:
+		return ""
+	}
+}
 
 func (s SchemeType) Prefix() string {
 	switch s {
 	case SchemeGitHTTP:
 		return "git+http://"
+	case SchemeHTTP:
+		return "http://"
 	case SchemeGitHTTPS:
 		return "git+https://"
+	case SchemeHTTPS:
+		return "https://"
 	case SchemeGitSSH:
 		return "git+ssh://"
 	case SchemeSSH:
@@ -447,6 +462,14 @@ func (s SchemeType) IsExplicitSSH() bool {
 	}
 }
 
+func (s SchemeType) IsSSH() bool {
+	if s.IsExplicitSSH() || s == SchemeImplicitSSH {
+		return true
+	}
+
+	return false
+}
+
 type GitModuleSource struct {
 	Root        string `field:"true" doc:"The clean module name of the root of the module"`
 	RootSubpath string `field:"true" doc:"The path to the root of the module source under the context directory. This directory contains its configuration file. It also contains its source code (possibly as a subdirectory)."`
@@ -454,9 +477,10 @@ type GitModuleSource struct {
 	Version string `field:"true" doc:"The specified version of the git repo this source points to."`
 	Commit  string `field:"true" doc:"The resolved commit of the git repo this source points to."`
 
-	CloneURL string `field:"true" name:"cloneURL" doc:"The URL to clone the root of the git repo from"`
-	// CloneScheme SchemeType `name:"cloneScheme" doc:"The scheme used for cloning the repository (e.g., HTTP, HTTPS, SSH)"`
-	// SSHUsername string     `name:"sshUsername" doc:"The username to use when cloning via SSH. Only applicable when CloneScheme is set to SSH or Git+SSH"`
+	Ref      string `field:"true" name:"cloneRef" doc:"The ref to the root of the git repo, including original user scheme"`
+	CloneRef string `field:"true" name:"cloneRef" doc:"The ref to clone the root of the git repo from"`
+
+	RepositoryURL string `field:"true" doc:"The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket)"`
 
 	ContextDirectory dagql.Instance[*Directory] `field:"true" doc:"The directory containing everything needed to load load and use the module."`
 }
@@ -485,7 +509,7 @@ func (src *GitModuleSource) PBDefinitions(ctx context.Context) ([]*pb.Definition
 }
 
 func (src *GitModuleSource) RefString() string {
-	refPath := src.Root
+	refPath := src.Ref
 	subPath := filepath.Join("/", src.RootSubpath)
 	if subPath != "/" {
 		refPath += subPath
@@ -495,26 +519,26 @@ func (src *GitModuleSource) RefString() string {
 
 func (src *GitModuleSource) Symbolic() string {
 	// ignore error since ref is validated upon module initialization
-	p, _ := url.JoinPath(src.CloneURL, src.RootSubpath)
+	p, _ := url.JoinPath(src.Ref, src.RootSubpath)
 	return p
 }
 
 func (src *GitModuleSource) HTMLURL() string {
-	parsedURL, err := url.Parse(src.CloneURL)
+	parsedURL, err := url.Parse(src.RepositoryURL)
 	if err != nil {
-		return src.CloneURL + path.Join("/src", src.Commit, src.RootSubpath)
+		return src.RepositoryURL + path.Join("/src", src.Commit, src.RootSubpath)
 	}
 
 	switch parsedURL.Host {
 	case "github.com", "gitlab.com":
-		return src.CloneURL + path.Join("/tree", src.Commit, src.RootSubpath)
+		return src.RepositoryURL + path.Join("/tree", src.Commit, src.RootSubpath)
 	case "dev.azure.com":
 		if src.RootSubpath != "" {
-			return fmt.Sprintf("%s/commit/%s?path=/%s", src.CloneURL, src.Commit, src.RootSubpath)
+			return fmt.Sprintf("%s/commit/%s?path=/%s", src.RepositoryURL, src.Commit, src.RootSubpath)
 		}
-		return src.CloneURL + path.Join("/commit", src.Commit)
+		return src.RepositoryURL + path.Join("/commit", src.Commit)
 	default:
-		return src.CloneURL + path.Join("/src", src.Commit, src.RootSubpath)
+		return src.RepositoryURL + path.Join("/src", src.Commit, src.RootSubpath)
 	}
 }
 

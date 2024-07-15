@@ -138,6 +138,17 @@ func TestParseRefString(t *testing.T) {
 			},
 		},
 		{
+			urlStr: "ssh://github.com/shykes/daggerverse/ci",
+			want: &parsedRefString{
+				modPath:        "github.com/shykes/daggerverse/ci",
+				kind:           core.ModuleSourceKindGit,
+				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse", Repo: "https://github.com/shykes/daggerverse"},
+				repoRootSubdir: "ci",
+				scheme:         core.SchemeSSH,
+				sshusername:    "",
+			},
+		},
+		{
 			urlStr: "git+ssh://user@github.com/shykes/daggerverse/ci@version",
 			want: &parsedRefString{
 				modPath:        "github.com/shykes/daggerverse/ci",
