@@ -314,7 +314,7 @@ func main() {
 		// If you pass credentials in plaintext, yes, they will be leaked; don't do
 		// that, since they will also be leaked in various other places (like the
 		// process tree). Use Secret arguments instead.
-		ctx, span := Tracer().Start(ctx, strings.Join(os.Args, " "))
+		ctx, span := Tracer().Start(ctx, spanName(os.Args))
 		defer telemetry.End(span, func() error { return rerr })
 
 		// Set up global slog to log to the primary span output.
