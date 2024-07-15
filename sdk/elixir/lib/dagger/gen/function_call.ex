@@ -67,11 +67,14 @@ defmodule Dagger.FunctionCall do
   end
 
   @doc "Set the return value of the function call to the provided value."
-  @spec return_value(t(), Dagger.JSON.t()) :: {:ok, Dagger.Void.t() | nil} | {:error, term()}
+  @spec return_value(t(), Dagger.JSON.t()) :: :ok | {:error, term()}
   def return_value(%__MODULE__{} = function_call, value) do
     selection =
       function_call.selection |> select("returnValue") |> put_arg("value", value)
 
-    execute(selection, function_call.client)
+    case execute(selection, function_call.client) do
+      {:ok, _} -> :ok
+      error -> error
+    end
   end
 end

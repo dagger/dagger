@@ -41,11 +41,14 @@ defmodule Dagger.DaggerEngineCache do
   end
 
   @doc "Prune the cache of releaseable entries"
-  @spec prune(t()) :: {:ok, Dagger.Void.t() | nil} | {:error, term()}
+  @spec prune(t()) :: :ok | {:error, term()}
   def prune(%__MODULE__{} = dagger_engine_cache) do
     selection =
       dagger_engine_cache.selection |> select("prune")
 
-    execute(selection, dagger_engine_cache.client)
+    case execute(selection, dagger_engine_cache.client) do
+      {:ok, _} -> :ok
+      error -> error
+    end
   end
 end

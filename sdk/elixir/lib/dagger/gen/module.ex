@@ -199,12 +199,15 @@ defmodule Dagger.Module do
 
   Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.
   """
-  @spec serve(t()) :: {:ok, Dagger.Void.t() | nil} | {:error, term()}
+  @spec serve(t()) :: :ok | {:error, term()}
   def serve(%__MODULE__{} = module) do
     selection =
       module.selection |> select("serve")
 
-    execute(selection, module.client)
+    case execute(selection, module.client) do
+      {:ok, _} -> :ok
+      error -> error
+    end
   end
 
   @doc "The source for the module."
