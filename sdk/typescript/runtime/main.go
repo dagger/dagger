@@ -89,7 +89,7 @@ func (t *TypescriptSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSour
 		return nil, fmt.Errorf("failed to detect module runtime: %w", err)
 	}
 
-	packageManager, _, err := t.detectPackageManager(ctx, modSource, subPath)
+	packageManager, _, err := t.detectPackageManager(ctx, modSource, subPath, detectedRuntime)
 	if err != nil {
 		return nil, fmt.Errorf("failed to detect package manager: %w", err)
 	}
@@ -164,6 +164,11 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 		return nil, fmt.Errorf("failed to detect runtime: %w", err)
 	}
 
+	packageManager, packageManagerVersion, err := t.detectPackageManager(ctx, modSource, subPath, detectedRuntime)
+	if err != nil {
+		return nil, fmt.Errorf("failed to detect package manager: %w", err)
+	}
+
 	base, err := t.Base(detectedRuntime, runtimeVersion)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create codegen base: %w", err)
@@ -189,12 +194,13 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 		return nil, fmt.Errorf("failed to setup module: %w", err)
 	}
 
-	packageManager, packageManagerVersion, err := t.detectPackageManager(ctx, modSource, subPath)
+	// Generate the appropriate lock file
+	ctr, err = generateLockFile(ctx, ctr, packageManager, packageManagerVersion)
 	if err != nil {
-		return nil, fmt.Errorf("failed to detect package manager: %w", err)
+		return nil, fmt.Errorf("failed to generate lock file: %w", err)
 	}
 
-	return generateLockFile(ctx, ctr, packageManager, packageManagerVersion)
+	return ctr, nil
 }
 
 // Base returns a Node or Bun container with cache setup for yarn or bun
@@ -225,12 +231,13 @@ func (t *TypescriptSdk) Base(runtime SupportedTSRuntime, version string) (*Conta
 			WithoutEntrypoint().
 			// Install default CA certificates and configure node to use them instead of its compiled in CA bundle.
 			// This enables use of custom CA certificates if configured in the dagger engine.
-			WithExec([]string{"apk", "add", "ca-certificates"}).
+			WithExec([]string{"apk", "add", "ca-certificates", "jq"}).
 			WithEnvVariable("NODE_OPTIONS", "--use-openssl-ca").
+			// Add cache volumes for npm, yarn and pnpm
 			WithMountedCache("/root/.npm", dag.CacheVolume(fmt.Sprintf("mod-npm-cache-%s", nodeVersion))).
-			// Comment cache here, it seems it creates cache conflicts with yarn (v1 and v4).
-			// We should investigate this further and see if we hit the same issue with pnpm.
-			// WithMountedCache("/usr/local/share/.cache/yarn", dag.CacheVolume(fmt.Sprintf("mod-yarn-cache-%s", nodeVersion))).
+			WithMountedCache("/root/.cache/yarn", dag.CacheVolume(fmt.Sprintf("mod-yarn-cache-%s", nodeVersion))).
+			WithMountedCache("/root/.pnpm-store", dag.CacheVolume(fmt.Sprintf("mod-pnpm-cache-%s", nodeVersion))).
+			// Install tsx
 			WithExec([]string{"npm", "install", "-g", "tsx@4.15.6"}), nil
 	default:
 		return nil, fmt.Errorf("unknown runtime: %s", runtime)
@@ -368,6 +375,7 @@ func (t *TypescriptSdk) detectRuntime(ctx context.Context, modSource *ModuleSour
 
 	// Try to detect runtime from lock files
 	entries, err := source.Entries(ctx)
+	fmt.Printf("Entries: %v\n", entries)
 	if err == nil {
 		if slices.Contains(entries, "bun.lockb") {
 			return Bun, "", nil
@@ -393,7 +401,12 @@ func (t *TypescriptSdk) detectRuntime(ctx context.Context, modSource *ModuleSour
 //
 // Except if the package.json has an invalid value in field "packageManager", this
 // function should never return an error.
-func (t *TypescriptSdk) detectPackageManager(ctx context.Context, modSource *ModuleSource, subPath string) (SupportedPackageManager, string, error) {
+func (t *TypescriptSdk) detectPackageManager(ctx context.Context, modSource *ModuleSource, subPath string, runtime SupportedTSRuntime) (SupportedPackageManager, string, error) {
+	// If the runtime is Bun, we should use BunManager
+	if runtime == Bun {
+		return BunManager, "", nil
+	}
+
 	// Try to detect package manager from package.json
 	source := modSource.ContextDirectory().Directory(subPath)
 
