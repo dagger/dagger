@@ -212,7 +212,7 @@ To see this in action, commit a change to your forked and locally-cloned Dagger 
 ```shell
 echo "test on local host" >> README.md
 git commit -a -m "Updated README"
-dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.8 call build --source=. --args=./cmd/dagger
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call build --source=. --args=./cmd/dagger
 ```
 
 :::info Multiple Dagger Cloud organizations
