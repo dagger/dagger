@@ -576,6 +576,10 @@ func (s *containerSchema) Install() {
 	}.Install(s.srv)
 
 	dagql.Fields[*coreTerminalLegacy]{
+		Syncer[*coreTerminalLegacy]().
+			Doc(`Forces evaluation of the pipeline in the engine.`,
+				`It doesn't run the default command if no exec has been set.`),
+
 		dagql.Func("websocketEndpoint", s.terminalLegacyWebsocketEndpoint).
 			View(BeforeVersion("v0.12.0")).
 			Deprecated("Use newer dagger to access the terminal").
@@ -1677,6 +1681,10 @@ func (*coreTerminalLegacy) Type() *ast.Type {
 
 func (*coreTerminalLegacy) TypeDescription() string {
 	return "An interactive terminal that clients can connect to."
+}
+
+func (*coreTerminalLegacy) Evaluate(ctx context.Context) (*buildkit.Result, error) {
+	return nil, nil
 }
 
 func (s *containerSchema) terminalLegacyWebsocketEndpoint(ctx context.Context, parent *coreTerminalLegacy, args struct{}) (string, error) {

@@ -7321,7 +7321,8 @@ func (r *Socket) MarshalJSON() ([]byte, error) {
 type Terminal struct {
 	query *querybuilder.Selection
 
-	id *TerminalID
+	id   *TerminalID
+	sync *TerminalID
 }
 
 func (r *Terminal) WithGraphQLQuery(q *querybuilder.Selection) *Terminal {
@@ -7368,6 +7369,21 @@ func (r *Terminal) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+
+// Forces evaluation of the pipeline in the engine.
+//
+// It doesn't run the default command if no exec has been set.
+func (r *Terminal) Sync(ctx context.Context) (*Terminal, error) {
+	q := r.query.Select("sync")
+
+	var id TerminalID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Terminal{
+		query: q.Root().Select("loadTerminalFromID").Arg("id", id),
+	}, nil
 }
 
 // A definition of a parameter or return type in a Module.

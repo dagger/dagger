@@ -7250,6 +7250,27 @@ class Terminal(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(TerminalID)
 
+    async def sync(self) -> Self:
+        """Forces evaluation of the pipeline in the engine.
+
+        It doesn't run the default command if no exec has been set.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("sync", _args)
+        _id = await _ctx.execute(TerminalID)
+        _ctx = Client.from_context(_ctx)._select("loadTerminalFromID", [Arg("id", _id)])
+        return Terminal(_ctx)
+
+    def __await__(self):
+        return self.sync().__await__()
+
 
 @typecheck
 class TypeDef(Type):

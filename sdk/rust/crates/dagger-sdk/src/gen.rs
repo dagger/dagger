@@ -7445,6 +7445,12 @@ impl Terminal {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Forces evaluation of the pipeline in the engine.
+    /// It doesn't run the default command if no exec has been set.
+    pub async fn sync(&self) -> Result<TerminalId, DaggerError> {
+        let query = self.selection.select("sync");
+        query.execute(self.graphql_client.clone()).await
+    }
 }
 #[derive(Clone)]
 pub struct TypeDef {
