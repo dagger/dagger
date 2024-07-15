@@ -21,6 +21,10 @@ defmodule Dagger.Codegen.Introspection.Types.TypeRef do
   def is_scalar?(%__MODULE__{kind: "ENUM"}), do: true
   def is_scalar?(_), do: false
 
+  def is_void?(%__MODULE__{kind: "NON_NULL", of_type: type}), do: is_void?(type)
+  def is_void?(%__MODULE__{kind: "SCALAR", name: "Void"}), do: true
+  def is_void?(_), do: false
+
   def is_list_of?(%__MODULE__{kind: "NON_NULL", of_type: type}, of_kind),
     do: is_list_of?(type, of_kind)
 
