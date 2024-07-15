@@ -37,7 +37,7 @@ Common labels
 helm.sh/chart: {{ include "dagger.chart" . }}
 {{ include "dagger.selectorLabels" . }}
 {{- if .Chart.AppVersion }}
-app.kubernetes.io/version: v{{ .Chart.AppVersion | quote }}
+app.kubernetes.io/version: {{ printf "v%s" .Chart.AppVersion | quote }}
 {{- end }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 app.kubernetes.io/part-of: {{ template "dagger.name" . }}
