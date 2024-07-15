@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"golang.org/x/mod/semver"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/core"
@@ -856,7 +857,11 @@ func (s *moduleSchema) updateDeps(
 			// this is needed so that a module's dependency on the core
 			// uses the correct schema version
 			dag := *coreMod.Dag
-			dag.View = modCfg.EngineVersion
+			engineVersion := modCfg.EngineVersion
+			if !semver.IsValid(engineVersion) {
+				engineVersion = ""
+			}
+			dag.View = engineVersion
 			mod.Deps.Mods[i] = &CoreMod{Dag: &dag}
 		}
 	}
