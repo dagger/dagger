@@ -35,7 +35,6 @@ import (
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -252,7 +251,9 @@ const InstrumentationLibrary = "dagger.io/cli"
 
 var opts idtui.FrontendOpts
 
-var ClientID = os.Getenv(buildkit.DaggerSessionClientIDEnv)
+// This is buildkit.DaggerSessionClientIDEnv, which we can't import due
+// to platform-specific build constraints.
+var ClientID = os.Getenv("DAGGER_SESSION_CLIENT_ID")
 
 func init() {
 	if ClientID == "" {
