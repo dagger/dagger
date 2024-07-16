@@ -3,6 +3,10 @@
   "sdk": "go",
   "dependencies": [
     {
+      "name": "alpine",
+      "source": "modules/alpine"
+    },
+    {
       "name": "dirdiff",
       "source": "modules/dirdiff"
     },
