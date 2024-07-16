@@ -17,7 +17,7 @@ const (
 )
 
 type Helm struct {
-	Source *Directory // +private
+	Source *dagger.Directory // +private
 }
 
 func (h *Helm) Test(ctx context.Context) error {
@@ -30,7 +30,7 @@ func (h *Helm) Test(ctx context.Context) error {
 	return err
 }
 
-func (h *Helm) chart() *Container {
+func (h *Helm) chart() *dagger.Container {
 	return dag.Container().
 		From(helmImage).
 		WithDirectory("/dagger-helm", h.Source).
@@ -43,7 +43,7 @@ func (h *Helm) SetVersion(
 
 	// Version to set the chart & app to, e.g. --version=v0.12.0
 	version string,
-) (*File, error) {
+) (*dagger.File, error) {
 	c := h.chart()
 	chartYaml, err := c.File("Chart.yaml").Contents(ctx)
 	if err != nil {
@@ -69,9 +69,9 @@ func (h *Helm) SetVersion(
 		return nil, err
 	}
 
-	updatedChartYaml := c.WithNewFile("Chart.yaml", ContainerWithNewFileOpts{
-		Contents: string(updatedChart),
-	}).File("Chart.yaml")
+	updatedChartYaml := c.
+		WithNewFile("Chart.yaml", string(updatedChart)).
+		File("Chart.yaml")
 
 	return updatedChartYaml, nil
 }

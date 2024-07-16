@@ -107,11 +107,10 @@ func (gtc *GoToolchain) Lint(
 	// +optional
 	all bool,
 ) error {
-	_, err := gtc.Go.Lint(ctx, GoLintOpts{
+	return gtc.Go.Lint(ctx, dagger.GoLintOpts{
 		Pkgs: packages,
 		All:  all,
 	})
-	return err
 }
 
 // Develop the Dagger engine container

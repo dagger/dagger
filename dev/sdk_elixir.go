@@ -111,9 +111,7 @@ func (t ElixirSDK) Publish(
 			return err
 		}
 		newMixExs := strings.Replace(mixExs, `@version "0.0.0"`, `@version "`+version+`"`, 1)
-		ctr = ctr.WithNewFile(mixFile, dagger.ContainerWithNewFileOpts{
-			Contents: newMixExs,
-		})
+		ctr = ctr.WithNewFile(mixFile, newMixExs)
 	}
 
 	if dryRun {

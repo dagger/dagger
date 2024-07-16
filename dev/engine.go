@@ -231,8 +231,7 @@ func (e *Engine) Generate() *dagger.Directory {
 func (e *Engine) LintGenerate(ctx context.Context) error {
 	before := e.Dagger.Go().Env().WithoutDirectory("sdk").Directory(".")
 	after := e.Generate()
-	_, err := dag.Dirdiff().AssertEqual(ctx, before, after, []string{"."})
-	return err
+	return dag.Dirdiff().AssertEqual(ctx, before, after, []string{"."})
 }
 
 // Publish all engine images to a registry
