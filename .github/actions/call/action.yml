@@ -110,6 +110,19 @@ runs:
       env:
         DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
 
+    - name: Capture dev engine logs
+      if: always() && inputs.dev-engine == 'true'
+      shell: bash
+      run: |
+        docker logs dagger-engine.dev-${{ runner.name }} &> /tmp/actions/call/engine.logs
+
+    - name: Archive engine logs
+      if: always() && inputs.dev-engine == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: engine-logs
+        path: /tmp/actions/call/engine.logs
+
     - name: Cleanup
       shell: bash
       run: |
