@@ -31,14 +31,13 @@
               <li><a href="#query-blob">blob</a></li>
               <li><a href="#query-builtinContainer">builtinContainer</a></li>
               <li><a href="#query-cacheVolume">cacheVolume</a></li>
-              <li><a href="#query-checkVersionCompatibility">checkVersionCompatibility</a></li>
               <li><a href="#query-container">container</a></li>
               <li><a href="#query-currentFunctionCall">currentFunctionCall</a></li>
               <li><a href="#query-currentModule">currentModule</a></li>
               <li><a href="#query-currentTypeDefs">currentTypeDefs</a></li>
+              <li><a href="#query-daggerEngine">daggerEngine</a></li>
               <li><a href="#query-defaultPlatform">defaultPlatform</a></li>
               <li><a href="#query-directory">directory</a></li>
-              <li><a href="#query-file">file</a></li>
               <li><a href="#query-function">function</a></li>
               <li><a href="#query-generatedCode">generatedCode</a></li>
               <li><a href="#query-git">git</a></li>
@@ -47,7 +46,13 @@
               <li><a href="#query-loadCacheVolumeFromID">loadCacheVolumeFromID</a></li>
               <li><a href="#query-loadContainerFromID">loadContainerFromID</a></li>
               <li><a href="#query-loadCurrentModuleFromID">loadCurrentModuleFromID</a></li>
+              <li><a href="#query-loadDaggerEngineCacheEntryFromID">loadDaggerEngineCacheEntryFromID</a></li>
+              <li><a href="#query-loadDaggerEngineCacheEntrySetFromID">loadDaggerEngineCacheEntrySetFromID</a></li>
+              <li><a href="#query-loadDaggerEngineCacheFromID">loadDaggerEngineCacheFromID</a></li>
+              <li><a href="#query-loadDaggerEngineFromID">loadDaggerEngineFromID</a></li>
               <li><a href="#query-loadDirectoryFromID">loadDirectoryFromID</a></li>
+              <li><a href="#query-loadEnumTypeDefFromID">loadEnumTypeDefFromID</a></li>
+              <li><a href="#query-loadEnumValueTypeDefFromID">loadEnumValueTypeDefFromID</a></li>
               <li><a href="#query-loadEnvVariableFromID">loadEnvVariableFromID</a></li>
               <li><a href="#query-loadFieldTypeDefFromID">loadFieldTypeDefFromID</a></li>
               <li><a href="#query-loadFileFromID">loadFileFromID</a></li>
@@ -68,8 +73,10 @@
               <li><a href="#query-loadModuleDependencyFromID">loadModuleDependencyFromID</a></li>
               <li><a href="#query-loadModuleFromID">loadModuleFromID</a></li>
               <li><a href="#query-loadModuleSourceFromID">loadModuleSourceFromID</a></li>
+              <li><a href="#query-loadModuleSourceViewFromID">loadModuleSourceViewFromID</a></li>
               <li><a href="#query-loadObjectTypeDefFromID">loadObjectTypeDefFromID</a></li>
               <li><a href="#query-loadPortFromID">loadPortFromID</a></li>
+              <li><a href="#query-loadScalarTypeDefFromID">loadScalarTypeDefFromID</a></li>
               <li><a href="#query-loadSecretFromID">loadSecretFromID</a></li>
               <li><a href="#query-loadServiceFromID">loadServiceFromID</a></li>
               <li><a href="#query-loadSocketFromID">loadSocketFromID</a></li>
@@ -81,8 +88,8 @@
               <li><a href="#query-pipeline">pipeline</a></li>
               <li><a href="#query-secret">secret</a></li>
               <li><a href="#query-setSecret">setSecret</a></li>
-              <li><a href="#query-socket">socket</a></li>
               <li><a href="#query-typeDef">typeDef</a></li>
+              <li><a href="#query-version">version</a></li>
             </ul>
           </div>
           <div class="nav-group">
@@ -97,8 +104,20 @@
               <li><a href="#definition-ContainerID">ContainerID</a></li>
               <li><a href="#definition-CurrentModule">CurrentModule</a></li>
               <li><a href="#definition-CurrentModuleID">CurrentModuleID</a></li>
+              <li><a href="#definition-DaggerEngine">DaggerEngine</a></li>
+              <li><a href="#definition-DaggerEngineCache">DaggerEngineCache</a></li>
+              <li><a href="#definition-DaggerEngineCacheEntry">DaggerEngineCacheEntry</a></li>
+              <li><a href="#definition-DaggerEngineCacheEntryID">DaggerEngineCacheEntryID</a></li>
+              <li><a href="#definition-DaggerEngineCacheEntrySet">DaggerEngineCacheEntrySet</a></li>
+              <li><a href="#definition-DaggerEngineCacheEntrySetID">DaggerEngineCacheEntrySetID</a></li>
+              <li><a href="#definition-DaggerEngineCacheID">DaggerEngineCacheID</a></li>
+              <li><a href="#definition-DaggerEngineID">DaggerEngineID</a></li>
               <li><a href="#definition-Directory">Directory</a></li>
               <li><a href="#definition-DirectoryID">DirectoryID</a></li>
+              <li><a href="#definition-EnumTypeDef">EnumTypeDef</a></li>
+              <li><a href="#definition-EnumTypeDefID">EnumTypeDefID</a></li>
+              <li><a href="#definition-EnumValueTypeDef">EnumValueTypeDef</a></li>
+              <li><a href="#definition-EnumValueTypeDefID">EnumValueTypeDefID</a></li>
               <li><a href="#definition-EnvVariable">EnvVariable</a></li>
               <li><a href="#definition-EnvVariableID">EnvVariableID</a></li>
               <li><a href="#definition-FieldTypeDef">FieldTypeDef</a></li>
@@ -144,6 +163,8 @@
               <li><a href="#definition-ModuleSource">ModuleSource</a></li>
               <li><a href="#definition-ModuleSourceID">ModuleSourceID</a></li>
               <li><a href="#definition-ModuleSourceKind">ModuleSourceKind</a></li>
+              <li><a href="#definition-ModuleSourceView">ModuleSourceView</a></li>
+              <li><a href="#definition-ModuleSourceViewID">ModuleSourceViewID</a></li>
               <li><a href="#definition-NetworkProtocol">NetworkProtocol</a></li>
               <li><a href="#definition-ObjectTypeDef">ObjectTypeDef</a></li>
               <li><a href="#definition-ObjectTypeDefID">ObjectTypeDefID</a></li>
@@ -152,6 +173,8 @@
               <li><a href="#definition-Port">Port</a></li>
               <li><a href="#definition-PortForward">PortForward</a></li>
               <li><a href="#definition-PortID">PortID</a></li>
+              <li><a href="#definition-ScalarTypeDef">ScalarTypeDef</a></li>
+              <li><a href="#definition-ScalarTypeDefID">ScalarTypeDefID</a></li>
               <li><a href="#definition-Secret">Secret</a></li>
               <li><a href="#definition-SecretID">SecretID</a></li>
               <li><a href="#definition-Service">Service</a></li>
@@ -359,58 +382,6 @@
               </div>
             </div>
           </section>
-          <section id="query-checkVersionCompatibility" class="operation operation-query" data-traverse-target="query-checkVersionCompatibility">
-            <div class="operation-group-name">
-              <a href="#group-Queries">Queries</a>
-            </div>
-            <h2 class="operation-heading ">
-              <code>checkVersionCompatibility</code>
-            </h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>Checks if the current Dagger Engine is compatible with an SDK&#39;s required version.</p>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-response doc-copy-section">
-                  <h5>Type</h5>
-                  <p>
-                    <a href="#definition-Boolean"><code>Boolean!</code></a>
-                  </p>
-                </div>
-                <div class="operation-arguments test doc-copy-section">
-                  <h5>Arguments</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>version</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span>
-                        </td>
-                        <td> Version required by the SDK. </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-example doc-copy-section">
-                  <h5>Example</h5>
-                </div>
-              </div>
-            </div>
-          </section>
           <section id="query-container" class="operation operation-query" data-traverse-target="query-container">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
@@ -445,12 +416,6 @@
                       </tr>
                     </thead>
                     <tbody>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-ContainerID"><code>ContainerID</code></a></span>
-                        </td>
-                        <td> DEPRECATED: Use <code>loadContainerFromID</code> instead. </td>
-                      </tr>
                       <tr>
                         <td>
                           <span class="property-name"><code>platform</code></span> - <span class="property-type"><a href="#definition-Platform"><code>Platform</code></a></span>
@@ -584,6 +549,39 @@
               </div>
             </div>
           </section>
+          <section id="query-daggerEngine" class="operation operation-query" data-traverse-target="query-daggerEngine">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>daggerEngine</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The Dagger engine container configuration and state</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-DaggerEngine"><code>DaggerEngine!</code></a>
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="query-defaultPlatform" class="operation operation-query" data-traverse-target="query-defaultPlatform">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
@@ -645,25 +643,6 @@
                     <a href="#definition-Directory"><code>Directory!</code></a>
                   </p>
                 </div>
-                <div class="operation-arguments test doc-copy-section">
-                  <h5>Arguments</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-DirectoryID"><code>DirectoryID</code></a></span>
-                        </td>
-                        <td> DEPRECATED: Use <code>loadDirectoryFromID</code> instead. </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
               </div>
             </div>
             <div class="doc-row">
@@ -687,66 +666,6 @@
 }</span></span>
 </code></pre>
                   <p><a href="https://play.dagger.cloud/playground/ThUnHXcpmJY" target="_blank">Try it in the API Playground!</a></p>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="query-file" class="operation operation-query" data-traverse-target="query-file">
-            <div class="operation-group-name">
-              <a href="#group-Queries">Queries</a>
-            </div>
-            <h2 class="operation-heading operation-deprecated">
-              <code>file</code>
-            </h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="doc-copy-section">
-                  <div class="deprecation-reason"> Use <code>loadFileFromID</code> instead. </div>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-response doc-copy-section">
-                  <h5>Type</h5>
-                  <p>
-                    <a href="#definition-File"><code>File!</code></a>
-                  </p>
-                </div>
-                <div class="operation-arguments test doc-copy-section">
-                  <h5>Arguments</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-FileID"><code>FileID!</code></a></span>
-                        </td>
-                        <td>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-example doc-copy-section">
-                  <h5>Example</h5>
-                  <pre><code class="hljs language-gql"><span class="hljs-symbol"><span class="hljs-keyword">query</span> <span class="hljs-tag">{
-  <span class="hljs-symbol">file<span class="hljs-tag">(id: &quot;eyJsbGIiOnsiZGVmIjpbIklqWVNOQWovLy8vLy8vLy8vLzhCRVAvLy8vLy8vLy8vL3dFcUhBb0VMMlp2YnhDa0F4b0dTR1ZzYkc4aEtQLy8vLy8vLy8vLy93RlNBRm9BIiwiQ2trS1IzTm9ZVEkxTmpwak1EQTVPV1U1TURrNFpEVmlObUkyWVdWaFpXWXpObVpsTnpsaU9UUTVOVEF4TnpoalptRmpPRGxsWVdKbE5XRmtZbUprTkdZeFptWXdNV0l3TkdWbSJdLCJtZXRhZGF0YSI6eyJzaGEyNTY6NWNjOGQ1M2VkZTRjYzUyODQ0OTIyYWFhZDlhYjIzMzc3MzY3NWMwMDJjOTM5NGZhYTk0OTg1OTZmNGFjMWRiNiI6eyJjYXBzIjp7ImNvbnN0cmFpbnRzIjp0cnVlLCJwbGF0Zm9ybSI6dHJ1ZX19LCJzaGEyNTY6YzAwOTllOTA5OGQ1YjZiNmFlYWVmMzZmZTc5Yjk0OTUwMTc4Y2ZhYzg5ZWFiZTVhZGJiZDRmMWZmMDFiMDRlZiI6eyJjYXBzIjp7ImZpbGUuYmFzZSI6dHJ1ZX19fSwiU291cmNlIjp7ImxvY2F0aW9ucyI6eyJzaGEyNTY6YzAwOTllOTA5OGQ1YjZiNmFlYWVmMzZmZTc5Yjk0OTUwMTc4Y2ZhYzg5ZWFiZTVhZGJiZDRmMWZmMDFiMDRlZiI6e319fX0sImZpbGUiOiJmb28iLCJwbGF0Zm9ybSI6eyJhcmNoaXRlY3R1cmUiOiIiLCJvcyI6IiJ9fQ==&quot;)</span> <span class="hljs-tag">{
-    <span class="hljs-symbol">contents</span>
-    <span class="hljs-symbol">export<span class="hljs-tag">(path: &quot;greeting&quot;)</span></span>
-  }</span></span>
-}</span></span>
-</code></pre>
-                  <p><a href="https://play.dagger.cloud/playground/yWn-k9dPw0s" target="_blank">Try it in the API Playground!</a></p>
                 </div>
               </div>
             </div>
@@ -1235,6 +1154,218 @@
               </div>
             </div>
           </section>
+          <section id="query-loadDaggerEngineCacheEntryFromID" class="operation operation-query" data-traverse-target="query-loadDaggerEngineCacheEntryFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadDaggerEngineCacheEntryFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a DaggerEngineCacheEntry from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-DaggerEngineCacheEntry"><code>DaggerEngineCacheEntry!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-DaggerEngineCacheEntryID"><code>DaggerEngineCacheEntryID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-loadDaggerEngineCacheEntrySetFromID" class="operation operation-query" data-traverse-target="query-loadDaggerEngineCacheEntrySetFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadDaggerEngineCacheEntrySetFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a DaggerEngineCacheEntrySet from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-DaggerEngineCacheEntrySet"><code>DaggerEngineCacheEntrySet!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-DaggerEngineCacheEntrySetID"><code>DaggerEngineCacheEntrySetID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-loadDaggerEngineCacheFromID" class="operation operation-query" data-traverse-target="query-loadDaggerEngineCacheFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadDaggerEngineCacheFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a DaggerEngineCache from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-DaggerEngineCache"><code>DaggerEngineCache!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-DaggerEngineCacheID"><code>DaggerEngineCacheID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-loadDaggerEngineFromID" class="operation operation-query" data-traverse-target="query-loadDaggerEngineFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadDaggerEngineFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a DaggerEngine from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-DaggerEngine"><code>DaggerEngine!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-DaggerEngineID"><code>DaggerEngineID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="query-loadDirectoryFromID" class="operation operation-query" data-traverse-target="query-loadDirectoryFromID">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
@@ -1271,6 +1402,112 @@
                       <tr>
                         <td>
                           <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-DirectoryID"><code>DirectoryID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-loadEnumTypeDefFromID" class="operation operation-query" data-traverse-target="query-loadEnumTypeDefFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadEnumTypeDefFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a EnumTypeDef from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-EnumTypeDef"><code>EnumTypeDef!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-EnumTypeDefID"><code>EnumTypeDefID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-loadEnumValueTypeDefFromID" class="operation operation-query" data-traverse-target="query-loadEnumValueTypeDefFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadEnumValueTypeDefFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a EnumValueTypeDef from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-EnumValueTypeDef"><code>EnumValueTypeDef!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-EnumValueTypeDefID"><code>EnumValueTypeDefID!</code></a></span>
                         </td>
                         <td>
                         </td>
@@ -2348,6 +2585,59 @@
               </div>
             </div>
           </section>
+          <section id="query-loadModuleSourceViewFromID" class="operation operation-query" data-traverse-target="query-loadModuleSourceViewFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadModuleSourceViewFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a ModuleSourceView from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-ModuleSourceView"><code>ModuleSourceView!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-ModuleSourceViewID"><code>ModuleSourceViewID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="query-loadObjectTypeDefFromID" class="operation operation-query" data-traverse-target="query-loadObjectTypeDefFromID">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
@@ -2437,6 +2727,59 @@
                       <tr>
                         <td>
                           <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-PortID"><code>PortID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-loadScalarTypeDefFromID" class="operation operation-query" data-traverse-target="query-loadScalarTypeDefFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadScalarTypeDefFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a ScalarTypeDef from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-ScalarTypeDef"><code>ScalarTypeDef!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-ScalarTypeDefID"><code>ScalarTypeDefID!</code></a></span>
                         </td>
                         <td>
                         </td>
@@ -3067,73 +3410,6 @@
               </div>
             </div>
           </section>
-          <section id="query-socket" class="operation operation-query" data-traverse-target="query-socket">
-            <div class="operation-group-name">
-              <a href="#group-Queries">Queries</a>
-            </div>
-            <h2 class="operation-heading operation-deprecated">
-              <code>socket</code>
-            </h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="doc-copy-section">
-                  <div class="deprecation-reason"> Use <code>loadSocketFromID</code> instead. </div>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>Loads a socket by its ID.</p>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-response doc-copy-section">
-                  <h5>Type</h5>
-                  <p>
-                    <a href="#definition-Socket"><code>Socket!</code></a>
-                  </p>
-                </div>
-                <div class="operation-arguments test doc-copy-section">
-                  <h5>Arguments</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-SocketID"><code>SocketID!</code></a></span>
-                        </td>
-                        <td>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-example doc-copy-section">
-                  <h5>Example</h5>
-                  <pre><code class="hljs language-gql"><span class="hljs-symbol"><span class="hljs-keyword">query</span> <span class="hljs-tag">{
-  <span class="hljs-symbol">socket<span class="hljs-tag">(id: &quot;eyJob3N0X3BhdGgiOiIvdmFyL3J1bi9kb2NrZXIuc29jayJ9&quot;)</span> <span class="hljs-tag">{
-    <span class="hljs-symbol">id</span>
-  }</span></span>
-}</span></span>
-</code></pre>
-                  <p><a href="https://play.dagger.cloud/playground/fjnjn7cKORa" target="_blank">Try it in the API Playground!</a></p>
-                </div>
-              </div>
-            </div>
-          </section>
           <section id="query-typeDef" class="operation operation-query" data-traverse-target="query-typeDef">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
@@ -3155,6 +3431,39 @@
                   <h5>Type</h5>
                   <p>
                     <a href="#definition-TypeDef"><code>TypeDef!</code></a>
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-version" class="operation operation-query" data-traverse-target="query-version">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>version</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Get the current Dagger Engine version.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-String"><code>String!</code></a>
                   </p>
                 </div>
               </div>
@@ -3414,7 +3723,7 @@
                                 <h6 class="field-argument-name"><span class="property-name"><code>secrets</code></span> - <span class="property-type"><a href="#definition-SecretID"><code>[SecretID!]</code></a></span></h6>
                                 <p>Secrets to pass to the build.</p>
                                 <p>They will be mounted at /run/secrets/[secret-name] in the build container</p>
-                                <p>They can be accessed in the Dockerfile using the &quot;secret&quot; mount type and mount path /run/secrets/[secret-name], e.g. RUN --mount=type=secret,id=my-secret curl <a href="http://example.com?token=$">http://example.com?token=$</a>(cat /run/secrets/my-secret)</p>
+                                <p>They can be accessed in the Dockerfile using the &quot;secret&quot; mount type and mount path /run/secrets/[secret-name], e.g. RUN --mount=type=secret,id=my-secret curl [<a href="http://example.com?token=$">http://example.com?token=$</a>(cat /run/secrets/my-secret)](<a href="http://example.com?token=$">http://example.com?token=$</a>(cat /run/secrets/my-secret))</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>target</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
@@ -3503,10 +3812,9 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Container-export" href="#Container-export"><code>export</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
+                        <td data-property-name=""><a class="property-name" id="Container-export" href="#Container-export"><code>export</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td>
                           <p>Writes the container as an OCI tarball to the destination file path on the host.</p>
-                          <p>Return true on success.</p>
                           <p>It can also export platform variants.</p>
                         </td>
                       </tr>
@@ -3730,8 +4038,8 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Container-terminal" href="#Container-terminal"><code>terminal</code></a> - <span class="property-type"><a href="#definition-Terminal"><code>Terminal!</code></a></span> </td>
-                        <td> Return an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default). </td>
+                        <td data-property-name=""><a class="property-name" id="Container-terminal" href="#Container-terminal"><code>terminal</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
+                        <td> Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default). </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -3741,6 +4049,15 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>cmd</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
                                 <p>If set, override the container&#39;s default terminal command and invoke these command arguments instead.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>experimentalPrivilegedNesting</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Provides Dagger access to the executed command.</p>
+                                <p>Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>insecureRootCapabilities</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Execute the command with all root capabilities. This is similar to running a command with &quot;sudo&quot; or executing &quot;docker run&quot; with the &quot;--privileged&quot; flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.</p>
                               </div>
                             </div>
                           </div>
@@ -3779,6 +4096,15 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>args</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span></h6>
                                 <p>The args of the command.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>experimentalPrivilegedNesting</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Provides Dagger access to the executed command.</p>
+                                <p>Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>insecureRootCapabilities</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Execute the command with all root capabilities. This is similar to running a command with &quot;sudo&quot; or executing &quot;docker run&quot; with the &quot;--privileged&quot; flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.</p>
                               </div>
                             </div>
                           </div>
@@ -3881,7 +4207,7 @@
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>experimentalPrivilegedNesting</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
-                                <p>Provides dagger access to the executed command.</p>
+                                <p>Provides Dagger access to the executed command.</p>
                                 <p>Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.</p>
                               </div>
                               <div class="field-argument">
@@ -3898,11 +4224,15 @@
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>skipEntrypoint</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
-                                <p>If the container has an entrypoint, ignore it for args rather than using it to wrap them.</p>
+                                <p>DEPRECATED: For true this can be removed. For false, use <code>useEntrypoint</code> instead.</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>stdin</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
                                 <p>Content to write to the command&#39;s standard input before closing (e.g., &quot;Hello world&quot;).</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>useEntrypoint</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>If the container has an entrypoint, prepend it to the args.</p>
                               </div>
                             </div>
                           </div>
@@ -4159,7 +4489,7 @@
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Container-withMountedTemp" href="#Container-withMountedTemp"><code>withMountedTemp</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
-                        <td> Retrieves this container plus a temporary directory mounted at the given path. </td>
+                        <td> Retrieves this container plus a temporary directory mounted at the given path. Any writes will be ephemeral to a single withExec call; they will not be persisted to subsequent withExecs. </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -4184,7 +4514,7 @@
                             <h5 class="field-arguments-heading"> Arguments </h5>
                             <div class="field-argument-list">
                               <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>contents</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <h6 class="field-argument-name"><span class="property-name"><code>contents</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
                                 <p>Content of the file to write (e.g., &quot;Hello world!&quot;).</p>
                               </div>
                               <div class="field-argument">
@@ -4208,6 +4538,23 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Container-withoutDefaultArgs" href="#Container-withoutDefaultArgs"><code>withoutDefaultArgs</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
                         <td> Retrieves this container with unset default arguments for future commands. </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Container-withoutDirectory" href="#Container-withoutDirectory"><code>withoutDirectory</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
+                        <td> Retrieves this container with the directory at the given path removed. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Location of the directory to remove (e.g., &quot;.github/&quot;).</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Container-withoutEntrypoint" href="#Container-withoutEntrypoint"><code>withoutEntrypoint</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
@@ -4259,6 +4606,23 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>protocol</code></span> - <span class="property-type"><a href="#definition-NetworkProtocol"><code>NetworkProtocol</code></a></span></h6>
                                 <p>Port protocol to unexpose</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Container-withoutFile" href="#Container-withoutFile"><code>withoutFile</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
+                        <td> Retrieves this container with the file at the given path removed. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Location of the file to remove (e.g., &quot;/file.txt&quot;).</p>
                               </div>
                             </div>
                           </div>
@@ -4318,6 +4682,23 @@
                                 <h6 class="field-argument-name"><span class="property-name"><code>address</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
                                 <p>Registry&#39;s address to remove the authentication from.</p>
                                 <p>Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Container-withoutSecretVariable" href="#Container-withoutSecretVariable"><code>withoutSecretVariable</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
+                        <td> Retrieves this container minus the given environment variable containing the secret. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the environment variable (e.g., &quot;HOST&quot;).</p>
                               </div>
                             </div>
                           </div>
@@ -4624,6 +5005,234 @@
               </div>
             </div>
           </section>
+          <section id="definition-DaggerEngine" class="definition definition-object" data-traverse-target="definition-DaggerEngine">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">DaggerEngine</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The Dagger engine configuration and state</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="DaggerEngine-id" href="#DaggerEngine-id"><code>id</code></a> - <span class="property-type"><a href="#definition-DaggerEngineID"><code>DaggerEngineID!</code></a></span> </td>
+                        <td> A unique identifier for this DaggerEngine. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="DaggerEngine-localCache" href="#DaggerEngine-localCache"><code>localCache</code></a> - <span class="property-type"><a href="#definition-DaggerEngineCache"><code>DaggerEngineCache!</code></a></span> </td>
+                        <td> The local (on-disk) cache for the Dagger engine </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-DaggerEngineCache" class="definition definition-object" data-traverse-target="definition-DaggerEngineCache">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">DaggerEngineCache</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>A cache storage for the Dagger engine</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="DaggerEngineCache-entrySet" href="#DaggerEngineCache-entrySet"><code>entrySet</code></a> - <span class="property-type"><a href="#definition-DaggerEngineCacheEntrySet"><code>DaggerEngineCacheEntrySet!</code></a></span> </td>
+                        <td> The current set of entries in the cache </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="DaggerEngineCache-id" href="#DaggerEngineCache-id"><code>id</code></a> - <span class="property-type"><a href="#definition-DaggerEngineCacheID"><code>DaggerEngineCacheID!</code></a></span> </td>
+                        <td> A unique identifier for this DaggerEngineCache. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="DaggerEngineCache-keepBytes" href="#DaggerEngineCache-keepBytes"><code>keepBytes</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
+                        <td> The maximum bytes to keep in the cache without pruning, after which automatic pruning may kick in. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="DaggerEngineCache-prune" href="#DaggerEngineCache-prune"><code>prune</code></a> - <span class="property-type"><a href="#definition-Void"><code>Void</code></a></span> </td>
+                        <td> Prune the cache of releaseable entries </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-DaggerEngineCacheEntry" class="definition definition-object" data-traverse-target="definition-DaggerEngineCacheEntry">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">DaggerEngineCacheEntry</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>An individual cache entry in a cache entry set</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="DaggerEngineCacheEntry-activelyUsed" href="#DaggerEngineCacheEntry-activelyUsed"><code>activelyUsed</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
+                        <td> Whether the cache entry is actively being used. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="DaggerEngineCacheEntry-createdTimeUnixNano" href="#DaggerEngineCacheEntry-createdTimeUnixNano"><code>createdTimeUnixNano</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
+                        <td> The time the cache entry was created, in Unix nanoseconds. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="DaggerEngineCacheEntry-description" href="#DaggerEngineCacheEntry-description"><code>description</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The description of the cache entry. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="DaggerEngineCacheEntry-diskSpaceBytes" href="#DaggerEngineCacheEntry-diskSpaceBytes"><code>diskSpaceBytes</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
+                        <td> The disk space used by the cache entry. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="DaggerEngineCacheEntry-id" href="#DaggerEngineCacheEntry-id"><code>id</code></a> - <span class="property-type"><a href="#definition-DaggerEngineCacheEntryID"><code>DaggerEngineCacheEntryID!</code></a></span> </td>
+                        <td> A unique identifier for this DaggerEngineCacheEntry. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="DaggerEngineCacheEntry-mostRecentUseTimeUnixNano" href="#DaggerEngineCacheEntry-mostRecentUseTimeUnixNano"><code>mostRecentUseTimeUnixNano</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
+                        <td> The most recent time the cache entry was used, in Unix nanoseconds. </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-DaggerEngineCacheEntryID" class="definition definition-scalar" data-traverse-target="definition-DaggerEngineCacheEntryID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">DaggerEngineCacheEntryID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>DaggerEngineCacheEntryID</code> scalar type represents an identifier for an object of type DaggerEngineCacheEntry.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-DaggerEngineCacheEntrySet" class="definition definition-object" data-traverse-target="definition-DaggerEngineCacheEntrySet">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">DaggerEngineCacheEntrySet</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>A set of cache entries returned by a query to a cache</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="DaggerEngineCacheEntrySet-diskSpaceBytes" href="#DaggerEngineCacheEntrySet-diskSpaceBytes"><code>diskSpaceBytes</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
+                        <td> The total disk space used by the cache entries in this set. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="DaggerEngineCacheEntrySet-entries" href="#DaggerEngineCacheEntrySet-entries"><code>entries</code></a> - <span class="property-type"><a href="#definition-DaggerEngineCacheEntry"><code>[DaggerEngineCacheEntry!]!</code></a></span> </td>
+                        <td> The list of individual cache entries in the set </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="DaggerEngineCacheEntrySet-entryCount" href="#DaggerEngineCacheEntrySet-entryCount"><code>entryCount</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
+                        <td> The number of cache entries in this set. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="DaggerEngineCacheEntrySet-id" href="#DaggerEngineCacheEntrySet-id"><code>id</code></a> - <span class="property-type"><a href="#definition-DaggerEngineCacheEntrySetID"><code>DaggerEngineCacheEntrySetID!</code></a></span> </td>
+                        <td> A unique identifier for this DaggerEngineCacheEntrySet. </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-DaggerEngineCacheEntrySetID" class="definition definition-scalar" data-traverse-target="definition-DaggerEngineCacheEntrySetID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">DaggerEngineCacheEntrySetID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>DaggerEngineCacheEntrySetID</code> scalar type represents an identifier for an object of type DaggerEngineCacheEntrySet.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-DaggerEngineCacheID" class="definition definition-scalar" data-traverse-target="definition-DaggerEngineCacheID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">DaggerEngineCacheID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>DaggerEngineCacheID</code> scalar type represents an identifier for an object of type DaggerEngineCache.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-DaggerEngineID" class="definition definition-scalar" data-traverse-target="definition-DaggerEngineID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">DaggerEngineID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>DaggerEngineID</code> scalar type represents an identifier for an object of type DaggerEngine.</p>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="definition-Directory" class="definition definition-object" data-traverse-target="definition-Directory">
             <div class="definition-group-name">
               <a href="#group-Types">Types</a>
@@ -4654,6 +5263,10 @@
                           <div class="field-arguments">
                             <h5 class="field-arguments-heading"> Arguments </h5>
                             <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>engineVersion</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>The engine version to upgrade to.</p>
+                              </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>sourceRootPath</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
                                 <p>An optional subpath of the directory which contains the module&#39;s configuration file.</p>
@@ -4750,7 +5363,7 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="Directory-export" href="#Directory-export"><code>export</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
+                        <td data-property-name=""><a class="property-name" id="Directory-export" href="#Directory-export"><code>export</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> Writes the contents of the directory to a path on the host. </td>
                       </tr>
                       <tr class="row-field-arguments">
@@ -4761,6 +5374,10 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
                                 <p>Location of the copied directory (e.g., &quot;logs/&quot;).</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>wipe</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>If true, then the host directory will be wiped clean before exporting so that it exactly matches the directory being exported; this means it will delete any files on the host that aren&#39;t in the exported dir. If false (the default), the contents of the directory will be merged with any existing contents of the host directory, leaving any existing files on the host that aren&#39;t in the exported directory alone.</p>
                               </div>
                             </div>
                           </div>
@@ -4832,6 +5449,36 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Directory-sync" href="#Directory-sync"><code>sync</code></a> - <span class="property-type"><a href="#definition-DirectoryID"><code>DirectoryID!</code></a></span> </td>
                         <td> Force evaluation in the engine. </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Directory-terminal" href="#Directory-terminal"><code>terminal</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
+                        <td> Opens an interactive terminal in new container with this directory mounted inside. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>cmd</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
+                                <p>If set, override the container&#39;s default terminal command and invoke these command arguments instead.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>container</code></span> - <span class="property-type"><a href="#definition-ContainerID"><code>ContainerID</code></a></span></h6>
+                                <p>If set, override the default container used for the terminal.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>experimentalPrivilegedNesting</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Provides Dagger access to the executed command.</p>
+                                <p>Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>insecureRootCapabilities</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Execute the command with all root capabilities. This is similar to running a command with &quot;sudo&quot; or executing &quot;docker run&quot; with the &quot;--privileged&quot; flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Directory-withDirectory" href="#Directory-withDirectory"><code>withDirectory</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
@@ -5030,6 +5677,120 @@
               </div>
             </div>
           </section>
+          <section id="definition-EnumTypeDef" class="definition definition-object" data-traverse-target="definition-EnumTypeDef">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">EnumTypeDef</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>A definition of a custom enum defined in a Module.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="EnumTypeDef-description" href="#EnumTypeDef-description"><code>description</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> A doc string for the enum, if any. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="EnumTypeDef-id" href="#EnumTypeDef-id"><code>id</code></a> - <span class="property-type"><a href="#definition-EnumTypeDefID"><code>EnumTypeDefID!</code></a></span> </td>
+                        <td> A unique identifier for this EnumTypeDef. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="EnumTypeDef-name" href="#EnumTypeDef-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The name of the enum. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="EnumTypeDef-sourceModuleName" href="#EnumTypeDef-sourceModuleName"><code>sourceModuleName</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> If this EnumTypeDef is associated with a Module, the name of the module. Unset otherwise. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="EnumTypeDef-values" href="#EnumTypeDef-values"><code>values</code></a> - <span class="property-type"><a href="#definition-EnumValueTypeDef"><code>[EnumValueTypeDef!]!</code></a></span> </td>
+                        <td> The values of the enum. </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-EnumTypeDefID" class="definition definition-scalar" data-traverse-target="definition-EnumTypeDefID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">EnumTypeDefID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>EnumTypeDefID</code> scalar type represents an identifier for an object of type EnumTypeDef.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-EnumValueTypeDef" class="definition definition-object" data-traverse-target="definition-EnumValueTypeDef">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">EnumValueTypeDef</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>A definition of a value in a custom enum defined in a Module.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="EnumValueTypeDef-description" href="#EnumValueTypeDef-description"><code>description</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> A doc string for the enum value, if any. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="EnumValueTypeDef-id" href="#EnumValueTypeDef-id"><code>id</code></a> - <span class="property-type"><a href="#definition-EnumValueTypeDefID"><code>EnumValueTypeDefID!</code></a></span> </td>
+                        <td> A unique identifier for this EnumValueTypeDef. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="EnumValueTypeDef-name" href="#EnumValueTypeDef-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The name of the enum value. </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-EnumValueTypeDefID" class="definition definition-scalar" data-traverse-target="definition-EnumValueTypeDefID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">EnumValueTypeDefID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>EnumValueTypeDefID</code> scalar type represents an identifier for an object of type EnumValueTypeDef.</p>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="definition-EnvVariable" class="definition definition-object" data-traverse-target="definition-EnvVariable">
             <div class="definition-group-name">
               <a href="#group-Types">Types</a>
@@ -5167,7 +5928,7 @@
                         <td> Retrieves the contents of the file. </td>
                       </tr>
                       <tr class="row-has-field-arguments">
-                        <td data-property-name=""><a class="property-name" id="File-export" href="#File-export"><code>export</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
+                        <td data-property-name=""><a class="property-name" id="File-export" href="#File-export"><code>export</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> Writes the file to a file path on the host. </td>
                       </tr>
                       <tr class="row-field-arguments">
@@ -5202,6 +5963,23 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="File-sync" href="#File-sync"><code>sync</code></a> - <span class="property-type"><a href="#definition-FileID"><code>FileID!</code></a></span> </td>
                         <td> Force evaluation in the engine. </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="File-withName" href="#File-withName"><code>withName</code></a> - <span class="property-type"><a href="#definition-File"><code>File!</code></a></span> </td>
+                        <td> Retrieves this file with its name set to the given name. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>Name to set file to.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="File-withTimestamps" href="#File-withTimestamps"><code>withTimestamps</code></a> - <span class="property-type"><a href="#definition-File"><code>File!</code></a></span> </td>
@@ -5654,7 +6432,7 @@
                     <tbody>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="GitModuleSource-cloneURL" href="#GitModuleSource-cloneURL"><code>cloneURL</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> The URL from which the source's git repo can be cloned. </td>
+                        <td> The URL to clone the root of the git repo from </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="GitModuleSource-commit" href="#GitModuleSource-commit"><code>commit</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
@@ -5671,6 +6449,10 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="GitModuleSource-id" href="#GitModuleSource-id"><code>id</code></a> - <span class="property-type"><a href="#definition-GitModuleSourceID"><code>GitModuleSourceID!</code></a></span> </td>
                         <td> A unique identifier for this GitModuleSource. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="GitModuleSource-root" href="#GitModuleSource-root"><code>root</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The clean module name of the root of the module </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="GitModuleSource-rootSubpath" href="#GitModuleSource-rootSubpath"><code>rootSubpath</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
@@ -5729,26 +6511,9 @@
                         <td data-property-name=""><a class="property-name" id="GitRef-id" href="#GitRef-id"><code>id</code></a> - <span class="property-type"><a href="#definition-GitRefID"><code>GitRefID!</code></a></span> </td>
                         <td> A unique identifier for this GitRef. </td>
                       </tr>
-                      <tr class="row-has-field-arguments">
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="GitRef-tree" href="#GitRef-tree"><code>tree</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
                         <td> The filesystem tree at this ref. </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>sshAuthSocket</code></span> - <span class="property-type"><a href="#definition-SocketID"><code>SocketID</code></a></span></h6>
-                                <p>DEPRECATED: This option should be passed to <code>git</code> instead.</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>sshKnownHosts</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
-                                <p>DEPRECATED: This option should be passed to <code>git</code> instead.</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
                       </tr>
                     </tbody>
                   </table>
@@ -5826,6 +6591,10 @@
                         </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="GitRepository-head" href="#GitRepository-head"><code>head</code></a> - <span class="property-type"><a href="#definition-GitRef"><code>GitRef!</code></a></span> </td>
+                        <td> Returns details for HEAD. </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="GitRepository-id" href="#GitRepository-id"><code>id</code></a> - <span class="property-type"><a href="#definition-GitRepositoryID"><code>GitRepositoryID!</code></a></span> </td>
                         <td> A unique identifier for this GitRepository. </td>
                       </tr>
@@ -5858,6 +6627,57 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
                                 <p>Tag&#39;s name (e.g., &quot;v0.3.9&quot;).</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="GitRepository-tags" href="#GitRepository-tags"><code>tags</code></a> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span> </td>
+                        <td> tags that match any of the given glob patterns. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>patterns</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
+                                <p>Glob patterns (e.g., &quot;refs/tags/v*&quot;).</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="GitRepository-withAuthHeader" href="#GitRepository-withAuthHeader"><code>withAuthHeader</code></a> - <span class="property-type"><a href="#definition-GitRepository"><code>GitRepository!</code></a></span> </td>
+                        <td> Header to authenticate the remote with. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>header</code></span> - <span class="property-type"><a href="#definition-SecretID"><code>SecretID!</code></a></span></h6>
+                                <p>Secret used to populate the Authorization HTTP header</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="GitRepository-withAuthToken" href="#GitRepository-withAuthToken"><code>withAuthToken</code></a> - <span class="property-type"><a href="#definition-GitRepository"><code>GitRepository!</code></a></span> </td>
+                        <td> Token to authenticate the remote with. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>token</code></span> - <span class="property-type"><a href="#definition-SecretID"><code>SecretID!</code></a></span></h6>
+                                <p>Secret used to populate the password during basic HTTP Authorization</p>
                               </div>
                             </div>
                           </div>
@@ -6512,6 +7332,10 @@
                         <td> The doc string of the module, if any </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="Module-enums" href="#Module-enums"><code>enums</code></a> - <span class="property-type"><a href="#definition-TypeDef"><code>[TypeDef!]!</code></a></span> </td>
+                        <td> Enumerations served by this module. </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="Module-generatedContextDiff" href="#Module-generatedContextDiff"><code>generatedContextDiff</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
                         <td> The generated files and directories made on top of the module source's context directory. </td>
                       </tr>
@@ -6576,6 +7400,22 @@
                         </td>
                       </tr>
                       <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Module-withEnum" href="#Module-withEnum"><code>withEnum</code></a> - <span class="property-type"><a href="#definition-Module"><code>Module!</code></a></span> </td>
+                        <td> This module plus the given Enum type and associated values </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>enum</code></span> - <span class="property-type"><a href="#definition-TypeDefID"><code>TypeDefID!</code></a></span></h6>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Module-withInterface" href="#Module-withInterface"><code>withInterface</code></a> - <span class="property-type"><a href="#definition-Module"><code>Module!</code></a></span> </td>
                         <td> This module plus the given Interface type and associated functions </td>
                       </tr>
@@ -6616,6 +7456,10 @@
                           <div class="field-arguments">
                             <h5 class="field-arguments-heading"> Arguments </h5>
                             <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>engineVersion</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>The engine version to upgrade to.</p>
+                              </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>source</code></span> - <span class="property-type"><a href="#definition-ModuleSourceID"><code>ModuleSourceID!</code></a></span></h6>
                                 <p>The module source to initialize from.</p>
@@ -6726,9 +7570,22 @@
                         <td data-property-name=""><a class="property-name" id="ModuleSource-asLocalSource" href="#ModuleSource-asLocalSource"><code>asLocalSource</code></a> - <span class="property-type"><a href="#definition-LocalModuleSource"><code>LocalModuleSource</code></a></span> </td>
                         <td> If the source is of kind local, the local source representation of it. </td>
                       </tr>
-                      <tr>
+                      <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="ModuleSource-asModule" href="#ModuleSource-asModule"><code>asModule</code></a> - <span class="property-type"><a href="#definition-Module"><code>Module!</code></a></span> </td>
                         <td> Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>engineVersion</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>The engine version to upgrade to.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="ModuleSource-asString" href="#ModuleSource-asString"><code>asString</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
@@ -6800,6 +7657,27 @@
                           </div>
                         </td>
                       </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="ModuleSource-resolveDirectoryFromCaller" href="#ModuleSource-resolveDirectoryFromCaller"><code>resolveDirectoryFromCaller</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
+                        <td> Load a directory from the caller optionally with a given view applied. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The path on the caller&#39;s filesystem to load.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>viewName</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>If set, the name of the view to apply to the path.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="ModuleSource-resolveFromCaller" href="#ModuleSource-resolveFromCaller"><code>resolveFromCaller</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
                         <td> Load the source from its path on the caller's filesystem, including only needed+configured files and directories. Only valid for local sources. </td>
@@ -6811,6 +7689,27 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="ModuleSource-sourceSubpath" href="#ModuleSource-sourceSubpath"><code>sourceSubpath</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> The path relative to context of the module implementation source code. </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="ModuleSource-view" href="#ModuleSource-view"><code>view</code></a> - <span class="property-type"><a href="#definition-ModuleSourceView"><code>ModuleSourceView!</code></a></span> </td>
+                        <td> Retrieve a named view defined for this module source. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the view to retrieve.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="ModuleSource-views" href="#ModuleSource-views"><code>views</code></a> - <span class="property-type"><a href="#definition-ModuleSourceView"><code>[ModuleSourceView!]!</code></a></span> </td>
+                        <td> The named views defined for this module source, which are sets of directory filters that can be applied to directory arguments provided to functions. </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="ModuleSource-withContextDirectory" href="#ModuleSource-withContextDirectory"><code>withContextDirectory</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
@@ -6897,6 +7796,27 @@
                           </div>
                         </td>
                       </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="ModuleSource-withView" href="#ModuleSource-withView"><code>withView</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
+                        <td> Update the module source with a new named view. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the view to set.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>patterns</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span></h6>
+                                <p>The patterns to set as the view filters.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
                     </tbody>
                   </table>
                 </div>
@@ -6965,6 +7885,59 @@
 </code></pre>
                     </body>
                   </html>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-ModuleSourceView" class="definition definition-object" data-traverse-target="definition-ModuleSourceView">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">ModuleSourceView</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>A named set of path filters that can be applied to directory arguments provided to functions.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="ModuleSourceView-id" href="#ModuleSourceView-id"><code>id</code></a> - <span class="property-type"><a href="#definition-ModuleSourceViewID"><code>ModuleSourceViewID!</code></a></span> </td>
+                        <td> A unique identifier for this ModuleSourceView. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="ModuleSourceView-name" href="#ModuleSourceView-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The name of the view </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="ModuleSourceView-patterns" href="#ModuleSourceView-patterns"><code>patterns</code></a> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span> </td>
+                        <td> The patterns of the view used to filter paths </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-ModuleSourceViewID" class="definition definition-scalar" data-traverse-target="definition-ModuleSourceViewID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">ModuleSourceViewID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>ModuleSourceViewID</code> scalar type represents an identifier for an object of type ModuleSourceView.</p>
                 </div>
               </div>
             </div>
@@ -7133,7 +8106,7 @@
                   <html>
                     <head></head>
                     <body><pre><code class="hljs language-json"><span class="hljs-punctuation">{</span>
-  <span class="hljs-attr">"name"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"abc123"</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">"name"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"xyz789"</span><span class="hljs-punctuation">,</span>
   <span class="hljs-attr">"value"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"xyz789"</span>
 <span class="hljs-punctuation">}</span>
 </code></pre>
@@ -7253,7 +8226,7 @@
                   <h5>Example</h5>
                   <html>
                     <head></head>
-                    <body><pre><code class="hljs language-json"><span class="hljs-punctuation">{</span><span class="hljs-attr">"backend"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">987</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">"frontend"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">123</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">"protocol"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"TCP"</span><span class="hljs-punctuation">}</span>
+                    <body><pre><code class="hljs language-json"><span class="hljs-punctuation">{</span><span class="hljs-attr">"backend"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">123</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">"frontend"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">123</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">"protocol"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"TCP"</span><span class="hljs-punctuation">}</span>
 </code></pre>
                     </body>
                   </html>
@@ -7271,6 +8244,63 @@
                 <div class="definition-description doc-copy-section">
                   <h5>Description</h5>
                   <p>The <code>PortID</code> scalar type represents an identifier for an object of type Port.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-ScalarTypeDef" class="definition definition-object" data-traverse-target="definition-ScalarTypeDef">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">ScalarTypeDef</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>A definition of a custom scalar defined in a Module.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="ScalarTypeDef-description" href="#ScalarTypeDef-description"><code>description</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> A doc string for the scalar, if any. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="ScalarTypeDef-id" href="#ScalarTypeDef-id"><code>id</code></a> - <span class="property-type"><a href="#definition-ScalarTypeDefID"><code>ScalarTypeDefID!</code></a></span> </td>
+                        <td> A unique identifier for this ScalarTypeDef. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="ScalarTypeDef-name" href="#ScalarTypeDef-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The name of the scalar. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="ScalarTypeDef-sourceModuleName" href="#ScalarTypeDef-sourceModuleName"><code>sourceModuleName</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> If this ScalarTypeDef is associated with a Module, the name of the module. Unset otherwise. </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-ScalarTypeDefID" class="definition definition-scalar" data-traverse-target="definition-ScalarTypeDefID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">ScalarTypeDefID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>ScalarTypeDefID</code> scalar type represents an identifier for an object of type ScalarTypeDef.</p>
                 </div>
               </div>
             </div>
@@ -7299,6 +8329,10 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Secret-id" href="#Secret-id"><code>id</code></a> - <span class="property-type"><a href="#definition-SecretID"><code>SecretID!</code></a></span> </td>
                         <td> A unique identifier for this Secret. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Secret-name" href="#Secret-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The name of this secret. </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Secret-plaintext" href="#Secret-plaintext"><code>plaintext</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
@@ -7532,10 +8566,6 @@
                         <td data-property-name=""><a class="property-name" id="Terminal-id" href="#Terminal-id"><code>id</code></a> - <span class="property-type"><a href="#definition-TerminalID"><code>TerminalID!</code></a></span> </td>
                         <td> A unique identifier for this Terminal. </td>
                       </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="Terminal-websocketEndpoint" href="#Terminal-websocketEndpoint"><code>websocketEndpoint</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> An http endpoint at which this terminal can be connected to over a websocket. </td>
-                      </tr>
                     </tbody>
                   </table>
                 </div>
@@ -7578,6 +8608,10 @@
                     </thead>
                     <tbody>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="TypeDef-asEnum" href="#TypeDef-asEnum"><code>asEnum</code></a> - <span class="property-type"><a href="#definition-EnumTypeDef"><code>EnumTypeDef</code></a></span> </td>
+                        <td> If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null. </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="TypeDef-asInput" href="#TypeDef-asInput"><code>asInput</code></a> - <span class="property-type"><a href="#definition-InputTypeDef"><code>InputTypeDef</code></a></span> </td>
                         <td> If kind is INPUT, the input-specific type definition. If kind is not INPUT, this will be null. </td>
                       </tr>
@@ -7592,6 +8626,10 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="TypeDef-asObject" href="#TypeDef-asObject"><code>asObject</code></a> - <span class="property-type"><a href="#definition-ObjectTypeDef"><code>ObjectTypeDef</code></a></span> </td>
                         <td> If kind is OBJECT, the object-specific type definition. If kind is not OBJECT, this will be null. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="TypeDef-asScalar" href="#TypeDef-asScalar"><code>asScalar</code></a> - <span class="property-type"><a href="#definition-ScalarTypeDef"><code>ScalarTypeDef</code></a></span> </td>
+                        <td> If kind is SCALAR, the scalar-specific type definition. If kind is not SCALAR, this will be null. </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="TypeDef-id" href="#TypeDef-id"><code>id</code></a> - <span class="property-type"><a href="#definition-TypeDefID"><code>TypeDefID!</code></a></span> </td>
@@ -7616,6 +8654,51 @@
                             <div class="field-argument-list">
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>function</code></span> - <span class="property-type"><a href="#definition-FunctionID"><code>FunctionID!</code></a></span></h6>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="TypeDef-withEnum" href="#TypeDef-withEnum"><code>withEnum</code></a> - <span class="property-type"><a href="#definition-TypeDef"><code>TypeDef!</code></a></span> </td>
+                        <td>
+                          <p>Returns a TypeDef of kind Enum with the provided name.</p>
+                          <p>Note that an enum&#39;s values may be omitted if the intent is only to refer to an enum. This is how functions are able to return their own, or any other circular reference.</p>
+                        </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>A doc string for the enum, if any</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the enum</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="TypeDef-withEnumValue" href="#TypeDef-withEnumValue"><code>withEnumValue</code></a> - <span class="property-type"><a href="#definition-TypeDef"><code>TypeDef!</code></a></span> </td>
+                        <td> Adds a static value for an Enum TypeDef, failing if the type is not an enum. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>A doc string for the value, if any</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                                <p>The name of the value in the enum</p>
                               </div>
                             </div>
                           </div>
@@ -7751,6 +8834,25 @@
                           </div>
                         </td>
                       </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="TypeDef-withScalar" href="#TypeDef-withScalar"><code>withScalar</code></a> - <span class="property-type"><a href="#definition-TypeDef"><code>TypeDef!</code></a></span> </td>
+                        <td> Returns a TypeDef of kind Scalar with the provided name. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
                     </tbody>
                   </table>
                 </div>
@@ -7812,6 +8914,12 @@
                       </tr>
                       <tr>
                         <td>
+                          <p><code>SCALAR_KIND</code></p>
+                        </td>
+                        <td> A scalar value of any basic kind. </td>
+                      </tr>
+                      <tr>
+                        <td>
                           <p><code>LIST_KIND</code></p>
                         </td>
                         <td>
@@ -7850,6 +8958,15 @@
                         <td>
                           <p>A special kind used to signify that no value is returned.</p>
                           <p>This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.</p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>ENUM_KIND</code></p>
+                        </td>
+                        <td>
+                          <p>A GraphQL enum type and its values</p>
+                          <p>Always paired with an EnumTypeDef.</p>
                         </td>
                       </tr>
                     </tbody>
