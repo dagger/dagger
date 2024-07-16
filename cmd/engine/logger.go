@@ -46,9 +46,6 @@ var ignoredMessagePrefixes = []string{
 	"sending sigkill to process in container",
 	"diffcopy took",
 	"Using single walk diff for",
-	"reusing ref for",
-	"not reusing ref",
-	"new ref for local",
 }
 
 func (h *noiseReductionHook) Fire(entry *logrus.Entry) error {
