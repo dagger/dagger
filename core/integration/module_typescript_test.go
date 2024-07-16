@@ -783,7 +783,7 @@ func (ModuleSuite) TestTypescriptWithOtherModuleTypes(ctx context.Context, t *te
 		WithWorkdir("/work/dep").
 		With(daggerExec("init", "--name=dep", "--sdk=typescript")).
 		With(sdkSource("typescript", `
-	import {  object, func, func } from "@dagger.io/dagger"
+	import {  object, func } from "@dagger.io/dagger"
 
 @object()
 class Dep {
