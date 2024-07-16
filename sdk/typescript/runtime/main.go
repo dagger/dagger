@@ -203,7 +203,7 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 	return ctr, nil
 }
 
-// Base returns a Node or Bun container with cache setup for yarn or bun
+// Base returns a Node or Bun container with cache setup for node package managers or bun
 func (t *TypescriptSdk) Base(runtime SupportedTSRuntime, version string) (*Container, error) {
 	ctr := dag.Container()
 
@@ -456,6 +456,7 @@ func (t *TypescriptSdk) detectPackageManager(ctx context.Context, modSource *Mod
 	return Yarn, YarnDefaultVersion, nil
 }
 
+// generateLockFile generate a lock file for the matching package manager.
 func generateLockFile(ctx context.Context, ctr *Container, packageManager SupportedPackageManager, version string) (*Container, error) {
 	switch packageManager {
 	case Yarn:
