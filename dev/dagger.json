@@ -8,7 +8,7 @@
     },
     {
       "name": "docusaurus",
-      "source": "github.com/levlaz/daggerverse/docusaurus@72ec19206da7dbe2815da94c62e491b54935b633"
+      "source": "github.com/levlaz/daggerverse/docusaurus@e494cec1aa8f9faab1e0f12b2e5eea4a2321f2de"
     },
     {
       "name": "go",
