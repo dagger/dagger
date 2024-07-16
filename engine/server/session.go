@@ -299,6 +299,10 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	errs = errors.Join(errs, sess.analytics.Close())
 	telemetry.Flush(ctx)
 
+	// ensure this chan is closed even if the client never explicitly called the /shutdown endpoint
+	sess.closeShutdownOnce.Do(func() {
+		close(sess.shutdownCh)
+	})
 	return errs
 }
 
@@ -416,8 +420,10 @@ func (srv *Server) initializeDaggerClient(
 		if err != nil {
 			return fmt.Errorf("failed to create progress writer: %w", err)
 		}
-		go client.job.Status(ctx, statusCh)
-		go pw.UpdateFrom(ctx, statusCh)
+		// ensure these logs keep getting printed until the session goes away, not just until this request finishes
+		logCtx := client.daggerSession.withShutdownCancel(context.WithoutCancel(ctx))
+		go client.job.Status(logCtx, statusCh)
+		go pw.UpdateFrom(logCtx, statusCh)
 	}
 
 	client.bkClient, err = buildkit.NewClient(ctx, &buildkit.Opts{
