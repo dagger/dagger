@@ -39,11 +39,14 @@ export class Registry {
    * class module that must be exposed to the Dagger API.
    *
    */
-  object = (): (<T extends Class>(constructor: T) => T) => {
-    return <T extends Class>(constructor: T): T => {
-      Reflect.defineMetadata(constructor.name, { class_: constructor }, this)
+  object = (): (<T extends Class>(
+    target: T,
+    context: ClassDecoratorContext,
+  ) => T) => {
+    return <T extends Class>(target: T, context: ClassDecoratorContext): T => {
+      Reflect.defineMetadata(target.name, { class_: target }, this)
 
-      return constructor
+      return target
     }
   }
 
@@ -51,9 +54,12 @@ export class Registry {
    * The definition of the @enum decorator that should be on top of any
    * class module that must be exposed to the Dagger API as enumeration.
    */
-  enumType = (): (<T extends Class>(constructor: T) => T) => {
-    return <T extends Class>(constructor: T): T => {
-      return constructor
+  enumType = (): (<T extends Class>(
+    target: T,
+    context: ClassDecoratorContext,
+  ) => T) => {
+    return <T extends Class>(target: T, context: ClassDecoratorContext): T => {
+      return target
     }
   }
 
@@ -64,8 +70,10 @@ export class Registry {
    * @deprecated In favor of `@func`
    * @param alias The alias to use for the field when exposed on the API.
    */
-  field = (alias?: string): ((target: object, propertyKey: string) => void) => {
-    return (target: object, propertyKey: string) => {
+  field = (
+    alias?: string,
+  ): ((target: any, context: ClassFieldDecoratorContext) => void) => {
+    return (target: any, context: ClassFieldDecoratorContext) => {
       // A placeholder to declare field in the registry.
     }
   }
@@ -77,14 +85,12 @@ export class Registry {
   func = (
     alias?: string,
   ): ((
-    target: object,
-    propertyKey: string | symbol,
-    descriptor?: PropertyDescriptor,
+    target: any,
+    context: ClassMethodDecoratorContext | ClassFieldDecoratorContext,
   ) => void) => {
     return (
-      target: object,
-      propertyKey: string | symbol,
-      descriptor?: PropertyDescriptor,
+      target: any,
+      context: ClassMethodDecoratorContext | ClassFieldDecoratorContext,
     ) => {
       // The logic is done in the object constructor since it's not possible to
       // access the class parent's name from a method constructor without calling

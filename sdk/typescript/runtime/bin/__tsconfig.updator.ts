@@ -13,7 +13,6 @@ if (!fs.existsSync(tsConfigPath)) {
     compilerOptions: {
       target: "ES2022",
       moduleResolution: "Node",
-      experimentalDecorators: true,
       paths: {
         "@dagger.io/dagger": ["./sdk"],
         "@dagger.io/dagger/telemetry": ["./sdk/telemetry"],
@@ -58,8 +57,13 @@ if (
   !tsconfig.compilerOptions.paths[daggerTelemetryPathAlias] ||
   !tsconfig.compilerOptions.paths[daggerTelemetryPathAlias].includes(
     daggerTelemetryPath,
-  )
+  ) ||
+  tsconfig.compilerOptions.experimentalDecorators ||
+  tsconfig.compilerOptions.emitDecoratorMetadata
 ) {
+  delete tsconfig.compilerOptions.experimentalDecorators
+  delete tsconfig.compilerOptions.emitDecoratorMetadata
+
   tsconfig.compilerOptions.paths[daggerPathAlias] = [daggerPath]
   tsconfig.compilerOptions.paths[daggerTelemetryPathAlias] = [
     daggerTelemetryPath,
