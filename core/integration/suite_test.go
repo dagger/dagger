@@ -31,6 +31,13 @@ var testCtx = context.Background()
 
 func TestMain(m *testing.M) {
 	testCtx = telemetry.InitEmbedded(testCtx, nil)
+
+	// Create a testctx.T for setup
+	t := testctx.New(testCtx, &testing.T{})
+
+	cleanup := setupGlobalSSHAgent(t)
+	defer cleanup()
+
 	res := m.Run()
 	telemetry.Close()
 	os.Exit(res)
@@ -63,6 +70,19 @@ func connect(ctx context.Context, t *testctx.T, opts ...dagger.ClientOpt) *dagge
 	t.Cleanup(func() { client.Close() })
 	return client
 }
+
+// func connectWithSSH(ctx context.Context, t *testctx.T, opts ...dagger.ClientOpt) *dagger.Client {
+// 	ctxWithSSH := engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
+// 		SSHAuthSocketPath: globalSSHSock,
+// 	})
+// 	opts = append([]dagger.ClientOpt{
+// 		dagger.WithLogOutput(testutil.NewTWriter(t.T)),
+// 	}, opts...)
+// 	client, err := dagger.Connect(ctxWithSSH, opts...)
+// 	require.NoError(t, err)
+// 	t.Cleanup(func() { client.Close() })
+// 	return client
+// }
 
 func newCache(t *testctx.T) core.CacheVolumeID {
 	var res struct {

@@ -1413,6 +1413,22 @@ var vcsTestCases = []vcsTestCase{
 		expectedURLPathComponent: "commit",
 		expectedPathPrefix:       "?path=",
 	},
+	{
+		name:                     "SSH GitHub",
+		gitTestRepoRef:           "ssh://github.com/dagger/dagger-test-modules.git",
+		gitTestRepoCommit:        "8723e276a45b2e620ba3185cb07dc35e2be5bc86",
+		expectedHost:             "github.com",
+		expectedBaseHTMLURL:      "github.com/dagger/dagger-test-modules",
+		expectedURLPathComponent: "tree",
+	},
+	{
+		name:                     "SSH GitHub",
+		gitTestRepoRef:           "git@github.com/dagger/dagger-test-modules",
+		gitTestRepoCommit:        "8723e276a45b2e620ba3185cb07dc35e2be5bc86",
+		expectedHost:             "github.com",
+		expectedBaseHTMLURL:      "github.com/dagger/dagger-test-modules",
+		expectedURLPathComponent: "tree",
+	},
 }
 
 func testOnMultipleVCS(t *testctx.T, testFunc func(ctx context.Context, t *testctx.T, tc vcsTestCase)) {
