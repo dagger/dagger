@@ -1451,9 +1451,9 @@ func (ModuleSuite) TestDaggerGitRefs(ctx context.Context, t *testctx.T) {
 			defer resp.Body.Close()
 			require.Equal(t, http.StatusOK, resp.StatusCode)
 
-			cloneURL, err := rootModSrc.AsGitSource().CloneURL(ctx)
+			repositoryURL, err := rootModSrc.AsGitSource().RepositoryURL(ctx)
 			require.NoError(t, err)
-			require.Equal(t, fmt.Sprintf("https://%s", tc.expectedBaseHTMLURL), cloneURL)
+			require.Equal(t, fmt.Sprintf("https://%s", tc.expectedBaseHTMLURL), repositoryURL)
 
 			commit, err := rootModSrc.AsGitSource().Commit(ctx)
 			require.NoError(t, err)
@@ -1476,9 +1476,9 @@ func (ModuleSuite) TestDaggerGitRefs(ctx context.Context, t *testctx.T) {
 			defer resp.Body.Close()
 			require.Equal(t, http.StatusOK, resp.StatusCode)
 
-			cloneURL, err := topLevelModSrc.AsGitSource().CloneURL(ctx)
+			repositoryURL, err := topLevelModSrc.AsGitSource().RepositoryURL(ctx)
 			require.NoError(t, err)
-			require.Equal(t, fmt.Sprintf("https://%s", tc.expectedBaseHTMLURL), cloneURL)
+			require.Equal(t, fmt.Sprintf("https://%s", tc.expectedBaseHTMLURL), repositoryURL)
 
 			commit, err := topLevelModSrc.AsGitSource().Commit(ctx)
 			require.NoError(t, err)
@@ -1501,9 +1501,9 @@ func (ModuleSuite) TestDaggerGitRefs(ctx context.Context, t *testctx.T) {
 			defer resp.Body.Close()
 			require.Equal(t, http.StatusOK, resp.StatusCode)
 
-			cloneURL, err := subdirDepModSrc.AsGitSource().CloneURL(ctx)
+			repositoryURL, err := subdirDepModSrc.AsGitSource().RepositoryURL(ctx)
 			require.NoError(t, err)
-			require.Equal(t, fmt.Sprintf("https://%s", tc.expectedBaseHTMLURL), cloneURL)
+			require.Equal(t, fmt.Sprintf("https://%s", tc.expectedBaseHTMLURL), repositoryURL)
 
 			commit, err := subdirDepModSrc.AsGitSource().Commit(ctx)
 			require.NoError(t, err)
