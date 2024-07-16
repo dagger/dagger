@@ -1,9 +1,17 @@
 {
-  "name": "php-sdk",
-  "sdk": "go",
-  "include": [
-    "."
-  ],
-  "source": "runtime",
-  "engineVersion": "v0.11.6"
+    "name": "php-sdk",
+    "sdk": "go",
+    "include": [
+        "codegen",
+        "dagger.json",
+        "install-composer.sh",
+        "init-template.sh",
+        "src/",
+        "template/"
+    ],
+    "exclude": [
+        "vendor/"
+    ],
+    "source": "runtime",
+    "engineVersion": "v0.12.0"
 }

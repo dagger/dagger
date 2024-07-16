@@ -9,7 +9,7 @@ use Dagger\File;
 use Dagger\Json;
 use Dagger\Tests\Unit\Fixture\DaggerObjectWithDaggerFunctions;
 use Dagger\ValueObject\DaggerFunction;
-use Dagger\ValueObject\DaggerArgument;
+use Dagger\ValueObject\Argument;
 use Dagger\ValueObject\Type;
 use Generator;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -80,7 +80,7 @@ class DaggerFunctionTest extends TestCase
             new DaggerFunction(
                 'requiredString',
                 null,
-                [new DaggerArgument('value', null, new Type('string'))],
+                [new Argument('value', null, new Type('string'))],
                 new Type('void'),
             ),
             new ReflectionMethod(
@@ -93,7 +93,7 @@ class DaggerFunctionTest extends TestCase
             new DaggerFunction(
                 'annotatedString',
                 null,
-                [new DaggerArgument(
+                [new Argument(
                     'value',
                     'this value should have a description',
                     new Type('string')
@@ -110,7 +110,7 @@ class DaggerFunctionTest extends TestCase
             new DaggerFunction(
                 'implicitlyOptionalContainer',
                 null,
-                [new DaggerArgument(
+                [new Argument(
                     'value',
                     null,
                     new Type(Container::class, true),
@@ -128,7 +128,7 @@ class DaggerFunctionTest extends TestCase
             new DaggerFunction(
                 'explicitlyOptionalFile',
                 null,
-                [new DaggerArgument(
+                [new Argument(
                     'value',
                     null,
                     new Type(File::class, true),

@@ -34,7 +34,7 @@ final readonly class FindsSrcDirectory
 
     private function searchDirectory(string $dir): ?string
     {
-        return file_exists("$dir/dagger") && is_dir("$dir/src") ?
+        return file_exists("$dir/entrypoint.php") && is_dir("$dir/src") ?
             "$dir/src" :
             null;
     }

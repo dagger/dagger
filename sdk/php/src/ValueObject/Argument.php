@@ -10,27 +10,34 @@ use Dagger\Json;
 use ReflectionParameter;
 use Roave\BetterReflection\Reflection\ReflectionParameter as BetterReflectionParameter;
 
-final readonly class DaggerArgument
+final readonly class Argument
 {
     public function __construct(
         public string $name,
         public ?string $description,
-        public Type $type,
+        public ListOfType|Type $type,
         public ?Json $default = null,
     ) {
-
     }
 
     public static function fromReflection(ReflectionParameter $parameter): self
     {
-        $attribute = (current($parameter
-            ->getAttributes(Attribute\DaggerArgument::class)) ?: null)
+        $argument = (current($parameter
+            ->getAttributes(Attribute\Argument::class)) ?: null)
             ?->newInstance();
+
+        $listOfType = (current($parameter
+            ->getAttributes(Attribute\ListOfType::class)) ?: null)
+            ?->newInstance();
+
+        $type = $listOfType?->type === null ?
+            Type::fromReflection($parameter->getType()) :
+            ListOfType::fromReflection($parameter->getType(), $listOfType);
 
         return new self(
             $parameter->name,
-            $attribute?->description,
-            Type::fromReflection($parameter->getType()),
+            $argument?->description,
+            $type,
             self::getDefault($parameter),
         );
     }

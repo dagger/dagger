@@ -4,24 +4,20 @@ declare(strict_types=1);
 
 namespace Dagger\ValueObject;
 
+use Dagger\Client\AbstractScalar;
 use Dagger\Client\IdAble;
+use Dagger\Exception\UnsupportedType;
 use Dagger\TypeDefKind;
+use DomainException;
 use ReflectionClass;
 use ReflectionNamedType;
 use ReflectionType;
 use RuntimeException;
 
-//@TODO support union/intersection types
-//@TODO proper exception if no type is specified
 final readonly class Type
 {
     public TypeDefKind $typeDefKind;
 
-
-    /**
-     * @throws RuntimeException
-     * if type is unsupported
-     */
     public function __construct(
         public string $name,
         public bool $nullable = false,
@@ -29,16 +25,13 @@ final readonly class Type
         $this->typeDefKind = $this->getTypeDefKind($name);
     }
 
-    /**
-     * @throws RuntimeException
-     * if type is unsupported
-     */
     public static function fromReflection(ReflectionType $type): self
     {
         if (!($type instanceof ReflectionNamedType)) {
-            throw new RuntimeException(
-                'union/intersection types are currently unsupported'
-            );
+            throw new UnsupportedType(sprintf(
+                'Currently the PHP SDK only supports %s',
+                ReflectionNamedType::class,
+            ));
         }
 
         return new self($type->getName(), $type->allowsNull());
@@ -55,9 +48,6 @@ final readonly class Type
         return $class->implementsInterface(IdAble::class);
     }
 
-    /**
-     * @throws \RuntimeException if it is not a class
-     */
     public function getShortName(): string
     {
         if (!class_exists($this->name)) {
@@ -72,20 +62,37 @@ final readonly class Type
         return $class->getShortName();
     }
 
-
-
     private function getTypeDefKind(string $nameOfType): TypeDefKind
     {
         switch ($nameOfType) {
             case 'bool': return TypeDefKind::BOOLEAN_KIND;
             case 'int': return TypeDefKind::INTEGER_KIND;
             case 'string': return TypeDefKind::STRING_KIND;
-            case 'array': return TypeDefKind::LIST_KIND;
             case 'null':
             case 'void': return TypeDefKind::VOID_KIND;
         }
 
+        if ($nameOfType === 'array') {
+            throw new DomainException(sprintf(
+                '%s should not be constructed for arrays, use %s instead.' .
+                ' If this error occurred outside of developing the PHP SDK, it is a bug.',
+                self::class,
+                ListOfType::class,
+            ));
+        }
+
         if (class_exists($nameOfType)) {
+            $parents = class_parents($nameOfType);
+            assert(is_array($parents));
+
+            if (in_array(AbstractScalar::class, $parents, true)) {
+                return TypeDefKind::SCALAR_KIND;
+            }
+
+            if (enum_exists($nameOfType)) {
+                return TypeDefKind::ENUM_KIND;
+            }
+
             return TypeDefKind::OBJECT_KIND;
         }
 
@@ -93,7 +100,7 @@ final readonly class Type
             return TypeDefKind::INTERFACE_KIND;
         }
 
-        throw new RuntimeException(sprintf(
+        throw new UnsupportedType(sprintf(
             'No matching "%s" for "%s"',
             TypeDefKind::class,
             $nameOfType,

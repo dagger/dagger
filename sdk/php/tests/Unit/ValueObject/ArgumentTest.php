@@ -8,7 +8,7 @@ use Dagger\Container;
 use Dagger\File;
 use Dagger\Json;
 use Dagger\Tests\Unit\Fixture\DaggerObjectWithDaggerFunctions;
-use Dagger\ValueObject\DaggerArgument;
+use Dagger\ValueObject\Argument;
 use Dagger\ValueObject\Type;
 use Generator;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -21,25 +21,25 @@ use ReflectionNamedType;
 use ReflectionParameter;
 
 #[Group('unit')]
-#[CoversClass(DaggerArgument::class)]
-class DaggerArgumentTest extends TestCase
+#[CoversClass(Argument::class)]
+class ArgumentTest extends TestCase
 {
     #[Test]
     #[DataProvider('provideReflectionParameters')]
     public function ItBuildsFromReflectionParameter(
-        DaggerArgument $expected,
+        Argument $expected,
         ReflectionParameter $reflectionParameter,
     ): void {
-        $actual = DaggerArgument::fromReflection($reflectionParameter);
+        $actual = Argument::fromReflection($reflectionParameter);
 
         self::assertEquals($expected, $actual);
     }
 
-    /** @return Generator<array{ 0: DaggerArgument, 1:ReflectionNamedType}> */
+    /** @return Generator<array{ 0: Argument, 1:ReflectionNamedType}> */
     public static function provideReflectionParameters(): Generator
     {
         yield 'bool' => [
-            new DaggerArgument('value', null, new Type('bool'), null),
+            new Argument('value', null, new Type('bool'), null),
             self::getReflectionParameter(
                 DaggerObjectWithDaggerFunctions::class,
                 'requiredBool',
@@ -48,7 +48,7 @@ class DaggerArgumentTest extends TestCase
         ];
 
         yield 'implicitly optional string' => [
-            new DaggerArgument(
+            new Argument(
                 'value',
                 null,
                 new Type('string', true),
@@ -62,7 +62,7 @@ class DaggerArgumentTest extends TestCase
         ];
 
         yield 'explicitly optional string' => [
-            new DaggerArgument(
+            new Argument(
                 'value',
                 null,
                 new Type('string', true),
@@ -76,7 +76,7 @@ class DaggerArgumentTest extends TestCase
         ];
 
         yield 'annotated string' => [
-            new DaggerArgument(
+            new Argument(
                 'value',
                 'this value should have a description',
                 new Type('string', false),
@@ -90,7 +90,7 @@ class DaggerArgumentTest extends TestCase
         ];
 
         yield 'implicitly optional Container' => [
-            new DaggerArgument(
+            new Argument(
                 'value',
                 null,
                 new Type(Container::class, true),
@@ -104,7 +104,7 @@ class DaggerArgumentTest extends TestCase
         ];
 
         yield 'explicitly optional File' => [
-            new DaggerArgument(
+            new Argument(
                 'value',
                 null,
                 new Type(File::class, true),

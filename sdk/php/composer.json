@@ -16,7 +16,10 @@
     "autoload": {
         "psr-4": {
             "Dagger\\": ["src/", "generated/"]
-        }
+        },
+        "files": [
+            "src/functions.php"
+        ]
     },
     "autoload-dev": {
         "psr-4": {

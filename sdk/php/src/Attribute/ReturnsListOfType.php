@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace Dagger\Attribute;
 
 #[\Attribute(\Attribute::TARGET_METHOD)]
-final readonly class DaggerFunction
+final readonly class ReturnsListOfType
 {
-    //@TODO support renaming argument with public string $name
     public function __construct(
-        public ?string $description = null,
+        public ListOfType|string $type,
+        public bool $nullable = false,
     ) {
     }
 }

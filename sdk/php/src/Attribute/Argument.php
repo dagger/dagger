@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Dagger\Attribute;
 
 #[\Attribute(\Attribute::TARGET_PARAMETER)]
-final class DaggerArgument
+final readonly class Argument
 {
-    //@TODO support renaming argumet with public string $name
+    //@TODO support renaming argument with public string $name
     public function __construct(
         public ?string $description = null,
     ) {

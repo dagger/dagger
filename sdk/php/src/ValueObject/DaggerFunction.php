@@ -5,18 +5,17 @@ declare(strict_types=1);
 namespace Dagger\ValueObject;
 
 use Dagger\Attribute;
-use Dagger\ValueObject;
 use ReflectionMethod;
 use RuntimeException;
 
 final readonly class DaggerFunction
 {
-    /** @param ValueObject\DaggerArgument[] $arguments */
+    /** @param Argument[] $arguments */
     public function __construct(
         public string $name,
         public ?string $description,
         public array $arguments,
-        public ValueObject\Type $returnType,
+        public ListOfType|Type $returnType,
     ) {
     }
 
@@ -34,7 +33,7 @@ final readonly class DaggerFunction
             throw new RuntimeException('method is not a DaggerFunction');
 
         $parameters = array_map(
-            fn($p) => ValueObject\DaggerArgument::fromReflection($p),
+            fn($p) => Argument::fromReflection($p),
             $method->getParameters(),
         );
 
@@ -42,7 +41,24 @@ final readonly class DaggerFunction
             $method->name,
             $attribute->description,
             $parameters,
-            ValueObject\Type::fromReflection($method->getReturnType()),
+            self::getReturnType($method),
+        );
+    }
+
+    private static function getReturnType(
+        ReflectionMethod $method
+    ): ListOfType|Type {
+        $attribute = (current($method
+            ->getAttributes(Attribute\ReturnsListOfType::class)) ?: null)
+            ?->newInstance();
+
+        if (!isset($attribute)) {
+            return Type::fromReflection($method->getReturnType());
+        }
+
+        return ListOfType::fromReflection(
+            $method->getReturnType(),
+            $attribute,
         );
     }
 }

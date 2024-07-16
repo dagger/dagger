@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Dagger\Tests\Unit\Fixture;
 
-use Dagger\Attribute\DaggerArgument;
+use Dagger\Attribute\Argument;
 use Dagger\Attribute\DaggerFunction;
 use Dagger\Attribute\DaggerObject;
 use Dagger\Container;
@@ -63,7 +63,7 @@ final class DaggerObjectWithDaggerFunctions
 
     #[DaggerFunction]
     public function annotatedString(
-        #[DaggerArgument('this value should have a description')]
+        #[Argument('this value should have a description')]
         string $value
     ): void {
     }
@@ -124,7 +124,7 @@ final class DaggerObjectWithDaggerFunctions
                     'requiredBool',
                     null,
                     [
-                        new ValueObject\DaggerArgument(
+                        new ValueObject\Argument(
                             'value',
                             null,
                             new ValueObject\Type('bool'),
@@ -137,7 +137,7 @@ final class DaggerObjectWithDaggerFunctions
                     'requiredInt',
                     null,
                     [
-                        new ValueObject\DaggerArgument(
+                        new ValueObject\Argument(
                             'value',
                             null,
                             new ValueObject\Type('int'),
@@ -150,7 +150,7 @@ final class DaggerObjectWithDaggerFunctions
                     'requiredString',
                     null,
                     [
-                        new ValueObject\DaggerArgument(
+                        new ValueObject\Argument(
                             'value',
                             null,
                             new ValueObject\Type('string'),
@@ -163,7 +163,7 @@ final class DaggerObjectWithDaggerFunctions
                     'implicitlyOptionalString',
                     null,
                     [
-                        new ValueObject\DaggerArgument(
+                        new ValueObject\Argument(
                             'value',
                             null,
                             new ValueObject\Type('string', true),
@@ -176,7 +176,7 @@ final class DaggerObjectWithDaggerFunctions
                     'explicitlyOptionalString',
                     null,
                     [
-                        new ValueObject\DaggerArgument(
+                        new ValueObject\Argument(
                             'value',
                             null,
                             new ValueObject\Type('string', true),
@@ -189,7 +189,7 @@ final class DaggerObjectWithDaggerFunctions
                     'stringWithDefault',
                     null,
                     [
-                        new ValueObject\DaggerArgument(
+                        new ValueObject\Argument(
                             'value',
                             null,
                             new ValueObject\Type('string', true),
@@ -202,7 +202,7 @@ final class DaggerObjectWithDaggerFunctions
                     'annotatedString',
                     null,
                     [
-                        new ValueObject\DaggerArgument(
+                        new ValueObject\Argument(
                             'value',
                             'this value should have a description',
                             new ValueObject\Type('string'),
@@ -215,13 +215,13 @@ final class DaggerObjectWithDaggerFunctions
                     'requiredStrings',
                     null,
                     [
-                        new ValueObject\DaggerArgument(
+                        new ValueObject\Argument(
                             'first',
                             null,
                             new ValueObject\Type('string'),
                             null,
                         ),
-                        new ValueObject\DaggerArgument(
+                        new ValueObject\Argument(
                             'second',
                             null,
                             new ValueObject\Type('string'),
@@ -234,13 +234,13 @@ final class DaggerObjectWithDaggerFunctions
                     'stringsWithDefaults',
                     null,
                     [
-                        new ValueObject\DaggerArgument(
+                        new ValueObject\Argument(
                             'first',
                             null,
                             new ValueObject\Type('string'),
                             new Json('"first"'),
                         ),
-                        new ValueObject\DaggerArgument(
+                        new ValueObject\Argument(
                             'second',
                             null,
                             new ValueObject\Type('string'),
@@ -253,7 +253,7 @@ final class DaggerObjectWithDaggerFunctions
                     'implicitlyOptionalContainer',
                     null,
                     [
-                        new ValueObject\DaggerArgument(
+                        new ValueObject\Argument(
                             'value',
                             null,
                             new ValueObject\Type(Container::class, true),
@@ -266,7 +266,7 @@ final class DaggerObjectWithDaggerFunctions
                     'explicitlyOptionalFile',
                     null,
                     [
-                        new ValueObject\DaggerArgument(
+                        new ValueObject\Argument(
                             'value',
                             null,
                             new ValueObject\Type(File::class, true),

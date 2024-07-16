@@ -8,7 +8,7 @@ use Dagger\Container;
 use Dagger\File;
 use Dagger\Json;
 use Dagger\Tests\Unit\Fixture\DaggerObjectWithDaggerFunctions;
-use Dagger\ValueObject\DaggerArgument;
+use Dagger\ValueObject\Argument;
 use Dagger\ValueObject\DaggerFunction;
 use Dagger\ValueObject\DaggerObject;
 use Dagger\ValueObject\Type;
