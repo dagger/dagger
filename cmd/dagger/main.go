@@ -17,6 +17,7 @@ import (
 
 	"dagger.io/dagger/telemetry"
 	"github.com/mattn/go-isatty"
+	randid "github.com/moby/buildkit/identity"
 	"github.com/muesli/reflow/indent"
 	"github.com/muesli/reflow/wordwrap"
 	"github.com/muesli/termenv"
@@ -250,6 +251,20 @@ const InstrumentationLibrary = "dagger.io/cli"
 
 var opts idtui.FrontendOpts
 
+// This is buildkit.DaggerSessionClientIDEnv, which we can't import due
+// to platform-specific build constraints.
+var ClientID = os.Getenv("DAGGER_SESSION_CLIENT_ID")
+
+func init() {
+	if ClientID == "" {
+		ClientID = randid.NewID()
+	}
+}
+
+// Assigned after initializing the root span. Passed to the engine client so
+// that nested clients don't end up deadlocking draining on their own logs.
+var RootSpanID trace.SpanID
+
 func main() {
 	parseGlobalFlags()
 	opts.Verbosity += idtui.ShowCompletedVerbosity // keep progress by default
@@ -293,8 +308,12 @@ func main() {
 		ctx, stop := signal.NotifyContext(ctx, os.Interrupt)
 		defer stop()
 
+		isInDagger := os.Getenv("OTEL_EXPORTER_OTLP_TRACES_LIVE") != ""
+		isNestedDagger := os.Getenv("DAGGER_SESSION_PORT") != ""
+
 		telemetryCfg := telemetry.Config{
-			Detect:   true,
+			// don't export if we're nested
+			Detect:   !(isInDagger && isNestedDagger),
 			Resource: Resource(),
 
 			LiveTraceExporters: []sdktrace.SpanExporter{Frontend.SpanExporter()},
@@ -309,16 +328,45 @@ func main() {
 		ctx = telemetry.Init(ctx, telemetryCfg)
 		defer telemetry.Close()
 
+		// Set the root span ID for the engine client.
+		RootSpanID = trace.SpanContextFromContext(ctx).SpanID()
+
 		// Set the full command string as the name of the root span.
 		//
 		// If you pass credentials in plaintext, yes, they will be leaked; don't do
 		// that, since they will also be leaked in various other places (like the
 		// process tree). Use Secret arguments instead.
-		ctx, span := Tracer().Start(ctx, spanName(os.Args))
+		ctx, span := Tracer().Start(ctx, spanName(os.Args),
+			trace.WithAttributes(
+				attribute.String(telemetry.ClientIDAttr, ClientID),
+				attribute.Bool(telemetry.NoDrainAttr, true),
+			))
 		defer telemetry.End(span, func() error { return rerr })
 
 		// Set up global slog to log to the primary span output.
+		// slog.SetDefault(slog.PrettyLogger(os.Stderr, termenv.ColorProfile(), slog.LevelDebug))
 		slog.SetDefault(slog.SpanLogger(ctx, InstrumentationLibrary))
+
+		// Set the root span ID for the engine client.
+		if !RootSpanID.IsValid() {
+			// HACK: really I think we only care about the parent
+			RootSpanID = trace.SpanContextFromContext(ctx).SpanID()
+		}
+
+		cmd := strings.Join(os.Args, " ")
+		slog.Warn("!!! OMG ROOT SPAN ID", "rootSpanID", RootSpanID, "cmd", cmd)
+		// if strings.Contains(cmd, "session") {
+		// 	slog.Warn("im a session")
+		// } else if strings.Contains(cmd, "init") {
+		// 	slog.Warn("innit")
+		// } else {
+		// if cmd == "/.dagger-cli session --label dagger.io/sdk.name:go --label dagger.io/sdk.version:n/a" {
+		// 	slog.Warn("im the session")
+		// } else if cmd == "dagger --debug init --source=. --name=minimal --sdk=go" {
+		// 	slog.Warn("im the init")
+		// } else {
+		// 	panic(fmt.Sprintf("%s: %s", cmd, RootSpanID))
+		// }
 
 		// Set the span as the primary span for the frontend.
 		Frontend.SetPrimary(span.SpanContext().SpanID())

@@ -52,6 +52,10 @@ type FrontendOpts struct {
 
 	// Open web browser with the trace URL as soon as pipeline starts.
 	OpenWeb bool
+
+	// RevealAllSpans tells the frontend to show all spans, not just the spans
+	// beneath the primary span.
+	RevealAllSpans bool
 }
 
 type Frontend interface {
@@ -63,6 +67,9 @@ type Frontend interface {
 	// children will be promoted to the "top-level" of the TUI.
 	SetPrimary(spanID trace.SpanID)
 	Background(cmd tea.ExecCommand) error
+	// RevealAllSpans tells the frontend to show all spans, not just the spans
+	// beneath the primary span.
+	SetRevealAllSpans(bool)
 
 	// Can consume otel spans and logs.
 	SpanExporter() sdktrace.SpanExporter
@@ -425,11 +432,11 @@ func (opts FrontendOpts) ShouldShow(tree *TraceTree) bool {
 		// internal steps are hidden by default
 		return false
 	}
-	if tree.Parent != nil && (span.Encapsulated || tree.Parent.Span.Encapsulate) && tree.Parent.Span.Err() == nil && opts.Verbosity < ShowEncapsulatedVerbosity {
+	if tree.Parent != nil && (span.Encapsulated || tree.Parent.Span.Encapsulate) && !tree.Parent.Span.Failed() && opts.Verbosity < ShowEncapsulatedVerbosity {
 		// encapsulated steps are hidden (even on error) unless their parent errors
 		return false
 	}
-	if span.Err() != nil {
+	if span.Failed() {
 		// show errors
 		return true
 	}

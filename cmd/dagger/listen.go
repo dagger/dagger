@@ -53,9 +53,13 @@ func Listen(ctx context.Context, engineClient *client.Client, _ *dagger.Module, 
 		handler = cors.AllowAll().Handler(handler)
 	}
 
-	handler = otelhttp.NewHandler(handler, "listen", otelhttp.WithSpanNameFormatter(func(o string, r *http.Request) string {
-		return fmt.Sprintf("%s: HTTP %s %s", o, r.Method, r.URL.Path)
-	}))
+	handler = otelhttp.NewHandler(handler, "listen",
+		otelhttp.WithFilter(func(r *http.Request) bool {
+			return r.Header.Get("X-Dagger-Telemetry") != "true"
+		}),
+		otelhttp.WithSpanNameFormatter(func(o string, r *http.Request) string {
+			return fmt.Sprintf("%s: HTTP %s %s", o, r.Method, r.URL.Path)
+		}))
 
 	http2Srv := &http2.Server{}
 	handler = h2c.NewHandler(handler, http2Srv)

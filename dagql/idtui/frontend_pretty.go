@@ -162,6 +162,12 @@ func (fe *frontendPretty) SetPrimary(spanID trace.SpanID) {
 	fe.mu.Unlock()
 }
 
+func (fe *frontendPretty) SetRevealAllSpans(val bool) {
+	fe.mu.Lock()
+	fe.FrontendOpts.RevealAllSpans = val
+	fe.mu.Unlock()
+}
+
 func (fe *frontendPretty) runWithTUI(ctx context.Context, ttyIn *os.File, ttyOut *os.File, run func(context.Context) error) error {
 	var stdin io.Reader
 	if ttyIn != nil {
@@ -212,6 +218,35 @@ func (fe *frontendPretty) runWithTUI(ctx context.Context, ttyIn *os.File, ttyOut
 	return fe.err
 }
 
+func (fe *frontendPretty) renderErrorLogs(out *termenv.Output) {
+	if fe.rowsView == nil {
+		return
+	}
+	errTree := fe.db.CollectErrors(fe.rowsView)
+	var anyHasLogs bool
+	WalkTree(errTree, func(row *TraceTree, _ int) bool {
+		logs := fe.logs.Logs[row.Span.ID]
+		if logs != nil && logs.UsedHeight() > 0 {
+			anyHasLogs = true
+			return true
+		}
+		return false
+	})
+	if anyHasLogs {
+		fmt.Fprintln(out)
+		fmt.Fprintln(out, out.String("Error logs:").Bold())
+	}
+	WalkTree(errTree, func(row *TraceTree, _ int) bool {
+		logs := fe.logs.Logs[row.Span.ID]
+		if logs != nil && logs.UsedHeight() > 0 {
+			fmt.Fprintln(out)
+			fe.renderStep(out, row.Span, 0, "")
+			fe.renderLogs(out, logs, -1, logs.UsedHeight(), "")
+		}
+		return false
+	})
+}
+
 // finalRender is called after the program has finished running and prints the
 // final output after the TUI has exited.
 func (fe *frontendPretty) finalRender() error {
@@ -224,14 +259,24 @@ func (fe *frontendPretty) finalRender() error {
 	fe.focusedIdx = -1
 	fe.recalculateViewLocked()
 
+	// Render to stderr so stdout stays clean.
+	out := NewOutput(os.Stderr, termenv.WithProfile(fe.profile))
+
 	var renderedProgress bool
 	if fe.Debug || fe.Verbosity >= ShowCompletedVerbosity || fe.err != nil {
 		if fe.msgPreFinalRender.Len() > 0 {
 			fmt.Fprintf(os.Stderr, fe.msgPreFinalRender.String()+"\n\n")
 		}
-		// Render progress to stderr so stdout stays clean.
-		out := NewOutput(os.Stderr, termenv.WithProfile(fe.profile))
 		renderedProgress = fe.renderProgress(out, true, fe.window.Height, "")
+	}
+
+	// If there are errors, show log output.
+	if fe.err != nil && renderedProgress {
+		fe.renderErrorLogs(out)
+		// Counter-intuitively, we don't want to render the primary output
+		// when there's an error, because the error is better represented by
+		// the progress output and error summary.
+		return nil
 	}
 
 	if renderedProgress {
@@ -351,10 +396,12 @@ func (fe *frontendPretty) renderKeymap(out *termenv.Output, style lipgloss.Style
 			fmt.Fprint(w, style.Render("  "))
 		}
 		keyStyle := style
-		if time.Since(fe.pressedKeyAt) < 500*time.Millisecond {
+		sincePressed := time.Since(fe.pressedKeyAt)
+		if sincePressed < pressedHlDur {
 			for _, k := range key.keys {
 				if k == fe.pressedKey {
-					keyStyle = keyStyle.Foreground(nil)
+					keyStyle = keyStyle.
+						Foreground(nil)
 					// Reverse(true)
 				}
 			}
@@ -367,6 +414,8 @@ func (fe *frontendPretty) renderKeymap(out *termenv.Output, style lipgloss.Style
 	fmt.Fprint(out, res)
 	return lipgloss.Width(res)
 }
+
+const pressedHlDur = 500 * time.Millisecond
 
 func (fe *frontendPretty) Render(out *termenv.Output) error {
 	progHeight := fe.window.Height
@@ -827,18 +876,18 @@ func (fe *frontendPretty) renderLocked() {
 	fe.Render(fe.viewOut)
 }
 
-func (fe *frontendPretty) renderRow(out *termenv.Output, row *TraceRow, full bool, prefix string) {
+func (fe *frontendPretty) renderRow(out *termenv.Output, row *TraceRow, final bool, prefix string) {
 	fe.renderStep(out, row.Span, row.Depth, prefix)
+	if final {
+		// in the final render, we show logs beneath the progress tree instead
+		return
+	}
 	if row.IsRunningOrChildRunning || row.Span.Failed() || fe.Verbosity >= ShowSpammyVerbosity {
 		if logs := fe.logs.Logs[row.Span.ID]; logs != nil {
-			logLimit := fe.window.Height / 3
-			if full {
-				logLimit = logs.UsedHeight()
-			}
 			fe.renderLogs(out,
 				logs,
 				row.Depth,
-				logLimit,
+				fe.window.Height/3,
 				prefix,
 			)
 		}

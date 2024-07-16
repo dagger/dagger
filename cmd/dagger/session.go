@@ -40,6 +40,10 @@ type connectParams struct {
 }
 
 func EngineSession(cmd *cobra.Command, args []string) error {
+	// show progress from everywhere, not just the primary span, since this
+	// command is purely in service of other spans
+	Frontend.SetRevealAllSpans(true)
+
 	// discard SIGPIPE, which can happen when stdout or stderr are closed
 	// (possibly from the spawning process going away)
 	//

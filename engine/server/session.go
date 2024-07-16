@@ -207,10 +207,10 @@ func (srv *Server) initializeDaggerSession(
 }
 
 func (sess *daggerSession) withShutdownCancel(ctx context.Context) context.Context {
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithCancelCause(ctx)
 	go func() {
 		<-sess.shutdownCh
-		cancel()
+		cancel(errors.New("session shutdown channel closed"))
 	}()
 	return ctx
 }
@@ -392,7 +392,7 @@ func (srv *Server) initializeDaggerClient(
 	// write progress for extra debugging if configured
 	bkLogsW := srv.buildkitLogSink
 	if bkLogsW != nil {
-		prefix := fmt.Sprintf("[buildkit] [trace=%s] [client=%s] ", client.spanCtx.TraceID(), client.clientID)
+		prefix := fmt.Sprintf("[buildkit] [client=%s] ", client.clientID)
 		bkLogsW = prefixw.New(bkLogsW, prefix)
 		statusCh := make(chan *bkclient.SolveStatus, 8)
 		pw, err := progressui.NewDisplay(bkLogsW, progressui.PlainMode)
@@ -698,8 +698,8 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 
 func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opts *ClientInitOpts) (rerr error) {
 	ctx := r.Context()
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(errors.New("done serving HTTP to client"))
 
 	clientMetadata := opts.ClientMetadata
 	ctx = engine.ContextWithClientMetadata(ctx, clientMetadata)
@@ -742,6 +742,8 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 	mux.Handle(engine.SessionAttachablesEndpoint, httpHandlerFunc(srv.serveSessionAttachables, client))
 	mux.Handle(engine.QueryEndpoint, httpHandlerFunc(srv.serveQuery, client))
 	mux.Handle(engine.ShutdownEndpoint, httpHandlerFunc(srv.serveShutdown, client))
+	mux.HandleFunc("GET /v1/traces", srv.telemetryPubSub.SubscribeTracesHandler)
+	mux.HandleFunc("GET /v1/logs", srv.telemetryPubSub.SubscribeLogsHandler)
 	sess.endpointMu.RLock()
 	for path, handler := range sess.endpoints {
 		mux.Handle(path, handler)
@@ -871,18 +873,17 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 		"clientID", client.clientID,
 		"mainClientID", sess.mainClientCallerID)
 
-	slog.Trace("shutting down server")
-	defer slog.Trace("done shutting down server")
+	slog.ExtraDebug("shutting down server")
+	defer slog.ExtraDebug("done shutting down server")
 
 	if client.clientID == sess.mainClientCallerID {
 		// Stop services, since the main client is going away, and we
 		// want the client to see them stop.
+		slog.Warn("stopping services")
 		sess.services.StopSessionServices(ctx, sess.sessionID)
 
-		// Start draining telemetry
-		srv.telemetryPubSub.Drain(sess.mainClientCallerID, immediate)
-
 		if len(sess.cacheExporterCfgs) > 0 {
+			slog.Warn("exporting caches")
 			bklog.G(ctx).Debugf("running cache export for client %s", client.clientID)
 			cacheExporterFuncs := make([]buildkit.ResolveCacheExporterFunc, len(sess.cacheExporterCfgs))
 			for i, cacheExportCfg := range sess.cacheExporterCfgs {
@@ -903,11 +904,18 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 		}
 
 		sess.closeShutdownOnce.Do(func() {
+			slog.Warn("shutting down session once")
 			close(sess.shutdownCh)
 		})
 	}
 
+	// Start draining telemetry
+	slog.Warn("draining telemetry")
+	srv.telemetryPubSub.Drain(client.clientID, immediate)
+
+	slog.Warn("forcing flush")
 	telemetry.Flush(ctx)
+	slog.Warn("forced flush")
 
 	return nil
 }

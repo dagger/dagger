@@ -86,14 +86,14 @@ type Client struct {
 	*Opts
 
 	closeCtx context.Context
-	cancel   context.CancelFunc
+	cancel   context.CancelCauseFunc
 	closeMu  sync.RWMutex
 	execMap  sync.Map
 }
 
 func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
 	// override the outer cancel, we will manage cancellation ourselves here
-	ctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	ctx, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
 	client := &Client{
 		Opts:     opts,
 		closeCtx: ctx,
@@ -108,7 +108,7 @@ func (c *Client) ID() string {
 	return c.BkSession.ID()
 }
 
-func (c *Client) withClientCloseCancel(ctx context.Context) (context.Context, context.CancelFunc, error) {
+func (c *Client) withClientCloseCancel(ctx context.Context) (context.Context, context.CancelCauseFunc, error) {
 	c.closeMu.RLock()
 	defer c.closeMu.RUnlock()
 	select {
@@ -116,11 +116,11 @@ func (c *Client) withClientCloseCancel(ctx context.Context) (context.Context, co
 		return nil, nil, errors.New("client closed")
 	default:
 	}
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithCancelCause(ctx)
 	go func() {
 		select {
 		case <-c.closeCtx.Done():
-			cancel()
+			cancel(errors.New("relaying client close"))
 		case <-ctx.Done():
 		}
 	}()
@@ -132,7 +132,7 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 	if err != nil {
 		return nil, err
 	}
-	defer cancel()
+	defer cancel(errors.New("Solve done"))
 	ctx = withOutgoingContext(ctx)
 
 	// include upstream cache imports, if any
@@ -176,7 +176,7 @@ func (c *Client) ResolveImageConfig(ctx context.Context, ref string, opt sourcer
 	if err != nil {
 		return "", "", nil, err
 	}
-	defer cancel()
+	defer cancel(errors.New("ResolveImageConfig done"))
 	ctx = withOutgoingContext(ctx)
 
 	imr := sourceresolver.NewImageMetaResolver(c.LLBBridge)
@@ -188,7 +188,7 @@ func (c *Client) ResolveSourceMetadata(ctx context.Context, op *bksolverpb.Sourc
 	if err != nil {
 		return nil, err
 	}
-	defer cancel()
+	defer cancel(errors.New("ResolveSourceMetadata done"))
 	ctx = withOutgoingContext(ctx)
 
 	return c.LLBBridge.ResolveSourceMetadata(ctx, op, opt)
@@ -223,7 +223,7 @@ func (c *Client) NewContainer(ctx context.Context, req NewContainerRequest) (*Co
 	if err != nil {
 		return nil, err
 	}
-	defer cancel()
+	defer cancel(errors.New("NewContainer done"))
 	ctx = withOutgoingContext(ctx)
 	ctrReq := bkcontainer.NewContainerRequest{
 		ContainerID: containerID,
@@ -359,7 +359,7 @@ func (c *Client) UpstreamCacheExport(ctx context.Context, cacheExportFuncs []Res
 	if err != nil {
 		return err
 	}
-	defer cancel()
+	defer cancel(errors.New("UpstreamCacheExport done"))
 
 	if len(cacheExportFuncs) == 0 {
 		return nil
@@ -475,7 +475,7 @@ func (c *Client) ListenHostToContainer(
 
 	clientCaller, err := c.GetSessionCaller(ctx, false)
 	if err != nil {
-		cancel()
+		cancel(errors.New("GetSessionCaller failed"))
 		return nil, nil, fmt.Errorf("failed to get requester session: %w", err)
 	}
 
@@ -485,7 +485,7 @@ func (c *Client) ListenHostToContainer(
 
 	listener, err := tunnelClient.Listen(ctx)
 	if err != nil {
-		cancel()
+		cancel(errors.New("Listen failed"))
 		return nil, nil, fmt.Errorf("failed to listen: %w", err)
 	}
 
@@ -494,13 +494,13 @@ func (c *Client) ListenHostToContainer(
 		Protocol: proto,
 	})
 	if err != nil {
-		cancel()
+		cancel(errors.New("Send failed"))
 		return nil, nil, fmt.Errorf("failed to send listen request: %w", err)
 	}
 
 	listenRes, err := listener.Recv()
 	if err != nil {
-		cancel()
+		cancel(errors.New("Recv failed"))
 		return nil, nil, fmt.Errorf("failed to receive listen response: %w", err)
 	}
 
@@ -573,7 +573,7 @@ func (c *Client) ListenHostToContainer(
 	}()
 
 	return listenRes, func() error {
-		defer cancel()
+		defer cancel(errors.New("listener closed"))
 		sendL.Lock()
 		err := listener.CloseSend()
 		sendL.Unlock()

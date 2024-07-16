@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -55,8 +56,9 @@ const (
 	DaggerRedirectStderrEnv  = "_DAGGER_REDIRECT_STDERR"
 	DaggerHostnameAliasesEnv = "_DAGGER_HOSTNAME_ALIASES"
 
-	DaggerSessionPortEnv  = "DAGGER_SESSION_PORT"
-	DaggerSessionTokenEnv = "DAGGER_SESSION_TOKEN"
+	DaggerSessionPortEnv     = "DAGGER_SESSION_PORT"
+	DaggerSessionTokenEnv    = "DAGGER_SESSION_TOKEN"
+	DaggerSessionClientIDEnv = "DAGGER_SESSION_CLIENT_ID"
 
 	// this is set by buildkit, we cannot change
 	BuildkitSessionIDHeader = "x-docker-expose-session-uuid"
@@ -875,7 +877,11 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 		w.execMD.Hostname = state.spec.Hostname
 	}
 
-	state.spec.Process.Env = append(state.spec.Process.Env, DaggerSessionTokenEnv+"="+w.execMD.SecretToken)
+	state.spec.Process.Env = append(state.spec.Process.Env,
+		DaggerSessionClientIDEnv+"="+w.execMD.ClientID)
+
+	state.spec.Process.Env = append(state.spec.Process.Env,
+		DaggerSessionTokenEnv+"="+w.execMD.SecretToken)
 
 	filesyncer, err := client.NewFilesyncer(
 		state.rootfsPath,
@@ -939,8 +945,10 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	sessionSrv := client.NewBuildkitSessionServer(ctx, sessionClientConn, attachables...)
 	stopSessionSrv := state.cleanups.Add("stop session server", Infallible(sessionSrv.Stop))
 
-	srvCtx, srvCancel := context.WithCancel(ctx)
-	state.cleanups.Add("cancel session server", Infallible(srvCancel))
+	srvCtx, srvCancel := context.WithCancelCause(ctx)
+	state.cleanups.Add("cancel session server", Infallible(func() {
+		srvCancel(errors.New("nested client cleanup"))
+	}))
 	srvPool := pool.New().WithContext(srvCtx).WithCancelOnError()
 	srvPool.Go(func(ctx context.Context) error {
 		sessionSrv.Run(ctx)
@@ -967,12 +975,15 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	if !ok {
 		return fmt.Errorf("unexpected listener address type: %T", httpListener.Addr())
 	}
-	state.spec.Process.Env = append(state.spec.Process.Env, DaggerSessionPortEnv+"="+strconv.Itoa(tcpAddr.Port))
+	state.spec.Process.Env = append(state.spec.Process.Env,
+		DaggerSessionPortEnv+"="+strconv.Itoa(tcpAddr.Port))
 
 	http2Srv := &http2.Server{}
 	httpSrv := &http.Server{
 		ReadHeaderTimeout: 10 * time.Second,
 		Handler: h2c.NewHandler(http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
+			slog.Warn("!!! serving HTTP to nested client", "path", req.URL.Path)
+			defer slog.Warn("!!! DONE serving HTTP to nested client", "path", req.URL.Path)
 			w.sessionHandler.ServeHTTPToNestedClient(resp, req, w.execMD)
 		}), http2Srv),
 	}
@@ -991,7 +1002,10 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	state.cleanups.Add("wait for nested client server pool", srvPool.Wait)
 	state.cleanups.ReAdd(stopSessionSrv)
 	state.cleanups.Add("close nested client http server", httpSrv.Close)
-	state.cleanups.Add("cancel nested client server pool", Infallible(srvCancel))
+	state.cleanups.Add("cancel nested client server pool", Infallible(func() {
+		// TODO: a bit odd that we close this same thing twice. intentional or bug?
+		srvCancel(errors.New("nested client cleanup 2"))
+	}))
 
 	return nil
 }
