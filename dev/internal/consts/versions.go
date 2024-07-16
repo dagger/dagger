@@ -13,7 +13,6 @@ const (
 	GolangImage   = distconsts.GolangImage
 
 	AlpineVersion = distconsts.AlpineVersion
-	AlpineImage   = distconsts.AlpineImage
 
 	WolfiImage   = "cgr.dev/chainguard/wolfi-base"
 	WolfiVersion = "latest" // Wolfi is a rolling distro; no release to pin to

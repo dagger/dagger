@@ -51,8 +51,9 @@ func (build *Builder) pythonSDKContent(ctx context.Context) (*sdkContent, error)
 			ForcedCompression: dagger.Uncompressed,
 		})
 
-	sdkDir := dag.Container().
-		From(consts.AlpineImage).
+	sdkDir := dag.
+		Alpine().
+		Container().
 		WithMountedDirectory("/out", dag.Directory()).
 		WithMountedFile("/sdk.tar", sdkCtrTarball).
 		WithExec([]string{"tar", "xf", "/sdk.tar", "-C", "/out"}).

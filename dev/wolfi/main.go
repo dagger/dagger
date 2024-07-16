@@ -14,12 +14,22 @@ func (w *Wolfi) Container(
 	// APK packages to install
 	// +optional
 	packages []string,
+	// Hardware architecture to target
+	// +optional
+	arch string,
 	// Overlay images to merge on top of the base.
 	// See https://twitter.com/ibuildthecloud/status/1721306361999597884
 	// +optional
 	overlays []*dagger.Container,
 ) *dagger.Container {
-	ctr := dag.Apko().Wolfi(packages)
+	config := dag.
+		Apko().
+		WithPackages(packages).
+		WithWolfi()
+	if arch != "" {
+		config = config.WithArchs([]string{arch})
+	}
+	ctr := config.AsContainer()
 	for _, overlay := range overlays {
 		ctr = ctr.WithDirectory("/", overlay.Rootfs())
 	}
