@@ -23,7 +23,7 @@ func withEngine(
 	return Frontend.Run(ctx, opts, func(ctx context.Context) (rerr error) {
 		// Init tracing as early as possible and shutdown after the command
 		// completes, ensuring progress is fully flushed to the frontend.
-		cleanupTelemetry := initEngineTelemetry(ctx)
+		ctx, cleanupTelemetry := initEngineTelemetry(ctx)
 		defer cleanupTelemetry(rerr)
 
 		if debug {
@@ -63,7 +63,7 @@ func withEngine(
 	})
 }
 
-func initEngineTelemetry(ctx context.Context) func(error) {
+func initEngineTelemetry(ctx context.Context) (context.Context, func(error)) {
 	// Setup telemetry config
 	telemetryCfg := telemetry.Config{
 		Detect:   true,
@@ -96,7 +96,7 @@ func initEngineTelemetry(ctx context.Context) func(error) {
 	rootCmd.SetOut(stdio.Stdout)
 	rootCmd.SetErr(stdio.Stderr)
 
-	return func(rerr error) {
+	return ctx, func(rerr error) {
 		stdio.Close()
 		telemetry.End(span, func() error { return rerr })
 		telemetry.Close()
