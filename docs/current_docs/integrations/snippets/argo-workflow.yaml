@@ -46,7 +46,7 @@ spec:
         command: ["sh", "-c"]
         # assumes a Go project
         # modify to use different function(s) as needed
-        args: ["dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.10 call test --source=."]
+        args: ["dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call test --source=."]
         workingDir: /work
         env:
         - name: "_EXPERIMENTAL_DAGGER_RUNNER_HOST"
