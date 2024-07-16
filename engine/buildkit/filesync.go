@@ -50,7 +50,7 @@ func (c *Client) LocalImport(
 		llb.SharedKeyHint(strings.Join([]string{clientMetadata.ClientHostname, srcPath}, " ")),
 	}
 
-	localName := fmt.Sprintf("upload %s from %s (client id: %s)", srcPath, clientMetadata.ClientHostname, clientMetadata.ClientID)
+	localName := fmt.Sprintf("upload %s from %s (client id: %s, session id: %s)", srcPath, clientMetadata.ClientHostname, clientMetadata.ClientID, clientMetadata.SessionID)
 	if len(excludePatterns) > 0 {
 		localName += fmt.Sprintf(" (exclude: %s)", strings.Join(excludePatterns, ", "))
 		localOpts = append(localOpts, llb.ExcludePatterns(excludePatterns))

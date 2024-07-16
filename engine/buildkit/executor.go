@@ -42,10 +42,11 @@ import (
 )
 
 type ExecutionMetadata struct {
-	ClientID    string
-	SessionID   string
-	SecretToken string
-	Hostname    string
+	ClientID       string
+	CallerClientID string
+	SessionID      string
+	SecretToken    string
+	Hostname       string
 
 	// Unique (random) ID for this execution.
 	// This is used to deduplicate the same execution that gets evaluated multiple times.
@@ -205,9 +206,21 @@ func (w *Worker) run(
 	}
 	f.Close()
 
-	bklog.G(ctx).Debugf("> creating %s %v", state.id, state.spec.Process.Args)
+	lg := bklog.G(ctx).
+		WithField("id", state.id).
+		WithField("args", state.spec.Process.Args)
+	if w.execMD != nil {
+		lg = lg.WithField("caller_client_id", w.execMD.CallerClientID)
+		if w.execMD.CallID != nil {
+			lg = lg.WithField("call_id", w.execMD.CallID.Display())
+		}
+		if w.execMD.ClientID != "" {
+			lg = lg.WithField("nested_client_id", w.execMD.ClientID)
+		}
+	}
+	lg.Debug("starting container")
 	defer func() {
-		bklog.G(ctx).WithError(rerr).Debugf("> container done %s %v", state.id, state.spec.Process.Args)
+		lg.WithError(rerr).Debug("container done")
 	}()
 
 	trace.SpanFromContext(ctx).AddEvent("Container created")

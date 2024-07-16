@@ -79,6 +79,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		execMD = *opts.NestedExecMetadata
 	}
 	execMD.CallID = dagql.CurrentID(ctx)
+	execMD.CallerClientID = clientMetadata.ClientID
 	execMD.ExecID = identity.NewID()
 	execMD.SessionID = clientMetadata.SessionID
 	if execMD.HostAliases == nil {
@@ -119,10 +120,6 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 
 		if execMD.CachePerSession {
 			// include the SessionID here so that we bust cache once-per-session
-			clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-			if err != nil {
-				return nil, err
-			}
 			runOpts = append(runOpts, llb.AddEnv(buildkit.DaggerSessionIDEnv, clientMetadata.SessionID))
 		}
 	}
