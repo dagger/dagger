@@ -14,8 +14,9 @@ type Docs struct {
 }
 
 const (
-	generatedSchemaPath = "docs/docs-graphql/schema.graphqls"
-	generatedCliZenPath = "docs/current_docs/reference/cli.mdx"
+	generatedSchemaPath       = "docs/docs-graphql/schema.graphqls"
+	generatedCliZenPath       = "docs/current_docs/reference/cli.mdx"
+	generatedApiReferencePath = "docs/static/api/reference/index.html"
 )
 
 const cliZenFrontmatter = `---
@@ -109,12 +110,17 @@ func (d Docs) Generate(ctx context.Context) (*dagger.Directory, error) {
 		cli = d.GenerateCli()
 		return nil
 	})
+	var apiRef *dagger.Directory
+	eg.Go(func() error {
+		apiRef = d.GenerateAPIReference()
+		return nil
+	})
 
 	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
 
-	return sdl.WithDirectory("/", cli), nil
+	return sdl.WithDirectory("/", cli).WithDirectory("/", apiRef), nil
 }
 
 // Regenerate the API schema
@@ -138,4 +144,16 @@ func (d Docs) GenerateCli() *dagger.Directory {
 		WithExec([]string{"go", "run", "./cmd/dagger", "gen", "--frontmatter=" + cliZenFrontmatter, "--output=cli.mdx", "--include-experimental"}).
 		File("cli.mdx")
 	return dag.Directory().WithFile(generatedCliZenPath, generated)
+}
+
+// Regenerate the API Reference documentation
+func (d Docs) GenerateAPIReference() *dagger.Directory {
+	generatedHTML := dag.Container().
+		From("node:18").
+		WithMountedDirectory("/src", d.Dagger.Source).
+		WithWorkdir("/src/docs").
+		WithExec([]string{"yarn", "add", "spectaql"}).
+		WithExec([]string{"yarn", "run", "spectaql", "./docs-graphql/config.yml", "-t", "."}).
+		File("index.html")
+	return dag.Directory().WithFile(generatedApiReferencePath, generatedHTML)
 }
