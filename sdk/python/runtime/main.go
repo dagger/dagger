@@ -150,7 +150,6 @@ func (m *PythonSdk) Common(
 		WithTemplate().
 		WithSDK(introspectionJSON).
 		WithSource(), nil
-
 }
 
 // Get all the needed information from the module's metadata and source files
