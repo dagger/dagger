@@ -2,7 +2,6 @@ import { dag, Container, object, func } from "@dagger.io/dagger"
 
 @object()
 class MyModule {
-  @func()
   ctr: Container
 
   constructor(ctr?: Container) {
