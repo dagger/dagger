@@ -577,7 +577,7 @@ func (ModuleSuite) TestTypescriptRuntimeDetection(ctx context.Context, t *testct
 				  }
 				}
 			`)).
-			WithNewFile("/work/dagger/package.json", `{
+			WithNewFile("/work/package.json", `{
 					"dagger": {
 						"runtime": "bun"
 					}
@@ -602,7 +602,7 @@ func (ModuleSuite) TestTypescriptRuntimeDetection(ctx context.Context, t *testct
 	})
 
 	t.Run("should detect specificpinned node version 20.15.0", func(ctx context.Context, t *testctx.T) {
-		modGen := modGen.WithNewFile("/work/dagger/package.json", `{
+		modGen := modGen.WithNewFile("/work/package.json", `{
 				"dagger": {
 					"runtime": "node@20.15.0"
 				}
@@ -615,7 +615,7 @@ func (ModuleSuite) TestTypescriptRuntimeDetection(ctx context.Context, t *testct
 	})
 
 	t.Run("should detect a specific pinned node version 22.4.0", func(ctx context.Context, t *testctx.T) {
-		modGen := modGen.WithNewFile("/work/dagger/package.json", `{
+		modGen := modGen.WithNewFile("/work/package.json", `{
 				"dagger": {
 					"runtime": "node@22.4.0"
 				}
@@ -628,7 +628,7 @@ func (ModuleSuite) TestTypescriptRuntimeDetection(ctx context.Context, t *testct
 	})
 
 	t.Run("should detect a specific pinned bun version", func(ctx context.Context, t *testctx.T) {
-		modGen := modGen.WithNewFile("/work/dagger/package.json", `{
+		modGen := modGen.WithNewFile("/work/package.json", `{
 				"dagger": {
 					"runtime": "bun@1.0.11"
 				}
