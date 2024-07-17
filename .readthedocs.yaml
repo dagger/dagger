@@ -1,16 +1,11 @@
-# .readthedocs.yaml
-# Read the Docs configuration file
-# See https://docs.readthedocs.io/en/stable/config-file/v2.html for details
+# FIXME: Temporary, until sdk/python/.readthedocs.yaml is merged
 
 version: 2
 
 build:
   os: ubuntu-22.04
-  tools:
-    python: "3.11"
-
-python:
-  install:
-    - method: pip
-      path: sdk/python
-    - requirements: sdk/python/requirements.txt
+  commands:
+    - asdf plugin add uv
+    - asdf install uv latest
+    - asdf global uv latest
+    - cd sdk/python && uv run python -m sphinx -T -b html -d docs/_build/doctrees -D language=en docs $READTHEDOCS_OUTPUT/html

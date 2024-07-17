@@ -104,7 +104,7 @@ The SDK is managed with a Dagger module in `./dev`. To see which tasks are
 available run:
 
 ```shell
-dagger call -m dev
+dagger call -m dev --source=.:default
 ```
 
 ### Common tasks
@@ -112,41 +112,28 @@ dagger call -m dev
 Run pytest in supported Python versions:
 
 ```shell
-dagger call -m dev tests
+dagger call -m dev --source=.:default test default
 ```
 
 Check for linting violations:
 ```shell
-dagger call -m dev lint check
+dagger call -m dev --source=.:default lint
 ```
 
 Re-format code following common styling conventions:
 ```shell
-dagger call -m dev lint format -o .
+dagger call -m dev --source=.:default format export --path=.
 ```
 
-Update pinned devevelopment dependencies:
+Update pinned development dependencies:
 ```shell
-dagger call -m dev lock -o .
+uv lock -U
 ```
 
 Build and preview the reference documentation:
 ```shell
-dagger call -m dev docs preview up
+dagger call -m dev --source=.:default docs preview up
 ```
 
 Add `--help` to any command to check all the available options.
 
-### Engine changes
-
-Testing and regenerating the client may fail if there’s changes in the engine code that haven’t been released yet. Prefix with `hack/dev` to build a new engine before executing pipelines:
-
-```shell
-../../hack/dev dagger call -m dev test
-```
-
-To re-generate the client (codegen) after changes to the API schema:
-
-```shell
-./hack/dev ./hack/make sdk:python:generate
-```
