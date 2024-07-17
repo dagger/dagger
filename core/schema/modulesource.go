@@ -19,6 +19,7 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/vcs"
 	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/moby/buildkit/util/bklog"
 	"github.com/tonistiigi/fsutil/types"
 )
 
@@ -90,55 +91,60 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 		// Ref used to clone the root of the repo (`git+` is removed)
 		src.AsGitSource.Value.CloneRef = parsed.scheme.CloneString() + cloneUsername + parsed.repoRoot.Root
 
-		var modVersion string
-		if parsed.hasVersion {
-			modVersion = parsed.modVersion
-		} else {
-			if args.Stable {
-				return nil, fmt.Errorf("no version provided for stable remote ref: %s", args.RefString)
-			}
-			var err error
-			modVersion, err = defaultBranch(ctx, parsed.repoRoot.Repo)
-			if err != nil {
-				return nil, fmt.Errorf("determine default branch: %w", err)
-			}
-		}
-		src.AsGitSource.Value.Version = modVersion
-
 		subPath := "/"
 		if parsed.repoRootSubdir != "" {
 			subPath = parsed.repoRootSubdir
 		}
 
-		commitRef := modVersion
-		if parsed.hasVersion && isSemver(modVersion) {
-			var tags dagql.Array[dagql.String]
-			err := s.dag.Select(ctx, s.dag.Root(), &tags,
-				dagql.Selector{
-					Field: "git",
-					Args: []dagql.NamedInput{
-						{Name: "url", Value: dagql.String(src.AsGitSource.Value.CloneRef)},
+		var commitRefSelector dagql.Selector
+		if parsed.hasVersion {
+			bklog.G(ctx).Debugf("⚠️ hasVersion: |%+v|\n", parsed.modVersion)
+			modVersion := parsed.modVersion
+			if parsed.hasVersion && isSemver(modVersion) {
+				var tags dagql.Array[dagql.String]
+				err := s.dag.Select(ctx, s.dag.Root(), &tags,
+					dagql.Selector{
+						Field: "git",
+						Args: []dagql.NamedInput{
+							{Name: "url", Value: dagql.String(src.AsGitSource.Value.CloneRef)},
+						},
 					},
-				},
-				dagql.Selector{
-					Field: "tags",
-				},
-			)
-			if err != nil {
-				return nil, fmt.Errorf("failed to resolve git tags: %w", err)
-			}
+					dagql.Selector{
+						Field: "tags",
+					},
+				)
+				if err != nil {
+					return nil, fmt.Errorf("failed to resolve git tags: %w", err)
+				}
 
-			allTags := make([]string, len(tags))
-			for i, tag := range tags {
-				allTags[i] = tag.String()
-			}
+				allTags := make([]string, len(tags))
+				for i, tag := range tags {
+					allTags[i] = tag.String()
+				}
+				bklog.G(ctx).Debugf("⚠️ allTags: |%+v|\n", allTags)
 
-			matched, err := matchVersion(allTags, modVersion, subPath)
-			if err != nil {
-				return nil, fmt.Errorf("matching version to tags: %w", err)
+				matched, err := matchVersion(allTags, modVersion, subPath)
+				if err != nil {
+					return nil, fmt.Errorf("matching version to tags: %w", err)
+				}
+				modVersion = matched
 			}
-			// reassign modVersion to matched tag which could be subPath/tag
-			commitRef = matched
+			commitRefSelector = dagql.Selector{
+				Field: "commit",
+				Args: []dagql.NamedInput{
+					// reassign modVersion to matched tag which could be subPath/tag
+					{Name: "id", Value: dagql.String(modVersion)},
+				},
+			}
+			src.AsGitSource.Value.Version = modVersion
+		} else {
+			if args.Stable {
+				return nil, fmt.Errorf("no version provided for stable remote ref: %s", args.RefString)
+			}
+			commitRefSelector = dagql.Selector{
+				Field: "head",
+			}
+			src.AsGitSource.Value.Version = "main" // todo: fix, not necessary?
 		}
 
 		var gitRef dagql.Instance[*core.GitRef]
@@ -149,12 +155,7 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 					{Name: "url", Value: dagql.String(src.AsGitSource.Value.CloneRef)},
 				},
 			},
-			dagql.Selector{
-				Field: "commit",
-				Args: []dagql.NamedInput{
-					{Name: "id", Value: dagql.String(commitRef)},
-				},
-			},
+			commitRefSelector,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to resolve git src: %w", err)

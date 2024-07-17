@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -74,14 +75,14 @@ func (ModuleSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 			With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
 			WithNewFile("/work/dep/main.go", `package main
 
-			import "context"
+        import "context"
 
-			type Dep struct {}
+        type Dep struct {}
 
-			func (m *Dep) GetSource(ctx context.Context) *dagger.Directory {
-				return dag.CurrentModule().Source()
-			}
-			`,
+        func (m *Dep) GetSource(ctx context.Context) *dagger.Directory {
+            return dag.CurrentModule().Source()
+        }
+        `,
 			).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go"))
@@ -1047,6 +1048,8 @@ func (m *Test) Fn(ctx context.Context) (string, error) {
 			})
 
 			t.Run("unpinned gets pinned", func(ctx context.Context, t *testctx.T) {
+				require.Equal(t, os.Getenv("SSH_AUTH_SOCK"), globalSSHSockPath)
+
 				c := connect(ctx, t)
 
 				out, err := goGitBase(t, c).
@@ -1364,6 +1367,7 @@ type vcsTestCase struct {
 	expectedURLPathComponent string
 	// Azure needs a path prefix
 	expectedPathPrefix string
+	isPrivateRepo      bool
 }
 
 var vcsTestCases = []vcsTestCase{
@@ -1404,6 +1408,7 @@ var vcsTestCases = []vcsTestCase{
 		expectedURLPathComponent: "commit",
 		expectedPathPrefix:       "?path=",
 	},
+	// Private repo
 	{
 		name:                     "Azure DevOps without .git",
 		gitTestRepoRef:           "dev.azure.com/daggere2e/public/_git/dagger-test-modules",
@@ -1414,21 +1419,35 @@ var vcsTestCases = []vcsTestCase{
 		expectedPathPrefix:       "?path=",
 	},
 	{
-		name:                     "SSH GitHub",
-		gitTestRepoRef:           "ssh://github.com/dagger/dagger-test-modules.git",
+		name:                     "SSH Private GitLab",
+		gitTestRepoRef:           "ssh://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git",
 		gitTestRepoCommit:        "8723e276a45b2e620ba3185cb07dc35e2be5bc86",
-		expectedHost:             "github.com",
-		expectedBaseHTMLURL:      "github.com/dagger/dagger-test-modules",
+		expectedHost:             "gitlab.com",
+		expectedBaseHTMLURL:      "gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private",
 		expectedURLPathComponent: "tree",
+		expectedPathPrefix:       "",
+		isPrivateRepo:            true,
 	},
 	{
-		name:                     "SSH GitHub",
-		gitTestRepoRef:           "git@github.com/dagger/dagger-test-modules",
+		name:                     "SSH Private BitBucket",
+		gitTestRepoRef:           "git+ssh://git@bitbucket.org/dagger-modules/private-modules-test.git",
 		gitTestRepoCommit:        "8723e276a45b2e620ba3185cb07dc35e2be5bc86",
-		expectedHost:             "github.com",
-		expectedBaseHTMLURL:      "github.com/dagger/dagger-test-modules",
-		expectedURLPathComponent: "tree",
+		expectedHost:             "bitbucket.org",
+		expectedBaseHTMLURL:      "bitbucket.org/dagger-modules/private-modules-test",
+		expectedURLPathComponent: "src",
+		expectedPathPrefix:       "",
+		isPrivateRepo:            true,
 	},
+	// TODO(guillaume): add Azure DevOps
+	// {
+	// 	name:                     "SSH Private Azure",
+	// 	gitTestRepoRef:           "git@gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git",
+	// 	gitTestRepoCommit:        "8723e276a45b2e620ba3185cb07dc35e2be5bc86",
+	// 	expectedHost:             "gitlab.com",
+	// 	expectedBaseHTMLURL:      "gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private",
+	// 	expectedURLPathComponent: "tree",
+	// 	withSSHAuth:              true,
+	// },
 }
 
 func testOnMultipleVCS(t *testctx.T, testFunc func(ctx context.Context, t *testctx.T, tc vcsTestCase)) {
@@ -1452,9 +1471,9 @@ func testGitModuleRef(tc vcsTestCase, subpath string) string {
 }
 
 func (ModuleSuite) TestDaggerGitRefs(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
 	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
+		c := connect(ctx, t)
+
 		t.Run("root module", func(ctx context.Context, t *testctx.T) {
 			rootModSrc := c.ModuleSource(testGitModuleRef(tc, ""))
 
@@ -1462,10 +1481,15 @@ func (ModuleSuite) TestDaggerGitRefs(ctx context.Context, t *testctx.T) {
 			require.NoError(t, err)
 			expectedURL := fmt.Sprintf("https://%s/%s/%s", tc.expectedBaseHTMLURL, tc.expectedURLPathComponent, tc.gitTestRepoCommit)
 			require.Equal(t, expectedURL, htmlURL)
-			resp, err := http.Get(htmlURL)
-			require.NoError(t, err)
-			defer resp.Body.Close()
-			require.Equal(t, http.StatusOK, resp.StatusCode)
+			// URL format matches public repo from same provider.
+			// No need to test with auth on those refs
+			if !tc.isPrivateRepo {
+				resp, err := http.Get(htmlURL)
+				require.NoError(t, err)
+				defer resp.Body.Close()
+				require.Equal(t, http.StatusOK, resp.StatusCode)
+				require.Equal(t, fmt.Sprintf("https://%s/%s/%s", tc.expectedBaseHTMLURL, tc.expectedURLPathComponent, tc.gitTestRepoCommit), htmlURL)
+			}
 
 			repositoryURL, err := rootModSrc.AsGitSource().RepositoryURL(ctx)
 			require.NoError(t, err)
@@ -1487,10 +1511,14 @@ func (ModuleSuite) TestDaggerGitRefs(ctx context.Context, t *testctx.T) {
 			expectedURL := fmt.Sprintf("https://%s/%s/%s%s/top-level", tc.expectedBaseHTMLURL, tc.expectedURLPathComponent, tc.gitTestRepoCommit, tc.expectedPathPrefix)
 			require.Equal(t, expectedURL, htmlURL)
 
-			resp, err := http.Get(htmlURL)
-			require.NoError(t, err)
-			defer resp.Body.Close()
-			require.Equal(t, http.StatusOK, resp.StatusCode)
+			// URL format matches public repo from same provider.
+			// No need to test with auth on those refs
+			if !tc.isPrivateRepo {
+				resp, err := http.Get(htmlURL)
+				require.NoError(t, err)
+				defer resp.Body.Close()
+				require.Equal(t, http.StatusOK, resp.StatusCode)
+			}
 
 			repositoryURL, err := topLevelModSrc.AsGitSource().RepositoryURL(ctx)
 			require.NoError(t, err)
@@ -1512,10 +1540,14 @@ func (ModuleSuite) TestDaggerGitRefs(ctx context.Context, t *testctx.T) {
 			expectedURL := fmt.Sprintf("https://%s/%s/%s%s/subdir/dep2", tc.expectedBaseHTMLURL, tc.expectedURLPathComponent, tc.gitTestRepoCommit, tc.expectedPathPrefix)
 			require.Equal(t, expectedURL, htmlURL)
 
-			resp, err := http.Get(htmlURL)
-			require.NoError(t, err)
-			defer resp.Body.Close()
-			require.Equal(t, http.StatusOK, resp.StatusCode)
+			// URL format matches public repo from same provider.
+			// No need to test with auth on those refs
+			if !tc.isPrivateRepo {
+				resp, err := http.Get(htmlURL)
+				require.NoError(t, err)
+				defer resp.Body.Close()
+				require.Equal(t, http.StatusOK, resp.StatusCode)
+			}
 
 			repositoryURL, err := subdirDepModSrc.AsGitSource().RepositoryURL(ctx)
 			require.NoError(t, err)

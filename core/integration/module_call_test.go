@@ -1942,9 +1942,9 @@ func (ModuleSuite) TestCallByName(ctx context.Context, t *testctx.T) {
 }
 
 func (ModuleSuite) TestCallGitMod(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
 	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
+		c := connect(ctx, t)
+
 		t.Run("go", func(ctx context.Context, t *testctx.T) {
 			out, err := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
