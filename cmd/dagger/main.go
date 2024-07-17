@@ -286,9 +286,9 @@ func main() {
 	ctx = slog.ContextWithColorMode(ctx, termenv.EnvNoColor())
 	ctx = slog.ContextWithDebugMode(ctx, debug)
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt)
-	defer stop()
 
 	if err := rootCmd.ExecuteContext(ctx); err != nil {
+		stop()
 		var exit ExitError
 		if errors.As(err, &exit) {
 			os.Exit(exit.Code)

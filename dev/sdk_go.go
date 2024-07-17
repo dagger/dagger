@@ -22,7 +22,7 @@ type GoSDK struct {
 func (t GoSDK) Lint(ctx context.Context) error {
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
-		return t.Dagger.Go().Lint(ctx, []string{"sdk/go"}, false)
+		return t.Dagger.Go().Lint(ctx, []string{"sdk/go"})
 	})
 	eg.Go(func() error {
 		return util.DiffDirectoryF(ctx, t.Dagger.Source, t.Generate, "sdk/go")

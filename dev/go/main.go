@@ -80,7 +80,6 @@ func (p *Go) Lint(
 	ctx context.Context,
 
 	pkgs []string, // +optional
-	all bool, // +optional
 ) error {
 	eg, ctx := errgroup.WithContext(ctx)
 	for _, pkg := range pkgs {

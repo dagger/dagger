@@ -163,8 +163,6 @@ func (e *Engine) Service(
 // Lint the engine
 func (e *Engine) Lint(
 	ctx context.Context,
-	// +optional
-	all bool,
 ) error {
 	eg, ctx := errgroup.WithContext(ctx)
 
@@ -193,7 +191,7 @@ func (e *Engine) Lint(
 
 		return e.Dagger.Go().
 			WithCodegen(codegen).
-			Lint(ctx, packages, all)
+			Lint(ctx, packages)
 	})
 
 	eg.Go(func() error {

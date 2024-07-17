@@ -16,7 +16,7 @@ type Docs struct {
 const (
 	generatedSchemaPath       = "docs/docs-graphql/schema.graphqls"
 	generatedCliZenPath       = "docs/current_docs/reference/cli.mdx"
-	generatedApiReferencePath = "docs/static/api/reference/index.html"
+	generatedAPIReferencePath = "docs/static/api/reference/index.html"
 )
 
 const cliZenFrontmatter = `---
@@ -156,5 +156,5 @@ func (d Docs) GenerateAPIReference() *dagger.Directory {
 		WithExec([]string{"yarn", "add", "spectaql"}).
 		WithExec([]string{"yarn", "run", "spectaql", "./docs-graphql/config.yml", "-t", "."}).
 		File("index.html")
-	return dag.Directory().WithFile(generatedApiReferencePath, generatedHTML)
+	return dag.Directory().WithFile(generatedAPIReferencePath, generatedHTML)
 }

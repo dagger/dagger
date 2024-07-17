@@ -45,7 +45,7 @@ func (dev *DaggerDev) Check(ctx context.Context) error {
 	if err := dev.Docs().Lint(ctx); err != nil {
 		return err
 	}
-	if err := dev.Engine().Lint(ctx, false); err != nil {
+	if err := dev.Engine().Lint(ctx); err != nil {
 		return err
 	}
 	if err := dev.Test().All(
@@ -104,12 +104,9 @@ func (gtc *GoToolchain) Env() *dagger.Container {
 func (gtc *GoToolchain) Lint(
 	ctx context.Context,
 	packages []string,
-	// +optional
-	all bool,
 ) error {
 	return gtc.Go.Lint(ctx, dagger.GoLintOpts{
 		Pkgs: packages,
-		All:  all,
 	})
 }
 
