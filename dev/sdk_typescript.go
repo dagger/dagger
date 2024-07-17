@@ -70,7 +70,7 @@ func (t TypescriptSDK) Lint(ctx context.Context) error {
 		return t.Dagger.
 			Go().
 			WithCodegen([]string{typescriptRuntimeSubdir}).
-			Lint(ctx, []string{typescriptRuntimeSubdir}, false)
+			Lint(ctx, []string{typescriptRuntimeSubdir})
 	})
 
 	return eg.Wait()

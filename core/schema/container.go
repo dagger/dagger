@@ -622,6 +622,10 @@ func (s *containerSchema) build(ctx context.Context, parent *core.Container, arg
 	if err != nil {
 		return nil, err
 	}
+	secretStore, err := parent.Query.Secrets(ctx)
+	if err != nil {
+		return nil, err
+	}
 	return parent.Build(
 		ctx,
 		dir.Self,
@@ -629,6 +633,7 @@ func (s *containerSchema) build(ctx context.Context, parent *core.Container, arg
 		collectInputsSlice(args.BuildArgs),
 		args.Target,
 		secrets,
+		secretStore,
 	)
 }
 
@@ -1450,9 +1455,9 @@ func (s *containerSchema) withRegistryAuth(ctx context.Context, parent *core.Con
 	if err != nil {
 		return nil, err
 	}
-	secretBytes, err := secretStore.GetSecret(ctx, secret.Self.Accessor)
-	if err != nil {
-		return nil, err
+	secretBytes, ok := secretStore.GetSecretPlaintext(secret.Self.IDDigest)
+	if !ok {
+		return nil, fmt.Errorf("secret %s not found", secret.Self.IDDigest)
 	}
 
 	auth, err := parent.Query.Auth(ctx)

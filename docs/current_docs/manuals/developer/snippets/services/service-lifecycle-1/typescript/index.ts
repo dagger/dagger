@@ -18,9 +18,10 @@ class MyModule {
       .container()
       .from("redis")
       .withServiceBinding("redis-srv", redisSrv)
-      .withEntrypoint(["redis-cli", "-h", "redis-srv"])
 
     // send ping from client to server
-    return await redisCLI.withExec(["ping"]).stdout()
+    return await redisCLI
+      .withExec(["redis-cli", "-h", "redis-srv", "ping"])
+      .stdout()
   }
 }

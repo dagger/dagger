@@ -1,12 +1,14 @@
 package main
 
+import "main/internal/dagger"
+
 type Github struct{}
 
 func (module *Github) DaggerOrganization() *Organization {
 	url := "https://github.com/dagger"
 	return &Organization{
 		URL:          url,
-		Repositories: []*GitRepository{dag.Git(url + "/dagger")},
+		Repositories: []*dagger.GitRepository{dag.Git(url + "/dagger")},
 		Members: []*Account{
 			{"jane", "jane@example.com"},
 			{"john", "john@example.com"},
@@ -16,7 +18,7 @@ func (module *Github) DaggerOrganization() *Organization {
 
 type Organization struct {
 	URL          string
-	Repositories []*GitRepository
+	Repositories []*dagger.GitRepository
 	Members      []*Account
 }
 

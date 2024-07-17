@@ -121,7 +121,12 @@ func (host *Host) File(ctx context.Context, srv *dagql.Server, filePath string) 
 }
 
 func (host *Host) SetSecretFile(ctx context.Context, srv *dagql.Server, secretName string, path string) (i dagql.Instance[*Secret], err error) {
-	accessor, err := GetLocalSecretAccessor(ctx, host.Query, secretName)
+	secretStore, err := host.Query.Secrets(ctx)
+	if err != nil {
+		return i, fmt.Errorf("failed to get secrets: %w", err)
+	}
+
+	accessor, err := GetClientResourceAccessor(ctx, host.Query, secretName)
 	if err != nil {
 		return i, err
 	}
@@ -136,14 +141,6 @@ func (host *Host) SetSecretFile(ctx context.Context, srv *dagql.Server, secretNa
 		return i, fmt.Errorf("read secret file: %w", err)
 	}
 
-	secrets, err := host.Query.Secrets(ctx)
-	if err != nil {
-		return i, fmt.Errorf("failed to get secrets: %w", err)
-	}
-
-	if err := secrets.AddSecret(ctx, accessor, secretFileContent); err != nil {
-		return i, err
-	}
 	err = srv.Select(ctx, srv.Root(), &i, dagql.Selector{
 		Field: "secret",
 		Args: []dagql.NamedInput{
@@ -157,9 +154,13 @@ func (host *Host) SetSecretFile(ctx context.Context, srv *dagql.Server, secretNa
 			},
 		},
 	})
-	return i, err
-}
+	if err != nil {
+		return i, fmt.Errorf("failed to select secret: %w", err)
+	}
 
-func (host *Host) Socket(sockPath string) *Socket {
-	return NewHostUnixSocket(sockPath)
+	if err := secretStore.AddSecret(i.Self, secretName, secretFileContent); err != nil {
+		return i, fmt.Errorf("failed to add secret: %w", err)
+	}
+
+	return i, nil
 }

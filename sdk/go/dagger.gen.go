@@ -2005,16 +2005,13 @@ func (r *DaggerEngineCache) KeepBytes(ctx context.Context) (int, error) {
 }
 
 // Prune the cache of releaseable entries
-func (r *DaggerEngineCache) Prune(ctx context.Context) (Void, error) {
+func (r *DaggerEngineCache) Prune(ctx context.Context) error {
 	if r.prune != nil {
-		return *r.prune, nil
+		return nil
 	}
 	q := r.query.Select("prune")
 
-	var response Void
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	return q.Execute(ctx)
 }
 
 // An individual cache entry in a cache entry set
@@ -3674,17 +3671,14 @@ func (r *FunctionCall) ParentName(ctx context.Context) (string, error) {
 }
 
 // Set the return value of the function call to the provided value.
-func (r *FunctionCall) ReturnValue(ctx context.Context, value JSON) (Void, error) {
+func (r *FunctionCall) ReturnValue(ctx context.Context, value JSON) error {
 	if r.returnValue != nil {
-		return *r.returnValue, nil
+		return nil
 	}
 	q := r.query.Select("returnValue")
 	q = q.Arg("value", value)
 
-	var response Void
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	return q.Execute(ctx)
 }
 
 // A value passed as a named argument to a function call.
@@ -5185,16 +5179,13 @@ func (r *Module) SDK(ctx context.Context) (string, error) {
 // Serve a module's API in the current session.
 //
 // Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.
-func (r *Module) Serve(ctx context.Context) (Void, error) {
+func (r *Module) Serve(ctx context.Context) error {
 	if r.serve != nil {
-		return *r.serve, nil
+		return nil
 	}
 	q := r.query.Select("serve")
 
-	var response Void
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	return q.Execute(ctx)
 }
 
 // The source for the module.
@@ -7254,9 +7245,9 @@ type ServiceUpOpts struct {
 }
 
 // Creates a tunnel that forwards traffic from the caller's network to this service.
-func (r *Service) Up(ctx context.Context, opts ...ServiceUpOpts) (Void, error) {
+func (r *Service) Up(ctx context.Context, opts ...ServiceUpOpts) error {
 	if r.up != nil {
-		return *r.up, nil
+		return nil
 	}
 	q := r.query.Select("up")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -7270,10 +7261,7 @@ func (r *Service) Up(ctx context.Context, opts ...ServiceUpOpts) (Void, error) {
 		}
 	}
 
-	var response Void
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	return q.Execute(ctx)
 }
 
 // A Unix or TCP/IP socket that can be mounted into a container.

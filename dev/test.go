@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/moby/buildkit/identity"
 
@@ -92,6 +93,12 @@ func (t *Test) test(
 		"test",
 	}
 
+	// Add ldflags
+	ldflags := []string{
+		"-X", "github.com/dagger/dagger/engine.Version=" + t.Dagger.Version.String(),
+	}
+	args = append(args, "-ldflags", strings.Join(ldflags, " "))
+
 	// All following are go test flags
 	if failfast {
 		args = append(args, "-failfast")
@@ -173,6 +180,7 @@ func (t *Test) testCmd(ctx context.Context) (*dagger.Container, error) {
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
 		WithMountedCache(distconsts.EngineDefaultStateDir, dag.CacheVolume("dagger-dev-engine-test-state"+identity.NewID())).
 		WithExec(nil, dagger.ContainerWithExecOpts{
+			UseEntrypoint:            true,
 			InsecureRootCapabilities: true,
 		}).
 		AsService()
@@ -211,7 +219,9 @@ func registry() *dagger.Service {
 	return dag.Container().
 		From("registry:2").
 		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
-		WithExec(nil).
+		WithExec(nil, dagger.ContainerWithExecOpts{
+			UseEntrypoint: true,
+		}).
 		AsService()
 }
 
@@ -219,11 +229,13 @@ func privateRegistry() *dagger.Service {
 	const htpasswd = "john:$2y$05$/iP8ud0Fs8o3NLlElyfVVOp6LesJl3oRLYoc3neArZKWX10OhynSC" //nolint:gosec
 	return dag.Container().
 		From("registry:2").
-		WithNewFile("/auth/htpasswd", dagger.ContainerWithNewFileOpts{Contents: htpasswd}).
+		WithNewFile("/auth/htpasswd", htpasswd).
 		WithEnvVariable("REGISTRY_AUTH", "htpasswd").
 		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_REALM", "Registry Realm").
 		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_PATH", "/auth/htpasswd").
 		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
-		WithExec(nil).
+		WithExec(nil, dagger.ContainerWithExecOpts{
+			UseEntrypoint: true,
+		}).
 		AsService()
 }

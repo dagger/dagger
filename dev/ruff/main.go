@@ -10,14 +10,6 @@ import (
 	"github.com/dagger/dagger/dev/ruff/internal/dagger"
 )
 
-var (
-	pythonVersion     = "3.11"
-	pythonImageRepo   = "docker.io/library/python"
-	pythonImageTag    = fmt.Sprintf("%s-slim", pythonVersion)
-	pythonImageDigest = "sha256:fc39d2e68b554c3f0a5cb8a776280c0b3d73b4c04b83dbade835e2a171ca27ef"
-	pythonImage       = pythonImageRepo + ":" + pythonImageTag + "@" + pythonImageDigest
-)
-
 // Ruff is a fast Python linter implemented in Rust
 type Ruff struct{}
 
@@ -41,17 +33,17 @@ type LintRun struct {
 // Return a JSON report file for this run
 func (run LintRun) Report() *dagger.File {
 	cmd := []string{
-		"ruff", "check",
+		"/ruff", "check",
 		"--exit-zero",
 		"--output-format", "json",
 		".",
 	}
 	return dag.
-		Container().
-		From(pythonImage).
-		WithExec([]string{"pip", "install", "ruff==0.4.9"}).
-		WithMountedDirectory("/src", run.Source).
-		WithWorkdir("/src").
+		CurrentModule().
+		Source().
+		Directory("build").
+		DockerBuild().
+		WithMountedDirectory("", run.Source).
 		WithExec(cmd, dagger.ContainerWithExecOpts{RedirectStdout: "ruff-report.json"}).
 		File("ruff-report.json")
 }

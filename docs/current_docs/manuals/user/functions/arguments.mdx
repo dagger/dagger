@@ -13,7 +13,7 @@ To pass a string argument to a Dagger Function, add the corresponding flag to th
 Here is an example of passing two string arguments to a "hello world" Dagger Function. The Dagger Function uses the arguments to adjust its output message accordingly:
 
 ```shell
-dagger -m github.com/shykes/daggerverse/hello@v0.1.2 call hello --greeting=bonjour --name=daggernaut
+dagger -m github.com/shykes/daggerverse/hello@v0.3.0 call hello --greeting=bonjour --name=daggernaut
 ```
 
 ## Boolean arguments
@@ -23,10 +23,10 @@ To pass a Boolean argument to a Dagger Function, simply add the corresponding fl
 - To set the argument to true: `--foo=true`, or simply `--foo`
 - To set the argument to false: `--foo=false`
 
-Here is an example of passing a a Boolean argument to the same "hello world" Dagger Function. The Boolean argument controls the size ("giant" or normal) of the output message returned by the Dagger Function:
+Here is an example of passing a Boolean argument to the same "hello world" Dagger Function. The Boolean argument controls the size ("giant" or normal) of the output message returned by the Dagger Function:
 
 ```shell
-dagger -m github.com/shykes/daggerverse/hello@v0.1.2 call hello --giant
+dagger -m github.com/shykes/daggerverse/hello@v0.3.0 call hello --giant
 ```
 
 ## Directory arguments
@@ -89,6 +89,6 @@ dagger -m github.com/aweris/daggerverse/gh@99a1336f8091ff43bf833778a324de1cadcf2
 To list all the arguments accepted by a function, add the `--help` suffix at any point in the `dagger call` command to obtain context-sensitive help. For example, to list the arguments available for the `Build()` function of the `golang` module, use:
 
 ```shell
-dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.8 call build --help
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call build --help
 ```
 :::

@@ -131,7 +131,7 @@ Before releasing, make sure to sanity check the backwards compatibility of a
 release. If you enounter issues, then:
 
 - [ ] Add a release note using `changie new` (or add it later manually).
-- [ ] Bump the minimum version numbers in [engine/version.go](https://github.com/dagger/dagger/blob/mainengine/version.go).
+- [ ] Bump the minimum version numbers in [engine/version.go](https://github.com/dagger/dagger/blob/main/engine/version.go).
 
 If unsure, bump both the client and engine minimum version numbers, but if
 the backwards compatibility is only an issue in one direction, you only need
@@ -251,13 +251,13 @@ You will also want to ensure you _always_ cherry-pick a few special commits:
 
 </details>
 
-- [ ] Create e.g. `.changes/v0.11.9.md` by either running `changie batch patch`
+- [ ] Create e.g. `.changes/v0.12.0.md` by either running `changie batch patch`
       (or `changie batch minor` if this is a new minor).
 
 - [ ] Make any necessary edits to the newly generated file, e.g.
-      `.changes/v0.11.9.md`
+      `.changes/v0.12.0.md`
 - [ ] Update `CHANGELOG.md` by running `changie merge`.
-- [ ] `30 mins` Submit a PR - e.g. `add-v0.11.9-release-notes` with the new release notes so that they can be used in the new release.
+- [ ] `30 mins` Submit a PR - e.g. `add-v0.12.0-release-notes` with the new release notes so that they can be used in the new release.
   - 🚨 Non-main branch release only: This PR will also include the cherry-picked commits mentioned above.
 - [ ] Get the PR reviewed & merged. The merge commit is what gets tagged in the next step.
   - 🚨 Non-main branch release only: Ideally use "Rebase and Merge" rather than squashing commits when merging so we can more easily preserve the history of the cherry-picked commits.
@@ -385,7 +385,7 @@ github.com/dagger/dagger-go-sdk](https://github.com/dagger/dagger-go-sdk/tags).
 go mod edit -require dagger.io/dagger@${GO_SDK_VERSION:?must be set}
 go mod edit -require github.com/dagger/dagger/engine/distconsts@${GO_SDK_VERSION:?must be set}
 go mod tidy
-cd ci
+cd dev
 go mod edit -require github.com/dagger/dagger/engine/distconsts@${ENGINE_VERSION:?must be set}
 go mod tidy
 cd ..
@@ -418,10 +418,10 @@ Ensure that all the workflows succeed before continuing (specifically `test` and
       release process using the just-released CLI.
 
 ```console
-curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=0.11.9 sh
-# install the cli to dagger-0.11.9, and symlink dagger to it
-mv ~/.local/bin/dagger{,-0.11.9}
-ln -s ~/.local/bin/dagger{-0.11.9,}
+curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=0.12.0 sh
+# install the cli to dagger-0.12.0, and symlink dagger to it
+mv ~/.local/bin/dagger{,-0.12.0}
+ln -s ~/.local/bin/dagger{-0.12.0,}
 
 dagger version
 ```

@@ -117,9 +117,7 @@ func (r *Report) Fixed(ctx context.Context) (*dagger.File, error) {
 	f := base().
 		WithExec([]string{"apk", "add", "patch"}).
 		WithWorkdir("/src").
-		WithNewFile(filename+".patch", dagger.ContainerWithNewFileOpts{
-			Contents: r.FixedDiff,
-		}).
+		WithNewFile(filename+".patch", r.FixedDiff).
 		WithFile(filename, r.Target).
 		WithExec([]string{"patch", filename, filename + ".patch"}).
 		File(filename)

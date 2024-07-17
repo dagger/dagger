@@ -19,13 +19,22 @@ You can think of a just-in-time container, and the `Container` type that represe
 Here is an example of a Wolfi container builder Dagger Function that returns a base Wolfi container image with a list of additional specified packages:
 
 ```shell
-dagger -m github.com/shykes/daggerverse/wolfi@v0.1.2 call container --packages=cowsay
+dagger -m github.com/shykes/daggerverse/wolfi@v0.1.4 call container --packages=cowsay
 ```
 
 Once the command completes, you should see this output:
 
 ```shell
-Container evaluated. Use "dagger call base with-package container --help" to see available sub-commands.
+_type: Container
+defaultArgs:
+    - /bin/sh
+entrypoint: []
+mounts:
+    - /tmp
+    - /dev/shm
+platform: linux/arm64
+user: ""
+workdir: /bass/work
 ```
 
 This means that the build succeeded, and a `Container` type representing the built container image was returned.

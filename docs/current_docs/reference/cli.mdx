@@ -47,7 +47,7 @@ dagger call [options]
 
 ```
   -j, --json            Present result as JSON
-  -m, --mod string      Path to the module directory containing the dagger.json config file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
+  -m, --mod string      Path to the module directory containing the dagger.json config file. Either local path or a remote git repo
   -o, --output string   Save the result to a local file or directory
 ```
 
@@ -90,7 +90,7 @@ dagger config -m github.com/dagger/hello-dagger
 
 ```
       --json         output in JSON format
-  -m, --mod string   Path to the module directory containing the dagger.json config file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
+  -m, --mod string   Path to the module directory containing the dagger.json config file. Either local path or a remote git repo
 ```
 
 ### Options inherited from parent commands
@@ -137,7 +137,7 @@ dagger develop [options]
 
 ```
       --license string   License identifier to generate - see https://spdx.org/licenses/ (default "Apache-2.0")
-  -m, --mod string       Path to the module directory containing the dagger.json config file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
+  -m, --mod string       Path to the module directory containing the dagger.json config file. Either local path or a remote git repo
       --sdk string       New SDK for the module
       --source string    Directory to store the module implementation source code in
 ```
@@ -177,7 +177,7 @@ dagger functions [options] [function]...
 ### Options
 
 ```
-  -m, --mod string   Path to the module directory containing the dagger.json config file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
+  -m, --mod string   Path to the module directory containing the dagger.json config file. Either local path or a remote git repo
 ```
 
 ### Options inherited from parent commands
@@ -270,7 +270,7 @@ dagger install github.com/shykes/daggerverse/ttlsh@16e40ec244966e55e36a13cb6e1ff
 ### Options
 
 ```
-  -m, --mod string    Path to the module directory containing the dagger.json config file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
+  -m, --mod string    Path to the module directory containing the dagger.json config file. Either local path or a remote git repo
   -n, --name string   Name to use for the dependency in the module. Defaults to the name of the module being installed.
 ```
 
@@ -377,7 +377,7 @@ EOF
 
 ```
       --doc string        Read query from file (defaults to reading from stdin)
-  -m, --mod string        Path to the module directory containing the dagger.json config file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
+  -m, --mod string        Path to the module directory containing the dagger.json config file. Either local path or a remote git repo
       --var strings       List of query variables, in key=value format
       --var-json string   Query variables in JSON format (overrides --var)
 ```

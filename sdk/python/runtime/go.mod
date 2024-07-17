@@ -3,10 +3,13 @@ module python-sdk
 go 1.22
 
 require (
+	github.com/distribution/reference v0.6.0
 	github.com/iancoleman/strcase v0.3.0
 	github.com/pelletier/go-toml/v2 v2.1.1
 	golang.org/x/sync v0.7.0
 )
+
+require github.com/opencontainers/go-digest v1.0.0 // indirect
 
 require (
 	github.com/99designs/gqlgen v0.17.49

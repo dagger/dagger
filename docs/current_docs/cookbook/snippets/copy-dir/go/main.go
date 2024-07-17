@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+
+	"dagger/my-module/internal/dagger"
 )
 
 type MyModule struct{}
@@ -10,8 +12,8 @@ type MyModule struct{}
 func (m *MyModule) CopyDirectory(
 	ctx context.Context,
 	// Source directory
-	source *Directory,
-) *Container {
+	source *dagger.Directory,
+) *dagger.Container {
 	return dag.Container().
 		From("alpine:latest").
 		WithDirectory("/src", source)

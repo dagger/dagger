@@ -3,11 +3,13 @@ package main
 import (
 	"context"
 	"fmt"
+
+	"dagger/my-module/internal/dagger"
 )
 
 type MyModule struct{}
 
-func (m *MyModule) Build(ctx context.Context, source *Directory) *File {
+func (m *MyModule) Build(ctx context.Context, source *dagger.Directory) *dagger.File {
 	return dag.Java().
 		WithJdk("17").
 		WithMaven("3.9.5").
@@ -16,9 +18,9 @@ func (m *MyModule) Build(ctx context.Context, source *Directory) *File {
 		File("target/spring-petclinic-3.2.0-SNAPSHOT.jar")
 }
 
-func (m *MyModule) Publish(ctx context.Context, source *Directory, version string, registryAddress string, registryUsername string, registryPassword *Secret, imageName string) (string, error) {
+func (m *MyModule) Publish(ctx context.Context, source *dagger.Directory, version string, registryAddress string, registryUsername string, registryPassword *dagger.Secret, imageName string) (string, error) {
 
-	return dag.Container(ContainerOpts{Platform: "linux/amd64"}).
+	return dag.Container(dagger.ContainerOpts{Platform: "linux/amd64"}).
 		From("eclipse-temurin:17-alpine").
 		WithLabel("org.opencontainers.image.title", "Java with Dagger").
 		WithLabel("org.opencontainers.image.version", version).

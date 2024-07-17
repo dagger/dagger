@@ -31,7 +31,7 @@ import (
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
-	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/mod/semver"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/analytics"
@@ -72,7 +72,6 @@ type daggerSession struct {
 
 	analytics analytics.Tracker
 
-	secretStore  *core.SecretStore
 	authProvider *auth.RegistryAuthProvider
 
 	cacheExporterCfgs []bkgw.CacheOptionsEntry
@@ -101,6 +100,7 @@ const (
 type daggerClient struct {
 	daggerSession *daggerSession
 	clientID      string
+	clientVersion string
 	secretToken   string
 
 	state   daggerClientState
@@ -108,6 +108,9 @@ type daggerClient struct {
 	// the number of active http requests to any endpoint from this client,
 	// used to determine when to cleanup the client+session
 	activeCount int
+
+	secretStore *core.SecretStore
+	socketStore *core.SocketStore
 
 	dagqlRoot *core.Query
 
@@ -130,7 +133,6 @@ type daggerClient struct {
 	llbSolver           *llbsolver.Solver
 	llbBridge           bkfrontend.FrontendLLBBridge
 	dialer              *net.Dialer
-	spanCtx             trace.SpanContext
 	bkClient            *buildkit.Client
 }
 
@@ -156,7 +158,6 @@ func (srv *Server) initializeDaggerSession(
 	sess.endpoints = map[string]http.Handler{}
 	sess.shutdownCh = make(chan struct{})
 	sess.services = core.NewServices()
-	sess.secretStore = core.NewSecretStore()
 	sess.authProvider = auth.NewRegistryAuthProvider()
 	sess.refs = map[buildkit.Reference]struct{}{}
 	sess.containers = map[bkgw.Container]struct{}{}
@@ -304,6 +305,13 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 type ClientInitOpts struct {
 	*engine.ClientMetadata
 
+	// If this is a nested client, the call that created the client (i.e. a function call or
+	// an exec with nesting enabled)
+	CallID *call.ID
+
+	// If this is a nested client, the client ID of the caller that created it
+	CallerClientID string
+
 	// If the client is running from a function in a module, this is the encoded dagQL ID
 	// of that module.
 	EncodedModuleID string
@@ -320,7 +328,18 @@ func (srv *Server) initializeDaggerClient(
 	failureCleanups *buildkit.Cleanups,
 	opts *ClientInitOpts,
 ) error {
-	// initialize all the buildkit state for the client
+	// initialize all the buildkit+session attachable state for the client
+	client.secretStore = core.NewSecretStore()
+	client.socketStore = core.NewSocketStore(srv.bkSessionManager)
+	if opts.CallID != nil {
+		if opts.CallerClientID == "" {
+			return fmt.Errorf("caller client ID is not set")
+		}
+		if err := srv.addClientResourcesFromID(ctx, client, opts.CallID, opts.CallerClientID, true); err != nil {
+			return fmt.Errorf("failed to add client resources from ID: %w", err)
+		}
+	}
+
 	wc, err := buildkit.AsWorkerController(srv.worker)
 	if err != nil {
 		return err
@@ -390,7 +409,7 @@ func (srv *Server) initializeDaggerClient(
 	// write progress for extra debugging if configured
 	bkLogsW := srv.buildkitLogSink
 	if bkLogsW != nil {
-		prefix := fmt.Sprintf("[buildkit] [trace=%s] [client=%s] ", client.spanCtx.TraceID(), client.clientID)
+		prefix := fmt.Sprintf("[buildkit] [client=%s] ", client.clientID)
 		bkLogsW = prefixw.New(bkLogsW, prefix)
 		statusCh := make(chan *bkclient.SolveStatus, 8)
 		pw, err := progressui.NewDisplay(bkLogsW, progressui.PlainMode)
@@ -402,27 +421,20 @@ func (srv *Server) initializeDaggerClient(
 	}
 
 	client.bkClient, err = buildkit.NewClient(ctx, &buildkit.Opts{
-		Worker:                 srv.worker,
-		SessionManager:         srv.bkSessionManager,
-		BkSession:              client.buildkitSession,
-		Job:                    client.job,
-		LLBSolver:              client.llbSolver,
-		LLBBridge:              client.llbBridge,
-		Dialer:                 client.dialer,
-		GetMainClientCaller:    client.getMainClientCaller,
-		Entitlements:           srv.entitlements,
-		SecretStore:            client.daggerSession.secretStore,
-		AuthProvider:           client.daggerSession.authProvider,
-		UpstreamCacheImporters: srv.cacheImporters,
-		UpstreamCacheImports:   client.daggerSession.cacheImporterCfgs,
-		Frontends:              srv.frontends,
+		Worker:               srv.worker,
+		SessionManager:       srv.bkSessionManager,
+		BkSession:            client.buildkitSession,
+		LLBBridge:            client.llbBridge,
+		Dialer:               client.dialer,
+		GetMainClientCaller:  client.getMainClientCaller,
+		Entitlements:         srv.entitlements,
+		UpstreamCacheImports: client.daggerSession.cacheImporterCfgs,
+		Frontends:            srv.frontends,
 
 		Refs:         client.daggerSession.refs,
 		RefsMu:       &client.daggerSession.refsMu,
 		Containers:   client.daggerSession.containers,
 		ContainersMu: &client.daggerSession.containersMu,
-
-		SpanCtx: client.spanCtx,
 
 		Interactive: client.daggerSession.interactive,
 	})
@@ -431,7 +443,6 @@ func (srv *Server) initializeDaggerClient(
 	}
 
 	// setup the graphql server + module/function state for the client
-
 	client.dagqlRoot = core.NewRoot(srv)
 
 	dag := dagql.NewServer(client.dagqlRoot)
@@ -445,6 +456,11 @@ func (srv *Server) initializeDaggerClient(
 
 	if opts.EncodedModuleID == "" {
 		client.deps = core.NewModDeps(client.dagqlRoot, []core.Mod{coreMod})
+		clientVersion := client.clientVersion
+		if !semver.IsValid(clientVersion) {
+			clientVersion = ""
+		}
+		coreMod.Dag.View = clientVersion
 	} else {
 		modID := new(call.ID)
 		if err := modID.Decode(opts.EncodedModuleID); err != nil {
@@ -499,22 +515,29 @@ func (srv *Server) clientFromContext(ctx context.Context) (*daggerClient, error)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get client metadata for session call: %w", err)
 	}
+	client, ok := srv.clientFromIDs(clientMetadata.SessionID, clientMetadata.ClientID)
+	if !ok {
+		return nil, fmt.Errorf("client %q not found", clientMetadata.ClientID)
+	}
+	return client, nil
+}
 
+func (srv *Server) clientFromIDs(sessID, clientID string) (*daggerClient, bool) {
 	srv.daggerSessionsMu.RLock()
 	defer srv.daggerSessionsMu.RUnlock()
-	sess, ok := srv.daggerSessions[clientMetadata.SessionID]
+	sess, ok := srv.daggerSessions[sessID]
 	if !ok {
-		return nil, fmt.Errorf("session %q not found", clientMetadata.SessionID)
+		return nil, false
 	}
 
 	sess.clientMu.RLock()
 	defer sess.clientMu.RUnlock()
-	client, ok := sess.clients[clientMetadata.ClientID]
+	client, ok := sess.clients[clientID]
 	if !ok {
-		return nil, fmt.Errorf("client %q not found", clientMetadata.ClientID)
+		return nil, false
 	}
 
-	return client, nil
+	return client, true
 }
 
 // initialize session+client if needed, return:
@@ -586,6 +609,7 @@ func (srv *Server) getOrInitClient(
 			state:         clientStateUninitialized,
 			daggerSession: sess,
 			clientID:      clientID,
+			clientVersion: opts.ClientVersion,
 			secretToken:   token,
 		}
 		sess.clients[clientID] = client
@@ -669,14 +693,22 @@ func (srv *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // in http headers since it includes arbitrary values from users in the function call metadata, which can exceed max header
 // size.
 func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Request, execMD *buildkit.ExecutionMetadata) {
+	clientVersion := engine.Version
+	if md, _ := engine.ClientMetadataFromHTTPHeaders(r.Header); md != nil {
+		clientVersion = md.ClientVersion
+	}
+
 	httpHandlerFunc(srv.serveHTTPToClient, &ClientInitOpts{
 		ClientMetadata: &engine.ClientMetadata{
 			ClientID:          execMD.ClientID,
+			ClientVersion:     clientVersion,
 			ClientSecretToken: execMD.SecretToken,
 			SessionID:         execMD.SessionID,
 			ClientHostname:    execMD.Hostname,
 			Labels:            map[string]string{},
 		},
+		CallID:              execMD.CallID,
+		CallerClientID:      execMD.CallerClientID,
 		EncodedModuleID:     execMD.EncodedModuleID,
 		EncodedFunctionCall: execMD.EncodedFunctionCall,
 	}).ServeHTTP(w, r)
@@ -813,7 +845,7 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 	// get the schema we're gonna serve to this client based on which modules they have loaded, if any
 	schema, err := client.deps.Schema(ctx)
 	if err != nil {
-		return httpErr(fmt.Errorf("failed to get schema: %w", err), http.StatusBadRequest)
+		return gqlErr(fmt.Errorf("failed to get schema: %w", err), http.StatusBadRequest)
 	}
 
 	gqlSrv := handler.NewDefaultServer(schema)
@@ -829,30 +861,14 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 	defer func() {
 		if v := recover(); v != nil {
 			bklog.G(ctx).Errorf("panic serving schema: %v %s", v, string(debug.Stack()))
-			// check whether this is a hijacked connection, if so we can't write any http errors to it
-			_, err := w.Write(nil)
-			if err == http.ErrHijacked {
-				return
-			}
-			gqlErr := &gqlerror.Error{
-				Message: "Internal Server Error",
-			}
-			code := http.StatusInternalServerError
 			switch v := v.(type) {
 			case error:
-				gqlErr.Err = v
-				gqlErr.Message = v.Error()
+				rerr = gqlErr(v, http.StatusInternalServerError)
 			case string:
-				gqlErr.Message = v
+				rerr = gqlErr(errors.New(v), http.StatusInternalServerError)
+			default:
+				rerr = gqlErr(errors.New("internal server error"), http.StatusInternalServerError)
 			}
-			res := graphql.Response{
-				Errors: gqlerror.List{gqlErr},
-			}
-			bytes, err := json.Marshal(res)
-			if err != nil {
-				panic(err)
-			}
-			http.Error(w, string(bytes), code)
 		}
 	}()
 
@@ -1024,7 +1040,16 @@ func (srv *Server) Secrets(ctx context.Context) (*core.SecretStore, error) {
 	if err != nil {
 		return nil, err
 	}
-	return client.daggerSession.secretStore, nil
+	return client.secretStore, nil
+}
+
+// The socket store for the current client
+func (srv *Server) Sockets(ctx context.Context) (*core.SocketStore, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return client.socketStore, nil
 }
 
 // A map of unique IDs for the result of a given cache entry set query, allowing further queries on the result
@@ -1088,6 +1113,34 @@ func httpErr(err error, code int) httpError {
 	return httpError{err, code}
 }
 
+func (e httpError) WriteTo(w http.ResponseWriter) {
+	http.Error(w, e.Error(), e.code)
+}
+
+type gqlError struct {
+	error
+	httpCode int
+}
+
+func gqlErr(err error, httpCode int) gqlError {
+	return gqlError{err, httpCode}
+}
+
+func (e gqlError) WriteTo(w http.ResponseWriter) {
+	gqlerr := &gqlerror.Error{
+		Err:     e.error,
+		Message: e.Error(),
+	}
+	res := graphql.Response{
+		Errors: gqlerror.List{gqlerr},
+	}
+	bytes, err := json.Marshal(res)
+	if err != nil {
+		panic(err)
+	}
+	http.Error(w, string(bytes), e.httpCode)
+}
+
 // httpHandlerFunc lets you write an http handler that just returns an error, which will be
 // turned into a 500 http response if non-nil, or a specific code if the error is of type httpError.
 // It also accepts a generic extra argument that will be passed to the handler function to support
@@ -1105,9 +1158,13 @@ func httpHandlerFunc[T any](fn func(http.ResponseWriter, *http.Request, T) error
 		}
 
 		var httpErr httpError
-		if errors.As(err, &httpErr) {
-			http.Error(w, httpErr.Error(), httpErr.code)
-		} else {
+		var gqlErr gqlError
+		switch {
+		case errors.As(err, &httpErr):
+			httpErr.WriteTo(w)
+		case errors.As(err, &gqlErr):
+			gqlErr.WriteTo(w)
+		default:
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	}

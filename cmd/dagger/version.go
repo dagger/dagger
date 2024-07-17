@@ -16,7 +16,7 @@ var versionCmd = &cobra.Command{
 	PersistentPreRun: func(*cobra.Command, []string) {},
 	Args:             cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println(long())
+		fmt.Fprintln(cmd.OutOrStdout(), long())
 	},
 }
 

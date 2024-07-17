@@ -219,7 +219,7 @@ func (EngineSuite) TestLocalCacheManualGC(ctx context.Context, t *testctx.T) {
 	}
 
 	// prune everything
-	_, err = c2.DaggerEngine().LocalCache().Prune(ctx)
+	err = c2.DaggerEngine().LocalCache().Prune(ctx)
 	require.NoError(t, err)
 	newEnts, err := c2.DaggerEngine().LocalCache().EntrySet().Entries(ctx)
 	require.NoError(t, err)

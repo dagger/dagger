@@ -14,16 +14,18 @@ Just-in-time files might be produced by a Dagger Function that:
 Here is an example of a linter Dagger Function that returns the linting rules used by it as a file:
 
 ```shell
-dagger -m github.com/dagger/dagger/linters/markdown@88d89e8d15ab6ad9ca4043a920d3cd735a6405fd call rules
+dagger call -m github.com/dagger/dagger/dev/ruff@a29dadbb5d9968784847a15fccc5629daf2985ae lint --source https://github.com/dagger/dagger report
 ```
 
-Once the command completes, you should see this output:
+Once the command completes, you should see something like this output:
 
 ```shell
-File evaluated. Use "dagger call rules --help" to see available sub-commands.
+_type: File
+name: ruff-report.json
+size: 1476
 ```
 
-This means that the function succeeded, and a `File` type representing the linting rules file was returned.
+This means that the function succeeded, and a `File` type representing the linting report file was returned.
 
 Here is another example of a file builder Dagger Function that returns a ZIP archive of the `cmd/dagger` directory in the Dagger GitHub repository:
 

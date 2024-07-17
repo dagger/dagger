@@ -57,7 +57,7 @@ const (
 )
 
 func init() {
-	moduleFlags.StringVarP(&moduleURL, "mod", "m", "", "Path to the module directory containing the dagger.json config file. Either local path (e.g. \"/path/to/some/dir\") or a github repo (e.g. \"github.com/dagger/dagger/path/to/some/subdir\")")
+	moduleFlags.StringVarP(&moduleURL, "mod", "m", "", "Path to the module directory containing the dagger.json config file. Either local path or a remote git repo")
 
 	listenCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	queryCmd.PersistentFlags().AddFlagSet(moduleFlags)
@@ -333,7 +333,7 @@ If not updating source or SDK, this is only required for IDE auto-completion/LSP
 			// ResolveFromCaller call first
 			modConf.Source = modConf.Source.ResolveFromCaller()
 
-			modSDK, err := modConf.Source.AsModule().SDK(ctx)
+			modSDK, err := modConf.Source.AsModule(dagger.ModuleSourceAsModuleOpts{EngineVersion: modules.EngineVersionLatest}).SDK(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to get module SDK: %w", err)
 			}
@@ -741,7 +741,7 @@ func optionalModCmdWrapper(
 			var loadedMod *dagger.Module
 			if modConf.FullyInitialized() {
 				loadedMod = modConf.Source.AsModule().Initialize()
-				_, err := loadedMod.Serve(ctx)
+				err := loadedMod.Serve(ctx)
 				if err != nil {
 					return fmt.Errorf("failed to serve module: %w", err)
 				}

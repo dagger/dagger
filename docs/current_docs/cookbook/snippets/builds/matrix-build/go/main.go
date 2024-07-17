@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"dagger/my-module/internal/dagger"
 	"fmt"
 )
 
@@ -11,8 +12,8 @@ type MyModule struct{}
 func (m *MyModule) Build(
 	ctx context.Context,
 	// Source code location
-	src *Directory,
-) *Directory {
+	src *dagger.Directory,
+) *dagger.Directory {
 	// define build matrix
 	gooses := []string{"linux", "darwin"}
 	goarches := []string{"amd64", "arm64"}

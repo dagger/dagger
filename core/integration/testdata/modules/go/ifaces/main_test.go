@@ -26,7 +26,7 @@ func TestIface(t *testing.T) {
 
 	t.Run("void", func(t *testing.T) {
 		t.Parallel()
-		_, err := test.Void(ctx, impl.AsTestCustomIface())
+		err := test.Void(ctx, impl.AsTestCustomIface())
 		require.NoError(t, err)
 	})
 
@@ -114,6 +114,26 @@ func TestIface(t *testing.T) {
 		bools, err := test.WithBoolList(impl.AsTestCustomIface(), []bool{false, true}).BoolList(ctx)
 		require.NoError(t, err)
 		require.Equal(t, []bool{false, true}, bools)
+	})
+
+	t.Run("withMany", func(t *testing.T) {
+		t.Parallel()
+		iface := test.
+			WithStr(impl.AsTestCustomIface(), "c").
+			WithInt(3).
+			WithBool(true)
+
+		str, err := iface.Str(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "c", str)
+
+		i, err := iface.Int(ctx)
+		require.NoError(t, err)
+		require.Equal(t, 3, i)
+
+		b, err := iface.Bool(ctx)
+		require.NoError(t, err)
+		require.Equal(t, true, b)
 	})
 
 	t.Run("obj", func(t *testing.T) {

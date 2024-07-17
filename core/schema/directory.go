@@ -319,6 +319,10 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent *core.Director
 	if err != nil {
 		return nil, err
 	}
+	secretStore, err := parent.Query.Secrets(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get secret store: %w", err)
+	}
 	return ctr.Build(
 		ctx,
 		parent,
@@ -326,6 +330,7 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent *core.Director
 		collectInputsSlice(args.BuildArgs),
 		args.Target,
 		secrets,
+		secretStore,
 	)
 }
 

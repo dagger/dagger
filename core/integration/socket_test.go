@@ -100,8 +100,9 @@ func (ContainerSuite) TestWithUnixSocketOwner(ctx context.Context, t *testctx.T)
 
 	l, err := net.Listen("unix", sock)
 	require.NoError(t, err)
-
-	defer l.Close()
+	t.Cleanup(func() {
+		l.Close()
+	})
 
 	socket := c.Host().UnixSocket(sock)
 

@@ -6,6 +6,7 @@ import (
 
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/bklog"
+	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql"
@@ -20,6 +21,11 @@ type InterfaceType struct {
 	typeDef *InterfaceTypeDef
 }
 
+type loadedIfaceImpl struct {
+	val     dagql.Object
+	valType ModType
+}
+
 var _ ModType = (*InterfaceType)(nil)
 
 func (iface *InterfaceType) ConvertFromSDKResult(ctx context.Context, value any) (dagql.Typed, error) {
@@ -31,39 +37,12 @@ func (iface *InterfaceType) ConvertFromSDKResult(ctx context.Context, value any)
 
 	// TODO: this seems expensive
 	fromID := func(id *call.ID) (dagql.Typed, error) {
-		deps, err := iface.mod.Query.IDDeps(ctx, id)
+		loadedImpl, err := iface.loadImpl(ctx, id)
 		if err != nil {
-			return nil, fmt.Errorf("schema: %w", err)
+			return nil, fmt.Errorf("load interface implementation: %w", err)
 		}
-		dag, err := deps.Schema(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("schema: %w", err)
-		}
-		val, err := dag.Load(ctx, id)
-		if err != nil {
-			return nil, fmt.Errorf("load interface ID %s: %w", id.Display(), err)
-		}
-
-		typeName := val.ObjectType().TypeName()
-
-		var checkType *TypeDef
-		if objType, found, err := deps.ModTypeFor(ctx, &TypeDef{
-			Kind: TypeDefKindObject,
-			AsObject: dagql.NonNull(&ObjectTypeDef{
-				Name: typeName,
-			}),
-		}); err == nil && found {
-			checkType = objType.TypeDef()
-		} else if ifaceType, found, err := deps.ModTypeFor(ctx, &TypeDef{
-			Kind: TypeDefKindInterface,
-			AsInterface: dagql.NonNull(&InterfaceTypeDef{
-				Name: typeName,
-			}),
-		}); err == nil && found {
-			checkType = ifaceType.TypeDef()
-		} else {
-			return nil, fmt.Errorf("could not find object or interface type for %q", typeName)
-		}
+		typeName := loadedImpl.val.ObjectType().TypeName()
+		checkType := loadedImpl.valType.TypeDef()
 
 		// Verify that the object provided actually implements the interface. This
 		// is also enforced by only adding "As*" fields to objects in a schema once
@@ -73,7 +52,8 @@ func (iface *InterfaceType) ConvertFromSDKResult(ctx context.Context, value any)
 		if ok := checkType.IsSubtypeOf(iface.TypeDef()); !ok {
 			return nil, fmt.Errorf("type %s does not implement interface %s", typeName, iface.typeDef.Name)
 		}
-		return val, nil
+
+		return loadedImpl.val, nil
 	}
 
 	switch value := value.(type) {
@@ -87,6 +67,80 @@ func (iface *InterfaceType) ConvertFromSDKResult(ctx context.Context, value any)
 		return fromID(value.ID())
 	default:
 		return nil, fmt.Errorf("unexpected interface value type for conversion from sdk result %T: %+v", value, value)
+	}
+}
+
+func (iface *InterfaceType) loadImpl(ctx context.Context, id *call.ID) (*loadedIfaceImpl, error) {
+	deps, err := iface.mod.Query.IDDeps(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("schema: %w", err)
+	}
+	dag, err := deps.Schema(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("schema: %w", err)
+	}
+	val, err := dag.Load(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("load interface ID %s: %w", id.Display(), err)
+	}
+
+	typeName := val.ObjectType().TypeName()
+
+	var modType ModType
+	var found bool
+
+	// try first as an object, then as an interface
+	modType, found, err = deps.ModTypeFor(ctx, &TypeDef{
+		Kind: TypeDefKindObject,
+		AsObject: dagql.NonNull(&ObjectTypeDef{
+			Name: typeName,
+		}),
+	})
+	if err != nil || !found {
+		modType, found, err = deps.ModTypeFor(ctx, &TypeDef{
+			Kind: TypeDefKindInterface,
+			AsInterface: dagql.NonNull(&InterfaceTypeDef{
+				Name: typeName,
+			}),
+		})
+	}
+	if err != nil || !found {
+		return nil, fmt.Errorf("could not find object or interface type for %q", typeName)
+	}
+
+	loadedImpl := &loadedIfaceImpl{
+		val:     val,
+		valType: modType,
+	}
+	return loadedImpl, nil
+}
+
+func (iface *InterfaceType) CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*call.ID) error {
+	switch value := value.(type) {
+	case dagql.Instance[*InterfaceAnnotatedValue]:
+		mod, ok := value.Self.UnderlyingType.SourceMod().(*Module)
+		if !ok {
+			return fmt.Errorf("unexpected source mod type %T", value.Self.UnderlyingType.SourceMod())
+		}
+		return value.Self.UnderlyingType.CollectCoreIDs(ctx, &ModuleObject{
+			Module:  mod,
+			TypeDef: value.Self.UnderlyingType.TypeDef().AsObject.Value,
+			Fields:  value.Self.Fields,
+		}, ids)
+
+	case dagql.Instance[*ModuleObject]:
+		loadedImpl, err := iface.loadImpl(ctx, value.ID())
+		if err != nil {
+			return fmt.Errorf("load interface implementation: %w", err)
+		}
+
+		return loadedImpl.valType.CollectCoreIDs(ctx, loadedImpl.val, ids)
+
+	case nil:
+		return nil
+
+	default:
+		return fmt.Errorf("unexpected interface value type for collecting IDs %T", value)
 	}
 }
 

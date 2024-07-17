@@ -417,7 +417,11 @@ func (spec *parsedObjectType) concreteFieldTypeCode(typeSpec ParsedType) (*State
 			s.Op("*")
 		}
 		if typeSpec.alias != "" {
-			s.Id(typeSpec.alias)
+			if typeSpec.moduleName == "" {
+				s.Id("dagger." + typeSpec.alias)
+			} else {
+				s.Id(typeSpec.alias)
+			}
 		} else {
 			tp := typeSpec.GoType()
 			if basic, ok := tp.(*types.Basic); ok {
@@ -444,7 +448,7 @@ func (spec *parsedObjectType) concreteFieldTypeCode(typeSpec ParsedType) (*State
 		s.Id(typeName(typeSpec))
 
 	case *parsedIfaceTypeReference:
-		s.Op("*").Id(formatIfaceImplName(typeSpec.name))
+		s.Op("*").Id(formatIfaceImplName(typeName(typeSpec)))
 
 	default:
 		return nil, fmt.Errorf("unsupported concrete field type %T", typeSpec)

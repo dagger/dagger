@@ -11,11 +11,11 @@ To start an interactive session for a container returned by a Dagger Function, u
 Here is an example of starting an interactive terminal with the Wolfi base container returned by the `Container()` function of the `wolfi` module:
 
 ```shell
-dagger call -m github.com/shykes/daggerverse/wolfi@v0.1.2 container --packages=cowsay terminal
+dagger call -m github.com/shykes/daggerverse/wolfi@v0.1.4 container --packages=cowsay terminal
 ```
 
 To start the same terminal with the `zsh` shell, use:
 
 ```shell
-dagger call -m github.com/shykes/daggerverse/wolfi@v0.1.2 container --packages=cowsay,zsh terminal --cmd=zsh
+dagger call -m github.com/shykes/daggerverse/wolfi@v0.1.4 container --packages=cowsay,zsh terminal --cmd=zsh
 ```

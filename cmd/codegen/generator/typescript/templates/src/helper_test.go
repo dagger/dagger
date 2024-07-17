@@ -27,5 +27,5 @@ func updateAndGetFixtures(t *testing.T, filepath, got string) string {
 
 func templateHelper(t *testing.T) *template.Template {
 	t.Helper()
-	return templates.New()
+	return templates.New("")
 }

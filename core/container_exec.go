@@ -104,7 +104,12 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 			spanName = buildkit.InternalPrefix + spanName
 		}
 
-		execMD.ClientID = identity.NewID()
+		if execMD.ClientID == "" {
+			execMD.ClientID = identity.NewID()
+		}
+		if execMD.CallerClientID == "" {
+			execMD.CallerClientID = clientMetadata.ClientID
+		}
 
 		// include the engine version so that these execs get invalidated if the engine/API change
 		runOpts = append(runOpts, llb.AddEnv(buildkit.DaggerEngineVersionEnv, engine.Version))
@@ -174,7 +179,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	}
 
 	for i, secret := range container.Secrets {
-		secretOpts := []llb.SecretOption{llb.SecretID(secret.Secret.Accessor)}
+		secretOpts := []llb.SecretOption{llb.SecretID(secret.Secret.LLBID())}
 
 		var secretDest string
 		switch {
@@ -205,7 +210,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		}
 
 		socketOpts := []llb.SSHOption{
-			llb.SSHID(ctrSocket.Source.SSHID()),
+			llb.SSHID(ctrSocket.Source.LLBID()),
 			llb.SSHSocketTarget(ctrSocket.ContainerPath),
 		}
 

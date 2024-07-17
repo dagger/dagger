@@ -158,9 +158,13 @@ func (spec *parsedIfaceType) ImplementationCode() (*Statement, error) {
 
 	// the ID method, which is not explicitly declared by the user but needed internally
 	idMethodCode, err := spec.concreteMethodCode(&funcTypeSpec{
-		name:         "ID",
-		argSpecs:     []paramSpec{{name: "ctx", isContext: true}},
-		returnSpec:   &parsedPrimitiveType{goType: types.Typ[types.String], alias: spec.idTypeName()},
+		name:     "ID",
+		argSpecs: []paramSpec{{name: "ctx", isContext: true}},
+		returnSpec: &parsedPrimitiveType{
+			goType:     types.Typ[types.String],
+			alias:      spec.idTypeName(),
+			moduleName: spec.moduleName,
+		},
 		returnsError: true,
 	})
 	if err != nil {

@@ -345,16 +345,23 @@ func (container *Container) Build(
 	buildArgs []BuildArg,
 	target string,
 	secrets []*Secret,
+	secretStore *SecretStore,
 ) (*Container, error) {
 	container = container.Clone()
 
 	container.Services.Merge(contextDir.Services)
 
+	secretNameToLLBID := make(map[string]string)
 	for _, secret := range secrets {
+		secretName, ok := secretStore.GetSecretName(secret.IDDigest)
+		if !ok {
+			return nil, fmt.Errorf("secret not found: %s", secret.IDDigest)
+		}
 		container.Secrets = append(container.Secrets, ContainerSecret{
 			Secret:    secret,
-			MountPath: fmt.Sprintf("/run/secrets/%s", secret.Name),
+			MountPath: fmt.Sprintf("/run/secrets/%s", secretName),
 		})
+		secretNameToLLBID[secretName] = secret.IDDigest.String()
 	}
 
 	// set image ref to empty string
@@ -404,7 +411,11 @@ func (container *Container) Build(
 	// FIXME: ew, this is a terrible way to pass this around
 	//nolint:staticcheck
 	solveCtx := context.WithValue(ctx, "secret-translator", func(name string) (string, error) {
-		return GetLocalSecretAccessor(ctx, container.Query, name)
+		llbID, ok := secretNameToLLBID[name]
+		if !ok {
+			return "", fmt.Errorf("secret not found: %s", name)
+		}
+		return llbID, nil
 	})
 
 	res, err := bk.Solve(solveCtx, bkgw.SolveRequest{
