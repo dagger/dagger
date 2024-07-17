@@ -41,6 +41,8 @@ type frontendPlain struct {
 	lastContextLock trace.SpanID
 	// lastContextTime is the time at which the lastContext was rendered at
 	lastContextTime time.Time
+	// lastContextStartTime is the time at which the lastContext first acquired the lock
+	lastContextStartTime time.Time
 	// lastContextDepth is a cached value to indicate the depth of the
 	// lastContext (since it may be relatively expensive to compute)
 	lastContextDepth int
@@ -49,6 +51,10 @@ type frontendPlain struct {
 	// access for - during this amount of time after a render, no context
 	// switches are allowed
 	contextHold time.Duration
+	// contextHoldMax is the amount of time that a span is allowed exclusive
+	// for - after this amount of time, a span's lock is evicted, even if it
+	// has continued to renew the lock.
+	contextHoldMax time.Duration
 
 	// output is the target to render to
 	output  *termenv.Output
@@ -104,9 +110,10 @@ func NewPlain() Frontend {
 		db:   db,
 		data: make(map[trace.SpanID]*spanData),
 
-		profile:     ColorProfile(),
-		output:      NewOutput(os.Stderr),
-		contextHold: 1 * time.Second,
+		profile:        ColorProfile(),
+		output:         NewOutput(os.Stderr),
+		contextHold:    1 * time.Second,
+		contextHoldMax: 10 * time.Second,
 
 		done:   make(chan struct{}),
 		ticker: time.NewTicker(50 * time.Millisecond),
@@ -537,9 +544,16 @@ func (fe *frontendPlain) stepPrefix(span *Span, dt *spanData) string {
 }
 
 func (fe *frontendPlain) renderContext(row *TraceTree) (int, bool) {
+	now := time.Now()
+
 	if row.Span.ID == fe.lastVertex() {
-		// this is the last vertex we rendered, we're already in the right context
-		return fe.lastContextDepth, true
+		// this is the last vertex we rendered, we're already in the right
+		// context: attempt to renew the lock and return
+		if now.Sub(fe.lastContextStartTime) < fe.contextHoldMax {
+			fe.lastContextLock = fe.lastVertex()
+			fe.lastContextTime = now
+			return fe.lastContextDepth, true
+		}
 	}
 
 	// determine the current context
@@ -554,7 +568,6 @@ func (fe *frontendPlain) renderContext(row *TraceTree) (int, bool) {
 	}
 	slices.Reverse(currentContext)
 
-	now := time.Now()
 	if switchContext {
 		// this context is not directly related to the last one, so we need to
 		// context-switch
@@ -590,6 +603,7 @@ func (fe *frontendPlain) renderContext(row *TraceTree) (int, bool) {
 	}
 	fe.lastContextLock = fe.lastVertex()
 	fe.lastContextDepth = depth
+	fe.lastContextStartTime = now
 	fe.lastContextTime = now
 	return depth, true
 }
