@@ -258,8 +258,8 @@ require (
 )
 
 require (
-	dagger.io/dagger v0.11.9
-	github.com/dagger/dagger/engine/distconsts v0.11.9
+	dagger.io/dagger v0.12.0
+	github.com/dagger/dagger/engine/distconsts v0.12.0
 )
 
 replace (

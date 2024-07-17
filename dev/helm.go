@@ -17,20 +17,20 @@ const (
 )
 
 type Helm struct {
-	Source *Directory // +private
+	Source *dagger.Directory // +private
 }
 
 func (h *Helm) Test(ctx context.Context) error {
 	_, err := h.chart().
-		WithExec([]string{"lint"}).
-		WithExec([]string{"lint", "--debug", "--namespace", "dagger", "--set", "magicache.token=hello-world", "--set", "magicache.enabled=true"}).
-		WithExec([]string{"template", ".", "--debug", "--namespace", "dagger", "--set", "magicache.token=hello-world", "--set", "magicache.enabled=true"}).
+		WithExec([]string{"helm", "lint"}).
+		WithExec([]string{"helm", "lint", "--debug", "--namespace", "dagger", "--set", "magicache.token=hello-world", "--set", "magicache.enabled=true"}).
+		WithExec([]string{"helm", "template", ".", "--debug", "--namespace", "dagger", "--set", "magicache.token=hello-world", "--set", "magicache.enabled=true"}).
 		Sync(ctx)
 
 	return err
 }
 
-func (h *Helm) chart() *Container {
+func (h *Helm) chart() *dagger.Container {
 	return dag.Container().
 		From(helmImage).
 		WithDirectory("/dagger-helm", h.Source).
@@ -43,7 +43,7 @@ func (h *Helm) SetVersion(
 
 	// Version to set the chart & app to, e.g. --version=v0.12.0
 	version string,
-) (*File, error) {
+) (*dagger.File, error) {
 	c := h.chart()
 	chartYaml, err := c.File("Chart.yaml").Contents(ctx)
 	if err != nil {
@@ -69,9 +69,9 @@ func (h *Helm) SetVersion(
 		return nil, err
 	}
 
-	updatedChartYaml := c.WithNewFile("Chart.yaml", ContainerWithNewFileOpts{
-		Contents: string(updatedChart),
-	}).File("Chart.yaml")
+	updatedChartYaml := c.
+		WithNewFile("Chart.yaml", string(updatedChart)).
+		File("Chart.yaml")
 
 	return updatedChartYaml, nil
 }

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"path"
 	"strings"
+
+	"github.com/dagger/dagger/dev/golangci/internal/dagger"
 )
 
 const (
@@ -18,7 +20,7 @@ const (
 // Lint a go codebase
 func (gl Golangci) Lint(
 	// The Go source directory to lint
-	source *Directory,
+	source *dagger.Directory,
 	// Lint a specific path within the source directory
 	// +optional
 	path string,
@@ -29,12 +31,12 @@ func (gl Golangci) Lint(
 // The result of running the GolangCI lint tool
 type LintRun struct {
 	// +private
-	Source *Directory
+	Source *dagger.Directory
 	// +private
 	Path string
 }
 
-func (run LintRun) Issues(ctx context.Context) ([]Issue, error) {
+func (run LintRun) Issues(ctx context.Context) ([]*Issue, error) {
 	report, err := run.parseReport(ctx)
 	if err != nil {
 		return nil, err
@@ -52,7 +54,7 @@ func (run LintRun) Assert(ctx context.Context) error {
 		summaries []string
 	)
 	for _, iss := range issues {
-		if iss.Severity != "error" {
+		if !iss.IsError() {
 			continue
 		}
 		errCount += 1
@@ -82,7 +84,7 @@ func (run LintRun) ErrorCount(ctx context.Context) (int, error) {
 }
 
 func (issue Issue) IsError() bool {
-	return issue.Severity == "error" || issue.Severity == ""
+	return issue.Severity == "error"
 }
 
 func (run LintRun) WarningCount(ctx context.Context) (int, error) {
@@ -100,7 +102,8 @@ func (run LintRun) WarningCount(ctx context.Context) (int, error) {
 }
 
 // Return a JSON report file for this run
-func (run LintRun) Report() *File {
+func (run LintRun) Report() *dagger.File {
+	home := "/root"
 	cmd := []string{
 		"golangci-lint", "run",
 		"-v",
@@ -110,18 +113,21 @@ func (run LintRun) Report() *File {
 		"--max-same-issues", "0",
 		"--out-format", "json",
 		"--issues-exit-code", "0",
+		"--config", path.Join(home, ".golangci.yml"),
 	}
 	return dag.
 		Container().
 		From(lintImage).
-		WithFile("/etc/golangci.yml", dag.CurrentModule().Source().File("lint-config.yml")).
-		WithEnvVariable("GOLANGCI_LINT_CONFIG", "/etc/golangci.yml").
+		// FIXME should be "${HOME}/.golangci.yml"
+		WithFile(path.Join(home, ".golangci.yml"), dag.CurrentModule().Source().File("lint-config.yml"), dagger.ContainerWithFileOpts{}).
 		WithMountedDirectory("/src", run.Source).
 		WithWorkdir(path.Join("/src", run.Path)).
 		// Uncomment to debug:
 		// WithEnvVariable("DEBUG_CMD", strings.Join(cmd, " ")).
 		// Terminal().
-		WithExec(cmd, ContainerWithExecOpts{RedirectStdout: "golangci-lint-report.json"}).
+		WithExec(cmd, dagger.ContainerWithExecOpts{
+			RedirectStdout: "golangci-lint-report.json",
+		}).
 		File("golangci-lint-report.json")
 }
 
@@ -137,20 +143,20 @@ type Position struct {
 }
 
 type Issue struct {
-	Text           string       `json:"Text"`
-	FromLinter     string       `json:"FromLinter"`
-	SourceLines    []string     `json:"SourceLines"`
-	Replacement    *Replacement `json:"Replacement,omitempty"`
-	Pos            Position     `json:"Pos"`
-	ExpectedNoLint bool         `json:"ExpectedNoLint"`
-	Severity       string       `json:"Severity"`
+	Text           string      `json:"Text"`
+	FromLinter     string      `json:"FromLinter"`
+	SourceLines    []string    `json:"SourceLines"`
+	Replacement    Replacement `json:"Replacement,omitempty"`
+	Pos            Position    `json:"Pos"`
+	ExpectedNoLint bool        `json:"ExpectedNoLint"`
+	Severity       string      `json:"Severity"`
 }
 
 func (issue Issue) Summary() string {
-	return fmt.Sprintf("%s:%d %s: %s",
+	return fmt.Sprintf("[%s] %s:%d: %s",
+		issue.FromLinter,
 		issue.Pos.Filename,
 		issue.Pos.Line,
-		issue.Severity,
 		issue.Text,
 	)
 }
@@ -160,7 +166,7 @@ func (issue Issue) Summary() string {
 // 1) mix lazy and non-lazy functions
 // 2) augment the schema with "smart' functions
 type reportSchema struct {
-	Issues []Issue `json:"Issues"`
+	Issues []*Issue `json:"Issues"`
 }
 
 func (run LintRun) parseReport(ctx context.Context) (*reportSchema, error) {
@@ -169,5 +175,16 @@ func (run LintRun) parseReport(ctx context.Context) (*reportSchema, error) {
 		return nil, err
 	}
 	var report reportSchema
-	return &report, json.Unmarshal([]byte(reportJSON), &report)
+	if err := json.Unmarshal([]byte(reportJSON), &report); err != nil {
+		return nil, err
+	}
+	for _, issue := range report.Issues {
+		// get the full path
+		issue.Pos.Filename = path.Join(run.Path, issue.Pos.Filename)
+		// normalize the severity
+		if issue.Severity == "" {
+			issue.Severity = "error"
+		}
+	}
+	return &report, nil
 }

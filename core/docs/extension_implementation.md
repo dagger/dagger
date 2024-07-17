@@ -56,7 +56,7 @@ When a resolver from an extension needs to be invoked:
 The runtime is expected to:
 
 1. Read `/inputs/dagger.json`
-   - If any of the types in the input are an "ID-able" dagger object (e.g. `File`, `Directory`, `Container`, etc.), then they will be be serialized as their ID string here and should be converted into the actual object when passed to the user code.
+   - If any of the types in the input are an "ID-able" dagger object (e.g. `File`, `Directory`, `Container`, etc.), then they will be serialized as their ID string here and should be converted into the actual object when passed to the user code.
 1. Use the `resolver` value to determine which code to execute
 1. Execute that code, receive the result
 1. JSON encode the result and write it to `/outputs/dagger.json`

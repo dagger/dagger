@@ -15,7 +15,7 @@ Here are a few examples of function chaining in action:
 - List the contents of the build directory returned by a Dagger Function, by chaining a call to the `Directory` object's `Entries()` function:
 
     ```shell
-    dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=https://github.com/dagger/dagger --args=./cmd/dagger entries
+    dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call build --source=https://github.com/dagger/dagger --args=./cmd/dagger entries
     ```
 
 - Print the contents of a file returned by a Dagger Function, by chaining a call to the `File` object's `Contents()` function:

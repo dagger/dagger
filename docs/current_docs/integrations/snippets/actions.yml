@@ -18,7 +18,7 @@ jobs:
           verb: call
           # assumes a Go project
           # modify to use different function(s) as needed
-          module: github.com/kpenfound/dagger-modules/golang@v0.1.5
+          module: github.com/kpenfound/dagger-modules/golang@v0.2.0
           args: build --project=. --args=.
           # assumes the Dagger Cloud token is in
           # a repository secret named DAGGER_CLOUD_TOKEN

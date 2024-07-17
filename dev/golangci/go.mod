@@ -1,4 +1,4 @@
-module golangci
+module github.com/dagger/dagger/dev/golangci
 
 go 1.22.4
 

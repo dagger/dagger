@@ -12,7 +12,7 @@ Here is an example of passing a host directory as argument to a Go builder Dagge
 
 ```shell
 git clone https://github.com/golang/example
-dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.8 call build --source=./example/hello --args=. directory --path=. entries
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call build --source=./example/hello --args=. directory --path=. entries
 ```
 
 Here is an example of passing a host file to a container builder Dagger Function using the `WithFile()` function:
