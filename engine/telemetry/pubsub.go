@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/moby/buildkit/identity"
@@ -250,6 +251,8 @@ func (ps *PubSub) MetricsHandler(rw http.ResponseWriter, r *http.Request) {
 	// TODO
 }
 
+const drainTimeout = 10 * time.Second
+
 func (ps *PubSub) Drain(client string, immediate bool) {
 	slog.Debug("draining", "client", client, "immediate", immediate)
 	ps.clientsL.Lock()
@@ -260,6 +263,15 @@ func (ps *PubSub) Drain(client string, immediate bool) {
 		trace.drainImmediately = immediate
 		trace.cond.Broadcast()
 		trace.cond.L.Unlock()
+		if !immediate && drainTimeout > 0 {
+			go func() {
+				<-time.After(drainTimeout)
+				trace.cond.L.Lock()
+				trace.drainImmediately = true
+				trace.cond.Broadcast()
+				trace.cond.L.Unlock()
+			}()
+		}
 	} else {
 		slog.Warn("draining nonexistant client", "client", client, "immediate", immediate)
 	}
