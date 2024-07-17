@@ -30,6 +30,7 @@ const (
 	ModuleSource string = "ModuleSource"
 	Module       string = "Module"
 	Platform     string = "Platform"
+	Socket       string = "Socket"
 )
 
 var (

@@ -3,9 +3,13 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net"
+	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/dagger/engine/distconsts"
@@ -754,6 +758,407 @@ func (m *Test) Mod(ctx context.Context, module *dagger.Module) *dagger.Module {
 			require.NoError(t, err)
 			require.Equal(t, testGitModuleRef(tc, "top-level"), out)
 		})
+	})
+}
+
+func (ModuleSuite) TestDaggerCallSocketArg(ctx context.Context, t *testctx.T) {
+	getHostSocket := func(t *testctx.T) (string, func()) {
+		sockDir := t.TempDir()
+		sockPath := filepath.Join(sockDir, "host.sock")
+		sock, err := net.Listen("unix", sockPath)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			sock.Close()
+		})
+
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				conn, err := sock.Accept()
+				if err != nil {
+					if !errors.Is(err, net.ErrClosed) {
+						t.Logf("failed to accept connection: %v", err)
+					}
+					return
+				}
+
+				_, err = conn.Write([]byte("yoyoyo"))
+				if err != nil {
+					conn.Close()
+					t.Logf("failed to write to connection: %v", err)
+					return
+				}
+				conn.Close()
+			}
+		}()
+
+		return sockPath, func() {
+			sock.Close()
+			wg.Wait()
+		}
+	}
+
+	t.Run("basic", func(ctx context.Context, t *testctx.T) {
+		modDir := t.TempDir()
+		err := os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
+
+import (
+	"context"
+	"fmt"
+
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {}
+
+func (m *Test) Fn(ctx context.Context, sock *dagger.Socket) error {
+	out, err := dag.Container().From("`+alpineImage+`").
+		WithExec([]string{"apk", "add", "netcat-openbsd"}).
+		WithUnixSocket("/var/run/host.sock", sock).
+		WithExec([]string{"nc", "-w", "5", "-U", "/var/run/host.sock"}).
+		Stdout(ctx)
+	if err != nil {
+		return err
+	}
+	if out != "yoyoyo" {
+		return fmt.Errorf("unexpected output: %s", out)
+	}
+	return nil
+}
+`), 0o644)
+		require.NoError(t, err)
+
+		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "init", "--source=.", "--name=test", "--sdk=go")
+		require.NoError(t, err)
+
+		sockPath, cleanup := getHostSocket(t)
+		defer cleanup()
+
+		_, err = hostDaggerExec(ctx, t, modDir, "call", "fn", "--sock", sockPath)
+		require.NoError(t, err)
+	})
+
+	t.Run("passed to another module", func(ctx context.Context, t *testctx.T) {
+		modDir := t.TempDir()
+		depModDir := filepath.Join(modDir, "dep")
+		require.NoError(t, os.MkdirAll(depModDir, 0o755))
+
+		err := os.WriteFile(filepath.Join(depModDir, "main.go"), []byte(`package main
+
+import (
+	"context"
+	"fmt"
+
+	"dagger/dep/internal/dagger"
+)
+
+type Dep struct {}
+
+func (m *Dep) Fn(ctx context.Context, sock *dagger.Socket) error {
+	out, err := dag.Container().From("`+alpineImage+`").
+		WithExec([]string{"apk", "add", "netcat-openbsd"}).
+		WithUnixSocket("/var/run/host.sock", sock).
+		WithExec([]string{"nc", "-w", "5", "-U", "/var/run/host.sock"}).
+		Stdout(ctx)
+	if err != nil {
+		return err
+	}
+	if out != "yoyoyo" {
+		return fmt.Errorf("unexpected output: %s", out)
+	}
+	return nil
+}
+`), 0o644)
+		require.NoError(t, err)
+
+		_, err = hostDaggerExec(ctx, t, depModDir, "--debug", "init", "--source=.", "--name=dep", "--sdk=go")
+		require.NoError(t, err)
+
+		err = os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
+
+import (
+	"context"
+
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {}
+
+func (m *Test) Fn(ctx context.Context, sock *dagger.Socket) error {
+	return dag.Dep().Fn(ctx, sock)
+}
+`), 0o644)
+		require.NoError(t, err)
+
+		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "init", "--source=.", "--name=test", "--sdk=go")
+		require.NoError(t, err)
+
+		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "install", depModDir)
+		require.NoError(t, err)
+
+		sockPath, cleanup := getHostSocket(t)
+		defer cleanup()
+
+		_, err = hostDaggerExec(ctx, t, modDir, "call", "fn", "--sock", sockPath)
+		require.NoError(t, err)
+	})
+
+	t.Run("passed embedded in arg", func(ctx context.Context, t *testctx.T) {
+		modDir := t.TempDir()
+		depModDir := filepath.Join(modDir, "dep")
+		require.NoError(t, os.MkdirAll(depModDir, 0o755))
+
+		err := os.WriteFile(filepath.Join(depModDir, "main.go"), []byte(`package main
+
+import (
+	"context"
+	"fmt"
+
+	"dagger/dep/internal/dagger"
+)
+
+type Dep struct {}
+
+func (m *Dep) Fn(ctx context.Context, ctr *dagger.Container) error {
+	out, err := ctr.Stdout(ctx)
+	if err != nil {
+		return err
+	}
+	if out != "yoyoyo" {
+		return fmt.Errorf("unexpected output: %s", out)
+	}
+	return nil
+}
+`), 0o644)
+		require.NoError(t, err)
+
+		_, err = hostDaggerExec(ctx, t, depModDir, "--debug", "init", "--source=.", "--name=dep", "--sdk=go")
+		require.NoError(t, err)
+
+		err = os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
+
+import (
+	"context"
+
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {}
+
+func (m *Test) Fn(ctx context.Context, sock *dagger.Socket) error {
+	ctr := dag.Container().From("`+alpineImage+`").
+		WithExec([]string{"apk", "add", "netcat-openbsd"}).
+		WithUnixSocket("/var/run/host.sock", sock).
+		WithExec([]string{"nc", "-w", "5", "-U", "/var/run/host.sock"})
+	err := dag.Dep().Fn(ctx, ctr)
+	return err
+}
+`), 0o644)
+		require.NoError(t, err)
+
+		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "init", "--source=.", "--name=test", "--sdk=go")
+		require.NoError(t, err)
+
+		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "install", depModDir)
+		require.NoError(t, err)
+
+		sockPath, cleanup := getHostSocket(t)
+		defer cleanup()
+
+		_, err = hostDaggerExec(ctx, t, modDir, "call", "fn", "--sock", sockPath)
+		require.NoError(t, err)
+	})
+
+	t.Run("passed back and forth", func(ctx context.Context, t *testctx.T) {
+		// Pass a container and a socket, have the caller attach the socket to the container, return that
+		// and then have the caller use it. This is mainly meant to exercise the code-paths involving
+		// client resources that a given client already knows about being handled when returned back to them
+		// via a call return value.
+
+		modDir := t.TempDir()
+		depModDir := filepath.Join(modDir, "dep")
+		require.NoError(t, os.MkdirAll(depModDir, 0o755))
+
+		err := os.WriteFile(filepath.Join(depModDir, "main.go"), []byte(`package main
+
+import (
+	"dagger/dep/internal/dagger"
+)
+
+type Dep struct {}
+
+func (m *Dep) Fn(ctr *dagger.Container, sock *dagger.Socket) *dagger.Container {
+	return ctr.WithUnixSocket("/var/run/host.sock", sock)
+}
+`), 0o644)
+		require.NoError(t, err)
+
+		_, err = hostDaggerExec(ctx, t, depModDir, "--debug", "init", "--source=.", "--name=dep", "--sdk=go")
+		require.NoError(t, err)
+
+		err = os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
+
+import (
+	"context"
+	"fmt"
+
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {}
+
+func (m *Test) Fn(ctx context.Context, sock *dagger.Socket) error {
+	ctr := dag.Container().From("`+alpineImage+`").
+		WithExec([]string{"apk", "add", "netcat-openbsd"})
+	out, err := dag.Dep().Fn(ctr, sock).
+		WithExec([]string{"nc", "-w", "5", "-U", "/var/run/host.sock"}).
+		Stdout(ctx)
+	if err != nil {
+		return err
+	}
+	if out != "yoyoyo" {
+		return fmt.Errorf("unexpected output: %s", out)
+	}
+	return nil
+}
+`), 0o644)
+		require.NoError(t, err)
+
+		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "init", "--source=.", "--name=test", "--sdk=go")
+		require.NoError(t, err)
+
+		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "install", depModDir)
+		require.NoError(t, err)
+
+		sockPath, cleanup := getHostSocket(t)
+		defer cleanup()
+
+		_, err = hostDaggerExec(ctx, t, modDir, "call", "fn", "--sock", sockPath)
+		require.NoError(t, err)
+	})
+
+	t.Run("nested exec", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		sockPath, cleanup := getHostSocket(t)
+		defer cleanup()
+
+		_, err := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+			WithNewFile("main.go", `package main
+
+import (
+	"context"
+	"fmt"
+
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {}
+
+func (m *Test) Fn(ctx context.Context, sock *dagger.Socket) error {
+	out, err := dag.Container().From("`+alpineImage+`").
+		WithExec([]string{"apk", "add", "netcat-openbsd"}).
+		WithUnixSocket("/var/run/host.sock", sock).
+		WithExec([]string{"nc", "-w", "5", "-U", "/var/run/host.sock"}).
+		Stdout(ctx)
+	if err != nil {
+		return err
+	}
+	if out != "yoyoyo" {
+		return fmt.Errorf("unexpected output: %s", out)
+	}
+	return nil
+}
+`,
+			).WithUnixSocket("/nested.sock", c.Host().UnixSocket(sockPath)).
+			With(daggerCall("fn", "--sock", "/nested.sock")).
+			Sync(ctx)
+		require.NoError(t, err)
+	})
+
+	t.Run("no implicit host access", func(ctx context.Context, t *testctx.T) {
+		// verify that a sneaky module can't use raw gql queries to access host sockets that they weren't passed
+
+		runContainerQuery := `query Run($sockID: SocketID!) {
+	container {
+		from(address: "` + alpineImage + `") {
+			withExec(args: ["apk", "add", "netcat-openbsd"]) {
+				withUnixSocket(path: "/var/run/host.sock", source: $sockID) {
+					withExec(args: ["stat", "/var/run/host.sock"]) {
+						stdout
+					}
+				}
+			}
+		}
+	}
+}
+`
+
+		modDir := t.TempDir()
+		err := os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
+
+import (
+	"context"
+	"fmt"
+	"strings"
+
+	"github.com/Khan/genqlient/graphql"
+)
+
+type Test struct{}
+
+type SocketIDResponse struct {
+	Host struct{ 
+		UnixSocket struct{ 
+			Id string 
+		} 
+	} 
+}
+
+func (m *Test) Fn(ctx context.Context, sockPath string, runContainerQuery string) error {
+	sockResp := &SocketIDResponse{}
+	resp := &graphql.Response{Data: sockResp}
+	err := dag.GraphQLClient().MakeRequest(ctx, &graphql.Request{
+		Query: "{host{unixSocket(path:\""+sockPath+"\"){id}}}",
+	}, resp)
+	if err != nil {
+		return fmt.Errorf("get socket id req: %w", err)
+	}
+
+	sockID := sockResp.Host.UnixSocket.Id
+	if sockID == "" {
+		return fmt.Errorf("unexpected response: %+v", resp)
+	}
+
+	resp = &graphql.Response{}
+	err = dag.GraphQLClient().MakeRequest(ctx, &graphql.Request{
+		Query: runContainerQuery,
+		Variables: map[string]interface{}{"sockID": sockID},
+	}, resp)
+	if err == nil {
+		return fmt.Errorf("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), fmt.Sprintf("socket %s not found", sockPath)) {
+		return fmt.Errorf("unexpected error: %w", err)
+	}
+	return nil
+}
+`), 0o644)
+		require.NoError(t, err)
+
+		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "init", "--source=.", "--name=test", "--sdk=go")
+		require.NoError(t, err)
+
+		sockPath, cleanup := getHostSocket(t)
+		defer cleanup()
+
+		_, err = hostDaggerExec(ctx, t, modDir, "call", "fn", "--sockPath", sockPath, "--runContainerQuery", runContainerQuery)
+		require.NoError(t, err)
 	})
 }
 

@@ -21,7 +21,7 @@ Here are a few examples of function chaining in action:
 - Print the contents of a file returned by a Dagger Function, by chaining a call to the `File` object's `Contents()` function:
 
     ```shell
-    dagger -m github.com/dagger/dagger/linters/markdown@88d89e8d15ab6ad9ca4043a920d3cd735a6405fd call rules contents
+dagger call -m github.com/dagger/dagger/dev/ruff@a29dadbb5d9968784847a15fccc5629daf2985ae lint --source https://github.com/dagger/dagger report contents
     ```
 
 - Publish a container image of a container returned by a Dagger Function, by chaining a call to the `Container` object's `Publish()` function:

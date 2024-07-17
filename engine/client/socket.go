@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"os"
 
+	"github.com/dagger/dagger/engine"
 	"github.com/moby/buildkit/session/sshforward"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -15,8 +17,13 @@ import (
 
 type SocketProvider struct {
 	EnableHostNetworkAccess bool
-	// optional, defaults to net.Dial if not set
-	Dialer func(network, addr string) (net.Conn, error)
+
+	// Dialer to use for tcp/udp socket. Optional, defaults to net.Dial if not set
+	IPDialer func(network, addr string) (net.Conn, error)
+
+	// If unix sock paths need to be remapped (i.e. nested execs), use this function to do so.
+	// Otherwise paths are passed through as-is.
+	UnixPathMapper func(path string) (string, error)
 }
 
 func (p SocketProvider) Register(server *grpc.Server) {
@@ -35,7 +42,23 @@ func (p SocketProvider) CheckAgent(ctx context.Context, req *sshforward.CheckAge
 		return nil, status.Errorf(codes.InvalidArgument, "invalid id: %s", err)
 	}
 	switch u.Scheme {
-	case "unix", "tcp", "udp":
+	case "unix":
+		path := u.Path
+		if p.UnixPathMapper != nil {
+			path, err = p.UnixPathMapper(path)
+			if err != nil {
+				return nil, status.Errorf(codes.Internal, "failed to map unix path: %s", err)
+			}
+		}
+
+		stat, err := os.Stat(path)
+		if err != nil {
+			return nil, status.Errorf(codes.NotFound, "socket %s not found: %s", u.Path, err)
+		}
+		if stat.Mode()&os.ModeSocket == 0 {
+			return nil, status.Errorf(codes.InvalidArgument, "not a socket: %s", u.Path)
+		}
+	case "tcp", "udp":
 	default:
 		return nil, status.Errorf(codes.InvalidArgument, "invalid id: unsupported scheme %q", u.Scheme)
 	}
@@ -46,33 +69,39 @@ func (p SocketProvider) ForwardAgent(stream sshforward.SSH_ForwardAgentServer) e
 	if !p.EnableHostNetworkAccess {
 		return status.Errorf(codes.PermissionDenied, "host access is disabled")
 	}
-	opts, ok := metadata.FromIncomingContext(stream.Context()) // if no metadata continue with empty object
+	opts, ok := metadata.FromIncomingContext(stream.Context())
 	if !ok {
 		return status.Errorf(codes.InvalidArgument, "no metadata")
 	}
-	var connURL *url.URL
-	if v, ok := opts[sshforward.KeySSHID]; ok && len(v) > 0 && v[0] != "" {
-		var err error
-		connURL, err = url.Parse(v[0])
-		if err != nil {
-			return status.Errorf(codes.InvalidArgument, "invalid id: %s", err)
-		}
+	v := opts.Get(engine.SocketURLEncodedKey)
+	if len(v) == 0 || v[0] == "" {
+		return status.Errorf(codes.InvalidArgument, "missing socket url")
 	}
+	connURL, err := url.Parse(v[0])
+	if err != nil {
+		return status.Errorf(codes.InvalidArgument, "invalid socket url %q: %s", v[0], err)
+	}
+
 	var network, addr string
+	dialer := net.Dial
 	switch connURL.Scheme {
 	case "unix":
 		network = "unix"
 		addr = connURL.Path
+		if p.UnixPathMapper != nil {
+			addr, err = p.UnixPathMapper(addr)
+			if err != nil {
+				return status.Errorf(codes.Internal, "failed to map unix path: %s", err)
+			}
+		}
 	case "tcp", "udp":
 		network = connURL.Scheme
 		addr = connURL.Host
+		if p.IPDialer != nil {
+			dialer = p.IPDialer
+		}
 	default:
-		return status.Errorf(codes.InvalidArgument, "invalid id: unsupported scheme %q", connURL.Scheme)
-	}
-
-	dialer := p.Dialer
-	if dialer == nil {
-		dialer = net.Dial
+		return status.Errorf(codes.InvalidArgument, "invalid socket url: unsupported scheme %q", connURL.Scheme)
 	}
 
 	return (&socketProxy{

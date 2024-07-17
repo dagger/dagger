@@ -11,6 +11,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/opencontainers/go-digest"
 )
 
 // CoreMod is a special implementation of Mod for our core API, which is not *technically* a true module yet
@@ -269,6 +270,10 @@ func (obj *CoreModScalar) ConvertToSDKInput(ctx context.Context, value dagql.Typ
 	return s.DecodeInput(string(val.Value))
 }
 
+func (obj *CoreModScalar) CollectCoreIDs(context.Context, dagql.Typed, map[digest.Digest]*call.ID) error {
+	return nil
+}
+
 func (obj *CoreModScalar) SourceMod() core.Mod {
 	return obj.coreMod
 }
@@ -325,6 +330,21 @@ func (obj *CoreModObject) ConvertToSDKInput(ctx context.Context, value dagql.Typ
 	}
 }
 
+func (obj *CoreModObject) CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*call.ID) error {
+	if value == nil {
+		return nil
+	}
+	switch x := value.(type) {
+	case dagql.Input:
+		return nil
+	case dagql.Object:
+		ids[x.ID().Digest()] = x.ID()
+		return nil
+	default:
+		return fmt.Errorf("%T.CollectCoreIDs: unknown type %T", obj, value)
+	}
+}
+
 func (obj *CoreModObject) SourceMod() core.Mod {
 	return obj.coreMod
 }
@@ -361,6 +381,10 @@ func (enum *CoreModEnum) ConvertToSDKInput(ctx context.Context, value dagql.Type
 		return nil, fmt.Errorf("CoreModEnum.ConvertToSDKInput: found no enum type")
 	}
 	return s.DecodeInput(value)
+}
+
+func (enum *CoreModEnum) CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*call.ID) error {
+	return nil
 }
 
 func (enum *CoreModEnum) SourceMod() core.Mod {

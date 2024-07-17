@@ -59,6 +59,14 @@ type Server interface {
 	// The secret store for the current client
 	Secrets(context.Context) (*SecretStore, error)
 
+	// The socket store for the current client
+	Sockets(context.Context) (*SocketStore, error)
+
+	// Add client-isolated resources like secrets, sockets, etc. to the current client's session based
+	// on anything embedded in the given ID. skipTopLevel, if true, will result in the leaf selection
+	// of the ID to be skipped when walking the ID to find these resources.
+	AddClientResourcesFromID(ctx context.Context, id *call.ID, sourceClientID string, skipTopLevel bool) error
+
 	// The auth provider for the current client
 	Auth(context.Context) (*auth.RegistryAuthProvider, error)
 
@@ -126,14 +134,6 @@ func (q *Query) NewContainer(platform Platform) *Container {
 	}
 }
 
-func (q *Query) NewSecret(name string, accessor string) *Secret {
-	return &Secret{
-		Query:    q,
-		Name:     name,
-		Accessor: accessor,
-	}
-}
-
 func (q *Query) NewHost() *Host {
 	return &Host{
 		Query: q,
@@ -163,13 +163,11 @@ func (q *Query) NewTunnelService(ctx context.Context, upstream dagql.Instance[*S
 	}
 }
 
-func (q *Query) NewHostService(ctx context.Context, upstream string, ports []PortForward, sessionID string) *Service {
+func (q *Query) NewHostService(ctx context.Context, socks []*Socket) *Service {
 	connectServiceEffect(ctx)
 	return &Service{
-		Query:         q,
-		HostUpstream:  upstream,
-		HostPorts:     ports,
-		HostSessionID: sessionID,
+		Query:       q,
+		HostSockets: socks,
 	}
 }
 

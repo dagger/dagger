@@ -10,14 +10,21 @@ import (
 
 func TestSecretStore(t *testing.T) {
 	store := NewSecretStore()
-	store.AddSecret(context.Background(), "foo", []byte("bar"))
-	result, err := store.GetSecret(context.Background(), "foo")
-	require.NoError(t, err)
-	require.Equal(t, []byte("bar"), result)
+	require.NoError(t, store.AddSecret(&Secret{
+		Query:    &Query{},
+		IDDigest: "dgst",
+	}, "foo", []byte("bar")))
+	require.True(t, store.HasSecret("dgst"))
+	name, ok := store.GetSecretName("dgst")
+	require.True(t, ok)
+	require.Equal(t, "foo", name)
+	plaintext, ok := store.GetSecretPlaintext("dgst")
+	require.True(t, ok)
+	require.Equal(t, []byte("bar"), plaintext)
 }
 
 func TestSecretStoreNotFound(t *testing.T) {
 	store := NewSecretStore()
-	_, err := store.GetSecret(context.Background(), "foo")
+	_, err := store.AsBuildkitSecretStore().GetSecret(context.Background(), "foo")
 	require.ErrorIs(t, err, secrets.ErrNotFound)
 }

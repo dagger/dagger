@@ -42,13 +42,8 @@ type Service struct {
 	// TunnelPorts configures the port forwarding rules for the tunnel.
 	TunnelPorts []PortForward `json:"tunnel_ports,omitempty"`
 
-	// HostUpstream is the host address (i.e. hostname or IP) for the reverse
-	// tunnel to request through the host.
-	HostUpstream string `json:"reverse_tunnel_upstream_addr,omitempty"`
-	// HostPorts configures the port forwarding rules for the host.
-	HostPorts []PortForward `json:"host_ports,omitempty"`
-	// HostSessionID is the session ID of the host (could differ from main client in the case of nested execs).
-	HostSessionID string `json:"host_session_id,omitempty"`
+	// The sockets on the host to reverse tunnel
+	HostSockets []*Socket `json:"host_sockets,omitempty"`
 }
 
 func (*Service) Type() *ast.Type {
@@ -75,7 +70,7 @@ func (svc *Service) Clone() *Service {
 		cp.TunnelUpstream.Self = cp.TunnelUpstream.Self.Clone()
 	}
 	cp.TunnelPorts = cloneSlice(cp.TunnelPorts)
-	cp.HostPorts = cloneSlice(cp.HostPorts)
+	cp.HostSockets = cloneSlice(cp.HostSockets)
 	return &cp
 }
 
@@ -98,7 +93,7 @@ func (svc *Service) Hostname(ctx context.Context, id *call.ID) (string, error) {
 
 		return upstream.Host, nil
 	case svc.Container != nil, // container=>container
-		svc.HostUpstream != "": // container=>host
+		len(svc.HostSockets) > 0: // container=>host
 		return network.HostHash(id.Digest()), nil
 	default:
 		return "", errors.New("unknown service type")
@@ -107,7 +102,7 @@ func (svc *Service) Hostname(ctx context.Context, id *call.ID) (string, error) {
 
 func (svc *Service) Ports(ctx context.Context, id *call.ID) ([]Port, error) {
 	switch {
-	case svc.TunnelUpstream != nil, svc.HostUpstream != "":
+	case svc.TunnelUpstream != nil, len(svc.HostSockets) > 0:
 		svcs, err := svc.Query.Services(ctx)
 		if err != nil {
 			return nil, err
@@ -161,18 +156,22 @@ func (svc *Service) Endpoint(ctx context.Context, id *call.ID, port int, scheme 
 
 			port = tunnel.Ports[0].Port
 		}
-	case svc.HostUpstream != "":
+	case len(svc.HostSockets) > 0:
 		host, err = svc.Hostname(ctx, id)
 		if err != nil {
 			return "", err
 		}
 
 		if port == 0 {
-			if len(svc.HostPorts) == 0 {
-				return "", fmt.Errorf("no ports")
+			socketStore, err := svc.Query.Sockets(ctx)
+			if err != nil {
+				return "", fmt.Errorf("failed to get socket store: %w", err)
 			}
-
-			port = svc.HostPorts[0].FrontendOrBackendPort()
+			portForward, ok := socketStore.GetSocketPortForward(svc.HostSockets[0].IDDigest)
+			if !ok {
+				return "", fmt.Errorf("socket not found: %s", svc.HostSockets[0].IDDigest)
+			}
+			port = portForward.FrontendOrBackendPort()
 		}
 	default:
 		return "", fmt.Errorf("unknown service type")
@@ -216,7 +215,7 @@ func (svc *Service) Start(
 		return svc.startContainer(ctx, id, interactive, forwardStdin, forwardStdout, forwardStderr)
 	case svc.TunnelUpstream != nil:
 		return svc.startTunnel(ctx, id)
-	case svc.HostUpstream != "":
+	case len(svc.HostSockets) > 0:
 		return svc.startReverseTunnel(ctx, id)
 	default:
 		return nil, fmt.Errorf("unknown service type")
@@ -626,6 +625,11 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
+	sockStore, err := svc.Query.Sockets(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get socket store: %w", err)
+	}
+
 	// we don't need a full container, just a CNI provisioned network namespace to listen in
 	netNS, err := bk.NewNetworkNamespace(ctx, fullHost)
 	if err != nil {
@@ -633,13 +637,17 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 	}
 
 	checkPorts := []Port{}
-	descs := make([]string, 0, len(svc.HostPorts))
-	for _, p := range svc.HostPorts {
-		desc := fmt.Sprintf("tunnel %s %d -> %d", p.Protocol, p.FrontendOrBackendPort(), p.Backend)
+	descs := make([]string, 0, len(svc.HostSockets))
+	for _, sock := range svc.HostSockets {
+		port, ok := sockStore.GetSocketPortForward(sock.IDDigest)
+		if !ok {
+			return nil, fmt.Errorf("socket not found: %s", sock.IDDigest)
+		}
+		desc := fmt.Sprintf("tunnel %s %d -> %d", port.Protocol, port.FrontendOrBackendPort(), port.Backend)
 		descs = append(descs, desc)
 		checkPorts = append(checkPorts, Port{
-			Port:        p.FrontendOrBackendPort(),
-			Protocol:    p.Protocol,
+			Port:        port.FrontendOrBackendPort(),
+			Protocol:    port.Protocol,
 			Description: &desc,
 		})
 	}
@@ -657,12 +665,10 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 	}()
 
 	tunnel := &c2hTunnel{
-		bk:                 bk,
-		ns:                 netNS,
-		upstreamHost:       svc.HostUpstream,
-		tunnelServiceHost:  fullHost,
-		tunnelServicePorts: svc.HostPorts,
-		sessionID:          svc.HostSessionID,
+		bk:        bk,
+		ns:        netNS,
+		socks:     svc.HostSockets,
+		sockStore: sockStore,
 	}
 
 	// NB: decouple from the incoming ctx cancel and add our own
