@@ -103,6 +103,7 @@ func (run LintRun) WarningCount(ctx context.Context) (int, error) {
 
 // Return a JSON report file for this run
 func (run LintRun) Report() *dagger.File {
+	home := "/root"
 	cmd := []string{
 		"golangci-lint", "run",
 		"-v",
@@ -112,17 +113,21 @@ func (run LintRun) Report() *dagger.File {
 		"--max-same-issues", "0",
 		"--out-format", "json",
 		"--issues-exit-code", "0",
+		"--config", path.Join(home, ".golangci.yml"),
 	}
 	return dag.
 		Container().
 		From(lintImage).
+		// FIXME should be "${HOME}/.golangci.yml"
+		WithFile(path.Join(home, ".golangci.yml"), dag.CurrentModule().Source().File("lint-config.yml"), dagger.ContainerWithFileOpts{}).
 		WithMountedDirectory("/src", run.Source).
-		WithFile("/src/.golangci.yml", dag.CurrentModule().Source().File("lint-config.yml")).
 		WithWorkdir(path.Join("/src", run.Path)).
 		// Uncomment to debug:
 		// WithEnvVariable("DEBUG_CMD", strings.Join(cmd, " ")).
 		// Terminal().
-		WithExec(cmd, dagger.ContainerWithExecOpts{RedirectStdout: "golangci-lint-report.json"}).
+		WithExec(cmd, dagger.ContainerWithExecOpts{
+			RedirectStdout: "golangci-lint-report.json",
+		}).
 		File("golangci-lint-report.json")
 }
 
