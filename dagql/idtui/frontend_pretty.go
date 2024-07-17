@@ -655,6 +655,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		return fe, nil
 
 	case tea.KeyMsg:
+		lastKey := fe.pressedKey
 		fe.pressedKey = msg.String()
 		fe.pressedKeyAt = time.Now()
 		switch msg.String() {
@@ -687,8 +688,10 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		case "home":
 			fe.goStart()
 			return fe, nil
-		case "end", " ":
+		case "end", "G", " ":
 			fe.goEnd()
+			fe.pressedKey = "end"
+			fe.pressedKeyAt = time.Now()
 			return fe, nil
 		case "esc":
 			fe.zoomed = fe.db.PrimarySpan
@@ -726,10 +729,20 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 			fe.zoomed = fe.focused
 			fe.recalculateViewLocked()
 			return fe, nil
-		default:
-			return fe, nil
 		}
 
+		switch lastKey { //nolint:gocritic
+		case "g":
+			switch msg.String() {
+			case "g":
+				fe.goStart()
+				fe.pressedKey = "home"
+				fe.pressedKeyAt = time.Now()
+				return fe, nil
+			}
+		}
+
+		return fe, nil
 	case tea.WindowSizeMsg:
 		fe.setWindowSizeLocked(msg)
 		return fe, nil
