@@ -56,8 +56,7 @@ class Resolver(ABC):
     origin: type | None
 
     @abstractproperty
-    def return_type(self) -> type:
-        ...
+    def return_type(self) -> type: ...
 
     @abstractmethod
     def register(self, typedef: dagger.TypeDef) -> dagger.TypeDef:
@@ -69,8 +68,7 @@ class Resolver(ABC):
         converter: cattrs.Converter,
         root: object | None,
         inputs: Mapping[APIName, Any],
-    ) -> Any:
-        ...
+    ) -> Any: ...
 
 
 @dataclasses.dataclass(kw_only=True, slots=True)
@@ -336,7 +334,7 @@ class FunctionResolver(Resolver, Generic[P, R]):
 
             try:
                 kwargs[python_name] = await asyncify(converter.structure, value, type_)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 msg = transform_error(
                     e,
                     f"Invalid argument `{param.name}`",
@@ -383,12 +381,10 @@ class Function(Generic[P, R]):
         self.resolver.origin = owner
 
     @overload
-    def __get__(self, instance: None, owner: None = None) -> Self:
-        ...
+    def __get__(self, instance: None, owner: None = None) -> Self: ...
 
     @overload
-    def __get__(self, instance: object, owner: None = None) -> Func[P, R]:
-        ...
+    def __get__(self, instance: object, owner: None = None) -> Func[P, R]: ...
 
     def __get__(self, instance: object | None, owner: None = None) -> Func[P, R] | Self:
         if instance is None:

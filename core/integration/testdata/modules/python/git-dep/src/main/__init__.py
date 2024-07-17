@@ -14,12 +14,7 @@ from dagger import dag, function, object_type
 class GitDep:
     @function
     async def echo(self, msg: str) -> str:
-        return await (
-            dag.container()
-            .from_("alpine")
-            .with_exec(["echo", msg])
-            .stdout()
-        )
+        return await dag.container().from_("alpine").with_exec(["echo", msg]).stdout()
 
     @function
     async def git_version(self) -> str:

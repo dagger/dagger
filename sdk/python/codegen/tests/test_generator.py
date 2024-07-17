@@ -26,7 +26,7 @@ from codegen.generator import Enum as EnumHandler
 from codegen.generator import Scalar as ScalarHandler
 
 
-@pytest.fixture()
+@pytest.fixture
 def ctx():
     return Context(
         ids=frozenset({}),

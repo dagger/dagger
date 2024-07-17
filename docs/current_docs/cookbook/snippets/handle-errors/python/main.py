@@ -7,14 +7,12 @@ class MyModule:
     async def test(self) -> str:
         """Generate an error"""
         try:
-            return (
-                await (
-                    dag.container()
-                    .from_("alpine")
-                    # ERROR: cat: read error: Is a directory
-                    .with_exec(["cat", "/"])
-                    .stdout()
-                )
+            return await (
+                dag.container()
+                .from_("alpine")
+                # ERROR: cat: read error: Is a directory
+                .with_exec(["cat", "/"])
+                .stdout()
             )
         except DaggerError as e:
             # DaggerError is the base class for all errors raised by dagger

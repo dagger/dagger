@@ -21,8 +21,8 @@ async def test_context_manager_provision(alpine_image: str):
 
     async with dagger.connection():
         assert conn.is_connected(), "Connection should be established."
-        out = await (
-            dag.container()
+        out = (
+            await dag.container()
             .from_(alpine_image)
             .with_exec(["echo", "-n", "hello"])
             .stdout()
@@ -72,8 +72,8 @@ class TestConnectionManagement:
     async def test_connect_and_close(self, alpine_image: str):
         conn = await dagger.connect()
         assert conn.is_connected(), "Connection should be established."
-        out = await (
-            dag.container()
+        out = (
+            await dag.container()
             .from_(alpine_image)
             .with_exec(["echo", "-n", "hello"])
             .stdout()
@@ -83,8 +83,8 @@ class TestConnectionManagement:
 
     async def test_connect_and_global_close(self, alpine_image: str):
         await dagger.connect()
-        out = await (
-            dag.container()
+        out = (
+            await dag.container()
             .from_(alpine_image)
             .with_exec(["echo", "-n", "hello"])
             .stdout()
@@ -93,8 +93,8 @@ class TestConnectionManagement:
         await dagger.close()
 
     async def test_lazy_connect_and_global_close(self, alpine_image: str):
-        out = await (
-            dag.container()
+        out = (
+            await dag.container()
             .from_(alpine_image)
             .with_exec(["echo", "-n", "hello"])
             .stdout()

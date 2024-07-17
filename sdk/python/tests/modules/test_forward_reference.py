@@ -6,8 +6,7 @@ mod = Module()
 @mod.object_type
 class Foo:
     @mod.function
-    def method(self) -> "Foo":
-        ...
+    def method(self) -> "Foo": ...
 
 
 def test_method_returns_resolved_forward_reference():

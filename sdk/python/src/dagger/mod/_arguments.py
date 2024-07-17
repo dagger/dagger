@@ -34,8 +34,7 @@ class Arg:
     Example usage:
 
     >>> @function
-    ... def pull(from_: Annotated[str, Arg("from")]):
-    ...     ...
+    ... def pull(from_: Annotated[str, Arg("from")]): ...
     """
 
     name: APIName

@@ -23,16 +23,15 @@ class MyModule:
     async def test(self) -> TestResult:
         """Handle errors"""
         try:
-            ctr = (
-                await (
-                    dag.container().from_("alpine")
-                    # add script with execution permission to simulate a testing tool.
-                    .with_new_file("run-tests", SCRIPT, permissions=0o750)
-                    # if the exit code isn't needed: "run-tests; true"
-                    .with_exec(["sh", "-c", "/run-tests; echo -n $? > /exit_code"])
-                    # the result of `sync` is the container, which allows continued chaining
-                    .sync()
-                )
+            ctr = await (
+                dag.container()
+                .from_("alpine")
+                # add script with execution permission to simulate a testing tool.
+                .with_new_file("run-tests", SCRIPT, permissions=0o750)
+                # if the exit code isn't needed: "run-tests; true"
+                .with_exec(["sh", "-c", "/run-tests; echo -n $? > /exit_code"])
+                # the result of `sync` is the container, which allows continued chaining
+                .sync()
             )
 
             # save report for inspection.

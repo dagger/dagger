@@ -55,7 +55,7 @@ async def _setup(
         monkeypatch.setattr(download.Downloader, "CLI_BASE_URL", base_url)
 
 
-@pytest.fixture()
+@pytest.fixture
 async def mock_cli_server(tmp_path_factory: pytest.TempPathFactory):
     async with AsyncExitStack() as stack:
 
@@ -105,7 +105,7 @@ def create_archive(cli_path: pathlib.Path, archive_path: pathlib.Path):
                 tar.addfile(tarinfo, f)
 
 
-@pytest.fixture()
+@pytest.fixture
 async def cache_dir(
     tmp_path_factory: pytest.TempPathFactory,
     monkeypatch: pytest.MonkeyPatch,
@@ -118,9 +118,9 @@ async def cache_dir(
     return cache_dir
 
 
-@pytest.mark.anyio()
-@pytest.mark.slow()
-@pytest.mark.provision()
+@pytest.mark.anyio
+@pytest.mark.slow
+@pytest.mark.provision
 async def test_download_bin(cache_dir: anyio.Path):
     # make some garbage for the image provisioner to collect
     garbage_path = cache_dir / "dagger-0.0.0"

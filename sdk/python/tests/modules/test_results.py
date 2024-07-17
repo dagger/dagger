@@ -38,7 +38,7 @@ async def get_result(
     )
 
 
-@pytest.mark.slow()
+@pytest.mark.slow
 async def test_unstructure_structure():
     mod = Module()
 
