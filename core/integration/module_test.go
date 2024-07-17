@@ -107,7 +107,7 @@ func (ModuleSuite) TestGoInit(ctx context.Context, t *testctx.T) {
 		require.JSONEq(t, `{"beneathGoMod":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 
 		t.Run("names Go module after Dagger module", func(ctx context.Context, t *testctx.T) {
-			generated, err := modGen.Directory("dagger").File("go.mod").Contents(ctx)
+			generated, err := modGen.Directory(".").File("go.mod").Contents(ctx)
 			require.NoError(t, err)
 			require.Contains(t, generated, "module dagger/beneath-go-mod")
 		})
@@ -158,7 +158,7 @@ func (ModuleSuite) TestGoInit(ctx context.Context, t *testctx.T) {
 		t.Run("go.work is edited", func(ctx context.Context, t *testctx.T) {
 			generated, err := modGen.File("go.work").Contents(ctx)
 			require.NoError(t, err)
-			require.Contains(t, generated, "use ./dagger\n")
+			require.Contains(t, generated, "use .\n")
 		})
 	})
 
@@ -205,7 +205,7 @@ func (ModuleSuite) TestGoInit(ctx context.Context, t *testctx.T) {
 		t.Run("go.work is edited", func(ctx context.Context, t *testctx.T) {
 			generated, err := modGen.File("go.work").Contents(ctx)
 			require.NoError(t, err)
-			require.Contains(t, generated, "use ./subdir/dagger\n")
+			require.Contains(t, generated, "use ./subdir\n")
 		})
 	})
 
@@ -404,8 +404,8 @@ func (m *HasNotMainGo) Hello() string { return "Hello, world!" }
 
 		generated, err := modGen.File("go.work").Contents(ctx)
 		require.NoError(t, err)
-		require.Contains(t, generated, "\t./foo/dagger\n")
-		require.Contains(t, generated, "\t./bar/dagger\n")
+		require.Contains(t, generated, "\t./foo\n")
+		require.Contains(t, generated, "\t./bar\n")
 
 		out, err := modGen.
 			WithWorkdir("./foo").
@@ -615,7 +615,7 @@ func (ModuleSuite) TestGit(ctx context.Context, t *testctx.T) {
 			require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 
 			t.Run("configures .gitattributes", func(ctx context.Context, t *testctx.T) {
-				ignore, err := modGen.File("dagger/.gitattributes").Contents(ctx)
+				ignore, err := modGen.File(".gitattributes").Contents(ctx)
 				require.NoError(t, err)
 				for _, fileName := range tc.gitGeneratedFiles {
 					require.Contains(t, ignore, fmt.Sprintf("%s linguist-generated\n", fileName))
@@ -623,7 +623,7 @@ func (ModuleSuite) TestGit(ctx context.Context, t *testctx.T) {
 			})
 
 			t.Run("configures .gitignore", func(ctx context.Context, t *testctx.T) {
-				ignore, err := modGen.File("dagger/.gitignore").Contents(ctx)
+				ignore, err := modGen.File(".gitignore").Contents(ctx)
 				require.NoError(t, err)
 				for _, fileName := range tc.gitIgnoredFiles {
 					require.Contains(t, ignore, fileName)
@@ -650,7 +650,7 @@ func (ModuleSuite) TestGit(ctx context.Context, t *testctx.T) {
 					WithNewFile("dagger.json", string(modCfgBytes)).
 					With(daggerExec("develop", "--sdk=go"))
 
-				_, err = modGen.File("dagger/.gitignore").Contents(ctx)
+				_, err = modGen.File(".gitignore").Contents(ctx)
 				require.ErrorContains(t, err, "no such file or directory")
 			})
 		})
@@ -825,8 +825,8 @@ func (ModuleSuite) TestGoSignaturesBuiltinTypes(ctx context.Context, t *testctx.
 	modGen := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
-		With(daggerExec("init", "--name=minimal", "--sdk=go")).
-		WithNewFile("dagger/main.go", `package main
+		With(daggerExec("init", "--name=minimal", "--sdk=go",)).
+		WithNewFile("main.go", `package main
 
 import (
 	"context"
