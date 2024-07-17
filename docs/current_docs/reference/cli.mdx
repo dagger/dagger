@@ -136,10 +136,11 @@ dagger develop [options]
 ### Options
 
 ```
-      --license string   License identifier to generate - see https://spdx.org/licenses/ (default "Apache-2.0")
-  -m, --mod string       Path to the module directory containing the dagger.json config file. Either local path or a remote git repo
-      --sdk string       New SDK for the module
-      --source string    Directory to store the module implementation source code in
+      --compat string[="skip"]   Engine API version to target (default "latest")
+      --license string           License identifier to generate - see https://spdx.org/licenses/ (default "Apache-2.0")
+  -m, --mod string               Path to the module directory containing the dagger.json config file. Either local path or a remote git repo
+      --sdk string               New SDK for the module
+      --source string            Directory to store the module implementation source code in
 ```
 
 ### Options inherited from parent commands

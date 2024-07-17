@@ -36,8 +36,9 @@ var (
 	moduleURL   string
 	moduleFlags = pflag.NewFlagSet("module", pflag.ContinueOnError)
 
-	sdk       string
-	licenseID string
+	sdk           string
+	licenseID     string
+	compatVersion string
 
 	moduleName       string
 	moduleSourcePath string
@@ -80,6 +81,8 @@ func init() {
 	moduleDevelopCmd.Flags().StringVar(&developSDK, "sdk", "", "New SDK for the module")
 	moduleDevelopCmd.Flags().StringVar(&developSourcePath, "source", "", "Directory to store the module implementation source code in")
 	moduleDevelopCmd.Flags().StringVar(&licenseID, "license", defaultLicense, "License identifier to generate - see https://spdx.org/licenses/")
+	moduleDevelopCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
+	moduleDevelopCmd.Flags().Lookup("compat").NoOptDefVal = "skip"
 	moduleDevelopCmd.PersistentFlags().AddFlagSet(moduleFlags)
 }
 
@@ -333,7 +336,12 @@ If not updating source or SDK, this is only required for IDE auto-completion/LSP
 			// ResolveFromCaller call first
 			modConf.Source = modConf.Source.ResolveFromCaller()
 
-			modSDK, err := modConf.Source.AsModule(dagger.ModuleSourceAsModuleOpts{EngineVersion: modules.EngineVersionLatest}).SDK(ctx)
+			engineVersion := compatVersion
+			if engineVersion == "skip" {
+				engineVersion = ""
+			}
+
+			modSDK, err := modConf.Source.AsModule(dagger.ModuleSourceAsModuleOpts{EngineVersion: engineVersion}).SDK(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to get module SDK: %w", err)
 			}
@@ -378,7 +386,7 @@ If not updating source or SDK, this is only required for IDE auto-completion/LSP
 			}
 
 			_, err = src.ResolveFromCaller().
-				AsModule(dagger.ModuleSourceAsModuleOpts{EngineVersion: modules.EngineVersionLatest}).
+				AsModule(dagger.ModuleSourceAsModuleOpts{EngineVersion: engineVersion}).
 				GeneratedContextDiff().
 				Export(ctx, modConf.LocalContextPath)
 			if err != nil {
