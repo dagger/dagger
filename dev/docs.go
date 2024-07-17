@@ -84,7 +84,7 @@ func (d Docs) Lint(ctx context.Context) error {
 				From("ghcr.io/miniscruff/changie").
 				WithMountedDirectory("/src", d.Dagger.Source).
 				WithWorkdir("/src").
-				WithExec([]string{"merge"}).
+				WithExec([]string{"/changie", "merge"}).
 				Directory("/src"), nil
 		}, "CHANGELOG.md")
 	})

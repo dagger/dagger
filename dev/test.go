@@ -180,6 +180,7 @@ func (t *Test) testCmd(ctx context.Context) (*dagger.Container, error) {
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
 		WithMountedCache(distconsts.EngineDefaultStateDir, dag.CacheVolume("dagger-dev-engine-test-state"+identity.NewID())).
 		WithExec(nil, dagger.ContainerWithExecOpts{
+			UseEntrypoint:            true,
 			InsecureRootCapabilities: true,
 		}).
 		AsService()
@@ -218,7 +219,9 @@ func registry() *dagger.Service {
 	return dag.Container().
 		From("registry:2").
 		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
-		WithExec(nil).
+		WithExec(nil, dagger.ContainerWithExecOpts{
+			UseEntrypoint: true,
+		}).
 		AsService()
 }
 
@@ -231,6 +234,8 @@ func privateRegistry() *dagger.Service {
 		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_REALM", "Registry Realm").
 		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_PATH", "/auth/htpasswd").
 		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
-		WithExec(nil).
+		WithExec(nil, dagger.ContainerWithExecOpts{
+			UseEntrypoint: true,
+		}).
 		AsService()
 }

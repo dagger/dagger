@@ -153,6 +153,7 @@ func (e *Engine) Service(
 			Sharing: dagger.Private,
 		}).
 		WithExec(nil, dagger.ContainerWithExecOpts{
+			UseEntrypoint:            true,
 			InsecureRootCapabilities: true,
 		})
 
@@ -339,6 +340,7 @@ func (e *Engine) Scan(ctx context.Context) (string, error) {
 		WithMountedCache("/root/.cache/", dag.CacheVolume("trivy-cache"))
 
 	args := []string{
+		"trivy",
 		"image",
 		"--format=json",
 		"--no-progress",
