@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/adrg/xdg"
+	"github.com/muesli/termenv"
 	"github.com/pkg/browser"
 	"golang.org/x/oauth2"
 )
@@ -55,10 +56,13 @@ func Login(ctx context.Context, out io.Writer) error {
 	browser.Stdout = browserBuf
 	browser.Stderr = browserBuf
 	if err := browser.OpenURL(authURL); err != nil {
-		fmt.Fprintf(out, "\nFailed to open browser: %s\n\n%s", err, browserBuf.String())
+		fmt.Fprintf(out, "Failed to open browser: %s\n\n%s\n", err, browserBuf.String())
+		fmt.Fprintf(out, "Authenticate here: %s\n", authURL)
+	} else {
+		fmt.Fprintf(out, "Browser opened to: %s\n", authURL)
 	}
 
-	fmt.Fprintf(out, "\nTo authenticate, visit:\n\t%s\n\n", authURL)
+	fmt.Fprintf(out, "Confirmation code: %s\n\n", termenv.String(deviceAuth.UserCode).Bold())
 
 	token, err := authConfig.DeviceAccessToken(ctx, deviceAuth)
 	if err != nil {
