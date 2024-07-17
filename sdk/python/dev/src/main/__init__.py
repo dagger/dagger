@@ -1,86 +1,151 @@
 """The Python SDK's development module."""
 
-import logging
 import os
-from collections.abc import Sequence
-from typing import Annotated, Final
-
-import anyio
+from typing import Annotated, Final, Literal, Self, get_args
 
 import dagger
-from dagger import Doc, dag, field, function, object_type, telemetry
-from dagger.log import configure_logging
-from main.consts import PYTHON_VERSION, SUPPORTED_VERSIONS
-from main.debug import Debug
-#from main.docs import Docs
-#from main.test import TestSuite
-from main.utils import mounted_workdir, python_base, venv
-
-configure_logging(logging.DEBUG)
+from dagger import Doc, dag, field, function, object_type
+from main.docs import Docs
+from main.test import TestSuite
 
 UV_IMAGE: Final[str] = os.getenv("DAGGER_UV_IMAGE", "ghcr.io/astral-sh/uv:latest")
+HATCH_VERSION: Final[str] = "1.12.0"
+SUPPORTED_VERSIONS: Final = Literal["3.12", "3.11", "3.10"]
 
 
 @object_type
 class PythonSdkDev:
     """The Python SDK's development module."""
 
-    # TODO: require sdk's dir and mount in /src/sdk/python to match file structure
-    # TODO: install requirements-dev.lock from sdk dir
-
-    src: Annotated[
-        dagger.Directory,
-        Doc("Directory with sources")
-    ]
-
     container: Annotated[
         dagger.Container,
-        Doc("Container to run commands in")
-    ] = field(init=False)
+        Doc("Container to run commands in"),
+    ] = field()
 
-    def __post_init__(self):
-        self.container = (
-            dag.apko().wolfi(["libgcc"])
-            .with_env_variable("PYTHONUNBUFFERED", "1")
-            .with_env_variable("PATH", "/root/.local/bin:$PATH", expand=True)
-            .with_(self.tools_cache("uv", "hatch", "ruff", "mypy"))
-            .with_(self.uv)
-            .with_(self.hatch)
-            .with_workdir("/src/sdk/python")
-            .with_mounted_directory("", self.src)
-            .with_exec(["uv", "sync"])
-        )
+    @classmethod
+    def create(
+        cls,
+        source: Annotated[
+            dagger.Directory,
+            Doc("Directory with sources"),
+        ],
+        container: Annotated[
+            dagger.Container | None,
+            Doc("Base container"),
+        ] = None,
+    ):
+        """Create an instance to develop the Python SDK."""
+        if container is None:
+            container = (
+                dag.apko()
+                .wolfi(["libgcc"])
+                .with_env_variable("PYTHONUNBUFFERED", "1")
+                .with_env_variable(
+                    "PATH", "/root/.local/bin:/usr/local/bin:$PATH", expand=True
+                )
+                .with_(cls.tools_cache("uv", "hatch", "ruff", "mypy"))
+                .with_(cls.uv)
+                .with_(cls.hatch)
+                .with_directory("/src/sdk/python", source)
+                .with_workdir("/src/sdk/python")
+                .with_exec(["uv", "sync"])
+            )
+        return cls(container=container)
 
-    def uv(self, ctr: dagger.Container) -> dagger.Container:
+    @classmethod
+    def uv(cls, ctr: dagger.Container) -> dagger.Container:
+        """Add the uv tool to the container."""
         return ctr.with_directory(
-            "/root/.local/bin",
+            "/usr/local/bin",
             dag.container().from_(UV_IMAGE).rootfs(),
-            include=["uv*"]
+            include=["uv*"],
         )
 
-    def hatch(self, ctr: dagger.Container) -> dagger.Container:
-        return ctr.with_exec(["uv", "tool", "install", "hatch==1.12.0"])
+    @classmethod
+    def hatch(cls, ctr: dagger.Container) -> dagger.Container:
+        """Install the Hatch tool."""
+        return ctr.with_exec(["uv", "tool", "install", f"hatch=={HATCH_VERSION}"])
 
-    def tools_cache(self, *args: str):
+    @classmethod
+    def tools_cache(cls, *args: str):
+        """Setup the cache directory for multiple tools."""
+
         def _tools(ctr: dagger.Container) -> dagger.Container:
             for tool in args:
-                ctr = (
-                    ctr
-                    .with_mounted_cache(
-                        f"/root/.cache/{tool}",
-                        dag.cache_volume(f"modpythondev-{tool}"),
-                    )
-                    .with_env_variable(
-                        f"{tool.upper()}_CACHE_DIR",
-                        f"/root/.cache/{tool}",
-                    )
+                ctr = ctr.with_mounted_cache(
+                    f"/root/.cache/{tool}",
+                    dag.cache_volume(f"modpythondev-{tool}"),
+                ).with_env_variable(
+                    f"{tool.upper()}_CACHE_DIR",
+                    f"/root/.cache/{tool}",
                 )
             return ctr
+
         return _tools
 
     @function
-    def debug(self) -> Debug:
-        return Debug(container=self.container)
+    def supported_versions(self) -> list[str]:
+        """Supported Python versions."""
+        return list(get_args(SUPPORTED_VERSIONS))
+
+    @function
+    def with_directory(
+        self,
+        source: Annotated[
+            dagger.Directory,
+            Doc("The directory to add"),
+        ],
+    ) -> Self:
+        """Mount a directory on the base container."""
+        self.container = self.container.with_directory("/src", source)
+        return self
+
+    @function
+    def with_container(self, ctr: dagger.Container) -> Self:
+        """Replace container."""
+        self.container = ctr
+        return self
+
+    @function
+    def generate(
+        self,
+        introspection_json: Annotated[
+            dagger.File,
+            Doc("Result of the introspection query"),
+        ],
+    ) -> dagger.Directory:
+        """Generate the client bindings for the API."""
+        path = "src/dagger/client/gen.py"
+        self.container = self.container.with_file(
+            path,
+            (
+                self.container.with_workdir("codegen")
+                .with_mounted_file("/schema.json", introspection_json)
+                .with_exec(
+                    [
+                        "uv",
+                        "run",
+                        "python",
+                        "-m",
+                        "codegen",
+                        "generate",
+                        "-i",
+                        "/schema.json",
+                        "-o",
+                        "gen.py",
+                    ]
+                )
+                .file("gen.py")
+            ),
+        )
+        # Ensure it's in a clean directory to avoid pulling in caches or
+        # uv.lock file updates.
+        return dag.directory().with_file(path, self.format(paths=(path,)).file(path))
+
+    @function
+    async def typecheck(self) -> str:
+        """Run the type checker (mypy)."""
+        return await self.container.with_exec(["uv", "run", "mypy", "."]).stdout()
 
     @function
     async def lint(
@@ -90,82 +155,51 @@ class PythonSdkDev:
             Doc("List of files or directories to check"),
         ] = (),
     ) -> str:
-        # TODO: optionally mount/run from any dir
+        """Check for linting errors."""
         return await (
-            self.container
-            .with_exec(["uv", "run", "ruff", "check", *paths])
+            self.container.with_exec(["uv", "run", "ruff", "check", *paths])
             .with_exec(["uv", "run", "ruff", "format", "--check", "--diff", *paths])
             .stdout()
         )
 
     @function
-    def fmt(
+    def format(
         self,
         paths: Annotated[
             tuple[str, ...],
             Doc("List of files or directories to check"),
         ] = (),
     ) -> dagger.Directory:
-        # TODO: optionally mount/run from any dir
-        ctr = (
-            self.container
-            .with_exec(["uv", "run", "ruff", "check", "--fix-only", *paths])
-            .with_exec(["uv", "run", "ruff", "format", *paths])
-        )
-        return self.src.diff(ctr.directory("/work"))
-
-    '''
-    @function
-    async def typing(self) -> str:
-        """Run the type checker (mypy)."""
-        return await self.container.with_exec(["mypy", "."]).stdout()
+        """Format source files."""
+        ctr = self.container.with_exec(
+            ["uv", "run", "ruff", "check", "--fix-only", *paths]
+        ).with_exec(["uv", "run", "ruff", "format", *paths])
+        return self.container.directory("").diff(ctr.directory(""))
 
     @function
-    def test_suite(self, version: str | None = None) -> TestSuite:
+    def test(
+        self,
+        version: Annotated[
+            str | None,
+            Doc("Python version to test against"),
+        ] = None,
+    ) -> TestSuite:
         """Run the test suite."""
-        ctr = self.container if version is None else python_base(version).with_(self.install)
-        return TestSuite(container=ctr)
+        return TestSuite(container=self.container, version=version)
+
+    @function
+    def test_versions(self) -> list[TestSuite]:
+        """Run the test suite for all supported versions."""
+        return [self.test(version) for version in self.supported_versions()]
 
     @function
     def build(self) -> dagger.Directory:
         """Build Python SDK package for distribution."""
-        return self.container.with_exec(["hatch", "build", "--clean"]).directory("dist")
-
-    @function
-    async def test(self, versions: Sequence[str] = SUPPORTED_VERSIONS):
-        """Run the test suite on multiple Python versions."""
-        tracer = telemetry.get_tracer()
-
-        async def _test_suite(version: str):
-            with tracer.start_as_current_span("Test suite"):
-                await self.test_suite(version).default()
-
-        async def _test_build(ctr: dagger.Container, dist: dagger.Directory, ext: str):
-            with tracer.start_as_current_span(f"Test {ext} build"):
-                await (
-                    ctr
-                    .with_mounted_directory("/dist", dist)
-                    .with_exec(["sh", "-c", f"uv pip install /dist/*.{ext}"])
-                    .with_exec(["python", "-c", "import dagger"])
-                )
-
-        async def _test_version(version: str):
-            with tracer.start_as_current_span(f"Test Python {version}"):
-                ctr = self.container if version is None else python_base(version)
-                dist = self.build()
-
-                async with anyio.create_task_group() as tg:
-                    tg.start_soon(_test_suite, version)
-
-                    for ext in ("tar.gz", "whl"):
-                        tg.start_soon(_test_build, ctr, dist, ext)
-
-        async with anyio.create_task_group() as tg:
-            for version in versions:
-                tg.start_soon(_test_version, version)
+        return self.container.with_exec(["uvx", "hatch", "build", "--clean"]).directory(
+            "dist"
+        )
 
     @function
     def docs(self) -> Docs:
+        """Preview the reference documentation."""
         return Docs(container=self.container)
-
-    '''

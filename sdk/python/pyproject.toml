@@ -101,6 +101,3 @@ pretty = true
 show_column_numbers = true
 warn_no_return = false
 warn_unused_ignores = true
-
-[tool.hatch.envs.hatch-static-analysis]
-config-path = "ruff_defaults.toml"

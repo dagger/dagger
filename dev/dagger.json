@@ -19,6 +19,10 @@
       "source": "graphql"
     },
     {
+      "name": "python-sdk-dev",
+      "source": "../sdk/python/dev"
+    },
+    {
       "name": "shellcheck",
       "source": "shellcheck"
     }

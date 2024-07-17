@@ -2,7 +2,7 @@ from typing import Annotated
 
 import dagger
 from dagger import Doc, function, object_type
-from main.utils import mounted_workdir, python_base
+from main.utils import mounted_workdir
 
 
 @object_type
@@ -15,9 +15,8 @@ class Docs:
     def build(self) -> dagger.Directory:
         """Build the documentation."""
         return (
-            self.container
-            .with_workdir("docs")
-            .with_exec(["sphinx-build", "-v", ".", "/dist"])
+            self.container.with_workdir("docs")
+            .with_exec(["uv", "run", "sphinx-build", "-v", ".", "/dist"])
             .directory("/dist")
         )
 
@@ -31,9 +30,8 @@ class Docs:
     ) -> dagger.Service:
         """Build and preview the documentation in the browser."""
         return (
-            python_base()
-            .with_(mounted_workdir(self.build()))
-            .with_exec(["python", "-m", "http.server", str(bind)])
+            self.container.with_(mounted_workdir(self.build()))
+            .with_exec(["uv", "run", "python", "-m", "http.server", str(bind)])
             .with_exposed_port(bind)
             .as_service()
         )

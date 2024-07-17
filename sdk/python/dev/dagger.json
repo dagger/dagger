@@ -19,21 +19,29 @@
     }
   ],
   "source": ".",
-  "engineVersion": "dev-922ddb4de207f4a9fc2ee679c89f8cb299008cf1",
+  "engineVersion": "v0.12.0",
   "views": [
     {
       "name": "default",
       "patterns": [
+        "dev/src/**/*.py",
         "docs/**/*.py",
         "docs/**/*.rst",
         "src/**/*.py",
         "src/**/py.typed",
         "tests/**/*.py",
         "codegen/**/*.py",
-        "pyproject.toml",
-        "requirements-dev.lock",
+        "ruff.toml",
+        "uv.lock",
         "README.md",
-        "LICENSE"
+        "LICENSE",
+        "**/pyproject.toml",
+        "**/.gitignore",
+        "**/.ruff.toml",
+        "!dev/sdk",
+        "!**/__pycache__",
+        "!**/.*cache",
+        "!**/.venv"
       ]
     },
     {
@@ -49,7 +57,9 @@
         "**/pyproject.toml",
         "**/.ruff.toml",
         "**/ruff*.toml",
-        "**/*.py"
+        "**/*.py",
+        "README.md",
+        "LICENSE"
       ]
     }
   ]

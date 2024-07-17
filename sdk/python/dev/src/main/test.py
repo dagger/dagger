@@ -9,16 +9,29 @@ from dagger import Doc, dag, function, object_type
 class TestSuite:
     """Run the test suite."""
 
-    container: dagger.Container
+    container: Annotated[
+        dagger.Container,
+        Doc("The base container to run the tests"),
+    ]
+    version: Annotated[
+        str | None,
+        Doc("The python version to test against"),
+    ] = None
 
     @function
     def run(
         self,
-        args: Annotated[list[str], Doc("Arguments to pass to pytest")],
+        args: Annotated[
+            list[str],
+            Doc("Arguments to pass to pytest"),
+        ],
     ) -> dagger.Container:
         """Run the pytest command."""
+        cmd = ["uv", "run"]
+        if self.version:
+            cmd.extend(["-p", self.version])
         return self.container.with_exec(
-            ["pytest", *args],
+            [*cmd, "pytest", *args],
             experimental_privileged_nesting=True,
         )
 
@@ -82,7 +95,8 @@ class TestSuite:
                 self.container.with_mounted_file(
                     "/opt/docker.tgz",
                     dag.http(
-                        "https://download.docker.com/linux/static/stable" f"/{arch_name}/docker-{docker_version}.tgz"
+                        "https://download.docker.com/linux/static/stable"
+                        f"/{arch_name}/docker-{docker_version}.tgz"
                     ),
                     owner="root",
                 ).with_exec(
