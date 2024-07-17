@@ -26,10 +26,10 @@ Instead of exporting an entire directory, you can also export a file. Here is an
 dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call build --source=https://github.com/dagger/dagger --args=./cmd/dagger file --path=dagger export --path=./my-binary-file
 ```
 
-Here is another example, this time exporting the rules file used by a linter Dagger Function as `/tmp/rules` on the host:
+Here is another example, this time exporting the results of a `ruff` linter Dagger Function as `/tmp/report.json` on the host:
 
 ```shell
-dagger -m github.com/dagger/dagger/linters/markdown@88d89e8d15ab6ad9ca4043a920d3cd735a6405fd call rules export --path=/tmp/rules
+dagger call -m github.com/dagger/dagger/dev/ruff@a29dadbb5d9968784847a15fccc5629daf2985ae lint --source https://github.com/dagger/dagger report export --path=/tmp/report.json
 ```
 
 Here is an example of exporting a container returned by a Wolfi container builder Dagger Function as an OCI tarball named `/tmp/tarball.tar.gz` on the host:
