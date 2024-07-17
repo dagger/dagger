@@ -120,7 +120,7 @@ runs:
       if: always() && inputs.dev-engine == 'true'
       uses: actions/upload-artifact@v4
       with:
-        name: engine-logs
+        name: engine-logs-${{ runner.name }}
         path: /tmp/actions/call/engine.logs
 
     - name: Cleanup
