@@ -159,9 +159,7 @@ func publishEnv(ctx context.Context) (*dagger.Container, error) {
 	ctr = ctr.
 		WithExec([]string{"apk", "add", "xz"}).
 		WithDirectory("/nix", dag.Directory()).
-		WithNewFile("/etc/nix/nix.conf", dagger.ContainerWithNewFileOpts{
-			Contents: `build-users-group =`,
-		}).
+		WithNewFile("/etc/nix/nix.conf", `build-users-group =`).
 		WithExec([]string{"sh", "-c", "curl -L https://nixos.org/nix/install | sh -s -- --no-daemon"})
 	path, err := ctr.EnvVariable(ctx, "PATH")
 	if err != nil {

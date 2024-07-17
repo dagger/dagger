@@ -153,6 +153,7 @@ func (e *Engine) Service(
 			Sharing: dagger.Private,
 		}).
 		WithExec(nil, dagger.ContainerWithExecOpts{
+			UseEntrypoint:            true,
 			InsecureRootCapabilities: true,
 		})
 
@@ -231,8 +232,7 @@ func (e *Engine) Generate() *dagger.Directory {
 func (e *Engine) LintGenerate(ctx context.Context) error {
 	before := e.Dagger.Go().Env().WithoutDirectory("sdk").Directory(".")
 	after := e.Generate()
-	_, err := dag.Dirdiff().AssertEqual(ctx, before, after, []string{"."})
-	return err
+	return dag.Dirdiff().AssertEqual(ctx, before, after, []string{"."})
 }
 
 // Publish all engine images to a registry
@@ -340,6 +340,7 @@ func (e *Engine) Scan(ctx context.Context) (string, error) {
 		WithMountedCache("/root/.cache/", dag.CacheVolume("trivy-cache"))
 
 	args := []string{
+		"trivy",
 		"image",
 		"--format=json",
 		"--no-progress",
