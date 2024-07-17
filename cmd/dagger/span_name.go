@@ -57,6 +57,7 @@ func spanName(args []string) string {
 				}
 			} else {
 				// we're a flag preceding any command (maybe --debug); drop
+				continue
 			}
 			continue
 		}

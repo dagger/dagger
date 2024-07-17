@@ -63,7 +63,7 @@ func (t PythonSDK) Lint(ctx context.Context) error {
 		return t.Dagger.
 			Go().
 			WithCodegen([]string{pythonRuntimeSubdir}).
-			Lint(ctx, []string{pythonRuntimeSubdir}, false)
+			Lint(ctx, []string{pythonRuntimeSubdir})
 	})
 
 	return eg.Wait()
