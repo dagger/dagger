@@ -43,3 +43,12 @@ func End(span trace.Span, fn func() error) {
 	}
 	span.End()
 }
+
+// EndNow is equivalent to End, but doesn't take a function.
+func EndNow(span trace.Span, err error) {
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	}
+	span.End()
+}
