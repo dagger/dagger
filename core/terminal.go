@@ -58,7 +58,7 @@ func (container *Container) Terminal(
 	// Inject a custom shell prompt `dagger:<cwd>$`
 	container.Config.Env = append(container.Config.Env, fmt.Sprintf("PS1=%s %s $ ",
 		output.String("dagger").Foreground(termenv.ANSIYellow).String(),
-		output.String(`\w`).Faint().String(),
+		output.String(`$(pwd | sed "s|^$HOME|~|")`).Faint().String(),
 	))
 	container, err = container.WithExec(ctx, ContainerExecOpts{
 		Args:                          args.Cmd,
