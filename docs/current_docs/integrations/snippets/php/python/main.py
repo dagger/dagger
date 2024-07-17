@@ -17,14 +17,20 @@ class MyModule:
                 [
                     "sh",
                     "-c",
-                    "sed -ri -e 's!/var/www/html!/var/www/public!g' /etc/apache2/sites-available/*.conf",
+                    (
+                        "sed -ri -e 's!/var/www/html!/var/www/public!g'"
+                        "/etc/apache2/sites-available/*.conf"
+                    ),
                 ]
             )
             .with_exec(
                 [
                     "sh",
                     "-c",
-                    "sed -ri -e 's!/var/www/!/var/www/public!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf",
+                    (
+                        "sed -ri -e 's!/var/www/!/var/www/public!g'"
+                        " /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf"
+                    ),
                 ]
             )
             .with_exec(["a2enmod", "rewrite"])
@@ -32,17 +38,23 @@ class MyModule:
                 [
                     "sh",
                     "-c",
-                    "curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer",
+                    (
+                        "curl -sS https://getcomposer.org/installer"
+                        " | php -- --install-dir=/usr/local/bin --filename=composer"
+                    ),
                 ]
             )
             .with_directory(
-                "/var/www", source.without_directory("dagger"), owner="www-data"
+                "/var/www",
+                source.without_directory("dagger"),
+                owner="www-data",
             )
             .with_workdir("/var/www")
             .with_exec(["chmod", "-R", "775", "/var/www"])
             .with_mounted_cache("/root/.composer", dag.cache_volume("composer-cache"))
             .with_mounted_cache(
-                "/var/www/vendor", dag.cache_volume("composer-vendor-cache")
+                "/var/www/vendor",
+                dag.cache_volume("composer-vendor-cache"),
             )
             .with_exec(["composer", "install"])
         )

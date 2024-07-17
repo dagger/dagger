@@ -1,4 +1,4 @@
-src = ["**/src", "**/tests"]
+src = ["src", "tests"]
 target-version = "py310"
 
 [format]
@@ -18,19 +18,10 @@ ignore = [
     "D100",
     "D104",
     "D105",
-    # First line should end with a period.
-    "D400",
     # Imperative mood only makes sense in functions, not classes.
     "D401",
-    # Not using timezones in this project.
-    "DTZ",
-    # Allow logging with default %. You need custom setup to use `extra`.
-    "G002",
-    # Valid use in pytest, docs and examples.
+    # Valid use in pytest and docs.
     "INP001",
-    # Unnecessary variable assignment before `return` statement
-    # doesn't seem to work as expected.
-    "RET504",
     # We don't use asserts as runtime validation guarantees.
     "S101",
     # Don't guard types. Don't want to stringize them.
@@ -41,7 +32,7 @@ ignore = [
     "FIX002",
     # Pandas
     "PD",
-    # Avoid conflicts with the linter
+    # Avoid conflicts with the formatter
     "W191",
     "E111",
     "E114",
@@ -56,17 +47,15 @@ ignore = [
     "ISC001",
     "ISC002",
 ]
-unfixable = [
-    # Don't remove `print` statements, just warn.
-    "T201",
-]
 
 [lint.per-file-ignores]
-"./docs/*" = ["D1"]
-"./runtime/*" = ["D1"]
-"./codegen/*" = [
+"!src/**.py" = [
     # No public interfaces.
     "D1",
+    # First line should end with a period.
+    "D400",
+]
+"./codegen/*" = [
     # False positive on __str__ decorator.
     "PLE0307",
 ]
@@ -83,21 +72,18 @@ unfixable = [
     "SLF001",
     # Too many arguments to function call.
     "PLR0913",
-    # `Optional` is preferred over `| None` because of how
-    # beartype handles forward references.
-    "UP007",
 ]
 # Ignore built-in shadowing in test mocks.
 "./tests/client/test_inputs.py" = ["A", "ERA001"]
 "./tests/*.py" = [
-    # Ignore security issues in tests.
-    "S",
+    # Not using timezones in this project.
+    "DTZ",
     # Magic value comparison doesn't apply to tests.
     "PLR2004",
     # Allow more than one statement in pytest.raises.
     "PT012",
-    # No public interfaces.
-    "D1",
+    # Ignore security issues in tests.
+    "S",
     # Allow accessing private fields in tests.
     "SLF001",
     # Allow covering `Optional` in tests.
@@ -106,9 +92,7 @@ unfixable = [
 # Allow alias imports in __init__.
 "./**/__init__.py" = ["PLC0414"]
 # Allow some patterns to redefine imports in __init__.
-"./src/**/__init__.py" = ["I001", "F403", "PLC0414"]
-# Typer uses boolean parameters for the CLI. Let it.
-"./**/src/**/cli.py" = ["FBT"]
+"./src/**/__init__.py" = ["I001", "F403"]
 
 [lint.isort]
 known-first-party = ["dagger", "codegen"]

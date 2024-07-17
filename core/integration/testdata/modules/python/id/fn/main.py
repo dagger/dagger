@@ -1,6 +1,6 @@
 from dagger import function
 
 
-@function
-def id() -> str:
+@function(name="id")
+def id_() -> str:
     return "NOOOO!!!!"
