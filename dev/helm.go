@@ -22,9 +22,9 @@ type Helm struct {
 
 func (h *Helm) Test(ctx context.Context) error {
 	_, err := h.chart().
-		WithExec([]string{"lint"}).
-		WithExec([]string{"lint", "--debug", "--namespace", "dagger", "--set", "magicache.token=hello-world", "--set", "magicache.enabled=true"}).
-		WithExec([]string{"template", ".", "--debug", "--namespace", "dagger", "--set", "magicache.token=hello-world", "--set", "magicache.enabled=true"}).
+		WithExec([]string{"helm", "lint"}).
+		WithExec([]string{"helm", "lint", "--debug", "--namespace", "dagger", "--set", "magicache.token=hello-world", "--set", "magicache.enabled=true"}).
+		WithExec([]string{"helm", "template", ".", "--debug", "--namespace", "dagger", "--set", "magicache.token=hello-world", "--set", "magicache.enabled=true"}).
 		Sync(ctx)
 
 	return err

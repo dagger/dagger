@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"path"
 	"strings"
+
+	"github.com/dagger/dagger/dev/golangci/internal/dagger"
 )
 
 const (
@@ -18,7 +20,7 @@ const (
 // Lint a go codebase
 func (gl Golangci) Lint(
 	// The Go source directory to lint
-	source *Directory,
+	source *dagger.Directory,
 	// Lint a specific path within the source directory
 	// +optional
 	path string,
@@ -29,7 +31,7 @@ func (gl Golangci) Lint(
 // The result of running the GolangCI lint tool
 type LintRun struct {
 	// +private
-	Source *Directory
+	Source *dagger.Directory
 	// +private
 	Path string
 }
@@ -100,7 +102,7 @@ func (run LintRun) WarningCount(ctx context.Context) (int, error) {
 }
 
 // Return a JSON report file for this run
-func (run LintRun) Report() *File {
+func (run LintRun) Report() *dagger.File {
 	cmd := []string{
 		"golangci-lint", "run",
 		"-v",
@@ -121,7 +123,7 @@ func (run LintRun) Report() *File {
 		// Uncomment to debug:
 		// WithEnvVariable("DEBUG_CMD", strings.Join(cmd, " ")).
 		// Terminal().
-		WithExec(cmd, ContainerWithExecOpts{RedirectStdout: "golangci-lint-report.json"}).
+		WithExec(cmd, dagger.ContainerWithExecOpts{RedirectStdout: "golangci-lint-report.json"}).
 		File("golangci-lint-report.json")
 }
 

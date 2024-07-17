@@ -63,6 +63,7 @@ func (d Docs) Lint(ctx context.Context) error {
 			WithMountedFile("/src/.markdownlint.yaml", d.Dagger.Source.File(".markdownlint.yaml")).
 			WithWorkdir("/src").
 			WithExec([]string{
+				"markdownlint",
 				"-c",
 				".markdownlint.yaml",
 				"--",
