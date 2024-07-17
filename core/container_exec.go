@@ -108,10 +108,6 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		if execMD.ClientID == "" {
 			execMD.ClientID = identity.NewID()
 		}
-		if execMD.CallerClientID == "" {
-			execMD.CallerClientID = clientMetadata.ClientID
-		}
-
 		// include the engine version so that these execs get invalidated if the engine/API change
 		runOpts = append(runOpts, llb.AddEnv(buildkit.DaggerEngineVersionEnv, engine.Version))
 

@@ -48,11 +48,13 @@ type ClientMetadata struct {
 	SessionID string `json:"session_id"`
 
 	// ClientHostname is the hostname of the client that made the request. It's
-	// used opportunistically as a best-effort, semi-stable identifier for the
-	// client across multiple sessions, which can be useful for debugging and for
-	// minimizing occurrences of both excessive cache misses and excessive cache
-	// matches.
+	// used to help identify clients in the logs more clearly; nothing functional.
 	ClientHostname string `json:"client_hostname"`
+
+	// ClientStableID is an ID that's persisted in a client's XDG state directory.
+	// It's currently used to identify clients that are executing on the same host in order to
+	// tell buildkit which filesync cache ref to re-use when syncing dirs+files to the engine.
+	ClientStableID string `json:"client_stable_id"`
 
 	// ClientVersion is the version string of the client that make the request.
 	ClientVersion string `json:"client_version"`

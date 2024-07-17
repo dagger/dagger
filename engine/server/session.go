@@ -711,6 +711,7 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 			ClientSecretToken: execMD.SecretToken,
 			SessionID:         execMD.SessionID,
 			ClientHostname:    execMD.Hostname,
+			ClientStableID:    execMD.ClientStableID,
 			Labels:            map[string]string{},
 		},
 		CallID:              execMD.CallID,

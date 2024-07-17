@@ -42,11 +42,16 @@ import (
 )
 
 type ExecutionMetadata struct {
-	ClientID       string
-	CallerClientID string
-	SessionID      string
-	SecretToken    string
-	Hostname       string
+	ClientID    string
+	SessionID   string
+	SecretToken string
+	Hostname    string
+
+	// The "stable" ID of the client that is used to identify filesync cache refs
+	// across different clients running on the same host.
+	// For now, nested execs are just always given a random unique ID each exec (as
+	// opposed to clients running on the host which re-use a persisted ID).
+	ClientStableID string
 
 	// Unique (random) ID for this execution.
 	// This is used to deduplicate the same execution that gets evaluated multiple times.

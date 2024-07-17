@@ -15,6 +15,7 @@ import (
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/session/filesync"
 	"github.com/moby/buildkit/snapshot"
 	bksolverpb "github.com/moby/buildkit/solver/pb"
@@ -24,6 +25,7 @@ import (
 	fsutiltypes "github.com/tonistiigi/fsutil/types"
 
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/slog"
 )
 
 func (c *Client) LocalImport(
@@ -45,12 +47,18 @@ func (c *Client) LocalImport(
 		return nil, desc, err
 	}
 
-	localOpts := []llb.LocalOption{
-		llb.SessionID(clientMetadata.ClientID),
-		llb.SharedKeyHint(strings.Join([]string{clientMetadata.ClientHostname, srcPath}, " ")),
+	stableID := clientMetadata.ClientStableID
+	if stableID == "" {
+		slog.WarnContext(ctx, "client stable ID not set, using random value")
+		stableID = identity.NewID()
 	}
 
-	localName := fmt.Sprintf("upload %s from %s (client id: %s, session id: %s)", srcPath, clientMetadata.ClientHostname, clientMetadata.ClientID, clientMetadata.SessionID)
+	localOpts := []llb.LocalOption{
+		llb.SessionID(clientMetadata.ClientID),
+		llb.SharedKeyHint(strings.Join([]string{stableID, srcPath}, " ")),
+	}
+
+	localName := fmt.Sprintf("upload %s from %s (client id: %s, session id: %s)", srcPath, stableID, clientMetadata.ClientID, clientMetadata.SessionID)
 	if len(excludePatterns) > 0 {
 		localName += fmt.Sprintf(" (exclude: %s)", strings.Join(excludePatterns, ", "))
 		localOpts = append(localOpts, llb.ExcludePatterns(excludePatterns))
