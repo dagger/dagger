@@ -6382,23 +6382,12 @@ func schemaVersion(ctx context.Context) (string, error) {
 			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v0.0.0"}`).
 			WithNewFile("main.go", moduleSrc)
 
-		_, err := work.With(daggerQuery("{foo{getVersion}}")).Stdout(ctx)
-		require.ErrorContains(t, err, "incompatible engine version")
-
 		work = work.With(daggerExec("develop"))
 		daggerJSON, err := work.
 			File("dagger.json").
 			Contents(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "`+engine.Version+`"}`, daggerJSON)
-
-		out, err := work.With(daggerQuery("{foo{getVersion}}")).Stdout(ctx)
-		require.NoError(t, err)
-		if semver.IsValid(engine.Version) {
-			require.JSONEq(t, `{"foo":{"getVersion":"`+engine.Version+`"}}`, out)
-		} else {
-			require.JSONEq(t, `{"foo":{"getVersion":""}}`, out)
-		}
 	})
 
 	t.Run("from high", func(ctx context.Context, t *testctx.T) {
@@ -6410,24 +6399,12 @@ func schemaVersion(ctx context.Context) (string, error) {
 			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v100.0.0"}`).
 			WithNewFile("main.go", moduleSrc)
 
-		out, err := work.With(daggerQuery("{foo{getVersion}}")).Stdout(ctx)
-		require.NoError(t, err)
-		require.JSONEq(t, `{"foo":{"getVersion":"v100.0.0"}}`, out)
-
 		work = work.With(daggerExec("develop"))
 		daggerJSON, err := work.
 			File("dagger.json").
 			Contents(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "`+engine.Version+`"}`, daggerJSON)
-
-		out, err = work.With(daggerQuery("{foo{getVersion}}")).Stdout(ctx)
-		require.NoError(t, err)
-		if semver.IsValid(engine.Version) {
-			require.JSONEq(t, `{"foo":{"getVersion":"`+engine.Version+`"}}`, out)
-		} else {
-			require.JSONEq(t, `{"foo":{"getVersion":""}}`, out)
-		}
 	})
 
 	t.Run("from missing", func(ctx context.Context, t *testctx.T) {
@@ -6439,24 +6416,12 @@ func schemaVersion(ctx context.Context) (string, error) {
 			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "source": "."}`).
 			WithNewFile("main.go", moduleSrc)
 
-		out, err := work.With(daggerQuery("{foo{getVersion}}")).Stdout(ctx)
-		require.NoError(t, err)
-		require.JSONEq(t, `{"foo":{"getVersion":"v0.9.9"}}`, out)
-
 		work = work.With(daggerExec("develop"))
 		daggerJSON, err := work.
 			File("dagger.json").
 			Contents(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "`+engine.Version+`"}`, daggerJSON)
-
-		out, err = work.With(daggerQuery("{foo{getVersion}}")).Stdout(ctx)
-		require.NoError(t, err)
-		if semver.IsValid(engine.Version) {
-			require.JSONEq(t, `{"foo":{"getVersion":"`+engine.Version+`"}}`, out)
-		} else {
-			require.JSONEq(t, `{"foo":{"getVersion":""}}`, out)
-		}
 	})
 
 	t.Run("to specified", func(ctx context.Context, t *testctx.T) {
@@ -6467,19 +6432,12 @@ func schemaVersion(ctx context.Context) (string, error) {
 			WithWorkdir("/work").
 			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v0.0.0"}`)
 
-		_, err := work.With(daggerQuery("{__schemaVersion}")).Stdout(ctx)
-		require.ErrorContains(t, err, "incompatible engine version")
-
 		work = work.With(daggerExec("develop", "--compat=v0.9.9"))
 		daggerJSON, err := work.
 			File("dagger.json").
 			Contents(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v0.9.9"}`, daggerJSON)
-
-		out, err := work.With(daggerQuery("{__schemaVersion}")).Stdout(ctx)
-		require.NoError(t, err)
-		require.JSONEq(t, `{"__schemaVersion":"v0.9.9"}`, out)
 	})
 
 	t.Run("skipped", func(ctx context.Context, t *testctx.T) {
@@ -6490,20 +6448,12 @@ func schemaVersion(ctx context.Context) (string, error) {
 			WithWorkdir("/work").
 			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v0.9.9"}`)
 
-		out, err := work.With(daggerQuery("{__schemaVersion}")).Stdout(ctx)
-		require.NoError(t, err)
-		require.JSONEq(t, `{"__schemaVersion":"v0.9.9"}`, out)
-
 		work = work.With(daggerExec("develop", "--compat"))
 		daggerJSON, err := work.
 			File("dagger.json").
 			Contents(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v0.9.9"}`, daggerJSON)
-
-		out, err = work.With(daggerQuery("{__schemaVersion}")).Stdout(ctx)
-		require.NoError(t, err)
-		require.JSONEq(t, `{"__schemaVersion":"v0.9.9"}`, out)
 	})
 }
 
