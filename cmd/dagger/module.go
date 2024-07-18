@@ -54,7 +54,7 @@ var (
 const (
 	moduleURLDefault = "."
 
-	defaultModuleSourceDirName = "dagger"
+	defaultModuleSourceDirName = "."
 )
 
 func init() {
