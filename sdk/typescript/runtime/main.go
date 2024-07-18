@@ -53,12 +53,29 @@ func New(
 			"**/package-lock.json",
 			"**/tsconfig.json",
 		},
+		moduleConfig: &moduleConfig{},
 	}
+}
+
+type moduleConfig struct {
+	runtime        SupportedTSRuntime
+	runtimeVersion string
+
+	packageManager        SupportedPackageManager
+	packageManagerVersion string
+
+	source  *Directory
+	entries map[string]bool
+
+	name    string
+	subPath string
 }
 
 type TypescriptSdk struct {
 	SDKSourceDir  *Directory
 	RequiredPaths []string
+
+	moduleConfig *moduleConfig
 }
 
 const (
@@ -74,57 +91,50 @@ const (
 
 // ModuleRuntime returns a container with the node or bun entrypoint ready to be called.
 func (t *TypescriptSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSource, introspectionJSON *File) (*Container, error) {
+	err := t.analyzeModuleConfig(ctx, modSource)
+	if err != nil {
+		return nil, fmt.Errorf("failed to analyze module config: %w", err)
+	}
+
 	ctr, err := t.CodegenBase(ctx, modSource, introspectionJSON)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create codegen base: %w", err)
 	}
 
-	subPath, err := modSource.SourceSubpath(ctx)
+	// Mount the entrypoint file
+	ctr = ctr.WithMountedFile(
+		t.moduleConfig.entrypointPath(),
+		ctr.Directory("/opt/module/bin").File(EntrypointExecutableFile),
+	)
+
+	ctr, err = t.installDependencies(ctx, ctr)
 	if err != nil {
-		return nil, fmt.Errorf("could not load module config: %w", err)
+		return nil, fmt.Errorf("failed to install dependencies: %w", err)
 	}
 
-	detectedRuntime, _, err := t.detectRuntime(ctx, modSource, subPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to detect module runtime: %w", err)
-	}
-
-	packageManager, _, err := t.detectPackageManager(ctx, modSource, subPath, detectedRuntime)
-	if err != nil {
-		return nil, fmt.Errorf("failed to detect package manager: %w", err)
-	}
-
-	entrypointPath := filepath.Join(ModSourceDirPath, subPath, SrcDir, EntrypointExecutableFile)
-	tsConfigPath := filepath.Join(ModSourceDirPath, subPath, "tsconfig.json")
-
-	ctr = ctr.WithMountedFile(entrypointPath, ctr.Directory("/opt/module/bin").File(EntrypointExecutableFile))
-
-	switch detectedRuntime {
+	switch t.moduleConfig.runtime {
 	case Bun:
 		return ctr.
-			// Install dependencies
-			WithExec([]string{"bun", "install", "--no-verify", "--no-progress"}).
-			WithEntrypoint([]string{"bun", entrypointPath}), nil
+			WithEntrypoint([]string{"bun", t.moduleConfig.entrypointPath()}), nil
 	case Node:
-		// Install dependencies
-		ctr, err = installNodeDependencies(ctx, ctr, packageManager)
-		if err != nil {
-			return nil, fmt.Errorf("failed to install dependencies: %w", err)
-		}
-
 		return ctr.
 			// need to specify --tsconfig because final runtime container will change working directory to a separate scratch
 			// dir, without this the paths mapped in the tsconfig.json will not be used and js module loading will fail
 			// need to specify --no-deprecation because the default package.json has no main field which triggers a warning
 			// not useful to display to the user.
-			WithEntrypoint([]string{"tsx", "--no-deprecation", "--tsconfig", tsConfigPath, entrypointPath}), nil
+			WithEntrypoint([]string{"tsx", "--no-deprecation", "--tsconfig", t.moduleConfig.tsConfigPath(), t.moduleConfig.entrypointPath()}), nil
 	default:
-		return nil, fmt.Errorf("unknown runtime: %s", detectedRuntime)
+		return nil, fmt.Errorf("unknown runtime: %s", t.moduleConfig.runtime)
 	}
 }
 
 // Codegen returns the generated API client based on user's module
 func (t *TypescriptSdk) Codegen(ctx context.Context, modSource *ModuleSource, introspectionJSON *File) (*GeneratedCode, error) {
+	err := t.analyzeModuleConfig(ctx, modSource)
+	if err != nil {
+		return nil, fmt.Errorf("failed to analyze module config: %w", err)
+	}
+
 	// Get base container
 	ctr, err := t.CodegenBase(ctx, modSource, introspectionJSON)
 	if err != nil {
@@ -148,36 +158,15 @@ func (t *TypescriptSdk) Codegen(ctx context.Context, modSource *ModuleSource, in
 // CodegenBase returns a Container containing the SDK from the engine container
 // and the user's code with a generated API based on what he did.
 func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource, introspectionJSON *File) (*Container, error) {
-	// Load module name for the template class
-	name, err := modSource.ModuleOriginalName(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("could not load module config: %w", err)
-	}
-
-	subPath, err := modSource.SourceSubpath(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("could not load module config: %w", err)
-	}
-
-	detectedRuntime, runtimeVersion, err := t.detectRuntime(ctx, modSource, subPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to detect runtime: %w", err)
-	}
-
-	packageManager, packageManagerVersion, err := t.detectPackageManager(ctx, modSource, subPath, detectedRuntime)
-	if err != nil {
-		return nil, fmt.Errorf("failed to detect package manager: %w", err)
-	}
-
-	base, err := t.Base(detectedRuntime, runtimeVersion)
+	base, err := t.Base()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create codegen base: %w", err)
 	}
 
 	// Get a directory with the SDK sources installed and the generated client.
 	sdk := t.
-		installedSDK(base, detectedRuntime).
-		WithDirectory(".", t.generateClient(base, name, introspectionJSON, subPath))
+		installedSDK(base).
+		WithDirectory(".", t.generateClient(base, introspectionJSON))
 
 	base = base.
 		// Add template directory
@@ -185,17 +174,17 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 		// Mount users' module with SDK sources and generated client in it.
 		WithMountedDirectory(ModSourceDirPath, modSource.
 			ContextDirectory().
-			WithDirectory(filepath.Join(subPath, GenDir), sdk),
+			WithDirectory(filepath.Join(t.moduleConfig.subPath, GenDir), sdk),
 		).
-		WithWorkdir(filepath.Join(ModSourceDirPath, subPath))
+		WithWorkdir(t.moduleConfig.modulePath())
 
-	ctr, err := t.setupModule(ctx, base, detectedRuntime, name)
+	ctr, err := t.setupModule(ctx, base)
 	if err != nil {
 		return nil, fmt.Errorf("failed to setup module: %w", err)
 	}
 
 	// Generate the appropriate lock file
-	ctr, err = generateLockFile(ctx, ctr, packageManager, packageManagerVersion)
+	ctr, err = t.generateLockFile(ctx, ctr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate lock file: %w", err)
 	}
@@ -204,8 +193,11 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 }
 
 // Base returns a Node or Bun container with cache setup for node package managers or bun
-func (t *TypescriptSdk) Base(runtime SupportedTSRuntime, version string) (*Container, error) {
+func (t *TypescriptSdk) Base() (*Container, error) {
 	ctr := dag.Container()
+
+	runtime := t.moduleConfig.runtime
+	version := t.moduleConfig.runtimeVersion
 
 	switch runtime {
 	case Bun:
@@ -231,12 +223,12 @@ func (t *TypescriptSdk) Base(runtime SupportedTSRuntime, version string) (*Conta
 			WithoutEntrypoint().
 			// Install default CA certificates and configure node to use them instead of its compiled in CA bundle.
 			// This enables use of custom CA certificates if configured in the dagger engine.
-			WithExec([]string{"apk", "add", "ca-certificates", "jq"}).
+			WithExec([]string{"apk", "add", "ca-certificates"}).
 			WithEnvVariable("NODE_OPTIONS", "--use-openssl-ca").
 			// Add cache volumes for npm, yarn and pnpm
-			WithMountedCache("/root/.npm", dag.CacheVolume(fmt.Sprintf("mod-npm-cache-%s", nodeVersion))).
-			WithMountedCache("/root/.cache/yarn", dag.CacheVolume(fmt.Sprintf("mod-yarn-cache-%s", nodeVersion))).
-			WithMountedCache("/root/.pnpm-store", dag.CacheVolume(fmt.Sprintf("mod-pnpm-cache-%s", nodeVersion))).
+			WithMountedCache("/root/.npm", dag.CacheVolume(fmt.Sprintf("npm-cache-%s-%s", runtime, version))).
+			WithMountedCache("/root/.cache/yarn", dag.CacheVolume(fmt.Sprintf("yarn-cache-%s-%s", runtime, version))).
+			WithMountedCache("/root/.pnpm-store", dag.CacheVolume(fmt.Sprintf("pnpm-cache-%s-%s", runtime, version))).
 			// Install tsx
 			WithExec([]string{"npm", "install", "-g", "tsx@4.15.6"}), nil
 	default:
@@ -253,17 +245,13 @@ func (t *TypescriptSdk) Base(runtime SupportedTSRuntime, version string) (*Conta
 //
 // If there's no src directory or no typescript files in it, it will create one
 // and copy the template index.ts file in it.
-func (t *TypescriptSdk) setupModule(ctx context.Context, ctr *Container, runtime SupportedTSRuntime, name string) (*Container, error) {
-	moduleFiles, err := ctr.Directory(".").Entries(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("could not list rootfs entries: %w", err)
-	}
-
-	packageJSONExist := slices.Contains(moduleFiles, "package.json")
+func (t *TypescriptSdk) setupModule(ctx context.Context, ctr *Container) (*Container, error) {
+	runtime := t.moduleConfig.runtime
+	name := t.moduleConfig.name
 
 	// If there's a package.json, run the tsconfig updator script and install the genDir.
 	// else, copy the template config files.
-	if packageJSONExist {
+	if t.moduleConfig.hasFile("package.json") {
 		if runtime == Bun {
 			ctr = ctr.
 				WithExec([]string{"bun", "/opt/module/bin/__tsconfig.updator.ts"}).
@@ -278,7 +266,7 @@ func (t *TypescriptSdk) setupModule(ctx context.Context, ctr *Container, runtime
 	}
 
 	// Check if there's a src directory and creates an empty directory if it doesn't exist.
-	if !slices.Contains(moduleFiles, "src") {
+	if !t.moduleConfig.hasFile("src") {
 		ctr = ctr.WithDirectory("src", dag.Directory())
 	}
 
@@ -302,14 +290,14 @@ func (t *TypescriptSdk) setupModule(ctx context.Context, ctr *Container, runtime
 }
 
 // installedSDK returns a directory with the SDK sources and its dependencies installed.
-func (t *TypescriptSdk) installedSDK(ctr *Container, runtime SupportedTSRuntime) *Directory {
+func (t *TypescriptSdk) installedSDK(ctr *Container) *Directory {
 	ctr = ctr.
 		WithWorkdir(ModSourceDirPath).
 		WithDirectory(".", t.SDKSourceDir, ContainerWithDirectoryOpts{
 			Exclude: []string{"codegen", "runtime"},
 		})
 
-	switch runtime {
+	switch t.moduleConfig.runtime {
 	case Bun:
 		return ctr.WithExec([]string{"bun", "install", "--no-verify", "--no-progress", "--summary"}).Directory(ModSourceDirPath)
 	case Node:
@@ -323,7 +311,7 @@ func (t *TypescriptSdk) installedSDK(ctr *Container, runtime SupportedTSRuntime)
 }
 
 // generateClient uses the given container to generate the client code.
-func (t *TypescriptSdk) generateClient(ctr *Container, name string, introspectionJSON *File, subPath string) *Directory {
+func (t *TypescriptSdk) generateClient(ctr *Container, introspectionJSON *File) *Directory {
 	return ctr.
 		// Add dagger codegen binary.
 		WithMountedFile(codegenBinPath, t.SDKSourceDir.File("/codegen")).
@@ -334,14 +322,14 @@ func (t *TypescriptSdk) generateClient(ctr *Container, name string, introspectio
 			codegenBinPath,
 			"--lang", "typescript",
 			"--output", ModSourceDirPath,
-			"--module-name", name,
-			"--module-context-path", filepath.Join(ModSourceDirPath, subPath),
+			"--module-name", t.moduleConfig.name,
+			"--module-context-path", t.moduleConfig.modulePath(),
 			"--introspection-json-path", schemaPath,
 		}, ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		}).
 		// Return the generated code directory.
-		Directory(filepath.Join(ModSourceDirPath, subPath, GenDir))
+		Directory(t.moduleConfig.sdkPath())
 }
 
 // DetectRuntime returns the runtime(bun or node) detected for the user's module
@@ -351,13 +339,14 @@ func (t *TypescriptSdk) generateClient(ctr *Container, name string, introspectio
 // If none of the above is present, node will be used.
 //
 // If the runtime is detected and pinned to a specific version, it will also return the pinned version.
-func (t *TypescriptSdk) detectRuntime(ctx context.Context, modSource *ModuleSource, subPath string) (SupportedTSRuntime, string, error) {
-	// Try to detect runtime from package.json
-	source := modSource.ContextDirectory().Directory(subPath)
+func (t *TypescriptSdk) detectRuntime(ctx context.Context) (SupportedTSRuntime, string, error) {
+	// If we find a package.json, we check if the runtime is specified in `dagger.runtime` field.
+	if t.moduleConfig.hasFile("package.json") {
+		json, err := t.moduleConfig.source.File("package.json").Contents(ctx)
+		if err != nil {
+			return "", "", fmt.Errorf("failed to read package.json: %w", err)
+		}
 
-	// read contents of package.json
-	json, err := source.File("package.json").Contents(ctx)
-	if err == nil {
 		value := gjson.Get(json, "dagger.runtime").String()
 		if value != "" {
 			// Retrieve the runtime and version from the value (e.g., node@lts, bun@1)
@@ -374,18 +363,14 @@ func (t *TypescriptSdk) detectRuntime(ctx context.Context, modSource *ModuleSour
 	}
 
 	// Try to detect runtime from lock files
-	entries, err := source.Entries(ctx)
-	fmt.Printf("Entries: %v\n", entries)
-	if err == nil {
-		if slices.Contains(entries, "bun.lockb") {
-			return Bun, "", nil
-		}
+	if t.moduleConfig.hasFile("bun.lockb") {
+		return Bun, "", nil
+	}
 
-		if slices.Contains(entries, "package-lock.json") ||
-			slices.Contains(entries, "yarn.lock") ||
-			slices.Contains(entries, "pnpm-lock.yaml") {
-			return Node, "", nil
-		}
+	if t.moduleConfig.hasFile("package-lock.json") ||
+		t.moduleConfig.hasFile("yarn.lock") ||
+		t.moduleConfig.hasFile("pnpm-lock.yaml") {
+		return Node, "", nil
 	}
 
 	// Default to node
@@ -401,25 +386,20 @@ func (t *TypescriptSdk) detectRuntime(ctx context.Context, modSource *ModuleSour
 //
 // Except if the package.json has an invalid value in field "packageManager", this
 // function should never return an error.
-func (t *TypescriptSdk) detectPackageManager(ctx context.Context, modSource *ModuleSource, subPath string, runtime SupportedTSRuntime) (SupportedPackageManager, string, error) {
+func (t *TypescriptSdk) detectPackageManager(ctx context.Context) (SupportedPackageManager, string, error) {
 	// If the runtime is Bun, we should use BunManager
-	if runtime == Bun {
+	if t.moduleConfig.runtime == Bun {
 		return BunManager, "", nil
 	}
 
-	// Try to detect package manager from package.json
-	source := modSource.ContextDirectory().Directory(subPath)
-
-	// read contents of package.json
-	json, err := source.File("package.json").Contents(ctx)
-	if err == nil {
-		// Check if the dagger.runtime field is set to "bun" first
-		value := gjson.Get(json, "dagger.runtime").String()
-		if value != "" && strings.Contains(value, "bun") {
-			return BunManager, "", nil
+	// If we find a package.json, we check if the packageManager is specified in `packageManager` field.
+	if t.moduleConfig.hasFile("package.json") {
+		json, err := t.moduleConfig.source.File("package.json").Contents(ctx)
+		if err != nil {
+			return "", "", fmt.Errorf("failed to read package.json: %w", err)
 		}
 
-		value = gjson.Get(json, "packageManager").String()
+		value := gjson.Get(json, "packageManager").String()
 		if value != "" {
 			// Retrieve the package manager and version from the value (e.g., yarn@4.2.0, pnpm@8.5.1)
 			packageManager, version, _ := strings.Cut(value, "@")
@@ -433,31 +413,31 @@ func (t *TypescriptSdk) detectPackageManager(ctx context.Context, modSource *Mod
 		}
 	}
 
-	// Try to detect package manager from lock files
-	entries, err := source.Entries(ctx)
-	if err == nil {
-		if slices.Contains(entries, "bun.lockb") {
-			return BunManager, "", nil
-		}
-
-		if slices.Contains(entries, "package-lock.json") {
-			return Npm, "", nil
-		}
-
-		if slices.Contains(entries, "yarn.lock") {
-			return Yarn, "", nil
-		}
-
-		if slices.Contains(entries, "pnpm-lock.yaml") {
-			return Pnpm, "", nil
-		}
+	if t.moduleConfig.hasFile("bun.lockb") {
+		return BunManager, "", nil
 	}
 
+	if t.moduleConfig.hasFile("package-lock.json") {
+		return Npm, "", nil
+	}
+
+	if t.moduleConfig.hasFile("yarn.lock") {
+		return Yarn, "", nil
+	}
+
+	if t.moduleConfig.hasFile("pnpm-lock.yaml") {
+		return Pnpm, "", nil
+	}
+
+	// Default to yarn
 	return Yarn, YarnDefaultVersion, nil
 }
 
 // generateLockFile generate a lock file for the matching package manager.
-func generateLockFile(ctx context.Context, ctr *Container, packageManager SupportedPackageManager, version string) (*Container, error) {
+func (t *TypescriptSdk) generateLockFile(ctx context.Context, ctr *Container) (*Container, error) {
+	packageManager := t.moduleConfig.packageManager
+	version := t.moduleConfig.packageManagerVersion
+
 	switch packageManager {
 	case Yarn:
 		// Sadly, yarn < v3 doesn't support generating a lockfile without installing the dependencies.
@@ -483,17 +463,8 @@ func generateLockFile(ctx context.Context, ctr *Container, packageManager Suppor
 }
 
 // installDependencies installs the dependencies using the detected package manager.
-//
-// If the package.json file has a field "packageManager", it will use that to
-// determine the package manager to use. Otherwise, it will use the default
-// package manager based on the lock files present in the module.
-//
-// If none of the above works, it will use yarn.
-//
-// Except if the package.json has an invalid value in field "packageManager", this
-// // function should never return an error.
-func installNodeDependencies(ctx context.Context, ctr *Container, packageManager SupportedPackageManager) (*Container, error) {
-	switch packageManager {
+func (t *TypescriptSdk) installDependencies(ctx context.Context, ctr *Container) (*Container, error) {
+	switch t.moduleConfig.packageManager {
 	case Yarn:
 		return ctr.
 			WithExec([]string{"yarn", "install"}), nil
@@ -507,6 +478,74 @@ func installNodeDependencies(ctx context.Context, ctr *Container, packageManager
 		return ctr.
 			WithExec([]string{"bun", "install", "--no-verify", "--no-progress"}), nil
 	default:
-		return nil, fmt.Errorf("detected unknown package manager: %s", packageManager)
+		return nil, fmt.Errorf("detected unknown package manager: %s", t.moduleConfig.packageManager)
 	}
+}
+
+// analyzeModuleConfig analyzes the module config and populates the moduleConfig field.
+//
+// It detect the module name, source subpath, runtime, package manager and their versions.
+// It also populates the moduleConfig.entries map with the list of files present in the module source.
+//
+// It's a utility function that should be called before calling any other exposed function in this module.
+func (t *TypescriptSdk) analyzeModuleConfig(ctx context.Context, modSource *ModuleSource) (err error) {
+	if t.moduleConfig == nil {
+		t.moduleConfig = &moduleConfig{
+			entries: make(map[string]bool),
+		}
+	}
+
+	t.moduleConfig.name, err = modSource.ModuleOriginalName(ctx)
+	if err != nil {
+		return fmt.Errorf("could not load module config name: %w", err)
+	}
+
+	t.moduleConfig.subPath, err = modSource.SourceSubpath(ctx)
+	if err != nil {
+		return fmt.Errorf("could not load module config source subpath: %w", err)
+	}
+
+	// If a first init, there will be no directory, so we ignore the error here.
+	t.moduleConfig.source = modSource.ContextDirectory().Directory(t.moduleConfig.subPath)
+	entries, err := t.moduleConfig.source.Entries(ctx)
+	if err == nil {
+		for _, entry := range entries {
+			t.moduleConfig.entries[entry] = true
+		}
+	}
+
+	t.moduleConfig.runtime, t.moduleConfig.runtimeVersion, err = t.detectRuntime(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to detect module runtime: %w", err)
+	}
+
+	t.moduleConfig.packageManager, t.moduleConfig.packageManagerVersion, err = t.detectPackageManager(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to detect package manager: %w", err)
+	}
+
+	return nil
+}
+
+// Return true if the file is present in the module source.
+func (c *moduleConfig) hasFile(name string) bool {
+	_, ok := c.entries[name]
+
+	return ok
+}
+
+func (c *moduleConfig) modulePath() string {
+	return filepath.Join(ModSourceDirPath, c.subPath)
+}
+
+func (c *moduleConfig) sdkPath() string {
+	return filepath.Join(c.modulePath(), GenDir)
+}
+
+func (c *moduleConfig) entrypointPath() string {
+	return filepath.Join(ModSourceDirPath, c.subPath, SrcDir, EntrypointExecutableFile)
+}
+
+func (c *moduleConfig) tsConfigPath() string {
+	return filepath.Join(ModSourceDirPath, c.subPath, "tsconfig.json")
 }
