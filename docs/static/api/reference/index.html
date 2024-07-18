@@ -3531,8 +3531,8 @@
                   <html>
                     <head></head>
                     <body><pre><code class="hljs language-json"><span class="hljs-punctuation">{</span>
-  <span class="hljs-attr">"name"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"abc123"</span><span class="hljs-punctuation">,</span>
-  <span class="hljs-attr">"value"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"xyz789"</span>
+  <span class="hljs-attr">"name"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"xyz789"</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">"value"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"abc123"</span>
 <span class="hljs-punctuation">}</span>
 </code></pre>
                     </body>
@@ -8226,7 +8226,7 @@
                   <h5>Example</h5>
                   <html>
                     <head></head>
-                    <body><pre><code class="hljs language-json"><span class="hljs-punctuation">{</span><span class="hljs-attr">"backend"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">123</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">"frontend"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">123</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">"protocol"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"TCP"</span><span class="hljs-punctuation">}</span>
+                    <body><pre><code class="hljs language-json"><span class="hljs-punctuation">{</span><span class="hljs-attr">"backend"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">123</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">"frontend"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">987</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">"protocol"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"TCP"</span><span class="hljs-punctuation">}</span>
 </code></pre>
                     </body>
                   </html>
@@ -8565,6 +8565,13 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Terminal-id" href="#Terminal-id"><code>id</code></a> - <span class="property-type"><a href="#definition-TerminalID"><code>TerminalID!</code></a></span> </td>
                         <td> A unique identifier for this Terminal. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Terminal-sync" href="#Terminal-sync"><code>sync</code></a> - <span class="property-type"><a href="#definition-TerminalID"><code>TerminalID!</code></a></span> </td>
+                        <td>
+                          <p>Forces evaluation of the pipeline in the engine.</p>
+                          <p>It doesn&#39;t run the default command if no exec has been set.</p>
+                        </td>
                       </tr>
                     </tbody>
                   </table>
