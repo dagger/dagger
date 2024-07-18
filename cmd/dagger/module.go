@@ -87,20 +87,15 @@ func init() {
 }
 
 var moduleInitCmd = &cobra.Command{
-	Use:   "init [options] [path]",
+	Use:   "init [options] [PATH]",
 	Short: "Initialize a new Dagger module",
-	Long: `Initialize a new Dagger module in a local directory.
-By default, create a new dagger.json configuration in the current working directory. If the positional argument PATH is provided, create the module in that directory instead.
+	Long: `Initialize a new Dagger module at the given path.
 
-The configuration will default the name of the module to the parent directory name, unless specified with --name.
+This creates a dagger.json file at the specified directory, making it the root of the new module.
 
-Any module can be installed to via "dagger install".
-
-A module can only be called once it has been initialized with an SDK though. The "--sdk" flag can be provided to init here, but if it's not the configuration can be updated later via "dagger develop".
-
-The "--source" flag allows controlling the directory in which the actual module source code is stored. By default, it will be stored in a directory named "dagger".
+If --sdk is specified, the given SDK is installed in the module. You can do this later with "dagger develop".
 `,
-	Example: "dagger init --name=hello --sdk=python --source=some/subdir",
+	Example: "dagger init --sdk=python",
 	GroupID: moduleGroup.ID,
 	Args:    cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
