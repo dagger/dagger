@@ -1,6 +1,0 @@
-kind: Added
-body: Add support for passing Sockets as arguments from the CLI to Functions
-time: 2024-07-10T22:59:47.741409661-07:00
-custom:
-  Author: sipsma
-  PR: "7804"
