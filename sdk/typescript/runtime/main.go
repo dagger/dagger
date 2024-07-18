@@ -107,7 +107,7 @@ func (t *TypescriptSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSour
 		ctr.Directory("/opt/module/bin").File(EntrypointExecutableFile),
 	)
 
-	ctr, err = t.installDependencies(ctx, ctr)
+	ctr, err = t.installDependencies(ctr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to install dependencies: %w", err)
 	}
@@ -184,7 +184,7 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 	}
 
 	// Generate the appropriate lock file
-	ctr, err = t.generateLockFile(ctx, ctr)
+	ctr, err = t.generateLockFile(ctr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate lock file: %w", err)
 	}
@@ -434,7 +434,7 @@ func (t *TypescriptSdk) detectPackageManager(ctx context.Context) (SupportedPack
 }
 
 // generateLockFile generate a lock file for the matching package manager.
-func (t *TypescriptSdk) generateLockFile(ctx context.Context, ctr *Container) (*Container, error) {
+func (t *TypescriptSdk) generateLockFile(ctr *Container) (*Container, error) {
 	packageManager := t.moduleConfig.packageManager
 	version := t.moduleConfig.packageManagerVersion
 
@@ -463,7 +463,7 @@ func (t *TypescriptSdk) generateLockFile(ctx context.Context, ctr *Container) (*
 }
 
 // installDependencies installs the dependencies using the detected package manager.
-func (t *TypescriptSdk) installDependencies(ctx context.Context, ctr *Container) (*Container, error) {
+func (t *TypescriptSdk) installDependencies(ctr *Container) (*Container, error) {
 	switch t.moduleConfig.packageManager {
 	case Yarn:
 		return ctr.
