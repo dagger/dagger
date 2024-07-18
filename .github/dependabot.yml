@@ -50,7 +50,7 @@ updates:
           - "*"
 
   - package-ecosystem: "npm"
-    directory: "/website"
+    directory: "/docs"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -60,7 +60,7 @@ updates:
       - "kind/dependencies"
       - "area/documentation"
     groups:
-      website:
+      docs:
         applies-to: version-updates
         patterns:
           - "*"
