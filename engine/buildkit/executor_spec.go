@@ -1050,6 +1050,7 @@ func (w *Worker) installCACerts(ctx context.Context, state *execState) error {
 		caExecState.spec.Process.User.UID = 0
 		caExecState.spec.Process.User.GID = 0
 		caExecState.spec.Process.Cwd = "/"
+		caExecState.spec.Process.Terminal = false
 
 		started := make(chan struct{}, 1)
 		if err := w.run(ctx, caExecState, started); err != nil {
