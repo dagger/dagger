@@ -39,8 +39,7 @@ runs:
           echo "::group::Checking dagger"
           version="$(dagger --silent version | cut --fields 2 --delimiter ' ')"
           if [[ "$version" != "$DAGGER_VERSION" ]]; then
-            echo "dagger ${version} is installed, but needed ${DAGGER_VERSION}"
-            exit 1
+            echo "WARNING: dagger ${version} is installed, but needed ${DAGGER_VERSION}"
           fi
           echo "::endgroup::"
         else
