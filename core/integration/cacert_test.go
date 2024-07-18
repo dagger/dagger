@@ -3,11 +3,10 @@ package core
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/dagger/testctx"
 	"github.com/stretchr/testify/require"
 )
@@ -438,55 +437,31 @@ func customCACertTests(
 ) {
 	t.Helper()
 
-	executeTestEnvName := fmt.Sprintf("DAGGER_TEST_%s", strings.ToUpper(t.Name()))
-
 	certGen := newGeneratedCerts(c, "ca")
 	serverCert, serverKey := certGen.newServerCerts("server")
 
-	if os.Getenv(executeTestEnvName) == "" {
-		serverCtr := nginxWithCerts(c, nginxWithCertsOpts{
-			serverCert:          serverCert,
-			serverKey:           serverKey,
-			dhParam:             certGen.dhParam,
-			dnsName:             "server",
-			msg:                 "hello",
-			redirectHTTPToHTTPS: true,
-		})
+	serverCtr := nginxWithCerts(c, nginxWithCertsOpts{
+		serverCert:          serverCert,
+		serverKey:           serverKey,
+		dhParam:             certGen.dhParam,
+		dnsName:             "server",
+		msg:                 "hello",
+		redirectHTTPToHTTPS: true,
+	})
 
-		devEngine := devEngineContainer(c, func(ctr *dagger.Container) *dagger.Container {
-			return ctr.
-				WithMountedFile("/usr/local/share/ca-certificates/dagger-test-custom-ca.crt", certGen.caRootCert).
-				WithServiceBinding("server", serverCtr.AsService())
-		})
-
-		thisRepoPath, err := filepath.Abs("../..")
-		require.NoError(t, err)
-		thisRepo := c.Host().Directory(thisRepoPath)
-
-		_, err = c.Container().From(golangImage).
-			With(goCache(c)).
-			WithMountedDirectory("/src", thisRepo).
-			WithWorkdir("/src").
-			WithMountedFile("/ca.crt", certGen.caRootCert).
-			WithMountedFile("/server.crt", serverCert).
-			WithMountedFile("/server.key", serverKey).
-			WithMountedFile("/dhparam.pem", certGen.dhParam).
-			WithServiceBinding("engine", devEngine.AsService()).
-			WithMountedFile("/bin/dagger", daggerCliFile(t, c)).
-			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
-			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://engine:1234").
-			WithEnvVariable(executeTestEnvName, "ya").
-			WithExec([]string{
-				"go", "test",
-				"-v",
-				"-timeout", "20m",
-				"-count", "1",
-				"-run", fmt.Sprintf("^%s$", t.Name()),
-				"./core/integration",
-			}).Sync(ctx)
-		require.NoError(t, err)
-		return
-	}
+	devEngine := devEngineContainer(c, func(ctr *dagger.Container) *dagger.Container {
+		return ctr.
+			WithMountedFile("/usr/local/share/ca-certificates/dagger-test-custom-ca.crt", certGen.caRootCert).
+			WithServiceBinding("server", serverCtr.AsService())
+	})
+	engineSvc, err := c.Host().Tunnel(devEngine.AsService()).Start(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { engineSvc.Stop(ctx) })
+	endpoint, err := engineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Scheme: "tcp"})
+	require.NoError(t, err)
+	c2, err := dagger.Connect(ctx, dagger.WithRunnerHost(endpoint), dagger.WithLogOutput(testutil.NewTWriter(t)))
+	require.NoError(t, err)
+	t.Cleanup(func() { c2.Close() })
 
 	caCertContents, err := certGen.caRootCert.Contents(ctx)
 	require.NoError(t, err)
@@ -494,7 +469,7 @@ func customCACertTests(
 	for _, test := range tests {
 		test := test
 		t.Run(test.name, func(ctx context.Context, t *testctx.T) {
-			test.run(t, c, caCertsTestFixtures{
+			test.run(t, c2, caCertsTestFixtures{
 				caCertContents: caCertContents,
 			})
 		})
