@@ -65,6 +65,7 @@ runs:
           echo "docker is not installed"
           exit 1
         fi
+        docker info
 
         # put env variables in /tmp/actions/call/local-envs instead of
         # $GITHUB_ENV to avoid leaking into parent workflow
