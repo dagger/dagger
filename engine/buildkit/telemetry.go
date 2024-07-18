@@ -2,8 +2,10 @@ package buildkit
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 
+	"github.com/dagger/dagger/engine"
 	"go.opentelemetry.io/otel/attribute"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
@@ -20,26 +22,45 @@ func buildkitTelemetryContext(ctx context.Context) context.Context {
 		return nil
 	}
 	sp := trace.SpanFromContext(ctx)
-	sp = buildkitSpan{Span: sp, provider: &buildkitTraceProvider{tp: sp.TracerProvider()}}
+	// Start will sometimes be called with a ctx that drops our client metadata. No idea
+	// why. I guess it gets lost somewhere in the buildkit solver.
+	//
+	// To work around that, we'll capture the client metadata here and reinstall it for
+	// future spans.
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		slog.Warn("failed to extract client metadata from context", "err", err)
+		// carry on
+	}
+	sp = buildkitSpan{
+		Span: sp,
+		provider: &buildkitTraceProvider{
+			tp:             sp.TracerProvider(),
+			clientMetadata: clientMetadata,
+		},
+	}
 	return trace.ContextWithSpan(ctx, sp)
 }
 
 type buildkitTraceProvider struct {
 	embedded.TracerProvider
-	tp trace.TracerProvider
+	tp             trace.TracerProvider
+	clientMetadata *engine.ClientMetadata
 }
 
 func (tp *buildkitTraceProvider) Tracer(name string, options ...trace.TracerOption) trace.Tracer {
 	return &buildkitTracer{
-		tracer:   tp.tp.Tracer(name, options...),
-		provider: tp,
+		tracer:         tp.tp.Tracer(name, options...),
+		provider:       tp,
+		clientMetadata: tp.clientMetadata,
 	}
 }
 
 type buildkitTracer struct {
 	embedded.Tracer
-	tracer   trace.Tracer
-	provider *buildkitTraceProvider
+	tracer         trace.Tracer
+	provider       *buildkitTraceProvider
+	clientMetadata *engine.ClientMetadata
 }
 
 const TelemetryComponent = "buildkit"
@@ -52,6 +73,11 @@ func (t *buildkitTracer) Start(ctx context.Context, spanName string, opts ...tra
 		// have to make do.
 		trace.WithAttributes(attribute.Bool("buildkit", true)),
 	}, opts...)
+
+	// Bring back the client metadata since it's part of span processing.
+	if _, err := engine.ClientMetadataFromContext(ctx); err != nil {
+		ctx = engine.ContextWithClientMetadata(ctx, t.clientMetadata)
+	}
 
 	ctx, span := t.tracer.Start(ctx, spanName, opts...)
 	newSpan := buildkitSpan{Span: span, provider: t.provider}
