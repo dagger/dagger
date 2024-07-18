@@ -1104,3 +1104,44 @@ class Test {
 		require.JSONEq(t, `{"test": {"foo": "bar"}}`, out)
 	})
 }
+
+func (ModuleSuite) TestTypeScriptExperimentalDecoratorsCompatibility(ctx context.Context, t *testctx.T) {
+	t.Run("should work with experimental decorators", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=test", "--sdk=typescript")).
+			With(sdkSource("typescript", `
+import { func, object } from "@dagger.io/dagger"
+
+@object()
+class Test {
+  @func()
+  foo(): string {
+    return "bar"
+  }
+}
+`,
+			)).
+			WithoutFile("/work/dagger/tsconfig.json").
+			WithNewFile("/work/dagger/tsconfig.json", `
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "moduleResolution": "Node",
+		"experimentalDecorators": true,
+		"emitDecoratorMetadata": true,
+    "paths": {
+      "@dagger.io/dagger": ["./sdk"],
+      "@dagger.io/dagger/telemetry": ["./sdk/telemetry"]
+    }
+  }
+}`)
+
+		out, err := modGen.With(daggerQuery(`{test{foo}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"test": {"foo": "bar"}}`, out)
+	})
+}
