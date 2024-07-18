@@ -2,11 +2,13 @@
 slug: /manuals/user/host-services
 ---
 
-# Host Services Access
+# Connecting to Host Services
 
 Dagger Functions do not have access to the network of the host you invoke the Dagger Function from (i.e. the host you execute a CLI command like `dagger call` from). Instead, host network services need to be explicitly passed when executing `dagger call`.
 
-To pass host network services as arguments when invoking a Dagger Function, specify them in the form `tcp://<host>:<port>`.
+## TCP and UDP Services
+
+To pass host TCP or UDP network services as arguments when invoking a Dagger Function, specify them in the form `tcp://<host>:<port>` or `udp://<host>:<port>`.
 
 Assume that you have a PostgresQL database running locally on port 5432, as with:
 
@@ -18,4 +20,16 @@ Here is an example of passing this host service as argument to a PostgreSQL clie
 
 ```shell
 dagger -m github.com/kpenfound/dagger-modules/postgres@v0.1.0 call client --db=postgres --user=postgres --password=postgres --server=tcp://localhost:5432
+```
+
+## Unix Sockets
+
+Similar to host TCP/UDP services, Dagger Functions can also be granted access to host Unix sockets when the client is running on Linux or MacOS.
+
+To pass host Unix sockets as arguments when invoking a Dagger Function, specify them by their path on the host.
+
+For example, assuming you have Docker on your host with the Docker daemon listening on a Unix socket at `/var/run/docker.sock`, you can pass this socket to a Docker client Dagger Function as follows:
+
+```shell
+dagger -m github.com/sipsma/daggerverse/docker-client@v0.0.1 call --sock=/var/run/docker.sock version
 ```
