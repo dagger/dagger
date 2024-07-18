@@ -22,7 +22,7 @@ type PHPSDK struct {
 
 // Lint the PHP SDK
 func (t PHPSDK) Lint(ctx context.Context) error {
-	return util.DiffDirectoryF(ctx, t.Dagger.Source, t.Generate, filepath.Join(phpSDKPath, phpSDKGeneratedDir))
+	return util.DiffDirectoryF(ctx, t.Dagger.Source(), t.Generate, filepath.Join(phpSDKPath, phpSDKGeneratedDir))
 }
 
 // Test the PHP SDK
@@ -95,7 +95,7 @@ func (t PHPSDK) Bump(ctx context.Context, version string) (*dagger.Directory, er
 // phpBase returns a PHP container with the PHP SDK source files
 // added and dependencies installed.
 func (t PHPSDK) phpBase() *dagger.Container {
-	src := t.Dagger.Source.Directory(phpSDKPath)
+	src := t.Dagger.Source().Directory(phpSDKPath)
 	return dag.Container().
 		From("php:8.2-zts-bookworm").
 		WithExec([]string{"apt-get", "update"}).

@@ -32,7 +32,7 @@ pagination_prev: null
 func (d Docs) Site() *dagger.Directory {
 	return dag.
 		Docusaurus(
-			d.Dagger.Source,
+			d.Dagger.Source(),
 			dagger.DocusaurusOpts{Dir: "/src/docs", DisableCache: true},
 		).
 		Build()
@@ -59,8 +59,8 @@ func (d Docs) Lint(ctx context.Context) error {
 	eg.Go(func() error {
 		_, err := dag.Container().
 			From("tmknom/markdownlint:0.31.1").
-			WithMountedDirectory("/src", d.Dagger.Source).
-			WithMountedFile("/src/.markdownlint.yaml", d.Dagger.Source.File(".markdownlint.yaml")).
+			WithMountedDirectory("/src", d.Dagger.Source()).
+			WithMountedFile("/src/.markdownlint.yaml", d.Dagger.Source().File(".markdownlint.yaml")).
 			WithWorkdir("/src").
 			WithExec([]string{
 				"markdownlint",
@@ -75,14 +75,14 @@ func (d Docs) Lint(ctx context.Context) error {
 	})
 
 	eg.Go(func() error {
-		return util.DiffDirectoryF(ctx, d.Dagger.Source, d.Generate, generatedSchemaPath, generatedCliZenPath)
+		return util.DiffDirectoryF(ctx, d.Dagger.Source(), d.Generate, generatedSchemaPath, generatedCliZenPath)
 	})
 
 	eg.Go(func() error {
-		return util.DiffDirectoryF(ctx, d.Dagger.Source, func(ctx context.Context) (*dagger.Directory, error) {
+		return util.DiffDirectoryF(ctx, d.Dagger.Source(), func(ctx context.Context) (*dagger.Directory, error) {
 			return dag.Container().
 				From("ghcr.io/miniscruff/changie").
-				WithMountedDirectory("/src", d.Dagger.Source).
+				WithMountedDirectory("/src", d.Dagger.Source()).
 				WithWorkdir("/src").
 				WithExec([]string{"/changie", "merge"}).
 				Directory("/src"), nil
@@ -127,7 +127,7 @@ func (d Docs) Generate(ctx context.Context) (*dagger.Directory, error) {
 // Regenerate the API schema
 func (d Docs) GenerateSdl() *dagger.Directory {
 	introspectionJSON := dag.
-		Go(d.Dagger.Source).
+		Go(d.Dagger.Source()).
 		Env().
 		WithExec([]string{"go", "run", "./cmd/introspect"}, dagger.ContainerWithExecOpts{
 			RedirectStdout: "introspection.json",
@@ -151,7 +151,7 @@ func (d Docs) GenerateCli() *dagger.Directory {
 func (d Docs) GenerateAPIReference() *dagger.Directory {
 	generatedHTML := dag.Container().
 		From("node:18").
-		WithMountedDirectory("/src", d.Dagger.Source).
+		WithMountedDirectory("/src", d.Dagger.Source()).
 		WithWorkdir("/src/docs").
 		WithExec([]string{"yarn", "add", "spectaql"}).
 		WithExec([]string{"yarn", "run", "spectaql", "./docs-graphql/config.yml", "-t", "."}).
