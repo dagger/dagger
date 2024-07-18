@@ -3516,6 +3516,7 @@ func (ContainerSuite) TestInsecureRootCapabilitesWithService(ctx context.Context
 		WithMountedCache("/tmp", c.CacheVolume("share-tmp")).
 		WithServiceBinding("docker", dockerd).
 		WithEnvVariable("DOCKER_HOST", dockerHost).
+		With(mountDockerConfig(c)).
 		WithExec([]string{"sh", "-e", "-c", strings.Join([]string{
 			fmt.Sprintf("echo %s-from-outside > /tmp/from-outside", randID),
 			"docker run --rm -v /tmp:/tmp alpine cat /tmp/from-outside",
@@ -4205,4 +4206,23 @@ func (ContainerSuite) TestEmptyExecDiff(ctx context.Context, t *testctx.T) {
 	ents, err := base.Rootfs().Diff(base.WithExec([]string{"true"}).Rootfs()).Entries(ctx)
 	require.NoError(t, err)
 	require.Len(t, ents, 0)
+}
+
+// mountDockerConfig is a helper for mounting the host's docker config if it exists
+func mountDockerConfig(dag *dagger.Client) dagger.WithContainerFunc {
+	return func(ctr *dagger.Container) *dagger.Container {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return ctr
+		}
+		content, err := os.ReadFile(filepath.Join(home, ".docker/config.json"))
+		if err != nil {
+			return ctr
+		}
+
+		return ctr.WithMountedSecret(
+			"/root/.docker/config.json",
+			dag.SetSecret("docker-config-"+identity.NewID(), string(content)),
+		)
+	}
 }
