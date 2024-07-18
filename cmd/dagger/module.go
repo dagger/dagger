@@ -58,17 +58,17 @@ const (
 )
 
 func init() {
-	moduleFlags.StringVarP(&moduleURL, "mod", "m", "", "Path to the module directory containing the dagger.json config file. Either local path or a remote git repo")
+	moduleFlags.StringVarP(&moduleURL, "mod", "m", "", "Path to the module directory. Either local path or a remote git repo")
 
 	listenCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	queryCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	funcCmds.AddFlagSet(moduleFlags)
 	configCmd.PersistentFlags().AddFlagSet(moduleFlags)
 
-	moduleInitCmd.Flags().StringVar(&sdk, "sdk", "", "Optionally initialize module for development in the given SDK")
+	moduleInitCmd.Flags().StringVar(&sdk, "sdk", "", "Optionally install a Dagger SDK")
 	moduleInitCmd.Flags().StringVar(&moduleName, "name", "", "Name of the new module (defaults to parent directory name)")
-	moduleInitCmd.Flags().StringVar(&moduleSourcePath, "source", "", "Directory to store the module implementation source code in (defaults to \".\"/ if \"--sdk\" is provided)")
-	moduleInitCmd.Flags().StringVar(&licenseID, "license", defaultLicense, "License identifier to generate - see https://spdx.org/licenses/")
+	moduleInitCmd.Flags().StringVar(&moduleSourcePath, "source", "", "Source directory used by the installed SDK. Defaults to module root")
+	moduleInitCmd.Flags().StringVar(&licenseID, "license", defaultLicense, "License identifier to generate. See https://spdx.org/licenses/")
 
 	modulePublishCmd.Flags().BoolVarP(&force, "force", "f", false, "Force publish even if the git repository is not clean")
 	modFlag := *moduleFlags.Lookup("mod")
@@ -78,9 +78,9 @@ func init() {
 	moduleInstallCmd.Flags().StringVarP(&installName, "name", "n", "", "Name to use for the dependency in the module. Defaults to the name of the module being installed.")
 	moduleInstallCmd.Flags().AddFlagSet(moduleFlags)
 
-	moduleDevelopCmd.Flags().StringVar(&developSDK, "sdk", "", "New SDK for the module")
-	moduleDevelopCmd.Flags().StringVar(&developSourcePath, "source", "", "Directory to store the module implementation source code in")
-	moduleDevelopCmd.Flags().StringVar(&licenseID, "license", defaultLicense, "License identifier to generate - see https://spdx.org/licenses/")
+	moduleDevelopCmd.Flags().StringVar(&developSDK, "sdk", "", "Install the given Dagger SDK. Can be builtin (go, python, typescript) or a module address")
+	moduleDevelopCmd.Flags().StringVar(&developSourcePath, "source", "", "Source directory used by the installed SDK. Defaults to module root")
+	moduleDevelopCmd.Flags().StringVar(&licenseID, "license", defaultLicense, "License identifier to generate. See https://spdx.org/licenses/")
 	moduleDevelopCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
 	moduleDevelopCmd.Flags().Lookup("compat").NoOptDefVal = "skip"
 	moduleDevelopCmd.PersistentFlags().AddFlagSet(moduleFlags)
@@ -88,19 +88,14 @@ func init() {
 
 var moduleInitCmd = &cobra.Command{
 	Use:   "init [options] [path]",
-	Short: "Initialize a new Dagger module",
-	Long: `Initialize a new Dagger module in a local directory.
-By default, create a new dagger.json configuration in the current working directory. If the positional argument PATH is provided, create the module in that directory instead.
+	Short: "Initialize a new module",
+	Long: `Initialize a new module at the given path.
 
-The configuration will default the name of the module to the parent directory name, unless specified with --name.
+This creates a dagger.json file at the specified directory, making it the root of the new module.
 
-Any module can be installed to via "dagger install".
-
-A module can only be called once it has been initialized with an SDK though. The "--sdk" flag can be provided to init here, but if it's not the configuration can be updated later via "dagger develop".
-
-The "--source" flag allows controlling the directory in which the actual module source code is stored. By default, it will be stored in a directory named "dagger".
+If --sdk is specified, the given SDK is installed in the module. You can do this later with "dagger develop".
 `,
-	Example: "dagger init --name=hello --sdk=python --source=some/subdir",
+	Example: "dagger init --sdk=python",
 	GroupID: moduleGroup.ID,
 	Args:    cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
@@ -189,10 +184,9 @@ The "--source" flag allows controlling the directory in which the actual module 
 var moduleInstallCmd = &cobra.Command{
 	Use:     "install [options] <module>",
 	Aliases: []string{"use"},
-	Short:   "Add a new dependency to a Dagger module",
-	Long:    "Add a Dagger module as a dependency of a local module.",
-	// TODO: use example from a reference module, using a tag instead of commit
-	Example: "dagger install github.com/shykes/daggerverse/ttlsh@16e40ec244966e55e36a13cb6e1ff8023e1e1473",
+	Short:   "Install a dependency",
+	Long:    "Install another module as a dependency to the current module. The target module must be local.",
+	Example: "dagger install github.com/shykes/hello@v0.1.0",
 	GroupID: moduleGroup.ID,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
@@ -303,19 +297,23 @@ var moduleInstallCmd = &cobra.Command{
 
 var moduleDevelopCmd = &cobra.Command{
 	Use:   "develop [options]",
-	Short: "Setup or update all the resources needed to develop on a module locally",
-	Long: `Setup or update all the resources needed to develop on a module locally.
+	Short: "Prepare a local module for development",
+	Long: `Ensure that a module's SDK is installed, configured, and all its files re-generated.
 
-This command regenerates the module's code based on dependencies
-and the current state of the module's source code.
+It has different uses in different contexts:
 
-If --sdk is set, the config file and generated code will be updated with those values reflected. It currently can only be used to set the SDK of a module that does not have one already.
+- In a module without SDK: install an SDK and start an implementation
+- In a fresh checkout of a module repository: make sure IDE auto-complete is up-to-date
+- In a module with local dependencies: re-generate bindings for all dependencies
+- In a module after upgrading the engine: upgrade the target engine version, and check for breaking changes
 
---source allows controlling the directory in which the actual module source code is stored. By default, it will be stored in a directory named "dagger".
+This command is idempotent: you can run it at any time, any number of times. It will:
 
-:::note
-If not updating source or SDK, this is only required for IDE auto-completion/LSP purposes.
-:::
+1. Ensure that an SDK is installed
+2. Ensure that custom SDK configuration is applied
+3. Update the target engine version if needed
+4. Ensure that a module implementation exists, and create a starter template if not
+5. Generate the latest client bindings for the Dagger API and installed dependencies
 `,
 	GroupID: moduleGroup.ID,
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {

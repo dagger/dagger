@@ -21,7 +21,7 @@ var responsePayload map[string]any
 
 var callCmd = &FuncCommand{
 	Name:  "call [options]",
-	Short: "Call a module function",
+	Short: "Call one or more functions, interconnected into a pipeline",
 	Init: func(cmd *cobra.Command) {
 		cmd.PersistentFlags().StringVarP(&outputPath, "output", "o", "", "Save the result to a local file or directory")
 

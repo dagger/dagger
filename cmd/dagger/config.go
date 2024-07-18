@@ -29,7 +29,7 @@ func init() {
 
 var configCmd = &cobra.Command{
 	Use:   "config [options]",
-	Short: "Get or set the configuration of a Dagger module",
+	Short: "Get or set module configuration",
 	Long:  "Get or set the configuration of a Dagger module. By default, print the configuration of the specified module.",
 	Example: strings.TrimSpace(`
 dagger config -m /path/to/some/dir

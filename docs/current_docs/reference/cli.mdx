@@ -7,28 +7,28 @@ pagination_prev: null
 # CLI Reference
 ## dagger
 
-The Dagger CLI provides a command-line interface to Dagger.
+A tool to run CI/CD pipelines in containers, anywhere
 
 ### Options
 
 ```
   -d, --debug             Show debug logs and full verbosity
-  -i, --interactive       interactive mode will spawn a terminal on container exec failure
+  -i, --interactive       Spawn a terminal on container exec failure
       --progress string   Progress output format (auto, plain, tty) (default "auto")
   -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
   -s, --silent            Do not show progress at all
   -v, --verbose count     Increase verbosity (use -vv or -vvv for more)
-  -w, --web               open trace URL in default browser
+  -w, --web               Open trace URL in a web browser
 ```
 
 ### SEE ALSO
 
-* [dagger call](#dagger-call)	 - Call a module function
-* [dagger config](#dagger-config)	 - Get or set the configuration of a Dagger module
-* [dagger develop](#dagger-develop)	 - Setup or update all the resources needed to develop on a module locally
+* [dagger call](#dagger-call)	 - Call one or more functions, interconnected into a pipeline
+* [dagger config](#dagger-config)	 - Get or set module configuration
+* [dagger develop](#dagger-develop)	 - Prepare a local module for development
 * [dagger functions](#dagger-functions)	 - List available functions
-* [dagger init](#dagger-init)	 - Initialize a new Dagger module
-* [dagger install](#dagger-install)	 - Add a new dependency to a Dagger module
+* [dagger init](#dagger-init)	 - Initialize a new module
+* [dagger install](#dagger-install)	 - Install a dependency
 * [dagger login](#dagger-login)	 - Log in to Dagger Cloud
 * [dagger logout](#dagger-logout)	 - Log out from Dagger Cloud
 * [dagger query](#dagger-query)	 - Send API queries to a dagger engine
@@ -37,7 +37,7 @@ The Dagger CLI provides a command-line interface to Dagger.
 
 ## dagger call
 
-Call a module function
+Call one or more functions, interconnected into a pipeline
 
 ```
 dagger call [options]
@@ -47,7 +47,7 @@ dagger call [options]
 
 ```
   -j, --json            Present result as JSON
-  -m, --mod string      Path to the module directory containing the dagger.json config file. Either local path or a remote git repo
+  -m, --mod string      Path to the module directory. Either local path or a remote git repo
   -o, --output string   Save the result to a local file or directory
 ```
 
@@ -55,21 +55,21 @@ dagger call [options]
 
 ```
   -d, --debug             Show debug logs and full verbosity
-  -i, --interactive       interactive mode will spawn a terminal on container exec failure
+  -i, --interactive       Spawn a terminal on container exec failure
       --progress string   Progress output format (auto, plain, tty) (default "auto")
   -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
   -s, --silent            Do not show progress at all
   -v, --verbose count     Increase verbosity (use -vv or -vvv for more)
-  -w, --web               open trace URL in default browser
+  -w, --web               Open trace URL in a web browser
 ```
 
 ### SEE ALSO
 
-* [dagger](#dagger)	 - The Dagger CLI provides a command-line interface to Dagger.
+* [dagger](#dagger)	 - A tool to run CI/CD pipelines in containers, anywhere
 
 ## dagger config
 
-Get or set the configuration of a Dagger module
+Get or set module configuration
 
 ### Synopsis
 
@@ -90,43 +90,47 @@ dagger config -m github.com/dagger/hello-dagger
 
 ```
       --json         output in JSON format
-  -m, --mod string   Path to the module directory containing the dagger.json config file. Either local path or a remote git repo
+  -m, --mod string   Path to the module directory. Either local path or a remote git repo
 ```
 
 ### Options inherited from parent commands
 
 ```
   -d, --debug             Show debug logs and full verbosity
-  -i, --interactive       interactive mode will spawn a terminal on container exec failure
+  -i, --interactive       Spawn a terminal on container exec failure
       --progress string   Progress output format (auto, plain, tty) (default "auto")
   -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
   -s, --silent            Do not show progress at all
   -v, --verbose count     Increase verbosity (use -vv or -vvv for more)
-  -w, --web               open trace URL in default browser
+  -w, --web               Open trace URL in a web browser
 ```
 
 ### SEE ALSO
 
-* [dagger](#dagger)	 - The Dagger CLI provides a command-line interface to Dagger.
+* [dagger](#dagger)	 - A tool to run CI/CD pipelines in containers, anywhere
 
 ## dagger develop
 
-Setup or update all the resources needed to develop on a module locally
+Prepare a local module for development
 
 ### Synopsis
 
-Setup or update all the resources needed to develop on a module locally.
+Ensure that a module's SDK is installed, configured, and all its files re-generated.
 
-This command regenerates the module's code based on dependencies
-and the current state of the module's source code.
+It has different uses in different contexts:
 
-If --sdk is set, the config file and generated code will be updated with those values reflected. It currently can only be used to set the SDK of a module that does not have one already.
+- In a module without SDK: install an SDK and start an implementation
+- In a fresh checkout of a module repository: make sure IDE auto-complete is up-to-date
+- In a module with local dependencies: re-generate bindings for all dependencies
+- In a module after upgrading the engine: upgrade the target engine version, and check for breaking changes
 
---source allows controlling the directory in which the actual module source code is stored. By default, it will be stored in a directory named "dagger".
+This command is idempotent: you can run it at any time, any number of times. It will:
 
-:::note
-If not updating source or SDK, this is only required for IDE auto-completion/LSP purposes.
-:::
+1. Ensure that an SDK is installed
+2. Ensure that custom SDK configuration is applied
+3. Update the target engine version if needed
+4. Ensure that a module implementation exists, and create a starter template if not
+5. Generate the latest client bindings for the Dagger API and installed dependencies
 
 
 ```
@@ -137,27 +141,27 @@ dagger develop [options]
 
 ```
       --compat string[="skip"]   Engine API version to target (default "latest")
-      --license string           License identifier to generate - see https://spdx.org/licenses/ (default "Apache-2.0")
-  -m, --mod string               Path to the module directory containing the dagger.json config file. Either local path or a remote git repo
-      --sdk string               New SDK for the module
-      --source string            Directory to store the module implementation source code in
+      --license string           License identifier to generate. See https://spdx.org/licenses/ (default "Apache-2.0")
+  -m, --mod string               Path to the module directory. Either local path or a remote git repo
+      --sdk string               Install the given Dagger SDK. Can be builtin (go, python, typescript) or a module address
+      --source string            Source directory used by the installed SDK. Defaults to module root
 ```
 
 ### Options inherited from parent commands
 
 ```
   -d, --debug             Show debug logs and full verbosity
-  -i, --interactive       interactive mode will spawn a terminal on container exec failure
+  -i, --interactive       Spawn a terminal on container exec failure
       --progress string   Progress output format (auto, plain, tty) (default "auto")
   -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
   -s, --silent            Do not show progress at all
   -v, --verbose count     Increase verbosity (use -vv or -vvv for more)
-  -w, --web               open trace URL in default browser
+  -w, --web               Open trace URL in a web browser
 ```
 
 ### SEE ALSO
 
-* [dagger](#dagger)	 - The Dagger CLI provides a command-line interface to Dagger.
+* [dagger](#dagger)	 - A tool to run CI/CD pipelines in containers, anywhere
 
 ## dagger functions
 
@@ -178,41 +182,36 @@ dagger functions [options] [function]...
 ### Options
 
 ```
-  -m, --mod string   Path to the module directory containing the dagger.json config file. Either local path or a remote git repo
+  -m, --mod string   Path to the module directory. Either local path or a remote git repo
 ```
 
 ### Options inherited from parent commands
 
 ```
   -d, --debug             Show debug logs and full verbosity
-  -i, --interactive       interactive mode will spawn a terminal on container exec failure
+  -i, --interactive       Spawn a terminal on container exec failure
       --progress string   Progress output format (auto, plain, tty) (default "auto")
   -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
   -s, --silent            Do not show progress at all
   -v, --verbose count     Increase verbosity (use -vv or -vvv for more)
-  -w, --web               open trace URL in default browser
+  -w, --web               Open trace URL in a web browser
 ```
 
 ### SEE ALSO
 
-* [dagger](#dagger)	 - The Dagger CLI provides a command-line interface to Dagger.
+* [dagger](#dagger)	 - A tool to run CI/CD pipelines in containers, anywhere
 
 ## dagger init
 
-Initialize a new Dagger module
+Initialize a new module
 
 ### Synopsis
 
-Initialize a new Dagger module in a local directory.
-By default, create a new dagger.json configuration in the current working directory. If the positional argument PATH is provided, create the module in that directory instead.
+Initialize a new module at the given path.
 
-The configuration will default the name of the module to the parent directory name, unless specified with --name.
+This creates a dagger.json file at the specified directory, making it the root of the new module.
 
-Any module can be installed to via "dagger install".
-
-A module can only be called once it has been initialized with an SDK though. The "--sdk" flag can be provided to init here, but if it's not the configuration can be updated later via "dagger develop".
-
-The "--source" flag allows controlling the directory in which the actual module source code is stored. By default, it will be stored in a directory named "dagger".
+If --sdk is specified, the given SDK is installed in the module. You can do this later with "dagger develop".
 
 
 ```
@@ -222,41 +221,41 @@ dagger init [options] [path]
 ### Examples
 
 ```
-dagger init --name=hello --sdk=python --source=some/subdir
+dagger init --sdk=python
 ```
 
 ### Options
 
 ```
-      --license string   License identifier to generate - see https://spdx.org/licenses/ (default "Apache-2.0")
+      --license string   License identifier to generate. See https://spdx.org/licenses/ (default "Apache-2.0")
       --name string      Name of the new module (defaults to parent directory name)
-      --sdk string       Optionally initialize module for development in the given SDK
-      --source string    Directory to store the module implementation source code in (defaults to "."/ if "--sdk" is provided)
+      --sdk string       Optionally install a Dagger SDK
+      --source string    Source directory used by the installed SDK. Defaults to module root
 ```
 
 ### Options inherited from parent commands
 
 ```
   -d, --debug             Show debug logs and full verbosity
-  -i, --interactive       interactive mode will spawn a terminal on container exec failure
+  -i, --interactive       Spawn a terminal on container exec failure
       --progress string   Progress output format (auto, plain, tty) (default "auto")
   -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
   -s, --silent            Do not show progress at all
   -v, --verbose count     Increase verbosity (use -vv or -vvv for more)
-  -w, --web               open trace URL in default browser
+  -w, --web               Open trace URL in a web browser
 ```
 
 ### SEE ALSO
 
-* [dagger](#dagger)	 - The Dagger CLI provides a command-line interface to Dagger.
+* [dagger](#dagger)	 - A tool to run CI/CD pipelines in containers, anywhere
 
 ## dagger install
 
-Add a new dependency to a Dagger module
+Install a dependency
 
 ### Synopsis
 
-Add a Dagger module as a dependency of a local module.
+Install another module as a dependency to the current module. The target module must be local.
 
 ```
 dagger install [options] <module>
@@ -265,13 +264,13 @@ dagger install [options] <module>
 ### Examples
 
 ```
-dagger install github.com/shykes/daggerverse/ttlsh@16e40ec244966e55e36a13cb6e1ff8023e1e1473
+dagger install github.com/shykes/hello@v0.1.0
 ```
 
 ### Options
 
 ```
-  -m, --mod string    Path to the module directory containing the dagger.json config file. Either local path or a remote git repo
+  -m, --mod string    Path to the module directory. Either local path or a remote git repo
   -n, --name string   Name to use for the dependency in the module. Defaults to the name of the module being installed.
 ```
 
@@ -279,17 +278,17 @@ dagger install github.com/shykes/daggerverse/ttlsh@16e40ec244966e55e36a13cb6e1ff
 
 ```
   -d, --debug             Show debug logs and full verbosity
-  -i, --interactive       interactive mode will spawn a terminal on container exec failure
+  -i, --interactive       Spawn a terminal on container exec failure
       --progress string   Progress output format (auto, plain, tty) (default "auto")
   -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
   -s, --silent            Do not show progress at all
   -v, --verbose count     Increase verbosity (use -vv or -vvv for more)
-  -w, --web               open trace URL in default browser
+  -w, --web               Open trace URL in a web browser
 ```
 
 ### SEE ALSO
 
-* [dagger](#dagger)	 - The Dagger CLI provides a command-line interface to Dagger.
+* [dagger](#dagger)	 - A tool to run CI/CD pipelines in containers, anywhere
 
 ## dagger login
 
@@ -303,17 +302,17 @@ dagger login [options] [org]
 
 ```
   -d, --debug             Show debug logs and full verbosity
-  -i, --interactive       interactive mode will spawn a terminal on container exec failure
+  -i, --interactive       Spawn a terminal on container exec failure
       --progress string   Progress output format (auto, plain, tty) (default "auto")
   -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
   -s, --silent            Do not show progress at all
   -v, --verbose count     Increase verbosity (use -vv or -vvv for more)
-  -w, --web               open trace URL in default browser
+  -w, --web               Open trace URL in a web browser
 ```
 
 ### SEE ALSO
 
-* [dagger](#dagger)	 - The Dagger CLI provides a command-line interface to Dagger.
+* [dagger](#dagger)	 - A tool to run CI/CD pipelines in containers, anywhere
 
 ## dagger logout
 
@@ -327,17 +326,17 @@ dagger logout
 
 ```
   -d, --debug             Show debug logs and full verbosity
-  -i, --interactive       interactive mode will spawn a terminal on container exec failure
+  -i, --interactive       Spawn a terminal on container exec failure
       --progress string   Progress output format (auto, plain, tty) (default "auto")
   -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
   -s, --silent            Do not show progress at all
   -v, --verbose count     Increase verbosity (use -vv or -vvv for more)
-  -w, --web               open trace URL in default browser
+  -w, --web               Open trace URL in a web browser
 ```
 
 ### SEE ALSO
 
-* [dagger](#dagger)	 - The Dagger CLI provides a command-line interface to Dagger.
+* [dagger](#dagger)	 - A tool to run CI/CD pipelines in containers, anywhere
 
 ## dagger query
 
@@ -378,7 +377,7 @@ EOF
 
 ```
       --doc string        Read query from file (defaults to reading from stdin)
-  -m, --mod string        Path to the module directory containing the dagger.json config file. Either local path or a remote git repo
+  -m, --mod string        Path to the module directory. Either local path or a remote git repo
       --var strings       List of query variables, in key=value format
       --var-json string   Query variables in JSON format (overrides --var)
 ```
@@ -387,17 +386,17 @@ EOF
 
 ```
   -d, --debug             Show debug logs and full verbosity
-  -i, --interactive       interactive mode will spawn a terminal on container exec failure
+  -i, --interactive       Spawn a terminal on container exec failure
       --progress string   Progress output format (auto, plain, tty) (default "auto")
   -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
   -s, --silent            Do not show progress at all
   -v, --verbose count     Increase verbosity (use -vv or -vvv for more)
-  -w, --web               open trace URL in default browser
+  -w, --web               Open trace URL in a web browser
 ```
 
 ### SEE ALSO
 
-* [dagger](#dagger)	 - The Dagger CLI provides a command-line interface to Dagger.
+* [dagger](#dagger)	 - A tool to run CI/CD pipelines in containers, anywhere
 
 ## dagger run
 
@@ -444,17 +443,17 @@ dagger run python main.py
 
 ```
   -d, --debug             Show debug logs and full verbosity
-  -i, --interactive       interactive mode will spawn a terminal on container exec failure
+  -i, --interactive       Spawn a terminal on container exec failure
       --progress string   Progress output format (auto, plain, tty) (default "auto")
   -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
   -s, --silent            Do not show progress at all
   -v, --verbose count     Increase verbosity (use -vv or -vvv for more)
-  -w, --web               open trace URL in default browser
+  -w, --web               Open trace URL in a web browser
 ```
 
 ### SEE ALSO
 
-* [dagger](#dagger)	 - The Dagger CLI provides a command-line interface to Dagger.
+* [dagger](#dagger)	 - A tool to run CI/CD pipelines in containers, anywhere
 
 ## dagger version
 
@@ -468,15 +467,15 @@ dagger version
 
 ```
   -d, --debug             Show debug logs and full verbosity
-  -i, --interactive       interactive mode will spawn a terminal on container exec failure
+  -i, --interactive       Spawn a terminal on container exec failure
       --progress string   Progress output format (auto, plain, tty) (default "auto")
   -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
   -s, --silent            Do not show progress at all
   -v, --verbose count     Increase verbosity (use -vv or -vvv for more)
-  -w, --web               open trace URL in default browser
+  -w, --web               Open trace URL in a web browser
 ```
 
 ### SEE ALSO
 
-* [dagger](#dagger)	 - The Dagger CLI provides a command-line interface to Dagger.
+* [dagger](#dagger)	 - A tool to run CI/CD pipelines in containers, anywhere
 

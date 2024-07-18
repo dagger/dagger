@@ -109,7 +109,7 @@ func init() {
 
 var rootCmd = &cobra.Command{
 	Use:           "dagger",
-	Short:         "The Dagger CLI provides a command-line interface to Dagger.",
+	Short:         "A tool to run CI/CD pipelines in containers, anywhere",
 	SilenceErrors: true, // handled in func main() instead
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		// if we got this far, CLI parsing worked just fine; no
@@ -173,14 +173,14 @@ var rootCmd = &cobra.Command{
 }
 
 func installGlobalFlags(flags *pflag.FlagSet) {
-	flags.StringVar(&workdir, "workdir", ".", "The host workdir loaded into dagger")
+	flags.StringVar(&workdir, "workdir", ".", "Change the working directory")
 	flags.CountVarP(&verbose, "verbose", "v", "Increase verbosity (use -vv or -vvv for more)")
 	flags.CountVarP(&quiet, "quiet", "q", "Reduce verbosity (show progress, but clean up at the end)")
 	flags.BoolVarP(&silent, "silent", "s", silent, "Do not show progress at all")
 	flags.BoolVarP(&debug, "debug", "d", debug, "Show debug logs and full verbosity")
 	flags.StringVar(&progress, "progress", "auto", "Progress output format (auto, plain, tty)")
-	flags.BoolVarP(&interactive, "interactive", "i", false, "interactive mode will spawn a terminal on container exec failure")
-	flags.BoolVarP(&web, "web", "w", false, "open trace URL in default browser")
+	flags.BoolVarP(&interactive, "interactive", "i", false, "Spawn a terminal on container exec failure")
+	flags.BoolVarP(&web, "web", "w", false, "Open trace URL in a web browser")
 
 	for _, fl := range []string{"workdir"} {
 		if err := flags.MarkHidden(fl); err != nil {
