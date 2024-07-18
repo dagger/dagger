@@ -91,7 +91,9 @@ func (cli *CLI) Publish(
 			return ctr
 		}).
 		WithEntrypoint([]string{"/sbin/tini", "--", "/entrypoint.sh"}).
-		WithExec(args).
+		WithExec(args, dagger.ContainerWithExecOpts{
+			UseEntrypoint: true,
+		}).
 		Sync(ctx)
 	return err
 }
