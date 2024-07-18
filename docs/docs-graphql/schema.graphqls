@@ -2695,6 +2695,13 @@ scalar SocketID
 type Terminal {
   """A unique identifier for this Terminal."""
   id: TerminalID!
+
+  """
+  Forces evaluation of the pipeline in the engine.
+  
+  It doesn't run the default command if no exec has been set.
+  """
+  sync: TerminalID!
 }
 
 """

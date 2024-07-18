@@ -937,23 +937,10 @@ func (srv *Server) ServeModule(ctx context.Context, mod *core.Module) error {
 		return err
 	}
 
-	engineVersion, err := mod.Source.Self.ModuleEngineVersion(ctx)
-	if err != nil {
-		return err
-	}
-
 	client.stateMu.Lock()
 	defer client.stateMu.Unlock()
 
 	client.deps = client.deps.Append(mod)
-	for _, depMod := range client.deps.Mods {
-		if coreMod, ok := depMod.(*schema.CoreMod); ok {
-			// this is needed so that when the cli serves a module, that we
-			// serve the coreMod schema associated with that module
-			coreMod.Dag.View = engineVersion
-			break
-		}
-	}
 	return nil
 }
 

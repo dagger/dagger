@@ -6206,6 +6206,7 @@ func (ModuleSuite) TestModuleSchemaVersion(ctx context.Context, t *testctx.T) {
 
 		work := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", "v3.0.0").
 			WithWorkdir("/work").
 			With(daggerExec("init", "--name=foo", "--sdk=go", "--source=.")).
 			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v2.0.0"}`)
@@ -6213,7 +6214,7 @@ func (ModuleSuite) TestModuleSchemaVersion(ctx context.Context, t *testctx.T) {
 			With(daggerQuery("{__schemaVersion}")).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"__schemaVersion":"v2.0.0"}`, out)
+		require.JSONEq(t, `{"__schemaVersion":"v3.0.0"}`, out)
 	})
 
 	t.Run("module", func(ctx context.Context, t *testctx.T) {
@@ -6348,15 +6349,40 @@ func schemaVersion(ctx context.Context) (string, error) {
 }
 
 func (ModuleSuite) TestModuleDevelopVersion(ctx context.Context, t *testctx.T) {
+	moduleSrc := `package main
+
+import (
+	"context"
+	"github.com/Khan/genqlient/graphql"
+)
+
+type Foo struct {}
+
+func (m *Foo) GetVersion(ctx context.Context) (string, error) {
+	return schemaVersion(ctx)
+}
+
+func schemaVersion(ctx context.Context) (string, error) {
+	resp := &graphql.Response{}
+	err := dag.GraphQLClient().MakeRequest(ctx, &graphql.Request{
+		Query: "{__schemaVersion}",
+	}, resp)
+	if err != nil {
+		return "", err
+	}
+	return resp.Data.(map[string]any)["__schemaVersion"].(string), nil
+}`
+
 	t.Run("from low", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		work := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v0.0.0"}`)
+			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v0.0.0"}`).
+			WithNewFile("main.go", moduleSrc)
 
-		_, err := work.With(daggerQuery("{__schemaVersion}")).Stdout(ctx)
+		_, err := work.With(daggerQuery("{foo{getVersion}}")).Stdout(ctx)
 		require.ErrorContains(t, err, "incompatible engine version")
 
 		work = work.With(daggerExec("develop"))
@@ -6366,12 +6392,12 @@ func (ModuleSuite) TestModuleDevelopVersion(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.JSONEq(t, `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "`+engine.Version+`"}`, daggerJSON)
 
-		out, err := work.With(daggerQuery("{__schemaVersion}")).Stdout(ctx)
+		out, err := work.With(daggerQuery("{foo{getVersion}}")).Stdout(ctx)
 		require.NoError(t, err)
 		if semver.IsValid(engine.Version) {
-			require.JSONEq(t, `{"__schemaVersion":"`+engine.Version+`"}`, out)
+			require.JSONEq(t, `{"foo":{"getVersion":"`+engine.Version+`"}}`, out)
 		} else {
-			require.JSONEq(t, `{"__schemaVersion":""}`, out)
+			require.JSONEq(t, `{"foo":{"getVersion":""}}`, out)
 		}
 	})
 
@@ -6381,11 +6407,12 @@ func (ModuleSuite) TestModuleDevelopVersion(ctx context.Context, t *testctx.T) {
 		work := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v100.0.0"}`)
+			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v100.0.0"}`).
+			WithNewFile("main.go", moduleSrc)
 
-		out, err := work.With(daggerQuery("{__schemaVersion}")).Stdout(ctx)
+		out, err := work.With(daggerQuery("{foo{getVersion}}")).Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"__schemaVersion":"v100.0.0"}`, out)
+		require.JSONEq(t, `{"foo":{"getVersion":"v100.0.0"}}`, out)
 
 		work = work.With(daggerExec("develop"))
 		daggerJSON, err := work.
@@ -6394,12 +6421,12 @@ func (ModuleSuite) TestModuleDevelopVersion(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.JSONEq(t, `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "`+engine.Version+`"}`, daggerJSON)
 
-		out, err = work.With(daggerQuery("{__schemaVersion}")).Stdout(ctx)
+		out, err = work.With(daggerQuery("{foo{getVersion}}")).Stdout(ctx)
 		require.NoError(t, err)
 		if semver.IsValid(engine.Version) {
-			require.JSONEq(t, `{"__schemaVersion":"`+engine.Version+`"}`, out)
+			require.JSONEq(t, `{"foo":{"getVersion":"`+engine.Version+`"}}`, out)
 		} else {
-			require.JSONEq(t, `{"__schemaVersion":""}`, out)
+			require.JSONEq(t, `{"foo":{"getVersion":""}}`, out)
 		}
 	})
 
@@ -6409,11 +6436,12 @@ func (ModuleSuite) TestModuleDevelopVersion(ctx context.Context, t *testctx.T) {
 		work := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "source": "."}`)
+			WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "source": "."}`).
+			WithNewFile("main.go", moduleSrc)
 
-		out, err := work.With(daggerQuery("{__schemaVersion}")).Stdout(ctx)
+		out, err := work.With(daggerQuery("{foo{getVersion}}")).Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"__schemaVersion":"v0.9.9"}`, out)
+		require.JSONEq(t, `{"foo":{"getVersion":"v0.9.9"}}`, out)
 
 		work = work.With(daggerExec("develop"))
 		daggerJSON, err := work.
@@ -6422,12 +6450,12 @@ func (ModuleSuite) TestModuleDevelopVersion(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.JSONEq(t, `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "`+engine.Version+`"}`, daggerJSON)
 
-		out, err = work.With(daggerQuery("{__schemaVersion}")).Stdout(ctx)
+		out, err = work.With(daggerQuery("{foo{getVersion}}")).Stdout(ctx)
 		require.NoError(t, err)
 		if semver.IsValid(engine.Version) {
-			require.JSONEq(t, `{"__schemaVersion":"`+engine.Version+`"}`, out)
+			require.JSONEq(t, `{"foo":{"getVersion":"`+engine.Version+`"}}`, out)
 		} else {
-			require.JSONEq(t, `{"__schemaVersion":""}`, out)
+			require.JSONEq(t, `{"foo":{"getVersion":""}}`, out)
 		}
 	})
 }

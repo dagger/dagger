@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"dagger.io/dagger"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -45,13 +44,13 @@ var callCmd = &FuncCommand{
 		// There's no fields in `Container` that trigger container execution so
 		// we use `sync` first to evaluate, and then load the new `Container`
 		// from that response before continuing.
-		if typeName == Container {
-			var cid dagger.ContainerID
+		if typeName == Container || typeName == Terminal {
+			var id string
 			fc.Select("sync")
-			if err := fc.Request(ctx, &cid); err != nil {
+			if err := fc.Request(ctx, &id); err != nil {
 				return err
 			}
-			fc.q = fc.q.Root().Select("loadContainerFromID").Arg("id", cid)
+			fc.q = fc.q.Root().Select(fmt.Sprintf("load%sFromID", typeName)).Arg("id", id)
 		}
 
 		// Add the object's name so we always have something to show.

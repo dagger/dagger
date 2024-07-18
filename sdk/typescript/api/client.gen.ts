@@ -9416,6 +9416,7 @@ export class Socket extends BaseClient {
  */
 export class Terminal extends BaseClient {
   private readonly _id?: TerminalID = undefined
+  private readonly _sync?: TerminalID = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -9423,10 +9424,12 @@ export class Terminal extends BaseClient {
   constructor(
     parent?: { queryTree?: QueryTree[]; ctx: Context },
     _id?: TerminalID,
+    _sync?: TerminalID,
   ) {
     super(parent)
 
     this._id = _id
+    this._sync = _sync
   }
 
   /**
@@ -9448,6 +9451,33 @@ export class Terminal extends BaseClient {
     )
 
     return response
+  }
+
+  /**
+   * Forces evaluation of the pipeline in the engine.
+   *
+   * It doesn't run the default command if no exec has been set.
+   */
+  sync = async (): Promise<Terminal> => {
+    const response: Awaited<TerminalID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "sync",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return new Terminal({
+      queryTree: [
+        {
+          operation: "loadTerminalFromID",
+          args: { id: response },
+        },
+      ],
+      ctx: this._ctx,
+    })
   }
 }
 
