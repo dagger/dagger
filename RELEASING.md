@@ -389,6 +389,7 @@ go mod edit -require dagger.io/dagger@${GO_SDK_VERSION:?must be set}
 go mod edit -require github.com/dagger/dagger/engine/distconsts@${GO_SDK_VERSION:?must be set}
 go mod tidy
 cd dev
+dagger develop
 go mod edit -require github.com/dagger/dagger/engine/distconsts@${ENGINE_VERSION:?must be set}
 go mod tidy
 cd ..
