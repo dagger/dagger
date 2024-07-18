@@ -1,0 +1,6 @@
+kind: Added
+body: 'cli: new --compat flag for develop to target a specific api version'
+time: 2024-07-17T10:17:24.1005004+01:00
+custom:
+  Author: jedevc
+  PR: "7948"
