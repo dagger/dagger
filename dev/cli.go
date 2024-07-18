@@ -14,8 +14,17 @@ type CLI struct {
 	Dagger *DaggerDev // +private
 }
 
-// Build the CLI binary
+// Build the CLI binary (deprecated)
 func (cli *CLI) File(
+	ctx context.Context,
+	// +optional
+	platform dagger.Platform,
+) (*dagger.File, error) {
+	return cli.Binary(ctx, platform)
+}
+
+// Build the CLI binary
+func (cli *CLI) Binary(
 	ctx context.Context,
 
 	// +optional
