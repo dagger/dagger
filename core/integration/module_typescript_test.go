@@ -1125,14 +1125,13 @@ class Test {
 }
 `,
 			)).
-			WithoutFile("/work/dagger/tsconfig.json").
 			WithNewFile("/work/dagger/tsconfig.json", `
 {
   "compilerOptions": {
     "target": "ES2022",
     "moduleResolution": "Node",
-		"experimentalDecorators": true,
-		"emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
     "paths": {
       "@dagger.io/dagger": ["./sdk"],
       "@dagger.io/dagger/telemetry": ["./sdk/telemetry"]
@@ -1140,8 +1139,19 @@ class Test {
   }
 }`)
 
-		out, err := modGen.With(daggerQuery(`{test{foo}}`)).Stdout(ctx)
+		out, err := modGen.With(daggerCall("test", "foo")).Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"test": {"foo": "bar"}}`, out)
+		require.JSONEq(t, "bar", out)
+
+		modGen = modGen.With(daggerExec("develop"))
+
+		tsConfig, err := modGen.File("/work/dagger/tsconfig.json").Contents(ctx)
+		require.NoError(t, err)
+		require.NotContains(t, tsConfig, `"experimentalDecorators": true`)
+		require.NotContains(t, tsConfig, `"emitDecoratorMetadata": true`)
+
+		out, err = modGen.With(daggerCall("test", "foo")).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, "bar", out)
 	})
 }
