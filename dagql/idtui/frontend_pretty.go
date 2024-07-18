@@ -733,7 +733,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 
 		switch lastKey { //nolint:gocritic
 		case "g":
-			switch msg.String() {
+			switch msg.String() { //nolint:gocritic
 			case "g":
 				fe.goStart()
 				fe.pressedKey = "home"
