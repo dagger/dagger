@@ -3,9 +3,13 @@ package core
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"dagger.io/dagger"
+	"github.com/creack/pty"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -417,6 +421,90 @@ class Test {
 			require.NoError(t, err)
 			require.Equal(t, "hello", strings.TrimSpace(out))
 		}},
+
+		caCertsTest{"terminal", func(t *testctx.T, _ *dagger.Client, f caCertsTestFixtures) {
+			modDir := t.TempDir()
+			err := os.WriteFile(filepath.Join(modDir, "main.go"), []byte(fmt.Sprintf(`package main
+
+	import (
+		"context"
+		"dagger/test/internal/dagger"
+	)
+
+	func New(ctx context.Context) *Test {
+		return &Test{
+			Ctr: dag.Container().
+				From("%s").
+				WithExec([]string{"apk", "add", "curl"}).
+				WithDefaultTerminalCmd([]string{"/bin/sh"}),
+		}
+	}
+
+	type Test struct {
+		Ctr *dagger.Container
+	}
+	`, alpineImage)), 0644)
+			require.NoError(t, err)
+
+			initCmd := hostDaggerCommand(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
+			copy(initCmd.Env, os.Environ())
+			initCmd.Env = append(initCmd.Env, "_EXPERIMENTAL_DAGGER_RUNNER_HOST="+f.engineEndpoint)
+			initOutput, err := initCmd.CombinedOutput()
+			require.NoError(t, err, initOutput)
+
+			// cache the module load itself so there's less to wait for in the shell invocation below
+			functionsCmd := hostDaggerCommand(ctx, t, modDir, "functions")
+			copy(functionsCmd.Env, os.Environ())
+			functionsCmd.Env = append(functionsCmd.Env, "_EXPERIMENTAL_DAGGER_RUNNER_HOST="+f.engineEndpoint)
+			functionsOutput, err := functionsCmd.CombinedOutput()
+			require.NoError(t, err, functionsOutput)
+
+			// timeout for waiting for each expected line is very generous in case CI is under heavy load or something
+			console, err := newTUIConsole(t, 60*time.Second)
+			require.NoError(t, err)
+			defer console.Close()
+
+			tty := console.Tty()
+
+			// We want the size to be big enough to fit the output we're expecting, but increasing
+			// the size also eventually slows down the tests due to more output being generated and
+			// needing parsing.
+			err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 16})
+			require.NoError(t, err)
+
+			cmd := hostDaggerCommand(ctx, t, modDir, "call", "ctr", "terminal")
+			copy(cmd.Env, os.Environ())
+			cmd.Env = append(cmd.Env, "_EXPERIMENTAL_DAGGER_RUNNER_HOST="+f.engineEndpoint)
+			cmd.Stdin = tty
+			cmd.Stdout = tty
+			cmd.Stderr = tty
+
+			err = cmd.Start()
+			require.NoError(t, err)
+
+			_, err = console.ExpectString(" $ ")
+			require.NoError(t, err)
+
+			_, err = console.SendLine("set -e")
+			require.NoError(t, err)
+
+			_, err = console.ExpectString(" $ ")
+			require.NoError(t, err)
+
+			_, err = console.SendLine("curl https://server")
+			require.NoError(t, err)
+
+			_, err = console.ExpectString(" $ ")
+			require.NoError(t, err)
+
+			_, err = console.SendLine("exit")
+			require.NoError(t, err)
+
+			go console.ExpectEOF()
+
+			err = cmd.Wait()
+			require.NoError(t, err)
+		}},
 	)
 }
 
@@ -427,6 +515,7 @@ type caCertsTest struct {
 
 type caCertsTestFixtures struct {
 	caCertContents string
+	engineEndpoint string
 }
 
 func customCACertTests(
@@ -471,6 +560,7 @@ func customCACertTests(
 		t.Run(test.name, func(ctx context.Context, t *testctx.T) {
 			test.run(t, c2, caCertsTestFixtures{
 				caCertContents: caCertContents,
+				engineEndpoint: endpoint,
 			})
 		})
 	}
