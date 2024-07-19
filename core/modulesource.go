@@ -374,20 +374,11 @@ func (src *ModuleSource) ResolveContextPathFromCaller(ctx context.Context) (cont
 
 	slog.Error("moduleSource.ResolveContextPathFromCaller.rootSubpath", "rootSubPath", rootSubpath)
 
-	
-	// Resolve rootSubpath to an absolute path
-	absRootSubpath, err := filepath.Abs(rootSubpath)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to resolve absolute path for root subpath: %w", err)
-	}
-
-	slog.Error("moduleSource.ResolveContextPathFromCaller.absRootSubPath", "absRootSubPath", absRootSubpath)
-
 	bk, err := src.Query.Buildkit(ctx)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to get buildkit client: %w", err)
 	}
-	sourceRootStat, err := bk.StatCallerHostPath(ctx, absRootSubpath, true)
+	sourceRootStat, err := bk.StatCallerHostPath(ctx, rootSubpath, true)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to stat source root: %w", err)
 	}

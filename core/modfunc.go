@@ -86,6 +86,7 @@ type CallOpts struct {
 	ParentFields   map[string]any
 	Cache          bool
 	SkipSelfSchema bool
+	Server         *dagql.Server
 }
 
 type CallInput struct {
@@ -180,7 +181,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		}
 
 		// Load contextual argument value.
-		ctxVal, err := fn.loadContextualArg(ctx, arg)
+		ctxVal, err := fn.loadContextualArg(ctx, opts.Server, arg)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load contextual arg %q: %w", arg.Name, err)
 		}
@@ -416,16 +417,20 @@ func (fn *ModuleFunction) linkDependencyBlobs(ctx context.Context, cacheResult *
 // For file, it will loa the directory containing the file and then query the file ID from this directory.
 //
 // This functions returns the ID of the loaded object.
-func (fn *ModuleFunction) loadContextualArg(ctx context.Context, arg *FunctionArg) (JSON, error) {
+func (fn *ModuleFunction) loadContextualArg(ctx context.Context, dag *dagql.Server,arg *FunctionArg) (JSON, error) {
 	if arg.TypeDef.Kind != TypeDefKindObject {
 		return nil, fmt.Errorf("contextual argument %q must be a Directory or a File", arg.OriginalName)
+	}
+
+	if dag == nil {
+		return nil, fmt.Errorf("dagql server is nil but required for contextual argument %q", arg.OriginalName)
 	}
 
 	switch arg.TypeDef.AsObject.Value.Name {
 	case "Directory":
 		slog.Debug("moduleFunction.loadContextualArg: loading contextual directory", "fn", arg.Name, "dir", arg.DefaultPath)
 
-		dir, err := fn.mod.Source.Self.LoadContext(ctx, fn.mod.Server, arg.DefaultPath, arg.Ignore)
+		dir, err := fn.mod.Source.Self.LoadContext(ctx, dag, arg.DefaultPath, arg.Ignore)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load contextual directory %q: %w", arg.DefaultPath, err)
 		}
@@ -444,7 +449,7 @@ func (fn *ModuleFunction) loadContextualArg(ctx context.Context, arg *FunctionAr
 		filePath := filepath.Base(arg.DefaultPath)
 
 		// Load the directory containing the file.
-		dir, err := fn.mod.Source.Self.LoadContext(ctx, fn.mod.Server, dirPath, nil)
+		dir, err := fn.mod.Source.Self.LoadContext(ctx, dag, dirPath, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load contextual directory %q: %w", dirPath, err)
 		}
@@ -453,7 +458,7 @@ func (fn *ModuleFunction) loadContextualArg(ctx context.Context, arg *FunctionAr
 
 		// We need to load the fileID from the directory itself, because `*File` doesn't have a `ID` field,
 		// we use select instead.
-		err = fn.mod.Server.Select(ctx, dir, &fileID,
+		err = dag.Select(ctx, dir, &fileID,
 			dagql.Selector{
 				Field: "file",
 				Args: []dagql.NamedInput{
