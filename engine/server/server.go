@@ -73,6 +73,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	daggercache "github.com/dagger/dagger/engine/cache"
+	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/sources/blob"
@@ -103,6 +104,7 @@ type Server struct {
 	workerCacheMetaDBPath string
 	buildkitMountPoolDir  string
 	executorRootDir       string
+	clientDBDir           string
 
 	//
 	// buildkit+containerd entities/DBs
@@ -170,6 +172,7 @@ type Server struct {
 	//
 	daggerSessions   map[string]*daggerSession // session id -> session state
 	daggerSessionsMu sync.RWMutex
+	clientDBs        *clientdb.DBs
 }
 
 type NewServerOpts struct {
@@ -239,6 +242,9 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	// clean up old hosts/resolv.conf file. ignore errors
 	os.RemoveAll(filepath.Join(srv.executorRootDir, "hosts"))
 	os.RemoveAll(filepath.Join(srv.executorRootDir, "resolv.conf"))
+
+	srv.clientDBDir = filepath.Join(srv.workerRootDir, "clientdbs")
+	srv.clientDBs = clientdb.NewDBs(srv.clientDBDir)
 
 	//
 	// setup config derived from engine config

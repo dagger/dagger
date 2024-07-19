@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -32,6 +33,7 @@ import (
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/analytics"
@@ -134,6 +136,9 @@ type daggerClient struct {
 	llbBridge           bkfrontend.FrontendLLBBridge
 	dialer              *net.Dialer
 	bkClient            *buildkit.Client
+
+	// SQLite database storing telemetry + anything else
+	db *sql.DB
 }
 
 type daggerClientState string
@@ -274,6 +279,10 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 				errs = errors.Join(errs, client.buildkitSession.Close())
 				client.buildkitSession = nil
 			}
+
+			// TODO: is this the right spot to do this? can we trust all background work
+			// to be done?
+			errs = errors.Join(errs, client.db.Close())
 
 			return errs
 		})
@@ -527,6 +536,12 @@ func (srv *Server) initializeDaggerClient(
 		client.fnCall = &fnCall
 	}
 
+	// initialize SQLite DB
+	client.db, err = srv.clientDBs.Open(client.clientID)
+	if err != nil {
+		return fmt.Errorf("open client DB: %w", err)
+	}
+
 	client.state = clientStateInitialized
 	return nil
 }
@@ -737,6 +752,8 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 	}).ServeHTTP(w, r)
 }
 
+const InstrumentationLibrary = "dagger.io/engine.server"
+
 func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opts *ClientInitOpts) (rerr error) {
 	ctx := r.Context()
 	ctx, cancel := context.WithCancel(ctx)
@@ -773,6 +790,17 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 			rerr = errors.Join(rerr, err)
 		}
 	}()
+
+	clientTP := sdktrace.NewTracerProvider(
+		sdktrace.WithSpanProcessor(telemetry.NewLiveSpanProcessor(
+			srv.telemetryPubSub.Spans(client.db),
+		)),
+	)
+
+	clientTracer := clientTP.Tracer(InstrumentationLibrary)
+
+	ctx, span := clientTracer.Start(ctx, "serveHTTPToClient")
+	defer telemetry.End(span, func() error { return rerr })
 
 	sess := client.daggerSession
 	ctx = analytics.WithContext(ctx, sess.analytics)

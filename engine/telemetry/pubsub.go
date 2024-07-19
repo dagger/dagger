@@ -2,15 +2,15 @@ package telemetry
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 	"sync"
 	"time"
 
 	"dagger.io/dagger/telemetry"
-	"github.com/moby/buildkit/identity"
 	"github.com/sourcegraph/conc/pool"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -21,9 +21,11 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
+	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/slog"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
@@ -38,6 +40,8 @@ func (t Topic) String() string {
 }
 
 type PubSub struct {
+	clientDBs *clientdb.DBs
+
 	mux           http.Handler
 	traceClients  map[trace.TraceID]map[string]struct{}
 	traceClientsL sync.Mutex
@@ -200,6 +204,13 @@ func (ps *PubSub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (ps *PubSub) TracesHandler(rw http.ResponseWriter, r *http.Request) { //nolint: dupl
+	clientID := r.Header.Get("X-Dagger-Client-ID")
+	if clientID == "" {
+		slog.Warn("missing client ID")
+		http.Error(rw, "missing client ID", http.StatusBadRequest)
+		return
+	}
+
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		slog.Warn("error reading body", "err", err)
@@ -214,7 +225,15 @@ func (ps *PubSub) TracesHandler(rw http.ResponseWriter, r *http.Request) { //nol
 		return
 	}
 
-	if err := ps.Spans().ExportSpans(r.Context(), telemetry.SpansFromPB(req.ResourceSpans)); err != nil {
+	db, err := ps.clientDBs.Open(clientID)
+	if err != nil {
+		slog.Error("error opening spans exporter", "err", err)
+		http.Error(rw, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer db.Close()
+
+	if err := ps.Spans(db).ExportSpans(r.Context(), telemetry.SpansFromPB(req.ResourceSpans)); err != nil {
 		slog.Error("error exporting spans", "err", err)
 		http.Error(rw, err.Error(), http.StatusInternalServerError)
 		return
@@ -224,6 +243,13 @@ func (ps *PubSub) TracesHandler(rw http.ResponseWriter, r *http.Request) { //nol
 }
 
 func (ps *PubSub) LogsHandler(rw http.ResponseWriter, r *http.Request) { //nolint: dupl
+	clientID := r.Header.Get("X-Dagger-Client-ID")
+	if clientID == "" {
+		slog.Warn("missing client ID")
+		http.Error(rw, "missing client ID", http.StatusBadRequest)
+		return
+	}
+
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		slog.Warn("error reading body", "err", err)
@@ -238,7 +264,15 @@ func (ps *PubSub) LogsHandler(rw http.ResponseWriter, r *http.Request) { //nolin
 		return
 	}
 
-	if err := ps.Logs().Export(r.Context(), telemetry.LogsFromPB(req.ResourceLogs)); err != nil {
+	db, err := ps.clientDBs.Open(clientID)
+	if err != nil {
+		slog.Error("error opening spans exporter", "err", err)
+		http.Error(rw, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer db.Close()
+
+	if err := ps.Logs(db).Export(r.Context(), telemetry.LogsFromPB(req.ResourceLogs)); err != nil {
 		slog.Error("error exporting spans", "err", err)
 		http.Error(rw, err.Error(), http.StatusInternalServerError)
 		return
@@ -361,108 +395,107 @@ func (ps *PubSub) lookupClient(id string) (*activeClient, bool) {
 
 type SpansPubSub struct {
 	*PubSub
+	db *sql.DB
 }
 
-func (ps *PubSub) Spans() sdktrace.SpanExporter {
-	return SpansPubSub{ps}
+func (ps *PubSub) Spans(db *sql.DB) sdktrace.SpanExporter {
+	return SpansPubSub{
+		PubSub: ps,
+		db:     db,
+	}
 }
 
 func (ps SpansPubSub) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
-	ps.trackSpans(spans)
-
-	export := identity.NewID()
-
-	slog.ExtraDebug("exporting spans to pubsub", "call", export, "spans", len(spans))
-
-	byExporter := map[sdktrace.SpanExporter][]sdktrace.ReadOnlySpan{}
-
-	updated := map[*activeClient]struct{}{}
-	defer func() {
-		// notify anyone waiting to drain after all client updates are applied
-		// NOTE: finishSpan below uses defer, so this must be deferred sooner
-		for client := range updated {
-			slog.Trace("broadcasting to client", "client", client.id)
-			client.cond.Broadcast()
-		}
-	}()
-
-	for _, s := range spans {
-		affectedClients := ps.clientsFor(
-			s.SpanContext().TraceID(),
-			s.SpanContext().SpanID(),
-		)
-
-		selfClient := ps.clientFor(
-			s.SpanContext().TraceID(),
-			s.SpanContext().SpanID(),
-		)
-
-		slog := slog.With(
-			"span", s.Name(),
-			"spanID", s.SpanContext().SpanID(),
-			"endTime", s.EndTime(),
-			"status", s.Status().Code,
-		)
-
-		var subs []sdktrace.SpanExporter
-
-		if len(affectedClients) > 0 {
-			for _, clientID := range affectedClients {
-				client, subscribed := ps.lookupClient(clientID)
-				if !subscribed {
-					continue
-				}
-
-				if strings.HasSuffix(TracesSource_Subscribe_FullMethodName, s.Name()) ||
-					strings.HasSuffix(LogsSource_Subscribe_FullMethodName, s.Name()) {
-					// HACK: don't get stuck waiting on ourselves
-					slog.ExtraDebug("avoiding waiting for ourselves")
-				} else if clientID == selfClient {
-					if s.EndTime().Before(s.StartTime()) {
-						slog.Trace("starting span", "client", client.id)
-						client.startSpan(s)
-					} else {
-						slog.Trace("finishing span", "client", client.id)
-						// NOTE: finish *after* exporting to consumers
-						defer client.finishSpan(s)
-					}
-				}
-
-				updated[client] = struct{}{}
-
-				subs = append(subs, ps.SpanSubscribers(Topic{
-					TraceID:  s.SpanContext().TraceID(),
-					ClientID: clientID,
-				})...)
-			}
-
-			slog.ExtraDebug("publishing span to affected clients", "clients", affectedClients, "subs", len(subs))
-		} else {
-			// NOTE: this can happen when a client goes away, but also happens for a
-			// few "boring" spans (internal gRPC plumbing etc). because of the first
-			// case, we handle this by not emitting it to anyone. at one point we
-			// emitted to all clients for the trace, but that led to strange
-			// cross-talk with partial data.
-			slog.ExtraDebug("no clients interested in span")
-		}
-
-		for _, exp := range subs {
-			byExporter[exp] = append(byExporter[exp], s)
-		}
+	tx, err := ps.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
 	}
+	defer tx.Rollback()
 
-	eg := pool.New().WithErrors()
+	queries := clientdb.New(tx)
 
-	for exp, spans := range byExporter {
-		exp := exp
-		spans := spans
-		eg.Go(func() error {
-			slog.ExtraDebug("exporting spans to subscriber", "spans", len(spans))
-			return exp.ExportSpans(ctx, spans)
+	for _, span := range spans {
+		traceID := span.SpanContext().TraceID().String()
+		spanID := span.SpanContext().SpanID().String()
+		traceState := span.SpanContext().TraceState().String()
+		parentSpanID := span.Parent().SpanID().String()
+		flags := int64(span.SpanContext().TraceFlags())
+		name := span.Name()
+		kind := span.SpanKind().String()
+		startTime := span.StartTime().UnixNano()
+		endTime := sql.NullInt64{
+			Int64: span.EndTime().UnixNano(),
+			Valid: !span.EndTime().IsZero(),
+		}
+		if span.EndTime().Before(span.StartTime()) {
+			endTime.Int64 = 0
+			endTime.Valid = false
+		}
+		attributes, err := json.Marshal(telemetry.KeyValues(span.Attributes()))
+		if err != nil {
+			slog.Warn("failed to marshal attributes", "error", err)
+			continue
+		}
+		droppedAttributesCount := int64(span.DroppedAttributes())
+		events, err := json.Marshal(telemetry.SpanEventsToPB(span.Events()))
+		if err != nil {
+			slog.Warn("failed to marshal events", "error", err)
+			continue
+		}
+		droppedEventsCount := int64(span.DroppedEvents())
+		links, err := json.Marshal(telemetry.SpanLinksToPB(span.Links()))
+		if err != nil {
+			slog.Warn("failed to marshal links", "error", err)
+			continue
+		}
+		droppedLinksCount := int64(span.DroppedLinks())
+		statusCode := int64(span.Status().Code)
+		statusMessage := span.Status().Description
+		instrumentationScope, err := json.Marshal(telemetry.InstrumentationScope(span.InstrumentationScope()))
+		if err != nil {
+			slog.Warn("failed to marshal instrumentation scope", "error", err)
+			continue
+		}
+		resource, err := json.Marshal(telemetry.ResourcePtr(span.Resource()))
+		if err != nil {
+			slog.Warn("failed to marshal resource", "error", err)
+			continue
+		}
+
+		_, err = queries.InsertSpan(ctx, clientdb.InsertSpanParams{
+			TraceID:    traceID,
+			SpanID:     spanID,
+			TraceState: traceState,
+			ParentSpanID: sql.NullString{
+				String: parentSpanID,
+				Valid:  span.Parent().IsValid(),
+			},
+			Flags:                  flags,
+			Name:                   name,
+			Kind:                   kind,
+			StartTime:              startTime,
+			EndTime:                endTime,
+			Attributes:             attributes,
+			DroppedAttributesCount: droppedAttributesCount,
+			Events:                 events,
+			DroppedEventsCount:     droppedEventsCount,
+			Links:                  links,
+			DroppedLinksCount:      droppedLinksCount,
+			StatusCode:             statusCode,
+			StatusMessage:          statusMessage,
+			InstrumentationScope:   instrumentationScope,
+			Resource:               resource,
 		})
+		if err != nil {
+			return fmt.Errorf("upsert span: %w", err)
+		}
 	}
 
-	return eg.Wait()
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
+	}
+
+	return nil
 }
 
 func (ps *PubSub) SubscribeToSpans(ctx context.Context, topic Topic, exp sdktrace.SpanExporter) error {
@@ -485,76 +518,94 @@ func (ps *PubSub) SpanSubscribers(topic Topic) []sdktrace.SpanExporter {
 	return exps
 }
 
-func (ps *PubSub) Logs() sdklog.Exporter {
-	return LogsPubSub{ps}
+func (ps *PubSub) Logs(db *sql.DB) sdklog.Exporter {
+	return LogsPubSub{
+		PubSub: ps,
+		db:     db,
+	}
 }
 
 type LogsPubSub struct {
 	*PubSub
+	db *sql.DB
+}
+
+func logValueToJSON(val log.Value) ([]byte, error) {
+	return json.Marshal(telemetry.LogValueToPB(val))
+}
+
+func logValueFromJSON(val []byte) (log.Value, error) {
+	var anyVal *otlpcommonv1.AnyValue
+	if err := json.Unmarshal(val, &anyVal); err != nil {
+		return log.Value{}, err
+	}
+	return telemetry.LogValueFromPB(anyVal), nil
 }
 
 func (ps LogsPubSub) Export(ctx context.Context, logs []sdklog.Record) error {
-	slog.ExtraDebug("exporting logs to pub/sub", "logs", len(logs))
+	tx, err := ps.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
 
-	byExporter := map[sdklog.Exporter][]sdklog.Record{}
+	queries := clientdb.New(tx)
 
 	for _, rec := range logs {
-		topics := map[Topic]struct{}{
-			{}:                       {},
-			{TraceID: rec.TraceID()}: {},
-		}
+		traceID := rec.TraceID().String()
+		spanID := rec.SpanID().String()
+		timestamp := rec.Timestamp().UnixNano()
+		severity := int64(rec.Severity())
 
-		selfClient := ps.clientFor(
-			rec.TraceID(),
-			rec.SpanID(),
-		)
-
-		// Publish to all clients involved, or the full trace if none.
-		for _, clientID := range ps.clientsFor(rec.TraceID(), rec.SpanID()) {
-			topics[Topic{
-				TraceID:  rec.TraceID(),
-				ClientID: clientID,
-			}] = struct{}{}
-
-			if clientID == selfClient {
-				client, found := ps.lookupClient(clientID)
-				if found {
-					client.trackLogStream(rec)
-				}
+		var body sql.NullString
+		if !rec.Body().Empty() {
+			bodyJSON, err := logValueToJSON(rec.Body())
+			if err != nil {
+				slog.Warn("failed to marshal log record body", "error", err)
+				continue
 			}
+			body.String = string(bodyJSON)
+			body.Valid = true
 		}
 
+		attrs := []*otlpcommonv1.KeyValue{}
 		rec.WalkAttributes(func(kv log.KeyValue) bool {
-			if kv.Key == telemetry.ClientIDAttr {
-				topics[Topic{
-					TraceID:  rec.TraceID(),
-					ClientID: kv.Value.AsString(),
-				}] = struct{}{}
-				return true
-			}
-			return false
+			attrs = append(attrs, &otlpcommonv1.KeyValue{
+				Key:   kv.Key,
+				Value: telemetry.LogValueToPB(kv.Value),
+			})
+			return true
 		})
+		attributes, err := json.Marshal(attrs)
+		if err != nil {
+			slog.Warn("failed to marshal log record attributes", "error", err)
+			continue
+		}
 
-		for topic := range topics {
-			for _, exp := range ps.LogSubscribers(topic) {
-				byExporter[exp] = append(byExporter[exp], rec)
-			}
+		_, err = queries.InsertLog(ctx, clientdb.InsertLogParams{
+			TraceID: sql.NullString{
+				String: traceID,
+				Valid:  rec.TraceID().IsValid(),
+			},
+			SpanID: sql.NullString{
+				String: spanID,
+				Valid:  rec.SpanID().IsValid(),
+			},
+			Timestamp:  timestamp,
+			Severity:   severity,
+			Body:       body,
+			Attributes: attributes,
+		})
+		if err != nil {
+			return fmt.Errorf("insert log: %w", err)
 		}
 	}
 
-	eg := pool.New().WithErrors()
-
-	// export to span subscribers
-	for exp, logs := range byExporter {
-		exp := exp
-		logs := logs
-		eg.Go(func() error {
-			slog.ExtraDebug("exporting logs to subscriber", "logs", len(logs))
-			return exp.Export(ctx, logs)
-		})
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
 	}
 
-	return eg.Wait()
+	return nil
 }
 
 func (ps *PubSub) SubscribeToLogs(ctx context.Context, topic Topic, exp sdklog.Exporter) error {

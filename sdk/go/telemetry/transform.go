@@ -103,7 +103,7 @@ func logRecord(l sdklog.Record) *otlplogsv1.LogRecord {
 	l.WalkAttributes(func(kv log.KeyValue) bool {
 		attrs = append(attrs, &otlpcommonv1.KeyValue{
 			Key:   kv.Key,
-			Value: logValueToPB(kv.Value),
+			Value: LogValueToPB(kv.Value),
 		})
 		return true
 	})
@@ -113,7 +113,7 @@ func logRecord(l sdklog.Record) *otlplogsv1.LogRecord {
 		TimeUnixNano:   uint64(l.Timestamp().UnixNano()),
 		SeverityNumber: otlplogsv1.SeverityNumber(l.Severity()),
 		SeverityText:   l.SeverityText(),
-		Body:           logValueToPB(l.Body()),
+		Body:           LogValueToPB(l.Body()),
 		Attributes:     attrs,
 		// DroppedAttributesCount: 0,
 		// Flags: 0,
@@ -380,11 +380,11 @@ func spanToPB(sd sdktrace.ReadOnlySpan) *otlptracev1.Span {
 		Status:                 status(sd.Status().Code, sd.Status().Description),
 		StartTimeUnixNano:      uint64(sd.StartTime().UnixNano()),
 		EndTimeUnixNano:        uint64(sd.EndTime().UnixNano()),
-		Links:                  linksToPB(sd.Links()),
+		Links:                  SpanLinksToPB(sd.Links()),
 		Kind:                   spanKindToPB(sd.SpanKind()),
 		Name:                   sd.Name(),
 		Attributes:             KeyValues(sd.Attributes()),
-		Events:                 spanEventsToPB(sd.Events()),
+		Events:                 SpanEventsToPB(sd.Events()),
 		DroppedAttributesCount: uint32(sd.DroppedAttributes()),
 		DroppedEventsCount:     uint32(sd.DroppedEvents()),
 		DroppedLinksCount:      uint32(sd.DroppedLinks()),
@@ -429,7 +429,7 @@ func KeyValues(attrs []attribute.KeyValue) []*otlpcommonv1.KeyValue {
 }
 
 // linksFromPB transforms span Links to OTLP span linksFromPB.
-func linksToPB(links []sdktrace.Link) []*otlptracev1.Span_Link {
+func SpanLinksToPB(links []sdktrace.Link) []*otlptracev1.Span_Link {
 	if len(links) == 0 {
 		return nil
 	}
@@ -465,8 +465,8 @@ func buildSpanFlags(sc trace.SpanContext) uint32 {
 	return uint32(flags)
 }
 
-// spanEventsToPB transforms span Events to an OTLP span events.
-func spanEventsToPB(es []sdktrace.Event) []*otlptracev1.Span_Event {
+// SpanEventsToPB transforms span Events to an OTLP span events.
+func SpanEventsToPB(es []sdktrace.Event) []*otlptracev1.Span_Event {
 	if len(es) == 0 {
 		return nil
 	}
@@ -833,7 +833,7 @@ func LogsFromPB(resLogs []*otlplogsv1.ResourceLogs) []sdklog.Record {
 				logRec.SetTraceID(trace.TraceID(rec.GetTraceId()))
 				logRec.SetSpanID(trace.SpanID(rec.GetSpanId()))
 				logRec.SetTimestamp(time.Unix(0, int64(rec.GetTimeUnixNano())))
-				logRec.SetBody(logValueFromPB(rec.GetBody()))
+				logRec.SetBody(LogValueFromPB(rec.GetBody()))
 				logRec.SetSeverity(log.Severity(rec.GetSeverityNumber()))
 				logRec.SetSeverityText(rec.GetSeverityText())
 				logRec.SetObservedTimestamp(time.Unix(0, int64(rec.GetObservedTimeUnixNano())))
@@ -856,7 +856,7 @@ func logKVs(kvs []*otlpcommonv1.KeyValue) []log.KeyValue {
 func logKeyValue(v *otlpcommonv1.KeyValue) log.KeyValue {
 	return log.KeyValue{
 		Key:   v.GetKey(),
-		Value: logValueFromPB(v.GetValue()),
+		Value: LogValueFromPB(v.GetValue()),
 	}
 }
 
@@ -880,7 +880,7 @@ func attrValue(v *otlpcommonv1.AnyValue) attribute.Value {
 	}
 }
 
-func logValueFromPB(v *otlpcommonv1.AnyValue) log.Value {
+func LogValueFromPB(v *otlpcommonv1.AnyValue) log.Value {
 	switch x := v.Value.(type) {
 	case *otlpcommonv1.AnyValue_StringValue:
 		return log.StringValue(v.GetStringValue())
@@ -899,7 +899,7 @@ func logValueFromPB(v *otlpcommonv1.AnyValue) log.Value {
 	case *otlpcommonv1.AnyValue_ArrayValue:
 		vals := make([]log.Value, 0, len(x.ArrayValue.GetValues()))
 		for _, v := range x.ArrayValue.GetValues() {
-			vals = append(vals, logValueFromPB(v))
+			vals = append(vals, LogValueFromPB(v))
 		}
 		return log.SliceValue(vals...)
 	case *otlpcommonv1.AnyValue_BytesValue:
@@ -911,7 +911,7 @@ func logValueFromPB(v *otlpcommonv1.AnyValue) log.Value {
 }
 
 // Value transforms an attribute Value into an OTLP AnyValue.
-func logValueToPB(v log.Value) *otlpcommonv1.AnyValue {
+func LogValueToPB(v log.Value) *otlpcommonv1.AnyValue {
 	av := new(otlpcommonv1.AnyValue)
 	switch v.Kind() {
 	case log.KindBool:
@@ -933,7 +933,7 @@ func logValueToPB(v log.Value) *otlpcommonv1.AnyValue {
 	case log.KindSlice:
 		array := &otlpcommonv1.ArrayValue{}
 		for _, e := range v.AsSlice() {
-			array.Values = append(array.Values, logValueToPB(e))
+			array.Values = append(array.Values, LogValueToPB(e))
 		}
 		av.Value = &otlpcommonv1.AnyValue_ArrayValue{
 			ArrayValue: array,
@@ -943,7 +943,7 @@ func logValueToPB(v log.Value) *otlpcommonv1.AnyValue {
 		for _, e := range v.AsMap() {
 			kvList.Values = append(kvList.Values, &otlpcommonv1.KeyValue{
 				Key:   e.Key,
-				Value: logValueToPB(e.Value),
+				Value: LogValueToPB(e.Value),
 			})
 		}
 		av.Value = &otlpcommonv1.AnyValue_KvlistValue{
