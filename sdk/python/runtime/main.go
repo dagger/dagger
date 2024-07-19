@@ -367,7 +367,7 @@ func (m *PythonSdk) WithInstall() *PythonSdk {
 			install = append(install, "--no-deps", "-r", PipCompileLock)
 		}
 		// pip compiles by default, but not uv
-		install = append([]string{"uv"}, append(install, "--compile-bytecode")...)
+		install = append([]string{"uv"}, append(install, "--verbose", "--compile-bytecode")...)
 		check = append([]string{"uv"}, check...)
 	}
 
