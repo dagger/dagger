@@ -464,8 +464,8 @@ func (ModuleSuite) TestDaggerInit(ctx context.Context, t *testctx.T) {
 				srcRootEnts, err := srcRootDir.Entries(ctx)
 				require.NoError(t, err)
 				require.Contains(t, srcRootEnts, "dagger.json")
-				require.NotContains(t, srcRootEnts, tc.sourceDirEnt)
-				srcDirEnts, err := srcRootDir.Directory("dagger").Entries(ctx)
+				require.Contains(t, srcRootEnts, tc.sourceDirEnt)
+				srcDirEnts, err := srcRootDir.Directory(".").Entries(ctx)
 				require.NoError(t, err)
 				require.Contains(t, srcDirEnts, tc.sourceDirEnt)
 			})
@@ -1224,13 +1224,13 @@ func (m *Coolsdk) RequiredPaths() []string {
 					WithWorkdir("/work")
 			}
 
-			ctr = ctr.With(daggerExec("init", "--name=test", "--sdk="+tc.sdk))
+			ctr = ctr.With(daggerExec("init", "--name=test", "--source=dagger", "--sdk="+tc.sdk))
 
 			if tc.customSDKSource != "" {
 				// TODO: hardcoding that underlying sdk is go right now, could be generalized
 				ctr = ctr.WithNewFile("dagger/main.go", tc.mainSource)
 			} else {
-				ctr = ctr.With(sdkSource(tc.sdk, tc.mainSource))
+				ctr = ctr.WithWorkdir("/work/dagger").With(sdkSource(tc.sdk, tc.mainSource)).WithWorkdir("/work")
 			}
 
 			// TODO: use cli to configure include/exclude once supported

@@ -1,0 +1,7 @@
+kind: Changed
+body: SDK now generate files in the current directory by default and no longer in
+  `./dagger`
+time: 2024-07-19T12:09:07.3248+02:00
+custom:
+  Author: TomChv
+  PR: "7824"
