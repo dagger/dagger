@@ -465,11 +465,13 @@ func renderPrimaryOutput(db *DB) error {
 			return true
 		})
 		switch stream {
-		case 1:
+		case 1: // stdout
 			if _, err := fmt.Fprint(os.Stdout, data); err != nil {
 				return err
 			}
-		case 2:
+		case 2: // stderr
+			fallthrough
+		default:
 			if _, err := fmt.Fprint(os.Stderr, data); err != nil {
 				return err
 			}
