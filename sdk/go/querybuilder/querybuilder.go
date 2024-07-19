@@ -17,10 +17,11 @@ func Query() *Selection {
 }
 
 type Selection struct {
-	name  string
-	alias string
-	args  map[string]*argument
-	bind  any
+	name     string
+	alias    string
+	args     map[string]*argument
+	bind     any
+	multiple bool
 
 	prev *Selection
 
@@ -52,8 +53,14 @@ func (s *Selection) SelectWithAlias(alias, name string) *Selection {
 	return sel
 }
 
-func (s *Selection) Select(name ...string) *Selection {
-	return s.SelectWithAlias("", strings.Join(name, " "))
+func (s *Selection) Select(name string) *Selection {
+	return s.SelectWithAlias("", name)
+}
+
+func (s *Selection) SelectMultiple(name ...string) *Selection {
+	sel := s.SelectWithAlias("", strings.Join(name, " "))
+	sel.multiple = true
+	return sel
 }
 
 func (s *Selection) Arg(name string, value any) *Selection {
@@ -70,13 +77,6 @@ func (s *Selection) Arg(name string, value any) *Selection {
 
 func (s *Selection) Bind(v interface{}) *Selection {
 	sel := *s
-	// When there's multiple fields, bind the parent.
-	if strings.Contains(sel.name, " ") {
-		prev := *s.prev
-		prev.bind = v
-		sel.prev = &prev
-		return &sel
-	}
 	sel.bind = v
 	return &sel
 }
@@ -104,15 +104,10 @@ func (s *Selection) Build(ctx context.Context) (string, error) {
 	b.WriteString("query")
 
 	path := s.path()
-	multiple := false
 
 	for _, sel := range path {
-		if multiple {
+		if sel.prev != nil && sel.prev.multiple {
 			return "", fmt.Errorf("sibling selections not end of chain")
-		}
-
-		if strings.Contains(sel.name, " ") {
-			multiple = true
 		}
 
 		b.WriteRune('{')
@@ -151,12 +146,10 @@ func (s *Selection) unpack(data any) error {
 			k = i.alias
 		}
 
-		// Try to assert type of the value
-		switch f := data.(type) {
-		case map[string]any:
-			data = f[k]
-		default:
-			data = f
+		if !i.multiple {
+			if f, ok := data.(map[string]any); ok {
+				data = f[k]
+			}
 		}
 
 		if i.bind != nil {

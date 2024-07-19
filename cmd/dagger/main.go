@@ -80,11 +80,12 @@ func init() {
 		moduleInstallCmd,
 		moduleDevelopCmd,
 		modulePublishCmd,
+		funcListCmd,
+		callCoreCmd.Command(),
+		callModCmd.Command(),
 		sessionCmd(),
 		newGenCmd(),
 	)
-
-	rootCmd.AddCommand(funcCmds.All()...)
 
 	rootCmd.AddGroup(moduleGroup)
 	rootCmd.AddGroup(execGroup)

@@ -2186,3 +2186,19 @@ func (m *Test) Quit() {
 	require.ErrorAs(t, err, &exErr)
 	require.Equal(t, 6, exErr.ExitCode)
 }
+
+func (ModuleSuite) TestCallCore(ctx context.Context, t *testctx.T) {
+	t.Run("call container", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		out, err := daggerCliBase(t, c).
+			With(daggerExec(
+				"core", "container",
+				"from", "--address", alpineImage,
+				"file", "--path", "/etc/os-release",
+				"contents",
+			)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "Alpine Linux")
+	})
+}

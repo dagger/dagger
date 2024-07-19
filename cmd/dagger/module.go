@@ -36,9 +36,6 @@ var (
 	moduleURL   string
 	moduleFlags = pflag.NewFlagSet("module", pflag.ContinueOnError)
 
-	loadCoreFuncs bool
-	functionFlags = pflag.NewFlagSet("functions", pflag.ContinueOnError)
-
 	sdk           string
 	licenseID     string
 	compatVersion string
@@ -63,14 +60,13 @@ const (
 func init() {
 	moduleFlags.StringVarP(&moduleURL, "mod", "m", "", "Path to the module directory. Either local path or a remote git repo")
 
-	functionFlags.BoolVarP(&loadCoreFuncs, "core", "c", false, "Load core functions instead of a module (mutually exclusive with -m)")
-
-	for _, c := range funcCmds.All() {
-		c.PersistentFlags().AddFlagSet(moduleFlags)
-		c.PersistentFlags().AddFlagSet(functionFlags)
-		c.MarkFlagsMutuallyExclusive("core", "mod")
+	for _, fc := range funcCmds {
+		if !fc.DisableModuleLoad {
+			fc.Command().PersistentFlags().AddFlagSet(moduleFlags)
+		}
 	}
 
+	funcListCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	listenCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	queryCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	configCmd.PersistentFlags().AddFlagSet(moduleFlags)
@@ -1113,15 +1109,22 @@ func (o *modObject) IsCore() bool {
 func skipFunction(obj, field string) bool {
 	// TODO: make this configurable in the API but may not be easy to
 	// generalize because an "internal" field may still need to exist in
-	// codegen, for example.
+	// codegen, for example. Could expose if internal via the TypeDefs though.
 	skip := map[string][]string{
 		"Query": {
 			// for SDKs only
-			"typeDef",
+			"builtinContainer",
+			"generatedCode",
 			"currentFunctionCall",
 			"currentModule",
+			"typeDef",
+			// not useful until the CLI accepts ID inputs
+			"cacheVolume",
+			"setSecret",
 			// for tests only
 			"secret",
+			// deprecated
+			"pipeline",
 		},
 	}
 	if fields, ok := skip[obj]; ok {

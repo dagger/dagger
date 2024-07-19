@@ -791,6 +791,16 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) error {
 	case dagger.ObjectKind:
 		objName := r.TypeDef.AsObject.Name
 
+		if name == "id" && r.TypeDef.AsObject.IsCore() {
+			// FIXME: The core TypeDefs have ids converted to objects, but we'd
+			// need the CLI to recognize that and either use the object's ID
+			// or allow inputing it directly. Just don't support it for now.
+			return &UnsupportedFlagError{
+				Name: name,
+				Type: fmt.Sprintf("%sID", objName),
+			}
+		}
+
 		if val := GetCustomFlagValue(objName); val != nil {
 			flags.Var(val, name, usage)
 			return nil

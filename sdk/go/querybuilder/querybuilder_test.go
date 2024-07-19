@@ -154,7 +154,7 @@ func TestSiblings(t *testing.T) {
 	q, err := Query().
 		Select("foo").
 		Select("bar").
-		Select("one", "two", "three").
+		SelectMultiple("one", "two", "three").
 		Build(context.Background())
 
 	require.NoError(t, err)
@@ -164,7 +164,7 @@ func TestSiblings(t *testing.T) {
 func TestSiblingsLeaf(t *testing.T) {
 	_, err := Query().
 		Select("foo").
-		Select("one", "two", "three").
+		SelectMultiple("one", "two", "three").
 		Select("bar").
 		Build(context.Background())
 
@@ -181,8 +181,8 @@ func TestUnpackSiblings(t *testing.T) {
 	root := Query().
 		Select("foo").
 		Select("bar").
-		Bind(&contents).
-		Select("one", "two", "three")
+		SelectMultiple("one", "two", "three").
+		Bind(&contents)
 
 	var response any
 	err := json.Unmarshal([]byte(`
