@@ -68,10 +68,12 @@ type spanKey struct {
 	SpanID  trace.SpanID
 }
 
-func NewPubSub() *PubSub {
+func NewPubSub(clientDBs *clientdb.DBs) *PubSub {
 	mux := http.NewServeMux()
 	ps := &PubSub{
 		mux:          mux,
+		clientDBs:    clientDBs,
+		listeners:    map[string][]chan<- struct{}{},
 		traceClients: map[trace.TraceID]map[string]struct{}{},
 		traceSubs:    map[Topic][]sdktrace.SpanExporter{},
 		logSubs:      map[Topic][]sdklog.Exporter{},
@@ -82,7 +84,6 @@ func NewPubSub() *PubSub {
 		spanParents: map[spanKey]trace.SpanID{},
 	}
 	mux.HandleFunc("POST /v1/traces", ps.TracesHandler)
-	mux.HandleFunc("GET /v1/traces", ps.TracesSubscribeHandler)
 	mux.HandleFunc("POST /v1/logs", ps.LogsHandler)
 	mux.HandleFunc("POST /v1/metrics", ps.MetricsHandler)
 	return ps
@@ -207,6 +208,40 @@ func (ps *PubSub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ps.mux.ServeHTTP(w, r)
 }
 
+func (ps *PubSub) Listen(clientID string) <-chan struct{} {
+	ch := make(chan struct{}, 1)
+	ps.listenersL.Lock()
+	ps.listeners[clientID] = append(ps.listeners[clientID], ch)
+	ps.listenersL.Unlock()
+	return ch
+}
+
+func (ps *PubSub) Notify(clientID string) {
+	ps.listenersL.Lock()
+	for _, ch := range ps.listeners[clientID] {
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
+	}
+	ps.listenersL.Unlock()
+}
+
+func (ps *PubSub) Terminate(clientID string) {
+	ps.listenersL.Lock()
+	for _, ch := range ps.listeners[clientID] {
+		// One last notification to catch any straggling updates.
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
+		// Close the channel so that for range completes.
+		close(ch)
+	}
+	delete(ps.listeners, clientID)
+	ps.listenersL.Unlock()
+}
+
 func (ps *PubSub) TracesHandler(rw http.ResponseWriter, r *http.Request) { //nolint: dupl
 	clientID := r.Header.Get("X-Dagger-Client-ID")
 	if clientID == "" {
@@ -246,34 +281,13 @@ func (ps *PubSub) TracesHandler(rw http.ResponseWriter, r *http.Request) { //nol
 	rw.WriteHeader(http.StatusCreated)
 }
 
-func (ps *PubSub) Listen(clientID string) <-chan struct{} {
-	ch := make(chan struct{}, 1)
-	ps.listenersL.Lock()
-	ps.listeners[clientID] = append(ps.listeners[clientID], ch)
-	ps.listenersL.Unlock()
-	return ch
-}
-
-func (ps *PubSub) Notify(clientID string) {
-	ps.listenersL.Lock()
-	for _, ch := range ps.listeners[clientID] {
-		select {
-		case ch <- struct{}{}:
-		default:
-		}
-	}
-	ps.listenersL.Unlock()
-}
-
-func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request) { //nolint: dupl
+func (ps *PubSub) sseHandler(w http.ResponseWriter, r *http.Request, handler func(<-chan struct{}, *clientdb.Queries, func(string, int64, []byte))) {
 	clientID := r.Header.Get("X-Dagger-Client-ID")
 	if clientID == "" {
 		slog.Warn("missing client ID")
 		http.Error(w, "missing client ID", http.StatusBadRequest)
 		return
 	}
-
-	// TODO: when do we disconnect? when the client disconnects?
 
 	db, err := ps.clientDBs.Open(clientID)
 	if err != nil {
@@ -298,46 +312,65 @@ func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request)
 
 	q := clientdb.New(db)
 
-	var since int64 = 0
-	var limit int64 = 1000
+	notify := ps.Listen(clientID)
 
-	for range ps.Listen(clientID) {
-		spans, err := q.SelectSpansSince(r.Context(), clientdb.SelectSpansSinceParams{
-			ID:    since,
-			Limit: limit,
-		})
-		if err != nil {
-			slog.Error("error selecting spans", "err", err)
-			return
-		}
-
-		if len(spans) == 0 {
-			continue
-		}
-
-		roSpans := make([]sdktrace.ReadOnlySpan, len(spans))
-		for i, span := range spans {
-			roSpans[i] = span.ReadOnly()
-			since = span.ID
-		}
-
-		// Marshal the spans to OTLP.
-		payload, err := json.Marshal(coltracepb.ExportTraceServiceRequest{
-			ResourceSpans: telemetry.SpansToPB(roSpans),
-		})
-		if err != nil {
-			slog.Error("error marshalling spans", "err", err)
-			return
-		}
-
+	handler(notify, q, func(event string, id int64, data []byte) {
 		// Send the batch as an OTLP trace export request.
 		fmt.Fprintf(w, "event: spans\n")
-		fmt.Fprintf(w, "id: %d\n", since)
-		fmt.Fprintf(w, "data: %s\n", payload)
+		fmt.Fprintf(w, "id: %d\n", id)
+		fmt.Fprintf(w, "data: %s\n", string(data))
 		fmt.Fprintln(w)
-
 		flush()
-	}
+	})
+}
+
+func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request) { //nolint: dupl
+	ps.sseHandler(w, r, func(notify <-chan struct{}, q *clientdb.Queries, emit func(event string, id int64, payload []byte)) {
+		var since int64 = 0
+		var limit int64 = 1000
+
+		for {
+			spans, err := q.SelectSpansSince(r.Context(), clientdb.SelectSpansSinceParams{
+				ID:    since,
+				Limit: limit,
+			})
+			if err != nil {
+				slog.Error("error selecting spans", "err", err)
+				return
+			}
+
+			slog.Warn("!!! PUBSUB GOT SPANS", "spans", len(spans))
+
+			if len(spans) == 0 {
+				_, ok := <-notify
+				if ok {
+					// More data to read.
+					continue
+				} else {
+					// Got 0 spans and the client has terminated, so we're done.
+					break
+				}
+			}
+
+			roSpans := make([]sdktrace.ReadOnlySpan, len(spans))
+			for i, span := range spans {
+				roSpans[i] = span.ReadOnly()
+				since = span.ID
+			}
+
+			// Marshal the spans to OTLP.
+			payload, err := json.Marshal(coltracepb.ExportTraceServiceRequest{
+				ResourceSpans: telemetry.SpansToPB(roSpans),
+			})
+			if err != nil {
+				slog.Error("error marshalling spans", "err", err)
+				return
+			}
+
+			// Send the batch as an OTLP trace export request.
+			emit("spans", since, payload)
+		}
+	})
 }
 
 func (ps *PubSub) LogsHandler(rw http.ResponseWriter, r *http.Request) { //nolint: dupl
@@ -377,6 +410,55 @@ func (ps *PubSub) LogsHandler(rw http.ResponseWriter, r *http.Request) { //nolin
 	}
 
 	rw.WriteHeader(http.StatusCreated)
+}
+
+func (ps *PubSub) LogsSubscribeHandler(w http.ResponseWriter, r *http.Request) { //nolint: dupl
+	ps.sseHandler(w, r, func(notify <-chan struct{}, q *clientdb.Queries, emit func(event string, id int64, payload []byte)) {
+		var since int64 = 0
+		var limit int64 = 1000
+
+		for {
+			logs, err := q.SelectLogsSince(r.Context(), clientdb.SelectLogsSinceParams{
+				ID:    since,
+				Limit: limit,
+			})
+			if err != nil {
+				slog.Error("error selecting logs", "err", err)
+				return
+			}
+
+			slog.Warn("!!! PUBSUB GOT LOGS", "spans", len(logs))
+
+			if len(logs) == 0 {
+				_, ok := <-notify
+				if ok {
+					// More data to read.
+					continue
+				} else {
+					// Got 0 spans and the client has terminated, so we're done.
+					break
+				}
+			}
+
+			recs := make([]sdklog.Record, len(logs))
+			for i, log := range logs {
+				recs[i] = log.Record()
+				since = log.ID
+			}
+
+			// Marshal the spans to OTLP.
+			payload, err := json.Marshal(collogspb.ExportLogsServiceRequest{
+				ResourceLogs: telemetry.LogsToPB(recs),
+			})
+			if err != nil {
+				slog.Error("error marshalling logs", "err", err)
+				return
+			}
+
+			// Send the batch as an OTLP trace export request.
+			emit("logs", since, payload)
+		}
+	})
 }
 
 func (ps *PubSub) MetricsHandler(rw http.ResponseWriter, r *http.Request) {
@@ -587,7 +669,7 @@ func (ps SpansPubSub) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnly
 			Resource:               resource,
 		})
 		if err != nil {
-			return fmt.Errorf("upsert span: %w", err)
+			return fmt.Errorf("insert span: %w", err)
 		}
 	}
 

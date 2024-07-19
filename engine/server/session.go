@@ -32,8 +32,10 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/analytics"
@@ -537,7 +539,7 @@ func (srv *Server) initializeDaggerClient(
 	}
 
 	// initialize SQLite DB
-	client.db, err = srv.clientDBs.Open(client.clientID)
+	client.db, err = srv.clientDBs.Create(client.clientID)
 	if err != nil {
 		return fmt.Errorf("open client DB: %w", err)
 	}
@@ -802,7 +804,10 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 
 	clientTracer := clientTP.Tracer(InstrumentationLibrary)
 
-	ctx, span := clientTracer.Start(ctx, "serveHTTPToClient")
+	// TODO: maybe only do this for queries? otherwise we've got a circle
+	ctx, span := clientTracer.Start(ctx,
+		fmt.Sprintf("%s %s", r.Method, r.URL.Path),
+		trace.WithAttributes(attribute.Bool(telemetry.UIPassthroughAttr, true)))
 	defer telemetry.End(span, func() error { return rerr })
 
 	sess := client.daggerSession
@@ -811,6 +816,14 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 	r = r.WithContext(ctx)
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /v1/traces", func(w http.ResponseWriter, r *http.Request) {
+		r.Header.Set("X-Dagger-Client-ID", client.clientID)
+		srv.telemetryPubSub.TracesSubscribeHandler(w, r)
+	})
+	mux.HandleFunc("GET /v1/logs", func(w http.ResponseWriter, r *http.Request) {
+		r.Header.Set("X-Dagger-Client-ID", client.clientID)
+		srv.telemetryPubSub.LogsSubscribeHandler(w, r)
+	})
 	mux.Handle(engine.SessionAttachablesEndpoint, httpHandlerFunc(srv.serveSessionAttachables, client))
 	mux.Handle(engine.QueryEndpoint, httpHandlerFunc(srv.serveQuery, client))
 	mux.Handle(engine.ShutdownEndpoint, httpHandlerFunc(srv.serveShutdown, client))
@@ -951,6 +964,8 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 		// want the client to see them stop.
 		sess.services.StopSessionServices(ctx, sess.sessionID)
 
+		// TODO: wait for services to stop?
+
 		// Start draining telemetry
 		srv.telemetryPubSub.Drain(sess.mainClientCallerID, immediate)
 
@@ -978,6 +993,9 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 			close(sess.shutdownCh)
 		})
 	}
+
+	// Finalize telemetry for the client.
+	srv.telemetryPubSub.Terminate(client.clientID)
 
 	telemetry.Flush(ctx)
 

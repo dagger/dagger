@@ -175,8 +175,6 @@ type Server struct {
 type NewServerOpts struct {
 	Config *config.Config
 	Name   string
-
-	TelemetryPubSub *enginetel.PubSub
 }
 
 //nolint:gocyclo
@@ -201,8 +199,6 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 			Options:       cfg.DNS.Options,
 			SearchDomains: cfg.DNS.SearchDomains,
 		},
-
-		telemetryPubSub: opts.TelemetryPubSub,
 
 		daggerSessions: make(map[string]*daggerSession),
 	}
@@ -240,8 +236,10 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	os.RemoveAll(filepath.Join(srv.executorRootDir, "hosts"))
 	os.RemoveAll(filepath.Join(srv.executorRootDir, "resolv.conf"))
 
+	// set up client DBs, and the telemetry pub/sub which writes to it
 	srv.clientDBDir = filepath.Join(srv.workerRootDir, "clientdbs")
 	srv.clientDBs = clientdb.NewDBs(srv.clientDBDir)
+	srv.telemetryPubSub = enginetel.NewPubSub(srv.clientDBs)
 
 	//
 	// setup config derived from engine config

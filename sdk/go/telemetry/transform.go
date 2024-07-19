@@ -837,7 +837,7 @@ func LogsFromPB(resLogs []*otlplogsv1.ResourceLogs) []sdklog.Record {
 				logRec.SetSeverity(log.Severity(rec.GetSeverityNumber()))
 				logRec.SetSeverityText(rec.GetSeverityText())
 				logRec.SetObservedTimestamp(time.Unix(0, int64(rec.GetObservedTimeUnixNano())))
-				logRec.SetAttributes(logKVs(rec.GetAttributes())...)
+				logRec.SetAttributes(LogKeyValuesFromPB(rec.GetAttributes())...)
 				logs = append(logs, logRec)
 			}
 		}
@@ -845,7 +845,7 @@ func LogsFromPB(resLogs []*otlplogsv1.ResourceLogs) []sdklog.Record {
 	return logs
 }
 
-func logKVs(kvs []*otlpcommonv1.KeyValue) []log.KeyValue {
+func LogKeyValuesFromPB(kvs []*otlpcommonv1.KeyValue) []log.KeyValue {
 	res := make([]log.KeyValue, len(kvs))
 	for i, kv := range kvs {
 		res[i] = logKeyValue(kv)

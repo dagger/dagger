@@ -571,9 +571,6 @@ func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte) error) (rerr
 				Host:   "dagger",
 				Path:   c.path,
 			},
-			Header: http.Header{
-				"X-Dagger-Client-ID": []string{c.clientID},
-			},
 		}).WithContext(ctx)
 	})
 	if err != nil {
