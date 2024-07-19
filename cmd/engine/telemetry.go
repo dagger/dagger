@@ -16,7 +16,6 @@ import (
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/buildkit"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 )
 
@@ -77,23 +76,9 @@ func InitTelemetry(ctx context.Context) (context.Context, *enginetel.PubSub) {
 	ctx = telemetry.Init(ctx, telemetry.Config{
 		Resource: otelResource,
 
-		// Detect is false because we don't want to forward user-initiated
-		// telemetry to Cloud or OTEL_* - only Engine-specific telemetry.
+		// TODO: should this be true now that all userland telemetry goes to
+		// local client tracer providers?
 		Detect: false,
-
-		SpanProcessors: []sdktrace.SpanProcessor{
-			// Install a span processor that modifies spans created by Buildkit to
-			// fit our ideal format.
-			buildkit.SpanProcessor{},
-			// Install a span processor that annotates each span with the client ID
-			// that it came from.
-			pubsub.Processor(),
-		},
-
-		// Send everything to the pub/sub, which distributes telemetry to
-		// individual clients.
-		LiveTraceExporters: []sdktrace.SpanExporter{pubsub.Spans()},
-		LiveLogExporters:   []sdklog.Exporter{pubsub.Logs()},
 	})
 
 	return ctx, pubsub

@@ -20,6 +20,7 @@ func (dbs *DBs) Open(clientID string) (*sql.DB, error) {
 	return sql.Open("sqlite", dbs.path(clientID))
 }
 
+// TODO: not called by anything
 func (dbs *DBs) Remove(clientID string) error {
 	return os.RemoveAll(dbs.path(clientID))
 }

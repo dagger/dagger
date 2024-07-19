@@ -14,18 +14,8 @@ type Log struct {
 	SpanID     sql.NullString
 	Timestamp  int64
 	Severity   int64
-	Body       interface{}
-	Attributes interface{}
-}
-
-type Metric struct {
-	ID          int64
-	Name        string
-	Description sql.NullString
-	Unit        sql.NullString
-	Type        sql.NullString
-	Timestamp   int64
-	DataPoints  interface{}
+	Body       []byte
+	Attributes []byte
 }
 
 type Span struct {
@@ -39,14 +29,14 @@ type Span struct {
 	Kind                   string
 	StartTime              int64
 	EndTime                sql.NullInt64
-	Attributes             interface{}
+	Attributes             []byte
 	DroppedAttributesCount int64
-	Events                 interface{}
+	Events                 []byte
 	DroppedEventsCount     int64
-	Links                  interface{}
+	Links                  []byte
 	DroppedLinksCount      int64
 	StatusCode             int64
 	StatusMessage          string
-	InstrumentationScope   interface{}
-	Resource               interface{}
+	InstrumentationScope   []byte
+	Resource               []byte
 }

@@ -18,8 +18,6 @@ import (
 	"time"
 
 	"github.com/Khan/genqlient/graphql"
-	"github.com/cenkalti/backoff/v4"
-	"github.com/containerd/containerd/defaults"
 	"github.com/docker/cli/cli/config"
 	"github.com/google/uuid"
 	controlapi "github.com/moby/buildkit/api/services/control"
@@ -29,16 +27,18 @@ import (
 	"github.com/moby/buildkit/session/auth/authprovider"
 	"github.com/moby/buildkit/util/grpcerrors"
 	"github.com/moby/buildkit/util/tracing"
+	"github.com/vito/go-sse/sse"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
+	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
+	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"golang.org/x/net/http2"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
 
@@ -73,6 +73,7 @@ type Params struct {
 
 	EngineTrace sdktrace.SpanExporter
 	EngineLogs  sdklog.Exporter
+	RootSpanID  trace.SpanID
 
 	// Log level (0 = INFO)
 	LogLevel slog.Level
@@ -92,14 +93,13 @@ type Client struct {
 	connector drivers.Connector
 
 	internalCtx    context.Context
-	internalCancel context.CancelFunc
+	internalCancel context.CancelCauseFunc
 
 	closeCtx      context.Context
-	closeRequests context.CancelFunc
+	closeRequests context.CancelCauseFunc
 	closeMu       sync.RWMutex
 
-	telemetry     *errgroup.Group
-	telemetryConn *grpc.ClientConn
+	telemetry *errgroup.Group
 
 	httpClient *httpClient
 	bkClient   *bkclient.Client
@@ -125,6 +125,9 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	c := &Client{Params: params}
 
 	if c.ID == "" {
+		c.ID = os.Getenv("DAGGER_SESSION_CLIENT_ID")
+	}
+	if c.ID == "" {
 		c.ID = identity.NewID()
 	}
 	configuredSessionID := c.SessionID
@@ -140,14 +143,14 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	c.rootCtx = ctx
 
 	// NB: decouple from the originator's cancel ctx
-	c.internalCtx, c.internalCancel = context.WithCancel(context.WithoutCancel(ctx))
-	c.closeCtx, c.closeRequests = context.WithCancel(context.WithoutCancel(ctx))
+	c.internalCtx, c.internalCancel = context.WithCancelCause(context.WithoutCancel(ctx))
+	c.closeCtx, c.closeRequests = context.WithCancelCause(context.WithoutCancel(ctx))
 
 	c.eg, c.internalCtx = errgroup.WithContext(c.internalCtx)
 
 	defer func() {
 		if rerr != nil {
-			c.internalCancel()
+			c.internalCancel(errors.New("Connect failed"))
 		}
 	}()
 
@@ -276,53 +279,6 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 	c.bkClient = bkClient
 	c.bkVersion = bkInfo.BuildkitVersion.Version
 
-	if err := retry(ctx, 10*time.Millisecond, func(elapsed time.Duration, ctx context.Context) error {
-		slog.Debug("subscribing to telemetry", "remote", c.RunnerHost)
-
-		// Open a separate connection for telemetry.
-		telemetryConn, err := grpc.NewClient(
-			"passthrough:"+c.RunnerHost,
-			grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
-				return c.connector.Connect(c.internalCtx)
-			}),
-			// Propagate the session ID to the server (via baggage).
-			grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
-			// Same defaults as Buildkit. I hit the default 4MB limit pretty quickly.
-			// Shrinking IDs might help.
-			grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(defaults.DefaultMaxRecvMsgSize)),
-			grpc.WithDefaultCallOptions(grpc.MaxCallSendMsgSize(defaults.DefaultMaxSendMsgSize)),
-			// Uncomment to measure telemetry traffic.
-			// grpc.WithUnaryInterceptor(telemetry.MeasuringUnaryClientInterceptor()),
-			// grpc.WithStreamInterceptor(telemetry.MeasuringStreamClientInterceptor()),
-			grpc.WithTransportCredentials(insecure.NewCredentials()))
-		if err != nil {
-			slog.Error("failed to dial telemetry", "error", err, "elapsed", elapsed)
-			return fmt.Errorf("telemetry grpc dial: %w", err)
-		}
-		c.telemetryConn = telemetryConn
-		c.telemetry = new(errgroup.Group)
-
-		if c.EngineTrace != nil {
-			if err := c.exportTraces(enginetel.NewTracesSourceClient(telemetryConn)); err != nil {
-				slog.Error("failed to subscribe to traces", "error", err, "elapsed", elapsed)
-				return fmt.Errorf("export traces: %w", err)
-			}
-		}
-
-		if c.EngineLogs != nil {
-			if err := c.exportLogs(enginetel.NewLogsSourceClient(telemetryConn)); err != nil {
-				slog.Error("failed to subscribe to logs", "error", err, "elapsed", elapsed)
-				return fmt.Errorf("export logs: %w", err)
-			}
-		}
-
-		slog.Debug("subscribed to telemetry", "elapsed", elapsed)
-
-		return nil
-	}); err != nil {
-		return fmt.Errorf("attach to telemetry: %w", err)
-	}
-
 	if c.EngineCallback != nil {
 		c.EngineCallback(ctx, bkInfo.BuildkitVersion.Revision, bkInfo.BuildkitVersion.Version, c.ID)
 	}
@@ -335,6 +291,22 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 	}
 
 	return nil
+}
+
+func (c *Client) subscribeTelemetry() {
+	slog.Debug("subscribing to telemetry", "remote", c.RunnerHost)
+
+	c.telemetry = new(errgroup.Group)
+
+	httpClient := c.newTelemetryHTTPClient()
+
+	if c.EngineTrace != nil {
+		c.exportTraces(httpClient)
+	}
+
+	if c.EngineLogs != nil {
+		c.exportLogs(httpClient)
+	}
 }
 
 func (c *Client) startSession(ctx context.Context) (rerr error) {
@@ -389,7 +361,7 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 		}
 		go func() {
 			<-ctx.Done()
-			cancel()
+			cancel(errors.New("startSession context done"))
 		}()
 		c.sessionSrv.Run(ctx)
 		return nil
@@ -507,35 +479,9 @@ func (srv *BuildkitSessionServer) Run(ctx context.Context) {
 	}
 }
 
-func retry(ctx context.Context, initialInterval time.Duration, fn func(time.Duration, context.Context) error) error {
-	bo := backoff.NewExponentialBackOff()
-	bo.InitialInterval = initialInterval
-
-	connectRetryCtx, connectRetryCancel := context.WithTimeout(ctx, 300*time.Second)
-	defer connectRetryCancel()
-
-	start := time.Now()
-
-	var lastErr error
-	err := backoff.Retry(func() error {
-		if err := ctx.Err(); err != nil {
-			return backoff.Permanent(err)
-		}
-
-		nextBackoff := bo.NextBackOff()
-		ctx, cancel := context.WithTimeout(connectRetryCtx, nextBackoff)
-		defer cancel()
-
-		lastErr = fn(time.Since(start), ctx)
-		return lastErr
-	}, backoff.WithContext(bo, connectRetryCtx))
-	if err != nil {
-		return errors.Join(ctx.Err(), lastErr)
-	}
-	return nil
-}
-
 func (c *Client) daggerConnect(ctx context.Context) error {
+	c.subscribeTelemetry()
+
 	var err error
 	c.daggerClient, err = dagger.Connect(
 		context.WithoutCancel(ctx),
@@ -560,10 +506,10 @@ func (c *Client) Close() (rerr error) {
 	default:
 	}
 
-	c.closeRequests()
+	c.closeRequests(errors.New("Client.Close"))
 
 	if c.internalCancel != nil {
-		c.internalCancel()
+		c.internalCancel(errors.New("Client.Close"))
 	}
 
 	if c.daggerClient != nil {
@@ -591,96 +537,142 @@ func (c *Client) Close() (rerr error) {
 	if c.telemetry != nil {
 		if err := c.telemetry.Wait(); err != nil {
 			rerr = errors.Join(rerr, fmt.Errorf("flush telemetry: %w", err))
+			slog.Warn("!!! WAITED ON TELEMETRY", "err", err)
 		}
 	}
 
 	return rerr
 }
 
-func (c *Client) exportTraces(tracesClient enginetel.TracesSourceClient) error {
+type otlpConsumer struct {
+	httpClient *httpClient
+	path       string
+	traceID    trace.TraceID
+	rootSpanID trace.SpanID
+	clientID   string
+}
+
+func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte) error) (rerr error) {
+	slog := slog.With("path", c.path, "traceID", c.traceID, "clientID", c.clientID, "self", c.rootSpanID)
+
+	defer func() {
+		if rerr != nil {
+			slog.Error("consume failed", "err", rerr)
+		} else {
+			slog.Warn("consumed", "ctxErr", ctx.Err())
+		}
+	}()
+
+	sseConn, err := sse.Connect(c.httpClient, 100*time.Millisecond, func() *http.Request {
+		return (&http.Request{
+			Method: http.MethodGet,
+			URL: &url.URL{
+				Scheme: "http",
+				Host:   "dagger",
+				Path:   c.path,
+			},
+			Header: http.Header{
+				"X-Dagger-Client-ID": []string{c.clientID},
+			},
+		}).WithContext(ctx)
+	})
+	if err != nil {
+		return fmt.Errorf("connect to SSE: %w", err)
+	}
+	defer sseConn.Close()
+
+	slog.Warn("consuming")
+
+	for {
+		event, err := sseConn.Next()
+		if err != nil {
+			if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
+				return nil
+			}
+			return fmt.Errorf("decode: %w", err)
+		}
+
+		data := event.Data
+
+		slog.ExtraDebug("consuming data", "bytes", len(data))
+
+		if len(data) == 0 {
+			continue
+		}
+
+		if err := cb(data); err != nil {
+			slog.Warn("consume error", "err", err)
+		}
+	}
+}
+
+func (c *Client) exportTraces(httpClient *httpClient) {
 	// NB: we never actually want to interrupt this, since it's relied upon for
 	// seeing what's going on, even during shutdown
 	ctx := context.WithoutCancel(c.internalCtx)
 
-	traceID := trace.SpanContextFromContext(ctx).TraceID()
-	spans, err := tracesClient.Subscribe(ctx, &enginetel.SubscribeRequest{
-		TraceId:  traceID[:],
-		ClientId: c.ID,
-	})
-	if err != nil {
-		return fmt.Errorf("subscribe to spans: %w", err)
+	exp := &otlpConsumer{
+		path:       "/v1/traces",
+		traceID:    trace.SpanContextFromContext(ctx).TraceID(),
+		rootSpanID: c.RootSpanID,
+		clientID:   c.ID,
+		httpClient: httpClient,
 	}
 
-	slog.Debug("exporting spans from engine")
-
 	c.telemetry.Go(func() error {
-		defer slog.Debug("done exporting spans from engine", "ctxErr", ctx.Err())
-
-		for {
-			data, err := spans.Recv()
-			if err != nil {
-				if errors.Is(err, context.Canceled) {
-					return nil
-				}
-				return fmt.Errorf("recv spans: %w", err)
+		return exp.Consume(ctx, func(data []byte) error {
+			var req coltracepb.ExportTraceServiceRequest
+			if err := json.Unmarshal(data, &req); err != nil {
+				return fmt.Errorf("unmarshal: %w", err)
 			}
 
-			spans := telemetry.SpansFromPB(data.GetResourceSpans())
+			spans := telemetry.SpansFromPB(req.GetResourceSpans())
 
-			slog.Debug("received spans from engine", "len", len(spans))
+			slog.ExtraDebug("received spans from engine", "len", len(spans))
 
 			for _, span := range spans {
-				slog.Debug("received span from engine", "span", span.Name(), "id", span.SpanContext().SpanID(), "endTime", span.EndTime())
+				slog.ExtraDebug("received span from engine", "span", span.Name(), "id", span.SpanContext().SpanID(), "endTime", span.EndTime())
 			}
 
 			if err := c.Params.EngineTrace.ExportSpans(ctx, spans); err != nil {
 				return fmt.Errorf("export %d spans: %w", len(spans), err)
 			}
-		}
-	})
 
-	return nil
+			return nil
+		})
+	})
 }
 
-func (c *Client) exportLogs(logsClient enginetel.LogsSourceClient) error {
+func (c *Client) exportLogs(httpClient *httpClient) {
 	// NB: we never actually want to interrupt this, since it's relied upon for
 	// seeing what's going on, even during shutdown
 	ctx := context.WithoutCancel(c.internalCtx)
 
-	traceID := trace.SpanContextFromContext(ctx).TraceID()
-	logs, err := logsClient.Subscribe(ctx, &enginetel.SubscribeRequest{
-		TraceId:  traceID[:],
-		ClientId: c.ID,
-	})
-	if err != nil {
-		return fmt.Errorf("subscribe to logs: %w", err)
+	exp := &otlpConsumer{
+		path:       "/v1/logs",
+		traceID:    trace.SpanContextFromContext(ctx).TraceID(),
+		rootSpanID: c.RootSpanID,
+		clientID:   c.ID,
+		httpClient: httpClient,
 	}
 
-	slog.Debug("exporting logs from engine")
-
 	c.telemetry.Go(func() error {
-		defer slog.Debug("done exporting logs from engine", "ctxErr", ctx.Err())
-
-		for {
-			data, err := logs.Recv()
-			if err != nil {
-				if errors.Is(err, context.Canceled) {
-					return nil
-				}
-				return fmt.Errorf("recv log: %w", err)
+		return exp.Consume(ctx, func(data []byte) error {
+			var req collogspb.ExportLogsServiceRequest
+			if err := json.Unmarshal(data, &req); err != nil {
+				return fmt.Errorf("unmarshal spans: %w", err)
 			}
 
-			logs := telemetry.LogsFromPB(data.GetResourceLogs())
+			logs := telemetry.LogsFromPB(req.GetResourceLogs())
 
-			slog.Debug("received logs from engine", "len", len(logs))
+			slog.ExtraDebug("received logs from engine", "len", len(logs))
 
 			if err := c.EngineLogs.Export(ctx, logs); err != nil {
 				return fmt.Errorf("export %d logs: %w", len(logs), err)
 			}
-		}
+			return nil
+		})
 	})
-
-	return nil
 }
 
 func (c *Client) shutdownServer() error {
@@ -706,7 +698,7 @@ func (c *Client) shutdownServer() error {
 	return resp.Body.Close()
 }
 
-func (c *Client) withClientCloseCancel(ctx context.Context) (context.Context, context.CancelFunc, error) {
+func (c *Client) withClientCloseCancel(ctx context.Context) (context.Context, context.CancelCauseFunc, error) {
 	c.closeMu.RLock()
 	defer c.closeMu.RUnlock()
 	select {
@@ -714,11 +706,11 @@ func (c *Client) withClientCloseCancel(ctx context.Context) (context.Context, co
 		return nil, nil, errors.New("client closed")
 	default:
 	}
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithCancelCause(ctx)
 	go func() {
 		select {
 		case <-c.closeCtx.Done():
-			cancel()
+			cancel(fmt.Errorf("client closed: %w", context.Cause(c.closeCtx)))
 		case <-ctx.Done():
 		}
 	}()
@@ -730,36 +722,46 @@ func (c *Client) DialContext(ctx context.Context, _, _ string) (conn net.Conn, e
 	if err != nil {
 		return nil, err
 	}
-
-	isNestedSession := c.nestedSessionPort != 0
-	if isNestedSession {
-		conn, err = (&net.Dialer{
-			Cancel: ctx.Done(),
-		}).Dial("tcp", "127.0.0.1:"+strconv.Itoa(c.nestedSessionPort))
-	} else {
-		conn, err = c.connector.Connect(ctx)
-	}
+	conn, err = c.dialContextNoClientClose(ctx)
 	if err != nil {
 		return nil, err
 	}
-
 	go func() {
 		<-c.closeCtx.Done()
-		cancel()
+		cancel(errors.New("dial context closed"))
 		conn.Close()
 	}()
 	return conn, nil
 }
 
+func (c *Client) dialContextNoClientClose(ctx context.Context) (net.Conn, error) {
+	isNestedSession := c.nestedSessionPort != 0
+	if isNestedSession {
+		return (&net.Dialer{
+			Cancel: ctx.Done(),
+		}).Dial("tcp", "127.0.0.1:"+strconv.Itoa(c.nestedSessionPort))
+	} else {
+		return c.connector.Connect(ctx)
+	}
+}
+
 func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel, err := c.withClientCloseCancel(r.Context())
+	// propagate span from per-request client headers, otherwise all spans
+	// end up beneath the client session span
+	ctx := otel.GetTextMapPropagator().Extract(r.Context(), propagation.HeaderCarrier(r.Header))
+
+	// TODO: that breaks client logs
+
+	// otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(r.Header))
+
+	ctx, cancel, err := c.withClientCloseCancel(ctx)
 	if err != nil {
 		w.WriteHeader(http.StatusBadGateway)
 		w.Write([]byte("client has closed: " + err.Error()))
 		return
 	}
 	r = r.WithContext(ctx)
-	defer cancel()
+	defer cancel(errors.New("client done serving HTTP"))
 
 	if c.SecretToken != "" {
 		username, _, ok := r.BasicAuth()
@@ -805,7 +807,7 @@ func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (c *Client) serveHijackedHTTP(ctx context.Context, cancel context.CancelFunc, w http.ResponseWriter, r *http.Request) {
+func (c *Client) serveHijackedHTTP(ctx context.Context, cancel context.CancelCauseFunc, w http.ResponseWriter, r *http.Request) {
 	slog.Warn("serving hijacked HTTP with trace", "ctx", trace.SpanContextFromContext(ctx).TraceID())
 
 	serverConn, err := c.DialContext(ctx, "", "")
@@ -833,7 +835,7 @@ func (c *Client) serveHijackedHTTP(ctx context.Context, cancel context.CancelFun
 	}
 	go func() {
 		<-c.closeCtx.Done()
-		cancel()
+		cancel(errors.New("client closing hijacked HTTP"))
 		clientConn.Close()
 	}()
 
@@ -885,7 +887,7 @@ func (c *Client) Do(
 	if err != nil {
 		return err
 	}
-	defer cancel()
+	defer cancel(errors.New("Client.Do done"))
 
 	gqlClient := graphql.NewClient("http://dagger"+engine.QueryEndpoint, c.httpClient)
 
@@ -1041,6 +1043,21 @@ func (c *Client) newHTTPClient() *httpClient {
 	}
 }
 
+func (c *Client) newTelemetryHTTPClient() *httpClient {
+	return &httpClient{
+		inner: &http.Client{
+			Transport: &http2.Transport{
+				AllowHTTP: true,
+				DialTLSContext: func(ctx context.Context, _, _ string, _ *tls.Config) (net.Conn, error) {
+					return c.dialContextNoClientClose(ctx)
+				},
+			},
+		},
+		headers:     c.AppendHTTPRequestHeaders(http.Header{}),
+		secretToken: c.SecretToken,
+	}
+}
+
 type httpClient struct {
 	inner       *http.Client
 	headers     http.Header
@@ -1049,6 +1066,9 @@ type httpClient struct {
 
 func (c *httpClient) Do(req *http.Request) (*http.Response, error) {
 	for k, v := range c.headers {
+		if req.Header == nil {
+			req.Header = http.Header{}
+		}
 		req.Header[k] = v
 	}
 	otel.GetTextMapPropagator().Inject(req.Context(), propagation.HeaderCarrier(req.Header))

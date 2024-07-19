@@ -18,3 +18,6 @@ INSERT INTO logs (
 -- ) VALUES (
 --     ?, ?, ?, ?, ?, ?
 -- ) RETURNING id;
+
+-- name: SelectSpansSince :many
+SELECT * FROM spans WHERE id > ? ORDER BY id ASC LIMIT ?;

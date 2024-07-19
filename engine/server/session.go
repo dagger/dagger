@@ -792,8 +792,11 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 	}()
 
 	clientTP := sdktrace.NewTracerProvider(
+		// Install a span processor that modifies spans created by Buildkit to
+		// fit our ideal format.
+		sdktrace.WithSpanProcessor(buildkit.SpanProcessor{}),
 		sdktrace.WithSpanProcessor(telemetry.NewLiveSpanProcessor(
-			srv.telemetryPubSub.Spans(client.db),
+			srv.telemetryPubSub.Spans(client.clientID, client.db),
 		)),
 	)
 
