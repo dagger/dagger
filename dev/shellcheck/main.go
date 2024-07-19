@@ -11,7 +11,7 @@ import (
 
 type Shellcheck struct{}
 
-// Returns a container that echoes whatever string argument is provided
+// Report the issues that need to be fix on a given file.
 func (m *Shellcheck) Check(ctx context.Context, file *dagger.File) (*Report, error) {
 	filename, err := file.Name(ctx)
 	if err != nil {
