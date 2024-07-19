@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"go.opentelemetry.io/otel/codes"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/dev/internal/dagger"
@@ -39,12 +40,19 @@ func (t PythonSDK) directory(dist *dagger.Directory) *dagger.Directory {
 }
 
 // Lint the Python SDK
-func (t PythonSDK) Lint(ctx context.Context) error {
+func (t PythonSDK) Lint(ctx context.Context) (rerr error) {
 	eg, ctx := errgroup.WithContext(ctx)
 
 	// TODO: create function in PythonSDKDev to lint any directory as input
 	// but reusing the same linter configuration in the SDK.
-	eg.Go(func() error {
+	eg.Go(func() (rerr error) {
+		ctx, span := Tracer().Start(ctx, "lint Python code in the SDK and docs")
+		defer func() {
+			if rerr != nil {
+				span.SetStatus(codes.Error, rerr.Error())
+			}
+			span.End()
+		}()
 		// Preserve same file hierarchy for docs because of extend rules in .ruff.toml
 		_, err := t.dev().
 			WithDirectory(
@@ -65,7 +73,14 @@ func (t PythonSDK) Lint(ctx context.Context) error {
 		return err
 	})
 
-	eg.Go(func() error {
+	eg.Go(func() (rerr error) {
+		ctx, span := Tracer().Start(ctx, "check that the generated client library is up-to-date")
+		defer func() {
+			if rerr != nil {
+				span.SetStatus(codes.Error, rerr.Error())
+			}
+			span.End()
+		}()
 		before := t.Dagger.Source()
 		after, err := t.Generate(ctx)
 		if err != nil {
@@ -74,7 +89,14 @@ func (t PythonSDK) Lint(ctx context.Context) error {
 		return dag.Dirdiff().AssertEqual(ctx, before, after, []string{pythonGeneratedAPIPath})
 	})
 
-	eg.Go(func() error {
+	eg.Go(func() (rerr error) {
+		ctx, span := Tracer().Start(ctx, "lint the python runtime, which is written in Go")
+		defer func() {
+			if rerr != nil {
+				span.SetStatus(codes.Error, rerr.Error())
+			}
+			span.End()
+		}()
 		return dag.
 			Go(t.Dagger.WithModCodegen().Source()).
 			Lint(ctx, dagger.GoLintOpts{Packages: []string{pythonRuntimeSubdir}})
@@ -84,7 +106,7 @@ func (t PythonSDK) Lint(ctx context.Context) error {
 }
 
 // Test the Python SDK
-func (t PythonSDK) Test(ctx context.Context) error {
+func (t PythonSDK) Test(ctx context.Context) (rerr error) {
 	installer, err := t.Dagger.installer(ctx, "sdk-python-test")
 	if err != nil {
 		return err
