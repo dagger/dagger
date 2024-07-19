@@ -1,4 +1,5 @@
 """Command line interface for the dagger extension runtime."""
+
 import importlib
 import inspect
 import logging

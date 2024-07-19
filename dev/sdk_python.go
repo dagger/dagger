@@ -11,13 +11,10 @@ import (
 	"github.com/dagger/dagger/dev/internal/util"
 )
 
-// TODO: use dev module (this is just the mage port)
-
 const (
 	pythonSubdir           = "sdk/python"
 	pythonRuntimeSubdir    = "sdk/python/runtime"
 	pythonGeneratedAPIPath = "sdk/python/src/dagger/client/gen.py"
-	pythonDefaultVersion   = "3.11"
 )
 
 var (
@@ -28,28 +25,44 @@ type PythonSDK struct {
 	Dagger *DaggerDev // +private
 }
 
+// dev instantiates a PythonSDKDev instance, with source directory
+// from `sdk/python` subdir.
+func (t PythonSDK) dev(opts ...dagger.PythonSDKDevOpts) *dagger.PythonSDKDev {
+	src := t.Dagger.Source().Directory(pythonSubdir)
+	return dag.PythonSDKDev(src, opts...)
+}
+
+// directory takes a directory returned by PythonSDKDev which is relative
+// to `sdk/python` and returns a new directory relative to the repo's
+// root.
+func (t PythonSDK) directory(dist *dagger.Directory) *dagger.Directory {
+	return dag.Directory().WithDirectory(pythonSubdir, dist)
+}
+
 // Lint the Python SDK
 func (t PythonSDK) Lint(ctx context.Context) error {
 	eg, ctx := errgroup.WithContext(ctx)
 
-	base := t.pythonBase(pythonDefaultVersion, true)
-
+	// TODO: create function in PythonSDKDev to lint any directory as input
+	// but reusing the same linter configuration in the SDK.
 	eg.Go(func() error {
-		path := "docs/current_docs"
-		_, err := base.
+		// Preserve same file hierarchy for docs because of extend rules in .ruff.toml
+		_, err := t.dev().
 			WithDirectory(
-				fmt.Sprintf("/%s", path),
-				t.Dagger.Source().Directory(path),
-				dagger.ContainerWithDirectoryOpts{
-					Include: []string{
-						"**/*.py",
-						".ruff.toml",
-					},
-				},
+				dag.Directory().
+					WithDirectory(
+						"",
+						t.Dagger.Source(),
+						dagger.DirectoryWithDirectoryOpts{
+							Include: []string{
+								"docs/current_docs/**/*.py",
+								"**/.ruff.toml",
+							},
+						},
+					),
 			).
-			WithExec([]string{"ruff", "check", "--show-source", ".", "/docs"}).
-			WithExec([]string{"black", "--check", "--diff", ".", "/docs"}).
-			Sync(ctx)
+			Lint(ctx, []string{"../.."})
+
 		return err
 	})
 
@@ -73,37 +86,18 @@ func (t PythonSDK) Test(ctx context.Context) error {
 		return err
 	}
 
+	base := t.dev().Container().With(installer)
+	dev := t.dev(dagger.PythonSDKDevOpts{Container: base})
+
 	eg, ctx := errgroup.WithContext(ctx)
 	for _, version := range pythonVersions {
-		base := t.pythonBase(version, true).With(installer)
-
 		eg.Go(func() error {
-			_, err := base.
-				WithEnvVariable("PYTHONUNBUFFERED", "1").
-				WithExec([]string{"pytest", "-Wd", "--exitfirst", "-m", "not provision"}).
+			_, err := dev.
+				Test(dagger.PythonSDKDevTestOpts{Version: version}).
+				Default().
 				Sync(ctx)
 			return err
 		})
-
-		// Test build
-		dist := t.pythonBase(version, false).
-			WithMountedDirectory(
-				"/dist",
-				base.
-					WithExec([]string{"hatch", "build", "--clean"}).
-					Directory("dist"),
-			)
-
-		for _, ext := range map[string]string{"sdist": "tar.gz", "bdist": "whl"} {
-			ext := ext
-			eg.Go(func() error {
-				_, err := dist.
-					WithExec([]string{"sh", "-c", "pip install /dist/*" + ext}).
-					WithExec([]string{"python", "-c", "import dagger"}).
-					Sync(ctx)
-				return err
-			})
-		}
 	}
 
 	return eg.Wait()
@@ -119,17 +113,7 @@ func (t PythonSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 	if err != nil {
 		return nil, err
 	}
-	generated := t.pythonBase(pythonDefaultVersion, true).
-		WithWorkdir("./codegen").
-		WithMountedFile("/schema.json", introspection).
-		WithExec([]string{
-			"uv", "run", "--no-dev",
-			"python", "-m",
-			"codegen", "generate", "-i", "/schema.json", "-o", "gen.py",
-		}).
-		WithExec([]string{"black", "gen.py"}).
-		File("gen.py")
-	return dag.Directory().WithFile(pythonGeneratedAPIPath, generated), nil
+	return t.directory(t.dev().Generate(introspection)), nil
 }
 
 // Publish the Python SDK
@@ -153,15 +137,16 @@ func (t PythonSDK) Publish(
 		pypiRepo = "main"
 	}
 
-	result := t.pythonBase(pythonDefaultVersion, true).
+	// TODO: move this to PythonSDKDev
+	result := t.dev().Container().
 		WithEnvVariable("SETUPTOOLS_SCM_PRETEND_VERSION", version).
 		WithEnvVariable("HATCH_INDEX_REPO", pypiRepo).
 		WithEnvVariable("HATCH_INDEX_USER", "__token__").
-		WithExec([]string{"hatch", "build"})
+		WithExec([]string{"uvx", "hatch", "build"})
 	if !dryRun {
 		result = result.
 			WithSecretVariable("HATCH_INDEX_AUTH", pypiToken).
-			WithExec([]string{"hatch", "publish"})
+			WithExec([]string{"uvx", "hatch", "publish"})
 	}
 	_, err := result.Sync(ctx)
 	return err
@@ -176,58 +161,4 @@ func (t PythonSDK) Bump(ctx context.Context, version string) (*dagger.Directory,
 	// NOTE: if you change this path, be sure to update .github/workflows/publish.yml so that
 	// provision tests run whenever this file changes.
 	return dag.Directory().WithNewFile("sdk/python/src/dagger/_engine/_version.py", engineReference), nil
-}
-
-// pythonBase returns a python container with the Python SDK source files
-// added and dependencies installed.
-func (t PythonSDK) pythonBase(version string, install bool) *dagger.Container {
-	src := t.Dagger.Source().Directory(pythonSubdir)
-
-	pipx := dag.HTTP("https://github.com/pypa/pipx/releases/download/1.2.0/pipx.pyz")
-	venv := "/opt/venv"
-
-	base := dag.Container().
-		From(fmt.Sprintf("python:%s-slim", version)).
-		// TODO: the way uv is installed here is temporary. The PythonSDK
-		// object will be refactored soon to use sdk/python/dev as a dependency.
-		WithDirectory(
-			"/usr/local/bin",
-			dag.Directory().
-				WithFile("", src.File("runtime/Dockerfile")).
-				DockerBuild(dagger.DirectoryDockerBuildOpts{Target: "uv"}).
-				Rootfs(),
-			dagger.ContainerWithDirectoryOpts{
-				Include: []string{"uv*"},
-			},
-		).
-		WithMountedCache("/root/.cache/uv", dag.CacheVolume("modpython-uv")).
-		WithEnvVariable("PIPX_BIN_DIR", "/usr/local/bin").
-		WithMountedCache("/root/.cache/pip", dag.CacheVolume("pip_cache_"+version)).
-		WithMountedCache("/root/.local/pipx/cache", dag.CacheVolume("pipx_cache_"+version)).
-		WithMountedCache("/root/.cache/hatch", dag.CacheVolume("hatch_cache_"+version)).
-		WithMountedFile("/pipx.pyz", pipx).
-		WithExec([]string{"python", "/pipx.pyz", "install", "hatch==1.12.0"}).
-		WithExec([]string{"python", "-m", "venv", venv}).
-		WithEnvVariable("VIRTUAL_ENV", venv).
-		WithEnvVariable(
-			"PATH",
-			"$VIRTUAL_ENV/bin:$PATH",
-			dagger.ContainerWithEnvVariableOpts{
-				Expand: true,
-			},
-		).
-		WithEnvVariable("HATCH_ENV_TYPE_VIRTUAL_PATH", venv).
-		// Mirror the same dir structure from the repo because of the
-		// relative paths in ruff (for docs linting).
-		WithWorkdir(pythonSubdir).
-		WithMountedFile("requirements.txt", src.File("requirements.txt")).
-		WithExec([]string{"pip", "install", "-r", "requirements.txt"})
-
-	if install {
-		base = base.
-			WithMountedDirectory("", src).
-			WithExec([]string{"pip", "install", "--no-deps", "."})
-	}
-
-	return base
 }

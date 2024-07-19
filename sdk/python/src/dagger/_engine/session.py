@@ -104,8 +104,8 @@ def run(cfg: dagger.Config, path: str) -> subprocess.Popen[str]:
     # case is obscure enough that it should not be hit very often at all.
     for _ in range(10):
         try:
-            proc = subprocess.Popen(
-                args,  # noqa: S603
+            proc = subprocess.Popen(  # noqa: S603
+                args,
                 bufsize=0,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,

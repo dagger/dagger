@@ -8,11 +8,11 @@ def anyio_backend():
     return "asyncio"
 
 
-@pytest.fixture()
+@pytest.fixture
 def alpine_version():
     return "3.20.1"
 
 
-@pytest.fixture()
+@pytest.fixture
 def alpine_image(alpine_version):
     return f"alpine:{alpine_version}"

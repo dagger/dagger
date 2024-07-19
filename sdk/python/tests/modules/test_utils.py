@@ -73,16 +73,13 @@ def test_get_factory_doc():
     assert get_doc(ClassWithDocstring.create) == "Bar."
 
 
-class ClassWithoutDocstring:
-    ...
+class ClassWithoutDocstring: ...
 
 
-def func_without_docstring():
-    ...
+def func_without_docstring(): ...
 
 
-async def async_func_without_docstring():
-    ...
+async def async_func_without_docstring(): ...
 
 
 @pytest.mark.parametrize(

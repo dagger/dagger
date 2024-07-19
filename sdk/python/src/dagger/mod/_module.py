@@ -396,8 +396,7 @@ class Module:
         *,
         name: APIName | None = None,
         doc: str | None = None,
-    ) -> Func[P, R]:
-        ...
+    ) -> Func[P, R]: ...
 
     @overload
     def function(
@@ -405,8 +404,7 @@ class Module:
         *,
         name: APIName | None = None,
         doc: str | None = None,
-    ) -> Callable[[Func[P, R]], Func[P, R]]:
-        ...
+    ) -> Callable[[Func[P, R]], Func[P, R]]: ...
 
     def function(
         self,
@@ -454,16 +452,14 @@ class Module:
         kw_only_default=True,
         field_specifiers=(function, dataclasses.field, dataclasses.Field),
     )
-    def object_type(self, cls: T) -> T:
-        ...
+    def object_type(self, cls: T) -> T: ...
 
     @overload
     @dataclass_transform(
         kw_only_default=True,
         field_specifiers=(function, dataclasses.field, dataclasses.Field),
     )
-    def object_type(self) -> Callable[[T], T]:
-        ...
+    def object_type(self) -> Callable[[T], T]: ...
 
     def object_type(self, cls: T | None = None) -> T | Callable[[T], T]:
         """Exposes a Python class as a :py:class:`dagger.ObjectTypeDef`.
@@ -552,12 +548,10 @@ class Module:
         return cls
 
     @overload
-    def enum_type(self, cls: T) -> T:
-        ...
+    def enum_type(self, cls: T) -> T: ...
 
     @overload
-    def enum_type(self) -> Callable[[T], T]:
-        ...
+    def enum_type(self) -> Callable[[T], T]: ...
 
     def enum_type(self, cls: T | None = None) -> T | Callable[[T], T]:
         """Exposes a Python enum.Enum as a :py:class:`dagger.EnumTypeDef`.

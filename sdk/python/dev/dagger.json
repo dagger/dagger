@@ -1,27 +1,66 @@
 {
   "name": "python-sdk-dev",
-  "root": "..",
   "sdk": "python",
-  "include": [
-    "**/*.py",
-    "**/*.typed",
-    "**/pyproject.toml",
-    "**/*ruff.toml",
-    "LICENSE",
-    "README.md",
-    "hatch.toml",
-    "requirements/*.txt",
-    "docs/**/*.rst",
-    "dev/dagger.json"
-  ],
   "exclude": [
-    "docs/_build",
-    "**/.envrc",
     "**/.direnv",
     "**/.venv",
-    "*/sdk"
+    "**/__pycache__",
+    "**/.*cache",
+    "**/sdk"
   ],
   "dependencies": [
-    "github.com/kpenfound/dagger-modules/dockerd@ec3133891c9cea4ec964c6fb597e62567dfecc7e"
+    {
+      "name": "apko",
+      "source": "github.com/vito/daggerverse/apko@fee9c69c2213c9411844095c4b22884e2993cdbf"
+    },
+    {
+      "name": "dockerd",
+      "source": "github.com/kpenfound/dagger-modules/dockerd@57352e06a1cfbcb5307c009d37c0201b2719b935"
+    }
+  ],
+  "source": ".",
+  "engineVersion": "v0.12.0",
+  "views": [
+    {
+      "name": "default",
+      "patterns": [
+        "dev/src/**/*.py",
+        "docs/**/*.py",
+        "docs/**/*.rst",
+        "src/**/*.py",
+        "src/**/py.typed",
+        "tests/**/*.py",
+        "codegen/**/*.py",
+        "ruff.toml",
+        "uv.lock",
+        "README.md",
+        "LICENSE",
+        "**/pyproject.toml",
+        "**/.gitignore",
+        "**/.ruff.toml",
+        "!dev/sdk",
+        "!**/__pycache__",
+        "!**/.*cache",
+        "!**/.venv"
+      ]
+    },
+    {
+      "name": "lint",
+      "patterns": [
+        "!**/.direnv",
+        "!**/.venv",
+        "!**/__pycache__",
+        "!**/.ruff_cache",
+        "!**/sdk/pyproject.toml",
+        "!**/sdk/src",
+        "**/.gitignore",
+        "**/pyproject.toml",
+        "**/.ruff.toml",
+        "**/ruff*.toml",
+        "**/*.py",
+        "README.md",
+        "LICENSE"
+      ]
+    }
   ]
 }

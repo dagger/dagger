@@ -2,6 +2,7 @@
 
 Further documentation for the module here.
 """
+
 from typing import Annotated
 
 from dagger import Doc, function, object_type

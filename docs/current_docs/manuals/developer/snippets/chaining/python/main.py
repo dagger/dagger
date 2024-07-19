@@ -1,4 +1,5 @@
 """A simple chaining example module."""
+
 from typing import Self
 
 from dagger import function, object_type

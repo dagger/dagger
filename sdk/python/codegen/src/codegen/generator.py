@@ -726,8 +726,7 @@ class Field(Protocol):
     name: str
     graphql_name: str
 
-    def __str__(self) -> str:
-        ...
+    def __str__(self) -> str: ...
 
 
 _O = TypeVar("_O", GraphQLInputObjectType, GraphQLObjectType)
@@ -738,8 +737,7 @@ _F: TypeAlias = _InputField | _ObjectField
 
 class ObjectHandler(Handler[_O]):
     @abstractmethod
-    def fields(self, t: _O) -> Iterator[_F]:
-        ...
+    def fields(self, t: _O) -> Iterator[_F]: ...
 
     @joiner
     def render_body(self, t: _O) -> Iterator[str]:
