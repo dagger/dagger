@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -704,6 +705,8 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 		return inst, err
 	}
 
+	slog.Error("moduleSourceResolveFromCaller", "contextAbsPath", contextAbsPath, "sourceRootAbsPath", sourceRootAbsPath)
+
 	sourceRootRelPath, err := filepath.Rel(contextAbsPath, sourceRootAbsPath)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get source root relative path: %w", err)
@@ -712,6 +715,8 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 	// even when subdir relative to git source has ref structure
 	// (cf. test TestRefFormat)
 	sourceRootRelPath = "./" + sourceRootRelPath
+
+	slog.Error("moduleSourceResolveFromCaller", "sourceRootRelPath", sourceRootRelPath)
 
 	collectedDeps := dagql.NewCacheMap[string, *callerLocalDep]()
 	if err := s.collectCallerLocalDeps(ctx, src.Query, contextAbsPath, sourceRootAbsPath, true, src, collectedDeps); err != nil {
