@@ -826,7 +826,7 @@ func (ModuleSuite) TestGoSignaturesBuiltinTypes(ctx context.Context, t *testctx.
 	modGen := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
-		With(daggerExec("init", "--name=minimal", "--sdk=go",)).
+		With(daggerExec("init", "--name=minimal", "--sdk=go")).
 		WithNewFile("main.go", `package main
 
 import (
