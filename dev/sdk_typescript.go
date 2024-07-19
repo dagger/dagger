@@ -6,6 +6,7 @@ import (
 	"path"
 	"strings"
 
+	"go.opentelemetry.io/otel/codes"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/dev/internal/build"
@@ -29,17 +30,31 @@ type TypescriptSDK struct {
 }
 
 // Lint the Typescript SDK
-func (t TypescriptSDK) Lint(ctx context.Context) error {
+func (t TypescriptSDK) Lint(ctx context.Context) (rerr error) {
 	eg, ctx := errgroup.WithContext(ctx)
 
 	base := t.nodeJsBase()
 
-	eg.Go(func() error {
+	eg.Go(func() (rerr error) {
+		ctx, span := Tracer().Start(ctx, "lint the Typescript SDK code")
+		defer func() {
+			if rerr != nil {
+				span.SetStatus(codes.Error, rerr.Error())
+			}
+			span.End()
+		}()
 		_, err := base.WithExec([]string{"yarn", "lint"}).Sync(ctx)
 		return err
 	})
 
-	eg.Go(func() error {
+	eg.Go(func() (rerr error) {
+		ctx, span := Tracer().Start(ctx, "lint Typescript snippets in the docs")
+		defer func() {
+			if rerr != nil {
+				span.SetStatus(codes.Error, rerr.Error())
+			}
+			span.End()
+		}()
 		path := "docs/current_docs"
 		_, err := base.
 			WithDirectory(
@@ -61,7 +76,14 @@ func (t TypescriptSDK) Lint(ctx context.Context) error {
 		return err
 	})
 
-	eg.Go(func() error {
+	eg.Go(func() (rerr error) {
+		ctx, span := Tracer().Start(ctx, "check that the generated client library is up-to-date")
+		defer func() {
+			if rerr != nil {
+				span.SetStatus(codes.Error, rerr.Error())
+			}
+			span.End()
+		}()
 		before := t.Dagger.Source()
 		after, err := t.Generate(ctx)
 		if err != nil {
@@ -72,7 +94,14 @@ func (t TypescriptSDK) Lint(ctx context.Context) error {
 			AssertEqual(ctx, before, after, []string{typescriptGeneratedAPIPath})
 	})
 
-	eg.Go(func() error {
+	eg.Go(func() (rerr error) {
+		ctx, span := Tracer().Start(ctx, "lint the typescript runtime, which is written in Go")
+		defer func() {
+			if rerr != nil {
+				span.SetStatus(codes.Error, rerr.Error())
+			}
+			span.End()
+		}()
 		return dag.
 			Go(t.Dagger.WithModCodegen().Source()).
 			Lint(ctx, dagger.GoLintOpts{Packages: []string{typescriptRuntimeSubdir}})
@@ -82,7 +111,7 @@ func (t TypescriptSDK) Lint(ctx context.Context) error {
 }
 
 // Test the Typescript SDK
-func (t TypescriptSDK) Test(ctx context.Context) error {
+func (t TypescriptSDK) Test(ctx context.Context) (rerr error) {
 	installer, err := t.Dagger.installer(ctx, "sdk-typescript-test")
 	if err != nil {
 		return err

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"go.opentelemetry.io/otel/codes"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/dev/internal/dagger"
@@ -15,14 +16,28 @@ type GoSDK struct {
 }
 
 // Lint the Go SDK
-func (t GoSDK) Lint(ctx context.Context) error {
+func (t GoSDK) Lint(ctx context.Context) (rerr error) {
 	eg, ctx := errgroup.WithContext(ctx)
-	eg.Go(func() error {
+	eg.Go(func() (rerr error) {
+		ctx, span := Tracer().Start(ctx, "lint the go source")
+		defer func() {
+			if rerr != nil {
+				span.SetStatus(codes.Error, rerr.Error())
+			}
+			span.End()
+		}()
 		return dag.
 			Go(t.Dagger.Source()).
 			Lint(ctx, dagger.GoLintOpts{Packages: []string{"sdk/go"}})
 	})
-	eg.Go(func() error {
+	eg.Go(func() (rerr error) {
+		ctx, span := Tracer().Start(ctx, "check that the generated client library is up-to-date")
+		defer func() {
+			if rerr != nil {
+				span.SetStatus(codes.Error, rerr.Error())
+			}
+			span.End()
+		}()
 		before := t.Dagger.Source()
 		after, err := t.Generate(ctx)
 		if err != nil {
@@ -34,7 +49,7 @@ func (t GoSDK) Lint(ctx context.Context) error {
 }
 
 // Test the Go SDK
-func (t GoSDK) Test(ctx context.Context) error {
+func (t GoSDK) Test(ctx context.Context) (rerr error) {
 	installer, err := t.Dagger.installer(ctx, "sdk-go-test")
 	if err != nil {
 		return err

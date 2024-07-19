@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 
+	"go.opentelemetry.io/otel/codes"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/dev/internal/dagger"
@@ -51,11 +52,18 @@ func (d Docs) Server() *dagger.Container {
 }
 
 // Lint documentation files
-func (d Docs) Lint(ctx context.Context) error {
+func (d Docs) Lint(ctx context.Context) (rerr error) {
 	eg, ctx := errgroup.WithContext(ctx)
 
 	// Markdown
-	eg.Go(func() error {
+	eg.Go(func() (rerr error) {
+		ctx, span := Tracer().Start(ctx, "lint markdown files")
+		defer func() {
+			if rerr != nil {
+				span.SetStatus(codes.Error, rerr.Error())
+			}
+			span.End()
+		}()
 		_, err := dag.Container().
 			From("tmknom/markdownlint:0.31.1").
 			WithMountedDirectory("/src", d.Dagger.Source()).
@@ -73,7 +81,14 @@ func (d Docs) Lint(ctx context.Context) error {
 		return err
 	})
 
-	eg.Go(func() error {
+	eg.Go(func() (rerr error) {
+		ctx, span := Tracer().Start(ctx, "check that generated GraphQL and CLI references are up-to-date")
+		defer func() {
+			if rerr != nil {
+				span.SetStatus(codes.Error, rerr.Error())
+			}
+			span.End()
+		}()
 		before := d.Dagger.Source()
 		after, err := d.Generate(ctx)
 		if err != nil {
@@ -82,7 +97,14 @@ func (d Docs) Lint(ctx context.Context) error {
 		return dag.Dirdiff().AssertEqual(ctx, before, after, []string{generatedSchemaPath, generatedCliZenPath})
 	})
 
-	eg.Go(func() error {
+	eg.Go(func() (rerr error) {
+		ctx, span := Tracer().Start(ctx, "check that changelog is up-do-date")
+		defer func() {
+			if rerr != nil {
+				span.SetStatus(codes.Error, rerr.Error())
+			}
+			span.End()
+		}()
 		before := d.Dagger.Source()
 		// FIXME: spin out a changie module
 		after := dag.
