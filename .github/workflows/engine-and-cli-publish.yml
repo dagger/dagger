@@ -150,6 +150,8 @@ jobs:
           delete-branch: true
           branch: bump-engine
           draft: true
+          token: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
+          push-to-fork: dagger-ci/dagger
       - name: "Notify"
         uses: ./.github/actions/notify
         if: github.ref_name != 'main'
