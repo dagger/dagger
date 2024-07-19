@@ -2,9 +2,6 @@
 -- autoincrementing ID so we can trivially maintain order of events without
 -- worrying about nanosecond timestamp collisions.
 --
--- All JSONB fields are the JSON representation of the corresponding OTLP
--- protobuf type.
---
 -- Note that there will be duplicates for spans as they progress through
 -- updates to completion. These tables are append-only.
 
@@ -19,16 +16,16 @@ CREATE TABLE spans (
     kind TEXT NOT NULL,
     start_time INTEGER NOT NULL, -- Nanoseconds from epoch
     end_time INTEGER, -- Nullable to support started spans
-    attributes JSONB, -- JSONB to store span attributes
+    attributes BLOB, -- JSON encoded []*otlpcommonv1.KeyValue
     dropped_attributes_count INTEGER NOT NULL,
-    events JSONB, -- JSONB to store span events
+    events BLOB, -- JSON encoded []*otlptracev1.Span_Event
     dropped_events_count INTEGER NOT NULL,
-    links JSONB, -- JSONB to store span links
+    links BLOB, -- JSON encoded []*otlptracev1.Span_Link
     dropped_links_count INTEGER NOT NULL,
     status_code INTEGER NOT NULL,
     status_message TEXT NOT NULL,
-    instrumentation_scope JSONB, -- JSONB to store instrumentation scope
-    resource JSONB -- JSONB to store resource attributes
+    instrumentation_scope BLOB, -- JSON encoded *otlpcommonv1.InstrumentationScope
+    resource BLOB -- JSON encoded *otlpresourcev1.Resource
 );
 
 CREATE TABLE logs (
@@ -37,16 +34,6 @@ CREATE TABLE logs (
     span_id TEXT,
     timestamp INTEGER NOT NULL, -- Nanoseconds from epoch
     severity INTEGER NOT NULL,
-    body JSONB, -- JSONB encoded otlpcommon.v1.Any
-    attributes JSONB -- JSONB encoded otlpcommon.v1.Key
-);
-
-CREATE TABLE metrics (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    description TEXT,
-    unit TEXT,
-    type TEXT,
-    timestamp INTEGER NOT NULL, -- Nanoseconds from epoch
-    data_points JSONB -- JSONB to store metric data points
+    body BLOB, -- JSON encoded otlpcommon.v1.Any
+    attributes BLOB -- JSON encoded otlpcommon.v1.Key
 );

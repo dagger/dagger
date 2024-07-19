@@ -563,22 +563,22 @@ func (s *readOnlySpan) Attributes() []attribute.KeyValue {
 }
 
 func (s *readOnlySpan) Links() []sdktrace.Link {
-	return linksFromPB(s.pb.Links)
+	return SpanLinksFromPB(s.pb.Links)
 }
 
 func (s *readOnlySpan) Events() []sdktrace.Event {
-	return spanEventsFromPB(s.pb.Events)
+	return SpanEventsFromPB(s.pb.Events)
 }
 
 func (s *readOnlySpan) Status() sdktrace.Status {
 	return sdktrace.Status{
-		Code:        statusCode(s.pb.Status),
+		Code:        StatusCodeFromPB(s.pb.Status),
 		Description: s.pb.Status.GetMessage(),
 	}
 }
 
 func (s *readOnlySpan) InstrumentationScope() instrumentation.Scope {
-	return instrumentationScope(s.is)
+	return InstrumentationScopeFromPB(s.is)
 }
 
 // Deprecated: use InstrumentationScope.
@@ -624,7 +624,7 @@ func (s *readOnlySpan) ChildSpanCount() int {
 var _ sdktrace.ReadOnlySpan = &readOnlySpan{}
 
 // status transform a OTLP span status into span code.
-func statusCode(st *otlptracev1.Status) codes.Code {
+func StatusCodeFromPB(st *otlptracev1.Status) codes.Code {
 	if st == nil {
 		return codes.Unset
 	}
@@ -636,8 +636,8 @@ func statusCode(st *otlptracev1.Status) codes.Code {
 	}
 }
 
-// linksFromPB transforms OTLP span links to span Links.
-func linksFromPB(links []*otlptracev1.Span_Link) []sdktrace.Link {
+// SpanLinksFromPB transforms OTLP span links to span Links.
+func SpanLinksFromPB(links []*otlptracev1.Span_Link) []sdktrace.Link {
 	if len(links) == 0 {
 		return nil
 	}
@@ -669,8 +669,8 @@ func linksFromPB(links []*otlptracev1.Span_Link) []sdktrace.Link {
 	return sl
 }
 
-// spanEventsFromPB transforms OTLP span events to span Events.
-func spanEventsFromPB(es []*otlptracev1.Span_Event) []sdktrace.Event {
+// SpanEventsFromPB transforms OTLP span events to span Events.
+func SpanEventsFromPB(es []*otlptracev1.Span_Event) []sdktrace.Event {
 	if len(es) == 0 {
 		return nil
 	}
@@ -814,7 +814,7 @@ func anyArrayToAttrValue(anyVals []*otlpcommonv1.AnyValue) attribute.Value {
 	}
 }
 
-func instrumentationScope(is *otlpcommonv1.InstrumentationScope) instrumentation.Scope {
+func InstrumentationScopeFromPB(is *otlpcommonv1.InstrumentationScope) instrumentation.Scope {
 	if is == nil {
 		return instrumentation.Scope{}
 	}

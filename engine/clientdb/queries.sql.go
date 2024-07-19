@@ -23,8 +23,8 @@ type InsertLogParams struct {
 	SpanID     sql.NullString
 	Timestamp  int64
 	Severity   int64
-	Body       interface{}
-	Attributes interface{}
+	Body       []byte
+	Attributes []byte
 }
 
 func (q *Queries) InsertLog(ctx context.Context, arg InsertLogParams) (int64, error) {
@@ -59,16 +59,16 @@ type InsertSpanParams struct {
 	Kind                   string
 	StartTime              int64
 	EndTime                sql.NullInt64
-	Attributes             interface{}
+	Attributes             []byte
 	DroppedAttributesCount int64
-	Events                 interface{}
+	Events                 []byte
 	DroppedEventsCount     int64
-	Links                  interface{}
+	Links                  []byte
 	DroppedLinksCount      int64
 	StatusCode             int64
 	StatusMessage          string
-	InstrumentationScope   interface{}
-	Resource               interface{}
+	InstrumentationScope   []byte
+	Resource               []byte
 }
 
 func (q *Queries) InsertSpan(ctx context.Context, arg InsertSpanParams) (int64, error) {
@@ -96,4 +96,68 @@ func (q *Queries) InsertSpan(ctx context.Context, arg InsertSpanParams) (int64, 
 	var id int64
 	err := row.Scan(&id)
 	return id, err
+}
+
+const selectSpansSince = `-- name: SelectSpansSince :many
+
+SELECT id, trace_id, span_id, trace_state, parent_span_id, flags, name, kind, start_time, end_time, attributes, dropped_attributes_count, events, dropped_events_count, links, dropped_links_count, status_code, status_message, instrumentation_scope, resource FROM spans WHERE id > ? ORDER BY id ASC LIMIT ?
+`
+
+type SelectSpansSinceParams struct {
+	ID    int64
+	Limit int64
+}
+
+// -- name: InsertMetric :one
+// INSERT INTO metrics (
+//
+//	name, description, unit, type, timestamp, data_points
+//
+// ) VALUES (
+//
+//	?, ?, ?, ?, ?, ?
+//
+// ) RETURNING id;
+func (q *Queries) SelectSpansSince(ctx context.Context, arg SelectSpansSinceParams) ([]Span, error) {
+	rows, err := q.db.QueryContext(ctx, selectSpansSince, arg.ID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Span
+	for rows.Next() {
+		var i Span
+		if err := rows.Scan(
+			&i.ID,
+			&i.TraceID,
+			&i.SpanID,
+			&i.TraceState,
+			&i.ParentSpanID,
+			&i.Flags,
+			&i.Name,
+			&i.Kind,
+			&i.StartTime,
+			&i.EndTime,
+			&i.Attributes,
+			&i.DroppedAttributesCount,
+			&i.Events,
+			&i.DroppedEventsCount,
+			&i.Links,
+			&i.DroppedLinksCount,
+			&i.StatusCode,
+			&i.StatusMessage,
+			&i.InstrumentationScope,
+			&i.Resource,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

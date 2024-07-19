@@ -64,9 +64,6 @@ import (
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/sirupsen/logrus"
 	bolt "go.etcd.io/bbolt"
-	logsv1 "go.opentelemetry.io/proto/otlp/collector/logs/v1"
-	metricsv1 "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
-	tracev1 "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"golang.org/x/sync/semaphore"
 	"google.golang.org/grpc"
 
@@ -592,16 +589,4 @@ func (srv *Server) LogMetrics(l *logrus.Entry) *logrus.Entry {
 
 func (srv *Server) Register(server *grpc.Server) {
 	controlapi.RegisterControlServer(server, srv)
-
-	traceSrv := &enginetel.TraceServer{PubSub: srv.telemetryPubSub}
-	tracev1.RegisterTraceServiceServer(server, traceSrv)
-	enginetel.RegisterTracesSourceServer(server, traceSrv)
-
-	logsSrv := &enginetel.LogsServer{PubSub: srv.telemetryPubSub}
-	logsv1.RegisterLogsServiceServer(server, logsSrv)
-	enginetel.RegisterLogsSourceServer(server, logsSrv)
-
-	metricsSrv := &enginetel.MetricsServer{PubSub: srv.telemetryPubSub}
-	metricsv1.RegisterMetricsServiceServer(server, metricsSrv)
-	enginetel.RegisterMetricsSourceServer(server, metricsSrv)
 }

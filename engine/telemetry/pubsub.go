@@ -15,6 +15,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/log"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -27,7 +28,6 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/slog"
-	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
 
 type Topic struct {
@@ -42,7 +42,10 @@ func (t Topic) String() string {
 type PubSub struct {
 	clientDBs *clientdb.DBs
 
-	mux           http.Handler
+	mux http.Handler
+
+	listeners     map[string][]chan<- struct{}
+	listenersL    sync.Mutex
 	traceClients  map[trace.TraceID]map[string]struct{}
 	traceClientsL sync.Mutex
 	traceSubs     map[Topic][]sdktrace.SpanExporter
@@ -78,9 +81,10 @@ func NewPubSub() *PubSub {
 		spanClients: map[spanKey]string{},
 		spanParents: map[spanKey]trace.SpanID{},
 	}
-	mux.HandleFunc("/v1/traces", ps.TracesHandler)
-	mux.HandleFunc("/v1/logs", ps.LogsHandler)
-	mux.HandleFunc("/v1/metrics", ps.MetricsHandler)
+	mux.HandleFunc("POST /v1/traces", ps.TracesHandler)
+	mux.HandleFunc("GET /v1/traces", ps.TracesSubscribeHandler)
+	mux.HandleFunc("POST /v1/logs", ps.LogsHandler)
+	mux.HandleFunc("POST /v1/metrics", ps.MetricsHandler)
 	return ps
 }
 
@@ -233,13 +237,107 @@ func (ps *PubSub) TracesHandler(rw http.ResponseWriter, r *http.Request) { //nol
 	}
 	defer db.Close()
 
-	if err := ps.Spans(db).ExportSpans(r.Context(), telemetry.SpansFromPB(req.ResourceSpans)); err != nil {
+	if err := ps.Spans(clientID, db).ExportSpans(r.Context(), telemetry.SpansFromPB(req.ResourceSpans)); err != nil {
 		slog.Error("error exporting spans", "err", err)
 		http.Error(rw, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	rw.WriteHeader(http.StatusCreated)
+}
+
+func (ps *PubSub) Listen(clientID string) <-chan struct{} {
+	ch := make(chan struct{}, 1)
+	ps.listenersL.Lock()
+	ps.listeners[clientID] = append(ps.listeners[clientID], ch)
+	ps.listenersL.Unlock()
+	return ch
+}
+
+func (ps *PubSub) Notify(clientID string) {
+	ps.listenersL.Lock()
+	for _, ch := range ps.listeners[clientID] {
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
+	}
+	ps.listenersL.Unlock()
+}
+
+func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request) { //nolint: dupl
+	clientID := r.Header.Get("X-Dagger-Client-ID")
+	if clientID == "" {
+		slog.Warn("missing client ID")
+		http.Error(w, "missing client ID", http.StatusBadRequest)
+		return
+	}
+
+	// TODO: when do we disconnect? when the client disconnects?
+
+	db, err := ps.clientDBs.Open(clientID)
+	if err != nil {
+		slog.Error("error opening spans exporter", "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer db.Close()
+
+	flush := func() {}
+	if flusher, ok := w.(http.Flusher); ok {
+		flush = flusher.Flush
+	}
+
+	// Set CORS headers to allow all origins. You may want to restrict this to specific origins in a production environment.
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Expose-Headers", "Content-Type")
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	q := clientdb.New(db)
+
+	var since int64 = 0
+	var limit int64 = 1000
+
+	for range ps.Listen(clientID) {
+		spans, err := q.SelectSpansSince(r.Context(), clientdb.SelectSpansSinceParams{
+			ID:    since,
+			Limit: limit,
+		})
+		if err != nil {
+			slog.Error("error selecting spans", "err", err)
+			return
+		}
+
+		if len(spans) == 0 {
+			continue
+		}
+
+		roSpans := make([]sdktrace.ReadOnlySpan, len(spans))
+		for i, span := range spans {
+			roSpans[i] = span.ReadOnly()
+			since = span.ID
+		}
+
+		// Marshal the spans to OTLP.
+		payload, err := json.Marshal(coltracepb.ExportTraceServiceRequest{
+			ResourceSpans: telemetry.SpansToPB(roSpans),
+		})
+		if err != nil {
+			slog.Error("error marshalling spans", "err", err)
+			return
+		}
+
+		// Send the batch as an OTLP trace export request.
+		fmt.Fprintf(w, "event: spans\n")
+		fmt.Fprintf(w, "id: %d\n", since)
+		fmt.Fprintf(w, "data: %s\n", payload)
+		fmt.Fprintln(w)
+
+		flush()
+	}
 }
 
 func (ps *PubSub) LogsHandler(rw http.ResponseWriter, r *http.Request) { //nolint: dupl
@@ -272,7 +370,7 @@ func (ps *PubSub) LogsHandler(rw http.ResponseWriter, r *http.Request) { //nolin
 	}
 	defer db.Close()
 
-	if err := ps.Logs(db).Export(r.Context(), telemetry.LogsFromPB(req.ResourceLogs)); err != nil {
+	if err := ps.Logs(clientID, db).Export(r.Context(), telemetry.LogsFromPB(req.ResourceLogs)); err != nil {
 		slog.Error("error exporting spans", "err", err)
 		http.Error(rw, err.Error(), http.StatusInternalServerError)
 		return
@@ -395,13 +493,15 @@ func (ps *PubSub) lookupClient(id string) (*activeClient, bool) {
 
 type SpansPubSub struct {
 	*PubSub
-	db *sql.DB
+	db       *sql.DB
+	clientID string
 }
 
-func (ps *PubSub) Spans(db *sql.DB) sdktrace.SpanExporter {
+func (ps *PubSub) Spans(clientID string, db *sql.DB) sdktrace.SpanExporter {
 	return SpansPubSub{
-		PubSub: ps,
-		db:     db,
+		PubSub:   ps,
+		db:       db,
+		clientID: clientID,
 	}
 }
 
@@ -495,6 +595,8 @@ func (ps SpansPubSub) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnly
 		return fmt.Errorf("commit tx: %w", err)
 	}
 
+	ps.Notify(ps.clientID)
+
 	return nil
 }
 
@@ -518,16 +620,18 @@ func (ps *PubSub) SpanSubscribers(topic Topic) []sdktrace.SpanExporter {
 	return exps
 }
 
-func (ps *PubSub) Logs(db *sql.DB) sdklog.Exporter {
+func (ps *PubSub) Logs(clientID string, db *sql.DB) sdklog.Exporter {
 	return LogsPubSub{
-		PubSub: ps,
-		db:     db,
+		PubSub:   ps,
+		db:       db,
+		clientID: clientID,
 	}
 }
 
 type LogsPubSub struct {
 	*PubSub
-	db *sql.DB
+	db       *sql.DB
+	clientID string
 }
 
 func logValueToJSON(val log.Value) ([]byte, error) {
@@ -557,15 +661,13 @@ func (ps LogsPubSub) Export(ctx context.Context, logs []sdklog.Record) error {
 		timestamp := rec.Timestamp().UnixNano()
 		severity := int64(rec.Severity())
 
-		var body sql.NullString
+		var body []byte
 		if !rec.Body().Empty() {
-			bodyJSON, err := logValueToJSON(rec.Body())
+			body, err = logValueToJSON(rec.Body())
 			if err != nil {
 				slog.Warn("failed to marshal log record body", "error", err)
 				continue
 			}
-			body.String = string(bodyJSON)
-			body.Valid = true
 		}
 
 		attrs := []*otlpcommonv1.KeyValue{}
@@ -604,6 +706,8 @@ func (ps LogsPubSub) Export(ctx context.Context, logs []sdklog.Record) error {
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit tx: %w", err)
 	}
+
+	ps.Notify(ps.clientID)
 
 	return nil
 }
