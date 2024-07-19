@@ -1915,9 +1915,9 @@ func (c *Container) Echo(ctx context.Context, msg string) (string, error) {
 			With(daggerQuery(`{container{from(address:"` + alpineImage + `"){echo(msg:"echo!"){stdout}}}}`)).
 			Sync(ctx)
 		require.Error(t, err)
-		require.NoError(t, c.Close())
-		t.Log(logs.String())
-		require.Contains(t, logs.String(), "cannot define methods on objects from outside this module")
+		require.NoError(t, logs.WaitForContents(ctx, 100*time.Millisecond, 10*time.Second,
+			"cannot define methods on objects from outside this module",
+		))
 	})
 
 	t.Run("in same mod name", func(ctx context.Context, t *testctx.T) {
@@ -1931,9 +1931,9 @@ func (c *Container) Echo(ctx context.Context, msg string) (string, error) {
 			With(daggerQuery(`{container{from(address:"` + alpineImage + `"){echo(msg:"echo!"){stdout}}}}`)).
 			Sync(ctx)
 		require.Error(t, err)
-		require.NoError(t, c.Close())
-		t.Log(logs.String())
-		require.Contains(t, logs.String(), "cannot define methods on objects from outside this module")
+		require.NoError(t, logs.WaitForContents(ctx, 100*time.Millisecond, 10*time.Second,
+			"cannot define methods on objects from outside this module",
+		))
 	})
 }
 

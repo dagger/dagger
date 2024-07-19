@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -276,6 +277,26 @@ func (s *safeBuffer) String() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.bu.String()
+}
+
+func (s *safeBuffer) WaitForContents(
+	ctx context.Context,
+	retryInterval, timeout time.Duration,
+	expectedSubstring string,
+) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	for {
+		if strings.Contains(s.String(), expectedSubstring) {
+			return nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("waiting for %q in buffer: %w", expectedSubstring, context.Cause(ctx))
+		case <-time.After(retryInterval):
+		}
+	}
 }
 
 func limitTicker(interval time.Duration, limit int) <-chan time.Time {
