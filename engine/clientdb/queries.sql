@@ -21,3 +21,6 @@ INSERT INTO logs (
 
 -- name: SelectSpansSince :many
 SELECT * FROM spans WHERE id > ? ORDER BY id ASC LIMIT ?;
+
+-- name: SelectLogsSince :many
+SELECT * FROM logs WHERE id > ? ORDER BY id ASC LIMIT ?;

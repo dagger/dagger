@@ -98,6 +98,46 @@ func (q *Queries) InsertSpan(ctx context.Context, arg InsertSpanParams) (int64, 
 	return id, err
 }
 
+const selectLogsSince = `-- name: SelectLogsSince :many
+SELECT id, trace_id, span_id, timestamp, severity, body, attributes FROM logs WHERE id > ? ORDER BY id ASC LIMIT ?
+`
+
+type SelectLogsSinceParams struct {
+	ID    int64
+	Limit int64
+}
+
+func (q *Queries) SelectLogsSince(ctx context.Context, arg SelectLogsSinceParams) ([]Log, error) {
+	rows, err := q.db.QueryContext(ctx, selectLogsSince, arg.ID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Log
+	for rows.Next() {
+		var i Log
+		if err := rows.Scan(
+			&i.ID,
+			&i.TraceID,
+			&i.SpanID,
+			&i.Timestamp,
+			&i.Severity,
+			&i.Body,
+			&i.Attributes,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const selectSpansSince = `-- name: SelectSpansSince :many
 
 SELECT id, trace_id, span_id, trace_state, parent_span_id, flags, name, kind, start_time, end_time, attributes, dropped_attributes_count, events, dropped_events_count, links, dropped_links_count, status_code, status_message, instrumentation_scope, resource FROM spans WHERE id > ? ORDER BY id ASC LIMIT ?

@@ -46,7 +46,7 @@ func init() {
 	}
 }
 
-func InitTelemetry(ctx context.Context) (context.Context, *enginetel.PubSub) {
+func InitTelemetry(ctx context.Context) context.Context {
 	otelResource := resource.NewWithAttributes(
 		semconv.SchemaURL,
 		semconv.ServiceNameKey.String("dagger-engine"),
@@ -72,7 +72,6 @@ func InitTelemetry(ctx context.Context) (context.Context, *enginetel.PubSub) {
 		})
 	}
 
-	pubsub := enginetel.NewPubSub()
 	ctx = telemetry.Init(ctx, telemetry.Config{
 		Resource: otelResource,
 
@@ -81,7 +80,7 @@ func InitTelemetry(ctx context.Context) (context.Context, *enginetel.PubSub) {
 		Detect: false,
 	})
 
-	return ctx, pubsub
+	return ctx
 }
 
 func CloseTelemetry() {

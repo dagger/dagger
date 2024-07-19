@@ -264,8 +264,6 @@ func main() { //nolint:gocyclo
 			}
 		}
 
-		ctx, pubsub := InitTelemetry(ctx)
-
 		bklog.G(ctx).Debug("loading engine config file")
 		cfg, err := config.LoadFile(c.GlobalString("config"))
 		if err != nil {
@@ -376,9 +374,8 @@ func main() { //nolint:gocyclo
 
 		bklog.G(ctx).Debug("creating engine server")
 		srv, err := server.NewServer(ctx, &server.NewServerOpts{
-			Config:          &cfg,
-			Name:            engineName,
-			TelemetryPubSub: pubsub,
+			Config: &cfg,
+			Name:   engineName,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to create engine: %w", err)
