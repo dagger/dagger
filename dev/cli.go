@@ -41,11 +41,6 @@ func (cli *CLI) Binary(
 	return builder.CLI(ctx)
 }
 
-const (
-	// https://github.com/goreleaser/goreleaser/releases
-	goReleaserVersion = "v1.26.0"
-)
-
 // Publish the CLI using GoReleaser
 func (cli *CLI) Publish(
 	ctx context.Context,
@@ -74,6 +69,26 @@ func (cli *CLI) Publish(
 			"--config", ".goreleaser.nightly.yml",
 		)
 	}
+
+	_, err := dag.
+		Goreleaser(dagger.GoreleaserOpts{fqdn: artefactsFQDN}).
+		WithNix(	).
+		WithGithub(githubOrgName, githubToken).
+		WithAWS(awsRegion, awsBucket, awsAccessKeyID, awsSecretAccessKey).
+
+
+		dagger.GoreleaserOpts{
+			Nix:           true,
+			GithubOrg:     githubOrgName,
+			GithubToken:   githubToken,
+			proKey:        goreleaserKey,
+			awsID:         awsAccessKeyID,
+			awsSecret:     awsSecretAccessKey,
+			awsRegion:     awsRegion,
+			awsBucket:     awsBucket,
+			artefactsFQDN: artefactsFQDN,
+		}).
+		Release()
 
 	ctr, err := publishEnv(ctx)
 	if err != nil {
@@ -160,7 +175,7 @@ func (cli *CLI) TestPublish(ctx context.Context) error {
 	return eg.Wait()
 }
 
-func publishEnv(ctx context.Context) (*dagger.Container, error) {
+func publishEnv() (*dagger.Container, error) {
 	ctr := dag.Container().
 		From(fmt.Sprintf("ghcr.io/goreleaser/goreleaser-pro:%s-pro", goReleaserVersion)).
 		WithEntrypoint([]string{}).
