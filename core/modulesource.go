@@ -18,6 +18,7 @@ import (
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/slog"
 )
@@ -371,20 +372,39 @@ func (src *ModuleSource) ResolveContextPathFromCaller(ctx context.Context) (cont
 		return "", "", fmt.Errorf("failed to get source root subpath: %w", err)
 	}
 
+	slog.Error("moduleSource.ResolveContextPathFromCaller.rootSubpath", "rootSubPath", rootSubpath)
+
+	
+	// Resolve rootSubpath to an absolute path
+	absRootSubpath, err := filepath.Abs(rootSubpath)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to resolve absolute path for root subpath: %w", err)
+	}
+
+	slog.Error("moduleSource.ResolveContextPathFromCaller.absRootSubPath", "absRootSubPath", absRootSubpath)
+
 	bk, err := src.Query.Buildkit(ctx)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to get buildkit client: %w", err)
 	}
-	sourceRootStat, err := bk.StatCallerHostPath(ctx, rootSubpath, true)
+	sourceRootStat, err := bk.StatCallerHostPath(ctx, absRootSubpath, true)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to stat source root: %w", err)
 	}
 	sourceRootAbsPath = sourceRootStat.Path
 
+	slog.Error("moduleSource.ResolveContextPathFromCaller.sourceRootAbsPath", "sourceRootAbsPath", sourceRootAbsPath)
+
 	contextAbsPath, contextFound, err := callerHostFindUpContext(ctx, bk, sourceRootAbsPath)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to find up root: %w", err)
 	}
+
+	slog.Error("moduleSource.ResolveContextPathFromCaller.sourceRootAbsPath",
+		"sourceRootAbsPath", sourceRootAbsPath,
+		"contextAbsPath", contextAbsPath,
+		"contextFound", contextFound,
+	)
 
 	if !contextFound {
 		// default to restricting to the source root dir, make it abs though for consistency
