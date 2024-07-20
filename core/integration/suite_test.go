@@ -43,7 +43,7 @@ func Tracer() trace.Tracer {
 }
 
 func Logger() log.Logger {
-	return telemetry.Logger(InstrumentationLibrary)
+	return telemetry.Logger(testCtx, InstrumentationLibrary)
 }
 
 func Middleware() []testctx.Middleware {
