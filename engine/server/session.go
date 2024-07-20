@@ -765,7 +765,15 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 	ctx = engine.ContextWithClientMetadata(ctx, clientMetadata)
 
 	// propagate span context from the client
-	ctx = otel.GetTextMapPropagator().Extract(ctx, propagation.HeaderCarrier(r.Header))
+	// TODO: why tf does otel.GetTextMapPropagator() not work?
+	ctx = telemetry.Propagator.Extract(ctx, propagation.HeaderCarrier(r.Header))
+
+	slog.Debug("!!! SERVING HTTP",
+		"method", r.Method,
+		"path", r.URL.Path,
+		"headers", r.Header,
+		"trace", trace.SpanContextFromContext(ctx).TraceID().String(),
+		"span", trace.SpanContextFromContext(ctx).SpanID().String())
 
 	ctx = bklog.WithLogger(ctx, bklog.G(ctx).
 		WithField("client_id", clientMetadata.ClientID).

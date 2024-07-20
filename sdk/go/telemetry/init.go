@@ -247,19 +247,25 @@ func InitEmbedded(ctx context.Context, res *resource.Resource) context.Context {
 	return Init(ctx, traceCfg)
 }
 
+// Propagator is a composite propagator of everything we could possibly want.
+//
+// Do not rely on otel.GetTextMapPropagator() - it's prone to change from a
+// random import.
+var Propagator = propagation.NewCompositeTextMapPropagator(
+	propagation.Baggage{},
+	propagation.TraceContext{},
+)
+
 // Init sets up the global OpenTelemetry providers tracing, logging, and
 // someday metrics providers. It is called by the CLI, the engine, and the
 // container shim, so it needs to be versatile.
 func Init(ctx context.Context, cfg Config) context.Context {
 	// Set up a text map propagator so that things, well, propagate. The default
 	// is a noop.
-	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
-		propagation.TraceContext{},
-		propagation.Baggage{},
-	))
+	otel.SetTextMapPropagator(Propagator)
 
 	// Inherit trace context from env if present.
-	ctx = otel.GetTextMapPropagator().Extract(ctx, NewEnvCarrier(true))
+	ctx = Propagator.Extract(ctx, NewEnvCarrier(true))
 
 	// Log to slog.
 	otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {

@@ -29,7 +29,6 @@ import (
 	"github.com/moby/buildkit/util/tracing"
 	"github.com/vito/go-sse/sse"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
@@ -382,6 +381,7 @@ func ConnectBuildkitSession(
 	for _, methodURL := range sessionSrv.MethodURLs {
 		headers.Add(engine.SessionMethodNameMetaKey, methodURL)
 	}
+	telemetry.Propagator.Inject(ctx, propagation.HeaderCarrier(headers))
 
 	req := &http.Request{
 		Method: http.MethodGet,
@@ -746,11 +746,10 @@ func (c *Client) dialContextNoClientClose(ctx context.Context) (net.Conn, error)
 func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// propagate span from per-request client headers, otherwise all spans
 	// end up beneath the client session span
-	ctx := otel.GetTextMapPropagator().Extract(r.Context(), propagation.HeaderCarrier(r.Header))
+	ctx := telemetry.Propagator.Extract(r.Context(), propagation.HeaderCarrier(r.Header))
 
 	// TODO: that breaks client logs
-
-	// otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(r.Header))
+	telemetry.Propagator.Inject(ctx, propagation.HeaderCarrier(r.Header))
 
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
 	if err != nil {
@@ -1069,7 +1068,7 @@ func (c *httpClient) Do(req *http.Request) (*http.Response, error) {
 		}
 		req.Header[k] = v
 	}
-	otel.GetTextMapPropagator().Inject(req.Context(), propagation.HeaderCarrier(req.Header))
+	telemetry.Propagator.Inject(req.Context(), propagation.HeaderCarrier(req.Header))
 	req.SetBasicAuth(c.secretToken, "")
 
 	// We're making a request to the engine HTTP/2 server, but these headers are not
