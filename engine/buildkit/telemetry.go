@@ -5,13 +5,14 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/dagger/dagger/engine"
 	"go.opentelemetry.io/otel/attribute"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/embedded"
 
 	"dagger.io/dagger/telemetry"
+	"github.com/dagger/dagger/engine"
 )
 
 // buildkitTelemetryContext returns a context with a wrapped span that has a
@@ -22,6 +23,7 @@ func buildkitTelemetryContext(ctx context.Context) context.Context {
 		return nil
 	}
 	sp := trace.SpanFromContext(ctx)
+	lp := telemetry.LoggerProvider(ctx)
 	// Start will sometimes be called with a ctx that drops our client metadata. No idea
 	// why. I guess it gets lost somewhere in the buildkit solver.
 	//
@@ -34,8 +36,9 @@ func buildkitTelemetryContext(ctx context.Context) context.Context {
 	}
 	sp = buildkitSpan{
 		Span: sp,
-		provider: &buildkitTraceProvider{
+		tp: &buildkitTraceProvider{
 			tp:             sp.TracerProvider(),
+			lp:             lp,
 			clientMetadata: clientMetadata,
 		},
 	}
@@ -45,6 +48,7 @@ func buildkitTelemetryContext(ctx context.Context) context.Context {
 type buildkitTraceProvider struct {
 	embedded.TracerProvider
 	tp             trace.TracerProvider
+	lp             *sdklog.LoggerProvider
 	clientMetadata *engine.ClientMetadata
 }
 
@@ -53,6 +57,7 @@ func (tp *buildkitTraceProvider) Tracer(name string, options ...trace.TracerOpti
 		tracer:         tp.tp.Tracer(name, options...),
 		provider:       tp,
 		clientMetadata: tp.clientMetadata,
+		lp:             tp.lp,
 	}
 }
 
@@ -61,6 +66,7 @@ type buildkitTracer struct {
 	tracer         trace.Tracer
 	provider       *buildkitTraceProvider
 	clientMetadata *engine.ClientMetadata
+	lp             *sdklog.LoggerProvider
 }
 
 const TelemetryComponent = "buildkit"
@@ -79,18 +85,19 @@ func (t *buildkitTracer) Start(ctx context.Context, spanName string, opts ...tra
 		ctx = engine.ContextWithClientMetadata(ctx, t.clientMetadata)
 	}
 
+	ctx = telemetry.WithLoggerProvider(ctx, t.lp)
 	ctx, span := t.tracer.Start(ctx, spanName, opts...)
-	newSpan := buildkitSpan{Span: span, provider: t.provider}
+	newSpan := buildkitSpan{Span: span, tp: t.provider}
 	return trace.ContextWithSpan(ctx, newSpan), newSpan
 }
 
 type buildkitSpan struct {
 	trace.Span
-	provider *buildkitTraceProvider
+	tp *buildkitTraceProvider
 }
 
 func (s buildkitSpan) TracerProvider() trace.TracerProvider {
-	return s.provider
+	return s.tp
 }
 
 // SpanProcessor modifies spans coming from the Buildkit component to integrate
