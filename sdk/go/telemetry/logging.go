@@ -17,13 +17,18 @@ func WithLoggerProvider(ctx context.Context, provider *sdklog.LoggerProvider) co
 	return context.WithValue(ctx, loggerProviderKey{}, provider)
 }
 
-// Logger returns a logger with the given name.
-func Logger(ctx context.Context, name string) log.Logger {
+// LoggerProvider returns the LoggerProvider from the context.
+func LoggerProvider(ctx context.Context) *sdklog.LoggerProvider {
 	var loggerProvider *sdklog.LoggerProvider = sdklog.NewLoggerProvider()
 	if val := ctx.Value(loggerProviderKey{}); val != nil {
 		loggerProvider = val.(*sdklog.LoggerProvider)
 	}
-	return loggerProvider.Logger(name) // TODO more instrumentation attrs
+	return loggerProvider
+}
+
+// Logger returns a logger with the given name.
+func Logger(ctx context.Context, name string) log.Logger {
+	return LoggerProvider(ctx).Logger(name) // TODO more instrumentation attrs
 }
 
 // SpanStdio returns a pair of io.WriteClosers which will send log records with
