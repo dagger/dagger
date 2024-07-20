@@ -807,18 +807,6 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 		}
 	}()
 
-	clientTracer := client.tp.Tracer(InstrumentationLibrary)
-
-	// TODO: maybe only do this for queries? otherwise we've got a circle
-	ctx, span := clientTracer.Start(ctx,
-		fmt.Sprintf("%s %s", r.Method, r.URL.Path),
-		trace.WithAttributes(
-			attribute.Bool(telemetry.UIPassthroughAttr, r.URL.Path == "/query"),
-			attribute.Bool(telemetry.UIInternalAttr, r.URL.Path != "/query"),
-		),
-	)
-	defer telemetry.End(span, func() error { return rerr })
-
 	sess := client.daggerSession
 	ctx = analytics.WithContext(ctx, sess.analytics)
 
@@ -917,6 +905,17 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 
 func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *daggerClient) (rerr error) {
 	ctx := r.Context()
+
+	// create a span to record telemetry into the client's DB
+	//
+	// downstream components must use otel.SpanFromContext(ctx).TracerProvider()
+	clientTracer := client.tp.Tracer(InstrumentationLibrary)
+	ctx, span := clientTracer.Start(ctx,
+		fmt.Sprintf("%s %s", r.Method, r.URL.Path),
+		trace.WithAttributes(attribute.Bool(telemetry.UIPassthroughAttr, true)),
+	)
+	defer telemetry.End(span, func() error { return rerr })
+	r = r.WithContext(ctx)
 
 	// get the schema we're gonna serve to this client based on which modules they have loaded, if any
 	schema, err := client.deps.Schema(ctx)
