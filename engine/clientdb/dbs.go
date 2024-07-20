@@ -24,7 +24,6 @@ func NewDBs(root string) *DBs {
 var Schema string
 
 func (dbs *DBs) Create(clientID string) (*sql.DB, error) {
-	slog.Warn("!!! CREATE DB", "clientID", clientID)
 	db, err := dbs.Open(clientID)
 	if err != nil {
 		return nil, err
@@ -36,7 +35,6 @@ func (dbs *DBs) Create(clientID string) (*sql.DB, error) {
 }
 
 func (dbs *DBs) Open(clientID string) (*sql.DB, error) {
-	slog.Warn("!!! OPEN DB", "clientID", clientID)
 	dbPath := dbs.path(clientID)
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0700); err != nil {
 		return nil, fmt.Errorf("mkdir %s: %w", filepath.Dir(dbPath), err)

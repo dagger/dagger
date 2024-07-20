@@ -560,7 +560,7 @@ func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte) error) (rerr
 		if rerr != nil {
 			slog.Error("consume failed", "err", rerr)
 		} else {
-			slog.Warn("consumed", "ctxErr", ctx.Err())
+			slog.ExtraDebug("done consuming", "ctxErr", ctx.Err())
 		}
 	}()
 
@@ -579,7 +579,7 @@ func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte) error) (rerr
 	}
 	defer sseConn.Close()
 
-	slog.Warn("consuming")
+	slog.ExtraDebug("consuming")
 
 	for {
 		event, err := sseConn.Next()
@@ -592,7 +592,7 @@ func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte) error) (rerr
 
 		data := event.Data
 
-		slog.ExtraDebug("consuming data", "bytes", len(data))
+		slog.ExtraDebug("received "+event.Name, "cursor", event.ID, "bytes", len(data))
 
 		if len(data) == 0 {
 			continue

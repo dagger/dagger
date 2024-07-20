@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -31,8 +32,6 @@ import (
 	bknetwork "github.com/moby/buildkit/util/network"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/sourcegraph/conc/pool"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/log"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 
@@ -631,15 +630,17 @@ func (w *Worker) setupOTel(ctx context.Context, state *execState) error {
 		return nil
 	}
 
-	logAttrs := []log.KeyValue{}
+	var clientID string
 	if w.execMD != nil {
+		clientID = w.execMD.CallerClientID
 		if w.execMD.SpanContext != nil {
-			ctx = otel.GetTextMapPropagator().Extract(ctx, w.execMD.SpanContext)
+			ctx = telemetry.Propagator.Extract(ctx, w.execMD.SpanContext)
 		}
-		logAttrs = append(logAttrs, log.String(telemetry.ClientIDAttr, w.execMD.ClientID))
+	} else {
+		slog.Warn("!!! NO EXECMD FOR", "args", state.procInfo.Meta.Args)
 	}
 
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, logAttrs...)
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
 	state.cleanups.Add("close logs", stdio.Close)
 
 	state.procInfo.Stdout = nopCloser{io.MultiWriter(stdio.Stdout, state.procInfo.Stdout)}
@@ -652,7 +653,14 @@ func (w *Worker) setupOTel(ctx context.Context, state *execState) error {
 		return fmt.Errorf("otel tcp proxy listen: %w", err)
 	}
 	otelSrv := &http.Server{
-		Handler:           w.telemetryPubSub,
+		Handler: http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+			if r.Header == nil {
+				r.Header = http.Header{}
+			}
+			slog.Warn("!!! OTEL PROXY ADDING HEADER", "clientID", clientID, "execMD", fmt.Sprintf("%+v", w.execMD))
+			r.Header.Set("X-Dagger-Client-ID", clientID)
+			w.telemetryPubSub.ServeHTTP(rw, r)
+		}),
 		ReadHeaderTimeout: 10 * time.Second, // for gocritic
 	}
 	listenerPool := pool.New().WithErrors()
