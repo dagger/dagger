@@ -7,10 +7,22 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel/log"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
 
+type loggerProviderKey struct{}
+
+// WithLoggerProvider returns a new context with the given LoggerProvider.
+func WithLoggerProvider(ctx context.Context, provider *sdklog.LoggerProvider) context.Context {
+	return context.WithValue(ctx, loggerProviderKey{}, provider)
+}
+
 // Logger returns a logger with the given name.
-func Logger(name string) log.Logger {
+func Logger(ctx context.Context, name string) log.Logger {
+	var loggerProvider *sdklog.LoggerProvider = sdklog.NewLoggerProvider()
+	if val := ctx.Value(loggerProviderKey{}); val != nil {
+		loggerProvider = val.(*sdklog.LoggerProvider)
+	}
 	return loggerProvider.Logger(name) // TODO more instrumentation attrs
 }
 
@@ -25,7 +37,7 @@ func Logger(name string) log.Logger {
 //
 // Both streamsm must be closed to ensure that draining completes.
 func SpanStdio(ctx context.Context, name string, attrs ...log.KeyValue) SpanStreams {
-	logger := Logger(name)
+	logger := Logger(ctx, name)
 	return SpanStreams{
 		Stdout: &spanStream{
 			Writer: &Writer{
@@ -56,7 +68,7 @@ type Writer struct {
 func NewWriter(ctx context.Context, name string, attrs ...log.KeyValue) io.Writer {
 	return &Writer{
 		ctx:    ctx,
-		logger: Logger(name),
+		logger: Logger(ctx, name),
 		attrs:  attrs,
 	}
 }

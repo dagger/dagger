@@ -33,6 +33,7 @@ import (
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/propagation"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
@@ -141,6 +142,7 @@ type daggerClient struct {
 	// SQLite database storing telemetry + anything else
 	db *sql.DB
 	tp *sdktrace.TracerProvider
+	lp *sdklog.LoggerProvider
 }
 
 type daggerClientState string
@@ -549,6 +551,14 @@ func (srv *Server) initializeDaggerClient(
 			srv.telemetryPubSub.Spans(client.clientID, client.db),
 		)),
 	)
+	client.lp = sdklog.NewLoggerProvider(
+		sdklog.WithProcessor(
+			sdklog.NewBatchProcessor(
+				srv.telemetryPubSub.Logs(client.clientID, client.db),
+				sdklog.WithExportInterval(telemetry.NearlyImmediate),
+			),
+		),
+	)
 
 	client.state = clientStateInitialized
 	return nil
@@ -915,6 +925,8 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 		trace.WithAttributes(attribute.Bool(telemetry.UIPassthroughAttr, true)),
 	)
 	defer telemetry.End(span, func() error { return rerr })
+	// install a logger provider that records to the client's DB
+	ctx = telemetry.WithLoggerProvider(ctx, client.lp)
 	r = r.WithContext(ctx)
 
 	// get the schema we're gonna serve to this client based on which modules they have loaded, if any
