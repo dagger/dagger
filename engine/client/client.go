@@ -41,6 +41,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
@@ -619,7 +620,7 @@ func (c *Client) exportTraces(httpClient *httpClient) {
 	c.telemetry.Go(func() error {
 		return exp.Consume(ctx, func(data []byte) error {
 			var req coltracepb.ExportTraceServiceRequest
-			if err := json.Unmarshal(data, &req); err != nil {
+			if err := protojson.Unmarshal(data, &req); err != nil {
 				return fmt.Errorf("unmarshal: %w", err)
 			}
 
@@ -656,7 +657,7 @@ func (c *Client) exportLogs(httpClient *httpClient) {
 	c.telemetry.Go(func() error {
 		return exp.Consume(ctx, func(data []byte) error {
 			var req collogspb.ExportLogsServiceRequest
-			if err := json.Unmarshal(data, &req); err != nil {
+			if err := protojson.Unmarshal(data, &req); err != nil {
 				return fmt.Errorf("unmarshal spans: %w", err)
 			}
 
