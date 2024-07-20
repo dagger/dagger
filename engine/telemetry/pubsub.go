@@ -3,7 +3,6 @@ package telemetry
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -23,6 +22,7 @@ import (
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/dagger/dagger/engine"
@@ -359,7 +359,7 @@ func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request)
 			}
 
 			// Marshal the spans to OTLP.
-			payload, err := json.Marshal(coltracepb.ExportTraceServiceRequest{
+			payload, err := protojson.Marshal(&coltracepb.ExportTraceServiceRequest{
 				ResourceSpans: telemetry.SpansToPB(roSpans),
 			})
 			if err != nil {
@@ -389,7 +389,7 @@ func (ps *PubSub) LogsHandler(rw http.ResponseWriter, r *http.Request) { //nolin
 	}
 
 	var req collogspb.ExportLogsServiceRequest
-	if err := proto.Unmarshal(body, &req); err != nil {
+	if err := protojson.Unmarshal(body, &req); err != nil {
 		slog.Error("error unmarshalling request", "err", err)
 		http.Error(rw, err.Error(), http.StatusBadRequest)
 		return
@@ -447,7 +447,7 @@ func (ps *PubSub) LogsSubscribeHandler(w http.ResponseWriter, r *http.Request) {
 			}
 
 			// Marshal the spans to OTLP.
-			payload, err := json.Marshal(collogspb.ExportLogsServiceRequest{
+			payload, err := protojson.Marshal(&collogspb.ExportLogsServiceRequest{
 				ResourceLogs: telemetry.LogsToPB(recs),
 			})
 			if err != nil {
@@ -613,19 +613,19 @@ func (ps SpansPubSub) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnly
 			endTime.Int64 = 0
 			endTime.Valid = false
 		}
-		attributes, err := json.Marshal(telemetry.KeyValues(span.Attributes()))
+		attributes, err := clientdb.MarshalProtos(telemetry.KeyValues(span.Attributes()))
 		if err != nil {
 			slog.Warn("failed to marshal attributes", "error", err)
 			continue
 		}
 		droppedAttributesCount := int64(span.DroppedAttributes())
-		events, err := json.Marshal(telemetry.SpanEventsToPB(span.Events()))
+		events, err := clientdb.MarshalProtos(telemetry.SpanEventsToPB(span.Events()))
 		if err != nil {
 			slog.Warn("failed to marshal events", "error", err)
 			continue
 		}
 		droppedEventsCount := int64(span.DroppedEvents())
-		links, err := json.Marshal(telemetry.SpanLinksToPB(span.Links()))
+		links, err := clientdb.MarshalProtos(telemetry.SpanLinksToPB(span.Links()))
 		if err != nil {
 			slog.Warn("failed to marshal links", "error", err)
 			continue
@@ -633,12 +633,12 @@ func (ps SpansPubSub) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnly
 		droppedLinksCount := int64(span.DroppedLinks())
 		statusCode := int64(span.Status().Code)
 		statusMessage := span.Status().Description
-		instrumentationScope, err := json.Marshal(telemetry.InstrumentationScope(span.InstrumentationScope()))
+		instrumentationScope, err := protojson.Marshal(telemetry.InstrumentationScope(span.InstrumentationScope()))
 		if err != nil {
 			slog.Warn("failed to marshal instrumentation scope", "error", err)
 			continue
 		}
-		resource, err := json.Marshal(telemetry.ResourcePtr(span.Resource()))
+		resource, err := protojson.Marshal(telemetry.ResourcePtr(span.Resource()))
 		if err != nil {
 			slog.Warn("failed to marshal resource", "error", err)
 			continue
@@ -717,12 +717,12 @@ type LogsPubSub struct {
 }
 
 func logValueToJSON(val log.Value) ([]byte, error) {
-	return json.Marshal(telemetry.LogValueToPB(val))
+	return protojson.Marshal(telemetry.LogValueToPB(val))
 }
 
 func logValueFromJSON(val []byte) (log.Value, error) {
-	var anyVal *otlpcommonv1.AnyValue
-	if err := json.Unmarshal(val, &anyVal); err != nil {
+	anyVal := &otlpcommonv1.AnyValue{}
+	if err := protojson.Unmarshal(val, anyVal); err != nil {
 		return log.Value{}, err
 	}
 	return telemetry.LogValueFromPB(anyVal), nil
@@ -760,7 +760,7 @@ func (ps LogsPubSub) Export(ctx context.Context, logs []sdklog.Record) error {
 			})
 			return true
 		})
-		attributes, err := json.Marshal(attrs)
+		attributes, err := clientdb.MarshalProtos(attrs)
 		if err != nil {
 			slog.Warn("failed to marshal log record attributes", "error", err)
 			continue
