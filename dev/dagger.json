@@ -3,6 +3,10 @@
   "sdk": "go",
   "dependencies": [
     {
+      "name": "ps-analyzer",
+      "source": "ps-analyzer"
+    },
+    {
       "name": "dirdiff",
       "source": "dirdiff"
     },
