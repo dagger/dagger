@@ -724,14 +724,6 @@ func logValueToJSON(val log.Value) ([]byte, error) {
 	return protojson.Marshal(telemetry.LogValueToPB(val))
 }
 
-func logValueFromJSON(val []byte) (log.Value, error) {
-	anyVal := &otlpcommonv1.AnyValue{}
-	if err := protojson.Unmarshal(val, anyVal); err != nil {
-		return log.Value{}, err
-	}
-	return telemetry.LogValueFromPB(anyVal), nil
-}
-
 func (ps LogsPubSub) Export(ctx context.Context, logs []sdklog.Record) error {
 	tx, err := ps.db.Begin()
 	if err != nil {

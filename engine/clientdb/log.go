@@ -1,7 +1,6 @@
 package clientdb
 
 import (
-	"encoding/json"
 	"log/slog"
 	"time"
 
@@ -10,6 +9,7 @@ import (
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/trace"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 func (dbLog *Log) Record() sdklog.Record {
@@ -29,17 +29,23 @@ func (dbLog *Log) Record() sdklog.Record {
 		rec.SetSpanID(sid)
 	}
 
-	var body *otlpcommonv1.AnyValue
-	if err := json.Unmarshal(dbLog.Body, &body); err != nil {
-		slog.Warn("failed to unmarshal log body", "error", err)
+	if len(dbLog.Body) > 0 {
+		body := &otlpcommonv1.AnyValue{}
+		if err := protojson.Unmarshal(dbLog.Body, body); err != nil {
+			slog.Warn("failed to unmarshal log body", "error", err)
+		} else {
+			rec.SetBody(telemetry.LogValueFromPB(body))
+		}
 	}
-	rec.SetBody(telemetry.LogValueFromPB(body))
 
-	var attrs []*otlpcommonv1.KeyValue
-	if err := json.Unmarshal(dbLog.Attributes, &attrs); err != nil {
-		slog.Warn("failed to unmarshal log attributes", "error", err)
+	if len(dbLog.Attributes) > 0 {
+		var attrs []*otlpcommonv1.KeyValue
+		if err := UnmarshalProtos(dbLog.Attributes, &otlpcommonv1.KeyValue{}, &attrs); err != nil {
+			slog.Warn("failed to unmarshal log attributes", "error", err)
+		} else {
+			rec.SetAttributes(telemetry.LogKeyValuesFromPB(attrs)...)
+		}
 	}
-	rec.SetAttributes(telemetry.LogKeyValuesFromPB(attrs)...)
 
 	return rec
 }
