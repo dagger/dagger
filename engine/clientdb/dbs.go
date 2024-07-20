@@ -51,6 +51,7 @@ func (dbs *DBs) Open(clientID string) (*sql.DB, error) {
 				"mmap_size=134217728",
 				"journal_size_limit=27103364",
 				"cache_size=2000",
+				"busy_timeout=10000",
 			},
 		}.Encode(),
 		// ?cache=shared&mode=rwc&_busy_timeout=10000&_journal_mode=WAL&_synchronous=NORMAL&_foreign_keys
