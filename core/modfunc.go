@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"strings"
 
+	"dagger.io/dagger/telemetry"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 
@@ -188,7 +188,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 	}
 	if spanCtx := trace.SpanContextFromContext(ctx); spanCtx.IsValid() {
 		execMD.SpanContext = propagation.MapCarrier{}
-		otel.GetTextMapPropagator().Inject(
+		telemetry.Propagator.Inject(
 			trace.ContextWithSpanContext(ctx, spanCtx),
 			execMD.SpanContext,
 		)
