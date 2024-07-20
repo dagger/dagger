@@ -45,14 +45,12 @@ func (dbs *DBs) Open(clientID string) (*sql.DB, error) {
 		Path:   dbPath,
 		RawQuery: url.Values{
 			"_pragma": []string{
-				"foreign_keys=ON",
-				"journal_mode=WAL",
-				"synchronous=NORMAL",
-				"mmap_size=134217728",
-				"journal_size_limit=27103364",
-				"cache_size=2000",
-				"busy_timeout=10000",
+				"foreign_keys=ON",    // we don't use em yet, but makes sense anyway
+				"journal_mode=WAL",   // readers don't block writers and vice versa
+				"synchronous=NORMAL", // cargo culted; "reasonable" syncing behavior
+				"busy_timeout=10000", // wait up to 10s when there are concurrent writers
 			},
+			"_txlock": []string{"immediate"}, // use BEGIN IMMEDIATE for transactions.
 		}.Encode(),
 		// ?cache=shared&mode=rwc&_busy_timeout=10000&_journal_mode=WAL&_synchronous=NORMAL&_foreign_keys
 	}
