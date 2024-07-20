@@ -583,10 +583,18 @@ func (ps *PubSub) Spans(clientID string, db *sql.DB) sdktrace.SpanExporter {
 	}
 }
 
+func spanNames(spans []sdktrace.ReadOnlySpan) []string {
+	names := make([]string, len(spans))
+	for i, span := range spans {
+		names[i] = span.Name()
+	}
+	return names
+}
+
 func (ps SpansPubSub) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
 	tx, err := ps.db.Begin()
 	if err != nil {
-		return fmt.Errorf("begin tx: %w", err)
+		return fmt.Errorf("export spans %+v: begin tx: %w", spanNames(spans), err)
 	}
 	defer tx.Rollback()
 
@@ -727,7 +735,7 @@ func logValueFromJSON(val []byte) (log.Value, error) {
 func (ps LogsPubSub) Export(ctx context.Context, logs []sdklog.Record) error {
 	tx, err := ps.db.Begin()
 	if err != nil {
-		return fmt.Errorf("begin tx: %w", err)
+		return fmt.Errorf("export logs %+v: begin tx: %w", logs, err)
 	}
 	defer tx.Rollback()
 

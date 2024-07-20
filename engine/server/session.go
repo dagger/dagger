@@ -31,7 +31,6 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/sirupsen/logrus"
 	"github.com/vektah/gqlparser/v2/gqlerror"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -141,6 +140,7 @@ type daggerClient struct {
 
 	// SQLite database storing telemetry + anything else
 	db *sql.DB
+	tp *sdktrace.TracerProvider
 }
 
 type daggerClientState string
@@ -282,8 +282,7 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 				client.buildkitSession = nil
 			}
 
-			// TODO: is this the right spot to do this? can we trust all background work
-			// to be done?
+			errs = errors.Join(errs, client.tp.ForceFlush(ctx))
 			errs = errors.Join(errs, client.db.Close())
 
 			return errs
@@ -308,7 +307,6 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 
 	// cleanup analytics and telemetry
 	errs = errors.Join(errs, sess.analytics.Close())
-	telemetry.Flush(ctx)
 
 	// ensure this chan is closed even if the client never explicitly called the /shutdown endpoint
 	sess.closeShutdownOnce.Do(func() {
@@ -543,6 +541,14 @@ func (srv *Server) initializeDaggerClient(
 	if err != nil {
 		return fmt.Errorf("open client DB: %w", err)
 	}
+	client.tp = sdktrace.NewTracerProvider(
+		// Install a span processor that modifies spans created by Buildkit to
+		// fit our ideal format.
+		sdktrace.WithSpanProcessor(buildkit.SpanProcessor{}),
+		sdktrace.WithSpanProcessor(telemetry.NewLiveSpanProcessor(
+			srv.telemetryPubSub.Spans(client.clientID, client.db),
+		)),
+	)
 
 	client.state = clientStateInitialized
 	return nil
@@ -801,21 +807,16 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 		}
 	}()
 
-	clientTP := sdktrace.NewTracerProvider(
-		// Install a span processor that modifies spans created by Buildkit to
-		// fit our ideal format.
-		sdktrace.WithSpanProcessor(buildkit.SpanProcessor{}),
-		sdktrace.WithSpanProcessor(telemetry.NewLiveSpanProcessor(
-			srv.telemetryPubSub.Spans(client.clientID, client.db),
-		)),
-	)
-
-	clientTracer := clientTP.Tracer(InstrumentationLibrary)
+	clientTracer := client.tp.Tracer(InstrumentationLibrary)
 
 	// TODO: maybe only do this for queries? otherwise we've got a circle
 	ctx, span := clientTracer.Start(ctx,
 		fmt.Sprintf("%s %s", r.Method, r.URL.Path),
-		trace.WithAttributes(attribute.Bool(telemetry.UIPassthroughAttr, true)))
+		trace.WithAttributes(
+			attribute.Bool(telemetry.UIPassthroughAttr, r.URL.Path == "/query"),
+			attribute.Bool(telemetry.UIInternalAttr, r.URL.Path != "/query"),
+		),
+	)
 	defer telemetry.End(span, func() error { return rerr })
 
 	sess := client.daggerSession
@@ -1003,9 +1004,11 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 	}
 
 	// Finalize telemetry for the client.
-	srv.telemetryPubSub.Terminate(client.clientID)
+	if err := client.tp.ForceFlush(ctx); err != nil {
+		slog.Error("failed to flush telemetry", "error", err)
+	}
 
-	telemetry.Flush(ctx)
+	srv.telemetryPubSub.Terminate(client.clientID)
 
 	return nil
 }
