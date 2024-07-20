@@ -73,8 +73,16 @@ func ConfiguredSpanExporter(ctx context.Context) (sdktrace.SpanExporter, bool) {
 
 		switch proto {
 		case "http/protobuf", "http":
+			headers := map[string]string{}
+			if hs := os.Getenv("OTEL_EXPORTER_OTLP_HEADERS"); hs != "" {
+				for _, header := range strings.Split(hs, ",") {
+					name, value, _ := strings.Cut(header, "=")
+					headers[name] = value
+				}
+			}
 			configuredSpanExporter, err = otlptracehttp.New(ctx,
-				otlptracehttp.WithEndpointURL(endpoint))
+				otlptracehttp.WithEndpointURL(endpoint),
+				otlptracehttp.WithHeaders(headers))
 		case "grpc":
 			var u *url.URL
 			u, err = url.Parse(endpoint)

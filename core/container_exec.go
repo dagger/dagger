@@ -81,6 +81,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	execMD.CallID = dagql.CurrentID(ctx)
 	execMD.CallerClientID = clientMetadata.ClientID
 	execMD.ExecID = identity.NewID()
+	execMD.CallerClientID = clientMetadata.ClientID
 	execMD.SessionID = clientMetadata.SessionID
 	if execMD.HostAliases == nil {
 		execMD.HostAliases = make(map[string][]string)
@@ -105,9 +106,11 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 			spanName = buildkit.InternalPrefix + spanName
 		}
 
+		// establish new client ID for the nested client
 		if execMD.ClientID == "" {
 			execMD.ClientID = identity.NewID()
 		}
+
 		// include the engine version so that these execs get invalidated if the engine/API change
 		runOpts = append(runOpts, llb.AddEnv(buildkit.DaggerEngineVersionEnv, engine.Version))
 

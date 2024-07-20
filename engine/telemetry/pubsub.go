@@ -339,8 +339,6 @@ func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request)
 				return
 			}
 
-			slog.Warn("!!! PUBSUB GOT SPANS", "spans", len(spans))
-
 			if len(spans) == 0 {
 				_, ok := <-notify
 				if ok {
@@ -426,8 +424,6 @@ func (ps *PubSub) LogsSubscribeHandler(w http.ResponseWriter, r *http.Request) {
 				slog.Error("error selecting logs", "err", err)
 				return
 			}
-
-			slog.Warn("!!! PUBSUB GOT LOGS", "spans", len(logs))
 
 			if len(logs) == 0 {
 				_, ok := <-notify
