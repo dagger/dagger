@@ -10,6 +10,9 @@ import (
 	"github.com/dagger/dagger/dev/ps-analyzer/internal/dagger"
 )
 
+const psScriptAnalyzerVersion = "1.22.0"
+
+// The PowerShell PSScriptAnalyzer severity.
 type Severity int
 
 const (
@@ -83,9 +86,20 @@ func (m *PsAnalyzer) Check(ctx context.Context, file *dagger.File) (*Report, err
 }
 
 func (m *PsAnalyzer) Base() *dagger.Container {
-	return dag.Container().
-		From("mcr.microsoft.com/powershell").
-		WithExec([]string{"pwsh", "-c", "Install-Module -Name PSScriptAnalyzer -Force"})
+	analyzerPackage := dag.HTTP(
+		fmt.Sprintf("https://github.com/PowerShell/PSScriptAnalyzer/releases/download/%s/PSScriptAnalyzer.%s.nupkg", psScriptAnalyzerVersion, psScriptAnalyzerVersion),
+	)
+	modulesPath := "/root/.local/share/powershell/Modules"
+
+	return dag.Wolfi().
+		Container(dagger.WolfiContainerOpts{
+			Packages: []string{
+				"powershell",
+			},
+		}).
+		WithMountedFile("/PSScriptAnalyzer.nupkg", analyzerPackage).
+		WithExec([]string{"mkdir", "-p", modulesPath}).
+		WithExec([]string{"unzip", "/PSScriptAnalyzer.nupkg", "-d", modulesPath + "/PSScriptAnalyzer"})
 }
 
 type Report struct {
