@@ -68,6 +68,13 @@ def to_camel_case(s: str) -> str:
     return snake_to_camel(s.replace("-", "_"), upper=False)
 
 
+def normalize_name(name: str) -> str:
+    """Remove the last underscore, used to avoid conflicts with reserved words."""
+    if name.endswith("_") and name[-2] != "_" and not name.startswith("_"):
+        return name.removesuffix("_")
+    return name
+
+
 def get_doc(obj: Any) -> str | None:
     """Get the last Doc() in an annotated type or the docstring of an object."""
     if is_annotated(obj):

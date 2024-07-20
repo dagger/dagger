@@ -6,7 +6,13 @@ from typing_extensions import Doc, Self
 
 from dagger import Arg, field
 from dagger.mod import Module
-from dagger.mod._utils import get_arg_name, get_doc, is_nullable, non_null
+from dagger.mod._utils import (
+    get_arg_name,
+    get_doc,
+    is_nullable,
+    non_null,
+    normalize_name,
+)
 
 
 @pytest.mark.parametrize(
@@ -106,6 +112,19 @@ def test_no_dataclass_default_doc():
         bar: str = field()
 
     assert get_doc(Foo) is None
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("with_", "with"),
+        ("__init__", "__init__"),
+        ("_private_", "_private_"),
+        ("mangled__", "mangled__"),
+    ],
+)
+def test_normalize_name(name: str, expected: str):
+    assert normalize_name(name) == expected
 
 
 def test_get_arg_name():

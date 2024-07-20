@@ -33,6 +33,7 @@ from ._utils import (
     get_alt_constructor,
     get_arg_name,
     get_doc,
+    normalize_name,
     transform_error,
 )
 
@@ -269,7 +270,7 @@ class FunctionResolver(Resolver, Generic[P, R]):
                 annotation = annotation.type
 
             parameter = Parameter(
-                name=get_arg_name(param.annotation) or param.name,
+                name=get_arg_name(param.annotation) or normalize_name(param.name),
                 signature=param,
                 resolved_type=annotation,
                 doc=get_doc(param.annotation),
@@ -357,6 +358,9 @@ class Function(Generic[P, R]):
 
     def __post_init__(self):
         original_name = self.func.__name__
+        normalized_name = normalize_name(original_name)
+        if self.name is None and normalized_name != original_name:
+            self.name = normalized_name
         name = original_name if self.name is None else self.name
         origin = None
 

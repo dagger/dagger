@@ -1077,13 +1077,37 @@ func (ModuleSuite) TestPythonDocs(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (ModuleSuite) TestPythonNameConflicts(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := pythonModInit(t, c, `
+        from dagger import field, function, object_type
+
+        @object_type
+        class Test:
+            from_: str = field(default="")
+
+            @function
+            def with_(self, import_: str = "") -> str:
+                return import_
+        `)
+
+	out, err := modGen.With(daggerCall("--from=foo", "from")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "foo", out)
+
+	out, err = modGen.With(daggerCall("with", "--import=bar")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "bar", out)
+}
+
 func (ModuleSuite) TestPythonNameOverrides(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	modGen := pythonModInit(t, c, `
         from typing import Annotated
 
-        from dagger import Arg, Doc, field, function, object_type
+        from dagger import Arg, field, function, object_type
 
         @object_type
         class Test:
