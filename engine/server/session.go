@@ -107,6 +107,10 @@ type daggerClient struct {
 	clientVersion string
 	secretToken   string
 
+	// if the client is a nested client, this is its ancestral clients,
+	// with the most recent parent last
+	parents []*daggerClient
+
 	state   daggerClientState
 	stateMu sync.RWMutex
 	// the number of active http requests to any endpoint from this client,
@@ -543,22 +547,37 @@ func (srv *Server) initializeDaggerClient(
 	if err != nil {
 		return fmt.Errorf("open client DB: %w", err)
 	}
-	client.tp = sdktrace.NewTracerProvider(
+	tracerOpts := []sdktrace.TracerProviderOption{
 		// Install a span processor that modifies spans created by Buildkit to
 		// fit our ideal format.
 		sdktrace.WithSpanProcessor(buildkit.SpanProcessor{}),
+		// Save to our own client's DB.
 		sdktrace.WithSpanProcessor(telemetry.NewLiveSpanProcessor(
 			srv.telemetryPubSub.Spans(client.clientID, client.db),
 		)),
-	)
-	client.lp = sdklog.NewLoggerProvider(
+	}
+	loggerOpts := []sdklog.LoggerProviderOption{
 		sdklog.WithProcessor(
 			sdklog.NewBatchProcessor(
 				srv.telemetryPubSub.Logs(client.clientID, client.db),
 				sdklog.WithExportInterval(telemetry.NearlyImmediate),
 			),
 		),
-	)
+	}
+	// Save to parent client DBs too.
+	for _, parent := range client.parents {
+		tracerOpts = append(tracerOpts, sdktrace.WithSpanProcessor(telemetry.NewLiveSpanProcessor(
+			srv.telemetryPubSub.Spans(parent.clientID, parent.db),
+		)))
+		loggerOpts = append(loggerOpts, sdklog.WithProcessor(
+			sdklog.NewBatchProcessor(
+				srv.telemetryPubSub.Logs(parent.clientID, parent.db),
+				sdklog.WithExportInterval(telemetry.NearlyImmediate),
+			),
+		))
+	}
+	client.tp = sdktrace.NewTracerProvider(tracerOpts...)
+	client.lp = sdklog.NewLoggerProvider(loggerOpts...)
 
 	client.state = clientStateInitialized
 	return nil
@@ -667,6 +686,12 @@ func (srv *Server) getOrInitClient(
 			secretToken:   token,
 		}
 		sess.clients[clientID] = client
+
+		parent, parentExists := sess.clients[opts.CallerClientID]
+		if parentExists {
+			client.parents = append([]*daggerClient{}, parent.parents...)
+			client.parents = append(client.parents, parent)
+		}
 
 		failureCleanups.Add("delete client ID", func() error {
 			sess.clientMu.Lock()
