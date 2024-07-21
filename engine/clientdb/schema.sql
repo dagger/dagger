@@ -26,7 +26,7 @@ CREATE TABLE spans (
     status_message TEXT NOT NULL,
     instrumentation_scope BLOB, -- JSON encoded *otlpcommonv1.InstrumentationScope
     resource BLOB -- JSON encoded *otlpresourcev1.Resource
-);
+) STRICT;
 
 CREATE TABLE logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -36,4 +36,4 @@ CREATE TABLE logs (
     severity INTEGER NOT NULL,
     body BLOB, -- JSON encoded otlpcommon.v1.Any
     attributes BLOB -- JSON encoded otlpcommon.v1.Key
-);
+) STRICT;
