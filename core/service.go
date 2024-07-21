@@ -219,7 +219,7 @@ func (svc *Service) startSpan(ctx context.Context, id *call.ID, name string) (co
 	if err != nil {
 		return ctx, nil, fmt.Errorf("get main client caller ID: %w", err)
 	}
-	ctx, span := Tracer().Start(ctx, "start "+name, trace.WithAttributes(
+	ctx, span := Tracer(ctx).Start(ctx, "start "+name, trace.WithAttributes(
 		// assign service spans to the _main_ client caller, since their lifespan is tied
 		// to the session level, independent of which client happened to start it.
 		//

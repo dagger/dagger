@@ -340,7 +340,7 @@ func (file *File) Export(ctx context.Context, dest string, allowParentDirPath bo
 		return err
 	}
 
-	ctx, vtx := Tracer().Start(ctx, fmt.Sprintf("export file %s to host %s", file.File, dest))
+	ctx, vtx := Tracer(ctx).Start(ctx, fmt.Sprintf("export file %s to host %s", file.File, dest))
 	defer telemetry.End(vtx, func() error { return rerr })
 
 	detach, _, err := svcs.StartBindings(ctx, file.Services)
