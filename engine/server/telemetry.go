@@ -125,6 +125,41 @@ func (ps *PubSub) TracesHandler(rw http.ResponseWriter, r *http.Request) { //nol
 	rw.WriteHeader(http.StatusCreated)
 }
 
+func (ps *PubSub) LogsHandler(rw http.ResponseWriter, r *http.Request) { //nolint: dupl
+	sessionID := r.Header.Get("X-Dagger-Session-ID")
+	clientID := r.Header.Get("X-Dagger-Client-ID")
+	client, err := ps.getClient(sessionID, clientID)
+	if err != nil {
+		slog.Warn("error getting client", "err", err)
+		http.Error(rw, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		slog.Warn("error reading body", "err", err)
+		http.Error(rw, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	var req collogspb.ExportLogsServiceRequest
+	if err := proto.Unmarshal(body, &req); err != nil {
+		slog.Error("error unmarshalling logs request", "payload", string(body), "error", err)
+		http.Error(rw, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	for _, c := range append([]*daggerClient{client}, client.parents...) {
+		if err := ps.Logs(c.clientID, c.db).Export(r.Context(), telemetry.LogsFromPB(req.ResourceLogs)); err != nil {
+			slog.Error("error exporting logs", "err", err)
+			http.Error(rw, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	rw.WriteHeader(http.StatusCreated)
+}
+
 func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request) { //nolint: dupl
 	ps.sseHandler(w, r, func(notify <-chan struct{}, q *clientdb.Queries, emit func(event string, id int64, payload []byte)) {
 		var since int64 = 0
@@ -170,41 +205,6 @@ func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request)
 			emit("spans", since, payload)
 		}
 	})
-}
-
-func (ps *PubSub) LogsHandler(rw http.ResponseWriter, r *http.Request) { //nolint: dupl
-	sessionID := r.Header.Get("X-Dagger-Session-ID")
-	clientID := r.Header.Get("X-Dagger-Client-ID")
-	client, err := ps.getClient(sessionID, clientID)
-	if err != nil {
-		slog.Warn("error getting client", "err", err)
-		http.Error(rw, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		slog.Warn("error reading body", "err", err)
-		http.Error(rw, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	var req collogspb.ExportLogsServiceRequest
-	if err := protojson.Unmarshal(body, &req); err != nil {
-		slog.Error("error unmarshalling request", "err", err)
-		http.Error(rw, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	for _, c := range append([]*daggerClient{client}, client.parents...) {
-		if err := ps.Logs(c.clientID, c.db).Export(r.Context(), telemetry.LogsFromPB(req.ResourceLogs)); err != nil {
-			slog.Error("error exporting logs", "err", err)
-			http.Error(rw, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	}
-
-	rw.WriteHeader(http.StatusCreated)
 }
 
 func (ps *PubSub) LogsSubscribeHandler(w http.ResponseWriter, r *http.Request) { //nolint: dupl
