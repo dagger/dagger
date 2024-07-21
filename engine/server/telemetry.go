@@ -1,4 +1,4 @@
-package telemetry
+package server
 
 import (
 	"context"
@@ -33,22 +33,17 @@ func (t Topic) String() string {
 }
 
 type PubSub struct {
-	clientDBs  *clientdb.DBs
+	srv        *Server
 	mux        http.Handler
 	listeners  map[string][]chan<- struct{}
 	listenersL sync.Mutex
 }
 
-type spanKey struct {
-	TraceID trace.TraceID
-	SpanID  trace.SpanID
-}
-
-func NewPubSub(clientDBs *clientdb.DBs) *PubSub {
+func NewPubSub(srv *Server) *PubSub {
 	mux := http.NewServeMux()
 	ps := &PubSub{
+		srv:       srv,
 		mux:       mux,
-		clientDBs: clientDBs,
 		listeners: map[string][]chan<- struct{}{},
 	}
 	mux.HandleFunc("POST /v1/traces", ps.TracesHandler)
@@ -96,14 +91,14 @@ func (ps *PubSub) Terminate(clientID string) {
 }
 
 func (ps *PubSub) TracesHandler(rw http.ResponseWriter, r *http.Request) { //nolint: dupl
+	sessionID := r.Header.Get("X-Dagger-Session-ID")
 	clientID := r.Header.Get("X-Dagger-Client-ID")
-	if clientID == "" {
-		slog.Warn("missing client ID")
-		http.Error(rw, "missing client ID", http.StatusBadRequest)
+	client, err := ps.getClient(sessionID, clientID)
+	if err != nil {
+		slog.Warn("error getting client", "err", err)
+		http.Error(rw, err.Error(), http.StatusBadRequest)
 		return
 	}
-
-	// TODO: save to parent clients, too
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -119,64 +114,15 @@ func (ps *PubSub) TracesHandler(rw http.ResponseWriter, r *http.Request) { //nol
 		return
 	}
 
-	db, err := ps.clientDBs.Open(clientID)
-	if err != nil {
-		slog.Error("error opening spans exporter", "err", err)
-		http.Error(rw, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	defer db.Close()
-
-	if err := ps.Spans(clientID, db).ExportSpans(r.Context(), telemetry.SpansFromPB(req.ResourceSpans)); err != nil {
-		slog.Error("error exporting spans", "err", err)
-		http.Error(rw, err.Error(), http.StatusInternalServerError)
-		return
+	for _, c := range append([]*daggerClient{client}, client.parents...) {
+		if err := ps.Spans(c.clientID, c.db).ExportSpans(r.Context(), telemetry.SpansFromPB(req.ResourceSpans)); err != nil {
+			slog.Error("error exporting spans", "err", err)
+			http.Error(rw, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	rw.WriteHeader(http.StatusCreated)
-}
-
-func (ps *PubSub) sseHandler(w http.ResponseWriter, r *http.Request, handler func(<-chan struct{}, *clientdb.Queries, func(string, int64, []byte))) {
-	clientID := r.Header.Get("X-Dagger-Client-ID")
-	if clientID == "" {
-		slog.Warn("missing client ID")
-		http.Error(w, "missing client ID", http.StatusBadRequest)
-		return
-	}
-
-	db, err := ps.clientDBs.Open(clientID)
-	if err != nil {
-		slog.Error("error opening spans exporter", "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	defer db.Close()
-
-	flush := func() {}
-	if flusher, ok := w.(http.Flusher); ok {
-		flush = flusher.Flush
-	}
-
-	// Set CORS headers to allow all origins. You may want to restrict this to specific origins in a production environment.
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Expose-Headers", "Content-Type")
-
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-
-	q := clientdb.New(db)
-
-	notify := ps.Listen(clientID)
-
-	handler(notify, q, func(event string, id int64, data []byte) {
-		// Send the batch as an OTLP trace export request.
-		fmt.Fprintf(w, "event: spans\n")
-		fmt.Fprintf(w, "id: %d\n", id)
-		fmt.Fprintf(w, "data: %s\n", string(data))
-		fmt.Fprintln(w)
-		flush()
-	})
 }
 
 func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request) { //nolint: dupl
@@ -227,10 +173,12 @@ func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request)
 }
 
 func (ps *PubSub) LogsHandler(rw http.ResponseWriter, r *http.Request) { //nolint: dupl
+	sessionID := r.Header.Get("X-Dagger-Session-ID")
 	clientID := r.Header.Get("X-Dagger-Client-ID")
-	if clientID == "" {
-		slog.Warn("missing client ID")
-		http.Error(rw, "missing client ID", http.StatusBadRequest)
+	client, err := ps.getClient(sessionID, clientID)
+	if err != nil {
+		slog.Warn("error getting client", "err", err)
+		http.Error(rw, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -248,18 +196,12 @@ func (ps *PubSub) LogsHandler(rw http.ResponseWriter, r *http.Request) { //nolin
 		return
 	}
 
-	db, err := ps.clientDBs.Open(clientID)
-	if err != nil {
-		slog.Error("error opening spans exporter", "err", err)
-		http.Error(rw, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	defer db.Close()
-
-	if err := ps.Logs(clientID, db).Export(r.Context(), telemetry.LogsFromPB(req.ResourceLogs)); err != nil {
-		slog.Error("error exporting spans", "err", err)
-		http.Error(rw, err.Error(), http.StatusInternalServerError)
-		return
+	for _, c := range append([]*daggerClient{client}, client.parents...) {
+		if err := ps.Logs(c.clientID, c.db).Export(r.Context(), telemetry.LogsFromPB(req.ResourceLogs)); err != nil {
+			slog.Error("error exporting logs", "err", err)
+			http.Error(rw, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	rw.WriteHeader(http.StatusCreated)
@@ -523,11 +465,61 @@ func (ps LogsPubSub) Export(ctx context.Context, logs []sdklog.Record) error {
 func (ps LogsPubSub) ForceFlush(context.Context) error { return nil }
 func (ps LogsPubSub) Shutdown(context.Context) error   { return nil }
 
-type logStream struct {
-	span   spanKey
-	stream int64
+func (ps *PubSub) sseHandler(w http.ResponseWriter, r *http.Request, handler func(<-chan struct{}, *clientdb.Queries, func(string, int64, []byte))) {
+	sessionID := r.Header.Get("X-Dagger-Session-ID")
+	clientID := r.Header.Get("X-Dagger-Client-ID")
+	client, err := ps.getClient(sessionID, clientID)
+	if err != nil {
+		slog.Warn("error getting client", "err", err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	flush := func() {}
+	if flusher, ok := w.(http.Flusher); ok {
+		flush = flusher.Flush
+	}
+
+	// Set CORS headers to allow all origins. You may want to restrict this to specific origins in a production environment.
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Expose-Headers", "Content-Type")
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	q := clientdb.New(client.db)
+
+	notify := ps.Listen(clientID)
+
+	handler(notify, q, func(event string, id int64, data []byte) {
+		// Send the batch as an OTLP trace export request.
+		fmt.Fprintf(w, "event: spans\n")
+		fmt.Fprintf(w, "id: %d\n", id)
+		fmt.Fprintf(w, "data: %s\n", string(data))
+		fmt.Fprintln(w)
+		flush()
+	})
 }
 
-func (s logStream) String() string {
-	return fmt.Sprintf("logStream{span=%s, stream=%d}", s.span, s.stream)
+func (ps *PubSub) getClient(sessionID, clientID string) (*daggerClient, error) {
+	if sessionID == "" {
+		return nil, fmt.Errorf("missing session ID")
+	}
+	if clientID == "" {
+		return nil, fmt.Errorf("missing client ID")
+	}
+	ps.srv.daggerSessionsMu.RLock()
+	sess, ok := ps.srv.daggerSessions[sessionID]
+	ps.srv.daggerSessionsMu.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("session %q not found", sessionID)
+	}
+	sess.clientMu.RLock()
+	client, ok := sess.clients[clientID]
+	sess.clientMu.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("client %q not found", clientID)
+	}
+	return client, nil
 }

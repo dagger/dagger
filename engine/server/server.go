@@ -76,7 +76,6 @@ import (
 	"github.com/dagger/dagger/engine/sources/blob"
 	"github.com/dagger/dagger/engine/sources/gitdns"
 	"github.com/dagger/dagger/engine/sources/httpdns"
-	enginetel "github.com/dagger/dagger/engine/telemetry"
 )
 
 const (
@@ -155,7 +154,7 @@ type Server struct {
 	// telemetry config+state
 	//
 
-	telemetryPubSub *enginetel.PubSub
+	telemetryPubSub *PubSub
 	buildkitLogSink io.Writer
 
 	//
@@ -239,7 +238,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	// set up client DBs, and the telemetry pub/sub which writes to it
 	srv.clientDBDir = filepath.Join(srv.workerRootDir, "clientdbs")
 	srv.clientDBs = clientdb.NewDBs(srv.clientDBDir)
-	srv.telemetryPubSub = enginetel.NewPubSub(srv.clientDBs)
+	srv.telemetryPubSub = NewPubSub(srv)
 
 	//
 	// setup config derived from engine config

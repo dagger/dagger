@@ -19,8 +19,6 @@ import (
 	"github.com/moby/buildkit/worker"
 	"github.com/moby/buildkit/worker/base"
 	"golang.org/x/sync/semaphore"
-
-	"github.com/dagger/dagger/engine/telemetry"
 )
 
 /*
@@ -42,7 +40,7 @@ type sharedWorkerState struct {
 	*base.Worker
 	root             string
 	executorRoot     string
-	telemetryPubSub  *telemetry.PubSub
+	telemetryPubSub  http.Handler
 	bkSessionManager *bksession.Manager
 	sessionHandler   sessionHandler
 
@@ -70,7 +68,7 @@ type NewWorkerOpts struct {
 	WorkerRoot       string
 	ExecutorRoot     string
 	BaseWorker       *base.Worker
-	TelemetryPubSub  *telemetry.PubSub
+	TelemetryPubSub  http.Handler
 	BKSessionManager *bksession.Manager
 	SessionHandler   sessionHandler
 
