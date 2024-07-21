@@ -1011,9 +1011,6 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 
 		// TODO: wait for services to stop?
 
-		// Start draining telemetry
-		srv.telemetryPubSub.Drain(sess.mainClientCallerID, immediate)
-
 		if len(sess.cacheExporterCfgs) > 0 {
 			bklog.G(ctx).Debugf("running cache export for client %s", client.clientID)
 			cacheExporterFuncs := make([]buildkit.ResolveCacheExporterFunc, len(sess.cacheExporterCfgs))
