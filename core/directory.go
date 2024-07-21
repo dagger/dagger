@@ -737,7 +737,7 @@ func (dir *Directory) Export(ctx context.Context, destPath string, merge bool) (
 		defPB = dir.LLB
 	}
 
-	ctx, span := Tracer().Start(ctx, fmt.Sprintf("export directory %s to host %s", dir.Dir, destPath))
+	ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("export directory %s to host %s", dir.Dir, destPath))
 	defer telemetry.End(span, func() error { return rerr })
 
 	detach, _, err := svcs.StartBindings(ctx, dir.Services)
