@@ -70,7 +70,7 @@ type daggerSession struct {
 	endpointMu sync.RWMutex
 
 	// informed when a client goes away to prevent hanging on drain
-	telemetryPubSub *enginetel.PubSub
+	telemetryPubSub *PubSub
 
 	services *core.Services
 
@@ -849,10 +849,12 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/traces", func(w http.ResponseWriter, r *http.Request) {
+		r.Header.Set("X-Dagger-Session-ID", client.daggerSession.sessionID)
 		r.Header.Set("X-Dagger-Client-ID", client.clientID)
 		srv.telemetryPubSub.TracesSubscribeHandler(w, r)
 	})
 	mux.HandleFunc("GET /v1/logs", func(w http.ResponseWriter, r *http.Request) {
+		r.Header.Set("X-Dagger-Session-ID", client.daggerSession.sessionID)
 		r.Header.Set("X-Dagger-Client-ID", client.clientID)
 		srv.telemetryPubSub.LogsSubscribeHandler(w, r)
 	})

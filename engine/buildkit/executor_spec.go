@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -630,14 +629,21 @@ func (w *Worker) setupOTel(ctx context.Context, state *execState) error {
 		return nil
 	}
 
+	var sessionID string
 	var clientID string
-	if w.execMD != nil {
-		clientID = w.execMD.CallerClientID
+	if w.execMD != nil { // NB: this seems to be _always_ set
+		sessionID = w.execMD.SessionID
+		if w.execMD.ClientID != "" {
+			// We're a new nested client, so save telemetry to it.
+			clientID = w.execMD.ClientID
+		} else if w.execMD.CallerClientID != "" {
+			// Otherwise, save telemetry to the caller's client - either a module function call,
+			// or the client that called withExec.
+			clientID = w.execMD.CallerClientID
+		}
 		if w.execMD.SpanContext != nil {
 			ctx = telemetry.Propagator.Extract(ctx, w.execMD.SpanContext)
 		}
-	} else {
-		slog.Warn("!!! NO EXECMD FOR", "args", state.procInfo.Meta.Args)
 	}
 
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
@@ -657,7 +663,7 @@ func (w *Worker) setupOTel(ctx context.Context, state *execState) error {
 			if r.Header == nil {
 				r.Header = http.Header{}
 			}
-			slog.Warn("!!! OTEL PROXY ADDING HEADER", "clientID", clientID, "execMD", fmt.Sprintf("%+v", w.execMD))
+			r.Header.Set("X-Dagger-Session-ID", sessionID)
 			r.Header.Set("X-Dagger-Client-ID", clientID)
 			w.telemetryPubSub.ServeHTTP(rw, r)
 		}),
