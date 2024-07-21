@@ -24,7 +24,7 @@ func withEngine(
 		// Init tracing as early as possible and shutdown after the command
 		// completes, ensuring progress is fully flushed to the frontend.
 		ctx, cleanupTelemetry := initEngineTelemetry(ctx)
-		defer cleanupTelemetry(rerr)
+		defer func() { cleanupTelemetry(rerr) }()
 
 		if debug {
 			params.LogLevel = slog.LevelDebug
