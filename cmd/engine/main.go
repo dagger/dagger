@@ -244,15 +244,15 @@ func main() { //nolint:gocyclo
 
 	addFlags(app)
 
+	ctx, cancel := context.WithCancel(appcontext.Context())
+	defer cancel()
+
 	app.Action = func(c *cli.Context) error {
 		// TODO: On Windows this always returns -1. The actual "are you admin" check is very Windows-specific.
 		// See https://github.com/golang/go/issues/28804#issuecomment-505326268 for the "short" version.
 		if os.Geteuid() > 0 {
 			return errors.New("rootless mode requires to be executed as the mapped root in a user namespace; you may use RootlessKit for setting up the namespace")
 		}
-		ctx, cancel := context.WithCancel(appcontext.Context())
-		defer cancel()
-
 		// install CA certs in case the user has a custom engine w/ extra certs installed to
 		// /usr/local/share/ca-certificates
 		if out, err := exec.CommandContext(ctx, "update-ca-certificates").CombinedOutput(); err != nil {
@@ -263,6 +263,8 @@ func main() { //nolint:gocyclo
 				bklog.G(ctx).WithError(err).Warnf("failed to rehash ca-certificates: %s", out)
 			}
 		}
+
+		ctx = InitTelemetry(ctx)
 
 		bklog.G(ctx).Debug("loading engine config file")
 		cfg, err := config.LoadFile(c.GlobalString("config"))
@@ -450,8 +452,8 @@ func main() { //nolint:gocyclo
 		return err
 	}
 
-	app.After = func(_ *cli.Context) error {
-		CloseTelemetry()
+	app.After = func(*cli.Context) error {
+		CloseTelemetry(ctx)
 		return nil
 	}
 
