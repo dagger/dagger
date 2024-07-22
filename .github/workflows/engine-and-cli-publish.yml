@@ -220,16 +220,13 @@ jobs:
           cd sdk/go
           go test -v -run TestProvision ./...
 
-      - uses: actions/setup-python@v4
+      - uses: yezz123/setup-uv@v4
         with:
-          python-version: "3.11"
-          cache: "pip"
-          cache-dependency-path: "sdk/python/requirements.txt"
+          uv-version: "0.2.27"
       - name: "Test Python SDK"
         run: |
           cd sdk/python
-          pip install -r requirements.txt .
-          pytest -xm provision
+          uv run pytest -xm provision
 
       - uses: actions/setup-node@v2
         with:
@@ -323,16 +320,13 @@ jobs:
             echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=${RUNNER_HOST}" >> $GITHUB_ENV
           fi
         shell: bash
-      - uses: actions/setup-python@v4
+      - uses: yezz123/setup-uv@v4
         with:
-          python-version: "3.11"
-          cache: "pip"
-          cache-dependency-path: "sdk/python/requirements.txt"
+          uv-version: "0.2.27"
       - name: "Test Python SDK"
         run: |
           cd sdk/python
-          pip install -r requirements.txt .
-          pytest -xm provision
+          uv run pytest -xm provision
       - name: "ALWAYS print engine logs - especially useful on failure"
         if: always()
         run: docker logs $(docker ps -q --filter name=dagger-engine)
