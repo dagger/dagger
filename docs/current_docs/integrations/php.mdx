@@ -22,7 +22,7 @@ The following code sample demonstrates how these CI tasks can be encapsulated as
 Bootstrap a new module:
 
 ```shell
-dagger init --name=my-module --sdk=go
+dagger init --name=my-module --sdk=go --source=./dagger
 ```
 
 Update the generated `dagger/main.go` file with the following code:
@@ -36,7 +36,7 @@ Update the generated `dagger/main.go` file with the following code:
 Bootstrap a new module:
 
 ```shell
-dagger init --name=my-module --sdk=python
+dagger init --name=my-module --sdk=python --source=./dagger
 ```
 
 Update the generated `dagger/src/main/__init__.py` file with the following code:
@@ -50,7 +50,7 @@ Update the generated `dagger/src/main/__init__.py` file with the following code:
 Bootstrap a new module:
 
 ```shell
-dagger init --name=my-module --sdk=typescript
+dagger init --name=my-module --sdk=typescript --source=./dagger
 ```
 
 Update the generated `dagger/src/index.ts` file with the following code:
