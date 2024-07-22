@@ -629,18 +629,17 @@ func (w *Worker) setupOTel(ctx context.Context, state *execState) error {
 		return nil
 	}
 
-	var sessionID string
-	var clientID string
+	var destSession string
+	var destClientID string
 	if w.execMD != nil { // NB: this seems to be _always_ set
-		sessionID = w.execMD.SessionID
-		if w.execMD.ClientID != "" {
-			// We're a new nested client, so save telemetry to it.
-			clientID = w.execMD.ClientID
-		} else if w.execMD.CallerClientID != "" {
-			// Otherwise, save telemetry to the caller's client - either a module function call,
-			// or the client that called withExec.
-			clientID = w.execMD.CallerClientID
-		}
+		destSession = w.execMD.SessionID
+
+		// Send telemetry to the caller client, *not* the nested client (ClientID).
+		//
+		// If you set ClientID here, nested dagger CLI calls made against an engine running
+		// as a service in Dagger will end up in a loop sending logs to themselves.
+		destClientID = w.execMD.CallerClientID
+
 		if w.execMD.SpanContext != nil {
 			ctx = telemetry.Propagator.Extract(ctx, w.execMD.SpanContext)
 		}
@@ -648,7 +647,6 @@ func (w *Worker) setupOTel(ctx context.Context, state *execState) error {
 
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
 	state.cleanups.Add("close logs", stdio.Close)
-
 	state.procInfo.Stdout = nopCloser{io.MultiWriter(stdio.Stdout, state.procInfo.Stdout)}
 	state.procInfo.Stderr = nopCloser{io.MultiWriter(stdio.Stderr, state.procInfo.Stderr)}
 
@@ -663,8 +661,8 @@ func (w *Worker) setupOTel(ctx context.Context, state *execState) error {
 			if r.Header == nil {
 				r.Header = http.Header{}
 			}
-			r.Header.Set("X-Dagger-Session-ID", sessionID)
-			r.Header.Set("X-Dagger-Client-ID", clientID)
+			r.Header.Set("X-Dagger-Session-ID", destSession)
+			r.Header.Set("X-Dagger-Client-ID", destClientID)
 			w.telemetryPubSub.ServeHTTP(rw, r)
 		}),
 		ReadHeaderTimeout: 10 * time.Second, // for gocritic
