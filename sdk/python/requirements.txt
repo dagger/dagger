@@ -1,2 +1,0 @@
-# for dependabot
--r requirements-dev.lock
