@@ -233,8 +233,6 @@ Setup the local branch to align with the remote branch being released
 git checkout "${RELEASE_BRANCH:?must be set}"
 
 git pull $DAGGER_REPO_REMOTE "${RELEASE_BRANCH:?must be set}"
-
-export ENGINE_GIT_SHA="$(git rev-parse --verify HEAD)"
 ```
 
 <details>
@@ -251,23 +249,28 @@ You will also want to ensure you _always_ cherry-pick a few special commits:
 
 </details>
 
-- [ ] Create e.g. `.changes/v0.12.0.md` by either running `changie batch patch`
+- [ ] Create e.g. `.changes/v0.12.1.md` by either running `changie batch patch`
       (or `changie batch minor` if this is a new minor).
 
 - [ ] Make any necessary edits to the newly generated file, e.g.
-      `.changes/v0.12.0.md`
+      `.changes/v0.12.1.md`
 - [ ] Update `CHANGELOG.md` by running `changie merge`.
-- [ ] `30 mins` Submit a PR - e.g. `add-v0.12.0-release-notes` with the new release notes so that they can be used in the new release.
+- [ ] `30 mins` Submit a PR - e.g. `add-v0.12.1-release-notes` with the new release notes so that they can be used in the new release.
   - 🚨 Non-main branch release only: This PR will also include the cherry-picked commits mentioned above.
 - [ ] Get the PR reviewed & merged. The merge commit is what gets tagged in the next step.
   - 🚨 Non-main branch release only: Ideally use "Rebase and Merge" rather than squashing commits when merging so we can more easily preserve the history of the cherry-picked commits.
-- [ ] Ensure that all checks are green ✅ for the `<ENGINE_GIT_SHA>` on the
+- [ ] Ensure that all checks are green ✅ on the
       `<RELEASE_BRANCH>` that you are about to release.
   - 🚨 Non-main branch release only: currently, CI does not run on non-main branches and some of the workflows are currently hardcoded with `main` so it's not safe to manually run them. So for now this has to be skipped in this case.
 - [ ] `30mins` When you have confirmed that all checks are green, run the following:
 
 ```console
+git checkout "${RELEASE_BRANCH:?must be set}"
+git pull $DAGGER_REPO_REMOTE "${RELEASE_BRANCH:?must be set}"
+
+export ENGINE_GIT_SHA="$(git rev-parse --verify HEAD)"
 export ENGINE_VERSION="$(changie latest)"
+
 git tag "${ENGINE_VERSION:?must be set}" "${ENGINE_GIT_SHA:?must be set}"
 
 git push "${DAGGER_REPO_REMOTE:?must be set}" "${ENGINE_VERSION:?must be set}"
@@ -386,6 +389,7 @@ go mod edit -require dagger.io/dagger@${GO_SDK_VERSION:?must be set}
 go mod edit -require github.com/dagger/dagger/engine/distconsts@${GO_SDK_VERSION:?must be set}
 go mod tidy
 cd dev
+dagger develop
 go mod edit -require github.com/dagger/dagger/engine/distconsts@${ENGINE_VERSION:?must be set}
 go mod tidy
 cd ..
@@ -418,10 +422,10 @@ Ensure that all the workflows succeed before continuing (specifically `test` and
       release process using the just-released CLI.
 
 ```console
-curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=0.12.0 sh
-# install the cli to dagger-0.12.0, and symlink dagger to it
-mv ~/.local/bin/dagger{,-0.12.0}
-ln -s ~/.local/bin/dagger{-0.12.0,}
+curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=0.12.1 sh
+# install the cli to dagger-0.12.1, and symlink dagger to it
+mv ~/.local/bin/dagger{,-0.12.1}
+ln -s ~/.local/bin/dagger{-0.12.1,}
 
 dagger version
 ```
