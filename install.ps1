@@ -27,7 +27,7 @@ function Get-DownloadPath {
             return $inputPath
         }
         else {
-            Write-Host "Invalid path: $inputPath. Please enter a valid path."
+            Write-Output "Invalid path: $inputPath. Please enter a valid path."
         }
     }
 }
@@ -70,7 +70,7 @@ function Get-ValidPath {
                 return $path
             }
             else {
-                Write-Host "Invalid path: $path. Please enter a valid path."
+                Write-Output "Invalid path: $path. Please enter a valid path."
                 $path = $null
             }
         }
@@ -80,7 +80,7 @@ function Get-ValidPath {
 function Confirm-GitCommit {
     # Check if the hash matches the basic pattern of a Git commit hash
     if (-not ([string]::IsNullOrWhiteSpace($DaggerCommit)) -and $DaggerCommit -match '^[0-9a-fA-F]{40}$') {
-        Write-Host @"
+        Write-Output @"
 ---------------------------------------------------------------------------
 The commit hash provided does not seem to be a valid Git commit hash.
 Please provide a valid Git commit hash.
@@ -133,8 +133,7 @@ function Find-LatestVersion {
     $response = Invoke-RestMethod "https://dl.dagger.io/dagger/latest_version" -Body $body -ErrorVariable LatestVersionError
 
     if ($LatestVersionError) {
-        Write-Host
-        @"
+        Write-Output @"
 ---------------------------------------------------------------------------
 Houston we have a problem!
 Apparently we had an issue finding the latest version of Dagger.
@@ -145,7 +144,7 @@ Please check https://docs.dagger.io/install
     }
 
     $latestVersion = $response -replace "v", ""
-    Write-Host "Latest version of Dagger is v$latestVersion"
+    Write-Output "Latest version of Dagger is v$latestVersion"
 
     return [System.Management.Automation.SemanticVersion]::Parse($latestVersion)
 }
@@ -186,11 +185,11 @@ function Get-SemVer {
 
         if (-not $isValid) {
             $version = $null
-            Write-Host "Invalid version string: $inputString. Please enter a valid semantic version (e.g., 0.11.6)."
+            Write-Output "Invalid version string: $inputString. Please enter a valid semantic version (e.g., 0.11.6)."
         }
         elseif ($isvalid -and $version -gt $Default) {
             $version = $null
-            Write-Host "Please enter a valid version."
+            Write-Output "Please enter a valid version."
         }
     }
 
@@ -203,7 +202,7 @@ function Get-InstallPath {
         New-Item -ItemType Directory -Path $InstallPath -ErrorAction Stop -ErrorVariable InstallPathError | Out-Null
 
         if ($InstallPathError) {
-            Write-Host @"
+            Write-Output @"
 ---------------------------------------------------------------------------
 Whoops, apparently we had an issue in creating the install path.
 Please check you have the right permission to do so or try to create the path manually.
@@ -223,10 +222,10 @@ function Get-Checksum {
     $arch = Get-ProcessorArchitecture
     $response = Invoke-RestMethod -Uri $ChecksumUrl -UserAgent "PowerShell"
     $checksums = $response -split "`n"
-    
+
     $checksum = $null
     $target = $null
-    
+
     if (-not [string]::IsNullOrWhiteSpace($DaggerCommit)) {
         $target = "dagger_${DaggerCommit}_windows_${arch}.zip"
     }
@@ -238,7 +237,7 @@ function Get-Checksum {
     foreach ($line in $checksums) {
         if ($line -match $target) {
             $checksum = $line -split " " | Select-Object -First 1
-            Write-Host "Checksum for $target is $checksum"
+            Write-Output "Checksum for $target is $checksum"
             break
         }
     }
@@ -259,7 +258,7 @@ function Compare-Checksum {
     if ($hash.Hash -ne $Checksum) {
         Remove-Item -Path $DownloadPath
 
-        Write-Host @"
+        Write-Output @"
 ---------------------------------------------------------------------------
 The file checksum does not match the expected checksum!
 Expected: $Checksum
@@ -275,7 +274,7 @@ The downloaded file has been removed.
 function Main {
     # Powershell is cross-platform, notice about windows binary when used on non-windows
     if (-not $IsWindows) {
-        Write-Host @"
+        Write-Output @"
 ---------------------------------------------------------------------------
 Note: This script will install the Windows binary of Dagger.
 ---------------------------------------------------------------------------
@@ -286,7 +285,7 @@ Note: This script will install the Windows binary of Dagger.
     Get-ProcessorArchitecture -ErrorAction Stop -ErrorVariable ArchitectureError | Out-Null
 
     if ($ArchitectureError) {
-        Write-Host @"
+        Write-Output @"
 ---------------------------------------------------------------------------
 Whoops, apparently we had an issue in determining the architecture of your system.
 Dagger compiles for AMD64, ARM64, and ARM architectures only.
@@ -309,8 +308,7 @@ Dagger compiles for AMD64, ARM64, and ARM architectures only.
             -ErrorVariable InteractiveDaggerVersionError
 
         if ($InteractiveDaggerVersionError) {
-            Write-Host
-            @"
+            Write-Output @"
 ---------------------------------------------------------------------------
 Whoops, we had an issue in finding the selected version of Dagger.
 Please check your internet connection and try again.
@@ -325,7 +323,7 @@ Please check your internet connection and try again.
             -ErrorVariable InteractiveDownloadPathError
 
         if ($InteractiveDownloadPathError) {
-            Write-Host @"
+            Write-Output @"
 ---------------------------------------------------------------------------
 Whoops, we had an issue in getting the download path.
 Please check the path and try again.
@@ -340,7 +338,7 @@ Please check the path and try again.
             -ErrorVariable InteractiveInstallPathError
 
         if ($InteractiveInstallPathError) {
-            Write-Host @"
+            Write-Output @"
 ---------------------------------------------------------------------------
 Whoops, we had an issue in getting the install path.
 Please check the path and try again.
@@ -356,7 +354,7 @@ Please check the path and try again.
             -ErrorVariable InteractiveAddToPathError
 
         if ($InteractiveAddToPathError) {
-            Write-Host @"
+            Write-Output @"
 ---------------------------------------------------------------------------
 Whoops, we had an issue checking if you want to add dagger.exe to your PATH.
 Please check the option and try again.
@@ -367,7 +365,7 @@ Please check the option and try again.
     }
 
     $zipUrl = Get-DownloadUrl
-    Write-Host "Downloading Dagger from $zipUrl"
+    Write-Output "Downloading Dagger from $zipUrl"
 
     Invoke-RestMethod -Uri $zipUrl -OutFile $DownloadPath -UserAgent "PowerShell"
     $checksum = Get-Checksum -ErrorAction Stop -ErrorVariable ChecksumError
@@ -375,7 +373,7 @@ Please check the option and try again.
     Expand-Archive -Path $downloadPath -DestinationPath $InstallPath -Force -ErrorVariable ProcessError
 
     If ($ProcessError) {
-        Write-Host @"
+        Write-Output @"
 ---------------------------------------------------------------------------
 Whoops, apparently we had an issue in unzipping the file, please check
 you have the right permission to do so or try to unzip the file manually.
@@ -385,7 +383,7 @@ Dagger is currently downloaded at $DownloadPath.
     }
     else {
         $installPath = Get-InstallPath
-        Write-Host @"
+        Write-Output @"
 ---------------------------------------------------------------------------
 Thank you for downloading Dagger!
 Dagger has been successfully installed at $(Get-InstallPath)
@@ -396,18 +394,18 @@ Dagger has been successfully installed at $(Get-InstallPath)
         if ($AddToPath) {
             if (-not $existsInPath) {
                 [Environment]::SetEnvironmentVariable("Path", [Environment]::GetEnvironmentVariable("Path", "User") + ";$installPath", "User")
-                Write-Host "Dagger has been added to your PATH"
+                Write-Output "Dagger has been added to your PATH"
             }
             else {
-                Write-Host "Dagger is already in your PATH"
+                Write-Output "Dagger is already in your PATH"
             }
         }
         else {
             if (-not $existsInPath) {
-                Write-Host "Please add dagger.exe to your PATH in order to use it"
+                Write-Output "Please add dagger.exe to your PATH in order to use it"
             }
         }
-        Write-Host "---------------------------------------------------------------------------"
+        Write-Output "---------------------------------------------------------------------------"
     }
 }
 
