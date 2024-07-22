@@ -1,4 +1,4 @@
-# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-June%2019,%202024-success?style=flat-square)
+# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-July%2022,%202024-success?style=flat-square)
 
 This describes how to release Dagger:
 
@@ -307,8 +307,10 @@ export BUMP_ENGINE_PR=
 ```
 
 ```console
-git fetch "${DAGGER_REPO_REMOTE:?must be set}"
-git checkout --track "${DAGGER_REPO_REMOTE:?must be set}/bump-engine"
+# Engine bump PR is made from the dagger-ci fork
+git remote add dagger-ci https://github.com/dagger-ci/dagger
+git fetch dagger-ci bump-engine
+git checkout --track dagger-ci/bump-engine
 
 cd sdk/go
 changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom "Author=github-actions" --custom "PR=${BUMP_ENGINE_PR:?must be set}"
