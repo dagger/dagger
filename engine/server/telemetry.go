@@ -109,7 +109,7 @@ func (ps *PubSub) TracesHandler(rw http.ResponseWriter, r *http.Request) { //nol
 
 	var req coltracepb.ExportTraceServiceRequest
 	if err := proto.Unmarshal(body, &req); err != nil {
-		slog.Error("error unmarshalling request", "err", err)
+		slog.Error("error unmarshalling trace request", "payload", string(body), "error", err)
 		http.Error(rw, err.Error(), http.StatusBadRequest)
 		return
 	}

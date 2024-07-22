@@ -156,6 +156,10 @@ const (
 	clientStateInitialized   daggerClientState = "initialized"
 )
 
+func (client *daggerClient) String() string {
+	return fmt.Sprintf("<Client %s: %s>", client.clientID, client.state)
+}
+
 // requires that sess.stateMu is held
 func (srv *Server) initializeDaggerSession(
 	clientMetadata *engine.ClientMetadata,
@@ -547,11 +551,13 @@ func (srv *Server) initializeDaggerClient(
 	if err != nil {
 		return fmt.Errorf("open client DB: %w", err)
 	}
+
+	// configure OTel providers that export to SQLite
 	tracerOpts := []sdktrace.TracerProviderOption{
-		// Install a span processor that modifies spans created by Buildkit to
-		// fit our ideal format.
+		// install a span processor that modifies spans created by Buildkit to
+		// fit our ideal format
 		sdktrace.WithSpanProcessor(buildkit.SpanProcessor{}),
-		// Save to our own client's DB.
+		// save to our own client's DB
 		sdktrace.WithSpanProcessor(telemetry.NewLiveSpanProcessor(
 			srv.telemetryPubSub.Spans(client.clientID, client.db),
 		)),
@@ -564,11 +570,13 @@ func (srv *Server) initializeDaggerClient(
 			),
 		),
 	}
-	// Save to parent client DBs too.
+	// export to parent client DBs too
 	for _, parent := range client.parents {
-		tracerOpts = append(tracerOpts, sdktrace.WithSpanProcessor(telemetry.NewLiveSpanProcessor(
-			srv.telemetryPubSub.Spans(parent.clientID, parent.db),
-		)))
+		tracerOpts = append(tracerOpts, sdktrace.WithSpanProcessor(
+			telemetry.NewLiveSpanProcessor(
+				srv.telemetryPubSub.Spans(parent.clientID, parent.db),
+			),
+		))
 		loggerOpts = append(loggerOpts, sdklog.WithProcessor(
 			sdklog.NewBatchProcessor(
 				srv.telemetryPubSub.Logs(parent.clientID, parent.db),
