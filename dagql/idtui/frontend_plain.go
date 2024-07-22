@@ -203,6 +203,12 @@ func (fe *frontendPlain) SetPrimary(spanID trace.SpanID) {
 	fe.mu.Unlock()
 }
 
+func (fe *frontendPlain) SetRevealAllSpans(val bool) {
+	fe.mu.Lock()
+	fe.FrontendOpts.RevealAllSpans = val
+	fe.mu.Unlock()
+}
+
 func (fe *frontendPlain) Background(cmd tea.ExecCommand) error {
 	return fmt.Errorf("not implemented")
 }
@@ -364,7 +370,11 @@ func (fe *frontendPlain) finalRender() {
 }
 
 func (fe *frontendPlain) renderProgress() {
-	rowsView := fe.db.RowsView(fe.db.PrimarySpan)
+	scope := fe.db.PrimarySpan
+	if fe.RevealAllSpans {
+		scope = trace.SpanID{}
+	}
+	rowsView := fe.db.RowsView(scope)
 
 	// quickly sanity check the context - if a span from it has gone missing
 	// from the db, or has been marked as passthrough, it will no longer appear
