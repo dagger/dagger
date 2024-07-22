@@ -6,7 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/url"
+	"os"
+	"path/filepath"
 	"sync"
 
 	"github.com/dagger/dagger/engine"
@@ -277,6 +280,80 @@ func (store *SocketStore) ConnectSocket(ctx context.Context, idDgst digest.Diges
 		return nil, fmt.Errorf("failed to get forward agent client: %w", err)
 	}
 	return forwardAgentClient, nil
+}
+
+func (store *SocketStore) MountSocket(ctx context.Context, idDgst digest.Digest) (string, func() error, error) {
+	dir, err := os.MkdirTemp("", ".dagger-ssh-sock")
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to create temp dir: %w", err)
+	}
+
+	defer func() {
+		if err != nil {
+			os.RemoveAll(dir)
+		}
+	}()
+
+	if err := os.Chmod(dir, 0711); err != nil {
+		return "", nil, fmt.Errorf("failed to chmod temp dir: %w", err)
+	}
+
+	sockPath := filepath.Join(dir, "ssh_auth_sock")
+
+	l, err := net.Listen("unix", sockPath)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to listen on unix socket: %w", err)
+	}
+
+	// TODO: correctly set uid,gid,mode
+	uid := 0
+	gid := 0
+	mode := 0775
+	if err := os.Chown(sockPath, uid, gid); err != nil {
+		l.Close()
+		return "", nil, fmt.Errorf("failed to chown unix socket: %w", err)
+	}
+	if err := os.Chmod(sockPath, os.FileMode(mode)); err != nil {
+		l.Close()
+		return "", nil, fmt.Errorf("failed to chmod unix socket: %w", err)
+	}
+
+	eg, ctx := errgroup.WithContext(ctx)
+	ctx, cancel := context.WithCancel(ctx)
+
+	eg.Go(func() error {
+		defer l.Close()
+		<-ctx.Done()
+		return nil
+	})
+
+	eg.Go(func() error {
+		defer cancel()
+		for {
+			conn, err := l.Accept()
+			if err != nil {
+				if errors.Is(err, net.ErrClosed) {
+					return nil
+				}
+				return fmt.Errorf("failed to accept connection: %w", err)
+			}
+
+			stream, err := store.ConnectSocket(ctx, idDgst)
+			if err != nil {
+				conn.Close()
+				return fmt.Errorf("failed to connect to socket: %w", err)
+			}
+
+			go sshforward.Copy(ctx, conn, stream, stream.CloseSend)
+		}
+	})
+
+	return sockPath, func() error {
+		cancel()
+		err := eg.Wait()
+		os.RemoveAll(dir)
+		return err
+	}, nil
 }
 
 func (store *SocketStore) Register(srv *grpc.Server) {

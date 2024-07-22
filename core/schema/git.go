@@ -5,20 +5,20 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"os/user"
 	"regexp"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/sources/gitdns"
-	"github.com/moby/buildkit/session/sshforward"
 	"github.com/moby/buildkit/util/bklog"
+	"github.com/opencontainers/go-digest"
 )
 
 var _ SchemaResolvers = &gitSchema{}
@@ -255,11 +255,16 @@ func (s *gitSchema) tags(ctx context.Context, parent *core.GitRepository, args t
 			hostpath, found := socketStore.GetSocketHostPath(parent.SSHAuthSocket.IDDigest)
 			bklog.G(ctx).Debugf("🎃🎃🎃🎃🎃 hostPath: |%+v||%+v|\n", hostpath, found)
 			// if found && hostpath != "" {
-			sock, err := mountSSHSocket(ctx, parent)
+			sock, err := mountSSHSocket(ctx, socketStore, parent.SSHAuthSocket.IDDigest)
 			if err != nil {
 				return nil, fmt.Errorf("failed to mount SSH socket: %w", err)
 			}
-			defer sock.cleanup()
+			defer func() {
+				err := sock.cleanup()
+				if err != nil {
+					slog.Error("failed to cleanup SSH socket", "error", err)
+				}
+			}()
 
 			bklog.G(ctx).Debugf("🎃🎃🎃🎃🎃🎃 hostPath: |%+v|\n", sock.path)
 			cmd.Env = append(cmd.Env, "SSH_AUTH_SOCK="+sock.path)
@@ -267,7 +272,6 @@ func (s *gitSchema) tags(ctx context.Context, parent *core.GitRepository, args t
 		}
 	}
 
-	time.Sleep(10*time.Minute)
 	// Handle known hosts
 	var knownHostsPath string
 	if parent.SSHKnownHosts != "" {
@@ -278,6 +282,8 @@ func (s *gitSchema) tags(ctx context.Context, parent *core.GitRepository, args t
 		}
 		defer os.Remove(knownHostsPath)
 	}
+
+	// time.Sleep(1000 * time.Minute)
 
 	// Set GIT_SSH_COMMAND
 	cmd.Env = append(cmd.Env, "GIT_SSH_COMMAND="+gitdns.GetGitSSHCommand(knownHostsPath))
@@ -320,33 +326,15 @@ type sshSocket struct {
 	cleanup func() error
 }
 
-func mountSSHSocket(ctx context.Context, parent *core.GitRepository) (*sshSocket, error) {
-	sshID := parent.SSHAuthSocket.LLBID()
-	if sshID == "" {
-		return nil, fmt.Errorf("sshID is empty")
-	}
+func mountSSHSocket(ctx context.Context, store *core.SocketStore, sockIDDgst digest.Digest) (*sshSocket, error) {
+	/*
+		uid, gid, err := getUIDGID()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get UID and GID: %w", err)
+		}
+	*/
 
-	client, err := parent.Query.Buildkit(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get Buildkit client: %w", err)
-	}
-
-	caller, err := client.GetSessionCaller(ctx, false)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get session caller: %w", err)
-	}
-
-	uid, gid, err := getUIDGID()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get UID and GID: %w", err)
-	}
-
-	sock, cleanup, err := sshforward.MountSSHSocket(ctx, caller, sshforward.SocketOpt{
-		ID:   sshID,
-		UID:  uid,
-		GID:  gid,
-		Mode: 0700,
-	})
+	sock, cleanup, err := store.MountSocket(ctx, sockIDDgst)
 	if err != nil {
 		return nil, fmt.Errorf("failed to mount SSH socket: %w", err)
 	}
