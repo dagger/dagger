@@ -32,7 +32,7 @@ var testCtx = context.Background()
 func TestMain(m *testing.M) {
 	testCtx = telemetry.InitEmbedded(testCtx, nil)
 	res := m.Run()
-	telemetry.Close()
+	telemetry.Close(testCtx)
 	os.Exit(res)
 }
 

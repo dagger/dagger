@@ -83,8 +83,8 @@ func InitTelemetry(ctx context.Context) context.Context {
 	return ctx
 }
 
-func CloseTelemetry() {
-	telemetry.Close()
+func CloseTelemetry(ctx context.Context) {
+	telemetry.Close(ctx)
 
 	if rootSpan != nil {
 		rootSpan.End()
@@ -96,7 +96,7 @@ func CloseTelemetry() {
 
 	shutdown := func(shutdowner shutdowner) {
 		timeout := 30 * time.Second
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), timeout)
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
 		defer cancel()
 		bklog.G(shutdownCtx).Debugf("Shutting down %T (timeout=%s)", shutdowner, timeout)
 		shutdowner.Shutdown(shutdownCtx)

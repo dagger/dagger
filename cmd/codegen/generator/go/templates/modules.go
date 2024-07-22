@@ -294,7 +294,7 @@ func dispatch(ctx context.Context) error {
 		semconv.ServiceNameKey.String("dagger-go-sdk"),
 		// TODO version?
 	))
-	defer telemetry.Close()
+	defer telemetry.Close(ctx)
 
 	// A lot of the "work" actually happens when we're marshalling the return
 	// value, which entails getting object IDs, which happens in MarshalJSON,

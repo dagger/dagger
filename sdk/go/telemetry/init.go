@@ -200,7 +200,6 @@ func FallbackResource() *resource.Resource {
 var (
 	// set by Init, closed by Close
 	tracerProvider *sdktrace.TracerProvider = sdktrace.NewTracerProvider()
-	loggerProvider *sdklog.LoggerProvider   = sdklog.NewLoggerProvider()
 )
 
 type Config struct {
@@ -340,43 +339,23 @@ func Init(ctx context.Context, cfg Config) context.Context {
 			LogProcessors = append(LogProcessors, processor)
 			logOpts = append(logOpts, sdklog.WithProcessor(processor))
 		}
-		loggerProvider = sdklog.NewLoggerProvider(logOpts...)
-
-		// TODO: someday do the following (once it exists)
-		// Register our TracerProvider as the global so any imported
-		// instrumentation in the future will default to using it.
-		// otel.SetLoggerProvider(loggerProvider)
+		ctx = WithLoggerProvider(ctx, sdklog.NewLoggerProvider(logOpts...))
 	}
 
 	return ctx
 }
 
-// Flush drains telemetry data, and is typically called just before a client
-// goes away.
-//
-// NB: now that we wait for all spans to complete, this is less necessary, but
-// it seems wise to keep it anyway, as the spots where it are needed are hard
-// to find.
-func Flush(ctx context.Context) {
-	if tracerProvider != nil {
-		if err := tracerProvider.ForceFlush(ctx); err != nil {
-			slog.Error("failed to flush spans", "error", err)
-		}
-	}
-}
-
 // Close shuts down the global OpenTelemetry providers, flushing any remaining
 // data to the configured exporters.
-func Close() {
-	flushCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+func Close(ctx context.Context) {
+	flushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
-	Flush(flushCtx)
 	if tracerProvider != nil {
 		if err := tracerProvider.Shutdown(flushCtx); err != nil {
 			slog.Error("failed to shut down tracer provider", "error", err)
 		}
 	}
-	if loggerProvider != nil {
+	if loggerProvider := LoggerProvider(ctx); loggerProvider != nil {
 		if err := loggerProvider.Shutdown(flushCtx); err != nil {
 			slog.Error("failed to shut down logger provider", "error", err)
 		}
