@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strings"
 
+	nomadalloc "github.com/dagger/dagger/engine/client/drivers/nomad"
 	connh "github.com/moby/buildkit/client/connhelper"
 	connhDocker "github.com/moby/buildkit/client/connhelper/dockercontainer"
 	connhKube "github.com/moby/buildkit/client/connhelper/kubepod"
@@ -21,6 +22,7 @@ func init() {
 	register("docker-container", &dialDriver{connhDocker.Helper})
 	register("kube-pod", &dialDriver{connhKube.Helper})
 	register("podman-container", &dialDriver{connhPodman.Helper})
+	register("nomad-alloc", &dialDriver{nomadalloc.Helper})
 }
 
 // dialDriver uses the buildkit connhelpers to directly connect
