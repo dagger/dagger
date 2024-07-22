@@ -1,0 +1,6 @@
+kind: Fixed
+body: 'cli: fix handling of enum default values'
+time: 2024-07-22T13:50:09.255507Z
+custom:
+    Author: helderco
+    PR: "8000"
