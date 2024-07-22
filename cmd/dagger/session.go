@@ -81,6 +81,10 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 		SecretToken: sessionToken.String(),
 		UserAgent:   labelsFlag.Labels.WithCILabels().WithAnonymousGitLabels(workdir).UserAgent(),
 	}, func(ctx context.Context, sess *client.Client) error {
+		// show progress from everywhere, not just the primary span, since this
+		// command is purely in service of other spans
+		Frontend.SetRevealAllSpans(true)
+
 		srv := http.Server{
 			Handler:           sess,
 			ReadHeaderTimeout: 30 * time.Second,
