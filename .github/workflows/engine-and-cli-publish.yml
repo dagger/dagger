@@ -138,7 +138,9 @@ jobs:
         uses: peter-evans/create-pull-request@v3
         if: github.ref_name != 'main'
         with:
-          add-paths: ./sdk/
+          add-paths: |
+            ./sdk/
+            ./helm/
           committer: Dagger CI <hello@dagger.io>
           author: Dagger CI <hello@dagger.io>
           commit-message: "sdk: Bump engine dependency to ${{ github.ref_name }}"
