@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"strconv"
 	"strings"
@@ -241,6 +242,8 @@ func (svc *Service) startContainer(
 ) (running *RunningService, rerr error) {
 	dig := id.Digest()
 
+	slog := slog.With("service", dig.String(), "id", id.DisplaySelf())
+
 	host, err := svc.Hostname(ctx, id)
 	if err != nil {
 		return nil, err
@@ -440,6 +443,7 @@ func (svc *Service) startContainer(
 		defer span.End()
 
 		exitErr = svcProc.Wait()
+		slog.Info("service exited", "err", exitErr)
 
 		// detach dependent services when process exits
 		detachDeps()
@@ -462,8 +466,10 @@ func (svc *Service) startContainer(
 		}
 		select {
 		case <-ctx.Done():
+			slog.Info("service stop interrupted", "err", ctx.Err())
 			return ctx.Err()
-		case <-exited:
+		case exitErr := <-exited:
+			slog.Info("service exited in stop", "err", exitErr)
 			return nil
 		}
 	}

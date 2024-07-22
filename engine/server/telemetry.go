@@ -16,6 +16,7 @@ import (
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
@@ -115,7 +116,7 @@ func (ps *PubSub) TracesHandler(rw http.ResponseWriter, r *http.Request) { //nol
 	}
 
 	for _, c := range append([]*daggerClient{client}, client.parents...) {
-		if err := ps.Spans(c.clientID, c.db).ExportSpans(r.Context(), telemetry.SpansFromPB(req.ResourceSpans)); err != nil {
+		if err := ps.Spans(c).ExportSpans(r.Context(), telemetry.SpansFromPB(req.ResourceSpans)); err != nil {
 			slog.Error("error exporting spans", "err", err)
 			http.Error(rw, err.Error(), http.StatusInternalServerError)
 			return
@@ -150,7 +151,7 @@ func (ps *PubSub) LogsHandler(rw http.ResponseWriter, r *http.Request) { //nolin
 	}
 
 	for _, c := range append([]*daggerClient{client}, client.parents...) {
-		if err := ps.Logs(c.clientID, c.db).Export(r.Context(), telemetry.LogsFromPB(req.ResourceLogs)); err != nil {
+		if err := ps.Logs(c).Export(r.Context(), telemetry.LogsFromPB(req.ResourceLogs)); err != nil {
 			slog.Error("error exporting logs", "err", err)
 			http.Error(rw, err.Error(), http.StatusInternalServerError)
 			return
@@ -260,15 +261,13 @@ func (ps *PubSub) MetricsHandler(rw http.ResponseWriter, r *http.Request) {
 
 type SpansPubSub struct {
 	*PubSub
-	db       *sql.DB
-	clientID string
+	client *daggerClient
 }
 
-func (ps *PubSub) Spans(clientID string, db *sql.DB) sdktrace.SpanExporter {
+func (ps *PubSub) Spans(client *daggerClient) sdktrace.SpanExporter {
 	return SpansPubSub{
-		PubSub:   ps,
-		db:       db,
-		clientID: clientID,
+		PubSub: ps,
+		client: client,
 	}
 }
 
@@ -281,7 +280,9 @@ func spanNames(spans []sdktrace.ReadOnlySpan) []string {
 }
 
 func (ps SpansPubSub) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
-	tx, err := ps.db.Begin()
+	slog.ExtraDebug("pubsub exporting spans", "client", ps.client.clientID, "count", len(spans))
+
+	tx, err := ps.client.db.Begin()
 	if err != nil {
 		return fmt.Errorf("export spans %+v: begin tx: %w", spanNames(spans), err)
 	}
@@ -370,26 +371,34 @@ func (ps SpansPubSub) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnly
 		return fmt.Errorf("commit tx: %w", err)
 	}
 
-	ps.Notify(ps.clientID)
+	ps.Notify(ps.client.clientID)
 
 	return nil
 }
 
-func (ps SpansPubSub) ForceFlush(context.Context) error { return nil }
-func (ps SpansPubSub) Shutdown(context.Context) error   { return nil }
+// ForceFlush flushes all parents of the client, since we also send to them.
+func (ps SpansPubSub) ForceFlush(ctx context.Context) error {
+	eg := new(errgroup.Group)
+	for _, ancestors := range ps.client.parents {
+		eg.Go(func() error {
+			return ancestors.tp.ForceFlush(ctx)
+		})
+	}
+	return eg.Wait()
+}
 
-func (ps *PubSub) Logs(clientID string, db *sql.DB) sdklog.Exporter {
+func (ps SpansPubSub) Shutdown(context.Context) error { return nil }
+
+func (ps *PubSub) Logs(client *daggerClient) sdklog.Exporter {
 	return LogsPubSub{
-		PubSub:   ps,
-		db:       db,
-		clientID: clientID,
+		PubSub: ps,
+		client: client,
 	}
 }
 
 type LogsPubSub struct {
 	*PubSub
-	db       *sql.DB
-	clientID string
+	client *daggerClient
 }
 
 func logValueToJSON(val log.Value) ([]byte, error) {
@@ -397,7 +406,9 @@ func logValueToJSON(val log.Value) ([]byte, error) {
 }
 
 func (ps LogsPubSub) Export(ctx context.Context, logs []sdklog.Record) error {
-	tx, err := ps.db.Begin()
+	slog.ExtraDebug("pubsub exporting logs", "client", ps.client.clientID, "count", len(logs))
+
+	tx, err := ps.client.db.Begin()
 	if err != nil {
 		return fmt.Errorf("export logs %+v: begin tx: %w", logs, err)
 	}
@@ -457,13 +468,23 @@ func (ps LogsPubSub) Export(ctx context.Context, logs []sdklog.Record) error {
 		return fmt.Errorf("commit tx: %w", err)
 	}
 
-	ps.Notify(ps.clientID)
+	ps.Notify(ps.client.clientID)
 
 	return nil
 }
 
-func (ps LogsPubSub) ForceFlush(context.Context) error { return nil }
-func (ps LogsPubSub) Shutdown(context.Context) error   { return nil }
+// ForceFlush flushes all parents of the client, since we also send to them.
+func (ps LogsPubSub) ForceFlush(ctx context.Context) error {
+	eg := new(errgroup.Group)
+	for _, ancestors := range ps.client.parents {
+		eg.Go(func() error {
+			return ancestors.tp.ForceFlush(ctx)
+		})
+	}
+	return eg.Wait()
+}
+
+func (ps LogsPubSub) Shutdown(context.Context) error { return nil }
 
 func (ps *PubSub) sseHandler(w http.ResponseWriter, r *http.Request, handler func(<-chan struct{}, *clientdb.Queries, func(string, int64, []byte))) {
 	sessionID := r.Header.Get("X-Dagger-Session-ID")

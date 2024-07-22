@@ -233,12 +233,10 @@ func (sess *daggerSession) withShutdownCancel(ctx context.Context) context.Conte
 
 // requires that sess.stateMu is held
 func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession) error {
-	slog.Debug("session closing; stopping client services and flushing",
-		"session", sess.sessionID,
-	)
-	defer slog.Debug("session closed",
-		"session", sess.sessionID,
-	)
+	slog := slog.With("session", sess.sessionID)
+
+	slog.Debug("removing session; stopping client services and flushing")
+	defer slog.Debug("session removed")
 
 	// check if the local cache needs pruning after session is removed, prune if so
 	defer func() {
@@ -258,8 +256,11 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	defer cancel()
 
 	if err := sess.services.StopSessionServices(ctx, sess.sessionID); err != nil {
+		slog.Warn("error stopping services")
 		errs = errors.Join(errs, fmt.Errorf("stop client services: %w", err))
 	}
+
+	slog.Debug("stopped services")
 
 	// release containers + buildkit solver/session state in parallel
 
@@ -559,13 +560,13 @@ func (srv *Server) initializeDaggerClient(
 		sdktrace.WithSpanProcessor(buildkit.SpanProcessor{}),
 		// save to our own client's DB
 		sdktrace.WithSpanProcessor(telemetry.NewLiveSpanProcessor(
-			srv.telemetryPubSub.Spans(client.clientID, client.db),
+			srv.telemetryPubSub.Spans(client),
 		)),
 	}
 	loggerOpts := []sdklog.LoggerProviderOption{
 		sdklog.WithProcessor(
 			sdklog.NewBatchProcessor(
-				srv.telemetryPubSub.Logs(client.clientID, client.db),
+				srv.telemetryPubSub.Logs(client),
 				sdklog.WithExportInterval(telemetry.NearlyImmediate),
 			),
 		),
@@ -574,12 +575,12 @@ func (srv *Server) initializeDaggerClient(
 	for _, parent := range client.parents {
 		tracerOpts = append(tracerOpts, sdktrace.WithSpanProcessor(
 			telemetry.NewLiveSpanProcessor(
-				srv.telemetryPubSub.Spans(parent.clientID, parent.db),
+				srv.telemetryPubSub.Spans(parent),
 			),
 		))
 		loggerOpts = append(loggerOpts, sdklog.WithProcessor(
 			sdklog.NewBatchProcessor(
-				srv.telemetryPubSub.Logs(parent.clientID, parent.db),
+				srv.telemetryPubSub.Logs(parent),
 				sdklog.WithExportInterval(telemetry.NearlyImmediate),
 			),
 		))
@@ -1015,6 +1016,8 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 	defer slog.Trace("done shutting down server")
 
 	if client.clientID == sess.mainClientCallerID {
+		slog.Debug("main client is shutting down")
+
 		// Stop services, since the main client is going away, and we
 		// want the client to see them stop.
 		sess.services.StopSessionServices(ctx, sess.sessionID)
@@ -1047,10 +1050,15 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 	}
 
 	// Finalize telemetry for the client.
+	slog.ExtraDebug("flushing telemetry")
 	if err := client.tp.ForceFlush(ctx); err != nil {
-		slog.Error("failed to flush telemetry", "error", err)
+		slog.Error("failed to flush traces", "error", err)
+	}
+	if err := client.lp.ForceFlush(ctx); err != nil {
+		slog.Error("failed to flush logs", "error", err)
 	}
 
+	slog.ExtraDebug("terminating telemetry subscribers")
 	srv.telemetryPubSub.Terminate(client.clientID)
 
 	return nil
