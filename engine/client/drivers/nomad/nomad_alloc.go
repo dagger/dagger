@@ -50,7 +50,6 @@ func Helper(u *url.URL) (*connhelper.ConnectionHelper, error) {
 			if sp.Namespace != "" {
 				args = append(args, "-namespace")
 				args = append(args, sp.Namespace)
-
 			}
 			if sp.Region != "" {
 				args = append(args, "-region")
@@ -60,7 +59,6 @@ func Helper(u *url.URL) (*connhelper.ConnectionHelper, error) {
 			return commandconn.New(context.Background(), "nomad", args...)
 		},
 	}, nil
-
 }
 
 // Nomad Spec to connect for "nomad exec"

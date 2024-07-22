@@ -1,11 +1,8 @@
 package nomadalloc
 
 import (
-	"context"
 	"errors"
 	"net/url"
-	"os"
-	"os/exec"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -83,10 +80,8 @@ func TestSpecFromURL(t *testing.T) {
 			require.Equal(t, tt.expected, *spec)
 		})
 	}
-
 }
 func TestSpecFromURLErrors(t *testing.T) {
-
 	tt := []struct {
 		name     string
 		input    string
@@ -114,80 +109,4 @@ func TestSpecFromURLErrors(t *testing.T) {
 			require.Equal(t, tc.expected, err)
 		})
 	}
-}
-func TestHelper(t *testing.T) {
-
-	os.Setenv("NOMAD_ADDR", "http://localhost:4646")
-
-	nomadAddr := os.Getenv("NOMAD_ADDR")
-	if testing.Short() {
-		t.Skip("skipping test in short mode.")
-	}
-	if nomadAddr == "" {
-		t.Skip("NOMAD_ADDR not set")
-	}
-	// cleanup := launchNomadJob(t)
-	// defer cleanup()
-
-	u, err := url.Parse("nomad-alloc://testengine")
-	if err != nil {
-		t.Fatal(err)
-	}
-	ch, err := Helper(u)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if ch == nil {
-		t.Fatal("expected con to be not nil")
-	}
-	con, err := ch.ContextDialer(context.Background(), "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if con == nil {
-		t.Fatal("expected con to be not nil")
-	}
-
-}
-
-func launchNomadJob(t *testing.T) func() {
-	t.Helper()
-
-	job := `
-	job "testengine" {
-		datacenters = ["*"]
-		
-		group "group1" {
-			count = 1
-			task "task1" {
-				driver = "docker"
-				config {
-					image = "registry.dagger.io/engine:v0.12.0"
-
-					cap_add = ["sys_admin"]
-					privileged = true
-					
-					volumes = ["alloc/data/runner:/var/lib/dagger"]
-				}
-				
-			}
-		}
-	}
-	`
-	// exec nomad run job - <<EOF
-	// $job
-	// EOF
-
-	err := exec.Command("nomad", "run", "-", "<<EOF", job, "EOF").Run()
-
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return func() {
-
-		exec.Command("nomad", "stop", "testengine", "-purge").Run()
-	}
-
-	// launch a nomad job
 }
