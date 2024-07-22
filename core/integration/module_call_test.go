@@ -636,7 +636,10 @@ import "dagger/test/internal/dagger"
 
 type Test struct {}
 
-func (m *Test) FromProto(proto dagger.NetworkProtocol) string {
+func (m *Test) FromProto(
+	// +default="UDP"
+	proto dagger.NetworkProtocol,
+) string {
 	return string(proto)
 }
 
@@ -646,24 +649,42 @@ func (m *Test) ToProto(proto string) dagger.NetworkProtocol {
 `,
 			)
 
-		out, err := modGen.With(daggerCall("from-proto", "--proto", "TCP")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "TCP", out)
-		_, err = modGen.With(daggerCall("from-proto", "--proto", "INVALID")).Stdout(ctx)
-		require.ErrorContains(t, err, "value should be one of")
-		require.ErrorContains(t, err, "TCP")
-		require.ErrorContains(t, err, "UDP")
+		t.Run("valid input", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCall("from-proto", "--proto", "TCP")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "TCP", out)
+		})
 
-		out, err = modGen.With(daggerCall("to-proto", "--proto", "TCP")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "TCP", out)
-		_, err = modGen.With(daggerCall("to-proto", "--proto", "INVALID")).Stdout(ctx)
-		require.ErrorContains(t, err, "invalid enum value")
+		t.Run("invalid input", func(ctx context.Context, t *testctx.T) {
+			_, err := modGen.With(daggerCall("from-proto", "--proto", "INVALID")).Stdout(ctx)
+			require.ErrorContains(t, err, "value should be one of")
+			require.ErrorContains(t, err, "TCP")
+			require.ErrorContains(t, err, "UDP")
+		})
 
-		out, err = modGen.With(daggerCall("from-proto", "--help")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Contains(t, out, "TCP")
-		require.Contains(t, out, "UDP")
+		t.Run("default input value", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCall("from-proto")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "UDP", out)
+		})
+
+		t.Run("valid output", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCall("to-proto", "--proto", "TCP")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "TCP", out)
+		})
+
+		t.Run("invalid output", func(ctx context.Context, t *testctx.T) {
+			_, err := modGen.With(daggerCall("to-proto", "--proto", "INVALID")).Stdout(ctx)
+			require.ErrorContains(t, err, "invalid enum value")
+		})
+
+		t.Run("choices in help", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCall("from-proto", "--help")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Contains(t, out, "TCP")
+			require.Contains(t, out, "UDP")
+		})
 	})
 
 	t.Run("custom enum args", func(ctx context.Context, t *testctx.T) {
@@ -684,7 +705,10 @@ const (
 
 type Test struct {}
 
-func (m *Test) FromStatus(status Status) string {
+func (m *Test) FromStatus(
+	// +default="INACTIVE"
+	status Status,
+) string {
 	return string(status)
 }
 
@@ -694,24 +718,42 @@ func (m *Test) ToStatus(status string) Status {
 `,
 			)
 
-		out, err := modGen.With(daggerCall("from-status", "--status", "ACTIVE")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "ACTIVE", out)
-		_, err = modGen.With(daggerCall("from-status", "--status", "INVALID")).Stdout(ctx)
-		require.ErrorContains(t, err, "value should be one of")
-		require.ErrorContains(t, err, "ACTIVE")
-		require.ErrorContains(t, err, "INACTIVE")
+		t.Run("valid input", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCall("from-status", "--status", "ACTIVE")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "ACTIVE", out)
+		})
 
-		out, err = modGen.With(daggerCall("to-status", "--status", "ACTIVE")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "ACTIVE", out)
-		_, err = modGen.With(daggerCall("to-status", "--status", "INVALID")).Stdout(ctx)
-		require.ErrorContains(t, err, "invalid enum value")
+		t.Run("invalid input", func(ctx context.Context, t *testctx.T) {
+			_, err := modGen.With(daggerCall("from-status", "--status", "INVALID")).Stdout(ctx)
+			require.ErrorContains(t, err, "value should be one of")
+			require.ErrorContains(t, err, "ACTIVE")
+			require.ErrorContains(t, err, "INACTIVE")
+		})
 
-		out, err = modGen.With(daggerCall("from-status", "--help")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Contains(t, out, "ACTIVE")
-		require.Contains(t, out, "INACTIVE")
+		t.Run("default input value", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCall("from-status")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "INACTIVE", out)
+		})
+
+		t.Run("valid output", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCall("to-status", "--status", "ACTIVE")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "ACTIVE", out)
+		})
+
+		t.Run("invalid output", func(ctx context.Context, t *testctx.T) {
+			_, err := modGen.With(daggerCall("to-status", "--status", "INVALID")).Stdout(ctx)
+			require.ErrorContains(t, err, "invalid enum value")
+		})
+
+		t.Run("choices in help", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCall("from-status", "--help")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Contains(t, out, "ACTIVE")
+			require.Contains(t, out, "INACTIVE")
+		})
 	})
 
 	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {

@@ -776,9 +776,13 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) error {
 		}
 
 		val := &enumValue{typedef: r.TypeDef.AsEnum}
+		if defVal, err := getDefaultValue[string](r); err == nil {
+			val.value = defVal
+		}
 		flags.Var(val, name, usage)
 
 		return nil
+
 	case dagger.ObjectKind:
 		objName := r.TypeDef.AsObject.Name
 
