@@ -5,7 +5,7 @@ defmodule Dagger.Terminal do
   use Dagger.Core.QueryBuilder
 
   @derive Dagger.ID
-
+  @derive Dagger.Sync
   defstruct [:selection, :client]
 
   @type t() :: %__MODULE__{}
@@ -19,12 +19,25 @@ defmodule Dagger.Terminal do
     execute(selection, terminal.client)
   end
 
-  @doc "An http endpoint at which this terminal can be connected to over a websocket."
-  @spec websocket_endpoint(t()) :: {:ok, String.t()} | {:error, term()}
-  def websocket_endpoint(%__MODULE__{} = terminal) do
-    selection =
-      terminal.selection |> select("websocketEndpoint")
+  @doc """
+  Forces evaluation of the pipeline in the engine.
 
-    execute(selection, terminal.client)
+  It doesn't run the default command if no exec has been set.
+  """
+  @spec sync(t()) :: {:ok, Dagger.Terminal.t()} | {:error, term()}
+  def sync(%__MODULE__{} = terminal) do
+    selection =
+      terminal.selection |> select("sync")
+
+    with {:ok, id} <- execute(selection, terminal.client) do
+      {:ok,
+       %Dagger.Terminal{
+         selection:
+           query()
+           |> select("loadTerminalFromID")
+           |> arg("id", id),
+         client: terminal.client
+       }}
+    end
   end
 end

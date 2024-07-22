@@ -19,7 +19,7 @@ jobs:
           # assumes a Go project
           # modify to use different function(s) as needed
           name: Call Dagger Function
-          command: dagger -m github.com/kpenfound/dagger-modules/golang@v0.1.5 call build --project=. --args=.
+          command: dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call build --project=. --args=.
       # for ephemeral runners only: override the default docker stop timeout and
       # give the Dagger Engine more time to push cache data to Dagger Cloud
       - run:

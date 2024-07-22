@@ -27,7 +27,7 @@ The runtime container is currently hardcoded to run in Go 1.21  (although this m
 The runtime container is currently hardcoded to run in Python 3.11.1 using the [python:3.11-slim](https://hub.docker.com/_/python/tags?name=3.11-slim) base image by default. This can be overridden in `pyproject.toml` since [Dagger v0.11][v11]:
 
 ```toml
-[dagger.tool]
+[tool.dagger]
 base-image = "acme/python:3.11"
 ```
 
@@ -116,10 +116,10 @@ This is why the initial `package.json` doesn't include any dependencies except a
 
 A new Dagger module is initialized by calling `dagger init`. This creates a new `dagger.json` configuration file in the current working directory. The configuration file will default the name of the module to the current directory name, unless an alternative is specified with the `--name` argument.
 
-Once a module is initialized, `dagger develop --sdk=...` sets up or updates all the resources needed to develop the module locally. By default, the module source code will be stored in a directory named `dagger`, unless an alternative is specified with the `--source` argument.
+Once a module is initialized, `dagger develop --sdk=...` sets up or updates all the resources needed to develop the module locally. By default, the module source code will be stored in the current working directory, unless an alternative is specified with the `--source` argument.
 
 :::info
-At any point, running `dagger develop...` regenerates the module's code based on dependencies and the current state of the module.
+At any point, running `dagger develop` regenerates the module's code based on dependencies and the current state of the module.
 :::
 
 <Tabs groupId="language">
@@ -283,7 +283,7 @@ If a different project layout is needed, `dagger init` won't override existing `
 ```shell
 rye init --name=main acme
 cd acme
-dagger init --sdk=python --source=.
+dagger init --sdk=python
 ```
 
 Rye will create an initial `src/main/__init__.py` but Dagger won't recognize any Dagger Functions in it. Either remove it and let Dagger create the default one, or adapt it to your needs before running `dagger call`.

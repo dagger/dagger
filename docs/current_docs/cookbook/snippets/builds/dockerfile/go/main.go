@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+
+	"dagger/my-module/internal/dagger"
 )
 
 type MyModule struct{}
@@ -10,7 +12,7 @@ type MyModule struct{}
 func (m *MyModule) Build(
 	ctx context.Context,
 	// location of directory containing Dockerfile
-	src *Directory,
+	src *dagger.Directory,
 ) (string, error) {
 	ref, err := dag.Container().
 		WithDirectory("/src", src).

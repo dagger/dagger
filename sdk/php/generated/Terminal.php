@@ -23,11 +23,13 @@ class Terminal extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * An http endpoint at which this terminal can be connected to over a websocket.
+     * Forces evaluation of the pipeline in the engine.
+     *
+     * It doesn't run the default command if no exec has been set.
      */
-    public function websocketEndpoint(): string
+    public function sync(): TerminalId
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('websocketEndpoint');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'websocketEndpoint');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
+        return new \Dagger\TerminalId((string)$this->queryLeaf($leafQueryBuilder, 'sync'));
     }
 }

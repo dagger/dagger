@@ -1,7 +1,9 @@
 import { registry } from "../introspector/registry/registry.js"
 import { Constructor } from "../introspector/scanner/abtractions/constructor.js"
+import { DaggerEnum } from "../introspector/scanner/abtractions/enum.js"
 import { Method } from "../introspector/scanner/abtractions/method.js"
 import { DaggerModule } from "../introspector/scanner/abtractions/module.js"
+import { DaggerObject } from "../introspector/scanner/abtractions/object.js"
 import { InvokeCtx } from "./context.js"
 import {
   loadResult,
@@ -26,7 +28,7 @@ function isConstructor(method: Method | Constructor): method is Constructor {
  * @param fnArgs The arguments of the function to call.
  */
 export async function invoke(module: DaggerModule, ctx: InvokeCtx) {
-  let object = loadInvokedObject(module, ctx.parentName)
+  const object = loadInvokedObject(module, ctx.parentName)
   if (!object) {
     throw new Error(`could not find object ${ctx.parentName}`)
   }
@@ -47,13 +49,17 @@ export async function invoke(module: DaggerModule, ctx: InvokeCtx) {
   )
 
   if (result) {
+    let returnType: DaggerObject | DaggerEnum
+
     // Handle alias serialization by getting the return type to load
     // if the function called isn't a constructor.
     if (!isConstructor(method)) {
-      object = loadObjectReturnType(module, object, method)
+      returnType = loadObjectReturnType(module, object, method)
+    } else {
+      returnType = object
     }
 
-    result = await loadResult(result, module, object)
+    result = await loadResult(result, module, returnType)
   }
 
   return result

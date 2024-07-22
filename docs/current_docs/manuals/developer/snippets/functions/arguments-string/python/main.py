@@ -14,7 +14,10 @@ class MyModule:
                 [
                     "sh",
                     "-c",
-                    f"curl https://randomuser.me/api/?gender={gender} | jq .results[0].name",
+                    (
+                        f"curl https://randomuser.me/api/?gender={gender}"
+                        " | jq .results[0].name"
+                    ),
                 ]
             )
             .stdout()

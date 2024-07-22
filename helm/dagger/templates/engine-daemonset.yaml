@@ -23,6 +23,7 @@ spec:
       {{- end }}
       labels:
         name: {{ include "dagger.fullname" . }}-engine
+        {{- include "dagger.labels" . | nindent 8 }}
     spec:
       {{- with .Values.engine.tolerations }}
       tolerations:
@@ -43,7 +44,7 @@ spec:
       {{- end }}
       containers:
         - name: dagger-engine
-          image: {{ .Values.engine.image.repository }}:{{ if .Values.engine.image.tag }}{{ .Values.engine.image.tag }}{{ else }}{{ .Chart.AppVersion }}{{ end }}
+          image: {{ .Values.engine.image.repository }}:{{ if .Values.engine.image.tag }}{{ .Values.engine.image.tag }}{{ else }}v{{ .Chart.AppVersion }}{{ end }}
           imagePullPolicy: {{ .Values.engine.image.pullPolicy }}
           {{- if .Values.engine.args }}
           args:

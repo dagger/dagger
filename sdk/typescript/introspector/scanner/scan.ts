@@ -1,15 +1,6 @@
 import ts from "typescript"
 
 import { DaggerModule } from "./abtractions/module.js"
-import { ClassTypeDef, FunctionTypedef } from "./typeDefs.js"
-
-export type ScanResult = {
-  module: {
-    description?: string
-  }
-  classes: { [name: string]: ClassTypeDef }
-  functions: { [name: string]: FunctionTypedef }
-}
 
 /**
  * Scan the list of TypeScript File using the TypeScript compiler API.

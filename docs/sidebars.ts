@@ -30,6 +30,11 @@ module.exports = {
       ]
     },
     {
+      "type": "doc",
+      "label": "Adopting Dagger",
+      "id": "adopting"
+    },
+    {
       "type": "category",
       "label": "Integrations",
       "link": {
@@ -359,6 +364,10 @@ module.exports = {
         },
         {
           "type": "doc",
+          "id": "manuals/developer/cache-volumes"
+        },
+        {
+          "type": "doc",
           "id": "manuals/developer/custom-types"
         },
         {
@@ -453,6 +462,16 @@ module.exports = {
               "type": "doc",
               "label": "Custom Registry",
               "id": "manuals/administrator/engine/custom-registry"
+            },
+            {
+              "type": "doc",
+              "label": "Proxy Configuration",
+              "id": "manuals/administrator/engine/proxy"
+            },
+            {
+              "type": "doc",
+              "label": "Custom Certificate Authorities",
+              "id": "manuals/administrator/engine/custom-ca"
             }
           ]
         },

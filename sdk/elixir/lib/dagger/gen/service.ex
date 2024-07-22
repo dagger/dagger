@@ -72,21 +72,39 @@ defmodule Dagger.Service do
 
   Services bound to a Container do not need to be manually started.
   """
-  @spec start(t()) :: {:ok, Dagger.ServiceID.t()} | {:error, term()}
+  @spec start(t()) :: {:ok, Dagger.Service.t()} | {:error, term()}
   def start(%__MODULE__{} = service) do
     selection =
       service.selection |> select("start")
 
-    execute(selection, service.client)
+    with {:ok, id} <- execute(selection, service.client) do
+      {:ok,
+       %Dagger.Service{
+         selection:
+           query()
+           |> select("loadServiceFromID")
+           |> arg("id", id),
+         client: service.client
+       }}
+    end
   end
 
   @doc "Stop the service."
-  @spec stop(t(), [{:kill, boolean() | nil}]) :: {:ok, Dagger.ServiceID.t()} | {:error, term()}
+  @spec stop(t(), [{:kill, boolean() | nil}]) :: {:ok, Dagger.Service.t()} | {:error, term()}
   def stop(%__MODULE__{} = service, optional_args \\ []) do
     selection =
       service.selection |> select("stop") |> maybe_put_arg("kill", optional_args[:kill])
 
-    execute(selection, service.client)
+    with {:ok, id} <- execute(selection, service.client) do
+      {:ok,
+       %Dagger.Service{
+         selection:
+           query()
+           |> select("loadServiceFromID")
+           |> arg("id", id),
+         client: service.client
+       }}
+    end
   end
 
   @doc "Creates a tunnel that forwards traffic from the caller's network to this service."

@@ -279,9 +279,9 @@ func (ss *Services) Stop(ctx context.Context, id *call.ID, kill bool) error {
 	}
 }
 
-// StopClientServices stops all of the services being run by the given server.
+// StopSessionServices stops all of the services being run by the given server.
 // It is called when a server is closing.
-func (ss *Services) StopClientServices(ctx context.Context, sessionID string) error {
+func (ss *Services) StopSessionServices(ctx context.Context, sessionID string) error {
 	ss.l.Lock()
 	var svcs []*RunningService
 	for _, svc := range ss.running {

@@ -1,5 +1,5 @@
 import { log } from "../utils.js"
-import { ErrorCodes, ErrorNames } from "./errors-codes"
+import { ErrorCodes, ErrorNames } from "./errors-codes.js"
 
 export interface DaggerSDKErrorOptions {
   cause?: Error

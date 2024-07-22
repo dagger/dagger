@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/csv"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -60,6 +61,8 @@ func GetCustomFlagValue(name string) DaggerValue {
 		return &moduleValue{}
 	case Platform:
 		return &platformValue{}
+	case Socket:
+		return &socketValue{}
 	}
 	return nil
 }
@@ -87,6 +90,8 @@ func GetCustomFlagValueSlice(name string) DaggerValue {
 		return &sliceValue[*moduleValue]{}
 	case Platform:
 		return &sliceValue[*platformValue]{}
+	case Socket:
+		return &sliceValue[*socketValue]{}
 	}
 	return nil
 }
@@ -163,6 +168,40 @@ func (v *sliceValue[T]) Set(s string) error {
 	return nil
 }
 
+type enumValue struct {
+	value   string
+	typedef *modEnum
+}
+
+var _ DaggerValue = &enumValue{}
+
+func (v *enumValue) Type() string {
+	vs := make([]string, 0, len(v.typedef.Values))
+	for _, v := range v.typedef.Values {
+		vs = append(vs, v.Name)
+	}
+	return strings.Join(vs, ",")
+}
+
+func (v *enumValue) String() string {
+	return v.value
+}
+
+func (v *enumValue) Get(ctx context.Context, dag *dagger.Client, modSrc *dagger.ModuleSource) (any, error) {
+	return v.value, nil
+}
+
+func (v *enumValue) Set(s string) error {
+	for _, allow := range v.typedef.Values {
+		if strings.EqualFold(s, allow.Name) {
+			v.value = allow.Name
+			return nil
+		}
+	}
+
+	return fmt.Errorf("value should be one of %s", v.Type())
+}
+
 // containerValue is a pflag.Value that builds a dagger.Container from a
 // base image name.
 type containerValue struct {
@@ -227,7 +266,14 @@ func (v *directoryValue) Get(ctx context.Context, dag *dagger.Client, modSrc *da
 		if authSock, ok := os.LookupEnv("SSH_AUTH_SOCK"); ok {
 			gitOpts.SSHAuthSocket = dag.Host().UnixSocket(authSock)
 		}
-		gitDir := dag.Git(parsedGit.Remote, gitOpts).Branch(parsedGit.Fragment.Ref).Tree()
+		git := dag.Git(parsedGit.Remote, gitOpts)
+		var gitRef *dagger.GitRef
+		if parsedGit.Fragment.Ref == "" {
+			gitRef = git.Head()
+		} else {
+			gitRef = git.Branch(parsedGit.Fragment.Ref)
+		}
+		gitDir := gitRef.Tree()
 		if subdir := parsedGit.Fragment.Subdir; subdir != "" {
 			gitDir = gitDir.Directory(subdir)
 		}
@@ -244,7 +290,12 @@ func (v *directoryValue) Get(ctx context.Context, dag *dagger.Client, modSrc *da
 	// POSIX "portable filename character set":
 	// https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_282
 	path, viewName, _ := strings.Cut(path, ":")
+	path, err = expandHomeDir(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to expand home directory: %w", err)
+	}
 	path = filepath.ToSlash(path) // make windows paths usable in the Linux engine container
+
 	return modSrc.ResolveDirectoryFromCaller(path, dagger.ModuleSourceResolveDirectoryFromCallerOpts{
 		ViewName: viewName,
 	}).Sync(ctx)
@@ -258,11 +309,6 @@ func parseGit(urlStr string) (*gitutil.GitURL, error) {
 	}
 	if u.Fragment == nil {
 		u.Fragment = &gitutil.GitURLFragment{}
-	}
-	if u.Fragment.Ref == "" {
-		// FIXME: default branch can be remotely looked up, but that would
-		// require 1) a context, 2) a way to return an error, 3) more time than I have :)
-		u.Fragment.Ref = "main"
 	}
 	return u, nil
 }
@@ -303,7 +349,14 @@ func (v *fileValue) Get(_ context.Context, dag *dagger.Client, _ *dagger.ModuleS
 		if authSock, ok := os.LookupEnv("SSH_AUTH_SOCK"); ok {
 			gitOpts.SSHAuthSocket = dag.Host().UnixSocket(authSock)
 		}
-		gitDir := dag.Git(parsedGit.Remote, gitOpts).Branch(parsedGit.Fragment.Ref).Tree()
+		git := dag.Git(parsedGit.Remote, gitOpts)
+		var gitRef *dagger.GitRef
+		if parsedGit.Fragment.Ref == "" {
+			gitRef = git.Head()
+		} else {
+			gitRef = git.Branch(parsedGit.Fragment.Ref)
+		}
+		gitDir := gitRef.Tree()
 		path := parsedGit.Fragment.Subdir
 		if path == "" {
 			return nil, fmt.Errorf("expected path selection for git repo")
@@ -315,11 +368,16 @@ func (v *fileValue) Get(_ context.Context, dag *dagger.Client, _ *dagger.ModuleS
 	vStr = strings.TrimPrefix(vStr, "file://")
 	if !filepath.IsAbs(vStr) {
 		var err error
+		vStr, err = expandHomeDir(vStr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to expand home directory: %w", err)
+		}
 		vStr, err = filepath.Abs(vStr)
 		if err != nil {
 			return nil, fmt.Errorf("failed to resolve absolute path: %w", err)
 		}
 	}
+
 	vStr = filepath.ToSlash(vStr) // make windows paths usable in the Linux engine container
 	return dag.Host().File(vStr), nil
 }
@@ -380,7 +438,11 @@ func (v *secretValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.Modul
 		plaintext = envPlaintext
 
 	case fileSecretSource:
-		filePlaintext, err := os.ReadFile(v.sourceVal)
+		sourceVal, err := expandHomeDir(v.sourceVal)
+		if err != nil {
+			return nil, err
+		}
+		filePlaintext, err := os.ReadFile(sourceVal)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read secret file %q: %w", v.sourceVal, err)
 		}
@@ -519,6 +581,31 @@ func (v *portForwardValue) Get(_ context.Context, c *dagger.Client, _ *dagger.Mo
 		Frontend: v.frontend,
 		Backend:  v.backend,
 	}, nil
+}
+
+type socketValue struct {
+	path string
+}
+
+func (v *socketValue) Type() string {
+	return Socket
+}
+
+func (v *socketValue) String() string {
+	return v.path
+}
+
+func (v *socketValue) Set(s string) error {
+	if s == "" {
+		return fmt.Errorf("socket path cannot be empty")
+	}
+	s = strings.TrimPrefix(s, "unix://") // allow unix:// scheme
+	v.path = s
+	return nil
+}
+
+func (v *socketValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.ModuleSource) (any, error) {
+	return c.Host().UnixSocket(v.path), nil
 }
 
 // cacheVolumeValue is a pflag.Value that builds a dagger.CacheVolume from a
@@ -680,6 +767,22 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) error {
 		flags.String(name, val, usage)
 		return nil
 
+	case dagger.EnumKind:
+		enumName := r.TypeDef.AsEnum.Name
+
+		if val := GetCustomFlagValue(enumName); val != nil {
+			flags.Var(val, name, usage)
+			return nil
+		}
+
+		val := &enumValue{typedef: r.TypeDef.AsEnum}
+		if defVal, err := getDefaultValue[string](r); err == nil {
+			val.value = defVal
+		}
+		flags.Var(val, name, usage)
+
+		return nil
+
 	case dagger.ObjectKind:
 		objName := r.TypeDef.AsObject.Name
 
@@ -796,4 +899,19 @@ func writeAsCSV(vals []string) (string, error) {
 	}
 	w.Flush()
 	return strings.TrimSuffix(b.String(), "\n"), nil
+}
+
+func expandHomeDir(path string) (string, error) {
+	if path[0] != '~' {
+		return path, nil
+	}
+	if len(path) > 1 && path[1] != '/' && path[1] != '\\' {
+		return "", errors.New("cannot expand home directory")
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return strings.Replace(path, "~", homeDir, 1), nil
 }

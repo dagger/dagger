@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"main/internal/dagger"
 	"path"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/iancoleman/strcase"
 	"github.com/tidwall/gjson"
@@ -13,9 +15,9 @@ import (
 
 const (
 	bunVersion  = "1.1.12"
-	nodeVersion = "21.3"
+	nodeVersion = "20" // LTS version, IRON (https://nodejs.org/en/about/previous-releases)
 
-	nodeImageDigest = "sha256:3dab5cc219983a5f1904d285081cceffc9d181e64bed2a4a18855d2d62c64ccb"
+	nodeImageDigest = "sha256:df01469346db2bf1cfc1f7261aeab86b2960efa840fe2bd46d83ff339f463665"
 	bunImageDigest  = "sha256:6568a679b87107d3d7d46b829f614c443e73bbe3bf7d6ea5c9ceb8f845869c96"
 
 	nodeImageRef = "node:" + nodeVersion + "-alpine@" + nodeImageDigest
@@ -71,7 +73,7 @@ func (t *TypescriptSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSour
 		return nil, fmt.Errorf("could not load module config: %w", err)
 	}
 
-	detectedRuntime, err := t.detectRuntime(ctx, modSource, subPath)
+	detectedRuntime, _, err := t.detectRuntime(ctx, modSource, subPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create module runtime: %w", err)
 	}
@@ -137,12 +139,12 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 		return nil, fmt.Errorf("could not load module config: %w", err)
 	}
 
-	detectedRuntime, err := t.detectRuntime(ctx, modSource, subPath)
+	detectedRuntime, version, err := t.detectRuntime(ctx, modSource, subPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to detect runtime: %w", err)
 	}
 
-	base, err := t.Base(detectedRuntime)
+	base, err := t.Base(detectedRuntime, version)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create codegen base: %w", err)
 	}
@@ -166,16 +168,30 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 }
 
 // Base returns a Node or Bun container with cache setup for yarn or bun
-func (t *TypescriptSdk) Base(runtime SupportedTSRuntime) (*Container, error) {
+func (t *TypescriptSdk) Base(runtime SupportedTSRuntime, version string) (*Container, error) {
+	ctr := dag.Container()
+
 	switch runtime {
 	case Bun:
-		return dag.Container().
-			From(bunImageRef).
+		if version != "" {
+			ctr = ctr.From(fmt.Sprintf("oven/%s:%s-alpine", Bun, version))
+		} else {
+			ctr = ctr.From(bunImageRef)
+		}
+
+		return ctr.
 			WithoutEntrypoint().
-			WithMountedCache("/root/.bun/install/cache", dag.CacheVolume(fmt.Sprintf("mod-bun-cache-%s", bunVersion))), nil
+			WithMountedCache("/root/.bun/install/cache", dag.CacheVolume(fmt.Sprintf("mod-bun-cache-%s", bunVersion)), dagger.ContainerWithMountedCacheOpts{
+				Sharing: dagger.Private,
+			}), nil
 	case Node:
-		return dag.Container().
-			From(nodeImageRef).
+		if version != "" {
+			ctr = ctr.From(fmt.Sprintf("%s:%s-alpine", Node, version))
+		} else {
+			ctr = ctr.From(nodeImageRef)
+		}
+
+		return ctr.
 			WithoutEntrypoint().
 			// Install default CA certificates and configure node to use them instead of its compiled in CA bundle.
 			// This enables use of custom CA certificates if configured in the dagger engine.
@@ -185,7 +201,7 @@ func (t *TypescriptSdk) Base(runtime SupportedTSRuntime) (*Container, error) {
 			// Comment cache here, it seems it creates cache conflicts with yarn (v1 and v4).
 			// We should investigate this further and see if we hit the same issue with pnpm.
 			// WithMountedCache("/usr/local/share/.cache/yarn", dag.CacheVolume(fmt.Sprintf("mod-yarn-cache-%s", nodeVersion))).
-			WithExec([]string{"npm", "install", "-g", "tsx@4.13.0"}), nil
+			WithExec([]string{"npm", "install", "-g", "tsx@4.15.6"}), nil
 	default:
 		return nil, fmt.Errorf("unknown runtime: %s", runtime)
 	}
@@ -298,7 +314,9 @@ func (t *TypescriptSdk) generateClient(ctr *Container, name string, introspectio
 // If a package-lock.json, yarn.lock, or pnpm-lock.yaml is present, node will be used.
 // If a bun.lockb is present, bun will be used.
 // If none of the above is present, node will be used.
-func (t *TypescriptSdk) detectRuntime(ctx context.Context, modSource *ModuleSource, subPath string) (SupportedTSRuntime, error) {
+//
+// If the runtime is detected and pinned to a specific version, it will also return the pinned version.
+func (t *TypescriptSdk) detectRuntime(ctx context.Context, modSource *ModuleSource, subPath string) (SupportedTSRuntime, string, error) {
 	// Try to detect runtime from package.json
 	source := modSource.ContextDirectory().Directory(subPath)
 
@@ -307,11 +325,15 @@ func (t *TypescriptSdk) detectRuntime(ctx context.Context, modSource *ModuleSour
 	if err == nil {
 		value := gjson.Get(json, "dagger.runtime").String()
 		if value != "" {
-			switch runtime := SupportedTSRuntime(value); runtime {
+			// Retrieve the runtime and version from the value (e.g., node@lts, bun@1)
+			// If version isn't specified, version will be an empty string and only the runtime will be used in Base.
+			runtime, version, _ := strings.Cut(value, "@")
+
+			switch runtime := SupportedTSRuntime(runtime); runtime {
 			case Bun, Node:
-				return runtime, nil
+				return runtime, version, nil
 			default:
-				return "", fmt.Errorf("detected unknown runtime: %s", runtime)
+				return "", "", fmt.Errorf("detected unknown runtime: %s", runtime)
 			}
 		}
 	}
@@ -322,13 +344,13 @@ func (t *TypescriptSdk) detectRuntime(ctx context.Context, modSource *ModuleSour
 		if slices.Contains(entries, "package-lock.json") ||
 			slices.Contains(entries, "yarn.lock") ||
 			slices.Contains(entries, "pnpm-lock.yaml") {
-			return Node, nil
+			return Node, "", nil
 		}
 		if slices.Contains(entries, "bun.lockb") {
-			return Bun, nil
+			return Bun, "", nil
 		}
 	}
 
 	// Default to node
-	return Node, nil
+	return Node, "", nil
 }

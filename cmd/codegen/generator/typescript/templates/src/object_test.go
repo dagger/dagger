@@ -42,7 +42,7 @@ func objectInit(t *testing.T, jsonString string) *introspection.Type {
 	return &object
 }
 
-func objectsInit(t *testing.T, jsonString string) introspection.Types {
+func objectsInit(t *testing.T, jsonString string) introspection.Schema {
 	t.Helper()
 	var objects introspection.Types
 	err := json.Unmarshal([]byte(jsonString), &objects)
@@ -53,7 +53,7 @@ func objectsInit(t *testing.T, jsonString string) introspection.Types {
 	}
 
 	generator.SetSchemaParents(&schema)
-	return objects
+	return schema
 }
 
 var containerExecArgsJSON = `

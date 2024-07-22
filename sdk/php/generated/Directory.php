@@ -16,11 +16,14 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     /**
      * Load the directory as a Dagger module
      */
-    public function asModule(?string $sourceRootPath = '.'): Module
+    public function asModule(?string $sourceRootPath = '.', ?string $engineVersion = null): Module
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('asModule');
         if (null !== $sourceRootPath) {
         $innerQueryBuilder->setArgument('sourceRootPath', $sourceRootPath);
+        }
+        if (null !== $engineVersion) {
+        $innerQueryBuilder->setArgument('engineVersion', $engineVersion);
         }
         return new \Dagger\Module($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
@@ -90,14 +93,14 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     /**
      * Writes the contents of the directory to a path on the host.
      */
-    public function export(string $path, ?bool $wipe = false): bool
+    public function export(string $path, ?bool $wipe = false): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('export');
         $leafQueryBuilder->setArgument('path', $path);
         if (null !== $wipe) {
         $leafQueryBuilder->setArgument('wipe', $wipe);
         }
-        return (bool)$this->queryLeaf($leafQueryBuilder, 'export');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'export');
     }
 
     /**
@@ -152,6 +155,32 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('sync');
         return new \Dagger\DirectoryId((string)$this->queryLeaf($leafQueryBuilder, 'sync'));
+    }
+
+    /**
+     * Opens an interactive terminal in new container with this directory mounted inside.
+     */
+    public function terminal(
+        ?array $cmd = null,
+        ?bool $experimentalPrivilegedNesting = false,
+        ?bool $insecureRootCapabilities = false,
+        ContainerId|Container|null $container = null,
+    ): Directory
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('terminal');
+        if (null !== $cmd) {
+        $innerQueryBuilder->setArgument('cmd', $cmd);
+        }
+        if (null !== $experimentalPrivilegedNesting) {
+        $innerQueryBuilder->setArgument('experimentalPrivilegedNesting', $experimentalPrivilegedNesting);
+        }
+        if (null !== $insecureRootCapabilities) {
+        $innerQueryBuilder->setArgument('insecureRootCapabilities', $insecureRootCapabilities);
+        }
+        if (null !== $container) {
+        $innerQueryBuilder->setArgument('container', $container);
+        }
+        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**

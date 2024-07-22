@@ -2,3 +2,4 @@
 /sdk/elixir/ @dagger/sdk-elixir
 /sdk/dotnet/ @dagger/sdk-dotnet
 /sdk/java/ @dagger/sdk-java
+/docs/ @dagger/docs

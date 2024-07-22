@@ -64,14 +64,6 @@ defmodule Dagger do
         selection: Dagger.Core.QueryBuilder.Selection.query()
       }
 
-      case Dagger.Client.check_version_compatibility(
-             client,
-             Dagger.Core.EngineConn.engine_version()
-           ) do
-        {:error, reason} -> IO.warn("failed to check version compatibility: #{inspect(reason)}")
-        _ -> nil
-      end
-
       {:ok, client}
     end
   end

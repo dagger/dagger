@@ -1,8 +1,7 @@
-import { dag, Container, object, func, field } from "@dagger.io/dagger"
+import { dag, Container, object, func } from "@dagger.io/dagger"
 
 @object()
 class MyModule {
-  @field()
   ctr: Container = dag.container().from("alpine:3.14.0")
 
   constructor(ctr?: Container) {

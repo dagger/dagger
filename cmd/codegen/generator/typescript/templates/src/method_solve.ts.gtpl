@@ -27,12 +27,16 @@
 	{{- end }}
 
 	{{- /* Write return type */ -}}
-	{{- "" }}): Promise<{{ . | FormatReturnType }}> => {
+	{{- "" }}): Promise<{{ if .TypeRef.IsVoid }}void{{ else }}{{ . | FormatReturnType }}{{ end }}> => {
 
     {{- /* If it's a scalar, make possible to return its already filled value */ -}}
     {{- if and (.TypeRef.IsScalar) (ne .ParentObject.Name "Query") (not $convertID) }}
     if (this._{{ .Name }}) {
+        {{- if .TypeRef.IsVoid }}
+      return
+        {{- else }}
       return this._{{ .Name }}
+        {{- end }}
     }
 {{ "" }}
     {{- end }}
@@ -62,7 +66,7 @@
 	{{- end }}
 
 	{{- if .TypeRef }}
-    {{ if not $convertID }}const response: Awaited<{{ $promiseRetType }}> = {{ end }}await computeQuery(
+    {{ if not .TypeRef.IsVoid }}const response: Awaited<{{ if $convertID }}{{ .TypeRef | FormatOutputType }}{{ else }}{{ $promiseRetType }}{{ end }}> = {{ end }}await computeQuery(
       [
         ...this._queryTree,
         {
@@ -93,8 +97,16 @@
     )
 
     {{ if $convertID -}}
-    return this
-    {{- else -}}
+    return new {{ $promiseRetType }}({
+      queryTree: [
+        {
+          operation: "load{{ $promiseRetType }}FromID",
+          args: { id: response },
+        },
+      ],
+      ctx: this._ctx,
+    })
+    {{- else if not .TypeRef.IsVoid -}}
         {{- if and .TypeRef.IsList (IsListOfObject .TypeRef) }}
     return response.map(
       (r) => new {{ . | FormatReturnType | ToSingleType }}(

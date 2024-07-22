@@ -51,7 +51,7 @@ Check [compatibility with `pip` and `pip-tools`](https://github.com/astral-sh/uv
 The lock file is only created automatically for new modules. For existing modules that don't have it, it can be created (and updated) manually. For example:
 
 ```console
-uv pip compile --generate-hashes --update-all -o requirements.lock pyproject.toml sdk/pyproject.toml
+uv pip compile --generate-hashes --upgrade -o requirements.lock pyproject.toml sdk/pyproject.toml
 ```
 
 The above command pulls in dependencies from `pyproject.toml` and `sdk/pyproject.toml`, gets their latest compatible versions, and writes them to `requirements.lock` with added hashes to verify integrity when downloading during install.

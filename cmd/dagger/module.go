@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/go-git/go-git/v5"
@@ -34,8 +36,9 @@ var (
 	moduleURL   string
 	moduleFlags = pflag.NewFlagSet("module", pflag.ContinueOnError)
 
-	sdk       string
-	licenseID string
+	sdk           string
+	licenseID     string
+	compatVersion string
 
 	moduleName       string
 	moduleSourcePath string
@@ -51,11 +54,11 @@ var (
 const (
 	moduleURLDefault = "."
 
-	defaultModuleSourceDirName = "dagger"
+	defaultModuleSourceDirName = "."
 )
 
 func init() {
-	moduleFlags.StringVarP(&moduleURL, "mod", "m", "", "Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. \"/path/to/some/dir\") or a github repo (e.g. \"github.com/dagger/dagger/path/to/some/subdir\")")
+	moduleFlags.StringVarP(&moduleURL, "mod", "m", "", "Path to the module directory containing the dagger.json config file. Either local path or a remote git repo")
 
 	listenCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	queryCmd.PersistentFlags().AddFlagSet(moduleFlags)
@@ -64,17 +67,22 @@ func init() {
 
 	moduleInitCmd.Flags().StringVar(&sdk, "sdk", "", "Optionally initialize module for development in the given SDK")
 	moduleInitCmd.Flags().StringVar(&moduleName, "name", "", "Name of the new module (defaults to parent directory name)")
-	moduleInitCmd.Flags().StringVar(&moduleSourcePath, "source", "", "Directory to store the module implementation source code in (defaults to \"dagger/ if \"--sdk\" is provided)")
-	moduleInitCmd.Flags().StringVar(&licenseID, "license", "", "License identifier to generate - see https://spdx.org/licenses/")
+	moduleInitCmd.Flags().StringVar(&moduleSourcePath, "source", "", "Directory to store the module implementation source code in (defaults to \".\"/ if \"--sdk\" is provided)")
+	moduleInitCmd.Flags().StringVar(&licenseID, "license", defaultLicense, "License identifier to generate - see https://spdx.org/licenses/")
 
 	modulePublishCmd.Flags().BoolVarP(&force, "force", "f", false, "Force publish even if the git repository is not clean")
-	modulePublishCmd.Flags().AddFlagSet(moduleFlags)
+	modFlag := *moduleFlags.Lookup("mod")
+	modFlag.Usage = modFlag.Usage[:strings.Index(modFlag.Usage, " Either local path")-1]
+	modulePublishCmd.Flags().AddFlag(&modFlag)
 
 	moduleInstallCmd.Flags().StringVarP(&installName, "name", "n", "", "Name to use for the dependency in the module. Defaults to the name of the module being installed.")
 	moduleInstallCmd.Flags().AddFlagSet(moduleFlags)
 
 	moduleDevelopCmd.Flags().StringVar(&developSDK, "sdk", "", "New SDK for the module")
 	moduleDevelopCmd.Flags().StringVar(&developSourcePath, "source", "", "Directory to store the module implementation source code in")
+	moduleDevelopCmd.Flags().StringVar(&licenseID, "license", defaultLicense, "License identifier to generate - see https://spdx.org/licenses/")
+	moduleDevelopCmd.Flags().StringVar(&compatVersion, "compat", modules.EngineVersionLatest, "Engine API version to target")
+	moduleDevelopCmd.Flags().Lookup("compat").NoOptDefVal = "skip"
 	moduleDevelopCmd.PersistentFlags().AddFlagSet(moduleFlags)
 }
 
@@ -155,15 +163,20 @@ The "--source" flag allows controlling the directory in which the actual module 
 				WithSDK(sdk).
 				WithSourceSubpath(moduleSourcePath).
 				ResolveFromCaller().
-				AsModule().
+				AsModule(dagger.ModuleSourceAsModuleOpts{EngineVersion: modules.EngineVersionLatest}).
 				GeneratedContextDiff().
 				Export(ctx, modConf.LocalContextPath)
 			if err != nil {
 				return fmt.Errorf("failed to generate code: %w", err)
 			}
 
-			if err := findOrCreateLicense(ctx, modConf.LocalRootSourcePath); err != nil {
-				return err
+			if sdk != "" {
+				// If we're generating code by setting a SDK, we should also generate a license
+				// if it doesn't already exists.
+				searchExisting := !cmd.Flags().Lookup("license").Changed
+				if err := findOrCreateLicense(ctx, modConf.LocalRootSourcePath, searchExisting); err != nil {
+					return err
+				}
 			}
 
 			fmt.Fprintln(cmd.OutOrStdout(), "Initialized module", moduleName, "in", srcRootPath)
@@ -281,7 +294,6 @@ var moduleInstallCmd = &cobra.Command{
 					"source_kind":   "local",
 					"local_subpath": depRootSubpath,
 				})
-
 			}
 
 			return nil
@@ -324,7 +336,12 @@ If not updating source or SDK, this is only required for IDE auto-completion/LSP
 			// ResolveFromCaller call first
 			modConf.Source = modConf.Source.ResolveFromCaller()
 
-			modSDK, err := modConf.Source.AsModule().SDK(ctx)
+			engineVersion := compatVersion
+			if engineVersion == "skip" {
+				engineVersion = ""
+			}
+
+			modSDK, err := modConf.Source.AsModule(dagger.ModuleSourceAsModuleOpts{EngineVersion: engineVersion}).SDK(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to get module SDK: %w", err)
 			}
@@ -369,11 +386,19 @@ If not updating source or SDK, this is only required for IDE auto-completion/LSP
 			}
 
 			_, err = src.ResolveFromCaller().
-				AsModule().
+				AsModule(dagger.ModuleSourceAsModuleOpts{EngineVersion: engineVersion}).
 				GeneratedContextDiff().
 				Export(ctx, modConf.LocalContextPath)
 			if err != nil {
 				return fmt.Errorf("failed to generate code: %w", err)
+			}
+
+			// If no license has been created yet, and SDK is set, we should create one.
+			if developSDK != "" {
+				searchExisting := !cmd.Flags().Lookup("license").Changed
+				if err := findOrCreateLicense(ctx, modConf.LocalRootSourcePath, searchExisting); err != nil {
+					return err
+				}
 			}
 
 			return nil
@@ -724,7 +749,7 @@ func optionalModCmdWrapper(
 			var loadedMod *dagger.Module
 			if modConf.FullyInitialized() {
 				loadedMod = modConf.Source.AsModule().Initialize()
-				_, err := loadedMod.Serve(ctx)
+				err := loadedMod.Serve(ctx)
 				if err != nil {
 					return fmt.Errorf("failed to serve module: %w", err)
 				}
@@ -740,6 +765,7 @@ type moduleDef struct {
 	MainObject *modTypeDef
 	Objects    []*modTypeDef
 	Interfaces []*modTypeDef
+	Enums      []*modTypeDef
 	Inputs     []*modTypeDef
 
 	// the ModuleSource definition for the module, needed by some arg types
@@ -747,110 +773,17 @@ type moduleDef struct {
 	Source *dagger.ModuleSource
 }
 
+//go:embed typedefs.graphql
+var loadTypeDefsQuery string
+
 // loadModTypeDefs loads the objects defined by the given module in an easier to use data structure.
 func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client) error {
 	var res struct {
 		TypeDefs []*modTypeDef
 	}
 
-	const query = `
-fragment TypeDefRefParts on TypeDef {
-	kind
-	optional
-	asObject {
-		name
-	}
-	asInterface {
-		name
-	}
-	asInput {
-		name
-	}
-	asScalar {
-		name
-	}
-	asList {
-		elementTypeDef {
-			kind
-			asObject {
-				name
-			}
-			asInterface {
-				name
-			}
-			asInput {
-				name
-			}
-			asScalar {
-				name
-			}
-		}
-	}
-}
-
-fragment FunctionParts on Function {
-	name
-	description
-	returnType {
-		...TypeDefRefParts
-	}
-	args {
-		name
-		description
-		defaultValue
-		typeDef {
-			...TypeDefRefParts
-		}
-	}
-}
-
-fragment FieldParts on FieldTypeDef {
-	name
-	description
-	typeDef {
-		...TypeDefRefParts
-	}
-}
-
-query TypeDefs {
-	typeDefs: currentTypeDefs {
-		kind
-		optional
-		asObject {
-			name
-			sourceModuleName
-			constructor {
-				...FunctionParts
-			}
-			functions {
-				...FunctionParts
-			}
-			fields {
-				...FieldParts
-			}
-		}
-		asScalar {
-			name
-		}
-		asInterface {
-			name
-			sourceModuleName
-			functions {
-				...FunctionParts
-			}
-		}
-		asInput {
-			name
-			fields {
-				...FieldParts
-			}
-		}
-	}
-}
-`
-
 	err := dag.Do(ctx, &dagger.Request{
-		Query: query,
+		Query: loadTypeDefsQuery,
 	}, &dagger.Response{
 		Data: &res,
 	})
@@ -880,6 +813,8 @@ query TypeDefs {
 			m.Objects = append(m.Objects, typeDef)
 		case dagger.InterfaceKind:
 			m.Interfaces = append(m.Interfaces, typeDef)
+		case dagger.EnumKind:
+			m.Enums = append(m.Enums, typeDef)
 		case dagger.InputKind:
 			m.Inputs = append(m.Inputs, typeDef)
 		}
@@ -920,6 +855,16 @@ func (m *moduleDef) AsInterfaces() []*modInterface {
 	return defs
 }
 
+func (m *moduleDef) AsEnums() []*modEnum {
+	var defs []*modEnum
+	for _, typeDef := range m.Enums {
+		if typeDef.AsEnum != nil {
+			defs = append(defs, typeDef.AsEnum)
+		}
+	}
+	return defs
+}
+
 func (m *moduleDef) AsInputs() []*modInput {
 	var defs []*modInput
 	for _, typeDef := range m.Inputs {
@@ -947,6 +892,17 @@ func (m *moduleDef) GetInterface(name string) *modInterface {
 		// Normalize name in case an SDK uses a different convention for interface names.
 		if gqlObjectName(iface.Name) == gqlObjectName(name) {
 			return iface
+		}
+	}
+	return nil
+}
+
+// GetEnum retrieves a saved enum type definition from the module.
+func (m *moduleDef) GetEnum(name string) *modEnum {
+	for _, enum := range m.AsEnums() {
+		// Normalize name in case an SDK uses a different convention for object names.
+		if gqlObjectName(enum.Name) == gqlObjectName(name) {
+			return enum
 		}
 	}
 	return nil
@@ -990,6 +946,12 @@ func (m *moduleDef) LoadTypeDef(typeDef *modTypeDef) {
 			typeDef.AsInterface = iface
 		}
 	}
+	if typeDef.AsEnum != nil {
+		enum := m.GetEnum(typeDef.AsEnum.Name)
+		if enum != nil {
+			typeDef.AsEnum = enum
+		}
+	}
 	if typeDef.AsInput != nil && typeDef.AsInput.Fields == nil {
 		input := m.GetInput(typeDef.AsInput.Name)
 		if input != nil {
@@ -1010,12 +972,77 @@ type modTypeDef struct {
 	AsInput     *modInput
 	AsList      *modList
 	AsScalar    *modScalar
+	AsEnum      *modEnum
 }
 
 type functionProvider interface {
 	ProviderName() string
 	GetFunctions() []*modFunction
 	IsCore() bool
+}
+
+func HasAvailableFunctions(o functionProvider) bool {
+	if o == nil {
+		return false
+	}
+	for _, fn := range o.GetFunctions() {
+		if !fn.IsUnsupported() {
+			return true
+		}
+	}
+	return false
+}
+
+// skipLeaves is a map of provider names to function names that should be skipped
+// when looking for leaf functions.
+var skipLeaves = map[string][]string{
+	"Container": {
+		// imageRef should only be requested right after a `from`, and that's
+		// hard to check for here.
+		"imageRef",
+		// stdout and stderr may be arbitrarily large and jarring to see (e.g. test suites)
+		"stdout",
+		"stderr",
+	},
+	"File": {
+		// This could be a binary file, so until we can tell which type of
+		// file it is, best to skip it for now.
+		"contents",
+	},
+}
+
+// GetLeafFunctions returns the leaf functions of a function provider, which are
+// functions that have no arguments and return a scalar or list of scalars.
+//
+// Functions that return an ID are excluded since the CLI can't handle them
+// as input arguments yet, so they'd add noise when listing an object's leaves.
+func GetLeafFunctions(fp functionProvider) []*modFunction {
+	fns := fp.GetFunctions()
+	r := make([]*modFunction, 0, len(fns))
+
+	for _, fn := range fns {
+		kind := fn.ReturnType.Kind
+		if kind == dagger.ListKind {
+			kind = fn.ReturnType.AsList.ElementTypeDef.Kind
+		}
+		switch kind {
+		case dagger.ObjectKind, dagger.InterfaceKind, dagger.VoidKind:
+			continue
+		case dagger.ScalarKind:
+			// FIXME: ID types are coming from TypeDef with the wrong case ("Id")
+			if fn.ReturnType.AsScalar.Name == fmt.Sprintf("%sId", fp.ProviderName()) {
+				continue
+			}
+		}
+		if names, ok := skipLeaves[fp.ProviderName()]; ok && slices.Contains(names, fn.Name) {
+			continue
+		}
+		if fn.HasRequiredArgs() {
+			continue
+		}
+		r = append(r, fn)
+	}
+	return r
 }
 
 func GetFunction(o functionProvider, name string) (*modFunction, error) {
@@ -1066,9 +1093,10 @@ func (o *modObject) IsCore() bool {
 	return o.SourceModuleName == ""
 }
 
-// GetStateFunctions returns the object's fields as function definitions.
-func (o *modObject) GetStateFunctions() []*modFunction {
-	fns := make([]*modFunction, 0, len(o.Fields))
+// GetFunctions returns the object's function definitions including the fields,
+// which are treated as functions with no arguments.
+func (o *modObject) GetFunctions() []*modFunction {
+	fns := make([]*modFunction, 0, len(o.Fields)+len(o.Functions))
 	for _, f := range o.Fields {
 		fns = append(fns, &modFunction{
 			Name:        f.Name,
@@ -1076,14 +1104,6 @@ func (o *modObject) GetStateFunctions() []*modFunction {
 			ReturnType:  f.TypeDef,
 		})
 	}
-	return fns
-}
-
-// GetFunctions returns the object's function definitions including the fields,
-// which are treated as functions with no arguments.
-func (o *modObject) GetFunctions() []*modFunction {
-	fns := make([]*modFunction, 0, len(o.Fields)+len(o.Functions))
-	fns = append(fns, o.GetStateFunctions()...)
 	return append(fns, o.Functions...)
 }
 
@@ -1108,6 +1128,15 @@ func (o *modInterface) GetFunctions() []*modFunction {
 }
 
 type modScalar struct {
+	Name string
+}
+
+type modEnum struct {
+	Name   string
+	Values []*modEnumValue
+}
+
+type modEnumValue struct {
 	Name string
 }
 
@@ -1142,6 +1171,15 @@ func (f *modFunction) CmdName() string {
 		f.cmdName = cliName(f.Name)
 	}
 	return f.cmdName
+}
+
+func (f *modFunction) HasRequiredArgs() bool {
+	for _, arg := range f.Args {
+		if arg.IsRequired() {
+			return true
+		}
+	}
+	return false
 }
 
 func (f *modFunction) SupportedArgs() []*modFunctionArg {

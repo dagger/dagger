@@ -125,3 +125,78 @@ func TestUnpack(t *testing.T) {
 	require.NoError(t, root.unpack(response))
 	require.Equal(t, "TEST", contents)
 }
+
+func TestUnpackList(t *testing.T) {
+	var contents []string
+	root := Query().
+		Select("foo").
+		Select("bar").
+		Bind(&contents)
+
+	var response any
+	err := json.Unmarshal([]byte(`
+        {
+            "foo": {
+                "bar": [
+                    "one",
+                    "two",
+                    "three"
+                ]
+            }
+        }
+	`), &response)
+	require.NoError(t, err)
+	require.NoError(t, root.unpack(response))
+	require.EqualValues(t, []string{"one", "two", "three"}, contents)
+}
+
+func TestSiblings(t *testing.T) {
+	q, err := Query().
+		Select("foo").
+		Select("bar").
+		Select("one", "two", "three").
+		Build(context.Background())
+
+	require.NoError(t, err)
+	require.Equal(t, `query{foo{bar{one two three}}}`, q)
+}
+
+func TestSiblingsLeaf(t *testing.T) {
+	_, err := Query().
+		Select("foo").
+		Select("one", "two", "three").
+		Select("bar").
+		Build(context.Background())
+
+	require.ErrorContains(t, err, "sibling selections not end of chain")
+}
+
+func TestUnpackSiblings(t *testing.T) {
+	type data struct {
+		One   string
+		Two   int
+		Three bool
+	}
+	var contents data
+	root := Query().
+		Select("foo").
+		Select("bar").
+		Bind(&contents).
+		Select("one", "two", "three")
+
+	var response any
+	err := json.Unmarshal([]byte(`
+        {
+            "foo": {
+                "bar": {
+                    "one": "TEST",
+                    "two": 12,
+                    "three": true
+                }
+            }
+        }
+	`), &response)
+	require.NoError(t, err)
+	require.NoError(t, root.unpack(response))
+	require.EqualValues(t, data{"TEST", 12, true}, contents)
+}

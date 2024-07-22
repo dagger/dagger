@@ -3,21 +3,18 @@ package core
 import (
 	"context"
 	"strings"
-	"testing"
-
-	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"
+
+	"github.com/dagger/dagger/testctx"
+	"github.com/stretchr/testify/require"
 )
 
 func testOwnership(
-	ctx context.Context,
-	t *testing.T,
+	t *testctx.T,
 	c *dagger.Client,
 	addContent func(ctr *dagger.Container, name, owner string) *dagger.Container,
 ) {
-	t.Parallel()
-
 	ctr := c.Container().From(alpineImage).
 		WithExec([]string{"adduser", "-D", "inherituser"}).
 		WithExec([]string{"adduser", "-u", "1234", "-D", "auser"}).
@@ -59,7 +56,7 @@ func testOwnership(
 		{name: "no-inherit", owner: "", output: "root root"},
 	} {
 		example := example
-		t.Run(example.name, func(t *testing.T) {
+		t.Run(example.name, func(ctx context.Context, t *testctx.T) {
 			withOwner := addContent(ctr, example.name, example.owner)
 			output, err := withOwner.
 				WithUser("root"). // go back to root so we can see 0400 files

@@ -19,6 +19,7 @@ import (
 	connhDocker "github.com/moby/buildkit/client/connhelper/dockercontainer"
 	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/slog"
@@ -143,7 +144,7 @@ func (d *dockerDriver) create(ctx context.Context, imageRef string, opts *Driver
 	}
 
 	// ensure the image is pulled
-	if _, err := traceExec(ctx, exec.CommandContext(ctx, "docker", "inspect", "--type=image", imageRef)); err != nil {
+	if _, err := traceExec(ctx, exec.CommandContext(ctx, "docker", "inspect", "--type=image", imageRef), telemetry.Encapsulated()); err != nil {
 		if _, err := traceExec(ctx, exec.CommandContext(ctx, "docker", "pull", imageRef)); err != nil {
 			return nil, errors.Wrapf(err, "failed to pull image")
 		}
@@ -204,8 +205,8 @@ func garbageCollectEngines(ctx context.Context, log *slog.Logger, engines []stri
 	}
 }
 
-func traceExec(ctx context.Context, cmd *exec.Cmd) (out string, rerr error) {
-	ctx, span := otel.Tracer("").Start(ctx, fmt.Sprintf("exec %s", strings.Join(cmd.Args, " ")))
+func traceExec(ctx context.Context, cmd *exec.Cmd, opts ...trace.SpanStartOption) (out string, rerr error) {
+	ctx, span := otel.Tracer("").Start(ctx, fmt.Sprintf("exec %s", strings.Join(cmd.Args, " ")), opts...)
 	defer telemetry.End(span, func() error { return rerr })
 	stdio := telemetry.SpanStdio(ctx, "")
 	defer stdio.Close()

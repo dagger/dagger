@@ -7,11 +7,13 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/moby/buildkit/identity"
 	"github.com/sourcegraph/conc/pool"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -160,6 +162,15 @@ func (ps *PubSub) clientsFor(traceID trace.TraceID, spanID trace.SpanID) []strin
 	return ids
 }
 
+func (ps *PubSub) clientFor(traceID trace.TraceID, spanID trace.SpanID) string {
+	ps.spansL.Lock()
+	defer ps.spansL.Unlock()
+	return ps.spanClients[spanKey{
+		TraceID: traceID,
+		SpanID:  spanID,
+	}]
+}
+
 func (ps *PubSub) trackSpans(spans []sdktrace.ReadOnlySpan) {
 	ps.spansL.Lock()
 	defer ps.spansL.Unlock()
@@ -240,6 +251,8 @@ func (ps *PubSub) MetricsHandler(rw http.ResponseWriter, r *http.Request) {
 	// TODO
 }
 
+const drainTimeout = 10 * time.Second
+
 func (ps *PubSub) Drain(client string, immediate bool) {
 	slog.Debug("draining", "client", client, "immediate", immediate)
 	ps.clientsL.Lock()
@@ -250,6 +263,15 @@ func (ps *PubSub) Drain(client string, immediate bool) {
 		trace.drainImmediately = immediate
 		trace.cond.Broadcast()
 		trace.cond.L.Unlock()
+		if !immediate && drainTimeout > 0 {
+			go func() {
+				<-time.After(drainTimeout)
+				trace.cond.L.Lock()
+				trace.drainImmediately = true
+				trace.cond.Broadcast()
+				trace.cond.L.Unlock()
+			}()
+		}
 	} else {
 		slog.Warn("draining nonexistant client", "client", client, "immediate", immediate)
 	}
@@ -353,12 +375,24 @@ func (ps SpansPubSub) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnly
 	slog.ExtraDebug("exporting spans to pubsub", "call", export, "spans", len(spans))
 
 	byExporter := map[sdktrace.SpanExporter][]sdktrace.ReadOnlySpan{}
+
 	updated := map[*activeClient]struct{}{}
+	defer func() {
+		// notify anyone waiting to drain after all client updates are applied
+		// NOTE: finishSpan below uses defer, so this must be deferred sooner
+		for client := range updated {
+			slog.Trace("broadcasting to client", "client", client.id)
+			client.cond.Broadcast()
+		}
+	}()
 
 	for _, s := range spans {
-		var subs []sdktrace.SpanExporter
-
 		affectedClients := ps.clientsFor(
+			s.SpanContext().TraceID(),
+			s.SpanContext().SpanID(),
+		)
+
+		selfClient := ps.clientFor(
 			s.SpanContext().TraceID(),
 			s.SpanContext().SpanID(),
 		)
@@ -369,6 +403,8 @@ func (ps SpansPubSub) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnly
 			"endTime", s.EndTime(),
 			"status", s.Status().Code,
 		)
+
+		var subs []sdktrace.SpanExporter
 
 		if len(affectedClients) > 0 {
 			for _, clientID := range affectedClients {
@@ -381,13 +417,14 @@ func (ps SpansPubSub) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnly
 					strings.HasSuffix(LogsSource_Subscribe_FullMethodName, s.Name()) {
 					// HACK: don't get stuck waiting on ourselves
 					slog.ExtraDebug("avoiding waiting for ourselves")
-				} else {
+				} else if clientID == selfClient {
 					if s.EndTime().Before(s.StartTime()) {
 						slog.Trace("starting span", "client", client.id)
 						client.startSpan(s)
 					} else {
 						slog.Trace("finishing span", "client", client.id)
-						client.finishSpan(s)
+						// NOTE: finish *after* exporting to consumers
+						defer client.finishSpan(s)
 					}
 				}
 
@@ -413,14 +450,6 @@ func (ps SpansPubSub) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnly
 			byExporter[exp] = append(byExporter[exp], s)
 		}
 	}
-
-	defer func() {
-		// notify anyone waiting to drain
-		for client := range updated {
-			slog.Trace("broadcasting to client", "client", client.id)
-			client.cond.Broadcast()
-		}
-	}()
 
 	eg := pool.New().WithErrors()
 
@@ -475,6 +504,11 @@ func (ps LogsPubSub) Export(ctx context.Context, logs []sdklog.Record) error {
 			{TraceID: rec.TraceID()}: {},
 		}
 
+		selfClient := ps.clientFor(
+			rec.TraceID(),
+			rec.SpanID(),
+		)
+
 		// Publish to all clients involved, or the full trace if none.
 		for _, clientID := range ps.clientsFor(rec.TraceID(), rec.SpanID()) {
 			topics[Topic{
@@ -482,9 +516,11 @@ func (ps LogsPubSub) Export(ctx context.Context, logs []sdklog.Record) error {
 				ClientID: clientID,
 			}] = struct{}{}
 
-			client, found := ps.lookupClient(clientID)
-			if found {
-				client.trackLogStream(rec)
+			if clientID == selfClient {
+				client, found := ps.lookupClient(clientID)
+				if found {
+					client.trackLogStream(rec)
+				}
 			}
 		}
 
@@ -620,7 +656,7 @@ func (ps *PubSub) unsubLogs(topic Topic, exp sdklog.Exporter) {
 }
 
 type logStream struct {
-	span   trace.SpanID
+	span   spanKey
 	stream int64
 }
 
@@ -661,15 +697,17 @@ func (c *activeClient) finishSpan(span sdktrace.ReadOnlySpan) {
 
 func (c *activeClient) finishAndAbandonChildrenLocked(span sdktrace.ReadOnlySpan) {
 	delete(c.spans, span.SpanContext().SpanID())
-	for _, s := range c.spans {
-		if s.Parent().SpanID() == span.SpanContext().SpanID() {
-			slog.ExtraDebug("abandoning child span",
-				"parent", span.Name(),
-				"parentID", span.SpanContext().SpanID(),
-				"span", s.Name(),
-				"spanID", s.SpanContext().SpanID(),
-			)
-			c.finishAndAbandonChildrenLocked(s)
+	if span.Status().Code == codes.Error {
+		for _, s := range c.spans {
+			if s.Parent().SpanID() == span.SpanContext().SpanID() {
+				slog.ExtraDebug("abandoning child span due to failed parent",
+					"parent", span.Name(),
+					"parentID", span.SpanContext().SpanID(),
+					"span", s.Name(),
+					"spanID", s.SpanContext().SpanID(),
+				)
+				c.finishAndAbandonChildrenLocked(s)
+			}
 		}
 	}
 }
@@ -692,7 +730,10 @@ func (c *activeClient) spanIDs() []string {
 
 func (c *activeClient) trackLogStream(rec sdklog.Record) {
 	stream := logStream{
-		span:   rec.SpanID(),
+		span: spanKey{
+			TraceID: rec.TraceID(),
+			SpanID:  rec.SpanID(),
+		},
 		stream: -1,
 	}
 	var eof bool

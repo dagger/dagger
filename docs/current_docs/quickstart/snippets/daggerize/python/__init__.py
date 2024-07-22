@@ -9,7 +9,7 @@ class HelloDagger:
     @function
     async def publish(self, source: dagger.Directory) -> str:
         """Publish the application container after building and testing it on-the-fly"""
-        self.test(source)
+        await self.test(source)
         return await self.build(source).publish(
             f"ttl.sh/myapp-{random.randrange(10 ** 8)}"
         )
@@ -26,7 +26,7 @@ class HelloDagger:
             dag.container()
             .from_("nginx:1.25-alpine")
             .with_directory("/usr/share/nginx/html", build)
-            .with_exposed_port(8080)
+            .with_exposed_port(80)
         )
 
     @function

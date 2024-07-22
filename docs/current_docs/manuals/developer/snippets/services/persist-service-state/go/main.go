@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+
+	"main/internal/dagger"
 )
 
 type MyModule struct{}
 
 // Create Redis service and client
-func (m *MyModule) Redis(ctx context.Context) *Container {
+func (m *MyModule) Redis(ctx context.Context) *dagger.Container {
 	redisSrv := dag.Container().
 		From("redis").
 		WithExposedPort(6379).
@@ -23,6 +25,10 @@ func (m *MyModule) Redis(ctx context.Context) *Container {
 	return redisCLI
 }
 
+var execOpts = dagger.ContainerWithExecOpts{
+	UseEntrypoint: true,
+}
+
 // Set key and value in Redis service
 func (m *MyModule) Set(
 	ctx context.Context,
@@ -32,18 +38,18 @@ func (m *MyModule) Set(
 	value string,
 ) (string, error) {
 	return m.Redis(ctx).
-		WithExec([]string{"set", key, value}).
-		WithExec([]string{"save"}).
+		WithExec([]string{"set", key, value}, execOpts).
+		WithExec([]string{"save"}, execOpts).
 		Stdout(ctx)
 }
 
 // Get value from Redis service
 func (m *MyModule) Get(
 	ctx context.Context,
-	// The cache value to set
+	// The cache key to get
 	key string,
 ) (string, error) {
 	return m.Redis(ctx).
-		WithExec([]string{"get", key}).
+		WithExec([]string{"get", key}, execOpts).
 		Stdout(ctx)
 }

@@ -2,10 +2,7 @@
 defmodule Dagger.BuildArg do
   @moduledoc "Key value object that represents a build argument."
 
-  @type t() :: %__MODULE__{
-          name: String.t(),
-          value: String.t()
-        }
+  @type t() :: %__MODULE__{name: String.t(), value: String.t()}
 
   defstruct [:name, :value]
 end

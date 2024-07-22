@@ -11,26 +11,31 @@ import (
 	"github.com/koron-go/prefixw"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
+
+	"github.com/dagger/dagger/internal/testutil"
+	"github.com/dagger/dagger/testctx"
 )
 
-func TestClientClose(t *testing.T) {
-	t.Parallel()
-	c, _ := connect(t)
+type ClientSuite struct{}
 
+func TestClient(t *testing.T) {
+	testctx.Run(testCtx, t, ClientSuite{}, Middleware()...)
+}
+
+func (ClientSuite) TestClose(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 	err := c.Close()
 	require.NoError(t, err)
 }
 
-func TestClientMultiSameTrace(t *testing.T) {
-	t.Parallel()
-
-	rootCtx, span := Tracer().Start(testCtx, "root")
+func (ClientSuite) TestMultiSameTrace(ctx context.Context, t *testctx.T) {
+	rootCtx, span := Tracer().Start(ctx, "root")
 	defer span.End()
 
 	newClient := func(ctx context.Context, name string) (*dagger.Client, *safeBuffer) {
 		out := new(safeBuffer)
 		c, err := dagger.Connect(ctx,
-			dagger.WithLogOutput(io.MultiWriter(prefixw.New(newTWriter(t), name+": "), out)))
+			dagger.WithLogOutput(io.MultiWriter(prefixw.New(testutil.NewTWriter(t.T), name+": "), out)))
 		require.NoError(t, err)
 		t.Cleanup(func() { c.Close() })
 		return c, out
@@ -41,11 +46,11 @@ func TestClientMultiSameTrace(t *testing.T) {
 	c1, out1 := newClient(ctx1, "client 1")
 
 	// NOTE: the failure mode for these tests is to hang forever, so we'll set a
-	// reasonable timeout and try to insulate from network flakiness by resolving
-	// and using the image beforehand.
-	//
-	// the timeout has to be established before connecting, so we apply it to c2
-	// and make sure we close c2 first.
+	// reasonable timeout
+	const timeout = 60 * time.Second
+
+	// try to insulate from network flakiness by resolving and using a fully
+	// qualified ref beforehand.
 	fqRef, err := c1.Container().From(alpineImage).ImageRef(ctx1)
 	require.NoError(t, err)
 
@@ -67,11 +72,14 @@ func TestClientMultiSameTrace(t *testing.T) {
 	echo(ctx1, c1, c1msg)
 	require.Eventually(t, func() bool {
 		return strings.Contains(out1.String(), "echoed: "+c1msg)
-	}, 10*time.Second, 10*time.Millisecond)
+	}, timeout, 10*time.Millisecond)
 
 	ctx2, span := Tracer().Start(rootCtx, "client 2")
 	defer span.End()
-	timeoutCtx2, cancelTimeout := context.WithTimeout(ctx2, 10*time.Second)
+
+	// the timeout has to be established before connecting, so we apply it to c2
+	// and make sure we close c2 first.
+	timeoutCtx2, cancelTimeout := context.WithTimeout(ctx2, timeout)
 	defer cancelTimeout()
 	c2, out2 := newClient(timeoutCtx2, "client 2")
 
@@ -79,11 +87,11 @@ func TestClientMultiSameTrace(t *testing.T) {
 	echo(ctx2, c2, c2msg)
 	require.Eventually(t, func() bool {
 		return strings.Contains(out2.String(), "echoed: "+c2msg)
-	}, 10*time.Second, 10*time.Millisecond)
+	}, timeout, 10*time.Millisecond)
 
 	ctx3, span := Tracer().Start(rootCtx, "client 3")
 	defer span.End()
-	timeoutCtx3, cancelTimeout := context.WithTimeout(ctx3, 10*time.Second)
+	timeoutCtx3, cancelTimeout := context.WithTimeout(ctx3, timeout)
 	defer cancelTimeout()
 	c3, out3 := newClient(timeoutCtx3, "client 3")
 
@@ -91,7 +99,7 @@ func TestClientMultiSameTrace(t *testing.T) {
 	echo(ctx3, c3, c3msg)
 	require.Eventually(t, func() bool {
 		return strings.Contains(out3.String(), "echoed: "+c3msg)
-	}, 10*time.Second, 10*time.Millisecond)
+	}, timeout, 10*time.Millisecond)
 
 	t.Logf("closing c2 (which has timeout)")
 	require.NoError(t, c2.Close())

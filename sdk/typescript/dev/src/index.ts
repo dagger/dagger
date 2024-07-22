@@ -4,7 +4,6 @@ import {
   object,
   func,
   Directory,
-  field,
 } from "@dagger.io/dagger"
 
 @object()
@@ -14,7 +13,7 @@ class TypescriptSdkDev {
    *
    * Open a shell in with: `dagger call --source=. project terminal`
    */
-  @field()
+  @func()
   project: Container
 
   constructor(source: Directory) {

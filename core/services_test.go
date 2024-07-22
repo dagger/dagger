@@ -301,7 +301,7 @@ func (f *fakeStartable) ID() *call.ID {
 	id := call.New().Append(&ast.Type{
 		NamedType: "FakeService",
 		NonNull:   true,
-	}, f.name, nil, false, 0)
+	}, f.name, "", nil, false, 0)
 	return id
 }
 

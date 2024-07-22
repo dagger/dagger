@@ -164,8 +164,6 @@ type Container {
   """
   Writes the container as an OCI tarball to the destination file path on the host.
   
-  Return true on success.
-  
   It can also export platform variants.
   """
   export(
@@ -200,7 +198,7 @@ type Container {
     Used for multi-platform image.
     """
     platformVariants: [ContainerID!] = []
-  ): Boolean!
+  ): String!
 
   """
   Retrieves the list of exposed ports.
@@ -341,7 +339,7 @@ type Container {
   sync: ContainerID!
 
   """
-  Return an interactive terminal for this container using its configured default
+  Opens an interactive terminal for this container using its configured default
   terminal command if not overridden by args (or sh as a fallback default).
   """
   terminal(
@@ -366,7 +364,7 @@ type Container {
     trusted commands.
     """
     insecureRootCapabilities: Boolean = false
-  ): Terminal!
+  ): Container!
 
   """Retrieves the user to be set for all commands."""
   user: String!
@@ -493,14 +491,17 @@ type Container {
     redirectStdout: String = ""
 
     """
-    If the container has an entrypoint, ignore it for args rather than using it to wrap them.
+    DEPRECATED: For true this can be removed. For false, use `useEntrypoint` instead.
     """
-    skipEntrypoint: Boolean = false
+    skipEntrypoint: Boolean = true
 
     """
     Content to write to the command's standard input before closing (e.g., "Hello world").
     """
     stdin: String = ""
+
+    """If the container has an entrypoint, prepend it to the args."""
+    useEntrypoint: Boolean = false
   ): Container!
 
   """
@@ -692,7 +693,7 @@ type Container {
   """Retrieves this container plus a new file written at the given path."""
   withNewFile(
     """Content of the file to write (e.g., "Hello world!")."""
-    contents: String = ""
+    contents: String!
 
     """
     A user:group to set for the file.
@@ -955,10 +956,95 @@ The `CurrentModuleID` scalar type represents an identifier for an object of type
 """
 scalar CurrentModuleID
 
+"""The Dagger engine configuration and state"""
+type DaggerEngine {
+  """A unique identifier for this DaggerEngine."""
+  id: DaggerEngineID!
+
+  """The local (on-disk) cache for the Dagger engine"""
+  localCache: DaggerEngineCache!
+}
+
+"""A cache storage for the Dagger engine"""
+type DaggerEngineCache {
+  """The current set of entries in the cache"""
+  entrySet: DaggerEngineCacheEntrySet!
+
+  """A unique identifier for this DaggerEngineCache."""
+  id: DaggerEngineCacheID!
+
+  """
+  The maximum bytes to keep in the cache without pruning, after which automatic pruning may kick in.
+  """
+  keepBytes: Int!
+
+  """Prune the cache of releaseable entries"""
+  prune: Void
+}
+
+"""An individual cache entry in a cache entry set"""
+type DaggerEngineCacheEntry {
+  """Whether the cache entry is actively being used."""
+  activelyUsed: Boolean!
+
+  """The time the cache entry was created, in Unix nanoseconds."""
+  createdTimeUnixNano: Int!
+
+  """The description of the cache entry."""
+  description: String!
+
+  """The disk space used by the cache entry."""
+  diskSpaceBytes: Int!
+
+  """A unique identifier for this DaggerEngineCacheEntry."""
+  id: DaggerEngineCacheEntryID!
+
+  """The most recent time the cache entry was used, in Unix nanoseconds."""
+  mostRecentUseTimeUnixNano: Int!
+}
+
+"""
+The `DaggerEngineCacheEntryID` scalar type represents an identifier for an object of type DaggerEngineCacheEntry.
+"""
+scalar DaggerEngineCacheEntryID
+
+"""A set of cache entries returned by a query to a cache"""
+type DaggerEngineCacheEntrySet {
+  """The total disk space used by the cache entries in this set."""
+  diskSpaceBytes: Int!
+
+  """The list of individual cache entries in the set"""
+  entries: [DaggerEngineCacheEntry!]!
+
+  """The number of cache entries in this set."""
+  entryCount: Int!
+
+  """A unique identifier for this DaggerEngineCacheEntrySet."""
+  id: DaggerEngineCacheEntrySetID!
+}
+
+"""
+The `DaggerEngineCacheEntrySetID` scalar type represents an identifier for an object of type DaggerEngineCacheEntrySet.
+"""
+scalar DaggerEngineCacheEntrySetID
+
+"""
+The `DaggerEngineCacheID` scalar type represents an identifier for an object of type DaggerEngineCache.
+"""
+scalar DaggerEngineCacheID
+
+"""
+The `DaggerEngineID` scalar type represents an identifier for an object of type DaggerEngine.
+"""
+scalar DaggerEngineID
+
 """A directory."""
 type Directory {
   """Load the directory as a Dagger module"""
   asModule(
+    """The engine version to upgrade to."""
+    engineVersion: String
+
     """
     An optional subpath of the directory which contains the module's configuration file.
     
@@ -1025,7 +1111,7 @@ type Directory {
     aren't in the exported directory alone.
     """
     wipe: Boolean = false
-  ): Boolean!
+  ): String!
 
   """Retrieves a file at the given path."""
   file(
@@ -1056,6 +1142,36 @@ type Directory {
 
   """Force evaluation in the engine."""
   sync: DirectoryID!
+
+  """
+  Opens an interactive terminal in new container with this directory mounted inside.
+  """
+  terminal(
+    """
+    If set, override the container's default terminal command and invoke these command arguments instead.
+    """
+    cmd: [String!] = []
+
+    """If set, override the default container used for the terminal."""
+    container: ContainerID
+
+    """
+    Provides Dagger access to the executed command.
+    
+    Do not use this option unless you trust the command being executed; the
+    command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
+    """
+    experimentalPrivilegedNesting: Boolean = false
+
+    """
+    Execute the command with all root capabilities. This is similar to running a
+    command with "sudo" or executing "docker run" with the "--privileged" flag.
+    Containerization does not provide any security guarantees when using this
+    option. It should only be used when absolutely necessary and only with
+    trusted commands.
+    """
+    insecureRootCapabilities: Boolean = false
+  ): Directory!
 
   """Retrieves this directory plus a directory written at the given path."""
   withDirectory(
@@ -1157,6 +1273,48 @@ The `DirectoryID` scalar type represents an identifier for an object of type Dir
 """
 scalar DirectoryID
 
+"""A definition of a custom enum defined in a Module."""
+type EnumTypeDef {
+  """A doc string for the enum, if any."""
+  description: String!
+
+  """A unique identifier for this EnumTypeDef."""
+  id: EnumTypeDefID!
+
+  """The name of the enum."""
+  name: String!
+
+  """
+  If this EnumTypeDef is associated with a Module, the name of the module. Unset otherwise.
+  """
+  sourceModuleName: String!
+
+  """The values of the enum."""
+  values: [EnumValueTypeDef!]!
+}
+
+"""
+The `EnumTypeDefID` scalar type represents an identifier for an object of type EnumTypeDef.
+"""
+scalar EnumTypeDefID
+
+"""A definition of a value in a custom enum defined in a Module."""
+type EnumValueTypeDef {
+  """A doc string for the enum value, if any."""
+  description: String!
+
+  """A unique identifier for this EnumValueTypeDef."""
+  id: EnumValueTypeDefID!
+
+  """The name of the enum value."""
+  name: String!
+}
+
+"""
+The `EnumValueTypeDefID` scalar type represents an identifier for an object of type EnumValueTypeDef.
+"""
+scalar EnumValueTypeDefID
+
 """An environment variable name and value."""
 type EnvVariable {
   """A unique identifier for this EnvVariable."""
@@ -1214,7 +1372,7 @@ type File {
 
     """Location of the written directory (e.g., "output.txt")."""
     path: String!
-  ): Boolean!
+  ): String!
 
   """A unique identifier for this File."""
   id: FileID!
@@ -1458,13 +1616,7 @@ type GitRef {
   id: GitRefID!
 
   """The filesystem tree at this ref."""
-  tree(
-    """DEPRECATED: This option should be passed to `git` instead."""
-    sshAuthSocket: SocketID
-
-    """DEPRECATED: This option should be passed to `git` instead."""
-    sshKnownHosts: String
-  ): Directory!
+  tree: Directory!
 }
 
 """
@@ -1507,6 +1659,12 @@ type GitRepository {
     """Tag's name (e.g., "v0.3.9")."""
     name: String!
   ): GitRef!
+
+  """tags that match any of the given glob patterns."""
+  tags(
+    """Glob patterns (e.g., "refs/tags/v*")."""
+    patterns: [String!]
+  ): [String!]!
 
   """Header to authenticate the remote with."""
   withAuthHeader(
@@ -1752,6 +1910,9 @@ type Module {
   """The doc string of the module, if any"""
   description: String!
 
+  """Enumerations served by this module."""
+  enums: [TypeDef!]!
+
   """
   The generated files and directories made on top of the module source's context directory.
   """
@@ -1805,6 +1966,9 @@ type Module {
     description: String!
   ): Module!
 
+  """This module plus the given Enum type and associated values"""
+  withEnum(enum: TypeDefID!): Module!
+
   """This module plus the given Interface type and associated functions"""
   withInterface(iface: TypeDefID!): Module!
 
@@ -1813,6 +1977,9 @@ type Module {
 
   """Retrieves the module with basic configuration loaded if present."""
   withSource(
+    """The engine version to upgrade to."""
+    engineVersion: String
+
     """The module source to initialize from."""
     source: ModuleSourceID!
   ): Module!
@@ -1854,7 +2021,10 @@ type ModuleSource {
   Load the source as a module. If this is a local source, the parent directory
   must have been provided during module source creation
   """
-  asModule: Module!
+  asModule(
+    """The engine version to upgrade to."""
+    engineVersion: String
+  ): Module!
 
   """A human readable ref string representation of this module source."""
   asString: String!
@@ -2141,23 +2311,12 @@ type Query {
   ): CacheVolume!
 
   """
-  Checks if the current Dagger Engine is compatible with an SDK's required version.
-  """
-  checkVersionCompatibility(
-    """Version required by the SDK."""
-    version: String!
-  ): Boolean!
-
-  """
   Creates a scratch container.
   
   Optional platform argument initializes new containers to execute and publish
   as that platform. Platform defaults to that of the builder's host.
   """
   container(
-    """DEPRECATED: Use `loadContainerFromID` instead."""
-    id: ContainerID
-
     """Platform to initialize the container with."""
     platform: Platform
   ): Container!
@@ -2177,15 +2336,14 @@ type Query {
   """
   currentTypeDefs: [TypeDef!]!
 
+  """The Dagger engine container configuration and state"""
+  daggerEngine: DaggerEngine!
+
   """The default platform of the engine."""
   defaultPlatform: Platform!
 
   """Creates an empty directory."""
-  directory(
-    """DEPRECATED: Use `loadDirectoryFromID` instead."""
-    id: DirectoryID
-  ): Directory!
-  file(id: FileID!): File! @deprecated(reason: "Use `loadFileFromID` instead.")
+  directory: Directory!
 
   """Creates a function."""
   function(
@@ -2248,8 +2406,26 @@ type Query {
   """Load a CurrentModule from its ID."""
   loadCurrentModuleFromID(id: CurrentModuleID!): CurrentModule!
 
+  """Load a DaggerEngineCacheEntry from its ID."""
+  loadDaggerEngineCacheEntryFromID(id: DaggerEngineCacheEntryID!): DaggerEngineCacheEntry!
+
+  """Load a DaggerEngineCacheEntrySet from its ID."""
+  loadDaggerEngineCacheEntrySetFromID(id: DaggerEngineCacheEntrySetID!): DaggerEngineCacheEntrySet!
+
+  """Load a DaggerEngineCache from its ID."""
+  loadDaggerEngineCacheFromID(id: DaggerEngineCacheID!): DaggerEngineCache!
+
+  """Load a DaggerEngine from its ID."""
+  loadDaggerEngineFromID(id: DaggerEngineID!): DaggerEngine!
+
   """Load a Directory from its ID."""
   loadDirectoryFromID(id: DirectoryID!): Directory!
+
+  """Load a EnumTypeDef from its ID."""
+  loadEnumTypeDefFromID(id: EnumTypeDefID!): EnumTypeDef!
+
+  """Load a EnumValueTypeDef from its ID."""
+  loadEnumValueTypeDefFromID(id: EnumValueTypeDefID!): EnumValueTypeDef!
 
   """Load a EnvVariable from its ID."""
   loadEnvVariableFromID(id: EnvVariableID!): EnvVariable!
@@ -2394,9 +2570,6 @@ type Query {
     plaintext: String!
   ): Secret!
 
-  """Loads a socket by its ID."""
-  socket(id: SocketID!): Socket! @deprecated(reason: "Use `loadSocketFromID` instead.")
-
   """Create a new TypeDef."""
   typeDef: TypeDef!
 
@@ -2524,9 +2697,11 @@ type Terminal {
   id: TerminalID!
 
   """
-  An http endpoint at which this terminal can be connected to over a websocket.
+  Forces evaluation of the pipeline in the engine.
+  
+  It doesn't run the default command if no exec has been set.
   """
-  websocketEndpoint: String!
+  sync: TerminalID!
 }
 
 """
@@ -2536,6 +2711,11 @@ scalar TerminalID
 
 """A definition of a parameter or return type in a Module."""
 type TypeDef {
+  """
+  If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null.
+  """
+  asEnum: EnumTypeDef
+
   """
   If kind is INPUT, the input-specific type definition. If kind is not INPUT, this will be null.
   """
@@ -2574,6 +2754,32 @@ type TypeDef {
   Adds a function for constructing a new instance of an Object TypeDef, failing if the type is not an object.
   """
   withConstructor(function: FunctionID!): TypeDef!
+
+  """
+  Returns a TypeDef of kind Enum with the provided name.
+  
+  Note that an enum's values may be omitted if the intent is only to refer to an
+  enum. This is how functions are able to return their own, or any other
+  circular reference.
+  """
+  withEnum(
+    """A doc string for the enum, if any"""
+    description: String = ""
+
+    """The name of the enum"""
+    name: String!
+  ): TypeDef!
+
+  """
+  Adds a static value for an Enum TypeDef, failing if the type is not an enum.
+  """
+  withEnumValue(
+    """A doc string for the value, if any"""
+    description: String = ""
+
+    """The name of the value in the enum"""
+    value: String!
+  ): TypeDef!
 
   """
   Adds a static field for an Object TypeDef, failing if the type is not an object.
@@ -2673,6 +2879,13 @@ enum TypeDefKind {
   specifying this Kind is always Optional, as the Void is never actually represented.
   """
   VOID_KIND
+
+  """
+  A GraphQL enum type and its values
+  
+  Always paired with an EnumTypeDef.
+  """
+  ENUM_KIND
 }
 
 """

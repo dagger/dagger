@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+
+	"main/internal/dagger"
 )
 
 type MyModule struct{}
@@ -10,7 +12,7 @@ type MyModule struct{}
 func (m *MyModule) GithubApi(
 	ctx context.Context,
 	// GitHub API token
-	token *Secret,
+	token *dagger.Secret,
 ) (string, error) {
 	return dag.Container().
 		From("alpine:3.17").

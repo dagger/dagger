@@ -1,6 +1,7 @@
 # ruff: noqa: BLE001
 import contextlib
 import dataclasses
+import enum
 import functools
 import inspect
 import json
@@ -10,7 +11,7 @@ import types
 import typing
 from collections import Counter, defaultdict
 from collections.abc import Callable, Mapping, MutableMapping
-from typing import Any, TypeAlias, TypeVar
+from typing import Any, TypeAlias, TypeVar, cast
 
 import anyio
 import cattrs
@@ -76,6 +77,7 @@ class Module:
         self._resolvers: list[Resolver] = []
         self._fn_call = dag.current_function_call()
         self._mod = dag.module()
+        self._enums: dict[str, type[enum.Enum]] = {}
 
     def with_description(self, description: str | None) -> Self:
         if description:
@@ -187,39 +189,31 @@ class Module:
 
     async def _run(self):
         async with await dagger.connect():
-            mod_name = await dag.current_module().name()
-            parent_name = await self._fn_call.parent_name()
-            fn = (
-                functools.partial(self._invoke, parent_name)
-                if parent_name
-                else self._register
-            )
-            await fn(mod_name)
+            await self.serve()
 
-    @staticmethod
-    def serve():
-        def _serve(func):
-            @functools.wraps(func)
-            async def wrapper(*args, **kwargs):
-                result = await func(*args, **kwargs)
+    async def serve(self):
+        mod_name = await dag.current_module().name()
+        parent_name = await self._fn_call.parent_name()
+        fn = (
+            functools.partial(self._invoke, parent_name)
+            if parent_name
+            else self._register
+        )
 
-                try:
-                    output = json.dumps(result)
-                except (TypeError, ValueError) as e:
-                    msg = f"Failed to serialize result: {e}"
-                    raise InternalError(msg) from e
+        result = await fn(mod_name)
 
-                logger.debug(
-                    "output => %s",
-                    textwrap.shorten(repr(output), 144),
-                )
-                await dag.current_function_call().return_value(dagger.JSON(output))
+        try:
+            output = json.dumps(result)
+        except (TypeError, ValueError) as e:
+            msg = f"Failed to serialize result: {e}"
+            raise InternalError(msg) from e
 
-            return wrapper
+        logger.debug(
+            "output => %s",
+            textwrap.shorten(repr(output), 144),
+        )
+        await dag.current_function_call().return_value(dagger.JSON(output))
 
-        return _serve
-
-    @serve()
     async def _register(self, mod_name: str) -> dagger.ModuleID:
         resolvers = self.get_resolvers(mod_name)
         mod_name = to_pascal_case(mod_name)
@@ -247,9 +241,17 @@ class Module:
 
             mod = mod.with_object(typedef)
 
+        for name, cls in self._enums.items():
+            typedef = dag.type_def().with_enum(name, description=get_doc(cls))
+            for member in cls:
+                typedef = typedef.with_enum_value(
+                    str(member.value),
+                    description=getattr(member, "description", None),
+                )
+            mod = mod.with_enum(typedef)
+
         return await mod.id()
 
-    @serve()
     async def _invoke(self, parent_name: str, mod_name: str) -> Any:
         resolvers = self.get_resolvers(mod_name)
         name = await self._fn_call.name()
@@ -394,8 +396,7 @@ class Module:
         *,
         name: APIName | None = None,
         doc: str | None = None,
-    ) -> Func[P, R]:
-        ...
+    ) -> Func[P, R]: ...
 
     @overload
     def function(
@@ -403,8 +404,7 @@ class Module:
         *,
         name: APIName | None = None,
         doc: str | None = None,
-    ) -> Callable[[Func[P, R]], Func[P, R]]:
-        ...
+    ) -> Callable[[Func[P, R]], Func[P, R]]: ...
 
     def function(
         self,
@@ -452,16 +452,14 @@ class Module:
         kw_only_default=True,
         field_specifiers=(function, dataclasses.field, dataclasses.Field),
     )
-    def object_type(self, cls: T) -> T:
-        ...
+    def object_type(self, cls: T) -> T: ...
 
     @overload
     @dataclass_transform(
         kw_only_default=True,
         field_specifiers=(function, dataclasses.field, dataclasses.Field),
     )
-    def object_type(self) -> Callable[[T], T]:
-        ...
+    def object_type(self) -> Callable[[T], T]: ...
 
     def object_type(self, cls: T | None = None) -> T | Callable[[T], T]:
         """Exposes a Python class as a :py:class:`dagger.ObjectTypeDef`.
@@ -548,3 +546,36 @@ class Module:
         self.function(name="")(cls)
 
         return cls
+
+    @overload
+    def enum_type(self, cls: T) -> T: ...
+
+    @overload
+    def enum_type(self) -> Callable[[T], T]: ...
+
+    def enum_type(self, cls: T | None = None) -> T | Callable[[T], T]:
+        """Exposes a Python enum.Enum as a :py:class:`dagger.EnumTypeDef`.
+
+        Example usage:
+
+        >>> @dagger.enum_type
+        >>> class Foo(enum.Enum):
+        >>>     FOO = "FOO"
+        >>>     BAR = "BAR"
+        """
+
+        def wrapper(cls: T) -> T:
+            if not inspect.isclass(cls):
+                msg = f"Expected an enum, got {type(cls)}"
+                raise UserError(msg)
+
+            if not issubclass(cls, enum.Enum):
+                msg = f"Class {cls.__name__} is not an enum.Enum"
+                raise UserError(msg)
+
+            cls = cast(T, enum.unique(cls))
+            self._enums.setdefault(cls.__name__, cls)
+
+            return cls
+
+        return wrapper(cls) if cls else wrapper

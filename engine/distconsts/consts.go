@@ -2,7 +2,7 @@
 // dependent code (e.g. SDKs).
 //
 // These are kept separate from all other code to avoid breakage from
-// backwards-incompatible changes (ci/ uses stable SDK, core/ uses dev).
+// backwards-incompatible changes (dev/ uses stable SDK, core/ uses dev).
 package distconsts
 
 const (
@@ -18,9 +18,9 @@ const (
 )
 
 const (
-	AlpineVersion = "3.20.0"
+	AlpineVersion = "3.20.1"
 	AlpineImage   = "alpine:" + AlpineVersion
 
-	GolangVersion = "1.22.4"
+	GolangVersion = "1.22.5"
 	GolangImage   = "golang:" + GolangVersion + "-alpine"
 )

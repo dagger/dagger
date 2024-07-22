@@ -17,9 +17,7 @@ defimpl Dagger.Sync, for: Any do
     quote do
       defimpl Dagger.Sync, for: unquote(module) do
         def sync(resource) do
-          with {:ok, _} <- unquote(module).sync(resource) do
-            {:ok, resource}
-          end
+          unquote(module).sync(resource)
         end
       end
     end

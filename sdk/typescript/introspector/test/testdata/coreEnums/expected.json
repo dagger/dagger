@@ -1,0 +1,53 @@
+{
+  "name": "CoreEnums",
+  "objects": {
+    "CoreEnums": {
+      "name": "CoreEnums",
+      "description": "",
+      "methods": {
+        "toImageLayerCompression": {
+          "name": "toImageLayerCompression",
+          "description": "",
+          "arguments": {
+            "compression": {
+              "name": "compression",
+              "description": "",
+              "type": {
+                "kind": "STRING_KIND"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false
+            }
+          },
+          "returnType": {
+            "kind": "ENUM_KIND",
+            "name": "ImageLayerCompression"
+          }
+        },
+        "fromImageLayerCompression": {
+          "name": "fromImageLayerCompression",
+          "description": "",
+          "arguments": {
+            "compression": {
+              "name": "compression",
+              "description": "",
+              "type": {
+                "kind": "ENUM_KIND",
+                "name": "ImageLayerCompression"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false
+            }
+          },
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        }
+      },
+      "properties": {}
+    }
+  },
+  "enums": {}
+}

@@ -87,6 +87,10 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 
 	env := os.Environ()
 
+	if cfg.RunnerHost != "" {
+		env = append(env, "_EXPERIMENTAL_DAGGER_RUNNER_HOST="+cfg.RunnerHost)
+	}
+
 	// detect $TRACEPARENT set by 'dagger run'
 	ctx = fallbackSpanContext(ctx)
 

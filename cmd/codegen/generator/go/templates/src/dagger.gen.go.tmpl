@@ -3,7 +3,7 @@
 package {{.PackageName}}
 
 {{ if IsModuleCode }}
-{{ template "_dagger.gen.go/alias.go.tmpl" . }}
+{{ template "_dagger.gen.go/module.go.tmpl" . }}
 {{ else }}
 {{ template "_dagger.gen.go/defs.go.tmpl" . }}
 {{ end }}

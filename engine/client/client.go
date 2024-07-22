@@ -68,14 +68,18 @@ type Params struct {
 
 	DisableHostRW bool
 
-	EngineCallback func(context.Context, string, string, string)
-	CloudCallback  func(context.Context, string, string)
+	EngineCallback   func(context.Context, string, string, string)
+	CloudURLCallback func(context.Context, string, string, bool)
 
 	EngineTrace sdktrace.SpanExporter
 	EngineLogs  sdklog.Exporter
 
 	// Log level (0 = INFO)
 	LogLevel slog.Level
+
+	Interactive bool
+
+	WithTerminal session.WithTerminalFunc
 }
 
 type Client struct {
@@ -318,9 +322,11 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 	if c.EngineCallback != nil {
 		c.EngineCallback(ctx, bkInfo.BuildkitVersion.Revision, bkInfo.BuildkitVersion.Version, c.ID)
 	}
-	if c.CloudCallback != nil {
+	if c.CloudURLCallback != nil {
 		if url, msg, ok := enginetel.URLForTrace(ctx); ok {
-			c.CloudCallback(ctx, url, msg)
+			c.CloudURLCallback(ctx, url, msg, ok)
+		} else {
+			c.CloudURLCallback(ctx, "https://dagger.cloud/traces/setup", "", ok)
 		}
 	}
 
@@ -341,6 +347,8 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 		authprovider.NewDockerAuthProvider(config.LoadDefaultConfigFile(os.Stderr), nil),
 		// host=>container networking
 		session.NewTunnelListenerAttachable(ctx, nil),
+		// terminal
+		session.NewTerminalAttachable(ctx, c.Params.WithTerminal),
 	}
 	// filesync
 	if !c.DisableHostRW {
@@ -478,6 +486,7 @@ type BuildkitSessionServer struct {
 
 func (srv *BuildkitSessionServer) Run(ctx context.Context) {
 	defer srv.Conn.Close()
+	defer srv.Stop()
 
 	doneCh := make(chan struct{})
 	go func() {
@@ -527,7 +536,7 @@ func (c *Client) daggerConnect(ctx context.Context) error {
 	c.daggerClient, err = dagger.Connect(
 		context.WithoutCancel(ctx),
 		dagger.WithConn(EngineConn(c)),
-		dagger.WithSkipCompatibilityCheck())
+	)
 	return err
 }
 
@@ -681,12 +690,6 @@ func (c *Client) shutdownServer() error {
 	req, err := http.NewRequestWithContext(ctx, "POST", "http://dagger"+engine.ShutdownEndpoint, nil)
 	if err != nil {
 		return fmt.Errorf("new request: %w", err)
-	}
-
-	if c.rootCtx.Err() != nil {
-		req.URL.RawQuery = url.Values{
-			"immediate": []string{"true"},
-		}.Encode()
 	}
 
 	req.SetBasicAuth(c.SecretToken, "")
@@ -1010,6 +1013,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		Labels:                    c.labels,
 		CloudToken:                os.Getenv("DAGGER_CLOUD_TOKEN"),
 		DoNotTrack:                analytics.DoNotTrack(),
+		Interactive:               c.Interactive,
 	}
 }
 

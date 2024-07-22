@@ -9,17 +9,25 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dagger/dagger/engine/distconsts"
+	bkconfig "github.com/moby/buildkit/cmd/buildkitd/config"
 	"github.com/moby/buildkit/identity"
-	"github.com/stretchr/testify/require"
+	"github.com/pelletier/go-toml"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/engine/distconsts"
+	"github.com/dagger/dagger/internal/testutil"
+	"github.com/dagger/dagger/testctx"
+	"github.com/stretchr/testify/require"
 )
 
+type EngineSuite struct{}
+
+func TestEngine(t *testing.T) {
+	testctx.Run(testCtx, t, EngineSuite{}, Middleware()...)
+}
+
 // devEngineContainer returns a nested dev engine.
-//
-// Note! engineInstance *must* be unique for concurrent instances of dagger.
-func devEngineContainer(c *dagger.Client, engineInstance uint8, withs ...func(*dagger.Container) *dagger.Container) *dagger.Container {
+func devEngineContainer(c *dagger.Client, withs ...func(*dagger.Container) *dagger.Container) *dagger.Container {
 	// This loads the engine.tar file from the host into the container, that
 	// was set up by the test caller. This is used to spin up additional dev
 	// engines.
@@ -35,22 +43,43 @@ func devEngineContainer(c *dagger.Client, engineInstance uint8, withs ...func(*d
 	for _, with := range withs {
 		ctr = with(ctr)
 	}
+
+	deviceName, cidr := testutil.GetUniqueNestedEngineNetwork()
 	return ctr.
-		WithEnvVariable("ENGINE_ID", fmt.Sprint(engineInstance)).
 		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-state-"+identity.NewID())).
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
 		WithExec([]string{
 			"--addr", "tcp://0.0.0.0:1234",
 			"--addr", "unix:///var/run/buildkit/buildkitd.sock",
 			// avoid network conflicts with other tests
-			"--network-name", fmt.Sprintf("dagger%d", engineInstance),
-			"--network-cidr", fmt.Sprintf("10.88.%d.0/24", engineInstance),
+			"--network-name", deviceName,
+			"--network-cidr", cidr,
 		}, dagger.ContainerWithExecOpts{
+			UseEntrypoint:            true,
 			InsecureRootCapabilities: true,
 		})
 }
 
-func engineClientContainer(ctx context.Context, t *testing.T, c *dagger.Client, devEngine *dagger.Service) (*dagger.Container, error) {
+func engineWithConfig(ctx context.Context, t *testctx.T, cfgFns ...func(context.Context, *testctx.T, bkconfig.Config) bkconfig.Config) func(*dagger.Container) *dagger.Container {
+	return func(ctr *dagger.Container) *dagger.Container {
+		t.Helper()
+		existingCfgStr, err := ctr.File("/etc/dagger/engine.toml").Contents(ctx)
+		require.NoError(t, err)
+
+		cfg, err := bkconfig.Load(strings.NewReader(existingCfgStr))
+		require.NoError(t, err)
+		for _, cfgFn := range cfgFns {
+			cfg = cfgFn(ctx, t, cfg)
+		}
+
+		newCfgBytes, err := toml.Marshal(cfg)
+		require.NoError(t, err)
+
+		return ctr.WithNewFile("/etc/dagger/engine.toml", string(newCfgBytes))
+	}
+}
+
+func engineClientContainer(ctx context.Context, t *testctx.T, c *dagger.Client, devEngine *dagger.Service) (*dagger.Container, error) {
 	daggerCli := daggerCliFile(t, c)
 
 	cliBinPath := "/bin/dagger"
@@ -65,16 +94,17 @@ func engineClientContainer(ctx context.Context, t *testing.T, c *dagger.Client, 
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint), nil
 }
 
-func TestEngineExitsZeroOnSignal(t *testing.T) {
-	t.Parallel()
-	c, ctx := connect(t)
+func (EngineSuite) TestExitsZeroOnSignal(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	// engine should shutdown with exit code 0 when receiving SIGTERM
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
-	_, err := devEngineContainer(c, 101, func(c *dagger.Container) *dagger.Container {
-		return c.WithNewFile("/usr/local/bin/dagger-entrypoint.sh", dagger.ContainerWithNewFileOpts{
-			Contents: `#!/bin/sh
+	t = t.WithContext(ctx)
+	_, err := devEngineContainer(c, func(c *dagger.Container) *dagger.Container {
+		return c.WithNewFile(
+			"/usr/local/bin/dagger-entrypoint.sh",
+			`#!/bin/sh
 set -ex
 /usr/local/bin/dagger-engine --debug &
 engine_pid=$!
@@ -84,50 +114,46 @@ kill -TERM $engine_pid
 wait $engine_pid
 exit $?
 `,
-			Permissions: 0o700,
-		})
+			dagger.ContainerWithNewFileOpts{Permissions: 0o700},
+		)
 	}).Sync(ctx)
 	require.NoError(t, err)
 }
 
-func TestClientWaitsForEngine(t *testing.T) {
-	t.Parallel()
+func (ClientSuite) TestWaitsForEngine(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
-	c, ctx := connect(t)
-
-	devEngine := devEngineContainer(c, 102, func(c *dagger.Container) *dagger.Container {
+	devEngine := devEngineContainer(c, func(c *dagger.Container) *dagger.Container {
 		return c.
-			WithNewFile("/usr/local/bin/slow-entrypoint.sh", dagger.ContainerWithNewFileOpts{
-				Contents: strings.Join([]string{
+			WithNewFile(
+				"/usr/local/bin/slow-entrypoint.sh",
+				strings.Join([]string{
 					`#!/bin/sh`,
 					`set -eux`,
 					`sleep 15`,
 					`echo my hostname is $(hostname)`,
 					`exec /usr/local/bin/dagger-entrypoint.sh "$@"`,
 				}, "\n"),
-				Permissions: 0o700,
-			}).
+				dagger.ContainerWithNewFileOpts{Permissions: 0o700},
+			).
 			WithEntrypoint([]string{"/usr/local/bin/slow-entrypoint.sh"})
 	})
 
 	clientCtr, err := engineClientContainer(ctx, t, c, devEngine.AsService())
 	require.NoError(t, err)
 	_, err = clientCtr.
-		WithNewFile("/query.graphql", dagger.ContainerWithNewFileOpts{
-			Contents: `{ defaultPlatform }`,
-		}). // arbitrary valid query
+		WithNewFile("/query.graphql", `{ version }`). // arbitrary valid query
 		WithExec([]string{"dagger", "query", "--debug", "--doc", "/query.graphql"}).Sync(ctx)
 
 	require.NoError(t, err)
 }
 
-func TestEngineSetsNameFromEnv(t *testing.T) {
-	t.Parallel()
-	c, ctx := connect(t)
+func (EngineSuite) TestSetsNameFromEnv(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	engineName := "my-special-engine"
 	engineVersion := "v1000.0.0-special"
-	devEngineSvc := devEngineContainer(c, 103, func(c *dagger.Container) *dagger.Container {
+	devEngineSvc := devEngineContainer(c, func(c *dagger.Container) *dagger.Container {
 		return c.
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_ENGINE_NAME", engineName).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", engineVersion)
@@ -137,9 +163,7 @@ func TestEngineSetsNameFromEnv(t *testing.T) {
 	require.NoError(t, err)
 
 	clientCtr = clientCtr.
-		WithNewFile("/query.graphql", dagger.ContainerWithNewFileOpts{
-			Contents: `{ version }`,
-		}).
+		WithNewFile("/query.graphql", `{ version }`).
 		WithExec([]string{"dagger", "query", "--debug", "--doc", "/query.graphql"})
 	stdout, err := clientCtr.Stdout(ctx)
 	require.NoError(t, err)
@@ -152,12 +176,10 @@ func TestEngineSetsNameFromEnv(t *testing.T) {
 	require.Contains(t, stdout, engineVersion)
 }
 
-func TestDaggerRun(t *testing.T) {
-	t.Parallel()
+func (EngineSuite) TestDaggerRun(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
-	c, ctx := connect(t)
-
-	devEngine := devEngineContainer(c, 104).AsService()
+	devEngine := devEngineContainer(c).AsService()
 
 	clientCtr, err := engineClientContainer(ctx, t, c, devEngine)
 	require.NoError(t, err)
@@ -188,11 +210,10 @@ func TestDaggerRun(t *testing.T) {
 	require.Contains(t, stderr, "Container.from")
 }
 
-func TestClientSendsLabelsInTelemetry(t *testing.T) {
-	t.Parallel()
-	c, ctx := connect(t)
+func (ClientSuite) TestSendsLabelsInTelemetry(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
-	devEngine := devEngineContainer(c, 105).AsService()
+	devEngine := devEngineContainer(c).AsService()
 	thisRepoPath, err := filepath.Abs("../..")
 	require.NoError(t, err)
 
@@ -257,12 +278,11 @@ func TestClientSendsLabelsInTelemetry(t *testing.T) {
 	require.Contains(t, receivedEvents, "init test repo")
 }
 
-func TestEngineVersionCompat(t *testing.T) {
-	t.Parallel()
-	c, ctx := connect(t)
+func (EngineSuite) TestVersionCompat(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	devEngineVersion := "v2.0.0"
-	devEngineSvc := devEngineContainer(c, 106, func(c *dagger.Container) *dagger.Container {
+	devEngineSvc := devEngineContainer(c, func(c *dagger.Container) *dagger.Container {
 		return c.
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", devEngineVersion).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", "v2.0.0")
@@ -275,33 +295,29 @@ func TestEngineVersionCompat(t *testing.T) {
 	stderr, err := clientCtr.
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", "v2.0.0").
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", "v2.0.0").
-		WithNewFile("/query.graphql", dagger.ContainerWithNewFileOpts{
-			Contents: `{ version }`,
-		}).
+		WithNewFile("/query.graphql", `{ version }`).
 		WithExec([]string{"sh", "-c", "dagger query --debug --doc /query.graphql"}).
 		Stderr(ctx)
 	require.NoError(t, err)
 	require.Contains(t, stderr, devEngineVersion)
+	require.NotContains(t, stderr, "incompatible")
 
 	// client version is a development version
 	stderr, err = clientCtr.
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", "foobar").
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", "v2.0.0").
-		WithNewFile("/query.graphql", dagger.ContainerWithNewFileOpts{
-			Contents: `{ version }`,
-		}).
+		WithNewFile("/query.graphql", `{ version }`).
 		WithExec([]string{"sh", "-c", "dagger query --debug --doc /query.graphql"}).
 		Stderr(ctx)
 	require.NoError(t, err)
 	require.Contains(t, stderr, devEngineVersion)
+	require.NotContains(t, stderr, "incompatible")
 
 	// client version is too old (v1.0.0 < v2.0.0)
 	stderr, err = clientCtr.
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", "v1.0.0").
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", "v2.0.0").
-		WithNewFile("/query.graphql", dagger.ContainerWithNewFileOpts{
-			Contents: `{ version }`,
-		}).
+		WithNewFile("/query.graphql", `{ version }`).
 		WithExec([]string{"sh", "-c", "! dagger query --debug --doc /query.graphql"}).
 		Stderr(ctx)
 	require.NoError(t, err)
@@ -311,9 +327,7 @@ func TestEngineVersionCompat(t *testing.T) {
 	stderr, err = clientCtr.
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", "v2.0.0").
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", "v3.0.0").
-		WithNewFile("/query.graphql", dagger.ContainerWithNewFileOpts{
-			Contents: `{ version }`,
-		}).
+		WithNewFile("/query.graphql", `{ version }`).
 		WithExec([]string{"sh", "-c", "! dagger query --debug --doc /query.graphql"}).
 		Stderr(ctx)
 	require.NoError(t, err)
@@ -323,11 +337,66 @@ func TestEngineVersionCompat(t *testing.T) {
 	stderr, err = clientCtr.
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", "v1.0.0").
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", "v3.0.0").
-		WithNewFile("/query.graphql", dagger.ContainerWithNewFileOpts{
-			Contents: `{ version }`,
-		}).
+		WithNewFile("/query.graphql", `{ version }`).
 		WithExec([]string{"sh", "-c", "! dagger query --debug --doc /query.graphql"}).
 		Stderr(ctx)
 	require.NoError(t, err)
 	require.Contains(t, stderr, "incompatible engine version")
+}
+
+func (EngineSuite) TestModuleVersionCompat(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	devEngineVersion := "v2.0.0"
+	devEngineSvc := devEngineContainer(c, func(c *dagger.Container) *dagger.Container {
+		return c.
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", devEngineVersion).
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", "v2.0.0")
+	}).AsService()
+
+	clientCtr, err := engineClientContainer(ctx, t, c, devEngineSvc)
+	require.NoError(t, err)
+	clientCtr = clientCtr.
+		WithWorkdir("/work").
+		With(daggerExec("init", "--name=bare", "--sdk=go"))
+
+	// versions are compatible!
+	stderr, err := clientCtr.
+		WithNewFile("/work/dagger.json", `{"name": "bare", "sdk": "go", "engineVersion": "v2.0.0"}`).
+		WithNewFile("/query.graphql", `{bare{containerEcho(stringArg:"hello"){stdout}}}`).
+		WithExec([]string{"sh", "-c", "dagger query --debug --doc /query.graphql"}).
+		Stderr(ctx)
+	require.NoError(t, err)
+	require.Contains(t, stderr, devEngineVersion)
+	require.NotContains(t, stderr, "module requires")
+
+	// module version is a development version
+	stderr, err = clientCtr.
+		WithNewFile("/work/dagger.json", `{"name": "bare", "sdk": "go", "engineVersion": "foobar"}`).
+		WithNewFile("/query.graphql", `{bare{containerEcho(stringArg:"hello"){stdout}}}`).
+		WithExec([]string{"sh", "-c", "dagger query --debug --doc /query.graphql"}).
+		Stderr(ctx)
+	require.NoError(t, err)
+	require.Contains(t, stderr, devEngineVersion)
+	require.NotContains(t, stderr, "module requires")
+
+	// module version is asking for a too old version
+	stderr, err = clientCtr.
+		WithNewFile("/work/dagger.json", `{"name": "bare", "sdk": "go", "engineVersion": "v1.0.0"}`).
+		WithNewFile("/query.graphql", `{bare{containerEcho(stringArg:"hello"){stdout}}}`).
+		WithExec([]string{"sh", "-c", "! dagger query --debug --doc /query.graphql"}).
+		Stderr(ctx)
+	require.NoError(t, err)
+	require.Contains(t, stderr, devEngineVersion)
+	require.Contains(t, stderr, "module requires incompatible engine")
+
+	// module version is asking for a too new version
+	stderr, err = clientCtr.
+		WithNewFile("/work/dagger.json", `{"name": "bare", "sdk": "go", "engineVersion": "v3.0.0"}`).
+		WithNewFile("/query.graphql", `{bare{containerEcho(stringArg:"hello"){stdout}}}`).
+		WithExec([]string{"sh", "-c", "! dagger query --debug --doc /query.graphql"}).
+		Stderr(ctx)
+	require.NoError(t, err)
+	require.Contains(t, stderr, devEngineVersion)
+	require.Contains(t, stderr, "module requires newer engine")
 }

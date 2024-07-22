@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"syscall"
 )
 
 func InstallDnsmasq(ctx context.Context, name string) error {
@@ -47,16 +49,47 @@ func InstallDnsmasq(ctx context.Context, name string) error {
 	dnsmasq.Stdout = os.Stdout
 	dnsmasq.Stderr = os.Stderr
 
-	if err := dnsmasq.Start(); err != nil {
-		return fmt.Errorf("start dnsmasq: %w", err)
+	if dnsmasq.SysProcAttr == nil {
+		dnsmasq.SysProcAttr = &syscall.SysProcAttr{}
 	}
+	// If the engine dies, dnsmasq should die too
+	dnsmasq.SysProcAttr.Pdeathsig = syscall.SIGKILL
+	// Prevent signals forwarded to the engine's process group from automatically going to dnsmasq.
+	// The engine handles signals itself and will kill dnsmasq when/if needed. If we don't do this
+	// the engine can receive shutdown signals (SIGTERM/SIGINT/etc.), start a graceful shutdown, but
+	// dnsmasq will receive those too and exit immediately, not being around for the engine's
+	// graceful shutdown.
+	dnsmasq.SysProcAttr.Setpgid = true
 
+	// We have to lock proess start+wait to the os thread when using Pdeathsig, otherwise it's
+	// possible for the thread that started the process to run elsewhere, exit and the child process
+	// to unexpectedly get its parent death signal.
+	started := make(chan error, 1)
 	go func() {
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+
+		if err := dnsmasq.Start(); err != nil {
+			started <- fmt.Errorf("start dnsmasq: %w", err)
+			close(started)
+			return
+		}
+		close(started)
+
 		err := dnsmasq.Wait()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "dnsmasq exited: %v\n", err)
 		}
 	}()
+
+	select {
+	case err := <-started:
+		if err != nil {
+			return err
+		}
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	}
 
 	return nil
 }

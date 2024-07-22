@@ -72,6 +72,18 @@ class GitRepository extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * tags that match any of the given glob patterns.
+     */
+    public function tags(?array $patterns = null): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('tags');
+        if (null !== $patterns) {
+        $leafQueryBuilder->setArgument('patterns', $patterns);
+        }
+        return (array)$this->queryLeaf($leafQueryBuilder, 'tags');
+    }
+
+    /**
      * Header to authenticate the remote with.
      */
     public function withAuthHeader(SecretId|Secret $header): GitRepository

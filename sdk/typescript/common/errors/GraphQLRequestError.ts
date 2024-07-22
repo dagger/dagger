@@ -1,14 +1,10 @@
-import {
-  GraphQLRequestContext,
-  GraphQLResponse,
-} from "graphql-request/build/esm/types.js"
+import { ClientError } from "graphql-request"
 
 import { DaggerSDKError, DaggerSDKErrorOptions } from "./DaggerSDKError.js"
 import { ERROR_CODES, ERROR_NAMES } from "./errors-codes.js"
 
 interface GraphQLRequestErrorOptions extends DaggerSDKErrorOptions {
-  response: GraphQLResponse
-  request: GraphQLRequestContext
+  error: ClientError
 }
 
 /**
@@ -21,19 +17,19 @@ export class GraphQLRequestError extends DaggerSDKError {
   /**
    *  The query and variables, which caused the error.
    */
-  requestContext: GraphQLRequestContext
+  requestContext: ClientError["request"]
 
   /**
    *  the GraphQL response containing the error.
    */
-  response: GraphQLResponse
+  response: ClientError["response"]
 
   /**
    *  @hidden
    */
   constructor(message: string, options: GraphQLRequestErrorOptions) {
     super(message, options)
-    this.requestContext = options.request
-    this.response = options.response
+    this.requestContext = options.error.request
+    this.response = options.error.response
   }
 }

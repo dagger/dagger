@@ -2,9 +2,7 @@ package dagger
 
 import (
 	"context"
-	"fmt"
 	"io"
-	"os"
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/vektah/gqlparser/v2/gqlerror"
@@ -53,10 +51,12 @@ func WithConn(conn engineconn.EngineConn) ClientOpt {
 	})
 }
 
-// WithSkipCompatibilityCheck disables the version compatibility check
-func WithSkipCompatibilityCheck() ClientOpt {
+// WithRunnerHost sets the runner host URL for provisioning and connecting to
+// an engine. This only has effect when connecting via the CLI, and is only
+// exposed for testing purposes.
+func WithRunnerHost(runnerHost string) ClientOpt {
 	return clientOptFunc(func(cfg *engineconn.Config) {
-		cfg.SkipCompatibilityCheck = true
+		cfg.RunnerHost = runnerHost
 	})
 }
 
@@ -79,15 +79,6 @@ func Connect(ctx context.Context, opts ...ClientOpt) (*Client, error) {
 		client: gql,
 		conn:   conn,
 	}
-
-	if !cfg.SkipCompatibilityCheck {
-		// Call version compatibility.
-		// If versions are not compatible, a warning will be displayed.
-		if _, err = c.CheckVersionCompatibility(ctx, engineconn.CLIVersion); err != nil {
-			fmt.Fprintln(os.Stderr, "failed to check version compatibility:", err)
-		}
-	}
-
 	return c, nil
 }
 

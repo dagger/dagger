@@ -13,8 +13,7 @@ defmodule Dagger.ClientTest do
     Host,
     QueryError,
     Secret,
-    Sync,
-    ID
+    Sync
   }
 
   setup_all do
@@ -58,7 +57,7 @@ defmodule Dagger.ClientTest do
              client
              |> Client.container()
              |> Container.build(repo)
-             |> Container.with_exec(["version"])
+             |> Container.with_exec(["dagger", "version"])
              |> Container.stdout()
 
     assert ["dagger" | _] = out |> String.trim() |> String.split(" ")
@@ -81,6 +80,7 @@ defmodule Dagger.ClientTest do
                |> Directory.with_new_file("Dockerfile", dockerfile),
                build_args: [%BuildArg{name: "SPAM", value: "egg"}]
              )
+             |> Container.with_exec([])
              |> Container.stdout()
 
     assert out =~ "SPAM=egg"
@@ -298,8 +298,9 @@ defmodule Dagger.ClientTest do
              client
              |> Client.container()
              |> Container.from("nginx:1.25-alpine3.18")
-             |> Container.with_new_file("/a.txt",
-               contents: """
+             |> Container.with_new_file(
+               "/a.txt",
+               """
                  \\  /       Partly cloudy
                _ /\"\".-.     +29(31) °C
                  \\_(   ).   ↑ 13 km/h

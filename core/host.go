@@ -70,10 +70,15 @@ func (host *Host) Directory(
 	var i dagql.Instance[*Directory]
 	// TODO: enforcement that requester session is granted access to source session at this path
 
+	bk, err := host.Query.Buildkit(ctx)
+	if err != nil {
+		return i, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+
 	// Create a sub-pipeline to group llb.Local instructions
-	_, desc, err := host.Query.Buildkit.LocalImport(
+	_, desc, err := bk.LocalImport(
 		ctx,
-		host.Query.Platform.Spec(),
+		host.Query.Platform().Spec(),
 		dirPath,
 		filter.Exclude,
 		filter.Include,
@@ -116,19 +121,26 @@ func (host *Host) File(ctx context.Context, srv *dagql.Server, filePath string) 
 }
 
 func (host *Host) SetSecretFile(ctx context.Context, srv *dagql.Server, secretName string, path string) (i dagql.Instance[*Secret], err error) {
-	accessor, err := GetLocalSecretAccessor(ctx, host.Query, secretName)
+	secretStore, err := host.Query.Secrets(ctx)
+	if err != nil {
+		return i, fmt.Errorf("failed to get secrets: %w", err)
+	}
+
+	accessor, err := GetClientResourceAccessor(ctx, host.Query, secretName)
 	if err != nil {
 		return i, err
 	}
 
-	secretFileContent, err := host.Query.Buildkit.ReadCallerHostFile(ctx, path)
+	bk, err := host.Query.Buildkit(ctx)
+	if err != nil {
+		return i, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+
+	secretFileContent, err := bk.ReadCallerHostFile(ctx, path)
 	if err != nil {
 		return i, fmt.Errorf("read secret file: %w", err)
 	}
 
-	if err := host.Query.Secrets.AddSecret(ctx, accessor, secretFileContent); err != nil {
-		return i, err
-	}
 	err = srv.Select(ctx, srv.Root(), &i, dagql.Selector{
 		Field: "secret",
 		Args: []dagql.NamedInput{
@@ -142,9 +154,13 @@ func (host *Host) SetSecretFile(ctx context.Context, srv *dagql.Server, secretNa
 			},
 		},
 	})
-	return
-}
+	if err != nil {
+		return i, fmt.Errorf("failed to select secret: %w", err)
+	}
 
-func (host *Host) Socket(sockPath string) *Socket {
-	return NewHostUnixSocket(sockPath)
+	if err := secretStore.AddSecret(i.Self, secretName, secretFileContent); err != nil {
+		return i, fmt.Errorf("failed to add secret: %w", err)
+	}
+
+	return i, nil
 }

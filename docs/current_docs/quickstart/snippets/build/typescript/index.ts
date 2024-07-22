@@ -22,7 +22,7 @@ class HelloDagger {
         // copy the build output directory to the container
         .withDirectory("/usr/share/nginx/html", build)
         // expose the container port
-        .withExposedPort(8080)
+        .withExposedPort(80)
     )
   }
 }

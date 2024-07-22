@@ -42,7 +42,7 @@ func TestParsePublicRefString(t *testing.T) {
 			want: &parsedRefString{
 				modPath:        "github.com/shykes/daggerverse.git/ci",
 				kind:           core.ModuleSourceKindGit,
-				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse.git", Repo: "https://github.com/shykes/daggerverse.git"},
+				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse.git", Repo: "https://github.com/shykes/daggerverse"},
 				repoRootSubdir: "ci",
 			},
 		},
@@ -51,7 +51,7 @@ func TestParsePublicRefString(t *testing.T) {
 			want: &parsedRefString{
 				modPath:        "github.com/shykes/daggerverse.git/../../",
 				kind:           core.ModuleSourceKindGit,
-				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse.git", Repo: "https://github.com/shykes/daggerverse.git"},
+				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse.git", Repo: "https://github.com/shykes/daggerverse"},
 				repoRootSubdir: "../../",
 			},
 		},
@@ -61,7 +61,7 @@ func TestParsePublicRefString(t *testing.T) {
 			want: &parsedRefString{
 				modPath:        "gitlab.com/testguigui1/dagger-public-sub/mywork/depth1/depth2",
 				kind:           core.ModuleSourceKindGit,
-				repoRoot:       &vcs.RepoRoot{Root: "gitlab.com/testguigui1/dagger-public-sub/mywork", Repo: "https://gitlab.com/testguigui1/dagger-public-sub/mywork.git"},
+				repoRoot:       &vcs.RepoRoot{Root: "gitlab.com/testguigui1/dagger-public-sub/mywork", Repo: "https://gitlab.com/testguigui1/dagger-public-sub/mywork"},
 				repoRootSubdir: "depth1/depth2",
 			},
 		},
@@ -89,7 +89,7 @@ func TestParsePublicRefString(t *testing.T) {
 			want: &parsedRefString{
 				modPath:        "bitbucket.org/test-travail/test.git/depth1",
 				kind:           core.ModuleSourceKindGit,
-				repoRoot:       &vcs.RepoRoot{Root: "bitbucket.org/test-travail/test.git", Repo: "https://bitbucket.org/test-travail/test.git"},
+				repoRoot:       &vcs.RepoRoot{Root: "bitbucket.org/test-travail/test.git", Repo: "https://bitbucket.org/test-travail/test"},
 				repoRootSubdir: "depth1",
 			},
 		},
@@ -115,4 +115,76 @@ type MockBuildkitClient struct {
 
 func (m *MockBuildkitClient) StatCallerHostPath(ctx context.Context, path string, followLinks bool) (*types.Stat, error) {
 	return m.StatFunc(ctx, path, followLinks)
+}
+
+func TestLexicalRelativePath(t *testing.T) {
+	tests := []struct {
+		name     string
+		cwdPath  string
+		modPath  string
+		expected string
+		wantErr  bool
+	}{
+		{
+			name:     "Simple relative path",
+			cwdPath:  "/home/user",
+			modPath:  "/home/user/project",
+			expected: "project",
+		},
+		{
+			name:     "Parent directory",
+			cwdPath:  "/home/user/project",
+			modPath:  "/home/user",
+			expected: "..",
+		},
+		{
+			name:     "Same directory",
+			cwdPath:  "/home/user",
+			modPath:  "/home/user",
+			expected: ".",
+		},
+		{
+			name:     "Windows style paths",
+			cwdPath:  `C:\Users\user`,
+			modPath:  `C:\Users\user\project`,
+			expected: "project",
+		},
+		{
+			name:    "Windows different drives",
+			cwdPath: `C:\Users\user`,
+			modPath: `D:\Projects\myproject`,
+			wantErr: true,
+		},
+		{
+			name:     "Windows UNC paths",
+			cwdPath:  `\\server\share\folder`,
+			modPath:  `\\server\share\folder\project`,
+			expected: "project",
+		},
+		{
+			name:     "Mixed slashes",
+			cwdPath:  `/home/user/folder`,
+			modPath:  `/home/user/folder/subfolder\project`,
+			expected: "subfolder/project",
+		},
+		{
+			name:    "Invalid relative path",
+			cwdPath: "/home/user",
+			modPath: "C:/Windows",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := lexicalRelativePath(tt.cwdPath, tt.modPath)
+
+			if tt.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tt.expected, result)
+			}
+		})
+	}
 }

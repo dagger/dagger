@@ -21,7 +21,11 @@ class MyModule:
                 [
                     "sh",
                     "-c",
-                    """curl "https://api.github.com/repos/dagger/dagger/issues" --header "Accept: application/vnd.github+json" --header "Authorization: Bearer $GITHUB_API_TOKEN" """,
+                    (
+                        'curl "https://api.github.com/repos/dagger/dagger/issues"'
+                        ' --header "Authorization: Bearer $GITHUB_API_TOKEN"'
+                        ' --header "Accept: application/vnd.github+json"'
+                    ),
                 ]
             )
             .stdout()

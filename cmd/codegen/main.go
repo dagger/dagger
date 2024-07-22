@@ -54,7 +54,7 @@ func init() {
 
 func ClientGen(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
-	dag, err := dagger.Connect(ctx, dagger.WithSkipCompatibilityCheck())
+	dag, err := dagger.Connect(ctx)
 	if err != nil {
 		return err
 	}
@@ -94,7 +94,7 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 
 func Introspect(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
-	dag, err := dagger.Connect(ctx, dagger.WithSkipCompatibilityCheck())
+	dag, err := dagger.Connect(ctx)
 	if err != nil {
 		return err
 	}

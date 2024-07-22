@@ -16,6 +16,7 @@ import (
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/buildkit"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 )
 
@@ -81,6 +82,9 @@ func InitTelemetry(ctx context.Context) (context.Context, *enginetel.PubSub) {
 		Detect: false,
 
 		SpanProcessors: []sdktrace.SpanProcessor{
+			// Install a span processor that modifies spans created by Buildkit to
+			// fit our ideal format.
+			buildkit.SpanProcessor{},
 			// Install a span processor that annotates each span with the client ID
 			// that it came from.
 			pubsub.Processor(),

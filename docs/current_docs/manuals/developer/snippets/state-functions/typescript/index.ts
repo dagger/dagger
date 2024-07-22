@@ -1,11 +1,11 @@
-import { dag, Container, object, func, field } from "@dagger.io/dagger"
+import { object, func } from "@dagger.io/dagger"
 
 @object()
 class MyModule {
   /**
    * The greeting to use
    */
-  @field()
+  @func()
   greeting: string
 
   /**

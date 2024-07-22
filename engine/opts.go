@@ -28,6 +28,9 @@ const (
 	localDirImportIncludePatternsMetaKey = "include-patterns"
 	localDirImportExcludePatternsMetaKey = "exclude-patterns"
 	localDirImportFollowPathsMetaKey     = "followpaths"
+
+	// socket session attachable keys
+	SocketURLEncodedKey = "X-Dagger-Socket-URLEncoded"
 )
 
 type ClientMetadata struct {
@@ -56,6 +59,9 @@ type ClientMetadata struct {
 
 	// (Optional) Pipeline labels for e.g. vcs info like branch, commit, etc.
 	Labels map[string]string `json:"labels"`
+
+	// Interactive mode
+	Interactive bool `json:"interactive"`
 
 	// Import configuration for Buildkit's remote cache
 	UpstreamCacheImportConfig []*controlapi.CacheOptionsEntry

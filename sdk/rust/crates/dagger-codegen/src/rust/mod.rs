@@ -14,6 +14,7 @@ use crate::visitor::{VisitHandlers, Visitor};
 
 use self::format::FormatTypeFunc;
 use self::templates::enum_tmpl::render_enum;
+use self::templates::heading_tmpl::render_heading;
 use self::templates::input_tmpl::render_input;
 use self::templates::object_tmpl::render_object;
 use self::templates::scalar_tmpl::render_scalar;
@@ -24,7 +25,8 @@ impl Generator for RustGenerator {
     fn generate(&self, schema: Schema) -> eyre::Result<String> {
         let render = Arc::new(Mutex::new(rust::Tokens::new()));
         let common_funcs = Arc::new(CommonFunctions::new(Arc::new(FormatTypeFunc {})));
-        println!("generating dagger for rust");
+
+        tracing::info!("generating dagger for rust");
 
         let visitor = Visitor {
             schema,
@@ -33,7 +35,7 @@ impl Generator for RustGenerator {
                     let render = render.clone();
 
                     move |t| {
-                        println!("generating scalar");
+                        tracing::debug!("generating scalar");
                         let rendered_scalar = render_scalar(t)?;
 
                         let mut render = render.lock().unwrap();
@@ -41,7 +43,7 @@ impl Generator for RustGenerator {
                         render.append(rendered_scalar);
                         render.push();
 
-                        println!("generated scalar");
+                        tracing::debug!("generated scalar");
 
                         Ok(())
                     }
@@ -51,14 +53,14 @@ impl Generator for RustGenerator {
                     let common_funcs = common_funcs.clone();
 
                     move |t| {
-                        println!("generating object");
+                        tracing::debug!("generating object");
                         let rendered_scalar = render_object(&common_funcs, t)?;
 
                         let mut render = render.lock().unwrap();
 
                         render.append(rendered_scalar);
                         render.push();
-                        println!("generated object");
+                        tracing::debug!("generated object");
 
                         Ok(())
                     }
@@ -68,14 +70,14 @@ impl Generator for RustGenerator {
                     let common_funcs = common_funcs.clone();
 
                     move |t| {
-                        println!("generating input");
+                        tracing::debug!("generating input");
                         let rendered_scalar = render_input(&common_funcs, t)?;
 
                         let mut render = render.lock().unwrap();
 
                         render.append(rendered_scalar);
                         render.push();
-                        println!("generated input");
+                        tracing::debug!("generated input");
 
                         Ok(())
                     }
@@ -85,14 +87,14 @@ impl Generator for RustGenerator {
                     let _common_funcs = common_funcs.clone();
 
                     move |t| {
-                        println!("generating enum");
+                        tracing::debug!("generating enum");
                         let rendered_scalar = render_enum(t)?;
 
                         let mut render = render.lock().unwrap();
 
                         render.append(rendered_scalar);
                         render.push();
-                        println!("generated enum");
+                        tracing::debug!("generated enum");
 
                         Ok(())
                     }
@@ -102,12 +104,18 @@ impl Generator for RustGenerator {
 
         visitor.run()?;
 
-        println!("done generating objects");
+        tracing::info!("done generating objects");
 
         let rendered = render.lock().unwrap();
 
-        rendered
+        let body = rendered
             .to_file_string()
-            .context("could not render to file string")
+            .context("could not render to file string")?;
+
+        let heading = render_heading()
+            .to_string()
+            .context("failed to render heaing")?;
+
+        Ok(format!("{heading}\n\n{body}"))
     }
 }

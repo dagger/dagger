@@ -1,6 +1,0 @@
-kind: Added
-body: allow other CIs than GitHub
-time: 2024-06-12T14:51:59.394243036Z
-custom:
-    Author: grouville
-    PR: "7511"

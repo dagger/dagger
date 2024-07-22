@@ -21,10 +21,10 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 	}
 
 	var base string
-	if id.Base() == nil {
+	if id.Receiver() == nil {
 		base = "Query"
 	} else {
-		base = id.Base().Type().ToAST().Name()
+		base = id.Receiver().Type().ToAST().Name()
 	}
 	spanName := fmt.Sprintf("%s.%s", base, id.Field())
 
@@ -107,7 +107,7 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 						ops = append(ops, dig.String())
 					}
 				}
-				span.SetAttributes(attribute.StringSlice(telemetry.LLBDigestsAttr, ops))
+				span.SetAttributes(attribute.StringSlice(telemetry.EffectIDsAttr, ops))
 			}
 		}
 	}
@@ -118,9 +118,10 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 // These queries tend to be very large and are not interesting for users to
 // see.
 func isIntrospection(id *call.ID) bool {
-	if id.Base() == nil {
+	if id.Receiver() == nil {
 		switch id.Field() {
 		case "__schema",
+			"__schemaVersion",
 			"currentTypeDefs",
 			"currentFunctionCall",
 			"currentModule":
@@ -129,6 +130,15 @@ func isIntrospection(id *call.ID) bool {
 			return false
 		}
 	} else {
-		return isIntrospection(id.Base())
+		return isIntrospection(id.Receiver())
 	}
+}
+
+func serviceEffect(id *call.ID) string {
+	return id.Digest().String() + "-service"
+}
+
+// Tell telemetry about the associated effect for when the service starts.
+func connectServiceEffect(ctx context.Context) {
+	trace.SpanFromContext(ctx).SetAttributes(attribute.StringSlice(telemetry.EffectIDsAttr, []string{serviceEffect(dagql.CurrentID(ctx))}))
 }

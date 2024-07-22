@@ -11,14 +11,14 @@ use crate::utility::OptionExt;
 
 pub fn render_object(funcs: &CommonFunctions, t: &FullType) -> eyre::Result<rust::Tokens> {
     let selection = rust::import("crate::querybuilder", "Selection");
-    let child = rust::import("tokio::process", "Child");
+    let session_proc = rust::import("crate::core::cli_session", "DaggerSessionProc");
     let graphql_client = rust::import("crate::core::graphql_client", "DynGraphQLClient");
     let arc = rust::import("std::sync", "Arc");
 
     Ok(quote! {
         #[derive(Clone)]
         pub struct $(t.name.pipe(|s| format_name(s))) {
-            pub proc: Option<$arc<$child>>,
+            pub proc: Option<$arc<$session_proc>>,
             pub selection: $selection,
             pub graphql_client: $graphql_client
         }
@@ -33,15 +33,14 @@ pub fn render_object(funcs: &CommonFunctions, t: &FullType) -> eyre::Result<rust
 
 fn render_optional_args(
     funcs: &CommonFunctions,
-    fields: &Vec<FullTypeFields>,
+    fields: &[FullTypeFields],
 ) -> Option<rust::Tokens> {
     let rendered_fields = fields
         .iter()
-        .map(|f| render_optional_arg(funcs, f))
-        .flatten()
+        .filter_map(|f| render_optional_arg(funcs, f))
         .collect::<Vec<_>>();
 
-    if rendered_fields.len() == 0 {
+    if rendered_fields.is_empty() {
         None
     } else {
         Some(quote! {
@@ -73,13 +72,13 @@ fn render_optional_arg(funcs: &CommonFunctions, field: &FullTypeFields) -> Optio
 
 pub fn render_optional_field_args(
     funcs: &CommonFunctions,
-    args: &Vec<&FullTypeFieldsArgs>,
+    args: &[&FullTypeFieldsArgs],
 ) -> Option<(rust::Tokens, bool)> {
-    if args.len() == 0 {
+    if args.is_empty() {
         return None;
     }
     let mut contains_lifetime = false;
-    let rendered_args = args.into_iter().map(|a| &a.input_value).map(|a| {
+    let rendered_args = args.iter().map(|a| &a.input_value).map(|a| {
         let type_ = funcs.format_immutable_input_type(&a.type_);
         if type_.contains("str") {
             contains_lifetime = true;
@@ -99,13 +98,13 @@ pub fn render_optional_field_args(
     ))
 }
 
-fn render_functions(funcs: &CommonFunctions, fields: &Vec<FullTypeFields>) -> Option<rust::Tokens> {
+fn render_functions(funcs: &CommonFunctions, fields: &[FullTypeFields]) -> Option<rust::Tokens> {
     let rendered_functions = fields
         .iter()
         .map(|f| render_function(funcs, f))
         .collect::<Vec<_>>();
 
-    if rendered_functions.len() > 0 {
+    if !rendered_functions.is_empty() {
         Some(quote! {
             $(for func in rendered_functions join ($['\r']) => $func)
         })

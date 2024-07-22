@@ -25,6 +25,7 @@ class Connection(ResourceManager):
 
         import dagger
 
+
         async def main():
             async with dagger.Connection() as client:
                 ctr = client.container().from_("alpine")
@@ -36,6 +37,7 @@ class Connection(ResourceManager):
         import anyio
         import dagger
 
+
         async def main():
             cfg = dagger.Config(log_output=sys.stderr)
 
@@ -45,6 +47,7 @@ class Connection(ResourceManager):
 
             print(version)
             # Output: Python 3.11.1
+
 
         anyio.run(main)
     """
@@ -79,6 +82,7 @@ async def connection(config: Config | None = None):
         import dagger
         from dagger import dag
 
+
         async def main():
             async with dagger.connection():
                 ctr = dag.container().from_("alpine")
@@ -93,6 +97,7 @@ async def connection(config: Config | None = None):
         import dagger
         from dagger import dag
 
+
         async def main():
             cfg = dagger.Config(log_output=sys.stderr)
 
@@ -102,6 +107,7 @@ async def connection(config: Config | None = None):
 
             print(version)
             # Output: Python 3.11.1
+
 
         anyio.run(main)
     """

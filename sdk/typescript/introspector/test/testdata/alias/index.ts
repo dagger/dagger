@@ -1,12 +1,12 @@
 import { dag, Container } from "../../../../api/client.gen.js"
-import { func, object, field } from "../../../decorators/decorators.js"
+import { func, object } from "../../../decorators/decorators.js"
 
 @object()
 export class Bar {
-  @field("bar")
+  @func("bar")
   baz: string = "baz"
 
-  @field("oof")
+  @func("oof")
   foo: number = 4
 
   constructor(baz: string = "baz", foo: number = 4) {
@@ -22,10 +22,10 @@ export class Bar {
 
 @object()
 export class Alias {
-  @field("prefix")
+  @func("prefix")
   gretingPrefix = "test"
 
-  @field("container")
+  @func("container")
   ctr: Container
 
   constructor(ctr?: Container) {

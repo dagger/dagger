@@ -1,10 +1,9 @@
-import { func, object, field } from "../../../decorators/decorators.js"
+import { func, object } from "../../../decorators/decorators.js"
 
 @object()
-class Number {
-  @field()
+class Integer {
+  @func()
   value: number
-
 
   constructor(value: number) {
     this.value = value
@@ -20,7 +19,7 @@ class Number {
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 class List {
   @func()
-  create(...n: number[]): Number[] {
-    return n.map((v) => new Number(v))
+  create(...n: number[]): Integer[] {
+    return n.map((v) => new Integer(v))
   }
 }

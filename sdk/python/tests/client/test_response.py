@@ -7,8 +7,7 @@ from dagger.client._core import Context, Field, InvalidQueryError
 from dagger.client.base import Scalar
 
 
-class SomeID(Scalar):
-    ...
+class SomeID(Scalar): ...
 
 
 class F(NamedTuple):

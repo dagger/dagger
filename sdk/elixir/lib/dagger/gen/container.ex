@@ -183,15 +183,13 @@ defmodule Dagger.Container do
   @doc """
   Writes the container as an OCI tarball to the destination file path on the host.
 
-  Return true on success.
-
   It can also export platform variants.
   """
   @spec export(t(), String.t(), [
           {:platform_variants, [Dagger.ContainerID.t()]},
           {:forced_compression, Dagger.ImageLayerCompression.t() | nil},
           {:media_types, Dagger.ImageMediaTypes.t() | nil}
-        ]) :: {:ok, boolean()} | {:error, term()}
+        ]) :: {:ok, String.t()} | {:error, term()}
   def export(%__MODULE__{} = container, path, optional_args \\ []) do
     selection =
       container.selection
@@ -434,20 +432,29 @@ defmodule Dagger.Container do
 
   It doesn't run the default command if no exec has been set.
   """
-  @spec sync(t()) :: {:ok, Dagger.ContainerID.t()} | {:error, term()}
+  @spec sync(t()) :: {:ok, Dagger.Container.t()} | {:error, term()}
   def sync(%__MODULE__{} = container) do
     selection =
       container.selection |> select("sync")
 
-    execute(selection, container.client)
+    with {:ok, id} <- execute(selection, container.client) do
+      {:ok,
+       %Dagger.Container{
+         selection:
+           query()
+           |> select("loadContainerFromID")
+           |> arg("id", id),
+         client: container.client
+       }}
+    end
   end
 
-  @doc "Return an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default)."
+  @doc "Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default)."
   @spec terminal(t(), [
           {:cmd, [String.t()]},
           {:experimental_privileged_nesting, boolean() | nil},
           {:insecure_root_capabilities, boolean() | nil}
-        ]) :: Dagger.Terminal.t()
+        ]) :: Dagger.Container.t()
   def terminal(%__MODULE__{} = container, optional_args \\ []) do
     selection =
       container.selection
@@ -459,7 +466,7 @@ defmodule Dagger.Container do
       )
       |> maybe_put_arg("insecureRootCapabilities", optional_args[:insecure_root_capabilities])
 
-    %Dagger.Terminal{
+    %Dagger.Container{
       selection: selection,
       client: container.client
     }
@@ -566,6 +573,7 @@ defmodule Dagger.Container do
   @doc "Retrieves this container after executing the specified command inside it."
   @spec with_exec(t(), [String.t()], [
           {:skip_entrypoint, boolean() | nil},
+          {:use_entrypoint, boolean() | nil},
           {:stdin, String.t() | nil},
           {:redirect_stdout, String.t() | nil},
           {:redirect_stderr, String.t() | nil},
@@ -578,6 +586,7 @@ defmodule Dagger.Container do
       |> select("withExec")
       |> put_arg("args", args)
       |> maybe_put_arg("skipEntrypoint", optional_args[:skip_entrypoint])
+      |> maybe_put_arg("useEntrypoint", optional_args[:use_entrypoint])
       |> maybe_put_arg("stdin", optional_args[:stdin])
       |> maybe_put_arg("redirectStdout", optional_args[:redirect_stdout])
       |> maybe_put_arg("redirectStderr", optional_args[:redirect_stderr])
@@ -781,17 +790,16 @@ defmodule Dagger.Container do
   end
 
   @doc "Retrieves this container plus a new file written at the given path."
-  @spec with_new_file(t(), String.t(), [
-          {:contents, String.t() | nil},
+  @spec with_new_file(t(), String.t(), String.t(), [
           {:permissions, integer() | nil},
           {:owner, String.t() | nil}
         ]) :: Dagger.Container.t()
-  def with_new_file(%__MODULE__{} = container, path, optional_args \\ []) do
+  def with_new_file(%__MODULE__{} = container, path, contents, optional_args \\ []) do
     selection =
       container.selection
       |> select("withNewFile")
       |> put_arg("path", path)
-      |> maybe_put_arg("contents", optional_args[:contents])
+      |> put_arg("contents", contents)
       |> maybe_put_arg("permissions", optional_args[:permissions])
       |> maybe_put_arg("owner", optional_args[:owner])
 

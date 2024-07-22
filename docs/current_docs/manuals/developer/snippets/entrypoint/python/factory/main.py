@@ -1,4 +1,5 @@
 """An example module using default factory functions."""
+
 import dataclasses
 
 import dagger

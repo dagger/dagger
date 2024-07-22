@@ -2,7 +2,7 @@
 Export a type for each type or input existing in the GraphQL schema.
  */ -}}
 {{ define "types" }}
-	{{- range . }}
+	{{- range .Types }}
 		{{- template "type" . }}
 	{{- end }}
 {{- end }}

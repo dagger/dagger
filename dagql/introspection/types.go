@@ -17,6 +17,9 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 		dagql.Func("__schema", func(ctx context.Context, self T, args struct{}) (*Schema, error) {
 			return WrapSchema(srv.Schema()), nil
 		}).Impure("A schema can be modified at runtime."),
+		dagql.Func("__schemaVersion", func(ctx context.Context, self T, args struct{}) (string, error) {
+			return srv.View, nil
+		}).View(dagql.AllView{}),
 		dagql.Func("__type", func(ctx context.Context, self T, args struct {
 			Name string
 		}) (*Type, error) {

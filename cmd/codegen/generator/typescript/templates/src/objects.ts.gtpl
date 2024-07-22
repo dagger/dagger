@@ -1,5 +1,5 @@
 {{ define "objects" }}
-	{{- range . }}
+	{{- range .Types }}
 		{{- if HasPrefix .Name "__" }}
 			{{- /* we ignore types prefixed by __ */ -}}
 		{{- else }}

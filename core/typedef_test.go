@@ -45,6 +45,12 @@ var Samples = map[TypeDefKind]*TypeDef{
 			Name: "FooInterface",
 		}),
 	},
+	TypeDefKindEnum: {
+		Kind: TypeDefKindEnum,
+		AsEnum: dagql.NonNull(&EnumTypeDef{
+			Name: "FooEnum",
+		}),
+	},
 	TypeDefKindVoid: {
 		Kind: TypeDefKindVoid,
 	},

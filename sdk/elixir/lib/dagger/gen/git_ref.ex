@@ -29,16 +29,10 @@ defmodule Dagger.GitRef do
   end
 
   @doc "The filesystem tree at this ref."
-  @spec tree(t(), [
-          {:ssh_known_hosts, String.t() | nil},
-          {:ssh_auth_socket, Dagger.SocketID.t() | nil}
-        ]) :: Dagger.Directory.t()
-  def tree(%__MODULE__{} = git_ref, optional_args \\ []) do
+  @spec tree(t()) :: Dagger.Directory.t()
+  def tree(%__MODULE__{} = git_ref) do
     selection =
-      git_ref.selection
-      |> select("tree")
-      |> maybe_put_arg("sshKnownHosts", optional_args[:ssh_known_hosts])
-      |> maybe_put_arg("sshAuthSocket", optional_args[:ssh_auth_socket])
+      git_ref.selection |> select("tree")
 
     %Dagger.Directory{
       selection: selection,

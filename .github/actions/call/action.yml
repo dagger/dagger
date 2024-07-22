@@ -8,12 +8,12 @@ inputs:
 
   module:
     description: "The Dagger module to call"
-    default: "."
+    default: "dev"
     required: false
 
   version:
     description: "Dagger version to run against"
-    default: "v0.11.6"
+    default: "v0.12.1"
     required: false
 
   dev-engine:
@@ -54,7 +54,7 @@ runs:
       if: inputs.dev-engine == 'true'
       with:
         go-version: "1.22"
-        cache-dependency-path: "ci/go.sum"
+        cache-dependency-path: "dev/go.sum"
 
     - name: Start dev dagger
       shell: bash
@@ -65,15 +65,18 @@ runs:
           echo "docker is not installed"
           exit 1
         fi
-        ./hack/dev
 
-        # put env variables in /tmp/actions/call/local-envs instead of $GITHUB_ENV to avoid
-        # leaking into parent workflow
-        echo "export PATH=$PWD/bin:$PATH" >> /tmp/actions/call/local-envs
-        echo "export _EXPERIMENTAL_DAGGER_CLI_BIN=$PWD/bin/dagger" >> /tmp/actions/call/local-envs
-        echo "export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://dagger-engine.dev" >> /tmp/actions/call/local-envs
+        # put env variables in /tmp/actions/call/local-envs instead of
+        # $GITHUB_ENV to avoid leaking into parent workflow
+        (cd dev/mage; go run main.go -w ../.. engine:dev) | tee /tmp/actions/call/local-envs
 
         echo "::endgroup::"
+      env:
+        # create separate outputs and containers for each workflow (to prevent
+        # collisions with shared docker containers). With `arc` the runner name
+        # is the name of the pod, and each pod runs a single dedicated job.
+        _EXPERIMENTAL_DAGGER_DEV_OUTPUT: ./bin/dev-${{ runner.name }}
+        _EXPERIMENTAL_DAGGER_DEV_CONTAINER: dagger-engine.dev-${{ runner.name }}
 
     - name: Wait for dagger to be ready
       shell: bash
@@ -94,18 +97,32 @@ runs:
         source /tmp/actions/call/local-envs
 
         set -x
-        if [[ "${{ inputs.module }}" == "." ]]; then
+        if [[ "${{ inputs.module }}" == "dev" ]]; then
           # set some sane defaults for the current module
           if [[ -f $HOME/.docker/config.json ]]; then
-            dagger -m . call --source=".:default" --host-docker-config=file:"$HOME/.docker/config.json" ${{ inputs.function }}
+            dagger -m "${{ inputs.module }}" call --source=".:default" --docker-cfg=file:"$HOME/.docker/config.json" ${{ inputs.function }}
           else
-            dagger -m . call --source=".:default" ${{ inputs.function }}
+            dagger -m "${{ inputs.module }}" call --source=".:default" ${{ inputs.function }}
           fi
         else
           dagger -m "${{ inputs.module }}" call ${{ inputs.function }}
         fi
       env:
-        DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
+        DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
+
+    - name: Capture dev engine logs
+      if: always() && inputs.dev-engine == 'true'
+      shell: bash
+      run: |
+        docker logs dagger-engine.dev-${{ runner.name }} &> /tmp/actions/call/engine.logs
+
+    - name: Archive engine logs
+      if: always() && inputs.dev-engine == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: engine-logs-${{ runner.name }}
+        path: /tmp/actions/call/engine.logs
+        overwrite: true
 
     - name: Cleanup
       shell: bash

@@ -21,7 +21,7 @@ defmodule Dagger.File do
 
   @doc "Writes the file to a file path on the host."
   @spec export(t(), String.t(), [{:allow_parent_dir_path, boolean() | nil}]) ::
-          {:ok, boolean()} | {:error, term()}
+          {:ok, String.t()} | {:error, term()}
   def export(%__MODULE__{} = file, path, optional_args \\ []) do
     selection =
       file.selection
@@ -60,12 +60,21 @@ defmodule Dagger.File do
   end
 
   @doc "Force evaluation in the engine."
-  @spec sync(t()) :: {:ok, Dagger.FileID.t()} | {:error, term()}
+  @spec sync(t()) :: {:ok, Dagger.File.t()} | {:error, term()}
   def sync(%__MODULE__{} = file) do
     selection =
       file.selection |> select("sync")
 
-    execute(selection, file.client)
+    with {:ok, id} <- execute(selection, file.client) do
+      {:ok,
+       %Dagger.File{
+         selection:
+           query()
+           |> select("loadFileFromID")
+           |> arg("id", id),
+         client: file.client
+       }}
+    end
   end
 
   @doc "Retrieves this file with its name set to the given name."

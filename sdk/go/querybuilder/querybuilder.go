@@ -20,7 +20,7 @@ type Selection struct {
 	name  string
 	alias string
 	args  map[string]*argument
-	bind  interface{}
+	bind  any
 
 	prev *Selection
 
@@ -52,8 +52,8 @@ func (s *Selection) SelectWithAlias(alias, name string) *Selection {
 	return sel
 }
 
-func (s *Selection) Select(name string) *Selection {
-	return s.SelectWithAlias("", name)
+func (s *Selection) Select(name ...string) *Selection {
+	return s.SelectWithAlias("", strings.Join(name, " "))
 }
 
 func (s *Selection) Arg(name string, value any) *Selection {
@@ -70,6 +70,13 @@ func (s *Selection) Arg(name string, value any) *Selection {
 
 func (s *Selection) Bind(v interface{}) *Selection {
 	sel := *s
+	// When there's multiple fields, bind the parent.
+	if strings.Contains(sel.name, " ") {
+		prev := *s.prev
+		prev.bind = v
+		sel.prev = &prev
+		return &sel
+	}
 	sel.bind = v
 	return &sel
 }
@@ -97,8 +104,17 @@ func (s *Selection) Build(ctx context.Context) (string, error) {
 	b.WriteString("query")
 
 	path := s.path()
+	multiple := false
 
 	for _, sel := range path {
+		if multiple {
+			return "", fmt.Errorf("sibling selections not end of chain")
+		}
+
+		if strings.Contains(sel.name, " ") {
+			multiple = true
+		}
+
 		b.WriteRune('{')
 
 		if sel.alias != "" {
@@ -128,7 +144,7 @@ func (s *Selection) Build(ctx context.Context) (string, error) {
 	return b.String(), nil
 }
 
-func (s *Selection) unpack(data interface{}) error {
+func (s *Selection) unpack(data any) error {
 	for _, i := range s.path() {
 		k := i.name
 		if i.alias != "" {
@@ -137,12 +153,10 @@ func (s *Selection) unpack(data interface{}) error {
 
 		// Try to assert type of the value
 		switch f := data.(type) {
-		case map[string]interface{}:
+		case map[string]any:
 			data = f[k]
-		case []interface{}:
-			data = f
 		default:
-			fmt.Printf("type not found %s\n", f)
+			data = f
 		}
 
 		if i.bind != nil {
@@ -150,7 +164,7 @@ func (s *Selection) unpack(data interface{}) error {
 			if err != nil {
 				return err
 			}
-			if err := json.Unmarshal(marshalled, s.bind); err != nil {
+			if err := json.Unmarshal(marshalled, i.bind); err != nil {
 				return err
 			}
 		}

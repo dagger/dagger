@@ -66,8 +66,9 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) { //nolint: gocyclo
 	ps := &parseState{
 		pkg:        funcs.modulePkg,
 		fset:       funcs.moduleFset,
-		methods:    make(map[string][]method),
 		moduleName: funcs.moduleName,
+
+		methods: make(map[string][]method),
 	}
 
 	pkgScope := funcs.modulePkg.Types.Scope()
@@ -76,24 +77,24 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) { //nolint: gocyclo
 
 	createMod := Qual("dag", "Module").Call()
 
-	objs := []types.Object{}
+	ps.objs = []types.Object{}
 	for _, name := range pkgScope.Names() {
 		obj := pkgScope.Lookup(name)
 		if obj == nil {
 			continue
 		}
 
-		objs = append(objs, obj)
+		ps.objs = append(ps.objs, obj)
 	}
 
 	// preserve definition order, so developer can keep more important /
 	// entrypoint types higher up
-	sort.Slice(objs, func(i, j int) bool {
-		return objs[i].Pos() < objs[j].Pos()
+	sort.Slice(ps.objs, func(i, j int) bool {
+		return ps.objs[i].Pos() < ps.objs[j].Pos()
 	})
 
 	tps := []types.Type{}
-	for _, obj := range objs {
+	for _, obj := range ps.objs {
 		// ignore any private definitions, they may be part of the runtime itself
 		// e.g. marshalCtx
 		if !obj.Exported() {
@@ -147,7 +148,7 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) { //nolint: gocyclo
 			}
 
 			// avoid adding a struct definition twice (if it's referenced in two function signatures)
-			if _, ok := added[obj.Name()]; ok {
+			if _, ok := added[obj.Pkg().Path()+"/"+obj.Name()]; ok {
 				continue
 			}
 
@@ -174,7 +175,7 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) { //nolint: gocyclo
 					return "", fmt.Errorf("failed to generate type def code for %s: %w", obj.Name(), err)
 				}
 				createMod = dotLine(createMod, "WithObject").Call(Add(Line(), objTypeDefCode))
-				added[obj.Name()] = struct{}{}
+				added[obj.Pkg().Path()+"/"+obj.Name()] = struct{}{}
 
 				implCode, err := objTypeSpec.ImplementationCode()
 				if err != nil {
@@ -203,7 +204,7 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) { //nolint: gocyclo
 					return "", fmt.Errorf("failed to generate type def code for %s: %w", obj.Name(), err)
 				}
 				createMod = dotLine(createMod, "WithInterface").Call(Add(Line(), ifaceTypeDefCode))
-				added[obj.Name()] = struct{}{}
+				added[obj.Pkg().Path()+"/"+obj.Name()] = struct{}{}
 
 				implCode, err := ifaceTypeSpec.ImplementationCode()
 				if err != nil {
@@ -214,6 +215,35 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) { //nolint: gocyclo
 				// If the object has any extra sub-types (e.g. for function return
 				// values), add them to the list of types to process
 				nextTps = append(nextTps, ifaceTypeSpec.GoSubTypes()...)
+
+			case *types.Basic:
+				enum := underlyingObj
+				enumTypeSpec, err := ps.parseGoEnum(enum, named)
+				if err != nil {
+					return "", err
+				}
+				if enumTypeSpec == nil {
+					// not including in module schema, skip it
+					continue
+				}
+
+				// Add the enum to the module
+				enumTypeDefCode, err := enumTypeSpec.TypeDefCode()
+				if err != nil {
+					return "", fmt.Errorf("failed to generate type def code for %s: %w", obj.Name(), err)
+				}
+				createMod = dotLine(createMod, "WithEnum").Call(Add(Line(), enumTypeDefCode))
+				added[obj.Pkg().Path()+"/"+obj.Name()] = struct{}{}
+
+				implCode, err := enumTypeSpec.ImplementationCode()
+				if err != nil {
+					return "", fmt.Errorf("failed to generate enum code for %s: %w", obj.Name(), err)
+				}
+				implementationCode.Add(implCode).Line()
+
+				// If the object has any extra sub-types (e.g. for function return
+				// values), add them to the list of types to process
+				nextTps = append(nextTps, enumTypeSpec.GoSubTypes()...)
 			}
 		}
 
@@ -222,7 +252,7 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) { //nolint: gocyclo
 
 	return strings.Join([]string{
 		fmt.Sprintf("%#v", implementationCode),
-		mainSrc,
+		mainSrc(funcs.CheckVersionCompatibility),
 		invokeSrc(objFunctionCases, createMod),
 	}, "\n"), nil
 }
@@ -232,9 +262,18 @@ func dotLine(a *Statement, id string) *Statement {
 }
 
 const (
-	// The static part of the generated code. It calls out to the "invoke" func, which is the mostly
-	// dynamically generated code that actually calls the user's functions.
-	mainSrc = `func main() {
+	parentJSONVar  = "parentJSON"
+	parentNameVar  = "parentName"
+	fnNameVar      = "fnName"
+	inputArgsVar   = "inputArgs"
+	invokeFuncName = "invoke"
+)
+
+// mainSrc returns the static part of the generated code. It calls out to the
+// "invoke" func, which is the mostly dynamically generated code that actually
+// calls the user's functions.
+func mainSrc(checkVersionCompatibility func(string) bool) string {
+	main := `func main() {
 	ctx := context.Background()
 
 	// Direct slog to the new stderr. This is only for dev time debugging, and
@@ -300,20 +339,24 @@ func dispatch(ctx context.Context) error {
 	resultBytes, err := json.Marshal(result)
 	if err != nil {
 		return fmt.Errorf("marshal: %w", err)
-	}
-	_, err = fnCall.ReturnValue(ctx, JSON(resultBytes))
-	if err != nil {
+	}`
+
+	if checkVersionCompatibility("v0.12.0") {
+		main += `
+	if err = fnCall.ReturnValue(ctx, dagger.JSON(resultBytes)); err != nil {
 		return fmt.Errorf("store return value: %w", err)
+	}`
+	} else {
+		main += `
+	if _, err = fnCall.ReturnValue(ctx, dagger.JSON(resultBytes)); err != nil {
+		return fmt.Errorf("store return value: %w", err)
+	}`
 	}
+	main += `
 	return nil
+}`
+	return main
 }
-`
-	parentJSONVar  = "parentJSON"
-	parentNameVar  = "parentName"
-	fnNameVar      = "fnName"
-	inputArgsVar   = "inputArgs"
-	invokeFuncName = "invoke"
-)
 
 // the source code of the invoke func, which is the mostly dynamically generated code that actually calls the user's functions
 func invokeSrc(objFunctionCases map[string][]Code, createMod Code) string {
@@ -365,12 +408,12 @@ func invokeSrc(objFunctionCases map[string][]Code, createMod Code) string {
 }
 
 // TODO: use jennifer for generating this magical typedef
-func renderNameOrStruct(t types.Type) string {
+func (ps *parseState) renderNameOrStruct(t types.Type) string {
 	if ptr, ok := t.(*types.Pointer); ok {
-		return "*" + renderNameOrStruct(ptr.Elem())
+		return "*" + ps.renderNameOrStruct(ptr.Elem())
 	}
 	if sl, ok := t.(*types.Slice); ok {
-		return "[]" + renderNameOrStruct(sl.Elem())
+		return "[]" + ps.renderNameOrStruct(sl.Elem())
 	}
 	if st, ok := t.(*types.Struct); ok {
 		result := "struct {\n"
@@ -378,7 +421,7 @@ func renderNameOrStruct(t types.Type) string {
 			if !st.Field(i).Embedded() {
 				result += st.Field(i).Name() + " "
 			}
-			result += renderNameOrStruct(st.Field(i).Type())
+			result += ps.renderNameOrStruct(st.Field(i).Type())
 			if tag := st.Tag(i); tag != "" {
 				result += " `" + tag + "`"
 			}
@@ -400,17 +443,25 @@ func renderNameOrStruct(t types.Type) string {
 		// this to a graphql type that all langs can convert to their native
 		// representation.
 		base := named.Obj().Name()
+		if ps.isDaggerGenerated(named.Obj()) {
+			base = named.Obj().Pkg().Name() + "." + base
+		}
 		if typeArgs := named.TypeArgs(); typeArgs.Len() > 0 {
 			base += "["
 			for i := 0; i < typeArgs.Len(); i++ {
 				if i > 0 {
 					base += ", "
 				}
-				base += renderNameOrStruct(typeArgs.At(i))
+				base += ps.renderNameOrStruct(typeArgs.At(i))
 			}
 			base += "]"
 		}
 		return base
+	}
+	if basic, ok := t.(*types.Basic); ok {
+		if basic.Kind() == types.Invalid {
+			return "any"
+		}
 	}
 	// HACK(vito): this is passed to Id(), which is a bit weird, but works
 	return t.String()
@@ -591,7 +642,7 @@ func (ps *parseState) fillObjectFunctionCase(
 				fnCallArgCode = fnCallArgCode2
 			}
 
-			statements = append(statements, Var().Id(varName).Id(renderNameOrStruct(tp)))
+			statements = append(statements, Var().Id(varName).Id(ps.renderNameOrStruct(tp)))
 			if spec.variadic {
 				fnCallArgs = append(fnCallArgs, fnCallArgCode.Op("..."))
 			} else {
@@ -676,8 +727,10 @@ func (ps *parseState) fillObjectFunctionCase(
 type parseState struct {
 	pkg        *packages.Package
 	fset       *token.FileSet
-	methods    map[string][]method
 	moduleName string
+	objs       []types.Object
+
+	methods map[string][]method
 
 	// If it exists, constructor is the New func that returns the main module object
 	constructor *types.Func
@@ -721,13 +774,13 @@ type method struct {
 	paramSpecs []paramSpec
 }
 
-// astSpecForNamedType returns the *ast* type spec for the given Named type. This is needed
-// because the types.Named object does not have the comments associated with the type, which
-// we want to parse.
-func (ps *parseState) astSpecForNamedType(namedType *types.Named) (*ast.TypeSpec, error) {
-	tokenFile := ps.fset.File(namedType.Obj().Pos())
+// astSpecForObj returns the *ast* type spec for the given object. This is
+// needed because the object does not have the comments associated with the
+// type, which we want to parse.
+func (ps *parseState) astSpecForObj(obj types.Object) (ast.Spec, error) {
+	tokenFile := ps.fset.File(obj.Pos())
 	if tokenFile == nil {
-		return nil, fmt.Errorf("no file for %s", namedType.Obj().Name())
+		return nil, fmt.Errorf("no file for %s", obj.Name())
 	}
 	for _, f := range ps.pkg.Syntax {
 		if ps.fset.File(f.Pos()) != tokenFile {
@@ -739,20 +792,44 @@ func (ps *parseState) astSpecForNamedType(namedType *types.Named) (*ast.TypeSpec
 				continue
 			}
 			for _, spec := range genDecl.Specs {
-				typeSpec, ok := spec.(*ast.TypeSpec)
-				if !ok {
-					continue
-				}
-				if typeSpec.Name.Name == namedType.Obj().Name() {
-					if typeSpec.Doc == nil {
-						typeSpec.Doc = genDecl.Doc
+				switch spec := spec.(type) {
+				case *ast.TypeSpec:
+					if spec.Name.Name == obj.Name() {
+						if spec.Doc == nil {
+							spec.Doc = genDecl.Doc
+						}
+						return spec, nil
 					}
-					return typeSpec, nil
+				case *ast.ValueSpec:
+					for _, name := range spec.Names {
+						if name.Name == obj.Name() {
+							if spec.Doc == nil {
+								spec.Doc = genDecl.Doc
+							}
+							return spec, nil
+						}
+					}
 				}
 			}
 		}
 	}
-	return nil, fmt.Errorf("no decl for %s", namedType.Obj().Name())
+	return nil, fmt.Errorf("no decl for %s", obj.Name())
+}
+
+func docForAstSpec(spec ast.Spec) *ast.CommentGroup {
+	if spec == nil {
+		return nil
+	}
+	switch spec := spec.(type) {
+	case *ast.TypeSpec:
+		return spec.Doc
+	case *ast.ValueSpec:
+		return spec.Doc
+	case *ast.ImportSpec:
+		return spec.Doc
+	default:
+		return nil
+	}
 }
 
 // declForFunc returns the *ast* func decl for the given Func type. This is needed

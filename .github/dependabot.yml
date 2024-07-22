@@ -18,7 +18,7 @@ updates:
           - "*"
 
   - package-ecosystem: "gomod"
-    directory: "/ci"
+    directory: "/dev"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -43,9 +43,6 @@ updates:
     labels:
       - "kind/dependencies"
       - "area/sdk/typescript"
-    ignore:
-      - dependency-name: "*"
-        update-types: ["version-update:semver-patch"]
     groups:
       sdk-typescript:
         applies-to: version-updates
@@ -53,7 +50,7 @@ updates:
           - "*"
 
   - package-ecosystem: "npm"
-    directory: "/website"
+    directory: "/docs"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -62,11 +59,8 @@ updates:
     labels:
       - "kind/dependencies"
       - "area/documentation"
-    ignore:
-      - dependency-name: "*"
-        update-types: ["version-update:semver-patch"]
     groups:
-      website:
+      docs:
         applies-to: version-updates
         patterns:
           - "*"
@@ -81,9 +75,6 @@ updates:
     labels:
       - "kind/dependencies"
       - "area/sdk/go"
-    ignore:
-      - dependency-name: "*"
-        update-types: ["version-update:semver-patch"]
     groups:
       sdk-go:
         applies-to: version-updates
@@ -100,9 +91,38 @@ updates:
     labels:
       - "kind/dependencies"
       - "area/sdk/python"
-    ignore:
-      - dependency-name: "*"
-        update-types: ["version-update:semver-patch"]
+    groups:
+      sdk-python:
+        applies-to: version-updates
+        patterns:
+          - "*"
+
+  - package-ecosystem: "docker"
+    directory: "/sdk/python/runtime"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:00"
+      timezone: "UTC"
+    labels:
+      - "kind/dependencies"
+      - "area/sdk/python"
+    groups:
+      sdk-python:
+        applies-to: version-updates
+        patterns:
+          - "*"
+
+  - package-ecosystem: "docker"
+    directory: "/dev/ruff/build"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:00"
+      timezone: "UTC"
+    labels:
+      - "kind/dependencies"
+      - "area/sdk/python"
     groups:
       sdk-python:
         applies-to: version-updates
@@ -120,8 +140,6 @@ updates:
       - "kind/dependencies"
       - "area/sdk/java"
     ignore:
-      - dependency-name: "*"
-        update-types: ["version-update:semver-patch"]
       # ignore maven dependencies (API, plugins, etc)
       - dependency-name: "org.apache.maven*"
     groups:

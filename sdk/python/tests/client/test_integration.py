@@ -37,7 +37,7 @@ async def test_container_build():
     repo = dag.git("https://github.com/dagger/dagger").tag("v0.3.0").tree()
     dagger_img = dag.container().build(repo)
 
-    out = await dagger_img.with_exec(["version"]).stdout()
+    out = await dagger_img.with_exec(["dagger", "version"]).stdout()
 
     words = out.strip().split(" ")
 
@@ -57,6 +57,7 @@ async def test_input_arg(alpine_image: str):
             dag.directory().with_new_file("Dockerfile", dockerfile),
             build_args=[dagger.BuildArg("SPAM", "egg")],
         )
+        .with_exec([])
         .stdout()
     )
     assert "SPAM=egg" in out

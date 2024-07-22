@@ -29,7 +29,11 @@ type moduleSourceArgs struct {
 }
 
 func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args moduleSourceArgs) (*core.ModuleSource, error) {
-	parsed := parseRefString(ctx, query.Buildkit, args.RefString)
+	bk, err := query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+	parsed := parseRefString(ctx, bk, args.RefString)
 	if args.Stable && !parsed.hasVersion && parsed.kind == core.ModuleSourceKindGit {
 		return nil, fmt.Errorf("no version provided for stable remote ref: %s", args.RefString)
 	}
@@ -42,7 +46,17 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 	switch src.Kind {
 	case core.ModuleSourceKindLocal:
 		if filepath.IsAbs(parsed.modPath) {
-			return nil, fmt.Errorf("local module source root path is absolute: %s", parsed.modPath)
+			cwdStat, err := bk.StatCallerHostPath(ctx, ".", true)
+			if err != nil {
+				return nil, fmt.Errorf("failed to stat caller's current working directory: %w", err)
+			}
+
+			relPath, err := lexicalRelativePath(cwdStat.Path, parsed.modPath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to make path relative: %w", err)
+			}
+
+			parsed.modPath = relPath
 		}
 
 		src.AsLocalSource = dagql.NonNull(&core.LocalModuleSource{
@@ -77,10 +91,27 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 
 		commitRef := modVersion
 		if parsed.hasVersion && isSemver(modVersion) {
-			allTags, err := gitTags(ctx, parsed.repoRoot.Repo)
+			var tags dagql.Array[dagql.String]
+			err := s.dag.Select(ctx, s.dag.Root(), &tags,
+				dagql.Selector{
+					Field: "git",
+					Args: []dagql.NamedInput{
+						{Name: "url", Value: dagql.String(parsed.repoRoot.Repo)},
+					},
+				},
+				dagql.Selector{
+					Field: "tags",
+				},
+			)
 			if err != nil {
-				return nil, fmt.Errorf("get git tags: %w", err)
+				return nil, fmt.Errorf("failed to resolve git tags: %w", err)
 			}
+
+			allTags := make([]string, len(tags))
+			for i, tag := range tags {
+				allTags[i] = tag.String()
+			}
+
 			matched, err := matchVersion(allTags, modVersion, subPath)
 			if err != nil {
 				return nil, fmt.Errorf("matching version to tags: %w", err)
@@ -137,6 +168,57 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 	return src, nil
 }
 
+// lexicalRelativePath computes a relative path between the current working directory
+// and modPath without relying on runtime.GOOS to estimate OS-specific separators. This is necessary as the code
+// runs inside a Linux container, but the user might have specified a Windows-style modPath.
+func lexicalRelativePath(cwdPath, modPath string) (string, error) {
+	cwdPath = normalizePath(cwdPath)
+	modPath = normalizePath(modPath)
+
+	cwdDrive := getDrive(cwdPath)
+	modDrive := getDrive(modPath)
+	if cwdDrive != modDrive {
+		return "", fmt.Errorf("cannot make paths on different drives relative: %s and %s", cwdDrive, modDrive)
+	}
+
+	// Remove drive letter for relative path calculation
+	cwdPath = strings.TrimPrefix(cwdPath, cwdDrive)
+	modPath = strings.TrimPrefix(modPath, modDrive)
+
+	relPath, err := filepath.Rel(cwdPath, modPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to make path relative: %w", err)
+	}
+
+	return relPath, nil
+}
+
+// normalizePath converts all backslashes to forward slashes and removes trailing slashes.
+// We can't use filepath.ToSlash() as this code always runs inside a Linux container.
+func normalizePath(path string) string {
+	path = filepath.Clean(path)
+	path = strings.ReplaceAll(path, "\\", "/")
+	return strings.TrimSuffix(path, "/")
+}
+
+// getDrive extracts the drive letter or UNC share from a path.
+func getDrive(path string) string {
+	// Check for drive letter (e.g., "C:")
+	if len(path) >= 2 && path[1] == ':' {
+		return strings.ToUpper(path[:2])
+	}
+
+	// Check for UNC path (e.g., "//server/share")
+	if strings.HasPrefix(path, "//") {
+		parts := strings.SplitN(path[2:], "/", 3)
+		if len(parts) >= 2 {
+			return "//" + parts[0] + "/" + parts[1]
+		}
+	}
+
+	return ""
+}
+
 type parsedRefString struct {
 	modPath        string
 	modVersion     string
@@ -158,16 +240,16 @@ type buildkitClient interface {
 // - if nothing worked, fallback as local ref, as before
 func parseRefString(ctx context.Context, bk buildkitClient, refString string) parsedRefString {
 	var parsed parsedRefString
-	parsed.modPath, parsed.modVersion, parsed.hasVersion = strings.Cut(refString, "@")
+	parsed.modPath = refString
 
 	// We do a stat in case the mod path github.com/username is a local directory
 	stat, err := bk.StatCallerHostPath(ctx, parsed.modPath, false)
-	if err == nil {
-		if !parsed.hasVersion && stat.IsDir() {
-			parsed.kind = core.ModuleSourceKindLocal
-			return parsed
-		}
+	if err == nil && stat.IsDir() {
+		parsed.kind = core.ModuleSourceKindLocal
+		return parsed
 	}
+
+	parsed.modPath, parsed.modVersion, parsed.hasVersion = strings.Cut(refString, "@")
 
 	// we try to isolate the root of the git repo
 	repoRoot, err := vcs.RepoRootForImportPath(parsed.modPath, false)
@@ -180,6 +262,7 @@ func parseRefString(ctx context.Context, bk buildkitClient, refString string) pa
 		return parsed
 	}
 
+	parsed.modPath = refString
 	parsed.kind = core.ModuleSourceKindLocal
 	return parsed
 }
@@ -187,17 +270,23 @@ func parseRefString(ctx context.Context, bk buildkitClient, refString string) pa
 func (s *moduleSchema) moduleSourceAsModule(
 	ctx context.Context,
 	src dagql.Instance[*core.ModuleSource],
-	args struct{},
+	args struct {
+		EngineVersion dagql.Optional[dagql.String]
+	},
 ) (inst dagql.Instance[*core.Module], err error) {
+	withSourceInputs := []dagql.NamedInput{
+		{Name: "source", Value: dagql.NewID[*core.ModuleSource](src.ID())},
+	}
+	if args.EngineVersion.Valid {
+		withSourceInputs = append(withSourceInputs, dagql.NamedInput{Name: "engineVersion", Value: args.EngineVersion})
+	}
 	err = s.dag.Select(ctx, s.dag.Root(), &inst,
 		dagql.Selector{
 			Field: "module",
 		},
 		dagql.Selector{
 			Field: "withSource",
-			Args: []dagql.NamedInput{
-				{Name: "source", Value: dagql.NewID[*core.ModuleSource](src.ID())},
-			},
+			Args:  withSourceInputs,
 		},
 	)
 	if err != nil {
@@ -618,13 +707,17 @@ func (s *moduleSchema) resolveContextPathFromCaller(
 		return "", "", fmt.Errorf("failed to get source root subpath: %w", err)
 	}
 
-	sourceRootStat, err := src.Query.Buildkit.StatCallerHostPath(ctx, rootSubpath, true)
+	bk, err := src.Query.Buildkit(ctx)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+	sourceRootStat, err := bk.StatCallerHostPath(ctx, rootSubpath, true)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to stat source root: %w", err)
 	}
 	sourceRootAbsPath = sourceRootStat.Path
 
-	contextAbsPath, contextFound, err := callerHostFindUpContext(ctx, src.Query.Buildkit, sourceRootAbsPath)
+	contextAbsPath, contextFound, err := callerHostFindUpContext(ctx, bk, sourceRootAbsPath)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to find up root: %w", err)
 	}
@@ -778,9 +871,13 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 		excludes = append(excludes, exclude)
 	}
 
-	_, desc, err := src.Query.Buildkit.LocalImport(
+	bk, err := src.Query.Buildkit(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+	_, desc, err := bk.LocalImport(
 		ctx,
-		src.Query.Platform.Spec(),
+		src.Query.Platform().Spec(),
 		contextAbsPath,
 		excludes,
 		includes,
@@ -911,6 +1008,7 @@ type callerLocalDep struct {
 	sdkKey string
 }
 
+//nolint:gocyclo // it's already been split up where it makes sense, more would just create indirection in reading it
 func (s *moduleSchema) collectCallerLocalDeps(
 	ctx context.Context,
 	query *core.Query,
@@ -934,9 +1032,13 @@ func (s *moduleSchema) collectCallerLocalDeps(
 			return nil, fmt.Errorf("local module dep source path %q escapes context %q", sourceRootRelPath, contextAbsPath)
 		}
 
+		bk, err := query.Buildkit(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+		}
 		var modCfg modules.ModuleConfig
 		configPath := filepath.Join(sourceRootAbsPath, modules.Filename)
-		configBytes, err := query.Buildkit.ReadCallerHostFile(ctx, configPath)
+		configBytes, err := bk.ReadCallerHostFile(ctx, configPath)
 		switch {
 		case err == nil:
 			if err := json.Unmarshal(configBytes, &modCfg); err != nil {
@@ -984,7 +1086,7 @@ func (s *moduleSchema) collectCallerLocalDeps(
 		}
 
 		for _, depCfg := range modCfg.Dependencies {
-			parsed := parseRefString(ctx, query.Buildkit, depCfg.Source)
+			parsed := parseRefString(ctx, bk, depCfg.Source)
 			if parsed.kind != core.ModuleSourceKindLocal {
 				continue
 			}
@@ -1005,7 +1107,7 @@ func (s *moduleSchema) collectCallerLocalDeps(
 		switch {
 		case err == nil:
 		case errors.Is(err, errUnknownBuiltinSDK):
-			parsed := parseRefString(ctx, query.Buildkit, modCfg.SDK)
+			parsed := parseRefString(ctx, bk, modCfg.SDK)
 			switch parsed.kind {
 			case core.ModuleSourceKindLocal:
 				// SDK is a local custom one, it needs to be included
@@ -1018,7 +1120,7 @@ func (s *moduleSchema) collectCallerLocalDeps(
 
 				// TODO: this is inefficient, leads to extra local loads, but only for case
 				// of local custom SDK.
-				callerCwdStat, err := query.Buildkit.StatCallerHostPath(ctx, ".", true)
+				callerCwdStat, err := bk.StatCallerHostPath(ctx, ".", true)
 				if err != nil {
 					return nil, fmt.Errorf("failed to stat caller cwd: %w", err)
 				}
@@ -1104,7 +1206,12 @@ func (s *moduleSchema) moduleSourceResolveDirectoryFromCaller(
 	},
 ) (inst dagql.Instance[*core.Directory], err error) {
 	path := args.Path
-	stat, err := src.Query.Buildkit.StatCallerHostPath(ctx, path, true)
+
+	bk, err := src.Query.Buildkit(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+	stat, err := bk.StatCallerHostPath(ctx, path, true)
 	if err != nil {
 		return inst, fmt.Errorf("failed to stat caller path: %w", err)
 	}
@@ -1126,8 +1233,8 @@ func (s *moduleSchema) moduleSourceResolveDirectoryFromCaller(
 		}
 	}
 
-	_, desc, err := src.Query.Buildkit.LocalImport(
-		ctx, src.Query.Platform.Spec(),
+	_, desc, err := bk.LocalImport(
+		ctx, src.Query.Platform().Spec(),
 		path,
 		excludes,
 		includes,

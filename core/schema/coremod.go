@@ -11,6 +11,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/opencontainers/go-digest"
 )
 
 // CoreMod is a special implementation of Mod for our core API, which is not *technically* a true module yet
@@ -30,6 +31,10 @@ func (m *CoreMod) Dependencies() []core.Mod {
 	return nil
 }
 
+func (m *CoreMod) View() (string, bool) {
+	return m.Dag.View, true
+}
+
 func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server) error {
 	for _, schema := range []SchemaResolvers{
 		&querySchema{dag},
@@ -45,6 +50,7 @@ func (m *CoreMod) Install(ctx context.Context, dag *dagql.Server) error {
 		&platformSchema{dag},
 		&socketSchema{dag},
 		&moduleSchema{dag},
+		&engineSchema{dag},
 	} {
 		schema.Install()
 	}
@@ -84,6 +90,13 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 			return nil, false, nil
 		}
 		modType = &CoreModObject{coreMod: m, name: typeDef.AsObject.Value.Name}
+	case core.TypeDefKindEnum:
+		_, ok := m.Dag.ScalarType(typeDef.AsEnum.Value.Name)
+		if !ok {
+			return nil, false, nil
+		}
+
+		modType = &CoreModEnum{coreMod: m, typeDef: typeDef.AsEnum.Value}
 
 	case core.TypeDefKindInterface:
 		// core does not yet defined any interfaces
@@ -203,6 +216,23 @@ func (m *CoreMod) TypeDefs(ctx context.Context) ([]*core.TypeDef, error) {
 				Kind:    core.TypeDefKindInput,
 				AsInput: dagql.NonNull(typeDef),
 			})
+		case introspection.TypeKindEnum:
+			typedef := &core.EnumTypeDef{
+				Name:        introspectionType.Name,
+				Description: introspectionType.Description,
+			}
+
+			for _, value := range introspectionType.EnumValues {
+				typedef.Values = append(typedef.Values, &core.EnumValueTypeDef{
+					Name:        value.Name,
+					Description: value.Description,
+				})
+			}
+
+			typeDefs = append(typeDefs, &core.TypeDef{
+				Kind:   core.TypeDefKindEnum,
+				AsEnum: dagql.NonNull(typedef),
+			})
 
 		default:
 			continue
@@ -238,6 +268,10 @@ func (obj *CoreModScalar) ConvertToSDKInput(ctx context.Context, value dagql.Typ
 		return nil, fmt.Errorf("CoreModScalar.ConvertToSDKInput: core scalar should be string")
 	}
 	return s.DecodeInput(string(val.Value))
+}
+
+func (obj *CoreModScalar) CollectCoreIDs(context.Context, dagql.Typed, map[digest.Digest]*call.ID) error {
+	return nil
 }
 
 func (obj *CoreModScalar) SourceMod() core.Mod {
@@ -296,6 +330,21 @@ func (obj *CoreModObject) ConvertToSDKInput(ctx context.Context, value dagql.Typ
 	}
 }
 
+func (obj *CoreModObject) CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*call.ID) error {
+	if value == nil {
+		return nil
+	}
+	switch x := value.(type) {
+	case dagql.Input:
+		return nil
+	case dagql.Object:
+		ids[x.ID().Digest()] = x.ID()
+		return nil
+	default:
+		return fmt.Errorf("%T.CollectCoreIDs: unknown type %T", obj, value)
+	}
+}
+
 func (obj *CoreModObject) SourceMod() core.Mod {
 	return obj.coreMod
 }
@@ -308,6 +357,44 @@ func (obj *CoreModObject) TypeDef() *core.TypeDef {
 		AsObject: dagql.NonNull(&core.ObjectTypeDef{
 			Name: obj.name,
 		}),
+	}
+}
+
+type CoreModEnum struct {
+	coreMod *CoreMod
+	typeDef *core.EnumTypeDef
+}
+
+var _ core.ModType = (*CoreModEnum)(nil)
+
+func (enum *CoreModEnum) ConvertFromSDKResult(ctx context.Context, value any) (dagql.Typed, error) {
+	s, ok := enum.coreMod.Dag.ScalarType(enum.typeDef.Name)
+	if !ok {
+		return nil, fmt.Errorf("CoreModEnum.ConvertFromSDKResult: found no enum type")
+	}
+	return s.DecodeInput(value)
+}
+
+func (enum *CoreModEnum) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error) {
+	s, ok := enum.coreMod.Dag.ScalarType(enum.typeDef.Name)
+	if !ok {
+		return nil, fmt.Errorf("CoreModEnum.ConvertToSDKInput: found no enum type")
+	}
+	return s.DecodeInput(value)
+}
+
+func (enum *CoreModEnum) CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*call.ID) error {
+	return nil
+}
+
+func (enum *CoreModEnum) SourceMod() core.Mod {
+	return enum.coreMod
+}
+
+func (enum *CoreModEnum) TypeDef() *core.TypeDef {
+	return &core.TypeDef{
+		Kind:   core.TypeDefKindEnum,
+		AsEnum: dagql.NonNull(enum.typeDef),
 	}
 }
 
@@ -349,9 +436,11 @@ func introspectionRefToTypeDef(introspectionType *introspection.TypeRef, nonNull
 
 	case introspection.TypeKindEnum:
 		return &core.TypeDef{
-			// just call it a string for now
-			Kind:     core.TypeDefKindString,
+			Kind:     core.TypeDefKindEnum,
 			Optional: !nonNull,
+			AsEnum: dagql.NonNull(&core.EnumTypeDef{
+				Name: introspectionType.Name,
+			}),
 		}, true, nil
 
 	case introspection.TypeKindList:

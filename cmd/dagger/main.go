@@ -6,14 +6,15 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"runtime/pprof"
 	runtimetrace "runtime/trace"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 
-	"dagger.io/dagger/telemetry"
 	"github.com/mattn/go-isatty"
 	"github.com/muesli/reflow/indent"
 	"github.com/muesli/reflow/wordwrap"
@@ -24,7 +25,6 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/resource"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/term"
@@ -34,7 +34,6 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
-	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
 
 var (
@@ -48,10 +47,13 @@ var (
 
 	workdir string
 
-	debug     bool
-	verbosity int
-	silent    bool
-	progress  string
+	silent      bool
+	verbose     int
+	quiet, _    = strconv.Atoi(os.Getenv("DAGGER_QUIET"))
+	debug       bool
+	progress    string
+	interactive bool
+	web         bool
 
 	stdoutIsTTY = isatty.IsTerminal(os.Stdout.Fd())
 	stderrIsTTY = isatty.IsTerminal(os.Stderr.Fd())
@@ -119,9 +121,8 @@ var rootCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("create profile: %w", err)
 			}
-			defer profF.Close()
+
 			pprof.StartCPUProfile(profF)
-			cobra.OnFinalize(pprof.StopCPUProfile)
 
 			tracePath := cpuprofile + ".trace"
 
@@ -129,11 +130,16 @@ var rootCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("create trace: %w", err)
 			}
-			defer traceF.Close()
 			if err := runtimetrace.Start(traceF); err != nil {
 				return fmt.Errorf("start trace: %w", err)
 			}
-			cobra.OnFinalize(runtimetrace.Stop)
+
+			cobra.OnFinalize(func() {
+				pprof.StopCPUProfile()
+				profF.Close()
+				runtimetrace.Stop()
+				traceF.Close()
+			})
 		}
 
 		if pprofAddr != "" {
@@ -162,17 +168,19 @@ var rootCmd = &cobra.Command{
 				"name": cmdName,
 			})
 		}
-
 		return nil
 	},
 }
 
 func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.StringVar(&workdir, "workdir", ".", "The host workdir loaded into dagger")
-	flags.CountVarP(&verbosity, "verbose", "v", "increase verbosity (use -vv or -vvv for more)")
-	flags.BoolVarP(&debug, "debug", "d", debug, "show debug logs and full verbosity")
-	flags.BoolVarP(&silent, "silent", "s", silent, "disable terminal UI and progress output")
-	flags.StringVar(&progress, "progress", "auto", "progress output format (auto, plain, tty)")
+	flags.CountVarP(&verbose, "verbose", "v", "Increase verbosity (use -vv or -vvv for more)")
+	flags.CountVarP(&quiet, "quiet", "q", "Reduce verbosity (show progress, but clean up at the end)")
+	flags.BoolVarP(&silent, "silent", "s", silent, "Do not show progress at all")
+	flags.BoolVarP(&debug, "debug", "d", debug, "Show debug logs and full verbosity")
+	flags.StringVar(&progress, "progress", "auto", "Progress output format (auto, plain, tty)")
+	flags.BoolVarP(&interactive, "interactive", "i", false, "interactive mode will spawn a terminal on container exec failure")
+	flags.BoolVarP(&web, "web", "w", false, "open trace URL in default browser")
 
 	for _, fl := range []string{"workdir"} {
 		if err := flags.MarkHidden(fl); err != nil {
@@ -237,21 +245,26 @@ func (e ExitError) Error() string {
 
 const InstrumentationLibrary = "dagger.io/cli"
 
+var opts idtui.FrontendOpts
+
 func main() {
 	parseGlobalFlags()
-
-	opts := idtui.FrontendOpts{
-		Debug:     debug,
-		Silent:    silent,
-		Verbosity: verbosity,
-	}
-
+	opts.Verbosity += idtui.ShowCompletedVerbosity // keep progress by default
+	opts.Verbosity += verbose                      // raise verbosity with -v
+	opts.Verbosity -= quiet                        // lower verbosity with -q
+	opts.Silent = silent                           // show no progress
+	opts.Debug = debug                             // show everything
+	opts.OpenWeb = web
 	if progress == "auto" {
 		if hasTTY {
 			progress = "tty"
 		} else {
 			progress = "plain"
 		}
+	}
+	if silent {
+		// if silent, don't even bother with the pretty frontend
+		progress = "plain"
 	}
 	switch progress {
 	case "plain":
@@ -272,46 +285,15 @@ func main() {
 	ctx := context.Background()
 	ctx = slog.ContextWithColorMode(ctx, termenv.EnvNoColor())
 	ctx = slog.ContextWithDebugMode(ctx, debug)
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt)
 
-	if err := Frontend.Run(ctx, opts, func(ctx context.Context) (rerr error) {
-		telemetryCfg := telemetry.Config{
-			Detect:   true,
-			Resource: Resource(),
-
-			LiveTraceExporters: []sdktrace.SpanExporter{Frontend.SpanExporter()},
-			LiveLogExporters:   []sdklog.Exporter{Frontend.LogExporter()},
-		}
-		if spans, logs, ok := enginetel.ConfiguredCloudExporters(ctx); ok {
-			telemetryCfg.LiveTraceExporters = append(telemetryCfg.LiveTraceExporters, spans)
-			telemetryCfg.LiveLogExporters = append(telemetryCfg.LiveLogExporters, logs)
-		}
-		// Init tracing as early as possible and shutdown after the command
-		// completes, ensuring progress is fully flushed to the frontend.
-		ctx = telemetry.Init(ctx, telemetryCfg)
-		defer telemetry.Close()
-
-		// Set the full command string as the name of the root span.
-		//
-		// If you pass credentials in plaintext, yes, they will be leaked; don't do
-		// that, since they will also be leaked in various other places (like the
-		// process tree). Use Secret arguments instead.
-		ctx, span := Tracer().Start(ctx, strings.Join(os.Args, " "))
-		defer telemetry.End(span, func() error { return rerr })
-
-		// Set the span as the primary span for the frontend.
-		Frontend.SetPrimary(span.SpanContext().SpanID())
-
-		// Direct command stdout/stderr to span stdio via OpenTelemetry.
-		stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
-		defer stdio.Close()
-		rootCmd.SetOut(stdio.Stdout)
-		rootCmd.SetErr(stdio.Stderr)
-
-		return rootCmd.ExecuteContext(ctx)
-	}); err != nil {
+	if err := rootCmd.ExecuteContext(ctx); err != nil {
+		stop()
 		var exit ExitError
 		if errors.As(err, &exit) {
 			os.Exit(exit.Code)
+		} else if errors.Is(err, context.Canceled) {
+			os.Exit(2)
 		} else {
 			fmt.Fprintln(os.Stderr, rootCmd.ErrPrefix(), err)
 			os.Exit(1)

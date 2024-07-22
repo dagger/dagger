@@ -12,10 +12,13 @@ The Dagger CLI provides a command-line interface to Dagger.
 ### Options
 
 ```
-  -d, --debug             show debug logs and full verbosity
-      --progress string   progress output format (auto, plain, tty) (default "auto")
-  -s, --silent            disable terminal UI and progress output
-  -v, --verbose count     increase verbosity (use -vv or -vvv for more)
+  -d, --debug             Show debug logs and full verbosity
+  -i, --interactive       interactive mode will spawn a terminal on container exec failure
+      --progress string   Progress output format (auto, plain, tty) (default "auto")
+  -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent            Do not show progress at all
+  -v, --verbose count     Increase verbosity (use -vv or -vvv for more)
+  -w, --web               open trace URL in default browser
 ```
 
 ### SEE ALSO
@@ -36,45 +39,28 @@ The Dagger CLI provides a command-line interface to Dagger.
 
 Call a module function
 
-### Synopsis
-
-Call a module function and print the result.
-
-If the last argument is either a Container, Directory, or File, the pipeline
-will be evaluated (the result of calling `sync`) without presenting any output.
-Providing the `--output` option (shorthand: `-o`) is equivalent to calling
-`export` instead. To print a property of these core objects, continue chaining
-by appending it to the end of the command (for example, `stdout`, `entries`, or
-`contents`).
-
-
 ```
 dagger call [options]
-```
-
-### Examples
-
-```
-dagger call test
-dagger call build -o ./bin/myapp
-dagger call lint stdout
 ```
 
 ### Options
 
 ```
-      --json            Present result as JSON
-  -m, --mod string      Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
-  -o, --output string   Path in the host to save the result to
+  -j, --json            Present result as JSON
+  -m, --mod string      Path to the module directory containing the dagger.json config file. Either local path or a remote git repo
+  -o, --output string   Save the result to a local file or directory
 ```
 
 ### Options inherited from parent commands
 
 ```
-  -d, --debug             show debug logs and full verbosity
-      --progress string   progress output format (auto, plain, tty) (default "auto")
-  -s, --silent            disable terminal UI and progress output
-  -v, --verbose count     increase verbosity (use -vv or -vvv for more)
+  -d, --debug             Show debug logs and full verbosity
+  -i, --interactive       interactive mode will spawn a terminal on container exec failure
+      --progress string   Progress output format (auto, plain, tty) (default "auto")
+  -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent            Do not show progress at all
+  -v, --verbose count     Increase verbosity (use -vv or -vvv for more)
+  -w, --web               open trace URL in default browser
 ```
 
 ### SEE ALSO
@@ -104,16 +90,19 @@ dagger config -m github.com/dagger/hello-dagger
 
 ```
       --json         output in JSON format
-  -m, --mod string   Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
+  -m, --mod string   Path to the module directory containing the dagger.json config file. Either local path or a remote git repo
 ```
 
 ### Options inherited from parent commands
 
 ```
-  -d, --debug             show debug logs and full verbosity
-      --progress string   progress output format (auto, plain, tty) (default "auto")
-  -s, --silent            disable terminal UI and progress output
-  -v, --verbose count     increase verbosity (use -vv or -vvv for more)
+  -d, --debug             Show debug logs and full verbosity
+  -i, --interactive       interactive mode will spawn a terminal on container exec failure
+      --progress string   Progress output format (auto, plain, tty) (default "auto")
+  -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent            Do not show progress at all
+  -v, --verbose count     Increase verbosity (use -vv or -vvv for more)
+  -w, --web               open trace URL in default browser
 ```
 
 ### SEE ALSO
@@ -147,18 +136,23 @@ dagger develop [options]
 ### Options
 
 ```
-  -m, --mod string      Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
-      --sdk string      New SDK for the module
-      --source string   Directory to store the module implementation source code in
+      --compat string[="skip"]   Engine API version to target (default "latest")
+      --license string           License identifier to generate - see https://spdx.org/licenses/ (default "Apache-2.0")
+  -m, --mod string               Path to the module directory containing the dagger.json config file. Either local path or a remote git repo
+      --sdk string               New SDK for the module
+      --source string            Directory to store the module implementation source code in
 ```
 
 ### Options inherited from parent commands
 
 ```
-  -d, --debug             show debug logs and full verbosity
-      --progress string   progress output format (auto, plain, tty) (default "auto")
-  -s, --silent            disable terminal UI and progress output
-  -v, --verbose count     increase verbosity (use -vv or -vvv for more)
+  -d, --debug             Show debug logs and full verbosity
+  -i, --interactive       interactive mode will spawn a terminal on container exec failure
+      --progress string   Progress output format (auto, plain, tty) (default "auto")
+  -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent            Do not show progress at all
+  -v, --verbose count     Increase verbosity (use -vv or -vvv for more)
+  -w, --web               open trace URL in default browser
 ```
 
 ### SEE ALSO
@@ -184,16 +178,19 @@ dagger functions [options] [function]...
 ### Options
 
 ```
-  -m, --mod string   Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
+  -m, --mod string   Path to the module directory containing the dagger.json config file. Either local path or a remote git repo
 ```
 
 ### Options inherited from parent commands
 
 ```
-  -d, --debug             show debug logs and full verbosity
-      --progress string   progress output format (auto, plain, tty) (default "auto")
-  -s, --silent            disable terminal UI and progress output
-  -v, --verbose count     increase verbosity (use -vv or -vvv for more)
+  -d, --debug             Show debug logs and full verbosity
+  -i, --interactive       interactive mode will spawn a terminal on container exec failure
+      --progress string   Progress output format (auto, plain, tty) (default "auto")
+  -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent            Do not show progress at all
+  -v, --verbose count     Increase verbosity (use -vv or -vvv for more)
+  -w, --web               open trace URL in default browser
 ```
 
 ### SEE ALSO
@@ -231,19 +228,22 @@ dagger init --name=hello --sdk=python --source=some/subdir
 ### Options
 
 ```
-      --license string   License identifier to generate - see https://spdx.org/licenses/
+      --license string   License identifier to generate - see https://spdx.org/licenses/ (default "Apache-2.0")
       --name string      Name of the new module (defaults to parent directory name)
       --sdk string       Optionally initialize module for development in the given SDK
-      --source string    Directory to store the module implementation source code in (defaults to "dagger/ if "--sdk" is provided)
+      --source string    Directory to store the module implementation source code in (defaults to "."/ if "--sdk" is provided)
 ```
 
 ### Options inherited from parent commands
 
 ```
-  -d, --debug             show debug logs and full verbosity
-      --progress string   progress output format (auto, plain, tty) (default "auto")
-  -s, --silent            disable terminal UI and progress output
-  -v, --verbose count     increase verbosity (use -vv or -vvv for more)
+  -d, --debug             Show debug logs and full verbosity
+  -i, --interactive       interactive mode will spawn a terminal on container exec failure
+      --progress string   Progress output format (auto, plain, tty) (default "auto")
+  -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent            Do not show progress at all
+  -v, --verbose count     Increase verbosity (use -vv or -vvv for more)
+  -w, --web               open trace URL in default browser
 ```
 
 ### SEE ALSO
@@ -271,17 +271,20 @@ dagger install github.com/shykes/daggerverse/ttlsh@16e40ec244966e55e36a13cb6e1ff
 ### Options
 
 ```
-  -m, --mod string    Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
+  -m, --mod string    Path to the module directory containing the dagger.json config file. Either local path or a remote git repo
   -n, --name string   Name to use for the dependency in the module. Defaults to the name of the module being installed.
 ```
 
 ### Options inherited from parent commands
 
 ```
-  -d, --debug             show debug logs and full verbosity
-      --progress string   progress output format (auto, plain, tty) (default "auto")
-  -s, --silent            disable terminal UI and progress output
-  -v, --verbose count     increase verbosity (use -vv or -vvv for more)
+  -d, --debug             Show debug logs and full verbosity
+  -i, --interactive       interactive mode will spawn a terminal on container exec failure
+      --progress string   Progress output format (auto, plain, tty) (default "auto")
+  -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent            Do not show progress at all
+  -v, --verbose count     Increase verbosity (use -vv or -vvv for more)
+  -w, --web               open trace URL in default browser
 ```
 
 ### SEE ALSO
@@ -299,10 +302,13 @@ dagger login [options] [org]
 ### Options inherited from parent commands
 
 ```
-  -d, --debug             show debug logs and full verbosity
-      --progress string   progress output format (auto, plain, tty) (default "auto")
-  -s, --silent            disable terminal UI and progress output
-  -v, --verbose count     increase verbosity (use -vv or -vvv for more)
+  -d, --debug             Show debug logs and full verbosity
+  -i, --interactive       interactive mode will spawn a terminal on container exec failure
+      --progress string   Progress output format (auto, plain, tty) (default "auto")
+  -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent            Do not show progress at all
+  -v, --verbose count     Increase verbosity (use -vv or -vvv for more)
+  -w, --web               open trace URL in default browser
 ```
 
 ### SEE ALSO
@@ -320,10 +326,13 @@ dagger logout
 ### Options inherited from parent commands
 
 ```
-  -d, --debug             show debug logs and full verbosity
-      --progress string   progress output format (auto, plain, tty) (default "auto")
-  -s, --silent            disable terminal UI and progress output
-  -v, --verbose count     increase verbosity (use -vv or -vvv for more)
+  -d, --debug             Show debug logs and full verbosity
+  -i, --interactive       interactive mode will spawn a terminal on container exec failure
+      --progress string   Progress output format (auto, plain, tty) (default "auto")
+  -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent            Do not show progress at all
+  -v, --verbose count     Increase verbosity (use -vv or -vvv for more)
+  -w, --web               open trace URL in default browser
 ```
 
 ### SEE ALSO
@@ -369,7 +378,7 @@ EOF
 
 ```
       --doc string        Read query from file (defaults to reading from stdin)
-  -m, --mod string        Path to dagger.json config file for the module or a directory containing that file. Either local path (e.g. "/path/to/some/dir") or a github repo (e.g. "github.com/dagger/dagger/path/to/some/subdir")
+  -m, --mod string        Path to the module directory containing the dagger.json config file. Either local path or a remote git repo
       --var strings       List of query variables, in key=value format
       --var-json string   Query variables in JSON format (overrides --var)
 ```
@@ -377,10 +386,13 @@ EOF
 ### Options inherited from parent commands
 
 ```
-  -d, --debug             show debug logs and full verbosity
-      --progress string   progress output format (auto, plain, tty) (default "auto")
-  -s, --silent            disable terminal UI and progress output
-  -v, --verbose count     increase verbosity (use -vv or -vvv for more)
+  -d, --debug             Show debug logs and full verbosity
+  -i, --interactive       interactive mode will spawn a terminal on container exec failure
+      --progress string   Progress output format (auto, plain, tty) (default "auto")
+  -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent            Do not show progress at all
+  -v, --verbose count     Increase verbosity (use -vv or -vvv for more)
+  -w, --web               open trace URL in default browser
 ```
 
 ### SEE ALSO
@@ -406,7 +418,7 @@ jq -n '{query:"{container{id}}"}' | \
     -u $DAGGER_SESSION_TOKEN: \
     -H "content-type:application/json" \
     -d @- \
-    http://127.0.0.1:$DAGGER_SESSION_PORT/query
+    http://127.0.0.1:$DAGGER_SESSION_PORT/query'
 ```
 
 ```
@@ -431,10 +443,13 @@ dagger run python main.py
 ### Options inherited from parent commands
 
 ```
-  -d, --debug             show debug logs and full verbosity
-      --progress string   progress output format (auto, plain, tty) (default "auto")
-  -s, --silent            disable terminal UI and progress output
-  -v, --verbose count     increase verbosity (use -vv or -vvv for more)
+  -d, --debug             Show debug logs and full verbosity
+  -i, --interactive       interactive mode will spawn a terminal on container exec failure
+      --progress string   Progress output format (auto, plain, tty) (default "auto")
+  -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent            Do not show progress at all
+  -v, --verbose count     Increase verbosity (use -vv or -vvv for more)
+  -w, --web               open trace URL in default browser
 ```
 
 ### SEE ALSO
@@ -452,10 +467,13 @@ dagger version
 ### Options inherited from parent commands
 
 ```
-  -d, --debug             show debug logs and full verbosity
-      --progress string   progress output format (auto, plain, tty) (default "auto")
-  -s, --silent            disable terminal UI and progress output
-  -v, --verbose count     increase verbosity (use -vv or -vvv for more)
+  -d, --debug             Show debug logs and full verbosity
+  -i, --interactive       interactive mode will spawn a terminal on container exec failure
+      --progress string   Progress output format (auto, plain, tty) (default "auto")
+  -q, --quiet count       Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent            Do not show progress at all
+  -v, --verbose count     Increase verbosity (use -vv or -vvv for more)
+  -w, --web               open trace URL in default browser
 ```
 
 ### SEE ALSO

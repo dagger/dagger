@@ -2,10 +2,7 @@
 defmodule Dagger.PipelineLabel do
   @moduledoc "Key value object that represents a pipeline label."
 
-  @type t() :: %__MODULE__{
-          name: String.t(),
-          value: String.t()
-        }
+  @type t() :: %__MODULE__{name: String.t(), value: String.t()}
 
   defstruct [:name, :value]
 end

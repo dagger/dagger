@@ -35,26 +35,26 @@ context of dagql + the engine.
 
 IDs are immutable from the consumer's perspective. Rather than mutating an ID,
 methods on ID can be used to create a new ID on top of an existing (immutable)
-Base ID (e.g. Append, SelectNth, etc.).
+Receiver ID (e.g. Append, SelectNth, etc.).
 */
 type ID struct {
 	pb *callpbv1.Call
 
 	// Wrappers around the various proto types in ID.pb
-	base   *ID
-	args   []*Argument
-	module *Module
-	typ    *Type
+	receiver *ID
+	args     []*Argument
+	module   *Module
+	typ      *Type
 }
 
 // The ID of the object that the field selection will be evaluated against.
 //
 // If nil, the root Query object is implied.
-func (id *ID) Base() *ID {
+func (id *ID) Receiver() *ID {
 	if id == nil {
 		return nil
 	}
-	return id.base
+	return id.receiver
 }
 
 // The root Call of the ID, with its Digest set. Exposed so that Calls can be
@@ -75,6 +75,11 @@ func (id *ID) Type() *Type {
 // GraphQL field name.
 func (id *ID) Field() string {
 	return id.pb.Field
+}
+
+// GraphQL view.
+func (id *ID) View() string {
+	return id.pb.View
 }
 
 // GraphQL field arguments, always in alphabetical order.
@@ -100,8 +105,8 @@ func (id *ID) IsTainted() bool {
 	if id.pb.Tainted {
 		return true
 	}
-	if id.base != nil {
-		return id.base.IsTainted()
+	if id.receiver != nil {
+		return id.receiver.IsTainted()
 	}
 	return false
 }
@@ -148,7 +153,7 @@ func (id *ID) Modules() []*Module {
 		for _, arg := range id.args {
 			allMods = append(allMods, arg.value.Modules()...)
 		}
-		id = id.base
+		id = id.receiver
 	}
 	seen := map[digest.Digest]struct{}{}
 	deduped := []*Module{}
@@ -165,8 +170,8 @@ func (id *ID) Modules() []*Module {
 
 func (id *ID) Path() string {
 	buf := new(bytes.Buffer)
-	if id.base != nil {
-		fmt.Fprintf(buf, "%s.", id.base.Path())
+	if id.receiver != nil {
+		fmt.Fprintf(buf, "%s.", id.receiver.Path())
 	}
 	fmt.Fprint(buf, id.DisplaySelf())
 	return buf.String()
@@ -197,9 +202,10 @@ func (id *ID) Display() string {
 }
 
 func (id *ID) SelectNth(nth int) *ID {
-	return id.base.Append(
+	return id.receiver.Append(
 		id.pb.Type.Elem.ToAST(),
 		id.pb.Field,
+		id.pb.View,
 		id.module,
 		id.pb.Tainted,
 		nth,
@@ -210,6 +216,7 @@ func (id *ID) SelectNth(nth int) *ID {
 func (id *ID) Append(
 	ret *ast.Type,
 	field string,
+	view string,
 	mod *Module,
 	tainted bool,
 	nth int,
@@ -219,14 +226,15 @@ func (id *ID) Append(
 		pb: &callpbv1.Call{
 			ReceiverDigest: string(id.Digest()),
 			Field:          field,
+			View:           view,
 			Args:           make([]*callpbv1.Argument, len(args)),
 			Tainted:        tainted,
 			Nth:            int64(nth),
 		},
-		base:   id,
-		module: mod,
-		args:   args,
-		typ:    NewType(ret),
+		receiver: id,
+		module:   mod,
+		args:     args,
+		typ:      NewType(ret),
 	}
 
 	newID.pb.Type = newID.typ.pb
@@ -268,6 +276,22 @@ func (id *ID) Encode() (string, error) {
 	return base64.StdEncoding.EncodeToString(proto), nil
 }
 
+func (id ID) MarshalJSON() ([]byte, error) {
+	enc, err := id.Encode()
+	if err != nil {
+		return nil, err
+	}
+	return []byte(`"` + enc + `"`), nil
+}
+
+func (id *ID) UnmarshalJSON(data []byte) error {
+	if len(data) < 2 || data[0] != '"' || data[len(data)-1] != '"' {
+		return fmt.Errorf("invalid JSON string")
+	}
+	enc := string(data[1 : len(data)-1])
+	return id.Decode(enc)
+}
+
 // NOTE: use with caution, any mutations to the returned proto can corrupt the ID
 func (id *ID) ToProto() (*callpbv1.DAG, error) {
 	dagPB := &callpbv1.DAG{
@@ -288,7 +312,7 @@ func (id *ID) gatherCalls(callsByDigest map[string]*callpbv1.Call) {
 	}
 	callsByDigest[id.pb.Digest] = id.pb
 
-	id.base.gatherCalls(callsByDigest)
+	id.receiver.gatherCalls(callsByDigest)
 	id.module.gatherCalls(callsByDigest)
 	for _, arg := range id.args {
 		arg.gatherCalls(callsByDigest)
@@ -342,9 +366,9 @@ func (id *ID) decode(
 	id.pb = pb
 
 	if id.pb.ReceiverDigest != "" {
-		id.base = new(ID)
-		if err := id.base.decode(id.pb.ReceiverDigest, callsByDigest, memo); err != nil {
-			return fmt.Errorf("failed to decode base Call: %w", err)
+		id.receiver = new(ID)
+		if err := id.receiver.decode(id.pb.ReceiverDigest, callsByDigest, memo); err != nil {
+			return fmt.Errorf("failed to decode receiver Call: %w", err)
 		}
 	}
 	if id.pb.Module != nil {

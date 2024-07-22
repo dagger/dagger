@@ -153,8 +153,6 @@ class Container extends Client\AbstractObject implements Client\IdAble
     /**
      * Writes the container as an OCI tarball to the destination file path on the host.
      *
-     * Return true on success.
-     *
      * It can also export platform variants.
      */
     public function export(
@@ -162,7 +160,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
         ?array $platformVariants = null,
         ?ImageLayerCompression $forcedCompression = null,
         ?ImageMediaTypes $mediaTypes = null,
-    ): bool
+    ): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('export');
         $leafQueryBuilder->setArgument('path', $path);
@@ -175,7 +173,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
         if (null !== $mediaTypes) {
         $leafQueryBuilder->setArgument('mediaTypes', $mediaTypes);
         }
-        return (bool)$this->queryLeaf($leafQueryBuilder, 'export');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'export');
     }
 
     /**
@@ -366,13 +364,13 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Return an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
+     * Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
      */
     public function terminal(
         ?array $cmd = null,
         ?bool $experimentalPrivilegedNesting = false,
         ?bool $insecureRootCapabilities = false,
-    ): Terminal
+    ): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('terminal');
         if (null !== $cmd) {
@@ -384,7 +382,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
         if (null !== $insecureRootCapabilities) {
         $innerQueryBuilder->setArgument('insecureRootCapabilities', $insecureRootCapabilities);
         }
-        return new \Dagger\Terminal($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -484,7 +482,8 @@ class Container extends Client\AbstractObject implements Client\IdAble
      */
     public function withExec(
         array $args,
-        ?bool $skipEntrypoint = false,
+        ?bool $skipEntrypoint = true,
+        ?bool $useEntrypoint = false,
         ?string $stdin = '',
         ?string $redirectStdout = '',
         ?string $redirectStderr = '',
@@ -496,6 +495,9 @@ class Container extends Client\AbstractObject implements Client\IdAble
         $innerQueryBuilder->setArgument('args', $args);
         if (null !== $skipEntrypoint) {
         $innerQueryBuilder->setArgument('skipEntrypoint', $skipEntrypoint);
+        }
+        if (null !== $useEntrypoint) {
+        $innerQueryBuilder->setArgument('useEntrypoint', $useEntrypoint);
         }
         if (null !== $stdin) {
         $innerQueryBuilder->setArgument('stdin', $stdin);
@@ -695,16 +697,14 @@ class Container extends Client\AbstractObject implements Client\IdAble
      */
     public function withNewFile(
         string $path,
-        ?string $contents = '',
+        string $contents,
         ?int $permissions = 420,
         ?string $owner = '',
     ): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withNewFile');
         $innerQueryBuilder->setArgument('path', $path);
-        if (null !== $contents) {
         $innerQueryBuilder->setArgument('contents', $contents);
-        }
         if (null !== $permissions) {
         $innerQueryBuilder->setArgument('permissions', $permissions);
         }

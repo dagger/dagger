@@ -163,6 +163,12 @@ func (m *manager) StartCacheMountSynchronization(ctx context.Context) error {
 					if err != nil {
 						return fmt.Errorf("failed to get cache mount upload url: %w", err)
 					}
+
+					if getURLResp.Skip {
+						bklog.G(ctx).Debugf("skipped pushing cache mount %s", cacheMountName)
+						return nil
+					}
+
 					contentReader := io.NewSectionReader(contentReaderAt, 0, contentLength)
 					httpReq, err := http.NewRequestWithContext(ctx, http.MethodPut, getURLResp.URL, contentReader)
 					if err != nil {

@@ -49,29 +49,16 @@ defmodule Dagger.Client do
     }
   end
 
-  @doc "Checks if the current Dagger Engine is compatible with an SDK's required version."
-  @spec check_version_compatibility(t(), String.t()) :: {:ok, boolean()} | {:error, term()}
-  def check_version_compatibility(%__MODULE__{} = client, version) do
-    selection =
-      client.selection |> select("checkVersionCompatibility") |> put_arg("version", version)
-
-    execute(selection, client.client)
-  end
-
   @doc """
   Creates a scratch container.
 
   Optional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.
   """
-  @spec container(t(), [
-          {:id, Dagger.ContainerID.t() | nil},
-          {:platform, Dagger.Platform.t() | nil}
-        ]) :: Dagger.Container.t()
+  @spec container(t(), [{:platform, Dagger.Platform.t() | nil}]) :: Dagger.Container.t()
   def container(%__MODULE__{} = client, optional_args \\ []) do
     selection =
       client.selection
       |> select("container")
-      |> maybe_put_arg("id", optional_args[:id])
       |> maybe_put_arg("platform", optional_args[:platform])
 
     %Dagger.Container{
@@ -128,6 +115,18 @@ defmodule Dagger.Client do
     end
   end
 
+  @doc "The Dagger engine container configuration and state"
+  @spec dagger_engine(t()) :: Dagger.DaggerEngine.t()
+  def dagger_engine(%__MODULE__{} = client) do
+    selection =
+      client.selection |> select("daggerEngine")
+
+    %Dagger.DaggerEngine{
+      selection: selection,
+      client: client.client
+    }
+  end
+
   @doc "The default platform of the engine."
   @spec default_platform(t()) :: {:ok, Dagger.Platform.t()} | {:error, term()}
   def default_platform(%__MODULE__{} = client) do
@@ -138,25 +137,12 @@ defmodule Dagger.Client do
   end
 
   @doc "Creates an empty directory."
-  @spec directory(t(), [{:id, Dagger.DirectoryID.t() | nil}]) :: Dagger.Directory.t()
-  def directory(%__MODULE__{} = client, optional_args \\ []) do
+  @spec directory(t()) :: Dagger.Directory.t()
+  def directory(%__MODULE__{} = client) do
     selection =
-      client.selection |> select("directory") |> maybe_put_arg("id", optional_args[:id])
+      client.selection |> select("directory")
 
     %Dagger.Directory{
-      selection: selection,
-      client: client.client
-    }
-  end
-
-  @deprecated "Use `load_file_from_id` instead."
-
-  @spec file(t(), Dagger.FileID.t()) :: Dagger.File.t()
-  def file(%__MODULE__{} = client, id) do
-    selection =
-      client.selection |> select("file") |> put_arg("id", id)
-
-    %Dagger.File{
       selection: selection,
       client: client.client
     }
@@ -276,6 +262,57 @@ defmodule Dagger.Client do
     }
   end
 
+  @doc "Load a DaggerEngineCacheEntry from its ID."
+  @spec load_dagger_engine_cache_entry_from_id(t(), Dagger.DaggerEngineCacheEntryID.t()) ::
+          Dagger.DaggerEngineCacheEntry.t()
+  def load_dagger_engine_cache_entry_from_id(%__MODULE__{} = client, id) do
+    selection =
+      client.selection |> select("loadDaggerEngineCacheEntryFromID") |> put_arg("id", id)
+
+    %Dagger.DaggerEngineCacheEntry{
+      selection: selection,
+      client: client.client
+    }
+  end
+
+  @doc "Load a DaggerEngineCacheEntrySet from its ID."
+  @spec load_dagger_engine_cache_entry_set_from_id(t(), Dagger.DaggerEngineCacheEntrySetID.t()) ::
+          Dagger.DaggerEngineCacheEntrySet.t()
+  def load_dagger_engine_cache_entry_set_from_id(%__MODULE__{} = client, id) do
+    selection =
+      client.selection |> select("loadDaggerEngineCacheEntrySetFromID") |> put_arg("id", id)
+
+    %Dagger.DaggerEngineCacheEntrySet{
+      selection: selection,
+      client: client.client
+    }
+  end
+
+  @doc "Load a DaggerEngineCache from its ID."
+  @spec load_dagger_engine_cache_from_id(t(), Dagger.DaggerEngineCacheID.t()) ::
+          Dagger.DaggerEngineCache.t()
+  def load_dagger_engine_cache_from_id(%__MODULE__{} = client, id) do
+    selection =
+      client.selection |> select("loadDaggerEngineCacheFromID") |> put_arg("id", id)
+
+    %Dagger.DaggerEngineCache{
+      selection: selection,
+      client: client.client
+    }
+  end
+
+  @doc "Load a DaggerEngine from its ID."
+  @spec load_dagger_engine_from_id(t(), Dagger.DaggerEngineID.t()) :: Dagger.DaggerEngine.t()
+  def load_dagger_engine_from_id(%__MODULE__{} = client, id) do
+    selection =
+      client.selection |> select("loadDaggerEngineFromID") |> put_arg("id", id)
+
+    %Dagger.DaggerEngine{
+      selection: selection,
+      client: client.client
+    }
+  end
+
   @doc "Load a Directory from its ID."
   @spec load_directory_from_id(t(), Dagger.DirectoryID.t()) :: Dagger.Directory.t()
   def load_directory_from_id(%__MODULE__{} = client, id) do
@@ -283,6 +320,31 @@ defmodule Dagger.Client do
       client.selection |> select("loadDirectoryFromID") |> put_arg("id", id)
 
     %Dagger.Directory{
+      selection: selection,
+      client: client.client
+    }
+  end
+
+  @doc "Load a EnumTypeDef from its ID."
+  @spec load_enum_type_def_from_id(t(), Dagger.EnumTypeDefID.t()) :: Dagger.EnumTypeDef.t()
+  def load_enum_type_def_from_id(%__MODULE__{} = client, id) do
+    selection =
+      client.selection |> select("loadEnumTypeDefFromID") |> put_arg("id", id)
+
+    %Dagger.EnumTypeDef{
+      selection: selection,
+      client: client.client
+    }
+  end
+
+  @doc "Load a EnumValueTypeDef from its ID."
+  @spec load_enum_value_type_def_from_id(t(), Dagger.EnumValueTypeDefID.t()) ::
+          Dagger.EnumValueTypeDef.t()
+  def load_enum_value_type_def_from_id(%__MODULE__{} = client, id) do
+    selection =
+      client.selection |> select("loadEnumValueTypeDefFromID") |> put_arg("id", id)
+
+    %Dagger.EnumValueTypeDef{
       selection: selection,
       client: client.client
     }
@@ -733,19 +795,6 @@ defmodule Dagger.Client do
       |> put_arg("plaintext", plaintext)
 
     %Dagger.Secret{
-      selection: selection,
-      client: client.client
-    }
-  end
-
-  @deprecated "Use `load_socket_from_id` instead."
-  @doc "Loads a socket by its ID."
-  @spec socket(t(), Dagger.SocketID.t()) :: Dagger.Socket.t()
-  def socket(%__MODULE__{} = client, id) do
-    selection =
-      client.selection |> select("socket") |> put_arg("id", id)
-
-    %Dagger.Socket{
       selection: selection,
       client: client.client
     }

@@ -1,4 +1,5 @@
 """An example module using a factory constructor"""
+
 from typing import Annotated
 
 from dagger import Doc, dag, function, object_type

@@ -24,11 +24,11 @@ describe("TypeScript default client", function () {
    container {
      from(address: "alpine") {
        withExec(args: ["echo", "hello", "world"]) {
-           stdout
-         }
+          stdout
+       }
      }
    }
- }      
+ }
       `)
 
       assert.equal(result.container.from.withExec.stdout, "hello world\n")

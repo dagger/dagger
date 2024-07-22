@@ -1,36 +1,46 @@
 package core
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"net"
+	"os"
+	"path/filepath"
 	"strings"
-	"testing"
+	"sync"
 
 	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/dagger/engine/distconsts"
+	"github.com/dagger/dagger/testctx"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 
 	"dagger.io/dagger"
 )
 
-func TestModuleDaggerCallHelp(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ModuleSuite) TestDaggerCallHelp(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	modGen := modInit(t, c, "go", `package main
 
-func New(source *Directory) *Test {
+import (
+	"dagger/test/internal/dagger"
+)
+
+func New(source *dagger.Directory) *Test {
     return &Test{
         Source: source,
     }
 }
 
 type Test struct {
-    Source *Directory
+    Source *dagger.Directory
 }
 
-func (m *Test) Container() *Container {
+func (m *Test) Container() *dagger.Container {
     return dag.
         Container().
         From("`+alpineImage+`").
@@ -39,16 +49,14 @@ func (m *Test) Container() *Container {
 `,
 	)
 
-	t.Run("no required arg validation", func(t *testing.T) {
-		t.Parallel()
+	t.Run("no required arg validation", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.With(daggerCall("container", "--help")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "USAGE")
 		require.Contains(t, out, "dagger call container <function>")
 	})
 
-	t.Run("globally parsed", func(t *testing.T) {
-		t.Parallel()
+	t.Run("globally parsed", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.With(daggerCall("container", "--help", "directory")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "USAGE")
@@ -56,37 +64,31 @@ func (m *Test) Container() *Container {
 	})
 }
 
-func TestModuleDaggerCallArgTypes(t *testing.T) {
-	t.Parallel()
-
-	t.Run("service args", func(t *testing.T) {
-		t.Parallel()
-
-		t.Run("used as service binding", func(t *testing.T) {
-			t.Parallel()
-
-			c, ctx := connect(t)
+func (ModuleSuite) TestDaggerCallArgTypes(ctx context.Context, t *testctx.T) {
+	t.Run("service args", func(ctx context.Context, t *testctx.T) {
+		t.Run("used as service binding", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
 
 			modGen := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work").
 				With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-				WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-					Contents: fmt.Sprintf(`package main
+				WithNewFile("main.go", fmt.Sprintf(`package main
 import (
 	"context"
+	"dagger/test/internal/dagger"
 )
 
 type Test struct {}
 
-func (m *Test) Fn(ctx context.Context, svc *Service) (string, error) {
+func (m *Test) Fn(ctx context.Context, svc *dagger.Service) (string, error) {
 	return dag.Container().From("%s").WithExec([]string{"apk", "add", "curl"}).
 		WithServiceBinding("daserver", svc).
 		WithExec([]string{"curl", "http://daserver:8000"}).
 		Stdout(ctx)
 }
 `, alpineImage),
-				})
+				)
 
 			logGen(ctx, t, modGen.Directory("."))
 
@@ -101,26 +103,24 @@ func (m *Test) Fn(ctx context.Context, svc *Service) (string, error) {
 			require.Equal(t, "im up", out)
 		})
 
-		t.Run("used directly", func(t *testing.T) {
-			t.Parallel()
-
-			c, ctx := connect(t)
+		t.Run("used directly", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
 
 			modGen := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work").
 				With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-				WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-					Contents: `package main
+				WithNewFile("main.go", `package main
 import (
 	"context"
 	"fmt"
 	"strings"
+	"dagger/test/internal/dagger"
 )
 
 type Test struct {}
 
-func (m *Test) Fn(ctx context.Context, svc *Service) (string, error) {
+func (m *Test) Fn(ctx context.Context, svc *dagger.Service) (string, error) {
 	ports, err := svc.Ports(ctx)
 	if err != nil {
 		return "", err
@@ -137,7 +137,7 @@ func (m *Test) Fn(ctx context.Context, svc *Service) (string, error) {
 	return strings.Join(out, "\n"), nil
 }
 `,
-				})
+				)
 
 			logGen(ctx, t, modGen.Directory("."))
 
@@ -153,23 +153,19 @@ func (m *Test) Fn(ctx context.Context, svc *Service) (string, error) {
 		})
 	})
 
-	t.Run("list args", func(t *testing.T) {
-		t.Parallel()
-
-		c, ctx := connect(t)
+	t.Run("list args", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=minimal", "--sdk=go")).
-			WithNewFile("foo.txt", dagger.ContainerWithNewFileOpts{
-				Contents: "bar",
-			}).
-			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("foo.txt", "bar").
+			WithNewFile("main.go", `package main
 import (
 	"context"
 	"strings"
+	"dagger/minimal/internal/dagger"
 )
 
 type Minimal struct {}
@@ -178,7 +174,7 @@ func (m *Minimal) Hello(msgs []string) string {
 	return strings.Join(msgs, "+")
 }
 
-func (m *Minimal) Reads(ctx context.Context, files []File) (string, error) {
+func (m *Minimal) Reads(ctx context.Context, files []dagger.File) (string, error) {
 	var contents []string
 	for _, f := range files {
 		content, err := f.Contents(ctx)
@@ -190,7 +186,7 @@ func (m *Minimal) Reads(ctx context.Context, files []File) (string, error) {
 	return strings.Join(contents, "+"), nil
 }
 `,
-			})
+			)
 
 		logGen(ctx, t, modGen.Directory("."))
 
@@ -203,35 +199,30 @@ func (m *Minimal) Reads(ctx context.Context, files []File) (string, error) {
 		require.Equal(t, "bar+bar", out)
 	})
 
-	t.Run("directory arg inputs", func(t *testing.T) {
-		t.Parallel()
-
-		t.Run("local dir", func(t *testing.T) {
-			t.Parallel()
-
-			t.Run("abs path", func(t *testing.T) {
-				t.Parallel()
-				c, ctx := connect(t)
+	t.Run("directory arg inputs", func(ctx context.Context, t *testctx.T) {
+		t.Run("local dir", func(ctx context.Context, t *testctx.T) {
+			t.Run("abs path", func(ctx context.Context, t *testctx.T) {
+				c := connect(ctx, t)
 
 				modGen := c.Container().From(golangImage).
 					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 					WithWorkdir("/work").
 					With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-					WithNewFile("/dir/subdir/foo.txt", dagger.ContainerWithNewFileOpts{
-						Contents: "foo",
-					}).
-					WithNewFile("/dir/subdir/bar.txt", dagger.ContainerWithNewFileOpts{
-						Contents: "bar",
-					}).
-					WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-						Contents: `package main
+					WithNewFile("/dir/subdir/foo.txt", "foo").
+					WithNewFile("/dir/subdir/bar.txt", "bar").
+					WithNewFile("main.go", `package main
+
+import (
+	"dagger/test/internal/dagger"
+)
+
 type Test struct {}
 
-func (m *Test) Fn(dir *Directory) *Directory {
+func (m *Test) Fn(dir *dagger.Directory) *dagger.Directory {
 	return dir
 }
 	`,
-					})
+					)
 
 				out, err := modGen.With(daggerCall("fn", "--dir", "/dir/subdir", "entries")).Stdout(ctx)
 				require.NoError(t, err)
@@ -242,33 +233,58 @@ func (m *Test) Fn(dir *Directory) *Directory {
 				require.Equal(t, "bar.txt\nfoo.txt\n", out)
 			})
 
-			t.Run("rel path", func(t *testing.T) {
-				t.Parallel()
+			t.Run("expand home directory", func(ctx context.Context, t *testctx.T) {
+				c := connect(ctx, t)
 
-				c, ctx := connect(t)
+				modGen := c.Container().From(golangImage).
+					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+					WithWorkdir("/work").
+					With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+					WithNewFile("/root/foo.txt", "foo").
+					WithNewFile("/root/subdir/bar.txt", "bar").
+					WithNewFile("main.go", `package main
+
+import (
+	"dagger/test/internal/dagger"
+)
+type Test struct {}
+
+func (m *Test) Fn(dir *dagger.Directory) *dagger.Directory {
+	return dir
+}
+`,
+					)
+
+				out, err := modGen.With(daggerCall("fn", "--dir", "~", "entries")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "foo.txt\nsubdir\n", out)
+
+				out, err = modGen.With(daggerCall("fn", "--dir", "~/subdir", "entries")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "bar.txt\n", out)
+			})
+
+			t.Run("rel path", func(ctx context.Context, t *testctx.T) {
+				c := connect(ctx, t)
 
 				modGen := goGitBase(t, c).
 					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 					WithWorkdir("/work/dir").
 					With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-					WithNewFile("/work/otherdir/foo.txt", dagger.ContainerWithNewFileOpts{
-						Contents: "foo",
-					}).
-					WithNewFile("/work/otherdir/bar.txt", dagger.ContainerWithNewFileOpts{
-						Contents: "bar",
-					}).
-					WithNewFile("/work/dir/subdir/blah.txt", dagger.ContainerWithNewFileOpts{
-						Contents: "blah",
-					}).
-					WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-						Contents: `package main
+					WithNewFile("/work/otherdir/foo.txt", "foo").
+					WithNewFile("/work/otherdir/bar.txt", "bar").
+					WithNewFile("/work/dir/subdir/blah.txt", "blah").
+					WithNewFile("main.go", `package main
+import (
+	"dagger/test/internal/dagger"
+)
 type Test struct {}
 
-func (m *Test) Fn(dir *Directory) *Directory {
+func (m *Test) Fn(dir *dagger.Directory) *dagger.Directory {
 	return dir
 }
 	`,
-					})
+					)
 
 				out, err := modGen.With(daggerCall("fn", "--dir", "../otherdir", "entries")).Stdout(ctx)
 				require.NoError(t, err)
@@ -288,29 +304,31 @@ func (m *Test) Fn(dir *Directory) *Directory {
 			})
 		})
 
-		t.Run("git dir", func(t *testing.T) {
-			t.Parallel()
-			c, ctx := connect(t)
+		t.Run("git dir", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
 
 			modGen := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work").
 				With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-				WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-					Contents: `package main
+				WithNewFile("main.go", `package main
+import (
+	"dagger/test/internal/dagger"
+)
+
 type Test struct {}
 
 func (m *Test) Fn(
-	dir *Directory,
+	dir *dagger.Directory,
 	subpath string, // +optional
-) *Directory {
+) *dagger.Directory {
 	if subpath == "" {
 		subpath = "."
 	}
 	return dir.Directory(subpath)
 }
 	`,
-				})
+				)
 
 			for _, tc := range []struct {
 				baseURL string
@@ -332,8 +350,7 @@ func (m *Test) Fn(
 				},
 			} {
 				tc := tc
-				t.Run(fmt.Sprintf("%s:%s", tc.baseURL, tc.subpath), func(t *testing.T) {
-					t.Parallel()
+				t.Run(fmt.Sprintf("%s:%s", tc.baseURL, tc.subpath), func(ctx context.Context, t *testctx.T) {
 					url := tc.baseURL + "#v0.9.1"
 					if tc.subpath != "" {
 						url += ":" + tc.subpath
@@ -354,29 +371,27 @@ func (m *Test) Fn(
 		})
 	})
 
-	t.Run("file arg inputs", func(t *testing.T) {
-		t.Parallel()
-
-		t.Run("abs path", func(t *testing.T) {
-			t.Parallel()
-			c, ctx := connect(t)
+	t.Run("file arg inputs", func(ctx context.Context, t *testctx.T) {
+		t.Run("abs path", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
 
 			modGen := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work").
 				With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-				WithNewFile("/dir/subdir/foo.txt", dagger.ContainerWithNewFileOpts{
-					Contents: "foo",
-				}).
-				WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-					Contents: `package main
+				WithNewFile("/dir/subdir/foo.txt", "foo").
+				WithNewFile("/root/foo.txt", "foo").
+				WithNewFile("main.go", `package main
+import (
+	"dagger/test/internal/dagger"
+)
 type Test struct {}
 
-func (m *Test) Fn(file *File) *File {
+func (m *Test) Fn(file *dagger.File) *dagger.File {
 	return file
 }
-	`,
-				})
+`,
+				)
 
 			out, err := modGen.With(daggerCall("fn", "--file", "/dir/subdir/foo.txt", "contents")).Stdout(ctx)
 			require.NoError(t, err)
@@ -387,30 +402,50 @@ func (m *Test) Fn(file *File) *File {
 			require.Equal(t, "foo", out)
 		})
 
-		t.Run("rel path", func(t *testing.T) {
-			t.Parallel()
+		t.Run("expand home directory", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
 
-			c, ctx := connect(t)
+			modGen := c.Container().From(golangImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				WithWorkdir("/work").
+				With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+				WithNewFile("/root/foo.txt", "foo").
+				WithNewFile("main.go", `package main
+import (
+	"dagger/test/internal/dagger"
+)
+type Test struct {}
+
+func (m *Test) Fn(file *dagger.File) *dagger.File {
+	return file
+}
+`,
+				)
+			out, err := modGen.With(daggerCall("fn", "--file", "~/foo.txt", "contents")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "foo", out)
+		})
+
+		t.Run("rel path", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
 
 			modGen := goGitBase(t, c).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work/dir").
 				With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-				WithNewFile("/work/otherdir/foo.txt", dagger.ContainerWithNewFileOpts{
-					Contents: "foo",
-				}).
-				WithNewFile("/work/dir/subdir/blah.txt", dagger.ContainerWithNewFileOpts{
-					Contents: "blah",
-				}).
-				WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-					Contents: `package main
+				WithNewFile("/work/otherdir/foo.txt", "foo").
+				WithNewFile("/work/dir/subdir/blah.txt", "blah").
+				WithNewFile("main.go", `package main
+import (
+	"dagger/test/internal/dagger"
+)
 type Test struct {}
 
-func (m *Test) Fn(file *File) *File {
+func (m *Test) Fn(file *dagger.File) *dagger.File {
 	return file
 }
 	`,
-				})
+				)
 
 			out, err := modGen.With(daggerCall("fn", "--file", "../otherdir/foo.txt", "contents")).Stdout(ctx)
 			require.NoError(t, err)
@@ -430,100 +465,91 @@ func (m *Test) Fn(file *File) *File {
 		})
 	})
 
-	t.Run("secret args", func(t *testing.T) {
-		t.Parallel()
-		c, ctx := connect(t)
+	t.Run("secret args", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("main.go", `package main
 
-import "context"
+import (
+	"context"
+	"dagger/test/internal/dagger"
+)
 
 type Test struct {}
 
-func (m *Test) Insecure(ctx context.Context, token *Secret) (string, error) {
+func (m *Test) Insecure(ctx context.Context, token *dagger.Secret) (string, error) {
 	return token.Plaintext(ctx)
 }
 `,
-			}).
+			).
 			WithEnvVariable("TOPSECRET", "shhh").
-			WithNewFile("/mysupersecret", dagger.ContainerWithNewFileOpts{Contents: "file shhh"})
+			WithNewFile("/mysupersecret", "file shhh").
+			WithNewFile("/root/homesupersecret", "file shhh")
 
-		t.Run("explicit env", func(t *testing.T) {
-			t.Parallel()
-			t.Run("happy", func(t *testing.T) {
-				t.Parallel()
+		t.Run("explicit env", func(ctx context.Context, t *testctx.T) {
+			t.Run("happy", func(ctx context.Context, t *testctx.T) {
 				out, err := modGen.With(daggerCall("insecure", "--token", "env:TOPSECRET")).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, "shhh", out)
 			})
-			t.Run("sad", func(t *testing.T) {
-				t.Parallel()
+			t.Run("sad", func(ctx context.Context, t *testctx.T) {
 				_, err := modGen.With(daggerCall("insecure", "--token", "env:NOWHERETOBEFOUND")).Stdout(ctx)
 				require.ErrorContains(t, err, `secret env var not found: "NOW..."`)
 			})
 		})
 
-		t.Run("implicit env", func(t *testing.T) {
-			t.Parallel()
-			t.Run("happy", func(t *testing.T) {
-				t.Parallel()
+		t.Run("implicit env", func(ctx context.Context, t *testctx.T) {
+			t.Run("happy", func(ctx context.Context, t *testctx.T) {
 				out, err := modGen.With(daggerCall("insecure", "--token", "TOPSECRET")).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, "shhh", out)
 			})
-			t.Run("sad", func(t *testing.T) {
-				t.Parallel()
+			t.Run("sad", func(ctx context.Context, t *testctx.T) {
 				_, err := modGen.With(daggerCall("insecure", "--token", "NOWHERETOBEFOUND")).Stdout(ctx)
 				require.ErrorContains(t, err, `secret env var not found: "NOW..."`)
 			})
 		})
 
-		t.Run("file", func(t *testing.T) {
-			t.Parallel()
-			t.Run("happy", func(t *testing.T) {
-				t.Parallel()
+		t.Run("file", func(ctx context.Context, t *testctx.T) {
+			t.Run("happy", func(ctx context.Context, t *testctx.T) {
 				out, err := modGen.With(daggerCall("insecure", "--token", "file:/mysupersecret")).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, "file shhh", out)
+
+				out, err = modGen.With(daggerCall("insecure", "--token", "file:~/homesupersecret")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "file shhh", out)
 			})
-			t.Run("sad", func(t *testing.T) {
-				t.Parallel()
+			t.Run("sad", func(ctx context.Context, t *testctx.T) {
 				_, err := modGen.With(daggerCall("insecure", "--token", "file:/nowheretobefound")).Stdout(ctx)
 				require.ErrorContains(t, err, `failed to read secret file "/nowheretobefound": open /nowheretobefound: no such file or directory`)
 			})
 		})
 
-		t.Run("cmd", func(t *testing.T) {
-			t.Parallel()
-			t.Run("happy", func(t *testing.T) {
-				t.Parallel()
+		t.Run("cmd", func(ctx context.Context, t *testctx.T) {
+			t.Run("happy", func(ctx context.Context, t *testctx.T) {
 				out, err := modGen.With(daggerCall("insecure", "--token", "cmd:echo -n cmd shhh")).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, "cmd shhh", out)
 			})
-			t.Run("sad", func(t *testing.T) {
-				t.Parallel()
+			t.Run("sad", func(ctx context.Context, t *testctx.T) {
 				_, err := modGen.With(daggerCall("insecure", "--token", "cmd:exit 1")).Stdout(ctx)
 				require.ErrorContains(t, err, `failed to run secret command "exit 1": exit status 1`)
 			})
 		})
 
-		t.Run("invalid source", func(t *testing.T) {
-			t.Parallel()
+		t.Run("invalid source", func(ctx context.Context, t *testctx.T) {
 			_, err := modGen.With(daggerCall("insecure", "--token", "wtf:HUH")).Stdout(ctx)
 			require.ErrorContains(t, err, `unsupported secret arg source: "wtf"`)
 		})
 	})
 
-	t.Run("cache volume args", func(t *testing.T) {
-		t.Parallel()
-
-		c, ctx := connect(t)
+	t.Run("cache volume args", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		volName := identity.NewID()
 
@@ -531,25 +557,25 @@ func (m *Test) Insecure(ctx context.Context, token *Secret) (string, error) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("main.go", `package main
 
 import (
 	"context"
+	"dagger/test/internal/dagger"
 )
 
 type Test struct {}
 
-func (m *Test) Cacher(ctx context.Context, cache *CacheVolume, val string) (string, error) {
+func (m *Test) Cacher(ctx context.Context, cache *dagger.CacheVolume, val string) (string, error) {
 	return dag.Container().
-		From("` + alpineImage + `").
+		From("`+alpineImage+`").
 		WithMountedCache("/cache", cache).
 		WithExec([]string{"sh", "-c", "echo $0 >> /cache/vals", val}).
 		WithExec([]string{"cat", "/cache/vals"}).
 		Stdout(ctx)
 }
 `,
-			})
+			)
 
 		out, err := modGen.With(daggerCall("cacher", "--cache", volName, "--val", "foo")).Stdout(ctx)
 		require.NoError(t, err)
@@ -559,29 +585,27 @@ func (m *Test) Cacher(ctx context.Context, cache *CacheVolume, val string) (stri
 		require.Equal(t, "foo\nbar\n", out)
 	})
 
-	t.Run("platform args", func(t *testing.T) {
-		t.Parallel()
-
-		c, ctx := connect(t)
+	t.Run("platform args", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("main.go", `package main
+import "dagger/test/internal/dagger"
 
 type Test struct {}
 
-func (m *Test) FromPlatform(platform Platform) string {
+func (m *Test) FromPlatform(platform dagger.Platform) string {
 	return string(platform)
 }
 
-func (m *Test) ToPlatform(platform string) Platform {
-	return Platform(platform)
+func (m *Test) ToPlatform(platform string) dagger.Platform {
+	return dagger.Platform(platform)
 }
 `,
-			})
+			)
 
 		out, err := modGen.With(daggerCall("from-platform", "--platform", "linux/amd64")).Stdout(ctx)
 		require.NoError(t, err)
@@ -599,110 +623,600 @@ func (m *Test) ToPlatform(platform string) Platform {
 		require.ErrorContains(t, err, "unknown operating system or architecture")
 	})
 
-	t.Run("enum args", func(t *testing.T) {
-		t.Parallel()
-
-		c, ctx := connect(t)
+	t.Run("enum args", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("main.go", `package main
+
+import "dagger/test/internal/dagger"
 
 type Test struct {}
 
-func (m *Test) FromProto(proto NetworkProtocol) string {
+func (m *Test) FromProto(
+	// +default="UDP"
+	proto dagger.NetworkProtocol,
+) string {
 	return string(proto)
 }
 
-func (m *Test) ToProto(proto string) NetworkProtocol {
-	return NetworkProtocol(proto)
+func (m *Test) ToProto(proto string) dagger.NetworkProtocol {
+	return dagger.NetworkProtocol(proto)
 }
 `,
-			})
+			)
 
-		out, err := modGen.With(daggerCall("from-proto", "--proto", "TCP")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "TCP", out)
-		_, err = modGen.With(daggerCall("from-proto", "--proto", "INVALID")).Stdout(ctx)
-		require.ErrorContains(t, err, "invalid enum value")
+		t.Run("valid input", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCall("from-proto", "--proto", "TCP")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "TCP", out)
+		})
 
-		out, err = modGen.With(daggerCall("to-proto", "--proto", "TCP")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "TCP", out)
-		_, err = modGen.With(daggerCall("to-proto", "--proto", "INVALID")).Stdout(ctx)
-		require.ErrorContains(t, err, "invalid enum value")
+		t.Run("invalid input", func(ctx context.Context, t *testctx.T) {
+			_, err := modGen.With(daggerCall("from-proto", "--proto", "INVALID")).Stdout(ctx)
+			require.ErrorContains(t, err, "value should be one of")
+			require.ErrorContains(t, err, "TCP")
+			require.ErrorContains(t, err, "UDP")
+		})
+
+		t.Run("default input value", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCall("from-proto")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "UDP", out)
+		})
+
+		t.Run("valid output", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCall("to-proto", "--proto", "TCP")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "TCP", out)
+		})
+
+		t.Run("invalid output", func(ctx context.Context, t *testctx.T) {
+			_, err := modGen.With(daggerCall("to-proto", "--proto", "INVALID")).Stdout(ctx)
+			require.ErrorContains(t, err, "invalid enum value")
+		})
+
+		t.Run("choices in help", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCall("from-proto", "--help")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Contains(t, out, "TCP")
+			require.Contains(t, out, "UDP")
+		})
 	})
 
-	t.Run("module args", func(t *testing.T) {
-		t.Parallel()
+	t.Run("custom enum args", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
-		c, ctx := connect(t)
-
-		modGen := goGitBase(t, c).
+		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-			WithNewFile("foo.txt", dagger.ContainerWithNewFileOpts{
-				Contents: "foo",
-			}).
-			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("main.go", `package main
 
-import (
-	"context"
+type Status string
+
+const (
+	Active Status = "ACTIVE"
+	Inactive Status = "INACTIVE"
 )
 
 type Test struct {}
 
-func (m *Test) ModSrc(ctx context.Context, modSrc *ModuleSource) *ModuleSource {
+func (m *Test) FromStatus(
+	// +default="INACTIVE"
+	status Status,
+) string {
+	return string(status)
+}
+
+func (m *Test) ToStatus(status string) Status {
+	return Status(status)
+}
+`,
+			)
+
+		t.Run("valid input", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCall("from-status", "--status", "ACTIVE")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "ACTIVE", out)
+		})
+
+		t.Run("invalid input", func(ctx context.Context, t *testctx.T) {
+			_, err := modGen.With(daggerCall("from-status", "--status", "INVALID")).Stdout(ctx)
+			require.ErrorContains(t, err, "value should be one of")
+			require.ErrorContains(t, err, "ACTIVE")
+			require.ErrorContains(t, err, "INACTIVE")
+		})
+
+		t.Run("default input value", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCall("from-status")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "INACTIVE", out)
+		})
+
+		t.Run("valid output", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCall("to-status", "--status", "ACTIVE")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "ACTIVE", out)
+		})
+
+		t.Run("invalid output", func(ctx context.Context, t *testctx.T) {
+			_, err := modGen.With(daggerCall("to-status", "--status", "INVALID")).Stdout(ctx)
+			require.ErrorContains(t, err, "invalid enum value")
+		})
+
+		t.Run("choices in help", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCall("from-status", "--help")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Contains(t, out, "ACTIVE")
+			require.Contains(t, out, "INACTIVE")
+		})
+	})
+
+	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
+		t.Run("module args", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			modGen := goGitBase(t, c).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				WithWorkdir("/work").
+				With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+				WithNewFile("foo.txt", "foo").
+				WithNewFile("main.go", `package main
+
+import (
+	"context"
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {}
+
+func (m *Test) ModSrc(ctx context.Context, modSrc *dagger.ModuleSource) *dagger.ModuleSource {
 	return modSrc
 }
 
-func (m *Test) Mod(ctx context.Context, module *Module) *Module {
+func (m *Test) Mod(ctx context.Context, module *dagger.Module) *dagger.Module {
 	return module
 }
 `,
-			})
+				)
 
-		out, err := modGen.With(daggerCall("mod-src", "--mod-src", ".", "directory", "--path", ".", "entries")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, ".gitattributes\n.gitignore\nLICENSE\ndagger.gen.go\ndagger.json\nfoo.txt\ngo.mod\ngo.sum\ninternal\nmain.go\n", out)
+			out, err := modGen.With(daggerCall("mod-src", "--mod-src", ".", "directory", "--path", ".", "entries")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, ".gitattributes\n.gitignore\nLICENSE\ndagger.gen.go\ndagger.json\nfoo.txt\ngo.mod\ngo.sum\ninternal\nmain.go\n", out)
 
-		out, err = modGen.With(daggerCall("mod", "--module", ".", "source", "directory", "--path", ".", "entries")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, ".gitattributes\n.gitignore\nLICENSE\ndagger.gen.go\ndagger.json\nfoo.txt\ngo.mod\ngo.sum\ninternal\nmain.go\n", out)
+			out, err = modGen.With(daggerCall("mod", "--module", ".", "source", "directory", "--path", ".", "entries")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, ".gitattributes\n.gitignore\nLICENSE\ndagger.gen.go\ndagger.json\nfoo.txt\ngo.mod\ngo.sum\ninternal\nmain.go\n", out)
 
-		out, err = modGen.With(daggerCall("mod-src", "--mod-src", testGitModuleRef("top-level"), "as-string")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, testGitModuleRef("top-level"), out)
+			out, err = modGen.With(daggerCall("mod-src", "--mod-src", testGitModuleRef(tc, "top-level"), "as-string")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, testGitModuleRef(tc, "top-level"), out)
 
-		out, err = modGen.With(daggerCall("mod", "--module", testGitModuleRef("top-level"), "source", "as-string")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, testGitModuleRef("top-level"), out)
+			out, err = modGen.With(daggerCall("mod", "--module", testGitModuleRef(tc, "top-level"), "source", "as-string")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, testGitModuleRef(tc, "top-level"), out)
+		})
 	})
 }
 
-func TestModuleDaggerCallReturnTypes(t *testing.T) {
-	t.Parallel()
+func (ModuleSuite) TestDaggerCallSocketArg(ctx context.Context, t *testctx.T) {
+	getHostSocket := func(t *testctx.T) (string, func()) {
+		sockDir := t.TempDir()
+		sockPath := filepath.Join(sockDir, "host.sock")
+		sock, err := net.Listen("unix", sockPath)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			sock.Close()
+		})
 
-	t.Run("return list objects", func(t *testing.T) {
-		t.Parallel()
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				conn, err := sock.Accept()
+				if err != nil {
+					if !errors.Is(err, net.ErrClosed) {
+						t.Logf("failed to accept connection: %v", err)
+					}
+					return
+				}
 
-		c, ctx := connect(t)
+				_, err = conn.Write([]byte("yoyoyo"))
+				if err != nil {
+					conn.Close()
+					t.Logf("failed to write to connection: %v", err)
+					return
+				}
+				conn.Close()
+			}
+		}()
+
+		return sockPath, func() {
+			sock.Close()
+			wg.Wait()
+		}
+	}
+
+	t.Run("basic", func(ctx context.Context, t *testctx.T) {
+		modDir := t.TempDir()
+		err := os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
+
+import (
+	"context"
+	"fmt"
+
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {}
+
+func (m *Test) Fn(ctx context.Context, sock *dagger.Socket) error {
+	out, err := dag.Container().From("`+alpineImage+`").
+		WithExec([]string{"apk", "add", "netcat-openbsd"}).
+		WithUnixSocket("/var/run/host.sock", sock).
+		WithExec([]string{"nc", "-w", "5", "-U", "/var/run/host.sock"}).
+		Stdout(ctx)
+	if err != nil {
+		return err
+	}
+	if out != "yoyoyo" {
+		return fmt.Errorf("unexpected output: %s", out)
+	}
+	return nil
+}
+`), 0o644)
+		require.NoError(t, err)
+
+		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "init", "--source=.", "--name=test", "--sdk=go")
+		require.NoError(t, err)
+
+		sockPath, cleanup := getHostSocket(t)
+		defer cleanup()
+
+		_, err = hostDaggerExec(ctx, t, modDir, "call", "fn", "--sock", sockPath)
+		require.NoError(t, err)
+	})
+
+	t.Run("passed to another module", func(ctx context.Context, t *testctx.T) {
+		modDir := t.TempDir()
+		depModDir := filepath.Join(modDir, "dep")
+		require.NoError(t, os.MkdirAll(depModDir, 0o755))
+
+		err := os.WriteFile(filepath.Join(depModDir, "main.go"), []byte(`package main
+
+import (
+	"context"
+	"fmt"
+
+	"dagger/dep/internal/dagger"
+)
+
+type Dep struct {}
+
+func (m *Dep) Fn(ctx context.Context, sock *dagger.Socket) error {
+	out, err := dag.Container().From("`+alpineImage+`").
+		WithExec([]string{"apk", "add", "netcat-openbsd"}).
+		WithUnixSocket("/var/run/host.sock", sock).
+		WithExec([]string{"nc", "-w", "5", "-U", "/var/run/host.sock"}).
+		Stdout(ctx)
+	if err != nil {
+		return err
+	}
+	if out != "yoyoyo" {
+		return fmt.Errorf("unexpected output: %s", out)
+	}
+	return nil
+}
+`), 0o644)
+		require.NoError(t, err)
+
+		_, err = hostDaggerExec(ctx, t, depModDir, "--debug", "init", "--source=.", "--name=dep", "--sdk=go")
+		require.NoError(t, err)
+
+		err = os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
+
+import (
+	"context"
+
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {}
+
+func (m *Test) Fn(ctx context.Context, sock *dagger.Socket) error {
+	return dag.Dep().Fn(ctx, sock)
+}
+`), 0o644)
+		require.NoError(t, err)
+
+		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "init", "--source=.", "--name=test", "--sdk=go")
+		require.NoError(t, err)
+
+		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "install", depModDir)
+		require.NoError(t, err)
+
+		sockPath, cleanup := getHostSocket(t)
+		defer cleanup()
+
+		_, err = hostDaggerExec(ctx, t, modDir, "call", "fn", "--sock", sockPath)
+		require.NoError(t, err)
+	})
+
+	t.Run("passed embedded in arg", func(ctx context.Context, t *testctx.T) {
+		modDir := t.TempDir()
+		depModDir := filepath.Join(modDir, "dep")
+		require.NoError(t, os.MkdirAll(depModDir, 0o755))
+
+		err := os.WriteFile(filepath.Join(depModDir, "main.go"), []byte(`package main
+
+import (
+	"context"
+	"fmt"
+
+	"dagger/dep/internal/dagger"
+)
+
+type Dep struct {}
+
+func (m *Dep) Fn(ctx context.Context, ctr *dagger.Container) error {
+	out, err := ctr.Stdout(ctx)
+	if err != nil {
+		return err
+	}
+	if out != "yoyoyo" {
+		return fmt.Errorf("unexpected output: %s", out)
+	}
+	return nil
+}
+`), 0o644)
+		require.NoError(t, err)
+
+		_, err = hostDaggerExec(ctx, t, depModDir, "--debug", "init", "--source=.", "--name=dep", "--sdk=go")
+		require.NoError(t, err)
+
+		err = os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
+
+import (
+	"context"
+
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {}
+
+func (m *Test) Fn(ctx context.Context, sock *dagger.Socket) error {
+	ctr := dag.Container().From("`+alpineImage+`").
+		WithExec([]string{"apk", "add", "netcat-openbsd"}).
+		WithUnixSocket("/var/run/host.sock", sock).
+		WithExec([]string{"nc", "-w", "5", "-U", "/var/run/host.sock"})
+	err := dag.Dep().Fn(ctx, ctr)
+	return err
+}
+`), 0o644)
+		require.NoError(t, err)
+
+		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "init", "--source=.", "--name=test", "--sdk=go")
+		require.NoError(t, err)
+
+		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "install", depModDir)
+		require.NoError(t, err)
+
+		sockPath, cleanup := getHostSocket(t)
+		defer cleanup()
+
+		_, err = hostDaggerExec(ctx, t, modDir, "call", "fn", "--sock", sockPath)
+		require.NoError(t, err)
+	})
+
+	t.Run("passed back and forth", func(ctx context.Context, t *testctx.T) {
+		// Pass a container and a socket, have the caller attach the socket to the container, return that
+		// and then have the caller use it. This is mainly meant to exercise the code-paths involving
+		// client resources that a given client already knows about being handled when returned back to them
+		// via a call return value.
+
+		modDir := t.TempDir()
+		depModDir := filepath.Join(modDir, "dep")
+		require.NoError(t, os.MkdirAll(depModDir, 0o755))
+
+		err := os.WriteFile(filepath.Join(depModDir, "main.go"), []byte(`package main
+
+import (
+	"dagger/dep/internal/dagger"
+)
+
+type Dep struct {}
+
+func (m *Dep) Fn(ctr *dagger.Container, sock *dagger.Socket) *dagger.Container {
+	return ctr.WithUnixSocket("/var/run/host.sock", sock)
+}
+`), 0o644)
+		require.NoError(t, err)
+
+		_, err = hostDaggerExec(ctx, t, depModDir, "--debug", "init", "--source=.", "--name=dep", "--sdk=go")
+		require.NoError(t, err)
+
+		err = os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
+
+import (
+	"context"
+	"fmt"
+
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {}
+
+func (m *Test) Fn(ctx context.Context, sock *dagger.Socket) error {
+	ctr := dag.Container().From("`+alpineImage+`").
+		WithExec([]string{"apk", "add", "netcat-openbsd"})
+	out, err := dag.Dep().Fn(ctr, sock).
+		WithExec([]string{"nc", "-w", "5", "-U", "/var/run/host.sock"}).
+		Stdout(ctx)
+	if err != nil {
+		return err
+	}
+	if out != "yoyoyo" {
+		return fmt.Errorf("unexpected output: %s", out)
+	}
+	return nil
+}
+`), 0o644)
+		require.NoError(t, err)
+
+		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "init", "--source=.", "--name=test", "--sdk=go")
+		require.NoError(t, err)
+
+		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "install", depModDir)
+		require.NoError(t, err)
+
+		sockPath, cleanup := getHostSocket(t)
+		defer cleanup()
+
+		_, err = hostDaggerExec(ctx, t, modDir, "call", "fn", "--sock", sockPath)
+		require.NoError(t, err)
+	})
+
+	t.Run("nested exec", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		sockPath, cleanup := getHostSocket(t)
+		defer cleanup()
+
+		_, err := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+			WithNewFile("main.go", `package main
+
+import (
+	"context"
+	"fmt"
+
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {}
+
+func (m *Test) Fn(ctx context.Context, sock *dagger.Socket) error {
+	out, err := dag.Container().From("`+alpineImage+`").
+		WithExec([]string{"apk", "add", "netcat-openbsd"}).
+		WithUnixSocket("/var/run/host.sock", sock).
+		WithExec([]string{"nc", "-w", "5", "-U", "/var/run/host.sock"}).
+		Stdout(ctx)
+	if err != nil {
+		return err
+	}
+	if out != "yoyoyo" {
+		return fmt.Errorf("unexpected output: %s", out)
+	}
+	return nil
+}
+`,
+			).WithUnixSocket("/nested.sock", c.Host().UnixSocket(sockPath)).
+			With(daggerCall("fn", "--sock", "/nested.sock")).
+			Sync(ctx)
+		require.NoError(t, err)
+	})
+
+	t.Run("no implicit host access", func(ctx context.Context, t *testctx.T) {
+		// verify that a sneaky module can't use raw gql queries to access host sockets that they weren't passed
+
+		runContainerQuery := `query Run($sockID: SocketID!) {
+	container {
+		from(address: "` + alpineImage + `") {
+			withExec(args: ["apk", "add", "netcat-openbsd"]) {
+				withUnixSocket(path: "/var/run/host.sock", source: $sockID) {
+					withExec(args: ["stat", "/var/run/host.sock"]) {
+						stdout
+					}
+				}
+			}
+		}
+	}
+}
+`
+
+		modDir := t.TempDir()
+		err := os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
+
+import (
+	"context"
+	"fmt"
+	"strings"
+
+	"github.com/Khan/genqlient/graphql"
+)
+
+type Test struct{}
+
+type SocketIDResponse struct {
+	Host struct{ 
+		UnixSocket struct{ 
+			Id string 
+		} 
+	} 
+}
+
+func (m *Test) Fn(ctx context.Context, sockPath string, runContainerQuery string) error {
+	sockResp := &SocketIDResponse{}
+	resp := &graphql.Response{Data: sockResp}
+	err := dag.GraphQLClient().MakeRequest(ctx, &graphql.Request{
+		Query: "{host{unixSocket(path:\""+sockPath+"\"){id}}}",
+	}, resp)
+	if err != nil {
+		return fmt.Errorf("get socket id req: %w", err)
+	}
+
+	sockID := sockResp.Host.UnixSocket.Id
+	if sockID == "" {
+		return fmt.Errorf("unexpected response: %+v", resp)
+	}
+
+	resp = &graphql.Response{}
+	err = dag.GraphQLClient().MakeRequest(ctx, &graphql.Request{
+		Query: runContainerQuery,
+		Variables: map[string]interface{}{"sockID": sockID},
+	}, resp)
+	if err == nil {
+		return fmt.Errorf("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), fmt.Sprintf("socket %s not found", sockPath)) {
+		return fmt.Errorf("unexpected error: %w", err)
+	}
+	return nil
+}
+`), 0o644)
+		require.NoError(t, err)
+
+		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "init", "--source=.", "--name=test", "--sdk=go")
+		require.NoError(t, err)
+
+		sockPath, cleanup := getHostSocket(t)
+		defer cleanup()
+
+		_, err = hostDaggerExec(ctx, t, modDir, "call", "fn", "--sockPath", sockPath, "--runContainerQuery", runContainerQuery)
+		require.NoError(t, err)
+	})
+}
+
+func (ModuleSuite) TestDaggerCallReturnTypes(ctx context.Context, t *testctx.T) {
+	t.Run("return list objects", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=minimal", "--sdk=go")).
-			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("main.go", `package main
 type Minimal struct {}
 
 type Foo struct {
-	Bar int ` + "`" + `json:"bar"` + "`" + `
+	Bar int `+"`"+`json:"bar"`+"`"+`
 }
 
 func (m *Minimal) Fn() []*Foo {
@@ -713,20 +1227,25 @@ func (m *Minimal) Fn() []*Foo {
 	return foos
 }
 `,
-			})
+			)
 
 		logGen(ctx, t, modGen.Directory("."))
 		expected := "0\n1\n2\n"
+		expectedJSON := `[{"bar": 0}, {"bar": 1}, {"bar": 2}]`
 
-		t.Run("print", func(t *testing.T) {
-			t.Parallel()
+		t.Run("default", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCall("fn")).Stdout(ctx)
+			require.NoError(t, err)
+			require.JSONEq(t, expectedJSON, gjson.Get(out, "#.{bar}").Raw)
+		})
+
+		t.Run("print", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("fn", "bar")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, expected, out)
 		})
 
-		t.Run("output", func(t *testing.T) {
-			t.Parallel()
+		t.Run("output", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.
 				With(daggerCall("fn", "bar", "-o", "./outfile")).
 				File("./outfile").
@@ -735,52 +1254,64 @@ func (m *Minimal) Fn() []*Foo {
 			require.Equal(t, expected, out)
 		})
 
-		t.Run("json", func(t *testing.T) {
-			t.Parallel()
+		t.Run("json", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.
 				With(daggerCall("fn", "bar", "--json")).
 				Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `[{"bar": 0}, {"bar": 1}, {"bar": 2}]`, out)
+			require.JSONEq(t, expectedJSON, out)
 		})
 	})
 
-	t.Run("return container", func(t *testing.T) {
-		t.Parallel()
-		c, ctx := connect(t)
+	t.Run("return container", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-				Contents: fmt.Sprintf(`package main
+			WithNewFile("main.go", fmt.Sprintf(`package main
 
-func New() *Test {
-	return &Test{Ctr: dag.Container().From("%s").WithExec([]string{"echo", "hello", "world"})}
+import (
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {}
+
+func (m *Test) Ctr() *dagger.Container {
+    return dag.Container().
+        From("%[1]s").
+        WithDefaultArgs([]string{"echo", "hello"}).
+        WithExec([]string{})
 }
 
-type Test struct {
-	Ctr *Container
+func (m *Test) Fail() *dagger.Container {
+    return dag.Container().
+        From("%[1]s").
+        WithExec([]string{"sh", "-c", "echo goodbye; exit 127"})
 }
 `, alpineImage),
-			})
+			)
 
 		logGen(ctx, t, modGen.Directory("."))
 
-		t.Run("default", func(t *testing.T) {
-			t.Parallel()
-			ctr := modGen.With(daggerCall("ctr"))
-			out, err := ctr.Stdout(ctx)
+		t.Run("default", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCall("ctr")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Empty(t, out)
-			out, err = ctr.Stderr(ctx)
-			require.NoError(t, err)
-			require.Contains(t, out, "Container evaluated")
+			require.JSONEq(t,
+				`["echo", "hello"]`,
+				gjson.Get(out, "[@this].#(_type==Container).defaultArgs").Raw,
+			)
 		})
 
-		t.Run("output", func(t *testing.T) {
-			t.Parallel()
+		t.Run("exec", func(ctx context.Context, t *testctx.T) {
+			// Container doesn't show output but executes withExecs
+			out, err := modGen.With(daggerCall("fail")).Stdout(ctx)
+			require.ErrorContains(t, err, "goodbye")
+			require.NotContains(t, out, "goodbye")
+		})
+
+		t.Run("output", func(ctx context.Context, t *testctx.T) {
 			modGen, err := modGen.With(daggerCall("ctr", "-o", "./container.tar")).Sync(ctx)
 			require.NoError(t, err)
 			size, err := modGen.File("./container.tar").Size(ctx)
@@ -791,16 +1322,18 @@ type Test struct {
 		})
 	})
 
-	t.Run("return directory", func(t *testing.T) {
-		t.Parallel()
-		c, ctx := connect(t)
+	t.Run("return directory", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("main.go", `package main
+
+import (
+	"dagger/test/internal/dagger"
+)
 
 func New() *Test {
 	return &Test{
@@ -809,26 +1342,23 @@ func New() *Test {
 }
 
 type Test struct {
-	Dir *Directory
+	Dir *dagger.Directory
 }
 `,
-			})
+			)
 
 		logGen(ctx, t, modGen.Directory("."))
 
-		t.Run("default", func(t *testing.T) {
-			t.Parallel()
-			ctr := modGen.With(daggerCall("dir"))
-			out, err := ctr.Stdout(ctx)
+		t.Run("default", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCall("dir")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Empty(t, out)
-			out, err = ctr.Stderr(ctx)
-			require.NoError(t, err)
-			require.Contains(t, out, "Directory evaluated")
+			actual := gjson.Get(out, "[@this].#(_type==Directory).entries").Array()
+			require.Len(t, actual, 2)
+			require.Equal(t, "bar.txt", actual[0].String())
+			require.Equal(t, "foo.txt", actual[1].String())
 		})
 
-		t.Run("output", func(t *testing.T) {
-			t.Parallel()
+		t.Run("output", func(ctx context.Context, t *testctx.T) {
 			modGen, err := modGen.With(daggerCall("dir", "-o", "./outdir")).Sync(ctx)
 			require.NoError(t, err)
 
@@ -846,16 +1376,18 @@ type Test struct {
 		})
 	})
 
-	t.Run("return file", func(t *testing.T) {
-		t.Parallel()
-		c, ctx := connect(t)
+	t.Run("return file", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("main.go", `package main
+
+import (
+	"dagger/test/internal/dagger"
+)
 
 func New() *Test {
 	return &Test{
@@ -864,26 +1396,21 @@ func New() *Test {
 }
 
 type Test struct {
-	File *File
+	File *dagger.File
 }
 `,
-			})
+			)
 
 		logGen(ctx, t, modGen.Directory("."))
 
-		t.Run("default", func(t *testing.T) {
-			t.Parallel()
-			ctr := modGen.With(daggerCall("file"))
-			out, err := ctr.Stdout(ctx)
+		t.Run("default", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCall("file")).Stdout(ctx)
 			require.NoError(t, err)
-			require.Empty(t, out)
-			out, err = ctr.Stderr(ctx)
-			require.NoError(t, err)
-			require.Contains(t, out, "File evaluated")
+			actual := gjson.Get(out, "[@this].#(_type==File).name").String()
+			require.Equal(t, "foo.txt", actual)
 		})
 
-		t.Run("output", func(t *testing.T) {
-			t.Parallel()
+		t.Run("output", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.
 				With(daggerCall("file", "-o", "./outfile")).
 				File("./outfile").
@@ -893,26 +1420,28 @@ type Test struct {
 		})
 	})
 
-	t.Run("sync", func(t *testing.T) {
-		t.Parallel()
-		c, ctx := connect(t)
+	t.Run("sync", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-				Contents: fmt.Sprintf(`package main
+			WithNewFile("main.go", fmt.Sprintf(`package main
+
+import (
+	"dagger/test/internal/dagger"
+)
 
 func New() *Test {
 	return &Test{Ctr: dag.Container().From("%s").WithExec([]string{"echo", "hello", "world"})}
 }
 
 type Test struct {
-	Ctr *Container
+	Ctr *dagger.Container
 }
 `, alpineImage),
-			})
+			)
 
 		// adding sync disables the default behavior of **not** printing the ID
 		// just verify it works without error for now
@@ -921,39 +1450,37 @@ type Test struct {
 	})
 }
 
-func TestModuleDaggerCallCoreChaining(t *testing.T) {
-	t.Parallel()
-
-	t.Run("container", func(t *testing.T) {
-		t.Parallel()
-		c, ctx := connect(t)
+func (ModuleSuite) TestDaggerCallCoreChaining(ctx context.Context, t *testctx.T) {
+	t.Run("container", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-				Contents: fmt.Sprintf(`package main
+			WithNewFile("main.go", fmt.Sprintf(`package main
+
+import (
+	"dagger/test/internal/dagger"
+)
 
 func New() *Test {
 	return &Test{Ctr: dag.Container().From("%s")}
 }
 
 type Test struct {
-	Ctr *Container
+	Ctr *dagger.Container
 }
 `, alpineImage),
-			})
+			)
 
-		t.Run("file", func(t *testing.T) {
-			t.Parallel()
+		t.Run("file", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("ctr", "file", "--path=/etc/alpine-release", "contents")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, distconsts.AlpineVersion, strings.TrimSpace(out))
 		})
 
-		t.Run("export", func(t *testing.T) {
-			t.Parallel()
+		t.Run("export", func(ctx context.Context, t *testctx.T) {
 			modGen, err := modGen.With(daggerCall("ctr", "export", "--path=./container.tar.gz")).Sync(ctx)
 			require.NoError(t, err)
 			size, err := modGen.File("./container.tar.gz").Size(ctx)
@@ -962,16 +1489,18 @@ type Test struct {
 		})
 	})
 
-	t.Run("directory", func(t *testing.T) {
-		t.Parallel()
-		c, ctx := connect(t)
+	t.Run("directory", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("main.go", `package main
+
+import (
+	"dagger/test/internal/dagger"
+)
 
 func New() *Test {
 	return &Test{
@@ -980,20 +1509,18 @@ func New() *Test {
 }
 
 type Test struct {
-	Dir *Directory
+	Dir *dagger.Directory
 }
 `,
-			})
+			)
 
-		t.Run("file", func(t *testing.T) {
-			t.Parallel()
+		t.Run("file", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("dir", "file", "--path=foo.txt", "contents")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "foo", out)
 		})
 
-		t.Run("export", func(t *testing.T) {
-			t.Parallel()
+		t.Run("export", func(ctx context.Context, t *testctx.T) {
 			modGen, err := modGen.With(daggerCall("dir", "export", "--path=./outdir")).Sync(ctx)
 			require.NoError(t, err)
 			ents, err := modGen.Directory("./outdir").Entries(ctx)
@@ -1002,16 +1529,18 @@ type Test struct {
 		})
 	})
 
-	t.Run("return file", func(t *testing.T) {
-		t.Parallel()
-		c, ctx := connect(t)
+	t.Run("return file", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("main.go", `package main
+
+import (
+	"dagger/test/internal/dagger"
+)
 
 func New() *Test {
 	return &Test{
@@ -1020,20 +1549,18 @@ func New() *Test {
 }
 
 type Test struct {
-	File *File
+	File *dagger.File
 }
 `,
-			})
+			)
 
-		t.Run("size", func(t *testing.T) {
-			t.Parallel()
+		t.Run("size", func(ctx context.Context, t *testctx.T) {
 			out, err := modGen.With(daggerCall("file", "size")).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "3", out)
 		})
 
-		t.Run("export", func(t *testing.T) {
-			t.Parallel()
+		t.Run("export", func(ctx context.Context, t *testctx.T) {
 			modGen, err := modGen.With(daggerCall("file", "export", "--path=./outfile")).Sync(ctx)
 			require.NoError(t, err)
 			contents, err := modGen.File("./outfile").Contents(ctx)
@@ -1043,19 +1570,85 @@ type Test struct {
 	})
 }
 
-func TestModuleDaggerCallSaveOutput(t *testing.T) {
+func (ModuleSuite) TestDaggerCallReturnObject(ctx context.Context, t *testctx.T) {
+	// NB: Container, Directory and File are tested in TestDaggerCallReturnTypes.
+
+	c := connect(ctx, t)
+
+	modGen := modInit(t, c, "go", `package main
+
+import (
+	"dagger/test/internal/dagger"
+)
+
+func New() *Test {
+    return &Test{
+        BaseImage: "`+alpineImage+`",
+    }
+}
+
+type Test struct {
+    BaseImage string
+}
+
+func (t *Test) Foo() *Foo {
+    return &Foo{Ctr: dag.Container().From(t.BaseImage)}
+}
+
+func (t *Test) Files() []*dagger.File {
+    return []*dagger.File{
+        dag.Directory().WithNewFile("foo.txt", "foo").File("foo.txt"),
+        dag.Directory().WithNewFile("bar.txt", "bar").File("bar.txt"),
+    }
+}
+
+type Foo struct {
+    Ctr *dagger.Container
+}
+`,
+	)
+
+	t.Run("main object", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(daggerCall()).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Test", gjson.Get(out, "_type").String())
+		require.Equal(t, alpineImage, gjson.Get(out, "baseImage").String())
+	})
+
+	t.Run("no scalars", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(daggerCall("foo")).Stdout(ctx)
+		require.NoError(t, err)
+		// At minimum should print the type of the object
+		require.JSONEq(t, `{"_type": "TestFoo"}`, out)
+	})
+
+	t.Run("list of objects", func(ctx context.Context, t *testctx.T) {
+		expected := []string{"foo.txt", "bar.txt"}
+		out, err := modGen.With(daggerCall("files")).Stdout(ctx)
+		require.NoError(t, err)
+		actual := gjson.Get(out, "@this").Array()
+		require.Len(t, actual, len(expected))
+		for i, res := range actual {
+			require.Equal(t, "File", res.Get("_type").String())
+			require.Equal(t, expected[i], res.Get("name").String())
+		}
+	})
+}
+
+func (ModuleSuite) TestDaggerCallSaveOutput(ctx context.Context, t *testctx.T) {
 	// NB: Normal usage is tested in TestModuleDaggerCallReturnTypes.
 
-	t.Parallel()
-
-	c, ctx := connect(t)
+	c := connect(ctx, t)
 
 	modGen := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
 		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-			Contents: `package main
+		WithNewFile("main.go", `package main
+
+import (
+	"dagger/test/internal/dagger"
+)
 
 type Test struct {
 }
@@ -1064,20 +1657,17 @@ func (t *Test) Hello() string {
     return "hello"
 }
 
-func (t *Test) File() *File {
+func (t *Test) File() *dagger.File {
     return dag.Directory().WithNewFile("foo.txt", "foo").File("foo.txt")
 }
 `,
-		})
+		)
 
 	logGen(ctx, t, modGen.Directory("."))
 
-	t.Run("truncate file", func(t *testing.T) {
-		t.Parallel()
+	t.Run("truncate file", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.
-			WithNewFile("foo.txt", dagger.ContainerWithNewFileOpts{
-				Contents: "foobar",
-			}).
+			WithNewFile("foo.txt", "foobar").
 			With(daggerCall("hello", "-o", "foo.txt")).
 			File("foo.txt").
 			Contents(ctx)
@@ -1085,14 +1675,12 @@ func (t *Test) File() *File {
 		require.Equal(t, "hello", out)
 	})
 
-	t.Run("not a file", func(t *testing.T) {
-		t.Parallel()
+	t.Run("not a file", func(ctx context.Context, t *testctx.T) {
 		_, err := modGen.With(daggerCall("hello", "-o", ".")).Sync(ctx)
 		require.ErrorContains(t, err, "is a directory")
 	})
 
-	t.Run("allow dir for file", func(t *testing.T) {
-		t.Parallel()
+	t.Run("allow dir for file", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.
 			With(daggerCall("file", "-o", ".")).
 			File("foo.txt").
@@ -1101,58 +1689,52 @@ func (t *Test) File() *File {
 		require.Equal(t, "foo", out)
 	})
 
-	t.Run("create parent dirs", func(t *testing.T) {
-		t.Parallel()
+	t.Run("create parent dirs", func(ctx context.Context, t *testctx.T) {
 		ctr, err := modGen.With(daggerCall("hello", "-o", "foo/bar.txt")).Sync(ctx)
 		require.NoError(t, err)
 
-		t.Run("print success", func(t *testing.T) {
-			t.Parallel()
+		t.Run("print success", func(ctx context.Context, t *testctx.T) {
 			// should print success to stderr so it doesn't interfere with piping output
 			out, err := ctr.Stderr(ctx)
 			require.NoError(t, err)
 			require.Contains(t, out, `Saved output to "/work/foo/bar.txt"`)
 		})
 
-		t.Run("check directory permissions", func(t *testing.T) {
-			t.Parallel()
+		t.Run("check directory permissions", func(ctx context.Context, t *testctx.T) {
 			out, err := ctr.WithExec([]string{"stat", "-c", "%a", "foo"}).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "755\n", out)
 		})
 
-		t.Run("check file permissions", func(t *testing.T) {
-			t.Parallel()
+		t.Run("check file permissions", func(ctx context.Context, t *testctx.T) {
 			out, err := ctr.WithExec([]string{"stat", "-c", "%a", "foo/bar.txt"}).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "644\n", out)
 		})
 	})
 
-	t.Run("check umask", func(t *testing.T) {
-		t.Parallel()
+	t.Run("check umask", func(ctx context.Context, t *testctx.T) {
 		ctr, err := modGen.
-			WithNewFile("/entrypoint.sh", dagger.ContainerWithNewFileOpts{
-				Contents: `#!/bin/sh
+			WithNewFile(
+				"/entrypoint.sh",
+				`#!/bin/sh
 umask 027
 exec "$@"
 `,
-				Permissions: 0o750,
-			}).
+				dagger.ContainerWithNewFileOpts{Permissions: 0o750},
+			).
 			WithEntrypoint([]string{"/entrypoint.sh"}).
 			With(daggerCall("hello", "-o", "/tmp/foo/bar.txt")).
 			Sync(ctx)
 		require.NoError(t, err)
 
-		t.Run("directory", func(t *testing.T) {
-			t.Parallel()
+		t.Run("directory", func(ctx context.Context, t *testctx.T) {
 			out, err := ctr.WithExec([]string{"stat", "-c", "%a", "/tmp/foo"}).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "750\n", out)
 		})
 
-		t.Run("file", func(t *testing.T) {
-			t.Parallel()
+		t.Run("file", func(ctx context.Context, t *testctx.T) {
 			out, err := ctr.WithExec([]string{"stat", "-c", "%a", "/tmp/foo/bar.txt"}).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "640\n", out)
@@ -1160,19 +1742,15 @@ exec "$@"
 	})
 }
 
-func TestModuleCallByName(t *testing.T) {
-	t.Parallel()
-
-	t.Run("local", func(t *testing.T) {
-		t.Parallel()
-		c, ctx := connect(t)
+func (ModuleSuite) TestCallByName(ctx context.Context, t *testctx.T) {
+	t.Run("local", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		ctr := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work/mod-a").
 			With(daggerExec("init", "--source=.", "--name=mod-a", "--sdk=go")).
-			WithNewFile("/work/mod-a/main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("/work/mod-a/main.go", `package main
 
 			import "context"
 
@@ -1182,11 +1760,10 @@ func TestModuleCallByName(t *testing.T) {
 				return "hi from mod-a"
 			}
 			`,
-			}).
+			).
 			WithWorkdir("/work/mod-b").
 			With(daggerExec("init", "--source=.", "--name=mod-b", "--sdk=go")).
-			WithNewFile("/work/mod-b/main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("/work/mod-b/main.go", `package main
 
 			import "context"
 
@@ -1196,7 +1773,7 @@ func TestModuleCallByName(t *testing.T) {
 				return "hi from mod-b"
 			}
 			`,
-			}).
+			).
 			WithWorkdir("/work").
 			With(daggerExec("init")).
 			With(daggerExec("install", "--name", "foo", "./mod-a")).
@@ -1211,65 +1788,194 @@ func TestModuleCallByName(t *testing.T) {
 		require.Equal(t, "hi from mod-b", strings.TrimSpace(out))
 	})
 
-	t.Run("git", func(t *testing.T) {
-		t.Parallel()
-		c, ctx := connect(t)
+	t.Run("local with absolute paths", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		ctr := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/mod-a").
+			With(daggerExec("init", "--source=.", "--name=mod-a", "--sdk=go")).
+			WithNewFile("/work/mod-a/main.go", `package main
+
+			import "context"
+
+			type ModA struct {}
+
+			func (m *ModA) Fn(ctx context.Context) string {
+				return "hi from mod-a"
+			}
+			`,
+			).
+			WithWorkdir("/work/mod-b").
+			With(daggerExec("init", "--source=.", "--name=mod-b", "--sdk=go")).
+			WithNewFile("/work/mod-b/main.go", `package main
+
+			import "context"
+
+			type ModB struct {}
+
+			func (m *ModB) Fn(ctx context.Context) string {
+				return "hi from mod-b"
+			}
+			`,
+			).
 			WithWorkdir("/work").
 			With(daggerExec("init")).
-			With(daggerExec("install", "--name", "foo", testGitModuleRef(""))).
-			With(daggerExec("install", "--name", "bar", testGitModuleRef("subdir/dep2")))
+			With(daggerExec("install", "--name", "foo", "/work/mod-a")).
+			With(daggerExec("install", "--name", "bar", "/work/mod-b"))
 
+		// Check dagger.json for absolute paths
+		jsonContent, err := ctr.File("/work/dagger.json").Contents(ctx)
+		require.NoError(t, err)
+
+		var config map[string]interface{}
+		err = json.Unmarshal([]byte(jsonContent), &config)
+		require.NoError(t, err)
+
+		dependencies, ok := config["dependencies"].([]interface{})
+		require.True(t, ok, "dependencies should be an array")
+
+		for _, dep := range dependencies {
+			depMap, ok := dep.(map[string]interface{})
+			require.True(t, ok, "each dependency should be a map")
+
+			source, ok := depMap["source"].(string)
+			require.True(t, ok, "source should be a string")
+
+			require.False(t, filepath.IsAbs(source), "dependency source should not be an absolute path")
+		}
+
+		// call main module at /work path
 		out, err := ctr.With(daggerCallAt("foo", "fn")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "hi from root hi from dep hi from dep2", strings.TrimSpace(out))
+		require.Equal(t, "hi from mod-a", strings.TrimSpace(out))
 
 		out, err = ctr.With(daggerCallAt("bar", "fn")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "hi from dep2", strings.TrimSpace(out))
+		require.Equal(t, "hi from mod-b", strings.TrimSpace(out))
+
+		// call submodules module with absolute path
+		out, err = ctr.With(daggerCallAt("/work/mod-a", "fn")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hi from mod-a", strings.TrimSpace(out))
+
+		out, err = ctr.With(daggerCallAt("/work/mod-b", "fn")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hi from mod-b", strings.TrimSpace(out))
+	})
+
+	t.Run("local with absolute paths linking to modules outside of root", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		ctr := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/outside/mod-a").
+			With(daggerExec("init", "--source=.", "--name=mod-a", "--sdk=go")).
+			WithNewFile("/outside/mod-a/main.go", `package main
+
+			import "context"
+
+			type ModA struct {}
+
+			func (m *ModA) Fn(ctx context.Context) string {
+				return "hi from mod-a"
+			}
+			`,
+			).
+			WithWorkdir("/work").
+			With(daggerExec("init")).
+			With(daggerExec("install", "--name", "foo", "/outside/mod-a"))
+
+		// call main module at /work path
+		_, err := ctr.With(daggerCallAt("foo", "fn")).Stdout(ctx)
+		require.Error(t, err)
+		require.ErrorContains(t, err, `local module dep source path "../outside/mod-a" escapes context "/work"`)
+	})
+
+	t.Run("local ref with @", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		ctr := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/").
+			With(daggerExec("init", "--source=test@test", "--name=mod-a", "--sdk=go", "test@test")).
+			WithNewFile("/work/test@test/main.go", `package main
+
+			import "context"
+
+			type ModA struct {}
+
+			func (m *ModA) Fn(ctx context.Context) string {
+				return "hi from mod-a"
+			}
+			`,
+			).
+			With(daggerExec("init")).
+			With(daggerExec("install", "--name", "foo", "/work/test@test"))
+
+		// call main module at /work path
+		out, err := ctr.With(daggerCallAt("foo", "fn")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hi from mod-a", strings.TrimSpace(out))
+	})
+
+	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
+		t.Run("git", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			ctr := c.Container().From(golangImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				WithWorkdir("/work").
+				With(daggerExec("init")).
+				With(daggerExec("install", "--name", "foo", testGitModuleRef(tc, ""))).
+				With(daggerExec("install", "--name", "bar", testGitModuleRef(tc, "subdir/dep2")))
+
+			out, err := ctr.With(daggerCallAt("foo", "fn")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "hi from root hi from dep hi from dep2", strings.TrimSpace(out))
+
+			out, err = ctr.With(daggerCallAt("bar", "fn")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "hi from dep2", strings.TrimSpace(out))
+		})
 	})
 }
 
-func TestModuleCallGitMod(t *testing.T) {
-	t.Parallel()
-	c, ctx := connect(t)
+func (ModuleSuite) TestCallGitMod(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
-	t.Run("go", func(t *testing.T) {
-		t.Parallel()
-		out, err := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			With(daggerCallAt(testGitModuleRef("top-level"), "fn")).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "hi from top level hi from dep hi from dep2", strings.TrimSpace(out))
-	})
+	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
+		t.Run("go", func(ctx context.Context, t *testctx.T) {
+			out, err := c.Container().From(golangImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				With(daggerCallAt(testGitModuleRef(tc, "top-level"), "fn")).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "hi from top level hi from dep hi from dep2", strings.TrimSpace(out))
+		})
 
-	t.Run("typescript", func(t *testing.T) {
-		t.Parallel()
-		out, err := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			With(daggerCallAt(testGitModuleRef("ts"), "container-echo", "--string-arg", "yoyo", "stdout")).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "yoyo", strings.TrimSpace(out))
-	})
+		t.Run("typescript", func(ctx context.Context, t *testctx.T) {
+			out, err := c.Container().From(golangImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				With(daggerCallAt(testGitModuleRef(tc, "ts"), "container-echo", "--string-arg", "yoyo", "stdout")).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "yoyo", strings.TrimSpace(out))
+		})
 
-	t.Run("python", func(t *testing.T) {
-		t.Parallel()
-		out, err := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			With(daggerCallAt(testGitModuleRef("py"), "container-echo", "--string-arg", "yoyo", "stdout")).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "yoyo", strings.TrimSpace(out))
+		t.Run("python", func(ctx context.Context, t *testctx.T) {
+			out, err := c.Container().From(golangImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				With(daggerCallAt(testGitModuleRef(tc, "py"), "container-echo", "--string-arg", "yoyo", "stdout")).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "yoyo", strings.TrimSpace(out))
+		})
 	})
 }
 
-func TestModuleCallFindup(t *testing.T) {
-	t.Parallel()
-	c, ctx := connect(t)
+func (ModuleSuite) TestCallFindup(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	out, err := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -1282,9 +1988,8 @@ func TestModuleCallFindup(t *testing.T) {
 	require.Equal(t, "yo", strings.TrimSpace(out))
 }
 
-func TestModuleCallUnsupportedFunctions(t *testing.T) {
-	t.Parallel()
-	c, ctx := connect(t)
+func (ModuleSuite) TestCallUnsupportedFunctions(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	modGen := modInit(t, c, "go", `package main
 
@@ -1318,8 +2023,7 @@ func (m *Chain) Echo(msg string) string {
 `,
 	)
 
-	t.Run("functions list", func(t *testing.T) {
-		t.Parallel()
+	t.Run("functions list", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.With(daggerCall("--help")).Stdout(ctx)
 		require.NoError(t, err)
 
@@ -1333,8 +2037,7 @@ func (m *Chain) Echo(msg string) string {
 		require.Contains(t, out, "Skips adding the optional flag")
 	})
 
-	t.Run("arguments list", func(t *testing.T) {
-		t.Parallel()
+	t.Run("arguments list", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.With(daggerCall("fn-b", "--help")).Stdout(ctx)
 		require.NoError(t, err)
 
@@ -1342,22 +2045,123 @@ func (m *Chain) Echo(msg string) string {
 		require.NotContains(t, out, "--matrix")
 	})
 
-	t.Run("in chain", func(t *testing.T) {
-		t.Parallel()
+	t.Run("in chain", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.With(daggerCall("fn-b", "--msg", "", "echo", "--msg", "hello")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "hello")
 	})
 
-	t.Run("no sub-command", func(t *testing.T) {
-		t.Parallel()
+	t.Run("no sub-command", func(ctx context.Context, t *testctx.T) {
 		_, err := modGen.With(daggerCall("fn-a")).Sync(ctx)
 		require.ErrorContains(t, err, `unknown command "fn-a"`)
 	})
 
-	t.Run("no flag", func(t *testing.T) {
-		t.Parallel()
+	t.Run("no flag", func(ctx context.Context, t *testctx.T) {
 		_, err := modGen.With(daggerCall("fn-b", "--msg", "hello", "--matrix", "")).Sync(ctx)
 		require.ErrorContains(t, err, `unknown flag: --matrix`)
+	})
+}
+
+func (ModuleSuite) TestCallInvalidEnum(ctx context.Context, t *testctx.T) {
+	t.Run("duplicated enum value", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := modInit(t, c, "go", `package main
+
+type Status string
+
+const (
+	Active Status = "ACTIVE"
+	Inactive Status = "INACTIVE"
+	Duplicated Status = "ACTIVE"
+)
+
+type Test struct{}
+
+func (m *Test) FromStatus(status Status) string {
+	return string(status)
+}
+
+func (m *Test) ToStatus(status string) Status {
+	return Status(status)
+}
+	`)
+
+		_, err := modGen.With(daggerCall("--help")).Stdout(ctx)
+		require.ErrorContains(t, err, `enum value "ACTIVE" is already defined`)
+	})
+
+	t.Run("invalid value", func(ctx context.Context, t *testctx.T) {
+		type testCase struct {
+			enumValue string
+		}
+
+		// Test few invalid values
+		for _, tc := range []testCase{
+			{
+				enumValue: "1ACTIVE",
+			},
+			{
+				enumValue: "#ACTIVE",
+			},
+			{
+				enumValue: " ACTIVE",
+			},
+			{
+				enumValue: "ACTI#E",
+			},
+			{
+				enumValue: "ACTIVE ",
+			},
+			{
+				enumValue: "foo bar",
+			},
+		} {
+			tc := tc
+
+			t.Run(tc.enumValue, func(ctx context.Context, t *testctx.T) {
+				c := connect(ctx, t)
+
+				modGen := modInit(t, c, "go", fmt.Sprintf(`package main
+
+type Status string
+
+const (
+	Value Status = "%s"
+)
+
+type Test struct{}
+
+func (m *Test) FromStatus(status Status) string {
+	return string(status)
+}
+`, tc.enumValue))
+
+				_, err := modGen.With(daggerCall("--help")).Stdout(ctx)
+				require.ErrorContains(t, err, fmt.Sprintf("enum value %q is not valid", tc.enumValue))
+			})
+		}
+	})
+
+	t.Run("empty value", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := modInit(t, c, "go", `package main
+
+type Status string
+
+const (
+	Value Status = ""
+)
+
+type Test struct{}
+
+func (m *Test) FromStatus(status Status) string {
+	return string(status)
+}
+`)
+
+		_, err := modGen.With(daggerCall("--help")).Stdout(ctx)
+		require.ErrorContains(t, err, "enum value must not be empty")
 	})
 }

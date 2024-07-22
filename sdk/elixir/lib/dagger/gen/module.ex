@@ -59,6 +59,26 @@ defmodule Dagger.Module do
     execute(selection, module.client)
   end
 
+  @doc "Enumerations served by this module."
+  @spec enums(t()) :: {:ok, [Dagger.TypeDef.t()]} | {:error, term()}
+  def enums(%__MODULE__{} = module) do
+    selection =
+      module.selection |> select("enums") |> select("id")
+
+    with {:ok, items} <- execute(selection, module.client) do
+      {:ok,
+       for %{"id" => id} <- items do
+         %Dagger.TypeDef{
+           selection:
+             query()
+             |> select("loadTypeDefFromID")
+             |> arg("id", id),
+           client: module.client
+         }
+       end}
+    end
+  end
+
   @doc "The generated files and directories made on top of the module source's context directory."
   @spec generated_context_diff(t()) :: Dagger.Directory.t()
   def generated_context_diff(%__MODULE__{} = module) do
@@ -211,6 +231,18 @@ defmodule Dagger.Module do
     }
   end
 
+  @doc "This module plus the given Enum type and associated values"
+  @spec with_enum(t(), Dagger.TypeDef.t()) :: Dagger.Module.t()
+  def with_enum(%__MODULE__{} = module, enum) do
+    selection =
+      module.selection |> select("withEnum") |> put_arg("enum", Dagger.ID.id!(enum))
+
+    %Dagger.Module{
+      selection: selection,
+      client: module.client
+    }
+  end
+
   @doc "This module plus the given Interface type and associated functions"
   @spec with_interface(t(), Dagger.TypeDef.t()) :: Dagger.Module.t()
   def with_interface(%__MODULE__{} = module, iface) do
@@ -236,10 +268,14 @@ defmodule Dagger.Module do
   end
 
   @doc "Retrieves the module with basic configuration loaded if present."
-  @spec with_source(t(), Dagger.ModuleSource.t()) :: Dagger.Module.t()
-  def with_source(%__MODULE__{} = module, source) do
+  @spec with_source(t(), Dagger.ModuleSource.t(), [{:engine_version, String.t() | nil}]) ::
+          Dagger.Module.t()
+  def with_source(%__MODULE__{} = module, source, optional_args \\ []) do
     selection =
-      module.selection |> select("withSource") |> put_arg("source", Dagger.ID.id!(source))
+      module.selection
+      |> select("withSource")
+      |> put_arg("source", Dagger.ID.id!(source))
+      |> maybe_put_arg("engineVersion", optional_args[:engine_version])
 
     %Dagger.Module{
       selection: selection,

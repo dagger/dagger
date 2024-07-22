@@ -10,6 +10,18 @@ defmodule Dagger.TypeDef do
 
   @type t() :: %__MODULE__{}
 
+  @doc "If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null."
+  @spec as_enum(t()) :: Dagger.EnumTypeDef.t() | nil
+  def as_enum(%__MODULE__{} = type_def) do
+    selection =
+      type_def.selection |> select("asEnum")
+
+    %Dagger.EnumTypeDef{
+      selection: selection,
+      client: type_def.client
+    }
+  end
+
   @doc "If kind is INPUT, the input-specific type definition. If kind is not INPUT, this will be null."
   @spec as_input(t()) :: Dagger.InputTypeDef.t() | nil
   def as_input(%__MODULE__{} = type_def) do
@@ -104,6 +116,40 @@ defmodule Dagger.TypeDef do
       type_def.selection
       |> select("withConstructor")
       |> put_arg("function", Dagger.ID.id!(function))
+
+    %Dagger.TypeDef{
+      selection: selection,
+      client: type_def.client
+    }
+  end
+
+  @doc """
+  Returns a TypeDef of kind Enum with the provided name.
+
+  Note that an enum's values may be omitted if the intent is only to refer to an enum. This is how functions are able to return their own, or any other circular reference.
+  """
+  @spec with_enum(t(), String.t(), [{:description, String.t() | nil}]) :: Dagger.TypeDef.t()
+  def with_enum(%__MODULE__{} = type_def, name, optional_args \\ []) do
+    selection =
+      type_def.selection
+      |> select("withEnum")
+      |> put_arg("name", name)
+      |> maybe_put_arg("description", optional_args[:description])
+
+    %Dagger.TypeDef{
+      selection: selection,
+      client: type_def.client
+    }
+  end
+
+  @doc "Adds a static value for an Enum TypeDef, failing if the type is not an enum."
+  @spec with_enum_value(t(), String.t(), [{:description, String.t() | nil}]) :: Dagger.TypeDef.t()
+  def with_enum_value(%__MODULE__{} = type_def, value, optional_args \\ []) do
+    selection =
+      type_def.selection
+      |> select("withEnumValue")
+      |> put_arg("value", value)
+      |> maybe_put_arg("description", optional_args[:description])
 
     %Dagger.TypeDef{
       selection: selection,

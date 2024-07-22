@@ -1,13 +1,13 @@
-import { object, field } from "../../../decorators/decorators.js"
+import { object, func } from "../../../decorators/decorators.js"
 import { Lint } from "./lint.js"
 import { Test } from "./test.js"
 
 @object()
 class MultipleObjectsAsFields {
-  @field()
+  @func()
   test: Test = new Test()
 
-  @field()
+  @func()
   lint: Lint = new Lint()
 
   constructor() {}

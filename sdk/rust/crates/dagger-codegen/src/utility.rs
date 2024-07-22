@@ -10,9 +10,6 @@ impl<'t, T: 't> OptionExt<'t, T> for Option<T> {
     where
         F: FnOnce(&'t T) -> U,
     {
-        match *self {
-            Some(ref x) => Some(f(x)),
-            None => None,
-        }
+        (*self).as_ref().map(f)
     }
 }

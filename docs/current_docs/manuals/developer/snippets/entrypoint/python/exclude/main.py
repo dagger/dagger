@@ -1,4 +1,5 @@
 """A simple hello world example, using a constructor."""
+
 import dataclasses
 from typing import Annotated
 

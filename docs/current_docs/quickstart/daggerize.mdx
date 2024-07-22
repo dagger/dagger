@@ -53,13 +53,13 @@ FIXME: Update the signup steps here, and the result ie. the user is dropped into
 
 ### Initialize a Dagger module
 
-Bootstrap a new Dagger module in Go, Python or TypeScript by running `dagger init` in the application's root directory:
+Bootstrap a new Dagger module in Go, Python or TypeScript by running `dagger init` in the application's root directory, using the `--source` flag to specify a directory for the module's source code.
 
 <Tabs groupId="language">
 <TabItem value="Go">
 
 ```shell
-dagger init --sdk=go
+dagger init --sdk=go --source=./dagger
 ```
 
 This will generate a `dagger.json` module metadata file, an initial `dagger/main.go` source code template, as well as a `dagger/dagger.gen.go` file and `dagger/internal/` directory.
@@ -67,7 +67,7 @@ This will generate a `dagger.json` module metadata file, an initial `dagger/main
 <TabItem value="Python">
 
 ```shell
-dagger init --sdk=python
+dagger init --sdk=python --source=./dagger
 ```
 
 This will generate a `dagger.json` module metadata file, initial `dagger/src/main/__init__.py` source code template, `dagger/pyproject.toml` and `dagger/requirements.lock` files, as well as a generated `dagger/sdk` folder for local development.
@@ -75,7 +75,7 @@ This will generate a `dagger.json` module metadata file, initial `dagger/src/mai
 <TabItem value="TypeScript">
 
 ```shell
-dagger init --sdk=typescript
+dagger init --sdk=typescript --source=./dagger
 ```
 
 This will generate a `dagger.json` module metadata file, initial `dagger/src/index.ts` source code template, `dagger/package.json` and `dagger/tsconfig.json` files, as well as a generated `dagger/sdk` folder for local development.

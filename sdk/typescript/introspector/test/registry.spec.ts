@@ -118,7 +118,7 @@ describe("Registry", function () {
 
     @registry.object()
     class HelloWorld {
-      @registry.field()
+      @registry.func()
       prefix = "placeholder"
 
       @registry.func()
@@ -146,7 +146,7 @@ describe("Registry", function () {
 
     @registry.object()
     class HelloWorld {
-      @registry.field()
+      @registry.func()
       prefix = "placeholder"
 
       @registry.func()
@@ -177,7 +177,7 @@ describe("Registry", function () {
 
     @registry.object()
     class HelloWorld {
-      @registry.field()
+      @registry.func()
       ctr?: Ctr = undefined
 
       @registry.func()
@@ -233,10 +233,10 @@ describe("Registry", function () {
 
     @registry.object()
     class Bar {
-      @registry.field()
+      @registry.func()
       ctr?: Container = undefined
 
-      @registry.field()
+      @registry.func()
       msg = "foobar"
 
       @registry.func()
@@ -249,7 +249,7 @@ describe("Registry", function () {
 
     @registry.object()
     class Foo {
-      @registry.field()
+      @registry.func()
       foo(): Bar {
         const b = new Bar()
 
@@ -276,7 +276,7 @@ describe("Registry", function () {
 
     @registry.object()
     class HelloWorld {
-      @registry.field()
+      @registry.func()
       msg: string
 
       constructor(msg?: string) {

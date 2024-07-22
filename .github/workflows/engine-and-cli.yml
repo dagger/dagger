@@ -22,7 +22,7 @@ concurrency:
 
 jobs:
   lint:
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-v0-11-6-4c-nvme' || 'ubuntu-latest' }}"
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-v0-12-1-4c-nvme' || 'ubuntu-latest' }}"
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -30,9 +30,13 @@ jobs:
         uses: ./.github/actions/call
         with:
           function: "engine lint"
+      - name: "scripts lint"
+        uses: ./.github/actions/call
+        with:
+          function: "scripts lint"
 
   test:
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-v0-11-6-16c-nvme' || 'ubuntu-latest' }}"
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-v0-12-1-16c-nvme' || 'ubuntu-latest' }}"
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -45,7 +49,7 @@ jobs:
   # Only run a subset of important test cases since we just need to verify basic
   # functionality rather than repeat every test already run in the other targets.
   testdev:
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-v0-11-6-dind' || 'ubuntu-latest' }}"
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-v0-12-1-32c-dind' || 'ubuntu-latest' }}"
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -56,7 +60,7 @@ jobs:
           dev-engine: true
 
   test-publish:
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-v0-11-6-4c-nvme' || 'ubuntu-latest' }}"
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-v0-12-1-4c-nvme' || 'ubuntu-latest' }}"
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -74,7 +78,7 @@ jobs:
           function: "engine with-base --image=ubuntu --gpu-support=true test-publish"
 
   scan-engine:
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-v0-11-6-dind' || 'ubuntu-latest' }}"
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-v0-12-1-4c-nvme' || 'ubuntu-latest' }}"
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4

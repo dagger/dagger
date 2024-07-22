@@ -23,19 +23,15 @@ def test_object_type_resolvers():
         private_field: str
         exposed_field: str = mod.field()
 
-        def private_method(self) -> str:
-            ...
+        def private_method(self) -> str: ...
 
         @mod.function
-        def exposed_method(self) -> str:
-            ...
+        def exposed_method(self) -> str: ...
 
-    def private_function() -> str:
-        ...
+    def private_function() -> str: ...
 
     @mod.function
-    def exposed_function() -> str:
-        ...
+    def exposed_function() -> str: ...
 
     resolvers = [
         (r.name, r.origin.__name__ if r.origin else None) for r in mod._resolvers
@@ -55,8 +51,7 @@ def test_no_main_object():
     @mod.object_type
     class Bar:
         @mod.function
-        def method(self):
-            ...
+        def method(self): ...
 
     with pytest.raises(UserError, match="doesn't define"):
         mod.get_resolvers("foo")
@@ -68,12 +63,10 @@ def test_toplevel_and_class_conflict():
     @mod.object_type
     class Foo:
         @mod.function
-        def method(self):
-            ...
+        def method(self): ...
 
     @mod.function
-    def func():
-        ...
+    def func(): ...
 
     with pytest.raises(NameConflictError, match="not both"):
         mod.get_resolvers("foo")
@@ -83,12 +76,10 @@ def test_resolver_name_conflict():
     mod = Module()
 
     @mod.function
-    def foo():
-        ...
+    def foo(): ...
 
     @mod.function(name="foo")
-    def foo_():
-        ...
+    def foo_(): ...
 
     with pytest.raises(NameConflictError, match="“Foo.foo” is defined 2 times"):
         mod.get_resolvers("foo")
@@ -108,8 +99,7 @@ def test_main_object_name(mod_name, class_name):
     mod = Module()
 
     @mod.function
-    def func():
-        ...
+    def func(): ...
 
     resolvers = mod.get_resolvers(mod_name)
     assert next(iter(resolvers.keys())).name == class_name

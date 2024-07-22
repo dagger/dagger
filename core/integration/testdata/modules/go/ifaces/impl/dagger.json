@@ -1,4 +1,6 @@
 {
   "name": "impl",
-  "sdk": "go"
+  "sdk": "go",
+  "source": ".",
+  "engineVersion": "dev-3d13c8e5b3e3e8d4c042d71fefe5c6ce3a0b5950"
 }

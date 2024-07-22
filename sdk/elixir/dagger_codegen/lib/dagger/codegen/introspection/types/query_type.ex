@@ -1,4 +1,9 @@
 defmodule Dagger.Codegen.Introspection.Types.QueryType do
-  @derive Nestru.Decoder
   defstruct [:name]
+
+  def from_map(query_type) do
+    %__MODULE__{
+      name: Map.fetch!(query_type, "name")
+    }
+  end
 end

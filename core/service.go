@@ -1,7 +1,6 @@
 package core
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -13,8 +12,11 @@ import (
 	"time"
 
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/vektah/gqlparser/v2/ast"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core/pipeline"
@@ -40,13 +42,8 @@ type Service struct {
 	// TunnelPorts configures the port forwarding rules for the tunnel.
 	TunnelPorts []PortForward `json:"tunnel_ports,omitempty"`
 
-	// HostUpstream is the host address (i.e. hostname or IP) for the reverse
-	// tunnel to request through the host.
-	HostUpstream string `json:"reverse_tunnel_upstream_addr,omitempty"`
-	// HostPorts configures the port forwarding rules for the host.
-	HostPorts []PortForward `json:"host_ports,omitempty"`
-	// HostSessionID is the session ID of the host (could differ from main client in the case of nested execs).
-	HostSessionID string `json:"host_session_id,omitempty"`
+	// The sockets on the host to reverse tunnel
+	HostSockets []*Socket `json:"host_sockets,omitempty"`
 }
 
 func (*Service) Type() *ast.Type {
@@ -73,7 +70,7 @@ func (svc *Service) Clone() *Service {
 		cp.TunnelUpstream.Self = cp.TunnelUpstream.Self.Clone()
 	}
 	cp.TunnelPorts = cloneSlice(cp.TunnelPorts)
-	cp.HostPorts = cloneSlice(cp.HostPorts)
+	cp.HostSockets = cloneSlice(cp.HostSockets)
 	return &cp
 }
 
@@ -85,14 +82,18 @@ func (svc *Service) PipelinePath() pipeline.Path {
 func (svc *Service) Hostname(ctx context.Context, id *call.ID) (string, error) {
 	switch {
 	case svc.TunnelUpstream != nil: // host=>container (127.0.0.1)
-		upstream, err := svc.Query.Services.Get(ctx, id)
+		svcs, err := svc.Query.Services(ctx)
+		if err != nil {
+			return "", err
+		}
+		upstream, err := svcs.Get(ctx, id)
 		if err != nil {
 			return "", err
 		}
 
 		return upstream.Host, nil
 	case svc.Container != nil, // container=>container
-		svc.HostUpstream != "": // container=>host
+		len(svc.HostSockets) > 0: // container=>host
 		return network.HostHash(id.Digest()), nil
 	default:
 		return "", errors.New("unknown service type")
@@ -101,8 +102,12 @@ func (svc *Service) Hostname(ctx context.Context, id *call.ID) (string, error) {
 
 func (svc *Service) Ports(ctx context.Context, id *call.ID) ([]Port, error) {
 	switch {
-	case svc.TunnelUpstream != nil, svc.HostUpstream != "":
-		running, err := svc.Query.Services.Get(ctx, id)
+	case svc.TunnelUpstream != nil, len(svc.HostSockets) > 0:
+		svcs, err := svc.Query.Services(ctx)
+		if err != nil {
+			return nil, err
+		}
+		running, err := svcs.Get(ctx, id)
 		if err != nil {
 			return nil, err
 		}
@@ -133,7 +138,11 @@ func (svc *Service) Endpoint(ctx context.Context, id *call.ID, port int, scheme 
 			port = svc.Container.Ports[0].Port
 		}
 	case svc.TunnelUpstream != nil:
-		tunnel, err := svc.Query.Services.Get(ctx, id)
+		svcs, err := svc.Query.Services(ctx)
+		if err != nil {
+			return "", err
+		}
+		tunnel, err := svcs.Get(ctx, id)
 		if err != nil {
 			return "", err
 		}
@@ -147,18 +156,22 @@ func (svc *Service) Endpoint(ctx context.Context, id *call.ID, port int, scheme 
 
 			port = tunnel.Ports[0].Port
 		}
-	case svc.HostUpstream != "":
+	case len(svc.HostSockets) > 0:
 		host, err = svc.Hostname(ctx, id)
 		if err != nil {
 			return "", err
 		}
 
 		if port == 0 {
-			if len(svc.HostPorts) == 0 {
-				return "", fmt.Errorf("no ports")
+			socketStore, err := svc.Query.Sockets(ctx)
+			if err != nil {
+				return "", fmt.Errorf("failed to get socket store: %w", err)
 			}
-
-			port = svc.HostPorts[0].FrontendOrBackendPort()
+			portForward, ok := socketStore.GetSocketPortForward(svc.HostSockets[0].IDDigest)
+			if !ok {
+				return "", fmt.Errorf("socket not found: %s", svc.HostSockets[0].IDDigest)
+			}
+			port = portForward.FrontendOrBackendPort()
 		}
 	default:
 		return "", fmt.Errorf("unknown service type")
@@ -173,12 +186,20 @@ func (svc *Service) Endpoint(ctx context.Context, id *call.ID, port int, scheme 
 }
 
 func (svc *Service) StartAndTrack(ctx context.Context, id *call.ID) error {
-	_, err := svc.Query.Services.Start(ctx, id, svc)
+	svcs, err := svc.Query.Services(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = svcs.Start(ctx, id, svc)
 	return err
 }
 
 func (svc *Service) Stop(ctx context.Context, id *call.ID, kill bool) error {
-	return svc.Query.Services.Stop(ctx, id, kill)
+	svcs, err := svc.Query.Services(ctx)
+	if err != nil {
+		return err
+	}
+	return svcs.Stop(ctx, id, kill)
 }
 
 func (svc *Service) Start(
@@ -194,11 +215,27 @@ func (svc *Service) Start(
 		return svc.startContainer(ctx, id, interactive, forwardStdin, forwardStdout, forwardStderr)
 	case svc.TunnelUpstream != nil:
 		return svc.startTunnel(ctx, id)
-	case svc.HostUpstream != "":
+	case len(svc.HostSockets) > 0:
 		return svc.startReverseTunnel(ctx, id)
 	default:
 		return nil, fmt.Errorf("unknown service type")
 	}
+}
+
+func (svc *Service) startSpan(ctx context.Context, id *call.ID, name string) (context.Context, trace.Span, error) {
+	mainClientCallerID, err := svc.Query.MainClientCallerID(ctx)
+	if err != nil {
+		return ctx, nil, fmt.Errorf("get main client caller ID: %w", err)
+	}
+	ctx, span := Tracer().Start(ctx, "start "+name, trace.WithAttributes(
+		// assign service spans to the _main_ client caller, since their lifespan is tied
+		// to the session level, independent of which client happened to start it.
+		//
+		// otherwise, this span gets associated to whichever client happened to start it.
+		// when that client goes away, we don't want to reap this span.
+		attribute.String(telemetry.ClientIDAttr, mainClientCallerID),
+		attribute.String(telemetry.EffectIDAttr, serviceEffect(id))))
+	return ctx, span, nil
 }
 
 //nolint:gocyclo
@@ -248,11 +285,16 @@ func (svc *Service) startContainer(
 	}
 	if !ok {
 		execMD = &buildkit.ExecutionMetadata{
+			ExecID:    identity.NewID(),
 			SessionID: clientMetadata.SessionID,
 		}
 	}
 
-	detachDeps, _, err := svc.Query.Services.StartBindings(ctx, ctr.Services)
+	svcs, err := svc.Query.Services(ctx)
+	if err != nil {
+		return nil, err
+	}
+	detachDeps, _, err := svcs.StartBindings(ctx, ctr.Services)
 	if err != nil {
 		return nil, fmt.Errorf("start dependent services: %w", err)
 	}
@@ -263,11 +305,12 @@ func (svc *Service) startContainer(
 		}
 	}()
 
-	ctx, span := Tracer().Start(ctx, "start "+strings.Join(execOp.Meta.Args, " "))
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+	ctx, span, err := svc.startSpan(ctx, id, strings.Join(execOp.Meta.Args, " "))
+	if err != nil {
+		return nil, fmt.Errorf("start span: %w", err)
+	}
 	defer func() {
 		if rerr != nil {
-			stdio.Close()
 			// NB: this is intentionally conditional; we only complete if there was
 			// an error starting. span.End is called when the service exits.
 			telemetry.End(span, func() error { return rerr })
@@ -276,11 +319,14 @@ func (svc *Service) startContainer(
 
 	fullHost := host + "." + network.ClientDomain(clientMetadata.SessionID)
 
-	bk := svc.Query.Buildkit
+	bk, err := svc.Query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
 
 	pbPlatform := pb.PlatformFromSpec(ctr.Platform.Spec())
 
-	mounts := make([]bkgw.Mount, len(execOp.Mounts))
+	mounts := make([]buildkit.ContainerMount, len(execOp.Mounts))
 	for i, m := range execOp.Mounts {
 		mount := bkgw.Mount{
 			Selector:  m.Selector,
@@ -312,7 +358,9 @@ func (svc *Service) startContainer(
 			mount.Ref = res.Ref
 		}
 
-		mounts[i] = mount
+		mounts[i] = buildkit.ContainerMount{
+			Mount: &mount,
+		}
 	}
 
 	gc, err := bk.NewContainer(ctx, buildkit.NewContainerRequest{
@@ -339,7 +387,6 @@ func (svc *Service) startContainer(
 	env := append([]string{}, execOp.Meta.Env...)
 	env = append(env, telemetry.PropagationEnv(ctx)...)
 
-	outBuf := new(bytes.Buffer)
 	var stdinCtr, stdoutClient, stderrClient io.ReadCloser
 	var stdinClient, stdoutCtr, stderrCtr io.WriteCloser
 	if forwardStdin != nil {
@@ -348,14 +395,10 @@ func (svc *Service) startContainer(
 
 	if forwardStdout != nil {
 		stdoutClient, stdoutCtr = io.Pipe()
-	} else {
-		stdoutCtr = nopCloser{io.MultiWriter(stdio.Stdout, outBuf)}
 	}
 
 	if forwardStderr != nil {
 		stderrClient, stderrCtr = io.Pipe()
-	} else {
-		stderrCtr = nopCloser{io.MultiWriter(stdio.Stderr, outBuf)}
 	}
 
 	svcProc, err := gc.Start(ctx, bkgw.StartRequest{
@@ -387,11 +430,6 @@ func (svc *Service) startContainer(
 	var exitErr error
 	exited := make(chan struct{})
 	go func() {
-		// terminate the span; we're not interested in setting an error, since
-		// services return a benign error like `exit status 1` on exit
-		defer span.End()
-		defer stdio.Close()
-
 		defer func() {
 			if stdinClient != nil {
 				stdinClient.Close()
@@ -404,6 +442,10 @@ func (svc *Service) startContainer(
 			}
 			close(exited)
 		}()
+
+		// terminate the span; we're not interested in setting an error, since
+		// services return a benign error like `exit status 1` on exit
+		defer span.End()
 
 		exitErr = svcProc.Wait()
 
@@ -462,7 +504,7 @@ func (svc *Service) startContainer(
 		}, nil
 	case <-exited:
 		if exitErr != nil {
-			return nil, fmt.Errorf("exited: %w\noutput: %s", exitErr, outBuf.String())
+			return nil, fmt.Errorf("exited: %w", exitErr)
 		}
 		return nil, fmt.Errorf("service exited before healthcheck")
 	}
@@ -482,8 +524,14 @@ func (svc *Service) startTunnel(ctx context.Context, id *call.ID) (running *Runn
 	}
 	svcCtx = engine.ContextWithClientMetadata(svcCtx, clientMetadata)
 
-	svcs := svc.Query.Services
-	bk := svc.Query.Buildkit
+	svcs, err := svc.Query.Services(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get services: %w", err)
+	}
+	bk, err := svc.Query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
 
 	upstream, err := svcs.Start(svcCtx, svc.TunnelUpstream.ID(), svc.TunnelUpstream.Self)
 	if err != nil {
@@ -572,7 +620,15 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 
 	fullHost := host + "." + network.ClientDomain(clientMetadata.SessionID)
 
-	bk := svc.Query.Buildkit
+	bk, err := svc.Query.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+
+	sockStore, err := svc.Query.Sockets(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get socket store: %w", err)
+	}
 
 	// we don't need a full container, just a CNI provisioned network namespace to listen in
 	netNS, err := bk.NewNetworkNamespace(ctx, fullHost)
@@ -581,18 +637,25 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 	}
 
 	checkPorts := []Port{}
-	descs := make([]string, 0, len(svc.HostPorts))
-	for _, p := range svc.HostPorts {
-		desc := fmt.Sprintf("tunnel %s %d -> %d", p.Protocol, p.FrontendOrBackendPort(), p.Backend)
+	descs := make([]string, 0, len(svc.HostSockets))
+	for _, sock := range svc.HostSockets {
+		port, ok := sockStore.GetSocketPortForward(sock.IDDigest)
+		if !ok {
+			return nil, fmt.Errorf("socket not found: %s", sock.IDDigest)
+		}
+		desc := fmt.Sprintf("tunnel %s %d -> %d", port.Protocol, port.FrontendOrBackendPort(), port.Backend)
 		descs = append(descs, desc)
 		checkPorts = append(checkPorts, Port{
-			Port:        p.FrontendOrBackendPort(),
-			Protocol:    p.Protocol,
+			Port:        port.FrontendOrBackendPort(),
+			Protocol:    port.Protocol,
 			Description: &desc,
 		})
 	}
 
-	ctx, span := Tracer().Start(ctx, strings.Join(descs, ", "))
+	ctx, span, err := svc.startSpan(ctx, id, strings.Join(descs, ", "))
+	if err != nil {
+		return nil, fmt.Errorf("start span: %w", err)
+	}
 	defer func() {
 		if rerr != nil {
 			// NB: this is intentionally conditional; we only complete if there was
@@ -602,20 +665,20 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 	}()
 
 	tunnel := &c2hTunnel{
-		bk:                 bk,
-		ns:                 netNS,
-		upstreamHost:       svc.HostUpstream,
-		tunnelServiceHost:  fullHost,
-		tunnelServicePorts: svc.HostPorts,
-		sessionID:          svc.HostSessionID,
+		bk:        bk,
+		ns:        netNS,
+		socks:     svc.HostSockets,
+		sockStore: sockStore,
 	}
 
 	// NB: decouple from the incoming ctx cancel and add our own
 	svcCtx, stop := context.WithCancel(context.WithoutCancel(ctx))
 
-	exited := make(chan error, 1)
+	exited := make(chan struct{}, 1)
+	var exitErr error
 	go func() {
-		exited <- tunnel.Tunnel(svcCtx)
+		defer close(exited)
+		exitErr = tunnel.Tunnel(svcCtx)
 	}()
 
 	checked := make(chan error, 1)
@@ -648,15 +711,18 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 				select {
 				case <-waitCtx.Done():
 					return fmt.Errorf("timeout waiting for tunnel to stop: %w", waitCtx.Err())
-				case err := <-exited:
-					return err
+				case <-exited:
+					return nil
 				}
 			},
 		}, nil
-	case err := <-exited:
+	case <-exited:
 		netNS.Release(svcCtx)
 		stop()
-		return nil, fmt.Errorf("proxy exited: %w", err)
+		if exitErr != nil {
+			return nil, fmt.Errorf("proxy exited: %w", exitErr)
+		}
+		return nil, fmt.Errorf("proxy exited before healthcheck")
 	}
 }
 

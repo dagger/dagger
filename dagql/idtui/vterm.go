@@ -23,7 +23,8 @@ type Vterm struct {
 
 	vt *midterm.Terminal
 
-	viewBuf *bytes.Buffer
+	viewBuf     *bytes.Buffer
+	needsRedraw bool
 
 	mu *sync.Mutex
 }
@@ -58,7 +59,7 @@ func (term *Vterm) Write(p []byte) (int, error) {
 		term.Offset = max(0, term.vt.UsedHeight()-term.Height)
 	}
 
-	term.redraw()
+	term.needsRedraw = true
 
 	return n, nil
 }
@@ -78,7 +79,7 @@ func (term *Vterm) SetHeight(height int) {
 	if atBottom {
 		term.Offset = max(0, term.vt.UsedHeight()-term.Height)
 	}
-	term.redraw()
+	term.needsRedraw = true
 }
 
 func (term *Vterm) SetWidth(width int) {
@@ -92,7 +93,7 @@ func (term *Vterm) SetWidth(width int) {
 	if width > prefixWidth {
 		term.vt.ResizeX(width - prefixWidth)
 	}
-	term.redraw()
+	term.needsRedraw = true
 }
 
 func (term *Vterm) SetPrefix(prefix string) {
@@ -106,7 +107,7 @@ func (term *Vterm) SetPrefix(prefix string) {
 	if term.Width > prefixWidth && !term.vt.AutoResizeX {
 		term.vt.ResizeX(term.Width - prefixWidth)
 	}
-	term.redraw()
+	term.needsRedraw = true
 }
 
 func (term *Vterm) Init() tea.Cmd {
@@ -146,6 +147,10 @@ const reset = termenv.CSI + termenv.ResetSeq + "m"
 func (term *Vterm) View() string {
 	term.mu.Lock()
 	defer term.mu.Unlock()
+	if term.needsRedraw {
+		term.redraw()
+		term.needsRedraw = false
+	}
 	return term.viewBuf.String()
 }
 

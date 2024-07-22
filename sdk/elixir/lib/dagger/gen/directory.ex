@@ -11,12 +11,16 @@ defmodule Dagger.Directory do
   @type t() :: %__MODULE__{}
 
   @doc "Load the directory as a Dagger module"
-  @spec as_module(t(), [{:source_root_path, String.t() | nil}]) :: Dagger.Module.t()
+  @spec as_module(t(), [
+          {:source_root_path, String.t() | nil},
+          {:engine_version, String.t() | nil}
+        ]) :: Dagger.Module.t()
   def as_module(%__MODULE__{} = directory, optional_args \\ []) do
     selection =
       directory.selection
       |> select("asModule")
       |> maybe_put_arg("sourceRootPath", optional_args[:source_root_path])
+      |> maybe_put_arg("engineVersion", optional_args[:engine_version])
 
     %Dagger.Module{
       selection: selection,
@@ -88,7 +92,8 @@ defmodule Dagger.Directory do
   end
 
   @doc "Writes the contents of the directory to a path on the host."
-  @spec export(t(), String.t(), [{:wipe, boolean() | nil}]) :: {:ok, boolean()} | {:error, term()}
+  @spec export(t(), String.t(), [{:wipe, boolean() | nil}]) ::
+          {:ok, String.t()} | {:error, term()}
   def export(%__MODULE__{} = directory, path, optional_args \\ []) do
     selection =
       directory.selection
@@ -149,12 +154,46 @@ defmodule Dagger.Directory do
   end
 
   @doc "Force evaluation in the engine."
-  @spec sync(t()) :: {:ok, Dagger.DirectoryID.t()} | {:error, term()}
+  @spec sync(t()) :: {:ok, Dagger.Directory.t()} | {:error, term()}
   def sync(%__MODULE__{} = directory) do
     selection =
       directory.selection |> select("sync")
 
-    execute(selection, directory.client)
+    with {:ok, id} <- execute(selection, directory.client) do
+      {:ok,
+       %Dagger.Directory{
+         selection:
+           query()
+           |> select("loadDirectoryFromID")
+           |> arg("id", id),
+         client: directory.client
+       }}
+    end
+  end
+
+  @doc "Opens an interactive terminal in new container with this directory mounted inside."
+  @spec terminal(t(), [
+          {:cmd, [String.t()]},
+          {:experimental_privileged_nesting, boolean() | nil},
+          {:insecure_root_capabilities, boolean() | nil},
+          {:container, Dagger.ContainerID.t() | nil}
+        ]) :: Dagger.Directory.t()
+  def terminal(%__MODULE__{} = directory, optional_args \\ []) do
+    selection =
+      directory.selection
+      |> select("terminal")
+      |> maybe_put_arg("cmd", optional_args[:cmd])
+      |> maybe_put_arg(
+        "experimentalPrivilegedNesting",
+        optional_args[:experimental_privileged_nesting]
+      )
+      |> maybe_put_arg("insecureRootCapabilities", optional_args[:insecure_root_capabilities])
+      |> maybe_put_arg("container", optional_args[:container])
+
+    %Dagger.Directory{
+      selection: selection,
+      client: directory.client
+    }
   end
 
   @doc "Retrieves this directory plus a directory written at the given path."

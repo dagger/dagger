@@ -52,7 +52,8 @@ func Close() error {
 //
 {{ $field.DeprecationReason | FormatDeprecation }}
 {{- end }}
-{{ FieldFunction $field true "dagger" }} {
+{{- $supportsVoid := CheckVersionCompatibility "v0.12.0" }}
+{{ FieldFunction $field true $supportsVoid "dagger" }} {
 	client := initClient()
 	return client.{{ .Name | FormatName }}(
 		{{- if not $field.TypeRef.IsObject -}}

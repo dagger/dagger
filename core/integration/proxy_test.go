@@ -11,9 +11,9 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"testing"
 	"time"
 
+	"github.com/dagger/dagger/testctx"
 	"github.com/goproxy/goproxy"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
@@ -23,9 +23,11 @@ import (
 
 type proxyTest struct {
 	name         string
-	run          func(*testing.T, *dagger.Client, proxyTestFixtures)
-	proxyLogTest func(*testing.T, *dagger.Client, string)
+	run          func(*testctx.T, *dagger.Client, proxyTestFixtures)
+	proxyLogTest func(*testctx.T, *dagger.Client, getProxyLogsFunc)
 }
+
+type getProxyLogsFunc func(context.Context) (string, error)
 
 type proxyTestFixtures struct {
 	caCert *dagger.File
@@ -41,9 +43,8 @@ type proxyTestFixtures struct {
 
 func customProxyTests(
 	ctx context.Context,
-	t *testing.T,
+	t *testctx.T,
 	c *dagger.Client,
-	netID uint8,
 	useAuth bool,
 	tests ...proxyTest,
 ) {
@@ -62,7 +63,6 @@ func customProxyTests(
 		serverCert: httpServerCert,
 		serverKey:  httpServerKey,
 		dhParam:    certGen.dhParam,
-		netID:      netID,
 		dnsName:    httpServerAlias,
 		msg:        "whatup",
 	})
@@ -80,7 +80,6 @@ func customProxyTests(
 		serverCert: noproxyHTTPServerCert,
 		serverKey:  noproxyHTTPServerKey,
 		dhParam:    certGen.dhParam,
-		netID:      netID,
 		dnsName:    noproxyHTTPServerAlias,
 		msg:        "whatup",
 	})
@@ -172,24 +171,32 @@ http_access allow localhost
 
 	squidConf += "http_access deny all\n"
 
-	squid = squid.
-		WithNewFile("/etc/squid/squid.conf", dagger.ContainerWithNewFileOpts{Contents: squidConf}).
+	squidSvc := squid.
+		WithNewFile("/etc/squid/squid.conf", squidConf).
 		WithServiceBinding(httpServerAlias, httpServer.AsService()).
 		WithServiceBinding(noproxyHTTPServerAlias, noproxyHTTPServer.AsService()).
-		WithExec([]string{"sh", "-c", "chmod -R a+rw /var/log/squidaccess && exec squid --foreground"})
+		WithExec([]string{"sh", "-c", "chmod -R a+rw /var/log/squidaccess && exec squid --foreground"}).
+		AsService()
 
 	if os.Getenv(executeTestEnvName) == "" {
-		devEngine := devEngineContainer(c, netID, func(ctr *dagger.Container) *dagger.Container {
+		squidSvc, err := squidSvc.Start(ctx)
+		require.NoError(t, err)
+		stopCtx := context.WithoutCancel(ctx)
+		t.Cleanup(func() {
+			squidSvc.Stop(stopCtx, dagger.ServiceStopOpts{Kill: true})
+		})
+
+		devEngine := devEngineContainer(c, func(ctr *dagger.Container) *dagger.Container {
 			return ctr.
 				// go right to /etc/ssl/certs to avoid testing the custom CA cert support (covered elsewhere)
 				WithMountedFile("/etc/ssl/certs/myCA.pem", certGen.caRootCert).
-				WithExec([]string{"update-ca-certificates"}, dagger.ContainerWithExecOpts{SkipEntrypoint: true}).
+				WithExec([]string{"update-ca-certificates"}).
 				WithEnvVariable("HTTP_PROXY", squidHTTPURL.String()).
 				WithEnvVariable("HTTPS_PROXY", squidHTTPSURL.String()).
 				WithEnvVariable("NO_PROXY", noproxyHTTPServerAlias).
 				WithServiceBinding(httpServerAlias, httpServer.AsService()).
 				WithServiceBinding(noproxyHTTPServerAlias, noproxyHTTPServer.AsService()).
-				WithServiceBinding(squidAlias, squid.AsService())
+				WithServiceBinding(squidAlias, squidSvc)
 		})
 
 		thisRepoPath, err := filepath.Abs("../..")
@@ -206,7 +213,8 @@ http_access allow localhost
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://engine:1234").
 			WithEnvVariable(executeTestEnvName, "ya").
-			WithExec([]string{"go", "test",
+			WithExec([]string{
+				"go", "test",
 				"-v",
 				"-timeout", "20m",
 				"-count", "1",
@@ -215,17 +223,18 @@ http_access allow localhost
 			}).Sync(ctx)
 		require.NoError(t, err)
 
-		squidLogs, err := c.Container().From(alpineImage).
-			WithMountedCache("/var/log/squidaccess", squidLogsVolume).
-			WithExec([]string{"cat", "/var/log/squidaccess/access.log"}).
-			Stdout(ctx)
 		require.NoError(t, err)
 		for _, test := range tests {
 			test := test
 			if test.proxyLogTest != nil {
-				t.Run(test.name+"-proxy-logs", func(t *testing.T) {
-					t.Parallel()
-					test.proxyLogTest(t, c, squidLogs)
+				t.Run(test.name+"-proxy-logs", func(ctx context.Context, t *testctx.T) {
+					test.proxyLogTest(t, c, func(ctx context.Context) (string, error) {
+						return c.Container().From(alpineImage).
+							WithMountedCache("/var/log/squidaccess", squidLogsVolume).
+							WithEnvVariable("CACHEBUSTER", identity.NewID()).
+							WithExec([]string{"cat", "/var/log/squidaccess/access.log"}).
+							Stdout(ctx)
+					})
 				})
 			}
 		}
@@ -237,8 +246,7 @@ http_access allow localhost
 
 	for _, test := range tests {
 		test := test
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
+		t.Run(test.name, func(ctx context.Context, t *testctx.T) {
 			test.run(t, c, proxyTestFixtures{
 				caCert: c.Host().File("/ca.pem"),
 
@@ -254,15 +262,12 @@ http_access allow localhost
 	}
 }
 
-func TestContainerSystemProxies(t *testing.T) {
-	t.Parallel()
+func (ContainerSuite) TestSystemProxies(ctx context.Context, t *testctx.T) {
+	t.Run("basic", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
-	c, ctx := connect(t)
-
-	t.Run("basic", func(t *testing.T) {
-		t.Parallel()
-		customProxyTests(ctx, t, c, 101, false,
-			proxyTest{name: "http", run: func(t *testing.T, c *dagger.Client, f proxyTestFixtures) {
+		customProxyTests(ctx, t, c, false,
+			proxyTest{name: "http", run: func(t *testctx.T, c *dagger.Client, f proxyTestFixtures) {
 				out, err := c.Container().From(alpineImage).
 					WithExec([]string{"apk", "add", "curl"}).
 					WithExec([]string{"curl", "-v", f.httpServerURL.String()}).
@@ -272,7 +277,7 @@ func TestContainerSystemProxies(t *testing.T) {
 				require.Regexp(t, `.*< Via: .* \(squid/.*\).*`, out)
 			}},
 
-			proxyTest{name: "https", run: func(t *testing.T, c *dagger.Client, f proxyTestFixtures) {
+			proxyTest{name: "https", run: func(t *testctx.T, c *dagger.Client, f proxyTestFixtures) {
 				out, err := c.Container().From(alpineImage).
 					WithExec([]string{"apk", "add", "curl", "ca-certificates"}).
 					WithMountedFile("/etc/ssl/certs/myCA.pem", f.caCert).
@@ -284,7 +289,7 @@ func TestContainerSystemProxies(t *testing.T) {
 				require.Regexp(t, fmt.Sprintf(`.*Establish HTTP proxy tunnel to %s.*`, f.httpsServerURL.Host), out)
 			}},
 
-			proxyTest{name: "noproxy http", run: func(t *testing.T, c *dagger.Client, f proxyTestFixtures) {
+			proxyTest{name: "noproxy http", run: func(t *testctx.T, c *dagger.Client, f proxyTestFixtures) {
 				out, err := c.Container().From(alpineImage).
 					WithExec([]string{"apk", "add", "curl"}).
 					WithExec([]string{"curl", "-v", f.noproxyHTTPServerURL.String()}).
@@ -296,10 +301,11 @@ func TestContainerSystemProxies(t *testing.T) {
 		)
 	})
 
-	t.Run("auth", func(t *testing.T) {
-		t.Parallel()
-		customProxyTests(ctx, t, c, 102, true,
-			proxyTest{name: "http", run: func(t *testing.T, c *dagger.Client, f proxyTestFixtures) {
+	t.Run("auth", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		customProxyTests(ctx, t, c, true,
+			proxyTest{name: "http", run: func(t *testctx.T, c *dagger.Client, f proxyTestFixtures) {
 				base := c.Container().From(alpineImage).
 					WithExec([]string{"apk", "add", "curl"})
 
@@ -322,7 +328,7 @@ func TestContainerSystemProxies(t *testing.T) {
 				require.Contains(t, out, "< HTTP/1.1 407 Proxy Authentication Required")
 			}},
 
-			proxyTest{name: "https", run: func(t *testing.T, c *dagger.Client, f proxyTestFixtures) {
+			proxyTest{name: "https", run: func(t *testctx.T, c *dagger.Client, f proxyTestFixtures) {
 				base := c.Container().From(alpineImage).
 					WithExec([]string{"apk", "add", "curl", "ca-certificates"}).
 					WithMountedFile("/etc/ssl/certs/myCA.pem", f.caCert).
@@ -348,128 +354,145 @@ func TestContainerSystemProxies(t *testing.T) {
 		)
 	})
 
-	t.Run("git uses proxy", func(t *testing.T) {
-		t.Parallel()
-		customProxyTests(ctx, t, c, 104, false,
-			proxyTest{name: "git",
-				run: func(t *testing.T, c *dagger.Client, _ proxyTestFixtures) {
-					_, err := c.Git("https://" + gitTestRepoURL).Ref(gitTestRepoCommit).Tree().Sync(ctx)
-					require.NoError(t, err)
+	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
+		t.Run("git uses proxy", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			customProxyTests(ctx, t, c, false,
+				proxyTest{name: "git",
+					run: func(t *testctx.T, c *dagger.Client, _ proxyTestFixtures) {
+						_, err := c.Git("https://" + tc.gitTestRepoRef).Ref(tc.gitTestRepoCommit).Tree().Sync(ctx)
+						require.NoError(t, err)
+					},
+					proxyLogTest: func(t *testctx.T, _ *dagger.Client, getProxyLogs getProxyLogsFunc) {
+						// retry a few times in case logs haven't been flushed yet
+						var proxyLogs string
+						for i := 0; i < 5; i++ {
+							var err error
+							proxyLogs, err = getProxyLogs(ctx)
+							require.NoError(t, err)
+							if strings.Contains(proxyLogs, fmt.Sprintf("CONNECT %s:443", tc.expectedHost)) {
+								return
+							}
+							time.Sleep(1 * time.Second)
+						}
+						require.Fail(t, fmt.Sprintf("expected CONNECT to %s in proxy logs", tc.expectedHost), proxyLogs)
+					},
 				},
-				proxyLogTest: func(t *testing.T, _ *dagger.Client, proxyLogs string) {
-					require.Contains(t, proxyLogs, "CONNECT github.com:443")
-				},
-			},
-		)
+			)
+		})
 	})
 }
 
-func TestContainerSystemGoProxy(t *testing.T) {
-	t.Parallel()
-	c, ctx := connect(t)
+func (ContainerSuite) TestSystemGoProxy(ctx context.Context, t *testctx.T) {
+	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
+		t.Run("system go proxy", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
 
-	// just a subset of modules we expect to be downloaded since trying to go one to one would
-	// be too fragile whenever the SDK changes
-	expectedGoModDownloads := []string{
-		"github.com/99designs/gqlgen",
-		"github.com/Khan/genqlient",
-		"go.opentelemetry.io/otel/exporters/otlp/otlptrace",
-		"golang.org/x/sync",
-	}
+			// just a subset of modules we expect to be downloaded since trying to go one to one would
+			// be too fragile whenever the SDK changes
+			expectedGoModDownloads := []string{
+				"github.com/99designs/gqlgen",
+				"github.com/Khan/genqlient",
+				"go.opentelemetry.io/otel/exporters/otlp/otlptrace",
+				"golang.org/x/sync",
+			}
 
-	executeTestEnvName := fmt.Sprintf("DAGGER_TEST_%s", strings.ToUpper(t.Name()))
-	if os.Getenv(executeTestEnvName) == "" {
-		const netID = 103
-		const goProxyAlias = "goproxy"
-		const goProxyPort = 8080
-		goProxySetting := fmt.Sprintf("http://%s:%d", goProxyAlias, goProxyPort)
+			executeTestEnvName := fmt.Sprintf("DAGGER_TEST_%s", strings.ToUpper(t.Name()))
+			if os.Getenv(executeTestEnvName) == "" {
+				const goProxyAlias = "goproxy"
+				const goProxyPort = 8080
+				goProxySetting := fmt.Sprintf("http://%s:%d", goProxyAlias, goProxyPort)
 
-		fetcher := &goProxyFetcher{dlPaths: make(map[string]struct{})}
-		proxy := &goproxy.Goproxy{Fetcher: fetcher}
+				fetcher := &goProxyFetcher{dlPaths: make(map[string]struct{})}
+				proxy := &goproxy.Goproxy{Fetcher: fetcher}
 
-		l, err := net.Listen("tcp", "127.0.0.1:0")
-		require.NoError(t, err)
-		t.Cleanup(func() {
-			l.Close()
-		})
-		port := l.Addr().(*net.TCPAddr).Port
+				l, err := net.Listen("tcp", "127.0.0.1:0")
+				require.NoError(t, err)
+				t.Cleanup(func() {
+					l.Close()
+				})
+				port := l.Addr().(*net.TCPAddr).Port
 
-		goProxyCtx, cancelGoProxy := context.WithCancel(ctx)
-		t.Cleanup(cancelGoProxy)
-		srv := http.Server{
-			Handler:           proxy,
-			ReadHeaderTimeout: 30 * time.Second,
-			BaseContext: func(net.Listener) context.Context {
-				return goProxyCtx
-			},
-		}
-		t.Cleanup(func() {
-			srv.Shutdown(context.Background())
-		})
+				goProxyCtx, cancelGoProxy := context.WithCancel(ctx)
+				t.Cleanup(cancelGoProxy)
+				srv := http.Server{
+					Handler:           proxy,
+					ReadHeaderTimeout: 30 * time.Second,
+					BaseContext: func(net.Listener) context.Context {
+						return goProxyCtx
+					},
+				}
+				t.Cleanup(func() {
+					srv.Shutdown(context.Background())
+				})
 
-		goProxyDone := make(chan error, 1)
-		go func() {
-			goProxyDone <- srv.Serve(l)
-		}()
+				goProxyDone := make(chan error, 1)
+				go func() {
+					goProxyDone <- srv.Serve(l)
+				}()
 
-		goProxySvc := c.Host().Service([]dagger.PortForward{{
-			Backend:  port,
-			Frontend: goProxyPort,
-		}})
+				goProxySvc := c.Host().Service([]dagger.PortForward{{
+					Backend:  port,
+					Frontend: goProxyPort,
+				}})
 
-		devEngine := devEngineContainer(c, netID, func(ctr *dagger.Container) *dagger.Container {
-			return ctr.
-				WithServiceBinding(goProxyAlias, goProxySvc).
-				WithEnvVariable("_DAGGER_ENGINE_SYSTEMENV_GOPROXY", goProxySetting)
-		})
+				devEngine := devEngineContainer(c, func(ctr *dagger.Container) *dagger.Container {
+					return ctr.
+						WithServiceBinding(goProxyAlias, goProxySvc).
+						WithEnvVariable("_DAGGER_ENGINE_SYSTEMENV_GOPROXY", goProxySetting)
+				})
 
-		thisRepoPath, err := filepath.Abs("../..")
-		require.NoError(t, err)
-		thisRepo := c.Host().Directory(thisRepoPath)
+				thisRepoPath, err := filepath.Abs("../..")
+				require.NoError(t, err)
+				thisRepo := c.Host().Directory(thisRepoPath)
 
-		_, err = c.Container().From(golangImage).
-			With(goCache(c)).
-			WithMountedDirectory("/src", thisRepo).
-			WithWorkdir("/src").
-			WithServiceBinding("engine", devEngine.AsService()).
-			WithMountedFile("/bin/dagger", daggerCliFile(t, c)).
-			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
-			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://engine:1234").
-			WithEnvVariable(executeTestEnvName, "ya").
-			WithExec([]string{"go", "test",
-				"-v",
-				"-timeout", "20m",
-				"-count", "1",
-				"-run", fmt.Sprintf("^%s$", t.Name()),
-				"./core/integration",
-			}).Sync(ctx)
-		require.NoError(t, err)
+				_, err = c.Container().From(golangImage).
+					With(goCache(c)).
+					WithMountedDirectory("/src", thisRepo).
+					WithWorkdir("/src").
+					WithServiceBinding("engine", devEngine.AsService()).
+					WithMountedFile("/bin/dagger", daggerCliFile(t, c)).
+					WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/bin/dagger").
+					WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://engine:1234").
+					WithEnvVariable(executeTestEnvName, "ya").
+					WithExec([]string{
+						"go", "test",
+						"-v",
+						"-timeout", "20m",
+						"-count", "1",
+						"-run", fmt.Sprintf("^%s$", t.Name()),
+						"./core/integration",
+					}).Sync(ctx)
+				require.NoError(t, err)
 
-		select {
-		case err := <-goProxyDone:
+				select {
+				case err := <-goProxyDone:
+					require.NoError(t, err)
+				default:
+				}
+
+				fetcher.mu.Lock()
+				defer fetcher.mu.Unlock()
+				require.NotEmpty(t, fetcher.dlPaths)
+				for _, expectedPath := range expectedGoModDownloads {
+					require.Contains(t, fetcher.dlPaths, expectedPath)
+				}
+
+				return
+			}
+
+			// we're in the container depending on the custom engine, run the actual tests
+			ctr := goGitBase(t, c).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
+
+			out, err := ctr.
+				With(daggerCallAt(testGitModuleRef(tc, "top-level"), "fn")).
+				Stdout(ctx)
 			require.NoError(t, err)
-		default:
-		}
-
-		fetcher.mu.Lock()
-		defer fetcher.mu.Unlock()
-		require.NotEmpty(t, fetcher.dlPaths)
-		for _, expectedPath := range expectedGoModDownloads {
-			require.Contains(t, fetcher.dlPaths, expectedPath)
-		}
-
-		return
-	}
-
-	// we're in the container depending on the custom engine, run the actual tests
-	ctr := goGitBase(t, c).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
-
-	out, err := ctr.
-		With(daggerCallAt(testGitModuleRef("top-level"), "fn")).
-		Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "hi from top level hi from dep hi from dep2", strings.TrimSpace(out))
+			require.Equal(t, "hi from top level hi from dep hi from dep2", strings.TrimSpace(out))
+		})
+	})
 }
 
 type goProxyFetcher struct {

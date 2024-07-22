@@ -11,6 +11,134 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
   alias Dagger.Codegen.Introspection.Types.TypeRef
 
   @doc """
+  Render object type into module.
+  """
+  def render(type) do
+    Renderer.render_module(type, render_module_body(type))
+  end
+
+  def render_module_body(type) do
+    module_var = Formatter.format_var_name(type.name)
+
+    [
+      "use Dagger.Core.QueryBuilder",
+      ?\n,
+      ?\n,
+      render_derive_type(type),
+      ?\n,
+      "defstruct [:selection, :client]",
+      ?\n,
+      ?\n,
+      "@type t() :: %__MODULE__{}",
+      ?\n,
+      for field <- type.fields do
+        [
+          render_function(type, field, module_var),
+          ?\n
+        ]
+      end
+    ]
+  end
+
+  def render_function(type, field, module_var) do
+    fun_name = Formatter.format_function_name(field.name)
+    {optional_args, required_args} = Enum.split_with(field.args, &InputValue.is_optional?/1)
+
+    [
+      Renderer.render_deprecated(field),
+      ?\n,
+      Renderer.render_doc(field),
+      ?\n,
+      render_spec(type, field, required_args, optional_args),
+      ?\n,
+      "def #{fun_name}(",
+      render_function_args(module_var, required_args, optional_args),
+      ") do",
+      ?\n,
+      "  selection = ",
+      ?\n,
+      render_selection_chain(field, module_var, required_args, optional_args),
+      ?\n,
+      cond do
+        TypeRef.is_list_of?(field.type, "OBJECT") ->
+          output_type = Formatter.format_output_type(field.type.of_type)
+          load_type_name = field.type.of_type.of_type.of_type.name
+
+          [
+            "with {:ok, items} <- execute(selection, #{module_var}.client) do",
+            ?\n,
+            "  {:ok, for %{\"id\" => id} <- items do",
+            ?\n,
+            """
+                  %#{output_type}{
+                    selection:
+                      query()
+                      |> select("load#{load_type_name}FromID")
+                      |> arg("id", id),
+                    client: #{module_var}.client
+                  }
+            """,
+            ?\n,
+            "  end}",
+            ?\n,
+            "end"
+          ]
+
+        TypeRef.is_scalar?(field.type) ->
+          type_name =
+            case field.type.of_type do
+              nil -> ""
+              type -> type.name
+            end
+
+          id_of_type = String.trim_trailing(type_name, "ID")
+
+          if String.ends_with?(type_name, "ID") and id_of_type == type.name and field.name != "id" do
+            type = %{
+              field.type
+              | of_type: %{field.type.of_type | kind: "OBJECT", name: id_of_type}
+            }
+
+            output_type = Formatter.format_output_type(type)
+
+            [
+              "with {:ok, id} <- execute(selection, #{module_var}.client) do",
+              ?\n,
+              """
+                {:ok, %#{output_type}{
+                  selection: 
+                    query()
+                    |> select("load#{id_of_type}FromID")
+                    |> arg("id", id),
+                  client: #{module_var}.client
+                }}
+              """,
+              ?\n,
+              "end"
+            ]
+          else
+            "execute(selection, #{module_var}.client)"
+          end
+
+        TypeRef.is_list_of?(field.type, "SCALAR") ->
+          "execute(selection, #{module_var}.client)"
+
+        true ->
+          output_type = Formatter.format_output_type(field.type)
+
+          """
+          %#{output_type}{
+            selection: selection,
+            client: #{module_var}.client
+          }
+          """
+      end,
+      ?\n,
+      "end"
+    ]
+  end
+
+  @doc """
   Render `@derive` module attribute.
   """
   def render_derive_type(%Type{} = type) do
@@ -27,13 +155,12 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
         ""
       end
     ]
-    |> IO.iodata_to_binary()
   end
 
   @doc """
   Render `@spec` module attribute.
   """
-  def render_spec(%Field{name: name} = field, required_args, optional_args) do
+  def render_spec(type, %Field{name: name} = field, required_args, optional_args) do
     map_arg = fn arg ->
       if convert_id?(arg) do
         arg.type.of_type.name
@@ -88,7 +215,29 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
       optional_args,
       ?),
       " :: ",
-      Formatter.format_typespec_output_type(field.type)
+      cond do
+        TypeRef.is_scalar?(field.type) ->
+          type_name =
+            case field.type.of_type do
+              nil -> ""
+              type -> type.name
+            end
+
+          id_of_type = String.trim_trailing(type_name, "ID")
+
+          type =
+            if String.ends_with?(type_name, "ID") and id_of_type == type.name and
+                 field.name != "id" do
+              %{field.type | of_type: %{field.type.of_type | name: id_of_type}}
+            else
+              field.type
+            end
+
+          Formatter.format_typespec_output_type(type)
+
+        true ->
+          Formatter.format_typespec_output_type(field.type)
+      end
     ]
   end
 
@@ -99,7 +248,6 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
       render_function_required_args(required_args),
       render_function_optional_args(optional_args)
     ]
-    |> IO.iodata_to_binary()
   end
 
   def render_function_required_args([]) do
@@ -127,7 +275,6 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
     else
       var_name
     end
-    |> IO.iodata_to_binary()
   end
 
   def render_maybe_put_arg(arg) do
@@ -145,7 +292,6 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
     else
       ["optional_args[", key, ~c"]"]
     end
-    |> IO.iodata_to_binary()
   end
 
   def convert_id?(%InputValue{name: "id"}), do: false
@@ -160,7 +306,7 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
     Enum.any?(fields, &(&1.name == "id"))
   end
 
-  def render_selection_chain(_schema, field, module_var, required_args, optional_args) do
+  def render_selection_chain(field, module_var, required_args, optional_args) do
     [
       "#{module_var}.selection",
       "|> select(\"#{field.name}\")",

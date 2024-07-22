@@ -124,12 +124,10 @@ class Context:
         return dsl_gql(DSLQuery(await self.build()))
 
     @overload
-    async def execute(self, return_type: None = None) -> None:
-        ...
+    async def execute(self, return_type: None = None) -> None: ...
 
     @overload
-    async def execute(self, return_type: type[T]) -> T:
-        ...
+    async def execute(self, return_type: type[T]) -> T: ...
 
     async def execute(self, return_type: type[T] | None = None) -> T | None:
         await self.resolve_ids()
@@ -167,12 +165,10 @@ class Context:
         return self.get_value(result, return_type) if return_type else None
 
     @overload
-    def get_value(self, value: None, return_type: Any) -> None:
-        ...
+    def get_value(self, value: None, return_type: Any) -> None: ...
 
     @overload
-    def get_value(self, value: dict[str, Any], return_type: type[T]) -> T:
-        ...
+    def get_value(self, value: dict[str, Any], return_type: type[T]) -> T: ...
 
     def get_value(self, value: dict[str, Any] | None, return_type: type[T]) -> T | None:
         type_hint = TypeHint(return_type)

@@ -25,6 +25,7 @@ const (
 // the introspection JSON that module SDKs use for codegen.
 var typesHiddenFromModuleSDKs = []dagql.Typed{
 	&Host{},
+	&Engine{},
 }
 
 /*
@@ -45,8 +46,12 @@ type ModDeps struct {
 func NewModDeps(root *Query, mods []Mod) *ModDeps {
 	return &ModDeps{
 		root: root,
-		Mods: mods,
+		Mods: append([]Mod{}, mods...),
 	}
+}
+
+func (d *ModDeps) Clone() *ModDeps {
+	return NewModDeps(d.root, append([]Mod{}, d.Mods...))
 }
 
 func (d *ModDeps) Prepend(mods ...Mod) *ModDeps {
@@ -125,11 +130,21 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (
 	}()
 
 	dag := dagql.NewServer[*Query](d.root)
+	for _, mod := range d.Mods {
+		if version, ok := mod.View(); ok {
+			dag.View = version
+			break
+		}
+	}
 
 	dag.Around(AroundFunc)
 
 	// share the same cache session-wide
-	dag.Cache = d.root.Cache
+	var err error
+	dag.Cache, err = d.root.Cache(ctx)
+	if err != nil {
+		return nil, loadedSchemaJSONFile, fmt.Errorf("failed to get cache: %w", err)
+	}
 
 	dagintro.Install[*Query](dag)
 
@@ -221,7 +236,12 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (
 
 	const schemaJSONFilename = "schema.json"
 
-	_, schemaJSONDesc, err := d.root.Buildkit.BytesToBlob(ctx,
+	bk, err := d.root.Buildkit(ctx)
+	if err != nil {
+		return nil, loadedSchemaJSONFile, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+
+	_, schemaJSONDesc, err := bk.BytesToBlob(ctx,
 		schemaJSONFilename,
 		0644,
 		moduleSchemaJSON,

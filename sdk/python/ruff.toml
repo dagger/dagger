@@ -1,0 +1,111 @@
+src = ["src", "tests"]
+target-version = "py310"
+
+[format]
+docstring-code-format = true
+
+[lint]
+select = ["ALL"]
+ignore = [
+    # Type inferrance is ok in a lot of places.
+    "ANN",
+    # This rule doesn't know to ignore a subclass override
+    # so we get false positives for unused arguments.
+    "ARG002",
+    # Can't control using a library with boolean arguments.
+    "FBT",
+    # TODO: Document public modules and packages.
+    "D100",
+    "D104",
+    "D105",
+    # Imperative mood only makes sense in functions, not classes.
+    "D401",
+    # Valid use in pytest and docs.
+    "INP001",
+    # We don't use asserts as runtime validation guarantees.
+    "S101",
+    # Don't guard types. Don't want to stringize them.
+    "TCH",
+    # Don't require author and link in TODO comments.
+    "TD002",
+    "TD003",
+    "FIX002",
+    # Pandas
+    "PD",
+    # Avoid conflicts with the formatter
+    "W191",
+    "E111",
+    "E114",
+    "E117",
+    "D206",
+    "D300",
+    "Q000",
+    "Q002",
+    "Q003",
+    "COM812",
+    "COM819",
+    "ISC001",
+    "ISC002",
+]
+
+[lint.per-file-ignores]
+"!src/**.py" = [
+    # No public interfaces.
+    "D1",
+    # First line should end with a period.
+    "D400",
+]
+"./codegen/*" = [
+    # False positive on __str__ decorator.
+    "PLE0307",
+]
+"./src/dagger/client/gen.py" = [
+    # Not much control over field names and docs coming from the API.
+    # Note: We could detect built-in shadowing like the reserved
+    # keywords but these built-ins aren't being used in the generated
+    # code so no need to bother.
+    "A",
+    "D",
+    # Too hard to properly wrap long lines in codegen.
+    "E501",
+    # Allow access to private members as it's controlled by our own library.
+    "SLF001",
+    # Too many arguments to function call.
+    "PLR0913",
+]
+# Ignore built-in shadowing in test mocks.
+"./tests/client/test_inputs.py" = ["A", "ERA001"]
+"./tests/*.py" = [
+    # Not using timezones in this project.
+    "DTZ",
+    # Magic value comparison doesn't apply to tests.
+    "PLR2004",
+    # Allow more than one statement in pytest.raises.
+    "PT012",
+    # Ignore security issues in tests.
+    "S",
+    # Allow accessing private fields in tests.
+    "SLF001",
+    # Allow covering `Optional` in tests.
+    "UP007",
+]
+# Allow alias imports in __init__.
+"./**/__init__.py" = ["PLC0414"]
+# Allow some patterns to redefine imports in __init__.
+"./src/**/__init__.py" = ["I001", "F403"]
+
+[lint.isort]
+known-first-party = ["dagger", "codegen"]
+
+[lint.pycodestyle]
+ignore-overlong-task-comments = true
+
+[lint.pydocstyle]
+convention = "numpy"
+
+[lint.flake8-unused-arguments]
+ignore-variadic-names = true
+
+[lint.flake8-pytest-style]
+fixture-parentheses = false
+mark-parentheses = false

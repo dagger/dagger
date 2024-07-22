@@ -4,10 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/adrg/xdg"
+	"github.com/muesli/termenv"
+	"github.com/pkg/browser"
 	"golang.org/x/oauth2"
 )
 
@@ -35,7 +39,7 @@ var authConfig = &oauth2.Config{
 
 // Login logs the user in and stores the credentials for later use.
 // Interactive messages are printed to w.
-func Login(ctx context.Context) error {
+func Login(ctx context.Context, out io.Writer) error {
 	// If the user is already authenticated, skip the login process.
 	if _, err := Token(ctx); err == nil {
 		return nil
@@ -46,7 +50,19 @@ func Login(ctx context.Context) error {
 		return err
 	}
 
-	fmt.Fprintf(os.Stderr, "\nTo authenticate, visit:\n\t%s\n\n", deviceAuth.VerificationURIComplete)
+	authURL := deviceAuth.VerificationURIComplete
+
+	browserBuf := new(strings.Builder)
+	browser.Stdout = browserBuf
+	browser.Stderr = browserBuf
+	if err := browser.OpenURL(authURL); err != nil {
+		fmt.Fprintf(out, "Failed to open browser: %s\n\n%s\n", err, browserBuf.String())
+		fmt.Fprintf(out, "Authenticate here: %s\n", authURL)
+	} else {
+		fmt.Fprintf(out, "Browser opened to: %s\n", authURL)
+	}
+
+	fmt.Fprintf(out, "Confirmation code: %s\n\n", termenv.String(deviceAuth.UserCode).Bold())
 
 	token, err := authConfig.DeviceAccessToken(ctx, deviceAuth)
 	if err != nil {

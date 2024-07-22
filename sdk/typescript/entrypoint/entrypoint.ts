@@ -3,7 +3,7 @@ import { fileURLToPath } from "url"
 
 import { dag } from "../api/client.gen.js"
 import { connection } from "../connect.js"
-import { Args } from "../introspector/registry/registry"
+import { Args } from "../introspector/registry/registry.js"
 import { scan } from "../introspector/scanner/scan.js"
 import { listFiles } from "../introspector/utils/files.js"
 import { invoke } from "./invoke.js"

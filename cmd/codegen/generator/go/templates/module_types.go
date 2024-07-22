@@ -31,6 +31,13 @@ func loadFromIDGQLFieldName(spec NamedParsedType) string {
 	return fmt.Sprintf("load%s%sFromID", strcase.ToCamel(spec.ModuleName()), spec.Name())
 }
 
+func typeName(spec NamedParsedType) string {
+	if spec.ModuleName() == "" {
+		return fmt.Sprintf("dagger.%s", spec.Name())
+	}
+	return spec.Name()
+}
+
 // parseGoTypeReference parses a Go type and returns a TypeSpec for the type *reference* only.
 // So if the type is a struct or interface, the returned TypeSpec will not have all the fields,
 // only the type name and kind.
@@ -64,15 +71,32 @@ func (ps *parseState) parseGoTypeReference(typ types.Type, named *types.Named, i
 		}, nil
 
 	case *types.Basic:
-		if t.Kind() == types.Invalid {
-			return nil, fmt.Errorf("invalid type: %+v", t)
-		}
 		parsedType := &parsedPrimitiveType{goType: t, isPtr: isPtr}
 		if named != nil {
-			if ps.isDaggerGenerated(named.Obj()) {
-				// only pre-generated scalars allowed here
-				parsedType.scalarType = named
+			if enum, _ := ps.parseGoEnum(t, named); enum != nil {
+				// type can be parsed as an enum, so let's assume it is
+				parsedType.enumType = named
 			}
+
+			if ps.isDaggerGenerated(named.Obj()) {
+				isEnum := false
+				for i := 0; i < named.NumMethods(); i++ {
+					method := named.Method(i)
+					if method.Name() == "IsEnum" {
+						isEnum = true
+						break
+					}
+				}
+
+				if isEnum {
+					parsedType.enumType = named
+				} else {
+					parsedType.scalarType = named
+				}
+			} else {
+				parsedType.moduleName = ps.moduleName
+			}
+
 			parsedType.alias = named.Obj().Name()
 		}
 		return parsedType, nil
@@ -121,10 +145,12 @@ func (ps *parseState) parseGoTypeReference(typ types.Type, named *types.Named, i
 
 // parsedPrimitiveType is a parsed type that is a primitive type like string, int, bool, etc.
 type parsedPrimitiveType struct {
-	goType *types.Basic
-	isPtr  bool
+	goType     *types.Basic
+	isPtr      bool
+	moduleName string
 
 	scalarType *types.Named
+	enumType   *types.Named
 
 	// if this is something like `type Foo string`, then alias will be "Foo"
 	alias string
@@ -134,19 +160,28 @@ var _ ParsedType = &parsedPrimitiveType{}
 
 func (spec *parsedPrimitiveType) TypeDefCode() (*Statement, error) {
 	var kind Code
-	switch spec.goType.Info() {
-	case types.IsString:
-		kind = Id("StringKind")
-	case types.IsInteger:
-		kind = Id("IntegerKind")
-	case types.IsBoolean:
-		kind = Id("BooleanKind")
-	default:
-		return nil, fmt.Errorf("unsupported basic type: %+v", spec.goType)
+	if spec.goType.Kind() == types.Invalid {
+		// NOTE: this is odd, but it doesn't matter, because the module won't
+		// pass the compilation step if there are invalid types - we just want
+		// to not error out horribly in codegen
+		kind = Id("dagger").Dot("VoidKind")
+	} else {
+		switch spec.goType.Info() {
+		case types.IsString:
+			kind = Id("dagger").Dot("StringKind")
+		case types.IsInteger:
+			kind = Id("dagger").Dot("IntegerKind")
+		case types.IsBoolean:
+			kind = Id("dagger").Dot("BooleanKind")
+		default:
+			return nil, fmt.Errorf("unsupported basic type: %+v", spec.goType)
+		}
 	}
 	var def *Statement
 	if spec.scalarType != nil {
 		def = Qual("dag", "TypeDef").Call().Dot("WithScalar").Call(Lit(spec.scalarType.Obj().Name()))
+	} else if spec.enumType != nil {
+		def = Qual("dag", "TypeDef").Call().Dot("WithEnum").Call(Lit(spec.enumType.Obj().Name()))
 	} else {
 		def = Qual("dag", "TypeDef").Call().Dot("WithKind").Call(kind)
 	}
@@ -161,10 +196,14 @@ func (spec *parsedPrimitiveType) GoType() types.Type {
 }
 
 func (spec *parsedPrimitiveType) GoSubTypes() []types.Type {
+	subTypes := []types.Type{}
 	if spec.scalarType != nil {
-		return []types.Type{spec.scalarType}
+		subTypes = append(subTypes, spec.scalarType)
 	}
-	return nil
+	if spec.enumType != nil {
+		subTypes = append(subTypes, spec.enumType)
+	}
+	return subTypes
 }
 
 // parsedSliceType is a parsed type that is a slice of other types

@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/moby/buildkit/client/llb"
 	"github.com/pkg/errors"
@@ -66,7 +67,10 @@ func (ref *GitRef) Tree(ctx context.Context) (*Directory, error) {
 }
 
 func (ref *GitRef) Commit(ctx context.Context) (string, error) {
-	bk := ref.Query.Buildkit
+	bk, err := ref.Query.Buildkit(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get buildkit client: %w", err)
+	}
 	st, err := ref.getState(ctx)
 	if err != nil {
 		return "", err
@@ -91,13 +95,13 @@ func (ref *GitRef) getState(ctx context.Context) (llb.State, error) {
 		opts = append(opts, llb.KnownSSHHosts(ref.Repo.SSHKnownHosts))
 	}
 	if ref.Repo.SSHAuthSocket != nil {
-		opts = append(opts, llb.MountSSHSock(ref.Repo.SSHAuthSocket.SSHID()))
+		opts = append(opts, llb.MountSSHSock(ref.Repo.SSHAuthSocket.LLBID()))
 	}
 	if ref.Repo.AuthToken != nil {
-		opts = append(opts, llb.AuthTokenSecret(ref.Repo.AuthToken.Accessor))
+		opts = append(opts, llb.AuthTokenSecret(ref.Repo.AuthToken.LLBID()))
 	}
 	if ref.Repo.AuthHeader != nil {
-		opts = append(opts, llb.AuthHeaderSecret(ref.Repo.AuthHeader.Accessor))
+		opts = append(opts, llb.AuthHeaderSecret(ref.Repo.AuthHeader.LLBID()))
 	}
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)

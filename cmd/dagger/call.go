@@ -2,147 +2,197 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
+var outputFormat string
 var outputPath string
 var jsonOutput bool
+var responsePayload map[string]any
 
 var callCmd = &FuncCommand{
 	Name:  "call [options]",
 	Short: "Call a module function",
-	Long: strings.ReplaceAll(`Call a module function and print the result.
-
-If the last argument is either a Container, Directory, or File, the pipeline
-will be evaluated (the result of calling ´sync´) without presenting any output.
-Providing the ´--output´ option (shorthand: ´-o´) is equivalent to calling
-´export´ instead. To print a property of these core objects, continue chaining
-by appending it to the end of the command (for example, ´stdout´, ´entries´, or
-´contents´).
-`,
-		"´",
-		"`",
-	),
-	Example: strings.TrimSpace(`
-dagger call test
-dagger call build -o ./bin/myapp
-dagger call lint stdout
-`,
-	),
 	Init: func(cmd *cobra.Command) {
-		cmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Present result as JSON")
-		cmd.PersistentFlags().StringVarP(&outputPath, "output", "o", "", "Path in the host to save the result to")
+		cmd.PersistentFlags().StringVarP(&outputPath, "output", "o", "", "Save the result to a local file or directory")
+
+		cmd.PersistentFlags().BoolVarP(&jsonOutput, "json", "j", false, "Present result as JSON")
 	},
-	OnSelectObjectLeaf: func(c *FuncCommand, name string) error {
-		switch name {
+	OnSelectObjectLeaf: func(ctx context.Context, fc *FuncCommand, obj functionProvider) error {
+		typeName := obj.ProviderName()
+		switch typeName {
 		case Container, Directory, File:
 			if outputPath != "" {
-				c.Select("export")
-				c.Arg("path", outputPath)
-				if name == File {
-					c.Arg("allowParentDirPath", true)
+				fc.Select("export")
+				fc.Arg("path", outputPath)
+				if typeName == File {
+					fc.Arg("allowParentDirPath", true)
 				}
 				return nil
 			}
-			c.Select("sync")
-		case Terminal:
-			c.Select("websocketEndpoint")
-		default:
-			return fmt.Errorf("return type %q requires a sub-command", name)
-		}
-		return nil
-	},
-	BeforeRequest: func(_ *FuncCommand, _ *cobra.Command, modType *modTypeDef) error {
-		if modType.Name() != Terminal {
-			return nil
 		}
 
-		// Even though these flags are global, we only check them just before query
-		// execution because you may want to debug an error during loading or for
-		// --help.
-		if silent || !(progress == "auto" && hasTTY || progress == "tty") {
-			return fmt.Errorf("running shell without the TUI is not supported")
+		// There's no fields in `Container` that trigger container execution so
+		// we use `sync` first to evaluate, and then load the new `Container`
+		// from that response before continuing.
+		if typeName == Container || typeName == Terminal {
+			var id string
+			fc.Select("sync")
+			if err := fc.Request(ctx, &id); err != nil {
+				return err
+			}
+			fc.q = fc.q.Root().Select(fmt.Sprintf("load%sFromID", typeName)).Arg("id", id)
 		}
-		if outputPath != "" {
-			return fmt.Errorf("running shell with --output is not supported")
+
+		// Add the object's name so we always have something to show.
+		responsePayload = make(map[string]any)
+		responsePayload["_type"] = typeName
+
+		names := make([]string, 0)
+		for _, f := range GetLeafFunctions(obj) {
+			names = append(names, f.Name)
 		}
+
+		if len(names) > 0 {
+			// FIXME: Consider adding a method to the query builder speficically
+			// for multiple selections to avoid this workaround. Even if there's
+			// just one field it helps to show the field's name, not just the
+			// value, and multiple selection allows it because it binds to the
+			// parent selection.
+			if len(names) == 1 {
+				names = append(names, "")
+			}
+
+			fc.Select(names...)
+		}
+
 		return nil
 	},
 	AfterResponse: func(c *FuncCommand, cmd *cobra.Command, modType *modTypeDef, response any) error {
 		switch modType.Name() {
-		case Terminal:
-			termEndpoint, ok := response.(string)
-			if !ok {
-				return fmt.Errorf("unexpected response %T: %+v", response, response)
-			}
-			return attachToShell(cmd.Context(), c.c, termEndpoint)
 		case Container, Directory, File:
 			if outputPath != "" {
-				logOutputSuccess(cmd, outputPath)
+				respPath, ok := response.(string)
+				if !ok {
+					return fmt.Errorf("unexpected response %T: %+v", response, response)
+				}
+				cmd.PrintErrf("Saved to %q.\n", respPath)
 				return nil
 			}
-
-			// Just `sync`, don't print the result (id), but let user know.
-
-			// TODO: This is only "needed" when there's no output because
-			// you're left wondering if the command did anything. Otherwise,
-			// the output is sent only to progrock (TUI), so we'd need to check
-			// there if possible. Decide whether this message is ok in all cases,
-			// better to not print it, or to conditionally check.
-			cmd.PrintErrf("%s evaluated. Use \"%s --help\" to see available sub-commands.\n", modType.Name(), cmd.CommandPath())
-			return nil
-		default:
-			// TODO: Since IDs aren't stable to be used in the CLI, we should
-			// silence all ID results (or present in a compact way like
-			// ´<ContainerID:etpdi9gue9l5>`), but need a KindScalar TypeDef
-			// to get the name from modType.
-			// You can't select `id`, but you can select `sync`, and there
-			// may be others.
-			buf := new(bytes.Buffer)
-
-			// especially useful for lists and maps
-			if jsonOutput {
-				// disable HTML escaping to improve readability
-				encoder := json.NewEncoder(buf)
-				encoder.SetEscapeHTML(false)
-				encoder.SetIndent("", "    ")
-				if err := encoder.Encode(response); err != nil {
-					return err
-				}
-			} else {
-				if err := printFunctionResult(buf, response); err != nil {
-					return err
-				}
-			}
-
-			if outputPath != "" {
-				if err := writeOutputFile(outputPath, buf); err != nil {
-					return fmt.Errorf("couldn't write output to file: %w", err)
-				}
-				logOutputSuccess(cmd, outputPath)
-			}
-
-			writer := cmd.OutOrStdout()
-			buf.WriteTo(writer)
-
-			// TODO(vito) right now when stdoutIsTTY we'll be printing to a Progrock
-			// vertex, which currently adds its own linebreak (as well as all the
-			// other UI clutter), so there's no point doing this. consider adding
-			// back when we switch to printing "clean" output on exit.
-			// if stdoutIsTTY && !strings.HasSuffix(buf.String(), "\n") {
-			// 	fmt.Fprintln(writer, "⏎")
-			// }
-
-			return nil
 		}
+
+		if responsePayload != nil {
+			r, err := addPayload(response, responsePayload)
+			if err != nil {
+				return err
+			}
+			response = r
+
+			// Use yaml when printing scalars because it's more human-readable
+			// and handles lists and multiline strings well.
+			if stdoutIsTTY {
+				outputFormat = "yaml"
+			} else {
+				outputFormat = "json"
+			}
+		}
+
+		if jsonOutput {
+			outputFormat = "json"
+		}
+
+		buf := new(bytes.Buffer)
+
+		switch outputFormat {
+		case "json":
+			// disable HTML escaping to improve readability
+			encoder := json.NewEncoder(buf)
+			encoder.SetEscapeHTML(false)
+			encoder.SetIndent("", "    ")
+			if err := encoder.Encode(response); err != nil {
+				return err
+			}
+		case "yaml":
+			out, err := yaml.Marshal(response)
+			if err != nil {
+				return err
+			}
+			if _, err := buf.Write(out); err != nil {
+				return err
+			}
+		case "":
+			if err := printFunctionResult(buf, response); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("wrong output format %q", outputFormat)
+		}
+
+		if outputPath != "" {
+			if err := writeOutputFile(outputPath, buf); err != nil {
+				return fmt.Errorf("couldn't write output to file: %w", err)
+			}
+			path, err := filepath.Abs(outputPath)
+			if err != nil {
+				// don't fail because at this point the output has been saved successfully
+				slog.Warn("Failed to get absolute path", "error", err)
+				path = outputPath
+			}
+			cmd.PrintErrf("Saved output to %q.\n", path)
+		}
+
+		writer := cmd.OutOrStdout()
+		buf.WriteTo(writer)
+
+		// TODO(vito) right now when stdoutIsTTY we'll be printing to a Progrock
+		// vertex, which currently adds its own linebreak (as well as all the
+		// other UI clutter), so there's no point doing this. consider adding
+		// back when we switch to printing "clean" output on exit.
+		// if stdoutIsTTY && !strings.HasSuffix(buf.String(), "\n") {
+		// 	fmt.Fprintln(writer, "⏎")
+		// }
+
+		return nil
 	},
+}
+
+// addPayload merges a map into a response from getting an object's values.
+func addPayload(response any, payload map[string]any) (any, error) {
+	switch t := response.(type) {
+	case []any:
+		r := make([]any, 0, len(t))
+		for _, v := range t {
+			p, err := addPayload(v, payload)
+			if err != nil {
+				return nil, err
+			}
+			r = append(r, p)
+		}
+		return r, nil
+	case map[string]any:
+		if len(t) == 0 {
+			return payload, nil
+		}
+		r := make(map[string]any, len(t)+len(payload))
+		for k, v := range t {
+			r[k] = v
+		}
+		for k, v := range responsePayload {
+			r[k] = v
+		}
+		return r, nil
+	default:
+		return nil, fmt.Errorf("unexpected response %T for object values: %+v", response, response)
+	}
 }
 
 // writeOutputFile writes the buffer to a file, creating the parent directories
@@ -154,21 +204,9 @@ func writeOutputFile(path string, buf *bytes.Buffer) error {
 	return os.WriteFile(path, buf.Bytes(), 0o644) //nolint: gosec
 }
 
-// logOutputSuccess prints to stderr the output path to the user.
-func logOutputSuccess(cmd *cobra.Command, path string) {
-	path, err := filepath.Abs(path)
-	if err != nil {
-		// don't fail because at this point the output has been saved successfully
-		cmd.PrintErrf("WARNING: failed to get absolute path: %s\n", err)
-		path = outputPath
-	}
-	cmd.PrintErrf("Saved output to %q.\n", path)
-}
-
 func printFunctionResult(w io.Writer, r any) error {
 	switch t := r.(type) {
 	case []any:
-		// TODO: group in progrock
 		for _, v := range t {
 			if err := printFunctionResult(w, v); err != nil {
 				return err

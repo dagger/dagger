@@ -20,13 +20,13 @@ jobs:
   publish:
     if: ${{ github.repository == 'dagger/dagger' && github.event_name == 'push' }}
     # Use our own Dagger runner when running in the dagger/dagger repo (including PRs)
-    runs-on: dagger-v0-11-6-16c-nvme
+    runs-on: dagger-v0-12-1-16c-nvme
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: "1.22"
-          cache-dependency-path: "ci/go.sum"
+          cache-dependency-path: "dev/go.sum"
       - name: "Publish Engine"
         uses: ./.github/actions/call
         with:
@@ -36,6 +36,7 @@ jobs:
             publish \
             --platform="linux/amd64" --platform="linux/arm64" \
             --image="$DAGGER_ENGINE_IMAGE" \
+            --tags="${{ github.ref_name}},${{ github.sha}}" \
             --registry="$DAGGER_ENGINE_IMAGE_REGISTRY" \
             --registry-username="$DAGGER_ENGINE_IMAGE_USERNAME" \
             --registry-password=env:DAGGER_ENGINE_IMAGE_PASSWORD
@@ -44,7 +45,7 @@ jobs:
           DAGGER_ENGINE_IMAGE_REGISTRY: ghcr.io
           DAGGER_ENGINE_IMAGE_USERNAME: ${{ github.actor }}
           DAGGER_ENGINE_IMAGE_PASSWORD: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
-      - name: "Publish Engine (GPU)"
+      - name: "Publish Engine - Ubuntu with NVIDIA variant"
         uses: ./.github/actions/call
         with:
           function: |
@@ -53,6 +54,43 @@ jobs:
             publish \
             --platform="linux/amd64" \
             --image="$DAGGER_ENGINE_IMAGE" \
+            --tags="${{ github.ref_name}}-gpu,${{ github.sha}}-gpu" \
+            --registry="$DAGGER_ENGINE_IMAGE_REGISTRY" \
+            --registry-username="$DAGGER_ENGINE_IMAGE_USERNAME" \
+            --registry-password=env:DAGGER_ENGINE_IMAGE_PASSWORD
+        env:
+          DAGGER_ENGINE_IMAGE: ${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}
+          DAGGER_ENGINE_IMAGE_REGISTRY: ghcr.io
+          DAGGER_ENGINE_IMAGE_USERNAME: ${{ github.actor }}
+          DAGGER_ENGINE_IMAGE_PASSWORD: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
+      - name: "Publish Engine - Wolfi variant"
+        uses: ./.github/actions/call
+        with:
+          function: |
+            --version="${{ github.ref_name == 'main' && github.sha || github.ref_name }}" \
+            engine with-base --image=wolfi \
+            publish \
+            --platform="linux/amd64" \
+            --image="$DAGGER_ENGINE_IMAGE" \
+            --tags="${{ github.ref_name}}-wolfi,${{ github.sha}}-wolfi" \
+            --registry="$DAGGER_ENGINE_IMAGE_REGISTRY" \
+            --registry-username="$DAGGER_ENGINE_IMAGE_USERNAME" \
+            --registry-password=env:DAGGER_ENGINE_IMAGE_PASSWORD
+        env:
+          DAGGER_ENGINE_IMAGE: ${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}
+          DAGGER_ENGINE_IMAGE_REGISTRY: ghcr.io
+          DAGGER_ENGINE_IMAGE_USERNAME: ${{ github.actor }}
+          DAGGER_ENGINE_IMAGE_PASSWORD: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
+      - name: "Publish Engine - Wolfi with NVIDIA variant"
+        uses: ./.github/actions/call
+        with:
+          function: |
+            --version="${{ github.ref_name == 'main' && github.sha || github.ref_name }}" \
+            engine with-base --image=wolfi --gpu-support=true \
+            publish \
+            --platform="linux/amd64" \
+            --image="$DAGGER_ENGINE_IMAGE" \
+            --tags="${{ github.ref_name}}-wolfi-gpu,${{ github.sha}}-wolfi-gpu" \
             --registry="$DAGGER_ENGINE_IMAGE_REGISTRY" \
             --registry-username="$DAGGER_ENGINE_IMAGE_USERNAME" \
             --registry-password=env:DAGGER_ENGINE_IMAGE_PASSWORD
@@ -90,7 +128,12 @@ jobs:
         if: github.ref_name != 'main'
         uses: ./.github/actions/call
         with:
-          function: sdk all bump --version="${{ github.ref_name == 'main' && github.sha || github.ref_name }}" -o ./
+          function: sdk all bump --version="${{ github.ref_name }}" -o ./
+      - name: "Set Engine version in Helm Chart"
+        if: github.ref_name != 'main'
+        uses: ./.github/actions/call
+        with:
+          function: helm set-version --version="${{ github.ref_name }}" -o ./helm/dagger/Chart.yaml
       - name: "Open SDK Engine Dependencies PR"
         uses: peter-evans/create-pull-request@v3
         if: github.ref_name != 'main'
@@ -107,6 +150,8 @@ jobs:
           delete-branch: true
           branch: bump-engine
           draft: true
+          token: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
+          push-to-fork: dagger-ci/dagger
       - name: "Notify"
         uses: ./.github/actions/notify
         if: github.ref_name != 'main'
@@ -115,7 +160,7 @@ jobs:
           discord-webhook: ${{ secrets.NEW_RELEASE_DISCORD_WEBHOOK }}
 
   scan-engine:
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-v0-11-6-dind' || 'ubuntu-latest' }}"
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-v0-12-1-4c-nvme' || 'ubuntu-latest' }}"
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -175,16 +220,13 @@ jobs:
           cd sdk/go
           go test -v -run TestProvision ./...
 
-      - uses: actions/setup-python@v4
+      - uses: yezz123/setup-uv@v4
         with:
-          python-version: "3.11"
-          cache: "pip"
-          cache-dependency-path: "sdk/python/requirements.txt"
+          uv-version: "0.2.27"
       - name: "Test Python SDK"
         run: |
           cd sdk/python
-          pip install -r requirements.txt .
-          pytest -xm provision
+          uv run pytest -xm provision
 
       - uses: actions/setup-node@v2
         with:
@@ -278,16 +320,13 @@ jobs:
             echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=${RUNNER_HOST}" >> $GITHUB_ENV
           fi
         shell: bash
-      - uses: actions/setup-python@v4
+      - uses: yezz123/setup-uv@v4
         with:
-          python-version: "3.11"
-          cache: "pip"
-          cache-dependency-path: "sdk/python/requirements.txt"
+          uv-version: "0.2.27"
       - name: "Test Python SDK"
         run: |
           cd sdk/python
-          pip install -r requirements.txt .
-          pytest -xm provision
+          uv run pytest -xm provision
       - name: "ALWAYS print engine logs - especially useful on failure"
         if: always()
         run: docker logs $(docker ps -q --filter name=dagger-engine)

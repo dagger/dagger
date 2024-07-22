@@ -2,13 +2,11 @@ package core
 
 import (
 	"context"
-	"crypto/hmac"
-	"encoding/hex"
+	"fmt"
 	"sync"
 
 	"github.com/moby/buildkit/session/secrets"
 	"github.com/opencontainers/go-digest"
-	"github.com/pkg/errors"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
@@ -16,32 +14,9 @@ import (
 type Secret struct {
 	Query *Query
 
-	// Name specifies the name of the secret.
-	Name string `json:"name,omitempty"`
-
-	// Accessor specifies the accessor key for the secret.
-	Accessor string `json:"accessor,omitempty"`
-}
-
-func GetLocalSecretAccessor(ctx context.Context, parent *Query, name string) (string, error) {
-	m, err := parent.CurrentModule(ctx)
-	if err != nil && !errors.Is(err, ErrNoCurrentModule) {
-		return "", err
-	}
-	var d digest.Digest
-	if m != nil {
-		d = m.Source.ID().Digest()
-	}
-	return NewSecretAccessor(name, d.String()), nil
-}
-
-func NewSecretAccessor(name string, scope string) string {
-	// Use an HMAC, which allows us to keep the scope secret
-	// This also protects from length-extension attacks (where if we had
-	// access to secret FOO in scope X, we could derive access to FOOBAR).
-	h := hmac.New(digest.SHA256.Hash, []byte(scope))
-	dt := h.Sum([]byte(name))
-	return hex.EncodeToString(dt)
+	// The digest of the DagQL ID that accessed this secret, used as its identifier
+	// in secret stores.
+	IDDigest digest.Digest
 }
 
 func (*Secret) Type() *ast.Type {
@@ -60,35 +35,108 @@ func (secret *Secret) Clone() *Secret {
 	return &cp
 }
 
+func (secret *Secret) LLBID() string {
+	return string(secret.IDDigest)
+}
+
+type SecretStore struct {
+	secrets map[digest.Digest]*storedSecret
+	mu      sync.RWMutex
+}
+
+// storedSecret has the actual metadata of the Secret. The Secret type is just it's key into the
+// SecretStore, which allows us to pass it around but still more easily enforce that any code that
+// wants to access it has to go through the SecretStore. So storedSecret has all the actual data
+// once you've asked for the secret from the store.
+type storedSecret struct {
+	*Secret
+
+	// The user-designated name of the secret.
+	Name string
+
+	// The plaintext value of the secret.
+	Plaintext []byte
+}
+
 func NewSecretStore() *SecretStore {
 	return &SecretStore{
-		secrets: map[string][]byte{},
+		secrets: map[digest.Digest]*storedSecret{},
 	}
 }
 
-var _ secrets.SecretStore = &SecretStore{}
+func (store *SecretStore) AddSecret(secret *Secret, name string, plaintext []byte) error {
+	if secret == nil {
+		return fmt.Errorf("secret must not be nil")
+	}
+	if secret.Query == nil {
+		return fmt.Errorf("secret must have a query")
+	}
+	if secret.IDDigest == "" {
+		return fmt.Errorf("secret must have an ID digest")
+	}
 
-type SecretStore struct {
-	mu      sync.Mutex
-	secrets map[string][]byte
-}
-
-// AddSecret adds the secret identified by user defined name with its plaintext
-// value to the secret store.
-func (store *SecretStore) AddSecret(ctx context.Context, name string, plaintext []byte) error {
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	store.secrets[name] = plaintext
+	store.secrets[secret.IDDigest] = &storedSecret{
+		Secret:    secret,
+		Name:      name,
+		Plaintext: plaintext,
+	}
 	return nil
 }
 
-// GetSecret returns the plaintext secret value for a user defined secret name.
-func (store *SecretStore) GetSecret(ctx context.Context, name string) ([]byte, error) {
-	store.mu.Lock()
-	defer store.mu.Unlock()
-	plaintext, ok := store.secrets[name]
+func (store *SecretStore) AddSecretFromOtherStore(secret *Secret, otherStore *SecretStore) error {
+	otherStore.mu.RLock()
+	secretVals, ok := otherStore.secrets[secret.IDDigest]
+	otherStore.mu.RUnlock()
 	if !ok {
-		return nil, errors.Wrapf(secrets.ErrNotFound, "secret %s", name)
+		return fmt.Errorf("secret %s not found in other store", secret.IDDigest)
+	}
+	return store.AddSecret(secret, secretVals.Name, secretVals.Plaintext)
+}
+
+func (store *SecretStore) HasSecret(idDgst digest.Digest) bool {
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	_, ok := store.secrets[idDgst]
+	return ok
+}
+
+func (store *SecretStore) GetSecretName(idDgst digest.Digest) (string, bool) {
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	secret, ok := store.secrets[idDgst]
+	if !ok {
+		return "", false
+	}
+	return secret.Name, true
+}
+
+func (store *SecretStore) GetSecretPlaintext(idDgst digest.Digest) ([]byte, bool) {
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	secret, ok := store.secrets[idDgst]
+	if !ok {
+		return nil, false
+	}
+	return secret.Plaintext, true
+}
+
+func (store *SecretStore) AsBuildkitSecretStore() secrets.SecretStore {
+	return &buildkitSecretStore{inner: store}
+}
+
+// adapts our SecretStore to the interface buildkit wants
+type buildkitSecretStore struct {
+	inner *SecretStore
+}
+
+var _ secrets.SecretStore = &buildkitSecretStore{}
+
+func (bkStore *buildkitSecretStore) GetSecret(_ context.Context, llbID string) ([]byte, error) {
+	plaintext, ok := bkStore.inner.GetSecretPlaintext(digest.Digest(llbID))
+	if !ok {
+		return nil, fmt.Errorf("secret %s: %w", llbID, secrets.ErrNotFound)
 	}
 	return plaintext, nil
 }

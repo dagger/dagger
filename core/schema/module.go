@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"golang.org/x/mod/semver"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/core"
@@ -71,7 +72,8 @@ func (s *moduleSchema) Install() {
 				parent directories to be loaded in order to execute. For example, the
 				module source code may need a go.mod, project.toml, package.json, etc.
 				file from a parent directory.`,
-				`If not set, the module source code is loaded from the root of the directory.`),
+				`If not set, the module source code is loaded from the root of the directory.`).
+			ArgDoc("engineVersion", `The engine version to upgrade to.`),
 	}.Install(s.dag)
 
 	dagql.Fields[*core.FunctionCall]{
@@ -135,7 +137,8 @@ func (s *moduleSchema) Install() {
 			Doc(`A human readable ref string representation of this module source.`),
 
 		dagql.NodeFunc("asModule", s.moduleSourceAsModule).
-			Doc(`Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation`),
+			Doc(`Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation`).
+			ArgDoc("engineVersion", `The engine version to upgrade to.`),
 
 		dagql.Func("resolveFromCaller", s.moduleSourceResolveFromCaller).
 			Impure(`Loads live caller-specific data from their filesystem.`).
@@ -183,7 +186,8 @@ func (s *moduleSchema) Install() {
 	dagql.Fields[*core.Module]{
 		dagql.Func("withSource", s.moduleWithSource).
 			Doc(`Retrieves the module with basic configuration loaded if present.`).
-			ArgDoc("source", `The module source to initialize from.`),
+			ArgDoc("source", `The module source to initialize from.`).
+			ArgDoc("engineVersion", `The engine version to upgrade to.`),
 
 		dagql.Func("generatedContextDiff", s.moduleGeneratedContextDiff).
 			Doc(`The generated files and directories made on top of the module source's context directory.`),
@@ -200,6 +204,9 @@ func (s *moduleSchema) Install() {
 
 		dagql.Func("withInterface", s.moduleWithInterface).
 			Doc(`This module plus the given Interface type and associated functions`),
+
+		dagql.Func("withEnum", s.moduleWithEnum).
+			Doc(`This module plus the given Enum type and associated values`),
 
 		dagql.NodeFunc("serve", s.moduleServe).
 			Impure(`Mutates the calling session's global schema.`).
@@ -277,6 +284,18 @@ func (s *moduleSchema) Install() {
 
 		dagql.Func("withConstructor", s.typeDefWithObjectConstructor).
 			Doc(`Adds a function for constructing a new instance of an Object TypeDef, failing if the type is not an object.`),
+
+		dagql.Func("withEnum", s.typeDefWithEnum).
+			Doc(`Returns a TypeDef of kind Enum with the provided name.`,
+				`Note that an enum's values may be omitted if the intent is only to refer to an enum.
+				This is how functions are able to return their own, or any other circular reference.`).
+			ArgDoc("name", `The name of the enum`).
+			ArgDoc("description", `A doc string for the enum, if any`),
+
+		dagql.Func("withEnumValue", s.typeDefWithEnumValue).
+			Doc(`Adds a static value for an Enum TypeDef, failing if the type is not an enum.`).
+			ArgDoc("value", `The name of the value in the enum`).
+			ArgDoc("description", `A doc string for the value, if any`),
 	}.Install(s.dag)
 
 	dagql.Fields[*core.ObjectTypeDef]{}.Install(s.dag)
@@ -285,6 +304,8 @@ func (s *moduleSchema) Install() {
 	dagql.Fields[*core.FieldTypeDef]{}.Install(s.dag)
 	dagql.Fields[*core.ListTypeDef]{}.Install(s.dag)
 	dagql.Fields[*core.ScalarTypeDef]{}.Install(s.dag)
+	dagql.Fields[*core.EnumTypeDef]{}.Install(s.dag)
+	dagql.Fields[*core.EnumValueTypeDef]{}.Install(s.dag)
 
 	dagql.Fields[*core.GeneratedCode]{
 		dagql.Func("withVCSGeneratedPaths", s.generatedCodeWithVCSGeneratedPaths).
@@ -382,6 +403,28 @@ func (s *moduleSchema) typeDefWithObjectConstructor(ctx context.Context, def *co
 	fn.Name = ""
 	fn.OriginalName = ""
 	return def.WithObjectConstructor(fn)
+}
+
+func (s *moduleSchema) typeDefWithEnum(ctx context.Context, def *core.TypeDef, args struct {
+	Name        string
+	Description string `default:""`
+}) (*core.TypeDef, error) {
+	if args.Name == "" {
+		return nil, fmt.Errorf("enum type def must have a name")
+	}
+
+	return def.WithEnum(args.Name, args.Description), nil
+}
+
+func (s *moduleSchema) typeDefWithEnumValue(ctx context.Context, def *core.TypeDef, args struct {
+	Value       string
+	Description string `default:""`
+}) (*core.TypeDef, error) {
+	if args.Value == "" {
+		return nil, fmt.Errorf("enum value must not be empty")
+	}
+
+	return def.WithEnumValue(args.Value, args.Description)
 }
 
 func (s *moduleSchema) generatedCode(ctx context.Context, _ *core.Query, args struct {
@@ -489,7 +532,8 @@ func (s *moduleSchema) currentTypeDefs(ctx context.Context, self *core.Query, _ 
 
 func (s *moduleSchema) functionCallReturnValue(ctx context.Context, fnCall *core.FunctionCall, args struct {
 	Value core.JSON
-}) (dagql.Nullable[core.Void], error) {
+},
+) (dagql.Nullable[core.Void], error) {
 	// TODO: error out if caller is not coming from a module
 	return dagql.Null[core.Void](), fnCall.ReturnValue(ctx, args.Value)
 }
@@ -518,6 +562,17 @@ func (s *moduleSchema) moduleWithInterface(ctx context.Context, mod *core.Module
 		return nil, err
 	}
 	return mod.WithInterface(ctx, def.Self)
+}
+
+func (s *moduleSchema) moduleWithEnum(ctx context.Context, mod *core.Module, args struct {
+	Enum core.TypeDefID
+}) (_ *core.Module, rerr error) {
+	def, err := args.Enum.Load(ctx, s.dag)
+	if err != nil {
+		return nil, err
+	}
+
+	return mod.WithEnum(ctx, def.Self)
 }
 
 func (s *moduleSchema) currentModuleName(
@@ -606,9 +661,15 @@ func (s *moduleSchema) currentModuleWorkdirFile(
 
 type directoryAsModuleArgs struct {
 	SourceRootPath string `default:"."`
+	EngineVersion  dagql.Optional[dagql.String]
 }
 
 func (s *moduleSchema) directoryAsModule(ctx context.Context, contextDir dagql.Instance[*core.Directory], args directoryAsModuleArgs) (*core.Module, error) {
+	asModuleInputs := []dagql.NamedInput{}
+	if args.EngineVersion.Valid {
+		asModuleInputs = append(asModuleInputs, dagql.NamedInput{Name: "engineVersion", Value: args.EngineVersion})
+	}
+
 	var inst dagql.Instance[*core.Module]
 	err := s.dag.Select(ctx, s.dag.Root(), &inst,
 		dagql.Selector{
@@ -625,6 +686,7 @@ func (s *moduleSchema) directoryAsModule(ctx context.Context, contextDir dagql.I
 		},
 		dagql.Selector{
 			Field: "asModule",
+			Args:  asModuleInputs,
 		},
 	)
 	if err != nil {
@@ -651,8 +713,10 @@ func (s *moduleSchema) moduleInitialize(
 }
 
 func (s *moduleSchema) moduleWithSource(ctx context.Context, mod *core.Module, args struct {
-	Source core.ModuleSourceID
-}) (*core.Module, error) {
+	Source        core.ModuleSourceID
+	EngineVersion dagql.Optional[dagql.String]
+},
+) (*core.Module, error) {
 	src, err := args.Source.Load(ctx, s.dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode module source: %w", err)
@@ -674,15 +738,25 @@ func (s *moduleSchema) moduleWithSource(ctx context.Context, mod *core.Module, a
 		return nil, fmt.Errorf("failed to get module SDK: %w", err)
 	}
 
-	if err := s.updateDeps(ctx, mod, src); err != nil {
+	modCfg, modCfgPath, err := s.updateDaggerConfig(ctx, string(args.EngineVersion.Value), mod, src)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update dagger.json: %w", err)
+	}
+	if err := engine.CheckVersionCompatibility(modCfg.EngineVersion, engine.MinimumModuleVersion); err != nil {
+		return nil, fmt.Errorf("module requires incompatible engine version: %w", err)
+	}
+	if err := engine.CheckVersionCompatibility(engine.Version, modCfg.EngineVersion); err != nil {
+		return nil, fmt.Errorf("module requires newer engine version: %w", err)
+	}
+	if err := s.updateDeps(ctx, mod, modCfg, src); err != nil {
 		return nil, fmt.Errorf("failed to update module dependencies: %w", err)
 	}
 	if err := s.updateCodegenAndRuntime(ctx, mod, src); err != nil {
 		return nil, fmt.Errorf("failed to update codegen and runtime: %w", err)
 	}
-	// update dagger.json last so SDKs can't intentionally or unintentionally
+	// write dagger.json last so SDKs can't intentionally or unintentionally
 	// modify it during codegen in ways that would be hard to deal with
-	if err := s.updateDaggerConfig(ctx, mod, src); err != nil {
+	if err := s.writeDaggerConfig(ctx, mod, modCfg, modCfgPath); err != nil {
 		return nil, fmt.Errorf("failed to update dagger.json: %w", err)
 	}
 
@@ -717,6 +791,7 @@ func (s *moduleSchema) moduleGeneratedContextDiff(
 func (s *moduleSchema) updateDeps(
 	ctx context.Context,
 	mod *core.Module,
+	modCfg *modules.ModuleConfig,
 	src dagql.Instance[*core.ModuleSource],
 ) error {
 	var deps []dagql.Instance[*core.ModuleDependency]
@@ -768,9 +843,68 @@ func (s *moduleSchema) updateDeps(
 		return fmt.Errorf("failed to initialize dependency modules: %w", err)
 	}
 
-	mod.Deps = core.NewModDeps(src.Self.Query, src.Self.Query.DefaultDeps.Mods)
+	defaultDeps, err := src.Self.Query.DefaultDeps(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get default dependencies: %w", err)
+	}
+	mod.Deps = core.NewModDeps(src.Self.Query, defaultDeps.Mods)
 	for _, dep := range mod.DependenciesField {
 		mod.Deps = mod.Deps.Append(dep.Self)
+	}
+
+	for i, depMod := range mod.Deps.Mods {
+		if coreMod, ok := depMod.(*CoreMod); ok {
+			// this is needed so that a module's dependency on the core
+			// uses the correct schema version
+			dag := *coreMod.Dag
+			engineVersion := modCfg.EngineVersion
+			if !semver.IsValid(engineVersion) {
+				engineVersion = ""
+			}
+			dag.View = engineVersion
+			mod.Deps.Mods[i] = &CoreMod{Dag: &dag}
+		}
+	}
+
+	sourceRootSubpath, err := src.Self.SourceRootSubpath()
+	if err != nil {
+		return fmt.Errorf("failed to get source root subpath: %w", err)
+	}
+
+	// keep the module config in sync
+	modCfg.Dependencies = make([]*modules.ModuleConfigDependency, len(mod.DependencyConfig))
+	for i, dep := range mod.DependencyConfig {
+		var srcStr string
+		switch dep.Source.Self.Kind {
+		case core.ModuleSourceKindLocal:
+			// make it relative to this module's source root
+			depRootSubpath, err := dep.Source.Self.SourceRootSubpath()
+			if err != nil {
+				return fmt.Errorf("failed to get source root subpath: %w", err)
+			}
+			depRelPath, err := filepath.Rel(sourceRootSubpath, depRootSubpath)
+			if err != nil {
+				return fmt.Errorf("failed to get relative path to dep: %w", err)
+			}
+			srcStr = depRelPath
+
+		case core.ModuleSourceKindGit:
+			srcStr = dep.Source.Self.AsGitSource.Value.RefString()
+
+		default:
+			return fmt.Errorf("unsupported dependency source kind: %s", dep.Source.Self.Kind)
+		}
+
+		depName := dep.Name
+		if dep.Name == "" {
+			// fill in default dep names if missing with the name of the module
+			depName = mod.DependenciesField[i].Self.Name()
+		}
+
+		modCfg.Dependencies[i] = &modules.ModuleConfigDependency{
+			Name:   depName,
+			Source: srcStr,
+		}
 	}
 
 	return nil
@@ -865,7 +999,7 @@ func (s *moduleSchema) updateCodegenAndRuntime(
 				Args: []dagql.NamedInput{
 					{Name: "path", Value: dagql.String(gitAttrsPath)},
 					{Name: "contents", Value: dagql.String(gitAttrsContents)},
-					{Name: "permissions", Value: dagql.Int(0600)},
+					{Name: "permissions", Value: dagql.Int(0o600)},
 				},
 			},
 		)
@@ -913,7 +1047,7 @@ func (s *moduleSchema) updateCodegenAndRuntime(
 				Args: []dagql.NamedInput{
 					{Name: "path", Value: dagql.String(gitIgnorePath)},
 					{Name: "contents", Value: dagql.String(gitIgnoreContents)},
-					{Name: "permissions", Value: dagql.Int(0600)},
+					{Name: "permissions", Value: dagql.Int(0o600)},
 				},
 			},
 		)
@@ -932,12 +1066,13 @@ func (s *moduleSchema) updateCodegenAndRuntime(
 
 func (s *moduleSchema) updateDaggerConfig(
 	ctx context.Context,
+	engineVersion string,
 	mod *core.Module,
 	src dagql.Instance[*core.ModuleSource],
-) error {
+) (*modules.ModuleConfig, string, error) {
 	modCfg, ok, err := src.Self.ModuleConfig(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get module config: %w", err)
+		return nil, "", fmt.Errorf("failed to get module config: %w", err)
 	}
 	if !ok {
 		modCfg = &modules.ModuleConfig{}
@@ -945,19 +1080,33 @@ func (s *moduleSchema) updateDaggerConfig(
 
 	modCfg.Name = mod.OriginalName
 	modCfg.SDK = mod.SDKConfig
-	modCfg.EngineVersion = engine.Version
+	switch engineVersion {
+	case modules.EngineVersionLatest:
+		modCfg.EngineVersion = engine.Version
+	case "":
+		engineVersion, err := src.Self.ModuleEngineVersion(ctx)
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to get module config: %w", err)
+		}
+		modCfg.EngineVersion = engineVersion
+		if modCfg.EngineVersion == "" {
+			modCfg.EngineVersion = engine.Version
+		}
+	default:
+		modCfg.EngineVersion = engineVersion
+	}
 
 	sourceRootSubpath, err := src.Self.SourceRootSubpath()
 	if err != nil {
-		return fmt.Errorf("failed to get source root subpath: %w", err)
+		return nil, "", fmt.Errorf("failed to get source root subpath: %w", err)
 	}
 	sourceSubpath, err := src.Self.SourceSubpathWithDefault(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get source subpath: %w", err)
+		return nil, "", fmt.Errorf("failed to get source subpath: %w", err)
 	}
 	sourceRelSubpath, err := filepath.Rel(sourceRootSubpath, sourceSubpath)
 	if err != nil {
-		return fmt.Errorf("failed to get relative source subpath: %w", err)
+		return nil, "", fmt.Errorf("failed to get relative source subpath: %w", err)
 	}
 	if sourceRelSubpath != "." {
 		modCfg.Source = sourceRelSubpath
@@ -965,7 +1114,7 @@ func (s *moduleSchema) updateDaggerConfig(
 
 	views, err := src.Self.Views(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get views: %w", err)
+		return nil, "", fmt.Errorf("failed to get views: %w", err)
 	}
 	modCfg.Views = nil
 	for _, view := range views {
@@ -975,47 +1124,21 @@ func (s *moduleSchema) updateDaggerConfig(
 		modCfg.Views = append(modCfg.Views, view.ModuleConfigView)
 	}
 
-	modCfg.Dependencies = make([]*modules.ModuleConfigDependency, len(mod.DependencyConfig))
-	for i, dep := range mod.DependencyConfig {
-		var srcStr string
-		switch dep.Source.Self.Kind {
-		case core.ModuleSourceKindLocal:
-			// make it relative to this module's source root
-			depRootSubpath, err := dep.Source.Self.SourceRootSubpath()
-			if err != nil {
-				return fmt.Errorf("failed to get source root subpath: %w", err)
-			}
-			depRelPath, err := filepath.Rel(sourceRootSubpath, depRootSubpath)
-			if err != nil {
-				return fmt.Errorf("failed to get relative path to dep: %w", err)
-			}
-			srcStr = depRelPath
-
-		case core.ModuleSourceKindGit:
-			srcStr = dep.Source.Self.AsGitSource.Value.RefString()
-
-		default:
-			return fmt.Errorf("unsupported dependency source kind: %s", dep.Source.Self.Kind)
-		}
-
-		depName := dep.Name
-		if dep.Name == "" {
-			// fill in default dep names if missing with the name of the module
-			depName = mod.DependenciesField[i].Self.Name()
-		}
-
-		modCfg.Dependencies[i] = &modules.ModuleConfigDependency{
-			Name:   depName,
-			Source: srcStr,
-		}
-	}
-
 	rootSubpath, err := src.Self.SourceRootSubpath()
 	if err != nil {
-		return fmt.Errorf("failed to get source root subpath: %w", err)
+		return nil, "", fmt.Errorf("failed to get source root subpath: %w", err)
 	}
 
 	modCfgPath := filepath.Join(rootSubpath, modules.Filename)
+	return modCfg, modCfgPath, nil
+}
+
+func (s *moduleSchema) writeDaggerConfig(
+	ctx context.Context,
+	mod *core.Module,
+	modCfg *modules.ModuleConfig,
+	modCfgPath string,
+) error {
 	updatedModCfgBytes, err := json.MarshalIndent(modCfg, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to encode module config: %w", err)
@@ -1038,7 +1161,7 @@ func (s *moduleSchema) updateDaggerConfig(
 			Args: []dagql.NamedInput{
 				{Name: "path", Value: dagql.String(modCfgPath)},
 				{Name: "contents", Value: dagql.String(updatedModCfgBytes)},
-				{Name: "permissions", Value: dagql.Int(0644)},
+				{Name: "permissions", Value: dagql.Int(0o644)},
 			},
 		},
 	)

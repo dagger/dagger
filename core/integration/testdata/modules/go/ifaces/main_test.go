@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"dagger/test/internal/dagger"
 )
 
 func TestIface(t *testing.T) {
@@ -14,7 +16,7 @@ func TestIface(t *testing.T) {
 	strs := []string{"a", "b"}
 	ints := []int{1, 2}
 	bools := []bool{true, false}
-	dirs := []*Directory{
+	dirs := []*dagger.Directory{
 		dag.Directory().WithNewFile("/file1", "file1"),
 		dag.Directory().WithNewFile("/file2", "file2"),
 	}
@@ -24,7 +26,7 @@ func TestIface(t *testing.T) {
 
 	t.Run("void", func(t *testing.T) {
 		t.Parallel()
-		_, err := test.Void(ctx, impl.AsTestCustomIface())
+		err := test.Void(ctx, impl.AsTestCustomIface())
 		require.NoError(t, err)
 	})
 
@@ -42,7 +44,7 @@ func TestIface(t *testing.T) {
 	})
 	t.Run("withOptionalPragmaStr", func(t *testing.T) {
 		t.Parallel()
-		str, err := test.WithOptionalPragmaStr(impl.AsTestCustomIface(), TestWithOptionalPragmaStrOpts{
+		str, err := test.WithOptionalPragmaStr(impl.AsTestCustomIface(), dagger.TestWithOptionalPragmaStrOpts{
 			StrArg: "d",
 		}).Str(ctx)
 		require.NoError(t, err)
@@ -114,6 +116,26 @@ func TestIface(t *testing.T) {
 		require.Equal(t, []bool{false, true}, bools)
 	})
 
+	t.Run("withMany", func(t *testing.T) {
+		t.Parallel()
+		iface := test.
+			WithStr(impl.AsTestCustomIface(), "c").
+			WithInt(3).
+			WithBool(true)
+
+		str, err := iface.Str(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "c", str)
+
+		i, err := iface.Int(ctx)
+		require.NoError(t, err)
+		require.Equal(t, 3, i)
+
+		b, err := iface.Bool(ctx)
+		require.NoError(t, err)
+		require.Equal(t, true, b)
+	})
+
 	t.Run("obj", func(t *testing.T) {
 		t.Parallel()
 		dir := test.Obj(impl.AsTestCustomIface())
@@ -142,7 +164,7 @@ func TestIface(t *testing.T) {
 	})
 	t.Run("withObjList", func(t *testing.T) {
 		t.Parallel()
-		dirs, err := test.WithObjList(impl.AsTestCustomIface(), []*Directory{
+		dirs, err := test.WithObjList(impl.AsTestCustomIface(), []*dagger.Directory{
 			dag.Directory().WithNewFile("/file3", "file3"),
 			dag.Directory().WithNewFile("/file4", "file4"),
 		}).ObjList(ctx)
@@ -247,11 +269,11 @@ func TestIface(t *testing.T) {
 	t.Run("ifaceListArgs", func(t *testing.T) {
 		t.Parallel()
 		strs, err := test.IfaceListArgs(ctx,
-			[]*TestCustomIface{
+			[]*dagger.TestCustomIface{
 				impl.AsTestCustomIface(),
 				impl.SelfIface().AsTestCustomIface(),
 			},
-			[]*TestOtherIface{
+			[]*dagger.TestOtherIface{
 				impl.OtherIface().AsTestOtherIface(),
 				impl.SelfIface().OtherIface().AsTestOtherIface(),
 			},
@@ -266,12 +288,12 @@ func TestIface(t *testing.T) {
 			t.Parallel()
 			strs, err := test.
 				WithIface(impl.AsTestCustomIface()).
-				WithPrivateIface(dag.Impl([]string{"private"}, []int{99}, []bool{false}, []*Directory{dag.Directory()}).AsTestCustomIface()).
-				WithIfaceList([]*TestCustomIface{
+				WithPrivateIface(dag.Impl([]string{"private"}, []int{99}, []bool{false}, []*dagger.Directory{dag.Directory()}).AsTestCustomIface()).
+				WithIfaceList([]*dagger.TestCustomIface{
 					impl.AsTestCustomIface(),
 					impl.SelfIface().AsTestCustomIface(),
 				}).
-				WithOtherIfaceList([]*TestOtherIface{
+				WithOtherIfaceList([]*dagger.TestOtherIface{
 					impl.OtherIface().AsTestOtherIface(),
 					impl.SelfIface().OtherIface().AsTestOtherIface(),
 				}).
@@ -283,7 +305,7 @@ func TestIface(t *testing.T) {
 			t.Parallel()
 			strs, err := test.
 				WithOptionalPragmaIface().
-				WithOptionalPragmaIface(TestWithOptionalPragmaIfaceOpts{Iface: impl.AsTestCustomIface()}).
+				WithOptionalPragmaIface(dagger.TestWithOptionalPragmaIfaceOpts{Iface: impl.AsTestCustomIface()}).
 				WithOptionalPragmaIface().
 				ParentIfaceFields(ctx)
 			require.NoError(t, err)
@@ -294,11 +316,11 @@ func TestIface(t *testing.T) {
 	t.Run("returnCustomObj", func(t *testing.T) {
 		t.Parallel()
 		customObj := test.ReturnCustomObj(
-			[]*TestCustomIface{
+			[]*dagger.TestCustomIface{
 				impl.AsTestCustomIface(),
 				impl.SelfIface().AsTestCustomIface(),
 			},
-			[]*TestOtherIface{
+			[]*dagger.TestOtherIface{
 				impl.OtherIface().AsTestOtherIface(),
 				impl.SelfIface().OtherIface().AsTestOtherIface(),
 			},

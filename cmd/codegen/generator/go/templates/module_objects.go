@@ -72,15 +72,21 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 	}
 
 	// get the comment above the struct (if any)
-	astSpec, err := ps.astSpecForNamedType(named)
+	astSpec, err := ps.astSpecForObj(named.Obj())
 	if err != nil {
 		return nil, fmt.Errorf("failed to find decl for named type %s: %w", spec.name, err)
 	}
-	spec.doc = astSpec.Doc.Text()
+	if doc := docForAstSpec(astSpec); doc != nil {
+		spec.doc = doc.Text()
+	}
 
-	astStructType, ok := astSpec.Type.(*ast.StructType)
+	astTypeSpec, ok := astSpec.(*ast.TypeSpec)
 	if !ok {
-		return nil, fmt.Errorf("expected type spec to be a struct, got %T", astSpec.Type)
+		return nil, fmt.Errorf("expected type spec, got %T", astSpec)
+	}
+	astStructType, ok := astTypeSpec.Type.(*ast.StructType)
+	if !ok {
+		return nil, fmt.Errorf("expected type spec to be a struct, got %T", astTypeSpec.Type)
 	}
 
 	// Fill out the static fields of the struct (if any)
@@ -166,7 +172,7 @@ func (spec *parsedObjectType) TypeDefCode() (*Statement, error) {
 		withObjectOptsCode = append(withObjectOptsCode, Id("Description").Op(":").Lit(strings.TrimSpace(spec.doc)))
 	}
 	if len(withObjectOptsCode) > 0 {
-		withObjectArgsCode = append(withObjectArgsCode, Id("TypeDefWithObjectOpts").Values(withObjectOptsCode...))
+		withObjectArgsCode = append(withObjectArgsCode, Id("dagger").Dot("TypeDefWithObjectOpts").Values(withObjectOptsCode...))
 	}
 
 	typeDefCode := Qual("dag", "TypeDef").Call().Dot("WithObject").Call(withObjectArgsCode...)
@@ -194,7 +200,7 @@ func (spec *parsedObjectType) TypeDefCode() (*Statement, error) {
 		}
 		if field.doc != "" {
 			withFieldArgsCode = append(withFieldArgsCode,
-				Id("TypeDefWithFieldOpts").Values(
+				Id("dagger").Dot("TypeDefWithFieldOpts").Values(
 					Id("Description").Op(":").Lit(field.doc),
 				))
 		}
@@ -411,8 +417,20 @@ func (spec *parsedObjectType) concreteFieldTypeCode(typeSpec ParsedType) (*State
 			s.Op("*")
 		}
 		if typeSpec.alias != "" {
-			s.Id(typeSpec.alias)
+			if typeSpec.moduleName == "" {
+				s.Id("dagger." + typeSpec.alias)
+			} else {
+				s.Id(typeSpec.alias)
+			}
 		} else {
+			tp := typeSpec.GoType()
+			if basic, ok := tp.(*types.Basic); ok {
+				if basic.Kind() == types.Invalid {
+					s.Id("any")
+					break
+				}
+			}
+
 			s.Id(typeSpec.GoType().String())
 		}
 
@@ -427,10 +445,10 @@ func (spec *parsedObjectType) concreteFieldTypeCode(typeSpec ParsedType) (*State
 		if typeSpec.isPtr {
 			s.Op("*")
 		}
-		s.Id(typeSpec.name)
+		s.Id(typeName(typeSpec))
 
 	case *parsedIfaceTypeReference:
-		s.Op("*").Id(formatIfaceImplName(typeSpec.name))
+		s.Op("*").Id(formatIfaceImplName(typeName(typeSpec)))
 
 	default:
 		return nil, fmt.Errorf("unsupported concrete field type %T", typeSpec)

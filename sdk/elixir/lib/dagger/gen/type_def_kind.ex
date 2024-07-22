@@ -12,6 +12,7 @@ defmodule Dagger.TypeDefKind do
           | :INTERFACE_KIND
           | :INPUT_KIND
           | :VOID_KIND
+          | :ENUM_KIND
 
   @doc "A string value."
   @spec string_kind() :: :STRING_KIND
@@ -64,4 +65,12 @@ defmodule Dagger.TypeDefKind do
   """
   @spec void_kind() :: :VOID_KIND
   def void_kind(), do: :VOID_KIND
+
+  @doc """
+  A GraphQL enum type and its values
+
+  Always paired with an EnumTypeDef.
+  """
+  @spec enum_kind() :: :ENUM_KIND
+  def enum_kind(), do: :ENUM_KIND
 end

@@ -10,7 +10,7 @@ class HelloDagger:
     async def publish(self, source: dagger.Directory) -> str:
         """Publish the application container after building and testing it on-the-fly"""
         # call Dagger Function to run unit tests
-        self.test(source)
+        await self.test(source)
         # call Dagger Function to build the application image
         # publish the image to ttl.sh
         return await self.build(source).publish(

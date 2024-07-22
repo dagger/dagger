@@ -1,4 +1,5 @@
 """An example exposing Dagger Functions for object attributes."""
+
 from typing import Annotated
 
 from dagger import Doc, field, function, object_type

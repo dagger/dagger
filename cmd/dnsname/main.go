@@ -120,7 +120,12 @@ func cmdDel(args *skel.CmdArgs) error {
 }
 
 func main() {
-	skel.PluginMain(cmdAdd, cmdCheck, cmdDel, version.All, getVersion())
+	cniFuncs := skel.CNIFuncs{
+		Add:   cmdAdd,
+		Check: cmdCheck,
+		Del:   cmdDel,
+	}
+	skel.PluginMainFuncs(cniFuncs, version.All, getVersion())
 }
 
 func cmdCheck(args *skel.CmdArgs) error {

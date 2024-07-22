@@ -3,13 +3,13 @@ package idtui
 import (
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
 	"github.com/a-h/templ"
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 )
@@ -17,16 +17,27 @@ import (
 type Span struct {
 	sdktrace.ReadOnlySpan
 
-	Digest string
+	ParentSpan *Span
+	ChildSpans []*Span
 
-	Call *callpbv1.Call
+	ID trace.SpanID
+
+	IsSelfRunning bool
+
+	Digest string
+	Call   *callpbv1.Call
+	Base   *callpbv1.Call
 
 	Internal bool
 	Cached   bool
 	Canceled bool
-	Inputs   []string
+	EffectID string
 
-	Primary      bool
+	Inputs         []string
+	Effects        []string
+	RunningEffects map[string]*Span
+	FailedEffects  map[string]*Span
+
 	Encapsulate  bool
 	Encapsulated bool
 	Mask         bool
@@ -37,23 +48,18 @@ type Span struct {
 	trace *Trace
 }
 
-func (span *Span) Base() (*callpbv1.Call, bool) {
-	if span.Call == nil {
-		return nil, false
-	}
-	if span.Call.ReceiverDigest == "" {
-		return nil, false
-	}
-	call, ok := span.db.Calls[span.Call.ReceiverDigest]
-	if !ok {
-		return nil, false
-	}
-	return span.db.Simplify(call, span.Internal), true
+func (span *Span) IsRunning() bool {
+	return span.IsSelfRunning || len(span.RunningEffects) > 0
 }
 
-func (span *Span) IsRunning() bool {
-	inner := span.ReadOnlySpan
-	return inner.EndTime().Before(inner.StartTime())
+func (span *Span) HasParent(parent *Span) bool {
+	if span.ParentSpan == nil {
+		return false
+	}
+	if span.ParentSpan == parent {
+		return true
+	}
+	return span.ParentSpan.HasParent(parent)
 }
 
 func (span *Span) Name() string {
@@ -71,6 +77,28 @@ func (span *Span) Name() string {
 // 	return nil
 // }
 
+func (span *Span) ChildrenAndEffects() []*Span {
+	var children []*Span
+	children = append(children, span.ChildSpans...)
+	children = append(children, span.EffectSpans()...)
+	return children
+}
+
+func (span *Span) EffectSpans() []*Span {
+	var effects []*Span
+	for _, e := range span.Effects {
+		if s, ok := span.db.Effects[e]; ok {
+			effects = append(effects, s)
+		}
+	}
+	return effects
+}
+
+func (span *Span) Failed() bool {
+	return span.Status().Code == codes.Error ||
+		len(span.FailedEffects) > 0
+}
+
 func (span *Span) Err() error {
 	status := span.Status()
 	if status.Code == codes.Error {
@@ -83,43 +111,70 @@ func (span *Span) IsInternal() bool {
 	return span.Internal
 }
 
-func (span *Span) Duration() time.Duration {
-	inner := span.ReadOnlySpan
-	var dur time.Duration
-	if span.IsRunning() {
-		dur = time.Since(inner.StartTime())
-	} else {
-		dur = inner.EndTime().Sub(inner.StartTime())
-	}
-	return dur
+type SpanActivity struct {
+	Duration time.Duration
+	Min      time.Time
+	Max      time.Time
 }
 
-func (span *Span) EndTime() time.Time {
+func (span *Span) SelfDuration(fallbackEnd time.Time) time.Duration {
 	if span.IsRunning() {
-		return time.Now()
+		return fallbackEnd.Sub(span.StartTime())
+	}
+	return span.EndTimeOrFallback(fallbackEnd).Sub(span.StartTime())
+}
+
+func (span *Span) ActiveDuration(fallbackEnd time.Time) time.Duration {
+	facts := SpanActivity{
+		Min: span.StartTime(),
+		Max: span.EndTimeOrFallback(fallbackEnd),
+	}
+	facts.Duration = facts.Max.Sub(span.StartTime())
+
+	currentEnd := facts.Max
+
+	for _, effect := range span.EffectSpans() {
+		start := effect.StartTime()
+		end := effect.EndTimeOrFallback(fallbackEnd)
+		duration := end.Sub(start)
+
+		if start.Before(facts.Min) {
+			facts.Min = start
+		}
+		if end.After(facts.Max) {
+			facts.Max = end
+		}
+
+		if start.Before(currentEnd) {
+			// If we started before the last completion, the only case we care about
+			// is if we exceed past it.
+			if end.After(currentEnd) {
+				facts.Duration += end.Sub(currentEnd)
+				currentEnd = end
+			}
+		} else {
+			// Started after the last completion, so we just add the duration.
+			facts.Duration += duration
+			currentEnd = end
+		}
+	}
+
+	return facts.Duration
+}
+
+func (span *Span) EndTimeOrFallback(fallbackEnd time.Time) time.Time {
+	if span.IsRunning() {
+		return fallbackEnd
 	}
 	return span.ReadOnlySpan.EndTime()
 }
 
-func (span *Span) IsBefore(other *Span) bool {
-	return span.StartTime().Before(other.StartTime())
+func (span *Span) EndTime() time.Time {
+	return span.EndTimeOrFallback(time.Now())
 }
 
-func (span *Span) Children() []*Span {
-	children := []*Span{}
-	for childID := range span.db.Children[span.SpanContext().SpanID()] {
-		child, ok := span.db.Spans[childID]
-		if !ok {
-			continue
-		}
-		if !child.Ignore {
-			children = append(children, child)
-		}
-	}
-	sort.Slice(children, func(i, j int) bool {
-		return children[i].IsBefore(children[j])
-	})
-	return children
+func (span *Span) IsBefore(other *Span) bool {
+	return span.StartTime().Before(other.StartTime())
 }
 
 type SpanBar struct {

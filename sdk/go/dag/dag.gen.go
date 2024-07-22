@@ -58,12 +58,6 @@ func CacheVolume(key string) *dagger.CacheVolume {
 	return client.CacheVolume(key)
 }
 
-// Checks if the current Dagger Engine is compatible with an SDK's required version.
-func CheckVersionCompatibility(ctx context.Context, version string) (bool, error) {
-	client := initClient()
-	return client.CheckVersionCompatibility(ctx, version)
-}
-
 // Creates a scratch container.
 //
 // Optional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.
@@ -92,6 +86,12 @@ func CurrentTypeDefs(ctx context.Context) ([]dagger.TypeDef, error) {
 	return client.CurrentTypeDefs(ctx)
 }
 
+// The Dagger engine container configuration and state
+func DaggerEngine() *dagger.DaggerEngine {
+	client := initClient()
+	return client.DaggerEngine()
+}
+
 // The default platform of the engine.
 func DefaultPlatform(ctx context.Context) (dagger.Platform, error) {
 	client := initClient()
@@ -99,15 +99,9 @@ func DefaultPlatform(ctx context.Context) (dagger.Platform, error) {
 }
 
 // Creates an empty directory.
-func Directory(opts ...dagger.DirectoryOpts) *dagger.Directory {
+func Directory() *dagger.Directory {
 	client := initClient()
-	return client.Directory(opts...)
-}
-
-// Deprecated: Use LoadFileFromID instead.
-func File(id dagger.FileID) *dagger.File {
-	client := initClient()
-	return client.File(id)
+	return client.Directory()
 }
 
 // Creates a function.
@@ -158,10 +152,46 @@ func LoadCurrentModuleFromID(id dagger.CurrentModuleID) *dagger.CurrentModule {
 	return client.LoadCurrentModuleFromID(id)
 }
 
+// Load a DaggerEngineCacheEntry from its ID.
+func LoadDaggerEngineCacheEntryFromID(id dagger.DaggerEngineCacheEntryID) *dagger.DaggerEngineCacheEntry {
+	client := initClient()
+	return client.LoadDaggerEngineCacheEntryFromID(id)
+}
+
+// Load a DaggerEngineCacheEntrySet from its ID.
+func LoadDaggerEngineCacheEntrySetFromID(id dagger.DaggerEngineCacheEntrySetID) *dagger.DaggerEngineCacheEntrySet {
+	client := initClient()
+	return client.LoadDaggerEngineCacheEntrySetFromID(id)
+}
+
+// Load a DaggerEngineCache from its ID.
+func LoadDaggerEngineCacheFromID(id dagger.DaggerEngineCacheID) *dagger.DaggerEngineCache {
+	client := initClient()
+	return client.LoadDaggerEngineCacheFromID(id)
+}
+
+// Load a DaggerEngine from its ID.
+func LoadDaggerEngineFromID(id dagger.DaggerEngineID) *dagger.DaggerEngine {
+	client := initClient()
+	return client.LoadDaggerEngineFromID(id)
+}
+
 // Load a Directory from its ID.
 func LoadDirectoryFromID(id dagger.DirectoryID) *dagger.Directory {
 	client := initClient()
 	return client.LoadDirectoryFromID(id)
+}
+
+// Load a EnumTypeDef from its ID.
+func LoadEnumTypeDefFromID(id dagger.EnumTypeDefID) *dagger.EnumTypeDef {
+	client := initClient()
+	return client.LoadEnumTypeDefFromID(id)
+}
+
+// Load a EnumValueTypeDef from its ID.
+func LoadEnumValueTypeDefFromID(id dagger.EnumValueTypeDefID) *dagger.EnumValueTypeDef {
+	client := initClient()
+	return client.LoadEnumValueTypeDefFromID(id)
 }
 
 // Load a EnvVariable from its ID.
@@ -374,14 +404,6 @@ func Secret(name string, opts ...dagger.SecretOpts) *dagger.Secret {
 func SetSecret(name string, plaintext string) *dagger.Secret {
 	client := initClient()
 	return client.SetSecret(name, plaintext)
-}
-
-// Loads a socket by its ID.
-//
-// Deprecated: Use LoadSocketFromID instead.
-func Socket(id dagger.SocketID) *dagger.Socket {
-	client := initClient()
-	return client.Socket(id)
 }
 
 // Create a new TypeDef.

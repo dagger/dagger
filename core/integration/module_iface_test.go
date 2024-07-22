@@ -1,18 +1,17 @@
 package core
 
 import (
+	"context"
 	"strings"
-	"testing"
 
+	"github.com/dagger/dagger/testctx"
 	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"
 )
 
-func TestModuleIfaceBasic(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ModuleSuite) TestIfaceBasic(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	_, err := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -23,20 +22,16 @@ func TestModuleIfaceBasic(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestModuleIfaceGoSadPaths(t *testing.T) {
-	t.Parallel()
-
-	t.Run("no dagger object embed", func(t *testing.T) {
-		t.Parallel()
+func (ModuleSuite) TestIfaceGoSadPaths(ctx context.Context, t *testctx.T) {
+	t.Run("no dagger object embed", func(ctx context.Context, t *testctx.T) {
 		var logs safeBuffer
-		c, ctx := connect(t, dagger.WithLogOutput(&logs))
+		c := connect(ctx, t, dagger.WithLogOutput(&logs))
 
 		_, err := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-			WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-				Contents: `package main
+			WithNewFile("main.go", `package main
 type Test struct {}
 
 type BadIface interface {
@@ -47,7 +42,7 @@ func (m *Test) Fn() BadIface {
 	return nil
 }
 	`,
-			}).
+			).
 			With(daggerFunctions()).
 			Sync(ctx)
 		require.Error(t, err)
@@ -56,17 +51,14 @@ func (m *Test) Fn() BadIface {
 	})
 }
 
-func TestModuleIfaceGoDanglingInterface(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ModuleSuite) TestIfaceGoDanglingInterface(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	modGen, err := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work").
 		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-			Contents: `package main
+		WithNewFile("main.go", `package main
 type Test struct {}
 
 func (test *Test) Hello() string {
@@ -83,7 +75,7 @@ type DanglingIface interface {
 	DoThing() (error)
 }
 	`,
-		}).
+		).
 		Sync(ctx)
 	require.NoError(t, err)
 
@@ -94,28 +86,24 @@ type DanglingIface interface {
 	require.JSONEq(t, `{"test":{"hello":"hello"}}`, out)
 }
 
-func TestModuleIfaceDaggerCall(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ModuleSuite) TestIfaceDaggerCall(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	out, err := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work/mallard").
 		With(daggerExec("init", "--source=.", "--name=mallard", "--sdk=go")).
-		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-			Contents: `package main
+		WithNewFile("main.go", `package main
 type Mallard struct {}
 
 func (m *Mallard) Quack() string {
 	return "mallard quack"
 }
 	`,
-		}).
+		).
 		WithWorkdir("/work").
 		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
-		WithNewFile("main.go", dagger.ContainerWithNewFileOpts{
-			Contents: `package main
+		WithNewFile("main.go", `package main
 
 import (
 	"context"
@@ -132,7 +120,7 @@ func (m *Test) GetDuck() Duck {
 	return dag.Mallard()
 }
 	`,
-		}).
+		).
 		With(daggerExec("install", "./mallard")).
 		With(daggerCall("get-duck", "quack")).
 		Stdout(ctx)

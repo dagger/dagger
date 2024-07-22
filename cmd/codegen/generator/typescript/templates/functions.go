@@ -12,40 +12,43 @@ import (
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 )
 
-var (
-	commonFunc = generator.NewCommonFunctions(&FormatTypeFunc{})
-	funcMap    = template.FuncMap{
-		"CommentToLines":      commentToLines,
-		"FormatDeprecation":   formatDeprecation,
-		"FormatReturnType":    commonFunc.FormatReturnType,
-		"FormatInputType":     commonFunc.FormatInputType,
-		"FormatOutputType":    commonFunc.FormatOutputType,
-		"FormatEnum":          formatEnum,
-		"FormatName":          formatName,
-		"QueryToClient":       queryToClient,
-		"GetOptionalArgs":     getOptionalArgs,
-		"GetRequiredArgs":     getRequiredArgs,
-		"HasPrefix":           strings.HasPrefix,
-		"PascalCase":          pascalCase,
-		"IsArgOptional":       isArgOptional,
-		"IsCustomScalar":      isCustomScalar,
-		"IsEnum":              isEnum,
-		"IsKeyword":           isKeyword,
-		"ArgsHaveDescription": argsHaveDescription,
-		"SortInputFields":     sortInputFields,
-		"SortEnumFields":      sortEnumFields,
-		"Solve":               solve,
-		"Subtract":            subtract,
-		"ConvertID":           commonFunc.ConvertID,
-		"IsSelfChainable":     commonFunc.IsSelfChainable,
-		"IsListOfObject":      commonFunc.IsListOfObject,
-		"GetArrayField":       commonFunc.GetArrayField,
-		"ToLowerCase":         commonFunc.ToLowerCase,
-		"ToUpperCase":         commonFunc.ToUpperCase,
-		"ToSingleType":        toSingleType,
-		"GetEnumValues":       getEnumValues,
+func TypescriptTemplateFuncs(
+	schemaVersion string,
+) template.FuncMap {
+	commonFunc := generator.NewCommonFunctions(schemaVersion, &FormatTypeFunc{})
+	return template.FuncMap{
+		"CommentToLines":            commentToLines,
+		"FormatDeprecation":         formatDeprecation,
+		"FormatReturnType":          commonFunc.FormatReturnType,
+		"FormatInputType":           commonFunc.FormatInputType,
+		"FormatOutputType":          commonFunc.FormatOutputType,
+		"FormatEnum":                formatEnum,
+		"FormatName":                formatName,
+		"QueryToClient":             queryToClient,
+		"GetOptionalArgs":           getOptionalArgs,
+		"GetRequiredArgs":           getRequiredArgs,
+		"HasPrefix":                 strings.HasPrefix,
+		"PascalCase":                pascalCase,
+		"IsArgOptional":             isArgOptional,
+		"IsCustomScalar":            isCustomScalar,
+		"IsEnum":                    isEnum,
+		"IsKeyword":                 isKeyword,
+		"ArgsHaveDescription":       argsHaveDescription,
+		"SortInputFields":           sortInputFields,
+		"SortEnumFields":            sortEnumFields,
+		"Solve":                     solve,
+		"Subtract":                  subtract,
+		"ConvertID":                 commonFunc.ConvertID,
+		"IsSelfChainable":           commonFunc.IsSelfChainable,
+		"IsListOfObject":            commonFunc.IsListOfObject,
+		"GetArrayField":             commonFunc.GetArrayField,
+		"ToLowerCase":               commonFunc.ToLowerCase,
+		"ToUpperCase":               commonFunc.ToUpperCase,
+		"ToSingleType":              toSingleType,
+		"GetEnumValues":             getEnumValues,
+		"CheckVersionCompatibility": commonFunc.CheckVersionCompatibility,
 	}
-)
+}
 
 // pascalCase change a type name into pascalCase
 func pascalCase(name string) string {

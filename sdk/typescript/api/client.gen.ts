@@ -267,9 +267,14 @@ export type ContainerWithEnvVariableOpts = {
 
 export type ContainerWithExecOpts = {
   /**
-   * If the container has an entrypoint, ignore it for args rather than using it to wrap them.
+   * DEPRECATED: For true this can be removed. For false, use `useEntrypoint` instead.
    */
   skipEntrypoint?: boolean
+
+  /**
+   * If the container has an entrypoint, prepend it to the args.
+   */
+  useEntrypoint?: boolean
 
   /**
    * Content to write to the command's standard input before closing (e.g., "Hello world").
@@ -413,11 +418,6 @@ export type ContainerWithMountedSecretOpts = {
 
 export type ContainerWithNewFileOpts = {
   /**
-   * Content of the file to write (e.g., "Hello world!").
-   */
-  contents?: string
-
-  /**
    * Permission given to the written file (e.g., 0600).
    */
   permissions?: number
@@ -479,6 +479,30 @@ export type CurrentModuleWorkdirOpts = {
  */
 export type CurrentModuleID = string & { __CurrentModuleID: never }
 
+/**
+ * The `DaggerEngineCacheEntryID` scalar type represents an identifier for an object of type DaggerEngineCacheEntry.
+ */
+export type DaggerEngineCacheEntryID = string & {
+  __DaggerEngineCacheEntryID: never
+}
+
+/**
+ * The `DaggerEngineCacheEntrySetID` scalar type represents an identifier for an object of type DaggerEngineCacheEntrySet.
+ */
+export type DaggerEngineCacheEntrySetID = string & {
+  __DaggerEngineCacheEntrySetID: never
+}
+
+/**
+ * The `DaggerEngineCacheID` scalar type represents an identifier for an object of type DaggerEngineCache.
+ */
+export type DaggerEngineCacheID = string & { __DaggerEngineCacheID: never }
+
+/**
+ * The `DaggerEngineID` scalar type represents an identifier for an object of type DaggerEngine.
+ */
+export type DaggerEngineID = string & { __DaggerEngineID: never }
+
 export type DirectoryAsModuleOpts = {
   /**
    * An optional subpath of the directory which contains the module's configuration file.
@@ -488,6 +512,11 @@ export type DirectoryAsModuleOpts = {
    * If not set, the module source code is loaded from the root of the directory.
    */
   sourceRootPath?: string
+
+  /**
+   * The engine version to upgrade to.
+   */
+  engineVersion?: string
 }
 
 export type DirectoryDockerBuildOpts = {
@@ -545,6 +574,30 @@ export type DirectoryPipelineOpts = {
   labels?: PipelineLabel[]
 }
 
+export type DirectoryTerminalOpts = {
+  /**
+   * If set, override the container's default terminal command and invoke these command arguments instead.
+   */
+  cmd?: string[]
+
+  /**
+   * Provides Dagger access to the executed command.
+   *
+   * Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
+   */
+  experimentalPrivilegedNesting?: boolean
+
+  /**
+   * Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
+   */
+  insecureRootCapabilities?: boolean
+
+  /**
+   * If set, override the default container used for the terminal.
+   */
+  container?: Container
+}
+
 export type DirectoryWithDirectoryOpts = {
   /**
    * Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
@@ -589,6 +642,16 @@ export type DirectoryWithNewFileOpts = {
  * The `DirectoryID` scalar type represents an identifier for an object of type Directory.
  */
 export type DirectoryID = string & { __DirectoryID: never }
+
+/**
+ * The `EnumTypeDefID` scalar type represents an identifier for an object of type EnumTypeDef.
+ */
+export type EnumTypeDefID = string & { __EnumTypeDefID: never }
+
+/**
+ * The `EnumValueTypeDefID` scalar type represents an identifier for an object of type EnumValueTypeDef.
+ */
+export type EnumValueTypeDefID = string & { __EnumValueTypeDefID: never }
 
 /**
  * The `EnvVariableID` scalar type represents an identifier for an object of type EnvVariable.
@@ -656,22 +719,17 @@ export type GeneratedCodeID = string & { __GeneratedCodeID: never }
  */
 export type GitModuleSourceID = string & { __GitModuleSourceID: never }
 
-export type GitRefTreeOpts = {
-  /**
-   * DEPRECATED: This option should be passed to `git` instead.
-   */
-  sshKnownHosts?: string
-
-  /**
-   * DEPRECATED: This option should be passed to `git` instead.
-   */
-  sshAuthSocket?: Socket
-}
-
 /**
  * The `GitRefID` scalar type represents an identifier for an object of type GitRef.
  */
 export type GitRefID = string & { __GitRefID: never }
+
+export type GitRepositoryTagsOpts = {
+  /**
+   * Glob patterns (e.g., "refs/tags/v*").
+   */
+  patterns?: string[]
+}
 
 /**
  * The `GitRepositoryID` scalar type represents an identifier for an object of type GitRepository.
@@ -777,6 +835,13 @@ export type ListTypeDefID = string & { __ListTypeDefID: never }
  */
 export type LocalModuleSourceID = string & { __LocalModuleSourceID: never }
 
+export type ModuleWithSourceOpts = {
+  /**
+   * The engine version to upgrade to.
+   */
+  engineVersion?: string
+}
+
 /**
  * The `ModuleDependencyID` scalar type represents an identifier for an object of type ModuleDependency.
  */
@@ -786,6 +851,13 @@ export type ModuleDependencyID = string & { __ModuleDependencyID: never }
  * The `ModuleID` scalar type represents an identifier for an object of type Module.
  */
 export type ModuleID = string & { __ModuleID: never }
+
+export type ModuleSourceAsModuleOpts = {
+  /**
+   * The engine version to upgrade to.
+   */
+  engineVersion?: string
+}
 
 export type ModuleSourceResolveDirectoryFromCallerOpts = {
   /**
@@ -866,21 +938,9 @@ export type PortID = string & { __PortID: never }
 
 export type ClientContainerOpts = {
   /**
-   * DEPRECATED: Use `loadContainerFromID` instead.
-   */
-  id?: ContainerID
-
-  /**
    * Platform to initialize the container with.
    */
   platform?: Platform
-}
-
-export type ClientDirectoryOpts = {
-  /**
-   * DEPRECATED: Use `loadDirectoryFromID` instead.
-   */
-  id?: DirectoryID
 }
 
 export type ClientGitOpts = {
@@ -1000,6 +1060,20 @@ export type SocketID = string & { __SocketID: never }
  */
 export type TerminalID = string & { __TerminalID: never }
 
+export type TypeDefWithEnumOpts = {
+  /**
+   * A doc string for the enum, if any
+   */
+  description?: string
+}
+
+export type TypeDefWithEnumValueOpts = {
+  /**
+   * A doc string for the value, if any
+   */
+  description?: string
+}
+
 export type TypeDefWithFieldOpts = {
   /**
    * A doc string for the field, if any
@@ -1032,6 +1106,13 @@ export enum TypeDefKind {
    * A boolean value.
    */
   BooleanKind = "BOOLEAN_KIND",
+
+  /**
+   * A GraphQL enum type and its values
+   *
+   * Always paired with an EnumTypeDef.
+   */
+  EnumKind = "ENUM_KIND",
 
   /**
    * A graphql input type, used only when representing the core API via TypeDefs.
@@ -1142,7 +1223,7 @@ export class CacheVolume extends BaseClient {
 export class Container extends BaseClient {
   private readonly _id?: ContainerID = undefined
   private readonly _envVariable?: string = undefined
-  private readonly _export?: boolean = undefined
+  private readonly _export?: string = undefined
   private readonly _imageRef?: string = undefined
   private readonly _label?: string = undefined
   private readonly _platform?: Platform = undefined
@@ -1160,7 +1241,7 @@ export class Container extends BaseClient {
     parent?: { queryTree?: QueryTree[]; ctx: Context },
     _id?: ContainerID,
     _envVariable?: string,
-    _export?: boolean,
+    _export?: string,
     _imageRef?: string,
     _label?: string,
     _platform?: Platform,
@@ -1437,8 +1518,6 @@ export class Container extends BaseClient {
   /**
    * Writes the container as an OCI tarball to the destination file path on the host.
    *
-   * Return true on success.
-   *
    * It can also export platform variants.
    * @param path Host's destination path (e.g., "./tarball").
    *
@@ -1456,7 +1535,7 @@ export class Container extends BaseClient {
   export = async (
     path: string,
     opts?: ContainerExportOpts,
-  ): Promise<boolean> => {
+  ): Promise<string> => {
     if (this._export) {
       return this._export
     }
@@ -1466,7 +1545,7 @@ export class Container extends BaseClient {
       mediaTypes: { is_enum: true },
     }
 
-    const response: Awaited<boolean> = await computeQuery(
+    const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -1828,7 +1907,7 @@ export class Container extends BaseClient {
    * It doesn't run the default command if no exec has been set.
    */
   sync = async (): Promise<Container> => {
-    await computeQuery(
+    const response: Awaited<ContainerID> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -1838,19 +1917,27 @@ export class Container extends BaseClient {
       await this._ctx.connection(),
     )
 
-    return this
+    return new Container({
+      queryTree: [
+        {
+          operation: "loadContainerFromID",
+          args: { id: response },
+        },
+      ],
+      ctx: this._ctx,
+    })
   }
 
   /**
-   * Return an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
+   * Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
    * @param opts.cmd If set, override the container's default terminal command and invoke these command arguments instead.
    * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
    *
    * Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
    * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
    */
-  terminal = (opts?: ContainerTerminalOpts): Terminal => {
-    return new Terminal({
+  terminal = (opts?: ContainerTerminalOpts): Container => {
+    return new Container({
       queryTree: [
         ...this._queryTree,
         {
@@ -2002,7 +2089,8 @@ export class Container extends BaseClient {
    * @param args Command to run instead of the container's default command (e.g., ["run", "main.go"]).
    *
    * If empty, the container's default command is used.
-   * @param opts.skipEntrypoint If the container has an entrypoint, ignore it for args rather than using it to wrap them.
+   * @param opts.skipEntrypoint DEPRECATED: For true this can be removed. For false, use `useEntrypoint` instead.
+   * @param opts.useEntrypoint If the container has an entrypoint, prepend it to the args.
    * @param opts.stdin Content to write to the command's standard input before closing (e.g., "Hello world").
    * @param opts.redirectStdout Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
    * @param opts.redirectStderr Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
@@ -2285,7 +2373,7 @@ export class Container extends BaseClient {
   /**
    * Retrieves this container plus a new file written at the given path.
    * @param path Location of the written file (e.g., "/tmp/file.txt").
-   * @param opts.contents Content of the file to write (e.g., "Hello world!").
+   * @param contents Content of the file to write (e.g., "Hello world!").
    * @param opts.permissions Permission given to the written file (e.g., 0600).
    * @param opts.owner A user:group to set for the file.
    *
@@ -2293,13 +2381,17 @@ export class Container extends BaseClient {
    *
    * If the group is omitted, it defaults to the same as the user.
    */
-  withNewFile = (path: string, opts?: ContainerWithNewFileOpts): Container => {
+  withNewFile = (
+    path: string,
+    contents: string,
+    opts?: ContainerWithNewFileOpts,
+  ): Container => {
     return new Container({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withNewFile",
-          args: { path, ...opts },
+          args: { path, contents, ...opts },
         },
       ],
       ctx: this._ctx,
@@ -2844,11 +2936,453 @@ export class CurrentModule extends BaseClient {
 }
 
 /**
+ * The Dagger engine configuration and state
+ */
+export class DaggerEngine extends BaseClient {
+  private readonly _id?: DaggerEngineID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: DaggerEngineID,
+  ) {
+    super(parent)
+
+    this._id = _id
+  }
+
+  /**
+   * A unique identifier for this DaggerEngine.
+   */
+  id = async (): Promise<DaggerEngineID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<DaggerEngineID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * The local (on-disk) cache for the Dagger engine
+   */
+  localCache = (): DaggerEngineCache => {
+    return new DaggerEngineCache({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "localCache",
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+}
+
+/**
+ * A cache storage for the Dagger engine
+ */
+export class DaggerEngineCache extends BaseClient {
+  private readonly _id?: DaggerEngineCacheID = undefined
+  private readonly _keepBytes?: number = undefined
+  private readonly _prune?: Void = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: DaggerEngineCacheID,
+    _keepBytes?: number,
+    _prune?: Void,
+  ) {
+    super(parent)
+
+    this._id = _id
+    this._keepBytes = _keepBytes
+    this._prune = _prune
+  }
+
+  /**
+   * A unique identifier for this DaggerEngineCache.
+   */
+  id = async (): Promise<DaggerEngineCacheID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<DaggerEngineCacheID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * The current set of entries in the cache
+   */
+  entrySet = (): DaggerEngineCacheEntrySet => {
+    return new DaggerEngineCacheEntrySet({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "entrySet",
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * The maximum bytes to keep in the cache without pruning, after which automatic pruning may kick in.
+   */
+  keepBytes = async (): Promise<number> => {
+    if (this._keepBytes) {
+      return this._keepBytes
+    }
+
+    const response: Awaited<number> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "keepBytes",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * Prune the cache of releaseable entries
+   */
+  prune = async (): Promise<void> => {
+    if (this._prune) {
+      return
+    }
+
+    await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "prune",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+  }
+}
+
+/**
+ * An individual cache entry in a cache entry set
+ */
+export class DaggerEngineCacheEntry extends BaseClient {
+  private readonly _id?: DaggerEngineCacheEntryID = undefined
+  private readonly _activelyUsed?: boolean = undefined
+  private readonly _createdTimeUnixNano?: number = undefined
+  private readonly _description?: string = undefined
+  private readonly _diskSpaceBytes?: number = undefined
+  private readonly _mostRecentUseTimeUnixNano?: number = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: DaggerEngineCacheEntryID,
+    _activelyUsed?: boolean,
+    _createdTimeUnixNano?: number,
+    _description?: string,
+    _diskSpaceBytes?: number,
+    _mostRecentUseTimeUnixNano?: number,
+  ) {
+    super(parent)
+
+    this._id = _id
+    this._activelyUsed = _activelyUsed
+    this._createdTimeUnixNano = _createdTimeUnixNano
+    this._description = _description
+    this._diskSpaceBytes = _diskSpaceBytes
+    this._mostRecentUseTimeUnixNano = _mostRecentUseTimeUnixNano
+  }
+
+  /**
+   * A unique identifier for this DaggerEngineCacheEntry.
+   */
+  id = async (): Promise<DaggerEngineCacheEntryID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<DaggerEngineCacheEntryID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * Whether the cache entry is actively being used.
+   */
+  activelyUsed = async (): Promise<boolean> => {
+    if (this._activelyUsed) {
+      return this._activelyUsed
+    }
+
+    const response: Awaited<boolean> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "activelyUsed",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * The time the cache entry was created, in Unix nanoseconds.
+   */
+  createdTimeUnixNano = async (): Promise<number> => {
+    if (this._createdTimeUnixNano) {
+      return this._createdTimeUnixNano
+    }
+
+    const response: Awaited<number> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "createdTimeUnixNano",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * The description of the cache entry.
+   */
+  description = async (): Promise<string> => {
+    if (this._description) {
+      return this._description
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "description",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * The disk space used by the cache entry.
+   */
+  diskSpaceBytes = async (): Promise<number> => {
+    if (this._diskSpaceBytes) {
+      return this._diskSpaceBytes
+    }
+
+    const response: Awaited<number> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "diskSpaceBytes",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * The most recent time the cache entry was used, in Unix nanoseconds.
+   */
+  mostRecentUseTimeUnixNano = async (): Promise<number> => {
+    if (this._mostRecentUseTimeUnixNano) {
+      return this._mostRecentUseTimeUnixNano
+    }
+
+    const response: Awaited<number> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "mostRecentUseTimeUnixNano",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+}
+
+/**
+ * A set of cache entries returned by a query to a cache
+ */
+export class DaggerEngineCacheEntrySet extends BaseClient {
+  private readonly _id?: DaggerEngineCacheEntrySetID = undefined
+  private readonly _diskSpaceBytes?: number = undefined
+  private readonly _entryCount?: number = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: DaggerEngineCacheEntrySetID,
+    _diskSpaceBytes?: number,
+    _entryCount?: number,
+  ) {
+    super(parent)
+
+    this._id = _id
+    this._diskSpaceBytes = _diskSpaceBytes
+    this._entryCount = _entryCount
+  }
+
+  /**
+   * A unique identifier for this DaggerEngineCacheEntrySet.
+   */
+  id = async (): Promise<DaggerEngineCacheEntrySetID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<DaggerEngineCacheEntrySetID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * The total disk space used by the cache entries in this set.
+   */
+  diskSpaceBytes = async (): Promise<number> => {
+    if (this._diskSpaceBytes) {
+      return this._diskSpaceBytes
+    }
+
+    const response: Awaited<number> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "diskSpaceBytes",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * The list of individual cache entries in the set
+   */
+  entries = async (): Promise<DaggerEngineCacheEntry[]> => {
+    type entries = {
+      id: DaggerEngineCacheEntryID
+    }
+
+    const response: Awaited<entries[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "entries",
+        },
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response.map(
+      (r) =>
+        new DaggerEngineCacheEntry(
+          {
+            queryTree: [
+              {
+                operation: "loadDaggerEngineCacheEntryFromID",
+                args: { id: r.id },
+              },
+            ],
+            ctx: this._ctx,
+          },
+          r.id,
+        ),
+    )
+  }
+
+  /**
+   * The number of cache entries in this set.
+   */
+  entryCount = async (): Promise<number> => {
+    if (this._entryCount) {
+      return this._entryCount
+    }
+
+    const response: Awaited<number> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "entryCount",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+}
+
+/**
  * A directory.
  */
 export class Directory extends BaseClient {
   private readonly _id?: DirectoryID = undefined
-  private readonly _export?: boolean = undefined
+  private readonly _export?: string = undefined
   private readonly _sync?: DirectoryID = undefined
 
   /**
@@ -2857,7 +3391,7 @@ export class Directory extends BaseClient {
   constructor(
     parent?: { queryTree?: QueryTree[]; ctx: Context },
     _id?: DirectoryID,
-    _export?: boolean,
+    _export?: string,
     _sync?: DirectoryID,
   ) {
     super(parent)
@@ -2895,6 +3429,7 @@ export class Directory extends BaseClient {
    * This is needed when the module code is in a subdirectory but requires parent directories to be loaded in order to execute. For example, the module source code may need a go.mod, project.toml, package.json, etc. file from a parent directory.
    *
    * If not set, the module source code is loaded from the root of the directory.
+   * @param opts.engineVersion The engine version to upgrade to.
    */
   asModule = (opts?: DirectoryAsModuleOpts): Module_ => {
     return new Module_({
@@ -2993,12 +3528,12 @@ export class Directory extends BaseClient {
   export = async (
     path: string,
     opts?: DirectoryExportOpts,
-  ): Promise<boolean> => {
+  ): Promise<string> => {
     if (this._export) {
       return this._export
     }
 
-    const response: Awaited<boolean> = await computeQuery(
+    const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -3071,7 +3606,7 @@ export class Directory extends BaseClient {
    * Force evaluation in the engine.
    */
   sync = async (): Promise<Directory> => {
-    await computeQuery(
+    const response: Awaited<DirectoryID> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -3081,7 +3616,37 @@ export class Directory extends BaseClient {
       await this._ctx.connection(),
     )
 
-    return this
+    return new Directory({
+      queryTree: [
+        {
+          operation: "loadDirectoryFromID",
+          args: { id: response },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Opens an interactive terminal in new container with this directory mounted inside.
+   * @param opts.cmd If set, override the container's default terminal command and invoke these command arguments instead.
+   * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
+   *
+   * Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
+   * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
+   * @param opts.container If set, override the default container used for the terminal.
+   */
+  terminal = (opts?: DirectoryTerminalOpts): Directory => {
+    return new Directory({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "terminal",
+          args: { ...opts },
+        },
+      ],
+      ctx: this._ctx,
+    })
   }
 
   /**
@@ -3258,6 +3823,244 @@ export class Directory extends BaseClient {
    */
   with = (arg: (param: Directory) => Directory) => {
     return arg(this)
+  }
+}
+
+/**
+ * A definition of a custom enum defined in a Module.
+ */
+export class EnumTypeDef extends BaseClient {
+  private readonly _id?: EnumTypeDefID = undefined
+  private readonly _description?: string = undefined
+  private readonly _name?: string = undefined
+  private readonly _sourceModuleName?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: EnumTypeDefID,
+    _description?: string,
+    _name?: string,
+    _sourceModuleName?: string,
+  ) {
+    super(parent)
+
+    this._id = _id
+    this._description = _description
+    this._name = _name
+    this._sourceModuleName = _sourceModuleName
+  }
+
+  /**
+   * A unique identifier for this EnumTypeDef.
+   */
+  id = async (): Promise<EnumTypeDefID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<EnumTypeDefID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * A doc string for the enum, if any.
+   */
+  description = async (): Promise<string> => {
+    if (this._description) {
+      return this._description
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "description",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * The name of the enum.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "name",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * If this EnumTypeDef is associated with a Module, the name of the module. Unset otherwise.
+   */
+  sourceModuleName = async (): Promise<string> => {
+    if (this._sourceModuleName) {
+      return this._sourceModuleName
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "sourceModuleName",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * The values of the enum.
+   */
+  values = async (): Promise<EnumValueTypeDef[]> => {
+    type values = {
+      id: EnumValueTypeDefID
+    }
+
+    const response: Awaited<values[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "values",
+        },
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response.map(
+      (r) =>
+        new EnumValueTypeDef(
+          {
+            queryTree: [
+              {
+                operation: "loadEnumValueTypeDefFromID",
+                args: { id: r.id },
+              },
+            ],
+            ctx: this._ctx,
+          },
+          r.id,
+        ),
+    )
+  }
+}
+
+/**
+ * A definition of a value in a custom enum defined in a Module.
+ */
+export class EnumValueTypeDef extends BaseClient {
+  private readonly _id?: EnumValueTypeDefID = undefined
+  private readonly _description?: string = undefined
+  private readonly _name?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: EnumValueTypeDefID,
+    _description?: string,
+    _name?: string,
+  ) {
+    super(parent)
+
+    this._id = _id
+    this._description = _description
+    this._name = _name
+  }
+
+  /**
+   * A unique identifier for this EnumValueTypeDef.
+   */
+  id = async (): Promise<EnumValueTypeDefID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<EnumValueTypeDefID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * A doc string for the enum value, if any.
+   */
+  description = async (): Promise<string> => {
+    if (this._description) {
+      return this._description
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "description",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * The name of the enum value.
+   */
+  name = async (): Promise<string> => {
+    if (this._name) {
+      return this._name
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "name",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
   }
 }
 
@@ -3460,7 +4263,7 @@ export class FieldTypeDef extends BaseClient {
 export class File extends BaseClient {
   private readonly _id?: FileID = undefined
   private readonly _contents?: string = undefined
-  private readonly _export?: boolean = undefined
+  private readonly _export?: string = undefined
   private readonly _name?: string = undefined
   private readonly _size?: number = undefined
   private readonly _sync?: FileID = undefined
@@ -3472,7 +4275,7 @@ export class File extends BaseClient {
     parent?: { queryTree?: QueryTree[]; ctx: Context },
     _id?: FileID,
     _contents?: string,
-    _export?: boolean,
+    _export?: string,
     _name?: string,
     _size?: number,
     _sync?: FileID,
@@ -3534,12 +4337,12 @@ export class File extends BaseClient {
    * @param path Location of the written directory (e.g., "output.txt").
    * @param opts.allowParentDirPath If allowParentDirPath is true, the path argument can be a directory path, in which case the file will be created in that directory.
    */
-  export = async (path: string, opts?: FileExportOpts): Promise<boolean> => {
+  export = async (path: string, opts?: FileExportOpts): Promise<string> => {
     if (this._export) {
       return this._export
     }
 
-    const response: Awaited<boolean> = await computeQuery(
+    const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -3599,7 +4402,7 @@ export class File extends BaseClient {
    * Force evaluation in the engine.
    */
   sync = async (): Promise<File> => {
-    await computeQuery(
+    const response: Awaited<FileID> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -3609,7 +4412,15 @@ export class File extends BaseClient {
       await this._ctx.connection(),
     )
 
-    return this
+    return new File({
+      queryTree: [
+        {
+          operation: "loadFileFromID",
+          args: { id: response },
+        },
+      ],
+      ctx: this._ctx,
+    })
   }
 
   /**
@@ -4136,12 +4947,12 @@ export class FunctionCall extends BaseClient {
    * Set the return value of the function call to the provided value.
    * @param value JSON serialization of the return value.
    */
-  returnValue = async (value: JSON): Promise<Void> => {
+  returnValue = async (value: JSON): Promise<void> => {
     if (this._returnValue) {
-      return this._returnValue
+      return
     }
 
-    const response: Awaited<Void> = await computeQuery(
+    await computeQuery(
       [
         ...this._queryTree,
         {
@@ -4151,8 +4962,6 @@ export class FunctionCall extends BaseClient {
       ],
       await this._ctx.connection(),
     )
-
-    return response
   }
 }
 
@@ -4638,16 +5447,13 @@ export class GitRef extends BaseClient {
 
   /**
    * The filesystem tree at this ref.
-   * @param opts.sshKnownHosts DEPRECATED: This option should be passed to `git` instead.
-   * @param opts.sshAuthSocket DEPRECATED: This option should be passed to `git` instead.
    */
-  tree = (opts?: GitRefTreeOpts): Directory => {
+  tree = (): Directory => {
     return new Directory({
       queryTree: [
         ...this._queryTree,
         {
           operation: "tree",
-          args: { ...opts },
         },
       ],
       ctx: this._ctx,
@@ -4775,6 +5581,25 @@ export class GitRepository extends BaseClient {
       ],
       ctx: this._ctx,
     })
+  }
+
+  /**
+   * tags that match any of the given glob patterns.
+   * @param opts.patterns Glob patterns (e.g., "refs/tags/v*").
+   */
+  tags = async (opts?: GitRepositoryTagsOpts): Promise<string[]> => {
+    const response: Awaited<string[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "tags",
+          args: { ...opts },
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
   }
 
   /**
@@ -5609,6 +6434,44 @@ export class Module_ extends BaseClient {
   }
 
   /**
+   * Enumerations served by this module.
+   */
+  enums = async (): Promise<TypeDef[]> => {
+    type enums = {
+      id: TypeDefID
+    }
+
+    const response: Awaited<enums[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "enums",
+        },
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response.map(
+      (r) =>
+        new TypeDef(
+          {
+            queryTree: [
+              {
+                operation: "loadTypeDefFromID",
+                args: { id: r.id },
+              },
+            ],
+            ctx: this._ctx,
+          },
+          r.id,
+        ),
+    )
+  }
+
+  /**
    * The generated files and directories made on top of the module source's context directory.
    */
   generatedContextDiff = (): Directory => {
@@ -5791,12 +6654,12 @@ export class Module_ extends BaseClient {
    *
    * Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.
    */
-  serve = async (): Promise<Void> => {
+  serve = async (): Promise<void> => {
     if (this._serve) {
-      return this._serve
+      return
     }
 
-    const response: Awaited<Void> = await computeQuery(
+    await computeQuery(
       [
         ...this._queryTree,
         {
@@ -5805,8 +6668,6 @@ export class Module_ extends BaseClient {
       ],
       await this._ctx.connection(),
     )
-
-    return response
   }
 
   /**
@@ -5835,6 +6696,24 @@ export class Module_ extends BaseClient {
         {
           operation: "withDescription",
           args: { description },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * This module plus the given Enum type and associated values
+   */
+  withEnum = (enum_: TypeDef): Module_ => {
+    return new Module_({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withEnum",
+          args: {
+            enum: enum_,
+          },
         },
       ],
       ctx: this._ctx,
@@ -5876,14 +6755,15 @@ export class Module_ extends BaseClient {
   /**
    * Retrieves the module with basic configuration loaded if present.
    * @param source The module source to initialize from.
+   * @param opts.engineVersion The engine version to upgrade to.
    */
-  withSource = (source: ModuleSource): Module_ => {
+  withSource = (source: ModuleSource, opts?: ModuleWithSourceOpts): Module_ => {
     return new Module_({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withSource",
-          args: { source },
+          args: { source, ...opts },
         },
       ],
       ctx: this._ctx,
@@ -6074,13 +6954,15 @@ export class ModuleSource extends BaseClient {
 
   /**
    * Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation
+   * @param opts.engineVersion The engine version to upgrade to.
    */
-  asModule = (): Module_ => {
+  asModule = (opts?: ModuleSourceAsModuleOpts): Module_ => {
     return new Module_({
       queryTree: [
         ...this._queryTree,
         {
           operation: "asModule",
+          args: { ...opts },
         },
       ],
       ctx: this._ctx,
@@ -6970,7 +7852,6 @@ export class Port extends BaseClient {
  * The root of the DAG.
  */
 export class Client extends BaseClient {
-  private readonly _checkVersionCompatibility?: boolean = undefined
   private readonly _defaultPlatform?: Platform = undefined
   private readonly _version?: string = undefined
 
@@ -6979,13 +7860,11 @@ export class Client extends BaseClient {
    */
   constructor(
     parent?: { queryTree?: QueryTree[]; ctx: Context },
-    _checkVersionCompatibility?: boolean,
     _defaultPlatform?: Platform,
     _version?: string,
   ) {
     super(parent)
 
-    this._checkVersionCompatibility = _checkVersionCompatibility
     this._defaultPlatform = _defaultPlatform
     this._version = _version
   }
@@ -7057,29 +7936,9 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Checks if the current Dagger Engine is compatible with an SDK's required version.
-   * @param version Version required by the SDK.
-   */
-  checkVersionCompatibility = async (version: string): Promise<boolean> => {
-    const response: Awaited<boolean> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "checkVersionCompatibility",
-          args: { version },
-        },
-      ],
-      await this._ctx.connection(),
-    )
-
-    return response
-  }
-
-  /**
    * Creates a scratch container.
    *
    * Optional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.
-   * @param opts.id DEPRECATED: Use `loadContainerFromID` instead.
    * @param opts.platform Platform to initialize the container with.
    */
   container = (opts?: ClientContainerOpts): Container => {
@@ -7166,6 +8025,21 @@ export class Client extends BaseClient {
   }
 
   /**
+   * The Dagger engine container configuration and state
+   */
+  daggerEngine = (): DaggerEngine => {
+    return new DaggerEngine({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "daggerEngine",
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
    * The default platform of the engine.
    */
   defaultPlatform = async (): Promise<Platform> => {
@@ -7184,31 +8058,13 @@ export class Client extends BaseClient {
 
   /**
    * Creates an empty directory.
-   * @param opts.id DEPRECATED: Use `loadDirectoryFromID` instead.
    */
-  directory = (opts?: ClientDirectoryOpts): Directory => {
+  directory = (): Directory => {
     return new Directory({
       queryTree: [
         ...this._queryTree,
         {
           operation: "directory",
-          args: { ...opts },
-        },
-      ],
-      ctx: this._ctx,
-    })
-  }
-
-  /**
-   * @deprecated Use loadFileFromID instead.
-   */
-  file = (id: FileID): File => {
-    return new File({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "file",
-          args: { id },
         },
       ],
       ctx: this._ctx,
@@ -7356,6 +8212,76 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Load a DaggerEngineCacheEntry from its ID.
+   */
+  loadDaggerEngineCacheEntryFromID = (
+    id: DaggerEngineCacheEntryID,
+  ): DaggerEngineCacheEntry => {
+    return new DaggerEngineCacheEntry({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "loadDaggerEngineCacheEntryFromID",
+          args: { id },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Load a DaggerEngineCacheEntrySet from its ID.
+   */
+  loadDaggerEngineCacheEntrySetFromID = (
+    id: DaggerEngineCacheEntrySetID,
+  ): DaggerEngineCacheEntrySet => {
+    return new DaggerEngineCacheEntrySet({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "loadDaggerEngineCacheEntrySetFromID",
+          args: { id },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Load a DaggerEngineCache from its ID.
+   */
+  loadDaggerEngineCacheFromID = (
+    id: DaggerEngineCacheID,
+  ): DaggerEngineCache => {
+    return new DaggerEngineCache({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "loadDaggerEngineCacheFromID",
+          args: { id },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Load a DaggerEngine from its ID.
+   */
+  loadDaggerEngineFromID = (id: DaggerEngineID): DaggerEngine => {
+    return new DaggerEngine({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "loadDaggerEngineFromID",
+          args: { id },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
    * Load a Directory from its ID.
    */
   loadDirectoryFromID = (id: DirectoryID): Directory => {
@@ -7364,6 +8290,38 @@ export class Client extends BaseClient {
         ...this._queryTree,
         {
           operation: "loadDirectoryFromID",
+          args: { id },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Load a EnumTypeDef from its ID.
+   */
+  loadEnumTypeDefFromID = (id: EnumTypeDefID): EnumTypeDef => {
+    return new EnumTypeDef({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "loadEnumTypeDefFromID",
+          args: { id },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Load a EnumValueTypeDef from its ID.
+   */
+  loadEnumValueTypeDefFromID = (id: EnumValueTypeDefID): EnumValueTypeDef => {
+    return new EnumValueTypeDef({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "loadEnumValueTypeDefFromID",
           args: { id },
         },
       ],
@@ -7952,23 +8910,6 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Loads a socket by its ID.
-   * @deprecated Use loadSocketFromID instead.
-   */
-  socket = (id: SocketID): Socket => {
-    return new Socket({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "socket",
-          args: { id },
-        },
-      ],
-      ctx: this._ctx,
-    })
-  }
-
-  /**
    * Create a new TypeDef.
    */
   typeDef = (): TypeDef => {
@@ -8357,7 +9298,7 @@ export class Service extends BaseClient {
    * Services bound to a Container do not need to be manually started.
    */
   start = async (): Promise<Service> => {
-    await computeQuery(
+    const response: Awaited<ServiceID> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -8367,7 +9308,15 @@ export class Service extends BaseClient {
       await this._ctx.connection(),
     )
 
-    return this
+    return new Service({
+      queryTree: [
+        {
+          operation: "loadServiceFromID",
+          args: { id: response },
+        },
+      ],
+      ctx: this._ctx,
+    })
   }
 
   /**
@@ -8375,7 +9324,7 @@ export class Service extends BaseClient {
    * @param opts.kill Immediately kill the service without waiting for a graceful exit
    */
   stop = async (opts?: ServiceStopOpts): Promise<Service> => {
-    await computeQuery(
+    const response: Awaited<ServiceID> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -8386,7 +9335,15 @@ export class Service extends BaseClient {
       await this._ctx.connection(),
     )
 
-    return this
+    return new Service({
+      queryTree: [
+        {
+          operation: "loadServiceFromID",
+          args: { id: response },
+        },
+      ],
+      ctx: this._ctx,
+    })
   }
 
   /**
@@ -8396,12 +9353,12 @@ export class Service extends BaseClient {
    * Frontend is the port accepting traffic on the host, backend is the service port.
    * @param opts.random Bind each tunnel port to a random port on the host.
    */
-  up = async (opts?: ServiceUpOpts): Promise<Void> => {
+  up = async (opts?: ServiceUpOpts): Promise<void> => {
     if (this._up) {
-      return this._up
+      return
     }
 
-    const response: Awaited<Void> = await computeQuery(
+    await computeQuery(
       [
         ...this._queryTree,
         {
@@ -8411,8 +9368,6 @@ export class Service extends BaseClient {
       ],
       await this._ctx.connection(),
     )
-
-    return response
   }
 }
 
@@ -8461,7 +9416,7 @@ export class Socket extends BaseClient {
  */
 export class Terminal extends BaseClient {
   private readonly _id?: TerminalID = undefined
-  private readonly _websocketEndpoint?: string = undefined
+  private readonly _sync?: TerminalID = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -8469,12 +9424,12 @@ export class Terminal extends BaseClient {
   constructor(
     parent?: { queryTree?: QueryTree[]; ctx: Context },
     _id?: TerminalID,
-    _websocketEndpoint?: string,
+    _sync?: TerminalID,
   ) {
     super(parent)
 
     this._id = _id
-    this._websocketEndpoint = _websocketEndpoint
+    this._sync = _sync
   }
 
   /**
@@ -8499,24 +9454,30 @@ export class Terminal extends BaseClient {
   }
 
   /**
-   * An http endpoint at which this terminal can be connected to over a websocket.
+   * Forces evaluation of the pipeline in the engine.
+   *
+   * It doesn't run the default command if no exec has been set.
    */
-  websocketEndpoint = async (): Promise<string> => {
-    if (this._websocketEndpoint) {
-      return this._websocketEndpoint
-    }
-
-    const response: Awaited<string> = await computeQuery(
+  sync = async (): Promise<Terminal> => {
+    const response: Awaited<TerminalID> = await computeQuery(
       [
         ...this._queryTree,
         {
-          operation: "websocketEndpoint",
+          operation: "sync",
         },
       ],
       await this._ctx.connection(),
     )
 
-    return response
+    return new Terminal({
+      queryTree: [
+        {
+          operation: "loadTerminalFromID",
+          args: { id: response },
+        },
+      ],
+      ctx: this._ctx,
+    })
   }
 }
 
@@ -8563,6 +9524,21 @@ export class TypeDef extends BaseClient {
     )
 
     return response
+  }
+
+  /**
+   * If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null.
+   */
+  asEnum = (): EnumTypeDef => {
+    return new EnumTypeDef({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "asEnum",
+        },
+      ],
+      ctx: this._ctx,
+    })
   }
 
   /**
@@ -8694,6 +9670,44 @@ export class TypeDef extends BaseClient {
           args: {
             function: function_,
           },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Returns a TypeDef of kind Enum with the provided name.
+   *
+   * Note that an enum's values may be omitted if the intent is only to refer to an enum. This is how functions are able to return their own, or any other circular reference.
+   * @param name The name of the enum
+   * @param opts.description A doc string for the enum, if any
+   */
+  withEnum = (name: string, opts?: TypeDefWithEnumOpts): TypeDef => {
+    return new TypeDef({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withEnum",
+          args: { name, ...opts },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Adds a static value for an Enum TypeDef, failing if the type is not an enum.
+   * @param value The name of the value in the enum
+   * @param opts.description A doc string for the value, if any
+   */
+  withEnumValue = (value: string, opts?: TypeDefWithEnumValueOpts): TypeDef => {
+    return new TypeDef({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withEnumValue",
+          args: { value, ...opts },
         },
       ],
       ctx: this._ctx,

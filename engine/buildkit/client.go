@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"sync"
 
@@ -17,20 +18,16 @@ import (
 	bkcontainer "github.com/moby/buildkit/frontend/gateway/container"
 	"github.com/moby/buildkit/identity"
 	bksession "github.com/moby/buildkit/session"
-	bksecrets "github.com/moby/buildkit/session/secrets"
 	bksolver "github.com/moby/buildkit/solver"
-	"github.com/moby/buildkit/solver/llbsolver"
 	bksolverpb "github.com/moby/buildkit/solver/pb"
 	solverresult "github.com/moby/buildkit/solver/result"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/moby/buildkit/util/entitlements"
 	bkworker "github.com/moby/buildkit/worker"
 	"github.com/opencontainers/go-digest"
-	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/metadata"
 
-	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/session"
 )
@@ -53,27 +50,22 @@ const (
 
 // Opts for a Client that are shared across all instances for a given DaggerServer
 type Opts struct {
-	Worker                 *Worker
-	SessionManager         *bksession.Manager
-	BkSession              *bksession.Session
-	Job                    *bksolver.Job
-	LLBSolver              *llbsolver.Solver
-	LLBBridge              bkfrontend.FrontendLLBBridge
-	Dialer                 *net.Dialer
-	GetMainClientCaller    func() (bksession.Caller, error)
-	Entitlements           entitlements.Set
-	SecretStore            bksecrets.SecretStore
-	AuthProvider           *auth.RegistryAuthProvider
-	UpstreamCacheImporters map[string]remotecache.ResolveCacheImporterFunc
-	UpstreamCacheImports   []bkgw.CacheOptionsEntry
-	Frontends              map[string]bkfrontend.Frontend
+	Worker               *Worker
+	SessionManager       *bksession.Manager
+	BkSession            *bksession.Session
+	LLBBridge            bkfrontend.FrontendLLBBridge
+	Dialer               *net.Dialer
+	GetMainClientCaller  func() (bksession.Caller, error)
+	Entitlements         entitlements.Set
+	UpstreamCacheImports []bkgw.CacheOptionsEntry
+	Frontends            map[string]bkfrontend.Frontend
 
 	Refs         map[Reference]struct{}
 	RefsMu       *sync.Mutex
 	Containers   map[bkgw.Container]struct{}
 	ContainersMu *sync.Mutex
 
-	SpanCtx trace.SpanContext
+	Interactive bool
 }
 
 type ResolveCacheExporterFunc func(ctx context.Context, g bksession.Group) (remotecache.Exporter, error)
@@ -85,6 +77,7 @@ type Client struct {
 	closeCtx context.Context
 	cancel   context.CancelFunc
 	closeMu  sync.RWMutex
+	execMap  sync.Map
 }
 
 func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
@@ -94,6 +87,7 @@ func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
 		Opts:     opts,
 		closeCtx: ctx,
 		cancel:   cancel,
+		execMap:  sync.Map{},
 	}
 
 	return client, nil
@@ -140,7 +134,9 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 	}
 	llbRes, err := gw.Solve(ctx, req, c.ID())
 	if err != nil {
-		return nil, wrapError(ctx, err, c.ID())
+		// writing log w/ %+v so that we can see stack traces embedded in err by buildkit's usage of pkg/errors
+		bklog.G(ctx).Errorf("solve error: %+v", err)
+		return nil, wrapError(ctx, err, c)
 	}
 
 	res, err := solverresult.ConvertResult(llbRes, func(rp bksolver.ResultProxy) (*ref, error) {
@@ -187,8 +183,13 @@ func (c *Client) ResolveSourceMetadata(ctx context.Context, op *bksolverpb.Sourc
 	return c.LLBBridge.ResolveSourceMetadata(ctx, op, opt)
 }
 
+type ContainerMount struct {
+	*bkgw.Mount
+	WorkerRef *bkworker.WorkerRef
+}
+
 type NewContainerRequest struct {
-	Mounts   []bkgw.Mount
+	Mounts   []ContainerMount
 	Platform *bksolverpb.Platform
 	Hostname string
 	ExecutionMetadata
@@ -224,8 +225,8 @@ func (c *Client) NewContainer(ctx context.Context, req NewContainerRequest) (*Co
 	for i, m := range req.Mounts {
 		i, m := i, m
 		eg.Go(func() error {
-			var workerRef *bkworker.WorkerRef
-			if m.Ref != nil {
+			workerRef := m.WorkerRef
+			if workerRef == nil && m.Ref != nil {
 				ref, ok := m.Ref.(*ref)
 				if !ok {
 					return fmt.Errorf("dagger: unexpected ref type: %T", m.Ref)
@@ -251,6 +252,7 @@ func (c *Client) NewContainer(ctx context.Context, req NewContainerRequest) (*Co
 					CacheOpt:  m.CacheOpt,
 					SecretOpt: m.SecretOpt,
 					SSHOpt:    m.SSHOpt,
+					ResultID:  m.ResultID,
 				},
 			}
 			return nil
@@ -574,6 +576,116 @@ func (c *Client) ListenHostToContainer(
 			wg.Wait()
 		}
 		return err
+	}, nil
+}
+
+type TerminalClient struct {
+	Stdin    io.ReadCloser
+	Stdout   io.WriteCloser
+	Stderr   io.WriteCloser
+	ResizeCh chan bkgw.WinSize
+	ErrCh    chan error
+	Close    func(exitCode int) error
+}
+
+func (c *Client) OpenTerminal(
+	ctx context.Context,
+) (*TerminalClient, error) {
+	caller, err := c.GetMainClientCaller()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get main client caller: %w", err)
+	}
+	terminalClient := session.NewTerminalClient(caller.Conn())
+
+	term, err := terminalClient.Session(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open terminal: %w", err)
+	}
+
+	var (
+		stdoutR, stdoutW = io.Pipe()
+		stderrR, stderrW = io.Pipe()
+		stdinR, stdinW   = io.Pipe()
+	)
+
+	forwardFD := func(r io.Reader, fn func([]byte) *session.SessionRequest) error {
+		for {
+			b := make([]byte, 2048)
+			n, err := r.Read(b)
+			if err != nil {
+				if err == io.EOF || err == io.ErrClosedPipe {
+					return nil
+				}
+				return fmt.Errorf("error reading fd: %w", err)
+			}
+
+			if err := term.Send(fn(b[:n])); err != nil {
+				return fmt.Errorf("error forwarding fd: %w", err)
+			}
+		}
+	}
+
+	go forwardFD(stdoutR, func(stdout []byte) *session.SessionRequest {
+		return &session.SessionRequest{
+			Msg: &session.SessionRequest_Stdout{Stdout: stdout},
+		}
+	})
+
+	go forwardFD(stderrR, func(stderr []byte) *session.SessionRequest {
+		return &session.SessionRequest{
+			Msg: &session.SessionRequest_Stderr{Stderr: stderr},
+		}
+	})
+
+	errCh := make(chan error)
+	resizeCh := make(chan bkgw.WinSize)
+	go func() {
+		defer close(errCh)
+		defer close(resizeCh)
+		for {
+			res, err := term.Recv()
+			if err != nil {
+				if !errors.Is(err, io.EOF) {
+					bklog.G(ctx).Warnf("terminal recv err: %v", err)
+					errCh <- err
+				}
+				return
+			}
+			switch msg := res.GetMsg().(type) {
+			case *session.SessionResponse_Stdin:
+				_, err := stdinW.Write(msg.Stdin)
+				if err != nil {
+					bklog.G(ctx).Warnf("failed to write stdin: %v", err)
+					errCh <- err
+					return
+				}
+			case *session.SessionResponse_Resize:
+				resizeCh <- bkgw.WinSize{
+					Rows: uint32(msg.Resize.Height),
+					Cols: uint32(msg.Resize.Width),
+				}
+			}
+		}
+	}()
+
+	return &TerminalClient{
+		Stdin:    stdinR,
+		Stdout:   stdoutW,
+		Stderr:   stderrW,
+		ErrCh:    errCh,
+		ResizeCh: resizeCh,
+		Close: func(exitCode int) error {
+			defer stdinW.Close()
+			defer term.CloseSend()
+
+			err := term.Send(&session.SessionRequest{
+				Msg: &session.SessionRequest_Exit{Exit: int32(exitCode)},
+			})
+			if err != nil {
+				return fmt.Errorf("failed to close terminal: %w", err)
+			}
+			return nil
+		},
 	}, nil
 }
 

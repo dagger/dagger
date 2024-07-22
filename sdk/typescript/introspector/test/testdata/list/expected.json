@@ -1,8 +1,8 @@
 {
   "name": "List",
   "objects": {
-    "Number": {
-      "name": "Number",
+    "Integer": {
+      "name": "Integer",
       "description": "",
       "constructor": {
         "args": {
@@ -65,12 +65,13 @@
             "kind": "LIST_KIND",
             "typeDef": {
               "kind": "OBJECT_KIND",
-              "name": "Number"
+              "name": "Integer"
             }
           }
         }
       },
       "properties": {}
     }
-  }
+  },
+  "enums": {}
 }

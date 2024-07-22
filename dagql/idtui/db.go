@@ -20,28 +20,37 @@ type DB struct {
 	PrimarySpan trace.SpanID
 	PrimaryLogs map[trace.SpanID][]sdklog.Record
 
-	Traces   map[trace.TraceID]*Trace
-	Spans    map[trace.SpanID]*Span
-	Children map[trace.SpanID]map[trace.SpanID]struct{}
+	Traces        map[trace.TraceID]*Trace
+	Spans         map[trace.SpanID]*Span
+	SpanOrder     []*Span
+	Children      map[trace.SpanID]map[trace.SpanID]struct{}
+	ChildrenOrder map[trace.SpanID][]trace.SpanID
 
 	Calls     map[string]*callpbv1.Call
 	Outputs   map[string]map[string]struct{}
 	OutputOf  map[string]map[string]struct{}
 	Intervals map[string]map[time.Time]*Span
+
+	Effects    map[string]*Span
+	EffectSite map[string]*Span
 }
 
 func NewDB() *DB {
 	return &DB{
 		PrimaryLogs: make(map[trace.SpanID][]sdklog.Record),
 
-		Traces:   make(map[trace.TraceID]*Trace),
-		Spans:    make(map[trace.SpanID]*Span),
-		Children: make(map[trace.SpanID]map[trace.SpanID]struct{}),
+		Traces:        make(map[trace.TraceID]*Trace),
+		Spans:         make(map[trace.SpanID]*Span),
+		SpanOrder:     make([]*Span, 0),
+		Children:      make(map[trace.SpanID]map[trace.SpanID]struct{}),
+		ChildrenOrder: make(map[trace.SpanID][]trace.SpanID),
 
-		Calls:     make(map[string]*callpbv1.Call),
-		OutputOf:  make(map[string]map[string]struct{}),
-		Outputs:   make(map[string]map[string]struct{}),
-		Intervals: make(map[string]map[time.Time]*Span),
+		Calls:      make(map[string]*callpbv1.Call),
+		OutputOf:   make(map[string]map[string]struct{}),
+		Outputs:    make(map[string]map[string]struct{}),
+		Intervals:  make(map[string]map[time.Time]*Span),
+		Effects:    make(map[string]*Span),
+		EffectSite: make(map[string]*Span),
 	}
 }
 
@@ -130,24 +139,46 @@ func (db *DB) SetPrimarySpan(span trace.SpanID) {
 	db.PrimarySpan = span
 }
 
-func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) {
+func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) { //nolint: gocyclo
 	spanID := span.SpanContext().SpanID()
 
-	spanData := &Span{
-		ReadOnlySpan: span,
+	spanData, found := db.Spans[spanID]
+	if !found {
+		if !span.Parent().IsValid() && !db.PrimarySpan.IsValid() {
+			// Default the 'primary' span to the root span.
+			db.PrimarySpan = spanID
+		}
 
-		// All root spans are Primary, unless we're explicitly told a different
-		// span to treat as the "primary" as with Dagger-in-Dagger.
-		Primary: !span.Parent().SpanID().IsValid() ||
-			spanID == db.PrimarySpan,
+		spanData = &Span{
+			ID: spanID,
 
-		db:    db,
-		trace: traceData,
+			FailedEffects:  map[string]*Span{},
+			RunningEffects: map[string]*Span{},
+
+			db:    db,
+			trace: traceData,
+		}
+
+		db.Spans[spanID] = spanData
+		db.SpanOrder = append(db.SpanOrder, spanData)
+
+		// collect any children that were received before the parent
+		for _, childID := range db.ChildrenOrder[spanID] {
+			child := db.Spans[childID]
+			if child == nil {
+				// defensive
+				slog.Warn("child span not found", "child", childID)
+				continue
+			}
+			spanData.ChildSpans = append(spanData.ChildSpans, child)
+			child.ParentSpan = spanData
+		}
 	}
 
-	slog.Debug("recording span", "span", span.Name(), "id", spanID)
+	spanData.ReadOnlySpan = span
+	spanData.IsSelfRunning = span.EndTime().Before(span.StartTime())
 
-	db.Spans[spanID] = spanData
+	slog.Debug("recording span", "span", span.Name(), "id", spanID)
 
 	// track parent/child relationships
 	if parent := span.Parent(); parent.IsValid() {
@@ -155,7 +186,14 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) {
 			db.Children[parent.SpanID()] = make(map[trace.SpanID]struct{})
 		}
 		slog.Debug("recording span child", "span", span.Name(), "parent", parent.SpanID(), "child", spanID)
-		db.Children[parent.SpanID()][spanID] = struct{}{}
+		if _, found := db.Children[parent.SpanID()][spanID]; !found {
+			db.Children[parent.SpanID()][spanID] = struct{}{}
+			db.ChildrenOrder[parent.SpanID()] = append(db.ChildrenOrder[parent.SpanID()], spanID)
+			if parent, exists := db.Spans[span.Parent().SpanID()]; exists {
+				spanData.ParentSpan = parent
+				parent.ChildSpans = append(parent.ChildSpans, spanData)
+			}
+		}
 	} else if !db.PrimarySpan.IsValid() {
 		// default primary to "root" span, but we might never see it in a nested
 		// scenario.
@@ -230,6 +268,14 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) {
 		case telemetry.DagInputsAttr:
 			spanData.Inputs = attr.Value.AsStringSlice()
 
+		case telemetry.EffectIDsAttr:
+			spanData.Effects = attr.Value.AsStringSlice()
+			for _, digest := range spanData.Effects {
+				if db.EffectSite[digest] == nil {
+					db.EffectSite[digest] = spanData
+				}
+			}
+
 		case telemetry.DagOutputAttr:
 			output := attr.Value.AsString()
 			if digest == "" {
@@ -250,20 +296,36 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) {
 				db.OutputOf[output][digest] = struct{}{}
 			}
 
+		case telemetry.EffectIDAttr:
+			spanData.EffectID = attr.Value.AsString()
+			db.Effects[spanData.EffectID] = spanData
+			if dependentSpan := db.EffectSite[spanData.EffectID]; dependentSpan != nil {
+				if spanData.IsRunning() {
+					dependentSpan.RunningEffects[spanData.EffectID] = spanData
+				} else {
+					delete(dependentSpan.RunningEffects, spanData.EffectID)
+				}
+				if spanData.Failed() {
+					dependentSpan.FailedEffects[spanData.EffectID] = spanData
+				}
+			}
+
 		case "rpc.service":
+			// TODO: rather than special-casing this, we should just switch
+			// the telemetry pipeline over to HTTP.
+			// I tried adding attributes like 'internal' to the spans we care about
+			// but the OTel API is broken and stuck in bikeshedding:
+			// https://github.com/open-telemetry/opentelemetry-go-contrib/pull/5431#pullrequestreview-2024891968
 			spanData.Passthrough = true
 		}
 	}
-}
 
-func (db *DB) PrimarySpanForTrace(traceID trace.TraceID) *Span {
-	for _, span := range db.Spans {
-		spanCtx := span.SpanContext()
-		if span.Primary && spanCtx.TraceID() == traceID {
-			return span
+	if spanData.Call != nil && spanData.Call.ReceiverDigest != "" {
+		parentCall, ok := db.Calls[spanData.Call.ReceiverDigest]
+		if ok {
+			spanData.Base = db.Simplify(parentCall, spanData.Internal)
 		}
 	}
-	return nil
 }
 
 func (db *DB) HighLevelSpan(call *callpbv1.Call) *Span {
@@ -376,23 +438,37 @@ func (db *DB) idSize(id *callpbv1.Call) int {
 	return size
 }
 
-func (db *DB) Simplify(call *callpbv1.Call, require bool) (smallest *callpbv1.Call) {
+func (db *DB) Simplify(call *callpbv1.Call, force bool) (smallest *callpbv1.Call) {
 	smallest = call
-	creators, ok := db.OutputOf[call.Digest]
-	if !ok {
-		return
-	}
 	smallestSize := -1
-	if !require {
+	if !force {
 		smallestSize = db.idSize(smallest)
 	}
-	var simplified bool
+
+	creators, ok := db.OutputOf[call.Digest]
+	if !ok {
+		return smallest
+	}
+	simplified := false
+
+loop:
 	for creatorDig := range creators {
 		if creatorDig == call.Digest {
+			// can't be simplified to itself
 			continue
 		}
 		creator, ok := db.Calls[creatorDig]
 		if ok {
+			for _, creatorArg := range creator.Args {
+				if creatorArg, ok := creatorArg.Value.Value.(*callpbv1.Literal_CallDigest); ok {
+					if creatorArg.CallDigest == call.Digest {
+						// can't be simplified to a call that references itself
+						// in it's argument - which would loop endlessly
+						continue loop
+					}
+				}
+			}
+
 			if size := db.idSize(creator); smallestSize == -1 || size < smallestSize {
 				smallest = creator
 				smallestSize = size
@@ -403,7 +479,7 @@ func (db *DB) Simplify(call *callpbv1.Call, require bool) (smallest *callpbv1.Ca
 	if simplified {
 		return db.Simplify(smallest, false)
 	}
-	return
+	return smallest
 }
 
 func getAttr(attrs []attribute.KeyValue, key attribute.Key) (attribute.Value, bool) {

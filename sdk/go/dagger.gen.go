@@ -118,8 +118,26 @@ type ContainerID string
 // The `CurrentModuleID` scalar type represents an identifier for an object of type CurrentModule.
 type CurrentModuleID string
 
+// The `DaggerEngineCacheEntryID` scalar type represents an identifier for an object of type DaggerEngineCacheEntry.
+type DaggerEngineCacheEntryID string
+
+// The `DaggerEngineCacheEntrySetID` scalar type represents an identifier for an object of type DaggerEngineCacheEntrySet.
+type DaggerEngineCacheEntrySetID string
+
+// The `DaggerEngineCacheID` scalar type represents an identifier for an object of type DaggerEngineCache.
+type DaggerEngineCacheID string
+
+// The `DaggerEngineID` scalar type represents an identifier for an object of type DaggerEngine.
+type DaggerEngineID string
+
 // The `DirectoryID` scalar type represents an identifier for an object of type Directory.
 type DirectoryID string
+
+// The `EnumTypeDefID` scalar type represents an identifier for an object of type EnumTypeDef.
+type EnumTypeDefID string
+
+// The `EnumValueTypeDefID` scalar type represents an identifier for an object of type EnumValueTypeDef.
+type EnumValueTypeDefID string
 
 // The `EnvVariableID` scalar type represents an identifier for an object of type EnvVariable.
 type EnvVariableID string
@@ -309,7 +327,7 @@ type Container struct {
 	query *querybuilder.Selection
 
 	envVariable *string
-	export      *bool
+	export      *string
 	id          *ContainerID
 	imageRef    *string
 	label       *string
@@ -555,10 +573,8 @@ type ContainerExportOpts struct {
 
 // Writes the container as an OCI tarball to the destination file path on the host.
 //
-// Return true on success.
-//
 // It can also export platform variants.
-func (r *Container) Export(ctx context.Context, path string, opts ...ContainerExportOpts) (bool, error) {
+func (r *Container) Export(ctx context.Context, path string, opts ...ContainerExportOpts) (string, error) {
 	if r.export != nil {
 		return *r.export, nil
 	}
@@ -579,7 +595,7 @@ func (r *Container) Export(ctx context.Context, path string, opts ...ContainerEx
 	}
 	q = q.Arg("path", path)
 
-	var response bool
+	var response string
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -909,7 +925,13 @@ func (r *Container) Stdout(ctx context.Context) (string, error) {
 func (r *Container) Sync(ctx context.Context) (*Container, error) {
 	q := r.query.Select("sync")
 
-	return r, q.Execute(ctx)
+	var id ContainerID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Container{
+		query: q.Root().Select("loadContainerFromID").Arg("id", id),
+	}, nil
 }
 
 // ContainerTerminalOpts contains options for Container.Terminal
@@ -924,8 +946,8 @@ type ContainerTerminalOpts struct {
 	InsecureRootCapabilities bool
 }
 
-// Return an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
-func (r *Container) Terminal(opts ...ContainerTerminalOpts) *Terminal {
+// Opens an interactive terminal for this container using its configured default terminal command if not overridden by args (or sh as a fallback default).
+func (r *Container) Terminal(opts ...ContainerTerminalOpts) *Container {
 	q := r.query.Select("terminal")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `cmd` optional argument
@@ -942,7 +964,7 @@ func (r *Container) Terminal(opts ...ContainerTerminalOpts) *Terminal {
 		}
 	}
 
-	return &Terminal{
+	return &Container{
 		query: q,
 	}
 }
@@ -1087,8 +1109,10 @@ func (r *Container) WithEnvVariable(name string, value string, opts ...Container
 
 // ContainerWithExecOpts contains options for Container.WithExec
 type ContainerWithExecOpts struct {
-	// If the container has an entrypoint, ignore it for args rather than using it to wrap them.
+	// DEPRECATED: For true this can be removed. For false, use `useEntrypoint` instead.
 	SkipEntrypoint bool
+	// If the container has an entrypoint, prepend it to the args.
+	UseEntrypoint bool
 	// Content to write to the command's standard input before closing (e.g., "Hello world").
 	Stdin string
 	// Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
@@ -1110,6 +1134,10 @@ func (r *Container) WithExec(args []string, opts ...ContainerWithExecOpts) *Cont
 		// `skipEntrypoint` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SkipEntrypoint) {
 			q = q.Arg("skipEntrypoint", opts[i].SkipEntrypoint)
+		}
+		// `useEntrypoint` optional argument
+		if !querybuilder.IsZeroValue(opts[i].UseEntrypoint) {
+			q = q.Arg("useEntrypoint", opts[i].UseEntrypoint)
 		}
 		// `stdin` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Stdin) {
@@ -1412,8 +1440,6 @@ func (r *Container) WithMountedTemp(path string) *Container {
 
 // ContainerWithNewFileOpts contains options for Container.WithNewFile
 type ContainerWithNewFileOpts struct {
-	// Content of the file to write (e.g., "Hello world!").
-	Contents string
 	// Permission given to the written file (e.g., 0600).
 	Permissions int
 	// A user:group to set for the file.
@@ -1425,13 +1451,9 @@ type ContainerWithNewFileOpts struct {
 }
 
 // Retrieves this container plus a new file written at the given path.
-func (r *Container) WithNewFile(path string, opts ...ContainerWithNewFileOpts) *Container {
+func (r *Container) WithNewFile(path string, contents string, opts ...ContainerWithNewFileOpts) *Container {
 	q := r.query.Select("withNewFile")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `contents` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Contents) {
-			q = q.Arg("contents", opts[i].Contents)
-		}
 		// `permissions` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Permissions) {
 			q = q.Arg("permissions", opts[i].Permissions)
@@ -1442,6 +1464,7 @@ func (r *Container) WithNewFile(path string, opts ...ContainerWithNewFileOpts) *
 		}
 	}
 	q = q.Arg("path", path)
+	q = q.Arg("contents", contents)
 
 	return &Container{
 		query: q,
@@ -1842,11 +1865,397 @@ func (r *CurrentModule) WorkdirFile(path string) *File {
 	}
 }
 
+// The Dagger engine configuration and state
+type DaggerEngine struct {
+	query *querybuilder.Selection
+
+	id *DaggerEngineID
+}
+
+func (r *DaggerEngine) WithGraphQLQuery(q *querybuilder.Selection) *DaggerEngine {
+	return &DaggerEngine{
+		query: q,
+	}
+}
+
+// A unique identifier for this DaggerEngine.
+func (r *DaggerEngine) ID(ctx context.Context) (DaggerEngineID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response DaggerEngineID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *DaggerEngine) XXX_GraphQLType() string {
+	return "DaggerEngine"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *DaggerEngine) XXX_GraphQLIDType() string {
+	return "DaggerEngineID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *DaggerEngine) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *DaggerEngine) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The local (on-disk) cache for the Dagger engine
+func (r *DaggerEngine) LocalCache() *DaggerEngineCache {
+	q := r.query.Select("localCache")
+
+	return &DaggerEngineCache{
+		query: q,
+	}
+}
+
+// A cache storage for the Dagger engine
+type DaggerEngineCache struct {
+	query *querybuilder.Selection
+
+	id        *DaggerEngineCacheID
+	keepBytes *int
+	prune     *Void
+}
+
+func (r *DaggerEngineCache) WithGraphQLQuery(q *querybuilder.Selection) *DaggerEngineCache {
+	return &DaggerEngineCache{
+		query: q,
+	}
+}
+
+// The current set of entries in the cache
+func (r *DaggerEngineCache) EntrySet() *DaggerEngineCacheEntrySet {
+	q := r.query.Select("entrySet")
+
+	return &DaggerEngineCacheEntrySet{
+		query: q,
+	}
+}
+
+// A unique identifier for this DaggerEngineCache.
+func (r *DaggerEngineCache) ID(ctx context.Context) (DaggerEngineCacheID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response DaggerEngineCacheID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *DaggerEngineCache) XXX_GraphQLType() string {
+	return "DaggerEngineCache"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *DaggerEngineCache) XXX_GraphQLIDType() string {
+	return "DaggerEngineCacheID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *DaggerEngineCache) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *DaggerEngineCache) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The maximum bytes to keep in the cache without pruning, after which automatic pruning may kick in.
+func (r *DaggerEngineCache) KeepBytes(ctx context.Context) (int, error) {
+	if r.keepBytes != nil {
+		return *r.keepBytes, nil
+	}
+	q := r.query.Select("keepBytes")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Prune the cache of releaseable entries
+func (r *DaggerEngineCache) Prune(ctx context.Context) error {
+	if r.prune != nil {
+		return nil
+	}
+	q := r.query.Select("prune")
+
+	return q.Execute(ctx)
+}
+
+// An individual cache entry in a cache entry set
+type DaggerEngineCacheEntry struct {
+	query *querybuilder.Selection
+
+	activelyUsed              *bool
+	createdTimeUnixNano       *int
+	description               *string
+	diskSpaceBytes            *int
+	id                        *DaggerEngineCacheEntryID
+	mostRecentUseTimeUnixNano *int
+}
+
+func (r *DaggerEngineCacheEntry) WithGraphQLQuery(q *querybuilder.Selection) *DaggerEngineCacheEntry {
+	return &DaggerEngineCacheEntry{
+		query: q,
+	}
+}
+
+// Whether the cache entry is actively being used.
+func (r *DaggerEngineCacheEntry) ActivelyUsed(ctx context.Context) (bool, error) {
+	if r.activelyUsed != nil {
+		return *r.activelyUsed, nil
+	}
+	q := r.query.Select("activelyUsed")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The time the cache entry was created, in Unix nanoseconds.
+func (r *DaggerEngineCacheEntry) CreatedTimeUnixNano(ctx context.Context) (int, error) {
+	if r.createdTimeUnixNano != nil {
+		return *r.createdTimeUnixNano, nil
+	}
+	q := r.query.Select("createdTimeUnixNano")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The description of the cache entry.
+func (r *DaggerEngineCacheEntry) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.query.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The disk space used by the cache entry.
+func (r *DaggerEngineCacheEntry) DiskSpaceBytes(ctx context.Context) (int, error) {
+	if r.diskSpaceBytes != nil {
+		return *r.diskSpaceBytes, nil
+	}
+	q := r.query.Select("diskSpaceBytes")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this DaggerEngineCacheEntry.
+func (r *DaggerEngineCacheEntry) ID(ctx context.Context) (DaggerEngineCacheEntryID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response DaggerEngineCacheEntryID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *DaggerEngineCacheEntry) XXX_GraphQLType() string {
+	return "DaggerEngineCacheEntry"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *DaggerEngineCacheEntry) XXX_GraphQLIDType() string {
+	return "DaggerEngineCacheEntryID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *DaggerEngineCacheEntry) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *DaggerEngineCacheEntry) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The most recent time the cache entry was used, in Unix nanoseconds.
+func (r *DaggerEngineCacheEntry) MostRecentUseTimeUnixNano(ctx context.Context) (int, error) {
+	if r.mostRecentUseTimeUnixNano != nil {
+		return *r.mostRecentUseTimeUnixNano, nil
+	}
+	q := r.query.Select("mostRecentUseTimeUnixNano")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A set of cache entries returned by a query to a cache
+type DaggerEngineCacheEntrySet struct {
+	query *querybuilder.Selection
+
+	diskSpaceBytes *int
+	entryCount     *int
+	id             *DaggerEngineCacheEntrySetID
+}
+
+func (r *DaggerEngineCacheEntrySet) WithGraphQLQuery(q *querybuilder.Selection) *DaggerEngineCacheEntrySet {
+	return &DaggerEngineCacheEntrySet{
+		query: q,
+	}
+}
+
+// The total disk space used by the cache entries in this set.
+func (r *DaggerEngineCacheEntrySet) DiskSpaceBytes(ctx context.Context) (int, error) {
+	if r.diskSpaceBytes != nil {
+		return *r.diskSpaceBytes, nil
+	}
+	q := r.query.Select("diskSpaceBytes")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The list of individual cache entries in the set
+func (r *DaggerEngineCacheEntrySet) Entries(ctx context.Context) ([]DaggerEngineCacheEntry, error) {
+	q := r.query.Select("entries")
+
+	q = q.Select("id")
+
+	type entries struct {
+		Id DaggerEngineCacheEntryID
+	}
+
+	convert := func(fields []entries) []DaggerEngineCacheEntry {
+		out := []DaggerEngineCacheEntry{}
+
+		for i := range fields {
+			val := DaggerEngineCacheEntry{id: &fields[i].Id}
+			val.query = q.Root().Select("loadDaggerEngineCacheEntryFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []entries
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// The number of cache entries in this set.
+func (r *DaggerEngineCacheEntrySet) EntryCount(ctx context.Context) (int, error) {
+	if r.entryCount != nil {
+		return *r.entryCount, nil
+	}
+	q := r.query.Select("entryCount")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this DaggerEngineCacheEntrySet.
+func (r *DaggerEngineCacheEntrySet) ID(ctx context.Context) (DaggerEngineCacheEntrySetID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response DaggerEngineCacheEntrySetID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *DaggerEngineCacheEntrySet) XXX_GraphQLType() string {
+	return "DaggerEngineCacheEntrySet"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *DaggerEngineCacheEntrySet) XXX_GraphQLIDType() string {
+	return "DaggerEngineCacheEntrySetID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *DaggerEngineCacheEntrySet) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *DaggerEngineCacheEntrySet) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
 // A directory.
 type Directory struct {
 	query *querybuilder.Selection
 
-	export *bool
+	export *string
 	id     *DirectoryID
 	sync   *DirectoryID
 }
@@ -1873,6 +2282,8 @@ type DirectoryAsModuleOpts struct {
 	//
 	// If not set, the module source code is loaded from the root of the directory.
 	SourceRootPath string
+	// The engine version to upgrade to.
+	EngineVersion string
 }
 
 // Load the directory as a Dagger module
@@ -1882,6 +2293,10 @@ func (r *Directory) AsModule(opts ...DirectoryAsModuleOpts) *Module {
 		// `sourceRootPath` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SourceRootPath) {
 			q = q.Arg("sourceRootPath", opts[i].SourceRootPath)
+		}
+		// `engineVersion` optional argument
+		if !querybuilder.IsZeroValue(opts[i].EngineVersion) {
+			q = q.Arg("engineVersion", opts[i].EngineVersion)
 		}
 	}
 
@@ -1987,7 +2402,7 @@ type DirectoryExportOpts struct {
 }
 
 // Writes the contents of the directory to a path on the host.
-func (r *Directory) Export(ctx context.Context, path string, opts ...DirectoryExportOpts) (bool, error) {
+func (r *Directory) Export(ctx context.Context, path string, opts ...DirectoryExportOpts) (string, error) {
 	if r.export != nil {
 		return *r.export, nil
 	}
@@ -2000,7 +2415,7 @@ func (r *Directory) Export(ctx context.Context, path string, opts ...DirectoryEx
 	}
 	q = q.Arg("path", path)
 
-	var response bool
+	var response string
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -2099,7 +2514,54 @@ func (r *Directory) Pipeline(name string, opts ...DirectoryPipelineOpts) *Direct
 func (r *Directory) Sync(ctx context.Context) (*Directory, error) {
 	q := r.query.Select("sync")
 
-	return r, q.Execute(ctx)
+	var id DirectoryID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Directory{
+		query: q.Root().Select("loadDirectoryFromID").Arg("id", id),
+	}, nil
+}
+
+// DirectoryTerminalOpts contains options for Directory.Terminal
+type DirectoryTerminalOpts struct {
+	// If set, override the container's default terminal command and invoke these command arguments instead.
+	Cmd []string
+	// Provides Dagger access to the executed command.
+	//
+	// Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
+	ExperimentalPrivilegedNesting bool
+	// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
+	InsecureRootCapabilities bool
+	// If set, override the default container used for the terminal.
+	Container *Container
+}
+
+// Opens an interactive terminal in new container with this directory mounted inside.
+func (r *Directory) Terminal(opts ...DirectoryTerminalOpts) *Directory {
+	q := r.query.Select("terminal")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `cmd` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Cmd) {
+			q = q.Arg("cmd", opts[i].Cmd)
+		}
+		// `experimentalPrivilegedNesting` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
+			q = q.Arg("experimentalPrivilegedNesting", opts[i].ExperimentalPrivilegedNesting)
+		}
+		// `insecureRootCapabilities` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InsecureRootCapabilities) {
+			q = q.Arg("insecureRootCapabilities", opts[i].InsecureRootCapabilities)
+		}
+		// `container` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Container) {
+			q = q.Arg("container", opts[i].Container)
+		}
+	}
+
+	return &Directory{
+		query: q,
+	}
 }
 
 // DirectoryWithDirectoryOpts contains options for Directory.WithDirectory
@@ -2252,6 +2714,215 @@ func (r *Directory) WithoutFile(path string) *Directory {
 	return &Directory{
 		query: q,
 	}
+}
+
+// A definition of a custom enum defined in a Module.
+type EnumTypeDef struct {
+	query *querybuilder.Selection
+
+	description      *string
+	id               *EnumTypeDefID
+	name             *string
+	sourceModuleName *string
+}
+
+func (r *EnumTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *EnumTypeDef {
+	return &EnumTypeDef{
+		query: q,
+	}
+}
+
+// A doc string for the enum, if any.
+func (r *EnumTypeDef) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.query.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this EnumTypeDef.
+func (r *EnumTypeDef) ID(ctx context.Context) (EnumTypeDefID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response EnumTypeDefID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *EnumTypeDef) XXX_GraphQLType() string {
+	return "EnumTypeDef"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *EnumTypeDef) XXX_GraphQLIDType() string {
+	return "EnumTypeDefID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *EnumTypeDef) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *EnumTypeDef) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The name of the enum.
+func (r *EnumTypeDef) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// If this EnumTypeDef is associated with a Module, the name of the module. Unset otherwise.
+func (r *EnumTypeDef) SourceModuleName(ctx context.Context) (string, error) {
+	if r.sourceModuleName != nil {
+		return *r.sourceModuleName, nil
+	}
+	q := r.query.Select("sourceModuleName")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The values of the enum.
+func (r *EnumTypeDef) Values(ctx context.Context) ([]EnumValueTypeDef, error) {
+	q := r.query.Select("values")
+
+	q = q.Select("id")
+
+	type values struct {
+		Id EnumValueTypeDefID
+	}
+
+	convert := func(fields []values) []EnumValueTypeDef {
+		out := []EnumValueTypeDef{}
+
+		for i := range fields {
+			val := EnumValueTypeDef{id: &fields[i].Id}
+			val.query = q.Root().Select("loadEnumValueTypeDefFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []values
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// A definition of a value in a custom enum defined in a Module.
+type EnumValueTypeDef struct {
+	query *querybuilder.Selection
+
+	description *string
+	id          *EnumValueTypeDefID
+	name        *string
+}
+
+func (r *EnumValueTypeDef) WithGraphQLQuery(q *querybuilder.Selection) *EnumValueTypeDef {
+	return &EnumValueTypeDef{
+		query: q,
+	}
+}
+
+// A doc string for the enum value, if any.
+func (r *EnumValueTypeDef) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.query.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this EnumValueTypeDef.
+func (r *EnumValueTypeDef) ID(ctx context.Context) (EnumValueTypeDefID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response EnumValueTypeDefID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *EnumValueTypeDef) XXX_GraphQLType() string {
+	return "EnumValueTypeDef"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *EnumValueTypeDef) XXX_GraphQLIDType() string {
+	return "EnumValueTypeDefID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *EnumValueTypeDef) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *EnumValueTypeDef) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The name of the enum value.
+func (r *EnumValueTypeDef) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.query.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // An environment variable name and value.
@@ -2432,7 +3103,7 @@ type File struct {
 	query *querybuilder.Selection
 
 	contents *string
-	export   *bool
+	export   *string
 	id       *FileID
 	name     *string
 	size     *int
@@ -2473,7 +3144,7 @@ type FileExportOpts struct {
 }
 
 // Writes the file to a file path on the host.
-func (r *File) Export(ctx context.Context, path string, opts ...FileExportOpts) (bool, error) {
+func (r *File) Export(ctx context.Context, path string, opts ...FileExportOpts) (string, error) {
 	if r.export != nil {
 		return *r.export, nil
 	}
@@ -2486,7 +3157,7 @@ func (r *File) Export(ctx context.Context, path string, opts ...FileExportOpts) 
 	}
 	q = q.Arg("path", path)
 
-	var response bool
+	var response string
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
@@ -2562,7 +3233,13 @@ func (r *File) Size(ctx context.Context) (int, error) {
 func (r *File) Sync(ctx context.Context) (*File, error) {
 	q := r.query.Select("sync")
 
-	return r, q.Execute(ctx)
+	var id FileID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &File{
+		query: q.Root().Select("loadFileFromID").Arg("id", id),
+	}, nil
 }
 
 // Retrieves this file with its name set to the given name.
@@ -2994,17 +3671,14 @@ func (r *FunctionCall) ParentName(ctx context.Context) (string, error) {
 }
 
 // Set the return value of the function call to the provided value.
-func (r *FunctionCall) ReturnValue(ctx context.Context, value JSON) (Void, error) {
+func (r *FunctionCall) ReturnValue(ctx context.Context, value JSON) error {
 	if r.returnValue != nil {
-		return *r.returnValue, nil
+		return nil
 	}
 	q := r.query.Select("returnValue")
 	q = q.Arg("value", value)
 
-	var response Void
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	return q.Execute(ctx)
 }
 
 // A value passed as a named argument to a function call.
@@ -3411,27 +4085,9 @@ func (r *GitRef) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// GitRefTreeOpts contains options for GitRef.Tree
-type GitRefTreeOpts struct {
-	// DEPRECATED: This option should be passed to `git` instead.
-	SSHKnownHosts string
-	// DEPRECATED: This option should be passed to `git` instead.
-	SSHAuthSocket *Socket
-}
-
 // The filesystem tree at this ref.
-func (r *GitRef) Tree(opts ...GitRefTreeOpts) *Directory {
+func (r *GitRef) Tree() *Directory {
 	q := r.query.Select("tree")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `sshKnownHosts` optional argument
-		if !querybuilder.IsZeroValue(opts[i].SSHKnownHosts) {
-			q = q.Arg("sshKnownHosts", opts[i].SSHKnownHosts)
-		}
-		// `sshAuthSocket` optional argument
-		if !querybuilder.IsZeroValue(opts[i].SSHAuthSocket) {
-			q = q.Arg("sshAuthSocket", opts[i].SSHAuthSocket)
-		}
-	}
 
 	return &Directory{
 		query: q,
@@ -3546,6 +4202,28 @@ func (r *GitRepository) Tag(name string) *GitRef {
 	return &GitRef{
 		query: q,
 	}
+}
+
+// GitRepositoryTagsOpts contains options for GitRepository.Tags
+type GitRepositoryTagsOpts struct {
+	// Glob patterns (e.g., "refs/tags/v*").
+	Patterns []string
+}
+
+// tags that match any of the given glob patterns.
+func (r *GitRepository) Tags(ctx context.Context, opts ...GitRepositoryTagsOpts) ([]string, error) {
+	q := r.query.Select("tags")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `patterns` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Patterns) {
+			q = q.Arg("patterns", opts[i].Patterns)
+		}
+	}
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // Header to authenticate the remote with.
@@ -4297,6 +4975,39 @@ func (r *Module) Description(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// Enumerations served by this module.
+func (r *Module) Enums(ctx context.Context) ([]TypeDef, error) {
+	q := r.query.Select("enums")
+
+	q = q.Select("id")
+
+	type enums struct {
+		Id TypeDefID
+	}
+
+	convert := func(fields []enums) []TypeDef {
+		out := []TypeDef{}
+
+		for i := range fields {
+			val := TypeDef{id: &fields[i].Id}
+			val.query = q.Root().Select("loadTypeDefFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []enums
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
 // The generated files and directories made on top of the module source's context directory.
 func (r *Module) GeneratedContextDiff() *Directory {
 	q := r.query.Select("generatedContextDiff")
@@ -4468,16 +5179,13 @@ func (r *Module) SDK(ctx context.Context) (string, error) {
 // Serve a module's API in the current session.
 //
 // Note: this can only be called once per session. In the future, it could return a stream or service to remove the side effect.
-func (r *Module) Serve(ctx context.Context) (Void, error) {
+func (r *Module) Serve(ctx context.Context) error {
 	if r.serve != nil {
-		return *r.serve, nil
+		return nil
 	}
 	q := r.query.Select("serve")
 
-	var response Void
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	return q.Execute(ctx)
 }
 
 // The source for the module.
@@ -4493,6 +5201,17 @@ func (r *Module) Source() *ModuleSource {
 func (r *Module) WithDescription(description string) *Module {
 	q := r.query.Select("withDescription")
 	q = q.Arg("description", description)
+
+	return &Module{
+		query: q,
+	}
+}
+
+// This module plus the given Enum type and associated values
+func (r *Module) WithEnum(enum *TypeDef) *Module {
+	assertNotNil("enum", enum)
+	q := r.query.Select("withEnum")
+	q = q.Arg("enum", enum)
 
 	return &Module{
 		query: q,
@@ -4521,10 +5240,22 @@ func (r *Module) WithObject(object *TypeDef) *Module {
 	}
 }
 
+// ModuleWithSourceOpts contains options for Module.WithSource
+type ModuleWithSourceOpts struct {
+	// The engine version to upgrade to.
+	EngineVersion string
+}
+
 // Retrieves the module with basic configuration loaded if present.
-func (r *Module) WithSource(source *ModuleSource) *Module {
+func (r *Module) WithSource(source *ModuleSource, opts ...ModuleWithSourceOpts) *Module {
 	assertNotNil("source", source)
 	q := r.query.Select("withSource")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `engineVersion` optional argument
+		if !querybuilder.IsZeroValue(opts[i].EngineVersion) {
+			q = q.Arg("engineVersion", opts[i].EngineVersion)
+		}
+	}
 	q = q.Arg("source", source)
 
 	return &Module{
@@ -4655,9 +5386,21 @@ func (r *ModuleSource) AsLocalSource() *LocalModuleSource {
 	}
 }
 
+// ModuleSourceAsModuleOpts contains options for ModuleSource.AsModule
+type ModuleSourceAsModuleOpts struct {
+	// The engine version to upgrade to.
+	EngineVersion string
+}
+
 // Load the source as a module. If this is a local source, the parent directory must have been provided during module source creation
-func (r *ModuleSource) AsModule() *Module {
+func (r *ModuleSource) AsModule(opts ...ModuleSourceAsModuleOpts) *Module {
 	q := r.query.Select("asModule")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `engineVersion` optional argument
+		if !querybuilder.IsZeroValue(opts[i].EngineVersion) {
+			q = q.Arg("engineVersion", opts[i].EngineVersion)
+		}
+	}
 
 	return &Module{
 		query: q,
@@ -5412,21 +6155,8 @@ func (r *Client) CacheVolume(key string) *CacheVolume {
 	}
 }
 
-// Checks if the current Dagger Engine is compatible with an SDK's required version.
-func (r *Client) CheckVersionCompatibility(ctx context.Context, version string) (bool, error) {
-	q := r.query.Select("checkVersionCompatibility")
-	q = q.Arg("version", version)
-
-	var response bool
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
 // ContainerOpts contains options for Client.Container
 type ContainerOpts struct {
-	// DEPRECATED: Use `loadContainerFromID` instead.
-	ID ContainerID
 	// Platform to initialize the container with.
 	Platform Platform
 }
@@ -5437,10 +6167,6 @@ type ContainerOpts struct {
 func (r *Client) Container(opts ...ContainerOpts) *Container {
 	q := r.query.Select("container")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `id` optional argument
-		if !querybuilder.IsZeroValue(opts[i].ID) {
-			q = q.Arg("id", opts[i].ID)
-		}
 		// `platform` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Platform) {
 			q = q.Arg("platform", opts[i].Platform)
@@ -5505,6 +6231,15 @@ func (r *Client) CurrentTypeDefs(ctx context.Context) ([]TypeDef, error) {
 	return convert(response), nil
 }
 
+// The Dagger engine container configuration and state
+func (r *Client) DaggerEngine() *DaggerEngine {
+	q := r.query.Select("daggerEngine")
+
+	return &DaggerEngine{
+		query: q,
+	}
+}
+
 // The default platform of the engine.
 func (r *Client) DefaultPlatform(ctx context.Context) (Platform, error) {
 	q := r.query.Select("defaultPlatform")
@@ -5515,33 +6250,11 @@ func (r *Client) DefaultPlatform(ctx context.Context) (Platform, error) {
 	return response, q.Execute(ctx)
 }
 
-// DirectoryOpts contains options for Client.Directory
-type DirectoryOpts struct {
-	// DEPRECATED: Use `loadDirectoryFromID` instead.
-	ID DirectoryID
-}
-
 // Creates an empty directory.
-func (r *Client) Directory(opts ...DirectoryOpts) *Directory {
+func (r *Client) Directory() *Directory {
 	q := r.query.Select("directory")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `id` optional argument
-		if !querybuilder.IsZeroValue(opts[i].ID) {
-			q = q.Arg("id", opts[i].ID)
-		}
-	}
 
 	return &Directory{
-		query: q,
-	}
-}
-
-// Deprecated: Use LoadFileFromID instead.
-func (r *Client) File(id FileID) *File {
-	q := r.query.Select("file")
-	q = q.Arg("id", id)
-
-	return &File{
 		query: q,
 	}
 }
@@ -5670,12 +6383,72 @@ func (r *Client) LoadCurrentModuleFromID(id CurrentModuleID) *CurrentModule {
 	}
 }
 
+// Load a DaggerEngineCacheEntry from its ID.
+func (r *Client) LoadDaggerEngineCacheEntryFromID(id DaggerEngineCacheEntryID) *DaggerEngineCacheEntry {
+	q := r.query.Select("loadDaggerEngineCacheEntryFromID")
+	q = q.Arg("id", id)
+
+	return &DaggerEngineCacheEntry{
+		query: q,
+	}
+}
+
+// Load a DaggerEngineCacheEntrySet from its ID.
+func (r *Client) LoadDaggerEngineCacheEntrySetFromID(id DaggerEngineCacheEntrySetID) *DaggerEngineCacheEntrySet {
+	q := r.query.Select("loadDaggerEngineCacheEntrySetFromID")
+	q = q.Arg("id", id)
+
+	return &DaggerEngineCacheEntrySet{
+		query: q,
+	}
+}
+
+// Load a DaggerEngineCache from its ID.
+func (r *Client) LoadDaggerEngineCacheFromID(id DaggerEngineCacheID) *DaggerEngineCache {
+	q := r.query.Select("loadDaggerEngineCacheFromID")
+	q = q.Arg("id", id)
+
+	return &DaggerEngineCache{
+		query: q,
+	}
+}
+
+// Load a DaggerEngine from its ID.
+func (r *Client) LoadDaggerEngineFromID(id DaggerEngineID) *DaggerEngine {
+	q := r.query.Select("loadDaggerEngineFromID")
+	q = q.Arg("id", id)
+
+	return &DaggerEngine{
+		query: q,
+	}
+}
+
 // Load a Directory from its ID.
 func (r *Client) LoadDirectoryFromID(id DirectoryID) *Directory {
 	q := r.query.Select("loadDirectoryFromID")
 	q = q.Arg("id", id)
 
 	return &Directory{
+		query: q,
+	}
+}
+
+// Load a EnumTypeDef from its ID.
+func (r *Client) LoadEnumTypeDefFromID(id EnumTypeDefID) *EnumTypeDef {
+	q := r.query.Select("loadEnumTypeDefFromID")
+	q = q.Arg("id", id)
+
+	return &EnumTypeDef{
+		query: q,
+	}
+}
+
+// Load a EnumValueTypeDef from its ID.
+func (r *Client) LoadEnumValueTypeDefFromID(id EnumValueTypeDefID) *EnumValueTypeDef {
+	q := r.query.Select("loadEnumValueTypeDefFromID")
+	q = q.Arg("id", id)
+
+	return &EnumValueTypeDef{
 		query: q,
 	}
 }
@@ -6087,18 +6860,6 @@ func (r *Client) SetSecret(name string, plaintext string) *Secret {
 	}
 }
 
-// Loads a socket by its ID.
-//
-// Deprecated: Use LoadSocketFromID instead.
-func (r *Client) Socket(id SocketID) *Socket {
-	q := r.query.Select("socket")
-	q = q.Arg("id", id)
-
-	return &Socket{
-		query: q,
-	}
-}
-
 // Create a new TypeDef.
 func (r *Client) TypeDef() *TypeDef {
 	q := r.query.Select("typeDef")
@@ -6439,7 +7200,13 @@ func (r *Service) Ports(ctx context.Context) ([]Port, error) {
 func (r *Service) Start(ctx context.Context) (*Service, error) {
 	q := r.query.Select("start")
 
-	return r, q.Execute(ctx)
+	var id ServiceID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Service{
+		query: q.Root().Select("loadServiceFromID").Arg("id", id),
+	}, nil
 }
 
 // ServiceStopOpts contains options for Service.Stop
@@ -6458,7 +7225,13 @@ func (r *Service) Stop(ctx context.Context, opts ...ServiceStopOpts) (*Service, 
 		}
 	}
 
-	return r, q.Execute(ctx)
+	var id ServiceID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
+	}
+	return &Service{
+		query: q.Root().Select("loadServiceFromID").Arg("id", id),
+	}, nil
 }
 
 // ServiceUpOpts contains options for Service.Up
@@ -6472,9 +7245,9 @@ type ServiceUpOpts struct {
 }
 
 // Creates a tunnel that forwards traffic from the caller's network to this service.
-func (r *Service) Up(ctx context.Context, opts ...ServiceUpOpts) (Void, error) {
+func (r *Service) Up(ctx context.Context, opts ...ServiceUpOpts) error {
 	if r.up != nil {
-		return *r.up, nil
+		return nil
 	}
 	q := r.query.Select("up")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -6488,10 +7261,7 @@ func (r *Service) Up(ctx context.Context, opts ...ServiceUpOpts) (Void, error) {
 		}
 	}
 
-	var response Void
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	return q.Execute(ctx)
 }
 
 // A Unix or TCP/IP socket that can be mounted into a container.
@@ -6551,8 +7321,8 @@ func (r *Socket) MarshalJSON() ([]byte, error) {
 type Terminal struct {
 	query *querybuilder.Selection
 
-	id                *TerminalID
-	websocketEndpoint *string
+	id   *TerminalID
+	sync *TerminalID
 }
 
 func (r *Terminal) WithGraphQLQuery(q *querybuilder.Selection) *Terminal {
@@ -6601,17 +7371,19 @@ func (r *Terminal) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
-// An http endpoint at which this terminal can be connected to over a websocket.
-func (r *Terminal) WebsocketEndpoint(ctx context.Context) (string, error) {
-	if r.websocketEndpoint != nil {
-		return *r.websocketEndpoint, nil
+// Forces evaluation of the pipeline in the engine.
+//
+// It doesn't run the default command if no exec has been set.
+func (r *Terminal) Sync(ctx context.Context) (*Terminal, error) {
+	q := r.query.Select("sync")
+
+	var id TerminalID
+	if err := q.Bind(&id).Execute(ctx); err != nil {
+		return nil, err
 	}
-	q := r.query.Select("websocketEndpoint")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
+	return &Terminal{
+		query: q.Root().Select("loadTerminalFromID").Arg("id", id),
+	}, nil
 }
 
 // A definition of a parameter or return type in a Module.
@@ -6633,6 +7405,15 @@ func (r *TypeDef) With(f WithTypeDefFunc) *TypeDef {
 
 func (r *TypeDef) WithGraphQLQuery(q *querybuilder.Selection) *TypeDef {
 	return &TypeDef{
+		query: q,
+	}
+}
+
+// If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null.
+func (r *TypeDef) AsEnum() *EnumTypeDef {
+	q := r.query.Select("asEnum")
+
+	return &EnumTypeDef{
 		query: q,
 	}
 }
@@ -6753,6 +7534,52 @@ func (r *TypeDef) WithConstructor(function *Function) *TypeDef {
 	assertNotNil("function", function)
 	q := r.query.Select("withConstructor")
 	q = q.Arg("function", function)
+
+	return &TypeDef{
+		query: q,
+	}
+}
+
+// TypeDefWithEnumOpts contains options for TypeDef.WithEnum
+type TypeDefWithEnumOpts struct {
+	// A doc string for the enum, if any
+	Description string
+}
+
+// Returns a TypeDef of kind Enum with the provided name.
+//
+// Note that an enum's values may be omitted if the intent is only to refer to an enum. This is how functions are able to return their own, or any other circular reference.
+func (r *TypeDef) WithEnum(name string, opts ...TypeDefWithEnumOpts) *TypeDef {
+	q := r.query.Select("withEnum")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `description` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Description) {
+			q = q.Arg("description", opts[i].Description)
+		}
+	}
+	q = q.Arg("name", name)
+
+	return &TypeDef{
+		query: q,
+	}
+}
+
+// TypeDefWithEnumValueOpts contains options for TypeDef.WithEnumValue
+type TypeDefWithEnumValueOpts struct {
+	// A doc string for the value, if any
+	Description string
+}
+
+// Adds a static value for an Enum TypeDef, failing if the type is not an enum.
+func (r *TypeDef) WithEnumValue(value string, opts ...TypeDefWithEnumValueOpts) *TypeDef {
+	q := r.query.Select("withEnumValue")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `description` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Description) {
+			q = q.Arg("description", opts[i].Description)
+		}
+	}
+	q = q.Arg("value", value)
 
 	return &TypeDef{
 		query: q,
@@ -6956,6 +7783,11 @@ func (TypeDefKind) IsEnum() {}
 const (
 	// A boolean value.
 	BooleanKind TypeDefKind = "BOOLEAN_KIND"
+
+	// A GraphQL enum type and its values
+	//
+	// Always paired with an EnumTypeDef.
+	EnumKind TypeDefKind = "ENUM_KIND"
 
 	// A graphql input type, used only when representing the core API via TypeDefs.
 	InputKind TypeDefKind = "INPUT_KIND"

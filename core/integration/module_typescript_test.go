@@ -1,23 +1,18 @@
 package core
 
 import (
+	"context"
 	_ "embed"
 	"fmt"
-	"testing"
 
+	"github.com/dagger/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
-
-	"dagger.io/dagger"
 )
 
-func TestModuleTypescriptInit(t *testing.T) {
-	t.Parallel()
-
-	t.Run("from scratch", func(t *testing.T) {
-		t.Parallel()
-
-		c, ctx := connect(t)
+func (ModuleSuite) TestTypescriptInit(ctx context.Context, t *testctx.T) {
+	t.Run("from scratch", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -31,10 +26,8 @@ func TestModuleTypescriptInit(t *testing.T) {
 		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 	})
 
-	t.Run("with different root", func(t *testing.T) {
-		t.Parallel()
-
-		c, ctx := connect(t)
+	t.Run("with different root", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		modGen := goGitBase(t, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -48,10 +41,8 @@ func TestModuleTypescriptInit(t *testing.T) {
 		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 	})
 
-	t.Run("camel-cases Dagger module name", func(t *testing.T) {
-		t.Parallel()
-
-		c, ctx := connect(t)
+	t.Run("camel-cases Dagger module name", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -65,16 +56,13 @@ func TestModuleTypescriptInit(t *testing.T) {
 		require.JSONEq(t, `{"myModule":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 	})
 
-	t.Run("respect existing package.json", func(t *testing.T) {
-		t.Parallel()
-
-		c, ctx := connect(t)
+	t.Run("respect existing package.json", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			WithNewFile("/work/package.json", dagger.ContainerWithNewFileOpts{
-				Contents: `{
+			WithNewFile("/work/package.json", `{
   "name": "my-module",
   "version": "1.0.0",
   "description": "My module",
@@ -85,7 +73,7 @@ func TestModuleTypescriptInit(t *testing.T) {
   "author": "John doe",
   "license": "MIT"
 	}`,
-			}).
+			).
 			With(daggerExec("init", "--source=.", "--name=hasPkgJson", "--sdk=typescript"))
 
 		out, err := modGen.
@@ -94,7 +82,7 @@ func TestModuleTypescriptInit(t *testing.T) {
 		require.NoError(t, err)
 		require.JSONEq(t, `{"hasPkgJson":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 
-		t.Run("Add dagger dependencies to the existing package.json", func(t *testing.T) {
+		t.Run("Add dagger dependencies to the existing package.json", func(ctx context.Context, t *testctx.T) {
 			pkgJSON, err := modGen.File("/work/package.json").Contents(ctx)
 			require.NoError(t, err)
 			require.Contains(t, pkgJSON, `"@dagger.io/dagger":`)
@@ -102,23 +90,20 @@ func TestModuleTypescriptInit(t *testing.T) {
 		})
 	})
 
-	t.Run("respect existing tsconfig.json", func(t *testing.T) {
-		t.Parallel()
-
-		c, ctx := connect(t)
+	t.Run("respect existing tsconfig.json", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			WithNewFile("/work/tsconfig.json", dagger.ContainerWithNewFileOpts{
-				Contents: `{
+			WithNewFile("/work/tsconfig.json", `{
 	"compilerOptions": {
 	  "target": "ES2022",
 	  "moduleResolution": "Node",
 	  "experimentalDecorators": true
 	}
 		}`,
-			}).
+			).
 			With(daggerExec("init", "--name=hasTsConfig", "--sdk=typescript"))
 
 		out, err := modGen.
@@ -127,24 +112,21 @@ func TestModuleTypescriptInit(t *testing.T) {
 		require.NoError(t, err)
 		require.JSONEq(t, `{"hasTsConfig":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 
-		t.Run("Add dagger paths to the existing tsconfig.json", func(t *testing.T) {
-			tsConfig, err := modGen.File("/work/dagger/tsconfig.json").Contents(ctx)
+		t.Run("Add dagger paths to the existing tsconfig.json", func(ctx context.Context, t *testctx.T) {
+			tsConfig, err := modGen.File("/work/tsconfig.json").Contents(ctx)
 			require.NoError(t, err)
 			require.Contains(t, tsConfig, `"@dagger.io/dagger":`)
 		})
 	})
 
-	t.Run("respect existing src/index.ts", func(t *testing.T) {
-		t.Parallel()
-
-		c, ctx := connect(t)
+	t.Run("respect existing src/index.ts", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			WithDirectory("/work/src", c.Directory()).
-			WithNewFile("/work/src/index.ts", dagger.ContainerWithNewFileOpts{
-				Contents: `
+			WithNewFile("/work/src/index.ts", `
 				import { dag, Container, object, func } from "@dagger.io/dagger"
 
 				@object()
@@ -156,7 +138,7 @@ func TestModuleTypescriptInit(t *testing.T) {
 				}
 
 				`,
-			}).
+			).
 			With(daggerExec("init", "--source=.", "--name=existingSource", "--sdk=typescript"))
 
 		out, err := modGen.
@@ -166,10 +148,8 @@ func TestModuleTypescriptInit(t *testing.T) {
 		require.JSONEq(t, `{"existingSource":{"helloWorld":{"stdout":"hello\n"}}}`, out)
 	})
 
-	t.Run("with source", func(t *testing.T) {
-		t.Parallel()
-
-		c, ctx := connect(t)
+	t.Run("with source", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -195,10 +175,8 @@ func TestModuleTypescriptInit(t *testing.T) {
 //go:embed testdata/modules/typescript/syntax/index.ts
 var tsSyntax string
 
-func TestModuleTypescriptSyntaxSupport(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ModuleSuite) TestTypescriptSyntaxSupport(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	modGen := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -206,8 +184,7 @@ func TestModuleTypescriptSyntaxSupport(t *testing.T) {
 		With(daggerExec("init", "--name=syntax", "--sdk=typescript")).
 		With(sdkSource("typescript", tsSyntax))
 
-	t.Run("singleQuoteDefaultArgHello(msg: string = 'world'): string", func(t *testing.T) {
-		t.Parallel()
+	t.Run("singleQuoteDefaultArgHello(msg: string = 'world'): string", func(ctx context.Context, t *testctx.T) {
 		defaultOut, err := modGen.With(daggerQuery(`{syntax{singleQuoteDefaultArgHello}}`)).Stdout(ctx)
 
 		require.NoError(t, err)
@@ -219,8 +196,7 @@ func TestModuleTypescriptSyntaxSupport(t *testing.T) {
 		require.JSONEq(t, `{"syntax":{"singleQuoteDefaultArgHello":"hello dagger"}}`, out)
 	})
 
-	t.Run("doubleQuotesDefaultArgHello(msg: string = \"world\"): string", func(t *testing.T) {
-		t.Parallel()
+	t.Run("doubleQuotesDefaultArgHello(msg: string = \"world\"): string", func(ctx context.Context, t *testctx.T) {
 		defaultOut, err := modGen.With(daggerQuery(`{syntax{doubleQuotesDefaultArgHello}}`)).Stdout(ctx)
 
 		require.NoError(t, err)
@@ -236,10 +212,8 @@ func TestModuleTypescriptSyntaxSupport(t *testing.T) {
 //go:embed testdata/modules/typescript/minimal/index.ts
 var tsSignatures string
 
-func TestModuleTypescriptSignatures(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ModuleSuite) TestTypescriptSignatures(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	modGen := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -247,24 +221,21 @@ func TestModuleTypescriptSignatures(t *testing.T) {
 		With(daggerExec("init", "--name=minimal", "--sdk=typescript")).
 		With(sdkSource("typescript", tsSignatures))
 
-	t.Run("hello(): string", func(t *testing.T) {
-		t.Parallel()
+	t.Run("hello(): string", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.With(daggerQuery(`{minimal{hello}}`)).Stdout(ctx)
 
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"hello":"hello"}}`, out)
 	})
 
-	t.Run("echoes(msgs: string[]): string[]", func(t *testing.T) {
-		t.Parallel()
+	t.Run("echoes(msgs: string[]): string[]", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.With(daggerQuery(`{minimal{echoes(msgs: ["hello"])}}`)).Stdout(ctx)
 
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoes":["hello...hello...hello..."]}}`, out)
 	})
 
-	t.Run("echoOptional(msg = 'default'): string", func(t *testing.T) {
-		t.Parallel()
+	t.Run("echoOptional(msg = 'default'): string", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.With(daggerQuery(`{minimal{echoOptional(msg: "hello")}}`)).Stdout(ctx)
 
 		require.NoError(t, err)
@@ -276,24 +247,21 @@ func TestModuleTypescriptSignatures(t *testing.T) {
 		require.JSONEq(t, `{"minimal":{"echoOptional":"default...default...default..."}}`, out)
 	})
 
-	t.Run("echoesVariadic(...msgs: string[]): string", func(t *testing.T) {
-		t.Parallel()
+	t.Run("echoesVariadic(...msgs: string[]): string", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.With(daggerQuery(`{minimal{echoesVariadic(msgs: ["hello"])}}`)).Stdout(ctx)
 
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoesVariadic":"hello...hello...hello..."}}`, out)
 	})
 
-	t.Run("echo(msg: string): string", func(t *testing.T) {
-		t.Parallel()
+	t.Run("echo(msg: string): string", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.With(daggerQuery(`{minimal{echo(msg: "hello")}}`)).Stdout(ctx)
 
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echo":"hello...hello...hello..."}}`, out)
 	})
 
-	t.Run("echoOptionalSlice(msg = ['foobar']): string", func(t *testing.T) {
-		t.Parallel()
+	t.Run("echoOptionalSlice(msg = ['foobar']): string", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.With(daggerQuery(`{minimal{echoOptionalSlice(msg: ["hello", "there"])}}`)).Stdout(ctx)
 
 		require.NoError(t, err)
@@ -305,16 +273,14 @@ func TestModuleTypescriptSignatures(t *testing.T) {
 		require.JSONEq(t, `{"minimal":{"echoOptionalSlice":"foobar...foobar...foobar..."}}`, out)
 	})
 
-	t.Run("helloVoid(): void", func(t *testing.T) {
-		t.Parallel()
+	t.Run("helloVoid(): void", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.With(daggerQuery(`{minimal{helloVoid}}`)).Stdout(ctx)
 
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"helloVoid":null}}`, out)
 	})
 
-	t.Run("echoOpts(msg: string, suffix: string = '', times: number = 1): string", func(t *testing.T) {
-		t.Parallel()
+	t.Run("echoOpts(msg: string, suffix: string = '', times: number = 1): string", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.With(daggerQuery(`{minimal{echoOpts(msg: "hi")}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOpts":"hi"}}`, out)
@@ -323,15 +289,14 @@ func TestModuleTypescriptSignatures(t *testing.T) {
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoOpts":"hi!hi!"}}`, out)
 
-		t.Run("execute with unordered args", func(t *testing.T) {
+		t.Run("execute with unordered args", func(ctx context.Context, t *testctx.T) {
 			out, err = modGen.With(daggerQuery(`{minimal{echoOpts(times: 2, msg: "order", suffix: "?")}}`)).Stdout(ctx)
 			require.NoError(t, err)
 			require.JSONEq(t, `{"minimal":{"echoOpts":"order?order?"}}`, out)
 		})
 	})
 
-	t.Run("echoMaybe(msg: string, isQuestion = false): string", func(t *testing.T) {
-		t.Parallel()
+	t.Run("echoMaybe(msg: string, isQuestion = false): string", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.With(daggerQuery(`{minimal{echoMaybe(msg: "hi")}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoMaybe":"hi...hi...hi..."}}`, out)
@@ -340,7 +305,7 @@ func TestModuleTypescriptSignatures(t *testing.T) {
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"echoMaybe":"hi?...hi?...hi?..."}}`, out)
 
-		t.Run("execute with unordered args", func(t *testing.T) {
+		t.Run("execute with unordered args", func(ctx context.Context, t *testctx.T) {
 			out, err = modGen.With(daggerQuery(`{minimal{echoMaybe(isQuestion: false, msg: "hi")}}`)).Stdout(ctx)
 			require.NoError(t, err)
 			require.JSONEq(t, `{"minimal":{"echoMaybe":"hi...hi...hi..."}}`, out)
@@ -351,10 +316,8 @@ func TestModuleTypescriptSignatures(t *testing.T) {
 //go:embed testdata/modules/typescript/minimal/builtin.ts
 var tsSignaturesBuiltin string
 
-func TestModuleTypescriptSignaturesBuildinTypes(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ModuleSuite) TestTypescriptSignaturesBuildinTypes(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	modGen := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -366,29 +329,25 @@ func TestModuleTypescriptSignaturesBuildinTypes(t *testing.T) {
 	require.NoError(t, err)
 	dirID := gjson.Get(out, "directory.withNewFile.id").String()
 
-	t.Run("async read(dir: Directory): Promise<string>", func(t *testing.T) {
-		t.Parallel()
+	t.Run("async read(dir: Directory): Promise<string>", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{read(dir: "%s")}}`, dirID))).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"read":"bar"}}`, out)
 	})
 
-	t.Run("async readSlice(dir: Directory[]): Promise<string>", func(t *testing.T) {
-		t.Parallel()
+	t.Run("async readSlice(dir: Directory[]): Promise<string>", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{readSlice(dir: ["%s"])}}`, dirID))).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"readSlice":"bar"}}`, out)
 	})
 
-	t.Run("async readVariadic(...dir: Directory[]): Promise<string>", func(t *testing.T) {
-		t.Parallel()
+	t.Run("async readVariadic(...dir: Directory[]): Promise<string>", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{readVariadic(dir: ["%s"])}}`, dirID))).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"readVariadic":"bar"}}`, out)
 	})
 
-	t.Run("async readOptional(dir?: Directory): Promise<string>", func(t *testing.T) {
-		t.Parallel()
+	t.Run("async readOptional(dir?: Directory): Promise<string>", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.With(daggerQuery(fmt.Sprintf(`{minimal{readOptional(dir: "%s")}}`, dirID))).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"minimal":{"readOptional":"bar"}}`, out)
@@ -402,10 +361,8 @@ func TestModuleTypescriptSignaturesBuildinTypes(t *testing.T) {
 var tsSignaturesUnexported string
 
 // TODO: Fixes DEV-3343 and update this test
-func TestModuleTypescriptSignatureUnexported(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ModuleSuite) TestTypescriptSignatureUnexported(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	modGen := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -420,10 +377,8 @@ func TestModuleTypescriptSignatureUnexported(t *testing.T) {
 	require.Equal(t, "MinimalFoo", objs.Get("0.name").String())
 }
 
-func TestModuleTypescriptDocs(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ModuleSuite) TestTypescriptDocs(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	modGen := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -468,10 +423,8 @@ func TestModuleTypescriptDocs(t *testing.T) {
 //go:embed testdata/modules/typescript/optional/index.ts
 var tsOptional string
 
-func TestModuleTypescriptOptional(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ModuleSuite) TestTypescriptOptional(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	modGen := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -486,12 +439,14 @@ func TestModuleTypescriptOptional(t *testing.T) {
 	out, err = modGen.With(daggerQuery(`{minimal{isEmpty}}`)).Stdout(ctx)
 	require.NoError(t, err)
 	require.JSONEq(t, `{"minimal": {"isEmpty": true}}`, out)
+
+	out, err = modGen.With(daggerQuery(`{minimal{resolveValue}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"minimal": {"resolveValue": "hello world"}}`, out)
 }
 
-func TestModuleTypescriptRuntimeDetection(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ModuleSuite) TestTypescriptRuntimeDetection(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	modGen := c.Container().From(golangImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -506,48 +461,58 @@ func TestModuleTypescriptRuntimeDetection(t *testing.T) {
 			    const isBunRuntime = typeof Bun === "object";
 			    return isBunRuntime ? "bun" : "node";
 			  }
+
+				@func()
+				version(): string {
+          const isBunRuntime = typeof Bun === "object";
+          const runtime = isBunRuntime ? "bun" : "node";
+          let version = "";
+
+          if (!isBunRuntime) {
+            const [major, minor, patch] = process.versions.node.split(".").map(Number);
+            version = major + "." + minor + "." + patch;
+          } else {
+            version = Bun.version
+          }
+
+          return runtime + "@" + version;
+				}
 			}
 		`))
 
-	t.Run("should default to node", func(t *testing.T) {
-		t.Parallel()
+	t.Run("should default to node", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.With(daggerQuery(`{runtimeDetection{echoRuntime}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"runtimeDetection":{"echoRuntime":"node"}}`, out)
 	})
 
-	t.Run("should use package.json configuration node", func(t *testing.T) {
-		t.Parallel()
-		modGen := modGen.WithNewFile("/work/dagger/package.json", dagger.ContainerWithNewFileOpts{
-			Contents: `{
+	t.Run("should use package.json configuration node", func(ctx context.Context, t *testctx.T) {
+		modGen := modGen.WithNewFile("/work/package.json", `{
 				"dagger": {
 					"runtime": "node"
 				}
 			}`,
-		})
+		)
 
 		out, err := modGen.With(daggerQuery(`{runtimeDetection{echoRuntime}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"runtimeDetection":{"echoRuntime":"node"}}`, out)
 	})
 
-	t.Run("should use package.json configuration bun", func(t *testing.T) {
-		t.Parallel()
-		modGen := modGen.WithNewFile("/work/dagger/package.json", dagger.ContainerWithNewFileOpts{
-			Contents: `{
+	t.Run("should use package.json configuration bun", func(ctx context.Context, t *testctx.T) {
+		modGen := modGen.WithNewFile("/work/package.json", `{
 				"dagger": {
 					"runtime": "bun"
 				}
 			}`,
-		})
+		)
 
 		out, err := modGen.With(daggerQuery(`{runtimeDetection{echoRuntime}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"runtimeDetection":{"echoRuntime":"bun"}}`, out)
 	})
 
-	t.Run("should detect package-lock.json", func(t *testing.T) {
-		t.Parallel()
+	t.Run("should detect package-lock.json", func(ctx context.Context, t *testctx.T) {
 		modGen := c.Container().From("node:20-alpine").
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
@@ -564,15 +529,14 @@ func TestModuleTypescriptRuntimeDetection(t *testing.T) {
 				  }
 				}
 			`)).
-			WithExec([]string{"npm", "install", "--package-lock-only", "-C", "./dagger"})
+			WithExec([]string{"npm", "install", "--package-lock-only"})
 
 		out, err := modGen.With(daggerQuery(`{runtimeDetection{echoRuntime}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"runtimeDetection":{"echoRuntime":"node"}}`, out)
 	})
 
-	t.Run("should detect bun.lockb", func(t *testing.T) {
-		t.Parallel()
+	t.Run("should detect bun.lockb", func(ctx context.Context, t *testctx.T) {
 		modGen := c.Container().From("oven/bun:1.0.27-alpine").
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
@@ -589,15 +553,14 @@ func TestModuleTypescriptRuntimeDetection(t *testing.T) {
 				  }
 				}
 			`)).
-			WithExec([]string{"bun", "install", "--cwd", "./dagger"})
+			WithExec([]string{"bun", "install"})
 
 		out, err := modGen.With(daggerQuery(`{runtimeDetection{echoRuntime}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"runtimeDetection":{"echoRuntime":"bun"}}`, out)
 	})
 
-	t.Run("should prioritize package.json config over file detection", func(t *testing.T) {
-		t.Parallel()
+	t.Run("should prioritize package.json config over file detection", func(ctx context.Context, t *testctx.T) {
 		modGen := c.Container().From("node:20-alpine").
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
@@ -614,45 +577,79 @@ func TestModuleTypescriptRuntimeDetection(t *testing.T) {
 				  }
 				}
 			`)).
-			WithNewFile("/work/dagger/package.json", dagger.ContainerWithNewFileOpts{
-				Contents: `{
+			WithNewFile("/work/package.json", `{
 					"dagger": {
 						"runtime": "bun"
 					}
 				}`,
-			}).
-			WithExec([]string{"npm", "install", "--package-lock-only", "-C", "./dagger"})
+			).
+			WithExec([]string{"npm", "install", "--package-lock-only"})
 
 		out, err := modGen.With(daggerQuery(`{runtimeDetection{echoRuntime}}`)).Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"runtimeDetection":{"echoRuntime":"bun"}}`, out)
 	})
 
-	t.Run("should error if configured runtime is unknown", func(t *testing.T) {
-		t.Parallel()
-		modGen := modGen.WithNewFile("/work/dagger/package.json", dagger.ContainerWithNewFileOpts{
-			Contents: `{
+	t.Run("should error if configured runtime is unknown", func(ctx context.Context, t *testctx.T) {
+		modGen := modGen.WithNewFile("/work/package.json", `{
 				"dagger": {
 					"runtime": "xyz"
 				}
 			}`,
-		})
+		)
 		_, err := modGen.With(daggerQuery(`{runtimeDetection{echoRuntime}}`)).Stdout(ctx)
 		require.Error(t, err)
 	})
+
+	t.Run("should detect specificpinned node version 20.15.0", func(ctx context.Context, t *testctx.T) {
+		modGen := modGen.WithNewFile("/work/package.json", `{
+				"dagger": {
+					"runtime": "node@20.15.0"
+				}
+			}`,
+		)
+
+		out, err := modGen.With(daggerQuery(`{runtimeDetection{version}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"runtimeDetection":{"version":"node@20.15.0"}}`, out)
+	})
+
+	t.Run("should detect a specific pinned node version 22.4.0", func(ctx context.Context, t *testctx.T) {
+		modGen := modGen.WithNewFile("/work/package.json", `{
+				"dagger": {
+					"runtime": "node@22.4.0"
+				}
+			}`,
+		)
+
+		out, err := modGen.With(daggerQuery(`{runtimeDetection{version}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"runtimeDetection":{"version":"node@22.4.0"}}`, out)
+	})
+
+	t.Run("should detect a specific pinned bun version", func(ctx context.Context, t *testctx.T) {
+		modGen := modGen.WithNewFile("/work/package.json", `{
+				"dagger": {
+					"runtime": "bun@1.0.11"
+				}
+			}`,
+		)
+
+		out, err := modGen.With(daggerQuery(`{runtimeDetection{version}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"runtimeDetection":{"version":"bun@1.0.11"}}`, out)
+	})
 }
 
-func TestModuleTypescriptWithOtherModuleTypes(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
+func (ModuleSuite) TestTypescriptWithOtherModuleTypes(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
 
 	ctr := goGitBase(t, c).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithWorkdir("/work/dep").
 		With(daggerExec("init", "--name=dep", "--sdk=typescript")).
 		With(sdkSource("typescript", `
-	import {  object, func, field } from "@dagger.io/dagger"
+	import {  object, func, func } from "@dagger.io/dagger"
 
 @object()
 class Dep {
@@ -664,7 +661,7 @@ class Dep {
 
 @object()
 class Obj {
-  @field()
+  @func()
   foo: string = ""
 
   constructor(foo: string) {
@@ -680,10 +677,8 @@ class Foo {}
 		With(daggerExec("install", "-m=test", "./dep")).
 		WithWorkdir("/work/test")
 
-	t.Run("return as other module object", func(t *testing.T) {
-		t.Parallel()
-		t.Run("direct", func(t *testing.T) {
-			t.Parallel()
+	t.Run("return as other module object", func(ctx context.Context, t *testctx.T) {
+		t.Run("direct", func(ctx context.Context, t *testctx.T) {
 			_, err := ctr.With(sdkSource("typescript", `
 			import { object, func, DepObj } from "@dagger.io/dagger"
 
@@ -704,8 +699,7 @@ class Foo {}
 			), err.Error())
 		})
 
-		t.Run("list", func(t *testing.T) {
-			t.Parallel()
+		t.Run("list", func(ctx context.Context, t *testctx.T) {
 			_, err := ctr.With(sdkSource("typescript", `
 			import { object, func, DepObj } from "@dagger.io/dagger"
 
@@ -727,10 +721,8 @@ class Foo {}
 		})
 	})
 
-	t.Run("arg as other module object", func(t *testing.T) {
-		t.Parallel()
-		t.Run("direct", func(t *testing.T) {
-			t.Parallel()
+	t.Run("arg as other module object", func(ctx context.Context, t *testctx.T) {
+		t.Run("direct", func(ctx context.Context, t *testctx.T) {
 			_, err := ctr.With(sdkSource("typescript", `
 import { object, func, DepObj } from "@dagger.io/dagger"
 
@@ -749,8 +741,7 @@ class Test {
 			), err.Error())
 		})
 
-		t.Run("list", func(t *testing.T) {
-			t.Parallel()
+		t.Run("list", func(ctx context.Context, t *testctx.T) {
 			_, err := ctr.
 				With(sdkSource("typescript", `
 import { object, func, DepObj } from "@dagger.io/dagger"
@@ -771,10 +762,8 @@ class Test {
 		})
 	})
 
-	t.Run("field as other module object", func(t *testing.T) {
-		t.Parallel()
-		t.Run("direct", func(t *testing.T) {
-			t.Parallel()
+	t.Run("field as other module object", func(ctx context.Context, t *testctx.T) {
+		t.Run("direct", func(ctx context.Context, t *testctx.T) {
 			_, err := ctr.
 				With(sdkSource("typescript", `
 import { object, func, DepObj } from "@dagger.io/dagger"
@@ -789,7 +778,7 @@ class Test {
 
 @object()
 class Obj {
-  @field()
+  @func()
   foo: DepObj
 }
 			`)).
@@ -802,8 +791,7 @@ class Obj {
 			), err.Error())
 		})
 
-		t.Run("list", func(t *testing.T) {
-			t.Parallel()
+		t.Run("list", func(ctx context.Context, t *testctx.T) {
 			_, err := ctr.
 				With(sdkSource("typescript", `
 import { object, func, DepObj } from "@dagger.io/dagger"
@@ -818,7 +806,7 @@ class Test {
 
 @object()
 class Obj {
-  @field()
+  @func()
   foo: DepObj[]
 }
 			`)).
@@ -833,13 +821,9 @@ class Obj {
 	})
 }
 
-func TestModuleTypescriptAliases(t *testing.T) {
-	t.Parallel()
-
-	t.Run("alias in function", func(t *testing.T) {
-		t.Parallel()
-
-		c, ctx := connect(t)
+func (ModuleSuite) TestTypescriptAliases(ctx context.Context, t *testctx.T) {
+	t.Run("alias in function", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -862,10 +846,8 @@ class Alias {
 		require.JSONEq(t, `{"alias": {"bar": "hello world"}}`, out)
 	})
 
-	t.Run("nested alias in function", func(t *testing.T) {
-		t.Parallel()
-
-		c, ctx := connect(t)
+	t.Run("nested alias in function", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -904,42 +886,40 @@ class Alias {
 		require.JSONEq(t, `{"alias": {"bar": {"hello": {"zoo": "hello world"}}}}`, out)
 	})
 
-	t.Run("nested alias in field", func(t *testing.T) {
-		t.Parallel()
-
-		c, ctx := connect(t)
+	t.Run("nested alias in field", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--name=alias", "--sdk=typescript")).
 			With(sdkSource("typescript", `
-import { object, func, field } from "@dagger.io/dagger"
+import { object, func, func } from "@dagger.io/dagger"
 
 @object()
 class SuperSubSub {
-	@field("farFarNested")
+	@func("farFarNested")
 	far = true
 }
 
 @object()
 class SubSub {
-	@field("zoo")
+	@func("zoo")
 	a = 4
 
-	@field("hey")
+	@func("hey")
 	b = [true, false, true]
 
-	@field("far")
+	@func("far")
 	subsubsub = new SuperSubSub()
 }
 
 @object()
 class Sub {
-	@field("hello")
+	@func("hello")
 	hey = "a"
 
-	@field("foo")
+	@func("foo")
 	sub = new SubSub()
 }
 
@@ -958,24 +938,20 @@ class Alias {
 	})
 }
 
-func TestModuleTypeScriptPrototype(t *testing.T) {
-	t.Parallel()
-
-	t.Run("keep class prototype inside module", func(t *testing.T) {
-		t.Parallel()
-
-		c, ctx := connect(t)
+func (ModuleSuite) TestTypeScriptPrototype(ctx context.Context, t *testctx.T) {
+	t.Run("keep class prototype inside module", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(daggerExec("init", "--name=test", "--sdk=typescript")).
 			With(sdkSource("typescript", `
-import { field, func, object } from "@dagger.io/dagger"
+import { func, object } from "@dagger.io/dagger"
 
 @object()
 class Test {
-  @func() 
+  @func()
   test() {
     return new PModule(new PCheck(4))
   }
@@ -983,7 +959,7 @@ class Test {
 
 @object()
 class PCheck {
-  @field() 
+  @func()
   value: number
 
   constructor(value: number) {
@@ -997,13 +973,13 @@ class PCheck {
 
 @object()
 class PModule {
-  @field() 
+  @func()
   value: PCheck
-  
+
   constructor(value: PCheck) {
     this.value = value
   }
-  @func() 
+  @func()
   print() {
     return this.value.doubled ?? 0
   }
@@ -1016,13 +992,9 @@ class PModule {
 	})
 }
 
-func TestModuleTypeScriptSubPathLoading(t *testing.T) {
-	t.Parallel()
-
-	t.Run("load from subpath", func(t *testing.T) {
-		t.Parallel()
-
-		c, ctx := connect(t)
+func (ModuleSuite) TestModuleTypeScriptSubPathLoading(ctx context.Context, t *testctx.T) {
+	t.Run("load from subpath", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -1032,5 +1004,103 @@ func TestModuleTypeScriptSubPathLoading(t *testing.T) {
 
 		_, err := modGen.With(daggerQuery(`{host{directory(path: "."){asModule(sourceRootPath: "./sub"){id}}}}`)).Stdout(ctx)
 		require.NoError(t, err)
+	})
+}
+
+func (ModuleSuite) TestTypeScriptPrimitiveType(ctx context.Context, t *testctx.T) {
+	t.Run("should throw error on String", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=test", "--sdk=typescript")).
+			With(sdkSource("typescript", `
+import { func, object } from "@dagger.io/dagger"
+
+@object()
+class Test {
+  @func()
+  str(s: String): String {
+    return s
+  }
+}
+`))
+
+		_, err := modGen.With(daggerQuery(`{test{str("hello")}}`)).Stdout(ctx)
+		require.ErrorContains(t, err, "Use of primitive String type detected, did you mean string?")
+	})
+
+	t.Run("should throw error on Number", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=test", "--sdk=typescript")).
+			With(sdkSource("typescript", `
+import { func, object } from "@dagger.io/dagger"
+
+@object()
+class Test {
+  @func()
+  integer(n: Number): Number {
+    return n
+  }
+}
+`))
+
+		_, err := modGen.With(daggerQuery(`{test{integer(4)}}`)).Stdout(ctx)
+		require.ErrorContains(t, err, "Use of primitive Number type detected, did you mean number?")
+	})
+
+	t.Run("should throw error on Boolean", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=test", "--sdk=typescript")).
+			With(sdkSource("typescript", `
+import { func, object } from "@dagger.io/dagger"
+
+@object()
+class Test {
+  @func()
+  bool(b: Boolean): Boolean {
+    return b
+  }
+}
+`))
+
+		_, err := modGen.With(daggerQuery(`{test{bool(false)}}`)).Stdout(ctx)
+		require.ErrorContains(t, err, "Use of primitive Boolean type detected, did you mean boolean?")
+	})
+}
+
+func (ModuleSuite) TestTypeScriptDeprecatedFieldDecorator(ctx context.Context, t *testctx.T) {
+	t.Run("@field still working", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=test", "--sdk=typescript")).
+			With(sdkSource("typescript", `
+import { field, object } from "@dagger.io/dagger"
+
+@object()
+class Test {
+  @field()
+  foo: string = "bar"
+
+	constructor() {}
+}
+`,
+			))
+
+		out, err := modGen.With(daggerQuery(`{test{foo}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"test": {"foo": "bar"}}`, out)
 	})
 }

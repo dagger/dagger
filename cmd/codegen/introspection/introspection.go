@@ -11,7 +11,8 @@ var Query string
 
 // Response is the introspection query response
 type Response struct {
-	Schema *Schema `json:"__schema"`
+	Schema        *Schema `json:"__schema"`
+	SchemaVersion string  `json:"__schemaVersion"`
 }
 
 type Schema struct {
@@ -84,6 +85,7 @@ const (
 	ScalarFloat   = Scalar("Float")
 	ScalarString  = Scalar("String")
 	ScalarBoolean = Scalar("Boolean")
+	ScalarVoid    = Scalar("Void")
 )
 
 type Type struct {
@@ -222,6 +224,14 @@ func (r TypeRef) IsList() bool {
 		return true
 	}
 	return false
+}
+
+func (r TypeRef) IsVoid() bool {
+	ref := r
+	if r.Kind == TypeKindNonNull {
+		ref = *ref.OfType
+	}
+	return ref.Kind == TypeKindScalar && ref.Name == string(ScalarVoid)
 }
 
 func (r TypeRef) ReferencesType(typeName string) bool {

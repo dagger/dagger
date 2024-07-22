@@ -48,7 +48,7 @@ The runner is distributed as a container image at `registry.dagger.io/engine`.
 
 ### Custom CA Certs
 
-If any extra CA certs are to be included in order to - for example - push images to a private registry, they can be included under `/etc/ssl/certs` in the runner image.
+If any extra CA certs are to be included in order to - for example - push images to a private registry, they can be included under `/usr/local/share/ca-certificates` in the runner image.
 
 This can be accomplished by building a custom engine image using the Dagger Engine image as a base, or by mounting them into a container created from the Dagger Engine image at runtime.
 

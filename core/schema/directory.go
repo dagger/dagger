@@ -2,6 +2,7 @@ package schema
 
 import (
 	"context"
+	"fmt"
 	"io/fs"
 
 	"github.com/dagger/dagger/core"
@@ -17,8 +18,7 @@ var _ SchemaResolvers = &directorySchema{}
 func (s *directorySchema) Install() {
 	dagql.Fields[*core.Query]{
 		dagql.Func("directory", s.directory).
-			Doc(`Creates an empty directory.`).
-			ArgDeprecated("id", "Use `loadDirectoryFromID` instead."),
+			Doc(`Creates an empty directory.`),
 	}.Install(s.srv)
 
 	dagql.Fields[*core.Directory]{
@@ -76,10 +76,14 @@ func (s *directorySchema) Install() {
 			Doc(`Gets the difference between this directory and an another directory.`).
 			ArgDoc("other", `Identifier of the directory to compare.`),
 		dagql.Func("export", s.export).
+			View(AllVersion).
 			Impure("Writes to the local host.").
 			Doc(`Writes the contents of the directory to a path on the host.`).
 			ArgDoc("path", `Location of the copied directory (e.g., "logs/").`).
 			ArgDoc("wipe", `If true, then the host directory will be wiped clean before exporting so that it exactly matches the directory being exported; this means it will delete any files on the host that aren't in the exported dir. If false (the default), the contents of the directory will be merged with any existing contents of the host directory, leaving any existing files on the host that aren't in the exported directory alone.`),
+		dagql.Func("export", s.exportLegacy).
+			View(BeforeVersion("v0.12.0")).
+			Extend(),
 		dagql.Func("dockerBuild", s.dockerBuild).
 			Doc(`Builds a new Docker container from this directory.`).
 			ArgDoc("dockerfile", `Path to the Dockerfile to use (e.g., "frontend.Dockerfile").`).
@@ -92,6 +96,23 @@ func (s *directorySchema) Install() {
 			Doc(`Retrieves this directory with all file/dir timestamps set to the given time.`).
 			ArgDoc("timestamp", `Timestamp to set dir/files in.`,
 				`Formatted in seconds following Unix epoch (e.g., 1672531199).`),
+		dagql.NodeFunc("terminal", s.terminal).
+			View(AfterVersion("v0.12.0")).
+			Impure("Nondeterministic.").
+			Doc(`Opens an interactive terminal in new container with this directory mounted inside.`).
+			ArgDoc("container", `If set, override the default container used for the terminal.`).
+			ArgDoc("cmd", `If set, override the container's default terminal command and invoke these command arguments instead.`).
+			ArgDoc("experimentalPrivilegedNesting",
+				`Provides Dagger access to the executed command.`,
+				`Do not use this option unless you trust the command being executed;
+			the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST
+			FILESYSTEM.`).
+			ArgDoc("insecureRootCapabilities",
+				`Execute the command with all root capabilities. This is similar to
+			running a command with "sudo" or executing "docker run" with the
+			"--privileged" flag. Containerization does not provide any security
+			guarantees when using this option. It should only be used when
+			absolutely necessary and only with trusted commands.`),
 	}.Install(s.srv)
 }
 
@@ -105,19 +126,8 @@ func (s *directorySchema) pipeline(ctx context.Context, parent *core.Directory, 
 	return parent.WithPipeline(ctx, args.Name, args.Description)
 }
 
-type directoryArgs struct {
-	ID dagql.Optional[core.DirectoryID]
-}
-
-func (s *directorySchema) directory(ctx context.Context, parent *core.Query, args directoryArgs) (*core.Directory, error) {
-	if args.ID.Valid {
-		inst, err := args.ID.Value.Load(ctx, s.srv)
-		if err != nil {
-			return nil, err
-		}
-		return inst.Self, nil
-	}
-	platform := parent.Platform
+func (s *directorySchema) directory(ctx context.Context, parent *core.Query, _ struct{}) (*core.Directory, error) {
+	platform := parent.Platform()
 	return core.NewScratchDirectory(parent, platform), nil
 }
 
@@ -264,12 +274,27 @@ type dirExportArgs struct {
 	Wipe bool `default:"false"`
 }
 
-func (s *directorySchema) export(ctx context.Context, parent *core.Directory, args dirExportArgs) (dagql.Boolean, error) {
+func (s *directorySchema) export(ctx context.Context, parent *core.Directory, args dirExportArgs) (dagql.String, error) {
 	err := parent.Export(ctx, args.Path, !args.Wipe)
+	if err != nil {
+		return "", err
+	}
+	bk, err := parent.Query.Buildkit(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+	stat, err := bk.StatCallerHostPath(ctx, args.Path, true)
+	if err != nil {
+		return "", err
+	}
+	return dagql.String(stat.Path), err
+}
+
+func (s *directorySchema) exportLegacy(ctx context.Context, parent *core.Directory, args dirExportArgs) (dagql.Boolean, error) {
+	_, err := s.export(ctx, parent, args)
 	if err != nil {
 		return false, err
 	}
-
 	return true, nil
 }
 
@@ -282,7 +307,7 @@ type dirDockerBuildArgs struct {
 }
 
 func (s *directorySchema) dockerBuild(ctx context.Context, parent *core.Directory, args dirDockerBuildArgs) (*core.Container, error) {
-	platform := parent.Query.Platform
+	platform := parent.Query.Platform()
 	if args.Platform.Valid {
 		platform = args.Platform.Value
 	}
@@ -294,6 +319,10 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent *core.Director
 	if err != nil {
 		return nil, err
 	}
+	secretStore, err := parent.Query.Secrets(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get secret store: %w", err)
+	}
 	return ctr.Build(
 		ctx,
 		parent,
@@ -301,5 +330,38 @@ func (s *directorySchema) dockerBuild(ctx context.Context, parent *core.Director
 		collectInputsSlice(args.BuildArgs),
 		args.Target,
 		secrets,
+		secretStore,
 	)
+}
+
+type directoryTerminalArgs struct {
+	core.TerminalArgs
+	Container dagql.Optional[core.ContainerID]
+}
+
+func (s *directorySchema) terminal(
+	ctx context.Context,
+	dir dagql.Instance[*core.Directory],
+	args directoryTerminalArgs,
+) (dagql.Instance[*core.Directory], error) {
+	if len(args.Cmd) == 0 {
+		args.Cmd = []string{"sh"}
+	}
+
+	var ctr *core.Container
+
+	if args.Container.Valid {
+		inst, err := args.Container.Value.Load(ctx, s.srv)
+		if err != nil {
+			return dir, err
+		}
+		ctr = inst.Self
+	}
+
+	err := dir.Self.Terminal(ctx, dir.ID(), ctr, &args.TerminalArgs)
+	if err != nil {
+		return dir, err
+	}
+
+	return dir, nil
 }
