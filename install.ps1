@@ -101,7 +101,6 @@ function Get-DownloadUrl {
 }
 
 function Get-ChecksumUrl {
-
     if (-not [string]::IsNullOrWhiteSpace($DaggerCommit)) {
         return "https://dl.dagger.io/dagger/main/${DaggerCommit}/checksums.txt"
     }
@@ -210,7 +209,6 @@ Please check you have the right permission to do so or try to create the path ma
 "@
             exit 1
         }
-
     }
 
     return (Get-Item -Path $InstallPath).FullName
@@ -220,7 +218,7 @@ Please check you have the right permission to do so or try to create the path ma
 function Get-Checksum {
     $checksumUrl = Get-ChecksumUrl
     $arch = Get-ProcessorArchitecture
-    $response = Invoke-RestMethod -Uri $ChecksumUrl -UserAgent "PowerShell"
+    $response = Invoke-RestMethod -Uri $checksumUrl -UserAgent "PowerShell"
     $checksums = $response -split "`n"
 
     $checksum = $null
@@ -301,7 +299,6 @@ Dagger compiles for AMD64, ARM64, and ARM architectures only.
 
     # Interactive allows customisation of the installation
     if ($Interactive) {
-
         $DaggerVersion = Get-SemVer `
             -Message "Enter the Dagger version to install or leave empty and hit Enter for default ($DaggerVersion)" `
             -Default $DaggerVersion `
@@ -349,7 +346,7 @@ Please check the path and try again.
 
         $defaultString = $AddToPath ? "y" : "n"
         $AddToPath = Get-TrueFalse `
-            -Message "Enter (y/n) to add dagger.exe to your PATH or hit Enter for Default ($defaultString)" `
+            -Message "Enter (y/n) to add dagger.exe to your PATH or hit Enter for default ($defaultString)" `
             -Default $AddToPath `
             -ErrorVariable InteractiveAddToPathError
 
