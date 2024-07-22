@@ -19,7 +19,7 @@ func WithLoggerProvider(ctx context.Context, provider *sdklog.LoggerProvider) co
 
 // LoggerProvider returns the LoggerProvider from the context.
 func LoggerProvider(ctx context.Context) *sdklog.LoggerProvider {
-	var loggerProvider *sdklog.LoggerProvider = sdklog.NewLoggerProvider()
+	loggerProvider := sdklog.NewLoggerProvider()
 	if val := ctx.Value(loggerProviderKey{}); val != nil {
 		loggerProvider = val.(*sdklog.LoggerProvider)
 	}
