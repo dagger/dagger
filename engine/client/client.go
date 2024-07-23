@@ -293,20 +293,21 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 	return nil
 }
 
-func (c *Client) subscribeTelemetry() {
+func (c *Client) subscribeTelemetry() error {
 	slog.Debug("subscribing to telemetry", "remote", c.RunnerHost)
-
 	c.telemetry = new(errgroup.Group)
-
 	httpClient := c.newTelemetryHTTPClient()
-
 	if c.EngineTrace != nil {
-		c.exportTraces(httpClient)
+		if err := c.exportTraces(httpClient); err != nil {
+			return fmt.Errorf("export traces: %w", err)
+		}
 	}
-
 	if c.EngineLogs != nil {
-		c.exportLogs(httpClient)
+		if err := c.exportLogs(httpClient); err != nil {
+			return fmt.Errorf("export logs: %w", err)
+		}
 	}
+	return nil
 }
 
 func (c *Client) startSession(ctx context.Context) (rerr error) {
@@ -481,7 +482,9 @@ func (srv *BuildkitSessionServer) Run(ctx context.Context) {
 }
 
 func (c *Client) daggerConnect(ctx context.Context) error {
-	c.subscribeTelemetry()
+	if err := c.subscribeTelemetry(); err != nil {
+		return fmt.Errorf("subscribe to telemetry: %w", err)
+	}
 
 	var err error
 	c.daggerClient, err = dagger.Connect(
@@ -550,6 +553,7 @@ type otlpConsumer struct {
 	traceID    trace.TraceID
 	rootSpanID trace.SpanID
 	clientID   string
+	eg         *errgroup.Group
 }
 
 func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte) error) (rerr error) {
@@ -576,34 +580,42 @@ func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte) error) (rerr
 	if err != nil {
 		return fmt.Errorf("connect to SSE: %w", err)
 	}
-	defer sseConn.Close()
 
-	slog.ExtraDebug("consuming")
+	c.eg.Go(func() error {
+		defer sseConn.Close()
 
-	for {
-		event, err := sseConn.Next()
-		if err != nil {
-			if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
-				return nil
+		slog.ExtraDebug("consuming")
+
+		for {
+			event, err := sseConn.Next()
+			if err != nil {
+				if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
+					return nil
+				}
+				return fmt.Errorf("decode: %w", err)
 			}
-			return fmt.Errorf("decode: %w", err)
+			if event.Name == "attached" {
+				continue
+			}
+
+			data := event.Data
+
+			slog.ExtraDebug("received "+event.Name, "cursor", event.ID, "bytes", len(data))
+
+			if len(data) == 0 {
+				continue
+			}
+
+			if err := cb(data); err != nil {
+				slog.Warn("consume error", "err", err)
+			}
 		}
+	})
 
-		data := event.Data
-
-		slog.ExtraDebug("received "+event.Name, "cursor", event.ID, "bytes", len(data))
-
-		if len(data) == 0 {
-			continue
-		}
-
-		if err := cb(data); err != nil {
-			slog.Warn("consume error", "err", err)
-		}
-	}
+	return nil
 }
 
-func (c *Client) exportTraces(httpClient *httpClient) {
+func (c *Client) exportTraces(httpClient *httpClient) error {
 	// NB: we never actually want to interrupt this, since it's relied upon for
 	// seeing what's going on, even during shutdown
 	ctx := context.WithoutCancel(c.internalCtx)
@@ -614,33 +626,32 @@ func (c *Client) exportTraces(httpClient *httpClient) {
 		rootSpanID: c.RootSpanID,
 		clientID:   c.ID,
 		httpClient: httpClient,
+		eg:         c.telemetry,
 	}
 
-	c.telemetry.Go(func() error {
-		return exp.Consume(ctx, func(data []byte) error {
-			var req coltracepb.ExportTraceServiceRequest
-			if err := protojson.Unmarshal(data, &req); err != nil {
-				return fmt.Errorf("unmarshal: %w", err)
-			}
+	return exp.Consume(ctx, func(data []byte) error {
+		var req coltracepb.ExportTraceServiceRequest
+		if err := protojson.Unmarshal(data, &req); err != nil {
+			return fmt.Errorf("unmarshal: %w", err)
+		}
 
-			spans := telemetry.SpansFromPB(req.GetResourceSpans())
+		spans := telemetry.SpansFromPB(req.GetResourceSpans())
 
-			slog.ExtraDebug("received spans from engine", "len", len(spans))
+		slog.ExtraDebug("received spans from engine", "len", len(spans))
 
-			for _, span := range spans {
-				slog.ExtraDebug("received span from engine", "span", span.Name(), "id", span.SpanContext().SpanID(), "endTime", span.EndTime())
-			}
+		for _, span := range spans {
+			slog.ExtraDebug("received span from engine", "span", span.Name(), "id", span.SpanContext().SpanID(), "endTime", span.EndTime())
+		}
 
-			if err := c.Params.EngineTrace.ExportSpans(ctx, spans); err != nil {
-				return fmt.Errorf("export %d spans: %w", len(spans), err)
-			}
+		if err := c.Params.EngineTrace.ExportSpans(ctx, spans); err != nil {
+			return fmt.Errorf("export %d spans: %w", len(spans), err)
+		}
 
-			return nil
-		})
+		return nil
 	})
 }
 
-func (c *Client) exportLogs(httpClient *httpClient) {
+func (c *Client) exportLogs(httpClient *httpClient) error {
 	// NB: we never actually want to interrupt this, since it's relied upon for
 	// seeing what's going on, even during shutdown
 	ctx := context.WithoutCancel(c.internalCtx)
@@ -651,24 +662,23 @@ func (c *Client) exportLogs(httpClient *httpClient) {
 		rootSpanID: c.RootSpanID,
 		clientID:   c.ID,
 		httpClient: httpClient,
+		eg:         c.telemetry,
 	}
 
-	c.telemetry.Go(func() error {
-		return exp.Consume(ctx, func(data []byte) error {
-			var req collogspb.ExportLogsServiceRequest
-			if err := protojson.Unmarshal(data, &req); err != nil {
-				return fmt.Errorf("unmarshal spans: %w", err)
-			}
+	return exp.Consume(ctx, func(data []byte) error {
+		var req collogspb.ExportLogsServiceRequest
+		if err := protojson.Unmarshal(data, &req); err != nil {
+			return fmt.Errorf("unmarshal spans: %w", err)
+		}
 
-			logs := telemetry.LogsFromPB(req.GetResourceLogs())
+		logs := telemetry.LogsFromPB(req.GetResourceLogs())
 
-			slog.ExtraDebug("received logs from engine", "len", len(logs))
+		slog.ExtraDebug("received logs from engine", "len", len(logs))
 
-			if err := c.EngineLogs.Export(ctx, logs); err != nil {
-				return fmt.Errorf("export %d logs: %w", len(logs), err)
-			}
-			return nil
-		})
+		if err := c.EngineLogs.Export(ctx, logs); err != nil {
+			return fmt.Errorf("export %d logs: %w", len(logs), err)
+		}
+		return nil
 	})
 }
 

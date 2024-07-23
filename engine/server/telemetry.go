@@ -515,6 +515,11 @@ func (ps *PubSub) sseHandler(w http.ResponseWriter, r *http.Request, handler fun
 
 	notify := ps.Listen(clientID)
 
+	// Send an initial event to indicate that the client is attached.
+	fmt.Fprintf(w, "event: attached\n")
+	fmt.Fprintln(w)
+	flush()
+
 	handler(notify, q, func(event string, id int64, data []byte) {
 		// Send the batch as an OTLP trace export request.
 		fmt.Fprintf(w, "event: spans\n")
