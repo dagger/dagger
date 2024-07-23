@@ -69,9 +69,9 @@ class PythonSdkDev:
     @classmethod
     def hatch(cls, ctr: dagger.Container) -> dagger.Container:
         """Install the Hatch tool."""
-        args = ["uv", "--verbose", "tool", "install", f"hatch=={HATCH_VERSION}"]
+        args = ["uv", "tool", "install", f"hatch=={HATCH_VERSION}"]
         if UV_VERSION:
-            args += ["with", f"uv=={UV_VERSION}"]
+            args += ["--with", f"uv=={UV_VERSION}"]
         return ctr.with_exec(args)
 
     @classmethod
