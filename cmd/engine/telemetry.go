@@ -7,7 +7,7 @@ import (
 
 	"github.com/moby/buildkit/identity"
 	"github.com/sirupsen/logrus"
-	sdklog "go.opentelemetry.io/otel/sdk/log"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/resource"
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 
@@ -21,8 +21,6 @@ const (
 
 var (
 	engineName string
-
-	engineLoggerProvider *sdklog.LoggerProvider
 )
 
 func init() {
