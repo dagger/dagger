@@ -245,8 +245,6 @@ func (fe plainSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.Re
 		// a time that we didn't have it (i.e. from a log)
 		spanDt.parentID = span.Parent().SpanID()
 
-		fe.maybeWakeUpEffectCause(spanID)
-
 		spanDt.ready = true
 	}
 	return nil
@@ -274,8 +272,6 @@ func (fe plainLogExporter) Export(ctx context.Context, logs []sdklog.Record) err
 			spanDt = &spanData{}
 			fe.data[log.SpanID()] = spanDt
 		}
-
-		fe.maybeWakeUpEffectCause(log.SpanID())
 
 		body := log.Body().AsString()
 		if body == "" {
@@ -326,16 +322,6 @@ func (fe plainLogExporter) Export(ctx context.Context, logs []sdklog.Record) err
 
 func (fe *frontendPlain) ForceFlush(context.Context) error {
 	return nil
-}
-
-// if the span is an effect, wake up the effect site (i.e. withExec)
-func (fe *frontendPlain) maybeWakeUpEffectCause(spanID trace.SpanID) {
-	dbSpan := fe.db.Spans[spanID]
-	if dbSpan != nil && dbSpan.EffectID != "" {
-		if cause := fe.db.EffectSite[dbSpan.EffectID]; cause != nil {
-			fe.wakeUpSpan(cause.ID)
-		}
-	}
 }
 
 // wake up all spans up to the root span
