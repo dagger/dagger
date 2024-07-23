@@ -623,6 +623,9 @@ func sampleContext(rows []*TraceTree) []int {
 
 	// don't ever sample the current row
 	rows = rows[:len(rows)-1]
+	if len(rows) == 0 {
+		return nil
+	}
 
 	// NB: break glass for all the context
 	// all := make([]int, len(rows))
@@ -631,27 +634,24 @@ func sampleContext(rows []*TraceTree) []int {
 	// }
 	// return all
 
-	// find the first vertex
-	first := -1
-	if len(rows) > 0 {
-		first = 0
+	result := []int{}
+
+	// find the first call
+	for i := 0; i < len(rows); i++ {
+		row := rows[i]
+		result = append(result, i)
+		if row.Span.Call != nil {
+			break
+		}
 	}
 	// iterate backwards to find the last call
-	last := -1
-	for i := len(rows) - 1; i > first; i-- {
+	for i := len(rows) - 1; i > result[len(result)-1]; i-- {
 		row := rows[i]
 		if row.Span.Call != nil {
-			last = i
+			result = append(result, i)
 			break
 		}
 	}
 
-	switch {
-	case first == -1:
-		return []int{}
-	case last == -1:
-		return []int{first}
-	default:
-		return []int{first, last}
-	}
+	return result
 }
