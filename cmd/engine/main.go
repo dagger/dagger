@@ -40,6 +40,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/engine/buildkit/cacerts"
 	"github.com/dagger/dagger/engine/server"
 	"github.com/dagger/dagger/engine/slog"
@@ -453,7 +454,7 @@ func main() { //nolint:gocyclo
 	}
 
 	app.After = func(*cli.Context) error {
-		CloseTelemetry(ctx)
+		telemetry.Close(ctx)
 		return nil
 	}
 

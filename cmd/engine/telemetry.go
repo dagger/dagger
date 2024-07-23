@@ -2,21 +2,17 @@ package main
 
 import (
 	"context"
+	"log/slog"
 	"os"
-	"time"
 
 	"github.com/moby/buildkit/identity"
-	"github.com/moby/buildkit/util/bklog"
 	"github.com/sirupsen/logrus"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/sdk/resource"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
-	"go.opentelemetry.io/otel/trace"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/engine"
-	enginetel "github.com/dagger/dagger/engine/telemetry"
 )
 
 const (
@@ -26,9 +22,6 @@ const (
 var (
 	engineName string
 
-	rootSpan trace.Span
-
-	engineTraceProvider  *sdktrace.TracerProvider
 	engineLoggerProvider *sdklog.LoggerProvider
 )
 
@@ -47,66 +40,27 @@ func init() {
 }
 
 func InitTelemetry(ctx context.Context) context.Context {
-	otelResource := resource.NewWithAttributes(
-		semconv.SchemaURL,
-		semconv.ServiceNameKey.String("dagger-engine"),
-		semconv.ServiceVersionKey.String(engine.Version),
-		semconv.HostNameKey.String(engineName),
+	otelResource, err := resource.New(ctx,
+		resource.WithHost(),
+		resource.WithAttributes(
+			semconv.ServiceNameKey.String("dagger-engine"),
+			semconv.ServiceVersionKey.String(engine.Version),
+		),
 	)
-
-	// Send engine telemetry to Cloud if configured.
-	if _, logs, ok := enginetel.ConfiguredCloudExporters(ctx); ok {
-		// TODO revive if/when we want engine logs to correlate to a trace
-		// spanProcessor := sdktrace.NewBatchSpanProcessor(spans)
-		// engineTraceProvider = sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spanProcessor))
-
-		// ctx, rootSpan = engineTraceProvider.Tracer(InstrumentationScopeName).Start(ctx, "dagger engine")
-
-		engineLoggerProvider = sdklog.NewLoggerProvider(
-			sdklog.WithResource(otelResource),
-			sdklog.WithProcessor(sdklog.NewBatchProcessor(logs)),
-		)
-		logrus.AddHook(&otelLogrusHook{
-			rootSpan: rootSpan,
-			logger:   engineLoggerProvider.Logger(InstrumentationScopeName),
-		})
+	if err != nil {
+		slog.Error("failed to create OTel resource", "error", err)
+		return ctx
 	}
 
 	ctx = telemetry.Init(ctx, telemetry.Config{
 		Resource: otelResource,
+	})
 
-		// TODO: should this be true now that all userland telemetry goes to
-		// local client tracer providers?
-		Detect: false,
+	// send engine logs to OTel. logrus is the globally used logger; bklog
+	// also sends to it.
+	logrus.AddHook(&otelLogrusHook{
+		logger: telemetry.LoggerProvider(ctx).Logger(InstrumentationScopeName),
 	})
 
 	return ctx
-}
-
-func CloseTelemetry(ctx context.Context) {
-	telemetry.Close(ctx)
-
-	if rootSpan != nil {
-		rootSpan.End()
-	}
-
-	type shutdowner interface {
-		Shutdown(context.Context) error
-	}
-
-	shutdown := func(shutdowner shutdowner) {
-		timeout := 30 * time.Second
-		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
-		defer cancel()
-		bklog.G(shutdownCtx).Debugf("Shutting down %T (timeout=%s)", shutdowner, timeout)
-		shutdowner.Shutdown(shutdownCtx)
-	}
-
-	if engineTraceProvider != nil {
-		shutdown(engineTraceProvider)
-	}
-
-	if engineLoggerProvider != nil {
-		shutdown(engineLoggerProvider)
-	}
 }
