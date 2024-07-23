@@ -43,6 +43,7 @@ func InitTelemetry(ctx context.Context) context.Context {
 		resource.WithAttributes(
 			semconv.ServiceNameKey.String("dagger-engine"),
 			semconv.ServiceVersionKey.String(engine.Version),
+			attribute.String("dagger.io/engine.name", engineName),
 		),
 	)
 	if err != nil {
