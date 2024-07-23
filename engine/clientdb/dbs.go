@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	_ "embed"
 	"fmt"
-	"log/slog"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -50,23 +49,21 @@ func (dbs *DBs) Open(clientID string) (*sql.DB, error) {
 				"synchronous=NORMAL", // cargo culted; "reasonable" syncing behavior
 				"busy_timeout=10000", // wait up to 10s when there are concurrent writers
 			},
-			"_txlock": []string{"immediate"}, // use BEGIN IMMEDIATE for transactions.
+			"_txlock": []string{"immediate"}, // use BEGIN IMMEDIATE for transactions
 		}.Encode(),
-		// ?cache=shared&mode=rwc&_busy_timeout=10000&_journal_mode=WAL&_synchronous=NORMAL&_foreign_keys
 	}
 	db, err := sql.Open("sqlite", connURL.String())
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", connURL, err)
 	}
 	if err := db.Ping(); err != nil {
+		db.Close()
 		return nil, fmt.Errorf("ping %s: %w", connURL, err)
 	}
 	return db, nil
 }
 
-// TODO: not called by anything. GC based on time?
 func (dbs *DBs) Remove(clientID string) error {
-	slog.Warn("!!! REMOVE DB", "clientID", clientID)
 	return os.RemoveAll(dbs.path(clientID))
 }
 
