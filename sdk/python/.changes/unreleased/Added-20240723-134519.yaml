@@ -1,0 +1,6 @@
+kind: Added
+body: normalize names in a module to avoid escape hatch for reserved keywords
+time: 2024-07-23T13:45:19.961089Z
+custom:
+    Author: helderco
+    PR: "8014"
