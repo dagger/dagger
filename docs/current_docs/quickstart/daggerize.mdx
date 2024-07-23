@@ -30,7 +30,7 @@ cd hello-dagger
 ### Configure Dagger Cloud (optional)
 
 :::note
-This step is optional and requires signing up for Dagger Cloud's individual plan. The individual plan is free of charge for a single user. You will require a GitHub account for account setup and identity verification. If you prefer not to sign up for Dagger Cloud, you can skip this section.
+This step is optional and will create a Dagger Cloud individual plan account. The individual plan is free of charge for a single user. You will require a GitHub account for account setup and identity verification. If you prefer not to sign up for Dagger Cloud, you can skip this section.
 :::
 
 Dagger Cloud is an online visualization tool for Dagger pipelines. It provides a web interface to visualize each step of your pipeline, drill down to detailed logs, understand how long operations took to run, and whether operations were cached.
@@ -43,13 +43,17 @@ dagger login
 
 The Dagger CLI will invite you to authenticate your device by displaying a link containing a unique key. Click the link in your browser, and verify that you see the same key in the Dagger Cloud Web interface.
 
-FIXME: Add image
+```shell
+$ dagger login
+Browser opened to: https://auth.dagger.cloud/activate?user_code=FCNP-SRLM
+Confirmation code: FCNP-SRLM
+```
 
-Once you confirm that the keys match, your device will be authenticated and you will be transferred to your auto-created Dagger Cloud organization page.
+Once you confirm your authentication code, your Dagger CLI will be authenticated and you will get redirected to your newly created Dagger Cloud organization.
 
-FIXME: Add image
+After successfully creating your organization, all future `dagger call` pipelines
+will be visualized in Dagger Cloud interface.
 
-FIXME: Update the signup steps here, and the result ie. the user is dropped into an autoconfigured org. Ideally don't point to any other doc for Cloud setup, and keep the steps brief to avoid adding friction to this page.
 
 ### Initialize a Dagger module
 
@@ -152,7 +156,7 @@ This single command runs the application's tests, then builds and publishes it a
 
 If you signed up for Dagger Cloud, the output of the previous command would have also included a link to visualize the pipeline run on Dagger Cloud. Click the link in your browser to see a complete breakdown  of the steps performed by the pipeline. Here's what you should see:
 
-FIXME Add image
+![login](/img/cloud/hello-dagger.gif)
 
 This is called a "Trace". It represents a single run of a Daggerized pipeline, and shows a detailed log and output of each step in the pipeline. If there are any errors in the run, Dagger Cloud automatically brings you to the first error in the list.
 
