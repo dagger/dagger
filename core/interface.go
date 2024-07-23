@@ -277,8 +277,9 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 				}
 
 				res, err := callable.Call(ctx, &CallOpts{
-					Inputs:    callInputs,
-					ParentVal: runtimeVal.Fields,
+					Inputs:       callInputs,
+					ParentTyped:  runtimeVal,
+					ParentFields: runtimeVal.Fields,
 				})
 				if err != nil {
 					return nil, fmt.Errorf("failed to call interface function %s.%s: %w", ifaceName, fieldDef.Name, err)

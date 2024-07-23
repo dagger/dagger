@@ -1,0 +1,7 @@
+kind: Fixed
+body: Fix missing secret errors when secrets are set in objects fields during chained
+  function calls
+time: 2024-07-22T23:27:08.45115791-07:00
+custom:
+  Author: sipsma
+  PR: "8011"
