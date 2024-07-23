@@ -5587,6 +5587,47 @@ func (t *Test) GetCensored(ctx context.Context) (string, error) {
 		})
 	})
 
+	t.Run("parent fields", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		ctr := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
+
+		ctr = ctr.
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+			WithNewFile("main.go", `package main
+
+import (
+	"context"
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {
+	Ctr *dagger.Container
+}
+
+func (t *Test) FnA() *Test {
+	secret := dag.SetSecret("FOO", "omg")
+	t.Ctr = dag.Container().From("`+alpineImage+`").
+		WithSecretVariable("SECRET", secret)
+	return t
+}
+
+func (t *Test) FnB(ctx context.Context) (string, error) {
+	return t.Ctr.
+		WithExec([]string{"sh", "-c", "echo $SECRET | base64"}).
+		Stdout(ctx)
+}
+`,
+			)
+
+		encodedOut, err := ctr.With(daggerCall("fn-a", "fn-b")).Stdout(ctx)
+		require.NoError(t, err)
+		decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encodedOut))
+		require.NoError(t, err)
+		require.Equal(t, "omg\n", string(decoded))
+	})
+
 	t.Run("duplicate secret names", func(ctx context.Context, t *testctx.T) {
 		// check that each module has it's own segmented secret store, by
 		// writing secrets with the same name

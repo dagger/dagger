@@ -82,7 +82,8 @@ func newModFunction(
 
 type CallOpts struct {
 	Inputs         []CallInput
-	ParentVal      map[string]any
+	ParentTyped    dagql.Typed
+	ParentFields   map[string]any
 	Cache          bool
 	Pipeline       pipeline.Path
 	SkipSelfSchema bool
@@ -113,6 +114,7 @@ func (fn *ModuleFunction) recordCall(ctx context.Context) {
 	analytics.Ctx(ctx).Capture(ctx, "module_call", props)
 }
 
+//nolint:gocyclo
 func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typed, rerr error) {
 	mod := fn.mod
 
@@ -174,7 +176,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		}
 	}()
 
-	parentJSON, err := json.Marshal(opts.ParentVal)
+	parentJSON, err := json.Marshal(opts.ParentFields)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal parent value: %w", err)
 	}
@@ -192,6 +194,25 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 			trace.ContextWithSpanContext(ctx, spanCtx),
 			execMD.SpanContext,
 		)
+	}
+
+	if opts.ParentTyped != nil {
+		// collect any client resources stored in parent fields (secrets/sockets/etc.) and grant
+		// this function client access
+		parentModType, ok, err := mod.ModTypeFor(ctx, &TypeDef{
+			Kind:     TypeDefKindObject,
+			AsObject: dagql.NonNull(fn.objDef),
+		}, true)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get mod type for parent: %w", err)
+		}
+		if !ok {
+			return nil, fmt.Errorf("failed to find mod type for parent %q", fn.objDef.Name)
+		}
+		execMD.ParentIDs = map[digest.Digest]*call.ID{}
+		if err := parentModType.CollectCoreIDs(ctx, opts.ParentTyped, execMD.ParentIDs); err != nil {
+			return nil, fmt.Errorf("failed to collect IDs from parent fields: %w", err)
+		}
 	}
 
 	execMD.EncodedModuleID, err = mod.InstanceID.Encode()

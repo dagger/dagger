@@ -27,6 +27,7 @@ import (
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/moby/buildkit/util/leaseutil"
 	"github.com/moby/buildkit/util/progress/progressui"
+	"github.com/opencontainers/go-digest"
 	"github.com/sirupsen/logrus"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.opentelemetry.io/otel"
@@ -319,6 +320,12 @@ type ClientInitOpts struct {
 	// If the client is running from a function in a module, this is the encoded function call
 	// metadata (of type core.FunctionCall)
 	EncodedFunctionCall json.RawMessage
+
+	// Client resource IDs passed to this client from parent object fields.
+	// Needed to handle finding any secrets, sockets or other client resources
+	// that this client should have access to due to being set in the parent
+	// object.
+	ParentIDs map[digest.Digest]*call.ID
 }
 
 // requires that client.stateMu is held
@@ -337,6 +344,19 @@ func (srv *Server) initializeDaggerClient(
 		}
 		if err := srv.addClientResourcesFromID(ctx, client, opts.CallID, opts.CallerClientID, true); err != nil {
 			return fmt.Errorf("failed to add client resources from ID: %w", err)
+		}
+	}
+	if opts.ParentIDs != nil {
+		if opts.CallerClientID == "" {
+			return fmt.Errorf("caller client ID is not set")
+		}
+		// we can use the caller client ID here (as opposed to the client ID of the parent function call)
+		// because any client resources returned by the parent function call will be added to the stores
+		// of the caller
+		for _, id := range opts.ParentIDs {
+			if err := srv.addClientResourcesFromID(ctx, client, id, opts.CallerClientID, false); err != nil {
+				return fmt.Errorf("failed to add client resources from ID: %w", err)
+			}
 		}
 	}
 
@@ -711,6 +731,7 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 		CallerClientID:      execMD.CallerClientID,
 		EncodedModuleID:     execMD.EncodedModuleID,
 		EncodedFunctionCall: execMD.EncodedFunctionCall,
+		ParentIDs:           execMD.ParentIDs,
 	}).ServeHTTP(w, r)
 }
 

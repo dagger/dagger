@@ -88,6 +88,12 @@ func (t *ModuleObjectType) CollectCoreIDs(ctx context.Context, value dagql.Typed
 		obj = value
 	case dagql.Instance[*ModuleObject]:
 		obj = value.Self
+	case *InterfaceAnnotatedValue:
+		return t.CollectCoreIDs(ctx, &ModuleObject{
+			Module:  t.mod,
+			TypeDef: t.typeDef,
+			Fields:  value.Fields,
+		}, ids)
 	default:
 		return fmt.Errorf("expected *ModuleObject, got %T", value)
 	}
@@ -302,8 +308,9 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 				})
 			}
 			return fn.Call(ctx, &CallOpts{
-				Inputs:    callInput,
-				ParentVal: nil,
+				Inputs:       callInput,
+				ParentTyped:  nil,
+				ParentFields: nil,
 			})
 		},
 	)
@@ -379,7 +386,8 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 		Spec: spec,
 		Func: func(ctx context.Context, obj dagql.Instance[*ModuleObject], args map[string]dagql.Input) (dagql.Typed, error) {
 			opts := &CallOpts{
-				ParentVal: obj.Self.Fields,
+				ParentTyped:  obj,
+				ParentFields: obj.Self.Fields,
 				// TODO: there may be a more elegant way to do this, but the desired
 				// effect is to cache SDK module calls, which we used to do pre-DagQL.
 				// We should figure out how user modules can opt in to caching, too.
@@ -409,9 +417,9 @@ type CallableField struct {
 }
 
 func (f *CallableField) Call(ctx context.Context, opts *CallOpts) (dagql.Typed, error) {
-	val, ok := opts.ParentVal[f.Field.OriginalName]
+	val, ok := opts.ParentFields[f.Field.OriginalName]
 	if !ok {
-		return nil, fmt.Errorf("field %q not found on object %q", f.Field.Name, opts.ParentVal)
+		return nil, fmt.Errorf("field %q not found on object %q", f.Field.Name, opts.ParentFields)
 	}
 	return f.Return.ConvertFromSDKResult(ctx, val)
 }

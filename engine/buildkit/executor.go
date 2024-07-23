@@ -34,6 +34,7 @@ import (
 	"github.com/moby/buildkit/util/entitlements"
 	"github.com/moby/buildkit/util/stack"
 	"github.com/moby/sys/signal"
+	"github.com/opencontainers/go-digest"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/propagation"
@@ -60,6 +61,12 @@ type ExecutionMetadata struct {
 	EncodedModuleID     string
 	EncodedFunctionCall json.RawMessage
 	CallerClientID      string
+
+	// Client resource IDs passed to this client from parent object fields.
+	// Needed to handle finding any secrets, sockets or other client resources
+	// that this client should have access to due to being set in the parent
+	// object.
+	ParentIDs map[digest.Digest]*call.ID
 
 	CachePerSession bool
 
