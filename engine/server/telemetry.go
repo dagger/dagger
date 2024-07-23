@@ -16,6 +16,7 @@ import (
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
@@ -114,12 +115,22 @@ func (ps *PubSub) TracesHandler(rw http.ResponseWriter, r *http.Request) { //nol
 		return
 	}
 
+	spans := telemetry.SpansFromPB(req.ResourceSpans)
+	slog.Debug("exporting spans to clients", "spans", len(spans), "clients", len(client.parents)+1)
+
+	eg := new(errgroup.Group)
 	for _, c := range append([]*daggerClient{client}, client.parents...) {
-		if err := ps.Spans(c).ExportSpans(r.Context(), telemetry.SpansFromPB(req.ResourceSpans)); err != nil {
-			slog.Error("error exporting spans", "err", err)
-			http.Error(rw, err.Error(), http.StatusInternalServerError)
-			return
-		}
+		eg.Go(func() error {
+			if err := ps.Spans(c).ExportSpans(r.Context(), spans); err != nil {
+				return fmt.Errorf("export to %s: %w", c.clientID, err)
+			}
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		slog.Error("error exporting spans", "err", err)
+		http.Error(rw, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
 	rw.WriteHeader(http.StatusCreated)
@@ -149,12 +160,24 @@ func (ps *PubSub) LogsHandler(rw http.ResponseWriter, r *http.Request) { //nolin
 		return
 	}
 
+	logs := telemetry.LogsFromPB(req.ResourceLogs)
+
+	slog.Debug("exporting logs to clients", "logs", len(logs), "clients", len(client.parents)+1)
+
+	eg := new(errgroup.Group)
 	for _, c := range append([]*daggerClient{client}, client.parents...) {
-		if err := ps.Logs(c).Export(r.Context(), telemetry.LogsFromPB(req.ResourceLogs)); err != nil {
-			slog.Error("error exporting logs", "err", err)
-			http.Error(rw, err.Error(), http.StatusInternalServerError)
-			return
-		}
+		c := c
+		eg.Go(func() error {
+			if err := ps.Logs(c).Export(r.Context(), logs); err != nil {
+				return fmt.Errorf("export to %s: %w", c.clientID, err)
+			}
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		slog.Error("error exporting logs", "err", err)
+		http.Error(rw, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
 	rw.WriteHeader(http.StatusCreated)
