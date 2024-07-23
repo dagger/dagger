@@ -44,7 +44,7 @@ Run all tests:
 
 Run a specific test (e.g. `TestModuleNamespacing`):
 
-    dagger call -m dev --source=.:default test custom --pkg="./core/integration" --run="^TestModuleNamespacing"
+    dagger call -m dev --source=.:default test custom --pkg="./core/integration" --run="^TestModule/TestNamespacing"
 
 ## Dev environment
 
