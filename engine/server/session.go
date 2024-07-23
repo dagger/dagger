@@ -144,9 +144,9 @@ type daggerClient struct {
 	bkClient            *buildkit.Client
 
 	// SQLite database storing telemetry + anything else
-	db *sql.DB
-	tp *sdktrace.TracerProvider
-	lp *sdklog.LoggerProvider
+	db             *sql.DB
+	tracerProvider *sdktrace.TracerProvider
+	loggerProvider *sdklog.LoggerProvider
 }
 
 type daggerClientState string
@@ -163,10 +163,14 @@ func (client *daggerClient) String() string {
 func (client *daggerClient) FlushTelemetry(ctx context.Context) error {
 	slog := slog.With("client", client.clientID)
 	var errs error
-	slog.ExtraDebug("force flushing client traces")
-	errs = errors.Join(errs, client.tp.ForceFlush(ctx))
-	slog.ExtraDebug("force flushing client logs")
-	errs = errors.Join(errs, client.lp.ForceFlush(ctx))
+	if client.tracerProvider != nil {
+		slog.ExtraDebug("force flushing client traces")
+		errs = errors.Join(errs, client.tracerProvider.ForceFlush(ctx))
+	}
+	if client.loggerProvider != nil {
+		slog.ExtraDebug("force flushing client logs")
+		errs = errors.Join(errs, client.loggerProvider.ForceFlush(ctx))
+	}
 	return errs
 }
 
@@ -316,7 +320,7 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 				client.buildkitSession = nil
 			}
 
-			errs = errors.Join(errs, client.tp.ForceFlush(ctx))
+			errs = errors.Join(errs, client.FlushTelemetry(ctx))
 			errs = errors.Join(errs, client.db.Close())
 			errs = errors.Join(errs, srv.clientDBs.Remove(client.clientID))
 
@@ -609,8 +613,8 @@ func (srv *Server) initializeDaggerClient(
 			),
 		))
 	}
-	client.tp = sdktrace.NewTracerProvider(tracerOpts...)
-	client.lp = sdklog.NewLoggerProvider(loggerOpts...)
+	client.tracerProvider = sdktrace.NewTracerProvider(tracerOpts...)
+	client.loggerProvider = sdklog.NewLoggerProvider(loggerOpts...)
 
 	client.state = clientStateInitialized
 	return nil
@@ -973,14 +977,14 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 	// create a span to record telemetry into the client's DB
 	//
 	// downstream components must use otel.SpanFromContext(ctx).TracerProvider()
-	clientTracer := client.tp.Tracer(InstrumentationLibrary)
+	clientTracer := client.tracerProvider.Tracer(InstrumentationLibrary)
 	ctx, span := clientTracer.Start(ctx,
 		fmt.Sprintf("%s %s", r.Method, r.URL.Path),
 		trace.WithAttributes(attribute.Bool(telemetry.UIPassthroughAttr, true)),
 	)
 	defer telemetry.End(span, func() error { return rerr })
 	// install a logger provider that records to the client's DB
-	ctx = telemetry.WithLoggerProvider(ctx, client.lp)
+	ctx = telemetry.WithLoggerProvider(ctx, client.loggerProvider)
 	r = r.WithContext(ctx)
 
 	// get the schema we're gonna serve to this client based on which modules they have loaded, if any
