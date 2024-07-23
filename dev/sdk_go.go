@@ -11,7 +11,6 @@ import (
 
 	"github.com/dagger/dagger/dev/internal/consts"
 	"github.com/dagger/dagger/dev/internal/dagger"
-	"github.com/dagger/dagger/dev/internal/util"
 )
 
 type GoSDK struct {
@@ -27,7 +26,12 @@ func (t GoSDK) Lint(ctx context.Context) error {
 			Lint(ctx, dagger.GoLintOpts{Packages: []string{"sdk/go"}})
 	})
 	eg.Go(func() error {
-		return util.DiffDirectoryF(ctx, t.Dagger.Source(), t.Generate, "sdk/go")
+		before := t.Dagger.Source()
+		after, err := t.Generate(ctx)
+		if err != nil {
+			return err
+		}
+		return dag.Dirdiff().AssertEqual(ctx, before, after, []string{"sdk/go"})
 	})
 	return eg.Wait()
 }

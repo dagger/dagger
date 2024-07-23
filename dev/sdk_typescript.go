@@ -10,7 +10,6 @@ import (
 
 	"github.com/dagger/dagger/dev/internal/build"
 	"github.com/dagger/dagger/dev/internal/dagger"
-	"github.com/dagger/dagger/dev/internal/util"
 )
 
 // TODO: use dev module (this is just the mage port)
@@ -63,7 +62,14 @@ func (t TypescriptSDK) Lint(ctx context.Context) error {
 	})
 
 	eg.Go(func() error {
-		return util.DiffDirectoryF(ctx, t.Dagger.Source(), t.Generate, typescriptGeneratedAPIPath)
+		before := t.Dagger.Source()
+		after, err := t.Generate(ctx)
+		if err != nil {
+			return err
+		}
+		return dag.
+			Dirdiff().
+			AssertEqual(ctx, before, after, []string{typescriptGeneratedAPIPath})
 	})
 
 	eg.Go(func() error {

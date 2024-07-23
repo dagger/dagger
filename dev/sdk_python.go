@@ -8,7 +8,6 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/dev/internal/dagger"
-	"github.com/dagger/dagger/dev/internal/util"
 )
 
 const (
@@ -67,7 +66,12 @@ func (t PythonSDK) Lint(ctx context.Context) error {
 	})
 
 	eg.Go(func() error {
-		return util.DiffDirectoryF(ctx, t.Dagger.Source(), t.Generate, pythonGeneratedAPIPath)
+		before := t.Dagger.Source()
+		after, err := t.Generate(ctx)
+		if err != nil {
+			return err
+		}
+		return dag.Dirdiff().AssertEqual(ctx, before, after, []string{pythonGeneratedAPIPath})
 	})
 
 	eg.Go(func() error {
