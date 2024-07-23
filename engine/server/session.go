@@ -160,6 +160,29 @@ func (client *daggerClient) String() string {
 	return fmt.Sprintf("<Client %s: %s>", client.clientID, client.state)
 }
 
+func (client *daggerClient) FlushTelemetry(ctx context.Context) error {
+	slog := slog.With("client", client.clientID)
+	var errs error
+	slog.ExtraDebug("force flushing client traces")
+	errs = errors.Join(errs, client.tp.ForceFlush(ctx))
+	slog.ExtraDebug("force flushing client logs")
+	errs = errors.Join(errs, client.lp.ForceFlush(ctx))
+	return errs
+}
+
+func (sess *daggerSession) FlushTelemetry(ctx context.Context) error {
+	eg := new(errgroup.Group)
+	sess.clientMu.Lock()
+	for _, client := range sess.clients {
+		client := client
+		eg.Go(func() error {
+			return client.FlushTelemetry(ctx)
+		})
+	}
+	sess.clientMu.Unlock()
+	return eg.Wait()
+}
+
 // requires that sess.stateMu is held
 func (srv *Server) initializeDaggerSession(
 	clientMetadata *engine.ClientMetadata,
@@ -1017,8 +1040,6 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 		// want the client to see them stop.
 		sess.services.StopSessionServices(ctx, sess.sessionID)
 
-		// TODO: wait for services to stop?
-
 		if len(sess.cacheExporterCfgs) > 0 {
 			bklog.G(ctx).Debugf("running cache export for client %s", client.clientID)
 			cacheExporterFuncs := make([]buildkit.ResolveCacheExporterFunc, len(sess.cacheExporterCfgs))
@@ -1044,15 +1065,15 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 		})
 	}
 
-	// Finalize telemetry for the client.
-	slog.ExtraDebug("flushing telemetry")
-	if err := client.tp.ForceFlush(ctx); err != nil {
-		slog.Error("failed to flush traces", "error", err)
-	}
-	if err := client.lp.ForceFlush(ctx); err != nil {
-		slog.Error("failed to flush logs", "error", err)
+	// Flush telemetry across the entire session so that any child clients will
+	// save telemetry into their parent's DB, including to this client.
+	slog.ExtraDebug("flushing session telemetry")
+	if err := sess.FlushTelemetry(ctx); err != nil {
+		slog.Error("failed to flush telemetry", "error", err)
 	}
 
+	// At this point all relevant telemetry should be written, so it is safe to
+	// terminate the telemetry subscribers.
 	slog.ExtraDebug("terminating telemetry subscribers")
 	srv.telemetryPubSub.Terminate(client.clientID)
 
