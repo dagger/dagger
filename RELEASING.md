@@ -680,25 +680,35 @@ update once there's a new release of the Dagger Engine.
 > We should automate the above mentioned steps same as we do with the PR which
 > bumps the Engine version, e.g. https://github.com/dagger/dagger/pull/7318
 
-- [ ] Force update the major version, currently `v5`
-
-```console
-git tag --sign --force v5
-# Update the date in the comment to e.g. 2024-05-08
-git push origin v5 --force
-```
-
-- [ ] Once this PR is merged, tag the new version
+- [ ] Once this PR is merged, tag the new full semver version
 
 ```console
 # Find the latest released patch https://github.com/dagger/dagger-for-github/releases
-git tag --sign <NEXT_PATCH_VERSION>
-# Use the date as the comment, e.g. 2024-05-08
-git push origin <NEXT_PATCH_VERSION> --force
+# or via the `gh` CLI. Use that to figure out the NEXT_PATCH_VERSION.
+# For `dagger` minor bumps, bump `dagger-for-github` major version.
+# For `dagger` patch bumps, bump `dagger-for-github` minor version. Use `dagger-for-github`
+# patch version for fixes to bugs in `dagger-for-github`.
+gh release view --repo dagger/dagger-for-github --json tagName,publishedAt
+
+# Sign the tag, using the date as the comment, e.g. 2024-07-22
+git tag --sign <NEXT_PATCH_VERSION> -m "2024-07-22"
+git push origin <NEXT_PATCH_VERSION> #shouldn't need to force since new tag
 ```
 
 - [ ] Create a new release from the patch tag (auto-fill release notes via the
-      GitHub UI)
+      GitHub UI or via the `gh` CLI)
+
+```console
+# --verify-tag will ensure the last tag creation step was done
+gh release create <NEXT_PATCH_VERSION> --generate-notes --verify-tag
+```
+
+- [ ] Force update the major version, currently `v6`, using the date as the comment, e.g. 2024-07-22
+
+```console
+git tag --sign v6 -m "2024-07-22"
+git push origin v6 --force #need to force since moving this tag
+```
 
 ## 🍺 dagger Homebrew ⏱ `2mins`
 
