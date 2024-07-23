@@ -19,9 +19,6 @@ var (
 )
 
 func setupGlobalSSHAgent(t *testctx.T) func() {
-	// Use t for logging and error reporting
-	t.Log("Setting up global SSH agent")
-
 	key, err := ssh.ParseRawPrivateKey([]byte(globalPrivateKeyReadOnly))
 	require.NoError(t, err)
 
@@ -53,17 +50,15 @@ func setupGlobalSSHAgent(t *testctx.T) func() {
 		}
 	}()
 
-	t.Log("😈 SSH_AUTH_SOCK", globalSSHSockPath)
-
 	// ensure test suite is not polluted by env var
 	globalHostSSHAuthSock = os.Getenv("SSH_AUTH_SOCK")
-	os.Setenv("SSH_AUTH_SOCK", globalSSHSockPath)
+	os.Unsetenv("SSH_AUTH_SOCK")
 
 	return func() {
 		t.Log("Cleaning up global SSH agent")
 		l.Close()
-		os.Remove(globalSSHSockPath)
-		// leave host environment untouched
+		os.RemoveAll(globalSSHSockPath)
+		// restore host environment
 		if globalHostSSHAuthSock != "" {
 			os.Setenv("SSH_AUTH_SOCK", globalHostSSHAuthSock)
 		}

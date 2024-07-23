@@ -5329,6 +5329,7 @@ func (m *Test) Fn() string {
 
 			ctr := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				With(mountedPrivateRepoSocket(c)).
 				WithWorkdir("/work").
 				With(daggerExec("init", "--source=.", "--name=test", "--sdk="+testGitModuleRef(tc, "cool-sdk"))).
 				WithNewFile("main.go", `package main
@@ -6682,15 +6683,26 @@ func daggerCall(args ...string) dagger.WithContainerFunc {
 }
 
 func daggerCallAt(modPath string, args ...string) dagger.WithContainerFunc {
-	return func(c *dagger.Container) *dagger.Container {
+	return func(ctr *dagger.Container) *dagger.Container {
 		execArgs := []string{"dagger", "--debug", "call"}
 		if modPath != "" {
 			execArgs = append(execArgs, "-m", modPath)
 		}
-		return c.WithExec(append(execArgs, args...), dagger.ContainerWithExecOpts{
+		return ctr.WithExec(append(execArgs, args...), dagger.ContainerWithExecOpts{
 			UseEntrypoint:                 true,
 			ExperimentalPrivilegedNesting: true,
 		})
+	}
+}
+
+func mountedPrivateRepoSocket(c *dagger.Client) dagger.WithContainerFunc {
+	return func(ctr *dagger.Container) *dagger.Container {
+		sock := c.Host().UnixSocket(globalHostSSHAuthSock)
+		if sock != nil {
+			ctr = ctr.WithUnixSocket("/sock/unix-socket", sock)
+			ctr = ctr.WithEnvVariable("SSH_AUTH_SOCK", "/sock/unix-socket")
+		}
+		return ctr
 	}
 }
 

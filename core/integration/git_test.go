@@ -237,15 +237,11 @@ func (GitSuite) TestGitTagsWithAndWithoutSSHAuth(ctx context.Context, t *testctx
 		require.ElementsMatch(t, []string{"cool-sdk/v0.1", "v0.1.1"}, tags)
 	})
 
-	// Test fetching tags without SSH authentication
-	// TODO(guillaume) Broken for now, as the host has access to the env var,
-	// need to containerize to isolate
-
-	// t.Run("without SSH auth", func(ctx context.Context, t *testctx.T) {
-	// 	_, err := c.Git(repoURL).Tags(ctx)
-	// 	require.Error(t, err)
-	// 	require.Contains(t, err.Error(), "Permission denied (publickey)")
-	// })
+	t.Run("without SSH auth", func(ctx context.Context, t *testctx.T) {
+		_, err := c.Git(repoURL).Tags(ctx)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "Permission denied (publickey)")
+	})
 }
 
 func (GitSuite) TestAuth(ctx context.Context, t *testctx.T) {
