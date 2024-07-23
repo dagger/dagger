@@ -5,7 +5,15 @@ changelogPath: CHANGELOG.md
 versionExt: md
 versionFormat: '## sdk/go/{{.Version}} - {{.Time.Format "2006-01-02"}}'
 kindFormat: '### {{.Kind}}'
-changeFormat: '- {{.Body}} by @{{.Custom.Author}} in https://github.com/dagger/dagger/pull/{{.Custom.PR}}'
+changeFormat: |
+  {{- $lines := .Body | splitn "\n" 2 -}}
+  - {{ $lines._0 }} by @{{.Custom.Author}} in https://github.com/dagger/dagger/pull/{{.Custom.PR}}
+  {{- with $lines._1 -}}
+    {{ " " }}\{{ "\n" }}
+    {{- . | trim | indent 2 }}
+  {{- end -}}
+body:
+  block: true
 custom:
   - key: PR
     label: GitHub PR
