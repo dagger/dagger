@@ -58,8 +58,6 @@ class PythonSdkDev:
     @classmethod
     def uv(cls, ctr: dagger.Container) -> dagger.Container:
         """Add the uv tool to the container."""
-        if link_mode := os.getenv("UV_LINK_MODE"):
-            ctr = ctr.with_env_variable("UV_LINK_MODE", link_mode)
         return ctr.with_directory(
             "/usr/local/bin",
             dag.container().from_(UV_IMAGE).rootfs(),
