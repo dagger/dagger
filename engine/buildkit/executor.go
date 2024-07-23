@@ -43,10 +43,11 @@ import (
 )
 
 type ExecutionMetadata struct {
-	ClientID    string
-	SessionID   string
-	SecretToken string
-	Hostname    string
+	ClientID          string
+	SessionID         string
+	SecretToken       string
+	Hostname          string
+	SSHAuthSocketPath string
 
 	// The "stable" ID of the client that is used to identify filesync cache refs
 	// across different clients running on the same host.
