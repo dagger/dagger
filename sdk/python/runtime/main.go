@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/iancoleman/strcase"
+	"golang.org/x/mod/semver"
 )
 
 const (
@@ -174,14 +175,16 @@ func (m *PythonSdk) WithBase() (*PythonSdk, error) {
 	// NB: Always add uvImage to avoid a dynamic base pipeline as much as possible.
 	// Even if users don't use it, it's useful to create a faster virtual env
 	// and faster install for the codegen package.
-	uvAddr, err := m.UvImage()
+	uvImage, err := m.Discovery.GetImage(UvImageName)
 	if err != nil {
 		return nil, err
 	}
+	uvAddr := uvImage.String()
+	uvTag := uvImage.Tag()
 
 	// NB: Adding env vars with container images that were pulled allows
 	// modules to reuse them for performance benefits.
-	m.Container = dag.Container().
+	ctr := dag.Container().
 		// Base Python
 		From(baseAddr).
 		WithEnvVariable("PYTHONUNBUFFERED", "1").
@@ -200,9 +203,17 @@ func (m *PythonSdk) WithBase() (*PythonSdk, error) {
 		).
 		WithMountedCache("/root/.cache/uv", dag.CacheVolume("modpython-uv")).
 		WithEnvVariable("DAGGER_UV_IMAGE", uvAddr).
+		WithEnvVariable("UV_VERSION", uvTag).
 		WithEnvVariable("UV_SYSTEM_PYTHON", "1").
-		WithEnvVariable("UV_NATIVE_TLS", "1").
-		WithWorkdir(path.Join(ModSourceDirPath, m.Discovery.SubPath))
+		WithEnvVariable("UV_NATIVE_TLS", "1")
+
+	// NB: uv 0.2.27+ supports symlink mode to speed up the virtualenv creation.
+	// The "clone" and "hardlink" modes don't work across the cache volume.
+	if semver.Compare("v"+uvTag, "v0.2.27") >= 0 {
+		ctr = ctr.WithEnvVariable("UV_LINK_MODE", "symlink")
+	}
+
+	m.Container = ctr.WithWorkdir(path.Join(ModSourceDirPath, m.Discovery.SubPath))
 
 	return m, nil
 }

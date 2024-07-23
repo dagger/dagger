@@ -9,6 +9,7 @@ from main.docs import Docs
 from main.test import TestSuite
 
 UV_IMAGE: Final[str] = os.getenv("DAGGER_UV_IMAGE", "ghcr.io/astral-sh/uv:latest")
+UV_VERSION: Final[str] = os.getenv("UV_VERSION", "")
 HATCH_VERSION: Final[str] = "1.12.0"
 SUPPORTED_VERSIONS: Final = Literal["3.12", "3.11", "3.10"]
 
@@ -41,7 +42,9 @@ class PythonSdkDev:
                 .wolfi(["libgcc"])
                 .with_env_variable("PYTHONUNBUFFERED", "1")
                 .with_env_variable(
-                    "PATH", "/root/.local/bin:/usr/local/bin:$PATH", expand=True
+                    "PATH",
+                    "/root/.local/bin:/usr/local/bin:$PATH",
+                    expand=True,
                 )
                 .with_(cls.tools_cache("uv", "hatch", "ruff", "mypy"))
                 .with_(cls.uv)
@@ -55,6 +58,8 @@ class PythonSdkDev:
     @classmethod
     def uv(cls, ctr: dagger.Container) -> dagger.Container:
         """Add the uv tool to the container."""
+        if link_mode := os.getenv("UV_LINK_MODE"):
+            ctr = ctr.with_env_variable("UV_LINK_MODE", link_mode)
         return ctr.with_directory(
             "/usr/local/bin",
             dag.container().from_(UV_IMAGE).rootfs(),
@@ -64,7 +69,10 @@ class PythonSdkDev:
     @classmethod
     def hatch(cls, ctr: dagger.Container) -> dagger.Container:
         """Install the Hatch tool."""
-        return ctr.with_exec(["uv", "tool", "install", f"hatch=={HATCH_VERSION}"])
+        args = ["uv", "--verbose", "tool", "install", f"hatch=={HATCH_VERSION}"]
+        if UV_VERSION:
+            args += ["with", f"uv=={UV_VERSION}"]
+        return ctr.with_exec(args)
 
     @classmethod
     def tools_cache(cls, *args: str):

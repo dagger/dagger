@@ -6,6 +6,7 @@ require (
 	github.com/distribution/reference v0.6.0
 	github.com/iancoleman/strcase v0.3.0
 	github.com/pelletier/go-toml/v2 v2.1.1
+	golang.org/x/mod v0.18.0
 	golang.org/x/sync v0.7.0
 )
 
