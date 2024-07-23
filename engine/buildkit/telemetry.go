@@ -11,7 +11,6 @@ import (
 	"go.opentelemetry.io/otel/trace/embedded"
 
 	"dagger.io/dagger/telemetry"
-	"github.com/dagger/dagger/engine"
 )
 
 // buildkitTelemetryContext returns a context with a wrapped span that has a
@@ -22,15 +21,13 @@ func buildkitTelemetryContext(ctx context.Context) context.Context {
 		return nil
 	}
 	sp := trace.SpanFromContext(ctx)
-	lp := telemetry.LoggerProvider(ctx)
-	sp = buildkitSpan{
+	return trace.ContextWithSpan(ctx, buildkitSpan{
 		Span: sp,
 		tp: &buildkitTraceProvider{
 			tp: sp.TracerProvider(),
-			lp: lp,
+			lp: telemetry.LoggerProvider(ctx),
 		},
-	}
-	return trace.ContextWithSpan(ctx, sp)
+	})
 }
 
 type buildkitTraceProvider struct {
@@ -41,18 +38,15 @@ type buildkitTraceProvider struct {
 
 func (tp *buildkitTraceProvider) Tracer(name string, options ...trace.TracerOption) trace.Tracer {
 	return &buildkitTracer{
-		provider: tp,
-		tracer:   tp.tp.Tracer(name, options...),
-		lp:       tp.lp,
+		bkProvider: tp,
+		tracer:     tp.tp.Tracer(name, options...),
 	}
 }
 
 type buildkitTracer struct {
 	embedded.Tracer
-	provider       *buildkitTraceProvider
-	tracer         trace.Tracer
-	clientMetadata *engine.ClientMetadata
-	lp             *sdklog.LoggerProvider
+	bkProvider *buildkitTraceProvider
+	tracer     trace.Tracer
 }
 
 const TelemetryComponent = "buildkit"
@@ -65,9 +59,13 @@ func (t *buildkitTracer) Start(ctx context.Context, spanName string, opts ...tra
 		// have to make do.
 		trace.WithAttributes(attribute.Bool("buildkit", true)),
 	}, opts...)
-	ctx = telemetry.WithLoggerProvider(ctx, t.lp)
+
+	// Restore logger provider from the original ctx the provider was created.
+	ctx = telemetry.WithLoggerProvider(ctx, t.bkProvider.lp)
+
+	// Start the span, and make sure we return a span that has the provider.
 	ctx, span := t.tracer.Start(ctx, spanName, opts...)
-	newSpan := buildkitSpan{Span: span, tp: t.provider}
+	newSpan := buildkitSpan{Span: span, tp: t.bkProvider}
 	return trace.ContextWithSpan(ctx, newSpan), newSpan
 }
 
