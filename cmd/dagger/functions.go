@@ -279,8 +279,14 @@ func (fc *FuncCommand) Command() *cobra.Command {
 					if err := fc.execute(c, a); err != nil {
 						// We've already handled printing the error in `fc.execute`
 						// because we want to show the usage for the right sub-command.
-						// Returning Fail here will prevent the error from being printed
+						// Returning ExitError here will prevent the error from being printed
 						// twice on main().
+
+						// Return the same ExecError exit code.
+						var ex *dagger.ExecError
+						if errors.As(err, &ex) {
+							return ExitError{Code: ex.ExitCode}
+						}
 						return Fail
 					}
 
