@@ -98,11 +98,10 @@ func (EngineSuite) TestExitsZeroOnSignal(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	// engine should shutdown with exit code 0 when receiving SIGTERM
-	ctx, cancel := context.WithTimeout(ctx, time.Minute)
-	defer cancel()
-	t = t.WithContext(ctx)
-	_, err := devEngineContainer(c, func(c *dagger.Container) *dagger.Container {
-		return c.WithNewFile(
+	ctr := devEngineContainer(c, func(c *dagger.Container) *dagger.Container {
+		t.Helper()
+
+		c = c.WithNewFile(
 			"/usr/local/bin/dagger-entrypoint.sh",
 			`#!/bin/sh
 set -ex
@@ -116,7 +115,18 @@ exit $?
 `,
 			dagger.ContainerWithNewFileOpts{Permissions: 0o700},
 		)
-	}).Sync(ctx)
+
+		// do a sync here so our timeout doesn't include overhead of importing the engine itself
+		var err error
+		c, err = c.Sync(ctx)
+		require.NoError(t, err)
+		return c
+	})
+
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	t = t.WithContext(ctx)
+	_, err := ctr.Sync(ctx)
 	require.NoError(t, err)
 }
 
