@@ -16,7 +16,6 @@ import (
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
-	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
@@ -376,18 +375,8 @@ func (ps SpansPubSub) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnly
 	return nil
 }
 
-// ForceFlush flushes all parents of the client, since we also send to them.
-func (ps SpansPubSub) ForceFlush(ctx context.Context) error {
-	eg := new(errgroup.Group)
-	for _, ancestors := range ps.client.parents {
-		eg.Go(func() error {
-			return ancestors.tp.ForceFlush(ctx)
-		})
-	}
-	return eg.Wait()
-}
-
-func (ps SpansPubSub) Shutdown(context.Context) error { return nil }
+func (ps SpansPubSub) ForceFlush(ctx context.Context) error { return nil }
+func (ps SpansPubSub) Shutdown(context.Context) error       { return nil }
 
 func (ps *PubSub) Logs(client *daggerClient) sdklog.Exporter {
 	return LogsPubSub{
@@ -473,18 +462,8 @@ func (ps LogsPubSub) Export(ctx context.Context, logs []sdklog.Record) error {
 	return nil
 }
 
-// ForceFlush flushes all parents of the client, since we also send to them.
-func (ps LogsPubSub) ForceFlush(ctx context.Context) error {
-	eg := new(errgroup.Group)
-	for _, ancestors := range ps.client.parents {
-		eg.Go(func() error {
-			return ancestors.tp.ForceFlush(ctx)
-		})
-	}
-	return eg.Wait()
-}
-
-func (ps LogsPubSub) Shutdown(context.Context) error { return nil }
+func (ps LogsPubSub) ForceFlush(ctx context.Context) error { return nil }
+func (ps LogsPubSub) Shutdown(context.Context) error       { return nil }
 
 func (ps *PubSub) sseHandler(w http.ResponseWriter, r *http.Request, handler func(<-chan struct{}, *clientdb.Queries, func(string, int64, []byte))) {
 	sessionID := r.Header.Get("X-Dagger-Session-ID")
