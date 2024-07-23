@@ -537,8 +537,7 @@ func (c *Client) Close() (rerr error) {
 	// Wait for telemetry to finish draining
 	if c.telemetry != nil {
 		if err := c.telemetry.Wait(); err != nil {
-			rerr = errors.Join(rerr, fmt.Errorf("flush telemetry: %w", err))
-			slog.Warn("!!! WAITED ON TELEMETRY", "err", err)
+			rerr = errors.Join(rerr, fmt.Errorf("wait for telemetry: %w", err))
 		}
 	}
 
