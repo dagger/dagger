@@ -19,7 +19,6 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/vcs"
 	"github.com/go-git/go-git/v5/plumbing/transport"
-	"github.com/moby/buildkit/util/bklog"
 	"github.com/tonistiigi/fsutil/types"
 )
 
@@ -98,7 +97,6 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 
 		var commitRefSelector dagql.Selector
 		if parsed.hasVersion {
-			bklog.G(ctx).Debugf("⚠️ hasVersion: |%+v|\n", parsed.modVersion)
 			modVersion := parsed.modVersion
 			if parsed.hasVersion && isSemver(modVersion) {
 				var tags dagql.Array[dagql.String]
@@ -121,7 +119,6 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 				for i, tag := range tags {
 					allTags[i] = tag.String()
 				}
-				bklog.G(ctx).Debugf("⚠️ allTags: |%+v|\n", allTags)
 
 				matched, err := matchVersion(allTags, modVersion, subPath)
 				if err != nil {
@@ -144,7 +141,7 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 			commitRefSelector = dagql.Selector{
 				Field: "head",
 			}
-			src.AsGitSource.Value.Version = "main" // todo: fix, not necessary?
+			// src.AsGitSource.Value.Version = "main" // todo: fix, not necessary?
 		}
 
 		var gitRef dagql.Instance[*core.GitRef]

@@ -9,7 +9,6 @@ import (
 
 	"github.com/dagger/dagger/engine"
 	"github.com/moby/buildkit/session/sshforward"
-	"github.com/moby/buildkit/util/bklog"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -42,7 +41,6 @@ func (p SocketProvider) CheckAgent(ctx context.Context, req *sshforward.CheckAge
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid id: %s", err)
 	}
-	bklog.G(ctx).Debugf("🎃 yo |%+v|\n", u)
 	switch u.Scheme {
 	case "unix":
 		path := u.Path

@@ -230,8 +230,11 @@ func (GitSuite) TestGitTagsWithAndWithoutSSHAuth(ctx context.Context, t *testctx
 
 	// Test fetching tags with SSH authentication
 	t.Run("with SSH auth", func(ctx context.Context, t *testctx.T) {
+		sockPath, cleanup := setupPrivateRepoSSHAgent(t)
+		defer cleanup()
+
 		tags, err := c.Git(repoURL, dagger.GitOpts{
-			SSHAuthSocket: c.Host().UnixSocket(globalSSHSockPath),
+			SSHAuthSocket: c.Host().UnixSocket(sockPath),
 		}).Tags(ctx)
 		require.NoError(t, err)
 		require.ElementsMatch(t, []string{"cool-sdk/v0.1", "v0.1.1"}, tags)

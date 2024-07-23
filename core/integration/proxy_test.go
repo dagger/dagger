@@ -496,7 +496,6 @@ func (ContainerSuite) TestSystemGoProxy(ctx context.Context, t *testctx.T) {
 					Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, "hi from top level hi from dep hi from dep2", strings.TrimSpace(out))
-
 			})
 		}
 	})

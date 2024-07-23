@@ -15,7 +15,6 @@ import (
 	"github.com/dagger/dagger/engine"
 	bksession "github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/sshforward"
-	"github.com/moby/buildkit/util/bklog"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"golang.org/x/sync/errgroup"
@@ -219,8 +218,6 @@ func (store *SocketStore) CheckAgent(ctx context.Context, req *sshforward.CheckA
 
 	urlEncoded := store.getSocketURLEncoded(sock)
 	ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs(engine.SocketURLEncodedKey, urlEncoded))
-
-	bklog.G(ctx).Debugf("🥵 to: |%+v|%+v|\n", urlEncoded, sock)
 
 	return sshforward.NewSSHClient(caller.Conn()).CheckAgent(ctx, &sshforward.CheckAgentRequest{
 		ID: urlEncoded,

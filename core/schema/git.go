@@ -8,17 +8,13 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
-	"os/user"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/sources/gitdns"
-	"github.com/moby/buildkit/util/bklog"
-	"github.com/opencontainers/go-digest"
 )
 
 var _ SchemaResolvers = &gitSchema{}
@@ -108,7 +104,7 @@ func (s *gitSchema) git(ctx context.Context, parent *core.Query, args gitArgs) (
 			Hostname: host,
 		})
 	}
-	var authSock *core.Socket
+	var authSock *core.Socket = nil
 	if args.SSHAuthSocket.Valid {
 		sock, err := args.SSHAuthSocket.Value.Load(ctx, s.srv)
 		if err != nil {
@@ -120,44 +116,41 @@ func (s *gitSchema) git(ctx context.Context, parent *core.Query, args gitArgs) (
 		if err != nil {
 			return nil, fmt.Errorf("failed to get socket store: %w", err)
 		}
-		bklog.G(ctx).Debugf("🔥 sshAuthSock: |%+v|\n", socketStore)
 
 		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get client metadata from context: %w", err)
 		}
-		bklog.G(ctx).Debugf("🔥🔥 clientMetadata: |%+v|\n", clientMetadata)
 
-		accessor, err := core.GetClientResourceAccessor(ctx, parent, clientMetadata.SSHAuthSocketPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get client resource name: %w", err)
-		}
-		bklog.G(ctx).Debugf("🔥🔥 accessor: |%+v|\n", accessor)
+		if clientMetadata != nil && clientMetadata.SSHAuthSocketPath != "" {
+			accessor, err := core.GetClientResourceAccessor(ctx, parent, clientMetadata.SSHAuthSocketPath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get client resource name: %w", err)
+			}
 
-		var sockInst dagql.Instance[*core.Socket]
-		if err := s.srv.Select(ctx, s.srv.Root(), &sockInst,
-			dagql.Selector{
-				Field: "host",
-			},
-			dagql.Selector{
-				Field: "__internalSocket",
-				Args: []dagql.NamedInput{
-					{
-						Name:  "accessor",
-						Value: dagql.NewString(accessor),
+			var sockInst dagql.Instance[*core.Socket]
+			if err := s.srv.Select(ctx, s.srv.Root(), &sockInst,
+				dagql.Selector{
+					Field: "host",
+				},
+				dagql.Selector{
+					Field: "__internalSocket",
+					Args: []dagql.NamedInput{
+						{
+							Name:  "accessor",
+							Value: dagql.NewString(accessor),
+						},
 					},
 				},
-			},
-		); err != nil {
-			return nil, fmt.Errorf("failed to select internal socket: %w", err)
-		}
+			); err != nil {
+				return nil, fmt.Errorf("failed to select internal socket: %w", err)
+			}
 
-		bklog.G(ctx).Debugf("🔥🔥🔥 sockInst: |%+v|\n", sockInst.Self)
-		if err := socketStore.AddUnixSocket(sockInst.Self, clientMetadata.ClientID, clientMetadata.SSHAuthSocketPath); err != nil {
-			return nil, fmt.Errorf("failed to add unix socket to store: %w", err)
+			if err := socketStore.AddUnixSocket(sockInst.Self, clientMetadata.ClientID, clientMetadata.SSHAuthSocketPath); err != nil {
+				return nil, fmt.Errorf("failed to add unix socket to store: %w", err)
+			}
+			authSock = sockInst.Self
 		}
-		authSock = sockInst.Self
-		bklog.G(ctx).Debugf("🔥🔥🔥🔥 sockInst: |%+v|\n", sockInst.Self)
 	}
 	return &core.GitRepository{
 		Query:         parent,
@@ -246,29 +239,21 @@ func (s *gitSchema) tags(ctx context.Context, parent *core.GitRepository, args t
 	}
 	cmd := exec.CommandContext(ctx, "git", queryArgs...)
 
-	bklog.G(ctx).Debugf("🎃🎃 git tags command: |%+v|\n", parent.SSHAuthSocket)
 	if parent.SSHAuthSocket != nil {
-		bklog.G(ctx).Debugf("🎃🎃🎃 sshAuthSock: |%+v|\n", parent.SSHAuthSocket)
 		socketStore, err := parent.Query.Sockets(ctx)
 		if err == nil {
-			bklog.G(ctx).Debugf("🎃🎃🎃🎃 parent.SSHAuthSocket.IDDigest: |%+v|\n", parent.SSHAuthSocket.IDDigest)
-			hostpath, found := socketStore.GetSocketHostPath(parent.SSHAuthSocket.IDDigest)
-			bklog.G(ctx).Debugf("🎃🎃🎃🎃🎃 hostPath: |%+v||%+v|\n", hostpath, found)
-			// if found && hostpath != "" {
-			sock, err := mountSSHSocket(ctx, socketStore, parent.SSHAuthSocket.IDDigest)
+			sockpath, cleanup, err := socketStore.MountSocket(ctx, parent.SSHAuthSocket.IDDigest)
 			if err != nil {
 				return nil, fmt.Errorf("failed to mount SSH socket: %w", err)
 			}
 			defer func() {
-				err := sock.cleanup()
+				err := cleanup
 				if err != nil {
 					slog.Error("failed to cleanup SSH socket", "error", err)
 				}
 			}()
 
-			bklog.G(ctx).Debugf("🎃🎃🎃🎃🎃🎃 hostPath: |%+v|\n", sock.path)
-			cmd.Env = append(cmd.Env, "SSH_AUTH_SOCK="+sock.path)
-			// }
+			cmd.Env = append(cmd.Env, "SSH_AUTH_SOCK="+sockpath)
 		}
 	}
 
@@ -283,17 +268,13 @@ func (s *gitSchema) tags(ctx context.Context, parent *core.GitRepository, args t
 		defer os.Remove(knownHostsPath)
 	}
 
-	// time.Sleep(1000 * time.Minute)
-
 	// Set GIT_SSH_COMMAND
 	cmd.Env = append(cmd.Env, "GIT_SSH_COMMAND="+gitdns.GetGitSSHCommand(knownHostsPath))
 
-	bklog.G(ctx).Debugf("🎃🎃🎃🎃🎃🎃🎃 parentURL: |%+v|\n", parent.URL)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	bklog.G(ctx).Debugf("🎃🎃🎃🎃🎃🎃🎃🎃 cmd: |%+v|%+v|\n", cmd, cmd.Env)
 	err := cmd.Run()
 	if err != nil {
 		return nil, fmt.Errorf("git command failed: %w\nstdout: %s\nstderr: %s", err, stdout.String(), stderr.String())
@@ -319,40 +300,6 @@ func (s *gitSchema) tags(ctx context.Context, parent *core.GitRepository, args t
 	}
 
 	return tags, nil
-}
-
-type sshSocket struct {
-	path    string
-	cleanup func() error
-}
-
-func mountSSHSocket(ctx context.Context, store *core.SocketStore, sockIDDgst digest.Digest) (*sshSocket, error) {
-	/*
-		uid, gid, err := getUIDGID()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get UID and GID: %w", err)
-		}
-	*/
-
-	sock, cleanup, err := store.MountSocket(ctx, sockIDDgst)
-	if err != nil {
-		return nil, fmt.Errorf("failed to mount SSH socket: %w", err)
-	}
-
-	return &sshSocket{path: sock, cleanup: cleanup}, nil
-}
-
-func getUIDGID() (int, int, error) {
-	usr, err := user.Current()
-	if err != nil {
-		return 0, 0, fmt.Errorf("failed to get current user: %w", err)
-	}
-
-	// best effort, default to root
-	uid, _ := strconv.Atoi(usr.Uid)
-	gid, _ := strconv.Atoi(usr.Gid)
-
-	return uid, gid, nil
 }
 
 func mountKnownHosts(knownHosts string) (string, error) {

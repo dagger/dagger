@@ -30,16 +30,18 @@ import (
 var testCtx = context.Background()
 
 func TestMain(m *testing.M) {
+	// Preserve original SSH_AUTH_SOCK value and
+	// Ensure SSH_AUTH_SOCK does not pollute tests state
+	origAuthSock := os.Getenv("SSH_AUTH_SOCK")
+	os.Unsetenv("SSH_AUTH_SOCK")
+
 	testCtx = telemetry.InitEmbedded(testCtx, nil)
-
-	// Create a testctx.T for setup
-	t := testctx.New(testCtx, &testing.T{})
-
-	cleanup := setupGlobalSSHAgent(t)
-	defer cleanup()
-
 	res := m.Run()
 	telemetry.Close()
+
+	if origAuthSock != "" {
+		os.Setenv("SSH_AUTH_SOCK", origAuthSock)
+	}
 	os.Exit(res)
 }
 

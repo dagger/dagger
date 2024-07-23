@@ -12,26 +12,26 @@ import (
 	"golang.org/x/crypto/ssh/agent"
 )
 
-var (
-	globalSSHAgent        agent.Agent
-	globalSSHSockPath     string
-	globalHostSSHAuthSock string
-)
-
-func setupGlobalSSHAgent(t *testctx.T) func() {
+func setupPrivateRepoSSHAgent(t *testctx.T) (string, func()) {
 	key, err := ssh.ParseRawPrivateKey([]byte(globalPrivateKeyReadOnly))
 	require.NoError(t, err)
 
-	globalSSHAgent = agent.NewKeyring()
-	err = globalSSHAgent.Add(agent.AddedKey{
+	sshAgent := agent.NewKeyring()
+	err = sshAgent.Add(agent.AddedKey{
 		PrivateKey: key,
 	})
 	require.NoError(t, err)
 
-	tmp := t.TempDir()
-	globalSSHSockPath = filepath.Join(tmp, "ssh-agent.sock")
-	l, err := net.Listen("unix", globalSSHSockPath)
+	tmp, err := os.MkdirTemp("", "ssh-agent")
 	require.NoError(t, err)
+
+	sshAgentPath := filepath.Join(tmp, "ssh-agent.sock")
+	t.Logf("Attempting to create SSH agent socket at: %s", sshAgentPath)
+
+	l, err := net.Listen("unix", sshAgentPath)
+	if err != nil {
+		t.Fatalf("Failed to create SSH agent socket: %v", err)
+	}
 
 	go func() {
 		for {
@@ -42,7 +42,7 @@ func setupGlobalSSHAgent(t *testctx.T) func() {
 			}
 			go func() {
 				defer conn.Close()
-				err := agent.ServeAgent(globalSSHAgent, conn)
+				err := agent.ServeAgent(sshAgent, conn)
 				if err != nil && err != io.EOF {
 					t.Logf("SSH agent error: %v", err)
 				}
@@ -50,17 +50,11 @@ func setupGlobalSSHAgent(t *testctx.T) func() {
 		}
 	}()
 
-	// ensure test suite is not polluted by env var
-	globalHostSSHAuthSock = os.Getenv("SSH_AUTH_SOCK")
-	os.Unsetenv("SSH_AUTH_SOCK")
-
-	return func() {
-		t.Log("Cleaning up global SSH agent")
+	cleanup := func() {
+		t.Logf("Cleaning up SSH agent: %s", sshAgentPath)
 		l.Close()
-		os.RemoveAll(globalSSHSockPath)
-		// restore host environment
-		if globalHostSSHAuthSock != "" {
-			os.Setenv("SSH_AUTH_SOCK", globalHostSSHAuthSock)
-		}
+		os.RemoveAll(tmp)
 	}
+
+	return sshAgentPath, cleanup
 }

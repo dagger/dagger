@@ -125,7 +125,10 @@ func (ModuleSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 
 			testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
 				t.Run("git", func(ctx context.Context, t *testctx.T) {
-					_, err := base.With(mountedPrivateRepoSocket(c)).With(daggerCallAt(testGitModuleRef(tc, "invalid/bad-source"), "container-echo", "--string-arg", "plz fail")).Sync(ctx)
+					mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
+					defer cleanup()
+
+					_, err := base.With(mountedSocket).With(daggerCallAt(testGitModuleRef(tc, "invalid/bad-source"), "container-echo", "--string-arg", "plz fail")).Sync(ctx)
 					require.ErrorContains(t, err, `source path "../../../" contains parent directory components`)
 				})
 			})
@@ -214,7 +217,10 @@ func (ModuleSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 
 			testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
 				t.Run("git", func(ctx context.Context, t *testctx.T) {
-					_, err := base.With(mountedPrivateRepoSocket(c)).With(daggerCallAt(testGitModuleRef(tc, "invalid/bad-dep"), "container-echo", "--string-arg", "plz fail")).Sync(ctx)
+					mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
+					defer cleanup()
+
+					_, err := base.With(mountedSocket).With(daggerCallAt(testGitModuleRef(tc, "invalid/bad-dep"), "container-echo", "--string-arg", "plz fail")).Sync(ctx)
 					require.ErrorContains(t, err, `module dep source root path "../../../foo" escapes root`)
 				})
 			})
@@ -663,8 +669,11 @@ func (ModuleSuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 		t.Run("fails on git", func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
+			mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
+			defer cleanup()
+
 			_, err := goGitBase(t, c).
-				With(mountedPrivateRepoSocket(c)).
+				With(mountedSocket).
 				With(daggerExec("develop", "-m", testGitModuleRef(tc, "top-level"))).
 				Sync(ctx)
 			require.ErrorContains(t, err, `module must be local`)
@@ -1008,8 +1017,11 @@ func (ModuleSuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 			t.Run("happy", func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
+				mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
+				defer cleanup()
+
 				out, err := goGitBase(t, c).
-					With(mountedPrivateRepoSocket(c)).
+					With(mountedSocket).
 					WithWorkdir("/work").
 					With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
 					With(daggerExec("install", testGitModuleRef(tc, "top-level"))).
@@ -1033,8 +1045,11 @@ func (m *Test) Fn(ctx context.Context) (string, error) {
 			t.Run("sad", func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
+				mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
+				defer cleanup()
+
 				_, err := goGitBase(t, c).
-					With(mountedPrivateRepoSocket(c)).
+					With(mountedSocket).
 					WithWorkdir("/work").
 					With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
 					With(daggerExec("install", testGitModuleRef(tc, "../../"))).
@@ -1042,7 +1057,7 @@ func (m *Test) Fn(ctx context.Context) (string, error) {
 				require.ErrorContains(t, err, `git module source subpath points out of root: "../.."`)
 
 				_, err = goGitBase(t, c).
-					With(mountedPrivateRepoSocket(c)).
+					With(mountedSocket).
 					WithWorkdir("/work").
 					With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
 					With(daggerExec("install", testGitModuleRef(tc, "this/just/does/not/exist"))).
@@ -1051,27 +1066,26 @@ func (m *Test) Fn(ctx context.Context) (string, error) {
 			})
 
 			t.Run("unpinned gets pinned", func(ctx context.Context, t *testctx.T) {
-				// require.Equal(t, os.Getenv("SSH_AUTH_SOCK"), globalSSHSockPath)
-
 				c := connect(ctx, t)
 
+				mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
+				defer cleanup()
+
 				out, err := goGitBase(t, c).
-					With(mountedPrivateRepoSocket(c)).
+					With(mountedSocket).
 					WithWorkdir("/work").
 					With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
-					WithExec([]string{"env"}).
-					Stdout(ctx)
-
-				fmt.Printf("🎉 out: |%+v|\n", out)
-				// With(daggerExec("install", tc.gitTestRepoRef)).
-				// 	File("/work/dagger.json").
-				// 	Contents(ctx)
+					With(daggerExec("install", tc.gitTestRepoRef)).
+					File("/work/dagger.json").
+					Contents(ctx)
 				require.NoError(t, err)
 				var modCfg modules.ModuleConfig
 				require.NoError(t, json.Unmarshal([]byte(out), &modCfg))
 				require.Len(t, modCfg.Dependencies, 1)
-				url, commit, ok := strings.Cut(modCfg.Dependencies[0].Source, "@")
-				require.True(t, ok)
+				lastAtIndex := strings.LastIndex(modCfg.Dependencies[0].Source, "@")
+				require.NotEqual(t, lastAtIndex, -1)
+				url := modCfg.Dependencies[0].Source[:lastAtIndex]
+				commit := modCfg.Dependencies[0].Source[lastAtIndex+1:]
 				require.Equal(t, tc.gitTestRepoRef, url)
 				require.NotEmpty(t, commit)
 			})
@@ -1590,8 +1604,12 @@ func (ModuleSuite) TestDaggerGitWithSources(ctx context.Context, t *testctx.T) {
 			modSubpath := modSubpath
 			t.Run(modSubpath, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
+
+				mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
+				defer cleanup()
+
 				ctr := goGitBase(t, c).
-					With(mountedPrivateRepoSocket(c)).
+					With(mountedSocket).
 					WithWorkdir("/work").
 					With(daggerExec("init")).
 					With(daggerExec("install", "--name", "foo", testGitModuleRef(tc, "various-source-values/"+modSubpath)))
