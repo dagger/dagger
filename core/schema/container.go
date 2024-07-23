@@ -725,15 +725,15 @@ func (s *containerSchema) withExecLegacy(ctx context.Context, parent *core.Conta
 }
 
 func (s *containerSchema) stdout(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {
-	return parent.MetaFileContents(ctx, buildkit.MetaMountStdoutPath)
+	return parent.Stdout(ctx)
 }
 
 func (s *containerSchema) stderr(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {
-	return parent.MetaFileContents(ctx, buildkit.MetaMountStderrPath)
+	return parent.Stderr(ctx)
 }
 
 func (s *containerSchema) stdoutLegacy(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {
-	out, err := parent.MetaFileContents(ctx, buildkit.MetaMountStdoutPath)
+	out, err := parent.Stdout(ctx)
 	if errors.Is(err, core.ErrNoCommand) {
 		ctr, err := parent.WithExec(ctx, core.ContainerExecOpts{
 			UseEntrypoint: true,
@@ -741,13 +741,13 @@ func (s *containerSchema) stdoutLegacy(ctx context.Context, parent *core.Contain
 		if err != nil {
 			return "", err
 		}
-		return ctr.MetaFileContents(ctx, buildkit.MetaMountStdoutPath)
+		return ctr.Stdout(ctx)
 	}
 	return out, err
 }
 
 func (s *containerSchema) stderrLegacy(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {
-	out, err := parent.MetaFileContents(ctx, buildkit.MetaMountStderrPath)
+	out, err := parent.Stderr(ctx)
 	if errors.Is(err, core.ErrNoCommand) {
 		ctr, err := parent.WithExec(ctx, core.ContainerExecOpts{
 			UseEntrypoint: true,
@@ -755,7 +755,7 @@ func (s *containerSchema) stderrLegacy(ctx context.Context, parent *core.Contain
 		if err != nil {
 			return "", err
 		}
-		return ctr.MetaFileContents(ctx, buildkit.MetaMountStderrPath)
+		return ctr.Stderr(ctx)
 	}
 	return out, err
 }
