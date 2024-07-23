@@ -245,9 +245,9 @@ func main() { //nolint:gocyclo
 	addFlags(app)
 
 	ctx, cancel := context.WithCancel(appcontext.Context())
-	defer cancel()
 
 	app.Action = func(c *cli.Context) error {
+		defer cancel()
 		// TODO: On Windows this always returns -1. The actual "are you admin" check is very Windows-specific.
 		// See https://github.com/golang/go/issues/28804#issuecomment-505326268 for the "short" version.
 		if os.Geteuid() > 0 {
