@@ -58,8 +58,6 @@ class PythonSdkDev:
     @classmethod
     def uv(cls, ctr: dagger.Container) -> dagger.Container:
         """Add the uv tool to the container."""
-        if link_mode := os.getenv("UV_LINK_MODE"):
-            ctr = ctr.with_env_variable("UV_LINK_MODE", link_mode)
         return ctr.with_directory(
             "/usr/local/bin",
             dag.container().from_(UV_IMAGE).rootfs(),
@@ -69,9 +67,9 @@ class PythonSdkDev:
     @classmethod
     def hatch(cls, ctr: dagger.Container) -> dagger.Container:
         """Install the Hatch tool."""
-        args = ["uv", "--verbose", "tool", "install", f"hatch=={HATCH_VERSION}"]
+        args = ["uv", "tool", "install", f"hatch=={HATCH_VERSION}"]
         if UV_VERSION:
-            args += ["with", f"uv=={UV_VERSION}"]
+            args += ["--with", f"uv=={UV_VERSION}"]
         return ctr.with_exec(args)
 
     @classmethod
