@@ -113,7 +113,8 @@ type Client struct {
 	upstreamCacheImportOptions []*controlapi.CacheOptionsEntry
 	upstreamCacheExportOptions []*controlapi.CacheOptionsEntry
 
-	hostname string
+	hostname       string
+	stableClientID string
 
 	nestedSessionPort int
 
@@ -195,6 +196,9 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	// NB: don't propagate this ctx, we don't want everything tucked beneath connect
 	connectCtx, span := Tracer().Start(ctx, "connect", connectSpanOpts...)
 	defer telemetry.End(span, func() error { return rerr })
+
+	slog := slog.SpanLogger(connectCtx, InstrumentationLibrary)
+	c.stableClientID = GetHostStableID(slog)
 
 	if err := c.startEngine(connectCtx); err != nil {
 		return nil, nil, fmt.Errorf("start engine: %w", err)
@@ -1008,6 +1012,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		SessionID:                 c.SessionID,
 		ClientSecretToken:         c.SecretToken,
 		ClientHostname:            c.hostname,
+		ClientStableID:            c.stableClientID,
 		UpstreamCacheImportConfig: c.upstreamCacheImportOptions,
 		UpstreamCacheExportConfig: c.upstreamCacheExportOptions,
 		Labels:                    c.labels,

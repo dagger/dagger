@@ -1,0 +1,6 @@
+kind: Fixed
+body: Fix rare condition in which clients could use wrong files in filesync
+time: 2024-07-18T22:36:38.877691456-07:00
+custom:
+  Author: sipsma
+  PR: "7900"

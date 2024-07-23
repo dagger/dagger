@@ -877,6 +877,8 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 
 	state.spec.Process.Env = append(state.spec.Process.Env, DaggerSessionTokenEnv+"="+w.execMD.SecretToken)
 
+	w.execMD.ClientStableID = randid.NewID()
+
 	filesyncer, err := client.NewFilesyncer(
 		state.rootfsPath,
 		strings.TrimPrefix(state.spec.Process.Cwd, "/"),

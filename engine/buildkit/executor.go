@@ -48,6 +48,12 @@ type ExecutionMetadata struct {
 	SecretToken string
 	Hostname    string
 
+	// The "stable" ID of the client that is used to identify filesync cache refs
+	// across different clients running on the same host.
+	// For now, nested execs are just always given a random unique ID each exec (as
+	// opposed to clients running on the host which re-use a persisted ID).
+	ClientStableID string
+
 	// Unique (random) ID for this execution.
 	// This is used to deduplicate the same execution that gets evaluated multiple times.
 	ExecID string
@@ -212,9 +218,21 @@ func (w *Worker) run(
 	}
 	f.Close()
 
-	bklog.G(ctx).Debugf("> creating %s %v", state.id, state.spec.Process.Args)
+	lg := bklog.G(ctx).
+		WithField("id", state.id).
+		WithField("args", state.spec.Process.Args)
+	if w.execMD != nil {
+		lg = lg.WithField("caller_client_id", w.execMD.CallerClientID)
+		if w.execMD.CallID != nil {
+			lg = lg.WithField("call_id", w.execMD.CallID.Display())
+		}
+		if w.execMD.ClientID != "" {
+			lg = lg.WithField("nested_client_id", w.execMD.ClientID)
+		}
+	}
+	lg.Debug("starting container")
 	defer func() {
-		bklog.G(ctx).WithError(rerr).Debugf("> container done %s %v", state.id, state.spec.Process.Args)
+		lg.WithError(rerr).Debug("container done")
 	}()
 
 	trace.SpanFromContext(ctx).AddEvent("Container created")
