@@ -320,7 +320,15 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	return container, nil
 }
 
-func (container *Container) MetaFileContents(ctx context.Context, filePath string) (string, error) {
+func (container *Container) Stdout(ctx context.Context) (string, error) {
+	return container.metaFileContents(ctx, buildkit.MetaMountStdoutPath)
+}
+
+func (container *Container) Stderr(ctx context.Context) (string, error) {
+	return container.metaFileContents(ctx, buildkit.MetaMountStderrPath)
+}
+
+func (container *Container) metaFileContents(ctx context.Context, filePath string) (string, error) {
 	if container.Meta == nil {
 		return "", fmt.Errorf("%w: %s requires an exec", ErrNoCommand, filePath)
 	}
