@@ -151,7 +151,7 @@ func (ps *PubSub) LogsHandler(rw http.ResponseWriter, r *http.Request) { //nolin
 const otlpBatchSize = 1000
 
 func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request, client *daggerClient) error { //nolint: dupl
-	return ps.sseHandler(w, r, client, func(ctx context.Context, lastID string) (*sse.Event, bool, error) {
+	return ps.sseHandler(w, r, client, func(ctx context.Context, db *sql.DB, lastID string) (*sse.Event, bool, error) {
 		var since int64
 		if lastID != "" {
 			_, err := fmt.Sscanf(lastID, "%d", &since)
@@ -159,7 +159,7 @@ func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request,
 				return nil, false, fmt.Errorf("invalid last ID: %w", err)
 			}
 		}
-		q := clientdb.New(client.db)
+		q := clientdb.New(db)
 		spans, err := q.SelectSpansSince(ctx, clientdb.SelectSpansSinceParams{
 			ID:    since,
 			Limit: otlpBatchSize,
@@ -191,7 +191,7 @@ func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request,
 }
 
 func (ps *PubSub) LogsSubscribeHandler(w http.ResponseWriter, r *http.Request, client *daggerClient) error { //nolint: dupl
-	return ps.sseHandler(w, r, client, func(ctx context.Context, lastID string) (*sse.Event, bool, error) {
+	return ps.sseHandler(w, r, client, func(ctx context.Context, db *sql.DB, lastID string) (*sse.Event, bool, error) {
 		var since int64
 		if lastID != "" {
 			_, err := fmt.Sscanf(lastID, "%d", &since)
@@ -199,7 +199,7 @@ func (ps *PubSub) LogsSubscribeHandler(w http.ResponseWriter, r *http.Request, c
 				return nil, false, fmt.Errorf("invalid last ID: %w", err)
 			}
 		}
-		q := clientdb.New(client.db)
+		q := clientdb.New(db)
 		logs, err := q.SelectLogsSince(ctx, clientdb.SelectLogsSinceParams{
 			ID:    since,
 			Limit: otlpBatchSize,
@@ -437,7 +437,7 @@ func (ps LogsPubSub) Export(ctx context.Context, logs []sdklog.Record) error {
 func (ps LogsPubSub) ForceFlush(ctx context.Context) error { return nil }
 func (ps LogsPubSub) Shutdown(context.Context) error       { return nil }
 
-type Fetcher func(ctx context.Context, since string) (*sse.Event, bool, error)
+type Fetcher func(ctx context.Context, db *sql.DB, since string) (*sse.Event, bool, error)
 
 func (ps *PubSub) sseHandler(w http.ResponseWriter, r *http.Request, client *daggerClient, fetcher Fetcher) error {
 	flush := func() {}
@@ -453,13 +453,17 @@ func (ps *PubSub) sseHandler(w http.ResponseWriter, r *http.Request, client *dag
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
-	ctx := client.daggerSession.withShutdownCancel(r.Context())
-
 	since := r.Header.Get("X-Last-Event-ID")
+
+	db, err := ps.srv.clientDBs.Open(client.clientID)
+	if err != nil {
+		return fmt.Errorf("open client db: %w", err)
+	}
+	defer db.Close()
 
 	var terminating bool
 	for {
-		event, hasData, err := fetcher(r.Context(), since) // fetch without shutdown context
+		event, hasData, err := fetcher(r.Context(), db, since)
 		if err != nil {
 			slog.Warn("error fetching event", "err", err)
 			return fmt.Errorf("fetch: %w", err)
@@ -473,7 +477,8 @@ func (ps *PubSub) sseHandler(w http.ResponseWriter, r *http.Request, client *dag
 			case <-time.After(telemetry.NearlyImmediate):
 				// Poll for more data at the same frequency that it's batched and saved.
 				// SQLite should be able to handle this just fine.
-			case <-ctx.Done():
+			case <-client.shutdownCh:
+				// Client is shutting down; next time we receive no data, we'll exit.
 				terminating = true
 			}
 			continue
