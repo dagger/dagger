@@ -567,21 +567,20 @@ func (c *otlpConsumer) Consume(ctx context.Context, cb func([]byte) error) (rerr
 		}
 	}()
 
-	sseConn, err := sse.Connect(c.httpClient, 100*time.Millisecond, func() *http.Request {
-		return (&http.Request{
-			Method: http.MethodGet,
-			URL: &url.URL{
-				Scheme: "http",
-				Host:   "dagger",
-				Path:   c.path,
-			},
-		}).WithContext(ctx)
-	})
-	if err != nil {
-		return fmt.Errorf("connect to SSE: %w", err)
-	}
-
 	c.eg.Go(func() error {
+		sseConn, err := sse.Connect(c.httpClient, 100*time.Millisecond, func() *http.Request {
+			return (&http.Request{
+				Method: http.MethodGet,
+				URL: &url.URL{
+					Scheme: "http",
+					Host:   "dagger",
+					Path:   c.path,
+				},
+			}).WithContext(ctx)
+		})
+		if err != nil {
+			return fmt.Errorf("connect to SSE: %w", err)
+		}
 		defer sseConn.Close()
 
 		slog.ExtraDebug("consuming")
