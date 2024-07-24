@@ -18,7 +18,7 @@ import (
 
 var (
 	OutputDir           = ""
-	EngineContainerName = "dagger-engine.dev"
+	EngineContainerName = distconsts.EngineContainerName
 )
 
 func init() {

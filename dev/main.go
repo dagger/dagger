@@ -13,6 +13,7 @@ import (
 type DaggerDev struct {
 	Src     *dagger.Directory // +private
 	Version *VersionInfo
+	Tag     string
 	// When set, module codegen is automatically applied when retrieving the Dagger source code
 	ModCodegen bool
 
@@ -28,6 +29,9 @@ func New(
 	// +optional
 	version string,
 	// +optional
+	tag string,
+
+	// +optional
 	dockerCfg *dagger.Secret,
 ) (*DaggerDev, error) {
 	versionInfo, err := newVersion(ctx, source, version)
@@ -38,6 +42,7 @@ func New(
 	return &DaggerDev{
 		Src:       source,
 		Version:   versionInfo,
+		Tag:       tag,
 		DockerCfg: dockerCfg,
 	}, nil
 }

@@ -24,6 +24,7 @@ type Builder struct {
 	source *dagger.Directory
 
 	version string
+	tag     string
 
 	platform     dagger.Platform
 	platformSpec ocispecs.Platform
@@ -83,6 +84,12 @@ func NewBuilder(ctx context.Context, source *dagger.Directory) (*Builder, error)
 func (build *Builder) WithVersion(version string) *Builder {
 	b := *build
 	b.version = version
+	return &b
+}
+
+func (build *Builder) WithTag(tag string) *Builder {
+	b := *build
+	b.tag = tag
 	return &b
 }
 
@@ -312,6 +319,9 @@ func (build *Builder) binary(pkg string, version bool, race bool) *dagger.File {
 	}
 	if version && build.version != "" {
 		ldflags = append(ldflags, "-X", "github.com/dagger/dagger/engine.Version="+build.version)
+	}
+	if version && build.tag != "" {
+		ldflags = append(ldflags, "-X", "github.com/dagger/dagger/engine.Tag="+build.tag)
 	}
 
 	output := filepath.Join("./bin/", filepath.Base(pkg))

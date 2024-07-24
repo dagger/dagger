@@ -86,6 +86,7 @@ func (e *Engine) Container(
 	}
 	builder = builder.
 		WithVersion(e.Dagger.Version.String()).
+		WithTag(e.Dagger.Tag).
 		WithRace(e.Race)
 	if platform != "" {
 		builder = builder.WithPlatform(platform)

@@ -3,6 +3,19 @@ package engine
 import (
 	"fmt"
 	"os"
+
+	"github.com/dagger/dagger/engine/distconsts"
+)
+
+var (
+	// Tag holds the tag that the respective engine version is tagged with.
+	//
+	// Note: this is filled at link-time.
+	//
+	// - For official tagged releases, this is simple semver like vX.Y.Z
+	// - For builds off our repo's main branch, this is a commit ID
+	// - For dev builds, this is empty
+	Tag string
 )
 
 const (
@@ -18,16 +31,21 @@ const (
 	RunnerHostEnv = "_EXPERIMENTAL_DAGGER_RUNNER_HOST"
 )
 
-func RunnerHost() (string, error) {
+func RunnerHost() string {
 	if v, ok := os.LookupEnv(RunnerHostEnv); ok {
-		return v, nil
+		return v
 	}
 
-	tag := Version
+	tag := Tag
+	if tag == "" {
+		// can happen during naive dev builds (so just fallback to something
+		// semi-reasonable)
+		return "docker-container://" + distconsts.EngineContainerName
+	}
 	if os.Getenv(GPUSupportEnv) != "" {
 		tag += "-gpu"
 	}
-	return fmt.Sprintf("docker-image://%s:%s", EngineImageRepo, tag), nil
+	return fmt.Sprintf("docker-image://%s:%s", EngineImageRepo, tag)
 }
 
 const (

@@ -21,6 +21,11 @@ inputs:
     default: "false"
     required: false
 
+  redirect:
+    description: "Filepath to redirect result to"
+    default: "/dev/null"
+    required: false
+
 runs:
   using: "composite"
   steps:
@@ -100,12 +105,12 @@ runs:
         if [[ "${{ inputs.module }}" == "dev" ]]; then
           # set some sane defaults for the current module
           if [[ -f $HOME/.docker/config.json ]]; then
-            dagger -m "${{ inputs.module }}" call --source=".:default" --docker-cfg=file:"$HOME/.docker/config.json" ${{ inputs.function }}
+            dagger -m "${{ inputs.module }}" call --source=".:default" --docker-cfg=file:"$HOME/.docker/config.json" ${{ inputs.function }} | tee "${{ inputs.redirect }}"
           else
-            dagger -m "${{ inputs.module }}" call --source=".:default" ${{ inputs.function }}
+            dagger -m "${{ inputs.module }}" call --source=".:default" ${{ inputs.function }} | tee "${{ inputs.redirect }}"
           fi
         else
-          dagger -m "${{ inputs.module }}" call ${{ inputs.function }}
+          dagger -m "${{ inputs.module }}" call ${{ inputs.function }} | tee "${{ inputs.redirect }}"
         fi
       env:
         DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"

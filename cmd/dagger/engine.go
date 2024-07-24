@@ -31,11 +31,7 @@ func withEngine(
 		}
 
 		if params.RunnerHost == "" {
-			var err error
-			params.RunnerHost, err = engine.RunnerHost()
-			if err != nil {
-				return err
-			}
+			params.RunnerHost = engine.RunnerHost()
 		}
 
 		params.DisableHostRW = disableHostRW

@@ -12,6 +12,7 @@ builds:
     ldflags:
       - -s -w
       - -X github.com/dagger/dagger/engine.Version={{.Env.ENGINE_VERSION}}
+      - -X github.com/dagger/dagger/engine.Tag={{.Env.ENGINE_TAG}}
     goos:
       - linux
       - windows

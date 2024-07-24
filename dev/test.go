@@ -96,6 +96,7 @@ func (t *Test) test(
 	// Add ldflags
 	ldflags := []string{
 		"-X", "github.com/dagger/dagger/engine.Version=" + t.Dagger.Version.String(),
+		"-X", "github.com/dagger/dagger/engine.Tag=" + t.Dagger.Tag,
 	}
 	args = append(args, "-ldflags", strings.Join(ldflags, " "))
 

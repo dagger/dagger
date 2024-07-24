@@ -34,7 +34,9 @@ func (cli *CLI) Binary(
 	if err != nil {
 		return nil, err
 	}
-	builder = builder.WithVersion(cli.Dagger.Version.String())
+	builder = builder.
+		WithVersion(cli.Dagger.Version.String()).
+		WithTag(cli.Dagger.Tag)
 	if platform != "" {
 		builder = builder.WithPlatform(platform)
 	}
@@ -65,8 +67,8 @@ func (cli *CLI) Publish(
 	artefactsFQDN *dagger.Secret,
 ) error {
 	args := []string{"release", "--clean", "--skip-validate", "--debug"}
-	if cli.Dagger.Version.Tag != "" {
-		args = append(args, "--release-notes", fmt.Sprintf(".changes/%s.md", cli.Dagger.Version.Tag))
+	if cli.Dagger.Tag != "" {
+		args = append(args, "--release-notes", fmt.Sprintf(".changes/%s.md", cli.Dagger.Tag))
 	} else {
 		// if this isn't an official semver version, do a dev release
 		args = append(args,
@@ -92,6 +94,7 @@ func (cli *CLI) Publish(
 		WithSecretVariable("AWS_BUCKET", awsBucket).
 		WithSecretVariable("ARTEFACTS_FQDN", artefactsFQDN).
 		WithEnvVariable("ENGINE_VERSION", cli.Dagger.Version.String()).
+		WithEnvVariable("ENGINE_TAG", cli.Dagger.Tag).
 		With(func(ctr *dagger.Container) *dagger.Container {
 			if cli.Dagger.Version.Tag == "" {
 				// goreleaser refuses to run if there isn't a tag, so set it to a dummy but valid semver
@@ -121,7 +124,9 @@ func (cli *CLI) TestPublish(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	builder = builder.WithVersion(cli.Dagger.Version.String())
+	builder = builder.
+		WithVersion(cli.Dagger.Version.String()).
+		WithTag(cli.Dagger.Tag)
 
 	var eg errgroup.Group
 	for _, os := range oses {
