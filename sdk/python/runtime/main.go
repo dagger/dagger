@@ -200,7 +200,13 @@ func (m *PythonSdk) WithBase() (*PythonSdk, error) {
 				Include: []string{"uv*"},
 			},
 		).
-		WithMountedCache("/root/.cache/uv", dag.CacheVolume("modpython-uv")).
+		WithMountedCache(
+			"/root/.cache/uv",
+			dag.CacheVolume("modpython-uv"),
+			dagger.ContainerWithMountedCacheOpts{
+				Sharing: dagger.Private,
+			},
+		).
 		WithEnvVariable("DAGGER_UV_IMAGE", uvAddr).
 		WithEnvVariable("UV_VERSION", uvTag).
 		WithEnvVariable("UV_SYSTEM_PYTHON", "1").
@@ -367,7 +373,7 @@ func (m *PythonSdk) WithInstall() *PythonSdk {
 			install = append(install, "--no-deps", "-r", PipCompileLock)
 		}
 		// pip compiles by default, but not uv
-		install = append([]string{"uv"}, append(install, "--compile-bytecode")...)
+		install = append([]string{"uv"}, append(install, "--verbose", "--compile-bytecode")...)
 		check = append([]string{"uv"}, check...)
 	}
 
