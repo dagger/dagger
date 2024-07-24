@@ -2165,3 +2165,24 @@ func (m *Test) FromStatus(status Status) string {
 		require.ErrorContains(t, err, "enum value must not be empty")
 	})
 }
+
+func (ModuleSuite) TestCallExit(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	_, err := modInit(t, c, "go", `package main
+
+import "os"
+
+type Test struct {}
+
+func (m *Test) Quit() {
+	os.Exit(6)
+}
+`,
+	).
+		With(daggerCall("quit")).
+		Sync(ctx)
+
+	var exErr *dagger.ExecError
+	require.ErrorAs(t, err, &exErr)
+	require.Equal(t, 6, exErr.ExitCode)
+}
