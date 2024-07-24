@@ -886,18 +886,17 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 	mux := http.NewServeMux()
 	switch r.URL.Path {
 	case "/v1/traces", "/v1/logs":
+		// Just get the client if it exists, don't init it.
 		client, err := srv.getClient(clientMetadata.SessionID, clientMetadata.ClientID)
 		if err != nil {
-			slog.Warn("error getting client", "err", err)
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
+			return fmt.Errorf("get client: %w", err)
 		}
 		mux.HandleFunc("GET /v1/traces", httpHandlerFunc(srv.telemetryPubSub.TracesSubscribeHandler, client))
 		mux.HandleFunc("GET /v1/logs", httpHandlerFunc(srv.telemetryPubSub.LogsSubscribeHandler, client))
 	default:
 		client, cleanup, err := srv.getOrInitClient(ctx, opts)
 		if err != nil {
-			return fmt.Errorf("update session state: %w", err)
+			return fmt.Errorf("get or init client: %w", err)
 		}
 		defer func() {
 			err := cleanup()
@@ -909,7 +908,6 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 
 		sess := client.daggerSession
 		ctx = analytics.WithContext(ctx, sess.analytics)
-
 		r = r.WithContext(ctx)
 
 		mux.Handle(engine.SessionAttachablesEndpoint, httpHandlerFunc(srv.serveSessionAttachables, client))
