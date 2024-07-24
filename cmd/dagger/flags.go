@@ -18,7 +18,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/containerd/containerd/platforms"
+	"github.com/containerd/platforms"
 	"github.com/moby/buildkit/util/gitutil"
 	"github.com/spf13/pflag"
 

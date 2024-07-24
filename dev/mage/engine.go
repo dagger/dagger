@@ -9,7 +9,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/containerd/containerd/platforms"
+	"github.com/containerd/platforms"
 	"github.com/magefile/mage/mg"
 
 	"github.com/dagger/dagger/dev/mage/util"

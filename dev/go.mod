@@ -11,7 +11,7 @@ replace github.com/dagger/dagger/engine/distconsts => ../engine/distconsts
 require (
 	github.com/99designs/gqlgen v0.17.49
 	github.com/Khan/genqlient v0.7.0
-	github.com/containerd/containerd v1.7.17
+	github.com/containerd/platforms v0.2.1
 	github.com/magefile/mage v1.15.0
 	github.com/moby/buildkit v0.14.0-rc1.0.20240603193914-3d789eb740a9
 	github.com/opencontainers/image-spec v1.1.0
@@ -36,7 +36,6 @@ require (
 
 require (
 	github.com/Masterminds/semver/v3 v3.2.1 // indirect
-	github.com/Microsoft/hcsshim v0.11.5 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/containerd/log v0.1.0 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
