@@ -1064,9 +1064,14 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 			bklog.G(ctx).Debugf("done running cache export for client %s", client.clientID)
 		}
 
-		sess.closeShutdownOnce.Do(func() {
-			close(sess.shutdownCh)
-		})
+		defer func() {
+			// Signal shutdown at the very end, _after_ flushing telemetry/etc.,
+			// so we can respect the shutdownCh to short-circuit any telemetry
+			// subscribers that appeared _while_ shutting down.
+			sess.closeShutdownOnce.Do(func() {
+				close(sess.shutdownCh)
+			})
+		}()
 	}
 
 	// Flush telemetry across the entire session so that any child clients will

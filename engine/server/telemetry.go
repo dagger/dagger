@@ -36,7 +36,7 @@ func (t Topic) String() string {
 type PubSub struct {
 	srv        *Server
 	mux        http.Handler
-	listeners  map[string][]chan<- struct{}
+	listeners  map[string]map[<-chan struct{}]chan<- struct{}
 	listenersL sync.Mutex
 }
 
@@ -45,7 +45,7 @@ func NewPubSub(srv *Server) *PubSub {
 	ps := &PubSub{
 		srv:       srv,
 		mux:       mux,
-		listeners: map[string][]chan<- struct{}{},
+		listeners: map[string]map[<-chan struct{}]chan<- struct{}{},
 	}
 	mux.HandleFunc("POST /v1/traces", ps.TracesHandler)
 	mux.HandleFunc("POST /v1/logs", ps.LogsHandler)
@@ -60,9 +60,24 @@ func (ps *PubSub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (ps *PubSub) Listen(clientID string) <-chan struct{} {
 	ch := make(chan struct{}, 1)
 	ps.listenersL.Lock()
-	ps.listeners[clientID] = append(ps.listeners[clientID], ch)
+	if ps.listeners[clientID] == nil {
+		ps.listeners[clientID] = map[<-chan struct{}]chan<- struct{}{}
+	}
+	ps.listeners[clientID][ch] = ch
 	ps.listenersL.Unlock()
 	return ch
+}
+
+func (ps *PubSub) Unlisten(clientID string, ch <-chan struct{}) {
+	ps.listenersL.Lock()
+	chs, ok := ps.listeners[clientID]
+	if ok {
+		delete(chs, ch)
+		if len(chs) == 0 {
+			delete(ps.listeners, clientID)
+		}
+	}
+	ps.listenersL.Unlock()
 }
 
 func (ps *PubSub) Notify(clientID string) {
@@ -87,7 +102,6 @@ func (ps *PubSub) Terminate(clientID string) {
 		// Close the channel so that for range completes.
 		close(ch)
 	}
-	delete(ps.listeners, clientID)
 	ps.listenersL.Unlock()
 }
 
@@ -184,12 +198,12 @@ func (ps *PubSub) LogsHandler(rw http.ResponseWriter, r *http.Request) { //nolin
 }
 
 func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request) { //nolint: dupl
-	ps.sseHandler(w, r, func(notify <-chan struct{}, q *clientdb.Queries, emit func(event string, id int64, payload []byte)) {
+	ps.sseHandler(w, r, func(ctx context.Context, notify <-chan struct{}, q *clientdb.Queries, emit func(event string, id int64, payload []byte)) {
 		var since int64 = 0
 		var limit int64 = 1000
 
 		for {
-			spans, err := q.SelectSpansSince(r.Context(), clientdb.SelectSpansSinceParams{
+			spans, err := q.SelectSpansSince(ctx, clientdb.SelectSpansSinceParams{
 				ID:    since,
 				Limit: limit,
 			})
@@ -199,13 +213,18 @@ func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request)
 			}
 
 			if len(spans) == 0 {
-				_, ok := <-notify
-				if ok {
-					// More data to read.
-					continue
-				} else {
-					// Got 0 spans and the client has terminated, so we're done.
-					break
+				select {
+				case _, ok := <-notify:
+					if ok {
+						// More data to read.
+						continue
+					} else {
+						// Got 0 spans and the client has terminated, so we're done.
+						return
+					}
+				case <-ctx.Done():
+					// Client disconnected or shut down while subscribing.
+					return
 				}
 			}
 
@@ -231,12 +250,12 @@ func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request)
 }
 
 func (ps *PubSub) LogsSubscribeHandler(w http.ResponseWriter, r *http.Request) { //nolint: dupl
-	ps.sseHandler(w, r, func(notify <-chan struct{}, q *clientdb.Queries, emit func(event string, id int64, payload []byte)) {
+	ps.sseHandler(w, r, func(ctx context.Context, notify <-chan struct{}, q *clientdb.Queries, emit func(event string, id int64, payload []byte)) {
 		var since int64 = 0
 		var limit int64 = 1000
 
 		for {
-			logs, err := q.SelectLogsSince(r.Context(), clientdb.SelectLogsSinceParams{
+			logs, err := q.SelectLogsSince(ctx, clientdb.SelectLogsSinceParams{
 				ID:    since,
 				Limit: limit,
 			})
@@ -246,12 +265,17 @@ func (ps *PubSub) LogsSubscribeHandler(w http.ResponseWriter, r *http.Request) {
 			}
 
 			if len(logs) == 0 {
-				_, ok := <-notify
-				if ok {
-					// More data to read.
-					continue
-				} else {
-					// Got 0 spans and the client has terminated, so we're done.
+				select {
+				case _, ok := <-notify:
+					if ok {
+						// More data to read.
+						continue
+					} else {
+						// Got 0 spans and the client has terminated, so we're done.
+						break
+					}
+				case <-ctx.Done():
+					// Client disconnected, or shut down while subscribing.
 					break
 				}
 			}
@@ -488,7 +512,7 @@ func (ps LogsPubSub) Export(ctx context.Context, logs []sdklog.Record) error {
 func (ps LogsPubSub) ForceFlush(ctx context.Context) error { return nil }
 func (ps LogsPubSub) Shutdown(context.Context) error       { return nil }
 
-func (ps *PubSub) sseHandler(w http.ResponseWriter, r *http.Request, handler func(<-chan struct{}, *clientdb.Queries, func(string, int64, []byte))) {
+func (ps *PubSub) sseHandler(w http.ResponseWriter, r *http.Request, handler func(context.Context, <-chan struct{}, *clientdb.Queries, func(string, int64, []byte))) {
 	sessionID := r.Header.Get("X-Dagger-Session-ID")
 	clientID := r.Header.Get("X-Dagger-Client-ID")
 	client, err := ps.getClient(sessionID, clientID)
@@ -511,16 +535,12 @@ func (ps *PubSub) sseHandler(w http.ResponseWriter, r *http.Request, handler fun
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
-	q := clientdb.New(client.db)
-
 	notify := ps.Listen(clientID)
+	defer ps.Unlisten(clientID, notify)
 
-	// Send an initial event to indicate that the client is attached.
-	fmt.Fprintf(w, "event: attached\n")
-	fmt.Fprintln(w)
-	flush()
+	ctx := client.daggerSession.withShutdownCancel(r.Context())
 
-	handler(notify, q, func(event string, id int64, data []byte) {
+	handler(ctx, notify, clientdb.New(client.db), func(event string, id int64, data []byte) {
 		// Send the batch as an OTLP trace export request.
 		fmt.Fprintf(w, "event: spans\n")
 		fmt.Fprintf(w, "id: %d\n", id)
