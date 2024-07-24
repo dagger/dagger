@@ -1057,11 +1057,8 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client *daggerClient) (rerr error) {
 	ctx := r.Context()
 
-	immediate := r.URL.Query().Get("immediate") == "true"
-
 	sess := client.daggerSession
 	slog := slog.With(
-		"isImmediate", immediate,
 		"isMainClient", client.clientID == sess.mainClientCallerID,
 		"sessionID", sess.sessionID,
 		"clientID", client.clientID,
