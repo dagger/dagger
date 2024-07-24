@@ -1103,11 +1103,6 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 		slog.Error("failed to flush telemetry", "error", err)
 	}
 
-	// At this point all relevant telemetry should be written, so it is safe to
-	// terminate the telemetry subscribers.
-	slog.ExtraDebug("terminating telemetry subscribers")
-	srv.telemetryPubSub.Terminate(client.clientID)
-
 	return nil
 }
 

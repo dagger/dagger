@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"sync"
+	"time"
 
 	"dagger.io/dagger/telemetry"
 	"go.opentelemetry.io/otel/log"
@@ -35,18 +35,15 @@ func (t Topic) String() string {
 }
 
 type PubSub struct {
-	srv        *Server
-	mux        http.Handler
-	listeners  map[string]map[<-chan struct{}]chan<- struct{}
-	listenersL sync.Mutex
+	srv *Server
+	mux http.Handler
 }
 
 func NewPubSub(srv *Server) *PubSub {
 	mux := http.NewServeMux()
 	ps := &PubSub{
-		srv:       srv,
-		mux:       mux,
-		listeners: map[string]map[<-chan struct{}]chan<- struct{}{},
+		srv: srv,
+		mux: mux,
 	}
 	mux.HandleFunc("POST /v1/traces", ps.TracesHandler)
 	mux.HandleFunc("POST /v1/logs", ps.LogsHandler)
@@ -56,48 +53,6 @@ func NewPubSub(srv *Server) *PubSub {
 
 func (ps *PubSub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ps.mux.ServeHTTP(w, r)
-}
-
-func (ps *PubSub) Listen(clientID string) <-chan struct{} {
-	ch := make(chan struct{}, 1)
-	ps.listenersL.Lock()
-	if ps.listeners[clientID] == nil {
-		ps.listeners[clientID] = map[<-chan struct{}]chan<- struct{}{}
-	}
-	ps.listeners[clientID][ch] = ch
-	ps.listenersL.Unlock()
-	return ch
-}
-
-func (ps *PubSub) Unlisten(clientID string, ch <-chan struct{}) {
-	ps.listenersL.Lock()
-	chs, ok := ps.listeners[clientID]
-	if ok {
-		delete(chs, ch)
-		if len(chs) == 0 {
-			delete(ps.listeners, clientID)
-		}
-	}
-	ps.listenersL.Unlock()
-}
-
-func (ps *PubSub) Notify(clientID string) {
-	ps.listenersL.Lock()
-	for _, ch := range ps.listeners[clientID] {
-		select {
-		case ch <- struct{}{}:
-		default:
-		}
-	}
-	ps.listenersL.Unlock()
-}
-
-func (ps *PubSub) Terminate(clientID string) {
-	ps.listenersL.Lock()
-	for _, ch := range ps.listeners[clientID] {
-		close(ch)
-	}
-	ps.listenersL.Unlock()
 }
 
 func (ps *PubSub) TracesHandler(rw http.ResponseWriter, r *http.Request) { //nolint: dupl
@@ -391,8 +346,6 @@ func (ps SpansPubSub) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnly
 		return fmt.Errorf("commit tx: %w", err)
 	}
 
-	ps.Notify(ps.client.clientID)
-
 	return nil
 }
 
@@ -478,8 +431,6 @@ func (ps LogsPubSub) Export(ctx context.Context, logs []sdklog.Record) error {
 		return fmt.Errorf("commit tx: %w", err)
 	}
 
-	ps.Notify(ps.client.clientID)
-
 	return nil
 }
 
@@ -502,9 +453,6 @@ func (ps *PubSub) sseHandler(w http.ResponseWriter, r *http.Request, client *dag
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
-	notify := ps.Listen(client.clientID)
-	defer ps.Unlisten(client.clientID, notify)
-
 	ctx := client.daggerSession.withShutdownCancel(r.Context())
 
 	since := r.Header.Get("X-Last-Event-ID")
@@ -522,12 +470,9 @@ func (ps *PubSub) sseHandler(w http.ResponseWriter, r *http.Request, client *dag
 				return nil
 			}
 			select {
-			case _, ok := <-notify:
-				if ok {
-					// More data to read.
-				} else {
-					terminating = true
-				}
+			case <-time.After(telemetry.NearlyImmediate):
+				// Poll for more data at the same frequency that it's batched and saved.
+				// SQLite should be able to handle this just fine.
 			case <-ctx.Done():
 				terminating = true
 			}
