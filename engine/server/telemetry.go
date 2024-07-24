@@ -459,7 +459,7 @@ func (ps *PubSub) sseHandler(w http.ResponseWriter, r *http.Request, client *dag
 
 	var terminating bool
 	for {
-		event, hasData, err := fetcher(ctx, since)
+		event, hasData, err := fetcher(r.Context(), since) // fetch without shutdown context
 		if err != nil {
 			slog.Warn("error fetching event", "err", err)
 			return fmt.Errorf("fetch: %w", err)
