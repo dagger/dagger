@@ -389,7 +389,7 @@ func (ps LogsPubSub) Export(ctx context.Context, logs []sdklog.Record) error {
 		if !rec.Body().Empty() {
 			body, err = logValueToJSON(rec.Body())
 			if err != nil {
-				slog.Warn("failed to marshal log record body", "error", err)
+				slog.Warn("failed to marshal log record body", "error", err, "body", rec.Body(), "asString", rec.Body().AsString())
 				continue
 			}
 		}
