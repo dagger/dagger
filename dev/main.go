@@ -6,7 +6,6 @@ import (
 	"context"
 
 	"github.com/dagger/dagger/dev/internal/dagger"
-	"golang.org/x/sync/errgroup"
 )
 
 // A dev environment for the DaggerDev Engine
@@ -104,26 +103,16 @@ func (dev *DaggerDev) Source() *dagger.Directory {
 		"sdk/typescript/dev/node",
 		"sdk/typescript/runtime",
 	}
-	eg, _ := errgroup.WithContext(context.TODO())
-	layers := make(chan *dagger.Directory, len(modules))
-	for _, module := range modules {
-		module := module
-		eg.Go(func() error {
-			layers <- dev.Src.
-				AsModule(dagger.DirectoryAsModuleOpts{
-					SourceRootPath: module,
-				}).
-				GeneratedContextDirectory()
-			return nil
-		})
-	}
-	go func() {
-		eg.Wait()
-		close(layers)
-	}()
+
 	src := dev.Src
-	for layer := range layers {
-		src = src.WithDirectory("", layer)
+	for _, module := range modules {
+		layer := dev.Src.
+			AsModule(dagger.DirectoryAsModuleOpts{
+				SourceRootPath: module,
+			}).
+			GeneratedContextDirectory().
+			Directory(module)
+		src = src.WithDirectory(module, layer)
 	}
 	return src
 }
