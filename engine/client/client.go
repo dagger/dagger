@@ -86,8 +86,6 @@ type Params struct {
 type Client struct {
 	Params
 
-	rootCtx context.Context
-
 	eg *errgroup.Group
 
 	connector drivers.Connector
@@ -137,10 +135,6 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	if c.SecretToken == "" {
 		c.SecretToken = uuid.New().String()
 	}
-
-	// keep the root ctx around so we can detect whether we've been interrupted,
-	// so we can drain immediately in that scenario
-	c.rootCtx = ctx
 
 	// NB: decouple from the originator's cancel ctx
 	c.internalCtx, c.internalCancel = context.WithCancelCause(context.WithoutCancel(ctx))
@@ -743,9 +737,7 @@ func (c *Client) DialContext(ctx context.Context, _, _ string) (conn net.Conn, e
 func (c *Client) dialContextNoClientClose(ctx context.Context) (net.Conn, error) {
 	isNestedSession := c.nestedSessionPort != 0
 	if isNestedSession {
-		return (&net.Dialer{
-			Cancel: ctx.Done(),
-		}).Dial("tcp", "127.0.0.1:"+strconv.Itoa(c.nestedSessionPort))
+		return (&net.Dialer{}).DialContext(ctx, "tcp", fmt.Sprintf("127.0.0.1:%d", c.nestedSessionPort))
 	} else {
 		return c.connector.Connect(ctx)
 	}
@@ -755,9 +747,6 @@ func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// propagate span from per-request client headers, otherwise all spans
 	// end up beneath the client session span
 	ctx := telemetry.Propagator.Extract(r.Context(), propagation.HeaderCarrier(r.Header))
-
-	// TODO: that breaks client logs
-	telemetry.Propagator.Inject(ctx, propagation.HeaderCarrier(r.Header))
 
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
 	if err != nil {
