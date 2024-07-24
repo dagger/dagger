@@ -11,7 +11,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/containerd/containerd/platforms"
+	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/testctx"
 	"github.com/moby/buildkit/identity"

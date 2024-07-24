@@ -21,7 +21,7 @@ import (
 )
 
 func (srv *Server) newBuildkitSession(ctx context.Context, c *daggerClient) (*bksession.Session, error) {
-	sess, err := bksession.NewSession(ctx, identity.NewID(), "")
+	sess, err := bksession.NewSession(ctx, identity.NewID())
 	if err != nil {
 		return nil, err
 	}
