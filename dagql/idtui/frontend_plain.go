@@ -245,8 +245,6 @@ func (fe plainSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.Re
 		// a time that we didn't have it (i.e. from a log)
 		spanDt.parentID = span.Parent().SpanID()
 
-		fe.maybeWakeUpEffectCause(spanID)
-
 		spanDt.ready = true
 	}
 	return nil
@@ -274,8 +272,6 @@ func (fe plainLogExporter) Export(ctx context.Context, logs []sdklog.Record) err
 			spanDt = &spanData{}
 			fe.data[log.SpanID()] = spanDt
 		}
-
-		fe.maybeWakeUpEffectCause(log.SpanID())
 
 		body := log.Body().AsString()
 		if body == "" {
@@ -326,16 +322,6 @@ func (fe plainLogExporter) Export(ctx context.Context, logs []sdklog.Record) err
 
 func (fe *frontendPlain) ForceFlush(context.Context) error {
 	return nil
-}
-
-// if the span is an effect, wake up the effect site (i.e. withExec)
-func (fe *frontendPlain) maybeWakeUpEffectCause(spanID trace.SpanID) {
-	dbSpan := fe.db.Spans[spanID]
-	if dbSpan != nil && dbSpan.EffectID != "" {
-		if cause := fe.db.EffectSite[dbSpan.EffectID]; cause != nil {
-			fe.wakeUpSpan(cause.ID)
-		}
-	}
 }
 
 // wake up all spans up to the root span
@@ -623,6 +609,9 @@ func sampleContext(rows []*TraceTree) []int {
 
 	// don't ever sample the current row
 	rows = rows[:len(rows)-1]
+	if len(rows) == 0 {
+		return nil
+	}
 
 	// NB: break glass for all the context
 	// all := make([]int, len(rows))
@@ -631,27 +620,24 @@ func sampleContext(rows []*TraceTree) []int {
 	// }
 	// return all
 
-	// find the first vertex
-	first := -1
-	if len(rows) > 0 {
-		first = 0
+	result := []int{}
+
+	// find the first call
+	for i := 0; i < len(rows); i++ {
+		row := rows[i]
+		result = append(result, i)
+		if row.Span.Call != nil {
+			break
+		}
 	}
 	// iterate backwards to find the last call
-	last := -1
-	for i := len(rows) - 1; i > first; i-- {
+	for i := len(rows) - 1; i > result[len(result)-1]; i-- {
 		row := rows[i]
 		if row.Span.Call != nil {
-			last = i
+			result = append(result, i)
 			break
 		}
 	}
 
-	switch {
-	case first == -1:
-		return []int{}
-	case last == -1:
-		return []int{first}
-	default:
-		return []int{first, last}
-	}
+	return result
 }
