@@ -275,21 +275,15 @@ build-backend = "poetry.core.masonry.api"
 		t.Run(fmt.Sprintf("%s/%s", tc.name, tc.path), func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
-			conf := tc.conf + fmt.Sprintf(`
-# Test: %s / %s
-`, tc.name, tc.path)
-
 			modGen := daggerCliBase(t, c).
-				With(fileContents("pyproject.toml", conf)).
-				With(fileContents(tc.path, fmt.Sprintf(`
+				With(fileContents("pyproject.toml", tc.conf)).
+				With(fileContents(tc.path, `
 from dagger import function
-
-# Test: %s / %s
 
 @function
 def hello() -> str:
     return "Hello, world!"
-`, tc.name, tc.path),
+`,
 				)).
 				With(daggerInitPython())
 
