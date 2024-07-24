@@ -107,6 +107,10 @@ type daggerClient struct {
 	clientVersion string
 	secretToken   string
 
+	// closed after the shutdown endpoint is called
+	shutdownCh        chan struct{}
+	closeShutdownOnce sync.Once
+
 	// if the client is a nested client, this is its ancestral clients,
 	// with the most recent parent last
 	parents []*daggerClient
@@ -320,8 +324,13 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 				client.buildkitSession = nil
 			}
 
+			// Flush all telemetry.
 			errs = errors.Join(errs, client.FlushTelemetry(ctx))
+
+			// Close client DB for writing; subscribers will have their own connection
 			errs = errors.Join(errs, client.db.Close())
+
+			// TODO: garbage collect these somewhere out of the critical path
 			// errs = errors.Join(errs, srv.clientDBs.Remove(client.clientID))
 
 			return errs
@@ -575,12 +584,6 @@ func (srv *Server) initializeDaggerClient(
 		client.fnCall = &fnCall
 	}
 
-	// initialize SQLite DB
-	client.db, err = srv.clientDBs.Create(client.clientID)
-	if err != nil {
-		return fmt.Errorf("open client DB: %w", err)
-	}
-
 	// configure OTel providers that export to SQLite
 	tracerOpts := []sdktrace.TracerProviderOption{
 		// install a span processor that modifies spans created by Buildkit to
@@ -721,8 +724,16 @@ func (srv *Server) getOrInitClient(
 			clientID:      clientID,
 			clientVersion: opts.ClientVersion,
 			secretToken:   token,
+			shutdownCh:    make(chan struct{}),
 		}
 		sess.clients[clientID] = client
+
+		// initialize SQLite DB early so we can subscribe to it immediately
+		var err error
+		client.db, err = srv.clientDBs.Create(client.clientID)
+		if err != nil {
+			return nil, nil, fmt.Errorf("open client DB: %w", err)
+		}
 
 		parent, parentExists := sess.clients[opts.CallerClientID]
 		if parentExists {
@@ -1102,6 +1113,10 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 	if err := sess.FlushTelemetry(ctx); err != nil {
 		slog.Error("failed to flush telemetry", "error", err)
 	}
+
+	client.closeShutdownOnce.Do(func() {
+		close(client.shutdownCh)
+	})
 
 	return nil
 }
