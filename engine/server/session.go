@@ -322,7 +322,7 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 
 			errs = errors.Join(errs, client.FlushTelemetry(ctx))
 			errs = errors.Join(errs, client.db.Close())
-			errs = errors.Join(errs, srv.clientDBs.Remove(client.clientID))
+			// errs = errors.Join(errs, srv.clientDBs.Remove(client.clientID))
 
 			return errs
 		})
