@@ -786,6 +786,28 @@ func (srv *Server) getOrInitClient(
 	}, nil
 }
 
+func (srv *Server) getClient(sessionID, clientID string) (*daggerClient, error) {
+	if sessionID == "" {
+		return nil, fmt.Errorf("missing session ID")
+	}
+	if clientID == "" {
+		return nil, fmt.Errorf("missing client ID")
+	}
+	srv.daggerSessionsMu.RLock()
+	sess, ok := srv.daggerSessions[sessionID]
+	srv.daggerSessionsMu.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("session %q not found", sessionID)
+	}
+	sess.clientMu.RLock()
+	client, ok := sess.clients[clientID]
+	sess.clientMu.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("client %q not found", clientID)
+	}
+	return client, nil
+}
+
 // ServeHTTP serves clients directly hitting the engine API (i.e. main client callers, not nested execs like module functions)
 func (srv *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	clientMetadata, err := engine.ClientMetadataFromHTTPHeaders(r.Header)
@@ -861,42 +883,44 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 		"span":          trace.SpanContextFromContext(ctx).SpanID().String(),
 	}).Debug("handling http request")
 
-	client, cleanup, err := srv.getOrInitClient(ctx, opts)
-	if err != nil {
-		return fmt.Errorf("update session state: %w", err)
-	}
-	defer func() {
-		err := cleanup()
-		if err != nil {
-			bklog.G(ctx).WithError(err).Error("client serve cleanup failed")
-			rerr = errors.Join(rerr, err)
-		}
-	}()
-
-	sess := client.daggerSession
-	ctx = analytics.WithContext(ctx, sess.analytics)
-
-	r = r.WithContext(ctx)
-
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /v1/traces", func(w http.ResponseWriter, r *http.Request) {
-		r.Header.Set("X-Dagger-Session-ID", client.daggerSession.sessionID)
-		r.Header.Set("X-Dagger-Client-ID", client.clientID)
-		srv.telemetryPubSub.TracesSubscribeHandler(w, r)
-	})
-	mux.HandleFunc("GET /v1/logs", func(w http.ResponseWriter, r *http.Request) {
-		r.Header.Set("X-Dagger-Session-ID", client.daggerSession.sessionID)
-		r.Header.Set("X-Dagger-Client-ID", client.clientID)
-		srv.telemetryPubSub.LogsSubscribeHandler(w, r)
-	})
-	mux.Handle(engine.SessionAttachablesEndpoint, httpHandlerFunc(srv.serveSessionAttachables, client))
-	mux.Handle(engine.QueryEndpoint, httpHandlerFunc(srv.serveQuery, client))
-	mux.Handle(engine.ShutdownEndpoint, httpHandlerFunc(srv.serveShutdown, client))
-	sess.endpointMu.RLock()
-	for path, handler := range sess.endpoints {
-		mux.Handle(path, handler)
+	switch r.URL.Path {
+	case "/v1/traces", "/v1/logs":
+		client, err := srv.getClient(clientMetadata.SessionID, clientMetadata.ClientID)
+		if err != nil {
+			slog.Warn("error getting client", "err", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		mux.HandleFunc("GET /v1/traces", httpHandlerFunc(srv.telemetryPubSub.TracesSubscribeHandler, client))
+		mux.HandleFunc("GET /v1/logs", httpHandlerFunc(srv.telemetryPubSub.LogsSubscribeHandler, client))
+	default:
+		client, cleanup, err := srv.getOrInitClient(ctx, opts)
+		if err != nil {
+			return fmt.Errorf("update session state: %w", err)
+		}
+		defer func() {
+			err := cleanup()
+			if err != nil {
+				bklog.G(ctx).WithError(err).Error("client serve cleanup failed")
+				rerr = errors.Join(rerr, err)
+			}
+		}()
+
+		sess := client.daggerSession
+		ctx = analytics.WithContext(ctx, sess.analytics)
+
+		r = r.WithContext(ctx)
+
+		mux.Handle(engine.SessionAttachablesEndpoint, httpHandlerFunc(srv.serveSessionAttachables, client))
+		mux.Handle(engine.QueryEndpoint, httpHandlerFunc(srv.serveQuery, client))
+		mux.Handle(engine.ShutdownEndpoint, httpHandlerFunc(srv.serveShutdown, client))
+		sess.endpointMu.RLock()
+		for path, handler := range sess.endpoints {
+			mux.Handle(path, handler)
+		}
+		sess.endpointMu.RUnlock()
 	}
-	sess.endpointMu.RUnlock()
 
 	mux.ServeHTTP(w, r)
 	return nil

@@ -22,6 +22,7 @@ import (
 
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/vito/go-sse/sse"
 )
 
 type Topic struct {
@@ -94,12 +95,6 @@ func (ps *PubSub) Notify(clientID string) {
 func (ps *PubSub) Terminate(clientID string) {
 	ps.listenersL.Lock()
 	for _, ch := range ps.listeners[clientID] {
-		// One last notification to catch any straggling updates.
-		select {
-		case ch <- struct{}{}:
-		default:
-		}
-		// Close the channel so that for range completes.
 		close(ch)
 	}
 	ps.listenersL.Unlock()
@@ -108,7 +103,7 @@ func (ps *PubSub) Terminate(clientID string) {
 func (ps *PubSub) TracesHandler(rw http.ResponseWriter, r *http.Request) { //nolint: dupl
 	sessionID := r.Header.Get("X-Dagger-Session-ID")
 	clientID := r.Header.Get("X-Dagger-Client-ID")
-	client, err := ps.getClient(sessionID, clientID)
+	client, err := ps.srv.getClient(sessionID, clientID)
 	if err != nil {
 		slog.Warn("error getting client", "err", err)
 		http.Error(rw, err.Error(), http.StatusBadRequest)
@@ -134,6 +129,7 @@ func (ps *PubSub) TracesHandler(rw http.ResponseWriter, r *http.Request) { //nol
 
 	eg := new(errgroup.Group)
 	for _, c := range append([]*daggerClient{client}, client.parents...) {
+		c := c
 		eg.Go(func() error {
 			if err := ps.Spans(c).ExportSpans(r.Context(), spans); err != nil {
 				return fmt.Errorf("export to %s: %w", c.clientID, err)
@@ -153,7 +149,7 @@ func (ps *PubSub) TracesHandler(rw http.ResponseWriter, r *http.Request) { //nol
 func (ps *PubSub) LogsHandler(rw http.ResponseWriter, r *http.Request) { //nolint: dupl
 	sessionID := r.Header.Get("X-Dagger-Session-ID")
 	clientID := r.Header.Get("X-Dagger-Client-ID")
-	client, err := ps.getClient(sessionID, clientID)
+	client, err := ps.srv.getClient(sessionID, clientID)
 	if err != nil {
 		slog.Warn("error getting client", "err", err)
 		http.Error(rw, err.Error(), http.StatusBadRequest)
@@ -197,107 +193,85 @@ func (ps *PubSub) LogsHandler(rw http.ResponseWriter, r *http.Request) { //nolin
 	rw.WriteHeader(http.StatusCreated)
 }
 
-func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request) { //nolint: dupl
-	ps.sseHandler(w, r, func(ctx context.Context, notify <-chan struct{}, q *clientdb.Queries, emit func(event string, id int64, payload []byte)) {
-		var since int64 = 0
-		var limit int64 = 1000
+const otlpBatchSize = 1000
 
-		for {
-			spans, err := q.SelectSpansSince(ctx, clientdb.SelectSpansSinceParams{
-				ID:    since,
-				Limit: limit,
-			})
+func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request, client *daggerClient) error { //nolint: dupl
+	return ps.sseHandler(w, r, client, func(ctx context.Context, lastID string) (*sse.Event, bool, error) {
+		var since int64
+		if lastID != "" {
+			_, err := fmt.Sscanf(lastID, "%d", &since)
 			if err != nil {
-				slog.Error("error selecting spans", "err", err)
-				return
+				return nil, false, fmt.Errorf("invalid last ID: %w", err)
 			}
-
-			if len(spans) == 0 {
-				select {
-				case _, ok := <-notify:
-					if ok {
-						// More data to read.
-						continue
-					} else {
-						// Got 0 spans and the client has terminated, so we're done.
-						return
-					}
-				case <-ctx.Done():
-					// Client disconnected or shut down while subscribing.
-					return
-				}
-			}
-
-			roSpans := make([]sdktrace.ReadOnlySpan, len(spans))
-			for i, span := range spans {
-				roSpans[i] = span.ReadOnly()
-				since = span.ID
-			}
-
-			// Marshal the spans to OTLP.
-			payload, err := protojson.Marshal(&coltracepb.ExportTraceServiceRequest{
-				ResourceSpans: telemetry.SpansToPB(roSpans),
-			})
-			if err != nil {
-				slog.Error("error marshalling spans", "err", err)
-				return
-			}
-
-			// Send the batch as an OTLP trace export request.
-			emit("spans", since, payload)
 		}
+		q := clientdb.New(client.db)
+		spans, err := q.SelectSpansSince(ctx, clientdb.SelectSpansSinceParams{
+			ID:    since,
+			Limit: otlpBatchSize,
+		})
+		if err != nil {
+			return nil, false, fmt.Errorf("select spans: %w", err)
+		}
+		if len(spans) == 0 {
+			return nil, false, nil
+		}
+		roSpans := make([]sdktrace.ReadOnlySpan, len(spans))
+		for i, span := range spans {
+			roSpans[i] = span.ReadOnly()
+			since = span.ID
+		}
+		// Marshal the spans to OTLP.
+		payload, err := protojson.Marshal(&coltracepb.ExportTraceServiceRequest{
+			ResourceSpans: telemetry.SpansToPB(roSpans),
+		})
+		if err != nil {
+			return nil, false, fmt.Errorf("marshal spans: %w", err)
+		}
+		return &sse.Event{
+			Name: "spans",
+			ID:   fmt.Sprintf("%d", since),
+			Data: payload,
+		}, true, nil
 	})
 }
 
-func (ps *PubSub) LogsSubscribeHandler(w http.ResponseWriter, r *http.Request) { //nolint: dupl
-	ps.sseHandler(w, r, func(ctx context.Context, notify <-chan struct{}, q *clientdb.Queries, emit func(event string, id int64, payload []byte)) {
-		var since int64 = 0
-		var limit int64 = 1000
-
-		for {
-			logs, err := q.SelectLogsSince(ctx, clientdb.SelectLogsSinceParams{
-				ID:    since,
-				Limit: limit,
-			})
+func (ps *PubSub) LogsSubscribeHandler(w http.ResponseWriter, r *http.Request, client *daggerClient) error { //nolint: dupl
+	return ps.sseHandler(w, r, client, func(ctx context.Context, lastID string) (*sse.Event, bool, error) {
+		var since int64
+		if lastID != "" {
+			_, err := fmt.Sscanf(lastID, "%d", &since)
 			if err != nil {
-				slog.Error("error selecting logs", "err", err)
-				return
+				return nil, false, fmt.Errorf("invalid last ID: %w", err)
 			}
-
-			if len(logs) == 0 {
-				select {
-				case _, ok := <-notify:
-					if ok {
-						// More data to read.
-						continue
-					} else {
-						// Got 0 spans and the client has terminated, so we're done.
-						break
-					}
-				case <-ctx.Done():
-					// Client disconnected, or shut down while subscribing.
-					break
-				}
-			}
-
-			recs := make([]sdklog.Record, len(logs))
-			for i, log := range logs {
-				recs[i] = log.Record()
-				since = log.ID
-			}
-
-			// Marshal the spans to OTLP.
-			payload, err := protojson.Marshal(&collogspb.ExportLogsServiceRequest{
-				ResourceLogs: telemetry.LogsToPB(recs),
-			})
-			if err != nil {
-				slog.Error("error marshalling logs", "err", err)
-				return
-			}
-
-			// Send the batch as an OTLP trace export request.
-			emit("logs", since, payload)
 		}
+		q := clientdb.New(client.db)
+		logs, err := q.SelectLogsSince(ctx, clientdb.SelectLogsSinceParams{
+			ID:    since,
+			Limit: otlpBatchSize,
+		})
+		if err != nil {
+			return nil, false, fmt.Errorf("select logs: %w", err)
+		}
+		if len(logs) == 0 {
+			return nil, false, nil
+		}
+		recs := make([]sdklog.Record, len(logs))
+		for i, log := range logs {
+			recs[i] = log.Record()
+			since = log.ID
+		}
+		// Marshal the logs to OTLP.
+		payload, err := protojson.Marshal(&collogspb.ExportLogsServiceRequest{
+			ResourceLogs: telemetry.LogsToPB(recs),
+		})
+		if err != nil {
+			return nil, false, fmt.Errorf("marshal logs: %w", err)
+		}
+		return &sse.Event{
+			Name: "logs",
+			ID:   fmt.Sprintf("%d", since),
+			Data: payload,
+		}, true, nil
 	})
 }
 
@@ -512,16 +486,9 @@ func (ps LogsPubSub) Export(ctx context.Context, logs []sdklog.Record) error {
 func (ps LogsPubSub) ForceFlush(ctx context.Context) error { return nil }
 func (ps LogsPubSub) Shutdown(context.Context) error       { return nil }
 
-func (ps *PubSub) sseHandler(w http.ResponseWriter, r *http.Request, handler func(context.Context, <-chan struct{}, *clientdb.Queries, func(string, int64, []byte))) {
-	sessionID := r.Header.Get("X-Dagger-Session-ID")
-	clientID := r.Header.Get("X-Dagger-Client-ID")
-	client, err := ps.getClient(sessionID, clientID)
-	if err != nil {
-		slog.Warn("error getting client", "err", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
+type Fetcher func(ctx context.Context, since string) (*sse.Event, bool, error)
 
+func (ps *PubSub) sseHandler(w http.ResponseWriter, r *http.Request, client *daggerClient, fetcher Fetcher) error {
 	flush := func() {}
 	if flusher, ok := w.(http.Flusher); ok {
 		flush = flusher.Flush
@@ -535,39 +502,44 @@ func (ps *PubSub) sseHandler(w http.ResponseWriter, r *http.Request, handler fun
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
-	notify := ps.Listen(clientID)
-	defer ps.Unlisten(clientID, notify)
+	notify := ps.Listen(client.clientID)
+	defer ps.Unlisten(client.clientID, notify)
 
 	ctx := client.daggerSession.withShutdownCancel(r.Context())
 
-	handler(ctx, notify, clientdb.New(client.db), func(event string, id int64, data []byte) {
-		// Send the batch as an OTLP trace export request.
-		fmt.Fprintf(w, "event: spans\n")
-		fmt.Fprintf(w, "id: %d\n", id)
-		fmt.Fprintf(w, "data: %s\n", string(data))
-		fmt.Fprintln(w)
-		flush()
-	})
-}
+	since := r.Header.Get("X-Last-Event-ID")
 
-func (ps *PubSub) getClient(sessionID, clientID string) (*daggerClient, error) {
-	if sessionID == "" {
-		return nil, fmt.Errorf("missing session ID")
+	var terminating bool
+	for {
+		event, hasData, err := fetcher(ctx, since)
+		if err != nil {
+			slog.Warn("error fetching event", "err", err)
+			return fmt.Errorf("fetch: %w", err)
+		}
+		if !hasData {
+			if terminating {
+				// We're already terminating and found no data, so we're done.
+				return nil
+			}
+			select {
+			case _, ok := <-notify:
+				if ok {
+					// More data to read.
+				} else {
+					terminating = true
+				}
+			case <-ctx.Done():
+				terminating = true
+			}
+			continue
+		}
+
+		since = event.ID
+
+		if err := event.Write(w); err != nil {
+			return fmt.Errorf("write: %w", err)
+		}
+
+		flush()
 	}
-	if clientID == "" {
-		return nil, fmt.Errorf("missing client ID")
-	}
-	ps.srv.daggerSessionsMu.RLock()
-	sess, ok := ps.srv.daggerSessions[sessionID]
-	ps.srv.daggerSessionsMu.RUnlock()
-	if !ok {
-		return nil, fmt.Errorf("session %q not found", sessionID)
-	}
-	sess.clientMu.RLock()
-	client, ok := sess.clients[clientID]
-	sess.clientMu.RUnlock()
-	if !ok {
-		return nil, fmt.Errorf("client %q not found", clientID)
-	}
-	return client, nil
 }
