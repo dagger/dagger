@@ -1,6 +1,0 @@
-kind: Dependencies
-body: update uv to 0.2.27 in modules
-time: 2024-07-23T13:46:26.855335Z
-custom:
-    Author: helderco
-    PR: "8013"
