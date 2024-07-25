@@ -628,7 +628,7 @@ func (ModuleSuite) TestTypescriptRuntimeDetection(ctx context.Context, t *testct
 	})
 
 	t.Run("should detect a specific pinned bun version", func(ctx context.Context, t *testctx.T) {
-		// We need to explicitely add the typescript version because the default bun's version is different.
+		// We need to explicitly add the typescript version because the default bun's version is different.
 		modGen := modGen.WithNewFile("/work/package.json", `{
 		    "dependencies": {
     	  	"typescript": "^5.3.2",
