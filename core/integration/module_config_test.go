@@ -1460,7 +1460,8 @@ var vcsTestCases = []vcsTestCase{
 		expectedPathPrefix:       "",
 		isPrivateRepo:            true,
 	},
-	// TODO(guillaume): add Azure DevOps
+	// TODO(guillaume): add Azure DevOps, public and private (follow-up as needs improvement on the regex)
+	// azure go-get=1 does not work well with subdir, but solvable with regex / per VCS (git only for now)
 	// {
 	// 	name:                     "SSH Private Azure",
 	// 	gitTestRepoRef:           "git@gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git",

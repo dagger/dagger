@@ -160,17 +160,6 @@ func (store *SocketStore) GetSocketURLEncoded(idDgst digest.Digest) (string, boo
 	return store.getSocketURLEncoded(sock), true
 }
 
-func (store *SocketStore) GetSocketHostPath(idDgst digest.Digest) (string, bool) {
-	store.mu.RLock()
-	sock, ok := store.sockets[idDgst]
-	store.mu.RUnlock()
-	if !ok {
-		return "", false
-	}
-
-	return sock.HostPath, true
-}
-
 func (store *SocketStore) GetSocketPortForward(idDgst digest.Digest) (PortForward, bool) {
 	store.mu.RLock()
 	sock, ok := store.sockets[idDgst]
