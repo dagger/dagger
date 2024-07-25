@@ -172,7 +172,7 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *dagger.Modul
 
 	// Get a directory with the SDK sources installed and the generated client.
 	sdk := t.
-		installedSDK(base).
+		addSDK(base).
 		WithDirectory(".", t.generateClient(base, introspectionJSON))
 
 	base = base.
@@ -296,29 +296,13 @@ func (t *TypescriptSdk) setupModule(ctx context.Context, ctr *dagger.Container) 
 	return ctr, nil
 }
 
-// installedSDK returns a directory with the SDK sources and its dependencies installed.
-func (t *TypescriptSdk) installedSDK(ctr *dagger.Container) *dagger.Directory {
-	return dag.Directory().WithDirectory("/", t.SDKSourceDir, dagger.DirectoryWithDirectoryOpts{
-		Exclude: []string{"codegen", "runtime"},
-	})
-
-	//ctr = ctr.
-	//	WithWorkdir(ModSourceDirPath).
-	//	WithDirectory(".", t.SDKSourceDir, ContainerWithDirectoryOpts{
-	//		Exclude: []string{"codegen", "runtime"},
-	//	})
-	//
-	//switch t.moduleConfig.runtime {
-	//case Bun:
-	//	return ctr.WithExec([]string{"bun", "install", "--no-verify", "--no-progress", "--summary"}).Directory(ModSourceDirPath)
-	//case Node:
-	//	return ctr.
-	//		// Enable corepack so we can use yarn v4 which is supposed to be faster than npm or yarn v1.
-	//		WithExec([]string{"yarn", "install", "--production"}).Directory(ModSourceDirPath)
-	//default:
-	//	// Should never happen since we verify the runtime before calling this function.
-	//	return nil
-	//}
+// addSDK returns a directory with the SDK sources.
+func (t *TypescriptSdk) addSDK(ctr *dagger.Container) *dagger.Directory {
+	return dag.
+		Directory().
+		WithDirectory("/", t.SDKSourceDir, dagger.DirectoryWithDirectoryOpts{
+			Exclude: []string{"codegen", "runtime"},
+		})
 }
 
 // generateClient uses the given container to generate the client code.
