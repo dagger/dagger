@@ -135,20 +135,24 @@ const config: Config = {
             {
               label: "Dagger Engine",
               href: "https://dagger.io/dagger-engine",
+              target: "_self",
             },
             {
               label: "Dagger Cloud",
               href: "https://dagger.io/cloud",
+              target: "_self",
             },
             {
               label: "Integrations",
               href: "https://dagger.io/integrations",
+              target: "_self",
             },
             {
               label: "Pricing",
               href: "https://dagger.io/pricing",
+              target: "_self",
             },
-          ]
+          ],
         },
         {
           position: "left",
@@ -171,12 +175,14 @@ const config: Config = {
             {
               label: "Get involved",
               href: "https://dagger.io/community",
+              target: "_self",
             },
             {
               label: "Dagger Love",
               href: "https://dagger.io/dagger-love",
+              target: "_self",
             },
-          ]
+          ],
         },
         {
           position: "left",
@@ -251,7 +257,7 @@ const config: Config = {
             {
               label: "Status",
               to: "https://status.dagger.io",
-            }
+            },
           ],
         },
         {
@@ -272,7 +278,7 @@ const config: Config = {
             {
               label: "Pricing",
               to: "https://dagger.io/pricing",
-            }
+            },
           ],
         },
         {
@@ -283,7 +289,7 @@ const config: Config = {
               to: "https://dagger.io/partners",
             },
             {
-              label:"Brand",
+              label: "Brand",
               to: "https://dagger.io/brand",
             },
             {
@@ -297,10 +303,11 @@ const config: Config = {
             {
               label: "Trademark Guidelines",
               to: "https://dagger.io/trademark-guidelines",
-            },{
+            },
+            {
               label: "Dagger Trust Center",
               to: "https://trust.dagger.io",
-            }
+            },
           ],
         },
       ],
