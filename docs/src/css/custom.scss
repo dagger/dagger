@@ -22,6 +22,7 @@ $desktop-xl-width: 1160px;
   --ifm-navbar-background-color: #0d0c1b;
   --ifm-navbar-height: 4.5rem;
   --ifm-navbar-padding-vertical: 0.75rem;
+  --ifm-navbar-link-color: rgba(255, 255, 255, .75);
   --ifm-toc-link-color: #4b4b5a;
 }
 
@@ -144,7 +145,6 @@ html[data-theme="light"] {
 }
 
 .navbar-blog-link {
-  color: white;
   @include mobile {
     justify-content: center;
   }
