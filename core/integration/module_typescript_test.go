@@ -601,7 +601,7 @@ func (ModuleSuite) TestTypescriptRuntimeDetection(ctx context.Context, t *testct
 		require.Error(t, err)
 	})
 
-	t.Run("should detect specificpinned node version 20.15.0", func(ctx context.Context, t *testctx.T) {
+	t.Run("should detect specific pinned node version 20.15.0", func(ctx context.Context, t *testctx.T) {
 		modGen := modGen.WithNewFile("/work/package.json", `{
 				"dagger": {
 					"runtime": "node@20.15.0"
