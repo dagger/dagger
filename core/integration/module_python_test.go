@@ -275,7 +275,7 @@ build-backend = "poetry.core.masonry.api"
 		t.Run(fmt.Sprintf("%s/%s", tc.name, tc.path), func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
-			out, err := daggerCliBase(t, c).
+			modGen := daggerCliBase(t, c).
 				With(fileContents("pyproject.toml", tc.conf)).
 				With(fileContents(tc.path, `
 from dagger import function
@@ -285,7 +285,19 @@ def hello() -> str:
     return "Hello, world!"
 `,
 				)).
-				With(daggerInitPython()).
+				With(daggerInitPython())
+
+				// TODO: Fetching these files' contents temporarily to
+				// debug a flaky failure.
+				// See https://github.com/dagger/dagger/issues/7663
+			toml, err := modGen.File("pyproject.toml").Contents(ctx)
+			require.NoError(t, err)
+			t.Logf("==== pyproject.toml ====\n%s", toml)
+			py, err := modGen.File(tc.path).Contents(ctx)
+			require.NoError(t, err)
+			t.Logf("==== "+tc.path+" ====:\n%s", py)
+
+			out, err := modGen.
 				With(daggerCall("hello")).
 				Stdout(ctx)
 
