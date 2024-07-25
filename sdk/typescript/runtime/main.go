@@ -172,7 +172,7 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *dagger.Modul
 
 	// Get a directory with the SDK sources installed and the generated client.
 	sdk := t.
-		addSDK(base).
+		addSDK().
 		WithDirectory(".", t.generateClient(base, introspectionJSON))
 
 	base = base.
@@ -297,7 +297,7 @@ func (t *TypescriptSdk) setupModule(ctx context.Context, ctr *dagger.Container) 
 }
 
 // addSDK returns a directory with the SDK sources.
-func (t *TypescriptSdk) addSDK(ctr *dagger.Container) *dagger.Directory {
+func (t *TypescriptSdk) addSDK() *dagger.Directory {
 	return dag.
 		Directory().
 		WithDirectory("/", t.SDKSourceDir, dagger.DirectoryWithDirectoryOpts{
