@@ -11,6 +11,7 @@ import (
 
 	"github.com/iancoleman/strcase"
 	"github.com/tidwall/gjson"
+	"golang.org/x/mod/semver"
 )
 
 const (
@@ -444,13 +445,25 @@ func (t *TypescriptSdk) generateLockFile(ctr *dagger.Container) (*dagger.Contain
 		file := ctr.
 			WithExec([]string{"yarn", "install", "--mode", "update-lockfile"}).File("yarn.lock")
 
+		// We use node-modules linker for yarn >= v3 because it's not working with pnp.
+		if semver.Compare(fmt.Sprintf("v%s", t.moduleConfig.packageManagerVersion), "v3.0.0") >= 0 {
+			ctr = ctr.WithNewFile(".yarnrc.yml", `nodeLinker: node-modules`)
+		}
+
 		// Sadly, yarn < v3 doesn't support generating a lockfile without installing the dependencies.
 		// So we use npm to generate the lockfile and then import it into yarn.
 		return ctr.WithFile("yarn.lock", file), nil
 	case Pnpm:
-		return ctr.
-			WithExec([]string{"npm", "install", "-g", fmt.Sprintf("pnpm@%s", version)}).
-			WithExec([]string{"pnpm", "install", "--lockfile-only"}), nil
+		ctr = ctr.WithExec([]string{"npm", "install", "-g", fmt.Sprintf("pnpm@%s", version)})
+
+		if !t.moduleConfig.hasFile("pnpm-workspace.yaml") {
+			ctr = ctr.
+				WithNewFile("pnpm-workspace.yaml", `packages:
+  - './sdk'
+			`)
+		}
+
+		return ctr.WithExec([]string{"pnpm", "install", "--lockfile-only"}), nil
 	case Npm:
 		return ctr.
 			WithExec([]string{"npm", "install", "-g", fmt.Sprintf("npm@%s", version)}).
@@ -467,17 +480,21 @@ func (t *TypescriptSdk) generateLockFile(ctr *dagger.Container) (*dagger.Contain
 func (t *TypescriptSdk) installDependencies(ctr *dagger.Container) (*dagger.Container, error) {
 	switch t.moduleConfig.packageManager {
 	case Yarn:
-		return ctr.
-			WithExec([]string{"yarn", "install"}), nil
+		if semver.Compare(fmt.Sprintf("v%s", t.moduleConfig.packageManagerVersion), "v3.0.0") <= 0 {
+			return ctr.
+				WithExec([]string{"yarn", "install", "--frozen-lockfile"}), nil
+		}
+
+		return ctr.WithExec([]string{"yarn", "install", "--immutable"}), nil
 	case Pnpm:
 		return ctr.
-			WithExec([]string{"pnpm", "install"}), nil
+			WithExec([]string{"pnpm", "install", "--frozen-lockfile", "--shamefully-hoist=true"}), nil
 	case Npm:
 		return ctr.
-			WithExec([]string{"npm", "install"}), nil
+			WithExec([]string{"npm", "ci"}), nil
 	case BunManager:
 		return ctr.
-			WithExec([]string{"bun", "install", "--no-verify", "--no-progress"}), nil
+			WithExec([]string{"bun", "install", "--no-verify", "--no-progress", "--frozen-lockfile"}), nil
 	default:
 		return nil, fmt.Errorf("detected unknown package manager: %s", t.moduleConfig.packageManager)
 	}
