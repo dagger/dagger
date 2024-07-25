@@ -14,46 +14,48 @@ type AllSDK struct {
 var _ sdkBase = AllSDK{}
 
 func (t AllSDK) Lint(ctx context.Context) error {
-	eg, ctx := errgroup.WithContext(ctx)
-	for _, sdk := range t.SDK.allSDKs() {
-		sdk := sdk
-		eg.Go(func() error {
-			return sdk.Lint(ctx)
-		})
-	}
-	return eg.Wait()
+	_, err := forEachSDK(ctx, t.SDK.allSDKs(), func(ctx context.Context, sdk sdkBase) (struct{}, error) {
+		return struct{}{}, sdk.Lint(ctx)
+	})
+	return err
 }
 
 func (t AllSDK) Test(ctx context.Context) error {
-	eg, ctx := errgroup.WithContext(ctx)
-	for _, sdk := range t.SDK.allSDKs() {
-		sdk := sdk
-		eg.Go(func() error {
-			return sdk.Test(ctx)
-		})
-	}
-	return eg.Wait()
+	_, err := forEachSDK(ctx, t.SDK.allSDKs(), func(ctx context.Context, sdk sdkBase) (struct{}, error) {
+		return struct{}{}, sdk.Test(ctx)
+	})
+	return err
 }
 
 func (t AllSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
-	eg, ctx := errgroup.WithContext(ctx)
-	dirs := make([]*dagger.Directory, len(t.SDK.allSDKs()))
-	for i, sdk := range t.SDK.allSDKs() {
-		i, sdk := i, sdk
-		eg.Go(func() error {
-			dir, err := sdk.Generate(ctx)
-			if err != nil {
-				return err
-			}
-			dir, err = dir.Sync(ctx)
-			if err != nil {
-				return err
-			}
-			dirs[i] = dir
-			return nil
-		})
-	}
-	err := eg.Wait()
+	return t.mergeDirsForEachSDK(ctx, func(ctx context.Context, sdk sdkBase) (*dagger.Directory, error) {
+		return sdk.Generate(ctx)
+	})
+}
+
+func (t AllSDK) Bump(ctx context.Context, version string) (*dagger.Directory, error) {
+	return t.mergeDirsForEachSDK(ctx, func(ctx context.Context, sdk sdkBase) (*dagger.Directory, error) {
+		return sdk.Bump(ctx, version)
+	})
+}
+
+func (t AllSDK) GenerateChangelogs(ctx context.Context, version string, bumpEnginePR string) (*dagger.Directory, error) {
+	return t.mergeDirsForEachSDK(ctx, func(ctx context.Context, sdk sdkBase) (*dagger.Directory, error) {
+		return sdk.GenerateChangelogs(ctx, version, bumpEnginePR)
+	})
+}
+
+func (t AllSDK) mergeDirsForEachSDK(
+	ctx context.Context,
+	f func(context.Context, sdkBase) (*dagger.Directory, error),
+) (*dagger.Directory, error) {
+	dirs, err := forEachSDK(ctx, t.SDK.allSDKs(), func(ctx context.Context, sdk sdkBase) (*dagger.Directory, error) {
+		dir, err := f(ctx, sdk)
+		if err != nil {
+			return nil, err
+		}
+		return dir.Sync(ctx)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -65,21 +67,21 @@ func (t AllSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 	return dir, nil
 }
 
-func (t AllSDK) Bump(ctx context.Context, version string) (*dagger.Directory, error) {
+func forEachSDK[R any](
+	ctx context.Context,
+	sdks []sdkBase,
+	f func(context.Context, sdkBase) (R, error),
+) ([]R, error) {
 	eg, ctx := errgroup.WithContext(ctx)
-	dirs := make([]*dagger.Directory, len(t.SDK.allSDKs()))
-	for i, sdk := range t.SDK.allSDKs() {
+	values := make([]R, len(sdks))
+	for i, sdk := range sdks {
 		i, sdk := i, sdk
 		eg.Go(func() error {
-			dir, err := sdk.Bump(ctx, version)
+			v, err := f(ctx, sdk)
 			if err != nil {
 				return err
 			}
-			dir, err = dir.Sync(ctx)
-			if err != nil {
-				return err
-			}
-			dirs[i] = dir
+			values[i] = v
 			return nil
 		})
 	}
@@ -87,10 +89,5 @@ func (t AllSDK) Bump(ctx context.Context, version string) (*dagger.Directory, er
 	if err != nil {
 		return nil, err
 	}
-
-	dir := dag.Directory()
-	for _, dir2 := range dirs {
-		dir = dir.WithDirectory("", dir2)
-	}
-	return dir, nil
+	return values, nil
 }

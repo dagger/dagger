@@ -115,6 +115,11 @@ func (t JavaSDK) Bump(ctx context.Context, version string) (*dagger.Directory, e
 	return dir, nil
 }
 
+// Generate the Java SDK changelogs
+func (t JavaSDK) GenerateChangelogs(ctx context.Context, version string, bumpEnginePR string) (*dagger.Directory, error) {
+	return t.Dagger.generateSDKChangelogs(javaSDKPath, version, bumpEnginePR)
+}
+
 func (t JavaSDK) javaBase() *dagger.Container {
 	src := t.Dagger.Source().Directory(javaSDKPath)
 	mountPath := "/" + javaSDKPath

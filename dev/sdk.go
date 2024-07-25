@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"path"
 
 	"github.com/dagger/dagger/dev/internal/build"
 	"github.com/dagger/dagger/dev/internal/consts"
@@ -38,6 +40,7 @@ type sdkBase interface {
 	Test(ctx context.Context) error
 	Generate(ctx context.Context) (*dagger.Directory, error)
 	Bump(ctx context.Context, version string) (*dagger.Directory, error)
+	GenerateChangelogs(ctx context.Context, version string, bumpEnginePR string) (*dagger.Directory, error)
 }
 
 func (sdk *SDK) allSDKs() []sdkBase {
@@ -91,4 +94,26 @@ func (dev *DaggerDev) introspection(ctx context.Context, installer func(*dagger.
 		WithFile("/usr/local/bin/codegen", builder.CodegenBinary()).
 		WithExec([]string{"codegen", "introspect", "-o", "/schema.json"}).
 		File("/schema.json"), nil
+}
+
+func (dev *DaggerDev) generateSDKChangelogs(sdkSubpath, version, bumpEnginePR string) (*dagger.Directory, error) {
+	// TODO: before := dev.Source()
+	// FIXME: spin out a changie module
+	after := dag.
+		Container().
+		From("ghcr.io/miniscruff/changie").
+		WithMountedDirectory("/src", dev.Source()).
+		WithWorkdir(path.Join("/src", sdkSubpath)).
+		WithExec([]string{"/changie", "new",
+			"--kind", "Dependencies",
+			"--body", fmt.Sprintf("Bump Engine to %s", version),
+			"--custom", "Author=github-actions",
+			"--custom", fmt.Sprintf("PR=%s", bumpEnginePR),
+		}).
+		WithExec([]string{"/changie", "batch", "patch"}).
+		WithExec([]string{"/changie", "merge"}).
+		Directory("/src")
+
+		// TODO: return before.Diff(after), nil
+	return after, nil
 }

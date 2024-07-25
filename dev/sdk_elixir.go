@@ -143,6 +143,11 @@ func (t ElixirSDK) Bump(ctx context.Context, version string) (*dagger.Directory,
 	return dag.Directory().WithNewFile(elixirSDKVersionFilePath, newContents), nil
 }
 
+// Generate the Elixir SDK changelogs
+func (t ElixirSDK) GenerateChangelogs(ctx context.Context, version string, bumpEnginePR string) (*dagger.Directory, error) {
+	return t.Dagger.generateSDKChangelogs(elixirSDKPath, version, bumpEnginePR)
+}
+
 func (t ElixirSDK) elixirBase(elixirVersion string) *dagger.Container {
 	src := t.Dagger.Source().Directory(elixirSDKPath)
 	mountPath := "/" + elixirSDKPath

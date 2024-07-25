@@ -124,6 +124,11 @@ const CLIVersion = %q
 	return dir, nil
 }
 
+// Generate the Go SDK changelogs
+func (t GoSDK) GenerateChangelogs(ctx context.Context, version string, bumpEnginePR string) (*dagger.Directory, error) {
+	return t.Dagger.generateSDKChangelogs("sdk/go", version, bumpEnginePR)
+}
+
 type gitPublishOpts struct {
 	source, dest       string
 	sourceTag, destTag string

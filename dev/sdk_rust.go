@@ -157,6 +157,11 @@ func (r RustSDK) Bump(ctx context.Context, version string) (*dagger.Directory, e
 	return dag.Directory().WithNewFile(rustVersionFilePath, versionBumpedContents), nil
 }
 
+// Generate the Rust SDK changelogs
+func (r RustSDK) GenerateChangelogs(ctx context.Context, version string, bumpEnginePR string) (*dagger.Directory, error) {
+	return r.Dagger.generateSDKChangelogs("sdk/rust", version, bumpEnginePR)
+}
+
 func (r RustSDK) rustBase(image string) *dagger.Container {
 	const appDir = "sdk/rust"
 

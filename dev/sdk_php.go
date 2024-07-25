@@ -97,6 +97,11 @@ func (t PHPSDK) Bump(ctx context.Context, version string) (*dagger.Directory, er
 	return dir, nil
 }
 
+// Generate the PHP SDK changelogs
+func (t PHPSDK) GenerateChangelogs(ctx context.Context, version string, bumpEnginePR string) (*dagger.Directory, error) {
+	return t.Dagger.generateSDKChangelogs(phpSDKPath, version, bumpEnginePR)
+}
+
 // phpBase returns a PHP container with the PHP SDK source files
 // added and dependencies installed.
 func (t PHPSDK) phpBase() *dagger.Container {
