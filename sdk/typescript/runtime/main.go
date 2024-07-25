@@ -41,7 +41,11 @@ const (
 	BunManager SupportedPackageManager = "bun"
 )
 
-const YarnDefaultVersion = "1.22.22"
+const (
+	PnpmDefaultVersion = "8.15.4"
+	YarnDefaultVersion = "1.22.22"
+	NpmDefaultVersion  = "10.7.0"
+)
 
 func New(
 	// +optional
@@ -414,15 +418,15 @@ func (t *TypescriptSdk) detectPackageManager(ctx context.Context) (SupportedPack
 	}
 
 	if t.moduleConfig.hasFile("package-lock.json") {
-		return Npm, "", nil
+		return Npm, NpmDefaultVersion, nil
 	}
 
 	if t.moduleConfig.hasFile("yarn.lock") {
-		return Yarn, "", nil
+		return Yarn, YarnDefaultVersion, nil
 	}
 
 	if t.moduleConfig.hasFile("pnpm-lock.yaml") {
-		return Pnpm, "", nil
+		return Pnpm, PnpmDefaultVersion, nil
 	}
 
 	// Default to yarn
@@ -494,7 +498,7 @@ func (t *TypescriptSdk) installDependencies(ctr *dagger.Container) (*dagger.Cont
 			WithExec([]string{"npm", "ci"}), nil
 	case BunManager:
 		return ctr.
-			WithExec([]string{"bun", "install", "--no-verify", "--no-progress", "--frozen-lockfile"}), nil
+			WithExec([]string{"bun", "install", "--no-verify", "--no-progress"}), nil
 	default:
 		return nil, fmt.Errorf("detected unknown package manager: %s", t.moduleConfig.packageManager)
 	}
