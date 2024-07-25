@@ -141,10 +141,17 @@ func (t *TypescriptSdk) Codegen(ctx context.Context, modSource *ModuleSource, in
 		return nil, fmt.Errorf("failed to create codegen base: %w", err)
 	}
 
+	// Extract codegen directory
+	codegen := dag.
+		Directory().
+		WithDirectory(
+			"/",
+			ctr.Directory(ModSourceDirPath),
+			DirectoryWithDirectoryOpts{Exclude: []string{"**/node_modules"}},
+		)
+
 	return dag.GeneratedCode(
-		ctr.
-			Directory(ModSourceDirPath).
-			WithoutDirectory("**/node_modules/**"),
+		codegen,
 	).
 		WithVCSGeneratedPaths([]string{
 			GenDir + "/**",
@@ -440,12 +447,18 @@ func (t *TypescriptSdk) generateLockFile(ctr *Container) (*Container, error) {
 
 	switch packageManager {
 	case Yarn:
+		// Enable corepack
+		ctr = ctr.
+			WithExec([]string{"corepack", "enable"}).
+			WithExec([]string{"corepack", "use", fmt.Sprintf("yarn@%s", version)})
+
+		// Install dependencies and extrat the lockfile
+		file := ctr.
+			WithExec([]string{"yarn", "install", "--mode", "update-lockfile"}).File("yarn.lock")
+
 		// Sadly, yarn < v3 doesn't support generating a lockfile without installing the dependencies.
 		// So we use npm to generate the lockfile and then import it into yarn.
-		return ctr.
-			WithExec([]string{"corepack", "enable"}).
-			WithExec([]string{"corepack", "use", fmt.Sprintf("yarn@%s", version)}).
-			WithExec([]string{"yarn", "install", "--mode", "update-lockfile"}), nil
+		return ctr.WithFile("yarn.lock", file), nil
 	case Pnpm:
 		return ctr.
 			WithExec([]string{"npm", "install", "-g", fmt.Sprintf("pnpm@%s", version)}).
