@@ -4,34 +4,39 @@ $tablet-width: 996px;
 $desktop-width: 997px;
 $desktop-xl-width: 1160px;
 
+@import url("https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap");
+
 :root {
-  --ifm-color-primary-light: #21798D;
-  --ifm-color-primary: #21798D;
-  --ifm-heading-color: #0D0C1B;
-  --ifm-hover-overlay: #E1F5FB;
-  --ifm-menu-color-active: #21798D;
-  --ifm-menu-color-background-active: #E1F5FB;
-  --ifm-menu-color-background-hover: #E1F5FB;
-  --ifm-menu-color: #4B4B5A;
-  --ifm-navbar-background-color: #0D0C1B;
+  --ifm-font-family-base: "Open Sans", system-ui, -apple-system, Segoe UI,
+    Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif, BlinkMacSystemFont,
+    "Segoe UI", Helvetica, Arial, sans-serif, "Apple Color Emoji",
+    "Segoe UI Emoji", "Segoe UI Symbol";
+  --ifm-color-primary-light: #21798d;
+  --ifm-color-primary: #21798d;
+  --ifm-heading-color: #0d0c1b;
+  --ifm-hover-overlay: #e1f5fb;
+  --ifm-menu-color-active: #21798d;
+  --ifm-menu-color-background-active: #e1f5fb;
+  --ifm-menu-color-background-hover: #e1f5fb;
+  --ifm-menu-color: #4b4b5a;
+  --ifm-navbar-background-color: #0d0c1b;
   --ifm-navbar-height: 4.5rem;
-  --ifm-navbar-padding-vertical: .75rem;
-  --ifm-toc-link-color: #4B4B5A;
+  --ifm-navbar-padding-vertical: 0.75rem;
+  --ifm-toc-link-color: #4b4b5a;
 }
 
 html[data-theme="dark"] {
   --ifm-background-color: #131226;
-  --ifm-color-primary-light: #57C7E3;
-  --ifm-color-primary: #57C7E3;
+  --ifm-color-primary-light: #57c7e3;
+  --ifm-color-primary: #57c7e3;
   --ifm-heading-color: white;
   --ifm-hover-overlay: #2b2f46;
-  --ifm-menu-color-active: #57C7E3;
-  --ifm-menu-color-background-active: #2B2F46;
+  --ifm-menu-color-active: #57c7e3;
+  --ifm-menu-color-background-active: #2b2f46;
   --ifm-menu-color-background-hover: #2b2f46;
   --ifm-menu-color: white;
   --ifm-toc-link-color: white;
 }
-
 
 @mixin mobile {
   @media (max-width: #{$mobile-width}) {
@@ -57,13 +62,12 @@ html[data-theme="dark"] {
   }
 }
 
-
 .header-github-link {
   height: 35px;
   margin: 0;
   padding: 0;
   background-color: white;
-  mask-image: url('/img/github-icon.svg');
+  mask-image: url("/img/github-icon.svg");
   mask-size: 100%;
   width: 30px;
 
@@ -82,7 +86,9 @@ html[data-theme="dark"] {
   }
 }
 
-.header-discord-link, .footer-discord-link, .footer-x-link {
+.header-discord-link,
+.footer-discord-link,
+.footer-x-link {
   background-color: white;
   height: 30px;
   margin: 0;
@@ -154,12 +160,12 @@ html[data-theme="light"] {
 }
 
 pre {
-  background: #0D0C1B;
-  border: 1px solid rgba(75,75,90, 0.3);
+  background: #0d0c1b;
+  border: 1px solid rgba(75, 75, 90, 0.3);
 }
 
 .footer {
-  background-color: #0D0C1B;
+  background-color: #0d0c1b;
   color: white;
   padding: 4rem 0 1.5rem;
 
@@ -190,7 +196,7 @@ pre {
 
   .discord-icon {
     background-color: white;
-    mask-image: url('/img/discord-icon.svg');
+    mask-image: url("/img/discord-icon.svg");
     mask-size: 100%;
   }
 }
