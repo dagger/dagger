@@ -43,6 +43,7 @@ from dagger.mod._types import APIName, FieldDefinition, ObjectDefinition
 from dagger.mod._utils import (
     asyncify,
     get_doc,
+    normalize_name,
     to_pascal_case,
     transform_error,
 )
@@ -496,7 +497,7 @@ class Module:
             field_def: FieldDefinition | None
             if field_def := field.metadata.get(FIELD_DEF_KEY, None):
                 r = FieldResolver(
-                    name=field_def.name or field.name,
+                    name=field_def.name or normalize_name(field.name),
                     original_name=field.name,
                     doc=get_doc(field.type),
                     type_annotation=types[field.name],
