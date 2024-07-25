@@ -1,6 +1,0 @@
-kind: Added
-body: 'cli: propagate exit code from function'
-time: 2024-07-23T17:14:37.925014Z
-custom:
-    Author: helderco
-    PR: "8019"
