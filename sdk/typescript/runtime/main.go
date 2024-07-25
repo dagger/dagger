@@ -44,7 +44,7 @@ const YarnDefaultVersion = "1.22.22"
 
 func New(
 	// +optional
-	sdkSourceDir *Directory,
+	sdkSourceDir *dagger.Directory,
 ) *TypescriptSdk {
 	return &TypescriptSdk{
 		SDKSourceDir: sdkSourceDir,
@@ -64,7 +64,7 @@ type moduleConfig struct {
 	packageManager        SupportedPackageManager
 	packageManagerVersion string
 
-	source  *Directory
+	source  *dagger.Directory
 	entries map[string]bool
 
 	name    string
@@ -72,7 +72,7 @@ type moduleConfig struct {
 }
 
 type TypescriptSdk struct {
-	SDKSourceDir  *Directory
+	SDKSourceDir  *dagger.Directory
 	RequiredPaths []string
 
 	moduleConfig *moduleConfig
@@ -90,7 +90,7 @@ const (
 )
 
 // ModuleRuntime returns a container with the node or bun entrypoint ready to be called.
-func (t *TypescriptSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSource, introspectionJSON *File) (*Container, error) {
+func (t *TypescriptSdk) ModuleRuntime(ctx context.Context, modSource *dagger.ModuleSource, introspectionJSON *dagger.File) (*dagger.Container, error) {
 	err := t.analyzeModuleConfig(ctx, modSource)
 	if err != nil {
 		return nil, fmt.Errorf("failed to analyze module config: %w", err)
@@ -129,7 +129,7 @@ func (t *TypescriptSdk) ModuleRuntime(ctx context.Context, modSource *ModuleSour
 }
 
 // Codegen returns the generated API client based on user's module
-func (t *TypescriptSdk) Codegen(ctx context.Context, modSource *ModuleSource, introspectionJSON *File) (*GeneratedCode, error) {
+func (t *TypescriptSdk) Codegen(ctx context.Context, modSource *dagger.ModuleSource, introspectionJSON *dagger.File) (*dagger.GeneratedCode, error) {
 	err := t.analyzeModuleConfig(ctx, modSource)
 	if err != nil {
 		return nil, fmt.Errorf("failed to analyze module config: %w", err)
@@ -147,7 +147,7 @@ func (t *TypescriptSdk) Codegen(ctx context.Context, modSource *ModuleSource, in
 		WithDirectory(
 			"/",
 			ctr.Directory(ModSourceDirPath),
-			DirectoryWithDirectoryOpts{Exclude: []string{"**/node_modules"}},
+			dagger.DirectoryWithDirectoryOpts{Exclude: []string{"**/node_modules"}},
 		)
 
 	return dag.GeneratedCode(
@@ -164,7 +164,7 @@ func (t *TypescriptSdk) Codegen(ctx context.Context, modSource *ModuleSource, in
 
 // CodegenBase returns a Container containing the SDK from the engine container
 // and the user's code with a generated API based on what he did.
-func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource, introspectionJSON *File) (*Container, error) {
+func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *dagger.ModuleSource, introspectionJSON *dagger.File) (*dagger.Container, error) {
 	base, err := t.Base()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create codegen base: %w", err)
@@ -200,7 +200,7 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *ModuleSource
 }
 
 // Base returns a Node or Bun container with cache setup for node package managers or bun
-func (t *TypescriptSdk) Base() (*Container, error) {
+func (t *TypescriptSdk) Base() (*dagger.Container, error) {
 	ctr := dag.Container()
 
 	runtime := t.moduleConfig.runtime
@@ -252,7 +252,7 @@ func (t *TypescriptSdk) Base() (*Container, error) {
 //
 // If there's no src directory or no typescript files in it, it will create one
 // and copy the template index.ts file in it.
-func (t *TypescriptSdk) setupModule(ctx context.Context, ctr *Container) (*Container, error) {
+func (t *TypescriptSdk) setupModule(ctx context.Context, ctr *dagger.Container) (*dagger.Container, error) {
 	runtime := t.moduleConfig.runtime
 	name := t.moduleConfig.name
 
@@ -269,7 +269,7 @@ func (t *TypescriptSdk) setupModule(ctx context.Context, ctr *Container) (*Conta
 				WithExec([]string{"npm", "pkg", "set", "dependencies[@dagger.io/dagger]=./sdk"})
 		}
 	} else {
-		ctr = ctr.WithDirectory(".", ctr.Directory("/opt/module/template"), ContainerWithDirectoryOpts{Include: []string{"*.json"}})
+		ctr = ctr.WithDirectory(".", ctr.Directory("/opt/module/template"), dagger.ContainerWithDirectoryOpts{Include: []string{"*.json"}})
 	}
 
 	// Check if there's a src directory and creates an empty directory if it doesn't exist.
@@ -289,7 +289,7 @@ func (t *TypescriptSdk) setupModule(ctx context.Context, ctr *Container) (*Conta
 		return path.Ext(s) == ".ts"
 	}) {
 		return ctr.
-			WithDirectory("src", ctr.Directory("/opt/module/template/src"), ContainerWithDirectoryOpts{Include: []string{"*.ts"}}).
+			WithDirectory("src", ctr.Directory("/opt/module/template/src"), dagger.ContainerWithDirectoryOpts{Include: []string{"*.ts"}}).
 			WithExec([]string{"sed", "-i", "-e", fmt.Sprintf("s/QuickStart/%s/g", strcase.ToCamel(name)), "src/index.ts"}), nil
 	}
 
@@ -297,28 +297,32 @@ func (t *TypescriptSdk) setupModule(ctx context.Context, ctr *Container) (*Conta
 }
 
 // installedSDK returns a directory with the SDK sources and its dependencies installed.
-func (t *TypescriptSdk) installedSDK(ctr *Container) *Directory {
-	ctr = ctr.
-		WithWorkdir(ModSourceDirPath).
-		WithDirectory(".", t.SDKSourceDir, ContainerWithDirectoryOpts{
-			Exclude: []string{"codegen", "runtime"},
-		})
+func (t *TypescriptSdk) installedSDK(ctr *dagger.Container) *dagger.Directory {
+	return dag.Directory().WithDirectory("/", t.SDKSourceDir, dagger.DirectoryWithDirectoryOpts{
+		Exclude: []string{"codegen", "runtime"},
+	})
 
-	switch t.moduleConfig.runtime {
-	case Bun:
-		return ctr.WithExec([]string{"bun", "install", "--no-verify", "--no-progress", "--summary"}).Directory(ModSourceDirPath)
-	case Node:
-		return ctr.
-			// Enable corepack so we can use yarn v4 which is supposed to be faster than npm or yarn v1.
-			WithExec([]string{"yarn", "install", "--production"}).Directory(ModSourceDirPath)
-	default:
-		// Should never happen since we verify the runtime before calling this function.
-		return nil
-	}
+	//ctr = ctr.
+	//	WithWorkdir(ModSourceDirPath).
+	//	WithDirectory(".", t.SDKSourceDir, ContainerWithDirectoryOpts{
+	//		Exclude: []string{"codegen", "runtime"},
+	//	})
+	//
+	//switch t.moduleConfig.runtime {
+	//case Bun:
+	//	return ctr.WithExec([]string{"bun", "install", "--no-verify", "--no-progress", "--summary"}).Directory(ModSourceDirPath)
+	//case Node:
+	//	return ctr.
+	//		// Enable corepack so we can use yarn v4 which is supposed to be faster than npm or yarn v1.
+	//		WithExec([]string{"yarn", "install", "--production"}).Directory(ModSourceDirPath)
+	//default:
+	//	// Should never happen since we verify the runtime before calling this function.
+	//	return nil
+	//}
 }
 
 // generateClient uses the given container to generate the client code.
-func (t *TypescriptSdk) generateClient(ctr *Container, introspectionJSON *File) *Directory {
+func (t *TypescriptSdk) generateClient(ctr *dagger.Container, introspectionJSON *dagger.File) *dagger.Directory {
 	return ctr.
 		// Add dagger codegen binary.
 		WithMountedFile(codegenBinPath, t.SDKSourceDir.File("/codegen")).
@@ -332,7 +336,7 @@ func (t *TypescriptSdk) generateClient(ctr *Container, introspectionJSON *File) 
 			"--module-name", t.moduleConfig.name,
 			"--module-context-path", t.moduleConfig.modulePath(),
 			"--introspection-json-path", schemaPath,
-		}, ContainerWithExecOpts{
+		}, dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		}).
 		// Return the generated code directory.
@@ -441,7 +445,7 @@ func (t *TypescriptSdk) detectPackageManager(ctx context.Context) (SupportedPack
 }
 
 // generateLockFile generate a lock file for the matching package manager.
-func (t *TypescriptSdk) generateLockFile(ctr *Container) (*Container, error) {
+func (t *TypescriptSdk) generateLockFile(ctr *dagger.Container) (*dagger.Container, error) {
 	packageManager := t.moduleConfig.packageManager
 	version := t.moduleConfig.packageManagerVersion
 
@@ -476,7 +480,7 @@ func (t *TypescriptSdk) generateLockFile(ctr *Container) (*Container, error) {
 }
 
 // installDependencies installs the dependencies using the detected package manager.
-func (t *TypescriptSdk) installDependencies(ctr *Container) (*Container, error) {
+func (t *TypescriptSdk) installDependencies(ctr *dagger.Container) (*dagger.Container, error) {
 	switch t.moduleConfig.packageManager {
 	case Yarn:
 		return ctr.
@@ -501,7 +505,7 @@ func (t *TypescriptSdk) installDependencies(ctr *Container) (*Container, error) 
 // It also populates the moduleConfig.entries map with the list of files present in the module source.
 //
 // It's a utility function that should be called before calling any other exposed function in this module.
-func (t *TypescriptSdk) analyzeModuleConfig(ctx context.Context, modSource *ModuleSource) (err error) {
+func (t *TypescriptSdk) analyzeModuleConfig(ctx context.Context, modSource *dagger.ModuleSource) (err error) {
 	if t.moduleConfig == nil {
 		t.moduleConfig = &moduleConfig{
 			entries: make(map[string]bool),
