@@ -382,6 +382,19 @@ workflow](https://github.com/dagger/dagger/actions/workflows/sdk-go-publish.yml)
 which publishes to [🐙
 github.com/dagger/dagger-go-sdk](https://github.com/dagger/dagger-go-sdk/tags).
 
+- [ ] Download and install the latest release, and continue the rest of the
+      release process using the just-released CLI. This is needed now so the
+      `dev` module updated below will get `dagger.json`'s engine version bumped.
+
+```console
+curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=0.12.1 sh
+# install the cli to dagger-0.12.1, and symlink dagger to it
+mv ~/.local/bin/dagger{,-0.12.1}
+ln -s ~/.local/bin/dagger{-0.12.1,}
+
+dagger version
+```
+
 - [ ] `20mins` Bump the Go SDK version in our internal CI targets & check
       that Engine tests pass locally. If everything looks good, submit a new PR
       with this change so that we can check that all our workflows pass with the new
@@ -421,18 +434,6 @@ Change the branch the PR is being merged into from `main` to the `release-vX.Y.Z
 </details>
 
 Ensure that all the workflows succeed before continuing (specifically `test` and `testdev`)!
-
-- [ ] Download and install the latest release, and continue the rest of the
-      release process using the just-released CLI.
-
-```console
-curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=0.12.1 sh
-# install the cli to dagger-0.12.1, and symlink dagger to it
-mv ~/.local/bin/dagger{,-0.12.1}
-ln -s ~/.local/bin/dagger{-0.12.1,}
-
-dagger version
-```
 
 - [ ] After you confirm that our internal tooling works with the new Go SDK
       release, [🐙 github.com/dagger/dagger-go-sdk](https://github.com/dagger/dagger-go-sdk/tags),
