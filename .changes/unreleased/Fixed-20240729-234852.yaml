@@ -1,0 +1,6 @@
+kind: Fixed
+body: Fix errors when using Dockerfile builds from module functions that have secrets.
+time: 2024-07-29T23:48:52.402969146-07:00
+custom:
+  Author: sipsma
+  PR: "8049"
