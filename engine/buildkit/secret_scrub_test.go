@@ -513,6 +513,33 @@ func TestTrieExtend(t *testing.T) {
 	fmt.Println(trie)
 	require.Equal(t, []byte("bar"), trie.Step('f').Step('o').Step('o').Value())
 	require.Equal(t, []byte("bax"), trie.Step('f').Step('o').Step('o').Step('b').Value())
+
+	trie = Trie{}
+	trie.Insert([]byte("foo"), []byte("bar"))
+	trie.Insert([]byte("foobar"), []byte("qux"))
+	trie.Insert([]byte("foob"), []byte("bax"))
+	fmt.Println(trie)
+	require.Equal(t, []byte("bar"), trie.Step('f').Step('o').Step('o').Value())
+	require.Equal(t, []byte("bax"), trie.Step('f').Step('o').Step('o').Step('b').Value())
+	require.Equal(t, []byte("qux"), trie.Step('f').Step('o').Step('o').Step('b').Step('a').Step('r').Value())
+
+	trie = Trie{}
+	trie.Insert([]byte("foo"), []byte("bar"))
+	trie.Insert([]byte("foob"), []byte("bax"))
+	trie.Insert([]byte("foobar"), []byte("qux"))
+	fmt.Println(trie)
+	require.Equal(t, []byte("bar"), trie.Step('f').Step('o').Step('o').Value())
+	require.Equal(t, []byte("bax"), trie.Step('f').Step('o').Step('o').Step('b').Value())
+	require.Equal(t, []byte("qux"), trie.Step('f').Step('o').Step('o').Step('b').Step('a').Step('r').Value())
+
+	trie = Trie{}
+	trie.Insert([]byte("foo1"), []byte("bar"))
+	trie.Insert([]byte("foo2"), []byte("bax"))
+	trie.Insert([]byte("fax"), []byte("qux"))
+	fmt.Println(trie)
+	require.Equal(t, []byte("bar"), trie.Step('f').Step('o').Step('o').Step('1').Value())
+	require.Equal(t, []byte("bax"), trie.Step('f').Step('o').Step('o').Step('2').Value())
+	require.Equal(t, []byte("qux"), trie.Step('f').Step('a').Step('x').Value())
 }
 
 func TestTrieReinsert(t *testing.T) {

@@ -231,7 +231,9 @@ func (t *Trie) Insert(key []byte, value []byte) {
 		}
 		node = node.children[ch]
 	}
-	if node.direct != nil {
+	if node.direct == nil {
+		node.direct = []byte{}
+	} else {
 		node.branch()
 	}
 	node.value = value
