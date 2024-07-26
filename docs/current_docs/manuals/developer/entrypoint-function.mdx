@@ -72,11 +72,6 @@ If you plan to use constructor fields in other module functions, ensure that the
 
 Entrypoint functions can be passed both simple and complex types (such as `Container`, `Directory`, `Service` etc.) as arguments. Default values can be assigned in both cases.
 
-Here's is an example of a Dagger module with an entrypoint function expecting an argument of type `Container` and with a default value assigned:
-
-
-If a Dagger module constructor expects a Dagger core type (such as `Container`, `Directory`, `Service` etc.) as argument and you wish to assign a default value for this argument, it is necessary to use the `??` notation for this assignment. It is not possible to use the classic TypeScript notation for default arguments because the argument in this case is not a TypeScript primitive.
-
 Here is an example of a Dagger module with a default constructor argument of type `Container`:
 
 <Tabs groupId="language">

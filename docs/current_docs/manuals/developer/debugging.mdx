@@ -11,6 +11,83 @@ import TabItem from '@theme/TabItem';
 
 If you come across bugs, here are some simple debugging suggestions.
 
+### Inspect the pipeline with the `Terminal()` method
+
+The `Terminal()` method lets you set one or more breakpoints in your Dagger pipeline, and start an interactive terminal session at each breakpoint. This lets you interactively inspect a `Directory` or a `Container` at any point in your pipeline run.
+
+Here is an example of a Dagger Function which opens an interactive terminal at two different points in the Dagger pipeline to inspect the built container:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/debugging/go/terminal-container/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+```python file=./snippets/debugging/python/terminal-container/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/debugging/typescript/terminal-container/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+The `Terminal()` method can be chained. It returns a `Container`, so it can be injected at any point in a pipeline (in this example, between `From()` and `WithExec()` methods).
+
+:::tip
+Multiple terminals are supported in the same Dagger Function; they will open in sequence.
+:::
+
+It's also possible to inspect a directory using the `Terminal()` method. Here is an example of a Dagger Function which opens an interactive terminal on a directory:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/debugging/go/terminal-directory-1/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+```python file=./snippets/debugging/python/terminal-directory-1/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/debugging/typescript/terminal-directory-1/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+The container can be customized using `DirectoryTerminalOpts`. Here is a more complex Dagger Function, which does the same as the previous one but this time using an `ubuntu` container image and `bash` shell instead of the default `alpine` container image and `sh` shell.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/debugging/go/terminal-directory-2/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+```python file=./snippets/debugging/python/terminal-directory-2/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/debugging/typescript/terminal-directory-2/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+
 ### Rerun commands with `--debug`
 
 The Dagger CLI tries to keep its output concise by default. If you're running
@@ -42,7 +119,7 @@ external system like Sentry). But for a simple lowering of the default logging
 level to [logging.DEBUG](https://docs.python.org/3/library/logging.html#logging.DEBUG),
 there's a convenience function for that:
 
-```python file=./snippets/debugging/python/main.py
+```python file=./snippets/debugging/sdk-logs/python/main.py
 ```
 
 :::note
