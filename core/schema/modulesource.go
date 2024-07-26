@@ -18,6 +18,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/vcs"
+	"github.com/moby/patternmatcher"
 	"github.com/tonistiigi/fsutil/types"
 )
 
@@ -869,6 +870,39 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 	excludes := make([]string, 0, len(excludeSet))
 	for exclude := range excludeSet {
 		excludes = append(excludes, exclude)
+	}
+
+	// ensure that exclusions do not conflict with inclusions
+	// handles negations as BuildKit does
+	pm, err := patternmatcher.New(excludes)
+	if err != nil {
+		return inst, fmt.Errorf("failed to create pattern matcher on all exclusions: %w", err)
+	}
+
+	for _, include := range includes {
+		matches, err := pm.MatchesOrParentMatches(include)
+		if err != nil {
+			return inst, fmt.Errorf("failed to check for matches: %w", err)
+		}
+
+		if matches {
+			// isolate failing pattern
+			for _, exclude := range excludes {
+				pm, err := patternmatcher.New([]string{exclude})
+				if err != nil {
+					return inst, fmt.Errorf("failed to create pattern matcher on exclusions %s: %w", exclude, err)
+				}
+
+				matches, err := pm.MatchesOrParentMatches(include)
+				if err != nil {
+					return inst, fmt.Errorf("failed to create pattern matcher: %w", err)
+				}
+
+				if matches {
+					return inst, fmt.Errorf("include pattern %+v conflicts with exclude pattern %+v", include, exclude)
+				}
+			}
+		}
 	}
 
 	bk, err := src.Query.Buildkit(ctx)
