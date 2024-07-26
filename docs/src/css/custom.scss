@@ -22,7 +22,7 @@ $desktop-xl-width: 1160px;
   --ifm-navbar-background-color: #0d0c1b;
   --ifm-navbar-height: 4.5rem;
   --ifm-navbar-padding-vertical: 0.75rem;
-  --ifm-navbar-link-color: rgba(255, 255, 255, .75);
+  --ifm-navbar-link-color: rgba(255, 255, 255, 0.75);
   --ifm-toc-link-color: #4b4b5a;
 }
 
@@ -157,6 +157,14 @@ html[data-theme="light"] {
 .navbar__toggle {
   color: white;
   margin-right: 1rem;
+}
+
+.dropdown > .navbar__link::after {
+  content: "\203A";
+  display: inline-block;
+  transform: rotate(90deg) !important;
+  border: none;
+  padding: 0em 0.5em;
 }
 
 pre {
