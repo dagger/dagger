@@ -106,6 +106,7 @@ func TestScrubSecretWrite(t *testing.T) {
 	envMap := map[string]string{
 		"secret1":      "secret1 value",
 		"secret2":      "secret2",
+		"secret2b":     "secret2 more",
 		"sshSecretKey": sshSecretKey,
 		"sshPublicKey": sshPublicKey,
 	}
@@ -118,6 +119,7 @@ func TestScrubSecretWrite(t *testing.T) {
 	secretEnvs := []string{
 		"secret1",
 		"secret2",
+		"secret2b",
 		"sshSecretKey",
 		"sshPublicKey",
 	}
@@ -127,6 +129,7 @@ func TestScrubSecretWrite(t *testing.T) {
 			"aaa\n" + sshSecretKey + "\nbbb\nccc": "aaa\n***\nbbb\nccc",
 			"aaa" + sshSecretKey + "bbb\nccc":     "aaa***bbb\nccc",
 			sshSecretKey:                          "***",
+			strings.TrimSpace(sshSecretKey):       "***",
 		} {
 			var buf bytes.Buffer
 			r, err := NewSecretScrubReader(&buf, env, secretEnvs, []string{})
@@ -138,6 +141,7 @@ func TestScrubSecretWrite(t *testing.T) {
 			require.Equal(t, expectedOutput, string(out))
 		}
 	})
+
 	t.Run("single line secret", func(t *testing.T) {
 		var buf bytes.Buffer
 		r, err := NewSecretScrubReader(&buf, env, secretEnvs, []string{})
@@ -159,9 +163,11 @@ func TestScrubSecretWrite(t *testing.T) {
 		inputLines := []string{
 			"secret1 value",
 			"secret2",
+			"secret2 more",
 			"nonsecret",
 		}
 		outputLines := []string{
+			"***",
 			"***",
 			"***",
 			"nonsecret",

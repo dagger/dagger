@@ -42,9 +42,11 @@ func NewSecretScrubReader(
 	trie := &Trie{}
 	for _, s := range secretAsBytes {
 		trie.Insert(s, scrubString)
+		if strimmed := bytes.TrimSpace(s); len(strimmed) != len(s) {
+			trie.Insert(strimmed, scrubString)
+		}
 	}
 	transformer := &censor{
-		trie:     trie,
 		trieRoot: trie,
 		// NOTE: keep these sizes the same as the default transform sizes
 		srcBuf: make([]byte, 0, 4096),
@@ -100,7 +102,9 @@ type censor struct {
 	// trieRoot is the root of the trie
 	trieRoot *Trie
 	// trie is the current node we are at in the trie
-	trie *Trie
+	trie     *Trie
+	match    *Trie
+	matchLen int
 
 	// srcBuf is the source buffer, which contains bytes read from the src that
 	// are partial matches against the trie
@@ -145,16 +149,33 @@ func (c *censor) Transform(dst, src []byte, atEOF bool) (nDst, nSrc int, err err
 			c.trie = c.trie.Step(ch)
 
 			if c.trie == nil {
+				// we had found a match somewhere in this string previously, so
+				// flush the secret replacement and the rest of the source
+				// buffer
+				if c.match != nil {
+					c.trie = c.trieRoot
+					c.dstBuf = append(c.dstBuf, c.match.Value()...)
+					c.dstBuf = append(c.dstBuf, c.srcBuf[c.matchLen:]...)
+					c.srcBuf = c.srcBuf[:0]
+					c.match = nil
+					c.matchLen = 0
+
+					// process the current byte again. we do this because this
+					// *might* cause us to try to flush more than len(dst) - nDst
+					// bytes into the destination buffer, so we should avoid
+					// consuming the next byte in this case.
+					nSrc--
+					continue
+				}
+
 				// no match possible, so flush the source buffer into the
-				// destination buffer, and process the current byte again.
-				//
-				// we do this because this *might* cause us to try to flush
-				// more than len(dst) - nDst bytes into the destination buffer,
-				// so we should avoid consuming the next byte in this case.
+				// destination buffer
 				if len(c.srcBuf) != 0 {
 					c.trie = c.trieRoot
 					c.dstBuf = append(c.dstBuf, c.srcBuf...)
 					c.srcBuf = c.srcBuf[:0]
+
+					// process the current byte again - same reason as above
 					nSrc--
 					continue
 				}
@@ -172,11 +193,11 @@ func (c *censor) Transform(dst, src []byte, atEOF bool) (nDst, nSrc int, err err
 					c.srcBuf = append(c.srcBuf, ch)
 				}
 			} else if replace := c.trie.Value(); replace != nil {
-				// aha, we made a match, so replace the source buffer with the
-				// censored string, and flush into the destination buffer
-				c.trie = c.trieRoot
-				c.dstBuf = append(c.dstBuf, replace...)
-				c.srcBuf = c.srcBuf[:0]
+				// aha, we made a match, mark it, and we'll come back and flush
+				// the censored string later
+				c.srcBuf = append(c.srcBuf, ch)
+				c.match = c.trie
+				c.matchLen = len(c.srcBuf)
 			} else {
 				// we're in the middle of a match
 				c.srcBuf = append(c.srcBuf, ch)
@@ -185,7 +206,14 @@ func (c *censor) Transform(dst, src []byte, atEOF bool) (nDst, nSrc int, err err
 
 		// at this point, no more matches are possible, so flush
 		if atEOF {
-			c.dstBuf = append(c.dstBuf, c.srcBuf...)
+			if c.match != nil {
+				c.dstBuf = append(c.dstBuf, c.match.Value()...)
+				c.dstBuf = append(c.dstBuf, c.srcBuf[c.matchLen:]...)
+				c.match = nil
+				c.matchLen = 0
+			} else {
+				c.dstBuf = append(c.dstBuf, c.srcBuf...)
+			}
 			c.srcBuf = c.srcBuf[:0]
 		}
 	}
@@ -283,6 +311,9 @@ func (t *Trie) Step(ch byte) *Trie {
 
 // Value gets the value previously inserted at this node.
 func (t *Trie) Value() []byte {
+	if t == nil {
+		return nil
+	}
 	if len(t.direct) == 0 {
 		return t.value
 	}
