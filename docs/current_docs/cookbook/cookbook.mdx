@@ -1143,13 +1143,13 @@ dagger call test exit-code
 dagger call test report contents
 ```
 
-## Interactive debugging
+## Debugging
 
 Dagger lets you open an interactive terminal session at any point in a Dagger pipeline, with all the required context available. This is similar to debugger breakpoints, and is a useful way to debug pipeline failures, as all context is available at the point of failure. Multiple terminals are supported in the same Dagger Function; they will open in sequence.
 
 ### Debug container builds
 
-The following Dagger Function demonstrates how to open interactive terminal sessions to debug a container build at different stages in a Dagger pipeline.
+The following Dagger Function opens an interactive terminal session at different stages in a Dagger pipeline to debug a container build.
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -1173,10 +1173,71 @@ The following Dagger Function demonstrates how to open interactive terminal sess
 
 #### Example
 
-Execute a Dagger Function to build a container, and open interactive terminals at two different points in the build process. The interactive terminal enables you to inspect the container filesystem and environment "live", during the build process.
+Execute a Dagger Function to build a container, and open an interactive terminal at two different points in the build process. The interactive terminal enables you to inspect the container filesystem and environment "live", during the build process.
 
 ```shell
-# build a container
-# inspect it interactively during the build
+# inspect a container build
 dagger call container
+```
+
+### Inspect directories and files
+
+The following Dagger Function clones Dagger's GitHub repository and opens an interactive terminal session to inspect it. Under the hood, this creates a new container (defaults to `alpine`) and starts a shell, mounting the repository directory inside.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=../manuals/developer/snippets/debugging/go/terminal-directory-1/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+```python file=../manuals/developer/snippets/debugging/python/terminal-directory-1/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=../manuals/developer/snippets/debugging/typescript/terminal-directory-1/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+The container created to mount the directory can be customized using additional options. The following Dagger Function revised the previous example to demonstrate this, using an `ubuntu` container image and `bash` shell instead of the defaults.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=../manuals/developer/snippets/debugging/go/terminal-directory-2/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+```python file=../manuals/developer/snippets/debugging/python/terminal-directory-2/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=../manuals/developer/snippets/debugging/typescript/terminal-directory-2/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Execute a Dagger Function to clone Dagger's GitHub repository and open a terminal session in the repository directory:
+
+```shell
+# inspect a directory
+dagger call simple-directory
+```
+
+Execute another Dagger Function that does the same as the previous one, except using an `ubuntu` container image as base and initializing the terminal with the `bash` shell:
+
+```shell
+# inspect a directory
+dagger call advanced-directory
 ```

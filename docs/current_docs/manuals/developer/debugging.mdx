@@ -11,13 +11,13 @@ import TabItem from '@theme/TabItem';
 
 If you come across bugs, here are some simple debugging suggestions.
 
-### Rerun commands with `--interactive`
+## Rerun commands with `--interactive`
 
 Run `dagger call` with the `--interactive` (`-i` for short) flag to open a terminal in the context of a pipeline failure. No changes are required to your Dagger Function code.
 
-### Inspect the pipeline with the `Terminal()` method
+## Use the `Terminal()` method to inspect the pipeline live
 
-As an alternative to the `--interactive` flag, the `Terminal()` method lets you set one or more explicit breakpoints in your Dagger pipeline. Dagger starts an interactive terminal session at each breakpoint. This lets you inspect a `Directory` or a `Container` at any point in your pipeline run, with all the necessary context available to you.
+As an alternative to the `--interactive` flag, use the `Terminal()` method to set one or more explicit breakpoints in your Dagger pipeline. Dagger then starts an interactive terminal session at each breakpoint. This lets you inspect a `Directory` or a `Container` at any point in your pipeline run, with all the necessary context available to you.
 
 Here is an example of a Dagger Function which opens an interactive terminal at two different points in the Dagger pipeline to inspect the built container:
 
@@ -69,7 +69,7 @@ It's also possible to inspect a directory using the `Terminal()` method. Here is
 </TabItem>
 </Tabs>
 
-The container can be customized using additional options. Here is a more complex example, which produces  the same result as the previous one but this time using an `ubuntu` container image and `bash` shell instead of the default `alpine` container image and `sh` shell:
+Under the hood, this creates a new container (defaults to `alpine`) and starts a shell, mounting the directory inside. This container can be customized using additional options. Here is a more complex example, which produces  the same result as the previous one but this time using an `ubuntu` container image and `bash` shell instead of the default `alpine` container image and `sh` shell:
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -91,13 +91,13 @@ The container can be customized using additional options. Here is a more complex
 </TabItem>
 </Tabs>
 
-### Rerun commands with `--debug`
+## Rerun commands with `--debug`
 
 The Dagger CLI tries to keep its output concise by default. If you're running
 into issues and want to debug with more detailed output, you can run any `dagger`
 subcommand with the `--debug` flag to have it reveal all available information.
 
-### Access the Dagger Engine logs
+## Access the Dagger Engine logs
 
 The Dagger Engine runs in a dedicated Docker container and emits log messages as it works. Here's how to access these logs:
 
@@ -106,7 +106,7 @@ DAGGER_ENGINE_DOCKER_CONTAINER="$(docker container list --all --filter 'name=^da
 docker logs $DAGGER_ENGINE_DOCKER_CONTAINER
 ```
 
-### Enable SDK debug logs
+## Enable SDK debug logs
 
 :::important
 The information in this section is only applicable to the Python SDK. Debug logs are not currently available for the Go and TypeScript SDKs.
@@ -122,7 +122,7 @@ external system like Sentry). But for a simple lowering of the default logging
 level to [logging.DEBUG](https://docs.python.org/3/library/logging.html#logging.DEBUG),
 there's a convenience function for that:
 
-```python file=./snippets/debugging/sdk-logs/python/main.py
+```python file=./snippets/debugging/python/sdk-logs/main.py
 ```
 
 :::note

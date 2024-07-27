@@ -5,11 +5,10 @@ class MyModule {
   @func()
   container(): Container {
     return dag
-    .container()
-    .from("alpine:latest")
-    .terminal()
-    .withExec(["sh", "-c", "echo hello world > /foo && cat /foo"])
-    .terminal()
+      .container()
+      .from("alpine:latest")
+      .terminal()
+      .withExec(["sh", "-c", "echo hello world > /foo && cat /foo"])
+      .terminal()
   }
-
 }
