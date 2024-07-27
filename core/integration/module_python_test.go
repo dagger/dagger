@@ -269,13 +269,14 @@ build-backend = "poetry.core.masonry.api"
 		},
 	}
 
-	for _, tc := range testCases {
+	for i, tc := range testCases {
 		tc := tc
 
 		t.Run(fmt.Sprintf("%s/%s", tc.name, tc.path), func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
 			out, err := daggerCliBase(t, c).
+				WithWorkdir(fmt.Sprintf("/work/%s-%d", tc.name, i)).
 				With(fileContents("pyproject.toml", tc.conf)).
 				With(fileContents(tc.path, `
 from dagger import function
