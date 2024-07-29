@@ -96,7 +96,7 @@ func (t TypescriptSDK) Test(ctx context.Context) error {
 
 		eg.Go(func() error {
 			_, err := base.
-				WithExec([]string{"yarn", "test:node"}).
+				WithExec([]string{"yarn", "test:node", "-i", "-g", "Automatic Provisioned CLI Binary"}).
 				Sync(ctx)
 			return err
 		})
@@ -105,7 +105,7 @@ func (t TypescriptSDK) Test(ctx context.Context) error {
 	eg.Go(func() error {
 		_, err = t.bunJsBase().
 			With(installer).
-			WithExec([]string{"bun", "test:bun"}).
+			WithExec([]string{"bun", "test:bun", "-i", "-g", "Automatic Provisioned CLI Binary"}).
 			Sync(ctx)
 		return err
 	})
