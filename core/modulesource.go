@@ -475,12 +475,17 @@ func (src *GitModuleSource) HTMLURL() string {
 		return src.CloneURL + path.Join("/src", src.Commit, src.RootSubpath)
 	}
 
-	pathPrefix := "/src"
-	if parsedURL.Host == "github.com" || parsedURL.Host == "gitlab.com" {
-		pathPrefix = "/tree"
+	switch parsedURL.Host {
+	case "github.com", "gitlab.com":
+		return src.CloneURL + path.Join("/tree", src.Commit, src.RootSubpath)
+	case "dev.azure.com":
+		if src.RootSubpath != "" {
+			return fmt.Sprintf("%s/commit/%s?path=/%s", src.CloneURL, src.Commit, src.RootSubpath)
+		}
+		return src.CloneURL + path.Join("/commit", src.Commit)
+	default:
+		return src.CloneURL + path.Join("/src", src.Commit, src.RootSubpath)
 	}
-
-	return src.CloneURL + path.Join(pathPrefix, src.Commit, src.RootSubpath)
 }
 
 type ModuleSourceView struct {
