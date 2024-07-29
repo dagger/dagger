@@ -7,12 +7,6 @@ dependencies = [
     "graphql-core>=3.2.3",
 ]
 
-[tool.uv]
-preview = true
-dev-dependencies = [
-    "pytest>=8.1.1",
-]
-
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

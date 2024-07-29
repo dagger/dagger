@@ -231,6 +231,14 @@ wheels = [
 ]
 
 [[distribution]]
+name = "codegen"
+version = "0.0.0"
+source = { editable = "codegen" }
+dependencies = [
+    { name = "graphql-core" },
+]
+
+[[distribution]]
 name = "colorama"
 version = "0.4.6"
 source = { registry = "https://pypi.org/simple" }
@@ -258,6 +266,7 @@ dependencies = [
 [distribution.dev-dependencies]
 dev = [
     { name = "aiohttp" },
+    { name = "codegen" },
     { name = "mypy" },
     { name = "pytest" },
     { name = "pytest-httpx" },
