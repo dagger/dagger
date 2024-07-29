@@ -394,10 +394,6 @@ import (
 
 type %[1]s struct{}
 
-func (m *%[1]s) Echo(stringArg string) string {
-	return stringArg
-}
-
 // Returns a container that echoes whatever string argument is provided
 func (m *%[1]s) ContainerEcho(stringArg string) *dagger.Container {
 	return dag.Container().From("alpine:latest").WithExec([]string{"echo", stringArg})
