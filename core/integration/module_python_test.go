@@ -276,6 +276,9 @@ build-backend = "poetry.core.masonry.api"
 			c := connect(ctx, t)
 
 			out, err := daggerCliBase(t, c).
+				// uv caches a project's metadata by its absolute path so we can't change
+				// build backends and package location on the same `pyproject.toml` path
+				// concurrently because uv may return the cached metadata from another subtest.
 				WithWorkdir(fmt.Sprintf("/work/%s-%d", tc.name, i)).
 				With(fileContents("pyproject.toml", tc.conf)).
 				With(fileContents(tc.path, `
