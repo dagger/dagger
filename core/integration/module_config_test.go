@@ -1404,6 +1404,14 @@ var vcsTestCases = []vcsTestCase{
 		expectedURLPathComponent: "commit",
 		expectedPathPrefix:       "?path=",
 	},
+	{
+		name:                     "Azure DevOps without .git",
+		gitTestRepoRef:           "dev.azure.com/daggere2e/public/_git/dagger-test-modules",
+		gitTestRepoCommit:        "8723e276a45b2e620ba3185cb07dc35e2be5bc86",
+		expectedHost:             "dev.azure.com",
+		expectedBaseHTMLURL:      "dev.azure.com/daggere2e/public/_git/dagger-test-modules",
+		expectedURLPathComponent: "commit",
+	},
 }
 
 func testOnMultipleVCS(t *testctx.T, testFunc func(ctx context.Context, t *testctx.T, tc vcsTestCase)) {
