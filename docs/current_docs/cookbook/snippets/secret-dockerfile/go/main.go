@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 
-	"dagger.io/dagger"
+	"main/internal/dagger"
 )
 
 type MyModule struct{}
@@ -16,17 +16,16 @@ func (m *MyModule) Build(
 	// The secret to use in the Dockerfile
 	secret *dagger.Secret,
 ) (*dagger.Container, error) {
-	secretName, err := secret.Name(ctx)
+	// Ensure the Dagger secret's name matches what the Dockerfile
+	// expects as the id for the secret mount.
+	secretVal, err := secret.Plaintext(ctx)
 	if err != nil {
 		return nil, err
 	}
+	buildSecret := dag.SetSecret("gh-secret", secretVal)
 
 	return source.
 		DockerBuild(dagger.DirectoryDockerBuildOpts{
-			Dockerfile: "Dockerfile",
-			BuildArgs: []dagger.BuildArg{
-				{Name: "gh-secret", Value: secretName},
-			},
-			Secrets: []*dagger.Secret{secret},
+			Secrets: []*dagger.Secret{buildSecret},
 		}), nil
 }

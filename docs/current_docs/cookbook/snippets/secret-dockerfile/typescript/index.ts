@@ -1,4 +1,4 @@
-import { object, func, Secret } from "@dagger.io/dagger"
+import { dag, object, func, Secret } from "@dagger.io/dagger"
 
 @object()
 class MyModule {
@@ -16,11 +16,10 @@ class MyModule {
      */
     secret: Secret,
   ): Promise<Container> {
-    const secretName = await secret.name()
-    return source.dockerBuild({
-      dockerfile: "Dockerfile",
-      buildArgs: [{ name: "gh-secret", value: secretName }],
-      secrets: [secret],
-    })
+    // Ensure the Dagger secret's name matches what the Dockerfile
+    // expects as the id for the secret mount.
+    const buildSecret = dag.setSecret("gh-secret", await secret.plaintext())
+
+    return source.dockerBuild({ secrets: [buildSecret] })
   }
 }
