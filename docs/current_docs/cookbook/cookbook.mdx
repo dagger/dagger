@@ -1145,7 +1145,7 @@ dagger call test report contents
 
 ## Debugging
 
-Dagger lets you open an interactive terminal session at any point in a Dagger pipeline, with all the required context available. This is similar to debugger breakpoints, and is a useful way to debug pipeline failures, as all context is available at the point of failure. Multiple terminals are supported in the same Dagger Function; they will open in sequence.
+Dagger provides two features that can help greatly when trying to debug a pipeline - opening an interactive terminal session at the failure point, or at explicit breakpoints throughout your pipeline code. All context is available at the point of failure. Multiple terminals are supported in the same Dagger Function; they will open in sequence.
 
 ### Debug container builds
 
