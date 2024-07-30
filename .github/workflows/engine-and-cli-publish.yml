@@ -41,7 +41,7 @@ jobs:
             --registry-username="$DAGGER_ENGINE_IMAGE_USERNAME" \
             --registry-password=env:DAGGER_ENGINE_IMAGE_PASSWORD
         env:
-          DAGGER_ENGINE_IMAGE: ${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}
+          DAGGER_ENGINE_IMAGE: ${{ vars.RELEASE_DAGGER_ENGINE_IMAGE }}
           DAGGER_ENGINE_IMAGE_REGISTRY: ghcr.io
           DAGGER_ENGINE_IMAGE_USERNAME: ${{ github.actor }}
           DAGGER_ENGINE_IMAGE_PASSWORD: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
@@ -59,7 +59,7 @@ jobs:
             --registry-username="$DAGGER_ENGINE_IMAGE_USERNAME" \
             --registry-password=env:DAGGER_ENGINE_IMAGE_PASSWORD
         env:
-          DAGGER_ENGINE_IMAGE: ${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}
+          DAGGER_ENGINE_IMAGE: ${{ vars.RELEASE_DAGGER_ENGINE_IMAGE }}
           DAGGER_ENGINE_IMAGE_REGISTRY: ghcr.io
           DAGGER_ENGINE_IMAGE_USERNAME: ${{ github.actor }}
           DAGGER_ENGINE_IMAGE_PASSWORD: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
@@ -77,7 +77,7 @@ jobs:
             --registry-username="$DAGGER_ENGINE_IMAGE_USERNAME" \
             --registry-password=env:DAGGER_ENGINE_IMAGE_PASSWORD
         env:
-          DAGGER_ENGINE_IMAGE: ${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}
+          DAGGER_ENGINE_IMAGE: ${{ vars.RELEASE_DAGGER_ENGINE_IMAGE }}
           DAGGER_ENGINE_IMAGE_REGISTRY: ghcr.io
           DAGGER_ENGINE_IMAGE_USERNAME: ${{ github.actor }}
           DAGGER_ENGINE_IMAGE_PASSWORD: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
@@ -95,7 +95,7 @@ jobs:
             --registry-username="$DAGGER_ENGINE_IMAGE_USERNAME" \
             --registry-password=env:DAGGER_ENGINE_IMAGE_PASSWORD
         env:
-          DAGGER_ENGINE_IMAGE: ${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}
+          DAGGER_ENGINE_IMAGE: ${{ vars.RELEASE_DAGGER_ENGINE_IMAGE }}
           DAGGER_ENGINE_IMAGE_REGISTRY: ghcr.io
           DAGGER_ENGINE_IMAGE_USERNAME: ${{ github.actor }}
           DAGGER_ENGINE_IMAGE_PASSWORD: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
@@ -114,7 +114,7 @@ jobs:
             --aws-secret-access-key=env:AWS_SECRET_ACCESS_KEY \
             --aws-region=env:AWS_REGION \
             --aws-bucket=env:AWS_BUCKET \
-            --artefacts-fqdn=env:ARTEFACTS_FQDN
+            --artefacts-fqdn="$ARTEFACTS_FQDN"
         env:
           GH_ORG_NAME: ${{ vars.GH_ORG_NAME }}
           GITHUB_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
@@ -122,7 +122,7 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.RELEASE_AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: ${{ secrets.RELEASE_AWS_REGION }}
           AWS_BUCKET: ${{ secrets.RELEASE_AWS_BUCKET }}
-          ARTEFACTS_FQDN: ${{ secrets.RELEASE_FQDN }}
+          ARTEFACTS_FQDN: ${{ vars.RELEASE_FQDN }}
           GORELEASER_KEY: ${{ secrets.GORELEASER_PRO_LICENSE_KEY }}
       - name: "Bump SDK Engine Dependencies"
         if: github.ref_name != 'main'
@@ -187,17 +187,17 @@ jobs:
       - name: "Set CLI Test URL"
         run: |
           if [ ${{ github.event_name }} == 'push' ]; then
-            BASE_URL="https://${{ secrets.RELEASE_FQDN }}/dagger"
+            BASE_URL="https://${{ vars.RELEASE_FQDN }}/dagger"
             if [ $GITHUB_REF_NAME == 'main' ]; then
               # this is a push to the main branch
               ARCHIVE_URL="${BASE_URL}/main/${GITHUB_SHA}/dagger_${GITHUB_SHA}_darwin_amd64.tar.gz"
               CHECKSUMS_URL="${BASE_URL}/main/${GITHUB_SHA}/checksums.txt"
-              RUNNER_HOST="docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:${GITHUB_SHA}"
+              RUNNER_HOST="docker-image://${{ vars.RELEASE_DAGGER_ENGINE_IMAGE }}:${GITHUB_SHA}"
             else
               # this is a tag push
               ARCHIVE_URL="${BASE_URL}/releases/${GITHUB_REF_NAME:1}/dagger_${GITHUB_REF_NAME}_darwin_amd64.tar.gz"
               CHECKSUMS_URL="${BASE_URL}/releases/${GITHUB_REF_NAME:1}/checksums.txt"
-              RUNNER_HOST="docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:${GITHUB_REF_NAME}"
+              RUNNER_HOST="docker-image://${{ vars.RELEASE_DAGGER_ENGINE_IMAGE }}:${GITHUB_REF_NAME}"
             fi
             echo "_INTERNAL_DAGGER_TEST_CLI_URL=${ARCHIVE_URL}" >> $GITHUB_ENV
             echo "_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL=${CHECKSUMS_URL}" >> $GITHUB_ENV
@@ -264,17 +264,17 @@ jobs:
       - name: "Set CLI Test URL"
         run: |
           if [ ${{ github.event_name }} == 'push' ]; then
-            BASE_URL="https://${{ secrets.RELEASE_FQDN }}/dagger"
+            BASE_URL="https://${{ vars.RELEASE_FQDN }}/dagger"
             if [ $GITHUB_REF_NAME == 'main' ]; then
               # this is a push to the main branch
               ARCHIVE_URL="${BASE_URL}/main/${GITHUB_SHA}/dagger_${GITHUB_SHA}_linux_amd64.tar.gz"
               CHECKSUMS_URL="${BASE_URL}/main/${GITHUB_SHA}/checksums.txt"
-              RUNNER_HOST="docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:${GITHUB_SHA}"
+              RUNNER_HOST="docker-image://${{ vars.RELEASE_DAGGER_ENGINE_IMAGE }}:${GITHUB_SHA}"
             else
               # this is a tag push
               ARCHIVE_URL="${BASE_URL}/releases/${GITHUB_REF_NAME:1}/dagger_${GITHUB_REF_NAME}_linux_amd64.tar.gz"
               CHECKSUMS_URL="${BASE_URL}/releases/${GITHUB_REF_NAME:1}/checksums.txt"
-              RUNNER_HOST="docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:${GITHUB_REF_NAME}"
+              RUNNER_HOST="docker-image://${{ vars.RELEASE_DAGGER_ENGINE_IMAGE }}:${GITHUB_REF_NAME}"
             fi
             echo "_INTERNAL_DAGGER_TEST_CLI_URL=${ARCHIVE_URL}" >> $GITHUB_ENV
             echo "_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL=${CHECKSUMS_URL}" >> $GITHUB_ENV
@@ -305,17 +305,17 @@ jobs:
       - name: "Set CLI Test URL"
         run: |
           if [ ${{ github.event_name }} == 'push' ]; then
-            BASE_URL="https://${{ secrets.RELEASE_FQDN }}/dagger"
+            BASE_URL="https://${{ vars.RELEASE_FQDN }}/dagger"
             if [ $GITHUB_REF_NAME == 'main' ]; then
               # this is a push to the main branch
               ARCHIVE_URL="${BASE_URL}/main/${GITHUB_SHA}/dagger_${GITHUB_SHA}_linux_amd64.tar.gz"
               CHECKSUMS_URL="${BASE_URL}/main/${GITHUB_SHA}/checksums.txt"
-              RUNNER_HOST="docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:${GITHUB_SHA}"
+              RUNNER_HOST="docker-image://${{ vars.RELEASE_DAGGER_ENGINE_IMAGE }}:${GITHUB_SHA}"
             else
               # this is a tag push
               ARCHIVE_URL="${BASE_URL}/releases/${GITHUB_REF_NAME:1}/dagger_${GITHUB_REF_NAME}_linux_amd64.tar.gz"
               CHECKSUMS_URL="${BASE_URL}/releases/${GITHUB_REF_NAME:1}/checksums.txt"
-              RUNNER_HOST="docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:${GITHUB_REF_NAME}"
+              RUNNER_HOST="docker-image://${{ vars.RELEASE_DAGGER_ENGINE_IMAGE }}:${GITHUB_REF_NAME}"
             fi
             echo "_INTERNAL_DAGGER_TEST_CLI_URL=${ARCHIVE_URL}" >> $GITHUB_ENV
             echo "_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL=${CHECKSUMS_URL}" >> $GITHUB_ENV
@@ -346,17 +346,17 @@ jobs:
       - name: "Set CLI Test URL"
         run: |
           if [ ${{ github.event_name }} == 'push' ]; then
-            BASE_URL="https://${{ secrets.RELEASE_FQDN }}/dagger"
+            BASE_URL="https://${{ vars.RELEASE_FQDN }}/dagger"
             if [ $GITHUB_REF_NAME == 'main' ]; then
               # this is a push to the main branch
               ARCHIVE_URL="${BASE_URL}/main/${GITHUB_SHA}/dagger_${GITHUB_SHA}_linux_amd64.tar.gz"
               CHECKSUMS_URL="${BASE_URL}/main/${GITHUB_SHA}/checksums.txt"
-              RUNNER_HOST="docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:${GITHUB_SHA}"
+              RUNNER_HOST="docker-image://${{ vars.RELEASE_DAGGER_ENGINE_IMAGE }}:${GITHUB_SHA}"
             else
               # this is a tag push
               ARCHIVE_URL="${BASE_URL}/releases/${GITHUB_REF_NAME:1}/dagger_${GITHUB_REF_NAME}_linux_amd64.tar.gz"
               CHECKSUMS_URL="${BASE_URL}/releases/${GITHUB_REF_NAME:1}/checksums.txt"
-              RUNNER_HOST="docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:${GITHUB_REF_NAME}"
+              RUNNER_HOST="docker-image://${{ vars.RELEASE_DAGGER_ENGINE_IMAGE }}:${GITHUB_REF_NAME}"
             fi
             echo "_INTERNAL_DAGGER_TEST_CLI_URL=${ARCHIVE_URL}" >> $GITHUB_ENV
             echo "_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL=${CHECKSUMS_URL}" >> $GITHUB_ENV
