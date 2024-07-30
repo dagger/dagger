@@ -2,6 +2,13 @@ module github.com/dagger/dagger
 
 go 1.22
 
+// TODO:
+// TODO:
+// TODO:
+// TODO:
+// TODO:
+replace github.com/moby/buildkit => ./buildkit
+
 require (
 	github.com/99designs/gqlgen v0.17.49
 	github.com/Khan/genqlient v0.7.0
