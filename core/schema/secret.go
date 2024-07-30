@@ -25,7 +25,6 @@ func (s *secretSchema) Install() {
 			ArgSensitive("plaintext"),
 
 		dagql.Func("secret", s.secret).
-			Impure("A secret is scoped to the client that created it.").
 			Doc(`Reference a secret by name.`),
 	}.Install(s.srv)
 

@@ -5451,6 +5451,57 @@ func (t *Toplevel) TryArg(ctx context.Context) error {
 		})
 	})
 
+	t.Run("dockerfiles in modules", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		ctr := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+			WithNewFile("/input/Dockerfile", `FROM `+alpineImage+`
+RUN --mount=type=secret,id=my-secret test "$(cat /run/secrets/my-secret)" = "barbar"
+`).
+			WithNewFile("main.go", `package main
+
+import (
+	"context"
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {
+}
+
+func (t *Test) Ctr(src *dagger.Directory) *dagger.Container {
+	secret := dag.SetSecret("my-secret", "barbar")
+	return src.
+		DockerBuild(dagger.DirectoryDockerBuildOpts{
+			Secrets: []*dagger.Secret{secret},
+		}).
+		WithExec([]string{"true"}) // needed to avoid "no command set" error
+}
+
+func (t *Test) Evaluated(ctx context.Context, src *dagger.Directory) error {
+	secret := dag.SetSecret("my-secret", "barbar")
+	_, err := src.
+		DockerBuild(dagger.DirectoryDockerBuildOpts{
+			Secrets: []*dagger.Secret{secret},
+		}).
+		WithExec([]string{"true"}). 
+		Sync(ctx)
+	return err
+}
+`)
+
+		_, err := ctr.
+			With(daggerCall("ctr", "--src", "/input", "stdout")).
+			Sync(ctx)
+		require.NoError(t, err)
+
+		_, err = ctr.
+			With(daggerCall("evaluated", "--src", "/input")).
+			Sync(ctx)
+		require.NoError(t, err)
+	})
+
 	t.Run("pass embedded secrets between modules", func(ctx context.Context, t *testctx.T) {
 		// check that we can pass valid secret objects between functions in
 		// different modules when the secrets are embedded in containers rather than
