@@ -132,7 +132,7 @@ function Find-LatestVersion {
     $response = Invoke-RestMethod "https://dl.dagger.io/dagger/latest_version" -Body $body -ErrorVariable LatestVersionError
 
     if ($LatestVersionError) {
-        Write-Output @"
+        Write-Error @"
 ---------------------------------------------------------------------------
 Houston we have a problem!
 Apparently we had an issue finding the latest version of Dagger.
@@ -253,7 +253,7 @@ function Compare-Checksum {
     if ($hash.Hash -ne $Checksum) {
         Remove-Item -Path $DownloadPath
 
-        Write-Output @"
+        Write-Error @"
 ---------------------------------------------------------------------------
 The file checksum does not match the expected checksum!
 Expected: $Checksum
