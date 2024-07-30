@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/dagger/dagger/dev/ps-analyzer/internal/dagger"
 )
@@ -39,18 +40,39 @@ func (s Severity) String() string {
 
 type PsAnalyzer struct{}
 
-func (m *PsAnalyzer) Check(ctx context.Context, file *dagger.File) (*Report, error) {
+func (m *PsAnalyzer) Check(ctx context.Context,
+	// The file that want to check.
+	file *dagger.File,
+	// Exclude rules out of the analyzer.
+	//
+	// +optional
+	excludeRules []string,
+) (*Report, error) {
 	filename, err := file.Name(ctx)
 	if err != nil {
 		return nil, err
 	}
 
+	excludeRuleArg := ""
+	if len(excludeRules) != 0 {
+		excludeRuleArg = "-ExcludeRule " + toPSArraySubExpr(excludeRules)
+	}
+
 	out, err := m.Base().
 		WithMountedFile("/"+filename, file).
-		WithExec([]string{"pwsh", "-c", fmt.Sprintf("Invoke-ScriptAnalyzer -Path /%s | ConvertTo-Json -Depth 1 -WarningAction Ignore", filename)}).
+		WithExec([]string{"pwsh", "-c", fmt.Sprintf("Invoke-ScriptAnalyzer -Path /%s %s | ConvertTo-Json -Depth 1 -WarningAction Ignore", filename, excludeRuleArg)}).
 		Stdout(ctx)
 	if err != nil {
 		return nil, err
+	}
+
+	report := &Report{
+		Target: file,
+		JSON:   out,
+	}
+
+	if len(out) == 0 {
+		return report, nil
 	}
 
 	var issues []struct {
@@ -63,11 +85,6 @@ func (m *PsAnalyzer) Check(ctx context.Context, file *dagger.File) (*Report, err
 
 	if err := json.Unmarshal([]byte(out), &issues); err != nil {
 		return nil, err
-	}
-
-	report := &Report{
-		Target: file,
-		JSON:   out,
 	}
 
 	for _, iss := range issues {
@@ -128,4 +145,12 @@ func (r *Report) Assert() error {
 		return fmt.Errorf("linting failed with %d issues:\n%s", len(r.Issues), r.Report)
 	}
 	return nil
+}
+
+func toPSArraySubExpr(elems []string) string {
+	arr := make([]string, len(elems))
+	for i, elem := range elems {
+		arr[i] = fmt.Sprintf(`"%s"`, elem)
+	}
+	return fmt.Sprintf("@(%s)", strings.Join(arr, ","))
 }
