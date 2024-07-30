@@ -43,8 +43,9 @@ func New(
 
 // Enable module auto-codegen when retrieving the dagger source code
 func (dev *DaggerDev) WithModCodegen() *DaggerDev {
-	dev.ModCodegen = true
-	return dev
+	clone := *dev
+	clone.ModCodegen = true
+	return &clone
 }
 
 // Check that everything works. Use this as CI entrypoint.
