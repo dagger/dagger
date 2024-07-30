@@ -2,14 +2,11 @@ package main
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"strings"
 
-	"github.com/moby/buildkit/identity"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/dagger/dagger/dev/internal/consts"
 	"github.com/dagger/dagger/dev/internal/dagger"
 )
 
@@ -82,6 +79,9 @@ func (t GoSDK) Publish(
 	// +default="https://github.com/dagger/dagger-go-sdk.git"
 	gitRepo string,
 	// +optional
+	// +default="https://github.com/dagger/dagger.git"
+	gitRepoSource string,
+	// +optional
 	// +default="dagger-ci"
 	gitUserName string,
 	// +optional
@@ -92,7 +92,8 @@ func (t GoSDK) Publish(
 	githubToken *dagger.Secret,
 ) error {
 	return gitPublish(ctx, gitPublishOpts{
-		source:       "https://github.com/dagger/dagger.git",
+		sdk:          "go",
+		source:       gitRepoSource,
 		sourceTag:    tag,
 		sourcePath:   "sdk/go/",
 		sourceFilter: "if [ -f go.mod ]; then go mod edit -dropreplace github.com/dagger/dagger; fi",
@@ -122,76 +123,4 @@ const CLIVersion = %q
 	// provision tests run whenever this file changes.
 	dir := dag.Directory().WithNewFile("sdk/go/internal/engineconn/version.gen.go", versionFile)
 	return dir, nil
-}
-
-type gitPublishOpts struct {
-	source, dest       string
-	sourceTag, destTag string
-	sourcePath         string
-	sourceFilter       string
-	sourceEnv          *dagger.Container
-
-	username    string
-	email       string
-	githubToken *dagger.Secret
-
-	dryRun bool
-}
-
-func gitPublish(ctx context.Context, opts gitPublishOpts) error {
-	base := opts.sourceEnv
-	if base == nil {
-		base = dag.Container().
-			From(consts.AlpineImage).
-			WithExec([]string{"apk", "add", "-U", "--no-cache", "git"})
-	}
-
-	// FIXME: move this into std modules
-	git := base.
-		WithExec([]string{"git", "config", "--global", "user.name", opts.username}).
-		WithExec([]string{"git", "config", "--global", "user.email", opts.email})
-	if !opts.dryRun {
-		githubTokenRaw, err := opts.githubToken.Plaintext(ctx)
-		if err != nil {
-			return err
-		}
-		encodedPAT := base64.URLEncoding.EncodeToString([]byte("pat:" + githubTokenRaw))
-		git = git.
-			WithEnvVariable("GIT_CONFIG_COUNT", "1").
-			WithEnvVariable("GIT_CONFIG_KEY_0", "http.https://github.com/.extraheader").
-			WithSecretVariable("GIT_CONFIG_VALUE_0", dag.SetSecret("GITHUB_HEADER", fmt.Sprintf("AUTHORIZATION: Basic %s", encodedPAT)))
-	}
-
-	result := git.
-		WithEnvVariable("CACHEBUSTER", identity.NewID()).
-		WithWorkdir("/src/dagger").
-		WithExec([]string{"git", "clone", opts.source, "."}).
-		WithExec([]string{"git", "fetch", "origin", "-v", "--update-head-ok", fmt.Sprintf("refs/*%[1]s:refs/*%[1]s", strings.TrimPrefix(opts.sourceTag, "refs/"))}).
-		WithEnvVariable("FILTER_BRANCH_SQUELCH_WARNING", "1").
-		WithExec([]string{
-			"git", "filter-branch", "-f", "--prune-empty",
-			"--subdirectory-filter", opts.sourcePath,
-			"--tree-filter", opts.sourceFilter,
-			"--", opts.sourceTag,
-		})
-	if !opts.dryRun {
-		result = result.WithExec([]string{
-			"git",
-			"push",
-			"-f",
-			opts.dest,
-			fmt.Sprintf("%s:%s", opts.sourceTag, opts.destTag),
-		})
-	} else {
-		// on a dry run, just resolve the ref
-		result = result.WithExec([]string{
-			"git",
-			"rev-parse",
-			"--symbolic-full-name",
-			opts.sourceTag,
-		})
-	}
-
-	_, err := result.Sync(ctx)
-	return err
 }

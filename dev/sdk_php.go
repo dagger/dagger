@@ -68,6 +68,9 @@ func (t PHPSDK) Publish(
 	// +default="https://github.com/dagger/dagger-php-sdk.git"
 	gitRepo string,
 	// +optional
+	// +default="https://github.com/dagger/dagger.git"
+	gitRepoSource string,
+	// +optional
 	// +default="dagger-ci"
 	gitUserName string,
 	// +optional
@@ -78,7 +81,8 @@ func (t PHPSDK) Publish(
 	githubToken *dagger.Secret,
 ) error {
 	return gitPublish(ctx, gitPublishOpts{
-		source:      "https://github.com/dagger/dagger.git",
+		sdk:         "php",
+		source:      gitRepoSource,
 		sourcePath:  "sdk/php/",
 		sourceTag:   tag,
 		dest:        gitRepo,

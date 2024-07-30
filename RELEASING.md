@@ -1,5 +1,18 @@
 # Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-July%2022,%202024-success?style=flat-square)
 
+> [!WARNING]
+>
+> This guide is currently out-of-date due to https://github.com/dagger/dagger/pull/7705.
+>
+> The next "Improve releasing" PR should include updates to these instructions to:
+> - Add all release notes together in add-vX.Y.Z-release-notes
+>   - Include all SDK version bumps
+>     - dagger call -m dev sdk all bump --version="${{ github.ref_name }}" -o ./
+>   - Include helm version bumps
+      - dagger call -m dev helm set-version --version="${{ github.ref_name }}" -o ./helm/dagger/Chart.yaml
+> - Tag engine and SDK on the same commit $ENGINE_GIT_SHA
+> - Skip the bump-engine automated PR
+
 This describes how to release Dagger:
 
 - [🚙 Engine + 🚗 CLI ⏱ `30mins`](#-engine---cli--30mins)
