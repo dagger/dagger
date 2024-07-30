@@ -129,21 +129,77 @@ const config: Config = {
       },
       items: [
         {
-          position: "right",
-          to: "https://dagger.io/blog",
-          label: "Blog",
+          position: "left",
+          type: "dropdown",
+          label: "Platform",
+          className: "navbar-blog-link",
+          items: [
+            {
+              label: "Dagger Engine",
+              href: "https://dagger.io/dagger-engine",
+              target: "_self",
+            },
+            {
+              label: "Dagger Cloud",
+              href: "https://dagger.io/cloud",
+              target: "_self",
+            },
+            {
+              label: "Integrations",
+              href: "https://dagger.io/integrations",
+              target: "_self",
+            },
+            {
+              label: "Pricing",
+              href: "https://dagger.io/pricing",
+              target: "_self",
+            },
+          ],
+        },
+        {
+          position: "left",
+          to: "https://daggerverse.dev/",
+          label: "Daggerverse",
+          className: "navbar-blog-link",
+          target: "_self",
+        },
+        {
+          position: "left",
+          to: "https://dagger.io/resources",
+          label: "Resources",
+          className: "navbar-blog-link",
+          target: "_self",
+        },
+        {
+          position: "left",
+          type: "dropdown",
+          label: "Community",
+          className: "navbar-blog-link",
+          items: [
+            {
+              label: "Get involved",
+              href: "https://dagger.io/community",
+              target: "_self",
+            },
+            {
+              label: "Dagger Love",
+              href: "https://dagger.io/dagger-love",
+              target: "_self",
+            },
+          ],
+        },
+        {
+          position: "left",
+          to: "/",
+          label: "Docs",
           className: "navbar-blog-link",
         },
         {
-          position: "right",
-          href: "https://github.com/dagger/dagger",
-          className: "header-github-link hide-target-icon",
-          "aria-label": "GitHub repository",
-        },
-        {
-          position: "right",
-          href: "https://discord.gg/ufnyBtc8uY",
-          className: "header-discord-link",
+          position: "left",
+          to: "https://dagger.io/blog",
+          label: "Blog",
+          className: "navbar-blog-link",
+          target: "_self",
         },
         {
           type: "search",
@@ -206,7 +262,7 @@ const config: Config = {
             {
               label: "Status",
               to: "https://status.dagger.io",
-            }
+            },
           ],
         },
         {
@@ -227,7 +283,7 @@ const config: Config = {
             {
               label: "Pricing",
               to: "https://dagger.io/pricing",
-            }
+            },
           ],
         },
         {
@@ -238,7 +294,7 @@ const config: Config = {
               to: "https://dagger.io/partners",
             },
             {
-              label:"Brand",
+              label: "Brand",
               to: "https://dagger.io/brand",
             },
             {
@@ -252,10 +308,11 @@ const config: Config = {
             {
               label: "Trademark Guidelines",
               to: "https://dagger.io/trademark-guidelines",
-            },{
+            },
+            {
               label: "Dagger Trust Center",
               to: "https://trust.dagger.io",
-            }
+            },
           ],
         },
       ],
