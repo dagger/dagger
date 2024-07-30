@@ -75,9 +75,25 @@ dagger v0.12.6 (registry.dagger.io/engine:v0.12.6) linux/amd64
 
 <TabItem value="Windows">
 
-`dagger` can be installed on Windows via a PowerShell 7.0 script.
+You can install `dagger` on Windows using winget or PowerShell 7.0.
 
-The quickest way of installing `dagger` on Windows is to run the following command:
+<Tabs>
+
+<TabItem value="winget">
+
+Winget is the Windows package manager and is available on Windows 10 version 1809 and later.
+
+To install `dagger` using `winget`, run the following command from the Terminal:
+
+```powershell
+winget install Dagger.Cli
+```
+
+</TabItem>
+
+<TabItem value="powershell 7">
+
+To install `dagger` using PowerShell, run the following command from the PowerShell terminal:
 
 ```powershell
 Invoke-WebRequest -UseBasicParsing -Uri https://dl.dagger.io/dagger/install.ps1 | Invoke-Expression; Install-Dagger
@@ -120,6 +136,8 @@ To verify that Dagger has been installed correctly, use where.exe
 where.exe dagger
 # Expected output: C:\<your home folder>\dagger\dagger.exe
 ```
+</TabItem>
+</Tabs>
 
 </TabItem>
 
