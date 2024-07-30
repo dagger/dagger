@@ -159,12 +159,14 @@ const config: Config = {
           to: "https://daggerverse.dev/",
           label: "Daggerverse",
           className: "navbar-blog-link",
+          target: "_self",
         },
         {
           position: "left",
           to: "https://dagger.io/resources",
           label: "Resources",
           className: "navbar-blog-link",
+          target: "_self",
         },
         {
           position: "left",
@@ -195,6 +197,7 @@ const config: Config = {
           to: "https://dagger.io/blog",
           label: "Blog",
           className: "navbar-blog-link",
+          target: "_self",
         },
         {
           type: "search",
