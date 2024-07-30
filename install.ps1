@@ -70,7 +70,7 @@ function Get-ValidPath {
                 return $path
             }
             else {
-                Write-Output "Invalid path: $path. Please enter a valid path."
+                Write-Warning "Invalid path: $path. Please enter a valid path."
                 $path = $null
             }
         }
@@ -143,8 +143,6 @@ Please check https://docs.dagger.io/install
     }
 
     $latestVersion = $response -replace "v", ""
-    Write-Output "Latest version of Dagger is v$latestVersion"
-
     return [System.Management.Automation.SemanticVersion]::Parse($latestVersion)
 }
 
@@ -168,7 +166,7 @@ function Get-SemVer {
         [Parameter(Mandatory = $true)]
         [string]$Message,
         [Parameter(Mandatory = $true)]
-        [System.Management.Automation.SemanticVersion] $Default
+        [System.Management.Automation.SemanticVersion]$Default
     )
 
     $version = $null
@@ -184,11 +182,11 @@ function Get-SemVer {
 
         if (-not $isValid) {
             $version = $null
-            Write-Output "Invalid version string: $inputString. Please enter a valid semantic version (e.g., 0.11.6)."
+            Write-Warning "Invalid version string: $inputString. Please enter a valid semantic version (e.g., 0.11.6)."
         }
         elseif ($isvalid -and $version -gt $Default) {
             $version = $null
-            Write-Output "Please enter a valid version."
+            Write-Warning "Please enter a valid version."
         }
     }
 
@@ -201,7 +199,7 @@ function Get-InstallPath {
         New-Item -ItemType Directory -Path $InstallPath -ErrorAction Stop -ErrorVariable InstallPathError | Out-Null
 
         if ($InstallPathError) {
-            Write-Output @"
+            Write-Error @"
 ---------------------------------------------------------------------------
 Whoops, apparently we had an issue in creating the install path.
 Please check you have the right permission to do so or try to create the path manually.
@@ -235,7 +233,6 @@ function Get-Checksum {
     foreach ($line in $checksums) {
         if ($line -match $target) {
             $checksum = $line -split " " | Select-Object -First 1
-            Write-Output "Checksum for $target is $checksum"
             break
         }
     }
@@ -272,7 +269,7 @@ The downloaded file has been removed.
 function Main {
     # Powershell is cross-platform, notice about windows binary when used on non-windows
     if (-not $IsWindows) {
-        Write-Output @"
+        Write-Warning @"
 ---------------------------------------------------------------------------
 Note: This script will install the Windows binary of Dagger.
 ---------------------------------------------------------------------------
@@ -283,7 +280,7 @@ Note: This script will install the Windows binary of Dagger.
     Get-ProcessorArchitecture -ErrorAction Stop -ErrorVariable ArchitectureError | Out-Null
 
     if ($ArchitectureError) {
-        Write-Output @"
+        Write-Error @"
 ---------------------------------------------------------------------------
 Whoops, apparently we had an issue in determining the architecture of your system.
 Dagger compiles for AMD64, ARM64, and ARM architectures only.
@@ -305,7 +302,7 @@ Dagger compiles for AMD64, ARM64, and ARM architectures only.
             -ErrorVariable InteractiveDaggerVersionError
 
         if ($InteractiveDaggerVersionError) {
-            Write-Output @"
+            Write-Error @"
 ---------------------------------------------------------------------------
 Whoops, we had an issue in finding the selected version of Dagger.
 Please check your internet connection and try again.
@@ -320,7 +317,7 @@ Please check your internet connection and try again.
             -ErrorVariable InteractiveDownloadPathError
 
         if ($InteractiveDownloadPathError) {
-            Write-Output @"
+            Write-Error @"
 ---------------------------------------------------------------------------
 Whoops, we had an issue in getting the download path.
 Please check the path and try again.
@@ -335,7 +332,7 @@ Please check the path and try again.
             -ErrorVariable InteractiveInstallPathError
 
         if ($InteractiveInstallPathError) {
-            Write-Output @"
+            Write-Error @"
 ---------------------------------------------------------------------------
 Whoops, we had an issue in getting the install path.
 Please check the path and try again.
@@ -351,7 +348,7 @@ Please check the path and try again.
             -ErrorVariable InteractiveAddToPathError
 
         if ($InteractiveAddToPathError) {
-            Write-Output @"
+            Write-Error @"
 ---------------------------------------------------------------------------
 Whoops, we had an issue checking if you want to add dagger.exe to your PATH.
 Please check the option and try again.
@@ -366,11 +363,12 @@ Please check the option and try again.
 
     Invoke-RestMethod -Uri $zipUrl -OutFile $DownloadPath -UserAgent "PowerShell"
     $checksum = Get-Checksum -ErrorAction Stop -ErrorVariable ChecksumError
+    Write-Output "Checksum is $checksum"
     Compare-Checksum -DownloadPath $DownloadPath -Checksum $checksum
     Expand-Archive -Path $downloadPath -DestinationPath $InstallPath -Force -ErrorVariable ProcessError
 
-    If ($ProcessError) {
-        Write-Output @"
+    if ($ProcessError) {
+        Write-Error @"
 ---------------------------------------------------------------------------
 Whoops, apparently we had an issue in unzipping the file, please check
 you have the right permission to do so or try to unzip the file manually.
@@ -394,7 +392,7 @@ Dagger has been successfully installed at $(Get-InstallPath)
                 Write-Output "Dagger has been added to your PATH"
             }
             else {
-                Write-Output "Dagger is already in your PATH"
+                Write-Warning "Dagger is already in your PATH"
             }
         }
         else {
@@ -409,7 +407,6 @@ Dagger has been successfully installed at $(Get-InstallPath)
 $isInvoked = [string]::IsNullOrWhiteSpace($MyInvocation.MyCommand.Path)
 
 if ($isInvoked) {
-
     # Allow Invoke-Expression to customise the installation by producing the function Install-Dagger
     # This is because the Param of the Script file is not available unless the script is invoked
     function Install-Dagger {
