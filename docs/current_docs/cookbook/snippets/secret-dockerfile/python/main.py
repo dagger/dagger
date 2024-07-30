@@ -1,7 +1,7 @@
 from typing import Annotated
 
 import dagger
-from dagger import Doc, function, object_type
+from dagger import Doc, dag, function, object_type
 
 
 @object_type
@@ -13,9 +13,8 @@ class MyModule:
         secret: Annotated[dagger.Secret, Doc("The secret to use in the Dockerfile")],
     ) -> dagger.Container:
         """Build a Container from a Dockerfile"""
-        secret_name = await secret.name()
-        return source.docker_build(
-            dockerfile="Dockerfile",
-            build_args=dagger.DockerBuildArgs(name="gh-secret", value=secret_name),
-            secrets=[secret],
-        )
+        # Ensure the Dagger secret's name matches what the Dockerfile
+        # expects as the id for the secret mount.
+        build_secret = dag.set_secret("gh-secret", await secret.plaintext())
+
+        return source.docker_build(secrets=[build_secret])
