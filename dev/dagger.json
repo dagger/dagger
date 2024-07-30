@@ -3,10 +3,6 @@
   "sdk": "go",
   "dependencies": [
     {
-      "name": "ps-analyzer",
-      "source": "ps-analyzer"
-    },
-    {
       "name": "dirdiff",
       "source": "dirdiff"
     },
@@ -21,6 +17,10 @@
     {
       "name": "graphql",
       "source": "graphql"
+    },
+    {
+      "name": "ps-analyzer",
+      "source": "ps-analyzer"
     },
     {
       "name": "python-sdk-dev",
