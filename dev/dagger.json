@@ -19,6 +19,10 @@
       "source": "graphql"
     },
     {
+      "name": "ps-analyzer",
+      "source": "ps-analyzer"
+    },
+    {
       "name": "python-sdk-dev",
       "source": "../sdk/python/dev"
     },
