@@ -1,4 +1,4 @@
-module dagger/runtime
+module elixir-sdk
 
 go 1.22
 
