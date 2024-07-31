@@ -1411,6 +1411,7 @@ var vcsTestCases = []vcsTestCase{
 		expectedHost:             "dev.azure.com",
 		expectedBaseHTMLURL:      "dev.azure.com/daggere2e/public/_git/dagger-test-modules",
 		expectedURLPathComponent: "commit",
+		expectedPathPrefix:       "?path=",
 	},
 }
 
