@@ -74,6 +74,7 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 	daggercache "github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/distconsts"
+	"github.com/dagger/dagger/engine/server/snapshot/volume"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/sources/blob"
 	"github.com/dagger/dagger/engine/sources/gitdns"
@@ -284,6 +285,13 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		return nil, fmt.Errorf("failed to create snapshotter: %w", err)
 	}
 
+	// TODO: store on struct
+	// TODO: premake dir above for consistency
+	volumeSnapshotter, err := volume.NewVolumeSnapshotter(ctx, filepath.Join(srv.rootDir, "volumes"))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create volume snapshotter: %w", err)
+	}
+
 	srv.localContentStore, err = local.NewStore(srv.contentStoreRootDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create content store: %w", err)
@@ -295,7 +303,8 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	}
 
 	srv.containerdMetaDB = ctdmetadata.NewDB(srv.containerdMetaBoltDB, srv.localContentStore, map[string]ctdsnapshot.Snapshotter{
-		srv.snapshotterName: srv.snapshotter,
+		srv.snapshotterName:      srv.snapshotter,
+		volumeSnapshotter.Name(): volumeSnapshotter,
 	})
 	if err := srv.containerdMetaDB.Init(context.TODO()); err != nil {
 		return nil, fmt.Errorf("failed to init metadata db: %w", err)
@@ -381,18 +390,19 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 			"buildkit",
 			nil, // no idmapping
 		),
-		ContentStore:    srv.contentStore,
-		Applier:         winlayers.NewFileSystemApplierWithWindows(srv.contentStore, apply.NewFileSystemApplier(srv.contentStore)),
-		Differ:          winlayers.NewWalkingDiffWithWindows(srv.contentStore, walking.NewWalkingDiff(srv.contentStore)),
-		ImageStore:      nil, // explicitly, because that's what upstream does too
-		RegistryHosts:   srv.registryHosts,
-		IdentityMapping: nil, // no idmapping
-		LeaseManager:    srv.leaseManager,
-		GarbageCollect:  srv.containerdMetaDB.GarbageCollect,
-		ParallelismSem:  srv.parallelismSem,
-		MetadataStore:   srv.workerCacheMetaDB,
-		MountPoolRoot:   srv.buildkitMountPoolDir,
-		ResourceMonitor: nil, // we don't use it
+		ContentStore:      srv.contentStore,
+		Applier:           winlayers.NewFileSystemApplierWithWindows(srv.contentStore, apply.NewFileSystemApplier(srv.contentStore)),
+		Differ:            winlayers.NewWalkingDiffWithWindows(srv.contentStore, walking.NewWalkingDiff(srv.contentStore)),
+		ImageStore:        nil, // explicitly, because that's what upstream does too
+		RegistryHosts:     srv.registryHosts,
+		IdentityMapping:   nil, // no idmapping
+		LeaseManager:      srv.leaseManager,
+		GarbageCollect:    srv.containerdMetaDB.GarbageCollect,
+		ParallelismSem:    srv.parallelismSem,
+		MetadataStore:     srv.workerCacheMetaDB,
+		MountPoolRoot:     srv.buildkitMountPoolDir,
+		ResourceMonitor:   nil, // we don't use it
+		VolumeSnapshotter: volumeSnapshotter,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create base worker: %w", err)
