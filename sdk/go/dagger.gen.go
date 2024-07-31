@@ -4896,6 +4896,7 @@ type LocalModuleSource struct {
 	query *querybuilder.Selection
 
 	id          *LocalModuleSourceID
+	relHostPath *string
 	rootSubpath *string
 }
 
@@ -4952,6 +4953,19 @@ func (r *LocalModuleSource) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+
+// The relative path to the module root from the host directory
+func (r *LocalModuleSource) RelHostPath(ctx context.Context) (string, error) {
+	if r.relHostPath != nil {
+		return *r.relHostPath, nil
+	}
+	q := r.query.Select("relHostPath")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // The path to the root of the module source under the context directory. This directory contains its configuration file. It also contains its source code (possibly as a subdirectory).
@@ -6896,6 +6910,8 @@ func (r *Client) ModuleDependency(source *ModuleSource, opts ...ModuleDependency
 type ModuleSourceOpts struct {
 	// If true, enforce that the source is a stable version for source kinds that support versioning.
 	Stable bool
+	// The relative path to the module root from the host directory
+	RelHostPath string
 }
 
 // Create a new module source instance from a source ref string.
@@ -6905,6 +6921,10 @@ func (r *Client) ModuleSource(refString string, opts ...ModuleSourceOpts) *Modul
 		// `stable` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Stable) {
 			q = q.Arg("stable", opts[i].Stable)
+		}
+		// `relHostPath` optional argument
+		if !querybuilder.IsZeroValue(opts[i].RelHostPath) {
+			q = q.Arg("relHostPath", opts[i].RelHostPath)
 		}
 	}
 	q = q.Arg("refString", refString)

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -28,6 +27,10 @@ type moduleSourceArgs struct {
 	RefString string
 
 	Stable bool `default:"false"`
+
+	// relHostPath is the relative path to the module root from the host directory.
+	// This should only be used internally.
+	RelHostPath string `default:""`
 }
 
 func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args moduleSourceArgs) (*core.ModuleSource, error) {
@@ -63,6 +66,7 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 
 		src.AsLocalSource = dagql.NonNull(&core.LocalModuleSource{
 			RootSubpath: parsed.modPath,
+			RelHostPath: args.RelHostPath,
 		})
 
 	case core.ModuleSourceKindGit:
@@ -758,8 +762,6 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 		return inst, err
 	}
 
-	slog.Error("moduleSourceResolveFromCaller", "contextAbsPath", contextAbsPath, "sourceRootAbsPath", sourceRootAbsPath)
-
 	sourceRootRelPath, err := filepath.Rel(contextAbsPath, sourceRootAbsPath)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get source root relative path: %w", err)
@@ -768,8 +770,6 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 	// even when subdir relative to git source has ref structure
 	// (cf. test TestRefFormat)
 	sourceRootRelPath = "./" + sourceRootRelPath
-
-	slog.Error("moduleSourceResolveFromCaller", "sourceRootRelPath", sourceRootRelPath)
 
 	collectedDeps := dagql.NewCacheMap[string, *callerLocalDep]()
 	if err := s.collectCallerLocalDeps(ctx, src.Query, contextAbsPath, sourceRootAbsPath, true, src, collectedDeps); err != nil {
@@ -911,7 +911,12 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 		return inst, fmt.Errorf("failed to load local module source: %w", err)
 	}
 
-	return s.normalizeCallerLoadedSource(ctx, src, sourceRootRelPath, loadedDir)
+	rootSubPath, err := src.SourceRootSubpath()
+	if err != nil {
+		return inst, fmt.Errorf("failed to get source root subpath: %w", err)
+	}
+
+	return s.normalizeCallerLoadedSource(ctx, src, sourceRootRelPath, rootSubPath, loadedDir)
 }
 
 // get an instance of ModuleSource with the context resolved from the caller that doesn't
@@ -921,6 +926,7 @@ func (s *moduleSchema) normalizeCallerLoadedSource(
 	ctx context.Context,
 	src *core.ModuleSource,
 	sourceRootRelPath string,
+	relHostPath string,
 	loadedDir dagql.Instance[*core.Directory],
 ) (inst dagql.Instance[*core.ModuleSource], err error) {
 	err = s.dag.Select(ctx, s.dag.Root(), &inst,
@@ -928,6 +934,7 @@ func (s *moduleSchema) normalizeCallerLoadedSource(
 			Field: "moduleSource",
 			Args: []dagql.NamedInput{
 				{Name: "refString", Value: dagql.String(sourceRootRelPath)},
+				{Name: "relHostPath", Value: dagql.String(relHostPath)},
 			},
 		},
 		dagql.Selector{

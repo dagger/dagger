@@ -114,22 +114,15 @@ func (fn *ModuleFunction) recordCall(ctx context.Context) {
 	analytics.Ctx(ctx).Capture(ctx, "module_call", props)
 }
 
-//nolint:gocyclo
-func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typed, rerr error) {
-	mod := fn.mod
-
-	lg := bklog.G(ctx).WithField("module", mod.Name()).WithField("function", fn.metadata.Name)
-	if fn.objDef != nil {
-		lg = lg.WithField("object", fn.objDef.Name)
-	}
-	ctx = bklog.WithLogger(ctx, lg)
-
-	// Capture analytics for the function call.
-	// Calls without function name are internal and excluded.
-	fn.recordCall(ctx)
-
+// setCallInputs sets the call inputs for the function call.
+//
+// It first load the argument set by the user.
+// Then the default values.
+// Finally the contextual arguments.
+func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts) ([]*FunctionCallArgValue, error) {
 	callInputs := make([]*FunctionCallArgValue, len(opts.Inputs))
 	hasArg := map[string]bool{}
+
 	for i, input := range opts.Inputs {
 		normalizedName := gqlArgName(input.Name)
 		arg, ok := fn.args[normalizedName]
@@ -190,6 +183,27 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 			Name:  name,
 			Value: ctxVal,
 		})
+	}
+
+	return callInputs, nil
+}
+
+func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typed, rerr error) {
+	mod := fn.mod
+
+	lg := bklog.G(ctx).WithField("module", mod.Name()).WithField("function", fn.metadata.Name)
+	if fn.objDef != nil {
+		lg = lg.WithField("object", fn.objDef.Name)
+	}
+	ctx = bklog.WithLogger(ctx, lg)
+
+	// Capture analytics for the function call.
+	// Calls without function name are internal and excluded.
+	fn.recordCall(ctx)
+
+	callInputs, err := fn.setCallInputs(ctx, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to set call inputs: %w", err)
 	}
 
 	bklog.G(ctx).Debug("function call")
@@ -417,7 +431,7 @@ func (fn *ModuleFunction) linkDependencyBlobs(ctx context.Context, cacheResult *
 // For file, it will loa the directory containing the file and then query the file ID from this directory.
 //
 // This functions returns the ID of the loaded object.
-func (fn *ModuleFunction) loadContextualArg(ctx context.Context, dag *dagql.Server,arg *FunctionArg) (JSON, error) {
+func (fn *ModuleFunction) loadContextualArg(ctx context.Context, dag *dagql.Server, arg *FunctionArg) (JSON, error) {
 	if arg.TypeDef.Kind != TypeDefKindObject {
 		return nil, fmt.Errorf("contextual argument %q must be a Directory or a File", arg.OriginalName)
 	}

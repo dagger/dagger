@@ -1008,6 +1008,11 @@ export type ClientModuleSourceOpts = {
    * If true, enforce that the source is a stable version for source kinds that support versioning.
    */
   stable?: boolean
+
+  /**
+   * The relative path to the module root from the host directory
+   */
+  relHostPath?: string
 }
 
 export type ClientPipelineOpts = {
@@ -6355,6 +6360,7 @@ export class ListTypeDef extends BaseClient {
  */
 export class LocalModuleSource extends BaseClient {
   private readonly _id?: LocalModuleSourceID = undefined
+  private readonly _relHostPath?: string = undefined
   private readonly _rootSubpath?: string = undefined
 
   /**
@@ -6363,11 +6369,13 @@ export class LocalModuleSource extends BaseClient {
   constructor(
     parent?: { queryTree?: QueryTree[]; ctx: Context },
     _id?: LocalModuleSourceID,
+    _relHostPath?: string,
     _rootSubpath?: string,
   ) {
     super(parent)
 
     this._id = _id
+    this._relHostPath = _relHostPath
     this._rootSubpath = _rootSubpath
   }
 
@@ -6405,6 +6413,27 @@ export class LocalModuleSource extends BaseClient {
       ],
       ctx: this._ctx,
     })
+  }
+
+  /**
+   * The relative path to the module root from the host directory
+   */
+  relHostPath = async (): Promise<string> => {
+    if (this._relHostPath) {
+      return this._relHostPath
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "relHostPath",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
   }
 
   /**
@@ -8998,6 +9027,7 @@ export class Client extends BaseClient {
    * Create a new module source instance from a source ref string.
    * @param refString The string ref representation of the module source
    * @param opts.stable If true, enforce that the source is a stable version for source kinds that support versioning.
+   * @param opts.relHostPath The relative path to the module root from the host directory
    */
   moduleSource = (
     refString: string,

@@ -5396,6 +5396,11 @@ impl LocalModuleSource {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The relative path to the module root from the host directory
+    pub async fn rel_host_path(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("relHostPath");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// The path to the root of the module source under the context directory. This directory contains its configuration file. It also contains its source code (possibly as a subdirectory).
     pub async fn root_subpath(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("rootSubpath");
@@ -6191,7 +6196,10 @@ pub struct QueryModuleDependencyOpts<'a> {
     pub name: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct QueryModuleSourceOpts {
+pub struct QueryModuleSourceOpts<'a> {
+    /// The relative path to the module root from the host directory
+    #[builder(setter(into, strip_option), default)]
+    pub rel_host_path: Option<&'a str>,
     /// If true, enforce that the source is a stable version for source kinds that support versioning.
     #[builder(setter(into, strip_option), default)]
     pub stable: Option<bool>,
@@ -7214,15 +7222,18 @@ impl Query {
     ///
     /// * `ref_string` - The string ref representation of the module source
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn module_source_opts(
+    pub fn module_source_opts<'a>(
         &self,
         ref_string: impl Into<String>,
-        opts: QueryModuleSourceOpts,
+        opts: QueryModuleSourceOpts<'a>,
     ) -> ModuleSource {
         let mut query = self.selection.select("moduleSource");
         query = query.arg("refString", ref_string.into());
         if let Some(stable) = opts.stable {
             query = query.arg("stable", stable);
+        }
+        if let Some(rel_host_path) = opts.rel_host_path {
+            query = query.arg("relHostPath", rel_host_path);
         }
         ModuleSource {
             proc: self.proc.clone(),

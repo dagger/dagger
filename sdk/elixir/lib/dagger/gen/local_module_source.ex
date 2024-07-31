@@ -32,6 +32,15 @@ defmodule Dagger.LocalModuleSource do
     Client.execute(local_module_source.client, query_builder)
   end
 
+  @doc "The relative path to the module root from the host directory"
+  @spec rel_host_path(t()) :: {:ok, String.t()} | {:error, term()}
+  def rel_host_path(%__MODULE__{} = local_module_source) do
+    selection =
+      local_module_source.selection |> select("relHostPath")
+
+    execute(selection, local_module_source.client)
+  end
+
   @doc "The path to the root of the module source under the context directory. This directory contains its configuration file. It also contains its source code (possibly as a subdirectory)."
   @spec root_subpath(t()) :: {:ok, String.t()} | {:error, term()}
   def root_subpath(%__MODULE__{} = local_module_source) do

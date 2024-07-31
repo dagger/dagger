@@ -5077,6 +5077,27 @@ class LocalModuleSource(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(LocalModuleSourceID)
 
+    async def rel_host_path(self) -> str:
+        """The relative path to the module root from the host directory
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("relHostPath", _args)
+        return await _ctx.execute(str)
+
     async def root_subpath(self) -> str:
         """The path to the root of the module source under the context directory.
         This directory contains its configuration file. It also contains its
@@ -6892,6 +6913,7 @@ class Client(Root):
         ref_string: str,
         *,
         stable: bool | None = False,
+        rel_host_path: str | None = "",
     ) -> ModuleSource:
         """Create a new module source instance from a source ref string.
 
@@ -6902,10 +6924,13 @@ class Client(Root):
         stable:
             If true, enforce that the source is a stable version for source
             kinds that support versioning.
+        rel_host_path:
+            The relative path to the module root from the host directory
         """
         _args = [
             Arg("refString", ref_string),
             Arg("stable", stable, False),
+            Arg("relHostPath", rel_host_path, ""),
         ]
         _ctx = self._select("moduleSource", _args)
         return ModuleSource(_ctx)

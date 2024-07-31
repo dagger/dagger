@@ -604,12 +604,15 @@ class Client extends Client\AbstractClient
     /**
      * Create a new module source instance from a source ref string.
      */
-    public function moduleSource(string $refString, ?bool $stable = false): ModuleSource
+    public function moduleSource(string $refString, ?bool $stable = false, ?string $relHostPath = ''): ModuleSource
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('moduleSource');
         $innerQueryBuilder->setArgument('refString', $refString);
         if (null !== $stable) {
         $innerQueryBuilder->setArgument('stable', $stable);
+        }
+        if (null !== $relHostPath) {
+        $innerQueryBuilder->setArgument('relHostPath', $relHostPath);
         }
         return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
