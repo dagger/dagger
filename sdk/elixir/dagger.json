@@ -12,5 +12,5 @@
     "dagger_codegen/mix.lock"
   ],
   "source": "runtime",
-  "engineVersion": "v0.12.0"
+  "engineVersion": "v0.12.3"
 }

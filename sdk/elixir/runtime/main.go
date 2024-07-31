@@ -22,21 +22,41 @@ func New(
 	sdkSourceDir *dagger.Directory,
 ) *ElixirSdk {
 	if sdkSourceDir == nil {
-		sdkSourceDir = dag.CurrentModule().
-			Source().
-			Directory("..").
-			WithoutDirectory("runtime").
-			WithoutFile("dagger.json")
+		// TODO: Replace with a *default path from context* when
+		// https://github.com/dagger/dagger/pull/7744 becomes available.
+		sdkSourceDir = dag.Directory().
+			// NB: these patterns should match those in `dagger.json`.
+			// When `--sdk` points to a git remote the files aren't filtered
+			// using `dagger.json` include/exclude patterns since the whole
+			// repo is cloned. It's still useful to have the same patterns in
+			// `dagger.json` though, to avoid the unnecessary uploads when
+			// loading the SDK from a local path.
+			WithDirectory(
+				"/",
+				dag.CurrentModule().Source().Directory(".."),
+				dagger.DirectoryWithDirectoryOpts{
+					Include: []string{
+						"LICENSE",
+						"lib/**/*.ex",
+						".formatter.exs",
+						"mix.exs",
+						"mix.lock",
+						"dagger_codegen/lib/**/*.ex",
+						"dagger_codegen/mix.exs",
+						"dagger_codegen/mix.lock",
+					},
+				},
+			)
 	}
 	return &ElixirSdk{
-		SDKSourceDir:  sdkSourceDir,
+		SdkSourceDir:  sdkSourceDir,
 		RequiredPaths: []string{},
 		Container:     dag.Container(),
 	}
 }
 
 type ElixirSdk struct {
-	SDKSourceDir  *dagger.Directory
+	SdkSourceDir  *dagger.Directory
 	RequiredPaths []string
 
 	Container *dagger.Container
@@ -109,7 +129,7 @@ func (m *ElixirSdk) Common(ctx context.Context,
 
 func (m *ElixirSdk) Base(modSource *dagger.ModuleSource, subPath string) *ElixirSdk {
 	m.Container = m.baseContainer(m.Container).
-		WithMountedDirectory(sdkSrc, m.SDKSourceDir).
+		WithMountedDirectory(sdkSrc, m.SdkSourceDir).
 		WithMountedDirectory(ModSourceDirPath, modSource.ContextDirectory()).
 		WithWorkdir(path.Join(ModSourceDirPath, subPath))
 	return m
@@ -137,9 +157,9 @@ func (m *ElixirSdk) WithNewElixirPackage(ctx context.Context, modName string) *E
 	if !alreadyNewPackage {
 		m.Container = m.Container.
 			WithExec([]string{"mix", "new", "--sup", modName}).
-			WithExec([]string{"mkdir", "-p", modName + "/lib/mix/tasks"}).
-			// TODO: moved it to WithSource.
-			WithExec([]string{"elixir", "/sdk/template.exs", "generate", modName})
+			WithDirectory(modName+"/lib/mix/tasks", dag.Directory()).
+			WithMountedFile("/template.exs", dag.CurrentModule().Source().File("template.exs")).
+			WithExec([]string{"elixir", "/template.exs", "generate", modName})
 	}
 	return m
 }
@@ -150,21 +170,10 @@ func (m *ElixirSdk) WithSDK(introspectionJson *dagger.File) *ElixirSdk {
 		return m
 	}
 	m.Container = m.Container.
-		WithDirectory(genDir, m.SDKSourceDir, dagger.ContainerWithDirectoryOpts{
-			Include: []string{
-				".gitignore",
-				".gitattributes",
-				".formatter.exs",
-				"mix.exs",
-				"mix.lock",
-				"LICENSE",
-				"lib/**/*.ex",
-			},
-			Exclude: []string{
-				// We'll do generate code on the next step.
-				"lib/dagger/gen",
-			},
-		}).
+		WithDirectory(genDir, m.SdkSourceDir.
+			WithoutDirectory("dagger_codegen").
+			WithoutDirectory("lib/dagger/gen"),
+		).
 		WithDirectory(path.Join(genDir, "lib", "dagger", "gen"), m.GenerateCode(introspectionJson))
 	return m
 }
@@ -173,7 +182,7 @@ func (m *ElixirSdk) WithDaggerCodegen() *dagger.Container {
 	codegenPath := path.Join(sdkSrc, "dagger_codegen")
 	codegenDepsCache, codegenBuildCache := mixProjectCaches("dagger-codegen")
 	return m.baseContainer(dag.Container()).
-		WithMountedDirectory(sdkSrc, m.SDKSourceDir).
+		WithMountedDirectory(sdkSrc, m.SdkSourceDir).
 		WithMountedCache(path.Join(codegenPath, "deps"), codegenDepsCache).
 		WithMountedCache(path.Join(codegenPath, "_build"), codegenBuildCache).
 		WithWorkdir(codegenPath).
