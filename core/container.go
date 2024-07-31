@@ -30,7 +30,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/vektah/gqlparser/v2/ast"
 
-	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/buildkit"
@@ -161,13 +160,6 @@ func (container *Container) Clone() *Container {
 	cp.Services = cloneSlice(cp.Services)
 	cp.SystemEnvNames = cloneSlice(cp.SystemEnvNames)
 	return &cp
-}
-
-var _ pipeline.Pipelineable = (*Container)(nil)
-
-// PipelinePath returns the container's pipeline path.
-func (container *Container) PipelinePath() pipeline.Path {
-	return container.Query.Pipeline
 }
 
 // Ownership contains a UID/GID pair resolved from a user/group name or ID pair

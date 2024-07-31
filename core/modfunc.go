@@ -16,7 +16,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/analytics"
-	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/buildkit"
@@ -85,7 +84,6 @@ type CallOpts struct {
 	ParentTyped    dagql.Typed
 	ParentFields   map[string]any
 	Cache          bool
-	Pipeline       pipeline.Path
 	SkipSelfSchema bool
 }
 

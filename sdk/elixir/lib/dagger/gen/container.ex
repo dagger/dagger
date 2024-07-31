@@ -331,6 +331,7 @@ defmodule Dagger.Container do
     execute(selection, container.client)
   end
 
+  @deprecated "Explicit pipeline creation is now a no-op"
   @doc "Creates a named sub-pipeline."
   @spec pipeline(t(), String.t(), [
           {:description, String.t() | nil},

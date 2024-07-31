@@ -1759,6 +1759,7 @@ export class Container extends BaseClient {
    * @param name Name of the sub-pipeline.
    * @param opts.description Description of the sub-pipeline.
    * @param opts.labels Labels to apply to the sub-pipeline.
+   * @deprecated Explicit pipeline creation is now a no-op
    */
   pipeline = (name: string, opts?: ContainerPipelineOpts): Container => {
     return new Container({
@@ -3588,6 +3589,7 @@ export class Directory extends BaseClient {
    * @param name Name of the sub-pipeline.
    * @param opts.description Description of the sub-pipeline.
    * @param opts.labels Labels to apply to the sub-pipeline.
+   * @deprecated Explicit pipeline creation is now a no-op
    */
   pipeline = (name: string, opts?: DirectoryPipelineOpts): Directory => {
     return new Directory({
@@ -8859,6 +8861,7 @@ export class Client extends BaseClient {
    * @param name Name of the sub-pipeline.
    * @param opts.description Description of the sub-pipeline.
    * @param opts.labels Labels to apply to the sub-pipeline.
+   * @deprecated Explicit pipeline creation is now a no-op
    */
   pipeline = (name: string, opts?: ClientPipelineOpts): Client => {
     return new Client({

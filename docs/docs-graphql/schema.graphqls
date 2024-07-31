@@ -268,7 +268,7 @@ type Container {
 
     """Name of the sub-pipeline."""
     name: String!
-  ): Container!
+  ): Container! @deprecated(reason: "Explicit pipeline creation is now a no-op")
 
   """The platform this container executes and publishes as."""
   platform: Platform!
@@ -1138,7 +1138,7 @@ type Directory {
 
     """Name of the sub-pipeline."""
     name: String!
-  ): Directory!
+  ): Directory! @deprecated(reason: "Explicit pipeline creation is now a no-op")
 
   """Force evaluation in the engine."""
   sync: DirectoryID!
@@ -2552,7 +2552,7 @@ type Query {
 
     """Name of the sub-pipeline."""
     name: String!
-  ): Query!
+  ): Query! @deprecated(reason: "Explicit pipeline creation is now a no-op")
 
   """Reference a secret by name."""
   secret(accessor: String, name: String!): Secret!

@@ -19,7 +19,6 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"dagger.io/dagger/telemetry"
-	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/buildkit"
 )
@@ -110,12 +109,6 @@ func (dir *Directory) Clone() *Directory {
 	cp := *dir
 	cp.Services = cloneSlice(cp.Services)
 	return &cp
-}
-
-var _ pipeline.Pipelineable = (*Directory)(nil)
-
-func (dir *Directory) PipelinePath() pipeline.Path {
-	return dir.Query.Pipeline
 }
 
 func (dir *Directory) State() (llb.State, error) {
