@@ -6097,12 +6097,20 @@
                             <h5 class="field-arguments-heading"> Arguments </h5>
                             <div class="field-argument-list">
                               <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>defaultPath</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>If the argument is a Directory or File type, default to load path from context directory, relative to root directory.</p>
+                              </div>
+                              <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>defaultValue</code></span> - <span class="property-type"><a href="#definition-JSON"><code>JSON</code></a></span></h6>
                                 <p>A default value to use for this argument if not explicitly set by the caller, if any</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
                                 <p>A doc string for the argument, if any</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>ignore</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
+                                <p>Patterns to ignore when loading the contextual argument value.</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
@@ -6162,6 +6170,10 @@
                     </thead>
                     <tbody>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="FunctionArg-defaultPath" href="#FunctionArg-defaultPath"><code>defaultPath</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="FunctionArg-defaultValue" href="#FunctionArg-defaultValue"><code>defaultValue</code></a> - <span class="property-type"><a href="#definition-JSON"><code>JSON!</code></a></span> </td>
                         <td> A default value to use for this argument when not explicitly set by the caller, if any. </td>
                       </tr>
@@ -6172,6 +6184,10 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="FunctionArg-id" href="#FunctionArg-id"><code>id</code></a> - <span class="property-type"><a href="#definition-FunctionArgID"><code>FunctionArgID!</code></a></span> </td>
                         <td> A unique identifier for this FunctionArg. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="FunctionArg-ignore" href="#FunctionArg-ignore"><code>ignore</code></a> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span> </td>
+                        <td> Only applies to arguments of type Directory. The ignore patterns are applied to the input directory, and matching entries are filtered out, in a cache-efficient manner. </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="FunctionArg-name" href="#FunctionArg-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
@@ -8278,7 +8294,7 @@
                   <h5>Example</h5>
                   <html>
                     <head></head>
-                    <body><pre><code class="hljs language-json"><span class="hljs-punctuation">{</span><span class="hljs-attr">"backend"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">123</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">"frontend"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">123</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">"protocol"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"TCP"</span><span class="hljs-punctuation">}</span>
+                    <body><pre><code class="hljs language-json"><span class="hljs-punctuation">{</span><span class="hljs-attr">"backend"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">987</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">"frontend"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">123</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">"protocol"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"TCP"</span><span class="hljs-punctuation">}</span>
 </code></pre>
                     </body>
                   </html>

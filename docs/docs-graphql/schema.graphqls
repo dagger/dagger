@@ -1925,6 +1925,9 @@ type LocalModuleSource {
   """A unique identifier for this LocalModuleSource."""
   id: LocalModuleSourceID!
 
+  """The relative path to the module root from the host directory"""
+  relHostPath: String!
+
   """
   The path to the root of the module source under the context directory. This
   directory contains its configuration file. It also contains its source code
@@ -2580,6 +2583,9 @@ type Query {
   moduleSource(
     """The string ref representation of the module source"""
     refString: String!
+
+    """The relative path to the module root from the host directory"""
+    relHostPath: String = ""
 
     """
     If true, enforce that the source is a stable version for source kinds that support versioning.
