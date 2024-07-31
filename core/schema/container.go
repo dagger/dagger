@@ -43,6 +43,7 @@ func (s *containerSchema) Install() {
 				`It doesn't run the default command if no exec has been set.`),
 
 		dagql.Func("pipeline", s.pipeline).
+			Deprecated("Explicit pipeline creation is now a no-op").
 			Doc(`Creates a named sub-pipeline.`).
 			ArgDoc("name", "Name of the sub-pipeline.").
 			ArgDoc("description", "Description of the sub-pipeline.").

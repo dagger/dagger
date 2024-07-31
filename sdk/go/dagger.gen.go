@@ -800,6 +800,8 @@ type ContainerPipelineOpts struct {
 }
 
 // Creates a named sub-pipeline.
+//
+// Deprecated: Explicit pipeline creation is now a no-op
 func (r *Container) Pipeline(name string, opts ...ContainerPipelineOpts) *Container {
 	q := r.query.Select("pipeline")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -2491,6 +2493,8 @@ type DirectoryPipelineOpts struct {
 }
 
 // Creates a named sub-pipeline.
+//
+// Deprecated: Explicit pipeline creation is now a no-op
 func (r *Directory) Pipeline(name string, opts ...DirectoryPipelineOpts) *Directory {
 	q := r.query.Select("pipeline")
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -6806,6 +6810,8 @@ type PipelineOpts struct {
 }
 
 // Creates a named sub-pipeline.
+//
+// Deprecated: Explicit pipeline creation is now a no-op
 func (r *Client) Pipeline(name string, opts ...PipelineOpts) *Client {
 	q := r.query.Select("pipeline")
 	for i := len(opts) - 1; i >= 0; i-- {
