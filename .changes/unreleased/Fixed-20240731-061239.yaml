@@ -2,7 +2,7 @@ kind: Fixed
 body: |
     feat: extend multi git server support to Azure devOps
 
-    Our support for Azure refs is broken on monorepos, as Azure returns a 500 when we query a ref containing a subpath with `go-get=1`. Instead, we rely on regexes to infer the root of the repo and the subpath from the ref
+    Our support for Azure refs was broken on monorepos. We special-case Azure DevOps since it doesn't work with the go standard convention of discovering the root of a git repository
 time: 2024-07-31T06:12:39.205696046Z
 custom:
     Author: grouville

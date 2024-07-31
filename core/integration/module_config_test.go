@@ -1362,6 +1362,8 @@ type vcsTestCase struct {
 	expectedBaseHTMLURL string
 	// path separator to access `tree` view of src at commit, per provider
 	expectedURLPathComponent string
+	// Azure needs a path prefix
+	expectedPathPrefix string
 }
 
 var vcsTestCases = []vcsTestCase{
@@ -1373,6 +1375,7 @@ var vcsTestCases = []vcsTestCase{
 		expectedHost:             "github.com",
 		expectedBaseHTMLURL:      "github.com/dagger/dagger-test-modules",
 		expectedURLPathComponent: "tree",
+		expectedPathPrefix:       "",
 	},
 	{
 		name:                     "GitLab without .git",
@@ -1381,6 +1384,7 @@ var vcsTestCases = []vcsTestCase{
 		expectedHost:             "gitlab.com",
 		expectedBaseHTMLURL:      "gitlab.com/dagger-modules/test/more/dagger-test-modules-public",
 		expectedURLPathComponent: "tree",
+		expectedPathPrefix:       "",
 	},
 	{
 		name:                     "BitBucket without .git",
@@ -1389,6 +1393,7 @@ var vcsTestCases = []vcsTestCase{
 		expectedHost:             "bitbucket.org",
 		expectedBaseHTMLURL:      "bitbucket.org/dagger-modules/dagger-test-modules-public",
 		expectedURLPathComponent: "src",
+		expectedPathPrefix:       "",
 	},
 	{
 		name:                     "Azure DevOps without .git",
@@ -1397,6 +1402,7 @@ var vcsTestCases = []vcsTestCase{
 		expectedHost:             "dev.azure.com",
 		expectedBaseHTMLURL:      "dev.azure.com/daggere2e/public/_git/dagger-test-modules",
 		expectedURLPathComponent: "commit",
+		expectedPathPrefix:       "?path=",
 	},
 }
 
@@ -1429,12 +1435,7 @@ func (ModuleSuite) TestDaggerGitRefs(ctx context.Context, t *testctx.T) {
 
 			htmlURL, err := rootModSrc.AsGitSource().HTMLURL(ctx)
 			require.NoError(t, err)
-			var expectedURL string
-			if tc.expectedHost == "dev.azure.com" {
-				expectedURL = fmt.Sprintf("https://%s/%s/%s", tc.expectedBaseHTMLURL, tc.expectedURLPathComponent, tc.gitTestRepoCommit)
-			} else {
-				expectedURL = fmt.Sprintf("https://%s/%s/%s", tc.expectedBaseHTMLURL, tc.expectedURLPathComponent, tc.gitTestRepoCommit)
-			}
+			expectedURL := fmt.Sprintf("https://%s/%s/%s", tc.expectedBaseHTMLURL, tc.expectedURLPathComponent, tc.gitTestRepoCommit)
 			require.Equal(t, expectedURL, htmlURL)
 			resp, err := http.Get(htmlURL)
 			require.NoError(t, err)
@@ -1458,12 +1459,7 @@ func (ModuleSuite) TestDaggerGitRefs(ctx context.Context, t *testctx.T) {
 			topLevelModSrc := c.ModuleSource(testGitModuleRef(tc, "top-level"))
 			htmlURL, err := topLevelModSrc.AsGitSource().HTMLURL(ctx)
 			require.NoError(t, err)
-			var expectedURL string
-			if tc.expectedHost == "dev.azure.com" {
-				expectedURL = fmt.Sprintf("https://%s/%s/%s?path=/top-level", tc.expectedBaseHTMLURL, tc.expectedURLPathComponent, tc.gitTestRepoCommit)
-			} else {
-				expectedURL = fmt.Sprintf("https://%s/%s/%s/top-level", tc.expectedBaseHTMLURL, tc.expectedURLPathComponent, tc.gitTestRepoCommit)
-			}
+			expectedURL := fmt.Sprintf("https://%s/%s/%s%s/top-level", tc.expectedBaseHTMLURL, tc.expectedURLPathComponent, tc.gitTestRepoCommit, tc.expectedPathPrefix)
 			require.Equal(t, expectedURL, htmlURL)
 
 			resp, err := http.Get(htmlURL)
@@ -1488,12 +1484,7 @@ func (ModuleSuite) TestDaggerGitRefs(ctx context.Context, t *testctx.T) {
 			subdirDepModSrc := c.ModuleSource(testGitModuleRef(tc, "subdir/dep2"))
 			htmlURL, err := subdirDepModSrc.AsGitSource().HTMLURL(ctx)
 			require.NoError(t, err)
-			var expectedURL string
-			if tc.expectedHost == "dev.azure.com" {
-				expectedURL = fmt.Sprintf("https://%s/%s/%s?path=/subdir/dep2", tc.expectedBaseHTMLURL, tc.expectedURLPathComponent, tc.gitTestRepoCommit)
-			} else {
-				expectedURL = fmt.Sprintf("https://%s/%s/%s/subdir/dep2", tc.expectedBaseHTMLURL, tc.expectedURLPathComponent, tc.gitTestRepoCommit)
-			}
+			expectedURL := fmt.Sprintf("https://%s/%s/%s%s/subdir/dep2", tc.expectedBaseHTMLURL, tc.expectedURLPathComponent, tc.gitTestRepoCommit, tc.expectedPathPrefix)
 			require.Equal(t, expectedURL, htmlURL)
 
 			resp, err := http.Get(htmlURL)
