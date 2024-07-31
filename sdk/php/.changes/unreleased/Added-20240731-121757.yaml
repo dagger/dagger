@@ -1,0 +1,6 @@
+kind: Added
+body: Support Dagger Modules written in PHP
+time: 2024-07-31T12:17:57.600009Z
+custom:
+    Author: carnage
+    PR: "7493"
