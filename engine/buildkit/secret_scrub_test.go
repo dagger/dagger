@@ -106,6 +106,7 @@ func TestScrubSecretWrite(t *testing.T) {
 	envMap := map[string]string{
 		"secret1":      "secret1 value",
 		"secret2":      "secret2",
+		"secret2b":     "secret2 more",
 		"sshSecretKey": sshSecretKey,
 		"sshPublicKey": sshPublicKey,
 	}
@@ -118,6 +119,7 @@ func TestScrubSecretWrite(t *testing.T) {
 	secretEnvs := []string{
 		"secret1",
 		"secret2",
+		"secret2b",
 		"sshSecretKey",
 		"sshPublicKey",
 	}
@@ -127,6 +129,7 @@ func TestScrubSecretWrite(t *testing.T) {
 			"aaa\n" + sshSecretKey + "\nbbb\nccc": "aaa\n***\nbbb\nccc",
 			"aaa" + sshSecretKey + "bbb\nccc":     "aaa***bbb\nccc",
 			sshSecretKey:                          "***",
+			strings.TrimSpace(sshSecretKey):       "***",
 		} {
 			var buf bytes.Buffer
 			r, err := NewSecretScrubReader(&buf, env, secretEnvs, []string{})
@@ -138,6 +141,7 @@ func TestScrubSecretWrite(t *testing.T) {
 			require.Equal(t, expectedOutput, string(out))
 		}
 	})
+
 	t.Run("single line secret", func(t *testing.T) {
 		var buf bytes.Buffer
 		r, err := NewSecretScrubReader(&buf, env, secretEnvs, []string{})
@@ -159,9 +163,11 @@ func TestScrubSecretWrite(t *testing.T) {
 		inputLines := []string{
 			"secret1 value",
 			"secret2",
+			"secret2 more",
 			"nonsecret",
 		}
 		outputLines := []string{
+			"***",
 			"***",
 			"***",
 			"nonsecret",
@@ -513,6 +519,33 @@ func TestTrieExtend(t *testing.T) {
 	fmt.Println(trie)
 	require.Equal(t, []byte("bar"), trie.Step('f').Step('o').Step('o').Value())
 	require.Equal(t, []byte("bax"), trie.Step('f').Step('o').Step('o').Step('b').Value())
+
+	trie = Trie{}
+	trie.Insert([]byte("foo"), []byte("bar"))
+	trie.Insert([]byte("foobar"), []byte("qux"))
+	trie.Insert([]byte("foob"), []byte("bax"))
+	fmt.Println(trie)
+	require.Equal(t, []byte("bar"), trie.Step('f').Step('o').Step('o').Value())
+	require.Equal(t, []byte("bax"), trie.Step('f').Step('o').Step('o').Step('b').Value())
+	require.Equal(t, []byte("qux"), trie.Step('f').Step('o').Step('o').Step('b').Step('a').Step('r').Value())
+
+	trie = Trie{}
+	trie.Insert([]byte("foo"), []byte("bar"))
+	trie.Insert([]byte("foob"), []byte("bax"))
+	trie.Insert([]byte("foobar"), []byte("qux"))
+	fmt.Println(trie)
+	require.Equal(t, []byte("bar"), trie.Step('f').Step('o').Step('o').Value())
+	require.Equal(t, []byte("bax"), trie.Step('f').Step('o').Step('o').Step('b').Value())
+	require.Equal(t, []byte("qux"), trie.Step('f').Step('o').Step('o').Step('b').Step('a').Step('r').Value())
+
+	trie = Trie{}
+	trie.Insert([]byte("foo1"), []byte("bar"))
+	trie.Insert([]byte("foo2"), []byte("bax"))
+	trie.Insert([]byte("fax"), []byte("qux"))
+	fmt.Println(trie)
+	require.Equal(t, []byte("bar"), trie.Step('f').Step('o').Step('o').Step('1').Value())
+	require.Equal(t, []byte("bax"), trie.Step('f').Step('o').Step('o').Step('2').Value())
+	require.Equal(t, []byte("qux"), trie.Step('f').Step('a').Step('x').Value())
 }
 
 func TestTrieReinsert(t *testing.T) {
