@@ -1,11 +1,11 @@
 # Dagger PHP SDK
 
-You will require the Dagger engine setup locally.   
+You will require the Dagger engine setup locally.
 This guide assumes you have dagger up and running.
 
 ## Word of Warning
 
-Do not submit your modules to packagist.  
+Do not submit your modules to packagist.
 As composer dependencies; they will not work the way you expect.
 
 The intended workflow for reusable modules is to install them through the Dagger CLI.
@@ -48,7 +48,7 @@ You should find two functions:
 - echo
 - grep-dir
 
-These functions are written within `src/Example.php`.  
+These functions are written within `src/Example.php`.
 This aptly named file demonstrates how DaggerFunctions should be written.
 
 ```php
@@ -79,14 +79,14 @@ You'll notice it uses a function called `dag`; this is how you get the currently
 ### Call Module Functions
 
 ```text
-dagger call -m <path-to-module> echo  --value="hello world"
+dagger call -m <path-to-module> echo --value="hello world"
 ```
 
 ## How Dagger Finds Available Functions
 
 Dagger searches your `src/` directory for `Dagger Objects`, when it finds `Dagger Objects`, it searches them for `Dagger Functions`.
 
-That's it.  
+That's it.
 So you only need to know how to define a `Dagger Object` and a `Dagger Function`.
 
 ### Dagger Objects
@@ -134,7 +134,7 @@ class Example
          * - It has the DaggerFunction Attribute.
          */
     }
-    
+
     #[DaggerFunction('documentation for the function')]
     public function myDocumentedDaggerFunction(): void
     {
@@ -144,7 +144,7 @@ class Example
          * - It has the DaggerFunction Attribute.
          */
     }
-    
+
     private function myPublicMethod(): void
     {
         /**
@@ -152,7 +152,7 @@ class Example
          * - It is missing the DaggerFunction Attribute.
          */
     }
-    
+
     #[DaggerFunction]
     private function myPrivateMethodWithAPointlessAttribute(): void
     {
@@ -161,7 +161,7 @@ class Example
          * - It has private visibility.
          */
     }
-    
+
     private function myPrivateMethod(): void
     {
         /**
@@ -196,14 +196,14 @@ use Dagger\Attribute\Argument;
 class Example
 {
      //...
-     
+
      #[DaggerFunction]
      public function myCoolDaggerFunction(
          string $value,
      ): string {
          // do something...
      }
-     
+
      #[DaggerFunction]
      public function myEquallyCoolDaggerFunction(
          #[Argument]
@@ -211,7 +211,7 @@ class Example
      ): string {
          // do something...
      }
-     
+
      #[DaggerFunction('documentation for function')]
      public function myWellDocumentedDaggerFunction(
          #[Argument('documentation for argument')]
@@ -219,14 +219,14 @@ class Example
      ): string {
          // do something...
      }
-     
+
      // ...
 }
 ```
 
 #### Lists
 
-Lists must have their subtype specified.  
+Lists must have their subtype specified.
 Specifying subtypes on arguments MUST be done using the `ListOfType` attribute, do not rely on annotations for this.
 
 ```php
@@ -241,14 +241,14 @@ use Dagger\Attribute\ListOfType;
 
 #[DaggerObject]
 class Example
-{ 
+{
      #[DaggerFunction('The subtype of an array MUST be specified')]
      public function myInvalidList(
          array $value,
      ): string {
          // do something...
      }
-     
+
      /**
      * @param int[] $value
      */
@@ -258,7 +258,7 @@ class Example
      ): string {
          // do something...
      }
-     
+
      #[DaggerFunction('ListOfType attribute is supported')]
      public function myValidList(
          #[ListOfType('int')]
@@ -266,7 +266,7 @@ class Example
      ): string {
          // do something...
      }
-     
+
      // ...
 }
 ```
@@ -285,13 +285,13 @@ use Dagger\Attribute\ReturnsListOfType;
 
 #[DaggerObject]
 class Example
-{ 
+{
      #[DaggerFunction('The subtype of an array MUST be specified')]
      public function myInvalidList(): array
      {
          // do something...
      }
-     
+
      /**
      * @return int[]
      */
@@ -300,14 +300,14 @@ class Example
      {
          // do something...
      }
-     
+
      #[DaggerFunction('ReturnsListOfType attribute is supported')]
      #[ReturnsListOfType('int')]
      public function myValidList(): array 
      {
          // do something...
      }
-     
+
      // ...
 }
 ```
