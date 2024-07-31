@@ -11,7 +11,6 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/auth"
-	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
@@ -22,9 +21,6 @@ import (
 // dependencies for evaluating queries.
 type Query struct {
 	Server
-
-	// The current pipeline.
-	Pipeline pipeline.Path
 }
 
 var ErrNoCurrentModule = fmt.Errorf("no current module")
@@ -119,12 +115,7 @@ func (q Query) Clone() *Query {
 }
 
 func (q *Query) WithPipeline(name, desc string) *Query {
-	q = q.Clone()
-	q.Pipeline = q.Pipeline.Add(pipeline.Pipeline{
-		Name:        name,
-		Description: desc,
-	})
-	return q
+	return q.Clone()
 }
 
 func (q *Query) NewContainer(platform Platform) *Container {

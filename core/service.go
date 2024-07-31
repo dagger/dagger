@@ -19,7 +19,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"dagger.io/dagger/telemetry"
-	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
@@ -57,8 +56,6 @@ func (*Service) TypeDescription() string {
 	return "A content-addressed service providing TCP connectivity."
 }
 
-var _ pipeline.Pipelineable = (*Service)(nil)
-
 // Clone returns a deep copy of the container suitable for modifying in a
 // WithXXX method.
 func (svc *Service) Clone() *Service {
@@ -72,11 +69,6 @@ func (svc *Service) Clone() *Service {
 	cp.TunnelPorts = cloneSlice(cp.TunnelPorts)
 	cp.HostSockets = cloneSlice(cp.HostSockets)
 	return &cp
-}
-
-// PipelinePath returns the service's pipeline path.
-func (svc *Service) PipelinePath() pipeline.Path {
-	return svc.Query.Pipeline
 }
 
 func (svc *Service) Hostname(ctx context.Context, id *call.ID) (string, error) {
