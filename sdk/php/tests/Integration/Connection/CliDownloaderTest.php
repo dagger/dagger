@@ -1,16 +1,15 @@
 <?php
 
-namespace Dagger\Tests\Connection;
+namespace Dagger\Tests\Integration\Connection;
 
 use Dagger\Connection\CliDownloader;
 use Dagger\Connection\Provisioning;
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
+#[Group('integration')]
 class CliDownloaderTest extends TestCase
 {
-    /**
-     * @group functional
-     */
     public function testRealCliDownload(): void
     {
         $versionToDownload = Provisioning::getCliVersion();
