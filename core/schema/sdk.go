@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/opencontainers/go-digest"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/distconsts"
 )
 
@@ -92,8 +94,24 @@ func (s *moduleSchema) builtinSDK(ctx context.Context, root *core.Query, sdkName
 	case "typescript":
 		return s.loadBuiltinSDK(ctx, root, sdkName, digest.Digest(os.Getenv(distconsts.TypescriptSDKManifestDigestEnvName)))
 	default:
-		return nil, fmt.Errorf("%s: %w", sdkName, errUnknownBuiltinSDK)
+		sdkName, sdkVersion, hasVersion := strings.Cut(sdkName, "@")
+		if !hasVersion {
+			sdkVersion = engine.Tag
+		}
+		sdkSuffix := ""
+		if sdkVersion != "" {
+			sdkSuffix = "@" + sdkSuffix
+		}
+
+		switch sdkName {
+		case "elixir":
+			return s.sdkForModule(ctx, root, "github.com/dagger/dagger/sdk/elixir"+sdkSuffix, dagql.Instance[*core.ModuleSource]{})
+		case "php":
+			return s.sdkForModule(ctx, root, "github.com/dagger/dagger/sdk/php"+sdkSuffix, dagql.Instance[*core.ModuleSource]{})
+		}
 	}
+
+	return nil, fmt.Errorf("%s: %w", sdkName, errUnknownBuiltinSDK)
 }
 
 // moduleSDK is an SDK implemented as module; i.e. every module besides the special case go sdk.
