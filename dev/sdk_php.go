@@ -11,9 +11,12 @@ import (
 )
 
 const (
-	phpSDKPath         = "sdk/php"
-	phpSDKGeneratedDir = "generated"
-	phpSDKVersionFile  = "src/Connection/version.php"
+	phpSDKPath          = "sdk/php"
+	phpSDKImage         = "php:8.3-cli-alpine"
+	phpSDKDigest        = "sha256:e4ffe0a17a6814009b5f0713a5444634a9c5b688ee34b8399e7d4f2db312c3b4"
+	phpSDKComposerImage = "composer:2@sha256:6d2b5386580c3ba67399c6ccfb50873146d68fcd7c31549f8802781559bed709"
+	phpSDKGeneratedDir  = "generated"
+	phpSDKVersionFile   = "src/Connection/version.php"
 )
 
 type PHPSDK struct {
@@ -47,7 +50,7 @@ func (t PHPSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 		With(util.ShellCmds(
 			fmt.Sprintf("rm -f %s/*.php", phpSDKGeneratedDir),
 			"ls -lha",
-			"$_EXPERIMENTAL_DAGGER_CLI_BIN run ./codegen",
+			"$_EXPERIMENTAL_DAGGER_CLI_BIN run ./scripts/codegen.php",
 		)).
 		Directory(".")
 	return dag.Directory().WithDirectory(phpSDKPath, generated), nil
@@ -102,17 +105,14 @@ func (t PHPSDK) Bump(ctx context.Context, version string) (*dagger.Directory, er
 func (t PHPSDK) phpBase() *dagger.Container {
 	src := t.Dagger.Source().Directory(phpSDKPath)
 	return dag.Container().
-		From("php:8.2-zts-bookworm").
-		WithExec([]string{"apt-get", "update"}).
-		WithExec([]string{"apt-get", "install", "-y", "git", "unzip"}).
-		WithFile("/usr/bin/composer", dag.Container().
-			From("composer:2").
-			File("/usr/bin/composer"),
-		).
-		WithMountedCache("/root/.composer", dag.CacheVolume("composer-cache-8.2-zts-bookworm")).
+		From(fmt.Sprintf("%s@%s", phpSDKImage, phpSDKDigest)).
+		WithExec([]string{"apk", "add", "git"}).
+		WithFile("/usr/bin/composer", dag.Container().From(phpSDKComposerImage).File("/usr/bin/composer")).
+		WithMountedCache("/root/.composer", dag.CacheVolume(fmt.Sprintf("composer-%s", phpSDKImage))).
 		WithEnvVariable("COMPOSER_HOME", "/root/.composer").
+		WithEnvVariable("COMPOSER_NO_INTERACTION", "1").
 		WithEnvVariable("COMPOSER_ALLOW_SUPERUSER", "1").
-		WithWorkdir(fmt.Sprintf("/%s", phpSDKPath)).
+		WithWorkdir(fmt.Sprintf("/src/%s", phpSDKPath)).
 		WithFile("composer.json", src.File("composer.json")).
 		WithFile("composer.lock", src.File("composer.lock")).
 		WithExec([]string{"composer", "install"}).
