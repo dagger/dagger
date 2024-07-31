@@ -6556,6 +6556,7 @@ func (ModuleSuite) TestContextDirectory(ctx context.Context, t *testctx.T) {
 
 import (
   "context"
+	"dagger/test/internal/dagger"
 )
 
 type Test struct {}
@@ -6564,10 +6565,10 @@ func (t *Test) Dirs(
   ctx context.Context,
 
   // +defaultPath="/"
-  root *Directory,
+  root *dagger.Directory,
 
   // +defaultPath="."
-  relativeRoot *Directory,
+  relativeRoot *dagger.Directory,
 ) ([]string, error) {
   res, err := root.Entries(ctx)
   if err != nil {
@@ -6586,11 +6587,11 @@ func (t *Test) DirsIgnore(
 
   // +defaultPath="/"
   // +ignore=["!backend", "!frontend"]
-  root *Directory,
+  root *dagger.Directory,
 
   // +defaultPath="."
   // +ignore=["dagger.json", "LICENSE"]
-  relativeRoot *Directory,
+  relativeRoot *dagger.Directory,
 ) ([]string, error) {
   res, err := root.Entries(ctx)
   if err != nil {
@@ -6607,13 +6608,13 @@ func (t *Test) RootDirPath(
   ctx context.Context,
 
   // +defaultPath="/backend"
-  backend *Directory,
+  backend *dagger.Directory,
 
   // +defaultPath="/frontend"
-  frontend *Directory,
+  frontend *dagger.Directory,
 
   // +defaultPath="/ci/dagger/sub"
-  modSrcDir *Directory,
+  modSrcDir *dagger.Directory,
 ) ([]string, error) {
   backendFiles, err := backend.Entries(ctx)
   if err != nil {
@@ -6637,10 +6638,10 @@ func (t *Test) RelativeDirPath(
   ctx context.Context,
 
   // +defaultPath="./dagger/sub"
-  modSrcDir *Directory,
+  modSrcDir *dagger.Directory,
 
   // +defaultPath="../backend"
-  backend *Directory,
+  backend *dagger.Directory,
 ) ([]string, error) {
   modSrcDirFiles, err := modSrcDir.Entries(ctx)
   if err != nil {
@@ -6658,10 +6659,10 @@ func (t *Test) Files(
   ctx context.Context,
 
   // +defaultPath="/ci/LICENSE"
-  license *File,
+  license *dagger.File,
 
   // +defaultPath="./dagger/sub/sub.txt"
-  index *File,
+  index *dagger.File,
 ) ([]string, error) {
   licenseName, err := license.Name(ctx)
   if err != nil {
@@ -6815,7 +6816,8 @@ class Test {
 					WithDirectory("/work/backend", c.Directory().WithNewFile("foo.txt", "foo")).
 					WithDirectory("/work/frontend", c.Directory().WithNewFile("bar.txt", "bar")).
 					WithWorkdir("/work/ci").
-					With(daggerExec("init", "--name=test", "--sdk="+tc.sdk)).
+					With(daggerExec("init", "--name=test", "--sdk="+tc.sdk, "--source=dagger")).
+					WithWorkdir("/work/ci/dagger").
 					With(sdkSource(tc.sdk, tc.source)).
 					WithDirectory("/work/ci/dagger/sub", c.Directory().WithNewFile("sub.txt", "sub")).
 					WithWorkdir("/work")
@@ -6861,6 +6863,7 @@ class Test {
 
 import (
   "context"
+	"dagger/test/internal/dagger"
 )
 
 type Test struct {}
@@ -6869,10 +6872,10 @@ func (t *Test) Dirs(
   ctx context.Context,
 
   // +defaultPath="/"
-  root *Directory,
+  root *dagger.Directory,
 
   // +defaultPath="."
-  relativeRoot *Directory,
+  relativeRoot *dagger.Directory,
 ) ([]string, error) {
   res, err := root.Entries(ctx)
   if err != nil {
@@ -6890,13 +6893,13 @@ func (t *Test) RootDirPath(
   ctx context.Context,
 
   // +defaultPath="/backend"
-  backend *Directory,
+  backend *dagger.Directory,
 
   // +defaultPath="/frontend"
-  frontend *Directory,
+  frontend *dagger.Directory,
 
   // +defaultPath="/dagger/sub"
-  modSrcDir *Directory,
+  modSrcDir *dagger.Directory,
 ) ([]string, error) {
   backendFiles, err := backend.Entries(ctx)
   if err != nil {
@@ -6920,10 +6923,10 @@ func (t *Test) RelativeDirPath(
   ctx context.Context,
 
   // +defaultPath="./dagger/sub"
-  modSrcDir *Directory,
+  modSrcDir *dagger.Directory,
 
   // +defaultPath="./backend"
-  backend *Directory,
+  backend *dagger.Directory,
 ) ([]string, error) {
   modSrcDirFiles, err := modSrcDir.Entries(ctx)
   if err != nil {
@@ -6941,10 +6944,10 @@ func (t *Test) Files(
   ctx context.Context,
 
   // +defaultPath="/LICENSE"
-  license *File,
+  license *dagger.File,
 
   // +defaultPath="./dagger.json"
-  index *File,
+  index *dagger.File,
 ) ([]string, error) {
   licenseName, err := license.Name(ctx)
   if err != nil {
@@ -7077,9 +7080,11 @@ class Test {
 					WithWorkdir("/work").
 					WithDirectory("/work/backend", c.Directory().WithNewFile("foo.txt", "foo")).
 					WithDirectory("/work/frontend", c.Directory().WithNewFile("bar.txt", "bar")).
-					With(daggerExec("init", "--name=test", "--sdk="+tc.sdk)).
+					With(daggerExec("init", "--name=test", "--sdk="+tc.sdk, "--source=dagger")).
 					WithDirectory("/work/dagger/sub", c.Directory().WithNewFile("sub.txt", "sub")).
-					With(sdkSource(tc.sdk, tc.source))
+					WithWorkdir("/work/dagger").
+					With(sdkSource(tc.sdk, tc.source)).
+					WithWorkdir("/work")
 
 				t.Run("absolute and relative root context dir", func(ctx context.Context, t *testctx.T) {
 					out, err := modGen.With(daggerCall("dirs")).Stdout(ctx)
@@ -7116,6 +7121,7 @@ class Test {
 
 import (
 	"context"
+	"dagger/test/internal/dagger"
 )
 
 type Test struct {}
@@ -7124,7 +7130,7 @@ func (t *Test) TooHighRelativeDirPath(
 	ctx context.Context,
 
 	// +defaultPath="../../"
-	backend *Directory,
+	backend *dagger.Directory,
 ) ([]string, error) {
   // The engine should throw an error
 	return []string{}, nil
@@ -7134,7 +7140,7 @@ func (t *Test) NonExistingPath(
 	ctx context.Context,
 
 	// +defaultPath="/invalid"
-	dir *Directory,
+	dir *dagger.Directory,
 ) ([]string, error) {
   // The engine should throw an error
 	return []string{}, nil
@@ -7144,7 +7150,7 @@ func (t *Test) TooHighRelativeFilePath(
 	ctx context.Context,
 
 	// +defaultPath="../../file.txt"
-	backend *File,
+	backend *dagger.File,
 ) (string, error) {
   // The engine should throw an error
 	return "", nil
@@ -7154,7 +7160,7 @@ func (t *Test) NonExistingFile(
 	ctx context.Context,
 
 	// +defaultPath="/invalid"
-	file *File,
+	file *dagger.File,
 ) (string, error) {
   // The engine should throw an error
 	return "", nil
@@ -7242,21 +7248,23 @@ class Test {
 				modGen := goGitBase(t, c).
 					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 					WithWorkdir("/work").
-					With(daggerExec("init", "--name=test", "--sdk="+tc.sdk)).
-					With(sdkSource(tc.sdk, tc.source))
+					With(daggerExec("init", "--name=test", "--sdk="+tc.sdk, "--source=dagger")).
+					WithWorkdir("/work/dagger").
+					With(sdkSource(tc.sdk, tc.source)).
+					WithWorkdir("/work")
 
 				t.Run("too high relative context dir path", func(ctx context.Context, t *testctx.T) {
 					out, err := modGen.With(daggerCall("too-high-relative-dir-path")).Stdout(ctx)
 					require.Empty(t, out)
 					require.Error(t, err)
-					require.ErrorContains(t, err, `escapes workdir; use an absolute path instead`)
+					require.ErrorContains(t, err, `path should be relative to the context directory`)
 				})
 
 				t.Run("too high relative context file path", func(ctx context.Context, t *testctx.T) {
 					out, err := modGen.With(daggerCall("too-high-relative-file-path")).Stdout(ctx)
 					require.Empty(t, out)
 					require.Error(t, err)
-					require.ErrorContains(t, err, `escapes workdir; use an absolute path instead`)
+					require.ErrorContains(t, err, `path should be relative to the context directory`)
 				})
 
 				t.Run("non existing dir path", func(ctx context.Context, t *testctx.T) {

@@ -35,6 +35,7 @@ func (s *moduleSchema) Install() {
 		dagql.Func("moduleSource", s.moduleSource).
 			Doc(`Create a new module source instance from a source ref string.`).
 			ArgDoc("refString", `The string ref representation of the module source`).
+			ArgDoc("relHostPath", `The relative path to the module root from the host directory`).
 			ArgDoc("stable", `If true, enforce that the source is a stable version for source kinds that support versioning.`),
 
 		dagql.Func("moduleDependency", s.moduleDependency).
