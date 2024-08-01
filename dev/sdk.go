@@ -170,7 +170,8 @@ func gitPublish(ctx context.Context, opts gitPublishOpts) error {
 			WithEnvVariable("CACHEBUSTER", identity.NewID()).
 			WithWorkdir("/src/dagger").
 			WithExec([]string{"git", "clone", opts.dest, "."}).
-			WithExec([]string{"git", "switch", opts.destTag}).
+			WithExec([]string{"git", "fetch", "origin", "-v", "--update-head-ok", fmt.Sprintf("refs/*%[1]s:refs/*%[1]s", strings.TrimPrefix(opts.destTag, "refs/"))}).
+			WithExec([]string{"git", "checkout", opts.destTag, "--"}).
 			WithExec([]string{"git", "rev-parse", "HEAD"}).
 			Stdout(ctx)
 		if err != nil {
