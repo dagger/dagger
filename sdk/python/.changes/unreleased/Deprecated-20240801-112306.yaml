@@ -1,9 +1,0 @@
-kind: Deprecated
-body: |-
-    Top-level functions are deprecated in Modules
-
-    Dagger Functions (decorated with `@dagger.function`) that are not a part of an object will be unsupported in a future release. Move the Function to an instance method of a @dagger.object_type decorated class.
-time: 2024-08-01T11:23:06.413493Z
-custom:
-    Author: helderco
-    PR: "8074"
