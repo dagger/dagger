@@ -64,7 +64,7 @@ func (cli *CLI) Publish(
 	awsRegion *dagger.Secret,
 	awsBucket *dagger.Secret,
 
-	artefactsFQDN *dagger.Secret,
+	artefactsFQDN string,
 ) error {
 	args := []string{"release", "--clean", "--skip-validate", "--debug"}
 	if cli.Dagger.Tag != "" {
@@ -92,7 +92,7 @@ func (cli *CLI) Publish(
 		WithSecretVariable("AWS_SECRET_ACCESS_KEY", awsSecretAccessKey).
 		WithSecretVariable("AWS_REGION", awsRegion).
 		WithSecretVariable("AWS_BUCKET", awsBucket).
-		WithSecretVariable("ARTEFACTS_FQDN", artefactsFQDN).
+		WithEnvVariable("ARTEFACTS_FQDN", artefactsFQDN).
 		WithEnvVariable("ENGINE_VERSION", cli.Dagger.Version.String()).
 		WithEnvVariable("ENGINE_TAG", cli.Dagger.Tag).
 		With(func(ctr *dagger.Container) *dagger.Container {
