@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"golang.org/x/sync/errgroup"
 
@@ -81,10 +82,21 @@ func (cli *CLI) Publish(
 	if err != nil {
 		return err
 	}
-	_, err = ctr.
+	ctr = ctr.
 		WithWorkdir("/app").
 		WithMountedDirectory("/app", cli.Dagger.Source()).
-		WithDirectory("/app/.git", gitDir).
+		WithDirectory("/app/.git", gitDir)
+	_, err = ctr.WithExec([]string{"git", "show-ref", "--verify", "refs/tags/" + cli.Dagger.Tag}).Sync(ctx)
+	if err != nil {
+		err, ok := err.(*ExecError)
+		if !ok || !strings.Contains(err.Stderr, "not a valid ref") {
+			return err
+		}
+
+		ctr = ctr.WithExec([]string{"git", "tag", "0.0.0"})
+	}
+
+	_, err = ctr.
 		WithEnvVariable("GH_ORG_NAME", githubOrgName).
 		WithSecretVariable("GITHUB_TOKEN", githubToken).
 		WithSecretVariable("GORELEASER_KEY", goreleaserKey).
@@ -95,13 +107,6 @@ func (cli *CLI) Publish(
 		WithEnvVariable("ARTEFACTS_FQDN", artefactsFQDN).
 		WithEnvVariable("ENGINE_VERSION", cli.Dagger.Version.String()).
 		WithEnvVariable("ENGINE_TAG", cli.Dagger.Tag).
-		With(func(ctr *dagger.Container) *dagger.Container {
-			if cli.Dagger.Tag == "" {
-				// goreleaser refuses to run if there isn't a tag, so set it to a dummy but valid semver
-				return ctr.WithExec([]string{"git", "tag", "0.0.0"})
-			}
-			return ctr
-		}).
 		WithEntrypoint([]string{"/sbin/tini", "--", "/entrypoint.sh"}).
 		WithExec(args, dagger.ContainerWithExecOpts{
 			UseEntrypoint: true,
