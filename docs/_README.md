@@ -20,7 +20,12 @@ The doc URL will use the `slug` property from the doc markdown metadata.
 
 Given `slug: /1001/install/`, the live URL will be [devel.docs.dagger.io/1001/install](https://devel.docs.dagger.io/1001/install)
 
-It must be manually deployed to [docs.dagger.io](https://docs.dagger.io).
+It must be manually deployed to [docs.dagger.io](https://docs.dagger.io).Only a certain group of people can deploy via Netlify. For those with permission, follow these steps:
+
+1. Go to Nelify and login. If you are on the Dagger team and need creds, you need to make a request with Infra using the linear template.
+2. Go to "Dagger team" and click on "docs.dagger.io"
+3. Click on the latest commit box to see the deploy details
+4. Click on "publish deploy"
 
 ## How can I test my docs change/PR?
 
