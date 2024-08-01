@@ -227,6 +227,63 @@ func TestRepoRootForImportPath(t *testing.T) {
 				Root: "codeberg.org/workspace/pkgname",
 			},
 		},
+
+		// Azure DevOps
+		// short HTTPS ref, with format: user, org and where repo name == org name
+		{
+			"dev.azure.com/dagger-e2e/_git/dagger-modules-test-public/depth1/depth2",
+			&RepoRoot{
+				VCS:  vcsGit,
+				Repo: "https://dev.azure.com/dagger-e2e/_git/dagger-modules-test-public",
+				Root: "dev.azure.com/dagger-e2e/_git/dagger-modules-test-public",
+			},
+		},
+		{
+			"dev.azure.com/dagger-e2e/_git/dagger-modules-test-public.git/depth1/depth2",
+			&RepoRoot{
+				VCS:  vcsGit,
+				Repo: "https://dev.azure.com/dagger-e2e/_git/dagger-modules-test-public",
+				Root: "dev.azure.com/dagger-e2e/_git/dagger-modules-test-public.git",
+			},
+		},
+
+		// HTTPS ref, with format: user, org and repo name != org name
+		{
+			"dev.azure.com/daggere2e/public/_git/dagger-test-modules/depth1/depth2",
+			&RepoRoot{
+				VCS:  vcsGit,
+				Repo: "https://dev.azure.com/daggere2e/public/_git/dagger-test-modules",
+				Root: "dev.azure.com/daggere2e/public/_git/dagger-test-modules",
+			},
+		},
+		// ⚠️ Azure requires auth when cloning on this format, will have to be used conjointly with PAT
+		{
+			"dev.azure.com/daggere2e/public/_git/dagger-test-modules.git/depth1/depth2",
+			&RepoRoot{
+				VCS:  vcsGit,
+				Repo: "https://dev.azure.com/daggere2e/public/_git/dagger-test-modules",
+				Root: "dev.azure.com/daggere2e/public/_git/dagger-test-modules.git",
+			},
+		},
+
+		// SSH ref - new ref style
+		// https://learn.microsoft.com/en-us/azure/devops/repos/git/use-ssh-keys-to-authenticate?view=azure-devops
+		{
+			"ssh.dev.azure.com/v3/daggere2e/private/dagger-test-modules/depth1/depth2",
+			&RepoRoot{
+				VCS:  vcsGit,
+				Repo: "https://dev.azure.com/daggere2e/private/_git/dagger-test-modules",
+				Root: "ssh.dev.azure.com/v3/daggere2e/private/dagger-test-modules",
+			},
+		},
+		{
+			"ssh.dev.azure.com/v3/daggere2e/private/dagger-test-modules.git/depth1/depth2",
+			&RepoRoot{
+				VCS:  vcsGit,
+				Repo: "https://dev.azure.com/daggere2e/private/_git/dagger-test-modules",
+				Root: "ssh.dev.azure.com/v3/daggere2e/private/dagger-test-modules.git",
+			},
+		},
 	}
 
 	for _, test := range tests {
@@ -248,6 +305,9 @@ func TestRepoRootForImportPath(t *testing.T) {
 		}
 		if got.VCS.Name != want.VCS.Name || got.Repo != want.Repo {
 			t.Errorf("RepoRootForImportPath(%q) = VCS(%s) Repo(%s), want VCS(%s) Repo(%s)", test.path, got.VCS, got.Repo, want.VCS, want.Repo)
+		}
+		if got.Root != want.Root {
+			t.Errorf("RepoRootForImportPath(%q) = VCS(%s) Root(%s), want VCS(%s) Root(%s)", test.path, got.VCS, got.Root, want.VCS, want.Root)
 		}
 	}
 }

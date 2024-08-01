@@ -1,0 +1,9 @@
+kind: Fixed
+body: |
+    feat: extend multi git server support to Azure devOps
+
+    Our support for Azure refs was broken on monorepos. We special-case Azure DevOps since it doesn't work with the go standard convention of discovering the root of a git repository
+time: 2024-07-31T06:12:39.205696046Z
+custom:
+    Author: grouville
+    PR: "8063"
