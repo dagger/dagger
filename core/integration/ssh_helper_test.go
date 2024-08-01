@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/dagger/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -33,25 +34,32 @@ func setupPrivateRepoSSHAgent(t *testctx.T) (string, func()) {
 		t.Fatalf("Failed to create SSH agent socket: %v", err)
 	}
 
+	var logMu sync.Mutex
+	safeLog := func(format string, args ...interface{}) {
+		logMu.Lock()
+		defer logMu.Unlock()
+		t.Logf(format, args...)
+	}
+
 	go func() {
 		for {
 			conn, err := l.Accept()
 			if err != nil {
-				t.Logf("SSH agent l stopped: %v", err)
+				safeLog("SSH agent l stopped: %v", err)
 				return
 			}
 			go func() {
 				defer conn.Close()
 				err := agent.ServeAgent(sshAgent, conn)
 				if err != nil && err != io.EOF {
-					t.Logf("SSH agent error: %v", err)
+					safeLog("SSH agent error: %v", err)
 				}
 			}()
 		}
 	}()
 
 	cleanup := func() {
-		t.Logf("Cleaning up SSH agent: %s", sshAgentPath)
+		safeLog("Cleaning up SSH agent: %s", sshAgentPath)
 		l.Close()
 		os.RemoveAll(tmp)
 	}
