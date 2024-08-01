@@ -42,7 +42,7 @@ jobs:
       - name: "Publish Engine"
         uses: ./.github/actions/call
         with:
-          function: |
+          function: |-
             --version="$(cat /tmp/publish/version)" \
             --tag="$(cat /tmp/publish/tag)" \
             engine \
@@ -61,7 +61,7 @@ jobs:
       - name: "Publish Engine - Ubuntu with NVIDIA variant"
         uses: ./.github/actions/call
         with:
-          function: |
+          function: |-
             --version="$(cat /tmp/publish/version)" \
             --tag="$(cat /tmp/publish/tag)" \
             engine with-base --image=ubuntu --gpu-support=true \
@@ -80,7 +80,7 @@ jobs:
       - name: "Publish Engine - Wolfi variant"
         uses: ./.github/actions/call
         with:
-          function: |
+          function: |-
             --version="$(cat /tmp/publish/version)" \
             --tag="$(cat /tmp/publish/tag)" \
             engine with-base --image=wolfi \
@@ -99,7 +99,7 @@ jobs:
       - name: "Publish Engine - Wolfi with NVIDIA variant"
         uses: ./.github/actions/call
         with:
-          function: |
+          function: |-
             --version="$(cat /tmp/publish/version)" \
             --tag="$(cat /tmp/publish/tag)" \
             engine with-base --image=wolfi --gpu-support=true \
@@ -118,7 +118,7 @@ jobs:
       - name: "Publish CLI"
         uses: ./.github/actions/call
         with:
-          function: |
+          function: |-
             --version="$(cat /tmp/publish/version)" \
             --tag="$(cat /tmp/publish/tag)" \
             cli \
