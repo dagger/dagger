@@ -4,7 +4,6 @@ on:
     branches: ["main"]
     tags: ["v**"]
 
-  # Run tests in a PR when an SDK has a default CLI version bump
   pull_request:
     types:
       - opened
@@ -12,9 +11,10 @@ on:
       - reopened
       - ready_for_review
     paths:
-      - sdk/go/internal/engineconn/version.gen.go
-      - sdk/python/src/dagger/_engine/_version.py
-      - sdk/typescript/provisioning/default.ts
+      # run tests in a PR when an SDK is modified...
+      - ./sdk
+      # ...or when we are
+      - ./.github/workflows/engine-and-cli-publish.yml
 
 jobs:
   publish:
@@ -141,36 +141,6 @@ jobs:
           AWS_BUCKET: ${{ secrets.RELEASE_AWS_BUCKET }}
           ARTEFACTS_FQDN: ${{ vars.RELEASE_FQDN }}
           GORELEASER_KEY: ${{ secrets.GORELEASER_PRO_LICENSE_KEY }}
-      - name: "Bump SDK Engine Dependencies"
-        if: github.ref_name != 'main'
-        uses: ./.github/actions/call
-        with:
-          function: sdk all bump --version="${{ github.ref_name }}" -o ./
-      - name: "Set Engine version in Helm Chart"
-        if: github.ref_name != 'main'
-        uses: ./.github/actions/call
-        with:
-          function: helm set-version --version="${{ github.ref_name }}" -o ./helm/dagger/Chart.yaml
-      - name: "Open SDK Engine Dependencies PR"
-        uses: peter-evans/create-pull-request@v3
-        if: github.ref_name != 'main'
-        with:
-          add-paths: |
-            ./sdk/
-            ./helm/
-          committer: Dagger CI <hello@dagger.io>
-          author: Dagger CI <hello@dagger.io>
-          commit-message: "sdk: Bump engine dependency to ${{ github.ref_name }}"
-          signoff: true
-          base: main
-          title: "sdk: Bump engine dependency to ${{ github.ref_name }}"
-          body: |
-            This PR was auto-generated.
-          delete-branch: true
-          branch: bump-engine
-          draft: true
-          token: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
-          push-to-fork: dagger-ci/dagger
       - name: "Notify"
         uses: ./.github/actions/notify
         if: github.ref_name != 'main'
@@ -216,10 +186,17 @@ jobs:
               CHECKSUMS_URL="${BASE_URL}/releases/${GITHUB_REF_NAME:1}/checksums.txt"
               RUNNER_HOST="docker-image://${{ vars.RELEASE_DAGGER_ENGINE_IMAGE }}:${GITHUB_REF_NAME}"
             fi
-            echo "_INTERNAL_DAGGER_TEST_CLI_URL=${ARCHIVE_URL}" >> $GITHUB_ENV
-            echo "_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL=${CHECKSUMS_URL}" >> $GITHUB_ENV
-            echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=${RUNNER_HOST}" >> $GITHUB_ENV
+          else
+            BASE_URL="https://dl.dagger.io/dagger"
+
+            # this is a pr, just default to main artifacts
+            ARCHIVE_URL="${BASE_URL}/main/head/dagger_head_darwin_amd64.tar.gz"
+            CHECKSUMS_URL="${BASE_URL}/main/head/checksums.txt"
+            RUNNER_HOST="docker-image://registry.dagger.io/engine:main"
           fi
+          echo "_INTERNAL_DAGGER_TEST_CLI_URL=${ARCHIVE_URL}" >> $GITHUB_ENV
+          echo "_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL=${CHECKSUMS_URL}" >> $GITHUB_ENV
+          echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=${RUNNER_HOST}" >> $GITHUB_ENV
         shell: bash
       - name: "Install Docker"
         run: |
@@ -293,10 +270,17 @@ jobs:
               CHECKSUMS_URL="${BASE_URL}/releases/${GITHUB_REF_NAME:1}/checksums.txt"
               RUNNER_HOST="docker-image://${{ vars.RELEASE_DAGGER_ENGINE_IMAGE }}:${GITHUB_REF_NAME}"
             fi
-            echo "_INTERNAL_DAGGER_TEST_CLI_URL=${ARCHIVE_URL}" >> $GITHUB_ENV
-            echo "_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL=${CHECKSUMS_URL}" >> $GITHUB_ENV
-            echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=${RUNNER_HOST}" >> $GITHUB_ENV
+          else
+            BASE_URL="https://dl.dagger.io/dagger"
+
+            # this is a pr, just default to main artifacts
+            ARCHIVE_URL="${BASE_URL}/main/head/dagger_head_linux_amd64.tar.gz"
+            CHECKSUMS_URL="${BASE_URL}/main/head/checksums.txt"
+            RUNNER_HOST="docker-image://registry.dagger.io/engine:main"
           fi
+          echo "_INTERNAL_DAGGER_TEST_CLI_URL=${ARCHIVE_URL}" >> $GITHUB_ENV
+          echo "_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL=${CHECKSUMS_URL}" >> $GITHUB_ENV
+          echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=${RUNNER_HOST}" >> $GITHUB_ENV
         shell: bash
       - uses: actions/setup-go@v5
         with:
@@ -334,10 +318,17 @@ jobs:
               CHECKSUMS_URL="${BASE_URL}/releases/${GITHUB_REF_NAME:1}/checksums.txt"
               RUNNER_HOST="docker-image://${{ vars.RELEASE_DAGGER_ENGINE_IMAGE }}:${GITHUB_REF_NAME}"
             fi
-            echo "_INTERNAL_DAGGER_TEST_CLI_URL=${ARCHIVE_URL}" >> $GITHUB_ENV
-            echo "_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL=${CHECKSUMS_URL}" >> $GITHUB_ENV
-            echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=${RUNNER_HOST}" >> $GITHUB_ENV
+          else
+            BASE_URL="https://dl.dagger.io/dagger"
+
+            # this is a pr, just default to main artifacts
+            ARCHIVE_URL="${BASE_URL}/main/head/dagger_head_linux_amd64.tar.gz"
+            CHECKSUMS_URL="${BASE_URL}/main/head/checksums.txt"
+            RUNNER_HOST="docker-image://registry.dagger.io/engine:main"
           fi
+          echo "_INTERNAL_DAGGER_TEST_CLI_URL=${ARCHIVE_URL}" >> $GITHUB_ENV
+          echo "_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL=${CHECKSUMS_URL}" >> $GITHUB_ENV
+          echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=${RUNNER_HOST}" >> $GITHUB_ENV
         shell: bash
       - uses: yezz123/setup-uv@v4
         with:
@@ -375,10 +366,17 @@ jobs:
               CHECKSUMS_URL="${BASE_URL}/releases/${GITHUB_REF_NAME:1}/checksums.txt"
               RUNNER_HOST="docker-image://${{ vars.RELEASE_DAGGER_ENGINE_IMAGE }}:${GITHUB_REF_NAME}"
             fi
-            echo "_INTERNAL_DAGGER_TEST_CLI_URL=${ARCHIVE_URL}" >> $GITHUB_ENV
-            echo "_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL=${CHECKSUMS_URL}" >> $GITHUB_ENV
-            echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=${RUNNER_HOST}" >> $GITHUB_ENV
+          else
+            BASE_URL="https://dl.dagger.io/dagger"
+
+            # this is a pr, just default to main artifacts
+            ARCHIVE_URL="${BASE_URL}/main/head/dagger_head_linux_amd64.tar.gz"
+            CHECKSUMS_URL="${BASE_URL}/main/head/checksums.txt"
+            RUNNER_HOST="docker-image://registry.dagger.io/engine:main"
           fi
+          echo "_INTERNAL_DAGGER_TEST_CLI_URL=${ARCHIVE_URL}" >> $GITHUB_ENV
+          echo "_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL=${CHECKSUMS_URL}" >> $GITHUB_ENV
+          echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=${RUNNER_HOST}" >> $GITHUB_ENV
         shell: bash
       - uses: actions/setup-node@v2
         with:

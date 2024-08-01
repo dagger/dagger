@@ -14,7 +14,7 @@ import (
 
 const (
 	rustGeneratedAPIPath = "sdk/rust/crates/dagger-sdk/src/gen.rs"
-	rustVersionFilePath  = "sdk/rust/crates/dagger-sdk/src/core/mod.rs"
+	rustVersionFilePath  = "sdk/rust/crates/dagger-sdk/src/core/version.rs"
 
 	// https://hub.docker.com/_/rust
 	rustDockerStable = "rust:1.77-bookworm"

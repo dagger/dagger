@@ -44,8 +44,7 @@ func (p *Go) Base() *dagger.Container {
 			"go~" + p.Version,
 			// gcc is needed to run go test -race https://github.com/golang/go/issues/9918 (???)
 			"build-base",
-			// adding the git CLI to inject vcs info
-			// into the go binaries
+			// adding the git CLI to inject vcs info into the go binaries
 			"git",
 		}}).
 		WithEnvVariable("GOLANG_VERSION", p.Version).
