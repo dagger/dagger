@@ -5,22 +5,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
+	"github.com/containerd/containerd/metadata"
 	"github.com/containerd/containerd/mount"
 	"github.com/containerd/containerd/snapshots"
 	"github.com/moby/buildkit/cache"
-	bksnapshot "github.com/moby/buildkit/snapshot"
 	"github.com/moby/buildkit/solver/pb"
 )
 
-const SnapshotterName = "dagger-volume"
+const SnapshotterName = "daggervolume"
 
-// TODO: doc
-type VolumeSnapshotter struct {
-	rootDir string
-}
-
-func NewVolumeSnapshotter(ctx context.Context, rootDir string) (*VolumeSnapshotter, error) {
+func NewVolumeSnapshotter(ctx context.Context, rootDir string) (cache.CtdVolumeSnapshotter, error) {
 	// TODO: use consts/funcs, fix perms
 	if err := os.MkdirAll(rootDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create root dir: %w", err)
@@ -35,6 +31,34 @@ func NewVolumeSnapshotter(ctx context.Context, rootDir string) (*VolumeSnapshott
 	return &VolumeSnapshotter{rootDir: rootDir}, nil
 }
 
+// TODO: explain this mild wtf situation
+func VolumeSnapshotterFromMetaDB(db *metadata.DB, sn cache.CtdVolumeSnapshotter) cache.CtdVolumeSnapshotter {
+	return adapter{
+		Snapshotter: db.Snapshotter(sn.Name()),
+		base:        sn,
+	}
+}
+
+type adapter struct {
+	snapshots.Snapshotter
+	base cache.CtdVolumeSnapshotter
+}
+
+var _ cache.CtdVolumeSnapshotter = (*adapter)(nil)
+
+func (a adapter) Acquire(ctx context.Context, key string, sharingMode pb.CacheSharingOpt) (func() error, error) {
+	return a.base.Acquire(ctx, key, sharingMode)
+}
+
+func (a adapter) Name() string {
+	return a.base.Name()
+}
+
+// TODO: doc
+type VolumeSnapshotter struct {
+	rootDir string
+}
+
 var _ cache.CtdVolumeSnapshotter = (*VolumeSnapshotter)(nil)
 
 // TODO: implement snapshots.Cleaner interface?
@@ -44,6 +68,7 @@ func (sn *VolumeSnapshotter) Name() string {
 }
 
 func (sn *VolumeSnapshotter) Acquire(ctx context.Context, key string, sharingMode pb.CacheSharingOpt) (func() error, error) {
+	key = denamespaceKey(key)
 	snap, err := sn.getSnapshot(ctx, key)
 	if err != nil {
 		return nil, err
@@ -52,6 +77,7 @@ func (sn *VolumeSnapshotter) Acquire(ctx context.Context, key string, sharingMod
 }
 
 func (sn *VolumeSnapshotter) Mounts(ctx context.Context, key string) ([]mount.Mount, error) {
+	key = denamespaceKey(key)
 	snap, err := sn.getSnapshot(ctx, key)
 	if err != nil {
 		return nil, err
@@ -60,6 +86,7 @@ func (sn *VolumeSnapshotter) Mounts(ctx context.Context, key string) ([]mount.Mo
 }
 
 func (sn *VolumeSnapshotter) Prepare(ctx context.Context, key, parent string, opts ...snapshots.Opt) (_ []mount.Mount, rerr error) {
+	key = denamespaceKey(key)
 	// TODO: support parent
 	if parent != "" {
 		return nil, fmt.Errorf("parent snapshot is not supported")
@@ -71,10 +98,12 @@ func (sn *VolumeSnapshotter) Prepare(ctx context.Context, key, parent string, op
 	}
 
 	// TODO: mounts currently assumes you have acquired.. doesn't matter in buildkit usage but weird in general case
+	// TODO: could set readonly on these out of caution? Or plumb sharing mode through opts?
 	return snap.mounts(ctx)
 }
 
 func (sn *VolumeSnapshotter) Usage(ctx context.Context, key string) (snapshots.Usage, error) {
+	key = denamespaceKey(key)
 	snap, err := sn.getSnapshot(ctx, key)
 	if err != nil {
 		return snapshots.Usage{}, err
@@ -83,6 +112,7 @@ func (sn *VolumeSnapshotter) Usage(ctx context.Context, key string) (snapshots.U
 }
 
 func (sn *VolumeSnapshotter) Stat(ctx context.Context, key string) (snapshots.Info, error) {
+	key = denamespaceKey(key)
 	snap, err := sn.getSnapshot(ctx, key)
 	if err != nil {
 		return snapshots.Info{}, err
@@ -101,6 +131,7 @@ func (sn *VolumeSnapshotter) Update(ctx context.Context, info snapshots.Info, fi
 // TODO: remember to use errdefs.ErrFailedPrecondition if you can't remove it, to play nice with containerd gc.
 // same for other errdefs
 func (sn *VolumeSnapshotter) Remove(ctx context.Context, key string) error {
+	key = denamespaceKey(key)
 	snap, err := sn.getSnapshot(ctx, key)
 	if err != nil {
 		return err
@@ -110,6 +141,7 @@ func (sn *VolumeSnapshotter) Remove(ctx context.Context, key string) error {
 
 func (sn *VolumeSnapshotter) Walk(ctx context.Context, fn snapshots.WalkFunc, filters ...string) error {
 	// TODO: support filters
+
 	curSnaps, err := sn.currentSnapshots(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get current snapshots: %w", err)
@@ -140,6 +172,10 @@ func (sn *VolumeSnapshotter) Commit(ctx context.Context, name, key string, opts 
 	return fmt.Errorf("commit not supported")
 }
 
-func (sn *VolumeSnapshotter) Merge(ctx context.Context, key string, diffs []bksnapshot.Diff, opts ...snapshots.Opt) error {
-	return fmt.Errorf("merge not supported")
+// TODO: explain
+// TODO: could be more robust too
+func denamespaceKey(key string) string {
+	// we get keys from containerd in the form of "<namespace>/<incrementing int>/<actual key>", return <actual key>
+	split := strings.Split(key, "/")
+	return split[len(split)-1]
 }

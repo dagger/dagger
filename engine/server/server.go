@@ -310,6 +310,10 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		return nil, fmt.Errorf("failed to init metadata db: %w", err)
 	}
 
+	// subtle: if you don't get the snapshotter from the metadata db, you miss the wrapping
+	// which integrates it's metadata into the containerd GC
+	volumeSnapshotter = volume.VolumeSnapshotterFromMetaDB(srv.containerdMetaDB, volumeSnapshotter)
+
 	srv.leaseManager = leaseutil.WithNamespace(ctdmetadata.NewLeaseManager(srv.containerdMetaDB), "buildkit")
 	srv.workerCacheMetaDB, err = metadata.NewStore(srv.workerCacheMetaDBPath)
 	if err != nil {

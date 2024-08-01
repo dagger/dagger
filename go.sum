@@ -507,8 +507,8 @@ github.com/shibumi/go-pathspec v1.3.0 h1:QUyMZhFo0Md5B8zV8x2tesohbb5kfbpTi9rBnKh
 github.com/shibumi/go-pathspec v1.3.0/go.mod h1:Xutfslp817l2I1cZvgcfeMQJG5QnU2lh5tVaaMCl3jE=
 github.com/shurcooL/graphql v0.0.0-20220606043923-3cf50f8a0a29 h1:B1PEwpArrNp4dkQrfxh/abbBAOZBVp0ds+fBEOUOqOc=
 github.com/shurcooL/graphql v0.0.0-20220606043923-3cf50f8a0a29/go.mod h1:AuYgA5Kyo4c7HfUmvRGs/6rGlMMV/6B1bVnB9JxJEEg=
-github.com/sipsma/buildkit v0.6.1-0.20240731214417-058da208b3e2 h1:l52GNLEnnz1Vy8qWbJ61rNem9T2bRbVgyFD/v+2+8i4=
-github.com/sipsma/buildkit v0.6.1-0.20240731214417-058da208b3e2/go.mod h1:4CqHeDbLV/0j/fQPOVc57oqXxg25DMcIUzwPr2VMPBA=
+github.com/sipsma/buildkit v0.6.1-0.20240801050138-31e2bf9c5823 h1:0/FOLj8/ZV3VTnbMax8fCIqwvRzmNZTxOHWubvqbTQI=
+github.com/sipsma/buildkit v0.6.1-0.20240801050138-31e2bf9c5823/go.mod h1:4CqHeDbLV/0j/fQPOVc57oqXxg25DMcIUzwPr2VMPBA=
 github.com/sirupsen/logrus v1.2.0/go.mod h1:LxeOpSwHxABJmUn/MG1IvRgCAasNZTLOkJPxbbu5VWo=
 github.com/sirupsen/logrus v1.7.0/go.mod h1:yWOB1SBYBC5VeMP7gHvWumXLIWorT60ONWic61uBYv0=
 github.com/sirupsen/logrus v1.9.3 h1:dueUQJ1C2q9oE3F7wvmSGAaVtTmUizReu6fjN8uqzbQ=

@@ -100,11 +100,12 @@ func (sn *VolumeSnapshotter) getOrInitSnapshot(ctx context.Context, key string, 
 		return nil, fmt.Errorf("failed to create stage contents dir: %w", err)
 	}
 
+	now := time.Now().UTC()
 	initInfo := snapshots.Info{
 		Kind:    snapshots.KindActive,
 		Name:    key,
-		Created: time.Now().UTC(),
-		Updated: time.Now().UTC(),
+		Created: now,
+		Updated: now,
 	}
 	for _, opt := range opts {
 		if err := opt(&initInfo); err != nil {
@@ -188,6 +189,8 @@ func (s *snapshot) acquire(ctx context.Context, sharingMode pb.CacheSharingOpt) 
 	case pb.CacheSharingOpt_PRIVATE:
 		// TODO: handle differently than locked? Maybe return err and have caller create new throwaway one?
 		ok, err = lock.TryLockContext(ctx, flockRetryInterval)
+	default:
+		return nil, fmt.Errorf("unknown sharing mode: %v", sharingMode)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to acquire shared lock: %w", err)
@@ -388,11 +391,11 @@ func (s *snapshot) stageContentsDirPath() string {
 }
 
 func (s *snapshot) stageMetadataFilePath() string {
-	return filepath.Join(s.stageRootDir(), s.id+".json")
+	return filepath.Join(s.stageRootDir(), "metadata.json")
 }
 
 func (s *snapshot) stageSharingLockFilePath() string {
-	return filepath.Join(s.stageRootDir(), s.id+".sharing.lock")
+	return filepath.Join(s.stageRootDir(), "sharing.lock")
 }
 
 func (s *snapshot) rmDirPath() string {
