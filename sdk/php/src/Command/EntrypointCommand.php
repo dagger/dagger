@@ -8,6 +8,7 @@ use Dagger;
 use Dagger\Service\DecodesValue;
 use Dagger\Service\FindsDaggerObjects;
 use Dagger\Service\FindsSrcDirectory;
+use Dagger\Service\Serialisation;
 use Dagger\TypeDef;
 use Dagger\TypeDefKind;
 use Dagger\ValueObject\DaggerFunction;
@@ -28,21 +29,18 @@ use function Dagger\dag;
 #[AsCommand('dagger:entrypoint')]
 class EntrypointCommand extends Command
 {
+    private Serialisation\Serialiser $serialiser;
+
     protected function execute(
         InputInterface $input,
         OutputInterface $output
     ): int {
         $functionCall = dag()->currentFunctionCall();
-        $parentName = $functionCall->parentName();
 
         try {
-                return $parentName === '' ?
+                return $functionCall->parentName() === '' ?
                     $this->registerModule($functionCall) :
-                    $this->callFunctionOnParent(
-                        $output,
-                        $functionCall,
-                        $parentName,
-                    );
+                    $this->callFunctionOnParent($output, $functionCall);
         } catch (\Throwable $t) {
             $this->outputErrorInformation($input, $output, $t);
 
@@ -97,20 +95,23 @@ class EntrypointCommand extends Command
     private function callFunctionOnParent(
         OutputInterface $output,
         Dagger\FunctionCall $functionCall,
-        string $parentName
     ): int {
         $errorOutput = $output instanceof ConsoleOutputInterface ?
             $output->getErrorOutput() :
             $output;
 
-        $className = "DaggerModule\\$parentName";
+        $parentName = sprintf('DaggerModule\\%s', $functionCall->parentName());
         $functionName = $functionCall->name();
-        $class = new $className();
 
         $args = $this->formatArguments(
-            $className,
+            $parentName,
             $functionName,
             json_decode(json_encode($functionCall->inputArgs()), true)
+        );
+
+        $class = $this->getSerialiser()->deserialise(
+            (string) $functionCall->parent(),
+            $parentName
         );
 
         try {
@@ -128,15 +129,9 @@ class EntrypointCommand extends Command
                 Command::FAILURE;
         }
 
-        if ($result instanceof Dagger\Client\IdAble) {
-            $result = (string) $result->id();
-        }
+        $result = $this->getSerialiser()->serialise($result);
 
-        if ($result instanceof Dagger\Client\AbstractScalar) {
-            $result = (string) $result;
-        }
-
-        $functionCall->returnValue(new Dagger\Json(json_encode($result)));
+        $functionCall->returnValue(new Dagger\Json($result));
 
         return Command::SUCCESS;
     }
@@ -168,10 +163,7 @@ class EntrypointCommand extends Command
                     return $typeDef->withObject($type->getShortName());
                 }
 
-                throw new RuntimeException(sprintf(
-                    'Currently cannot handle custom classes: %s',
-                    $type->name
-                ));
+                return $typeDef->withObject($this->normalizeClassname($type->name));
             default:
                 throw new RuntimeException("No support exists for $type->name");
         }
@@ -215,6 +207,24 @@ class EntrypointCommand extends Command
         }
 
         return $result;
+    }
+
+    private function getSerialiser(): Serialisation\Serialiser
+    {
+        if (!isset($this->serialiser)) {
+            $this->serialiser = new Serialisation\Serialiser(
+                [
+                    new Serialisation\AbstractScalarSubscriber(),
+                    new Serialisation\IdableSubscriber(),
+                ],
+                [
+                    new Serialisation\AbstractScalarHandler(),
+                    new Serialisation\IdableHandler(dag()),
+                ],
+            );
+        }
+
+        return $this->serialiser;
     }
 
     private function outputErrorInformation(
