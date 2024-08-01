@@ -67,17 +67,6 @@ func (cli *CLI) Publish(
 
 	artefactsFQDN string,
 ) error {
-	args := []string{"release", "--clean", "--skip-validate", "--debug"}
-	if cli.Dagger.Tag != "" {
-		args = append(args, "--release-notes", fmt.Sprintf(".changes/%s.md", cli.Dagger.Tag))
-	} else {
-		// if this isn't an official semver version, do a dev release
-		args = append(args,
-			"--nightly",
-			"--config", ".goreleaser.nightly.yml",
-		)
-	}
-
 	ctr, err := publishEnv(ctx)
 	if err != nil {
 		return err
@@ -86,14 +75,30 @@ func (cli *CLI) Publish(
 		WithWorkdir("/app").
 		WithMountedDirectory("/app", cli.Dagger.Source()).
 		WithDirectory("/app/.git", gitDir)
-	_, err = ctr.WithExec([]string{"git", "show-ref", "--verify", "refs/tags/" + cli.Dagger.Tag}).Sync(ctx)
+
+	tag := cli.Dagger.Tag
+	_, err = ctr.WithExec([]string{"git", "show-ref", "--verify", "refs/tags/" + tag}).Sync(ctx)
 	if err != nil {
 		err, ok := err.(*ExecError)
 		if !ok || !strings.Contains(err.Stderr, "not a valid ref") {
 			return err
 		}
 
+		// clear the set tag
+		tag = ""
+		// goreleaser refuses to run if there isn't a tag, so set it to a dummy but valid semver
 		ctr = ctr.WithExec([]string{"git", "tag", "0.0.0"})
+	}
+
+	args := []string{"release", "--clean", "--skip-validate", "--debug"}
+	if tag != "" {
+		args = append(args, "--release-notes", fmt.Sprintf(".changes/%s.md", tag))
+	} else {
+		// if this isn't an official semver version, do a dev release
+		args = append(args,
+			"--nightly",
+			"--config", ".goreleaser.nightly.yml",
+		)
 	}
 
 	_, err = ctr.
