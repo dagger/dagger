@@ -184,6 +184,11 @@ func (t TypescriptSDK) Bump(ctx context.Context, version string) (*dagger.Direct
 	return dag.Directory().WithNewFile("sdk/typescript/provisioning/default.ts", engineReference), nil
 }
 
+// Generate the Typescript SDK changelogs
+func (t TypescriptSDK) GenerateChangelogs(ctx context.Context, version string, bumpEnginePR string) (*dagger.Directory, error) {
+	return t.Dagger.generateSDKChangelogs("sdk/typescript", version, bumpEnginePR)
+}
+
 func (t TypescriptSDK) nodeJsBase() *dagger.Container {
 	// Use the LTS version by default
 	return t.nodeJsBaseFromVersion(nodeVersionMaintenance)

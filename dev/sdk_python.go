@@ -166,3 +166,8 @@ func (t PythonSDK) Bump(ctx context.Context, version string) (*dagger.Directory,
 	// provision tests run whenever this file changes.
 	return dag.Directory().WithNewFile("sdk/python/src/dagger/_engine/_version.py", engineReference), nil
 }
+
+// Generate the Python SDK changelogs
+func (t PythonSDK) GenerateChangelogs(ctx context.Context, version string, bumpEnginePR string) (*dagger.Directory, error) {
+	return t.Dagger.generateSDKChangelogs(pythonSubdir, version, bumpEnginePR)
+}
