@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/dagger/dagger/dev/internal/build"
-	"github.com/dagger/dagger/dev/internal/consts"
 	"github.com/dagger/dagger/dev/internal/dagger"
 )
 
@@ -85,8 +84,9 @@ func (dev *DaggerDev) introspection(ctx context.Context, installer func(*dagger.
 	if err != nil {
 		return nil, err
 	}
-	return dag.Container().
-		From(consts.AlpineImage).
+	return dag.
+		Alpine().
+		Container().
 		With(installer).
 		WithFile("/usr/local/bin/codegen", builder.CodegenBinary()).
 		WithExec([]string{"codegen", "introspect", "-o", "/schema.json"}).

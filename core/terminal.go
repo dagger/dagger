@@ -14,7 +14,10 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/dagql/idtui"
-	"github.com/dagger/dagger/engine/distconsts"
+)
+
+const (
+	defaultTerminalImage = "index.docker.io/alpine:3.20.1"
 )
 
 type TerminalArgs struct {
@@ -172,7 +175,7 @@ func (dir *Directory) Terminal(
 		if err != nil {
 			return fmt.Errorf("failed to create terminal container: %w", err)
 		}
-		ctr, err = ctr.From(ctx, distconsts.AlpineImage)
+		ctr, err = ctr.From(ctx, defaultTerminalImage)
 		if err != nil {
 			return fmt.Errorf("failed to create terminal container: %w", err)
 		}

@@ -3,6 +3,10 @@
   "sdk": "go",
   "dependencies": [
     {
+      "name": "alpine",
+      "source": "alpine"
+    },
+    {
       "name": "dirdiff",
       "source": "dirdiff"
     },
@@ -29,6 +33,10 @@
     {
       "name": "shellcheck",
       "source": "shellcheck"
+    },
+    {
+      "name": "wolfi",
+      "source": "wolfi"
     }
   ],
   "source": ".",

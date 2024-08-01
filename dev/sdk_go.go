@@ -9,7 +9,6 @@ import (
 	"github.com/moby/buildkit/identity"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/dagger/dagger/dev/internal/consts"
 	"github.com/dagger/dagger/dev/internal/dagger"
 )
 
@@ -141,9 +140,11 @@ type gitPublishOpts struct {
 func gitPublish(ctx context.Context, opts gitPublishOpts) error {
 	base := opts.sourceEnv
 	if base == nil {
-		base = dag.Container().
-			From(consts.AlpineImage).
-			WithExec([]string{"apk", "add", "-U", "--no-cache", "git"})
+		base = dag.
+			Alpine(dagger.AlpineOpts{
+				Packages: []string{"git"},
+			}).
+			Container()
 	}
 
 	// FIXME: move this into std modules

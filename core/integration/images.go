@@ -3,7 +3,7 @@ package core
 import "github.com/dagger/dagger/engine/distconsts"
 
 const (
-	alpineImage = distconsts.AlpineImage
+	alpineImage = "index.docker.io/alpine:3.20.1"
 	golangImage = distconsts.GolangImage
 	debianImage = "debian:bookworm"
 	rhelImage   = "registry.access.redhat.com/ubi9/ubi"
