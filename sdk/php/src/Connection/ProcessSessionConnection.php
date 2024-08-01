@@ -10,6 +10,11 @@ use Psr\Log\NullLogger;
 use RuntimeException;
 use Symfony\Component\Process\Process;
 
+/**
+ * @deprecated
+ * dagger modules will always have the environment variables set
+ * so we don't need to download a CLI Client
+ */
 class ProcessSessionConnection extends Connection implements LoggerAwareInterface
 {
     private ?Process $sessionProcess;

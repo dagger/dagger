@@ -7,6 +7,11 @@ use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use RuntimeException;
 
+/**
+ * @deprecated
+ * dagger modules will always have the environment variables set
+ * so we don't need to download a CLI Client
+ */
 class CliDownloader implements LoggerAwareInterface
 {
     public const DAGGER_CLI_BIN_PREFIX = 'dagger-';
@@ -120,7 +125,7 @@ class CliDownloader implements LoggerAwareInterface
         $checksumMap = [];
 
         foreach ($checksumArray as $checksumLine) {
-            list($v, $k) = preg_split("/\s+/", $checksumLine, 2);
+            [$v, $k] = preg_split("/\s+/", $checksumLine, 2);
             $checksumMap[$k] = $v;
         }
 

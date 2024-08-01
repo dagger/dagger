@@ -71,7 +71,10 @@ func (m *PhpSdk) Codegen(
 	}
 	return dag.
 		GeneratedCode(ctr.Directory(ModSourcePath)).
-		WithVCSGeneratedPaths([]string{GenPath + "/**"}).
+		WithVCSGeneratedPaths([]string{
+			GenPath + "/**",
+			"entrypoint.php",
+		}).
 		WithVCSIgnoredPaths([]string{GenPath, "vendor"}), nil
 }
 
