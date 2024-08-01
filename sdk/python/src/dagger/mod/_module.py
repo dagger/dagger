@@ -9,6 +9,7 @@ import logging
 import textwrap
 import types
 import typing
+import warnings
 from collections import Counter, defaultdict
 from collections.abc import Callable, Mapping, MutableMapping
 from typing import Any, TypeAlias, TypeVar, cast
@@ -111,9 +112,19 @@ class Module:
                     if "." in qualname:
                         msg = (
                             f"Function “{qualname}” seems to be decorated in a "
-                            "class that's not itself decorated with @object_type"
+                            "class that is not itself decorated with @object_type"
                         )
                         raise UserError(msg)
+
+                    warnings.warn(
+                        (
+                            "Top-level functions are deprecated and will be "
+                            "removed in a future release. Move to an instance "
+                            "method of a @dagger.object_type decorated class."
+                        ),
+                        DeprecationWarning,
+                        stacklevel=1,
+                    )
 
                 if isinstance(resolver, FieldResolver):
                     msg = (
