@@ -28,7 +28,7 @@ kinds:
   - label: Fixed
   - label: Dependencies
 headerFormat: |
-  This SDK uses 🚙 Engine + 🚗 CLI version `{{.Env.ENGINE_VERSION}}`.[See what changed in that release]](https://github.com/dagger/dagger/releases/tag/{{.Env.ENGINE_VERSION}}).
+  This SDK uses 🚙 Engine + 🚗 CLI version `{{.Env.ENGINE_VERSION}}`. [See what changed in that release](https://github.com/dagger/dagger/releases/tag/{{.Env.ENGINE_VERSION}}).
   ⬢ https://crates.io/crates/dagger-sdk/{{ trimPrefix "v" .Version }}
   📒 https://docs.rs/dagger-sdk/{{ trimPrefix "v" .Version }}/dagger-sdk
 footerFormat: |
