@@ -2,11 +2,10 @@
   "name": "python-sdk-dev",
   "sdk": "python",
   "exclude": [
-    "**/.direnv",
     "**/.venv",
     "**/__pycache__",
     "**/.*cache",
-    "**/sdk"
+    "sdk"
   ],
   "dependencies": [
     {

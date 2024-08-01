@@ -5,7 +5,12 @@ dependencies = [
     "dagger-io",
 ]
 
+[tool.dagger]
+# Fix uv version so the dev module works both with released and dev CLI.
+uv-version = "0.2.32"
+
 [tool.uv]
+# Preview for workspace support (better workflow).
 preview = true
 
 [tool.uv.sources]

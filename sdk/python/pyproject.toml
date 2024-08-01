@@ -75,6 +75,7 @@ only-include = [
     "tests",
     "docs",
     "CHANGELOG.md",
+    "README.md",
 ]
 
 [tool.hatch.build.targets.wheel]
