@@ -96,7 +96,7 @@ func (cli *CLI) Publish(
 		WithEnvVariable("ENGINE_VERSION", cli.Dagger.Version.String()).
 		WithEnvVariable("ENGINE_TAG", cli.Dagger.Tag).
 		With(func(ctr *dagger.Container) *dagger.Container {
-			if cli.Dagger.Version.Tag == "" {
+			if cli.Dagger.Tag == "" {
 				// goreleaser refuses to run if there isn't a tag, so set it to a dummy but valid semver
 				return ctr.WithExec([]string{"git", "tag", "0.0.0"})
 			}
