@@ -417,6 +417,9 @@ cd ..
   - The worker runner versions (of the form `dagger-v<major>-<minor>-<patch>-<worker>`)
   - e.g. if bumping 0.12.2->0.12.3, can run `find .github/ -type f -exec sed -i 's/0-12-2/0-12-3/g; s/0\.12\.2/0\.12\.3/g' {} +`
 
+- [ ] Update `.changes/.next` with the next release number if known -
+     otherwise, make the file empty (but don't remove it).
+
 - [ ] Open a PR with the title `Improve Releasing during $ENGINE_VERSION`
 
 ```console

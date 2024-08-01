@@ -3,6 +3,8 @@ package engine
 import (
 	"fmt"
 	"os"
+	"slices"
+	"strings"
 
 	"golang.org/x/mod/semver"
 )
@@ -12,9 +14,11 @@ var (
 	//
 	// Note: this is filled at link-time.
 	//
-	// - For official tagged releases, this is simple semver like x.y.z
-	// - For builds off our repo's main branch, this is the git commit sha
-	// - For local dev builds, this is a content hash of the source directory
+	// - For official tagged releases, this is simple semver like vX.Y.Z
+	// - For builds off our repo's main branch, this is a pre-release of the
+	//   form vX.Y.Z-<timestamp>-<commit>
+	// - For local dev builds with no other specified version, this is a
+	//   pre-release of the form vX.Y.Z-<timestamp>-dev-<dirhash>
 	Version string
 
 	// MinimumEngineVersion is used by the client to determine the minimum
@@ -34,26 +38,42 @@ var (
 	MinimumModuleVersion = "v0.9.9"
 )
 
+var (
+	presemverModuleVersion = "v0.11.9"
+)
+
 func init() {
+	// The minimum version is greater than our current version this is weird,
+	// and shouldn't generally be intentional - but can happen if we set it to
+	// vX.Y.Z in anticipation of the next release being vX.Y.Z.
+	//
+	// To avoid this causing huge issues in dev builds no longer being able
+	// to connect to each other, in this scenario, we cap the minVersion at
+	// the current version.
+	if semver.Compare(Version, MinimumClientVersion) < 0 {
+		MinimumClientVersion = Version
+	}
+	if semver.Compare(Version, MinimumEngineVersion) < 0 {
+		MinimumEngineVersion = Version
+	}
+	if semver.Compare(Version, MinimumModuleVersion) < 0 {
+		MinimumModuleVersion = Version
+	}
+
 	// hack: dynamically populate version env vars
-	// we use these during tests, but not really for anything else
+	// we use these during tests, but not really for anything else - this is
+	// why it's okay to skip the previous validation
 	if v, ok := os.LookupEnv(DaggerVersionEnv); ok {
-		Version = v
+		Version = cleanVersion(v)
 	}
 	if v, ok := os.LookupEnv(DaggerMinimumVersionEnv); ok {
-		MinimumClientVersion = v
-		MinimumEngineVersion = v
-		MinimumModuleVersion = v
+		MinimumClientVersion = cleanVersion(v)
+		MinimumEngineVersion = cleanVersion(v)
+		MinimumModuleVersion = cleanVersion(v)
 	}
-
-	// normalize version strings
-	Version = normalizeVersion(Version)
-	MinimumClientVersion = normalizeVersion(MinimumClientVersion)
-	MinimumEngineVersion = normalizeVersion(MinimumEngineVersion)
-	MinimumModuleVersion = normalizeVersion(MinimumModuleVersion)
 }
 
-func normalizeVersion(v string) string {
+func cleanVersion(v string) string {
 	if semver.IsValid("v" + v) {
 		return "v" + v
 	}
@@ -61,14 +81,58 @@ func normalizeVersion(v string) string {
 }
 
 func CheckVersionCompatibility(version string, minVersion string) error {
-	if !semver.IsValid(version) {
-		return nil // probably a dev version
+	v := version
+	if isDevVersion(v) && isDevVersion(Version) {
+		// Both our version and our target version are dev versions - in this
+		// case, strip pre-release info from our target, we should pretend it's
+		// just the real thing here.
+		v = BaseVersion(v)
 	}
-	if !semver.IsValid(minVersion) {
-		return nil // probably a dev version
-	}
-	if semver.Compare(version, minVersion) < 0 {
+	if semver.Compare(v, minVersion) < 0 {
 		return fmt.Errorf("version %s does not meet required version %s", version, minVersion)
 	}
 	return nil
+}
+
+func CheckMaxVersionCompatibility(version string, maxVersion string) error {
+	v := version
+	if isDevVersion(v) && isDevVersion(Version) {
+		// see CheckVersionCompatibility
+		v = BaseVersion(v)
+	}
+	if semver.Compare(v, maxVersion) > 0 {
+		return fmt.Errorf("version %s is greater than supported version %s", version, maxVersion)
+	}
+	return nil
+}
+
+func NormalizeVersion(version string) string {
+	version = cleanVersion(version)
+	switch {
+	case version == "":
+		// if the target version is empty, this is weird, but probably because
+		// someone did a manual build - so just assume they know what they're
+		// doing, and set it to be the latest we know about
+		return Version
+	case !semver.IsValid(version):
+		// older versions of dagger don't all use semver, so if it's a
+		// non-semver version, assume it's v0.11.9 (not perfect, but it's a
+		// pretty good guess)
+		return presemverModuleVersion
+	default:
+		return version
+	}
+}
+
+func BaseVersion(version string) string {
+	version = strings.TrimSuffix(version, semver.Build(version))
+	version = strings.TrimSuffix(version, semver.Prerelease(version))
+	return version
+}
+
+func isDevVersion(version string) bool {
+	if version == "" {
+		return true
+	}
+	return slices.Contains(strings.Split(semver.Prerelease(version), "-"), "dev")
 }

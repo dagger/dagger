@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"golang.org/x/mod/semver"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/core"
@@ -745,9 +744,10 @@ func (s *moduleSchema) moduleWithSource(ctx context.Context, mod *core.Module, a
 	if err := engine.CheckVersionCompatibility(modCfg.EngineVersion, engine.MinimumModuleVersion); err != nil {
 		return nil, fmt.Errorf("module requires incompatible engine version: %w", err)
 	}
-	if err := engine.CheckVersionCompatibility(engine.Version, modCfg.EngineVersion); err != nil {
-		return nil, fmt.Errorf("module requires newer engine version: %w", err)
+	if err := engine.CheckMaxVersionCompatibility(modCfg.EngineVersion, engine.BaseVersion(engine.Version)); err != nil {
+		return nil, fmt.Errorf("module requires incompatible engine version: %w", err)
 	}
+
 	if err := s.updateDeps(ctx, mod, modCfg, src); err != nil {
 		return nil, fmt.Errorf("failed to update module dependencies: %w", err)
 	}
@@ -857,11 +857,7 @@ func (s *moduleSchema) updateDeps(
 			// this is needed so that a module's dependency on the core
 			// uses the correct schema version
 			dag := *coreMod.Dag
-			engineVersion := modCfg.EngineVersion
-			if !semver.IsValid(engineVersion) {
-				engineVersion = ""
-			}
-			dag.View = engineVersion
+			dag.View = engine.BaseVersion(engine.NormalizeVersion(modCfg.EngineVersion))
 			mod.Deps.Mods[i] = &CoreMod{Dag: &dag}
 		}
 	}
@@ -1075,26 +1071,24 @@ func (s *moduleSchema) updateDaggerConfig(
 		return nil, "", fmt.Errorf("failed to get module config: %w", err)
 	}
 	if !ok {
-		modCfg = &modules.ModuleConfig{}
+		modCfg = &modules.ModuleConfig{EngineVersion: engine.Version}
 	}
 
 	modCfg.Name = mod.OriginalName
 	modCfg.SDK = mod.SDKConfig
 	switch engineVersion {
+	case "":
+		if modCfg.EngineVersion == "" {
+			// older versions of dagger might not produce an engine version -
+			// so return the version that engineVersion was introduced in
+			modCfg.EngineVersion = engine.MinimumModuleVersion
+		}
 	case modules.EngineVersionLatest:
 		modCfg.EngineVersion = engine.Version
-	case "":
-		engineVersion, err := src.Self.ModuleEngineVersion(ctx)
-		if err != nil {
-			return nil, "", fmt.Errorf("failed to get module config: %w", err)
-		}
-		modCfg.EngineVersion = engineVersion
-		if modCfg.EngineVersion == "" {
-			modCfg.EngineVersion = engine.Version
-		}
 	default:
 		modCfg.EngineVersion = engineVersion
 	}
+	modCfg.EngineVersion = engine.NormalizeVersion(modCfg.EngineVersion)
 
 	sourceRootSubpath, err := src.Self.SourceRootSubpath()
 	if err != nil {

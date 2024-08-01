@@ -6,10 +6,10 @@ import (
 	"fmt"
 
 	"github.com/iancoleman/strcase"
+	"golang.org/x/mod/semver"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/introspection"
-	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 )
 
@@ -86,7 +86,10 @@ var AllVersion = dagql.AllView{}
 type AfterVersion string
 
 func (minVersion AfterVersion) Contains(version string) bool {
-	return engine.CheckVersionCompatibility(version, string(minVersion)) == nil
+	if version == "" {
+		return true
+	}
+	return semver.Compare(version, string(minVersion)) >= 0
 }
 
 // BeforeVersion is a view that checks if a target version is less than the
@@ -94,5 +97,8 @@ func (minVersion AfterVersion) Contains(version string) bool {
 type BeforeVersion string
 
 func (maxVersion BeforeVersion) Contains(version string) bool {
-	return engine.CheckVersionCompatibility(version, string(maxVersion)) != nil
+	if version == "" {
+		return false
+	}
+	return semver.Compare(version, string(maxVersion)) < 0
 }
