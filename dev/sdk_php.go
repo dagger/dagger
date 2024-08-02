@@ -35,7 +35,9 @@ func (t PHPSDK) Lint(ctx context.Context) error {
 
 // Test the PHP SDK
 func (t PHPSDK) Test(ctx context.Context) error {
-	return fmt.Errorf("not implemented")
+	src := t.Dagger.Source().Directory(phpSDKPath)
+	_, err := dag.PhpSDKDev().Tests(src).Sync(ctx)
+	return err
 }
 
 // Regenerate the PHP SDK API
