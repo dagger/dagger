@@ -211,7 +211,7 @@ module.exports = {
           "items": [
             {
               "type": "doc",
-              "id": "manual/functions/structure"
+              "id": "manual/functions/initialization-structure-packaging"
             },
             {
               "type": "doc",
