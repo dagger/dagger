@@ -1,0 +1,38 @@
+{
+  "description": "An active function call.",
+  "enumValues": [],
+  "fields": [
+    {
+      "args": [
+        {
+          "defaultValue": null,
+          "description": "JSON serialization of the return value.",
+          "name": "value",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "JSON",
+              "ofType": null
+            }
+          }
+        }
+      ],
+      "deprecationReason": null,
+      "description": "Set the return value of the function call to the provided value.",
+      "isDeprecated": false,
+      "name": "returnValue",
+      "type": {
+        "kind": "SCALAR",
+        "name": "Void",
+        "ofType": null
+      }
+    }
+  ],
+  "inputFields": [],
+  "interfaces": [],
+  "kind": "OBJECT",
+  "name": "FunctionCall",
+  "possibleTypes": []
+}

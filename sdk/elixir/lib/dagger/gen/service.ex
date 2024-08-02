@@ -109,7 +109,7 @@ defmodule Dagger.Service do
 
   @doc "Creates a tunnel that forwards traffic from the caller's network to this service."
   @spec up(t(), [{:ports, [Dagger.PortForward.t()]}, {:random, boolean() | nil}]) ::
-          {:ok, Dagger.Void.t() | nil} | {:error, term()}
+          :ok | {:error, term()}
   def up(%__MODULE__{} = service, optional_args \\ []) do
     selection =
       service.selection
@@ -117,6 +117,9 @@ defmodule Dagger.Service do
       |> maybe_put_arg("ports", optional_args[:ports])
       |> maybe_put_arg("random", optional_args[:random])
 
-    execute(selection, service.client)
+    case execute(selection, service.client) do
+      {:ok, _} -> :ok
+      error -> error
+    end
   end
 end

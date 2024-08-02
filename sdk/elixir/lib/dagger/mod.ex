@@ -114,9 +114,8 @@ defmodule Dagger.Mod do
          {:ok, parent_json} <- Dagger.FunctionCall.parent(fn_call),
          {:ok, parent} <- Jason.decode(parent_json),
          {:ok, input_args} <- Dagger.FunctionCall.input_args(fn_call),
-         {:ok, json} <- invoke(dag, parent, parent_name, fn_name, input_args),
-         {:ok, _} <- Dagger.FunctionCall.return_value(fn_call, json) do
-      :ok
+         {:ok, json} <- invoke(dag, parent, parent_name, fn_name, input_args) do
+      Dagger.FunctionCall.return_value(fn_call, json)
     else
       {:error, reason} ->
         IO.puts(inspect(reason))
