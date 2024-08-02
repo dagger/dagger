@@ -221,7 +221,7 @@ module.exports = {
           "label": "Dagger Functions",
           "link": {
             "type": "doc",
-            "id": "manual/functions/structure"
+            "id": "manual/functions/initialization-structure-packaging"
           },
           "collapsible": true,
           "collapsed": true,
