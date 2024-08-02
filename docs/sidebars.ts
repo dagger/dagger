@@ -128,6 +128,104 @@ module.exports = {
       "label": "Cookbook",
       "id": "cookbook/cookbook"
     },
+    //
+    {
+      "type": "category",
+      "label": "Manual",
+      "link": {
+        "type": "doc",
+        "id": "manual/index"
+      },
+      "collapsible": true,
+      "collapsed": true,
+      "items": [
+        {
+          "type": "doc",
+          "id": "manual/components"
+        },
+        {
+          "type": "category",
+          "label": "Dagger API",
+          "link": {
+            "type": "doc",
+            "id": "manual/api/index"
+          },
+          "collapsible": true,
+          "collapsed": true,
+          "items": [
+            {
+              "type": "doc",
+              "id": "manual/api/types-fields"
+            },
+            {
+              "type": "doc",
+              "id": "manual/api/state-representation"
+            },
+            {
+              "type": "doc",
+              "id": "manual/api/lazy-evaluation"
+            },
+            {
+              "type": "doc",
+              "id": "manual/api/requests"
+            },
+          ]
+        },
+        {
+          "type": "category",
+          "label": "Functions",
+          "link": {
+            "type": "doc",
+            "id": "manual/functions/modules"
+          },
+          "collapsible": true,
+          "collapsed": true,
+          "items": [
+            {
+              "type": "doc",
+              "id": "manual/functions/modules"
+            },
+          ],
+        },
+        {
+          "type": "category",
+          "label": "Advanced Topics",
+          "link": {
+            "type": "doc",
+            "id": "manual/functions/modules"
+          },
+          "collapsible": true,
+          "collapsed": true,
+          "items": [
+            {
+              "type": "doc",
+              "id": "manual/functions/entrypoint-function"
+            },
+            {
+              "type": "doc",
+              "id": "manual/functions/custom-types"
+            },
+            {
+              "type": "doc",
+              "id": "manual/functions/state-functions"
+            },
+            {
+              "type": "doc",
+              "id": "manual/functions/interfaces"
+            },
+            {
+              "type": "doc",
+              "id": "manual/functions/runtimes"
+            },
+            {
+              "type": "doc",
+              "id": "manual/functions/language-dependencies"
+            },
+          ],
+        },
+      ]
+    },
+    /*
     {
       "type": "category",
       "label": "User Manual",
@@ -518,6 +616,7 @@ module.exports = {
         }
       ]
     },
+    */
     {
       "type": "doc",
       "label": "CLI Reference",
