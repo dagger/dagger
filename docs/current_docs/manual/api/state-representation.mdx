@@ -4,6 +4,8 @@ displayed_sidebar: "current"
 toc_max_heading_level: 2
 ---
 
+import Embed from "@site/src/components/embed.js"
+
 # State Representation
 
 In a GraphQL schema, every object exposes an `id` field. This ID serves to uniquely identify and retrieve an object, and is also used by GraphQL's caching mechanism.
@@ -12,45 +14,15 @@ In the Dagger GraphQL API too, objects expose an ID but here, the ID represents 
 
 To illustrate this, consider the following query:
 
-```graphql
-query {
-  host {
-    directory(path: ".") {
-      id
-    }
-  }
-}
-```
+<Embed id="8I0c_SMKQbj"/>
 
-The return value of the previous query is an ID representing the state of the current directory on the host, like this:
-
-```graphql
-{
- "data": {
-  "host": {
-   "directory": {
-    "id": "eyJsbGIiOnsiZGVm...n19"
-   }
-  }
- }
-}
-```
+The return value of the previous query is an ID representing the state of the current directory on the host
 
 By using object IDs to represesent object state, Dagger's GraphQL API enables some very powerful features. For example, you can save this state and reference it elsewhere (even in a different Dagger Function). You can then continue updating the state from the point you left off, or use it an input to another query.
 
 To make this clearer, consider the following query:
 
-```graphql
-query {
-  container {
-    from(address: "alpine:latest") {
-      withExec(args: ["touch", "/tmp/myfile"]) {
-        id
-      }
-    }
-  }
-}
-```
+<Embed id="PE1GJrfZODq"/>
 
 This query instructs Dagger to:
 
@@ -60,31 +32,10 @@ This query instructs Dagger to:
 
 The output of this query is an identifier representing the state of the container filesystem and Dagger's execution plan.
 
-```graphql
-{
- "data": {
-  "container": {
-   "from": {
-    "withExec": {
-     "id": "eyJmcyI6ey...9fQ=="
-    }
-   }
-  }
- }
-}
-```
 
 Now, execute a second query as follows, replacing the placeholder with the contents of the `id` field from the previous query:
 
-```graphql
-query {
-  container(id: "YOUR-ID-HERE") {
-    withExec(args: ["ls", "/tmp"]) {
-      stdout
-    }
-  }
-}
-```
+<Embed id="DKUH7PI5Yt0"/>
 
 This second query instructs Dagger to:
 

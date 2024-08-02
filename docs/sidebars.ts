@@ -154,17 +154,62 @@ module.exports = {
           "collapsed": true,
           "items": [
             {
-              "type": "doc",
-              "id": "manual/api/types-fields"
+              "type": "category",
+              "label": "Concepts",
+              "link": {
+                "type": "doc",
+                "id": "manual/api/index"
+              },
+              "collapsible": true,
+              "collapsed": true,
+              items: [
+                {
+                  "type": "doc",
+                  "id": "manual/api/types-fields"
+                },
+                {
+                  "type": "doc",
+                  "id": "manual/api/state-representation"
+                },
+                {
+                  "type": "doc",
+                  "id": "manual/api/lazy-evaluation"
+                },
+              ],
             },
             {
-              "type": "doc",
-              "id": "manual/api/state-representation"
+              "type": "category",
+              "label": "Types",
+              "link": {
+                "type": "doc",
+                "id": "manual/api/types"
+              },
+              "collapsible": true,
+              "collapsed": true,
+              items: [
+                {
+                  "type": "doc",
+                  "id": "manual/api/container"
+                },
+                {
+                  "type": "doc",
+                  "id": "manual/api/directory"
+                },
+                {
+                  "type": "doc",
+                  "id": "manual/api/file"
+                },
+                {
+                  "type": "doc",
+                  "id": "manual/api/service"
+                },
+                {
+                  "type": "doc",
+                  "id": "manual/api/secret"
+                },
+              ],
             },
-            {
-              "type": "doc",
-              "id": "manual/api/lazy-evaluation"
-            },
+
             {
               "type": "doc",
               "id": "manual/api/requests"
@@ -173,17 +218,57 @@ module.exports = {
         },
         {
           "type": "category",
-          "label": "Functions",
+          "label": "Dagger Functions",
           "link": {
             "type": "doc",
-            "id": "manual/functions/modules"
+            "id": "manual/functions/structure"
           },
           "collapsible": true,
           "collapsed": true,
           "items": [
             {
               "type": "doc",
-              "id": "manual/functions/modules"
+              "id": "manual/functions/structure"
+            },
+            {
+              "type": "doc",
+              "id": "manual/functions/execution-environment"
+            },
+            {
+              "type": "doc",
+              "id": "manual/functions/arguments-return-values"
+            },
+            {
+              "type": "doc",
+              "id": "manual/functions/ide-integration"
+            },
+            {
+              "type": "doc",
+              "id": "manual/functions/chaining"
+            },
+            {
+              "type": "doc",
+              "id": "manual/functions/documentation"
+            },
+            {
+              "type": "doc",
+              "id": "manual/functions/secrets"
+            },
+            {
+              "type": "doc",
+              "id": "manual/functions/services"
+            },
+            {
+              "type": "doc",
+              "id": "manual/functions/cache-volumes"
+            },
+            {
+              "type": "doc",
+              "id": "manual/functions/error-handling"
+            },
+            {
+              "type": "doc",
+              "id": "manual/functions/debugging"
             },
           ],
         },
@@ -192,7 +277,7 @@ module.exports = {
           "label": "Advanced Topics",
           "link": {
             "type": "doc",
-            "id": "manual/functions/modules"
+            "id": "manual/functions/entrypoint-function"
           },
           "collapsible": true,
           "collapsed": true,
@@ -221,7 +306,27 @@ module.exports = {
               "type": "doc",
               "id": "manual/functions/language-dependencies"
             },
+            {
+              "type": "doc",
+              "id": "manual/engine/custom-ca"
+            },
+            {
+              "type": "doc",
+              "id": "manual/engine/custom-registry"
+            },
+            {
+              "type": "doc",
+              "id": "manual/engine/custom-runner"
+            },
+            {
+              "type": "doc",
+              "id": "manual/engine/proxy"
+            },
           ],
+        },
+        {
+          "type": "doc",
+          "id": "manual/known-issues"
         },
       ]
     },
