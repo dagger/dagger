@@ -476,10 +476,14 @@ func (ps *PubSub) sseHandler(w http.ResponseWriter, r *http.Request, client *dag
 			select {
 			case <-time.After(telemetry.NearlyImmediate):
 				// Poll for more data at the same frequency that it's batched and saved.
-				// SQLite should be able to handle this just fine.
+				// SQLite should be able to handle aggressive polling just fine.
+				// Synchronizing with writes isn't worth the accompanying risk of hangs.
 			case <-client.shutdownCh:
 				// Client is shutting down; next time we receive no data, we'll exit.
 				terminating = true
+			case <-r.Context().Done():
+				// Client went away, no point hanging around.
+				return nil
 			}
 			continue
 		}
