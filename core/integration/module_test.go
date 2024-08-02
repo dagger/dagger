@@ -7053,7 +7053,7 @@ class Test {
 				t.Run("absolute and relative root context dir", func(ctx context.Context, t *testctx.T) {
 					out, err := modGen.With(daggerCallAt("ci", "dirs")).Stdout(ctx)
 					require.NoError(t, err)
-					require.Equal(t, "backend\nci\nfrontend\nLICENSE\ndagger\ndagger.json\n", out)
+					require.Equal(t, ".git\nbackend\nci\nfrontend\nLICENSE\ndagger\ndagger.json\n", out)
 				})
 
 				t.Run("dir ignore", func(ctx context.Context, t *testctx.T) {
@@ -7317,7 +7317,7 @@ class Test {
 				t.Run("absolute and relative root context dir", func(ctx context.Context, t *testctx.T) {
 					out, err := modGen.With(daggerCall("dirs")).Stdout(ctx)
 					require.NoError(t, err)
-					require.Equal(t, "LICENSE\nbackend\ndagger\ndagger.json\nfrontend\nLICENSE\nbackend\ndagger\ndagger.json\nfrontend\n", out)
+					require.Equal(t, ".git\nLICENSE\nbackend\ndagger\ndagger.json\nfrontend\n.git\nLICENSE\nbackend\ndagger\ndagger.json\nfrontend\n", out)
 				})
 
 				t.Run("absolute context dir subpath", func(ctx context.Context, t *testctx.T) {
