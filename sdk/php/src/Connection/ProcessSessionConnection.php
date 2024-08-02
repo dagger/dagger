@@ -87,8 +87,8 @@ class ProcessSessionConnection extends Connection implements LoggerAwareInterfac
         $port = $sessionInformation->port;
         $token = $sessionInformation->session_token;
 
-        $this->client = new Client('http://127.0.0.1:'.$port.'/query', [
-            'Authorization' => 'Basic '.base64_encode($token.':'),
+        $this->client = new Client('http://127.0.0.1:' . $port . '/query', [
+            'Authorization' => 'Basic ' . base64_encode($token . ':'),
         ]);
 
         $this->sessionProcess = $process;

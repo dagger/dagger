@@ -37,7 +37,6 @@ final readonly class AbstractScalarHandler implements SubscribingHandlerInterfac
                 'method' => 'deserialise'
             ],
         ];
-
     }
 
     public function serialise(

@@ -13,7 +13,6 @@ use Symfony\Component\Console\Output\OutputInterface;
 #[AsCommand('dagger:generate-module-classname')]
 class GenerateModuleClassnameCommand extends Command
 {
-
     public function configure(): void
     {
         $this->addArgument('classname', InputArgument::REQUIRED, 'Classname for the module');

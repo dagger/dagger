@@ -24,7 +24,7 @@ class CodeWriter
 
         $filePath = implode(DIRECTORY_SEPARATOR, [
            $this->targetDirectory,
-           $classType->getName().'.php',
+           $classType->getName() . '.php',
         ]);
 
         $printer = new PsrPrinter();

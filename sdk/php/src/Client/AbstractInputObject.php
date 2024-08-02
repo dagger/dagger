@@ -32,7 +32,7 @@ abstract class AbstractInputObject implements Stringable
                 // Convert PHP array to its array representation in graphql arguments
                 $value = StringLiteralFormatter::formatArrayForGQLQuery($value);
             }
-            $objectString .= $name.': '.$value;
+            $objectString .= $name . ': ' . $value;
         }
         $objectString .= '}';
 

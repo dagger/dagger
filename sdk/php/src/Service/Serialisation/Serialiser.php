@@ -25,14 +25,14 @@ final readonly class Serialiser
     {
         $this->serializer = SerializerBuilder::create()
             ->configureListeners(
-                function(EventDispatcher $dispatcher) use ($subscribers) {
+                function (EventDispatcher $dispatcher) use ($subscribers) {
                     foreach ($subscribers as $subscriber) {
                         $dispatcher->addSubscriber($subscriber);
                     }
                 }
             )
             ->configureHandlers(
-                function(HandlerRegistry $registry) use ($handlers) {
+                function (HandlerRegistry $registry) use ($handlers) {
                     foreach ($handlers as $handler) {
                         $registry->registerSubscribingHandler($handler);
                     }

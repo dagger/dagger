@@ -65,11 +65,15 @@ final readonly class Type
     private function getTypeDefKind(string $nameOfType): TypeDefKind
     {
         switch ($nameOfType) {
-            case 'bool': return TypeDefKind::BOOLEAN_KIND;
-            case 'int': return TypeDefKind::INTEGER_KIND;
-            case 'string': return TypeDefKind::STRING_KIND;
+            case 'bool':
+                return TypeDefKind::BOOLEAN_KIND;
+            case 'int':
+                return TypeDefKind::INTEGER_KIND;
+            case 'string':
+                return TypeDefKind::STRING_KIND;
             case 'null':
-            case 'void': return TypeDefKind::VOID_KIND;
+            case 'void':
+                return TypeDefKind::VOID_KIND;
         }
 
         if ($nameOfType === 'array') {

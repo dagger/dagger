@@ -16,8 +16,8 @@ class Codegen
     public function __construct(
         private readonly Schema $schema,
         private readonly string $writeDir,
-        private readonly SymfonyStyle $io)
-    {
+        private readonly SymfonyStyle $io
+    ) {
     }
 
     public function generate(): void
