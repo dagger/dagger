@@ -3279,7 +3279,7 @@ func (m *Dep) Invert(status Status) Status {
 			{
 				sdk: "go",
 				source: `package main
-				
+
 import "context"
 
 type Test struct{}
@@ -5453,6 +5453,7 @@ func (ModuleSuite) TestDaggerListen(ctx context.Context, t *testctx.T) {
 			for range limitTicker(time.Second, 60) {
 				callCmd := hostDaggerCommand(ctx, t, modDir, "--debug", "query")
 				callCmd.Stdin = strings.NewReader(fmt.Sprintf(`query{container{from(address:"%s"){file(path:"/etc/alpine-release"){contents}}}}`, alpineImage))
+				callCmd.Stderr = testutil.NewTWriter(t)
 				callCmd.Env = append(callCmd.Env, "DAGGER_SESSION_PORT=12457", "DAGGER_SESSION_TOKEN=lol")
 				out, err = callCmd.Output()
 				if err == nil {
@@ -5476,6 +5477,7 @@ func (ModuleSuite) TestDaggerListen(ctx context.Context, t *testctx.T) {
 			for range limitTicker(time.Second, 60) {
 				callCmd := hostDaggerCommand(ctx, t, tmpdir, "--debug", "query")
 				callCmd.Stdin = strings.NewReader(fmt.Sprintf(`query{container{from(address:"%s"){file(path:"/etc/alpine-release"){contents}}}}`, alpineImage))
+				callCmd.Stderr = testutil.NewTWriter(t)
 				callCmd.Env = append(callCmd.Env, "DAGGER_SESSION_PORT=12458", "DAGGER_SESSION_TOKEN=lol")
 				out, err = callCmd.Output()
 				if err == nil {
@@ -5602,7 +5604,7 @@ func (t *Test) Evaluated(ctx context.Context, src *dagger.Directory) error {
 		DockerBuild(dagger.DirectoryDockerBuildOpts{
 			Secrets: []*dagger.Secret{secret},
 		}).
-		WithExec([]string{"true"}). 
+		WithExec([]string{"true"}).
 		Sync(ctx)
 	return err
 }
