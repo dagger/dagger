@@ -17,7 +17,7 @@ final class PhpSdkDev
     #[DaggerFunction('Run integration tests from source directory')]
     public function integrationTests(Directory $source): Container {
         return $this->base($source)->withExec(
-                ['./vendor/bin/phpunit', '--group=integration'],
+                ['phpunit', '--group=integration'],
                 experimentalPrivilegedNesting: true,
             );
      }
@@ -25,14 +25,14 @@ final class PhpSdkDev
     #[DaggerFunction('Run unit tests from source directory')]
     public function unitTests(Directory $source): Container {
         return $this->base($source)->withExec(
-            ['./vendor/bin/phpunit', '--group=unit']
+            ['phpunit', '--group=unit']
         );
     }
 
     #[DaggerFunction('Run unit tests from source directory')]
     public function tests(Directory $source): Container {
         return $this->base($source)->withExec(
-                ['./vendor/bin/phpunit'],
+                ['phpunit'],
                 experimentalPrivilegedNesting: true,
             );
     }
@@ -52,6 +52,7 @@ final class PhpSdkDev
             ->WithEnvVariable('COMPOSER_ALLOW_SUPERUSER', '1')
             ->withMountedDirectory('/src/sdk/php', $source)
             ->withWorkdir('/src/sdk/php')
-            ->withExec(['composer', 'install']);
+            ->withExec(['composer', 'install'])
+            ->withEnvVariable('PATH', './vendor/bin:$PATH', expand: true);
     }
 }
