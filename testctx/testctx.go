@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -63,8 +64,25 @@ type T struct {
 	errors     []string
 }
 
+// AfterSelf installs a function to be run after the synchronous portion of
+// the current test, before running any sub-tests.
+//
+// The function will also be called if the current test is skipped, fails,
+// or panics, using t.Cleanup internally while ensuring f is only called once.
 func (t *T) AfterSelf(f func(*T)) {
-	t.afterSelf = append(t.afterSelf, f)
+	once := new(sync.Once)
+	onceF := func(t *T) {
+		once.Do(func() {
+			f(t)
+		})
+	}
+	t.afterSelf = append(t.afterSelf, onceF)
+	t.Cleanup(func() {
+		// NB: this might be a different *T from the one that gets passed
+		// to afterSelf, but that's okay; we just do this to handle
+		// skipped/failed/panicked cases
+		onceF(t)
+	})
 }
 
 type Subtest struct {

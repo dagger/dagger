@@ -1,7 +1,6 @@
 package testctx
 
 import (
-	"fmt"
 	"time"
 
 	"dagger.io/dagger/telemetry"
@@ -36,15 +35,12 @@ func WithOTelTracing(tracer trace.Tracer) Middleware {
 			}
 			var effects []string
 			for _, st := range t.subtests {
-				effects = append(effects, fmt.Sprintf("%s:%d", t.Name(), st.Index))
+				effects = append(effects, st.id())
 			}
 			// Correlates to EffectIDAttr set on each subtest span.
 			span.SetAttributes(attribute.StringSlice(telemetry.EffectIDsAttr, effects))
 			span.End()
 		})
-		// TODO: intentionally set t.Cleanup too for redundancy?
-		// t.Cleanup(func() {
-		// })
 		return t.WithContext(ctx)
 	}
 	return func(t *T) *T {
