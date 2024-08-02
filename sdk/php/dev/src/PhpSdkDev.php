@@ -24,12 +24,10 @@ final class PhpSdkDev
 
     #[DaggerFunction('Run unit tests from source directory')]
     public function unitTests(Directory $source): Container {
-        return $this->base($source)->withExec(
-            ['phpunit', '--group=unit']
-        );
+        return $this->base($source)->withExec(['phpunit', '--group=unit']);
     }
 
-    #[DaggerFunction('Run unit tests from source directory')]
+    #[DaggerFunction('Run tests from source directory')]
     public function tests(Directory $source): Container {
         return $this->base($source)->withExec(
                 ['phpunit'],

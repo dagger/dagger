@@ -22,7 +22,7 @@ class FindsDaggerObjectsTest extends TestCase
     public function itFindsDaggerObjects(array $expected, string $dir): void {
         $actual = (new FindsDaggerObjects())($dir);
 
-        self::assertEquals($expected, $actual);
+        self::assertEqualsCanonicalizing($expected, $actual);
     }
 
     /** @return Generator<array{ 0: DaggerObject[], 1: string}> */

@@ -68,8 +68,7 @@ class Function_ extends Client\AbstractObject implements Client\IdAble
         TypeDefId|TypeDef $typeDef,
         ?string $description = '',
         ?Json $defaultValue = null,
-    ): Function_
-    {
+    ): Function_ {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withArg');
         $innerQueryBuilder->setArgument('name', $name);
         $innerQueryBuilder->setArgument('typeDef', $typeDef);
