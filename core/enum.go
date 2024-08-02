@@ -104,9 +104,8 @@ func (m *ModuleEnumType) getDecoder(ctx context.Context) (dagql.InputDecoder, er
 }
 
 type ModuleEnum struct {
-	TypeDef       *EnumTypeDef
-	Value         string
-	OriginalValue string
+	TypeDef *EnumTypeDef
+	Value   string
 }
 
 func (e *ModuleEnum) TypeName() string {
@@ -171,11 +170,10 @@ func (e *ModuleEnum) DecodeInput(val any) (dagql.Input, error) {
 
 func (e *ModuleEnum) Lookup(val string) (dagql.Input, error) {
 	for _, possible := range e.TypeDef.Values {
-		if val == possible.Name || val == possible.OriginalName {
+		if val == possible.Name {
 			return &ModuleEnum{
-				TypeDef:       e.TypeDef,
-				Value:         possible.Name,
-				OriginalValue: possible.OriginalName,
+				TypeDef: e.TypeDef,
+				Value:   possible.Name,
 			}, nil
 		}
 	}
@@ -184,5 +182,5 @@ func (e *ModuleEnum) Lookup(val string) (dagql.Input, error) {
 }
 
 func (e *ModuleEnum) MarshalJSON() ([]byte, error) {
-	return json.Marshal(e.OriginalValue)
+	return json.Marshal(e.Value)
 }

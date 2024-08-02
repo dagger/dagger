@@ -507,7 +507,7 @@ func (typeDef *TypeDef) WithEnumValue(name, desc string) (*TypeDef, error) {
 
 	// Verify if the enum value is duplicated.
 	for _, v := range typeDef.AsEnum.Value.Values {
-		if v.OriginalName == name {
+		if v.Name == name {
 			return nil, fmt.Errorf("enum value %q is already defined", name)
 		}
 	}
@@ -917,7 +917,7 @@ func (enum *EnumTypeDef) ListValues() ast.EnumValueList {
 
 	for _, val := range enum.Values {
 		values = append(values, &ast.EnumValueDefinition{
-			Name:        val.OriginalName,
+			Name:        val.Name,
 			Description: val.Description,
 		})
 	}
@@ -947,11 +947,6 @@ func (enum EnumTypeDef) Clone() *EnumTypeDef {
 type EnumValueTypeDef struct {
 	Name        string `field:"true" doc:"The name of the enum value."`
 	Description string `field:"true" doc:"A doc string for the enum value, if any."`
-
-	// Below are not in public API
-
-	// The original name of the enum value as provided by the SDK that defined it, used
-	OriginalName string
 }
 
 func (*EnumValueTypeDef) Type() *ast.Type {
@@ -967,9 +962,8 @@ func (*EnumValueTypeDef) TypeDescription() string {
 
 func NewEnumValueTypeDef(name, description string) *EnumValueTypeDef {
 	return &EnumValueTypeDef{
-		Name:         strcase.ToScreamingSnake(name),
-		OriginalName: name,
-		Description:  description,
+		Name:        name,
+		Description: description,
 	}
 }
 

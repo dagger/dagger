@@ -110,11 +110,16 @@ type DaggerValue interface {
 // NOTE: the code defining this type is heavily inspired by stringSliceValue.Set
 // for equivalent behaviour as the other builtin slice types
 type sliceValue[T DaggerValue] struct {
-	value []T
+	value   []T
+	changed bool
+	Init    func() T
 }
 
 func (v *sliceValue[T]) Type() string {
 	var t T
+	if v.Init != nil {
+		t = v.Init()
+	}
 	return t.Type()
 }
 
@@ -152,20 +157,49 @@ func (v *sliceValue[T]) Set(s string) error {
 	// parse values into slice
 	out := make([]T, 0, len(ss))
 	for _, s := range ss {
-		var v T
-		if typ := reflect.TypeOf(v); typ.Kind() == reflect.Ptr {
-			// hack to get a pointer to a new instance of the underlying type
-			v = reflect.New(typ.Elem()).Interface().(T)
+		var vv T
+
+		if v.Init != nil {
+			vv = v.Init()
+		} else {
+			if typ := reflect.TypeOf(vv); typ.Kind() == reflect.Ptr {
+				// hack to get a pointer to a new instance of the underlying type
+				vv = reflect.New(typ.Elem()).Interface().(T)
+			}
 		}
 
-		if err := v.Set(strings.TrimSpace(s)); err != nil {
+		if err := vv.Set(strings.TrimSpace(s)); err != nil {
 			return err
 		}
-		out = append(out, v)
+		out = append(out, vv)
 	}
 
-	v.value = append(v.value, out...)
+	if !v.changed {
+		v.value = out
+	} else {
+		v.value = append(v.value, out...)
+	}
+
+	v.changed = true
 	return nil
+}
+
+func newEnumSliceValue(typedef *modEnum, defaultValues []string) *sliceValue[*enumValue] {
+	v := &sliceValue[*enumValue]{
+		Init: func() *enumValue {
+			return newEnumValue(typedef, "")
+		},
+	}
+	for _, defaultValue := range defaultValues {
+		v.value = append(v.value, newEnumValue(typedef, defaultValue))
+	}
+	return v
+}
+
+func newEnumValue(typedef *modEnum, defaultValue string) *enumValue {
+	v := &enumValue{typedef: typedef}
+	v.value = defaultValue
+	return v
 }
 
 type enumValue struct {
@@ -775,10 +809,8 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) error {
 			return nil
 		}
 
-		val := &enumValue{typedef: r.TypeDef.AsEnum}
-		if defVal, err := getDefaultValue[string](r); err == nil {
-			val.value = defVal
-		}
+		defVal, _ := getDefaultValue[string](r)
+		val := newEnumValue(r.TypeDef.AsEnum, defVal)
 		flags.Var(val, name, usage)
 
 		return nil
@@ -840,6 +872,20 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) error {
 
 			val, _ := getDefaultValue[[]string](r)
 			flags.StringSlice(name, val, usage)
+			return nil
+
+		case dagger.EnumKind:
+			enumName := elementType.AsEnum.Name
+
+			if val := GetCustomFlagValueSlice(enumName); val != nil {
+				flags.Var(val, name, usage)
+				return nil
+			}
+
+			defVals, _ := getDefaultValue[[]string](r)
+			val := newEnumSliceValue(elementType.AsEnum, defVals)
+			flags.Var(val, name, usage)
+
 			return nil
 
 		case dagger.ObjectKind:
