@@ -260,8 +260,8 @@ require (
 )
 
 require (
-	dagger.io/dagger v0.12.3
-	github.com/dagger/dagger/engine/distconsts v0.12.3
+	dagger.io/dagger v0.12.4
+	github.com/dagger/dagger/engine/distconsts v0.12.4
 )
 
 replace (
