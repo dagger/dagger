@@ -4,7 +4,7 @@ slug: /manuals/user/export
 
 # Artifact Export
 
-Just-in-time artifacts such as containers, directories and files expose an `Export()` function, enabling them to be exported to the host filesystem from the Dagger Function that produced them. The destination path on the host is passed to the function using the `--path` argument.
+Just-in-time artifacts such as containers, directories and files expose an `Container.export()` API method, enabling them to be exported to the host filesystem from the Dagger Function that produced them. The destination path on the host is passed to the function using the `--path` argument.
 
 Here is an example of exporting the directory returned by a Go builder Dagger Function to the `./my-build` directory on the host:
 
@@ -12,7 +12,7 @@ Here is an example of exporting the directory returned by a Go builder Dagger Fu
 dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call build --source=https://github.com/dagger/dagger --args=./cmd/dagger export --path=./my-build
 ```
 
-By default, the `Export()` function exports the files that exist in the returned directory to the host, but it does not modify or delete any files that already exist at that host path. To replace the contents of the target host directory, such that it exactly matches the directory being exported, add the `--wipe` argument.
+By default, the `Container.export()` method exports the files that exist in the returned directory to the host, but it does not modify or delete any files that already exist at that host path. To replace the contents of the target host directory, such that it exactly matches the directory being exported, add the `--wipe` argument.
 
 Here is an example of exporting the build directory returned by the same Dagger Function above, deleting and replacing files as needed in the `./my-build` directory on the host:
 

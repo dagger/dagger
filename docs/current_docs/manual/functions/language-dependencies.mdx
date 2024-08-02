@@ -1,5 +1,5 @@
 ---
-slug: /manual/language-dependencies
+slug: /manual/functions/language-dependencies
 displayed_sidebar: "current"
 hide_table_of_contents: true
 ---
@@ -41,7 +41,7 @@ poetry add infisical-python
 
 While Python doesn't have a [lock file standard](https://discuss.python.org/t/lock-files-again-but-this-time-w-sdists/46593/313) yet, other than using a tool that has a proprietary format (like Poetry), the most common way to do it is with a `pip`-compatible format like [`pip-tools`](https://pip-tools.readthedocs.io/en/latest/) uses.
 
-Since the introduction of [uv](./modules.mdx#uv-installer), dependencies are pinned by default using a `requirements.lock` file. If it exists, the Python SDK will use it directly to install dependencies, resulting in a faster installation.
+Since the introduction of [uv](./structure.mdx#uv-installer), dependencies are pinned by default using a `requirements.lock` file. If it exists, the Python SDK will use it directly to install dependencies, resulting in a faster installation.
 
 :::tip
 Check [compatibility with `pip` and `pip-tools`](https://github.com/astral-sh/uv/blob/main/PIP_COMPATIBILITY.md) if migrating from or integrating with those tools.
@@ -69,7 +69,7 @@ The lock file should only include dependencies, and not the editable installs fo
 
 ### Poetry's lock file
 
-Dagger doesn't support running the `poetry` CLI. It depends on standards like [PEP 517](./modules.mdx#language-native-packaging). That means that it doesn't know about the `poetry.lock` file, but the `requirements.lock` file can be generated with [`poetry export`](https://python-poetry.org/docs/cli#export):
+Dagger doesn't support running the `poetry` CLI. It depends on standards like [PEP 517](./structure.mdx#language-native-packaging). That means that it doesn't know about the `poetry.lock` file, but the `requirements.lock` file can be generated with [`poetry export`](https://python-poetry.org/docs/cli#export):
 
 ```console
 poetry export --with dev --without main -o requirements.lock
