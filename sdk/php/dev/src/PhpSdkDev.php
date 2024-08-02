@@ -42,12 +42,16 @@ final class PhpSdkDev
         return dag()
             ->container()
             ->from('php:8.3-cli-alpine')
-            ->withMountedDirectory('/src/sdk/php', $source)
-            ->withWorkdir('/src/sdk/php')
             ->withFile('/usr/bin/composer', dag()
                 ->container()
                 ->from('composer:2')
                 ->file('/usr/bin/composer'))
+            ->withMountedCache('/root/.composer', dag()
+                ->cacheVolume('composer-php:8.3-cli-alpine'))
+            ->withEnvVariable('COMPOSER_HOME', '/root/.composer')
+            ->WithEnvVariable('COMPOSER_ALLOW_SUPERUSER', '1')
+            ->withMountedDirectory('/src/sdk/php', $source)
+            ->withWorkdir('/src/sdk/php')
             ->withExec(['composer', 'install']);
     }
 }
