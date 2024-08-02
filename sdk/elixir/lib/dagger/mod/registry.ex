@@ -1,5 +1,5 @@
 defmodule Dagger.Mod.Registry do
-  @moduledoc false
+  @moduledoc deprecated: "This module will be remove in the future."
 
   use Agent
 
@@ -12,7 +12,7 @@ defmodule Dagger.Mod.Registry do
   Register a module.
   """
   def register(pid \\ __MODULE__, module) do
-    name = Dagger.Mod.Module.name_for(module)
+    name = Dagger.Mod.Object.get_name(module)
     fun = fn modules -> Map.put(modules, name, module) end
     Agent.update(pid, fun)
   end

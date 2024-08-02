@@ -2,12 +2,14 @@ defmodule Dagger.Mod.Function do
   @moduledoc false
 
   alias Dagger.Mod.Helper
+  alias Dagger.Mod.Object
 
   @doc """
-  Define a Dagger function.
+  Define a Dagger function from the function definition.
   """
-  def define(dag, {name, fun_def}, doc_content) do
-    args = fun_def[:args] || []
+  @spec define(Dagger.Client.t(), module(), Object.function_def()) :: Dagger.Function.t()
+  def define(%Dagger.Client{} = dag, module, {name, fun_def}) when is_atom(module) do
+    args = Keyword.fetch!(fun_def, :args)
     return = Keyword.fetch!(fun_def, :return)
 
     dag
@@ -15,26 +17,24 @@ defmodule Dagger.Mod.Function do
       Helper.camelize(name),
       define_type(dag, Dagger.Client.type_def(dag), return)
     )
-    |> maybe_with_description(doc_content)
+    |> maybe_with_description(Object.get_function_doc(module, name))
     |> with_args(args, dag)
   end
 
-  defp maybe_with_description(function, doc) when doc in [:none, :hidden], do: function
+  defp maybe_with_description(function, nil), do: function
+  defp maybe_with_description(function, doc), do: Dagger.Function.with_description(function, doc)
 
-  defp maybe_with_description(function, %{"en" => doc}) do
-    Dagger.Function.with_description(function, doc)
-  end
-
-  defp with_args(fun_def, args, dag) do
+  defp with_args(fun, args, dag) do
     args
-    |> Enum.reduce(fun_def, fn {name, info}, fun_def ->
-      type = Keyword.fetch!(info, :type)
+    |> Enum.reduce(fun, fn {name, arg_def}, fun ->
+      type = Keyword.fetch!(arg_def, :type)
 
       type_def =
-        define_type(dag, Dagger.Client.type_def(dag), type)
-        |> then(&maybe_with_optional(&1, info[:optional]))
+        dag
+        |> define_type(Dagger.Client.type_def(dag), type)
+        |> maybe_with_optional(arg_def[:optional])
 
-      fun_def
+      fun
       |> Dagger.Function.with_arg(name, type_def)
     end)
   end
@@ -46,8 +46,6 @@ defmodule Dagger.Mod.Function do
       type_def
     end
   end
-
-  # TODO: support type list.
 
   defp define_type(_dag, type_def, :integer) do
     type_def
