@@ -23,6 +23,7 @@ from gql.transport.exceptions import (
     TransportQueryError,
     TransportServerError,
 )
+from typing_extensions import TypeForm
 
 from dagger import (
     ExecuteTimeoutError,
@@ -73,11 +74,17 @@ class Field:
 
 @dataclasses.dataclass(slots=True)
 class Context:
-    conn: BaseConnection = dataclasses.field(default_factory=SharedConnection)
+    conn: BaseConnection = dataclasses.field(
+        default_factory=SharedConnection,
+        compare=False,
+    )
     selections: collections.deque[Field] = dataclasses.field(
         default_factory=collections.deque
     )
-    converter: cattrs.Converter = dataclasses.field(init=False)
+    converter: cattrs.Converter = dataclasses.field(
+        init=False,
+        compare=False,
+    )
 
     def __post_init__(self):
         self.converter = make_converter(self)
@@ -118,7 +125,7 @@ class Context:
         ctx = dataclasses.replace(self, selections=collections.deque())
         return ctx.select("Query", field_name, args)
 
-    def select_id(self, type_name: str, id_value: Scalar) -> "Context":
+    def select_id(self, type_name: str, id_value: str) -> "Context":
         return self.root_select(
             f"load{type_name}FromID",
             [Arg("id", id_value)],
@@ -147,9 +154,11 @@ class Context:
     async def execute(self, return_type: None = None) -> None: ...
 
     @overload
-    async def execute(self, return_type: type[T]) -> T: ...
+    async def execute(self, return_type: TypeForm[T] | type[T]) -> T: ...
 
-    async def execute(self, return_type: type[T] | None = None) -> T | None:
+    async def execute(
+        self, return_type: TypeForm[T] | type[T] | None = None
+    ) -> T | None:
         await self.resolve_ids()
         query = await self.query()
 
@@ -190,7 +199,7 @@ class Context:
     ) -> list[Obj_T]:
         @dataclasses.dataclass
         class Response:
-            id: Scalar
+            id: str
 
         ctx = element_type(self)._select("id", [])  # noqa: SLF001
         ids = await ctx.execute(list[Response])

@@ -1470,6 +1470,39 @@ func (PythonSuite) TestDocs(ctx context.Context, t *testctx.T) {
 
 		require.Equal(t, "Inheritance.", obj.Get("constructor.description").String())
 	})
+
+	t.Run("interface", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := pythonModInit(t, c, `
+            import typing
+
+            import dagger
+            from dagger import Doc
+
+            @dagger.interface
+            class Duck(typing.Protocol):
+                """A simple Duck interface"""
+
+                @dagger.function
+                def quack(self, word: typing.Annotated[str, Doc("A word for the duck to speak")] = "") -> str:
+                    """A quack sound"""
+                
+            @dagger.object_type
+            class Test:
+                @dagger.function
+                def duck_quack(self, duck: Duck) -> str:
+                    return duck.quack("quack")
+        `)
+
+		o := inspectModuleInterfaces(ctx, t, modGen).Get("#(name=TestDuck)")
+		f := o.Get("functions.#(name=quack)")
+		a := f.Get("args.#(name=word)")
+
+		require.Equal(t, "A simple Duck interface", o.Get("description").String())
+		require.Equal(t, "A quack sound", f.Get("description").String())
+		require.Equal(t, "A word for the duck to speak", a.Get("description").String())
+	})
 }
 
 func (PythonSuite) TestNameConflicts(ctx context.Context, t *testctx.T) {

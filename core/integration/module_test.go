@@ -5597,7 +5597,11 @@ func sdkSource(sdk, contents string) dagger.WithContainerFunc {
 }
 
 func sdkSourceAt(dir, sdk, contents string) dagger.WithContainerFunc {
-	return fileContents(filepath.Join(dir, sdkSourceFile(sdk)), contents)
+	path := sdkSourceFile(sdk)
+	if sdk == "python" && dir != "." && dir != "test" {
+		path = strings.ReplaceAll(path, "test", dir)
+	}
+	return fileContents(filepath.Join(dir, path), contents)
 }
 
 func sdkSourceFile(sdk string) string {
@@ -5635,20 +5639,19 @@ func modInit(t *testctx.T, c *dagger.Client, sdk, contents string) *dagger.Conta
 }
 
 func withModInit(sdk, contents string) dagger.WithContainerFunc {
-	return func(ctr *dagger.Container) *dagger.Container {
-		ctr = ctr.With(daggerExec("init", "--name=test", "--sdk="+sdk))
-		if contents != "" {
-			ctr = ctr.With(sdkSource(sdk, contents))
-		}
-		return ctr
-	}
+	return withModInitAt(".", sdk, contents)
 }
 
 func withModInitAt(dir, sdk, contents string) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
-		ctr = ctr.With(daggerExec("init", "--name="+filepath.Base(dir), "--sdk="+sdk, dir))
+		name := filepath.Base(dir)
+		if name == "." {
+			name = "test"
+		}
+		args := []string{"init", "--sdk=" + sdk, "--name=" + name, "--source=" + dir, dir}
+		ctr = ctr.With(daggerExec(args...))
 		if contents != "" {
-			ctr = ctr.With(sdkSourceAt(dir, sdk, contents))
+			return ctr.With(sdkSourceAt(dir, sdk, contents))
 		}
 		return ctr
 	}
@@ -5694,20 +5697,20 @@ query { host { directory(path: ".") { asModule {
             }
         }
     }
-		interfaces {
-		  asInterface {
-			  name
+	interfaces {
+	    asInterface {
+			name
+			description
+			functions {
+				name
 				description
-				functions {
-				  name
+				args {
+					name
 					description
-					args {
-					  name
-						description
-					}
 				}
-			}
-		}
+            }
+        }
+    }
     enums {
         asEnum {
             name
@@ -5733,6 +5736,11 @@ func inspectModule(ctx context.Context, t *testctx.T, ctr *dagger.Container) gjs
 func inspectModuleObjects(ctx context.Context, t *testctx.T, ctr *dagger.Container) gjson.Result {
 	t.Helper()
 	return inspectModule(ctx, t, ctr).Get("objects.#.asObject")
+}
+
+func inspectModuleInterfaces(ctx context.Context, t *testctx.T, ctr *dagger.Container) gjson.Result {
+	t.Helper()
+	return inspectModule(ctx, t, ctr).Get("interfaces.#.asInterface")
 }
 
 func goGitBase(t testing.TB, c *dagger.Client) *dagger.Container {

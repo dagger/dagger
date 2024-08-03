@@ -344,12 +344,28 @@ def id_query_field(t: GraphQLType) -> FieldName | None:
     return f"load{type_name}FromID" if type_name else None
 
 
+# Don't shadow builtins that can be used as types in function signatures.
+#
+# For example, if a method is called "str" and the next one returns the "str"
+# type, that method will actually return the method above, not the type.
+_reserved_builtins = frozenset(
+    [
+        "str",
+        "int",
+        "float",
+        "bool",
+        "list",
+        "type",
+    ]
+)
+
+
 def format_name(s: str) -> str:
     """Format a GraphQL field or argument name into Python."""
     # rewrite acronyms, initialisms and abbreviations
     s = ACRONYM_RE.sub(lambda m: m.group(0).title(), s)
     s = camel_to_snake(s)
-    if iskeyword(s):
+    if iskeyword(s) or s in _reserved_builtins:
         s += "_"
     return s
 
