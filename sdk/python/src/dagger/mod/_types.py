@@ -17,6 +17,7 @@ class FieldDefinition:
 class ObjectDefinition:
     name: PythonName
     doc: str | None = dataclasses.field(default=None, compare=False)
+    interface: bool = dataclasses.field(default=False, compare=False)
 
 
 class Enum(base.Enum):

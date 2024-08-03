@@ -1,0 +1,20 @@
+[project]
+name = "main"
+version = "0.0.0"
+dependencies = [
+    "dagger-io",
+]
+
+[tool.uv]
+preview = true
+
+[tool.uv.sources]
+dagger-io = { workspace = true }
+
+[tool.uv.workspace]
+members = ["sdk"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+

@@ -15,8 +15,10 @@ from collections.abc import Callable, Mapping, MutableMapping
 from typing import Any, TypeAlias, TypeVar, cast
 
 import anyio
+from beartype import beartype
 import cattrs
 import cattrs.gen
+from graphql.pyutils import description
 from rich.console import Console
 from typing_extensions import Self, dataclass_transform, overload
 
@@ -143,10 +145,27 @@ class Module:
                     raise UserError(msg)
 
                 if not hasattr(resolver.origin, "__dagger_type__"):
-                    msg = f"Class “{resolver.origin.__name__}” is missing @object_type."
+                    if issubclass(resolver.origin, typing.Protocol):
+                        msg = (
+                            f"Protocol “{resolver.origin.__name__}” is not "
+                            "decorated with @interface"
+                        )
+                    else:
+                        msg = (
+                            f"Class “{resolver.origin.__name__}” is not "
+                            "decorated with @object_type."
+                        )
                     raise UserError(msg)
 
                 obj_def = resolver.origin.__dagger_type__  # type: ignore generalTypeIssues
+
+            if obj_def.name == "":
+                msg = "Unexpected empty object name"
+                raise InternalError(msg)
+
+            if resolver.name == "" and obj_def.name != main_object.name:
+                # Skip constructors of classes that are not the main object.
+                continue
 
             object_names[obj_def.name].add(resolver.origin)
             resolver_names[(obj_def.name, resolver.name)] += 1
@@ -164,8 +183,8 @@ class Module:
             msg = f"Object “{name}” is defined multiple times."
             if name == main_object.name:
                 msg = (
-                    f"{msg} Either define top-level functions or as methods "
-                    f"of a class named “{name}” but not both."
+                    f"{msg} If you have top-level functions, refactor as methods "
+                    f"of a class named “{name}”."
                 )
             raise NameConflictError(msg)
 
@@ -235,23 +254,20 @@ class Module:
         mod = self._mod
 
         for obj, obj_resolvers in resolvers.items():
-            if obj.name == "":
-                msg = "Unexpected empty object name"
-                raise InternalError(msg)
+            typedef = dag.type_def()
+            if obj.interface:
+                typedef.with_interface(obj.name, description=obj.doc)
+            else:
+                typedef.with_object(obj.name, description=obj.doc)
 
-            typedef = dag.type_def().with_object(
-                obj.name,
-                description=obj.doc,
-            )
             for r in obj_resolvers.values():
-                if r.name == "" and obj.name != mod_name:
-                    # Skip constructors of classes that are not the main object.
-                    continue
-
                 typedef = r.register(typedef)
                 logger.debug("registered => %s", str(r))
 
-            mod = mod.with_object(typedef)
+            if obj.interface:
+                mod = mod.with_interface(typedef)
+            else:
+                mod = mod.with_object(typedef)
 
         for name, cls in self._enums.items():
             typedef = dag.type_def().with_enum(name, description=get_doc(cls))
@@ -558,6 +574,24 @@ class Module:
         self.function(name="")(cls)
 
         return cls
+
+    @overload
+    def interface(self, cls: T) -> T: ...
+
+    @overload
+    def interface(self) -> Callable[[T], T]: ...
+
+    def interface(self, cls: T | None = None) -> T | Callable[[T], T]:
+        def wrapper(cls: T) -> T:
+            new_cls = beartype(typing.runtime_checkable(cls))
+            new_cls.__dagger_type__ = ObjectDefinition(  # type: ignore generalTypeIssues
+                name=cls.__name__,
+                doc=get_doc(cls),
+                interface=True,
+            )
+            return new_cls
+
+        return wrapper(cls) if cls else wrapper
 
     @overload
     def enum_type(self, cls: T) -> T: ...

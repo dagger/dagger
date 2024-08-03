@@ -354,8 +354,7 @@ class TestFunctionFromExternalConstructor:
 
             test = mod.function()(Test)
 
-        assert get_resolver(mod, "Test", "").origin is Test
-        assert get_resolver(mod, origin, "").origin is locals()[origin]
+        assert get_resolver(mod, "Foo", "").origin is Foo
         assert get_resolver(mod, origin, "test").origin is locals()[origin]
         assert await get_result(mod, origin, {}, "test", {}) == {"egg": "white"}
 

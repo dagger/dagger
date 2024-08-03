@@ -32,6 +32,7 @@ from .mod import Enum as Enum
 from .mod import enum_type as enum_type
 from .mod import field as field
 from .mod import function as function
+from .mod import interface as interface
 from .mod import object_type as object_type
 
 # Re-export imports so they look like they live directly in this package.

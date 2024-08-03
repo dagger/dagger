@@ -96,13 +96,11 @@ def to_typedef(annotation: type) -> "TypeDef":  # noqa: C901, PLR0911
         msg = f"Unsupported union type: {typ.hint}"
         raise TypeError(msg)
 
-    if typ is TypeHint(type(None)):
-        return td.with_kind(dagger.TypeDefKind.VOID_KIND)
-
     builtins = {
         str: dagger.TypeDefKind.STRING_KIND,
         int: dagger.TypeDefKind.INTEGER_KIND,
         bool: dagger.TypeDefKind.BOOLEAN_KIND,
+        type(None): dagger.TypeDefKind.VOID_KIND,
     }
 
     if typ.hint in builtins:
@@ -129,10 +127,9 @@ def to_typedef(annotation: type) -> "TypeDef":  # noqa: C901, PLR0911
         custom_obj: ObjectDefinition | None = getattr(cls, "__dagger_type__", None)
 
         if custom_obj is not None:
-            return td.with_object(
-                custom_obj.name,
-                description=custom_obj.doc,
-            )
+            if custom_obj.interface:
+                return td.with_interface(custom_obj.name)
+            return td.with_object(custom_obj.name)
 
         if is_id_type_subclass(cls):
             return td.with_object(cls.__name__)
