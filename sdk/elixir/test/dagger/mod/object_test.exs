@@ -3,7 +3,7 @@ defmodule Dagger.Mod.ObjectTest do
 
   test "store function information" do
     defmodule A do
-      use Dagger.Mod.Object
+      use Dagger.Mod.Object, name: "A"
 
       function([name: String.t()], String.t())
 
@@ -94,7 +94,7 @@ defmodule Dagger.Mod.ObjectTest do
   test "throw unsupported type" do
     assert_raise ArgumentError, "type `non_neg_integer()` is not supported", fn ->
       defmodule ShouldThrowError do
-        use Dagger.Mod.Object
+        use Dagger.Mod.Object, name: "ShouldThrowError"
 
         function([name: non_neg_integer()], String.t())
 
@@ -103,6 +103,48 @@ defmodule Dagger.Mod.ObjectTest do
         end
       end
     end
+  end
+
+  test "raise with define a function with defp" do
+    assert_raise RuntimeError, fn ->
+      defmodule RaiseDefp do
+        use Dagger.Mod.Object, name: "RaiseDefp"
+
+        function([], String.t())
+        defp hello(_self, _args), do: "It works"
+
+        def dummy(), do: hello(nil, %{})
+      end
+    end
+  end
+
+  test "raise when define with function != 2 arities" do
+    assert_raise RuntimeError, fn ->
+      defmodule RaiseArityError do
+        use Dagger.Mod.Object, name: "RaiseArityError"
+
+        function([], String.t())
+        def hello(_self, _args, _opts), do: "It works"
+      end
+    end
+  end
+
+  test "store the module name" do
+    defmodule C do
+      use Dagger.Mod.Object, name: "C"
+
+      function([name: String.t()], String.t())
+
+      def hello(_self, args) do
+        "Hello, #{args.name}"
+      end
+    end
+
+    assert name_for(C) == "C"
+  end
+
+  defp name_for(module) do
+    Dagger.Mod.Module.name_for(module)
   end
 
   defp functions_for(module) do
