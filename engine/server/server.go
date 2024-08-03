@@ -19,6 +19,7 @@ import (
 	ctdmetadata "github.com/containerd/containerd/metadata"
 	"github.com/containerd/containerd/remotes/docker"
 	ctdsnapshot "github.com/containerd/containerd/snapshots"
+	"github.com/containerd/containerd/snapshots/storage"
 	"github.com/containerd/go-runc"
 	"github.com/containerd/platforms"
 	controlapi "github.com/moby/buildkit/api/services/control"
@@ -287,7 +288,12 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 
 	// TODO: store on struct
 	// TODO: premake dir above for consistency
-	volumeSnapshotter, err := volume.NewVolumeSnapshotter(ctx, filepath.Join(srv.rootDir, "volumes"))
+	volumeSnapshotterMDPath := filepath.Join(srv.rootDir, "volumes.db")
+	volumeSnapshotterMD, err := storage.NewMetaStore(volumeSnapshotterMDPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create volume snapshotter metadata store: %w", err)
+	}
+	volumeSnapshotter, err := volume.New(ctx, volumeSnapshotterMD, filepath.Join(srv.rootDir, "volumes"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create volume snapshotter: %w", err)
 	}
@@ -312,7 +318,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 
 	// subtle: if you don't get the snapshotter from the metadata db, you miss the wrapping
 	// which integrates it's metadata into the containerd GC
-	volumeSnapshotter = volume.VolumeSnapshotterFromMetaDB(srv.containerdMetaDB, volumeSnapshotter)
+	volumeSnapshotter = volume.FromMetaDB(srv.containerdMetaDB, volumeSnapshotter)
 
 	srv.leaseManager = leaseutil.WithNamespace(ctdmetadata.NewLeaseManager(srv.containerdMetaDB), "buildkit")
 	srv.workerCacheMetaDB, err = metadata.NewStore(srv.workerCacheMetaDBPath)

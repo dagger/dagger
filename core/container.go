@@ -581,8 +581,9 @@ func (container *Container) WithMountedCache(ctx context.Context, target string,
 	}
 
 	mount := ContainerMount{
-		Target:           target,
-		CacheVolumeID:    cache.Sum(),
+		Target: target,
+		// TODO: hack
+		CacheVolumeID:    cache.Sum() + "-" + cache.Keys[0],
 		CacheSharingMode: sharingMode,
 	}
 
