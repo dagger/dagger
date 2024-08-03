@@ -106,7 +106,14 @@ defmodule Dagger.Mod do
   @doc """
   Invoke a function.
   """
-  def invoke(dag \\ Dagger.connect!()) do
+  def invoke() do
+    case Dagger.Global.start_link() do
+      {:ok, _} -> invoke(Dagger.Global.dag())
+      otherwise -> otherwise
+    end
+  end
+
+  def invoke(dag) do
     fn_call = Dagger.Client.current_function_call(dag)
 
     with {:ok, parent_name} <- Dagger.FunctionCall.parent_name(fn_call),
@@ -122,7 +129,7 @@ defmodule Dagger.Mod do
         System.halt(2)
     end
   after
-    Dagger.close(dag)
+    Dagger.Global.close()
   end
 
   def invoke(dag, _parent, "", _fn_name, _input_args) do
@@ -260,6 +267,7 @@ defmodule Dagger.Mod do
       use GenServer
 
       import Dagger.Mod
+      import Dagger.Global, only: [dag: 0]
 
       @name name
       @on_definition Dagger.Mod
