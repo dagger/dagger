@@ -13,6 +13,8 @@ Dagger Modules support.
 
 .. autodecorator:: enum_type
 
+.. autodecorator:: interface
+
 .. autoclass:: DefaultPath
 
 .. autoclass:: Ignore

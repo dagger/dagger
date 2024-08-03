@@ -1,8 +1,7 @@
-import contextlib
 import dataclasses
 import inspect
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from functools import cached_property
 from typing import (
     Any,
@@ -27,6 +26,8 @@ from dagger.mod._utils import (
     get_doc,
     get_ignore,
     is_nullable,
+    is_self,
+    list_of,
     normalize_name,
 )
 
@@ -55,6 +56,7 @@ class Function(Generic[P, R]):
     wrapped: Func[P, R]
     meta: FunctionDefinition = dataclasses.field(default_factory=FunctionDefinition)
     original_name: PythonName = dataclasses.field(init=False)
+    origin: type | None = dataclasses.field(default=None)
 
     def __post_init__(self):
         self.original_name = self.wrapped.__name__
@@ -132,28 +134,34 @@ class Function(Generic[P, R]):
         )
 
     @property
-    def return_type(self) -> type:
+    def return_type(self) -> Any:
         """Return the resolved return type of the wrapped function."""
         try:
-            r: type = self.type_hints["return"]
+            r = self.type_hints["return"]
         except KeyError:
             # When no return type is specified, assume None.
-            return type(None)
+            return None
 
-        if r is Self:
-            with contextlib.suppress(AttributeError):
-                if inspect.ismethod(self.wrapped):
-                    return self.wrapped.__self__.__class__
+        if self.origin:
+            if is_self(r):
+                return self.origin
+
+            if (el := list_of(r)) and is_self(el):
+                return list[self.origin]
 
         return r
 
     def bind_parent(self, parent: object):
-        return dataclasses.replace(self, wrapped=getattr(parent, self.original_name))
+        return dataclasses.replace(
+            self,
+            origin=parent.__class__,
+            wrapped=getattr(parent, self.original_name),
+        )
 
-    def bind_arguments(self, inputs: Mapping[str, Any]):
+    def bind_arguments(self, *args, **kwargs):
         """Bind the function with the given arguments."""
         try:
-            bound = self.signature.bind(**inputs)
+            bound = self.signature.bind(*args, **kwargs)
             bound.apply_defaults()
         except TypeError as e:
             msg = f"Unable to bind arguments: {e}"
@@ -203,7 +211,7 @@ class Constructor(Function[P, R]):
 
     @property
     @override
-    def return_type(self) -> type[R]:
+    def return_type(self) -> type[R] | type[None]:
         return self._wrapped_cls
 
     def __call__(self, *args: P.args, **kwargs: P.kwargs) -> R:
@@ -213,6 +221,7 @@ class Constructor(Function[P, R]):
 @dataclasses.dataclass(slots=True)
 class ObjectType(Generic[T]):
     cls: type[T]
+    interface: bool = False
     fields: dict[APIName, Field] = dataclasses.field(default_factory=dict)
     functions: dict[APIName, Function] = dataclasses.field(default_factory=dict)
 
