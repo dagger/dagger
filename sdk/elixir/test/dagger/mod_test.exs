@@ -4,10 +4,13 @@ defmodule Dagger.ModTest do
 
   alias Dagger.Mod
 
-  test "decode/2" do
+  setup do
     dag = Dagger.connect!()
     on_exit(fn -> Dagger.close(dag) end)
+    %{dag: dag}
+  end
 
+  test "decode/2", %{dag: dag} do
     assert {:ok, "hello"} = Mod.decode(Jason.encode!("hello"), :string, dag)
     assert {:ok, 1} = Mod.decode(Jason.encode!(1), :integer, dag)
     assert {:ok, true} = Mod.decode(Jason.encode!(true), :boolean, dag)
@@ -24,10 +27,7 @@ defmodule Dagger.ModTest do
     assert {:error, _} = Mod.decode(Jason.encode!(1), :string, dag)
   end
 
-  test "encode/2" do
-    dag = Dagger.connect!()
-    on_exit(fn -> Dagger.close(dag) end)
-
+  test "encode/2", %{dag: dag} do
     assert {:ok, "\"hello\""} = Mod.encode("hello", :string)
     assert {:ok, "1"} = Mod.encode(1, :integer)
     assert {:ok, "true"} = Mod.encode(true, :boolean)
