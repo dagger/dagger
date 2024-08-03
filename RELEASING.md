@@ -711,7 +711,7 @@ update once there's a new release of the Dagger Engine.
 gh release view --repo dagger/dagger-for-github --json tagName,publishedAt
 
 # Sign the tag, using the date as the comment, e.g. 2024-07-22
-git tag --sign <NEXT_PATCH_VERSION> -m "2024-07-22"
+git tag --sign -m "2024-08-02" <NEXT_PATCH_VERSION>
 git push origin <NEXT_PATCH_VERSION> #shouldn't need to force since new tag
 ```
 
@@ -720,13 +720,13 @@ git push origin <NEXT_PATCH_VERSION> #shouldn't need to force since new tag
 
 ```console
 # --verify-tag will ensure the last tag creation step was done
-gh release create <NEXT_PATCH_VERSION> --generate-notes --verify-tag
+gh release create --generate-notes --verify-tag <NEXT_PATCH_VERSION>
 ```
 
 - [ ] Force update the major version, currently `v6`, using the date as the comment, e.g. 2024-07-22
 
 ```console
-git tag --sign v6 -m "2024-07-22"
+git tag --sign -m "2024-08-02" v6 --force
 git push origin v6 --force #need to force since moving this tag
 ```
 
