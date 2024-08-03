@@ -4,3 +4,32 @@ displayed_sidebar: "current"
 ---
 
 # Types
+
+In addition to basic types (string, boolean, integer, arrays...), the Dagger API also provides powerful core types which serve as both arguments and return values for Dagger Functions. These include `Directory`, `Container`, `Service`, `Secret`, and many more.
+
+:::note
+The types listed on this page are indicative and not exhaustive. For a complete list of supported types and their fields, refer to the Dagger API reference guide.
+:::
+
+The following table lists available types and what they represent:
+
+| Type | Description |
+|------|-------------|
+| `CacheVolume` | A directory whose contents persist across runs |
+| `Container` | An OCI-compatible container |
+| `CurrentModule` | The current Dagger module and its context |
+| `DaggerEngine` | The Dagger Engine configuration and state |
+| `Directory` | A directory (local path or Git reference) |
+| `EnvVariable` | An environment variable name and value |
+| `File` | A file |
+| `GitRepository` | A Git repository |
+| `GitRef` | A Git reference (tag, branch, or commit) |
+| `Host` | The Dagger host environment |
+| `Module` | A Dagger module |
+| `Port` | A port exposed by a container |
+| `Secret` | A secret credential like a password, access token or key) |
+| `Service` | A content-addressed service providing TCP connectivity |
+| `Socket` | A Unix or TCP/IP socket that can be mounted into a container |
+| `Terminal` | An interactive terminal session |
+
+Each type exposes additional fields, which also double as build operations. Some of these are discussed in subsequent pages.

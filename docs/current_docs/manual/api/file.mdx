@@ -4,3 +4,45 @@ displayed_sidebar: "current"
 ---
 
 # File
+
+:::note
+The fields listed on this page are indicative and not exhaustive. For a complete list of fields, refer to the Dagger API reference guide.
+:::
+
+The `File` type represents a single file. Some of its important fields are:
+
+| Field | Description |
+|-------|-------------|
+| `contents` | Returns the contents of the file |
+| `export` | Writes the file to a path on the host |
+
+
+Here is an example of returning the contents of the `/etc/os-release` file from an `alpine` container:
+
+```graphql
+query {
+  container {
+    from(address: "alpine") {
+      file(path: "/etc/os-release") {
+        contents
+      }
+    }
+  }
+}
+```
+
+[Try it in the API Playground](https://play.dagger.cloud/playground/PuxVoRejc6u)
+
+Here is an example of copying the `/etc/os-release` file from an `alpine` container to `/tmp/outfile` on the host:
+
+```graphql
+query {
+  container {
+    from(address: "alpine") {
+      file(path: "/etc/os-release") {
+        export(path: "/tmp/outfile")
+      }
+    }
+  }
+}
+```

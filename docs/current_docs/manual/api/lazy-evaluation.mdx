@@ -15,8 +15,21 @@ An example will make this clearer. First, navigate to [Webhook.site](https://web
 
 Then, execute the following query, replacing the placeholder with your unique webhook URL:
 
-<Embed id="NuLZcSHaNno"/>
+```graphql
+query {
+  container {
+    from(address: "alpine:latest") {
+      withExec(args: ["apk", "add", "curl"]) {
+        withExec(args: ["curl", "YOUR-WEBHOOK-URL"]) {
+          id
+        }
+      }
+    }
+  }
+}
+```
 
+[Try it in the API Playground](https://play.dagger.cloud/playground/NuLZcSHaNno)
 
 This query instructs Dagger to:
 
@@ -31,7 +44,21 @@ However, check the Webhook.site dashboard and you will notice that no HTTP reque
 
 Now, update and execute the query again as follows:
 
-<Embed id="SLtXQ4lvqNS"/>
+```graphql
+query {
+  container {
+    from(address: "alpine:latest") {
+      withExec(args: ["apk", "add", "curl"]) {
+        withExec(args: ["curl", "YOUR-WEBHOOK-URL-HERE"]) {
+          stdout
+        }
+      }
+    }
+  }
+}
+```
+
+[Try it in the API Playground](https://play.dagger.cloud/playground/SLtXQ4lvqNS)
 
 This time, Dagger both prepares and executes the plan, because that is the only way to resolve the `stdout` field. Check the Webhook.site dashboard and the HTTP request sent by the `curl` command will be visible in the request log, as shown below:
 

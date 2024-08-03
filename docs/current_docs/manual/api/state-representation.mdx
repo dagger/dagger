@@ -13,7 +13,17 @@ In the Dagger GraphQL API too, objects expose an ID but here, the ID represents 
 
 To illustrate this, consider the following query:
 
-<Embed id="8I0c_SMKQbj"/>
+```graphql
+query {
+  host {
+    directory(path: ".") {
+      id
+    }
+  }
+}
+```
+
+[Try it in the API Playground](https://play.dagger.cloud/playground/8I0c_SMKQbj)
 
 The return value of the previous query is an ID representing the state of the current directory on the host
 
@@ -21,7 +31,19 @@ By using object IDs to represesent object state, Dagger's GraphQL API enables so
 
 To make this clearer, consider the following query:
 
-<Embed id="PE1GJrfZODq"/>
+```graphql
+query {
+  container {
+    from(address: "alpine:latest") {
+      withExec(args: ["touch", "/tmp/myfile"]) {
+        id
+      }
+    }
+  }
+}
+```
+
+[Try it in the API Playground](https://play.dagger.cloud/playground/PE1GJrfZODq)
 
 This query instructs Dagger to:
 
@@ -31,10 +53,19 @@ This query instructs Dagger to:
 
 The output of this query is an identifier representing the state of the container filesystem and Dagger's execution plan.
 
-
 Now, execute a second query as follows, replacing the placeholder with the contents of the `id` field from the previous query:
 
-<Embed id="DKUH7PI5Yt0"/>
+```graphql
+query {
+  container(id: "YOUR-ID-HERE") {
+    withExec(args: ["ls", "/tmp"]) {
+      stdout
+    }
+  }
+}
+```
+
+[Try it in the API Playground](https://play.dagger.cloud/playground/DKUH7PI5Yt0)
 
 This second query instructs Dagger to:
 
