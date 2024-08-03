@@ -7,31 +7,31 @@ defmodule Dagger.Mod.ObjectTest do
 
       function([name: String.t()], String.t())
 
-      def accept_string(_dag, args) do
+      def accept_string(_self, args) do
         "Hello, #{args.name}"
       end
 
       function([name: binary()], binary())
 
-      def accept_string2(_dag, args) do
+      def accept_string2(_self, args) do
         "Hello, #{args.name}"
       end
 
       function([name: integer()], binary())
 
-      def accept_integer(_dag, args) do
+      def accept_integer(_self, args) do
         "Hello, #{args.name}"
       end
 
       function([name: boolean()], binary())
 
-      def accept_boolean(_dag, args) do
+      def accept_boolean(_self, args) do
         "Hello, #{args.name}"
       end
 
       function([], String.t())
 
-      def empty_args(_dag, _args) do
+      def empty_args(_self, _args) do
         "Empty args"
       end
 
@@ -44,13 +44,13 @@ defmodule Dagger.Mod.ObjectTest do
 
       function([name: list(String.t())], String.t())
 
-      def accept_list(_dag, _args) do
+      def accept_list(_self, _args) do
         "Accept list"
       end
 
       function([name: [String.t()]], String.t())
 
-      def accept_list2(_dag, _args) do
+      def accept_list2(_self, _args) do
         "Accept list"
       end
     end
@@ -98,7 +98,7 @@ defmodule Dagger.Mod.ObjectTest do
 
         function([name: non_neg_integer()], String.t())
 
-        def accept_string(_dag, args) do
+        def accept_string(_self, args) do
           "Hello, #{args.name}"
         end
       end
