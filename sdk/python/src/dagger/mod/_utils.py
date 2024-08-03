@@ -26,6 +26,9 @@ T = TypeVar("T")
 
 AwaitableOrValue: TypeAlias = Coroutine[Any, Any, T] | T
 
+if typing.TYPE_CHECKING:
+    from dagger.mod._resolver import ObjectType
+
 
 async def await_maybe(value: AwaitableOrValue[T]) -> T:
     return await value if inspect.iscoroutine(value) else cast(T, value)
@@ -148,7 +151,11 @@ def strip_annotations(t: _T) -> _T:
 
 def is_mod_object_type(cls) -> bool:
     """Check if the given class was decorated with @object_type."""
-    return hasattr(cls, "__dagger_module__")
+    return hasattr(cls, "__dagger_object_type__")
+
+
+def get_object_type(cls: type) -> ObjectType | None:
+    return getattr(cls, "__dagger_object_type__", None)
 
 
 def get_alt_constructor(cls: type[T]) -> Callable[..., T] | None:
