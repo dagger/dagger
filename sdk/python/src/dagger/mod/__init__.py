@@ -12,6 +12,7 @@ _default_mod = Module()
 enum_type = _default_mod.enum_type
 function = _default_mod.function
 field = _default_mod.field
+interface = _default_mod.interface
 object_type = _default_mod.object_type
 
 
@@ -29,5 +30,6 @@ __all__ = [
     "enum_type",
     "field",
     "function",
+    "interface",
     "object_type",
 ]
