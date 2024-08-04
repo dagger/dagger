@@ -2,38 +2,39 @@
 defmodule Dagger.FunctionCallArgValue do
   @moduledoc "A value passed as a named argument to a function call."
 
-  use Dagger.Core.QueryBuilder
+  alias Dagger.Core.Client
+  alias Dagger.Core.QueryBuilder, as: QB
 
   @derive Dagger.ID
 
-  defstruct [:selection, :client]
+  defstruct [:query_builder, :client]
 
   @type t() :: %__MODULE__{}
 
   @doc "A unique identifier for this FunctionCallArgValue."
   @spec id(t()) :: {:ok, Dagger.FunctionCallArgValueID.t()} | {:error, term()}
   def id(%__MODULE__{} = function_call_arg_value) do
-    selection =
-      function_call_arg_value.selection |> select("id")
+    query_builder =
+      function_call_arg_value.query_builder |> QB.select("id")
 
-    execute(selection, function_call_arg_value.client)
+    Client.execute(function_call_arg_value.client, query_builder)
   end
 
   @doc "The name of the argument."
   @spec name(t()) :: {:ok, String.t()} | {:error, term()}
   def name(%__MODULE__{} = function_call_arg_value) do
-    selection =
-      function_call_arg_value.selection |> select("name")
+    query_builder =
+      function_call_arg_value.query_builder |> QB.select("name")
 
-    execute(selection, function_call_arg_value.client)
+    Client.execute(function_call_arg_value.client, query_builder)
   end
 
   @doc "The value of the argument represented as a JSON serialized string."
   @spec value(t()) :: {:ok, Dagger.JSON.t()} | {:error, term()}
   def value(%__MODULE__{} = function_call_arg_value) do
-    selection =
-      function_call_arg_value.selection |> select("value")
+    query_builder =
+      function_call_arg_value.query_builder |> QB.select("value")
 
-    execute(selection, function_call_arg_value.client)
+    Client.execute(function_call_arg_value.client, query_builder)
   end
 end

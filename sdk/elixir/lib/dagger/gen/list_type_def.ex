@@ -2,22 +2,23 @@
 defmodule Dagger.ListTypeDef do
   @moduledoc "A definition of a list type in a Module."
 
-  use Dagger.Core.QueryBuilder
+  alias Dagger.Core.Client
+  alias Dagger.Core.QueryBuilder, as: QB
 
   @derive Dagger.ID
 
-  defstruct [:selection, :client]
+  defstruct [:query_builder, :client]
 
   @type t() :: %__MODULE__{}
 
   @doc "The type of the elements in the list."
   @spec element_type_def(t()) :: Dagger.TypeDef.t()
   def element_type_def(%__MODULE__{} = list_type_def) do
-    selection =
-      list_type_def.selection |> select("elementTypeDef")
+    query_builder =
+      list_type_def.query_builder |> QB.select("elementTypeDef")
 
     %Dagger.TypeDef{
-      selection: selection,
+      query_builder: query_builder,
       client: list_type_def.client
     }
   end
@@ -25,9 +26,9 @@ defmodule Dagger.ListTypeDef do
   @doc "A unique identifier for this ListTypeDef."
   @spec id(t()) :: {:ok, Dagger.ListTypeDefID.t()} | {:error, term()}
   def id(%__MODULE__{} = list_type_def) do
-    selection =
-      list_type_def.selection |> select("id")
+    query_builder =
+      list_type_def.query_builder |> QB.select("id")
 
-    execute(selection, list_type_def.client)
+    Client.execute(list_type_def.client, query_builder)
   end
 end

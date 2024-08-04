@@ -2,20 +2,21 @@
 defmodule Dagger.Socket do
   @moduledoc "A Unix or TCP/IP socket that can be mounted into a container."
 
-  use Dagger.Core.QueryBuilder
+  alias Dagger.Core.Client
+  alias Dagger.Core.QueryBuilder, as: QB
 
   @derive Dagger.ID
 
-  defstruct [:selection, :client]
+  defstruct [:query_builder, :client]
 
   @type t() :: %__MODULE__{}
 
   @doc "A unique identifier for this Socket."
   @spec id(t()) :: {:ok, Dagger.SocketID.t()} | {:error, term()}
   def id(%__MODULE__{} = socket) do
-    selection =
-      socket.selection |> select("id")
+    query_builder =
+      socket.query_builder |> QB.select("id")
 
-    execute(selection, socket.client)
+    Client.execute(socket.client, query_builder)
   end
 end

@@ -2,22 +2,23 @@
 defmodule Dagger.TypeDef do
   @moduledoc "A definition of a parameter or return type in a Module."
 
-  use Dagger.Core.QueryBuilder
+  alias Dagger.Core.Client
+  alias Dagger.Core.QueryBuilder, as: QB
 
   @derive Dagger.ID
 
-  defstruct [:selection, :client]
+  defstruct [:query_builder, :client]
 
   @type t() :: %__MODULE__{}
 
   @doc "If kind is ENUM, the enum-specific type definition. If kind is not ENUM, this will be null."
   @spec as_enum(t()) :: Dagger.EnumTypeDef.t() | nil
   def as_enum(%__MODULE__{} = type_def) do
-    selection =
-      type_def.selection |> select("asEnum")
+    query_builder =
+      type_def.query_builder |> QB.select("asEnum")
 
     %Dagger.EnumTypeDef{
-      selection: selection,
+      query_builder: query_builder,
       client: type_def.client
     }
   end
@@ -25,11 +26,11 @@ defmodule Dagger.TypeDef do
   @doc "If kind is INPUT, the input-specific type definition. If kind is not INPUT, this will be null."
   @spec as_input(t()) :: Dagger.InputTypeDef.t() | nil
   def as_input(%__MODULE__{} = type_def) do
-    selection =
-      type_def.selection |> select("asInput")
+    query_builder =
+      type_def.query_builder |> QB.select("asInput")
 
     %Dagger.InputTypeDef{
-      selection: selection,
+      query_builder: query_builder,
       client: type_def.client
     }
   end
@@ -37,11 +38,11 @@ defmodule Dagger.TypeDef do
   @doc "If kind is INTERFACE, the interface-specific type definition. If kind is not INTERFACE, this will be null."
   @spec as_interface(t()) :: Dagger.InterfaceTypeDef.t() | nil
   def as_interface(%__MODULE__{} = type_def) do
-    selection =
-      type_def.selection |> select("asInterface")
+    query_builder =
+      type_def.query_builder |> QB.select("asInterface")
 
     %Dagger.InterfaceTypeDef{
-      selection: selection,
+      query_builder: query_builder,
       client: type_def.client
     }
   end
@@ -49,11 +50,11 @@ defmodule Dagger.TypeDef do
   @doc "If kind is LIST, the list-specific type definition. If kind is not LIST, this will be null."
   @spec as_list(t()) :: Dagger.ListTypeDef.t() | nil
   def as_list(%__MODULE__{} = type_def) do
-    selection =
-      type_def.selection |> select("asList")
+    query_builder =
+      type_def.query_builder |> QB.select("asList")
 
     %Dagger.ListTypeDef{
-      selection: selection,
+      query_builder: query_builder,
       client: type_def.client
     }
   end
@@ -61,11 +62,11 @@ defmodule Dagger.TypeDef do
   @doc "If kind is OBJECT, the object-specific type definition. If kind is not OBJECT, this will be null."
   @spec as_object(t()) :: Dagger.ObjectTypeDef.t() | nil
   def as_object(%__MODULE__{} = type_def) do
-    selection =
-      type_def.selection |> select("asObject")
+    query_builder =
+      type_def.query_builder |> QB.select("asObject")
 
     %Dagger.ObjectTypeDef{
-      selection: selection,
+      query_builder: query_builder,
       client: type_def.client
     }
   end
@@ -73,11 +74,11 @@ defmodule Dagger.TypeDef do
   @doc "If kind is SCALAR, the scalar-specific type definition. If kind is not SCALAR, this will be null."
   @spec as_scalar(t()) :: Dagger.ScalarTypeDef.t() | nil
   def as_scalar(%__MODULE__{} = type_def) do
-    selection =
-      type_def.selection |> select("asScalar")
+    query_builder =
+      type_def.query_builder |> QB.select("asScalar")
 
     %Dagger.ScalarTypeDef{
-      selection: selection,
+      query_builder: query_builder,
       client: type_def.client
     }
   end
@@ -85,40 +86,40 @@ defmodule Dagger.TypeDef do
   @doc "A unique identifier for this TypeDef."
   @spec id(t()) :: {:ok, Dagger.TypeDefID.t()} | {:error, term()}
   def id(%__MODULE__{} = type_def) do
-    selection =
-      type_def.selection |> select("id")
+    query_builder =
+      type_def.query_builder |> QB.select("id")
 
-    execute(selection, type_def.client)
+    Client.execute(type_def.client, query_builder)
   end
 
   @doc "The kind of type this is (e.g. primitive, list, object)."
   @spec kind(t()) :: Dagger.TypeDefKind.t()
   def kind(%__MODULE__{} = type_def) do
-    selection =
-      type_def.selection |> select("kind")
+    query_builder =
+      type_def.query_builder |> QB.select("kind")
 
-    execute(selection, type_def.client)
+    Client.execute(type_def.client, query_builder)
   end
 
   @doc "Whether this type can be set to null. Defaults to false."
   @spec optional(t()) :: {:ok, boolean()} | {:error, term()}
   def optional(%__MODULE__{} = type_def) do
-    selection =
-      type_def.selection |> select("optional")
+    query_builder =
+      type_def.query_builder |> QB.select("optional")
 
-    execute(selection, type_def.client)
+    Client.execute(type_def.client, query_builder)
   end
 
   @doc "Adds a function for constructing a new instance of an Object TypeDef, failing if the type is not an object."
   @spec with_constructor(t(), Dagger.Function.t()) :: Dagger.TypeDef.t()
   def with_constructor(%__MODULE__{} = type_def, function) do
-    selection =
-      type_def.selection
-      |> select("withConstructor")
-      |> put_arg("function", Dagger.ID.id!(function))
+    query_builder =
+      type_def.query_builder
+      |> QB.select("withConstructor")
+      |> QB.put_arg("function", Dagger.ID.id!(function))
 
     %Dagger.TypeDef{
-      selection: selection,
+      query_builder: query_builder,
       client: type_def.client
     }
   end
@@ -130,14 +131,14 @@ defmodule Dagger.TypeDef do
   """
   @spec with_enum(t(), String.t(), [{:description, String.t() | nil}]) :: Dagger.TypeDef.t()
   def with_enum(%__MODULE__{} = type_def, name, optional_args \\ []) do
-    selection =
-      type_def.selection
-      |> select("withEnum")
-      |> put_arg("name", name)
-      |> maybe_put_arg("description", optional_args[:description])
+    query_builder =
+      type_def.query_builder
+      |> QB.select("withEnum")
+      |> QB.put_arg("name", name)
+      |> QB.maybe_put_arg("description", optional_args[:description])
 
     %Dagger.TypeDef{
-      selection: selection,
+      query_builder: query_builder,
       client: type_def.client
     }
   end
@@ -145,14 +146,14 @@ defmodule Dagger.TypeDef do
   @doc "Adds a static value for an Enum TypeDef, failing if the type is not an enum."
   @spec with_enum_value(t(), String.t(), [{:description, String.t() | nil}]) :: Dagger.TypeDef.t()
   def with_enum_value(%__MODULE__{} = type_def, value, optional_args \\ []) do
-    selection =
-      type_def.selection
-      |> select("withEnumValue")
-      |> put_arg("value", value)
-      |> maybe_put_arg("description", optional_args[:description])
+    query_builder =
+      type_def.query_builder
+      |> QB.select("withEnumValue")
+      |> QB.put_arg("value", value)
+      |> QB.maybe_put_arg("description", optional_args[:description])
 
     %Dagger.TypeDef{
-      selection: selection,
+      query_builder: query_builder,
       client: type_def.client
     }
   end
@@ -161,15 +162,15 @@ defmodule Dagger.TypeDef do
   @spec with_field(t(), String.t(), Dagger.TypeDef.t(), [{:description, String.t() | nil}]) ::
           Dagger.TypeDef.t()
   def with_field(%__MODULE__{} = type_def, name, type_def, optional_args \\ []) do
-    selection =
-      type_def.selection
-      |> select("withField")
-      |> put_arg("name", name)
-      |> put_arg("typeDef", Dagger.ID.id!(type_def))
-      |> maybe_put_arg("description", optional_args[:description])
+    query_builder =
+      type_def.query_builder
+      |> QB.select("withField")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("typeDef", Dagger.ID.id!(type_def))
+      |> QB.maybe_put_arg("description", optional_args[:description])
 
     %Dagger.TypeDef{
-      selection: selection,
+      query_builder: query_builder,
       client: type_def.client
     }
   end
@@ -177,11 +178,13 @@ defmodule Dagger.TypeDef do
   @doc "Adds a function for an Object or Interface TypeDef, failing if the type is not one of those kinds."
   @spec with_function(t(), Dagger.Function.t()) :: Dagger.TypeDef.t()
   def with_function(%__MODULE__{} = type_def, function) do
-    selection =
-      type_def.selection |> select("withFunction") |> put_arg("function", Dagger.ID.id!(function))
+    query_builder =
+      type_def.query_builder
+      |> QB.select("withFunction")
+      |> QB.put_arg("function", Dagger.ID.id!(function))
 
     %Dagger.TypeDef{
-      selection: selection,
+      query_builder: query_builder,
       client: type_def.client
     }
   end
@@ -189,14 +192,14 @@ defmodule Dagger.TypeDef do
   @doc "Returns a TypeDef of kind Interface with the provided name."
   @spec with_interface(t(), String.t(), [{:description, String.t() | nil}]) :: Dagger.TypeDef.t()
   def with_interface(%__MODULE__{} = type_def, name, optional_args \\ []) do
-    selection =
-      type_def.selection
-      |> select("withInterface")
-      |> put_arg("name", name)
-      |> maybe_put_arg("description", optional_args[:description])
+    query_builder =
+      type_def.query_builder
+      |> QB.select("withInterface")
+      |> QB.put_arg("name", name)
+      |> QB.maybe_put_arg("description", optional_args[:description])
 
     %Dagger.TypeDef{
-      selection: selection,
+      query_builder: query_builder,
       client: type_def.client
     }
   end
@@ -204,11 +207,11 @@ defmodule Dagger.TypeDef do
   @doc "Sets the kind of the type."
   @spec with_kind(t(), Dagger.TypeDefKind.t()) :: Dagger.TypeDef.t()
   def with_kind(%__MODULE__{} = type_def, kind) do
-    selection =
-      type_def.selection |> select("withKind") |> put_arg("kind", kind)
+    query_builder =
+      type_def.query_builder |> QB.select("withKind") |> QB.put_arg("kind", kind)
 
     %Dagger.TypeDef{
-      selection: selection,
+      query_builder: query_builder,
       client: type_def.client
     }
   end
@@ -216,13 +219,13 @@ defmodule Dagger.TypeDef do
   @doc "Returns a TypeDef of kind List with the provided type for its elements."
   @spec with_list_of(t(), Dagger.TypeDef.t()) :: Dagger.TypeDef.t()
   def with_list_of(%__MODULE__{} = type_def, element_type) do
-    selection =
-      type_def.selection
-      |> select("withListOf")
-      |> put_arg("elementType", Dagger.ID.id!(element_type))
+    query_builder =
+      type_def.query_builder
+      |> QB.select("withListOf")
+      |> QB.put_arg("elementType", Dagger.ID.id!(element_type))
 
     %Dagger.TypeDef{
-      selection: selection,
+      query_builder: query_builder,
       client: type_def.client
     }
   end
@@ -234,14 +237,14 @@ defmodule Dagger.TypeDef do
   """
   @spec with_object(t(), String.t(), [{:description, String.t() | nil}]) :: Dagger.TypeDef.t()
   def with_object(%__MODULE__{} = type_def, name, optional_args \\ []) do
-    selection =
-      type_def.selection
-      |> select("withObject")
-      |> put_arg("name", name)
-      |> maybe_put_arg("description", optional_args[:description])
+    query_builder =
+      type_def.query_builder
+      |> QB.select("withObject")
+      |> QB.put_arg("name", name)
+      |> QB.maybe_put_arg("description", optional_args[:description])
 
     %Dagger.TypeDef{
-      selection: selection,
+      query_builder: query_builder,
       client: type_def.client
     }
   end
@@ -249,11 +252,11 @@ defmodule Dagger.TypeDef do
   @doc "Sets whether this type can be set to null."
   @spec with_optional(t(), boolean()) :: Dagger.TypeDef.t()
   def with_optional(%__MODULE__{} = type_def, optional) do
-    selection =
-      type_def.selection |> select("withOptional") |> put_arg("optional", optional)
+    query_builder =
+      type_def.query_builder |> QB.select("withOptional") |> QB.put_arg("optional", optional)
 
     %Dagger.TypeDef{
-      selection: selection,
+      query_builder: query_builder,
       client: type_def.client
     }
   end
@@ -261,14 +264,14 @@ defmodule Dagger.TypeDef do
   @doc "Returns a TypeDef of kind Scalar with the provided name."
   @spec with_scalar(t(), String.t(), [{:description, String.t() | nil}]) :: Dagger.TypeDef.t()
   def with_scalar(%__MODULE__{} = type_def, name, optional_args \\ []) do
-    selection =
-      type_def.selection
-      |> select("withScalar")
-      |> put_arg("name", name)
-      |> maybe_put_arg("description", optional_args[:description])
+    query_builder =
+      type_def.query_builder
+      |> QB.select("withScalar")
+      |> QB.put_arg("name", name)
+      |> QB.maybe_put_arg("description", optional_args[:description])
 
     %Dagger.TypeDef{
-      selection: selection,
+      query_builder: query_builder,
       client: type_def.client
     }
   end

@@ -2,65 +2,66 @@
 defmodule Dagger.DaggerEngineCacheEntry do
   @moduledoc "An individual cache entry in a cache entry set"
 
-  use Dagger.Core.QueryBuilder
+  alias Dagger.Core.Client
+  alias Dagger.Core.QueryBuilder, as: QB
 
   @derive Dagger.ID
 
-  defstruct [:selection, :client]
+  defstruct [:query_builder, :client]
 
   @type t() :: %__MODULE__{}
 
   @doc "Whether the cache entry is actively being used."
   @spec actively_used(t()) :: {:ok, boolean()} | {:error, term()}
   def actively_used(%__MODULE__{} = dagger_engine_cache_entry) do
-    selection =
-      dagger_engine_cache_entry.selection |> select("activelyUsed")
+    query_builder =
+      dagger_engine_cache_entry.query_builder |> QB.select("activelyUsed")
 
-    execute(selection, dagger_engine_cache_entry.client)
+    Client.execute(dagger_engine_cache_entry.client, query_builder)
   end
 
   @doc "The time the cache entry was created, in Unix nanoseconds."
   @spec created_time_unix_nano(t()) :: {:ok, integer()} | {:error, term()}
   def created_time_unix_nano(%__MODULE__{} = dagger_engine_cache_entry) do
-    selection =
-      dagger_engine_cache_entry.selection |> select("createdTimeUnixNano")
+    query_builder =
+      dagger_engine_cache_entry.query_builder |> QB.select("createdTimeUnixNano")
 
-    execute(selection, dagger_engine_cache_entry.client)
+    Client.execute(dagger_engine_cache_entry.client, query_builder)
   end
 
   @doc "The description of the cache entry."
   @spec description(t()) :: {:ok, String.t()} | {:error, term()}
   def description(%__MODULE__{} = dagger_engine_cache_entry) do
-    selection =
-      dagger_engine_cache_entry.selection |> select("description")
+    query_builder =
+      dagger_engine_cache_entry.query_builder |> QB.select("description")
 
-    execute(selection, dagger_engine_cache_entry.client)
+    Client.execute(dagger_engine_cache_entry.client, query_builder)
   end
 
   @doc "The disk space used by the cache entry."
   @spec disk_space_bytes(t()) :: {:ok, integer()} | {:error, term()}
   def disk_space_bytes(%__MODULE__{} = dagger_engine_cache_entry) do
-    selection =
-      dagger_engine_cache_entry.selection |> select("diskSpaceBytes")
+    query_builder =
+      dagger_engine_cache_entry.query_builder |> QB.select("diskSpaceBytes")
 
-    execute(selection, dagger_engine_cache_entry.client)
+    Client.execute(dagger_engine_cache_entry.client, query_builder)
   end
 
   @doc "A unique identifier for this DaggerEngineCacheEntry."
   @spec id(t()) :: {:ok, Dagger.DaggerEngineCacheEntryID.t()} | {:error, term()}
   def id(%__MODULE__{} = dagger_engine_cache_entry) do
-    selection =
-      dagger_engine_cache_entry.selection |> select("id")
+    query_builder =
+      dagger_engine_cache_entry.query_builder |> QB.select("id")
 
-    execute(selection, dagger_engine_cache_entry.client)
+    Client.execute(dagger_engine_cache_entry.client, query_builder)
   end
 
   @doc "The most recent time the cache entry was used, in Unix nanoseconds."
   @spec most_recent_use_time_unix_nano(t()) :: {:ok, integer()} | {:error, term()}
   def most_recent_use_time_unix_nano(%__MODULE__{} = dagger_engine_cache_entry) do
-    selection =
-      dagger_engine_cache_entry.selection |> select("mostRecentUseTimeUnixNano")
+    query_builder =
+      dagger_engine_cache_entry.query_builder |> QB.select("mostRecentUseTimeUnixNano")
 
-    execute(selection, dagger_engine_cache_entry.client)
+    Client.execute(dagger_engine_cache_entry.client, query_builder)
   end
 end

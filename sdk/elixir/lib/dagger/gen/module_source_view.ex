@@ -2,38 +2,39 @@
 defmodule Dagger.ModuleSourceView do
   @moduledoc "A named set of path filters that can be applied to directory arguments provided to functions."
 
-  use Dagger.Core.QueryBuilder
+  alias Dagger.Core.Client
+  alias Dagger.Core.QueryBuilder, as: QB
 
   @derive Dagger.ID
 
-  defstruct [:selection, :client]
+  defstruct [:query_builder, :client]
 
   @type t() :: %__MODULE__{}
 
   @doc "A unique identifier for this ModuleSourceView."
   @spec id(t()) :: {:ok, Dagger.ModuleSourceViewID.t()} | {:error, term()}
   def id(%__MODULE__{} = module_source_view) do
-    selection =
-      module_source_view.selection |> select("id")
+    query_builder =
+      module_source_view.query_builder |> QB.select("id")
 
-    execute(selection, module_source_view.client)
+    Client.execute(module_source_view.client, query_builder)
   end
 
   @doc "The name of the view"
   @spec name(t()) :: {:ok, String.t()} | {:error, term()}
   def name(%__MODULE__{} = module_source_view) do
-    selection =
-      module_source_view.selection |> select("name")
+    query_builder =
+      module_source_view.query_builder |> QB.select("name")
 
-    execute(selection, module_source_view.client)
+    Client.execute(module_source_view.client, query_builder)
   end
 
   @doc "The patterns of the view used to filter paths"
   @spec patterns(t()) :: {:ok, [String.t()]} | {:error, term()}
   def patterns(%__MODULE__{} = module_source_view) do
-    selection =
-      module_source_view.selection |> select("patterns")
+    query_builder =
+      module_source_view.query_builder |> QB.select("patterns")
 
-    execute(selection, module_source_view.client)
+    Client.execute(module_source_view.client, query_builder)
   end
 end

@@ -2,38 +2,39 @@
 defmodule Dagger.Secret do
   @moduledoc "A reference to a secret value, which can be handled more safely than the value itself."
 
-  use Dagger.Core.QueryBuilder
+  alias Dagger.Core.Client
+  alias Dagger.Core.QueryBuilder, as: QB
 
   @derive Dagger.ID
 
-  defstruct [:selection, :client]
+  defstruct [:query_builder, :client]
 
   @type t() :: %__MODULE__{}
 
   @doc "A unique identifier for this Secret."
   @spec id(t()) :: {:ok, Dagger.SecretID.t()} | {:error, term()}
   def id(%__MODULE__{} = secret) do
-    selection =
-      secret.selection |> select("id")
+    query_builder =
+      secret.query_builder |> QB.select("id")
 
-    execute(selection, secret.client)
+    Client.execute(secret.client, query_builder)
   end
 
   @doc "The name of this secret."
   @spec name(t()) :: {:ok, String.t()} | {:error, term()}
   def name(%__MODULE__{} = secret) do
-    selection =
-      secret.selection |> select("name")
+    query_builder =
+      secret.query_builder |> QB.select("name")
 
-    execute(selection, secret.client)
+    Client.execute(secret.client, query_builder)
   end
 
   @doc "The value of this secret."
   @spec plaintext(t()) :: {:ok, String.t()} | {:error, term()}
   def plaintext(%__MODULE__{} = secret) do
-    selection =
-      secret.selection |> select("plaintext")
+    query_builder =
+      secret.query_builder |> QB.select("plaintext")
 
-    execute(selection, secret.client)
+    Client.execute(secret.client, query_builder)
   end
 end
