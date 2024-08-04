@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace DaggerModule;
 
+use Dagger\Attribute\Argument;
 use Dagger\Attribute\DaggerFunction;
 use Dagger\Attribute\DaggerObject;
 use Dagger\Container;
@@ -14,25 +15,17 @@ use function Dagger\dag;
 #[DaggerObject]
 final class PhpSdkDev
 {
-    #[DaggerFunction('Run integration tests from source directory')]
-    public function integrationTests(Directory $source): Container {
-        return $this->base($source)->withExec(
-                ['phpunit', '--group=integration'],
-                experimentalPrivilegedNesting: true,
-            );
-     }
-
-    #[DaggerFunction('Run unit tests from source directory')]
-    public function unitTests(Directory $source): Container {
-        return $this->base($source)->withExec(['phpunit', '--group=unit']);
-    }
-
     #[DaggerFunction('Run tests from source directory')]
-    public function tests(Directory $source): Container {
+    public function test(
+        #[Argument('Run tests from the given source directory')]
+        Directory $source,
+        #[Argument('Only run tests in the given group')]
+        ?string $group = null,
+    ): Container {
         return $this->base($source)->withExec(
-                ['phpunit'],
-                experimentalPrivilegedNesting: true,
-            );
+            is_null($group) ? ['phpunit'] : ['phpunit', "--group=$group"],
+            experimentalPrivilegedNesting: true,
+        );
     }
 
     private function base(Directory $source): Container
@@ -47,7 +40,7 @@ final class PhpSdkDev
             ->withMountedCache('/root/.composer', dag()
                 ->cacheVolume('composer-php:8.3-cli-alpine'))
             ->withEnvVariable('COMPOSER_HOME', '/root/.composer')
-            ->WithEnvVariable('COMPOSER_ALLOW_SUPERUSER', '1')
+            ->withEnvVariable('COMPOSER_ALLOW_SUPERUSER', '1')
             ->withMountedDirectory('/src/sdk/php', $source)
             ->withWorkdir('/src/sdk/php')
             ->withExec(['composer', 'install'])
