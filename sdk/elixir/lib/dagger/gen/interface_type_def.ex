@@ -2,37 +2,38 @@
 defmodule Dagger.InterfaceTypeDef do
   @moduledoc "A definition of a custom interface defined in a Module."
 
-  use Dagger.Core.QueryBuilder
+  alias Dagger.Core.Client
+  alias Dagger.Core.QueryBuilder, as: QB
 
   @derive Dagger.ID
 
-  defstruct [:selection, :client]
+  defstruct [:query_builder, :client]
 
   @type t() :: %__MODULE__{}
 
   @doc "The doc string for the interface, if any."
   @spec description(t()) :: {:ok, String.t()} | {:error, term()}
   def description(%__MODULE__{} = interface_type_def) do
-    selection =
-      interface_type_def.selection |> select("description")
+    query_builder =
+      interface_type_def.query_builder |> QB.select("description")
 
-    execute(selection, interface_type_def.client)
+    Client.execute(interface_type_def.client, query_builder)
   end
 
   @doc "Functions defined on this interface, if any."
   @spec functions(t()) :: {:ok, [Dagger.Function.t()]} | {:error, term()}
   def functions(%__MODULE__{} = interface_type_def) do
-    selection =
-      interface_type_def.selection |> select("functions") |> select("id")
+    query_builder =
+      interface_type_def.query_builder |> QB.select("functions") |> QB.select("id")
 
-    with {:ok, items} <- execute(selection, interface_type_def.client) do
+    with {:ok, items} <- Client.execute(interface_type_def.client, query_builder) do
       {:ok,
        for %{"id" => id} <- items do
          %Dagger.Function{
-           selection:
-             query()
-             |> select("loadFunctionFromID")
-             |> arg("id", id),
+           query_builder:
+             QB.query()
+             |> QB.select("loadFunctionFromID")
+             |> QB.put_arg("id", id),
            client: interface_type_def.client
          }
        end}
@@ -42,27 +43,27 @@ defmodule Dagger.InterfaceTypeDef do
   @doc "A unique identifier for this InterfaceTypeDef."
   @spec id(t()) :: {:ok, Dagger.InterfaceTypeDefID.t()} | {:error, term()}
   def id(%__MODULE__{} = interface_type_def) do
-    selection =
-      interface_type_def.selection |> select("id")
+    query_builder =
+      interface_type_def.query_builder |> QB.select("id")
 
-    execute(selection, interface_type_def.client)
+    Client.execute(interface_type_def.client, query_builder)
   end
 
   @doc "The name of the interface."
   @spec name(t()) :: {:ok, String.t()} | {:error, term()}
   def name(%__MODULE__{} = interface_type_def) do
-    selection =
-      interface_type_def.selection |> select("name")
+    query_builder =
+      interface_type_def.query_builder |> QB.select("name")
 
-    execute(selection, interface_type_def.client)
+    Client.execute(interface_type_def.client, query_builder)
   end
 
   @doc "If this InterfaceTypeDef is associated with a Module, the name of the module. Unset otherwise."
   @spec source_module_name(t()) :: {:ok, String.t()} | {:error, term()}
   def source_module_name(%__MODULE__{} = interface_type_def) do
-    selection =
-      interface_type_def.selection |> select("sourceModuleName")
+    query_builder =
+      interface_type_def.query_builder |> QB.select("sourceModuleName")
 
-    execute(selection, interface_type_def.client)
+    Client.execute(interface_type_def.client, query_builder)
   end
 end

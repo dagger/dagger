@@ -7,28 +7,29 @@ defmodule Dagger.InputTypeDef do
   module accept input objects via their id rather than graphql input types.
   """
 
-  use Dagger.Core.QueryBuilder
+  alias Dagger.Core.Client
+  alias Dagger.Core.QueryBuilder, as: QB
 
   @derive Dagger.ID
 
-  defstruct [:selection, :client]
+  defstruct [:query_builder, :client]
 
   @type t() :: %__MODULE__{}
 
   @doc "Static fields defined on this input object, if any."
   @spec fields(t()) :: {:ok, [Dagger.FieldTypeDef.t()]} | {:error, term()}
   def fields(%__MODULE__{} = input_type_def) do
-    selection =
-      input_type_def.selection |> select("fields") |> select("id")
+    query_builder =
+      input_type_def.query_builder |> QB.select("fields") |> QB.select("id")
 
-    with {:ok, items} <- execute(selection, input_type_def.client) do
+    with {:ok, items} <- Client.execute(input_type_def.client, query_builder) do
       {:ok,
        for %{"id" => id} <- items do
          %Dagger.FieldTypeDef{
-           selection:
-             query()
-             |> select("loadFieldTypeDefFromID")
-             |> arg("id", id),
+           query_builder:
+             QB.query()
+             |> QB.select("loadFieldTypeDefFromID")
+             |> QB.put_arg("id", id),
            client: input_type_def.client
          }
        end}
@@ -38,18 +39,18 @@ defmodule Dagger.InputTypeDef do
   @doc "A unique identifier for this InputTypeDef."
   @spec id(t()) :: {:ok, Dagger.InputTypeDefID.t()} | {:error, term()}
   def id(%__MODULE__{} = input_type_def) do
-    selection =
-      input_type_def.selection |> select("id")
+    query_builder =
+      input_type_def.query_builder |> QB.select("id")
 
-    execute(selection, input_type_def.client)
+    Client.execute(input_type_def.client, query_builder)
   end
 
   @doc "The name of the input object."
   @spec name(t()) :: {:ok, String.t()} | {:error, term()}
   def name(%__MODULE__{} = input_type_def) do
-    selection =
-      input_type_def.selection |> select("name")
+    query_builder =
+      input_type_def.query_builder |> QB.select("name")
 
-    execute(selection, input_type_def.client)
+    Client.execute(input_type_def.client, query_builder)
   end
 end

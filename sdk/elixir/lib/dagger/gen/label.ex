@@ -2,38 +2,39 @@
 defmodule Dagger.Label do
   @moduledoc "A simple key value object that represents a label."
 
-  use Dagger.Core.QueryBuilder
+  alias Dagger.Core.Client
+  alias Dagger.Core.QueryBuilder, as: QB
 
   @derive Dagger.ID
 
-  defstruct [:selection, :client]
+  defstruct [:query_builder, :client]
 
   @type t() :: %__MODULE__{}
 
   @doc "A unique identifier for this Label."
   @spec id(t()) :: {:ok, Dagger.LabelID.t()} | {:error, term()}
   def id(%__MODULE__{} = label) do
-    selection =
-      label.selection |> select("id")
+    query_builder =
+      label.query_builder |> QB.select("id")
 
-    execute(selection, label.client)
+    Client.execute(label.client, query_builder)
   end
 
   @doc "The label name."
   @spec name(t()) :: {:ok, String.t()} | {:error, term()}
   def name(%__MODULE__{} = label) do
-    selection =
-      label.selection |> select("name")
+    query_builder =
+      label.query_builder |> QB.select("name")
 
-    execute(selection, label.client)
+    Client.execute(label.client, query_builder)
   end
 
   @doc "The label value."
   @spec value(t()) :: {:ok, String.t()} | {:error, term()}
   def value(%__MODULE__{} = label) do
-    selection =
-      label.selection |> select("value")
+    query_builder =
+      label.query_builder |> QB.select("value")
 
-    execute(selection, label.client)
+    Client.execute(label.client, query_builder)
   end
 end

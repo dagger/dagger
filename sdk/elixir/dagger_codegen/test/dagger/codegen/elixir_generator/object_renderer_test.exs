@@ -11,20 +11,21 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRendererTest do
       defmodule Dagger.Client do
         @moduledoc "The root of the DAG."
 
-        use Dagger.Core.QueryBuilder
+        alias Dagger.Core.Client
+        alias Dagger.Core.QueryBuilder, as: QB
 
-        defstruct [:selection, :client]
+        defstruct [:query_builder, :client]
 
         @type t() :: %__MODULE__{}
 
         @doc "Create a new TypeDef."
         @spec type_def(t()) :: Dagger.TypeDef.t()
         def type_def(%__MODULE__{} = client) do
-          selection =
-            client.selection |> select("typeDef")
+          query_builder =
+            client.query_builder |> QB.select("typeDef")
 
           %Dagger.TypeDef{
-            selection: selection,
+            query_builder: query_builder,
             client: client.client
           }
         end
@@ -40,26 +41,27 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRendererTest do
       defmodule Dagger.Container do
         @moduledoc "The root of the DAG."
 
-        use Dagger.Core.QueryBuilder
+        alias Dagger.Core.Client
+        alias Dagger.Core.QueryBuilder, as: QB
 
-        defstruct [:selection, :client]
+        defstruct [:query_builder, :client]
 
         @type t() :: %__MODULE__{}
 
         @doc "Retrieves the list of environment variables passed to commands."
         @spec env_variables(t()) :: {:ok, [Dagger.EnvVariable.t()]} | {:error, term()}
         def env_variables(%__MODULE__{} = container) do
-          selection =
-            container.selection |> select("envVariables") |> select("id")
+          query_builder =
+            container.query_builder |> QB.select("envVariables") |> QB.select("id")
 
-          with {:ok, items} <- execute(selection, container.client) do
+          with {:ok, items} <- Client.execute(container.client, query_builder) do
             {:ok,
              for %{"id" => id} <- items do
                %Dagger.EnvVariable{
-                 selection:
-                   query()
-                   |> select("loadEnvVariableFromID")
-                   |> arg("id", id),
+                 query_builder:
+                   QB.query()
+                   |> QB.select("loadEnvVariableFromID")
+                   |> QB.put_arg("id", id),
                  client: container.client
                }
              end}
@@ -77,19 +79,20 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRendererTest do
       defmodule Dagger.EnvVariable do
         @moduledoc "An environment variable name and value."
 
-        use Dagger.Core.QueryBuilder
+        alias Dagger.Core.Client
+        alias Dagger.Core.QueryBuilder, as: QB
 
-        defstruct [:selection, :client]
+        defstruct [:query_builder, :client]
 
         @type t() :: %__MODULE__{}
 
         @doc "The environment variable name."
         @spec name(t()) :: {:ok, String.t()} | {:error, term()}
         def name(%__MODULE__{} = env_variable) do
-          selection =
-            env_variable.selection |> select("name")
+          query_builder =
+            env_variable.query_builder |> QB.select("name")
 
-          execute(selection, env_variable.client)
+          Client.execute(env_variable.client, query_builder)
         end
       end\
       """ <- render_type(ObjectRenderer, "test/fixtures/objects/execute-leaf-node.json")
@@ -103,20 +106,21 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRendererTest do
       defmodule Dagger.Client do
         @moduledoc "The root of the DAG."
 
-        use Dagger.Core.QueryBuilder
+        alias Dagger.Core.Client
+        alias Dagger.Core.QueryBuilder, as: QB
 
-        defstruct [:selection, :client]
+        defstruct [:query_builder, :client]
 
         @type t() :: %__MODULE__{}
 
         @doc "Load a Container from its ID."
         @spec load_container_from_id(t(), Dagger.ContainerID.t()) :: Dagger.Container.t()
         def load_container_from_id(%__MODULE__{} = client, id) do
-          selection =
-            client.selection |> select("loadContainerFromID") |> put_arg("id", id)
+          query_builder =
+            client.query_builder |> QB.select("loadContainerFromID") |> QB.put_arg("id", id)
 
           %Dagger.Container{
-            selection: selection,
+            query_builder: query_builder,
             client: client.client
           }
         end
@@ -132,10 +136,11 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRendererTest do
       defmodule Dagger.Container do
         @moduledoc "The root of the DAG."
 
-        use Dagger.Core.QueryBuilder
+        alias Dagger.Core.Client
+        alias Dagger.Core.QueryBuilder, as: QB
 
         @derive Dagger.Sync
-        defstruct [:selection, :client]
+        defstruct [:query_builder, :client]
 
         @type t() :: %__MODULE__{}
 
@@ -146,16 +151,16 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRendererTest do
         \"""
         @spec sync(t()) :: {:ok, Dagger.Container.t()} | {:error, term()}
         def sync(%__MODULE__{} = container) do
-          selection =
-            container.selection |> select("sync")
+          query_builder =
+            container.query_builder |> QB.select("sync")
 
-          with {:ok, id} <- execute(selection, container.client) do
+          with {:ok, id} <- Client.execute(container.client, query_builder) do
             {:ok,
              %Dagger.Container{
-               selection:
-                 query()
-                 |> select("loadContainerFromID")
-                 |> arg("id", id),
+               query_builder:
+                 QB.query()
+                 |> QB.select("loadContainerFromID")
+                 |> QB.put_arg("id", id),
                client: container.client
              }}
           end
@@ -172,19 +177,20 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRendererTest do
       defmodule Dagger.FunctionCall do
         @moduledoc "An active function call."
 
-        use Dagger.Core.QueryBuilder
+        alias Dagger.Core.Client
+        alias Dagger.Core.QueryBuilder, as: QB
 
-        defstruct [:selection, :client]
+        defstruct [:query_builder, :client]
 
         @type t() :: %__MODULE__{}
 
         @doc "Set the return value of the function call to the provided value."
         @spec return_value(t(), Dagger.JSON.t()) :: :ok | {:error, term()}
         def return_value(%__MODULE__{} = function_call, value) do
-          selection =
-            function_call.selection |> select("returnValue") |> put_arg("value", value)
+          query_builder =
+            function_call.query_builder |> QB.select("returnValue") |> QB.put_arg("value", value)
 
-          case execute(selection, function_call.client) do
+          case Client.execute(function_call.client, query_builder) do
             {:ok, _} -> :ok
             error -> error
           end

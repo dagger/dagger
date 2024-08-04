@@ -2,28 +2,29 @@
 defmodule Dagger.Module do
   @moduledoc "A Dagger module."
 
-  use Dagger.Core.QueryBuilder
+  alias Dagger.Core.Client
+  alias Dagger.Core.QueryBuilder, as: QB
 
   @derive Dagger.ID
 
-  defstruct [:selection, :client]
+  defstruct [:query_builder, :client]
 
   @type t() :: %__MODULE__{}
 
   @doc "Modules used by this module."
   @spec dependencies(t()) :: {:ok, [Dagger.Module.t()]} | {:error, term()}
   def dependencies(%__MODULE__{} = module) do
-    selection =
-      module.selection |> select("dependencies") |> select("id")
+    query_builder =
+      module.query_builder |> QB.select("dependencies") |> QB.select("id")
 
-    with {:ok, items} <- execute(selection, module.client) do
+    with {:ok, items} <- Client.execute(module.client, query_builder) do
       {:ok,
        for %{"id" => id} <- items do
          %Dagger.Module{
-           selection:
-             query()
-             |> select("loadModuleFromID")
-             |> arg("id", id),
+           query_builder:
+             QB.query()
+             |> QB.select("loadModuleFromID")
+             |> QB.put_arg("id", id),
            client: module.client
          }
        end}
@@ -33,17 +34,17 @@ defmodule Dagger.Module do
   @doc "The dependencies as configured by the module."
   @spec dependency_config(t()) :: {:ok, [Dagger.ModuleDependency.t()]} | {:error, term()}
   def dependency_config(%__MODULE__{} = module) do
-    selection =
-      module.selection |> select("dependencyConfig") |> select("id")
+    query_builder =
+      module.query_builder |> QB.select("dependencyConfig") |> QB.select("id")
 
-    with {:ok, items} <- execute(selection, module.client) do
+    with {:ok, items} <- Client.execute(module.client, query_builder) do
       {:ok,
        for %{"id" => id} <- items do
          %Dagger.ModuleDependency{
-           selection:
-             query()
-             |> select("loadModuleDependencyFromID")
-             |> arg("id", id),
+           query_builder:
+             QB.query()
+             |> QB.select("loadModuleDependencyFromID")
+             |> QB.put_arg("id", id),
            client: module.client
          }
        end}
@@ -53,26 +54,26 @@ defmodule Dagger.Module do
   @doc "The doc string of the module, if any"
   @spec description(t()) :: {:ok, String.t()} | {:error, term()}
   def description(%__MODULE__{} = module) do
-    selection =
-      module.selection |> select("description")
+    query_builder =
+      module.query_builder |> QB.select("description")
 
-    execute(selection, module.client)
+    Client.execute(module.client, query_builder)
   end
 
   @doc "Enumerations served by this module."
   @spec enums(t()) :: {:ok, [Dagger.TypeDef.t()]} | {:error, term()}
   def enums(%__MODULE__{} = module) do
-    selection =
-      module.selection |> select("enums") |> select("id")
+    query_builder =
+      module.query_builder |> QB.select("enums") |> QB.select("id")
 
-    with {:ok, items} <- execute(selection, module.client) do
+    with {:ok, items} <- Client.execute(module.client, query_builder) do
       {:ok,
        for %{"id" => id} <- items do
          %Dagger.TypeDef{
-           selection:
-             query()
-             |> select("loadTypeDefFromID")
-             |> arg("id", id),
+           query_builder:
+             QB.query()
+             |> QB.select("loadTypeDefFromID")
+             |> QB.put_arg("id", id),
            client: module.client
          }
        end}
@@ -82,11 +83,11 @@ defmodule Dagger.Module do
   @doc "The generated files and directories made on top of the module source's context directory."
   @spec generated_context_diff(t()) :: Dagger.Directory.t()
   def generated_context_diff(%__MODULE__{} = module) do
-    selection =
-      module.selection |> select("generatedContextDiff")
+    query_builder =
+      module.query_builder |> QB.select("generatedContextDiff")
 
     %Dagger.Directory{
-      selection: selection,
+      query_builder: query_builder,
       client: module.client
     }
   end
@@ -94,11 +95,11 @@ defmodule Dagger.Module do
   @doc "The module source's context plus any configuration and source files created by codegen."
   @spec generated_context_directory(t()) :: Dagger.Directory.t()
   def generated_context_directory(%__MODULE__{} = module) do
-    selection =
-      module.selection |> select("generatedContextDirectory")
+    query_builder =
+      module.query_builder |> QB.select("generatedContextDirectory")
 
     %Dagger.Directory{
-      selection: selection,
+      query_builder: query_builder,
       client: module.client
     }
   end
@@ -106,20 +107,20 @@ defmodule Dagger.Module do
   @doc "A unique identifier for this Module."
   @spec id(t()) :: {:ok, Dagger.ModuleID.t()} | {:error, term()}
   def id(%__MODULE__{} = module) do
-    selection =
-      module.selection |> select("id")
+    query_builder =
+      module.query_builder |> QB.select("id")
 
-    execute(selection, module.client)
+    Client.execute(module.client, query_builder)
   end
 
   @doc "Retrieves the module with the objects loaded via its SDK."
   @spec initialize(t()) :: Dagger.Module.t()
   def initialize(%__MODULE__{} = module) do
-    selection =
-      module.selection |> select("initialize")
+    query_builder =
+      module.query_builder |> QB.select("initialize")
 
     %Dagger.Module{
-      selection: selection,
+      query_builder: query_builder,
       client: module.client
     }
   end
@@ -127,17 +128,17 @@ defmodule Dagger.Module do
   @doc "Interfaces served by this module."
   @spec interfaces(t()) :: {:ok, [Dagger.TypeDef.t()]} | {:error, term()}
   def interfaces(%__MODULE__{} = module) do
-    selection =
-      module.selection |> select("interfaces") |> select("id")
+    query_builder =
+      module.query_builder |> QB.select("interfaces") |> QB.select("id")
 
-    with {:ok, items} <- execute(selection, module.client) do
+    with {:ok, items} <- Client.execute(module.client, query_builder) do
       {:ok,
        for %{"id" => id} <- items do
          %Dagger.TypeDef{
-           selection:
-             query()
-             |> select("loadTypeDefFromID")
-             |> arg("id", id),
+           query_builder:
+             QB.query()
+             |> QB.select("loadTypeDefFromID")
+             |> QB.put_arg("id", id),
            client: module.client
          }
        end}
@@ -147,26 +148,26 @@ defmodule Dagger.Module do
   @doc "The name of the module"
   @spec name(t()) :: {:ok, String.t()} | {:error, term()}
   def name(%__MODULE__{} = module) do
-    selection =
-      module.selection |> select("name")
+    query_builder =
+      module.query_builder |> QB.select("name")
 
-    execute(selection, module.client)
+    Client.execute(module.client, query_builder)
   end
 
   @doc "Objects served by this module."
   @spec objects(t()) :: {:ok, [Dagger.TypeDef.t()]} | {:error, term()}
   def objects(%__MODULE__{} = module) do
-    selection =
-      module.selection |> select("objects") |> select("id")
+    query_builder =
+      module.query_builder |> QB.select("objects") |> QB.select("id")
 
-    with {:ok, items} <- execute(selection, module.client) do
+    with {:ok, items} <- Client.execute(module.client, query_builder) do
       {:ok,
        for %{"id" => id} <- items do
          %Dagger.TypeDef{
-           selection:
-             query()
-             |> select("loadTypeDefFromID")
-             |> arg("id", id),
+           query_builder:
+             QB.query()
+             |> QB.select("loadTypeDefFromID")
+             |> QB.put_arg("id", id),
            client: module.client
          }
        end}
@@ -176,11 +177,11 @@ defmodule Dagger.Module do
   @doc "The container that runs the module's entrypoint. It will fail to execute if the module doesn't compile."
   @spec runtime(t()) :: Dagger.Container.t()
   def runtime(%__MODULE__{} = module) do
-    selection =
-      module.selection |> select("runtime")
+    query_builder =
+      module.query_builder |> QB.select("runtime")
 
     %Dagger.Container{
-      selection: selection,
+      query_builder: query_builder,
       client: module.client
     }
   end
@@ -188,10 +189,10 @@ defmodule Dagger.Module do
   @doc "The SDK used by this module. Either a name of a builtin SDK or a module source ref string pointing to the SDK's implementation."
   @spec sdk(t()) :: {:ok, String.t()} | {:error, term()}
   def sdk(%__MODULE__{} = module) do
-    selection =
-      module.selection |> select("sdk")
+    query_builder =
+      module.query_builder |> QB.select("sdk")
 
-    execute(selection, module.client)
+    Client.execute(module.client, query_builder)
   end
 
   @doc """
@@ -201,10 +202,10 @@ defmodule Dagger.Module do
   """
   @spec serve(t()) :: :ok | {:error, term()}
   def serve(%__MODULE__{} = module) do
-    selection =
-      module.selection |> select("serve")
+    query_builder =
+      module.query_builder |> QB.select("serve")
 
-    case execute(selection, module.client) do
+    case Client.execute(module.client, query_builder) do
       {:ok, _} -> :ok
       error -> error
     end
@@ -213,11 +214,11 @@ defmodule Dagger.Module do
   @doc "The source for the module."
   @spec source(t()) :: Dagger.ModuleSource.t()
   def source(%__MODULE__{} = module) do
-    selection =
-      module.selection |> select("source")
+    query_builder =
+      module.query_builder |> QB.select("source")
 
     %Dagger.ModuleSource{
-      selection: selection,
+      query_builder: query_builder,
       client: module.client
     }
   end
@@ -225,11 +226,13 @@ defmodule Dagger.Module do
   @doc "Retrieves the module with the given description"
   @spec with_description(t(), String.t()) :: Dagger.Module.t()
   def with_description(%__MODULE__{} = module, description) do
-    selection =
-      module.selection |> select("withDescription") |> put_arg("description", description)
+    query_builder =
+      module.query_builder
+      |> QB.select("withDescription")
+      |> QB.put_arg("description", description)
 
     %Dagger.Module{
-      selection: selection,
+      query_builder: query_builder,
       client: module.client
     }
   end
@@ -237,11 +240,11 @@ defmodule Dagger.Module do
   @doc "This module plus the given Enum type and associated values"
   @spec with_enum(t(), Dagger.TypeDef.t()) :: Dagger.Module.t()
   def with_enum(%__MODULE__{} = module, enum) do
-    selection =
-      module.selection |> select("withEnum") |> put_arg("enum", Dagger.ID.id!(enum))
+    query_builder =
+      module.query_builder |> QB.select("withEnum") |> QB.put_arg("enum", Dagger.ID.id!(enum))
 
     %Dagger.Module{
-      selection: selection,
+      query_builder: query_builder,
       client: module.client
     }
   end
@@ -249,11 +252,13 @@ defmodule Dagger.Module do
   @doc "This module plus the given Interface type and associated functions"
   @spec with_interface(t(), Dagger.TypeDef.t()) :: Dagger.Module.t()
   def with_interface(%__MODULE__{} = module, iface) do
-    selection =
-      module.selection |> select("withInterface") |> put_arg("iface", Dagger.ID.id!(iface))
+    query_builder =
+      module.query_builder
+      |> QB.select("withInterface")
+      |> QB.put_arg("iface", Dagger.ID.id!(iface))
 
     %Dagger.Module{
-      selection: selection,
+      query_builder: query_builder,
       client: module.client
     }
   end
@@ -261,11 +266,13 @@ defmodule Dagger.Module do
   @doc "This module plus the given Object type and associated functions."
   @spec with_object(t(), Dagger.TypeDef.t()) :: Dagger.Module.t()
   def with_object(%__MODULE__{} = module, object) do
-    selection =
-      module.selection |> select("withObject") |> put_arg("object", Dagger.ID.id!(object))
+    query_builder =
+      module.query_builder
+      |> QB.select("withObject")
+      |> QB.put_arg("object", Dagger.ID.id!(object))
 
     %Dagger.Module{
-      selection: selection,
+      query_builder: query_builder,
       client: module.client
     }
   end
@@ -274,14 +281,14 @@ defmodule Dagger.Module do
   @spec with_source(t(), Dagger.ModuleSource.t(), [{:engine_version, String.t() | nil}]) ::
           Dagger.Module.t()
   def with_source(%__MODULE__{} = module, source, optional_args \\ []) do
-    selection =
-      module.selection
-      |> select("withSource")
-      |> put_arg("source", Dagger.ID.id!(source))
-      |> maybe_put_arg("engineVersion", optional_args[:engine_version])
+    query_builder =
+      module.query_builder
+      |> QB.select("withSource")
+      |> QB.put_arg("source", Dagger.ID.id!(source))
+      |> QB.maybe_put_arg("engineVersion", optional_args[:engine_version])
 
     %Dagger.Module{
-      selection: selection,
+      query_builder: query_builder,
       client: module.client
     }
   end

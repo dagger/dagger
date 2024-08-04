@@ -2,21 +2,22 @@
 defmodule Dagger.Terminal do
   @moduledoc "An interactive terminal that clients can connect to."
 
-  use Dagger.Core.QueryBuilder
+  alias Dagger.Core.Client
+  alias Dagger.Core.QueryBuilder, as: QB
 
   @derive Dagger.ID
   @derive Dagger.Sync
-  defstruct [:selection, :client]
+  defstruct [:query_builder, :client]
 
   @type t() :: %__MODULE__{}
 
   @doc "A unique identifier for this Terminal."
   @spec id(t()) :: {:ok, Dagger.TerminalID.t()} | {:error, term()}
   def id(%__MODULE__{} = terminal) do
-    selection =
-      terminal.selection |> select("id")
+    query_builder =
+      terminal.query_builder |> QB.select("id")
 
-    execute(selection, terminal.client)
+    Client.execute(terminal.client, query_builder)
   end
 
   @doc """
@@ -26,16 +27,16 @@ defmodule Dagger.Terminal do
   """
   @spec sync(t()) :: {:ok, Dagger.Terminal.t()} | {:error, term()}
   def sync(%__MODULE__{} = terminal) do
-    selection =
-      terminal.selection |> select("sync")
+    query_builder =
+      terminal.query_builder |> QB.select("sync")
 
-    with {:ok, id} <- execute(selection, terminal.client) do
+    with {:ok, id} <- Client.execute(terminal.client, query_builder) do
       {:ok,
        %Dagger.Terminal{
-         selection:
-           query()
-           |> select("loadTerminalFromID")
-           |> arg("id", id),
+         query_builder:
+           QB.query()
+           |> QB.select("loadTerminalFromID")
+           |> QB.put_arg("id", id),
          client: terminal.client
        }}
     end

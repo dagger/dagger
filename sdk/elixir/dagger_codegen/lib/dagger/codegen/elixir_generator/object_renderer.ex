@@ -21,12 +21,14 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
     module_var = Formatter.format_var_name(type.name)
 
     [
-      "use Dagger.Core.QueryBuilder",
-      ?\n,
+      """
+      alias Dagger.Core.Client
+      alias Dagger.Core.QueryBuilder, as: QB
+      """,
       ?\n,
       render_derive_type(type),
       ?\n,
-      "defstruct [:selection, :client]",
+      "defstruct [:query_builder, :client]",
       ?\n,
       ?\n,
       "@type t() :: %__MODULE__{}",
@@ -55,9 +57,9 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
       render_function_args(module_var, required_args, optional_args),
       ") do",
       ?\n,
-      "  selection = ",
+      "  query_builder = ",
       ?\n,
-      render_selection_chain(field, module_var, required_args, optional_args),
+      render_query_builder_chain(field, module_var, required_args, optional_args),
       ?\n,
       render_return_value(type, field, module_var),
       ?\n,
@@ -72,16 +74,16 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
         load_type_name = field.type.of_type.of_type.of_type.name
 
         [
-          "with {:ok, items} <- execute(selection, #{module_var}.client) do",
+          "with {:ok, items} <- Client.execute(#{module_var}.client, query_builder) do",
           ?\n,
           "  {:ok, for %{\"id\" => id} <- items do",
           ?\n,
           """
                 %#{output_type}{
-                  selection:
-                    query()
-                    |> select("load#{load_type_name}FromID")
-                    |> arg("id", id),
+                  query_builder:
+                    QB.query()
+                    |> QB.select("load#{load_type_name}FromID")
+                    |> QB.put_arg("id", id),
                   client: #{module_var}.client
                 }
           """,
@@ -93,7 +95,7 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
 
       TypeRef.is_void?(field.type) ->
         [
-          "case execute(selection, #{module_var}.client) do",
+          "case Client.execute(#{module_var}.client, query_builder) do",
           ?\n,
           "  {:ok, _} -> :ok",
           ?\n,
@@ -121,14 +123,14 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
           output_type = Formatter.format_output_type(type)
 
           [
-            "with {:ok, id} <- execute(selection, #{module_var}.client) do",
+            "with {:ok, id} <- Client.execute(#{module_var}.client, query_builder) do",
             ?\n,
             """
               {:ok, %#{output_type}{
-                selection: 
-                  query()
-                  |> select("load#{id_of_type}FromID")
-                  |> arg("id", id),
+                query_builder:
+                  QB.query()
+                  |> QB.select("load#{id_of_type}FromID")
+                  |> QB.put_arg("id", id),
                 client: #{module_var}.client
               }}
             """,
@@ -136,18 +138,18 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
             "end"
           ]
         else
-          "execute(selection, #{module_var}.client)"
+          "Client.execute(#{module_var}.client, query_builder)"
         end
 
       TypeRef.is_list_of?(field.type, "SCALAR") ->
-        "execute(selection, #{module_var}.client)"
+        "Client.execute(#{module_var}.client, query_builder)"
 
       true ->
         output_type = Formatter.format_output_type(field.type)
 
         """
         %#{output_type}{
-          selection: selection,
+          query_builder: query_builder,
           client: #{module_var}.client
         }
         """
@@ -325,18 +327,18 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
     Enum.any?(fields, &(&1.name == "id"))
   end
 
-  def render_selection_chain(field, module_var, required_args, optional_args) do
+  def render_query_builder_chain(field, module_var, required_args, optional_args) do
     [
-      "#{module_var}.selection",
-      "|> select(\"#{field.name}\")",
+      "#{module_var}.query_builder",
+      "|> QB.select(\"#{field.name}\")",
       for arg <- required_args do
-        ["|> put_arg(", ?", arg.name, ?", ~c",", render_put_arg(arg), ")"]
+        ["|> QB.put_arg(", ?", arg.name, ?", ~c",", render_put_arg(arg), ")"]
       end,
       for arg <- optional_args do
-        ["|> maybe_put_arg(", ?", arg.name, ?", ~c",", render_maybe_put_arg(arg), ")"]
+        ["|> QB.maybe_put_arg(", ?", arg.name, ?", ~c",", render_maybe_put_arg(arg), ")"]
       end,
       if TypeRef.is_list_of?(field.type, "OBJECT") do
-        ["|> select(\"id\")"]
+        ["|> QB.select(\"id\")"]
       else
         []
       end

@@ -1,4 +1,4 @@
-defmodule Dagger.Core.QueryBuilder.Selection do
+defmodule Dagger.Core.QueryBuilder do
   @moduledoc false
 
   defstruct [:name, :args, :prev, alias: ""]
@@ -16,11 +16,6 @@ defmodule Dagger.Core.QueryBuilder.Selection do
       alias: alias,
       prev: selection
     }
-  end
-
-  # TODO: Remove me.
-  def arg(selection, name, value) do
-    put_arg(selection, name, value)
   end
 
   def put_arg(%__MODULE__{args: args} = selection, name, value) when is_binary(name) do
@@ -106,15 +101,4 @@ defmodule Dagger.QueryError do
   @moduledoc false
 
   defstruct [:errors]
-end
-
-defmodule Dagger.Core.QueryBuilder do
-  @moduledoc false
-
-  defmacro __using__(_opts) do
-    quote do
-      import Dagger.Core.QueryBuilder.Selection
-      import Dagger.Core.Client, only: [execute: 2]
-    end
-  end
 end

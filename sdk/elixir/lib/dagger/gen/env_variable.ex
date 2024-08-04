@@ -2,38 +2,39 @@
 defmodule Dagger.EnvVariable do
   @moduledoc "An environment variable name and value."
 
-  use Dagger.Core.QueryBuilder
+  alias Dagger.Core.Client
+  alias Dagger.Core.QueryBuilder, as: QB
 
   @derive Dagger.ID
 
-  defstruct [:selection, :client]
+  defstruct [:query_builder, :client]
 
   @type t() :: %__MODULE__{}
 
   @doc "A unique identifier for this EnvVariable."
   @spec id(t()) :: {:ok, Dagger.EnvVariableID.t()} | {:error, term()}
   def id(%__MODULE__{} = env_variable) do
-    selection =
-      env_variable.selection |> select("id")
+    query_builder =
+      env_variable.query_builder |> QB.select("id")
 
-    execute(selection, env_variable.client)
+    Client.execute(env_variable.client, query_builder)
   end
 
   @doc "The environment variable name."
   @spec name(t()) :: {:ok, String.t()} | {:error, term()}
   def name(%__MODULE__{} = env_variable) do
-    selection =
-      env_variable.selection |> select("name")
+    query_builder =
+      env_variable.query_builder |> QB.select("name")
 
-    execute(selection, env_variable.client)
+    Client.execute(env_variable.client, query_builder)
   end
 
   @doc "The environment variable value."
   @spec value(t()) :: {:ok, String.t()} | {:error, term()}
   def value(%__MODULE__{} = env_variable) do
-    selection =
-      env_variable.selection |> select("value")
+    query_builder =
+      env_variable.query_builder |> QB.select("value")
 
-    execute(selection, env_variable.client)
+    Client.execute(env_variable.client, query_builder)
   end
 end

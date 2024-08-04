@@ -2,40 +2,41 @@
 defmodule Dagger.ModuleDependency do
   @moduledoc "The configuration of dependency of a module."
 
-  use Dagger.Core.QueryBuilder
+  alias Dagger.Core.Client
+  alias Dagger.Core.QueryBuilder, as: QB
 
   @derive Dagger.ID
 
-  defstruct [:selection, :client]
+  defstruct [:query_builder, :client]
 
   @type t() :: %__MODULE__{}
 
   @doc "A unique identifier for this ModuleDependency."
   @spec id(t()) :: {:ok, Dagger.ModuleDependencyID.t()} | {:error, term()}
   def id(%__MODULE__{} = module_dependency) do
-    selection =
-      module_dependency.selection |> select("id")
+    query_builder =
+      module_dependency.query_builder |> QB.select("id")
 
-    execute(selection, module_dependency.client)
+    Client.execute(module_dependency.client, query_builder)
   end
 
   @doc "The name of the dependency module."
   @spec name(t()) :: {:ok, String.t()} | {:error, term()}
   def name(%__MODULE__{} = module_dependency) do
-    selection =
-      module_dependency.selection |> select("name")
+    query_builder =
+      module_dependency.query_builder |> QB.select("name")
 
-    execute(selection, module_dependency.client)
+    Client.execute(module_dependency.client, query_builder)
   end
 
   @doc "The source for the dependency module."
   @spec source(t()) :: Dagger.ModuleSource.t()
   def source(%__MODULE__{} = module_dependency) do
-    selection =
-      module_dependency.selection |> select("source")
+    query_builder =
+      module_dependency.query_builder |> QB.select("source")
 
     %Dagger.ModuleSource{
-      selection: selection,
+      query_builder: query_builder,
       client: module_dependency.client
     }
   end
