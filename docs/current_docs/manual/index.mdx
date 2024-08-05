@@ -19,15 +19,22 @@ This manual provides detailed information to help you use Dagger. It covers:
 ```mermaid
 graph LR
     A[Dagger CLI] --> B[Dagger Functions]
-    B --> C[Dagger SDKs]
     D --> E[Dagger Engine]
     B --> F[Daggerverse]
     B --> G[Dagger Cloud]
 
-    C --> H[Go SDK]
-    C --> I[TypeScript SDK]
-    C --> J[Python SDK]
-    C --> K[Experimental/Community SDKs]
+    subgraph C[Dagger SDKs]
+      direction LR
+      H[Go SDK]
+      I[TypeScript SDK]
+      J[Python SDK]
+      K[Experimental/Community SDKs]
+    end
+
+    B --> H
+    B --> I
+    B --> J
+    B --> K
 
     H --> D[Dagger API]
     I --> D
