@@ -145,29 +145,18 @@ module.exports = {
         },
         {
           "type": "category",
-          "label": "Dagger API",
-          "link": {
-            "type": "doc",
-            "id": "manual/api/index"
-          },
+          "label": "Dagger CLI",
           "collapsible": true,
           "collapsed": true,
             items: [
               {
                 "type": "doc",
-                "id": "manual/api/queries"
+                "id": "manual/cli/visualization"
               },
               {
                 "type": "doc",
-                "id": "manual/api/state-representation"
-              },
-              {
-                "type": "doc",
-                "id": "manual/api/lazy-evaluation"
-              },
-              {
-                "type": "doc",
-                "id": "manual/api/types"
+                "label": "CLI Reference",
+                "id": "reference/cli"
               },
             ],
         },
@@ -203,6 +192,11 @@ module.exports = {
             },
             {
               "type": "doc",
+              "id": "manual/functions/debugging"
+            },
+
+            {
+              "type": "doc",
               "id": "manual/functions/documentation"
             },
             {
@@ -219,15 +213,23 @@ module.exports = {
             },
             {
               "type": "doc",
+              "id": "manual/functions/host-resources"
+            },
+            {
+              "type": "doc",
+              "id": "manual/functions/remote-resources"
+            },
+            {
+              "type": "doc",
               "id": "manual/functions/error-handling"
             },
             {
               "type": "doc",
-              "id": "manual/functions/debugging"
+              "id": "manual/functions/remote-resources"
             },
             {
               "type": "doc",
-              "id": "manual/functions/visualization"
+              "id": "manual/functions/publish"
             },
             {
               "type": "category",
@@ -238,6 +240,10 @@ module.exports = {
                 {
                   "type": "doc",
                   "id": "manual/functions/execution-environment"
+                },
+                {
+                  "type": "doc",
+                  "id": "manual/functions/structure-packaging"
                 },
                 {
                   "type": "doc",
@@ -263,39 +269,30 @@ module.exports = {
                   "type": "doc",
                   "id": "manual/functions/language-dependencies"
                 },
-                {
-                  "type": "doc",
-                  "id": "manual/functions/structure-packaging"
-                },
               ],
             },
-          ],
-        },
-        {
-          "type": "category",
-          "label": "Dagger Engine",
-          "link": {
-            "type": "doc",
-            "id": "manual/engine/index"
-          },
-          "collapsible": true,
-          "collapsed": true,
-          "items": [
             {
-              "type": "doc",
-              "id": "manual/engine/custom-ca"
-            },
-            {
-              "type": "doc",
-              "id": "manual/engine/custom-registry"
-            },
-            {
-              "type": "doc",
-              "id": "manual/engine/custom-runner"
-            },
-            {
-              "type": "doc",
-              "id": "manual/engine/proxy"
+              "type": "category",
+              "label": "Reference",
+              "collapsible": true,
+              "collapsed": true,
+              "items": [
+                {
+                  "type": "link",
+                  "label": "Go SDK Reference",
+                  "href": "https://pkg.go.dev/dagger.io/dagger"
+                },
+                {
+                  "type": "link",
+                  "label": "Python SDK Reference",
+                  "href": "https://dagger-io.readthedocs.org/"
+                },
+                {
+                  "type": "doc",
+                  "label": "TypeScript SDK Reference",
+                  "id": "reference/typescript/modules"
+                },
+              ]
             },
           ],
         },
@@ -315,6 +312,10 @@ module.exports = {
             },
             {
               "type": "doc",
+              "id": "manual/cloud/traces"
+            },
+            {
+              "type": "doc",
               "id": "manual/cloud/caching"
             },
             {
@@ -324,6 +325,71 @@ module.exports = {
             {
               "type": "doc",
               "id": "manual/cloud/roles-permissions"
+            },
+            {
+              "type": "doc",
+              "id": "manual/cloud/runs"
+            },
+          ],
+        },
+        {
+          "type": "category",
+          "label": "Dagger API",
+          "link": {
+            "type": "doc",
+            "id": "manual/api/index"
+          },
+          "collapsible": true,
+          "collapsed": true,
+            items: [
+              {
+                "type": "doc",
+                "id": "manual/api/queries"
+              },
+              {
+                "type": "doc",
+                "id": "manual/api/state-representation"
+              },
+              {
+                "type": "doc",
+                "id": "manual/api/lazy-evaluation"
+              },
+              {
+                "type": "doc",
+                "id": "manual/api/types"
+              },
+              {
+                "type": "link",
+                "label": "API Reference",
+                "href": "https://docs.dagger.io/api/reference"
+              },
+            ],
+        },
+        {
+          "type": "category",
+          "label": "Dagger Engine",
+          "link": {
+            "type": "doc",
+            "id": "manual/engine/index"
+          },
+          "collapsible": true,
+          "collapsed": true,
+          "items": [
+            {
+              "type": "doc",
+              "id": "manual/engine/custom-runner"
+            },
+            {
+              "type": "doc",
+              "id": "manual/engine/custom-registry"
+            },
+            {
+              "type": "doc",
+              "id": "manual/engine/custom-ca"
+            },
+            {
+              "type": "doc",
+              "id": "manual/engine/proxy"
             },
           ],
         },
