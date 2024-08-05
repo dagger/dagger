@@ -7,6 +7,25 @@ displayed_sidebar: "current"
 
 Dagger consists of a number of components, all of which work together in an integrated fashion to orchestrate the delivery of applications to the cloud from start to finish.
 
+```mermaid
+graph LR
+    A[Dagger CLI] --> B[Dagger Functions]
+    B --> C[Dagger SDKs]
+    D --> E[Dagger Engine]
+    B --> F[Daggerverse]
+    B --> G[Dagger Cloud]
+
+    C --> H[Go SDK]
+    C --> I[TypeScript SDK]
+    C --> J[Python SDK]
+    C --> K[Experimental/Community SDKs]
+
+    H --> D[Dagger API]
+    I --> D
+    J --> D
+    K --> D
+```
+
 ## Dagger CLI
 The Dagger Command-Line Interface (CLI) is your primary entrypoint to using Dagger. It is a full-featured, easy to use tool that can be used interactively from a terminal or non-interactively from a shell script or a CI runner. The Dagger CLI also includes a real-time visualization feature called the terminal UI (TUI).
 
