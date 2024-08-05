@@ -38,7 +38,7 @@ func (r *{{ .Name | FormatName }}) WithGraphQLQuery(q *querybuilder.Selection) *
 // {{ $field | FieldOptionsStructName }} contains options for {{ $.Name | FormatName }}.{{ $field.Name | FormatName }}
 type {{ $field | FieldOptionsStructName }} struct {
 	{{- range $arg := $field.Args }}
-	{{- if $arg.TypeRef.IsOptional }}
+	{{- if $arg.IsOptional }}
 	{{ $arg.Description | Comment }}
 	{{- if and (eq $arg.Name "id") (eq $.Name "Query") }}
 	{{ $arg.Name | FormatName }} {{ $arg.TypeRef | FormatOutputType }}
@@ -60,7 +60,7 @@ type {{ $field | FieldOptionsStructName }} struct {
 {{- $supportsVoid := CheckVersionCompatibility "v0.12.0" }}
 {{ FieldFunction $field false $supportsVoid }} {
 	{{- range $arg := $field.Args }}
-	    {{- if and (IsPointer $arg) (not $arg.TypeRef.IsOptional) }}
+	    {{- if and (IsPointer $arg) (not $arg.IsOptional) }}
         assertNotNil("{{ $arg.Name}}", {{ $arg.Name }})
         {{- end }}
     {{- end }}
@@ -79,7 +79,7 @@ type {{ $field | FieldOptionsStructName }} struct {
 	{{- if $field.Args.HasOptionals }}
 	for i := len(opts) - 1; i >= 0; i-- {
 	{{- range $arg := $field.Args }}
-	{{- if $arg.TypeRef.IsOptional }}
+	{{- if $arg.IsOptional }}
 	// `{{ $arg.Name }}` optional argument
 	if !querybuilder.IsZeroValue(opts[i].{{ $arg.Name | FormatName }}) {
 		q = q.Arg("{{ $arg.Name }}", opts[i].{{ $arg.Name | FormatName }})
@@ -91,7 +91,7 @@ type {{ $field | FieldOptionsStructName }} struct {
 
 
 	{{- range $arg := $field.Args }}
-	{{- if not $arg.TypeRef.IsOptional }}
+	{{- if not $arg.IsOptional }}
 	q = q.Arg("{{ $arg.Name }}", {{ $arg.Name }})
 	{{- end }}
 	{{- end }}
