@@ -60,7 +60,7 @@ func (t PythonSDK) Lint(ctx context.Context) error {
 						},
 					),
 			).
-			Lint(ctx, []string{"../.."})
+			Lint(ctx, dagger.PythonSDKDevLintOpts{Paths: []string{"../.."}})
 
 		return err
 	})
