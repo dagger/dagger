@@ -4,7 +4,7 @@ import { object, func } from "@dagger.io/dagger"
 class MyModule {
   @func()
   hello(shout: boolean): string {
-    let message = "Hello, world"
+    const message = "Hello, world"
     if (shout) {
       return message.toUpperCase()
     }
