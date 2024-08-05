@@ -134,7 +134,7 @@ module.exports = {
             items: [
               {
                 "type": "doc",
-                "id": "manual/cli/visualization"
+                "id": "manual/cli/tui"
               },
               {
                 "type": "doc",
@@ -181,7 +181,10 @@ module.exports = {
               "type": "doc",
               "id": "manual/functions/debugging"
             },
-
+            {
+              "type": "doc",
+              "id": "manual/functions/visualization"
+            },
             {
               "type": "doc",
               "id": "manual/functions/documentation"
@@ -209,10 +212,6 @@ module.exports = {
             {
               "type": "doc",
               "id": "manual/functions/error-handling"
-            },
-            {
-              "type": "doc",
-              "id": "manual/functions/remote-resources"
             },
             {
               "type": "doc",
