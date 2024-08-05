@@ -1,14 +1,10 @@
 ---
-slug: /manual/cli/visualization
+slug: /manual/cli/tui
 ---
 
-# Visualization
+# Terminal UI
 
-Dagger works by building up a DAG of operations and evaluating them, often in parallel. By nature, this is a difficult thing to display. It's easy to show the output of one operation at a time, but as soon as you have parallelism, you'll get jumbled output that's hard to understand.
-
-The Dagger CLI includes a real-time visualization feature called the terminal UI (TUI).
-
-The Dagger CLI includes a real-time visualization feature, also called the terminal UI (TUI). It shows a full-blown DAG in a style similar to `git log --graph`, with the current state of your DAG's evaluation and a full snapshot of all output at the end.
+The Dagger CLI includes a real-time visualization feature called the terminal UI (TUI). It shows a full-blown DAG in a style similar to `git log --graph`, with the current state of your DAG's evaluation and a full snapshot of all output at the end.
 
 The TUI is designed for rapid iteration, in the same way regular scripting works: you run a command, it shows live progress, and then leaves all the output in your terminal scrollback. Here is an example of it in action:
 
