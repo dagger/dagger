@@ -3,7 +3,7 @@ import inspect
 
 from typing_extensions import deprecated
 
-from dagger.mod._types import APIName
+from dagger.mod._types import APIName, ContextPath
 
 
 @dataclasses.dataclass(slots=True, frozen=True)
@@ -33,6 +33,47 @@ class Arg(Name):
     """
 
 
+@dataclasses.dataclass(slots=True, frozen=True)
+class DefaultPath:
+    """If the argument is omitted, load it from the given path in the context directory.
+
+    Only applies to arguments of type :py:class:`dagger.Directory` or
+    :py:class:`dagger.File`.
+
+    Mutually exclusive with setting a default value for the parameter. When
+    used within Python, the parameter should be required.
+
+    Example usage:
+
+    >>> @function
+    ... def build(src: Annotated[dagger.Directory, DefaultPath(".")]): ...
+    """
+
+    from_context: ContextPath
+
+    def __str__(self) -> str:
+        return self.from_context
+
+
+@dataclasses.dataclass(slots=True, frozen=True)
+class Ignore:
+    """Ignore patterns for :py:class:`dagger.Directory` arguments.
+
+    The ignore patterns are applied to the input directory, and matching entries
+    are filtered out, in a cache-efficient manner.
+
+    Useful if it's known in advance which files or directories should be
+    excluded when loading the directory.
+
+    Example usage:
+
+    >>> @function
+    ... def build(src: Annotated[dagger.Directory, Ignore([".venv"])]):
+    """
+
+    patterns: list[str]
+
+
 @dataclasses.dataclass(slots=True, frozen=True, kw_only=True)
 class Parameter:
     """Parameter from function signature in :py:class:`FunctionResolver`."""
@@ -46,10 +87,15 @@ class Parameter:
 
     # Metadata
     doc: str | None
+    ignore: Ignore | None = None
+    default_path: DefaultPath | None = None
 
     @property
     def has_default(self) -> bool:
-        return self.signature.default is not inspect.Parameter.empty
+        return (
+            self.signature.default is not inspect.Parameter.empty
+            or self.default_path is not None
+        )
 
     @property
     def is_optional(self) -> bool:
