@@ -5,7 +5,9 @@ displayed_sidebar: "current"
 
 # Execution Environment and Process Flow
 
-Dagger Functions execute within containers spawned by the Dagger Engine. This serves a few important purposes:
+## Execution environment
+
+Dagger Functions execute within containers spawned by the Dagger Engine. This "sandboxing" serves a few important purposes:
 
 1. Reproducibility: Executing in a well-defined and well-controlled container ensures that a function to run the same way every time it is invoked. It also guards against creating "hidden dependencies" on ambient properties of the execution environment that could change at any moment.
 1. Caching: A reproducible containerized environment makes it possible to cache the result of function execution, which in turn allows Dagger to automatically speed up function execution.

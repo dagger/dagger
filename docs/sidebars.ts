@@ -152,91 +152,50 @@ module.exports = {
           },
           "collapsible": true,
           "collapsed": true,
-          "items": [
-            {
-              "type": "category",
-              "label": "Concepts",
-              "link": {
+            items: [
+              {
                 "type": "doc",
-                "id": "manual/api/index"
+                "id": "manual/api/queries"
               },
-              "collapsible": true,
-              "collapsed": true,
-              items: [
-                {
-                  "type": "doc",
-                  "id": "manual/api/types-fields"
-                },
-                {
-                  "type": "doc",
-                  "id": "manual/api/state-representation"
-                },
-                {
-                  "type": "doc",
-                  "id": "manual/api/lazy-evaluation"
-                },
-              ],
-            },
-            {
-              "type": "category",
-              "label": "Types",
-              "link": {
+              {
+                "type": "doc",
+                "id": "manual/api/state-representation"
+              },
+              {
+                "type": "doc",
+                "id": "manual/api/lazy-evaluation"
+              },
+              {
                 "type": "doc",
                 "id": "manual/api/types"
               },
-              "collapsible": true,
-              "collapsed": true,
-              items: [
-                {
-                  "type": "doc",
-                  "id": "manual/api/container"
-                },
-                {
-                  "type": "doc",
-                  "id": "manual/api/directory"
-                },
-                {
-                  "type": "doc",
-                  "id": "manual/api/file"
-                },
-                {
-                  "type": "doc",
-                  "id": "manual/api/service"
-                },
-                {
-                  "type": "doc",
-                  "id": "manual/api/secret"
-                },
-              ],
-            },
-
-            {
-              "type": "doc",
-              "id": "manual/api/requests"
-            },
-          ]
+              {
+                "type": "doc",
+                "id": "manual/api/requests"
+              },
+            ],
         },
         {
           "type": "category",
           "label": "Dagger Functions",
           "link": {
             "type": "doc",
-            "id": "manual/functions/initialization-structure-packaging"
+            "id": "manual/functions/index"
           },
           "collapsible": true,
           "collapsed": true,
           "items": [
             {
               "type": "doc",
-              "id": "manual/functions/initialization-structure-packaging"
+              "id": "manual/functions/basics"
             },
             {
               "type": "doc",
-              "id": "manual/functions/execution-environment"
+              "id": "manual/functions/arguments"
             },
             {
               "type": "doc",
-              "id": "manual/functions/arguments-return-values"
+              "id": "manual/functions/return-values"
             },
             {
               "type": "doc",
@@ -270,42 +229,74 @@ module.exports = {
               "type": "doc",
               "id": "manual/functions/debugging"
             },
+            {
+              "type": "category",
+              "label": "Advanced Topics",
+              "collapsible": true,
+              "collapsed": true,
+              "items": [
+                {
+                  "type": "doc",
+                  "id": "manual/functions/execution-environment"
+                },
+                {
+                  "type": "doc",
+                  "id": "manual/functions/entrypoint-function"
+                },
+                {
+                  "type": "doc",
+                  "id": "manual/functions/custom-types"
+                },
+                {
+                  "type": "doc",
+                  "id": "manual/functions/state-functions"
+                },
+                {
+                  "type": "doc",
+                  "id": "manual/functions/interfaces"
+                },
+                {
+                  "type": "doc",
+                  "id": "manual/functions/runtimes"
+                },
+                {
+                  "type": "doc",
+                  "id": "manual/functions/language-dependencies"
+                },
+                {
+                  "type": "doc",
+                  "id": "manual/functions/structure-packaging"
+                },
+                {
+                  "type": "doc",
+                  "id": "manual/engine/custom-ca"
+                },
+                {
+                  "type": "doc",
+                  "id": "manual/engine/custom-registry"
+                },
+                {
+                  "type": "doc",
+                  "id": "manual/engine/custom-runner"
+                },
+                {
+                  "type": "doc",
+                  "id": "manual/engine/proxy"
+                },
+              ],
+            },
           ],
         },
         {
           "type": "category",
-          "label": "Advanced Topics",
+          "label": "Dagger Engine",
           "link": {
             "type": "doc",
-            "id": "manual/functions/entrypoint-function"
+            "id": "manual/engine/index"
           },
           "collapsible": true,
           "collapsed": true,
           "items": [
-            {
-              "type": "doc",
-              "id": "manual/functions/entrypoint-function"
-            },
-            {
-              "type": "doc",
-              "id": "manual/functions/custom-types"
-            },
-            {
-              "type": "doc",
-              "id": "manual/functions/state-functions"
-            },
-            {
-              "type": "doc",
-              "id": "manual/functions/interfaces"
-            },
-            {
-              "type": "doc",
-              "id": "manual/functions/runtimes"
-            },
-            {
-              "type": "doc",
-              "id": "manual/functions/language-dependencies"
-            },
             {
               "type": "doc",
               "id": "manual/engine/custom-ca"
@@ -324,6 +315,7 @@ module.exports = {
             },
           ],
         },
+
         {
           "type": "doc",
           "id": "manual/known-issues"
