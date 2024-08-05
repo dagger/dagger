@@ -214,7 +214,7 @@ func (funcs goTemplateFuncs) fieldFunction(f introspection.Field, topLevel bool,
 		args = append(args, "ctx context.Context")
 	}
 	for _, arg := range f.Args {
-		if arg.TypeRef.IsOptional() {
+		if arg.IsOptional() {
 			continue
 		}
 

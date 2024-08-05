@@ -214,7 +214,7 @@ func formatEnum(s string) string {
 // They are, if all of there InputValues are optional.
 func isArgOptional(values introspection.InputValues) bool {
 	for _, v := range values {
-		if (v.TypeRef != nil && !v.TypeRef.IsOptional()) && v.DefaultValue == nil {
+		if !v.IsOptional() {
 			return false
 		}
 	}
@@ -223,7 +223,7 @@ func isArgOptional(values introspection.InputValues) bool {
 
 func splitRequiredOptionalArgs(values introspection.InputValues) (required introspection.InputValues, optionals introspection.InputValues) {
 	for i, v := range values {
-		if (v.TypeRef != nil && !v.TypeRef.IsOptional()) && v.DefaultValue == nil {
+		if !v.IsOptional() {
 			continue
 		}
 
