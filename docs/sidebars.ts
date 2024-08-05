@@ -191,15 +191,15 @@ module.exports = {
             },
             {
               "type": "doc",
+              "id": "manual/functions/ide-integration"
+            },
+            {
+              "type": "doc",
               "id": "manual/functions/arguments"
             },
             {
               "type": "doc",
               "id": "manual/functions/return-values"
-            },
-            {
-              "type": "doc",
-              "id": "manual/functions/ide-integration"
             },
             {
               "type": "doc",
@@ -228,6 +228,10 @@ module.exports = {
             {
               "type": "doc",
               "id": "manual/functions/debugging"
+            },
+            {
+              "type": "doc",
+              "id": "manual/functions/visualization"
             },
             {
               "type": "category",
@@ -315,7 +319,34 @@ module.exports = {
             },
           ],
         },
-
+        {
+          "type": "category",
+          "label": "Dagger Cloud",
+          "link": {
+            "type": "doc",
+            "id": "manual/cloud/index"
+          },
+          "collapsible": true,
+          "collapsed": true,
+          "items": [
+            {
+              "type": "doc",
+              "id": "manual/cloud/configuration"
+            },
+            {
+              "type": "doc",
+              "id": "manual/cloud/caching"
+            },
+            {
+              "type": "doc",
+              "id": "manual/cloud/organizations"
+            },
+            {
+              "type": "doc",
+              "id": "manual/cloud/roles-permissions"
+            },
+          ],
+        },
         {
           "type": "doc",
           "id": "manual/known-issues"
