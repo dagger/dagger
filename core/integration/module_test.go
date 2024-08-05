@@ -6677,6 +6677,74 @@ func (t *Test) Files(
 `,
 			},
 			{
+				sdk: "python",
+				source: `from typing import Annotated
+
+import dagger
+from dagger import DefaultPath, Ignore, function, object_type
+
+
+@object_type
+class Test:
+    @function
+    async def dirs(
+        self,
+        root: Annotated[dagger.Directory, DefaultPath("/")],
+        relativeRoot: Annotated[dagger.Directory, DefaultPath(".")],
+    ) -> list[str]:
+        return [
+            *(await root.entries()),
+            *(await relativeRoot.entries()),
+       ]
+
+    @function
+    async def dirs_ignore(
+        self,
+        root: Annotated[dagger.Directory, DefaultPath("/"), Ignore(["!backend", "!frontend"])],
+        relativeRoot: Annotated[dagger.Directory, DefaultPath("."), Ignore(["dagger.json", "LICENSE"])],
+    ) -> list[str]:
+        return [
+            *(await root.entries()),
+            *(await relativeRoot.entries()),
+        ]
+
+    @function
+    async def root_dir_path(
+        self,
+        backend: Annotated[dagger.Directory, DefaultPath("/backend")],
+        frontend: Annotated[dagger.Directory, DefaultPath("/frontend")],
+        mod_src_dir: Annotated[dagger.Directory, DefaultPath("/ci/dagger/sub")],
+    ) -> list[str]:
+        return [
+            *(await backend.entries()),
+            *(await frontend.entries()),
+            *(await mod_src_dir.entries()),
+        ]
+
+    @function
+    async def relative_dir_path(
+        self,
+        mod_src_dir: Annotated[dagger.Directory, DefaultPath("./dagger/sub")],
+        backend: Annotated[dagger.Directory, DefaultPath("../backend")],
+    ) -> list[str]:
+        return [
+            *(await mod_src_dir.entries()),
+            *(await backend.entries()),
+        ]
+
+    @function
+    async def files(
+        self,
+        license: Annotated[dagger.File, DefaultPath("/ci/LICENSE")],
+        index: Annotated[dagger.File, DefaultPath("./dagger/sub/sub.txt")],
+    ) -> list[str]:
+        return [
+            await license.name(),
+            await index.name(),
+        ]
+`,
+			},
+			{
 				sdk: "typescript",
 				source: `import { Directory, File, object, func, argument } from "@dagger.io/dagger"
 
@@ -6703,8 +6771,8 @@ class Test {
 
   @func()
   async rootDirPath(
-    @argument({ defaultPath: "/backend" }) backend: Directory, 
-    @argument({ defaultPath: "/frontend" }) frontend: Directory, 
+    @argument({ defaultPath: "/backend" }) backend: Directory,
+    @argument({ defaultPath: "/frontend" }) frontend: Directory,
     @argument({ defaultPath: "/ci/dagger/sub" }) modSrcDir: Directory,
   ): Promise<string[]> {
     const backendFiles = await backend.entries()
@@ -6716,7 +6784,7 @@ class Test {
 
   @func()
   async relativeDirPath(
-    @argument({ defaultPath: "./dagger/sub" }) modSrcDir: Directory, 
+    @argument({ defaultPath: "./dagger/sub" }) modSrcDir: Directory,
     @argument({ defaultPath: "../backend" }) backend: Directory,
   ): Promise<string[]> {
     const modSrcDirFiles = await modSrcDir.entries()
@@ -6892,6 +6960,62 @@ func (t *Test) Files(
 `,
 			},
 			{
+				sdk: "python",
+				source: `from typing import Annotated
+
+import dagger
+from dagger import DefaultPath, function, object_type
+
+@object_type
+class Test:
+    @function
+    async def dirs(
+        self,
+        root: Annotated[dagger.Directory, DefaultPath("/")],
+        relative_root: Annotated[dagger.Directory, DefaultPath(".")],
+    ) -> list[str]:
+        return [
+            *(await root.entries()),
+            *(await relative_root.entries()),
+        ]
+
+    @function
+    async def root_dir_path(
+        self,
+        backend: Annotated[dagger.Directory, DefaultPath("/backend")],
+        frontend: Annotated[dagger.Directory, DefaultPath("/frontend")],
+        mod_src_dir: Annotated[dagger.Directory, DefaultPath("/dagger/sub")],
+    ) -> list[str]:
+        return [
+            *(await backend.entries()),
+            *(await frontend.entries()),
+            *(await mod_src_dir.entries()),
+        ]
+
+    @function
+    async def relative_dir_path(
+        self,
+        mod_src_dir: Annotated[dagger.Directory, DefaultPath("./dagger/sub")],
+        backend: Annotated[dagger.Directory, DefaultPath("./backend")],
+    ) -> list[str]:
+        return [
+            *(await mod_src_dir.entries()),
+            *(await backend.entries()),
+        ]
+
+    @function
+    async def files(
+        self,
+        license: Annotated[dagger.File, DefaultPath("/LICENSE")],
+        index: Annotated[dagger.File, DefaultPath("./dagger.json")],
+    ) -> list[str]:
+        return [
+            await license.name(),
+            await index.name(),
+        ]
+`,
+			},
+			{
 				sdk: "typescript",
 				source: `import { Directory, File, object, func, argument } from "@dagger.io/dagger"
 
@@ -6899,7 +7023,7 @@ func (t *Test) Files(
 class Test {
   @func()
   async dirs(
-    @argument({ defaultPath: "/" }) root: Directory, 
+    @argument({ defaultPath: "/" }) root: Directory,
     @argument({ defaultPath: "." }) relativeRoot: Directory,
   ): Promise<string[]> {
     const res = await root.entries()
@@ -6911,7 +7035,7 @@ class Test {
   @func()
   async rootDirPath(
     @argument({ defaultPath: "/backend" }) backend: Directory,
-    @argument({ defaultPath: "/frontend" }) frontend: Directory, 
+    @argument({ defaultPath: "/frontend" }) frontend: Directory,
     @argument({ defaultPath: "/dagger/sub" }) modSrcDir: Directory,
   ): Promise<string[]> {
     const backendFiles = await backend.entries()
@@ -7038,6 +7162,48 @@ func (t *Test) NonExistingFile(
 `,
 			},
 			{
+				sdk: "python",
+				source: `from typing import Annotated
+
+import dagger
+from dagger import DefaultPath, function, object_type
+
+@object_type
+class Test:
+    @function
+    async def too_high_relative_dir_path(
+        self,
+        backend: Annotated[dagger.Directory, DefaultPath("../../")],
+    ) -> list[str]:
+        # The engine should throw an error
+        return []
+
+    @function
+    async def non_existing_path(
+        self,
+        dir: Annotated[dagger.Directory, DefaultPath("/invalid")],
+    ) -> list[str]:
+        # The engine should throw an error
+        return []
+
+    @function
+    async def too_high_relative_file_path(
+        self,
+        backend: Annotated[dagger.File, DefaultPath("../../file.txt")],
+    ) -> str:
+        # The engine should throw an error
+        return ""
+
+    @function
+    async def non_existing_file(
+        self,
+        file: Annotated[dagger.File, DefaultPath("/invalid")],
+    ) -> str:
+        # The engine should throw an error
+        return ""
+`,
+			},
+			{
 				sdk: "typescript",
 				source: `import { Directory, File,object, func, argument } from "@dagger.io/dagger"
 @object()
@@ -7064,7 +7230,7 @@ class Test {
     // The engine should throw an error
     return ""
   }
-}			
+}
 `,
 			},
 		} {

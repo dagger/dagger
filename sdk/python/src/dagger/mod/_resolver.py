@@ -24,7 +24,7 @@ from typing_extensions import Self, TypeVar
 
 import dagger
 from dagger import dag
-from dagger.mod._arguments import Parameter
+from dagger.mod._arguments import DefaultPath, Ignore, Parameter
 from dagger.mod._converter import to_typedef
 from dagger.mod._exceptions import UserError
 from dagger.mod._types import APIName, PythonName
@@ -34,6 +34,7 @@ from dagger.mod._utils import (
     get_alt_constructor,
     get_alt_name,
     get_doc,
+    get_meta,
     is_nullable,
     normalize_name,
     transform_error,
@@ -153,6 +154,11 @@ class FunctionResolver(Generic[P, R]):
                 arg_type,
                 description=param.doc,
                 default_value=default,
+                # The engine should validate if these are set on the right types.
+                default_path=(
+                    param.default_path.from_context if param.default_path else None
+                ),
+                ignore=param.ignore.patterns if param.ignore else None,
             )
 
         return typedef.with_function(fn) if self.name else typedef.with_constructor(fn)
@@ -295,13 +301,37 @@ class FunctionResolver(Generic[P, R]):
         # The Parameter class is just a simple data object. We calculate all
         # the attributes here to avoid cyclic imports from utils, as this is
         # the only place where it needs to be created.
-        return Parameter(
+        p = Parameter(
             name=get_alt_name(param.annotation) or normalize_name(param.name),
             signature=param,
             resolved_type=annotation,
             is_nullable=is_nullable(TypeHint(annotation)),
             doc=get_doc(param.annotation),
+            ignore=get_meta(param.annotation, Ignore),
+            default_path=get_meta(param.annotation, DefaultPath),
         )
+
+        if (
+            p.default_path is not None
+            and p.has_default
+            and not (p.is_nullable and p.signature.default is None)
+        ):
+            msg = (
+                "Can't use DefaultPath with a default value for "
+                f"parameter '{param.name}'"
+            )
+            raise AssertionError(msg)
+
+        if p.default_path and not p.default_path.from_context:
+            # NB: We could instead warn or just ignore, but it's better to fail
+            # fast to avoid astonishment.
+            msg = (
+                "DefaultPath can't be used with an empty path in "
+                f"parameter '{param.name}'"
+            )
+            raise ValueError(msg)
+
+        return p
 
     async def get_result(
         self,
