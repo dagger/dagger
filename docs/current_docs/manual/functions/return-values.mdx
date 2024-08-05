@@ -1,0 +1,62 @@
+---
+slug: /manual/functions/return-values
+displayed_sidebar: "current"
+toc_max_heading_level: 3
+---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Return Values
+
+Not only can Dagger Functions use Dagger's core types in their arguments; they can use them in their return value as well.
+
+This opens powerful applications to Dagger Functions. For example, a Dagger Function that builds binaries could take a directory with the source code as argument and return another directory containing just binaries or a container image with the binaries included.
+
+:::note
+If a function doesn’t have a return type annotation, it’ll be translated to the [dagger.Void][void-type] type in the API.
+
+[void-type]: https://docs.dagger.io/api/reference/#definition-Void
+:::
+
+Here's an example of a Dagger Function that accepts a `Directory` containing a Go application's source code as input, compiles it into a binary, and returns a `Container` with the binary:
+
+<Tabs groupId="language">
+
+<TabItem value="Go">
+```go file=./snippets/functions/return-values-container/go/main.go
+```
+
+</TabItem>
+
+<TabItem value="Python">
+```python file=./snippets/functions/return-values-container/python/main.py
+```
+</TabItem>
+
+<TabItem value="TypeScript">
+```typescript file=./snippets/functions/return-values-container/typescript/index.ts
+```
+</TabItem>
+
+</Tabs>
+
+Here is an example call for this Dagger Function:
+
+```shell
+dagger call build --src=https://github.com/golang/example/#master:hello --os=linux --arch=amd64 terminal
+```
+
+This example chains two function calls:
+- a call to `Container.build()`, which builds a Go application from a remote GitHub repository and returns a `Container` with the compiled binary;
+- a call to `Container.terminal()`, which opens an interactive terminal session with the `Container` returned by the previous function.
+
+The result will be an interactive terminal session with the built container, which you can use to validate the compiled Go binary:
+
+```shell
+/ # cd /usr/local/bin
+/usr/local/bin # ls
+hello
+/usr/local/bin # ./hello
+Hello, world!
+/usr/local/bin #
+```

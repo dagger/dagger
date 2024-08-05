@@ -84,11 +84,3 @@ And here is an example of passing a secret from a command executed on the host:
 ```shell
 dagger -m github.com/aweris/daggerverse/gh@99a1336f8091ff43bf833778a324de1cadcf25ac call run --token=cmd:"gh auth token" --cmd="issue list --repo=dagger/dagger"
 ```
-
-:::tip
-To list all the arguments accepted by a function, add the `--help` suffix at any point in the `dagger call` command to obtain context-sensitive help. For example, to list the arguments available for the `Build()` function of the `golang` module, use:
-
-```shell
-dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call build --help
-```
-:::
