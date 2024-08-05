@@ -152,10 +152,6 @@ module.exports = {
                 "type": "doc",
                 "id": "manual/api/types"
               },
-              {
-                "type": "doc",
-                "id": "manual/api/requests"
-              },
             ],
         },
         {
