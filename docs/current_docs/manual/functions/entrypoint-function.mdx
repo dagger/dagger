@@ -17,7 +17,7 @@ This is a simple way to accept module-wide configuration, or just to set a few a
 
 The entrypoint function for a module can be overridden by registering a custom constructor. Its parameters are available as flags in the `dagger call` command directly.
 
-:::note
+:::important
 Dagger modules have only one entrypoint function. Entrypoint function of [custom types](./custom-types.mdx) are not registered; they are constructed by the function that [chains](./chaining.mdx) them.
 :::
 
@@ -62,7 +62,7 @@ The result will be:
 Hello, Foo!
 ```
 
-:::note
+:::important
 If you plan to use constructor fields in other module functions, ensure that they are declared as public (in Go and TypeScript). This is because Dagger stores fields using serialization and private fields are omitted during the serialization process. As a result, if a field is not declared as public, calling methods that use it will produce unexpected results.
 :::
 
@@ -95,7 +95,7 @@ This default value can also be assigned directly in the field:
 ```typescript file=./snippets/entrypoint/typescript/default-object-in-field/index.ts
 ```
 
-:::note
+:::important
 When assigning default values to complex types in TypeScript, it is necessary to use the `??` notation for this assignment. It is not possible to use the classic TypeScript notation for default arguments because the argument in this case is not a TypeScript primitive.
 :::
 

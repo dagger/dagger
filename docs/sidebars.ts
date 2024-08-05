@@ -155,6 +155,10 @@ module.exports = {
               },
               {
                 "type": "doc",
+                "id": "manual/cli/uninstall"
+              },
+              {
+                "type": "doc",
                 "label": "CLI Reference",
                 "id": "reference/cli"
               },
@@ -326,10 +330,6 @@ module.exports = {
               "type": "doc",
               "id": "manual/cloud/roles-permissions"
             },
-            {
-              "type": "doc",
-              "id": "manual/cloud/runs"
-            },
           ],
         },
         {
@@ -392,10 +392,6 @@ module.exports = {
               "id": "manual/engine/proxy"
             },
           ],
-        },
-        {
-          "type": "doc",
-          "id": "manual/known-issues"
         },
       ]
     },
