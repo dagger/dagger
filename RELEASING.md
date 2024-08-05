@@ -1,22 +1,9 @@
 # Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-July%2022,%202024-success?style=flat-square)
 
-> [!WARNING]
->
-> This guide is currently out-of-date due to https://github.com/dagger/dagger/pull/7705.
->
-> The next "Improve releasing" PR should include updates to these instructions to:
-> - Add all release notes together in add-vX.Y.Z-release-notes
->   - Include all SDK version bumps
->     - dagger call -m dev sdk all bump --version="${{ github.ref_name }}" -o ./
->   - Include helm version bumps
-      - dagger call -m dev helm set-version --version="${{ github.ref_name }}" -o ./helm/dagger/Chart.yaml
-> - Tag engine and SDK on the same commit $ENGINE_GIT_SHA
-> - Skip the bump-engine automated PR
-
 This describes how to release Dagger:
 
 - [🚙 Engine + 🚗 CLI ⏱ `30mins`](#-engine---cli--30mins)
-- [🐹 Go SDK ⏱ `30mins`](#-go-sdk--30mins)
+- [🐹 Go SDK ⏱ `10mins`](#-go-sdk--10mins)
 - [🐍 Python SDK ⏱ `5mins`](#-python-sdk--5mins)
 - [⬢ TypeScript SDK ⏱ `5mins`](#-typescript-sdk--5mins)
 - [🧪 Elixir SDK ⏱ `5mins`](#-elixir-sdk--5mins)
@@ -179,13 +166,31 @@ and improve it. We want small, constant improvements which compound. Therefore:
 
 ## Workflow for releases off non-main branch
 
-Currently, some of the steps here vary depending on whether we are running a release off of `main` vs. off of a separate branch.
+Currently, some of the steps here vary depending on whether we are running a
+release off of `main` vs. off of a separate branch.
 
 They are marked with 🚨 in the steps below.
 
-We do this process when we need to do a patch release but don't want to include every commit that has been merged to `main` since the last release.
+We do this process when we need to do a patch release but don't want to include
+every commit that has been merged to `main` since the last release.
 
-In the long term we should strive to make the process the same regardless of the branch we are releasing off of, but for now, we need to be aware of the differences.
+In the long term we should strive to make the process the same regardless of
+the branch we are releasing off of, but for now, we need to be aware of the
+differences.
+
+## Required tooling
+
+Before starting the releasing process, make sure you have your local
+environment setup and ready to go. You'll need (at least) the following tools -
+though you probably already have most of them if you're regularly contributing
+to dagger.
+
+- A UNIX environment and shell
+- [git](https://git-scm.com/)
+- [dagger](https://github.com/dagger/dagger) (the most recent release)
+- [changie](https://changie.dev)
+- [gh](https://cli.github.com/) github cli tool
+- [golang](https://go.dev)
 
 ## 🚙 Engine + 🚗 CLI ⏱ `30mins`
 
@@ -194,10 +199,6 @@ In the long term we should strive to make the process the same regardless of the
 > It is important to always do an Engine + CLI release prior to releasing any
 > SDK. This will ensure that all the APIs in the SDK are also available in the
 > Engine it depends on.
-
-> [!NOTE]
->
-> If you do not have `changie` installed, see https://changie.dev
 
 Setup some variables used throughout the release process:
 
@@ -262,124 +263,135 @@ You will also want to ensure you _always_ cherry-pick a few special commits:
 
 </details>
 
-- [ ] Create e.g. `.changes/v0.12.1.md` by either running `changie batch patch`
-      (or `changie batch minor` if this is a new minor).
+- [ ] Determine the next release version (use `patch`/`minor`/`major` to set the release type):
 
-- [ ] Make any necessary edits to the newly generated file, e.g.
-      `.changes/v0.12.1.md`
-- [ ] Update `CHANGELOG.md` by running `changie merge`.
-- [ ] `30 mins` Submit a PR - e.g. `add-v0.12.1-release-notes` with the new release notes so that they can be used in the new release.
+```console
+export ENGINE_VERSION_TYPE=patch
+export ENGINE_VERSION="$(changie next $ENGINE_VERSION_TYPE)"
+
+# this is required to interpolate $ENGINE_VERSION to the SDK release notes
+export CHANGIE_ENGINE_VERSION="$ENGINE_VERSION"
+```
+
+- [ ] Create the target release notes branch for a PR - e.g. `prep-v0.12.4`.
   - 🚨 Non-main branch release only: This PR will also include the cherry-picked commits mentioned above.
-- [ ] Get the PR reviewed & merged. The merge commit is what gets tagged in the next step.
+
+```console
+git checkout -b prep-${ENGINE_VERSION}
+```
+
+- [ ] Bump SDK versions to the target version
+
+```console
+dagger call -m dev --source=.:default sdk all bump --version="${ENGINE_VERSION}" -o ./
+git add sdk
+git commit -s -m "chore: bump sdk dependencies to ${ENGINE_VERSION}"
+```
+
+- [ ] Bump Helm version to the target version
+
+```console
+dagger call -m dev --source=.:default helm set-version --version="${ENGINE_VERSION}" -o ./helm/dagger/Chart.yaml
+git add helm
+git commit -s -m "chore: bump helm dependency to ${ENGINE_VERSION}"
+```
+
+- [ ] Generate release notes `.changes/**/v0.12.4.md` for all releases by
+      running `changie batch $ENGINE_VERSION`:
+
+```console
+find . sdk/go sdk/python sdk/typescript sdk/elixir sdk/php helm/dagger -maxdepth 1 -name .changie.yaml -execdir changie batch $ENGINE_VERSION \;
+```
+
+- [ ] Make any necessary edits to the newly generated file, e.g. `.changes/v0.12.4.md`
+- [ ] Update `CHANGELOG.md` by running `changie merge`.
+
+```console
+find . sdk/go sdk/python sdk/typescript sdk/elixir sdk/php helm/dagger -maxdepth 1 -name .changie.yaml -execdir changie merge \;
+git add **/.changes
+git add **/CHANGELOG.md
+git commit -s -m "chore: add release notes for ${ENGINE_VERSION}"
+```
+
+- [ ] Update `.changes/.next` with the next release number if known -
+     otherwise, make the file empty (but don't remove it).
+
+- [ ] Update all dagger versions in `docs/current_docs/partials/_install-cli.mdx` to `$ENGINE_VERSION`
+  - e.g. if bumping 0.12.2->0.12.3, can run `sed -i 's/0\.12\.2/0\.12\.3/g' docs/current_docs/partials/_install-cli.mdx`
+
+- [ ] `30 mins` Submit, review and merge the prep PR. The merge commit is what gets tagged in the next step.
   - 🚨 Non-main branch release only: Ideally use "Rebase and Merge" rather than squashing commits when merging so we can more easily preserve the history of the cherry-picked commits.
-- [ ] Ensure that all checks are green ✅ on the
-      `<RELEASE_BRANCH>` that you are about to release.
+- [ ] Ensure that all checks are green ✅ on the `$RELEASE_BRANCH` that you are about to release.
   - 🚨 Non-main branch release only: currently, CI does not run on non-main branches and some of the workflows are currently hardcoded with `main` so it's not safe to manually run them. So for now this has to be skipped in this case.
 - [ ] `30mins` When you have confirmed that all checks are green, run the following:
 
 ```console
 git checkout "${RELEASE_BRANCH:?must be set}"
-git pull $DAGGER_REPO_REMOTE "${RELEASE_BRANCH:?must be set}"
+git pull "${DAGGER_REPO_REMOTE:?must be set}" "${RELEASE_BRANCH:?must be set}"
 
 export ENGINE_GIT_SHA="$(git rev-parse --verify HEAD)"
-export ENGINE_VERSION="$(changie latest)"
-
 git tag "${ENGINE_VERSION:?must be set}" "${ENGINE_GIT_SHA:?must be set}"
-
 git push "${DAGGER_REPO_REMOTE:?must be set}" "${ENGINE_VERSION:?must be set}"
-
-# This is required to interpolate $ENGINE_VERSION to the SDK release notes
-export CHANGIE_ENGINE_VERSION="$ENGINE_VERSION"
 ```
 
 This will kick off
-[`.github./workflows/publish.yml`](https://github.com/dagger/dagger/actions/workflows/publish.yml).
-After the `publish` job in this workflow passes, a new `draft` PR will
-automatically be created to bump the Engine version in the various SDKs.
+[`.github./workflows/publish.yml`](https://github.com/dagger/dagger/actions/workflows/publish.yml)
+which publishes:
+- A new image to [ghcr.io/dagger/engine](https://github.com/dagger/dagger/pkgs/container/engine) (mirrored to registry.dagger.io/engine using https://github.com/dagger/registry-redirect).
+- New cli binaries to [dl.dagger.io](https://dl.dagger.io) (served from an S3 bucket, uploaded to by goreleaser)
+
+### Improve releasing 改善
+
+- [ ] Download and install the latest release, and continue the rest of the
+      release process using the just-released CLI. This is needed now so the
+      `dev` module updated below will get `dagger.json`'s engine version bumped.
+
+```console
+curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=0.12.4 sh
+# install the cli to dagger-0.12.4, and symlink dagger to it
+mv ~/.local/bin/dagger{,-0.12.4}
+ln -s ~/.local/bin/dagger{-0.12.4,}
+
+dagger version
+```
+
+- [ ] Update all dagger versions in `.github/` to `$ENGINE_VERSION`
+
+  - The version numbers (of the form `<major>.<minor>.<patch>`) should be updated to the new version
+  - The worker runner versions (of the form `dagger-v<major>-<minor>-<patch>-<worker>`)
+  - e.g. if bumping 0.12.2->0.12.3, can run `find .github/ -type f -exec sed -i 's/0-12-2/0-12-3/g; s/0\.12\.2/0\.12\.3/g' {} +`
+
+- [ ] Open a PR with the title `Improve Releasing during $ENGINE_VERSION`
+
+```console
+git checkout -b improve-releasing-during-${ENGINE_VERSION:?must be set}
+git add .  # or any other files changed during the last few steps
+git commit -s -m "Improve releasing during $ENGINE_VERSION"
+git push
+```
+
+- Swap back to `$RELEASE_BRANCH` to continue
+
+```console
+git checkout "${RELEASE_BRANCH:?must be set}"
+```
 
 <details>
 <summary>🚨 Non-main branch release only:</summary>
 
-Currently, the bump-engine PR will be created against `main` by default and also include commits from main rather than just the ones you cherry-picked.
-
-You will want to leave this PR open, but need to manually create a new PR against the release branch, with an additional cherry-pick on the engine bump commit.
-
-- ‼️ Be sure to change the branch being merged into from `main` to the release branch when opening the PR.
-
-This PR will also need the extra commits described below for SDK changelogs, helm chart version bump, etc.
-
-An example PR used while releasing `v0.11.9` off of `v0.11.8` can be found [here](https://github.com/dagger/dagger/pull/7746).
+Change the branch the PR is being merged into from `main` to the `release-vX.Y.Z` branch.
 
 </details>
 
-- [ ] Checkout the `bump-engine` branch locally & generate changelogs for all SDKs:
+## 🐹 Go SDK ⏱ `10mins`
 
-```console
-# Fill in the value with the PR number of the bump-engine PR just created
-export BUMP_ENGINE_PR=
-```
-
-```console
-# Engine bump PR is made from the dagger-ci fork
-git remote add dagger-ci https://github.com/dagger-ci/dagger
-git fetch dagger-ci bump-engine
-git checkout --track dagger-ci/bump-engine
-
-cd sdk/go
-changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom "Author=github-actions" --custom "PR=${BUMP_ENGINE_PR:?must be set}"
-changie batch patch
-changie merge
-
-cd ../python
-changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom "Author=github-actions" --custom "PR=${BUMP_ENGINE_PR:?must be set}"
-changie batch patch
-changie merge
-
-cd ../typescript
-changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom "Author=github-actions" --custom "PR=${BUMP_ENGINE_PR:?must be set}"
-changie batch patch
-changie merge
-
-cd ../elixir
-changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom "Author=github-actions" --custom "PR=${BUMP_ENGINE_PR:?must be set}"
-changie batch patch
-changie merge
-
-cd ../php
-changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom "Author=github-actions" --custom "PR=${BUMP_ENGINE_PR:?must be set}"
-changie batch patch
-changie merge
-
-cd ../../helm/dagger
-changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom "Author=github-actions" --custom "PR=${BUMP_ENGINE_PR:?must be set}"
-changie batch patch
-changie merge
-
-cd ../..
-```
-
-- [ ] Update all dagger versions in `docs/current_docs/partials/_install-cli.mdx` to `$ENGINE_VERSION`
-  - e.g. if bumping 0.12.2->0.12.3, can run `sed -i 's/0\.12\.2/0\.12\.3/g' docs/current_docs/partials/_install-cli.mdx`
-- [ ] Commit and push the changes with the message `Add SDK release notes`
-- [ ] `30mins` Open this draft PR in
-      [github.com/dagger/dagger/pulls](https://github.com/dagger/dagger/pulls) &
-      click on **Ready to review**.
-- [ ] **After all checks pass**, merge this PR. Tip: go to the **Files
-      changed** tab on the PR to review without an explicit request.
-
-## 🐹 Go SDK ⏱ `30mins`
-
-- [ ] Ensure that all checks are green ✅ for the `<SDK_GIT_SHA>` on the `<RELEASE_BRANCH>`
+- [ ] Ensure that all checks are green ✅ on the `$RELEASE_BRANCH`
       branch that you are about to release. This will usually be the commit that
       bumps the Engine version, the one that you merged earlier.
   - 🚨 Non-main branch release only: currently, CI does not run on non-main branches and some of the workflows are currently hardcoded with `main` so it's not safe to manually run them. So for now this has to be skipped in this case.
 
 ```console
-git checkout "${RELEASE_BRANCH:?must be set}"
-git pull "${DAGGER_REPO_REMOTE:?must be set}"
-git branch -D bump-engine
-
-export SDK_GIT_SHA="$(git rev-parse --verify HEAD)"
+export SDK_GIT_SHA=$ENGINE_GIT_SHA
 ```
 
 - [ ] Tag & publish:
@@ -395,73 +407,6 @@ workflow](https://github.com/dagger/dagger/actions/workflows/sdk-go-publish.yml)
 which publishes to [🐙
 github.com/dagger/dagger-go-sdk](https://github.com/dagger/dagger-go-sdk/tags).
 
-- [ ] Download and install the latest release, and continue the rest of the
-      release process using the just-released CLI. This is needed now so the
-      `dev` module updated below will get `dagger.json`'s engine version bumped.
-
-```console
-curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=0.12.1 sh
-# install the cli to dagger-0.12.1, and symlink dagger to it
-mv ~/.local/bin/dagger{,-0.12.1}
-ln -s ~/.local/bin/dagger{-0.12.1,}
-
-dagger version
-```
-
-- [ ] `20mins` Bump the Go SDK version in our internal CI targets & check
-      that Engine tests pass locally. If everything looks good, submit a new PR
-      with this change so that we can check that all our workflows pass with the new
-      SDK version before we create a new GitHub release and make it widely public.
-
-```console
-go mod edit -require dagger.io/dagger@${GO_SDK_VERSION:?must be set}
-go mod edit -require github.com/dagger/dagger/engine/distconsts@${GO_SDK_VERSION:?must be set}
-go mod tidy
-cd dev
-dagger develop
-go mod edit -require github.com/dagger/dagger/engine/distconsts@${ENGINE_VERSION:?must be set}
-go mod tidy
-cd ..
-```
-
-- [ ] Update all dagger versions in `.github/` to `$ENGINE_VERSION`
-
-  - The version numbers (of the form `<major>.<minor>.<patch>`) should be updated to the new version
-  - The worker runner versions (of the form `dagger-v<major>-<minor>-<patch>-<worker>`)
-  - e.g. if bumping 0.12.2->0.12.3, can run `find .github/ -type f -exec sed -i 's/0-12-2/0-12-3/g; s/0\.12\.2/0\.12\.3/g' {} +`
-
-- [ ] Update `.changes/.next` with the next release number if known -
-     otherwise, make the file empty (but don't remove it).
-
-- [ ] Open a PR with the title `Improve Releasing during $ENGINE_VERSION`
-
-```console
-git checkout -b improve-releasing-during-${ENGINE_VERSION:?must be set}
-git add .  # or any other files changed during the last few steps
-git commit -s -m "Improve releasing during $ENGINE_VERSION"
-git push
-```
-
-<details>
-<summary>🚨 Non-main branch release only:</summary>
-
-Change the branch the PR is being merged into from `main` to the `release-vX.Y.Z` branch.
-
-</details>
-
-Ensure that all the workflows succeed before continuing (specifically `test` and `testdev`)!
-
-- [ ] After you confirm that our internal tooling works with the new Go SDK
-      release, [🐙 github.com/dagger/dagger-go-sdk](https://github.com/dagger/dagger-go-sdk/tags),
-      double-check that is was picked up by [pkg.go.dev](https://pkg.go.dev/dagger.io/dagger).
-      You can manually request this new version via `open https://pkg.go.dev/dagger.io/dagger@${GO_SDK_VERSION:?must be set}`.
-      The new version can take up to `60mins` to appear, it's OK to move on.
-
-> [!NOTE]
->
-> To upload the release notes, we need to have the [`gh`
-> CLI](https://cli.github.com/) installed, e.g. `brew install gh`
-
 - [ ] Upload the release notes by running:
 
 ```console
@@ -474,12 +419,44 @@ gh release create "sdk/go/${GO_SDK_VERSION:?must be set}" \
 - [ ] ⚠️ De-select **Set as the latest release** (only used for 🚙 Engine + 🚗 CLI releases)
 - [ ] Click on **Publish release**
 
+- [ ] Double-check that the releases was picked up by [pkg.go.dev](https://pkg.go.dev/dagger.io/dagger).
+      You can manually request this new version via `open https://pkg.go.dev/dagger.io/dagger@${GO_SDK_VERSION:?must be set}`.
+      The new version can take up to `60mins` to appear, it's OK to move on.
+
+### Improve releasing 改善
+
+- [ ] Swap to the release improvement branch
+
+```console
+git checkout -b improve-releasing-during-${ENGINE_VERSION:?must be set}
+```
+
+- [ ] Bump the Go SDK version in our internal CI targets (these aren't actually
+      used anywhere since we use the modularized go SDK - but it's good
+      practice regardless).
+
+```console
+go mod edit -require dagger.io/dagger@${GO_SDK_VERSION:?must be set}
+go mod edit -require github.com/dagger/dagger/engine/distconsts@${GO_SDK_VERSION:?must be set}
+go mod tidy
+cd dev
+dagger develop
+go mod edit -require github.com/dagger/dagger/engine/distconsts@${ENGINE_VERSION:?must be set}
+go mod tidy
+cd ..
+```
+
+- Swap back to `$RELEASE_BRANCH` to continue
+
+```console
+git checkout "${RELEASE_BRANCH:?must be set}"
+```
+
 ## 🐍 Python SDK ⏱ `5mins`
 
 - [ ] Tag & publish:
 
 ```console
-git checkout "${RELEASE_BRANCH:?must be set}"
 cd sdk/python && export PYTHON_SDK_VERSION=$(changie latest) && cd ../..
 git tag "sdk/python/${PYTHON_SDK_VERSION:?must be set}" "${SDK_GIT_SHA:?must be set}"
 git push "${DAGGER_REPO_REMOTE:?must be set}" sdk/python/${PYTHON_SDK_VERSION}
@@ -586,9 +563,9 @@ gh release create "sdk/php/${PHP_SDK_VERSION:?must be set}" \
 - [ ] Tag & publish:
 
 ```console
-export HELM_CHART_VERSION="$(awk '/^version: / { print $2 }' helm/dagger/Chart.yaml)"
-git tag "helm/chart/v${HELM_CHART_VERSION:?must be set}" "${SDK_GIT_SHA:?must be set}"
-git push "${DAGGER_REPO_REMOTE:?must be set}" "helm/chart/v${HELM_CHART_VERSION:?must be set}"
+export HELM_CHART_VERSION=v"$(awk '/^version: / { print $2 }' helm/dagger/Chart.yaml)"
+git tag "helm/chart/${HELM_CHART_VERSION:?must be set}" "${SDK_GIT_SHA:?must be set}"
+git push "${DAGGER_REPO_REMOTE:?must be set}" "helm/chart/${HELM_CHART_VERSION:?must be set}"
 ```
 
 This will trigger the [`publish-helm-chart`
