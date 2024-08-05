@@ -9,10 +9,31 @@ Welcome to the Dagger manual!
 
 This manual provides detailed information to help you use Dagger. It covers:
 
-- The Dagger API, which provides primitives to stitch together powerful pipelines out of containers, artifacts, network services, and secrets – all in type-safe Go, Python or TypeScript;
-- Dagger Functions, which let you encapsulate this code into a software component which can be loaded into any Dagger Engine, and called by other Dagger Functions;
 - The Dagger CLI, which is your primary way to call Dagger Functions, either interactively from a terminal or non-interactively from a shell script or a CI configuration;
-- Dagger Cloud, which provides additional visualization and debugging features.
+- Dagger Functions, which let you encapsulate this code into a software component which can be loaded into any Dagger Engine, and called by other Dagger Functions;
+- The Dagger API, which provides primitives to stitch together powerful pipelines out of containers, artifacts, network services, and secrets – all in type-safe Go, Python or TypeScript;
+- The Dagger Engine, which is a container engine controlled by the Dagger API;
+- Dagger Cloud, which provides additional visualization and debugging features;
+- The Daggerverse, which is a free service run by Dagger to easily search and consume Dagger Functions.
+
+```mermaid
+graph TD
+    A[Dagger CLI] --> B[Dagger Functions]
+    B --> C[Dagger SDKs]
+    D --> E[Dagger Engine]
+    B --> F[Daggerverse]
+    B --> G[Dagger Cloud]
+
+    C --> H[Go SDK]
+    C --> I[TypeScript SDK]
+    C --> J[Python SDK]
+    C --> K[Experimental/Community SDKs]
+
+    H --> D[Dagger API]
+    I --> D
+    J --> D
+    K --> D
+```
 
 :::tip
 If you're new to Dagger, [try the Dagger Quickstart](../quickstart/index.mdx) first.
