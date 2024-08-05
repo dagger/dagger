@@ -267,22 +267,6 @@ module.exports = {
                   "type": "doc",
                   "id": "manual/functions/structure-packaging"
                 },
-                {
-                  "type": "doc",
-                  "id": "manual/engine/custom-ca"
-                },
-                {
-                  "type": "doc",
-                  "id": "manual/engine/custom-registry"
-                },
-                {
-                  "type": "doc",
-                  "id": "manual/engine/custom-runner"
-                },
-                {
-                  "type": "doc",
-                  "id": "manual/engine/proxy"
-                },
               ],
             },
           ],
