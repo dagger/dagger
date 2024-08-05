@@ -1,25 +1,14 @@
 ---
-slug: /manuals/developer/publish-modules
+slug: /manual/functions/publish
 displayed_sidebar: "current"
 toc_max_heading_level: 3
 ---
 
-# Publish Dagger modules to the Daggerverse
-
-This page explains how to publish Dagger modules to the [Daggerverse](https://daggerverse.dev), so that other users can easily discover and use them.
-
-## Requirements
-
-This guide assumes that:
-
-- You have a Dagger module with at least one Dagger Function. If not, create one using the [quickstart](../../quickstart/index.mdx).
-- You can push your module to a public Git repository on a Git server reachable over the internet.
-
-## Process
+# Publish to the Daggerverse
 
 Two processes are available to publish your Dagger module to the Daggerverse, manual and automatic on use.
 
-### Manual publishing
+## Manual publishing
 
 To manually publish a module to the Daggerverse, follow the steps below:
 
@@ -51,7 +40,7 @@ To manually publish a module to the Daggerverse, follow the steps below:
 - The Daggerverse only fetches publicly available information from Git servers. Modules are not hosted on the Daggerverse. If you need a module removed from the Daggerverse for some reason, let the Dagger team know in [Discord](https://discord.gg/dagger-io).
 :::
 
-### Publishing on use
+## Publishing on use
 
 Every time that a user executes `dagger call`, if any of the Dagger Functions which are invoked in the execution come from a remote Dagger module (here, a remote module is defined as a module whose location is specified by a URL like `GITSERVER/USERNAME/daggerverse/...`), that Dagger module will automatically be published to the Daggerverse.
 
@@ -68,7 +57,3 @@ At this time, only version numbers matching the `vMAJOR.MINOR.PATCH` versioning 
 :::
 
 In monorepos of modules, modules can be independently versioned by prefixing the tag with the subpath. For example a module named `foo` can be tagged with `foo/v1.2.3` and referenced as `GITSERVER/USERNAME/REPOSITORY/foo@v1.2.3`.
-
-## Conclusion
-
-This guide described the two processes available to add your modules to the [Daggerverse](https://daggerverse.dev), and also explained how to version your modules according to semantic versioning principles.
