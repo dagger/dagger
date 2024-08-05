@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/opencontainers/go-digest"
@@ -492,6 +493,18 @@ func (sdk *goSDK) baseWithCodegen(
 		return ctr, fmt.Errorf("failed to remove dagger.gen.go from source directory: %w", err)
 	}
 
+	codegenArgs := dagql.ArrayInput[dagql.String]{
+		"--output", dagql.String(goSDKUserModContextDirPath),
+		"--module-context-path", dagql.String(filepath.Join(goSDKUserModContextDirPath, srcSubpath)),
+		"--module-name", dagql.String(modName),
+		"--introspection-json-path", goSDKIntrospectionJSONPath,
+	}
+
+	if src.Self.WithInitConfig != nil {
+		codegenArgs = append(codegenArgs,
+			dagql.String("--merge="+strconv.FormatBool(src.Self.WithInitConfig.Merge)))
+	}
+
 	if err := sdk.dag.Select(ctx, ctr, &ctr, dagql.Selector{
 		Field: "withMountedFile",
 		Args: []dagql.NamedInput{
@@ -531,13 +544,9 @@ func (sdk *goSDK) baseWithCodegen(
 		Args: []dagql.NamedInput{
 			{
 				Name: "args",
-				Value: dagql.ArrayInput[dagql.String]{
+				Value: append(dagql.ArrayInput[dagql.String]{
 					"codegen",
-					"--output", dagql.String(goSDKUserModContextDirPath),
-					"--module-context-path", dagql.String(filepath.Join(goSDKUserModContextDirPath, srcSubpath)),
-					"--module-name", dagql.String(modName),
-					"--introspection-json-path", goSDKIntrospectionJSONPath,
-				},
+				}, codegenArgs...),
 			},
 			{
 				Name:  "experimentalPrivilegedNesting",

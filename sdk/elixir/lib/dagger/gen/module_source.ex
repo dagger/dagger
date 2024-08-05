@@ -276,6 +276,20 @@ defmodule Dagger.ModuleSource do
     }
   end
 
+  @doc "Sets module init arguments"
+  @spec with_init(t(), [{:merge, boolean() | nil}]) :: Dagger.ModuleSource.t()
+  def with_init(%__MODULE__{} = module_source, optional_args \\ []) do
+    selection =
+      module_source.selection
+      |> select("withInit")
+      |> maybe_put_arg("merge", optional_args[:merge])
+
+    %Dagger.ModuleSource{
+      selection: selection,
+      client: module_source.client
+    }
+  end
+
   @doc "Update the module source with a new name."
   @spec with_name(t(), String.t()) :: Dagger.ModuleSource.t()
   def with_name(%__MODULE__{} = module_source, name) do

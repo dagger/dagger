@@ -5656,6 +5656,12 @@ pub struct ModuleSourceResolveDirectoryFromCallerOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub view_name: Option<&'a str>,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct ModuleSourceWithInitOpts {
+    /// Merge module dependencies into the current project's
+    #[builder(setter(into, strip_option), default)]
+    pub merge: Option<bool>,
+}
 impl ModuleSource {
     /// If the source is a of kind git, the git source representation of it.
     pub fn as_git_source(&self) -> GitModuleSource {
@@ -5898,6 +5904,35 @@ impl ModuleSource {
     pub fn with_dependencies(&self, dependencies: Vec<ModuleDependencyId>) -> ModuleSource {
         let mut query = self.selection.select("withDependencies");
         query = query.arg("dependencies", dependencies);
+        ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Sets module init arguments
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_init(&self) -> ModuleSource {
+        let query = self.selection.select("withInit");
+        ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Sets module init arguments
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_init_opts(&self, opts: ModuleSourceWithInitOpts) -> ModuleSource {
+        let mut query = self.selection.select("withInit");
+        if let Some(merge) = opts.merge {
+            query = query.arg("merge", merge);
+        }
         ModuleSource {
             proc: self.proc.clone(),
             selection: query,
