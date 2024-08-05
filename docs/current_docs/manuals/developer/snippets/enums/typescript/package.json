@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "typescript": "^5.3.2",
+    "@dagger.io/dagger": "./sdk"
+  }
+}
