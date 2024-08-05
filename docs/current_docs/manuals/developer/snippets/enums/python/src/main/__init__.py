@@ -1,8 +1,8 @@
-import dagger
-from dagger import dag
+from dagger import Enum, dag, enum_type, function, object_type
 
-@dagger.enum_type
-class Severity(dagger.Enum):
+
+@enum_type
+class Severity(Enum):
     """Vulnerability severity levels"""
 
     UNKNOWN = "UNKNOWN", "Undetermined risk; analyze further"
@@ -11,12 +11,12 @@ class Severity(dagger.Enum):
     HIGH = "HIGH", "Serious risk; quick fix needed."
     CRITICAL = "CRITICAL", "Severe risk; immediate action."
 
-@dagger.object_type
+@object_type
 class MyModule:
-    @dagger.function
+    @function
     def scan(self, ref: str, severity: Severity) -> str:
         ctr = dag.container().from_(ref)
-        
+
         return dag.container()\
             .from_("aquasec/trivy:0.50.4")\
             .with_mounted_file("/mnt/ctr.tar", ctr.as_tarball())\
@@ -28,7 +28,7 @@ class MyModule:
                 "--no-progress",
                 "--exit-code=1",
                 "--vuln-type=os,library",
-                "--severity=" + severity, 
+                "--severity=" + severity,
                 "--show-suppressed",
                 "--input=/mnt/ctr.tar"
             ])\
