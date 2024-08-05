@@ -7,6 +7,25 @@ displayed_sidebar: "current"
 
 Dagger consists of a number of components, all of which work together in an integrated fashion to orchestrate the delivery of applications to the cloud from start to finish.
 
+```mermaid
+graph TD
+    E[Dagger Engine] --> A[Dagger API]
+    A --> B[Dagger SDKs]
+    B --> C[Dagger Functions]
+    C --> D[Dagger CLI]
+    C --> F[Daggerverse]
+    C --> G[Dagger Cloud]
+
+    B --> H[Go SDK]
+    B --> I[TypeScript SDK]
+    B --> J[Python SDK]
+    B --> K[Experimental/Community SDKs]
+```
+
+## Dagger Engine
+The Dagger Engine is a next-generation container engine controlled by the Dagger API.
+FIXME add paragraph
+
 ## Dagger API
 The Dagger API is a unified interface for programming the Dagger Engine. It provides a set of powerful core types for creating and managing application delivery pipelines, including types for containers, artifacts, network services, and secrets. It  uses GraphQL as its low-level language-agnostic framework, and can be accessed using any standard GraphQL client. In practice, interacting with the API directly is optional; typically, you will use a Dagger Function created with a type-safe Dagger SDK, or the Dagger CLI.
 
@@ -23,11 +42,10 @@ Dagger Functions are portable and interoperable across languages. For example, a
 ## Dagger CLI
 The simplest and most common way to call Dagger Functions is with the Dagger Command-Line Interface (CLI). The Dagger CLI is a full-featured, easy to use tool that can be used interactively from a terminal or non-interactively from a shell script or a CI runner. The Dagger CLI also includes a real-time visualization feature called the terminal UI (TUI).
 
-## Dagger Engine
-The Dagger Engine is a next-generation container engine controlled by the Dagger API. FIXME
-
 ## Daggerverse
 The Daggerverse is a free service run by Dagger, which indexes all publicly available Dagger Functions, and lets you easily search and consume them.
 
 ## Dagger Cloud
-Dagger Cloud complements Dagger with a production-grade control plane. Features of Dagger Cloud include pipeline visualization, operational insights, and distributed caching.
+Dagger Cloud complements Dagger with a production-grade control plane. Features of Dagger Cloud include pipeline visualization, operational insights, and distributed caching. Dagger Cloud provides a web interface to visualize each step of your pipeline, drill down to detailed logs, understand how long operations took to run, and whether operations were cached.
+
+Dagger Cloud also collects telemetry from all your organization’s Dagger Engines, whether they run in development or CI, and presents it all to you in one place. This gives you a unique view on all pipelines, both pre-push and post-push.
