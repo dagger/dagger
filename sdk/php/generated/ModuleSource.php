@@ -224,6 +224,18 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Sets module init arguments
+     */
+    public function withInit(?bool $merge = false): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withInit');
+        if (null !== $merge) {
+        $innerQueryBuilder->setArgument('merge', $merge);
+        }
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Update the module source with a new name.
      */
     public function withName(string $name): ModuleSource

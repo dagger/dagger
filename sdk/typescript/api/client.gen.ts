@@ -866,6 +866,13 @@ export type ModuleSourceResolveDirectoryFromCallerOpts = {
   viewName?: string
 }
 
+export type ModuleSourceWithInitOpts = {
+  /**
+   * Merge module dependencies into the current project's
+   */
+  merge?: boolean
+}
+
 /**
  * The `ModuleSourceID` scalar type represents an identifier for an object of type ModuleSource.
  */
@@ -7345,6 +7352,23 @@ export class ModuleSource extends BaseClient {
         {
           operation: "withDependencies",
           args: { dependencies },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Sets module init arguments
+   * @param opts.merge Merge module dependencies into the current project's
+   */
+  withInit = (opts?: ModuleSourceWithInitOpts): ModuleSource => {
+    return new ModuleSource({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withInit",
+          args: { ...opts },
         },
       ],
       ctx: this._ctx,

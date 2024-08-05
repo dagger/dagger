@@ -46,6 +46,10 @@ func (proto ModuleSourceKind) ToLiteral() call.Literal {
 	return ModuleSourceKindEnum.Literal(proto)
 }
 
+type ModuleInitConfig struct {
+	Merge bool
+}
+
 type ModuleSource struct {
 	Query *Query
 
@@ -59,6 +63,7 @@ type ModuleSource struct {
 	WithName          string
 	WithDependencies  []dagql.Instance[*ModuleDependency]
 	WithSDK           string
+	WithInitConfig    *ModuleInitConfig
 	WithSourceSubpath string
 	WithViews         []*ModuleSourceView
 }
@@ -97,6 +102,11 @@ func (src ModuleSource) Clone() *ModuleSource {
 	if src.WithViews != nil {
 		cp.WithViews = make([]*ModuleSourceView, len(src.WithViews))
 		copy(cp.WithViews, src.WithViews)
+	}
+
+	if src.WithInitConfig != nil {
+		cp.WithInitConfig = new(ModuleInitConfig)
+		*cp.WithInitConfig = *src.WithInitConfig
 	}
 
 	return &cp

@@ -164,6 +164,7 @@ func (g *GoGenerator) bootstrapMod(ctx context.Context, mfs *memfs.FS) (*Package
 	var modPath string
 	var mod *modfile.File
 
+	modname := fmt.Sprintf("dagger/%s", strcase.ToKebab(g.Config.ModuleName))
 	// check for a go.mod already for the dagger module
 	if content, err := os.ReadFile(filepath.Join(g.Config.OutputDir, g.Config.ModuleContextPath, "go.mod")); err == nil {
 		modPath = g.Config.ModuleContextPath
@@ -172,13 +173,19 @@ func (g *GoGenerator) bootstrapMod(ctx context.Context, mfs *memfs.FS) (*Package
 		if err != nil {
 			return nil, false, fmt.Errorf("parse go.mod: %w", err)
 		}
+
+		if g.Config.Merge != nil && !*g.Config.Merge && mod.Module.Mod.Path != modname {
+			return nil, false, fmt.Errorf("existing go.mod does not match the module's path")
+		}
 	}
+
 	// if no go.mod is available, check the root output directory instead
+	// and if no merge is set
 	//
 	// this is a necessary part of bootstrapping: SDKs such as the Go SDK
 	// will want to have a runtime module that lives in the same Go module as
 	// the generated client, which typically lives in the parent directory.
-	if mod == nil {
+	if mod == nil && (g.Config.Merge == nil || *g.Config.Merge) {
 		if content, err := os.ReadFile(filepath.Join(g.Config.OutputDir, "go.mod")); err == nil {
 			modPath = "."
 			mod, err = modfile.ParseLax("go.mod", content, nil)
@@ -191,8 +198,6 @@ func (g *GoGenerator) bootstrapMod(ctx context.Context, mfs *memfs.FS) (*Package
 	if mod == nil {
 		modPath = g.Config.ModuleContextPath
 		mod = new(modfile.File)
-
-		modname := fmt.Sprintf("dagger/%s", strcase.ToKebab(g.Config.ModuleName))
 
 		mod.AddModuleStmt(modname)
 		mod.AddGoStmt(goVersion)
