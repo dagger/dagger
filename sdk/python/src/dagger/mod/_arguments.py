@@ -43,10 +43,10 @@ class DefaultPath:
     Mutually exclusive with setting a default value for the parameter. When
     used within Python, the parameter should be required.
 
-    Example usage:
+    Example usage::
 
-    >>> @function
-    ... def build(src: Annotated[dagger.Directory, DefaultPath(".")]): ...
+        @function
+        def build(src: Annotated[dagger.Directory, DefaultPath("..")]): ...
     """
 
     from_context: ContextPath
@@ -65,10 +65,10 @@ class Ignore:
     Useful if it's known in advance which files or directories should be
     excluded when loading the directory.
 
-    Example usage:
+    Example usage::
 
-    >>> @function
-    ... def build(src: Annotated[dagger.Directory, Ignore([".venv"])]):
+        @function
+        def build(src: Annotated[dagger.Directory, Ignore([".venv"])]): ...
     """
 
     patterns: list[str]
