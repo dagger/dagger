@@ -25,11 +25,12 @@ class Name:
 
 
 @deprecated("Arg is deprecated, use Name instead.")
-def Arg(name: str) -> Name:  # noqa: N802
-    return Name(name)
+class Arg(Name):
+    """An alternative name when exposing a function argument to the API.
 
-
-Arg.__doc__ = Name.__doc__
+    .. deprecated::
+        Use :py:class:`Name` instead.
+    """
 
 
 @dataclasses.dataclass(slots=True, frozen=True, kw_only=True)
