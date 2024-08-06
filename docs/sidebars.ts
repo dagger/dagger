@@ -111,7 +111,6 @@ module.exports = {
       "label": "Cookbook",
       "id": "cookbook/cookbook"
     },
-    //
     {
       "type": "category",
       "label": "Manual",
@@ -386,6 +385,10 @@ module.exports = {
               "id": "manual/engine/proxy"
             },
           ],
+        },
+        {
+          "type": "doc",
+          "id": "manual/troubleshooting"
         },
       ]
     },
