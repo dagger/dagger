@@ -4265,6 +4265,7 @@ export class FieldTypeDef extends BaseClient {
 export class File extends BaseClient {
   private readonly _id?: FileID = undefined
   private readonly _contents?: string = undefined
+  private readonly _digest?: string = undefined
   private readonly _export?: string = undefined
   private readonly _name?: string = undefined
   private readonly _size?: number = undefined
@@ -4277,6 +4278,7 @@ export class File extends BaseClient {
     parent?: { queryTree?: QueryTree[]; ctx: Context },
     _id?: FileID,
     _contents?: string,
+    _digest?: string,
     _export?: string,
     _name?: string,
     _size?: number,
@@ -4286,6 +4288,7 @@ export class File extends BaseClient {
 
     this._id = _id
     this._contents = _contents
+    this._digest = _digest
     this._export = _export
     this._name = _name
     this._size = _size
@@ -4326,6 +4329,27 @@ export class File extends BaseClient {
         ...this._queryTree,
         {
           operation: "contents",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * Return the file's digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine.
+   */
+  digest = async (): Promise<string> => {
+    if (this._digest) {
+      return this._digest
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "digest",
         },
       ],
       await this._ctx.connection(),

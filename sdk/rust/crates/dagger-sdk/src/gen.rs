@@ -4399,6 +4399,11 @@ impl File {
         let query = self.selection.select("contents");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Return the file's digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine.
+    pub async fn digest(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("digest");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Writes the file to a file path on the host.
     ///
     /// # Arguments

@@ -1362,6 +1362,13 @@ type File {
   """Retrieves the contents of the file."""
   contents: String!
 
+  """
+  Return the file's digest. The format of the digest is not guaranteed to be
+  stable between releases of Dagger. It is guaranteed to be stable between
+  invocations of the same Dagger engine.
+  """
+  digest: String!
+
   """Writes the file to a file path on the host."""
   export(
     """

@@ -25,6 +25,12 @@ func (s *fileSchema) Install() {
 			Doc(`Retrieves the size of the file, in bytes.`),
 		dagql.Func("name", s.name).
 			Doc(`Retrieves the name of the file.`),
+		dagql.Func("digest", s.digest).
+			Doc(
+				`Return the file's digest.
+				The format of the digest is not guaranteed to be stable between releases of Dagger.
+				It is guaranteed to be stable between invocations of the same Dagger engine.`,
+			),
 		dagql.Func("withName", s.withName).
 			Doc(`Retrieves this file with its name set to the given name.`).
 			ArgDoc("name", `Name to set file to.`),
@@ -66,6 +72,15 @@ func (s *fileSchema) size(ctx context.Context, file *core.File, args struct{}) (
 
 func (s *fileSchema) name(ctx context.Context, file *core.File, args struct{}) (dagql.String, error) {
 	return dagql.NewString(filepath.Base(file.File)), nil
+}
+
+func (s *fileSchema) digest(ctx context.Context, file *core.File, args struct{}) (dagql.String, error) {
+	digest, err := file.Digest(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	return dagql.NewString(digest), nil
 }
 
 type fileWithNameArgs struct {

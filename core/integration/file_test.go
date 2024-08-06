@@ -393,6 +393,18 @@ func (FileSuite) TestContents(ctx context.Context, t *testctx.T) {
 	}
 }
 
+func (FileSuite) TestDigest(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("compute file digest", func(ctx context.Context, t *testctx.T) {
+		file := c.Directory().WithNewFile("/foo.txt", "Hello, World!")
+
+		digest, err := file.File("/foo.txt").Digest(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "sha256:dffd6021bb2bd5b0af676290809ec3a53191dd81c7f70a4b28688a362182986f", digest)
+	})
+}
+
 func (FileSuite) TestSync(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

@@ -19,6 +19,15 @@ defmodule Dagger.File do
     execute(selection, file.client)
   end
 
+  @doc "Return the file's digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine."
+  @spec digest(t()) :: {:ok, String.t()} | {:error, term()}
+  def digest(%__MODULE__{} = file) do
+    selection =
+      file.selection |> select("digest")
+
+    execute(selection, file.client)
+  end
+
   @doc "Writes the file to a file path on the host."
   @spec export(t(), String.t(), [{:allow_parent_dir_path, boolean() | nil}]) ::
           {:ok, String.t()} | {:error, term()}

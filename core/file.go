@@ -11,6 +11,7 @@ import (
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
+	"github.com/opencontainers/go-digest"
 	fstypes "github.com/tonistiigi/fsutil/types"
 	"github.com/vektah/gqlparser/v2/ast"
 
@@ -190,6 +191,15 @@ func (file *File) Contents(ctx context.Context) ([]byte, error) {
 		offset += len(chunk)
 	}
 	return contents, nil
+}
+
+func (file *File) Digest(ctx context.Context) (string, error) {
+	content, err := file.Contents(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get file content: %w", err)
+	}
+
+	return digest.FromBytes(content).String(), nil
 }
 
 func (file *File) Stat(ctx context.Context) (*fstypes.Stat, error) {

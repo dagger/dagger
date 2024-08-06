@@ -3107,6 +3107,7 @@ type File struct {
 	query *querybuilder.Selection
 
 	contents *string
+	digest   *string
 	export   *string
 	id       *FileID
 	name     *string
@@ -3134,6 +3135,19 @@ func (r *File) Contents(ctx context.Context) (string, error) {
 		return *r.contents, nil
 	}
 	q := r.query.Select("contents")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Return the file's digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine.
+func (r *File) Digest(ctx context.Context) (string, error) {
+	if r.digest != nil {
+		return *r.digest, nil
+	}
+	q := r.query.Select("digest")
 
 	var response string
 
