@@ -2,13 +2,17 @@ package buildkit
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
+	"github.com/moby/buildkit/solver/pb"
+	"github.com/opencontainers/go-digest"
 	"go.opentelemetry.io/otel/attribute"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/embedded"
+	"go.opentelemetry.io/otel/trace/noop"
 
 	"dagger.io/dagger/telemetry"
 )
@@ -16,7 +20,7 @@ import (
 // buildkitTelemetryContext returns a context with a wrapped span that has a
 // TracerProvider that can process spans produced by buildkit. This works,
 // because of how buildkit heavily relies on trace.SpanFromContext.
-func buildkitTelemetryContext(ctx context.Context) context.Context {
+func buildkitTelemetryContext(client *Client, ctx context.Context) context.Context {
 	if ctx == nil {
 		return nil
 	}
@@ -24,29 +28,31 @@ func buildkitTelemetryContext(ctx context.Context) context.Context {
 	return trace.ContextWithSpan(ctx, buildkitSpan{
 		Span: sp,
 		tp: &buildkitTraceProvider{
-			tp: sp.TracerProvider(),
-			lp: telemetry.LoggerProvider(ctx),
+			tp:     sp.TracerProvider(),
+			lp:     telemetry.LoggerProvider(ctx),
+			client: client,
 		},
 	})
 }
 
 type buildkitTraceProvider struct {
 	embedded.TracerProvider
-	tp trace.TracerProvider
-	lp *sdklog.LoggerProvider
+	tp     trace.TracerProvider
+	lp     *sdklog.LoggerProvider
+	client *Client
 }
 
 func (tp *buildkitTraceProvider) Tracer(name string, options ...trace.TracerOption) trace.Tracer {
 	return &buildkitTracer{
-		bkProvider: tp,
-		tracer:     tp.tp.Tracer(name, options...),
+		provider: tp,
+		tracer:   tp.tp.Tracer(name, options...),
 	}
 }
 
 type buildkitTracer struct {
 	embedded.Tracer
-	bkProvider *buildkitTraceProvider
-	tracer     trace.Tracer
+	provider *buildkitTraceProvider
+	tracer   trace.Tracer
 }
 
 const TelemetryComponent = "buildkit"
@@ -61,12 +67,143 @@ func (t *buildkitTracer) Start(ctx context.Context, spanName string, opts ...tra
 	}, opts...)
 
 	// Restore logger provider from the original ctx the provider was created.
-	ctx = telemetry.WithLoggerProvider(ctx, t.bkProvider.lp)
+	ctx = telemetry.WithLoggerProvider(ctx, t.provider.lp)
+
+	if strings.HasPrefix(spanName, "cache request: ") {
+		// these wrap calls to CacheMap (set deep inside buildkit)
+		// we can discard these, they're not super useful to show to users
+		return noop.NewTracerProvider().Tracer("").Start(ctx, spanName, opts...)
+	}
+
+	if strings.HasPrefix(spanName, "load cache: ") {
+		cfg := trace.NewSpanStartConfig(opts...)
+		for _, attr := range cfg.Attributes() {
+			if attr.Key != "vertex" {
+				continue
+			}
+			dgst := digest.Digest(attr.Value.AsString())
+
+			t.provider.client.opsmu.Lock()
+			llbop, ok := t.provider.client.ops[dgst]
+			if ok {
+				llbop.seen = true
+			}
+			t.provider.client.opsmu.Unlock()
+
+			if ok {
+				for _, input := range llbop.Def.Inputs {
+					t.walk(ctx, input.Digest, func(llbop *op) {
+						_, span := t.tracer.Start(ctx, t.name(llbop.Digest), trace.WithAttributes(
+							attribute.Bool("buildkit", true),
+							attribute.Bool("dagger.io/dag.virtual", true),
+							attribute.Bool(telemetry.CachedAttr, true),
+							attribute.String("vertex", string(llbop.Digest)),
+						))
+						span.End()
+					})
+				}
+			}
+			break
+		}
+	}
 
 	// Start the span, and make sure we return a span that has the provider.
 	ctx, span := t.tracer.Start(ctx, spanName, opts...)
-	newSpan := buildkitSpan{Span: span, tp: t.bkProvider}
+	newSpan := buildkitSpan{Span: span, tp: t.provider}
 	return trace.ContextWithSpan(ctx, newSpan), newSpan
+}
+
+func (t *buildkitTracer) walk(ctx context.Context, digest digest.Digest, cb func(*op)) {
+	t.provider.client.opsmu.RLock()
+	op, ok := t.provider.client.ops[digest]
+	seen := op.seen
+	t.provider.client.opsmu.RUnlock()
+	if !ok || seen {
+		return
+	}
+
+	for _, input := range op.Def.Inputs {
+		t.walk(ctx, input.Digest, cb)
+	}
+
+	cb(op)
+
+	t.provider.client.opsmu.Lock()
+	op.seen = true
+	t.provider.client.opsmu.Unlock()
+}
+
+func (t *buildkitTracer) name(d digest.Digest) string {
+	t.provider.client.opsmu.RLock()
+	op := t.provider.client.ops[d]
+	t.provider.client.opsmu.RUnlock()
+
+	name, ok := op.Meta.Description["llb.customname"]
+	if ok {
+		return name
+	}
+
+	name, err := llbOpName(op, t.name)
+	if err != nil {
+		panic(err)
+	}
+	return name
+}
+
+func llbOpName(llbop *op, basename func(digest.Digest) string) (string, error) {
+	switch op := llbop.Def.Op.(type) {
+	case *pb.Op_Source:
+		return op.Source.Identifier, nil
+	case *pb.Op_Exec:
+		return strings.Join(op.Exec.Meta.Args, " "), nil
+	case *pb.Op_File:
+		return fileOpName(op.File.Actions), nil
+	case *pb.Op_Build:
+		return "build", nil
+	case *pb.Op_Merge:
+		subnames := make([]string, len(llbop.Def.Inputs))
+		for i, inp := range llbop.Def.Inputs {
+			subvtx := basename(inp.Digest)
+			subnames[i] = subvtx
+		}
+		return "merge " + fmt.Sprintf("(%s)", strings.Join(subnames, ", ")), nil
+	case *pb.Op_Diff:
+		var lowerName string
+		if op.Diff.Lower.Input == -1 {
+			lowerName = "scratch"
+		} else {
+			lowerVtx := basename(llbop.Def.Inputs[op.Diff.Lower.Input].Digest)
+			lowerName = fmt.Sprintf("(%s)", lowerVtx)
+		}
+		var upperName string
+		if op.Diff.Upper.Input == -1 {
+			upperName = "scratch"
+		} else {
+			upperVtx := basename(llbop.Def.Inputs[op.Diff.Upper.Input].Digest)
+			upperName = fmt.Sprintf("(%s)", upperVtx)
+		}
+		return "diff " + lowerName + " -> " + upperName, nil
+	default:
+		return "unknown", nil
+	}
+}
+
+func fileOpName(actions []*pb.FileAction) string {
+	names := make([]string, 0, len(actions))
+	for _, action := range actions {
+		switch a := action.Action.(type) {
+		case *pb.FileAction_Mkdir:
+			names = append(names, fmt.Sprintf("mkdir %s", a.Mkdir.Path))
+		case *pb.FileAction_Mkfile:
+			names = append(names, fmt.Sprintf("mkfile %s", a.Mkfile.Path))
+		case *pb.FileAction_Rm:
+			names = append(names, fmt.Sprintf("rm %s", a.Rm.Path))
+		case *pb.FileAction_Copy:
+			names = append(names, fmt.Sprintf("copy %s %s", a.Copy.Src, a.Copy.Dest))
+		}
+	}
+
+	return strings.Join(names, ", ")
 }
 
 type buildkitSpan struct {
@@ -104,12 +241,16 @@ func (sp SpanProcessor) OnStart(ctx context.Context, span sdktrace.ReadWriteSpan
 
 	attrs := []attribute.KeyValue{}
 
+	// convert cache prefixes into cached attribute (this is set deep inside buildkit)
+	spanName, cached := strings.CutPrefix(spanName, "load cache: ")
+	if cached {
+		span.SetName(spanName)
+		attrs = append(attrs, attribute.Bool(telemetry.CachedAttr, true))
+	}
+
 	// convert [internal] prefix into internal attribute
 	if rest, ok := strings.CutPrefix(spanName, InternalPrefix); ok {
 		span.SetName(rest)
-		attrs = append(attrs, attribute.Bool(telemetry.UIInternalAttr, true))
-	} else if rest, ok := strings.CutPrefix(spanName, "load cache: "+InternalPrefix); ok {
-		span.SetName("load cache: " + rest)
 		attrs = append(attrs, attribute.Bool(telemetry.UIInternalAttr, true))
 	}
 

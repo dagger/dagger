@@ -31,10 +31,11 @@ type Span struct {
 	Canceled bool
 	EffectID string
 
-	Inputs         []string
-	Effects        []string
-	RunningEffects map[string]*Span
-	FailedEffects  map[string]*Span
+	Inputs            []string
+	Effects           []string
+	RunningEffects    map[string]*Span
+	SuccessfulEffects map[string]*Span
+	FailedEffects     map[string]*Span
 
 	Encapsulate  bool
 	Encapsulated bool
@@ -48,6 +49,40 @@ type Span struct {
 
 func (span *Span) IsRunning() bool {
 	return span.IsSelfRunning || len(span.RunningEffects) > 0
+}
+
+func (span *Span) IsPending() bool {
+	// TODO: work out how to implement this properly
+	// for some reason it looks like some spans we're waiting on *never* show up?
+	if span.IsRunning() {
+		return false
+	}
+	spanEffects := span.EffectSpans()
+	return len(spanEffects) < len(span.Effects)
+}
+
+func (span *Span) IsCached() bool {
+	// XXX: this is a horrendously inefficient way to do this, and also isn't a
+	// very good heuristic.
+
+	if span.Cached {
+		return true
+	}
+
+	if len(span.ChildSpans)+len(span.EffectSpans()) == 0 {
+		return false
+	}
+	for _, child := range span.ChildSpans {
+		if !child.IsCached() {
+			return false
+		}
+	}
+	for _, effect := range span.EffectSpans() {
+		if !effect.IsCached() {
+			return false
+		}
+	}
+	return true
 }
 
 func (span *Span) HasParent(parent *Span) bool {

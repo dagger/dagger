@@ -249,6 +249,7 @@ func (r renderer) renderCall(
 
 	if span != nil {
 		r.renderDuration(out, span)
+		r.renderCached(out, span)
 	}
 
 	return nil
@@ -279,6 +280,7 @@ func (r renderer) renderSpan(
 		// TODO: when a span has child spans that have progress, do 2-d progress
 		// fe.renderVertexTasks(out, span, depth)
 		r.renderDuration(out, span)
+		r.renderCached(out, span)
 	}
 
 	return nil
@@ -340,6 +342,9 @@ func (r renderer) renderStatus(out *termenv.Output, span *dagui.Span, focused bo
 	case span.Failed():
 		symbol = IconFailure
 		color = termenv.ANSIRed
+	case span.IsPending():
+		symbol = DotFilled
+		color = termenv.ANSIBlue
 	default:
 		symbol = IconSuccess
 		color = termenv.ANSIGreen
@@ -367,6 +372,12 @@ func (r renderer) renderDuration(out *termenv.Output, span *dagui.Span) {
 		duration = duration.Faint()
 	}
 	fmt.Fprint(out, duration)
+}
+
+func (r renderer) renderCached(out *termenv.Output, span *dagui.Span) {
+	if !span.IsRunning() && span.IsCached() {
+		fmt.Fprintf(out, " %s", out.String("[CACHED]").Faint())
+	}
 }
 
 // var (

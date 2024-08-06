@@ -79,6 +79,9 @@ type Client struct {
 	cancel   context.CancelCauseFunc
 	closeMu  sync.RWMutex
 	execMap  sync.Map
+
+	ops   map[digest.Digest]*op
+	opsmu sync.RWMutex
 }
 
 func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
@@ -89,6 +92,7 @@ func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
 		closeCtx: ctx,
 		cancel:   cancel,
 		execMap:  sync.Map{},
+		ops:      make(map[digest.Digest]*op),
 	}
 
 	return client, nil
@@ -123,7 +127,22 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 		return nil, err
 	}
 	defer cancel(errors.New("solve done"))
-	ctx = withOutgoingContext(ctx)
+	ctx = withOutgoingContext(c, ctx)
+
+	dag, err := DefToDAG(req.Definition)
+	if err != nil {
+		return nil, err
+	}
+	c.opsmu.Lock()
+	dag.Walk(func(od *OpDAG) error {
+		c.ops[*od.OpDigest] = &op{
+			Digest: *od.OpDigest,
+			Def:    *od.Op,
+			Meta:   *od.Metadata,
+		}
+		return nil
+	})
+	c.opsmu.Unlock()
 
 	// include upstream cache imports, if any
 	req.CacheImports = c.UpstreamCacheImports
@@ -165,7 +184,7 @@ func (c *Client) ResolveImageConfig(ctx context.Context, ref string, opt sourcer
 		return "", "", nil, err
 	}
 	defer cancel(errors.New("resolve image config done"))
-	ctx = withOutgoingContext(ctx)
+	ctx = withOutgoingContext(c, ctx)
 
 	imr := sourceresolver.NewImageMetaResolver(c.LLBBridge)
 	return imr.ResolveImageConfig(ctx, ref, opt)
@@ -177,7 +196,7 @@ func (c *Client) ResolveSourceMetadata(ctx context.Context, op *bksolverpb.Sourc
 		return nil, err
 	}
 	defer cancel(errors.New("resolve source metadata done"))
-	ctx = withOutgoingContext(ctx)
+	ctx = withOutgoingContext(c, ctx)
 
 	return c.LLBBridge.ResolveSourceMetadata(ctx, op, opt)
 }
@@ -212,7 +231,7 @@ func (c *Client) NewContainer(ctx context.Context, req NewContainerRequest) (*Co
 		return nil, err
 	}
 	defer cancel(errors.New("new container done"))
-	ctx = withOutgoingContext(ctx)
+	ctx = withOutgoingContext(c, ctx)
 	ctrReq := bkcontainer.NewContainerRequest{
 		ContainerID: containerID,
 		Hostname:    req.Hostname,
@@ -690,13 +709,21 @@ func (c *Client) OpenTerminal(
 	}, nil
 }
 
-func withOutgoingContext(ctx context.Context) context.Context {
+func withOutgoingContext(c *Client, ctx context.Context) context.Context {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if ok {
 		ctx = metadata.NewOutgoingContext(ctx, md)
 	}
-	ctx = buildkitTelemetryContext(ctx)
+	ctx = buildkitTelemetryContext(c, ctx)
 	return ctx
+}
+
+type op struct {
+	Digest digest.Digest
+	Def    bksolverpb.Op
+	Meta   bksolverpb.OpMetadata
+
+	seen bool
 }
 
 // filteringGateway is a helper gateway that filters+converts various

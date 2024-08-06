@@ -12,6 +12,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
 )
 
@@ -127,6 +128,19 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 							continue
 						}
 						seenEffects[dig] = true
+
+						var d pb.Op
+						err := d.Unmarshal(op)
+						if err != nil {
+							slog.Warn("failed to unmarshal LLB", "err", err)
+							continue
+						}
+						if d.Op == nil {
+							// the last def should always be an empty op with
+							// the previous as an input
+							continue
+						}
+
 						ops = append(ops, dig.String())
 					}
 				}
