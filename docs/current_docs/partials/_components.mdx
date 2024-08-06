@@ -1,9 +1,14 @@
 ```mermaid
 graph LR
-    A[Dagger CLI] --> B[Dagger Functions]
+    A[Dagger CLI] --> B
     D --> E[Dagger Engine]
     B --> F[Daggerverse]
-    B --> G[Dagger Cloud]
+    E --> G[Dagger Cloud]
+
+    subgraph B[Dagger Modules]
+      direction LR
+      N[Dagger Functions]
+    end
 
     subgraph C[Dagger SDKs]
       direction LR
