@@ -68,7 +68,7 @@ def test_toplevel_and_class_conflict():
     @mod.function
     def func(): ...
 
-    with pytest.raises(NameConflictError, match="not both"):
+    with pytest.raises(NameConflictError, match="refactor as methods of a class"):
         mod.get_resolvers("foo")
 
 
