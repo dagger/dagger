@@ -146,9 +146,21 @@ module.exports = {
         {
           "type": "category",
           "label": "Dagger CLI",
+          "link": {
+            "type": "doc",
+            "id": "manual/cli/index"
+          },
           "collapsible": true,
           "collapsed": true,
             items: [
+              {
+                "type": "doc",
+                "id": "manual/cli/basics"
+              },
+              {
+                "type": "doc",
+                "id": "manual/cli/chaining"
+              },
               {
                 "type": "doc",
                 "id": "manual/cli/tui"

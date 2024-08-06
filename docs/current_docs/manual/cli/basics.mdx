@@ -1,0 +1,65 @@
+---
+slug: /manual/cli/basics
+---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Basic Usage
+
+The Dagger CLI is available for [installation](../../install.mdx) on macOS, Linux, and Windows to run locally or in a CI environment.
+
+:::note
+The commands listed on this page are not exhaustive. For a complete list of available commands, refer to the [Dagger CLI reference](../../reference/cli.mdx).
+:::
+
+## List Dagger Functions
+
+To list the Dagger Functions available in a Dagger module, use `dagger functions`. Modules may be installed locally or hosted externally, in remote Git repositories.
+
+Use the following command to list Dagger Functions in a local module:
+
+```shell
+dagger functions
+```
+
+Use the following command to list Dagger Functions in an external module (replace the example URL with the path to your Dagger module):
+
+```shell
+dagger -m github.com/jpadams/daggerverse/trivy@v0.5.0 functions
+```
+
+## Call a Dagger Function
+
+To invoke a Dagger Function, use `dagger call`. Here is an example of calling a local Dagger Function:
+
+```shell
+dagger call container-echo --string-arg="Welcome to Dagger!" stdout
+```
+
+Here is an example of calling a Dagger Function hosted externally:
+
+```shell
+dagger -m github.com/jpadams/daggerverse/trivy@v0.5.0 call scan-image --image-ref=ubuntu:latest
+```
+
+:::tip
+When using `dagger call`, all names (functions, arguments, struct fields, etc) are converted into a shell-friendly "kebab-case" style.
+:::
+
+## List available arguments for a Dagger Function
+
+To list all the arguments accepted by a function, add the `--help` suffix at any point in the `dagger call` command to obtain context-sensitive help.
+
+Here is an example of listing the available arguments for a Dagger Function hosted externally:
+
+```shell
+dagger -m github.com/jpadams/daggerverse/trivy@v0.5.0 call scan-image --help
+```
+
+## Check the current Dagger versions
+
+To obtain the current Dagger version, use `dagger version`.
+
+## Obtain command help
+
+To see a list of available Dagger CLI commands, use `dagger help`. Command-specific help can be obtained with `dagger COMMAND --help`.

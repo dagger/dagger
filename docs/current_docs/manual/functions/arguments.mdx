@@ -26,12 +26,12 @@ Here is an example of a Dagger Function that accepts a string argument:
 ```
 
 Even though the Python runtime doesn't enforce [type annotations][typing] at runtime,
-it’s important to define them with Dagger Functions. The Python SDK needs the
-typing information at runtime to correctly report to the API. It can’t rely on
+it's important to define them with Dagger Functions. The Python SDK needs the
+typing information at runtime to correctly report to the API. It can't rely on
 [type inference][inference], which is only possible for external [static type
 checkers][type-checker].
 
-If a function doesn’t have a return type annotation, it’ll be declared as `None`,
+If a function doesn't have a return type annotation, it'll be declared as `None`,
 which translates to the [dagger.Void][void] type in the API:
 
 ```python
@@ -42,7 +42,7 @@ def hello(self):
 # Error: cannot convert string to Void
 ```
 
-It’s fine however, when no value actually needs to be returned:
+It's fine however, when no value actually needs to be returned:
 
 ```python
 @function
@@ -188,21 +188,70 @@ The result will be the same file listing as [this GitHub page](https://github.co
 
 Just like directories, you can pass a container to a Dagger Function from the command-line. To do so, add the corresponding flag, followed by the address of an OCI image. The CLI will dynamically pull the image, and pass the resulting `Container` object as argument to the Dagger Function.
 
-Here is an example of a Dagger Function that accepts a container image reference as an argument. The Dagger Function
+Here is an example of a Dagger Function that accepts a container image reference as an argument. The Dagger Function returns operating system information for the container.
 
-FIXME Add example
+<Tabs groupId="language">
+<TabItem value="Go">
+```go file=./snippets/functions/arguments-container/go/main.go
+```
+</TabItem>
+<TabItem value="Python">
+```python file=./snippets/functions/arguments-container/python/main.py
+```
+</TabItem>
+<TabItem value="TypeScript">
+```typescript file=./snippets/functions/arguments-container/typescript/index.ts
+```
+</TabItem>
+</Tabs>
+
 
 Here is an example of passing a container image reference to this Dagger Function as an argument.
 
 ```shell
-FIXME
+dagger call os-info --ctr=ubuntu:latest
 ```
 
 The result will look like this:
 
 ```shell
-FIXME
+Linux buildkitsandbox 6.1.0-22-cloud-amd64 #1 SMP PREEMPT_DYNAMIC Debian 6.1.94-1 (2024-06-21) x86_64 x86_64 x86_64 GNU/Linux
 ```
+
+## Secret arguments
+
+Secrets, such as credentials or access tokens, can be passed to Dagger Functions as arguments using the `Secret` core type.
+
+Here is an example of a Dagger Function which accepts a GitHub personal access token as a secret, and uses the token to authorize a request to the GitHub API:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=../../cookbook/snippets/secret-variable/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=../../cookbook/snippets/secret-variable/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=../../cookbook/snippets/secret-variable/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+Here is an example of calling this Dagger Function, with the secret sourced from a host environment variable named `GITHUB_API_TOKEN`:
+
+```shell
+dagger call github-api --token=env:GITHUB_API_TOKEN
+```
+
+The result will be a JSON-formatted list of issues from Dagger's GitHub repository.
 
 ## Optional arguments
 
@@ -211,23 +260,18 @@ Function arguments can be marked as optional. In this case, the Dagger CLI will 
 Here's an example of a Dagger Function with an optional argument:
 
 <Tabs groupId="language">
-
 <TabItem value="Go">
 ```go file=./snippets/functions/arguments-optional/go/main.go
 ```
-
 </TabItem>
-
 <TabItem value="Python">
 ```python file=./snippets/functions/arguments-optional/python/main.py
 ```
 </TabItem>
-
 <TabItem value="TypeScript">
 ```typescript file=./snippets/functions/arguments-optional/typescript/index.ts
 ```
 </TabItem>
-
 </Tabs>
 
 Here is an example call for this Dagger Function, with the optional argument:
@@ -261,23 +305,18 @@ Function arguments can define a default value if no value is supplied for them.
 Here's an example of a Dagger Function with a default value for a string argument:
 
 <Tabs groupId="language">
-
 <TabItem value="Go">
 ```go file=./snippets/functions/arguments-default-string/go/main.go
 ```
-
 </TabItem>
-
 <TabItem value="Python">
 ```python file=./snippets/functions/arguments-default-string/python/main.py
 ```
 </TabItem>
-
 <TabItem value="TypeScript">
 ```typescript file=./snippets/functions/arguments-default-string/typescript/index.ts
 ```
 </TabItem>
-
 </Tabs>
 
 Here is an example call for this Dagger Function, without the required argument:
