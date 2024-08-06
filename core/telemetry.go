@@ -50,9 +50,7 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 		attrs = append(attrs, attribute.Bool(telemetry.UIInternalAttr, true))
 	}
 
-	ctx, span := trace.SpanFromContext(ctx).
-		TracerProvider().
-		Tracer(InstrumentationLibrary).
+	ctx, span := telemetry.Tracer(ctx, InstrumentationLibrary).
 		Start(ctx, spanName, trace.WithAttributes(attrs...))
 
 	return ctx, func(res dagql.Typed, cached bool, err error) {

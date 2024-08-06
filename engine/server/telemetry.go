@@ -440,14 +440,14 @@ func (ps LogsPubSub) Shutdown(context.Context) error       { return nil }
 type Fetcher func(ctx context.Context, db *sql.DB, since string) (*sse.Event, bool, error)
 
 func (ps *PubSub) sseHandler(w http.ResponseWriter, r *http.Request, client *daggerClient, fetcher Fetcher) error {
-	flush := func() {}
+	slog := slog.With("client", client.clientID, "path", r.URL.Path)
+
+	flush := func() {
+		slog.Warn("flush not supported?")
+	}
 	if flusher, ok := w.(http.Flusher); ok {
 		flush = flusher.Flush
 	}
-
-	// Set CORS headers to allow all origins. You may want to restrict this to specific origins in a production environment.
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Expose-Headers", "Content-Type")
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -460,6 +460,16 @@ func (ps *PubSub) sseHandler(w http.ResponseWriter, r *http.Request, client *dag
 		return fmt.Errorf("open client db: %w", err)
 	}
 	defer db.Close()
+
+	// Send an initial event just to indicate that the client has subscribed.
+	//
+	// This helps distinguish 'attached but no data yet' vs. 'waiting for headers'.
+	// Theoretically the flush() is enough, but we might as well send a different
+	// event type to keep people on their toes.
+	sse.Event{
+		Name: "subscribed",
+	}.Write(w)
+	flush()
 
 	var terminating bool
 	for {
@@ -478,11 +488,15 @@ func (ps *PubSub) sseHandler(w http.ResponseWriter, r *http.Request, client *dag
 				// Poll for more data at the same frequency that it's batched and saved.
 				// SQLite should be able to handle aggressive polling just fine.
 				// Synchronizing with writes isn't worth the accompanying risk of hangs.
+				//
+				// NB: logging here is a bit too crazy
 			case <-client.shutdownCh:
 				// Client is shutting down; next time we receive no data, we'll exit.
+				slog.ExtraDebug("shutting down")
 				terminating = true
 			case <-r.Context().Done():
 				// Client went away, no point hanging around.
+				slog.ExtraDebug("client went away")
 				return nil
 			}
 			continue

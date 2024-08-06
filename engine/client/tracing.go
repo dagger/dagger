@@ -1,12 +1,14 @@
 package client
 
 import (
-	"go.opentelemetry.io/otel"
+	"context"
+
+	"dagger.io/dagger/telemetry"
 	"go.opentelemetry.io/otel/trace"
 )
 
 const InstrumentationLibrary = "dagger.io/engine.client"
 
-func Tracer() trace.Tracer {
-	return otel.Tracer(InstrumentationLibrary)
+func Tracer(ctx context.Context) trace.Tracer {
+	return telemetry.Tracer(ctx, InstrumentationLibrary)
 }
