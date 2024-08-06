@@ -17,13 +17,13 @@ const (
 	elixirSDKVersionFilePath = elixirSDKPath + "/lib/dagger/core/version.ex"
 )
 
-// https://hub.docker.com/r/hexpm/elixir/tags?page=1&name=debian-buster
-var elixirVersions = []string{"1.16.2", "1.15.7", "1.14.5"}
+var elixirVersions = map[string]string{
+	"1.15": "hexpm/elixir:1.15.8-erlang-26.2.5.2-debian-bookworm-20240701-slim@sha256:7f282f3b1a50d795375f5bb95250aeec36d21dc2b56f6fba45b88243ac001e52",
+	"1.16": "hexpm/elixir:1.16.2-erlang-26.2.5-debian-bookworm-20240513-slim@sha256:4c3bcf223c896bd817484569164357a49c473556e8773d74a591a3c565e8b8b9",
+	"1.17": "hexpm/elixir:1.17.2-erlang-27.0.1-debian-bookworm-20240701-slim@sha256:0e4234e482dd487c78d0f0b73fa9bc9b03ccad0d964ef0e7a5e92a6df68ab289",
+}
 
-const (
-	otpVersion    = "26.2.4"
-	debianVersion = "20240423"
-)
+const elixirLatestVersion = "1.17"
 
 type ElixirSDK struct {
 	Dagger *DaggerDev // +private
@@ -36,7 +36,7 @@ func (t ElixirSDK) Lint(ctx context.Context) error {
 		return err
 	}
 
-	_, err = t.elixirBase(elixirVersions[0]).
+	_, err = t.elixirBase(elixirVersions[elixirLatestVersion]).
 		With(installer).
 		WithExec([]string{"mix", "lint"}).
 		Sync(ctx)
@@ -51,15 +51,35 @@ func (t ElixirSDK) Test(ctx context.Context) error {
 	}
 
 	eg, ctx := errgroup.WithContext(ctx)
-	for _, elixirVersion := range elixirVersions {
-		ctr := t.elixirBase(elixirVersion).With(installer)
+	for elixirVersion, baseImage := range elixirVersions {
+		ctr := t.elixirBase(baseImage).With(installer)
+
+		ctx, span := Tracer().Start(ctx, "test - elixir/"+elixirVersion)
+		defer span.End()
 
 		eg.Go(func() error {
+			ctx, span := Tracer().Start(ctx, "dagger")
+			defer span.End()
+
 			_, err := ctr.
 				WithExec([]string{"mix", "test"}).
 				Sync(ctx)
 			return err
 		})
+
+		if elixirVersion == elixirLatestVersion {
+			eg.Go(func() error {
+				ctx, span := Tracer().Start(ctx, "dagger_codegen")
+				defer span.End()
+
+				_, err := ctr.
+					WithWorkdir("dagger_codegen").
+					WithExec([]string{"mix", "deps.get"}).
+					WithExec([]string{"mix", "test"}).
+					Sync(ctx)
+				return err
+			})
+		}
 	}
 	return eg.Wait()
 }
@@ -74,7 +94,7 @@ func (t ElixirSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 	if err != nil {
 		return nil, err
 	}
-	gen := t.elixirBase(elixirVersions[0]).
+	gen := t.elixirBase(elixirVersions[elixirLatestVersion]).
 		With(installer).
 		WithWorkdir("dagger_codegen").
 		WithExec([]string{"mix", "deps.get"}).
@@ -103,7 +123,7 @@ func (t ElixirSDK) Publish(
 		mixFile = "/sdk/elixir/mix.exs"
 	)
 
-	ctr := t.elixirBase(elixirVersions[1])
+	ctr := t.elixirBase(elixirVersions[elixirLatestVersion])
 
 	if !dryRun {
 		mixExs, err := t.Dagger.Source().File(mixFile).Contents(ctx)
@@ -143,12 +163,12 @@ func (t ElixirSDK) Bump(ctx context.Context, version string) (*dagger.Directory,
 	return dag.Directory().WithNewFile(elixirSDKVersionFilePath, newContents), nil
 }
 
-func (t ElixirSDK) elixirBase(elixirVersion string) *dagger.Container {
+func (t ElixirSDK) elixirBase(baseImage string) *dagger.Container {
 	src := t.Dagger.Source().Directory(elixirSDKPath)
 	mountPath := "/" + elixirSDKPath
 
 	return dag.Container().
-		From(fmt.Sprintf("hexpm/elixir:%s-erlang-%s-debian-buster-%s-slim", elixirVersion, otpVersion, debianVersion)).
+		From(baseImage).
 		WithWorkdir(mountPath).
 		WithDirectory(mountPath, src).
 		WithExec([]string{"mix", "local.hex", "--force"}).
