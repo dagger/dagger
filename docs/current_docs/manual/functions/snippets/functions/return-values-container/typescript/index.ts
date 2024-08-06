@@ -4,10 +4,8 @@ import { dag, Container, object, func } from "@dagger.io/dagger"
 class MyModule {
   @func()
   alpineBuilder(packages: string[]): Container {
-    let ctr = dag
-      .container()
-      .from("alpine:latest")
-    for (let pkg in packages) {
+    let ctr = dag.container().from("alpine:latest")
+    for (const pkg in packages) {
       ctr = ctr.withExec(["apk", "add", pkg])
     }
     return ctr
