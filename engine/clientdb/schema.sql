@@ -5,7 +5,7 @@
 -- Note that there will be duplicates for spans as they progress through
 -- updates to completion. These tables are append-only.
 
-CREATE TABLE spans (
+CREATE TABLE IF NOT EXISTS spans (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     trace_id TEXT NOT NULL,
     span_id TEXT NOT NULL,
@@ -28,7 +28,7 @@ CREATE TABLE spans (
     resource BLOB -- JSON encoded *otlpresourcev1.Resource
 ) STRICT;
 
-CREATE TABLE logs (
+CREATE TABLE IF NOT EXISTS logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     trace_id TEXT,
     span_id TEXT,
