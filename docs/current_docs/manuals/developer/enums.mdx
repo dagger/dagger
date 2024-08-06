@@ -36,6 +36,10 @@ defined as an enum `Severity`:
 ```python file=./snippets/enums/python/main.py
 ```
 
+:::note
+`dagger.Enum` is a conveniance base class for defining documentation but you can also use `enum.Enum` directly.
+:::
+
 </TabItem>
 <TabItem value="TypeScript">
 
@@ -48,12 +52,7 @@ defined as an enum `Severity`:
 </TabItem>
 </Tabs>
 
-
-:::note
-Enumeration choices will be displayed when calling `--help` on a Dagger Function.
-:::
-
-Here's an example of displaying a Dagger Function helper on this method:
+Enumeration choices will be displayed when calling `--help` on a Dagger Function:
 
 ```
 dagger call scan --help
