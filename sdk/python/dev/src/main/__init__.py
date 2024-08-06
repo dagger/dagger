@@ -157,11 +157,15 @@ class PythonSdkDev:
     async def lint(
         self,
         paths: Annotated[
-            tuple[str, ...],
+            list[str] | None,
             Doc("List of files or directories to check"),
-        ] = (),
+        ] = None,
     ) -> str:
         """Check for linting errors."""
+        # TODO: Not defaulting to an empty list because of a bug in the Go SDK.
+        # See https://github.com/dagger/dagger/pull/8106.
+        if paths is None:
+            paths = []
         return await (
             self.container.with_exec(["uv", "run", "ruff", "check", *paths])
             .with_exec(["uv", "run", "ruff", "format", "--check", "--diff", *paths])
