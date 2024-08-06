@@ -2,6 +2,8 @@
 slug: /manual/
 ---
 
+import PartialComponentDiagram from '../partials/_components.mdx';
+
 # Manual
 
 Welcome to the Dagger manual!
@@ -15,31 +17,7 @@ This manual provides detailed information to help you use Dagger. It covers:
 - Dagger Cloud, which provides additional visualization and debugging features;
 - The Daggerverse, a free service run by Dagger to easily search and consume Dagger Functions.
 
-```mermaid
-graph LR
-    A[Dagger CLI] --> B[Dagger Functions]
-    D --> E[Dagger Engine]
-    B --> F[Daggerverse]
-    B --> G[Dagger Cloud]
-
-    subgraph C[Dagger SDKs]
-      direction LR
-      H[Go SDK]
-      I[TypeScript SDK]
-      J[Python SDK]
-      K[Experimental/Community SDKs]
-    end
-
-    B --> H
-    B --> I
-    B --> J
-    B --> K
-
-    H --> D[Dagger API]
-    I --> D
-    J --> D
-    K --> D
-```
+<PartialComponentDiagram />
 
 :::tip
 If you're new to Dagger, [try the Dagger Quickstart](../quickstart/index.mdx) first.
