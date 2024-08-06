@@ -3,9 +3,10 @@ defmodule Dagger.Core.Client do
   GraphQL client for Dagger.
   """
 
-  alias Dagger.Core.EngineConn
   alias Dagger.Core.GraphQLClient
-  alias Dagger.Core.QueryBuilder.Selection
+  alias Dagger.Core.QueryBuilder, as: QB
+  alias Dagger.Core.EngineConn
+  alias Dagger.Core.QueryError
 
   defstruct [:url, :conn, :connect_opts]
 
@@ -56,7 +57,11 @@ defmodule Dagger.Core.Client do
     end
   end
 
-  @doc false
+  @doc """
+  Send the raw GraphQL query to the Dagger.
+
+  Returns a raw response from the Dagger.
+  """
   def query(%__MODULE__{connect_opts: connect_opts} = client, query)
       when is_binary(query) do
     GraphQLClient.request(client.url, EngineConn.token(client.conn), query, %{},
@@ -64,16 +69,19 @@ defmodule Dagger.Core.Client do
     )
   end
 
-  @doc false
-  def execute(selection, client) do
-    q = Selection.build(selection)
+  @doc """
+  Send the `query_builder` to the Dagger and get the result from leaf node of
+  the query.
+  """
+  def execute(client, query_builder) do
+    q = QB.build(query_builder)
 
     case query(client, q) do
       {:ok, %{"data" => nil, "errors" => errors}} ->
-        {:error, %Dagger.QueryError{errors: errors}}
+        {:error, %QueryError{errors: errors}}
 
       {:ok, %{"data" => data}} ->
-        {:ok, select(data, Selection.path(selection))}
+        {:ok, select(data, QB.path(query_builder))}
 
       otherwise ->
         otherwise

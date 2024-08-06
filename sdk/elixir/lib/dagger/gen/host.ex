@@ -2,11 +2,12 @@
 defmodule Dagger.Host do
   @moduledoc "Information about the host environment."
 
-  use Dagger.Core.QueryBuilder
+  alias Dagger.Core.Client
+  alias Dagger.Core.QueryBuilder, as: QB
 
   @derive Dagger.ID
 
-  defstruct [:selection, :client]
+  defstruct [:query_builder, :client]
 
   @type t() :: %__MODULE__{}
 
@@ -14,15 +15,15 @@ defmodule Dagger.Host do
   @spec directory(t(), String.t(), [{:exclude, [String.t()]}, {:include, [String.t()]}]) ::
           Dagger.Directory.t()
   def directory(%__MODULE__{} = host, path, optional_args \\ []) do
-    selection =
-      host.selection
-      |> select("directory")
-      |> put_arg("path", path)
-      |> maybe_put_arg("exclude", optional_args[:exclude])
-      |> maybe_put_arg("include", optional_args[:include])
+    query_builder =
+      host.query_builder
+      |> QB.select("directory")
+      |> QB.put_arg("path", path)
+      |> QB.maybe_put_arg("exclude", optional_args[:exclude])
+      |> QB.maybe_put_arg("include", optional_args[:include])
 
     %Dagger.Directory{
-      selection: selection,
+      query_builder: query_builder,
       client: host.client
     }
   end
@@ -30,11 +31,11 @@ defmodule Dagger.Host do
   @doc "Accesses a file on the host."
   @spec file(t(), String.t()) :: Dagger.File.t()
   def file(%__MODULE__{} = host, path) do
-    selection =
-      host.selection |> select("file") |> put_arg("path", path)
+    query_builder =
+      host.query_builder |> QB.select("file") |> QB.put_arg("path", path)
 
     %Dagger.File{
-      selection: selection,
+      query_builder: query_builder,
       client: host.client
     }
   end
@@ -42,23 +43,23 @@ defmodule Dagger.Host do
   @doc "A unique identifier for this Host."
   @spec id(t()) :: {:ok, Dagger.HostID.t()} | {:error, term()}
   def id(%__MODULE__{} = host) do
-    selection =
-      host.selection |> select("id")
+    query_builder =
+      host.query_builder |> QB.select("id")
 
-    execute(selection, host.client)
+    Client.execute(host.client, query_builder)
   end
 
   @doc "Creates a service that forwards traffic to a specified address via the host."
   @spec service(t(), [Dagger.PortForward.t()], [{:host, String.t() | nil}]) :: Dagger.Service.t()
   def service(%__MODULE__{} = host, ports, optional_args \\ []) do
-    selection =
-      host.selection
-      |> select("service")
-      |> put_arg("ports", ports)
-      |> maybe_put_arg("host", optional_args[:host])
+    query_builder =
+      host.query_builder
+      |> QB.select("service")
+      |> QB.put_arg("ports", ports)
+      |> QB.maybe_put_arg("host", optional_args[:host])
 
     %Dagger.Service{
-      selection: selection,
+      query_builder: query_builder,
       client: host.client
     }
   end
@@ -70,11 +71,14 @@ defmodule Dagger.Host do
   """
   @spec set_secret_file(t(), String.t(), String.t()) :: Dagger.Secret.t()
   def set_secret_file(%__MODULE__{} = host, name, path) do
-    selection =
-      host.selection |> select("setSecretFile") |> put_arg("name", name) |> put_arg("path", path)
+    query_builder =
+      host.query_builder
+      |> QB.select("setSecretFile")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("path", path)
 
     %Dagger.Secret{
-      selection: selection,
+      query_builder: query_builder,
       client: host.client
     }
   end
@@ -85,15 +89,15 @@ defmodule Dagger.Host do
           {:native, boolean() | nil}
         ]) :: Dagger.Service.t()
   def tunnel(%__MODULE__{} = host, service, optional_args \\ []) do
-    selection =
-      host.selection
-      |> select("tunnel")
-      |> put_arg("service", Dagger.ID.id!(service))
-      |> maybe_put_arg("ports", optional_args[:ports])
-      |> maybe_put_arg("native", optional_args[:native])
+    query_builder =
+      host.query_builder
+      |> QB.select("tunnel")
+      |> QB.put_arg("service", Dagger.ID.id!(service))
+      |> QB.maybe_put_arg("ports", optional_args[:ports])
+      |> QB.maybe_put_arg("native", optional_args[:native])
 
     %Dagger.Service{
-      selection: selection,
+      query_builder: query_builder,
       client: host.client
     }
   end
@@ -101,11 +105,11 @@ defmodule Dagger.Host do
   @doc "Accesses a Unix socket on the host."
   @spec unix_socket(t(), String.t()) :: Dagger.Socket.t()
   def unix_socket(%__MODULE__{} = host, path) do
-    selection =
-      host.selection |> select("unixSocket") |> put_arg("path", path)
+    query_builder =
+      host.query_builder |> QB.select("unixSocket") |> QB.put_arg("path", path)
 
     %Dagger.Socket{
-      selection: selection,
+      query_builder: query_builder,
       client: host.client
     }
   end

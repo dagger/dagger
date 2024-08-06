@@ -2,22 +2,23 @@
 defmodule Dagger.ObjectTypeDef do
   @moduledoc "A definition of a custom object defined in a Module."
 
-  use Dagger.Core.QueryBuilder
+  alias Dagger.Core.Client
+  alias Dagger.Core.QueryBuilder, as: QB
 
   @derive Dagger.ID
 
-  defstruct [:selection, :client]
+  defstruct [:query_builder, :client]
 
   @type t() :: %__MODULE__{}
 
   @doc "The function used to construct new instances of this object, if any"
   @spec constructor(t()) :: Dagger.Function.t() | nil
   def constructor(%__MODULE__{} = object_type_def) do
-    selection =
-      object_type_def.selection |> select("constructor")
+    query_builder =
+      object_type_def.query_builder |> QB.select("constructor")
 
     %Dagger.Function{
-      selection: selection,
+      query_builder: query_builder,
       client: object_type_def.client
     }
   end
@@ -25,26 +26,26 @@ defmodule Dagger.ObjectTypeDef do
   @doc "The doc string for the object, if any."
   @spec description(t()) :: {:ok, String.t()} | {:error, term()}
   def description(%__MODULE__{} = object_type_def) do
-    selection =
-      object_type_def.selection |> select("description")
+    query_builder =
+      object_type_def.query_builder |> QB.select("description")
 
-    execute(selection, object_type_def.client)
+    Client.execute(object_type_def.client, query_builder)
   end
 
   @doc "Static fields defined on this object, if any."
   @spec fields(t()) :: {:ok, [Dagger.FieldTypeDef.t()]} | {:error, term()}
   def fields(%__MODULE__{} = object_type_def) do
-    selection =
-      object_type_def.selection |> select("fields") |> select("id")
+    query_builder =
+      object_type_def.query_builder |> QB.select("fields") |> QB.select("id")
 
-    with {:ok, items} <- execute(selection, object_type_def.client) do
+    with {:ok, items} <- Client.execute(object_type_def.client, query_builder) do
       {:ok,
        for %{"id" => id} <- items do
          %Dagger.FieldTypeDef{
-           selection:
-             query()
-             |> select("loadFieldTypeDefFromID")
-             |> arg("id", id),
+           query_builder:
+             QB.query()
+             |> QB.select("loadFieldTypeDefFromID")
+             |> QB.put_arg("id", id),
            client: object_type_def.client
          }
        end}
@@ -54,17 +55,17 @@ defmodule Dagger.ObjectTypeDef do
   @doc "Functions defined on this object, if any."
   @spec functions(t()) :: {:ok, [Dagger.Function.t()]} | {:error, term()}
   def functions(%__MODULE__{} = object_type_def) do
-    selection =
-      object_type_def.selection |> select("functions") |> select("id")
+    query_builder =
+      object_type_def.query_builder |> QB.select("functions") |> QB.select("id")
 
-    with {:ok, items} <- execute(selection, object_type_def.client) do
+    with {:ok, items} <- Client.execute(object_type_def.client, query_builder) do
       {:ok,
        for %{"id" => id} <- items do
          %Dagger.Function{
-           selection:
-             query()
-             |> select("loadFunctionFromID")
-             |> arg("id", id),
+           query_builder:
+             QB.query()
+             |> QB.select("loadFunctionFromID")
+             |> QB.put_arg("id", id),
            client: object_type_def.client
          }
        end}
@@ -74,27 +75,27 @@ defmodule Dagger.ObjectTypeDef do
   @doc "A unique identifier for this ObjectTypeDef."
   @spec id(t()) :: {:ok, Dagger.ObjectTypeDefID.t()} | {:error, term()}
   def id(%__MODULE__{} = object_type_def) do
-    selection =
-      object_type_def.selection |> select("id")
+    query_builder =
+      object_type_def.query_builder |> QB.select("id")
 
-    execute(selection, object_type_def.client)
+    Client.execute(object_type_def.client, query_builder)
   end
 
   @doc "The name of the object."
   @spec name(t()) :: {:ok, String.t()} | {:error, term()}
   def name(%__MODULE__{} = object_type_def) do
-    selection =
-      object_type_def.selection |> select("name")
+    query_builder =
+      object_type_def.query_builder |> QB.select("name")
 
-    execute(selection, object_type_def.client)
+    Client.execute(object_type_def.client, query_builder)
   end
 
   @doc "If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise."
   @spec source_module_name(t()) :: {:ok, String.t()} | {:error, term()}
   def source_module_name(%__MODULE__{} = object_type_def) do
-    selection =
-      object_type_def.selection |> select("sourceModuleName")
+    query_builder =
+      object_type_def.query_builder |> QB.select("sourceModuleName")
 
-    execute(selection, object_type_def.client)
+    Client.execute(object_type_def.client, query_builder)
   end
 end
