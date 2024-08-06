@@ -12,10 +12,10 @@ class Name:
 
     Useful to avoid conflicts with reserved words.
 
-    Example usage:
+    Example usage::
 
-    >>> @function
-    ... def pull(from_: Annotated[str, Name("from")]): ...
+        @function
+        def pull(from_: Annotated[str, Name("from")]): ...
     """
 
     name: APIName

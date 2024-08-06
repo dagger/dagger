@@ -20,13 +20,13 @@ class ObjectDefinition:
 
 
 class Enum(base.Enum):
-    """A dagger.base.Enum with descriptions for the values.
+    """A string based :py:class:`enum.Enum` with optional descriptions for the values.
 
-    Example usage:
+    Example usage::
 
-    >>> class MyEnum(dagger.mod.Enum):
-    >>>     ONE = "ONE", "The first value."
-    >>>     TWO = "TWO"  # no description
+        class Options(dagger.Enum):
+            ONE = "ONE", "The first value"
+            TWO = "TWO"  # no description
     """
 
     __slots__ = ("description",)
