@@ -103,8 +103,6 @@ func (dev *DaggerDev) Source() *dagger.Directory {
 		"dev/markdown",
 		"dev/shellcheck",
 		"sdk/elixir/runtime",
-		// FIXME: broken
-		// "sdk/python/dev",
 		"sdk/python/runtime",
 		"sdk/typescript/dev",
 		"sdk/typescript/dev/node",
