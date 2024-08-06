@@ -74,7 +74,6 @@ type Params struct {
 
 	EngineTrace sdktrace.SpanExporter
 	EngineLogs  sdklog.Exporter
-	RootSpanID  trace.SpanID
 
 	// Log level (0 = INFO)
 	LogLevel slog.Level
@@ -552,7 +551,6 @@ type otlpConsumer struct {
 	httpClient *httpClient
 	path       string
 	traceID    trace.TraceID
-	rootSpanID trace.SpanID
 	clientID   string
 	eg         *errgroup.Group
 }
@@ -631,7 +629,6 @@ func (c *Client) exportTraces(ctx context.Context, httpClient *httpClient) error
 	exp := &otlpConsumer{
 		path:       "/v1/traces",
 		traceID:    trace.SpanContextFromContext(ctx).TraceID(),
-		rootSpanID: c.RootSpanID,
 		clientID:   c.ID,
 		httpClient: httpClient,
 		eg:         c.telemetry,
@@ -667,7 +664,6 @@ func (c *Client) exportLogs(ctx context.Context, httpClient *httpClient) error {
 	exp := &otlpConsumer{
 		path:       "/v1/logs",
 		traceID:    trace.SpanContextFromContext(ctx).TraceID(),
-		rootSpanID: c.RootSpanID,
 		clientID:   c.ID,
 		httpClient: httpClient,
 		eg:         c.telemetry,
