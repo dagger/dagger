@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path"
 	"strconv"
 	"strings"
 
 	"github.com/containerd/containerd/leases"
+	"github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/dagql/idtui"
 	bkcache "github.com/moby/buildkit/cache"
 	cacheutil "github.com/moby/buildkit/cache/util"
@@ -28,6 +30,7 @@ import (
 	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/tonistiigi/fsutil"
 	fstypes "github.com/tonistiigi/fsutil/types"
 )
 
@@ -131,6 +134,16 @@ func (r *ref) ReadDir(ctx context.Context, req bkgw.ReadDirRequest) ([]*fstypes.
 		IncludePattern: req.IncludePattern,
 	}
 	return cacheutil.ReadDir(ctx, mnt, cacheReq)
+}
+
+func (r *ref) WalkDir(ctx context.Context, req WalkDirRequest) error {
+	ctx = withOutgoingContext(ctx)
+	mnt, err := r.getMountable(ctx)
+	if err != nil {
+		return err
+	}
+	// cacheutil.WalkDir isn't a thing (so we'll just call our own)
+	return walkDir(ctx, mnt, req)
 }
 
 func (r *ref) StatFile(ctx context.Context, req bkgw.StatRequest) (*fstypes.Stat, error) {
@@ -502,4 +515,67 @@ func getExecMetaFile(ctx context.Context, mntable snapshot.Mountable, fileName s
 		copy(contents, truncMsg)
 	}
 	return contents, nil
+}
+
+type WalkDirRequest struct {
+	Path           string
+	IncludePattern string
+	Callback       func(path string, info *fstypes.Stat) error
+}
+
+// walkDir is inspired by cacheutil.ReadDir, but instead executes a callback on
+// every item in the fs
+func walkDir(ctx context.Context, mount snapshot.Mountable, req WalkDirRequest) error {
+	if req.Callback == nil {
+		return nil
+	}
+
+	var fo fsutil.FilterOpt
+	if req.IncludePattern != "" {
+		fo.IncludePatterns = append(fo.IncludePatterns, req.IncludePattern)
+	}
+
+	return withMount(mount, func(root string) error {
+		fp, err := fs.RootPath(root, req.Path)
+		if err != nil {
+			return err
+		}
+		return fsutil.Walk(ctx, fp, &fo, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return fmt.Errorf("walking %q: %w", root, err)
+			}
+			stat, ok := info.Sys().(*fstypes.Stat)
+			if !ok {
+				// This "can't happen(tm)".
+				return fmt.Errorf("expected a *fsutil.Stat but got %T", info.Sys())
+			}
+			return req.Callback(path, stat)
+		})
+	})
+}
+
+// withMount is copied directly from buildkit
+func withMount(mount snapshot.Mountable, cb func(string) error) error {
+	lm := snapshot.LocalMounter(mount)
+
+	root, err := lm.Mount()
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		if lm != nil {
+			lm.Unmount()
+		}
+	}()
+
+	if err := cb(root); err != nil {
+		return err
+	}
+
+	if err := lm.Unmount(); err != nil {
+		return err
+	}
+	lm = nil
+	return nil
 }
