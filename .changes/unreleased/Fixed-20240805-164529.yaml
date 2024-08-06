@@ -1,0 +1,6 @@
+kind: Fixed
+body: 'engine: fix `Directory.Glob` doesn''t seem to be working as expected'
+time: 2024-08-05T16:45:29.636669914-07:00
+custom:
+    Author: khrisrichardson
+    PR: "8108"

@@ -1093,6 +1093,15 @@ func (DirectorySuite) TestGlob(ctx context.Context, t *testctx.T) {
 					"subdir2/TESTING.md", "subdir/subsubdir/JS.md",
 				})
 			})
+
+			t.Run("recursive with complex pattern that include only markdown", func(ctx context.Context, t *testctx.T) {
+				entries, err := tc.src.Glob(ctx, "subdir/**/*.md")
+
+				require.NoError(t, err)
+				require.ElementsMatch(t, entries, []string{
+					"subdir/README.md", "subdir/subsubdir/JS.md",
+				})
+			})
 		})
 	}
 

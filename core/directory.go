@@ -311,7 +311,7 @@ func (dir *Directory) Glob(ctx context.Context, src string, pattern string) ([]s
 
 	entries, err := ref.ReadDir(ctx, bkgw.ReadDirRequest{
 		Path:           path.Join(dir.Dir, src),
-		IncludePattern: pattern,
+		IncludePattern: filepath.Join("**", filepath.Base(pattern)),
 	})
 	if err != nil {
 		return nil, err
