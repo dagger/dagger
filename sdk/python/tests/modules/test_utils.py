@@ -4,10 +4,10 @@ import pytest
 from beartype.door import TypeHint
 from typing_extensions import Doc, Self
 
-from dagger import Arg, field
+from dagger import Name, field
 from dagger.mod import Module
 from dagger.mod._utils import (
-    get_arg_name,
+    get_alt_name,
     get_doc,
     is_nullable,
     non_null,
@@ -97,7 +97,7 @@ async def async_func_without_docstring(): ...
         str,
         str | None,
         Annotated[str, "Not supported"],
-        Annotated[str, Arg("foo")],
+        Annotated[str, Name("foo")],
     ],
 )
 def test_no_annotated_doc(annotation):
@@ -127,12 +127,12 @@ def test_normalize_name(name: str, expected: str):
     assert normalize_name(name) == expected
 
 
-def test_get_arg_name():
-    assert get_arg_name(Annotated[str, Arg("foo")]) == "foo"
+def test_get_alt_name():
+    assert get_alt_name(Annotated[str, Name("foo")]) == "foo"
 
 
-def test_get_last_arg_name():
-    assert get_arg_name(Annotated[str, Arg("foo"), Arg("bar")]) == "bar"
+def test_get_last_alt_name():
+    assert get_alt_name(Annotated[str, Name("foo"), Name("bar")]) == "bar"
 
 
 @pytest.mark.parametrize(
@@ -142,5 +142,5 @@ def test_get_last_arg_name():
         Annotated[str, Doc("foo")],
     ],
 )
-def test_no_get_arg_name(annotation):
-    assert get_arg_name(annotation) is None
+def test_no_get_alt_name(annotation):
+    assert get_alt_name(annotation) is None

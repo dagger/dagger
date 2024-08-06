@@ -9,8 +9,8 @@ from collections.abc import Collection
 from beartype.door import TypeHint
 from cattrs.preconf.json import make_converter as make_json_converter
 
-from ._types import ObjectDefinition
-from ._utils import (
+from dagger.mod._types import ObjectDefinition
+from dagger.mod._utils import (
     get_doc,
     is_annotated,
     is_nullable,
