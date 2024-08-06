@@ -67,7 +67,7 @@ class FindsSrcDirectoryTest extends TestCase
             'src',
             [
                 'src' => [],
-                'dagger' => 'Dagger file',
+                'entrypoint.php' => 'Dagger file',
             ],
             '',
         ];
@@ -76,7 +76,7 @@ class FindsSrcDirectoryTest extends TestCase
             'src',
             [
                 'src' => [],
-                'dagger' => 'Dagger file',
+                'entrypoint.php' => 'Dagger file',
             ],
             'src',
         ];
@@ -88,7 +88,7 @@ class FindsSrcDirectoryTest extends TestCase
                 'vendor' => [
                     'bin' => [],
                 ],
-                'dagger' => 'Dagger file',
+                'entrypoint.php' => 'Dagger file',
             ],
             'vendor/bin',
         ];
@@ -99,7 +99,7 @@ class FindsSrcDirectoryTest extends TestCase
                 'git' => [
                     'dagger-test' => [
                         'src' => [],
-                        'dagger' => 'Dagger file',
+                        'entrypoint.php' => 'Dagger file',
                     ],
                 ],
             ],
@@ -115,7 +115,7 @@ class FindsSrcDirectoryTest extends TestCase
                         'vendor' => [
                             'bin' => [],
                         ],
-                        'dagger' => 'Dagger file',
+                        'entrypoint.php' => 'Dagger file',
                     ],
                 ],
             ],

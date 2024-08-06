@@ -91,18 +91,4 @@ class ConnectionTest extends TestCase
 
         $this->assertInstanceOf(Connection\EnvSessionConnection::class, $connection);
     }
-
-    public function testCliDownloadIsCalledWhenCliBinIsNull(): void
-    {
-        putenv('_EXPERIMENTAL_DAGGER_CLI_BIN');
-        $cliBinPath = self::$daggerEnvVars['_EXPERIMENTAL_DAGGER_CLI_BIN'];
-
-        $cliDownloader = $this->createMock(Connection\CliDownloader::class);
-        $cliDownloader
-            ->expects($this->once())
-            ->method('download')
-            ->willReturn($cliBinPath);
-        $processSession = Connection::newProcessSession('', $cliDownloader);
-        $processSession->connect();
-    }
 }

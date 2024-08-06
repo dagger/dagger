@@ -88,3 +88,14 @@ jobs:
     with:
       sdk: rust
       dev-engine: true
+
+  php:
+    uses: ./.github/workflows/_sdk_check.yml
+    with:
+      sdk: php
+  php-dev:
+    if: github.ref_name == 'main'
+    uses: ./.github/workflows/_sdk_check.yml
+    with:
+      sdk: php
+      dev-engine: true
