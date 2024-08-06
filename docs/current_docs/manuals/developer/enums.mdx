@@ -12,6 +12,12 @@ import TabItem from '@theme/TabItem';
 
 Dagger supports custom enumeration types, this is useful to restrict possible values for an arguments.
 
+:::note
+Following the [GraphQL specification](https://spec.graphql.org/October2021/#Name), enums are represented as strings in the GraphQL schema and follows the following rules:
+- The value cannot start with digit and can only be composed of letter, digit or _
+- Name are case sensitive, and by convention should be in screaming case
+:::
+
 <Tabs groupId="language">
 <TabItem value="Go">
 
@@ -27,7 +33,7 @@ defined as an enum `Severity`:
 Here is an example of a `trivy` Dagger module with a function named `scan` that will take as arguments the reference of an image and a severity
 defined as an enum `Severity`:
 
-```python file=./snippets/enums/python/src/main/__init__.py
+```python file=./snippets/enums/python/main.py
 ```
 
 </TabItem>
@@ -36,7 +42,7 @@ defined as an enum `Severity`:
 Here is an example of a `trivy` Dagger module with a function named `scan` that will take as arguments the reference of an image and a severity
 defined as an enum `Severity`:
 
-```typescript file=./snippets/enums/typescript/src/index.ts
+```typescript file=./snippets/enums/typescript/index.ts
 ```
 
 </TabItem>
