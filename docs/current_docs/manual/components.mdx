@@ -2,41 +2,19 @@
 slug: /manual/components
 ---
 
+import PartialComponentDiagram from '../partials/_components.mdx';
+
 # Component Overview
 
 Dagger consists of a number of components, all of which work together in an integrated fashion to orchestrate the delivery of applications to the cloud from start to finish.
 
-```mermaid
-graph LR
-    A[Dagger CLI] --> B[Dagger Functions]
-    D --> E[Dagger Engine]
-    B --> F[Daggerverse]
-    B --> G[Dagger Cloud]
-
-    subgraph C[Dagger SDKs]
-      direction LR
-      H[Go SDK]
-      I[TypeScript SDK]
-      J[Python SDK]
-      K[Experimental/Community SDKs]
-    end
-
-    B --> H
-    B --> I
-    B --> J
-    B --> K
-
-    H --> D[Dagger API]
-    I --> D
-    J --> D
-    K --> D
-```
+<PartialComponentDiagram />
 
 ## Dagger CLI
 The Dagger Command-Line Interface (CLI) is your primary entrypoint to Dagger. It is a full-featured, easy to use tool that can be used interactively from a terminal or non-interactively from a shell script or a CI runner. The Dagger CLI also includes a real-time visualization feature called the terminal UI (TUI).
 
 ## Dagger Functions
-Dagger Functions are the fundamental unit of computing in Dagger. Dagger Functions are regular program code, written using a Dagger SDK. With Dagger Functions, you can encapsulate common project operations or workflows, such as "pull a container image", "copy a file", and "forward a TCP port", into portable, resuable components with clear inputs and outputs. Dagger Functions execute within containers spawned by the Dagger Engine and can be called using the Dagger CLI. Dagger Functions are packaged, shared and reused in modules.
+Dagger Functions are the fundamental unit of computing in Dagger. Dagger Functions are regular program code, written using a Dagger SDK. With Dagger Functions, you can encapsulate common project operations or workflows, such as "pull a container image", "copy a file", and "forward a TCP port", into portable, resuable components with clear inputs and outputs. Dagger Functions execute within containers spawned by the Dagger Engine and can be called using the Dagger CLI. Dagger Functions are packaged, shared and reused using Dagger modules.
 
 Dagger Functions are portable and interoperable across languages. For example, a Python function can call a Go function, which can call a TypeScript function, and so on. Dagger is able to do this by "translating" each Dagger Function into GraphQL at runtime and adding it to the Dagger API, thereby making it immediately usable from any other Dagger SDK or any HTTP client. This means that you no longer need to care which language your tooling is written in; you can use the one that you're most comfortable with or that best suits your requirements.
 
