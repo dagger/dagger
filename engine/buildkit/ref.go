@@ -103,7 +103,7 @@ func (r *ref) Evaluate(ctx context.Context) error {
 }
 
 func (r *ref) ReadFile(ctx context.Context, req bkgw.ReadRequest) ([]byte, error) {
-	ctx = withOutgoingContext(ctx)
+	ctx = withOutgoingContext(r.c, ctx)
 	mnt, err := r.getMountable(ctx)
 	if err != nil {
 		return nil, err
@@ -121,7 +121,7 @@ func (r *ref) ReadFile(ctx context.Context, req bkgw.ReadRequest) ([]byte, error
 }
 
 func (r *ref) ReadDir(ctx context.Context, req bkgw.ReadDirRequest) ([]*fstypes.Stat, error) {
-	ctx = withOutgoingContext(ctx)
+	ctx = withOutgoingContext(r.c, ctx)
 	mnt, err := r.getMountable(ctx)
 	if err != nil {
 		return nil, err
@@ -134,7 +134,7 @@ func (r *ref) ReadDir(ctx context.Context, req bkgw.ReadDirRequest) ([]*fstypes.
 }
 
 func (r *ref) StatFile(ctx context.Context, req bkgw.StatRequest) (*fstypes.Stat, error) {
-	ctx = withOutgoingContext(ctx)
+	ctx = withOutgoingContext(r.c, ctx)
 	mnt, err := r.getMountable(ctx)
 	if err != nil {
 		return nil, err
@@ -143,7 +143,7 @@ func (r *ref) StatFile(ctx context.Context, req bkgw.StatRequest) (*fstypes.Stat
 }
 
 func (r *ref) AddDependencyBlobs(ctx context.Context, blobs map[digest.Digest]*ocispecs.Descriptor) error {
-	ctx = withOutgoingContext(ctx)
+	ctx = withOutgoingContext(r.c, ctx)
 
 	cacheRef, err := r.CacheRef(ctx)
 	if err != nil {
@@ -201,7 +201,7 @@ func (r *ref) Result(ctx context.Context) (bksolver.CachedResult, error) {
 	if r == nil {
 		return nil, nil
 	}
-	ctx = withOutgoingContext(ctx)
+	ctx = withOutgoingContext(r.c, ctx)
 	res, err := r.resultProxy.Result(ctx)
 	if err != nil {
 		return nil, wrapError(ctx, err, r.c)
@@ -321,16 +321,16 @@ func wrapError(ctx context.Context, baseErr error, client *Client) error {
 		return errors.Join(err, baseErr)
 	}
 
-	stdoutBytes, err := getExecMetaFile(ctx, mntable, MetaMountStdoutPath)
+	stdoutBytes, err := getExecMetaFile(ctx, client, mntable, MetaMountStdoutPath)
 	if err != nil {
 		return errors.Join(err, baseErr)
 	}
-	stderrBytes, err := getExecMetaFile(ctx, mntable, MetaMountStderrPath)
+	stderrBytes, err := getExecMetaFile(ctx, client, mntable, MetaMountStderrPath)
 	if err != nil {
 		return errors.Join(err, baseErr)
 	}
 
-	exitCodeBytes, err := getExecMetaFile(ctx, mntable, MetaMountExitCodePath)
+	exitCodeBytes, err := getExecMetaFile(ctx, client, mntable, MetaMountExitCodePath)
 	if err != nil {
 		return errors.Join(err, baseErr)
 	}
@@ -472,8 +472,8 @@ func debugContainer(ctx context.Context, execOp *bksolverpb.ExecOp, execErr *llb
 	return term.Close(termExitCode)
 }
 
-func getExecMetaFile(ctx context.Context, mntable snapshot.Mountable, fileName string) ([]byte, error) {
-	ctx = withOutgoingContext(ctx)
+func getExecMetaFile(ctx context.Context, c *Client, mntable snapshot.Mountable, fileName string) ([]byte, error) {
+	ctx = withOutgoingContext(c, ctx)
 	filePath := path.Join(MetaMountDestPath, fileName)
 	stat, err := cacheutil.StatFile(ctx, mntable, filePath)
 	if err != nil {
