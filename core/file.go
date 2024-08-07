@@ -11,7 +11,6 @@ import (
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
-	"github.com/opencontainers/go-digest"
 	fstypes "github.com/tonistiigi/fsutil/types"
 	"github.com/vektah/gqlparser/v2/ast"
 
@@ -194,12 +193,18 @@ func (file *File) Contents(ctx context.Context) ([]byte, error) {
 }
 
 func (file *File) Digest(ctx context.Context) (string, error) {
-	content, err := file.Contents(ctx)
+	result, err := file.Evaluate(ctx)
 	if err != nil {
-		return "", fmt.Errorf("failed to get file content: %w", err)
+		return "", fmt.Errorf("failed to evaluate file: %w", err)
 	}
 
-	return digest.FromBytes(content).String(), nil
+	digest, err := result.Ref.Digest(ctx, file.File)
+	if err != nil {
+		return "", fmt.Errorf("failed to compute digest: %w", err)
+	}
+
+
+	return digest.String(), nil
 }
 
 func (file *File) Stat(ctx context.Context) (*fstypes.Stat, error) {

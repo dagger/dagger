@@ -13,6 +13,7 @@ import (
 	"github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/dagql/idtui"
 	bkcache "github.com/moby/buildkit/cache"
+	"github.com/moby/buildkit/cache/contenthash"
 	cacheutil "github.com/moby/buildkit/cache/util"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -90,6 +91,17 @@ func (r *ref) ToState() (llb.State, error) {
 		return llb.State{}, err
 	}
 	return llb.NewState(defOp), nil
+}
+
+func (r *ref) Digest(ctx context.Context, path string) (digest.Digest, error) {
+	cacheRef, err := r.CacheRef(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	sessionGroup := bksession.NewGroup(r.c.ID())
+
+	return contenthash.Checksum(ctx, cacheRef, path, contenthash.ChecksumOpts{}, sessionGroup)
 }
 
 func (r *ref) Evaluate(ctx context.Context) error {

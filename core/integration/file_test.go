@@ -401,7 +401,7 @@ func (FileSuite) TestDigest(ctx context.Context, t *testctx.T) {
 
 		digest, err := file.File("/foo.txt").Digest(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "sha256:dffd6021bb2bd5b0af676290809ec3a53191dd81c7f70a4b28688a362182986f", digest)
+		require.Equal(t, "sha256:8a887cdd3e476c79e1a14a65a6c401673b56071a24561dadb5e152605e72a613", digest)
 	})
 }
 
