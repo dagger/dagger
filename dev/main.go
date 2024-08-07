@@ -209,7 +209,7 @@ func (dev *DaggerDev) Dev(
 		return nil, err
 	}
 
-	client, err := dev.CLI().File(ctx, "")
+	client, err := dev.CLI().Binary(ctx, "")
 	if err != nil {
 		return nil, err
 	}
@@ -269,7 +269,7 @@ func (dev *DaggerDev) DevExport(
 	})
 
 	cli := dev.CLI()
-	cliBin, err := cli.File(ctx, platform)
+	cliBin, err := cli.Binary(ctx, platform)
 	if err != nil {
 		return nil, err
 	}

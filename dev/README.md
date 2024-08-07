@@ -64,7 +64,7 @@ Run the engine linter:
 
 Build the CLI:
 
-    dagger call -m dev --source=.:default cli file -o ./bin/dagger
+    dagger call -m dev --source=.:default cli binary -o ./bin/dagger
 
 ### Run the engine service
 
