@@ -142,11 +142,24 @@ class FunctionResolver(Generic[P, R]):
 
         for param in self.parameters.values():
             arg_type = to_typedef(param.resolved_type)
-            default = self._get_default_value(param)
 
-            # Default factories or more complex types aren't reflected in the
-            # API so we need to mark them as nullable to allow omission.
-            if param.has_default and default is None:
+            try:
+                default = self._serialize_default_value(param)
+            except TypeError as e:
+                # Rather than failing on a default value that's not JSON
+                # serializable and going through hoops to support more and more
+                # types, just don't register it. It'll still be registered
+                # as optional so the API server will call the function without
+                # it and let Python handle it.
+                logger.debug(
+                    "Not registering default value for %s: %s",
+                    param.signature,
+                    e,
+                )
+                default = None
+                arg_type = arg_type.with_optional(True)
+
+            if param.default_path:
                 arg_type = arg_type.with_optional(True)
 
             fn = fn.with_arg(
@@ -163,26 +176,14 @@ class FunctionResolver(Generic[P, R]):
 
         return typedef.with_function(fn) if self.name else typedef.with_constructor(fn)
 
-    def _get_default_value(self, param: Parameter) -> dagger.JSON | None:
-        if not param.has_default:
+    def _serialize_default_value(self, param: Parameter) -> dagger.JSON | None:
+        if (
+            not param.has_default
+            # It's redundant to have a default value of `null` in a nullable type.
+            or (param.is_nullable and param.signature.default is None)
+        ):
             return None
-
-        default_value = param.signature.default
-
-        try:
-            return dagger.JSON(json.dumps(default_value))
-        except TypeError as e:
-            # Rather than failing on a default value that's not JSON
-            # serializable and going through hoops to support more and more
-            # types, just don't register it. It'll still be registered
-            # as optional so the API server will call the function without
-            # it and let Python handle it.
-            logger.debug(
-                "Not registering default value for %s: %s",
-                param.signature,
-                e,
-            )
-            return None
+        return dagger.JSON(json.dumps(param.signature.default))
 
     @property
     def return_type(self) -> type:
@@ -311,25 +312,29 @@ class FunctionResolver(Generic[P, R]):
             default_path=get_meta(param.annotation, DefaultPath),
         )
 
-        if (
-            p.default_path is not None
-            and p.has_default
-            and not (p.is_nullable and p.signature.default is None)
-        ):
+        if not p.is_nullable and p.has_default and p.signature.default is None:
             msg = (
-                "Can't use DefaultPath with a default value for "
-                f"parameter '{param.name}'"
-            )
-            raise AssertionError(msg)
-
-        if p.default_path and not p.default_path.from_context:
-            # NB: We could instead warn or just ignore, but it's better to fail
-            # fast to avoid astonishment.
-            msg = (
-                "DefaultPath can't be used with an empty path in "
-                f"parameter '{param.name}'"
+                "Can't use a default value of None on a non-nullable type for "
+                "parameter '{param.name}'"
             )
             raise ValueError(msg)
+
+        if p.default_path:
+            if p.has_default and not (p.is_nullable and p.signature.default is None):
+                msg = (
+                    "Can't use DefaultPath with a default value for "
+                    f"parameter '{param.name}'"
+                )
+                raise AssertionError(msg)
+
+            if not p.default_path.from_context:
+                # NB: We could instead warn or just ignore, but it's better to fail
+                # fast to avoid astonishment.
+                msg = (
+                    "DefaultPath can't be used with an empty path in "
+                    f"parameter '{param.name}'"
+                )
+                raise ValueError(msg)
 
         return p
 

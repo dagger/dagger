@@ -92,11 +92,8 @@ class Parameter:
 
     @property
     def has_default(self) -> bool:
-        return (
-            self.signature.default is not inspect.Parameter.empty
-            or self.default_path is not None
-        )
+        return self.signature.default is not inspect.Parameter.empty
 
     @property
     def is_optional(self) -> bool:
-        return self.has_default or self.is_nullable
+        return self.has_default or self.default_path is not None or self.is_nullable
