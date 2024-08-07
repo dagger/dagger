@@ -372,7 +372,7 @@ module.exports = {
         },
         {
           "type": "doc",
-          "id": "manuals/developer/enums"
+          "id": "manuals/developer/enumerations"
         },
         {
           "type": "doc",
