@@ -203,7 +203,6 @@ func (file *File) Digest(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("failed to compute digest: %w", err)
 	}
 
-
 	return digest.String(), nil
 }
 
