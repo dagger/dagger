@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 func Run(ctx context.Context, testingT *testing.T, suite any, middleware ...Middleware) {
@@ -52,8 +54,9 @@ func New(ctx context.Context, t *testing.T) *T {
 type T struct {
 	*testing.T
 
-	parent     *T
-	subtestIdx int
+	parent      *T
+	subtestIdx  int
+	subtestGUID string
 
 	ctx        context.Context
 	baseName   string
@@ -88,13 +91,14 @@ func (t *T) AfterSelf(f func(*T)) {
 type Subtest struct {
 	Parent   *T
 	Index    int
+	GUID     string
 	BaseName string
 	F        func(context.Context, *T)
 }
 
 func (t *T) id() string {
 	if t.parent != nil {
-		return fmt.Sprintf("%s:%d", t.parent.Name(), t.subtestIdx)
+		return fmt.Sprintf("%s:%s:%d", t.parent.Name(), t.subtestGUID, t.subtestIdx)
 	} else {
 		// should never actually be the case, since all methods are already subtests
 		return t.baseName
@@ -102,7 +106,7 @@ func (t *T) id() string {
 }
 
 func (st *Subtest) id() string {
-	return fmt.Sprintf("%s:%d", st.Parent.Name(), st.Index)
+	return fmt.Sprintf("%s:%s:%d", st.Parent.Name(), st.GUID, st.Index)
 }
 
 func (t *T) BaseName() string {
@@ -151,9 +155,14 @@ func (t T) BeforeEach(f Middleware) *T {
 }
 
 func (t *T) Run(name string, f func(context.Context, *T)) {
+	uuid, err := uuid.NewV7()
+	if err != nil {
+		panic(err)
+	}
 	t.subtests = append(t.subtests, &Subtest{
 		Parent:   t,
 		Index:    len(t.subtests),
+		GUID:     uuid.String(),
 		BaseName: name,
 		F:        f,
 	})
@@ -167,6 +176,7 @@ func (t *T) runSubtests() {
 		t.T.Run(subTest.BaseName, func(testingT *testing.T) {
 			subT := t.sub(subTest.BaseName, testingT)
 			subT.subtestIdx = subTest.Index
+			subT.subtestGUID = subTest.GUID
 			for _, setup := range t.beforeEach {
 				subT = setup(subT)
 			}
