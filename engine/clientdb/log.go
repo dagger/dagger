@@ -9,7 +9,7 @@ import (
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/trace"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
-	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
 
 func (dbLog *Log) Record() sdklog.Record {
@@ -31,7 +31,7 @@ func (dbLog *Log) Record() sdklog.Record {
 
 	if len(dbLog.Body) > 0 {
 		body := &otlpcommonv1.AnyValue{}
-		if err := protojson.Unmarshal(dbLog.Body, body); err != nil {
+		if err := proto.Unmarshal(dbLog.Body, body); err != nil {
 			slog.Warn("failed to unmarshal log body", "error", err)
 		} else {
 			rec.SetBody(telemetry.LogValueFromPB(body))

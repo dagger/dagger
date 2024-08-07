@@ -34,6 +34,6 @@ CREATE TABLE IF NOT EXISTS logs (
     span_id TEXT,
     timestamp INTEGER NOT NULL, -- Nanoseconds from epoch
     severity INTEGER NOT NULL,
-    body BLOB, -- JSON encoded otlpcommon.v1.Any
+    body BLOB, -- *Protobuf* encoded otlpcommon.v1.Any
     attributes BLOB -- JSON encoded otlpcommon.v1.Key
 ) STRICT;
