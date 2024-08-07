@@ -189,7 +189,7 @@ type globArgs struct {
 }
 
 func (s *directorySchema) glob(ctx context.Context, parent *core.Directory, args globArgs) ([]string, error) {
-	return parent.Glob(ctx, ".", args.Pattern)
+	return parent.Glob(ctx, args.Pattern)
 }
 
 type dirFileArgs struct {

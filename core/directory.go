@@ -269,12 +269,7 @@ func (dir *Directory) Entries(ctx context.Context, src string) ([]string, error)
 }
 
 // Glob returns a list of files that matches the given pattern.
-//
-// Note(TomChv): Instead of handling the recursive manually, we could update cacheutil.ReadDir
-// so it will only mount and unmount the filesystem one time.
-// However, this requires to maintain buildkit code and is not mandatory for now until
-// we hit performances issues.
-func (dir *Directory) Glob(ctx context.Context, src string, pattern string) ([]string, error) {
+func (dir *Directory) Glob(ctx context.Context, pattern string) ([]string, error) {
 	svcs, err := dir.Query.Services(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get services: %w", err)
@@ -303,43 +298,38 @@ func (dir *Directory) Glob(ctx context.Context, src string, pattern string) ([]s
 	}
 	// empty directory, i.e. llb.Scratch()
 	if ref == nil {
-		if clean := path.Clean(dir.Dir); clean == "." || clean == "/" {
-			return []string{}, nil
-		}
-		return nil, fmt.Errorf("%s: no such file or directory", src)
+		return []string{}, nil
 	}
 
-	entries, err := ref.ReadDir(ctx, bkgw.ReadDirRequest{
-		Path:           path.Join(dir.Dir, src),
-		IncludePattern: pattern,
-	})
+	// We use the same pattern matching function as Buildkit, since just doing
+	// IncludePatterns will still include directories we don't want
+	pm, err := patternmatcher.New([]string{pattern})
 	if err != nil {
 		return nil, err
 	}
 
-	paths := []string{}
-	for _, entry := range entries {
-		entryPath := path.Join(src, entry.GetPath())
-
-		// We use the same pattern matching function as Buildkit to handle
-		// recursive strategy.
-		match, err := patternmatcher.MatchesOrParentMatches(entryPath, []string{pattern})
-		if err != nil {
-			return nil, err
-		}
-
-		if match {
-			paths = append(paths, entryPath)
-		}
-
-		// Handle recursive option
-		if entry.IsDir() {
-			subEntries, err := dir.Glob(ctx, entryPath, pattern)
+	var paths []string
+	err = ref.WalkDir(ctx, buildkit.WalkDirRequest{
+		IncludePattern: pattern,
+		Path:           dir.Dir,
+		Callback: func(path string, info *fstypes.Stat) error {
+			// HACK: ideally, we'd have something like MatchesExact, which
+			// would skip the parent behavior that we don't really want here -
+			// oh well, let's just fake it with false
+			//nolint:staticcheck
+			match, err := pm.MatchesUsingParentResult(filepath.Clean(path), false)
 			if err != nil {
-				return nil, err
+				return err
 			}
-			paths = append(paths, subEntries...)
-		}
+			if match {
+				paths = append(paths, path)
+			}
+
+			return nil
+		},
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	return paths, nil

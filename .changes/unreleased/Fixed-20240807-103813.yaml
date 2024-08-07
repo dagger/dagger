@@ -1,0 +1,9 @@
+kind: Fixed
+body: |
+  Fix Directory.glob to correctly handle globs with subdir prefixes
+
+  Previously, attempting to glob with a prefix subdir in a pattern like "<subdir>/*" would not match any files. This should now be fixed, and files in `<subdir>` will now be correctly matched.
+time: 2024-08-07T10:38:13.123294283+01:00
+custom:
+  Author: jedevc
+  PR: "8110"
