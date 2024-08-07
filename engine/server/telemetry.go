@@ -364,10 +364,6 @@ type LogsPubSub struct {
 	client *daggerClient
 }
 
-func logValueToJSON(val log.Value) ([]byte, error) {
-	return protojson.Marshal(telemetry.LogValueToPB(val))
-}
-
 func (ps LogsPubSub) Export(ctx context.Context, logs []sdklog.Record) error {
 	slog.ExtraDebug("pubsub exporting logs", "client", ps.client.clientID, "count", len(logs))
 
@@ -387,9 +383,9 @@ func (ps LogsPubSub) Export(ctx context.Context, logs []sdklog.Record) error {
 
 		var body []byte
 		if !rec.Body().Empty() {
-			body, err = logValueToJSON(rec.Body())
+			body, err = proto.Marshal(telemetry.LogValueToPB(rec.Body()))
 			if err != nil {
-				slog.Warn("failed to marshal log record body", "error", err, "body", rec.Body(), "asString", rec.Body().AsString())
+				slog.Warn("failed to marshal log record body", "error", err)
 				continue
 			}
 		}
