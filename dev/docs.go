@@ -79,7 +79,7 @@ func (d Docs) Lint(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		return dag.Dirdiff().AssertEqual(ctx, before, after, []string{generatedSchemaPath, generatedCliZenPath})
+		return dag.Dirdiff().AssertEqual(ctx, before, after, []string{generatedSchemaPath, generatedCliZenPath, generatedAPIReferencePath})
 	})
 
 	eg.Go(func() error {
@@ -159,8 +159,22 @@ func (d Docs) GenerateAPIReference() *dagger.Directory {
 		From("node:18").
 		WithMountedDirectory("/src", d.Dagger.Source()).
 		WithWorkdir("/src/docs").
-		WithExec([]string{"yarn", "add", "spectaql"}).
+		WithMountedDirectory("/mnt/spectaql", spectaql()).
+		WithExec([]string{"yarn", "add", "file:/mnt/spectaql"}).
 		WithExec([]string{"yarn", "run", "spectaql", "./docs-graphql/config.yml", "-t", "."}).
 		File("index.html")
 	return dag.Directory().WithFile(generatedAPIReferencePath, generatedHTML)
+}
+
+func spectaql() *dagger.Directory {
+	// HACK: return a custom build of spectaql that has reproducible example
+	// snippets (can be removed if anvilco/spectaql#976 is merged and released)
+	return dag.Container().
+		From("node:18").
+		// https://github.com/jedevc/spectaql/commit/1a59bf93c6ff0d13195eea98e5d2d27cd2ee8fc7
+		WithMountedDirectory("/src", dag.Git("https://github.com/jedevc/spectaql").Commit("1a59bf93c6ff0d13195eea98e5d2d27cd2ee8fc7").Tree()).
+		WithWorkdir("/src").
+		WithExec([]string{"yarn", "install"}).
+		WithExec([]string{"yarn", "run", "build"}).
+		Directory("./")
 }
