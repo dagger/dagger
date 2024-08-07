@@ -1007,15 +1007,21 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *daggerClient) (rerr error) {
 	ctx := r.Context()
 
-	// create a span to record telemetry into the client's DB
-	//
-	// downstream components must use otel.SpanFromContext(ctx).TracerProvider()
-	clientTracer := client.tracerProvider.Tracer(InstrumentationLibrary)
-	ctx, span := clientTracer.Start(ctx,
-		fmt.Sprintf("%s %s", r.Method, r.URL.Path),
-		trace.WithAttributes(attribute.Bool(telemetry.UIPassthroughAttr, true)),
-	)
-	defer telemetry.End(span, func() error { return rerr })
+	// only record telemetry if the request is traced, otherwise
+	// we end up with orphaned spans in their own separate traces from tests etc.
+	if trace.SpanContextFromContext(ctx).IsValid() {
+		// create a span to record telemetry into the client's DB
+		//
+		// downstream components must use otel.SpanFromContext(ctx).TracerProvider()
+		clientTracer := client.tracerProvider.Tracer(InstrumentationLibrary)
+		var span trace.Span
+		ctx, span = clientTracer.Start(ctx,
+			fmt.Sprintf("%s %s", r.Method, r.URL.Path),
+			trace.WithAttributes(attribute.Bool(telemetry.UIPassthroughAttr, true)),
+		)
+		defer telemetry.End(span, func() error { return rerr })
+	}
+
 	// install a logger provider that records to the client's DB
 	ctx = telemetry.WithLoggerProvider(ctx, client.loggerProvider)
 	r = r.WithContext(ctx)
