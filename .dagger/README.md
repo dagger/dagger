@@ -53,7 +53,7 @@ Run the engine linter:
 
 Build the CLI:
 
-    dagger call --source="$SRC" cli file -o ./bin/dagger
+    dagger call --source="$SRC" cli binary -o ./bin/dagger
 
 ### Run the engine service
 

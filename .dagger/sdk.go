@@ -63,7 +63,7 @@ func (dev *DaggerDev) installer(ctx context.Context, name string) (func(*dagger.
 		return nil, err
 	}
 
-	cliBinary, err := dev.CLI().File(ctx, "")
+	cliBinary, err := dev.CLI().Binary(ctx, "")
 	if err != nil {
 		return nil, err
 	}

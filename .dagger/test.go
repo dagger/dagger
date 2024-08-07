@@ -157,7 +157,7 @@ func (t *Test) testCmd(ctx context.Context) (*dagger.Container, error) {
 		return nil, err
 	}
 
-	devBinary, err := t.Dagger.CLI().File(ctx, "")
+	devBinary, err := t.Dagger.CLI().Binary(ctx, "")
 	if err != nil {
 		return nil, err
 	}
