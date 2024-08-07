@@ -14,6 +14,10 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      - name: "helm lint"
+        uses: ./.github/actions/call
+        with:
+          function: "helm lint"
       - name: "helm test"
         uses: ./.github/actions/call
         with:
