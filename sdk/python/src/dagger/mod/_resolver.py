@@ -177,11 +177,7 @@ class FunctionResolver(Generic[P, R]):
         return typedef.with_function(fn) if self.name else typedef.with_constructor(fn)
 
     def _serialize_default_value(self, param: Parameter) -> dagger.JSON | None:
-        if (
-            not param.has_default
-            # It's redundant to have a default value of `null` in a nullable type.
-            or (param.is_nullable and param.signature.default is None)
-        ):
+        if not param.has_default:
             return None
         return dagger.JSON(json.dumps(param.signature.default))
 
