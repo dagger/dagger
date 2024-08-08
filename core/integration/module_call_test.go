@@ -2166,6 +2166,123 @@ func (m *Test) FromStatus(status Status) string {
 	})
 }
 
+func (ModuleSuite) TestCallEnumList(ctx context.Context, t *testctx.T) {
+	type testCase struct {
+		sdk    string
+		source string
+	}
+	for _, tc := range []testCase{
+		{
+			sdk: "go",
+			source: `package main
+
+import (
+	"fmt"
+	"strings"
+)
+
+type Language string
+
+const (
+	Go Language = "GO"
+	Python Language = "PYTHON"
+	TypeScript Language = "TYPESCRIPT"
+	PHP Language = "PHP"
+	Elixir Language = "ELIXIR"
+)
+
+type Test struct{}
+
+func (m *Test) Faves(langs []Language) string {
+	return strings.Trim(fmt.Sprint(langs), "[]")
+}
+
+func (m *Test) Official() []Language {
+	return []Language{Go, Python, TypeScript}
+}
+`,
+		},
+		{
+			sdk: "python",
+			source: `import dagger
+from dagger import dag
+
+
+@dagger.enum_type
+class Language(dagger.Enum):
+    GO = "GO" 
+    PYTHON = "PYTHON"
+    TYPESCRIPT = "TYPESCRIPT"
+    PHP = "PHP"
+    ELIXIR = "ELIXIR"
+
+
+@dagger.object_type
+class Test:
+    @dagger.function
+    def faves(self, langs: list[Language]) -> str:
+        return " ".join(langs)
+
+    @dagger.function
+    def official(self) -> list[Language]:
+        return [Language.GO, Language.PYTHON, Language.TYPESCRIPT]
+`,
+		},
+		{
+			sdk: "typescript",
+			source: `import { dag, enumType, func, object } from "@dagger.io/dagger"
+
+@enumType()
+class Language {
+  static readonly Go: string = "GO"
+  static readonly Python: string = "PYTHON"
+  static readonly TypeScript: string = "TYPESCRIPT"
+  static readonly PHP: string = "PHP"
+  static readonly Elixir: string = "ELIXIR"
+}
+
+@object()
+export class Test {
+  @func()
+  faves(langs: Language[]): string {
+    return langs.join(" ")
+  }
+
+  @func()
+  official(): Language[] {
+    return [Language.Go, Language.Python, Language.TypeScript]
+  }
+}
+`,
+		},
+	} {
+		tc := tc
+
+		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+			modGen := modInit(t, c, tc.sdk, tc.source)
+
+			t.Run("happy input", func(ctx context.Context, t *testctx.T) {
+				out, err := modGen.With(daggerCall("faves", "--langs", "GO,PYTHON")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "GO PYTHON", out)
+			})
+
+			t.Run("sad input", func(ctx context.Context, t *testctx.T) {
+				_, err := modGen.With(daggerCall("faves", "--langs", "GO,FOO,BAR")).Sync(ctx)
+				require.ErrorContains(t, err, "invalid argument")
+				require.ErrorContains(t, err, "should be one of GO,PYTHON,TYPESCRIPT,PHP,ELIXIR")
+			})
+
+			t.Run("output", func(ctx context.Context, t *testctx.T) {
+				out, err := modGen.With(daggerCall("official")).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "GO\nPYTHON\nTYPESCRIPT\n", out)
+			})
+		})
+	}
+}
+
 func (ModuleSuite) TestCallExit(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	_, err := modInit(t, c, "go", `package main
