@@ -411,6 +411,31 @@ func (FileSuite) TestDigest(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, "sha256:042a7d64a581ef2ee983f21058801cc35663b705e6c55f62fa8e0f18ecc70989", digest)
 	})
+
+	t.Run("file digest with different metadata should be different", func(ctx context.Context, t *testctx.T) {
+		fileWithOverwrittenMetadata := c.Directory().WithNewFile("foo.txt", "Hello, World!", dagger.DirectoryWithNewFileOpts{
+			Permissions: 0777,
+		}).File("foo.txt")
+		fileWithDefaultMetadata := c.Directory().WithNewFile("foo.txt", "Hello, World!").File("foo.txt")
+
+		digestFileWithOverwrittenMetadata, err := fileWithOverwrittenMetadata.Digest(ctx)
+		require.NoError(t, err)
+
+		digestFileWithDefaultMetadata, err := fileWithDefaultMetadata.Digest(ctx)
+		require.NoError(t, err)
+
+		require.NotEqual(t, digestFileWithOverwrittenMetadata, digestFileWithDefaultMetadata)
+
+		t.Run("except if we exclude them from computation", func(ctx context.Context, t *testctx.T) {
+			digestFileWithOverwrittenMetadata, err := fileWithOverwrittenMetadata.Digest(ctx, dagger.FileDigestOpts{ExcludeMetadata: true})
+			require.NoError(t, err)
+
+			digestFileWithDefaultMetadata, err := fileWithDefaultMetadata.Digest(ctx, dagger.FileDigestOpts{ExcludeMetadata: true})
+			require.NoError(t, err)
+
+			require.Equal(t, digestFileWithOverwrittenMetadata, digestFileWithDefaultMetadata)
+		})
+	})
 }
 
 func (FileSuite) TestSync(ctx context.Context, t *testctx.T) {
