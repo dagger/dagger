@@ -3330,6 +3330,40 @@ class File(Type):
         _ctx = self._select("contents", _args)
         return await _ctx.execute(str)
 
+    async def digest(
+        self,
+        *,
+        exclude_metadata: bool | None = False,
+    ) -> str:
+        """Return the file's digest. The format of the digest is not guaranteed
+        to be stable between releases of Dagger. It is guaranteed to be stable
+        between invocations of the same Dagger engine.
+
+        Parameters
+        ----------
+        exclude_metadata:
+            If true, exclude metadata from the digest.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("excludeMetadata", exclude_metadata, False),
+        ]
+        _ctx = self._select("digest", _args)
+        return await _ctx.execute(str)
+
     async def export(
         self,
         path: str,

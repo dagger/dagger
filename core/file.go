@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"io/fs"
@@ -11,6 +12,7 @@ import (
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
+	"github.com/opencontainers/go-digest"
 	fstypes "github.com/tonistiigi/fsutil/types"
 	"github.com/vektah/gqlparser/v2/ast"
 
@@ -190,6 +192,38 @@ func (file *File) Contents(ctx context.Context) ([]byte, error) {
 		offset += len(chunk)
 	}
 	return contents, nil
+}
+
+func (file *File) Digest(ctx context.Context, excludeMetadata bool) (string, error) {
+	// If metadata are included, directly compute the digest of the file
+	if !excludeMetadata {
+		result, err := file.Evaluate(ctx)
+		if err != nil {
+			return "", fmt.Errorf("failed to evaluate file: %w", err)
+		}
+
+		digest, err := result.Ref.Digest(ctx, file.File)
+		if err != nil {
+			return "", fmt.Errorf("failed to compute digest: %w", err)
+		}
+
+		return digest.String(), nil
+	}
+
+	// If metadata are excluded, compute the digest of the file from its content.
+	reader, err := file.Open(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to open file to compute digest: %w", err)
+	}
+
+	defer reader.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, reader); err != nil {
+		return "", fmt.Errorf("failed to copy file content into hasher: %w", err)
+	}
+
+	return digest.FromBytes(h.Sum(nil)).String(), nil
 }
 
 func (file *File) Stat(ctx context.Context) (*fstypes.Stat, error) {
