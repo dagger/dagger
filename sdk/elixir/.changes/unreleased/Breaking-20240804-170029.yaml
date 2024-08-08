@@ -1,0 +1,6 @@
+kind: Breaking
+body: "The module runtime now passing only the function arguments instead of passing struct that contains `Dagger.Client` instance and the arguments.\n\nThe `self.dag` is now got replaced by `dag/0` function to access the `Dagger.Client` instance. "
+time: 2024-08-04T17:00:29.129361953+07:00
+custom:
+    Author: wingyplus
+    PR: "8099"
