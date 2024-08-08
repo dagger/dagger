@@ -1,5 +1,11 @@
 kind: Added
-body: Add `Digest` method to `File`
+body: |
+  Add `Digest` method to `File`.
+
+  This method provides an efficient way to compute a file's digest, which unlock optimized file comparison
+  or check for file changes.
+  This function benefits from Buildkit's cache system and include file's metadata in the digest computation.
+  There's also an option `excludeMetadata` to compute the file's digest from its content only.
 time: 2024-08-06T23:19:20.37563+02:00
 custom:
   Author: TomChv
