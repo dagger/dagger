@@ -2,6 +2,16 @@ module github.com/dagger/dagger
 
 go 1.22
 
+// TODO: FIX BEFORE MERGE
+// TODO: FIX BEFORE MERGE
+// TODO: FIX BEFORE MERGE
+// TODO: FIX BEFORE MERGE
+// TODO: FIX BEFORE MERGE
+// TODO: https://github.com/dagger/buildkit/pull/3
+replace github.com/moby/buildkit => github.com/sipsma/buildkit v0.6.1-0.20240803015026-699623575173
+
+// replace github.com/moby/buildkit => ./buildkit
+
 require (
 	github.com/99designs/gqlgen v0.17.49
 	github.com/Khan/genqlient v0.7.0

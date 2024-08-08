@@ -19,6 +19,7 @@ import (
 	ctdmetadata "github.com/containerd/containerd/metadata"
 	"github.com/containerd/containerd/remotes/docker"
 	ctdsnapshot "github.com/containerd/containerd/snapshots"
+	"github.com/containerd/containerd/snapshots/storage"
 	"github.com/containerd/go-runc"
 	"github.com/containerd/platforms"
 	controlapi "github.com/moby/buildkit/api/services/control"
@@ -74,6 +75,7 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 	daggercache "github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/distconsts"
+	"github.com/dagger/dagger/engine/server/snapshot/volume"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/sources/blob"
 	"github.com/dagger/dagger/engine/sources/gitdns"
@@ -284,6 +286,18 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		return nil, fmt.Errorf("failed to create snapshotter: %w", err)
 	}
 
+	// TODO: store on struct
+	// TODO: premake dir above for consistency
+	volumeSnapshotterMDPath := filepath.Join(srv.rootDir, "volumes.db")
+	volumeSnapshotterMD, err := storage.NewMetaStore(volumeSnapshotterMDPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create volume snapshotter metadata store: %w", err)
+	}
+	volumeSnapshotter, err := volume.New(ctx, volumeSnapshotterMD, filepath.Join(srv.rootDir, "volumes"))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create volume snapshotter: %w", err)
+	}
+
 	srv.localContentStore, err = local.NewStore(srv.contentStoreRootDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create content store: %w", err)
@@ -295,11 +309,16 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	}
 
 	srv.containerdMetaDB = ctdmetadata.NewDB(srv.containerdMetaBoltDB, srv.localContentStore, map[string]ctdsnapshot.Snapshotter{
-		srv.snapshotterName: srv.snapshotter,
+		srv.snapshotterName:      srv.snapshotter,
+		volumeSnapshotter.Name(): volumeSnapshotter,
 	})
 	if err := srv.containerdMetaDB.Init(context.TODO()); err != nil {
 		return nil, fmt.Errorf("failed to init metadata db: %w", err)
 	}
+
+	// subtle: if you don't get the snapshotter from the metadata db, you miss the wrapping
+	// which integrates it's metadata into the containerd GC
+	volumeSnapshotter = volume.FromMetaDB(srv.containerdMetaDB, volumeSnapshotter)
 
 	srv.leaseManager = leaseutil.WithNamespace(ctdmetadata.NewLeaseManager(srv.containerdMetaDB), "buildkit")
 	srv.workerCacheMetaDB, err = metadata.NewStore(srv.workerCacheMetaDBPath)
@@ -381,18 +400,19 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 			"buildkit",
 			nil, // no idmapping
 		),
-		ContentStore:    srv.contentStore,
-		Applier:         winlayers.NewFileSystemApplierWithWindows(srv.contentStore, apply.NewFileSystemApplier(srv.contentStore)),
-		Differ:          winlayers.NewWalkingDiffWithWindows(srv.contentStore, walking.NewWalkingDiff(srv.contentStore)),
-		ImageStore:      nil, // explicitly, because that's what upstream does too
-		RegistryHosts:   srv.registryHosts,
-		IdentityMapping: nil, // no idmapping
-		LeaseManager:    srv.leaseManager,
-		GarbageCollect:  srv.containerdMetaDB.GarbageCollect,
-		ParallelismSem:  srv.parallelismSem,
-		MetadataStore:   srv.workerCacheMetaDB,
-		MountPoolRoot:   srv.buildkitMountPoolDir,
-		ResourceMonitor: nil, // we don't use it
+		ContentStore:      srv.contentStore,
+		Applier:           winlayers.NewFileSystemApplierWithWindows(srv.contentStore, apply.NewFileSystemApplier(srv.contentStore)),
+		Differ:            winlayers.NewWalkingDiffWithWindows(srv.contentStore, walking.NewWalkingDiff(srv.contentStore)),
+		ImageStore:        nil, // explicitly, because that's what upstream does too
+		RegistryHosts:     srv.registryHosts,
+		IdentityMapping:   nil, // no idmapping
+		LeaseManager:      srv.leaseManager,
+		GarbageCollect:    srv.containerdMetaDB.GarbageCollect,
+		ParallelismSem:    srv.parallelismSem,
+		MetadataStore:     srv.workerCacheMetaDB,
+		MountPoolRoot:     srv.buildkitMountPoolDir,
+		ResourceMonitor:   nil, // we don't use it
+		VolumeSnapshotter: volumeSnapshotter,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create base worker: %w", err)

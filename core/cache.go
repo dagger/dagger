@@ -1,11 +1,10 @@
 package core
 
 import (
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"strings"
 
+	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql"
@@ -40,12 +39,16 @@ func (cache *CacheVolume) Clone() *CacheVolume {
 
 // Sum returns a checksum of the cache tokens suitable for use as a cache key.
 func (cache *CacheVolume) Sum() string {
+	return digest.FromString(strings.Join(cache.Keys, "\x00")).Encoded()
+
+	/* TODO: ?
 	hash := sha256.New()
 	for _, tok := range cache.Keys {
 		_, _ = hash.Write([]byte(tok + "\x00"))
 	}
 
 	return base64.StdEncoding.EncodeToString(hash.Sum(nil))
+	*/
 }
 
 type CacheSharingMode string
