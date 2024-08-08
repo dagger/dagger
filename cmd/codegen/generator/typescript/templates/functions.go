@@ -6,7 +6,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/iancoleman/strcase"
+	"github.com/dagger/dagger/dagql/strcase"
 
 	"github.com/dagger/dagger/cmd/codegen/generator"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
@@ -52,7 +52,7 @@ func TypescriptTemplateFuncs(
 
 // pascalCase change a type name into pascalCase
 func pascalCase(name string) string {
-	return strcase.ToCamel(name)
+	return strcase.ToPascal(name)
 }
 
 // solve checks if a field is solvable.
@@ -207,7 +207,7 @@ var jsKeywords = map[string]struct{}{
 // formatEnum formats a GraphQL enum into a TS equivalent
 func formatEnum(s string) string {
 	s = strings.ToLower(s)
-	return strcase.ToCamel(s)
+	return strcase.ToPascal(s)
 }
 
 // isArgOptional checks if some arg are optional.

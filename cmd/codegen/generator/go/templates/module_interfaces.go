@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/dagger/dagger/dagql/strcase"
 	. "github.com/dave/jennifer/jen" //nolint:stylecheck
-	"github.com/iancoleman/strcase"
 )
 
 func (ps *parseState) parseGoIface(t *types.Interface, named *types.Named) (*parsedIfaceType, error) {
@@ -201,7 +201,7 @@ func (spec *parsedIfaceType) idDefCode() *Statement {
 }
 
 func (spec *parsedIfaceType) concreteStructCachedFieldName(method *funcTypeSpec) string {
-	return strcase.ToLowerCamel(method.name)
+	return strcase.ToCamel(method.name)
 }
 
 /*
@@ -447,7 +447,7 @@ func (spec *parsedIfaceType) concreteMethodCode(method *funcTypeSpec) (*Statemen
 		methodReturns = append(methodReturns, Id("error"))
 	}
 
-	gqlFieldName := strcase.ToLowerCamel(method.name)
+	gqlFieldName := strcase.ToCamel(method.name)
 	executeQueryCode, err := spec.concreteMethodExecuteQueryCode(method)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate execute query code: %w", err)
@@ -465,7 +465,7 @@ func (spec *parsedIfaceType) concreteMethodCode(method *funcTypeSpec) (*Statemen
 					// skip context
 					continue
 				}
-				gqlArgName := strcase.ToLowerCamel(argSpec.name)
+				gqlArgName := strcase.ToCamel(argSpec.name)
 				setCode := Id("q").Op("=").Id("q").Dot("Arg").Call(Lit(gqlArgName), Id(argSpec.name))
 				g.Add(setCode).Line()
 			}
@@ -726,5 +726,5 @@ func (spec *parsedIfaceType) concreteMethodImplTypeCode(returnTypeSpec ParsedTyp
 // The name of the concrete struct implementing the interface with the given name.
 // If the interface is "Foo", this is "fooImpl".
 func formatIfaceImplName(s string) string {
-	return strcase.ToLowerCamel(s) + "Impl"
+	return strcase.ToCamel(s) + "Impl"
 }

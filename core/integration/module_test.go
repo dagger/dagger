@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/MakeNowJust/heredoc/v2"
-	"github.com/iancoleman/strcase"
+	"github.com/dagger/dagger/dagql/strcase"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -4806,7 +4806,7 @@ func (ModuleSuite) TestLotsOfDeps(ctx context.Context, t *testctx.T) {
 		_ = depS
 		var err error
 		_ = err
-	`, strcase.ToCamel(name), strcase.ToCamel(name), name)
+	`, strcase.ToPascal(name), strcase.ToPascal(name), name)
 		for _, depName := range depNames {
 			mainSrc += fmt.Sprintf(`
 	depS, err = dag.%s().Fn(ctx)
@@ -4814,7 +4814,7 @@ func (ModuleSuite) TestLotsOfDeps(ctx context.Context, t *testctx.T) {
 		return "", err
 	}
 	s += depS
-	`, strcase.ToCamel(depName))
+	`, strcase.ToPascal(depName))
 		}
 		mainSrc += "return s, nil\n}\n"
 		fmted, err := format.Source([]byte(mainSrc))
