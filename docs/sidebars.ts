@@ -372,6 +372,10 @@ module.exports = {
         },
         {
           "type": "doc",
+          "id": "manuals/developer/enumerations"
+        },
+        {
+          "type": "doc",
           "id": "manuals/developer/entrypoint-function"
         },
         {

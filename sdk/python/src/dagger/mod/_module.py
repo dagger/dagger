@@ -366,12 +366,13 @@ class Module:
 
         Should be used in a class decorated with :py:meth:`object_type`.
 
-        Example usage:
+        Example usage::
 
-        >>> @object_type
-        >>> class Foo:
-        >>>     bar: str = field(default="foobar")
-        >>>     args: list[str] = field(default=list)
+            @object_type
+            class Foo:
+                bar: str = field(default="foobar")
+                args: list[str] = field(default=list)
+
 
         Parameters
         ----------
@@ -426,11 +427,12 @@ class Module:
     ) -> Func[P, R] | Callable[[Func[P, R]], Func[P, R]]:
         """Exposes a Python function as a :py:class:`dagger.Function`.
 
-        Example usage:
+        Example usage::
 
-        >>> @function
-        >>> def foo() -> str:
-        >>>     return "bar"
+            @function
+            def foo() -> str:
+                return "bar"
+
 
         Parameters
         ----------
@@ -478,13 +480,13 @@ class Module:
         Used with :py:meth:`field` and :py:meth:`function` to expose
         the object's members.
 
-        Example usage:
+        Example usage::
 
-        >>> @object_type
-        >>> class Foo:
-        >>>     @function
-        >>>     def bar(self) -> str:
-        >>>         return "foobar"
+            @object_type
+            class Foo:
+                @function
+                def bar(self) -> str:
+                    return "foobar"
         """
 
         def wrapper(cls: T) -> T:
@@ -565,14 +567,40 @@ class Module:
     def enum_type(self) -> Callable[[T], T]: ...
 
     def enum_type(self, cls: T | None = None) -> T | Callable[[T], T]:
-        """Exposes a Python enum.Enum as a :py:class:`dagger.EnumTypeDef`.
+        """Exposes a Python :py:class:`enum.Enum` as a :py:class:`dagger.EnumTypeDef`.
 
-        Example usage:
+        The Dagger Python SDK looks for a ``description`` attribute in the enum
+        member. There's a convenience base class :py:class:`dagger.Enum` that
+        makes it easy to specify those descriptions as a second value.
 
-        >>> @dagger.enum_type
-        >>> class Foo(enum.Enum):
-        >>>     FOO = "FOO"
-        >>>     BAR = "BAR"
+        Examples
+        --------
+        Basic usage::
+
+            import enum
+            import dagger
+
+
+            @dagger.enum_type
+            class Options(enum.Enum):
+                ONE = "ONE"
+                TWO = "TWO"
+
+
+        Using convenience base class for descriptions::
+
+            import dagger
+
+
+            @dagger.enum_type
+            class Options(dagger.Enum):
+                ONE = "ONE", "The first value"
+                TWO = "TWO", "The second value"
+
+
+        .. note::
+            Only the values and their descriptions are reported to the
+            Dagger API. The member's name is only used in Python.
         """
 
         def wrapper(cls: T) -> T:
