@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -488,8 +489,14 @@ func (v *secretValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.Modul
 		plaintext = string(filePlaintext)
 
 	case commandSecretSource:
-		// #nosec G204
-		stdoutBytes, err := exec.CommandContext(ctx, "sh", "-c", v.sourceVal).Output()
+		var stdoutBytes []byte
+		var err error
+		if runtime.GOOS == "windows" {
+			stdoutBytes, err = exec.CommandContext(ctx, "cmd.exe", "/C", v.sourceVal).Output()
+		} else {
+			// #nosec G204
+			stdoutBytes, err = exec.CommandContext(ctx, "sh", "-c", v.sourceVal).Output()
+		}
 		if err != nil {
 			return nil, fmt.Errorf("failed to run secret command %q: %w", v.sourceVal, err)
 		}
