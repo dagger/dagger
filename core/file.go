@@ -201,7 +201,7 @@ func (file *File) Digest(ctx context.Context, excludeMetadata bool) (string, err
 		if err != nil {
 			return "", fmt.Errorf("failed to evaluate file: %w", err)
 		}
-	
+
 		digest, err := result.Ref.Digest(ctx, file.File)
 		if err != nil {
 			return "", fmt.Errorf("failed to compute digest: %w", err)
