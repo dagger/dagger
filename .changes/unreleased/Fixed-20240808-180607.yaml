@@ -1,0 +1,6 @@
+kind: Fixed
+body: Fixed enum lists in modules
+time: 2024-08-08T18:06:07.0133Z
+custom:
+    Author: helderco
+    PR: "8096"
