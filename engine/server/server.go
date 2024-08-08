@@ -530,6 +530,9 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		time.AfterFunc(time.Second, srv.throttledGC)
 	}()
 
+	// garbage collect client DBs
+	go srv.gcClientDBs()
+
 	return srv, nil
 }
 
@@ -586,4 +589,26 @@ func (srv *Server) LogMetrics(l *logrus.Entry) *logrus.Entry {
 
 func (srv *Server) Register(server *grpc.Server) {
 	controlapi.RegisterControlServer(server, srv)
+}
+
+func (srv *Server) gcClientDBs() {
+	for range time.NewTicker(time.Minute).C {
+		if err := srv.clientDBs.GC(srv.activeClientIDs()); err != nil {
+			slog.Error("failed to GC client DBs", "error", err)
+		}
+	}
+}
+
+func (srv *Server) activeClientIDs() map[string]bool {
+	keep := map[string]bool{}
+
+	srv.daggerSessionsMu.RLock()
+	for _, sess := range srv.daggerSessions {
+		for id := range sess.clients {
+			keep[id] = true
+		}
+	}
+	srv.daggerSessionsMu.RUnlock()
+
+	return keep
 }
