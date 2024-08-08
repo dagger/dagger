@@ -13,8 +13,8 @@ Dagger supports custom enumeration (enum) types, which can be used to restrict p
 
 :::note
 Following the [GraphQL specification](https://spec.graphql.org/October2021/#Name), enums are represented as strings in the Dagger API GraphQL schema and follow these rules:
-- Enum values cannot start with digits, and can only be composed of alphabets, digits or `_`.
-- Enum names are case-sensitive, and by convention should be upper-cased.
+- Enum names cannot start with digits, and can only be composed of alphabets, digits or `_`.
+- Enum values are case-sensitive, and by convention should be upper-cased.
 :::
 
 Here is an example of a Dagger Function that takes two arguments: an image reference and a severity filter. The latter is defined as an enum named `Severity`:
