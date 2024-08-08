@@ -20,10 +20,13 @@ defmodule Dagger.File do
   end
 
   @doc "Return the file's digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine."
-  @spec digest(t()) :: {:ok, String.t()} | {:error, term()}
-  def digest(%__MODULE__{} = file) do
+  @spec digest(t(), [{:exclude_metadata, boolean() | nil}]) ::
+          {:ok, String.t()} | {:error, term()}
+  def digest(%__MODULE__{} = file, optional_args \\ []) do
     selection =
-      file.selection |> select("digest")
+      file.selection
+      |> select("digest")
+      |> maybe_put_arg("excludeMetadata", optional_args[:exclude_metadata])
 
     execute(selection, file.client)
   end

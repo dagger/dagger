@@ -3330,10 +3330,19 @@ class File(Type):
         _ctx = self._select("contents", _args)
         return await _ctx.execute(str)
 
-    async def digest(self) -> str:
+    async def digest(
+        self,
+        *,
+        exclude_metadata: bool | None = False,
+    ) -> str:
         """Return the file's digest. The format of the digest is not guaranteed
         to be stable between releases of Dagger. It is guaranteed to be stable
         between invocations of the same Dagger engine.
+
+        Parameters
+        ----------
+        exclude_metadata:
+            If true, exclude metadata from the digest.
 
         Returns
         -------
@@ -3349,7 +3358,9 @@ class File(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
+        _args = [
+            Arg("excludeMetadata", exclude_metadata, False),
+        ]
         _ctx = self._select("digest", _args)
         return await _ctx.execute(str)
 

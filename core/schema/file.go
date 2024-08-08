@@ -30,7 +30,8 @@ func (s *fileSchema) Install() {
 				`Return the file's digest.
 				The format of the digest is not guaranteed to be stable between releases of Dagger.
 				It is guaranteed to be stable between invocations of the same Dagger engine.`,
-			),
+			).
+			ArgDoc("excludeMetadata", `If true, exclude metadata from the digest.`),
 		dagql.Func("withName", s.withName).
 			Doc(`Retrieves this file with its name set to the given name.`).
 			ArgDoc("name", `Name to set file to.`),
@@ -74,8 +75,12 @@ func (s *fileSchema) name(ctx context.Context, file *core.File, args struct{}) (
 	return dagql.NewString(filepath.Base(file.File)), nil
 }
 
-func (s *fileSchema) digest(ctx context.Context, file *core.File, args struct{}) (dagql.String, error) {
-	digest, err := file.Digest(ctx)
+type fileDigestArgs struct {
+	ExcludeMetadata bool `default:"false"`
+}
+
+func (s *fileSchema) digest(ctx context.Context, file *core.File, args fileDigestArgs) (dagql.String, error) {
+	digest, err := file.Digest(ctx, args.ExcludeMetadata)
 	if err != nil {
 		return "", err
 	}

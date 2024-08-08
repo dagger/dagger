@@ -1367,7 +1367,10 @@ type File {
   stable between releases of Dagger. It is guaranteed to be stable between
   invocations of the same Dagger engine.
   """
-  digest: String!
+  digest(
+    """If true, exclude metadata from the digest."""
+    excludeMetadata: Boolean = false
+  ): String!
 
   """Writes the file to a file path on the host."""
   export(

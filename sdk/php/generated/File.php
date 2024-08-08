@@ -25,9 +25,12 @@ class File extends Client\AbstractObject implements Client\IdAble
     /**
      * Return the file's digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine.
      */
-    public function digest(): string
+    public function digest(?bool $excludeMetadata = false): string
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('digest');
+        if (null !== $excludeMetadata) {
+        $leafQueryBuilder->setArgument('excludeMetadata', $excludeMetadata);
+        }
         return (string)$this->queryLeaf($leafQueryBuilder, 'digest');
     }
 

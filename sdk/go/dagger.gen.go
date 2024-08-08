@@ -3142,12 +3142,24 @@ func (r *File) Contents(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// FileDigestOpts contains options for File.Digest
+type FileDigestOpts struct {
+	// If true, exclude metadata from the digest.
+	ExcludeMetadata bool
+}
+
 // Return the file's digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine.
-func (r *File) Digest(ctx context.Context) (string, error) {
+func (r *File) Digest(ctx context.Context, opts ...FileDigestOpts) (string, error) {
 	if r.digest != nil {
 		return *r.digest, nil
 	}
 	q := r.query.Select("digest")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `excludeMetadata` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExcludeMetadata) {
+			q = q.Arg("excludeMetadata", opts[i].ExcludeMetadata)
+		}
+	}
 
 	var response string
 

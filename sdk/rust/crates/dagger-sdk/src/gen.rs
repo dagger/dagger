@@ -4388,6 +4388,12 @@ pub struct File {
     pub graphql_client: DynGraphQLClient,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct FileDigestOpts {
+    /// If true, exclude metadata from the digest.
+    #[builder(setter(into, strip_option), default)]
+    pub exclude_metadata: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct FileExportOpts {
     /// If allowParentDirPath is true, the path argument can be a directory path, in which case the file will be created in that directory.
     #[builder(setter(into, strip_option), default)]
@@ -4400,8 +4406,24 @@ impl File {
         query.execute(self.graphql_client.clone()).await
     }
     /// Return the file's digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn digest(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("digest");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Return the file's digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn digest_opts(&self, opts: FileDigestOpts) -> Result<String, DaggerError> {
+        let mut query = self.selection.select("digest");
+        if let Some(exclude_metadata) = opts.exclude_metadata {
+            query = query.arg("excludeMetadata", exclude_metadata);
+        }
         query.execute(self.graphql_client.clone()).await
     }
     /// Writes the file to a file path on the host.

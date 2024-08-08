@@ -403,6 +403,14 @@ func (FileSuite) TestDigest(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, "sha256:8a887cdd3e476c79e1a14a65a6c401673b56071a24561dadb5e152605e72a613", digest)
 	})
+
+	t.Run("compute file digest without metadata", func(ctx context.Context, t *testctx.T) {
+		file := c.Directory().WithNewFile("/foo.txt", "Hello, World!")
+
+		digest, err := file.File("/foo.txt").Digest(ctx, dagger.FileDigestOpts{ExcludeMetadata: true})
+		require.NoError(t, err)
+		require.Equal(t, "sha256:042a7d64a581ef2ee983f21058801cc35663b705e6c55f62fa8e0f18ecc70989", digest)
+	})
 }
 
 func (FileSuite) TestSync(ctx context.Context, t *testctx.T) {

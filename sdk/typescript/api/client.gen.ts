@@ -663,6 +663,13 @@ export type EnvVariableID = string & { __EnvVariableID: never }
  */
 export type FieldTypeDefID = string & { __FieldTypeDefID: never }
 
+export type FileDigestOpts = {
+  /**
+   * If true, exclude metadata from the digest.
+   */
+  excludeMetadata?: boolean
+}
+
 export type FileExportOpts = {
   /**
    * If allowParentDirPath is true, the path argument can be a directory path, in which case the file will be created in that directory.
@@ -4339,8 +4346,9 @@ export class File extends BaseClient {
 
   /**
    * Return the file's digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine.
+   * @param opts.excludeMetadata If true, exclude metadata from the digest.
    */
-  digest = async (): Promise<string> => {
+  digest = async (opts?: FileDigestOpts): Promise<string> => {
     if (this._digest) {
       return this._digest
     }
@@ -4350,6 +4358,7 @@ export class File extends BaseClient {
         ...this._queryTree,
         {
           operation: "digest",
+          args: { ...opts },
         },
       ],
       await this._ctx.connection(),
