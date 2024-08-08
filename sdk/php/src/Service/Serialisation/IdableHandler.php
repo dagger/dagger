@@ -18,7 +18,8 @@ final readonly class IdableHandler implements SubscribingHandlerInterface
 {
     public function __construct(
         private Client $client,
-    ) {}
+    ) {
+    }
 
     /**
      * @return array<array{
@@ -44,7 +45,6 @@ final readonly class IdableHandler implements SubscribingHandlerInterface
                 'method' => 'deserialise'
             ],
         ];
-
     }
 
     public function serialise(

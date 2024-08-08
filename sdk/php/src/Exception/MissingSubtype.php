@@ -6,5 +6,4 @@ namespace Dagger\Exception;
 
 final class MissingSubtype extends \RuntimeException
 {
-
 }

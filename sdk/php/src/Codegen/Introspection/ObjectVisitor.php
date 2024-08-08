@@ -66,13 +66,13 @@ class ObjectVisitor extends AbstractVisitor
                 $this->generateMethodArgumentsBody($method, $field->args, 'leafQueryBuilder');
                 if (Helpers::isCustomScalar($returnType) && !Helpers::isVoidType($returnType)) {
                     $method->addBody(
-                        'return new '.$returnTypeClassName.'((string)$this->queryLeaf($leafQueryBuilder, ?));',
+                        'return new ' . $returnTypeClassName . '((string)$this->queryLeaf($leafQueryBuilder, ?));',
                         [$fieldName]
                     );
                 } elseif (Helpers::isEnumType($returnType)) {
                     $enumClass = Helpers::formatPhpFqcn(Helpers::formatType($returnType));
                     $method->addBody(
-                        'return '.$enumClass.'::from((string)$this->queryLeaf($leafQueryBuilder, ?));',
+                        'return ' . $enumClass . '::from((string)$this->queryLeaf($leafQueryBuilder, ?));',
                         [$fieldName]
                     );
                 } elseif (Helpers::isVoidType($returnType)) {
@@ -82,7 +82,7 @@ class ObjectVisitor extends AbstractVisitor
                     );
                 } else {
                     $method->addBody(
-                        'return ('.Helpers::formatType($returnType).')$this->queryLeaf($leafQueryBuilder, ?);',
+                        'return (' . Helpers::formatType($returnType) . ')$this->queryLeaf($leafQueryBuilder, ?);',
                         [$fieldName]
                     );
                 }
@@ -90,8 +90,8 @@ class ObjectVisitor extends AbstractVisitor
                 $method->addBody('$innerQueryBuilder = new \Dagger\Client\QueryBuilder(?);', [$fieldName]);
                 $this->generateMethodArgumentsBody($method, $field->args, 'innerQueryBuilder');
                 $method->addBody(
-                    'return new '.
-                    Helpers::formatPhpFqcn(Helpers::formatType($returnType)).
+                    'return new ' .
+                    Helpers::formatPhpFqcn(Helpers::formatType($returnType)) .
                     '($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));',
                     []
                 );
@@ -122,7 +122,7 @@ class ObjectVisitor extends AbstractVisitor
             $daggerIdTypeName = Helpers::formatPhpClassName(Helpers::formatType($type));
             $objectTypeName = Helpers::formatPhpClassName(str_replace('Id', '', $daggerIdTypeName));
 
-            return Helpers::formatPhpFqcn($daggerIdTypeName).'|'.Helpers::formatPhpFqcn($objectTypeName);
+            return Helpers::formatPhpFqcn($daggerIdTypeName) . '|' . Helpers::formatPhpFqcn($objectTypeName);
         } else {
             return Helpers::formatPhpFqcn(Helpers::formatType($type));
         }

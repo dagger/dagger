@@ -17,7 +17,10 @@ abstract class Connection
         $connection = static::newEnvSession();
 
         if (!empty($workingDir)) {
-            throw new InvalidArgumentException('cannot configure workdir for existing session (please use --workdir or host.directory with absolute paths instead)');
+            throw new InvalidArgumentException(
+                'cannot configure workdir for existing session' .
+                ' (please use --workdir or host.directory with absolute paths instead)'
+            );
         }
 
         if (null === $connection) {

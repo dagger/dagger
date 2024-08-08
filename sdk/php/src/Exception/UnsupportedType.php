@@ -6,5 +6,4 @@ namespace Dagger\Exception;
 
 final class UnsupportedType extends \RuntimeException
 {
-
 }

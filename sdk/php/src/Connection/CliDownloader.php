@@ -38,12 +38,12 @@ class CliDownloader implements LoggerAwareInterface
             mkdir($cacheDir);
         }
 
-        $binName = self::DAGGER_CLI_BIN_PREFIX.$version;
+        $binName = self::DAGGER_CLI_BIN_PREFIX . $version;
         if ($this->isWindows()) {
             $binName .= '.exe';
         }
 
-        $binPath = $cacheDir.DIRECTORY_SEPARATOR.$binName;
+        $binPath = $cacheDir . DIRECTORY_SEPARATOR . $binName;
 
         if (file_exists($binPath)) {
             return $binPath;
@@ -69,7 +69,7 @@ class CliDownloader implements LoggerAwareInterface
         $xdgCacheHome = getenv('XDG_CACHE_HOME');
         $rootCacheDir = false !== $xdgCacheHome ? $xdgCacheHome : sys_get_temp_dir();
 
-        return $rootCacheDir.DIRECTORY_SEPARATOR.'dagger';
+        return $rootCacheDir . DIRECTORY_SEPARATOR . 'dagger';
     }
 
     private function isWindows(): bool
@@ -134,7 +134,7 @@ class CliDownloader implements LoggerAwareInterface
 
     private function extractCli(string $archiveName, string $daggerVersion, string $tmpBinFile): string
     {
-        $tmpArchiveFile = $this->getCacheDir().DIRECTORY_SEPARATOR.$archiveName;
+        $tmpArchiveFile = $this->getCacheDir() . DIRECTORY_SEPARATOR . $archiveName;
         $archiveUrl = "https://dl.dagger.io/dagger/releases/{$daggerVersion}/{$archiveName}";
         $this->logger->info("Downloading dagger {$daggerVersion} from {$archiveUrl}");
         file_put_contents($tmpArchiveFile, file_get_contents($archiveUrl));

@@ -39,8 +39,12 @@ abstract class AbstractClient
     {
         $response = $this->graphQlClient->runQuery($query);
         $data = $response->getData();
-        foreach (new RecursiveIteratorIterator(
-            new RecursiveArrayIterator($data), RecursiveIteratorIterator::CHILD_FIRST) as $k => $value) {
+        foreach (
+            new RecursiveIteratorIterator(
+                new RecursiveArrayIterator($data),
+                RecursiveIteratorIterator::CHILD_FIRST
+            ) as $k => $value
+        ) {
             if ($k === $leafKey) {
                 return $value;
             }

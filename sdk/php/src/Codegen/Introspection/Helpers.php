@@ -19,7 +19,7 @@ class Helpers
 {
     public static function formatPhpFqcn(string $className): string
     {
-        return '\\'.CodeWriter::NAMESPACE.'\\'.$className;
+        return '\\' . CodeWriter::NAMESPACE . '\\' . $className;
     }
 
     public static function formatPhpClassName(string $objectName): string
