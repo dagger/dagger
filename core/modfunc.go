@@ -249,7 +249,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		return nil, fmt.Errorf("failed to exec function: %w", err)
 	}
 
-	_, err = ctr.Evaluate(ctx)
+	_, err = ctr.evaluate(ctx)
 	if err != nil {
 		if fn.metadata.OriginalName == "" {
 			return nil, fmt.Errorf("call constructor: %w", err)
@@ -263,7 +263,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		return nil, fmt.Errorf("failed to get function output directory: %w", err)
 	}
 
-	result, err := ctrOutputDir.Evaluate(ctx)
+	result, err := ctrOutputDir.evaluate(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to evaluate function: %w", err)
 	}

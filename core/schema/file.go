@@ -17,7 +17,7 @@ var _ SchemaResolvers = &fileSchema{}
 
 func (s *fileSchema) Install() {
 	dagql.Fields[*core.File]{
-		Syncer[*core.File]().
+		core.Syncer[*core.File]().
 			Doc(`Force evaluation in the engine.`),
 		dagql.Func("contents", s.contents).
 			Doc(`Retrieves the contents of the file.`),

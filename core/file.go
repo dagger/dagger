@@ -110,7 +110,12 @@ func (file *File) State() (llb.State, error) {
 	return defToState(file.LLB)
 }
 
-func (file *File) Evaluate(ctx context.Context) (*buildkit.Result, error) {
+func (file *File) Evaluate(ctx context.Context) error {
+	_, err := file.evaluate(ctx)
+	return err
+}
+
+func (file *File) evaluate(ctx context.Context) (*buildkit.Result, error) {
 	svcs, err := file.Query.Services(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get services: %w", err)
