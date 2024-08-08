@@ -10,27 +10,10 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/introspection"
-	"github.com/dagger/dagger/engine/buildkit"
 )
 
 type SchemaResolvers interface {
 	Install()
-}
-
-type Evaluatable interface {
-	dagql.Typed
-	Evaluate(context.Context) (*buildkit.Result, error)
-}
-
-func Syncer[T Evaluatable]() dagql.Field[T] {
-	return dagql.NodeFunc("sync", func(ctx context.Context, self dagql.Instance[T], _ struct{}) (dagql.ID[T], error) {
-		_, err := self.Self.Evaluate(ctx)
-		if err != nil {
-			var zero dagql.ID[T]
-			return zero, err
-		}
-		return dagql.NewID[T](self.ID()), nil
-	})
 }
 
 func collectInputsSlice[T dagql.Type](inputs []dagql.InputObject[T]) []T {

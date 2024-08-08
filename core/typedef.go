@@ -335,6 +335,8 @@ func (*TypeDef) TypeDescription() string {
 func (typeDef *TypeDef) ToTyped() dagql.Typed {
 	var typed dagql.Typed
 	switch typeDef.Kind {
+	case TypeDefKindVoid:
+		typed = Void{}
 	case TypeDefKindString:
 		typed = dagql.String("")
 	case TypeDefKindInteger:
@@ -343,18 +345,16 @@ func (typeDef *TypeDef) ToTyped() dagql.Typed {
 		typed = dagql.Boolean(false)
 	case TypeDefKindScalar:
 		typed = dagql.NewScalar[dagql.String](typeDef.AsScalar.Value.Name, dagql.String(""))
-	case TypeDefKindEnum:
-		typed = &ModuleEnum{TypeDef: typeDef.AsEnum.Value}
-	case TypeDefKindList:
-		typed = dagql.DynamicArrayOutput{Elem: typeDef.AsList.Value.ElementTypeDef.ToTyped()}
-	case TypeDefKindObject:
-		typed = &ModuleObject{TypeDef: typeDef.AsObject.Value}
-	case TypeDefKindInterface:
-		typed = &InterfaceAnnotatedValue{TypeDef: typeDef.AsInterface.Value}
-	case TypeDefKindVoid:
-		typed = Void{}
 	case TypeDefKindInput:
 		typed = typeDef.AsInput.Value.ToInputObjectSpec()
+	case TypeDefKindEnum:
+		typed = typeDef.AsEnum.Value.ToTyped()
+	case TypeDefKindList:
+		typed = typeDef.AsList.Value.ToTyped()
+	case TypeDefKindObject:
+		typed = typeDef.AsObject.Value.ToTyped()
+	case TypeDefKindInterface:
+		typed = typeDef.AsInterface.Value.ToTyped()
 	default:
 		panic(fmt.Sprintf("unknown type kind: %s", typeDef.Kind))
 	}
@@ -598,6 +598,10 @@ func (*ObjectTypeDef) TypeDescription() string {
 	return "A definition of a custom object defined in a Module."
 }
 
+func (obj *ObjectTypeDef) ToTyped() dagql.Typed {
+	return &ModuleObject{TypeDef: obj}
+}
+
 func NewObjectTypeDef(name, description string) *ObjectTypeDef {
 	return &ObjectTypeDef{
 		Name:         strcase.ToCamel(name),
@@ -758,6 +762,10 @@ func (*InterfaceTypeDef) TypeDescription() string {
 	return "A definition of a custom interface defined in a Module."
 }
 
+func (iface *InterfaceTypeDef) ToTyped() dagql.Typed {
+	return &InterfaceAnnotatedValue{TypeDef: iface}
+}
+
 func (iface InterfaceTypeDef) Clone() *InterfaceTypeDef {
 	cp := iface
 
@@ -841,6 +849,10 @@ func (*ListTypeDef) TypeDescription() string {
 	return "A definition of a list type in a Module."
 }
 
+func (typeDef *ListTypeDef) ToTyped() dagql.Typed {
+	return dagql.DynamicArrayOutput{Elem: typeDef.ElementTypeDef.ToTyped()}
+}
+
 func (typeDef ListTypeDef) Clone() *ListTypeDef {
 	cp := typeDef
 	if typeDef.ElementTypeDef != nil {
@@ -918,6 +930,10 @@ func (*EnumTypeDef) Type() *ast.Type {
 
 func (*EnumTypeDef) TypeDescription() string {
 	return "A definition of a custom enum defined in a Module."
+}
+
+func (enum *EnumTypeDef) ToTyped() dagql.Typed {
+	return &ModuleEnum{TypeDef: enum}
 }
 
 // Implements dagql.Enum interface

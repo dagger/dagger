@@ -116,7 +116,12 @@ func (file *File) State() (llb.State, error) {
 	return defToState(file.LLB)
 }
 
-func (file *File) Evaluate(ctx context.Context) (*buildkit.Result, error) {
+func (file *File) Evaluate(ctx context.Context) error {
+	_, err := file.evaluate(ctx)
+	return err
+}
+
+func (file *File) evaluate(ctx context.Context) (*buildkit.Result, error) {
 	svcs, err := file.Query.Services(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get services: %w", err)
@@ -201,7 +206,7 @@ func (file *File) Contents(ctx context.Context) ([]byte, error) {
 func (file *File) Digest(ctx context.Context, excludeMetadata bool) (string, error) {
 	// If metadata are included, directly compute the digest of the file
 	if !excludeMetadata {
-		result, err := file.Evaluate(ctx)
+		result, err := file.evaluate(ctx)
 		if err != nil {
 			return "", fmt.Errorf("failed to evaluate file: %w", err)
 		}

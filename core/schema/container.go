@@ -38,7 +38,7 @@ func (s *containerSchema) Install() {
 	}.Install(s.srv)
 
 	dagql.Fields[*core.Container]{
-		Syncer[*core.Container]().
+		core.Syncer[*core.Container]().
 			Doc(`Forces evaluation of the pipeline in the engine.`,
 				`It doesn't run the default command if no exec has been set.`),
 
@@ -617,7 +617,7 @@ func (s *containerSchema) Install() {
 	}.Install(s.srv)
 
 	dagql.Fields[*coreTerminalLegacy]{
-		Syncer[*coreTerminalLegacy]().
+		core.Syncer[*coreTerminalLegacy]().
 			Doc(`Forces evaluation of the pipeline in the engine.`,
 				`It doesn't run the default command if no exec has been set.`),
 
@@ -1744,8 +1744,8 @@ func (*coreTerminalLegacy) TypeDescription() string {
 	return "An interactive terminal that clients can connect to."
 }
 
-func (*coreTerminalLegacy) Evaluate(ctx context.Context) (*buildkit.Result, error) {
-	return nil, nil
+func (*coreTerminalLegacy) Evaluate(ctx context.Context) error {
+	return nil
 }
 
 func (s *containerSchema) terminalLegacyWebsocketEndpoint(ctx context.Context, parent *coreTerminalLegacy, args struct{}) (string, error) {

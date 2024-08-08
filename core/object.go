@@ -266,8 +266,50 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server) error {
 	}
 	fields = append(fields, funs...)
 
+	syncer := DynamicSyncer[*ModuleObject](obj.TypeDef.ToTyped()).
+		Doc(`Force evaluation in the engine.`)
+	syncer.Spec.Module = obj.Module.IDModule()
+	fields = append(fields, syncer)
+
 	class.Install(fields...)
 	dag.InstallObject(class)
+
+	return nil
+}
+
+func (obj *ModuleObject) Evaluate(ctx context.Context) error {
+	for name, val := range obj.Fields {
+		fieldDef, ok := obj.TypeDef.FieldByOriginalName(name)
+		if !ok {
+			// TODO: must be a private field; skip, since we can't convert it anyhow.
+			// (this is a bug)
+			continue
+		}
+		fieldType, ok, err := obj.Module.ModTypeFor(ctx, fieldDef.TypeDef, true)
+		if err != nil {
+			return fmt.Errorf("failed to get mod type for field %q: %w", name, err)
+		}
+		if !ok {
+			return fmt.Errorf("failed to find mod type for field %q", name)
+		}
+		converted, err := fieldType.ConvertFromSDKResult(ctx, val)
+		if err != nil {
+			return fmt.Errorf("failed to convert field %q: %w", name, err)
+		}
+
+		err = walk(converted, func(value dagql.Typed) error {
+			if evaluatable, ok := value.(Evaluatable); ok {
+				err := evaluatable.Evaluate(ctx)
+				if err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+	}
 
 	return nil
 }

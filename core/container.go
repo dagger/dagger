@@ -1035,7 +1035,13 @@ func (container *Container) WithGPU(ctx context.Context, gpuOpts ContainerGPUOpt
 	return container, nil
 }
 
-func (container Container) Evaluate(ctx context.Context) (*buildkit.Result, error) {
+func (container Container) Evaluate(ctx context.Context) error {
+	_, err := container.evaluate(ctx)
+	return err
+}
+
+//noline:unparam
+func (container Container) evaluate(ctx context.Context) (*buildkit.Result, error) {
 	if container.FS == nil {
 		return nil, nil
 	}
