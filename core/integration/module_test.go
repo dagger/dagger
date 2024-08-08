@@ -88,6 +88,25 @@ func (ModuleSuite) TestGoInit(ctx context.Context, t *testctx.T) {
 		require.Contains(t, generated, "module dagger/my-module")
 	})
 
+	t.Run("issue-7941, single character in kebab case module name", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--source=.", "--name=a-module", "--sdk=go"))
+
+		out, err := modGen.
+			With(daggerQuery(`{aModule{containerEcho(stringArg:"hello"){stdout}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"aModule":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+
+		generated, err := modGen.File("go.mod").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, generated, "module dagger/a-module")
+	})
+
 	t.Run("creates go.mod beneath an existing go.mod if context is beneath it", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
