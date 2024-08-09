@@ -12,21 +12,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var funcCmds = []*FuncCommand{
-	callModCmd,
-	callCoreCmd,
-}
-
-var callCoreCmd = &FuncCommand{
-	Name:              "core [options]",
-	Short:             "Call a core function",
-	DisableModuleLoad: true,
-	Annotations: map[string]string{
-		"experimental": "true",
-	},
-}
-
-var callModCmd = &FuncCommand{
+var callCmd = &FuncCommand{
 	Name:  "call [options]",
 	Short: "Call one or more functions, interconnected into a pipeline",
 }

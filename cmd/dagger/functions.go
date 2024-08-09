@@ -157,6 +157,9 @@ func (fc *FuncCommand) Command() *cobra.Command {
 				}
 				c.FParseErrWhitelist.UnknownFlags = false
 
+				// If `--core` is used, don't load user modules.
+				fc.DisableModuleLoad = loadCoreFuncs
+
 				return nil
 			},
 

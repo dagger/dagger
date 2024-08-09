@@ -81,8 +81,7 @@ func init() {
 		moduleDevelopCmd,
 		modulePublishCmd,
 		funcListCmd,
-		callCoreCmd.Command(),
-		callModCmd.Command(),
+		callCmd.Command(),
 		sessionCmd(),
 		newGenCmd(),
 	)
