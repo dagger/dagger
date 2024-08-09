@@ -9,6 +9,7 @@ use Dagger\Client\IdAble;
 use Dagger\Json;
 use ReflectionParameter;
 use Roave\BetterReflection\Reflection\ReflectionParameter as BetterReflectionParameter;
+use RuntimeException;
 
 final readonly class Argument
 {
@@ -22,6 +23,12 @@ final readonly class Argument
 
     public static function fromReflection(ReflectionParameter $parameter): self
     {
+        $type = $parameter->getType() ??
+            throw new RuntimeException(sprintf(
+                'Argument "%s" cannot be supported without a typehint',
+                $parameter->name,
+            ));
+
         $argument = (current($parameter
             ->getAttributes(Attribute\Argument::class)) ?: null)
             ?->newInstance();
@@ -30,14 +37,12 @@ final readonly class Argument
             ->getAttributes(Attribute\ListOfType::class)) ?: null)
             ?->newInstance();
 
-        $type = $listOfType?->type === null ?
-            Type::fromReflection($parameter->getType()) :
-            ListOfType::fromReflection($parameter->getType(), $listOfType);
-
         return new self(
             $parameter->name,
             $argument?->description,
-            $type,
+            $listOfType?->type === null ?
+                Type::fromReflection($type) :
+                ListOfType::fromReflection($type, $listOfType),
             self::getDefault($parameter),
         );
     }
