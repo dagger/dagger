@@ -81,7 +81,6 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	execMD.CallID = dagql.CurrentID(ctx)
 	execMD.CallerClientID = clientMetadata.ClientID
 	execMD.ExecID = identity.NewID()
-	execMD.CallerClientID = clientMetadata.ClientID
 	execMD.SessionID = clientMetadata.SessionID
 	if execMD.HostAliases == nil {
 		execMD.HostAliases = make(map[string][]string)
@@ -101,7 +100,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	// this allows executed containers to communicate back to this API
 	if opts.ExperimentalPrivilegedNesting {
 		// directing telemetry to another span (i.e. a function call).
-		if execMD.SpanContext != nil {
+		if len(execMD.SpanContext) > 0 {
 			// hide the exec span
 			spanName = buildkit.InternalPrefix + spanName
 		}

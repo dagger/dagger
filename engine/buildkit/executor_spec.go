@@ -640,7 +640,7 @@ func (w *Worker) setupOTel(ctx context.Context, state *execState) error {
 		// as a service in Dagger will end up in a loop sending logs to themselves.
 		destClientID = w.execMD.CallerClientID
 
-		if w.execMD.SpanContext != nil {
+		if len(w.execMD.SpanContext) > 0 {
 			ctx = telemetry.Propagator.Extract(ctx, w.execMD.SpanContext)
 		}
 	}
@@ -887,7 +887,7 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 		w.execMD.Hostname = state.spec.Hostname
 	}
 
-	if w.execMD.SpanContext != nil {
+	if len(w.execMD.SpanContext) > 0 {
 		// propagate trace ctx to session attachables
 		ctx = telemetry.Propagator.Extract(ctx, w.execMD.SpanContext)
 	}
