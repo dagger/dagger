@@ -12,7 +12,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Call Dagger Function
-        uses: dagger/dagger-for-github@v5
+        uses: dagger/dagger-for-github@v6
         with:
           version: "0.11.5"
           verb: call
