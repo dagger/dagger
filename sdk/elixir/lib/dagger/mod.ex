@@ -249,8 +249,8 @@ defmodule Dagger.Mod do
     {:error, "cannot dump value #{value} to type #{type}"}
   end
 
-  defmacro __using__(opt) do
-    name = opt[:name]
+  defmacro __using__(opts) do
+    name = opts[:name]
 
     unless name do
       raise "Module name is required."
@@ -262,11 +262,8 @@ defmodule Dagger.Mod do
       import Dagger.Mod
 
       @name name
-      @on_definition Dagger.Mod
-      @functions []
 
       Module.register_attribute(__MODULE__, :name, persist: true)
-      Module.register_attribute(__MODULE__, :functions, persist: true)
 
       def start_link(_) do
         GenServer.start_link(__MODULE__, [], name: __MODULE__)

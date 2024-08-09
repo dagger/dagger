@@ -1,0 +1,6 @@
+kind: Breaking
+body: The object module needs to change from use `Dagger.Mod` to `Dagger.Mod.Object` and `@function` is now deprecated in favor of `function/2` macro.
+time: 2024-08-04T16:41:42.493481081+07:00
+custom:
+    Author: wingyplus
+    PR: "8094"

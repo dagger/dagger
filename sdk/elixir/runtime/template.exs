@@ -8,6 +8,8 @@ defmodule Main do
     # Elixir convert back to `<string><digit>`. 
     mod_name = mod |> Macro.camelize() |> Macro.underscore()
 
+    dot_formatter_exs = render_dot_formatter_exs()
+
     mix_exs =
       render_mix_exs(
         module: Macro.camelize(mod),
@@ -18,6 +20,7 @@ defmodule Main do
     application_module = render_application(module: Macro.camelize(mod))
     mix_task = render_mix_task(application: atom(Macro.underscore(mod)))
 
+    File.write!(Path.join([mod, ".formatter.exs"]), dot_formatter_exs)
     File.write!(Path.join([mod, "mix.exs"]), mix_exs)
     File.write!(Path.join([mod, "lib", "#{mod_name}.ex"]), module)
     File.write!(Path.join([mod, "lib", mod_name, "application.ex"]), application_module)
@@ -25,6 +28,15 @@ defmodule Main do
   end
 
   defp atom(string), do: ":#{string}"
+
+  @dot_formatter_exs """
+  [
+    import_deps: [:dagger],
+    inputs: ["{mix,.formatter}.exs", "{config,lib,test}/**/*.{ex,exs}"]
+  ]
+  """
+
+  EEx.function_from_string(:def, :render_dot_formatter_exs, @dot_formatter_exs, [])
 
   @mix_exs """
   defmodule <%= @module %>.MixProject do
@@ -75,16 +87,11 @@ defmodule Main do
     if appropriate. All modules should have a short description.
     \"\"\"
 
-    use Dagger.Mod, name: "<%= @module %>"
+    use Dagger.Mod.Object, name: "<%= @module %>"
 
     defstruct [:dag]
 
-    @function [
-      args: [
-        string_arg: [type: :string]
-      ],
-      return: Dagger.Container
-    ]
+    function [string_arg: String.t()], Dagger.Container.t()
     @doc \"\"\"
     Returns a container that echoes whatever string argument is provided.
     \"\"\"
@@ -95,13 +102,7 @@ defmodule Main do
       |> Dagger.Container.with_exec(~w"echo \#{args.string_arg}")
     end
 
-    @function [
-      args: [
-        directory_arg: [type: Dagger.Directory],
-        pattern: [type: :string]
-      ],
-      return: :string
-    ]
+    function [directory_arg: Dagger.Directory.t(), pattern: String.t()], String.t()
     @doc \"\"\"
     Returns lines that match a pattern in the files of the provided Directory.
     \"\"\"
