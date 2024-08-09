@@ -5,6 +5,7 @@ from dagger.client import base
 
 PythonName: TypeAlias = str
 APIName: TypeAlias = str
+ContextPath: TypeAlias = str
 
 
 @dataclasses.dataclass(slots=True)

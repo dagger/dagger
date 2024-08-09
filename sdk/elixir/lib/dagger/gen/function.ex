@@ -76,7 +76,9 @@ defmodule Dagger.Function do
   @doc "Returns the function with the provided argument"
   @spec with_arg(t(), String.t(), Dagger.TypeDef.t(), [
           {:description, String.t() | nil},
-          {:default_value, Dagger.JSON.t() | nil}
+          {:default_value, Dagger.JSON.t() | nil},
+          {:default_path, String.t() | nil},
+          {:ignore, [String.t()]}
         ]) :: Dagger.Function.t()
   def with_arg(%__MODULE__{} = function, name, type_def, optional_args \\ []) do
     selection =
@@ -86,6 +88,8 @@ defmodule Dagger.Function do
       |> put_arg("typeDef", Dagger.ID.id!(type_def))
       |> maybe_put_arg("description", optional_args[:description])
       |> maybe_put_arg("defaultValue", optional_args[:default_value])
+      |> maybe_put_arg("defaultPath", optional_args[:default_path])
+      |> maybe_put_arg("ignore", optional_args[:ignore])
 
     %Dagger.Function{
       selection: selection,

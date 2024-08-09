@@ -32,6 +32,15 @@ class LocalModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * The relative path to the module root from the host directory
+     */
+    public function relHostPath(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('relHostPath');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'relHostPath');
+    }
+
+    /**
      * The path to the root of the module source under the context directory. This directory contains its configuration file. It also contains its source code (possibly as a subdirectory).
      */
     public function rootSubpath(): string

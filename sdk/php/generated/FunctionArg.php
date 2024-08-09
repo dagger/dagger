@@ -16,6 +16,15 @@ namespace Dagger;
 class FunctionArg extends Client\AbstractObject implements Client\IdAble
 {
     /**
+     * Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory
+     */
+    public function defaultPath(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('defaultPath');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'defaultPath');
+    }
+
+    /**
      * A default value to use for this argument when not explicitly set by the caller, if any.
      */
     public function defaultValue(): Json
@@ -40,6 +49,15 @@ class FunctionArg extends Client\AbstractObject implements Client\IdAble
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
         return new \Dagger\FunctionArgId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+    }
+
+    /**
+     * Only applies to arguments of type Directory. The ignore patterns are applied to the input directory, and matching entries are filtered out, in a cache-efficient manner.
+     */
+    public function ignore(): array
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('ignore');
+        return (array)$this->queryLeaf($leafQueryBuilder, 'ignore');
     }
 
     /**

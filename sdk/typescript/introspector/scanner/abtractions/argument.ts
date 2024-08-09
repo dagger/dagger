@@ -2,8 +2,12 @@ import ts from "typescript"
 
 import { TypeDefKind } from "../../../api/client.gen.js"
 import { UnknownDaggerError } from "../../../common/errors/UnknownDaggerError.js"
+import { argument } from "../../decorators/decorators.js"
+import { ArgumentOptions } from "../../registry/registry.js"
 import { TypeDef } from "../typeDefs.js"
 import { typeToTypedef } from "./typeToTypedef.js"
+
+export const ARGUMENT_DECORATOR = argument.name
 
 export type Arguments = { [name: string]: Argument }
 
@@ -28,6 +32,8 @@ export class Argument {
   private _isOptional: boolean
   private _isNullable: boolean
   private _isVariadic: boolean
+  private _defaultPath?: string
+  private _ignore?: string[]
 
   /**
    * Create a new Argument instance.
@@ -68,6 +74,7 @@ export class Argument {
     this._isNullable = this.loadIsNullable()
     this._isVariadic = this.loadIsVariadic()
     this._isOptional = this.loadIsOptional()
+    this.loadMetadata()
   }
 
   get name(): string {
@@ -116,6 +123,14 @@ export class Argument {
     return this._isVariadic
   }
 
+  get defaultPath(): string | undefined {
+    return this._defaultPath
+  }
+
+  get ignore(): string[] | undefined {
+    return this._ignore
+  }
+
   toJSON() {
     return {
       name: this.name,
@@ -125,6 +140,8 @@ export class Argument {
       isNullable: this.isNullable,
       isOptional: this.isOptional,
       defaultValue: this.defaultValue,
+      defaultPath: this.defaultPath,
+      ignore: this.ignore,
     }
   }
 
@@ -218,5 +235,38 @@ export class Argument {
     }
 
     return value
+  }
+
+  private loadMetadata(): void {
+    const contextDecorator = ts.getDecorators(this.param)?.find((d) => {
+      if (ts.isCallExpression(d.expression)) {
+        return d.expression.expression.getText() === ARGUMENT_DECORATOR
+      }
+
+      return false
+    })
+
+    if (!contextDecorator) {
+      return undefined
+    }
+
+    const expression = contextDecorator.expression as ts.CallExpression
+    const arg = expression.arguments[0]
+    if (!arg) {
+      return
+    }
+
+    // We eval the string to convert it to a JavaScript object, because parsing it
+    // with JSON.parse will fails if the properties are not quoted.
+    const parsedArg = eval(`(${arg.getText()})`) as ArgumentOptions
+    if (parsedArg.defaultPath) {
+      this._defaultPath = parsedArg.defaultPath
+    }
+
+    if (parsedArg.ignore) {
+      this._ignore = parsedArg.ignore
+    }
+
+    return
   }
 }

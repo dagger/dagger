@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
+// @experimentalDecorators
+// @emitDecoratorMetadata
 import "reflect-metadata"
 
 import { UnknownDaggerError } from "../../common/errors/UnknownDaggerError.js"
@@ -17,6 +19,25 @@ export type Args = Record<string, unknown>
  */
 type RegistryClass = {
   class_: Class
+}
+
+export type ArgumentOptions = {
+  /**
+   * The contextual value to use for the argument.
+   *
+   * This should only be used for Directory or File types.
+   *
+   * An abslute path would be related to the context source directory (the git repo root or the module source root).
+   * A relative path would be relative to the module source root.
+   */
+  defaultPath?: string
+
+  /**
+   * Patterns to ignore when loading the contextual argument value.
+   *
+   * This should only be used for Directory types.
+   */
+  ignore?: string[]
 }
 
 /**
@@ -37,7 +58,6 @@ export class Registry {
   /**
    * The definition of the @object decorator that should be on top of any
    * class module that must be exposed to the Dagger API.
-   *
    */
   object = (): (<T extends Class>(constructor: T) => T) => {
     return <T extends Class>(constructor: T): T => {
@@ -85,11 +105,17 @@ export class Registry {
       target: object,
       propertyKey: string | symbol,
       descriptor?: PropertyDescriptor,
-    ) => {
-      // The logic is done in the object constructor since it's not possible to
-      // access the class parent's name from a method constructor without calling
-      // the method itself
-    }
+    ) => {}
+  }
+
+  argument = (
+    opts?: ArgumentOptions,
+  ): ((
+    target: object,
+    propertyKey: string,
+    parameterIndex: number,
+  ) => void) => {
+    return (target: object, propertyKey: string, parameterIndex: number) => {}
   }
 
   /**

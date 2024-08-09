@@ -24,7 +24,7 @@ from typing_extensions import Self, TypeVar
 
 import dagger
 from dagger import dag
-from dagger.mod._arguments import Parameter
+from dagger.mod._arguments import DefaultPath, Ignore, Parameter
 from dagger.mod._converter import to_typedef
 from dagger.mod._exceptions import UserError
 from dagger.mod._types import APIName, PythonName
@@ -34,6 +34,7 @@ from dagger.mod._utils import (
     get_alt_constructor,
     get_alt_name,
     get_doc,
+    get_meta,
     is_nullable,
     normalize_name,
     transform_error,
@@ -141,11 +142,24 @@ class FunctionResolver(Generic[P, R]):
 
         for param in self.parameters.values():
             arg_type = to_typedef(param.resolved_type)
-            default = self._get_default_value(param)
 
-            # Default factories or more complex types aren't reflected in the
-            # API so we need to mark them as nullable to allow omission.
-            if param.has_default and default is None:
+            try:
+                default = self._serialize_default_value(param)
+            except TypeError as e:
+                # Rather than failing on a default value that's not JSON
+                # serializable and going through hoops to support more and more
+                # types, just don't register it. It'll still be registered
+                # as optional so the API server will call the function without
+                # it and let Python handle it.
+                logger.debug(
+                    "Not registering default value for %s: %s",
+                    param.signature,
+                    e,
+                )
+                default = None
+                arg_type = arg_type.with_optional(True)
+
+            if param.default_path:
                 arg_type = arg_type.with_optional(True)
 
             fn = fn.with_arg(
@@ -153,30 +167,19 @@ class FunctionResolver(Generic[P, R]):
                 arg_type,
                 description=param.doc,
                 default_value=default,
+                # The engine should validate if these are set on the right types.
+                default_path=(
+                    param.default_path.from_context if param.default_path else None
+                ),
+                ignore=param.ignore.patterns if param.ignore else None,
             )
 
         return typedef.with_function(fn) if self.name else typedef.with_constructor(fn)
 
-    def _get_default_value(self, param: Parameter) -> dagger.JSON | None:
+    def _serialize_default_value(self, param: Parameter) -> dagger.JSON | None:
         if not param.has_default:
             return None
-
-        default_value = param.signature.default
-
-        try:
-            return dagger.JSON(json.dumps(default_value))
-        except TypeError as e:
-            # Rather than failing on a default value that's not JSON
-            # serializable and going through hoops to support more and more
-            # types, just don't register it. It'll still be registered
-            # as optional so the API server will call the function without
-            # it and let Python handle it.
-            logger.debug(
-                "Not registering default value for %s: %s",
-                param.signature,
-                e,
-            )
-            return None
+        return dagger.JSON(json.dumps(param.signature.default))
 
     @property
     def return_type(self) -> type:
@@ -295,13 +298,41 @@ class FunctionResolver(Generic[P, R]):
         # The Parameter class is just a simple data object. We calculate all
         # the attributes here to avoid cyclic imports from utils, as this is
         # the only place where it needs to be created.
-        return Parameter(
+        p = Parameter(
             name=get_alt_name(param.annotation) or normalize_name(param.name),
             signature=param,
             resolved_type=annotation,
             is_nullable=is_nullable(TypeHint(annotation)),
             doc=get_doc(param.annotation),
+            ignore=get_meta(param.annotation, Ignore),
+            default_path=get_meta(param.annotation, DefaultPath),
         )
+
+        if not p.is_nullable and p.has_default and p.signature.default is None:
+            msg = (
+                "Can't use a default value of None on a non-nullable type for "
+                "parameter '{param.name}'"
+            )
+            raise ValueError(msg)
+
+        if p.default_path:
+            if p.has_default and not (p.is_nullable and p.signature.default is None):
+                msg = (
+                    "Can't use DefaultPath with a default value for "
+                    f"parameter '{param.name}'"
+                )
+                raise AssertionError(msg)
+
+            if not p.default_path.from_context:
+                # NB: We could instead warn or just ignore, but it's better to fail
+                # fast to avoid astonishment.
+                msg = (
+                    "DefaultPath can't be used with an empty path in "
+                    f"parameter '{param.name}'"
+                )
+                raise ValueError(msg)
+
+        return p
 
     async def get_result(
         self,
