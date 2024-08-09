@@ -1,0 +1,93 @@
+---
+slug: /manual/functions/host-resources
+---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Host Resources
+
+Dagger Functions execute within containers spawned by the Dagger Engine and do not have direct access to host resources (the host filesystem, network, environment variables, etc.). Access to these host resources can only be granted by explicitly passing them as argument values to Dagger Functions.
+
+## Host environment variables
+
+Dagger Functions do not have access to environment variables on the host you invoke the Dagger Function from (i.e. the host you execute a CLI command like `dagger call` from). Instead, these variables need to be explicitly passed when executing `dagger call`.
+
+To pass host environment variable values as arguments when invoking a Dagger Function, use the standard shell convention of `$ENV_VAR_NAME` when using `dagger call`.
+
+Here is an example of passing a host environment variable containing a string value to a Dagger Function:
+
+```shell
+export GREETING=bonjour
+dagger -m github.com/shykes/daggerverse/hello@v0.3.0 call hello --greeting=$GREETING
+```
+
+To pass a secret stored in a host environment variable as arguments when invoking a Dagger Function, add the `env:` prefix to the environment variable name.
+
+Here is an example of passing a host environment variable containing an access token to a Dagger Function as a secret:
+
+```shell
+dagger -m github.com/aweris/daggerverse/gh@99a1336f8091ff43bf833778a324de1cadcf25ac call run --token=env:GITHUB_TOKEN --cmd="issue list --repo=dagger/dagger"
+```
+
+## Host filesystem
+
+Similarly, host file and directory paths need to be explicitly passed as arguments when invoking a Dagger Function.
+
+Here is an example of passing a host directory as argument to a Go builder Dagger Function:
+
+```shell
+git clone https://github.com/golang/example
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call build --source=./example/hello --args=. directory --path=. entries
+```
+
+Here is an example of passing a host file to a container builder Dagger Function using the `WithFile()` function:
+
+```shell
+dagger -m github.com/shykes/daggerverse/wolfi@v0.1.4 call container with-file --path=/README.md --source=./README.md with-exec --args="cat","/README.md" stdout
+```
+
+Here is another example of passing a host file as argument to a checksum Dagger Function:
+
+```shell
+dagger -m github.com/jumppad-labs/daggerverse/checksum@49dff54b421df9844fec87766e3710138bc98914 call calculate-from-file --file=~/.profile
+```
+
+To pass a secret stored in a host file as argument when invoking a Dagger Function, add the `file:` prefix to the file path value.
+
+Here is an example of passing a host file containing an access token to a Dagger Function as a secret:
+
+```shell
+dagger -m github.com/aweris/daggerverse/gh@99a1336f8091ff43bf833778a324de1cadcf25ac call run --token=file:/home/admin/github-token.txt --cmd="issue list --repo=dagger/dagger"
+```
+
+## Host network resources
+
+As with other host resources, host network services need to be explicitly passed when executing `dagger call`.
+
+### TCP and UDP services
+
+To pass host TCP or UDP network services as arguments when invoking a Dagger Function, specify them in the form `tcp://<host>:<port>` or `udp://<host>:<port>`.
+
+Assume that you have a PostgresQL database running locally on port 5432, as with:
+
+```shell
+docker run -d -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres
+```
+
+Here is an example of passing this host service as argument to a PostgreSQL client Dagger Function, which drops you to a prompt from where you can execute SQL queries:
+
+```shell
+dagger -m github.com/kpenfound/dagger-modules/postgres@v0.1.0 call client --db=postgres --user=postgres --password=postgres --server=tcp://localhost:5432
+```
+
+### Unix sockets
+
+Similar to host TCP/UDP services, Dagger Functions can also be granted access to host Unix sockets when the client is running on Linux or MacOS.
+
+To pass host Unix sockets as arguments when invoking a Dagger Function, specify them by their path on the host.
+
+For example, assuming you have Docker on your host with the Docker daemon listening on a Unix socket at `/var/run/docker.sock`, you can pass this socket to a Docker client Dagger Function as follows:
+
+```shell
+dagger -m github.com/sipsma/daggerverse/docker-client@v0.0.1 call --sock=/var/run/docker.sock version
+```

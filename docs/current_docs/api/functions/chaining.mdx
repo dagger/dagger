@@ -1,0 +1,109 @@
+---
+slug: /manual/functions/chaining
+---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Chaining
+
+Dagger Functions can return either basic types or objects. Objects can define their own functions (in the classic object-oriented model). When calling a Dagger Function that returns an object, the Dagger API lets you follow up by calling one of that object's functions, which itself can return another object, and so on. This is called "function chaining", and is a core feature of Dagger.
+
+Dagger's core types (`Container`, `Directory`, `Service`, `Secret`, ...) are all objects. They each define various functions for interacting with their respective objects. When a Dagger Function returns a core type as a just-in-time artifact - for example, a `Directory` - the caller typically continues the chain by calling a function from that type - for example, to export it to the local filesystem, modify it, mount it into a container, etc.
+
+To illustrate, try the following example:
+
+```shell
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call build --source=https://github.com/golang/example#master:/hello --args=. terminal
+```
+
+This example chains two function calls:
+- the first call (`build`) builds a Go application from a remote GitHub repository and returns a just-in-time directory with the compiled binary;
+- the second call (`terminal`) opens an interactive terminal session in the just-in-time directory.
+
+You can use the interactive terminal to validate the compiled binary:
+
+```shell
+dagger /src $ ls
+hello
+dagger /src $ ./hello
+Hello, world!
+```
+
+This manual contains many more examples of function chaining with the Dagger CLI. However, what's important to know is that just as you can chain Dagger Functions with the Dagger CLI, you can also chain Dagger Functions (including Dagger Functions created by others) using the programming language you're most comfortable with.
+
+Here's the Dagger Function equivalent of the previous Dagger CLI example on this page. It is a Dagger Function that utilizes a module from the Daggerverse to build a Go project, then chains a Dagger API method to open an interactive terminal session in the build directory.
+
+First, install the module:
+
+```shell
+dagger install github.com/kpenfound/dagger-modules/golang@v0.2.0
+```
+
+Next, create a new Dagger Function:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+```go file=./snippets/chaining/using/go/main.go
+```
+</TabItem>
+<TabItem value="Python">
+```python file=./snippets/chaining/using/python/main.py
+```
+</TabItem>
+<TabItem value="TypeScript">
+```typescript file=./snippets/chaining/using/typescript/index.ts
+```
+</TabItem>
+</Tabs>
+
+This Dagger Function accepts two arguments - the source directory and a list of build arguments - and does the following:
+
+- It invokes the Golang module via the `dag` Dagger client.
+- It calls a Dagger Function from the module to build the source code and return a just-in-time directory with the compiled binary.
+- It chains a core Dagger API method to open an interactive terminal session in the returned directory.
+
+Here is an example call for this Dagger Function:
+
+```shell
+dagger call example --build-src=https://github.com/golang/example#master:/hello --build-args=.
+```
+
+As bfore, you can use the interactive terminal to validate the compiled binary:
+
+```shell
+dagger /src $ ls
+hello
+dagger /src $ ./hello
+Hello, world!
+```
+
+So long as a Dagger Function returns an object that can be JSON-serialized, its state will be preserved and passed to the next function in the chain. This makes it possible to write custom Dagger Functions that support function chaining in the same style as the Dagger API.
+
+Here is an example module with support for function chaining:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+```go file=./snippets/chaining/enabling/go/main.go
+```
+</TabItem>
+<TabItem value="Python">
+```python file=./snippets/chaining/enabling/python/main.py
+```
+</TabItem>
+<TabItem value="TypeScript">
+```typescript file=./snippets/chaining/enabling/typescript/index.ts
+```
+</TabItem>
+</Tabs>
+
+And here is an example call for this module:
+
+```shell
+dagger call with-name --name=Monde with-greeting --greeting=Bonjour message
+```
+
+The result will be:
+
+```shell
+Bonjour, Monde!
+```

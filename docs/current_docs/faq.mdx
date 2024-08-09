@@ -2,7 +2,6 @@
 slug: /faq
 pagination_next: null
 pagination_prev: null
-displayed_sidebar: "current"
 ---
 
 import Tabs from "@theme/Tabs";
@@ -15,7 +14,7 @@ import TabItem from "@theme/TabItem";
 
 ### What is the Dagger Platform?
 
-We're building the devops operating system, an integrated platform to orchestrate the delivery of applications to the cloud from start to finish. The Dagger Platform includes the Dagger Engine, Dagger Cloud, and the Dagger SDKs. Soon we will deliver the capability to publish and leverage prebuilt modules to further accelerate the adoption of Dagger across an organization’s pipelines.
+We're building the devops operating system, an integrated platform to orchestrate the delivery of applications to the cloud from start to finish. The Dagger Platform includes the Dagger Engine, Dagger Cloud, and the Dagger SDKs. Soon we will deliver the capability to publish and leverage prebuilt modules to further accelerate the adoption of Dagger across an organization's pipelines.
 
 ### How do I install Dagger?
 
@@ -49,58 +48,6 @@ The image below shows an example of the compatibility information available in t
 
 ![Release information](/img/current_docs/faq/release-notes.png)
 
-### How do I uninstall Dagger?
-
-Follow these steps:
-
-1. To uninstall a Dagger SDK, follow the same procedure that you would follow to uninstall any other SDK package in your chosen development environment.
-
-1. Remove the Dagger CLI using the following command:
-
-    ```shell
-    sudo rm /usr/local/bin/dagger
-    ```
-
-    Homebrew users can alternatively use the following command:
-
-    ```shell
-    brew uninstall dagger
-    ```
-
-1. Remove the Dagger container using the following commands:
-
-    ```shell
-    docker rm --force --volumes "$(docker ps --quiet --filter='name=^dagger-engine-')"
-    ```
-
-1. Remove the `dagger` sub-directory of your local cache and configuration directories (`$XDG_CACHE_HOME` and `$XDG_CONFIG_HOME` on Linux or the equivalent for other platforms):
-
-    <Tabs>
-    <TabItem value="macOS">
-
-    ```shell
-    rm -rf ~/Library/Caches/dagger
-    rm -rf ~/Library/Application\ Support/dagger
-    ```
-
-    </TabItem>
-    <TabItem value="Linux">
-
-    ```shell
-    rm -rf ~/.cache/dagger
-    rm -rf ~/.config/dagger
-    ```
-
-    </TabItem>
-    </Tabs>
-
-    :::note
-    The paths listed above are defaults and may require adjustment for your specific environment. The third-party packages Dagger uses to determine these paths are listed below:
-      - Go (SDK and CLI): [https://github.com/adrg/xdg](https://github.com/adrg/xdg)
-      - Node.js: [https://github.com/sindresorhus/env-paths](https://github.com/sindresorhus/env-paths)
-      - Python: [https://github.com/platformdirs/platformdirs](https://github.com/platformdirs/platformdirs)
-    :::
-
 ### Does Dagger send telemetry?
 
 By default, the Dagger CLI sends anonymized telemetry to dagger.io. This allows us to improve Dagger by understanding how it is used. Telemetry is optional and can be disabled at any time. If you are willing and able to leave telemetry enabled: thank you! This will help us better understand how Dagger is used, and will allow us to improve your experience.
@@ -119,15 +66,6 @@ We use telemetry for aggregate analysis, and do not tie telemetry events to a sp
 ### Can Dagger telemetry be disabled?
 
 Dagger implements the [Console Do Not Track (DNT) standard](https://consoledonottrack.com/). As a result, you can disable the telemetry by setting the environment variable `DO_NOT_TRACK=1` before running the Dagger CLI.
-
-### What are Dagger's caching features?
-
-Dagger is able to cache:
-
-- Operations, such as copying files or directories to a container, running tests, compiling code, etc.
-- Volumes, such as data caches or package manager caches
-
-Operations are automatically cached every time a Dagger pipeline runs. Cache volumes must be explicitly defined and used in your Dagger pipeline code.
 
 ### Can I run the Dagger Engine as a "rootless" container?
 
@@ -165,15 +103,15 @@ Dagger Cloud provides a web interface to visualize each step of your pipeline, d
 
 ### What operational insights does Dagger Cloud provide?
 
-Dagger Cloud collects telemetry from all your organization’s Dagger Engines, whether they run in development or CI, and presents it all to you in one place. This gives you a unique view on all pipelines, both pre-push and post-push.
+Dagger Cloud collects telemetry from all your organization's Dagger Engines, whether they run in development or CI, and presents it all to you in one place. This gives you a unique view on all pipelines, both pre-push and post-push.
 
 ### What is distributed caching?
 
-One of Dagger’s superpowers is that it caches everything. On a single machine (like a laptop or long-running server), caching "just works", because the same Dagger Engine writing to the cache is also reading from it. But in a multi-machine configuration (like an elastic CI cluster), things get more complicated because all machines are continuously producing and consuming large amounts of cache data. How do we get the right cache data to the right machine at the right time, without wasting compute, networking, or storage resources? This is a complex problem which requires a distributed caching service, to orchestrate the movement of data between all machines in the cluster, and a centralized storage service. Because Dagger Cloud receives telemetry from all Dagger Engines, it can model the state of the cluster and make optimal caching decisions. The more telemetry data it receives, the smarter it becomes.
+One of Dagger's superpowers is that it caches everything. On a single machine (like a laptop or long-running server), caching "just works", because the same Dagger Engine writing to the cache is also reading from it. But in a multi-machine configuration (like an elastic CI cluster), things get more complicated because all machines are continuously producing and consuming large amounts of cache data. How do we get the right cache data to the right machine at the right time, without wasting compute, networking, or storage resources? This is a complex problem which requires a distributed caching service, to orchestrate the movement of data between all machines in the cluster, and a centralized storage service. Because Dagger Cloud receives telemetry from all Dagger Engines, it can model the state of the cluster and make optimal caching decisions. The more telemetry data it receives, the smarter it becomes.
 
 ### Does distributed caching support ephemeral CI runners?
 
-Yes. Ephemeral runners, by definition, lack caching; the runner’s local storage is purged when the runner is spun down. However, when your CI is connected to Dagger Cloud, these ephemeral runners gain all the benefits of a persistent shared cache.
+Yes. Ephemeral runners, by definition, lack caching; the runner's local storage is purged when the runner is spun down. However, when your CI is connected to Dagger Cloud, these ephemeral runners gain all the benefits of a persistent shared cache.
 
 ### Does Dagger Cloud store my cache data?
 
@@ -199,6 +137,10 @@ There are two options available:
 
 1. Use the [`Container.withRegistryAuth()`](https://docs.dagger.io/api/reference/#Container-withRegistryAuth) GraphQL API method. A native equivalent of this method is available in each Dagger SDK.
 1. Dagger SDKs can use your existing Docker credentials without requiring separate authentication. Simply execute `docker login` against your container registry on the host where your Dagger pipelines are running.
+
+### How do I uninstall a Dagger SDK?
+
+To uninstall a Dagger SDK, follow the same procedure that you would follow to uninstall any other SDK package in your chosen development environment.
 
 ## Dagger API
 
