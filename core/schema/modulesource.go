@@ -528,6 +528,21 @@ func (s *moduleSchema) moduleSourceWithSDK(
 	return src, nil
 }
 
+type ModuleSourceWithInitConfigArgs struct {
+	Merge bool `default:"false"`
+}
+
+func (s *moduleSchema) moduleSourceWithInit(
+	ctx context.Context,
+	src *core.ModuleSource,
+	args ModuleSourceWithInitConfigArgs,
+) (*core.ModuleSource, error) {
+	src.WithInitConfig = &core.ModuleInitConfig{
+		Merge: args.Merge,
+	}
+	return src, nil
+}
+
 func (s *moduleSchema) moduleSourceResolveDependency(
 	ctx context.Context,
 	src *core.ModuleSource,
@@ -991,6 +1006,20 @@ func (s *moduleSchema) normalizeCallerLoadedSource(
 			if err != nil {
 				return inst, fmt.Errorf("failed to set view: %w", err)
 			}
+		}
+	}
+
+	if src.WithInitConfig != nil {
+		err = s.dag.Select(ctx, inst, &inst,
+			dagql.Selector{
+				Field: "withInit",
+				Args: []dagql.NamedInput{
+					{Name: "merge", Value: dagql.Boolean(src.WithInitConfig.Merge)},
+				},
+			},
+		)
+		if err != nil {
+			return inst, fmt.Errorf("failed to set init config: %w", err)
 		}
 	}
 

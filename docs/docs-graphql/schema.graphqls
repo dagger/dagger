@@ -2143,6 +2143,12 @@ type ModuleSource {
     dependencies: [ModuleDependencyID!]!
   ): ModuleSource!
 
+  """Sets module init arguments"""
+  withInit(
+    """Merge module dependencies into the current project's"""
+    merge: Boolean = false
+  ): ModuleSource!
+
   """Update the module source with a new name."""
   withName(
     """The name to set."""
