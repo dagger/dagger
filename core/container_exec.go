@@ -8,12 +8,14 @@ import (
 	"slices"
 	"strings"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/identity"
 	"github.com/pkg/errors"
+	"go.opentelemetry.io/otel/propagation"
 )
 
 var ErrNoCommand = errors.New("no command has been set")
@@ -97,14 +99,24 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		}
 	}
 
+	// associate logs and telemetry to the withExec span
+	//
+	// Buildkit will still generate a span of its own from the scheduler,
+	// which we'll just hide, but use for calculating the time cost of this exec
+	// via cause/effect tracking.
+	if len(execMD.SpanContext) == 0 {
+		execMD.SpanContext = propagation.MapCarrier{}
+		telemetry.Propagator.Inject(ctx, execMD.SpanContext)
+	}
+
+	// directing telemetry to another span (i.e. a function call).
+	if len(execMD.SpanContext) > 0 {
+		// hide the exec span
+		spanName = buildkit.InternalPrefix + spanName
+	}
+
 	// this allows executed containers to communicate back to this API
 	if opts.ExperimentalPrivilegedNesting {
-		// directing telemetry to another span (i.e. a function call).
-		if len(execMD.SpanContext) > 0 {
-			// hide the exec span
-			spanName = buildkit.InternalPrefix + spanName
-		}
-
 		// establish new client ID for the nested client
 		if execMD.ClientID == "" {
 			execMD.ClientID = identity.NewID()
