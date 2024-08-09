@@ -31,9 +31,9 @@ It must be manually deployed to [docs.dagger.io](https://docs.dagger.io).Only a 
 
 ### Locally
 
-You will need to have `npm` and Node.js v18 installed.
+You will need to have `yarn` and Node.js v18 installed.
 
-From the `/docs` directory, run the following command: `npm install && npm start`
+From the `/docs` directory, run the following command: `yarn install && yarn start`
 
 This will install all dependencies, start the docs web server locally and open [localhost:3000](http://localhost:3000/) in your browser.
 

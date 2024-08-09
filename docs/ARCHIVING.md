@@ -60,7 +60,7 @@ NOTE: At the time of writing, this is a completely manual process. This is becau
 
 - In `docs/` sub-directory:
   - Replace `/img` paths with `/0.1/img` paths
-- Run `npm run build:withoutAuth` and store the `build/` directory as `site/0.1`
+- Run `yarn run build:withoutAuth` and store the `build/` directory as `site/0.1`
 
 ## Build 0.2 sub-site
 
@@ -132,7 +132,7 @@ NOTE: At the time of writing, this is a completely manual process. This is becau
   - Replace `/img` path with `/0.2/img` paths in `getting-started/1242-install.mdx`
   - Delete all instances of `displayed_sidebar: '0.1'`
 - Replace `/img` path with `/0.2/img` paths in `website/src/components/atoms/linkCTA.js`
-- Run `npm run build` and store the `build/` directory as `site/0.2`
+- Run `yarn run build` and store the `build/` directory as `site/0.2`
 
 ## Build 0.9 sub-site
 
@@ -238,7 +238,7 @@ NOTE: At the time of writing, this is a completely manual process. This is becau
   - Replace `(../sdk/python/)` URL links with `(/0.9/sdk/python/)` URL links
   - Replace `(../sdk/go/)` URL links with `(/0.9/sdk/go/)` URL links
   - Replace `(../api/)` URL links with `(/0.9/api/)` URL links
-- Run `npm run build` and store the `build/` directory as `site/0.9`
+- Run `yarn run build` and store the `build/` directory as `site/0.9`
 
 ## Build top-level site (archive.docs.dagger.io)
 
