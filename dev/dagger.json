@@ -3,10 +3,6 @@
   "sdk": "go",
   "dependencies": [
     {
-      "name": "php-sdk-dev",
-      "source": "../sdk/php/dev"
-    },
-    {
       "name": "dirdiff",
       "source": "dirdiff"
     },
@@ -23,6 +19,14 @@
       "source": "graphql"
     },
     {
+      "name": "k3s",
+      "source": "github.com/marcosnils/daggerverse/k3s@f4851a9c308410d58c5199dfd1b65e4f3ccae813"
+    },
+    {
+      "name": "php-sdk-dev",
+      "source": "../sdk/php/dev"
+    },
+    {
       "name": "ps-analyzer",
       "source": "ps-analyzer"
     },
@@ -33,6 +37,10 @@
     {
       "name": "shellcheck",
       "source": "shellcheck"
+    },
+    {
+      "name": "wolfi",
+      "source": "wolfi"
     }
   ],
   "source": ".",
