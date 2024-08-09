@@ -514,7 +514,7 @@ describe("Invoke typescript function", function () {
     // Load function
     try {
       await load(files)
-    } catch (e) {
+    } catch {
       assert.fail("failed to load files")
     }
 
