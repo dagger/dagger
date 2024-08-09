@@ -3277,7 +3277,7 @@ func (m *Dep) Invert(status Status) Status {
 			{
 				sdk: "go",
 				source: `package main
-				
+
 import "context"
 
 type Test struct{}
@@ -5592,7 +5592,7 @@ func (t *Test) Evaluated(ctx context.Context, src *dagger.Directory) error {
 		DockerBuild(dagger.DirectoryDockerBuildOpts{
 			Secrets: []*dagger.Secret{secret},
 		}).
-		WithExec([]string{"true"}). 
+		WithExec([]string{"true"}).
 		Sync(ctx)
 	return err
 }
@@ -6540,6 +6540,71 @@ func schemaVersion(ctx context.Context) (string, error) {
 		require.NoError(t, err)
 		require.Contains(t, out, "v0.10.0 v0.11.0")
 	})
+}
+
+func (ModuleSuite) TestModuleCustomSync(ctx context.Context, t *testctx.T) {
+	var logs safeBuffer
+	c := connect(ctx, t, dagger.WithLogOutput(&logs))
+
+	depSrc := `package main
+
+import "dagger/dep/internal/dagger"
+
+type Dep struct {
+	Ctr *dagger.Container
+}
+
+func New() *Dep {
+	return &Dep{
+		Ctr: dag.Container().From("alpine").WithExec([]string{"ls", "/does/not/exist"}),
+	}
+}
+
+func (m *Dep) Hello(name string) string {
+	return "Hello " + name
+}
+`
+
+	src := `package main
+
+import (
+	"context"
+)
+
+type Test struct{}
+
+func (m *Test) Hello(
+	ctx context.Context,
+	name string,
+	sync bool,  // +optional
+) (string, error) {
+	dep := dag.Dep()
+	if sync {
+		var err error
+		dep, err = dep.Sync(ctx)
+		if err != nil {
+			return "", err
+		}
+	}
+	return dep.Hello(ctx, name)
+}
+`
+
+	modGen := modInit(t, c, "go", src).
+		With(withModInitAt("./dep", "go", depSrc)).
+		With(daggerExec("install", "./dep"))
+
+	stdout, err := modGen.
+		With(daggerQuery(`{test{hello(name:"Dagger")}}`)).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"test":{"hello":"Hello Dagger"}}`, stdout)
+
+	_, err = modGen.
+		With(daggerQuery(`{test{hello(name:"Dagger", sync:true)}}`)).
+		Stdout(ctx)
+	require.Error(t, err)
+	require.Contains(t, logs.String(), "/does/not/exist: No such file or directory")
 }
 
 func (ModuleSuite) TestModuleDevelopVersion(ctx context.Context, t *testctx.T) {

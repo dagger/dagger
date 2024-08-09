@@ -152,7 +152,12 @@ func (dir *Directory) WithPipeline(ctx context.Context, name, description string
 	return dir, nil
 }
 
-func (dir *Directory) Evaluate(ctx context.Context) (*buildkit.Result, error) {
+func (dir *Directory) Evaluate(ctx context.Context) error {
+	_, err := dir.evaluate(ctx)
+	return err
+}
+
+func (dir *Directory) evaluate(ctx context.Context) (*buildkit.Result, error) {
 	if dir.LLB == nil {
 		return nil, nil
 	}

@@ -22,7 +22,7 @@ func (s *directorySchema) Install() {
 	}.Install(s.srv)
 
 	dagql.Fields[*core.Directory]{
-		Syncer[*core.Directory]().
+		core.Syncer[*core.Directory]().
 			Doc(`Force evaluation in the engine.`),
 		dagql.Func("pipeline", s.pipeline).
 			Deprecated("Explicit pipeline creation is now a no-op").
