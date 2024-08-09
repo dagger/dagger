@@ -3126,7 +3126,16 @@ const (
 	Inactive Status = "INACTIVE"
 )
 
-type Test struct{}
+func New(
+	// +default="INACTIVE"
+	status Status,
+) *Test {
+	return &Test{Status: status}
+}
+
+type Test struct {
+	Status Status
+}
 
 func (m *Test) FromStatus(status Status) string {
 	return string(status)
@@ -3151,6 +3160,8 @@ class Status(dagger.Enum):
 
 @dagger.object_type
 class Test:
+    status: Status = dagger.field(default=Status.INACTIVE)
+
     @dagger.function
     def from_status(self, status: Status) -> str:
         return str(status)
@@ -3188,6 +3199,10 @@ class Status {
 
 @object()
 export class Test {
+  constructor(status: Status = Status.Inactive) {
+    this.status = status
+  }
+
   @func()
   fromStatus(status: Status): string {
     return status as string
@@ -3210,6 +3225,10 @@ export class Test {
 				out, err := modGen.With(daggerQuery(`{test{fromStatus(status: "ACTIVE")}}`)).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, "ACTIVE", gjson.Get(out, "test.fromStatus").String())
+
+				out, err = modGen.With(daggerQuery(`{test{status}}`)).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "INACTIVE", gjson.Get(out, "test.status").String())
 
 				_, err = modGen.With(daggerQuery(`{test{fromStatus(status: "INVALID")}}`)).Stdout(ctx)
 				require.ErrorContains(t, err, "invalid enum value")
