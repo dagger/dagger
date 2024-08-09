@@ -245,7 +245,7 @@ type InputValues []InputValue
 
 func (i InputValues) HasOptionals() bool {
 	for _, v := range i {
-		if v.TypeRef.IsOptional() {
+		if v.IsOptional() {
 			return true
 		}
 	}
@@ -257,6 +257,10 @@ type InputValue struct {
 	Description  string   `json:"description"`
 	DefaultValue *string  `json:"defaultValue"`
 	TypeRef      *TypeRef `json:"type"`
+}
+
+func (v InputValue) IsOptional() bool {
+	return v.DefaultValue != nil || (v.TypeRef != nil && v.TypeRef.IsOptional())
 }
 
 type EnumValue struct {
