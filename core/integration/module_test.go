@@ -6368,6 +6368,38 @@ func (m *Test) Fn() string {
 	require.NoError(t, err)
 }
 
+func (ModuleSuite) TestReturnNilField(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	_, err := goGitBase(t, c).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--name=test", "--sdk=go")).
+		With(sdkSource("go", `package main
+
+type Test struct {
+	A *Thing
+	B *Thing
+}
+
+type Thing struct{}
+
+func New() *Test {
+	return &Test{
+		A: &Thing{},
+	}
+}
+
+func (m *Test) Hello() string {
+	return "Hello"
+}
+
+`)).
+		With(daggerCall("hello")).
+		Sync(ctx)
+	require.NoError(t, err)
+}
+
 func (ModuleSuite) TestModuleSchemaVersion(ctx context.Context, t *testctx.T) {
 	t.Run("standalone", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
