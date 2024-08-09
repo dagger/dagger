@@ -2,5 +2,5 @@
   "name": "php-sdk-dev",
   "sdk": "github.com/dagger/dagger/sdk/php",
   "source": ".",
-  "engineVersion": "v0.12.3"
+  "engineVersion": "v0.12.4"
 }

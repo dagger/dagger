@@ -14,5 +14,5 @@
     "vendor/"
   ],
   "source": "runtime",
-  "engineVersion": "v0.12.3"
+  "engineVersion": "v0.12.4"
 }

@@ -28,9 +28,15 @@ final class PhpSdkDev
         );
     }
 
-    #[DaggerFunction('Run linter in source directory')]
+    #[DaggerFunction('Lint the source directory')]
     public function lint(Directory $source): Container {
         return $this->base($source)->withExec(['phpcs']);
+    }
+
+    #[DaggerFunction('Format the source directory')]
+    public function format(Directory $source): string
+    {
+        return $this->base($source)->withExec(['phpcbf'])->stdout();
     }
 
     private function base(Directory $source): Container
