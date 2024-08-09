@@ -572,6 +572,8 @@ func (container *Container) WithMountedFile(ctx context.Context, target string, 
 var SeenCacheKeys = new(sync.Map)
 
 func (container *Container) WithMountedCache(ctx context.Context, target string, cache *CacheVolume, source *Directory, sharingMode CacheSharingMode, owner string) (*Container, error) {
+	// TODO: DEFAULT TO CONTAINER USER
+
 	container = container.Clone()
 
 	target = absPath(container.Config.WorkingDir, target)
@@ -581,9 +583,8 @@ func (container *Container) WithMountedCache(ctx context.Context, target string,
 	}
 
 	mount := ContainerMount{
-		Target: target,
-		// TODO: hack
-		CacheVolumeID:    cache.Sum() + "-" + cache.Keys[0],
+		Target:           target,
+		CacheVolumeID:    cache.Keys[0],
 		CacheSharingMode: sharingMode,
 	}
 

@@ -3723,7 +3723,7 @@ func (ContainerSuite) TestWithMountedCacheOwner(ctx context.Context, t *testctx.
 		})
 	})
 
-	t.Run("permissions (empty)", func(ctx context.Context, t *testctx.T) {
+	t.Run("permissions no source", func(ctx context.Context, t *testctx.T) {
 		ctr := c.Container().From(alpineImage).
 			WithExec([]string{"adduser", "-D", "inherituser"}).
 			WithExec([]string{"adduser", "-u", "1234", "-D", "auser"}).
@@ -3738,7 +3738,7 @@ func (ContainerSuite) TestWithMountedCacheOwner(ctx context.Context, t *testctx.
 		require.Equal(t, "755:auser:agroup\n", out)
 	})
 
-	t.Run("permissions (source)", func(ctx context.Context, t *testctx.T) {
+	t.Run("permissions source", func(ctx context.Context, t *testctx.T) {
 		dir := c.Directory().
 			WithNewDirectory("perms", dagger.DirectoryWithNewDirectoryOpts{
 				Permissions: 0o745,

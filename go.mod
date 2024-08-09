@@ -8,7 +8,7 @@ go 1.22
 // TODO: FIX BEFORE MERGE
 // TODO: FIX BEFORE MERGE
 // TODO: https://github.com/dagger/buildkit/pull/3
-replace github.com/moby/buildkit => github.com/sipsma/buildkit v0.6.1-0.20240803015026-699623575173
+replace github.com/moby/buildkit => github.com/sipsma/buildkit v0.6.1-0.20240812042639-4625a7520844
 
 // replace github.com/moby/buildkit => ./buildkit
 

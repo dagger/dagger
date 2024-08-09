@@ -71,6 +71,7 @@ import (
 	"golang.org/x/sync/semaphore"
 	"google.golang.org/grpc"
 
+	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	daggercache "github.com/dagger/dagger/engine/cache"
@@ -413,6 +414,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		MountPoolRoot:     srv.buildkitMountPoolDir,
 		ResourceMonitor:   nil, // we don't use it
 		VolumeSnapshotter: volumeSnapshotter,
+		SeenVolumes:       core.SeenCacheKeys,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create base worker: %w", err)

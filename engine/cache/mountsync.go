@@ -198,6 +198,7 @@ func (m *manager) StartCacheMountSynchronization(ctx context.Context) error {
 	return nil
 }
 
+// TODO: fix
 func cacheKeyFromMountName(name string) string {
 	// Turn the human-readable name into the key we use internally
 	// NOTE: this will be problematic if backwards incompatible changes are made
