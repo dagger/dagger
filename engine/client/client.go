@@ -431,7 +431,7 @@ func NewBuildkitSessionServer(ctx context.Context, conn net.Conn, attachables ..
 	if span := trace.SpanFromContext(ctx); span.SpanContext().IsValid() {
 		statsHandler := tracing.ServerStatsHandler(
 			otelgrpc.WithTracerProvider(span.TracerProvider()),
-			otelgrpc.WithPropagators(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{})),
+			otelgrpc.WithPropagators(telemetry.Propagator),
 		)
 		sessionSrvOpts = append(sessionSrvOpts, grpc.StatsHandler(statsHandler))
 	}

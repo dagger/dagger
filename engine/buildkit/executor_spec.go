@@ -887,6 +887,11 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 		w.execMD.Hostname = state.spec.Hostname
 	}
 
+	if w.execMD.SpanContext != nil {
+		// propagate trace ctx to session attachables
+		ctx = telemetry.Propagator.Extract(ctx, w.execMD.SpanContext)
+	}
+
 	state.spec.Process.Env = append(state.spec.Process.Env, DaggerSessionTokenEnv+"="+w.execMD.SecretToken)
 
 	w.execMD.ClientStableID = randid.NewID()
