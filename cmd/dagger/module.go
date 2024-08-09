@@ -262,7 +262,7 @@ var moduleInstallCmd = &cobra.Command{
 
 			if depSrcKind == dagger.GitSource {
 				git := depSrc.AsGitSource()
-				gitURL, err := git.CloneURL(ctx)
+				gitURL, err := git.CloneRef(ctx)
 				if err != nil {
 					return err
 				}

@@ -10,11 +10,11 @@ defmodule Dagger.GitModuleSource do
 
   @type t() :: %__MODULE__{}
 
-  @doc "The URL to clone the root of the git repo from"
-  @spec clone_url(t()) :: {:ok, String.t()} | {:error, term()}
-  def clone_url(%__MODULE__{} = git_module_source) do
+  @doc "The ref to clone the root of the git repo from"
+  @spec clone_ref(t()) :: {:ok, String.t()} | {:error, term()}
+  def clone_ref(%__MODULE__{} = git_module_source) do
     selection =
-      git_module_source.selection |> select("cloneURL")
+      git_module_source.selection |> select("cloneRef")
 
     execute(selection, git_module_source.client)
   end
@@ -54,6 +54,15 @@ defmodule Dagger.GitModuleSource do
   def id(%__MODULE__{} = git_module_source) do
     selection =
       git_module_source.selection |> select("id")
+
+    execute(selection, git_module_source.client)
+  end
+
+  @doc "The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket)"
+  @spec repository_url(t()) :: {:ok, String.t()} | {:error, term()}
+  def repository_url(%__MODULE__{} = git_module_source) do
+    selection =
+      git_module_source.selection |> select("repositoryUrl")
 
     execute(selection, git_module_source.client)
   end

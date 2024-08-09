@@ -5,12 +5,16 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
+	"os"
 	"os/exec"
 	"regexp"
 	"strings"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/sources/gitdns"
 )
 
 var _ SchemaResolvers = &gitSchema{}
@@ -100,13 +104,54 @@ func (s *gitSchema) git(ctx context.Context, parent *core.Query, args gitArgs) (
 			Hostname: host,
 		})
 	}
-	var authSock *core.Socket
+	var authSock *core.Socket = nil
 	if args.SSHAuthSocket.Valid {
 		sock, err := args.SSHAuthSocket.Value.Load(ctx, s.srv)
 		if err != nil {
 			return nil, err
 		}
 		authSock = sock.Self
+	} else {
+		// Fallback to using the client's SSH agent socket if available
+		socketStore, err := parent.Sockets(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get socket store: %w", err)
+		}
+
+		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get client metadata from context: %w", err)
+		}
+
+		if clientMetadata != nil && clientMetadata.SSHAuthSocketPath != "" {
+			accessor, err := core.GetClientResourceAccessor(ctx, parent, clientMetadata.SSHAuthSocketPath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get client resource name: %w", err)
+			}
+
+			var sockInst dagql.Instance[*core.Socket]
+			if err := s.srv.Select(ctx, s.srv.Root(), &sockInst,
+				dagql.Selector{
+					Field: "host",
+				},
+				dagql.Selector{
+					Field: "__internalSocket",
+					Args: []dagql.NamedInput{
+						{
+							Name:  "accessor",
+							Value: dagql.NewString(accessor),
+						},
+					},
+				},
+			); err != nil {
+				return nil, fmt.Errorf("failed to select internal socket: %w", err)
+			}
+
+			if err := socketStore.AddUnixSocket(sockInst.Self, clientMetadata.ClientID, clientMetadata.SSHAuthSocketPath); err != nil {
+				return nil, fmt.Errorf("failed to add unix socket to store: %w", err)
+			}
+			authSock = sockInst.Self
+		}
 	}
 	return &core.GitRepository{
 		Query:         parent,
@@ -193,15 +238,51 @@ func (s *gitSchema) tags(ctx context.Context, parent *core.GitRepository, args t
 			queryArgs = append(queryArgs, p.String())
 		}
 	}
+	cmd := exec.CommandContext(ctx, "git", queryArgs...)
 
-	output, err := exec.CommandContext(ctx, "git", queryArgs...).Output()
-	if err != nil {
-		return nil, err
+	if parent.SSHAuthSocket != nil {
+		socketStore, err := parent.Query.Sockets(ctx)
+		if err == nil {
+			sockpath, cleanup, err := socketStore.MountSocket(ctx, parent.SSHAuthSocket.IDDigest)
+			if err != nil {
+				return nil, fmt.Errorf("failed to mount SSH socket: %w", err)
+			}
+			defer func() {
+				err := cleanup()
+				if err != nil {
+					slog.Error("failed to cleanup SSH socket", "error", err)
+				}
+			}()
+
+			cmd.Env = append(cmd.Env, "SSH_AUTH_SOCK="+sockpath)
+		}
 	}
 
-	scanner := bufio.NewScanner(bytes.NewBuffer(output))
+	// Handle known hosts
+	var knownHostsPath string
+	if parent.SSHKnownHosts != "" {
+		var err error
+		knownHostsPath, err = mountKnownHosts(parent.SSHKnownHosts)
+		if err != nil {
+			return nil, fmt.Errorf("failed to mount known hosts: %w", err)
+		}
+		defer os.Remove(knownHostsPath)
+	}
+
+	// Set GIT_SSH_COMMAND
+	cmd.Env = append(cmd.Env, "GIT_SSH_COMMAND="+gitdns.GetGitSSHCommand(knownHostsPath))
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	if err != nil {
+		return nil, fmt.Errorf("git command failed: %w\nstdout: %s\nstderr: %s", err, stdout.String(), stderr.String())
+	}
 
 	tags := []string{}
+	scanner := bufio.NewScanner(&stdout)
 	for scanner.Scan() {
 		fields := strings.Fields(scanner.Text())
 		if len(fields) < 2 {
@@ -215,7 +296,32 @@ func (s *gitSchema) tags(ctx context.Context, parent *core.GitRepository, args t
 		tags = append(tags, tag)
 	}
 
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("error scanning git output: %w", err)
+	}
+
 	return tags, nil
+}
+
+func mountKnownHosts(knownHosts string) (string, error) {
+	tempFile, err := os.CreateTemp("", "known_hosts")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temporary known_hosts file: %w", err)
+	}
+
+	_, err = tempFile.WriteString(knownHosts)
+	if err != nil {
+		os.Remove(tempFile.Name())
+		return "", fmt.Errorf("failed to write known_hosts content: %w", err)
+	}
+
+	err = tempFile.Close()
+	if err != nil {
+		os.Remove(tempFile.Name())
+		return "", fmt.Errorf("failed to close temporary known_hosts file: %w", err)
+	}
+
+	return tempFile.Name(), nil
 }
 
 type withAuthTokenArgs struct {
@@ -280,29 +386,6 @@ func (s *gitSchema) fetchCommit(ctx context.Context, parent *core.GitRef, _ stru
 		return "", err
 	}
 	return dagql.NewString(str), nil
-}
-
-// TODO: make this part of the actual git api, just using as util for moduleRef right now
-func defaultBranch(ctx context.Context, repoURL string) (string, error) {
-	stdoutBytes, err := exec.CommandContext(ctx, "git", "ls-remote", "--symref", repoURL, "HEAD").Output()
-	if err != nil {
-		return "", fmt.Errorf("failed to run git: %w", err)
-	}
-
-	scanner := bufio.NewScanner(bytes.NewBuffer(stdoutBytes))
-
-	for scanner.Scan() {
-		fields := strings.Fields(scanner.Text())
-		if len(fields) < 3 {
-			continue
-		}
-
-		if fields[0] == "ref:" && fields[2] == "HEAD" {
-			return strings.TrimPrefix(fields[1], "refs/heads/"), nil
-		}
-	}
-
-	return "", fmt.Errorf("could not deduce default branch from output:\n%s", string(stdoutBytes))
 }
 
 func isSemver(ver string) bool {

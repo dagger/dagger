@@ -90,6 +90,9 @@ type ExecutionMetadata struct {
 	EnabledGPUs []string
 
 	SpanContext propagation.MapCarrier
+
+	// Path to the SSH auth socket. Used for Dagger-in-Dagger support.
+	SSHAuthSocketPath string
 }
 
 const executionMetadataKey = "dagger.executionMetadata"

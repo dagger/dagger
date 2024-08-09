@@ -104,7 +104,7 @@ func (cli *gitCLI) run(ctx context.Context, args ...string) (_ *bytes.Buffer, er
 		cmd.Env = []string{
 			"PATH=" + os.Getenv("PATH"),
 			"GIT_TERMINAL_PROMPT=0",
-			"GIT_SSH_COMMAND=" + getGitSSHCommand(cli.knownHosts),
+			"GIT_SSH_COMMAND=" + GetGitSSHCommand(cli.knownHosts),
 			//	"GIT_TRACE=1",
 			"GIT_CONFIG_NOSYSTEM=1", // Disable reading from system gitconfig.
 			"HOME=/dev/null",        // Disable reading from user gitconfig.
@@ -138,7 +138,7 @@ func (cli *gitCLI) run(ctx context.Context, args ...string) (_ *bytes.Buffer, er
 	}
 }
 
-func getGitSSHCommand(knownHosts string) string {
+func GetGitSSHCommand(knownHosts string) string {
 	gitSSHCommand := "ssh -F /dev/null"
 	if knownHosts != "" {
 		gitSSHCommand += " -o UserKnownHostsFile=" + knownHosts

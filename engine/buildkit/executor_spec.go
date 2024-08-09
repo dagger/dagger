@@ -879,6 +879,11 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 
 	w.execMD.ClientStableID = randid.NewID()
 
+	// include SSH_AUTH_SOCK if it's set in the exec's env vars
+	if v, ok := state.origEnvMap["SSH_AUTH_SOCK"]; ok {
+		w.execMD.SSHAuthSocketPath = v
+	}
+
 	filesyncer, err := client.NewFilesyncer(
 		state.rootfsPath,
 		strings.TrimPrefix(state.spec.Process.Cwd, "/"),

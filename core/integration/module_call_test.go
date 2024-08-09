@@ -760,9 +760,13 @@ func (m *Test) ToStatus(status string) Status {
 		t.Run("module args", func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
+			mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
+			defer cleanup()
+
 			modGen := goGitBase(t, c).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work").
+				With(mountedSocket).
 				With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 				WithNewFile("foo.txt", "foo").
 				WithNewFile("main.go", `package main
@@ -1923,9 +1927,13 @@ func (ModuleSuite) TestCallByName(ctx context.Context, t *testctx.T) {
 		t.Run("git", func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
+			mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
+			defer cleanup()
+
 			ctr := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work").
+				With(mountedSocket).
 				With(daggerExec("init")).
 				With(daggerExec("install", "--name", "foo", testGitModuleRef(tc, ""))).
 				With(daggerExec("install", "--name", "bar", testGitModuleRef(tc, "subdir/dep2")))
@@ -1942,12 +1950,16 @@ func (ModuleSuite) TestCallByName(ctx context.Context, t *testctx.T) {
 }
 
 func (ModuleSuite) TestCallGitMod(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
 	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
+		c := connect(ctx, t)
+
 		t.Run("go", func(ctx context.Context, t *testctx.T) {
+			mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
+			defer cleanup()
+
 			out, err := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				With(mountedSocket).
 				With(daggerCallAt(testGitModuleRef(tc, "top-level"), "fn")).
 				Stdout(ctx)
 			require.NoError(t, err)
@@ -1955,8 +1967,12 @@ func (ModuleSuite) TestCallGitMod(ctx context.Context, t *testctx.T) {
 		})
 
 		t.Run("typescript", func(ctx context.Context, t *testctx.T) {
+			mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
+			defer cleanup()
+
 			out, err := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				With(mountedSocket).
 				With(daggerCallAt(testGitModuleRef(tc, "ts"), "container-echo", "--string-arg", "yoyo", "stdout")).
 				Stdout(ctx)
 			require.NoError(t, err)
@@ -1964,8 +1980,12 @@ func (ModuleSuite) TestCallGitMod(ctx context.Context, t *testctx.T) {
 		})
 
 		t.Run("python", func(ctx context.Context, t *testctx.T) {
+			mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
+			defer cleanup()
+
 			out, err := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				With(mountedSocket).
 				With(daggerCallAt(testGitModuleRef(tc, "py"), "container-echo", "--string-arg", "yoyo", "stdout")).
 				Stdout(ctx)
 			require.NoError(t, err)

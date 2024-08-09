@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -1006,6 +1007,16 @@ func allCacheConfigsFromEnv() (cacheImportConfigs []*controlapi.CacheOptionsEntr
 }
 
 func (c *Client) clientMetadata() engine.ClientMetadata {
+	// retrieve SSH_AUTH_SOCK path and make it relative
+	sshAuthSock := os.Getenv("SSH_AUTH_SOCK")
+	if sshAuthSock != "" {
+		if cwd, err := os.Getwd(); err == nil {
+			if relPath, err := LexicalRelativePath(cwd, sshAuthSock); err == nil {
+				sshAuthSock = relPath
+			}
+		}
+	}
+
 	return engine.ClientMetadata{
 		ClientID:                  c.ID,
 		ClientVersion:             engine.Version,
@@ -1019,7 +1030,59 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		CloudToken:                os.Getenv("DAGGER_CLOUD_TOKEN"),
 		DoNotTrack:                analytics.DoNotTrack(),
 		Interactive:               c.Interactive,
+		SSHAuthSocketPath:         sshAuthSock,
 	}
+}
+
+// lexicalRelativePath computes a relative path between the current working directory
+// and modPath without relying on runtime.GOOS to estimate OS-specific separators. This is necessary as the code
+// runs inside a Linux container, but the user might have specified a Windows-style modPath.
+func LexicalRelativePath(cwdPath, modPath string) (string, error) {
+	cwdPath = normalizePath(cwdPath)
+	modPath = normalizePath(modPath)
+
+	cwdDrive := getDrive(cwdPath)
+	modDrive := getDrive(modPath)
+	if cwdDrive != modDrive {
+		return "", fmt.Errorf("cannot make paths on different drives relative: %s and %s", cwdDrive, modDrive)
+	}
+
+	// Remove drive letter for relative path calculation
+	cwdPath = strings.TrimPrefix(cwdPath, cwdDrive)
+	modPath = strings.TrimPrefix(modPath, modDrive)
+
+	relPath, err := filepath.Rel(cwdPath, modPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to make path relative: %w", err)
+	}
+
+	return relPath, nil
+}
+
+// normalizePath converts all backslashes to forward slashes and removes trailing slashes.
+// We can't use filepath.ToSlash() as this code always runs inside a Linux container.
+func normalizePath(path string) string {
+	path = filepath.Clean(path)
+	path = strings.ReplaceAll(path, "\\", "/")
+	return strings.TrimSuffix(path, "/")
+}
+
+// getDrive extracts the drive letter or UNC share from a path.
+func getDrive(path string) string {
+	// Check for drive letter (e.g., "C:")
+	if len(path) >= 2 && path[1] == ':' {
+		return strings.ToUpper(path[:2])
+	}
+
+	// Check for UNC path (e.g., "//server/share")
+	if strings.HasPrefix(path, "//") {
+		parts := strings.SplitN(path[2:], "/", 3)
+		if len(parts) >= 2 {
+			return "//" + parts[0] + "/" + parts[1]
+		}
+	}
+
+	return ""
 }
 
 func (c *Client) AppendHTTPRequestHeaders(headers http.Header) http.Header {

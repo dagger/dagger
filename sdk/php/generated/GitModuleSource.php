@@ -14,12 +14,12 @@ namespace Dagger;
 class GitModuleSource extends Client\AbstractObject implements Client\IdAble
 {
     /**
-     * The URL to clone the root of the git repo from
+     * The ref to clone the root of the git repo from
      */
-    public function cloneURL(): string
+    public function cloneRef(): string
     {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('cloneURL');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'cloneURL');
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('cloneRef');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'cloneRef');
     }
 
     /**
@@ -56,6 +56,15 @@ class GitModuleSource extends Client\AbstractObject implements Client\IdAble
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
         return new \Dagger\GitModuleSourceId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+    }
+
+    /**
+     * The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket)
+     */
+    public function repositoryUrl(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('repositoryUrl');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'repositoryUrl');
     }
 
     /**

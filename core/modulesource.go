@@ -408,6 +408,33 @@ func (src *LocalModuleSource) Symbolic() string {
 	return src.RefString()
 }
 
+type SchemeType int
+
+const (
+	NoScheme SchemeType = iota
+	SchemeHTTP
+	SchemeHTTPS
+	SchemeSSH
+	SchemeSCPLike
+)
+
+func (s SchemeType) Prefix() string {
+	switch s {
+	case SchemeHTTP:
+		return "http://"
+	case SchemeHTTPS:
+		return "https://"
+	case SchemeSSH:
+		return "ssh://"
+	default:
+		return ""
+	}
+}
+
+func (s SchemeType) IsSSH() bool {
+	return s == SchemeSSH
+}
+
 type GitModuleSource struct {
 	Root        string `field:"true" doc:"The clean module name of the root of the module"`
 	RootSubpath string `field:"true" doc:"The path to the root of the module source under the context directory. This directory contains its configuration file. It also contains its source code (possibly as a subdirectory)."`
@@ -415,7 +442,9 @@ type GitModuleSource struct {
 	Version string `field:"true" doc:"The specified version of the git repo this source points to."`
 	Commit  string `field:"true" doc:"The resolved commit of the git repo this source points to."`
 
-	CloneURL string `field:"true" name:"cloneURL" doc:"The URL to clone the root of the git repo from"`
+	CloneRef string `field:"true" name:"cloneRef" doc:"The ref to clone the root of the git repo from"`
+
+	RepositoryURL string `field:"true" doc:"The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket)"`
 
 	ContextDirectory dagql.Instance[*Directory] `field:"true" doc:"The directory containing everything needed to load load and use the module."`
 }
@@ -444,7 +473,7 @@ func (src *GitModuleSource) PBDefinitions(ctx context.Context) ([]*pb.Definition
 }
 
 func (src *GitModuleSource) RefString() string {
-	refPath := src.Root
+	refPath := src.CloneRef
 	subPath := filepath.Join("/", src.RootSubpath)
 	if subPath != "/" {
 		refPath += subPath
@@ -454,26 +483,26 @@ func (src *GitModuleSource) RefString() string {
 
 func (src *GitModuleSource) Symbolic() string {
 	// ignore error since ref is validated upon module initialization
-	p, _ := url.JoinPath(src.CloneURL, src.RootSubpath)
+	p, _ := url.JoinPath(src.CloneRef, src.RootSubpath)
 	return p
 }
 
 func (src *GitModuleSource) HTMLURL() string {
-	parsedURL, err := url.Parse(src.CloneURL)
+	parsedURL, err := url.Parse(src.RepositoryURL)
 	if err != nil {
-		return src.CloneURL + path.Join("/src", src.Commit, src.RootSubpath)
+		return src.RepositoryURL + path.Join("/src", src.Commit, src.RootSubpath)
 	}
 
 	switch parsedURL.Host {
 	case "github.com", "gitlab.com":
-		return src.CloneURL + path.Join("/tree", src.Commit, src.RootSubpath)
+		return src.RepositoryURL + path.Join("/tree", src.Commit, src.RootSubpath)
 	case "dev.azure.com":
 		if src.RootSubpath != "" {
-			return fmt.Sprintf("%s/commit/%s?path=/%s", src.CloneURL, src.Commit, src.RootSubpath)
+			return fmt.Sprintf("%s/commit/%s?path=/%s", src.RepositoryURL, src.Commit, src.RootSubpath)
 		}
-		return src.CloneURL + path.Join("/commit", src.Commit)
+		return src.RepositoryURL + path.Join("/commit", src.Commit)
 	default:
-		return src.CloneURL + path.Join("/src", src.Commit, src.RootSubpath)
+		return src.RepositoryURL + path.Join("/src", src.Commit, src.RootSubpath)
 	}
 }
 
