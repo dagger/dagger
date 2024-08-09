@@ -63,10 +63,9 @@ const InstrumentationLibrary = "dagger.io/client.drivers"
 // are identified by looking for containers with the prefix
 // "dagger-engine-").
 func (d *dockerDriver) create(ctx context.Context, imageRef string, opts *DriverOpts) (helper *connh.ConnectionHelper, rerr error) {
-	ctx, span := otel.Tracer("").Start(ctx, "create")
+	ctx, span := otel.Tracer("").Start(ctx, fmt.Sprintf("[driver:docker] create or update engine container from '%s'", imageRef))
 	defer telemetry.End(span, func() error { return rerr })
 	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
-
 	// Get the SHA digest of the image to use as an ID for the container we'll create
 	var id string
 	fallbackToLeftoverEngine := false
@@ -78,6 +77,7 @@ func (d *dockerDriver) create(ctx context.Context, imageRef string, opts *Driver
 		// We already have the digest as part of the image ref
 		id = digest.DigestStr()
 	} else {
+		slog.Info(fmt.Sprintf("Looking up digest for engine image '%s'", imageRef))
 		// We only have a tag in the image ref, so resolve it to a digest. The default
 		// auth keychain parses the same docker credentials as used by the buildkit
 		// session attachable.
@@ -89,6 +89,7 @@ func (d *dockerDriver) create(ctx context.Context, imageRef string, opts *Driver
 			fallbackToLeftoverEngine = true
 		} else {
 			id = img.Digest.String()
+			slog.Info(fmt.Sprintf("Digest for '%s': %s", imageRef, id))
 		}
 	}
 
