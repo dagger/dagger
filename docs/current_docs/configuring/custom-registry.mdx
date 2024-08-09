@@ -1,10 +1,10 @@
 ---
-slug: /manual/engine/custom-registry
+slug: /configuring/custom-registry
 ---
 
 # Custom Registry Mirrors
 
-The Dagger Engine can be configured to use container registry mirrors for any registry URL. This allows container images that refer to one registry to instead be redirected to a different one.
+Dagger can be configured to use container registry mirrors for any registry URL. This allows container images that refer to one registry to instead be redirected to a different one.
 
 Create a file named `engine.toml` that contains the registry mirror:
 
@@ -26,7 +26,7 @@ This configuration can be repeated for multiple registries and mirrors if needed
   mirrors = ["mirror.foo.com", "mirror.bar.com"]
 ```
 
-Manually start the Dagger Engine with the custom `engine.toml`:
+Manually start Dagger with the custom `engine.toml`:
 
 ```shell
 docker run --rm --name customized-dagger-engine --privileged --volume $PWD/engine.toml:/etc/dagger/engine.toml registry.dagger.io/engine:v0.10.2

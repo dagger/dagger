@@ -1,10 +1,10 @@
 ---
-slug: /manual/engine/custom-runner
+slug: /configuring/custom-runner
 ---
 
 # Custom Runner
 
-A runner is the "backend" of the Dagger Engine where containers are actually executed.
+A runner is the "backend" of Dagger where containers are actually executed.
 
 Runners are responsible for:
 
@@ -50,11 +50,11 @@ The runner is distributed as a container image at `registry.dagger.io/engine`.
 
 If any extra CA certificates are to be included in order to - for example - push images to a private registry, they can be included under `/usr/local/share/ca-certificates` in the runner image.
 
-This can be accomplished by building a custom engine image using the Dagger Engine image as a base, or by mounting them into a container created from the Dagger Engine image at runtime.
+This can be accomplished by building a custom image using the Dagger image as a base, or by mounting them into a container created from the Dagger image at runtime.
 
 ### Privileged execution
 
-By default, the Dagger Engine allows execs to run with root capabilities when the `InsecureRootCapabilities` field is set to true in the `WithExec` API.
+By default, Dagger allows execs to run with root capabilities when the `InsecureRootCapabilities` field is set to true in the `WithExec` API.
 
 This can be disabled by overriding the default engine config at `/etc/dagger/engine.toml` to remove the line `insecure-entitlements = ["security.insecure"]`.
 
