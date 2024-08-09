@@ -95,6 +95,16 @@ export function typeToTypedef(
         }
       }
 
+      // If we cannot resolve the symbol, we check for the alias symbol.
+      // This should mostly lead to a failure since external types are not supported by
+      // dagger yet.
+      if (type.aliasSymbol && type.aliasSymbol.flags & ts.TypeFlags.Object) {
+        return {
+          kind: TypeDefKind.ObjectKind,
+          name: type.aliasSymbol.escapedName.toString(),
+        }
+      }
+
       throw new Error(`Unsupported type ${strType}`)
   }
 }
