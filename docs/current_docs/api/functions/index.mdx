@@ -1,0 +1,15 @@
+---
+slug: /manual/functions/index
+---
+
+# Dagger Functions
+
+Dagger Functions let you encapsulate the tasks and workflows of your application delivery pipelines into reusable software components which can be loaded into any Dagger Engine, and called by other Dagger Functions.
+
+Dagger Functions are just regular code, written in your usual language using a Dagger SDK. At runtime, the Dagger Engine compiles each of your functions into a special container, and exposes a custom GraphQL API for calling them. Clients can compose your Dagger Functions into dynamic pipelines, just like with core functions.
+
+Dagger Functions can call other Dagger Functions, across languages. For example, a Python function can call a Go function, which can call a TypeScript function, and so on. Each Dagger SDK generates native code-bindings for all dependencies, which abstract away the underlying GraphQL queries. This gives you all the benefits of type-checking, code completion and other IDE features when developing Dagger Functions.
+
+All Dagger Functions can also be called from the Dagger CLI. The CLI can call any Dagger Function, either from your local filesystem or from a Git repository. No other infrastructure is required. It can be used interactively, from a shell script, or from a CI configuration.
+
+The Dagger Engine provides some core functions, but you are encouraged to write your own and share them with others. Functions are packaged, shared and reused using modules. Dagger also lets you import and reuse modules developed by your team, your organization or the broader Dagger community.

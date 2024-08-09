@@ -1,0 +1,70 @@
+---
+slug: /manual/api/lazy-evaluation
+---
+
+import Embed from "@site/src/components/embed.js"
+
+# Lazy Evaluation
+
+GraphQL query resolution is triggered only when a leaf value (scalar) is requested. Dagger uses this feature of GraphQL to evaluate pipelines "lazily".
+
+An example will make this clearer. First, navigate to [Webhook.site](https://webhook.site), a free online tool that lets you receive and log incoming HTTP requests. Obtain and copy your unique webhook URL, as shown below:
+
+![Webhook.site URL](/img/current_docs/manual/api/webhook-1.png)
+
+Then, execute the following query, replacing the placeholder with your unique webhook URL:
+
+```graphql
+query {
+  container {
+    from(address: "alpine:latest") {
+      withExec(args: ["apk", "add", "curl"]) {
+        withExec(args: ["curl", "YOUR-WEBHOOK-URL"]) {
+          id
+        }
+      }
+    }
+  }
+}
+```
+
+[Try it in the API Playground](https://play.dagger.cloud/playground/NuLZcSHaNno)
+
+This query instructs Dagger to:
+
+- initialize a container from the `alpine:latest` image (this resolves the `from` field);
+- add the `curl` command-line tool to the image via `apk add` (this resolves the `withExec` field);
+- send an HTTP request to your webhook URL using `curl` (this resolves the second `withExec` field);
+- return an ID representing the container state (this resolves the final `id` field).
+
+The query returns a base64-encoded block, as explained in the previous section.
+
+However, check the Webhook.site dashboard and you will notice that no HTTP request was sent when this query was executed. The reason is laziness: the query requests only an ID and, since resolving this does not require the commands to be executed, Dagger does not do so. It merely returns the container state and execution plan without actually executing the plan or running the `curl` command.
+
+Now, update and execute the query again as follows:
+
+```graphql
+query {
+  container {
+    from(address: "alpine:latest") {
+      withExec(args: ["apk", "add", "curl"]) {
+        withExec(args: ["curl", "YOUR-WEBHOOK-URL-HERE"]) {
+          stdout
+        }
+      }
+    }
+  }
+}
+```
+
+[Try it in the API Playground](https://play.dagger.cloud/playground/SLtXQ4lvqNS)
+
+This time, Dagger both prepares and executes the plan, because that is the only way to resolve the `stdout` field. Check the Webhook.site dashboard and the HTTP request sent by the `curl` command will be visible in the request log, as shown below:
+
+![Webhook.site request](/img/current_docs/manual/api/webhook-2.png)
+
+This example demonstrates the lazy evaluation model in action. The client requests data, and the Dagger GraphQL API returns that data. If executing a command is necessary to return that data, it will do so; if not, it will not.
+
+:::important
+Lazy evaluation is a key advantage of GraphQL. It allows users to write queries (or code, if using an SDK) in a procedural manner, and resolves those queries only when necessary to return data to the user. Dagger leverages this lazy evaluation model to optimize and parallelize query execution for maximum speed and performance.
+:::
