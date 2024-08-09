@@ -73,6 +73,10 @@ type FuncCommand struct {
 	// Example is examples of how to use the command.
 	Example string
 
+	// Annotations are key/value pairs that can be used to identify or
+	// group commands or set special options.
+	Annotations map[string]string
+
 	// DisableModuleLoad skips adding a flag for loading a user Dagger Module.
 	DisableModuleLoad bool
 
@@ -109,8 +113,8 @@ func (fc *FuncCommand) Command() *cobra.Command {
 			Short:       fc.Short,
 			Long:        fc.Long,
 			Example:     fc.Example,
+			Annotations: fc.Annotations,
 			GroupID:     moduleGroup.ID,
-			Annotations: map[string]string{},
 
 			// We need to disable flag parsing because it'll act on --help
 			// and validate the args before we have a chance to add the
@@ -182,6 +186,10 @@ func (fc *FuncCommand) Command() *cobra.Command {
 					return nil
 				})
 			},
+		}
+
+		if fc.cmd.Annotations == nil {
+			fc.cmd.Annotations = map[string]string{}
 		}
 
 		// Allow using flags with the name that was reported by the SDK.

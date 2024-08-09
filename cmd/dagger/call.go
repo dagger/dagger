@@ -21,6 +21,9 @@ var callCoreCmd = &FuncCommand{
 	Name:              "core [options]",
 	Short:             "Call a core function",
 	DisableModuleLoad: true,
+	Annotations: map[string]string{
+		"experimental": "true",
+	},
 }
 
 var callModCmd = &FuncCommand{

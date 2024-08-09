@@ -5,9 +5,13 @@ body: |
   Usage: `dagger core <function>`
   Example: `dagger core container from --address=alpine terminal`
 
-  Works the same as `dagger call`, but instead of loading a user module, it only uses functions in the core API.
+  Works the same as `dagger call`, but instead of loading a user module, 
+  it only uses functions from the core API.
   
   Run `dagger core --help` for available functions.
+
+  _Note that this command is experimental and the DX for calling core functions 
+  in the CLI may change in the future._
 
 time: 2024-06-29T00:03:42.175445Z
 custom:
