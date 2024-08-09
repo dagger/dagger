@@ -164,6 +164,20 @@ func (client *daggerClient) String() string {
 	return fmt.Sprintf("<Client %s: %s>", client.clientID, client.state)
 }
 
+func (client *daggerClient) FlushTelemetry(ctx context.Context) error {
+	slog := slog.With("client", client.clientID)
+	var errs error
+	if client.tracerProvider != nil {
+		slog.ExtraDebug("force flushing client traces")
+		errs = errors.Join(errs, client.tracerProvider.ForceFlush(ctx))
+	}
+	if client.loggerProvider != nil {
+		slog.ExtraDebug("force flushing client logs")
+		errs = errors.Join(errs, client.loggerProvider.ForceFlush(ctx))
+	}
+	return errs
+}
+
 func (client *daggerClient) ShutdownTelemetry(ctx context.Context) error {
 	slog := slog.With("client", client.clientID)
 	var errs error
@@ -178,13 +192,13 @@ func (client *daggerClient) ShutdownTelemetry(ctx context.Context) error {
 	return errs
 }
 
-func (sess *daggerSession) ShutdownTelemetry(ctx context.Context) error {
+func (sess *daggerSession) FlushTelemetry(ctx context.Context) error {
 	eg := new(errgroup.Group)
 	sess.clientMu.Lock()
 	for _, client := range sess.clients {
 		client := client
 		eg.Go(func() error {
-			return client.ShutdownTelemetry(ctx)
+			return client.FlushTelemetry(ctx)
 		})
 	}
 	sess.clientMu.Unlock()
@@ -1113,7 +1127,7 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 	// Flush telemetry across the entire session so that any child clients will
 	// save telemetry into their parent's DB, including to this client.
 	slog.ExtraDebug("flushing session telemetry")
-	if err := sess.ShutdownTelemetry(ctx); err != nil {
+	if err := sess.FlushTelemetry(ctx); err != nil {
 		slog.Error("failed to flush telemetry", "error", err)
 	}
 
