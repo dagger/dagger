@@ -7,7 +7,6 @@ import (
 
 	"github.com/sirupsen/logrus"
 	"go.opentelemetry.io/otel/log"
-	"go.opentelemetry.io/otel/trace"
 )
 
 // some logs from buildkit/containerd libs are not useful even at debug level,
@@ -67,8 +66,7 @@ func (h *noiseReductionHook) Fire(entry *logrus.Entry) error {
 }
 
 type otelLogrusHook struct {
-	rootSpan trace.Span
-	logger   log.Logger
+	logger log.Logger
 }
 
 var _ logrus.Hook = (*otelLogrusHook)(nil)

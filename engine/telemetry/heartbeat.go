@@ -7,9 +7,15 @@ import (
 
 	"github.com/dagger/dagger/engine/slog"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const HeartbeatInterval = 30 * time.Second
+
+type spanKey struct {
+	TraceID trace.TraceID
+	SpanID  trace.SpanID
+}
 
 // SpanHeartbeater is a SpanExporter that keeps track of live spans and
 // re-exports them periodically to the underlying SpanExporter to indicate that

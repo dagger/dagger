@@ -64,21 +64,18 @@ import (
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/sirupsen/logrus"
 	bolt "go.etcd.io/bbolt"
-	logsv1 "go.opentelemetry.io/proto/otlp/collector/logs/v1"
-	metricsv1 "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
-	tracev1 "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"golang.org/x/sync/semaphore"
 	"google.golang.org/grpc"
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	daggercache "github.com/dagger/dagger/engine/cache"
+	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/sources/blob"
 	"github.com/dagger/dagger/engine/sources/gitdns"
 	"github.com/dagger/dagger/engine/sources/httpdns"
-	enginetel "github.com/dagger/dagger/engine/telemetry"
 )
 
 const (
@@ -103,6 +100,7 @@ type Server struct {
 	workerCacheMetaDBPath string
 	buildkitMountPoolDir  string
 	executorRootDir       string
+	clientDBDir           string
 
 	//
 	// buildkit+containerd entities/DBs
@@ -156,7 +154,7 @@ type Server struct {
 	// telemetry config+state
 	//
 
-	telemetryPubSub *enginetel.PubSub
+	telemetryPubSub *PubSub
 	buildkitLogSink io.Writer
 
 	//
@@ -170,13 +168,12 @@ type Server struct {
 	//
 	daggerSessions   map[string]*daggerSession // session id -> session state
 	daggerSessionsMu sync.RWMutex
+	clientDBs        *clientdb.DBs
 }
 
 type NewServerOpts struct {
 	Config *config.Config
 	Name   string
-
-	TelemetryPubSub *enginetel.PubSub
 }
 
 //nolint:gocyclo
@@ -201,8 +198,6 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 			Options:       cfg.DNS.Options,
 			SearchDomains: cfg.DNS.SearchDomains,
 		},
-
-		telemetryPubSub: opts.TelemetryPubSub,
 
 		daggerSessions: make(map[string]*daggerSession),
 	}
@@ -239,6 +234,11 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	// clean up old hosts/resolv.conf file. ignore errors
 	os.RemoveAll(filepath.Join(srv.executorRootDir, "hosts"))
 	os.RemoveAll(filepath.Join(srv.executorRootDir, "resolv.conf"))
+
+	// set up client DBs, and the telemetry pub/sub which writes to it
+	srv.clientDBDir = filepath.Join(srv.workerRootDir, "clientdbs")
+	srv.clientDBs = clientdb.NewDBs(srv.clientDBDir)
+	srv.telemetryPubSub = NewPubSub(srv)
 
 	//
 	// setup config derived from engine config
@@ -530,6 +530,9 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		time.AfterFunc(time.Second, srv.throttledGC)
 	}()
 
+	// garbage collect client DBs
+	go srv.gcClientDBs()
+
 	return srv, nil
 }
 
@@ -586,16 +589,26 @@ func (srv *Server) LogMetrics(l *logrus.Entry) *logrus.Entry {
 
 func (srv *Server) Register(server *grpc.Server) {
 	controlapi.RegisterControlServer(server, srv)
+}
 
-	traceSrv := &enginetel.TraceServer{PubSub: srv.telemetryPubSub}
-	tracev1.RegisterTraceServiceServer(server, traceSrv)
-	enginetel.RegisterTracesSourceServer(server, traceSrv)
+func (srv *Server) gcClientDBs() {
+	for range time.NewTicker(time.Minute).C {
+		if err := srv.clientDBs.GC(srv.activeClientIDs()); err != nil {
+			slog.Error("failed to GC client DBs", "error", err)
+		}
+	}
+}
 
-	logsSrv := &enginetel.LogsServer{PubSub: srv.telemetryPubSub}
-	logsv1.RegisterLogsServiceServer(server, logsSrv)
-	enginetel.RegisterLogsSourceServer(server, logsSrv)
+func (srv *Server) activeClientIDs() map[string]bool {
+	keep := map[string]bool{}
 
-	metricsSrv := &enginetel.MetricsServer{PubSub: srv.telemetryPubSub}
-	metricsv1.RegisterMetricsServiceServer(server, metricsSrv)
-	enginetel.RegisterMetricsSourceServer(server, metricsSrv)
+	srv.daggerSessionsMu.RLock()
+	for _, sess := range srv.daggerSessions {
+		for id := range sess.clients {
+			keep[id] = true
+		}
+	}
+	srv.daggerSessionsMu.RUnlock()
+
+	return keep
 }

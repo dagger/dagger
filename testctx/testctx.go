@@ -5,24 +5,12 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
-	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/log"
-	"go.opentelemetry.io/otel/trace"
+	"github.com/google/uuid"
 )
-
-type Middleware = func(*T) *T
-
-func WithParallel(t *T) *T {
-	t.Parallel()
-	return t.
-		BeforeEach(func(t *T) *T {
-			t.Parallel()
-			return t
-		})
-}
 
 func Run(ctx context.Context, testingT *testing.T, suite any, middleware ...Middleware) {
 	t := New(ctx, testingT)
@@ -49,44 +37,8 @@ func Run(ctx context.Context, testingT *testing.T, suite any, middleware ...Midd
 
 		t.Run(methT.Name, tf)
 	}
-}
 
-func WithOTelTracing(tracer trace.Tracer) Middleware {
-	wrapSpan := func(t *T) *T {
-		ctx, span := tracer.Start(t.Context(), t.BaseName())
-		t.Cleanup(func() {
-			if t.Failed() {
-				span.SetStatus(codes.Error, "test failed")
-			}
-			span.End()
-		})
-		return t.WithContext(ctx)
-	}
-	return func(t *T) *T {
-		return t.
-			BeforeAll(wrapSpan).
-			BeforeEach(wrapSpan)
-	}
-}
-
-func WithOTelLogging(logger log.Logger) Middleware {
-	return func(t *T) *T {
-		return t.WithLogger(func(t2 *T, msg string) {
-			var rec log.Record
-			rec.SetBody(log.StringValue(msg))
-			rec.SetTimestamp(time.Now())
-			logger.Emit(t2.Context(), rec)
-		})
-	}
-}
-
-func Combine(middleware ...Middleware) Middleware {
-	return func(t *T) *T {
-		for _, m := range middleware {
-			t = m(t)
-		}
-		return t
-	}
+	t.runSubtests()
 }
 
 func New(ctx context.Context, t *testing.T) *T {
@@ -102,11 +54,59 @@ func New(ctx context.Context, t *testing.T) *T {
 type T struct {
 	*testing.T
 
+	parent      *T
+	subtestIdx  int
+	subtestGUID string
+
 	ctx        context.Context
 	baseName   string
 	logger     func(*T, string)
 	beforeEach []func(*T) *T
+	afterSelf  []func(*T)
+	subtests   []*Subtest
 	errors     []string
+}
+
+// AfterSelf installs a function to be run after the synchronous portion of
+// the current test, before running any sub-tests.
+//
+// The function will also be called if the current test is skipped, fails,
+// or panics, using t.Cleanup internally while ensuring f is only called once.
+func (t *T) AfterSelf(f func(*T)) {
+	once := new(sync.Once)
+	onceF := func(t *T) {
+		once.Do(func() {
+			f(t)
+		})
+	}
+	t.afterSelf = append(t.afterSelf, onceF)
+	t.Cleanup(func() {
+		// NB: this might be a different *T from the one that gets passed
+		// to afterSelf, but that's okay; we just do this to handle
+		// skipped/failed/panicked cases
+		onceF(t)
+	})
+}
+
+type Subtest struct {
+	Parent   *T
+	Index    int
+	GUID     string
+	BaseName string
+	F        func(context.Context, *T)
+}
+
+func (t *T) id() string {
+	if t.parent != nil {
+		return fmt.Sprintf("%s:%s:%d", t.parent.Name(), t.subtestGUID, t.subtestIdx)
+	} else {
+		// should never actually be the case, since all methods are already subtests
+		return t.baseName
+	}
+}
+
+func (st *Subtest) id() string {
+	return fmt.Sprintf("%s:%s:%d", st.Parent.Name(), st.GUID, st.Index)
 }
 
 func (t *T) BaseName() string {
@@ -154,21 +154,45 @@ func (t T) BeforeEach(f Middleware) *T {
 	return &t
 }
 
-func (t *T) Run(name string, f func(context.Context, *T)) bool {
-	return t.T.Run(name, func(testingT *testing.T) {
-		sub := t.sub(name, testingT)
-		for _, setup := range t.beforeEach {
-			sub = setup(sub)
-		}
-		f(sub.Context(), sub)
+func (t *T) Run(name string, f func(context.Context, *T)) {
+	uuid, err := uuid.NewV7()
+	if err != nil {
+		panic(err)
+	}
+	t.subtests = append(t.subtests, &Subtest{
+		Parent:   t,
+		Index:    len(t.subtests),
+		GUID:     uuid.String(),
+		BaseName: name,
+		F:        f,
 	})
+}
+
+func (t *T) runSubtests() {
+	for _, f := range t.afterSelf {
+		f(t)
+	}
+	for _, subTest := range t.subtests {
+		t.T.Run(subTest.BaseName, func(testingT *testing.T) {
+			subT := t.sub(subTest.BaseName, testingT)
+			subT.subtestIdx = subTest.Index
+			subT.subtestGUID = subTest.GUID
+			for _, setup := range t.beforeEach {
+				subT = setup(subT)
+			}
+			subTest.F(subT.Context(), subT)
+			subT.runSubtests()
+		})
+	}
 }
 
 func (t *T) sub(name string, testingT *testing.T) *T {
 	sub := New(t.ctx, testingT)
+	sub.parent = t
 	sub.baseName = name
 	sub.logger = t.logger
 	sub.beforeEach = t.beforeEach
+	// don't copy t.afterSelf or t.subtests
 	return sub
 }
 

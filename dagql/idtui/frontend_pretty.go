@@ -162,6 +162,12 @@ func (fe *frontendPretty) SetPrimary(spanID trace.SpanID) {
 	fe.mu.Unlock()
 }
 
+func (fe *frontendPretty) SetRevealAllSpans(val bool) {
+	fe.mu.Lock()
+	fe.FrontendOpts.RevealAllSpans = val
+	fe.mu.Unlock()
+}
+
 func (fe *frontendPretty) runWithTUI(ctx context.Context, ttyIn *os.File, ttyOut *os.File, run func(context.Context) error) error {
 	var stdin io.Reader
 	if ttyIn != nil {

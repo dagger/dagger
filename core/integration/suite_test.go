@@ -32,7 +32,7 @@ var testCtx = context.Background()
 func TestMain(m *testing.M) {
 	testCtx = telemetry.InitEmbedded(testCtx, nil)
 	res := m.Run()
-	telemetry.Close()
+	telemetry.Close(testCtx)
 	os.Exit(res)
 }
 
@@ -43,7 +43,7 @@ func Tracer() trace.Tracer {
 }
 
 func Logger() log.Logger {
-	return telemetry.Logger(InstrumentationLibrary)
+	return telemetry.Logger(testCtx, InstrumentationLibrary)
 }
 
 func Middleware() []testctx.Middleware {

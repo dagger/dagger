@@ -1,6 +1,8 @@
 package telemetry
 
 import (
+	"context"
+
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -28,6 +30,12 @@ func Internal() trace.SpanStartOption {
 // show its children instead.
 func Passthrough() trace.SpanStartOption {
 	return trace.WithAttributes(attribute.Bool(UIPassthroughAttr, true))
+}
+
+// Tracer returns a Tracer for the given library using the provider from
+// the current span.
+func Tracer(ctx context.Context, lib string) trace.Tracer {
+	return trace.SpanFromContext(ctx).TracerProvider().Tracer(lib)
 }
 
 // End is a helper to end a span with an error if the function returns an error.
