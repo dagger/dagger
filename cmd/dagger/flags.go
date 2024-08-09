@@ -284,6 +284,11 @@ func (v *directoryValue) Get(ctx context.Context, dag *dagger.Client, modSrc *da
 	path := v.String()
 	path = strings.TrimPrefix(path, "file://")
 
+	// The core module doesn't have a ModuleSource.
+	if modSrc == nil {
+		return dag.Host().Directory(path), nil
+	}
+
 	// Check if there's a :view.
 	// This technically prevents use of paths containing a ":", but that's
 	// generally considered a no-no anyways since it isn't in the
@@ -785,6 +790,16 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) error {
 
 	case dagger.ObjectKind:
 		objName := r.TypeDef.AsObject.Name
+
+		if name == "id" && r.TypeDef.AsObject.IsCore() {
+			// FIXME: The core TypeDefs have ids converted to objects, but we'd
+			// need the CLI to recognize that and either use the object's ID
+			// or allow inputing it directly. Just don't support it for now.
+			return &UnsupportedFlagError{
+				Name: name,
+				Type: fmt.Sprintf("%sID", objName),
+			}
+		}
 
 		if val := GetCustomFlagValue(objName); val != nil {
 			flags.Var(val, name, usage)

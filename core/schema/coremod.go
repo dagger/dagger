@@ -99,7 +99,7 @@ func (m *CoreMod) ModTypeFor(ctx context.Context, typeDef *core.TypeDef, checkDi
 		modType = &CoreModEnum{coreMod: m, typeDef: typeDef.AsEnum.Value}
 
 	case core.TypeDefKindInterface:
-		// core does not yet defined any interfaces
+		// core does not yet define any interfaces
 		return nil, false, nil
 
 	default:
@@ -182,7 +182,7 @@ func (m *CoreMod) TypeDefs(ctx context.Context) ([]*core.TypeDef, error) {
 				typeDef.Functions = append(typeDef.Functions, fn)
 			}
 
-			if !isIdable {
+			if !isIdable && typeDef.Name != "Query" {
 				continue
 			}
 

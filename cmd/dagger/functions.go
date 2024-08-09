@@ -1,22 +1,33 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
+	"io"
+	"os"
+	"path/filepath"
 	"strings"
 
-	"github.com/juju/ansiterm/tabwriter"
-	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"gopkg.in/yaml.v3"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/querybuilder"
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/slog"
+)
+
+var (
+	// jsonOutput is true if the `-j,--json` flag is used.
+	jsonOutput bool
+
+	// outputPath is the parsed value of the `--output` flag.
+	outputPath string
 )
 
 const (
@@ -44,106 +55,6 @@ var funcGroup = &cobra.Group{
 	Title: "Functions",
 }
 
-var funcCmds = FuncCommands{
-	funcListCmd,
-	callCmd,
-}
-
-var funcListCmd = &FuncCommand{
-	Name:  "functions [options] [function]...",
-	Short: `List available functions`,
-	Long: strings.ReplaceAll(`List available functions in a module.
-
-This is similar to ´dagger call --help´, but only focused on showing the
-available functions.
-`,
-		"´",
-		"`",
-	),
-	Execute: func(fc *FuncCommand, cmd *cobra.Command) error {
-		tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
-		var o functionProvider = fc.mod.MainObject.AsFunctionProvider()
-		fmt.Fprintf(tw, "%s\t%s\n",
-			termenv.String("Name").Bold(),
-			termenv.String("Description").Bold(),
-		)
-		// Walk the hypothetical function pipeline specified by the args
-		for _, field := range cmd.Flags().Args() {
-			// Lookup the next function in the specified pipeline
-			nextFunc, err := GetFunction(o, field)
-			if err != nil {
-				return err
-			}
-			nextType := nextFunc.ReturnType
-			if nextType.AsList != nil {
-				nextType = nextType.AsList.ElementTypeDef
-			}
-			if nextType.AsFunctionProvider() != nil {
-				// sipsma explains why 'nextType.AsObject' is not enough:
-				// > when we're returning the hierarchies of TypeDefs from the API,
-				// > and an object shows up as an output/input type to a function,
-				// > we just return a TypeDef with a name of the object rather than the full object definition.
-				// > You can get the full object definition only from the "top-level" returned object on the api call.
-				//
-				// > The reason is that if we repeated the full object definition every time,
-				// > you'd at best be using O(n^2) space in the result,
-				// > and at worst cause json serialization errors due to cyclic references
-				// > (i.e. with* functions on an object that return the object itself).
-				o = fc.mod.GetFunctionProvider(nextType.Name())
-				continue
-			}
-			return fmt.Errorf("function %q returns type %q with no further functions available", field, nextType.Kind)
-		}
-		// List functions on the final object
-		fns := o.GetFunctions()
-		sort.Slice(fns, func(i, j int) bool {
-			return fns[i].Name < fns[j].Name
-		})
-		skipped := make([]string, 0)
-		for _, fn := range fns {
-			if fn.IsUnsupported() {
-				skipped = append(skipped, cliName(fn.Name))
-				continue
-			}
-			desc := strings.SplitN(fn.Description, "\n", 2)[0]
-			if desc == "" {
-				desc = "-"
-			}
-			fmt.Fprintf(tw, "%s\t%s\n",
-				cliName(fn.Name),
-				desc,
-			)
-		}
-		if len(skipped) > 0 {
-			msg := fmt.Sprintf("Skipped %d function(s) with unsupported types: %s", len(skipped), strings.Join(skipped, ", "))
-			fmt.Fprintf(tw, "\n%s\n",
-				termenv.String(msg).Faint().String(),
-			)
-		}
-		return tw.Flush()
-	},
-}
-
-type FuncCommands []*FuncCommand
-
-func (fcs FuncCommands) AddFlagSet(flags *pflag.FlagSet) {
-	for _, cmd := range fcs.All() {
-		cmd.PersistentFlags().AddFlagSet(flags)
-	}
-}
-
-func (fcs FuncCommands) AddParent(rootCmd *cobra.Command) {
-	rootCmd.AddCommand(fcs.All()...)
-}
-
-func (fcs FuncCommands) All() []*cobra.Command {
-	cmds := make([]*cobra.Command, len(fcs))
-	for i, fc := range fcs {
-		cmds[i] = fc.Command()
-	}
-	return cmds
-}
-
 // FuncCommand is a config object used to create a dynamic set of commands
 // for querying a module's functions.
 type FuncCommand struct {
@@ -162,34 +73,12 @@ type FuncCommand struct {
 	// Example is examples of how to use the command.
 	Example string
 
-	// Init is called when the command is created and initialized,
-	// before execution.
-	//
-	// It can be useful to add persistent flags for all subcommands here.
-	Init func(*cobra.Command)
+	// Annotations are key/value pairs that can be used to identify or
+	// group commands or set special options.
+	Annotations map[string]string
 
-	// Execute circumvents the default behavior of traversing  subcommands
-	// from the arguments, but still has access to the loaded objects from
-	// the module.
-	Execute func(*FuncCommand, *cobra.Command) error
-
-	// OnSelectObjectLeaf is called when a user provided command ends in a
-	// object and no more sub-commands are provided.
-	//
-	// If set, it should make another selection on the object that results
-	// return no error. Otherwise if it doesn't handle the object, it should
-	// return an error.
-	OnSelectObjectLeaf func(context.Context, *FuncCommand, functionProvider) error
-
-	// BeforeRequest is called before making the request with the query that
-	// contains the whole chain of functions.
-	//
-	// It can be useful to validate the return type of the function or as a
-	// last effort to select a GraphQL sub-field.
-	BeforeRequest func(*FuncCommand, *cobra.Command, *modTypeDef) error
-
-	// AfterResponse is called when the query has completed and returned a result.
-	AfterResponse func(*FuncCommand, *cobra.Command, *modTypeDef, any) error
+	// DisableModuleLoad skips adding a flag for loading a user Dagger Module.
+	DisableModuleLoad bool
 
 	// cmd is the parent cobra command.
 	cmd *cobra.Command
@@ -208,6 +97,9 @@ type FuncCommand struct {
 	// arguments rather than a debug level log.
 	warnSkipped bool
 
+	// selectedObject is not empty if the command chain end in an object.
+	selectedObject functionProvider
+
 	q   *querybuilder.Selection
 	c   *client.Client
 	ctx context.Context
@@ -221,8 +113,8 @@ func (fc *FuncCommand) Command() *cobra.Command {
 			Short:       fc.Short,
 			Long:        fc.Long,
 			Example:     fc.Example,
+			Annotations: fc.Annotations,
 			GroupID:     moduleGroup.ID,
-			Annotations: map[string]string{},
 
 			// We need to disable flag parsing because it'll act on --help
 			// and validate the args before we have a chance to add the
@@ -272,6 +164,7 @@ func (fc *FuncCommand) Command() *cobra.Command {
 			RunE: func(c *cobra.Command, a []string) error {
 				return withEngine(c.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) (rerr error) {
 					fc.c = engineClient
+					fc.q = querybuilder.Query().Client(engineClient.Dagger().GraphQLClient())
 
 					// withEngine changes the context.
 					c.SetContext(ctx)
@@ -295,6 +188,10 @@ func (fc *FuncCommand) Command() *cobra.Command {
 			},
 		}
 
+		if fc.cmd.Annotations == nil {
+			fc.cmd.Annotations = map[string]string{}
+		}
+
 		// Allow using flags with the name that was reported by the SDK.
 		// This avoids confusion as users are editing a module and trying
 		// to test its functions. For example, if a function argument is
@@ -305,9 +202,9 @@ func (fc *FuncCommand) Command() *cobra.Command {
 			return pflag.NormalizedName(cliName(name))
 		})
 
-		if fc.Init != nil {
-			fc.Init(fc.cmd)
-		}
+		fc.cmd.PersistentFlags().StringVarP(&outputPath, "output", "o", "", "Save the result to a local file or directory")
+
+		fc.cmd.PersistentFlags().BoolVarP(&jsonOutput, "json", "j", false, "Present result as JSON")
 	}
 	return fc.cmd
 }
@@ -365,9 +262,11 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 		}
 	}()
 
-	if err := fc.initializeModule(ctx); err != nil {
+	mod, err := initializeModule(ctx, fc.c.Dagger(), !fc.DisableModuleLoad)
+	if err != nil {
 		return err
 	}
+	fc.mod = mod
 
 	// Now that the module is loaded, show usage by default since errors
 	// are more likely to be from wrong CLI usage.
@@ -382,76 +281,66 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 		return fc.Help(cmd)
 	}
 
-	if fc.Execute != nil {
-		return fc.Execute(fc, cmd)
-	}
-
 	// No args to the parent command
 	if cmd == c {
-		return fc.RunE(ctx, fc.mod.MainObject)(cmd, flags)
+		return fc.RunE(ctx, fc.mod.MainObject.AsObject.Constructor)(cmd, flags)
 	}
 
 	return cmd.RunE(cmd, flags)
 }
 
 // initializeModule loads the module's type definitions.
-func (fc *FuncCommand) initializeModule(ctx context.Context) (rerr error) {
-	dag := fc.c.Dagger()
+func initializeModule(ctx context.Context, dag *dagger.Client, loadModule bool) (rdef *moduleDef, rerr error) {
+	def := &moduleDef{}
 
 	ctx, span := Tracer().Start(ctx, "initialize")
 	defer telemetry.End(span, func() error { return rerr })
 
-	resolveCtx, resolveSpan := Tracer().Start(ctx, "resolving module ref", telemetry.Encapsulate())
-	defer telemetry.End(resolveSpan, func() error { return rerr })
-	modConf, err := getDefaultModuleConfiguration(resolveCtx, dag, true, true)
-	if err != nil {
-		return fmt.Errorf("failed to get configured module: %w", err)
-	}
-	if !modConf.FullyInitialized() {
-		return fmt.Errorf("module at source dir %q doesn't exist or is invalid", modConf.LocalRootSourcePath)
-	}
-	resolveSpan.End()
-	mod := modConf.Source.AsModule().Initialize()
+	if loadModule {
+		resolveCtx, resolveSpan := Tracer().Start(ctx, "resolving module ref", telemetry.Encapsulate())
+		defer telemetry.End(resolveSpan, func() error { return rerr })
+		modConf, err := getDefaultModuleConfiguration(resolveCtx, dag, true, true)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get configured module: %w", err)
+		}
+		if !modConf.FullyInitialized() {
+			return nil, fmt.Errorf("module at source dir %q doesn't exist or is invalid", modConf.LocalRootSourcePath)
+		}
+		resolveSpan.End()
 
-	serveCtx, serveSpan := Tracer().Start(ctx, "installing module", telemetry.Encapsulate())
-	err = mod.Serve(serveCtx)
-	telemetry.End(serveSpan, func() error { return err })
-	if err != nil {
-		return err
-	}
+		def.Source = modConf.Source
+		mod := modConf.Source.AsModule().Initialize()
 
-	ctx, loadSpan := Tracer().Start(ctx, "analyzing module", telemetry.Encapsulate())
-	defer telemetry.End(loadSpan, func() error { return rerr })
+		serveCtx, serveSpan := Tracer().Start(ctx, "installing module", telemetry.Encapsulate())
+		err = mod.Serve(serveCtx)
+		telemetry.End(serveSpan, func() error { return err })
+		if err != nil {
+			return nil, err
+		}
 
-	name, err := mod.Name(ctx)
-	if err != nil {
-		return fmt.Errorf("get module name: %w", err)
-	}
+		ctx, loadSpan := Tracer().Start(ctx, "analyzing module", telemetry.Encapsulate())
+		defer telemetry.End(loadSpan, func() error { return rerr })
 
-	fc.mod = &moduleDef{
-		Name:   name,
-		Source: modConf.Source,
-	}
-
-	if err := fc.mod.loadTypeDefs(ctx, dag); err != nil {
-		return err
+		name, err := mod.Name(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("get module name: %w", err)
+		}
+		def.Name = name
 	}
 
-	if fc.mod.MainObject == nil {
-		return fmt.Errorf("main object not found")
+	if err := def.loadTypeDefs(ctx, dag); err != nil {
+		return nil, err
 	}
 
-	return nil
+	if def.MainObject == nil {
+		return nil, fmt.Errorf("main object not found")
+	}
+
+	return def, nil
 }
 
 // loadCommand finds the leaf command to run.
 func (fc *FuncCommand) loadCommand(c *cobra.Command, a []string) (rcmd *cobra.Command, rargs []string, rerr error) {
-	// If a command implements Execute, it doesn't need to build and
-	// traverse the command tree.
-	if fc.Execute != nil {
-		return c, nil, nil
-	}
-
 	ctx := c.Context()
 
 	spanCtx, span := Tracer().Start(ctx, "prepare", telemetry.Encapsulate())
@@ -527,6 +416,14 @@ func (fc *FuncCommand) cobraBuilder(ctx context.Context, fn *modFunction) func(*
 			return err
 		}
 
+		// The function name can be empty if it's the mocked constructor for
+		// the root type (Query). That constructor has `fn.ReturnType` set to
+		// the root type itself, but empty name so we can exclude a selection
+		// in the query builder here.
+		if fn.Name == "" {
+			return nil
+		}
+
 		// Easier to add query builder selections as we traverse the command tree.
 		return fc.selectFunc(fn, c)
 	}
@@ -535,6 +432,8 @@ func (fc *FuncCommand) cobraBuilder(ctx context.Context, fn *modFunction) func(*
 // addFlagsForFunction creates the flags for a function's arguments.
 func (fc *FuncCommand) addFlagsForFunction(cmd *cobra.Command, fn *modFunction) error {
 	var skipped []string
+
+	var hasArgs bool
 
 	for _, arg := range fn.Args {
 		fc.mod.LoadTypeDef(arg.TypeDef)
@@ -554,9 +453,10 @@ func (fc *FuncCommand) addFlagsForFunction(cmd *cobra.Command, fn *modFunction) 
 			"help:group",
 			[]string{"Arguments"},
 		)
+		hasArgs = true
 	}
 
-	if cmd.HasAvailableLocalFlags() {
+	if hasArgs {
 		cmd.Use += " [arguments]"
 	}
 
@@ -622,7 +522,7 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, fn *modFunction) *cobra.C
 		PreRunE: fc.cobraBuilder(ctx, fn),
 		// This is going to be executed in the "execution" vertex, when
 		// we have the final/leaf command.
-		RunE: fc.RunE(ctx, fn.ReturnType),
+		RunE: fc.RunE(ctx, fn),
 	}
 
 	newCmd.Flags().SetInterspersed(false)
@@ -635,7 +535,7 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, fn *modFunction) *cobra.C
 func (fc *FuncCommand) selectFunc(fn *modFunction, cmd *cobra.Command) error {
 	dag := fc.c.Dagger()
 
-	fc.Select(fn.Name)
+	fc.q = fc.q.Select(fn.Name)
 
 	for _, arg := range fn.SupportedArgs() {
 		var val any
@@ -666,24 +566,15 @@ func (fc *FuncCommand) selectFunc(fn *modFunction, cmd *cobra.Command) error {
 			val = v.GetSlice()
 		}
 
-		fc.Arg(arg.Name, val)
+		fc.q = fc.q.Arg(arg.Name, val)
 	}
 
 	return nil
 }
 
-func (fc *FuncCommand) Select(name ...string) {
-	if fc.q == nil {
-		fc.q = querybuilder.Query().Client(fc.c.Dagger().GraphQLClient())
-	}
-	fc.q = fc.q.Select(name...)
-}
-
-func (fc *FuncCommand) Arg(name string, value any) {
-	fc.q = fc.q.Arg(name, value)
-}
-
-func (fc *FuncCommand) RunE(ctx context.Context, typeDef *modTypeDef) func(*cobra.Command, []string) error {
+// RunE is the final command in the function chain, where the API request is made.
+func (fc *FuncCommand) RunE(ctx context.Context, fn *modFunction) func(*cobra.Command, []string) error {
+	typeDef := fn.ReturnType
 	return func(cmd *cobra.Command, args []string) error {
 		t := typeDef
 		if t.AsList != nil {
@@ -695,21 +586,18 @@ func (fc *FuncCommand) RunE(ctx context.Context, typeDef *modTypeDef) func(*cobr
 			origSel := fc.q
 			obj := t.AsFunctionProvider()
 
-			if fc.OnSelectObjectLeaf != nil {
-				if err := fc.OnSelectObjectLeaf(ctx, fc, obj); err != nil {
-					return fmt.Errorf("invalid selection for command %q: %w", cmd.Name(), err)
-				}
+			if err := fc.SelectObjectLeaf(ctx, obj); err != nil {
+				return err
 			}
 
-			// If the selection didn't change, it means OnSelectObjectLeaf
-			// didn't handle it. Rather than error, just simulate an empty
-			// response for AfterResponse.
+			// If the selection didn't change, it means SelectObjectLeaf
+			// didn't handle it, probably because there's no scalars to select
+			// for printing. Rather than error, just return an empty
+			// response without making an API request. At minimum, the
+			// object's name will be returned.
 			if origSel == fc.q {
-				if fc.AfterResponse == nil {
-					return fmt.Errorf("%q requires a sub-command", cmd.Name())
-				}
 				response := map[string]any{}
-				return fc.AfterResponse(fc, cmd, typeDef, response)
+				return fc.HandleResponse(cmd, typeDef, response)
 			}
 		}
 
@@ -717,30 +605,58 @@ func (fc *FuncCommand) RunE(ctx context.Context, typeDef *modTypeDef) func(*cobr
 		// from wrong CLI usage.
 		fc.showUsage = false
 
-		if fc.BeforeRequest != nil {
-			if err := fc.BeforeRequest(fc, cmd, typeDef); err != nil {
-				return err
-			}
-		}
-
 		var response any
 
 		if err := fc.Request(ctx, &response); err != nil {
 			return err
 		}
 
-		if typeDef.Kind == dagger.VoidKind {
+		return fc.HandleResponse(cmd, typeDef, response)
+	}
+}
+
+func (fc *FuncCommand) SelectObjectLeaf(ctx context.Context, obj functionProvider) error {
+	fc.selectedObject = obj
+	typeName := obj.ProviderName()
+
+	// Convenience for sub-selecting `export` when `--output` is used
+	// on a core type that supports it.
+	// TODO: Replace with interface when possible.
+	switch typeName {
+	case Container, Directory, File:
+		if outputPath != "" {
+			fc.q = fc.q.Select("export").Arg("path", outputPath)
+			if typeName == File {
+				fc.q = fc.q.Arg("allowParentDirPath", true)
+			}
 			return nil
 		}
-
-		if fc.AfterResponse != nil {
-			return fc.AfterResponse(fc, cmd, typeDef, response)
-		}
-
-		cmd.Println(response)
-
-		return nil
 	}
+
+	switch typeName {
+	case Container, Terminal:
+		// There's no fields in `Container` that trigger container execution so
+		// we use `sync` first to evaluate, and then load the new `Container`
+		// from that response before continuing.
+		// TODO: Use an interface when possible.
+		var id string
+		fc.q = fc.q.Select("sync")
+		if err := fc.Request(ctx, &id); err != nil {
+			return err
+		}
+		fc.q = fc.q.Root().Select(fmt.Sprintf("load%sFromID", typeName)).Arg("id", id)
+	}
+
+	fns := GetLeafFunctions(obj)
+	names := make([]string, 0, len(fns))
+	for _, f := range fns {
+		names = append(names, f.Name)
+	}
+	if len(names) > 0 {
+		fc.q = fc.q.SelectMultiple(names...)
+	}
+
+	return nil
 }
 
 func (fc *FuncCommand) Request(ctx context.Context, response any) error {
@@ -754,5 +670,180 @@ func (fc *FuncCommand) Request(ctx context.Context, response any) error {
 		return fmt.Errorf("response from query: %w", err)
 	}
 
+	return nil
+}
+
+func (fc *FuncCommand) HandleResponse(cmd *cobra.Command, modType *modTypeDef, response any) error {
+	if modType.Kind == dagger.VoidKind {
+		return nil
+	}
+
+	// Handle the `export` convenience.
+	switch modType.Name() {
+	case Container, Directory, File:
+		if outputPath != "" {
+			respPath, ok := response.(string)
+			if !ok {
+				return fmt.Errorf("unexpected response %T: %+v", response, response)
+			}
+			cmd.PrintErrf("Saved to %q.\n", respPath)
+			return nil
+		}
+	}
+
+	var outputFormat string
+
+	// Command chain ended in an object.
+	if fc.selectedObject != nil {
+		typeName := fc.selectedObject.ProviderName()
+
+		if typeName == "Query" {
+			typeName = "Client"
+		}
+
+		// Add the object's name so we always have something to show.
+		payload := make(map[string]any)
+		payload["_type"] = typeName
+
+		if response == nil {
+			response = payload
+		} else {
+			r, err := addPayload(response, payload)
+			if err != nil {
+				return err
+			}
+			response = r
+		}
+
+		// Use yaml when printing scalars because it's more human-readable
+		// and handles lists and multiline strings well.
+		if stdoutIsTTY {
+			outputFormat = "yaml"
+		} else {
+			outputFormat = "json"
+		}
+	}
+
+	// The --json flag has precedence over the autodetected format above.
+	if jsonOutput {
+		outputFormat = "json"
+	}
+
+	buf := new(bytes.Buffer)
+	switch outputFormat {
+	case "json":
+		// disable HTML escaping to improve readability
+		encoder := json.NewEncoder(buf)
+		encoder.SetEscapeHTML(false)
+		encoder.SetIndent("", "    ")
+		if err := encoder.Encode(response); err != nil {
+			return err
+		}
+	case "yaml":
+		out, err := yaml.Marshal(response)
+		if err != nil {
+			return err
+		}
+		if _, err := buf.Write(out); err != nil {
+			return err
+		}
+	case "":
+		if err := printFunctionResult(buf, response); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("wrong output format %q", outputFormat)
+	}
+
+	if outputPath != "" {
+		if err := writeOutputFile(outputPath, buf); err != nil {
+			return fmt.Errorf("couldn't write output to file: %w", err)
+		}
+		path, err := filepath.Abs(outputPath)
+		if err != nil {
+			// don't fail because at this point the output has been saved successfully
+			slog.Warn("Failed to get absolute path", "error", err)
+			path = outputPath
+		}
+		cmd.PrintErrf("Saved output to %q.\n", path)
+	}
+
+	writer := cmd.OutOrStdout()
+	buf.WriteTo(writer)
+
+	// TODO(vito) right now when stdoutIsTTY we'll be printing to a Progrock
+	// vertex, which currently adds its own linebreak (as well as all the
+	// other UI clutter), so there's no point doing this. consider adding
+	// back when we switch to printing "clean" output on exit.
+	// if stdoutIsTTY && !strings.HasSuffix(buf.String(), "\n") {
+	// 	fmt.Fprintln(writer, "⏎")
+	// }
+
+	return nil
+}
+
+// addPayload merges a map into a response from getting an object's values.
+func addPayload(response any, payload map[string]any) (any, error) {
+	switch t := response.(type) {
+	case []any:
+		r := make([]any, 0, len(t))
+		for _, v := range t {
+			p, err := addPayload(v, payload)
+			if err != nil {
+				return nil, err
+			}
+			r = append(r, p)
+		}
+		return r, nil
+	case map[string]any:
+		if len(t) == 0 {
+			return payload, nil
+		}
+		r := make(map[string]any, len(t)+len(payload))
+		for k, v := range t {
+			r[k] = v
+		}
+		for k, v := range payload {
+			r[k] = v
+		}
+		return r, nil
+	default:
+		return nil, fmt.Errorf("unexpected response %T for object values: %+v", response, response)
+	}
+}
+
+// writeOutputFile writes the buffer to a file, creating the parent directories
+// if needed.
+func writeOutputFile(path string, buf *bytes.Buffer) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, buf.Bytes(), 0o644) //nolint: gosec
+}
+
+func printFunctionResult(w io.Writer, r any) error {
+	switch t := r.(type) {
+	case []any:
+		for _, v := range t {
+			if err := printFunctionResult(w, v); err != nil {
+				return err
+			}
+			fmt.Fprintln(w)
+		}
+		return nil
+	case map[string]any:
+		// NB: we're only interested in values because this is where we unwrap
+		// things like {"container":{"from":{"withExec":{"stdout":"foo"}}}}.
+		for _, v := range t {
+			if err := printFunctionResult(w, v); err != nil {
+				return err
+			}
+		}
+		return nil
+	case string:
+		fmt.Fprint(w, t)
+	default:
+		fmt.Fprintf(w, "%+v", t)
+	}
 	return nil
 }
