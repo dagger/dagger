@@ -43,11 +43,10 @@ import (
 )
 
 type ExecutionMetadata struct {
-	ClientID          string
-	SessionID         string
-	SecretToken       string
-	Hostname          string
-	SSHAuthSocketPath string
+	ClientID    string
+	SessionID   string
+	SecretToken string
+	Hostname    string
 
 	// The "stable" ID of the client that is used to identify filesync cache refs
 	// across different clients running on the same host.
@@ -91,6 +90,9 @@ type ExecutionMetadata struct {
 	EnabledGPUs []string
 
 	SpanContext propagation.MapCarrier
+
+	// Path to the SSH auth socket. Used for Dagger-in-Dagger support.
+	SSHAuthSocketPath string
 }
 
 const executionMetadataKey = "dagger.executionMetadata"

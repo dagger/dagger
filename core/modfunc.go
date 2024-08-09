@@ -341,7 +341,6 @@ func moduleAnalyticsProps(mod *Module, prefix string, props map[string]string) {
 		git := source.AsGitSource.Value
 		props[prefix+"source_kind"] = "git"
 		props[prefix+"git_symbolic"] = git.Symbolic()
-		props[prefix+"git_ref"] = git.Ref
 		props[prefix+"git_clone_ref"] = git.CloneRef
 		props[prefix+"git_subpath"] = git.RootSubpath
 		props[prefix+"git_version"] = git.Version

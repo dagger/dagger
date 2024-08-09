@@ -1431,15 +1431,7 @@ var vcsTestCases = []vcsTestCase{
 		expectedPathPrefix:       "?path=",
 	},
 	// Private repo
-	{
-		name:                     "Azure DevOps without .git",
-		gitTestRepoRef:           "dev.azure.com/daggere2e/public/_git/dagger-test-modules",
-		gitTestRepoCommit:        "8723e276a45b2e620ba3185cb07dc35e2be5bc86",
-		expectedHost:             "dev.azure.com",
-		expectedBaseHTMLURL:      "dev.azure.com/daggere2e/public/_git/dagger-test-modules",
-		expectedURLPathComponent: "commit",
-		expectedPathPrefix:       "?path=",
-	},
+	// Explicit SSH ref format
 	{
 		name:                     "SSH Private GitLab",
 		gitTestRepoRef:           "ssh://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git",
@@ -1450,9 +1442,10 @@ var vcsTestCases = []vcsTestCase{
 		expectedPathPrefix:       "",
 		isPrivateRepo:            true,
 	},
+	// SCP-like ref format
 	{
 		name:                     "SSH Private BitBucket",
-		gitTestRepoRef:           "git+ssh://git@bitbucket.org/dagger-modules/private-modules-test.git",
+		gitTestRepoRef:           "git@bitbucket.org:dagger-modules/private-modules-test.git",
 		gitTestRepoCommit:        "8723e276a45b2e620ba3185cb07dc35e2be5bc86",
 		expectedHost:             "bitbucket.org",
 		expectedBaseHTMLURL:      "bitbucket.org/dagger-modules/private-modules-test",
@@ -1460,8 +1453,8 @@ var vcsTestCases = []vcsTestCase{
 		expectedPathPrefix:       "",
 		isPrivateRepo:            true,
 	},
-	// TODO(guillaume): add Azure DevOps, public and private (follow-up as needs improvement on the regex)
-	// azure go-get=1 does not work well with subdir, but solvable with regex / per VCS (git only for now)
+	// commented for now, as Azure does not allow scoped SSH key at repo level, with read-only rights
+	// This is however a proper example of a ref for such provider
 	// {
 	// 	name:                     "SSH Private Azure",
 	// 	gitTestRepoRef:           "git@gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git",

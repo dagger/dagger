@@ -112,6 +112,7 @@ func (s *gitSchema) git(ctx context.Context, parent *core.Query, args gitArgs) (
 		}
 		authSock = sock.Self
 	} else {
+		// Fallback to using the client's SSH agent socket if available
 		socketStore, err := parent.Sockets(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get socket store: %w", err)
@@ -247,7 +248,7 @@ func (s *gitSchema) tags(ctx context.Context, parent *core.GitRepository, args t
 				return nil, fmt.Errorf("failed to mount SSH socket: %w", err)
 			}
 			defer func() {
-				err := cleanup
+				err := cleanup()
 				if err != nil {
 					slog.Error("failed to cleanup SSH socket", "error", err)
 				}

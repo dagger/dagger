@@ -412,40 +412,18 @@ type SchemeType int
 
 const (
 	NoScheme SchemeType = iota
-	SchemeGitHTTP
 	SchemeHTTP
-	SchemeGitHTTPS
 	SchemeHTTPS
-	SchemeGitSSH
 	SchemeSSH
-	SchemeImplicitSSH
+	SchemeSCPLike
 )
-
-func (s SchemeType) CloneString() string {
-	switch s {
-	case SchemeGitHTTP, SchemeHTTP:
-		return "http://"
-	case SchemeGitHTTPS, SchemeHTTPS:
-		return "https://"
-	case SchemeGitSSH, SchemeSSH:
-		return "ssh://"
-	default:
-		return ""
-	}
-}
 
 func (s SchemeType) Prefix() string {
 	switch s {
-	case SchemeGitHTTP:
-		return "git+http://"
 	case SchemeHTTP:
 		return "http://"
-	case SchemeGitHTTPS:
-		return "git+https://"
 	case SchemeHTTPS:
 		return "https://"
-	case SchemeGitSSH:
-		return "git+ssh://"
 	case SchemeSSH:
 		return "ssh://"
 	default:
@@ -453,21 +431,8 @@ func (s SchemeType) Prefix() string {
 	}
 }
 
-func (s SchemeType) IsExplicitSSH() bool {
-	switch s {
-	case SchemeGitSSH, SchemeSSH:
-		return true
-	default:
-		return false
-	}
-}
-
 func (s SchemeType) IsSSH() bool {
-	if s.IsExplicitSSH() || s == SchemeImplicitSSH {
-		return true
-	}
-
-	return false
+	return s == SchemeSSH
 }
 
 type GitModuleSource struct {
@@ -477,7 +442,6 @@ type GitModuleSource struct {
 	Version string `field:"true" doc:"The specified version of the git repo this source points to."`
 	Commit  string `field:"true" doc:"The resolved commit of the git repo this source points to."`
 
-	Ref      string `field:"true" name:"cloneRef" doc:"The ref to the root of the git repo, including original user scheme"`
 	CloneRef string `field:"true" name:"cloneRef" doc:"The ref to clone the root of the git repo from"`
 
 	RepositoryURL string `field:"true" doc:"The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket)"`
@@ -509,7 +473,7 @@ func (src *GitModuleSource) PBDefinitions(ctx context.Context) ([]*pb.Definition
 }
 
 func (src *GitModuleSource) RefString() string {
-	refPath := src.Ref
+	refPath := src.CloneRef
 	subPath := filepath.Join("/", src.RootSubpath)
 	if subPath != "/" {
 		refPath += subPath
@@ -519,7 +483,7 @@ func (src *GitModuleSource) RefString() string {
 
 func (src *GitModuleSource) Symbolic() string {
 	// ignore error since ref is validated upon module initialization
-	p, _ := url.JoinPath(src.Ref, src.RootSubpath)
+	p, _ := url.JoinPath(src.CloneRef, src.RootSubpath)
 	return p
 }
 

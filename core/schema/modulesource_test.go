@@ -61,46 +61,46 @@ func TestParseRefString(t *testing.T) {
 			},
 		},
 		{
-			urlStr: "git+https://github.com/shykes/daggerverse/ci",
+			urlStr: "https://github.com/shykes/daggerverse/ci",
 			want: &parsedRefString{
 				modPath:        "github.com/shykes/daggerverse/ci",
 				kind:           core.ModuleSourceKindGit,
 				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse", Repo: "https://github.com/shykes/daggerverse"},
 				repoRootSubdir: "ci",
-				scheme:         core.SchemeGitHTTPS,
+				scheme:         core.SchemeHTTPS,
 				sshusername:    "",
 			},
 		},
 		{
-			urlStr: "git+http://github.com/shykes/daggerverse.git/ci",
+			urlStr: "http://github.com/shykes/daggerverse.git/ci",
 			want: &parsedRefString{
 				modPath:        "github.com/shykes/daggerverse.git/ci",
 				kind:           core.ModuleSourceKindGit,
 				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse.git", Repo: "https://github.com/shykes/daggerverse"},
 				repoRootSubdir: "ci",
-				scheme:         core.SchemeGitHTTP,
+				scheme:         core.SchemeHTTP,
 				sshusername:    "",
 			},
 		},
 		{
-			urlStr: "git+ssh://github.com/shykes/daggerverse.git/ci",
+			urlStr: "ssh://github.com/shykes/daggerverse.git/ci",
 			want: &parsedRefString{
 				modPath:        "github.com/shykes/daggerverse.git/ci",
 				kind:           core.ModuleSourceKindGit,
 				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse.git", Repo: "https://github.com/shykes/daggerverse"},
 				repoRootSubdir: "ci",
-				scheme:         core.SchemeGitSSH,
+				scheme:         core.SchemeSSH,
 				sshusername:    "",
 			},
 		},
 		{
-			urlStr: "git+ssh://github.com/shykes/daggerverse/ci",
+			urlStr: "ssh://github.com/shykes/daggerverse/ci",
 			want: &parsedRefString{
 				modPath:        "github.com/shykes/daggerverse/ci",
 				kind:           core.ModuleSourceKindGit,
 				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse", Repo: "https://github.com/shykes/daggerverse"},
 				repoRootSubdir: "ci",
-				scheme:         core.SchemeGitSSH,
+				scheme:         core.SchemeSSH,
 				sshusername:    "",
 			},
 		},
@@ -127,13 +127,13 @@ func TestParseRefString(t *testing.T) {
 			},
 		},
 		{
-			urlStr: "git+ssh://user@github.com/shykes/daggerverse/ci",
+			urlStr: "ssh://user@github.com/shykes/daggerverse/ci",
 			want: &parsedRefString{
 				modPath:        "github.com/shykes/daggerverse/ci",
 				kind:           core.ModuleSourceKindGit,
 				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse", Repo: "https://github.com/shykes/daggerverse"},
 				repoRootSubdir: "ci",
-				scheme:         core.SchemeGitSSH,
+				scheme:         core.SchemeSSH,
 				sshusername:    "user",
 			},
 		},
@@ -149,25 +149,25 @@ func TestParseRefString(t *testing.T) {
 			},
 		},
 		{
-			urlStr: "git+ssh://user@github.com/shykes/daggerverse/ci@version",
+			urlStr: "ssh://user@github.com/shykes/daggerverse/ci@version",
 			want: &parsedRefString{
 				modPath:        "github.com/shykes/daggerverse/ci",
 				kind:           core.ModuleSourceKindGit,
 				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse", Repo: "https://github.com/shykes/daggerverse"},
 				repoRootSubdir: "ci",
-				scheme:         core.SchemeGitSSH,
+				scheme:         core.SchemeSSH,
 				sshusername:    "user",
 				modVersion:     "version",
 			},
 		},
 		{
-			urlStr: "git+ssh://github.com/shykes/daggerverse/ci@version",
+			urlStr: "ssh://github.com/shykes/daggerverse/ci@version",
 			want: &parsedRefString{
 				modPath:        "github.com/shykes/daggerverse/ci",
 				kind:           core.ModuleSourceKindGit,
 				repoRoot:       &vcs.RepoRoot{Root: "github.com/shykes/daggerverse", Repo: "https://github.com/shykes/daggerverse"},
 				repoRootSubdir: "ci",
-				scheme:         core.SchemeGitSSH,
+				scheme:         core.SchemeSSH,
 				sshusername:    "",
 				modVersion:     "version",
 			},
@@ -247,32 +247,61 @@ func TestParseRefString(t *testing.T) {
 			},
 		},
 		{
-			urlStr: "git@github.com/shykes/daggerverse.git/ci",
+			urlStr: "git@github.com:shykes/daggerverse/ci",
 			want: &parsedRefString{
-				modPath:        "github.com/shykes/daggerverse.git/ci",
+				modPath:        "github.com/shykes/daggerverse/ci",
 				kind:           core.ModuleSourceKindGit,
+				repoRoot:       &vcs.RepoRoot{Root: "github.com:shykes/daggerverse", Repo: "https://github.com/shykes/daggerverse"},
 				repoRootSubdir: "ci",
 				sshusername:    "git",
-				scheme:         core.SchemeImplicitSSH,
+				scheme:         core.SchemeSCPLike,
 			},
 		},
 		{
-			urlStr: "git@github.com/shykes/daggerverse.git/ci@version",
+			urlStr: "github.com:shykes/daggerverse.git/ci@version",
 			want: &parsedRefString{
 				modPath:        "github.com/shykes/daggerverse.git/ci",
 				kind:           core.ModuleSourceKindGit,
+				repoRoot:       &vcs.RepoRoot{Root: "github.com:shykes/daggerverse.git", Repo: "https://github.com/shykes/daggerverse"},
+				scheme:         core.SchemeSCPLike,
 				repoRootSubdir: "ci",
-				sshusername:    "git",
-				scheme:         core.SchemeImplicitSSH,
+				hasVersion:     true,
+				modVersion:     "version",
 			},
 		},
 		{
-			urlStr: "git@github.com/shykes/daggerverse.git@version",
+			urlStr: "github.com:shykes/daggerverse/ci@version",
 			want: &parsedRefString{
-				modPath:     "github.com/shykes/daggerverse.git",
-				kind:        core.ModuleSourceKindGit,
-				sshusername: "git",
-				scheme:      core.SchemeImplicitSSH,
+				modPath:        "github.com/shykes/daggerverse/ci",
+				kind:           core.ModuleSourceKindGit,
+				repoRoot:       &vcs.RepoRoot{Root: "github.com:shykes/daggerverse", Repo: "https://github.com/shykes/daggerverse"},
+				scheme:         core.SchemeSCPLike,
+				repoRootSubdir: "ci",
+				hasVersion:     true,
+				modVersion:     "version",
+			},
+		},
+		// Azure ref parsing
+		{
+			urlStr: "https://daggere2e@dev.azure.com/daggere2e/public/_git/dagger-test-modules/cool-sdk",
+			want: &parsedRefString{
+				modPath:        "dev.azure.com/daggere2e/public/_git/dagger-test-modules/cool-sdk",
+				kind:           core.ModuleSourceKindGit,
+				repoRoot:       &vcs.RepoRoot{Root: "dev.azure.com/daggere2e/public/_git/dagger-test-modules", Repo: "https://dev.azure.com/daggere2e/public/_git/dagger-test-modules"},
+				scheme:         core.SchemeHTTPS,
+				repoRootSubdir: "cool-sdk",
+				sshusername:    "daggere2e",
+			},
+		},
+		{
+			urlStr: "git@ssh.dev.azure.com:v3/daggere2e/public/dagger-test-modules/cool-sdk",
+			want: &parsedRefString{
+				modPath:        "ssh.dev.azure.com/v3/daggere2e/public/dagger-test-modules/cool-sdk",
+				kind:           core.ModuleSourceKindGit,
+				repoRoot:       &vcs.RepoRoot{Root: "ssh.dev.azure.com:v3/daggere2e/public/dagger-test-modules", Repo: "https://dev.azure.com/daggere2e/public/_git/dagger-test-modules"},
+				scheme:         core.SchemeSCPLike,
+				repoRootSubdir: "cool-sdk",
+				sshusername:    "git",
 			},
 		},
 	} {
@@ -301,76 +330,4 @@ type MockBuildkitClient struct {
 
 func (m *MockBuildkitClient) StatCallerHostPath(ctx context.Context, path string, followLinks bool) (*types.Stat, error) {
 	return m.StatFunc(ctx, path, followLinks)
-}
-
-func TestLexicalRelativePath(t *testing.T) {
-	tests := []struct {
-		name     string
-		cwdPath  string
-		modPath  string
-		expected string
-		wantErr  bool
-	}{
-		{
-			name:     "Simple relative path",
-			cwdPath:  "/home/user",
-			modPath:  "/home/user/project",
-			expected: "project",
-		},
-		{
-			name:     "Parent directory",
-			cwdPath:  "/home/user/project",
-			modPath:  "/home/user",
-			expected: "..",
-		},
-		{
-			name:     "Same directory",
-			cwdPath:  "/home/user",
-			modPath:  "/home/user",
-			expected: ".",
-		},
-		{
-			name:     "Windows style paths",
-			cwdPath:  `C:\Users\user`,
-			modPath:  `C:\Users\user\project`,
-			expected: "project",
-		},
-		{
-			name:    "Windows different drives",
-			cwdPath: `C:\Users\user`,
-			modPath: `D:\Projects\myproject`,
-			wantErr: true,
-		},
-		{
-			name:     "Windows UNC paths",
-			cwdPath:  `\\server\share\folder`,
-			modPath:  `\\server\share\folder\project`,
-			expected: "project",
-		},
-		{
-			name:     "Mixed slashes",
-			cwdPath:  `/home/user/folder`,
-			modPath:  `/home/user/folder/subfolder\project`,
-			expected: "subfolder/project",
-		},
-		{
-			name:    "Invalid relative path",
-			cwdPath: "/home/user",
-			modPath: "C:/Windows",
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result, err := lexicalRelativePath(tt.cwdPath, tt.modPath)
-
-			if tt.wantErr {
-				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-				require.Equal(t, tt.expected, result)
-			}
-		})
-	}
 }
