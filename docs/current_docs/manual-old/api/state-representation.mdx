@@ -1,0 +1,75 @@
+---
+slug: /manual/api/state-representation
+---
+
+# State Representation
+
+In a GraphQL schema, every object exposes an `id` field. This ID serves to uniquely identify and retrieve an object, and is also used by GraphQL's caching mechanism.
+
+In the Dagger GraphQL API too, objects expose an ID but here, the ID represents the object's state at a given time. Objects like `Container` and `Directory` should be thought of as collections of state, which are updated by subsequent field resolutions and whose ID represents their state at the instant of field resolution.
+
+To illustrate this, consider the following query:
+
+```graphql
+query {
+  host {
+    directory(path: ".") {
+      id
+    }
+  }
+}
+```
+
+[Try it in the API Playground](https://play.dagger.cloud/playground/8I0c_SMKQbj)
+
+The return value of the previous query is an ID representing the state of the current directory on the host
+
+By using object IDs to represesent object state, Dagger's GraphQL API enables some very powerful features. For example, you can save this state and reference it elsewhere (even in a different Dagger Function). You can then continue updating the state from the point you left off, or use it an input to another query.
+
+To make this clearer, consider the following query:
+
+```graphql
+query {
+  container {
+    from(address: "alpine:latest") {
+      withExec(args: ["touch", "/tmp/myfile"]) {
+        id
+      }
+    }
+  }
+}
+```
+
+[Try it in the API Playground](https://play.dagger.cloud/playground/PE1GJrfZODq)
+
+This query instructs Dagger to:
+
+- initialize a container from the `alpine:latest` image (this resolves the `from` field)
+- create an empty file at `/tmp/myfile` using the `touch` command (this resolves the `withExec` field)
+- return an identifier representing the state of the container filesystem (this resolves the final `id` field)
+
+The output of this query is an identifier representing the state of the container filesystem and Dagger's execution plan.
+
+Now, execute a second query as follows, replacing the placeholder with the contents of the `id` field from the previous query:
+
+```graphql
+query {
+  container(id: "YOUR-ID-HERE") {
+    withExec(args: ["ls", "/tmp"]) {
+      stdout
+    }
+  }
+}
+```
+
+[Try it in the API Playground](https://play.dagger.cloud/playground/DKUH7PI5Yt0)
+
+This second query instructs Dagger to:
+
+- initialize a container using the filesystem state provided in the ID;
+- run the `ls` command to list the files in the `/tmp/` directory (this resolves the `withExec` field);
+- return the output of the command (this resolves the final `stdout` field).
+
+This second query will return a listing for the `/tmp` directory of the container built by the first query.
+
+As this example demonstrates, Dagger object IDs hold the state of their corresponding object. This state can be transferred from one query to another, or from one Dagger Function to another.

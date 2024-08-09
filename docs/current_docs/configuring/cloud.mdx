@@ -1,0 +1,199 @@
+---
+slug: /configuring/cloud
+---
+
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Dagger Cloud
+
+:::caution Identity verification
+Dagger Cloud requires a GitHub account identity verification. If you don't have one, [register for a free GitHub account](https://github.com/signup) before proceeding.
+:::
+
+## Create a Dagger Cloud organization
+
+1. Sign up for Dagger Cloud by selecting a plan on the [Dagger website](https://www.dagger.io/pricing). Dagger Cloud includes plans for both individuals and teams. Click **Continue with GitHub** to log in with your GitHub account.
+
+1. After authorizing Dagger Cloud for your GitHub account, you'll create your organization.
+
+    :::info Naming your organization
+    Organization names may contain alphanumeric characters and dashes and are unique across Dagger Cloud. We recommend using your company name or team name for your organization.
+    :::
+
+1. Review and select a Dagger Cloud subscription plan.
+
+1. If you selected the **Team** plan:
+
+    1. You will be presented with the option to add teammates to your Dagger Cloud account. This step is optional and not available in the Individual plan.
+
+    1. You will then enter your payment information. After your free 14 day trial completes, you will be automatically subscribed to the Dagger Cloud Team plan.
+
+1. Click **Go to dashboard**. The next step walks you through how to send telemetry to Dagger Cloud.
+
+## Connect to Dagger Cloud
+
+The next step is to connect to Dagger Cloud from your local development environment or from your CI environment.
+
+### Connect from your local development host
+
+You can visualize and debug your local Dagger pipeline runs with Dagger Cloud to identify issues before pushing them to CI.
+
+To configure for local development, use the following command:
+
+```shell
+dagger login
+```
+
+:::tip Multiple Dagger Cloud organizations
+To use Dagger Cloud locally when you have multiple organizations linked to your account, you must use `dagger login ORGANIZATION-NAME` instead.
+:::
+
+The Dagger CLI will invite you to authenticate your device by displaying a link containing a unique key. Click the link in your browser, and verify that you see the same key in the Dagger Cloud Web interface.
+
+```shell
+$ dagger login
+Browser opened to: https://auth.dagger.cloud/activate?user_code=FCNP-SRLM
+Confirmation code: FCNP-SRLM
+```
+
+Once you confirm your authentication code, your Dagger CLI will be authenticated and you will get redirected to your newly created Dagger Cloud organization.
+
+### Connect from your CI environment
+
+To connect to Dagger Cloud from a CI environment, you require a Dagger Cloud token. Dagger Cloud creates this token automatically when you sign up.
+
+To find your token, browse to the **Organization Settings** page, by clicking your profile photo in the left sidebar and then clicking **Organization Settings**. Select the **Configuration** tab. You can also use this URL pattern: `https://dagger.cloud/{Your Org Name}/settings?tab=configuration`
+
+    ![Get token](/img/current_docs/configuring/get-token.png)
+
+  :::warning
+  If you regenerate your token, you must replace the token wherever you've referenced it. To reduce operational interruptions, only regenerate your token if it has leaked.
+  :::
+
+Once you have your token, you can use it to connect Dagger Cloud with your CI environment. The general procedure is:
+
+- Add your Dagger Cloud token to your CI environment.
+  - Store the Dagger Cloud token as a secret with your CI environment.
+    :::danger Keep your Dagger Cloud token private
+    You must store the Dagger Cloud token as a secret (not plaintext) with your CI environment and reference it in your CI workflow. Using a secret is recommended to protect your Dagger Cloud account from being used by forks of your project. We provide links in the steps below for configuring secrets with popular CI tools.
+    :::
+  - Add the secret to your CI environment as a variable named `DAGGER_CLOUD_TOKEN`.
+- For **Team** plan subscribers with ephemeral CI runners only: Add a wait step (example below) for the Docker configuration to allow Dagger to push cache volumes to the experimental Dagger Cloud distributed cache. Subscribers on the **Individual** plan do not have access to the experimental distributed cache and do not need to add this step.
+- If you are using GitHub Actions, install the Dagger Cloud GitHub app for GitHub Checks. This app adds a GitHub check to your pull requests. Each check links to the corresponding pipeline visualization in Dagger Cloud.
+
+You can use Dagger Cloud whether you're hosting your own CI runners and infrastructure or using hosted/SaaS runners.
+
+:::danger
+When using self-hosted CI runners on AWS infrastructure, NAT Gateways are a common source of unexpected network charges. It's advisable to setup an Amazon S3 Gateway for these cases. Refer to the [AWS documentation](https://docs.aws.amazon.com/vpc/latest/privatelink/vpc-endpoints-s3.html) for detailed information on how to do this.
+:::
+
+<Tabs groupId="ci">
+<TabItem value="GitHub Actions">
+
+1. Create a new secret for your GitHub repository named `DAGGER_CLOUD_TOKEN`, and set it to the value of the token obtained in [Step 1](#step-1-sign-up-for-dagger-cloud). Refer to the GitHub documentation [on creating repository secrets](https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions#creating-secrets-for-a-repository).
+
+1. Update your GitHub Actions workflow and add the secret to the Dagger pipeline step as an environment variable. The environment variable must be named `DAGGER_CLOUD_TOKEN` and can be referenced in the workflow using the format `DAGGER_CLOUD_TOKEN: ${{ secrets.DAGGER_CLOUD_TOKEN }}`. Refer to the GitHub documentation on [using secrets in a workflow](https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions#using-secrets-in-a-workflow).
+
+    [See an example of a sample GitHub Actions workflow file](../integrations/github-actions.mdx)
+
+1. Install the [Dagger Cloud GitHub App](https://github.com/apps/dagger-cloud). Once installed, GitHub automatically adds a new check for your GitHub pull requests, with a link to see CI status for each workflow job in Dagger Cloud.
+
+</TabItem>
+<TabItem value="GitLab CI">
+
+1. Create a new CI/CD project variable in your GitLab project named `DAGGER_CLOUD_TOKEN`, and set it to the value of the token obtained in [Step 1](#step-1-sign-up-for-dagger-cloud). Ensure that you configure the project variable to be masked and protected. Refer to the GitLab documentation on [creating CI/CD project variables](https://docs.gitlab.com/ee/ci/variables/#define-a-cicd-variable-in-the-ui) and [CI/CD variable security](https://docs.gitlab.com/ee/ci/variables/#cicd-variable-security).
+
+1. Update your GitLab CI workflow and add the variable to your CI environment. The environment variable must be named `DAGGER_CLOUD_TOKEN`. Refer to the GitLab documentation on [using CI/CD variables](https://docs.gitlab.com/ee/ci/variables/index.html#use-cicd-variables-in-job-scripts).
+
+    [See an example of a sample GitLab workflow file](../integrations/gitlab.mdx)
+
+1. For **Team** plan subscribers with ephemeral CI runners only: Update your GitLab CI workflow (example below) and adjust the `docker stop` timeout period so that Docker waits longer before killing the Dagger container, to give it more time to push data to the Dagger Cloud cache. Refer to the Docker documentation on the [`docker stop` command](https://docs.docker.com/engine/reference/commandline/stop/).
+
+</TabItem>
+<TabItem value="CircleCI">
+
+1. Create a new environment variable in your CircleCI project named `DAGGER_CLOUD_TOKEN` and set it to the value of the token obtained in [Step 1](#step-1-sign-up-for-dagger-cloud). Refer to the CircleCI documentation on [creating environment variables for a project](https://circleci.com/docs/set-environment-variable/#set-an-environment-variable-in-a-project).
+
+1. For **Team** plan subscribers with ephemeral CI runners only: Update your CircleCI workflow (example below) and adjust the `docker stop` timeout period so that Docker waits longer before killing the Dagger container, to give it more time to push data to the Dagger Cloud cache. Refer to the Docker documentation on the [`docker stop` command](https://docs.docker.com/engine/reference/commandline/stop/).
+
+1. For GitHub, GitLab or Atlassian Bitbucket source code repositories only: Update your CircleCI workflow and add the following pipeline values to the CI environment. Refer to the CircleCI documentation on [using pipeline values](https://circleci.com/docs/variables/#pipeline-values).
+
+    GitHub:
+
+    ```yaml
+    environment:
+      CIRCLE_PIPELINE_NUMBER: << pipeline.number >>
+    ```
+
+    GitLab:
+
+    ```yaml
+    environment:
+      CIRCLE_PIPELINE_NUMBER: << pipeline.number >>
+      CIRCLE_PIPELINE_TRIGGER_LOGIN: << pipeline.trigger_parameters.gitlab.user_username >>
+      CIRCLE_PIPELINE_REPO_URL: << pipeline.trigger_parameters.gitlab.repo_url >>
+      CIRCLE_PIPELINE_REPO_FULL_NAME: << pipeline.trigger_parameters.gitlab.repo_name >>
+    ```
+
+    Atlassian BitBucket:
+
+    ```yaml
+    environment:
+      CIRCLE_PIPELINE_NUMBER: << pipeline.number >>
+    ```
+
+    [See an example of a sample CircleCI workflow](../integrations/circleci.mdx)
+
+
+</TabItem>
+<TabItem value="Jenkins">
+
+1. Configure a Jenkins credential named `DAGGER_CLOUD_TOKEN` and set it to the value of the token obtained in [Step 1](#step-1-sign-up-for-dagger-cloud). Refer to the Jenkins documentation on [creating credentials](https://www.jenkins.io/doc/book/using/using-credentials/#configuring-credentials) and [credential security](https://www.jenkins.io/doc/book/using/using-credentials/#credential-security).
+
+1. Update your Jenkins Pipeline and add the variable to the CI environment. The environment variable must be named `DAGGER_CLOUD_TOKEN` and can be referenced in the Pipeline environment using the format `DAGGER_CLOUD_TOKEN = credentials('DAGGER_CLOUD_TOKEN')`. Refer to the Jenkins documentation on [handling credentials](https://www.jenkins.io/doc/book/pipeline/jenkinsfile/#handling-credentials).
+
+    [See an example of a sample Jenkins Pipeline](../integrations/jenkins.mdx)
+
+:::note
+- This Jenkins Pipeline assumes that the Dagger CLI is pre-installed on the Jenkins runner(s), together with other required dependencies.
+- If you use the same Jenkins server for more than one Dagger Cloud organization, create distinct credentials for each organization and link them to their respective Dagger Cloud tokens.
+- Typically, Jenkins servers are non-ephemeral and therefore it is not necessary to adjust the `docker stop` timeout.
+:::
+
+</TabItem>
+<TabItem value="Argo Workflows">
+
+1. Create a new Kubernetes secret named `dagger-cloud` and set it to the value of the token obtained in [Step 1](#step-1-sign-up-for-dagger-cloud). An example command to achieve this is shown below (replace the `TOKEN` placeholder with your actual token value). Refer to the Kubernetes documentation [on creating secrets](https://kubernetes.io/docs/concepts/configuration/secret/).
+
+    ```shell
+    kubectl create secret generic dagger-cloud --from-literal=token=TOKEN
+    ```
+
+1. Update your Argo Workflows specification and add the secret as an environment variable. The environment variable must be named `DAGGER_CLOUD_TOKEN`.
+
+    [See an example of a sample Argo Workflows specification](../integrations/argo-workflows.mdx)
+
+</TabItem>
+</Tabs>
+
+## Test the integration
+
+The next step is to test the integration with Dagger Cloud.
+
+### Test from your local development host
+
+1. In your terminal, call a Dagger Function. You will see a Dagger Cloud URL printed in the terminal.
+1. Click on the URL to view details of the run in Dagger Cloud.
+
+:::info
+Dagger 0.11.0 adds support for visualizing Dagger functions but does not yet print the Dagger Cloud URL for the pipeline run in the CLI output. We're adding this soon.
+:::
+
+```shell
+dagger -m github.com/shykes/daggerverse/hello@v0.3.0 call hello
+```
+
+### Test from your CI environment
+
+Trigger your CI workflow by pushing a commit or opening a pull request.

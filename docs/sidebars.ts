@@ -47,6 +47,13 @@ module.exports = {
       ]
     },
     {
+      "type": "category",
+      "label": "Features",
+      "items": [
+        "features/visualization",
+      ]
+    },
+    {
       "type": "doc",
       "label": "Adopting Dagger",
       "id": "adopting"
@@ -128,6 +135,7 @@ module.exports = {
       "label": "Cookbook",
       "id": "cookbook/cookbook"
     },
+    /*
     {
       "type": "category",
       "label": "Manual",
@@ -806,9 +814,37 @@ module.exports = {
     },
     */
     {
-      "type": "doc",
-      "label": "CLI Reference",
-      "id": "reference/cli"
+      "type": "category",
+      "label": "Configuring Dagger",
+      "link": {
+        "type": "doc",
+        "id": "configuring/index"
+      },
+      "collapsible": true,
+      "collapsed": true,
+      "items": [
+        {
+          "type": "doc",
+          "id": "configuring/custom-runner"
+        },
+        {
+          "type": "doc",
+          "id": "configuring/custom-registry"
+        },
+        {
+          "type": "doc",
+          "id": "configuring/custom-ca"
+        },
+        {
+          "type": "doc",
+          "id": "configuring/proxy"
+        },
+        {
+          "type": "doc",
+          "id": "configuring/cloud"
+        },
+
+      ],
     },
     {
       "type": "doc",
