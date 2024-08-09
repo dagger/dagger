@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Dagger\Tests\Unit\ValueObject;
 
+use Dagger\Attribute\DaggerObject;
 use Dagger\Container;
 use Dagger\File;
 use Dagger\Json;
@@ -17,6 +18,8 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use ReflectionClass;
+use ReflectionFunction;
 use ReflectionMethod;
 use RuntimeException;
 
@@ -33,6 +36,24 @@ class DaggerFunctionTest extends TestCase
         );
 
         self::expectException(RuntimeException::class);
+
+        DaggerFunction::fromReflection($reflection);
+    }
+
+    #[Test]
+    public function ItRequiresReturnType(): void
+    {
+        $reflection = (new ReflectionClass(new #[DaggerObject] class () {
+                #[\Dagger\Attribute\DaggerFunction]
+                public function noReturnType()
+                {
+                    return 'hello world';
+                }
+            }))->getMethod('noReturnType');
+
+        self::expectExceptionMessage(
+            'DaggerFunction "noReturnType" cannot be supported without a return type',
+        );
 
         DaggerFunction::fromReflection($reflection);
     }

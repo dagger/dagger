@@ -16,14 +16,29 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use ReflectionFunction;
 use ReflectionMethod;
 use ReflectionNamedType;
 use ReflectionParameter;
+use RuntimeException;
 
 #[Group('unit')]
 #[CoversClass(Argument::class)]
 class ArgumentTest extends TestCase
 {
+    #[Test]
+    public function ItRequiresTypeHint(): void
+    {
+        $reflection = (new ReflectionFunction(fn ($noTypeHint) => null))
+            ->getParameters()[0];
+
+        self::expectExceptionMessage(
+            'Argument "noTypeHint" cannot be supported without a typehint'
+        );
+
+        Argument::fromReflection($reflection);
+    }
+
     #[Test]
     #[DataProvider('provideReflectionParameters')]
     public function ItBuildsFromReflectionParameter(
