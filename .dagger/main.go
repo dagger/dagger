@@ -96,12 +96,15 @@ func (dev *DaggerDev) Source() *dagger.Directory {
 	// FIXME: build this list dynamically, by scanning the source for modules
 	modules := []string{
 		".",
-		"dirdiff",
-		"go",
-		"golangci",
-		"graphql",
-		"markdown",
-		"shellcheck",
+		"modules/dirdiff",
+		"modules/go",
+		"modules/golangci",
+		"modules/graphql",
+		"modules/markdown",
+		"modules/ps-analyzer",
+		"modules/ruff",
+		"modules/shellcheck",
+		"modules/wolfi",
 		"sdk/elixir/runtime",
 		"sdk/python/runtime",
 		"sdk/typescript/dev",
@@ -167,9 +170,10 @@ func (dev *DaggerDev) Test() *Test {
 func (dev *DaggerDev) SDK() *SDK {
 	return &SDK{
 		Go:         &GoSDK{Dagger: dev},
+		Python:     &PythonSDK{Dagger: dev},
 		Typescript: &TypescriptSDK{Dagger: dev},
-		Rust:       &RustSDK{Dagger: dev},
 		Elixir:     &ElixirSDK{Dagger: dev},
+		Rust:       &RustSDK{Dagger: dev},
 		PHP:        &PHPSDK{Dagger: dev},
 		Java:       &JavaSDK{Dagger: dev},
 	}

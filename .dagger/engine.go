@@ -174,11 +174,15 @@ func (e *Engine) Lint(
 				// FIXME: should the CI lint itself?
 				// FIXME: unsustainable to require keeping this list up to date by hand
 				".dagger",
-				"dirdiff",
-				"go",
-				"graphql",
-				"shellcheck",
-				"markdown",
+				"modules/dirdiff",
+				"modules/go",
+				"modules/golangci",
+				"modules/graphql",
+				"modules/markdown",
+				"modules/ps-analyzer",
+				"modules/ruff",
+				"modules/shellcheck",
+				"modules/wolfi",
 			}})
 	})
 	eg.Go(func() error {

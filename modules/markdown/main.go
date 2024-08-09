@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"text/template"
 
-	"github.com/dagger/dagger/markdown/internal/dagger"
+	"github.com/dagger/dagger/modules/markdown/internal/dagger"
 )
 
 type Markdown struct{}

@@ -7,7 +7,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/dagger/dagger/go/internal/dagger"
+	"github.com/dagger/dagger/modules/go/internal/dagger"
 )
 
 func New(

@@ -73,7 +73,7 @@ runs:
 
         # put env variables in /tmp/actions/call/local-envs instead of
         # $GITHUB_ENV to avoid leaking into parent workflow
-        (cd dev/mage; go run main.go -w ../.. engine:dev) | tee /tmp/actions/call/local-envs
+        (cd .dagger/mage; go run main.go -w ../.. engine:dev) | tee /tmp/actions/call/local-envs
 
         echo "::endgroup::"
       env:

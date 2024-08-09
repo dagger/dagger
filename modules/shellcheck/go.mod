@@ -1,4 +1,4 @@
-module github.com/dagger/dagger/shellcheck
+module github.com/dagger/dagger/modules/shellcheck
 
 go 1.22
 

@@ -283,7 +283,7 @@ git checkout -b prep-${ENGINE_VERSION}
 - [ ] Bump SDK versions to the target version
 
 ```console
-dagger call -m dev --source=.:default sdk all bump --version="${ENGINE_VERSION}" -o ./
+dagger call --source=.:default sdk all bump --version="${ENGINE_VERSION}" -o ./
 git add sdk
 git commit -s -m "chore: bump sdk dependencies to ${ENGINE_VERSION}"
 ```
@@ -291,7 +291,7 @@ git commit -s -m "chore: bump sdk dependencies to ${ENGINE_VERSION}"
 - [ ] Bump Helm version to the target version
 
 ```console
-dagger call -m dev --source=.:default helm set-version --version="${ENGINE_VERSION}" -o ./helm/dagger/Chart.yaml
+dagger call --source=.:default helm set-version --version="${ENGINE_VERSION}" -o ./helm/dagger/Chart.yaml
 git add helm
 git commit -s -m "chore: bump helm dependency to ${ENGINE_VERSION}"
 ```

@@ -7,7 +7,7 @@ import (
 	"path"
 	"strings"
 
-	"github.com/dagger/dagger/golangci/internal/dagger"
+	"github.com/dagger/dagger/modules/golangci/internal/dagger"
 )
 
 const (
@@ -61,7 +61,7 @@ func (run LintRun) Assert(ctx context.Context) error {
 		summaries = append(summaries, iss.Summary())
 	}
 	if errCount > 0 {
-		return fmt.Errorf("Linting failed with %d issues:\n%s",
+		return fmt.Errorf("linting failed with %d issues:\n%s",
 			errCount,
 			strings.Join(summaries, "\n"),
 		)

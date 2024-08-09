@@ -1,7 +1,11 @@
 {
   "name": "python-sdk-dev",
   "sdk": "python",
-  "exclude": ["**/.venv", "**/__pycache__", "**/.*cache"],
+  "exclude": [
+    "**/.venv",
+    "**/__pycache__",
+    "**/.*cache"
+  ],
   "dependencies": [
     {
       "name": "apko",

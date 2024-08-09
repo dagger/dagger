@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/dagger/dagger/graphql/internal/dagger"
+	"github.com/dagger/dagger/modules/graphql/internal/dagger"
 )
 
 // An instance of the GraphQL module

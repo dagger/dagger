@@ -1,4 +1,4 @@
-module github.com/dagger/dagger/dirdiff
+module github.com/dagger/dagger/modules/dirdiff
 
 go 1.22.3
 

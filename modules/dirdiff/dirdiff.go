@@ -4,7 +4,7 @@ import (
 	"context"
 	"path/filepath"
 
-	"github.com/dagger/dagger/dirdiff/internal/dagger"
+	"github.com/dagger/dagger/modules/dirdiff/internal/dagger"
 )
 
 type Dirdiff struct{}

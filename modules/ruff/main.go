@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/dagger/dagger/ruff/internal/dagger"
+	"github.com/dagger/dagger/modules/ruff/internal/dagger"
 )
 
 // Ruff is a fast Python linter implemented in Rust
@@ -15,7 +15,6 @@ type Ruff struct{}
 
 // Lint a Python codebase
 func (ruff Ruff) Lint(
-	ctx context.Context,
 	// The Python source directory to lint
 	source *dagger.Directory,
 ) *LintRun {

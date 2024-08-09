@@ -1,4 +1,4 @@
-module github.com/dagger/dagger/ps-analyzer
+module github.com/dagger/dagger/modules/ps-analyzer
 
 go 1.22.5
 

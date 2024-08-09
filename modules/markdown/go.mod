@@ -1,4 +1,4 @@
-module github.com/dagger/dagger/markdown
+module github.com/dagger/dagger/modules/markdown
 
 go 1.21.7
 

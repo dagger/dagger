@@ -3,10 +3,6 @@
   "sdk": "go",
   "dependencies": [
     {
-      "name": "php-sdk-dev",
-      "source": "sdk/php/dev"
-    },
-    {
       "name": "dirdiff",
       "source": "modules/dirdiff"
     },
@@ -21,6 +17,10 @@
     {
       "name": "graphql",
       "source": "modules/graphql"
+    },
+    {
+      "name": "php-sdk-dev",
+      "source": "sdk/php/dev"
     },
     {
       "name": "ps-analyzer",
