@@ -77,10 +77,10 @@ func (ModuleSuite) TestTypescriptInit(ctx context.Context, t *testctx.T) {
 			With(daggerExec("init", "--source=.", "--name=hasPkgJson", "--sdk=typescript"))
 
 		out, err := modGen.
-			With(daggerQuery(`{hasPkgJson{containerEcho(stringArg:"hello"){stdout}}}`)).
+			With(daggerQuery(`{hasPkgJSON{containerEcho(stringArg:"hello"){stdout}}}`)).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"hasPkgJson":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+		require.JSONEq(t, `{"hasPkgJSON":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 
 		t.Run("Add dagger dependencies to the existing package.json", func(ctx context.Context, t *testctx.T) {
 			pkgJSON, err := modGen.File("/work/package.json").Contents(ctx)

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/iancoleman/strcase"
+	"github.com/dagger/dagger/dagql/strcase"
 	"golang.org/x/tools/go/packages"
 
 	"github.com/dagger/dagger/cmd/codegen/generator"
@@ -146,7 +146,7 @@ func formatName(s string) string {
 // Example: `fooId` -> `FooID`
 func (funcs goTemplateFuncs) formatEnum(s string) string {
 	s = strings.ToLower(s)
-	return strcase.ToCamel(s)
+	return strcase.ToPascal(s)
 }
 
 func (funcs goTemplateFuncs) sortEnumFields(s []introspection.EnumValue) []introspection.EnumValue {
