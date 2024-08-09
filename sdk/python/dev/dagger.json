@@ -4,8 +4,7 @@
   "exclude": [
     "**/.venv",
     "**/__pycache__",
-    "**/.*cache",
-    "sdk"
+    "**/.*cache"
   ],
   "dependencies": [
     {
@@ -18,7 +17,7 @@
     }
   ],
   "source": ".",
-  "engineVersion": "v0.12.1",
+  "engineVersion": "v0.12.2",
   "views": [
     {
       "name": "default",

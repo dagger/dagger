@@ -1,0 +1,12 @@
+{
+  "name": "dirdiff",
+  "sdk": "go",
+  "dependencies": [
+    {
+      "name": "wolfi",
+      "source": "../wolfi"
+    }
+  ],
+  "source": ".",
+  "engineVersion": "v0.12.4"
+}

@@ -1,0 +1,52 @@
+{
+  "name": "dagger-dev",
+  "sdk": "go",
+  "dependencies": [
+    {
+      "name": "dirdiff",
+      "source": "modules/dirdiff"
+    },
+    {
+      "name": "docusaurus",
+      "source": "github.com/levlaz/daggerverse/docusaurus@e494cec1aa8f9faab1e0f12b2e5eea4a2321f2de"
+    },
+    {
+      "name": "go",
+      "source": "modules/go"
+    },
+    {
+      "name": "graphql",
+      "source": "modules/graphql"
+    },
+    {
+      "name": "php-sdk-dev",
+      "source": "sdk/php/dev"
+    },
+    {
+      "name": "ps-analyzer",
+      "source": "modules/ps-analyzer"
+    },
+    {
+      "name": "python-sdk-dev",
+      "source": "sdk/python/dev"
+    },
+    {
+      "name": "shellcheck",
+      "source": "modules/shellcheck"
+    }
+  ],
+  "source": ".dagger",
+  "engineVersion": "v0.12.4",
+  "views": [
+    {
+      "name": "default",
+      "patterns": [
+        "!bin",
+        "!.git",
+        "!**/node_modules",
+        "!**/.venv",
+        "!**/__pycache__"
+      ]
+    }
+  ]
+}

@@ -8,7 +8,7 @@ inputs:
 
   module:
     description: "The Dagger module to call"
-    default: "dev"
+    default: "."
     required: false
 
   version:
@@ -73,7 +73,7 @@ runs:
 
         # put env variables in /tmp/actions/call/local-envs instead of
         # $GITHUB_ENV to avoid leaking into parent workflow
-        (cd dev/mage; go run main.go -w ../.. engine:dev) | tee /tmp/actions/call/local-envs
+        (cd .dagger/mage; go run main.go -w ../.. engine:dev) | tee /tmp/actions/call/local-envs
 
         echo "::endgroup::"
       env:
@@ -102,7 +102,7 @@ runs:
         source /tmp/actions/call/local-envs
 
         set -x
-        if [[ "${{ inputs.module }}" == "dev" ]]; then
+        if [[ "${{ inputs.module }}" == "." ]]; then
           # set some sane defaults for the current module
           if [[ -f $HOME/.docker/config.json ]]; then
             dagger -m "${{ inputs.module }}" call --source=".:default" --docker-cfg=file:"$HOME/.docker/config.json" ${{ inputs.function }} | tee "${{ inputs.redirect }}"

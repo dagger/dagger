@@ -1,0 +1,20 @@
+{
+  "name": "go",
+  "sdk": "go",
+  "dependencies": [
+    {
+      "name": "dirdiff",
+      "source": "../dirdiff"
+    },
+    {
+      "name": "golangci",
+      "source": "../golangci"
+    },
+    {
+      "name": "wolfi",
+      "source": "../wolfi"
+    }
+  ],
+  "source": ".",
+  "engineVersion": "v0.12.4"
+}
