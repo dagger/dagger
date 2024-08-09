@@ -36,6 +36,9 @@ var (
 	moduleURL   string
 	moduleFlags = pflag.NewFlagSet("module", pflag.ContinueOnError)
 
+	loadCoreFuncs bool
+	functionFlags = pflag.NewFlagSet("functions", pflag.ContinueOnError)
+
 	sdk           string
 	licenseID     string
 	compatVersion string
@@ -59,12 +62,11 @@ const (
 
 func init() {
 	moduleFlags.StringVarP(&moduleURL, "mod", "m", "", "Path to the module directory. Either local path or a remote git repo")
+	functionFlags.BoolVarP(&loadCoreFuncs, "core", "c", false, "Load core functions instead of a module (mutually exclusive with -m)")
 
-	for _, fc := range funcCmds {
-		if !fc.DisableModuleLoad {
-			fc.Command().PersistentFlags().AddFlagSet(moduleFlags)
-		}
-	}
+	callCmd.Command().PersistentFlags().AddFlagSet(functionFlags)
+	callCmd.Command().PersistentFlags().AddFlagSet(moduleFlags)
+	callCmd.Command().MarkFlagsMutuallyExclusive("core", "mod")
 
 	funcListCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	listenCmd.PersistentFlags().AddFlagSet(moduleFlags)

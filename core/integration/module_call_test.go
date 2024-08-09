@@ -2308,8 +2308,8 @@ func (ModuleSuite) TestCallCore(ctx context.Context, t *testctx.T) {
 	t.Run("call container", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		out, err := daggerCliBase(t, c).
-			With(daggerExec(
-				"core", "container",
+			With(daggerCall(
+				"-c", "container",
 				"from", "--address", alpineImage,
 				"file", "--path", "/etc/os-release",
 				"contents",
@@ -2317,5 +2317,26 @@ func (ModuleSuite) TestCallCore(ctx context.Context, t *testctx.T) {
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "Alpine Linux")
+	})
+
+	t.Run("call core with existing module", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		out, err := daggerCliBase(t, c).
+			With(daggerExec("init", "--sdk=go", "--name=test")).
+			With(daggerFunctions()).
+			With(daggerCall("-c")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "Client", gjson.Get(out, "_type").String())
+	})
+
+	t.Run("call --core with --mod", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		_, err := daggerCliBase(t, c).
+			With(daggerExec("init", "--sdk=go", "test")).
+			With(daggerFunctions("-m", "test")).
+			With(daggerCall("-m", "test", "-c")).
+			Sync(ctx)
+		require.ErrorContains(t, err, "[core mod] were all set")
 	})
 }
