@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"go.opentelemetry.io/otel/attribute"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/embedded"
@@ -20,26 +21,32 @@ func buildkitTelemetryContext(ctx context.Context) context.Context {
 		return nil
 	}
 	sp := trace.SpanFromContext(ctx)
-	sp = buildkitSpan{Span: sp, provider: &buildkitTraceProvider{tp: sp.TracerProvider()}}
-	return trace.ContextWithSpan(ctx, sp)
+	return trace.ContextWithSpan(ctx, buildkitSpan{
+		Span: sp,
+		tp: &buildkitTraceProvider{
+			tp: sp.TracerProvider(),
+			lp: telemetry.LoggerProvider(ctx),
+		},
+	})
 }
 
 type buildkitTraceProvider struct {
 	embedded.TracerProvider
 	tp trace.TracerProvider
+	lp *sdklog.LoggerProvider
 }
 
 func (tp *buildkitTraceProvider) Tracer(name string, options ...trace.TracerOption) trace.Tracer {
 	return &buildkitTracer{
-		tracer:   tp.tp.Tracer(name, options...),
-		provider: tp,
+		bkProvider: tp,
+		tracer:     tp.tp.Tracer(name, options...),
 	}
 }
 
 type buildkitTracer struct {
 	embedded.Tracer
-	tracer   trace.Tracer
-	provider *buildkitTraceProvider
+	bkProvider *buildkitTraceProvider
+	tracer     trace.Tracer
 }
 
 const TelemetryComponent = "buildkit"
@@ -53,18 +60,22 @@ func (t *buildkitTracer) Start(ctx context.Context, spanName string, opts ...tra
 		trace.WithAttributes(attribute.Bool("buildkit", true)),
 	}, opts...)
 
+	// Restore logger provider from the original ctx the provider was created.
+	ctx = telemetry.WithLoggerProvider(ctx, t.bkProvider.lp)
+
+	// Start the span, and make sure we return a span that has the provider.
 	ctx, span := t.tracer.Start(ctx, spanName, opts...)
-	newSpan := buildkitSpan{Span: span, provider: t.provider}
+	newSpan := buildkitSpan{Span: span, tp: t.bkProvider}
 	return trace.ContextWithSpan(ctx, newSpan), newSpan
 }
 
 type buildkitSpan struct {
 	trace.Span
-	provider *buildkitTraceProvider
+	tp *buildkitTraceProvider
 }
 
 func (s buildkitSpan) TracerProvider() trace.TracerProvider {
-	return s.provider
+	return s.tp
 }
 
 // SpanProcessor modifies spans coming from the Buildkit component to integrate

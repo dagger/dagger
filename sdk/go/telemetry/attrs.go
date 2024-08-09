@@ -75,9 +75,6 @@ const (
 	// Indicates the units for the progress numbers.
 	ProgressUnitsAttr = "dagger.io/progress.units"
 
-	// The client ID that generated this telemetry.
-	ClientIDAttr = "dagger.io/client.id"
-
 	// The stdio stream a log corresponds to (1 for stdout, 2 for stderr).
 	StdioStreamAttr = "stdio.stream"
 

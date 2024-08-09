@@ -95,6 +95,6 @@ func initEngineTelemetry(ctx context.Context) (context.Context, func(error)) {
 	return ctx, func(rerr error) {
 		stdio.Close()
 		telemetry.End(span, func() error { return rerr })
-		telemetry.Close()
+		telemetry.Close(ctx)
 	}
 }

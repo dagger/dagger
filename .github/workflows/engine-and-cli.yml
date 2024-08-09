@@ -44,6 +44,7 @@ jobs:
         uses: ./.github/actions/call
         with:
           function: "test all --race=true --parallel=16"
+          upload-logs: true
 
   # Run Engine tests in dev Engine so that we can spot integration failures early
   # Only run a subset of important test cases since we just need to verify basic
@@ -58,6 +59,7 @@ jobs:
         with:
           function: "test important --race=true --parallel=16"
           dev-engine: true
+          upload-logs: true
 
   test-publish:
     runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-12-4-4c' || 'ubuntu-latest' }}"

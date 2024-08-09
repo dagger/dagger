@@ -1,12 +1,13 @@
 package core
 
 import (
-	"go.opentelemetry.io/otel"
+	"context"
+
 	"go.opentelemetry.io/otel/trace"
 )
 
 const InstrumentationLibrary = "dagger.io/core"
 
-func Tracer() trace.Tracer {
-	return otel.Tracer(InstrumentationLibrary)
+func Tracer(ctx context.Context) trace.Tracer {
+	return trace.SpanFromContext(ctx).TracerProvider().Tracer(InstrumentationLibrary)
 }
