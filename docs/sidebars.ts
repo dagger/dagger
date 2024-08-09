@@ -273,6 +273,10 @@ module.exports = {
                 },
                 {
                   "type": "doc",
+                  "id": "manual/functions/enumerations"
+                },
+                {
+                  "type": "doc",
                   "id": "manual/functions/interfaces"
                 },
                 {
