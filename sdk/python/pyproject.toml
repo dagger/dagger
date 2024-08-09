@@ -51,6 +51,7 @@ dependencies = [
 [tool.uv]
 preview = true
 dev-dependencies = [
+    "codegen",
     # lint
     "ruff>=0.3.4",
     "mypy>=1.8.0",
@@ -64,6 +65,12 @@ dev-dependencies = [
     "sphinx>=7.2.6",
     "sphinx-rtd-theme>=2.0.0",
 ]
+
+[tool.uv.sources]
+codegen = { workspace = true }
+
+[tool.uv.workspace]
+members = ["codegen"]
 
 [tool.hatch.version]
 source = "vcs"

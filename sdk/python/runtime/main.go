@@ -253,10 +253,12 @@ func (m *PythonSdk) WithTemplate() *PythonSdk {
 		if m.UseUv() && !d.HasFile(UvLock) && !d.HasFile(PipCompileLock) {
 			sdkToml := path.Join(GenDir, toml)
 			d.AddLockFile(m.Container.
+				// Readme needed because it's referenced in pyproject.toml
+				WithMountedFile(path.Join(GenDir, "README.md"), m.SdkSourceDir.File("README.md")).
 				WithMountedFile(sdkToml, m.SdkSourceDir.File(toml)).
 				WithMountedFile(toml, d.GetFile(toml)).
 				WithExec([]string{
-					"uv", "pip", "compile", "-q",
+					"uv", "pip", "compile", "-q", "--universal",
 					"-o", PipCompileLock,
 					sdkToml,
 					toml,
