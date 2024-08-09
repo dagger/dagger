@@ -8,7 +8,7 @@
     },
     {
       "name": "dirdiff",
-      "source": "dirdiff"
+      "source": "modules/dirdiff"
     },
     {
       "name": "docusaurus",
@@ -16,15 +16,15 @@
     },
     {
       "name": "go",
-      "source": "go"
+      "source": "modules/go"
     },
     {
       "name": "graphql",
-      "source": "graphql"
+      "source": "modules/graphql"
     },
     {
       "name": "ps-analyzer",
-      "source": "ps-analyzer"
+      "source": "modules/ps-analyzer"
     },
     {
       "name": "python-sdk-dev",
@@ -32,7 +32,7 @@
     },
     {
       "name": "shellcheck",
-      "source": "shellcheck"
+      "source": "modules/shellcheck"
     }
   ],
   "source": ".dagger",
