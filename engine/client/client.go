@@ -161,6 +161,17 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	}
 	c.hostname = hostname
 
+	connectSpanOpts := []trace.SpanStartOption{}
+	if configuredSessionID != "" {
+		// infer that this is not a main client caller, server ID is never set for those currently
+		connectSpanOpts = append(connectSpanOpts, telemetry.Internal())
+	}
+
+	// NB: don't propagate this ctx, we don't want everything tucked beneath connect
+	connectCtx, span := Tracer(ctx).Start(ctx, "connect", connectSpanOpts...)
+	defer telemetry.End(span, func() error { return rerr })
+	slog := slog.SpanLogger(connectCtx, InstrumentationLibrary)
+
 	nestedSessionPortVal, isNestedSession := os.LookupEnv("DAGGER_SESSION_PORT")
 	if isNestedSession {
 		nestedSessionPort, err := strconv.Atoi(nestedSessionPortVal)
@@ -170,7 +181,10 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		c.nestedSessionPort = nestedSessionPort
 		c.SecretToken = os.Getenv("DAGGER_SESSION_TOKEN")
 		c.httpClient = c.newHTTPClient()
-		if err := c.daggerConnect(ctx); err != nil {
+		if err := c.subscribeTelemetry(connectCtx); err != nil {
+			return nil, nil, fmt.Errorf("subscribe to telemetry: %w", err)
+		}
+		if err := c.daggerConnect(connectCtx); err != nil {
 			return nil, nil, fmt.Errorf("failed to connect to dagger: %w", err)
 		}
 		return c, ctx, nil
@@ -184,17 +198,6 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		return nil, nil, fmt.Errorf("cache config from env: %w", err)
 	}
 
-	connectSpanOpts := []trace.SpanStartOption{}
-	if configuredSessionID != "" {
-		// infer that this is not a main client caller, server ID is never set for those currently
-		connectSpanOpts = append(connectSpanOpts, telemetry.Internal())
-	}
-
-	// NB: don't propagate this ctx, we don't want everything tucked beneath connect
-	connectCtx, span := Tracer(ctx).Start(ctx, "connect", connectSpanOpts...)
-	defer telemetry.End(span, func() error { return rerr })
-
-	slog := slog.SpanLogger(connectCtx, InstrumentationLibrary)
 	c.stableClientID = GetHostStableID(slog)
 
 	if err := c.startEngine(connectCtx); err != nil {
@@ -220,6 +223,10 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 			c.sessionSrv.Stop()
 		}
 	}()
+
+	if err := c.subscribeTelemetry(connectCtx); err != nil {
+		return nil, nil, fmt.Errorf("subscribe to telemetry: %w", err)
+	}
 
 	if err := c.daggerConnect(ctx); err != nil {
 		return nil, nil, fmt.Errorf("failed to connect to dagger: %w", err)
@@ -288,7 +295,8 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 }
 
 func (c *Client) subscribeTelemetry(ctx context.Context) (rerr error) {
-	ctx, span := Tracer(ctx).Start(ctx, "subscribing to telemetry")
+	ctx, span := Tracer(ctx).Start(ctx, "subscribing to telemetry",
+		telemetry.Encapsulated())
 	defer telemetry.End(span, func() error { return rerr })
 
 	slog := slog.With("client", c.ID)
@@ -482,10 +490,6 @@ func (srv *BuildkitSessionServer) Run(ctx context.Context) {
 }
 
 func (c *Client) daggerConnect(ctx context.Context) error {
-	if err := c.subscribeTelemetry(ctx); err != nil {
-		return fmt.Errorf("subscribe to telemetry: %w", err)
-	}
-
 	var err error
 	c.daggerClient, err = dagger.Connect(
 		context.WithoutCancel(ctx),
