@@ -20,6 +20,23 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 		return ctx, dagql.NoopDone
 	}
 
+	// Keep track of which effects were already installed prior to the call so we
+	// only see new ones.
+	seenEffects := make(map[digest.Digest]bool)
+	if w, ok := self.(dagql.Wrapper); ok {
+		if hasPBs, ok := w.Unwrap().(HasPBDefinitions); ok {
+			if defs, err := hasPBs.PBDefinitions(ctx); err != nil {
+				slog.Warn("failed to get LLB definitions", "err", err)
+			} else {
+				for _, def := range defs {
+					for _, op := range def.Def {
+						seenEffects[digest.FromBytes(op)] = true
+					}
+				}
+			}
+		}
+	}
+
 	var base string
 	if id.Receiver() == nil {
 		base = "Query"
@@ -87,7 +104,7 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 			}
 		}
 
-		// Record any LLB op digests that the value depends on.
+		// Record any new LLB op digests that the value depends on.
 		//
 		// This allows the UI to track the 'cause and effect' between lazy
 		// operations and their eventual execution. The listed digests will be
@@ -97,15 +114,14 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 			if defs, err := hasPBs.PBDefinitions(ctx); err != nil {
 				slog.Warn("failed to get LLB definitions", "err", err)
 			} else {
-				seen := make(map[digest.Digest]bool)
 				var ops []string
 				for _, def := range defs {
 					for _, op := range def.Def {
 						dig := digest.FromBytes(op)
-						if seen[dig] {
+						if seenEffects[dig] {
 							continue
 						}
-						seen[dig] = true
+						seenEffects[dig] = true
 						ops = append(ops, dig.String())
 					}
 				}
