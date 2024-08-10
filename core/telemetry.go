@@ -79,6 +79,11 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 			span.SetAttributes(attribute.Bool(telemetry.CachedAttr, true))
 		}
 
+		if ctx.Err() != nil {
+			// If the request was canceled, reflect it on the span.
+			span.SetAttributes(attribute.Bool(telemetry.CanceledAttr, true))
+		}
+
 		if err != nil {
 			// NB: we do +id.Display() instead of setting it as a field to avoid
 			// double quoting
