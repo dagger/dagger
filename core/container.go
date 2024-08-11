@@ -312,6 +312,7 @@ func (container *Container) From(ctx context.Context, addr string) (*Container, 
 	fsSt := llb.Image(
 		digested.String(),
 		llb.WithCustomNamef("pull %s", ref),
+		buildkit.WithTracePropagation(ctx),
 	)
 
 	def, err := fsSt.Marshal(ctx, llb.Platform(platform.Spec()))
@@ -1359,6 +1360,7 @@ func (container *Container) Import(
 		fmt.Sprintf("%s@%s", dummyRepo, manifestDesc.Digest),
 		llb.OCIStore("", buildkit.OCIStoreName),
 		llb.Platform(container.Platform.Spec()),
+		buildkit.WithTracePropagation(ctx),
 	)
 
 	execDef, err := st.Marshal(ctx, llb.Platform(container.Platform.Spec()))
