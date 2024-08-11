@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
@@ -16,6 +18,18 @@ import (
 
 	"dagger.io/dagger/telemetry"
 )
+
+func WithTracePropagation(ctx context.Context) llb.ConstraintsOpt {
+	mc := propagation.MapCarrier{}
+	telemetry.Propagator.Inject(ctx, mc)
+	return llb.WithDescription(mc)
+}
+
+func SpanContextFromDescription(desc map[string]string) trace.SpanContext {
+	return trace.SpanContextFromContext(
+		telemetry.Propagator.Extract(context.Background(), propagation.MapCarrier(desc)),
+	)
+}
 
 // buildkitTelemetryContext returns a context with a wrapped span that has a
 // TracerProvider that can process spans produced by buildkit. This works,
