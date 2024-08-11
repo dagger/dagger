@@ -25,6 +25,7 @@ import (
 	"github.com/moby/buildkit/util/entitlements"
 	bkworker "github.com/moby/buildkit/worker"
 	"github.com/opencontainers/go-digest"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/metadata"
 
@@ -284,7 +285,10 @@ func (c *Client) NewContainer(ctx context.Context, req NewContainerRequest) (*Co
 	ctr, err := bkcontainer.NewContainer(
 		context.WithoutCancel(ctx),
 		c.Worker.CacheManager(),
-		c.Worker.withExecMD(req.ExecutionMetadata), // also implements Executor
+		c.Worker.execWorker(
+			trace.SpanContextFromContext(ctx),
+			req.ExecutionMetadata,
+		), // also implements Executor
 		c.SessionManager,
 		bksession.NewGroup(c.ID()),
 		ctrReq,
