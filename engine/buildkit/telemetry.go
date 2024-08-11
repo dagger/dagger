@@ -25,10 +25,12 @@ func WithTracePropagation(ctx context.Context) llb.ConstraintsOpt {
 	return llb.WithDescription(mc)
 }
 
+func ContextFromDescription(desc map[string]string) context.Context {
+	return telemetry.Propagator.Extract(context.Background(), propagation.MapCarrier(desc))
+}
+
 func SpanContextFromDescription(desc map[string]string) trace.SpanContext {
-	return trace.SpanContextFromContext(
-		telemetry.Propagator.Extract(context.Background(), propagation.MapCarrier(desc)),
-	)
+	return trace.SpanContextFromContext(ContextFromDescription(desc))
 }
 
 // buildkitTelemetryContext returns a context with a wrapped span that has a

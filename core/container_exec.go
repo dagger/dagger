@@ -120,7 +120,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 
 	runOpts = append(runOpts, llb.WithCustomName(spanName))
 
-	metaSt, metaSourcePath := metaMount(opts.Stdin)
+	metaSt, metaSourcePath := metaMount(ctx, opts.Stdin)
 
 	// create mount point for the executor to write stdout/stderr/exitcode to
 	runOpts = append(runOpts,
@@ -344,7 +344,7 @@ func (container *Container) metaFileContents(ctx context.Context, filePath strin
 	return string(content), nil
 }
 
-func metaMount(stdin string) (llb.State, string) {
+func metaMount(ctx context.Context, stdin string) (llb.State, string) {
 	meta := llb.Mkdir(buildkit.MetaMountDestPath, 0o777)
 	if stdin != "" {
 		meta = meta.Mkfile(path.Join(buildkit.MetaMountDestPath, buildkit.MetaMountStdinPath), 0o666, []byte(stdin))
@@ -353,6 +353,7 @@ func metaMount(stdin string) (llb.State, string) {
 	return llb.Scratch().File(
 			meta,
 			llb.WithCustomName(buildkit.InternalPrefix+"creating dagger metadata"),
+			buildkit.WithTracePropagation(ctx),
 		),
 		buildkit.MetaMountDestPath
 }

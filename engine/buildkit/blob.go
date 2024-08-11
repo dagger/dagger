@@ -77,7 +77,7 @@ func (c *Client) DefToBlob(
 
 	desc = remote.Descriptors[0]
 
-	blobDef, err := blob.LLB(desc).Marshal(ctx)
+	blobDef, err := blob.LLB(desc).Marshal(ctx, WithTracePropagation(ctx))
 	if err != nil {
 		return nil, desc, fmt.Errorf("failed to marshal blob source: %w", err)
 	}
@@ -105,7 +105,7 @@ func (c *Client) BytesToBlob(
 ) (_ *bksolverpb.Definition, desc specs.Descriptor, _ error) {
 	def, err := llb.Scratch().
 		File(llb.Mkfile(fileName, perms, bs)).
-		Marshal(ctx)
+		Marshal(ctx, WithTracePropagation(ctx))
 	if err != nil {
 		return nil, desc, fmt.Errorf("failed to create llb definition: %w", err)
 	}

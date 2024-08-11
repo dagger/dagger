@@ -137,7 +137,10 @@ func (dir *Directory) StateWithSourcePath() (llb.State, error) {
 }
 
 func (dir *Directory) SetState(ctx context.Context, st llb.State) error {
-	def, err := st.Marshal(ctx, llb.Platform(dir.Platform.Spec()))
+	def, err := st.Marshal(ctx,
+		llb.Platform(dir.Platform.Spec()),
+		buildkit.WithTracePropagation(ctx),
+	)
 	if err != nil {
 		return nil
 	}
