@@ -89,36 +89,48 @@ func (t *buildkitTracer) Start(ctx context.Context, spanName string, opts ...tra
 		return noop.NewTracerProvider().Tracer("").Start(ctx, spanName, opts...)
 	}
 
-	if strings.HasPrefix(spanName, "load cache: ") {
-		cfg := trace.NewSpanStartConfig(opts...)
-		for _, attr := range cfg.Attributes() {
-			if attr.Key != "vertex" {
-				continue
-			}
-			dgst := digest.Digest(attr.Value.AsString())
-
-			t.provider.client.opsmu.Lock()
-			llbop, ok := t.provider.client.ops[dgst]
-			if ok {
-				llbop.seen = true
-			}
-			t.provider.client.opsmu.Unlock()
-
-			if ok {
-				for _, input := range llbop.Def.Inputs {
-					t.walk(ctx, input.Digest, func(llbop *op) {
-						_, span := t.tracer.Start(ctx, t.name(llbop.Digest), trace.WithAttributes(
-							attribute.Bool("buildkit", true),
-							attribute.Bool("dagger.io/dag.virtual", true),
-							attribute.Bool(telemetry.CachedAttr, true),
-							attribute.String("vertex", string(llbop.Digest)),
-						))
-						span.End()
-					})
-				}
-			}
-			break
+	cfg := trace.NewSpanStartConfig(opts...)
+	for _, attr := range cfg.Attributes() {
+		if attr.Key != "vertex" {
+			continue
 		}
+
+		dgst := digest.Digest(attr.Value.AsString())
+
+		t.provider.client.opsmu.Lock()
+		llbop, ok := t.provider.client.ops[dgst]
+		if !ok {
+			t.provider.client.opsmu.Unlock()
+			continue
+		}
+		llbop.seen = true
+		t.provider.client.opsmu.Unlock()
+
+		causeCtx := SpanContextFromDescription(llbop.Meta.Description)
+		if causeCtx.IsValid() {
+			opts = append(opts, trace.WithLinks(trace.Link{
+				SpanContext: causeCtx,
+				// Attributes:  []attribute.KeyValue{},
+			}))
+		}
+
+		// TODO: bring this back? not sure what it does
+		// if strings.HasPrefix(spanName, "load cache: ") {
+		// 	if ok {
+		// 		for _, input := range llbop.Def.Inputs {
+		// 			t.walk(ctx, input.Digest, func(llbop *op) {
+		// 				_, span := t.tracer.Start(ctx, t.name(llbop.Digest), trace.WithAttributes(
+		// 					attribute.Bool("buildkit", true),
+		// 					attribute.Bool("dagger.io/dag.virtual", true),
+		// 					attribute.Bool(telemetry.CachedAttr, true),
+		// 					attribute.String("vertex", string(llbop.Digest)),
+		// 				))
+		// 				span.End()
+		// 			})
+		// 		}
+		// 	}
+		// 	break
+		// }
 	}
 
 	// Start the span, and make sure we return a span that has the provider.
