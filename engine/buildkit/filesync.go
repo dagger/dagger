@@ -56,6 +56,7 @@ func (c *Client) LocalImport(
 	localOpts := []llb.LocalOption{
 		llb.SessionID(clientMetadata.ClientID),
 		llb.SharedKeyHint(strings.Join([]string{stableID, srcPath}, " ")),
+		WithTracePropagation(ctx),
 	}
 
 	localName := fmt.Sprintf("upload %s from %s (client id: %s, session id: %s)", srcPath, stableID, clientMetadata.ClientID, clientMetadata.SessionID)
@@ -80,6 +81,7 @@ func (c *Client) LocalImport(
 	copyLLB := llb.Scratch().File(
 		llb.Copy(localLLB, "/", "/"),
 		llb.WithCustomNamef("%scopy %s", InternalPrefix, localName),
+		WithTracePropagation(ctx),
 	)
 
 	copyDef, err := copyLLB.Marshal(ctx, llb.Platform(platform))
