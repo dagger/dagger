@@ -84,6 +84,8 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 func (t *ModuleObjectType) CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*call.ID) error {
 	var obj *ModuleObject
 	switch value := value.(type) {
+	case nil:
+		return nil
 	case *ModuleObject:
 		obj = value
 	case dagql.Instance[*ModuleObject]:
