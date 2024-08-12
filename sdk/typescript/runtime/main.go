@@ -54,9 +54,9 @@ func New(
 	return &TypescriptSdk{
 		SDKSourceDir: sdkSourceDir,
 		RequiredPaths: []string{
-			"**/package.json",
-			"**/package-lock.json",
-			"**/tsconfig.json",
+			"sdk/typescript/package.json",
+			"sdk/typescript/package-lock.json",
+			"sdk/typescript/tsconfig.json",
 		},
 		moduleConfig: &moduleConfig{},
 	}
@@ -303,11 +303,9 @@ func (t *TypescriptSdk) setupModule(ctx context.Context, ctr *dagger.Container) 
 
 // addSDK returns a directory with the SDK sources.
 func (t *TypescriptSdk) addSDK() *dagger.Directory {
-	return dag.
-		Directory().
-		WithDirectory("/", t.SDKSourceDir, dagger.DirectoryWithDirectoryOpts{
-			Exclude: []string{"codegen", "runtime"},
-		})
+	return t.SDKSourceDir.
+		WithoutDirectory("codegen").
+		WithoutDirectory("runtime")
 }
 
 // generateClient uses the given container to generate the client code.
@@ -403,6 +401,10 @@ func (t *TypescriptSdk) detectPackageManager(ctx context.Context) (SupportedPack
 		if value != "" {
 			// Retrieve the package manager and version from the value (e.g., yarn@4.2.0, pnpm@8.5.1)
 			packageManager, version, _ := strings.Cut(value, "@")
+
+			if version == "" {
+				return "", "", fmt.Errorf("packageManager version is missing, please add it to your package.json")
+			}
 
 			switch SupportedPackageManager(packageManager) {
 			case Yarn, Pnpm, Npm:
