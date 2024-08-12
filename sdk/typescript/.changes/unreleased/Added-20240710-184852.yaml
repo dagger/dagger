@@ -1,5 +1,15 @@
 kind: Added
-body: Detect and use package manager and lock files
+body: |
+  Detect field `packageManager` in `package.json` to use it during the runtime.
+  If the field is not present, the runtime will try to detect it from the lock file.
+  By default, the runtime will use yarn@v1.22.0.
+
+  Improving the SDK runtime to generate a lockfile based on the package manager.
+
+  Improving the setup by moving dependencies installation to the `ModuleRuntime` function,
+  which should improve performances during init & updates.
+
+  Add caches folder mount for npm, yarn, pnpm & bun.
 time: 2024-07-10T18:48:52.935183+02:00
 custom:
   Author: TomChv
