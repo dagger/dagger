@@ -12,30 +12,12 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
 )
 
 func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Context, func(res dagql.Typed, cached bool, rerr error)) {
 	if isIntrospection(id) {
 		return ctx, dagql.NoopDone
-	}
-
-	// Keep track of which effects were already installed prior to the call so we
-	// only see new ones.
-	seenEffects := make(map[digest.Digest]bool)
-	if w, ok := self.(dagql.Wrapper); ok {
-		if hasPBs, ok := w.Unwrap().(HasPBDefinitions); ok {
-			if defs, err := hasPBs.PBDefinitions(ctx); err != nil {
-				slog.Warn("failed to get LLB definitions", "err", err)
-			} else {
-				for _, def := range defs {
-					for _, op := range def.Def {
-						seenEffects[digest.FromBytes(op)] = true
-					}
-				}
-			}
-		}
 	}
 
 	var base string
@@ -110,41 +92,19 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 			}
 		}
 
-		// Record any new LLB op digests that the value depends on.
+		// record which LLB op is the singular result of this call
 		//
-		// This allows the UI to track the 'cause and effect' between lazy
-		// operations and their eventual execution. The listed digests will be
-		// correlated to spans coming from Buildkit which set the matching digest
-		// as the 'vertex' span attribute.
-		if hasPBs, ok := res.(HasPBDefinitions); ok {
-			if defs, err := hasPBs.PBDefinitions(ctx); err != nil {
-				slog.Warn("failed to get LLB definitions", "err", err)
+		// previously we would emit all LLB digests and call it "done" based on the
+		// status across all of them, but this backfires for withExec, since it
+		// also includes a def for each mutated mount point, and those might never
+		// be referenced.
+		if hasPBs, ok := res.(HasPBOutput); ok {
+			if def, err := hasPBs.PBOutput(ctx); err != nil {
+				slog.Warn("failed to get LLB output", "err", err)
 			} else {
-				var ops []string
-				for _, def := range defs {
-					for _, op := range def.Def {
-						dig := digest.FromBytes(op)
-						if seenEffects[dig] {
-							continue
-						}
-						seenEffects[dig] = true
-
-						var d pb.Op
-						err := d.Unmarshal(op)
-						if err != nil {
-							slog.Warn("failed to unmarshal LLB", "err", err)
-							continue
-						}
-						if d.Op == nil {
-							// the last def should always be an empty op with
-							// the previous as an input
-							continue
-						}
-
-						ops = append(ops, dig.String())
-					}
-				}
-				span.SetAttributes(attribute.StringSlice(telemetry.EffectIDsAttr, ops))
+				lastOpDigest := digest.FromBytes(def.Def[len(def.Def)-1])
+				span.SetAttributes(
+					attribute.String(telemetry.EffectOutputAttr, lastOpDigest.String()))
 			}
 		}
 	}

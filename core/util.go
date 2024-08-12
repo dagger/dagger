@@ -28,6 +28,10 @@ type HasPBDefinitions interface {
 	PBDefinitions(context.Context) ([]*pb.Definition, error)
 }
 
+type HasPBOutput interface {
+	PBOutput(context.Context) (*pb.Definition, error)
+}
+
 func collectPBDefinitions(ctx context.Context, value dagql.Typed) ([]*pb.Definition, error) {
 	switch x := value.(type) {
 	case dagql.String, dagql.Int, dagql.Boolean, dagql.Float:

@@ -81,7 +81,7 @@ type Client struct {
 	closeMu  sync.RWMutex
 	execMap  sync.Map
 
-	ops   map[digest.Digest]*op
+	ops   map[digest.Digest]*OpDAG
 	opsmu sync.RWMutex
 }
 
@@ -93,7 +93,7 @@ func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
 		closeCtx: ctx,
 		cancel:   cancel,
 		execMap:  sync.Map{},
-		ops:      make(map[digest.Digest]*op),
+		ops:      make(map[digest.Digest]*OpDAG),
 	}
 
 	return client, nil
@@ -136,11 +136,7 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 	}
 	c.opsmu.Lock()
 	dag.Walk(func(od *OpDAG) error {
-		c.ops[*od.OpDigest] = &op{
-			Digest: *od.OpDigest,
-			Def:    *od.Op,
-			Meta:   *od.Metadata,
-		}
+		c.ops[*od.OpDigest] = od
 		return nil
 	})
 	c.opsmu.Unlock()
@@ -177,6 +173,13 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 		c.Refs[rf] = struct{}{}
 	}
 	return res, nil
+}
+
+func (c *Client) LookupOp(vertex digest.Digest) (*OpDAG, bool) {
+	c.opsmu.Lock()
+	llbop, ok := c.ops[vertex]
+	c.opsmu.Unlock()
+	return llbop, ok
 }
 
 func (c *Client) ResolveImageConfig(ctx context.Context, ref string, opt sourceresolver.Opt) (string, digest.Digest, []byte, error) {
@@ -726,8 +729,6 @@ type op struct {
 	Digest digest.Digest
 	Def    bksolverpb.Op
 	Meta   bksolverpb.OpMetadata
-
-	seen bool
 }
 
 // filteringGateway is a helper gateway that filters+converts various
