@@ -1,5 +1,12 @@
 # Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-August%2015,%202024-success?style=flat-square)
 
+> [!WARNING]
+>
+> This document is out of date because of dagger/dagger#8190.
+>
+> In the next improve-releasing-during-<version> PR, this document should be
+> updated to include the changes from that PR.
+
 This describes how to release Dagger:
 
 - [🚙 Engine + 🚗 CLI ⏱ `30mins`](#-engine---cli--30mins)

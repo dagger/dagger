@@ -11,9 +11,10 @@ jobs:
       - name: "go publish"
         uses: ./.github/actions/call
         env:
+          RELEASE_DAGGER_CI_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         with:
-          function: sdk rust publish --tag="${{ github.ref_name }}" --cargo-registry-token=env:CARGO_REGISTRY_TOKEN
+          function: sdk rust publish --tag="${{ github.ref_name }}"  --github-token=env:RELEASE_DAGGER_CI_TOKEN --cargo-registry-token=env:CARGO_REGISTRY_TOKEN
       - name: "notify"
         uses: ./.github/actions/notify
         with:

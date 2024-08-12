@@ -11,9 +11,10 @@ jobs:
       - name: "typescript publish"
         uses: ./.github/actions/call
         env:
+          RELEASE_DAGGER_CI_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
           RELEASE_NPM_TOKEN: ${{ secrets.RELEASE_NPM_TOKEN }}
         with:
-          function: sdk typescript publish --tag="${{ github.ref_name }}" --npm-token=env:RELEASE_NPM_TOKEN
+          function: sdk typescript publish --tag="${{ github.ref_name }}" --github-token=env:RELEASE_DAGGER_CI_TOKEN --npm-token=env:RELEASE_NPM_TOKEN
       - name: "notify"
         uses: ./.github/actions/notify
         with:

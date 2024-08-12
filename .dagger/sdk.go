@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/dagger/dagger/.dagger/build"
@@ -192,4 +193,66 @@ func gitPublish(ctx context.Context, opts gitPublishOpts) error {
 
 	_, err := result.Sync(ctx)
 	return err
+}
+
+type githubReleaseOpts struct {
+	tag   string
+	notes *dagger.File
+
+	gitRepo     string
+	githubToken *dagger.Secret
+
+	dryRun bool
+}
+
+func githubRelease(ctx context.Context, opts githubReleaseOpts) error {
+	u, err := url.Parse(opts.gitRepo)
+	if err != nil {
+		return err
+	}
+	if u.Host != "github.com" {
+		return fmt.Errorf("git repo must be on github.com")
+	}
+	githubRepo := strings.TrimPrefix(strings.TrimSuffix(u.Path, ".git"), "/")
+
+	if opts.dryRun {
+		// sanity check tag is in target repo
+		_, err = dag.
+			Git(fmt.Sprintf("https://github.com/%s", githubRepo)).
+			Ref(opts.tag).
+			Tree().
+			Sync(ctx)
+		if err != nil {
+			return err
+		}
+
+		// sanity check notes file exists
+		notes, err := opts.notes.Contents(ctx)
+		if err != nil {
+			return err
+		}
+		fmt.Println(notes)
+
+		return nil
+	}
+
+	gh := dag.Gh(dagger.GhOpts{
+		Repo:  githubRepo,
+		Token: opts.githubToken,
+	})
+	return gh.Release().Create(
+		ctx,
+		opts.tag,
+		opts.tag,
+		dagger.GhReleaseCreateOpts{
+			VerifyTag: true,
+			Draft:     true,
+			NotesFile: opts.notes,
+			// Latest:    false,  // can't do this yet
+		},
+	)
+}
+
+func sdkChangeNotes(src *dagger.Directory, sdk string, version string) *dagger.File {
+	return src.File(fmt.Sprintf("sdk/%s/.changes/%s.md", sdk, version))
 }

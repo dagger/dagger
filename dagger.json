@@ -11,6 +11,10 @@
       "source": "github.com/levlaz/daggerverse/docusaurus@e494cec1aa8f9faab1e0f12b2e5eea4a2321f2de"
     },
     {
+      "name": "gh",
+      "source": "github.com/sagikazarmark/daggerverse/gh@5b826062b6bc1bfbd619aa5d0fba117190c85aba"
+    },
+    {
       "name": "go",
       "source": "modules/go"
     },

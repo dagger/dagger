@@ -11,10 +11,11 @@ jobs:
       - name: "python publish"
         uses: ./.github/actions/call
         env:
+          RELEASE_DAGGER_CI_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
           RELEASE_PYPI_TOKEN: ${{ secrets.RELEASE_PYPI_TOKEN }}
           RELEASE_PYPI_REPO: ${{ secrets.RELEASE_PYPI_REPO }}
         with:
-          function: sdk python publish --tag="${{ github.ref_name }}" --pypi-repo="$RELEASE_PYPI_REPO" --pypi-token=env:RELEASE_PYPI_TOKEN
+          function: sdk python publish --tag="${{ github.ref_name }}" --github-token=env:RELEASE_DAGGER_CI_TOKEN --pypi-repo="$RELEASE_PYPI_REPO" --pypi-token=env:RELEASE_PYPI_TOKEN
       - name: "notify"
         uses: ./.github/actions/notify
         with:
