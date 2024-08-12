@@ -48,6 +48,10 @@ func (*Directory) TypeDescription() string {
 
 var _ HasPBDefinitions = (*Directory)(nil)
 
+func (dir *Directory) PBOutput(ctx context.Context) (*pb.Definition, error) {
+	return dir.LLB, nil
+}
+
 func (dir *Directory) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
 	var defs []*pb.Definition
 	if dir.LLB != nil {

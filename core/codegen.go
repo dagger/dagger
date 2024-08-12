@@ -54,6 +54,10 @@ func (code *GeneratedCode) WithVCSIgnoredPaths(paths []string) *GeneratedCode {
 
 var _ HasPBDefinitions = (*GeneratedCode)(nil)
 
+func (code *GeneratedCode) PBOutput(ctx context.Context) (*pb.Definition, error) {
+	return code.Code.Self.PBOutput(ctx)
+}
+
 func (code *GeneratedCode) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
 	return code.Code.Self.PBDefinitions(ctx)
 }

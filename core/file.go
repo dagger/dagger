@@ -46,6 +46,10 @@ func (*File) TypeDescription() string {
 
 var _ HasPBDefinitions = (*File)(nil)
 
+func (file *File) PBOutput(ctx context.Context) (*pb.Definition, error) {
+	return file.LLB, nil
+}
+
 func (file *File) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
 	var defs []*pb.Definition
 	if file.LLB != nil {

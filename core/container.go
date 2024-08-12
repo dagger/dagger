@@ -109,6 +109,10 @@ func (*Container) TypeDescription() string {
 
 var _ HasPBDefinitions = (*Container)(nil)
 
+func (container *Container) PBOutput(ctx context.Context) (*pb.Definition, error) {
+	return container.FS, nil
+}
+
 func (container *Container) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) {
 	var defs []*pb.Definition
 	if container.FS != nil {
