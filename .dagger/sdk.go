@@ -160,7 +160,7 @@ func gitPublish(ctx context.Context, opts gitPublishOpts) error {
 	} else {
 		// on a dry run, just test that the last state of dest is in the current branch (and is a fast-forward)
 		history, err := result.
-			WithExec([]string{"git", "log", "--oneline", "--no-abbrev-commit"}).
+			WithExec([]string{"git", "log", "--oneline", "--no-abbrev-commit", opts.sourceTag}).
 			Stdout(ctx)
 		if err != nil {
 			return err
