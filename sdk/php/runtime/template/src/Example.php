@@ -15,8 +15,8 @@ use function Dagger\dag;
 #[DaggerObject]
 class Example
 {
-     #[DaggerFunction('Echo the value to standard output')]
-     public function echo(string $value): Container
+     #[DaggerFunction('Returns a container that echoes whatever string argument is provided')]
+     public function containerEcho(string $stringArg): Container
      {
          return dag()
              ->container()
@@ -24,10 +24,10 @@ class Example
              ->withExec(['echo', $value]);
      }
 
-    #[DaggerFunction('Search a directory for lines matching a pattern')]
+    #[DaggerFunction('Returns lines that match a pattern in the files of the provided Directory')]
      public function grepDir(
          #[Argument('The directory to search')]
-         Directory $directory,
+         Directory $directoryArg,
          #[Argument('The pattern to search for')]
          string $pattern
     ): string {
