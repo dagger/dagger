@@ -1,7 +1,0 @@
-kind: Changed
-body: |
-  Drop CommonJS support in favor of Module. May be a breaking change if you use very old modules.
-time: 2024-08-06T22:37:17.728848+02:00
-custom:
-  Author: TomChv
-  PR: "8113"
