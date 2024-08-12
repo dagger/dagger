@@ -601,7 +601,7 @@ func (ModuleSuite) TestTypescriptRuntimeDetection(ctx context.Context, t *testct
 		require.Error(t, err)
 	})
 
-	t.Run("should detect specificpinned node version 20.15.0", func(ctx context.Context, t *testctx.T) {
+	t.Run("should detect specific pinned node version 20.15.0", func(ctx context.Context, t *testctx.T) {
 		modGen := modGen.WithNewFile("/work/package.json", `{
 				"dagger": {
 					"runtime": "node@20.15.0"
@@ -628,7 +628,12 @@ func (ModuleSuite) TestTypescriptRuntimeDetection(ctx context.Context, t *testct
 	})
 
 	t.Run("should detect a specific pinned bun version", func(ctx context.Context, t *testctx.T) {
+		// We need to explicitly add the typescript version because the default bun's version is different.
 		modGen := modGen.WithNewFile("/work/package.json", `{
+		    "dependencies": {
+    	  	"typescript": "^5.3.2",
+    	  	"@dagger.io/dagger": "./sdk"
+  		  },
 				"dagger": {
 					"runtime": "bun@1.0.11"
 				}
@@ -641,6 +646,140 @@ func (ModuleSuite) TestTypescriptRuntimeDetection(ctx context.Context, t *testct
 	})
 }
 
+func (ModuleSuite) TestTypeScriptPackageManagerDetection(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("should default to yarn", func(ctx context.Context, t *testctx.T) {
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=Package-Detection", "--sdk=typescript", "--source=."))
+
+		files, err := modGen.Directory(".").Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, files, "yarn.lock")
+
+		// Check that the package manager is set to yarn.
+		packageManager, err := modGen.File("package.json").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, packageManager, `"packageManager": "yarn@1.22.22`)
+
+		// Verify that it executes dagger example properly.
+		out, err := modGen.With(daggerQuery(`{packageDetection{containerEcho(stringArg:"hello"){stdout}}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"packageDetection":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+	})
+
+	t.Run("should use pnpm if set in package.json", func(ctx context.Context, t *testctx.T) {
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=Package-Detection", "--sdk=typescript", "--source=.")).
+			WithoutFile("yarn.lock").
+			WithoutFile("package.json").
+			WithNewFile("package.json", `
+{
+  "dependencies": {
+    "typescript": "^5.3.2",
+    "@dagger.io/dagger": "./sdk"
+  },
+	"packageManager": "pnpm@8.15.4"
+}`).
+			With(daggerExec("develop"))
+
+		files, err := modGen.Directory(".").Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, files, "pnpm-lock.yaml")
+
+		// Verify that it executes dagger example properly.
+		out, err := modGen.With(daggerQuery(`{packageDetection{containerEcho(stringArg:"hello"){stdout}}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"packageDetection":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+	})
+
+	t.Run("should use npm if set in package.json", func(ctx context.Context, t *testctx.T) {
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=Package-Detection", "--sdk=typescript", "--source=.")).
+			WithoutFile("yarn.lock").
+			WithoutFile("package.json").
+			WithNewFile("package.json", `
+{
+  "dependencies": {
+    "typescript": "^5.3.2",
+    "@dagger.io/dagger": "./sdk"
+  },
+	"packageManager": "npm@10.7.0"
+}`).
+			With(daggerExec("develop"))
+
+		files, err := modGen.Directory(".").Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, files, "package-lock.json")
+
+		// Verify that it executes dagger example properly.
+		out, err := modGen.With(daggerQuery(`{packageDetection{containerEcho(stringArg:"hello"){stdout}}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"packageDetection":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+	})
+
+	t.Run("should use npm if package-lock.json is present", func(ctx context.Context, t *testctx.T) {
+		modGen := c.Container().From("node:20-alpine").
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=Package-Detection", "--sdk=typescript", "--source=.")).
+			WithoutFile("yarn.lock").
+			WithoutFile("package.json").
+			WithNewFile("package.json", `
+{
+  "dependencies": {
+	  "typescript": "^5.3.2",
+	  "@dagger.io/dagger": "./sdk"
+  }
+}`).
+			WithExec([]string{"npm", "install", "--package-lock-only"}).
+			With(daggerExec("develop"))
+
+		files, err := modGen.Directory(".").Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, files, "package-lock.json")
+
+		// Verify that it executes dagger example properly.
+		out, err := modGen.With(daggerQuery(`{packageDetection{containerEcho(stringArg:"hello"){stdout}}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"packageDetection":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+	})
+
+	t.Run("should use pnpm if pnpm-lock.yaml is present", func(ctx context.Context, t *testctx.T) {
+		modGen := c.Container().From("node:20-alpine").
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=Package-Detection", "--sdk=typescript", "--source=.")).
+			WithoutFile("yarn.lock").
+			WithoutFile("package.json").
+			WithNewFile("package.json", `
+{
+  "dependencies": {
+	  "typescript": "^5.3.2",
+	  "@dagger.io/dagger": "./sdk"
+  }
+}`).
+			WithExec([]string{"npm", "install", "-g", "pnpm@9.5.0"}).
+			WithExec([]string{"pnpm", "install", "-lockfile-only"}).
+			With(daggerExec("develop"))
+
+		files, err := modGen.Directory(".").Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, files, "pnpm-lock.yaml")
+
+		// Verify that it executes dagger example properly.
+		out, err := modGen.With(daggerQuery(`{packageDetection{containerEcho(stringArg:"hello"){stdout}}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"packageDetection":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+	})
+}
+
 func (ModuleSuite) TestTypescriptWithOtherModuleTypes(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -649,7 +788,7 @@ func (ModuleSuite) TestTypescriptWithOtherModuleTypes(ctx context.Context, t *te
 		WithWorkdir("/work/dep").
 		With(daggerExec("init", "--name=dep", "--sdk=typescript")).
 		With(sdkSource("typescript", `
-	import {  object, func, func } from "@dagger.io/dagger"
+	import {  object, func } from "@dagger.io/dagger"
 
 @object()
 class Dep {
