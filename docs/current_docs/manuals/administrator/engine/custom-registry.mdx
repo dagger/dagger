@@ -29,7 +29,7 @@ This configuration can be repeated for multiple registries and mirrors if needed
 Manually start the Dagger Engine with the custom `engine.toml`:
 
 ```shell
-docker run --rm --name customized-dagger-engine --privileged --volume $PWD/engine.toml:/etc/dagger/engine.toml registry.dagger.io/engine:v0.10.2
+docker run --rm -v /var/lib/dagger --name customized-dagger-engine --privileged --volume $PWD/engine.toml:/etc/dagger/engine.toml registry.dagger.io/engine:v0.10.2
 ```
 
 Execute the following commands to test the configuration
@@ -39,4 +39,4 @@ export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://customized-dagger-eng
 dagger query --progress=plain <<< '{ container { from(address:"hello-world") { stdout } } }'
 ```
 
-You should see the specified `hello-world` container being pulled from the mirror instead of from Docker Hub.
+The specified `hello-world` container will now be pulled from the mirror instead of from Docker Hub.
