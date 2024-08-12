@@ -344,9 +344,6 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 			// Close client DB for writing; subscribers will have their own connection
 			errs = errors.Join(errs, client.db.Close())
 
-			// TODO: garbage collect these somewhere out of the critical path
-			// errs = errors.Join(errs, srv.clientDBs.Remove(client.clientID))
-
 			return errs
 		})
 	}
