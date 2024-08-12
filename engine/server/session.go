@@ -301,7 +301,7 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	defer cancel()
 
 	if err := sess.services.StopSessionServices(ctx, sess.sessionID); err != nil {
-		slog.Warn("error stopping services")
+		slog.Warn("error stopping services", "error", err)
 		errs = errors.Join(errs, fmt.Errorf("stop client services: %w", err))
 	}
 
