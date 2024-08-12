@@ -200,12 +200,6 @@ func (e *Engine) Generate() *dagger.Directory {
 
 	// protobuf dependencies
 	generated = generated.
-		WithMountedDirectory(
-			"engine/telemetry/opentelemetry-proto",
-			dag.Git("https://github.com/open-telemetry/opentelemetry-proto.git").
-				Commit("9d139c87b52669a3e2825b835dd828b57a455a55").
-				Tree(),
-		).
 		WithExec([]string{"apk", "add", "protoc=~3.21.12"}).
 		WithExec([]string{"go", "install", "google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.2"}).
 		WithExec([]string{"go", "install", "github.com/gogo/protobuf/protoc-gen-gogoslick@v1.3.2"}).
@@ -214,8 +208,7 @@ func (e *Engine) Generate() *dagger.Directory {
 	generated = generated.
 		WithExec([]string{"go", "generate", "-v", "./..."})
 
-	return generated.Directory(".").
-		WithoutDirectory("engine/telemetry/opentelemetry-proto")
+	return generated.Directory(".")
 }
 
 // Lint any generated engine-related files
