@@ -694,6 +694,7 @@ git push origin <NEXT_PATCH_VERSION> #shouldn't need to force since new tag
 
 - [ ] Create a new release from the patch tag (auto-fill release notes via the
       GitHub UI or via the `gh` CLI)
+- [ ] Submit PR to change the version mentioned in Dagger docs. See example [here](https://github.com/dagger/dagger/pull/8131)
 
 ```console
 # --verify-tag will ensure the last tag creation step was done
