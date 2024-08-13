@@ -62,7 +62,7 @@ use function Dagger\dag;
 class Example
 {
      #[DaggerFunction('Echo the value to standard output')]
-     public function echo(string $value): Container
+     public function containerEcho(string $stringArg): Container
      {
          return dag()
              ->container()
@@ -79,7 +79,7 @@ You'll notice it uses a function called `dag`; this is how you get the currently
 ### Call Module Functions
 
 ```text
-dagger call -m <path-to-module> echo --value="hello world"
+dagger call -m <path-to-module> container-echo --string-arg="hello world"
 ```
 
 ## How Dagger Finds Available Functions
