@@ -18,7 +18,7 @@ import (
 
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/cenkalti/backoff/v4"
-	"github.com/iancoleman/strcase"
+	"github.com/dagger/dagger/engine/strcase"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -89,6 +89,26 @@ func (ModuleSuite) TestGoInit(ctx context.Context, t *testctx.T) {
 		generated, err := modGen.File("go.mod").Contents(ctx)
 		require.NoError(t, err)
 		require.Contains(t, generated, "module dagger/my-module")
+	})
+
+	// dagger/dagger#7941
+	t.Run("single character in kebab case module name", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--source=.", "--name=a-module", "--sdk=go"))
+
+		out, err := modGen.
+			With(daggerQuery(`{aModule{containerEcho(stringArg:"hello"){stdout}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"aModule":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+
+		generated, err := modGen.File("go.mod").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, generated, "module dagger/a-module")
 	})
 
 	t.Run("creates go.mod beneath an existing go.mod if context is beneath it", func(ctx context.Context, t *testctx.T) {
@@ -4959,7 +4979,7 @@ func (ModuleSuite) TestLotsOfDeps(ctx context.Context, t *testctx.T) {
 		_ = depS
 		var err error
 		_ = err
-	`, strcase.ToCamel(name), strcase.ToCamel(name), name)
+	`, strcase.ToPascal(name), strcase.ToPascal(name), name)
 		for _, depName := range depNames {
 			mainSrc += fmt.Sprintf(`
 	depS, err = dag.%s().Fn(ctx)
@@ -4967,7 +4987,7 @@ func (ModuleSuite) TestLotsOfDeps(ctx context.Context, t *testctx.T) {
 		return "", err
 	}
 	s += depS
-	`, strcase.ToCamel(depName))
+	`, strcase.ToPascal(depName))
 		}
 		mainSrc += "return s, nil\n}\n"
 		fmted, err := format.Source([]byte(mainSrc))

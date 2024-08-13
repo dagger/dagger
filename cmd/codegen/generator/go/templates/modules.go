@@ -13,8 +13,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/dagger/dagger/engine/strcase"
 	. "github.com/dave/jennifer/jen" //nolint:stylecheck
-	"github.com/iancoleman/strcase"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -618,7 +618,7 @@ func (ps *parseState) fillObjectFunctionCase(
 		var varType types.Type
 		var target *Statement
 		if spec.parent == nil {
-			varName = strcase.ToLowerCamel(spec.name)
+			varName = strcase.ToCamel(spec.name)
 			varType = spec.paramType
 			target = Id(varName)
 		} else {
@@ -743,7 +743,7 @@ type parseState struct {
 }
 
 func (ps *parseState) isMainModuleObject(name string) bool {
-	return strcase.ToCamel(ps.moduleName) == strcase.ToCamel(name)
+	return strcase.ToPascal(ps.moduleName) == strcase.ToPascal(name)
 }
 
 // pkgDoc returns the package level documentation comment, if any,
