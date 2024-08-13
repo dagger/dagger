@@ -59,22 +59,11 @@ func (m *ModuleEnumType) ConvertToSDKInput(ctx context.Context, value dagql.Type
 	if value == nil {
 		return nil, nil
 	}
-
-	var val string
-	switch x := value.(type) {
-	case *ModuleEnum:
-		val = x.Value
-	case dagql.Scalar[dagql.String]:
-		val = string(x.Value)
-	default:
-		return nil, fmt.Errorf("%T.ConvertToSDKInput cannot handle type %T", m, x)
-	}
-
 	decoder, err := m.getDecoder(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("%T.ConvertToSDKInput: failed to get decoder: %w", m, err)
 	}
-	return decoder.DecodeInput(val)
+	return decoder.DecodeInput(value)
 }
 
 func (m *ModuleEnumType) CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*call.ID) error {
@@ -163,6 +152,8 @@ func (e *ModuleEnum) DecodeInput(val any) (dagql.Input, error) {
 		return e.Lookup(x)
 	case dagql.Scalar[dagql.String]:
 		return e.Lookup(string(x.Value))
+	case *ModuleEnum:
+		return e.Lookup(x.Value)
 	default:
 		return nil, fmt.Errorf("cannot create dynamic Enum from %T", x)
 	}
