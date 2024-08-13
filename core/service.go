@@ -17,7 +17,6 @@ import (
 	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/vektah/gqlparser/v2/ast"
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
 	"dagger.io/dagger/telemetry"
@@ -33,6 +32,10 @@ const (
 )
 
 type Service struct {
+	// The span that created the service, which future runs of the service will
+	// link to.
+	Creator trace.SpanContext
+
 	Query *Query
 
 	// Container is the container to run as a service.
@@ -217,9 +220,9 @@ func (svc *Service) Start(
 }
 
 func (svc *Service) startSpan(ctx context.Context, id *call.ID, name string) (context.Context, trace.Span) {
-	ctx, span := Tracer(ctx).Start(ctx, "start "+name, trace.WithAttributes(
-		attribute.String(telemetry.EffectIDAttr, serviceEffect(id))))
-	return ctx, span
+	return Tracer(ctx).Start(ctx, "start "+name, trace.WithLinks(
+		trace.Link{SpanContext: svc.Creator},
+	))
 }
 
 //nolint:gocyclo
