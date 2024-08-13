@@ -335,7 +335,7 @@ git push "${DAGGER_REPO_REMOTE:?must be set}" "${ENGINE_VERSION:?must be set}"
 ```
 
 This will kick off
-[`.github./workflows/publish.yml`](https://github.com/dagger/dagger/actions/workflows/publish.yml)
+[`.github./workflows/publish.yml`](https://github.com/dagger/dagger/actions/workflows/engine-and-cli-publish.yml)
 which publishes:
 - A new image to [ghcr.io/dagger/engine](https://github.com/dagger/dagger/pkgs/container/engine) (mirrored to registry.dagger.io/engine using https://github.com/dagger/registry-redirect).
 - New cli binaries to [dl.dagger.io](https://dl.dagger.io) (served from an S3 bucket, uploaded to by goreleaser)
