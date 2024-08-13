@@ -101,7 +101,7 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 		if hasPBs, ok := res.(HasPBOutput); ok {
 			if def, err := hasPBs.PBOutput(ctx); err != nil {
 				slog.Warn("failed to get LLB output", "err", err)
-			} else {
+			} else if def != nil { // may be nil for scratch
 				lastOpDigest := digest.FromBytes(def.Def[len(def.Def)-1])
 				span.SetAttributes(
 					attribute.String(telemetry.EffectOutputAttr, lastOpDigest.String()))
