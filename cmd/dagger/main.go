@@ -54,6 +54,7 @@ var (
 	progress    string
 	interactive bool
 	web         bool
+	noExit      bool
 
 	stdoutIsTTY = isatty.IsTerminal(os.Stdout.Fd())
 	stderrIsTTY = isatty.IsTerminal(os.Stderr.Fd())
@@ -182,6 +183,7 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.StringVar(&progress, "progress", "auto", "Progress output format (auto, plain, tty)")
 	flags.BoolVarP(&interactive, "interactive", "i", false, "Spawn a terminal on container exec failure")
 	flags.BoolVarP(&web, "web", "w", false, "Open trace URL in a web browser")
+	flags.BoolVarP(&noExit, "no-exit", "E", false, "Leave the TUI running after completion")
 
 	for _, fl := range []string{"workdir"} {
 		if err := flags.MarkHidden(fl); err != nil {
@@ -256,6 +258,7 @@ func main() {
 	opts.Silent = silent                           // show no progress
 	opts.Debug = debug                             // show everything
 	opts.OpenWeb = web
+	opts.NoExit = noExit
 	if progress == "auto" {
 		if hasTTY {
 			progress = "tty"

@@ -53,6 +53,9 @@ type FrontendOpts struct {
 	// Open web browser with the trace URL as soon as pipeline starts.
 	OpenWeb bool
 
+	// Leave the TUI running instead of exiting after completion.
+	NoExit bool
+
 	// RevealAllSpans tells the frontend to show all spans, not just the spans
 	// beneath the primary span.
 	RevealAllSpans bool
