@@ -130,16 +130,18 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 	defer cancel(errors.New("solve done"))
 	ctx = withOutgoingContext(c, ctx)
 
-	dag, err := DefToDAG(req.Definition)
-	if err != nil {
-		return nil, err
+	if req.Definition != nil {
+		dag, err := DefToDAG(req.Definition)
+		if err != nil {
+			return nil, err
+		}
+		c.opsmu.Lock()
+		dag.Walk(func(od *OpDAG) error {
+			c.ops[*od.OpDigest] = od
+			return nil
+		})
+		c.opsmu.Unlock()
 	}
-	c.opsmu.Lock()
-	dag.Walk(func(od *OpDAG) error {
-		c.ops[*od.OpDigest] = od
-		return nil
-	})
-	c.opsmu.Unlock()
 
 	// include upstream cache imports, if any
 	req.CacheImports = c.UpstreamCacheImports
