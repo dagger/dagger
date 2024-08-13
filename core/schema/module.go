@@ -920,6 +920,12 @@ func (s *moduleSchema) updateCodegenAndRuntime(
 		return nil
 	}
 
+	if src.Self.WithInitConfig != nil &&
+		src.Self.WithInitConfig.Merge &&
+		mod.SDKConfig != SDKGo {
+		return fmt.Errorf("merge is only supported for Go SDKs")
+	}
+
 	baseContext, err := src.Self.ContextDirectory()
 	if err != nil {
 		return fmt.Errorf("failed to get base context directory: %w", err)

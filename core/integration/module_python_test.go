@@ -94,6 +94,28 @@ version = "0.0.0"
 		require.NoError(t, err)
 		require.JSONEq(t, `{"helloWorld":{"message":"Hello, Monde!"}}`, out)
 	})
+
+	t.Run("fail if --merge is specified", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		_, err := daggerCliBase(t, c).
+			With(daggerInitPython("--name=hello-world", "--merge")).
+			With(pythonSource(`
+                from dagger import field, function, object_type
+
+                @object_type
+                class HelloWorld:
+                    my_name: str = field(default="World")
+
+                    @function
+                    def message(self) -> str:
+                        return f"Hello, {self.my_name}!"
+            `)).
+			With(daggerQuery(`{helloWorld(myName: "Monde"){message}}`)).
+			Stdout(ctx)
+
+		require.ErrorContains(t, err, "merge is only supported")
+	})
 }
 
 func (ModuleSuite) TestPythonProjectLayout(ctx context.Context, t *testctx.T) {

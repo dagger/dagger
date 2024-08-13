@@ -19,6 +19,9 @@ import (
 
 const (
 	runtimeWorkdirPath = "/scratch"
+	SDKGo              = "go"
+	SDKPython          = "python"
+	SDKTypescript      = "typescript"
 )
 
 // load the SDK implementation with the given name for the module at the given source dir + subpath.
@@ -88,11 +91,11 @@ var errUnknownBuiltinSDK = fmt.Errorf("unknown builtin sdk")
 // return a builtin SDK implementation with the given name
 func (s *moduleSchema) builtinSDK(ctx context.Context, root *core.Query, sdkName string) (core.SDK, error) {
 	switch sdkName {
-	case "go":
+	case SDKGo:
 		return &goSDK{root: root, dag: s.dag}, nil
-	case "python":
+	case SDKPython:
 		return s.loadBuiltinSDK(ctx, root, sdkName, digest.Digest(os.Getenv(distconsts.PythonSDKManifestDigestEnvName)))
-	case "typescript":
+	case SDKTypescript:
 		return s.loadBuiltinSDK(ctx, root, sdkName, digest.Digest(os.Getenv(distconsts.TypescriptSDKManifestDigestEnvName)))
 	default:
 		sdkName, sdkVersion, hasVersion := strings.Cut(sdkName, "@")

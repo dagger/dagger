@@ -61,8 +61,9 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// we're checking for the flag existence here as not setting the flag and
+	// setting it to false doesn't produce the same behavior.
 	var mergePtr *bool
-
 	if cmd.Flags().Changed("merge") {
 		mergePtr = &merge
 	}

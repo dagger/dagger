@@ -279,13 +279,13 @@ defmodule Dagger.ModuleSource do
   @doc "Sets module init arguments"
   @spec with_init(t(), [{:merge, boolean() | nil}]) :: Dagger.ModuleSource.t()
   def with_init(%__MODULE__{} = module_source, optional_args \\ []) do
-    selection =
-      module_source.selection
-      |> select("withInit")
-      |> maybe_put_arg("merge", optional_args[:merge])
+    query_builder =
+      module_source.query_builder
+      |> QB.select("withInit")
+      |> QB.maybe_put_arg("merge", optional_args[:merge])
 
     %Dagger.ModuleSource{
-      selection: selection,
+      query_builder: query_builder,
       client: module_source.client
     }
   end
