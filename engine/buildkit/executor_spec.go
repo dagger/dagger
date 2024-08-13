@@ -31,8 +31,6 @@ import (
 	bknetwork "github.com/moby/buildkit/util/network"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/sourcegraph/conc/pool"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/log"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 
@@ -631,17 +629,24 @@ func (w *Worker) setupOTel(ctx context.Context, state *execState) error {
 		return nil
 	}
 
-	logAttrs := []log.KeyValue{}
-	if w.execMD != nil {
-		if w.execMD.SpanContext != nil {
-			ctx = otel.GetTextMapPropagator().Extract(ctx, w.execMD.SpanContext)
+	var destSession string
+	var destClientID string
+	if w.execMD != nil { // NB: this seems to be _always_ set
+		destSession = w.execMD.SessionID
+
+		// Send telemetry to the caller client, *not* the nested client (ClientID).
+		//
+		// If you set ClientID here, nested dagger CLI calls made against an engine running
+		// as a service in Dagger will end up in a loop sending logs to themselves.
+		destClientID = w.execMD.CallerClientID
+
+		if len(w.execMD.SpanContext) > 0 {
+			ctx = telemetry.Propagator.Extract(ctx, w.execMD.SpanContext)
 		}
-		logAttrs = append(logAttrs, log.String(telemetry.ClientIDAttr, w.execMD.ClientID))
 	}
 
-	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary, logAttrs...)
+	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
 	state.cleanups.Add("close logs", stdio.Close)
-
 	state.procInfo.Stdout = nopCloser{io.MultiWriter(stdio.Stdout, state.procInfo.Stdout)}
 	state.procInfo.Stderr = nopCloser{io.MultiWriter(stdio.Stderr, state.procInfo.Stderr)}
 
@@ -652,7 +657,14 @@ func (w *Worker) setupOTel(ctx context.Context, state *execState) error {
 		return fmt.Errorf("otel tcp proxy listen: %w", err)
 	}
 	otelSrv := &http.Server{
-		Handler:           w.telemetryPubSub,
+		Handler: http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+			if r.Header == nil {
+				r.Header = http.Header{}
+			}
+			r.Header.Set("X-Dagger-Session-ID", destSession)
+			r.Header.Set("X-Dagger-Client-ID", destClientID)
+			w.telemetryPubSub.ServeHTTP(rw, r)
+		}),
 		ReadHeaderTimeout: 10 * time.Second, // for gocritic
 	}
 	listenerPool := pool.New().WithErrors()
@@ -873,6 +885,11 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	}
 	if w.execMD.Hostname == "" {
 		w.execMD.Hostname = state.spec.Hostname
+	}
+
+	if len(w.execMD.SpanContext) > 0 {
+		// propagate trace ctx to session attachables
+		ctx = telemetry.Propagator.Extract(ctx, w.execMD.SpanContext)
 	}
 
 	state.spec.Process.Env = append(state.spec.Process.Env, DaggerSessionTokenEnv+"="+w.execMD.SecretToken)

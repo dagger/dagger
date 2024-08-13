@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -30,8 +31,11 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/sirupsen/logrus"
 	"github.com/vektah/gqlparser/v2/gqlerror"
-	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/propagation"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/analytics"
@@ -66,7 +70,7 @@ type daggerSession struct {
 	endpointMu sync.RWMutex
 
 	// informed when a client goes away to prevent hanging on drain
-	telemetryPubSub *enginetel.PubSub
+	telemetryPubSub *PubSub
 
 	services *core.Services
 
@@ -103,6 +107,14 @@ type daggerClient struct {
 	clientVersion string
 	secretToken   string
 
+	// closed after the shutdown endpoint is called
+	shutdownCh        chan struct{}
+	closeShutdownOnce sync.Once
+
+	// if the client is a nested client, this is its ancestral clients,
+	// with the most recent parent last
+	parents []*daggerClient
+
 	state   daggerClientState
 	stateMu sync.RWMutex
 	// the number of active http requests to any endpoint from this client,
@@ -134,6 +146,11 @@ type daggerClient struct {
 	llbBridge           bkfrontend.FrontendLLBBridge
 	dialer              *net.Dialer
 	bkClient            *buildkit.Client
+
+	// SQLite database storing telemetry + anything else
+	db             *sql.DB
+	tracerProvider *sdktrace.TracerProvider
+	loggerProvider *sdklog.LoggerProvider
 }
 
 type daggerClientState string
@@ -142,6 +159,51 @@ const (
 	clientStateUninitialized daggerClientState = "uninitialized"
 	clientStateInitialized   daggerClientState = "initialized"
 )
+
+func (client *daggerClient) String() string {
+	return fmt.Sprintf("<Client %s: %s>", client.clientID, client.state)
+}
+
+func (client *daggerClient) FlushTelemetry(ctx context.Context) error {
+	slog := slog.With("client", client.clientID)
+	var errs error
+	if client.tracerProvider != nil {
+		slog.ExtraDebug("force flushing client traces")
+		errs = errors.Join(errs, client.tracerProvider.ForceFlush(ctx))
+	}
+	if client.loggerProvider != nil {
+		slog.ExtraDebug("force flushing client logs")
+		errs = errors.Join(errs, client.loggerProvider.ForceFlush(ctx))
+	}
+	return errs
+}
+
+func (client *daggerClient) ShutdownTelemetry(ctx context.Context) error {
+	slog := slog.With("client", client.clientID)
+	var errs error
+	if client.tracerProvider != nil {
+		slog.ExtraDebug("force flushing client traces")
+		errs = errors.Join(errs, client.tracerProvider.Shutdown(ctx))
+	}
+	if client.loggerProvider != nil {
+		slog.ExtraDebug("force flushing client logs")
+		errs = errors.Join(errs, client.loggerProvider.Shutdown(ctx))
+	}
+	return errs
+}
+
+func (sess *daggerSession) FlushTelemetry(ctx context.Context) error {
+	eg := new(errgroup.Group)
+	sess.clientMu.Lock()
+	for _, client := range sess.clients {
+		client := client
+		eg.Go(func() error {
+			return client.FlushTelemetry(ctx)
+		})
+	}
+	sess.clientMu.Unlock()
+	return eg.Wait()
+}
 
 // requires that sess.stateMu is held
 func (srv *Server) initializeDaggerSession(
@@ -216,12 +278,10 @@ func (sess *daggerSession) withShutdownCancel(ctx context.Context) context.Conte
 
 // requires that sess.stateMu is held
 func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession) error {
-	slog.Debug("session closing; stopping client services and flushing",
-		"session", sess.sessionID,
-	)
-	defer slog.Debug("session closed",
-		"session", sess.sessionID,
-	)
+	slog := slog.With("session", sess.sessionID)
+
+	slog.Debug("removing session; stopping client services and flushing")
+	defer slog.Debug("session removed")
 
 	// check if the local cache needs pruning after session is removed, prune if so
 	defer func() {
@@ -241,8 +301,11 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	defer cancel()
 
 	if err := sess.services.StopSessionServices(ctx, sess.sessionID); err != nil {
+		slog.Warn("error stopping services", "error", err)
 		errs = errors.Join(errs, fmt.Errorf("stop client services: %w", err))
 	}
+
+	slog.Debug("stopped services")
 
 	// release containers + buildkit solver/session state in parallel
 
@@ -275,6 +338,12 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 				client.buildkitSession = nil
 			}
 
+			// Flush all telemetry.
+			errs = errors.Join(errs, client.ShutdownTelemetry(ctx))
+
+			// Close client DB for writing; subscribers will have their own connection
+			errs = errors.Join(errs, client.db.Close())
+
 			return errs
 		})
 	}
@@ -297,7 +366,6 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 
 	// cleanup analytics and telemetry
 	errs = errors.Join(errs, sess.analytics.Close())
-	telemetry.Flush(ctx)
 
 	// ensure this chan is closed even if the client never explicitly called the /shutdown endpoint
 	sess.closeShutdownOnce.Do(func() {
@@ -527,6 +595,41 @@ func (srv *Server) initializeDaggerClient(
 		client.fnCall = &fnCall
 	}
 
+	// configure OTel providers that export to SQLite
+	tracerOpts := []sdktrace.TracerProviderOption{
+		// install a span processor that modifies spans created by Buildkit to
+		// fit our ideal format
+		sdktrace.WithSpanProcessor(buildkit.SpanProcessor{}),
+		// save to our own client's DB
+		sdktrace.WithSpanProcessor(telemetry.NewLiveSpanProcessor(
+			srv.telemetryPubSub.Spans(client),
+		)),
+	}
+	loggerOpts := []sdklog.LoggerProviderOption{
+		sdklog.WithProcessor(
+			sdklog.NewBatchProcessor(
+				srv.telemetryPubSub.Logs(client),
+				sdklog.WithExportInterval(telemetry.NearlyImmediate),
+			),
+		),
+	}
+	// export to parent client DBs too
+	for _, parent := range client.parents {
+		tracerOpts = append(tracerOpts, sdktrace.WithSpanProcessor(
+			telemetry.NewLiveSpanProcessor(
+				srv.telemetryPubSub.Spans(parent),
+			),
+		))
+		loggerOpts = append(loggerOpts, sdklog.WithProcessor(
+			sdklog.NewBatchProcessor(
+				srv.telemetryPubSub.Logs(parent),
+				sdklog.WithExportInterval(telemetry.NearlyImmediate),
+			),
+		))
+	}
+	client.tracerProvider = sdktrace.NewTracerProvider(tracerOpts...)
+	client.loggerProvider = sdklog.NewLoggerProvider(loggerOpts...)
+
 	client.state = clientStateInitialized
 	return nil
 }
@@ -632,8 +735,22 @@ func (srv *Server) getOrInitClient(
 			clientID:      clientID,
 			clientVersion: opts.ClientVersion,
 			secretToken:   token,
+			shutdownCh:    make(chan struct{}),
 		}
 		sess.clients[clientID] = client
+
+		// initialize SQLite DB early so we can subscribe to it immediately
+		var err error
+		client.db, err = srv.clientDBs.Create(client.clientID)
+		if err != nil {
+			return nil, nil, fmt.Errorf("open client DB: %w", err)
+		}
+
+		parent, parentExists := sess.clients[opts.CallerClientID]
+		if parentExists {
+			client.parents = append([]*daggerClient{}, parent.parents...)
+			client.parents = append(client.parents, parent)
+		}
 
 		failureCleanups.Add("delete client ID", func() error {
 			sess.clientMu.Lock()
@@ -691,6 +808,28 @@ func (srv *Server) getOrInitClient(
 	}, nil
 }
 
+func (srv *Server) getClient(sessionID, clientID string) (*daggerClient, error) {
+	if sessionID == "" {
+		return nil, fmt.Errorf("missing session ID")
+	}
+	if clientID == "" {
+		return nil, fmt.Errorf("missing client ID")
+	}
+	srv.daggerSessionsMu.RLock()
+	sess, ok := srv.daggerSessions[sessionID]
+	srv.daggerSessionsMu.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("session %q not found", sessionID)
+	}
+	sess.clientMu.RLock()
+	client, ok := sess.clients[clientID]
+	sess.clientMu.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("client %q not found", clientID)
+	}
+	return client, nil
+}
+
 // ServeHTTP serves clients directly hitting the engine API (i.e. main client callers, not nested execs like module functions)
 func (srv *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	clientMetadata, err := engine.ClientMetadataFromHTTPHeaders(r.Header)
@@ -737,6 +876,8 @@ func (srv *Server) ServeHTTPToNestedClient(w http.ResponseWriter, r *http.Reques
 	}).ServeHTTP(w, r)
 }
 
+const InstrumentationLibrary = "dagger.io/engine.server"
+
 func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opts *ClientInitOpts) (rerr error) {
 	ctx := r.Context()
 	ctx, cancel := context.WithCancel(ctx)
@@ -746,7 +887,7 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 	ctx = engine.ContextWithClientMetadata(ctx, clientMetadata)
 
 	// propagate span context from the client
-	ctx = otel.GetTextMapPropagator().Extract(ctx, propagation.HeaderCarrier(r.Header))
+	ctx = telemetry.Propagator.Extract(ctx, propagation.HeaderCarrier(r.Header))
 
 	ctx = bklog.WithLogger(ctx, bklog.G(ctx).
 		WithField("client_id", clientMetadata.ClientID).
@@ -760,34 +901,46 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 		"method":        r.Method,
 		"upgradeHeader": r.Header.Get("Upgrade"),
 		"contentType":   r.Header.Get("Content-Type"),
+		"trace":         trace.SpanContextFromContext(ctx).TraceID().String(),
+		"span":          trace.SpanContextFromContext(ctx).SpanID().String(),
 	}).Debug("handling http request")
 
-	client, cleanup, err := srv.getOrInitClient(ctx, opts)
-	if err != nil {
-		return fmt.Errorf("update session state: %w", err)
-	}
-	defer func() {
-		err := cleanup()
-		if err != nil {
-			bklog.G(ctx).WithError(err).Error("client serve cleanup failed")
-			rerr = errors.Join(rerr, err)
-		}
-	}()
-
-	sess := client.daggerSession
-	ctx = analytics.WithContext(ctx, sess.analytics)
-
-	r = r.WithContext(ctx)
-
 	mux := http.NewServeMux()
-	mux.Handle(engine.SessionAttachablesEndpoint, httpHandlerFunc(srv.serveSessionAttachables, client))
-	mux.Handle(engine.QueryEndpoint, httpHandlerFunc(srv.serveQuery, client))
-	mux.Handle(engine.ShutdownEndpoint, httpHandlerFunc(srv.serveShutdown, client))
-	sess.endpointMu.RLock()
-	for path, handler := range sess.endpoints {
-		mux.Handle(path, handler)
+	switch r.URL.Path {
+	case "/v1/traces", "/v1/logs":
+		// Just get the client if it exists, don't init it.
+		client, err := srv.getClient(clientMetadata.SessionID, clientMetadata.ClientID)
+		if err != nil {
+			return fmt.Errorf("get client: %w", err)
+		}
+		mux.HandleFunc("GET /v1/traces", httpHandlerFunc(srv.telemetryPubSub.TracesSubscribeHandler, client))
+		mux.HandleFunc("GET /v1/logs", httpHandlerFunc(srv.telemetryPubSub.LogsSubscribeHandler, client))
+	default:
+		client, cleanup, err := srv.getOrInitClient(ctx, opts)
+		if err != nil {
+			return fmt.Errorf("get or init client: %w", err)
+		}
+		defer func() {
+			err := cleanup()
+			if err != nil {
+				bklog.G(ctx).WithError(err).Error("client serve cleanup failed")
+				rerr = errors.Join(rerr, err)
+			}
+		}()
+
+		sess := client.daggerSession
+		ctx = analytics.WithContext(ctx, sess.analytics)
+		r = r.WithContext(ctx)
+
+		mux.Handle(engine.SessionAttachablesEndpoint, httpHandlerFunc(srv.serveSessionAttachables, client))
+		mux.Handle(engine.QueryEndpoint, httpHandlerFunc(srv.serveQuery, client))
+		mux.Handle(engine.ShutdownEndpoint, httpHandlerFunc(srv.serveShutdown, client))
+		sess.endpointMu.RLock()
+		for path, handler := range sess.endpoints {
+			mux.Handle(path, handler)
+		}
+		sess.endpointMu.RUnlock()
 	}
-	sess.endpointMu.RUnlock()
 
 	mux.ServeHTTP(w, r)
 	return nil
@@ -865,6 +1018,25 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *daggerClient) (rerr error) {
 	ctx := r.Context()
 
+	// only record telemetry if the request is traced, otherwise
+	// we end up with orphaned spans in their own separate traces from tests etc.
+	if trace.SpanContextFromContext(ctx).IsValid() {
+		// create a span to record telemetry into the client's DB
+		//
+		// downstream components must use otel.SpanFromContext(ctx).TracerProvider()
+		clientTracer := client.tracerProvider.Tracer(InstrumentationLibrary)
+		var span trace.Span
+		ctx, span = clientTracer.Start(ctx,
+			fmt.Sprintf("%s %s", r.Method, r.URL.Path),
+			trace.WithAttributes(attribute.Bool(telemetry.UIPassthroughAttr, true)),
+		)
+		defer telemetry.End(span, func() error { return rerr })
+	}
+
+	// install a logger provider that records to the client's DB
+	ctx = telemetry.WithLoggerProvider(ctx, client.loggerProvider)
+	r = r.WithContext(ctx)
+
 	// get the schema we're gonna serve to this client based on which modules they have loaded, if any
 	schema, err := client.deps.Schema(ctx)
 	if err != nil {
@@ -902,11 +1074,8 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client *daggerClient) (rerr error) {
 	ctx := r.Context()
 
-	immediate := r.URL.Query().Get("immediate") == "true"
-
 	sess := client.daggerSession
 	slog := slog.With(
-		"isImmediate", immediate,
 		"isMainClient", client.clientID == sess.mainClientCallerID,
 		"sessionID", sess.sessionID,
 		"clientID", client.clientID,
@@ -916,12 +1085,11 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 	defer slog.Trace("done shutting down server")
 
 	if client.clientID == sess.mainClientCallerID {
+		slog.Debug("main client is shutting down")
+
 		// Stop services, since the main client is going away, and we
 		// want the client to see them stop.
 		sess.services.StopSessionServices(ctx, sess.sessionID)
-
-		// Start draining telemetry
-		srv.telemetryPubSub.Drain(sess.mainClientCallerID, immediate)
 
 		if len(sess.cacheExporterCfgs) > 0 {
 			bklog.G(ctx).Debugf("running cache export for client %s", client.clientID)
@@ -943,12 +1111,26 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 			bklog.G(ctx).Debugf("done running cache export for client %s", client.clientID)
 		}
 
-		sess.closeShutdownOnce.Do(func() {
-			close(sess.shutdownCh)
-		})
+		defer func() {
+			// Signal shutdown at the very end, _after_ flushing telemetry/etc.,
+			// so we can respect the shutdownCh to short-circuit any telemetry
+			// subscribers that appeared _while_ shutting down.
+			sess.closeShutdownOnce.Do(func() {
+				close(sess.shutdownCh)
+			})
+		}()
 	}
 
-	telemetry.Flush(ctx)
+	// Flush telemetry across the entire session so that any child clients will
+	// save telemetry into their parent's DB, including to this client.
+	slog.ExtraDebug("flushing session telemetry")
+	if err := sess.FlushTelemetry(ctx); err != nil {
+		slog.Error("failed to flush telemetry", "error", err)
+	}
+
+	client.closeShutdownOnce.Do(func() {
+		close(client.shutdownCh)
+	})
 
 	return nil
 }

@@ -52,6 +52,10 @@ type FrontendOpts struct {
 
 	// Open web browser with the trace URL as soon as pipeline starts.
 	OpenWeb bool
+
+	// RevealAllSpans tells the frontend to show all spans, not just the spans
+	// beneath the primary span.
+	RevealAllSpans bool
 }
 
 type Frontend interface {
@@ -63,6 +67,9 @@ type Frontend interface {
 	// children will be promoted to the "top-level" of the TUI.
 	SetPrimary(spanID trace.SpanID)
 	Background(cmd tea.ExecCommand) error
+	// RevealAllSpans tells the frontend to show all spans, not just the spans
+	// beneath the primary span.
+	SetRevealAllSpans(bool)
 
 	// Can consume otel spans and logs.
 	SpanExporter() sdktrace.SpanExporter
@@ -465,11 +472,13 @@ func renderPrimaryOutput(db *DB) error {
 			return true
 		})
 		switch stream {
-		case 1:
+		case 1: // stdout
 			if _, err := fmt.Fprint(os.Stdout, data); err != nil {
 				return err
 			}
-		case 2:
+		case 2: // stderr
+			fallthrough
+		default:
 			if _, err := fmt.Fprint(os.Stderr, data); err != nil {
 				return err
 			}

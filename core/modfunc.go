@@ -6,14 +6,13 @@ import (
 	"fmt"
 	"strings"
 
+	"dagger.io/dagger/telemetry"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
-	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/dagql"
@@ -185,14 +184,9 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		ExecID:          identity.NewID(),
 		CachePerSession: !opts.Cache,
 		Internal:        true,
+		SpanContext:     propagation.MapCarrier{},
 	}
-	if spanCtx := trace.SpanContextFromContext(ctx); spanCtx.IsValid() {
-		execMD.SpanContext = propagation.MapCarrier{}
-		otel.GetTextMapPropagator().Inject(
-			trace.ContextWithSpanContext(ctx, spanCtx),
-			execMD.SpanContext,
-		)
-	}
+	telemetry.Propagator.Inject(ctx, execMD.SpanContext)
 
 	if opts.ParentTyped != nil {
 		// collect any client resources stored in parent fields (secrets/sockets/etc.) and grant

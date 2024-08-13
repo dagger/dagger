@@ -73,8 +73,16 @@ func ConfiguredSpanExporter(ctx context.Context) (sdktrace.SpanExporter, bool) {
 
 		switch proto {
 		case "http/protobuf", "http":
+			headers := map[string]string{}
+			if hs := os.Getenv("OTEL_EXPORTER_OTLP_HEADERS"); hs != "" {
+				for _, header := range strings.Split(hs, ",") {
+					name, value, _ := strings.Cut(header, "=")
+					headers[name] = value
+				}
+			}
 			configuredSpanExporter, err = otlptracehttp.New(ctx,
-				otlptracehttp.WithEndpointURL(endpoint))
+				otlptracehttp.WithEndpointURL(endpoint),
+				otlptracehttp.WithHeaders(headers))
 		case "grpc":
 			var u *url.URL
 			u, err = url.Parse(endpoint)
@@ -192,7 +200,6 @@ func FallbackResource() *resource.Resource {
 var (
 	// set by Init, closed by Close
 	tracerProvider *sdktrace.TracerProvider = sdktrace.NewTracerProvider()
-	loggerProvider *sdklog.LoggerProvider   = sdklog.NewLoggerProvider()
 )
 
 type Config struct {
@@ -247,19 +254,25 @@ func InitEmbedded(ctx context.Context, res *resource.Resource) context.Context {
 	return Init(ctx, traceCfg)
 }
 
+// Propagator is a composite propagator of everything we could possibly want.
+//
+// Do not rely on otel.GetTextMapPropagator() - it's prone to change from a
+// random import.
+var Propagator = propagation.NewCompositeTextMapPropagator(
+	propagation.Baggage{},
+	propagation.TraceContext{},
+)
+
 // Init sets up the global OpenTelemetry providers tracing, logging, and
 // someday metrics providers. It is called by the CLI, the engine, and the
 // container shim, so it needs to be versatile.
 func Init(ctx context.Context, cfg Config) context.Context {
 	// Set up a text map propagator so that things, well, propagate. The default
 	// is a noop.
-	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
-		propagation.TraceContext{},
-		propagation.Baggage{},
-	))
+	otel.SetTextMapPropagator(Propagator)
 
 	// Inherit trace context from env if present.
-	ctx = otel.GetTextMapPropagator().Extract(ctx, NewEnvCarrier(true))
+	ctx = Propagator.Extract(ctx, NewEnvCarrier(true))
 
 	// Log to slog.
 	otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
@@ -326,43 +339,23 @@ func Init(ctx context.Context, cfg Config) context.Context {
 			LogProcessors = append(LogProcessors, processor)
 			logOpts = append(logOpts, sdklog.WithProcessor(processor))
 		}
-		loggerProvider = sdklog.NewLoggerProvider(logOpts...)
-
-		// TODO: someday do the following (once it exists)
-		// Register our TracerProvider as the global so any imported
-		// instrumentation in the future will default to using it.
-		// otel.SetLoggerProvider(loggerProvider)
+		ctx = WithLoggerProvider(ctx, sdklog.NewLoggerProvider(logOpts...))
 	}
 
 	return ctx
 }
 
-// Flush drains telemetry data, and is typically called just before a client
-// goes away.
-//
-// NB: now that we wait for all spans to complete, this is less necessary, but
-// it seems wise to keep it anyway, as the spots where it are needed are hard
-// to find.
-func Flush(ctx context.Context) {
-	if tracerProvider != nil {
-		if err := tracerProvider.ForceFlush(ctx); err != nil {
-			slog.Error("failed to flush spans", "error", err)
-		}
-	}
-}
-
 // Close shuts down the global OpenTelemetry providers, flushing any remaining
 // data to the configured exporters.
-func Close() {
-	flushCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+func Close(ctx context.Context) {
+	flushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
-	Flush(flushCtx)
 	if tracerProvider != nil {
 		if err := tracerProvider.Shutdown(flushCtx); err != nil {
 			slog.Error("failed to shut down tracer provider", "error", err)
 		}
 	}
-	if loggerProvider != nil {
+	if loggerProvider := LoggerProvider(ctx); loggerProvider != nil {
 		if err := loggerProvider.Shutdown(flushCtx); err != nil {
 			slog.Error("failed to shut down logger provider", "error", err)
 		}

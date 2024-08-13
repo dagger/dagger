@@ -5,13 +5,12 @@ import (
 	"os"
 	"strings"
 
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 )
 
 func PropagationEnv(ctx context.Context) []string {
 	carrier := NewEnvCarrier(false)
-	otel.GetTextMapPropagator().Inject(ctx, carrier)
+	Propagator.Inject(ctx, carrier)
 	return carrier.Env
 }
 

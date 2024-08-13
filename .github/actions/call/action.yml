@@ -23,7 +23,12 @@ inputs:
 
   redirect:
     description: "Filepath to redirect result to"
-    default: "/dev/null"
+    default: ""
+    required: false
+
+  upload-logs:
+    description: "Whether to redirect logs to an artifact"
+    default: "false"
     required: false
 
 runs:
@@ -101,32 +106,50 @@ runs:
       run: |
         source /tmp/actions/call/local-envs
 
+        function redirect_logs() {
+          if [[ "${{ inputs.upload-logs }}" == "true" ]]; then
+            "$@" &> /tmp/actions/call/call.log
+          elif [[ -n "${{ inputs.redirect }}" ]]; then
+            "$@" | tee "${{ inputs.redirect }}"
+          else
+            "$@"
+          fi
+        }
+
         set -x
         if [[ "${{ inputs.module }}" == "." ]]; then
           # set some sane defaults for the current module
           if [[ -f $HOME/.docker/config.json ]]; then
-            dagger -m "${{ inputs.module }}" call --source=".:default" --docker-cfg=file:"$HOME/.docker/config.json" ${{ inputs.function }} | tee "${{ inputs.redirect }}"
+            redirect_logs dagger -m "${{ inputs.module }}" call --source=".:default" --docker-cfg=file:"$HOME/.docker/config.json" ${{ inputs.function }}
           else
-            dagger -m "${{ inputs.module }}" call --source=".:default" ${{ inputs.function }} | tee "${{ inputs.redirect }}"
+            redirect_logs dagger -m "${{ inputs.module }}" call --source=".:default" ${{ inputs.function }}
           fi
         else
-          dagger -m "${{ inputs.module }}" call ${{ inputs.function }} | tee "${{ inputs.redirect }}"
+          redirect_logs dagger -m "${{ inputs.module }}" call ${{ inputs.function }}
         fi
       env:
         DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
+
+    - name: Archive call logs
+      if: always() && inputs.upload-logs == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: call-logs-${{ runner.name }}-${{ inputs.function }}
+        path: /tmp/actions/call/call.log
+        overwrite: true
 
     - name: Capture dev engine logs
       if: always() && inputs.dev-engine == 'true'
       shell: bash
       run: |
-        docker logs dagger-engine.dev-${{ runner.name }} &> /tmp/actions/call/engine.logs
+        docker logs dagger-engine.dev-${{ runner.name }} &> /tmp/actions/call/engine.log
 
     - name: Archive engine logs
       if: always() && inputs.dev-engine == 'true'
       uses: actions/upload-artifact@v4
       with:
         name: engine-logs-${{ runner.name }}
-        path: /tmp/actions/call/engine.logs
+        path: /tmp/actions/call/engine.log
         overwrite: true
 
     - name: Cleanup

@@ -40,6 +40,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/engine/buildkit/cacerts"
 	"github.com/dagger/dagger/engine/server"
 	"github.com/dagger/dagger/engine/slog"
@@ -244,15 +245,15 @@ func main() { //nolint:gocyclo
 
 	addFlags(app)
 
+	ctx, cancel := context.WithCancel(appcontext.Context())
+
 	app.Action = func(c *cli.Context) error {
+		defer cancel()
 		// TODO: On Windows this always returns -1. The actual "are you admin" check is very Windows-specific.
 		// See https://github.com/golang/go/issues/28804#issuecomment-505326268 for the "short" version.
 		if os.Geteuid() > 0 {
 			return errors.New("rootless mode requires to be executed as the mapped root in a user namespace; you may use RootlessKit for setting up the namespace")
 		}
-		ctx, cancel := context.WithCancel(appcontext.Context())
-		defer cancel()
-
 		// install CA certs in case the user has a custom engine w/ extra certs installed to
 		// /usr/local/share/ca-certificates
 		if out, err := exec.CommandContext(ctx, "update-ca-certificates").CombinedOutput(); err != nil {
@@ -264,7 +265,7 @@ func main() { //nolint:gocyclo
 			}
 		}
 
-		ctx, pubsub := InitTelemetry(ctx)
+		ctx = InitTelemetry(ctx)
 
 		bklog.G(ctx).Debug("loading engine config file")
 		cfg, err := config.LoadFile(c.GlobalString("config"))
@@ -376,9 +377,8 @@ func main() { //nolint:gocyclo
 
 		bklog.G(ctx).Debug("creating engine server")
 		srv, err := server.NewServer(ctx, &server.NewServerOpts{
-			Config:          &cfg,
-			Name:            engineName,
-			TelemetryPubSub: pubsub,
+			Config: &cfg,
+			Name:   engineName,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to create engine: %w", err)
@@ -453,8 +453,8 @@ func main() { //nolint:gocyclo
 		return err
 	}
 
-	app.After = func(_ *cli.Context) error {
-		CloseTelemetry()
+	app.After = func(*cli.Context) error {
+		telemetry.Close(ctx)
 		return nil
 	}
 

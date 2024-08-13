@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"go/format"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/MakeNowJust/heredoc/v2"
+	"github.com/cenkalti/backoff/v4"
 	"github.com/iancoleman/strcase"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
@@ -29,6 +31,7 @@ import (
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/distconsts"
+	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/dagger/testctx"
 )
 
@@ -997,7 +1000,7 @@ func (b *bar) Hello(name string) string {
 	_, err := modGen.With(moduleIntrospection).Stderr(ctx)
 	require.Error(t, err)
 	require.NoError(t, c.Close())
-	require.Contains(t, logs.String(), "cannot code-generate unexported type bar")
+	require.Regexp(t, "cannot code-generate unexported type bar", logs.String())
 }
 
 func (ModuleSuite) TestGoSignaturesMixMatch(ctx context.Context, t *testctx.T) {
@@ -1021,8 +1024,7 @@ func (m *Minimal) Hello(name string, opts struct{}, opts2 struct{}) string {
 	_, err := modGen.With(daggerQuery(`{minimal{hello}}`)).Stdout(ctx)
 	require.Error(t, err)
 	require.NoError(t, c.Close())
-	t.Log(logs.String())
-	require.Contains(t, logs.String(), "nested structs are not supported")
+	require.Regexp(t, "nested structs are not supported", logs.String())
 }
 
 func (ModuleSuite) TestGoSignaturesNameConflict(ctx context.Context, t *testctx.T) {
@@ -1916,7 +1918,7 @@ func (c *Container) Echo(ctx context.Context, msg string) (string, error) {
 		require.Error(t, err)
 		require.NoError(t, c.Close())
 		t.Log(logs.String())
-		require.Contains(t, logs.String(), "cannot define methods on objects from outside this module")
+		require.Regexp(t, "cannot define methods on objects from outside this module", logs.String())
 	})
 
 	t.Run("in same mod name", func(ctx context.Context, t *testctx.T) {
@@ -1932,7 +1934,7 @@ func (c *Container) Echo(ctx context.Context, msg string) (string, error) {
 		require.Error(t, err)
 		require.NoError(t, c.Close())
 		t.Log(logs.String())
-		require.Contains(t, logs.String(), "cannot define methods on objects from outside this module")
+		require.Regexp(t, "cannot define methods on objects from outside this module", logs.String())
 	})
 }
 
@@ -1960,7 +1962,7 @@ func (f *Foo) Echo(ctx context.Context, ctx2 context.Context) (string, error) {
 	require.Error(t, err)
 	require.NoError(t, c.Close())
 	t.Log(logs.String())
-	require.Contains(t, logs.String(), "unexpected context type")
+	require.Regexp(t, "unexpected context type", logs.String())
 }
 
 func (ModuleSuite) TestCustomTypes(ctx context.Context, t *testctx.T) {
@@ -3277,7 +3279,7 @@ func (m *Dep) Invert(status Status) Status {
 			{
 				sdk: "go",
 				source: `package main
-				
+
 import "context"
 
 type Test struct{}
@@ -5407,24 +5409,32 @@ func (ModuleSuite) TestDaggerListen(ctx context.Context, t *testctx.T) {
 		_, err := hostDaggerExec(ctx, t, modDir, "--debug", "init", "--source=.", "--name=test", "--sdk=go")
 		require.NoError(t, err)
 
-		listenCmd := hostDaggerCommand(ctx, t, modDir, "--debug", "listen", "--listen", "127.0.0.1:12456")
+		addr := "127.0.0.1:12456"
+		listenCmd := hostDaggerCommand(ctx, t, modDir, "--debug", "listen", "--listen", addr)
 		listenCmd.Env = append(listenCmd.Env, "DAGGER_SESSION_TOKEN=lol")
+		listenCmd.Stdout = testutil.NewTWriter(t)
+		listenCmd.Stderr = testutil.NewTWriter(t)
 		require.NoError(t, listenCmd.Start())
 
-		var out []byte
-		for range limitTicker(time.Second, 60) {
-			callCmd := hostDaggerCommand(ctx, t, modDir, "--debug", "call", "container-echo", "--string-arg=hi", "stdout")
-			callCmd.Env = append(callCmd.Env, "DAGGER_SESSION_PORT=12456", "DAGGER_SESSION_TOKEN=lol")
-			out, err = callCmd.Output()
-			if err == nil {
-				lines := strings.Split(string(out), "\n")
-				lastLine := lines[len(lines)-2]
-				require.Equal(t, "hi", lastLine)
-				return
+		backoff.Retry(func() error {
+			c, err := net.Dial("tcp", addr)
+			t.Log("dial", addr, c, err)
+			if err != nil {
+				return err
 			}
-			time.Sleep(1 * time.Second)
-		}
-		t.Fatalf("failed to call container-echo: %s err: %v", string(out), err)
+			return c.Close()
+		}, backoff.NewExponentialBackOff(
+			backoff.WithMaxElapsedTime(time.Minute),
+		))
+
+		callCmd := hostDaggerCommand(ctx, t, modDir, "--debug", "call", "container-echo", "--string-arg=hi", "stdout")
+		callCmd.Env = append(callCmd.Env, "DAGGER_SESSION_PORT=12456", "DAGGER_SESSION_TOKEN=lol")
+		callCmd.Stderr = testutil.NewTWriter(t)
+		out, err := callCmd.Output()
+		require.NoError(t, err)
+		lines := strings.Split(string(out), "\n")
+		lastLine := lines[len(lines)-2]
+		require.Equal(t, "hi", lastLine)
 	})
 
 	t.Run("disable read write", func(ctx context.Context, t *testctx.T) {
@@ -5443,6 +5453,7 @@ func (ModuleSuite) TestDaggerListen(ctx context.Context, t *testctx.T) {
 			for range limitTicker(time.Second, 60) {
 				callCmd := hostDaggerCommand(ctx, t, modDir, "--debug", "query")
 				callCmd.Stdin = strings.NewReader(fmt.Sprintf(`query{container{from(address:"%s"){file(path:"/etc/alpine-release"){contents}}}}`, alpineImage))
+				callCmd.Stderr = testutil.NewTWriter(t)
 				callCmd.Env = append(callCmd.Env, "DAGGER_SESSION_PORT=12457", "DAGGER_SESSION_TOKEN=lol")
 				out, err = callCmd.Output()
 				if err == nil {
@@ -5466,6 +5477,7 @@ func (ModuleSuite) TestDaggerListen(ctx context.Context, t *testctx.T) {
 			for range limitTicker(time.Second, 60) {
 				callCmd := hostDaggerCommand(ctx, t, tmpdir, "--debug", "query")
 				callCmd.Stdin = strings.NewReader(fmt.Sprintf(`query{container{from(address:"%s"){file(path:"/etc/alpine-release"){contents}}}}`, alpineImage))
+				callCmd.Stderr = testutil.NewTWriter(t)
 				callCmd.Env = append(callCmd.Env, "DAGGER_SESSION_PORT=12458", "DAGGER_SESSION_TOKEN=lol")
 				out, err = callCmd.Output()
 				if err == nil {
@@ -5592,7 +5604,7 @@ func (t *Test) Evaluated(ctx context.Context, src *dagger.Directory) error {
 		DockerBuild(dagger.DirectoryDockerBuildOpts{
 			Secrets: []*dagger.Secret{secret},
 		}).
-		WithExec([]string{"true"}). 
+		WithExec([]string{"true"}).
 		Sync(ctx)
 	return err
 }
@@ -6773,7 +6785,13 @@ func hostDaggerExec(ctx context.Context, t testing.TB, workdir string, args ...s
 
 func cleanupExec(t testing.TB, cmd *exec.Cmd) {
 	t.Cleanup(func() {
+		if cmd.Process == nil {
+			t.Logf("never started: %v", cmd.Args)
+			return
+		}
+		t.Logf("interrupting: %v", cmd.Args)
 		cmd.Process.Signal(os.Interrupt)
+		t.Logf("waiting: %v", cmd.Args)
 		cmd.Wait()
 	})
 }

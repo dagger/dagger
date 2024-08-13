@@ -279,15 +279,12 @@ func (ClientSuite) TestSendsLabelsInTelemetry(ctx context.Context, t *testctx.T)
 		Stderr(ctx)
 	require.NoError(t, err)
 
-	receivedEvents, err := withCode.
+	_, err = withCode.
 		WithMountedCache("/events", eventsVol).
-		WithExec([]string{
-			"sh", "-c", "cat $0", fmt.Sprintf("/events/%s/**/*.json", eventsID),
-		}).
-		Stdout(ctx)
+		WithExec([]string{"sh", "-c", "grep dagger.io/git.title $0", fmt.Sprintf("/events/%s/**/*.json", eventsID)}).
+		WithExec([]string{"sh", "-c", "grep 'init test repo' $0", fmt.Sprintf("/events/%s/**/*.json", eventsID)}).
+		Sync(ctx)
 	require.NoError(t, err)
-	require.Contains(t, receivedEvents, "dagger.io/git.title")
-	require.Contains(t, receivedEvents, "init test repo")
 }
 
 func (EngineSuite) TestVersionCompat(ctx context.Context, t *testctx.T) {
