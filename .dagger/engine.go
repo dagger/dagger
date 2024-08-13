@@ -117,6 +117,15 @@ func (e *Engine) Container(
 		WithFile(engineTomlPath, cfg).
 		WithFile(engineEntrypointPath, entrypoint).
 		WithEntrypoint([]string{filepath.Base(engineEntrypointPath)})
+
+	cli, err := builder.CLI(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ctr = ctr.
+		WithFile(cliPath, cli).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "unix://"+engineUnixSocketPath)
+
 	return ctr, nil
 }
 

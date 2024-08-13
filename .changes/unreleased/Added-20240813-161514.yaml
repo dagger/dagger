@@ -1,0 +1,6 @@
+kind: Added
+body: Bundle CLI in the Engine image so that both parts of Dagger (CLI+Engine) ship as a single artefact
+time: 2024-08-13T16:15:14.821633+01:00
+custom:
+    Author: gerhard
+    PR: "8147"
