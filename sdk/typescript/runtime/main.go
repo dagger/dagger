@@ -9,7 +9,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/iancoleman/strcase"
 	"github.com/tidwall/gjson"
 	"golang.org/x/mod/semver"
 )
@@ -300,7 +299,7 @@ func (t *TypescriptSdk) setupModule(ctx context.Context, ctr *dagger.Container) 
 	}) {
 		return ctr.
 			WithDirectory("src", ctr.Directory("/opt/module/template/src"), dagger.ContainerWithDirectoryOpts{Include: []string{"*.ts"}}).
-			WithExec([]string{"sed", "-i", "-e", fmt.Sprintf("s/QuickStart/%s/g", strcase.ToCamel(name)), "src/index.ts"}), nil
+			WithExec([]string{"sed", "-i", "-e", fmt.Sprintf("s/QuickStart/%s/g", caser.ToPascal(name)), "src/index.ts"}), nil
 	}
 
 	return ctr, nil

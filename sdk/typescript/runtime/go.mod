@@ -5,7 +5,7 @@ go 1.22
 require (
 	github.com/99designs/gqlgen v0.17.49
 	github.com/Khan/genqlient v0.7.0
-	github.com/iancoleman/strcase v0.3.0
+	github.com/ettle/strcase v0.2.1-0.20230114185658-e5db6a6becf3
 	github.com/tidwall/gjson v1.17.1
 	github.com/vektah/gqlparser/v2 v2.5.16
 	go.opentelemetry.io/otel v1.27.0
