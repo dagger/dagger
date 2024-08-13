@@ -128,7 +128,7 @@ export class Bin implements EngineConn {
 
         fs.unlinkSync(filePath)
       })
-    } catch (e) {
+    } catch {
       // Log the error but do not interrupt program.
       console.error("could not clean up temporary binary files")
     }
@@ -153,7 +153,7 @@ export class Bin implements EngineConn {
           const packageJsonContent = fs.readFileSync(packageJsonPath, "utf8")
           const packageJson = JSON.parse(packageJsonContent)
           return packageJson.version
-        } catch (error) {
+        } catch {
           return "n/a"
         }
       } else {
