@@ -1,0 +1,9 @@
+kind: Fixed
+body: |-
+  Fixed referring to module's own objects/interfaces/enums in constructor signature
+
+  Previously, modules would fail to launch if they declared a constructor that contained a reference to a type from it's own module in it's args.
+time: 2024-08-13T15:21:29.694564346+01:00
+custom:
+  Author: jedevc
+  PR: "8115"
