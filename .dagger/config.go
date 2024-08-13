@@ -16,6 +16,8 @@ import (
 const (
 	engineTomlPath       = "/etc/dagger/engine.toml"
 	engineEntrypointPath = "/usr/local/bin/dagger-entrypoint.sh"
+	engineUnixSocketPath = "/var/run/buildkit/buildkitd.sock"
+	cliPath              = "/usr/local/bin/dagger"
 )
 
 const engineEntrypointTmpl = `#!/bin/sh
