@@ -136,12 +136,3 @@ func isIntrospection(id *call.ID) bool {
 		return isIntrospection(id.Receiver())
 	}
 }
-
-func serviceEffect(id *call.ID) string {
-	return id.Digest().String() + "-service"
-}
-
-// Tell telemetry about the associated effect for when the service starts.
-func connectServiceEffect(ctx context.Context) {
-	trace.SpanFromContext(ctx).SetAttributes(attribute.StringSlice(telemetry.EffectIDsAttr, []string{serviceEffect(dagql.CurrentID(ctx))}))
-}

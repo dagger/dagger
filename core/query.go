@@ -9,6 +9,7 @@ import (
 	"github.com/containerd/containerd/content"
 	"github.com/moby/buildkit/util/leaseutil"
 	"github.com/vektah/gqlparser/v2/ast"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/dagql"
@@ -144,16 +145,16 @@ func (q *Query) NewModule() *Module {
 }
 
 func (q *Query) NewContainerService(ctx context.Context, ctr *Container) *Service {
-	connectServiceEffect(ctx)
 	return &Service{
+		Creator:   trace.SpanContextFromContext(ctx),
 		Query:     q,
 		Container: ctr,
 	}
 }
 
 func (q *Query) NewTunnelService(ctx context.Context, upstream dagql.Instance[*Service], ports []PortForward) *Service {
-	connectServiceEffect(ctx)
 	return &Service{
+		Creator:        trace.SpanContextFromContext(ctx),
 		Query:          q,
 		TunnelUpstream: &upstream,
 		TunnelPorts:    ports,
@@ -161,8 +162,8 @@ func (q *Query) NewTunnelService(ctx context.Context, upstream dagql.Instance[*S
 }
 
 func (q *Query) NewHostService(ctx context.Context, socks []*Socket) *Service {
-	connectServiceEffect(ctx)
 	return &Service{
+		Creator:     trace.SpanContextFromContext(ctx),
 		Query:       q,
 		HostSockets: socks,
 	}
