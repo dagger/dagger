@@ -9,6 +9,7 @@ import (
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/vektah/gqlparser/v2/ast"
 
+	"github.com/dagger/dagger/core/compat"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/slog"
@@ -122,10 +123,24 @@ func (mod *Module) IDModule() *call.Module {
 	return call.NewModule(mod.InstanceID, mod.Name(), ref)
 }
 
+func (mod *Module) addCompatToCtx(ctx context.Context) (context.Context, error) {
+	engineVersion, err := mod.Source.Self.ModuleEngineVersion(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return compat.AddCompatToContext(ctx, engineVersion), nil
+}
+
 func (mod *Module) Initialize(ctx context.Context, oldID *call.ID, newID *call.ID) (*Module, error) {
 	modName := mod.Name()
 	newMod := mod.Clone()
 	newMod.InstanceID = oldID // updated to newID once the call to initialize is done
+
+	ctx, err := mod.addCompatToCtx(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	// construct a special function with no object or function name, which tells
 	// the SDK to return the module's definition (in terms of objects, fields and
@@ -136,9 +151,9 @@ func (mod *Module) Initialize(ctx context.Context, oldID *call.ID, newID *call.I
 		newMod,
 		nil,
 		newMod.Runtime,
-		NewFunction("", &TypeDef{
+		NewFunction(ctx, "", &TypeDef{
 			Kind:     TypeDefKindObject,
-			AsObject: dagql.NonNull(NewObjectTypeDef("Module", "")),
+			AsObject: dagql.NonNull(NewObjectTypeDef(ctx, "Module", "")),
 		}))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create module definition function for module %q: %w", modName, err)
@@ -435,7 +450,7 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 	obj := typeDef.AsObject.Value
 
 	for _, field := range obj.Fields {
-		if gqlFieldName(field.Name) == "id" {
+		if gqlFieldName(ctx, field.Name) == "id" {
 			return fmt.Errorf("cannot define field with reserved name %q on object %q", field.Name, obj.Name)
 		}
 		fieldType, ok, err := mod.Deps.ModTypeFor(ctx, field.TypeDef)
@@ -460,7 +475,7 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 	}
 
 	for _, fn := range obj.Functions {
-		if gqlFieldName(fn.Name) == "id" {
+		if gqlFieldName(ctx, fn.Name) == "id" {
 			return fmt.Errorf("cannot define function with reserved name %q on object %q", fn.Name, obj.Name)
 		}
 		// Check if this is a type from another (non-core) module, which is currently not allowed
@@ -521,7 +536,7 @@ func (mod *Module) validateInterfaceTypeDef(ctx context.Context, typeDef *TypeDe
 		}
 	}
 	for _, fn := range iface.Functions {
-		if gqlFieldName(fn.Name) == "id" {
+		if gqlFieldName(ctx, fn.Name) == "id" {
 			return fmt.Errorf("cannot define function with reserved name %q on interface %q", fn.Name, iface.Name)
 		}
 		if err := mod.validateTypeDef(ctx, fn.ReturnType); err != nil {
@@ -553,7 +568,7 @@ func (mod *Module) namespaceTypeDef(ctx context.Context, typeDef *TypeDef) error
 			return fmt.Errorf("failed to get mod type for type def: %w", err)
 		}
 		if !ok {
-			obj.Name = namespaceObject(obj.OriginalName, mod.Name(), mod.OriginalName)
+			obj.Name = namespaceObject(ctx, obj.OriginalName, mod.Name(), mod.OriginalName)
 		}
 
 		for _, field := range obj.Fields {
@@ -595,7 +610,7 @@ func (mod *Module) namespaceTypeDef(ctx context.Context, typeDef *TypeDef) error
 			return fmt.Errorf("failed to get mod type for type def: %w", err)
 		}
 		if !ok {
-			iface.Name = namespaceObject(iface.OriginalName, mod.Name(), mod.OriginalName)
+			iface.Name = namespaceObject(ctx, iface.OriginalName, mod.Name(), mod.OriginalName)
 		}
 
 		for _, fn := range iface.Functions {
@@ -619,7 +634,7 @@ func (mod *Module) namespaceTypeDef(ctx context.Context, typeDef *TypeDef) error
 		}
 
 		if !ok {
-			enum.Name = namespaceObject(enum.OriginalName, mod.Name(), mod.OriginalName)
+			enum.Name = namespaceObject(ctx, enum.OriginalName, mod.Name(), mod.OriginalName)
 		}
 	}
 	return nil

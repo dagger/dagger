@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -48,7 +49,7 @@ func TestNamespaceObjects(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.testCase, func(t *testing.T) {
-			result := namespaceObject(tc.obj, tc.namespace, tc.namespace)
+			result := namespaceObject(context.TODO(), tc.obj, tc.namespace, tc.namespace)
 			require.Equal(t, tc.result, result)
 		})
 	}

@@ -16,8 +16,8 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/dagger/dagger/engine/strcase"
 	"github.com/dschmidt/go-layerfs"
-	"github.com/iancoleman/strcase"
 	"github.com/psanford/memfs"
 	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/semver"
@@ -374,7 +374,7 @@ func loadPackage(ctx context.Context, dir string) (*packages.Package, *token.Fil
 }
 
 func (g *GoGenerator) baseModuleSource(pkgInfo *PackageInfo) string {
-	moduleStructName := strcase.ToCamel(g.Config.ModuleName)
+	moduleStructName := strcase.ToPascal(g.Config.ModuleName)
 
 	return fmt.Sprintf(`// A generated module for %[1]s functions
 //

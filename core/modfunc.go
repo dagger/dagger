@@ -128,7 +128,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 	callInputs := make([]*FunctionCallArgValue, len(opts.Inputs))
 	hasArg := map[string]bool{}
 	for i, input := range opts.Inputs {
-		normalizedName := gqlArgName(input.Name)
+		normalizedName := gqlArgName(ctx, input.Name)
 		arg, ok := fn.args[normalizedName]
 		if !ok {
 			return nil, fmt.Errorf("failed to find arg %q", input.Name)
@@ -314,8 +314,8 @@ func (fn *ModuleFunction) ReturnType() (ModType, error) {
 	return fn.returnType, nil
 }
 
-func (fn *ModuleFunction) ArgType(argName string) (ModType, error) {
-	arg, ok := fn.args[gqlArgName(argName)]
+func (fn *ModuleFunction) ArgType(ctx context.Context, argName string) (ModType, error) {
+	arg, ok := fn.args[gqlArgName(ctx, argName)]
 	if !ok {
 		return nil, fmt.Errorf("failed to find arg %q", argName)
 	}

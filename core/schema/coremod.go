@@ -429,7 +429,7 @@ func introspectionRefToTypeDef(introspectionType *introspection.TypeRef, nonNull
 		default:
 			// assume that all core scalars are strings
 			typeDef.Kind = core.TypeDefKindScalar
-			typeDef.AsScalar = dagql.NonNull(core.NewScalarTypeDef(introspectionType.Name, ""))
+			typeDef.AsScalar = dagql.NonNull(core.NewScalarTypeDef(context.TODO(), introspectionType.Name, ""))
 		}
 
 		return typeDef, true, nil

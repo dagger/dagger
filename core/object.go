@@ -135,7 +135,7 @@ func (t *ModuleObjectType) TypeDef() *TypeDef {
 type Callable interface {
 	Call(context.Context, *CallOpts) (dagql.Typed, error)
 	ReturnType() (ModType, error)
-	ArgType(argName string) (ModType, error)
+	ArgType(ctx context.Context, argName string) (ModType, error)
 }
 
 func (t *ModuleObjectType) GetCallable(ctx context.Context, name string) (Callable, error) {
@@ -225,7 +225,7 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server) error {
 	})
 	objDef := obj.TypeDef
 	mod := obj.Module
-	if gqlObjectName(objDef.OriginalName) == gqlObjectName(mod.OriginalName) {
+	if gqlObjectName(ctx, objDef.OriginalName) == gqlObjectName(ctx, mod.OriginalName) {
 		if err := obj.installConstructor(ctx, dag); err != nil {
 			return fmt.Errorf("failed to install constructor: %w", err)
 		}
@@ -253,7 +253,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 		// object
 		dag.Root().ObjectType().Extend(
 			dagql.FieldSpec{
-				Name: gqlFieldName(mod.Name()),
+				Name: gqlFieldName(ctx, mod.Name()),
 				// Description: "TODO", // XXX(vito)
 				Type:   obj,
 				Module: obj.Module.IDModule(),
@@ -288,7 +288,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 		return fmt.Errorf("failed to get field spec: %w", err)
 	}
 
-	spec.Name = gqlFieldName(mod.Name())
+	spec.Name = gqlFieldName(ctx, mod.Name())
 
 	// NB: functions actually _are_ cached per-session, which matches the
 	// lifetime of the server, so we might as well consider them pure.
@@ -430,6 +430,6 @@ func (f *CallableField) ReturnType() (ModType, error) {
 	return f.Return, nil
 }
 
-func (f *CallableField) ArgType(argName string) (ModType, error) {
+func (f *CallableField) ArgType(ctx context.Context, argName string) (ModType, error) {
 	return nil, fmt.Errorf("field cannot have argument %q", argName)
 }

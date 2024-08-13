@@ -14,8 +14,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/dagger/dagger/engine/strcase"
 	"github.com/go-git/go-git/v5"
-	"github.com/iancoleman/strcase"
 	"github.com/moby/buildkit/util/gitutil"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -1313,12 +1313,12 @@ func getDefaultValue[T any](r *modFunctionArg) (T, error) {
 
 // gqlObjectName converts casing to a GraphQL object  name
 func gqlObjectName(name string) string {
-	return strcase.ToCamel(name)
+	return strcase.ToPascal(name)
 }
 
 // gqlFieldName converts casing to a GraphQL object field name
 func gqlFieldName(name string) string {
-	return strcase.ToLowerCamel(name)
+	return strcase.ToCamel(name)
 }
 
 // cliName converts casing to the CLI convention (kebab)

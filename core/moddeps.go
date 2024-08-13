@@ -191,7 +191,7 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (
 			if !obj.IsSubtypeOf(iface) {
 				continue
 			}
-			asIfaceFieldName := gqlFieldName(fmt.Sprintf("as%s", iface.Name))
+			asIfaceFieldName := gqlFieldName(ctx, fmt.Sprintf("as%s", iface.Name))
 			class.Extend(
 				dagql.FieldSpec{
 					Name:        asIfaceFieldName,
