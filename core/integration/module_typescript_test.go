@@ -170,6 +170,30 @@ func (ModuleSuite) TestTypescriptInit(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.NotContains(t, sourceRootEnts, "src")
 	})
+
+	t.Run("ignore parent directory package manager", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From("node:20-alpine").
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithExec([]string{"npm", "init", "-y"}).
+			WithExec([]string{"corepack", "enable"}).
+			WithExec([]string{"corepack", "use", "pnpm@9.6.0"}).
+			With(daggerExec("init", "--sdk=typescript", "--source=dagger"))
+
+		out, err := modGen.With(daggerCall("container-echo", "--string-arg", "hello world", "stdout")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello world\n", out)
+
+		parentPackageJSON, err := modGen.File("./package.json").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, parentPackageJSON, `"packageManager": "pnpm@`) // We don't check the exact version because it's a SHA
+
+		sourcePackageJSON, err := modGen.File("./dagger/package.json").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, sourcePackageJSON, `"packageManager": "yarn@`) // We don't check the exact version because it's a SHA
+	})
 }
 
 //go:embed testdata/modules/typescript/syntax/index.ts

@@ -184,9 +184,13 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *dagger.Modul
 		// Add template directory
 		WithMountedDirectory("/opt/module", dag.CurrentModule().Source().Directory(".")).
 		// Mount users' module with SDK sources and generated client in it.
-		WithMountedDirectory(ModSourceDirPath, modSource.
-			ContextDirectory().
-			WithDirectory(filepath.Join(t.moduleConfig.subPath, GenDir), sdk),
+		WithMountedDirectory(ModSourceDirPath,
+			dag.Directory().WithDirectory("/", modSource.ContextDirectory(), dagger.DirectoryWithDirectoryOpts{
+				Include: []string{
+					fmt.Sprintf("%s/**", t.moduleConfig.subPath),
+				},
+			}).
+				WithDirectory(filepath.Join(t.moduleConfig.subPath, GenDir), sdk),
 		).
 		WithWorkdir(t.moduleConfig.modulePath())
 
