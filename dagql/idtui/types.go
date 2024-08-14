@@ -34,6 +34,7 @@ type TraceTree struct {
 
 	IsRunningOrChildRunning bool
 	Chained                 bool
+	Final                   bool
 
 	Children []*TraceTree
 }
@@ -44,8 +45,10 @@ type TraceTree struct {
 type TraceRow struct {
 	Index                   int
 	Span                    *Span
+	Chained                 bool
 	Depth                   int
 	IsRunningOrChildRunning bool
+	Previous                *TraceRow
 }
 
 type RowsView struct {
@@ -61,7 +64,7 @@ func (db *DB) RowsView(zoomedID trace.SpanID) *RowsView {
 	}
 	var spans []*Span
 	if view.Zoomed != nil {
-		spans = view.Zoomed.ChildrenAndEffects()
+		spans = view.Zoomed.ChildrenAndLinkedSpans()
 	} else {
 		spans = db.SpanOrder
 	}
@@ -89,7 +92,7 @@ func (db *DB) WalkSpans(spans []*Span, f func(*TraceTree)) {
 			return
 		}
 		if span.Passthrough {
-			for _, child := range span.ChildSpans {
+			for _, child := range span.ChildrenAndLinkedSpans() {
 				walk(child, parent)
 			}
 			return
@@ -99,7 +102,9 @@ func (db *DB) WalkSpans(spans []*Span, f func(*TraceTree)) {
 			Parent: parent,
 		}
 		if span.Base != nil && lastRow != nil {
+			// TODO: sync with Cloud impl.
 			row.Chained = span.Base.Digest == lastRow.Span.Digest
+			lastRow.Final = !row.Chained
 		}
 		if span.IsRunning() {
 			row.setRunning()
@@ -107,38 +112,19 @@ func (db *DB) WalkSpans(spans []*Span, f func(*TraceTree)) {
 		f(row)
 		lastRow = row
 		seen[spanID] = true
-		for _, child := range span.ChildSpans {
-			if child.EffectID != "" && db.EffectSite[child.EffectID] != nil {
-				// let it show up at the call sites instead
-				continue
-			}
+		for _, child := range span.ChildrenAndLinkedSpans() {
 			walk(child, row)
 		}
-		lastRow = row
-		for _, effectID := range span.Effects {
-			if db.EffectSite[effectID] != span {
-				// only show effects that we are the first 'site' of
-				continue
-			}
-			if effect, ok := db.Effects[effectID]; ok {
-				unlazier := effect.ParentSpan
-				// keep track of the original unlazier for this effect
-				db.UnlaziedEffects[unlazier.ID] = append(
-					db.UnlaziedEffects[unlazier.ID],
-					effect,
-				)
-				// reparent so we can step out of the effect
-				effect.ParentSpan = row.Span
-				walk(effect, row)
-				if effect.IsRunning() || unlazier.Failed() {
-					row.setRunning()
-				}
-			}
+		if lastRow != nil {
+			lastRow.Final = true
 		}
 		lastRow = row
 	}
 	for _, step := range spans {
 		walk(step, nil)
+	}
+	if lastRow != nil {
+		lastRow.Final = true
 	}
 }
 
@@ -160,14 +146,18 @@ func (lv *RowsView) Rows(opts FrontendOpts) *Rows {
 			row := &TraceRow{
 				Index:                   len(rows.Order),
 				Span:                    tree.Span,
+				Chained:                 tree.Chained,
 				Depth:                   depth,
 				IsRunningOrChildRunning: tree.IsRunningOrChildRunning,
+			}
+			if len(rows.Order) > 0 {
+				row.Previous = rows.Order[len(rows.Order)-1]
 			}
 			rows.Order = append(rows.Order, row)
 			rows.BySpan[tree.Span.ID] = row
 			depth++
 		}
-		if tree.IsRunningOrChildRunning || tree.Span.Failed() || opts.Verbosity >= ExpandCompletedVerbosity {
+		if tree.IsRunningOrChildRunning || tree.Span.IsFailed() || opts.Verbosity >= ExpandCompletedVerbosity {
 			for _, child := range tree.Children {
 				walk(child, depth)
 			}
