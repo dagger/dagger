@@ -77,13 +77,6 @@ func (opts FrontendOpts) ShouldShow(tree *TraceTree) bool {
 		// show running steps
 		return true
 	}
-	if tree.Parent != nil &&
-		opts.TooFastThreshold > 0 &&
-		span.ActiveDuration(time.Now()) < opts.TooFastThreshold &&
-		opts.Verbosity < ShowSpammyVerbosity {
-		// ignore fast steps; signal:noise is too poor
-		return false
-	}
 	if opts.GCThreshold > 0 &&
 		time.Since(span.EndTime()) > opts.GCThreshold &&
 		opts.Verbosity < ShowCompletedVerbosity {
