@@ -3,6 +3,7 @@ package buildkit
 import (
 	"context"
 	"strings"
+	"sync"
 
 	"github.com/moby/buildkit/client/llb"
 	"github.com/opencontainers/go-digest"
@@ -110,11 +111,22 @@ func (s buildkitSpan) TracerProvider() trace.TracerProvider {
 // It must be used in combination with the buildkitTraceProvider.
 type SpanProcessor struct {
 	Client *Client
+
+	witnessedOps  map[digest.Digest]bool
+	witnessedOpsL sync.Mutex
 }
 
-var _ sdktrace.SpanProcessor = SpanProcessor{}
+func NewSpanProcessor(client *Client) *SpanProcessor {
+	return &SpanProcessor{
+		Client: client,
 
-func (sp SpanProcessor) OnStart(ctx context.Context, span sdktrace.ReadWriteSpan) {
+		witnessedOps: map[digest.Digest]bool{},
+	}
+}
+
+var _ sdktrace.SpanProcessor = (*SpanProcessor)(nil)
+
+func (sp *SpanProcessor) OnStart(ctx context.Context, span sdktrace.ReadWriteSpan) {
 	var isBuildkit bool
 	var vertex digest.Digest
 	for _, attr := range span.Attributes() {
@@ -151,12 +163,12 @@ func (sp SpanProcessor) OnStart(ctx context.Context, span sdktrace.ReadWriteSpan
 	}
 }
 
-func (sp SpanProcessor) setupVertex(span sdktrace.ReadWriteSpan, vertex digest.Digest) {
+func (sp *SpanProcessor) setupVertex(span sdktrace.ReadWriteSpan, vertex digest.Digest) {
 	span.SetAttributes(
+		// TODO: consolidate? or do we need them to be distinct?
 		// track the "DAG digest" in the same way that we track Dagger digests
 		attribute.String(telemetry.DagDigestAttr, vertex.String()),
-		// track the "effect", which is tied to EffectIDsAttr on effect install (cause) site
-		// TODO: this may be wholly redundant with above; it predates the use of span links
+		// track the Buildkit effect-specific equivalent
 		attribute.String(telemetry.EffectIDAttr, vertex.String()),
 	)
 
@@ -168,12 +180,7 @@ func (sp SpanProcessor) setupVertex(span sdktrace.ReadWriteSpan, vertex digest.D
 	// link the vertex span to its causal span
 	causeCtx := SpanContextFromDescription(llbOp.Metadata.Description)
 	if causeCtx.IsValid() {
-		span.AddLink(trace.Link{
-			SpanContext: causeCtx,
-			Attributes: []attribute.KeyValue{
-				attribute.String(telemetry.EffectIDAttr, vertex.String()),
-			},
-		})
+		span.AddLink(trace.Link{SpanContext: causeCtx})
 	}
 
 	// track the inputs of the op
@@ -192,21 +199,25 @@ func (sp SpanProcessor) setupVertex(span sdktrace.ReadWriteSpan, vertex digest.D
 	if cached {
 		span.SetName(spanName)
 		span.SetAttributes(attribute.Bool(telemetry.CachedAttr, true))
-
-		// emit the op's deep set of inputs so that a cached op also implies
-		// its inputs are cached, without requiring a span to be emitted for
-		// each
-		var cachedDigests []string
-		llbOp.Walk(func(op *OpDAG) error {
-			cachedDigests = append(cachedDigests, llbOp.OpDigest.String())
-			return nil
-		})
-		span.SetAttributes(
-			attribute.StringSlice(telemetry.CachedDigestsAttr, cachedDigests),
-		)
 	}
+
+	// emit the deep dependencies of the op so the frontend can know that
+	// they're completed without needing a span for each
+	sp.witnessedOpsL.Lock()
+	var doneEffects []string
+	_ = llbOp.Walk(func(op *OpDAG) error {
+		if op != llbOp && !sp.witnessedOps[*op.OpDigest] {
+			doneEffects = append(doneEffects, op.OpDigest.String())
+			sp.witnessedOps[*op.OpDigest] = true
+		}
+		return nil
+	})
+	sp.witnessedOpsL.Unlock()
+	span.SetAttributes(
+		attribute.StringSlice(telemetry.EffectsCompletedAttr, doneEffects),
+	)
 }
 
-func (sp SpanProcessor) OnEnd(sdktrace.ReadOnlySpan)      {}
-func (sp SpanProcessor) ForceFlush(context.Context) error { return nil }
-func (sp SpanProcessor) Shutdown(context.Context) error   { return nil }
+func (*SpanProcessor) OnEnd(sdktrace.ReadOnlySpan)      {}
+func (*SpanProcessor) ForceFlush(context.Context) error { return nil }
+func (*SpanProcessor) Shutdown(context.Context) error   { return nil }

@@ -3,7 +3,6 @@ package idtui
 import (
 	"context"
 	"fmt"
-	"io"
 	"math/rand"
 	"os"
 	"strings"
@@ -102,7 +101,7 @@ func (d *Dump) DumpID(out *termenv.Output, id *call.ID) error {
 	if d.Newline != "" {
 		r.newline = d.Newline
 	}
-	err = r.renderCall(out, nil, id.Call(), d.Prefix, 0, false, false, false)
+	err = r.renderCall(out, nil, id.Call(), d.Prefix, false, 0, false, false, false)
 	fmt.Fprint(out, r.newline)
 	return err
 }
@@ -117,8 +116,8 @@ type renderer struct {
 	rendering     map[string]bool
 }
 
-func newRenderer(db *dagui.DB, maxLiteralLen int, fe dagui.FrontendOpts) renderer {
-	return renderer{
+func newRenderer(db *dagui.DB, maxLiteralLen int, fe dagui.FrontendOpts) *renderer {
+	return &renderer{
 		FrontendOpts:  fe,
 		now:           time.Now(),
 		db:            db,
@@ -134,11 +133,13 @@ const (
 	moduleColor = termenv.ANSIMagenta
 )
 
-func (r renderer) indent(out io.Writer, depth int) {
-	fmt.Fprint(out, strings.Repeat("  ", depth))
+func (r *renderer) indent(out *termenv.Output, depth int) {
+	fmt.Fprint(out, out.String(strings.Repeat(VertBar+" ", depth)).
+		Foreground(termenv.ANSIBrightBlack).
+		Faint())
 }
 
-func (r renderer) renderIDBase(out *termenv.Output, call *callpbv1.Call) {
+func (r *renderer) renderIDBase(out *termenv.Output, call *callpbv1.Call) {
 	typeName := call.Type.ToAST().Name()
 	parent := out.String(typeName)
 	if call.Module != nil {
@@ -150,11 +151,12 @@ func (r renderer) renderIDBase(out *termenv.Output, call *callpbv1.Call) {
 	}
 }
 
-func (r renderer) renderCall(
+func (r *renderer) renderCall(
 	out *termenv.Output,
 	span *dagui.Span,
 	call *callpbv1.Call,
 	prefix string,
+	chained bool,
 	depth int,
 	inline bool,
 	internal bool,
@@ -177,7 +179,9 @@ func (r renderer) renderCall(
 	}
 
 	if call.ReceiverDigest != "" {
-		r.renderIDBase(out, r.db.MustCall(call.ReceiverDigest))
+		if !chained {
+			r.renderIDBase(out, r.db.MustCall(call.ReceiverDigest))
+		}
 		fmt.Fprint(out, ".")
 	}
 
@@ -214,7 +218,7 @@ func (r renderer) renderCall(
 						}
 					}
 					argCall := r.db.Simplify(r.db.MustCall(argDig), forceSimplify)
-					if err := r.renderCall(out, argSpan, argCall, prefix, depth-1, true, internal, false); err != nil {
+					if err := r.renderCall(out, argSpan, argCall, prefix, false, depth-1, true, internal, false); err != nil {
 						return err
 					}
 				} else {
@@ -255,7 +259,7 @@ func (r renderer) renderCall(
 	return nil
 }
 
-func (r renderer) renderSpan(
+func (r *renderer) renderSpan(
 	out *termenv.Output,
 	span *dagui.Span,
 	name string,
@@ -269,8 +273,7 @@ func (r renderer) renderSpan(
 	style := lipgloss.NewStyle()
 	if span != nil {
 		r.renderStatus(out, span, focused)
-
-		if span.EffectID != "" {
+		if len(span.Links()) > 0 {
 			style = style.Italic(true)
 		}
 	}
@@ -286,7 +289,7 @@ func (r renderer) renderSpan(
 	return nil
 }
 
-func (r renderer) renderLiteral(out *termenv.Output, lit *callpbv1.Literal) {
+func (r *renderer) renderLiteral(out *termenv.Output, lit *callpbv1.Literal) {
 	switch val := lit.GetValue().(type) {
 	case *callpbv1.Literal_Bool:
 		fmt.Fprint(out, out.String(fmt.Sprintf("%v", val.Bool)).Foreground(termenv.ANSIRed))
@@ -329,22 +332,25 @@ func (r renderer) renderLiteral(out *termenv.Output, lit *callpbv1.Literal) {
 	}
 }
 
-func (r renderer) renderStatus(out *termenv.Output, span *dagui.Span, focused bool) {
+func (r *renderer) renderStatus(out *termenv.Output, span *dagui.Span, focused bool) {
 	var symbol string
 	var color termenv.Color
 	switch {
 	case span.IsRunning():
 		symbol = DotFilled
 		color = termenv.ANSIYellow
+	case span.IsCached():
+		symbol = IconCached
+		color = termenv.ANSIBlue
 	case span.Canceled:
 		symbol = IconSkipped
 		color = termenv.ANSIBrightBlack
-	case span.Failed():
+	case span.IsFailed():
 		symbol = IconFailure
 		color = termenv.ANSIRed
 	case span.IsPending():
-		symbol = DotFilled
-		color = termenv.ANSIBlue
+		symbol = DotEmpty
+		color = termenv.ANSIBrightBlack
 	default:
 		symbol = IconSuccess
 		color = termenv.ANSIGreen
@@ -363,7 +369,7 @@ func (r renderer) renderStatus(out *termenv.Output, span *dagui.Span, focused bo
 	}
 }
 
-func (r renderer) renderDuration(out *termenv.Output, span *dagui.Span) {
+func (r *renderer) renderDuration(out *termenv.Output, span *dagui.Span) {
 	fmt.Fprint(out, " ")
 	duration := out.String(dagui.FormatDuration(span.ActiveDuration(r.now)))
 	if span.IsRunning() {
@@ -374,9 +380,10 @@ func (r renderer) renderDuration(out *termenv.Output, span *dagui.Span) {
 	fmt.Fprint(out, duration)
 }
 
-func (r renderer) renderCached(out *termenv.Output, span *dagui.Span) {
+func (r *renderer) renderCached(out *termenv.Output, span *dagui.Span) {
 	if !span.IsRunning() && span.IsCached() {
-		fmt.Fprintf(out, " %s", out.String("[CACHED]").Faint())
+		fmt.Fprintf(out, " %s", out.String("CACHED").
+			Foreground(termenv.ANSIBlue))
 	}
 }
 
@@ -384,7 +391,7 @@ func (r renderer) renderCached(out *termenv.Output, span *dagui.Span) {
 // 	progChars = []string{"⠀", "⡀", "⣀", "⣄", "⣤", "⣦", "⣶", "⣷", "⣿"}
 // )
 
-// func (r renderer) renderVertexTasks(out *termenv.Output, span *Span, depth int) error {
+// func (r *renderer) renderVertexTasks(out *termenv.Output, span *Span, depth int) error {
 // 	tasks := r.db.Tasks[span.SpanContext().SpanID()]
 // 	if len(tasks) == 0 {
 // 		return nil

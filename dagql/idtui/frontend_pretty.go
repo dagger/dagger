@@ -226,7 +226,7 @@ func (fe *frontendPretty) runWithTUI(ctx context.Context, ttyIn *os.File, ttyOut
 	return fe.err
 }
 
-func (fe *frontendPretty) renderErrorLogs(out *termenv.Output) error {
+func (fe *frontendPretty) renderErrorLogs(out *termenv.Output, r *renderer) error {
 	if fe.rowsView == nil {
 		return nil
 	}
@@ -248,8 +248,8 @@ func (fe *frontendPretty) renderErrorLogs(out *termenv.Output) error {
 		logs := fe.logs.Logs[row.Span.ID]
 		if logs != nil && logs.UsedHeight() > 0 {
 			fmt.Fprintln(out)
-			fe.renderStep(out, row.Span, 0, "")
-			fe.renderLogs(out, logs, -1, logs.UsedHeight(), "")
+			fe.renderStep(out, r, row.Span, row.Chained, 0, "")
+			fe.renderLogs(out, r, logs, -1, logs.UsedHeight(), "")
 		}
 		return false
 	})
@@ -262,6 +262,8 @@ func (fe *frontendPretty) finalRender() error {
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
 
+	r := newRenderer(fe.db, fe.window.Width, fe.FrontendOpts)
+
 	// Render the full trace.
 	fe.zoomed = fe.db.PrimarySpan
 	fe.focused = trace.SpanID{}
@@ -272,7 +274,7 @@ func (fe *frontendPretty) finalRender() error {
 	out := NewOutput(os.Stderr, termenv.WithProfile(fe.profile))
 
 	if fe.Debug || fe.Verbosity >= dagui.ShowCompletedVerbosity || fe.err != nil {
-		fe.renderProgress(out, true, fe.window.Height, "")
+		fe.renderProgress(out, r, true, fe.window.Height, "")
 
 		if fe.msgPreFinalRender.Len() > 0 {
 			fmt.Fprint(os.Stderr, "\n"+fe.msgPreFinalRender.String()+"\n")
@@ -286,7 +288,7 @@ func (fe *frontendPretty) finalRender() error {
 		// Counter-intuitively, we don't want to render the primary output
 		// when there's an error, because the error is better represented by
 		// the progress output and error summary.
-		return fe.renderErrorLogs(out)
+		return fe.renderErrorLogs(out, r)
 	}
 
 	// Replay the primary output log to stdout/stderr.
@@ -417,9 +419,11 @@ func (fe *frontendPretty) renderKeymap(out *termenv.Output, style lipgloss.Style
 func (fe *frontendPretty) Render(out *termenv.Output) error {
 	progHeight := fe.window.Height
 
+	r := newRenderer(fe.db, fe.window.Width, fe.FrontendOpts)
+
 	var progPrefix string
 	if fe.rowsView != nil && fe.rowsView.Zoomed != nil && fe.rowsView.Zoomed.ID != fe.db.PrimarySpan {
-		fe.renderStep(out, fe.rowsView.Zoomed, 0, "")
+		fe.renderStep(out, r, fe.rowsView.Zoomed, false, 0, "")
 		progHeight -= 1
 		progPrefix = "  "
 	}
@@ -437,13 +441,13 @@ func (fe *frontendPretty) Render(out *termenv.Output) error {
 
 	if logs := fe.logs.Logs[fe.zoomed]; logs != nil && logs.UsedHeight() > 0 {
 		fmt.Fprintln(below)
-		fe.renderLogs(countOut, logs, -1, fe.window.Height/3, progPrefix)
+		fe.renderLogs(countOut, r, logs, -1, fe.window.Height/3, progPrefix)
 	}
 
 	belowOut := strings.TrimRight(below.String(), "\n")
 	progHeight -= lipgloss.Height(belowOut)
 
-	fe.renderProgress(out, false, progHeight, progPrefix)
+	fe.renderProgress(out, r, false, progHeight, progPrefix)
 	fmt.Fprintln(out)
 
 	fmt.Fprint(out, belowOut)
@@ -456,14 +460,14 @@ func (fe *frontendPretty) recalculateViewLocked() {
 	fe.focus(fe.rows.BySpan[fe.focused])
 }
 
-func (fe *frontendPretty) renderedRowLines(row *dagui.TraceRow, prefix string) []string {
+func (fe *frontendPretty) renderedRowLines(r *renderer, row *dagui.TraceRow, prefix string) []string {
 	buf := new(strings.Builder)
 	out := NewOutput(buf, termenv.WithProfile(fe.profile))
-	fe.renderRow(out, row, false, prefix)
+	fe.renderRow(out, r, row, false, prefix)
 	return strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
 }
 
-func (fe *frontendPretty) renderProgress(out *termenv.Output, full bool, height int, prefix string) {
+func (fe *frontendPretty) renderProgress(out *termenv.Output, r *renderer, full bool, height int, prefix string) {
 	if fe.rowsView == nil {
 		return
 	}
@@ -472,7 +476,7 @@ func (fe *frontendPretty) renderProgress(out *termenv.Output, full bool, height 
 
 	if full {
 		for _, row := range rows.Order {
-			fe.renderRow(out, row, full, "")
+			fe.renderRow(out, r, row, full, "")
 		}
 		return
 	}
@@ -505,27 +509,27 @@ func (fe *frontendPretty) renderProgress(out *termenv.Output, full bool, height 
 		fe.focused = rows.Order[fe.focusedIdx].Span.ID
 	}
 
-	lines := fe.renderLines(height, prefix)
+	lines := fe.renderLines(r, height, prefix)
 
 	fmt.Fprint(out, strings.Join(lines, "\n"))
 }
 
-func (fe *frontendPretty) renderLines(height int, prefix string) []string {
+func (fe *frontendPretty) renderLines(r *renderer, height int, prefix string) []string {
 	rows := fe.rows
 	before, focused, after := rows.Order[:fe.focusedIdx], rows.Order[fe.focusedIdx], rows.Order[fe.focusedIdx+1:]
 
 	beforeLines := []string{}
-	focusedLines := fe.renderedRowLines(focused, prefix)
+	focusedLines := fe.renderedRowLines(r, focused, prefix)
 	afterLines := []string{}
 	renderBefore := func() {
 		row := before[len(before)-1]
 		before = before[:len(before)-1]
-		beforeLines = append(fe.renderedRowLines(row, prefix), beforeLines...)
+		beforeLines = append(fe.renderedRowLines(r, row, prefix), beforeLines...)
 	}
 	renderAfter := func() {
 		row := after[0]
 		after = after[1:]
-		afterLines = append(afterLines, fe.renderedRowLines(row, prefix)...)
+		afterLines = append(afterLines, fe.renderedRowLines(r, row, prefix)...)
 	}
 	totalLines := func() int {
 		return len(beforeLines) + len(focusedLines) + len(afterLines)
@@ -890,15 +894,20 @@ func (fe *frontendPretty) renderLocked() {
 	fe.Render(fe.viewOut)
 }
 
-func (fe *frontendPretty) renderRow(out *termenv.Output, row *dagui.TraceRow, final bool, prefix string) {
-	fe.renderStep(out, row.Span, row.Depth, prefix)
+func (fe *frontendPretty) renderRow(out *termenv.Output, r *renderer, row *dagui.TraceRow, final bool, prefix string) {
+	if row.Previous != nil && row.Span.Call != nil && !row.Chained && row.Previous.Depth >= row.Depth {
+		fmt.Fprint(out, prefix)
+		r.indent(out, row.Depth)
+		fmt.Fprintln(out)
+	}
+	fe.renderStep(out, r, row.Span, row.Chained, row.Depth, prefix)
 	if final {
 		// in the final render, we show logs beneath the progress tree instead
 		return
 	}
-	if row.IsRunningOrChildRunning || row.Span.Failed() || fe.Verbosity >= dagui.ShowSpammyVerbosity {
+	if row.IsRunningOrChildRunning || row.Span.IsFailed() || fe.Verbosity >= dagui.ShowSpammyVerbosity {
 		if logs := fe.logs.Logs[row.Span.ID]; logs != nil {
-			fe.renderLogs(out,
+			fe.renderLogs(out, r,
 				logs,
 				row.Depth,
 				fe.window.Height/3,
@@ -908,14 +917,12 @@ func (fe *frontendPretty) renderRow(out *termenv.Output, row *dagui.TraceRow, fi
 	}
 }
 
-func (fe *frontendPretty) renderStep(out *termenv.Output, span *dagui.Span, depth int, prefix string) error {
-	r := newRenderer(fe.db, fe.window.Width, fe.FrontendOpts)
-
+func (fe *frontendPretty) renderStep(out *termenv.Output, r *renderer, span *dagui.Span, chained bool, depth int, prefix string) error {
 	isFocused := span.ID == fe.focused
 
 	id := span.Call
 	if id != nil {
-		if err := r.renderCall(out, span, id, prefix, depth, false, span.Internal, isFocused); err != nil {
+		if err := r.renderCall(out, span, id, prefix, chained, depth, false, span.Internal, isFocused); err != nil {
 			return err
 		}
 	} else if span != nil {
@@ -940,13 +947,18 @@ func (fe *frontendPretty) renderStep(out *termenv.Output, span *dagui.Span, dept
 	return nil
 }
 
-func (fe *frontendPretty) renderLogs(out *termenv.Output, logs *Vterm, depth int, height int, prefix string) {
+func (fe *frontendPretty) renderLogs(out *termenv.Output, r *renderer, logs *Vterm, depth int, height int, prefix string) {
 	pipe := out.String(VertBoldBar).Foreground(termenv.ANSIBrightBlack)
 	if depth == -1 {
 		// clear prefix when zoomed
 		logs.SetPrefix(prefix)
 	} else {
-		logs.SetPrefix(prefix + strings.Repeat("  ", depth) + pipe.String() + " ")
+		buf := new(strings.Builder)
+		fmt.Fprint(buf, prefix)
+		indentOut := NewOutput(buf, termenv.WithProfile(fe.profile))
+		r.indent(indentOut, depth)
+		fmt.Fprint(indentOut, pipe.String()+" ")
+		logs.SetPrefix(buf.String())
 	}
 	logs.SetHeight(height)
 	fmt.Fprint(out, logs.View())

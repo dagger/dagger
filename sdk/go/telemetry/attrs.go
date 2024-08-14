@@ -51,19 +51,15 @@ const (
 	// Indicates that this span was a cache hit and did nothing.
 	CachedAttr = "dagger.io/dag.cached"
 
-	// The full set of DAG digests that the cached span depends on - meaning
-	// its inputs, and each input's inputs, and so on.
+	// A list of completed effect IDs.
 	//
-	// This way the UI can learn about a cached op's inputs and presume they
-	// were also cached if no other data was received for them.
-	CachedDigestsAttr = "dagger.io/dag.cached.digests"
+	// This is primarily used for cached ops - since we don't see a span for a
+	// cached op's inputs, we'll just say they completed by listing all of them
+	// in this attribute.
+	EffectsCompletedAttr = "dagger.io/effects.completed"
 
 	// Indicates that this span was interrupted.
 	CanceledAttr = "dagger.io/dag.canceled"
-
-	// The base64-encoded, protobuf-marshalled Buildkit LLB op payload that this
-	// span represents.
-	LLBOpAttr = "dagger.io/llb.op"
 
 	// The IDs of effects which will be correlated to this span.
 	//
@@ -72,12 +68,6 @@ const (
 
 	// The ID of the effect that this span represents.
 	EffectIDAttr = "dagger.io/effect.id"
-
-	// The ID of the effect that is the output of this span.
-	//
-	// This is different from DagOutputAttr which represents an object result, as
-	// opposed to an effect result.
-	EffectOutputAttr = "dagger.io/effect.output"
 
 	// The amount of progress that needs to be reached.
 	ProgressTotalAttr = "dagger.io/progress.total"

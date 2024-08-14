@@ -480,7 +480,7 @@ func (fe *frontendPlain) renderStep(span *dagui.Span, depth int, done bool) {
 			call.Args = nil
 			call.Type = nil
 		}
-		r.renderCall(fe.output, nil, call, prefix, depth, false, span.Internal, false)
+		r.renderCall(fe.output, nil, call, prefix, false, depth, false, span.Internal, false)
 	} else {
 		r.renderSpan(fe.output, nil, span.Name(), prefix, depth, false)
 	}

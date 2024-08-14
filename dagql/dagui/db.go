@@ -31,8 +31,12 @@ type DB struct {
 	OutputOf  map[string]map[string]struct{}
 	Intervals map[string]map[time.Time]*Span
 
-	Effects         map[string]*Span
-	EffectSite      map[string]*Span
+	Links      map[trace.SpanID]map[trace.SpanID]struct{}
+	LinkedFrom map[trace.SpanID]map[trace.SpanID]struct{}
+
+	CompletedEffects map[string]bool
+	EffectSpans      map[string][]*Span
+
 	UnlaziedEffects map[trace.SpanID][]*Span
 }
 
@@ -51,8 +55,12 @@ func NewDB() *DB {
 		Outputs:   make(map[string]map[string]struct{}),
 		Intervals: make(map[string]map[time.Time]*Span),
 
-		Effects:         make(map[string]*Span),
-		EffectSite:      make(map[string]*Span),
+		Links:      make(map[trace.SpanID]map[trace.SpanID]struct{}),
+		LinkedFrom: make(map[trace.SpanID]map[trace.SpanID]struct{}),
+
+		CompletedEffects: make(map[string]bool),
+		EffectSpans:      make(map[string][]*Span),
+
 		UnlaziedEffects: make(map[trace.SpanID][]*Span),
 	}
 }
@@ -155,9 +163,6 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) { //
 		spanData = &Span{
 			ID: spanID,
 
-			FailedEffects:  map[string]*Span{},
-			RunningEffects: map[string]*Span{},
-
 			db:    db,
 			trace: traceData,
 		}
@@ -184,7 +189,7 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) { //
 	slog.Debug("recording span", "span", span.Name(), "id", spanID)
 
 	// track parent/child relationships
-	if parent := span.Parent(); parent.IsValid() {
+	if parent := span.Parent(); len(span.Links()) == 0 && parent.IsValid() {
 		if db.Children[parent.SpanID()] == nil {
 			db.Children[parent.SpanID()] = make(map[trace.SpanID]struct{})
 		}
@@ -198,7 +203,7 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) { //
 			}
 		}
 	} else if !db.PrimarySpan.IsValid() {
-		// default primary to "root" span, but we might never see it in a nested
+		// default primary to root span, but we might never see it in a nested
 		// scenario.
 		db.PrimarySpan = spanID
 	}
@@ -247,9 +252,6 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) { //
 				db.Calls[digest] = &call
 			}
 
-		case telemetry.LLBOpAttr:
-			// TODO
-
 		case telemetry.CachedAttr:
 			spanData.Cached = attr.Value.AsBool()
 
@@ -272,11 +274,11 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) { //
 			spanData.Inputs = attr.Value.AsStringSlice()
 
 		case telemetry.EffectIDsAttr:
-			spanData.Effects = attr.Value.AsStringSlice()
-			for _, digest := range spanData.Effects {
-				if db.EffectSite[digest] == nil {
-					db.EffectSite[digest] = spanData
-				}
+			spanData.EffectIDs = attr.Value.AsStringSlice()
+
+		case telemetry.EffectsCompletedAttr:
+			for _, dig := range attr.Value.AsStringSlice() {
+				db.CompletedEffects[dig] = true
 			}
 
 		case telemetry.DagOutputAttr:
@@ -300,27 +302,35 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) { //
 			}
 
 		case telemetry.EffectIDAttr:
-			spanData.EffectID = attr.Value.AsString()
-			db.Effects[spanData.EffectID] = spanData
-			if dependentSpan := db.EffectSite[spanData.EffectID]; dependentSpan != nil {
-				if spanData.IsRunning() {
-					dependentSpan.RunningEffects[spanData.EffectID] = spanData
-				} else {
-					delete(dependentSpan.RunningEffects, spanData.EffectID)
-				}
-				if spanData.Failed() {
-					dependentSpan.FailedEffects[spanData.EffectID] = spanData
-				}
-			}
+			dig := attr.Value.AsString()
+			db.EffectSpans[dig] = append(db.EffectSpans[dig], spanData)
 
 		case "rpc.service":
 			// TODO: rather than special-casing this, we should just switch
-			// the telemetry pipeline over to HTTP.
+			// the telemetry pipeline over to HTTP. (edit: that's done now)
 			// I tried adding attributes like 'internal' to the spans we care about
 			// but the OTel API is broken and stuck in bikeshedding:
 			// https://github.com/open-telemetry/opentelemetry-go-contrib/pull/5431#pullrequestreview-2024891968
 			spanData.Passthrough = true
 		}
+	}
+
+	for _, link := range span.Links() {
+		if link.SpanContext.TraceID() != spanData.trace.ID {
+			continue
+		}
+		linkedID := link.SpanContext.SpanID()
+		// parent -> child
+		if db.Links[spanData.ID] == nil {
+			db.Links[spanData.ID] = make(map[trace.SpanID]struct{})
+		}
+		db.Links[spanData.ID][linkedID] = struct{}{}
+
+		// child -> parent
+		if db.LinkedFrom[linkedID] == nil {
+			db.LinkedFrom[linkedID] = make(map[trace.SpanID]struct{})
+		}
+		db.LinkedFrom[linkedID][spanData.ID] = struct{}{}
 	}
 
 	if spanData.Call != nil && spanData.Call.ReceiverDigest != "" {
@@ -525,14 +535,14 @@ func (db *DB) CollectErrors(rows *RowsView) []*TraceTree {
 	var collect func(row *TraceTree)
 
 	collect = func(row *TraceTree) {
-		if !row.Span.Failed() {
+		if !row.Span.IsFailed() {
 			return
 		}
 		reveal[row] = struct{}{}
 		unlazied, ok := db.UnlaziedEffects[row.Span.ID]
 		if ok {
 			for _, effect := range unlazied {
-				if !effect.Failed() {
+				if !effect.IsFailed() {
 					continue
 				}
 				effectRow, ok := rows.BySpan[effect.ID]

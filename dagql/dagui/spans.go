@@ -2,6 +2,7 @@ package dagui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -26,16 +27,13 @@ type Span struct {
 	Call   *callpbv1.Call
 	Base   *callpbv1.Call
 
+	EffectIDs []string
+
 	Internal bool
 	Cached   bool
 	Canceled bool
-	EffectID string
 
-	Inputs            []string
-	Effects           []string
-	RunningEffects    map[string]*Span
-	SuccessfulEffects map[string]*Span
-	FailedEffects     map[string]*Span
+	Inputs []string
 
 	Encapsulate  bool
 	Encapsulated bool
@@ -47,42 +45,114 @@ type Span struct {
 	trace *Trace
 }
 
+func (span *Span) LinkedFrom() []*Span {
+	var linked []*Span
+	for linkerID := range span.db.LinkedFrom[span.ID] {
+		linker, ok := span.db.Spans[linkerID]
+		if ok {
+			linked = append(linked, linker)
+		}
+	}
+	return linked
+}
+
 func (span *Span) IsRunning() bool {
-	return span.IsSelfRunning || len(span.RunningEffects) > 0
+	if span.IsSelfRunning {
+		return true
+	}
+	for _, src := range span.LinkedFrom() {
+		if src.IsRunning() {
+			return true
+		}
+	}
+	return false
+}
+
+func (span *Span) ChildrenAndLinkedSpans() []*Span {
+	linkers := span.LinkedFrom()
+	if len(linkers) == 0 {
+		return span.ChildSpans
+	}
+	res := append([]*Span{}, span.ChildSpans...)
+	for _, s := range linkers {
+		res = append(res, s)
+	}
+	sort.Slice(res, func(i, j int) bool {
+		return res[i].StartTime().Before(res[j].StartTime())
+	})
+	return res
 }
 
 func (span *Span) IsPending() bool {
-	// TODO: work out how to implement this properly
-	// for some reason it looks like some spans we're waiting on *never* show up?
+	pending, _ := span.PendingReason()
+	return pending
+}
+
+func (span *Span) PendingReason() (bool, []string) {
 	if span.IsRunning() {
-		return false
+		return false, []string{"span is running"}
 	}
-	spanEffects := span.EffectSpans()
-	return len(spanEffects) < len(span.Effects)
+	var reasons []string
+	if len(span.EffectIDs) > 0 {
+		for _, digest := range span.EffectIDs {
+			// if the LLB span has arrived, so we're no longer pending
+			for _, effect := range span.LinkedFrom() {
+				if effect.Digest == digest {
+					return false, []string{
+						"effect " + digest + " has started",
+					}
+				}
+			}
+			reasons = append(reasons, "effect "+digest+" has not started")
+		}
+		// there's an output but no linked spans yet, so we're pending
+		return true, reasons
+	}
+	return false, []string{"span has completed"}
 }
 
 func (span *Span) IsCached() bool {
-	// XXX: this is a horrendously inefficient way to do this, and also isn't a
-	// very good heuristic.
+	cached, _ := span.CachedReason()
+	return cached
+}
 
+// TODO: fix this up
+func (span *Span) CachedReason() (bool, []string) {
 	if span.Cached {
-		return true
+		return true, []string{"span is cached"}
 	}
-
-	if len(span.ChildSpans)+len(span.EffectSpans()) == 0 {
-		return false
-	}
-	for _, child := range span.ChildSpans {
-		if !child.IsCached() {
-			return false
+	states := map[bool]int{}
+	reasons := []string{}
+	track := func(effect string, cached bool) {
+		states[cached]++
+		if cached {
+			reasons = append(reasons, fmt.Sprintf("effect %s is cached", effect))
+		} else {
+			reasons = append(reasons, fmt.Sprintf("effect %s is NOT cached", effect))
 		}
 	}
-	for _, effect := range span.EffectSpans() {
-		if !effect.IsCached() {
-			return false
+	for _, effect := range span.EffectIDs {
+		// first check for spans we've seen for the effect
+		effectSpans := span.db.EffectSpans[effect]
+		if len(effectSpans) > 0 {
+			for _, span := range effectSpans {
+				track(effect, span.IsCached())
+			}
+		} else {
+			// if the effect is completed but we never saw a span for it, that
+			// might mean it was a multiple-layers-deep cache hit. or, some
+			// buildkit bug caused us to never see the span. or, another parallel
+			// client completed it. in all of those cases, we'll at least consider
+			// it cached so it's not stuck 'pending' forever.
+			track(effect, span.db.CompletedEffects[effect])
 		}
 	}
-	return true
+	if len(states) == 1 && states[true] > 0 {
+		// all effects were cached
+		return true, reasons
+	}
+	// some effects were not cached
+	return false, reasons
 }
 
 func (span *Span) HasParent(parent *Span) bool {
@@ -110,26 +180,16 @@ func (span *Span) Name() string {
 // 	return nil
 // }
 
-func (span *Span) ChildrenAndEffects() []*Span {
-	var children []*Span
-	children = append(children, span.ChildSpans...)
-	children = append(children, span.EffectSpans()...)
-	return children
-}
-
-func (span *Span) EffectSpans() []*Span {
-	var effects []*Span
-	for _, e := range span.Effects {
-		if s, ok := span.db.Effects[e]; ok {
-			effects = append(effects, s)
+func (span *Span) IsFailed() bool {
+	if span.Status().Code == codes.Error {
+		return true
+	}
+	for _, effect := range span.LinkedFrom() {
+		if effect.IsFailed() {
+			return true
 		}
 	}
-	return effects
-}
-
-func (span *Span) Failed() bool {
-	return span.Status().Code == codes.Error ||
-		len(span.FailedEffects) > 0
+	return false
 }
 
 func (span *Span) IsInternal() bool {
@@ -158,7 +218,7 @@ func (span *Span) ActiveDuration(fallbackEnd time.Time) time.Duration {
 
 	currentEnd := facts.Max
 
-	for _, effect := range span.EffectSpans() {
+	for _, effect := range span.LinkedFrom() {
 		start := effect.StartTime()
 		end := effect.EndTimeOrFallback(fallbackEnd)
 		duration := end.Sub(start)
@@ -240,7 +300,7 @@ func (span *Span) Classes() string {
 	if span.Canceled {
 		classes = append(classes, "canceled")
 	}
-	if span.Failed() {
+	if span.IsFailed() {
 		classes = append(classes, "errored")
 	}
 	if span.Internal {

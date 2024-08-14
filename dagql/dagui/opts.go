@@ -58,23 +58,35 @@ func (opts FrontendOpts) ShouldShow(tree *TraceTree) bool {
 		// internal steps are hidden by default
 		return false
 	}
-	if tree.Parent != nil && (span.Encapsulated || tree.Parent.Span.Encapsulate) && tree.Parent.Span.Failed() && opts.Verbosity < ShowEncapsulatedVerbosity {
+	if tree.Parent != nil &&
+		(span.Encapsulated || tree.Parent.Span.Encapsulate) &&
+		!tree.Parent.Span.IsFailed() &&
+		opts.Verbosity < ShowEncapsulatedVerbosity {
 		// encapsulated steps are hidden (even on error) unless their parent errors
 		return false
 	}
-	if span.Failed() {
+	if span.IsFailed() {
 		// show errors
+		return true
+	}
+	if span.IsPending() {
+		// show pending steps
 		return true
 	}
 	if tree.IsRunningOrChildRunning {
 		// show running steps
 		return true
 	}
-	if tree.Parent != nil && (opts.TooFastThreshold > 0 && span.ActiveDuration(time.Now()) < opts.TooFastThreshold && opts.Verbosity < ShowSpammyVerbosity) {
+	if tree.Parent != nil &&
+		opts.TooFastThreshold > 0 &&
+		span.ActiveDuration(time.Now()) < opts.TooFastThreshold &&
+		opts.Verbosity < ShowSpammyVerbosity {
 		// ignore fast steps; signal:noise is too poor
 		return false
 	}
-	if opts.GCThreshold > 0 && time.Since(span.EndTime()) > opts.GCThreshold && opts.Verbosity < ShowCompletedVerbosity {
+	if opts.GCThreshold > 0 &&
+		time.Since(span.EndTime()) > opts.GCThreshold &&
+		opts.Verbosity < ShowCompletedVerbosity {
 		// stop showing steps that ended after a given threshold
 		return false
 	}
