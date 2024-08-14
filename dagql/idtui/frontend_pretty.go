@@ -27,13 +27,14 @@ type frontendPretty struct {
 	FrontendOpts
 
 	// updated by Run
-	program   *tea.Program
-	run       func(context.Context) error
-	runCtx    context.Context
-	interrupt func()
-	quitting  bool
-	done      bool
-	err       error
+	program     *tea.Program
+	run         func(context.Context) error
+	runCtx      context.Context
+	interrupt   func()
+	interrupted bool
+	quitting    bool
+	done        bool
+	err         error
 
 	// updated as events are written
 	db           *DB
@@ -374,7 +375,7 @@ func (fe *frontendPretty) renderKeymap(out *termenv.Output, style lipgloss.Style
 		show  bool
 	}
 	var quitMsg string
-	if fe.quitting {
+	if fe.interrupted {
 		quitMsg = "quit!"
 	} else {
 		quitMsg = "quit"
@@ -640,10 +641,7 @@ func (fe *frontendPretty) View() string {
 		// doesn't have any garbage before/after
 		return ""
 	}
-	if fe.done && // callback finished
-		fe.eof && // all updates received
-		// told to keep running, but then told to quit
-		(!fe.NoExit || fe.quitting) {
+	if fe.quitting {
 		// print nothing; make way for the pristine output in the final render
 		return ""
 	}
@@ -673,6 +671,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		fe.done = true
 		fe.err = msg.err
 		if fe.eof && !fe.NoExit {
+			fe.quitting = true
 			return fe, tea.Quit
 		}
 		return fe, nil
@@ -681,6 +680,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		slog.Debug("got EOF")
 		fe.eof = true
 		if fe.done && !fe.NoExit {
+			fe.quitting = true
 			return fe, tea.Quit
 		}
 		return fe, nil
@@ -714,18 +714,20 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		fe.pressedKeyAt = time.Now()
 		switch msg.String() {
 		case "q", "ctrl+c":
-			fe.quitting = true
 			if fe.done && fe.eof {
+				fe.quitting = true
 				// must have configured NoExit, and now they want
 				// to exit manually
 				return fe, tea.Quit
 			}
-			if fe.quitting {
+			if fe.interrupted {
 				slog.Warn("exiting immediately")
+				fe.quitting = true
 				return fe, tea.Quit
 			} else {
 				slog.Warn("canceling... (press again to exit immediately)")
 			}
+			fe.interrupted = true
 			fe.interrupt()
 			return fe, nil // tea.Quit is deferred until we receive doneMsg
 		case "ctrl+\\": // SIGQUIT
