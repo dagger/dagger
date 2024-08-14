@@ -88,8 +88,8 @@ defmodule Main do
     @doc \"\"\"
     Returns a container that echoes whatever string argument is provided.
     \"\"\"
-    def container_echo(self, args) do
-      self.dag
+    def container_echo(_self, args) do
+      dag()
       |> Dagger.Client.container()
       |> Dagger.Container.from("alpine:latest")
       |> Dagger.Container.with_exec(~w"echo \#{args.string_arg}")
@@ -105,8 +105,8 @@ defmodule Main do
     @doc \"\"\"
     Returns lines that match a pattern in the files of the provided Directory.
     \"\"\"
-    def grep_dir(self, %{directory_arg: directory, pattern: pattern}) do
-      self.dag
+    def grep_dir(_self, %{directory_arg: directory, pattern: pattern}) do
+      dag()
       |> Dagger.Client.container()
       |> Dagger.Container.from("alpine:latest")
       |> Dagger.Container.with_mounted_directory("/mnt", directory)
