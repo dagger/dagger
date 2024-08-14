@@ -772,6 +772,9 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 			if fe.zoomed.IsValid() && fe.zoomed != fe.db.PrimarySpan {
 				url += "?span=" + fe.zoomed.String()
 			}
+			if fe.focused.IsValid() && fe.focused != fe.db.PrimarySpan {
+				url += "#" + fe.focused.String()
+			}
 			return fe, func() tea.Msg {
 				if err := browser.OpenURL(url); err != nil {
 					slog.Warn("failed to open URL",
