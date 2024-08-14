@@ -58,52 +58,6 @@ Some of the `Container` type's important fields are:
 | `withWorkdir` | Returns the container configured with a specific working directory |
 | `withServiceBinding` | Returns the container with runtime dependency on another `Service` |
 
-Here is an example of creating a container image from an `alpine` base image and then copying the `/myapp` directory from the host filesystem to `/src` in the container filesystem:
-
-```graphql
-query {
-  container {
-    from(address: "alpine") {
-      withDirectory(path: "/src", directory: "/myapp") {
-        sync
-      }
-    }
-  }
-}
-```
-
-Here is an example of creating a container image from the Docker `hello-world` base image and then returning the output of the `hello` command run in the container:
-
-```graphql
-query {
-  container {
-    from(address:"hello-world") {
-      withExec(args:["/hello"]) {
-        stdout
-      }
-    }
-  }
-}
-```
-
-[Try it in the API Playground](https://play.dagger.cloud/playground/RD-s7FHsBGX)
-
-Here is an example of creating a container image from an `alpine` base image, adding the `curl` and `nginx` packages to it, and publishing it to a registry:
-
-```graphql
-query {
-  container {
-    from(address: "alpine") {
-      withExec(args: ["apk", "add", "curl", "nginx"]) {
-        publish(address: "ttl.sh/my-alpine")
-      }
-    }
-  }
-}
-```
-
-[Try it in the API Playground](https://play.dagger.cloud/playground/XuoX2KGMTky)
-
 ## Directory
 
 The `Directory` type represents the state of a directory. This could be either a local directory path or a remote Git reference. Some of its important fields are:
@@ -116,36 +70,6 @@ The `Directory` type represents the state of a directory. This could be either a
 | `file` | Returns a file at the given path as a `File`  |
 | `withFile` / `withFiles` | Returns the directory plus the file(s) copied to the given path |
 
-Here is an example of listing the contents of the `/usr` directory in an `alpine` container:
-
-```graphql
-query {
-  container {
-    from(address: "alpine") {
-      directory(path: "/usr") {
-        entries
-      }
-    }
-  }
-}
-```
-
-[Try it in the API Playground](https://play.dagger.cloud/playground/J4nU1oIK3rE)
-
-Here is an example of exporting the contents of the `/etc/crontabs` directory from an `alpine` container to the `/tmp` directory on the host:
-
-```graphql
-query {
-  container {
-    from(address: "alpine") {
-      directory(path: "/etc/crontabs/") {
-        export(path: "/tmp")
-      }
-    }
-  }
-}
-```
-
 ## File
 
 The `File` type represents a single file. Some of its important fields are:
@@ -154,37 +78,6 @@ The `File` type represents a single file. Some of its important fields are:
 |-------|-------------|
 | `contents` | Returns the contents of the file |
 | `export` | Writes the file to a path on the host |
-
-
-Here is an example of returning the contents of the `/etc/os-release` file from an `alpine` container:
-
-```graphql
-query {
-  container {
-    from(address: "alpine") {
-      file(path: "/etc/os-release") {
-        contents
-      }
-    }
-  }
-}
-```
-
-[Try it in the API Playground](https://play.dagger.cloud/playground/PuxVoRejc6u)
-
-Here is an example of copying the `/etc/os-release` file from an `alpine` container to `/tmp/outfile` on the host:
-
-```graphql
-query {
-  container {
-    from(address: "alpine") {
-      file(path: "/etc/os-release") {
-        export(path: "/tmp/outfile")
-      }
-    }
-  }
-}
-```
 
 ## Service
 
@@ -197,9 +90,6 @@ The `Service` type represents a content-addressed service providing TCP connecti
 | `ports` | Returns the list of ports provided by the service |
 | `up` | Creates a tunnel that forwards traffic from the caller's network to the service  |
 
-FIXME add examples
-
-
 ## Secret
 
 Dagger allows you to utilize confidential information ("secrets") such as passwords, API keys, SSH keys and so on, without exposing those secrets in plaintext logs, writing them into the filesystem of containers you're building, or inserting them into the cache. The `Secret` type is used to represent these secret values. Some of its important fields are:
@@ -208,5 +98,3 @@ Dagger allows you to utilize confidential information ("secrets") such as passwo
 |-------|-------------|
 | `name` | Returns the name of the secret |
 | `plaintext` | Returns the plaintext value of the secret |
-
-FIXME add examples
