@@ -168,6 +168,7 @@ func (fe *frontendPretty) SetPrimary(spanID trace.SpanID) {
 	fe.mu.Lock()
 	fe.db.SetPrimarySpan(spanID)
 	fe.zoomed = spanID
+	fe.focused = spanID
 	fe.mu.Unlock()
 }
 
