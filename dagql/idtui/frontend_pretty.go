@@ -43,6 +43,7 @@ type frontendPretty struct {
 	autoFocus    bool
 	focused      trace.SpanID
 	zoomed       trace.SpanID
+	debugged     trace.SpanID
 	focusedIdx   int
 	rowsView     *RowsView
 	rows         *Rows
@@ -779,6 +780,10 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 				}
 				return nil
 			}
+		case "?":
+			fe.debugged = fe.focused
+			fe.recalculateViewLocked()
+			return fe, nil
 		case "enter":
 			fe.zoomed = fe.focused
 			fe.recalculateViewLocked()
@@ -942,6 +947,23 @@ func (fe *frontendPretty) renderStep(out *termenv.Output, r *renderer, span *Spa
 			line,
 		)
 		fmt.Fprintln(out)
+	}
+
+	if span.ID == fe.debugged {
+		pending, reasons := span.PendingReason()
+		r.indent(out, depth+1)
+		fmt.Fprintf(out, prefix+"? pending: %v\n", pending)
+		for _, reason := range reasons {
+			r.indent(out, depth+1)
+			fmt.Fprintln(out, prefix+"- "+reason)
+		}
+		cached, reasons := span.CachedReason()
+		r.indent(out, depth+1)
+		fmt.Fprintf(out, prefix+"? cached: %v\n", cached)
+		for _, reason := range reasons {
+			r.indent(out, depth+1)
+			fmt.Fprintln(out, prefix+"- "+reason)
+		}
 	}
 
 	return nil
