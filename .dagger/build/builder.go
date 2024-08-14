@@ -140,7 +140,6 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 	sdks := []sdkContentF{build.goSDKContent, build.pythonSDKContent, build.typescriptSDKContent}
 	sdkContents := make([]*sdkContent, len(sdks))
 	for i, sdk := range sdks {
-		i, sdk := i, sdk
 		eg.Go(func() error {
 			content, err := sdk(ctx)
 			if err != nil {
@@ -254,7 +253,6 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 
 	ctr := base
 	for _, bin := range bins {
-		bin := bin
 		ctr = ctr.WithFile(bin.path, bin.file)
 		eg.Go(func() error {
 			return build.verifyPlatform(ctx, bin.file)

@@ -294,7 +294,6 @@ func (e *Engine) TestPublish(
 
 	var eg errgroup.Group
 	for _, platform := range platform {
-		platform := platform
 		eg.Go(func() error {
 			ctr, err := e.Container(ctx, platform)
 			if err != nil {

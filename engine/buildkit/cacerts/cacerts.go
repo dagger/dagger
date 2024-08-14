@@ -57,7 +57,6 @@ func NewInstaller(
 		&debianLike{},
 		&rhelLike{},
 	} {
-		installer := installer
 		eg.Go(func() error {
 			if err := installer.initialize(ctrFS); err != nil {
 				return err

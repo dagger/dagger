@@ -109,8 +109,6 @@ func (class Class[T]) Install(fields ...Field[T]) {
 	class.fieldsL.Lock()
 	defer class.fieldsL.Unlock()
 	for _, field := range fields {
-		field := field
-
 		if field.Spec.extend {
 			fields := class.fields[field.Spec.Name]
 			if len(fields) == 0 {

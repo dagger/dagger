@@ -81,7 +81,6 @@ func (p *Go) Lint(
 ) error {
 	eg, ctx := errgroup.WithContext(ctx)
 	for _, pkg := range packages {
-		pkg := pkg
 		eg.Go(func() error {
 			ctx, span := Tracer().Start(ctx, "lint "+path.Clean(pkg))
 			defer span.End()

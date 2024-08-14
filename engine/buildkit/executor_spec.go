@@ -411,7 +411,6 @@ func (w *Worker) setupRootfs(ctx context.Context, state *execState) error {
 	for _, mnt := range state.spec.Mounts {
 		switch {
 		case mnt.Destination == MetaMountDestPath:
-			mnt := mnt
 			state.metaMount = &mnt
 
 		case mnt.Destination == buildkitQemuEmulatorMountPoint:

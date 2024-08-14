@@ -403,7 +403,6 @@ func (s *Server) Resolve(ctx context.Context, self Object, sels ...Selection) (m
 
 	pool := pool.New().WithErrors()
 	for _, sel := range sels {
-		sel := sel
 		pool.Go(func() error {
 			res, err := s.resolvePath(ctx, self, sel)
 			if err != nil {
@@ -540,8 +539,6 @@ func LoadIDs[T Typed](ctx context.Context, srv *Server, ids []ID[T]) ([]T, error
 	out := make([]T, len(ids))
 	eg := new(errgroup.Group)
 	for i, id := range ids {
-		i := i
-		id := id
 		eg.Go(func() error {
 			val, err := id.Load(ctx, srv)
 			if err != nil {
