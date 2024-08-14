@@ -186,13 +186,13 @@ func (ModuleSuite) TestTypescriptInit(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, "hello world\n", out)
 
-		parentPackageJson, err := modGen.File("./package.json").Contents(ctx)
+		parentPackageJSON, err := modGen.File("./package.json").Contents(ctx)
 		require.NoError(t, err)
-		require.Contains(t, parentPackageJson, `"packageManager": "pnpm@`) // We don't check the exact version because it's a SHA
+		require.Contains(t, parentPackageJSON, `"packageManager": "pnpm@`) // We don't check the exact version because it's a SHA
 
-		sourcePackageJson, err := modGen.File("./dagger/package.json").Contents(ctx)
+		sourcePackageJSON, err := modGen.File("./dagger/package.JSON").Contents(ctx)
 		require.NoError(t, err)
-		require.Contains(t, sourcePackageJson, `"packageManager": "yarn@`) // We don't check the exact version because it's a SHA
+		require.Contains(t, sourcePackageJSON, `"packageManager": "yarn@`) // We don't check the exact version because it's a SHA
 	})
 }
 
