@@ -1,0 +1,6 @@
+kind: Added
+body: "Make Dagger client global and introduce `dag/0` to access the global instance. \n\nThe function first argument is now deprecated but the runtime still set this global instance into the struct. "
+time: 2024-08-14T17:25:42.765556+07:00
+custom:
+    Author: wingyplus
+    PR: "8099"
