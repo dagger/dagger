@@ -194,6 +194,22 @@ func (ModuleSuite) TestTypescriptInit(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Contains(t, sourcePackageJSON, `"packageManager": "yarn@`) // We don't check the exact version because it's a SHA
 	})
+
+	// dagger/dagger#7278
+	t.Run("module name with single character and a dot", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--source=.", "--name=m.a.s.h", "--sdk=typescript"))
+
+		out, err := modGen.
+			With(daggerQuery(`{mASH{containerEcho(stringArg:"hello"){stdout}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"mASH":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+	})
 }
 
 //go:embed testdata/modules/typescript/syntax/index.ts

@@ -60,12 +60,12 @@ def transform_error(
 
 def to_pascal_case(s: str) -> str:
     """Convert a string to PascalCase."""
-    return snake_to_camel(s.replace("-", "_"))
+    return snake_to_camel(s.replace("-", "_").replace(".", "_"))
 
 
 def to_camel_case(s: str) -> str:
     """Convert a string to camelCase."""
-    return snake_to_camel(s.replace("-", "_"), upper=False)
+    return snake_to_camel(s.replace("-", "_").replace(".", "_"), upper=False)
 
 
 def normalize_name(name: str) -> str:

@@ -94,6 +94,22 @@ version = "0.0.0"
 		require.NoError(t, err)
 		require.JSONEq(t, `{"helloWorld":{"message":"Hello, Monde!"}}`, out)
 	})
+
+	// dagger/dagger#7278
+	t.Run("module name with single character and a dot", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--source=.", "--name=m.a.s.h", "--sdk=python"))
+
+		out, err := modGen.
+			With(daggerQuery(`{mASH{containerEcho(stringArg:"hello"){stdout}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"mASH":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+	})
 }
 
 func (ModuleSuite) TestPythonProjectLayout(ctx context.Context, t *testctx.T) {
