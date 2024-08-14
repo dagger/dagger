@@ -28,13 +28,13 @@ func (ps *parseState) parseGoIface(t *types.Interface, named *types.Named) (*par
 	// (search "objects are routinely compared by the addresses of the underlying pointers")
 	daggerObjectIfaceMethods := make(map[types.Object]bool)
 	daggerObjectMethodSet := types.NewMethodSet(ps.daggerObjectIfaceType)
-	for i := 0; i < daggerObjectMethodSet.Len(); i++ {
+	for i := range daggerObjectMethodSet.Len() {
 		daggerObjectIfaceMethods[daggerObjectMethodSet.At(i).Obj()] = false
 	}
 
 	goFuncTypes := []*types.Func{}
 	methodSet := types.NewMethodSet(named)
-	for i := 0; i < methodSet.Len(); i++ {
+	for i := range methodSet.Len() {
 		methodObj := methodSet.At(i).Obj()
 
 		// check if this is a method from the embedded DaggerObject interface

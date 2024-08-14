@@ -34,7 +34,7 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 
 	goFuncTypes := []*types.Func{}
 	methodSet := types.NewMethodSet(types.NewPointer(named))
-	for i := 0; i < methodSet.Len(); i++ {
+	for i := range methodSet.Len() {
 		methodObj := methodSet.At(i).Obj()
 
 		if ps.isDaggerGenerated(methodObj) {
@@ -91,7 +91,7 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 
 	// Fill out the static fields of the struct (if any)
 	astFields := unpackASTFields(astStructType.Fields)
-	for i := 0; i < t.NumFields(); i++ {
+	for i := range t.NumFields() {
 		field := t.Field(i)
 		if !field.Exported() {
 			continue

@@ -44,7 +44,7 @@ func builtinOrTyped(val any) (Typed, error) {
 			arr := DynamicArrayOutput{
 				Elem: elem,
 			}
-			for i := 0; i < valV.Len(); i++ {
+			for i := range valV.Len() {
 				elem, err := builtinOrTyped(valV.Index(i).Interface())
 				if err != nil {
 					return nil, fmt.Errorf("slice elem %d: %w", i, err)

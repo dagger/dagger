@@ -647,7 +647,7 @@ func sampleContext(rows []*TraceTree) []int {
 	result := []int{}
 
 	// find the first call
-	for i := 0; i < len(rows); i++ {
+	for i := range len(rows) {
 		row := rows[i]
 		result = append(result, i)
 		if row.Span.Call != nil {

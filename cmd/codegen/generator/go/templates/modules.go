@@ -417,7 +417,7 @@ func (ps *parseState) renderNameOrStruct(t types.Type) string {
 	}
 	if st, ok := t.(*types.Struct); ok {
 		result := "struct {\n"
-		for i := 0; i < st.NumFields(); i++ {
+		for i := range st.NumFields() {
 			if !st.Field(i).Embedded() {
 				result += st.Field(i).Name() + " "
 			}
@@ -448,7 +448,7 @@ func (ps *parseState) renderNameOrStruct(t types.Type) string {
 		}
 		if typeArgs := named.TypeArgs(); typeArgs.Len() > 0 {
 			base += "["
-			for i := 0; i < typeArgs.Len(); i++ {
+			for i := range typeArgs.Len() {
 				if i > 0 {
 					base += ", "
 				}

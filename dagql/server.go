@@ -914,7 +914,7 @@ func setInputObjectFields(obj any, vals map[string]any) error {
 		// TODO handle pointer?
 		return fmt.Errorf("object must be a struct, got %T", obj)
 	}
-	for i := 0; i < objT.NumField(); i++ {
+	for i := range objT.NumField() {
 		fieldT := objT.Field(i)
 		fieldV := objV.Elem().Field(i)
 		name := fieldT.Tag.Get("name")
@@ -980,7 +980,7 @@ func collectLiteralArgs(obj any) ([]*call.Argument, error) {
 		return nil, fmt.Errorf("object must be a struct, got %T", obj)
 	}
 	args := []*call.Argument{}
-	for i := 0; i < objV.NumField(); i++ {
+	for i := range objV.NumField() {
 		fieldT := objT.Field(i)
 		name := fieldT.Tag.Get("name")
 		if name == "" {

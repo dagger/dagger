@@ -120,7 +120,7 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 		fmt.Fprintf(cfg.LogOutput, "Creating new Engine session... ")
 	}
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		proc = exec.CommandContext(cmdCtx, binPath, args...)
 		proc.Env = env
 
