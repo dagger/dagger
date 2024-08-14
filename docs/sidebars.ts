@@ -135,6 +135,40 @@ module.exports = {
       "label": "Cookbook",
       "id": "cookbook/cookbook"
     },
+    {
+      "type": "category",
+      "label": "Dagger API",
+      "link": {
+        "type": "doc",
+        "id": "api/index"
+      },
+      "collapsible": true,
+      "collapsed": true,
+      "items": [
+        "api/types",
+        "api/internals",
+        {
+          "type": "doc",
+          "label": "CLI Reference",
+          "id": "reference/cli"
+        },
+        {
+          "type": "link",
+          "label": "Go SDK Reference",
+          "href": "https://pkg.go.dev/dagger.io/dagger"
+        },
+        {
+          "type": "link",
+          "label": "Python SDK Reference",
+          "href": "https://dagger-io.readthedocs.org/"
+        },
+        {
+          "type": "doc",
+          "label": "TypeScript SDK Reference",
+          "id": "reference/typescript/modules"
+        },
+      ]
+    },
     /*
     {
       "type": "category",
