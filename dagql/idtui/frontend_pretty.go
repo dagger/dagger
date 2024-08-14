@@ -640,7 +640,10 @@ func (fe *frontendPretty) View() string {
 		// doesn't have any garbage before/after
 		return ""
 	}
-	if fe.done && fe.eof && !fe.NoExit {
+	if fe.done && // callback finished
+		fe.eof && // all updates received
+		// told to keep running, but then told to quit
+		(!fe.NoExit || fe.quitting) {
 		// print nothing; make way for the pristine output in the final render
 		return ""
 	}
