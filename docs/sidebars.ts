@@ -30,19 +30,6 @@ module.exports = {
     },
     {
       "type": "category",
-      "label": "Features",
-      "items": [
-        "features/programmable-builds",
-        "features/caching",
-        "features/debugging",
-        "features/services",
-        "features/secrets",
-        "features/visualization",
-        "features/language-interoperability",
-      ]
-    },
-    {
-      "type": "category",
       "label": "Quickstart",
       "link": {
         "type": "doc",
@@ -65,9 +52,71 @@ module.exports = {
       "id": "adopting"
     },
     {
-      "type": "doc",
-      "label": "Cookbook",
-      "id": "cookbook/cookbook"
+      "type": "category",
+      "label": "Dagger API",
+      "link": {
+        "type": "doc",
+        "id": "api/index"
+      },
+      "collapsible": true,
+      "collapsed": true,
+      "items": [
+        "api/types",
+        "api/calling",
+        "api/extending",
+        {
+          "type": "category",
+          "label": "API Documentation",
+          "collapsible": true,
+          "collapsed": true,
+          "items": [
+            "api/basics",
+            "api/ide-integration",
+            "api/arguments",
+            "api/return-values",
+            "api/chaining",
+            "api/debugging",
+            "api/documentation",
+            "api/secrets",
+            "api/services",
+            "api/cache-volumes",
+            "api/host-resources",
+            "api/remote-resources",
+            "api/error-handling",
+            "api/execution-environment",
+            "api/structure-packaging",
+            "api/entrypoint-function",
+            "api/custom-types",
+            "api/state-functions",
+            "api/enumerations",
+            "api/interfaces",
+            "api/runtimes",
+            "api/language-dependencies",
+            {
+              "type": "link",
+              "label": "Go SDK Reference",
+              "href": "https://pkg.go.dev/dagger.io/dagger"
+            },
+            {
+              "type": "link",
+              "label": "Python SDK Reference",
+              "href": "https://dagger-io.readthedocs.org/"
+            },
+            {
+              "type": "doc",
+              "label": "TypeScript SDK Reference",
+              "id": "reference/typescript/modules"
+            },
+
+          ],
+        },
+        {
+          "type": "doc",
+          "label": "CLI Reference",
+          "id": "reference/cli"
+        },
+        "api/internals",
+      ]
     },
     {
       "type": "category",
@@ -142,71 +191,9 @@ module.exports = {
       ]
     },
     {
-      "type": "category",
-      "label": "Dagger API",
-      "link": {
-        "type": "doc",
-        "id": "api/index"
-      },
-      "collapsible": true,
-      "collapsed": true,
-      "items": [
-        "api/calling",
-        "api/extending",
-        "api/types",
-        {
-          "type": "category",
-          "label": "API Documentation",
-          "collapsible": true,
-          "collapsed": true,
-          "items": [
-            "api/basics",
-            "api/ide-integration",
-            "api/arguments",
-            "api/return-values",
-            "api/chaining",
-            "api/debugging",
-            "api/documentation",
-            "api/secrets",
-            "api/services",
-            "api/cache-volumes",
-            "api/host-resources",
-            "api/remote-resources",
-            "api/error-handling",
-            "api/execution-environment",
-            "api/structure-packaging",
-            "api/entrypoint-function",
-            "api/custom-types",
-            "api/state-functions",
-            "api/enumerations",
-            "api/interfaces",
-            "api/runtimes",
-            "api/language-dependencies",
-            {
-              "type": "link",
-              "label": "Go SDK Reference",
-              "href": "https://pkg.go.dev/dagger.io/dagger"
-            },
-            {
-              "type": "link",
-              "label": "Python SDK Reference",
-              "href": "https://dagger-io.readthedocs.org/"
-            },
-            {
-              "type": "doc",
-              "label": "TypeScript SDK Reference",
-              "id": "reference/typescript/modules"
-            },
-
-          ],
-        },
-        {
-          "type": "doc",
-          "label": "CLI Reference",
-          "id": "reference/cli"
-        },
-        "api/internals",
-      ]
+      "type": "doc",
+      "label": "Cookbook",
+      "id": "cookbook/cookbook"
     },
     /*
     {
@@ -921,11 +908,11 @@ module.exports = {
     },
     {
       "type": "doc",
-      "id": "faq"
+      "id": "contributing"
     },
     {
       "type": "doc",
-      "id": "contributing"
+      "id": "faq"
     },
     {
       "type": "link",
