@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 
+	"go.opentelemetry.io/otel/codes"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/.dagger/internal/dagger"
@@ -31,16 +32,43 @@ type ElixirSDK struct {
 
 // Lint the Elixir SDK
 func (t ElixirSDK) Lint(ctx context.Context) error {
-	installer, err := t.Dagger.installer(ctx, "sdk-elixir-lint")
-	if err != nil {
-		return err
-	}
+	eg, ctx := errgroup.WithContext(ctx)
+	eg.Go(func() (rerr error) {
+		ctx, span := Tracer().Start(ctx, "lint the elixir source")
+		defer func() {
+			if rerr != nil {
+				span.SetStatus(codes.Error, rerr.Error())
+			}
+			span.End()
+		}()
 
-	_, err = t.elixirBase(elixirVersions[elixirLatestVersion]).
-		With(installer).
-		WithExec([]string{"mix", "lint"}).
-		Sync(ctx)
-	return err
+		installer, err := t.Dagger.installer(ctx, "sdk-elixir-lint")
+		if err != nil {
+			return err
+		}
+
+		_, err = t.elixirBase(elixirVersions[elixirLatestVersion]).
+			With(installer).
+			WithExec([]string{"mix", "lint"}).
+			Sync(ctx)
+		return err
+	})
+	eg.Go(func() (rerr error) {
+		ctx, span := Tracer().Start(ctx, "check that the generated client library is up-to-date")
+		defer func() {
+			if rerr != nil {
+				span.SetStatus(codes.Error, rerr.Error())
+			}
+			span.End()
+		}()
+		before := t.Dagger.Source()
+		after, err := t.Generate(ctx)
+		if err != nil {
+			return err
+		}
+		return dag.Dirdiff().AssertEqual(ctx, before, after, []string{"sdk/elixir/lib/dagger/gen"})
+	})
+	return eg.Wait()
 }
 
 // Test the Elixir SDK

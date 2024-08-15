@@ -125,6 +125,10 @@ func (s *moduleSchema) Install() {
 			Doc(`Update the module source with a new SDK.`).
 			ArgDoc("sdk", `The SDK to set.`),
 
+		dagql.Func("withInit", s.moduleSourceWithInit).
+			Doc(`Sets module init arguments`).
+			ArgDoc("merge", `Merge module dependencies into the current project's`),
+
 		dagql.Func("configExists", s.moduleSourceConfigExists).
 			Doc(`Returns whether the module source has a configuration file.`),
 
@@ -914,6 +918,12 @@ func (s *moduleSchema) updateCodegenAndRuntime(
 	if mod.NameField == "" || mod.SDKConfig == "" {
 		// can't codegen yet
 		return nil
+	}
+
+	if src.Self.WithInitConfig != nil &&
+		src.Self.WithInitConfig.Merge &&
+		mod.SDKConfig != SDKGo {
+		return fmt.Errorf("merge is only supported for Go SDKs")
 	}
 
 	baseContext, err := src.Self.ContextDirectory()

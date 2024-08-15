@@ -5767,6 +5767,20 @@ class ModuleSource(Type):
         _ctx = self._select("withDependencies", _args)
         return ModuleSource(_ctx)
 
+    def with_init(self, *, merge: bool | None = False) -> Self:
+        """Sets module init arguments
+
+        Parameters
+        ----------
+        merge:
+            Merge module dependencies into the current project's
+        """
+        _args = [
+            Arg("merge", merge, False),
+        ]
+        _ctx = self._select("withInit", _args)
+        return ModuleSource(_ctx)
+
     def with_name(self, name: str) -> Self:
         """Update the module source with a new name.
 

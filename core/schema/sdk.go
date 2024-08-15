@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/opencontainers/go-digest"
@@ -18,6 +19,9 @@ import (
 
 const (
 	runtimeWorkdirPath = "/scratch"
+	SDKGo              = "go"
+	SDKPython          = "python"
+	SDKTypescript      = "typescript"
 )
 
 // load the SDK implementation with the given name for the module at the given source dir + subpath.
@@ -87,11 +91,11 @@ var errUnknownBuiltinSDK = fmt.Errorf("unknown builtin sdk")
 // return a builtin SDK implementation with the given name
 func (s *moduleSchema) builtinSDK(ctx context.Context, root *core.Query, sdkName string) (core.SDK, error) {
 	switch sdkName {
-	case "go":
+	case SDKGo:
 		return &goSDK{root: root, dag: s.dag}, nil
-	case "python":
+	case SDKPython:
 		return s.loadBuiltinSDK(ctx, root, sdkName, digest.Digest(os.Getenv(distconsts.PythonSDKManifestDigestEnvName)))
-	case "typescript":
+	case SDKTypescript:
 		return s.loadBuiltinSDK(ctx, root, sdkName, digest.Digest(os.Getenv(distconsts.TypescriptSDKManifestDigestEnvName)))
 	default:
 		sdkName, sdkVersion, hasVersion := strings.Cut(sdkName, "@")
@@ -492,6 +496,18 @@ func (sdk *goSDK) baseWithCodegen(
 		return ctr, fmt.Errorf("failed to remove dagger.gen.go from source directory: %w", err)
 	}
 
+	codegenArgs := dagql.ArrayInput[dagql.String]{
+		"--output", dagql.String(goSDKUserModContextDirPath),
+		"--module-context-path", dagql.String(filepath.Join(goSDKUserModContextDirPath, srcSubpath)),
+		"--module-name", dagql.String(modName),
+		"--introspection-json-path", goSDKIntrospectionJSONPath,
+	}
+
+	if src.Self.WithInitConfig != nil {
+		codegenArgs = append(codegenArgs,
+			dagql.String("--merge="+strconv.FormatBool(src.Self.WithInitConfig.Merge)))
+	}
+
 	if err := sdk.dag.Select(ctx, ctr, &ctr, dagql.Selector{
 		Field: "withMountedFile",
 		Args: []dagql.NamedInput{
@@ -531,13 +547,9 @@ func (sdk *goSDK) baseWithCodegen(
 		Args: []dagql.NamedInput{
 			{
 				Name: "args",
-				Value: dagql.ArrayInput[dagql.String]{
+				Value: append(dagql.ArrayInput[dagql.String]{
 					"codegen",
-					"--output", dagql.String(goSDKUserModContextDirPath),
-					"--module-context-path", dagql.String(filepath.Join(goSDKUserModContextDirPath, srcSubpath)),
-					"--module-name", dagql.String(modName),
-					"--introspection-json-path", goSDKIntrospectionJSONPath,
-				},
+				}, codegenArgs...),
 			},
 			{
 				Name:  "experimentalPrivilegedNesting",

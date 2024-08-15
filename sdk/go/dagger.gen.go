@@ -5739,6 +5739,27 @@ func (r *ModuleSource) WithDependencies(dependencies []*ModuleDependency) *Modul
 	}
 }
 
+// ModuleSourceWithInitOpts contains options for ModuleSource.WithInit
+type ModuleSourceWithInitOpts struct {
+	// Merge module dependencies into the current project's
+	Merge bool
+}
+
+// Sets module init arguments
+func (r *ModuleSource) WithInit(opts ...ModuleSourceWithInitOpts) *ModuleSource {
+	q := r.query.Select("withInit")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `merge` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Merge) {
+			q = q.Arg("merge", opts[i].Merge)
+		}
+	}
+
+	return &ModuleSource{
+		query: q,
+	}
+}
+
 // Update the module source with a new name.
 func (r *ModuleSource) WithName(name string) *ModuleSource {
 	q := r.query.Select("withName")

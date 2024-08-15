@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"go.opentelemetry.io/otel/codes"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/.dagger/internal/dagger"
@@ -29,19 +30,32 @@ type PHPSDK struct {
 func (t PHPSDK) Lint(ctx context.Context) error {
 	eg, ctx := errgroup.WithContext(ctx)
 
-	eg.Go(func() error {
+	eg.Go(func() (rerr error) {
+		ctx, span := Tracer().Start(ctx, "lint the php source")
+		defer func() {
+			if rerr != nil {
+				span.SetStatus(codes.Error, rerr.Error())
+			}
+			span.End()
+		}()
 		src := t.Dagger.Source().Directory(phpSDKPath)
 		_, err := dag.PhpSDKDev().Lint(src).Sync(ctx)
 		return err
 	})
 
-	eg.Go(func() error {
+	eg.Go(func() (rerr error) {
+		ctx, span := Tracer().Start(ctx, "check that the generated client library is up-to-date")
+		defer func() {
+			if rerr != nil {
+				span.SetStatus(codes.Error, rerr.Error())
+			}
+			span.End()
+		}()
 		before := t.Dagger.Source()
 		after, err := t.Generate(ctx)
 		if err != nil {
 			return err
 		}
-
 		return dag.Dirdiff().AssertEqual(ctx, before, after, []string{
 			filepath.Join(phpSDKPath, phpSDKGeneratedDir),
 		})

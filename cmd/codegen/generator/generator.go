@@ -35,8 +35,11 @@ type Config struct {
 	// ModuleContextPath is the subpath where a module can be found.
 	ModuleContextPath string
 
-	// IntrospectionJSON is an optional pre-computed introspection json string
+	// IntrospectionJSON is an optional pre-computed introspection json string.
 	IntrospectionJSON string
+
+	// Merge indicates whether to merge the module deps with the existing project.
+	Merge *bool
 }
 
 type Generator interface {
