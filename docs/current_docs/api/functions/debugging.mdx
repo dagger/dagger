@@ -6,7 +6,7 @@ import TabItem from '@theme/TabItem';
 
 # Debugging
 
-Pipeline failures can be both frustrating and lead to wasted resources as the team seeks to understand what went wrong and why. Dagger provides various tools and features that can help greatly when trying to debug a pipeline failure.
+Dagger provides various tools and features that can help greatly when trying to debug a pipeline failure.
 
 ## Rerun commands with `--interactive`
 
@@ -70,7 +70,7 @@ It's also possible to inspect a directory using the `Container.terminal()` metho
 </TabItem>
 </Tabs>
 
-Under the hood, this creates a new container (defaults to `alpine`) and starts a shell, mounting the directory inside. This container can be customized using additional options. Here is a more complex example, which produces  the same result as the previous one but this time using an `ubuntu` container image and `bash` shell instead of the default `alpine` container image and `sh` shell:
+Under the hood, this creates a new container (defaults to `alpine`) and starts a shell, mounting the directory inside. This container can be customized using additional options. Here is a more complex example, which produces the same result as the previous one but this time using an `ubuntu` container image and `bash` shell instead of the default `alpine` container image and `sh` shell:
 
 <Tabs groupId="language">
 <TabItem value="Go">
