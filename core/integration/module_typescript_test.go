@@ -671,9 +671,8 @@ func (ModuleSuite) TestTypescriptRuntimeDetection(ctx context.Context, t *testct
 }
 
 func (ModuleSuite) TestTypeScriptPackageManagerDetection(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
 	t.Run("should default to yarn", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
@@ -695,6 +694,7 @@ func (ModuleSuite) TestTypeScriptPackageManagerDetection(ctx context.Context, t 
 	})
 
 	t.Run("should use pnpm if set in package.json", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
@@ -722,6 +722,7 @@ func (ModuleSuite) TestTypeScriptPackageManagerDetection(ctx context.Context, t 
 	})
 
 	t.Run("should use npm if set in package.json", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
@@ -749,6 +750,7 @@ func (ModuleSuite) TestTypeScriptPackageManagerDetection(ctx context.Context, t 
 	})
 
 	t.Run("should use npm if package-lock.json is present", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 		modGen := c.Container().From("node:20-alpine").
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
@@ -776,6 +778,7 @@ func (ModuleSuite) TestTypeScriptPackageManagerDetection(ctx context.Context, t 
 	})
 
 	t.Run("should use pnpm if pnpm-lock.yaml is present", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 		modGen := c.Container().From("node:20-alpine").
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
