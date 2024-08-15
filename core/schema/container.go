@@ -1607,7 +1607,7 @@ func (s *containerSchema) terminal(
 	ctr dagql.Instance[*core.Container],
 	args containerTerminalArgs,
 ) (dagql.Instance[*core.Container], error) {
-	if args.Cmd == nil || len(args.Cmd) == 0 {
+	if len(args.Cmd) == 0 {
 		args.Cmd = ctr.Self.DefaultTerminalCmd.Args
 	}
 

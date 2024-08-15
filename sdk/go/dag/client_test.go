@@ -2,14 +2,23 @@ package dag
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
 func TestMain(m *testing.M) {
-	m.Run()
-	Close() // close needs to be explicitly called
+	res := m.Run()
+
+	// close needs to be explicitly called
+	if err := Close(); err != nil {
+		if res == 0 {
+			res = 1
+		}
+	}
+
+	os.Exit(res)
 }
 
 func TestDirectory(t *testing.T) {
