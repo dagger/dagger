@@ -2,11 +2,12 @@
 defmodule Dagger.Service do
   @moduledoc "A content-addressed service providing TCP connectivity."
 
-  use Dagger.Core.QueryBuilder
+  alias Dagger.Core.Client
+  alias Dagger.Core.QueryBuilder, as: QB
 
   @derive Dagger.ID
 
-  defstruct [:selection, :client]
+  defstruct [:query_builder, :client]
 
   @type t() :: %__MODULE__{}
 
@@ -20,47 +21,47 @@ defmodule Dagger.Service do
   @spec endpoint(t(), [{:port, integer() | nil}, {:scheme, String.t() | nil}]) ::
           {:ok, String.t()} | {:error, term()}
   def endpoint(%__MODULE__{} = service, optional_args \\ []) do
-    selection =
-      service.selection
-      |> select("endpoint")
-      |> maybe_put_arg("port", optional_args[:port])
-      |> maybe_put_arg("scheme", optional_args[:scheme])
+    query_builder =
+      service.query_builder
+      |> QB.select("endpoint")
+      |> QB.maybe_put_arg("port", optional_args[:port])
+      |> QB.maybe_put_arg("scheme", optional_args[:scheme])
 
-    execute(selection, service.client)
+    Client.execute(service.client, query_builder)
   end
 
   @doc "Retrieves a hostname which can be used by clients to reach this container."
   @spec hostname(t()) :: {:ok, String.t()} | {:error, term()}
   def hostname(%__MODULE__{} = service) do
-    selection =
-      service.selection |> select("hostname")
+    query_builder =
+      service.query_builder |> QB.select("hostname")
 
-    execute(selection, service.client)
+    Client.execute(service.client, query_builder)
   end
 
   @doc "A unique identifier for this Service."
   @spec id(t()) :: {:ok, Dagger.ServiceID.t()} | {:error, term()}
   def id(%__MODULE__{} = service) do
-    selection =
-      service.selection |> select("id")
+    query_builder =
+      service.query_builder |> QB.select("id")
 
-    execute(selection, service.client)
+    Client.execute(service.client, query_builder)
   end
 
   @doc "Retrieves the list of ports provided by the service."
   @spec ports(t()) :: {:ok, [Dagger.Port.t()]} | {:error, term()}
   def ports(%__MODULE__{} = service) do
-    selection =
-      service.selection |> select("ports") |> select("id")
+    query_builder =
+      service.query_builder |> QB.select("ports") |> QB.select("id")
 
-    with {:ok, items} <- execute(selection, service.client) do
+    with {:ok, items} <- Client.execute(service.client, query_builder) do
       {:ok,
        for %{"id" => id} <- items do
          %Dagger.Port{
-           selection:
-             query()
-             |> select("loadPortFromID")
-             |> arg("id", id),
+           query_builder:
+             QB.query()
+             |> QB.select("loadPortFromID")
+             |> QB.put_arg("id", id),
            client: service.client
          }
        end}
@@ -74,16 +75,16 @@ defmodule Dagger.Service do
   """
   @spec start(t()) :: {:ok, Dagger.Service.t()} | {:error, term()}
   def start(%__MODULE__{} = service) do
-    selection =
-      service.selection |> select("start")
+    query_builder =
+      service.query_builder |> QB.select("start")
 
-    with {:ok, id} <- execute(selection, service.client) do
+    with {:ok, id} <- Client.execute(service.client, query_builder) do
       {:ok,
        %Dagger.Service{
-         selection:
-           query()
-           |> select("loadServiceFromID")
-           |> arg("id", id),
+         query_builder:
+           QB.query()
+           |> QB.select("loadServiceFromID")
+           |> QB.put_arg("id", id),
          client: service.client
        }}
     end
@@ -92,16 +93,16 @@ defmodule Dagger.Service do
   @doc "Stop the service."
   @spec stop(t(), [{:kill, boolean() | nil}]) :: {:ok, Dagger.Service.t()} | {:error, term()}
   def stop(%__MODULE__{} = service, optional_args \\ []) do
-    selection =
-      service.selection |> select("stop") |> maybe_put_arg("kill", optional_args[:kill])
+    query_builder =
+      service.query_builder |> QB.select("stop") |> QB.maybe_put_arg("kill", optional_args[:kill])
 
-    with {:ok, id} <- execute(selection, service.client) do
+    with {:ok, id} <- Client.execute(service.client, query_builder) do
       {:ok,
        %Dagger.Service{
-         selection:
-           query()
-           |> select("loadServiceFromID")
-           |> arg("id", id),
+         query_builder:
+           QB.query()
+           |> QB.select("loadServiceFromID")
+           |> QB.put_arg("id", id),
          client: service.client
        }}
     end
@@ -111,13 +112,13 @@ defmodule Dagger.Service do
   @spec up(t(), [{:ports, [Dagger.PortForward.t()]}, {:random, boolean() | nil}]) ::
           :ok | {:error, term()}
   def up(%__MODULE__{} = service, optional_args \\ []) do
-    selection =
-      service.selection
-      |> select("up")
-      |> maybe_put_arg("ports", optional_args[:ports])
-      |> maybe_put_arg("random", optional_args[:random])
+    query_builder =
+      service.query_builder
+      |> QB.select("up")
+      |> QB.maybe_put_arg("ports", optional_args[:ports])
+      |> QB.maybe_put_arg("random", optional_args[:random])
 
-    case execute(selection, service.client) do
+    case Client.execute(service.client, query_builder) do
       {:ok, _} -> :ok
       error -> error
     end

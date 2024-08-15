@@ -2,37 +2,38 @@
 defmodule Dagger.FunctionCall do
   @moduledoc "An active function call."
 
-  use Dagger.Core.QueryBuilder
+  alias Dagger.Core.Client
+  alias Dagger.Core.QueryBuilder, as: QB
 
   @derive Dagger.ID
 
-  defstruct [:selection, :client]
+  defstruct [:query_builder, :client]
 
   @type t() :: %__MODULE__{}
 
   @doc "A unique identifier for this FunctionCall."
   @spec id(t()) :: {:ok, Dagger.FunctionCallID.t()} | {:error, term()}
   def id(%__MODULE__{} = function_call) do
-    selection =
-      function_call.selection |> select("id")
+    query_builder =
+      function_call.query_builder |> QB.select("id")
 
-    execute(selection, function_call.client)
+    Client.execute(function_call.client, query_builder)
   end
 
   @doc "The argument values the function is being invoked with."
   @spec input_args(t()) :: {:ok, [Dagger.FunctionCallArgValue.t()]} | {:error, term()}
   def input_args(%__MODULE__{} = function_call) do
-    selection =
-      function_call.selection |> select("inputArgs") |> select("id")
+    query_builder =
+      function_call.query_builder |> QB.select("inputArgs") |> QB.select("id")
 
-    with {:ok, items} <- execute(selection, function_call.client) do
+    with {:ok, items} <- Client.execute(function_call.client, query_builder) do
       {:ok,
        for %{"id" => id} <- items do
          %Dagger.FunctionCallArgValue{
-           selection:
-             query()
-             |> select("loadFunctionCallArgValueFromID")
-             |> arg("id", id),
+           query_builder:
+             QB.query()
+             |> QB.select("loadFunctionCallArgValueFromID")
+             |> QB.put_arg("id", id),
            client: function_call.client
          }
        end}
@@ -42,37 +43,37 @@ defmodule Dagger.FunctionCall do
   @doc "The name of the function being called."
   @spec name(t()) :: {:ok, String.t()} | {:error, term()}
   def name(%__MODULE__{} = function_call) do
-    selection =
-      function_call.selection |> select("name")
+    query_builder =
+      function_call.query_builder |> QB.select("name")
 
-    execute(selection, function_call.client)
+    Client.execute(function_call.client, query_builder)
   end
 
   @doc "The value of the parent object of the function being called. If the function is top-level to the module, this is always an empty object."
   @spec parent(t()) :: {:ok, Dagger.JSON.t()} | {:error, term()}
   def parent(%__MODULE__{} = function_call) do
-    selection =
-      function_call.selection |> select("parent")
+    query_builder =
+      function_call.query_builder |> QB.select("parent")
 
-    execute(selection, function_call.client)
+    Client.execute(function_call.client, query_builder)
   end
 
   @doc "The name of the parent object of the function being called. If the function is top-level to the module, this is the name of the module."
   @spec parent_name(t()) :: {:ok, String.t()} | {:error, term()}
   def parent_name(%__MODULE__{} = function_call) do
-    selection =
-      function_call.selection |> select("parentName")
+    query_builder =
+      function_call.query_builder |> QB.select("parentName")
 
-    execute(selection, function_call.client)
+    Client.execute(function_call.client, query_builder)
   end
 
   @doc "Set the return value of the function call to the provided value."
   @spec return_value(t(), Dagger.JSON.t()) :: :ok | {:error, term()}
   def return_value(%__MODULE__{} = function_call, value) do
-    selection =
-      function_call.selection |> select("returnValue") |> put_arg("value", value)
+    query_builder =
+      function_call.query_builder |> QB.select("returnValue") |> QB.put_arg("value", value)
 
-    case execute(selection, function_call.client) do
+    case Client.execute(function_call.client, query_builder) do
       {:ok, _} -> :ok
       error -> error
     end

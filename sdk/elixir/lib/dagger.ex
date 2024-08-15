@@ -40,12 +40,27 @@ defmodule Dagger do
      and calling a command `elixir` with flag `--version`, get the standard
      output from latest command and printing it to standard output.
   4. Close the connection.
+
+  ## Accessing GraphQL API
+
+  In case you want to execute GraphQL directly, the SDK provides `Dagger.Core.Client`,
+  the client interface to the Dagger engine. The module provides 2 APIs for you:
+
+  1. `Dagger.Core.Client.query/2` - to execute a GraphQL query to the Dagger engine.
+  2. `Dagger.Core.Client.execute/2` - to execute a GraphQL query that produces by `Dagger.Core.QueryBuilder`.
+
+  By default, every object types (`Dagger.Container`, `Dagger.Directory`, etc.) has
+  a field `client` which is an instance of `Dagger.Core.Client`, you can use that instance
+  from the object type without initialize connection by yourself.
+
+  Please note that this API is an internal API, it may break from version to version. So
+  please use with cautions.
   """
 
   @doc """
   Connecting to Dagger.
 
-  When calling this function, it try to connect in ordered:
+  When calling this function, it try to connect in order:
 
   1. Use session from `DAGGER_SESSION_PORT` and `DAGGER_SESSION_TOKEN` shell
      environment variables.
@@ -58,10 +73,10 @@ defmodule Dagger do
   #{NimbleOptions.docs(Dagger.Core.Client.connect_schema())}
   """
   def connect(opts \\ []) do
-    with {:ok, graphql_client} <- Dagger.Core.Client.connect(opts) do
+    with {:ok, engine_client} <- Dagger.Core.Client.connect(opts) do
       client = %Dagger.Client{
-        client: graphql_client,
-        selection: Dagger.Core.QueryBuilder.Selection.query()
+        client: engine_client,
+        query_builder: Dagger.Core.QueryBuilder.query()
       }
 
       {:ok, client}

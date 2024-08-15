@@ -2,40 +2,41 @@
 defmodule Dagger.GitRef do
   @moduledoc "A git ref (tag, branch, or commit)."
 
-  use Dagger.Core.QueryBuilder
+  alias Dagger.Core.Client
+  alias Dagger.Core.QueryBuilder, as: QB
 
   @derive Dagger.ID
 
-  defstruct [:selection, :client]
+  defstruct [:query_builder, :client]
 
   @type t() :: %__MODULE__{}
 
   @doc "The resolved commit id at this ref."
   @spec commit(t()) :: {:ok, String.t()} | {:error, term()}
   def commit(%__MODULE__{} = git_ref) do
-    selection =
-      git_ref.selection |> select("commit")
+    query_builder =
+      git_ref.query_builder |> QB.select("commit")
 
-    execute(selection, git_ref.client)
+    Client.execute(git_ref.client, query_builder)
   end
 
   @doc "A unique identifier for this GitRef."
   @spec id(t()) :: {:ok, Dagger.GitRefID.t()} | {:error, term()}
   def id(%__MODULE__{} = git_ref) do
-    selection =
-      git_ref.selection |> select("id")
+    query_builder =
+      git_ref.query_builder |> QB.select("id")
 
-    execute(selection, git_ref.client)
+    Client.execute(git_ref.client, query_builder)
   end
 
   @doc "The filesystem tree at this ref."
   @spec tree(t()) :: Dagger.Directory.t()
   def tree(%__MODULE__{} = git_ref) do
-    selection =
-      git_ref.selection |> select("tree")
+    query_builder =
+      git_ref.query_builder |> QB.select("tree")
 
     %Dagger.Directory{
-      selection: selection,
+      query_builder: query_builder,
       client: git_ref.client
     }
   end

@@ -2,22 +2,23 @@
 defmodule Dagger.DaggerEngineCache do
   @moduledoc "A cache storage for the Dagger engine"
 
-  use Dagger.Core.QueryBuilder
+  alias Dagger.Core.Client
+  alias Dagger.Core.QueryBuilder, as: QB
 
   @derive Dagger.ID
 
-  defstruct [:selection, :client]
+  defstruct [:query_builder, :client]
 
   @type t() :: %__MODULE__{}
 
   @doc "The current set of entries in the cache"
   @spec entry_set(t()) :: Dagger.DaggerEngineCacheEntrySet.t()
   def entry_set(%__MODULE__{} = dagger_engine_cache) do
-    selection =
-      dagger_engine_cache.selection |> select("entrySet")
+    query_builder =
+      dagger_engine_cache.query_builder |> QB.select("entrySet")
 
     %Dagger.DaggerEngineCacheEntrySet{
-      selection: selection,
+      query_builder: query_builder,
       client: dagger_engine_cache.client
     }
   end
@@ -25,28 +26,28 @@ defmodule Dagger.DaggerEngineCache do
   @doc "A unique identifier for this DaggerEngineCache."
   @spec id(t()) :: {:ok, Dagger.DaggerEngineCacheID.t()} | {:error, term()}
   def id(%__MODULE__{} = dagger_engine_cache) do
-    selection =
-      dagger_engine_cache.selection |> select("id")
+    query_builder =
+      dagger_engine_cache.query_builder |> QB.select("id")
 
-    execute(selection, dagger_engine_cache.client)
+    Client.execute(dagger_engine_cache.client, query_builder)
   end
 
   @doc "The maximum bytes to keep in the cache without pruning, after which automatic pruning may kick in."
   @spec keep_bytes(t()) :: {:ok, integer()} | {:error, term()}
   def keep_bytes(%__MODULE__{} = dagger_engine_cache) do
-    selection =
-      dagger_engine_cache.selection |> select("keepBytes")
+    query_builder =
+      dagger_engine_cache.query_builder |> QB.select("keepBytes")
 
-    execute(selection, dagger_engine_cache.client)
+    Client.execute(dagger_engine_cache.client, query_builder)
   end
 
   @doc "Prune the cache of releaseable entries"
   @spec prune(t()) :: :ok | {:error, term()}
   def prune(%__MODULE__{} = dagger_engine_cache) do
-    selection =
-      dagger_engine_cache.selection |> select("prune")
+    query_builder =
+      dagger_engine_cache.query_builder |> QB.select("prune")
 
-    case execute(selection, dagger_engine_cache.client) do
+    case Client.execute(dagger_engine_cache.client, query_builder) do
       {:ok, _} -> :ok
       error -> error
     end

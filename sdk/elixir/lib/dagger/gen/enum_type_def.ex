@@ -2,64 +2,65 @@
 defmodule Dagger.EnumTypeDef do
   @moduledoc "A definition of a custom enum defined in a Module."
 
-  use Dagger.Core.QueryBuilder
+  alias Dagger.Core.Client
+  alias Dagger.Core.QueryBuilder, as: QB
 
   @derive Dagger.ID
 
-  defstruct [:selection, :client]
+  defstruct [:query_builder, :client]
 
   @type t() :: %__MODULE__{}
 
   @doc "A doc string for the enum, if any."
   @spec description(t()) :: {:ok, String.t()} | {:error, term()}
   def description(%__MODULE__{} = enum_type_def) do
-    selection =
-      enum_type_def.selection |> select("description")
+    query_builder =
+      enum_type_def.query_builder |> QB.select("description")
 
-    execute(selection, enum_type_def.client)
+    Client.execute(enum_type_def.client, query_builder)
   end
 
   @doc "A unique identifier for this EnumTypeDef."
   @spec id(t()) :: {:ok, Dagger.EnumTypeDefID.t()} | {:error, term()}
   def id(%__MODULE__{} = enum_type_def) do
-    selection =
-      enum_type_def.selection |> select("id")
+    query_builder =
+      enum_type_def.query_builder |> QB.select("id")
 
-    execute(selection, enum_type_def.client)
+    Client.execute(enum_type_def.client, query_builder)
   end
 
   @doc "The name of the enum."
   @spec name(t()) :: {:ok, String.t()} | {:error, term()}
   def name(%__MODULE__{} = enum_type_def) do
-    selection =
-      enum_type_def.selection |> select("name")
+    query_builder =
+      enum_type_def.query_builder |> QB.select("name")
 
-    execute(selection, enum_type_def.client)
+    Client.execute(enum_type_def.client, query_builder)
   end
 
   @doc "If this EnumTypeDef is associated with a Module, the name of the module. Unset otherwise."
   @spec source_module_name(t()) :: {:ok, String.t()} | {:error, term()}
   def source_module_name(%__MODULE__{} = enum_type_def) do
-    selection =
-      enum_type_def.selection |> select("sourceModuleName")
+    query_builder =
+      enum_type_def.query_builder |> QB.select("sourceModuleName")
 
-    execute(selection, enum_type_def.client)
+    Client.execute(enum_type_def.client, query_builder)
   end
 
   @doc "The values of the enum."
   @spec values(t()) :: {:ok, [Dagger.EnumValueTypeDef.t()]} | {:error, term()}
   def values(%__MODULE__{} = enum_type_def) do
-    selection =
-      enum_type_def.selection |> select("values") |> select("id")
+    query_builder =
+      enum_type_def.query_builder |> QB.select("values") |> QB.select("id")
 
-    with {:ok, items} <- execute(selection, enum_type_def.client) do
+    with {:ok, items} <- Client.execute(enum_type_def.client, query_builder) do
       {:ok,
        for %{"id" => id} <- items do
          %Dagger.EnumValueTypeDef{
-           selection:
-             query()
-             |> select("loadEnumValueTypeDefFromID")
-             |> arg("id", id),
+           query_builder:
+             QB.query()
+             |> QB.select("loadEnumValueTypeDefFromID")
+             |> QB.put_arg("id", id),
            client: enum_type_def.client
          }
        end}

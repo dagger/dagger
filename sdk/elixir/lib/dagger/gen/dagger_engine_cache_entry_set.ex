@@ -2,37 +2,38 @@
 defmodule Dagger.DaggerEngineCacheEntrySet do
   @moduledoc "A set of cache entries returned by a query to a cache"
 
-  use Dagger.Core.QueryBuilder
+  alias Dagger.Core.Client
+  alias Dagger.Core.QueryBuilder, as: QB
 
   @derive Dagger.ID
 
-  defstruct [:selection, :client]
+  defstruct [:query_builder, :client]
 
   @type t() :: %__MODULE__{}
 
   @doc "The total disk space used by the cache entries in this set."
   @spec disk_space_bytes(t()) :: {:ok, integer()} | {:error, term()}
   def disk_space_bytes(%__MODULE__{} = dagger_engine_cache_entry_set) do
-    selection =
-      dagger_engine_cache_entry_set.selection |> select("diskSpaceBytes")
+    query_builder =
+      dagger_engine_cache_entry_set.query_builder |> QB.select("diskSpaceBytes")
 
-    execute(selection, dagger_engine_cache_entry_set.client)
+    Client.execute(dagger_engine_cache_entry_set.client, query_builder)
   end
 
   @doc "The list of individual cache entries in the set"
   @spec entries(t()) :: {:ok, [Dagger.DaggerEngineCacheEntry.t()]} | {:error, term()}
   def entries(%__MODULE__{} = dagger_engine_cache_entry_set) do
-    selection =
-      dagger_engine_cache_entry_set.selection |> select("entries") |> select("id")
+    query_builder =
+      dagger_engine_cache_entry_set.query_builder |> QB.select("entries") |> QB.select("id")
 
-    with {:ok, items} <- execute(selection, dagger_engine_cache_entry_set.client) do
+    with {:ok, items} <- Client.execute(dagger_engine_cache_entry_set.client, query_builder) do
       {:ok,
        for %{"id" => id} <- items do
          %Dagger.DaggerEngineCacheEntry{
-           selection:
-             query()
-             |> select("loadDaggerEngineCacheEntryFromID")
-             |> arg("id", id),
+           query_builder:
+             QB.query()
+             |> QB.select("loadDaggerEngineCacheEntryFromID")
+             |> QB.put_arg("id", id),
            client: dagger_engine_cache_entry_set.client
          }
        end}
@@ -42,18 +43,18 @@ defmodule Dagger.DaggerEngineCacheEntrySet do
   @doc "The number of cache entries in this set."
   @spec entry_count(t()) :: {:ok, integer()} | {:error, term()}
   def entry_count(%__MODULE__{} = dagger_engine_cache_entry_set) do
-    selection =
-      dagger_engine_cache_entry_set.selection |> select("entryCount")
+    query_builder =
+      dagger_engine_cache_entry_set.query_builder |> QB.select("entryCount")
 
-    execute(selection, dagger_engine_cache_entry_set.client)
+    Client.execute(dagger_engine_cache_entry_set.client, query_builder)
   end
 
   @doc "A unique identifier for this DaggerEngineCacheEntrySet."
   @spec id(t()) :: {:ok, Dagger.DaggerEngineCacheEntrySetID.t()} | {:error, term()}
   def id(%__MODULE__{} = dagger_engine_cache_entry_set) do
-    selection =
-      dagger_engine_cache_entry_set.selection |> select("id")
+    query_builder =
+      dagger_engine_cache_entry_set.query_builder |> QB.select("id")
 
-    execute(selection, dagger_engine_cache_entry_set.client)
+    Client.execute(dagger_engine_cache_entry_set.client, query_builder)
   end
 end

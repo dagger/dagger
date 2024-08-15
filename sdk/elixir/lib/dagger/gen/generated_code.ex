@@ -2,22 +2,23 @@
 defmodule Dagger.GeneratedCode do
   @moduledoc "The result of running an SDK's codegen."
 
-  use Dagger.Core.QueryBuilder
+  alias Dagger.Core.Client
+  alias Dagger.Core.QueryBuilder, as: QB
 
   @derive Dagger.ID
 
-  defstruct [:selection, :client]
+  defstruct [:query_builder, :client]
 
   @type t() :: %__MODULE__{}
 
   @doc "The directory containing the generated code."
   @spec code(t()) :: Dagger.Directory.t()
   def code(%__MODULE__{} = generated_code) do
-    selection =
-      generated_code.selection |> select("code")
+    query_builder =
+      generated_code.query_builder |> QB.select("code")
 
     %Dagger.Directory{
-      selection: selection,
+      query_builder: query_builder,
       client: generated_code.client
     }
   end
@@ -25,38 +26,40 @@ defmodule Dagger.GeneratedCode do
   @doc "A unique identifier for this GeneratedCode."
   @spec id(t()) :: {:ok, Dagger.GeneratedCodeID.t()} | {:error, term()}
   def id(%__MODULE__{} = generated_code) do
-    selection =
-      generated_code.selection |> select("id")
+    query_builder =
+      generated_code.query_builder |> QB.select("id")
 
-    execute(selection, generated_code.client)
+    Client.execute(generated_code.client, query_builder)
   end
 
   @doc "List of paths to mark generated in version control (i.e. .gitattributes)."
   @spec vcs_generated_paths(t()) :: {:ok, [String.t()]} | {:error, term()}
   def vcs_generated_paths(%__MODULE__{} = generated_code) do
-    selection =
-      generated_code.selection |> select("vcsGeneratedPaths")
+    query_builder =
+      generated_code.query_builder |> QB.select("vcsGeneratedPaths")
 
-    execute(selection, generated_code.client)
+    Client.execute(generated_code.client, query_builder)
   end
 
   @doc "List of paths to ignore in version control (i.e. .gitignore)."
   @spec vcs_ignored_paths(t()) :: {:ok, [String.t()]} | {:error, term()}
   def vcs_ignored_paths(%__MODULE__{} = generated_code) do
-    selection =
-      generated_code.selection |> select("vcsIgnoredPaths")
+    query_builder =
+      generated_code.query_builder |> QB.select("vcsIgnoredPaths")
 
-    execute(selection, generated_code.client)
+    Client.execute(generated_code.client, query_builder)
   end
 
   @doc "Set the list of paths to mark generated in version control."
   @spec with_vcs_generated_paths(t(), [String.t()]) :: Dagger.GeneratedCode.t()
   def with_vcs_generated_paths(%__MODULE__{} = generated_code, paths) do
-    selection =
-      generated_code.selection |> select("withVCSGeneratedPaths") |> put_arg("paths", paths)
+    query_builder =
+      generated_code.query_builder
+      |> QB.select("withVCSGeneratedPaths")
+      |> QB.put_arg("paths", paths)
 
     %Dagger.GeneratedCode{
-      selection: selection,
+      query_builder: query_builder,
       client: generated_code.client
     }
   end
@@ -64,11 +67,13 @@ defmodule Dagger.GeneratedCode do
   @doc "Set the list of paths to ignore in version control."
   @spec with_vcs_ignored_paths(t(), [String.t()]) :: Dagger.GeneratedCode.t()
   def with_vcs_ignored_paths(%__MODULE__{} = generated_code, paths) do
-    selection =
-      generated_code.selection |> select("withVCSIgnoredPaths") |> put_arg("paths", paths)
+    query_builder =
+      generated_code.query_builder
+      |> QB.select("withVCSIgnoredPaths")
+      |> QB.put_arg("paths", paths)
 
     %Dagger.GeneratedCode{
-      selection: selection,
+      query_builder: query_builder,
       client: generated_code.client
     }
   end

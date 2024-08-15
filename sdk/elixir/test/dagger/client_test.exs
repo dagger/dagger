@@ -11,10 +11,11 @@ defmodule Dagger.ClientTest do
     GitRef,
     GitRepository,
     Host,
-    QueryError,
     Secret,
     Sync
   }
+
+  alias Dagger.Core.QueryError
 
   setup_all do
     client = Dagger.connect!(connect_timeout: :timer.seconds(60))

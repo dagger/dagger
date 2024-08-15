@@ -2,40 +2,41 @@
 defmodule Dagger.CurrentModule do
   @moduledoc "Reflective module API provided to functions at runtime."
 
-  use Dagger.Core.QueryBuilder
+  alias Dagger.Core.Client
+  alias Dagger.Core.QueryBuilder, as: QB
 
   @derive Dagger.ID
 
-  defstruct [:selection, :client]
+  defstruct [:query_builder, :client]
 
   @type t() :: %__MODULE__{}
 
   @doc "A unique identifier for this CurrentModule."
   @spec id(t()) :: {:ok, Dagger.CurrentModuleID.t()} | {:error, term()}
   def id(%__MODULE__{} = current_module) do
-    selection =
-      current_module.selection |> select("id")
+    query_builder =
+      current_module.query_builder |> QB.select("id")
 
-    execute(selection, current_module.client)
+    Client.execute(current_module.client, query_builder)
   end
 
   @doc "The name of the module being executed in"
   @spec name(t()) :: {:ok, String.t()} | {:error, term()}
   def name(%__MODULE__{} = current_module) do
-    selection =
-      current_module.selection |> select("name")
+    query_builder =
+      current_module.query_builder |> QB.select("name")
 
-    execute(selection, current_module.client)
+    Client.execute(current_module.client, query_builder)
   end
 
   @doc "The directory containing the module's source code loaded into the engine (plus any generated code that may have been created)."
   @spec source(t()) :: Dagger.Directory.t()
   def source(%__MODULE__{} = current_module) do
-    selection =
-      current_module.selection |> select("source")
+    query_builder =
+      current_module.query_builder |> QB.select("source")
 
     %Dagger.Directory{
-      selection: selection,
+      query_builder: query_builder,
       client: current_module.client
     }
   end
@@ -44,15 +45,15 @@ defmodule Dagger.CurrentModule do
   @spec workdir(t(), String.t(), [{:exclude, [String.t()]}, {:include, [String.t()]}]) ::
           Dagger.Directory.t()
   def workdir(%__MODULE__{} = current_module, path, optional_args \\ []) do
-    selection =
-      current_module.selection
-      |> select("workdir")
-      |> put_arg("path", path)
-      |> maybe_put_arg("exclude", optional_args[:exclude])
-      |> maybe_put_arg("include", optional_args[:include])
+    query_builder =
+      current_module.query_builder
+      |> QB.select("workdir")
+      |> QB.put_arg("path", path)
+      |> QB.maybe_put_arg("exclude", optional_args[:exclude])
+      |> QB.maybe_put_arg("include", optional_args[:include])
 
     %Dagger.Directory{
-      selection: selection,
+      query_builder: query_builder,
       client: current_module.client
     }
   end
@@ -60,11 +61,11 @@ defmodule Dagger.CurrentModule do
   @doc "Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution.Load a file from the module's scratch working directory, including any changes that may have been made to it during module function execution."
   @spec workdir_file(t(), String.t()) :: Dagger.File.t()
   def workdir_file(%__MODULE__{} = current_module, path) do
-    selection =
-      current_module.selection |> select("workdirFile") |> put_arg("path", path)
+    query_builder =
+      current_module.query_builder |> QB.select("workdirFile") |> QB.put_arg("path", path)
 
     %Dagger.File{
-      selection: selection,
+      query_builder: query_builder,
       client: current_module.client
     }
   end

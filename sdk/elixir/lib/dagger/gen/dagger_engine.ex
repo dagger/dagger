@@ -2,31 +2,32 @@
 defmodule Dagger.DaggerEngine do
   @moduledoc "The Dagger engine configuration and state"
 
-  use Dagger.Core.QueryBuilder
+  alias Dagger.Core.Client
+  alias Dagger.Core.QueryBuilder, as: QB
 
   @derive Dagger.ID
 
-  defstruct [:selection, :client]
+  defstruct [:query_builder, :client]
 
   @type t() :: %__MODULE__{}
 
   @doc "A unique identifier for this DaggerEngine."
   @spec id(t()) :: {:ok, Dagger.DaggerEngineID.t()} | {:error, term()}
   def id(%__MODULE__{} = dagger_engine) do
-    selection =
-      dagger_engine.selection |> select("id")
+    query_builder =
+      dagger_engine.query_builder |> QB.select("id")
 
-    execute(selection, dagger_engine.client)
+    Client.execute(dagger_engine.client, query_builder)
   end
 
   @doc "The local (on-disk) cache for the Dagger engine"
   @spec local_cache(t()) :: Dagger.DaggerEngineCache.t()
   def local_cache(%__MODULE__{} = dagger_engine) do
-    selection =
-      dagger_engine.selection |> select("localCache")
+    query_builder =
+      dagger_engine.query_builder |> QB.select("localCache")
 
     %Dagger.DaggerEngineCache{
-      selection: selection,
+      query_builder: query_builder,
       client: dagger_engine.client
     }
   end

@@ -2,56 +2,57 @@
 defmodule Dagger.Port do
   @moduledoc "A port exposed by a container."
 
-  use Dagger.Core.QueryBuilder
+  alias Dagger.Core.Client
+  alias Dagger.Core.QueryBuilder, as: QB
 
   @derive Dagger.ID
 
-  defstruct [:selection, :client]
+  defstruct [:query_builder, :client]
 
   @type t() :: %__MODULE__{}
 
   @doc "The port description."
   @spec description(t()) :: {:ok, String.t() | nil} | {:error, term()}
   def description(%__MODULE__{} = port) do
-    selection =
-      port.selection |> select("description")
+    query_builder =
+      port.query_builder |> QB.select("description")
 
-    execute(selection, port.client)
+    Client.execute(port.client, query_builder)
   end
 
   @doc "Skip the health check when run as a service."
   @spec experimental_skip_healthcheck(t()) :: {:ok, boolean()} | {:error, term()}
   def experimental_skip_healthcheck(%__MODULE__{} = port) do
-    selection =
-      port.selection |> select("experimentalSkipHealthcheck")
+    query_builder =
+      port.query_builder |> QB.select("experimentalSkipHealthcheck")
 
-    execute(selection, port.client)
+    Client.execute(port.client, query_builder)
   end
 
   @doc "A unique identifier for this Port."
   @spec id(t()) :: {:ok, Dagger.PortID.t()} | {:error, term()}
   def id(%__MODULE__{} = port) do
-    selection =
-      port.selection |> select("id")
+    query_builder =
+      port.query_builder |> QB.select("id")
 
-    execute(selection, port.client)
+    Client.execute(port.client, query_builder)
   end
 
   @doc "The port number."
   @spec port(t()) :: {:ok, integer()} | {:error, term()}
   def port(%__MODULE__{} = port) do
-    selection =
-      port.selection |> select("port")
+    query_builder =
+      port.query_builder |> QB.select("port")
 
-    execute(selection, port.client)
+    Client.execute(port.client, query_builder)
   end
 
   @doc "The transport layer protocol."
   @spec protocol(t()) :: Dagger.NetworkProtocol.t()
   def protocol(%__MODULE__{} = port) do
-    selection =
-      port.selection |> select("protocol")
+    query_builder =
+      port.query_builder |> QB.select("protocol")
 
-    execute(selection, port.client)
+    Client.execute(port.client, query_builder)
   end
 end
