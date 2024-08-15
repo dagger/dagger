@@ -25,17 +25,15 @@ Some common scenarios for using services with Dagger Functions are:
 
 Services instantiated by a Dagger Function run in service containers, which have the following characteristics:
 
-- Each service container has a canonical, content-addressed hostname and an optional set of exposed ports
-- Service containers are started just-in-time, de-duplicated, and stopped when no longer needed
-- Service containers are health checked prior to running clients
+- Each service container has a canonical, content-addressed hostname and an optional set of exposed ports.
+- Service containers are started just-in-time, de-duplicated, and stopped when no longer needed.
+- Service containers are health checked prior to running clients.
 
 ## Bind services in functions
 
 A Dagger Function can create and return a service, which can then be used from another Dagger Function or from the calling host. Services in Dagger Functions are returned using the `Service` core type.
 
 Here is an example of a Dagger Function that returns an HTTP service. This service is used by another Dagger Function, which creates a service binding using the alias `www` and then accesses the HTTP service using this alias.
-
-
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -74,7 +72,7 @@ Hello, world!
 
 Services returned by Dagger Functions can also be exposed directly to the host. This enables clients on the host to communicate with services running in Dagger.
 
-One use case is for testing, where you need to be able to spin up ephemeral databases to run tests against. You might also use this to access a web UI in a browser on your desktop.
+One use case is for testing, where you need to be able to spin up ephemeral databases against which to run tests. You might also use this to access a web UI in a browser on your desktop.
 
 Here is another example call for the Dagger Function shown previously, this time exposing the HTTP service on the host
 

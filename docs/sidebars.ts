@@ -50,7 +50,13 @@ module.exports = {
       "type": "category",
       "label": "Features",
       "items": [
+        "features/programmable-builds",
+        "features/caching",
+        "features/debugging",
+        "features/services",
         "features/visualization",
+        "features/language-interoperability",
+        "features/secrets",
       ]
     },
     {
