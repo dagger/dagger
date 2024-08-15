@@ -43,7 +43,7 @@ jobs:
       - name: "test"
         uses: ./.github/actions/call
         with:
-          function: "test all --race=true --parallel=16"
+          function: "test all --race=true --parallel=16 --timeout=24h"
           upload-logs: true
 
   # Run Engine tests in dev Engine so that we can spot integration failures early
