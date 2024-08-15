@@ -24,12 +24,12 @@ defmodule Dagger.File do
   @spec digest(t(), [{:exclude_metadata, boolean() | nil}]) ::
           {:ok, String.t()} | {:error, term()}
   def digest(%__MODULE__{} = file, optional_args \\ []) do
-    selection =
-      file.selection
-      |> select("digest")
-      |> maybe_put_arg("excludeMetadata", optional_args[:exclude_metadata])
+    query_builder =
+      file.query_builder
+      |> QB.select("digest")
+      |> QB.maybe_put_arg("excludeMetadata", optional_args[:exclude_metadata])
 
-    execute(selection, file.client)
+    Client.execute(file.client, query_builder)
   end
 
   @doc "Writes the file to a file path on the host."
