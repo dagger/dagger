@@ -20,10 +20,15 @@ permissions:
 
 jobs:
   test:
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-12-4-4c' || 'ubuntu-latest' }}"
+    # runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-12-4-4c' || 'ubuntu-latest' }}"
+    runs-on: "ubuntu-latest"
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      - name: "helm lint"
+        uses: ./.github/actions/call
+        with:
+          function: "helm lint"
       - name: "helm test"
         uses: ./.github/actions/call
         with:

@@ -2,37 +2,93 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/dagger/dagger/.dagger/internal/dagger"
 	"github.com/dagger/dagger/.dagger/util"
+	"github.com/moby/buildkit/identity"
 	"helm.sh/helm/v3/pkg/chart"
 	"sigs.k8s.io/yaml"
 )
 
-const (
-	// https://hub.docker.com/r/alpine/helm/tags
-	// Pin image to ref so that it caches better & protects from tag overrides
-	helmImage = "alpine/helm:3.15.2@sha256:761b0f39033ade8ce9e52e03d9d1608d6ca9cad1c7e68dc3e005f9e4e244410e"
-)
-
 type Helm struct {
+	Dagger *DaggerDev        // +private
 	Source *dagger.Directory // +private
 }
 
-func (h *Helm) Test(ctx context.Context) error {
+func (h *Helm) Lint(ctx context.Context) error {
 	_, err := h.chart().
 		WithExec([]string{"helm", "lint"}).
-		WithExec([]string{"helm", "lint", "--debug", "--namespace", "dagger", "--set", "magicache.token=hello-world", "--set", "magicache.enabled=true"}).
-		WithExec([]string{"helm", "template", ".", "--debug", "--namespace", "dagger", "--set", "magicache.token=hello-world", "--set", "magicache.enabled=true"}).
+		WithExec([]string{"helm", "lint", "--debug", "--namespace=dagger", "--set=magicache.token=hello-world", "--set=magicache.enabled=true"}).
+		WithExec([]string{"helm", "template", ".", "--debug", "--namespace=dagger", "--set=magicache.token=hello-world", "--set=magicache.enabled=true"}).
 		Sync(ctx)
 
 	return err
 }
 
+func (h *Helm) Test(ctx context.Context) error {
+	cli, err := h.Dagger.CLI().Binary(ctx, "")
+	if err != nil {
+		return err
+	}
+
+	k3s := dag.K3S("helm2-test")
+
+	// NOTE: force starting here - without this, the config won't be generated
+	k3ssvc, err := k3s.Server().Start(ctx)
+	if err != nil {
+		return err
+	}
+
+	test, err := h.chart().
+		WithMountedFile("/usr/bin/dagger", cli).
+		WithServiceBinding("helm-test", k3ssvc).
+		WithFile("/.kube/config", k3s.Config()).
+		WithEnvVariable("KUBECONFIG", "/.kube/config").
+		WithEnvVariable("CACHEBUSTER", identity.NewID()).
+		WithExec([]string{"kubectl", "get", "nodes"}).
+		WithExec([]string{"helm", "install", "--wait", "--create-namespace", "--namespace=dagger", "dagger", "."}).
+		Sync(ctx)
+	if err != nil {
+		return err
+	}
+
+	podName, err := test.WithExec([]string{"kubectl", "get", "pod", "--selector=name=dagger-dagger-helm-engine", "--namespace=dagger", "--output=jsonpath={.items[0].metadata.name}"}).Stdout(ctx)
+	if err != nil {
+		return err
+	}
+
+	stdout, err := test.
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", fmt.Sprintf("kube-pod://%s?namespace=dagger", podName)).
+		WithExec([]string{"dagger", "query"}, dagger.ContainerWithExecOpts{
+			Stdin: `{
+				container {
+					from(address:"alpine") {
+						withExec(args: ["uname", "-a"]) { stdout }
+					}
+				}
+			}`,
+		}).
+		Stdout(ctx)
+	if err != nil {
+		return err
+	}
+
+	if !strings.Contains(stdout, "Linux") {
+		return fmt.Errorf("container didn't seem to be running linux")
+	}
+	return nil
+}
+
 func (h *Helm) chart() *dagger.Container {
-	return dag.Container().
-		From(helmImage).
+	return dag.Wolfi().
+		Container(dagger.WolfiContainerOpts{
+			Packages: []string{
+				"helm",
+				"kubectl",
+			},
+		}).
 		WithDirectory("/dagger-helm", h.Source).
 		WithWorkdir("/dagger-helm")
 }
