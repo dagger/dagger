@@ -294,7 +294,12 @@ func (svc *Service) startContainer(
 		}
 	}()
 
-	ctx, span := svc.startSpan(ctx, id, strings.Join(execOp.Meta.Args, " "))
+	spanName := fmt.Sprintf("exec %s", strings.Join(execOp.Meta.Args, " "))
+	ctx, span := Tracer(ctx).Start(ctx, spanName, trace.WithLinks(
+		trace.Link{
+			SpanContext: buildkit.SpanContextFromDescription(execOp.Metadata.Description),
+		},
+	))
 	defer func() {
 		if rerr != nil {
 			// NB: this is intentionally conditional; we only complete if there was
