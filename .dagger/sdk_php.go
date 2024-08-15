@@ -41,10 +41,7 @@ func (t PHPSDK) Lint(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-
-		return dag.Dirdiff().AssertEqual(ctx, before, after, []string{
-			filepath.Join(phpSDKPath, phpSDKGeneratedDir),
-		})
+		return dag.Dirdiff().AssertEqual(ctx, before, after, []string{filepath.Join(phpSDKPath, phpSDKGeneratedDir)})
 	})
 
 	return eg.Wait()
@@ -66,8 +63,9 @@ func (t PHPSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 
 	generated := t.phpBase().
 		With(installer).
+		WithoutDirectory(phpSDKGeneratedDir).
+		WithDirectory(phpSDKGeneratedDir, dag.Directory()).
 		With(util.ShellCmds(
-			fmt.Sprintf("rm -f %s/*.php", phpSDKGeneratedDir),
 			"ls -lha",
 			"$_EXPERIMENTAL_DAGGER_CLI_BIN run ./scripts/codegen.php",
 		)).

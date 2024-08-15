@@ -57,7 +57,8 @@ class Directory extends Client\AbstractObject implements Client\IdAble
         ?string $target = '',
         ?array $buildArgs = null,
         ?array $secrets = null,
-    ): Container {
+    ): Container
+    {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('dockerBuild');
         if (null !== $platform) {
         $innerQueryBuilder->setArgument('platform', $platform);
@@ -164,7 +165,8 @@ class Directory extends Client\AbstractObject implements Client\IdAble
         ?bool $experimentalPrivilegedNesting = false,
         ?bool $insecureRootCapabilities = false,
         ContainerId|Container|null $container = null,
-    ): Directory {
+    ): Directory
+    {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('terminal');
         if (null !== $cmd) {
         $innerQueryBuilder->setArgument('cmd', $cmd);
@@ -189,7 +191,8 @@ class Directory extends Client\AbstractObject implements Client\IdAble
         DirectoryId|Directory $directory,
         ?array $exclude = null,
         ?array $include = null,
-    ): Directory {
+    ): Directory
+    {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDirectory');
         $innerQueryBuilder->setArgument('path', $path);
         $innerQueryBuilder->setArgument('directory', $directory);
