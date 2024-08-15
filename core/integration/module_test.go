@@ -426,6 +426,100 @@ func (m *HasNotMainGo) Hello() string { return "Hello, world!" }
 	})
 }
 
+func (ModuleSuite) TestElixirInit(ctx context.Context, t *testctx.T) {
+	t.Run("from upstream", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=bare", "--sdk=github.com/dagger/dagger/sdk/elixir"))
+
+		out, err := modGen.
+			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+	})
+
+	t.Run("from alias", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=bare", "--sdk=elixir"))
+
+		out, err := modGen.
+			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+	})
+
+	t.Run("from alias with ref", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=bare", "--sdk=elixir@main"))
+
+		out, err := modGen.
+			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+	})
+}
+
+func (ModuleSuite) TestPHPInit(ctx context.Context, t *testctx.T) {
+	t.Run("from upstream", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=bare", "--sdk=github.com/dagger/dagger/sdk/php"))
+
+		out, err := modGen.
+			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+	})
+
+	t.Run("from alias", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=bare", "--sdk=php"))
+
+		out, err := modGen.
+			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+	})
+
+	t.Run("from alias with ref", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=bare", "--sdk=php@main"))
+
+		out, err := modGen.
+			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+	})
+}
+
 func (ModuleSuite) TestInitLICENSE(ctx context.Context, t *testctx.T) {
 	t.Run("bootstraps Apache-2.0 LICENSE file if none found", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)

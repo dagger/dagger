@@ -1,0 +1,9 @@
+kind: Added
+body: |-
+  New SDK aliases for `elixir` and `php`
+
+  SDKs with experimental module support (elixir and php) can now be accessed using `--sdk=<sdk>` (such as `--sdk=elixir` and `--sdk=php` respectively) instead of the full form `--sdk=github.com/dagger/dagger/sdk/<sdk>@<version>`.
+time: 2024-07-31T13:49:29.069938099+01:00
+custom:
+  Author: jedevc
+  PR: "8067"

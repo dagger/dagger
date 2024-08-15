@@ -21,7 +21,7 @@ class Example
          return dag()
              ->container()
              ->from('alpine:latest')
-             ->withExec(['echo', $value]);
+             ->withExec(['echo', $stringArg]);
      }
 
     #[DaggerFunction('Returns lines that match a pattern in the files of the provided Directory')]
@@ -34,7 +34,7 @@ class Example
          return dag()
              ->container()
              ->from('alpine:latest')
-             ->withMountedDirectory('/mnt', $directory)
+             ->withMountedDirectory('/mnt', $directoryArg)
              ->withWorkdir('/mnt')
              ->withExec(["grep", '-R', $pattern, '.'])
              ->stdout();
