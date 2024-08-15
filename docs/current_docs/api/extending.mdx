@@ -1,0 +1,15 @@
+---
+slug: /api/extending
+---
+
+# Extending the API
+
+The Dagger API also provides functionality for loading Dagger modules. When a Dagger module is loaded into the session, the Dagger API is dynamically extended with new APIs served by that module. So, after loading a Dagger module, an API client can now call all of the original core APIs _plus_ the new APIs provided by that module.
+
+Dagger modules contain one or more Dagger Functions. Dagger Functions are just regular code, written in your usual language using a Dagger SDK.  Dagger Functions let you encapsulate the tasks and workflows of your application delivery pipelines into reusable software components which can be loaded into Dagger, and called by other Dagger Functions.
+
+Dagger Functions can call other Dagger Functions across languages. For example, a Python function can call a Go function, which can call a TypeScript function, and so on. Each Dagger SDK generates native code-bindings for all dependencies, which abstract away the underlying GraphQL queries. This gives you all the benefits of type-checking, code completion and other IDE features when developing Dagger Functions.
+
+All Dagger Functions can also be called from the Dagger CLI. The CLI can call any Dagger Function, either from your local filesystem or from a Git repository. No other infrastructure is required. It can be used interactively, from a shell script, or from a CI configuration.
+
+You are encouraged to write your own Dagger Functions and share them with others. Dagger also lets you import and reuse modules developed by your team, your organization or the broader Dagger community. The Daggerverse is a free service run by Dagger, which indexes all publicly available Dagger modules and Dagger Functions, and lets you easily search and consume them.
