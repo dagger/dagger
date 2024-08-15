@@ -606,6 +606,19 @@ func (mod *Module) namespaceTypeDef(ctx context.Context, typeDef *TypeDef) error
 				}
 			}
 		}
+
+		if obj.Constructor.Valid {
+			if err := mod.namespaceTypeDef(ctx, obj.Constructor.Value.ReturnType); err != nil {
+				return err
+			}
+
+			for _, arg := range obj.Constructor.Value.Args {
+				if err := mod.namespaceTypeDef(ctx, arg.TypeDef); err != nil {
+					return err
+				}
+			}
+		}
+
 	case TypeDefKindInterface:
 		iface := typeDef.AsInterface.Value
 
