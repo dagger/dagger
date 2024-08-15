@@ -4,7 +4,7 @@ go 1.22.0
 
 toolchain go1.22.5
 
-require github.com/dagger/dagger/engine/distconsts v0.12.4
+require github.com/dagger/dagger/engine/distconsts v0.12.5
 
 replace github.com/dagger/dagger/engine/distconsts => ../engine/distconsts
 
