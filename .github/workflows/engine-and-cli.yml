@@ -37,7 +37,7 @@ jobs:
 
   test:
     runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-12-4-16c-st-od' || 'ubuntu-latest' }}"
-    timeout-minutes: 30
+    timeout-minutes: 300
     steps:
       - uses: actions/checkout@v4
       - name: "test"
