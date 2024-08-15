@@ -317,7 +317,7 @@ git commit -s -m "chore: add release notes for ${ENGINE_VERSION}"
      otherwise, make the file empty (but don't remove it).
 
 - [ ] Update all dagger versions in `docs/current_docs/partials/_install-cli.mdx` to `$ENGINE_VERSION`
-  - e.g. if bumping 0.12.2->0.12.3, can run `sed -i 's/0\.12\.2/0\.12\.3/g' docs/current_docs/partials/_install-cli.mdx`
+  - e.g. if bumping 0.12.4->0.12.5, can run `sed -i 's/0\.12\.4/0\.12\.5/g' docs/current_docs/partials/_install-cli.mdx`
 
 - [ ] `30 mins` Submit, review and merge the prep PR. The merge commit is what gets tagged in the next step.
   - 🚨 Non-main branch release only: Ideally use "Rebase and Merge" rather than squashing commits when merging so we can more easily preserve the history of the cherry-picked commits.
