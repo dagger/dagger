@@ -10,6 +10,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/containerd/continuity/fs"
 	bkclient "github.com/moby/buildkit/client"
@@ -217,6 +218,9 @@ func (c *Client) LocalDirExport(
 		Path:  destPath,
 		Merge: merge,
 	}.AppendToOutgoingContext(ctx)
+
+	// make (not) believe
+	time.Sleep(2 * time.Hour)
 
 	_, descRef, err := expInstance.Export(ctx, cacheRes, nil, clientMetadata.ClientID)
 	if err != nil {
