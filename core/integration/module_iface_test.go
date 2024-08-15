@@ -128,3 +128,106 @@ func (m *Test) GetDuck() Duck {
 	require.NoError(t, err)
 	require.Equal(t, "mallard quack", strings.TrimSpace(out))
 }
+
+func (ModuleSuite) TestIfaceGoConstructor(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	out, err := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work/mallard").
+		With(daggerExec("init", "--source=.", "--sdk=go")).
+		WithNewFile("main.go", `package main
+
+import (
+	"context"
+	"fmt"
+)
+
+type Ducker interface {
+	DaggerObject
+	Quack(ctx context.Context) (string, error)
+}
+
+type Mallard struct {
+	Duck Ducker
+}
+
+func New(
+	d Ducker,
+) *Mallard {
+	return &Mallard{
+		Duck: d,
+	}
+}
+
+func (m *Mallard) Quack(ctx context.Context) string {
+	quack, _ := m.Duck.Quack(ctx)
+	return fmt.Sprintf("%s with a mallard accent", quack)
+}
+	`,
+		).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--source=.", "--name=duck", "--sdk=go")).
+		WithNewFile("main.go", `package main
+
+import (
+	"dagger/duck/internal/dagger"
+)
+
+type Duck struct {}
+
+func (d *Duck) Quack() string {
+	return "duck quack"
+}
+
+func (d *Duck) Mallard() *dagger.Mallard {
+	return &dagger.Mallard{
+		Duck: d,
+	}
+}
+	`,
+		).
+		With(daggerExec("install", "./mallard")).
+		With(daggerCall("mallard", "quack")).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, "duck quack with a mallard accent", strings.TrimSpace(out))
+}
+
+func (ModuleSuite) TestIfaceGoConstructorWithStructEmbedding(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	_, err := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work/mallard").
+		With(daggerExec("init", "--source=.", "--sdk=go")).
+		WithNewFile("main.go", `package main
+
+import (
+	"context"
+)
+
+type Ducker interface {
+	DaggerObject
+	Quack(ctx context.Context) (string, error)
+}
+
+type Mallard struct {
+	Ducker
+}
+
+func New(
+	d Ducker,
+) *Mallard {
+	return &Mallard{
+		d,
+	}
+}
+	`,
+		).
+		With(daggerExec("develop")).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+}
