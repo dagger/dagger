@@ -4,14 +4,14 @@ slug: /api/index
 
 # Dagger API
 
-One of Dagger's key aspects is cross-language instrumentation: teams can leverage their familiar languages without the need to learn a new DSL to write their Dagger Functions. Dagger allows this by exposing its functionality through a GraphQL API, which serves as a low-level language-agnostic API framework for all Dagger operations.
+The Dagger API is a unified interface for programming Dagger. It provides a set of powerful core types for creating and managing application delivery pipelines, including types for containers, artifacts, network services, and secrets. It  uses GraphQL as its low-level language-agnostic framework, and can be accessed using any standard GraphQL client.
+
+:::important
+In practice, interacting with the API directly is optional; typically, you will use a Dagger Function created with a type-safe Dagger SDK, or the Dagger CLI.
+:::
 
 This approach has multiple benefits:
 
 - It enables Dagger Function developers to use whichever language feels natural and intuitive to them, without having to think about interoperability.
 - Even though Dagger Functions may be written in different languages, they are all run by the same Dagger Engine. So common concerns like logging, scaling, monitoring and others only need to be solved once, and can then be applied for everyone.
-- Using GraphQL as a common low-level language facilitates interoperability. Each Dagger SDK generates native code-bindings for all dependencies from the GraphQL API. This gives you all the benefits of type-checking, code completion and other IDE features for your favorite language when developing Dagger Functions.
-
-:::important
-In practice, interacting with the API directly is optional. You can instead use Dagger Functions, a Dagger SDK, or the Dagger CLI.
-:::
+- Each Dagger SDK generates native code-bindings for all dependencies from the GraphQL API. This gives you all the benefits of type-checking, code completion and other IDE features for your favorite language when developing Dagger Functions.

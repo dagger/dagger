@@ -30,6 +30,19 @@ module.exports = {
     },
     {
       "type": "category",
+      "label": "Features",
+      "items": [
+        "features/programmable-builds",
+        "features/caching",
+        "features/debugging",
+        "features/services",
+        "features/secrets",
+        "features/visualization",
+        "features/language-interoperability",
+      ]
+    },
+    {
+      "type": "category",
       "label": "Quickstart",
       "link": {
         "type": "doc",
@@ -47,22 +60,14 @@ module.exports = {
       ]
     },
     {
-      "type": "category",
-      "label": "Features",
-      "items": [
-        "features/programmable-builds",
-        "features/caching",
-        "features/debugging",
-        "features/services",
-        "features/visualization",
-        "features/language-interoperability",
-        "features/secrets",
-      ]
-    },
-    {
       "type": "doc",
       "label": "Adopting Dagger",
       "id": "adopting"
+    },
+    {
+      "type": "doc",
+      "label": "Cookbook",
+      "id": "cookbook/cookbook"
     },
     {
       "type": "category",
@@ -137,11 +142,6 @@ module.exports = {
       ]
     },
     {
-      "type": "doc",
-      "label": "Cookbook",
-      "id": "cookbook/cookbook"
-    },
-    {
       "type": "category",
       "label": "Dagger API",
       "link": {
@@ -154,24 +154,55 @@ module.exports = {
         "api/types",
         "api/internals",
         {
+          "type": "category",
+          "label": "API Documentation",
+          "collapsible": true,
+          "collapsed": true,
+          "items": [
+            "api/basics",
+            "api/ide-integration",
+            "api/arguments",
+            "api/return-values",
+            "api/chaining",
+            "api/debugging",
+            "api/documentation",
+            "api/secrets",
+            "api/services",
+            "api/cache-volumes",
+            "api/host-resources",
+            "api/remote-resources",
+            "api/error-handling",
+            "api/execution-environment",
+            "api/structure-packaging",
+            "api/entrypoint-function",
+            "api/custom-types",
+            "api/state-functions",
+            "api/enumerations",
+            "api/interfaces",
+            "api/runtimes",
+            "api/language-dependencies",
+            {
+              "type": "link",
+              "label": "Go SDK Reference",
+              "href": "https://pkg.go.dev/dagger.io/dagger"
+            },
+            {
+              "type": "link",
+              "label": "Python SDK Reference",
+              "href": "https://dagger-io.readthedocs.org/"
+            },
+            {
+              "type": "doc",
+              "label": "TypeScript SDK Reference",
+              "id": "reference/typescript/modules"
+            },
+
+          ],
+        },
+        {
           "type": "doc",
           "label": "CLI Reference",
           "id": "reference/cli"
-        },
-        {
-          "type": "link",
-          "label": "Go SDK Reference",
-          "href": "https://pkg.go.dev/dagger.io/dagger"
-        },
-        {
-          "type": "link",
-          "label": "Python SDK Reference",
-          "href": "https://dagger-io.readthedocs.org/"
-        },
-        {
-          "type": "doc",
-          "label": "TypeScript SDK Reference",
-          "id": "reference/typescript/modules"
         },
       ]
     },
