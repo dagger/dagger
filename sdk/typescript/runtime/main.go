@@ -152,7 +152,7 @@ func (t *TypescriptSdk) Codegen(ctx context.Context, modSource *dagger.ModuleSou
 		WithDirectory(
 			"/",
 			ctr.Directory(ModSourceDirPath),
-			dagger.DirectoryWithDirectoryOpts{Exclude: []string{"**/node_modules", "**/.pnpm-store"}},
+			dagger.DirectoryWithDirectoryOpts{Exclude: []string{"**/node_modules"}},
 		)
 
 	return dag.GeneratedCode(
@@ -164,7 +164,6 @@ func (t *TypescriptSdk) Codegen(ctx context.Context, modSource *dagger.ModuleSou
 		WithVCSIgnoredPaths([]string{
 			GenDir,
 			"**/node_modules/**",
-			"**/.pnpm-store/**",
 		}), nil
 }
 
