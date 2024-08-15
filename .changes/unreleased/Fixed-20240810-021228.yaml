@@ -1,6 +1,0 @@
-kind: Fixed
-body: Make retrieving secret from command works on Windows
-time: 2024-08-10T02:12:28.306657717+07:00
-custom:
-    Author: wingyplus
-    PR: "8121"

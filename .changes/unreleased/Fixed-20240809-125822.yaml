@@ -1,7 +1,0 @@
-kind: Fixed
-body: Fix "failed to collect IDs from parent fields" error when module objects contain
-  fields with nil values.
-time: 2024-08-09T12:58:22.740097751-07:00
-custom:
-  Author: jedevc/sipsma
-  PR: "8132"

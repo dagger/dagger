@@ -1,9 +1,0 @@
-kind: Deprecated
-body: |-
-    `Arg` has been renamed to `Name`
-
-    For code that currently uses `Arg` to avoid a naming conflict with a reserved keyword, it can be removed since the SDK will strip the last `_` in an argument's name when interfacing with the API. For other needs, just rename `Arg` to `Name`.
-time: 2024-08-06T10:53:13.480927Z
-custom:
-    Author: helderco
-    PR: "8109"

@@ -1,6 +1,0 @@
-kind: Fixed
-body: Reimplemented the OpenTelemetry data pipeline to avoid hangs and other complications.
-time: 2024-08-13T10:08:59.738490003-04:00
-custom:
-    Author: vito
-    PR: "7996"

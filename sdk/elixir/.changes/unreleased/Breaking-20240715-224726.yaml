@@ -1,6 +1,0 @@
-kind: Breaking
-body: Returns `:ok` instead of `{:ok, Void}`
-time: 2024-07-15T22:47:26.69722705+07:00
-custom:
-    Author: wingyplus
-    PR: "7929"
