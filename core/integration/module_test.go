@@ -3143,6 +3143,13 @@ func (m *Test) FromStatus(status Status) string {
 	return string(status)
 }
 
+func (m *Test) FromStatusOpt(
+	// +optional
+	status Status,
+) string {
+	return string(status)
+}
+
 func (m *Test) ToStatus(status string) Status {
 	return Status(status)
 }
@@ -3167,6 +3174,10 @@ class Test:
     @dagger.function
     def from_status(self, status: Status) -> str:
         return str(status)
+
+    @dagger.function
+    def from_status_opt(self, status: Status | None) -> str:
+        return str(status) if status else ""
 
     @dagger.function
     def to_status(self, status: str) -> Status:
@@ -3215,6 +3226,14 @@ export class Test {
   }
 
   @func()
+  fromStatusOpt(status?: Status): string {
+	if (status) {
+		return status as string
+	}
+    return ""
+  }
+
+  @func()
   toStatus(status: string): Status {
     return status as Status
   }
@@ -3228,6 +3247,7 @@ export class Test {
 				c := connect(ctx, t)
 				modGen := modInit(t, c, tc.sdk, tc.source)
 
+				// fromStatus
 				out, err := modGen.With(daggerQuery(`{test{fromStatus(status: "ACTIVE")}}`)).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, "ACTIVE", gjson.Get(out, "test.fromStatus").String())
@@ -3239,6 +3259,19 @@ export class Test {
 				_, err = modGen.With(daggerQuery(`{test{fromStatus(status: "INVALID")}}`)).Stdout(ctx)
 				require.ErrorContains(t, err, "invalid enum value")
 
+				// fromStatusOpt
+				out, err = modGen.With(daggerQuery(`{test{fromStatusOpt}}`)).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "", gjson.Get(out, "test.fromStatusOpt").String())
+
+				out, err = modGen.With(daggerQuery(`{test{fromStatusOpt(status: "ACTIVE")}}`)).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "ACTIVE", gjson.Get(out, "test.fromStatusOpt").String())
+
+				_, err = modGen.With(daggerQuery(`{test{fromStatusOpt(status: "INVALID")}}`)).Stdout(ctx)
+				require.ErrorContains(t, err, "invalid enum value")
+
+				// toStatus
 				out, err = modGen.With(daggerQuery(`{test{toStatus(status: "INACTIVE")}}`)).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, "INACTIVE", gjson.Get(out, "test.toStatus").String())
@@ -3246,6 +3279,7 @@ export class Test {
 				_, err = modGen.With(daggerQuery(`{test{toStatus(status: "INVALID")}}`)).Sync(ctx)
 				require.ErrorContains(t, err, "invalid enum value")
 
+				// introspection
 				mod := inspectModule(ctx, t, modGen)
 				statusEnum := mod.Get("enums.#.asEnum|#(name=TestStatus)")
 				require.Equal(t, "Enum for Status", statusEnum.Get("description").String())

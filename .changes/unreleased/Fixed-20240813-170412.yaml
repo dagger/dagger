@@ -1,0 +1,9 @@
+kind: Fixed
+body: |-
+  Fixed using custom enum types as optional arguments
+
+  Previously, function calls that defined an optional argument would not be callable.
+time: 2024-08-13T17:04:12.719272966+01:00
+custom:
+  Author: jedevc
+  PR: "8115"

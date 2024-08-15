@@ -282,39 +282,34 @@ func (mod *Module) ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirect
 
 	switch typeDef.Kind {
 	case TypeDefKindString, TypeDefKindInteger, TypeDefKindBoolean, TypeDefKindVoid:
-		modType, ok = mod.modTypeForPrimitive(ctx, typeDef, checkDirectDeps)
+		modType, ok = mod.modTypeForPrimitive(typeDef)
 	case TypeDefKindList:
 		modType, ok, err = mod.modTypeForList(ctx, typeDef, checkDirectDeps)
 	case TypeDefKindObject:
-		modType, ok, err = mod.modTypeForObject(ctx, typeDef, checkDirectDeps)
-		if checkDirectDeps && ok {
-			return modType, true, nil
+		modType, ok, err = mod.modTypeFromDeps(ctx, typeDef, checkDirectDeps)
+		if ok || err != nil {
+			return modType, ok, err
 		}
-
+		modType, ok = mod.modTypeForObject(typeDef)
 	case TypeDefKindInterface:
-		// For some reason, if we do this logic inside `modTypeForInferface`, it doesn't work...
-		if checkDirectDeps {
-			// check to see if this is from a *direct* dependency
-			depType, ok, err := mod.Deps.ModTypeFor(ctx, typeDef)
-			if err != nil {
-				return nil, false, fmt.Errorf("failed to get interface type from dependency: %w", err)
-			}
-			if ok {
-				return depType, true, nil
-			}
+		modType, ok, err = mod.modTypeFromDeps(ctx, typeDef, checkDirectDeps)
+		if ok || err != nil {
+			return modType, ok, err
 		}
-
-		modType, ok = mod.modTypeForInterface(ctx, typeDef, checkDirectDeps)
+		modType, ok = mod.modTypeForInterface(typeDef)
 	case TypeDefKindScalar:
-		modType, ok, err = mod.modTypeForScalar(ctx, typeDef, checkDirectDeps)
-		if checkDirectDeps && ok {
-			return modType, true, nil
+		modType, ok, err = mod.modTypeFromDeps(ctx, typeDef, checkDirectDeps)
+		if ok || err != nil {
+			return modType, ok, err
 		}
+		modType, ok = nil, false
+		slog.ExtraDebug("module did not find scalar", "mod", mod.Name(), "scalar", typeDef.AsScalar.Value.Name)
 	case TypeDefKindEnum:
-		modType, ok, err = mod.modTypeForEnum(ctx, typeDef, checkDirectDeps)
-		if checkDirectDeps && ok {
-			return modType, true, nil
+		modType, ok, err = mod.modTypeFromDeps(ctx, typeDef, checkDirectDeps)
+		if ok || err != nil {
+			return modType, ok, err
 		}
+		modType, ok = mod.modTypeForEnum(typeDef)
 	default:
 		return nil, false, fmt.Errorf("unexpected type def kind %s", typeDef.Kind)
 	}
@@ -337,7 +332,20 @@ func (mod *Module) ModTypeFor(ctx context.Context, typeDef *TypeDef, checkDirect
 	return modType, true, nil
 }
 
-func (mod *Module) modTypeForPrimitive(_ context.Context, typedef *TypeDef, _ bool) (ModType, bool) {
+func (mod *Module) modTypeFromDeps(ctx context.Context, typedef *TypeDef, checkDirectDeps bool) (ModType, bool, error) {
+	if !checkDirectDeps {
+		return nil, false, nil
+	}
+
+	// check to see if this is from a *direct* dependency
+	depType, ok, err := mod.Deps.ModTypeFor(ctx, typedef)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to get %s from dependency: %w", typedef.Kind, err)
+	}
+	return depType, ok, nil
+}
+
+func (mod *Module) modTypeForPrimitive(typedef *TypeDef) (ModType, bool) {
 	return &PrimitiveType{typedef}, true
 }
 
@@ -356,34 +364,21 @@ func (mod *Module) modTypeForList(ctx context.Context, typedef *TypeDef, checkDi
 	}, true, nil
 }
 
-func (mod *Module) modTypeForObject(ctx context.Context, typeDef *TypeDef, checkDirectDeps bool) (ModType, bool, error) {
-	if checkDirectDeps {
-		// check to see if this is from a *direct* dependency
-		depType, ok, err := mod.Deps.ModTypeFor(ctx, typeDef)
-		if err != nil {
-			return nil, false, fmt.Errorf("failed to get object type from dependency: %w", err)
-		}
-		if ok {
-			return depType, true, nil
-		}
-	}
-
-	// otherwise it must be from this module
+func (mod *Module) modTypeForObject(typeDef *TypeDef) (ModType, bool) {
 	for _, obj := range mod.ObjectDefs {
 		if obj.AsObject.Value.Name == typeDef.AsObject.Value.Name {
 			return &ModuleObjectType{
 				typeDef: obj.AsObject.Value,
 				mod:     mod,
-			}, true, nil
+			}, true
 		}
 	}
 
 	slog.ExtraDebug("module did not find object", "mod", mod.Name(), "object", typeDef.AsObject.Value.Name)
-	return nil, false, nil
+	return nil, false
 }
 
-func (mod *Module) modTypeForInterface(_ context.Context, typeDef *TypeDef, _ bool) (ModType, bool) {
-	// otherwise it must be from this module
+func (mod *Module) modTypeForInterface(typeDef *TypeDef) (ModType, bool) {
 	for _, iface := range mod.InterfaceDefs {
 		if iface.AsInterface.Value.Name == typeDef.AsInterface.Value.Name {
 			return &InterfaceType{
@@ -397,46 +392,18 @@ func (mod *Module) modTypeForInterface(_ context.Context, typeDef *TypeDef, _ bo
 	return nil, false
 }
 
-func (mod *Module) modTypeForScalar(ctx context.Context, typeDef *TypeDef, checkDirectDeps bool) (ModType, bool, error) {
-	if checkDirectDeps {
-		// check to see if this is from a *direct* dependency
-		depType, ok, err := mod.Deps.ModTypeFor(ctx, typeDef)
-		if err != nil {
-			return nil, false, fmt.Errorf("failed to get scalar type from dependency: %w", err)
-		}
-		if ok {
-			return depType, true, nil
-		}
-	}
-
-	slog.ExtraDebug("module did not find scalar", "mod", mod.Name(), "scalar", typeDef.AsScalar.Value.Name)
-	return nil, false, nil
-}
-
-func (mod *Module) modTypeForEnum(ctx context.Context, typeDef *TypeDef, checkDirectDeps bool) (ModType, bool, error) {
-	if checkDirectDeps {
-		// check to see if this is from a *direct* dependency
-		depType, ok, err := mod.Deps.ModTypeFor(ctx, typeDef)
-		if err != nil {
-			return nil, false, fmt.Errorf("failed to get enum type from dependency: %w", err)
-		}
-		if ok {
-			return depType, true, nil
-		}
-	}
-
-	// otherwise it must be from this module
+func (mod *Module) modTypeForEnum(typeDef *TypeDef) (ModType, bool) {
 	for _, enum := range mod.EnumDefs {
 		if enum.AsEnum.Value.Name == typeDef.AsEnum.Value.Name {
 			return &ModuleEnumType{
 				typeDef: enum.AsEnum.Value,
 				mod:     mod,
-			}, true, nil
+			}, true
 		}
 	}
 
 	slog.ExtraDebug("module did not find enum", "mod", mod.Name(), "enum", typeDef.AsEnum.Value.Name)
-	return nil, false, nil
+	return nil, false
 }
 
 // verify the typedef is has no reserved names
