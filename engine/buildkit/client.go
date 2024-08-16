@@ -65,7 +65,8 @@ type Opts struct {
 	Containers   map[bkgw.Container]struct{}
 	ContainersMu *sync.Mutex
 
-	Interactive bool
+	Interactive        bool
+	InteractiveCommand []string
 }
 
 type ResolveCacheExporterFunc func(ctx context.Context, g bksession.Group) (remotecache.Exporter, error)

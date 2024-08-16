@@ -78,7 +78,8 @@ type Params struct {
 	// Log level (0 = INFO)
 	LogLevel slog.Level
 
-	Interactive bool
+	Interactive        bool
+	InteractiveCommand []string
 
 	WithTerminal session.WithTerminalFunc
 }
@@ -1060,6 +1061,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		CloudToken:                os.Getenv("DAGGER_CLOUD_TOKEN"),
 		DoNotTrack:                analytics.DoNotTrack(),
 		Interactive:               c.Interactive,
+		InteractiveCommand:        c.InteractiveCommand,
 		SSHAuthSocketPath:         sshAuthSock,
 	}
 }

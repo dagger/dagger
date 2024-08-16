@@ -15,6 +15,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/google/shlex"
 	"github.com/mattn/go-isatty"
 	"github.com/muesli/reflow/indent"
 	"github.com/muesli/reflow/wordwrap"
@@ -47,13 +48,15 @@ var (
 
 	workdir string
 
-	silent      bool
-	verbose     int
-	quiet, _    = strconv.Atoi(os.Getenv("DAGGER_QUIET"))
-	debug       bool
-	progress    string
-	interactive bool
-	web         bool
+	silent                   bool
+	verbose                  int
+	quiet, _                 = strconv.Atoi(os.Getenv("DAGGER_QUIET"))
+	debug                    bool
+	progress                 string
+	interactive              bool
+	interactiveCommand       string
+	interactiveCommandParsed []string
+	web                      bool
 
 	stdoutIsTTY = isatty.IsTerminal(os.Stdout.Fd())
 	stderrIsTTY = isatty.IsTerminal(os.Stderr.Fd())
@@ -169,6 +172,7 @@ var rootCmd = &cobra.Command{
 				"name": cmdName,
 			})
 		}
+
 		return nil
 	},
 }
@@ -181,6 +185,7 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.BoolVarP(&debug, "debug", "d", debug, "Show debug logs and full verbosity")
 	flags.StringVar(&progress, "progress", "auto", "Progress output format (auto, plain, tty)")
 	flags.BoolVarP(&interactive, "interactive", "i", false, "Spawn a terminal on container exec failure")
+	flags.StringVar(&interactiveCommand, "interactive-command", "/bin/sh", "Change the default command for interactive mode")
 	flags.BoolVarP(&web, "web", "w", false, "Open trace URL in a web browser")
 
 	for _, fl := range []string{"workdir"} {
@@ -280,6 +285,14 @@ func main() {
 		fmt.Fprintf(os.Stderr, "unknown progress type %q\n", progress)
 		os.Exit(1)
 	}
+
+	// Parse the interactive command to support shell-like syntax
+	parsedCommand, err := shlex.Split(interactiveCommand)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cannot parse interactive command: %s", err)
+		os.Exit(1)
+	}
+	interactiveCommandParsed = parsedCommand
 
 	installGlobalFlags(rootCmd.PersistentFlags())
 

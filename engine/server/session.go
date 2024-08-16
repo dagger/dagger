@@ -90,7 +90,8 @@ type daggerSession struct {
 	dagqlCache       dagql.Cache
 	cacheEntrySetMap *sync.Map
 
-	interactive bool
+	interactive        bool
+	interactiveCommand []string
 }
 
 type daggerSessionState string
@@ -226,6 +227,7 @@ func (srv *Server) initializeDaggerSession(
 	sess.cacheEntrySetMap = &sync.Map{}
 	sess.telemetryPubSub = srv.telemetryPubSub
 	sess.interactive = clientMetadata.Interactive
+	sess.interactiveCommand = clientMetadata.InteractiveCommand
 
 	sess.analytics = analytics.New(analytics.Config{
 		DoNotTrack: clientMetadata.DoNotTrack || analytics.DoNotTrack(),
@@ -525,7 +527,8 @@ func (srv *Server) initializeDaggerClient(
 		Containers:   client.daggerSession.containers,
 		ContainersMu: &client.daggerSession.containersMu,
 
-		Interactive: client.daggerSession.interactive,
+		Interactive:        client.daggerSession.interactive,
+		InteractiveCommand: client.daggerSession.interactiveCommand,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create buildkit client: %w", err)
