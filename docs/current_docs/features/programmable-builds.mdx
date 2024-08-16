@@ -23,3 +23,7 @@ Here's an example of calling the same Dagger Function again, but this time chain
 Here's the same Dagger Function again, modified to return the compiled binary as a just-in-time file. The file is then exported to the host via an additional, chained function call:
 
 ![Build and export](/img/current_docs/features/build-export.gif)
+
+:::tip
+Dagger leverages GraphQL's [lazy evaluation](../api/internals.mdx) model to optimize and parallelize query execution for maximum speed and performance.
+:::
