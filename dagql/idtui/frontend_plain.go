@@ -78,10 +78,6 @@ type spanData struct {
 	// idx is the human-readable number for this span
 	idx uint
 
-	// if set to true, overrides the heuristic from shouldShow
-	// NOTE: be sure to wake up the parentID, too
-	mustShow bool
-
 	// the parent span ID, if the span has a parent
 	parentID trace.SpanID
 
@@ -169,7 +165,6 @@ func (fe *frontendPlain) addVirtualLog(span trace.Span, name string, fields ...s
 		fe.data[span.SpanContext().SpanID()] = spanDt
 	}
 	spanDt.logs = append(spanDt.logs, logLine{newCursorBuffer([]byte(line)), time.Now()})
-	fe.wakeUpSpan(spanID)
 }
 
 func (fe *frontendPlain) Run(ctx context.Context, opts dagui.FrontendOpts, run func(context.Context) error) error {
@@ -210,9 +205,9 @@ func (fe *frontendPlain) SetPrimary(spanID trace.SpanID) {
 	fe.mu.Unlock()
 }
 
-func (fe *frontendPlain) SetRevealAllSpans(val bool) {
+func (fe *frontendPlain) RevealAllSpans() {
 	fe.mu.Lock()
-	fe.FrontendOpts.RevealAllSpans = val
+	fe.FrontendOpts.ZoomedSpan = trace.SpanID{}
 	fe.mu.Unlock()
 }
 
@@ -331,13 +326,6 @@ func (fe *frontendPlain) ForceFlush(context.Context) error {
 	return nil
 }
 
-// wake up all spans up to the root span
-func (fe *frontendPlain) wakeUpSpan(spanID trace.SpanID) {
-	for sleeper := fe.data[spanID]; sleeper != nil; sleeper = fe.data[sleeper.parentID] {
-		sleeper.mustShow = true
-	}
-}
-
 func (fe *frontendPlain) render() {
 	fe.mu.Lock()
 	fe.renderProgress()
@@ -364,11 +352,7 @@ func (fe *frontendPlain) finalRender() {
 }
 
 func (fe *frontendPlain) renderProgress() {
-	scope := fe.db.PrimarySpan
-	if fe.RevealAllSpans {
-		scope = trace.SpanID{}
-	}
-	rowsView := fe.db.RowsView(scope)
+	rowsView := fe.db.RowsView(fe.FrontendOpts)
 
 	// quickly sanity check the context - if a span from it has gone missing
 	// from the db, or has been marked as passthrough, it will no longer appear
@@ -402,10 +386,6 @@ func (fe *frontendPlain) renderRow(row *dagui.TraceTree) {
 	spanDt := fe.data[span.ID]
 	if !spanDt.ready {
 		// don't render! this span hasn't been exported yet
-		return
-	}
-
-	if !fe.ShouldShow(row) && !spanDt.mustShow {
 		return
 	}
 

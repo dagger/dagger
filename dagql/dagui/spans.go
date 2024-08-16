@@ -45,15 +45,70 @@ type Span struct {
 	trace *Trace
 }
 
-func (span *Span) LinkedFrom() []*Span {
+func (span *Span) VisibleParent(opts FrontendOpts) *Span {
+	if span.ParentSpan == nil {
+		return nil
+	}
+	if span.ParentSpan.Passthrough {
+		return span.ParentSpan.VisibleParent(opts)
+	}
+	links := span.LinksTo()
+	if len(links) > 0 {
+		// prioritize causal spans over the unlazier
+		return links[0]
+	}
+	return span.ParentSpan
+}
+
+func (span *Span) Hidden(opts FrontendOpts) bool {
+	if span.Ignore {
+		// absolutely 100% boring spans, like 'id' and 'sync'
+		return true
+	}
+	if span.IsInternal() && opts.Verbosity < ShowInternalVerbosity {
+		// internal spans are hidden by default
+		return true
+	}
+	if span.ParentSpan != nil &&
+		(span.Encapsulated || span.ParentSpan.Encapsulate) &&
+		!span.ParentSpan.IsFailed() &&
+		opts.Verbosity < ShowEncapsulatedVerbosity {
+		// encapsulated steps are hidden (even on error) unless their parent errors
+		return true
+	}
+	return false
+}
+
+func (span *Span) LinksTo() []*Span {
 	var linked []*Span
+	for linkedID := range span.db.Links[span.ID] {
+		linker, ok := span.db.Spans[linkedID]
+		if ok {
+			linked = append(linked, linker)
+		} else {
+			panic("impossible: linked span not found: " + linkedID.String())
+		}
+	}
+	sort.Slice(linked, func(i, j int) bool {
+		return linked[i].StartTime().Before(linked[j].StartTime())
+	})
+	return linked
+}
+
+func (span *Span) LinkedFrom() []*Span {
+	var linkers []*Span
 	for linkerID := range span.db.LinkedFrom[span.ID] {
 		linker, ok := span.db.Spans[linkerID]
 		if ok {
-			linked = append(linked, linker)
+			linkers = append(linkers, linker)
+		} else {
+			panic("impossible: linker span not found: " + linkerID.String())
 		}
 	}
-	return linked
+	sort.Slice(linkers, func(i, j int) bool {
+		return linkers[i].StartTime().Before(linkers[j].StartTime())
+	})
+	return linkers
 }
 
 func (span *Span) IsRunning() bool {
@@ -95,15 +150,17 @@ func (span *Span) PendingReason() (bool, []string) {
 	var reasons []string
 	if len(span.EffectIDs) > 0 {
 		for _, digest := range span.EffectIDs {
-			// if the LLB span has arrived, so we're no longer pending
-			for _, effect := range span.LinkedFrom() {
-				if effect.Digest == digest {
-					return false, []string{
-						"effect " + digest + " has started",
-					}
+			if len(span.db.EffectSpans[digest]) > 0 {
+				return false, []string{
+					digest + " has started",
 				}
 			}
-			reasons = append(reasons, "effect "+digest+" has not started")
+			if span.db.CompletedEffects[digest] {
+				return false, []string{
+					digest + " has completed",
+				}
+			}
+			reasons = append(reasons, digest+" has not started")
 		}
 		// there's an output but no linked spans yet, so we're pending
 		return true, reasons
@@ -116,7 +173,6 @@ func (span *Span) IsCached() bool {
 	return cached
 }
 
-// TODO: fix this up
 func (span *Span) CachedReason() (bool, []string) {
 	if span.Cached {
 		return true, []string{"span is cached"}
@@ -126,9 +182,9 @@ func (span *Span) CachedReason() (bool, []string) {
 	track := func(effect string, cached bool) {
 		states[cached]++
 		if cached {
-			reasons = append(reasons, fmt.Sprintf("effect %s is cached", effect))
+			reasons = append(reasons, fmt.Sprintf("%s is cached", effect))
 		} else {
-			reasons = append(reasons, fmt.Sprintf("effect %s is NOT cached", effect))
+			reasons = append(reasons, fmt.Sprintf("%s is not cached", effect))
 		}
 	}
 	for _, effect := range span.EffectIDs {
@@ -251,7 +307,13 @@ func (span *Span) EndTimeOrFallback(fallbackEnd time.Time) time.Time {
 	if span.IsRunning() {
 		return fallbackEnd
 	}
-	return span.ReadOnlySpan.EndTime()
+	maxTime := span.ReadOnlySpan.EndTime()
+	for _, effect := range span.LinkedFrom() {
+		if effect.EndTime().After(maxTime) {
+			maxTime = effect.EndTime()
+		}
+	}
+	return maxTime
 }
 
 func (span *Span) EndTime() time.Time {

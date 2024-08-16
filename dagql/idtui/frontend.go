@@ -63,9 +63,9 @@ type Frontend interface {
 	// children will be promoted to the "top-level" of the TUI.
 	SetPrimary(spanID trace.SpanID)
 	Background(cmd tea.ExecCommand) error
-	// RevealAllSpans tells the frontend to show all spans, not just the spans
-	// beneath the primary span.
-	SetRevealAllSpans(bool)
+	// RevealAllSpans tells the frontend to show all spans, not just
+	// the spans beneath the primary span.
+	RevealAllSpans()
 
 	// Can consume otel spans and logs.
 	SpanExporter() sdktrace.SpanExporter

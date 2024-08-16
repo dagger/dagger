@@ -35,7 +35,7 @@ func SpanContextFromDescription(desc map[string]string) trace.SpanContext {
 // buildkitTelemetryContext returns a context with a wrapped span that has a
 // TracerProvider that can process spans produced by buildkit. This works,
 // because of how buildkit heavily relies on trace.SpanFromContext.
-func buildkitTelemetryContext(client *Client, ctx context.Context) context.Context {
+func buildkitTelemetryProvider(client *Client, ctx context.Context) context.Context {
 	if ctx == nil {
 		return nil
 	}
@@ -149,8 +149,10 @@ func (sp *SpanProcessor) OnStart(ctx context.Context, span sdktrace.ReadWriteSpa
 	// convert [internal] prefix into internal attribute
 	if rest, ok := strings.CutPrefix(span.Name(), InternalPrefix); ok {
 		span.SetName(rest)
-		span.SetAttributes(attribute.Bool(telemetry.UIInternalAttr, true))
 	}
+
+	// all Buildkit spans are internal
+	span.SetAttributes(attribute.Bool(telemetry.UIInternalAttr, true))
 
 	// silence noisy registry lookups
 	if span.Name() == "remotes.docker.resolver.HTTPRequest" {
@@ -164,14 +166,6 @@ func (sp *SpanProcessor) OnStart(ctx context.Context, span sdktrace.ReadWriteSpa
 }
 
 func (sp *SpanProcessor) setupVertex(span sdktrace.ReadWriteSpan, vertex digest.Digest) {
-	span.SetAttributes(
-		// TODO: consolidate? or do we need them to be distinct?
-		// track the "DAG digest" in the same way that we track Dagger digests
-		attribute.String(telemetry.DagDigestAttr, vertex.String()),
-		// track the Buildkit effect-specific equivalent
-		attribute.String(telemetry.EffectIDAttr, vertex.String()),
-	)
-
 	llbOp, ok := sp.Client.LookupOp(vertex)
 	if !ok {
 		return
@@ -183,15 +177,11 @@ func (sp *SpanProcessor) setupVertex(span sdktrace.ReadWriteSpan, vertex digest.
 		span.AddLink(trace.Link{SpanContext: causeCtx})
 	}
 
-	// track the inputs of the op
-	// NOTE: this points to DagDigestAttr
-	if len(llbOp.Inputs) > 0 {
-		inputs := make([]string, len(llbOp.Inputs))
-		for i, input := range llbOp.Inputs {
-			inputs[i] = input.OpDigest.String()
-		}
-		span.SetAttributes(attribute.StringSlice(telemetry.DagInputsAttr, inputs))
-	}
+	// op, err := llbOp.Op.Marshal()
+	// if err == nil {
+	// span.SetAttributes(attribute.String("opDAG", llbOp.String()))
+	// span.SetAttributes("op", llbOp.OpDigest)
+	// }
 
 	// convert cache prefixes into cached attribute (this is set deep inside
 	// buildkit)
@@ -201,23 +191,65 @@ func (sp *SpanProcessor) setupVertex(span sdktrace.ReadWriteSpan, vertex digest.
 		span.SetAttributes(attribute.Bool(telemetry.CachedAttr, true))
 	}
 
-	// emit the deep dependencies of the op so the frontend can know that
-	// they're completed without needing a span for each
-	sp.witnessedOpsL.Lock()
-	var doneEffects []string
-	_ = llbOp.Walk(func(op *OpDAG) error {
-		if op != llbOp && !sp.witnessedOps[*op.OpDigest] {
-			doneEffects = append(doneEffects, op.OpDigest.String())
-			sp.witnessedOps[*op.OpDigest] = true
-		}
-		return nil
-	})
-	sp.witnessedOpsL.Unlock()
-	span.SetAttributes(
-		attribute.StringSlice(telemetry.EffectsCompletedAttr, doneEffects),
-	)
+	// sp.witnessedOpsL.Lock()
+	// doneEffects := opDeps(llbOp, sp.witnessedOps)
+	// sp.witnessedOpsL.Unlock()
+	// span.SetAttributes(
+	// 	attribute.StringSlice(telemetry.EffectsCompletedAttr, doneEffects),
+	// )
+	span.SetAttributes(DAGAttributes(llbOp)...)
 }
 
 func (*SpanProcessor) OnEnd(sdktrace.ReadOnlySpan)      {}
 func (*SpanProcessor) ForceFlush(context.Context) error { return nil }
 func (*SpanProcessor) Shutdown(context.Context) error   { return nil }
+
+func DAGAttributes(op *OpDAG) []attribute.KeyValue {
+	attrs := []attribute.KeyValue{
+		// TODO: consolidate? or do we need them to be distinct?
+		// track the "DAG digest" in the same way that we track Dagger digests
+		attribute.String(telemetry.DagDigestAttr, op.OpDigest.String()),
+		// track the Buildkit effect-specific equivalent
+		attribute.String(telemetry.EffectIDAttr, op.OpDigest.String()),
+	}
+	// track the inputs of the op
+	// NOTE: this points to DagDigestAttr
+	if len(op.Inputs) > 0 {
+		inputs := make([]string, len(op.Inputs))
+		for i, input := range op.Inputs {
+			inputs[i] = input.OpDigest.String()
+		}
+		attrs = append(attrs, attribute.StringSlice(telemetry.DagInputsAttr, inputs))
+	}
+	// emit the deep dependencies of the op so the frontend can know that
+	// they're completed without needing a span for each
+	deps := opDeps(op, nil)
+	if len(deps) > 0 {
+		attrs = append(attrs,
+			attribute.StringSlice(
+				telemetry.EffectsCompletedAttr,
+				deps,
+			),
+		)
+	}
+	return attrs
+}
+
+func opDeps(dag *OpDAG, seen map[digest.Digest]bool) []string {
+	var doneEffects []string
+	_ = dag.Walk(func(op *OpDAG) error {
+		if op == dag {
+			return nil
+		}
+		if seen != nil {
+			if seen[*op.OpDigest] {
+				return nil
+			} else {
+				seen[*op.OpDigest] = true
+			}
+		}
+		doneEffects = append(doneEffects, op.OpDigest.String())
+		return nil
+	})
+	return doneEffects
+}

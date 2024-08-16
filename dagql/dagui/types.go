@@ -49,6 +49,7 @@ type TraceRow struct {
 	Depth                   int
 	IsRunningOrChildRunning bool
 	Previous                *TraceRow
+	Parent                  *Span
 }
 
 type RowsView struct {
@@ -57,9 +58,9 @@ type RowsView struct {
 	BySpan map[trace.SpanID]*TraceTree
 }
 
-func (db *DB) RowsView(zoomedID trace.SpanID) *RowsView {
+func (db *DB) RowsView(opts FrontendOpts) *RowsView {
 	view := &RowsView{
-		Zoomed: db.Spans[zoomedID],
+		Zoomed: db.Spans[opts.ZoomedSpan],
 		BySpan: make(map[trace.SpanID]*TraceTree),
 	}
 	var spans []*Span
@@ -68,7 +69,7 @@ func (db *DB) RowsView(zoomedID trace.SpanID) *RowsView {
 	} else {
 		spans = db.SpanOrder
 	}
-	db.WalkSpans(spans, func(row *TraceTree) {
+	db.WalkSpans(opts, spans, func(row *TraceTree) {
 		if row.Parent != nil {
 			row.Parent.Children = append(row.Parent.Children, row)
 		} else {
@@ -79,52 +80,58 @@ func (db *DB) RowsView(zoomedID trace.SpanID) *RowsView {
 	return view
 }
 
-func (db *DB) WalkSpans(spans []*Span, f func(*TraceTree)) {
-	var lastRow *TraceTree
-	seen := make(map[trace.SpanID]bool, len(spans))
+func (db *DB) WalkSpans(opts FrontendOpts, spans []*Span, f func(*TraceTree)) {
+	var lastTree *TraceTree
+	seen := make(map[trace.SpanID]bool)
 	var walk func(*Span, *TraceTree)
 	walk = func(span *Span, parent *TraceTree) {
-		if span.Ignore {
-			return
-		}
 		spanID := span.ID
 		if seen[spanID] {
 			return
 		}
+		seen[spanID] = true
+
+		// If the span should be hidden, don't even collect it into the tree so we
+		// can track relationships between rows accurately (e.g. chaining pipeline
+		// calls).
+		if !opts.ShouldShow(span) {
+			return
+		}
+
 		if span.Passthrough {
 			for _, child := range span.ChildrenAndLinkedSpans() {
 				walk(child, parent)
 			}
 			return
 		}
-		row := &TraceTree{
+
+		tree := &TraceTree{
 			Span:   span,
 			Parent: parent,
 		}
-		if span.Base != nil && lastRow != nil {
+		if span.Base != nil && lastTree != nil {
 			// TODO: sync with Cloud impl.
-			row.Chained = span.Base.Digest == lastRow.Span.Digest
-			lastRow.Final = !row.Chained
+			tree.Chained = span.Base.Digest == lastTree.Span.Digest
+			lastTree.Final = !tree.Chained
 		}
 		if span.IsRunning() {
-			row.setRunning()
+			tree.setRunning()
 		}
-		f(row)
-		lastRow = row
-		seen[spanID] = true
+		f(tree)
+		lastTree = tree
 		for _, child := range span.ChildrenAndLinkedSpans() {
-			walk(child, row)
+			walk(child, tree)
 		}
-		if lastRow != nil {
-			lastRow.Final = true
+		if lastTree != nil {
+			lastTree.Final = true
 		}
-		lastRow = row
+		lastTree = tree
 	}
-	for _, step := range spans {
-		walk(step, nil)
+	for _, span := range spans {
+		walk(span, nil)
 	}
-	if lastRow != nil {
-		lastRow.Final = true
+	if lastTree != nil {
+		lastTree.Final = true
 	}
 }
 
@@ -137,34 +144,30 @@ func (lv *RowsView) Rows(opts FrontendOpts) *Rows {
 	rows := &Rows{
 		BySpan: make(map[trace.SpanID]*TraceRow, len(lv.Body)),
 	}
-	var walk func(*TraceTree, int)
-	walk = func(tree *TraceTree, depth int) {
-		if !opts.ShouldShow(tree) {
-			return
+	var walk func(*TraceTree, *Span, int)
+	walk = func(tree *TraceTree, parent *Span, depth int) {
+		row := &TraceRow{
+			Index:                   len(rows.Order),
+			Span:                    tree.Span,
+			Chained:                 tree.Chained,
+			Depth:                   depth,
+			IsRunningOrChildRunning: tree.IsRunningOrChildRunning,
+			Parent:                  parent,
 		}
-		if !tree.Span.Passthrough {
-			row := &TraceRow{
-				Index:                   len(rows.Order),
-				Span:                    tree.Span,
-				Chained:                 tree.Chained,
-				Depth:                   depth,
-				IsRunningOrChildRunning: tree.IsRunningOrChildRunning,
-			}
-			if len(rows.Order) > 0 {
-				row.Previous = rows.Order[len(rows.Order)-1]
-			}
-			rows.Order = append(rows.Order, row)
-			rows.BySpan[tree.Span.ID] = row
-			depth++
+		if len(rows.Order) > 0 {
+			row.Previous = rows.Order[len(rows.Order)-1]
 		}
+		rows.Order = append(rows.Order, row)
+		rows.BySpan[tree.Span.ID] = row
 		if tree.IsRunningOrChildRunning || tree.Span.IsFailed() || opts.Verbosity >= ExpandCompletedVerbosity {
 			for _, child := range tree.Children {
-				walk(child, depth)
+				walk(child, row.Span, depth+1)
 			}
 		}
 	}
 	for _, row := range lv.Body {
-		walk(row, 0)
+		// TODO: parent should be zoomed span?
+		walk(row, lv.Zoomed, 0)
 	}
 	return rows
 }

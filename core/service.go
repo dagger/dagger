@@ -18,6 +18,7 @@ import (
 	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/vektah/gqlparser/v2/ast"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
 	"dagger.io/dagger/telemetry"
@@ -232,12 +233,6 @@ func (svc *Service) Start(
 	}
 }
 
-func (svc *Service) startSpan(ctx context.Context, id *call.ID, name string) (context.Context, trace.Span) {
-	return Tracer(ctx).Start(ctx, "start "+name, trace.WithLinks(
-		trace.Link{SpanContext: svc.Creator},
-	))
-}
-
 //nolint:gocyclo
 func (svc *Service) startContainer(
 	ctx context.Context,
@@ -307,12 +302,21 @@ func (svc *Service) startContainer(
 		}
 	}()
 
-	spanName := fmt.Sprintf("exec %s", strings.Join(execOp.Meta.Args, " "))
-	ctx, span := Tracer(ctx).Start(ctx, spanName, trace.WithLinks(
-		trace.Link{
-			SpanContext: buildkit.SpanContextFromDescription(execOp.Metadata.Description),
-		},
-	))
+	execCtx := buildkit.ContextFromDescription(ctx, execOp.Metadata.Description)
+	ctx, span := Tracer(ctx).Start(
+		// The parent is the call site that triggered it to start.
+		ctx,
+		// Match naming scheme of normal exec span.
+		fmt.Sprintf("exec %s", strings.Join(execOp.Meta.Args, " ")),
+		// This span continues the original withExec, by linking to it.
+		telemetry.Resume(execCtx),
+		// Hide this span so the user can just focus on the withExec.
+		telemetry.Internal(),
+		// The withExec span expects to see this effect, otherwise it'll still be
+		// pending.
+		trace.WithAttributes(attribute.String(telemetry.DagDigestAttr, execOp.OpDigest.String())),
+		trace.WithAttributes(attribute.String(telemetry.EffectIDAttr, execOp.OpDigest.String())),
+	)
 	defer func() {
 		if rerr != nil {
 			// NB: this is intentionally conditional; we only complete if there was
@@ -381,7 +385,7 @@ func (svc *Service) startContainer(
 		}
 	}
 
-	gc, err := bk.NewContainer(ctx, buildkit.NewContainerRequest{
+	gc, err := bk.NewContainer(execCtx, buildkit.NewContainerRequest{
 		Mounts:            mounts,
 		Hostname:          fullHost,
 		Platform:          &pbPlatform,
@@ -419,7 +423,7 @@ func (svc *Service) startContainer(
 		stderrClient, stderrCtr = io.Pipe()
 	}
 
-	svcProc, err := gc.Start(ctx, bkgw.StartRequest{
+	svcProc, err := gc.Start(execCtx, bkgw.StartRequest{
 		Args:         execOp.Meta.Args,
 		Env:          env,
 		Cwd:          execOp.Meta.Cwd,
@@ -682,7 +686,9 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 		})
 	}
 
-	ctx, span := svc.startSpan(ctx, id, strings.Join(descs, ", "))
+	ctx, span := Tracer(ctx).Start(ctx, strings.Join(descs, ", "), trace.WithLinks(
+		trace.Link{SpanContext: svc.Creator},
+	))
 	defer func() {
 		if rerr != nil {
 			// NB: this is intentionally conditional; we only complete if there was

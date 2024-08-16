@@ -1,6 +1,10 @@
 package dagui
 
-import "time"
+import (
+	"time"
+
+	"go.opentelemetry.io/otel/trace"
+)
 
 type FrontendOpts struct {
 	// Debug tells the frontend to show everything and do one big final render.
@@ -21,10 +25,6 @@ type FrontendOpts struct {
 	// Open web browser with the trace URL as soon as pipeline starts.
 	OpenWeb bool
 
-	// RevealAllSpans tells the frontend to show all spans, not just the spans
-	// beneath the primary span.
-	RevealAllSpans bool
-
 	// Leave the TUI running instead of exiting after completion.
 	NoExit bool
 
@@ -36,6 +36,13 @@ type FrontendOpts struct {
 
 	// DotShowInternal indicates whether to include internal steps in the DOT output
 	DotShowInternal bool
+
+	// ZoomedSpan configures a span to be zoomed in on, revealing
+	// its child spans.
+	ZoomedSpan trace.SpanID
+
+	// FocusedSpan is the currently selected span, i.e. the cursor position.
+	FocusedSpan trace.SpanID
 }
 
 const (
@@ -48,34 +55,32 @@ const (
 	ShowDigestsVerbosity      = 4
 )
 
-func (opts FrontendOpts) ShouldShow(tree *TraceTree) bool {
+func (opts FrontendOpts) ShouldShow(span *Span) bool {
 	if opts.Debug {
 		// debug reveals all
 		return true
 	}
-	span := tree.Span
-	if span.IsInternal() && opts.Verbosity < ShowInternalVerbosity {
-		// internal steps are hidden by default
-		return false
+	if opts.FocusedSpan == span.ID {
+		// prevent focused span from disappearing
+		return true
 	}
-	if tree.Parent != nil &&
-		(span.Encapsulated || tree.Parent.Span.Encapsulate) &&
-		!tree.Parent.Span.IsFailed() &&
-		opts.Verbosity < ShowEncapsulatedVerbosity {
-		// encapsulated steps are hidden (even on error) unless their parent errors
+	if span.Hidden(opts) {
 		return false
 	}
 	if span.IsFailed() {
-		// show errors
 		return true
 	}
 	if span.IsPending() {
-		// show pending steps
 		return true
 	}
-	if tree.IsRunningOrChildRunning {
-		// show running steps
+	if span.IsRunning() {
 		return true
+	}
+	if opts.TooFastThreshold > 0 &&
+		span.ActiveDuration(time.Now()) < opts.TooFastThreshold &&
+		opts.Verbosity < ShowSpammyVerbosity {
+		// ignore fast steps; signal:noise is too poor
+		return false
 	}
 	if opts.GCThreshold > 0 &&
 		time.Since(span.EndTime()) > opts.GCThreshold &&

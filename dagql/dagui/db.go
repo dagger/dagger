@@ -243,8 +243,14 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) { //
 
 			// We also don't care about seeing the id field selection itself, since
 			// it's more noisy and confusing than helpful. We'll still show all the
-			// spans leadning up to it, just not the ID selection.
+			// spans leading up to it, just not the ID selection.
 			if call.Field == "id" {
+				spanData.Ignore = true
+			}
+
+			// We don't care about seeing the sync span itself - all relevant info
+			// should show up somewhere more familiar.
+			if call.Field == "sync" {
 				spanData.Ignore = true
 			}
 
@@ -304,6 +310,7 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) { //
 		case telemetry.EffectIDAttr:
 			dig := attr.Value.AsString()
 			db.EffectSpans[dig] = append(db.EffectSpans[dig], spanData)
+			db.CompletedEffects[dig] = true
 
 		case "rpc.service":
 			// TODO: rather than special-casing this, we should just switch

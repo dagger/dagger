@@ -723,7 +723,7 @@ func withOutgoingContext(c *Client, ctx context.Context) context.Context {
 	if ok {
 		ctx = metadata.NewOutgoingContext(ctx, md)
 	}
-	ctx = buildkitTelemetryContext(c, ctx)
+	ctx = buildkitTelemetryProvider(c, ctx)
 	return ctx
 }
 
