@@ -152,7 +152,7 @@ GraphQL query resolution is triggered only when a leaf value (scalar) is request
 
 An example will make this clearer. First, navigate to [Webhook.site](https://webhook.site), a free online tool that lets you receive and log incoming HTTP requests. Obtain and copy your unique webhook URL, as shown below:
 
-![Webhook.site URL](/img/current_docs/manual/api/webhook-1.png)
+![Webhook.site URL](/img/current_docs/api/webhook-1.png)
 
 Then, execute the following query, replacing the placeholder with your unique webhook URL:
 
@@ -203,7 +203,7 @@ query {
 
 This time, Dagger both prepares and executes the plan, because that is the only way to resolve the `stdout` field. Check the Webhook.site dashboard and the HTTP request sent by the `curl` command will be visible in the request log, as shown below:
 
-![Webhook.site request](/img/current_docs/manual/api/webhook-2.png)
+![Webhook.site request](/img/current_docs/api/webhook-2.png)
 
 This example demonstrates the lazy evaluation model in action. The client requests data, and the Dagger GraphQL API returns that data. If executing a command is necessary to return that data, it will do so; if not, it will not.
 

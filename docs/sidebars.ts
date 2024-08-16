@@ -224,33 +224,33 @@ module.exports = {
     },
     {
       "type": "category",
-      "label": "Configuring Dagger",
+      "label": "Configuration",
       "link": {
         "type": "doc",
-        "id": "configuring/index"
+        "id": "configuration/index"
       },
       "collapsible": true,
       "collapsed": true,
       "items": [
         {
           "type": "doc",
-          "id": "configuring/custom-runner"
+          "id": "configuration/custom-runner"
         },
         {
           "type": "doc",
-          "id": "configuring/custom-registry"
+          "id": "configuration/custom-registry"
         },
         {
           "type": "doc",
-          "id": "configuring/custom-ca"
+          "id": "configuration/custom-ca"
         },
         {
           "type": "doc",
-          "id": "configuring/proxy"
+          "id": "configuration/proxy"
         },
         {
           "type": "doc",
-          "id": "configuring/cloud"
+          "id": "configuration/cloud"
         },
 
       ],

@@ -1,5 +1,5 @@
 ---
-slug: /configuring/cloud
+slug: /configuration/cloud
 ---
 
 import Tabs from "@theme/Tabs";
@@ -11,7 +11,9 @@ import TabItem from "@theme/TabItem";
 Dagger Cloud requires a GitHub account identity verification. If you don't have one, [register for a free GitHub account](https://github.com/signup) before proceeding.
 :::
 
-## Create a Dagger Cloud organization
+## Traces
+
+### Create a Dagger Cloud organization
 
 1. Sign up for Dagger Cloud by selecting a plan on the [Dagger website](https://www.dagger.io/pricing). Dagger Cloud includes plans for both individuals and teams. Click **Continue with GitHub** to log in with your GitHub account.
 
@@ -31,11 +33,11 @@ Dagger Cloud requires a GitHub account identity verification. If you don't have 
 
 1. Click **Go to dashboard**. The next step walks you through how to send telemetry to Dagger Cloud.
 
-## Connect to Dagger Cloud
+### Connect to Dagger Cloud
 
 The next step is to connect to Dagger Cloud from your local development environment or from your CI environment.
 
-### Connect from your local development host
+#### Connect from your local development host
 
 You can visualize and debug your local Dagger pipeline runs with Dagger Cloud to identify issues before pushing them to CI.
 
@@ -59,13 +61,13 @@ Confirmation code: FCNP-SRLM
 
 Once you confirm your authentication code, your Dagger CLI will be authenticated and you will get redirected to your newly created Dagger Cloud organization.
 
-### Connect from your CI environment
+#### Connect from your CI environment
 
 To connect to Dagger Cloud from a CI environment, you require a Dagger Cloud token. Dagger Cloud creates this token automatically when you sign up.
 
 To find your token, browse to the **Organization Settings** page, by clicking your profile photo in the left sidebar and then clicking **Organization Settings**. Select the **Configuration** tab. You can also use this URL pattern: `https://dagger.cloud/{Your Org Name}/settings?tab=configuration`
 
-    ![Get token](/img/current_docs/configuring/get-token.png)
+    ![Get token](/img/current_docs/configuration/get-token.png)
 
   :::warning
   If you regenerate your token, you must replace the token wherever you've referenced it. To reduce operational interruptions, only regenerate your token if it has leaked.
@@ -177,11 +179,11 @@ When using self-hosted CI runners on AWS infrastructure, NAT Gateways are a comm
 </TabItem>
 </Tabs>
 
-## Test the integration
+### Test the integration
 
 The next step is to test the integration with Dagger Cloud.
 
-### Test from your local development host
+#### Test from your local development host
 
 1. In your terminal, call a Dagger Function. You will see a Dagger Cloud URL printed in the terminal.
 1. Click on the URL to view details of the run in Dagger Cloud.
@@ -194,6 +196,27 @@ Dagger 0.11.0 adds support for visualizing Dagger functions but does not yet pri
 dagger -m github.com/shykes/daggerverse/hello@v0.3.0 call hello
 ```
 
-### Test from your CI environment
+#### Test from your CI environment
 
 Trigger your CI workflow by pushing a commit or opening a pull request.
+
+## Organizations
+
+A member account grants a person access to log in to a Dagger Cloud organization to diagnose pipeline failures and collaborate on changes. Member information shown on the *All Runs* and *All Changes* pages is populated by the VCS you have integrated with Dagger Cloud. Deleting a member of a Dagger Cloud organization will not remove their runs and changes from Dagger Cloud.
+
+:::important
+You must hold the *Admin* role of a Dagger Cloud organization to administer members. You cannot change a member's role. Please contact Dagger Support via the in-app messenger for assistance if you need to change a member's role. This functionality is coming soon.
+:::
+
+## Roles and Permissions
+
+In Dagger Cloud, users can have one of two roles: *Admin* or *Member*. The Admin role is not a superset of the Member role. If a user needs to administer an organization and view Dagger pipeline runs, ensure that the user also has the Member role.
+
+| Actions | Admin | Member |
+| --- | :---: | :---: |
+| View Dagger pipeline runs and changes |  | ✓ |
+| View members of an org | ✓ | ✓ |
+| Invite new members to an org | ✓ |  |
+| Delete an existing member from an org | ✓ |  |
+
+You cannot change a member's role at this time. Please contact Dagger via the support messenger in Dagger Cloud if you need assistance.
