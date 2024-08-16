@@ -6,7 +6,7 @@ import remarkCodeImport from "remark-code-import";
 
 const config: Config = {
   title: "Dagger",
-  favicon: "img/favicon.png",
+  favicon: "img/favicon.svg",
 
   // Set the production url of your site here
   url: "https://docs.dagger.io",
