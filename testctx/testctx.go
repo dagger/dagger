@@ -24,7 +24,7 @@ func WithParallel(t *T) *T {
 		})
 }
 
-func Run(ctx context.Context, testingT *testing.T, suite any, middleware ...Middleware) {
+func Run(ctx context.Context, testingT *testing.T, suite any, middleware ...Middleware) bool {
 	t := New(ctx, testingT)
 	for _, m := range middleware {
 		t = m(t)
@@ -32,6 +32,8 @@ func Run(ctx context.Context, testingT *testing.T, suite any, middleware ...Midd
 
 	suiteT := reflect.TypeOf(suite)
 	suiteV := reflect.ValueOf(suite)
+
+	success := true
 
 	for i := 0; i < suiteV.NumMethod(); i++ {
 		methT := suiteT.Method(i)
@@ -47,8 +49,12 @@ func Run(ctx context.Context, testingT *testing.T, suite any, middleware ...Midd
 				methV.Interface())
 		}
 
-		t.Run(methT.Name, tf)
+		if !t.Run(methT.Name, tf) {
+			success = false
+		}
 	}
+
+	return success
 }
 
 func WithOTelTracing(tracer trace.Tracer) Middleware {
@@ -107,6 +113,12 @@ type T struct {
 	logger     func(*T, string)
 	beforeEach []func(*T) *T
 	errors     []string
+
+	failed bool
+
+	retry         int
+	retriesMax    int
+	retryInterval time.Duration
 }
 
 func (t *T) BaseName() string {
@@ -138,6 +150,15 @@ func (t *T) WithTimeout(timeout time.Duration) *T {
 	})
 }
 
+func (t *T) Retry(count int) {
+	t.retriesMax = count
+}
+
+func (t *T) RetryWithDelay(count int, interval time.Duration) {
+	t.retriesMax = count
+	t.retryInterval = interval
+}
+
 // BeforeAll calls f immediately with itself and returns the result.
 //
 // It is not inherited by subtests.
@@ -155,25 +176,52 @@ func (t T) BeforeEach(f Middleware) *T {
 }
 
 func (t *T) Run(name string, f func(context.Context, *T)) bool {
-	return t.T.Run(name, func(testingT *testing.T) {
-		sub := t.sub(name, testingT)
+	retry := 0
+
+	var run func(testingT *testing.T)
+	run = func(testingT *testing.T) {
+		sub := t.sub(name, testingT, retry)
+		retry++
 		for _, setup := range t.beforeEach {
 			sub = setup(sub)
 		}
+
+		defer func() {
+			if r := recover(); r != nil {
+				sub.failed = true
+			}
+
+			if (sub.Failed() || sub.failed) && sub.canRetry() {
+				defer func() {
+					time.Sleep(sub.retryInterval)
+					t.T.Run(name, run)
+				}()
+				sub.doRetry()
+			} else if sub.failed && !sub.Failed() {
+				sub.Fail()
+			}
+		}()
+
 		f(sub.Context(), sub)
-	})
+	}
+
+	// FIXME: the return value only considers the first test attempt, not any
+	// subsequent attempts - it's fiddly to get the deepest one here,
+	// considering how Parallel might also be involved, etc
+	return t.T.Run(name, run)
 }
 
-func (t *T) sub(name string, testingT *testing.T) *T {
+func (t *T) sub(name string, testingT *testing.T, retry int) *T {
 	sub := New(t.ctx, testingT)
 	sub.baseName = name
 	sub.logger = t.logger
 	sub.beforeEach = t.beforeEach
+	sub.retry = retry
 	return sub
 }
 
 func (t *T) Log(vals ...any) {
-	t.log(fmt.Sprintln(vals...))
+	t.log(vals...)
 	t.T.Log(vals...)
 }
 
@@ -183,32 +231,39 @@ func (t *T) Logf(format string, vals ...any) {
 }
 
 func (t *T) Error(vals ...any) {
-	msg := fmt.Sprint(vals...)
-	t.errors = append(t.errors, msg)
-	t.log(msg)
-	t.T.Error(vals...)
+	t.errors = append(t.errors, fmt.Sprint(vals...))
+	t.log(vals...)
+	if !t.doRetry() {
+		t.T.Error(vals...)
+	}
 }
 
 func (t *T) Errorf(format string, vals ...any) {
 	t.logf(format, vals...)
 	t.errors = append(t.errors, fmt.Sprintf(format, vals...))
-	t.T.Errorf(format, vals...)
+	if !t.doRetry() {
+		t.T.Errorf(format, vals...)
+	}
 }
 
 func (t *T) Fatal(vals ...any) {
-	t.log(fmt.Sprintln(vals...))
+	t.log(vals...)
 	t.errors = append(t.errors, fmt.Sprint(vals...))
-	t.T.Fatal(vals...)
+	if !t.doRetry() {
+		t.T.Fatal(vals...)
+	}
 }
 
 func (t *T) Fatalf(format string, vals ...any) {
 	t.logf(format, vals...)
 	t.errors = append(t.errors, fmt.Sprintf(format, vals...))
-	t.T.Fatalf(format, vals...)
+	if !t.doRetry() {
+		t.T.Fatalf(format, vals...)
+	}
 }
 
 func (t *T) Skip(vals ...any) {
-	t.log(fmt.Sprintln(vals...))
+	t.log(vals...)
 	t.T.Skip(vals...)
 }
 
@@ -217,12 +272,40 @@ func (t *T) Skipf(format string, vals ...any) {
 	t.T.Skipf(format, vals...)
 }
 
+func (t *T) Fail() {
+	if !t.doRetry() {
+		t.T.Fail()
+	}
+}
+
+func (t *T) FailNow() {
+	if !t.doRetry() {
+		t.T.FailNow()
+	}
+}
+
 func (t *T) Errors() string {
 	return strings.Join(t.errors, "\n")
 }
 
-func (t *T) log(out string) {
+func (t *T) doRetry() bool {
+	t.failed = true
+	if t.canRetry() {
+		if !t.T.Skipped() {
+			t.T.Skipf("test attempt #%02d failed, retrying", t.retry)
+		}
+		return true
+	}
+	return false
+}
+
+func (t *T) canRetry() bool {
+	return t.retry < t.retriesMax
+}
+
+func (t *T) log(vals ...any) {
 	if t.logger != nil {
+		out := fmt.Sprint(vals...)
 		if !strings.HasSuffix(out, "\n") {
 			out += "\n"
 		}
