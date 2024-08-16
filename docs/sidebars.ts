@@ -3,15 +3,15 @@ module.exports = {
   "current": [
     {
       "type": "doc",
+      "label": "Introduction",
       "id": "index",
-      "label": "Introduction"
     },
     {
       "type": "category",
       "label": "Features",
       "link": {
         "type": "doc",
-        "id": "features/index"
+        "id": "features/index",
       },
       "items": [
         "features/programmable-pipelines",
@@ -47,11 +47,6 @@ module.exports = {
       ]
     },
     {
-      "type": "doc",
-      "label": "Adopting Dagger",
-      "id": "adopting"
-    },
-    {
       "type": "category",
       "label": "Dagger API",
       "link": {
@@ -71,7 +66,9 @@ module.exports = {
           "collapsible": true,
           "collapsed": true,
           "items": [
-            "api/calling"
+            "api/clients-sdk",
+            "api/clients-cli",
+            "api/clients-graphql"
           ]
         },
         {
@@ -84,26 +81,35 @@ module.exports = {
           "collapsible": true,
           "collapsed": true,
           "items": [
-            "api/functions",
-            "api/arguments",
-            "api/return-values",
-            "api/chaining",
-            "api/debugging",
-            "api/documentation",
-            "api/secrets",
-            "api/services",
-            "api/cache-volumes",
-            "api/host-resources",
-            "api/error-handling",
-            "api/structure-packaging",
-            "api/entrypoint-function",
-            "api/custom-types",
-            "api/state-functions",
-            "api/enumerations",
-            "api/interfaces",
-            "api/runtimes",
-            "api/language-dependencies",
-            "api/ide-integration",
+            {
+              "type": "category",
+              "label": "Dagger Functions",
+              "link": {
+                "type": "doc",
+                "id": "api/functions"
+              },
+              items: [
+                "api/arguments",
+                "api/return-values",
+                "api/chaining",
+                "api/secrets",
+                "api/services",
+                "api/cache-volumes",
+                "api/host-resources",
+                "api/error-handling",
+                "api/debugging",
+                "api/ide-integration",
+                "api/documentation",
+                "api/structure-packaging",
+                "api/entrypoint-function",
+                "api/custom-types",
+                "api/state-functions",
+                "api/enumerations",
+                "api/interfaces",
+                "api/runtimes",
+                "api/language-dependencies",
+              ]
+            },
           ]
         },
         {
@@ -217,11 +223,6 @@ module.exports = {
       ]
     },
     {
-      "type": "doc",
-      "label": "Cookbook",
-      "id": "cookbook/cookbook"
-    },
-    {
       "type": "category",
       "label": "Configuring Dagger",
       "link": {
@@ -256,11 +257,21 @@ module.exports = {
     },
     {
       "type": "doc",
-      "id": "contributing"
+      "label": "Cookbook",
+      "id": "cookbook/cookbook"
     },
     {
       "type": "doc",
       "id": "faq"
+    },
+    {
+      "type": "doc",
+      "label": "Adopting Dagger",
+      "id": "adopting"
+    },
+    {
+      "type": "doc",
+      "id": "contributing"
     },
     {
       "type": "link",
