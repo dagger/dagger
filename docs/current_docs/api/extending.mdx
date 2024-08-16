@@ -10,6 +10,6 @@ Dagger modules contain one or more Dagger Functions. Dagger Functions are just r
 
 Dagger Functions can call other Dagger Functions across languages. For example, a Python function can call a Go function, which can call a TypeScript function, and so on. Each Dagger SDK generates native code-bindings for all dependencies, which abstract away the underlying GraphQL queries. This gives you all the benefits of type-checking, code completion and other IDE features when developing Dagger Functions.
 
-All Dagger Functions can also be called from the Dagger CLI. The CLI can call any Dagger Function, either from your local filesystem or from a Git repository. No other infrastructure is required. It can be used interactively, from a shell script, or from a CI configuration.
+All Dagger Functions can also be called from the Dagger CLI. The CLI can call any Dagger Function, either from your local filesystem or from a Git repository. It can be used interactively, from a shell script, or from a CI configuration. Apart from the Dagger CLI, no other infrastructure or tooling is required to call Dagger Functions.
 
 You are encouraged to write your own Dagger Functions and share them with others. Dagger also lets you import and reuse modules developed by your team, your organization or the broader Dagger community. The Daggerverse is a free service run by Dagger, which indexes all publicly available Dagger modules and Dagger Functions, and lets you easily search and consume them.

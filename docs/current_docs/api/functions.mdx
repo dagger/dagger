@@ -1,18 +1,14 @@
 ---
-slug: /api/basics
+slug: /api/functions
 ---
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-# Basic Usage
-
-Dagger Functions are packaged, shared and reused using Dagger modules. Dagger modules can contain one or more Dagger Functions. Dagger lets you add dependencies to your Dagger modules, so that you can import, reuse and build on Dagger modules created by others.
-
-The simplest and most common way to call Dagger Functions is with the Dagger Command-Line Interface (CLI).
+# Dagger Functions
 
 ## Initialize a Dagger module
 
-A new Dagger module is initialized by calling `dagger init`. This creates a new `dagger.json` configuration file in the current working directory, together with sample Dagger Function source code. The configuration file will default the name of the module to the current directory name, unless an alternative is specified with the `--name` argument.
+Dagger Functions are packaged, shared and reused using Dagger modules. A new Dagger module is initialized by calling `dagger init`. This creates a new `dagger.json` configuration file in the current working directory, together with sample Dagger Function source code. The configuration file will default the name of the module to the current directory name, unless an alternative is specified with the `--name` argument.
 
 Once a module is initialized, `dagger develop --sdk=...` sets up or updates all the resources needed to develop the module locally. By default, the module source code will be stored in the current working directory, unless an alternative is specified with the `--source` argument.
 
@@ -285,3 +281,17 @@ Here's what you should see:
   "last": "Lavigne"
 }
 ```
+
+## Understand the execution environment
+
+Dagger Functions execute within containers spawned by the Dagger Engine. This "sandboxing" serves a few important purposes:
+
+1. Reproducibility: Executing in a well-defined and well-controlled container ensures that a function to run the same way every time it is invoked. It also guards against creating "hidden dependencies" on ambient properties of the execution environment that could change at any moment.
+1. Caching: A reproducible containerized environment makes it possible to cache the result of function execution, which in turn allows Dagger to automatically speed up function execution.
+1. Security: Even when running third-party Dagger Functions sourced from a Git repository, those Dagger Functions will not have default access to your host environment (host files, directories, environment variables, etc.). Access to these host resources can only be granted by explicitly passing them as argument values to the Dagger Function.
+
+When implementing Dagger Functions, you are free to write arbitrary code that will execute inside the Dagger module's container. You have access to the Dagger API to make calls to the core Dagger API or other Dagger modules you depend on, but you are also free to just use the language's standard library and/or imported third-party libraries.
+
+The process your code executes in will currently be with the `root` user, but without a full set of Linux capabilities and other standard container sandboxing provided by `runc`.
+
+The current working directory of your code will be an initially empty directory. You can write and read files and directories in this directory if needed. This includes using the `Container.export()`, `Directory.export()` or `File.export()` APIs to write those artifacts to this local directory if needed.

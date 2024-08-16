@@ -61,17 +61,30 @@ module.exports = {
       "collapsible": true,
       "collapsed": true,
       "items": [
-        "api/types",
-        "api/calling",
-        "api/extending",
         {
           "type": "category",
-          "label": "API Documentation",
+          "label": "Calling the API",
+          "link": {
+            "type": "doc",
+            "id": "api/calling"
+          },
           "collapsible": true,
           "collapsed": true,
           "items": [
-            "api/basics",
-            "api/ide-integration",
+            "api/calling"
+          ]
+        },
+        {
+          "type": "category",
+          "label": "Extending the API",
+          "link": {
+            "type": "doc",
+            "id": "api/extending"
+          },
+          "collapsible": true,
+          "collapsed": true,
+          "items": [
+            "api/functions",
             "api/arguments",
             "api/return-values",
             "api/chaining",
@@ -81,9 +94,7 @@ module.exports = {
             "api/services",
             "api/cache-volumes",
             "api/host-resources",
-            "api/remote-resources",
             "api/error-handling",
-            "api/execution-environment",
             "api/structure-packaging",
             "api/entrypoint-function",
             "api/custom-types",
@@ -92,6 +103,22 @@ module.exports = {
             "api/interfaces",
             "api/runtimes",
             "api/language-dependencies",
+            "api/ide-integration",
+          ]
+        },
+        {
+          "type": "category",
+          "label": "Reference",
+          "collapsible": true,
+          "collapsed": true,
+          "items": [
+            "api/types",
+            "api/internals",
+            {
+              "type": "link",
+              "label": "API Reference",
+              "href": "https://docs.dagger.io/api/reference"
+            },
             {
               "type": "link",
               "label": "Go SDK Reference",
@@ -108,14 +135,13 @@ module.exports = {
               "id": "reference/typescript/modules"
             },
 
-          ],
+          ]
         },
         {
           "type": "doc",
           "label": "CLI Reference",
           "id": "reference/cli"
         },
-        "api/internals",
       ]
     },
     {
