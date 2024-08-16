@@ -750,7 +750,7 @@ defmodule Dagger.Client do
       |> QB.select("moduleSource")
       |> QB.put_arg("refString", ref_string)
       |> QB.maybe_put_arg("stable", optional_args[:stable])
-      |> maybe_put_arg("relHostPath", optional_args[:rel_host_path])
+      |> QB.maybe_put_arg("relHostPath", optional_args[:rel_host_path])
 
     %Dagger.ModuleSource{
       query_builder: query_builder,

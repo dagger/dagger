@@ -89,8 +89,8 @@ defmodule Dagger.Function do
       |> QB.put_arg("typeDef", Dagger.ID.id!(type_def))
       |> QB.maybe_put_arg("description", optional_args[:description])
       |> QB.maybe_put_arg("defaultValue", optional_args[:default_value])
-      |> maybe_put_arg("defaultPath", optional_args[:default_path])
-      |> maybe_put_arg("ignore", optional_args[:ignore])
+      |> QB.maybe_put_arg("defaultPath", optional_args[:default_path])
+      |> QB.maybe_put_arg("ignore", optional_args[:ignore])
 
     %Dagger.Function{
       query_builder: query_builder,
