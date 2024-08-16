@@ -1,0 +1,32 @@
+---
+slug: /api/clients/cli
+---
+
+# Dagger CLI
+
+The Dagger CLI offers a `dagger query` sub-command, which provides an easy way to call the Dagger API from the command line.
+
+This example demonstrates how to build a Go application by cloning the [canonical Git repository for Go](https://go.googlesource.com/example/+/HEAD/hello) and building the "Hello, world" example program from it by calling the Dagger API via `dagger query`.
+
+Create a new shell script named `build.sh` and add the following code to it:
+
+```shell file=./snippets/clients-cli/build.sh
+```
+
+This script uses `dagger query` to send two GraphQL queries to the Dagger API. The first query returns a content-addressed identifier of the source code directory from the remote Git repository. This is interpolated into the second query, which initializes a new container, mounts the source code directory, compiles the source code, and writes the compiled binary back to the host filesystem.
+
+Add the executable bit to the shell script and then run it by executing the commands below:
+
+```shell
+chmod +x ./build.sh
+dagger run ./build.sh
+```
+
+The `dagger run` command executes the script in a Dagger session and displays live progress. On completion, the built Go application will be available in the working directory on the host, as shown below:
+
+```shell
+tree
+.
+├── build.sh
+└── dagger-builds-hello
+```

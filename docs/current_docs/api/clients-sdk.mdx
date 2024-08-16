@@ -1,0 +1,205 @@
+---
+slug: /api/clients/sdk
+---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Dagger SDKs
+
+Dagger SDKs make it easy to call the Dagger API from your favorite programming language.
+
+Dagger SDKs are currently available for Go, TypeScript and Python. Although the Dagger API uses GraphQL, you do not need to know GraphQL to call the API; the translation to underlying GraphQL API calls is handled internally by the Dagger SDKs.
+
+## Installation
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+:::note
+The Dagger Go SDK requires [Go 1.22 or later](https://go.dev/doc/install).
+:::
+
+From an existing Go module, install the Dagger Go SDK using the commands below:
+
+```shell
+go get dagger.io/dagger@latest
+```
+
+After importing `dagger.io/dagger` in your Go module code, run the following command to update `go.sum`:
+
+```shell
+go mod tidy
+```
+</TabItem>
+<TabItem value="Python">
+
+:::note
+The Dagger Python SDK requires [Python 3.11 or later](https://docs.python.org/3/using/index.html).
+:::
+
+Using a [virtual environment](https://packaging.python.org/en/latest/tutorials/installing-packages/#creating-virtual-environments) is recommended. Create a virtual environment for your project:
+
+```shell
+python3 -m venv .venv && source .venv/bin/activate
+```
+
+Install the Dagger Python SDK in your project's virtual environment using [PyPI](https://pypi.org/project/dagger-io/) or [Conda](https://anaconda.org/conda-forge/dagger-io) (from the [conda-forge](https://conda-forge.org/docs/user/introduction.html#how-can-i-install-packages-from-conda-forge) channel):
+
+```shell
+# using pypi
+pip install dagger-io
+
+# using conda
+conda install dagger-io
+```
+</TabItem>
+<TabItem value="TypeScript">
+:::note
+The Dagger TypeScript SDK requires [TypeScript 5.0 or later](https://www.typescriptlang.org/download/). This SDK currently only [supports Node.js (stable) and Bun (experimental)](./runtimes.mdx).
+:::
+
+Install the Dagger TypeScript SDK in your project using `npm` or `yarn`:
+
+```shell
+// using npm
+npm install @dagger.io/dagger@latest --save-dev
+
+// using yarn
+yarn add @dagger.io/dagger --dev
+```
+</TabItem>
+</Tabs>
+
+## Usage example
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+This example demonstrates how to build a Go application for multiple architectures and Go versions using the Go SDK.
+
+Clone an example project and create a new Go module in the project directory:
+
+```shell
+git clone https://go.googlesource.com/example
+cd example/hello
+mkdir multibuild && cd multibuild
+go mod init multibuild
+```
+
+Create a new file in the `multibuild` directory named `main.go` and add the following code to it:
+
+```go file=./snippets/clients-sdk/go/main.go
+```
+
+This Go program imports the Dagger SDK and defines two functions. The `build()` function represents the pipeline and creates a Dagger client, which provides an interface to the Dagger API. It also defines the build matrix, consisting of two OSs (`darwin` and `linux`) and two architectures (`amd64` and `arm64`), and builds the Go application for each combination. The Go build process is instructed via the `GOOS` and `GOARCH` build variables, which are reset for each case.
+
+Try the Go program by executing the commands below:
+
+```shell
+dagger run go run multibuild/main.go
+```
+
+The `dagger run` command executes the specified command in a Dagger session and displays live progress. The Go program builds the application for each OS/architecture combination and writes the build results to the host. You will see the build process run four times, once for each combination. Note that the builds are happening concurrently, because the builds do not depend on eachother.
+
+Use the `tree` command to see the build artifacts on the host, as shown below:
+
+```shell
+tree build
+build/
+├── darwin
+│   ├── amd64
+│   │   └── multibuild
+│   └── arm64
+│       └── multibuild
+└── linux
+    ├── amd64
+    │   └── multibuild
+    └── arm64
+        └── multibuild
+```
+</TabItem>
+<TabItem value="Python">
+This example demonstrates how to test a Python application against multiple Python versions using the Python SDK.
+
+Clone an example project:
+
+```shell
+git clone --branch 0.101.0 https://github.com/tiangolo/fastapi
+cd fastapi
+```
+
+Create a new file named `test.py` in the project directory and add the following code to it.
+
+```python file=./snippets/clients-sdk/python/test.py
+```
+
+This Python program imports the Dagger SDK and defines an asynchronous function named `test()`. This `test()` function creates a Dagger client, which provides an interface to the Dagger API. It also defines the test matrix, consisting of Python versions `3.7` to `3.11` and iterates over this matrix, downloading a Python container image for each specified version and testing the source application in that version.
+
+Run the Python program by executing the command below from the project directory:
+
+```shell
+dagger run python test.py
+```
+
+The `dagger run` command executes the specified command in a Dagger session and displays live progress. The tool tests the application against each version concurrently and displays the following final output:
+
+```shell
+Starting tests for Python 3.7
+Tests for Python 3.7 succeeded!
+Starting tests for Python 3.8
+Tests for Python 3.8 succeeded!
+Starting tests for Python 3.9
+Tests for Python 3.9 succeeded!
+Starting tests for Python 3.10
+Tests for Python 3.10 succeeded!
+Starting tests for Python 3.11
+Tests for Python 3.11 succeeded!
+All tasks have finished
+```
+</TabItem>
+<TabItem value="TypeScript">
+
+This example demonstrates how to test a Node.js application against multiple Node.js versions using the TypeScript SDK.
+
+Create an example React project (or use an existing one) in TypeScript:
+
+```shell
+npx create-react-app my-app --template typescript
+cd my-app
+```
+
+In the project directory, create a new file named `build.mts` and add the following code to it:
+
+```typescript file=./snippets/clients-sdk/typescript/build.mts
+```
+
+This TypeScript program imports the Dagger SDK and defines an asynchronous function. This function creates a Dagger client, which provides an interface to the Dagger API. It also defines the test/build matrix, consisting of Node.js versions `12`, `14` and `16`, and iterates over this matrix, downloading a Node.js container image for each specified version and testing and building the source application against that version.
+
+Run the program by executing the command below:
+
+```shell
+dagger run node --loader ts-node/esm ./build.mts
+```
+
+The `dagger run` command executes the specified command in a Dagger session and displays live progress. The program tests and builds the application against each version in sequence. At the end of the process, a built application is available for each Node.js version in a `build-node-XX` folder in the project directory, as shown below:
+
+```shell
+tree -L 2 -d build-*
+build-node-12
+└── static
+    ├── css
+    ├── js
+    └── media
+build-node-14
+└── static
+    ├── css
+    ├── js
+    └── media
+build-node-16
+└── static
+    ├── css
+    ├── js
+    └── media
+```
+</TabItem>
+</Tabs>
