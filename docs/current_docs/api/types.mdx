@@ -2,9 +2,7 @@
 slug: /api/types
 ---
 
-import Embed from "@site/src/components/embed.js"
-
-# Types
+# API Types
 
 In addition to basic types (string, boolean, integer, arrays...), the Dagger API also provides powerful core types which serve as both arguments and return values for Dagger Functions. These include `Directory`, `Container`, `Service`, `Secret`, and many more.
 
@@ -98,3 +96,13 @@ Dagger allows you to utilize confidential information ("secrets") such as passwo
 |-------|-------------|
 | `name` | Returns the name of the secret |
 | `plaintext` | Returns the plaintext value of the secret |
+
+## CurrentModule
+
+The `CurrentModule` type provides capabilities to introspect the Dagger Function's module and interface between the current execution environment and the Dagger API.
+
+| Field | Description |
+|-------|-------------|
+| `source` | Returns the directory containing the module's source code |
+| `workdir` | Loads and returns a directory from the module's working directory, including any changes that may have been made to it during function execution |
+| `workdirFile` | Loads and returns a file from the module's working directory, including any changes that may have been made to it during function execution |
