@@ -42,8 +42,6 @@ type frontendPretty struct {
 	eof          bool
 	backgrounded bool
 	autoFocus    bool
-	focused      trace.SpanID
-	zoomed       trace.SpanID
 	debugged     trace.SpanID
 	focusedIdx   int
 	rowsView     *RowsView
@@ -160,14 +158,15 @@ func (fe *frontendPretty) Run(ctx context.Context, opts FrontendOpts, run func(c
 func (fe *frontendPretty) SetPrimary(spanID trace.SpanID) {
 	fe.mu.Lock()
 	fe.db.SetPrimarySpan(spanID)
-	fe.zoomed = spanID
-	fe.focused = spanID
+	fe.ZoomedSpan = spanID
+	fe.FocusedSpan = spanID
+	fe.recalculateViewLocked()
 	fe.mu.Unlock()
 }
 
-func (fe *frontendPretty) SetRevealAllSpans(val bool) {
+func (fe *frontendPretty) RevealAllSpans() {
 	fe.mu.Lock()
-	fe.FrontendOpts.RevealAllSpans = val
+	fe.ZoomedSpan = trace.SpanID{}
 	fe.mu.Unlock()
 }
 
@@ -260,8 +259,8 @@ func (fe *frontendPretty) finalRender() error {
 	r := newRenderer(fe.db, fe.window.Width, fe.FrontendOpts)
 
 	// Render the full trace.
-	fe.zoomed = fe.db.PrimarySpan
-	fe.focused = trace.SpanID{}
+	fe.ZoomedSpan = fe.db.PrimarySpan
+	fe.FocusedSpan = trace.SpanID{}
 	fe.focusedIdx = -1
 	fe.recalculateViewLocked()
 
@@ -389,7 +388,8 @@ func (fe *frontendPretty) renderKeymap(out *termenv.Output, style lipgloss.Style
 		{"first", []string{"home"}, true},
 		{"last", []string{"end", " "}, true},
 		{"zoom", []string{"enter"}, true},
-		{"unzoom", []string{"esc"}, fe.zoomed.IsValid() && fe.zoomed != fe.db.PrimarySpan},
+		{"unzoom", []string{"esc"}, fe.ZoomedSpan.IsValid() &&
+			fe.ZoomedSpan != fe.db.PrimarySpan},
 		{fmt.Sprintf("verbosity=%d", fe.Verbosity), []string{"+/-", "+", "-"}, true},
 		{quitMsg, []string{"q", "ctrl+c"}, true},
 	} {
@@ -441,7 +441,7 @@ func (fe *frontendPretty) Render(out *termenv.Output) error {
 		fmt.Fprint(countOut, KeymapStyle.Render(strings.Repeat(HorizBar, rest)))
 	}
 
-	if logs := fe.logs.Logs[fe.zoomed]; logs != nil && logs.UsedHeight() > 0 {
+	if logs := fe.logs.Logs[fe.ZoomedSpan]; logs != nil && logs.UsedHeight() > 0 {
 		fmt.Fprintln(below)
 		fe.renderLogs(countOut, r, logs, -1, fe.window.Height/3, progPrefix)
 	}
@@ -457,9 +457,27 @@ func (fe *frontendPretty) Render(out *termenv.Output) error {
 }
 
 func (fe *frontendPretty) recalculateViewLocked() {
-	fe.rowsView = fe.db.RowsView(fe.zoomed)
+	fe.rowsView = fe.db.RowsView(fe.FrontendOpts)
 	fe.rows = fe.rowsView.Rows(fe.FrontendOpts)
-	fe.focus(fe.rows.BySpan[fe.focused])
+	if len(fe.rows.Order) == 0 {
+		fe.focusedIdx = -1
+		fe.FocusedSpan = trace.SpanID{}
+		return
+	}
+	if len(fe.rows.Order) < fe.focusedIdx {
+		// durability: everything disappeared?
+		fe.autoFocus = true
+	}
+	if fe.autoFocus {
+		fe.focusedIdx = len(fe.rows.Order) - 1
+		fe.FocusedSpan = fe.rows.Order[fe.focusedIdx].Span.ID
+	} else if row := fe.rows.BySpan[fe.FocusedSpan]; row != nil {
+		fe.focusedIdx = row.Index
+	} else {
+		// lost focus somehow
+		fe.autoFocus = true
+		fe.recalculateViewLocked()
+	}
 }
 
 func (fe *frontendPretty) renderedRowLines(r *renderer, row *TraceRow, prefix string) []string {
@@ -485,34 +503,6 @@ func (fe *frontendPretty) renderProgress(out *termenv.Output, r *renderer, full 
 		return renderedAny
 	}
 
-	if !fe.autoFocus {
-		// must be manually focused
-		// NOTE: it's possible for the focused span to go away
-		lostFocus := true
-		if row := rows.BySpan[fe.focused]; row != nil {
-			fe.focusedIdx = row.Index
-			lostFocus = false
-		}
-		if lostFocus {
-			fe.autoFocus = true
-		}
-	}
-
-	if len(rows.Order) < fe.focusedIdx {
-		// durability: everything disappeared?
-		fe.autoFocus = true
-	}
-
-	if len(rows.Order) == 0 {
-		// NB: this is a bit redundant with above, but feels better to decouple
-		return renderedAny
-	}
-
-	if fe.autoFocus && len(rows.Order) > 0 {
-		fe.focusedIdx = len(rows.Order) - 1
-		fe.focused = rows.Order[fe.focusedIdx].Span.ID
-	}
-
 	lines := fe.renderLines(r, height, prefix)
 
 	fmt.Fprint(out, strings.Join(lines, "\n"))
@@ -523,7 +513,18 @@ func (fe *frontendPretty) renderProgress(out *termenv.Output, r *renderer, full 
 
 func (fe *frontendPretty) renderLines(r *renderer, height int, prefix string) []string {
 	rows := fe.rows
-	before, focused, after := rows.Order[:fe.focusedIdx], rows.Order[fe.focusedIdx], rows.Order[fe.focusedIdx+1:]
+	if len(rows.Order) == 0 {
+		return []string{}
+	}
+	if fe.focusedIdx == -1 {
+		fe.autoFocus = true
+		fe.focusedIdx = len(rows.Order) - 1
+	}
+
+	before, focused, after :=
+		rows.Order[:fe.focusedIdx],
+		rows.Order[fe.focusedIdx],
+		rows.Order[fe.focusedIdx+1:]
 
 	beforeLines := []string{}
 	focusedLines := fe.renderedRowLines(r, focused, prefix)
@@ -608,8 +609,9 @@ func (fe *frontendPretty) focus(row *TraceRow) {
 	if row == nil {
 		return
 	}
-	fe.focused = row.Span.ID
+	fe.FocusedSpan = row.Span.ID
 	fe.focusedIdx = row.Index
+	fe.recalculateViewLocked()
 }
 
 func (fe *frontendPretty) Init() tea.Cmd {
@@ -755,7 +757,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 			fe.pressedKeyAt = time.Now()
 			return fe, nil
 		case "esc":
-			fe.zoomed = fe.db.PrimarySpan
+			fe.ZoomedSpan = fe.db.PrimarySpan
 			fe.recalculateViewLocked()
 			return fe, nil
 		case "+":
@@ -774,11 +776,11 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 				return fe, nil
 			}
 			url := fe.cloudURL
-			if fe.zoomed.IsValid() && fe.zoomed != fe.db.PrimarySpan {
-				url += "?span=" + fe.zoomed.String()
+			if fe.ZoomedSpan.IsValid() && fe.ZoomedSpan != fe.db.PrimarySpan {
+				url += "?span=" + fe.ZoomedSpan.String()
 			}
-			if fe.focused.IsValid() && fe.focused != fe.db.PrimarySpan {
-				url += "#" + fe.focused.String()
+			if fe.FocusedSpan.IsValid() && fe.FocusedSpan != fe.db.PrimarySpan {
+				url += "#" + fe.FocusedSpan.String()
 			}
 			return fe, func() tea.Msg {
 				if err := browser.OpenURL(url); err != nil {
@@ -790,11 +792,10 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 				return nil
 			}
 		case "?":
-			fe.debugged = fe.focused
-			fe.recalculateViewLocked()
+			fe.debugged = fe.FocusedSpan
 			return fe, nil
 		case "enter":
-			fe.zoomed = fe.focused
+			fe.ZoomedSpan = fe.FocusedSpan
 			fe.recalculateViewLocked()
 			return fe, nil
 		}
@@ -862,21 +863,20 @@ func (fe *frontendPretty) goDown() {
 
 func (fe *frontendPretty) goOut() {
 	fe.autoFocus = false
-	focused := fe.db.Spans[fe.focused]
-	if focused.ParentSpan == nil {
+	focused := fe.db.Spans[fe.FocusedSpan]
+	if focused == nil {
 		return
 	}
-	fe.focused = focused.ParentSpan.ID
-	if fe.focused == fe.zoomed {
-		// targeted the zoomed span; zoom on its parent isntead
-		zoomedParent := fe.db.Spans[fe.zoomed].ParentSpan
-		for zoomedParent != nil && zoomedParent.Passthrough {
-			zoomedParent = zoomedParent.ParentSpan
-		}
+	parent := focused.VisibleParent(fe.FrontendOpts)
+	if parent == nil {
+		return
+	}
+	fe.FocusedSpan = parent.ID
+	// targeted the zoomed span; zoom on its parent instead
+	if fe.FocusedSpan == fe.ZoomedSpan {
+		zoomedParent := parent.VisibleParent(fe.FrontendOpts)
 		if zoomedParent != nil {
-			fe.zoomed = zoomedParent.ID
-		} else {
-			fe.zoomed = trace.SpanID{}
+			fe.ZoomedSpan = zoomedParent.ID
 		}
 	}
 	fe.recalculateViewLocked()
@@ -909,16 +909,16 @@ func (fe *frontendPretty) renderLocked() {
 }
 
 func (fe *frontendPretty) renderRow(out *termenv.Output, r *renderer, row *TraceRow, final bool, prefix string) {
-	if row.Previous != nil && row.Span.Call != nil && !row.Chained && row.Previous.Depth >= row.Depth {
+	if row.Previous != nil &&
+		row.Previous.Depth >= row.Depth &&
+		!row.Chained &&
+		(row.Previous.Depth > row.Depth || row.Span.Call != nil ||
+			(row.Previous.Span.Call != nil && row.Span.Call == nil)) {
 		fmt.Fprint(out, prefix)
 		r.indent(out, row.Depth)
 		fmt.Fprintln(out)
 	}
 	fe.renderStep(out, r, row.Span, row.Chained, row.Depth, prefix)
-	if final {
-		// in the final render, we show logs beneath the progress tree instead
-		return
-	}
 	if row.IsRunningOrChildRunning || row.Span.IsFailed() || fe.Verbosity >= ShowSpammyVerbosity {
 		if logs := fe.logs.Logs[row.Span.ID]; logs != nil {
 			fe.renderLogs(out, r,
@@ -932,7 +932,7 @@ func (fe *frontendPretty) renderRow(out *termenv.Output, r *renderer, row *Trace
 }
 
 func (fe *frontendPretty) renderStep(out *termenv.Output, r *renderer, span *Span, chained bool, depth int, prefix string) error {
-	isFocused := span.ID == fe.focused
+	isFocused := span.ID == fe.FocusedSpan
 
 	id := span.Call
 	if id != nil {

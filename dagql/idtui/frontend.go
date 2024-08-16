@@ -55,9 +55,12 @@ type FrontendOpts struct {
 	// Leave the TUI running instead of exiting after completion.
 	NoExit bool
 
-	// RevealAllSpans tells the frontend to show all spans, not just the spans
-	// beneath the primary span.
-	RevealAllSpans bool
+	// ZoomedSpan configures a span to be zoomed in on, revealing
+	// its child spans.
+	ZoomedSpan trace.SpanID
+
+	// FocusedSpan is the currently selected span, i.e. the cursor position.
+	FocusedSpan trace.SpanID
 }
 
 type Frontend interface {
@@ -69,9 +72,9 @@ type Frontend interface {
 	// children will be promoted to the "top-level" of the TUI.
 	SetPrimary(spanID trace.SpanID)
 	Background(cmd tea.ExecCommand) error
-	// RevealAllSpans tells the frontend to show all spans, not just the spans
-	// beneath the primary span.
-	SetRevealAllSpans(bool)
+	// RevealAllSpans tells the frontend to show all spans, not just
+	// the spans beneath the primary span.
+	RevealAllSpans()
 
 	// Can consume otel spans and logs.
 	SpanExporter() sdktrace.SpanExporter
@@ -443,39 +446,47 @@ const (
 	ShowDigestsVerbosity      = 4
 )
 
-func (opts FrontendOpts) ShouldShow(tree *TraceTree) bool {
+func (opts FrontendOpts) ShouldShow(span *Span) bool {
 	if opts.Debug {
 		// debug reveals all
 		return true
 	}
-	span := tree.Span
-	if span.IsInternal() && opts.Verbosity < ShowInternalVerbosity {
-		// internal steps are hidden by default
+	if opts.FocusedSpan == span.ID {
+		// prevent focused span from disappearing
+		return true
+	}
+	if span.Hidden(opts) {
 		return false
 	}
-	if tree.Parent != nil &&
-		(span.Encapsulated || tree.Parent.Span.Encapsulate) &&
-		!tree.Parent.Span.IsFailed() &&
-		opts.Verbosity < ShowEncapsulatedVerbosity {
-		// encapsulated steps are hidden (even on error) unless their parent errors
-		return false
-	}
+
+	// TODO: optimize these
+	//
+	// idea: mark spans interesting, with a reason. interestingness propagates
+	// through parent spans and linked spans, stopping at encapsulation
+	// boundaries.
+	//
+	// what if the span is internal? feels circular
+
 	if span.IsFailed() {
-		// show errors
 		return true
 	}
 	if span.IsPending() {
-		// show pending steps
 		return true
 	}
-	if tree.IsRunningOrChildRunning {
-		// show running steps
+	if span.IsRunning() {
 		return true
 	}
+	// TODO: bring back <100ms?
 	if opts.GCThreshold > 0 &&
 		time.Since(span.EndTime()) > opts.GCThreshold &&
 		opts.Verbosity < ShowCompletedVerbosity {
 		// stop showing steps that ended after a given threshold
+		return false
+	}
+	if opts.TooFastThreshold > 0 &&
+		span.ActiveDuration(time.Now()) < opts.TooFastThreshold &&
+		opts.Verbosity < ShowSpammyVerbosity {
+		// ignore fast steps; signal:noise is too poor
 		return false
 	}
 	return true
