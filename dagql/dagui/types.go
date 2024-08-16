@@ -60,14 +60,14 @@ type RowsView struct {
 
 func (db *DB) RowsView(opts FrontendOpts) *RowsView {
 	view := &RowsView{
-		Zoomed: db.Spans[opts.ZoomedSpan],
+		Zoomed: db.Spans.Map[opts.ZoomedSpan],
 		BySpan: make(map[trace.SpanID]*TraceTree),
 	}
 	var spans []*Span
 	if view.Zoomed != nil {
-		spans = view.Zoomed.ChildrenAndLinkedSpans()
+		spans = view.Zoomed.ChildSpans.Order
 	} else {
-		spans = db.SpanOrder
+		spans = db.Spans.Order
 	}
 	db.WalkSpans(opts, spans, func(row *TraceTree) {
 		if row.Parent != nil {
@@ -99,7 +99,7 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans []*Span, f func(*TraceTree)) {
 		}
 
 		if span.Passthrough {
-			for _, child := range span.ChildrenAndLinkedSpans() {
+			for _, child := range span.ChildSpans.Order {
 				walk(child, parent)
 			}
 			return
@@ -119,7 +119,7 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans []*Span, f func(*TraceTree)) {
 		}
 		f(tree)
 		lastTree = tree
-		for _, child := range span.ChildrenAndLinkedSpans() {
+		for _, child := range span.ChildSpans.Order {
 			walk(child, tree)
 		}
 		if lastTree != nil {

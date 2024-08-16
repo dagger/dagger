@@ -858,7 +858,7 @@ func (fe *frontendPretty) goDown() {
 
 func (fe *frontendPretty) goOut() {
 	fe.autoFocus = false
-	focused := fe.db.Spans[fe.FocusedSpan]
+	focused := fe.db.Spans.Map[fe.FocusedSpan]
 	if focused == nil {
 		return
 	}

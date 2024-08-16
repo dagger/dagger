@@ -20,19 +20,13 @@ type DB struct {
 	PrimarySpan trace.SpanID
 	PrimaryLogs map[trace.SpanID][]sdklog.Record
 
-	Traces        map[trace.TraceID]*Trace
-	Spans         map[trace.SpanID]*Span
-	SpanOrder     []*Span
-	Children      map[trace.SpanID]map[trace.SpanID]struct{}
-	ChildrenOrder map[trace.SpanID][]trace.SpanID
+	Traces map[trace.TraceID]*Trace
+	Spans  *OrderedSet[trace.SpanID, *Span]
 
 	Calls     map[string]*callpbv1.Call
 	Outputs   map[string]map[string]struct{}
 	OutputOf  map[string]map[string]struct{}
 	Intervals map[string]map[time.Time]*Span
-
-	Links      map[trace.SpanID]map[trace.SpanID]struct{}
-	LinkedFrom map[trace.SpanID]map[trace.SpanID]struct{}
 
 	CompletedEffects map[string]bool
 	EffectSpans      map[string][]*Span
@@ -44,19 +38,13 @@ func NewDB() *DB {
 	return &DB{
 		PrimaryLogs: make(map[trace.SpanID][]sdklog.Record),
 
-		Traces:        make(map[trace.TraceID]*Trace),
-		Spans:         make(map[trace.SpanID]*Span),
-		SpanOrder:     make([]*Span, 0),
-		Children:      make(map[trace.SpanID]map[trace.SpanID]struct{}),
-		ChildrenOrder: make(map[trace.SpanID][]trace.SpanID),
+		Traces: make(map[trace.TraceID]*Trace),
+		Spans:  NewSpanSet(),
 
 		Calls:     make(map[string]*callpbv1.Call),
 		OutputOf:  make(map[string]map[string]struct{}),
 		Outputs:   make(map[string]map[string]struct{}),
 		Intervals: make(map[string]map[time.Time]*Span),
-
-		Links:      make(map[trace.SpanID]map[trace.SpanID]struct{}),
-		LinkedFrom: make(map[trace.SpanID]map[trace.SpanID]struct{}),
 
 		CompletedEffects: make(map[string]bool),
 		EffectSpans:      make(map[string][]*Span),
@@ -150,61 +138,62 @@ func (db *DB) SetPrimarySpan(span trace.SpanID) {
 	db.PrimarySpan = span
 }
 
+func (db *DB) initSpan(traceData *Trace, spanID trace.SpanID) *Span {
+	spanData, found := db.Spans.Map[spanID]
+	if !found {
+		spanData = &Span{
+			ID:         spanID,
+			ChildSpans: NewSpanSet(),
+			LinkedFrom: NewSpanSet(),
+			LinksTo:    NewSpanSet(),
+			db:         db,
+			trace:      traceData,
+		}
+		db.Spans.Add(spanData)
+	}
+	return spanData
+}
+
 func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) { //nolint: gocyclo
 	spanID := span.SpanContext().SpanID()
+	parentID := span.Parent().SpanID()
 
-	spanData, found := db.Spans[spanID]
-	if !found {
-		if !span.Parent().IsValid() && !db.PrimarySpan.IsValid() {
-			// Default the 'primary' span to the root span.
-			db.PrimarySpan = spanID
-		}
-
-		spanData = &Span{
-			ID: spanID,
-
-			db:    db,
-			trace: traceData,
-		}
-
-		db.Spans[spanID] = spanData
-		db.SpanOrder = append(db.SpanOrder, spanData)
-
-		// collect any children that were received before the parent
-		for _, childID := range db.ChildrenOrder[spanID] {
-			child := db.Spans[childID]
-			if child == nil {
-				// defensive
-				slog.Warn("child span not found", "child", childID)
-				continue
-			}
-			spanData.ChildSpans = append(spanData.ChildSpans, child)
-			child.ParentSpan = spanData
+	// Process parents and links _before_ children; if we need to initialize
+	// them, we want them to appear earlier in SpanOrder.
+	var parent *Span
+	if parentID.IsValid() {
+		parent = db.initSpan(traceData, parentID)
+	}
+	links := make([]*Span, len(span.Links()))
+	for i, link := range span.Links() {
+		if link.SpanContext.TraceID() == traceData.ID {
+			links[i] = db.initSpan(traceData, link.SpanContext.SpanID())
 		}
 	}
 
+	// Initialize the span itself
+	spanData := db.initSpan(traceData, spanID)
 	spanData.ReadOnlySpan = span
 	spanData.IsSelfRunning = span.EndTime().Before(span.StartTime())
 
-	slog.Debug("recording span", "span", span.Name(), "id", spanID)
+	// Associate the span to its parents and links.
+	//
+	// If a span has links, don't bother associating it to its parent. We might
+	// want to use that info someday (the "unlazying" point), but no use case
+	// right now.
+	if parent != nil && len(links) == 0 {
+		spanData.ParentSpan = parent
+		spanData.ParentSpan.ChildSpans.Add(spanData)
+	}
+	for _, linked := range links {
+		linked.ChildSpans.Add(spanData)
+		linked.LinkedFrom.Add(spanData)
+		spanData.LinksTo.Add(linked)
+	}
 
-	// track parent/child relationships
-	if parent := span.Parent(); len(span.Links()) == 0 && parent.IsValid() {
-		if db.Children[parent.SpanID()] == nil {
-			db.Children[parent.SpanID()] = make(map[trace.SpanID]struct{})
-		}
-		slog.Debug("recording span child", "span", span.Name(), "parent", parent.SpanID(), "child", spanID)
-		if _, found := db.Children[parent.SpanID()][spanID]; !found {
-			db.Children[parent.SpanID()][spanID] = struct{}{}
-			db.ChildrenOrder[parent.SpanID()] = append(db.ChildrenOrder[parent.SpanID()], spanID)
-			if parent, exists := db.Spans[span.Parent().SpanID()]; exists {
-				spanData.ParentSpan = parent
-				parent.ChildSpans = append(parent.ChildSpans, spanData)
-			}
-		}
-	} else if !db.PrimarySpan.IsValid() {
-		// default primary to root span, but we might never see it in a nested
-		// scenario.
+	if !parentID.IsValid() && !db.PrimarySpan.IsValid() {
+		// default primary to root span, though we might never see a "root span" in
+		// a nested scenario.
 		db.PrimarySpan = spanID
 	}
 
@@ -250,8 +239,10 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) { //
 
 			// We don't care about seeing the sync span itself - all relevant info
 			// should show up somewhere more familiar.
+			//
+			// TODO: making this Internal since otherwise we don't see errors?
 			if call.Field == "sync" {
-				spanData.Ignore = true
+				spanData.Internal = true
 			}
 
 			if digest != "" {
@@ -320,24 +311,6 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) { //
 			// https://github.com/open-telemetry/opentelemetry-go-contrib/pull/5431#pullrequestreview-2024891968
 			spanData.Passthrough = true
 		}
-	}
-
-	for _, link := range span.Links() {
-		if link.SpanContext.TraceID() != spanData.trace.ID {
-			continue
-		}
-		linkedID := link.SpanContext.SpanID()
-		// parent -> child
-		if db.Links[spanData.ID] == nil {
-			db.Links[spanData.ID] = make(map[trace.SpanID]struct{})
-		}
-		db.Links[spanData.ID][linkedID] = struct{}{}
-
-		// child -> parent
-		if db.LinkedFrom[linkedID] == nil {
-			db.LinkedFrom[linkedID] = make(map[trace.SpanID]struct{})
-		}
-		db.LinkedFrom[linkedID][spanData.ID] = struct{}{}
 	}
 
 	if spanData.Call != nil && spanData.Call.ReceiverDigest != "" {

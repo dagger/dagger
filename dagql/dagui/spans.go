@@ -2,7 +2,6 @@ package dagui
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
@@ -17,7 +16,9 @@ type Span struct {
 	sdktrace.ReadOnlySpan
 
 	ParentSpan *Span
-	ChildSpans []*Span
+	ChildSpans *OrderedSet[trace.SpanID, *Span]
+	LinkedFrom *OrderedSet[trace.SpanID, *Span]
+	LinksTo    *OrderedSet[trace.SpanID, *Span]
 
 	ID trace.SpanID
 
@@ -52,7 +53,7 @@ func (span *Span) VisibleParent(opts FrontendOpts) *Span {
 	if span.ParentSpan.Passthrough {
 		return span.ParentSpan.VisibleParent(opts)
 	}
-	links := span.LinksTo()
+	links := span.LinksTo.Order
 	if len(links) > 0 {
 		// prioritize causal spans over the unlazier
 		return links[0]
@@ -79,63 +80,16 @@ func (span *Span) Hidden(opts FrontendOpts) bool {
 	return false
 }
 
-func (span *Span) LinksTo() []*Span {
-	var linked []*Span
-	for linkedID := range span.db.Links[span.ID] {
-		linker, ok := span.db.Spans[linkedID]
-		if ok {
-			linked = append(linked, linker)
-		} else {
-			panic("impossible: linked span not found: " + linkedID.String())
-		}
-	}
-	sort.Slice(linked, func(i, j int) bool {
-		return linked[i].StartTime().Before(linked[j].StartTime())
-	})
-	return linked
-}
-
-func (span *Span) LinkedFrom() []*Span {
-	var linkers []*Span
-	for linkerID := range span.db.LinkedFrom[span.ID] {
-		linker, ok := span.db.Spans[linkerID]
-		if ok {
-			linkers = append(linkers, linker)
-		} else {
-			panic("impossible: linker span not found: " + linkerID.String())
-		}
-	}
-	sort.Slice(linkers, func(i, j int) bool {
-		return linkers[i].StartTime().Before(linkers[j].StartTime())
-	})
-	return linkers
-}
-
 func (span *Span) IsRunning() bool {
 	if span.IsSelfRunning {
 		return true
 	}
-	for _, src := range span.LinkedFrom() {
+	for _, src := range span.LinkedFrom.Order {
 		if src.IsRunning() {
 			return true
 		}
 	}
 	return false
-}
-
-func (span *Span) ChildrenAndLinkedSpans() []*Span {
-	linkers := span.LinkedFrom()
-	if len(linkers) == 0 {
-		return span.ChildSpans
-	}
-	res := append([]*Span{}, span.ChildSpans...)
-	for _, s := range linkers {
-		res = append(res, s)
-	}
-	sort.Slice(res, func(i, j int) bool {
-		return res[i].StartTime().Before(res[j].StartTime())
-	})
-	return res
 }
 
 func (span *Span) IsPending() bool {
@@ -240,7 +194,7 @@ func (span *Span) IsFailed() bool {
 	if span.Status().Code == codes.Error {
 		return true
 	}
-	for _, effect := range span.LinkedFrom() {
+	for _, effect := range span.LinkedFrom.Order {
 		if effect.IsFailed() {
 			return true
 		}
@@ -274,7 +228,7 @@ func (span *Span) ActiveDuration(fallbackEnd time.Time) time.Duration {
 
 	currentEnd := facts.Max
 
-	for _, effect := range span.LinkedFrom() {
+	for _, effect := range span.LinkedFrom.Order {
 		start := effect.StartTime()
 		end := effect.EndTimeOrFallback(fallbackEnd)
 		duration := end.Sub(start)
@@ -308,7 +262,7 @@ func (span *Span) EndTimeOrFallback(fallbackEnd time.Time) time.Time {
 		return fallbackEnd
 	}
 	maxTime := span.ReadOnlySpan.EndTime()
-	for _, effect := range span.LinkedFrom() {
+	for _, effect := range span.LinkedFrom.Order {
 		if effect.EndTime().After(maxTime) {
 			maxTime = effect.EndTime()
 		}

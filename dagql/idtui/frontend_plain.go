@@ -360,7 +360,7 @@ func (fe *frontendPlain) renderProgress() {
 	if len(fe.lastContext) > 0 {
 		newLock := trace.SpanID{}
 		for _, spanID := range fe.lastContext {
-			span, ok := fe.db.Spans[spanID]
+			span, ok := fe.db.Spans.Map[spanID]
 			if !ok || !span.Passthrough {
 				// pass the lock to the last most-valid span
 				break
