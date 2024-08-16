@@ -1,4 +1,4 @@
-# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-July%2022,%202024-success?style=flat-square)
+# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-August%2015,%202024-success?style=flat-square)
 
 This describes how to release Dagger:
 
@@ -317,7 +317,7 @@ git commit -s -m "chore: add release notes for ${ENGINE_VERSION}"
      otherwise, make the file empty (but don't remove it).
 
 - [ ] Update all dagger versions in `docs/current_docs/partials/_install-cli.mdx` to `$ENGINE_VERSION`
-  - e.g. if bumping 0.12.2->0.12.3, can run `sed -i 's/0\.12\.2/0\.12\.3/g' docs/current_docs/partials/_install-cli.mdx`
+  - e.g. if bumping 0.12.4->0.12.5, can run `sed -i 's/0\.12\.4/0\.12\.5/g' docs/current_docs/partials/_install-cli.mdx`
 
 - [ ] `30 mins` Submit, review and merge the prep PR. The merge commit is what gets tagged in the next step.
   - 🚨 Non-main branch release only: Ideally use "Rebase and Merge" rather than squashing commits when merging so we can more easily preserve the history of the cherry-picked commits.
@@ -359,7 +359,7 @@ dagger version
 
   - The version numbers (of the form `<major>.<minor>.<patch>`) should be updated to the new version
   - The worker runner versions (of the form `dagger-v<major>-<minor>-<patch>-<worker>`)
-  - e.g. if bumping 0.12.2->0.12.3, can run `find .github/ -type f -exec sed -i 's/0-12-2/0-12-3/g; s/0\.12\.2/0\.12\.3/g' {} +`
+  - e.g. if bumping 0.12.4->0.12.5, can run `find .github/ -type f -exec sed -i 's/0-12-4/0-12-5/g; s/0\.12\.4/0\.12\.5/g' {} +`
 
 - [ ] Open a PR with the title `Improve Releasing during $ENGINE_VERSION`
 
@@ -428,7 +428,7 @@ gh release create "sdk/go/${GO_SDK_VERSION:?must be set}" \
 - [ ] Swap to the release improvement branch
 
 ```console
-git checkout -b improve-releasing-during-${ENGINE_VERSION:?must be set}
+git checkout improve-releasing-during-${ENGINE_VERSION:?must be set}
 ```
 
 - [ ] Bump the Go SDK version in our internal CI targets (these aren't actually
@@ -439,8 +439,8 @@ git checkout -b improve-releasing-during-${ENGINE_VERSION:?must be set}
 go mod edit -require dagger.io/dagger@${GO_SDK_VERSION:?must be set}
 go mod edit -require github.com/dagger/dagger/engine/distconsts@${GO_SDK_VERSION:?must be set}
 go mod tidy
-cd dev
 dagger develop
+cd .dagger
 go mod edit -require github.com/dagger/dagger/engine/distconsts@${ENGINE_VERSION:?must be set}
 go mod tidy
 cd ..
@@ -670,7 +670,7 @@ update once there's a new release of the Dagger Engine.
 
 - [ ] Submit PR with the version bump, e.g.
       https://github.com/dagger/dagger-for-github/pull/123
-  - e.g. if bumping 0.12.2->0.12.3, can run `find . -type f -exec sed -i 's/0\.12\.2/0\.12\.3/g' {} +`
+  - e.g. if bumping 0.12.4->0.12.5, can run `find . -type f -exec sed -i 's/0\.12\.4/0\.12\.5/g' {} +`
 - [ ] Ask @gerhard or @jpadams to review it
 
 > [!TIP]
@@ -711,13 +711,13 @@ git push origin v6 --force #need to force since moving this tag
 ## 🍺 dagger Homebrew ⏱ `2mins`
 
 - [ ] Check that Dagger Homebrew formula has been updated to latest, e.g.
-      [dagger 0.10.2](https://github.com/Homebrew/homebrew-core/pull/165904).
+      [dagger 0.12.5](https://github.com/Homebrew/homebrew-core/pull/181284).
       This is automated, but note that it may take several hours to trigger.
 
 ## ❄️ nix ⏱ `2mins`
 
 - [ ] Check that Dagger nix flake has been updated to latest, e.g. [dagger: ->
-      v0.10.2](https://github.com/dagger/nix/commit/26a1fee07e8b466b30da6be53c5e8f1566c33797)
+      v0.12.5](https://github.com/dagger/nix/commit/5053689af7d18e67254ba0b2d60fa916b7370104)
 
 ## Last step
 
