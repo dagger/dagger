@@ -8,6 +8,7 @@ import (
 
 	"dagger.io/dagger/telemetry"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 
@@ -28,10 +29,11 @@ type DB struct {
 	OutputOf  map[string]map[string]struct{}
 	Intervals map[string]map[time.Time]*Span
 
-	CompletedEffects map[string]bool
-	EffectSpans      map[string][]*Span
+	CauseSpans  map[string]SpanSet
+	EffectSpans map[string]SpanSet
 
-	UnlaziedEffects map[trace.SpanID][]*Span
+	CompletedEffects map[string]bool
+	UnlaziedEffects  map[trace.SpanID][]*Span
 }
 
 func NewDB() *DB {
@@ -47,7 +49,8 @@ func NewDB() *DB {
 		Intervals: make(map[string]map[time.Time]*Span),
 
 		CompletedEffects: make(map[string]bool),
-		EffectSpans:      make(map[string][]*Span),
+		CauseSpans:       make(map[string]SpanSet),
+		EffectSpans:      make(map[string]SpanSet),
 
 		UnlaziedEffects: make(map[trace.SpanID][]*Span),
 	}
@@ -142,12 +145,14 @@ func (db *DB) initSpan(traceData *Trace, spanID trace.SpanID) *Span {
 	spanData, found := db.Spans.Map[spanID]
 	if !found {
 		spanData = &Span{
-			ID:         spanID,
-			ChildSpans: NewSpanSet(),
-			LinkedFrom: NewSpanSet(),
-			LinksTo:    NewSpanSet(),
-			db:         db,
-			trace:      traceData,
+			ID:           spanID,
+			ChildSpans:   NewSpanSet(),
+			LinkedFrom:   NewSpanSet(),
+			LinksTo:      NewSpanSet(),
+			RunningSpans: NewSpanSet(),
+			FailedSpans:  NewSpanSet(),
+			db:           db,
+			trace:        traceData,
 		}
 		db.Spans.Add(spanData)
 	}
@@ -174,7 +179,6 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) { //
 	// Initialize the span itself
 	spanData := db.initSpan(traceData, spanID)
 	spanData.ReadOnlySpan = span
-	spanData.IsSelfRunning = span.EndTime().Before(span.StartTime())
 
 	// Associate the span to its parents and links.
 	//
@@ -195,6 +199,12 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) { //
 		// default primary to root span, though we might never see a "root span" in
 		// a nested scenario.
 		db.PrimarySpan = spanID
+	}
+
+	// Update span states, propagating them up through parents, too.
+	spanData.SetRunning(span.EndTime().Before(span.StartTime()))
+	if span.Status().Code == codes.Error {
+		spanData.Failed()
 	}
 
 	attrs := span.Attributes()
@@ -272,6 +282,15 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) { //
 
 		case telemetry.EffectIDsAttr:
 			spanData.EffectIDs = attr.Value.AsStringSlice()
+			for _, id := range spanData.EffectIDs {
+				if db.CauseSpans[id] == nil {
+					db.CauseSpans[id] = NewSpanSet()
+				}
+				if id == "sha256:b5b910ed7ac6c90422c4665fba0b50ffa0509d27e273406d6beb7a955e08009f" {
+					slog.Warn("recording cause", "id", id, "span", spanData.ID)
+				}
+				db.CauseSpans[id].Add(spanData)
+			}
 
 		case telemetry.EffectsCompletedAttr:
 			for _, dig := range attr.Value.AsStringSlice() {
@@ -299,9 +318,12 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) { //
 			}
 
 		case telemetry.EffectIDAttr:
-			dig := attr.Value.AsString()
-			db.EffectSpans[dig] = append(db.EffectSpans[dig], spanData)
-			db.CompletedEffects[dig] = true
+			id := attr.Value.AsString()
+			spanData.EffectID = id
+			if db.EffectSpans[id] == nil {
+				db.EffectSpans[id] = NewSpanSet()
+			}
+			db.EffectSpans[id].Add(spanData)
 
 		case "rpc.service":
 			// TODO: rather than special-casing this, we should just switch

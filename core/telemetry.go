@@ -16,6 +16,21 @@ import (
 	"github.com/opencontainers/go-digest"
 )
 
+func collectDefs(ctx context.Context, val dagql.Typed) []*pb.Definition {
+	if val, ok := val.(dagql.Wrapper); ok {
+		return collectDefs(ctx, val.Unwrap())
+	}
+	if hasPBs, ok := val.(HasPBDefinitions); ok {
+		if defs, err := hasPBs.PBDefinitions(ctx); err != nil {
+			slog.Warn("failed to get LLB definitions", "err", err)
+			return nil
+		} else {
+			return defs
+		}
+	}
+	return nil
+}
+
 func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Context, func(res dagql.Typed, cached bool, rerr error)) {
 	if isIntrospection(id) {
 		return ctx, dagql.NoopDone
@@ -24,17 +39,9 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 	// Keep track of which effects were already installed prior to the call so we
 	// only see new ones.
 	seenEffects := make(map[digest.Digest]bool)
-	if w, ok := self.(dagql.Wrapper); ok {
-		if hasPBs, ok := w.Unwrap().(HasPBDefinitions); ok {
-			if defs, err := hasPBs.PBDefinitions(ctx); err != nil {
-				slog.Warn("failed to get LLB definitions", "err", err)
-			} else {
-				for _, def := range defs {
-					for _, op := range def.Def {
-						seenEffects[digest.FromBytes(op)] = true
-					}
-				}
-			}
+	for _, def := range collectDefs(ctx, self) {
+		for _, op := range def.Def {
+			seenEffects[digest.FromBytes(op)] = true
 		}
 	}
 
@@ -116,38 +123,34 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 		//
 		// Effects will become complete as spans appear from Buildkit with a
 		// corresponding effect ID.
-		if hasPBs, ok := res.(HasPBDefinitions); ok {
-			if defs, err := hasPBs.PBDefinitions(ctx); err != nil {
-				slog.Warn("failed to get LLB definitions", "err", err)
-			} else {
-				var effectIDs []string
-				for _, def := range defs {
-					for _, opBytes := range def.Def {
-						dig := digest.FromBytes(opBytes)
-						if seenEffects[dig] {
-							continue
-						}
-						seenEffects[dig] = true
-
-						var pbOp pb.Op
-						err := pbOp.Unmarshal(opBytes)
-						if err != nil {
-							slog.Warn("failed to unmarshal LLB", "err", err)
-							continue
-						}
-						if pbOp.Op == nil {
-							// The last def should always be an empty op with the previous as
-							// an input. We never actually see a span for this, so skip it,
-							// otherwise the span will look like it still has pending
-							// effects.
-							continue
-						}
-
-						effectIDs = append(effectIDs, dig.String())
-					}
+		var effectIDs []string
+		for _, def := range collectDefs(ctx, res) {
+			for _, opBytes := range def.Def {
+				dig := digest.FromBytes(opBytes)
+				if seenEffects[dig] {
+					continue
 				}
-				span.SetAttributes(attribute.StringSlice(telemetry.EffectIDsAttr, effectIDs))
+				seenEffects[dig] = true
+
+				var pbOp pb.Op
+				err := pbOp.Unmarshal(opBytes)
+				if err != nil {
+					slog.Warn("failed to unmarshal LLB", "err", err)
+					continue
+				}
+				if pbOp.Op == nil {
+					// The last def should always be an empty op with the previous as
+					// an input. We never actually see a span for this, so skip it,
+					// otherwise the span will look like it still has pending
+					// effects.
+					continue
+				}
+
+				effectIDs = append(effectIDs, dig.String())
 			}
+		}
+		if len(effectIDs) > 0 {
+			span.SetAttributes(attribute.StringSlice(telemetry.EffectIDsAttr, effectIDs))
 		}
 	}
 }

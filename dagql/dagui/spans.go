@@ -5,31 +5,39 @@ import (
 	"strings"
 	"time"
 
-	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql/call/callpbv1"
+	"github.com/dagger/dagger/engine/slog"
 )
+
+type SpanSet = *OrderedSet[trace.SpanID, *Span]
 
 type Span struct {
 	sdktrace.ReadOnlySpan
 
 	ParentSpan *Span
-	ChildSpans *OrderedSet[trace.SpanID, *Span]
-	LinkedFrom *OrderedSet[trace.SpanID, *Span]
-	LinksTo    *OrderedSet[trace.SpanID, *Span]
+	ChildSpans SpanSet
+	LinkedFrom SpanSet
+	LinksTo    SpanSet
 
 	ID trace.SpanID
 
 	IsSelfRunning bool
+	RunningSpans  SpanSet
+
+	IsSelfFailed bool
+	FailedSpans  SpanSet
 
 	Digest string
 	Call   *callpbv1.Call
 	Base   *callpbv1.Call
 
+	EffectID  string
 	EffectIDs []string
 
+	Running  bool
 	Internal bool
 	Cached   bool
 	Canceled bool
@@ -46,10 +54,88 @@ type Span struct {
 	trace *Trace
 }
 
+func (span *Span) SetRunning(running bool) {
+	span.IsSelfRunning = running
+	span.Parents(func(parent *Span) bool { // TODO: go 1.23
+		if running {
+			parent.RunningSpans.Add(span)
+		} else {
+			parent.RunningSpans.Remove(span)
+		}
+		return true
+	})
+}
+
+func (span *Span) Failed() { // TODO: this can't be undone
+	span.IsSelfFailed = true
+	if span.EffectID != "" {
+		// TODO: do we need to worry about _new_ spans arriving?
+		// FIXME: yep - likely when a span starts and finishes in same batch?
+		causes := span.db.CauseSpans[span.EffectID]
+		if span.EffectID == "sha256:b5b910ed7ac6c90422c4665fba0b50ffa0509d27e273406d6beb7a955e08009f" {
+			slog.Warn("recording effect failure", "id", span.EffectID,
+				"causes", causes != nil)
+		}
+		if causes != nil {
+			for _, cause := range causes.Order {
+				cause.Failed()
+			}
+		}
+	}
+	// for parent := range span.Parents {
+	// 	if parent.Encapsulate {
+	// 		// Reached an encapsulation boundary; stop propagating.
+	// 		// TODO: test
+	// 		break
+	// 	}
+	// 	if failed {
+	// 		parent.FailedSpans.Add(span)
+	// 	} else {
+	// 		parent.FailedSpans.Remove(span)
+	// 	}
+	// 	if parent.Encapsulated {
+	// 		// TODO: test
+	// 		break
+	// 	}
+	// }
+	for _, parent := range span.LinksTo.Order {
+		parent.Failed()
+	}
+}
+
+func (span *Span) Parents(f func(*Span) bool) {
+	var keepGoing bool
+	// if the loop breaks while recursing we need to stop recursing, so we track
+	// that by man-in-the-middling the return value.
+	recurse := func(s *Span) bool {
+		keepGoing = f(s)
+		return keepGoing
+	}
+	if span.ParentSpan != nil {
+		if !f(span.ParentSpan) {
+			return
+		}
+		span.ParentSpan.Parents(recurse)
+		if !keepGoing {
+			return
+		}
+	}
+	// for _, parent := range span.LinksTo.Order {
+	// 	if !f(parent) {
+	// 		return
+	// 	}
+	// 	parent.Parents(recurse)
+	// 	if !keepGoing {
+	// 		return
+	// 	}
+	// }
+}
+
 func (span *Span) VisibleParent(opts FrontendOpts) *Span {
 	if span.ParentSpan == nil {
 		return nil
 	}
+	// TODO: check links first?
 	if span.ParentSpan.Passthrough {
 		return span.ParentSpan.VisibleParent(opts)
 	}
@@ -81,15 +167,7 @@ func (span *Span) Hidden(opts FrontendOpts) bool {
 }
 
 func (span *Span) IsRunning() bool {
-	if span.IsSelfRunning {
-		return true
-	}
-	for _, src := range span.LinkedFrom.Order {
-		if src.IsRunning() {
-			return true
-		}
-	}
-	return false
+	return span.IsSelfRunning || len(span.RunningSpans.Order) > 0
 }
 
 func (span *Span) IsPending() bool {
@@ -104,7 +182,8 @@ func (span *Span) PendingReason() (bool, []string) {
 	var reasons []string
 	if len(span.EffectIDs) > 0 {
 		for _, digest := range span.EffectIDs {
-			if len(span.db.EffectSpans[digest]) > 0 {
+			effectSpans := span.db.EffectSpans[digest]
+			if effectSpans != nil && len(effectSpans.Order) > 0 {
 				return false, []string{
 					digest + " has started",
 				}
@@ -144,8 +223,8 @@ func (span *Span) CachedReason() (bool, []string) {
 	for _, effect := range span.EffectIDs {
 		// first check for spans we've seen for the effect
 		effectSpans := span.db.EffectSpans[effect]
-		if len(effectSpans) > 0 {
-			for _, span := range effectSpans {
+		if effectSpans != nil && len(effectSpans.Order) > 0 {
+			for _, span := range effectSpans.Order {
 				track(effect, span.IsCached())
 			}
 		} else {
@@ -191,15 +270,7 @@ func (span *Span) Name() string {
 // }
 
 func (span *Span) IsFailed() bool {
-	if span.Status().Code == codes.Error {
-		return true
-	}
-	for _, effect := range span.LinkedFrom.Order {
-		if effect.IsFailed() {
-			return true
-		}
-	}
-	return false
+	return span.IsSelfFailed || len(span.FailedSpans.Order) > 0
 }
 
 func (span *Span) IsInternal() bool {

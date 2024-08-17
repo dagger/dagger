@@ -263,13 +263,14 @@ func (fe *frontendPretty) finalRender() error {
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
 
-	r := newRenderer(fe.db, fe.window.Width, fe.FrontendOpts)
-
 	// Render the full trace.
 	fe.ZoomedSpan = fe.db.PrimarySpan
-	fe.FocusedSpan = trace.SpanID{}
-	fe.focusedIdx = -1
 	fe.recalculateViewLocked()
+
+	// Unfocus for the final render.
+	fe.FocusedSpan = trace.SpanID{}
+
+	r := newRenderer(fe.db, fe.window.Width, fe.FrontendOpts)
 
 	// Render to stderr so stdout stays clean.
 	out := NewOutput(os.Stderr, termenv.WithProfile(fe.profile))
@@ -289,7 +290,7 @@ func (fe *frontendPretty) finalRender() error {
 		// Counter-intuitively, we don't want to render the primary output
 		// when there's an error, because the error is better represented by
 		// the progress output and error summary.
-		return fe.renderErrorLogs(out, r)
+		fe.renderErrorLogs(out, r)
 	}
 
 	// Replay the primary output log to stdout/stderr.
