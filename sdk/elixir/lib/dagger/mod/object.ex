@@ -1,6 +1,54 @@
 defmodule Dagger.Mod.Object do
   @moduledoc """
   Declare a module as an object type.
+
+  ## Declare a module
+
+  Add `use Dagger.Mod.Object` to the Elixir module that want to be a
+  Dagger module and give a name through `:name` configuration:
+
+      defmodule Potato do
+        use Dagger.Mod.Object, name: "Potato"
+
+        # ...
+      end
+
+  The module also support documentation by using Elixir standard documentation,
+  `@moduledoc`.
+
+  ## Declare a function
+
+  The module provides a `defn`, a macro for declare a function.
+  Let's declare a new function named `echo` that accepts a `name` as a string
+  and return a container that echo a name in the module `Potato` from the previous
+  section:
+
+      defmodule Potato do
+        use Dagger.Mod.Object, name: "Potato"
+
+        defn echo(name: String.t()) :: Dagger.Container.t() do
+          dag()
+          |> Dagger.Client.container()
+          |> Dagger.Container.from("alpine")
+          |> Dagger.Container.with_exec(["echo", name])
+        end
+      end
+
+  From the example above, the `defn` allows you to annotate a type to function
+  arguments and return type by using Elixir Typespec. The type will convert to
+  a Dagger type when registering a module.
+
+  The supported primitive types for now are:
+
+  1. `integer()` for a boolean type.
+  2. `boolean()` for a boolean type.
+  3. `String.t()` or `binary()` for a string type.
+  4. `list(type)` or `[type]` for a list type.
+  5. Any type that generated under `Dagger` namespace (`Dagger.Container.t()`,
+     `Dagger.Directory.t()`, etc.).
+
+  The function also support documentation by using Elixir standard documentation,
+  `@doc`.
   """
 
   @type function_name() :: atom()
