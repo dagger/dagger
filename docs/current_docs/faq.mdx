@@ -148,7 +148,7 @@ Because the Dagger Engine can integrate seamlessly with practically any CI, ther
 
 ### What is pipeline visualization?
 
-Dagger Cloud provides a web interface to visualize each step of your pipeline, drill down to detailed logs, understand how long operations took to run, and whether operations were cached.
+Traces, a browser-based interface focused on tracing and debugging Dagger pipeline runs. A Trace contains detailed information about the steps performed by the pipeline. Traces let you visualize each step of your pipeline, drill down to detailed logs, understand how long operations took to run, and whether operations were cached.
 
 ### What operational insights does Dagger Cloud provide?
 
@@ -170,9 +170,39 @@ Yes. For distributed caching to work, it requires two components: a centralized 
 
 Dagger Cloud features a global data storage service spanning 26 regions across 3 cloud providers: AWS, Google Cloud Platform, and Cloudflare R2. The region closest to your compute is automatically selected.
 
-### Does Dagger Cloud support “bring your own storage” for distributed caching?
+### Does Dagger Cloud support "bring your own storage" for distributed caching?
 
 The ability to "bring your own storage" is coming soon. Please reach out to us if this capability is needed for your organization.
+
+### Why am I seeing `dagger functions` in the local trace list?
+
+All commands that require module initialization at an engine level will send telemetry to Dagger Cloud.
+Dagger needs to introspect a module to be able to print the available functions in a module, so it calls `dagger functions`. This happens for both local and remote runs, which is why the calls appears in the local trace list.
+
+### How does Dagger classify Traces as originating from "CI" or "local"?
+
+Dagger is aware of the context it runs on. When it runs in a CI context like GitHub, GitLab, CircleCI, or Jenkins, additional Trace metadata is displayed based on the Git repository information available. For this reason, it is important for Dagger to run in a Git context when running in CI.
+
+### What are "orphaned Traces"?
+
+You might see a warning message in Dagger Cloud about orphaned Traces. Orphaned Traces are Traces emitted in a CI context, that contain incomplete or no Git metadata. This generally happens when Git is not properly set up in the CI context that Dagger runs in. In GitHub Actions, for example, this context can be provided by using the `checkout` action in the step where Dagger is called.
+
+### What is the "CI view"?
+
+The CI view shows all the recent changes that were made to a hosted repository where Dagger was triggered with a `DAGGER_CLOUD_TOKEN` environment variable set. This view shows a list of grouped traces. The group is determined by the branch/reference combination where Dagger was triggered.
+
+### What is the "focused view" of a group (when clicking a group in the CI view)?
+
+The "focused" view is used for pinning a specific point in your Git history and listening for Traces emitted under that context.
+
+### What is the flamegraph at the top of the Trace detaills page?
+
+The flamegraph shows the emitted spans of a trace, with a visual cue of how much time it represents of the parent span.
+
+### My CI provider is not supported in Dagger Cloud. Is there a way I can "force" my Traces into the Dagger Cloud dashboard?
+
+It’s possible to send Traces by setting the `CI=true` variable in Dagger's runtime environment. However, Traces with incomplete Git repository data will show up as orphaned, so it is important to ensure that Dagger is running in a properly-set Git context.
+
 
 ## Dagger SDKs
 
