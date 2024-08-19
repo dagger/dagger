@@ -183,7 +183,7 @@ In the project directory, create a new file named `build.mts` and add the follow
 ```typescript file=./snippets/clients-sdk/typescript/build.mts
 ```
 
-This TypeScript program imports the Dagger SDK and defines an asynchronous function. This function creates a Dagger client, which provides an interface to the Dagger API. It also defines the test/build matrix, consisting of Node.js versions `12`, `14` and `16`, and iterates over this matrix, downloading a Node.js container image for each specified version and testing and building the source application against that version.
+This TypeScript program imports the Dagger SDK and defines an asynchronous function. This function creates a Dagger client, which provides an interface to the Dagger API. It also defines the test/build matrix, consisting of Node.js versions `16`, `18` and `20`, and iterates over this matrix, downloading a Node.js container image for each specified version and testing and building the source application against that version.
 
 Run the program by executing the command below:
 
@@ -195,17 +195,17 @@ The `dagger run` command executes the specified command in a Dagger session and 
 
 ```shell
 tree -L 2 -d build-*
-build-node-12
-└── static
-    ├── css
-    ├── js
-    └── media
-build-node-14
-└── static
-    ├── css
-    ├── js
-    └── media
 build-node-16
+└── static
+    ├── css
+    ├── js
+    └── media
+build-node-18
+└── static
+    ├── css
+    ├── js
+    └── media
+build-node-20
 └── static
     ├── css
     ├── js
