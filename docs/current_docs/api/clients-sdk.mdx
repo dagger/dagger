@@ -93,7 +93,7 @@ Create a new file in the `multibuild` directory named `main.go` and add the foll
 
 This Go program imports the Dagger SDK and defines two functions. The `build()` function represents the pipeline and creates a Dagger client, which provides an interface to the Dagger API. It also defines the build matrix, consisting of two OSs (`darwin` and `linux`) and two architectures (`amd64` and `arm64`), and builds the Go application for each combination. The Go build process is instructed via the `GOOS` and `GOARCH` build variables, which are reset for each case.
 
-Try the Go program by executing the commands below:
+Try the Go program by executing the command below from the project directory:
 
 ```shell
 dagger run go run multibuild/main.go
@@ -105,17 +105,29 @@ Use the `tree` command to see the build artifacts on the host, as shown below:
 
 ```shell
 tree build
-build/
-├── darwin
-│   ├── amd64
-│   │   └── multibuild
-│   └── arm64
-│       └── multibuild
-└── linux
-    ├── amd64
-    │   └── multibuild
-    └── arm64
-        └── multibuild
+build
+├── 1.22
+│   ├── darwin
+│   │   ├── amd64
+│   │   │   └── hello
+│   │   └── arm64
+│   │       └── hello
+│   └── linux
+│       ├── amd64
+│       │   └── hello
+│       └── arm64
+│           └── hello
+└── 1.23
+    ├── darwin
+    │   ├── amd64
+    │   │   └── hello
+    │   └── arm64
+    │       └── hello
+    └── linux
+        ├── amd64
+        │   └── hello
+        └── arm64
+            └── hello
 ```
 </TabItem>
 <TabItem value="Python">
@@ -144,16 +156,14 @@ dagger run python test.py
 The `dagger run` command executes the specified command in a Dagger session and displays live progress. The tool tests the application against each version concurrently and displays the following final output:
 
 ```shell
-Starting tests for Python 3.7
-Tests for Python 3.7 succeeded!
 Starting tests for Python 3.8
-Tests for Python 3.8 succeeded!
 Starting tests for Python 3.9
-Tests for Python 3.9 succeeded!
 Starting tests for Python 3.10
-Tests for Python 3.10 succeeded!
 Starting tests for Python 3.11
+Tests for Python 3.8 succeeded!
+Tests for Python 3.9 succeeded!
 Tests for Python 3.11 succeeded!
+Tests for Python 3.10 succeeded!
 All tasks have finished
 ```
 </TabItem>

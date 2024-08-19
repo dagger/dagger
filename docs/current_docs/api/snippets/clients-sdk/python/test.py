@@ -8,7 +8,7 @@ import dagger
 
 
 async def test():
-    versions = ["3.7", "3.8", "3.9", "3.10", "3.11"]
+    versions = ["3.8", "3.9", "3.10", "3.11"]
 
     async with dagger.Connection(dagger.Config(log_output=sys.stderr)) as client:
         # get reference to the local project

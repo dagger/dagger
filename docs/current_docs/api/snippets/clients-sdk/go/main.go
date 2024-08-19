@@ -20,7 +20,7 @@ func build(ctx context.Context) error {
 	// define build matrix
 	oses := []string{"linux", "darwin"}
 	arches := []string{"amd64", "arm64"}
-	goVersions := []string{"1.20", "1.21"}
+	goVersions := []string{"1.22", "1.23"}
 
 	// initialize Dagger client
 	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
