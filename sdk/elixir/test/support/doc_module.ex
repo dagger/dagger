@@ -22,6 +22,8 @@ defmodule DocModule do
 end
 
 defmodule NoDocModule do
+  @moduledoc false
+
   use Dagger.Mod.Object, name: "NoDocModule"
 
   defn echo() :: String.t() do
@@ -31,6 +33,7 @@ end
 
 defmodule HiddenDocModule do
   @moduledoc false
+
   use Dagger.Mod.Object, name: "HiddenDocModule"
 
   defn echo() :: String.t() do
