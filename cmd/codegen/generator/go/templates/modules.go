@@ -81,9 +81,8 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) { //nolint: gocyclo
 	for _, name := range pkgScope.Names() {
 		obj := pkgScope.Lookup(name)
 		if obj == nil {
-			continue
+			return "", fmt.Errorf("%q should exist in scope, but doesn't", name)
 		}
-
 		ps.objs = append(ps.objs, obj)
 	}
 
