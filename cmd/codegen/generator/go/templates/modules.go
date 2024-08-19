@@ -106,7 +106,9 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) { //nolint: gocyclo
 		}
 
 		// check if this is the DaggerObject interface
-		if ok := ps.checkDaggerObjectIface(obj); ok {
+		if ok, err := ps.checkDaggerObjectIface(obj); err != nil {
+			return "", err
+		} else if ok {
 			continue
 		}
 
@@ -494,21 +496,21 @@ func (ps *parseState) checkConstructor(obj types.Object) bool {
 	return true
 }
 
-func (ps *parseState) checkDaggerObjectIface(obj types.Object) bool {
+func (ps *parseState) checkDaggerObjectIface(obj types.Object) (bool, error) {
 	named, isNamed := obj.Type().(*types.Named)
 	if !isNamed {
-		return false
+		return false, nil
+	}
+	if named.Obj().Name() != daggerObjectIfaceName {
+		return false, nil
 	}
 	iface, isIface := named.Underlying().(*types.Interface)
 	if !isIface {
-		return false
-	}
-	if named.Obj().Name() != daggerObjectIfaceName {
-		return false
+		return false, fmt.Errorf("exected %s to be %T, but got %T", daggerObjectIfaceName, &types.Interface{}, named.Underlying())
 	}
 
 	ps.daggerObjectIfaceType = iface
-	return true
+	return true, nil
 }
 
 // fillObjectFunctionCases recursively fills out the `cases` map with entries for object name -> `case` statement blocks
