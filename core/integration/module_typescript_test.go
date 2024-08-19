@@ -4,13 +4,20 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"testing"
 
 	"github.com/dagger/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
 
-func (ModuleSuite) TestTypescriptInit(ctx context.Context, t *testctx.T) {
+type TypescriptSuite struct {}
+
+func TestTypescript(t *testing.T) {
+	testctx.Run(testCtx, t, TypescriptSuite{}, Middleware()...)
+}
+
+func (TypescriptSuite) TestInit(ctx context.Context, t *testctx.T) {
 	t.Run("from scratch", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
@@ -225,7 +232,7 @@ func (ModuleSuite) TestTypescriptInit(ctx context.Context, t *testctx.T) {
 //go:embed testdata/modules/typescript/syntax/index.ts
 var tsSyntax string
 
-func (ModuleSuite) TestTypescriptSyntaxSupport(ctx context.Context, t *testctx.T) {
+func (TypescriptSuite) TestSyntaxSupport(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	modGen := c.Container().From(golangImage).
@@ -262,7 +269,7 @@ func (ModuleSuite) TestTypescriptSyntaxSupport(ctx context.Context, t *testctx.T
 //go:embed testdata/modules/typescript/minimal/index.ts
 var tsSignatures string
 
-func (ModuleSuite) TestTypescriptSignatures(ctx context.Context, t *testctx.T) {
+func (TypescriptSuite) TestSignatures(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	modGen := c.Container().From(golangImage).
@@ -366,7 +373,7 @@ func (ModuleSuite) TestTypescriptSignatures(ctx context.Context, t *testctx.T) {
 //go:embed testdata/modules/typescript/minimal/builtin.ts
 var tsSignaturesBuiltin string
 
-func (ModuleSuite) TestTypescriptSignaturesBuildinTypes(ctx context.Context, t *testctx.T) {
+func (TypescriptSuite) TestSignaturesBuildinTypes(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	modGen := c.Container().From(golangImage).
@@ -411,7 +418,7 @@ func (ModuleSuite) TestTypescriptSignaturesBuildinTypes(ctx context.Context, t *
 var tsSignaturesUnexported string
 
 // TODO: Fixes DEV-3343 and update this test
-func (ModuleSuite) TestTypescriptSignatureUnexported(ctx context.Context, t *testctx.T) {
+func (TypescriptSuite) TestSignatureUnexported(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	modGen := c.Container().From(golangImage).
@@ -427,7 +434,7 @@ func (ModuleSuite) TestTypescriptSignatureUnexported(ctx context.Context, t *tes
 	require.Equal(t, "MinimalFoo", objs.Get("0.name").String())
 }
 
-func (ModuleSuite) TestTypescriptDocs(ctx context.Context, t *testctx.T) {
+func (TypescriptSuite) TestDocs(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	modGen := c.Container().From(golangImage).
@@ -473,7 +480,7 @@ func (ModuleSuite) TestTypescriptDocs(ctx context.Context, t *testctx.T) {
 //go:embed testdata/modules/typescript/optional/index.ts
 var tsOptional string
 
-func (ModuleSuite) TestTypescriptOptional(ctx context.Context, t *testctx.T) {
+func (TypescriptSuite) TestOptional(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	modGen := c.Container().From(golangImage).
@@ -495,7 +502,7 @@ func (ModuleSuite) TestTypescriptOptional(ctx context.Context, t *testctx.T) {
 	require.JSONEq(t, `{"minimal": {"resolveValue": "hello world"}}`, out)
 }
 
-func (ModuleSuite) TestTypescriptRuntimeDetection(ctx context.Context, t *testctx.T) {
+func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	modGen := c.Container().From(golangImage).
@@ -696,7 +703,7 @@ func (ModuleSuite) TestTypescriptRuntimeDetection(ctx context.Context, t *testct
 	})
 }
 
-func (ModuleSuite) TestTypeScriptPackageManagerDetection(ctx context.Context, t *testctx.T) {
+func (TypescriptSuite) TestPackageManagerDetection(ctx context.Context, t *testctx.T) {
 	t.Run("should default to yarn", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		modGen := c.Container().From(golangImage).
@@ -833,7 +840,7 @@ func (ModuleSuite) TestTypeScriptPackageManagerDetection(ctx context.Context, t 
 	})
 }
 
-func (ModuleSuite) TestTypescriptWithOtherModuleTypes(ctx context.Context, t *testctx.T) {
+func (TypescriptSuite) TestWithOtherModuleTypes(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	ctr := goGitBase(t, c).
@@ -1013,7 +1020,7 @@ class Obj {
 	})
 }
 
-func (ModuleSuite) TestTypescriptAliases(ctx context.Context, t *testctx.T) {
+func (TypescriptSuite) TestAliases(ctx context.Context, t *testctx.T) {
 	t.Run("alias in function", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
@@ -1130,7 +1137,7 @@ class Alias {
 	})
 }
 
-func (ModuleSuite) TestTypeScriptPrototype(ctx context.Context, t *testctx.T) {
+func (TypescriptSuite) TestPrototype(ctx context.Context, t *testctx.T) {
 	t.Run("keep class prototype inside module", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
@@ -1184,7 +1191,7 @@ class PModule {
 	})
 }
 
-func (ModuleSuite) TestModuleTypeScriptSubPathLoading(ctx context.Context, t *testctx.T) {
+func (TypescriptSuite) TestModuleSubPathLoading(ctx context.Context, t *testctx.T) {
 	t.Run("load from subpath", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
@@ -1199,7 +1206,7 @@ func (ModuleSuite) TestModuleTypeScriptSubPathLoading(ctx context.Context, t *te
 	})
 }
 
-func (ModuleSuite) TestTypeScriptPrimitiveType(ctx context.Context, t *testctx.T) {
+func (TypescriptSuite) TestPrimitiveType(ctx context.Context, t *testctx.T) {
 	t.Run("should throw error on String", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
@@ -1270,7 +1277,7 @@ class Test {
 	})
 }
 
-func (ModuleSuite) TestTypeScriptDeprecatedFieldDecorator(ctx context.Context, t *testctx.T) {
+func (TypescriptSuite) TestDeprecatedFieldDecorator(ctx context.Context, t *testctx.T) {
 	t.Run("@field still working", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
