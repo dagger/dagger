@@ -36,7 +36,6 @@ defmodule Dagger.Mod do
     |> encode(Dagger.Module)
   end
 
-  # TODO: raise error when parent name != module.
   def invoke(dag, module, _parent, _parent_name, fn_name, input_args) do
     fun = fn_name |> Macro.underscore() |> String.to_existing_atom()
     fun_def = Dagger.Mod.Object.get_function(module, fun)

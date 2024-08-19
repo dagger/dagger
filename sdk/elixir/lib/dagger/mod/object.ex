@@ -3,9 +3,6 @@ defmodule Dagger.Mod.Object do
   Declare a module as an object type.
   """
 
-  # TODO: defn handle ignore argument correctly.
-  # TODO: support optional
-
   @type function_name() :: atom()
   @type function_def() :: {function_name(), keyword()}
 
