@@ -94,7 +94,6 @@ func (cli *CloudCLI) Login(cmd *cobra.Command, args []string) error {
 			return Fail
 		}
 		for _, org := range user.Orgs {
-			org := org
 			if org.Name == orgName {
 				selectedOrg = &org
 				break

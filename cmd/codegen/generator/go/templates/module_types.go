@@ -80,7 +80,7 @@ func (ps *parseState) parseGoTypeReference(typ types.Type, named *types.Named, i
 
 			if ps.isDaggerGenerated(named.Obj()) {
 				isEnum := false
-				for i := 0; i < named.NumMethods(); i++ {
+				for i := range named.NumMethods() {
 					method := named.Method(i)
 					if method.Name() == "IsEnum" {
 						isEnum = true

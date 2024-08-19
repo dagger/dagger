@@ -196,7 +196,6 @@ func (sess *daggerSession) FlushTelemetry(ctx context.Context) error {
 	eg := new(errgroup.Group)
 	sess.clientMu.Lock()
 	for _, client := range sess.clients {
-		client := client
 		eg.Go(func() error {
 			return client.FlushTelemetry(ctx)
 		})
@@ -314,7 +313,6 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	defer sess.containersMu.Unlock()
 	for ctr := range sess.containers {
 		if ctr != nil {
-			ctr := ctr
 			releaseGroup.Go(func() error {
 				return ctr.Release(ctx)
 			})
@@ -322,7 +320,6 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	}
 
 	for _, client := range sess.clients {
-		client := client
 		releaseGroup.Go(func() error {
 			var errs error
 			client.job.Discard()
@@ -354,7 +351,6 @@ func (srv *Server) removeDaggerSession(ctx context.Context, sess *daggerSession)
 	var refReleaseGroup errgroup.Group
 	for rf := range sess.refs {
 		if rf != nil {
-			rf := rf
 			refReleaseGroup.Go(func() error {
 				return rf.Release(ctx)
 			})
@@ -1095,7 +1091,6 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 			bklog.G(ctx).Debugf("running cache export for client %s", client.clientID)
 			cacheExporterFuncs := make([]buildkit.ResolveCacheExporterFunc, len(sess.cacheExporterCfgs))
 			for i, cacheExportCfg := range sess.cacheExporterCfgs {
-				cacheExportCfg := cacheExportCfg
 				cacheExporterFuncs[i] = func(ctx context.Context, sessionGroup bksession.Group) (remotecache.Exporter, error) {
 					exporterFunc, ok := srv.cacheExporters[cacheExportCfg.Type]
 					if !ok {

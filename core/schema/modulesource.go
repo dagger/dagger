@@ -385,7 +385,6 @@ func (s *moduleSchema) moduleSourceDependencies(
 		existingDeps = make([]dagql.Instance[*core.ModuleDependency], len(modCfg.Dependencies))
 		var eg errgroup.Group
 		for i, depCfg := range modCfg.Dependencies {
-			i, depCfg := i, depCfg
 			eg.Go(func() error {
 				var depSrc dagql.Instance[*core.ModuleSource]
 				err := s.dag.Select(ctx, s.dag.Root(), &depSrc,
@@ -436,7 +435,6 @@ func (s *moduleSchema) moduleSourceDependencies(
 	newDeps := make([]dagql.Instance[*core.ModuleDependency], len(src.Self.WithDependencies))
 	var eg errgroup.Group
 	for i, dep := range src.Self.WithDependencies {
-		i, dep := i, dep
 		eg.Go(func() error {
 			var resolvedDepSrc dagql.Instance[*core.ModuleSource]
 			err := s.dag.Select(ctx, src, &resolvedDepSrc,

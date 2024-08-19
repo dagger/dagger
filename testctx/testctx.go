@@ -33,7 +33,7 @@ func Run(ctx context.Context, testingT *testing.T, suite any, middleware ...Midd
 	suiteT := reflect.TypeOf(suite)
 	suiteV := reflect.ValueOf(suite)
 
-	for i := 0; i < suiteV.NumMethod(); i++ {
+	for i := range suiteV.NumMethod() {
 		methT := suiteT.Method(i)
 		if !strings.HasPrefix(methT.Name, "Test") {
 			continue

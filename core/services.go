@@ -216,7 +216,6 @@ func (ss *Services) StartBindings(ctx context.Context, bindings ServiceBindings)
 	// NB: don't use errgroup.WithCancel; we don't want to cancel on Wait
 	eg := new(errgroup.Group)
 	for i, bnd := range bindings {
-		i, bnd := i, bnd
 		eg.Go(func() error {
 			runningSvc, err := ss.Start(ctx, bnd.ID, bnd.Service)
 			if err != nil {
@@ -293,7 +292,6 @@ func (ss *Services) StopSessionServices(ctx context.Context, sessionID string) e
 
 	eg := new(errgroup.Group)
 	for _, svc := range svcs {
-		svc := svc
 		eg.Go(func() error {
 			bklog.G(ctx).Debugf("shutting down service %s", svc.Host)
 			// force kill the service, users should manually shutdown services if they're

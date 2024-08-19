@@ -240,7 +240,7 @@ func TestServicesStartConcurrentSadThenHappy(t *testing.T) {
 	}, 10*time.Second, 10*time.Millisecond)
 
 	// start a few more attempts
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		go func() {
 			_, err := services.Start(ctx, stub.ID(), stub)
 			errs <- err

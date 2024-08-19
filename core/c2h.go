@@ -27,7 +27,6 @@ func (d *c2hTunnel) Tunnel(ctx context.Context) (rerr error) {
 	listenerPool := pool.New().WithContext(ctx)
 	proxyConnPool := pool.New().WithContext(ctx)
 	for _, sock := range d.socks {
-		sock := sock
 		listenerPool.Go(func(ctx context.Context) error {
 			defer cancel() // if one exits, all should exit
 

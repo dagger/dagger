@@ -36,7 +36,6 @@ func (m *manager) StartCacheMountSynchronization(ctx context.Context) error {
 
 	var eg errgroup.Group
 	for _, syncedCacheMount := range syncedCacheMounts {
-		syncedCacheMount := syncedCacheMount
 		if syncedCacheMount.URL == "" {
 			// nothing to download, have to start fresh, skip it until we sync back to cloud at shutdown
 			continue
@@ -96,7 +95,6 @@ func (m *manager) StartCacheMountSynchronization(ctx context.Context) error {
 		})
 
 		for cacheMountName := range seenCacheMounts {
-			cacheMountName := cacheMountName
 			eg.Go(func() error {
 				bklog.G(ctx).Debugf("syncing cache mount remotely %s", cacheMountName)
 				cacheKey := cacheKeyFromMountName(cacheMountName)
