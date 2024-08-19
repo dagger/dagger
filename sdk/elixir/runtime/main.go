@@ -156,7 +156,7 @@ func (m *ElixirSdk) WithNewElixirPackage(ctx context.Context, modName string) *E
 	// Generate scaffolding code when no project exists.
 	if !alreadyNewPackage {
 		m.Container = m.Container.
-			WithExec([]string{"mix", "new", "--sup", modName}).
+			WithExec([]string{"mix", "new", modName}).
 			WithDirectory(modName+"/lib/mix/tasks", dag.Directory()).
 			WithMountedFile("/template.exs", dag.CurrentModule().Source().File("template.exs")).
 			WithExec([]string{"elixir", "/template.exs", "generate", modName})
