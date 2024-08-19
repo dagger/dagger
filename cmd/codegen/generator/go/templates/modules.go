@@ -117,7 +117,7 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) { //nolint: gocyclo
 	}
 
 	if ps.daggerObjectIfaceType == nil {
-		return "", fmt.Errorf("cannot find default codegen %s interface", daggerObjectIfaceName)
+		return "", fmt.Errorf("cannot find default codegen %s interface in:\n[%s]", daggerObjectIfaceName, strings.Join(pkgScope.Names(), ", "))
 	}
 
 	if pkgDoc := ps.pkgDoc(); pkgDoc != "" {
