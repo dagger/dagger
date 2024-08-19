@@ -1,0 +1,5 @@
+{
+  "name": "elixir-sdk-dev",
+  "sdk": "github.com/wingyplus/dagger/sdk/elixir@471e94498e1c50480c258fe03abda666df239a02",
+  "engineVersion": "v0.12.5"
+}
