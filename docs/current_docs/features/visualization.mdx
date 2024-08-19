@@ -42,7 +42,6 @@ Here's an example of it in action:
 
 ![Dagger Trace](/img/current_docs/quickstart/trace.gif)
 
-
 :::info
 Dagger uses [OpenTelemetry](https://opentelemetry.io/) as its telemetry protocol. Each Dagger Function call is represented as an [OpenTelemetry trace](https://opentelemetry.io/docs/concepts/signals/traces/). The operations performed by the Dagger Function are represented as [OpenTelemetry spans](https://opentelemetry.io/docs/concepts/signals/traces/#spans). A span can emit several effects, which are the operations generated in the span. For example, the `withDirectory()` span generates all the necessary operations to provide a directory with excluded and included elements. For this, it first loads a directory, and then creates a new one from scratch inside the container, generating two distinct steps (effects).
 :::
