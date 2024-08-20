@@ -4,12 +4,13 @@ slug: /integrations/argo-workflows
 
 # Argo Workflows
 
-# How it works
+Dagger provides a programmable container engine that can be invoked from an Argo Workflow to run a Dagger pipeline. This allows you to benefit from Dagger's caching, debugging, and visualization features, whilst still keeping all of your existing Argo Workflows infrastructure.
 
-More technical explanation. Points to cover:
+## How it works
 
+Dagger is invoked like any other tool, as one step of an Argo Workflow. Argo Workflows executes the Dagger CLI in a container and connects to the Dagger Engine running in a sidecar container.
 
-# Prerequisites
+## Prerequisites
 
 - A running Kubernetes cluster [configured for use with Dagger](./kubernetes.mdx) and with a pre-configured `kubectl` profile
 - Argo Workflows [installed](https://github.com/argoproj/argo-workflows/blob/master/docs/quick-start.md) in the cluster
@@ -37,6 +38,10 @@ When you're satisfied with the workflow configuration, run it with Argo:
 The `--watch` argument provides an ongoing status feed of the workflow request in Argo. To see the logs from your workflow, note the pod name and in another terminal run `kubectl logs -f POD_NAME`
 
 Once the workflow has successfully completed, run it again with `argo submit -n argo --watch ./workflow.yaml`. Dagger's caching should result in a significantly faster second execution.
+
+:::note
+Argo Workflows is not a full-featured CI platform in itself, and won't directly respond to changes in repositories or have any automated triggers. To use Argo Workflows as a CI server, it should be [paired with other tools](https://argo-workflows.readthedocs.io/en/latest/use-cases/ci-cd/) like Argo Events.
+:::
 
 ## Resources
 
