@@ -1995,17 +1995,46 @@ func (ModuleSuite) TestCallGitMod(ctx context.Context, t *testctx.T) {
 }
 
 func (ModuleSuite) TestCallFindup(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	prep := func(t *testctx.T) (*dagger.Client, *safeBuffer, *dagger.Container) {
+		var logs safeBuffer
+		c := connect(ctx, t, dagger.WithLogOutput(&logs))
 
-	out, err := c.Container().From(golangImage).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work").
-		With(daggerExec("init", "--name=foo", "--sdk=go")).
-		WithWorkdir("/work/some/subdir").
-		With(daggerCall("container-echo", "--string-arg", "yo", "stdout")).
-		Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "yo", strings.TrimSpace(out))
+		mod := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=foo", "--sdk=go"))
+		return c, &logs, mod
+	}
+
+	t.Run("workdir subdir", func(ctx context.Context, t *testctx.T) {
+		_, _, mod := prep(t)
+		out, err := mod.
+			WithWorkdir("/work/some/subdir").
+			With(daggerCall("container-echo", "--string-arg", "yo", "stdout")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "yo", strings.TrimSpace(out))
+	})
+
+	t.Run("explicit subdir", func(ctx context.Context, t *testctx.T) {
+		c, _, mod := prep(t)
+		out, err := mod.
+			WithDirectory("/work/some/subdir", c.Directory()).
+			With(daggerCallAt("some/subdir", "container-echo", "--string-arg", "yo", "stdout")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "yo", strings.TrimSpace(out))
+	})
+
+	t.Run("non-existent subdir", func(ctx context.Context, t *testctx.T) {
+		c, logs, mod := prep(t)
+		_, err := mod.
+			With(daggerCallAt("bad/subdir", "container-echo", "--string-arg", "yo", "stdout")).
+			Stdout(ctx)
+		require.Error(t, err)
+		require.NoError(t, c.Close())
+		require.Contains(t, logs.String(), "failed to lstat bad/subdir")
+	})
 }
 
 func (ModuleSuite) TestCallUnsupportedFunctions(ctx context.Context, t *testctx.T) {
