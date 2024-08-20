@@ -21,6 +21,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # testing cancellations
   lint:
     runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-12-5-4c' || 'ubuntu-latest' }}"
     timeout-minutes: 10
