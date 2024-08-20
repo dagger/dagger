@@ -45,6 +45,13 @@ func typeName(spec NamedParsedType) string {
 // without needing to duplicate the full type definition every time it occurs.
 func (ps *parseState) parseGoTypeReference(typ types.Type, named *types.Named, isPtr bool) (ParsedType, error) {
 	switch t := typ.(type) {
+	case *types.Alias:
+		typeSpec, err := ps.parseGoTypeReference(t.Rhs(), nil, isPtr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse alias type: %w", err)
+		}
+		return typeSpec, nil
+
 	case *types.Named:
 		// Named types are any types declared like `type Foo <...>`
 		typeSpec, err := ps.parseGoTypeReference(t.Underlying(), t, isPtr)
