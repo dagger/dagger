@@ -223,6 +223,30 @@ sleep infinity
 	require.Equal(t, []string{"README.md"}, entries)
 }
 
+func (GitSuite) TestGitTagsSSH(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	repoURL := "git@gitlab.com:dagger-modules/private/test/more/dagger-test-modules-private.git"
+
+	// Test fetching tags with SSH authentication
+	t.Run("with SSH auth", func(ctx context.Context, t *testctx.T) {
+		sockPath, cleanup := setupPrivateRepoSSHAgent(t)
+		defer cleanup()
+
+		tags, err := c.Git(repoURL, dagger.GitOpts{
+			SSHAuthSocket: c.Host().UnixSocket(sockPath),
+		}).Tags(ctx)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{"cool-sdk/v0.1", "v0.1.1"}, tags)
+	})
+
+	t.Run("without SSH auth", func(ctx context.Context, t *testctx.T) {
+		_, err := c.Git(repoURL).Tags(ctx)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "Permission denied (publickey)")
+	})
+}
+
 func (GitSuite) TestAuth(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	gitDaemon, repoURL := gitServiceHTTPWithBranch(ctx, t, c, c.Directory().WithNewFile("README.md", "Hello, world!"), "main", c.SetSecret("target", "foobar"))

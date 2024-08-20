@@ -4092,8 +4092,8 @@ class GeneratedCode(Type):
 class GitModuleSource(Type):
     """Module source originating from a git repo."""
 
-    async def clone_url(self) -> str:
-        """The URL to clone the root of the git repo from
+    async def clone_ref(self) -> str:
+        """The ref to clone the root of the git repo from
 
         Returns
         -------
@@ -4109,6 +4109,36 @@ class GitModuleSource(Type):
         QueryError
             If the API returns an error.
         """
+        _args: list[Arg] = []
+        _ctx = self._select("cloneRef", _args)
+        return await _ctx.execute(str)
+
+    async def clone_url(self) -> str:
+        """The URL to clone the root of the git repo from
+
+        .. deprecated::
+            Use CloneRef instead. CloneRef supports both URL-style and SCP-
+            like SSH references
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        warnings.warn(
+            'Method "clone_url" is deprecated: Use CloneRef instead. CloneRef supports both URL-style and SCP-like SSH references',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args: list[Arg] = []
         _ctx = self._select("cloneURL", _args)
         return await _ctx.execute(str)
@@ -4141,6 +4171,28 @@ class GitModuleSource(Type):
         _args: list[Arg] = []
         _ctx = self._select("contextDirectory", _args)
         return Directory(_ctx)
+
+    async def html_repo_url(self) -> str:
+        """The URL to access the web view of the repository (e.g., GitHub,
+        GitLab, Bitbucket)
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("htmlRepoURL", _args)
+        return await _ctx.execute(str)
 
     async def html_url(self) -> str:
         """The URL to the source's git repo in a web browser
