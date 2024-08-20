@@ -81,9 +81,8 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) { //nolint: gocyclo
 	for _, name := range pkgScope.Names() {
 		obj := pkgScope.Lookup(name)
 		if obj == nil {
-			continue
+			return "", fmt.Errorf("%q should exist in scope, but doesn't", name)
 		}
-
 		ps.objs = append(ps.objs, obj)
 	}
 
@@ -107,7 +106,9 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) { //nolint: gocyclo
 		}
 
 		// check if this is the DaggerObject interface
-		if ok := ps.checkDaggerObjectIface(obj); ok {
+		if ok, err := ps.checkDaggerObjectIface(obj); err != nil {
+			return "", err
+		} else if ok {
 			continue
 		}
 
@@ -117,7 +118,7 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) { //nolint: gocyclo
 	}
 
 	if ps.daggerObjectIfaceType == nil {
-		return "", fmt.Errorf("cannot find default codegen %s interface", daggerObjectIfaceName)
+		return "", fmt.Errorf("cannot find default codegen %s interface in:\n[%s]", daggerObjectIfaceName, strings.Join(pkgScope.Names(), ", "))
 	}
 
 	if pkgDoc := ps.pkgDoc(); pkgDoc != "" {
@@ -495,21 +496,21 @@ func (ps *parseState) checkConstructor(obj types.Object) bool {
 	return true
 }
 
-func (ps *parseState) checkDaggerObjectIface(obj types.Object) bool {
+func (ps *parseState) checkDaggerObjectIface(obj types.Object) (bool, error) {
 	named, isNamed := obj.Type().(*types.Named)
 	if !isNamed {
-		return false
+		return false, nil
+	}
+	if named.Obj().Name() != daggerObjectIfaceName {
+		return false, nil
 	}
 	iface, isIface := named.Underlying().(*types.Interface)
 	if !isIface {
-		return false
-	}
-	if named.Obj().Name() != daggerObjectIfaceName {
-		return false
+		return false, fmt.Errorf("exected %s to be %T, but got %T", daggerObjectIfaceName, &types.Interface{}, named.Underlying())
 	}
 
 	ps.daggerObjectIfaceType = iface
-	return true
+	return true, nil
 }
 
 // fillObjectFunctionCases recursively fills out the `cases` map with entries for object name -> `case` statement blocks
