@@ -87,7 +87,7 @@ You can click any of the Traces in the list to see detailed logs for each Trace.
 If there are any errors, Dagger Cloud automatically surfaces the main error and error message in the list.
 =======
 :::info
-Dagger uses [OpenTelemetry](https://opentelemetry.io/) as its telemetry protocol. Each Dagger Function call, or Trace, is represented as an [OpenTelemetry span](https://opentelemetry.io/docs/concepts/signals/traces/#spans). A span can emit several effects, which are the operations generated in the span. For example, the `withDirectory()` span generates all the necessary operations to provide a directory with excluded and included elements. For this, it first loads a directory, and then creates a new one from scratch inside the container, generating two distinct steps (effects).
+Dagger uses [OpenTelemetry](https://opentelemetry.io/) as its telemetry protocol. Each Dagger Function call is represented as an [OpenTelemetry trace](https://opentelemetry.io/docs/concepts/signals/traces/). The operations performed by the Dagger Function are represented as [OpenTelemetry spans](https://opentelemetry.io/docs/concepts/signals/traces/#spans). A span can emit several effects, which are the operations generated in the span. For example, the `withDirectory()` span generates all the necessary operations to provide a directory with excluded and included elements. For this, it first loads a directory, and then creates a new one from scratch inside the container, generating two distinct steps (effects).
 :::
 
 If there are any errors, Dagger Cloud automatically brings you to the first error in the list.
