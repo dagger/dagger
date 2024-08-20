@@ -11,7 +11,7 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-type TypescriptSuite struct {}
+type TypescriptSuite struct{}
 
 func TestTypescript(t *testing.T) {
 	testctx.Run(testCtx, t, TypescriptSuite{}, Middleware()...)
