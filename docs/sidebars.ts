@@ -66,6 +66,10 @@ module.exports = {
         },
         {
           "type": "doc",
+          "id": "integrations/github"
+        },
+        {
+          "type": "doc",
           "id": "integrations/github-actions"
         },
         {
