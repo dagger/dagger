@@ -4,11 +4,46 @@ slug: /integrations/argo-workflows
 
 # Argo Workflows
 
-The following code sample demonstrates one way to integrate Dagger with Argo Workflows.
+# How it works
 
-The example runs the Dagger Engine as a sidecar which shares a volume with the main container.
+More technical explanation. Points to cover:
 
-```yaml title="workflow.yaml" file=./snippets/argo-workflow.yaml
+
+# Prerequisites
+
+- A running Kubernetes cluster [configured for use with Dagger](./kubernetes.mdx) and with a pre-configured `kubectl` profile
+- Argo Workflows [installed](https://github.com/argoproj/argo-workflows/blob/master/docs/quick-start.md) in the cluster
+
+## Example
+
+The following example runs the tests for the [greetings-api](https://github.com/kpenfound/greetings-api) demo project using a Dagger Function. This project uses the Dagger Go SDK for CI.
+
+Create a file called `workflow.yaml` with the following content:
+
+```yaml file=./snippets/argo-workflow.yaml
 ```
-For a step-by-step example of how to use Argo Workflows with Dagger, check out this demo below:
-<iframe width="560" height="315" src="https://www.youtube.com/embed/FWOJO2PAQIo?si=RiSJAL8l_6uo731F" title="Argo Workflows with Dagger Demo" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+
+A few important points to note:
+
+- The workflow uses hardwired artifacts to clone the Git repository and to install the Dagger CLI.
+- `unix:///var/run/dagger/buildkitd.sock` is mounted and specified with the `_EXPERIMENTAL_DAGGER_RUNNER_HOST` environment variable.
+- The Dagger CLI is downloaded and installed. Confirm the version and architecture are accurate for your cluster and project.
+- Setting the `DAGGER_CLOUD_TOKEN` environment variable is only necessary if integrating with Dagger Cloud.
+
+When you're satisfied with the workflow configuration, run it with Argo:
+
+`argo submit -n argo --watch ./workflow.yaml`
+
+The `--watch` argument provides an ongoing status feed of the workflow request in Argo. To see the logs from your workflow, note the pod name and in another terminal run `kubectl logs -f POD_NAME`
+
+Once the workflow has successfully completed, run it again with `argo submit -n argo --watch ./workflow.yaml`. Dagger's caching should result in a significantly faster second execution.
+
+## Resources
+
+Some resources from the Dagger community that may help are listed below. If you have any questions about additional ways to use Argo Workflows with Dagger, join our [Discord](https://discord.gg/dagger-io) and ask your questions in our [Kubernetes channel](https://discord.com/channels/707636530424053791/1122942037096927353).
+
+- [Video: Argo Workflows with Dagger](https://www.youtube.com/watch?v=FWOJO2PAQIo) by Kyle Penfound: In this demo, Kyle demonstrates how to use Dagger to define pipelines in code and then use argo Workflows to orchestrate the execution of those pipelines.
+
+## About Argo Workflows
+
+[Argo Workflows](https://argoproj.github.io/argo-workflows/) is an open source container-native workflow engine for orchestrating parallel jobs on Kubernetes.
