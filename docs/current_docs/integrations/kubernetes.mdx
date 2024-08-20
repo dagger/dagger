@@ -91,9 +91,7 @@ Although this will obviously vary based on workloads, a minimum of 2 vCPUs and 8
 - A running kubernetes cluster with a pre-configured kubectl profile.
 - The [Helm](https://helm.sh/) package manager installed on your local machine.
 
-## Examples
-
-### Deployment with Helm
+## Example
 
 Dagger provides a Helm chart to create a Dagger Engine DaemonSet on a Kubernetes cluster. A DaemonSet ensures that all matching nodes run an instance of Dagger Engine.
 
@@ -159,17 +157,15 @@ For more complex scenarios, refer to the following sections.
 
 Below are some resources from the Dagger community that may help as well. If you have any questions about additional ways to use Kubernetes with Dagger, join our [Discord](https://discord.gg/dagger-io) and ask your questions in our [Kubernetes channel](https://discord.com/channels/707636530424053791/1122942037096927353).
 
-- [Kubernetes Dagger Modules](https://daggerverse.dev/search?q=kubernetes).
-- [Kubernetes in Dagger] https://www.youtube.com/watch?v=F6-44Je5HvE by Marcos Lilljedahl - He explains how to run Kubernetes clusters using Dagger. He addresses the challenges and solutions in integrating Kubernetes within Dagger and shares a practical setup using the [k3s Dagger Module](https://daggerverse.dev/mod/github.com/marcosnils/daggerverse/k3s)
-- [Kubernetes Infinity Stones: Can Dagger Complete My Set?](https://youtu.be/VIYxsc7TlhQ) - In this demo, Diego Ciangottini explores the integration of Dagger with Kubernetes to enhance the deployment and management of components across different environments. 
-- [Dagger and Kubernetes Repo Example](https://github.com/developer-guy/kcd-munich-2024-demo) by Batuhan Apaydın and Koray Oksay - The goal of this repository is to demonstrate how to use Dagger in a Kubernetes environment to manage the deployment of applications. They use a simple Go application that exposes a REST API. The application is going to be deployed in a Kubernetes cluster using Dagger with a pipeline-as-code approach.
-- [On-Demand Dagger Engines with Argo CD, EKS, and Karpenter](https://dagger.io/blog/argo-cd-kubernetes)
-- [Argo Workflows with Dagger Functions](https://youtu.be/FWOJO2PAQIo)
-
+- [Kubernetes Dagger modules](https://daggerverse.dev/search?q=kubernetes).
+- [Video: Kubernetes in Dagger](https://www.youtube.com/watch?v=F6-44Je5HvE) by Marcos Lilljedahl: In this demo, Marcos explains how to run Kubernetes clusters using Dagger. He addresses the challenges and solutions in integrating Kubernetes within Dagger and shares a practical setup using the [k3s Dagger Module](https://daggerverse.dev/mod/github.com/marcosnils/daggerverse/k3s)
+- [Video: Kubernetes Infinity Stones: Can Dagger Complete My Set?](https://youtu.be/VIYxsc7TlhQ) by Diego Ciangottini: In this demo, Diego explores the integration of Dagger with Kubernetes to enhance the deployment and management of components across different environments.
+- [Video: Dagger and Kubernetes Repo Example](https://github.com/developer-guy/kcd-munich-2024-demo) by Batuhan Apaydın and Koray Oksay: In this demo, Batuhan and Koray demonstrate how to use Dagger in a Kubernetes environment to manage the deployment of applications. They use a simple Go application that exposes a REST API. The application is deployed in a Kubernetes cluster using Dagger with a pipeline-as-code approach.
+- [Video: Argo Workflows with Dagger Functions](https://youtu.be/FWOJO2PAQIo)
+- [Blog post: On-Demand Dagger Engines with Argo CD, EKS, and Karpenter](https://dagger.io/blog/argo-cd-kubernetes)
 
 ## About Kubernetes
 
 Kubernetes is an open-source container orchestration platform that automates the deployment,
 scaling, and management of containerized applications. It was originally designed by Google
 and is now maintained by the Cloud Native Computing Foundation.
-

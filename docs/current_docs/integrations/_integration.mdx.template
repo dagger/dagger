@@ -6,7 +6,7 @@ slug: /integrations/<name-of-integration>
 
 High-level description of benefit or purpose of the integration ie. why should you consider it? 1-2 sentences max. This should explain why and what.
 
-# How it Works
+# How it works
 
 More technical explanation. Points to cover:
 
@@ -28,7 +28,7 @@ List approach(es) and code sample(s).
 
 Optional section, only include if there are external resources to add, like community call demos, additional docs, guides etc.
 
-Below are some resources from the Dagger community that may help as well. If
+Some resources from the Dagger community that may help are listed below. If
 you have any questions about additional ways to use <name of integration> with
 Dagger, join our [Discord](https://discord.gg/dagger-io) and ask your questions
 in our [<name of integration> channel]().
