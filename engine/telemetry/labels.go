@@ -147,7 +147,7 @@ func (labels Labels) WithGitLabels(workdir string) Labels {
 
 	head, err := repo.Head()
 	if err != nil {
-		slog.Warn("failed to get repo HEAD", "err", err)
+		slog.Debug("failed to get repo HEAD", "err", err)
 		return labels
 	}
 
