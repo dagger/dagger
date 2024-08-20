@@ -15,6 +15,10 @@ Pipeline failures can be both frustrating and lead to wasted resources as the te
 
 Run `dagger call` with the `--interactive` (`-i` for short) flag to open a terminal in the context of a pipeline failure. No changes are required to your Dagger Function code.
 
+:::tip
+Interactive mode defaults executing `/bin/sh` when opening a terminal. Change the command to execute with the `--interactive-command` flag.
+:::
+
 ## Use the `Terminal()` method to inspect the pipeline live
 
 As an alternative to the `--interactive` flag, use the `Terminal()` method to set one or more explicit breakpoints in your Dagger pipeline. Dagger then starts an interactive terminal session at each breakpoint. This lets you inspect a `Directory` or a `Container` at any point in your pipeline run, with all the necessary context available to you.
