@@ -15,3 +15,14 @@ This approach has multiple benefits:
 - It enables Dagger Function developers to use whichever language feels natural and intuitive to them, without having to think about interoperability.
 - Even though Dagger Functions may be written in different languages, they are all run by the same Dagger Engine. So common concerns like logging, scaling, monitoring and others only need to be solved once, and can then be applied for everyone.
 - Each Dagger SDK generates native code-bindings for all dependencies from the GraphQL API. This gives you all the benefits of type-checking, code completion and other IDE features for your favorite language when developing Dagger Functions.
+
+You can use the Dagger API in one of two ways:
+
+- You can [call the Dagger API](./calling.mdx) from a custom tool created with a Dagger SDK or a third-party GraphQL client using `dagger run ...` or `dagger query ...`.
+- You can [extend the Dagger API](./extending.mdx) by creating or reusing Dagger Functions and call the extended API (which now includes all of the original core APIs _plus_ the custom Dagger Functions) using `dagger call ...`.
+
+We recommend the second approach, as it has many advantages over the first:
+
+- Having to maintain a custom CLI for your project is overkill most of the time. Writing custom client tools involves additional time, effort and maintenance overhead. Most of the time, it's easier to write a Dagger Function and call it directly with `dagger call`.
+- Custom tools created with Dagger SDKs or GraphQL clients can't easily run Dagger modules from the Daggerverse (it's possible, but more complex to maintain and harder to debug, as it requires resorting to lower-level GraphQL queries).
+- Dagger Functions do not have direct access to the host system resources such as directories, files, environment variables, network services. This "sandboxing" of Dagger Functions improves security, ensures reproducibility, and assists caching.

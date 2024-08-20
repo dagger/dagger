@@ -4,4 +4,6 @@ slug: /api/calling
 
 # Calling the API
 
-You can call the Dagger API using a Dagger SDK in one of the supported programming languages, using the Dagger CLI, or using your programming language's native GraphQL client.
+You can call the Dagger API using a Dagger SDK in one of the supported programming languages, using the Dagger CLI, or using your programming language's native GraphQL client. Typically, you would do this from a custom client tool or from your application test suite using the `dagger run ...` or `dagger query ...` commands.
+
+This approach is only recommended if you already have existing tools that you specifically can't (or don't wish to) modify, or for niche use cases. For all other scenarios, the recommended approach is to [use Dagger Functions](./extending.mdx).
