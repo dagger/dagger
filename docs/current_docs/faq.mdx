@@ -187,22 +187,9 @@ Dagger is aware of the context it runs on. When it runs in a CI context like Git
 
 You might see a warning message in Dagger Cloud about orphaned Traces. Orphaned Traces are Traces emitted in a CI context, that contain incomplete or no Git metadata. This generally happens when Git is not properly set up in the CI context that Dagger runs in. In GitHub Actions, for example, this context can be provided by using the `checkout` action in the step where Dagger is called.
 
-### What is the "CI view"?
-
-The CI view shows all the recent changes that were made to a hosted repository where Dagger was triggered with a `DAGGER_CLOUD_TOKEN` environment variable set. This view shows a list of grouped traces. The group is determined by the branch/reference combination where Dagger was triggered.
-
-### What is the "focused view" of a group (when clicking a group in the CI view)?
-
-The "focused" view is used for pinning a specific point in your Git history and listening for Traces emitted under that context.
-
-### What is the flamegraph at the top of the Trace detaills page?
-
-The flamegraph shows the emitted spans of a trace, with a visual cue of how much time it represents of the parent span.
-
 ### My CI provider is not supported in Dagger Cloud. Is there a way I can "force" my Traces into the Dagger Cloud dashboard?
 
 It’s possible to send Traces by setting the `CI=true` variable in Dagger's runtime environment. However, Traces with incomplete Git repository data will show up as orphaned, so it is important to ensure that Dagger is running in a properly-set Git context.
-
 
 ## Dagger SDKs
 
