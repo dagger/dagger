@@ -36,36 +36,40 @@ func (t *Test) All(
 	// +optional
 	race bool,
 ) error {
-	return t.test(ctx, "", "./...", failfast, parallel, timeout, race, 1)
+	return t.test(ctx, "", "", "./...", failfast, parallel, timeout, race, 1)
 }
 
-// Run "important" engine tests
-func (t *Test) Important(
-	ctx context.Context,
-	// +optional
-	failfast bool,
-	// +optional
-	parallel int,
-	// +optional
-	timeout string,
-	// +optional
-	race bool,
-) error {
-	// These tests give good basic coverage of functionality w/out having to run everything
-	return t.test(ctx, `^(TestModule|TestContainer)`, "./...", failfast, parallel, timeout, race, 1)
+// List all tests
+func (t *Test) List(ctx context.Context) (string, error) {
+	cmd, err := t.testCmd(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	return cmd.
+		WithExec([]string{"sh", "-c", "go test -list=. ./... | grep ^Test | sort"}).
+		Stdout(ctx)
 }
 
-// Run custom engine tests
-func (t *Test) Custom(
+// Run specific tests
+func (t *Test) Specific(
 	ctx context.Context,
+	// Only run these tests
+	// +optional
 	run string,
+	// Skip these tests
+	// +optional
+	skip string,
 	// +optional
 	// +default="./..."
 	pkg string,
+	// Abort test run on first failure
 	// +optional
 	failfast bool,
+	// How many tests to run in parallel - defaults to the number of CPUs
 	// +optional
 	parallel int,
+	// How long before timing out the test run
 	// +optional
 	timeout string,
 	// +optional
@@ -74,12 +78,13 @@ func (t *Test) Custom(
 	// +optional
 	count int,
 ) error {
-	return t.test(ctx, run, pkg, failfast, parallel, timeout, race, count)
+	return t.test(ctx, run, skip, pkg, failfast, parallel, timeout, race, count)
 }
 
 func (t *Test) test(
 	ctx context.Context,
-	testRegex string,
+	runTestRegex string,
+	skipTestRegex string,
 	pkg string,
 	failfast bool,
 	parallel int,
@@ -91,6 +96,7 @@ func (t *Test) test(
 	args := []string{
 		"go",
 		"test",
+		"-v",
 	}
 
 	// Add ldflags
@@ -125,8 +131,12 @@ func (t *Test) test(
 	// Disable test caching, since these are integration tests
 	args = append(args, fmt.Sprintf("-count=%d", count))
 
-	if testRegex != "" {
-		args = append(args, "-run", testRegex)
+	if runTestRegex != "" {
+		args = append(args, "-run", runTestRegex)
+	}
+
+	if skipTestRegex != "" {
+		args = append(args, "-skip", skipTestRegex)
 	}
 
 	args = append(args, pkg)
