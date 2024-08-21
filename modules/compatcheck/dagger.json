@@ -1,0 +1,12 @@
+{
+  "name": "compatcheck",
+  "sdk": "go",
+  "dependencies": [
+    {
+      "name": "dagger-dev",
+      "source": "github.com/dagger/dagger@386e4d5597cd41598292ef6b463b7d762866679a"
+    }
+  ],
+  "source": ".",
+  "engineVersion": "v0.12.5"
+}
