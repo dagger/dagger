@@ -698,7 +698,15 @@ func getModuleConfigurationForSourceRef(
 	return conf, nil
 }
 
+// FIXME: huge refactor needed to remove this function - it shares a lot of
+// similarity with the engine-side callerHostFindUpContext, and it would be a
+// big simplification
 func findUp(curDirPath string) (string, bool, error) {
+	_, err := os.Lstat(curDirPath)
+	if err != nil {
+		return "", false, fmt.Errorf("failed to lstat %s: %w", curDirPath, err)
+	}
+
 	configPath := filepath.Join(curDirPath, modules.Filename)
 	stat, err := os.Lstat(configPath)
 	switch {
