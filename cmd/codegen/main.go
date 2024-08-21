@@ -41,6 +41,11 @@ var introspectCmd = &cobra.Command{
 	RunE: Introspect,
 }
 
+var initCmd = &cobra.Command{
+	Use:  "init",
+	RunE: ClientInit,
+}
+
 func init() {
 	rootCmd.Flags().StringVar(&lang, "lang", "go", "language to generate")
 	rootCmd.Flags().StringVarP(&outputDir, "output", "o", ".", "output directory")
@@ -52,6 +57,15 @@ func init() {
 
 	introspectCmd.Flags().StringVarP(&outputSchema, "output", "o", "", "save introspection result to file")
 	rootCmd.AddCommand(introspectCmd)
+
+	initCmd.Flags().StringVar(&lang, "lang", "go", "language to generate")
+	initCmd.Flags().StringVarP(&outputDir, "output", "o", ".", "output directory")
+	initCmd.Flags().StringVar(&introspectionJSONPath, "introspection-json-path", "", "optional path to file containing pre-computed graphql introspection JSON")
+
+	initCmd.Flags().StringVar(&modulePath, "module-context-path", "", "path to context directory of the module")
+	initCmd.Flags().StringVar(&moduleName, "module-name", "", "name of module to generate code for")
+	initCmd.Flags().BoolVar(&merge, "merge", false, "merge module deps with project's")
+	rootCmd.AddCommand(initCmd)
 }
 
 func ClientGen(cmd *cobra.Command, args []string) error {
@@ -101,6 +115,55 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 	}
 
 	return Generate(ctx, cfg, dag)
+}
+
+func ClientInit(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
+	dag, err := dagger.Connect(ctx)
+	if err != nil {
+		return err
+	}
+
+	// we're checking for the flag existence here as not setting the flag and
+	// setting it to false doesn't produce the same behavior.
+	var mergePtr *bool
+	if cmd.Flags().Changed("merge") {
+		mergePtr = &merge
+	}
+
+	cfg := generator.Config{
+		Lang: generator.SDKLang(lang),
+
+		OutputDir: outputDir,
+
+		Merge: mergePtr,
+	}
+
+	if moduleName != "" {
+		cfg.ModuleName = moduleName
+
+		if modulePath == "" {
+			return fmt.Errorf("--module-name requires --module-context-path")
+		}
+		modulePath, err = relativeTo(outputDir, modulePath)
+		if err != nil {
+			return err
+		}
+		if part, _, _ := strings.Cut(modulePath, string(filepath.Separator)); part == ".." {
+			return fmt.Errorf("module path must be child of output directory")
+		}
+		cfg.ModuleContextPath = modulePath
+	}
+
+	if introspectionJSONPath != "" {
+		introspectionJSON, err := os.ReadFile(introspectionJSONPath)
+		if err != nil {
+			return fmt.Errorf("read introspection json: %w", err)
+		}
+		cfg.IntrospectionJSON = string(introspectionJSON)
+	}
+
+	return Init(ctx, cfg, dag)
 }
 
 func Introspect(cmd *cobra.Command, args []string) error {

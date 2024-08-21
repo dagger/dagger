@@ -386,6 +386,29 @@ func (CLISuite) TestDaggerInitGit(ctx context.Context, t *testctx.T) {
 	}
 }
 
+func (CLISuite) TestDaggerInitWithNoSource(ctx context.Context, t *testctx.T) {
+	for _, tc := range []string{"go"} {
+		t.Run(tc, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			modGen := goGitBase(t, c).With(daggerExec("init", "--name=bare", "--sdk="+tc))
+
+			out, err := modGen.
+				With(daggerCall("container-echo", "--string-arg=hello there!", "stdout")).
+				Stdout(ctx)
+			require.NoError(t, err)
+			require.Contains(t, out, "hello there!")
+
+			_, err = modGen.
+				WithoutFile(sdkSourceFile(tc)).
+				With(daggerCall("container-echo", "--string-arg=hello there!", "stdout")).
+				Stdout(ctx)
+			require.Error(t, err)
+			require.ErrorContains(t, err, "main object not found")
+		})
+	}
+}
+
 func (CLISuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 	t.Run("name and sdk", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)

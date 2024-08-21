@@ -19,6 +19,10 @@ type TypeScriptGenerator struct {
 	Config generator.Config
 }
 
+func (g *TypeScriptGenerator) Init(ctx context.Context, schema *introspection.Schema, schemaVersion string) (*generator.GeneratedState, error) {
+	return nil, nil
+}
+
 // Generate will generate the TypeScript SDK code and might modify the schema to reorder types in a alphanumeric fashion.
 func (g *TypeScriptGenerator) Generate(_ context.Context, schema *introspection.Schema, schemaVersion string) (*generator.GeneratedState, error) {
 	generator.SetSchema(schema)

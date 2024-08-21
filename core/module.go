@@ -671,23 +671,38 @@ to be used without hard dependencies on the internet. They are loaded w/ the `lo
 loads them as modules from the engine container.
 */
 type SDK interface {
-	/* Codegen generates code for the module at the given source directory and subpath.
+	// Init generates the base code for the module at the given source
+	// directory and subpath.
+	//
+	// The Code field of the returned GeneratedCode object should be the
+	// generated contents of the module sourceDirSubpath, in the case where
+	// that's different than the root of the sourceDir.
+	//
+	// The provided Module is not fully initialized; the Runtime field will not
+	// be set yet.
+	Init(context.Context, *ModDeps, dagql.Instance[*ModuleSource]) (*dagql.Instance[*Directory], error)
 
-	The Code field of the returned GeneratedCode object should be the generated contents of the module sourceDirSubpath,
-	in the case where that's different than the root of the sourceDir.
-
-	The provided Module is not fully initialized; the Runtime field will not be set yet.
-	*/
+	// Codegen generates code for the module at the given source directory and
+	// subpath.
+	//
+	// The Code field of the returned GeneratedCode object should be the
+	// generated contents of the module sourceDirSubpath, in the case where
+	// that's different than the root of the sourceDir.
+	//
+	// The provided Module is not fully initialized; the Runtime field will not
+	// be set yet.
 	Codegen(context.Context, *ModDeps, dagql.Instance[*ModuleSource]) (*GeneratedCode, error)
 
-	/* Runtime returns a container that is used to execute module code at runtime in the Dagger engine.
-
-	The provided Module is not fully initialized; the Runtime field will not be set yet.
-	*/
+	// Runtime returns a container that is used to execute module code at
+	// runtime in the Dagger engine.
+	//
+	// The provided Module is not fully initialized; the Runtime field will not
+	// be set yet.
 	Runtime(context.Context, *ModDeps, dagql.Instance[*ModuleSource]) (*Container, error)
 
-	// Paths that should always be loaded from module sources using this SDK. Ensures that e.g. main.go
-	// in the Go SDK is always loaded even if dagger.json has include settings that don't include it.
+	// Paths that should always be loaded from module sources using this SDK.
+	// Ensures that e.g. main.go in the Go SDK is always loaded even if
+	// dagger.json has include settings that don't include it.
 	RequiredPaths(context.Context) ([]string, error)
 }
 

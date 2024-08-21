@@ -44,6 +44,67 @@ type GoGenerator struct {
 	Config generator.Config
 }
 
+func (g *GoGenerator) Init(ctx context.Context, schema *introspection.Schema, schemaVersion string) (*generator.GeneratedState, error) {
+	generator.SetSchema(schema)
+
+	outDir := "."
+	if g.Config.ModuleName != "" {
+		outDir = g.Config.ModuleContextPath
+	}
+
+	mfs := memfs.New()
+
+	var overlay fs.FS = mfs
+	// if g.Config.ModuleName != "" {
+	// 	overlay = layerfs.New(
+	// 		mfs,
+	// 		&MountedFS{FS: dagger.QueryBuilder, Name: filepath.Join(outDir, "internal")},
+	// 		&MountedFS{FS: dagger.Telemetry, Name: filepath.Join(outDir, "internal")},
+	// 	)
+	// }
+
+	genSt := &generator.GeneratedState{
+		Overlay: overlay,
+		PostCommands: []*exec.Cmd{
+			// run 'go mod tidy' after generating to fix and prune dependencies
+			exec.Command("go", "mod", "tidy"),
+		},
+	}
+	if _, err := os.Stat(filepath.Join(g.Config.OutputDir, "go.work")); err == nil {
+		// run "go work use ." after generating if we had a go.work at the root
+		genSt.PostCommands = append(genSt.PostCommands, exec.Command("go", "work", "use", "."))
+	}
+
+	pkgInfo, _, err := g.bootstrapMod(ctx, mfs)
+	if err != nil {
+		return nil, fmt.Errorf("bootstrap package: %w", err)
+	}
+	// assume package main, default for modules
+	pkgInfo.PackageName = "main"
+
+	if outDir != "." {
+		mfs.MkdirAll(outDir, 0700)
+		fs, err := mfs.Sub(outDir)
+		if err != nil {
+			return nil, err
+		}
+		mfs = fs.(*memfs.FS)
+	}
+
+	initialGoFiles, err := filepath.Glob(filepath.Join(g.Config.OutputDir, outDir, "*.go"))
+	if err != nil {
+		return nil, fmt.Errorf("glob go files: %w", err)
+	}
+	if len(initialGoFiles) == 0 {
+		// write an initial main.go if no main pkg exists yet
+		if err := mfs.WriteFile(StarterTemplateFile, []byte(g.baseModuleSource(pkgInfo)), 0600); err != nil {
+			return nil, err
+		}
+	}
+
+	return genSt, nil
+}
+
 func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema, schemaVersion string) (*generator.GeneratedState, error) {
 	generator.SetSchema(schema)
 
@@ -85,6 +146,7 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 	if err != nil {
 		return nil, fmt.Errorf("bootstrap package: %w", err)
 	}
+
 	if outDir != "." {
 		mfs.MkdirAll(outDir, 0700)
 		fs, err := mfs.Sub(outDir)
@@ -92,11 +154,6 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 			return nil, err
 		}
 		mfs = fs.(*memfs.FS)
-	}
-
-	initialGoFiles, err := filepath.Glob(filepath.Join(g.Config.OutputDir, outDir, "*.go"))
-	if err != nil {
-		return nil, fmt.Errorf("glob go files: %w", err)
 	}
 
 	genFile := filepath.Join(g.Config.OutputDir, outDir, ClientGenFile)
@@ -109,16 +166,6 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 			return nil, fmt.Errorf("generate code: %w", err)
 		}
 
-		partial = true
-	}
-
-	if len(initialGoFiles) == 0 {
-		// write an initial main.go if no main pkg exists yet
-		if err := mfs.WriteFile(StarterTemplateFile, []byte(g.baseModuleSource(pkgInfo)), 0600); err != nil {
-			return nil, err
-		}
-
-		// main.go is actually an input to codegen, so this requires another pass
 		partial = true
 	}
 

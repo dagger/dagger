@@ -15,7 +15,15 @@ import (
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 )
 
+func Init(ctx context.Context, cfg generator.Config, dag *dagger.Client) (err error) {
+	return do(ctx, cfg, dag, doInit)
+}
+
 func Generate(ctx context.Context, cfg generator.Config, dag *dagger.Client) (err error) {
+	return do(ctx, cfg, dag, doGenerate)
+}
+
+func do(ctx context.Context, cfg generator.Config, dag *dagger.Client, dothing doThing) (err error) {
 	logsW := os.Stdout
 
 	if cfg.ModuleName != "" {
@@ -41,7 +49,7 @@ func Generate(ctx context.Context, cfg generator.Config, dag *dagger.Client) (er
 	}
 
 	for ctx.Err() == nil {
-		generated, err := generate(ctx, introspectionSchema, introspectionSchemaVersion, cfg)
+		generated, err := dothing(ctx, introspectionSchema, introspectionSchemaVersion, cfg)
 		if err != nil {
 			return err
 		}
@@ -76,7 +84,34 @@ func Generate(ctx context.Context, cfg generator.Config, dag *dagger.Client) (er
 	return ctx.Err()
 }
 
-func generate(ctx context.Context, introspectionSchema *introspection.Schema, introspectionSchemaVersion string, cfg generator.Config) (*generator.GeneratedState, error) {
+type doThing func(ctx context.Context, introspectionSchema *introspection.Schema, introspectionSchemaVersion string, cfg generator.Config) (*generator.GeneratedState, error)
+
+func doInit(ctx context.Context, introspectionSchema *introspection.Schema, introspectionSchemaVersion string, cfg generator.Config) (*generator.GeneratedState, error) {
+	generator.SetSchemaParents(introspectionSchema)
+
+	var gen generator.Generator
+	switch cfg.Lang {
+	case generator.SDKLangGo:
+		gen = &gogenerator.GoGenerator{
+			Config: cfg,
+		}
+	case generator.SDKLangTypeScript:
+		gen = &typescriptgenerator.TypeScriptGenerator{
+			Config: cfg,
+		}
+
+	default:
+		sdks := []string{
+			string(generator.SDKLangGo),
+			string(generator.SDKLangTypeScript),
+		}
+		return nil, fmt.Errorf("use target SDK language: %s: %w", sdks, generator.ErrUnknownSDKLang)
+	}
+
+	return gen.Init(ctx, introspectionSchema, introspectionSchemaVersion)
+}
+
+func doGenerate(ctx context.Context, introspectionSchema *introspection.Schema, introspectionSchemaVersion string, cfg generator.Config) (*generator.GeneratedState, error) {
 	generator.SetSchemaParents(introspectionSchema)
 
 	var gen generator.Generator

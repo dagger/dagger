@@ -237,6 +237,10 @@ func (s *moduleSchema) newModuleSDK(
 	return &moduleSDK{mod: sdkModMeta, dag: dag, sdk: sdk}, nil
 }
 
+func (sdk *moduleSDK) Init(ctx context.Context, deps *core.ModDeps, source dagql.Instance[*core.ModuleSource]) (*dagql.Instance[*core.Directory], error) {
+	return nil, nil
+}
+
 // Codegen calls the Codegen function on the SDK Module
 func (sdk *moduleSDK) Codegen(ctx context.Context, deps *core.ModDeps, source dagql.Instance[*core.ModuleSource]) (*core.GeneratedCode, error) {
 	schemaJSONFile, err := deps.SchemaIntrospectionJSONFile(ctx)
@@ -393,12 +397,38 @@ type goSDK struct {
 	dag  *dagql.Server
 }
 
+func (sdk *goSDK) Init(
+	ctx context.Context,
+	deps *core.ModDeps,
+	source dagql.Instance[*core.ModuleSource],
+) (*dagql.Instance[*core.Directory], error) {
+	ctr, err := sdk.baseWithCodegen(ctx, true, deps, source)
+	if err != nil {
+		return nil, err
+	}
+
+	var modifiedSrcDir dagql.Instance[*core.Directory]
+	if err := sdk.dag.Select(ctx, ctr, &modifiedSrcDir, dagql.Selector{
+		Field: "directory",
+		Args: []dagql.NamedInput{
+			{
+				Name:  "path",
+				Value: dagql.String(goSDKUserModContextDirPath),
+			},
+		},
+	}); err != nil {
+		return nil, fmt.Errorf("failed to get modified source directory for go module sdk codegen: %w", err)
+	}
+
+	return &modifiedSrcDir, nil
+}
+
 func (sdk *goSDK) Codegen(
 	ctx context.Context,
 	deps *core.ModDeps,
 	source dagql.Instance[*core.ModuleSource],
 ) (*core.GeneratedCode, error) {
-	ctr, err := sdk.baseWithCodegen(ctx, deps, source)
+	ctr, err := sdk.baseWithCodegen(ctx, false, deps, source)
 	if err != nil {
 		return nil, err
 	}
@@ -438,7 +468,7 @@ func (sdk *goSDK) Runtime(
 	deps *core.ModDeps,
 	source dagql.Instance[*core.ModuleSource],
 ) (*core.Container, error) {
-	ctr, err := sdk.baseWithCodegen(ctx, deps, source)
+	ctr, err := sdk.baseWithCodegen(ctx, false, deps, source)
 	if err != nil {
 		return nil, err
 	}
@@ -499,6 +529,7 @@ func (sdk *goSDK) RequiredPaths(_ context.Context) ([]string, error) {
 
 func (sdk *goSDK) baseWithCodegen(
 	ctx context.Context,
+	init bool,
 	deps *core.ModDeps,
 	src dagql.Instance[*core.ModuleSource],
 ) (dagql.Instance[*core.Container], error) {
@@ -559,12 +590,16 @@ func (sdk *goSDK) baseWithCodegen(
 		return ctr, fmt.Errorf("failed to remove dagger.gen.go from source directory: %w", err)
 	}
 
-	codegenArgs := dagql.ArrayInput[dagql.String]{
+	var codegenArgs dagql.ArrayInput[dagql.String]
+	if init {
+		codegenArgs = append(codegenArgs, "init")
+	}
+	codegenArgs = append(codegenArgs,
 		"--output", dagql.String(goSDKUserModContextDirPath),
 		"--module-context-path", dagql.String(filepath.Join(goSDKUserModContextDirPath, srcSubpath)),
 		"--module-name", dagql.String(modName),
 		"--introspection-json-path", goSDKIntrospectionJSONPath,
-	}
+	)
 
 	if src.Self.WithInitConfig != nil {
 		codegenArgs = append(codegenArgs,

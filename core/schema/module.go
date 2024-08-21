@@ -760,6 +760,11 @@ func (s *moduleSchema) moduleWithSource(ctx context.Context, mod *core.Module, a
 		return nil, fmt.Errorf("failed to decode module source: %w", err)
 	}
 
+	_, existingConfig, err := src.Self.ModuleConfig(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get module config: %w", err)
+	}
+
 	mod = mod.Clone()
 	mod.Source = src
 	mod.NameField, err = src.Self.ModuleName(ctx)
@@ -790,7 +795,7 @@ func (s *moduleSchema) moduleWithSource(ctx context.Context, mod *core.Module, a
 	if err := s.updateDeps(ctx, mod, modCfg, src); err != nil {
 		return nil, fmt.Errorf("failed to update module dependencies: %w", err)
 	}
-	if err := s.updateCodegenAndRuntime(ctx, mod, src); err != nil {
+	if err := s.updateCodegenAndRuntime(ctx, !existingConfig, mod, src); err != nil {
 		return nil, fmt.Errorf("failed to update codegen and runtime: %w", err)
 	}
 	// write dagger.json last so SDKs can't intentionally or unintentionally
@@ -946,18 +951,13 @@ func (s *moduleSchema) updateDeps(
 
 func (s *moduleSchema) updateCodegenAndRuntime(
 	ctx context.Context,
+	init bool,
 	mod *core.Module,
 	src dagql.Instance[*core.ModuleSource],
 ) error {
 	if mod.NameField == "" || mod.SDKConfig == "" {
 		// can't codegen yet
 		return nil
-	}
-
-	if src.Self.WithInitConfig != nil &&
-		src.Self.WithInitConfig.Merge &&
-		mod.SDKConfig != string(SDKGo) {
-		return fmt.Errorf("merge is only supported for Go SDKs")
 	}
 
 	baseContext, err := src.Self.ContextDirectory()
@@ -974,6 +974,35 @@ func (s *moduleSchema) updateCodegenAndRuntime(
 	sdk, err := s.sdkForModule(ctx, src.Self.Query, mod.SDKConfig, src)
 	if err != nil {
 		return fmt.Errorf("failed to load sdk for module: %w", err)
+	}
+
+	if init {
+		if src.Self.Kind != core.ModuleSourceKindLocal {
+			return fmt.Errorf("module cannot be initialized in %s", src.Self.Kind)
+		}
+
+		if src.Self.WithInitConfig != nil &&
+			src.Self.WithInitConfig.Merge &&
+			mod.SDKConfig != string(SDKGo) {
+			return fmt.Errorf("merge is only supported for Go SDKs")
+		}
+
+		initDir, err := sdk.Init(ctx, mod.Deps, src)
+		if err != nil {
+			return fmt.Errorf("failed to init code: %w", err)
+		}
+
+		err = s.dag.Select(ctx, src, &src,
+			dagql.Selector{
+				Field: "withContextDirectory",
+				Args: []dagql.NamedInput{
+					{Name: "dir", Value: dagql.NewID[*core.Directory](initDir.ID())},
+				},
+			},
+		)
+		if err != nil {
+			return err
+		}
 	}
 
 	generatedCode, err := sdk.Codegen(ctx, mod.Deps, src)

@@ -43,6 +43,8 @@ type Config struct {
 }
 
 type Generator interface {
+	Init(ctx context.Context, schema *introspection.Schema, schemaVersion string) (*GeneratedState, error)
+
 	// Generate runs codegen and returns a map of default filename to content for that file.
 	Generate(ctx context.Context, schema *introspection.Schema, schemaVersion string) (*GeneratedState, error)
 }
