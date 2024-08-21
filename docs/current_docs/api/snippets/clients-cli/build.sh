@@ -36,10 +36,8 @@ build=$(dagger query <<EOF | jq -r .container.from.withDirectory.withWorkdir.wit
 EOF
 )
 
-# check build result and display message
-if [ "$build" == "true" ]
-then
-    echo "Build successful"
+if [ -n "$build" ]; then
+	echo "Build successful"
 else
-    echo "Build unsuccessful"
+	echo "Build unsuccessful"
 fi
