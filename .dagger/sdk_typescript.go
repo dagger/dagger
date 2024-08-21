@@ -112,7 +112,7 @@ func (t TypescriptSDK) Lint(ctx context.Context) (rerr error) {
 
 // Test the Typescript SDK
 func (t TypescriptSDK) Test(ctx context.Context) (rerr error) {
-	installer, err := t.Dagger.installer(ctx, "sdk-typescript-test")
+	installer, err := t.Dagger.installer(ctx, "sdk")
 	if err != nil {
 		return err
 	}
@@ -144,7 +144,7 @@ func (t TypescriptSDK) Test(ctx context.Context) (rerr error) {
 
 // Regenerate the Typescript SDK API
 func (t TypescriptSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
-	installer, err := t.Dagger.installer(ctx, "sdk-typescript-generate")
+	installer, err := t.Dagger.installer(ctx, "sdk")
 	if err != nil {
 		return nil, err
 	}

@@ -32,7 +32,7 @@ func (t JavaSDK) Lint(ctx context.Context) error {
 
 // Test the Java SDK
 func (t JavaSDK) Test(ctx context.Context) error {
-	installer, err := t.Dagger.installer(ctx, "sdk-java-test")
+	installer, err := t.Dagger.installer(ctx, "sdk")
 	if err != nil {
 		return err
 	}
@@ -46,7 +46,7 @@ func (t JavaSDK) Test(ctx context.Context) error {
 
 // Regenerate the Java SDK API
 func (t JavaSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
-	installer, err := t.Dagger.installer(ctx, "sdk-java-generate")
+	installer, err := t.Dagger.installer(ctx, "sdk")
 	if err != nil {
 		return nil, err
 	}

@@ -73,7 +73,7 @@ func (t PHPSDK) Test(ctx context.Context) error {
 
 // Regenerate the PHP SDK API
 func (t PHPSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
-	installer, err := t.Dagger.installer(ctx, "sdk-php-generate")
+	installer, err := t.Dagger.installer(ctx, "sdk")
 	if err != nil {
 		return nil, err
 	}
