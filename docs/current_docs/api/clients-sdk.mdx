@@ -62,7 +62,7 @@ conda install dagger-io
 </TabItem>
 <TabItem value="TypeScript">
 :::note
-The Dagger TypeScript SDK requires [TypeScript 5.0 or later](https://www.typescriptlang.org/download/). This SDK currently only [supports Node.js (stable) and Bun (experimental)](./runtimes.mdx).
+The Dagger TypeScript SDK requires [TypeScript 5.0 or later](https://www.typescriptlang.org/download/). This SDK currently only [supports Node.js (stable) and Bun (experimental)](./runtimes.mdx). To execute the TypeScript program, you must also have an TypeScript executor like `ts-node` or `tsx`.
 :::
 
 Install the Dagger TypeScript SDK in your project using `npm` or `yarn`:
@@ -192,7 +192,7 @@ In the project directory, create a new file named `build.mts` and add the follow
 
 This TypeScript program imports the Dagger SDK and defines an asynchronous function. This function creates a Dagger client, which provides an interface to the Dagger API. It also defines the test/build matrix, consisting of Node.js versions `16`, `18` and `20`, and iterates over this matrix, downloading a Node.js container image for each specified version and testing and building the source application against that version.
 
-Run the program by executing the command below:
+Run the program with a Typescript executor like `ts-node`, as shown below:
 
 ```shell
 dagger run node --loader ts-node/esm ./build.mts

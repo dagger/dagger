@@ -15,10 +15,23 @@
   status = 302
   force = true
 
+# start: specific redirects for v0.3 docs
 [[redirects]]
   # redirect old FAQ index page
   from = "/162770/faq"
   to = "/faq"
+  status = 301
+
+[[redirects]]
+  # redirect contributing page
+  from = "/204441/contributing"
+  to = "/contributing"
+  status = 301
+
+[[redirects]]
+  # redirect CLI page
+  from = "/reference/979596/cli"
+  to = "/reference/cli"
   status = 301
 
 [[redirects]]
@@ -40,152 +53,21 @@
   status = 301
 
 [[redirects]]
-  # redirect developer manual language-specific secrets page to multi-language page
-  from = "/manuals/developer/:language/:docid/secrets"
-  to = "/manuals/developer/secrets"
+  # redirect all developer manual pages
+  from = "/manuals/developer/*"
+  to = "/api"
   status = 301
 
 [[redirects]]
-  # redirect developer manual language-specific services page to multi-language page
-  from = "/manuals/developer/:language/:docid/services"
-  to = "/manuals/developer/services"
+  # redirect developer guide index
+  from = "/developer-guide"
+  to = "/api"
   status = 301
 
 [[redirects]]
-  # redirect developer manual language-specific documentation page to multi-language page
-  from = "/manuals/developer/:language/:docid/documentation"
-  to = "/manuals/developer/documentation"
-  status = 301
-
-[[redirects]]
-  # redirect developer manual language-specific dependencies pages to multi-language page
-  from = "/manuals/developer/:language/:docid/dependencies"
-  to = "/manuals/developer/module-dependencies"
-
-[[redirects]]
-  # redirect developer manual language-specific chaining page to multi-language page
-  from = "/manuals/developer/:language/:docid/chaining"
-  to = "/manuals/developer/chaining"
-  status = 301
-
-[[redirects]]
-  # redirect developer manual language-specific constructor page to multi-language page
-  from = "/manuals/developer/:language/:docid/constructor"
-  to = "/manuals/developer/entrypoint-function"
-  status = 301
-
-[[redirects]]
-  # redirect developer manual language-specific error handling page to multi-language page
-  from = "/manuals/developer/:language/:docid/error-handling"
-  to = "/manuals/developer/error-handling"
-  status = 301
-
-[[redirects]]
-  # redirect developer manual language-specific custom types page to multi-language page
-  from = "/manuals/developer/:language/:docid/custom-types"
-  to = "/manuals/developer/custom-types"
-  status = 301
-
-[[redirects]]
-  # redirect developer manual Go visibility page to multi-language page
-  from = "/manuals/developer/go/:docid/visibility"
-  to = "/manuals/developer/state-functions"
-  status = 301
-
-[[redirects]]
-  # redirect developer manual Python attributes as functions page to multi-language page
-  from = "/manuals/developer/python/:docid/attribute-functions"
-  to = "/manuals/developer/state-functions"
-  status = 301
-
-[[redirects]]
-  # redirect developer manual TypeScript runtimes page to multi-language page
-  from = "/manuals/developer/typescript/:docid/runtime"
-  to = "/manuals/developer/runtimes"
-  status = 301
-
-[[redirects]]
-  # redirect developer manual Go interfaces pages to multi-language page
-  from = "/manuals/developer/go/:docid/interfaces"
-  to = "/manuals/developer/interfaces"
-  status = 301
-
-[[redirects]]
-  # redirect developer manual language-specific dependencies page to multi-language page
-  from = "/manuals/developer/typescript/:docid/typescript-dependencies"
-  to = "/manuals/developer/language-dependencies"
-  status = 301
-
-[[redirects]]
-  # redirect developer manual language-specific dependencies page to multi-language page
-  from = "/manuals/developer/python/:docid/python-dependencies"
-  to = "/manuals/developer/language-dependencies"
-  status = 301
-
-[[redirects]]
-  # redirect developer manual language-specific IDE pages to multi-language IDE page
-  from = "/manuals/developer/:language/:docid/ide-integration"
-  to = "/manuals/developer/ide-integration"
-  status = 301
-
-[[redirects]]
-  # redirect developer manual language-specific module structure page to multi-language page
-  from = "/manuals/developer/:language/:docid/module-structure"
-  to = "/manuals/developer/module-structure"
-  status = 301
-
-[[redirects]]
-  # redirect developer manual TypeScript visibility page to multi-language page
-  from = "/manuals/developer/typescript/:docid/visibility"
-  to = "/manuals/developer/state-functions"
-  status = 301
-
-[[redirects]]
-  # redirect developer manual Go interfaces pages to multi-language page
-  from = "/manuals/developer/go/:docid/interfaces"
-  to = "/manuals/developer/interfaces"
-  status = 301
-
-[[redirects]]
-  # redirect developer manual language-specific debugging page to multi-language page
-  from = "/manuals/developer/:language/:docid/debugging"
-  to = "/manuals/developer/debugging"
-  status = 301
-
-[[redirects]]
-  # redirect developer manual first module page to developer manual index
-  from = "/manuals/developer/:language/:docid/first-module"
-  to = "/manuals/developer"
-  status = 301
-
-[[redirects]]
-  # redirect Python name overrides page to developer manual index
-  from = "/manuals/developer/python/:docid/name-overrides"
-  to = "/manuals/developer"
-  status = 301
-
-[[redirects]]
-  # redirect TypeScript aliases page to developer manual index
-  from = "/manuals/developer/typescript/:docid/aliases"
-  to = "/manuals/developer"
-  status = 301
-
-[[redirects]]
-  # redirect Typescript decorators page to developer manual index
-  from = "/manuals/developer/typescript/:docid/decorators"
-  to = "/manuals/developer"
-  status = 301
-
-[[redirects]]
-  # redirect developer manual overview pages
-  from = "/manuals/developer/overview/:docid/*"
-  to = "/manuals/developer/:splat"
-  status = 301
-
-[[redirects]]
-  # redirect user guide index to user manual index
-  from = "/user-guide"
-  to = "/manuals/user"
+  # redirect all user manual pages
+  from = "/manuals/user/*"
+  to = "/api"
   status = 301
 
 [[redirects]]
@@ -195,123 +77,21 @@
   status = 301
 
 [[redirects]]
-  # redirect cloud orgs admin page from user guide
-  from = "/user-guide/cloud/609601/org-administration"
-  to = "/manuals/administrator/organizations"
+  # redirect cloud pages
+  from = "/user-guide/cloud/*"
+  to = "/configuration/cloud"
   status = 301
 
 [[redirects]]
-  # redirect cloud roles and permissions page from user guide
-  from = "/user-guide/cloud/968372/roles-permissions"
-  to = "/manuals/administrator/roles-permissions"
+  # redirect user guide index to user manual index
+  from = "/user-guide"
+  to = "/api"
   status = 301
 
 [[redirects]]
-  # redirect cloud get started page from user guide
-  from = "/user-guide/cloud/572923/get-started"
-  to = "/manuals/user/cloud-get-started"
-  status = 301
-
-[[redirects]]
-  # redirect cloud get started page from user manual
-  from = "/manuals/user/cloud/572923/get-started"
-  to = "/manuals/user/cloud-get-started"
-  status = 301
-
-[[redirects]]
-  # redirect cloud user interface page from user manual
-  from = "/manuals/user/cloud/741031/user-interface"
-  to = "/manuals/user/cloud-get-started"
-  status = 301
-
-[[redirects]]
-  # redirect Google Cloud Run guide
-  from = "/620942/github-google-cloud"
-  to = "/integrations/google-cloud-run"
-  status = 301
-
-[[redirects]]
-  # redirect nerdctl guide
-  from = "/integrations/containerd"
-  to = "/integrations/nerdctl"
-  status = 301
-
-[[redirects]]
-  # redirect GitHub page
-  from = "/integrations/github-actions"
-  to = "/integrations/github"
-  status = 301
-
-[[redirects]]
-  # redirect developer guide index to developer manual index
-  from = "/developer-guide"
-  to = "/manuals/developer"
-  status = 301
-
-[[redirects]]
-  # redirect contributing page
-  from = "/204441/contributing"
-  to = "/contributing"
-  status = 301
-
-[[redirects]]
-  # redirect CLI page
-  from = "/reference/979596/cli"
-  to = "/reference/cli"
-  status = 301
-
-[[redirects]]
-  # redirect publish modules page
-  from = "/guides/821742/publish-modules"
-  to = "/manuals/developer/publish-modules"
-  status = 301
-
-[[redirects]]
-  # redirect CI page
-  from = "/manuals/administrator/738921/ci"
-  to = "/manuals/administrator/ci"
-  status = 301
-
-[[redirects]]
-  # redirect caching page
-  from = "/manuals/administrator/413929/caching"
-  to = "/manuals/administrator/caching"
-  status = 301
-
-[[redirects]]
-  # redirect cloud orgs page
-  from = "/manuals/administrator/609601/organizations"
-  to = "/manuals/administrator/organizations"
-  status = 301
-
-[[redirects]]
-  # redirect cloud roles page
-  from = "/manuals/administrator/968372/roles-permissions"
-  to = "/manuals/administrator/roles-permissions"
-  status = 301
-
-[[redirects]]
-  # redirect custom runner page
-  from = "/manuals/administrator/472258/custom-runner"
-  to = "/manuals/administrator/custom-runner"
-  status = 301
-
-[[redirects]]
-  # redirect custom registry page
-  from = "/manuals/administrator/272381/custom-registry"
-  to = "/manuals/administrator/custom-registry"
-  status = 301
-
-[[redirects]]
-  # redirect developer guide pages to developer manual
-  from = "/developer-guide/*"
-  to = "/manuals/developer/:splat"
-  status = 301
-
-[[redirects]]
-  # redirect CI pages from user guide
-  from = "/user-guide/ci/:docid-:slug"
-  to = "/integrations/:slug"
+  # redirect all admin manual pages
+  from = "/manuals/administrator/*"
+  to = "/configuration"
   status = 301
 
 [[redirects]]
@@ -319,12 +99,7 @@
   from = "/integrations/:docid/:slug"
   to = "/integrations/:slug"
   status = 301
-
-[[redirects]]
-  # redirect user manual pages
-  from = "/manuals/user/:docid/:slug"
-  to = "/manuals/user/:slug"
-  status = 301
+# end: specific redirects for v0.3 docs
 
 [[redirects]]
   # redirect v0.1 docs to archive.docs.dagger.io/0.1/
