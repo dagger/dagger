@@ -551,8 +551,6 @@ type Test struct {
 		err = cmd.Start()
 		require.NoError(t, err)
 
-		go console.ExpectEOF()
-
 		// We expect the command to fail
 		err = cmd.Wait()
 		require.Error(t, err)
