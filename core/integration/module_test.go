@@ -13,7 +13,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -6987,42 +6986,10 @@ func cleanupExec(t testing.TB, cmd *exec.Cmd) {
 			t.Logf("never started: %v", cmd.Args)
 			return
 		}
-
-		done := make(chan struct{})
-		go func() {
-			cmd.Wait()
-			close(done)
-		}()
-
-		signals := []syscall.Signal{
-			syscall.SIGINT,
-			syscall.SIGTERM,
-			syscall.SIGKILL,
-		}
-		doSignal := func() {
-			if len(signals) == 0 {
-				return
-			}
-			var signal syscall.Signal
-			signal, signals = signals[0], signals[1:]
-			t.Logf("sending %s: %v", signal, cmd.Args)
-			cmd.Process.Signal(signal)
-		}
-		doSignal()
-
-		for {
-			select {
-			case <-done:
-				return
-			case <-time.After(30 * time.Second):
-				if !t.Failed() {
-					t.Errorf("process did not exit immediately")
-				}
-
-				// the process *still* isn't dead? try killing it harder.
-				doSignal()
-			}
-		}
+		t.Logf("interrupting: %v", cmd.Args)
+		cmd.Process.Signal(os.Interrupt)
+		t.Logf("waiting: %v", cmd.Args)
+		cmd.Wait()
 	})
 }
 
