@@ -19,7 +19,34 @@ This example demonstrates how to connect to the Dagger API and run a simple pipe
 - Rust, using the [gql_client library](https://github.com/arthurkhlghatyan/gql-client-rs) (MIT License)
 - PHP, using the [php-graphql-client library](https://github.com/mghoneimy/php-graphql-client) (MIT License)
 
-Once the client library is installed, create an API client as described below.
+Create a new directory for the project and install the GraphQL client.
+
+<Tabs>
+<TabItem value="Rust">
+
+```shell
+mkdir my-project
+cd my-project
+cargo init
+cargo add gql_client@1.0.7
+cargo add serde_json@1.0.125
+cargo add tokio@1.39.3 -F full
+cargo add base64@0.22.1
+```
+
+</TabItem>
+<TabItem value="PHP">
+
+```shell
+mkdir my-project
+cd my-project
+composer require gmostafa/php-graphql-client
+```
+
+</TabItem>
+</Tabs>
+
+Once the client library is installed, create a Dagger API client.
 
 <Tabs>
 <TabItem value="Rust">
@@ -40,9 +67,9 @@ Create a new file named `client.php` and add the following code to it:
 </TabItem>
 </Tabs>
 
-This code listing initializes the client library and defines the Dagger pipeline to be executed as a GraphQL query. The `dagger run` command takes care of initializing a new local instance (or reusing a running instance) of the Dagger Engine on the host system and executing a specified command against it.
+This code listing initializes the GraphQL client library and defines the Dagger pipeline to be executed as a GraphQL query. The `dagger run` command takes care of initializing a new local instance (or reusing a running instance) of the Dagger Engine on the host system and executing a specified command against it.
 
-Run the API client using the Dagger CLI as follows:
+Run the Dagger API client using the Dagger CLI as follows:
 
 <Tabs>
 <TabItem value="Rust">
