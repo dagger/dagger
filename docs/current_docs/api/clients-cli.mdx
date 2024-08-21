@@ -19,14 +19,16 @@ Add the executable bit to the shell script and then run it by executing the comm
 
 ```shell
 chmod +x ./build.sh
-dagger run ./build.sh
+./build.sh
 ```
 
-The `dagger run` command executes the script in a Dagger session and displays live progress. On completion, the built Go application will be available in the working directory on the host, as shown below:
+On completion, the built Go application will be available in the working directory on the host, as shown below:
 
 ```shell
 tree
 .
 ├── build.sh
 └── dagger-builds-hello
+
+1 directory, 2 files
 ```
