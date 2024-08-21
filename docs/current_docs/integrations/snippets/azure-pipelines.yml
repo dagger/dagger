@@ -6,7 +6,7 @@ pool:
   vmImage: ubuntu-latest
 
 steps:
-- script: curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
+- script: curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
   displayName: 'Install Dagger CLI'
   # assumes a Go project
   # modify to use different function(s) as needed

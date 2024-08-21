@@ -347,7 +347,7 @@ which publishes:
       `dev` module updated below will get `dagger.json`'s engine version bumped.
 
 ```console
-curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=0.12.4 sh
+curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=0.12.4 sh
 # install the cli to dagger-0.12.4, and symlink dagger to it
 mv ~/.local/bin/dagger{,-0.12.4}
 ln -s ~/.local/bin/dagger{-0.12.4,}
