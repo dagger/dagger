@@ -55,7 +55,7 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 
 	outDir := "."
 	if g.Config.ModuleName != "" {
-		outDir = g.Config.ModuleContextPath
+		outDir = filepath.Clean(g.Config.ModuleContextPath)
 	}
 
 	mfs := memfs.New()
