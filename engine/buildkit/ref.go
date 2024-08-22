@@ -459,12 +459,14 @@ func debugContainer(ctx context.Context, execOp *bksolverpb.ExecOp, execErr *llb
 		output.String("! %s").Foreground(termenv.ANSIYellow).String(), execErr.Error())
 	fmt.Fprint(term.Stderr, dump.Newline)
 
+	// We default to "/bin/sh" if the client doesn't provide a command.
+	debugCommand := []string{"/bin/sh"}
+	if len(client.Opts.InteractiveCommand) > 0 {
+		debugCommand = client.Opts.InteractiveCommand
+	}
+
 	dbgShell, err := dbgCtr.Start(ctx, bkgw.StartRequest{
-		// We need to hardcode a shell since we don't have access to `withDefaultTerminalCmd` here.
-		//
-		// We could use `sh` instead of `/bin/sh`, but then we'd be relying on $PATH to be set up correctly.
-		// It's more likely for `sh` to be in `/bin/sh` than for the container to have a correct $PATH.
-		Args: []string{"/bin/sh"},
+		Args: debugCommand,
 
 		Env:          execOp.Meta.Env,
 		Cwd:          execOp.Meta.Cwd,

@@ -65,6 +65,9 @@ type ClientMetadata struct {
 	// Interactive mode
 	Interactive bool `json:"interactive"`
 
+	// InteractiveCommand changes the command that is run in interactive mode.
+	InteractiveCommand []string `json:"interactive_command"`
+
 	// Import configuration for Buildkit's remote cache
 	UpstreamCacheImportConfig []*controlapi.CacheOptionsEntry
 

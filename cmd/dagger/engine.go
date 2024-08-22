@@ -47,6 +47,7 @@ func withEngine(
 		}
 		params.WithTerminal = withTerminal
 		params.Interactive = interactive
+		params.InteractiveCommand = interactiveCommandParsed
 
 		// Connect to and run with the engine
 		sess, ctx, err := client.Connect(ctx, params)
