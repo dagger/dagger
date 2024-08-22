@@ -2,7 +2,7 @@
 slug: /integrations/github
 ---
 
-# Github
+# GitHub
 
 There are some GitHub-specific features that make the DX for working with Dagger even better.
 
@@ -12,16 +12,16 @@ There is a separate [integration guide for Github Actions](./github-actions.mdx)
 
 ## Examples
 
-### Working with Pull Requests URLs
+### Working with Pull Requests
 
 By default the Dagger `Directory` type accepts a [remote Git repository as an input](../../cookbook#copy-a-directory-or-remote-repository-to-a-container). This makes it easy to work with the directory tree at the root of a repository or a given branch.
 
-Github contains a shorthand redirect at the `/merge` endpoint that allows you to reference the correct branch of a repository from a PR without needing to know anything about the fork or branch where the PR came from.
+GitHub contains a shorthand redirect at the `/merge` endpoint that allows you to reference the correct branch of a repository from a PR without needing to know anything about the fork or branch where the PR came from.
 
-For a function called `foo` that accepts a `dagger.Directory` as input you can  use a GitHub Pull Request URL as an input like this:
+For a function called `foo` that accepts a `Directory` as input you can use a GitHub Pull Request URL as an input like this:
 
 ```
-dagger call foo --directory= https://github.com/FOO/BAR#pull/NUMBER/merge
+dagger call foo --directory=https://github.com/FOO/BAR#pull/NUMBER/merge
 ```
 
 If you're developing a Dagger module and want to test out the functionality as it exists in a given PR you can call this PR directly like this: 
@@ -32,10 +32,10 @@ dagger call -m github.com/FOO/BAR@pull/NUMBER/merge --help
 
 ## Resources
 
-If you have any questions about additional ways to use Github with
+If you have any questions about additional ways to use GitHub with
 Dagger, join our [Discord](https://discord.gg/dagger-io) and ask your questions
-in our [Github channel](https://discord.com/channels/707636530424053791/1117139064274034809).
+in our [GitHub channel](https://discord.com/channels/707636530424053791/1117139064274034809).
 
-## About Github
+## About GitHub
 
 GitHub is a popular web-based platform used for version control and collaboration in software development. It allows developers to store and manage their code in repositories, track changes over time, and collaborate with other developers on projects. 
