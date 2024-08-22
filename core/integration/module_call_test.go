@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"testing"
 
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/engine/distconsts"
@@ -21,7 +22,13 @@ import (
 	"dagger.io/dagger"
 )
 
-func (ModuleSuite) TestDaggerCallHelp(ctx context.Context, t *testctx.T) {
+type DaggerCallSuite struct{}
+
+func TestDaggerCall(t *testing.T) {
+	testctx.Run(testCtx, t, DaggerCallSuite{}, Middleware()...)
+}
+
+func (DaggerCallSuite) TestHelp(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	modGen := modInit(t, c, "go", `package main
@@ -64,7 +71,7 @@ func (m *Test) Container() *dagger.Container {
 	})
 }
 
-func (ModuleSuite) TestDaggerCallArgTypes(ctx context.Context, t *testctx.T) {
+func (DaggerCallSuite) TestArgTypes(ctx context.Context, t *testctx.T) {
 	t.Run("service args", func(ctx context.Context, t *testctx.T) {
 		t.Run("used as service binding", func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
@@ -807,7 +814,7 @@ func (m *Test) Mod(ctx context.Context, module *dagger.Module) *dagger.Module {
 	})
 }
 
-func (ModuleSuite) TestDaggerCallSocketArg(ctx context.Context, t *testctx.T) {
+func (DaggerCallSuite) TestSocketArg(ctx context.Context, t *testctx.T) {
 	getHostSocket := func(t *testctx.T) (string, func()) {
 		sockDir := t.TempDir()
 		sockPath := filepath.Join(sockDir, "host.sock")
@@ -1208,7 +1215,7 @@ func (m *Test) Fn(ctx context.Context, sockPath string, runContainerQuery string
 	})
 }
 
-func (ModuleSuite) TestDaggerCallReturnTypes(ctx context.Context, t *testctx.T) {
+func (DaggerCallSuite) TestReturnTypes(ctx context.Context, t *testctx.T) {
 	t.Run("return list objects", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
@@ -1454,7 +1461,7 @@ type Test struct {
 	})
 }
 
-func (ModuleSuite) TestDaggerCallCoreChaining(ctx context.Context, t *testctx.T) {
+func (DaggerCallSuite) TestCoreChaining(ctx context.Context, t *testctx.T) {
 	t.Run("container", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
@@ -1574,7 +1581,7 @@ type Test struct {
 	})
 }
 
-func (ModuleSuite) TestDaggerCallReturnObject(ctx context.Context, t *testctx.T) {
+func (DaggerCallSuite) TestReturnObject(ctx context.Context, t *testctx.T) {
 	// NB: Container, Directory and File are tested in TestDaggerCallReturnTypes.
 
 	c := connect(ctx, t)
@@ -1639,7 +1646,7 @@ type Foo struct {
 	})
 }
 
-func (ModuleSuite) TestDaggerCallSaveOutput(ctx context.Context, t *testctx.T) {
+func (DaggerCallSuite) TestSaveOutput(ctx context.Context, t *testctx.T) {
 	// NB: Normal usage is tested in TestModuleDaggerCallReturnTypes.
 
 	c := connect(ctx, t)
@@ -1746,7 +1753,7 @@ exec "$@"
 	})
 }
 
-func (ModuleSuite) TestCallByName(ctx context.Context, t *testctx.T) {
+func (DaggerCallSuite) TestByName(ctx context.Context, t *testctx.T) {
 	t.Run("local", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
@@ -1949,7 +1956,7 @@ func (ModuleSuite) TestCallByName(ctx context.Context, t *testctx.T) {
 	})
 }
 
-func (ModuleSuite) TestCallGitMod(ctx context.Context, t *testctx.T) {
+func (DaggerCallSuite) TestGitMod(ctx context.Context, t *testctx.T) {
 	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
 		c := connect(ctx, t)
 
@@ -1994,7 +2001,7 @@ func (ModuleSuite) TestCallGitMod(ctx context.Context, t *testctx.T) {
 	})
 }
 
-func (ModuleSuite) TestCallFindup(ctx context.Context, t *testctx.T) {
+func (DaggerCallSuite) TestFindup(ctx context.Context, t *testctx.T) {
 	prep := func(t *testctx.T) (*dagger.Client, *safeBuffer, *dagger.Container) {
 		var logs safeBuffer
 		c := connect(ctx, t, dagger.WithLogOutput(&logs))
@@ -2037,7 +2044,7 @@ func (ModuleSuite) TestCallFindup(ctx context.Context, t *testctx.T) {
 	})
 }
 
-func (ModuleSuite) TestCallUnsupportedFunctions(ctx context.Context, t *testctx.T) {
+func (DaggerCallSuite) TestUnsupportedFunctions(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	modGen := modInit(t, c, "go", `package main
@@ -2111,7 +2118,7 @@ func (m *Chain) Echo(msg string) string {
 	})
 }
 
-func (ModuleSuite) TestCallInvalidEnum(ctx context.Context, t *testctx.T) {
+func (DaggerCallSuite) TestInvalidEnum(ctx context.Context, t *testctx.T) {
 	t.Run("duplicated enum value", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
@@ -2215,7 +2222,7 @@ func (m *Test) FromStatus(status Status) string {
 	})
 }
 
-func (ModuleSuite) TestCallEnumList(ctx context.Context, t *testctx.T) {
+func (DaggerCallSuite) TestEnumList(ctx context.Context, t *testctx.T) {
 	type testCase struct {
 		sdk    string
 		source string
@@ -2332,7 +2339,7 @@ export class Test {
 	}
 }
 
-func (ModuleSuite) TestCallExit(ctx context.Context, t *testctx.T) {
+func (DaggerCallSuite) TestExit(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	_, err := modInit(t, c, "go", `package main
 
@@ -2353,7 +2360,7 @@ func (m *Test) Quit() {
 	require.Equal(t, 6, exErr.ExitCode)
 }
 
-func (ModuleSuite) TestCallCore(ctx context.Context, t *testctx.T) {
+func (DaggerCallSuite) TestCore(ctx context.Context, t *testctx.T) {
 	t.Run("call container", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		out, err := daggerCliBase(t, c).

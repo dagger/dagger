@@ -11,6 +11,7 @@ import (
 	"github.com/tidwall/gjson"
 )
 
+// Group all tests that are specific to TypeScript only.
 type TypescriptSuite struct{}
 
 func TestTypescript(t *testing.T) {
