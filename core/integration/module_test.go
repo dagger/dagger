@@ -1197,68 +1197,70 @@ func (b *Baz) Hello() (string, error) {
 func (ModuleSuite) TestGoDocs(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	modGen := c.Container().From(golangImage).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work").
-		With(daggerExec("init", "--source=.", "--name=minimal", "--sdk=go")).
-		WithNewFile("main.go", goSignatures)
+	lineEndings := map[string]string{
+		"lf":   "\n",
+		"crlf": "\r\n",
+	}
+	for name, lineEnding := range lineEndings {
+		t.Run(name, func(ctx context.Context, t *testctx.T) {
+			modGen := c.Container().From(golangImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				WithWorkdir("/work").
+				With(daggerExec("init", "--source=.", "--name=minimal", "--sdk=go")).
+				WithNewFile("main.go", strings.ReplaceAll(goSignatures, "\n", lineEnding))
 
-	logGen(ctx, t, modGen.Directory("."))
+			logGen(ctx, t, modGen.Directory("."))
 
-	obj := inspectModuleObjects(ctx, t, modGen).Get("0")
-	require.Equal(t, "Minimal", obj.Get("name").String())
+			obj := inspectModuleObjects(ctx, t, modGen).Get("0")
+			require.Equal(t, "Minimal", obj.Get("name").String())
 
-	hello := obj.Get(`functions.#(name="hello")`)
-	require.Equal(t, "hello", hello.Get("name").String())
-	require.Empty(t, hello.Get("description").String())
-	require.Empty(t, hello.Get("args").Array())
+			hello := obj.Get(`functions.#(name="hello")`)
+			require.Equal(t, "hello", hello.Get("name").String())
+			require.Empty(t, hello.Get("description").String())
+			require.Empty(t, hello.Get("args").Array())
 
-	// test the args-based form
-	echoOpts := obj.Get(`functions.#(name="echoOpts")`)
-	require.Equal(t, "echoOpts", echoOpts.Get("name").String())
-	require.Equal(t, "EchoOpts does some opts things", echoOpts.Get("description").String())
-	require.Len(t, echoOpts.Get("args").Array(), 3)
-	require.Equal(t, "msg", echoOpts.Get("args.0.name").String())
-	require.Equal(t, "the message to echo", echoOpts.Get("args.0.description").String())
-	require.Equal(t, "suffix", echoOpts.Get("args.1.name").String())
-	require.Equal(t, "String to append to the echoed message", echoOpts.Get("args.1.description").String())
-	require.Equal(t, "times", echoOpts.Get("args.2.name").String())
-	require.Equal(t, "Number of times to repeat the message", echoOpts.Get("args.2.description").String())
+			// test the args-based form
+			echoOpts := obj.Get(`functions.#(name="echoOpts")`)
+			require.Equal(t, "echoOpts", echoOpts.Get("name").String())
+			require.Equal(t, "EchoOpts does some opts things", echoOpts.Get("description").String())
+			require.Len(t, echoOpts.Get("args").Array(), 3)
+			require.Equal(t, "msg", echoOpts.Get("args.0.name").String())
+			require.Equal(t, "the message to echo", echoOpts.Get("args.0.description").String())
+			require.Equal(t, "suffix", echoOpts.Get("args.1.name").String())
+			require.Equal(t, "String to append to the echoed message", echoOpts.Get("args.1.description").String())
+			require.Equal(t, "times", echoOpts.Get("args.2.name").String())
+			require.Equal(t, "Number of times to repeat the message", echoOpts.Get("args.2.description").String())
 
-	// test the inline struct form
-	echoOpts = obj.Get(`functions.#(name="echoOptsInline")`)
-	require.Equal(t, "echoOptsInline", echoOpts.Get("name").String())
-	require.Equal(t, "EchoOptsInline does some opts things", echoOpts.Get("description").String())
-	require.Len(t, echoOpts.Get("args").Array(), 3)
-	require.Equal(t, "msg", echoOpts.Get("args.0.name").String())
-	require.Equal(t, "the message to echo", echoOpts.Get("args.0.description").String())
-	require.Equal(t, "suffix", echoOpts.Get("args.1.name").String())
-	require.Equal(t, "String to append to the echoed message", echoOpts.Get("args.1.description").String())
-	require.Equal(t, "times", echoOpts.Get("args.2.name").String())
-	require.Equal(t, "Number of times to repeat the message", echoOpts.Get("args.2.description").String())
+			// test the inline struct form
+			echoOpts = obj.Get(`functions.#(name="echoOptsInline")`)
+			require.Equal(t, "echoOptsInline", echoOpts.Get("name").String())
+			require.Equal(t, "EchoOptsInline does some opts things", echoOpts.Get("description").String())
+			require.Len(t, echoOpts.Get("args").Array(), 3)
+			require.Equal(t, "msg", echoOpts.Get("args.0.name").String())
+			require.Equal(t, "the message to echo", echoOpts.Get("args.0.description").String())
+			require.Equal(t, "suffix", echoOpts.Get("args.1.name").String())
+			require.Equal(t, "String to append to the echoed message", echoOpts.Get("args.1.description").String())
+			require.Equal(t, "times", echoOpts.Get("args.2.name").String())
+			require.Equal(t, "Number of times to repeat the message", echoOpts.Get("args.2.description").String())
 
-	// test the arg-based form (with pragmas)
-	echoOpts = obj.Get(`functions.#(name="echoOptsPragmas")`)
-	require.Equal(t, "echoOptsPragmas", echoOpts.Get("name").String())
-	require.Len(t, echoOpts.Get("args").Array(), 3)
-	require.Equal(t, "msg", echoOpts.Get("args.0.name").String())
-	require.Equal(t, "", echoOpts.Get("args.0.defaultValue").String())
-	require.Equal(t, "suffix", echoOpts.Get("args.1.name").String())
-	require.Equal(t, "String to append to the echoed message", echoOpts.Get("args.1.description").String())
-	require.Equal(t, "\"...\"", echoOpts.Get("args.1.defaultValue").String())
-	require.Equal(t, "times", echoOpts.Get("args.2.name").String())
-	require.Equal(t, "3", echoOpts.Get("args.2.defaultValue").String())
-	require.Equal(t, "Number of times to repeat the message", echoOpts.Get("args.2.description").String())
+			// test the arg-based form (with pragmas)
+			echoOpts = obj.Get(`functions.#(name="echoOptsPragmas")`)
+			require.Equal(t, "echoOptsPragmas", echoOpts.Get("name").String())
+			require.Len(t, echoOpts.Get("args").Array(), 3)
+			require.Equal(t, "msg", echoOpts.Get("args.0.name").String())
+			require.Equal(t, "", echoOpts.Get("args.0.defaultValue").String())
+			require.Equal(t, "suffix", echoOpts.Get("args.1.name").String())
+			require.Equal(t, "String to append to the echoed message", echoOpts.Get("args.1.description").String())
+			require.Equal(t, "\"...\"", echoOpts.Get("args.1.defaultValue").String())
+			require.Equal(t, "times", echoOpts.Get("args.2.name").String())
+			require.Equal(t, "3", echoOpts.Get("args.2.defaultValue").String())
+			require.Equal(t, "Number of times to repeat the message", echoOpts.Get("args.2.description").String())
+		})
+	}
 }
 
 func (ModuleSuite) TestGoDocsEdgeCases(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
-	modGen := c.Container().From(golangImage).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work").
-		With(daggerExec("init", "--source=.", "--name=minimal", "--sdk=go")).
-		WithNewFile("main.go", `package main
+	src := `package main
 
 // Minimal is a thing
 type Minimal struct {
@@ -1305,68 +1307,120 @@ func (m *Minimal) HelloFinal(
 	foo string) string { // woops
 	return foo
 }
-`,
-		)
 
-	logGen(ctx, t, modGen.Directory("."))
+func (m *Minimal) HelloMultiple(
+	foo string, /* foo 1 */ /* foo 2 */
+	/* bar 1 */ /* bar 2 */
+	bar string,
+) string {
+	return foo + bar
+}
 
-	obj := inspectModuleObjects(ctx, t, modGen).Get("0")
-	require.Equal(t, "Minimal", obj.Get("name").String())
-	require.Equal(t, "Minimal is a thing", obj.Get("description").String())
+func (m *Minimal) HelloWeird(
+	/* foo
+data */ foo string,
 
-	hello := obj.Get(`functions.#(name="hello")`)
-	require.Equal(t, "hello", hello.Get("name").String())
-	require.Len(t, hello.Get("args").Array(), 5)
-	require.Equal(t, "foo", hello.Get("args.0.name").String())
-	require.Equal(t, "", hello.Get("args.0.description").String())
-	require.Equal(t, "bar", hello.Get("args.1.name").String())
-	require.Equal(t, "", hello.Get("args.1.description").String())
-	require.Equal(t, "baz", hello.Get("args.2.name").String())
-	require.Equal(t, "hello", hello.Get("args.2.description").String())
-	require.Equal(t, "qux", hello.Get("args.3.name").String())
-	require.Equal(t, "", hello.Get("args.3.description").String())
-	require.Equal(t, "x", hello.Get("args.4.name").String())
-	require.Equal(t, "lol", hello.Get("args.4.description").String())
+	bar /* bar data */ string,
 
-	hello = obj.Get(`functions.#(name="helloMore")`)
-	require.Equal(t, "helloMore", hello.Get("name").String())
-	require.Len(t, hello.Get("args").Array(), 2)
-	require.Equal(t, "foo", hello.Get("args.0.name").String())
-	require.Equal(t, "foo here", hello.Get("args.0.description").String())
-	require.Equal(t, "bar", hello.Get("args.1.name").String())
-	require.Equal(t, "bar here", hello.Get("args.1.description").String())
+	/* baz data */ baz string,
+) string {
+	return foo + bar + baz
+}
+`
 
-	hello = obj.Get(`functions.#(name="helloMoreInline")`)
-	require.Equal(t, "helloMoreInline", hello.Get("name").String())
-	require.Len(t, hello.Get("args").Array(), 2)
-	require.Equal(t, "foo", hello.Get("args.0.name").String())
-	require.Equal(t, "foo here", hello.Get("args.0.description").String())
-	require.Equal(t, "bar", hello.Get("args.1.name").String())
-	require.Equal(t, "", hello.Get("args.1.description").String())
+	c := connect(ctx, t)
 
-	hello = obj.Get(`functions.#(name="helloAgain")`)
-	require.Equal(t, "helloAgain", hello.Get("name").String())
-	require.Len(t, hello.Get("args").Array(), 3)
-	require.Equal(t, "foo", hello.Get("args.0.name").String())
-	require.Equal(t, "", hello.Get("args.0.description").String())
-	require.Equal(t, "bar", hello.Get("args.1.name").String())
-	require.Equal(t, "docs for bar", hello.Get("args.1.description").String())
-	require.Equal(t, "baz", hello.Get("args.2.name").String())
-	require.Equal(t, "", hello.Get("args.2.description").String())
+	lineEndings := map[string]string{
+		"lf":   "\n",
+		"crlf": "\r\n",
+	}
+	for name, lineEnding := range lineEndings {
+		t.Run(name, func(ctx context.Context, t *testctx.T) {
+			modGen := c.Container().From(golangImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				WithWorkdir("/work").
+				With(daggerExec("init", "--source=.", "--name=minimal", "--sdk=go")).
+				WithNewFile("main.go", strings.ReplaceAll(src, "\n", lineEnding))
 
-	hello = obj.Get(`functions.#(name="helloFinal")`)
-	require.Equal(t, "helloFinal", hello.Get("name").String())
-	require.Len(t, hello.Get("args").Array(), 1)
-	require.Equal(t, "foo", hello.Get("args.0.name").String())
-	require.Equal(t, "", hello.Get("args.0.description").String())
+			logGen(ctx, t, modGen.Directory("."))
 
-	require.Len(t, obj.Get(`fields`).Array(), 2)
-	prop := obj.Get(`fields.#(name="x")`)
-	require.Equal(t, "x", prop.Get("name").String())
-	require.Equal(t, "X is this", prop.Get("description").String())
-	prop = obj.Get(`fields.#(name="y")`)
-	require.Equal(t, "y", prop.Get("name").String())
-	require.Equal(t, "", prop.Get("description").String())
+			obj := inspectModuleObjects(ctx, t, modGen).Get("0")
+			require.Equal(t, "Minimal", obj.Get("name").String())
+			require.Equal(t, "Minimal is a thing", obj.Get("description").String())
+
+			hello := obj.Get(`functions.#(name="hello")`)
+			require.Equal(t, "hello", hello.Get("name").String())
+			require.Len(t, hello.Get("args").Array(), 5)
+			require.Equal(t, "foo", hello.Get("args.0.name").String())
+			require.Equal(t, "", hello.Get("args.0.description").String())
+			require.Equal(t, "bar", hello.Get("args.1.name").String())
+			require.Equal(t, "", hello.Get("args.1.description").String())
+			require.Equal(t, "baz", hello.Get("args.2.name").String())
+			require.Equal(t, "hello", hello.Get("args.2.description").String())
+			require.Equal(t, "qux", hello.Get("args.3.name").String())
+			require.Equal(t, "", hello.Get("args.3.description").String())
+			require.Equal(t, "x", hello.Get("args.4.name").String())
+			require.Equal(t, "lol", hello.Get("args.4.description").String())
+
+			hello = obj.Get(`functions.#(name="helloMore")`)
+			require.Equal(t, "helloMore", hello.Get("name").String())
+			require.Len(t, hello.Get("args").Array(), 2)
+			require.Equal(t, "foo", hello.Get("args.0.name").String())
+			require.Equal(t, "foo here", hello.Get("args.0.description").String())
+			require.Equal(t, "bar", hello.Get("args.1.name").String())
+			require.Equal(t, "bar here", hello.Get("args.1.description").String())
+
+			hello = obj.Get(`functions.#(name="helloMoreInline")`)
+			require.Equal(t, "helloMoreInline", hello.Get("name").String())
+			require.Len(t, hello.Get("args").Array(), 2)
+			require.Equal(t, "foo", hello.Get("args.0.name").String())
+			require.Equal(t, "foo here", hello.Get("args.0.description").String())
+			require.Equal(t, "bar", hello.Get("args.1.name").String())
+			require.Equal(t, "", hello.Get("args.1.description").String())
+
+			hello = obj.Get(`functions.#(name="helloAgain")`)
+			require.Equal(t, "helloAgain", hello.Get("name").String())
+			require.Len(t, hello.Get("args").Array(), 3)
+			require.Equal(t, "foo", hello.Get("args.0.name").String())
+			require.Equal(t, "", hello.Get("args.0.description").String())
+			require.Equal(t, "bar", hello.Get("args.1.name").String())
+			require.Equal(t, "docs for bar", hello.Get("args.1.description").String())
+			require.Equal(t, "baz", hello.Get("args.2.name").String())
+			require.Equal(t, "", hello.Get("args.2.description").String())
+
+			hello = obj.Get(`functions.#(name="helloFinal")`)
+			require.Equal(t, "helloFinal", hello.Get("name").String())
+			require.Len(t, hello.Get("args").Array(), 1)
+			require.Equal(t, "foo", hello.Get("args.0.name").String())
+			require.Equal(t, "", hello.Get("args.0.description").String())
+
+			hello = obj.Get(`functions.#(name="helloMultiple")`)
+			require.Equal(t, "helloMultiple", hello.Get("name").String())
+			require.Len(t, hello.Get("args").Array(), 2)
+			require.Equal(t, "foo", hello.Get("args.0.name").String())
+			require.Equal(t, "foo 1\n foo 2", hello.Get("args.0.description").String())
+			require.Equal(t, "bar", hello.Get("args.1.name").String())
+			require.Equal(t, "bar 1\n bar 2", hello.Get("args.1.description").String())
+
+			hello = obj.Get(`functions.#(name="helloWeird")`)
+			require.Equal(t, "helloWeird", hello.Get("name").String())
+			require.Len(t, hello.Get("args").Array(), 3)
+			require.Equal(t, "foo", hello.Get("args.0.name").String())
+			require.Equal(t, "foo\ndata", hello.Get("args.0.description").String())
+			require.Equal(t, "bar", hello.Get("args.1.name").String())
+			require.Equal(t, "bar data", hello.Get("args.1.description").String())
+			require.Equal(t, "baz", hello.Get("args.2.name").String())
+			require.Equal(t, "baz data", hello.Get("args.2.description").String())
+
+			require.Len(t, obj.Get(`fields`).Array(), 2)
+			prop := obj.Get(`fields.#(name="x")`)
+			require.Equal(t, "x", prop.Get("name").String())
+			require.Equal(t, "X is this", prop.Get("description").String())
+			prop = obj.Get(`fields.#(name="y")`)
+			require.Equal(t, "y", prop.Get("name").String())
+			require.Equal(t, "", prop.Get("description").String())
+		})
+	}
 }
 
 func (ModuleSuite) TestGoWeirdFields(ctx context.Context, t *testctx.T) {

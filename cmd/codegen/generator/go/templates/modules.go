@@ -998,24 +998,29 @@ func (ps *parseState) commentForFuncField(fnDecl *ast.FuncDecl, unpackedParams [
 		}
 
 		if allowDocComment {
-			// take the last position in the last line, and try and find a
-			// comment that contains it
-			npos := tokenFile.LineStart(tokenFile.Line(pos)) - 1
-			for _, comment := range f.Comments {
-				if comment.Pos() <= npos && npos <= comment.End() {
-					docComment = comment
+			// find the line that ends the last comment, and check that
+			// it's right before the declaration
+			for _, commentGroup := range f.Comments {
+				comment := commentGroup.List[len(commentGroup.List)-1]
+
+				// we do this little line-counting dance since comment.End()
+				// returns nonsense when we have carriage returns
+				lastLine := tokenFile.Line(comment.Pos()) + strings.Count(comment.Text, "\n")
+				if lastLine == line || lastLine == line-1 {
+					docComment = commentGroup
 					break
 				}
 			}
 		}
 
 		if allowLineComment {
-			// take the last position in the current line, and try and find a
-			// comment that contains it
-			npos := tokenFile.LineStart(tokenFile.Line(pos)+1) - 1
-			for _, comment := range f.Comments {
-				if comment.Pos() <= npos && npos <= comment.End() {
-					lineComment = comment
+			// find the line that starts the comment and check that's on
+			// the same line as the declaration
+			for _, commentGroup := range f.Comments {
+				comment := commentGroup.List[0]
+
+				if tokenFile.Line(comment.Pos()) == line {
+					lineComment = commentGroup
 					break
 				}
 			}
@@ -1096,7 +1101,7 @@ func (ps *parseState) functionCallArgCode(t types.Type, access *Statement) (type
 	}
 }
 
-var pragmaCommentRegexp = regexp.MustCompile(`\+\s*(\S+?)(?:=(.+?))?(?:\r?\n|$)`)
+var pragmaCommentRegexp = regexp.MustCompile(`[ \t]*\+[ \t]*(\S+?)(?:=(.+?))?(?:\r?\n|$)`)
 
 // parsePragmaComment parses a dagger "pragma", that is used to define additional metadata about a parameter.
 func parsePragmaComment(comment string) (data map[string]string, rest string) {
