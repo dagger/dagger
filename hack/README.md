@@ -1,7 +1,7 @@
 # Overview
 
 This directory contains various helpers for developing dagger, providing a
-utility layer on top of our [ci module](../ci).
+utility layer on top of our [dev module](../.dagger).
 
 ## `./hack/dev`
 
