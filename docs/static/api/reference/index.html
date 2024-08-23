@@ -3194,6 +3194,12 @@
                       </tr>
                       <tr>
                         <td>
+                          <span class="property-name"><code>relHostPath</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span>
+                        </td>
+                        <td> The relative path to the module root from the host directory. Default = <code>""</code> </td>
+                      </tr>
+                      <tr>
+                        <td>
                           <span class="property-name"><code>stable</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span>
                         </td>
                         <td> If true, enforce that the source is a stable version for source kinds that support versioning. Default = <code>false</code> </td>
@@ -7326,6 +7332,10 @@
                         <td> A unique identifier for this LocalModuleSource. </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="LocalModuleSource-relHostPath" href="#LocalModuleSource-relHostPath"><code>relHostPath</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The relative path to the module root from the host directory </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="LocalModuleSource-rootSubpath" href="#LocalModuleSource-rootSubpath"><code>rootSubpath</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> The path to the root of the module source under the context directory. This directory contains its configuration file. It also contains its source code (possibly as a subdirectory). </td>
                       </tr>
@@ -8294,7 +8304,7 @@
                   <h5>Example</h5>
                   <html>
                     <head></head>
-                    <body><pre><code class="hljs language-json"><span class="hljs-punctuation">{</span><span class="hljs-attr">"backend"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">987</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">"frontend"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">123</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">"protocol"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"TCP"</span><span class="hljs-punctuation">}</span>
+                    <body><pre><code class="hljs language-json"><span class="hljs-punctuation">{</span><span class="hljs-attr">"backend"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">123</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">"frontend"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">123</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">"protocol"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"TCP"</span><span class="hljs-punctuation">}</span>
 </code></pre>
                     </body>
                   </html>
