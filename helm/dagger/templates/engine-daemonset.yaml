@@ -70,7 +70,11 @@ spec:
           resources: {{- toYaml .Values.engine.resources | nindent 12 }}
           readinessProbe:
             exec:
-              command: ["buildctl", "debug", "workers"]
+              command:
+                - sh
+                - -exc
+                - |-
+                  dagger core container with-new-file --contents "We are ready" --path "/tmp/ready" file --path "/tmp/ready" contents
             {{- if .Values.engine.readinessProbeSettings }}
             {{- toYaml .Values.engine.readinessProbeSettings | nindent 12 }}
             {{- end }}
