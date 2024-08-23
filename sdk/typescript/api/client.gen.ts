@@ -2655,6 +2655,23 @@ export class Container extends BaseClient {
   }
 
   /**
+   * Retrieves this container with the files at the given paths removed.
+   * @param paths Location of the files to remove (e.g., ["/file.txt"]).
+   */
+  withoutFiles = (paths: string[]): Container => {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withoutFiles",
+          args: { paths },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
    * Indicate that subsequent operations should not be featured more prominently in the UI.
    *
    * This is the initial state of all containers.
@@ -3818,6 +3835,23 @@ export class Directory extends BaseClient {
         {
           operation: "withoutFile",
           args: { path },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Retrieves this directory with the files at the given paths removed.
+   * @param paths Location of the file to remove (e.g., ["/file.txt"]).
+   */
+  withoutFiles = (paths: string[]): Directory => {
+    return new Directory({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withoutFiles",
+          args: { paths },
         },
       ],
       ctx: this._ctx,

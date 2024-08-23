@@ -1,0 +1,7 @@
+kind: Added
+body: |
+  Added new methods Container.withoutFiles and Directory.withoutFiles
+time: 2024-08-23T12:43:55.974539402+01:00
+custom:
+  Author: jedevc
+  PR: "8216"

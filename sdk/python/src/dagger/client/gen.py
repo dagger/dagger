@@ -1871,6 +1871,20 @@ class Container(Type):
         _ctx = self._select("withoutFile", _args)
         return Container(_ctx)
 
+    def without_files(self, paths: list[str]) -> Self:
+        """Retrieves this container with the files at the given paths removed.
+
+        Parameters
+        ----------
+        paths:
+            Location of the files to remove (e.g., ["/file.txt"]).
+        """
+        _args = [
+            Arg("paths", paths),
+        ]
+        _ctx = self._select("withoutFiles", _args)
+        return Container(_ctx)
+
     def without_focus(self) -> Self:
         """Indicate that subsequent operations should not be featured more
         prominently in the UI.
@@ -2940,6 +2954,20 @@ class Directory(Type):
             Arg("path", path),
         ]
         _ctx = self._select("withoutFile", _args)
+        return Directory(_ctx)
+
+    def without_files(self, paths: list[str]) -> Self:
+        """Retrieves this directory with the files at the given paths removed.
+
+        Parameters
+        ----------
+        paths:
+            Location of the file to remove (e.g., ["/file.txt"]).
+        """
+        _args = [
+            Arg("paths", paths),
+        ]
+        _ctx = self._select("withoutFiles", _args)
         return Directory(_ctx)
 
     def with_(self, cb: Callable[["Directory"], "Directory"]) -> "Directory":

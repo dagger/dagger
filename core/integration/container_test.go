@@ -1874,6 +1874,48 @@ func (ContainerSuite) TestWithoutPath(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (ContainerSuite) TestWithoutPaths(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	ctr := c.Container().
+		From(alpineImage).
+		WithWorkdir("/workdir").
+		WithNewFile("xyz", "").
+		WithNewFile("moo", "").
+		WithNewFile("foo", "").
+		WithNewFile("bar/man", "").
+		WithNewFile("bat/man", "").
+		WithNewFile("/ual", "")
+
+	t.Run("no error if not exists", func(ctx context.Context, t *testctx.T) {
+		out, err := ctr.
+			WithoutFiles([]string{"xyz", "not-exists"}).
+			WithExec([]string{"ls", "-1"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "bar\nbat\nfoo\nmoo\n", out)
+	})
+
+	t.Run("files, with pattern", func(ctx context.Context, t *testctx.T) {
+		out, err := ctr.
+			WithoutFiles([]string{"xyz", "*oo"}).
+			WithExec([]string{"ls", "-1"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "bar\nbat\n", out)
+	})
+
+	t.Run("absolute", func(ctx context.Context, t *testctx.T) {
+		out, err := ctr.
+			WithoutFiles([]string{"xyz", "/ual"}).
+			WithExec([]string{"ls", "-1", "/"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "workdir")
+		require.NotContains(t, out, "ual")
+	})
+}
+
 func (ContainerSuite) TestWithFiles(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

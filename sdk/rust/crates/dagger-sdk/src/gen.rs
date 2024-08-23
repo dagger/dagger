@@ -3256,6 +3256,23 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Retrieves this container with the files at the given paths removed.
+    ///
+    /// # Arguments
+    ///
+    /// * `paths` - Location of the files to remove (e.g., ["/file.txt"]).
+    pub fn without_files(&self, paths: Vec<impl Into<String>>) -> Container {
+        let mut query = self.selection.select("withoutFiles");
+        query = query.arg(
+            "paths",
+            paths.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Indicate that subsequent operations should not be featured more prominently in the UI.
     /// This is the initial state of all containers.
     pub fn without_focus(&self) -> Container {
@@ -4190,6 +4207,23 @@ impl Directory {
     pub fn without_file(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("withoutFile");
         query = query.arg("path", path.into());
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves this directory with the files at the given paths removed.
+    ///
+    /// # Arguments
+    ///
+    /// * `paths` - Location of the file to remove (e.g., ["/file.txt"]).
+    pub fn without_files(&self, paths: Vec<impl Into<String>>) -> Directory {
+        let mut query = self.selection.select("withoutFiles");
+        query = query.arg(
+            "paths",
+            paths.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
         Directory {
             proc: self.proc.clone(),
             selection: query,

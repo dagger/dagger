@@ -311,4 +311,16 @@ defmodule Dagger.Directory do
       client: directory.client
     }
   end
+
+  @doc "Retrieves this directory with the files at the given paths removed."
+  @spec without_files(t(), [String.t()]) :: Dagger.Directory.t()
+  def without_files(%__MODULE__{} = directory, paths) do
+    query_builder =
+      directory.query_builder |> QB.select("withoutFiles") |> QB.put_arg("paths", paths)
+
+    %Dagger.Directory{
+      query_builder: query_builder,
+      client: directory.client
+    }
+  end
 end

@@ -747,6 +747,12 @@ type Container {
     path: String!
   ): Container!
 
+  """Retrieves this container with the files at the given paths removed."""
+  withoutFiles(
+    """Location of the files to remove (e.g., ["/file.txt"])."""
+    paths: [String!]!
+  ): Container!
+
   """
   Indicate that subsequent operations should not be featured more prominently in the UI.
   
@@ -1246,6 +1252,12 @@ type Directory {
   withoutFile(
     """Location of the file to remove (e.g., "/file.txt")."""
     path: String!
+  ): Directory!
+
+  """Retrieves this directory with the files at the given paths removed."""
+  withoutFiles(
+    """Location of the file to remove (e.g., ["/file.txt"])."""
+    paths: [String!]!
   ): Directory!
 
   """

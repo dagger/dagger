@@ -485,7 +485,7 @@ func (DirectorySuite) TestWithTimestamps(ctx context.Context, t *testctx.T) {
 	})
 }
 
-func (DirectorySuite) TestWithoutDirectoryWithoutFile(ctx context.Context, t *testctx.T) {
+func (DirectorySuite) TestWithoutPaths(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	dir1 := c.Directory().
@@ -557,6 +557,17 @@ func (DirectorySuite) TestWithoutDirectoryWithoutFile(ctx context.Context, t *te
 		WithNewFile("some-file", "some-content").
 		WithNewFile("some-dir/sub-file", "sub-content").
 		WithoutFile("some-file")
+
+	entries, err = filesDir.Entries(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"some-dir"}, entries)
+
+	// Test WithoutFiles
+	filesDir = c.Directory().
+		WithNewFile("some-file", "some-content").
+		WithNewFile("some-file-2", "some-content").
+		WithNewFile("some-dir/sub-file", "sub-content").
+		WithoutFiles([]string{"some-file", "some-file-2"})
 
 	entries, err = filesDir.Entries(ctx)
 	require.NoError(t, err)

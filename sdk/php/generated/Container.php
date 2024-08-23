@@ -851,6 +851,16 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Retrieves this container with the files at the given paths removed.
+     */
+    public function withoutFiles(array $paths): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutFiles');
+        $innerQueryBuilder->setArgument('paths', $paths);
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Indicate that subsequent operations should not be featured more prominently in the UI.
      *
      * This is the initial state of all containers.
