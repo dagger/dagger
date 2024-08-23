@@ -7511,6 +7511,59 @@ class Test {
 			})
 		}
 	})
+
+	t.Run("deps", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		ctr := goGitBase(t, c).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/dep").
+			With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
+			WithNewFile("main.go", `package main
+
+import (
+	"dagger/dep/internal/dagger"
+)
+
+type Dep struct{}
+
+func (m *Dep) GetSource(
+	// +defaultPath="/dep"
+	// +ignore=["!yo"]
+	source *dagger.Directory,
+) *dagger.Directory {
+	return source
+}
+`,
+			).
+			WithNewFile("yo", "yo")
+
+		out, err := ctr.With(daggerCall("get-source", "entries")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "yo\n", out)
+
+		ctr = ctr.
+			WithWorkdir("/work").
+			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+			With(daggerExec("install", "./dep")).
+			WithNewFile("main.go", `package main
+
+import (
+	"dagger/test/internal/dagger"
+)
+
+type Test struct{}
+
+func (m *Test) GetDepSource() *dagger.Directory {
+	return dag.Dep().GetSource()
+}
+`,
+			)
+
+		out, err = ctr.With(daggerCall("get-dep-source", "entries")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "yo\n", out)
+	})
 }
 
 func (ModuleSuite) TestModuleDevelopVersion(ctx context.Context, t *testctx.T) {

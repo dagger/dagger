@@ -18,6 +18,7 @@ import (
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/slog"
 )
@@ -310,9 +311,15 @@ func (src *ModuleSource) LoadContext(ctx context.Context, dag *dagql.Server, pat
 			return inst, fmt.Errorf("failed to get buildkit api: %w", err)
 		}
 
+		localSourceClientMetadata, err := src.Query.NonModuleParentClientMetadata(ctx)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get client metadata: %w", err)
+		}
+		localSourceCtx := engine.ContextWithClientMetadata(ctx, localSourceClientMetadata)
+
 		// Retrieve the absolute path to the context directory (.git or dagger.json)
 		// and the module root directory (dagger.json)
-		ctxPath, modPath, err := src.ResolveContextPathFromModule(ctx)
+		ctxPath, modPath, err := src.ResolveContextPathFromModule(localSourceCtx)
 		if err != nil {
 			return inst, fmt.Errorf("failed to resolve context path: %w", err)
 		}
@@ -338,12 +345,12 @@ func (src *ModuleSource) LoadContext(ctx context.Context, dag *dagql.Server, pat
 			return inst, fmt.Errorf("path %q is outside of context directory %q, path should be relative to the context directory", path, ctxPath)
 		}
 
-		_, desc, err := bk.LocalImport(ctx, src.Query.Platform().Spec(), path, excludes, includes)
+		_, desc, err := bk.LocalImport(localSourceCtx, src.Query.Platform().Spec(), path, excludes, includes)
 		if err != nil {
 			return inst, fmt.Errorf("failed to import local module src: %w", err)
 		}
 
-		inst, err = LoadBlob(ctx, dag, desc)
+		inst, err = LoadBlob(localSourceCtx, dag, desc)
 		if err != nil {
 			return inst, fmt.Errorf("failed to load local module src: %w", err)
 		}
