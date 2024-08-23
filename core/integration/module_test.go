@@ -7564,6 +7564,81 @@ func (m *Test) GetDepSource() *dagger.Directory {
 		require.NoError(t, err)
 		require.Equal(t, "yo\n", out)
 	})
+
+	t.Run("as module", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		ctr := goGitBase(t, c).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/dep").
+			With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
+			WithNewFile("main.go", `package main
+
+import (
+	"dagger/dep/internal/dagger"
+)
+		
+type Dep struct{}
+		
+func (m *Dep) GetSource(
+	// +defaultPath="/dep"
+	// +ignore=["!yo"]
+	source *dagger.Directory,
+) *dagger.Directory {
+	return source
+}
+		`).
+			WithNewFile("yo", "yo")
+
+		ctr = ctr.
+			WithWorkdir("/work").
+			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+			WithNewFile("main.go", `package main
+
+import (
+	"context"
+
+	"dagger/test/internal/dagger"
+	"github.com/Khan/genqlient/graphql"
+)
+			
+type Test struct{}
+			
+func (m *Test) GetDepSource(ctx context.Context, src *dagger.Directory) (*dagger.Directory, error) {
+	err := src.AsModule().Initialize().Serve(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	type DirectoryIDRes struct {
+		Dep struct {
+			GetSource struct {
+				ID string
+			}
+		}
+	}
+
+	directoryIDRes := &DirectoryIDRes{}
+	res := &graphql.Response{Data: directoryIDRes}
+
+	err = dag.GraphQLClient().MakeRequest(ctx, &graphql.Request{
+		Query: "{dep {getSource {id} } }",
+	}, res)
+
+	if err != nil {
+		return nil, err
+	}
+
+
+	return dag.LoadDirectoryFromID(dagger.DirectoryID(directoryIDRes.Dep.GetSource.ID)), nil
+}
+			`,
+			)
+
+		out, err := ctr.With(daggerCall("get-dep-source", "--src", "./dep", "entries")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "yo\n", out)
+	})
 }
 
 func (ModuleSuite) TestModuleDevelopVersion(ctx context.Context, t *testctx.T) {
