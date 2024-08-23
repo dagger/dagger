@@ -3,11 +3,11 @@ package main
 import (
 	"context"
 	"dagger/compatcheck/internal/dagger"
+	"dagger/compatcheck/schemadiff"
 	"fmt"
 	"runtime"
 
 	"github.com/dagger/dagger/dagql/introspection"
-	"github.com/josephburnett/jd/v2"
 	"github.com/moby/buildkit/identity"
 	"github.com/tidwall/gjson"
 	"golang.org/x/exp/rand"
@@ -24,27 +24,29 @@ func (m *Compatcheck) Run(ctx context.Context,
 	versionA,
 	// version of engine to compare to
 	versionB string,
-	//+optional
-	// only required when one of the version to compare is 'dev' [optional]
-	source *dagger.Directory) error {
+	// +optional
+	// only required when one of the version to compare is 'dev'
+	source *dagger.Directory,
+) error {
 	if (versionA == "dev" || versionB == "dev") && source == nil {
 		return fmt.Errorf("--source flag is required when one of the requested engine version is 'dev'")
 	}
 
-	schemaA, err := m.getSchemaForModuleForEngineVersion(ctx, module, versionA, source)
+	baseSchemaA, schemaA, err := m.getSchemaForModuleForEngineVersion(ctx, module, versionA, source)
 	if err != nil {
 		return err
 	}
 
-	schemaB, err := m.getSchemaForModuleForEngineVersion(ctx, module, versionB, source)
+	baseSchemaB, schemaB, err := m.getSchemaForModuleForEngineVersion(ctx, module, versionB, source)
 	if err != nil {
 		return err
 	}
 
-	a, _ := jd.ReadJsonString(schemaA)
-	b, _ := jd.ReadJsonString(schemaB)
+	diff, err := schemadiff.Do(baseSchemaA, baseSchemaB, schemaA, schemaB)
+	if err != nil {
+		return err
+	}
 
-	diff := a.Diff(b).Render()
 	if diff != "" {
 		return fmt.Errorf("%s", diff)
 	}
@@ -54,7 +56,7 @@ func (m *Compatcheck) Run(ctx context.Context,
 
 // setup dagger engine/client with requested version and
 // fetches schema using dagger query
-func (m *Compatcheck) getSchemaForModuleForEngineVersion(ctx context.Context, module, engineVersion string, source *dagger.Directory) (string, error) {
+func (m *Compatcheck) getSchemaForModuleForEngineVersion(ctx context.Context, module, engineVersion string, source *dagger.Directory) (string, string, error) {
 	var engineSvc *dagger.Service
 	var client *dagger.Container
 	var err error
@@ -65,19 +67,27 @@ func (m *Compatcheck) getSchemaForModuleForEngineVersion(ctx context.Context, mo
 		engineSvc = engineServiceWithVersion(engineVersion)
 		client, err = engineClientContainerWithVersion(ctx, engineSvc, engineVersion)
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 	}
 
-	rawIntrospection, err := client.WithNewFile("/schema-query.graphql", introspection.Query).
+	baseIntrospection, err := client.WithNewFile("/base-schema-query.graphql", introspection.Query).
+		WithExec([]string{"dagger", "query", "--doc", "/base-schema-query.graphql"}).
+		Stdout(ctx)
+
+	if err != nil {
+		return "", "", err
+	}
+
+	withModuleIntrospection, err := client.WithNewFile("/schema-query.graphql", introspection.Query).
 		WithExec([]string{"dagger", "query", "-m", module, "--doc", "/schema-query.graphql"}).
 		Stdout(ctx)
 
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
-	return gjson.Get(rawIntrospection, "__schema").String(), nil
+	return gjson.Get(baseIntrospection, "__schema").String(), gjson.Get(withModuleIntrospection, "__schema").String(), nil
 }
 
 // returns a container with requested version of dagger cli
