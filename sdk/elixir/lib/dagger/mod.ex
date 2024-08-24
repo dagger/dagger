@@ -38,7 +38,7 @@ defmodule Dagger.Mod do
 
   def invoke(dag, module, _parent, _parent_name, fn_name, input_args) do
     fun = fn_name |> Macro.underscore() |> String.to_existing_atom()
-    fun_def = Dagger.Mod.Object.get_function(module, fun)
+    fun_def = module.__object__(:function, fun)
     args = decode_args(dag, input_args, Keyword.fetch!(fun_def, :args))
     return_type = Keyword.fetch!(fun_def, :return)
 
@@ -146,33 +146,5 @@ defmodule Dagger.Mod do
 
   defp dump(value, type) do
     {:error, "cannot dump value #{value} to type #{type}"}
-  end
-
-  defmacro __using__(opts) do
-    name = opts[:name]
-
-    unless name do
-      raise "Module name is required."
-    end
-
-    quote bind_quoted: [name: name] do
-      use GenServer
-
-      import Dagger.Mod
-      import Dagger.Global, only: [dag: 0]
-
-      @name name
-
-      Module.register_attribute(__MODULE__, :name, persist: true)
-
-      def start_link(_) do
-        GenServer.start_link(__MODULE__, [], name: __MODULE__)
-      end
-
-      def init([]) do
-        Dagger.Mod.Registry.register(__MODULE__)
-        {:ok, []}
-      end
-    end
   end
 end

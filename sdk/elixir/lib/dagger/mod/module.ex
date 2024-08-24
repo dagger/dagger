@@ -20,8 +20,8 @@ defmodule Dagger.Mod.Module do
   defp maybe_with_description(module, doc), do: Dagger.Module.with_description(module, doc)
 
   defp define_object(dag, module) do
-    mod_name = Object.get_name(module)
-    functions = Object.list_functions(module)
+    mod_name = module.__object__(:name)
+    functions = module.__object__(:functions)
 
     type_def =
       dag

@@ -39,7 +39,7 @@ defmodule Dagger.Mod.ObjectTest do
         end
       end
 
-      assert list_functions(A) == [
+      assert A.__object__(:functions) == [
                accept_string: [
                  {:self, false},
                  {:args, [name: [type: :string]]},
@@ -100,7 +100,7 @@ defmodule Dagger.Mod.ObjectTest do
         end
       end
 
-      assert get_name(C) == "C"
+      assert C.__object__(:name) == "C"
     end
 
     test "typespec" do
@@ -133,13 +133,5 @@ defmodule Dagger.Mod.ObjectTest do
     assert Dagger.Mod.Object.get_function_doc(DocModule, :echo) == "Echo the output."
     assert is_nil(Dagger.Mod.Object.get_function_doc(DocModule, :no_fun_doc))
     assert is_nil(Dagger.Mod.Object.get_function_doc(DocModule, :hidden_fun_doc))
-  end
-
-  defp get_name(module) do
-    Dagger.Mod.Object.get_name(module)
-  end
-
-  defp list_functions(module) do
-    Dagger.Mod.Object.list_functions(module)
   end
 end

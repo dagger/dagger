@@ -2,7 +2,7 @@ defmodule Dagger.Mod.Object do
   @moduledoc """
   Declare a module as an object type.
 
-  ## Declare a module
+  ## Declare an object
 
   Add `use Dagger.Mod.Object` to the Elixir module that want to be a
   Dagger module and give a name through `:name` configuration:
@@ -63,7 +63,7 @@ defmodule Dagger.Mod.Object do
   """
   @spec get_module_doc(module()) :: String.t() | nil
   def get_module_doc(module) do
-    with {:docs_v1, _, :elixir, _, module_doc, _, _} <- Code.fetch_docs(module),
+    with {module_doc, _} <- fetch_docs(module),
          %{"en" => doc} <- module_doc do
       String.trim(doc)
     else
@@ -71,25 +71,6 @@ defmodule Dagger.Mod.Object do
       :hidden -> nil
       {:error, :module_not_found} -> nil
     end
-  end
-
-  @doc """
-  List all available function definitions from the given module.
-  """
-  @spec list_functions(module()) :: [function_def()]
-  def list_functions(module) do
-    module.__info__(:attributes)
-    |> Keyword.get_values(:function)
-    |> Enum.flat_map(& &1)
-  end
-
-  @doc """
-  Get function definition from the given module.
-  """
-  @spec get_function(module(), function_name()) :: function_def()
-  def get_function(module, name) when is_atom(name) do
-    list_functions(module)
-    |> Keyword.fetch!(name)
   end
 
   @doc """
@@ -104,7 +85,7 @@ defmodule Dagger.Mod.Object do
       _ -> false
     end
 
-    with {:docs_v1, _, :elixir, _, _, _, function_docs} <- Code.fetch_docs(module),
+    with {_, function_docs} <- fetch_docs(module),
          {{:function, ^name, _}, _, _, doc_content, _} <- Enum.find(function_docs, fun),
          %{"en" => doc} <- doc_content do
       String.trim(doc)
@@ -115,24 +96,35 @@ defmodule Dagger.Mod.Object do
     end
   end
 
-  @doc """
-  Get object name from the given module.
-  """
-  @spec get_name(module()) :: String.t()
-  def get_name(module) do
-    module.__info__(:attributes)
-    |> Keyword.fetch!(:name)
-    |> to_string()
+  defp fetch_docs(module) do
+    {:docs_v1, _, :elixir, _, module_doc, _, function_docs} = Code.fetch_docs(module)
+    {module_doc, function_docs}
   end
 
   defmacro __using__(opts) do
-    quote do
-      use Dagger.Mod, unquote(opts)
+    name = opts[:name]
 
+    quote do
       import Dagger.Mod.Object, only: [defn: 2]
       import Dagger.Global, only: [dag: 0]
 
       Module.register_attribute(__MODULE__, :function, accumulate: true, persist: true)
+
+      # Get an object name
+      def __object__(:name), do: unquote(name)
+
+      # List available function definitions.
+      def __object__(:functions) do
+        __MODULE__.__info__(:attributes)
+        |> Keyword.get_values(:function)
+        |> Enum.flat_map(& &1)
+      end
+
+      # Get a function definition.
+      def __object__(:function, name) do
+        __object__(:functions)
+        |> Keyword.fetch!(name)
+      end
     end
   end
 
