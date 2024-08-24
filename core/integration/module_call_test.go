@@ -760,9 +760,13 @@ func (m *Test) ToStatus(status string) Status {
 		t.Run("module args", func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
+			mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
+			defer cleanup()
+
 			modGen := goGitBase(t, c).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work").
+				With(mountedSocket).
 				With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 				WithNewFile("foo.txt", "foo").
 				WithNewFile("main.go", `package main
@@ -1923,9 +1927,13 @@ func (ModuleSuite) TestCallByName(ctx context.Context, t *testctx.T) {
 		t.Run("git", func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
+			mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
+			defer cleanup()
+
 			ctr := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work").
+				With(mountedSocket).
 				With(daggerExec("init")).
 				With(daggerExec("install", "--name", "foo", testGitModuleRef(tc, ""))).
 				With(daggerExec("install", "--name", "bar", testGitModuleRef(tc, "subdir/dep2")))
@@ -1942,12 +1950,16 @@ func (ModuleSuite) TestCallByName(ctx context.Context, t *testctx.T) {
 }
 
 func (ModuleSuite) TestCallGitMod(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
 	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
+		c := connect(ctx, t)
+
 		t.Run("go", func(ctx context.Context, t *testctx.T) {
+			mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
+			defer cleanup()
+
 			out, err := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				With(mountedSocket).
 				With(daggerCallAt(testGitModuleRef(tc, "top-level"), "fn")).
 				Stdout(ctx)
 			require.NoError(t, err)
@@ -1955,8 +1967,12 @@ func (ModuleSuite) TestCallGitMod(ctx context.Context, t *testctx.T) {
 		})
 
 		t.Run("typescript", func(ctx context.Context, t *testctx.T) {
+			mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
+			defer cleanup()
+
 			out, err := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				With(mountedSocket).
 				With(daggerCallAt(testGitModuleRef(tc, "ts"), "container-echo", "--string-arg", "yoyo", "stdout")).
 				Stdout(ctx)
 			require.NoError(t, err)
@@ -1964,8 +1980,12 @@ func (ModuleSuite) TestCallGitMod(ctx context.Context, t *testctx.T) {
 		})
 
 		t.Run("python", func(ctx context.Context, t *testctx.T) {
+			mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
+			defer cleanup()
+
 			out, err := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				With(mountedSocket).
 				With(daggerCallAt(testGitModuleRef(tc, "py"), "container-echo", "--string-arg", "yoyo", "stdout")).
 				Stdout(ctx)
 			require.NoError(t, err)
@@ -1975,17 +1995,46 @@ func (ModuleSuite) TestCallGitMod(ctx context.Context, t *testctx.T) {
 }
 
 func (ModuleSuite) TestCallFindup(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	prep := func(t *testctx.T) (*dagger.Client, *safeBuffer, *dagger.Container) {
+		var logs safeBuffer
+		c := connect(ctx, t, dagger.WithLogOutput(&logs))
 
-	out, err := c.Container().From(golangImage).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work").
-		With(daggerExec("init", "--name=foo", "--sdk=go")).
-		WithWorkdir("/work/some/subdir").
-		With(daggerCall("container-echo", "--string-arg", "yo", "stdout")).
-		Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "yo", strings.TrimSpace(out))
+		mod := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=foo", "--sdk=go"))
+		return c, &logs, mod
+	}
+
+	t.Run("workdir subdir", func(ctx context.Context, t *testctx.T) {
+		_, _, mod := prep(t)
+		out, err := mod.
+			WithWorkdir("/work/some/subdir").
+			With(daggerCall("container-echo", "--string-arg", "yo", "stdout")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "yo", strings.TrimSpace(out))
+	})
+
+	t.Run("explicit subdir", func(ctx context.Context, t *testctx.T) {
+		c, _, mod := prep(t)
+		out, err := mod.
+			WithDirectory("/work/some/subdir", c.Directory()).
+			With(daggerCallAt("some/subdir", "container-echo", "--string-arg", "yo", "stdout")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "yo", strings.TrimSpace(out))
+	})
+
+	t.Run("non-existent subdir", func(ctx context.Context, t *testctx.T) {
+		c, logs, mod := prep(t)
+		_, err := mod.
+			With(daggerCallAt("bad/subdir", "container-echo", "--string-arg", "yo", "stdout")).
+			Stdout(ctx)
+		require.Error(t, err)
+		require.NoError(t, c.Close())
+		require.Contains(t, logs.String(), "failed to lstat bad/subdir")
+	})
 }
 
 func (ModuleSuite) TestCallUnsupportedFunctions(ctx context.Context, t *testctx.T) {

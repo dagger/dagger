@@ -84,7 +84,6 @@ func (ps *PubSub) TracesHandler(rw http.ResponseWriter, r *http.Request) { //nol
 
 	eg := new(errgroup.Group)
 	for _, c := range append([]*daggerClient{client}, client.parents...) {
-		c := c
 		eg.Go(func() error {
 			if err := ps.Spans(c).ExportSpans(r.Context(), spans); err != nil {
 				return fmt.Errorf("export to %s: %w", c.clientID, err)
@@ -131,7 +130,6 @@ func (ps *PubSub) LogsHandler(rw http.ResponseWriter, r *http.Request) { //nolin
 
 	eg := new(errgroup.Group)
 	for _, c := range append([]*daggerClient{client}, client.parents...) {
-		c := c
 		eg.Go(func() error {
 			if err := ps.Logs(c).Export(r.Context(), logs); err != nil {
 				return fmt.Errorf("export to %s: %w", c.clientID, err)

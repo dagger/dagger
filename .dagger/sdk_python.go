@@ -107,7 +107,7 @@ func (t PythonSDK) Lint(ctx context.Context) (rerr error) {
 
 // Test the Python SDK
 func (t PythonSDK) Test(ctx context.Context) (rerr error) {
-	installer, err := t.Dagger.installer(ctx, "sdk-python-test")
+	installer, err := t.Dagger.installer(ctx, "sdk")
 	if err != nil {
 		return err
 	}
@@ -131,7 +131,7 @@ func (t PythonSDK) Test(ctx context.Context) (rerr error) {
 
 // Regenerate the Python SDK API
 func (t PythonSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
-	installer, err := t.Dagger.installer(ctx, "sdk-python-generate")
+	installer, err := t.Dagger.installer(ctx, "sdk")
 	if err != nil {
 		return nil, err
 	}

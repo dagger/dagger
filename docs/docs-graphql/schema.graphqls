@@ -1581,8 +1581,11 @@ scalar GeneratedCodeID
 
 """Module source originating from a git repo."""
 type GitModuleSource {
+  """The ref to clone the root of the git repo from"""
+  cloneRef: String!
+
   """The URL to clone the root of the git repo from"""
-  cloneURL: String!
+  cloneURL: String! @deprecated(reason: "Use CloneRef instead. CloneRef supports both URL-style and SCP-like SSH references")
 
   """The resolved commit of the git repo this source points to."""
   commit: String!
@@ -1591,6 +1594,11 @@ type GitModuleSource {
   The directory containing everything needed to load load and use the module.
   """
   contextDirectory: Directory!
+
+  """
+  The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket)
+  """
+  htmlRepoURL: String!
 
   """The URL to the source's git repo in a web browser"""
   htmlURL: String!

@@ -16,7 +16,6 @@ var _ sdkBase = AllSDK{}
 func (t AllSDK) Lint(ctx context.Context) error {
 	eg, ctx := errgroup.WithContext(ctx)
 	for _, sdk := range t.SDK.allSDKs() {
-		sdk := sdk
 		eg.Go(func() error {
 			return sdk.Lint(ctx)
 		})
@@ -27,7 +26,6 @@ func (t AllSDK) Lint(ctx context.Context) error {
 func (t AllSDK) Test(ctx context.Context) error {
 	eg, ctx := errgroup.WithContext(ctx)
 	for _, sdk := range t.SDK.allSDKs() {
-		sdk := sdk
 		eg.Go(func() error {
 			return sdk.Test(ctx)
 		})
@@ -39,7 +37,6 @@ func (t AllSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 	eg, ctx := errgroup.WithContext(ctx)
 	dirs := make([]*dagger.Directory, len(t.SDK.allSDKs()))
 	for i, sdk := range t.SDK.allSDKs() {
-		i, sdk := i, sdk
 		eg.Go(func() error {
 			dir, err := sdk.Generate(ctx)
 			if err != nil {
@@ -69,7 +66,6 @@ func (t AllSDK) Bump(ctx context.Context, version string) (*dagger.Directory, er
 	eg, ctx := errgroup.WithContext(ctx)
 	dirs := make([]*dagger.Directory, len(t.SDK.allSDKs()))
 	for i, sdk := range t.SDK.allSDKs() {
-		i, sdk := i, sdk
 		eg.Go(func() error {
 			dir, err := sdk.Bump(ctx, version)
 			if err != nil {

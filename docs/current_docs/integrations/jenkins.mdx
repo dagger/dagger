@@ -13,7 +13,7 @@ There are many ways to run Dagger on Jenkins. The simplest way to get started is
 The general workflow looks like this:
 
 1. Jenkins receives job trigger as usual
-1. Jenkins loads `Jenkinsfile` from repo or from UI config
+1. Jenkins loads `Jenkinsfile` from repository or from UI configuration
 1. Jenkins parses the Groovy based `Jenkinsfile` and finds `dagger call $foo`
 1. Jenkins executes `dagger call $foo`
 1. Dagger CLI attempts to find an existing Dagger Engine or spins up a new one inside the Jenkins agent.
@@ -28,7 +28,7 @@ Running the examples shown below requires:
 1. A Docker engine that is able to run containers (can be `docker:dind`)
 1. The `docker` client installed on your Jenkins agent
 
-## Examples
+## Example
 
 The following code sample demonstrates how to integrate Dagger with Jenkins.
 

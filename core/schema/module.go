@@ -821,7 +821,6 @@ func (s *moduleSchema) updateDeps(
 	mod.DependenciesField = make([]dagql.Instance[*core.Module], len(deps))
 	var eg errgroup.Group
 	for i, dep := range deps {
-		i, dep := i, dep
 		eg.Go(func() error {
 			err := s.dag.Select(ctx, dep.Self.Source, &mod.DependenciesField[i],
 				dagql.Selector{

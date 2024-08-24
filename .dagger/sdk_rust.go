@@ -58,7 +58,7 @@ func (r RustSDK) Lint(ctx context.Context) error {
 
 // Test the Rust SDK
 func (r RustSDK) Test(ctx context.Context) error {
-	installer, err := r.Dagger.installer(ctx, "sdk-rust-test")
+	installer, err := r.Dagger.installer(ctx, "sdk")
 	if err != nil {
 		return err
 	}
@@ -72,7 +72,7 @@ func (r RustSDK) Test(ctx context.Context) error {
 
 // Regenerate the Rust SDK API
 func (r RustSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
-	installer, err := r.Dagger.installer(ctx, "sdk-rust-generate")
+	installer, err := r.Dagger.installer(ctx, "sdk")
 	if err != nil {
 		return nil, err
 	}

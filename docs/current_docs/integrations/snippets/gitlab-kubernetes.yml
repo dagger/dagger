@@ -7,7 +7,7 @@
     DAGGER_CLOUD_TOKEN: $DAGGER_CLOUD_TOKEN
   before_script:
     - apk add curl
-    - curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=/tmp sh
+    - curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=/tmp sh
 build:
   extends: [.dagger]
   script:

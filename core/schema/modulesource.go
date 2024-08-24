@@ -17,7 +17,9 @@ import (
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/vcs"
+	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/tonistiigi/fsutil/types"
 )
 
@@ -51,7 +53,7 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 				return nil, fmt.Errorf("failed to stat caller's current working directory: %w", err)
 			}
 
-			relPath, err := lexicalRelativePath(cwdStat.Path, parsed.modPath)
+			relPath, err := client.LexicalRelativePath(cwdStat.Path, parsed.modPath)
 			if err != nil {
 				return nil, fmt.Errorf("failed to make path relative: %w", err)
 			}
@@ -67,57 +69,81 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 		src.AsGitSource = dagql.NonNull(&core.GitModuleSource{})
 
 		src.AsGitSource.Value.Root = parsed.repoRoot.Root
-		src.AsGitSource.Value.CloneURL = parsed.repoRoot.Repo
+		src.AsGitSource.Value.HtmlRepoURL = parsed.repoRoot.Repo
 
-		var modVersion string
-		if parsed.hasVersion {
-			modVersion = parsed.modVersion
-		} else {
-			if args.Stable {
-				return nil, fmt.Errorf("no version provided for stable remote ref: %s", args.RefString)
-			}
-			var err error
-			modVersion, err = defaultBranch(ctx, parsed.repoRoot.Repo)
-			if err != nil {
-				return nil, fmt.Errorf("determine default branch: %w", err)
-			}
+		// Determine usernames for source reference and actual cloning
+		sourceUser, cloneUser := parsed.sshusername, parsed.sshusername
+		if cloneUser == "" && parsed.scheme.IsSSH() {
+			cloneUser = "git"
 		}
-		src.AsGitSource.Value.Version = modVersion
+
+		if sourceUser != "" {
+			sourceUser += "@"
+		}
+
+		if cloneUser != "" {
+			cloneUser += "@"
+		}
+
+		// Construct the source reference (preserves original input)
+		src.AsGitSource.Value.CloneRef = parsed.scheme.Prefix() + sourceUser + parsed.repoRoot.Root
+		// DEPRECATED: point CloneURL to new CloneRef implementation
+		src.AsGitSource.Value.CloneURL = src.AsGitSource.Value.CloneRef
+
+		// Construct the reference for actual cloning (ensures username for SSH)
+		cloneRef := parsed.scheme.Prefix() + cloneUser + parsed.repoRoot.Root
 
 		subPath := "/"
 		if parsed.repoRootSubdir != "" {
 			subPath = parsed.repoRootSubdir
 		}
 
-		commitRef := modVersion
-		if parsed.hasVersion && isSemver(modVersion) {
-			var tags dagql.Array[dagql.String]
-			err := s.dag.Select(ctx, s.dag.Root(), &tags,
-				dagql.Selector{
-					Field: "git",
-					Args: []dagql.NamedInput{
-						{Name: "url", Value: dagql.String(parsed.repoRoot.Repo)},
+		var commitRefSelector dagql.Selector
+		if parsed.hasVersion {
+			modVersion := parsed.modVersion
+			if parsed.hasVersion && isSemver(modVersion) {
+				var tags dagql.Array[dagql.String]
+				err := s.dag.Select(ctx, s.dag.Root(), &tags,
+					dagql.Selector{
+						Field: "git",
+						Args: []dagql.NamedInput{
+							{Name: "url", Value: dagql.String(cloneRef)},
+						},
 					},
-				},
-				dagql.Selector{
-					Field: "tags",
-				},
-			)
-			if err != nil {
-				return nil, fmt.Errorf("failed to resolve git tags: %w", err)
-			}
+					dagql.Selector{
+						Field: "tags",
+					},
+				)
+				if err != nil {
+					return nil, fmt.Errorf("failed to resolve git tags: %w", err)
+				}
 
-			allTags := make([]string, len(tags))
-			for i, tag := range tags {
-				allTags[i] = tag.String()
-			}
+				allTags := make([]string, len(tags))
+				for i, tag := range tags {
+					allTags[i] = tag.String()
+				}
 
-			matched, err := matchVersion(allTags, modVersion, subPath)
-			if err != nil {
-				return nil, fmt.Errorf("matching version to tags: %w", err)
+				matched, err := matchVersion(allTags, modVersion, subPath)
+				if err != nil {
+					return nil, fmt.Errorf("matching version to tags: %w", err)
+				}
+				modVersion = matched
 			}
-			// reassign modVersion to matched tag which could be subPath/tag
-			commitRef = matched
+			commitRefSelector = dagql.Selector{
+				Field: "commit",
+				Args: []dagql.NamedInput{
+					// reassign modVersion to matched tag which could be subPath/tag
+					{Name: "id", Value: dagql.String(modVersion)},
+				},
+			}
+			src.AsGitSource.Value.Version = modVersion
+		} else {
+			if args.Stable {
+				return nil, fmt.Errorf("no version provided for stable remote ref: %s", args.RefString)
+			}
+			commitRefSelector = dagql.Selector{
+				Field: "head",
+			}
 		}
 
 		var gitRef dagql.Instance[*core.GitRef]
@@ -125,15 +151,10 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 			dagql.Selector{
 				Field: "git",
 				Args: []dagql.NamedInput{
-					{Name: "url", Value: dagql.String(parsed.repoRoot.Repo)},
+					{Name: "url", Value: dagql.String(cloneRef)},
 				},
 			},
-			dagql.Selector{
-				Field: "commit",
-				Args: []dagql.NamedInput{
-					{Name: "id", Value: dagql.String(commitRef)},
-				},
-			},
+			commitRefSelector,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to resolve git src: %w", err)
@@ -168,57 +189,6 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 	return src, nil
 }
 
-// lexicalRelativePath computes a relative path between the current working directory
-// and modPath without relying on runtime.GOOS to estimate OS-specific separators. This is necessary as the code
-// runs inside a Linux container, but the user might have specified a Windows-style modPath.
-func lexicalRelativePath(cwdPath, modPath string) (string, error) {
-	cwdPath = normalizePath(cwdPath)
-	modPath = normalizePath(modPath)
-
-	cwdDrive := getDrive(cwdPath)
-	modDrive := getDrive(modPath)
-	if cwdDrive != modDrive {
-		return "", fmt.Errorf("cannot make paths on different drives relative: %s and %s", cwdDrive, modDrive)
-	}
-
-	// Remove drive letter for relative path calculation
-	cwdPath = strings.TrimPrefix(cwdPath, cwdDrive)
-	modPath = strings.TrimPrefix(modPath, modDrive)
-
-	relPath, err := filepath.Rel(cwdPath, modPath)
-	if err != nil {
-		return "", fmt.Errorf("failed to make path relative: %w", err)
-	}
-
-	return relPath, nil
-}
-
-// normalizePath converts all backslashes to forward slashes and removes trailing slashes.
-// We can't use filepath.ToSlash() as this code always runs inside a Linux container.
-func normalizePath(path string) string {
-	path = filepath.Clean(path)
-	path = strings.ReplaceAll(path, "\\", "/")
-	return strings.TrimSuffix(path, "/")
-}
-
-// getDrive extracts the drive letter or UNC share from a path.
-func getDrive(path string) string {
-	// Check for drive letter (e.g., "C:")
-	if len(path) >= 2 && path[1] == ':' {
-		return strings.ToUpper(path[:2])
-	}
-
-	// Check for UNC path (e.g., "//server/share")
-	if strings.HasPrefix(path, "//") {
-		parts := strings.SplitN(path[2:], "/", 3)
-		if len(parts) >= 2 {
-			return "//" + parts[0] + "/" + parts[1]
-		}
-	}
-
-	return ""
-}
-
 type parsedRefString struct {
 	modPath        string
 	modVersion     string
@@ -226,6 +196,8 @@ type parsedRefString struct {
 	kind           core.ModuleSourceKind
 	repoRoot       *vcs.RepoRoot
 	repoRootSubdir string
+	scheme         core.SchemeType
+	sshusername    string
 }
 
 // interface used for host interaction mocking
@@ -239,32 +211,100 @@ type buildkitClient interface {
 // - if not, try to isolate root of git repo from the ref
 // - if nothing worked, fallback as local ref, as before
 func parseRefString(ctx context.Context, bk buildkitClient, refString string) parsedRefString {
-	var parsed parsedRefString
-	parsed.modPath = refString
+	localParsed := parsedRefString{
+		modPath: refString,
+		kind:    core.ModuleSourceKindLocal,
+		scheme:  core.NoScheme,
+	}
 
-	// We do a stat in case the mod path github.com/username is a local directory
-	stat, err := bk.StatCallerHostPath(ctx, parsed.modPath, false)
+	// First, we stat ref in case the mod path github.com/username is a local directory
+	stat, err := bk.StatCallerHostPath(ctx, refString, false)
 	if err == nil && stat.IsDir() {
-		parsed.kind = core.ModuleSourceKindLocal
-		return parsed
+		return localParsed
 	}
 
-	parsed.modPath, parsed.modVersion, parsed.hasVersion = strings.Cut(refString, "@")
+	// Parse scheme and attempt to parse as git endpoint
+	gitParsed, err := parseGitEndpoint(refString)
+	if err == nil {
+		// Try to isolate the root of the git repo
+		// RepoRootForImportPath does not support SCP-like ref style. In parseGitEndpoint, we made sure that all refs
+		// would be compatible with this function to benefit from the repo URL and root splitting
+		repoRoot, err := vcs.RepoRootForImportPath(gitParsed.modPath, false)
+		if err == nil && repoRoot != nil && repoRoot.VCS != nil && repoRoot.VCS.Name == "Git" {
+			gitParsed.repoRoot = repoRoot
 
-	// we try to isolate the root of the git repo
-	repoRoot, err := vcs.RepoRootForImportPath(parsed.modPath, false)
-	if err == nil && repoRoot != nil && repoRoot.VCS != nil && repoRoot.VCS.Name == "Git" {
-		parsed.kind = core.ModuleSourceKindGit
-		parsed.repoRoot = repoRoot
-		parsed.repoRootSubdir = strings.TrimPrefix(parsed.modPath, repoRoot.Root)
-		// the extra "/" is important as subpath traversal such as /../ are being cleaned by filePath.Clean
-		parsed.repoRootSubdir = strings.TrimPrefix(parsed.repoRootSubdir, "/")
-		return parsed
+			// the extra "/" trim is important as subpath traversal such as /../ are being cleaned by filePath.Clean
+			gitParsed.repoRootSubdir = strings.TrimPrefix(strings.TrimPrefix(gitParsed.modPath, repoRoot.Root), "/")
+
+			// Restore SCPLike ref format
+			if gitParsed.scheme == core.SchemeSCPLike {
+				gitParsed.repoRoot.Root = strings.Replace(gitParsed.repoRoot.Root, "/", ":", 1)
+			}
+			return gitParsed
+		}
 	}
 
-	parsed.modPath = refString
-	parsed.kind = core.ModuleSourceKindLocal
-	return parsed
+	// Fallback to local reference
+	return localParsed
+}
+
+func parseGitEndpoint(refString string) (parsedRefString, error) {
+	scheme, schemelessRef := parseScheme(refString)
+
+	if scheme == core.NoScheme && isSCPLike(schemelessRef) {
+		scheme = core.SchemeSCPLike
+		// transform the ":" into a "/" to rely on a unified logic after
+		// works because "git@github.com:user" is equivalent to "ssh://git@ref/user"
+		schemelessRef = strings.Replace(schemelessRef, ":", "/", 1)
+	}
+
+	// Trick:
+	// as we removed the scheme above with `parseScheme``, and the SCP-like refs are
+	// now without ":", all refs are in such format: "[git@]github.com/user/path...@version"
+	// transport.NewEndpoint parses users only for SSH refs. As HTTP refs without scheme are valid SSH refs
+	// we use the "ssh://" prefix to parse properly both explicit / SCP-like and HTTP refs
+	// and delegate the logic to parse the host / path and user to the library
+	endpoint, err := transport.NewEndpoint("ssh://" + schemelessRef)
+	if err != nil {
+		return parsedRefString{}, err
+	}
+
+	gitParsed := parsedRefString{
+		modPath:     endpoint.Host + endpoint.Path,
+		kind:        core.ModuleSourceKindGit,
+		scheme:      scheme,
+		sshusername: endpoint.User,
+	}
+
+	parts := strings.SplitN(endpoint.Path, "@", 2)
+	if len(parts) == 2 {
+		gitParsed.modPath = endpoint.Host + parts[0]
+		gitParsed.modVersion = parts[1]
+		gitParsed.hasVersion = true
+	}
+
+	return gitParsed, nil
+}
+
+func isSCPLike(ref string) bool {
+	return strings.Contains(ref, ":") && !strings.Contains(ref, "//")
+}
+
+func parseScheme(refString string) (core.SchemeType, string) {
+	schemes := []core.SchemeType{
+		core.SchemeHTTP,
+		core.SchemeHTTPS,
+		core.SchemeSSH,
+	}
+
+	for _, scheme := range schemes {
+		prefix := scheme.Prefix()
+		if strings.HasPrefix(refString, prefix) {
+			return scheme, strings.TrimPrefix(refString, prefix)
+		}
+	}
+
+	return core.NoScheme, refString
 }
 
 func (s *moduleSchema) moduleSourceAsModule(
@@ -385,7 +425,6 @@ func (s *moduleSchema) moduleSourceDependencies(
 		existingDeps = make([]dagql.Instance[*core.ModuleDependency], len(modCfg.Dependencies))
 		var eg errgroup.Group
 		for i, depCfg := range modCfg.Dependencies {
-			i, depCfg := i, depCfg
 			eg.Go(func() error {
 				var depSrc dagql.Instance[*core.ModuleSource]
 				err := s.dag.Select(ctx, s.dag.Root(), &depSrc,
@@ -436,7 +475,6 @@ func (s *moduleSchema) moduleSourceDependencies(
 	newDeps := make([]dagql.Instance[*core.ModuleDependency], len(src.Self.WithDependencies))
 	var eg errgroup.Group
 	for i, dep := range src.Self.WithDependencies {
-		i, dep := i, dep
 		eg.Go(func() error {
 			var resolvedDepSrc dagql.Instance[*core.ModuleSource]
 			err := s.dag.Select(ctx, src, &resolvedDepSrc,

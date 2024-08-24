@@ -411,7 +411,6 @@ func (w *Worker) setupRootfs(ctx context.Context, state *execState) error {
 	for _, mnt := range state.spec.Mounts {
 		switch {
 		case mnt.Destination == MetaMountDestPath:
-			mnt := mnt
 			state.metaMount = &mnt
 
 		case mnt.Destination == buildkitQemuEmulatorMountPoint:
@@ -895,6 +894,11 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	state.spec.Process.Env = append(state.spec.Process.Env, DaggerSessionTokenEnv+"="+w.execMD.SecretToken)
 
 	w.execMD.ClientStableID = randid.NewID()
+
+	// include SSH_AUTH_SOCK if it's set in the exec's env vars
+	if v, ok := state.origEnvMap["SSH_AUTH_SOCK"]; ok {
+		w.execMD.SSHAuthSocketPath = v
+	}
 
 	filesyncer, err := client.NewFilesyncer(
 		state.rootfsPath,

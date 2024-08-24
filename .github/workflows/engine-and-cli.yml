@@ -46,6 +46,28 @@ jobs:
           function: "test all --race=true --parallel=16"
           upload-logs: true
 
+  test-modules:
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-12-5-16c-st-od' || 'ubuntu-latest' }}"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: "test"
+        uses: ./.github/actions/call
+        with:
+          function: "test specific --run=TestModule --race=true --parallel=16"
+          upload-logs: true
+
+  test-everything-else:
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-12-5-16c-st-od' || 'ubuntu-latest' }}"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: "test"
+        uses: ./.github/actions/call
+        with:
+          function: "test specific --skip=TestModule --race=true --parallel=16"
+          upload-logs: true
+
   # Run Engine tests in dev Engine so that we can spot integration failures early
   # Only run a subset of important test cases since we just need to verify basic
   # functionality rather than repeat every test already run in the other targets.
@@ -57,7 +79,7 @@ jobs:
       - name: "testdev"
         uses: ./.github/actions/call
         with:
-          function: "test important --race=true --parallel=16"
+          function: "test specific --run='TestModule|TestContainer' --race=true --parallel=16"
           dev-engine: true
           upload-logs: true
 

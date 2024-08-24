@@ -109,8 +109,6 @@ func (class Class[T]) Install(fields ...Field[T]) {
 	class.fieldsL.Lock()
 	defer class.fieldsL.Unlock()
 	for _, field := range fields {
-		field := field
-
 		if field.Spec.extend {
 			fields := class.fields[field.Spec.Name]
 			if len(fields) == 0 {
@@ -820,7 +818,7 @@ func reflectFieldsForType[T any](obj any, optIn bool, init func(any) (T, error))
 	if objT.Kind() != reflect.Struct {
 		return nil, fmt.Errorf("inputs must be a struct, got %T (%s)", obj, objT.Kind())
 	}
-	for i := 0; i < objT.NumField(); i++ {
+	for i := range objT.NumField() {
 		fieldT := objT.Field(i)
 		if fieldT.Anonymous {
 			fieldI := reflect.New(fieldT.Type).Elem().Interface()
@@ -877,7 +875,7 @@ func getField(obj any, optIn bool, fieldName string) (res Typed, found bool, rer
 	if objT.Kind() != reflect.Struct {
 		return nil, false, fmt.Errorf("get field %q: object must be a struct, got %T (%s)", fieldName, obj, objT.Kind())
 	}
-	for i := 0; i < objT.NumField(); i++ {
+	for i := range objT.NumField() {
 		fieldT := objT.Field(i)
 		if fieldT.Anonymous {
 			fieldI := objV.Field(i).Interface()
@@ -925,7 +923,7 @@ func setInputFields(specs InputSpecs, inputs map[string]Input, dest any) error {
 	if destT.Kind() != reflect.Struct {
 		return fmt.Errorf("inputs must be a struct, got %T (%s)", dest, destT.Kind())
 	}
-	for i := 0; i < destT.NumField(); i++ {
+	for i := range destT.NumField() {
 		fieldT := destT.Field(i)
 		fieldV := destV.Field(i)
 		if fieldT.Anonymous {

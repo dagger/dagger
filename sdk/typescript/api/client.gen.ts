@@ -5230,8 +5230,10 @@ export class GeneratedCode extends BaseClient {
  */
 export class GitModuleSource extends BaseClient {
   private readonly _id?: GitModuleSourceID = undefined
+  private readonly _cloneRef?: string = undefined
   private readonly _cloneURL?: string = undefined
   private readonly _commit?: string = undefined
+  private readonly _htmlRepoURL?: string = undefined
   private readonly _htmlURL?: string = undefined
   private readonly _root?: string = undefined
   private readonly _rootSubpath?: string = undefined
@@ -5243,8 +5245,10 @@ export class GitModuleSource extends BaseClient {
   constructor(
     parent?: { queryTree?: QueryTree[]; ctx: Context },
     _id?: GitModuleSourceID,
+    _cloneRef?: string,
     _cloneURL?: string,
     _commit?: string,
+    _htmlRepoURL?: string,
     _htmlURL?: string,
     _root?: string,
     _rootSubpath?: string,
@@ -5253,8 +5257,10 @@ export class GitModuleSource extends BaseClient {
     super(parent)
 
     this._id = _id
+    this._cloneRef = _cloneRef
     this._cloneURL = _cloneURL
     this._commit = _commit
+    this._htmlRepoURL = _htmlRepoURL
     this._htmlURL = _htmlURL
     this._root = _root
     this._rootSubpath = _rootSubpath
@@ -5283,7 +5289,29 @@ export class GitModuleSource extends BaseClient {
   }
 
   /**
+   * The ref to clone the root of the git repo from
+   */
+  cloneRef = async (): Promise<string> => {
+    if (this._cloneRef) {
+      return this._cloneRef
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "cloneRef",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
    * The URL to clone the root of the git repo from
+   * @deprecated Use CloneRef instead. CloneRef supports both URL-style and SCP-like SSH references
    */
   cloneURL = async (): Promise<string> => {
     if (this._cloneURL) {
@@ -5337,6 +5365,27 @@ export class GitModuleSource extends BaseClient {
       ],
       ctx: this._ctx,
     })
+  }
+
+  /**
+   * The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket)
+   */
+  htmlRepoURL = async (): Promise<string> => {
+    if (this._htmlRepoURL) {
+      return this._htmlRepoURL
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "htmlRepoURL",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
   }
 
   /**

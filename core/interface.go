@@ -188,7 +188,6 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 
 	fields := make([]dagql.Field[*InterfaceAnnotatedValue], 0, len(iface.typeDef.Functions))
 	for _, fnTypeDef := range iface.typeDef.Functions {
-		fnTypeDef := fnTypeDef
 		fnName := gqlFieldName(fnTypeDef.Name)
 
 		// check whether this is a pre-existing object from a dependency module
@@ -220,7 +219,6 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 
 		argTypeDefsByName := map[string]*TypeDef{}
 		for _, argMetadata := range fnTypeDef.Args {
-			argMetadata := argMetadata
 			argTypeDefsByName[argMetadata.Name] = argMetadata.TypeDef
 
 			// check whether this is a pre-existing object from a dependency module

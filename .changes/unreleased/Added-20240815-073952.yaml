@@ -1,0 +1,12 @@
+kind: Added
+body: |-
+    Support private modules with new SSH ref scheme and forward of SSH agent:
+    - Go-like refs (currently used) remain active
+    - http / https schemes are now supported as alternative public module refs
+    - SSH refs are introduced, with support of SCP-like refs git@provider:user/repo and explicit ssh://provider/user/repo
+
+    The Dagger CLI now securely forwards the SSH_AUTH_TOKEN for authentication
+time: 2024-08-15T07:39:52.263039405Z
+custom:
+    Author: grouville
+    PR: "7708"

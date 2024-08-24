@@ -65,7 +65,8 @@ type Opts struct {
 	Containers   map[bkgw.Container]struct{}
 	ContainersMu *sync.Mutex
 
-	Interactive bool
+	Interactive        bool
+	InteractiveCommand []string
 }
 
 type ResolveCacheExporterFunc func(ctx context.Context, g bksession.Group) (remotecache.Exporter, error)
@@ -223,7 +224,6 @@ func (c *Client) NewContainer(ctx context.Context, req NewContainerRequest) (*Co
 	// get the input mounts in parallel in case they need to be evaluated, which can be expensive
 	eg, egctx := errgroup.WithContext(ctx)
 	for i, m := range req.Mounts {
-		i, m := i, m
 		eg.Go(func() error {
 			workerRef := m.WorkerRef
 			if workerRef == nil && m.Ref != nil {
@@ -375,7 +375,6 @@ func (c *Client) UpstreamCacheExport(ctx context.Context, cacheExportFuncs []Res
 	eg, ctx := errgroup.WithContext(ctx)
 	// TODO: send progrock statuses for cache export progress
 	for _, exporterFunc := range cacheExportFuncs {
-		exporterFunc := exporterFunc
 		eg.Go(func() error {
 			bklog.G(ctx).Debugf("getting exporter")
 			exporter, err := exporterFunc(ctx, sessionGroup)

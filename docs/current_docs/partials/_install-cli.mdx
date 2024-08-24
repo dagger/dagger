@@ -30,7 +30,7 @@ If you do not have Homebrew installed, or you want to install a specific version
 
 ```shell
 cd /usr/local
-curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.12.5 sh
+curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.12.5 sh
 
 ./bin/dagger version
 dagger v0.12.5 (registry.dagger.io/engine:v0.12.5) darwin/arm64
@@ -41,7 +41,7 @@ If your user account doesn't have sufficient privileges to install in `/usr/loca
 
 ```shell
 cd /usr/local
-curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.12.5 sudo sh
+curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.12.5 sudo -E sh
 ```
 
 </TabItem>
@@ -51,7 +51,7 @@ curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.12.5 sudo sh
 The quickest way of installing `dagger` on Linux is to run the following command:
 
 ```shell
-curl -L https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
+curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
 ```
 [View source](https://github.com/dagger/dagger/blob/main/install.sh)
 
@@ -65,7 +65,7 @@ dagger is $HOME/.local/bin/dagger
 If you want to install a specific version of `dagger`, you can run:
 
 ```shell
-curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.12.5 sh
+curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.12.5 sh
 
 ./bin/dagger version
 dagger v0.12.5 (registry.dagger.io/engine:v0.12.5) linux/amd64
