@@ -220,7 +220,7 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRendererTest do
             type_def.query_builder |> QB.select("kind")
 
           case Client.execute(type_def.client, query_builder) do
-            {:ok, enum} -> Dagger.TypeDefKind.from_string(enum)
+            {:ok, enum} -> {:ok, Dagger.TypeDefKind.from_string(enum)}
             error -> error
           end
         end
