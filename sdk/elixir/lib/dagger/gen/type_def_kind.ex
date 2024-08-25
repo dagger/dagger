@@ -73,4 +73,19 @@ defmodule Dagger.TypeDefKind do
   """
   @spec enum_kind() :: :ENUM_KIND
   def enum_kind(), do: :ENUM_KIND
+
+  @doc false
+  @spec from_string(String.t()) :: t()
+  def from_string(string)
+
+  def from_string("STRING_KIND"), do: :STRING_KIND
+  def from_string("INTEGER_KIND"), do: :INTEGER_KIND
+  def from_string("BOOLEAN_KIND"), do: :BOOLEAN_KIND
+  def from_string("SCALAR_KIND"), do: :SCALAR_KIND
+  def from_string("LIST_KIND"), do: :LIST_KIND
+  def from_string("OBJECT_KIND"), do: :OBJECT_KIND
+  def from_string("INTERFACE_KIND"), do: :INTERFACE_KIND
+  def from_string("INPUT_KIND"), do: :INPUT_KIND
+  def from_string("VOID_KIND"), do: :VOID_KIND
+  def from_string("ENUM_KIND"), do: :ENUM_KIND
 end

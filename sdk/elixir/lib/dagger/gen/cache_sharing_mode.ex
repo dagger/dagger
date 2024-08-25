@@ -15,4 +15,12 @@ defmodule Dagger.CacheSharingMode do
   @doc "Shares the cache volume amongst many build pipelines, but will serialize the writes"
   @spec locked() :: :LOCKED
   def locked(), do: :LOCKED
+
+  @doc false
+  @spec from_string(String.t()) :: t()
+  def from_string(string)
+
+  def from_string("SHARED"), do: :SHARED
+  def from_string("PRIVATE"), do: :PRIVATE
+  def from_string("LOCKED"), do: :LOCKED
 end

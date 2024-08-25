@@ -311,4 +311,12 @@ defmodule Dagger.ClientTest do
              )
              |> Sync.sync()
   end
+
+  test "return scalar", %{client: client} do
+    assert {:ok, :OBJECT_KIND} =
+             client
+             |> Dagger.Client.type_def()
+             |> Dagger.TypeDef.with_object("A")
+             |> Dagger.TypeDef.kind()
+  end
 end

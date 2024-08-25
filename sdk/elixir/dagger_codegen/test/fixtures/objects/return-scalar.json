@@ -1,0 +1,27 @@
+{
+  "description": "A definition of a parameter or return type in a Module.",
+  "enumValues": [],
+  "fields": [
+    {
+      "args": [],
+      "deprecationReason": null,
+      "description": "The kind of type this is (e.g. primitive, list, object).",
+      "isDeprecated": false,
+      "name": "kind",
+      "type": {
+        "kind": "NON_NULL",
+        "name": null,
+        "ofType": {
+          "kind": "ENUM",
+          "name": "TypeDefKind",
+          "ofType": null
+        }
+      }
+    }
+  ],
+  "inputFields": [],
+  "interfaces": [],
+  "kind": "OBJECT",
+  "name": "TypeDef",
+  "possibleTypes": []
+}

@@ -48,11 +48,14 @@ defmodule Dagger.Port do
   end
 
   @doc "The transport layer protocol."
-  @spec protocol(t()) :: Dagger.NetworkProtocol.t()
+  @spec protocol(t()) :: {:ok, Dagger.NetworkProtocol.t()} | {:error, term()}
   def protocol(%__MODULE__{} = port) do
     query_builder =
       port.query_builder |> QB.select("protocol")
 
-    Client.execute(port.client, query_builder)
+    case Client.execute(port.client, query_builder) do
+      {:ok, enum} -> {:ok, Dagger.NetworkProtocol.from_string(enum)}
+      error -> error
+    end
   end
 end

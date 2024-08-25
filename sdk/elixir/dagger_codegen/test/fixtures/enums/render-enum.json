@@ -1,0 +1,29 @@
+{
+  "description": "Sharing mode of the cache volume.",
+  "enumValues": [
+    {
+      "deprecationReason": null,
+      "description": "Shares the cache volume amongst many build pipelines",
+      "isDeprecated": false,
+      "name": "SHARED"
+    },
+    {
+      "deprecationReason": null,
+      "description": "Keeps a cache volume for a single build pipeline",
+      "isDeprecated": false,
+      "name": "PRIVATE"
+    },
+    {
+      "deprecationReason": null,
+      "description": "Shares the cache volume amongst many build pipelines, but will serialize the writes",
+      "isDeprecated": false,
+      "name": "LOCKED"
+    }
+  ],
+  "fields": [],
+  "inputFields": [],
+  "interfaces": [],
+  "kind": "ENUM",
+  "name": "CacheSharingMode",
+  "possibleTypes": []
+}

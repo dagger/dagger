@@ -93,12 +93,15 @@ defmodule Dagger.TypeDef do
   end
 
   @doc "The kind of type this is (e.g. primitive, list, object)."
-  @spec kind(t()) :: Dagger.TypeDefKind.t()
+  @spec kind(t()) :: {:ok, Dagger.TypeDefKind.t()} | {:error, term()}
   def kind(%__MODULE__{} = type_def) do
     query_builder =
       type_def.query_builder |> QB.select("kind")
 
-    Client.execute(type_def.client, query_builder)
+    case Client.execute(type_def.client, query_builder) do
+      {:ok, enum} -> {:ok, Dagger.TypeDefKind.from_string(enum)}
+      error -> error
+    end
   end
 
   @doc "Whether this type can be set to null. Defaults to false."
