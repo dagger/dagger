@@ -15,11 +15,11 @@ import (
 )
 
 const (
-	bunVersion  = "1.1.12"
+	bunVersion  = "1.1.26"
 	nodeVersion = "20" // LTS version, IRON (https://nodejs.org/en/about/previous-releases)
 
 	nodeImageDigest = "sha256:df01469346db2bf1cfc1f7261aeab86b2960efa840fe2bd46d83ff339f463665"
-	bunImageDigest  = "sha256:6568a679b87107d3d7d46b829f614c443e73bbe3bf7d6ea5c9ceb8f845869c96"
+	bunImageDigest  = "sha256:f344713375598be5f0b40e478cdb70578cc255135a37f9c98179edb1ceb3b4f0"
 
 	nodeImageRef = "node:" + nodeVersion + "-alpine@" + nodeImageDigest
 	bunImageRef  = "oven/bun:" + bunVersion + "-alpine@" + bunImageDigest
@@ -343,6 +343,7 @@ func (t *TypescriptSdk) configureModule(ctr *dagger.Container) *dagger.Container
 		} else {
 			ctr = ctr.
 				WithExec([]string{"tsx", "/opt/module/bin/__tsconfig.updator.ts"}).
+				WithExec([]string{"npm", "pkg", "set", "type=module"}).
 				WithExec([]string{"npm", "pkg", "set", "dependencies[@dagger.io/dagger]=./sdk"})
 		}
 	} else {
