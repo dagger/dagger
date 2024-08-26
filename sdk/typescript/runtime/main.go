@@ -101,7 +101,7 @@ func (t *TypescriptSdk) ModuleRuntime(ctx context.Context, modSource *dagger.Mod
 		return nil, fmt.Errorf("failed to analyze module config: %w", err)
 	}
 
-	ctr, err := t.CodegenBase(ctx, modSource, introspectionJSON)
+	ctr, err := t.CodegenBase(ctx, modSource, introspectionJSON, true)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create codegen base: %w", err)
 	}
@@ -111,11 +111,6 @@ func (t *TypescriptSdk) ModuleRuntime(ctx context.Context, modSource *dagger.Mod
 		t.moduleConfig.entrypointPath(),
 		ctr.Directory("/opt/module/bin").File(EntrypointExecutableFile),
 	)
-
-	ctr, err = t.installDependencies(ctr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to install dependencies: %w", err)
-	}
 
 	switch t.moduleConfig.runtime {
 	case Bun:
@@ -140,8 +135,8 @@ func (t *TypescriptSdk) Codegen(ctx context.Context, modSource *dagger.ModuleSou
 		return nil, fmt.Errorf("failed to analyze module config: %w", err)
 	}
 
-	// Get base container
-	ctr, err := t.CodegenBase(ctx, modSource, introspectionJSON)
+	// Get base container without dependencies installed.
+	ctr, err := t.CodegenBase(ctx, modSource, introspectionJSON, false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create codegen base: %w", err)
 	}
@@ -170,7 +165,7 @@ func (t *TypescriptSdk) Codegen(ctx context.Context, modSource *dagger.ModuleSou
 
 // CodegenBase returns a Container containing the SDK from the engine container
 // and the user's code with a generated API based on what he did.
-func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *dagger.ModuleSource, introspectionJSON *dagger.File) (*dagger.Container, error) {
+func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *dagger.ModuleSource, introspectionJSON *dagger.File, installDep bool) (*dagger.Container, error) {
 	base, err := t.Base()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create codegen base: %w", err)
@@ -184,29 +179,55 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *dagger.Modul
 	base = base.
 		// Add template directory
 		WithMountedDirectory("/opt/module", dag.CurrentModule().Source().Directory(".")).
-		// Mount users' module with SDK sources and generated client in it.
-		WithMountedDirectory(ModSourceDirPath,
+		// Mount user's module configuration (without sources) and the generated client in it.
+		WithDirectory(ModSourceDirPath,
 			dag.Directory().WithDirectory("/", modSource.ContextDirectory(), dagger.DirectoryWithDirectoryOpts{
 				Include: []string{
-					fmt.Sprintf("%s/**", t.moduleConfig.subPath),
+					fmt.Sprintf("%s/package.json", t.moduleConfig.subPath),
+					fmt.Sprintf("%s/*lock*", t.moduleConfig.subPath),
+					fmt.Sprintf("%s/tsconfig.json", t.moduleConfig.subPath),
+					fmt.Sprintf("%s/pnpm-workspace.yaml", t.moduleConfig.subPath),
+					fmt.Sprintf("%s/.yarnrc.yml", t.moduleConfig.subPath),
 				},
-			}).
-				WithDirectory(filepath.Join(t.moduleConfig.subPath, GenDir), sdk),
-		).
+			})).
+		WithDirectory(filepath.Join(t.moduleConfig.modulePath(), GenDir), sdk).
 		WithWorkdir(t.moduleConfig.modulePath())
 
-	ctr, err := t.setupModule(ctx, base)
+	base, err = t.configureModule(ctx, base)
 	if err != nil {
 		return nil, fmt.Errorf("failed to setup module: %w", err)
 	}
 
 	// Generate the appropriate lock file
-	ctr, err = t.generateLockFile(ctr)
+	base, err = t.generateLockFile(base)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate lock file: %w", err)
 	}
 
-	return ctr, nil
+	// Install dependencies if needed.
+	if installDep {
+		base, err = t.installDependencies(base)
+		if err != nil {
+			return nil, fmt.Errorf("failed to install dependencies: %w", err)
+		}
+	}
+
+	// Add user's source files
+	base = base.WithDirectory(ModSourceDirPath,
+		dag.Directory().WithDirectory("/", modSource.ContextDirectory(), dagger.DirectoryWithDirectoryOpts{
+			// Only include the user's source files
+			Include: []string{
+				fmt.Sprintf("%s/src", t.moduleConfig.subPath),
+			},
+		}),
+	)
+
+	base, err = t.addTemplate(ctx, base)
+	if err != nil {
+		return nil, fmt.Errorf("failed to add template: %w", err)
+	}
+
+	return base, nil
 }
 
 // Base returns a Node or Bun container with cache setup for node package managers or bun
@@ -253,37 +274,18 @@ func (t *TypescriptSdk) Base() (*dagger.Container, error) {
 	}
 }
 
-// setupModule initialiaze the user's module.
-//
-// If the user's module has a package.json file, it will run the
-// __tsconfig.updator.ts script in order to add dagger to the tsconfig path so
-// the editor can give type hints and auto completion.
-// Otherwise, it will copy the template config files into the user's module directory.
-//
-// If there's no src directory or no typescript files in it, it will create one
-// and copy the template index.ts file in it.
-func (t *TypescriptSdk) setupModule(ctx context.Context, ctr *dagger.Container) (*dagger.Container, error) {
-	runtime := t.moduleConfig.runtime
+// addTemplate adds the template files to the user's module if there's no
+// source files in the src directory.
+func (t *TypescriptSdk) addTemplate(ctx context.Context, ctr *dagger.Container) (*dagger.Container, error) {
 	name := t.moduleConfig.name
 
-	// If there's a package.json, run the tsconfig updator script and install the genDir.
-	// else, copy the template config files.
-	if t.moduleConfig.hasFile("package.json") {
-		if runtime == Bun {
-			ctr = ctr.
-				WithExec([]string{"bun", "/opt/module/bin/__tsconfig.updator.ts"}).
-				WithExec([]string{"bun", "install", "--no-verify", "--no-progress", "--summary", "./sdk"})
-		} else {
-			ctr = ctr.
-				WithExec([]string{"tsx", "/opt/module/bin/__tsconfig.updator.ts"}).
-				WithExec([]string{"npm", "pkg", "set", "dependencies[@dagger.io/dagger]=./sdk"})
-		}
-	} else {
-		ctr = ctr.WithDirectory(".", ctr.Directory("/opt/module/template"), dagger.ContainerWithDirectoryOpts{Include: []string{"*.json"}})
+	moduleFiles, err := ctr.Directory(".").Entries(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("could not list module source entries: %w", err)
 	}
 
 	// Check if there's a src directory and creates an empty directory if it doesn't exist.
-	if !t.moduleConfig.hasFile("src") {
+	if !slices.Contains(moduleFiles, "src") {
 		ctr = ctr.WithDirectory("src", dag.Directory())
 	}
 
@@ -301,6 +303,37 @@ func (t *TypescriptSdk) setupModule(ctx context.Context, ctr *dagger.Container) 
 		return ctr.
 			WithDirectory("src", ctr.Directory("/opt/module/template/src"), dagger.ContainerWithDirectoryOpts{Include: []string{"*.ts"}}).
 			WithExec([]string{"sed", "-i", "-e", fmt.Sprintf("s/QuickStart/%s/g", strcase.ToCamel(name)), "src/index.ts"}), nil
+	}
+
+	return ctr, nil
+}
+
+// setupModule configure the user's module.
+//
+// If the user's module has a package.json file, it will run the
+// __tsconfig.updator.ts script in order to add dagger to the tsconfig path so
+// the editor can give type hints and auto completion.
+// Otherwise, it will copy the template config files into the user's module directory.
+//
+// If there's no src directory or no typescript files in it, it will create one
+// and copy the template index.ts file in it.
+func (t *TypescriptSdk) configureModule(ctx context.Context, ctr *dagger.Container) (*dagger.Container, error) {
+	runtime := t.moduleConfig.runtime
+
+	// If there's a package.json, run the tsconfig updator script and install the genDir.
+	// else, copy the template config files.
+	if t.moduleConfig.hasFile("package.json") {
+		if runtime == Bun {
+			ctr = ctr.
+				WithExec([]string{"bun", "/opt/module/bin/__tsconfig.updator.ts"}).
+				WithExec([]string{"bun", "install", "--no-verify", "--no-progress", "--summary", "./sdk"})
+		} else {
+			ctr = ctr.
+				WithExec([]string{"tsx", "/opt/module/bin/__tsconfig.updator.ts"}).
+				WithExec([]string{"npm", "pkg", "set", "dependencies[@dagger.io/dagger]=./sdk"})
+		}
+	} else {
+		ctr = ctr.WithDirectory(".", ctr.Directory("/opt/module/template"), dagger.ContainerWithDirectoryOpts{Include: []string{"*.json"}})
 	}
 
 	return ctr, nil
@@ -452,7 +485,7 @@ func (t *TypescriptSdk) generateLockFile(ctr *dagger.Container) (*dagger.Contain
 			WithExec([]string{"corepack", "enable"}).
 			WithExec([]string{"corepack", "use", fmt.Sprintf("yarn@%s", version)})
 
-		// Install dependencies and extrat the lockfile
+		// Install dependencies and extract the lockfile
 		file := ctr.
 			WithExec([]string{"yarn", "install", "--mode", "update-lockfile"}).File("yarn.lock")
 
@@ -535,10 +568,13 @@ func (t *TypescriptSdk) analyzeModuleConfig(ctx context.Context, modSource *dagg
 	}
 
 	// If a first init, there will be no directory, so we ignore the error here.
+	// We also only include package.json & lockfiles to benefit from caching.
 	t.moduleConfig.source = modSource.ContextDirectory().Directory(t.moduleConfig.subPath)
-	entries, err := t.moduleConfig.source.Entries(ctx)
+	configEntries, err := dag.Directory().WithDirectory(".", t.moduleConfig.source, dagger.DirectoryWithDirectoryOpts{
+		Include: []string{"package.json", "*lock*", "tsconfig.json", "pnpm-workspace.yaml", ".yarnrc.yml"},
+	}).Entries(ctx)
 	if err == nil {
-		for _, entry := range entries {
+		for _, entry := range configEntries {
 			t.moduleConfig.entries[entry] = true
 		}
 	}
