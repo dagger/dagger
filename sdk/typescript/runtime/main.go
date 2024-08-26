@@ -193,7 +193,7 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *dagger.Modul
 		WithDirectory(filepath.Join(t.moduleConfig.modulePath(), GenDir), sdk).
 		WithWorkdir(t.moduleConfig.modulePath())
 
-	base, err = t.configureModule(ctx, base)
+	base, err = t.configureModule(base)
 	if err != nil {
 		return nil, fmt.Errorf("failed to setup module: %w", err)
 	}
@@ -317,7 +317,7 @@ func (t *TypescriptSdk) addTemplate(ctx context.Context, ctr *dagger.Container) 
 //
 // If there's no src directory or no typescript files in it, it will create one
 // and copy the template index.ts file in it.
-func (t *TypescriptSdk) configureModule(ctx context.Context, ctr *dagger.Container) (*dagger.Container, error) {
+func (t *TypescriptSdk) configureModule(ctr *dagger.Container) (*dagger.Container, error) {
 	runtime := t.moduleConfig.runtime
 
 	// If there's a package.json, run the tsconfig updator script and install the genDir.
