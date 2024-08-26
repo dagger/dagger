@@ -220,20 +220,20 @@ func traceExec(ctx context.Context, cmd *exec.Cmd, opts ...trace.SpanStartOption
 }
 
 func collectLeftoverEngines(ctx context.Context) ([]string, error) {
-	output, err := exec.CommandContext(ctx,
+	cmd := exec.CommandContext(ctx,
 		"docker", "ps",
 		"-a",
 		"--no-trunc",
 		"--filter", "name=^/"+containerNamePrefix,
 		"--format", "{{.Names}}",
-	).CombinedOutput()
-	output = bytes.TrimSpace(output)
-
-	if len(output) == 0 {
-		return nil, err
+	)
+	output, err := traceExec(ctx, cmd)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to list containers: %s", output)
 	}
 
-	engineNames := strings.Split(string(output), "\n")
+	output = strings.TrimSpace(output)
+	engineNames := strings.Split(output, "\n")
 	return engineNames, err
 }
 
