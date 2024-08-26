@@ -1,7 +1,9 @@
 package core
 
 import (
+	"context"
 	"encoding/base64"
+	"errors"
 	"io"
 	"net"
 	"os"
@@ -48,34 +50,43 @@ func setupPrivateRepoSSHAgent(t *testctx.T) (string, func()) {
 	l, err := net.Listen("unix", sshAgentPath)
 	require.NoError(t, err, "Failed to create SSH agent socket")
 
-	var logMu sync.Mutex
-	safeLog := func(format string, args ...interface{}) {
-		logMu.Lock()
-		defer logMu.Unlock()
-		t.Logf(format, args...)
-	}
+	ctx, cancel := context.WithCancel(t.Context())
+	var wg sync.WaitGroup
 
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		for {
-			conn, err := l.Accept()
-			if err != nil {
-				safeLog("SSH agent l stopped: %v", err)
+			select {
+			case <-ctx.Done():
 				return
-			}
-			go func() {
-				defer conn.Close()
-				err := agent.ServeAgent(sshAgent, conn)
-				if err != nil && err != io.EOF {
-					safeLog("SSH agent error: %v", err)
+			default:
+				conn, err := l.Accept()
+				if err != nil {
+					if !errors.Is(err, net.ErrClosed) {
+						t.Logf("SSH agent listener stopped: %v", err)
+					}
+					return
 				}
-			}()
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					defer conn.Close()
+					err := agent.ServeAgent(sshAgent, conn)
+					if err != nil && !errors.Is(err, io.EOF) {
+						t.Logf("SSH agent error: %v", err)
+					}
+				}()
+			}
 		}
 	}()
 
 	cleanup := func() {
-		safeLog("Cleaning up SSH agent: %s", sshAgentPath)
+		cancel()
 		l.Close()
+		wg.Wait()
 		os.RemoveAll(tmp)
+		t.Logf("Cleaned up SSH agent: %s", sshAgentPath)
 	}
 
 	return sshAgentPath, cleanup

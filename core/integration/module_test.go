@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -5510,7 +5511,7 @@ func (m *Test) Fn() string {
 			c := connect(ctx, t)
 
 			mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
-			defer cleanup()
+			t.Cleanup(cleanup)
 
 			ctr := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -7153,4 +7154,23 @@ func logGen(ctx context.Context, t *testctx.T, modSrc *dagger.Directory) {
 			t.Logf("wrote generated code to %s", fileName)
 		}
 	})
+}
+
+func (ModuleSuite) TestSSHAgentConnection(ctx context.Context, t *testctx.T) {
+	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
+		t.Run("ConcurrentSetupAndCleanup", func(ctx context.Context, t *testctx.T) {
+			var wg sync.WaitGroup
+			for i := 0; i < 100; i++ {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					_, cleanup := setupPrivateRepoSSHAgent(t)
+					time.Sleep(10 * time.Millisecond) // Simulate some work
+					cleanup()
+				}()
+			}
+			wg.Wait()
+		})
+	})
+
 }
