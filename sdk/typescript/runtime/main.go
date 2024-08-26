@@ -193,10 +193,7 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *dagger.Modul
 		WithDirectory(filepath.Join(t.moduleConfig.modulePath(), GenDir), sdk).
 		WithWorkdir(t.moduleConfig.modulePath())
 
-	base, err = t.configureModule(base)
-	if err != nil {
-		return nil, fmt.Errorf("failed to setup module: %w", err)
-	}
+	base = t.configureModule(base)
 
 	// Generate the appropriate lock file
 	base, err = t.generateLockFile(base)
@@ -317,7 +314,7 @@ func (t *TypescriptSdk) addTemplate(ctx context.Context, ctr *dagger.Container) 
 //
 // If there's no src directory or no typescript files in it, it will create one
 // and copy the template index.ts file in it.
-func (t *TypescriptSdk) configureModule(ctr *dagger.Container) (*dagger.Container, error) {
+func (t *TypescriptSdk) configureModule(ctr *dagger.Container) *dagger.Container {
 	runtime := t.moduleConfig.runtime
 
 	// If there's a package.json, run the tsconfig updator script and install the genDir.
@@ -336,7 +333,7 @@ func (t *TypescriptSdk) configureModule(ctr *dagger.Container) (*dagger.Containe
 		ctr = ctr.WithDirectory(".", ctr.Directory("/opt/module/template"), dagger.ContainerWithDirectoryOpts{Include: []string{"*.json"}})
 	}
 
-	return ctr, nil
+	return ctr
 }
 
 // addSDK returns a directory with the SDK sources.
