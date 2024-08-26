@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"syscall"
@@ -372,6 +373,38 @@ func (m *HasNotMainGo) Hello() string { return "Hello, world!" }
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"hasNotMainGo":{"hello":"Hello, world!"}}`, out)
+	})
+
+	// Until the sdk/log package hits v1.0.0 we have to pin it to avoid breaking
+	// changes. (This also exposes that we're extremely reliant on semver.)
+	t.Run("pins the sdk/log version because it's unstable", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithNewFile("/work/main.go", `
+					package main
+					import (
+						"dagger/has-dagger-types/internal/dagger"
+					)
+
+					type HasDaggerTypes struct {}
+
+					func (m *HasDaggerTypes) Hello() *dagger.Container {
+						return dag.Container().
+							From("`+alpineImage+`").
+							WithExec([]string{"echo", "Hello, world!"})
+					}
+				`,
+			).
+			With(daggerExec("init", "--source=.", "--name=hasDaggerTypes", "--sdk=go"))
+
+		goMod, err := modGen.File("go.mod").Contents(ctx)
+		require.NoError(t, err)
+		require.Regexp(t, regexp.QuoteMeta(
+			`replace go.opentelemetry.io/otel/sdk/log => go.opentelemetry.io/otel/sdk/log v0.3.0`,
+		), goMod)
 	})
 
 	t.Run("with source", func(ctx context.Context, t *testctx.T) {

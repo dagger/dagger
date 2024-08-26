@@ -213,8 +213,8 @@ func (g *GoGenerator) bootstrapMod(ctx context.Context, mfs *memfs.FS) (*Package
 		return nil, false, fmt.Errorf("existing go.mod has unsupported version %v (highest supported version is %v)", mod.Go.Version, goVersion)
 	}
 
-	// use dagger's embedded go.mod as basis for pinning versions
-	daggerMod, err := modfile.Parse("go.mod", dagger.GoMod, nil)
+	// use Go SDK's embedded go.mod as basis for pinning versions
+	sdkMod, err := modfile.Parse("go.mod", dagger.GoMod, nil)
 	if err != nil {
 		return nil, false, fmt.Errorf("parse embedded go.mod: %w", err)
 	}
@@ -222,14 +222,21 @@ func (g *GoGenerator) bootstrapMod(ctx context.Context, mfs *memfs.FS) (*Package
 	for _, req := range mod.Require {
 		modRequires[req.Mod.Path] = req
 	}
-	for _, minReq := range daggerMod.Require {
+	for _, minReq := range sdkMod.Require {
 		// check if mod already at least this version
 		if currentReq, ok := modRequires[minReq.Mod.Path]; ok {
 			if semver.Compare(currentReq.Mod.Version, minReq.Mod.Version) >= 0 {
 				continue
 			}
 		}
+		modRequires[minReq.Mod.Path] = minReq
 		mod.AddNewRequire(minReq.Mod.Path, minReq.Mod.Version, minReq.Indirect)
+	}
+	// preserve any replace directives in sdk/go's go.mod (e.g. pre-1.0 packages)
+	for _, minReq := range sdkMod.Replace {
+		if _, ok := modRequires[minReq.New.Path]; ok { // ignore anything that's sdk/go only
+			mod.AddReplace(minReq.Old.Path, minReq.Old.Version, minReq.New.Path, minReq.New.Version)
+		}
 	}
 
 	// try and find a go.sum next to the go.mod, and use that to pin
