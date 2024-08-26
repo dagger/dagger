@@ -263,6 +263,10 @@ var Propagator = propagation.NewCompositeTextMapPropagator(
 	propagation.TraceContext{},
 )
 
+// closeCtx holds on to the initial context returned by Init. Close will
+// extract its providers and close them.
+var closeCtx context.Context
+
 // Init sets up the global OpenTelemetry providers tracing, logging, and
 // someday metrics providers. It is called by the CLI, the engine, and the
 // container shim, so it needs to be versatile.
@@ -342,12 +346,15 @@ func Init(ctx context.Context, cfg Config) context.Context {
 		ctx = WithLoggerProvider(ctx, sdklog.NewLoggerProvider(logOpts...))
 	}
 
+	closeCtx = ctx
+
 	return ctx
 }
 
 // Close shuts down the global OpenTelemetry providers, flushing any remaining
 // data to the configured exporters.
-func Close(ctx context.Context) {
+func Close() {
+	ctx := closeCtx
 	flushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
 	if tracerProvider != nil {

@@ -37,7 +37,7 @@ func TestMain(m *testing.M) {
 
 	testCtx = telemetry.InitEmbedded(testCtx, nil)
 	res := m.Run()
-	telemetry.Close(testCtx)
+	telemetry.Close()
 
 	if origAuthSock != "" {
 		os.Setenv("SSH_AUTH_SOCK", origAuthSock)

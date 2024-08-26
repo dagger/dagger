@@ -454,7 +454,7 @@ func main() { //nolint:gocyclo
 	}
 
 	app.After = func(*cli.Context) error {
-		telemetry.Close(ctx)
+		telemetry.Close()
 		return nil
 	}
 
