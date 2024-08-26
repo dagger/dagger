@@ -147,3 +147,19 @@ updates:
         applies-to: version-updates
         patterns:
           - "*"
+
+  - package-ecosystem: "mix"
+    directory: "/sdk/elixir"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:00"
+      timezone: "UTC"
+    labels:
+      - "kind/dependencies"
+      - "area/sdk/elixir"
+    groups:
+      sdk-elixir:
+        applies-to: version-updates
+        patterns:
+          - "*"
