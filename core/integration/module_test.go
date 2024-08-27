@@ -7534,11 +7534,23 @@ func (m *Dep) GetSource(
 ) *dagger.Directory {
 	return source
 }
+
+func (m *Dep) GetRelSource(
+  // +defaultPath="."
+	// +ignore=["!yo"]
+	source *dagger.Directory,
+) *dagger.Directory {
+  return source 
+}
 `,
 			).
 			WithNewFile("yo", "yo")
 
 		out, err := ctr.With(daggerCall("get-source", "entries")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "yo\n", out)
+
+		out, err = ctr.With(daggerCall("get-rel-source", "entries")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "yo\n", out)
 
@@ -7557,10 +7569,18 @@ type Test struct{}
 func (m *Test) GetDepSource() *dagger.Directory {
 	return dag.Dep().GetSource()
 }
+
+func (m *Test) GetRelDepSource() *dagger.Directory {
+	return dag.Dep().GetRelSource()
+}
 `,
 			)
 
 		out, err = ctr.With(daggerCall("get-dep-source", "entries")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "yo\n", out)
+
+		out, err = ctr.With(daggerCall("get-rel-dep-source", "entries")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "yo\n", out)
 	})
@@ -7586,6 +7606,14 @@ func (m *Dep) GetSource(
 	source *dagger.Directory,
 ) *dagger.Directory {
 	return source
+}
+
+func (m *Dep) GetRelSource(
+	// +defaultPath="."
+	// +ignore=["!yo"]
+	source *dagger.Directory,
+) *dagger.Directory {
+	return source 
 }
 		`).
 			WithNewFile("yo", "yo")
@@ -7632,10 +7660,43 @@ func (m *Test) GetDepSource(ctx context.Context, src *dagger.Directory) (*dagger
 
 	return dag.LoadDirectoryFromID(dagger.DirectoryID(directoryIDRes.Dep.GetSource.ID)), nil
 }
+
+func (m *Test) GetRelDepSource(ctx context.Context, src *dagger.Directory) (*dagger.Directory, error) {
+  err := src.AsModule().Initialize().Serve(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	type DirectoryIDRes struct {
+		Dep struct {
+			GetSource struct {
+				ID string
+			}
+		}
+	}
+
+	directoryIDRes := &DirectoryIDRes{}
+	res := &graphql.Response{Data: directoryIDRes}
+
+	err = dag.GraphQLClient().MakeRequest(ctx, &graphql.Request{
+		Query: "{dep {getRelSource {id} } }",
+	}, res)
+
+	if err != nil {
+		return nil, err
+	}
+
+
+	return dag.LoadDirectoryFromID(dagger.DirectoryID(directoryIDRes.Dep.GetSource.ID)), nil
+}
 			`,
 			)
 
 		out, err := ctr.With(daggerCall("get-dep-source", "--src", "./dep", "entries")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "yo\n", out)
+
+		out, err = ctr.With(daggerCall("get-rel-dep-source", "--src", "./dep", "entries")).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "yo\n", out)
 	})
