@@ -4,7 +4,19 @@ slug: /integrations/podman
 
 # Podman
 
-Podman is CLI-compatible with Docker and therefore can be used by creating a symbolic link to the Podman executable in your system path and naming it `docker`:
+Dagger can be used with with any OCI-compatible container runtime, including Podman.
+
+## How it works
+
+By default, Dagger tries to invoke the `docker` executable. Since Podman is CLI-compatible with Docker, it can be used as a drop-in replacement. This is as simple as creating a symbolic link to the Podman executable in your system path and naming it `docker`.
+
+## Prerequisites
+
+- Podman installed and running on the host system.
+
+## Example
+
+To use Podman with Dagger, create a symbolic link as below:
 
 ```shell
 sudo ln -s $(which podman) /usr/local/bin/docker
@@ -13,7 +25,6 @@ sudo ln -s $(which podman) /usr/local/bin/docker
 :::note
 RHEL 8.x users may need to additionally execute `modprobe iptable_nat`.
 :::
-
 
 ## Resources
 
