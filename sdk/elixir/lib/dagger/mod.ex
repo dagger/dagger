@@ -22,9 +22,9 @@ defmodule Dagger.Mod do
          {:ok, json} <- invoke(dag, module, parent, parent_name, fn_name, input_args) do
       Dagger.FunctionCall.return_value(fn_call, json)
     else
-      {:error, reason} ->
-        IO.puts(inspect(reason))
-        System.halt(2)
+      {:error, error} ->
+        IO.puts(:stderr, format_error(error))
+        exit({:shutdown, 2})
     end
   after
     Dagger.Global.close()
@@ -147,4 +147,8 @@ defmodule Dagger.Mod do
   defp dump(value, type) do
     {:error, "cannot dump value #{value} to type #{type}"}
   end
+
+  defp format_error(%{__exception__: true} = exception), do: Exception.message(exception)
+  defp format_error(error) when is_binary(error) or is_atom(error), do: error
+  defp format_error(error), do: inspect(error)
 end

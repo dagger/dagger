@@ -1,6 +1,8 @@
 defmodule Dagger.Core.GraphQLClient do
   @moduledoc false
 
+  alias Dagger.Core.GraphQL.Response
+
   @callback request(
               url :: String.t(),
               session_token :: String.t(),
@@ -19,14 +21,15 @@ defmodule Dagger.Core.GraphQLClient do
     request = %{query: query, variables: variables}
 
     with {:ok, request} <- json.encode(request),
-         {:ok, 200, result} <- client.request(url, session_token, request, timeout: timeout) do
-      json.decode(result)
-    else
-      {:ok, _, error} ->
-        with {:ok, result} <- json.decode(error) do
-          {:error, result}
-        end
+         {:ok, status, result} <- client.request(url, session_token, request, timeout: timeout),
+         {:ok, map} <- json.decode(result) do
+      response = Response.from_map(map)
 
+      case status do
+        200 -> {:ok, response}
+        _ -> {:error, response}
+      end
+    else
       otherwise ->
         otherwise
     end
