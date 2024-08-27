@@ -1,0 +1,91 @@
+---
+slug: /manuals/developer/typescript/784253/package-manager
+displayed_sidebar: "current"
+toc_max_heading_level: 2
+title: "Alternative Package Managers"
+---
+
+# Alternative Package Managers
+
+:::important
+The information on this page is only applicable to the TypeScript SDK. Alternative package managers are not currently supported in the Python and Go SDKs.
+:::
+
+TypeScript can manage dependencies using multiple package managers: [npm](https://www.npmjs.com/), [pnpm](https://pnpm.io/), [yarn](https://yarnpkg.com/) for [Node.js](https://nodejs.org/en) runtime and [bun](https://bun.sh/) for [Bun](https://bun.sh/) runtime.
+
+By default, the TypeScript SDK executes functions using the Node.js runtime with [yarn v1.22.22](https://yarnpkg.com/), but you can configure an alternative package manager or version in your Dagger module's `package.json` file.
+
+To change the TypeScript SDK runtime, set the field `packageManager` in your Dagger module's `package.json` file.
+
+## Npm
+
+Set the field to `npm` to use the Npm package manager. You can also set a specific version with a suffix (e.g., `npm@10.7.0`).
+
+```json
+  "packageManager": "npm@10.7.0"
+```
+
+If no version is specified, `npm@10.7.0` is used.
+
+## Yarn
+
+Set the field to `yarn` to use the Yarn package manager. You can also set a specific version with a suffix (e.g., `yarn@1.22.22`).
+
+```json
+  "packageManager": "yarn@1.22.22"
+```
+
+If no version is specified, `yarn@1.22.22` is used.
+
+If you use a version superior to `3`, the TypeScript SDK will also generate a `.yarnrc.yml` file in your module's root directory. This file is used to configure the Yarn package manager linker to node_modules.
+
+This is required to correctly resolve `@dagger.io/dagger` as local dependencie of your module.
+
+```yaml
+nodeLinker: node-modules
+```
+
+## Pnpm
+
+Set the field to `pnpm` to use the Pnpm package manager. You can also set a specific version with a suffix (e.g., `pnpm@8.15.4`).
+
+```json
+  "packageManager": "pnpm@8.15.4"
+```
+
+If no version is specified, `pnpm@8.15.4` is used.
+
+The TypeScript SDK will also generate a `pnpm-workspace.yml` file in your module's root directory. This file is used to configure the Pnpm package manager.
+
+This is required to correctly resolve `@dagger.io/dagger` as local dependencie of your module.
+
+```yaml
+packages:
+  - './sdk'
+```
+
+## Bun
+
+Setting the runtime to `bun` will use the Bun runtime and its package manager, you do not need to set `packageManager` field.
+
+```json
+  "dagger": {
+    "runtime": "bun"
+  }
+```
+
+:::warning
+Bun runtime support is still experimental. Unexpected results may occur in some cases.
+:::
+
+## Automatic Detection
+
+When a package manager is not explicitly defined within the `package.json` file, Dagger automatically identifies the appropriate package manager by examining the project's lock files inside the project's `dagger` directory.
+
+- If Dagger finds any of the following lock files : `package-lock.json`, `yarn.lock`, or `pnpm-lock.yaml`, it automatically selects the corresponding package manager with a predefined version (`npm@10.7.0`, `yarn@1.22.22`, `pnpm@8.15.4`).
+- In the absence of the lock files mentioned above, if a `bun.lockb` file is present, Dagger will choose `bun` as the runtime and package manager with a predefined version (`bun@1.0.11`).
+- If no or only unknown lock files are present, `yarn@1.22.22` is chosen.
+
+:::warning
+This behavior however should be seen as a sensible fallback and not as an explicit configuration.
+:::

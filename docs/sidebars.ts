@@ -388,6 +388,10 @@ module.exports = {
         },
         {
           "type": "doc",
+          "id": "manuals/developer/package-managers"
+        },
+        {
+          "type": "doc",
           "id": "manuals/developer/interfaces"
         },
         {
