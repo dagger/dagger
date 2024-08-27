@@ -58,7 +58,7 @@ module.exports = {
         },
         {
           "type": "doc",
-          "id": "integrations/containerd"
+          "id": "integrations/nerdctl"
         },
         {
           "type": "doc",

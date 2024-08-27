@@ -1,0 +1,44 @@
+---
+slug: /integrations/nerdctl
+---
+
+# Nerdctl
+
+Dagger can be used with any OCI-compatible container runtime, including `nerdctl`.
+
+## How it works
+
+By default, Dagger tries to invoke the `docker` executable. Since `nerdctl` is CLI-compatible with Docker, it can be used as a drop-in replacement. This is as simple as creating a symbolic link to the `nerdctl` executable in your system path and naming it `docker`.
+
+## Prerequisites
+
+- `nerdctl` installed and running on the host system in [rootless mode](https://github.com/containerd/nerdctl/blob/main/docs/rootless.md).
+
+## Example
+
+- To use `nerdctl` with Dagger, create a symbolic link as below:
+
+    ```shell
+    sudo ln -s $(which nerdctl) /usr/local/bin/docker
+    ```
+
+- To use `nerdctl` with Dagger via `lima`, create the following shell script at `/usr/local/bin/nerdctl`:
+
+    ```shell
+    #!/bin/sh
+    lima nerdctl "$@"
+    ```
+
+    Then, create a symbolic link to the shell script and name it `docker`:
+
+    ```shell
+    sudo ln -s /usr/local/bin/nerdctl /usr/local/bin/docker
+    ```
+
+## Resources
+
+If you have any questions about additional ways to use `nerdctl` with Dagger, join our [Discord](https://discord.gg/dagger-io) and ask your questions in our [help channel](https://discord.com/channels/707636530424053791/1030538312508776540).
+
+## About `nerdctl`
+
+[`nerdctl`](https://github.com/containerd/nerdctl) is a Docker-compatible tool to manage and run containers.

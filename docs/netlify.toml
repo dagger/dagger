@@ -231,6 +231,12 @@
   status = 301
 
 [[redirects]]
+  # redirect nerdctl guide
+  from = "/integrations/containerd"
+  to = "/integrations/nerdctl"
+  status = 301
+
+[[redirects]]
   # redirect developer guide index to developer manual index
   from = "/developer-guide"
   to = "/manuals/developer"
