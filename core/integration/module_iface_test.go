@@ -93,7 +93,7 @@ type DanglingIface interface {
 	require.JSONEq(t, `{"test":{"hello":"hello"}}`, out)
 }
 
-func (InterfaceSuite) TestIfaceDaggerCall(ctx context.Context, t *testctx.T) {
+func (InterfaceSuite) TestIfaceCall(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	out, err := c.Container().From(golangImage).

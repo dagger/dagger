@@ -57,6 +57,28 @@ jobs:
           function: "test specific --run=TestModule --race=true --parallel=16"
           upload-logs: true
 
+  test-module-runtimes:
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-12-5-16c-st-od' || 'ubuntu-latest' }}"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: "test"
+        uses: ./.github/actions/call
+        with:
+          function: "test specific --run='TestGo|TestPython|TestTypescript|TestElixir|TestPHP' --race=true --parallel=16"
+          upload-logs: true
+
+  test-cli-engine:
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-12-5-16c-st-od' || 'ubuntu-latest' }}"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: "test"
+        uses: ./.github/actions/call
+        with:
+          function: "test specific --run='TestCLI|TestEngine' --race=true --parallel=16"
+          upload-logs: true
+
   test-everything-else:
     runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-12-5-16c-st-od' || 'ubuntu-latest' }}"
     timeout-minutes: 30
@@ -65,7 +87,7 @@ jobs:
       - name: "test"
         uses: ./.github/actions/call
         with:
-          function: "test specific --skip=TestModule --race=true --parallel=16"
+          function: "test specific --skip='TestModule|TestGo|TestPython|TestTypescript|TestElixir|TestPHP|TestCLI|TestEngine' --race=true --parallel=16"
           upload-logs: true
 
   # Run Engine tests in dev Engine so that we can spot integration failures early

@@ -15,13 +15,13 @@ import (
 	"github.com/dagger/dagger/testctx"
 )
 
-type DaggerConfigSuite struct{}
+type ConfigSuite struct{}
 
-func TestDaggerConfig(t *testing.T) {
-	testctx.Run(testCtx, t, DaggerConfigSuite{}, Middleware()...)
+func TestConfig(t *testing.T) {
+	testctx.Run(testCtx, t, ConfigSuite{}, Middleware()...)
 }
 
-func (DaggerConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
+func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 	// test dagger.json source configs that aren't inherently covered in other tests
 
 	t.Run("upgrade from old config", func(ctx context.Context, t *testctx.T) {
@@ -234,7 +234,7 @@ func (DaggerConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 	})
 }
 
-func (DaggerConfigSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {
+func (ConfigSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {
 	t.Run("basic", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		ctr := goGitBase(t, c).
@@ -422,7 +422,7 @@ func (DaggerConfigSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {
 }
 
 // test the `dagger config` command
-func (DaggerConfigSuite) TestDaggerConfig(ctx context.Context, t *testctx.T) {
+func (ConfigSuite) TestDaggerConfig(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	ctr := c.Container().From(golangImage).
@@ -471,7 +471,7 @@ func (DaggerConfigSuite) TestDaggerConfig(ctx context.Context, t *testctx.T) {
 	}
 }
 
-func (DaggerConfigSuite) TestIncludeExclude(ctx context.Context, t *testctx.T) {
+func (ConfigSuite) TestIncludeExclude(ctx context.Context, t *testctx.T) {
 	for _, tc := range []struct {
 		sdk                    string
 		mainSource             string
@@ -637,7 +637,7 @@ func (m *Coolsdk) RequiredPaths() []string {
 }
 
 // verify that if there is no local .git in parent dirs then the context defaults to the source root
-func (DaggerConfigSuite) TestContextDefaultsToSourceRoot(ctx context.Context, t *testctx.T) {
+func (ConfigSuite) TestContextDefaultsToSourceRoot(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	ctr := c.Container().From(golangImage).
@@ -837,7 +837,7 @@ func testGitModuleRef(tc vcsTestCase, subpath string) string {
 	return fmt.Sprintf("%s@%s", url, tc.gitTestRepoCommit)
 }
 
-func (DaggerConfigSuite) TestDaggerGitRefs(ctx context.Context, t *testctx.T) {
+func (ConfigSuite) TestDaggerGitRefs(ctx context.Context, t *testctx.T) {
 	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
 		c := connect(ctx, t)
 
@@ -931,7 +931,7 @@ func (DaggerConfigSuite) TestDaggerGitRefs(ctx context.Context, t *testctx.T) {
 	})
 }
 
-func (DaggerConfigSuite) TestDaggerGitWithSources(ctx context.Context, t *testctx.T) {
+func (ConfigSuite) TestDaggerGitWithSources(ctx context.Context, t *testctx.T) {
 	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
 		for _, modSubpath := range []string{"samedir", "subdir"} {
 			modSubpath := modSubpath
@@ -976,7 +976,7 @@ func (m *Work) Fn(ctx context.Context) (string, error) {
 	})
 }
 
-func (DaggerConfigSuite) TestViews(ctx context.Context, t *testctx.T) {
+func (ConfigSuite) TestViews(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	ctr := goGitBase(t, c).

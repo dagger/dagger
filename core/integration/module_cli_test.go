@@ -13,13 +13,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type DaggerCLISuite struct{}
+type CLISuite struct{}
 
-func TestDaggerCLI(t *testing.T) {
-	testctx.Run(testCtx, t, DaggerCLISuite{}, Middleware()...)
+func TestCLI(t *testing.T) {
+	testctx.Run(testCtx, t, CLISuite{}, Middleware()...)
 }
 
-func (DaggerCLISuite) TestDaggerInit(ctx context.Context, t *testctx.T) {
+func (CLISuite) TestDaggerInit(ctx context.Context, t *testctx.T) {
 	t.Run("name defaults to source root dir name", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		out, err := c.Container().From(golangImage).
@@ -152,7 +152,7 @@ func (DaggerCLISuite) TestDaggerInit(ctx context.Context, t *testctx.T) {
 	})
 }
 
-func (DaggerCLISuite) TestDaggerInitLICENSE(ctx context.Context, t *testctx.T) {
+func (CLISuite) TestDaggerInitLICENSE(ctx context.Context, t *testctx.T) {
 	t.Run("bootstraps Apache-2.0 LICENSE file if none found", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
@@ -289,7 +289,7 @@ func (DaggerCLISuite) TestDaggerInitLICENSE(ctx context.Context, t *testctx.T) {
 	})
 }
 
-func (DaggerCLISuite) TestDaggerInitGit(ctx context.Context, t *testctx.T) {
+func (CLISuite) TestDaggerInitGit(ctx context.Context, t *testctx.T) {
 	type testCase struct {
 		sdk               string
 		gitGeneratedFiles []string
@@ -386,7 +386,7 @@ func (DaggerCLISuite) TestDaggerInitGit(ctx context.Context, t *testctx.T) {
 	}
 }
 
-func (DaggerCLISuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
+func (CLISuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 	t.Run("name and sdk", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
@@ -563,7 +563,7 @@ func (DaggerCLISuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 	})
 }
 
-func (DaggerCLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
+func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 	t.Run("local", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
@@ -931,7 +931,7 @@ func (m *Test) Fn(ctx context.Context) (string, error) {
 	})
 }
 
-func (DaggerCLISuite) TestDaggerCLIFunctions(ctx context.Context, t *testctx.T) {
+func (CLISuite) TestCLIFunctions(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	ctr := c.Container().From(golangImage).

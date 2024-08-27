@@ -11,13 +11,13 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-type DaggerTypeSuite struct{}
+type TypeSuite struct{}
 
-func TestDaggerType(t *testing.T) {
-	testctx.Run(testCtx, t, DaggerTypeSuite{}, Middleware()...)
+func TestType(t *testing.T) {
+	testctx.Run(testCtx, t, TypeSuite{}, Middleware()...)
 }
 
-func (DaggerTypeSuite) TestCustomTypes(ctx context.Context, t *testctx.T) {
+func (TypeSuite) TestCustomTypes(ctx context.Context, t *testctx.T) {
 	type testCase struct {
 		sdk    string
 		source string
@@ -116,7 +116,7 @@ class Test {
 	}
 }
 
-func (DaggerTypeSuite) TestReturnTypeDetection(ctx context.Context, t *testctx.T) {
+func (TypeSuite) TestReturnTypeDetection(ctx context.Context, t *testctx.T) {
 	type testCase struct {
 		sdk    string
 		source string
@@ -194,7 +194,7 @@ class Foo {
 	}
 }
 
-func (DaggerTypeSuite) TestReturnObject(ctx context.Context, t *testctx.T) {
+func (TypeSuite) TestReturnObject(ctx context.Context, t *testctx.T) {
 	type testCase struct {
 		sdk    string
 		source string
@@ -292,7 +292,7 @@ class Foo {
 	}
 }
 
-func (DaggerTypeSuite) TestReturnNestedObject(ctx context.Context, t *testctx.T) {
+func (TypeSuite) TestReturnNestedObject(ctx context.Context, t *testctx.T) {
 	type testCase struct {
 		sdk    string
 		source string
@@ -390,7 +390,7 @@ class Playground {
 	}
 }
 
-func (DaggerTypeSuite) TestReturnCompositeCore(ctx context.Context, t *testctx.T) {
+func (TypeSuite) TestReturnCompositeCore(ctx context.Context, t *testctx.T) {
 	type testCase struct {
 		sdk    string
 		source string
@@ -503,7 +503,7 @@ class Playground {
 	}
 }
 
-func (DaggerTypeSuite) TestReturnComplexThing(ctx context.Context, t *testctx.T) {
+func (TypeSuite) TestReturnComplexThing(ctx context.Context, t *testctx.T) {
 	type testCase struct {
 		sdk    string
 		source string
@@ -639,7 +639,7 @@ class Playground {
 	}
 }
 
-func (DaggerTypeSuite) TestIDableType(ctx context.Context, t *testctx.T) {
+func (TypeSuite) TestIDableType(ctx context.Context, t *testctx.T) {
 	type testCase struct {
 		sdk    string
 		source string
@@ -739,7 +739,7 @@ class Foo {
 	}
 }
 
-func (DaggerTypeSuite) TestArgOwnType(ctx context.Context, t *testctx.T) {
+func (TypeSuite) TestArgOwnType(ctx context.Context, t *testctx.T) {
 	// Verify use of a module's own object as an argument type.
 	// The server needs to specifically decode the input type from an ID into
 	// the raw JSON, since the module doesn't understand it's own types as IDs
@@ -872,7 +872,7 @@ class Foo {
 	}
 }
 
-func (DaggerTypeSuite) TestScalarType(ctx context.Context, t *testctx.T) {
+func (TypeSuite) TestScalarType(ctx context.Context, t *testctx.T) {
 	type testCase struct {
 		sdk    string
 		source string
@@ -999,7 +999,7 @@ class Test {
 	}
 }
 
-func (DaggerTypeSuite) TestEnumType(ctx context.Context, t *testctx.T) {
+func (TypeSuite) TestEnumType(ctx context.Context, t *testctx.T) {
 	type testCase struct {
 		sdk    string
 		source string
@@ -1088,7 +1088,7 @@ class Test {
 	}
 }
 
-func (DaggerTypeSuite) TestCustomEnumType(ctx context.Context, t *testctx.T) {
+func (TypeSuite) TestCustomEnumType(ctx context.Context, t *testctx.T) {
 	t.Run("custom enum type", func(ctx context.Context, t *testctx.T) {
 		type testCase struct {
 			sdk    string
