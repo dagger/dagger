@@ -16,13 +16,13 @@ By default, Dagger tries to invoke the `docker` executable. Since `nerdctl` is C
 
 ## Example
 
-- To use `nerdctl` directly, create a symbolic link as below:
+- To use `nerdctl` with Dagger, create a symbolic link as below:
 
     ```shell
     sudo ln -s $(which nerdctl) /usr/local/bin/docker
     ```
 
-- To use `nerdctl` via `lima`, create the following shell script at `/usr/local/bin/nerdctl`:
+- To use `nerdctl` with Dagger via `lima`, create the following shell script at `/usr/local/bin/nerdctl`:
 
     ```shell
     #!/bin/sh
