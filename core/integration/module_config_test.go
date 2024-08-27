@@ -126,7 +126,7 @@ func (ModuleSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 			testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
 				t.Run("git", func(ctx context.Context, t *testctx.T) {
 					mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
-					defer cleanup()
+					t.Cleanup(cleanup)
 
 					_, err := base.With(mountedSocket).With(daggerCallAt(testGitModuleRef(tc, "invalid/bad-source"), "container-echo", "--string-arg", "plz fail")).Sync(ctx)
 					require.ErrorContains(t, err, `source path "../../../" contains parent directory components`)
@@ -218,7 +218,7 @@ func (ModuleSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 			testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
 				t.Run("git", func(ctx context.Context, t *testctx.T) {
 					mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
-					defer cleanup()
+					t.Cleanup(cleanup)
 
 					_, err := base.With(mountedSocket).With(daggerCallAt(testGitModuleRef(tc, "invalid/bad-dep"), "container-echo", "--string-arg", "plz fail")).Sync(ctx)
 					require.ErrorContains(t, err, `module dep source root path "../../../foo" escapes root`)
@@ -670,7 +670,7 @@ func (ModuleSuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
 			mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
-			defer cleanup()
+			t.Cleanup(cleanup)
 
 			_, err := goGitBase(t, c).
 				With(mountedSocket).
@@ -1018,7 +1018,7 @@ func (ModuleSuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
 				mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
-				defer cleanup()
+				t.Cleanup(cleanup)
 
 				out, err := goGitBase(t, c).
 					With(mountedSocket).
@@ -1046,7 +1046,7 @@ func (m *Test) Fn(ctx context.Context) (string, error) {
 				c := connect(ctx, t)
 
 				mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
-				defer cleanup()
+				t.Cleanup(cleanup)
 
 				_, err := goGitBase(t, c).
 					With(mountedSocket).
@@ -1069,7 +1069,7 @@ func (m *Test) Fn(ctx context.Context) (string, error) {
 				c := connect(ctx, t)
 
 				mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
-				defer cleanup()
+				t.Cleanup(cleanup)
 
 				out, err := goGitBase(t, c).
 					With(mountedSocket).
@@ -1611,7 +1611,7 @@ func (ModuleSuite) TestDaggerGitWithSources(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
 				mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
-				defer cleanup()
+				t.Cleanup(cleanup)
 
 				ctr := goGitBase(t, c).
 					With(mountedSocket).

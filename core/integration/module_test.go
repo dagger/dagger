@@ -13,6 +13,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -5510,7 +5512,7 @@ func (m *Test) Fn() string {
 			c := connect(ctx, t)
 
 			mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
-			defer cleanup()
+			t.Cleanup(cleanup)
 
 			ctr := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -6986,10 +6988,41 @@ func cleanupExec(t testing.TB, cmd *exec.Cmd) {
 			t.Logf("never started: %v", cmd.Args)
 			return
 		}
-		t.Logf("interrupting: %v", cmd.Args)
-		cmd.Process.Signal(os.Interrupt)
-		t.Logf("waiting: %v", cmd.Args)
-		cmd.Wait()
+		done := make(chan struct{})
+		go func() {
+			cmd.Wait()
+			close(done)
+		}()
+
+		signals := []syscall.Signal{
+			syscall.SIGINT,
+			syscall.SIGTERM,
+			syscall.SIGKILL,
+		}
+		doSignal := func() {
+			if len(signals) == 0 {
+				return
+			}
+			var signal syscall.Signal
+			signal, signals = signals[0], signals[1:]
+			t.Logf("sending %s: %v", signal, cmd.Args)
+			cmd.Process.Signal(signal)
+		}
+		doSignal()
+
+		for {
+			select {
+			case <-done:
+				return
+			case <-time.After(30 * time.Second):
+				if !t.Failed() {
+					t.Errorf("process did not exit immediately")
+				}
+
+				// the process *still* isn't dead? try killing it harder.
+				doSignal()
+			}
+		}
 	})
 }
 
@@ -7153,4 +7186,23 @@ func logGen(ctx context.Context, t *testctx.T, modSrc *dagger.Directory) {
 			t.Logf("wrote generated code to %s", fileName)
 		}
 	})
+}
+
+func (ModuleSuite) TestSSHAgentConnection(ctx context.Context, t *testctx.T) {
+	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
+		t.Run("ConcurrentSetupAndCleanup", func(ctx context.Context, t *testctx.T) {
+			var wg sync.WaitGroup
+			for i := 0; i < 100; i++ {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					_, cleanup := setupPrivateRepoSSHAgent(t)
+					time.Sleep(10 * time.Millisecond) // Simulate some work
+					cleanup()
+				}()
+			}
+			wg.Wait()
+		})
+	})
+
 }
