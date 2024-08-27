@@ -319,7 +319,7 @@ func (src *ModuleSource) LoadContext(ctx context.Context, dag *dagql.Server, pat
 
 		// Retrieve the absolute path to the context directory (.git or dagger.json)
 		// and the module root directory (dagger.json)
-		ctxPath, _, err := src.ResolveContextPathFromModule(localSourceCtx)
+		ctxPath, modPath, err := src.ResolveContextPathFromModule(localSourceCtx)
 		if err != nil {
 			return inst, fmt.Errorf("failed to resolve context path: %w", err)
 		}
@@ -327,7 +327,7 @@ func (src *ModuleSource) LoadContext(ctx context.Context, dag *dagql.Server, pat
 		// If path is not absolute, it's relative to the module root directory.
 		// If path is absolute, it's relative to the context directory.
 		if !filepath.IsAbs(path) {
-			path = filepath.Join(ctxPath, src.AsLocalSource.Value.RootSubpath, path)
+			path = filepath.Join(modPath, path)
 		} else {
 			path = filepath.Join(ctxPath, path)
 		}
@@ -421,6 +421,10 @@ func (src *ModuleSource) ResolveContextPathFromModule(ctx context.Context) (cont
 	if !contextFound {
 		// default to restricting to the source root dir, make it abs though for consistency
 		contextAbsPath = moduleRootAbsPath
+	} else {
+		// If context is found, we can create the module root path by joining the 
+		// context path with the module root subpath
+		moduleRootAbsPath = filepath.Join(contextAbsPath, src.AsLocalSource.Value.RootSubpath)
 	}
 
 	return contextAbsPath, moduleRootAbsPath, nil
