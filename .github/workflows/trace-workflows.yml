@@ -6,7 +6,7 @@ on:
       - "Docs"
       - "Engine & CLI"
       - "Helm"
-      - "Publish CLI & Engine"    
+      - "Publish CLI & Engine"
       - "Publish Elixir SDK"
       - "Publish Go SDK"
       - "Publish Helm Chart"
@@ -15,6 +15,7 @@ on:
       - "Publish Rust SDK"
       - "Publish TypeScript SDK"
       - "SDK"
+      - "Benchmark"
     types:
       - completed
 
