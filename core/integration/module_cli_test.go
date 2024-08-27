@@ -508,7 +508,7 @@ func (CLISuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
 			mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
-			defer cleanup()
+			t.Cleanup(cleanup)
 
 			_, err := goGitBase(t, c).
 				With(mountedSocket).
@@ -856,7 +856,7 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
 				mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
-				defer cleanup()
+				t.Cleanup(cleanup)
 
 				out, err := goGitBase(t, c).
 					With(mountedSocket).
@@ -884,7 +884,7 @@ func (m *Test) Fn(ctx context.Context) (string, error) {
 				c := connect(ctx, t)
 
 				mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
-				defer cleanup()
+				t.Cleanup(cleanup)
 
 				_, err := goGitBase(t, c).
 					With(mountedSocket).
@@ -907,7 +907,7 @@ func (m *Test) Fn(ctx context.Context) (string, error) {
 				c := connect(ctx, t)
 
 				mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
-				defer cleanup()
+				t.Cleanup(cleanup)
 
 				out, err := goGitBase(t, c).
 					With(mountedSocket).

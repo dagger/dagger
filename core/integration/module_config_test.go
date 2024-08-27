@@ -132,7 +132,7 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 			testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
 				t.Run("git", func(ctx context.Context, t *testctx.T) {
 					mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
-					defer cleanup()
+					t.Cleanup(cleanup)
 
 					_, err := base.With(mountedSocket).With(daggerCallAt(testGitModuleRef(tc, "invalid/bad-source"), "container-echo", "--string-arg", "plz fail")).Sync(ctx)
 					require.ErrorContains(t, err, `source path "../../../" contains parent directory components`)
@@ -224,7 +224,7 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 			testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
 				t.Run("git", func(ctx context.Context, t *testctx.T) {
 					mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
-					defer cleanup()
+					t.Cleanup(cleanup)
 
 					_, err := base.With(mountedSocket).With(daggerCallAt(testGitModuleRef(tc, "invalid/bad-dep"), "container-echo", "--string-arg", "plz fail")).Sync(ctx)
 					require.ErrorContains(t, err, `module dep source root path "../../../foo" escapes root`)
@@ -939,7 +939,7 @@ func (ConfigSuite) TestDaggerGitWithSources(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
 				mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
-				defer cleanup()
+				t.Cleanup(cleanup)
 
 				ctr := goGitBase(t, c).
 					With(mountedSocket).
