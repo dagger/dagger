@@ -74,7 +74,7 @@ spec:
                 - sh
                 - -exc
                 - |-
-                  dagger core container with-new-file --contents "We are ready" --path "/tmp/ready" file --path "/tmp/ready" contents
+                  echo '{ version }' | dagger query
             {{- if .Values.engine.readinessProbeSettings }}
             {{- toYaml .Values.engine.readinessProbeSettings | nindent 12 }}
             {{- end }}
