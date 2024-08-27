@@ -8,15 +8,14 @@ This section covers different strategies for deploying Dagger on a Kubernetes cl
 Its primary focus are teams that looking forward to self-host their CI infrastructure and
 use Dagger at its core to run their pipelines.
 
-Running Dagger in Kuberentes is generally a good choice for:
+Running Dagger in Kubernetes is generally a good choice for:
 
 - Teams with demanding CI/CD performance needs or regulated environments.
 - Individuals or teams that want to self-host their CI infrastructure.
 - Better integration with internal existing infrastructure.
 - Mitigate CI vendor lock-in
 
-
-## How it Works
+## How it works
 
 ### Architecture patterns
 
@@ -88,7 +87,7 @@ Although this will obviously vary based on workloads, a minimum of 2 vCPUs and 8
 
 ## Prerequisites
 
-- A running kubernetes cluster with a pre-configured kubectl profile.
+- A running Kubernetes cluster with a pre-configured `kubectl` profile.
 - The [Helm](https://helm.sh/) package manager installed on your local machine.
 
 ## Example
@@ -151,8 +150,6 @@ dagger query <<EOF
 EOF
 ```
 
-For more complex scenarios, refer to the following sections.
-
 ## Resources
 
 Below are some resources from the Dagger community that may help as well. If you have any questions about additional ways to use Kubernetes with Dagger, join our [Discord](https://discord.gg/dagger-io) and ask your questions in our [Kubernetes channel](https://discord.com/channels/707636530424053791/1122942037096927353).
@@ -166,6 +163,5 @@ Below are some resources from the Dagger community that may help as well. If you
 
 ## About Kubernetes
 
-Kubernetes is an open-source container orchestration platform that automates the deployment,
-scaling, and management of containerized applications. It was originally designed by Google
+[Kubernetes](https://kubernetes.io/) is an open-source container orchestration platform that automates the deployment, scaling, and management of containerized applications. It was originally designed by Google
 and is now maintained by the Cloud Native Computing Foundation.
