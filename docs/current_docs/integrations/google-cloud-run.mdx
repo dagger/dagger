@@ -10,7 +10,7 @@ import TabItem from "@theme/TabItem";
 
 Dagger can be used to deploy any containerized application to Google Cloud Run. This allows developers to create continuous delivery pipelines that can be used both locally and in CI, and also run faster due to Dagger's intelligent caching. This integration does not require any installation of Google Cloud tools, such as the Google Cloud CLI or the Google Cloud SDKs.
 
-# How it works
+## How it works
 
 The integration depends on the [`google-cloud-run` Dagger module](https://daggerverse.dev/mod/github.com/vvaswani/daggerverse/google-cloud-run@6e44ee4a901dda7d742574354132745701db3c52), which provides various Dagger Functions to create or update a Google Cloud Run service using a container image. These Dagger Functions make it easy to extend existing CI pipelines with additional deployment support.
 
@@ -21,7 +21,7 @@ To use this integration, you can call the Dagger module with the Dagger CLI dire
 - Implement your CI/CD pipeline as one or more Dagger Function(s)
 - Test your Dagger Function(s) locally and then transfer them to your CI/CD environment
 
-# Prerequisites
+## Prerequisites
 
 - The [`google-cloud-run` Dagger module](https://daggerverse.dev/mod/github.com/vvaswani/daggerverse/google-cloud-run@6e44ee4a901dda7d742574354132745701db3c52)
 - An active Google Cloud project with the Google Cloud APIs and the Google Cloud Run Admin API enabled
@@ -29,7 +29,7 @@ To use this integration, you can call the Dagger module with the Dagger CLI dire
 - A JSON keyfile with credentials for the target service account
 - The address of the container image to be deployed
 
-# Example
+## Example
 
 The following example demonstrates how to deploy a containerized application on Google Cloud Run using this integration.
 
@@ -122,12 +122,10 @@ dagger call deploy \
 The `google-cloud-run` Dagger module can also modify an existing service by deploying a new container image to the service URL.
 :::
 
-# Resources
+## Resources
 
-If you have any questions about additional ways to use Google Cloud Run with
-Dagger, join our [Discord](https://discord.gg/dagger-io) and ask your questions
-in our [help channel](https://discord.com/channels/707636530424053791/1030538312508776540).
+If you have any questions about additional ways to use Google Cloud Run with Dagger, join our [Discord](https://discord.gg/dagger-io) and ask your questions in our [help channel](https://discord.com/channels/707636530424053791/1030538312508776540).
 
-# About Google Cloud Run
+## About Google Cloud Run
 
 [Google Cloud Run](https://cloud.google.com/run) is a managed service to run containerized applications using Google Cloud.
