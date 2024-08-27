@@ -9,4 +9,11 @@ defmodule Dagger.ImageMediaTypes do
 
   @spec docker_media_types() :: :DockerMediaTypes
   def docker_media_types(), do: :DockerMediaTypes
+
+  @doc false
+  @spec from_string(String.t()) :: t()
+  def from_string(string)
+
+  def from_string("OCIMediaTypes"), do: :OCIMediaTypes
+  def from_string("DockerMediaTypes"), do: :DockerMediaTypes
 end

@@ -27,7 +27,12 @@ defmodule Dagger.Codegen.ElixirGenerator.EnumRenderer do
           ?\n,
           ?\n
         ]
-      end
+      end,
+      ?\n,
+      ?\n,
+      render_from_string_function(type.enum_values),
+      ?\n,
+      ?\n
     ]
   end
 
@@ -41,6 +46,25 @@ defmodule Dagger.Codegen.ElixirGenerator.EnumRenderer do
       "@spec #{fun_name}() :: #{return_value}",
       ?\n,
       "def #{fun_name}(), do: #{return_value}"
+    ]
+  end
+
+  def render_from_string_function(enum_values) do
+    [
+      """
+      @doc false
+      @spec from_string(String.t()) :: t()
+      def from_string(string)
+      """,
+      ?\n,
+      ?\n,
+      for %{name: name} <- enum_values do
+        value = Renderer.render_atom(name)
+
+        """
+        def from_string("#{name}"), do: #{value}
+        """
+      end
     ]
   end
 

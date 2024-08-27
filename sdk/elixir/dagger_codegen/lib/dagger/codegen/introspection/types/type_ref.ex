@@ -18,8 +18,11 @@ defmodule Dagger.Codegen.Introspection.Types.TypeRef do
 
   def is_scalar?(%__MODULE__{kind: "NON_NULL", of_type: type}), do: is_scalar?(type)
   def is_scalar?(%__MODULE__{kind: "SCALAR"}), do: true
-  def is_scalar?(%__MODULE__{kind: "ENUM"}), do: true
   def is_scalar?(_), do: false
+
+  def is_enum?(%__MODULE__{kind: "NON_NULL", of_type: type}), do: is_enum?(type)
+  def is_enum?(%__MODULE__{kind: "ENUM"}), do: true
+  def is_enum?(_), do: false
 
   def is_void?(%__MODULE__{kind: "NON_NULL", of_type: type}), do: is_void?(type)
   def is_void?(%__MODULE__{kind: "SCALAR", name: "Void"}), do: true

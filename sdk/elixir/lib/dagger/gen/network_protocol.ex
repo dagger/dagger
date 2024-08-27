@@ -9,4 +9,11 @@ defmodule Dagger.NetworkProtocol do
 
   @spec udp() :: :UDP
   def udp(), do: :UDP
+
+  @doc false
+  @spec from_string(String.t()) :: t()
+  def from_string(string)
+
+  def from_string("TCP"), do: :TCP
+  def from_string("UDP"), do: :UDP
 end

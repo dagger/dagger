@@ -121,12 +121,15 @@ defmodule Dagger.ModuleSource do
   end
 
   @doc "The kind of source (e.g. local, git, etc.)"
-  @spec kind(t()) :: Dagger.ModuleSourceKind.t()
+  @spec kind(t()) :: {:ok, Dagger.ModuleSourceKind.t()} | {:error, term()}
   def kind(%__MODULE__{} = module_source) do
     query_builder =
       module_source.query_builder |> QB.select("kind")
 
-    Client.execute(module_source.client, query_builder)
+    case Client.execute(module_source.client, query_builder) do
+      {:ok, enum} -> {:ok, Dagger.ModuleSourceKind.from_string(enum)}
+      error -> error
+    end
   end
 
   @doc "If set, the name of the module this source references, including any overrides at runtime by callers."

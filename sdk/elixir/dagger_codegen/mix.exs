@@ -8,7 +8,8 @@ defmodule Dagger.Codegen.MixProject do
       elixir: "~> 1.14",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
-      escript: escript()
+      escript: escript(),
+      elixirc_paths: elixirc_paths(Mix.env())
     ]
   end
 
@@ -21,6 +22,9 @@ defmodule Dagger.Codegen.MixProject do
   defp escript do
     [main_module: Dagger.Codegen.CLI]
   end
+
+  defp elixirc_paths(:dev), do: ["lib"]
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
 
   defp deps do
     [

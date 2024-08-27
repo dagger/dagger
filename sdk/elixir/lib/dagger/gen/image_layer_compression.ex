@@ -15,4 +15,13 @@ defmodule Dagger.ImageLayerCompression do
 
   @spec uncompressed() :: :Uncompressed
   def uncompressed(), do: :Uncompressed
+
+  @doc false
+  @spec from_string(String.t()) :: t()
+  def from_string(string)
+
+  def from_string("Gzip"), do: :Gzip
+  def from_string("Zstd"), do: :Zstd
+  def from_string("EStarGZ"), do: :EStarGZ
+  def from_string("Uncompressed"), do: :Uncompressed
 end

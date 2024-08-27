@@ -9,4 +9,11 @@ defmodule Dagger.ModuleSourceKind do
 
   @spec git_source() :: :GIT_SOURCE
   def git_source(), do: :GIT_SOURCE
+
+  @doc false
+  @spec from_string(String.t()) :: t()
+  def from_string(string)
+
+  def from_string("LOCAL_SOURCE"), do: :LOCAL_SOURCE
+  def from_string("GIT_SOURCE"), do: :GIT_SOURCE
 end

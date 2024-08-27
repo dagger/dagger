@@ -127,9 +127,10 @@ defmodule Dagger.Codegen.ElixirGenerator.Formatter do
   def format_typespec_output_type(
         %TypeRef{
           kind: "NON_NULL",
-          of_type: %TypeRef{kind: "SCALAR"}
+          of_type: %TypeRef{kind: kind}
         } = type
-      ) do
+      )
+      when kind in ["SCALAR", "ENUM"] do
     "{:ok, #{format_type(type)}} | {:error, term()}"
   end
 
@@ -182,9 +183,11 @@ defmodule Dagger.Codegen.ElixirGenerator.Formatter do
     format_output_type(type)
   end
 
-  def format_output_type(%TypeRef{kind: "OBJECT", name: name}) do
+  def format_output_type(%TypeRef{kind: kind, name: name}) when kind in ["OBJECT", "ENUM"] do
     format_module(name)
   end
 
-  def format_output_type(_type_ref), do: "DaggerInvalidOutput"
+  def format_output_type(type_ref) do
+    raise "Cannot format output type for #{inspect(type_ref)}"
+  end
 end
