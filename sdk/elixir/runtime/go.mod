@@ -5,6 +5,8 @@ go 1.22
 require (
 	github.com/99designs/gqlgen v0.17.49
 	github.com/Khan/genqlient v0.7.0
+	github.com/ettle/strcase v0.2.1-0.20230114185658-e5db6a6becf3
+	github.com/iancoleman/strcase v0.3.0
 	github.com/vektah/gqlparser/v2 v2.5.16
 	golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa
 	golang.org/x/sync v0.7.0
@@ -16,7 +18,6 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.20.0 // indirect
-	github.com/iancoleman/strcase v0.3.0
 	github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3 // indirect
 	github.com/sosodev/duration v1.3.1 // indirect
 	go.opentelemetry.io/otel v1.27.0

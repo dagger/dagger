@@ -164,7 +164,7 @@ func (s *moduleSchema) newModuleSDK(
 	}
 	if err := dag.Select(ctx, dag.Root(), &sdk,
 		dagql.Selector{
-			Field: gqlFieldName(sdkModMeta.Self.Name()),
+			Field: gqlFieldName(ctx, sdkModMeta.Self.Name()),
 			Args:  constructorArgs,
 		},
 	); err != nil {
