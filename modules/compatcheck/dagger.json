@@ -1,0 +1,12 @@
+{
+  "name": "compatcheck",
+  "sdk": "go",
+  "dependencies": [
+    {
+      "name": "dagger-dev",
+      "source": "../../."
+    }
+  ],
+  "source": ".",
+  "engineVersion": "v0.12.5"
+}
