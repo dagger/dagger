@@ -8,6 +8,8 @@ defmodule Main do
     # Elixir convert back to `<string><digit>`. 
     mod_name = mod |> Macro.camelize() |> Macro.underscore()
 
+    dot_formatter_exs = render_dot_formatter_exs()
+
     mix_exs =
       render_mix_exs(
         module: Macro.camelize(mod),
@@ -15,16 +17,24 @@ defmodule Main do
       )
 
     module = render_module(module: Macro.camelize(mod))
-    application_module = render_application(module: Macro.camelize(mod))
-    mix_task = render_mix_task(application: atom(Macro.underscore(mod)))
+    mix_task = render_mix_task(module: Macro.camelize(mod))
 
+    File.write!(Path.join([mod, ".formatter.exs"]), dot_formatter_exs)
     File.write!(Path.join([mod, "mix.exs"]), mix_exs)
     File.write!(Path.join([mod, "lib", "#{mod_name}.ex"]), module)
-    File.write!(Path.join([mod, "lib", mod_name, "application.ex"]), application_module)
     File.write!(Path.join([mod, "lib", "mix", "tasks", "dagger.invoke.ex"]), mix_task)
   end
 
   defp atom(string), do: ":#{string}"
+
+  @dot_formatter_exs """
+  [
+    import_deps: [:dagger],
+    inputs: ["{mix,.formatter}.exs", "{config,lib,test}/**/*.{ex,exs}"]
+  ]
+  """
+
+  EEx.function_from_string(:def, :render_dot_formatter_exs, @dot_formatter_exs, [])
 
   @mix_exs """
   defmodule <%= @module %>.MixProject do
@@ -43,7 +53,6 @@ defmodule Main do
     def application do
       [
         extra_applications: [:logger],
-        mod: {<%= @module %>.Application, []}
       ]
     end
 
@@ -75,41 +84,26 @@ defmodule Main do
     if appropriate. All modules should have a short description.
     \"\"\"
 
-    use Dagger.Mod, name: "<%= @module %>"
+    use Dagger.Mod.Object, name: "<%= @module %>"
 
-    defstruct [:dag]
-
-    @function [
-      args: [
-        string_arg: [type: :string]
-      ],
-      return: Dagger.Container
-    ]
     @doc \"\"\"
     Returns a container that echoes whatever string argument is provided.
     \"\"\"
-    def container_echo(_self, args) do
+    defn container_echo(string_arg: String.t()) :: Dagger.Container.t() do
       dag()
       |> Dagger.Client.container()
       |> Dagger.Container.from("alpine:latest")
-      |> Dagger.Container.with_exec(~w"echo \#{args.string_arg}")
+      |> Dagger.Container.with_exec(~w"echo \#{string_arg}")
     end
 
-    @function [
-      args: [
-        directory_arg: [type: Dagger.Directory],
-        pattern: [type: :string]
-      ],
-      return: :string
-    ]
     @doc \"\"\"
     Returns lines that match a pattern in the files of the provided Directory.
     \"\"\"
-    def grep_dir(_self, %{directory_arg: directory, pattern: pattern}) do
+    defn grep_dir(directory_arg: Dagger.Directory.t(), pattern: String.t()) :: String.t() do
       dag()
       |> Dagger.Client.container()
       |> Dagger.Container.from("alpine:latest")
-      |> Dagger.Container.with_mounted_directory("/mnt", directory)
+      |> Dagger.Container.with_mounted_directory("/mnt", directory_arg)
       |> Dagger.Container.with_workdir("/mnt")
       |> Dagger.Container.with_exec(["grep", "-R", pattern, "."])
       |> Dagger.Container.stdout()
@@ -124,40 +118,13 @@ defmodule Main do
     use Mix.Task
 
     def run(_args) do
-      Mix.ensure_application!(:inets)
       Application.ensure_all_started(:dagger)
-      Application.ensure_all_started(<%= @application %>)
-      Dagger.Mod.invoke()
+      Dagger.Mod.invoke(<%= @module %>)
     end
   end
   """
 
   EEx.function_from_string(:def, :render_mix_task, @mix_task_ex, [:assigns])
-
-  @application_ex """
-  defmodule <%= @module %>.Application do
-    # See https://hexdocs.pm/elixir/Application.html
-    # for more information on OTP Applications
-    @moduledoc false
-
-    use Application
-
-    @impl true
-    def start(_type, _args) do
-      children = [
-        Dagger.Mod.Registry, 
-        <%= @module %>
-      ]
-
-      # See https://hexdocs.pm/elixir/Supervisor.html
-      # for other strategies and supported options
-      opts = [strategy: :one_for_one, name: Potato.Supervisor]
-      Supervisor.start_link(children, opts)
-    end
-  end
-  """
-
-  EEx.function_from_string(:def, :render_application, @application_ex, [:assigns])
 end
 
 Main.run(System.argv())

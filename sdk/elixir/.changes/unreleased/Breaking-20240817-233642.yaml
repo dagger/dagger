@@ -1,0 +1,11 @@
+kind: Breaking
+body: |-
+    The module and function declaration changes
+
+    The module declaration is change from `use Dagger.Mod` to `use Dagger.Mod.Object`
+
+    The function declaration is change from module attribute declaration to use `defn` with type annotation on function declaration instead.
+time: 2024-08-17T23:36:42.512571391+07:00
+custom:
+    Author: wingyplus
+    PR: "8172"

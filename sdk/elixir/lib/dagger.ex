@@ -55,6 +55,11 @@ defmodule Dagger do
 
   Please note that this API is an internal API, it may break from version to version. So
   please use with cautions.
+
+  ## Module support
+
+  The SDK also support Dagger Module, please see `Dagger.Mod.Object` for more
+  details.
   """
 
   @doc """
