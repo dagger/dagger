@@ -154,10 +154,16 @@ func (t PythonSDK) Publish(
 	pypiRepo string,
 	// +optional
 	pypiToken *dagger.Secret,
+
+	// +optional
+	// +default="https://github.com/dagger/dagger.git"
+	gitRepoSource string,
+	// +optional
+	githubToken *dagger.Secret,
 ) error {
-	version := strings.TrimPrefix(tag, "sdk/python/v")
+	version, isVersioned := strings.CutPrefix(tag, "sdk/python/")
 	if dryRun {
-		version = "0.0.0"
+		version = "v0.0.0"
 	}
 	if pypiRepo == "" || pypiRepo == "pypi" {
 		pypiRepo = "main"
@@ -165,7 +171,7 @@ func (t PythonSDK) Publish(
 
 	// TODO: move this to PythonSDKDev
 	result := t.dev().Container().
-		WithEnvVariable("SETUPTOOLS_SCM_PRETEND_VERSION", version).
+		WithEnvVariable("SETUPTOOLS_SCM_PRETEND_VERSION", strings.TrimPrefix(version, "v")).
 		WithEnvVariable("HATCH_INDEX_REPO", pypiRepo).
 		WithEnvVariable("HATCH_INDEX_USER", "__token__").
 		WithExec([]string{"uvx", "hatch", "build"})
@@ -175,7 +181,23 @@ func (t PythonSDK) Publish(
 			WithExec([]string{"uvx", "hatch", "publish"})
 	}
 	_, err := result.Sync(ctx)
-	return err
+	if err != nil {
+		return err
+	}
+
+	if isVersioned {
+		if err := githubRelease(ctx, githubReleaseOpts{
+			tag:         tag,
+			notes:       sdkChangeNotes(t.Dagger.Src, "elixir", version),
+			gitRepo:     gitRepoSource,
+			githubToken: githubToken,
+			dryRun:      dryRun,
+		}); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // Bump the Python SDK's Engine dependency

@@ -1,5 +1,12 @@
 # Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-August%2015,%202024-success?style=flat-square)
 
+> [!WARNING]
+>
+> This document is out of date because of dagger/dagger#8190.
+>
+> In the next improve-releasing-during-<version> PR, this document should be
+> updated to include the changes from that PR.
+
 This describes how to release Dagger:
 
 - [🚙 Engine + 🚗 CLI ⏱ `30mins`](#-engine---cli--30mins)
@@ -335,7 +342,7 @@ git push "${DAGGER_REPO_REMOTE:?must be set}" "${ENGINE_VERSION:?must be set}"
 ```
 
 This will kick off
-[`.github./workflows/publish.yml`](https://github.com/dagger/dagger/actions/workflows/publish.yml)
+[`.github./workflows/publish.yml`](https://github.com/dagger/dagger/actions/workflows/engine-and-cli-publish.yml)
 which publishes:
 - A new image to [ghcr.io/dagger/engine](https://github.com/dagger/dagger/pkgs/container/engine) (mirrored to registry.dagger.io/engine using https://github.com/dagger/registry-redirect).
 - New cli binaries to [dl.dagger.io](https://dl.dagger.io) (served from an S3 bucket, uploaded to by goreleaser)

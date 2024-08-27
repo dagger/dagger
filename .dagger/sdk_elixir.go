@@ -145,11 +145,15 @@ func (t ElixirSDK) Publish(
 	dryRun bool,
 	// +optional
 	hexAPIKey *dagger.Secret,
+
+	// +optional
+	// +default="https://github.com/dagger/dagger.git"
+	gitRepoSource string,
+	// +optional
+	githubToken *dagger.Secret,
 ) error {
-	var (
-		version = strings.TrimPrefix(tag, "sdk/elixir/v")
-		mixFile = "/sdk/elixir/mix.exs"
-	)
+	version, isVersioned := strings.CutPrefix(tag, "sdk/elixir/")
+	mixFile := "/sdk/elixir/mix.exs"
 
 	ctr := t.elixirBase(elixirVersions[elixirLatestVersion])
 
@@ -158,7 +162,7 @@ func (t ElixirSDK) Publish(
 		if err != nil {
 			return err
 		}
-		newMixExs := strings.Replace(mixExs, `@version "0.0.0"`, `@version "`+version+`"`, 1)
+		newMixExs := strings.Replace(mixExs, `@version "0.0.0"`, `@version "`+strings.TrimPrefix(version, "v")+`"`, 1)
 		ctr = ctr.WithNewFile(mixFile, newMixExs)
 	}
 
@@ -171,9 +175,24 @@ func (t ElixirSDK) Publish(
 			WithSecretVariable("HEX_API_KEY", hexAPIKey).
 			WithExec([]string{"mix", "hex.publish", "--yes"})
 	}
-
 	_, err := ctr.Sync(ctx)
-	return err
+	if err != nil {
+		return err
+	}
+
+	if isVersioned {
+		if err := githubRelease(ctx, githubReleaseOpts{
+			tag:         tag,
+			notes:       sdkChangeNotes(t.Dagger.Src, "elixir", version),
+			gitRepo:     gitRepoSource,
+			githubToken: githubToken,
+			dryRun:      dryRun,
+		}); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 var elixirVersionRe = regexp.MustCompile(`@dagger_cli_version "([0-9\.-a-zA-Z]+)"`)

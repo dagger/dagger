@@ -113,18 +113,35 @@ func (t PHPSDK) Publish(
 	// +optional
 	githubToken *dagger.Secret,
 ) error {
-	return gitPublish(ctx, gitPublishOpts{
+	version, isVersioned := strings.CutPrefix(tag, "sdk/php/")
+	if err := gitPublish(ctx, gitPublishOpts{
 		sdk:         "php",
 		source:      gitRepoSource,
 		sourcePath:  "sdk/php/",
 		sourceTag:   tag,
 		dest:        gitRepo,
-		destTag:     strings.TrimPrefix(tag, "sdk/php/"),
+		destTag:     version,
 		username:    gitUserName,
 		email:       gitUserEmail,
 		githubToken: githubToken,
 		dryRun:      dryRun,
-	})
+	}); err != nil {
+		return err
+	}
+
+	if isVersioned {
+		if err := githubRelease(ctx, githubReleaseOpts{
+			tag:         tag,
+			notes:       sdkChangeNotes(t.Dagger.Src, "php", version),
+			gitRepo:     gitRepo,
+			githubToken: githubToken,
+			dryRun:      dryRun,
+		}); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // Bump the PHP SDK's Engine dependency
