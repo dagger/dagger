@@ -1,0 +1,9 @@
+kind: Changed
+body: |-
+  Improve TypeScript SDK runtime performances by reordering operation to trigger more cache hits.
+
+  Add module's code as final step to avoid cache burst when changing codes.
+time: 2024-08-27T02:00:27.865659+02:00
+custom:
+  Author: TomChv
+  PR: "8236"
