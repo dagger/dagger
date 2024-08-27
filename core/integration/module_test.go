@@ -100,7 +100,7 @@ func (ModuleSuite) TestGoInit(ctx context.Context, t *testctx.T) {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			WithNewFile("/work/go.mod", "module example.com/test\n").
+			WithNewFile("/work/go.mod", "module foo/test\n").
 			WithNewFile("/work/foo.go", "package foo\n").
 			WithWorkdir("/work/ci").
 			With(daggerExec("init", "--name=beneathGoMod", "--sdk=go"))
@@ -124,7 +124,7 @@ func (ModuleSuite) TestGoInit(ctx context.Context, t *testctx.T) {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			WithExec([]string{"go", "mod", "init", "example.com/test"}).
+			WithExec([]string{"go", "mod", "init", "foo/test"}).
 			With(daggerExec("init", "--name=hasGoMod", "--merge", "--sdk=go"))
 
 		out, err := modGen.
@@ -136,7 +136,7 @@ func (ModuleSuite) TestGoInit(ctx context.Context, t *testctx.T) {
 		t.Run("preserves module name", func(ctx context.Context, t *testctx.T) {
 			generated, err := modGen.File("go.mod").Contents(ctx)
 			require.NoError(t, err)
-			require.Contains(t, generated, "module example.com/test")
+			require.Contains(t, generated, "module foo/test")
 		})
 
 		t.Run("no new go.mod", func(ctx context.Context, t *testctx.T) {
@@ -173,7 +173,7 @@ func (ModuleSuite) TestGoInit(ctx context.Context, t *testctx.T) {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			WithExec([]string{"go", "mod", "init", "example.com/test"}).
+			WithExec([]string{"go", "mod", "init", "foo/test"}).
 			WithExec([]string{"go", "work", "init"}).
 			WithExec([]string{"go", "work", "use", "."}).
 			With(daggerExec("init", "--name=hasGoMod", "--sdk=go", "--merge"))
@@ -247,7 +247,7 @@ func (ModuleSuite) TestGoInit(ctx context.Context, t *testctx.T) {
 		generated := goGitBase(t, c).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			WithExec([]string{"go", "mod", "init", "example.com/test"}).
+			WithExec([]string{"go", "mod", "init", "foo/test"}).
 			WithNewFile("/work/foo.go", "package foo\n").
 			With(daggerExec("init", "--name=child", "--merge", "--sdk=go", "./child")).
 			WithWorkdir("/work/child").
@@ -266,7 +266,7 @@ func (ModuleSuite) TestGoInit(ctx context.Context, t *testctx.T) {
 		t.Run("preserves parent module name", func(ctx context.Context, t *testctx.T) {
 			goMod, err := generated.File("go.mod").Contents(ctx)
 			require.NoError(t, err)
-			require.Contains(t, goMod, "module example.com/test")
+			require.Contains(t, goMod, "module foo/test")
 		})
 	})
 
@@ -277,7 +277,7 @@ func (ModuleSuite) TestGoInit(ctx context.Context, t *testctx.T) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			WithExec([]string{"git", "init"}).
-			WithExec([]string{"go", "mod", "init", "example.com/test"}).
+			WithExec([]string{"go", "mod", "init", "foo/test"}).
 			WithNewFile("/work/foo.go", "package foo\n").
 			WithWorkdir("/work/child").
 			WithExec([]string{"go", "mod", "init", "my-mod"}).
@@ -433,7 +433,7 @@ func (m *HasNotMainGo) Hello() string { return "Hello, world!" }
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			WithExec([]string{"go", "mod", "init", "example.com/test"}).
+			WithExec([]string{"go", "mod", "init", "foo/test"}).
 			With(daggerExec("init", "--name=hasGoMod", "--sdk=go"))
 
 		_, err := modGen.
@@ -448,7 +448,7 @@ func (m *HasNotMainGo) Hello() string { return "Hello, world!" }
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			WithExec([]string{"go", "mod", "init", "example.com/test"}).
+			WithExec([]string{"go", "mod", "init", "foo/test"}).
 			With(daggerExec("init", "--name=bare", "--sdk=go", "--source=some/subdir"))
 
 		sourceSubdirEnts, err := modGen.Directory("/work/some/subdir").Entries(ctx)
