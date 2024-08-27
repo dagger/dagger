@@ -19,7 +19,7 @@ require (
 )
 
 require (
-	dagger.io/dagger v0.12.4 // indirect
+	dagger.io/dagger v0.12.5 // indirect
 	github.com/99designs/gqlgen v0.17.49
 	github.com/Khan/genqlient v0.7.0
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
@@ -72,7 +72,4 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
 
-replace (
-	github.com/dagger/dagger/.dagger => ../../.dagger
-	github.com/dagger/dagger/engine/distconsts => ../../engine/distconsts
-)
+replace github.com/dagger/dagger => ../..

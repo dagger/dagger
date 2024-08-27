@@ -1,5 +1,5 @@
-dagger.io/dagger v0.12.4 h1:PeAsBs0dgMrV4TN8prVqeDDEvg8qOMMjdQiXHe9q2uc=
-dagger.io/dagger v0.12.4/go.mod h1:e5Xuvu+FnswwG28nMk7ZcDtT+p9vadvONowzLKf/0dA=
+dagger.io/dagger v0.12.5 h1:K4ghFL/j+zqk6RqN7nAus1hfjP9lbQXRb3MGz8Ys/f4=
+dagger.io/dagger v0.12.5/go.mod h1:e5Xuvu+FnswwG28nMk7ZcDtT+p9vadvONowzLKf/0dA=
 github.com/99designs/gqlgen v0.17.49 h1:b3hNGexHd33fBSAd4NDT/c3NCcQzcAVkknhN9ym36YQ=
 github.com/99designs/gqlgen v0.17.49/go.mod h1:tC8YFVZMed81x7UJ7ORUwXF4Kn6SXuucFqQBhN8+BU0=
 github.com/Khan/genqlient v0.7.0 h1:GZ1meyRnzcDTK48EjqB8t3bcfYvHArCUUvgOwpz1D4w=
@@ -13,8 +13,6 @@ github.com/aymanbagabas/go-osc52/v2 v2.0.1/go.mod h1:uYgXzlJ7ZpABp8OJ+exZzJJhRNQ
 github.com/cenkalti/backoff/v4 v4.3.0 h1:MyRJ/UdXutAwSAT+s3wNd7MfTIcy71VQueUuFK343L8=
 github.com/cenkalti/backoff/v4 v4.3.0/go.mod h1:Y3VNntkOUPxTVeUxJ/G5vcM//AlwfmyYozVcomhLiZE=
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
-github.com/dagger/dagger v0.12.5 h1:svAGBmxxK30JrqaTWUAUxTCvjlPDM0QI4BO8reyMpd4=
-github.com/dagger/dagger v0.12.5/go.mod h1:ouk6BU+cn1krddhaRUyG4DkoUi4etXIbA25he06sf+s=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
