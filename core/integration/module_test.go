@@ -7687,7 +7687,7 @@ func (m *Test) GetRelDepSource(ctx context.Context, src *dagger.Directory) (*dag
 	}
 
 
-	return dag.LoadDirectoryFromID(dagger.DirectoryID(directoryIDRes.Dep.GetSource.ID)), nil
+	return dag.LoadDirectoryFromID(dagger.DirectoryID(directoryIDRes.Dep.GetRelSource.ID)), nil
 }
 			`,
 			)
