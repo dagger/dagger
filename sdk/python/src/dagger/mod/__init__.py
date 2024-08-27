@@ -1,6 +1,8 @@
 from typing_extensions import Doc
 
 from dagger.mod._arguments import Arg
+from dagger.mod._arguments import DefaultPath
+from dagger.mod._arguments import Ignore
 from dagger.mod._arguments import Name
 from dagger.mod._module import Module
 from dagger.mod._types import Enum
@@ -21,7 +23,9 @@ def default_module() -> Module:
 
 __all__ = [
     "Arg",
+    "DefaultPath",
     "Doc",  # Only re-exported because it's in `typing_extensions`.
+    "Ignore",
     "Enum",
     "Name",
     "enum_type",

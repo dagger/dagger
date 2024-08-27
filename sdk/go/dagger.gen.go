@@ -3431,6 +3431,10 @@ type FunctionWithArgOpts struct {
 	Description string
 	// A default value to use for this argument if not explicitly set by the caller, if any
 	DefaultValue JSON
+	// If the argument is a Directory or File type, default to load path from context directory, relative to root directory.
+	DefaultPath string
+	// Patterns to ignore when loading the contextual argument value.
+	Ignore []string
 }
 
 // Returns the function with the provided argument
@@ -3445,6 +3449,14 @@ func (r *Function) WithArg(name string, typeDef *TypeDef, opts ...FunctionWithAr
 		// `defaultValue` optional argument
 		if !querybuilder.IsZeroValue(opts[i].DefaultValue) {
 			q = q.Arg("defaultValue", opts[i].DefaultValue)
+		}
+		// `defaultPath` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DefaultPath) {
+			q = q.Arg("defaultPath", opts[i].DefaultPath)
+		}
+		// `ignore` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Ignore) {
+			q = q.Arg("ignore", opts[i].Ignore)
 		}
 	}
 	q = q.Arg("name", name)
@@ -3471,6 +3483,7 @@ func (r *Function) WithDescription(description string) *Function {
 type FunctionArg struct {
 	query *querybuilder.Selection
 
+	defaultPath  *string
 	defaultValue *JSON
 	description  *string
 	id           *FunctionArgID
@@ -3481,6 +3494,19 @@ func (r *FunctionArg) WithGraphQLQuery(q *querybuilder.Selection) *FunctionArg {
 	return &FunctionArg{
 		query: q,
 	}
+}
+
+// Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory
+func (r *FunctionArg) DefaultPath(ctx context.Context) (string, error) {
+	if r.defaultPath != nil {
+		return *r.defaultPath, nil
+	}
+	q := r.query.Select("defaultPath")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // A default value to use for this argument when not explicitly set by the caller, if any.
@@ -3547,6 +3573,16 @@ func (r *FunctionArg) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+
+// Only applies to arguments of type Directory. The ignore patterns are applied to the input directory, and matching entries are filtered out, in a cache-efficient manner.
+func (r *FunctionArg) Ignore(ctx context.Context) ([]string, error) {
+	q := r.query.Select("ignore")
+
+	var response []string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // The name of the argument in lowerCamelCase format.
@@ -4860,6 +4896,7 @@ type LocalModuleSource struct {
 	query *querybuilder.Selection
 
 	id          *LocalModuleSourceID
+	relHostPath *string
 	rootSubpath *string
 }
 
@@ -4916,6 +4953,19 @@ func (r *LocalModuleSource) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
+}
+
+// The relative path to the module root from the host directory
+func (r *LocalModuleSource) RelHostPath(ctx context.Context) (string, error) {
+	if r.relHostPath != nil {
+		return *r.relHostPath, nil
+	}
+	q := r.query.Select("relHostPath")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // The path to the root of the module source under the context directory. This directory contains its configuration file. It also contains its source code (possibly as a subdirectory).
@@ -6860,6 +6910,8 @@ func (r *Client) ModuleDependency(source *ModuleSource, opts ...ModuleDependency
 type ModuleSourceOpts struct {
 	// If true, enforce that the source is a stable version for source kinds that support versioning.
 	Stable bool
+	// The relative path to the module root from the host directory
+	RelHostPath string
 }
 
 // Create a new module source instance from a source ref string.
@@ -6869,6 +6921,10 @@ func (r *Client) ModuleSource(refString string, opts ...ModuleSourceOpts) *Modul
 		// `stable` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Stable) {
 			q = q.Arg("stable", opts[i].Stable)
+		}
+		// `relHostPath` optional argument
+		if !querybuilder.IsZeroValue(opts[i].RelHostPath) {
+			q = q.Arg("relHostPath", opts[i].RelHostPath)
 		}
 	}
 	q = q.Arg("refString", refString)

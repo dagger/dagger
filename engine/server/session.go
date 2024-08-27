@@ -103,10 +103,11 @@ const (
 )
 
 type daggerClient struct {
-	daggerSession *daggerSession
-	clientID      string
-	clientVersion string
-	secretToken   string
+	daggerSession  *daggerSession
+	clientID       string
+	clientVersion  string
+	secretToken    string
+	clientMetadata *engine.ClientMetadata
 
 	// closed after the shutdown endpoint is called
 	shutdownCh        chan struct{}
@@ -729,12 +730,13 @@ func (srv *Server) getOrInitClient(
 	client, clientExists := sess.clients[clientID]
 	if !clientExists {
 		client = &daggerClient{
-			state:         clientStateUninitialized,
-			daggerSession: sess,
-			clientID:      clientID,
-			clientVersion: opts.ClientVersion,
-			secretToken:   token,
-			shutdownCh:    make(chan struct{}),
+			state:          clientStateUninitialized,
+			daggerSession:  sess,
+			clientID:       clientID,
+			clientVersion:  opts.ClientVersion,
+			secretToken:    token,
+			shutdownCh:     make(chan struct{}),
+			clientMetadata: opts.ClientMetadata,
 		}
 		sess.clients[clientID] = client
 
@@ -1293,6 +1295,30 @@ func (srv *Server) OCIStore() content.Store {
 // The lease manager for the engine as a whole
 func (srv *Server) LeaseManager() *leaseutil.Manager {
 	return srv.leaseManager
+}
+
+// The nearest ancestor client that is not a module (either a caller from the host like the CLI
+// or a nested exec). Useful for figuring out where local sources should be resolved from through
+// chains of dependency modules.
+func (srv *Server) NonModuleParentClientMetadata(ctx context.Context) (*engine.ClientMetadata, error) {
+	client, err := srv.clientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if client.mod == nil {
+		// not a module client, return the metadata
+		return client.clientMetadata, nil
+	}
+	for i := len(client.parents) - 1; i >= 0; i-- {
+		parent := client.parents[i]
+		if parent.mod == nil {
+			// not a module client, return the metadata
+			return parent.clientMetadata, nil
+		}
+	}
+
+	return nil, fmt.Errorf("no non-module parent found")
 }
 
 type httpError struct {

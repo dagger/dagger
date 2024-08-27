@@ -27,7 +27,9 @@ from dagger._connection import close as close
 
 # Modules.
 from dagger.mod import Arg as Arg
+from dagger.mod import DefaultPath as DefaultPath
 from dagger.mod import Doc as Doc
+from dagger.mod import Ignore as Ignore
 from dagger.mod import Enum as Enum
 from dagger.mod import Name as Name
 from dagger.mod import enum_type as enum_type

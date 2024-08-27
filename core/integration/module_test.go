@@ -6772,6 +6772,938 @@ func schemaVersion(ctx context.Context) (string, error) {
 	})
 }
 
+func (ModuleSuite) TestContextDirectory(ctx context.Context, t *testctx.T) {
+	type testCase struct {
+		sdk    string
+		source string
+	}
+
+	t.Run("load context inside git repo with module in a sub dir", func(ctx context.Context, t *testctx.T) {
+		for _, tc := range []testCase{
+			{
+				sdk: "go",
+				source: `package main
+
+import (
+  "context"
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {}
+
+func (t *Test) Dirs(
+  ctx context.Context,
+
+  // +defaultPath="/"
+  root *dagger.Directory,
+
+  // +defaultPath="."
+  relativeRoot *dagger.Directory,
+) ([]string, error) {
+  res, err := root.Entries(ctx)
+  if err != nil {
+    return nil, err
+  }
+  relativeRes, err := relativeRoot.Entries(ctx)
+  if err != nil {
+    return nil, err
+  }
+  return append(res, relativeRes...), nil
+}
+
+
+func (t *Test) DirsIgnore(
+  ctx context.Context,
+
+  // +defaultPath="/"
+  // +ignore=["!backend", "!frontend"]
+  root *dagger.Directory,
+
+  // +defaultPath="."
+  // +ignore=["dagger.json", "LICENSE"]
+  relativeRoot *dagger.Directory,
+) ([]string, error) {
+  res, err := root.Entries(ctx)
+  if err != nil {
+    return nil, err
+  }
+  relativeRes, err := relativeRoot.Entries(ctx)
+  if err != nil {
+    return nil, err
+  }
+  return append(res, relativeRes...), nil
+}
+
+func (t *Test) RootDirPath(
+  ctx context.Context,
+
+  // +defaultPath="/backend"
+  backend *dagger.Directory,
+
+  // +defaultPath="/frontend"
+  frontend *dagger.Directory,
+
+  // +defaultPath="/ci/dagger/sub"
+  modSrcDir *dagger.Directory,
+) ([]string, error) {
+  backendFiles, err := backend.Entries(ctx)
+  if err != nil {
+    return nil, err
+  }
+  frontendFiles, err := frontend.Entries(ctx)
+  if err != nil {
+    return nil, err
+  }
+  modSrcDirFiles, err := modSrcDir.Entries(ctx)
+  if err != nil {
+    return nil, err
+  }
+
+	res := append(backendFiles, append(frontendFiles, modSrcDirFiles...)...)
+
+  return res, nil
+}
+
+func (t *Test) RelativeDirPath(
+  ctx context.Context,
+
+  // +defaultPath="./dagger/sub"
+  modSrcDir *dagger.Directory,
+
+  // +defaultPath="../backend"
+  backend *dagger.Directory,
+) ([]string, error) {
+  modSrcDirFiles, err := modSrcDir.Entries(ctx)
+  if err != nil {
+    return nil, err
+  }
+  backendFiles, err := backend.Entries(ctx)
+  if err != nil {
+    return nil, err
+  }
+
+  return append(modSrcDirFiles, backendFiles...), nil
+}
+
+func (t *Test) Files(
+  ctx context.Context,
+
+  // +defaultPath="/ci/LICENSE"
+  license *dagger.File,
+
+  // +defaultPath="./dagger/sub/sub.txt"
+  index *dagger.File,
+) ([]string, error) {
+  licenseName, err := license.Name(ctx)
+  if err != nil {
+    return nil, err
+  }
+  indexName, err := index.Name(ctx)
+  if err != nil {
+    return nil, err
+  }
+
+  return []string{licenseName, indexName}, nil
+}
+`,
+			},
+			{
+				sdk: "python",
+				source: `from typing import Annotated
+
+import dagger
+from dagger import DefaultPath, Ignore, function, object_type
+
+
+@object_type
+class Test:
+    @function
+    async def dirs(
+        self,
+        root: Annotated[dagger.Directory, DefaultPath("/")],
+        relativeRoot: Annotated[dagger.Directory, DefaultPath(".")],
+    ) -> list[str]:
+        return [
+            *(await root.entries()),
+            *(await relativeRoot.entries()),
+       ]
+
+    @function
+    async def dirs_ignore(
+        self,
+        root: Annotated[dagger.Directory, DefaultPath("/"), Ignore(["!backend", "!frontend"])],
+        relativeRoot: Annotated[dagger.Directory, DefaultPath("."), Ignore(["dagger.json", "LICENSE"])],
+    ) -> list[str]:
+        return [
+            *(await root.entries()),
+            *(await relativeRoot.entries()),
+        ]
+
+    @function
+    async def root_dir_path(
+        self,
+        backend: Annotated[dagger.Directory, DefaultPath("/backend")],
+        frontend: Annotated[dagger.Directory, DefaultPath("/frontend")],
+        mod_src_dir: Annotated[dagger.Directory, DefaultPath("/ci/dagger/sub")],
+    ) -> list[str]:
+        return [
+            *(await backend.entries()),
+            *(await frontend.entries()),
+            *(await mod_src_dir.entries()),
+        ]
+
+    @function
+    async def relative_dir_path(
+        self,
+        mod_src_dir: Annotated[dagger.Directory, DefaultPath("./dagger/sub")],
+        backend: Annotated[dagger.Directory, DefaultPath("../backend")],
+    ) -> list[str]:
+        return [
+            *(await mod_src_dir.entries()),
+            *(await backend.entries()),
+        ]
+
+    @function
+    async def files(
+        self,
+        license: Annotated[dagger.File, DefaultPath("/ci/LICENSE")],
+        index: Annotated[dagger.File, DefaultPath("./dagger/sub/sub.txt")],
+    ) -> list[str]:
+        return [
+            await license.name(),
+            await index.name(),
+        ]
+`,
+			},
+			{
+				sdk: "typescript",
+				source: `import { Directory, File, object, func, argument } from "@dagger.io/dagger"
+
+@object()
+class Test {
+  @func()
+  async dirs(@argument({ defaultPath: "/" }) root: Directory, @argument({ defaultPath: "."}) relativeRoot: Directory): Promise<string[]> {
+    const res = await root.entries()
+    const relativeRes = await relativeRoot.entries()
+
+    return [...res, ...relativeRes]
+  }
+
+  @func()
+  async dirsIgnore(
+    @argument({ defaultPath: "/", ignore: ["!backend", "!frontend"] }) root: Directory,
+    @argument({ defaultPath: ".", ignore: ["dagger.json", "LICENSE"] }) relativeRoot: Directory,
+  ): Promise<string[]> {
+    const res = await root.entries();
+    const relativeRes = await relativeRoot.entries();
+
+    return [...res, ...relativeRes];
+  }
+
+  @func()
+  async rootDirPath(
+    @argument({ defaultPath: "/backend" }) backend: Directory,
+    @argument({ defaultPath: "/frontend" }) frontend: Directory,
+    @argument({ defaultPath: "/ci/dagger/sub" }) modSrcDir: Directory,
+  ): Promise<string[]> {
+    const backendFiles = await backend.entries()
+    const frontendFiles = await frontend.entries()
+    const modSrcDirFiles = await modSrcDir.entries()
+
+    return [...backendFiles, ...frontendFiles, ...modSrcDirFiles]
+  }
+
+  @func()
+  async relativeDirPath(
+    @argument({ defaultPath: "./dagger/sub" }) modSrcDir: Directory,
+    @argument({ defaultPath: "../backend" }) backend: Directory,
+  ): Promise<string[]> {
+    const modSrcDirFiles = await modSrcDir.entries()
+    const backendFiles = await backend.entries()
+
+    return [...modSrcDirFiles, ...backendFiles]
+  }
+
+  @func()
+  async files(
+    @argument({ defaultPath: "/ci/LICENSE" }) license: File,
+    @argument({ defaultPath: "./dagger/sub/sub.txt" }) index: File,
+  ): Promise<string[]> {
+    return [await license.name(), await index.name()]
+  }
+}
+`,
+			},
+		} {
+			tc := tc
+
+			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
+				c := connect(ctx, t)
+
+				modGen := goGitBase(t, c).
+					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+					WithWorkdir("/work").
+					WithDirectory("/work/backend", c.Directory().WithNewFile("foo.txt", "foo")).
+					WithDirectory("/work/frontend", c.Directory().WithNewFile("bar.txt", "bar")).
+					WithWorkdir("/work/ci").
+					With(daggerExec("init", "--name=test", "--sdk="+tc.sdk, "--source=dagger")).
+					WithWorkdir("/work/ci/dagger").
+					With(sdkSource(tc.sdk, tc.source)).
+					WithDirectory("/work/ci/dagger/sub", c.Directory().WithNewFile("sub.txt", "sub")).
+					WithWorkdir("/work")
+
+				t.Run("absolute and relative root context dir", func(ctx context.Context, t *testctx.T) {
+					out, err := modGen.With(daggerCallAt("ci", "dirs")).Stdout(ctx)
+					require.NoError(t, err)
+					require.Equal(t, ".git\nbackend\nci\nfrontend\nLICENSE\ndagger\ndagger.json\n", out)
+				})
+
+				t.Run("dir ignore", func(ctx context.Context, t *testctx.T) {
+					out, err := modGen.With(daggerCallAt("ci", "dirs-ignore")).Stdout(ctx)
+					require.NoError(t, err)
+					require.Equal(t, "backend\nfrontend\ndagger\n", out)
+				})
+
+				t.Run("absolute context dir subpath", func(ctx context.Context, t *testctx.T) {
+					out, err := modGen.With(daggerCallAt("ci", "root-dir-path")).Stdout(ctx)
+					require.NoError(t, err)
+					require.Equal(t, "foo.txt\nbar.txt\nsub.txt\n", out)
+				})
+
+				t.Run("relative context dir subpath", func(ctx context.Context, t *testctx.T) {
+					out, err := modGen.With(daggerCallAt("ci", "relative-dir-path")).Stdout(ctx)
+					require.NoError(t, err)
+					require.Equal(t, "sub.txt\nfoo.txt\n", out)
+				})
+
+				t.Run("files", func(ctx context.Context, t *testctx.T) {
+					out, err := modGen.With(daggerCallAt("ci", "files")).Stdout(ctx)
+					require.NoError(t, err)
+					require.Equal(t, "LICENSE\nsub.txt\n", out)
+				})
+			})
+		}
+	})
+
+	t.Run("load context inside git repo with module at the root of the repo", func(ctx context.Context, t *testctx.T) {
+		for _, tc := range []testCase{
+			{
+				sdk: "go",
+				source: `package main
+
+import (
+  "context"
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {}
+
+func (t *Test) Dirs(
+  ctx context.Context,
+
+  // +defaultPath="/"
+  root *dagger.Directory,
+
+  // +defaultPath="."
+  relativeRoot *dagger.Directory,
+) ([]string, error) {
+  res, err := root.Entries(ctx)
+  if err != nil {
+    return nil, err
+  }
+  relativeRes, err := relativeRoot.Entries(ctx)
+  if err != nil {
+    return nil, err
+  }
+  return append(res, relativeRes...), nil
+}
+
+
+func (t *Test) RootDirPath(
+  ctx context.Context,
+
+  // +defaultPath="/backend"
+  backend *dagger.Directory,
+
+  // +defaultPath="/frontend"
+  frontend *dagger.Directory,
+
+  // +defaultPath="/dagger/sub"
+  modSrcDir *dagger.Directory,
+) ([]string, error) {
+  backendFiles, err := backend.Entries(ctx)
+  if err != nil {
+    return nil, err
+  }
+  frontendFiles, err := frontend.Entries(ctx)
+  if err != nil {
+    return nil, err
+  }
+  modSrcDirFiles, err := modSrcDir.Entries(ctx)
+  if err != nil {
+    return nil, err
+  }
+
+	res := append(backendFiles, append(frontendFiles, modSrcDirFiles...)...)
+
+  return res, nil
+}
+
+func (t *Test) RelativeDirPath(
+  ctx context.Context,
+
+  // +defaultPath="./dagger/sub"
+  modSrcDir *dagger.Directory,
+
+  // +defaultPath="./backend"
+  backend *dagger.Directory,
+) ([]string, error) {
+  modSrcDirFiles, err := modSrcDir.Entries(ctx)
+  if err != nil {
+    return nil, err
+  }
+  backendFiles, err := backend.Entries(ctx)
+  if err != nil {
+    return nil, err
+  }
+
+  return append(modSrcDirFiles, backendFiles...), nil
+}
+
+func (t *Test) Files(
+  ctx context.Context,
+
+  // +defaultPath="/LICENSE"
+  license *dagger.File,
+
+  // +defaultPath="./dagger.json"
+  index *dagger.File,
+) ([]string, error) {
+  licenseName, err := license.Name(ctx)
+  if err != nil {
+    return nil, err
+  }
+  indexName, err := index.Name(ctx)
+  if err != nil {
+    return nil, err
+  }
+
+  return []string{licenseName, indexName}, nil
+}
+`,
+			},
+			{
+				sdk: "python",
+				source: `from typing import Annotated
+
+import dagger
+from dagger import DefaultPath, function, object_type
+
+@object_type
+class Test:
+    @function
+    async def dirs(
+        self,
+        root: Annotated[dagger.Directory, DefaultPath("/")],
+        relative_root: Annotated[dagger.Directory, DefaultPath(".")],
+    ) -> list[str]:
+        return [
+            *(await root.entries()),
+            *(await relative_root.entries()),
+        ]
+
+    @function
+    async def root_dir_path(
+        self,
+        backend: Annotated[dagger.Directory, DefaultPath("/backend")],
+        frontend: Annotated[dagger.Directory, DefaultPath("/frontend")],
+        mod_src_dir: Annotated[dagger.Directory, DefaultPath("/dagger/sub")],
+    ) -> list[str]:
+        return [
+            *(await backend.entries()),
+            *(await frontend.entries()),
+            *(await mod_src_dir.entries()),
+        ]
+
+    @function
+    async def relative_dir_path(
+        self,
+        mod_src_dir: Annotated[dagger.Directory, DefaultPath("./dagger/sub")],
+        backend: Annotated[dagger.Directory, DefaultPath("./backend")],
+    ) -> list[str]:
+        return [
+            *(await mod_src_dir.entries()),
+            *(await backend.entries()),
+        ]
+
+    @function
+    async def files(
+        self,
+        license: Annotated[dagger.File, DefaultPath("/LICENSE")],
+        index: Annotated[dagger.File, DefaultPath("./dagger.json")],
+    ) -> list[str]:
+        return [
+            await license.name(),
+            await index.name(),
+        ]
+`,
+			},
+			{
+				sdk: "typescript",
+				source: `import { Directory, File, object, func, argument } from "@dagger.io/dagger"
+
+@object()
+class Test {
+  @func()
+  async dirs(
+    @argument({ defaultPath: "/" }) root: Directory,
+    @argument({ defaultPath: "." }) relativeRoot: Directory,
+  ): Promise<string[]> {
+    const res = await root.entries()
+    const relativeRes = await relativeRoot.entries()
+
+    return [...res, ...relativeRes]
+  }
+
+  @func()
+  async rootDirPath(
+    @argument({ defaultPath: "/backend" }) backend: Directory,
+    @argument({ defaultPath: "/frontend" }) frontend: Directory,
+    @argument({ defaultPath: "/dagger/sub" }) modSrcDir: Directory,
+  ): Promise<string[]> {
+    const backendFiles = await backend.entries()
+    const frontendFiles = await frontend.entries()
+    const modSrcDirFiles = await modSrcDir.entries()
+
+    return [...backendFiles, ...frontendFiles, ...modSrcDirFiles]
+  }
+
+  @func()
+  async relativeDirPath(
+    @argument({ defaultPath: "./dagger/sub" }) modSrcDir: Directory,
+    @argument({ defaultPath: "./backend" }) backend: Directory,
+  ): Promise<string[]> {
+    const modSrcDirFiles = await modSrcDir.entries()
+    const backendFiles = await backend.entries()
+
+    return [...modSrcDirFiles, ...backendFiles]
+  }
+
+  @func()
+  async files(
+    @argument({ defaultPath: "/LICENSE" }) license: File,
+  	@argument({ defaultPath: "./dagger.json" }) daggerConfig: File,
+	): Promise<string[]> {
+    return [await license.name(), await daggerConfig.name()]
+  }
+}
+`,
+			},
+		} {
+			tc := tc
+
+			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
+				c := connect(ctx, t)
+
+				modGen := goGitBase(t, c).
+					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+					WithWorkdir("/work").
+					WithDirectory("/work/backend", c.Directory().WithNewFile("foo.txt", "foo")).
+					WithDirectory("/work/frontend", c.Directory().WithNewFile("bar.txt", "bar")).
+					With(daggerExec("init", "--name=test", "--sdk="+tc.sdk, "--source=dagger")).
+					WithDirectory("/work/dagger/sub", c.Directory().WithNewFile("sub.txt", "sub")).
+					WithWorkdir("/work/dagger").
+					With(sdkSource(tc.sdk, tc.source)).
+					WithWorkdir("/work")
+
+				t.Run("absolute and relative root context dir", func(ctx context.Context, t *testctx.T) {
+					out, err := modGen.With(daggerCall("dirs")).Stdout(ctx)
+					require.NoError(t, err)
+					require.Equal(t, ".git\nLICENSE\nbackend\ndagger\ndagger.json\nfrontend\n.git\nLICENSE\nbackend\ndagger\ndagger.json\nfrontend\n", out)
+				})
+
+				t.Run("absolute context dir subpath", func(ctx context.Context, t *testctx.T) {
+					out, err := modGen.With(daggerCall("root-dir-path")).Stdout(ctx)
+					require.NoError(t, err)
+					require.Equal(t, "foo.txt\nbar.txt\nsub.txt\n", out)
+				})
+
+				t.Run("relative context dir subpath", func(ctx context.Context, t *testctx.T) {
+					out, err := modGen.With(daggerCall("relative-dir-path")).Stdout(ctx)
+					require.NoError(t, err)
+					require.Equal(t, "sub.txt\nfoo.txt\n", out)
+				})
+
+				t.Run("files", func(ctx context.Context, t *testctx.T) {
+					out, err := modGen.With(daggerCall("files")).Stdout(ctx)
+					require.NoError(t, err)
+					require.Equal(t, "LICENSE\ndagger.json\n", out)
+				})
+			})
+		}
+	})
+
+	t.Run("load directory and files with invalid context path value", func(ctx context.Context, t *testctx.T) {
+		for _, tc := range []testCase{
+			{
+				sdk: "go",
+				source: `package main
+
+import (
+	"context"
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {}
+
+func (t *Test) TooHighRelativeDirPath(
+	ctx context.Context,
+
+	// +defaultPath="../../"
+	backend *dagger.Directory,
+) ([]string, error) {
+  // The engine should throw an error
+	return []string{}, nil
+}
+
+func (t *Test) NonExistingPath(
+	ctx context.Context,
+
+	// +defaultPath="/invalid"
+	dir *dagger.Directory,
+) ([]string, error) {
+  // The engine should throw an error
+	return []string{}, nil
+}
+
+func (t *Test) TooHighRelativeFilePath(
+	ctx context.Context,
+
+	// +defaultPath="../../file.txt"
+	backend *dagger.File,
+) (string, error) {
+  // The engine should throw an error
+	return "", nil
+}
+
+func (t *Test) NonExistingFile(
+	ctx context.Context,
+
+	// +defaultPath="/invalid"
+	file *dagger.File,
+) (string, error) {
+  // The engine should throw an error
+	return "", nil
+}
+`,
+			},
+			{
+				sdk: "python",
+				source: `from typing import Annotated
+
+import dagger
+from dagger import DefaultPath, function, object_type
+
+@object_type
+class Test:
+    @function
+    async def too_high_relative_dir_path(
+        self,
+        backend: Annotated[dagger.Directory, DefaultPath("../../")],
+    ) -> list[str]:
+        # The engine should throw an error
+        return []
+
+    @function
+    async def non_existing_path(
+        self,
+        dir: Annotated[dagger.Directory, DefaultPath("/invalid")],
+    ) -> list[str]:
+        # The engine should throw an error
+        return []
+
+    @function
+    async def too_high_relative_file_path(
+        self,
+        backend: Annotated[dagger.File, DefaultPath("../../file.txt")],
+    ) -> str:
+        # The engine should throw an error
+        return ""
+
+    @function
+    async def non_existing_file(
+        self,
+        file: Annotated[dagger.File, DefaultPath("/invalid")],
+    ) -> str:
+        # The engine should throw an error
+        return ""
+`,
+			},
+			{
+				sdk: "typescript",
+				source: `import { Directory, File,object, func, argument } from "@dagger.io/dagger"
+@object()
+class Test {
+  @func()
+  async tooHighRelativeDirPath(@argument({ defaultPath: "../../" }) backend: Directory): Promise<string[]> {
+    // The engine should throw an error
+    return []
+  }
+
+  @func()
+	async nonExistingPath(@argument({ defaultPath: "/invalid" }) dir: Directory): Promise<string[]> {
+    // The engine should throw an error
+    return []
+  }
+
+  @func()
+	async tooHighRelativeFilePath(@argument({ defaultPath: "../../file.txt" }) backend: File): Promise<string> {
+    // The engine should throw an error
+    return ""
+  }
+
+	@func() nonExistingFile(@argument({ defaultPath: "/invalid" }) file: File): Promise<string> {
+    // The engine should throw an error
+    return ""
+  }
+}
+`,
+			},
+		} {
+			tc := tc
+
+			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
+				c := connect(ctx, t)
+
+				modGen := goGitBase(t, c).
+					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+					WithWorkdir("/work").
+					With(daggerExec("init", "--name=test", "--sdk="+tc.sdk, "--source=dagger")).
+					WithWorkdir("/work/dagger").
+					With(sdkSource(tc.sdk, tc.source)).
+					WithWorkdir("/work")
+
+				t.Run("too high relative context dir path", func(ctx context.Context, t *testctx.T) {
+					out, err := modGen.With(daggerCall("too-high-relative-dir-path")).Stdout(ctx)
+					require.Empty(t, out)
+					require.Error(t, err)
+					require.ErrorContains(t, err, `path should be relative to the context directory`)
+				})
+
+				t.Run("too high relative context file path", func(ctx context.Context, t *testctx.T) {
+					out, err := modGen.With(daggerCall("too-high-relative-file-path")).Stdout(ctx)
+					require.Empty(t, out)
+					require.Error(t, err)
+					require.ErrorContains(t, err, `path should be relative to the context directory`)
+				})
+
+				t.Run("non existing dir path", func(ctx context.Context, t *testctx.T) {
+					out, err := modGen.With(daggerCall("non-existing-path")).Stdout(ctx)
+					require.Empty(t, out)
+					require.Error(t, err)
+					require.ErrorContains(t, err, "no such file or directory")
+				})
+
+				t.Run("non existing file", func(ctx context.Context, t *testctx.T) {
+					out, err := modGen.With(daggerCall("non-existing-file")).Stdout(ctx)
+					require.Empty(t, out)
+					require.Error(t, err)
+					require.ErrorContains(t, err, "no such file or directory")
+				})
+			})
+		}
+	})
+
+	t.Run("deps", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		ctr := goGitBase(t, c).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/dep").
+			With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
+			WithNewFile("main.go", `package main
+
+import (
+	"dagger/dep/internal/dagger"
+)
+
+type Dep struct{}
+
+func (m *Dep) GetSource(
+	// +defaultPath="/dep"
+	// +ignore=["!yo"]
+	source *dagger.Directory,
+) *dagger.Directory {
+	return source
+}
+
+func (m *Dep) GetRelSource(
+  // +defaultPath="."
+	// +ignore=["!yo"]
+	source *dagger.Directory,
+) *dagger.Directory {
+  return source 
+}
+`,
+			).
+			WithNewFile("yo", "yo")
+
+		out, err := ctr.With(daggerCall("get-source", "entries")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "yo\n", out)
+
+		out, err = ctr.With(daggerCall("get-rel-source", "entries")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "yo\n", out)
+
+		ctr = ctr.
+			WithWorkdir("/work").
+			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+			With(daggerExec("install", "./dep")).
+			WithNewFile("main.go", `package main
+
+import (
+	"dagger/test/internal/dagger"
+)
+
+type Test struct{}
+
+func (m *Test) GetDepSource() *dagger.Directory {
+	return dag.Dep().GetSource()
+}
+
+func (m *Test) GetRelDepSource() *dagger.Directory {
+	return dag.Dep().GetRelSource()
+}
+`,
+			)
+
+		out, err = ctr.With(daggerCall("get-dep-source", "entries")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "yo\n", out)
+
+		out, err = ctr.With(daggerCall("get-rel-dep-source", "entries")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "yo\n", out)
+	})
+
+	t.Run("as module", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		ctr := goGitBase(t, c).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/dep").
+			With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
+			WithNewFile("main.go", `package main
+
+import (
+	"dagger/dep/internal/dagger"
+)
+		
+type Dep struct{}
+		
+func (m *Dep) GetSource(
+	// +defaultPath="/dep"
+	// +ignore=["!yo"]
+	source *dagger.Directory,
+) *dagger.Directory {
+	return source
+}
+
+func (m *Dep) GetRelSource(
+	// +defaultPath="./dep"
+	// +ignore=["!yo"]
+	source *dagger.Directory,
+) *dagger.Directory {
+	return source 
+}
+		`).
+			WithNewFile("yo", "yo")
+
+		ctr = ctr.
+			WithWorkdir("/work").
+			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+			WithNewFile("main.go", `package main
+
+import (
+	"context"
+
+	"dagger/test/internal/dagger"
+	"github.com/Khan/genqlient/graphql"
+)
+			
+type Test struct{}
+			
+func (m *Test) GetDepSource(ctx context.Context, src *dagger.Directory) (*dagger.Directory, error) {
+	err := src.AsModule().Initialize().Serve(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	type DirectoryIDRes struct {
+		Dep struct {
+			GetSource struct {
+				ID string
+			}
+		}
+	}
+
+	directoryIDRes := &DirectoryIDRes{}
+	res := &graphql.Response{Data: directoryIDRes}
+
+	err = dag.GraphQLClient().MakeRequest(ctx, &graphql.Request{
+		Query: "{dep {getSource {id} } }",
+	}, res)
+
+	if err != nil {
+		return nil, err
+	}
+
+
+	return dag.LoadDirectoryFromID(dagger.DirectoryID(directoryIDRes.Dep.GetSource.ID)), nil
+}
+
+func (m *Test) GetRelDepSource(ctx context.Context, src *dagger.Directory) (*dagger.Directory, error) {
+  err := src.AsModule().Initialize().Serve(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	type DirectoryIDRes struct {
+		Dep struct {
+			GetRelSource struct {
+				ID string
+			}
+		}
+	}
+
+	directoryIDRes := &DirectoryIDRes{}
+	res := &graphql.Response{Data: directoryIDRes}
+
+	err = dag.GraphQLClient().MakeRequest(ctx, &graphql.Request{
+		Query: "{dep {getRelSource {id} } }",
+	}, res)
+
+	if err != nil {
+		return nil, err
+	}
+
+
+	return dag.LoadDirectoryFromID(dagger.DirectoryID(directoryIDRes.Dep.GetRelSource.ID)), nil
+}
+			`,
+			)
+
+		out, err := ctr.With(daggerCall("get-dep-source", "--src", "./dep", "entries")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "yo\n", out)
+
+		out, err = ctr.With(daggerCall("get-rel-dep-source", "--src", "./dep", "entries")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "yo\n", out)
+	})
+}
+
 func (ModuleSuite) TestModuleDevelopVersion(ctx context.Context, t *testctx.T) {
 	moduleSrc := `package main
 

@@ -232,7 +232,7 @@ func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server) error {
 	}
 	fields := obj.fields()
 
-	funs, err := obj.functions(ctx)
+	funs, err := obj.functions(ctx, dag)
 	if err != nil {
 		return err
 	}
@@ -313,6 +313,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 				Inputs:       callInput,
 				ParentTyped:  nil,
 				ParentFields: nil,
+				Server:       dag,
 			})
 		},
 	)
@@ -328,11 +329,11 @@ func (obj *ModuleObject) fields() (fields []dagql.Field[*ModuleObject]) {
 	return
 }
 
-func (obj *ModuleObject) functions(ctx context.Context) (fields []dagql.Field[*ModuleObject], err error) {
+func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) (fields []dagql.Field[*ModuleObject], err error) {
 	objDef := obj.TypeDef
 	mod := obj.Module
 	for _, fun := range obj.TypeDef.Functions {
-		objFun, err := objFun(ctx, mod, objDef, fun)
+		objFun, err := objFun(ctx, mod, objDef, fun, dag)
 		if err != nil {
 			return nil, err
 		}
@@ -366,7 +367,7 @@ func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
 	}
 }
 
-func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Function) (dagql.Field[*ModuleObject], error) {
+func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Function, dag *dagql.Server) (dagql.Field[*ModuleObject], error) {
 	var f dagql.Field[*ModuleObject]
 	modFun, err := newModFunction(
 		ctx,
@@ -396,6 +397,7 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 				Cache: dagql.IsInternal(ctx),
 				// Pipeline:  _, // TODO
 				SkipSelfSchema: false, // TODO?
+				Server:         dag,
 			}
 			for name, val := range args {
 				opts.Inputs = append(opts.Inputs, CallInput{

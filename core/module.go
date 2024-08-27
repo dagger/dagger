@@ -122,7 +122,7 @@ func (mod *Module) IDModule() *call.Module {
 	return call.NewModule(mod.InstanceID, mod.Name(), ref)
 }
 
-func (mod *Module) Initialize(ctx context.Context, oldID *call.ID, newID *call.ID) (*Module, error) {
+func (mod *Module) Initialize(ctx context.Context, oldID *call.ID, newID *call.ID, dag *dagql.Server) (*Module, error) {
 	modName := mod.Name()
 	newMod := mod.Clone()
 	newMod.InstanceID = oldID // updated to newID once the call to initialize is done
@@ -144,7 +144,7 @@ func (mod *Module) Initialize(ctx context.Context, oldID *call.ID, newID *call.I
 		return nil, fmt.Errorf("failed to create module definition function for module %q: %w", modName, err)
 	}
 
-	result, err := getModDefFn.Call(ctx, &CallOpts{Cache: true, SkipSelfSchema: true})
+	result, err := getModDefFn.Call(ctx, &CallOpts{Cache: true, SkipSelfSchema: true, Server: dag})
 	if err != nil {
 		return nil, fmt.Errorf("failed to call module %q to get functions: %w", modName, err)
 	}

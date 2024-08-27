@@ -3194,6 +3194,12 @@
                       </tr>
                       <tr>
                         <td>
+                          <span class="property-name"><code>relHostPath</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span>
+                        </td>
+                        <td> The relative path to the module root from the host directory. Default = <code>""</code> </td>
+                      </tr>
+                      <tr>
+                        <td>
                           <span class="property-name"><code>stable</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span>
                         </td>
                         <td> If true, enforce that the source is a stable version for source kinds that support versioning. Default = <code>false</code> </td>
@@ -6097,12 +6103,20 @@
                             <h5 class="field-arguments-heading"> Arguments </h5>
                             <div class="field-argument-list">
                               <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>defaultPath</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
+                                <p>If the argument is a Directory or File type, default to load path from context directory, relative to root directory.</p>
+                              </div>
+                              <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>defaultValue</code></span> - <span class="property-type"><a href="#definition-JSON"><code>JSON</code></a></span></h6>
                                 <p>A default value to use for this argument if not explicitly set by the caller, if any</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
                                 <p>A doc string for the argument, if any</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>ignore</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
+                                <p>Patterns to ignore when loading the contextual argument value.</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
@@ -6162,6 +6176,10 @@
                     </thead>
                     <tbody>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="FunctionArg-defaultPath" href="#FunctionArg-defaultPath"><code>defaultPath</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="FunctionArg-defaultValue" href="#FunctionArg-defaultValue"><code>defaultValue</code></a> - <span class="property-type"><a href="#definition-JSON"><code>JSON!</code></a></span> </td>
                         <td> A default value to use for this argument when not explicitly set by the caller, if any. </td>
                       </tr>
@@ -6172,6 +6190,10 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="FunctionArg-id" href="#FunctionArg-id"><code>id</code></a> - <span class="property-type"><a href="#definition-FunctionArgID"><code>FunctionArgID!</code></a></span> </td>
                         <td> A unique identifier for this FunctionArg. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="FunctionArg-ignore" href="#FunctionArg-ignore"><code>ignore</code></a> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span> </td>
+                        <td> Only applies to arguments of type Directory. The ignore patterns are applied to the input directory, and matching entries are filtered out, in a cache-efficient manner. </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="FunctionArg-name" href="#FunctionArg-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
@@ -7308,6 +7330,10 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="LocalModuleSource-id" href="#LocalModuleSource-id"><code>id</code></a> - <span class="property-type"><a href="#definition-LocalModuleSourceID"><code>LocalModuleSourceID!</code></a></span> </td>
                         <td> A unique identifier for this LocalModuleSource. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="LocalModuleSource-relHostPath" href="#LocalModuleSource-relHostPath"><code>relHostPath</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The relative path to the module root from the host directory </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="LocalModuleSource-rootSubpath" href="#LocalModuleSource-rootSubpath"><code>rootSubpath</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
