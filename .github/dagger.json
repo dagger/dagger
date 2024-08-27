@@ -1,0 +1,16 @@
+{
+  "name": "ci",
+  "sdk": "go",
+  "dependencies": [
+    {
+      "name": "gha",
+      "source": "github.com/shykes/gha@0470df4daeb846af150cb54b38aca39972143ce9"
+    },
+    {
+      "name": "dirdiff",
+      "source": "../modules/dirdiff"
+    }
+  ],
+  "source": ".",
+  "engineVersion": "v0.12.6"
+}
