@@ -7609,7 +7609,7 @@ func (m *Dep) GetSource(
 }
 
 func (m *Dep) GetRelSource(
-	// +defaultPath="."
+	// +defaultPath="./dep"
 	// +ignore=["!yo"]
 	source *dagger.Directory,
 ) *dagger.Directory {
@@ -7669,7 +7669,7 @@ func (m *Test) GetRelDepSource(ctx context.Context, src *dagger.Directory) (*dag
 
 	type DirectoryIDRes struct {
 		Dep struct {
-			GetSource struct {
+			GetRelSource struct {
 				ID string
 			}
 		}
