@@ -1,9 +1,11 @@
+version: 2
+
 includes:
   - from_file:
       path: ./.goreleaser.common.yml
 
 snapshot:
-  name_template: "{{ .Tag }}-next"
+  version_template: "{{ .Tag }}-next"
 
 archives:
   - name_template: "{{ .ProjectName }}_{{ .Tag }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}{{ if .Mips }}_{{ .Mips }}{{ end }}"
@@ -51,7 +53,7 @@ blobs:
   - provider: s3
     region: "{{ .Env.AWS_REGION }}"
     bucket: "{{ .Env.AWS_BUCKET }}"
-    folder: "dagger/releases/{{ .Version }}"
+    directory: "dagger/releases/{{ .Version }}"
 
 publishers:
   - name: publish-latest-version
