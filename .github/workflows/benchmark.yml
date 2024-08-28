@@ -32,7 +32,7 @@ jobs:
           mkdir -p /tmp/benchmark
           cd /tmp/benchmark
 
-          dagger --debug init --source=. --name=test --sdk=${{ matrix.sdk }}
+          dagger init --name=benchmark --sdk=${{ matrix.sdk }}
         env:
           DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
 
@@ -42,7 +42,7 @@ jobs:
           source /tmp/local-envs
           cd /tmp/benchmark
 
-          dagger --debug functions
+          dagger functions
         env:
           DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
 
@@ -52,7 +52,7 @@ jobs:
           source /tmp/local-envs
           cd /tmp/benchmark
 
-          dagger --debug functions
+          dagger functions
         env:
           DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
 
@@ -67,6 +67,6 @@ jobs:
             [ -f "$file" ] && echo >> $file
           done
 
-          dagger --debug functions
+          dagger functions
         env:
           DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
