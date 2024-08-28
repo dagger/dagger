@@ -1,9 +1,10 @@
 name: Benchmark
 
 on:
-  # Run the workflow every day at midnight (00:00) UTC
+  # Run the workflow every day at 5AM UTC
+  # That's 9PM PST, 12AM EST, 6AM CET
   schedule:
-    - cron: "0 0 * * *"
+    - cron: "0 5 * * *"
   # Enable manual trigger for easy debugging
   workflow_dispatch:
 
