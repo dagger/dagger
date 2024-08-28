@@ -421,11 +421,15 @@ func (src *ModuleSource) ResolveContextPathFromModule(ctx context.Context) (cont
 	if !contextFound {
 		// default to restricting to the source root dir, make it abs though for consistency
 		contextAbsPath = moduleRootAbsPath
-	} else {
-		// If context is found, we can create the module root path by joining the 
-		// context path with the module root subpath
-		moduleRootAbsPath = filepath.Join(contextAbsPath, src.AsLocalSource.Value.RootSubpath)
 	}
+
+	sourceSubPath, err := src.SourceSubpathWithDefault(ctx)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get source subpath: %w", err)
+	}
+	// If context is found, we can create the module root path by joining the
+	// context path with the source root subpath
+	moduleRootAbsPath = filepath.Join(contextAbsPath, sourceSubPath)
 
 	return contextAbsPath, moduleRootAbsPath, nil
 }
