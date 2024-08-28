@@ -4,7 +4,6 @@ linters:
     - bodyclose
     - dogsled
     - dupl
-    - exportloopref
     - errorlint
     - gocritic
     - gocyclo

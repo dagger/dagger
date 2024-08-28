@@ -381,7 +381,7 @@ func moduleAnalyticsProps(mod *Module, prefix string, props map[string]string) {
 		props[prefix+"git_subpath"] = git.RootSubpath
 		props[prefix+"git_version"] = git.Version
 		props[prefix+"git_commit"] = git.Commit
-		props[prefix+"git_html_repo_url"] = git.HtmlRepoURL
+		props[prefix+"git_html_repo_url"] = git.HTMLRepoURL
 	}
 }
 

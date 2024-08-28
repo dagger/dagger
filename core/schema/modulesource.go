@@ -73,7 +73,7 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 		src.AsGitSource = dagql.NonNull(&core.GitModuleSource{})
 
 		src.AsGitSource.Value.Root = parsed.repoRoot.Root
-		src.AsGitSource.Value.HtmlRepoURL = parsed.repoRoot.Repo
+		src.AsGitSource.Value.HTMLRepoURL = parsed.repoRoot.Repo
 
 		// Determine usernames for source reference and actual cloning
 		sourceUser, cloneUser := parsed.sshusername, parsed.sshusername

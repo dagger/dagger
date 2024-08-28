@@ -1,6 +1,6 @@
 module github.com/dagger/dagger/modules/graphql
 
-go 1.21.7
+go 1.22
 
 require (
 	github.com/99designs/gqlgen v0.17.49

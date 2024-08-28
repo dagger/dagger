@@ -8232,5 +8232,4 @@ func (ModuleSuite) TestSSHAgentConnection(ctx context.Context, t *testctx.T) {
 			wg.Wait()
 		})
 	})
-
 }
