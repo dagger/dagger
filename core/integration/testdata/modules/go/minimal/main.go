@@ -89,8 +89,10 @@ func (m *Minimal) EchoOpts(
 	// String to append to the echoed message
 	// +optional
 	suffix string,
-	// Number of times to repeat the message
-	// +optional
+	/*
+		Number of times to repeat the message
+		+optional
+	*/
 	times int,
 ) string {
 	msg += suffix
@@ -107,8 +109,10 @@ func (m *Minimal) EchoOptsInline(opts struct {
 	// String to append to the echoed message
 	// +optional
 	Suffix string
-	// Number of times to repeat the message
-	// +optional
+	/*
+		Number of times to repeat the message
+		+optional
+	*/
 	Times int
 }) string {
 	return m.EchoOpts(opts.Msg, opts.Suffix, opts.Times)
@@ -120,8 +124,10 @@ func (m *Minimal) EchoOptsInlinePointer(opts *struct {
 	// String to append to the echoed message
 	// +optional
 	Suffix string
-	// Number of times to repeat the message
-	// +optional
+	/*
+		Number of times to repeat the message
+		+optional
+	*/
 	Times int
 }) string {
 	return m.EchoOptsInline(*opts)
@@ -133,8 +139,10 @@ func (m *Minimal) EchoOptsInlineCtx(ctx context.Context, opts struct {
 	// String to append to the echoed message
 	// +optional
 	Suffix string
-	// Number of times to repeat the message
-	// +optional
+	/*
+		Number of times to repeat the message
+		+optional
+	*/
 	Times int
 }) string {
 	return m.EchoOpts(opts.Msg, opts.Suffix, opts.Times)
@@ -146,8 +154,10 @@ func (m *Minimal) EchoOptsInlineTags(ctx context.Context, opts struct {
 	// String to append to the echoed message
 	// +optional
 	Suffix string `tag:"hello"`
-	// Number of times to repeat the message
-	// +optional
+	/*
+		Number of times to repeat the message
+		+optional
+	*/
 	Times int `tag:"hello again"`
 }) string {
 	return m.EchoOpts(opts.Msg, opts.Suffix, opts.Times)
@@ -160,9 +170,11 @@ func (m *Minimal) EchoOptsPragmas(
 	// +optional=true
 	// +default="..."
 	suffix string,
-	// Number of times to repeat the message
-	// +optional
-	times int, // +default=3
+	/*
+		Number of times to repeat the message
+		+optional
+	*/
+	times int, /* +default=3 */
 ) string {
 	return strings.Repeat(msg+suffix, times)
 }

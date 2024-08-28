@@ -38,6 +38,14 @@ func TestParsePragmaComment(t *testing.T) {
 			rest: "",
 		},
 		{
+			name:    "single key with leading whitespace",
+			comment: " \t +foo",
+			expected: map[string]string{
+				"foo": "",
+			},
+			rest: "",
+		},
+		{
 			name:    "single key-value",
 			comment: "+foo=bar",
 			expected: map[string]string{
