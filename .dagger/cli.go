@@ -46,7 +46,7 @@ func (cli *CLI) Binary(
 
 const (
 	// https://github.com/goreleaser/goreleaser/releases
-	goReleaserVersion = "v1.26.0"
+	goReleaserVersion = "v2.2.0"
 )
 
 // Publish the CLI using GoReleaser
@@ -90,7 +90,7 @@ func (cli *CLI) Publish(
 		ctr = ctr.WithExec([]string{"git", "tag", "0.0.0"})
 	}
 
-	args := []string{"release", "--clean", "--skip-validate", "--debug"}
+	args := []string{"release", "--clean", "--skip=validate", "--verbose"}
 	if tag != "" {
 		args = append(args, "--release-notes", fmt.Sprintf(".changes/%s.md", tag))
 	} else {
