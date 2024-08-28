@@ -96,6 +96,7 @@ func Overlay(ctx context.Context, logsW io.Writer, overlay fs.FS, outputDir stri
 		}
 		if d.IsDir() {
 			if _, err := os.Stat(filepath.Join(outputDir, path)); err == nil {
+				fmt.Fprintln(logsW, "creating directory", path, "[skipped]")
 				return nil
 			}
 			fmt.Fprintln(logsW, "creating directory", path)
@@ -117,11 +118,12 @@ func Overlay(ctx context.Context, logsW io.Writer, overlay fs.FS, outputDir stri
 			needsWrite = string(oldContent) != string(newContent)
 		}
 
-		if needsWrite {
-			fmt.Fprintln(logsW, "writing", path)
-			return os.WriteFile(outPath, newContent, 0o600)
+		if !needsWrite {
+			fmt.Fprintln(logsW, "writing", path, "[skipped]")
+			return nil
 		}
 
-		return nil
+		fmt.Fprintln(logsW, "writing", path)
+		return os.WriteFile(outPath, newContent, 0o600)
 	})
 }

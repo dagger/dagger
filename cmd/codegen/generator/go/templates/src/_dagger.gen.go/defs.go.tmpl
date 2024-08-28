@@ -1,21 +1,19 @@
 import (
 	"context"
 	"encoding/json"
-	"log/slog"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
-	"strconv"
-	"runtime"
-	"fmt"
 	"reflect"
+	"strconv"
+	"strings"
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/vektah/gqlparser/v2/gqlerror"
-	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 
 {{ if IsModuleCode }}

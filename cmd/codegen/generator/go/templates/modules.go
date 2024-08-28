@@ -513,7 +513,7 @@ func (ps *parseState) checkDaggerObjectIface(obj types.Object) (bool, error) {
 	}
 	iface, isIface := named.Underlying().(*types.Interface)
 	if !isIface {
-		return false, fmt.Errorf("exected %s to be %T, but got %T", daggerObjectIfaceName, &types.Interface{}, named.Underlying())
+		return false, fmt.Errorf("exected %s to be %T, but got %T (%s)", daggerObjectIfaceName, &types.Interface{}, named.Underlying(), named.String())
 	}
 
 	ps.daggerObjectIfaceType = iface
