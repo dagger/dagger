@@ -212,9 +212,13 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *dagger.Modul
 	// Add user's source files
 	base = base.WithDirectory(ModSourceDirPath,
 		dag.Directory().WithDirectory("/", modSource.ContextDirectory(), dagger.DirectoryWithDirectoryOpts{
-			// Only include the user's source files
-			Include: []string{
-				fmt.Sprintf("%s/src", t.moduleConfig.subPath),
+			// Include the rest of the user's module except config files to not override previous steps.
+			Exclude: []string{
+				fmt.Sprintf("%s/package.json", t.moduleConfig.subPath),
+				fmt.Sprintf("%s/*lock*", t.moduleConfig.subPath),
+				fmt.Sprintf("%s/tsconfig.json", t.moduleConfig.subPath),
+				fmt.Sprintf("%s/pnpm-workspace.yaml", t.moduleConfig.subPath),
+				fmt.Sprintf("%s/.yarnrc.yml", t.moduleConfig.subPath),
 			},
 		}),
 	)
