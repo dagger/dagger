@@ -333,7 +333,7 @@ func initializeModule(ctx context.Context, dag *dagger.Client, loadModule bool) 
 	}
 
 	if def.MainObject == nil {
-		return nil, fmt.Errorf("main object not found")
+		return nil, fmt.Errorf("main object not found, check that your module's name and main object match")
 	}
 
 	return def, nil
