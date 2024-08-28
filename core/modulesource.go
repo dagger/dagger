@@ -128,6 +128,22 @@ func (src *ModuleSource) PBDefinitions(ctx context.Context) ([]*pb.Definition, e
 	}
 }
 
+func (src *ModuleSource) Digest(ctx context.Context) (string, error) {
+	switch src.Kind {
+	case ModuleSourceKindLocal:
+		dir, err := src.ContextDirectory()
+		if err != nil {
+			return "", err
+		}
+		return dir.Self.Digest(ctx)
+	case ModuleSourceKindGit:
+		// git uses sha1 hex digests
+		return "sha1:" + src.AsGitSource.Value.Commit, nil
+	default:
+		return "", fmt.Errorf("unknown module src kind: %q", src.Kind)
+	}
+}
+
 func (src *ModuleSource) RefString() (string, error) {
 	switch src.Kind {
 	case ModuleSourceKindLocal:

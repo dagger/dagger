@@ -99,6 +99,15 @@ defmodule Dagger.ModuleSource do
     end
   end
 
+  @doc "Return the module source's content digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine."
+  @spec digest(t()) :: {:ok, String.t()} | {:error, term()}
+  def digest(%__MODULE__{} = module_source) do
+    query_builder =
+      module_source.query_builder |> QB.select("digest")
+
+    Client.execute(module_source.client, query_builder)
+  end
+
   @doc "The directory containing the module configuration and source code (source code may be in a subdir)."
   @spec directory(t(), String.t()) :: Dagger.Directory.t()
   def directory(%__MODULE__{} = module_source, path) do

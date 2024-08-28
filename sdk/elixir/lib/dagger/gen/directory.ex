@@ -41,6 +41,15 @@ defmodule Dagger.Directory do
     }
   end
 
+  @doc "Return the directory's digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine."
+  @spec digest(t()) :: {:ok, String.t()} | {:error, term()}
+  def digest(%__MODULE__{} = directory) do
+    query_builder =
+      directory.query_builder |> QB.select("digest")
+
+    Client.execute(directory.client, query_builder)
+  end
+
   @doc "Retrieves a directory at the given path."
   @spec directory(t(), String.t()) :: Dagger.Directory.t()
   def directory(%__MODULE__{} = directory, path) do

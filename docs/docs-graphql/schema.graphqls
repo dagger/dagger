@@ -1046,6 +1046,13 @@ type Directory {
     other: DirectoryID!
   ): Directory!
 
+  """
+  Return the directory's digest. The format of the digest is not guaranteed to
+  be stable between releases of Dagger. It is guaranteed to be stable between
+  invocations of the same Dagger engine.
+  """
+  digest: String!
+
   """Retrieves a directory at the given path."""
   directory(
     """Location of the directory to retrieve (e.g., "/src")."""
@@ -2052,6 +2059,13 @@ type ModuleSource {
   configuration and any extras from withDependencies calls.
   """
   dependencies: [ModuleDependency!]!
+
+  """
+  Return the module source's content digest. The format of the digest is not
+  guaranteed to be stable between releases of Dagger. It is guaranteed to be
+  stable between invocations of the same Dagger engine.
+  """
+  digest: String!
 
   """
   The directory containing the module configuration and source code (source code may be in a subdir).

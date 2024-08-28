@@ -39,6 +39,15 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Return the directory's digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine.
+     */
+    public function digest(): string
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('digest');
+        return (string)$this->queryLeaf($leafQueryBuilder, 'digest');
+    }
+
+    /**
      * Retrieves a directory at the given path.
      */
     public function directory(string $path): Directory

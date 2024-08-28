@@ -5197,6 +5197,10 @@
                           </div>
                         </td>
                       </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Directory-digest" href="#Directory-digest"><code>digest</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Return the directory's digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine. </td>
+                      </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Directory-directory" href="#Directory-directory"><code>directory</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
                         <td> Retrieves a directory at the given path. </td>
@@ -7521,6 +7525,10 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="ModuleSource-dependencies" href="#ModuleSource-dependencies"><code>dependencies</code></a> - <span class="property-type"><a href="#definition-ModuleDependency"><code>[ModuleDependency!]!</code></a></span> </td>
                         <td> The dependencies of the module source. Includes dependencies from the configuration and any extras from withDependencies calls. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="ModuleSource-digest" href="#ModuleSource-digest"><code>digest</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> Return the module source's content digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine. </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="ModuleSource-directory" href="#ModuleSource-directory"><code>directory</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>

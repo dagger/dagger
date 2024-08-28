@@ -1320,6 +1320,14 @@ func (s *moduleSchema) moduleSourceWithView(
 	return src, nil
 }
 
+func (s *moduleSchema) moduleSourceDigest(
+	ctx context.Context,
+	src *core.ModuleSource,
+	args struct{},
+) (string, error) {
+	return src.Digest(ctx)
+}
+
 func (s *moduleSchema) moduleSourceViewName(
 	ctx context.Context,
 	view *core.ModuleSourceView,

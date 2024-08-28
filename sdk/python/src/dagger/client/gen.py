@@ -2462,6 +2462,29 @@ class Directory(Type):
         _ctx = self._select("diff", _args)
         return Directory(_ctx)
 
+    async def digest(self) -> str:
+        """Return the directory's digest. The format of the digest is not
+        guaranteed to be stable between releases of Dagger. It is guaranteed
+        to be stable between invocations of the same Dagger engine.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("digest", _args)
+        return await _ctx.execute(str)
+
     def directory(self, path: str) -> Self:
         """Retrieves a directory at the given path.
 
@@ -5505,6 +5528,29 @@ class ModuleSource(Type):
             )
             for v in _ids
         ]
+
+    async def digest(self) -> str:
+        """Return the module source's content digest. The format of the digest is
+        not guaranteed to be stable between releases of Dagger. It is
+        guaranteed to be stable between invocations of the same Dagger engine.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("digest", _args)
+        return await _ctx.execute(str)
 
     def directory(self, path: str) -> Directory:
         """The directory containing the module configuration and source code

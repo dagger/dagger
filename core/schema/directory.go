@@ -37,6 +37,12 @@ func (s *directorySchema) Install() {
 		dagql.Func("glob", s.glob).
 			Doc(`Returns a list of files and directories that matche the given pattern.`).
 			ArgDoc("pattern", `Pattern to match (e.g., "*.md").`),
+		dagql.Func("digest", s.digest).
+			Doc(
+				`Return the directory's digest.
+				The format of the digest is not guaranteed to be stable between releases of Dagger.
+				It is guaranteed to be stable between invocations of the same Dagger engine.`,
+			),
 		dagql.Func("file", s.file).
 			Doc(`Retrieves a file at the given path.`).
 			ArgDoc("path", `Location of the file to retrieve (e.g., "README.md").`),
@@ -191,6 +197,15 @@ type globArgs struct {
 
 func (s *directorySchema) glob(ctx context.Context, parent *core.Directory, args globArgs) ([]string, error) {
 	return parent.Glob(ctx, args.Pattern)
+}
+
+func (s *directorySchema) digest(ctx context.Context, parent *core.Directory, args struct{}) (dagql.String, error) {
+	digest, err := parent.Digest(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	return dagql.NewString(digest), nil
 }
 
 type dirFileArgs struct {
