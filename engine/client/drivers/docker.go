@@ -81,7 +81,11 @@ func (d *dockerDriver) create(ctx context.Context, imageRef string, opts *Driver
 		// We only have a tag in the image ref, so resolve it to a digest. The default
 		// auth keychain parses the same docker credentials as used by the buildkit
 		// session attachable.
-		if img, err := remote.Get(ref, remote.WithAuthFromKeychain(authn.DefaultKeychain), remote.WithUserAgent(opts.UserAgent)); err != nil {
+		_, span := otel.Tracer("").Start(ctx, "resolve image")
+		img, err := remote.Get(ref, remote.WithAuthFromKeychain(authn.DefaultKeychain), remote.WithUserAgent(opts.UserAgent))
+		telemetry.End(span, func() error { return err })
+
+		if err != nil {
 			slog.Warn("failed to resolve image; falling back to leftover engine", "error", err)
 			if strings.Contains(err.Error(), "DENIED") {
 				slog.Warn("check your docker registry auth; it might be incorrect or expired")
@@ -220,20 +224,20 @@ func traceExec(ctx context.Context, cmd *exec.Cmd, opts ...trace.SpanStartOption
 }
 
 func collectLeftoverEngines(ctx context.Context) ([]string, error) {
-	output, err := exec.CommandContext(ctx,
+	cmd := exec.CommandContext(ctx,
 		"docker", "ps",
 		"-a",
 		"--no-trunc",
 		"--filter", "name=^/"+containerNamePrefix,
 		"--format", "{{.Names}}",
-	).CombinedOutput()
-	output = bytes.TrimSpace(output)
-
-	if len(output) == 0 {
-		return nil, err
+	)
+	output, err := traceExec(ctx, cmd)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to list containers: %s", output)
 	}
 
-	engineNames := strings.Split(string(output), "\n")
+	output = strings.TrimSpace(output)
+	engineNames := strings.Split(output, "\n")
 	return engineNames, err
 }
 
