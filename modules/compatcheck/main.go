@@ -4,15 +4,18 @@ import (
 	"context"
 	"dagger/compatcheck/internal/dagger"
 	"dagger/compatcheck/schemadiff"
+	_ "embed"
 	"fmt"
 	"runtime"
 
-	"github.com/dagger/dagger/dagql/introspection"
 	"github.com/moby/buildkit/identity"
 	"github.com/tidwall/gjson"
 	"golang.org/x/exp/rand"
 	"golang.org/x/mod/semver"
 )
+
+//go:embed introspection.graphql
+var introspectionQuery string
 
 type Compatcheck struct{}
 
@@ -71,7 +74,7 @@ func (m *Compatcheck) getSchemaForModuleForEngineVersion(ctx context.Context, mo
 		}
 	}
 
-	baseIntrospection, err := client.WithNewFile("/base-schema-query.graphql", introspection.Query).
+	baseIntrospection, err := client.WithNewFile("/base-schema-query.graphql", introspectionQuery).
 		WithExec([]string{"dagger", "query", "--doc", "/base-schema-query.graphql"}).
 		Stdout(ctx)
 
@@ -79,7 +82,7 @@ func (m *Compatcheck) getSchemaForModuleForEngineVersion(ctx context.Context, mo
 		return "", "", err
 	}
 
-	withModuleIntrospection, err := client.WithNewFile("/schema-query.graphql", introspection.Query).
+	withModuleIntrospection, err := client.WithNewFile("/schema-query.graphql", introspectionQuery).
 		WithExec([]string{"dagger", "query", "-m", module, "--doc", "/schema-query.graphql"}).
 		Stdout(ctx)
 
