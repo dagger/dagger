@@ -399,3 +399,46 @@ func (m *Dep) Dummy() error {
 	require.NoError(t, err)
 	require.JSONEq(t, `{"test": {"test": ""}}`, out)
 }
+
+func (LegacySuite) TestGoAlias(ctx context.Context, t *testctx.T) {
+	// Changed in dagger/dagger#7831
+	//
+	// Ensure that old dagger aliases are preserved.
+
+	c := connect(ctx, t)
+
+	mod := daggerCliBase(t, c).
+		With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+		WithNewFile("dagger.json", `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.11.9"}`).
+		WithNewFile("main.go", `package main
+
+type Test struct {}
+
+func (m *Test) Container(ctr *Container, msg string) *Container {
+	return ctr.WithExec([]string{"echo", "hello " + msg})
+}
+
+func (m *Test) Proto(proto NetworkProtocol) NetworkProtocol {
+	switch proto {
+	case Tcp:
+		return Udp
+	case Udp:
+		return Tcp
+	default:
+		panic("nope")
+	}
+}
+`,
+		)
+	out, err := mod.
+		With(daggerCall("container", "--ctr=alpine", "--msg=world", "stdout")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "hello world")
+
+	out, err = mod.
+		With(daggerCall("proto", "--proto=TCP")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "UDP")
+}

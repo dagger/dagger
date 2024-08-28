@@ -1,7 +1,6 @@
 package core
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/iancoleman/strcase"
@@ -15,11 +14,11 @@ comment
 
 Which avoids corner cases where the comment ends in a `"`.
 */
-func formatGqlDescription(desc string, args ...any) string {
+func formatGqlDescription(desc string) string {
 	if desc == "" {
 		return ""
 	}
-	return "\n" + strings.TrimSpace(fmt.Sprintf(desc, args...)) + "\n"
+	return "\n" + strings.TrimSpace(desc) + "\n"
 }
 
 func gqlObjectName(name string) string {

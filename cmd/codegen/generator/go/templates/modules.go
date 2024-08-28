@@ -131,6 +131,8 @@ func (funcs goTemplateFuncs) moduleMainSrc() (string, error) { //nolint: gocyclo
 	for len(tps) != 0 {
 		var nextTps []types.Type
 		for _, tp := range tps {
+			tp = dealias(tp)
+
 			named, isNamed := tp.(*types.Named)
 			if !isNamed {
 				continue
@@ -410,6 +412,9 @@ func invokeSrc(objFunctionCases map[string][]Code, createMod Code) string {
 
 // TODO: use jennifer for generating this magical typedef
 func (ps *parseState) renderNameOrStruct(t types.Type) string {
+	if alias, ok := t.(*types.Alias); ok {
+		return ps.renderNameOrStruct(alias.Rhs())
+	}
 	if ptr, ok := t.(*types.Pointer); ok {
 		return "*" + ps.renderNameOrStruct(ptr.Elem())
 	}
@@ -497,7 +502,9 @@ func (ps *parseState) checkConstructor(obj types.Object) bool {
 }
 
 func (ps *parseState) checkDaggerObjectIface(obj types.Object) (bool, error) {
-	named, isNamed := obj.Type().(*types.Named)
+	objType := dealias(obj.Type())
+
+	named, isNamed := objType.(*types.Named)
 	if !isNamed {
 		return false, nil
 	}
@@ -565,6 +572,7 @@ func (ps *parseState) fillObjectFunctionCases(type_ types.Type, cases map[string
 		if ptrType, ok := resultType.(*types.Pointer); ok {
 			resultType = ptrType.Elem()
 		}
+		resultType = dealias(resultType)
 		namedType, ok := resultType.(*types.Named)
 		if !ok {
 			return fmt.Errorf("%s must return the main module object %q", constructorFuncName, objName)
@@ -634,7 +642,7 @@ func (ps *parseState) fillObjectFunctionCase(
 
 			tp := varType
 			fnCallArgCode := Id(varName)
-			tp2, fnCallArgCode2, ok, err := ps.functionCallArgCode(varType, Id(varName))
+			tp2, fnCallArgCode2, ok, err := ps.functionCallArgCode(tp, Id(varName))
 			if err != nil {
 				return fmt.Errorf("failed to get function call arg code for %s: %w", varName, err)
 			}
@@ -1034,6 +1042,8 @@ This is needed to handle various special cases:
 */
 func (ps *parseState) functionCallArgCode(t types.Type, access *Statement) (types.Type, *Statement, bool, error) {
 	switch t := t.(type) {
+	case *types.Alias:
+		return ps.functionCallArgCode(t.Rhs(), access)
 	case *types.Pointer:
 		// taking the address of an address isn't allowed - so we use a ptr
 		// helper function
@@ -1060,7 +1070,8 @@ func (ps *parseState) functionCallArgCode(t types.Type, access *Statement) (type
 		}
 		return nil, nil, false, nil
 	case *types.Slice:
-		elemNamed, ok := t.Elem().(*types.Named)
+		elem := dealias(t.Elem())
+		elemNamed, ok := elem.(*types.Named)
 		if !ok {
 			return nil, nil, false, nil
 		}
@@ -1149,4 +1160,14 @@ func unpackASTFields(fields *ast.FieldList) []*ast.Field {
 		}
 	}
 	return unpacked
+}
+
+func dealias(t types.Type) types.Type {
+	for {
+		alias, isAlias := t.(*types.Alias)
+		if !isAlias {
+			return t
+		}
+		t = alias.Rhs()
+	}
 }
