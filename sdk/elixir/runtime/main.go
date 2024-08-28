@@ -67,7 +67,7 @@ type ElixirSdk struct {
 func (m *ElixirSdk) ModuleRuntime(
 	ctx context.Context,
 	modSource *dagger.ModuleSource,
-	introspectionJson *dagger.File,
+	introspectionJSON *dagger.File,
 ) (*dagger.Container, error) {
 	modName, err := modSource.ModuleName(ctx)
 	if err != nil {
@@ -78,7 +78,7 @@ func (m *ElixirSdk) ModuleRuntime(
 		return nil, err
 	}
 
-	ctr, err := m.Common(ctx, modSource, introspectionJson)
+	ctr, err := m.Common(ctx, modSource, introspectionJSON)
 	if err != nil {
 		return nil, err
 	}
@@ -94,9 +94,9 @@ func (m *ElixirSdk) ModuleRuntime(
 func (m *ElixirSdk) Codegen(
 	ctx context.Context,
 	modSource *dagger.ModuleSource,
-	introspectionJson *dagger.File,
+	introspectionJSON *dagger.File,
 ) (*dagger.GeneratedCode, error) {
-	ctr, err := m.Common(ctx, modSource, introspectionJson)
+	ctr, err := m.Common(ctx, modSource, introspectionJSON)
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +108,7 @@ func (m *ElixirSdk) Codegen(
 
 func (m *ElixirSdk) Common(ctx context.Context,
 	modSource *dagger.ModuleSource,
-	introspectionJson *dagger.File,
+	introspectionJSON *dagger.File,
 ) (*dagger.Container, error) {
 	modName, err := modSource.ModuleName(ctx)
 	if err != nil {
@@ -119,7 +119,7 @@ func (m *ElixirSdk) Common(ctx context.Context,
 		return nil, err
 	}
 	m = m.Base(modSource, subPath).
-		WithSDK(introspectionJson).
+		WithSDK(introspectionJSON).
 		WithNewElixirPackage(ctx, normalizeModName(modName))
 	if m.err != nil {
 		return nil, m.err
@@ -165,7 +165,7 @@ func (m *ElixirSdk) WithNewElixirPackage(ctx context.Context, modName string) *E
 }
 
 // Generate the SDK into the container.
-func (m *ElixirSdk) WithSDK(introspectionJson *dagger.File) *ElixirSdk {
+func (m *ElixirSdk) WithSDK(introspectionJSON *dagger.File) *ElixirSdk {
 	if m.err != nil {
 		return m
 	}
@@ -174,7 +174,7 @@ func (m *ElixirSdk) WithSDK(introspectionJson *dagger.File) *ElixirSdk {
 			WithoutDirectory("dagger_codegen").
 			WithoutDirectory("lib/dagger/gen"),
 		).
-		WithDirectory(path.Join(genDir, "lib", "dagger", "gen"), m.GenerateCode(introspectionJson))
+		WithDirectory(path.Join(genDir, "lib", "dagger", "gen"), m.GenerateCode(introspectionJSON))
 	return m
 }
 
@@ -190,9 +190,9 @@ func (m *ElixirSdk) WithDaggerCodegen() *dagger.Container {
 		WithExec([]string{"mix", "escript.install", "--force"})
 }
 
-func (m *ElixirSdk) GenerateCode(introspectionJson *dagger.File) *dagger.Directory {
+func (m *ElixirSdk) GenerateCode(introspectionJSON *dagger.File) *dagger.Directory {
 	return m.WithDaggerCodegen().
-		WithMountedFile(schemaPath, introspectionJson).
+		WithMountedFile(schemaPath, introspectionJSON).
 		WithExec([]string{
 			"dagger_codegen", "generate",
 			"--outdir", "/gen",
