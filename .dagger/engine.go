@@ -6,13 +6,21 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/moby/buildkit/identity"
+	"go.opentelemetry.io/otel/codes"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/.dagger/build"
 	"github.com/dagger/dagger/.dagger/internal/dagger"
+)
+
+type Distro string
+
+const (
+	DistroAlpine = "alpine"
+	DistroWolfi  = "wolfi"
+	DistroUbuntu = "ubuntu"
 )
 
 type Engine struct {
@@ -24,9 +32,6 @@ type Engine struct {
 	Trace bool // +private
 
 	Race bool // +private
-
-	GPUSupport bool   // +private
-	ImageBase  string // +private
 }
 
 func (e *Engine) WithConfig(key, value string) *Engine {
@@ -49,27 +54,16 @@ func (e *Engine) WithTrace() *Engine {
 	return e
 }
 
-func (e *Engine) WithBase(
-	// +optional
-	image *string,
-	// +optional
-	gpuSupport *bool,
-) *Engine {
-	if image != nil {
-		e.ImageBase = *image
-	}
-	if gpuSupport != nil {
-		e.GPUSupport = *gpuSupport
-	}
-	return e
-}
-
 // Build the engine container
 func (e *Engine) Container(
 	ctx context.Context,
 
 	// +optional
 	platform dagger.Platform,
+	// +optional
+	image *Distro,
+	// +optional
+	gpuSupport bool,
 ) (*dagger.Container, error) {
 	cfg, err := generateConfig(e.Trace, e.Config)
 	if err != nil {
@@ -92,20 +86,20 @@ func (e *Engine) Container(
 		builder = builder.WithPlatform(platform)
 	}
 
-	if e.ImageBase != "" {
-		switch e.ImageBase {
-		case "wolfi":
-			builder = builder.WithWolfiBase()
-		case "alpine":
+	if image != nil {
+		switch *image {
+		case DistroAlpine:
 			builder = builder.WithAlpineBase()
-		case "ubuntu":
+		case DistroWolfi:
+			builder = builder.WithWolfiBase()
+		case DistroUbuntu:
 			builder = builder.WithUbuntuBase()
 		default:
-			return nil, fmt.Errorf("unknown base image type %s", e.ImageBase)
+			return nil, fmt.Errorf("unknown base image type %s", *image)
 		}
 	}
 
-	if e.GPUSupport {
+	if gpuSupport {
 		builder = builder.WithGPUSupport()
 	}
 
@@ -133,8 +127,13 @@ func (e *Engine) Container(
 func (e *Engine) Service(
 	ctx context.Context,
 	name string,
+
 	// +optional
 	version *VersionInfo,
+	// +optional
+	image *Distro,
+	// +optional
+	gpuSupport bool,
 ) (*dagger.Service, error) {
 	var cacheVolumeName string
 	if version != nil {
@@ -150,7 +149,7 @@ func (e *Engine) Service(
 		WithConfig("grpc", `address=["unix:///var/run/buildkit/buildkitd.sock", "tcp://0.0.0.0:1234"]`).
 		WithArg(`network-name`, `dagger-dev`).
 		WithArg(`network-cidr`, `10.88.0.0/16`)
-	devEngine, err := e.Container(ctx, "")
+	devEngine, err := e.Container(ctx, "", image, gpuSupport)
 	if err != nil {
 		return nil, err
 	}
@@ -229,17 +228,52 @@ func (e *Engine) LintGenerate(ctx context.Context) error {
 	return dag.Dirdiff().AssertEqual(ctx, before, after, []string{"."})
 }
 
+var targets = []struct {
+	Name       string
+	Tag        string
+	Image      Distro
+	Platforms  []dagger.Platform
+	GPUSupport bool
+}{
+	{
+		Name:      "alpine (default)",
+		Tag:       "%s",
+		Image:     DistroAlpine,
+		Platforms: []dagger.Platform{"linux/amd64", "linux/arm64"},
+	},
+	{
+		Name:       "ubuntu with nvidia variant",
+		Tag:        "%s-gpu",
+		Image:      DistroUbuntu,
+		Platforms:  []dagger.Platform{"linux/amd64"},
+		GPUSupport: true,
+	},
+	{
+		Name:      "wolfi",
+		Tag:       "%s-wolfi",
+		Image:     DistroWolfi,
+		Platforms: []dagger.Platform{"linux/amd64"},
+	},
+	{
+		Name:       "wolfi with nvidia variant",
+		Tag:        "%s-wolfi-gpu",
+		Image:      DistroWolfi,
+		Platforms:  []dagger.Platform{"linux/amd64"},
+		GPUSupport: true,
+	},
+}
+
 // Publish all engine images to a registry
 func (e *Engine) Publish(
 	ctx context.Context,
 
+	// Image target to push to
 	image string,
-
-	// Comma-separated list of tags to use
-	tags string,
+	// List of tags to use
+	tag []string,
 
 	// +optional
-	platform []dagger.Platform,
+	dryRun bool,
 
 	// +optional
 	registry *string,
@@ -247,69 +281,93 @@ func (e *Engine) Publish(
 	registryUsername *string,
 	// +optional
 	registryPassword *dagger.Secret,
-) ([]string, error) {
-	if len(platform) == 0 {
-		platform = []dagger.Platform{dagger.Platform(platforms.DefaultString())}
-	}
+) error {
+	// collect all the targets that we are trying to build together, along with
+	// where they need to go to
+	targetResults := make([]struct {
+		Platforms []*dagger.Container
+		Tags      []string
+	}, len(targets))
 
-	refs := strings.Split(tags, ",")
-
-	engines := make([]*dagger.Container, 0, len(platform))
-	for _, platform := range platform {
-		ctr, err := e.Container(ctx, platform)
-		if err != nil {
-			return []string{}, err
+	eg, egCtx := errgroup.WithContext(ctx)
+	for i, target := range targets {
+		// determine the target tags
+		for _, tag := range tag {
+			targetResults[i].Tags = append(targetResults[i].Tags, fmt.Sprintf(target.Tag, tag))
 		}
-		engines = append(engines, ctr)
+
+		// build all the target platforms
+		targetResults[i].Platforms = make([]*dagger.Container, len(target.Platforms))
+		for j, platform := range target.Platforms {
+			egCtx, span := Tracer().Start(egCtx, fmt.Sprintf("building %s [%s]", target.Name, platform))
+			eg.Go(func() (rerr error) {
+				defer func() {
+					if rerr != nil {
+						span.SetStatus(codes.Error, rerr.Error())
+					}
+					span.End()
+				}()
+
+				ctr, err := e.Container(egCtx, platform, &target.Image, target.GPUSupport)
+				if err != nil {
+					return err
+				}
+				ctr, err = ctr.Sync(egCtx)
+				if err != nil {
+					return err
+				}
+
+				targetResults[i].Platforms[j] = ctr
+				return nil
+			})
+		}
+	}
+	if err := eg.Wait(); err != nil {
+		return err
 	}
 
+	if dryRun {
+		return nil
+	}
+
+	// push all the targets
 	ctr := dag.Container()
 	if registry != nil && registryUsername != nil && registryPassword != nil {
 		ctr = ctr.WithRegistryAuth(*registry, *registryUsername, registryPassword)
 	}
+	for i, target := range targets {
+		result := targetResults[i]
 
-	digests := []string{}
-	for _, ref := range refs {
-		digest, err := ctr.
-			Publish(ctx, fmt.Sprintf("%s:%s", image, ref), dagger.ContainerPublishOpts{
-				PlatformVariants:  engines,
-				ForcedCompression: dagger.Gzip, // use gzip to avoid incompatibility w/ older docker versions
-			})
-		if err != nil {
-			return digests, err
-		}
-		digests = append(digests, digest)
-	}
-	return digests, nil
-}
+		if err := func() (rerr error) {
+			ctx, span := Tracer().Start(ctx, fmt.Sprintf("pushing %s", target.Name))
+			defer func() {
+				if rerr != nil {
+					span.SetStatus(codes.Error, rerr.Error())
+				}
+				span.End()
+			}()
 
-// Verify that the engine builds without actually publishing anything
-func (e *Engine) TestPublish(
-	ctx context.Context,
-
-	// +optional
-	platform []dagger.Platform,
-) error {
-	if len(platform) == 0 {
-		platform = []dagger.Platform{dagger.Platform(platforms.DefaultString())}
-	}
-
-	var eg errgroup.Group
-	for _, platform := range platform {
-		eg.Go(func() error {
-			ctr, err := e.Container(ctx, platform)
-			if err != nil {
-				return err
+			for _, tag := range result.Tags {
+				_, err := ctr.
+					Publish(ctx, fmt.Sprintf("%s:%s", image, tag), dagger.ContainerPublishOpts{
+						PlatformVariants:  result.Platforms,
+						ForcedCompression: dagger.Gzip, // use gzip to avoid incompatibility w/ older docker versions
+					})
+				if err != nil {
+					return err
+				}
 			}
-			_, err = ctr.Sync(ctx)
+			return nil
+		}(); err != nil {
 			return err
-		})
+		}
 	}
-	return eg.Wait()
+
+	return nil
 }
 
 func (e *Engine) Scan(ctx context.Context) (string, error) {
-	target, err := e.Container(ctx, "")
+	target, err := e.Container(ctx, "", nil, false)
 	if err != nil {
 		return "", err
 	}
