@@ -182,13 +182,7 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *dagger.Modul
 		// Mount user's module configuration (without sources) and the generated client in it.
 		WithDirectory(ModSourceDirPath,
 			dag.Directory().WithDirectory("/", modSource.ContextDirectory(), dagger.DirectoryWithDirectoryOpts{
-				Include: []string{
-					fmt.Sprintf("%s/package.json", t.moduleConfig.subPath),
-					fmt.Sprintf("%s/*lock*", t.moduleConfig.subPath),
-					fmt.Sprintf("%s/tsconfig.json", t.moduleConfig.subPath),
-					fmt.Sprintf("%s/pnpm-workspace.yaml", t.moduleConfig.subPath),
-					fmt.Sprintf("%s/.yarnrc.yml", t.moduleConfig.subPath),
-				},
+				Include: t.moduleConfigFiles(),
 			})).
 		WithDirectory(filepath.Join(t.moduleConfig.modulePath(), GenDir), sdk).
 		WithWorkdir(t.moduleConfig.modulePath())
@@ -213,14 +207,7 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *dagger.Modul
 	base = base.WithDirectory(ModSourceDirPath,
 		dag.Directory().WithDirectory("/", modSource.ContextDirectory(), dagger.DirectoryWithDirectoryOpts{
 			// Include the rest of the user's module except config files to not override previous steps & SDKs.
-			Exclude: []string{
-				fmt.Sprintf("%s/package.json", t.moduleConfig.subPath),
-				fmt.Sprintf("%s/*lock*", t.moduleConfig.subPath),
-				fmt.Sprintf("%s/tsconfig.json", t.moduleConfig.subPath),
-				fmt.Sprintf("%s/pnpm-workspace.yaml", t.moduleConfig.subPath),
-				fmt.Sprintf("%s/.yarnrc.yml", t.moduleConfig.subPath),
-				fmt.Sprintf("%s/sdk", t.moduleConfig.subPath),
-			},
+			Exclude: append(t.moduleConfigFiles(), filepath.Join(t.moduleConfig.subPath, "sdk")),
 		}),
 	)
 
@@ -230,6 +217,30 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *dagger.Modul
 	}
 
 	return base, nil
+}
+
+// Returns a list of files to include for module configs.
+func (t *TypescriptSdk) moduleConfigFiles() []string {
+	modConfigFiles := []string{
+		"package.json",
+		"tsconfig.json",
+
+		// Workspaces files
+		"pnpm-workspace.yaml",
+		".yarnrc.yml",
+
+		// Lockfiles to include
+		"package-lock.json",
+		"yarn.lock",
+		"pnpm-lock.yaml",
+		"bun.lockb",
+	}
+
+	for i, file := range modConfigFiles {
+		modConfigFiles[i] = filepath.Join(t.moduleConfig.subPath, file)
+	}
+
+	return modConfigFiles
 }
 
 // Base returns a Node or Bun container with cache setup for node package managers or bun
