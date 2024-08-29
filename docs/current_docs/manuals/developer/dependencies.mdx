@@ -1,0 +1,242 @@
+---
+slug: /manuals/developer/dependencies
+displayed_sidebar: "current"
+toc_max_heading_level: 2
+title: "Dependencies"
+---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Dependencies
+
+When creating a Dagger module, there are two types of dependencies you will encounter:
+
+- Dependencies on other Dagger modules
+- Dependencies on third-party packages or modules from your programming language's ecosystem
+
+## Dependencies on Dagger modules
+
+Dagger modules are shareable and reusable. You can call Dagger Functions from any Dagger module in your own Dagger module simply by adding it as a module dependency with `dagger install`, as in the following example:
+
+```sh
+dagger install github.com/shykes/daggerverse/hello@v0.3.0
+```
+
+This module will be added to your `dagger.json`:
+
+```json
+...
+"dependencies": [
+  {
+    "name": "hello",
+    "source": "github.com/shykes/daggerverse/hello@54d86c6002d954167796e41886a47c47d95a626d"
+  }
+]
+```
+
+When you add a dependency to your module with `dagger install`, the dependent module will be added to the code-generation routines and can be accessed from your own module's code.
+
+The entrypoint to accessing dependent modules from your own module's code is `dag`, the Dagger client, which is pre-initialized. It contains all the core types (like `Container`, `Directory`, etc.), as well as bindings to any dependencies your module has declared.
+
+Here is an example of accessing the installed `helloWorld` module from your own module's code:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go
+func (m *MyModule) Greeting(ctx context.Context) (string, error) {
+  return dag.HelloWorld().Message(ctx)
+}
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python
+@function
+async def greeting(self) -> str:
+  return await dag.hello_world().message()
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript
+@func()
+async greeting(): Promise<string> {
+  return await dag.helloWorld().message()
+}
+```
+
+</TabItem>
+</Tabs>
+
+You can also use local modules as dependencies. However, they must be stored in a sub-directory of your module. For example:
+
+```sh
+dagger install ./path/to/module
+```
+
+## Dependencies on third-party packages
+
+Dagger Functions are just regular code, written in your usual programming language. One of the key advantages of this approach is that it opens up access to your language's existing ecosystem of packages or modules. You can easily add and use these packages/modules as dependencies in your Dagger module via your language's package manager.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+To add a Go dependency, add it to your `go.mod` file using `go get`. For example:
+
+```shell
+go get github.com/spf13/cobra
+```
+
+</TabItem>
+<TabItem value="Python">
+
+To add a Python dependency, [add it to `pyproject.toml`'s `dependencies`](https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#dependencies-and-requirements). For example:
+
+```toml
+[project]
+dependencies = [
+    "infisical-python>=2.1.8",
+]
+```
+
+Of course, for tools that support it, you can simply use the CLI, as below:
+
+```shell
+poetry add infisical-python
+```
+
+## Lock file
+
+While Python doesn't have a [lock file standard](https://discuss.python.org/t/lock-files-again-but-this-time-w-sdists/46593/313) yet, other than using a tool that has a proprietary format (like Poetry), the most common way to do it is with a `pip`-compatible format like [`pip-tools`](https://pip-tools.readthedocs.io/en/latest/) uses.
+
+Since the introduction of [uv](./module-structure.mdx#uv-installer), dependencies are pinned by default using a `requirements.lock` file. If it exists, the Python SDK will use it directly to install dependencies, resulting in a faster installation.
+
+:::tip
+Check [compatibility with `pip` and `pip-tools`](https://github.com/astral-sh/uv/blob/main/PIP_COMPATIBILITY.md) if migrating from or integrating with those tools.
+:::
+
+The lock file is only created automatically for new modules. For existing modules that don't have it, it can be created (and updated) manually. For example:
+
+```console
+uv pip compile --generate-hashes --upgrade -o requirements.lock pyproject.toml sdk/pyproject.toml
+```
+
+The above command pulls in dependencies from `pyproject.toml` and `sdk/pyproject.toml`, gets their latest compatible versions, and writes them to `requirements.lock` with added hashes to verify integrity when downloading during install.
+
+:::important
+Make sure that `./sdk/pyproject.toml` is up to date first with:
+
+```console
+dagger develop
+```
+:::
+
+:::note
+The lock file should only include dependencies, and not the editable installs for the `./sdk` and current module.
+:::
+
+### Poetry's lock file
+
+Dagger doesn't support running the `poetry` CLI. It depends on standards like [PEP 517](./module-structure.mdx#language-native-packaging). That means that it doesn't know about the `poetry.lock` file, but the `requirements.lock` file can be generated with [`poetry export`](https://python-poetry.org/docs/cli#export):
+
+```console
+poetry export --with dev --without main -o requirements.lock
+```
+
+:::important
+The `dagger-io` dev dependency is [not exported correctly](https://github.com/python-poetry/poetry-plugin-export/issues/145), so it needs to be removed:
+
+```console
+sed -i '' '/dagger-io @/d' requirements.lock
+```
+:::
+
+</TabItem>
+<TabItem value="TypeScript">
+
+To add a TypeScript dependency, add it to the `package.json` file using your favorite package manager. For example:
+
+```shell
+npm install pm2
+```
+
+Pinning a specific dependency version or adding local dependencies are supported, in the same way as any Node.js project.
+
+TypeScript can manage dependencies using multiple package managers. The [Node.js](https://nodejs.org/en) runtime supports [`npm`](https://www.npmjs.com/), [`pnpm`](https://pnpm.io/) and [`yarn`](https://yarnpkg.com/). The [Bun](https://bun.sh/) runtime supports `bun`.
+
+By default, the TypeScript SDK executes functions using the Node.js runtime with [yarn v1.22.22](https://yarnpkg.com/), but you can configure an alternative package manager or version in your Dagger module's `package.json` file by setting the `packageManager` property.
+
+### Npm
+
+Set the `packageManager` property to `npm` to use the `npm` package manager. You can also set a specific version with a suffix, as shown below:
+
+```json
+  "packageManager": "npm@10.8.2"
+```
+
+If no version is specified, `npm@10.7.0` is used by default.
+
+### Yarn
+
+Set the `packageManager` property to `yarn` to use the Yarn package manager. You can also set a specific version with a suffix, as shown below:
+
+```json
+  "packageManager": "yarn@1.22.21"
+```
+
+If no version is specified, `yarn@1.22.22` is used by default.
+
+If you use Yarn 3.0 or above, the TypeScript SDK will also generate a `.yarnrc.yml` file in your module's root directory. This file is used to configure the Yarn package manager linker to `node_modules`, which is  required to correctly resolve `@dagger.io/dagger` as local dependencies of your module.
+
+```yaml
+nodeLinker: node-modules
+```
+
+### Pnpm
+
+Set the `packageManager` property to `pnpm` to use the Pnpm package manager. You can also set a specific version with a suffix, e.g.:
+
+```json
+  "packageManager": "pnpm@9.9"
+```
+
+If no version is specified, `pnpm@8.15.4` is used.
+
+The TypeScript SDK will also generate a `pnpm-workspace.yml` file in your module's root directory. This file is used to configure the Pnpm package manager, which is required to correctly resolve `@dagger.io/dagger` as local dependencies of your module.
+
+```yaml
+packages:
+  - './sdk'
+```
+
+### Bun
+
+:::warning
+Bun runtime support is still experimental. Unexpected results may occur in some cases.
+:::
+
+Setting the `runtime` property to `bun` will use the Bun runtime and its package manager. You do not need to set the `packageManager` field explicitly. Here is an example:
+
+```json
+  "dagger": {
+    "runtime": "bun"
+  }
+```
+
+### Automatic detection
+
+When a package manager is not explicitly defined within the `package.json` file, Dagger automatically identifies the appropriate package manager by examining the project's lock files inside the project's `.dagger` directory.
+
+- If Dagger finds any of the following lock files : `package-lock.json`, `yarn.lock`, or `pnpm-lock.yaml`, it automatically selects the corresponding package manager with a predefined default version: `npm@10.7.0`, `yarn@1.22.22` or `pnpm@8.15.4`.
+- If none of the above mentioned lock files are present, but a `bun.lockb` file is present, Dagger will choose `bun` as the runtime and package manager with a predefined default version: `bun@1.0.11`.
+- `yarn@1.22.22` is the last default, when nothing mentioned above applies.
+
+:::warning
+This behavior however should be considered a sensible fallback, and not as an explicit configuration. Since this default can change, we encourage you to configure a package manager explicitly.
+:::
+
+</TabItem>
+</Tabs>

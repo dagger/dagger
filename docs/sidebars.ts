@@ -356,7 +356,7 @@ module.exports = {
         },
         {
           "type": "doc",
-          "id": "manuals/developer/module-dependencies"
+          "id": "manuals/developer/dependencies"
         },
         {
           "type": "doc",
@@ -388,15 +388,7 @@ module.exports = {
         },
         {
           "type": "doc",
-          "id": "manuals/developer/package-managers"
-        },
-        {
-          "type": "doc",
           "id": "manuals/developer/interfaces"
-        },
-        {
-          "type": "doc",
-          "id": "manuals/developer/language-dependencies"
         },
         {
           "type": "doc",
