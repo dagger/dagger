@@ -1,9 +1,0 @@
-kind: Fixed
-body: |
-  CLI will now error out if non-existent local module directory is passed
-
-  The file-not-found errors were previously silently ignored for the top-level module passed in the CLI.
-time: 2024-08-20T16:35:19.898032134+01:00
-custom:
-  Author: jedevc
-  PR: "8193"
