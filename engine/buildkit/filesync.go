@@ -115,7 +115,7 @@ func (c *Client) diffcopy(ctx context.Context, opts engine.LocalImportOpts, msg 
 	if err != nil {
 		return err
 	}
-	defer cancel()
+	defer cancel(errors.New("diff copy done"))
 
 	ctx = opts.AppendToOutgoingContext(ctx)
 
@@ -182,7 +182,7 @@ func (c *Client) LocalDirExport(
 	if err != nil {
 		return err
 	}
-	defer cancel()
+	defer cancel(errors.New("local dir export done"))
 
 	destPath = path.Clean(destPath)
 	if destPath == ".." || strings.HasPrefix(destPath, "../") {
@@ -253,7 +253,7 @@ func (c *Client) LocalFileExport(
 	if err != nil {
 		return err
 	}
-	defer cancel()
+	defer cancel(errors.New("local file export done"))
 
 	destPath = path.Clean(destPath)
 	if destPath == ".." || strings.HasPrefix(destPath, "../") {

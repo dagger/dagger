@@ -972,8 +972,10 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	sessionSrv := client.NewBuildkitSessionServer(ctx, sessionClientConn, attachables...)
 	stopSessionSrv := state.cleanups.Add("stop session server", Infallible(sessionSrv.Stop))
 
-	srvCtx, srvCancel := context.WithCancel(ctx)
-	state.cleanups.Add("cancel session server", Infallible(srvCancel))
+	srvCtx, srvCancel := context.WithCancelCause(ctx)
+	state.cleanups.Add("cancel session server", Infallible(func() {
+		srvCancel(errors.New("container cleanup"))
+	}))
 	srvPool := pool.New().WithContext(srvCtx).WithCancelOnError()
 	srvPool.Go(func(ctx context.Context) error {
 		sessionSrv.Run(ctx)
@@ -1024,7 +1026,9 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	state.cleanups.Add("wait for nested client server pool", srvPool.Wait)
 	state.cleanups.ReAdd(stopSessionSrv)
 	state.cleanups.Add("close nested client http server", httpSrv.Close)
-	state.cleanups.Add("cancel nested client server pool", Infallible(srvCancel))
+	state.cleanups.Add("cancel nested client server pool", Infallible(func() {
+		srvCancel(errors.New("container cleanup"))
+	}))
 
 	return nil
 }

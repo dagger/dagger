@@ -3,6 +3,7 @@ package idtui
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -30,7 +31,7 @@ type frontendPretty struct {
 	program     *tea.Program
 	run         func(context.Context) error
 	runCtx      context.Context
-	interrupt   func()
+	interrupt   context.CancelCauseFunc
 	interrupted bool
 	done        bool
 	err         error
@@ -187,7 +188,7 @@ func (fe *frontendPretty) runWithTUI(ctx context.Context, ttyIn *os.File, ttyOut
 	// wire up the run so we can call it asynchronously with the TUI running
 	fe.run = run
 	// set up ctx cancellation so the TUI can interrupt via keypresses
-	fe.runCtx, fe.interrupt = context.WithCancel(ctx)
+	fe.runCtx, fe.interrupt = context.WithCancelCause(ctx)
 
 	// keep program state so we can send messages to it
 	fe.program = tea.NewProgram(fe,
@@ -672,7 +673,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 			} else {
 				slog.Warn("canceling... (press again to exit immediately)")
 			}
-			fe.interrupt()
+			fe.interrupt(errors.New("interrupted"))
 			fe.interrupted = true
 			return fe, nil // tea.Quit is deferred until we receive doneMsg
 		case "ctrl+\\": // SIGQUIT

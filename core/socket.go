@@ -214,8 +214,8 @@ func (store *SocketStore) CheckAgent(ctx context.Context, req *sshforward.CheckA
 }
 
 func (store *SocketStore) ForwardAgent(stream sshforward.SSH_ForwardAgentServer) error {
-	ctx, cancel := context.WithCancel(stream.Context())
-	defer cancel()
+	ctx, cancel := context.WithCancelCause(stream.Context())
+	defer cancel(errors.New("forward agent done"))
 
 	opts, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
@@ -305,7 +305,7 @@ func (store *SocketStore) MountSocket(ctx context.Context, idDgst digest.Digest)
 	}
 
 	eg, ctx := errgroup.WithContext(ctx)
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithCancelCause(ctx)
 
 	eg.Go(func() error {
 		defer l.Close()
@@ -313,8 +313,14 @@ func (store *SocketStore) MountSocket(ctx context.Context, idDgst digest.Digest)
 		return nil
 	})
 
-	eg.Go(func() error {
-		defer cancel()
+	eg.Go(func() (rerr error) {
+		defer func() {
+			if rerr != nil {
+				cancel(fmt.Errorf("failed to forward ssh agent: %w", rerr))
+			} else {
+				cancel(nil)
+			}
+		}()
 		for {
 			conn, err := l.Accept()
 			if err != nil {
@@ -335,7 +341,7 @@ func (store *SocketStore) MountSocket(ctx context.Context, idDgst digest.Digest)
 	})
 
 	return sockPath, func() error {
-		cancel()
+		cancel(errors.New("cleanup socket mount"))
 		err := eg.Wait()
 		os.RemoveAll(dir)
 		return err
@@ -347,8 +353,8 @@ func (store *SocketStore) Register(srv *grpc.Server) {
 }
 
 func proxyStream[T any](ctx context.Context, clientStream grpc.ClientStream, serverStream grpc.ServerStream) error {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(errors.New("proxy stream done"))
 	var eg errgroup.Group
 	var done bool
 	eg.Go(func() (rerr error) {
@@ -361,7 +367,7 @@ func proxyStream[T any](ctx context.Context, clientStream grpc.ClientStream, ser
 				rerr = nil
 			}
 			if rerr != nil {
-				cancel()
+				cancel(fmt.Errorf("failed to proxy stream server->client: %w", rerr))
 			}
 		}()
 		for {
@@ -385,8 +391,10 @@ func proxyStream[T any](ctx context.Context, clientStream grpc.ClientStream, ser
 			}
 			if rerr == nil {
 				done = true
+				cancel(errors.New("proxy stream client->server done"))
+			} else {
+				cancel(fmt.Errorf("failed to proxy stream client->server: %w", rerr))
 			}
-			cancel()
 		}()
 		for {
 			msg, err := withContext(ctx, func() (*T, error) {

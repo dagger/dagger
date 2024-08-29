@@ -3,6 +3,7 @@ package buildkit
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -35,7 +36,7 @@ func (c *Client) PublishContainerImage(
 	if err != nil {
 		return nil, err
 	}
-	defer cancel()
+	defer cancel(errors.New("publish container image done"))
 
 	combinedResult, err := c.getContainerResult(ctx, inputByPlatform)
 	if err != nil {
@@ -73,7 +74,7 @@ func (c *Client) ExportContainerImage(
 	if err != nil {
 		return nil, err
 	}
-	defer cancel()
+	defer cancel(errors.New("export container image done"))
 
 	destPath = path.Clean(destPath)
 	if destPath == ".." || strings.HasPrefix(destPath, "../") {
@@ -132,7 +133,7 @@ func (c *Client) ContainerImageToTarball(
 	if err != nil {
 		return nil, err
 	}
-	defer cancel()
+	defer cancel(errors.New("container image to tarball done"))
 
 	combinedResult, err := c.getContainerResult(ctx, inputByPlatform)
 	if err != nil {

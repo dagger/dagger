@@ -86,10 +86,10 @@ func (w *Worker) runNetNSWorkers(ctx context.Context, state *execState) error {
 	}
 	state.cleanups.Add("close container netns file", ctrFile.Close)
 
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithCancelCause(ctx)
 	p := pool.New().WithContext(ctx)
 	state.cleanups.Add("stopping namespace workers", p.Wait)
-	state.cleanups.Add("canceling namespace workers", Infallible(cancel))
+	state.cleanups.Add("canceling namespace workers", Infallible(func() { cancel(errors.New("cleanup container")) }))
 
 	for i := 0; i < workerPoolSize; i++ {
 		p.Go(func(ctx context.Context) (rerr error) {

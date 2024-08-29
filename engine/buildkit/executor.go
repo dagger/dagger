@@ -557,7 +557,7 @@ func (k procKiller) Kill(ctx context.Context) (err error) {
 	// shorter timeout but here as a fail-safe for future refactoring.
 	ctx, cancel := context.WithCancelCause(ctx)
 	ctx, _ = context.WithTimeoutCause(ctx, 10*time.Second, context.DeadlineExceeded)
-	defer cancel(context.Canceled)
+	defer cancel(nil)
 
 	if k.pidfile == "" {
 		// for `runc run` process we use `runc kill` to terminate the process
