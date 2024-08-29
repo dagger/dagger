@@ -17,7 +17,14 @@ import (
 
 const pythonSourcePath = "src/main/__init__.py"
 
-func (ModuleSuite) TestPythonInit(ctx context.Context, t *testctx.T) {
+// Group all tests that are specific to Python only.
+type PythonSuite struct{}
+
+func TestPython(t *testing.T) {
+	testctx.Run(testCtx, t, PythonSuite{}, Middleware()...)
+}
+
+func (PythonSuite) TestInit(ctx context.Context, t *testctx.T) {
 	t.Run("from scratch", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
@@ -118,7 +125,7 @@ version = "0.0.0"
 	})
 }
 
-func (ModuleSuite) TestPythonProjectLayout(ctx context.Context, t *testctx.T) {
+func (PythonSuite) TestProjectLayout(ctx context.Context, t *testctx.T) {
 	testCases := []struct {
 		name string
 		path string
@@ -321,7 +328,7 @@ def hello() -> str:
 	}
 }
 
-func (ModuleSuite) TestPythonVersion(ctx context.Context, t *testctx.T) {
+func (PythonSuite) TestVersion(ctx context.Context, t *testctx.T) {
 	source := pythonSource(`
 import sys
 from dagger import function
@@ -444,7 +451,7 @@ def relaxed() -> str:
 	})
 }
 
-func (ModuleSuite) TestPythonAltRuntime(ctx context.Context, t *testctx.T) {
+func (PythonSuite) TestAltRuntime(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	runtimeSrcPath, err := filepath.Abs("../../sdk/python/runtime")
@@ -495,7 +502,7 @@ def version() -> str:
 	})
 }
 
-func (ModuleSuite) TestPythonUv(ctx context.Context, t *testctx.T) {
+func (PythonSuite) TestUv(ctx context.Context, t *testctx.T) {
 	t.Run("disabled", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
@@ -576,7 +583,7 @@ async def version() -> str:
 	})
 }
 
-func (ModuleSuite) TestPythonLock(ctx context.Context, t *testctx.T) {
+func (PythonSuite) TestLock(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	base := daggerCliBase(t, c).With(pythonSource(`
@@ -630,7 +637,7 @@ def version(name: str) -> str:
 	require.Equal(t, "4.1.0", out)
 }
 
-func (ModuleSuite) TestPythonLockAddedDep(ctx context.Context, t *testctx.T) {
+func (PythonSuite) TestLockAddedDep(ctx context.Context, t *testctx.T) {
 	source := pythonSource(`
 from importlib import metadata
 from dagger import function
@@ -688,7 +695,7 @@ def version() -> str:
 	})
 }
 
-func (ModuleSuite) TestPythonSignatures(ctx context.Context, t *testctx.T) {
+func (PythonSuite) TestSignatures(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	modGen := pythonModInit(t, c, `
@@ -824,7 +831,7 @@ func (ModuleSuite) TestPythonSignatures(ctx context.Context, t *testctx.T) {
 	}
 }
 
-func (ModuleSuite) TestPythonSignaturesBuiltinTypes(ctx context.Context, t *testctx.T) {
+func (PythonSuite) TestSignaturesBuiltinTypes(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	modGen := pythonModInit(t, c, `
@@ -885,7 +892,7 @@ func (ModuleSuite) TestPythonSignaturesBuiltinTypes(ctx context.Context, t *test
 	}
 }
 
-func (ModuleSuite) TestPythonDocs(ctx context.Context, t *testctx.T) {
+func (PythonSuite) TestDocs(ctx context.Context, t *testctx.T) {
 	t.Run("basic", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
@@ -1103,7 +1110,7 @@ func (ModuleSuite) TestPythonDocs(ctx context.Context, t *testctx.T) {
 	})
 }
 
-func (ModuleSuite) TestPythonNameConflicts(ctx context.Context, t *testctx.T) {
+func (PythonSuite) TestNameConflicts(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	modGen := pythonModInit(t, c, `
@@ -1127,7 +1134,7 @@ func (ModuleSuite) TestPythonNameConflicts(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "bar", out)
 }
 
-func (ModuleSuite) TestPythonNameOverrides(ctx context.Context, t *testctx.T) {
+func (PythonSuite) TestNameOverrides(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	modGen := pythonModInit(t, c, `
@@ -1152,7 +1159,7 @@ func (ModuleSuite) TestPythonNameOverrides(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "field", obj.Get("constructor.args.0.name").String())
 }
 
-func (ModuleSuite) TestPythonReturnSelf(ctx context.Context, t *testctx.T) {
+func (PythonSuite) TestReturnSelf(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	out, err := pythonModInit(t, c, `
@@ -1176,7 +1183,7 @@ func (ModuleSuite) TestPythonReturnSelf(ctx context.Context, t *testctx.T) {
 	require.JSONEq(t, `{"test":{"foo":{"message":"bar"}}}`, out)
 }
 
-func (ModuleSuite) TestPythonWithOtherModuleTypes(ctx context.Context, t *testctx.T) {
+func (PythonSuite) TestWithOtherModuleTypes(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	ctr := goGitBase(t, c).

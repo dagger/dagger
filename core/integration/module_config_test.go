@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"path/filepath"
 	"strings"
+	"testing"
 
 	"github.com/stretchr/testify/require"
 
@@ -15,7 +15,13 @@ import (
 	"github.com/dagger/dagger/testctx"
 )
 
-func (ModuleSuite) TestConfigs(ctx context.Context, t *testctx.T) {
+type ConfigSuite struct{}
+
+func TestConfig(t *testing.T) {
+	testctx.Run(testCtx, t, ConfigSuite{}, Middleware()...)
+}
+
+func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 	// test dagger.json source configs that aren't inherently covered in other tests
 
 	t.Run("upgrade from old config", func(ctx context.Context, t *testctx.T) {
@@ -228,7 +234,7 @@ func (ModuleSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 	})
 }
 
-func (ModuleSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {
+func (ConfigSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {
 	t.Run("basic", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		ctr := goGitBase(t, c).
@@ -415,686 +421,8 @@ func (ModuleSuite) TestCustomDepNames(ctx context.Context, t *testctx.T) {
 	})
 }
 
-func (ModuleSuite) TestDaggerInit(ctx context.Context, t *testctx.T) {
-	t.Run("name defaults to source root dir name", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-		out, err := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec("init", "--source=coolmod", "--sdk=go", "coolmod")).
-			WithNewFile("/work/coolmod/main.go", `package main
-
-			import "context"
-
-			type Coolmod struct {}
-
-			func (m *Coolmod) Fn(ctx context.Context) (string, error) {
-				return dag.CurrentModule().Name(ctx)
-			}
-			`,
-			).
-			With(daggerCallAt("coolmod", "fn")).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "coolmod", strings.TrimSpace(out))
-	})
-
-	t.Run("source dir default", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-		ctr := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work")
-
-		for _, tc := range []struct {
-			sdk          string
-			sourceDirEnt string
-		}{
-			{
-				sdk:          "go",
-				sourceDirEnt: "main.go",
-			},
-			{
-				sdk:          "python",
-				sourceDirEnt: "src",
-			},
-			{
-				sdk:          "typescript",
-				sourceDirEnt: "src",
-			},
-		} {
-			tc := tc
-			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
-				srcRootDir := ctr.
-					With(daggerExec("init", "--name=test", "--sdk="+tc.sdk)).
-					Directory(".")
-				srcRootEnts, err := srcRootDir.Entries(ctx)
-				require.NoError(t, err)
-				require.Contains(t, srcRootEnts, "dagger.json")
-				require.Contains(t, srcRootEnts, tc.sourceDirEnt)
-				srcDirEnts, err := srcRootDir.Directory(".").Entries(ctx)
-				require.NoError(t, err)
-				require.Contains(t, srcDirEnts, tc.sourceDirEnt)
-			})
-		}
-	})
-
-	t.Run("source is made rel to source root by engine", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		ctr := goGitBase(t, c).
-			WithWorkdir("/var").
-			With(daggerExec("init", "--source=../work/some/subdir", "--name=test", "--sdk=go", "../work")).
-			With(daggerCallAt("../work", "container-echo", "--string-arg", "yo", "stdout"))
-		out, err := ctr.Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "yo", strings.TrimSpace(out))
-
-		ents, err := ctr.Directory("/work/some/subdir").Entries(ctx)
-		require.NoError(t, err)
-		require.Contains(t, ents, "main.go")
-	})
-
-	t.Run("works inside subdir of other module", func(ctx context.Context, t *testctx.T) {
-		// verifies find-up logic does NOT kick in here
-		c := connect(ctx, t)
-
-		ctr := goGitBase(t, c).
-			WithWorkdir("/work").
-			With(daggerExec("init", "--name=a", "--sdk=go", ".")).
-			WithWorkdir("/work/subdir").
-			With(daggerExec("init", "--name=b", "--sdk=go", "--source=.", ".")).
-			WithNewFile("./main.go", `package main
-
-			type B struct {}
-
-			func (m *B) Fn() string { return "yo" }
-			`,
-			).
-			With(daggerCall("fn"))
-		out, err := ctr.Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "yo", strings.TrimSpace(out))
-	})
-
-	t.Run("init with absolute path", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		absPath := "/work/mymodule"
-		ctr := goGitBase(t, c).
-			WithWorkdir("/").
-			With(daggerExec("init", "--source="+absPath, "--name=test", "--sdk=go", absPath)).
-			WithNewFile(absPath+"/main.go", `package main
-				type Test struct {}
-				func (m *Test) Fn() string { return "hello from absolute path" }`,
-			).
-			With(daggerCallAt(absPath, "fn"))
-
-		out, err := ctr.Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "hello from absolute path", strings.TrimSpace(out))
-	})
-
-	t.Run("init with absolute path and src .", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		absPath := "/work/mymodule"
-		ctr := goGitBase(t, c).
-			WithWorkdir("/").
-			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go", absPath))
-
-		_, err := ctr.Stdout(ctx)
-		require.Error(t, err)
-		require.ErrorContains(t, err, "source subdir path \"../..\" escapes context")
-	})
-}
-
-func (ModuleSuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
-	t.Run("name and sdk", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		base := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work/dep").
-			With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
-			WithNewFile("/work/dep/main.go", `package main
-
-			import "context"
-
-			type Dep struct {}
-
-			func (m *Dep) Fn(ctx context.Context) string {
-				return "hi from dep"
-			}
-			`,
-			).
-			WithWorkdir("/work").
-			With(daggerExec("init")).
-			With(daggerExec("install", "./dep"))
-
-		// should be able to invoke dep without name+sdk set yet
-		out, err := base.With(daggerCallAt("dep", "fn")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "hi from dep", strings.TrimSpace(out))
-
-		// test develop from source root and from subdir (in which case find-up should kick in)
-		for _, wd := range []string{"/work", "/work/from/some/otherdir"} {
-			wd := wd
-			t.Run(wd, func(ctx context.Context, t *testctx.T) {
-				sourceDir, err := filepath.Rel(wd, "/work/cool/subdir")
-				require.NoError(t, err)
-
-				ctr := base.
-					WithWorkdir(wd).
-					With(daggerExec("develop", "--sdk", "go", "--source", sourceDir)).
-					WithNewFile("/work/cool/subdir/main.go", `package main
-
-					import "context"
-
-					type Work struct {}
-
-					func (m *Work) Fn(ctx context.Context) (string, error) {
-						depStr, err := dag.Dep().Fn(ctx)
-						if err != nil {
-							return "", err
-						}
-						return "hi from work " + depStr, nil
-					}
-					`,
-					)
-
-				// should be able to invoke it directly now
-				out, err := ctr.With(daggerCall("fn")).Stdout(ctx)
-				require.NoError(t, err)
-				require.Equal(t, "hi from work hi from dep", strings.TrimSpace(out))
-
-				// currently, we don't support renaming or re-sdking a module, make sure that errors comprehensibly
-
-				_, err = ctr.With(daggerExec("develop", "--sdk", "python")).Sync(ctx)
-				require.ErrorContains(t, err, `cannot update module SDK that has already been set to "go"`)
-
-				_, err = ctr.With(daggerExec("develop", "--source", "blahblahblaha/blah")).Sync(ctx)
-				require.ErrorContains(t, err, `cannot update module source path that has already been set to "cool/subdir"`)
-			})
-		}
-	})
-
-	t.Run("source is made rel to source root by engine", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		ctr := goGitBase(t, c).
-			WithWorkdir("/work/dep").
-			With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
-			WithNewFile("/work/dep/main.go", `package main
-
-			import "context"
-
-			type Dep struct {}
-
-			func (m *Dep) Fn(ctx context.Context) string {
-				return "hi from dep"
-			}
-			`,
-			).
-			WithWorkdir("/work").
-			With(daggerExec("init")).
-			With(daggerExec("install", "./dep")).
-			WithWorkdir("/var").
-			With(daggerExec("develop", "-m", "../work", "--source=../work/some/subdir", "--sdk=go")).
-			WithNewFile("/work/some/subdir/main.go", `package main
-
-			import "context"
-
-			type Work struct {}
-
-			func (m *Work) Fn(ctx context.Context) (string, error) {
-				depStr, err := dag.Dep().Fn(ctx)
-				if err != nil {
-					return "", err
-				}
-				return "hi from work " + depStr, nil
-			}
-			`,
-			)
-
-		out, err := ctr.With(daggerCallAt("../work", "fn")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "hi from work hi from dep", strings.TrimSpace(out))
-
-		ents, err := ctr.Directory("/work/some/subdir").Entries(ctx)
-		require.NoError(t, err)
-		require.Contains(t, ents, "main.go")
-	})
-
-	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
-		t.Run("fails on git", func(ctx context.Context, t *testctx.T) {
-			c := connect(ctx, t)
-
-			mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
-			t.Cleanup(cleanup)
-
-			_, err := goGitBase(t, c).
-				With(mountedSocket).
-				With(daggerExec("develop", "-m", testGitModuleRef(tc, "top-level"))).
-				Sync(ctx)
-			require.ErrorContains(t, err, `module must be local`)
-		})
-	})
-
-	t.Run("source is made rel to source root by engine with absolute path", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		absPath := "/work"
-		ctr := goGitBase(t, c).
-			WithWorkdir(absPath+"/dep").
-			With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
-			WithNewFile(absPath+"/dep/main.go", `package main
-
-        import "context"
-
-        type Dep struct {}
-
-        func (m *Dep) Fn(ctx context.Context) string {
-            return "hi from dep"
-        }
-        `,
-			).
-			WithWorkdir(absPath).
-			With(daggerExec("init")).
-			With(daggerExec("install", "./dep")).
-			WithWorkdir("/var").
-			With(daggerExec("develop", "-m", absPath, "--source="+absPath+"/some/subdir", "--sdk=go")).
-			WithNewFile(absPath+"/some/subdir/main.go", `package main
-
-        import "context"
-
-        type Work struct {}
-
-        func (m *Work) Fn(ctx context.Context) (string, error) {
-            depStr, err := dag.Dep().Fn(ctx)
-            if err != nil {
-                return "", err
-            }
-            return "hi from work " + depStr, nil
-        }
-        `,
-			)
-
-		out, err := ctr.With(daggerCallAt(absPath, "fn")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "hi from work hi from dep", strings.TrimSpace(out))
-	})
-}
-
-func (ModuleSuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
-	t.Run("local", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		base := goGitBase(t, c).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work/subdir/dep").
-			With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
-			WithNewFile("/work/subdir/dep/main.go", `package main
-
-			import "context"
-
-			type Dep struct {}
-
-			func (m *Dep) DepFn(ctx context.Context, str string) string { return str }
-			`,
-			).
-			WithWorkdir("/work").
-			With(daggerExec("init", "--source=test", "--name=test", "--sdk=go", "test")).
-			With(daggerExec("install", "-m=test", "./subdir/dep")).
-			WithNewFile("/work/test/main.go", `package main
-
-			import "context"
-
-			type Test struct {}
-
-			func (m *Test) Fn(ctx context.Context) (string, error) { return dag.Dep().DepFn(ctx, "hi dep") }
-			`,
-			)
-
-		// try invoking it from a few different paths, just for more corner case coverage
-
-		t.Run("from src dir", func(ctx context.Context, t *testctx.T) {
-			out, err := base.WithWorkdir("test").With(daggerCall("fn")).Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "hi dep", strings.TrimSpace(out))
-		})
-
-		t.Run("from src root", func(ctx context.Context, t *testctx.T) {
-			out, err := base.With(daggerCallAt("test", "fn")).Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "hi dep", strings.TrimSpace(out))
-		})
-
-		t.Run("from root", func(ctx context.Context, t *testctx.T) {
-			out, err := base.WithWorkdir("/").With(daggerCallAt("work/test", "fn")).Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "hi dep", strings.TrimSpace(out))
-		})
-
-		t.Run("from dep parent", func(ctx context.Context, t *testctx.T) {
-			out, err := base.WithWorkdir("/work/subdir").With(daggerCallAt("../test", "fn")).Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "hi dep", strings.TrimSpace(out))
-		})
-
-		t.Run("from dep dir", func(ctx context.Context, t *testctx.T) {
-			out, err := base.WithWorkdir("/work/subdir/dep").With(daggerCallAt("../../test", "fn")).Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "hi dep", strings.TrimSpace(out))
-		})
-		t.Run("from src dir with absolute path", func(ctx context.Context, t *testctx.T) {
-			out, err := base.WithWorkdir("/work/test").With(daggerCall("fn")).Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "hi dep", strings.TrimSpace(out))
-		})
-
-		t.Run("from src root with absolute path", func(ctx context.Context, t *testctx.T) {
-			out, err := base.With(daggerCallAt("/work/test", "fn")).Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "hi dep", strings.TrimSpace(out))
-		})
-
-		t.Run("from root with absolute path", func(ctx context.Context, t *testctx.T) {
-			out, err := base.WithWorkdir("/").With(daggerCallAt("/work/test", "fn")).Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "hi dep", strings.TrimSpace(out))
-		})
-
-		t.Run("from dep parent with absolute path", func(ctx context.Context, t *testctx.T) {
-			out, err := base.WithWorkdir("/work/subdir").With(daggerCallAt("/work/test", "fn")).Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "hi dep", strings.TrimSpace(out))
-		})
-
-		t.Run("from dep dir with absolute path", func(ctx context.Context, t *testctx.T) {
-			out, err := base.WithWorkdir("/work/subdir/dep").With(daggerCallAt("/work/test", "fn")).Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "hi dep", strings.TrimSpace(out))
-		})
-
-		// Test installing with absolute paths
-		t.Run("install with absolute paths", func(ctx context.Context, t *testctx.T) {
-			ctr := base.
-				WithWorkdir("/").
-				With(daggerExec("init", "--source=/work/test2", "--name=test2", "--sdk=go", "/work/test2")).
-				With(daggerExec("install", "-m=/work/test2", "/work/subdir/dep")).
-				WithNewFile("/work/test2/main.go", `package main
-
-            import "context"
-
-            type Test2 struct {}
-
-            func (m *Test2) Fn(ctx context.Context) (string, error) { return dag.Dep().DepFn(ctx, "hi from test2") }
-            `,
-				)
-
-			out, err := ctr.With(daggerCallAt("/work/test2", "fn")).Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "hi from test2", strings.TrimSpace(out))
-		})
-	})
-
-	t.Run("install dep from various places", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		base := goGitBase(t, c).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			With(daggerExec("init", "--source=subdir/dep", "--name=dep", "--sdk=go", "subdir/dep")).
-			WithNewFile("/work/subdir/dep/main.go", `package main
-
-			import "context"
-
-			type Dep struct {}
-
-			func (m *Dep) DepFn(ctx context.Context, str string) string { return str }
-			`,
-			).
-			With(daggerExec("init", "--source=test", "--name=test", "--sdk=go", "test")).
-			WithNewFile("/work/test/main.go", `package main
-
-			import "context"
-
-			type Test struct {}
-
-			func (m *Test) Fn(ctx context.Context) (string, error) { return dag.Dep().DepFn(ctx, "hi dep") }
-			`,
-			)
-
-		t.Run("from src dir", func(ctx context.Context, t *testctx.T) {
-			// sanity test normal case
-
-			out, err := base.
-				WithWorkdir("/work/test").
-				With(daggerExec("install", "../subdir/dep")).
-				With(daggerCall("fn")).
-				Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "hi dep", strings.TrimSpace(out))
-		})
-
-		t.Run("from src subdir with findup", func(ctx context.Context, t *testctx.T) {
-			out, err := base.
-				WithWorkdir("/work/test/some/other/dir").
-				With(daggerExec("install", "../../../../subdir/dep")).
-				With(daggerCall("fn")).
-				Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "hi dep", strings.TrimSpace(out))
-		})
-
-		t.Run("from root", func(ctx context.Context, t *testctx.T) {
-			out, err := base.
-				WithWorkdir("/").
-				With(daggerExec("install", "-m=./work/test", "./work/subdir/dep")).
-				WithWorkdir("/work/test").
-				With(daggerCall("fn")).
-				Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "hi dep", strings.TrimSpace(out))
-		})
-
-		t.Run("from dep", func(ctx context.Context, t *testctx.T) {
-			out, err := base.
-				WithWorkdir("/work/subdir/dep").
-				With(daggerExec("install", "-m=../../test", ".")).
-				WithWorkdir("/work/test").
-				With(daggerCall("fn")).
-				Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "hi dep", strings.TrimSpace(out))
-		})
-
-		t.Run("from random place", func(ctx context.Context, t *testctx.T) {
-			out, err := base.
-				WithWorkdir("/var").
-				With(daggerExec("install", "-m=../work/test", "../work/subdir/dep")).
-				WithWorkdir("/work/test").
-				With(daggerCall("fn")).
-				Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "hi dep", strings.TrimSpace(out))
-		})
-
-		t.Run("from src dir with absolute paths", func(ctx context.Context, t *testctx.T) {
-			out, err := base.
-				WithWorkdir("/work/test").
-				With(daggerExec("install", "/work/subdir/dep")).
-				With(daggerCall("fn")).
-				Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "hi dep", strings.TrimSpace(out))
-		})
-
-		t.Run("from root with absolute paths", func(ctx context.Context, t *testctx.T) {
-			out, err := base.
-				WithWorkdir("/").
-				With(daggerExec("install", "-m=/work/test", "/work/subdir/dep")).
-				WithWorkdir("/work/test").
-				With(daggerCall("fn")).
-				Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "hi dep", strings.TrimSpace(out))
-		})
-
-		t.Run("from random place with absolute paths", func(ctx context.Context, t *testctx.T) {
-			out, err := base.
-				WithWorkdir("/var").
-				With(daggerExec("install", "-m=/work/test", "/work/subdir/dep")).
-				WithWorkdir("/work/test").
-				With(daggerCall("fn")).
-				Stdout(ctx)
-			require.NoError(t, err)
-			require.Equal(t, "hi dep", strings.TrimSpace(out))
-		})
-	})
-
-	t.Run("install out of tree dep fails", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		base := goGitBase(t, c).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/play/dep").
-			With(daggerExec("init", "--name=dep", "--sdk=go")).
-			WithWorkdir("/work/test").
-			With(daggerExec("init", "--name=test", "--sdk=go"))
-
-		t.Run("from src dir", func(ctx context.Context, t *testctx.T) {
-			_, err := base.
-				WithWorkdir("/work/test").
-				With(daggerExec("install", "../../play/dep")).
-				Sync(ctx)
-			require.ErrorContains(t, err, `local module dep source path "../play/dep" escapes context "/work"`)
-		})
-
-		t.Run("from src dir with absolute path", func(ctx context.Context, t *testctx.T) {
-			_, err := base.
-				WithWorkdir("/work/test").
-				With(daggerExec("install", "/play/dep")).
-				Sync(ctx)
-			require.ErrorContains(t, err, `local module dep source path "../play/dep" escapes context "/work"`)
-		})
-
-		t.Run("from dep dir", func(ctx context.Context, t *testctx.T) {
-			_, err := base.
-				WithWorkdir("/play/dep").
-				With(daggerExec("install", "-m=../../work/test", ".")).
-				Sync(ctx)
-			require.ErrorContains(t, err, `module dep source path "../play/dep" escapes context "/work"`)
-		})
-
-		t.Run("from dep dir with absolute path", func(ctx context.Context, t *testctx.T) {
-			_, err := base.
-				WithWorkdir("/play/dep").
-				With(daggerExec("install", "-m=/work/test", ".")).
-				Sync(ctx)
-			require.ErrorContains(t, err, `module dep source path "../play/dep" escapes context "/work"`)
-		})
-
-		t.Run("from root", func(ctx context.Context, t *testctx.T) {
-			_, err := base.
-				WithWorkdir("/").
-				With(daggerExec("install", "-m=work/test", "play/dep")).
-				Sync(ctx)
-			require.ErrorContains(t, err, `module dep source path "../play/dep" escapes context "/work"`)
-		})
-
-		t.Run("from root with absolute path", func(ctx context.Context, t *testctx.T) {
-			_, err := base.
-				WithWorkdir("/").
-				With(daggerExec("install", "-m=/work/test", "play/dep")).
-				Sync(ctx)
-			require.ErrorContains(t, err, `module dep source path "../play/dep" escapes context "/work"`)
-		})
-	})
-
-	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
-		t.Run("git", func(ctx context.Context, t *testctx.T) {
-			t.Run("happy", func(ctx context.Context, t *testctx.T) {
-				c := connect(ctx, t)
-
-				mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
-				t.Cleanup(cleanup)
-
-				out, err := goGitBase(t, c).
-					With(mountedSocket).
-					WithWorkdir("/work").
-					With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
-					With(daggerExec("install", testGitModuleRef(tc, "top-level"))).
-					WithNewFile("main.go", `package main
-
-import "context"
-
-type Test struct {}
-
-func (m *Test) Fn(ctx context.Context) (string, error) {
-	return dag.TopLevel().Fn(ctx)
-}
-`,
-					).
-					With(daggerCall("fn")).
-					Stdout(ctx)
-				require.NoError(t, err)
-				require.Equal(t, "hi from top level hi from dep hi from dep2", strings.TrimSpace(out))
-			})
-
-			t.Run("sad", func(ctx context.Context, t *testctx.T) {
-				c := connect(ctx, t)
-
-				mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
-				t.Cleanup(cleanup)
-
-				_, err := goGitBase(t, c).
-					With(mountedSocket).
-					WithWorkdir("/work").
-					With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
-					With(daggerExec("install", testGitModuleRef(tc, "../../"))).
-					Sync(ctx)
-				require.ErrorContains(t, err, `git module source subpath points out of root: "../.."`)
-
-				_, err = goGitBase(t, c).
-					With(mountedSocket).
-					WithWorkdir("/work").
-					With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
-					With(daggerExec("install", testGitModuleRef(tc, "this/just/does/not/exist"))).
-					Sync(ctx)
-				require.ErrorContains(t, err, `module "test" dependency "" with source root path "this/just/does/not/exist" does not exist or does not have a configuration file`)
-			})
-
-			t.Run("unpinned gets pinned", func(ctx context.Context, t *testctx.T) {
-				c := connect(ctx, t)
-
-				mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
-				t.Cleanup(cleanup)
-
-				out, err := goGitBase(t, c).
-					With(mountedSocket).
-					WithWorkdir("/work").
-					With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
-					With(daggerExec("install", tc.gitTestRepoRef)).
-					File("/work/dagger.json").
-					Contents(ctx)
-				require.NoError(t, err)
-				var modCfg modules.ModuleConfig
-				require.NoError(t, json.Unmarshal([]byte(out), &modCfg))
-				require.Len(t, modCfg.Dependencies, 1)
-				lastAtIndex := strings.LastIndex(modCfg.Dependencies[0].Source, "@")
-				require.NotEqual(t, lastAtIndex, -1)
-				url := modCfg.Dependencies[0].Source[:lastAtIndex]
-				commit := modCfg.Dependencies[0].Source[lastAtIndex+1:]
-				require.Equal(t, tc.gitTestRepoRef, url)
-				require.NotEmpty(t, commit)
-			})
-		})
-	})
-}
-
 // test the `dagger config` command
-func (ModuleSuite) TestDaggerConfig(ctx context.Context, t *testctx.T) {
+func (ConfigSuite) TestDaggerConfig(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	ctr := c.Container().From(golangImage).
@@ -1143,7 +471,7 @@ func (ModuleSuite) TestDaggerConfig(ctx context.Context, t *testctx.T) {
 	}
 }
 
-func (ModuleSuite) TestIncludeExclude(ctx context.Context, t *testctx.T) {
+func (ConfigSuite) TestIncludeExclude(ctx context.Context, t *testctx.T) {
 	for _, tc := range []struct {
 		sdk                    string
 		mainSource             string
@@ -1309,7 +637,7 @@ func (m *Coolsdk) RequiredPaths() []string {
 }
 
 // verify that if there is no local .git in parent dirs then the context defaults to the source root
-func (ModuleSuite) TestContextDefaultsToSourceRoot(ctx context.Context, t *testctx.T) {
+func (ConfigSuite) TestContextDefaultsToSourceRoot(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	ctr := c.Container().From(golangImage).
@@ -1509,7 +837,7 @@ func testGitModuleRef(tc vcsTestCase, subpath string) string {
 	return fmt.Sprintf("%s@%s", url, tc.gitTestRepoCommit)
 }
 
-func (ModuleSuite) TestDaggerGitRefs(ctx context.Context, t *testctx.T) {
+func (ConfigSuite) TestDaggerGitRefs(ctx context.Context, t *testctx.T) {
 	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
 		c := connect(ctx, t)
 
@@ -1603,7 +931,7 @@ func (ModuleSuite) TestDaggerGitRefs(ctx context.Context, t *testctx.T) {
 	})
 }
 
-func (ModuleSuite) TestDaggerGitWithSources(ctx context.Context, t *testctx.T) {
+func (ConfigSuite) TestDaggerGitWithSources(ctx context.Context, t *testctx.T) {
 	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
 		for _, modSubpath := range []string{"samedir", "subdir"} {
 			modSubpath := modSubpath
@@ -1648,7 +976,7 @@ func (m *Work) Fn(ctx context.Context) (string, error) {
 	})
 }
 
-func (ModuleSuite) TestViews(ctx context.Context, t *testctx.T) {
+func (ConfigSuite) TestViews(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	ctr := goGitBase(t, c).

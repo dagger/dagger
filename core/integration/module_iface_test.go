@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"strings"
+	"testing"
 
 	"github.com/dagger/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -10,7 +11,13 @@ import (
 	"dagger.io/dagger"
 )
 
-func (ModuleSuite) TestIfaceBasic(ctx context.Context, t *testctx.T) {
+type InterfaceSuite struct{}
+
+func TestInterface(t *testing.T) {
+	testctx.Run(testCtx, t, InterfaceSuite{}, Middleware()...)
+}
+
+func (InterfaceSuite) TestIfaceBasic(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	_, err := c.Container().From(golangImage).
@@ -22,7 +29,7 @@ func (ModuleSuite) TestIfaceBasic(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 }
 
-func (ModuleSuite) TestIfaceGoSadPaths(ctx context.Context, t *testctx.T) {
+func (InterfaceSuite) TestIfaceGoSadPaths(ctx context.Context, t *testctx.T) {
 	t.Run("no dagger object embed", func(ctx context.Context, t *testctx.T) {
 		var logs safeBuffer
 		c := connect(ctx, t, dagger.WithLogOutput(&logs))
@@ -51,7 +58,7 @@ func (m *Test) Fn() BadIface {
 	})
 }
 
-func (ModuleSuite) TestIfaceGoDanglingInterface(ctx context.Context, t *testctx.T) {
+func (InterfaceSuite) TestIfaceGoDanglingInterface(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	modGen, err := c.Container().From(golangImage).
@@ -86,7 +93,7 @@ type DanglingIface interface {
 	require.JSONEq(t, `{"test":{"hello":"hello"}}`, out)
 }
 
-func (ModuleSuite) TestIfaceDaggerCall(ctx context.Context, t *testctx.T) {
+func (InterfaceSuite) TestIfaceCall(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	out, err := c.Container().From(golangImage).
