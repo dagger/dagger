@@ -95,6 +95,12 @@
   status = 301
 
 [[redirects]]
+  # redirect containerd pages
+  from = "/integrations/containerd"
+  to = "/integrations/nerdctl"
+  status = 301
+
+[[redirects]]
   # redirect integrations pages
   from = "/integrations/:docid/:slug"
   to = "/integrations/:slug"
