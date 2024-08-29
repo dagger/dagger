@@ -4,6 +4,8 @@ package main
 
 import (
 	"context"
+	"path/filepath"
+	"strings"
 
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/.dagger/internal/dagger"
@@ -14,8 +16,10 @@ type DaggerDev struct {
 	Src     *dagger.Directory // +private
 	Version *VersionInfo
 	Tag     string
+
 	// When set, module codegen is automatically applied when retrieving the Dagger source code
-	ModCodegen bool
+	ModCodegen        bool
+	ModCodegenTargets []string
 
 	// Can be used by nested clients to forward docker credentials to avoid
 	// rate limits
@@ -39,12 +43,28 @@ func New(
 		return nil, err
 	}
 
-	return &DaggerDev{
+	dev := &DaggerDev{
 		Src:       source,
 		Version:   versionInfo,
 		Tag:       tag,
 		DockerCfg: dockerCfg,
-	}, nil
+	}
+
+	modules, err := dev.containing(ctx, "dagger.json")
+	if err != nil {
+		return nil, err
+	}
+	for _, module := range modules {
+		if strings.HasPrefix(module, "docs/") {
+			continue
+		}
+		if strings.HasPrefix(module, "core/integration/") {
+			continue
+		}
+		dev.ModCodegenTargets = append(dev.ModCodegenTargets, module)
+	}
+
+	return dev, nil
 }
 
 // Enable module auto-codegen when retrieving the dagger source code
@@ -93,27 +113,9 @@ func (dev *DaggerDev) Source() *dagger.Directory {
 	if !dev.ModCodegen {
 		return dev.Src
 	}
-	// FIXME: build this list dynamically, by scanning the source for modules
-	modules := []string{
-		".",
-		"modules/dirdiff",
-		"modules/go",
-		"modules/golangci",
-		"modules/graphql",
-		"modules/markdown",
-		"modules/ps-analyzer",
-		"modules/ruff",
-		"modules/shellcheck",
-		"modules/wolfi",
-		"sdk/elixir/runtime",
-		"sdk/python/runtime",
-		"sdk/typescript/dev",
-		"sdk/typescript/dev/node",
-		"sdk/typescript/runtime",
-	}
 
 	src := dev.Src
-	for _, module := range modules {
+	for _, module := range dev.ModCodegenTargets {
 		layer := dev.Src.
 			AsModule(dagger.DirectoryAsModuleOpts{
 				SourceRootPath: module,
@@ -123,6 +125,25 @@ func (dev *DaggerDev) Source() *dagger.Directory {
 		src = src.WithDirectory(module, layer)
 	}
 	return src
+}
+
+func (dev *DaggerDev) containing(ctx context.Context, filename string) ([]string, error) {
+	entries, err := dev.Src.Glob(ctx, "**/"+filename)
+	if err != nil {
+		return nil, err
+	}
+
+	var parents []string
+	for _, entry := range entries {
+		entry = filepath.Clean(entry)
+		parent := strings.TrimSuffix(entry, filename)
+		if parent == "" {
+			parent = "."
+		}
+		parents = append(parents, parent)
+	}
+
+	return parents, nil
 }
 
 // Dagger's Go toolchain

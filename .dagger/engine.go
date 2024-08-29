@@ -176,23 +176,25 @@ func (e *Engine) Lint(
 ) error {
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
+		allPkgs, err := e.Dagger.containing(ctx, "go.mod")
+		if err != nil {
+			return err
+		}
+
+		var pkgs []string
+		for _, pkg := range allPkgs {
+			if strings.HasPrefix(pkg, "docs/") {
+				continue
+			}
+			if strings.HasPrefix(pkg, "core/integration/") {
+				continue
+			}
+			pkgs = append(pkgs, pkg)
+		}
+
 		return dag.
 			Go(e.Dagger.WithModCodegen().Source()).
-			Lint(ctx, dagger.GoLintOpts{Packages: []string{
-				".",
-				// FIXME: should the CI lint itself?
-				// FIXME: unsustainable to require keeping this list up to date by hand
-				".dagger",
-				"modules/dirdiff",
-				"modules/go",
-				"modules/golangci",
-				"modules/graphql",
-				"modules/markdown",
-				"modules/ps-analyzer",
-				"modules/ruff",
-				"modules/shellcheck",
-				"modules/wolfi",
-			}})
+			Lint(ctx, dagger.GoLintOpts{Packages: pkgs})
 	})
 	eg.Go(func() error {
 		return e.LintGenerate(ctx)

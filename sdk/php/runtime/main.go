@@ -29,7 +29,7 @@ func New(
 ) *PhpSdk {
 	if sdkSourceDir == nil {
 		// TODO: Replace with a *default path from context* when
-		// https://github.com/dagger/dagger/pull/7744 becomes availble.
+		// https://github.com/dagger/dagger/pull/7744 becomes available.
 		sdkSourceDir = dag.Directory().
 			// NB: these patterns should match those in `dagger.json`.
 			// When `--sdk` points to a git remote the files aren't filtered
