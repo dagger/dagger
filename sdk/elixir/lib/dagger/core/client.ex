@@ -3,10 +3,11 @@ defmodule Dagger.Core.Client do
   GraphQL client for Dagger.
   """
 
+  alias Dagger.Core.EngineConn
+  alias Dagger.Core.ExecError
+  alias Dagger.Core.GraphQL.Response
   alias Dagger.Core.GraphQLClient
   alias Dagger.Core.QueryBuilder, as: QB
-  alias Dagger.Core.EngineConn
-  alias Dagger.Core.QueryError
 
   defstruct [:url, :conn, :connect_opts]
 
@@ -77,10 +78,21 @@ defmodule Dagger.Core.Client do
     q = QB.build(query_builder)
 
     case query(client, q) do
-      {:ok, %{"data" => nil, "errors" => errors}} ->
-        {:error, %QueryError{errors: errors}}
+      {:ok, %Response{errors: [error]}} ->
+        error =
+          case error.extensions["_type"] do
+            "EXEC_ERROR" ->
+              error.extensions
+              |> ExecError.from_map()
+              |> ExecError.with_original_error(error)
 
-      {:ok, %{"data" => data}} ->
+            _ ->
+              error
+          end
+
+        {:error, error}
+
+      {:ok, %Response{data: data}} ->
         {:ok, select(data, QB.path(query_builder))}
 
       otherwise ->

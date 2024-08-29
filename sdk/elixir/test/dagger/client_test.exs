@@ -15,7 +15,7 @@ defmodule Dagger.ClientTest do
     Sync
   }
 
-  alias Dagger.Core.QueryError
+  alias Dagger.Core.ExecError
 
   setup_all do
     client = Dagger.connect!(connect_timeout: :timer.seconds(60))
@@ -226,7 +226,7 @@ defmodule Dagger.ClientTest do
       |> Client.container()
       |> Container.from("alpine:3.16.2")
 
-    assert {:error, %QueryError{}} =
+    assert {:error, %ExecError{}} =
              container |> Container.with_exec(["foobar"]) |> Sync.sync()
 
     assert {:ok, %Container{} = container} =
@@ -318,5 +318,21 @@ defmodule Dagger.ClientTest do
              |> Dagger.Client.type_def()
              |> Dagger.TypeDef.with_object("A")
              |> Dagger.TypeDef.kind()
+  end
+
+  test "exec error", %{client: client} do
+    assert {:error, error} =
+             client
+             |> Client.container()
+             |> Container.from("alpine:3.16.2")
+             |> Container.with_exec(["foobar"])
+             |> Sync.sync()
+
+    assert Exception.message(error) == """
+           input: container.from.withExec.sync resolve: process \"foobar\" did not complete successfully: exit code: 2
+
+           Stderr:
+           [dumb-init] foobar: No such file or directory
+           """
   end
 end
