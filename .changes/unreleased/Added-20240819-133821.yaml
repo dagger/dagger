@@ -1,6 +1,0 @@
-kind: Added
-body: implements call argument `--interactive-command` for overriding the default command used in interactive mode
-time: 2024-08-19T13:38:21.847023-07:00
-custom:
-    Author: samalba
-    PR: "8171"

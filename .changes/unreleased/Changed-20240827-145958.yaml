@@ -1,6 +1,0 @@
-kind: Changed
-body: 'helm: use `dagger query` for engine healthcheck'
-time: 2024-08-27T14:59:58.26589613-03:00
-custom:
-    Author: matipan
-    PR: "8219"

@@ -1,6 +1,0 @@
-kind: Fixed
-body: Fix any functions that return enum value to convert string into atom.
-time: 2024-08-25T23:31:37.277466605+07:00
-custom:
-    Author: wingyplus
-    PR: "8222"
