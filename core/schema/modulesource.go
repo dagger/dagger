@@ -1278,39 +1278,63 @@ func (s *moduleSchema) collectCallerLocalDeps(
 			return nil, fmt.Errorf("failed to load sdk: %w", err)
 		}
 
-		ignorePath := filepath.Join(sourceRootAbsPath, ".gitignore")
-		// No stat because we want the contents, otherwise it would be two calls
-		// for each file that exists.
-		ignoreBytes, err := bk.ReadCallerHostFile(ctx, ignorePath)
-		switch {
-		case err == nil:
-			lines := strings.Split(string(ignoreBytes), "\n")
-			for _, pattern := range lines {
-				pattern = strings.TrimSpace(pattern)
-				if pattern == "" || strings.HasPrefix(pattern, "#") {
-					continue
+		readGitIgnore := func(baseAbsPath string) error {
+			ignorePath := filepath.Join(baseAbsPath, ".gitignore")
+			// No stat because we want the contents, otherwise it would be two calls
+			// for each file that exists.
+			ignoreBytes, err := bk.ReadCallerHostFile(ctx, ignorePath)
+			switch {
+			case err == nil:
+				lines := strings.Split(string(ignoreBytes), "\n")
+				for _, pattern := range lines {
+					pattern = strings.TrimSpace(pattern)
+					// ignore comments and empty lines
+					if pattern == "" || strings.HasPrefix(pattern, "#") {
+						continue
+					}
+					// patterns without a slash (beginnin, middle, or end) are recursive
+					if !strings.Contains(pattern, "/") {
+						pattern = "**/" + pattern
+					}
+					isNegation := strings.HasPrefix(pattern, "!")
+					pattern = strings.TrimPrefix(pattern, "!")
+					absPath := filepath.Join(baseAbsPath, pattern)
+					relPath, err := filepath.Rel(contextAbsPath, absPath)
+					if err != nil {
+						return fmt.Errorf("failed to get relative path of .gitignore pattern: %w", err)
+					}
+					if !filepath.IsLocal(relPath) {
+						return fmt.Errorf("local module .gitignore pattern %q escapes context %q", relPath, contextAbsPath)
+					}
+					if isNegation {
+						relPath = "!" + relPath
+					}
+					localDep.ignores = append(localDep.ignores, relPath)
 				}
-				if !strings.Contains(pattern, "/") {
-					pattern = "**/" + pattern
-				}
-				isNegation := strings.HasPrefix(pattern, "!")
-				pattern = strings.TrimPrefix(pattern, "!")
-				absPath := filepath.Join(sourceRootAbsPath, pattern)
-				relPath, err := filepath.Rel(contextAbsPath, absPath)
-				if err != nil {
-					return nil, fmt.Errorf("failed to get relative path of .gitignore pattern: %w", err)
-				}
-				if !filepath.IsLocal(relPath) {
-					return nil, fmt.Errorf("local module .gitignore pattern %q escapes context %q", relPath, contextAbsPath)
-				}
-				if isNegation {
-					relPath = "!" + relPath
-				}
-				localDep.ignores = append(localDep.ignores, relPath)
+
+			case status.Code(err) != codes.NotFound:
+				return fmt.Errorf("error reading .gitignore file %s: %w", ignorePath, err)
 			}
 
-		case status.Code(err) != codes.NotFound:
-			return nil, fmt.Errorf("error reading .gitignore file %s: %w", ignorePath, err)
+			return nil
+		}
+
+		ignoreBaseAbsPath := sourceRootAbsPath
+
+		for {
+			if err := readGitIgnore(ignoreBaseAbsPath); err != nil {
+				return nil, err
+			}
+
+			if ignoreBaseAbsPath == contextAbsPath {
+				break
+			}
+
+			ignoreBaseAbsPath = filepath.Dir(ignoreBaseAbsPath)
+
+			if len(ignoreBaseAbsPath) < len(contextAbsPath) {
+				break
+			}
 		}
 
 		return localDep, nil
