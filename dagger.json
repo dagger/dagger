@@ -48,7 +48,7 @@
     }
   ],
   "source": ".dagger",
-  "engineVersion": "v0.12.5",
+  "engineVersion": "v0.12.6",
   "views": [
     {
       "name": "default",
