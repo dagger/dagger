@@ -7,15 +7,12 @@ class ExtPythonSdk:
     required_paths: list[str] = field(default=list)
 
     @function
-    def codegen(
+    async def codegen(
         self, mod_source: dagger.ModuleSource, introspection_json: dagger.File
     ) -> dagger.GeneratedCode:
+        sdk = self.common(mod_source, introspection_json)
         return (
-            dag.generated_code(
-                self.common(mod_source, introspection_json)
-                .container()
-                .directory("/src")
-            )
+            dag.generated_code(sdk.container().directory(await sdk.source_path()))
             .with_vcs_generated_paths(["sdk/**"])
             .with_vcs_ignored_paths(["sdk"])
         )
