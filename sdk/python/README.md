@@ -104,7 +104,7 @@ The SDK is managed with a Dagger module in `./dev`. To see which tasks are
 available run:
 
 ```shell
-dagger call -m dev --source=.:default
+dagger call -m dev
 ```
 
 ### Common tasks
@@ -112,17 +112,17 @@ dagger call -m dev --source=.:default
 Run pytest in supported Python versions:
 
 ```shell
-dagger call -m dev --source=.:default test default
+dagger call -m dev test default
 ```
 
 Check for linting violations:
 ```shell
-dagger call -m dev --source=.:default lint
+dagger call -m dev lint
 ```
 
 Re-format code following common styling conventions:
 ```shell
-dagger call -m dev --source=.:default format export --path=.
+dagger call -m dev format export --path=.
 ```
 
 Update pinned development dependencies:
@@ -132,8 +132,7 @@ uv lock -U
 
 Build and preview the reference documentation:
 ```shell
-dagger call -m dev --source=.:default docs preview up
+dagger call -m dev docs preview up
 ```
 
 Add `--help` to any command to check all the available options.
-

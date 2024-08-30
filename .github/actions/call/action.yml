@@ -120,9 +120,9 @@ runs:
         if [[ "${{ inputs.module }}" == "." ]]; then
           # set some sane defaults for the current module
           if [[ -f $HOME/.docker/config.json ]]; then
-            redirect_logs dagger -m "${{ inputs.module }}" call --source=".:default" --docker-cfg=file:"$HOME/.docker/config.json" ${{ inputs.function }}
+            redirect_logs dagger -m "${{ inputs.module }}" call --docker-cfg=file:"$HOME/.docker/config.json" ${{ inputs.function }}
           else
-            redirect_logs dagger -m "${{ inputs.module }}" call --source=".:default" ${{ inputs.function }}
+            redirect_logs dagger -m "${{ inputs.module }}" call ${{ inputs.function }}
           fi
         else
           redirect_logs dagger -m "${{ inputs.module }}" call ${{ inputs.function }}

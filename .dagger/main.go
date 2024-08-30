@@ -30,6 +30,9 @@ type DaggerDev struct {
 
 func New(
 	ctx context.Context,
+	// +optional
+	// +defaultPath="/"
+	// +ignore=["bin", ".git", "**/node_modules", "**/.venv", "**/__pycache__"]
 	source *dagger.Directory,
 
 	// +optional
