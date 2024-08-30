@@ -153,11 +153,7 @@ jobs:
       - name: "test publish engine"
         uses: ./.github/actions/call
         with:
-          function: "engine test-publish"
-      - name: "test publish engine (gpu)"
-        uses: ./.github/actions/call
-        with:
-          function: "engine with-base --image=ubuntu --gpu-support=true test-publish"
+          function: "engine publish --image=dagger-engine.dev --tag=main --dry-run"
 
   scan-engine:
     runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-12-5-4c' || 'ubuntu-latest' }}"

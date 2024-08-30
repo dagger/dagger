@@ -33,7 +33,7 @@ func (h *Helm) Test(ctx context.Context) error {
 		return err
 	}
 
-	k3s := dag.K3S("helm2-test")
+	k3s := dag.K3S("helm-test")
 
 	// NOTE: force starting here - without this, the config won't be generated
 	k3ssvc, err := k3s.Server().Start(ctx)

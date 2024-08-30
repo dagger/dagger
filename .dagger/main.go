@@ -211,20 +211,18 @@ func (dev *DaggerDev) Dev(
 	// Mount a directory into the container's workdir, for convenience
 	// +optional
 	target *dagger.Directory,
+	// Set target distro
+	// +optional
+	image *Distro,
 	// Enable experimental GPU support
 	// +optional
-	experimentalGPUSupport bool,
+	gpuSupport bool,
 ) (*dagger.Container, error) {
 	if target == nil {
 		target = dag.Directory()
 	}
 
-	engine := dev.Engine()
-	if experimentalGPUSupport {
-		img := "ubuntu"
-		engine = engine.WithBase(&img, &experimentalGPUSupport)
-	}
-	svc, err := engine.Service(ctx, "", dev.Version)
+	svc, err := dev.Engine().Service(ctx, "", dev.Version, image, gpuSupport)
 	if err != nil {
 		return nil, err
 	}
@@ -252,12 +250,18 @@ func (dev *DaggerDev) DevExport(
 	ctx context.Context,
 	// +optional
 	platform dagger.Platform,
+
 	// +optional
 	race bool,
 	// +optional
 	trace bool,
+
+	// Set target distro
 	// +optional
-	experimentalGPUSupport bool,
+	image *Distro,
+	// Enable experimental GPU support
+	// +optional
+	gpuSupport bool,
 ) (*dagger.Directory, error) {
 	var platformSpec platforms.Platform
 	if platform == "" {
@@ -271,10 +275,6 @@ func (dev *DaggerDev) DevExport(
 	}
 
 	engine := dev.Engine()
-	if experimentalGPUSupport {
-		img := "ubuntu"
-		engine = engine.WithBase(&img, &experimentalGPUSupport)
-	}
 	if race {
 		engine = engine.WithRace()
 	}
@@ -283,7 +283,7 @@ func (dev *DaggerDev) DevExport(
 	}
 	enginePlatformSpec := platformSpec
 	enginePlatformSpec.OS = "linux"
-	engineCtr, err := engine.Container(ctx, dagger.Platform(platforms.Format(enginePlatformSpec)))
+	engineCtr, err := engine.Container(ctx, dagger.Platform(platforms.Format(enginePlatformSpec)), image, gpuSupport)
 	if err != nil {
 		return nil, err
 	}
