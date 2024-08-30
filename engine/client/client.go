@@ -62,6 +62,8 @@ type Params struct {
 	// The id of the session to connect to, or if blank a new one should be started.
 	SessionID string
 
+	Version string
+
 	SecretToken string
 
 	RunnerHost string // host of dagger engine runner serving buildkit apis
@@ -1048,9 +1050,14 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		}
 	}
 
+	clientVersion := c.Version
+	if clientVersion == "" {
+		clientVersion = engine.Version
+	}
+
 	return engine.ClientMetadata{
 		ClientID:                  c.ID,
-		ClientVersion:             engine.Version,
+		ClientVersion:             clientVersion,
 		SessionID:                 c.SessionID,
 		ClientSecretToken:         c.SecretToken,
 		ClientHostname:            c.hostname,

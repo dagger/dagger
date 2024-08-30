@@ -65,18 +65,23 @@ func getSDKVersion() string {
 	return version
 }
 
+type flagValue struct {
+	flag  string
+	value string
+}
+
 func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ EngineConn, rerr error) {
 	args := []string{"session"}
 
 	version := getSDKVersion()
 
-	flagsAndValues := []struct {
-		flag  string
-		value string
-	}{
+	flagsAndValues := []flagValue{
 		{"--workdir", cfg.Workdir},
 		{"--label", "dagger.io/sdk.name:go"},
 		{"--label", fmt.Sprintf("dagger.io/sdk.version:%s", version)},
+	}
+	if cfg.VersionOverride != "" {
+		flagsAndValues = append(flagsAndValues, flagValue{"--version", cfg.VersionOverride})
 	}
 
 	for _, pair := range flagsAndValues {
