@@ -38,14 +38,14 @@ When you add a dependency to your module with `dagger install`, the dependent mo
 
 The entrypoint to accessing dependent modules from your own module's code is `dag`, the Dagger client, which is pre-initialized. It contains all the core types (like `Container`, `Directory`, etc.), as well as bindings to any dependencies your module has declared.
 
-Here is an example of accessing the installed `helloWorld` module from your own module's code:
+Here is an example of accessing the installed `hello` module from your own module's code:
 
 <Tabs groupId="language">
 <TabItem value="Go">
 
 ```go
 func (m *MyModule) Greeting(ctx context.Context) (string, error) {
-  return dag.HelloWorld().Message(ctx)
+  return dag.Hello().Hello(ctx)
 }
 ```
 
@@ -55,7 +55,7 @@ func (m *MyModule) Greeting(ctx context.Context) (string, error) {
 ```python
 @function
 async def greeting(self) -> str:
-  return await dag.hello_world().message()
+  return await dag.hello().hello()
 ```
 
 </TabItem>
@@ -64,7 +64,7 @@ async def greeting(self) -> str:
 ```typescript
 @func()
 async greeting(): Promise<string> {
-  return await dag.helloWorld().message()
+  return await dag.hello().hello()
 }
 ```
 
