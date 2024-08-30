@@ -1273,7 +1273,6 @@ class Container(Type):
         self,
         args: list[str],
         *,
-        skip_entrypoint: bool | None = True,
         use_entrypoint: bool | None = False,
         stdin: str | None = "",
         redirect_stdout: str | None = "",
@@ -1290,9 +1289,6 @@ class Container(Type):
             Command to run instead of the container's default command (e.g.,
             ["run", "main.go"]).
             If empty, the container's default command is used.
-        skip_entrypoint:
-            DEPRECATED: For true this can be removed. For false, use
-            `useEntrypoint` instead.
         use_entrypoint:
             If the container has an entrypoint, prepend it to the args.
         stdin:
@@ -1318,7 +1314,6 @@ class Container(Type):
         """
         _args = [
             Arg("args", args),
-            Arg("skipEntrypoint", skip_entrypoint, True),
             Arg("useEntrypoint", use_entrypoint, False),
             Arg("stdin", stdin, ""),
             Arg("redirectStdout", redirect_stdout, ""),

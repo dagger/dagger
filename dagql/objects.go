@@ -680,6 +680,26 @@ func (field Field[T]) ArgDeprecated(name string, paras ...string) Field[T] {
 	panic(fmt.Sprintf("field %s has no such argument: %q", field.Spec.Name, name))
 }
 
+func (field Field[T]) ArgRemove(name string) Field[T] {
+	if field.Spec.extend {
+		panic("cannot call on extended field")
+	}
+
+	args := make(InputSpecs, 0, len(field.Spec.Args)-1)
+	for _, arg := range field.Spec.Args {
+		if arg.Name == name {
+			continue
+		}
+		args = append(args, arg)
+	}
+	if len(args) == len(field.Spec.Args) {
+		panic(fmt.Sprintf("field %s has no such argument: %q", field.Spec.Name, name))
+	}
+
+	field.Spec.Args = args
+	return field
+}
+
 func FormatDescription(paras ...string) string {
 	for i, p := range paras {
 		paras[i] = strings.Join(strings.Fields(strings.TrimSpace(p)), " ")

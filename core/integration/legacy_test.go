@@ -12,6 +12,7 @@ import (
 	"github.com/creack/pty"
 	"github.com/stretchr/testify/require"
 
+	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/dagger/testctx"
 )
 
@@ -295,6 +296,45 @@ func (m *Test) Skip() *dagger.Container {
 	require.NoError(t, err)
 	// if the entrypoint was not skipped, it would return "echo hello\n"
 	require.Equal(t, "hello\n", out)
+}
+
+func (LegacySuite) TestExecWithSkipEntrypointCompat(ctx context.Context, t *testctx.T) {
+	// Changed in dagger/dagger#8281
+	//
+	// Ensure that old schemas still have skipEntrypoint API
+	//
+	// Tests backwards compatibility with `skipEntrypoint: false` option.
+	// Doesn't work on Go because it can't distinguish between unset and
+	// empty value.
+
+	res := struct {
+		Container struct {
+			From struct {
+				WithEntrypoint struct {
+					WithExec struct {
+						Stdout string
+					}
+				}
+			}
+		}
+	}{}
+	err := testutil.Query(t,
+		`{
+            container {
+                from(address: "`+alpineImage+`") {
+                    withEntrypoint(args: ["sh", "-c"]) {
+                        withExec(args: ["echo $HOME"], skipEntrypoint: false) {
+                            stdout
+                        }
+                    }
+                }
+			}
+		}`, &res, &testutil.QueryOptions{
+			Version: "v0.12.6",
+		})
+
+	require.NoError(t, err)
+	require.Equal(t, "/root\n", res.Container.From.WithEntrypoint.WithExec.Stdout)
 }
 
 func (LegacySuite) TestLegacyNoExec(ctx context.Context, t *testctx.T) {

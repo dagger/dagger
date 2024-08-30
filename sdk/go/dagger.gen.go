@@ -1111,8 +1111,6 @@ func (r *Container) WithEnvVariable(name string, value string, opts ...Container
 
 // ContainerWithExecOpts contains options for Container.WithExec
 type ContainerWithExecOpts struct {
-	// DEPRECATED: For true this can be removed. For false, use `useEntrypoint` instead.
-	SkipEntrypoint bool
 	// If the container has an entrypoint, prepend it to the args.
 	UseEntrypoint bool
 	// Content to write to the command's standard input before closing (e.g., "Hello world").
@@ -1133,10 +1131,6 @@ type ContainerWithExecOpts struct {
 func (r *Container) WithExec(args []string, opts ...ContainerWithExecOpts) *Container {
 	q := r.query.Select("withExec")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `skipEntrypoint` optional argument
-		if !querybuilder.IsZeroValue(opts[i].SkipEntrypoint) {
-			q = q.Arg("skipEntrypoint", opts[i].SkipEntrypoint)
-		}
 		// `useEntrypoint` optional argument
 		if !querybuilder.IsZeroValue(opts[i].UseEntrypoint) {
 			q = q.Arg("useEntrypoint", opts[i].UseEntrypoint)
