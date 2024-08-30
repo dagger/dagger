@@ -4,7 +4,7 @@ import os
 from typing import Annotated, Final, Literal, Self, get_args
 
 import dagger
-from dagger import Doc, dag, field, function, object_type
+from dagger import DefaultPath, Doc, Ignore, dag, field, function, object_type
 from main.docs import Docs
 from main.test import TestSuite
 
@@ -29,6 +29,29 @@ class PythonSdkDev:
         source: Annotated[
             dagger.Directory,
             Doc("Directory with sources"),
+            DefaultPath("/sdk/python"),
+            Ignore(
+                [
+                    "!dev/src/**/*.py",
+                    "!docs/**/*.py",
+                    "!docs/**/*.rst",
+                    "!src/**/*.py",
+                    "!src/**/py.typed",
+                    "!tests/**/*.py",
+                    "!codegen/**/*.py",
+                    "!ruff.toml",
+                    "!uv.lock",
+                    "!README.md",
+                    "!LICENSE",
+                    "!**/pyproject.toml",
+                    "!**/.gitignore",
+                    "!**/.ruff.toml",
+                    "dev/sdk",
+                    "**/__pycache__",
+                    "**/.*cache",
+                    "**/.venv",
+                ]
+            ),
         ],
         container: Annotated[
             dagger.Container | None,
@@ -49,11 +72,14 @@ class PythonSdkDev:
                 .with_(cls.tools_cache("uv", "hatch", "ruff", "mypy"))
                 .with_(cls.uv)
                 .with_(cls.hatch)
-                .with_directory("/src/sdk/python", source)
+            )
+        return cls(
+            container=(
+                container.with_directory("/src/sdk/python", source)
                 .with_workdir("/src/sdk/python")
                 .with_exec(["uv", "sync"])
             )
-        return cls(container=container)
+        )
 
     @classmethod
     def uv(cls, ctr: dagger.Container) -> dagger.Container:
@@ -181,10 +207,13 @@ class PythonSdkDev:
         ] = (),
     ) -> dagger.Directory:
         """Format source files."""
-        ctr = self.container.with_exec(
-            ["uv", "run", "ruff", "check", "--fix-only", *paths]
-        ).with_exec(["uv", "run", "ruff", "format", *paths])
-        return self.container.directory("").diff(ctr.directory(""))
+        return (
+            self.container.with_exec(
+                ["uv", "run", "ruff", "check", "--fix-only", *paths]
+            )
+            .with_exec(["uv", "run", "ruff", "format", *paths])
+            .directory("")
+        )
 
     @function
     def test(
