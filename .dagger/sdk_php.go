@@ -133,7 +133,7 @@ func (t PHPSDK) Publish(
 		if err := githubRelease(ctx, githubReleaseOpts{
 			tag:         tag,
 			notes:       sdkChangeNotes(t.Dagger.Src, "php", version),
-			gitRepo:     gitRepo,
+			gitRepo:     gitRepoSource,
 			githubToken: githubToken,
 			dryRun:      dryRun,
 		}); err != nil {
