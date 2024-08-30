@@ -30,7 +30,7 @@ func setMarshalContext(ctx context.Context) {
 	dagger.SetMarshalContext(ctx)
 }
 
-type DaggerObject = dagger.DaggerObject
+type DaggerObject = querybuilder.GraphQLMarshaller
 
 type ExecError = dagger.ExecError
 
