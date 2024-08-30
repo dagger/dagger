@@ -137,26 +137,6 @@ defmodule Dagger.Directory do
     Client.execute(directory.client, query_builder)
   end
 
-  @deprecated "Explicit pipeline creation is now a no-op"
-  @doc "Creates a named sub-pipeline."
-  @spec pipeline(t(), String.t(), [
-          {:description, String.t() | nil},
-          {:labels, [Dagger.PipelineLabel.t()]}
-        ]) :: Dagger.Directory.t()
-  def pipeline(%__MODULE__{} = directory, name, optional_args \\ []) do
-    query_builder =
-      directory.query_builder
-      |> QB.select("pipeline")
-      |> QB.put_arg("name", name)
-      |> QB.maybe_put_arg("description", optional_args[:description])
-      |> QB.maybe_put_arg("labels", optional_args[:labels])
-
-    %Dagger.Directory{
-      query_builder: query_builder,
-      client: directory.client
-    }
-  end
-
   @doc "Force evaluation in the engine."
   @spec sync(t()) :: {:ok, Dagger.Directory.t()} | {:error, term()}
   def sync(%__MODULE__{} = directory) do

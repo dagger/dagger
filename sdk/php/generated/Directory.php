@@ -132,22 +132,6 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Creates a named sub-pipeline.
-     */
-    public function pipeline(string $name, ?string $description = '', ?array $labels = null): Directory
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('pipeline');
-        $innerQueryBuilder->setArgument('name', $name);
-        if (null !== $description) {
-        $innerQueryBuilder->setArgument('description', $description);
-        }
-        if (null !== $labels) {
-        $innerQueryBuilder->setArgument('labels', $labels);
-        }
-        return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Force evaluation in the engine.
      */
     public function sync(): DirectoryId

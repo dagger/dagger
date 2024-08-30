@@ -876,40 +876,6 @@ class Container(Type):
         _ctx = self._select("mounts", _args)
         return await _ctx.execute(list[str])
 
-    def pipeline(
-        self,
-        name: str,
-        *,
-        description: str | None = "",
-        labels: list[PipelineLabel] | None = None,
-    ) -> Self:
-        """Creates a named sub-pipeline.
-
-        .. deprecated::
-            Explicit pipeline creation is now a no-op
-
-        Parameters
-        ----------
-        name:
-            Name of the sub-pipeline.
-        description:
-            Description of the sub-pipeline.
-        labels:
-            Labels to apply to the sub-pipeline.
-        """
-        warnings.warn(
-            'Method "pipeline" is deprecated: Explicit pipeline creation is now a no-op',
-            DeprecationWarning,
-            stacklevel=4,
-        )
-        _args = [
-            Arg("name", name),
-            Arg("description", description, ""),
-            Arg("labels", [] if labels is None else labels),
-        ]
-        _ctx = self._select("pipeline", _args)
-        return Container(_ctx)
-
     async def platform(self) -> Platform:
         """The platform this container executes and publishes as.
 
@@ -2680,40 +2646,6 @@ class Directory(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(DirectoryID)
-
-    def pipeline(
-        self,
-        name: str,
-        *,
-        description: str | None = "",
-        labels: list[PipelineLabel] | None = None,
-    ) -> Self:
-        """Creates a named sub-pipeline.
-
-        .. deprecated::
-            Explicit pipeline creation is now a no-op
-
-        Parameters
-        ----------
-        name:
-            Name of the sub-pipeline.
-        description:
-            Description of the sub-pipeline.
-        labels:
-            Labels to apply to the sub-pipeline.
-        """
-        warnings.warn(
-            'Method "pipeline" is deprecated: Explicit pipeline creation is now a no-op',
-            DeprecationWarning,
-            stacklevel=4,
-        )
-        _args = [
-            Arg("name", name),
-            Arg("description", description, ""),
-            Arg("labels", [] if labels is None else labels),
-        ]
-        _ctx = self._select("pipeline", _args)
-        return Directory(_ctx)
 
     async def sync(self) -> Self:
         """Force evaluation in the engine.
@@ -6930,40 +6862,6 @@ class Client(Root):
         _ctx = self._select("moduleSource", _args)
         return ModuleSource(_ctx)
 
-    def pipeline(
-        self,
-        name: str,
-        *,
-        description: str | None = "",
-        labels: list[PipelineLabel] | None = None,
-    ) -> "Client":
-        """Creates a named sub-pipeline.
-
-        .. deprecated::
-            Explicit pipeline creation is now a no-op
-
-        Parameters
-        ----------
-        name:
-            Name of the sub-pipeline.
-        description:
-            Description of the sub-pipeline.
-        labels:
-            Labels to apply to the sub-pipeline.
-        """
-        warnings.warn(
-            'Method "pipeline" is deprecated: Explicit pipeline creation is now a no-op',
-            DeprecationWarning,
-            stacklevel=4,
-        )
-        _args = [
-            Arg("name", name),
-            Arg("description", description, ""),
-            Arg("labels", labels, None),
-        ]
-        _ctx = self._select("pipeline", _args)
-        return Client(_ctx)
-
     def secret(
         self,
         name: str,
@@ -7024,13 +6922,6 @@ class Client(Root):
         _args: list[Arg] = []
         _ctx = self._select("version", _args)
         return await _ctx.execute(str)
-
-    def with_(self, cb: Callable[["Client"], "Client"]) -> "Client":
-        """Call the provided callable with current Client.
-
-        This is useful for reusability and readability by not breaking the calling chain.
-        """
-        return cb(self)
 
 
 @typecheck

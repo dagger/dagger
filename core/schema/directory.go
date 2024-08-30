@@ -25,6 +25,7 @@ func (s *directorySchema) Install() {
 		Syncer[*core.Directory]().
 			Doc(`Force evaluation in the engine.`),
 		dagql.Func("pipeline", s.pipeline).
+			View(BeforeVersion("v0.13.0")).
 			Deprecated("Explicit pipeline creation is now a no-op").
 			Doc(`Creates a named sub-pipeline.`).
 			ArgDoc("name", "Name of the sub-pipeline.").

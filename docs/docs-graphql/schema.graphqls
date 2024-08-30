@@ -258,18 +258,6 @@ type Container {
   """Retrieves the list of paths where a directory is mounted."""
   mounts: [String!]!
 
-  """Creates a named sub-pipeline."""
-  pipeline(
-    """Description of the sub-pipeline."""
-    description: String = ""
-
-    """Labels to apply to the sub-pipeline."""
-    labels: [PipelineLabel!] = []
-
-    """Name of the sub-pipeline."""
-    name: String!
-  ): Container! @deprecated(reason: "Explicit pipeline creation is now a no-op")
-
   """The platform this container executes and publishes as."""
   platform: Platform!
 
@@ -1122,18 +1110,6 @@ type Directory {
 
   """A unique identifier for this Directory."""
   id: DirectoryID!
-
-  """Creates a named sub-pipeline."""
-  pipeline(
-    """Description of the sub-pipeline."""
-    description: String = ""
-
-    """Labels to apply to the sub-pipeline."""
-    labels: [PipelineLabel!] = []
-
-    """Name of the sub-pipeline."""
-    name: String!
-  ): Directory! @deprecated(reason: "Explicit pipeline creation is now a no-op")
 
   """Force evaluation in the engine."""
   sync: DirectoryID!
@@ -2587,18 +2563,6 @@ type Query {
     """
     stable: Boolean = false
   ): ModuleSource!
-
-  """Creates a named sub-pipeline."""
-  pipeline(
-    """Description of the sub-pipeline."""
-    description: String = ""
-
-    """Labels to apply to the sub-pipeline."""
-    labels: [PipelineLabel!]
-
-    """Name of the sub-pipeline."""
-    name: String!
-  ): Query! @deprecated(reason: "Explicit pipeline creation is now a no-op")
 
   """Reference a secret by name."""
   secret(accessor: String, name: String!): Secret!

@@ -40,6 +40,7 @@ func (s *querySchema) Install() {
 
 	dagql.Fields[*core.Query]{
 		dagql.Func("pipeline", s.pipeline).
+			View(BeforeVersion("v0.13.0")).
 			Deprecated("Explicit pipeline creation is now a no-op").
 			Doc("Creates a named sub-pipeline.").
 			ArgDoc("name", "Name of the sub-pipeline.").

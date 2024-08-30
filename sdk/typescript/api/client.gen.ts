@@ -162,18 +162,6 @@ export type ContainerImportOpts = {
   tag?: string
 }
 
-export type ContainerPipelineOpts = {
-  /**
-   * Description of the sub-pipeline.
-   */
-  description?: string
-
-  /**
-   * Labels to apply to the sub-pipeline.
-   */
-  labels?: PipelineLabel[]
-}
-
 export type ContainerPublishOpts = {
   /**
    * Identifiers for other platform specific containers.
@@ -555,18 +543,6 @@ export type DirectoryExportOpts = {
    * If true, then the host directory will be wiped clean before exporting so that it exactly matches the directory being exported; this means it will delete any files on the host that aren't in the exported dir. If false (the default), the contents of the directory will be merged with any existing contents of the host directory, leaving any existing files on the host that aren't in the exported directory alone.
    */
   wipe?: boolean
-}
-
-export type DirectoryPipelineOpts = {
-  /**
-   * Description of the sub-pipeline.
-   */
-  description?: string
-
-  /**
-   * Labels to apply to the sub-pipeline.
-   */
-  labels?: PipelineLabel[]
 }
 
 export type DirectoryTerminalOpts = {
@@ -1008,18 +984,6 @@ export type ClientModuleSourceOpts = {
    * The relative path to the module root from the host directory
    */
   relHostPath?: string
-}
-
-export type ClientPipelineOpts = {
-  /**
-   * Description of the sub-pipeline.
-   */
-  description?: string
-
-  /**
-   * Labels to apply to the sub-pipeline.
-   */
-  labels?: PipelineLabel[]
 }
 
 export type ClientSecretOpts = {
@@ -1776,26 +1740,6 @@ export class Container extends BaseClient {
     )
 
     return response
-  }
-
-  /**
-   * Creates a named sub-pipeline.
-   * @param name Name of the sub-pipeline.
-   * @param opts.description Description of the sub-pipeline.
-   * @param opts.labels Labels to apply to the sub-pipeline.
-   * @deprecated Explicit pipeline creation is now a no-op
-   */
-  pipeline = (name: string, opts?: ContainerPipelineOpts): Container => {
-    return new Container({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "pipeline",
-          args: { name, ...opts },
-        },
-      ],
-      ctx: this._ctx,
-    })
   }
 
   /**
@@ -3605,26 +3549,6 @@ export class Directory extends BaseClient {
     )
 
     return response
-  }
-
-  /**
-   * Creates a named sub-pipeline.
-   * @param name Name of the sub-pipeline.
-   * @param opts.description Description of the sub-pipeline.
-   * @param opts.labels Labels to apply to the sub-pipeline.
-   * @deprecated Explicit pipeline creation is now a no-op
-   */
-  pipeline = (name: string, opts?: DirectoryPipelineOpts): Directory => {
-    return new Directory({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "pipeline",
-          args: { name, ...opts },
-        },
-      ],
-      ctx: this._ctx,
-    })
   }
 
   /**
@@ -9040,26 +8964,6 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Creates a named sub-pipeline.
-   * @param name Name of the sub-pipeline.
-   * @param opts.description Description of the sub-pipeline.
-   * @param opts.labels Labels to apply to the sub-pipeline.
-   * @deprecated Explicit pipeline creation is now a no-op
-   */
-  pipeline = (name: string, opts?: ClientPipelineOpts): Client => {
-    return new Client({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "pipeline",
-          args: { name, ...opts },
-        },
-      ],
-      ctx: this._ctx,
-    })
-  }
-
-  /**
    * Reference a secret by name.
    */
   secret = (name: string, opts?: ClientSecretOpts): Secret => {
@@ -9125,15 +9029,6 @@ export class Client extends BaseClient {
     )
 
     return response
-  }
-
-  /**
-   * Call the provided function with current Client.
-   *
-   * This is useful for reusability and readability by not breaking the calling chain.
-   */
-  with = (arg: (param: Client) => Client) => {
-    return arg(this)
   }
 }
 

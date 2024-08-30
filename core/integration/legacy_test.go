@@ -482,3 +482,26 @@ func (m *Test) Proto(proto NetworkProtocol) NetworkProtocol {
 	require.NoError(t, err)
 	require.Contains(t, out, "UDP")
 }
+
+func (LegacySuite) TestPipeline(ctx context.Context, t *testctx.T) {
+	// Changed in dagger/dagger#8281
+	//
+	// Ensure that pipeline still exists in old schemas.
+
+	res := struct {
+		Pipeline struct {
+			Version string
+		}
+	}{}
+	err := testutil.Query(t,
+		`{
+			pipeline(name: "foo") {
+				version
+			}
+		}`, &res, &testutil.QueryOptions{
+			Version: "v0.12.6",
+		})
+
+	require.NoError(t, err)
+	require.NotEmpty(t, res.Pipeline.Version)
+}

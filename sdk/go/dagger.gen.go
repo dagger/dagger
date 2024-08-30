@@ -791,36 +791,6 @@ func (r *Container) Mounts(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx)
 }
 
-// ContainerPipelineOpts contains options for Container.Pipeline
-type ContainerPipelineOpts struct {
-	// Description of the sub-pipeline.
-	Description string
-	// Labels to apply to the sub-pipeline.
-	Labels []PipelineLabel
-}
-
-// Creates a named sub-pipeline.
-//
-// Deprecated: Explicit pipeline creation is now a no-op
-func (r *Container) Pipeline(name string, opts ...ContainerPipelineOpts) *Container {
-	q := r.query.Select("pipeline")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `description` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Description) {
-			q = q.Arg("description", opts[i].Description)
-		}
-		// `labels` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Labels) {
-			q = q.Arg("labels", opts[i].Labels)
-		}
-	}
-	q = q.Arg("name", name)
-
-	return &Container{
-		query: q,
-	}
-}
-
 // The platform this container executes and publishes as.
 func (r *Container) Platform(ctx context.Context) (Platform, error) {
 	if r.platform != nil {
@@ -2476,36 +2446,6 @@ func (r *Directory) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
-}
-
-// DirectoryPipelineOpts contains options for Directory.Pipeline
-type DirectoryPipelineOpts struct {
-	// Description of the sub-pipeline.
-	Description string
-	// Labels to apply to the sub-pipeline.
-	Labels []PipelineLabel
-}
-
-// Creates a named sub-pipeline.
-//
-// Deprecated: Explicit pipeline creation is now a no-op
-func (r *Directory) Pipeline(name string, opts ...DirectoryPipelineOpts) *Directory {
-	q := r.query.Select("pipeline")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `description` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Description) {
-			q = q.Arg("description", opts[i].Description)
-		}
-		// `labels` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Labels) {
-			q = q.Arg("labels", opts[i].Labels)
-		}
-	}
-	q = q.Arg("name", name)
-
-	return &Directory{
-		query: q,
-	}
 }
 
 // Force evaluation in the engine.
@@ -6231,15 +6171,6 @@ func (r *Port) Protocol(ctx context.Context) (NetworkProtocol, error) {
 	return response, q.Execute(ctx)
 }
 
-type WithClientFunc func(r *Client) *Client
-
-// With calls the provided function with current Client.
-//
-// This is useful for reusability and readability by not breaking the calling chain.
-func (r *Client) With(f WithClientFunc) *Client {
-	return f(r)
-}
-
 func (r *Client) WithGraphQLQuery(q *querybuilder.Selection) *Client {
 	return &Client{
 		query:  q,
@@ -6925,37 +6856,6 @@ func (r *Client) ModuleSource(refString string, opts ...ModuleSourceOpts) *Modul
 
 	return &ModuleSource{
 		query: q,
-	}
-}
-
-// PipelineOpts contains options for Client.Pipeline
-type PipelineOpts struct {
-	// Description of the sub-pipeline.
-	Description string
-	// Labels to apply to the sub-pipeline.
-	Labels []PipelineLabel
-}
-
-// Creates a named sub-pipeline.
-//
-// Deprecated: Explicit pipeline creation is now a no-op
-func (r *Client) Pipeline(name string, opts ...PipelineOpts) *Client {
-	q := r.query.Select("pipeline")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `description` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Description) {
-			q = q.Arg("description", opts[i].Description)
-		}
-		// `labels` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Labels) {
-			q = q.Arg("labels", opts[i].Labels)
-		}
-	}
-	q = q.Arg("name", name)
-
-	return &Client{
-		query:  q,
-		client: r.client,
 	}
 }
 

@@ -386,14 +386,6 @@ func ModuleSource(refString string, opts ...dagger.ModuleSourceOpts) *dagger.Mod
 	return client.ModuleSource(refString, opts...)
 }
 
-// Creates a named sub-pipeline.
-//
-// Deprecated: Explicit pipeline creation is now a no-op
-func Pipeline(name string, opts ...dagger.PipelineOpts) *dagger.Client {
-	client := initClient()
-	return client.Pipeline(name, opts...)
-}
-
 // Reference a secret by name.
 func Secret(name string, opts ...dagger.SecretOpts) *dagger.Secret {
 	client := initClient()

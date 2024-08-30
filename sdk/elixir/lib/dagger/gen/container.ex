@@ -334,26 +334,6 @@ defmodule Dagger.Container do
     Client.execute(container.client, query_builder)
   end
 
-  @deprecated "Explicit pipeline creation is now a no-op"
-  @doc "Creates a named sub-pipeline."
-  @spec pipeline(t(), String.t(), [
-          {:description, String.t() | nil},
-          {:labels, [Dagger.PipelineLabel.t()]}
-        ]) :: Dagger.Container.t()
-  def pipeline(%__MODULE__{} = container, name, optional_args \\ []) do
-    query_builder =
-      container.query_builder
-      |> QB.select("pipeline")
-      |> QB.put_arg("name", name)
-      |> QB.maybe_put_arg("description", optional_args[:description])
-      |> QB.maybe_put_arg("labels", optional_args[:labels])
-
-    %Dagger.Container{
-      query_builder: query_builder,
-      client: container.client
-    }
-  end
-
   @doc "The platform this container executes and publishes as."
   @spec platform(t()) :: {:ok, Dagger.Platform.t()} | {:error, term()}
   def platform(%__MODULE__{} = container) do
