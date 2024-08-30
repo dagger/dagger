@@ -864,6 +864,15 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 			sdkSet[localDep.sdkKey] = localDep.sdk
 		}
 
+		for _, path := range localDep.ignores {
+			pattern := strings.TrimPrefix(path, "!")
+			if strings.HasPrefix(path, "!") {
+				includeSet[pattern] = struct{}{}
+			} else {
+				excludeSet[pattern] = struct{}{}
+			}
+		}
+
 		// rebase user defined include/exclude relative to context
 		rebaseIncludeExclude := func(baseAbsPath, pattern string, set *core.SliceSet[string]) error {
 			isNegation := strings.HasPrefix(pattern, "!")
@@ -1089,6 +1098,8 @@ type callerLocalDep struct {
 	sourceRootAbsPath string
 	modCfg            *modules.ModuleConfig
 	sdk               core.SDK
+	// patterns from .gitignore files
+	ignores []string
 	// sdkKey is a unique identifier for the SDK, slightly different
 	// from the module ref for the SDK because custom local SDKs
 	// use their local path for sdkKey, which allows us to de-dupe
@@ -1265,6 +1276,41 @@ func (s *moduleSchema) collectCallerLocalDeps(
 			}
 		default:
 			return nil, fmt.Errorf("failed to load sdk: %w", err)
+		}
+
+		ignorePath := filepath.Join(sourceRootAbsPath, ".gitignore")
+		// No stat because we want the contents, otherwise it would be two calls
+		// for each file that exists.
+		ignoreBytes, err := bk.ReadCallerHostFile(ctx, ignorePath)
+		switch {
+		case err == nil:
+			lines := strings.Split(string(ignoreBytes), "\n")
+			for _, pattern := range lines {
+				pattern = strings.TrimSpace(pattern)
+				if pattern == "" || strings.HasPrefix(pattern, "#") {
+					continue
+				}
+				if !strings.Contains(pattern, "/") {
+					pattern = "**/" + pattern
+				}
+				isNegation := strings.HasPrefix(pattern, "!")
+				pattern = strings.TrimPrefix(pattern, "!")
+				absPath := filepath.Join(sourceRootAbsPath, pattern)
+				relPath, err := filepath.Rel(contextAbsPath, absPath)
+				if err != nil {
+					return nil, fmt.Errorf("failed to get relative path of .gitignore pattern: %w", err)
+				}
+				if !filepath.IsLocal(relPath) {
+					return nil, fmt.Errorf("local module .gitignore pattern %q escapes context %q", relPath, contextAbsPath)
+				}
+				if isNegation {
+					relPath = "!" + relPath
+				}
+				localDep.ignores = append(localDep.ignores, relPath)
+			}
+
+		case status.Code(err) != codes.NotFound:
+			return nil, fmt.Errorf("error reading .gitignore file %s: %w", ignorePath, err)
 		}
 
 		return localDep, nil
