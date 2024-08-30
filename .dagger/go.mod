@@ -4,7 +4,7 @@ go 1.22.0
 
 toolchain go1.22.5
 
-require github.com/dagger/dagger/engine/distconsts v0.12.5
+require github.com/dagger/dagger/engine/distconsts v0.12.6
 
 replace github.com/dagger/dagger/engine/distconsts => ../engine/distconsts
 
@@ -56,3 +56,11 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240610135401-a8a62080eff3 // indirect
 	google.golang.org/protobuf v1.34.1 // indirect
 )
+
+replace go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc => go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.0.0-20240518090000-14441aefdf88
+
+replace go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp => go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.3.0
+
+replace go.opentelemetry.io/otel/log => go.opentelemetry.io/otel/log v0.3.0
+
+replace go.opentelemetry.io/otel/sdk/log => go.opentelemetry.io/otel/sdk/log v0.3.0

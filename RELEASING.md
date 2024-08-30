@@ -1,11 +1,4 @@
-# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-August%2015,%202024-success?style=flat-square)
-
-> [!WARNING]
->
-> This document is out of date because of dagger/dagger#8190.
->
-> In the next improve-releasing-during-<version> PR, this document should be
-> updated to include the changes from that PR.
+# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-August%2029,%202024-success?style=flat-square)
 
 This describes how to release Dagger:
 
@@ -324,7 +317,7 @@ git commit -s -m "chore: add release notes for ${ENGINE_VERSION}"
      otherwise, make the file empty (but don't remove it).
 
 - [ ] Update all dagger versions in `docs/current_docs/partials/_install-cli.mdx` to `$ENGINE_VERSION`
-  - e.g. if bumping 0.12.4->0.12.5, can run `sed -i 's/0\.12\.4/0\.12\.5/g' docs/current_docs/partials/_install-cli.mdx`
+  - e.g. if bumping 0.12.5->0.12.6, can run `sed -i 's/0\.12\.5/0\.12\.6/g' docs/current_docs/partials/_install-cli.mdx`
 
 - [ ] `30 mins` Submit, review and merge the prep PR. The merge commit is what gets tagged in the next step.
   - 🚨 Non-main branch release only: Ideally use "Rebase and Merge" rather than squashing commits when merging so we can more easily preserve the history of the cherry-picked commits.
@@ -354,19 +347,20 @@ which publishes:
       `dev` module updated below will get `dagger.json`'s engine version bumped.
 
 ```console
-curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=0.12.4 sh
-# install the cli to dagger-0.12.4, and symlink dagger to it
-mv ~/.local/bin/dagger{,-0.12.4}
-ln -s ~/.local/bin/dagger{-0.12.4,}
+curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=0.12.6 sh
+# install the cli to dagger-0.12.6, and symlink dagger to it
+mv ~/.local/bin/dagger{,-0.12.6}
+ln -s ~/.local/bin/dagger{-0.12.6,}
 
 dagger version
+dagger core version
 ```
 
 - [ ] Update all dagger versions in `.github/` to `$ENGINE_VERSION`
 
   - The version numbers (of the form `<major>.<minor>.<patch>`) should be updated to the new version
   - The worker runner versions (of the form `dagger-v<major>-<minor>-<patch>-<worker>`)
-  - e.g. if bumping 0.12.4->0.12.5, can run `find .github/ -type f -exec sed -i 's/0-12-4/0-12-5/g; s/0\.12\.4/0\.12\.5/g' {} +`
+  - e.g. if bumping 0.12.5->0.12.6, can run `find .github/ -type f -exec sed -i 's/0-12-5/0-12-6/g; s/0\.12\.5/0\.12\.6/g' {} +`
 
 - [ ] Open a PR with the title `Improve Releasing during $ENGINE_VERSION`
 
@@ -414,17 +408,15 @@ workflow](https://github.com/dagger/dagger/actions/workflows/sdk-go-publish.yml)
 which publishes to [🐙
 github.com/dagger/dagger-go-sdk](https://github.com/dagger/dagger-go-sdk/tags).
 
-- [ ] Upload the release notes by running:
-
-```console
-gh release create "sdk/go/${GO_SDK_VERSION:?must be set}" \
-    --draft --verify-tag --title sdk/go/$GO_SDK_VERSION \
-    --notes-file sdk/go/.changes/$GO_SDK_VERSION.md
-```
+The release notes should be automatically uploaded as a draft to the
+[Dagger releases](https://github.com/dagger/dagger/releases) page. Navigate to
+the draft release, then:
 
 - [ ] Check that release notes look good in `Preview`
 - [ ] ⚠️ De-select **Set as the latest release** (only used for 🚙 Engine + 🚗 CLI releases)
 - [ ] Click on **Publish release**
+
+Finally:
 
 - [ ] Double-check that the releases was picked up by [pkg.go.dev](https://pkg.go.dev/dagger.io/dagger).
       You can manually request this new version via `open https://pkg.go.dev/dagger.io/dagger@${GO_SDK_VERSION:?must be set}`.
@@ -473,13 +465,9 @@ This will trigger the [`Publish Python SDK`
 workflow](https://github.com/dagger/dagger/actions/workflows/sdk-python-publish.yml)
 which publishes [dagger-io to 🐍 PyPI](https://pypi.org/project/dagger-io)
 
-- [ ] Upload the release notes by running:
-
-```console
-gh release create "sdk/python/${PYTHON_SDK_VERSION:?must be set}" \
-    --draft --verify-tag --title sdk/python/$PYTHON_SDK_VERSION \
-    --notes-file sdk/python/.changes/$PYTHON_SDK_VERSION.md
-```
+The release notes should be automatically uploaded as a draft to the
+[Dagger releases](https://github.com/dagger/dagger/releases) page. Navigate to
+the draft release, then:
 
 - [ ] ⚠️ De-select **Set as the latest release** (only used for 🚙 Engine + 🚗 CLI releases)
 - [ ] Check that release notes look good in `Preview`. FWIW:
@@ -500,13 +488,9 @@ This will trigger the [`Publish TypeScript SDK`
 workflow](https://github.com/dagger/dagger/actions/workflows/sdk-typescript-publish.yml)
 which publishes a new version to [⬢ npmjs.com/package/@dagger.io/dagger](https://www.npmjs.com/package/@dagger.io/dagger)
 
-- [ ] Upload the release notes by running:
-
-```console
-gh release create "sdk/typescript/${TYPESCRIPT_SDK_VERSION:?must be set}" \
-    --draft --verify-tag --title sdk/typescript/$TYPESCRIPT_SDK_VERSION \
-    --notes-file sdk/typescript/.changes/$TYPESCRIPT_SDK_VERSION.md
-```
+The release notes should be automatically uploaded as a draft to the
+[Dagger releases](https://github.com/dagger/dagger/releases) page. Navigate to
+the draft release, then:
 
 - [ ] Check that release notes look good in `Preview`
 - [ ] ⚠️ De-select **Set as the latest release** (only used for 🚙 Engine + 🚗 CLI releases)
@@ -526,13 +510,9 @@ This will trigger the [`Publish Elixir SDK`
 workflow](https://github.com/dagger/dagger/actions/workflows/sdk-elixir-publish.yml)
 which publishes a new version to [🧪 hex.pm/packages/dagger](https://hex.pm/packages/dagger)
 
-- [ ] Upload the release notes by running:
-
-```console
-gh release create "sdk/elixir/${ELIXIR_SDK_VERSION:?must be set}" \
-    --draft --verify-tag --title sdk/elixir/$ELIXIR_SDK_VERSION \
-    --notes-file sdk/elixir/.changes/$ELIXIR_SDK_VERSION.md
-```
+The release notes should be automatically uploaded as a draft to the
+[Dagger releases](https://github.com/dagger/dagger/releases) page. Navigate to
+the draft release, then:
 
 - [ ] Check that release notes look good in `Preview`
 - [ ] ⚠️ De-select **Set as the latest release** (only used for 🚙 Engine + 🚗 CLI releases)
@@ -553,13 +533,9 @@ workflow](https://github.com/dagger/dagger/actions/workflows/sdk-php-publish.yml
 which publishes to
 [github.com/dagger/dagger-php-sdk](https://github.com/dagger/dagger-php-sdk/tags).
 
-- [ ] Upload the release notes by running:
-
-```console
-gh release create "sdk/php/${PHP_SDK_VERSION:?must be set}" \
-    --draft --verify-tag --title sdk/php/$PHP_SDK_VERSION \
-    --notes-file sdk/php/.changes/$PHP_SDK_VERSION.md
-```
+The release notes should be automatically uploaded as a draft to the
+[Dagger releases](https://github.com/dagger/dagger/releases) page. Navigate to
+the draft release, then:
 
 - [ ] Check that release notes look good in `Preview`
 - [ ] ⚠️ De-select **Set as the latest release** (only used for 🚙 Engine + 🚗 CLI releases)
@@ -677,7 +653,7 @@ update once there's a new release of the Dagger Engine.
 
 - [ ] Submit PR with the version bump, e.g.
       https://github.com/dagger/dagger-for-github/pull/123
-  - e.g. if bumping 0.12.4->0.12.5, can run `find . -type f -exec sed -i 's/0\.12\.4/0\.12\.5/g' {} +`
+  - e.g. if bumping 0.12.5->0.12.6, can run `find . -type f -exec sed -i 's/0\.12\.5/0\.12\.6/g' {} +`
 - [ ] Ask @gerhard or @jpadams to review it
 
 > [!TIP]

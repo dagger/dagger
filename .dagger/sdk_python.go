@@ -188,7 +188,7 @@ func (t PythonSDK) Publish(
 	if isVersioned {
 		if err := githubRelease(ctx, githubReleaseOpts{
 			tag:         tag,
-			notes:       sdkChangeNotes(t.Dagger.Src, "elixir", version),
+			notes:       sdkChangeNotes(t.Dagger.Src, "python", version),
 			gitRepo:     gitRepoSource,
 			githubToken: githubToken,
 			dryRun:      dryRun,
