@@ -680,7 +680,6 @@ type GitModuleSource struct {
 	Version string `field:"true" doc:"The specified version of the git repo this source points to."`
 	Commit  string `field:"true" doc:"The resolved commit of the git repo this source points to."`
 
-	CloneURL string `field:"true" name:"cloneURL" doc:"The URL to clone the root of the git repo from" deprecated:"Use CloneRef instead. CloneRef supports both URL-style and SCP-like SSH references"`
 	CloneRef string `field:"true" name:"cloneRef" doc:"The ref to clone the root of the git repo from"`
 
 	HTMLRepoURL string `field:"true" name:"htmlRepoURL" doc:"The URL to access the web view of the repository (e.g., GitHub, GitLab, Bitbucket)"`

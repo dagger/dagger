@@ -91,8 +91,6 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 
 		// Construct the source reference (preserves original input)
 		src.AsGitSource.Value.CloneRef = parsed.scheme.Prefix() + sourceUser + parsed.repoRoot.Root
-		// DEPRECATED: point CloneURL to new CloneRef implementation
-		src.AsGitSource.Value.CloneURL = src.AsGitSource.Value.CloneRef
 
 		// Construct the reference for actual cloning (ensures username for SSH)
 		cloneRef := parsed.scheme.Prefix() + cloneUser + parsed.repoRoot.Root
@@ -349,6 +347,14 @@ func (s *moduleSchema) gitModuleSourceHTMLURL(
 	args struct{},
 ) (string, error) {
 	return ref.HTMLURL(), nil
+}
+
+func (s *moduleSchema) gitModuleSourceCloneURL(
+	ctx context.Context,
+	ref *core.GitModuleSource,
+	args struct{},
+) (string, error) {
+	return ref.CloneRef, nil
 }
 
 func (s *moduleSchema) moduleSourceConfigExists(

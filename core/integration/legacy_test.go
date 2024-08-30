@@ -505,3 +505,33 @@ func (LegacySuite) TestPipeline(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, res.Pipeline.Version)
 }
+
+func (LegacySuite) TestModuleSourceCloneURL(ctx context.Context, t *testctx.T) {
+	// Changed in dagger/dagger#8281
+	//
+	// Ensure that cloneURL still exists in old schemas.
+
+	res := struct {
+		ModuleSource struct {
+			AsGitSource struct {
+				CloneRef string
+				CloneURL string
+			}
+		}
+	}{}
+	err := testutil.Query(t,
+		`{
+			moduleSource(refString: "https://github.com/dagger/dagger.git@v0.12.6") {
+				asGitSource {
+					cloneRef
+					cloneURL
+				}
+			}
+		}`, &res, &testutil.QueryOptions{
+			Version: "v0.12.6",
+		})
+
+	require.NoError(t, err)
+	require.Equal(t, "https://github.com/dagger/dagger.git", res.ModuleSource.AsGitSource.CloneRef)
+	require.Equal(t, res.ModuleSource.AsGitSource.CloneRef, res.ModuleSource.AsGitSource.CloneURL)
+}

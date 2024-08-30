@@ -5207,7 +5207,6 @@ export class GeneratedCode extends BaseClient {
 export class GitModuleSource extends BaseClient {
   private readonly _id?: GitModuleSourceID = undefined
   private readonly _cloneRef?: string = undefined
-  private readonly _cloneURL?: string = undefined
   private readonly _commit?: string = undefined
   private readonly _htmlRepoURL?: string = undefined
   private readonly _htmlURL?: string = undefined
@@ -5222,7 +5221,6 @@ export class GitModuleSource extends BaseClient {
     parent?: { queryTree?: QueryTree[]; ctx: Context },
     _id?: GitModuleSourceID,
     _cloneRef?: string,
-    _cloneURL?: string,
     _commit?: string,
     _htmlRepoURL?: string,
     _htmlURL?: string,
@@ -5234,7 +5232,6 @@ export class GitModuleSource extends BaseClient {
 
     this._id = _id
     this._cloneRef = _cloneRef
-    this._cloneURL = _cloneURL
     this._commit = _commit
     this._htmlRepoURL = _htmlRepoURL
     this._htmlURL = _htmlURL
@@ -5277,28 +5274,6 @@ export class GitModuleSource extends BaseClient {
         ...this._queryTree,
         {
           operation: "cloneRef",
-        },
-      ],
-      await this._ctx.connection(),
-    )
-
-    return response
-  }
-
-  /**
-   * The URL to clone the root of the git repo from
-   * @deprecated Use CloneRef instead. CloneRef supports both URL-style and SCP-like SSH references
-   */
-  cloneURL = async (): Promise<string> => {
-    if (this._cloneURL) {
-      return this._cloneURL
-    }
-
-    const response: Awaited<string> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "cloneURL",
         },
       ],
       await this._ctx.connection(),

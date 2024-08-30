@@ -3877,7 +3877,6 @@ type GitModuleSource struct {
 	query *querybuilder.Selection
 
 	cloneRef    *string
-	cloneURL    *string
 	commit      *string
 	htmlRepoURL *string
 	htmlURL     *string
@@ -3899,21 +3898,6 @@ func (r *GitModuleSource) CloneRef(ctx context.Context) (string, error) {
 		return *r.cloneRef, nil
 	}
 	q := r.query.Select("cloneRef")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// The URL to clone the root of the git repo from
-//
-// Deprecated: Use CloneRef instead. CloneRef supports both URL-style and SCP-like SSH references
-func (r *GitModuleSource) CloneURL(ctx context.Context) (string, error) {
-	if r.cloneURL != nil {
-		return *r.cloneURL, nil
-	}
-	q := r.query.Select("cloneURL")
 
 	var response string
 

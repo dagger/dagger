@@ -4722,11 +4722,6 @@ impl GitModuleSource {
         let query = self.selection.select("cloneRef");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The URL to clone the root of the git repo from
-    pub async fn clone_url(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("cloneURL");
-        query.execute(self.graphql_client.clone()).await
-    }
     /// The resolved commit of the git repo this source points to.
     pub async fn commit(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("commit");
