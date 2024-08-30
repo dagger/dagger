@@ -21,7 +21,7 @@ import (
 
 type cliSessionConn struct {
 	*http.Client
-	childCancel func()
+	childCancel context.CancelCauseFunc
 	childProc   *exec.Cmd
 	stderrBuf   *safeBuffer
 }
@@ -32,7 +32,7 @@ func (c *cliSessionConn) Host() string {
 
 func (c *cliSessionConn) Close() error {
 	if c.childCancel != nil && c.childProc != nil {
-		c.childCancel()
+		c.childCancel(errors.New("client closed"))
 		err := c.childProc.Wait()
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
@@ -97,7 +97,7 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 	// propagate trace context to the child process (i.e. for Dagger-in-Dagger)
 	env = append(env, telemetry.PropagationEnv(ctx)...)
 
-	cmdCtx, cmdCancel := context.WithCancel(ctx)
+	cmdCtx, cmdCancel := context.WithCancelCause(ctx)
 
 	// Workaround https://github.com/golang/go/issues/22315
 	// Basically, if any other code in this process does fork/exec, it may
@@ -127,13 +127,13 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 		var err error
 		stdout, err = proc.StdoutPipe()
 		if err != nil {
-			cmdCancel()
+			cmdCancel(fmt.Errorf("failed to create stdout pipe: %w", err))
 			return nil, err
 		}
 
 		stderrPipe, err := proc.StderrPipe()
 		if err != nil {
-			cmdCancel()
+			cmdCancel(fmt.Errorf("failed to create stderr pipe: %w", err))
 			return nil, err
 		}
 		if cfg.LogOutput == nil {
@@ -154,7 +154,7 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 		// we don't leak child processes even if this process is SIGKILL'd.
 		childStdin, err = proc.StdinPipe()
 		if err != nil {
-			cmdCancel()
+			cmdCancel(fmt.Errorf("failed to create stdin pipe: %w", err))
 			return nil, err
 		}
 
@@ -178,14 +178,15 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 				childStdin = nil
 				continue
 			}
-			cmdCancel()
+			cmdCancel(fmt.Errorf("failed to start dagger session process: %w", err))
 			return nil, err
 		}
 		break
 	}
 	if proc == nil {
-		cmdCancel()
-		return nil, fmt.Errorf("failed to start dagger session")
+		err := fmt.Errorf("failed to start dagger session")
+		cmdCancel(err)
+		return nil, err
 	}
 
 	defer func() {
@@ -223,15 +224,17 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 	select {
 	case err := <-paramCh:
 		if err != nil {
-			cmdCancel()
+			err = fmt.Errorf("failed to read session params: %w", err)
+			cmdCancel(err)
 			return nil, err
 		}
 
 	case <-time.After(300 * time.Second):
 		// really long time to account for extensions that need to build, though
 		// that path should be optimized in future
-		cmdCancel()
-		return nil, fmt.Errorf("timed out waiting for session params")
+		err := fmt.Errorf("timed out waiting for session params")
+		cmdCancel(err)
+		return nil, err
 	}
 
 	if cfg.LogOutput != nil {

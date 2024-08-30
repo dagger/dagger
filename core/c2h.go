@@ -22,13 +22,13 @@ type c2hTunnel struct {
 func (d *c2hTunnel) Tunnel(ctx context.Context) (rerr error) {
 	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
 
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(errors.New("tunnel finished"))
 	listenerPool := pool.New().WithContext(ctx)
 	proxyConnPool := pool.New().WithContext(ctx)
 	for _, sock := range d.socks {
 		listenerPool.Go(func(ctx context.Context) error {
-			defer cancel() // if one exits, all should exit
+			defer cancel(errors.New("tunnel listener done")) // if one exits, all should exit
 
 			port, ok := d.sockStore.GetSocketPortForward(sock.IDDigest)
 			if !ok {

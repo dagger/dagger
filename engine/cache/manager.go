@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -89,10 +90,10 @@ func NewManager(ctx context.Context, managerConfig ManagerConfig) (Manager, erro
 	}
 	m.runtimeConfig = *config
 
-	importParentCtx, cancelImport := context.WithCancel(context.Background())
+	importParentCtx, cancelImport := context.WithCancelCause(context.Background())
 	go func() {
 		<-m.startCloseCh
-		cancelImport()
+		cancelImport(errors.New("cache manager closing"))
 	}()
 
 	// do an initial synchronous import at start

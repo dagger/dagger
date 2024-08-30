@@ -53,8 +53,8 @@ func (s TerminalAttachable) Session(srv Terminal_SessionServer) error {
 }
 
 func (s TerminalAttachable) session(srv Terminal_SessionServer, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
-	ctx, cancel := context.WithCancel(srv.Context())
-	defer cancel()
+	ctx, cancel := context.WithCancelCause(srv.Context())
+	defer cancel(errors.New("terminal session finished"))
 
 	if err := s.sendSize(srv, stdout); err != nil {
 		return fmt.Errorf("sending initial size: %w", err)

@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -27,7 +28,7 @@ type SpanHeartbeater struct {
 	activeSpansL *sync.Mutex
 
 	heartbeatCtx    context.Context
-	heartbeatCancel func()
+	heartbeatCancel context.CancelCauseFunc
 }
 
 func NewSpanHeartbeater(exp sdktrace.SpanExporter) *SpanHeartbeater {
@@ -37,7 +38,7 @@ func NewSpanHeartbeater(exp sdktrace.SpanExporter) *SpanHeartbeater {
 		activeSpansL: &sync.Mutex{},
 	}
 
-	lsp.heartbeatCtx, lsp.heartbeatCancel = context.WithCancel(context.Background())
+	lsp.heartbeatCtx, lsp.heartbeatCancel = context.WithCancelCause(context.Background())
 
 	go lsp.heartbeat()
 
@@ -67,7 +68,7 @@ func (p *SpanHeartbeater) ExportSpans(ctx context.Context, spans []sdktrace.Read
 }
 
 func (p *SpanHeartbeater) Shutdown(ctx context.Context) error {
-	p.heartbeatCancel()
+	p.heartbeatCancel(errors.New("telemetry shutdown"))
 	return p.SpanExporter.Shutdown(ctx)
 }
 

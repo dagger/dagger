@@ -270,10 +270,10 @@ func (srv *Server) initializeDaggerSession(
 }
 
 func (sess *daggerSession) withShutdownCancel(ctx context.Context) context.Context {
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithCancelCause(ctx)
 	go func() {
 		<-sess.shutdownCh
-		cancel()
+		cancel(errors.New("session shutdown called"))
 	}()
 	return ctx
 }
@@ -882,8 +882,8 @@ const InstrumentationLibrary = "dagger.io/engine.server"
 
 func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opts *ClientInitOpts) (rerr error) {
 	ctx := r.Context()
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(fmt.Errorf("http request done for client %q", opts.ClientID))
 
 	clientMetadata := opts.ClientMetadata
 	ctx = engine.ContextWithClientMetadata(ctx, clientMetadata)

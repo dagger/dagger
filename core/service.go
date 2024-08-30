@@ -496,10 +496,10 @@ func (svc *Service) startContainer(
 }
 
 func (svc *Service) startTunnel(ctx context.Context, id *call.ID) (running *RunningService, rerr error) {
-	svcCtx, stop := context.WithCancel(context.WithoutCancel(ctx))
+	svcCtx, stop := context.WithCancelCause(context.WithoutCancel(ctx))
 	defer func() {
 		if rerr != nil {
-			stop()
+			stop(fmt.Errorf("tunnel start error: %w", rerr))
 		}
 	}()
 
@@ -579,7 +579,7 @@ func (svc *Service) startTunnel(ctx context.Context, id *call.ID) (running *Runn
 		Host:  dialHost,
 		Ports: ports,
 		Stop: func(_ context.Context, _ bool) error {
-			stop()
+			stop(errors.New("service stop called"))
 			svcs.Detach(svcCtx, upstream)
 			var errs []error
 			for _, closeListener := range closers {
@@ -654,7 +654,7 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 	}
 
 	// NB: decouple from the incoming ctx cancel and add our own
-	svcCtx, stop := context.WithCancel(context.WithoutCancel(ctx))
+	svcCtx, stop := context.WithCancelCause(context.WithoutCancel(ctx))
 
 	exited := make(chan struct{}, 1)
 	var exitErr error
@@ -672,8 +672,9 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 	case err := <-checked:
 		if err != nil {
 			netNS.Release(svcCtx)
-			stop()
-			return nil, fmt.Errorf("health check errored: %w", err)
+			err = fmt.Errorf("health check errored: %w", err)
+			stop(err)
+			return nil, err
 		}
 
 		return &RunningService{
@@ -686,7 +687,7 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 			Ports: checkPorts,
 			Stop: func(context.Context, bool) error {
 				defer span.End()
-				stop()
+				stop(errors.New("service stop called"))
 				waitCtx, waitCancel := context.WithTimeout(context.WithoutCancel(svcCtx), 10*time.Second)
 				defer waitCancel()
 				netNS.Release(waitCtx)
@@ -700,7 +701,7 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 		}, nil
 	case <-exited:
 		netNS.Release(svcCtx)
-		stop()
+		stop(errors.New("proxy exited"))
 		if exitErr != nil {
 			return nil, fmt.Errorf("proxy exited: %w", exitErr)
 		}
