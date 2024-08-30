@@ -27,20 +27,13 @@ func (m *Compatcheck) Run(ctx context.Context,
 	versionA,
 	// version of engine to compare to
 	versionB string,
-	// +optional
-	// only required when one of the version to compare is 'dev'
-	source *dagger.Directory,
 ) error {
-	if (versionA == "dev" || versionB == "dev") && source == nil {
-		return fmt.Errorf("--source flag is required when one of the requested engine version is 'dev'")
-	}
-
-	baseSchemaA, schemaA, err := m.getSchemaForModuleForEngineVersion(ctx, module, versionA, source)
+	baseSchemaA, schemaA, err := m.getSchemaForModuleForEngineVersion(ctx, module, versionA)
 	if err != nil {
 		return err
 	}
 
-	baseSchemaB, schemaB, err := m.getSchemaForModuleForEngineVersion(ctx, module, versionB, source)
+	baseSchemaB, schemaB, err := m.getSchemaForModuleForEngineVersion(ctx, module, versionB)
 	if err != nil {
 		return err
 	}
@@ -59,13 +52,14 @@ func (m *Compatcheck) Run(ctx context.Context,
 
 // setup dagger engine/client with requested version and
 // fetches schema using dagger query
-func (m *Compatcheck) getSchemaForModuleForEngineVersion(ctx context.Context, module, engineVersion string, source *dagger.Directory) (string, string, error) {
+func (m *Compatcheck) getSchemaForModuleForEngineVersion(ctx context.Context, module, engineVersion string) (string, string, error) {
 	var engineSvc *dagger.Service
 	var client *dagger.Container
 	var err error
 
 	if engineVersion == "dev" {
-		client = devEngineAndClient(source)
+		// returns a container with dev version of dagger engine and cli
+		client = dag.DaggerDev().Dev()
 	} else {
 		engineSvc = engineServiceWithVersion(engineVersion)
 		client, err = engineClientContainerWithVersion(ctx, engineSvc, engineVersion)
@@ -141,13 +135,6 @@ func engineServiceWithVersion(version string, withs ...func(*dagger.Container) *
 			UseEntrypoint:            true,
 			InsecureRootCapabilities: true,
 		}).AsService()
-}
-
-// returns a container with dev version of dagger engine and cli
-// requires path to root of dagger repository to be provided using
-// --source flag
-func devEngineAndClient(source *dagger.Directory) *dagger.Container {
-	return dag.DaggerDev(source).Dev()
 }
 
 // creates a network CIDR to use for running the engine

@@ -28,34 +28,21 @@ are useful while developing Dagger. But remember, you are free to compose your
 own pipelines, either by modifying the examples, of starting from scratch. This
 flexibility is one of the killer features of Dagger.
 
-## Running pipelines in a local checkout
-
-All the pipelines in this document can be run against a local or remote source
-directory. We will assume a local checkout, unless explicitly stated otherwise.
-
-To keep the example commands shorter, let's use a convenience environment
-variable to designate the current git repository as the source.
-
-    # Run anywhere inside a local checkout of github.com/dagger/dagger
-    export SRC="$(git rev-parse --show-toplevel):default"
-
-That variable has no meaning outside of this document, it is for convenience only.
-
 ## Tests
 
 Run all tests:
 
-    dagger call --source="$SRC" test all
+    dagger call test all
 
 Run a specific test (e.g. `TestNamespacing` in the `TestModule` suite):
 
-    dagger call --source="$SRC" test specific --pkg="./core/integration" --run="^TestModule/TestNamespacing$"
+    dagger call test specific --pkg="./core/integration" --run="^TestModule/TestNamespacing$"
 
 ## Dev shell
 
 Start a dev shell with dagger-in-dagger:
 
-    dagger call --source="$SRC" dev terminal
+    dagger call dev terminal
 
 ## Engine & CLI
 
@@ -63,19 +50,19 @@ Start a dev shell with dagger-in-dagger:
 
 Run the engine linter:
 
-    dagger call --source="$SRC" engine lint
+    dagger call engine lint
 
 ### Build the CLI
 
 Build the CLI:
 
-    dagger call --source="$SRC" cli binary -o ./bin/dagger
+    dagger call cli binary -o ./bin/dagger
 
 ### Run the engine service
 
 Run the engine as a service:
 
-    dagger call --source="$SRC" engine service --name=dagger-engine up --ports=1234:1234
+    dagger call engine service --name=dagger-engine up --ports=1234:1234
 
 Connect to it from a dagger cli:
 
@@ -87,11 +74,11 @@ Connect to it from a dagger cli:
 
 Lint the docs:
 
-    dagger call --source="$SRC" docs lint
+    dagger call docs lint
 
 Auto-generate docs components:
 
-    dagger call --source="$SRC" docs generate -o .
+    dagger call docs generate -o .
 
 ## SDKs
 
@@ -112,31 +99,31 @@ All SDKs have the same functions defined:
 
 Run an SDK linter (replace `<sdk>` with one of the supported SDKs):
 
-    dagger call --source="$SRC" sdk <sdk> lint
+    dagger call sdk <sdk> lint
 
 ### Tests
 
 Run SDK tests (replace `<sdk>` with one of the supported SDKs):
 
-    dagger call --source="$SRC" sdk <sdk> test
+    dagger call sdk <sdk> test
 
 ### Generate
 
 Generate SDK static files (replace `<sdk>` with one of the supported SDKs):
 
-    dagger call --source="$SRC" sdk <sdk> generate export --path=.
+    dagger call sdk <sdk> generate export --path=.
 
 ### Publish
 
 Dry-run an SDK publishing step (replace `<sdk>` with one of the supported SDKs):
 
-    dagger call --source="$SRC" sdk <sdk> publish --dry-run
+    dagger call sdk <sdk> publish --dry-run
 
 ### Bump
 
 Bump an SDK version for releasing (replace `<sdk>` with one of the supported SDKs):
 
-    dagger call --source="$SRC" sdk <sdk> bump --version=$VERSION export --path=.
+    dagger call sdk <sdk> bump --version=$VERSION export --path=.
 
 ## Contributing to this module
 

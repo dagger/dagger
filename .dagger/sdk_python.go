@@ -28,8 +28,7 @@ type PythonSDK struct {
 // dev instantiates a PythonSDKDev instance, with source directory
 // from `sdk/python` subdir.
 func (t PythonSDK) dev(opts ...dagger.PythonSDKDevOpts) *dagger.PythonSDKDev {
-	src := t.Dagger.Source().Directory(pythonSubdir)
-	return dag.PythonSDKDev(src, opts...)
+	return dag.PythonSDKDev(opts...)
 }
 
 // directory takes a directory returned by PythonSDKDev which is relative

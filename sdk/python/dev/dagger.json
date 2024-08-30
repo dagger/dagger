@@ -1,11 +1,7 @@
 {
   "name": "python-sdk-dev",
   "sdk": "python",
-  "exclude": [
-    "**/.venv",
-    "**/__pycache__",
-    "**/.*cache"
-  ],
+  "exclude": ["**/.venv", "**/__pycache__", "**/.*cache"],
   "dependencies": [
     {
       "name": "apko",
@@ -17,48 +13,5 @@
     }
   ],
   "source": ".",
-  "engineVersion": "v0.12.2",
-  "views": [
-    {
-      "name": "default",
-      "patterns": [
-        "dev/src/**/*.py",
-        "docs/**/*.py",
-        "docs/**/*.rst",
-        "src/**/*.py",
-        "src/**/py.typed",
-        "tests/**/*.py",
-        "codegen/**/*.py",
-        "ruff.toml",
-        "uv.lock",
-        "README.md",
-        "LICENSE",
-        "**/pyproject.toml",
-        "**/.gitignore",
-        "**/.ruff.toml",
-        "!dev/sdk",
-        "!**/__pycache__",
-        "!**/.*cache",
-        "!**/.venv"
-      ]
-    },
-    {
-      "name": "lint",
-      "patterns": [
-        "!**/.direnv",
-        "!**/.venv",
-        "!**/__pycache__",
-        "!**/.ruff_cache",
-        "!**/sdk/pyproject.toml",
-        "!**/sdk/src",
-        "**/.gitignore",
-        "**/pyproject.toml",
-        "**/.ruff.toml",
-        "**/ruff*.toml",
-        "**/*.py",
-        "README.md",
-        "LICENSE"
-      ]
-    }
-  ]
+  "engineVersion": "v0.12.6"
 }
