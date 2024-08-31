@@ -19,12 +19,11 @@ const (
 
 func New(
 	// +optional
+	// +defaultPath="/sdk/elixir"
 	sdkSourceDir *dagger.Directory,
 ) *ElixirSdk {
-	if sdkSourceDir == nil {
-		// TODO: Replace with a *default path from context* when
-		// https://github.com/dagger/dagger/pull/7744 becomes available.
-		sdkSourceDir = dag.Directory().
+	return &ElixirSdk{
+		SdkSourceDir: dag.Directory().
 			// NB: these patterns should match those in `dagger.json`.
 			// When `--sdk` points to a git remote the files aren't filtered
 			// using `dagger.json` include/exclude patterns since the whole
@@ -33,7 +32,7 @@ func New(
 			// loading the SDK from a local path.
 			WithDirectory(
 				"/",
-				dag.CurrentModule().Source().Directory(".."),
+				sdkSourceDir,
 				dagger.DirectoryWithDirectoryOpts{
 					Include: []string{
 						"LICENSE",
@@ -46,10 +45,7 @@ func New(
 						"dagger_codegen/mix.lock",
 					},
 				},
-			)
-	}
-	return &ElixirSdk{
-		SdkSourceDir:  sdkSourceDir,
+			),
 		RequiredPaths: []string{},
 		Container:     dag.Container(),
 	}
