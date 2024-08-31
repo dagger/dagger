@@ -4,7 +4,9 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	_ "embed"
+	"encoding/hex"
 	"fmt"
 	"path"
 	"python-sdk/internal/dagger"
@@ -84,6 +86,14 @@ type PythonSdk struct {
 	// Resulting container after each composing step
 	Container *dagger.Container
 
+	// SourcePath is a unique host path for the module being loaded
+	//
+	// HACK: this property is computed as a unique value for a ModuleSource to
+	// provide a unique path on the filesystem. This is because the uv cache
+	// uses hashes of source paths - so we need to have something unique, or we
+	// can get very real conflicts in the uv cache.
+	SourcePath string
+
 	// Discovery holds the logic for getting more information from the target module
 	// +private
 	Discovery *Discovery
@@ -95,11 +105,11 @@ func (m *PythonSdk) Codegen(
 	modSource *dagger.ModuleSource,
 	introspectionJSON *dagger.File,
 ) (*dagger.GeneratedCode, error) {
-	self, err := m.Common(ctx, modSource, introspectionJSON)
+	m, err := m.Common(ctx, modSource, introspectionJSON)
 	if err != nil {
 		return nil, err
 	}
-	return dag.GeneratedCode(self.Container.Directory(ModSourceDirPath)).
+	return dag.GeneratedCode(m.Container.Directory(m.SourcePath)).
 		WithVCSGeneratedPaths(
 			[]string{GenDir + "/**"},
 		).
@@ -114,11 +124,11 @@ func (m *PythonSdk) ModuleRuntime(
 	modSource *dagger.ModuleSource,
 	introspectionJSON *dagger.File,
 ) (*dagger.Container, error) {
-	self, err := m.Common(ctx, modSource, introspectionJSON)
+	m, err := m.Common(ctx, modSource, introspectionJSON)
 	if err != nil {
 		return nil, err
 	}
-	return self.
+	return m.
 		WithInstall().
 		Container.
 		WithEntrypoint([]string{RuntimeExecutablePath}), nil
@@ -157,6 +167,17 @@ func (m *PythonSdk) Load(ctx context.Context, modSource *dagger.ModuleSource) (*
 	if err := m.Discovery.Load(ctx, modSource); err != nil {
 		return nil, fmt.Errorf("runtime module load: %w", err)
 	}
+
+	// FIXME: ModuleSource.id is not stable
+	modID, err := m.Discovery.ModSource.ID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	h := sha256.New()
+	fmt.Fprint(h, modID)
+	modDigest := hex.EncodeToString(h.Sum(nil))
+	m.SourcePath = path.Join(ModSourceDirPath, modDigest)
+
 	return m, nil
 }
 
@@ -205,7 +226,7 @@ func (m *PythonSdk) WithBase() (*PythonSdk, error) {
 		WithEnvVariable("UV_VERSION", uvTag).
 		WithEnvVariable("UV_SYSTEM_PYTHON", "1").
 		WithEnvVariable("UV_NATIVE_TLS", "1").
-		WithWorkdir(path.Join(ModSourceDirPath, m.Discovery.SubPath))
+		WithWorkdir(path.Join(m.SourcePath, m.Discovery.SubPath))
 
 	return m, nil
 }
@@ -310,7 +331,7 @@ func (m *PythonSdk) WithSource() *PythonSdk {
 	toml := "pyproject.toml"
 	sdkToml := path.Join(GenDir, toml)
 
-	ctr := m.Container.WithMountedDirectory(ModSourceDirPath, m.Discovery.ContextDir)
+	ctr := m.Container.WithMountedDirectory(m.SourcePath, m.Discovery.ContextDir)
 
 	// Update lock file but without upgrading dependencies.
 	if m.UseUv() && !m.Discovery.IsInit {
@@ -346,7 +367,7 @@ func (m *PythonSdk) WithInstall() *PythonSdk {
 			WithExec([]string{"uv", "sync", "--no-dev", "--compile-bytecode"}).
 			// Activate virtualenv for ./.venv to avoid having to prepend
 			// `uv run` to the entrypoint.
-			WithEnvVariable("VIRTUAL_ENV", path.Join(ModSourceDirPath, m.Discovery.SubPath, ".venv")).
+			WithEnvVariable("VIRTUAL_ENV", path.Join(m.SourcePath, m.Discovery.SubPath, ".venv")).
 			WithEnvVariable("PATH", "$VIRTUAL_ENV/bin:$PATH", dagger.ContainerWithEnvVariableOpts{
 				Expand: true,
 			})
