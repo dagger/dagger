@@ -920,7 +920,14 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 	default:
 		client, cleanup, err := srv.getOrInitClient(ctx, opts)
 		if err != nil {
-			return fmt.Errorf("get or init client: %w", err)
+			err = fmt.Errorf("get or init client: %w", err)
+			switch r.URL.Path {
+			case engine.QueryEndpoint:
+				err = gqlErr(err, http.StatusInternalServerError)
+			default:
+				err = httpErr(err, http.StatusInternalServerError)
+			}
+			return err
 		}
 		defer func() {
 			err := cleanup()
