@@ -72,7 +72,7 @@ func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *dag
 		}
 		for _, secret := range secrets {
 			if err := destClient.secretStore.AddSecretFromOtherStore(secret, srcClient.secretStore); err != nil {
-				return fmt.Errorf("failed to add secret: %w", err)
+				return fmt.Errorf("failed to add secret from source client %s: %w", srcClient.clientID, err)
 			}
 		}
 	}
@@ -84,7 +84,7 @@ func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *dag
 		}
 		for _, socket := range sockets {
 			if err := destClient.socketStore.AddSocketFromOtherStore(socket, srcClient.socketStore); err != nil {
-				return fmt.Errorf("failed to add socket: %w", err)
+				return fmt.Errorf("failed to add socket from source client %s: %w", srcClient.clientID, err)
 			}
 		}
 	}

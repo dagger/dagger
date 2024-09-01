@@ -332,15 +332,14 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 
 	// If the function returned anything that's isolated per-client, this caller client should
 	// have access to it now since it was returned to them (i.e. secrets/sockets/etc).
-	if fn.metadata.Name != "" {
-		returnedIDs := map[digest.Digest]*call.ID{}
-		if err := fn.returnType.CollectCoreIDs(ctx, returnValueTyped, returnedIDs); err != nil {
-			return nil, fmt.Errorf("failed to collect IDs: %w", err)
-		}
-		for _, id := range returnedIDs {
-			if err := fn.root.AddClientResourcesFromID(ctx, id, execMD.ClientID, false); err != nil {
-				return nil, fmt.Errorf("failed to add client resources from ID: %w", err)
-			}
+	returnedIDs := map[digest.Digest]*call.ID{}
+	if err := fn.returnType.CollectCoreIDs(ctx, returnValueTyped, returnedIDs); err != nil {
+		return nil, fmt.Errorf("failed to collect IDs: %w", err)
+	}
+
+	for _, id := range returnedIDs {
+		if err := fn.root.AddClientResourcesFromID(ctx, id, execMD.ClientID, false); err != nil {
+			return nil, fmt.Errorf("failed to add client resources from ID: %w", err)
 		}
 	}
 
