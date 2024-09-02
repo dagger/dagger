@@ -1155,6 +1155,14 @@ func (s *moduleSchema) collectCallerLocalDeps(
 				// SDK is a local custom one, it needs to be included
 				sdkPath := filepath.Join(sourceRootAbsPath, parsed.modPath)
 
+				// this check here enable us to send more specific error
+				// if the sdk provided by user is neither an inbuiltsdk,
+				// nor a valid sdk available on local path.
+				_, err = bk.StatCallerHostPath(ctx, sdkPath, true)
+				if err != nil {
+					return nil, getInvalidBuiltinSDKError(modCfg.SDK)
+				}
+
 				err = s.collectCallerLocalDeps(ctx, query, contextAbsPath, sdkPath, false, src, collectedDeps)
 				if err != nil {
 					return nil, fmt.Errorf("failed to collect local sdk: %w", err)
