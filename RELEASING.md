@@ -1,4 +1,4 @@
-# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-August%2029,%202024-success?style=flat-square)
+# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-September%202,%202024-success?style=flat-square)
 
 This describes how to release Dagger:
 
@@ -296,6 +296,19 @@ git add helm
 git commit -s -m "chore: bump helm dependency to ${ENGINE_VERSION}"
 ```
 
+- [ ] Push and open the PR as a draft, and capture the PR number:
+
+```console
+export RELEASE_PREP_PR=<PR>
+```
+
+- [ ] Generate bump changes for each SDK + the helm charts
+
+```console
+find sdk/go sdk/python sdk/typescript sdk/elixir sdk/php helm/dagger -maxdepth 1 -name .changie.yaml -execdir \
+      changie new --kind "Dependencies" --body "Bump Engine to ${ENGINE_VERSION}" --custom PR="${RELEASE_PREP_PR}" --custom Author="<GitHub username>" \;
+```
+
 - [ ] Generate release notes `.changes/**/v0.12.4.md` for all releases by
       running `changie batch $ENGINE_VERSION`:
 
@@ -347,10 +360,10 @@ which publishes:
       `dev` module updated below will get `dagger.json`'s engine version bumped.
 
 ```console
-curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=0.12.6 sh
-# install the cli to dagger-0.12.6, and symlink dagger to it
-mv ~/.local/bin/dagger{,-0.12.6}
-ln -s ~/.local/bin/dagger{-0.12.6,}
+# install the cli to dagger-0.12.7, and symlink dagger to it
+curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=0.12.7 sh
+mv ~/.local/bin/dagger{,-0.12.7}
+ln -s ~/.local/bin/dagger{-0.12.7,}
 
 dagger version
 dagger core version
@@ -360,7 +373,7 @@ dagger core version
 
   - The version numbers (of the form `<major>.<minor>.<patch>`) should be updated to the new version
   - The worker runner versions (of the form `dagger-v<major>-<minor>-<patch>-<worker>`)
-  - e.g. if bumping 0.12.5->0.12.6, can run `find .github/ -type f -exec sed -i 's/0-12-5/0-12-6/g; s/0\.12\.5/0\.12\.6/g' {} +`
+  - e.g. if bumping 0.12.6->0.12.7, can run `find .github/ -type f -exec sed -i 's/0-12-6/0-12-7/g; s/0\.12\.6/0\.12\.7/g' {} +`
 
 - [ ] Open a PR with the title `Improve Releasing during $ENGINE_VERSION`
 
