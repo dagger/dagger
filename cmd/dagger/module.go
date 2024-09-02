@@ -197,7 +197,7 @@ var moduleInstallCmd = &cobra.Command{
 	Aliases: []string{"use"},
 	Short:   "Install a dependency",
 	Long:    "Install another module as a dependency to the current module. The target module must be local.",
-	Example: "dagger install github.com/shykes/hello@v0.1.0",
+	Example: "dagger install github.com/shykes/daggerverse/hello@v0.3.0",
 	GroupID: moduleGroup.ID,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
