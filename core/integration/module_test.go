@@ -80,7 +80,7 @@ func (ModuleSuite) TestDescription(ctx context.Context, t *testctx.T) {
 		contents string
 	}
 
-	for _, tc := range []struct {
+	for i, tc := range []struct {
 		sdk     string
 		sources []source
 	}{
@@ -141,7 +141,7 @@ func (*Test) Foo() Foo {
 			sdk: "python",
 			sources: []source{
 				{
-					file: "src/main.py",
+					file: "src/main/__init__.py",
 					contents: `
 """Test module, short description
 
@@ -156,14 +156,6 @@ class Test:
 
     foo: str = field(default="foo")
 `,
-				},
-				{
-					file: "pyproject.toml",
-					contents: `
-                        [project]
-                        name = "main"
-                        version = "0.0.0"
-                        `,
 				},
 			},
 		},
@@ -274,7 +266,7 @@ class Test {
 	} {
 		tc := tc
 
-		t.Run(fmt.Sprintf("%s with %d files", tc.sdk, len(tc.sources)), func(ctx context.Context, t *testctx.T) {
+		t.Run(fmt.Sprintf("%s with %d files (#%d)", tc.sdk, len(tc.sources), i+1), func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
 			modGen := c.Container().From(golangImage).

@@ -22,8 +22,9 @@ const (
 	GenPath               = "src/dagger/client/gen.py"
 	SchemaPath            = "/schema.json"
 	VenvPath              = "/opt/venv"
+	ProjectCfg            = "pyproject.toml"
 	PipCompileLock        = "requirements.lock"
-	UvLock                = "uv.lock" // EXPERIMENTAL
+	UvLock                = "uv.lock"
 	MainFilePath          = "src/main/__init__.py"
 	MainObjectName        = "Main"
 )
@@ -51,13 +52,13 @@ type UserConfig struct {
 
 func New(
 	// Directory with the Python SDK source code.
-	// +optional
+	// +defaultPath=".."
+	// +ignore=["!pyproject.toml", "!uv.lock", "!src/**/*.py", "!src/**/*.typed", "!codegen/pyproject.toml", "!codegen/**/*.py", "!LICENSE", "!README.md"]
 	sdkSourceDir *dagger.Directory,
-) *PythonSdk {
+) (*PythonSdk, error) {
+	// Shouldn't happen due to defaultPath, but just in case.
 	if sdkSourceDir == nil {
-		// FIXME: Move `dagger.json` to the parent to get this or wait for
-		// *context directories*.
-		sdkSourceDir = dag.Directory()
+		return nil, fmt.Errorf("sdk source directory not provided")
 	}
 	return &PythonSdk{
 		Discovery: NewDiscovery(UserConfig{
@@ -65,7 +66,7 @@ func New(
 		}),
 		SdkSourceDir: sdkSourceDir.WithoutDirectory("runtime"),
 		Container:    dag.Container(),
-	}
+	}, nil
 }
 
 //go:embed template/main.py
@@ -109,7 +110,8 @@ func (m *PythonSdk) Codegen(
 	if err != nil {
 		return nil, err
 	}
-	return dag.GeneratedCode(m.Container.Directory(m.SourcePath)).
+	ctr := m.WithUpdates().Container
+	return dag.GeneratedCode(ctr.Directory(m.SourcePath)).
 		WithVCSGeneratedPaths(
 			[]string{GenDir + "/**"},
 		).
@@ -128,10 +130,7 @@ func (m *PythonSdk) ModuleRuntime(
 	if err != nil {
 		return nil, err
 	}
-	return m.
-		WithInstall().
-		Container.
-		WithEntrypoint([]string{RuntimeExecutablePath}), nil
+	return m.WithInstall().Container, nil
 }
 
 // Common steps for the ModuleRuntime and Codegen functions
@@ -157,8 +156,8 @@ func (m *PythonSdk) Common(
 		return nil, err
 	}
 	return m.
-		WithTemplate().
 		WithSDK(introspectionJSON).
+		WithTemplate().
 		WithSource(), nil
 }
 
@@ -225,6 +224,7 @@ func (m *PythonSdk) WithBase() (*PythonSdk, error) {
 		WithEnvVariable("DAGGER_UV_IMAGE", uvAddr).
 		WithEnvVariable("UV_VERSION", uvTag).
 		WithEnvVariable("UV_SYSTEM_PYTHON", "1").
+		WithEnvVariable("UV_LINK_MODE", "copy").
 		WithEnvVariable("UV_NATIVE_TLS", "1").
 		WithWorkdir(path.Join(m.SourcePath, m.Discovery.SubPath))
 
@@ -235,18 +235,20 @@ func (m *PythonSdk) WithBase() (*PythonSdk, error) {
 //
 // The following files are added:
 // - /runtime
-// - pyproject.toml
-// - requirements.lock
-// - src/main/__init__.py
+// - <source>/pyproject.toml
+// - <source>/src/main/__init__.py
 func (m *PythonSdk) WithTemplate() *PythonSdk {
 	template := dag.CurrentModule().Source().Directory("template")
-	d := m.Discovery
 
-	m.Container = m.Container.WithFile(
-		RuntimeExecutablePath,
-		template.File("runtime.py"),
-		dagger.ContainerWithFileOpts{Permissions: 0o755},
-	)
+	m.Container = m.Container.
+		WithFile(
+			RuntimeExecutablePath,
+			template.File("runtime.py"),
+			dagger.ContainerWithFileOpts{Permissions: 0o755},
+		).
+		WithEntrypoint([]string{RuntimeExecutablePath})
+
+	d := m.Discovery
 
 	// NB: We can't detect if it's a new module with `dagger develop --sdk`
 	// if there's also a pyproject.toml file to customize the base container.
@@ -262,30 +264,13 @@ func (m *PythonSdk) WithTemplate() *PythonSdk {
 	// surprising, which is done during discovery.
 
 	if d.IsInit {
-		toml := "pyproject.toml"
-
 		// On `dagger init --sdk`, one can first set a `pyproject.toml` to
 		// change the base image, but if it's `dagger develop --sdk` the
-		// existence of this file will exclude the rest from being added.
-		if !d.HasFile(toml) {
-			d.AddFile(toml, template.File(toml))
+		// existence of this file will set d.IsInit = true, thus skipping
+		// this entire branch.
+		if !d.HasFile(ProjectCfg) {
+			d.AddFile(ProjectCfg, template.File(ProjectCfg))
 		}
-
-		if m.UseUv() && !d.HasFile(UvLock) && !d.HasFile(PipCompileLock) {
-			sdkToml := path.Join(GenDir, toml)
-			d.AddLockFile(m.Container.
-				WithMountedFile(sdkToml, m.SdkSourceDir.File(toml)).
-				WithMountedFile(toml, d.GetFile(toml)).
-				WithExec([]string{
-					"uv", "pip", "compile", "-q",
-					"-o", PipCompileLock,
-					sdkToml,
-					toml,
-				}).
-				File(PipCompileLock),
-			)
-		}
-
 		if !d.HasFile("*.py") {
 			d.AddNewFile(
 				MainFilePath,
@@ -302,25 +287,22 @@ func (m *PythonSdk) WithTemplate() *PythonSdk {
 // This includes regenerating the client bindings for the current API schema
 // (codegen).
 func (m *PythonSdk) WithSDK(introspectionJSON *dagger.File) *PythonSdk {
-	// "codegen" dir included in the exported sdk directory to support
-	// extending the runtime module in a custom SDK.
-	m.Discovery.AddDirectory(GenDir, m.SdkSourceDir)
+	d := m.Discovery
+	d.AddDirectory(GenDir, m.SdkSourceDir)
 
 	// Allow empty introspection to facilitate debugging the container with a
 	// `dagger call module-runtime terminal` command.
 	if introspectionJSON != nil {
 		genFile := m.Container.
-			WithWorkdir("/codegen").
-			WithMountedDirectory("", m.SdkSourceDir.Directory("codegen")).
+			WithMountedDirectory("", m.SdkSourceDir).
 			WithMountedFile(SchemaPath, introspectionJSON).
 			WithExec([]string{
-				"uv", "run", "--no-dev",
-				"python", "-m",
-				"codegen", "generate", "-i", SchemaPath, "-o", "/gen.py",
+				"uv", "run", "--isolated", "--frozen", "--package", "codegen",
+				"python", "-m", "codegen", "generate", "-i", SchemaPath, "-o", "/gen.py",
 			}).
 			File("/gen.py")
 
-		m.Discovery.AddFile(path.Join(GenDir, GenPath), genFile)
+		d.AddFile(path.Join(GenDir, GenPath), genFile)
 	}
 
 	return m
@@ -328,26 +310,37 @@ func (m *PythonSdk) WithSDK(introspectionJSON *dagger.File) *PythonSdk {
 
 // Add the module's source code
 func (m *PythonSdk) WithSource() *PythonSdk {
-	toml := "pyproject.toml"
-	sdkToml := path.Join(GenDir, toml)
+	m.Container = m.Container.WithMountedDirectory(m.SourcePath, m.Discovery.ContextDir)
+	return m
+}
 
-	ctr := m.Container.WithMountedDirectory(m.SourcePath, m.Discovery.ContextDir)
+// Make any updates to current source
+//
+// Should happen only on `dagger develop`, so `dagger call` reflects what's on
+// the host as much as possible.
+func (m *PythonSdk) WithUpdates() *PythonSdk {
+	if !m.UseUv() {
+		return m
+	}
+
+	ctr := m.Container
+	d := m.Discovery
 
 	// Update lock file but without upgrading dependencies.
-	if m.UseUv() && !m.Discovery.IsInit {
-		switch {
-		case m.Discovery.HasFile(UvLock):
-			// Support uv.lock.
-			ctr = ctr.WithExec([]string{"uv", "lock"})
-		case m.Discovery.HasFile(PipCompileLock):
-			// Support requirements.lock.
-			ctr = ctr.WithExec([]string{
-				"uv", "pip", "compile", "-q",
-				"-o", PipCompileLock,
-				sdkToml,
-				toml,
-			})
-		}
+	switch {
+	case d.HasFile(UvLock) || !d.HasFile(PipCompileLock) && d.IsInit:
+		// Support uv.lock. Takes precedence.
+		// Always update if uv.lock exists, but only create a new uv.lock
+		// if init and there's not already a requirements.lock.
+		ctr = ctr.WithExec([]string{"uv", "lock"})
+	case d.HasFile(PipCompileLock) && !d.IsInit:
+		// Support requirements.lock (legacy).
+		ctr = ctr.WithExec([]string{
+			"uv", "pip", "compile", "-q", "--universal",
+			"-o", PipCompileLock,
+			path.Join(GenDir, ProjectCfg),
+			ProjectCfg,
+		})
 	}
 
 	m.Container = ctr
@@ -357,14 +350,19 @@ func (m *PythonSdk) WithSource() *PythonSdk {
 
 // Install the module's package and dependencies
 func (m *PythonSdk) WithInstall() *PythonSdk {
-	// NB: We compile bytecode now to cache it for later reuse.
-
-	ctr := m.Container
+	// NB: Only enable bytecode compilation in `dagger call`
+	// (not `dagger init/develop`), to avoid having to remove the .pyc files
+	// before exporting the module back to the host.
+	ctr := m.Container.WithEnvVariable("UV_COMPILE_BYTECODE", "1")
 
 	// Support uv.lock for simple and fast project management workflow.
 	if m.UseUv() && m.Discovery.HasFile(UvLock) {
+		// While best practice is to sync dependencies first with only pyproject.toml and
+		// uv.lock, user projects can have more required files for a minimally successful
+		// `uv sync --frozen --no-install-project --no-dev`.
+		// Besides, uv is fast enough that's not too bad to skip this optimization.
 		m.Container = ctr.
-			WithExec([]string{"uv", "sync", "--no-dev", "--compile-bytecode"}).
+			WithExec([]string{"uv", "sync", "--frozen", "--no-dev"}).
 			// Activate virtualenv for ./.venv to avoid having to prepend
 			// `uv run` to the entrypoint.
 			WithEnvVariable("VIRTUAL_ENV", path.Join(m.SourcePath, m.Discovery.SubPath, ".venv")).
@@ -374,7 +372,7 @@ func (m *PythonSdk) WithInstall() *PythonSdk {
 		return m
 	}
 
-	// Fallback to pip-compile workflow.
+	// Fallback to pip-compile workflow (legacy).
 	install := []string{"pip", "install", "-e", "./sdk", "-e", "."}
 	check := []string{"pip", "check"}
 
@@ -388,7 +386,7 @@ func (m *PythonSdk) WithInstall() *PythonSdk {
 			install = append(install, "--no-deps", "-r", PipCompileLock)
 		}
 		// pip compiles by default, but not uv
-		install = append([]string{"uv"}, append(install, "--compile-bytecode")...)
+		install = append([]string{"uv"}, install...)
 		check = append([]string{"uv"}, check...)
 	}
 

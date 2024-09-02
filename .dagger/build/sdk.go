@@ -34,11 +34,10 @@ func (build *Builder) pythonSDKContent(ctx context.Context) (*sdkContent, error)
 	rootfs := dag.Directory().WithDirectory("/", build.source.Directory("sdk/python"), dagger.DirectoryWithDirectoryOpts{
 		Include: []string{
 			"pyproject.toml",
+			"uv.lock",
 			"src/**/*.py",
 			"src/**/*.typed",
-			"codegen/src/**/*.py",
-			"codegen/pyproject.toml",
-			"codegen/uv.lock",
+			"codegen/",
 			"runtime/",
 			"LICENSE",
 			"README.md",

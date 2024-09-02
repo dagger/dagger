@@ -5,12 +5,10 @@ import (
 	"fmt"
 	"path"
 	"python-sdk/internal/dagger"
-	"python-sdk/internal/telemetry"
 	"strings"
 	"sync"
 
 	"github.com/pelletier/go-toml/v2"
-	"go.opentelemetry.io/otel"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -159,11 +157,7 @@ func (d *Discovery) Source() *dagger.Directory {
 //
 // This is intended to make all the necessary API calls as efficiently as possibly
 // with concurrency early on, to avoid unnecessary blocking calls later.
-func (d *Discovery) Load(ctx context.Context, modSource *dagger.ModuleSource) (rerr error) {
-	// FIXME: This is only temporarily enabled to measure how long this step takes to run.
-	ctx, span := otel.Tracer("dagger.io/sdk.python").Start(ctx, "runtime configuration discovery")
-	defer telemetry.End(span, func() error { return rerr })
-
+func (d *Discovery) Load(ctx context.Context, modSource *dagger.ModuleSource) error {
 	d.ModSource = modSource
 	d.ContextDir = modSource.ContextDirectory()
 
