@@ -1,6 +1,0 @@
-kind: Fixed
-body: Load specified version when loading `php` or `elixir` sdk
-time: 2024-09-02T16:00:36.648915+05:30
-custom:
-    Author: rajatjindal
-    PR: "8297"
