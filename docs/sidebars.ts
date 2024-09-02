@@ -95,6 +95,7 @@ module.exports = {
                 "api/secrets",
                 "api/services",
                 "api/cache-volumes",
+                "api/dependencies",
                 "api/error-handling",
                 "api/debugging",
                 "api/ide-integration",
@@ -106,7 +107,6 @@ module.exports = {
                 "api/enumerations",
                 "api/interfaces",
                 "api/runtimes",
-                "api/language-dependencies",
               ]
             },
           ]
