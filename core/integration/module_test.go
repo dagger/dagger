@@ -42,6 +42,38 @@ func TestModule(t *testing.T) {
 	testctx.Run(testCtx, t, ModuleSuite{}, Middleware()...)
 }
 
+func (ModuleSuite) TestInvalidSDK(ctx context.Context, t *testctx.T) {
+	t.Run("invalid sdk returns readable error", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=bare", "--sdk=foo-bar"))
+
+		_, err := modGen.
+			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			Stdout(ctx)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), `The "foo-bar" SDK does not exist.`)
+	})
+
+	t.Run("specifying version with either of go/python/typescript sdk returns error", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=bare", "--sdk=go@main"))
+
+		_, err := modGen.
+			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			Stdout(ctx)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), `the go sdk does not currently support selecting a specific version`)
+	})
+}
+
 func (ModuleSuite) TestDescription(ctx context.Context, t *testctx.T) {
 	type source struct {
 		file     string
