@@ -15,7 +15,7 @@ on:
 
       version:
         type: string
-        default: "v0.12.6"
+        default: "v0.12.7"
         required: false
 
       dev-engine:
@@ -32,7 +32,7 @@ on:
 
 jobs:
   check:
-    runs-on: "${{ github.repository == 'dagger/dagger' && (inputs.dev-engine && 'dagger-g2-v0-12-6-8c-dind' || 'dagger-g2-v0-12-6-4c') || 'ubuntu-latest' }}"
+    runs-on: "${{ github.repository == 'dagger/dagger' && (inputs.dev-engine && 'dagger-g2-v0-12-7-8c-dind' || 'dagger-g2-v0-12-7-4c') || 'ubuntu-latest' }}"
     timeout-minutes: "${{ inputs.timeout }}"
     steps:
       - uses: actions/checkout@v4
