@@ -36,7 +36,7 @@ func assertNotNil(argName string, value any) {
 	}
 }
 
-type DaggerObject querybuilder.GraphQLMarshaller
+type DaggerObject = querybuilder.GraphQLMarshaller
 
 // getCustomError parses a GraphQL error into a more specific error type.
 func getCustomError(err error) error {

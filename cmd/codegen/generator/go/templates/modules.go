@@ -19,10 +19,11 @@ import (
 )
 
 const (
-	daggerGenFilename     = "dagger.gen.go"
-	contextTypename       = "context.Context"
-	constructorFuncName   = "New"
-	daggerObjectIfaceName = "DaggerObject"
+	daggerGenFilename   = "dagger.gen.go"
+	contextTypename     = "context.Context"
+	constructorFuncName = "New"
+	// this is aliased as `type DaggerObject = querybuilder.GraphQLMarshaller`
+	daggerObjectIfaceName = "GraphQLMarshaller"
 )
 
 func (funcs goTemplateFuncs) isModuleCode() bool {
