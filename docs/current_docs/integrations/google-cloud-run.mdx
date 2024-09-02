@@ -8,19 +8,47 @@ import TabItem from "@theme/TabItem";
 
 # Google Cloud Run
 
-## Requirements
+Dagger can be used to deploy any containerized application to Google Cloud Run. This allows developers to create continuous delivery pipelines that can be used both locally and in CI, and also run faster due to Dagger's intelligent caching. This integration does not require any installation of Google Cloud tools, such as the Google Cloud CLI or the Google Cloud SDKs.
 
-The following code sample demonstrates how to build and deploy an application on Google Cloud Run using a Dagger module. It assumes:
+## How it works
 
-- A Node.js Web application
-- A Google Cloud service account with all necessary privileges and with the Google Cloud APIs enabled
-- A Google Cloud Run service with a public URL and defined resource/capacity/access rules
-- A Google Artifact Registry repository
+The integration depends on the [`google-cloud-run` Dagger module](https://daggerverse.dev/mod/github.com/vvaswani/daggerverse/google-cloud-run@6e44ee4a901dda7d742574354132745701db3c52), which provides various Dagger Functions to create or update a Google Cloud Run service using a container image. These Dagger Functions make it easy to extend existing CI pipelines with additional deployment support.
+
+To use this integration, you can call the Dagger module with the Dagger CLI directly, or you can create your own Dagger Function that uses it. In the latter case, you must:
+
+- Create a new Dagger module in your project
+- Install the `google-cloud-run` Dagger module as a dependency
+- Implement your CI/CD pipeline as one or more Dagger Function(s)
+- Test your Dagger Function(s) locally and then transfer them to your CI/CD environment
+
+## Prerequisites
+
+- The [`google-cloud-run` Dagger module](https://daggerverse.dev/mod/github.com/vvaswani/daggerverse/google-cloud-run@6e44ee4a901dda7d742574354132745701db3c52)
+- An active Google Cloud project with the Google Cloud APIs and the Google Cloud Run Admin API enabled
+- An active Google Cloud service account for the target project with Editor, Service Account Token Creator, and Cloud Run Admin roles
+- A JSON keyfile with credentials for the target service account
+- The address of the container image to be deployed
+
+## Example
+
+The following example demonstrates how to deploy a containerized application on Google Cloud Run using this integration.
+
+The simplest option is to use the Dagger CLI to directly call the Dagger Function. Remember to update the `project`, `location`, `image`, `http-port` and `credential` arguments with the correct values and filesystem path.
+
+```shell
+dagger -m github.com/vvaswani/daggerverse/google-cloud-run@v0.1.5 call create-service \
+  --project=my-project \
+  --location=us-central1 \
+  --image=us-docker.pkg.dev/cloudrun/container/hello \
+  --http-port=3000 \
+  --credential=file:my-keyfile.json
+```
+
+If your requirements are more complex - for example, if you already have one or more Dagger Functions to build, test and containerize your application - you can install the `google-cloud-run` module as a dependency and call it from your existing Dagger Functions using code.
 
 <Tabs groupId="language">
 <TabItem value="Go">
-
-In the application directory, create a new Dagger module:
+Create a new Dagger module:
 
 ```shell
 dagger init --name=my-module --sdk=go --source=./dagger
@@ -29,36 +57,16 @@ dagger init --name=my-module --sdk=go --source=./dagger
 Install the Google Cloud Run module from the Daggerverse:
 
 ```shell
-dagger install github.com/vvaswani/daggerverse/google-cloud-run
+dagger install github.com/vvaswani/daggerverse/google-cloud-run@v0.1.5
 ```
 
 Update the generated `dagger/main.go` file with the following code:
 
 ```go file=./snippets/google-cloud-run/go/main.go
 ```
-
-This Dagger module contains three Dagger Functions. Let's look at each in detail.
-
-The `Build()` function takes care of building the application image.
-  - It accepts one argument: a `Directory` representing the directory containing the application source code.
-  - It uses the client's `Container().From()` method to initialize a new container from a base image. In this example, the base image is the `node:21` image. This method returns a `Container` representing an OCI-compatible container image.
-  - It uses the `Container.WithDirectory()` method to return the container image with the application source code written at the `/home/node` path, and the `Container.WithWorkdir()` method to set the working directory in the container.
-  - It chains the `Container.WithExec()` method again to install dependencies with `npm install` and sets the container entrypoint using the `Container.WithEntrypoint()` method.
-
-The `Publish()` function takes care of publishing the container image to Google Artifact Registry.
-  - It accepts six arguments: the Go context, a `Directory` representing the directory containing the application source code, and strings representing the Google Cloud project name, Google Artifact Registry location and Google Artifact Registry repository name, and a `Secret` representing Google Cloud credentials.
-  - It invokes the `Build()` function to produce a `Container` representing the application image.
-  - It uses the `Container.Publish()` method to publish the container to the Google Artifact Registry repository and returns the SHA identifier of the published image.
-
-The `Deploy()` function takes care of deploying the application to an existing Google Cloud Run service.
-  - It accepts eight arguments: the Go context, a `Directory` representing the directory containing the application source code, and strings representing the Google Cloud project name, Google Artifact Registry location, Google Artifact Registry repository name, Google Cloud Run service location, Google Cloud Run service name, and a `Secret` representing Google Cloud credentials.
-  - It invokes the `Publish()` function to build and publish a `Container` representing the application image.
-  - It uses the Google Cloud Run module to deploy the container image to the named Google Cloud Run service.
-
 </TabItem>
 <TabItem value="Python">
-
-In the application directory, create a new Dagger module:
+Create a new Dagger module:
 
 ```shell
 dagger init --name=my-module --sdk=python --source=./dagger
@@ -67,36 +75,16 @@ dagger init --name=my-module --sdk=python --source=./dagger
 Install the Google Cloud Run module from the Daggerverse:
 
 ```shell
-dagger install github.com/vvaswani/daggerverse/google-cloud-run
+dagger install github.com/vvaswani/daggerverse/google-cloud-run@v0.1.5
 ```
 
 Update the generated `dagger/src/main/__init__.py` file with the following code.
 
 ```python file=./snippets/google-cloud-run/python/main.py
 ```
-
-This Dagger module contains three Dagger Functions. Let's look at each in detail.
-
-The `build()` function takes care of building the application image.
-  - It accepts one argument: a `Directory` representing the directory containing the application source code.
-  - It uses the client's `Container().from_()` method to initialize a new container from a base image. In this example, the base image is the `node:21` image. This method returns a `Container` representing an OCI-compatible container image.
-  - It uses the `Container.with_directory()` method to return the container image with the application source code written at the `/home/node` path, and the `Container.with_workdir()` method to set the working directory in the container.
-  - It chains the `Container.with_exec()` method again to install dependencies with `npm install` and sets the container entrypoint using the `Container.with_entrypoint()` method.
-
-The `publish()` function takes care of publishing the container image to Google Artifact Registry.
-  - It accepts five arguments: a `Directory` representing the directory containing the application source code, and strings representing the Google Cloud project name, Google Artifact Registry location and Google Artifact Registry repository name, and a `Secret` representing Google Cloud credentials.
-  - It invokes the `build()` function to produce a `Container` representing the application image.
-  - It uses the `Container.publish()` method to publish the container to the Google Artifact Registry repository and returns the SHA identifier of the published image.
-
-The `deploy()` function takes care of deploying the application to an existing Google Cloud Run service.
-  - It accepts seven arguments: a `Directory` representing the directory containing the application source code, and strings representing the Google Cloud project name, Google Artifact Registry location, Google Artifact Registry repository name, Google Cloud Run service location, Google Cloud Run service name, and a `Secret` representing Google Cloud credentials.
-  - It invokes the `publish()` function to build and publish a `Container` representing the application image.
-  - It uses the Google Cloud Run module to deploy the container image to the named Google Cloud Run service
-
 </TabItem>
 <TabItem value="TypeScript">
-
-In the application directory, create a new Dagger module:
+Create a new Dagger module:
 
 ```shell
 dagger init --name=my-module --sdk=typescript --source=./dagger
@@ -105,32 +93,13 @@ dagger init --name=my-module --sdk=typescript --source=./dagger
 Install the Google Cloud Run module:
 
 ```shell
-dagger install github.com/vvaswani/daggerverse/google-cloud-run
+dagger install github.com/vvaswani/daggerverse/google-cloud-run@v0.1.5
 ```
 
 Update the generated `dagger/src/index.ts` file with the following code:
 
 ```typescript file=./snippets/google-cloud-run/typescript/index.ts
 ```
-
-This Dagger module contains three Dagger Functions. Let's look at each in detail.
-
-The `build()` function takes care of building the application image.
-  - It accepts one argument: a `Directory` representing the directory containing the application source code.
-  - It uses the client's `Container().from()` method to initialize a new container from a base image. In this example, the base image is the `node:21` image. This method returns a `Container` representing an OCI-compatible container image.
-  - It uses the `Container.withDirectory()` method to return the container image with the application source code written at the `/home/node` path, and the `Container.withWorkdir()` method to set the working directory in the container.
-  - It chains the `Container.withExec()` method again to install dependencies with `npm install` and sets the container entrypoint using the `Container.withEntrypoint()` method.
-
-The `publish()` function takes care of publishing the container image to Google Artifact Registry.
-  - It accepts five arguments: a `Directory` representing the directory containing the application source code, and strings representing the Google Cloud project name, Google Artifact Registry location and Google Artifact Registry repository name, and a `Secret` representing Google Cloud credentials.
-  - It invokes the `build()` function to produce a `Container` representing the application image.
-  - It uses the `Container.publish()` method to publish the container to the Google Artifact Registry repository and returns the SHA identifier of the published image.
-
-The `deploy()` function takes care of deploying the application to an existing Google Cloud Run service.
-  - It accepts seven arguments: a `Directory` representing the directory containing the application source code, and strings representing the Google Cloud project name, Google Artifact Registry location, Google Artifact Registry repository name, Google Cloud Run service location, Google Cloud Run service name, and a `Secret` representing Google Cloud credentials.
-  - It invokes the `publish()` function to build and publish a `Container` representing the application image.
-  - It uses the Google Cloud Run module to deploy the container image to the named Google Cloud Run service.
-
 </TabItem>
 </Tabs>
 
@@ -138,15 +107,25 @@ The `deploy()` function takes care of deploying the application to an existing G
 The code sample above is illustrative only. Modify it to your application's specific requirements.
 :::
 
-Here is an example of calling the Dagger Function to deploy the application to Google Cloud Run. Remember to update the `registry-location`, `repository`, `service`, and `service-location` arguments, and update the `SERVICE-ACCOUNT-KEY-FILE` placeholder with the local filesystem path to your JSON service key file.
+Here is an example of calling the Dagger Function to deploy the Google Cloud sample application to Google Cloud Run. Remember to update the `project-name`, `service-location`, `image-address` and `credential` arguments with the correct values and filesystem path.
 
 ```shell
 dagger call deploy \
-  --source=. \
-  --project=myproject \
-  --registry-location=us-central1 \
-  --repository=myregistry/myapp \
+  --project-name=my-project \
   --service-location=us-central1 \
-  --service=myservice \
-  --credential=file:SERVICE-ACCOUNT-KEY-FILE
+  --image-address=us-docker.pkg.dev/cloudrun/container/hello \
+  --service-port=3000 \
+  --credential=file:my-keyfile.json
 ```
+
+:::tip
+The `google-cloud-run` Dagger module can also modify an existing service by deploying a new container image to the service URL.
+:::
+
+## Resources
+
+If you have any questions about additional ways to use Google Cloud Run with Dagger, join our [Discord](https://discord.gg/dagger-io) and ask your questions in our [help channel](https://discord.com/channels/707636530424053791/1030538312508776540).
+
+## About Google Cloud Run
+
+[Google Cloud Run](https://cloud.google.com/run) is a managed service to run containerized applications using Google Cloud.
