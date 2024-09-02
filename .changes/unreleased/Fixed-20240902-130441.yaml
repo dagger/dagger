@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+  Fixed regression in module ref parsing for no-protocol refs that had version suffixes
+time: 2024-09-02T13:04:41.979514041+01:00
+custom:
+  Author: jedevc
+  PR: "8298"

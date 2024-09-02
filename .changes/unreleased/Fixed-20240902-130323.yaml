@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+  make Git.tags url parsing consistent with Git.tree
+time: 2024-09-02T13:03:23.920914271+01:00
+custom:
+  Author: jedevc
+  PR: "8298"

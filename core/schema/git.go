@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/sources/gitdns"
+	"github.com/moby/buildkit/util/gitutil"
 )
 
 var _ SchemaResolvers = &gitSchema{}
@@ -224,11 +226,20 @@ type tagsArgs struct {
 }
 
 func (s *gitSchema) tags(ctx context.Context, parent *core.GitRepository, args tagsArgs) ([]string, error) {
+	// standardize to the same ref that goes into the state (see llb.Git)
+	remote, err := gitutil.ParseURL(parent.URL)
+	if errors.Is(err, gitutil.ErrUnknownProtocol) {
+		remote, err = gitutil.ParseURL("https://" + parent.URL)
+	}
+	if err != nil {
+		return nil, err
+	}
+
 	queryArgs := []string{
 		"ls-remote",
 		"--tags", // we only want tags
 		"--refs", // we don't want to include ^{} entries for annotated tags
-		parent.URL,
+		remote.Remote,
 	}
 
 	if args.Patterns.Valid {
@@ -276,7 +287,7 @@ func (s *gitSchema) tags(ctx context.Context, parent *core.GitRepository, args t
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	err := cmd.Run()
+	err = cmd.Run()
 	if err != nil {
 		return nil, fmt.Errorf("git command failed: %w\nstdout: %s\nstderr: %s", err, stdout.String(), stderr.String())
 	}

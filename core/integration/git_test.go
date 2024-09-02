@@ -343,6 +343,13 @@ func (GitSuite) TestGitTags(ctx context.Context, t *testctx.T) {
 		require.Contains(t, tags, "sdk/go/v0.9.3")
 	})
 
+	t.Run("all tags (short url)", func(ctx context.Context, t *testctx.T) {
+		tags, err := c.Git("github.com/dagger/dagger").Tags(ctx)
+		require.NoError(t, err)
+		require.Contains(t, tags, "v0.9.3")
+		require.Contains(t, tags, "sdk/go/v0.9.3")
+	})
+
 	t.Run("tag pattern", func(ctx context.Context, t *testctx.T) {
 		tags, err := c.Git("https://github.com/dagger/dagger").Tags(ctx, dagger.GitRepositoryTagsOpts{
 			Patterns: []string{"v*"},
