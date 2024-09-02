@@ -104,7 +104,7 @@ func (s *moduleSchema) builtinSDK(ctx context.Context, root *core.Query, sdkName
 		}
 		sdkSuffix := ""
 		if sdkVersion != "" {
-			sdkSuffix = "@" + sdkSuffix
+			sdkSuffix = "@" + sdkVersion
 		}
 
 		switch sdkName {
