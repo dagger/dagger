@@ -58,10 +58,6 @@ module.exports = {
         },
         {
           "type": "doc",
-          "id": "integrations/nerdctl"
-        },
-        {
-          "type": "doc",
           "id": "integrations/circleci"
         },
         {
@@ -87,6 +83,10 @@ module.exports = {
         {
           "type": "doc",
           "id": "integrations/kubernetes"
+        },
+        {
+          "type": "doc",
+          "id": "integrations/nerdctl"
         },
         {
           "type": "doc",
