@@ -5,7 +5,7 @@ on:
 jobs:
   publish:
     if: github.repository == 'dagger/dagger'
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-12-6-4c-od' || 'ubuntu-latest' }}"
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-12-7-4c-od' || 'ubuntu-latest' }}"
     steps:
       - uses: actions/checkout@v4
       - name: "typescript publish"
