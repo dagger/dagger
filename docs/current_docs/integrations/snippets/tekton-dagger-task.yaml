@@ -18,7 +18,7 @@ spec:
   sidecars:
     - name: dagger-engine
       # modify to use the desired Dagger version
-      image: registry.dagger.io/engine:v0.12.6
+      image: registry.dagger.io/engine:v0.12.7
       securityContext:
         privileged: true
         capabilities:
