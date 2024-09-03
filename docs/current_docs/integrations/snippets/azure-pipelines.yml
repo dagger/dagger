@@ -10,7 +10,7 @@ steps:
   displayName: 'Install Dagger CLI'
   # assumes a Go project
   # modify to use different function(s) as needed
-- script: dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call build --project=. --args=.
+- script: dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call build --source=. --args=.
   displayName: 'Call Dagger Function'
   env:
     # assumes the Dagger Cloud token is

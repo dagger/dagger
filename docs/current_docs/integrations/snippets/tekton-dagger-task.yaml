@@ -41,7 +41,7 @@ spec:
       #!/usr/bin/env sh
       apk add curl
       curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=/usr/local/bin sh
-      dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call build --project=. --args=.
+      dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call build --source=. --args=.
     volumeMounts:
       - mountPath: /var/run/dagger
         name: dagger-socket
