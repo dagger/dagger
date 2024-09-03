@@ -22,7 +22,9 @@ concurrency:
 
 jobs:
   lint:
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-4-16c' || 'ubuntu-latest' }}"
+    runs-on:
+      - depot-ubuntu-22.04
+      - dagger-0.13.4
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -36,7 +38,9 @@ jobs:
           function: "scripts lint"
 
   test:
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-4-16c-st-od' || 'ubuntu-latest' }}"
+    runs-on:
+      - depot-ubuntu-22.04
+      - dagger-0.13.4
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -50,7 +54,9 @@ jobs:
   # Only run a subset of important test cases since we just need to verify basic
   # functionality rather than repeat every test already run in the other targets.
   testdev:
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-4-32c-dind-st-od' || 'ubuntu-latest' }}"
+    runs-on:
+      - depot-ubuntu-22.04
+      - dagger-0.13.4
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -62,7 +68,9 @@ jobs:
           upload-logs: true
 
   test-publish:
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-4-16c' || 'ubuntu-latest' }}"
+    runs-on:
+      - depot-ubuntu-22.04
+      - dagger-0.13.4
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -76,7 +84,9 @@ jobs:
           function: "engine publish --image=dagger-engine.dev --tag=main --dry-run"
 
   scan-engine:
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-4-8c' || 'ubuntu-latest' }}"
+    runs-on:
+      - depot-ubuntu-22.04
+      - dagger-0.13.4
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
