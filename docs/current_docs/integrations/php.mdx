@@ -7,14 +7,37 @@ import TabItem from '@theme/TabItem';
 
 # PHP
 
-Dagger can be used to perform common CI tasks - testing, containerizing, publishing and more - for any PHP application.
+Dagger can be used to perform common CI tasks - testing, containerizing, publishing and more - for any PHP application in two ways:
 
-The following code sample demonstrates how these CI tasks can be encapsulated as Dagger Functions in a Dagger module. It assumes:
+1. PHP developers can create application delivery pipelines with the experimental PHP SDK, using the same language and tooling they use for their PHP applications.
 
-- A PHP 8.2.x Web application with:
-  - Composer for package management
-  - PHPUnit for application testing
-- Credentials to publish the containerized application image to a registry
+1. Alternatively, developers can encapsulate their CI workflows as Dagger Functions in a Dagger module.
+
+## How it works
+
+To Daggerize a PHP project using a Dagger module, you must:
+
+- Create a new Dagger module in your PHP project
+- Implement your CI pipeline as one or more Dagger Function(s)
+- Test your Dagger Function(s) locally and then transfer them to your CI environment
+
+## Prerequisites
+
+None
+
+## Example
+
+The following example demonstrates how CI tasks can be encapsulated as Dagger Functions in a Dagger module. It assumes:
+
+- A PHP 8.2.x Web application with Composer for package management and PHPUnit for application testing. This example uses the [Slim Framework skeleton application](https://github.com/slimphp/Slim-Skeleton.git).
+- Credentials to publish the containerized application image to a registry like Docker Hub.
+
+Clone the application repository:
+
+```shell
+git clone https://github.com/slimphp/Slim-Skeleton.git
+cd Slim-Skeleton
+```
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -61,11 +84,7 @@ Update the generated `dagger/src/index.ts` file with the following code:
 </TabItem>
 </Tabs>
 
-:::warning
-The code sample above is illustrative only. Modify it to your application's specific requirements.
-:::
-
-Here is an example of calling the Dagger Function to run an application's unit tests:
+Here is an example of calling the Dagger Function to run the application's unit tests:
 
 ```shell
 dagger call test --source=.
@@ -84,12 +103,10 @@ dagger call publish \
   --image-name=my-php-app
 ```
 
-Some PHP applications may need to perform specific operations on startup, such as running database migrations or reading/writing cache data. This can be accomplished by overriding the container's default entrypoint with a custom entrypoint script for startup operations.
+## Resources
 
-To use such a script, uncomment the relevant lines in the code sample above and create a script named `docker-entrypoint.sh` in the application directory. Here is an example of one such script, which runs database migrations for a Laravel Web application at startup:
+If you have any questions about additional ways to use PHP with Dagger, join our [Discord](https://discord.gg/dagger-io) and ask your questions in our [PHP channel](https://discord.com/channels/707636530424053791/1162025276872609832).
 
-```shell
-#!/bin/bash
-php artisan migrate
-apache2-foreground
-```
+## About PHP
+
+[PHP](https://www.php.net) is an interpreted, server-side scripting language.
