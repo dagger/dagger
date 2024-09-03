@@ -151,6 +151,8 @@ defmodule Dagger.ClientTest do
              {:ok, "1\n2\n3\n4\n"},
              {:ok, "1\n2\n3\n4\n5\n"}
            ] = out
+
+    IO.puts("Do not merge")
   end
 
   test "directory", %{client: client} do
