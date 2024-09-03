@@ -28,12 +28,25 @@ type gitSchema struct {
 func (s *gitSchema) Install() {
 	dagql.Fields[*core.Query]{
 		dagql.Func("git", s.git).
+			View(AllVersion).
 			Doc(`Queries a Git repository.`).
 			ArgDoc("url",
 				`URL of the git repository.`,
 				"Can be formatted as `https://{host}/{owner}/{repo}`, `git@{host}:{owner}/{repo}`.",
 				`Suffix ".git" is optional.`).
-			ArgDoc("keepGitDir", `Set to true to keep .git directory.`).
+			ArgDeprecated("keepGitDir", `Set to true to keep .git directory.`).
+			ArgDoc("discardGitDir", `Set to true to discard .git directory.`).
+			ArgDoc("sshKnownHosts", `Set SSH known hosts`).
+			ArgDoc("sshAuthSocket", `Set SSH auth socket`).
+			ArgDoc("experimentalServiceHost", `A service which must be started before the repo is fetched.`),
+		dagql.Func("git", s.gitLegacy).
+			View(BeforeVersion("v0.13.0")).
+			Doc(`Queries a Git repository.`).
+			ArgDoc("url",
+				`URL of the git repository.`,
+				"Can be formatted as `https://{host}/{owner}/{repo}`, `git@{host}:{owner}/{repo}`.",
+				`Suffix ".git" is optional.`).
+			ArgDeprecated("keepGitDir", `Set to true to keep .git directory.`).
 			ArgDoc("sshKnownHosts", `Set SSH known hosts`).
 			ArgDoc("sshAuthSocket", `Set SSH auth socket`).
 			ArgDoc("experimentalServiceHost", `A service which must be started before the repo is fetched.`),
@@ -82,7 +95,8 @@ func (s *gitSchema) Install() {
 
 type gitArgs struct {
 	URL                     string
-	KeepGitDir              bool `default:"false"`
+	KeepGitDir              *bool `default:"true"`
+	DiscardGitDir           bool  `default:"false"`
 	ExperimentalServiceHost dagql.Optional[core.ServiceID]
 
 	SSHKnownHosts string                        `name:"sshKnownHosts" default:""`
@@ -155,15 +169,51 @@ func (s *gitSchema) git(ctx context.Context, parent *core.Query, args gitArgs) (
 			authSock = sockInst.Self
 		}
 	}
+
+	fmt.Println(args.KeepGitDir)
+	if args.KeepGitDir != nil {
+		fmt.Println(*args.KeepGitDir)
+	}
+	fmt.Println(args.DiscardGitDir)
+
+	if args.KeepGitDir != nil {
+		slog.Warn("The 'keepGitDir' argument is deprecated. Use 'discardGitDir' instead.")
+		if !args.DiscardGitDir && !*args.KeepGitDir {
+			args.DiscardGitDir = true
+		}
+	}
+
+	fmt.Println("=", args.DiscardGitDir)
+
 	return &core.GitRepository{
 		Query:         parent,
 		URL:           args.URL,
-		KeepGitDir:    args.KeepGitDir,
+		DiscardGitDir: args.DiscardGitDir,
 		SSHKnownHosts: args.SSHKnownHosts,
 		SSHAuthSocket: authSock,
 		Services:      svcs,
 		Platform:      parent.Platform(),
 	}, nil
+}
+
+type gitArgsLegacy struct {
+	URL                     string
+	KeepGitDir              bool `default:"false"`
+	ExperimentalServiceHost dagql.Optional[core.ServiceID]
+
+	SSHKnownHosts string                        `name:"sshKnownHosts" default:""`
+	SSHAuthSocket dagql.Optional[core.SocketID] `name:"sshAuthSocket"`
+}
+
+func (s *gitSchema) gitLegacy(ctx context.Context, parent *core.Query, args gitArgsLegacy) (*core.GitRepository, error) {
+	return s.git(ctx, parent, gitArgs{
+		URL:                     args.URL,
+		KeepGitDir:              &args.KeepGitDir,
+		DiscardGitDir:           !args.KeepGitDir,
+		ExperimentalServiceHost: args.ExperimentalServiceHost,
+		SSHKnownHosts:           args.SSHKnownHosts,
+		SSHAuthSocket:           args.SSHAuthSocket,
+	})
 }
 
 func (s *gitSchema) head(ctx context.Context, parent *core.GitRepository, args struct{}) (*core.GitRef, error) {

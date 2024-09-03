@@ -17,7 +17,7 @@ type GitRepository struct {
 
 	URL string `json:"url"`
 
-	KeepGitDir bool `json:"keepGitDir"`
+	DiscardGitDir bool `json:"discardGitDir"`
 
 	SSHKnownHosts string  `json:"sshKnownHosts"`
 	SSHAuthSocket *Socket `json:"sshAuthSocket"`
@@ -88,7 +88,7 @@ func (ref *GitRef) Commit(ctx context.Context) (string, error) {
 func (ref *GitRef) getState(ctx context.Context) (llb.State, error) {
 	opts := []llb.GitOption{}
 
-	if ref.Repo.KeepGitDir {
+	if !ref.Repo.DiscardGitDir {
 		opts = append(opts, llb.KeepGitDir())
 	}
 	if ref.Repo.SSHKnownHosts != "" {

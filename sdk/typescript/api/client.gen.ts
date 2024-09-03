@@ -959,9 +959,14 @@ export type ClientContainerOpts = {
 
 export type ClientGitOpts = {
   /**
-   * Set to true to keep .git directory.
+   * DEPRECATED: Set to true to keep .git directory.
    */
   keepGitDir?: boolean
+
+  /**
+   * Set to true to discard .git directory.
+   */
+  discardGitDir?: boolean
 
   /**
    * A service which must be started before the repo is fetched.
@@ -8361,7 +8366,8 @@ export class Client extends BaseClient {
    * Can be formatted as `https://{host}/{owner}/{repo}`, `git@{host}:{owner}/{repo}`.
    *
    * Suffix ".git" is optional.
-   * @param opts.keepGitDir Set to true to keep .git directory.
+   * @param opts.keepGitDir DEPRECATED: Set to true to keep .git directory.
+   * @param opts.discardGitDir Set to true to discard .git directory.
    * @param opts.experimentalServiceHost A service which must be started before the repo is fetched.
    * @param opts.sshKnownHosts Set SSH known hosts
    * @param opts.sshAuthSocket Set SSH auth socket

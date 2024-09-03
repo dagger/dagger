@@ -6432,8 +6432,10 @@ func (r *Client) GeneratedCode(code *Directory) *GeneratedCode {
 
 // GitOpts contains options for Client.Git
 type GitOpts struct {
-	// Set to true to keep .git directory.
+	// DEPRECATED: Set to true to keep .git directory.
 	KeepGitDir bool
+	// Set to true to discard .git directory.
+	DiscardGitDir bool
 	// A service which must be started before the repo is fetched.
 	ExperimentalServiceHost *Service
 	// Set SSH known hosts
@@ -6449,6 +6451,10 @@ func (r *Client) Git(url string, opts ...GitOpts) *GitRepository {
 		// `keepGitDir` optional argument
 		if !querybuilder.IsZeroValue(opts[i].KeepGitDir) {
 			q = q.Arg("keepGitDir", opts[i].KeepGitDir)
+		}
+		// `discardGitDir` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DiscardGitDir) {
+			q = q.Arg("discardGitDir", opts[i].DiscardGitDir)
 		}
 		// `experimentalServiceHost` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ExperimentalServiceHost) {

@@ -6532,7 +6532,8 @@ class Client(Root):
         self,
         url: str,
         *,
-        keep_git_dir: bool | None = False,
+        keep_git_dir: bool | None = True,
+        discard_git_dir: bool | None = False,
         experimental_service_host: "Service | None" = None,
         ssh_known_hosts: str | None = "",
         ssh_auth_socket: "Socket | None" = None,
@@ -6547,7 +6548,9 @@ class Client(Root):
             `git@{host}:{owner}/{repo}`.
             Suffix ".git" is optional.
         keep_git_dir:
-            Set to true to keep .git directory.
+            DEPRECATED: Set to true to keep .git directory.
+        discard_git_dir:
+            Set to true to discard .git directory.
         experimental_service_host:
             A service which must be started before the repo is fetched.
         ssh_known_hosts:
@@ -6557,7 +6560,8 @@ class Client(Root):
         """
         _args = [
             Arg("url", url),
-            Arg("keepGitDir", keep_git_dir, False),
+            Arg("keepGitDir", keep_git_dir, True),
+            Arg("discardGitDir", discard_git_dir, False),
             Arg("experimentalServiceHost", experimental_service_host, None),
             Arg("sshKnownHosts", ssh_known_hosts, ""),
             Arg("sshAuthSocket", ssh_auth_socket, None),

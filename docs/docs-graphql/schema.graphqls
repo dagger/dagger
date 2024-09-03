@@ -2440,11 +2440,14 @@ type Query {
 
   """Queries a Git repository."""
   git(
+    """Set to true to discard .git directory."""
+    discardGitDir: Boolean = false
+
     """A service which must be started before the repo is fetched."""
     experimentalServiceHost: ServiceID
 
-    """Set to true to keep .git directory."""
-    keepGitDir: Boolean = false
+    """DEPRECATED: Set to true to keep .git directory."""
+    keepGitDir: Boolean = true
 
     """Set SSH auth socket"""
     sshAuthSocket: SocketID

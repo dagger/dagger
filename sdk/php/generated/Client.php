@@ -142,7 +142,8 @@ class Client extends Client\AbstractClient
      */
     public function git(
         string $url,
-        ?bool $keepGitDir = false,
+        ?bool $keepGitDir = true,
+        ?bool $discardGitDir = false,
         ServiceId|Service|null $experimentalServiceHost = null,
         ?string $sshKnownHosts = '',
         SocketId|Socket|null $sshAuthSocket = null,
@@ -151,6 +152,9 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder->setArgument('url', $url);
         if (null !== $keepGitDir) {
         $innerQueryBuilder->setArgument('keepGitDir', $keepGitDir);
+        }
+        if (null !== $discardGitDir) {
+        $innerQueryBuilder->setArgument('discardGitDir', $discardGitDir);
         }
         if (null !== $experimentalServiceHost) {
         $innerQueryBuilder->setArgument('experimentalServiceHost', $experimentalServiceHost);

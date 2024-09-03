@@ -49,7 +49,7 @@ func (GitSuite) TestGit(ctx context.Context, t *testctx.T) {
 
 	err := testutil.Query(t,
 		`{
-			git(url: "github.com/dagger/dagger", keepGitDir: true) {
+			git(url: "github.com/dagger/dagger") {
 				head {
 					commit
 					tree {
@@ -114,6 +114,22 @@ func (GitSuite) TestGit(ctx context.Context, t *testctx.T) {
 	// v0.9.5
 	require.Equal(t, res.Git.Tag.Commit, "9ea5ea7c848fef2a2c47cce0716d5fcb8d6bedeb")
 	require.Contains(t, res.Git.Tag.Tree.File.Contents, "Dagger")
+}
+
+func (GitSuite) TestDiscardGitDir(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("git dir is present", func(ctx context.Context, t *testctx.T) {
+		dir := c.Git("https://github.com/dagger/dagger").Branch("main").Tree()
+		ent, _ := dir.Entries(ctx)
+		require.Contains(t, ent, ".git")
+	})
+
+	t.Run("git dir is not present", func(ctx context.Context, t *testctx.T) {
+		dir := c.Git("https://github.com/dagger/dagger", dagger.GitOpts{DiscardGitDir: true}).Branch("main").Tree()
+		ent, _ := dir.Entries(ctx)
+		require.NotContains(t, ent, ".git")
+	})
 }
 
 func (GitSuite) TestSSHAuthSock(ctx context.Context, t *testctx.T) {
@@ -215,6 +231,7 @@ sleep infinity
 		ExperimentalServiceHost: sshSvc,
 		SSHKnownHosts:           fmt.Sprintf("[%s]:%d %s", sshHost, sshPort, strings.TrimSpace(hostPubKey)),
 		SSHAuthSocket:           c.Host().UnixSocket(sock),
+		DiscardGitDir:           true,
 	}).
 		Branch("main").
 		Tree().
@@ -292,22 +309,6 @@ func (GitSuite) TestAuth(ctx context.Context, t *testctx.T) {
 			Contents(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "Hello, world!", dt)
-	})
-}
-
-func (GitSuite) TestKeepGitDir(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
-	t.Run("git dir is present", func(ctx context.Context, t *testctx.T) {
-		dir := c.Git("https://github.com/dagger/dagger", dagger.GitOpts{KeepGitDir: true}).Branch("main").Tree()
-		ent, _ := dir.Entries(ctx)
-		require.Contains(t, ent, ".git")
-	})
-
-	t.Run("git dir is not present", func(ctx context.Context, t *testctx.T) {
-		dir := c.Git("https://github.com/dagger/dagger").Branch("main").Tree()
-		ent, _ := dir.Entries(ctx)
-		require.NotContains(t, ent, ".git")
 	})
 }
 

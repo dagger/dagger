@@ -580,4 +580,60 @@ class Dep:
 
 	require.NoError(t, err)
 	require.Equal(t, "Hello, Dagger!", out)
+
+func (LegacySuite) TestGitWithKeepDir(ctx context.Context, t *testctx.T) {
+	// Changed in dagger/dagger#...
+	//
+	// Ensure that the old schemas default to keeping KeepGitDir.
+
+	type result struct {
+		Commit string
+		Tree   struct {
+			File struct {
+				Contents string
+			}
+		}
+	}
+
+	res := struct {
+		Git struct {
+			Commit result
+		}
+	}{}
+
+	err := testutil.Query(t,
+		`{
+			git(url: "github.com/dagger/dagger", keepGitDir: true) {
+				commit(id: "c80ac2c13df7d573a069938e01ca13f7a81f0345") {
+					commit
+					tree {
+						file(path: ".git/HEAD") {
+							contents
+						}
+					}
+				}
+			}
+		}`, &res, &testutil.QueryOptions{
+			Version: "v0.12.6",
+		})
+	require.NoError(t, err)
+	require.Equal(t, "c80ac2c13df7d573a069938e01ca13f7a81f0345", res.Git.Commit.Commit)
+	require.Equal(t, "c80ac2c13df7d573a069938e01ca13f7a81f0345\n", res.Git.Commit.Tree.File.Contents)
+
+	err = testutil.Query(t,
+		`{
+			git(url: "github.com/dagger/dagger") {
+				commit(id: "c80ac2c13df7d573a069938e01ca13f7a81f0345") {
+					commit
+					tree {
+						file(path: ".git/HEAD") {
+							contents
+						}
+					}
+				}
+			}
+		}`, &res, &testutil.QueryOptions{
+			Version: "v0.12.6",
+		})
+	require.ErrorContains(t, err, ".git/HEAD: no such file or directory")
 }
