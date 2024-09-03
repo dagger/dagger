@@ -102,6 +102,8 @@ type ExecutionMetadata struct {
 
 	// If true, skip injecting dagger-init into the container.
 	NoInit bool
+
+	CacheVolumes []string
 }
 
 const executionMetadataKey = "dagger.executionMetadata"
@@ -162,6 +164,7 @@ func (w *Worker) Run(
 		w.injectInit,
 		w.generateBaseSpec,
 		w.filterEnvs,
+		w.setupCacheVolumes,
 		w.setupRootfs,
 		w.setUserGroup,
 		w.setExitCodePath,

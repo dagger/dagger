@@ -240,6 +240,9 @@ type ContainerMount struct {
 	// Persist changes to the mount under this cache ID.
 	CacheVolumeID string `json:"cache_volume_id,omitempty"`
 
+	// Name of the underlying cache volume for this container mount.
+	CacheVolumeName string `json:"-"`
+
 	// How to share the cache across concurrent runs.
 	CacheSharingMode CacheSharingMode `json:"cache_sharing,omitempty"`
 
@@ -654,9 +657,18 @@ func (container *Container) WithMountedCache(ctx context.Context, target string,
 		sharingMode = CacheSharingModeShared
 	}
 
+	// NOTE: cache volume has a list of keys even though we do not allow setting
+	// more than one in our graphql API. In spite of that we want to be defensive
+	// and not panic in case there is not even a single key.
+	var cacheVolumeName string
+	if len(cache.Keys) > 0 {
+		cacheVolumeName = cache.Keys[0]
+	}
+
 	mount := ContainerMount{
 		Target:           target,
 		CacheVolumeID:    cache.Sum(),
+		CacheVolumeName:  cacheVolumeName,
 		CacheSharingMode: sharingMode,
 	}
 

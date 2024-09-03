@@ -521,6 +521,17 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		return nil, err
 	}
 
+	// The dependencies between components makes us have to set the CacheManager
+	// for the worker after the SolverCache has been created:
+	// - srv.worker
+	//   - SolverCache
+	//     - baseWorkerController
+	//       - srv.worker
+	// The worker needs the SolverCache, which needs baseWorkerController which
+	// needs the parent worker. Because of this we need to initialize all components
+	// first and then set this dependency.
+	srv.worker.SetCacheManager(srv.SolverCache)
+
 	srv.cacheExporters = map[string]remotecache.ResolveCacheExporterFunc{
 		"registry": registryremotecache.ResolveCacheExporterFunc(srv.bkSessionManager, srv.registryHosts),
 		"local":    localremotecache.ResolveCacheExporterFunc(srv.bkSessionManager),

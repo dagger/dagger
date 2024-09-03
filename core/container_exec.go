@@ -254,6 +254,9 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		}
 
 		if mnt.CacheVolumeID != "" {
+			// append the list of cache volumes
+			execMD.CacheVolumes = append(execMD.CacheVolumes, mnt.CacheVolumeName)
+
 			var sharingMode llb.CacheMountSharingMode
 			switch mnt.CacheSharingMode {
 			case CacheSharingModeShared:
