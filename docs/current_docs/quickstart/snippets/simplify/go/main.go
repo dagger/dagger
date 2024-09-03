@@ -46,9 +46,9 @@ func (m *HelloDagger) Test(ctx context.Context, source *dagger.Directory) (strin
 
 // Build a ready-to-use development environment
 func (m *HelloDagger) BuildEnv(source *dagger.Directory) *dagger.Container {
-	return dag.Node(NodeOpts{Version: "21"}).
+	return dag.Node(dagger.NodeOpts{Version: "21"}).
 		WithNpm().
 		WithSource(source).
-		Install(nil).
+		Install().
 		Container()
 }
