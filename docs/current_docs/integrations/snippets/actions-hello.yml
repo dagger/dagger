@@ -4,22 +4,19 @@ on:
     branches: [main]
 
 jobs:
-  build:
-    name: build
+  hello:
+    name: hello
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
       -
         name: Call Dagger Function
         uses: dagger/dagger-for-github@v6
         with:
           version: "latest"
           verb: call
-          # assumes a Go project
           # modify to use different function(s) as needed
-          module: github.com/kpenfound/dagger-modules/golang@v0.2.0
-          args: build --project=. --args=.
+          module: github.com/shykes/daggerverse/hello@v0.1.2
+          args: hello --greeting="bonjour" --name="monde"
           # assumes the Dagger Cloud token is in
           # a repository secret named DAGGER_CLOUD_TOKEN
           # set via the GitHub UI/CLI
