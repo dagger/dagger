@@ -5,60 +5,101 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/dagger/dagger/engine"
 	"github.com/stretchr/testify/require"
 )
 
 func TestParseSDKName(t *testing.T) {
+	originalTag := engine.Tag
+	defer func() {
+		engine.Tag = originalTag
+	}()
+	engine.Tag = "v0.12.6"
+
 	testcases := []struct {
 		sdkName       string
-		parsedSDKName string
+		parsedSDKName SDK
 		parsedSuffix  string
+		expectedError string
 	}{
 		{
-			sdkName:       SDKGo,
+			sdkName:       "go",
 			parsedSDKName: SDKGo,
 		},
 		{
-			sdkName:       SDKTypescript,
+			sdkName:       "typescript",
 			parsedSDKName: SDKTypescript,
 		},
 		{
-			sdkName:       SDKPython,
+			sdkName:       "python",
 			parsedSDKName: SDKPython,
 		},
 		{
-			sdkName:       SDKPHP,
+			sdkName:       "php",
 			parsedSDKName: SDKPHP,
+			parsedSuffix:  "@v0.12.6",
 		},
 		{
-			sdkName:       SDKElixir,
+			sdkName:       "elixir",
 			parsedSDKName: SDKElixir,
+			parsedSuffix:  "@v0.12.6",
 		},
 		{
 			sdkName:       "php@foo",
-			parsedSDKName: "php",
+			parsedSDKName: SDKPHP,
 			parsedSuffix:  "@foo",
 		},
 		{
 			sdkName:       "elixir@foo",
-			parsedSDKName: "elixir",
+			parsedSDKName: SDKElixir,
 			parsedSuffix:  "@foo",
 		},
 		{
 			sdkName:       "elixir@",
-			parsedSDKName: "elixir",
+			parsedSDKName: SDKElixir,
+			parsedSuffix:  "@v0.12.6",
 		},
 		{
 			sdkName:       "php@",
-			parsedSDKName: "php",
+			parsedSDKName: SDKPHP,
+			parsedSuffix:  "@v0.12.6",
+		},
+		{
+			sdkName:       "go@v0.12.6",
+			parsedSDKName: "",
+			parsedSuffix:  "",
+			expectedError: "the go sdk does not currently support selecting a specific version",
+		},
+		{
+			sdkName:       "python@v0.12.6",
+			parsedSDKName: "",
+			parsedSuffix:  "",
+			expectedError: "the python sdk does not currently support selecting a specific version",
+		},
+		{
+			sdkName:       "typescript@v0.12.6",
+			parsedSDKName: "",
+			parsedSuffix:  "",
+			expectedError: "the typescript sdk does not currently support selecting a specific version",
+		},
+		{
+			sdkName:       "go@",
+			parsedSDKName: "",
+			parsedSuffix:  "",
+			expectedError: "the go sdk does not currently support selecting a specific version",
 		},
 	}
 
 	for _, tc := range testcases {
 		t.Run(tc.sdkName, func(t *testing.T) {
-			sdkName, suffix := parseSDKName(tc.sdkName)
+			sdkName, suffix, err := parseSDKName(tc.sdkName)
 			require.Equal(t, tc.parsedSDKName, sdkName)
 			require.Equal(t, tc.parsedSuffix, suffix)
+			if tc.expectedError != "" {
+				require.EqualError(t, err, tc.expectedError)
+			} else {
+				require.NoError(t, err)
+			}
 		})
 	}
 }
