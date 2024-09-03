@@ -408,6 +408,10 @@ func (w *Worker) filterEnvs(_ context.Context, state *execState) error {
 // setupCacheVolumes synchronizes the cache volumes that are in use for this
 // execution
 func (w *Worker) setupCacheVolumes(ctx context.Context, state *execState) error {
+	if w.execMD == nil || len(w.execMD.CacheVolumes) == 0 {
+		return nil
+	}
+
 	if err := w.daggerCacheManager.SynchronizeCacheMounts(ctx, w.execMD.CacheVolumes); err != nil {
 		bklog.G(ctx).Warnf("optional cache volume synchronization failed: %v", err)
 	}
