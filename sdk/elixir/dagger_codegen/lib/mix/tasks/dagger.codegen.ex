@@ -1,9 +1,11 @@
-defmodule Dagger.Codegen.CLI do
-  @moduledoc """
-  Main entrypoint for Dagger codegen binary.
-  """
+defmodule Mix.Tasks.Dagger.Codegen do
+  @shortdoc "Generate Dagger API from introspection.json"
 
-  def main(args) do
+  @moduledoc @shortdoc
+
+  use Mix.Task
+
+  def run(args) do
     :argparse.run(Enum.map(args, &String.to_charlist/1), cli(), %{progname: :dagger_codegen})
   end
 
@@ -32,7 +34,7 @@ defmodule Dagger.Codegen.CLI do
   end
 
   def handle_generate(%{outdir: outdir, introspection: introspection}) do
-    %{"__schema" => schema} = introspection |> File.read!() |> Jason.decode!()
+    %{"__schema" => schema} = introspection |> File.read!() |> :json.decode()
 
     IO.puts("Generate code to #{outdir}")
 

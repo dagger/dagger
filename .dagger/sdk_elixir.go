@@ -125,10 +125,8 @@ func (t ElixirSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 	gen := t.elixirBase(elixirVersions[elixirLatestVersion]).
 		With(installer).
 		WithWorkdir("dagger_codegen").
-		WithExec([]string{"mix", "deps.get"}).
-		WithExec([]string{"mix", "escript.build"}).
 		WithMountedFile("/schema.json", introspection).
-		WithExec([]string{"./dagger_codegen", "generate", "--introspection", "/schema.json", "--outdir", "gen"}).
+		WithExec([]string{"mix", "dagger.codegen", "generate", "--introspection", "/schema.json", "--outdir", "gen"}).
 		WithExec([]string{"mix", "format", "gen/*.ex"}).
 		Directory("gen")
 

@@ -28,7 +28,6 @@ defmodule Dagger.Codegen.MixProject do
 
   defp deps do
     [
-      {:jason, "~> 1.0"},
       {:mneme, ">= 0.0.0", only: :test}
     ]
   end
