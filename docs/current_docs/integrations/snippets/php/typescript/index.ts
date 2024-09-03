@@ -36,9 +36,7 @@ class MyModule {
    */
   @func()
   async test(source: Directory): Promise<string> {
-    return await this.build(source)
-      .withExec(["phpunit"])
-      .stdout()
+    return await this.build(source).withExec(["phpunit"]).stdout()
   }
 
   /*

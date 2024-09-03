@@ -35,11 +35,7 @@ class MyModule:
     @function
     async def test(self, source: dagger.Directory) -> str:
         """Return result of unit tests"""
-        return (
-            await self.build(source)
-            .with_exec(["phpunit"])
-            .stdout()
-        )
+        return await self.build(source).with_exec(["phpunit"]).stdout()
 
     @function
     async def publish(
