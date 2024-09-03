@@ -3,6 +3,7 @@ defmodule Dagger.ClientTest do
 
   alias Dagger.{
     BuildArg,
+    CacheSharingMode,
     Client,
     Container,
     Directory,
@@ -130,7 +131,9 @@ defmodule Dagger.ClientTest do
       client
       |> Client.container()
       |> Container.from("alpine:3.16.2")
-      |> Container.with_mounted_cache("/cache", Client.cache_volume(client, cache_key))
+      |> Container.with_mounted_cache("/cache", Client.cache_volume(client, cache_key),
+        sharing: CacheSharingMode.locked()
+      )
 
     out =
       for i <- 1..5 do
