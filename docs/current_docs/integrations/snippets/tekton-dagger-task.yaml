@@ -18,7 +18,7 @@ spec:
   sidecars:
     - name: dagger-engine
       # modify to use the desired Dagger version
-      image: registry.dagger.io/engine:vX.Y.Z 
+      image: registry.dagger.io/engine:v0.12.7
       securityContext:
         privileged: true
         capabilities:
@@ -33,7 +33,6 @@ spec:
         - mountPath: /var/lib/dagger
           name: dagger-storage
   steps:
-  # assumes a Go project
   # modify to use different function(s) as needed
   - name: read
     image: docker:dind

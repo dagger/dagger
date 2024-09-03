@@ -19,6 +19,7 @@ spec:
             storage: 1Gi
   params:
   - name: repo-url
-    value: YOUR_REPOSITORY_URL_HERE
+    # replace with your repository URL
+    value: https://github.com/kpenfound/greetings-api.git
   - name: dagger-cloud-token
     value: YOUR_DAGGER_CLOUD_TOKEN_HERE
