@@ -18,4 +18,4 @@ phases:
   build:
     commands:
       - echo "Calling Dagger Function"
-      - dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call build --project=. --args=.
+      - dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call build --source=. --args=.
