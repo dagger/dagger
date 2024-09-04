@@ -7,11 +7,7 @@ import TabItem from '@theme/TabItem';
 
 # PHP
 
-Dagger can be used to perform common CI tasks - testing, containerizing, publishing and more - for any PHP application in two ways:
-
-1. PHP developers can create application delivery pipelines with the experimental PHP SDK, using the same language and tooling they use for their PHP applications.
-
-1. Alternatively, developers can encapsulate their CI workflows as Dagger Functions in a Dagger module.
+Dagger can be used to perform common CI tasks - testing, containerizing, publishing and more - for any PHP application, by encapsulating these CI tasks as Dagger Functions in a Dagger module.
 
 ## How it works
 
@@ -102,6 +98,10 @@ dagger call publish \
   --registry-password=env:REGISTRY_PASSWORD \
   --image-name=my-php-app
 ```
+
+:::note
+If you prefer to write your Dagger module in PHP instead of the above languages, an experimental PHP SDK is also available for PHP developers. This SDK is currently under development and therefore not yet documented. Interested early adopters can learn more by [reviewing the source code](https://github.com/dagger/dagger/tree/main/sdk/php) or visiting our [PHP channel](https://discord.com/channels/707636530424053791/1162025276872609832).
+:::
 
 ## Resources
 
