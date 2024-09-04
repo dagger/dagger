@@ -944,7 +944,7 @@ func (s *moduleSchema) updateCodegenAndRuntime(
 
 	if src.Self.WithInitConfig != nil &&
 		src.Self.WithInitConfig.Merge &&
-		mod.SDKConfig != SDKGo {
+		mod.SDKConfig != string(SDKGo) {
 		return fmt.Errorf("merge is only supported for Go SDKs")
 	}
 

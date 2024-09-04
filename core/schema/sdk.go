@@ -20,16 +20,21 @@ import (
 
 const (
 	runtimeWorkdirPath = "/scratch"
-	SDKGo              = "go"
-	SDKPython          = "python"
-	SDKTypescript      = "typescript"
-	SDKPHP             = "php"
-	SDKElixir          = "elixir"
+)
+
+type SDK string
+
+const (
+	SDKGo         SDK = "go"
+	SDKPython     SDK = "python"
+	SDKTypescript SDK = "typescript"
+	SDKPHP        SDK = "php"
+	SDKElixir     SDK = "elixir"
 )
 
 // this list is to format the invalid sdk msg
 // and keeping that in sync with builtinSDK func
-var validInbuiltSDKs = []string{
+var validInbuiltSDKs = []SDK{
 	SDKGo,
 	SDKPython,
 	SDKTypescript,
@@ -99,25 +104,42 @@ func (s *moduleSchema) sdkForModule(
 	return s.newModuleSDK(ctx, query, sdkMod, dagql.Instance[*core.Directory]{})
 }
 
-// parse and return the name and suffix from sdkName
-// e.g.
+// parse and validate the name and version from sdkName
 //
 // for sdkName with format <sdk-name>@<version>, it returns
-// '<sdk-name>' as name and '@<version>' as suffix AND
+// '<sdk-name>' as name and '@<version>' as suffix.
 //
-// for sdkName with format <sdk-name>, it returns <sdk-name> with
-// empty suffix.
-func parseSDKName(sdkName string) (string, string) {
+// If sdk is one of go/python/typescript and <version>
+// is specified, we return an error as those sdk don't support
+// specific version
+//
+// if sdk is one of php/elixir and version is not specified,
+// we defaults the version to [engine.Tag]
+func parseSDKName(sdkName string) (SDK, string, error) {
 	sdkNameParsed, sdkVersion, hasVersion := strings.Cut(sdkName, "@")
-	if !hasVersion {
+
+	// this validation may seem redundant, but it helps keep the list of
+	// builtin sdk between invalidSDKError message and builtinSDK function in sync.
+	if !slices.Contains(validInbuiltSDKs, SDK(sdkNameParsed)) {
+		return "", "", getInvalidBuiltinSDKError(sdkName)
+	}
+
+	// inbuilt sdk go/python/typescript currently does not support selecting a specific version
+	if slices.Contains([]SDK{SDKGo, SDKPython, SDKTypescript}, SDK(sdkNameParsed)) && hasVersion {
+		return "", "", fmt.Errorf("the %s sdk does not currently support selecting a specific version", sdkNameParsed)
+	}
+
+	// for php, elixir we point them to github ref, so default the version to engine's tag
+	if slices.Contains([]SDK{SDKPHP, SDKElixir}, SDK(sdkNameParsed)) && sdkVersion == "" {
 		sdkVersion = engine.Tag
 	}
+
 	sdkSuffix := ""
 	if sdkVersion != "" {
 		sdkSuffix = "@" + sdkVersion
 	}
 
-	return sdkNameParsed, sdkSuffix
+	return SDK(sdkNameParsed), sdkSuffix, nil
 }
 
 var errUnknownBuiltinSDK = fmt.Errorf("unknown builtin sdk")
@@ -138,17 +160,9 @@ The %q SDK does not exist. The available SDKs are:
 
 // return a builtin SDK implementation with the given name
 func (s *moduleSchema) builtinSDK(ctx context.Context, root *core.Query, sdkName string) (core.SDK, error) {
-	sdkNameParsed, sdkSuffix := parseSDKName(sdkName)
-
-	// this validation may seem redundant, but it helps keep the list of
-	// builtin sdk between invalidSDKError and this function in sync.
-	if !slices.Contains(validInbuiltSDKs, sdkNameParsed) {
-		return nil, getInvalidBuiltinSDKError(sdkName)
-	}
-
-	// inbuilt sdk go/python/typescript currently does not support selecting a specific version
-	if slices.Contains([]string{SDKGo, SDKPython, SDKTypescript}, sdkNameParsed) && sdkSuffix != "" {
-		return nil, fmt.Errorf("the %s sdk does not currently support selecting a specific version", sdkNameParsed)
+	sdkNameParsed, sdkSuffix, err := parseSDKName(sdkName)
+	if err != nil {
+		return nil, err
 	}
 
 	switch sdkNameParsed {
