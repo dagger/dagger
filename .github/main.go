@@ -74,46 +74,25 @@ func (ci *CI) WithPipeline(
 	} else {
 		opts.DaggerVersion = daggerVersion
 	}
-	command = fmt.Sprintf("--source=.:default --docker-cfg=file:$HOME/.docker/config.json %s", command)
+	command = fmt.Sprintf("--ref=\"$GITHUB_REF\" --docker-cfg=file:$HOME/.docker/config.json %s", command)
 	ci.Gha = ci.Gha.WithPipeline(name, command, opts)
 	return ci
 }
 
 func (ci *CI) WithSdkPipelines(sdk string) *CI {
-	ci = ci.
-		WithSdkPipeline(sdk, "lint", false).
-		WithSdkPipeline(sdk, "lint", true).
-		WithSdkPipeline(sdk, "test", false).
-		WithSdkPipeline(sdk, "test", true)
-	// java doesn't have an automated publish step to test
-	if sdk != "java" {
-		ci = ci.
-			WithSdkPipeline(sdk, "test", false).
-			WithSdkPipeline(sdk, "test", true)
-	}
-	return ci
-}
-
-func (ci *CI) WithSdkPipeline(sdk, action string, devEngine bool) *CI {
-	var (
-		name    string
-		command []string
-		runner  string
-	)
-	if devEngine {
-		runner = ci.SilverRunner(true)
-		name = sdk + " sdk: " + action + " (dev-engine)"
-	} else {
-		name = sdk + " sdk: " + action
-	}
-	switch action {
-	case "test", "lint":
-		command = []string{"sdk", sdk, action}
-	case "test-publish":
-		// FIXME: move this logic into a dagger function
-		command = []string{"sdk", sdk, "publish --dry-run=true --tag=$GITHUB_REF"}
-	}
-	return ci.WithPipeline(name, strings.Join(command, " "), runner, devEngine)
+	return ci.
+		WithPipeline(
+			sdk,
+			"check --targets=sdk/"+sdk,
+			"",
+			false,
+		).
+		WithPipeline(
+			sdk+"-dev",
+			"check --targets=sdk/"+sdk,
+			ci.SilverRunner(true),
+			true,
+		)
 }
 
 // Assemble a runner name for a pipeline

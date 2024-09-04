@@ -134,6 +134,11 @@ func (t ElixirSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 	return dir, nil
 }
 
+// Test the publishing process
+func (t ElixirSDK) TestPublish(ctx context.Context, tag string) error {
+	return t.Publish(ctx, tag, true, nil, "https://github.com/dagger/dagger.git", nil)
+}
+
 // Publish the Elixir SDK
 func (t ElixirSDK) Publish(
 	ctx context.Context,

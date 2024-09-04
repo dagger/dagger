@@ -1,5 +1,5 @@
 # This file was generated. See https://daggerverse.dev/mod/github.com/shykes/gha
-name: 'python sdk: lint'
+name: go
 "on":
     push:
         branches:
@@ -19,7 +19,7 @@ jobs:
         runs-on: ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-12-7-4c' || 'ubuntu-latest' }}
         permissions:
             contents: read
-        name: 'python sdk: lint'
+        name: go
         steps:
             - name: Checkout
               uses: actions/checkout@v4
@@ -195,8 +195,9 @@ jobs:
                 exit $EXIT_CODE
               env:
                 _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
-                COMMAND: dagger call -q --source=.:default --docker-cfg=file:$HOME/.docker/config.json sdk python lint
+                COMMAND: dagger call -q --ref="$GITHUB_REF" --docker-cfg=file:$HOME/.docker/config.json check --targets=sdk/go
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
+                GITHUB_REF: ${{ github.github_ref }}
               shell: bash
         timeout-minutes: 10
         outputs:

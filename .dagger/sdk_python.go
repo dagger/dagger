@@ -141,6 +141,11 @@ func (t PythonSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 	return t.directory(t.dev().Generate(introspection)), nil
 }
 
+// Test the publishing process
+func (t PythonSDK) TestPublish(ctx context.Context, tag string) error {
+	return t.Publish(ctx, tag, true, "", nil, "https://github.com/dagger/dagger.git", nil)
+}
+
 // Publish the Python SDK
 func (t PythonSDK) Publish(
 	ctx context.Context,
