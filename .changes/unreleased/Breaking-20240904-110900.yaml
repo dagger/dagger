@@ -1,0 +1,9 @@
+kind: Breaking
+body: |
+  Changed behavior of Git to default keep the .git directory
+
+  This can be disabled with `tree`'s new `discardGitDir` option.
+time: 2024-09-04T11:09:00.583893826+01:00
+custom:
+  Author: jedevc
+  PR: "8318"

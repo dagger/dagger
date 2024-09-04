@@ -1,0 +1,6 @@
+kind: Breaking
+body: Deprecated `git`'s `keepGitDir` argument
+time: 2024-09-11T12:30:55.679002108+01:00
+custom:
+  Author: jedevc
+  PR: "8318"
