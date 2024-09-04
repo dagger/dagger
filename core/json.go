@@ -73,6 +73,8 @@ var _ dagql.ScalarType = JSON{}
 
 func (JSON) DecodeInput(val any) (res dagql.Input, err error) {
 	switch x := val.(type) {
+	case nil:
+		return nil, nil
 	case string:
 		if x == "" {
 			return nil, nil

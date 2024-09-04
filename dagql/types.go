@@ -142,6 +142,8 @@ func (i Int) TypeDefinition(views ...string) *ast.Definition {
 
 func (Int) DecodeInput(val any) (Input, error) {
 	switch x := val.(type) {
+	case nil:
+		return NewInt(0), nil
 	case int:
 		return NewInt(x), nil
 	case int32:
@@ -239,6 +241,8 @@ func (f Float) TypeDefinition(views ...string) *ast.Definition {
 
 func (Float) DecodeInput(val any) (Input, error) {
 	switch x := val.(type) {
+	case nil:
+		return NewFloat(float64(0)), nil
 	case float32:
 		return NewFloat(float64(x)), nil
 	case float64:
@@ -340,6 +344,8 @@ func (b Boolean) TypeDefinition(views ...string) *ast.Definition {
 
 func (Boolean) DecodeInput(val any) (Input, error) {
 	switch x := val.(type) {
+	case nil:
+		return NewBoolean(false), nil
 	case bool:
 		return NewBoolean(x), nil
 	case string: // from default
@@ -425,6 +431,8 @@ func (s String) TypeDefinition(views ...string) *ast.Definition {
 
 func (String) DecodeInput(val any) (Input, error) {
 	switch x := val.(type) {
+	case nil:
+		return NewString(""), nil
 	case string:
 		return NewString(x), nil
 	default:
@@ -760,6 +768,10 @@ var _ InputDecoder = ArrayInput[Input]{}
 func (a ArrayInput[I]) DecodeInput(val any) (Input, error) {
 	var zero I
 	decoder := zero.Decoder()
+
+	if val == nil {
+		val = []any{}
+	}
 	switch x := val.(type) {
 	case []any:
 		arr := make(ArrayInput[I], len(x))
@@ -902,6 +914,8 @@ func (e *EnumValues[T]) TypeDefinition(views ...string) *ast.Definition {
 
 func (e *EnumValues[T]) DecodeInput(val any) (Input, error) {
 	switch x := val.(type) {
+	case nil:
+		return e.Lookup("")
 	case string:
 		return e.Lookup(x)
 	case Scalar[String]:

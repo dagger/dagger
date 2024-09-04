@@ -360,7 +360,9 @@ func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
 			}
 			fieldVal, found := obj.Self.Fields[field.OriginalName]
 			if !found {
-				return nil, fmt.Errorf("field %q not found on object %q", field.Name, obj.Class.TypeName())
+				// the field *might* not have been set yet on the object (even
+				// though the typedef has it) - so just pick a suitable zero value
+				fieldVal = nil
 			}
 			return modType.ConvertFromSDKResult(ctx, fieldVal)
 		},
