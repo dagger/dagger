@@ -62,7 +62,7 @@ module.exports = {
         },
         {
           "type": "doc",
-          "id": "integrations/github-actions"
+          "id": "integrations/github"
         },
         {
           "type": "doc",
