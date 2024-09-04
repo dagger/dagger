@@ -4,11 +4,13 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"strings"
 
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/.dagger/internal/dagger"
+	"golang.org/x/sync/errgroup"
 )
 
 // A dev environment for the DaggerDev Engine
@@ -74,33 +76,91 @@ func (dev *DaggerDev) WithModCodegen() *DaggerDev {
 	return &clone
 }
 
+type Check func(context.Context) error
+
+// Wrap 3 SDK-specific checks into a single check
+type SDKChecks interface {
+	Lint(ctx context.Context) error
+	Test(ctx context.Context) error
+	TestPublish(ctx context.Context, tag string) error
+}
+
+func (dev *DaggerDev) sdkCheck(sdk string) Check {
+	var checks SDKChecks
+	switch sdk {
+	case "python":
+		checks = &PythonSDK{Dagger: dev}
+	case "go":
+		checks = &GoSDK{Dagger: dev}
+	case "typescript":
+		checks = &TypescriptSDK{Dagger: dev}
+	case "php":
+		checks = &PHPSDK{Dagger: dev}
+	case "java":
+		checks = &JavaSDK{Dagger: dev}
+	case "rust":
+		checks = &RustSDK{Dagger: dev}
+	case "elixir":
+		checks = &ElixirSDK{Dagger: dev}
+	}
+	return func(ctx context.Context) error {
+		if err := checks.Lint(ctx); err != nil {
+			return err
+		}
+		if err := checks.Test(ctx); err != nil {
+			return err
+		}
+		if err := checks.TestPublish(ctx, "test-tag"); err != nil {
+			return err
+		}
+		return nil
+	}
+}
+
+const (
+	CheckDocs          = "docs"
+	CheckPythonSDK     = "sdk/python"
+	CheckGoSDK         = "sdk/go"
+	CheckTypescriptSDK = "sdk/typescript"
+	CheckPHPSDK        = "sdk/php"
+	CheckJavaSDK       = "sdk/java"
+	CheckRustSDK       = "sdk/rust"
+	CheckElixirSDK     = "sdk/elixir"
+)
+
 // Check that everything works. Use this as CI entrypoint.
-func (dev *DaggerDev) Check(ctx context.Context) error {
-	// FIXME: run concurrently
-	if err := dev.Docs().Lint(ctx); err != nil {
-		return err
+func (dev *DaggerDev) Check(ctx context.Context,
+	// Directories to check
+	// +optional
+	targets []string,
+) error {
+	var routes = map[string]Check{
+		CheckDocs:          (&Docs{Dagger: dev}).Lint,
+		CheckPythonSDK:     dev.sdkCheck("python"),
+		CheckGoSDK:         dev.sdkCheck("go"),
+		CheckTypescriptSDK: dev.sdkCheck("typescript"),
+		CheckPHPSDK:        dev.sdkCheck("php"),
+		CheckJavaSDK:       dev.sdkCheck("java"),
+		CheckRustSDK:       dev.sdkCheck("rust"),
+		CheckElixirSDK:     dev.sdkCheck("elixir"),
 	}
-	if err := dev.Engine().Lint(ctx); err != nil {
-		return err
+	if len(targets) == 0 {
+		targets = make([]string, 0, len(routes))
+		for key := range routes {
+			targets = append(targets, key)
+		}
 	}
-	if err := dev.Test().All(
-		ctx,
-		// failfast
-		false,
-		// parallel
-		16,
-		// timeout
-		"",
-		// race
-		true,
-	); err != nil {
-		return err
+	for _, target := range targets {
+		if _, exists := routes[target]; !exists {
+			return fmt.Errorf("no such target: %s", target)
+		}
 	}
-	if err := dev.CLI().TestPublish(ctx); err != nil {
-		return err
+	eg, ctx := errgroup.WithContext(ctx)
+	for _, target := range targets {
+		check := routes[target]
+		eg.Go(func() error { return check(ctx) })
 	}
-	// FIXME: port all other function calls from Github Actions YAML
-	return nil
+	return eg.Wait()
 }
 
 // Develop the Dagger CLI

@@ -89,6 +89,11 @@ func (r RustSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 		WithFile(rustGeneratedAPIPath, generated), nil
 }
 
+// Test the publishing process
+func (r RustSDK) TestPublish(ctx context.Context, tag string) error {
+	return r.Publish(ctx, tag, true, nil, "", nil)
+}
+
 // Publish the Rust SDK
 func (r RustSDK) Publish(
 	ctx context.Context,

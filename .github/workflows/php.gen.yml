@@ -1,5 +1,5 @@
 # This file was generated. See https://daggerverse.dev/mod/github.com/shykes/gha
-name: 'go sdk: lint'
+name: php
 "on":
     push:
         branches:
@@ -19,7 +19,7 @@ jobs:
         runs-on: ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-12-7-4c' || 'ubuntu-latest' }}
         permissions:
             contents: read
-        name: 'go sdk: lint'
+        name: php
         steps:
             - name: Checkout
               uses: actions/checkout@v4
@@ -195,7 +195,7 @@ jobs:
                 exit $EXIT_CODE
               env:
                 _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
-                COMMAND: dagger call -q --source=.:default --docker-cfg=file:$HOME/.docker/config.json sdk go lint
+                COMMAND: dagger call -q --source=.:default --docker-cfg=file:$HOME/.docker/config.json check --targets=sdk/php
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
               shell: bash
         timeout-minutes: 10
