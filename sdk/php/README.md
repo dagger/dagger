@@ -18,7 +18,7 @@ An experimental [Dagger.io](https://dagger.io) SDK for PHP.
 
 ```php
 $client = Dagger::connect();
-$output = $client->pipeline('test')
+$output = $client
     ->container()
     ->from('alpine')
     ->withExec(['apk', 'add', 'curl'])

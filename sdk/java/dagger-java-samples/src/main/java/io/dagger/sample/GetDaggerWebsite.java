@@ -10,7 +10,6 @@ public class GetDaggerWebsite {
     try (Client client = Dagger.connect()) {
       String output =
           client
-              .pipeline("test")
               .container()
               .from("alpine")
               .withExec(List.of("apk", "add", "curl"))

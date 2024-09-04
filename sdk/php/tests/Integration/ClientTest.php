@@ -68,18 +68,4 @@ class ClientTest extends TestCase
 
         $this->assertEquals('3.16.2', trim($contents));
     }
-
-    public function testPipeline()
-    {
-        $client = $this->newClient();
-        $stdout = $client->pipeline('test', 'pipeline description', [
-            new PipelineLabel('distribution', 'alpine'),
-        ])
-            ->container()
-            ->from('alpine:3.16.2')
-            ->withExec(['cat', '/etc/alpine-release'])
-            ->stdout();
-
-        $this->assertEquals('3.16.2', trim($stdout));
-    }
 }

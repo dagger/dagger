@@ -79,7 +79,7 @@ public class GetDaggerWebsite {
 
   public static void main(String... args) throws Exception {
     try (Client client = Dagger.connect()) {
-      String output = client.pipeline("test")
+      String output = client
           .container()
           .from("alpine")
           .withExec(List.of("apk", "add", "curl"))
