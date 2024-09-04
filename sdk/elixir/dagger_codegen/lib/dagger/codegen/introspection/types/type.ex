@@ -10,13 +10,12 @@ defmodule Dagger.Codegen.Introspection.Types.Type do
 
   def from_map(
         %{
-          "description" => description,
           "kind" => kind,
           "name" => name
         } = type
       ) do
     %__MODULE__{
-      description: description,
+      description: type["description"],
       enum_values:
         Enum.map(
           type["enumValues"] || [],
