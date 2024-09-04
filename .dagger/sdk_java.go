@@ -74,6 +74,12 @@ func (t JavaSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 	return dir, nil
 }
 
+// Test the publishing process
+func (t JavaSDK) TestPublish(ctx context.Context, tag string) error {
+	// FIXME: we don't have a working test-publish implementation
+	return nil
+}
+
 // Publish the Java SDK
 func (t JavaSDK) Publish(
 	ctx context.Context,

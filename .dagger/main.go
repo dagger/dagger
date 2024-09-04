@@ -4,11 +4,14 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"strings"
 
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/.dagger/internal/dagger"
+	"go.opentelemetry.io/otel/codes"
+	"golang.org/x/sync/errgroup"
 )
 
 // A dev environment for the DaggerDev Engine
@@ -24,14 +27,25 @@ type DaggerDev struct {
 	// Can be used by nested clients to forward docker credentials to avoid
 	// rate limits
 	DockerCfg *dagger.Secret // +private
+
+	// +private
+	GitRef string
+	// +private
+	GitDir *dagger.Directory
 }
 
 func New(
 	ctx context.Context,
 	// +optional
 	// +defaultPath="/"
-	// +ignore=["bin", "**/node_modules", "**/.venv", "**/__pycache__"]
+	// +ignore=["bin", ".git", "**/node_modules", "**/.venv", "**/__pycache__"]
 	source *dagger.Directory,
+
+	// Git directory, for metadata introspection
+	// +optional
+	// +defaultPath="/.git"
+	// +ignore=["objects/*"]
+	gitDir *dagger.Directory,
 
 	// +optional
 	version string,
@@ -40,6 +54,10 @@ func New(
 
 	// +optional
 	dockerCfg *dagger.Secret,
+
+	// Git ref (used for test-publish checks)
+	// +optional
+	ref string,
 ) (*DaggerDev, error) {
 	versionInfo, err := newVersion(ctx, source, version)
 	if err != nil {
@@ -51,6 +69,8 @@ func New(
 		Version:   versionInfo,
 		Tag:       tag,
 		DockerCfg: dockerCfg,
+		GitRef:    ref,
+		GitDir:    gitDir,
 	}
 
 	modules, err := dev.containing(ctx, "dagger.json")
@@ -77,33 +97,151 @@ func (dev *DaggerDev) WithModCodegen() *DaggerDev {
 	return &clone
 }
 
+type Check func(context.Context) error
+
+// Wrap 3 SDK-specific checks into a single check
+type SDKChecks interface {
+	Lint(ctx context.Context) error
+	Test(ctx context.Context) error
+	TestPublish(ctx context.Context, tag string) error
+}
+
+func (dev *DaggerDev) Ref(ctx context.Context) (string, error) {
+	// Said .git introspection logic:
+	ref, err := dag.
+		Wolfi().
+		Container(dagger.WolfiContainerOpts{Packages: []string{"git"}}).
+		WithMountedDirectory("/src/.git", dev.GitDir).
+		WithWorkdir("/src").
+		WithMountedFile("/bin/get-ref.sh", dag.CurrentModule().Source().File("get-ref.sh")).
+		WithExec([]string{"sh", "/bin/get-ref.sh"}).
+		Stdout(ctx)
+	if err != nil {
+		return "", err
+	}
+	ref = strings.TrimRight(ref, "\n")
+	fmt.Printf("git ref: from $GITHUB_REF='%s', from .git='%s'\n", dev.GitRef, ref)
+	// FIXME: this shouldn't be needed.
+	//  but at the moment it is, because introspection from .git
+	//  doesn't work with TestPublish() for some reason.
+	if (dev.GitRef != "") && (ref != dev.GitRef) {
+		return dev.GitRef, nil
+	}
+	return ref, nil
+}
+
+func (dev *DaggerDev) sdkCheck(sdk string) Check {
+	var checks SDKChecks
+	switch sdk {
+	case "python":
+		checks = &PythonSDK{Dagger: dev}
+	case "go":
+		checks = &GoSDK{Dagger: dev}
+	case "typescript":
+		checks = &TypescriptSDK{Dagger: dev}
+	case "php":
+		checks = &PHPSDK{Dagger: dev}
+	case "java":
+		checks = &JavaSDK{Dagger: dev}
+	case "rust":
+		checks = &RustSDK{Dagger: dev}
+	case "elixir":
+		checks = &ElixirSDK{Dagger: dev}
+	}
+	return func(ctx context.Context) (rerr error) {
+		lint := func() (rerr error) {
+			ctx, span := Tracer().Start(ctx, fmt.Sprintf("lint sdk/%s", sdk))
+			defer func() {
+				if rerr != nil {
+					span.SetStatus(codes.Error, rerr.Error())
+				}
+				span.End()
+			}()
+			return checks.Lint(ctx)
+		}
+		test := func() (rerr error) {
+			ctx, span := Tracer().Start(ctx, fmt.Sprintf("test sdk/%s", sdk))
+			defer func() {
+				if rerr != nil {
+					span.SetStatus(codes.Error, rerr.Error())
+				}
+				span.End()
+			}()
+			return checks.Test(ctx)
+		}
+		testPublish := func() (rerr error) {
+			ctx, span := Tracer().Start(ctx, fmt.Sprintf("test-publish sdk/%s", sdk))
+			defer func() {
+				if rerr != nil {
+					span.SetStatus(codes.Error, rerr.Error())
+				}
+				span.End()
+			}()
+			// Inspect .git to avoid dependencing on $GITHUB_REF
+			ref, err := dev.Ref(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to introspect git ref: %s", err.Error())
+			}
+			fmt.Printf("===> ref = \"%s\"\n", ref)
+			return checks.TestPublish(ctx, ref)
+		}
+		if err := lint(); err != nil {
+			return err
+		}
+		if err := test(); err != nil {
+			return err
+		}
+		if err := testPublish(); err != nil {
+			return err
+		}
+		return nil
+	}
+}
+
+const (
+	CheckDocs          = "docs"
+	CheckPythonSDK     = "sdk/python"
+	CheckGoSDK         = "sdk/go"
+	CheckTypescriptSDK = "sdk/typescript"
+	CheckPHPSDK        = "sdk/php"
+	CheckJavaSDK       = "sdk/java"
+	CheckRustSDK       = "sdk/rust"
+	CheckElixirSDK     = "sdk/elixir"
+)
+
 // Check that everything works. Use this as CI entrypoint.
-func (dev *DaggerDev) Check(ctx context.Context) error {
-	// FIXME: run concurrently
-	if err := dev.Docs().Lint(ctx); err != nil {
-		return err
+func (dev *DaggerDev) Check(ctx context.Context,
+	// Directories to check
+	// +optional
+	targets []string,
+) error {
+	var routes = map[string]Check{
+		CheckDocs:          (&Docs{Dagger: dev}).Lint,
+		CheckPythonSDK:     dev.sdkCheck("python"),
+		CheckGoSDK:         dev.sdkCheck("go"),
+		CheckTypescriptSDK: dev.sdkCheck("typescript"),
+		CheckPHPSDK:        dev.sdkCheck("php"),
+		CheckJavaSDK:       dev.sdkCheck("java"),
+		CheckRustSDK:       dev.sdkCheck("rust"),
+		CheckElixirSDK:     dev.sdkCheck("elixir"),
 	}
-	if err := dev.Engine().Lint(ctx); err != nil {
-		return err
+	if len(targets) == 0 {
+		targets = make([]string, 0, len(routes))
+		for key := range routes {
+			targets = append(targets, key)
+		}
 	}
-	if err := dev.Test().All(
-		ctx,
-		// failfast
-		false,
-		// parallel
-		16,
-		// timeout
-		"",
-		// race
-		true,
-	); err != nil {
-		return err
+	for _, target := range targets {
+		if _, exists := routes[target]; !exists {
+			return fmt.Errorf("no such target: %s", target)
+		}
 	}
-	if err := dev.CLI().TestPublish(ctx); err != nil {
-		return err
+	eg, ctx := errgroup.WithContext(ctx)
+	for _, target := range targets {
+		check := routes[target]
+		eg.Go(func() error { return check(ctx) })
 	}
-	// FIXME: port all other function calls from Github Actions YAML
-	return nil
+	return eg.Wait()
 }
 
 // Develop the Dagger CLI

@@ -82,6 +82,20 @@ func (t GoSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 	return dag.Directory().WithDirectory("sdk/go", generated), nil
 }
 
+// Test the publishing process
+func (t GoSDK) TestPublish(ctx context.Context, tag string) error {
+	return t.Publish(
+		ctx,
+		tag,
+		true,
+		"https://github.com/dagger/dagger-go-sdk.git",
+		"https://github.com/dagger/dagger.git",
+		"dagger-ci",
+		"hello@dagger.io",
+		nil,
+	)
+}
+
 // Publish the Go SDK
 func (t GoSDK) Publish(
 	ctx context.Context,

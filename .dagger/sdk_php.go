@@ -89,6 +89,11 @@ func (t PHPSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 	return dag.Directory().WithDirectory(phpSDKPath, generated), nil
 }
 
+// Test the publishing process
+func (t PHPSDK) TestPublish(ctx context.Context, tag string) error {
+	return t.Publish(ctx, tag, true, "https://github.com/dagger/dagger-php-sdk.git", "https://github.com/dagger/dagger.git", "dagger-ci", "hello@dagger.io", nil)
+}
+
 // Publish the PHP SDK
 func (t PHPSDK) Publish(
 	ctx context.Context,
