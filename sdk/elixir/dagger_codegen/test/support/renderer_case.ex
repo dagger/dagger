@@ -11,7 +11,7 @@ defmodule Dagger.Codegen.RendererCase do
   defp decode_type_from_file(path) do
     path
     |> File.read!()
-    |> Jason.decode!()
+    |> :json.decode()
     |> Dagger.Codegen.Introspection.Types.Type.from_map()
   end
 

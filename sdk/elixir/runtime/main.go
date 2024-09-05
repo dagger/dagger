@@ -14,7 +14,7 @@ const (
 	sdkSrc           = "/sdk"
 	genDir           = "dagger_sdk"
 	schemaPath       = "/schema.json"
-	elixirImage      = "hexpm/elixir:1.16.3-erlang-26.2.5-debian-bookworm-20240612-slim@sha256:5aed25e4525ae7a5c96a8a880673bcc66d99b6f2a590161e42c8370fbebc4235"
+	elixirImage      = "hexpm/elixir:1.17.2-erlang-27.0.1-alpine-3.20.2@sha256:7c8a13cbff321b7d6f54b4c9a21a10fc8b987974171231eaa77532b8e638b645"
 )
 
 func New(
@@ -180,21 +180,18 @@ func (m *ElixirSdk) WithSDK(introspectionJSON *dagger.File) *ElixirSdk {
 
 func (m *ElixirSdk) WithDaggerCodegen() *dagger.Container {
 	codegenPath := path.Join(sdkSrc, "dagger_codegen")
-	codegenDepsCache, codegenBuildCache := mixProjectCaches("dagger-codegen")
+	_, codegenBuildCache := mixProjectCaches("dagger-codegen")
 	return m.baseContainer(dag.Container()).
 		WithMountedDirectory(sdkSrc, m.SdkSourceDir).
-		WithMountedCache(path.Join(codegenPath, "deps"), codegenDepsCache).
 		WithMountedCache(path.Join(codegenPath, "_build"), codegenBuildCache).
-		WithWorkdir(codegenPath).
-		WithExec([]string{"mix", "deps.get"}).
-		WithExec([]string{"mix", "escript.install", "--force"})
+		WithWorkdir(codegenPath)
 }
 
 func (m *ElixirSdk) GenerateCode(introspectionJSON *dagger.File) *dagger.Directory {
 	return m.WithDaggerCodegen().
 		WithMountedFile(schemaPath, introspectionJSON).
 		WithExec([]string{
-			"dagger_codegen", "generate",
+			"mix", "dagger.codegen", "generate",
 			"--outdir", "/gen",
 			"--introspection", schemaPath,
 		}).
@@ -206,13 +203,9 @@ func (m *ElixirSdk) baseContainer(ctr *dagger.Container) *dagger.Container {
 	return ctr.
 		From(elixirImage).
 		WithMountedCache("/root/.mix", mixCache).
-		WithExec([]string{"apt", "update"}).
-		WithExec([]string{"apt", "install", "-y", "--no-install-recommends", "git"}).
+		WithExec([]string{"apk", "add", "--no-cache", "git"}).
 		WithExec([]string{"mix", "local.hex", "--force"}).
-		WithExec([]string{"mix", "local.rebar", "--force"}).
-		WithEnvVariable("PATH", "/root/.mix/escripts:$PATH", dagger.ContainerWithEnvVariableOpts{
-			Expand: true,
-		})
+		WithExec([]string{"mix", "local.rebar", "--force"})
 }
 
 func mixProjectCaches(prefix string) (depsCache *dagger.CacheVolume, buildCache *dagger.CacheVolume) {
