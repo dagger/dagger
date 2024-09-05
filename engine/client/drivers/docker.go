@@ -68,33 +68,11 @@ func (d *dockerDriver) create(ctx context.Context, imageRef string, opts *Driver
 	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
 
 	// Get the SHA digest of the image to use as an ID for the container we'll create
-	var id string
-	fallbackToLeftoverEngine := false
-	ref, err := name.ParseReference(imageRef)
+	id, err := resolveImageDigest(ctx, imageRef, opts)
 	if err != nil {
-		return nil, errors.Wrap(err, "parsing image reference")
+		return nil, err
 	}
-	if digest, ok := ref.(name.Digest); ok {
-		// We already have the digest as part of the image ref
-		id = digest.DigestStr()
-	} else {
-		// We only have a tag in the image ref, so resolve it to a digest. The default
-		// auth keychain parses the same docker credentials as used by the buildkit
-		// session attachable.
-		_, span := otel.Tracer("").Start(ctx, "resolve image")
-		img, err := remote.Get(ref, remote.WithAuthFromKeychain(authn.DefaultKeychain), remote.WithUserAgent(opts.UserAgent))
-		telemetry.End(span, func() error { return err })
-
-		if err != nil {
-			slog.Warn("failed to resolve image; falling back to leftover engine", "error", err)
-			if strings.Contains(err.Error(), "DENIED") {
-				slog.Warn("check your docker registry auth; it might be incorrect or expired")
-			}
-			fallbackToLeftoverEngine = true
-		} else {
-			id = img.Digest.String()
-		}
-	}
+	fallbackToLeftoverEngine := id == ""
 
 	// We collect leftover engine anyway since we garbage collect them at the end
 	// And check if we are in a fallback case then perform fallback to most recent engine
@@ -192,6 +170,52 @@ func (d *dockerDriver) create(ctx context.Context, imageRef string, opts *Driver
 		Scheme: "docker-container",
 		Host:   containerName,
 	})
+}
+
+func resolveImageDigest(ctx context.Context, imageRef string, opts *DriverOpts) (string, error) {
+	ctx, span := otel.Tracer("").Start(ctx, "resolve image")
+	defer span.End()
+
+	ref, err := name.ParseReference(imageRef)
+	if err != nil {
+		return "", errors.Wrap(err, "parsing image reference")
+	}
+	if digest, ok := ref.(name.Digest); ok {
+		// We already have the digest as part of the image ref
+		return digest.DigestStr(), nil
+	}
+
+	// We only have a tag in the image ref, so resolve it to a digest.
+	// First, check if the image is already pulled and grab the digest locally
+	output, err := traceExec(ctx, exec.CommandContext(ctx, "docker", "inspect", "--type=image", "--format='{{index .RepoDigests 0}}'", imageRef), telemetry.Encapsulated())
+	if err == nil {
+		ref, err := name.ParseReference(output)
+		if err != nil {
+			return "", errors.Wrap(err, "parsing image reference")
+		}
+		if digest, ok := ref.(name.Digest); ok {
+			// We already have the digest as part of the image ref
+			return digest.DigestStr(), nil
+		}
+	}
+
+	// Otherwise, lookup the digest from the registry
+	// The default auth keychain parses the same docker credentials as used by the buildkit
+	// session attachable.
+	_, registrySpan := otel.Tracer("").Start(ctx, "registry lookup")
+	img, err := remote.Get(ref, remote.WithAuthFromKeychain(authn.DefaultKeychain), remote.WithUserAgent(opts.UserAgent))
+	telemetry.End(registrySpan, func() error { return err })
+
+	if err != nil {
+		slog.Warn("failed to resolve image; falling back to leftover engine", "error", err)
+		if strings.Contains(err.Error(), "DENIED") {
+			slog.Warn("check your docker registry auth; it might be incorrect or expired")
+		}
+
+		return "", nil
+	}
+
+	return img.Digest.String(), nil
 }
 
 func garbageCollectEngines(ctx context.Context, log *slog.Logger, engines []string) {
