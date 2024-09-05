@@ -1,0 +1,6 @@
+kind: Breaking
+body: Remove appVersion - this is now the chart version
+time: 2024-09-05T17:54:39.703345+01:00
+custom:
+    Author: gerhard
+    PR: "8348"

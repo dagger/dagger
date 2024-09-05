@@ -30,10 +30,11 @@ engine:
     #    cpu: "1"
     #    memory: 1Gi
   image:
-    repository: registry.dagger.io/engine
-    ### See https://github.com/dagger/dagger/blob/main/CHANGELOG.md for a list of available versions.
-    ### You can also use a specific git sha from https://github.com/dagger/dagger/commits/main/
-    # tag: PICK_A_CUSTOM_VERSION
+    ### Set a ref if you want to use a custom Dagger image
+    #   NOTE: you will need to ensure that a compatible dagger CLI is embedded in the image, otherwise readiness probes will fail
+    #   In the example below, we are configuring the latest, unreleased bleeding edge version
+    #
+    # ref: registry.dagger.io/engine:main
     pullPolicy: IfNotPresent
   ### Set taints & tolerations for this workload
   # tolerations:

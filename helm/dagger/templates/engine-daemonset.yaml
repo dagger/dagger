@@ -44,7 +44,7 @@ spec:
       {{- end }}
       containers:
         - name: dagger-engine
-          image: {{ .Values.engine.image.repository }}:{{ if .Values.engine.image.tag }}{{ .Values.engine.image.tag }}{{ else }}v{{ .Chart.AppVersion }}{{ end }}
+          image: {{ if .Values.engine.image.ref }}{{ .Values.engine.image.ref }}{{ else }}registry.dagger.io/engine:v{{ .Chart.Version }}{{ end }}
           imagePullPolicy: {{ .Values.engine.image.pullPolicy }}
           {{- if .Values.engine.args }}
           args:
@@ -58,9 +58,9 @@ spec:
           - secretRef:
               {{- if .Values.magicache.secretName }}
               name: {{ .Values.magicache.secretName }}
-              {{- else}}
+              {{- else }}
               name: {{ include "dagger.fullname" . }}-magicache-token
-              {{- end}}
+              {{- end }}
           {{- end }}
           securityContext:
             privileged: true
