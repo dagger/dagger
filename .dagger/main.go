@@ -134,8 +134,9 @@ func (dev *DaggerDev) sdkCheck(sdk string) Check {
 		// Inspect .git to avoid dependencing on $GITHUB_REF
 		ref, err := dev.Ref(ctx, dev.Source().Directory(".git"))
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to introspect git ref: %s", err.Error())
 		}
+		fmt.Printf("===> ref = %v\n", ref)
 		if err := checks.TestPublish(ctx, ref); err != nil {
 			return err
 		}
