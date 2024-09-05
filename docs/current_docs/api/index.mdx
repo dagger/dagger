@@ -18,11 +18,11 @@ This approach has multiple benefits:
 
 You can use the Dagger API in one of two ways:
 
-- You can [call the Dagger API](./calling.mdx) from a custom tool created with a Dagger SDK or a third-party GraphQL client using `dagger run ...` or `dagger query ...`.
+- You can [call the Dagger API](./calling.mdx) from the Dagger CLI using `dagger core...`, from a custom tool created with a Dagger SDK using `dagger run ...`, or from a third-party HTTP client using `dagger query ...`.
 - You can [extend the Dagger API](./extending.mdx) by creating or reusing Dagger Functions and call the extended API (which now includes all of the original core APIs _plus_ the custom Dagger Functions) using `dagger call ...`.
 
 We recommend the second approach, as it has many advantages over the first:
 
 - Having to maintain a custom CLI for your project is overkill most of the time. Writing custom client tools involves additional time, effort and maintenance overhead. Most of the time, it's easier to write a Dagger Function and call it directly with `dagger call`.
 - Custom tools created with Dagger SDKs or GraphQL clients can't easily run Dagger modules from the Daggerverse (it's possible, but more complex to maintain and harder to debug, as it requires resorting to lower-level GraphQL queries).
-- Dagger Functions do not have direct access to host system resources such as directories, files, environment variables, and network services. This "sandboxing" of Dagger Functions makes them more secure,  reproducible, and cacheable.
+- Dagger Functions do not have direct access to host system resources such as directories, files, environment variables, and network services. This "sandboxing" of Dagger Functions makes them more secure, reproducible, and cacheable.

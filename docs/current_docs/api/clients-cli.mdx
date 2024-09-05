@@ -4,31 +4,28 @@ slug: /api/clients/cli
 
 # Dagger CLI
 
-The Dagger CLI offers a `dagger query` sub-command, which provides an easy way to call the Dagger API from the command line.
+The Dagger CLI lets you call the Dagger API directly from the command-line via the `dagger core ...` command, without needing to first load a Dagger module. This is useful in some scenarios:
 
-This example demonstrates how to build a Go application by cloning the [canonical Git repository for Go](https://go.googlesource.com/example/+/HEAD/hello) and building the "Hello, world" example program from it by calling the Dagger API via `dagger query`.
+- You want to use Dagger for simple pipelines that are fully satisfied by the core Dagger API.
 
-Create a new shell script named `build.sh` and add the following code to it:
+    ```shell
+    dagger core container from --address="cgr.dev/chainguard/wolfi-base" \
+      with-exec --args="apk","add","go" \
+      with-directory --path="/src" --directory="https://github.com/golang/example#master" \
+      with-workdir --path="/src/hello" \
+      with-exec --args="go","build","-o","hello","." \
+      file --path="./hello" \
+      export --path="./hello-from-dagger"
+    ```
 
-```shell file=./snippets/clients-cli/build.sh
-```
+- You want to experiment with Dagger without having to program a Dagger module.
 
-This script uses `dagger query` to send two GraphQL queries to the Dagger API. The first query returns a content-addressed identifier of the source code directory from the remote Git repository. This is interpolated into the second query, which initializes a new container, mounts the source code directory, compiles the source code, and writes the compiled binary back to the host filesystem.
+    ```shell
+    dagger core container from --address=alpine file --path=/etc/os-release contents
+    ```
 
-Add the executable bit to the shell script and then run it by executing the commands below:
+- You are looking for a nice alternative to `docker run`.
 
-```shell
-chmod +x ./build.sh
-./build.sh
-```
-
-On completion, the built Go application will be available in the working directory on the host, as shown below:
-
-```shell
-tree
-.
-├── build.sh
-└── dagger-builds-hello
-
-1 directory, 2 files
-```
+    ```shell
+    dagger core container from --address=cgr.dev/chainguard/wolfi-base terminal
+    ```
