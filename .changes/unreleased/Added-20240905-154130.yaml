@@ -1,0 +1,9 @@
+kind: Added
+body: |-
+  Added new `Directory.digest` and `ModuleSource.digest` fields
+
+  These fields mirror the behavior of the `File.digest` field, computing a unique cryptographic digest over the contents of the object.
+time: 2024-09-05T15:41:30.256818315+01:00
+custom:
+  Author: jedevc
+  PR: "8282"
