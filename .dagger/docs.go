@@ -131,7 +131,7 @@ func (d Docs) Generate(ctx context.Context) (*dagger.Directory, error) {
 
 	var sdl *dagger.Directory
 	eg.Go(func() error {
-		sdl = d.GenerateSdl()
+		sdl = d.GenerateSchema()
 		return nil
 	})
 	var cli *dagger.Directory
@@ -141,7 +141,7 @@ func (d Docs) Generate(ctx context.Context) (*dagger.Directory, error) {
 	})
 	var apiRef *dagger.Directory
 	eg.Go(func() error {
-		apiRef = d.GenerateAPIReference()
+		apiRef = d.GenerateSchemaReference()
 		return nil
 	})
 
@@ -152,8 +152,17 @@ func (d Docs) Generate(ctx context.Context) (*dagger.Directory, error) {
 	return sdl.WithDirectory("/", cli).WithDirectory("/", apiRef), nil
 }
 
+// Regenerate the CLI reference docs
+func (d Docs) GenerateCli() *dagger.Directory {
+	// Should we keep `--include-experimental`?
+	generated := d.Dagger.Go().Env().
+		WithExec([]string{"go", "run", "./cmd/dagger", "gen", "--frontmatter=" + cliZenFrontmatter, "--output=cli.mdx", "--include-experimental"}).
+		File("cli.mdx")
+	return dag.Directory().WithFile(generatedCliZenPath, generated)
+}
+
 // Regenerate the API schema
-func (d Docs) GenerateSdl() *dagger.Directory {
+func (d Docs) GenerateSchema() *dagger.Directory {
 	introspectionJSON := dag.
 		Go(d.Dagger.Source()).
 		Env().
@@ -166,20 +175,11 @@ func (d Docs) GenerateSdl() *dagger.Directory {
 		WithFile(generatedSchemaPath, dag.Graphql().FromJSON(introspectionJSON).File())
 }
 
-// Regenerate the CLI reference docs
-func (d Docs) GenerateCli() *dagger.Directory {
-	// Should we keep `--include-experimental`?
-	generated := d.Dagger.Go().Env().
-		WithExec([]string{"go", "run", "./cmd/dagger", "gen", "--frontmatter=" + cliZenFrontmatter, "--output=cli.mdx", "--include-experimental"}).
-		File("cli.mdx")
-	return dag.Directory().WithFile(generatedCliZenPath, generated)
-}
-
 // Regenerate the API Reference documentation
-func (d Docs) GenerateAPIReference() *dagger.Directory {
+func (d Docs) GenerateSchemaReference() *dagger.Directory {
 	generatedHTML := dag.Container().
 		From("node:18").
-		WithMountedDirectory("/src", d.Dagger.Source()).
+		WithMountedDirectory("/src", d.Dagger.Source().WithDirectory(".", d.GenerateSchema())).
 		WithWorkdir("/src/docs").
 		WithMountedDirectory("/mnt/spectaql", spectaql()).
 		WithExec([]string{"yarn", "add", "file:/mnt/spectaql"}).
