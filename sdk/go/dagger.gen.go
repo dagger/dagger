@@ -791,36 +791,6 @@ func (r *Container) Mounts(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx)
 }
 
-// ContainerPipelineOpts contains options for Container.Pipeline
-type ContainerPipelineOpts struct {
-	// Description of the sub-pipeline.
-	Description string
-	// Labels to apply to the sub-pipeline.
-	Labels []PipelineLabel
-}
-
-// Creates a named sub-pipeline.
-//
-// Deprecated: Explicit pipeline creation is now a no-op
-func (r *Container) Pipeline(name string, opts ...ContainerPipelineOpts) *Container {
-	q := r.query.Select("pipeline")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `description` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Description) {
-			q = q.Arg("description", opts[i].Description)
-		}
-		// `labels` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Labels) {
-			q = q.Arg("labels", opts[i].Labels)
-		}
-	}
-	q = q.Arg("name", name)
-
-	return &Container{
-		query: q,
-	}
-}
-
 // The platform this container executes and publishes as.
 func (r *Container) Platform(ctx context.Context) (Platform, error) {
 	if r.platform != nil {
@@ -1111,8 +1081,6 @@ func (r *Container) WithEnvVariable(name string, value string, opts ...Container
 
 // ContainerWithExecOpts contains options for Container.WithExec
 type ContainerWithExecOpts struct {
-	// DEPRECATED: For true this can be removed. For false, use `useEntrypoint` instead.
-	SkipEntrypoint bool
 	// If the container has an entrypoint, prepend it to the args.
 	UseEntrypoint bool
 	// Content to write to the command's standard input before closing (e.g., "Hello world").
@@ -1133,10 +1101,6 @@ type ContainerWithExecOpts struct {
 func (r *Container) WithExec(args []string, opts ...ContainerWithExecOpts) *Container {
 	q := r.query.Select("withExec")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `skipEntrypoint` optional argument
-		if !querybuilder.IsZeroValue(opts[i].SkipEntrypoint) {
-			q = q.Arg("skipEntrypoint", opts[i].SkipEntrypoint)
-		}
 		// `useEntrypoint` optional argument
 		if !querybuilder.IsZeroValue(opts[i].UseEntrypoint) {
 			q = q.Arg("useEntrypoint", opts[i].UseEntrypoint)
@@ -2482,36 +2446,6 @@ func (r *Directory) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(id)
-}
-
-// DirectoryPipelineOpts contains options for Directory.Pipeline
-type DirectoryPipelineOpts struct {
-	// Description of the sub-pipeline.
-	Description string
-	// Labels to apply to the sub-pipeline.
-	Labels []PipelineLabel
-}
-
-// Creates a named sub-pipeline.
-//
-// Deprecated: Explicit pipeline creation is now a no-op
-func (r *Directory) Pipeline(name string, opts ...DirectoryPipelineOpts) *Directory {
-	q := r.query.Select("pipeline")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `description` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Description) {
-			q = q.Arg("description", opts[i].Description)
-		}
-		// `labels` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Labels) {
-			q = q.Arg("labels", opts[i].Labels)
-		}
-	}
-	q = q.Arg("name", name)
-
-	return &Directory{
-		query: q,
-	}
 }
 
 // Force evaluation in the engine.
@@ -3943,7 +3877,6 @@ type GitModuleSource struct {
 	query *querybuilder.Selection
 
 	cloneRef    *string
-	cloneURL    *string
 	commit      *string
 	htmlRepoURL *string
 	htmlURL     *string
@@ -3965,21 +3898,6 @@ func (r *GitModuleSource) CloneRef(ctx context.Context) (string, error) {
 		return *r.cloneRef, nil
 	}
 	q := r.query.Select("cloneRef")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// The URL to clone the root of the git repo from
-//
-// Deprecated: Use CloneRef instead. CloneRef supports both URL-style and SCP-like SSH references
-func (r *GitModuleSource) CloneURL(ctx context.Context) (string, error) {
-	if r.cloneURL != nil {
-		return *r.cloneURL, nil
-	}
-	q := r.query.Select("cloneURL")
 
 	var response string
 
@@ -6237,15 +6155,6 @@ func (r *Port) Protocol(ctx context.Context) (NetworkProtocol, error) {
 	return response, q.Execute(ctx)
 }
 
-type WithClientFunc func(r *Client) *Client
-
-// With calls the provided function with current Client.
-//
-// This is useful for reusability and readability by not breaking the calling chain.
-func (r *Client) With(f WithClientFunc) *Client {
-	return f(r)
-}
-
 func (r *Client) WithGraphQLQuery(q *querybuilder.Selection) *Client {
 	return &Client{
 		query:  q,
@@ -6931,37 +6840,6 @@ func (r *Client) ModuleSource(refString string, opts ...ModuleSourceOpts) *Modul
 
 	return &ModuleSource{
 		query: q,
-	}
-}
-
-// PipelineOpts contains options for Client.Pipeline
-type PipelineOpts struct {
-	// Description of the sub-pipeline.
-	Description string
-	// Labels to apply to the sub-pipeline.
-	Labels []PipelineLabel
-}
-
-// Creates a named sub-pipeline.
-//
-// Deprecated: Explicit pipeline creation is now a no-op
-func (r *Client) Pipeline(name string, opts ...PipelineOpts) *Client {
-	q := r.query.Select("pipeline")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `description` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Description) {
-			q = q.Arg("description", opts[i].Description)
-		}
-		// `labels` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Labels) {
-			q = q.Arg("labels", opts[i].Labels)
-		}
-	}
-	q = q.Arg("name", name)
-
-	return &Client{
-		query:  q,
-		client: r.client,
 	}
 }
 

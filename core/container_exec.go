@@ -24,10 +24,6 @@ type ContainerExecOpts struct {
 	// Command to run instead of the container's default command
 	Args []string
 
-	// If the container has an entrypoint, ignore it for this exec rather than
-	// calling it with args
-	SkipEntrypoint *bool `default:"true"`
-
 	// If the container has an entrypoint, prepend it to this exec's args
 	UseEntrypoint bool `default:"false"`
 

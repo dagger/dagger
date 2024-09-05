@@ -266,22 +266,6 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Creates a named sub-pipeline.
-     */
-    public function pipeline(string $name, ?string $description = '', ?array $labels = null): Container
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('pipeline');
-        $innerQueryBuilder->setArgument('name', $name);
-        if (null !== $description) {
-        $innerQueryBuilder->setArgument('description', $description);
-        }
-        if (null !== $labels) {
-        $innerQueryBuilder->setArgument('labels', $labels);
-        }
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * The platform this container executes and publishes as.
      */
     public function platform(): Platform
@@ -475,7 +459,6 @@ class Container extends Client\AbstractObject implements Client\IdAble
      */
     public function withExec(
         array $args,
-        ?bool $skipEntrypoint = true,
         ?bool $useEntrypoint = false,
         ?string $stdin = '',
         ?string $redirectStdout = '',
@@ -485,9 +468,6 @@ class Container extends Client\AbstractObject implements Client\IdAble
     ): Container {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withExec');
         $innerQueryBuilder->setArgument('args', $args);
-        if (null !== $skipEntrypoint) {
-        $innerQueryBuilder->setArgument('skipEntrypoint', $skipEntrypoint);
-        }
         if (null !== $useEntrypoint) {
         $innerQueryBuilder->setArgument('useEntrypoint', $useEntrypoint);
         }

@@ -162,18 +162,6 @@ export type ContainerImportOpts = {
   tag?: string
 }
 
-export type ContainerPipelineOpts = {
-  /**
-   * Description of the sub-pipeline.
-   */
-  description?: string
-
-  /**
-   * Labels to apply to the sub-pipeline.
-   */
-  labels?: PipelineLabel[]
-}
-
 export type ContainerPublishOpts = {
   /**
    * Identifiers for other platform specific containers.
@@ -266,11 +254,6 @@ export type ContainerWithEnvVariableOpts = {
 }
 
 export type ContainerWithExecOpts = {
-  /**
-   * DEPRECATED: For true this can be removed. For false, use `useEntrypoint` instead.
-   */
-  skipEntrypoint?: boolean
-
   /**
    * If the container has an entrypoint, prepend it to the args.
    */
@@ -560,18 +543,6 @@ export type DirectoryExportOpts = {
    * If true, then the host directory will be wiped clean before exporting so that it exactly matches the directory being exported; this means it will delete any files on the host that aren't in the exported dir. If false (the default), the contents of the directory will be merged with any existing contents of the host directory, leaving any existing files on the host that aren't in the exported directory alone.
    */
   wipe?: boolean
-}
-
-export type DirectoryPipelineOpts = {
-  /**
-   * Description of the sub-pipeline.
-   */
-  description?: string
-
-  /**
-   * Labels to apply to the sub-pipeline.
-   */
-  labels?: PipelineLabel[]
 }
 
 export type DirectoryTerminalOpts = {
@@ -1013,18 +984,6 @@ export type ClientModuleSourceOpts = {
    * The relative path to the module root from the host directory
    */
   relHostPath?: string
-}
-
-export type ClientPipelineOpts = {
-  /**
-   * Description of the sub-pipeline.
-   */
-  description?: string
-
-  /**
-   * Labels to apply to the sub-pipeline.
-   */
-  labels?: PipelineLabel[]
 }
 
 export type ClientSecretOpts = {
@@ -1784,26 +1743,6 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Creates a named sub-pipeline.
-   * @param name Name of the sub-pipeline.
-   * @param opts.description Description of the sub-pipeline.
-   * @param opts.labels Labels to apply to the sub-pipeline.
-   * @deprecated Explicit pipeline creation is now a no-op
-   */
-  pipeline = (name: string, opts?: ContainerPipelineOpts): Container => {
-    return new Container({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "pipeline",
-          args: { name, ...opts },
-        },
-      ],
-      ctx: this._ctx,
-    })
-  }
-
-  /**
    * The platform this container executes and publishes as.
    */
   platform = async (): Promise<Platform> => {
@@ -2119,7 +2058,6 @@ export class Container extends BaseClient {
    * @param args Command to run instead of the container's default command (e.g., ["run", "main.go"]).
    *
    * If empty, the container's default command is used.
-   * @param opts.skipEntrypoint DEPRECATED: For true this can be removed. For false, use `useEntrypoint` instead.
    * @param opts.useEntrypoint If the container has an entrypoint, prepend it to the args.
    * @param opts.stdin Content to write to the command's standard input before closing (e.g., "Hello world").
    * @param opts.redirectStdout Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
@@ -3611,26 +3549,6 @@ export class Directory extends BaseClient {
     )
 
     return response
-  }
-
-  /**
-   * Creates a named sub-pipeline.
-   * @param name Name of the sub-pipeline.
-   * @param opts.description Description of the sub-pipeline.
-   * @param opts.labels Labels to apply to the sub-pipeline.
-   * @deprecated Explicit pipeline creation is now a no-op
-   */
-  pipeline = (name: string, opts?: DirectoryPipelineOpts): Directory => {
-    return new Directory({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "pipeline",
-          args: { name, ...opts },
-        },
-      ],
-      ctx: this._ctx,
-    })
   }
 
   /**
@@ -5289,7 +5207,6 @@ export class GeneratedCode extends BaseClient {
 export class GitModuleSource extends BaseClient {
   private readonly _id?: GitModuleSourceID = undefined
   private readonly _cloneRef?: string = undefined
-  private readonly _cloneURL?: string = undefined
   private readonly _commit?: string = undefined
   private readonly _htmlRepoURL?: string = undefined
   private readonly _htmlURL?: string = undefined
@@ -5304,7 +5221,6 @@ export class GitModuleSource extends BaseClient {
     parent?: { queryTree?: QueryTree[]; ctx: Context },
     _id?: GitModuleSourceID,
     _cloneRef?: string,
-    _cloneURL?: string,
     _commit?: string,
     _htmlRepoURL?: string,
     _htmlURL?: string,
@@ -5316,7 +5232,6 @@ export class GitModuleSource extends BaseClient {
 
     this._id = _id
     this._cloneRef = _cloneRef
-    this._cloneURL = _cloneURL
     this._commit = _commit
     this._htmlRepoURL = _htmlRepoURL
     this._htmlURL = _htmlURL
@@ -5359,28 +5274,6 @@ export class GitModuleSource extends BaseClient {
         ...this._queryTree,
         {
           operation: "cloneRef",
-        },
-      ],
-      await this._ctx.connection(),
-    )
-
-    return response
-  }
-
-  /**
-   * The URL to clone the root of the git repo from
-   * @deprecated Use CloneRef instead. CloneRef supports both URL-style and SCP-like SSH references
-   */
-  cloneURL = async (): Promise<string> => {
-    if (this._cloneURL) {
-      return this._cloneURL
-    }
-
-    const response: Awaited<string> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "cloneURL",
         },
       ],
       await this._ctx.connection(),
@@ -9046,26 +8939,6 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Creates a named sub-pipeline.
-   * @param name Name of the sub-pipeline.
-   * @param opts.description Description of the sub-pipeline.
-   * @param opts.labels Labels to apply to the sub-pipeline.
-   * @deprecated Explicit pipeline creation is now a no-op
-   */
-  pipeline = (name: string, opts?: ClientPipelineOpts): Client => {
-    return new Client({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "pipeline",
-          args: { name, ...opts },
-        },
-      ],
-      ctx: this._ctx,
-    })
-  }
-
-  /**
    * Reference a secret by name.
    */
   secret = (name: string, opts?: ClientSecretOpts): Secret => {
@@ -9131,15 +9004,6 @@ export class Client extends BaseClient {
     )
 
     return response
-  }
-
-  /**
-   * Call the provided function with current Client.
-   *
-   * This is useful for reusability and readability by not breaking the calling chain.
-   */
-  with = (arg: (param: Client) => Client) => {
-    return arg(this)
   }
 }
 

@@ -12,6 +12,7 @@ type QueryOptions struct {
 	Operation string
 	Variables map[string]any
 	Secrets   map[string]string
+	Version   string
 }
 
 func Query(t *testctx.T, query string, res any, opts *QueryOptions, clientOpts ...dagger.ClientOpt) error {
@@ -29,6 +30,7 @@ func Query(t *testctx.T, query string, res any, opts *QueryOptions, clientOpts .
 
 	clientOpts = append([]dagger.ClientOpt{
 		dagger.WithLogOutput(NewTWriter(t.T)),
+		dagger.WithVersionOverride(opts.Version),
 	}, clientOpts...)
 
 	c, err := dagger.Connect(ctx, clientOpts...)

@@ -1500,15 +1500,6 @@ pub struct ContainerImportOpts<'a> {
     pub tag: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct ContainerPipelineOpts<'a> {
-    /// Description of the sub-pipeline.
-    #[builder(setter(into, strip_option), default)]
-    pub description: Option<&'a str>,
-    /// Labels to apply to the sub-pipeline.
-    #[builder(setter(into, strip_option), default)]
-    pub labels: Option<Vec<PipelineLabel>>,
-}
-#[derive(Builder, Debug, PartialEq)]
 pub struct ContainerPublishOpts {
     /// Force each layer of the published image to use the specified compression algorithm.
     /// If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
@@ -1587,9 +1578,6 @@ pub struct ContainerWithExecOpts<'a> {
     /// Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
     #[builder(setter(into, strip_option), default)]
     pub redirect_stdout: Option<&'a str>,
-    /// DEPRECATED: For true this can be removed. For false, use `useEntrypoint` instead.
-    #[builder(setter(into, strip_option), default)]
-    pub skip_entrypoint: Option<bool>,
     /// Content to write to the command's standard input before closing (e.g., "Hello world").
     #[builder(setter(into, strip_option), default)]
     pub stdin: Option<&'a str>,
@@ -2051,46 +2039,6 @@ impl Container {
         let query = self.selection.select("mounts");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Creates a named sub-pipeline.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Name of the sub-pipeline.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn pipeline(&self, name: impl Into<String>) -> Container {
-        let mut query = self.selection.select("pipeline");
-        query = query.arg("name", name.into());
-        Container {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Creates a named sub-pipeline.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Name of the sub-pipeline.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn pipeline_opts<'a>(
-        &self,
-        name: impl Into<String>,
-        opts: ContainerPipelineOpts<'a>,
-    ) -> Container {
-        let mut query = self.selection.select("pipeline");
-        query = query.arg("name", name.into());
-        if let Some(description) = opts.description {
-            query = query.arg("description", description);
-        }
-        if let Some(labels) = opts.labels {
-            query = query.arg("labels", labels);
-        }
-        Container {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
     /// The platform this container executes and publishes as.
     pub async fn platform(&self) -> Result<Platform, DaggerError> {
         let query = self.selection.select("platform");
@@ -2466,9 +2414,6 @@ impl Container {
             "args",
             args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
         );
-        if let Some(skip_entrypoint) = opts.skip_entrypoint {
-            query = query.arg("skipEntrypoint", skip_entrypoint);
-        }
         if let Some(use_entrypoint) = opts.use_entrypoint {
             query = query.arg("useEntrypoint", use_entrypoint);
         }
@@ -3652,15 +3597,6 @@ pub struct DirectoryExportOpts {
     pub wipe: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct DirectoryPipelineOpts<'a> {
-    /// Description of the sub-pipeline.
-    #[builder(setter(into, strip_option), default)]
-    pub description: Option<&'a str>,
-    /// Labels to apply to the sub-pipeline.
-    #[builder(setter(into, strip_option), default)]
-    pub labels: Option<Vec<PipelineLabel>>,
-}
-#[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryTerminalOpts<'a> {
     /// If set, override the container's default terminal command and invoke these command arguments instead.
     #[builder(setter(into, strip_option), default)]
@@ -3898,46 +3834,6 @@ impl Directory {
     pub async fn id(&self) -> Result<DirectoryId, DaggerError> {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
-    }
-    /// Creates a named sub-pipeline.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Name of the sub-pipeline.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn pipeline(&self, name: impl Into<String>) -> Directory {
-        let mut query = self.selection.select("pipeline");
-        query = query.arg("name", name.into());
-        Directory {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Creates a named sub-pipeline.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Name of the sub-pipeline.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn pipeline_opts<'a>(
-        &self,
-        name: impl Into<String>,
-        opts: DirectoryPipelineOpts<'a>,
-    ) -> Directory {
-        let mut query = self.selection.select("pipeline");
-        query = query.arg("name", name.into());
-        if let Some(description) = opts.description {
-            query = query.arg("description", description);
-        }
-        if let Some(labels) = opts.labels {
-            query = query.arg("labels", labels);
-        }
-        Directory {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
     }
     /// Force evaluation in the engine.
     pub async fn sync(&self) -> Result<DirectoryId, DaggerError> {
@@ -4824,11 +4720,6 @@ impl GitModuleSource {
     /// The ref to clone the root of the git repo from
     pub async fn clone_ref(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("cloneRef");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// The URL to clone the root of the git repo from
-    pub async fn clone_url(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("cloneURL");
         query.execute(self.graphql_client.clone()).await
     }
     /// The resolved commit of the git repo this source points to.
@@ -6205,15 +6096,6 @@ pub struct QueryModuleSourceOpts<'a> {
     pub stable: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct QueryPipelineOpts<'a> {
-    /// Description of the sub-pipeline.
-    #[builder(setter(into, strip_option), default)]
-    pub description: Option<&'a str>,
-    /// Labels to apply to the sub-pipeline.
-    #[builder(setter(into, strip_option), default)]
-    pub labels: Option<Vec<PipelineLabel>>,
-}
-#[derive(Builder, Debug, PartialEq)]
 pub struct QuerySecretOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub accessor: Option<&'a str>,
@@ -7236,42 +7118,6 @@ impl Query {
             query = query.arg("relHostPath", rel_host_path);
         }
         ModuleSource {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Creates a named sub-pipeline.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Name of the sub-pipeline.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn pipeline(&self, name: impl Into<String>) -> Query {
-        let mut query = self.selection.select("pipeline");
-        query = query.arg("name", name.into());
-        Query {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Creates a named sub-pipeline.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Name of the sub-pipeline.
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn pipeline_opts<'a>(&self, name: impl Into<String>, opts: QueryPipelineOpts<'a>) -> Query {
-        let mut query = self.selection.select("pipeline");
-        query = query.arg("name", name.into());
-        if let Some(description) = opts.description {
-            query = query.arg("description", description);
-        }
-        if let Some(labels) = opts.labels {
-            query = query.arg("labels", labels);
-        }
-        Query {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),

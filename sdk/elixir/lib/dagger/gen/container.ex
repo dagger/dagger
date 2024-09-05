@@ -334,26 +334,6 @@ defmodule Dagger.Container do
     Client.execute(container.client, query_builder)
   end
 
-  @deprecated "Explicit pipeline creation is now a no-op"
-  @doc "Creates a named sub-pipeline."
-  @spec pipeline(t(), String.t(), [
-          {:description, String.t() | nil},
-          {:labels, [Dagger.PipelineLabel.t()]}
-        ]) :: Dagger.Container.t()
-  def pipeline(%__MODULE__{} = container, name, optional_args \\ []) do
-    query_builder =
-      container.query_builder
-      |> QB.select("pipeline")
-      |> QB.put_arg("name", name)
-      |> QB.maybe_put_arg("description", optional_args[:description])
-      |> QB.maybe_put_arg("labels", optional_args[:labels])
-
-    %Dagger.Container{
-      query_builder: query_builder,
-      client: container.client
-    }
-  end
-
   @doc "The platform this container executes and publishes as."
   @spec platform(t()) :: {:ok, Dagger.Platform.t()} | {:error, term()}
   def platform(%__MODULE__{} = container) do
@@ -576,7 +556,6 @@ defmodule Dagger.Container do
 
   @doc "Retrieves this container after executing the specified command inside it."
   @spec with_exec(t(), [String.t()], [
-          {:skip_entrypoint, boolean() | nil},
           {:use_entrypoint, boolean() | nil},
           {:stdin, String.t() | nil},
           {:redirect_stdout, String.t() | nil},
@@ -589,7 +568,6 @@ defmodule Dagger.Container do
       container.query_builder
       |> QB.select("withExec")
       |> QB.put_arg("args", args)
-      |> QB.maybe_put_arg("skipEntrypoint", optional_args[:skip_entrypoint])
       |> QB.maybe_put_arg("useEntrypoint", optional_args[:use_entrypoint])
       |> QB.maybe_put_arg("stdin", optional_args[:stdin])
       |> QB.maybe_put_arg("redirectStdout", optional_args[:redirect_stdout])

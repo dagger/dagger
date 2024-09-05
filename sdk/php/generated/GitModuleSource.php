@@ -23,15 +23,6 @@ class GitModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * The URL to clone the root of the git repo from
-     */
-    public function cloneURL(): string
-    {
-        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('cloneURL');
-        return (string)$this->queryLeaf($leafQueryBuilder, 'cloneURL');
-    }
-
-    /**
      * The resolved commit of the git repo this source points to.
      */
     public function commit(): string

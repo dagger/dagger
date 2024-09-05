@@ -142,3 +142,22 @@ func (ClientSuite) TestClientStableID(ctx context.Context, t *testctx.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, stableID)
 }
+
+// TestQuerySchemaVersion checks that we can set the QueryOptions.Version
+// parameter to determine which schema version we're served.
+//
+// We use this in tests to do quick-and-easy checks against the schemas served
+// (without needing to do fancy module manipulation).
+func (ClientSuite) TestQuerySchemaVersion(ctx context.Context, t *testctx.T) {
+	v := struct {
+		SchemaVersion string `json:"__schemaVersion"`
+	}{}
+	err := testutil.Query(t,
+		`{
+			__schemaVersion
+		}`, &v, &testutil.QueryOptions{
+			Version: "v123.456.789",
+		})
+	require.NoError(t, err)
+	require.Equal(t, "v123.456.789", v.SchemaVersion)
+}

@@ -43,6 +43,7 @@ func (s *containerSchema) Install() {
 				`It doesn't run the default command if no exec has been set.`),
 
 		dagql.Func("pipeline", s.pipeline).
+			View(BeforeVersion("v0.13.0")).
 			Deprecated("Explicit pipeline creation is now a no-op").
 			Doc(`Creates a named sub-pipeline.`).
 			ArgDoc("name", "Name of the sub-pipeline.").
@@ -311,6 +312,36 @@ func (s *containerSchema) Install() {
 
 		dagql.Func("withExec", s.withExec).
 			View(AllVersion).
+			Doc(`Retrieves this container after executing the specified command inside it.`).
+			ArgDoc("args",
+				`Command to run instead of the container's default command (e.g., ["run", "main.go"]).`,
+				`If empty, the container's default command is used.`).
+			ArgDoc("useEntrypoint",
+				`If the container has an entrypoint, prepend it to the args.`).
+			ArgRemove("skipEntrypoint").
+			ArgDoc("stdin",
+				`Content to write to the command's standard input before closing (e.g.,
+				"Hello world").`).
+			ArgDoc("redirectStdout",
+				`Redirect the command's standard output to a file in the container (e.g.,
+			"/tmp/stdout").`).
+			ArgDoc("redirectStderr",
+				`Redirect the command's standard error to a file in the container (e.g.,
+			"/tmp/stderr").`).
+			ArgDoc("experimentalPrivilegedNesting",
+				`Provides Dagger access to the executed command.`,
+				`Do not use this option unless you trust the command being executed;
+				the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST
+				FILESYSTEM.`).
+			ArgDoc("insecureRootCapabilities",
+				`Execute the command with all root capabilities. This is similar to
+				running a command with "sudo" or executing "docker run" with the
+				"--privileged" flag. Containerization does not provide any security
+				guarantees when using this option. It should only be used when
+				absolutely necessary and only with trusted commands.`),
+
+		dagql.Func("withExec", s.withExec).
+			View(BeforeVersion("v0.13.0")).
 			Doc(`Retrieves this container after executing the specified command inside it.`).
 			ArgDoc("args",
 				`Command to run instead of the container's default command (e.g., ["run", "main.go"]).`,
@@ -670,12 +701,16 @@ func (s *containerSchema) rootfs(ctx context.Context, parent *core.Container, ar
 
 type containerExecArgs struct {
 	core.ContainerExecOpts
+
+	// If the container has an entrypoint, ignore it for this exec rather than
+	// calling it with args
+	SkipEntrypoint *bool `default:"true"`
 }
 
 func (s *containerSchema) withExec(ctx context.Context, parent *core.Container, args containerExecArgs) (*core.Container, error) {
-	if args.ContainerExecOpts.SkipEntrypoint != nil {
+	if args.SkipEntrypoint != nil {
 		slog.Warn("The 'skipEntrypoint' argument is deprecated. Use 'useEntrypoint' instead.")
-		if !args.ContainerExecOpts.UseEntrypoint && !*args.ContainerExecOpts.SkipEntrypoint {
+		if !args.ContainerExecOpts.UseEntrypoint && !*args.SkipEntrypoint {
 			args.ContainerExecOpts.UseEntrypoint = true
 		}
 	}
@@ -713,7 +748,6 @@ func (s *containerSchema) withExecLegacy(ctx context.Context, parent *core.Conta
 	opts := core.ContainerExecOpts{
 		Args:                          args.Args,
 		UseEntrypoint:                 !args.SkipEntrypoint,
-		SkipEntrypoint:                &args.SkipEntrypoint,
 		Stdin:                         args.Stdin,
 		RedirectStdout:                args.RedirectStdout,
 		RedirectStderr:                args.RedirectStderr,

@@ -258,18 +258,6 @@ type Container {
   """Retrieves the list of paths where a directory is mounted."""
   mounts: [String!]!
 
-  """Creates a named sub-pipeline."""
-  pipeline(
-    """Description of the sub-pipeline."""
-    description: String = ""
-
-    """Labels to apply to the sub-pipeline."""
-    labels: [PipelineLabel!] = []
-
-    """Name of the sub-pipeline."""
-    name: String!
-  ): Container! @deprecated(reason: "Explicit pipeline creation is now a no-op")
-
   """The platform this container executes and publishes as."""
   platform: Platform!
 
@@ -489,11 +477,6 @@ type Container {
     Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
     """
     redirectStdout: String = ""
-
-    """
-    DEPRECATED: For true this can be removed. For false, use `useEntrypoint` instead.
-    """
-    skipEntrypoint: Boolean = true
 
     """
     Content to write to the command's standard input before closing (e.g., "Hello world").
@@ -1128,18 +1111,6 @@ type Directory {
   """A unique identifier for this Directory."""
   id: DirectoryID!
 
-  """Creates a named sub-pipeline."""
-  pipeline(
-    """Description of the sub-pipeline."""
-    description: String = ""
-
-    """Labels to apply to the sub-pipeline."""
-    labels: [PipelineLabel!] = []
-
-    """Name of the sub-pipeline."""
-    name: String!
-  ): Directory! @deprecated(reason: "Explicit pipeline creation is now a no-op")
-
   """Force evaluation in the engine."""
   sync: DirectoryID!
 
@@ -1604,9 +1575,6 @@ scalar GeneratedCodeID
 type GitModuleSource {
   """The ref to clone the root of the git repo from"""
   cloneRef: String!
-
-  """The URL to clone the root of the git repo from"""
-  cloneURL: String! @deprecated(reason: "Use CloneRef instead. CloneRef supports both URL-style and SCP-like SSH references")
 
   """The resolved commit of the git repo this source points to."""
   commit: String!
@@ -2592,18 +2560,6 @@ type Query {
     """
     stable: Boolean = false
   ): ModuleSource!
-
-  """Creates a named sub-pipeline."""
-  pipeline(
-    """Description of the sub-pipeline."""
-    description: String = ""
-
-    """Labels to apply to the sub-pipeline."""
-    labels: [PipelineLabel!]
-
-    """Name of the sub-pipeline."""
-    name: String!
-  ): Query! @deprecated(reason: "Explicit pipeline creation is now a no-op")
 
   """Reference a secret by name."""
   secret(accessor: String, name: String!): Secret!

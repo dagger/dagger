@@ -183,6 +183,10 @@ func (s *moduleSchema) Install() {
 	dagql.Fields[*core.GitModuleSource]{
 		dagql.Func("htmlURL", s.gitModuleSourceHTMLURL).
 			Doc(`The URL to the source's git repo in a web browser`),
+		dagql.Func("cloneURL", s.gitModuleSourceCloneURL).
+			View(BeforeVersion("v0.13.0")).
+			Doc(`The URL to clone the root of the git repo from`).
+			Deprecated("Use `cloneRef` instead. `cloneRef` supports both URL-style and SCP-like SSH references"),
 	}.Install(s.dag)
 
 	dagql.Fields[*core.ModuleDependency]{}.Install(s.dag)

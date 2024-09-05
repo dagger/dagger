@@ -758,26 +758,6 @@ defmodule Dagger.Client do
     }
   end
 
-  @deprecated "Explicit pipeline creation is now a no-op"
-  @doc "Creates a named sub-pipeline."
-  @spec pipeline(t(), String.t(), [
-          {:description, String.t() | nil},
-          {:labels, [Dagger.PipelineLabel.t()]}
-        ]) :: Dagger.Client.t()
-  def pipeline(%__MODULE__{} = client, name, optional_args \\ []) do
-    query_builder =
-      client.query_builder
-      |> QB.select("pipeline")
-      |> QB.put_arg("name", name)
-      |> QB.maybe_put_arg("description", optional_args[:description])
-      |> QB.maybe_put_arg("labels", optional_args[:labels])
-
-    %Dagger.Client{
-      query_builder: query_builder,
-      client: client.client
-    }
-  end
-
   @doc "Reference a secret by name."
   @spec secret(t(), String.t(), [{:accessor, String.t() | nil}]) :: Dagger.Secret.t()
   def secret(%__MODULE__{} = client, name, optional_args \\ []) do

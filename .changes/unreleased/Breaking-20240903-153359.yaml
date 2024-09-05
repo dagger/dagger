@@ -1,0 +1,11 @@
+kind: Breaking
+body: |
+  Remove deprecated fields and arguments
+
+  - Remove `Container.withExec`'s `skipEntrypoint` argument - this is now the default (see `useEntrypoint`)
+  - Remove `pipeline`, `Container.pipeline` and `Directory.pipeline`
+  - Remove `GitModuleSource.cloneURL` (see `GitModuleSource.cloneRef`)
+time: 2024-09-03T15:33:59.531219349+01:00
+custom:
+  Author: jedevc
+  PR: "8065"

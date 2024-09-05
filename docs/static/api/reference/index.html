@@ -85,7 +85,6 @@
               <li><a href="#query-module">module</a></li>
               <li><a href="#query-moduleDependency">moduleDependency</a></li>
               <li><a href="#query-moduleSource">moduleSource</a></li>
-              <li><a href="#query-pipeline">pipeline</a></li>
               <li><a href="#query-secret">secret</a></li>
               <li><a href="#query-setSecret">setSecret</a></li>
               <li><a href="#query-typeDef">typeDef</a></li>
@@ -3217,86 +3216,6 @@
               </div>
             </div>
           </section>
-          <section id="query-pipeline" class="operation operation-query" data-traverse-target="query-pipeline">
-            <div class="operation-group-name">
-              <a href="#group-Queries">Queries</a>
-            </div>
-            <h2 class="operation-heading operation-deprecated">
-              <code>pipeline</code>
-            </h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="doc-copy-section">
-                  <div class="deprecation-reason"> Explicit pipeline creation is now a no-op </div>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>Creates a named sub-pipeline.</p>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-response doc-copy-section">
-                  <h5>Type</h5>
-                  <p>
-                    <a href="#definition-Query"><code>Query!</code></a>
-                  </p>
-                </div>
-                <div class="operation-arguments test doc-copy-section">
-                  <h5>Arguments</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span>
-                        </td>
-                        <td> Description of the sub-pipeline. Default = <code>""</code> </td>
-                      </tr>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>labels</code></span> - <span class="property-type"><a href="#definition-PipelineLabel"><code>[PipelineLabel!]</code></a></span>
-                        </td>
-                        <td> Labels to apply to the sub-pipeline. </td>
-                      </tr>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span>
-                        </td>
-                        <td> Name of the sub-pipeline. </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-example doc-copy-section">
-                  <h5>Example</h5>
-                  <pre><code class="hljs language-gql"><span class="hljs-symbol"><span class="hljs-keyword">query</span> <span class="hljs-tag">{
-  <span class="hljs-symbol">pipeline<span class="hljs-tag">(name: &quot;build&quot;, description: <span class="hljs-type">&quot;Builds </span>the app container&quot;)</span> <span class="hljs-tag">{
-    <span class="hljs-symbol">container <span class="hljs-tag">{
-      <span class="hljs-symbol">id</span>
-    }</span></span>
-  }</span></span>
-}</span></span>
-</code></pre>
-                  <p><a href="https://play.dagger.cloud/playground/JqqwzSV0wBO" target="_blank">Try it in the API Playground!</a></p>
-                </div>
-              </div>
-            </div>
-          </section>
           <section id="query-secret" class="operation operation-query" data-traverse-target="query-secret">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
@@ -3959,32 +3878,6 @@
                         <td data-property-name=""><a class="property-name" id="Container-mounts" href="#Container-mounts"><code>mounts</code></a> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span> </td>
                         <td> Retrieves the list of paths where a directory is mounted. </td>
                       </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="Container-pipeline" href="#Container-pipeline"><code>pipeline</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
-                        <td> Creates a named sub-pipeline. <span class="deprecation-reason">Explicit pipeline creation is now a no-op</span>
-                        </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
-                                <p>Description of the sub-pipeline.</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>labels</code></span> - <span class="property-type"><a href="#definition-PipelineLabel"><code>[PipelineLabel!]</code></a></span></h6>
-                                <p>Labels to apply to the sub-pipeline.</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>Name of the sub-pipeline.</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Container-platform" href="#Container-platform"><code>platform</code></a> - <span class="property-type"><a href="#definition-Platform"><code>Platform!</code></a></span> </td>
                         <td> The platform this container executes and publishes as. </td>
@@ -4235,10 +4128,6 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>redirectStdout</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
                                 <p>Redirect the command&#39;s standard output to a file in the container (e.g., &quot;/tmp/stdout&quot;).</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>skipEntrypoint</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
-                                <p>DEPRECATED: For true this can be removed. For false, use <code>useEntrypoint</code> instead.</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>stdin</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
@@ -5435,32 +5324,6 @@
                         <td data-property-name=""><a class="property-name" id="Directory-id" href="#Directory-id"><code>id</code></a> - <span class="property-type"><a href="#definition-DirectoryID"><code>DirectoryID!</code></a></span> </td>
                         <td> A unique identifier for this Directory. </td>
                       </tr>
-                      <tr class="row-has-field-arguments">
-                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="Directory-pipeline" href="#Directory-pipeline"><code>pipeline</code></a> - <span class="property-type"><a href="#definition-Directory"><code>Directory!</code></a></span> </td>
-                        <td> Creates a named sub-pipeline. <span class="deprecation-reason">Explicit pipeline creation is now a no-op</span>
-                        </td>
-                      </tr>
-                      <tr class="row-field-arguments">
-                        <td colspan="2">
-                          <div class="field-arguments">
-                            <h5 class="field-arguments-heading"> Arguments </h5>
-                            <div class="field-argument-list">
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
-                                <p>Description of the sub-pipeline.</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>labels</code></span> - <span class="property-type"><a href="#definition-PipelineLabel"><code>[PipelineLabel!]</code></a></span></h6>
-                                <p>Labels to apply to the sub-pipeline.</p>
-                              </div>
-                              <div class="field-argument">
-                                <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
-                                <p>Name of the sub-pipeline.</p>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Directory-sync" href="#Directory-sync"><code>sync</code></a> - <span class="property-type"><a href="#definition-DirectoryID"><code>DirectoryID!</code></a></span> </td>
                         <td> Force evaluation in the engine. </td>
@@ -6481,11 +6344,6 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="GitModuleSource-cloneRef" href="#GitModuleSource-cloneRef"><code>cloneRef</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> The ref to clone the root of the git repo from </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="GitModuleSource-cloneURL" href="#GitModuleSource-cloneURL"><code>cloneURL</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> The URL to clone the root of the git repo from <span class="deprecation-reason">Use CloneRef instead. CloneRef supports both URL-style and SCP-like SSH references</span>
-                        </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="GitModuleSource-commit" href="#GitModuleSource-commit"><code>commit</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>

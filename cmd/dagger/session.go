@@ -20,7 +20,10 @@ import (
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 )
 
-var sessionLabels = enginetel.NewLabelFlag()
+var (
+	sessionLabels  = enginetel.NewLabelFlag()
+	sessionVersion string
+)
 
 func sessionCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -30,6 +33,7 @@ func sessionCmd() *cobra.Command {
 		RunE:         EngineSession,
 		SilenceUsage: true,
 	}
+	cmd.Flags().StringVar(&sessionVersion, "version", "", "")
 	cmd.Flags().Var(&sessionLabels, "label", "label that identifies the source of this session (e.g, --label 'dagger.io/sdk.name:python' --label 'dagger.io/sdk.version:0.5.2' --label 'dagger.io/sdk.async:true')")
 	return cmd
 }
@@ -80,6 +84,7 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 	return withEngine(ctx, client.Params{
 		SecretToken: sessionToken.String(),
 		UserAgent:   labelsFlag.Labels.WithCILabels().WithAnonymousGitLabels(workdir).UserAgent(),
+		Version:     sessionVersion,
 	}, func(ctx context.Context, sess *client.Client) error {
 		// Requests maintain their original trace context from the client, rather
 		// than appearing beneath the dagger session span, so in order to see any

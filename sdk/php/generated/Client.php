@@ -618,22 +618,6 @@ class Client extends Client\AbstractClient
     }
 
     /**
-     * Creates a named sub-pipeline.
-     */
-    public function pipeline(string $name, ?string $description = '', ?array $labels = null): Client
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('pipeline');
-        $innerQueryBuilder->setArgument('name', $name);
-        if (null !== $description) {
-        $innerQueryBuilder->setArgument('description', $description);
-        }
-        if (null !== $labels) {
-        $innerQueryBuilder->setArgument('labels', $labels);
-        }
-        return new \Dagger\Client($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Reference a secret by name.
      */
     public function secret(string $name, ?string $accessor = null): Secret

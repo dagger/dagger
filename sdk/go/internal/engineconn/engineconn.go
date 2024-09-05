@@ -21,10 +21,11 @@ type EngineConn interface {
 }
 
 type Config struct {
-	Workdir    string
-	LogOutput  io.Writer
-	RunnerHost string
-	Conn       EngineConn
+	Workdir         string
+	LogOutput       io.Writer
+	RunnerHost      string
+	Conn            EngineConn
+	VersionOverride string
 }
 
 type ConnectParams struct {
