@@ -182,7 +182,7 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *dagger.Modul
 		// Mount user's module configuration (without sources) and the generated client in it.
 		WithDirectory(ModSourceDirPath,
 			dag.Directory().WithDirectory("/", modSource.ContextDirectory(), dagger.DirectoryWithDirectoryOpts{
-				Include: t.moduleConfigFiles(),
+				Include: t.moduleConfigFiles(t.moduleConfig.subPath),
 			})).
 		WithDirectory(filepath.Join(t.moduleConfig.modulePath(), GenDir), sdk).
 		WithWorkdir(t.moduleConfig.modulePath())
@@ -207,7 +207,7 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *dagger.Modul
 	base = base.WithDirectory(ModSourceDirPath,
 		dag.Directory().WithDirectory("/", modSource.ContextDirectory(), dagger.DirectoryWithDirectoryOpts{
 			// Include the rest of the user's module except config files to not override previous steps & SDKs.
-			Exclude: append(t.moduleConfigFiles(), filepath.Join(t.moduleConfig.subPath, "sdk")),
+			Exclude: append(t.moduleConfigFiles(t.moduleConfig.subPath), filepath.Join(t.moduleConfig.subPath, "sdk")),
 		}),
 	)
 
@@ -220,7 +220,7 @@ func (t *TypescriptSdk) CodegenBase(ctx context.Context, modSource *dagger.Modul
 }
 
 // Returns a list of files to include for module configs.
-func (t *TypescriptSdk) moduleConfigFiles() []string {
+func (t *TypescriptSdk) moduleConfigFiles(path string) []string {
 	modConfigFiles := []string{
 		"package.json",
 		"tsconfig.json",
@@ -237,7 +237,7 @@ func (t *TypescriptSdk) moduleConfigFiles() []string {
 	}
 
 	for i, file := range modConfigFiles {
-		modConfigFiles[i] = filepath.Join(t.moduleConfig.subPath, file)
+		modConfigFiles[i] = filepath.Join(path, file)
 	}
 
 	return modConfigFiles
@@ -584,7 +584,7 @@ func (t *TypescriptSdk) analyzeModuleConfig(ctx context.Context, modSource *dagg
 	// We also only include package.json & lockfiles to benefit from caching.
 	t.moduleConfig.source = modSource.ContextDirectory().Directory(t.moduleConfig.subPath)
 	configEntries, err := dag.Directory().WithDirectory(".", t.moduleConfig.source, dagger.DirectoryWithDirectoryOpts{
-		Include: []string{"package.json", "*lock*", "tsconfig.json", "pnpm-workspace.yaml", ".yarnrc.yml"},
+		Include: t.moduleConfigFiles("."),
 	}).Entries(ctx)
 	if err == nil {
 		for _, entry := range configEntries {
