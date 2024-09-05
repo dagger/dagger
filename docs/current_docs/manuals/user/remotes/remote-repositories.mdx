@@ -31,7 +31,7 @@ Dagger supports various ref schemes for remote modules, accommodating both HTTP 
 
 Dagger provides flexibility in referencing modules through the following options:
 
-- The `.git` extension is optional for HTTP refs or explicit SSH refs, except for [GitLab, when referencing modules stored on a private repo](https://gitlab.com/gitlab-org/gitlab-foss/-/blob/master/lib/gitlab/middleware/go.rb#L229-237).
+- The `.git` extension is optional for HTTP refs or explicit SSH refs, except for [GitLab, when referencing modules stored on a private repo or private subgroup](https://gitlab.com/gitlab-org/gitlab-foss/-/blob/master/lib/gitlab/middleware/go.rb#L229-237).
 - **Monorepo support**: Append `/subpath` to access a specific subdirectory within the repository.
 - **Version specification**: Add `@version` to target a particular version of the module. This can be a tag, branch name, or full commit hash.
 
@@ -71,10 +71,37 @@ For quick and easy referencing:
 - Add a `/subpath` if you need to target a specific directory within the repository.
 - Append `@version` if you want to specify a particular version or commit.
 
-### FAQ
+### Known Limitations and Workarounds
 
-#### 1. What systems are supported ?
+This section outlines current limitations and provides workarounds for common issues. We're actively working on improvements for these areas.
 
-Currently SSH refs are supported on UNIX systems, but an [exploration for Windows support is ongoing](https://github.com/dagger/dagger/issues/8313)
+#### 1. Platform Support
 
-#### 2. Multi SSH keys
+Currently, SSH refs are fully supported on UNIX-based systems (Linux and macOS). Windows support is under development. Track progress and contribute to the discussion in our [GitHub issue for Windows support](https://github.com/dagger/dagger/issues/8313).
+
+#### 2. Multiple SSH Keys
+
+**Issue**: SSH forwarding may fail when multiple keys are loaded in your SSH agent.
+**Status**: Under [active investigation](https://github.com/dagger/dagger/issues/8288).
+**Workaround**: 
+1. Clear all loaded keys: `ssh-add -D`
+2. Add only the required key: `ssh-add /path/to/key`
+
+#### 3. Environment Variable Expansion
+
+**Issue**: Shell expansion characters (e.g., `~`) in the `SSH_AUTH_SOCK` environment variable are not automatically expanded.
+**Status**: Under [active investigation](https://github.com/dagger/dagger/issues/8337).
+**Workaround**: Use the full path instead of `~` when setting `SSH_AUTH_SOCK`.
+
+
+#### 4. CI/CD Integration (GitHub Actions)
+
+When using SSH keys in GitHub Actions or other CI/CD environments, ensure proper SSH agent setup:
+
+```yaml
+- name: Set up SSH
+  run: |
+    eval "$(ssh-agent -s)"
+    ssh-add - <<< '${{ secrets.SSH_PRIVATE_KEY }}'
+```
+Replace `${{ secrets.SSH_PRIVATE_KEY }}` with your provider secret containing the private key.
