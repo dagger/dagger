@@ -60,7 +60,7 @@ engine:
 
   readinessProbeSettings: 
     initialDelaySeconds: 5
-    timeoutSeconds: 30
+    timeoutSeconds: 14
     periodSeconds: 15
     successThreshold: 1
     failureThreshold: 10
