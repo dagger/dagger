@@ -30,7 +30,6 @@ type DaggerDev struct {
 
 	// +private
 	GitRef string
-	// +private
 	GitDir *dagger.Directory
 }
 
@@ -43,8 +42,8 @@ func New(
 
 	// Git directory, for metadata introspection
 	// +optional
-	// +defaultPath="/.git"
-	// +ignore=["objects/*"]
+	// +defaultPath="/"
+	// +ignore=["!.git"]
 	gitDir *dagger.Directory,
 
 	// +optional
@@ -111,7 +110,7 @@ func (dev *DaggerDev) Ref(ctx context.Context) (string, error) {
 	ref, err := dag.
 		Wolfi().
 		Container(dagger.WolfiContainerOpts{Packages: []string{"git"}}).
-		WithMountedDirectory("/src/.git", dev.GitDir).
+		WithMountedDirectory("/src", dev.GitDir).
 		WithWorkdir("/src").
 		WithMountedFile("/bin/get-ref.sh", dag.CurrentModule().Source().File("get-ref.sh")).
 		WithExec([]string{"sh", "/bin/get-ref.sh"}).
