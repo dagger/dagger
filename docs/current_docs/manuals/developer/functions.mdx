@@ -338,6 +338,109 @@ The result will look like this:
 Hello, world
 ```
 
+## Contextual values
+
+Function arguments can define a default contextual value if no value is supplied for them. This default value will be load prior to the function call which makes it more cache efficient.
+
+:::note
+Contextual values are only available for arguments of type `Directory` and `File` for now.
+
+It's specially useful for static directory or file provided to the module. For example, a codebase source's code.
+:::
+
+The contextual value consist of a path to a directory or a file set through the `defaultPath` parameter metadata pointing to a location inside the module's context directory.
+- If the path is absolute, its root is the path to the git repository containting that module (called `context directory`), falling into the location of the `dagger.json` if no `.git` directory is found.
+- If the path is relative, its root is the path to `dagger.json` location (called `root directory`).
+
+Here's an example of Dagger Functions with a contextual arguments:
+- `repoFiles` has an argument `repo` of type `Directory` and a `defaultPath` parameter metadata set to `/` and returns the list of files in the given directory.
+- `moduleFiles` has an argument `module` of type `Directory` and a `defaultPath` parameter metadata set to `.` and returns the list of files in the given directory.
+- `readme` has an argument `readmeFile` of type `File` and a `defaultPath` parameter metadata set to `/README.md` and returns the contents of the given file.
+
+<Tabs groupId="language">
+
+<TabItem value="Go">
+
+For the example, we will use a repository with the following files:
+
+```shell
+.
+├── README.md
+├── file.txt
+└── my-module
+    ├── dagger.gen.go
+    ├── dagger.json
+    ├── go.mod
+    ├── go.sum
+    ├── internal
+    └── main.go
+```
+
+To define a contextual argument, you can add the `+defaultPath` pragma to the function parameter and set it to the path to default to.
+
+```go file=./snippets/functions/arguments-contextual/go/main.go
+```
+
+</TabItem>
+
+<TabItem value="Python">
+
+For the example, we will use a repository with the following files:
+
+```shell
+.
+├── README.md
+├── file.txt
+└── my-module
+    ├── LICENSE
+    ├── dagger.json
+    ├── package.json
+    ├── sdk
+    ├── src
+    ├── tsconfig.json
+    └── yarn.lock
+```
+
+To define a contextual argument, you can annotate the function parameter with the `DefaultPath` annotation and set it to the path to default to.
+
+```python file=./snippets/functions/arguments-contextual/python/main.py
+```
+
+</TabItem>
+
+<TabItem value="Typescript">
+
+For the example, we will use a repository with the following files:
+
+```shell
+.
+├── README.md
+├── file.txt
+└── my-module
+    ├── LICENSE
+    ├── dagger.json
+    ├── package.json
+    ├── sdk
+    ├── src
+    ├── tsconfig.json
+    └── yarn.lock
+```
+
+To define a contextual argument, you can add the decorator `@argument` to the function parameter and set the `defaultPath` parameter metadata to the path to default to.
+
+```typescript file=./snippets/functions/arguments-contextual/typescript/index.ts
+```
+
+</TabItem>
+
+</Tabs>
+
+It's also possible to provide an `ignore` parameter metadata to a contextual argument of type `Directory` to automatically ignore or include files in the directory.
+
+:::note
+The ignore directive follows the `.gitignore` syntax, prefix a path with `!` will actually include it instead of ignoring it.
+:::
+
 ## Return values
 
 Not only can Dagger Functions use Dagger's core types in their arguments; they can use them in their return value as well.
@@ -394,4 +497,3 @@ hello
 Hello, world!
 /usr/local/bin #
 ```
-
