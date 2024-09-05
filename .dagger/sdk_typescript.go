@@ -164,7 +164,7 @@ func (t TypescriptSDK) Generate(ctx context.Context) (*dagger.Directory, error) 
 
 // Test the publishing process
 func (t TypescriptSDK) TestPublish(ctx context.Context, tag string) error {
-	return t.Publish(ctx, tag, true, nil, "", nil)
+	return t.Publish(ctx, tag, true, nil, "https://github.com/dagger/dagger.git", nil)
 }
 
 // Publish the Typescript SDK

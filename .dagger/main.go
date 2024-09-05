@@ -32,7 +32,7 @@ func New(
 	ctx context.Context,
 	// +optional
 	// +defaultPath="/"
-	// +ignore=["bin", ".git", "**/node_modules", "**/.venv", "**/__pycache__"]
+	// +ignore=["bin", ".git/objects/*", "**/node_modules", "**/.venv", "**/__pycache__"]
 	source *dagger.Directory,
 
 	// +optional
@@ -88,6 +88,24 @@ type SDKChecks interface {
 	TestPublish(ctx context.Context, tag string) error
 }
 
+func (dev *DaggerDev) Ref(
+	ctx context.Context,
+	// +optional
+	// +defaultPath="/.git"
+	// +ignore=["objects/*"]
+	gitDir *dagger.Directory,
+) (string, error) {
+	return dag.
+		Wolfi().
+		Container(dagger.WolfiContainerOpts{Packages: []string{"git"}}).
+		//WithMountedDirectory("/src/.git", dev.Src.Directory(".git")).
+		WithMountedDirectory("/src/.git", gitDir).
+		WithWorkdir("/src").
+		WithMountedFile("/bin/get-ref.sh", dag.CurrentModule().Source().File("get-ref.sh")).
+		WithExec([]string{"sh", "/bin/get-ref.sh"}).
+		Stdout(ctx)
+}
+
 func (dev *DaggerDev) sdkCheck(sdk string) Check {
 	var checks SDKChecks
 	switch sdk {
@@ -113,7 +131,12 @@ func (dev *DaggerDev) sdkCheck(sdk string) Check {
 		if err := checks.Test(ctx); err != nil {
 			return err
 		}
-		if err := checks.TestPublish(ctx, "test-tag"); err != nil {
+		// Inspect .git to avoid dependencing on $GITHUB_REF
+		ref, err := dev.Ref(ctx, dev.Source().Directory(".git"))
+		if err != nil {
+			return err
+		}
+		if err := checks.TestPublish(ctx, ref); err != nil {
 			return err
 		}
 		return nil
