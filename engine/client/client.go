@@ -67,7 +67,6 @@ type Params struct {
 	SecretToken string
 
 	RunnerHost string // host of dagger engine runner serving buildkit apis
-	UserAgent  string
 
 	DisableHostRW bool
 
@@ -259,7 +258,6 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 	provisionCtx, provisionSpan := Tracer(ctx).Start(ctx, "starting engine")
 	provisionCtx, provisionCancel := context.WithTimeout(provisionCtx, 10*time.Minute)
 	c.connector, err = driver.Provision(provisionCtx, remote, &drivers.DriverOpts{
-		UserAgent:        c.UserAgent,
 		DaggerCloudToken: cloudToken,
 		GPUSupport:       os.Getenv(drivers.EnvGPUSupport),
 	})
