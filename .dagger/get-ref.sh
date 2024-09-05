@@ -1,5 +1,8 @@
 #!/bin/bash
 
+git symbolic-ref HEAD
+exit 0
+
 # Check if HEAD is detached (points directly to a commit hash)
 if git rev-parse --verify HEAD >/dev/null 2>&1; then
     # Check if it's a tag
