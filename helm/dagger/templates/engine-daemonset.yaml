@@ -74,7 +74,7 @@ spec:
                 - sh
                 - -exc
                 - |-
-                  echo '{ version }' | dagger query
+                  dagger core version
             {{- if .Values.engine.readinessProbeSettings }}
             {{- toYaml .Values.engine.readinessProbeSettings | nindent 12 }}
             {{- end }}
