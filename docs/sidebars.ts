@@ -68,7 +68,7 @@ module.exports = {
           "items": [
             "api/clients-sdk",
             "api/clients-cli",
-            "api/clients-graphql"
+            "api/clients-http"
           ]
         },
         {
