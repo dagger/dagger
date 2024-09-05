@@ -1036,9 +1036,13 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 	// retrieve SSH_AUTH_SOCK path and make it relative
 	sshAuthSock := os.Getenv("SSH_AUTH_SOCK")
 	if sshAuthSock != "" {
-		if cwd, err := os.Getwd(); err == nil {
-			if relPath, err := LexicalRelativePath(cwd, sshAuthSock); err == nil {
-				sshAuthSock = relPath
+		expandedPath, err := expandPath(sshAuthSock)
+		if err == nil {
+			sshAuthSock = expandedPath
+			if cwd, err := os.Getwd(); err == nil {
+				if relPath, err := LexicalRelativePath(cwd, sshAuthSock); err == nil {
+					sshAuthSock = relPath
+				}
 			}
 		}
 	}
