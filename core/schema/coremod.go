@@ -10,6 +10,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/opencontainers/go-digest"
 )
@@ -270,7 +271,7 @@ func (obj *CoreModScalar) ConvertToSDKInput(ctx context.Context, value dagql.Typ
 	return s.DecodeInput(string(val.Value))
 }
 
-func (obj *CoreModScalar) CollectCoreIDs(context.Context, dagql.Typed, map[digest.Digest]*call.ID) error {
+func (obj *CoreModScalar) CollectCoreIDs(context.Context, dagql.Typed, map[digest.Digest]*resource.ID) error {
 	return nil
 }
 
@@ -330,7 +331,7 @@ func (obj *CoreModObject) ConvertToSDKInput(ctx context.Context, value dagql.Typ
 	}
 }
 
-func (obj *CoreModObject) CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*call.ID) error {
+func (obj *CoreModObject) CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*resource.ID) error {
 	if value == nil {
 		return nil
 	}
@@ -338,7 +339,7 @@ func (obj *CoreModObject) CollectCoreIDs(ctx context.Context, value dagql.Typed,
 	case dagql.Input:
 		return nil
 	case dagql.Object:
-		ids[x.ID().Digest()] = x.ID()
+		ids[x.ID().Digest()] = &resource.ID{ID: *x.ID()}
 		return nil
 	default:
 		return fmt.Errorf("%T.CollectCoreIDs: unknown type %T", obj, value)
@@ -383,7 +384,7 @@ func (enum *CoreModEnum) ConvertToSDKInput(ctx context.Context, value dagql.Type
 	return s.DecodeInput(value)
 }
 
-func (enum *CoreModEnum) CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*call.ID) error {
+func (enum *CoreModEnum) CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*resource.ID) error {
 	return nil
 }
 

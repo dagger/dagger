@@ -17,8 +17,8 @@ import (
 
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -242,7 +242,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		if !ok {
 			return nil, fmt.Errorf("failed to find mod type for parent %q", fn.objDef.Name)
 		}
-		execMD.ParentIDs = map[digest.Digest]*call.ID{}
+		execMD.ParentIDs = map[digest.Digest]*resource.ID{}
 		if err := parentModType.CollectCoreIDs(ctx, opts.ParentTyped, execMD.ParentIDs); err != nil {
 			return nil, fmt.Errorf("failed to collect IDs from parent fields: %w", err)
 		}
@@ -332,7 +332,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 
 	// If the function returned anything that's isolated per-client, this caller client should
 	// have access to it now since it was returned to them (i.e. secrets/sockets/etc).
-	returnedIDs := map[digest.Digest]*call.ID{}
+	returnedIDs := map[digest.Digest]*resource.ID{}
 	if err := fn.returnType.CollectCoreIDs(ctx, returnValueTyped, returnedIDs); err != nil {
 		return nil, fmt.Errorf("failed to collect IDs: %w", err)
 	}
