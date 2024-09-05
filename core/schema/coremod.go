@@ -426,6 +426,8 @@ func introspectionRefToTypeDef(introspectionType *introspection.TypeRef, nonNull
 			typeDef.Kind = core.TypeDefKindInteger
 		case string(introspection.ScalarBoolean):
 			typeDef.Kind = core.TypeDefKindBoolean
+		case string(introspection.ScalarVoid):
+			typeDef.Kind = core.TypeDefKindVoid
 		default:
 			// assume that all core scalars are strings
 			typeDef.Kind = core.TypeDefKindScalar
