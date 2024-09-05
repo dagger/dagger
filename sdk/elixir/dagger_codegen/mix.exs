@@ -28,7 +28,7 @@ defmodule Dagger.Codegen.MixProject do
 
   defp deps do
     [
-      {:mneme, ">= 0.0.0", only: :test}
+      {:mneme, "~> 0.9.0-alpha.1", only: :test}
     ]
   end
 end

@@ -144,6 +144,16 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
       TypeRef.is_list_of?(field.type, "SCALAR") ->
         "Client.execute(#{module_var}.client, query_builder)"
 
+      TypeRef.is_list_of?(field.type, "ENUM") ->
+        output_type = Formatter.format_output_type(field.type)
+
+        """
+        case Client.execute(#{module_var}.client, query_builder) do
+          {:ok, enums} -> {:ok, Enum.map(enums, &#{output_type}.from_string/1)}
+          error -> error
+        end
+        """
+
       TypeRef.is_enum?(field.type) ->
         output_type = Formatter.format_output_type(field.type)
 
