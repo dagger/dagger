@@ -14,7 +14,27 @@ Dagger creates a unique local API endpoint for GraphQL HTTP queries for every Da
 Dagger protects the exposed API with an HTTP Basic authentication token which can be retrieved from the `DAGGER_SESSION_TOKEN` variable. Treat the `DAGGER_SESSION_TOKEN` value as you would any other sensitive credential. Store it securely and avoid passing it to, or over, insecure applications and networks.
 :::
 
-## Language-specific HTTP clients
+## Command-line HTTP clients
+
+This example demonstrates how to connect to the Dagger API and run a simple pipeline using `curl`:
+
+```shell
+echo '{"query":"{
+  container {
+    from(address:\"alpine:latest\") {
+      file(path:\"/etc/os-release\") {
+        contents
+      }
+    }
+  }
+}"}'|   dagger run sh -c 'curl -s \
+    -u $DAGGER_SESSION_TOKEN: \
+    -H "content-type:application/json" \
+    -d @- \
+    http://127.0.0.1:$DAGGER_SESSION_PORT/query'
+```
+
+## Language-native HTTP clients
 
 This example demonstrates how to connect to the Dagger API and run a simple pipeline in the following languages:
 
