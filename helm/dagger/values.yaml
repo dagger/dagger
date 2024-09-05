@@ -3,7 +3,8 @@ fullnameOverride: ""
 
 engine:
   ### Customize your Dagger Engine
-  # https://github.com/moby/buildkit/blob/5997099827e676c4b6ce5774c98ade2483e0afe7/cmd/buildkitd/config/config.go
+  #   https://github.com/moby/buildkit/blob/5997099827e676c4b6ce5774c98ade2483e0afe7/cmd/buildkitd/config/config.go
+  #
   # config: |
   #   debug = true
   #   insecure-entitlements = ["security.insecure"]
@@ -14,12 +15,14 @@ engine:
   #   [log]
   #     format = "json"
   labels: {}
+
   ### Customize Dagger Engine start args
-  # "--oci-max-parallelism num-cpu" is kept as the default behaviour so that we don't surprise users.
-  # You may want to remove it in your deployments. FTR: https://github.com/dagger/dagger/pull/7395
+  #   "--oci-max-parallelism num-cpu" is kept as the default behaviour so that we don't surprise users.
+  #   You may want to remove it in your deployments. FTR: https://github.com/dagger/dagger/pull/7395
   args:
     - "--oci-max-parallelism"
     - "num-cpu"
+
   resources:
     limits: {}
     # limits:
@@ -29,6 +32,7 @@ engine:
     # requests:
     #    cpu: "1"
     #    memory: 1Gi
+
   image:
     ### Set a ref if you want to use a custom Dagger image
     #   NOTE: you will need to ensure that a compatible dagger CLI is embedded in the image, otherwise readiness probes will fail
@@ -36,7 +40,9 @@ engine:
     #
     # ref: registry.dagger.io/engine:main
     pullPolicy: IfNotPresent
+
   ### Set taints & tolerations for this workload
+  #
   # tolerations:
   #   - effect: NoSchedule
   #     key: dagger-runner
@@ -48,25 +54,37 @@ engine:
   #       - matchExpressions:
   #         - key: actions-runner
   #           operator: Exists
+
   ### Set priorityClassName to avoid eviction
   priorityClassName: ""
+
   readinessProbeSettings: 
     initialDelaySeconds: 5
     timeoutSeconds: 30
     periodSeconds: 15
     successThreshold: 1
     failureThreshold: 10
+
+  ### The Engine may need to finish operations in flight, or sync its state to a remote destination.
+  #   We give it ample time by setting this value to 5 mins by default.
+  #   You may want to adjust this to fit your workloads so that the Engine stops quicker.
   terminationGracePeriodSeconds: 300
+
   newServiceAccount:
     # name: "dagger-helm"
     create: false
     annotations: []
+
   existingServiceAccount: {}
     # name: "default"
+
 magicache:
   enabled: false
   url: https://api.dagger.cloud/magicache
-  ### Create your token via https://docs.dagger.io/cloud/572923/get-started#step-2-connect-dagger-cloud-with-your-ci
+  ### Create your token via https://docs.dagger.io/manuals/user/cloud-get-started/#step-2-connect-to-dagger-cloud
+  #
   # token: YOUR_DAGGER_CLOUD_TOKEN
+
   ### If secretName is set, a new secret will NOT be created
+  #
   # secretName: EXISTING_SECRET_NAME
