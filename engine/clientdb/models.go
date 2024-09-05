@@ -9,13 +9,17 @@ import (
 )
 
 type Log struct {
-	ID         int64
-	TraceID    sql.NullString
-	SpanID     sql.NullString
-	Timestamp  int64
-	Severity   int64
-	Body       []byte
-	Attributes []byte
+	ID                   int64
+	TraceID              sql.NullString
+	SpanID               sql.NullString
+	Timestamp            int64
+	SeverityNumber       int64
+	SeverityText         string
+	Body                 []byte
+	Attributes           []byte
+	InstrumentationScope []byte
+	Resource             []byte
+	ResourceSchemaUrl    string
 }
 
 type Span struct {
@@ -39,4 +43,5 @@ type Span struct {
 	StatusMessage          string
 	InstrumentationScope   []byte
 	Resource               []byte
+	ResourceSchemaUrl      string
 }

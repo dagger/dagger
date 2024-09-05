@@ -48,7 +48,7 @@ func LogsToPB(sdl []sdklog.Record) []*otlplogsv1.ResourceLogs {
 		if !iOk {
 			// Either the resource or instrumentation scope were unknown.
 			scopeLog = &otlplogsv1.ScopeLogs{
-				Scope:      InstrumentationScope(sd.InstrumentationScope()),
+				Scope:      InstrumentationScopeToPB(sd.InstrumentationScope()),
 				LogRecords: []*otlplogsv1.LogRecord{},
 				SchemaUrl:  sd.InstrumentationScope().SchemaURL,
 			}
@@ -61,7 +61,7 @@ func LogsToPB(sdl []sdklog.Record) []*otlplogsv1.ResourceLogs {
 			resources++
 			// The resource was unknown.
 			rs = &otlplogsv1.ResourceLogs{
-				Resource:  Resource(res),
+				Resource:  ResourceToPB(res),
 				ScopeLogs: []*otlplogsv1.ScopeLogs{scopeLog},
 				SchemaUrl: res.SchemaURL(),
 			}
@@ -87,7 +87,7 @@ func LogsToPB(sdl []sdklog.Record) []*otlplogsv1.ResourceLogs {
 	return rss
 }
 
-func InstrumentationScope(il instrumentation.Scope) *otlpcommonv1.InstrumentationScope {
+func InstrumentationScopeToPB(il instrumentation.Scope) *otlpcommonv1.InstrumentationScope {
 	if il == (instrumentation.Scope{}) {
 		return nil
 	}
@@ -124,13 +124,22 @@ func logRecord(l sdklog.Record) *otlplogsv1.LogRecord {
 	return s
 }
 
-// Resource transforms a Resource into an OTLP Resource.
-func Resource(r resource.Resource) *otlpresourcev1.Resource {
+// ResourceToPB transforms a Resource into an OTLP Resource.
+func ResourceToPB(r resource.Resource) *otlpresourcev1.Resource {
 	return &otlpresourcev1.Resource{Attributes: resourceAttributes(r)}
 }
 
-// Resource transforms a Resource into an OTLP Resource.
-func ResourcePtr(r *resource.Resource) *otlpresourcev1.Resource {
+// ResourceFromPB creates a *resource.Resource from a schema URL and
+// protobuf encoded attributes.
+func ResourceFromPB(schemaURL string, pb *otlpresourcev1.Resource) *resource.Resource {
+	if schemaURL == "" {
+		return resource.NewSchemaless(AttributesFromProto(pb.Attributes)...)
+	}
+	return resource.NewWithAttributes(schemaURL, AttributesFromProto(pb.Attributes)...)
+}
+
+// ResourcePtrToPB transforms a *Resource into an OTLP Resource.
+func ResourcePtrToPB(r *resource.Resource) *otlpresourcev1.Resource {
 	if r == nil {
 		return nil
 	}
@@ -325,7 +334,7 @@ func SpansToPB(sdl []sdktrace.ReadOnlySpan) []*otlptracev1.ResourceSpans {
 		if !iOk {
 			// Either the resource or instrumentation scope were unknown.
 			scopeSpan = &otlptracev1.ScopeSpans{
-				Scope:     InstrumentationScope(sd.InstrumentationScope()),
+				Scope:     InstrumentationScopeToPB(sd.InstrumentationScope()),
 				Spans:     []*otlptracev1.Span{},
 				SchemaUrl: sd.InstrumentationScope().SchemaURL,
 			}
@@ -338,7 +347,7 @@ func SpansToPB(sdl []sdktrace.ReadOnlySpan) []*otlptracev1.ResourceSpans {
 			resources++
 			// The resource was unknown.
 			rs = &otlptracev1.ResourceSpans{
-				Resource:   ResourcePtr(sd.Resource()),
+				Resource:   ResourcePtrToPB(sd.Resource()),
 				ScopeSpans: []*otlptracev1.ScopeSpans{scopeSpan},
 				SchemaUrl:  sd.Resource().SchemaURL(),
 			}
@@ -588,13 +597,7 @@ func (s *readOnlySpan) InstrumentationLibrary() instrumentation.Library {
 
 // Resource returns information about the entity that produced the span.
 func (s *readOnlySpan) Resource() *resource.Resource {
-	if s.resource == nil {
-		return nil
-	}
-	if s.schemaURL != "" {
-		return resource.NewWithAttributes(s.schemaURL, AttributesFromProto(s.resource.Attributes)...)
-	}
-	return resource.NewSchemaless(AttributesFromProto(s.resource.Attributes)...)
+	return ResourceFromPB(s.schemaURL, s.resource)
 }
 
 // DroppedAttributes returns the number of attributes dropped by the span

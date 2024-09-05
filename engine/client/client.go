@@ -681,13 +681,8 @@ func (c *Client) exportLogs(ctx context.Context, httpClient *httpClient) error {
 		if err := protojson.Unmarshal(data, &req); err != nil {
 			return fmt.Errorf("unmarshal spans: %w", err)
 		}
-
-		logs := telemetry.LogsFromPB(req.GetResourceLogs())
-
-		slog.ExtraDebug("received logs from engine", "len", len(logs))
-
-		if err := c.EngineLogs.Export(ctx, logs); err != nil {
-			return fmt.Errorf("export %d logs: %w", len(logs), err)
+		if err := enginetel.ReexportLogsFromPB(ctx, c.EngineLogs, &req); err != nil {
+			return fmt.Errorf("re-export logs: %w", err)
 		}
 		return nil
 	})

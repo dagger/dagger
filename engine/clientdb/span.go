@@ -97,7 +97,7 @@ func (ros *readOnlySpan) EndTime() time.Time {
 	return time.Time{}
 }
 
-func UnmarshalProtos[T proto.Message](pb []byte, base T, out *[]T) error {
+func UnmarshalProtoJSONs[T proto.Message](pb []byte, base T, out *[]T) error {
 	var msgs []json.RawMessage
 	if err := json.Unmarshal(pb, &msgs); err != nil {
 		return fmt.Errorf("failed to json unmarshal: %w", err)
@@ -114,7 +114,7 @@ func UnmarshalProtos[T proto.Message](pb []byte, base T, out *[]T) error {
 	return nil
 }
 
-func MarshalProtos[T proto.Message](protos []T) ([]byte, error) {
+func MarshalProtoJSONs[T proto.Message](protos []T) ([]byte, error) {
 	msgs := make([]json.RawMessage, len(protos))
 	for i, msg := range protos {
 		pl, err := protojson.Marshal(msg)
@@ -129,7 +129,7 @@ func MarshalProtos[T proto.Message](protos []T) ([]byte, error) {
 // Attributes returns the attributes of the span
 func (ros *readOnlySpan) Attributes() []attribute.KeyValue {
 	var attrs []*otlpcommonv1.KeyValue
-	if err := UnmarshalProtos(ros.DB.Attributes, &otlpcommonv1.KeyValue{}, &attrs); err != nil {
+	if err := UnmarshalProtoJSONs(ros.DB.Attributes, &otlpcommonv1.KeyValue{}, &attrs); err != nil {
 		slog.Warn("failed to unmarshal attributes", "error", err)
 	}
 	return telemetry.AttributesFromProto(attrs)
@@ -138,7 +138,7 @@ func (ros *readOnlySpan) Attributes() []attribute.KeyValue {
 // Links returns the links of the span
 func (ros *readOnlySpan) Links() []sdktrace.Link {
 	var links []*otlptracev1.Span_Link
-	if err := UnmarshalProtos(ros.DB.Links, &otlptracev1.Span_Link{}, &links); err != nil {
+	if err := UnmarshalProtoJSONs(ros.DB.Links, &otlptracev1.Span_Link{}, &links); err != nil {
 		slog.Warn("failed to unmarshal links", "error", err)
 	}
 	return telemetry.SpanLinksFromPB(links)
@@ -147,7 +147,7 @@ func (ros *readOnlySpan) Links() []sdktrace.Link {
 // Events returns the events of the span
 func (ros *readOnlySpan) Events() []sdktrace.Event {
 	var events []*otlptracev1.Span_Event
-	if err := UnmarshalProtos(ros.DB.Events, &otlptracev1.Span_Event{}, &events); err != nil {
+	if err := UnmarshalProtoJSONs(ros.DB.Events, &otlptracev1.Span_Event{}, &events); err != nil {
 		slog.Warn("failed to unmarshal events", "error", err)
 	}
 	return telemetry.SpanEventsFromPB(events)
