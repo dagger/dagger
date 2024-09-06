@@ -263,7 +263,7 @@
         <smallrye-graphql.version>2.8.4</smallrye-graphql.version>
         <system-stubs-jupiter.version>2.1.6</system-stubs-jupiter.version>
         <xdg-java.version>0.1.1</xdg-java.version>
-        <yasson.version>3.0.3</yasson.version>
+        <yasson.version>3.0.4</yasson.version>
     </properties>
 
 </project>
