@@ -1,0 +1,6 @@
+kind: Fixed
+body: Fix `dagger.Ignore` when used in object attributes (dataclass field)
+time: 2024-09-06T12:33:48.497034Z
+custom:
+    Author: helderco
+    PR: "8359"
