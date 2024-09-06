@@ -297,7 +297,7 @@ func (src *ModuleSource) LoadContext(ctx context.Context, dag *dagql.Server, pat
 	includes := []string{}
 
 	for _, p := range ignore {
-			excludes = append(excludes, p)
+		excludes = append(excludes, p)
 	}
 
 	switch src.Kind {
