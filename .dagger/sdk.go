@@ -90,8 +90,11 @@ func (dev *DaggerDev) introspection(ctx context.Context, installer func(*dagger.
 	if err != nil {
 		return nil, err
 	}
-	return dag.Container().
-		From(consts.AlpineImage).
+	return dag.
+		Alpine(dagger.AlpineOpts{
+			Branch: consts.AlpineVersion,
+		}).
+		Container().
 		With(installer).
 		WithFile("/usr/local/bin/codegen", builder.CodegenBinary()).
 		WithExec([]string{"codegen", "introspect", "-o", "/schema.json"}).
@@ -117,9 +120,12 @@ type gitPublishOpts struct {
 func gitPublish(ctx context.Context, opts gitPublishOpts) error {
 	base := opts.sourceEnv
 	if base == nil {
-		base = dag.Container().
-			From(consts.AlpineImage).
-			WithExec([]string{"apk", "add", "-U", "--no-cache", "git", "go", "python3"})
+		base = dag.
+			Alpine(dagger.AlpineOpts{
+				Branch:   consts.AlpineVersion,
+				Packages: []string{"git", "go", "python3"},
+			}).
+			Container()
 	}
 
 	// FIXME: move this into std modules

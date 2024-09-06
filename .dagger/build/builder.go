@@ -154,23 +154,17 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 	switch build.base {
 	case "alpine", "":
 		base = dag.
-			Container(dagger.ContainerOpts{Platform: build.platform}).
-			From(consts.AlpineImage).
-			// NOTE: wrapping the apk installs with this time based env ensures that the cache is invalidated
-			// once-per day. This is a very unfortunate workaround for the poor caching "apk add" as an exec
-			// gives us.
-			// Fortunately, better approaches are on the horizon w/ Zenith, for which there are already apk
-			// modules that fix this problem and always result in the latest apk packages for the given alpine
-			// version being used (with optimal caching).
-			WithEnvVariable("DAGGER_APK_CACHE_BUSTER", fmt.Sprintf("%d", time.Now().Truncate(24*time.Hour).Unix())).
-			WithExec([]string{"apk", "upgrade"}).
-			WithExec([]string{
-				"apk", "add", "--no-cache",
-				// for Buildkit
-				"git", "openssh", "pigz", "xz",
-				// for CNI
-				"dnsmasq", "iptables", "ip6tables", "iptables-legacy",
+			Alpine(dagger.AlpineOpts{
+				Branch: consts.AlpineVersion,
+				Packages: []string{
+					// for Buildkit
+					"git", "openssh", "pigz", "xz",
+					// for CNI
+					"dnsmasq", "iptables", "ip6tables", "iptables-legacy",
+				},
+				Arch: build.platformSpec.Architecture,
 			}).
+			Container().
 			WithExec([]string{"sh", "-c", `
 				set -e
 				ln -s /sbin/iptables-legacy /usr/sbin/iptables
@@ -179,8 +173,7 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 				ln -s /sbin/ip6tables-legacy /usr/sbin/ip6tables
 				ln -s /sbin/ip6tables-legacy-save /usr/sbin/ip6tables-save
 				ln -s /sbin/ip6tables-legacy-restore /usr/sbin/ip6tables-restore
-			`}).
-			WithoutEnvVariable("DAGGER_APK_CACHE_BUSTER")
+			`})
 	case "ubuntu":
 		base = dag.Container(dagger.ContainerOpts{Platform: build.platform}).
 			From("ubuntu:"+consts.UbuntuVersion).
@@ -203,24 +196,16 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 			WithoutEnvVariable("DAGGER_APT_CACHE_BUSTER")
 	case "wolfi":
 		base = dag.
-			Container(dagger.ContainerOpts{Platform: build.platform}).
-			From(consts.WolfiImage).
-			// NOTE: wrapping the apk installs with this time based env ensures that the cache is invalidated
-			// once-per day. This is a very unfortunate workaround for the poor caching "apk add" as an exec
-			// gives us.
-			// Fortunately, better approaches are on the horizon w/ Zenith, for which there are already apk
-			// modules that fix this problem and always result in the latest apk packages for the given alpine
-			// version being used (with optimal caching).
-			WithEnvVariable("DAGGER_APK_CACHE_BUSTER", fmt.Sprintf("%d", time.Now().Truncate(24*time.Hour).Unix())).
-			WithExec([]string{"apk", "upgrade"}).
-			WithExec([]string{
-				"apk", "add", "--no-cache",
-				// for Buildkit
-				"git", "openssh", "pigz", "xz",
-				// for CNI
-				"iptables", "ip6tables", "dnsmasq",
-			}).
-			WithoutEnvVariable("DAGGER_APK_CACHE_BUSTER")
+			Wolfi().
+			Container(dagger.WolfiContainerOpts{
+				Packages: []string{
+					// for Buildkit
+					"git", "openssh", "pigz", "xz",
+					// for CNI
+					"iptables", "ip6tables", "dnsmasq",
+				},
+				Arch: build.platformSpec.Architecture,
+			})
 	default:
 		return nil, fmt.Errorf("unsupported engine base %q", build.base)
 	}
@@ -395,19 +380,28 @@ func (build *Builder) cniPlugins() []*dagger.File {
 	// We build the CNI plugins from source to enable upgrades to go and other dependencies that
 	// can contain CVEs in the builds on github releases
 	// If GPU support is enabled use a Debian image:
-	ctr := dag.Container()
+	var ctr *dagger.Container
 	switch build.base {
 	case "alpine", "":
-		ctr = ctr.From(consts.GolangImage).
-			WithExec([]string{"apk", "add", "build-base", "git"})
+		ctr = dag.
+			Alpine(dagger.AlpineOpts{
+				Branch:   consts.AlpineVersion,
+				Packages: []string{"build-base", "go", "git"},
+			}).
+			Container()
 	case "ubuntu":
 		// TODO: there's no guarantee the bullseye libc is compatible with the ubuntu image w/ rebase this onto
-		ctr = ctr.From(fmt.Sprintf("golang:%s-bullseye", consts.GolangVersion)).
+		ctr = dag.
+			Container().
+			From(fmt.Sprintf("golang:%s-bullseye", consts.GolangVersion)).
 			WithExec([]string{"apt-get", "update"}).
 			WithExec([]string{"apt-get", "install", "-y", "git", "build-essential"})
 	case "wolfi":
-		ctr = ctr.From(fmt.Sprintf("%s:%s", consts.WolfiImage, consts.WolfiVersion)).
-			WithExec([]string{"apk", "add", "build-base", "go", "git"})
+		ctr = dag.
+			Wolfi().
+			Container(dagger.WolfiContainerOpts{Packages: []string{
+				"build-base", "go", "git",
+			}})
 	}
 
 	ctr = ctr.WithMountedCache("/root/go/pkg/mod", dag.CacheVolume("go-mod")).
@@ -436,9 +430,15 @@ func (build *Builder) cniPlugins() []*dagger.File {
 func (build *Builder) dumbInit() *dagger.File {
 	// dumb init is static, so we can use it on any base image
 	return dag.
-		Container(dagger.ContainerOpts{Platform: build.platform}).
-		From(consts.AlpineImage).
-		WithExec([]string{"apk", "add", "build-base", "bash"}).
+		Alpine(dagger.AlpineOpts{
+			Branch: consts.AlpineVersion,
+			Packages: []string{
+				"bash",
+				"build-base",
+			},
+			Arch: build.platformSpec.Architecture,
+		}).
+		Container().
 		WithMountedDirectory("/src", dag.Git("github.com/yelp/dumb-init").Ref(consts.DumbInitVersion).Tree()).
 		WithWorkdir("/src").
 		WithExec([]string{"make"}).
@@ -467,8 +467,12 @@ func (build *Builder) verifyPlatform(ctx context.Context, bin *dagger.File) erro
 		return fmt.Errorf("failed to get name of binary: %w", err)
 	}
 	mntPath := filepath.Join("/mnt", name)
-	out, err := dag.Container().From(consts.AlpineImage).
-		WithExec([]string{"apk", "add", "file"}).
+	out, err := dag.
+		Alpine(dagger.AlpineOpts{
+			Branch:   consts.AlpineVersion,
+			Packages: []string{"file"},
+		}).
+		Container().
 		WithMountedFile(mntPath, bin).
 		WithExec([]string{"file", mntPath}).
 		Stdout(ctx)

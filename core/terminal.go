@@ -17,6 +17,10 @@ import (
 	"github.com/dagger/dagger/engine/distconsts"
 )
 
+const (
+	defaultTerminalImage = distconsts.AlpineImage
+)
+
 type TerminalArgs struct {
 	Cmd []string `default:"[]"`
 
@@ -172,7 +176,7 @@ func (dir *Directory) Terminal(
 		if err != nil {
 			return fmt.Errorf("failed to create terminal container: %w", err)
 		}
-		ctr, err = ctr.From(ctx, distconsts.AlpineImage)
+		ctr, err = ctr.From(ctx, defaultTerminalImage)
 		if err != nil {
 			return fmt.Errorf("failed to create terminal container: %w", err)
 		}
