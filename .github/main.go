@@ -35,6 +35,7 @@ func New(
 	})
 	return ci.
 		WithPipeline("Docs", "docs lint", "", false).
+		WithPipeline("Lint engine", "engine lint", "", false).
 		WithSdkPipelines("python").
 		WithSdkPipelines("typescript").
 		WithSdkPipelines("go").

@@ -59,43 +59,32 @@ func (sdk *SDK) allSDKs() []sdkBase {
 }
 
 func (dev *DaggerDev) installer(ctx context.Context, name string) (func(*dagger.Container) *dagger.Container, error) {
-	engineSvc, err := dev.Engine().Service(ctx, name, dev.Version, nil, false)
-	if err != nil {
-		return nil, err
-	}
-
-	cliBinary, err := dev.CLI().Binary(ctx, "")
-	if err != nil {
-		return nil, err
-	}
-	cliBinaryPath := "/.dagger-cli"
-
-	return func(ctr *dagger.Container) *dagger.Container {
-		ctr = ctr.
-			WithServiceBinding("dagger-engine", engineSvc).
-			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://dagger-engine:1234").
-			WithMountedFile(cliBinaryPath, cliBinary).
-			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinaryPath).
-			WithExec([]string{"ln", "-s", cliBinaryPath, "/usr/local/bin/dagger"})
-		if dev.DockerCfg != nil {
-			// this avoids rate limiting in our ci tests
-			ctr = ctr.WithMountedSecret("/root/.docker/config.json", dev.DockerCfg)
+	return func(client *dagger.Container) *dagger.Container {
+		client, err := dev.Engine().Bind(ctx, client)
+		if err != nil {
+			panic(err) // installer is a temporary facade
 		}
-		return ctr
+		return client
 	}, nil
 }
 
-func (dev *DaggerDev) introspection(ctx context.Context, installer func(*dagger.Container) *dagger.Container) (*dagger.File, error) {
+func (dev *DaggerDev) introspection(ctx context.Context, engine *Engine) (*dagger.File, error) {
 	builder, err := build.NewBuilder(ctx, dev.Source())
 	if err != nil {
 		return nil, err
 	}
-	return dag.Container().
+	client := dag.
+		Container().
 		From(consts.AlpineImage).
-		With(installer).
-		WithFile("/usr/local/bin/codegen", builder.CodegenBinary()).
-		WithExec([]string{"codegen", "introspect", "-o", "/schema.json"}).
-		File("/schema.json"), nil
+		WithFile("/usr/local/bin/codegen", builder.CodegenBinary())
+	client, err = engine.Bind(ctx, client)
+	if err != nil {
+		return nil, err
+	}
+	return client.
+			WithExec([]string{"codegen", "introspect", "-o", "/schema.json"}).
+			File("/schema.json"),
+		nil
 }
 
 type gitPublishOpts struct {

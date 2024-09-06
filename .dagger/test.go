@@ -162,7 +162,7 @@ func (t *Test) testCmd(ctx context.Context) (*dagger.Container, error) {
 		WithArg(`network-name`, `dagger-dev`).
 		WithArg(`network-cidr`, `10.88.0.0/16`).
 		WithArg(`debugaddr`, `0.0.0.0:6060`)
-	devEngine, err := engine.Container(ctx, "", nil, false)
+	devEngine, err := engine.Container(ctx)
 	if err != nil {
 		return nil, err
 	}

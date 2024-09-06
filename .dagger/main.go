@@ -135,7 +135,7 @@ func (dev *DaggerDev) sdkCheck(sdk string) Check {
 	case "python":
 		checks = &PythonSDK{Dagger: dev}
 	case "go":
-		checks = &GoSDK{Dagger: dev}
+		checks = NewGoSDK(dev.Source(), dev.Engine())
 	case "typescript":
 		checks = &TypescriptSDK{Dagger: dev}
 	case "php":
@@ -330,7 +330,7 @@ func (dev *DaggerDev) Test() *Test {
 // Develop Dagger SDKs
 func (dev *DaggerDev) SDK() *SDK {
 	return &SDK{
-		Go:         &GoSDK{Dagger: dev},
+		Go:         NewGoSDK(dev.Src, dev.Engine()),
 		Python:     &PythonSDK{Dagger: dev},
 		Typescript: &TypescriptSDK{Dagger: dev},
 		Elixir:     &ElixirSDK{Dagger: dev},
@@ -362,7 +362,11 @@ func (dev *DaggerDev) Dev(
 		target = dag.Directory()
 	}
 
-	svc, err := dev.Engine().Service(ctx, "", dev.Version, image, gpuSupport)
+	svc, err := dev.
+		Engine().
+		WithImage(image).
+		WithGpuSupport(gpuSupport).
+		Service(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -423,7 +427,11 @@ func (dev *DaggerDev) DevExport(
 	}
 	enginePlatformSpec := platformSpec
 	enginePlatformSpec.OS = "linux"
-	engineCtr, err := engine.Container(ctx, dagger.Platform(platforms.Format(enginePlatformSpec)), image, gpuSupport)
+	engineCtr, err := engine.
+		WithPlatform(dagger.Platform(platforms.Format(enginePlatformSpec))).
+		WithImage(image).
+		WithGpuSupport(gpuSupport).
+		Container(ctx)
 	if err != nil {
 		return nil, err
 	}

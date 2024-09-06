@@ -5,33 +5,36 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/dagger/dagger/sdk/go/.dagger/internal/dagger"
 	"go.opentelemetry.io/otel/codes"
 	"golang.org/x/sync/errgroup"
-
-	"github.com/dagger/dagger/.dagger/internal/dagger"
 )
 
-func NewGoSDK(
-	source *dagger.Directory,
-	engine *Engine,
-) *GoSDK {
-	return &GoSDK{
-		Source: source,
-		Engine: engine,
-	}
-}
-
-type GoSDK struct {
+func New(
 	// +optional
 	// +defaultPath="/"
 	// +ignore=["!sdk/go"]
+	source *dagger.Directory,
+	// /	engine Sidecar,
+) *Sdk {
+	return &Sdk{
+		Source: source,
+		///		Engine: engine,
+	}
+}
+
+type Sdk struct {
 	Source *dagger.Directory // +private
-	Engine *Engine           // +private
-	Dagger *DaggerDev        // +private
+	Engine Sidecar           // +private
+}
+
+type Sidecar interface {
+	dagger.DaggerObject
+	Bind(context.Context, *dagger.Container) *dagger.Container
 }
 
 // Lint the Go SDK
-func (t GoSDK) Lint(ctx context.Context) (rerr error) {
+func (t Sdk) Lint(ctx context.Context) (rerr error) {
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() (rerr error) {
 		ctx, span := Tracer().Start(ctx, "lint the go source")
@@ -64,7 +67,7 @@ func (t GoSDK) Lint(ctx context.Context) (rerr error) {
 }
 
 // Test the Go SDK
-func (t GoSDK) Test(ctx context.Context) (rerr error) {
+func (t Sdk) Test(ctx context.Context) (rerr error) {
 	env, err := t.Env(ctx)
 	if err != nil {
 		return err
@@ -75,7 +78,7 @@ func (t GoSDK) Test(ctx context.Context) (rerr error) {
 	return err
 }
 
-func (t GoSDK) Env(ctx context.Context) (*dagger.Container, error) {
+func (t Sdk) Env(ctx context.Context) (*dagger.Container, error) {
 	env := dag.
 		Go(t.Source).
 		Env().
@@ -84,7 +87,7 @@ func (t GoSDK) Env(ctx context.Context) (*dagger.Container, error) {
 }
 
 // Regenerate the Go SDK API
-func (t GoSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
+func (t Sdk) Generate(ctx context.Context) (*dagger.Directory, error) {
 	env, err := t.Env(ctx)
 	if err != nil {
 		return nil, err
@@ -97,7 +100,7 @@ func (t GoSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 }
 
 // Test the publishing process
-func (t GoSDK) TestPublish(ctx context.Context, tag string) error {
+func (t Sdk) TestPublish(ctx context.Context, tag string) error {
 	return t.Publish(
 		ctx,
 		tag,
@@ -111,7 +114,7 @@ func (t GoSDK) TestPublish(ctx context.Context, tag string) error {
 }
 
 // Publish the Go SDK
-func (t GoSDK) Publish(
+func (t Sdk) Publish(
 	ctx context.Context,
 	tag string,
 
@@ -169,7 +172,7 @@ func (t GoSDK) Publish(
 }
 
 // Bump the Go SDK's Engine dependency
-func (t GoSDK) Bump(ctx context.Context, version string) (*dagger.Directory, error) {
+func (t Sdk) Bump(ctx context.Context, version string) (*dagger.Directory, error) {
 	// trim leading v from version
 	version = strings.TrimPrefix(version, "v")
 

@@ -31,7 +31,13 @@ type Engine struct {
 
 	Trace bool // +private
 
-	Race bool // +private
+	Race         bool                // +private
+	GpuSupport   bool                // +private
+	Image        *Distro             // +private
+	Platform     dagger.Platform     // +private
+	CacheVolume  *dagger.CacheVolume // +private
+	InstanceName string              // +private
+	DockerConfig *dagger.Secret      // +private
 }
 
 func (e *Engine) WithConfig(key, value string) *Engine {
@@ -54,17 +60,40 @@ func (e *Engine) WithTrace() *Engine {
 	return e
 }
 
-// Build the engine container
-func (e *Engine) Container(
-	ctx context.Context,
+func (e *Engine) WithGpuSupport(value bool) *Engine {
+	e.GpuSupport = value
+	return e
+}
 
-	// +optional
-	platform dagger.Platform,
-	// +optional
-	image *Distro,
-	// +optional
-	gpuSupport bool,
-) (*dagger.Container, error) {
+func (e *Engine) WithImage(image *Distro) *Engine {
+	e.Image = image
+	return e
+}
+
+func (e *Engine) WithPlatform(platform dagger.Platform) *Engine {
+	e.Platform = platform
+	return e
+}
+
+func (e *Engine) WithCacheVolume(volume *dagger.CacheVolume) *Engine {
+	e.CacheVolume = e.CacheVolume
+	return e
+}
+
+// Set an instance name, to spawn different instances of the service, each
+// with their own lifecycle and state volume
+func (e *Engine) WithInstanceName(name string) *Engine {
+	e.InstanceName = name
+	return e
+}
+
+func (e *Engine) WithDockerConfig(config *dagger.Secret) *Engine {
+	e.DockerConfig = config
+	return e
+}
+
+// Build the engine container
+func (e *Engine) Container(ctx context.Context) (*dagger.Container, error) {
 	cfg, err := generateConfig(e.Trace, e.Config)
 	if err != nil {
 		return nil, err
@@ -82,12 +111,12 @@ func (e *Engine) Container(
 		WithVersion(e.Dagger.Version.String()).
 		WithTag(e.Dagger.Tag).
 		WithRace(e.Race)
-	if platform != "" {
-		builder = builder.WithPlatform(platform)
+	if e.Platform != "" {
+		builder = builder.WithPlatform(e.Platform)
 	}
 
-	if image != nil {
-		switch *image {
+	if e.Image != nil {
+		switch *e.Image {
 		case DistroAlpine:
 			builder = builder.WithAlpineBase()
 		case DistroWolfi:
@@ -95,11 +124,11 @@ func (e *Engine) Container(
 		case DistroUbuntu:
 			builder = builder.WithUbuntuBase()
 		default:
-			return nil, fmt.Errorf("unknown base image type %s", *image)
+			return nil, fmt.Errorf("unknown base image type %s", *e.Image)
 		}
 	}
 
-	if gpuSupport {
+	if e.GpuSupport {
 		builder = builder.WithGPUSupport()
 	}
 
@@ -123,39 +152,64 @@ func (e *Engine) Container(
 	return ctr, nil
 }
 
-// Create a test engine service
-func (e *Engine) Service(
-	ctx context.Context,
-	name string,
+// A sidecar service with zeroconf binding
+//type Sidecar interface {
+//	DaggerObject
+//	Service(context.Context) (*dagger.Service, error)
+//	Bind(context.Context, *dagger.Container) (*dagger.Container, error)
+//}
 
-	// +optional
-	version *VersionInfo,
-	// +optional
-	image *Distro,
-	// +optional
-	gpuSupport bool,
-) (*dagger.Service, error) {
-	var cacheVolumeName string
-	if version != nil {
-		cacheVolumeName = "dagger-dev-engine-state-" + version.String()
+// Instantiate the engine as a service, and bind it to the given client
+func (e *Engine) Bind(ctx context.Context, client *dagger.Container) (*dagger.Container, error) {
+	engineSvc, err := e.Service(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cliBinary, err := e.Dagger.CLI().Binary(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+	cliBinaryPath := "/.dagger-cli"
+	client = client.
+		WithServiceBinding("dagger-engine", engineSvc).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://dagger-engine:1234").
+		WithMountedFile(cliBinaryPath, cliBinary).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinaryPath).
+		WithExec([]string{"ln", "-s", cliBinaryPath, "/usr/local/bin/dagger"})
+	if e.DockerConfig != nil {
+		// this avoids rate limiting in our ci tests
+		client = client.WithMountedSecret("/root/.docker/config.json", e.DockerConfig)
+	}
+	return client, nil
+}
+
+func (e *Engine) cacheVolume() *dagger.CacheVolume {
+	var name string
+	if v := e.Dagger.Version; v != nil {
+		name = "dagger-dev-engine-state-" + v.String()
 	} else {
-		cacheVolumeName = "dagger-dev-engine-state-" + identity.NewID()
+		name = "dagger-dev-engine-state-" + identity.NewID()
 	}
-	if name != "" {
-		cacheVolumeName += "-" + name
+	if e.InstanceName == "" {
+		name += "-" + e.InstanceName
 	}
+	return dagger.Connect().CacheVolume(name)
+}
 
+// Create a test engine service
+func (e *Engine) Service(ctx context.Context) (*dagger.Service, error) {
+	cacheVolume := e.cacheVolume()
 	e = e.
 		WithConfig("grpc", `address=["unix:///var/run/buildkit/buildkitd.sock", "tcp://0.0.0.0:1234"]`).
 		WithArg(`network-name`, `dagger-dev`).
 		WithArg(`network-cidr`, `10.88.0.0/16`)
-	devEngine, err := e.Container(ctx, "", image, gpuSupport)
+	devEngine, err := e.Container(ctx)
 	if err != nil {
 		return nil, err
 	}
 	devEngine = devEngine.
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
-		WithMountedCache(distconsts.EngineDefaultStateDir, dag.CacheVolume(cacheVolumeName), dagger.ContainerWithMountedCacheOpts{
+		WithMountedCache(distconsts.EngineDefaultStateDir, cacheVolume, dagger.ContainerWithMountedCacheOpts{
 			// only one engine can run off it's local state dir at a time; Private means that we will attempt to re-use
 			// these cache volumes if they are not already locked to another running engine but otherwise will create a new
 			// one, which gets us best-effort cache re-use for these nested engine services
@@ -307,8 +361,11 @@ func (e *Engine) Publish(
 					}
 					span.End()
 				}()
-
-				ctr, err := e.Container(egCtx, platform, &target.Image, target.GPUSupport)
+				ctr, err := e.
+					WithPlatform(platform).
+					WithImage(&target.Image).
+					WithGpuSupport(target.GPUSupport).
+					Container(egCtx)
 				if err != nil {
 					return err
 				}
@@ -367,7 +424,7 @@ func (e *Engine) Publish(
 }
 
 func (e *Engine) Scan(ctx context.Context) (string, error) {
-	target, err := e.Container(ctx, "", nil, false)
+	target, err := e.Container(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -384,6 +441,7 @@ func (e *Engine) Scan(ctx context.Context) (string, error) {
 		return "", err
 	}
 
+	// FIXME: trivy module
 	ctr := dag.Container().
 		From("aquasec/trivy:0.50.4").
 		WithMountedFile("/mnt/engine.tar", target.AsTarball()).
