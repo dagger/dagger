@@ -297,11 +297,7 @@ func (src *ModuleSource) LoadContext(ctx context.Context, dag *dagql.Server, pat
 	includes := []string{}
 
 	for _, p := range ignore {
-		if strings.HasPrefix(p, "!") {
-			includes = append(includes, p[1:])
-		} else {
 			excludes = append(excludes, p)
-		}
 	}
 
 	switch src.Kind {
