@@ -16,7 +16,8 @@ class ExtensionError(DaggerError):
                 border_style="red",
                 title="Error",
                 title_align="left",
-            )
+            ),
+            markup=False,
         )
 
 

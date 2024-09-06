@@ -77,6 +77,8 @@ def normalize_name(name: str) -> str:
 
 def get_meta(obj: Any, match: type[T]) -> T | None:
     """Get metadata from an annotated type."""
+    if is_initvar(obj):
+        return get_meta(obj.type, match)
     if not is_annotated(obj):
         return None
     return next(
@@ -147,6 +149,11 @@ def is_annotated(annotation: type) -> typing.TypeGuard[typing.Annotated]:
         typing.Annotated,
         typing_extensions.Annotated,
     )
+
+
+def is_initvar(annotation: type) -> typing.TypeGuard[dataclasses.InitVar]:
+    """Check if the given type is a dataclasses.InitVar."""
+    return annotation is dataclasses.InitVar or type(annotation) is dataclasses.InitVar
 
 
 def strip_annotations(t: _T) -> _T:
