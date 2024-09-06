@@ -166,12 +166,9 @@ var rootCmd = &cobra.Command{
 		cobra.OnFinalize(func() {
 			t.Close()
 		})
-
-		if cmdName := commandName(cmd); cmdName != "session" {
-			t.Capture(cmd.Context(), "cli_command", map[string]string{
-				"name": cmdName,
-			})
-		}
+		t.Capture(cmd.Context(), "cli_command", map[string]string{
+			"name": commandName(cmd),
+		})
 
 		return nil
 	},
