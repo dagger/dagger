@@ -293,12 +293,8 @@ func (src *ModuleSource) AutomaticGitignore(ctx context.Context) (*bool, error) 
 // If the module is git, it will load the directory from the git repository
 // using its context directory.
 func (src *ModuleSource) LoadContext(ctx context.Context, dag *dagql.Server, path string, ignore []string) (inst dagql.Instance[*Directory], err error) {
-	excludes := []string{}
+	excludes := ignore
 	includes := []string{}
-
-	for _, p := range ignore {
-		excludes = append(excludes, p)
-	}
 
 	switch src.Kind {
 	case ModuleSourceKindLocal:
