@@ -803,25 +803,31 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) error {
 
 	case dagger.ScalarKind:
 		scalarName := r.TypeDef.AsScalar.Name
+		defVal, _ := getDefaultValue[string](r)
 
 		if val := GetCustomFlagValue(scalarName); val != nil {
+			if defVal != "" {
+				val.Set(defVal)
+			}
 			flags.Var(val, name, usage)
 			return nil
 		}
 
-		val, _ := getDefaultValue[string](r)
-		flags.String(name, val, usage)
+		flags.String(name, defVal, usage)
 		return nil
 
 	case dagger.EnumKind:
 		enumName := r.TypeDef.AsEnum.Name
+		defVal, _ := getDefaultValue[string](r)
 
 		if val := GetCustomFlagValue(enumName); val != nil {
+			if defVal != "" {
+				val.Set(defVal)
+			}
 			flags.Var(val, name, usage)
 			return nil
 		}
 
-		defVal, _ := getDefaultValue[string](r)
 		val := newEnumValue(r.TypeDef.AsEnum, defVal)
 		flags.Var(val, name, usage)
 
@@ -886,26 +892,32 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) error {
 
 		case dagger.ScalarKind:
 			scalarName := elementType.AsScalar.Name
+			defVal, _ := getDefaultValue[[]string](r)
 
 			if val := GetCustomFlagValueSlice(scalarName); val != nil {
+				if defVal != nil {
+					val.Set(strings.Join(defVal, ","))
+				}
 				flags.Var(val, name, usage)
 				return nil
 			}
 
-			val, _ := getDefaultValue[[]string](r)
-			flags.StringSlice(name, val, usage)
+			flags.StringSlice(name, defVal, usage)
 			return nil
 
 		case dagger.EnumKind:
 			enumName := elementType.AsEnum.Name
+			defVal, _ := getDefaultValue[[]string](r)
 
 			if val := GetCustomFlagValueSlice(enumName); val != nil {
+				if defVal != nil {
+					val.Set(strings.Join(defVal, ","))
+				}
 				flags.Var(val, name, usage)
 				return nil
 			}
 
-			defVals, _ := getDefaultValue[[]string](r)
-			val := newEnumSliceValue(elementType.AsEnum, defVals)
+			val := newEnumSliceValue(elementType.AsEnum, defVal)
 			flags.Var(val, name, usage)
 
 			return nil
