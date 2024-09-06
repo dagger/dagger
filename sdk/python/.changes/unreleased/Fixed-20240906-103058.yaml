@@ -1,0 +1,12 @@
+kind: Fixed
+body: |-
+    Fix adding documentation to a constructor-only argument (`dataclasses.InitVar`)
+
+    Note that `InitVar` should be the outer most type in order to be processed correctly by `dataclasses.dataclass()`:
+    ```python
+    >>> url: dataclasses.InitVar[Annotated[str, Doc("Some URL")]]
+    ```
+time: 2024-09-06T10:30:58.99772Z
+custom:
+    Author: helderco
+    PR: "8357"
