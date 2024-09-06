@@ -40,7 +40,7 @@ fi
 
 # expect more open files due to per-client SQLite databases
 # many systems default to 1024 which is far too low
-ulimit -n 1048576
+ulimit -n 1048576 || echo "cannot increase open FDs with ulimit, ignoring"
 
 exec {{.EngineBin}} --config {{.EngineConfig}} {{ range $key := .EntrypointArgKeys -}}--{{ $key }}="{{ index $.EntrypointArgs $key }}" {{ end -}} "$@"
 `
