@@ -73,6 +73,13 @@ class Ignore:
 
     patterns: list[str]
 
+    # TODO: to allow frozen=True, the patterns can't be in a list (mutable),
+    # but changing it to an immutable sequence now will produce IDE errors
+    # for users which requires a change to their existing code. It's not that
+    # important to be immutable though, just for future consideration.
+    def __hash__(self) -> int:
+        return hash(tuple(self.patterns))
+
 
 @dataclasses.dataclass(slots=True, frozen=True, kw_only=True)
 class Parameter:
