@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"path/filepath"
+	"regexp"
+	"strings"
 
 	"github.com/dagger/dagger/modules/dirdiff/internal/dagger"
 )
@@ -38,4 +40,49 @@ func (dd *Dirdiff) AssertEqual(
 		}
 	}
 	return nil
+}
+
+// Search for a filename in a directory and return paths of matching parent directories
+func (dd *Dirdiff) Find(
+	ctx context.Context,
+	dir *dagger.Directory,
+	filename string,
+	// +optional
+	exclude []string,
+) ([]string, error) {
+	excludeRE := make([]*regexp.Regexp, 0, len(exclude))
+	for _, pattern := range exclude {
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			return nil, err
+		}
+		excludeRE = append(excludeRE, re)
+	}
+	entries, err := dir.Glob(ctx, "**/"+filename)
+	if err != nil {
+		return nil, err
+	}
+	var parents []string
+	for _, entry := range entries {
+		entry = filepath.Clean(entry)
+		parent := strings.TrimSuffix(entry, filename)
+		if parent == "" {
+			parent = "."
+		}
+		if matchAny(parent, excludeRE) {
+			continue
+		}
+		parents = append(parents, parent)
+	}
+
+	return parents, nil
+}
+
+func matchAny(s string, regexps []*regexp.Regexp) bool {
+	for _, re := range regexps {
+		if re.MatchString(s) {
+			return true
+		}
+	}
+	return false
 }

@@ -1,0 +1,20 @@
+{
+  "name": "codegen",
+  "sdk": "go",
+  "dependencies": [
+    {
+      "name": "go",
+      "source": "../../modules/go"
+    },
+    {
+      "name": "types",
+      "source": "../../modules/types"
+    },
+    {
+      "name": "wolfi",
+      "source": "../../modules/wolfi"
+    }
+  ],
+  "source": ".dagger",
+  "engineVersion": "v0.12.7"
+}

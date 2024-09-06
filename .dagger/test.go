@@ -51,36 +51,6 @@ func (t *Test) List(ctx context.Context) (string, error) {
 		Stdout(ctx)
 }
 
-// Run specific tests
-func (t *Test) Specific(
-	ctx context.Context,
-	// Only run these tests
-	// +optional
-	run string,
-	// Skip these tests
-	// +optional
-	skip string,
-	// +optional
-	// +default="./..."
-	pkg string,
-	// Abort test run on first failure
-	// +optional
-	failfast bool,
-	// How many tests to run in parallel - defaults to the number of CPUs
-	// +optional
-	parallel int,
-	// How long before timing out the test run
-	// +optional
-	timeout string,
-	// +optional
-	race bool,
-	// +default=1
-	// +optional
-	count int,
-) error {
-	return t.test(ctx, run, skip, pkg, failfast, parallel, timeout, race, count)
-}
-
 func (t *Test) test(
 	ctx context.Context,
 	runTestRegex string,
@@ -162,7 +132,7 @@ func (t *Test) testCmd(ctx context.Context) (*dagger.Container, error) {
 		WithArg(`network-name`, `dagger-dev`).
 		WithArg(`network-cidr`, `10.88.0.0/16`).
 		WithArg(`debugaddr`, `0.0.0.0:6060`)
-	devEngine, err := engine.Container(ctx, "", nil, false)
+	devEngine, err := engine.Container(ctx)
 	if err != nil {
 		return nil, err
 	}

@@ -130,11 +130,7 @@ func (t PythonSDK) Test(ctx context.Context) (rerr error) {
 
 // Regenerate the Python SDK API
 func (t PythonSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
-	installer, err := t.Dagger.installer(ctx, "sdk")
-	if err != nil {
-		return nil, err
-	}
-	introspection, err := t.Dagger.introspection(ctx, installer)
+	introspection, err := t.Dagger.introspection(ctx, t.Dagger.Engine())
 	if err != nil {
 		return nil, err
 	}

@@ -1,0 +1,32 @@
+{
+  "name": "go-sdk",
+  "sdk": "go",
+  "dependencies": [
+    {
+      "name": "codegen",
+      "source": "../../cmd/codegen"
+    },
+    {
+      "name": "dirdiff",
+      "source": "../../modules/dirdiff"
+    },
+    {
+      "name": "engine",
+      "source": "../../engine"
+    },
+    {
+      "name": "go",
+      "source": "../../modules/go"
+    },
+    {
+      "name": "sdk",
+      "source": ".."
+    },
+    {
+      "name": "types",
+      "source": "../../modules/types"
+    }
+  ],
+  "source": ".dagger",
+  "engineVersion": "v0.12.7"
+}

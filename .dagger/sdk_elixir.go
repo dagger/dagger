@@ -114,23 +114,23 @@ func (t ElixirSDK) Test(ctx context.Context) error {
 
 // Regenerate the Elixir SDK API
 func (t ElixirSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
-	installer, err := t.Dagger.installer(ctx, "sdk")
+	introspection, err := t.Dagger.introspection(ctx, t.Dagger.Engine())
 	if err != nil {
 		return nil, err
 	}
-	introspection, err := t.Dagger.introspection(ctx, installer)
-	if err != nil {
-		return nil, err
-	}
-	gen := t.elixirBase(elixirVersions[elixirLatestVersion]).
-		With(installer).
+	ctr := t.elixirBase(elixirVersions[elixirLatestVersion]).
 		WithWorkdir("dagger_codegen").
-		WithMountedFile("/schema.json", introspection).
+		WithMountedFile("/schema.json", introspection)
+	ctr, err = t.Dagger.Engine().Bind(ctx, ctr)
+	if err != nil {
+		return nil, err
+	}
+	gen := ctr.
 		WithExec([]string{"mix", "dagger.codegen", "generate", "--introspection", "/schema.json", "--outdir", "gen"}).
 		WithExec([]string{"mix", "format", "gen/*.ex"}).
 		Directory("gen")
-
-	dir := dag.Directory().WithDirectory("sdk/elixir/lib/dagger/gen", gen)
+	dir := dag.
+		Directory().WithDirectory("sdk/elixir/lib/dagger/gen", gen)
 	return dir, nil
 }
 

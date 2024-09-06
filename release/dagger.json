@@ -1,0 +1,40 @@
+{
+  "name": "release",
+  "sdk": "go",
+  "dependencies": [
+    {
+      "name": "dagger-cli",
+      "source": "../cmd/dagger"
+    },
+    {
+      "name": "engine",
+      "source": "../engine"
+    },
+    {
+      "name": "gh",
+      "source": "github.com/sagikazarmark/daggerverse/gh@5b826062b6bc1bfbd619aa5d0fba117190c85aba"
+    },
+    {
+      "name": "go-sdk",
+      "source": "../sdk/go"
+    },
+    {
+      "name": "ps-analyzer",
+      "source": "../modules/ps-analyzer"
+    },
+    {
+      "name": "python-sdk-dev",
+      "source": "../sdk/python/dev"
+    },
+    {
+      "name": "shellcheck",
+      "source": "../modules/shellcheck"
+    },
+    {
+      "name": "wolfi",
+      "source": "../modules/wolfi"
+    }
+  ],
+  "source": ".dagger",
+  "engineVersion": "v0.13.1"
+}

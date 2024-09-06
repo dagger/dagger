@@ -1,0 +1,48 @@
+{
+  "name": "engine",
+  "sdk": "go",
+  "dependencies": [
+    {
+      "name": "cni-plugins",
+      "source": "cni-plugins"
+    },
+    {
+      "name": "codegen",
+      "source": "../cmd/codegen"
+    },
+    {
+      "name": "dagger-cli",
+      "source": "../cmd/dagger"
+    },
+    {
+      "name": "dirdiff",
+      "source": "../modules/dirdiff"
+    },
+    {
+      "name": "dumb-init",
+      "source": "dumb-init"
+    },
+    {
+      "name": "go",
+      "source": "../modules/go"
+    },
+    {
+      "name": "qemu",
+      "source": "qemu"
+    },
+    {
+      "name": "runc",
+      "source": "runc"
+    },
+    {
+      "name": "supermod",
+      "source": "../modules/supermod"
+    },
+    {
+      "name": "version",
+      "source": "../version"
+    }
+  ],
+  "source": ".dagger",
+  "engineVersion": "v0.13.1"
+}

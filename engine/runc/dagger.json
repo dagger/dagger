@@ -1,0 +1,12 @@
+{
+  "name": "runc",
+  "sdk": "go",
+  "dependencies": [
+    {
+      "name": "go",
+      "source": "../../modules/go"
+    }
+  ],
+  "source": ".dagger",
+  "engineVersion": "v0.13.0"
+}

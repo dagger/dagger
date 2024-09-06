@@ -3,44 +3,36 @@
   "sdk": "go",
   "dependencies": [
     {
-      "name": "dirdiff",
-      "source": "modules/dirdiff"
+      "name": "go",
+      "source": "modules/go"
     },
     {
-      "name": "docusaurus",
-      "source": "github.com/levlaz/daggerverse/docusaurus@e494cec1aa8f9faab1e0f12b2e5eea4a2321f2de"
+      "name": "codegen",
+      "source": "cmd/codegen"
     },
     {
-      "name": "gh",
-      "source": "github.com/sagikazarmark/daggerverse/gh@5b826062b6bc1bfbd619aa5d0fba117190c85aba"
+      "name": "docs",
+      "source": "docs"
+    },
+    {
+      "name": "engine",
+      "source": "engine"
     },
     {
       "name": "go",
       "source": "modules/go"
     },
     {
-      "name": "graphql",
-      "source": "modules/graphql"
+      "name": "go-sdk",
+      "source": "sdk/go"
     },
     {
-      "name": "k3s",
-      "source": "github.com/marcosnils/daggerverse/k3s@f4851a9c308410d58c5199dfd1b65e4f3ccae813"
+      "name": "supermod",
+      "source": "modules/supermod"
     },
     {
-      "name": "php-sdk-dev",
-      "source": "sdk/php/dev"
-    },
-    {
-      "name": "ps-analyzer",
-      "source": "modules/ps-analyzer"
-    },
-    {
-      "name": "python-sdk-dev",
-      "source": "sdk/python/dev"
-    },
-    {
-      "name": "shellcheck",
-      "source": "modules/shellcheck"
+      "name": "types",
+      "source": "modules/types"
     },
     {
       "name": "wolfi",
@@ -48,5 +40,5 @@
     }
   ],
   "source": ".dagger",
-  "engineVersion": "v0.12.7"
+  "engineVersion": "v0.13.0"
 }

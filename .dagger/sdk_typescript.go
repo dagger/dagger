@@ -3,13 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
-	"path"
 	"strings"
 
 	"go.opentelemetry.io/otel/codes"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/dagger/dagger/.dagger/build"
 	"github.com/dagger/dagger/.dagger/internal/dagger"
 )
 
@@ -143,23 +141,15 @@ func (t TypescriptSDK) Test(ctx context.Context) (rerr error) {
 }
 
 // Regenerate the Typescript SDK API
-func (t TypescriptSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
-	installer, err := t.Dagger.installer(ctx, "sdk")
-	if err != nil {
-		return nil, err
-	}
-	build, err := build.NewBuilder(ctx, t.Dagger.Source())
-	if err != nil {
-		return nil, err
-	}
-
+func (t TypescriptSDK) Generate(ctx context.Context) *dagger.Directory {
 	generated := t.nodeJsBase().
-		With(installer).
-		WithFile("/usr/local/bin/codegen", build.CodegenBinary()).
-		WithExec([]string{"codegen", "--lang", "typescript", "-o", path.Dir(typescriptGeneratedAPIPath)}).
+		WithDirectory(
+			"sdk/typescript/api",
+			dag.Codegen().Codegen("typescript", dag.Engine().AsCodegenSidecar()),
+		).
 		WithExec([]string{"yarn", "fmt", typescriptGeneratedAPIPath}).
-		File(typescriptGeneratedAPIPath)
-	return dag.Directory().WithFile(typescriptGeneratedAPIPath, generated), nil
+		File("sdk/typescript/api/client.gen.ts")
+	return dag.Directory().WithFile("sdk/typescript/api/client.gen.ts", generated)
 }
 
 // Test the publishing process

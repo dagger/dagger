@@ -1,25 +1,16 @@
 [project]
 name = "main"
 version = "0.0.0"
-dependencies = [
-    "dagger-io",
-]
+requires-python = ">=3.12"
+dependencies = ["dagger-io"]
 
 [tool.dagger]
-# Fix uv version so the dev module works both with released and dev CLI.
-uv-version = "0.2.32"
-
-[tool.uv]
-# Preview for workspace support (better workflow).
-preview = true
+# Ensure the dev module works both with released and dev engine.
+uv-version = "0.4.9"
 
 [tool.uv.sources]
-dagger-io = { workspace = true }
-
-[tool.uv.workspace]
-members = ["sdk"]
+dagger-io = { path = "sdk", editable = true }
 
 [build-system]
 requires = ["hatchling==1.25.0"]
 build-backend = "hatchling.build"
-
