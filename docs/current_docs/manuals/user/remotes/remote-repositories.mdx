@@ -14,18 +14,16 @@ dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call build --source=
 
 ## Dagger Module Ref Schemes
 
-Dagger supports various ref schemes for remote modules, accommodating both HTTP and SSH protocols. These schemes are compatible with all Git repositories hosted on platforms such as GitHub, GitLab, BitBucket, Azure DevOps, Codeberg, and Sourcehut.
+Dagger supports various reference ("ref") schemes for remote modules, accommodating both HTTP and SSH protocols. These schemes are compatible with all Git repositories hosted on platforms such as GitHub, GitLab, BitBucket, Azure DevOps, Codeberg, and Sourcehut.
 
 ### Supported Protocols and Schemes
 
 | Protocol | Scheme            | Private Modules Support | Example                                      |
 |----------|-------------------|-------------------------|----------------------------------------------|
-| HTTP     | Go-like ref style | Incoming*               | `github.com/username/repo[/subdir][@version]`  |
-| HTTP     | Git HTTP style    | Incoming*               | `https://github.com/username/repo.git[/subdir][@version]` |
+| HTTP     | Go-like ref style | In progress               | `github.com/username/repo[/subdir][@version]`  |
+| HTTP     | Git HTTP style    | In progress               | `https://github.com/username/repo.git[/subdir][@version]` |
 | SSH      | SCP-like          | Supported               | `git@github.com:username/repo.git[/subdir][@version]`     |
 | SSH      | Explicit SSH      | Supported               | `ssh://git@github.com/username/repo.git[/subdir][@version]` |
-
-*Incoming: Support for private modules via HTTP is planned for a future release.
 
 ### Additional Ref Options
 
@@ -33,13 +31,13 @@ Dagger provides flexibility in referencing modules through the following options
 
 - The `.git` extension is optional for HTTP refs or explicit SSH refs, except for [GitLab, when referencing modules stored on a private repo or private subgroup](https://gitlab.com/gitlab-org/gitlab-foss/-/blob/master/lib/gitlab/middleware/go.rb#L229-237).
 - **Monorepo support**: Append `/subpath` to access a specific subdirectory within the repository.
-- **Version specification**: Add `@version` to target a particular version of the module. This can be a tag, branch name, or full commit hash.
+- **Version specification**: Add `@version` to target a particular version of the module. This can be a tag, branch name, or full commit hash. If omitted, the default branch is used.
 
-These options are optional. If omitted, Dagger defaults to the default branch of the repository.
+These options are optional.
 
 ### SSH Refs and Authentication
 
-When using SSH refs, it's crucial to understand how Dagger handles authentication:
+Here is an overview of how Dagger handles authentication when using SSH refs:
 
 Dagger mounts the socket specified by your host's `SSH_AUTH_SOCK` environment variable to the engine. This is essential for SSH refs, as most Git servers use your SSH key for authentication and tracking purposes, even when cloning public repositories. Ensure that the `SSH_AUTH_SOCK` environment variable is properly set in your environment when using SSH refs.
 
@@ -54,15 +52,7 @@ This guide provides comprehensive information on:
 - Configuring SSH clients
 - Best practices for SSH key management
 
-By following this guide, you can ensure that your SSH authentication is properly configured for use with Dagger.
-
-### Examples
-
-| Description                               | Example                                      |
-|-------------------------------------------|----------------------------------------------|
-| HTTP Go-like ref with subpath and version | `github.com/username/repo/subpath@v1.0.0`    |
-| SSH SCP-like ref with subpath             | `git@github.com:username/repo.git/subpath`   |
-| Explicit SSH ref with version             | `ssh://git@github.com/username/repo.git@v2.1.3` |
+You can ensure that your SSH authentication is properly configured for use with Dagger by following this guide.
 
 ### Best Practices
 
@@ -82,7 +72,9 @@ Currently, SSH refs are fully supported on UNIX-based systems (Linux and macOS).
 #### 2. Multiple SSH Keys
 
 **Issue**: SSH forwarding may fail when multiple keys are loaded in your SSH agent.
+
 **Status**: Under [active investigation](https://github.com/dagger/dagger/issues/8288).
+
 **Workaround**: 
 1. Clear all loaded keys: `ssh-add -D`
 2. Add only the required key: `ssh-add /path/to/key`
@@ -90,7 +82,9 @@ Currently, SSH refs are fully supported on UNIX-based systems (Linux and macOS).
 #### 3. Environment Variable Expansion
 
 **Issue**: Shell expansion characters (e.g., `~`) in the `SSH_AUTH_SOCK` environment variable are not automatically expanded.
+
 **Status**: Under [active investigation](https://github.com/dagger/dagger/issues/8337).
+
 **Workaround**: Use the full path instead of `~` when setting `SSH_AUTH_SOCK`.
 
 
