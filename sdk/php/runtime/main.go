@@ -25,11 +25,10 @@ type PhpSdk struct {
 func New(
 	// Directory with the PHP SDK source code.
 	// +optional
+	// +defaultPath="/sdk/php"
 	sdkSourceDir *dagger.Directory,
 ) *PhpSdk {
 	if sdkSourceDir == nil {
-		// TODO: Replace with a *default path from context* when
-		// https://github.com/dagger/dagger/pull/7744 becomes available.
 		sdkSourceDir = dag.Directory().
 			// NB: these patterns should match those in `dagger.json`.
 			// When `--sdk` points to a git remote the files aren't filtered
@@ -39,7 +38,7 @@ func New(
 			// loading the SDK from a local path.
 			WithDirectory(
 				"/",
-				dag.CurrentModule().Source().Directory(".."),
+				sdkSourceDir,
 				dagger.DirectoryWithDirectoryOpts{
 					Include: []string{
 						"generated/",
