@@ -61,8 +61,8 @@ type frontendPlain struct {
 	output  *termenv.Output
 	profile termenv.Profile
 
-	// msgsBuffer contains messages to display on the final render
-	msgsBuffer strings.Builder
+	// msgPreFinalRender contains messages to display on the final render
+	msgPreFinalRender strings.Builder
 
 	// ticker keeps a constant frame rate
 	ticker *time.Ticker
@@ -139,9 +139,9 @@ func (fe *frontendPlain) SetCloudURL(ctx context.Context, url string, msg string
 	}
 	fe.addVirtualLog(trace.SpanFromContext(ctx), "cloud", "url", url)
 	if logged {
-		fmt.Fprintln(os.Stderr, traceMessage(fe.profile, url, msg)+"\n")
+		fe.msgPreFinalRender.WriteString(traceMessage(fe.profile, url, msg) + "\n")
 	} else if !skipLoggedOutTraceMsg() {
-		fmt.Fprintf(os.Stderr, loggedOutTraceMsg+"\n\n", url)
+		fe.msgPreFinalRender.WriteString(fmt.Sprintf(loggedOutTraceMsg, url) + "\n")
 	}
 }
 
@@ -364,8 +364,8 @@ func (fe *frontendPlain) finalRender() {
 		// if we rendered anything, leave a newline
 		fmt.Fprintln(os.Stderr)
 	}
-	if fe.msgsBuffer.Len() > 0 {
-		fmt.Fprintln(os.Stderr, fe.msgsBuffer.String())
+	if fe.msgPreFinalRender.Len() > 0 {
+		fmt.Fprintln(os.Stderr, fe.msgPreFinalRender.String())
 	}
 	renderPrimaryOutput(fe.db)
 }

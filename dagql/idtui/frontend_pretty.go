@@ -234,12 +234,13 @@ func (fe *frontendPretty) finalRender() error {
 
 	var renderedProgress bool
 	if fe.Debug || fe.Verbosity >= dagui.ShowCompletedVerbosity || fe.err != nil {
-		if fe.msgPreFinalRender.Len() > 0 {
-			fmt.Fprint(os.Stderr, fe.msgPreFinalRender.String()+"\n\n")
-		}
 		// Render progress to stderr so stdout stays clean.
 		out := NewOutput(os.Stderr, termenv.WithProfile(fe.profile))
 		renderedProgress = fe.renderProgress(out, true, fe.window.Height, "")
+	}
+
+	if fe.msgPreFinalRender.Len() > 0 {
+		fmt.Fprint(os.Stderr, "\n"+fe.msgPreFinalRender.String()+"\n")
 	}
 
 	if renderedProgress {
