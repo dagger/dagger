@@ -1033,18 +1033,11 @@ func allCacheConfigsFromEnv() (cacheImportConfigs []*controlapi.CacheOptionsEntr
 }
 
 func (c *Client) clientMetadata() engine.ClientMetadata {
-	// retrieve SSH_AUTH_SOCK path and make it relative
 	sshAuthSock := os.Getenv("SSH_AUTH_SOCK")
-	if sshAuthSock != "" {
-		expandedPath, err := expandPath(sshAuthSock)
-		if err == nil {
-			sshAuthSock = expandedPath
-			if cwd, err := os.Getwd(); err == nil {
-				if relPath, err := LexicalRelativePath(cwd, sshAuthSock); err == nil {
-					sshAuthSock = relPath
-				}
-			}
-		}
+
+	expandedPath, err := expandPath(sshAuthSock)
+	if err == nil {
+		sshAuthSock = expandedPath
 	}
 
 	clientVersion := c.Version
