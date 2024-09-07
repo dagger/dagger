@@ -15,7 +15,7 @@ func New(
 	source *dagger.Directory,
 	// Go version
 	// +optional
-	// +default="1.23.0"
+	// +default="1.23.1"
 	version string,
 ) *Go {
 	if source == nil {
