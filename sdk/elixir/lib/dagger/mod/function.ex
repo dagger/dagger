@@ -32,19 +32,10 @@ defmodule Dagger.Mod.Function do
       type_def =
         dag
         |> define_type(Dagger.Client.type_def(dag), type)
-        |> maybe_with_optional(arg_def[:optional])
 
       fun
       |> Dagger.Function.with_arg(name, type_def)
     end)
-  end
-
-  defp maybe_with_optional(type_def, optional?) do
-    if optional? do
-      Dagger.TypeDef.with_optional(type_def, true)
-    else
-      type_def
-    end
   end
 
   defp define_type(_dag, type_def, :integer) do
@@ -65,6 +56,12 @@ defmodule Dagger.Mod.Function do
   defp define_type(dag, type_def, {:list, type}) do
     type_def
     |> Dagger.TypeDef.with_list_of(define_type(dag, Dagger.Client.type_def(dag), type))
+  end
+
+  defp define_type(dag, type_def, {:optional, type}) do
+    dag
+    |> define_type(type_def, type)
+    |> Dagger.TypeDef.with_optional(true)
   end
 
   defp define_type(_dag, type_def, module) do

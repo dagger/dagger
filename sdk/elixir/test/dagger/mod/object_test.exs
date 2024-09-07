@@ -3,43 +3,7 @@ defmodule Dagger.Mod.ObjectTest do
 
   describe "defn/2" do
     test "store function information" do
-      defmodule A do
-        use Dagger.Mod.Object, name: "A"
-
-        defn accept_string(name: String.t()) :: String.t() do
-          "Hello, #{name}"
-        end
-
-        defn accept_string2(name: binary()) :: binary() do
-          "Hello, #{name}"
-        end
-
-        defn accept_integer(name: integer()) :: integer() do
-          "Hello, #{name}"
-        end
-
-        defn accept_boolean(name: boolean()) :: String.t() do
-          "Hello, #{name}"
-        end
-
-        defn empty_args() :: String.t() do
-          "Empty args"
-        end
-
-        defn accept_and_return_module(container: Dagger.Container.t()) :: Dagger.Container.t() do
-          container
-        end
-
-        defn accept_list(alist: list(String.t())) :: String.t() do
-          Enum.join(alist, ",")
-        end
-
-        defn accept_list2(alist: [String.t()]) :: String.t() do
-          Enum.join(alist, ",")
-        end
-      end
-
-      assert A.__object__(:functions) == [
+      assert ObjectMod.__object__(:functions) == [
                accept_string: [
                  {:self, false},
                  {:args, [name: [type: :string]]},
@@ -75,6 +39,11 @@ defmodule Dagger.Mod.ObjectTest do
                  {:self, false},
                  {:args, [alist: [type: {:list, :string}]]},
                  {:return, :string}
+               ],
+               optional_arg: [
+                 self: false,
+                 args: [s: [type: {:optional, :string}]],
+                 return: :string
                ]
              ]
     end

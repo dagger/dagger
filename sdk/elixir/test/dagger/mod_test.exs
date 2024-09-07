@@ -4,27 +4,30 @@ defmodule Dagger.ModTest do
 
   alias Dagger.Mod
 
-  setup do
+  setup_all do
     dag = Dagger.connect!()
     on_exit(fn -> Dagger.close(dag) end)
     %{dag: dag}
   end
 
   test "decode/2", %{dag: dag} do
-    assert {:ok, "hello"} = Mod.decode(Jason.encode!("hello"), :string, dag)
-    assert {:ok, 1} = Mod.decode(Jason.encode!(1), :integer, dag)
-    assert {:ok, true} = Mod.decode(Jason.encode!(true), :boolean, dag)
-    assert {:ok, false} = Mod.decode(Jason.encode!(false), :boolean, dag)
+    assert {:ok, "hello"} = Mod.decode(json("hello"), :string, dag)
+    assert {:ok, 1} = Mod.decode(json(1), :integer, dag)
+    assert {:ok, true} = Mod.decode(json(true), :boolean, dag)
+    assert {:ok, false} = Mod.decode(json(false), :boolean, dag)
 
     assert {:ok, [1, 2, 3]} =
-             Mod.decode(Jason.encode!([1, 2, 3]), {:list, :integer}, dag)
+             Mod.decode(json([1, 2, 3]), {:list, :integer}, dag)
+
+    assert {:ok, nil} = Mod.decode(json(nil), {:optional, :string}, dag)
+    assert {:ok, "hello"} = Mod.decode(json("hello"), {:optional, :string}, dag)
 
     {:ok, container_id} = dag |> Dagger.Client.container() |> Dagger.Container.id()
 
     assert {:ok, %Dagger.Container{}} =
-             Mod.decode(Jason.encode!(container_id), Dagger.Container, dag)
+             Mod.decode(json(container_id), Dagger.Container, dag)
 
-    assert {:error, _} = Mod.decode(Jason.encode!(1), :string, dag)
+    assert {:error, _} = Mod.decode(json(1), :string, dag)
   end
 
   test "encode/2", %{dag: dag} do
@@ -37,5 +40,9 @@ defmodule Dagger.ModTest do
     assert is_binary(id)
 
     assert {:error, _} = Mod.encode(1, :string)
+  end
+
+  defp json(value) do
+    Jason.encode!(value)
   end
 end

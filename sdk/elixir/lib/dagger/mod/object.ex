@@ -44,7 +44,8 @@ defmodule Dagger.Mod.Object do
   2. `boolean()` for a boolean type.
   3. `String.t()` or `binary()` for a string type.
   4. `list(type)` or `[type]` for a list type.
-  5. Any type that generated under `Dagger` namespace (`Dagger.Container.t()`,
+  5. `type | nil` for optional type.
+  6. Any type that generated under `Dagger` namespace (`Dagger.Container.t()`,
      `Dagger.Directory.t()`, etc.).
 
   The function also support documentation by using Elixir standard documentation,
@@ -171,14 +172,13 @@ defmodule Dagger.Mod.Object do
     end
   end
 
-  # binary()
-  defp compile_typespec!({:binary, _, []}), do: :string
-  # integer()
   defp compile_typespec!({:integer, _, []}), do: :integer
-  # boolean()
   defp compile_typespec!({:boolean, _, []}), do: :boolean
 
-  # String.t() 
+  ## String
+
+  defp compile_typespec!({:binary, _, []}), do: :string
+
   defp compile_typespec!(
          {{:., _,
            [
@@ -193,12 +193,20 @@ defmodule Dagger.Mod.Object do
     Module.concat(module)
   end
 
+  ## List
+
   defp compile_typespec!({:list, _, [type]}) do
     {:list, compile_typespec!(type)}
   end
 
   defp compile_typespec!([type]) do
     {:list, compile_typespec!(type)}
+  end
+
+  ## Optional
+
+  defp compile_typespec!({:|, _, [type, nil]}) do
+    {:optional, compile_typespec!(type)}
   end
 
   defp compile_typespec!(unsupported_type) do
