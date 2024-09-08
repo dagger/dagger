@@ -1,0 +1,6 @@
+kind: Changed
+body: Use `uv.lock` by default in new Dagger Modules
+time: 2024-09-08T18:41:52.021892Z
+custom:
+    Author: helderco
+    PR: "8311"
