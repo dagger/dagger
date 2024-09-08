@@ -5,44 +5,92 @@ defmodule Dagger.Mod.ObjectTest do
     test "store function information" do
       assert ObjectMod.__object__(:functions) == [
                accept_string: [
-                 {:self, false},
-                 {:args, [name: [type: :string]]},
-                 {:return, :string}
+                 self: false,
+                 args: [
+                   name: [{:ignore, nil}, {:default_path, nil}, {:doc, nil}, {:type, :string}]
+                 ],
+                 return: :string
                ],
                accept_string2: [
-                 {:self, false},
-                 {:args, [name: [type: :string]]},
-                 {:return, :string}
+                 self: false,
+                 args: [
+                   name: [{:ignore, nil}, {:default_path, nil}, {:doc, nil}, {:type, :string}]
+                 ],
+                 return: :string
                ],
                accept_integer: [
-                 {:self, false},
-                 {:args, [name: [type: :integer]]},
-                 {:return, :integer}
+                 self: false,
+                 args: [
+                   name: [{:ignore, nil}, {:default_path, nil}, {:doc, nil}, {:type, :integer}]
+                 ],
+                 return: :integer
                ],
                accept_boolean: [
-                 {:self, false},
-                 {:args, [name: [type: :boolean]]},
-                 {:return, :string}
+                 self: false,
+                 args: [
+                   name: [{:ignore, nil}, {:default_path, nil}, {:doc, nil}, {:type, :boolean}]
+                 ],
+                 return: :string
                ],
-               empty_args: [{:self, false}, {:args, []}, {:return, :string}],
+               empty_args: [self: false, args: [], return: :string],
                accept_and_return_module: [
-                 {:self, false},
-                 {:args, [container: [type: Dagger.Container]]},
-                 {:return, Dagger.Container}
+                 self: false,
+                 args: [
+                   container: [
+                     {:ignore, nil},
+                     {:default_path, nil},
+                     {:doc, nil},
+                     {:type, Dagger.Container}
+                   ]
+                 ],
+                 return: Dagger.Container
                ],
                accept_list: [
-                 {:self, false},
-                 {:args, [alist: [type: {:list, :string}]]},
-                 {:return, :string}
+                 self: false,
+                 args: [
+                   alist: [
+                     {:ignore, nil},
+                     {:default_path, nil},
+                     {:doc, nil},
+                     {:type, {:list, :string}}
+                   ]
+                 ],
+                 return: :string
                ],
                accept_list2: [
-                 {:self, false},
-                 {:args, [alist: [type: {:list, :string}]]},
-                 {:return, :string}
+                 self: false,
+                 args: [
+                   alist: [
+                     {:ignore, nil},
+                     {:default_path, nil},
+                     {:doc, nil},
+                     {:type, {:list, :string}}
+                   ]
+                 ],
+                 return: :string
                ],
                optional_arg: [
                  self: false,
-                 args: [s: [type: {:optional, :string}]],
+                 args: [
+                   s: [
+                     {:ignore, nil},
+                     {:default_path, nil},
+                     {:doc, nil},
+                     {:type, {:optional, :string}}
+                   ]
+                 ],
+                 return: :string
+               ],
+               type_option: [
+                 self: false,
+                 args: [
+                   dir: [
+                     {:ignore, ["deps", "_build"]},
+                     {:default_path, "/sdk/elixir"},
+                     {:doc, "The directory to run on."},
+                     {:type, {:optional, Dagger.Directory}}
+                   ]
+                 ],
                  return: :string
                ]
              ]
@@ -89,6 +137,38 @@ defmodule Dagger.Mod.ObjectTest do
                "@spec hidden_fun_doc() :: String.t()",
                "@spec echo(name :: String.t()) :: String.t()"
              ]
+    end
+
+    test "type option validation" do
+      assert_raise FunctionClauseError, fn ->
+        defmodule TypeOptDoc do
+          use Dagger.Mod.Object, name: "TypeOptDoc"
+
+          defn should_fail(v: {Dagger.String.t(), doc: 1}) :: String.t() do
+            v
+          end
+        end
+      end
+
+      assert_raise FunctionClauseError, fn ->
+        defmodule TypeOptDefaultPath do
+          use Dagger.Mod.Object, name: "TypeOptDoc"
+
+          defn should_fail(v: {Dagger.String.t(), default_path: 1}) :: String.t() do
+            v
+          end
+        end
+      end
+
+      assert_raise FunctionClauseError, fn ->
+        defmodule TypeOptIgnore do
+          use Dagger.Mod.Object, name: "TypeOptDoc"
+
+          defn should_fail(v: {Dagger.String.t(), ignore: 1}) :: String.t() do
+            v
+          end
+        end
+      end
     end
   end
 
