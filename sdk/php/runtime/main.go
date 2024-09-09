@@ -26,33 +26,9 @@ func New(
 	// Directory with the PHP SDK source code.
 	// +optional
 	// +defaultPath="/sdk/php"
+	// +ignore=["!generated/", "!src/", "!scripts/", "!composer.json", "!composer.lock", "!LICENSE", "!README.md"]
 	sdkSourceDir *dagger.Directory,
 ) *PhpSdk {
-	if sdkSourceDir == nil {
-		sdkSourceDir = dag.Directory().
-			// NB: these patterns should match those in `dagger.json`.
-			// When `--sdk` points to a git remote the files aren't filtered
-			// using `dagger.json` include/exclude patterns since the whole
-			// repo is cloned. It's still useful to have the same patterns in
-			// `dagger.json` though, to avoid the unnecessary uploads when
-			// loading the SDK from a local path.
-			WithDirectory(
-				"/",
-				sdkSourceDir,
-				dagger.DirectoryWithDirectoryOpts{
-					Include: []string{
-						"generated/",
-						"src/",
-						"scripts/",
-						"composer.json",
-						"composer.lock",
-						"LICENSE",
-						"README.md",
-					},
-				},
-			)
-	}
-
 	return &PhpSdk{
 		RequiredPaths: []string{},
 		SourceDir:     sdkSourceDir,
