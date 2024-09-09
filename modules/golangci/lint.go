@@ -107,7 +107,7 @@ func (run LintRun) Report() *dagger.File {
 	cmd := []string{
 		"golangci-lint", "run",
 		"-v",
-		"--timeout", "5m",
+		"--timeout", "10m",
 		// Disable limits, we can filter the report instead
 		"--max-issues-per-linter", "0",
 		"--max-same-issues", "0",
