@@ -1,5 +1,5 @@
 kind: Breaking
-body: Remove appVersion - this is now the chart version
+body: Remove appVersion - this is now the chart version. Customizing the Engine image is now done via `engine.image.ref` and requires the full image reference, including the registry URL. If you configure this value, you must ensure that this Engine image is compatible with the chart.
 time: 2024-09-05T17:54:39.703345+01:00
 custom:
     Author: gerhard
