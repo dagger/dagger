@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/containerd/containerd/content"
@@ -646,8 +645,6 @@ func (container *Container) WithMountedFile(ctx context.Context, target string, 
 	return container.withMounted(ctx, target, file.LLB, file.File, file.Services, owner, readonly)
 }
 
-var SeenCacheKeys = new(sync.Map)
-
 func (container *Container) WithMountedCache(ctx context.Context, target string, cache *CacheVolume, source *Directory, sharingMode CacheSharingMode, owner string) (*Container, error) {
 	container = container.Clone()
 
@@ -657,18 +654,10 @@ func (container *Container) WithMountedCache(ctx context.Context, target string,
 		sharingMode = CacheSharingModeShared
 	}
 
-	// NOTE: cache volume has a list of keys even though we do not allow setting
-	// more than one in our graphql API. In spite of that we want to be defensive
-	// and not panic in case there is not even a single key.
-	var cacheVolumeName string
-	if len(cache.Keys) > 0 {
-		cacheVolumeName = cache.Keys[0]
-	}
-
 	mount := ContainerMount{
 		Target:           target,
 		CacheVolumeID:    cache.Sum(),
-		CacheVolumeName:  cacheVolumeName,
+		CacheVolumeName:  cache.Key,
 		CacheSharingMode: sharingMode,
 	}
 
@@ -695,8 +684,6 @@ func (container *Container) WithMountedCache(ctx context.Context, target string,
 
 	// set image ref to empty string
 	container.ImageRef = ""
-
-	SeenCacheKeys.Store(cache.Keys[0], struct{}{})
 
 	return container, nil
 }
