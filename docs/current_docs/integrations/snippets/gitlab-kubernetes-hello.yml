@@ -8,7 +8,7 @@
   before_script:
     - apk add curl
     - curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=/tmp sh
-build:
+hello:
   extends: [.dagger]
   script:
     # modify to use different function(s) as needed
