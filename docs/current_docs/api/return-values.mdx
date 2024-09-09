@@ -188,3 +188,36 @@ This means that the build succeeded, and a `Container` type representing the bui
 :::note
 When calling Dagger Functions that produce a just-in-time artifact, you can use the Dagger CLI to add more functions to the pipeline for further processing - for example, inspecting the contents of a directory artifact, exporting a file artifact to the local filesystem, publishing a container artifact to a registry, and so on. This is called ["function chaining"](./chaining.mdx), and it is one of Dagger's most powerful features.
 :::
+
+## Chaining
+
+So long as a Dagger Function returns an object that can be JSON-serialized, its state will be preserved and passed to the next function in the chain. This makes it possible to write custom Dagger Functions that support function chaining in the same style as the Dagger API.
+
+Here is an example module with support for function chaining:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+```go file=./snippets/chaining/enabling/go/main.go
+```
+</TabItem>
+<TabItem value="Python">
+```python file=./snippets/chaining/enabling/python/main.py
+```
+</TabItem>
+<TabItem value="TypeScript">
+```typescript file=./snippets/chaining/enabling/typescript/index.ts
+```
+</TabItem>
+</Tabs>
+
+And here is an example call for this module:
+
+```shell
+dagger call with-name --name=Monde with-greeting --greeting=Bonjour message
+```
+
+The result will be:
+
+```shell
+Bonjour, Monde!
+```

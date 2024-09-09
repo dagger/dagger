@@ -6,18 +6,210 @@ import TabItem from '@theme/TabItem';
 
 # Dagger SDKs
 
-Dagger SDKs make it easy to call the Dagger API from your favorite programming language.
+Dagger SDKs make it easy to call the Dagger API from your favorite programming language, by developing Dagger Functions or custom applications.
 
 A Dagger SDK provides two components:
 
 - A client library to call the Dagger API from your code
 - Tooling to extend the Dagger API with your own Dagger Functions (bundled in a Dagger module)
 
-Although the Dagger API uses GraphQL, you do not need to know GraphQL to call the API; the translation to underlying GraphQL API calls is handled internally by the Dagger SDKs.
+The Dagger API uses GraphQL as its low-level language-agnostic framework, and can also be accessed using any standard GraphQL client. However, you do not need to know GraphQL to call the Dagger API; the translation to underlying GraphQL API calls is handled internally by the Dagger SDKs.
 
 Stable Dagger SDKs are currently available for Go, TypeScript and Python. There are also [experimental SDKs contributed by the community](https://github.com/dagger/dagger/tree/main/sdk).
 
-## Installation
+## Dagger Functions
+
+Dagger Functions are packaged, shared and reused using Dagger modules. A new Dagger module is initialized by calling `dagger init`. This creates a new `dagger.json` configuration file in the current working directory, together with sample Dagger Function source code. The configuration file will default the name of the module to the current directory name, unless an alternative is specified with the `--name` argument.
+
+Once a module is initialized, `dagger develop --sdk=...` sets up or updates all the resources needed to develop the module locally using a Dagger SDK. By default, the module source code will be stored in the current working directory, unless an alternative is specified with the `--source` argument.
+
+Here is an example of initializing a Dagger module:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+```shell
+dagger init --name=my-module
+dagger develop --sdk=go
+```
+</TabItem>
+<TabItem value="Python">
+```shell
+dagger init --name=my-module
+dagger develop --sdk=python
+```
+</TabItem>
+<TabItem value="TypeScript">
+```shell
+dagger init --name=my-module
+dagger develop --sdk=typescript
+```
+</TabItem>
+</Tabs>
+
+:::info
+At any point, running `dagger develop` regenerates the module's code based on dependencies and the current state of the module.
+:::
+
+The default template from `dagger develop` creates the following structure:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```
+.
+├── LICENSE
+├── dagger
+│   ├── dagger.gen.go
+│   ├── go.mod
+│   ├── go.sum
+│   ├── internal
+│   │   ├── dagger
+│   │   ├── querybuilder
+│   │   └── telemetry
+│   └── main.go
+└── dagger.json
+```
+
+In this structure:
+
+- `dagger.json` is the Dagger module configuration file.
+- `go.mod`/`go.sum` manage the Go module and its dependencies.
+- `main.go` is where your Dagger module code goes. It contains sample code to help you get started.
+- `internal` contains automatically-generated types and helpers needed to configure and run the module:
+    - `dagger` contains definitions for the Dagger API that's tied to the currently running Dagger Engine container.
+    - `querybuilder` has utilities for building GraphQL queries (used internally by the `dagger` package).
+    - `telemetry` has utilities for sending Dagger Engine telemetry.
+
+</TabItem>
+<TabItem value="Python">
+
+```
+.
+├── LICENSE
+├── dagger
+│   ├── pyproject.toml
+│   ├── requirements.lock
+│   ├── sdk
+│   └── src
+│       └── main
+│           └── __init__.py
+└── dagger.json
+```
+
+In this structure:
+
+- `dagger.json` is the Dagger module configuration file.
+- `pyproject.toml` manages the Python project configuration.
+- `requirements.lock` manages the module dependencies.
+- `src/main/` is where your Dagger module code goes. It contains sample code to help you get started.
+- `sdk/` contains the Python SDK.
+
+This structure hosts a `main` package inside a `src` directory. This follows a [Python convention](https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/) that requires a project to be installed in order to run its code. This prevents accidental usage of development code since the Python interpreter includes the current working directory as the first item on the import path (more information is available in this [blog post on Python packaging](https://blog.ionelmc.ro/2014/05/25/python-packaging/)).
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```
+.
+├── LICENSE
+├── dagger
+│   ├── package.json
+│   ├── sdk
+│   ├── src
+│   │   └── index.ts
+│   └── tsconfig.json
+└── dagger.json
+```
+
+In this structure:
+
+- `dagger.json` is the Dagger module configuration file.
+- `package.json` manages the module dependencies.
+- `src/` is where your Dagger module code goes. It contains sample code to help you get started.
+- `sdk/` contains the TypeScript SDK.
+
+</TabItem>
+</Tabs>
+
+:::note
+While you can use the utilities defined in the automatically-generated code above, you *cannot* edit these files. Even if you edit them locally, any changes will not be persisted when you run the module.
+:::
+
+You can now write Dagger Functions using the selected Dagger SDK. Here is an example, which calls a remote API method and returns the result:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+```go file=./snippets/functions/functions-complex/go/main.go
+```
+
+This Dagger Function includes the context as input and error as return in its signature.
+</TabItem>
+<TabItem value="Python">
+```python file=./snippets/functions/functions-complex/python/main.py
+```
+
+Dagger Functions are implemented as [@dagger.function][@function] decorated
+methods, of a [@dagger.object_type][@object_type] decorated class.
+
+It's possible for a module to implement multiple classes (*object types*), but
+**the first one needs to have a name that matches the module's name**, in
+*PascalCase*. This object is sometimes referred to as the *main object*.
+
+For example, for a module initialized with `dagger init --name=my-module`,
+the main object needs to be named `MyModule`.
+</TabItem>
+<TabItem value="TypeScript">
+```typescript file=./snippets/functions/functions-complex/typescript/index.ts
+```
+</TabItem>
+</Tabs>
+
+:::caution
+You can try this Dagger Function by copying it into the default template generated by `dagger init`, but remember that you must update the module name in the code samples above to match the name used when your module was first initialized.
+:::
+
+In simple terms, this Dagger Function:
+
+- initializes a new container from an `alpine` base image.
+- executes the `apk add ...` command in the container to add the `curl` and `jq` utilities.
+- uses the `curl` utility to send an HTTP request to the URL `https://randomuser.me/api/` and parses the response using `jq`.
+- retrieves and returns the output stream of the last executed command as a string.
+
+:::important
+Every Dagger Function has access to the `dag` client, which is a pre-initialized Dagger API client. This client contains all the core types (like `Container`, `Directory`, etc.), as well as bindings to any dependencies your Dagger module has declared.
+:::
+
+Here is an example call for this Dagger Function:
+
+```shell
+dagger call get-user
+```
+
+Here's what you should see:
+
+```shell
+{
+  "title": "Mrs",
+  "first": "Beatrice",
+  "last": "Lavigne"
+}
+```
+
+:::important
+Dagger Functions execute within containers spawned by the Dagger Engine. This "sandboxing" serves a few important purposes:
+1. Reproducibility: Executing in a well-defined and well-controlled container ensures that a Dagger Function runs the same way every time it is invoked. It also guards against creating "hidden dependencies" on ambient properties of the execution environment that could change at any moment.
+1. Caching: A reproducible containerized environment makes it possible to cache the result of Dagger Function execution, which in turn allows Dagger to automatically speed up operations.
+1. Security: Even when running third-party Dagger Functions sourced from a Git repository, those Dagger Functions will not have default access to your host environment (host files, directories, environment variables, etc.). Access to these host resources can only be granted by explicitly passing them as argument values to the Dagger Function.
+:::
+
+## Custom applications
+
+An alternative approach is to develop a custom application using a Dagger SDK. This involves:
+
+- installing the SDK for your selected language in your development environment
+- initializing a Dagger API client in your application code
+- calling and combining Dagger API methods from your application to achieve the required result
+- executing your application using `dagger run`
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -37,50 +229,6 @@ After importing `dagger.io/dagger` in your Go module code, run the following com
 ```shell
 go mod tidy
 ```
-</TabItem>
-<TabItem value="Python">
-
-:::note
-The Dagger Python SDK requires [Python 3.10 or later](https://docs.python.org/3/using/index.html).
-:::
-
-Using a [virtual environment](https://packaging.python.org/en/latest/tutorials/installing-packages/#creating-virtual-environments) is recommended. Create a virtual environment for your project:
-
-```shell
-python3 -m venv .venv && source .venv/bin/activate
-```
-
-Install the Dagger Python SDK in your project's virtual environment using [PyPI](https://pypi.org/project/dagger-io/) or [Conda](https://anaconda.org/conda-forge/dagger-io) (from the [conda-forge](https://conda-forge.org/docs/user/introduction.html#how-can-i-install-packages-from-conda-forge) channel):
-
-```shell
-# using pypi
-pip install dagger-io
-
-# using conda
-conda install dagger-io
-```
-</TabItem>
-<TabItem value="TypeScript">
-:::note
-The Dagger TypeScript SDK requires [TypeScript 5.0 or later](https://www.typescriptlang.org/download/). This SDK currently only [supports Node.js (stable) and Bun (experimental)](./runtimes.mdx). To execute the TypeScript program, you must also have an TypeScript executor like `ts-node` or `tsx`.
-:::
-
-Install the Dagger TypeScript SDK in your project using `npm` or `yarn`:
-
-```shell
-// using npm
-npm install @dagger.io/dagger@latest --save-dev
-
-// using yarn
-yarn add @dagger.io/dagger --dev
-```
-</TabItem>
-</Tabs>
-
-## Usage example
-
-<Tabs groupId="language">
-<TabItem value="Go">
 
 This example demonstrates how to build a Go application for multiple architectures and Go versions using the Go SDK.
 
@@ -138,6 +286,27 @@ build
 ```
 </TabItem>
 <TabItem value="Python">
+
+:::note
+The Dagger Python SDK requires [Python 3.10 or later](https://docs.python.org/3/using/index.html).
+:::
+
+Using a [virtual environment](https://packaging.python.org/en/latest/tutorials/installing-packages/#creating-virtual-environments) is recommended. Create a virtual environment for your project:
+
+```shell
+python3 -m venv .venv && source .venv/bin/activate
+```
+
+Install the Dagger Python SDK in your project's virtual environment using [PyPI](https://pypi.org/project/dagger-io/) or [Conda](https://anaconda.org/conda-forge/dagger-io) (from the [conda-forge](https://conda-forge.org/docs/user/introduction.html#how-can-i-install-packages-from-conda-forge) channel):
+
+```shell
+# using pypi
+pip install dagger-io
+
+# using conda
+conda install dagger-io
+```
+
 This example demonstrates how to test a Python application against multiple Python versions using the Python SDK.
 
 Clone an example project:
@@ -173,8 +342,22 @@ Tests for Python 3.11 succeeded!
 Tests for Python 3.10 succeeded!
 All tasks have finished
 ```
+
 </TabItem>
 <TabItem value="TypeScript">
+:::note
+The Dagger TypeScript SDK requires [TypeScript 5.0 or later](https://www.typescriptlang.org/download/). This SDK currently only [supports Node.js (stable) and Bun (experimental)](./runtimes.mdx). To execute the TypeScript program, you must also have an TypeScript executor like `ts-node` or `tsx`.
+:::
+
+Install the Dagger TypeScript SDK in your project using `npm` or `yarn`:
+
+```shell
+// using npm
+npm install @dagger.io/dagger@latest --save-dev
+
+// using yarn
+yarn add @dagger.io/dagger --dev
+```
 
 This example demonstrates how to test a Node.js application against multiple Node.js versions using the TypeScript SDK.
 
@@ -220,3 +403,14 @@ build-node-20
 ```
 </TabItem>
 </Tabs>
+
+## Differences
+
+Here is a quick summary of differences between these two approaches.
+
+|  | Dagger Functions | Custom applications |
+|:---|:---|:---|
+| Pre-initialized Dagger API client | Y | N |
+| Direct host access | N | Y |
+| Direct third-party module access | Y | N |
+| Cross-language interoperability | Y | N |
