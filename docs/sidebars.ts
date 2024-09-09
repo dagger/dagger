@@ -47,6 +47,11 @@ module.exports = {
       ]
     },
     {
+      "type": "doc",
+      "label": "Adopting Dagger",
+      "id": "adopting"
+    },
+    {
       "type": "category",
       "label": "Dagger API",
       "link": {
@@ -59,10 +64,6 @@ module.exports = {
         {
           "type": "category",
           "label": "Calling the API",
-          "link": {
-            "type": "doc",
-            "id": "api/calling"
-          },
           "collapsible": true,
           "collapsed": true,
           "items": [
@@ -74,50 +75,34 @@ module.exports = {
         {
           "type": "category",
           "label": "Extending the API",
-          "link": {
-            "type": "doc",
-            "id": "api/extending"
-          },
           "collapsible": true,
           "collapsed": true,
           "items": [
-            {
-              "type": "category",
-              "label": "Dagger Functions",
-              "link": {
-                "type": "doc",
-                "id": "api/functions"
-              },
-              items: [
-                "api/arguments",
-                "api/return-values",
-                "api/chaining",
-                "api/secrets",
-                "api/services",
-                "api/cache-volumes",
-                "api/dependencies",
-                "api/error-handling",
-                "api/debugging",
-                "api/ide-integration",
-                "api/documentation",
-                "api/structure-packaging",
-                "api/entrypoint-function",
-                "api/custom-types",
-                "api/state-functions",
-                "api/enumerations",
-                "api/interfaces",
-                "api/runtimes",
-              ]
-            },
+            "api/arguments",
+            "api/return-values",
+            "api/secrets",
+            "api/services",
+            "api/cache-volumes",
+            "api/dependencies",
+            "api/error-handling",
+            "api/debugging",
+            "api/ide-integration",
+            "api/documentation",
+            "api/structure-packaging",
+            "api/entrypoint-function",
+            "api/custom-types",
+            "api/state-functions",
+            "api/enumerations",
+            "api/interfaces",
+            "api/runtimes",
           ]
         },
         {
           "type": "category",
-          "label": "Reference",
+          "label": "API and SDKs Reference",
           "collapsible": true,
           "collapsed": true,
           "items": [
-            "api/types",
             "api/internals",
             {
               "type": "link",
@@ -262,11 +247,6 @@ module.exports = {
     {
       "type": "doc",
       "id": "faq"
-    },
-    {
-      "type": "doc",
-      "label": "Adopting Dagger",
-      "id": "adopting"
     },
     {
       "type": "doc",
