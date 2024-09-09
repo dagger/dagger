@@ -37,7 +37,7 @@ func (cli *CLI) Binary(
 
 const (
 	// https://github.com/goreleaser/goreleaser/releases
-	goReleaserVersion = "v2.2.0"
+	goReleaserVersion = "v2.3.0"
 )
 
 // Publish the CLI using GoReleaser
