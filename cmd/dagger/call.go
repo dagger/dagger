@@ -12,6 +12,18 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const (
+	printTraceLinkKey = "printTraceLink"
+)
+
+func isPrintTraceLinkEnabled(annotations map[string]string) bool {
+	if val, ok := annotations[printTraceLinkKey]; ok && val == "true" {
+		return true
+	}
+
+	return false
+}
+
 var funcCmds = []*FuncCommand{
 	callModCmd,
 	callCoreCmd,
@@ -22,13 +34,17 @@ var callCoreCmd = &FuncCommand{
 	Short:             "Call a core function",
 	DisableModuleLoad: true,
 	Annotations: map[string]string{
-		"experimental": "true",
+		"experimental":    "true",
+		printTraceLinkKey: "true",
 	},
 }
 
 var callModCmd = &FuncCommand{
 	Name:  "call [options]",
 	Short: "Call one or more functions, interconnected into a pipeline",
+	Annotations: map[string]string{
+		printTraceLinkKey: "true",
+	},
 }
 
 var funcListCmd = &cobra.Command{

@@ -18,6 +18,7 @@ import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/querybuilder"
 	"dagger.io/dagger/telemetry"
+	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/slog"
 )
@@ -159,9 +160,12 @@ func (fc *FuncCommand) Command() *cobra.Command {
 
 				return nil
 			},
-
 			// Between PreRunE and RunE, flags are validated.
 			RunE: func(c *cobra.Command, a []string) error {
+				if isPrintTraceLinkEnabled(c.Annotations) {
+					c.SetContext(idtui.WithPrintTraceLink(c.Context(), true))
+				}
+
 				return withEngine(c.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) (rerr error) {
 					fc.c = engineClient
 					fc.q = querybuilder.Query().Client(engineClient.Dagger().GraphQLClient())

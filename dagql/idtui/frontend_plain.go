@@ -138,10 +138,13 @@ func (fe *frontendPlain) SetCloudURL(ctx context.Context, url string, msg string
 		return
 	}
 	fe.addVirtualLog(trace.SpanFromContext(ctx), "cloud", "url", url)
-	if logged {
-		fe.msgPreFinalRender.WriteString(traceMessage(fe.profile, url, msg) + "\n")
-	} else if !skipLoggedOutTraceMsg() {
-		fe.msgPreFinalRender.WriteString(fmt.Sprintf(loggedOutTraceMsg, url) + "\n")
+
+	if cmdContext, ok := FromCmdContext(ctx); ok && cmdContext.printTraceLink {
+		if logged {
+			fe.msgPreFinalRender.WriteString(traceMessage(fe.profile, url, msg))
+		} else if !skipLoggedOutTraceMsg() {
+			fe.msgPreFinalRender.WriteString(fmt.Sprintf(loggedOutTraceMsg, url))
+		}
 	}
 }
 
@@ -365,7 +368,7 @@ func (fe *frontendPlain) finalRender() {
 		fmt.Fprintln(os.Stderr)
 	}
 	if fe.msgPreFinalRender.Len() > 0 {
-		fmt.Fprintln(os.Stderr, fe.msgPreFinalRender.String())
+		fmt.Fprintln(os.Stderr, "\n"+fe.msgPreFinalRender.String()+"\n")
 	}
 	renderPrimaryOutput(fe.db)
 }

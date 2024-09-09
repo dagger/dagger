@@ -12,6 +12,7 @@ import (
 	"golang.org/x/term"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
 )
 
@@ -47,7 +48,14 @@ EOF
 	GroupID: execGroup.ID,
 	Args:    cobra.MaximumNArgs(1), // operation can be specified
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if isPrintTraceLinkEnabled(cmd.Annotations) {
+			cmd.SetContext(idtui.WithPrintTraceLink(cmd.Context(), true))
+		}
+
 		return optionalModCmdWrapper(Query, "")(cmd, args)
+	},
+	Annotations: map[string]string{
+		printTraceLinkKey: "true",
 	},
 }
 

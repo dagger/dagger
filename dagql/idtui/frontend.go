@@ -26,6 +26,26 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 )
 
+type cmdContextKey struct{}
+type cmdContext struct {
+	printTraceLink bool
+}
+
+// WithPrintTraceLink is used for enabling printing the trace link
+// for the selected commands.
+func WithPrintTraceLink(ctx context.Context, printTraceLink bool) context.Context {
+	return context.WithValue(ctx, cmdContextKey{}, &cmdContext{printTraceLink: printTraceLink})
+}
+
+func FromCmdContext(ctx context.Context) (*cmdContext, bool) {
+	value, ok := ctx.Value(cmdContextKey{}).(*cmdContext)
+	if ok {
+		return value, true
+	}
+
+	return nil, false
+}
+
 // having a bit of fun with these. cc @vito @jedevc
 var skipLoggedOutTraceMsgEnvs = []string{"NOTHANKS", "SHUTUP", "GOAWAY", "STOPIT"}
 
