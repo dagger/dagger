@@ -1,0 +1,9 @@
+kind: Changed
+body: |-
+    Modules run in Python 3.12 by default
+
+    To pin to Python 3.11 in a module, either change `requires-python = ">=3.11"` in `pyproject.toml` or create a `.python-version` file with `3.11` as the content.
+time: 2024-09-09T22:10:14.078397Z
+custom:
+    Author: helderco
+    PR: "8311"
