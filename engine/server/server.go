@@ -499,6 +499,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 
 	cacheServiceURL := os.Getenv("_EXPERIMENTAL_DAGGER_CACHESERVICE_URL")
 	cacheServiceToken := os.Getenv("_EXPERIMENTAL_DAGGER_CACHESERVICE_TOKEN")
+	cacheServiceSyncOnBoot := os.Getenv("_EXPERIMENTAL_DAGGER_CACHESERVICE_SYNC_ON_BOOT")
 	// add DAGGER_CLOUD_TOKEN in a backwards compat way.
 	// TODO: deprecate in a future release
 	if v, ok := os.LookupEnv("DAGGER_CLOUD_TOKEN"); ok {
@@ -516,6 +517,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		ServiceURL:   cacheServiceURL,
 		Token:        cacheServiceToken,
 		EngineID:     opts.Name,
+		SyncOnBoot:   cacheServiceSyncOnBoot == "true",
 	})
 	if err != nil {
 		return nil, err

@@ -28,12 +28,25 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// SynchronizeCacheMounts synchronizes the specified list of cache mounts.
-// NOTE: this is a synchronous operation that will download data from object storage
-// providers.
-func (m *manager) SynchronizeCacheMounts(ctx context.Context, cacheMounts []string) error {
+func (m *manager) syncAllCacheMounts(ctx context.Context) error {
+	cacheMounts := []string{}
+	for _, cm := range m.syncedCacheMounts {
+		// skip all cache mounts that do not have a sync URL
+		if cm.mount.URL == "" {
+			continue
+		}
+		cacheMounts = append(cacheMounts, cm.mount.Name)
+	}
+
+	return m.downloadCacheMounts(ctx, cacheMounts)
+}
+
+func (m *manager) initSyncedCacheMounts(ctx context.Context) {
 	m.cacheMountsInit.Do(func() {
 		m.seenCacheMounts = &sync.Map{}
+
+		// initialize the map before the potential failure below
+		m.syncedCacheMounts = map[string]*syncedCacheMount{}
 
 		response, err := m.cacheClient.GetCacheMountConfig(ctx, GetCacheMountConfigRequest{})
 		if err != nil {
@@ -41,7 +54,6 @@ func (m *manager) SynchronizeCacheMounts(ctx context.Context, cacheMounts []stri
 			return
 		}
 
-		m.syncedCacheMounts = map[string]*syncedCacheMount{}
 		for _, mount := range response.SyncedCacheMounts {
 			m.syncedCacheMounts[mount.Name] = &syncedCacheMount{
 				init:  sync.Once{},
@@ -49,12 +61,29 @@ func (m *manager) SynchronizeCacheMounts(ctx context.Context, cacheMounts []stri
 			}
 		}
 	})
+}
 
+// DownloadCacheMounts synchronizes the specified list of cache mounts.
+// NOTE: this is a synchronous operation that will download data from object storage
+// providers.
+func (m *manager) DownloadCacheMounts(ctx context.Context, cacheMounts []string) error {
+	// if SyncOnBoot is on then we skip synchronizing the cache mounts
+	// NOTE: each cache mount is synchronized only once using sync.Once, technically
+	// we don't need this check since the function won't actually do anything. However
+	// if would still spawn a few goroutines that we know is unnecessary, so its
+	// better to just exit more quickly.
+	if m.SyncOnBoot {
+		return nil
+	}
+
+	return m.downloadCacheMounts(ctx, cacheMounts)
+}
+
+func (m *manager) downloadCacheMounts(ctx context.Context, cacheMounts []string) error {
 	var eg errgroup.Group
 	for _, cacheMountName := range cacheMounts {
 		m.seenCacheMounts.Store(cacheMountName, true)
 
-		bklog.G(ctx).Infof("syncing cache volume %s", cacheMountName)
 		cacheMount, ok := m.syncedCacheMounts[cacheMountName]
 		if !ok {
 			bklog.G(ctx).Infof("cache mount %s not in config", cacheMountName)
