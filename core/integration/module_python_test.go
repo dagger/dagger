@@ -1339,6 +1339,28 @@ func (PythonSuite) TestWithOtherModuleTypes(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (PythonSuite) TestIgnoreConstructorArg(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	out, err := pythonModInit(t, c, `
+        from typing import Annotated
+        import dagger
+
+        @dagger.object_type
+        class Test:
+            source: Annotated[
+                dagger.Directory, 
+                dagger.DefaultPath("/"),
+                dagger.Ignore([".venv"]),
+            ] = dagger.field()
+        `).
+		With(daggerCall("source", "entries", "--json")).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+	require.Contains(t, gjson.Parse(out).Value(), "dagger.json")
+}
+
 func pythonSource(contents string) dagger.WithContainerFunc {
 	return pythonSourceAt("", contents)
 }
