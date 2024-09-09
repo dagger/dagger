@@ -7,7 +7,6 @@ require (
 	github.com/Khan/genqlient v0.7.0
 	github.com/MakeNowJust/heredoc/v2 v2.0.1
 	github.com/Netflix/go-expect v0.0.0-20220104043353-73e0943537d2
-	github.com/a-h/templ v0.2.731
 	github.com/adrg/xdg v0.4.0
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/charmbracelet/bubbletea v0.26.6

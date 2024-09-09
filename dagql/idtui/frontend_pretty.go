@@ -21,11 +21,12 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/term"
 
+	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/slog"
 )
 
 type frontendPretty struct {
-	FrontendOpts
+	dagui.FrontendOpts
 
 	// updated by Run
 	program     *tea.Program
@@ -37,7 +38,7 @@ type frontendPretty struct {
 	err         error
 
 	// updated as events are written
-	db           *DB
+	db           *dagui.DB
 	logs         *prettyLogs
 	eof          bool
 	backgrounded bool
@@ -45,8 +46,8 @@ type frontendPretty struct {
 	focused      trace.SpanID
 	zoomed       trace.SpanID
 	focusedIdx   int
-	rowsView     *RowsView
-	rows         *Rows
+	rowsView     *dagui.RowsView
+	rows         *dagui.Rows
 	pressedKey   string
 	pressedKeyAt time.Time
 
@@ -70,7 +71,7 @@ type frontendPretty struct {
 }
 
 func New() Frontend {
-	db := NewDB()
+	db := dagui.NewDB()
 	profile := ColorProfile()
 	view := new(strings.Builder)
 	return &frontendPretty{
@@ -79,8 +80,8 @@ func New() Frontend {
 		autoFocus: true,
 
 		// set empty initial row state to avoid nil checks
-		rowsView: &RowsView{},
-		rows:     &Rows{BySpan: map[trace.SpanID]*TraceRow{}},
+		rowsView: &dagui.RowsView{},
+		rows:     &dagui.Rows{BySpan: map[trace.SpanID]*dagui.TraceRow{}},
 
 		// initial TUI state
 		window:     tea.WindowSizeMsg{Width: -1, Height: -1}, // be clear that it's not set
@@ -131,7 +132,7 @@ func traceMessage(profile termenv.Profile, url string, msg string) string {
 
 // Run starts the TUI, calls the run function, stops the TUI, and finally
 // prints the primary output to the appropriate stdout/stderr streams.
-func (fe *frontendPretty) Run(ctx context.Context, opts FrontendOpts, run func(context.Context) error) error {
+func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run func(context.Context) error) error {
 	if opts.TooFastThreshold == 0 {
 		opts.TooFastThreshold = 100 * time.Millisecond
 	}
@@ -232,7 +233,7 @@ func (fe *frontendPretty) finalRender() error {
 	fe.recalculateViewLocked()
 
 	var renderedProgress bool
-	if fe.Debug || fe.Verbosity >= ShowCompletedVerbosity || fe.err != nil {
+	if fe.Debug || fe.Verbosity >= dagui.ShowCompletedVerbosity || fe.err != nil {
 		if fe.msgPreFinalRender.Len() > 0 {
 			fmt.Fprint(os.Stderr, fe.msgPreFinalRender.String()+"\n\n")
 		}
@@ -417,7 +418,7 @@ func (fe *frontendPretty) recalculateViewLocked() {
 	fe.focus(fe.rows.BySpan[fe.focused])
 }
 
-func (fe *frontendPretty) renderedRowLines(row *TraceRow, prefix string) []string {
+func (fe *frontendPretty) renderedRowLines(row *dagui.TraceRow, prefix string) []string {
 	buf := new(strings.Builder)
 	out := NewOutput(buf, termenv.WithProfile(fe.profile))
 	fe.renderRow(out, row, false, prefix)
@@ -559,7 +560,7 @@ func (fe *frontendPretty) renderLines(height int, prefix string) []string {
 	return focusedLines
 }
 
-func (fe *frontendPretty) focus(row *TraceRow) {
+func (fe *frontendPretty) focus(row *dagui.TraceRow) {
 	if row == nil {
 		return
 	}
@@ -847,9 +848,9 @@ func (fe *frontendPretty) renderLocked() {
 	fe.Render(fe.viewOut)
 }
 
-func (fe *frontendPretty) renderRow(out *termenv.Output, row *TraceRow, full bool, prefix string) {
+func (fe *frontendPretty) renderRow(out *termenv.Output, row *dagui.TraceRow, full bool, prefix string) {
 	fe.renderStep(out, row.Span, row.Depth, prefix)
-	if row.IsRunningOrChildRunning || row.Span.Failed() || fe.Verbosity >= ShowSpammyVerbosity {
+	if row.IsRunningOrChildRunning || row.Span.Failed() || fe.Verbosity >= dagui.ShowSpammyVerbosity {
 		if logs := fe.logs.Logs[row.Span.ID]; logs != nil {
 			logLimit := fe.window.Height / 3
 			if full {
@@ -865,7 +866,7 @@ func (fe *frontendPretty) renderRow(out *termenv.Output, row *TraceRow, full boo
 	}
 }
 
-func (fe *frontendPretty) renderStep(out *termenv.Output, span *Span, depth int, prefix string) error {
+func (fe *frontendPretty) renderStep(out *termenv.Output, span *dagui.Span, depth int, prefix string) error {
 	r := newRenderer(fe.db, fe.window.Width, fe.FrontendOpts)
 
 	isFocused := span.ID == fe.focused

@@ -1,4 +1,4 @@
-package idtui
+package dagui
 
 import (
 	"errors"
@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/a-h/templ"
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
@@ -207,22 +206,6 @@ func (span *Span) Bar() SpanBar {
 	return bar
 }
 
-func (bar SpanBar) Render() templ.Component {
-	var dur string
-	if bar.Duration > 10*time.Millisecond {
-		dur = fmtDuration(bar.Duration)
-	}
-	return templ.Raw(
-		fmt.Sprintf(
-			`<div class="bar %s" style="left: %f%%; width: %f%%"><span class="duration">%s</span></div>`,
-			bar.Span.Classes(),
-			bar.OffsetPercent*100,
-			bar.WidthPercent*100,
-			dur,
-		),
-	)
-}
-
 func (span *Span) Classes() string {
 	classes := []string{}
 	if span.Cached {
@@ -240,7 +223,7 @@ func (span *Span) Classes() string {
 	return strings.Join(classes, " ")
 }
 
-func fmtDuration(d time.Duration) string {
+func FormatDuration(d time.Duration) string {
 	days := int64(d.Hours()) / 24
 	hours := int64(d.Hours()) % 24
 	minutes := int64(d.Minutes()) % 60

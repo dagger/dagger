@@ -31,6 +31,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/dagger/dagger/analytics"
+	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/slog"
@@ -251,11 +252,11 @@ func (e ExitError) Error() string {
 
 const InstrumentationLibrary = "dagger.io/cli"
 
-var opts idtui.FrontendOpts
+var opts dagui.FrontendOpts
 
 func main() {
 	parseGlobalFlags()
-	opts.Verbosity += idtui.ShowCompletedVerbosity // keep progress by default
+	opts.Verbosity += dagui.ShowCompletedVerbosity // keep progress by default
 	opts.Verbosity += verbose                      // raise verbosity with -v
 	opts.Verbosity -= quiet                        // lower verbosity with -q
 	opts.Silent = silent                           // show no progress
