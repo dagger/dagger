@@ -48,7 +48,7 @@ func (h *Helm) Test(ctx context.Context) error {
 		WithEnvVariable("KUBECONFIG", "/.kube/config").
 		WithEnvVariable("CACHEBUSTER", identity.NewID()).
 		WithExec([]string{"kubectl", "get", "nodes"}).
-		WithExec([]string{"helm", "install", "--wait", "--create-namespace", "--namespace=dagger", "dagger", "."}).
+		WithExec([]string{"helm", "install", "--wait", "--create-namespace", "--namespace=dagger", "--set=engine.image.ref=registry.dagger.io/engine:main", "dagger", "."}).
 		Sync(ctx)
 	if err != nil {
 		return err
