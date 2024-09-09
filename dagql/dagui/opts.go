@@ -24,6 +24,9 @@ type FrontendOpts struct {
 	// RevealAllSpans tells the frontend to show all spans, not just the spans
 	// beneath the primary span.
 	RevealAllSpans bool
+
+	// Leave the TUI running instead of exiting after completion.
+	NoExit bool
 }
 
 const (
