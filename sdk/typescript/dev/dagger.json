@@ -7,5 +7,6 @@
       "source": "node"
     }
   ],
-  "source": "."
+  "source": ".",
+  "engineVersion": "v0.12.7"
 }
