@@ -17,7 +17,7 @@ This is a simple way to accept module-wide configuration, or just to set a few a
 The entrypoint function for a module can be overridden by registering a custom constructor. Its parameters are available as flags in the `dagger call` command directly.
 
 :::important
-Dagger modules have only one entrypoint function. Entrypoint function of [custom types](./custom-types.mdx) are not registered; they are constructed by the function that [chains](./chaining.mdx) them.
+Dagger modules have only one entrypoint function. Entrypoint function of [custom types](./custom-types.mdx) are not registered; they are constructed by the function that [chains](./index.mdx#chaining) them.
 :::
 
 Here is an example module with a custom constructor as entrypoint function:
