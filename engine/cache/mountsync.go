@@ -148,9 +148,13 @@ func (m *manager) downloadCacheMount(ctx context.Context, syncedCacheMount Synce
 	})
 }
 
-// syncSeenCacheMounts uploads to object storage all cache mounts that were seen
+func (m *manager) UploadCacheMounts(ctx context.Context) error {
+	return m.uploadSeenCacheMounts(ctx)
+}
+
+// uploadSeenCacheMounts uploads to object storage all cache mounts that were seen
 // whose digest is different than the one stored upstream.
-func (m *manager) syncSeenCacheMounts(ctx context.Context) error {
+func (m *manager) uploadSeenCacheMounts(ctx context.Context) error {
 	// if seenCacheMounts is not set then are no cache mounts that should be synced
 	if m.seenCacheMounts == nil {
 		return nil

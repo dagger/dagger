@@ -467,6 +467,7 @@ func (m *manager) Import(ctx context.Context) error {
 // Close will block until the final export has finished or ctx is canceled.
 func (m *manager) Close(ctx context.Context) (rerr error) {
 	close(m.startCloseCh)
+	m.UploadCacheMounts(ctx)
 	select {
 	case <-m.doneCh:
 	case <-ctx.Done():
@@ -546,6 +547,7 @@ func (m *manager) descriptorProviderPair(layerMetadata remotecache.CacheLayer) (
 type Manager interface {
 	solver.CacheManager
 	DownloadCacheMounts(context.Context, []string) error
+	UploadCacheMounts(context.Context) error
 	ReleaseUnreferenced(context.Context) error
 	Close(context.Context) error
 }
@@ -557,6 +559,10 @@ type defaultCacheManager struct {
 var _ Manager = defaultCacheManager{}
 
 func (defaultCacheManager) DownloadCacheMounts(ctx context.Context, _ []string) error {
+	return nil
+}
+
+func (defaultCacheManager) UploadCacheMounts(ctx context.Context) error {
 	return nil
 }
 
