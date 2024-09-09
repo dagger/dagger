@@ -69,32 +69,43 @@ func GetCustomFlagValue(name string) DaggerValue {
 }
 
 // GetCustomFlagValueSlice returns a pflag.Value instance for a dagger.ObjectTypeDef name.
-func GetCustomFlagValueSlice(name string) DaggerValue {
+func GetCustomFlagValueSlice(name string, defVal []string) (DaggerValue, error) {
 	switch name {
 	case Container:
-		return &sliceValue[*containerValue]{}
+		v := &sliceValue[*containerValue]{}
+		return v.SetDefault(defVal)
 	case Directory:
-		return &sliceValue[*directoryValue]{}
+		v := &sliceValue[*directoryValue]{}
+		return v.SetDefault(defVal)
 	case File:
-		return &sliceValue[*fileValue]{}
+		v := &sliceValue[*fileValue]{}
+		return v.SetDefault(defVal)
 	case Secret:
-		return &sliceValue[*secretValue]{}
+		v := &sliceValue[*secretValue]{}
+		return v.SetDefault(defVal)
 	case Service:
-		return &sliceValue[*serviceValue]{}
+		v := &sliceValue[*serviceValue]{}
+		return v.SetDefault(defVal)
 	case PortForward:
-		return &sliceValue[*portForwardValue]{}
+		v := &sliceValue[*portForwardValue]{}
+		return v.SetDefault(defVal)
 	case CacheVolume:
-		return &sliceValue[*cacheVolumeValue]{}
+		v := &sliceValue[*cacheVolumeValue]{}
+		return v.SetDefault(defVal)
 	case ModuleSource:
-		return &sliceValue[*moduleSourceValue]{}
+		v := &sliceValue[*moduleSourceValue]{}
+		return v.SetDefault(defVal)
 	case Module:
-		return &sliceValue[*moduleValue]{}
+		v := &sliceValue[*moduleValue]{}
+		return v.SetDefault(defVal)
 	case Platform:
-		return &sliceValue[*platformValue]{}
+		v := &sliceValue[*platformValue]{}
+		return v.SetDefault(defVal)
 	case Socket:
-		return &sliceValue[*socketValue]{}
+		v := &sliceValue[*socketValue]{}
+		return v.SetDefault(defVal)
 	}
-	return nil
+	return nil, nil
 }
 
 // DaggerValue is a pflag.Value that requires a dagger.Client for producing the
@@ -143,6 +154,17 @@ func (v *sliceValue[T]) Get(ctx context.Context, c *dagger.Client, modSrc *dagge
 		out[i] = outV
 	}
 	return out, nil
+}
+
+func (v *sliceValue[T]) SetDefault(s []string) (*sliceValue[T], error) {
+	if s == nil {
+		return v, nil
+	}
+	if err := v.Set(strings.Join(s, ",")); err != nil {
+		return v, err
+	}
+	v.changed = false
+	return v, nil
 }
 
 func (v *sliceValue[T]) Set(s string) error {
@@ -777,6 +799,8 @@ func (v *platformValue) Get(ctx context.Context, dag *dagger.Client, _ *dagger.M
 
 // AddFlag adds a flag appropriate for the argument type. Should return a
 // pointer to the value.
+//
+//nolint:gocyclo
 func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) error {
 	name := r.FlagName()
 	usage := r.Description
@@ -803,25 +827,31 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) error {
 
 	case dagger.ScalarKind:
 		scalarName := r.TypeDef.AsScalar.Name
+		defVal, _ := getDefaultValue[string](r)
 
 		if val := GetCustomFlagValue(scalarName); val != nil {
+			if defVal != "" {
+				val.Set(defVal)
+			}
 			flags.Var(val, name, usage)
 			return nil
 		}
 
-		val, _ := getDefaultValue[string](r)
-		flags.String(name, val, usage)
+		flags.String(name, defVal, usage)
 		return nil
 
 	case dagger.EnumKind:
 		enumName := r.TypeDef.AsEnum.Name
+		defVal, _ := getDefaultValue[string](r)
 
 		if val := GetCustomFlagValue(enumName); val != nil {
+			if defVal != "" {
+				val.Set(defVal)
+			}
 			flags.Var(val, name, usage)
 			return nil
 		}
 
-		defVal, _ := getDefaultValue[string](r)
 		val := newEnumValue(r.TypeDef.AsEnum, defVal)
 		flags.Var(val, name, usage)
 
@@ -886,26 +916,34 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) error {
 
 		case dagger.ScalarKind:
 			scalarName := elementType.AsScalar.Name
+			defVal, _ := getDefaultValue[[]string](r)
 
-			if val := GetCustomFlagValueSlice(scalarName); val != nil {
+			val, err := GetCustomFlagValueSlice(scalarName, defVal)
+			if err != nil {
+				return err
+			}
+			if val != nil {
 				flags.Var(val, name, usage)
 				return nil
 			}
 
-			val, _ := getDefaultValue[[]string](r)
-			flags.StringSlice(name, val, usage)
+			flags.StringSlice(name, defVal, usage)
 			return nil
 
 		case dagger.EnumKind:
 			enumName := elementType.AsEnum.Name
+			defVal, _ := getDefaultValue[[]string](r)
 
-			if val := GetCustomFlagValueSlice(enumName); val != nil {
+			val, err := GetCustomFlagValueSlice(enumName, defVal)
+			if err != nil {
+				return err
+			}
+			if val != nil {
 				flags.Var(val, name, usage)
 				return nil
 			}
 
-			defVals, _ := getDefaultValue[[]string](r)
-			val := newEnumSliceValue(elementType.AsEnum, defVals)
+			val = newEnumSliceValue(elementType.AsEnum, defVal)
 			flags.Var(val, name, usage)
 
 			return nil
@@ -913,7 +951,11 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) error {
 		case dagger.ObjectKind:
 			objName := elementType.AsObject.Name
 
-			if val := GetCustomFlagValueSlice(objName); val != nil {
+			val, err := GetCustomFlagValueSlice(objName, nil)
+			if err != nil {
+				return err
+			}
+			if val != nil {
 				flags.Var(val, name, usage)
 				return nil
 			}
@@ -927,7 +969,11 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) error {
 		case dagger.InputKind:
 			inputName := elementType.AsInput.Name
 
-			if val := GetCustomFlagValueSlice(inputName); val != nil {
+			val, err := GetCustomFlagValueSlice(inputName, nil)
+			if err != nil {
+				return err
+			}
+			if val != nil {
 				flags.Var(val, name, usage)
 				return nil
 			}
