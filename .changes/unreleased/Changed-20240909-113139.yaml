@@ -1,0 +1,6 @@
+kind: Changed
+body: "client: Increase the min connect timeout from 1s to 3s (otherwise connecting to distant Engines fails)"
+time: 2024-09-09T11:31:39.442814+01:00
+custom:
+    Author: neutronth
+    PR: "8328"
