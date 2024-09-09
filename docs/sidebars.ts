@@ -127,11 +127,6 @@ module.exports = {
 
           ]
         },
-        {
-          "type": "doc",
-          "label": "CLI Reference",
-          "id": "reference/cli"
-        },
       ]
     },
     {
@@ -243,6 +238,11 @@ module.exports = {
       "type": "doc",
       "label": "Cookbook",
       "id": "cookbook/cookbook"
+    },
+    {
+      "type": "doc",
+      "label": "CLI Reference",
+      "id": "reference/cli"
     },
     {
       "type": "doc",
