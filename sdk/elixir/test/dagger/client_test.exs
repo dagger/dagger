@@ -19,15 +19,15 @@ defmodule Dagger.ClientTest do
   alias Dagger.Core.ExecError
 
   setup_all do
-    client = Dagger.connect!(connect_timeout: :timer.seconds(60))
-    on_exit(fn -> Dagger.close(client) end)
+    dag = Dagger.connect!(connect_timeout: :timer.seconds(60))
+    on_exit(fn -> Dagger.close(dag) end)
 
-    %{client: client}
+    %{dag: dag}
   end
 
-  test "container", %{client: client} do
+  test "container", %{dag: dag} do
     assert {:ok, version} =
-             client
+             dag
              |> Client.container()
              |> Container.from("alpine:3.16.2")
              |> Container.with_exec(["cat", "/etc/alpine-release"])
@@ -36,9 +36,9 @@ defmodule Dagger.ClientTest do
     assert version == "3.16.2\n"
   end
 
-  test "git_repository", %{client: client} do
+  test "git_repository", %{dag: dag} do
     assert {:ok, readme} =
-             client
+             dag
              |> Client.git("https://github.com/dagger/dagger")
              |> GitRepository.tag("v0.3.0")
              |> GitRef.tree()
@@ -48,15 +48,15 @@ defmodule Dagger.ClientTest do
     assert ["## What is Dagger?" | _] = String.split(readme, "\n")
   end
 
-  test "container build", %{client: client} do
+  test "container build", %{dag: dag} do
     repo =
-      client
+      dag
       |> Client.git("https://github.com/dagger/dagger")
       |> GitRepository.tag("v0.3.0")
       |> GitRef.tree()
 
     assert {:ok, out} =
-             client
+             dag
              |> Client.container()
              |> Container.build(repo)
              |> Container.with_exec(["dagger", "version"])
@@ -65,7 +65,7 @@ defmodule Dagger.ClientTest do
     assert ["dagger" | _] = out |> String.trim() |> String.split(" ")
   end
 
-  test "container build args", %{client: client} do
+  test "container build args", %{dag: dag} do
     dockerfile = """
     FROM alpine:3.16.2
     ARG SPAM=spam
@@ -74,10 +74,10 @@ defmodule Dagger.ClientTest do
     """
 
     assert {:ok, out} =
-             client
+             dag
              |> Client.container()
              |> Container.build(
-               client
+               dag
                |> Client.directory()
                |> Directory.with_new_file("Dockerfile", dockerfile),
                build_args: [%BuildArg{name: "SPAM", value: "egg"}]
@@ -88,10 +88,10 @@ defmodule Dagger.ClientTest do
     assert out =~ "SPAM=egg"
   end
 
-  test "container with env variable", %{client: client} do
+  test "container with env variable", %{dag: dag} do
     for val <- ["spam", ""] do
       assert {:ok, out} =
-               client
+               dag
                |> Client.container()
                |> Container.from("alpine:3.16.2")
                |> Container.with_env_variable("FOO", val)
@@ -102,15 +102,15 @@ defmodule Dagger.ClientTest do
     end
   end
 
-  test "container with mounted directory", %{client: client} do
+  test "container with mounted directory", %{dag: dag} do
     dir =
-      client
+      dag
       |> Client.directory()
       |> Directory.with_new_file("hello.txt", "Hello, world!")
       |> Directory.with_new_file("goodbye.txt", "Goodbye, world!")
 
     assert {:ok, out} =
-             client
+             dag
              |> Client.container()
              |> Container.from("alpine:3.16.2")
              |> Container.with_mounted_directory("/mnt", dir)
@@ -123,15 +123,15 @@ defmodule Dagger.ClientTest do
            """
   end
 
-  test "container with mounted cache", %{client: client} do
+  test "container with mounted cache", %{dag: dag} do
     cache_key = "example-cache"
     filename = DateTime.utc_now() |> Calendar.strftime("%Y-%m-%d-%H-%M-%S")
 
     container =
-      client
+      dag
       |> Client.container()
       |> Container.from("alpine:3.16.2")
-      |> Container.with_mounted_cache("/cache", Client.cache_volume(client, cache_key),
+      |> Container.with_mounted_cache("/cache", Client.cache_volume(dag, cache_key),
         sharing: CacheSharingMode.locked()
       )
 
@@ -156,9 +156,9 @@ defmodule Dagger.ClientTest do
            ] = out
   end
 
-  test "directory", %{client: client} do
+  test "directory", %{dag: dag} do
     {:ok, entries} =
-      client
+      dag
       |> Client.directory()
       |> Directory.with_new_file("hello.txt", "Hello, world!")
       |> Directory.with_new_file("goodbye.txt", "Goodbye, world!")
@@ -167,9 +167,9 @@ defmodule Dagger.ClientTest do
     assert entries == ["goodbye.txt", "hello.txt"]
   end
 
-  test "host directory", %{client: client} do
+  test "host directory", %{dag: dag} do
     assert {:ok, readme} =
-             client
+             dag
              |> Client.host()
              |> Host.directory(".")
              |> Directory.file("README.md")
@@ -178,9 +178,9 @@ defmodule Dagger.ClientTest do
     assert readme =~ "Dagger"
   end
 
-  test "return list of objects", %{client: client} do
+  test "return list of objects", %{dag: dag} do
     assert {:ok, envs} =
-             client
+             dag
              |> Client.container()
              |> Container.from("alpine:3.16.2")
              |> Container.env_variables()
@@ -189,43 +189,43 @@ defmodule Dagger.ClientTest do
     assert [{:ok, "PATH"}] = Enum.map(envs, &EnvVariable.name/1)
   end
 
-  test "nullable", %{client: client} do
+  test "nullable", %{dag: dag} do
     assert {:ok, nil} =
-             client
+             dag
              |> Client.container()
              |> Container.from("alpine:3.16.2")
              |> Container.env_variable("NOTHING")
   end
 
-  test "load file", %{client: client} do
+  test "load file", %{dag: dag} do
     {:ok, id} =
-      client
+      dag
       |> Client.directory()
       |> Directory.with_new_file("hello.txt", "Hello, world!")
       |> Directory.file("hello.txt")
       |> File.id()
 
     assert {:ok, "Hello, world!"} =
-             client
+             dag
              |> Client.load_file_from_id(id)
              |> File.contents()
   end
 
-  test "load secret", %{client: client} do
+  test "load secret", %{dag: dag} do
     {:ok, id} =
-      client
+      dag
       |> Client.set_secret("foo", "bar")
       |> Secret.id()
 
     assert {:ok, "bar"} =
-             client
+             dag
              |> Client.load_secret_from_id(id)
              |> Secret.plaintext()
   end
 
-  test "container sync", %{client: client} do
+  test "container sync", %{dag: dag} do
     container =
-      client
+      dag
       |> Client.container()
       |> Container.from("alpine:3.16.2")
 
@@ -244,30 +244,30 @@ defmodule Dagger.ClientTest do
     RUN --mount=type=secret,id=the-secret echo "hello ${THE_SECRET}"
     """
 
-    client = Dagger.connect!()
-    on_exit(fn -> Dagger.close(client) end)
+    dag = Dagger.connect!()
+    on_exit(fn -> Dagger.close(dag) end)
 
     Elixir.File.write!("Dockerfile", dockerfile)
     on_exit(fn -> Elixir.File.rm_rf!("Dockerfile") end)
 
     secret =
-      client
+      dag
       |> Client.set_secret("the-secret", "abcd")
 
     assert {:ok, _} =
-             client
+             dag
              |> Client.host()
              |> Host.directory(".")
              |> Directory.docker_build(dockerfile: "Dockerfile", secrets: [secret])
              |> Sync.sync()
 
-    container = Client.container(client)
-    assert %Container{} = Client.container(client, id: container)
+    container = Client.container(dag)
+    assert %Container{} = Client.container(dag, id: container)
   end
 
-  test "env variable expand", %{client: client} do
+  test "env variable expand", %{dag: dag} do
     {:ok, env} =
-      client
+      dag
       |> Client.container()
       |> Container.from("alpine:3.16.2")
       |> Container.with_env_variable("A", "B")
@@ -277,16 +277,16 @@ defmodule Dagger.ClientTest do
     assert env == "C:B"
   end
 
-  test "service binding", %{client: client} do
+  test "service binding", %{dag: dag} do
     service =
-      client
+      dag
       |> Client.container()
       |> Container.from("nginx:1.25-alpine3.18")
       |> Container.with_exposed_port(80)
       |> Container.as_service()
 
     assert {:ok, out} =
-             client
+             dag
              |> Client.container()
              |> Container.from("alpine:3.18")
              |> Container.with_service_binding("nginx-service", service)
@@ -297,9 +297,9 @@ defmodule Dagger.ClientTest do
     assert out =~ ~r/Welcome to nginx/
   end
 
-  test "string escape", %{client: client} do
+  test "string escape", %{dag: dag} do
     assert {:ok, _} =
-             client
+             dag
              |> Client.container()
              |> Container.from("nginx:1.25-alpine3.18")
              |> Container.with_new_file(
@@ -315,17 +315,17 @@ defmodule Dagger.ClientTest do
              |> Sync.sync()
   end
 
-  test "return scalar", %{client: client} do
+  test "return scalar", %{dag: dag} do
     assert {:ok, :OBJECT_KIND} =
-             client
+             dag
              |> Dagger.Client.type_def()
              |> Dagger.TypeDef.with_object("A")
              |> Dagger.TypeDef.kind()
   end
 
-  test "exec error", %{client: client} do
+  test "exec error", %{dag: dag} do
     assert {:error, error} =
-             client
+             dag
              |> Client.container()
              |> Container.from("alpine:3.16.2")
              |> Container.with_exec(["foobar"])

@@ -60,7 +60,7 @@ defmodule Dagger.Mod do
       end)
 
     for {name, _} <- args_def do
-      Map.fetch!(args, name)
+      Map.get(args, name)
     end
   end
 
@@ -91,6 +91,9 @@ defmodule Dagger.Mod do
 
     {:ok, values}
   end
+
+  defp cast(nil, {:optional, _type}, _dag), do: {:ok, nil}
+  defp cast(value, {:optional, type}, dag), do: cast(value, type, dag)
 
   defp cast(value, module, dag) when is_binary(value) and is_atom(module) do
     # NOTE: It feels like we really need a protocol for the module to 
