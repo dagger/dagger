@@ -10,9 +10,7 @@
     "LICENSE",
     "README.md"
   ],
-  "exclude": [
-    "vendor/"
-  ],
+  "exclude": ["vendor/"],
   "source": ".",
-  "engineVersion": "v0.13.0-010101000000-dev-6b135e6b6307"
+  "engineVersion": "v0.12.7"
 }
