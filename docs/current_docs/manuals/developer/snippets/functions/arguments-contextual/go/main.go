@@ -1,35 +1,48 @@
 package main
 
 import (
-  "context"
-  "dagger/my-module/internal/dagger"
+	"context"
+	"dagger/my-module/internal/dagger"
 )
 
 type MyModule struct{}
 
-func (m *MyModule) RepoFiles(
-  ctx context.Context,
-
-  // +defaultPath="/"
-  repo *dagger.Directory,
-) ([]string, error) {
-  return repo.Entries(ctx)
+type Files struct {
+  RepoFiles []string
+  ModuleFiles []string
+  ReadmeContent string
 }
 
-func (m *MyModule) ModuleFiles(
-  ctx context.Context,
+func (m *MyModule) Example(
+	ctx context.Context,
 
-  // +defaultPath="."
-  module *dagger.Directory,
-) ([]string, error) {
-  return module.Entries(ctx)
-}
+	// +defaultPath="/"
+	repo *dagger.Directory,
 
-func (m *MyModule) ReadMe(
-  ctx context.Context,
+	// +defaultPath="."
+	moduleDir *dagger.Directory,
 
-  // +defaultPath="/README.md"
-  readme *dagger.File,
-) (string, error) {
-  return readme.Contents(ctx)
+	// +defaultPath="/README.md"
+	readme *dagger.File,
+) (*Files, error) {
+	repoFiles, err := repo.Entries(ctx)
+  if err != nil {
+    return nil, err
+  }
+
+  moduleFiles, err := moduleDir.Entries(ctx)
+  if err != nil {
+    return nil, err
+  }
+
+  readmeContent, err := readme.Contents(ctx)
+  if err != nil {
+    return nil, err
+  }
+  
+	return &Files{
+		RepoFiles: repoFiles,
+		ModuleFiles: moduleFiles,
+		ReadmeContent: readmeContent,
+	}, nil
 }
