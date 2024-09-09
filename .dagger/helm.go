@@ -97,7 +97,7 @@ func (h *Helm) chart() *dagger.Container {
 func (h *Helm) SetVersion(
 	ctx context.Context,
 
-	// Version to set the chart & app to, e.g. --version=v0.12.0
+	// Version to set the chart to, e.g. --version=v0.12.0
 	version string,
 ) (*dagger.File, error) {
 	c := h.chart()
@@ -113,7 +113,6 @@ func (h *Helm) SetVersion(
 
 	version = strings.TrimPrefix(version, "v")
 	meta.Version = version
-	meta.AppVersion = version
 
 	err = meta.Validate()
 	if err != nil {
