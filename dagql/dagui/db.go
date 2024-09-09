@@ -1,4 +1,4 @@
-package idtui
+package dagui
 
 import (
 	"context"
