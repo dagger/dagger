@@ -1054,8 +1054,7 @@ func (PythonSuite) TestDocs(ctx context.Context, t *testctx.T) {
         `)
 
 		_, err := modGen.With(daggerCall("--help")).Sync(ctx)
-		require.ErrorContains(t, err, "The correct syntax is")
-		require.ErrorContains(t, err, ">>> url: InitVar[typing.Annotated[str, Doc('A URL')]]")
+		require.ErrorContains(t, err, "InitVar[typing.Annotated[str, Doc('A URL')]]")
 	})
 
 	t.Run("alternative constructor", func(ctx context.Context, t *testctx.T) {

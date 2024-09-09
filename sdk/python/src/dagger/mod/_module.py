@@ -500,16 +500,15 @@ class Module:
             # with community first on how this is usually handled.
             fields = inspect.get_annotations(cls)
             for name, t in fields.items():
-                if is_annotated(t):
-                    nt, *meta = typing.get_args(t)
-                    if isinstance(nt, dataclasses.InitVar):
-                        v = typing.Annotated[nt.type, *meta]
-                        msg = (
-                            f"Field `{name}` is an InitVar wrapped in Annotated. "
-                            "The correct syntax is:\n"
-                            f">>> {name}: InitVar[{v}]"
-                        )
-                        raise UserError(msg)
+                if is_annotated(t) and isinstance(t.__origin__, dataclasses.InitVar):
+                    # Pytohn 3.10 doesn't support `*meta*  syntax
+                    # in Annotated[init_t.type, *meta]
+                    t.__origin__ = t.__origin__.type
+                    msg = (
+                        f"Field `{name}` is an InitVar wrapped in Annotated. "
+                        f"The correct syntax is: InitVar[{t}]"
+                    )
+                    raise UserError(msg)
 
             wrapped = dataclasses.dataclass(kw_only=True)(cls)
             return self._process_type(wrapped)
