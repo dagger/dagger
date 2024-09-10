@@ -914,6 +914,9 @@ func (fe *frontendPretty) renderRow(out *termenv.Output, r *renderer, row *dagui
 		fmt.Fprintln(out)
 	}
 	fe.renderStep(out, r, row.Span, row.Chained, row.Depth, prefix)
+	if final {
+		return
+	}
 	if row.IsRunningOrChildRunning || row.Span.IsFailed() || fe.Verbosity >= dagui.ShowSpammyVerbosity {
 		if logs := fe.logs.Logs[row.Span.ID]; logs != nil {
 			fe.renderLogs(out, r,
