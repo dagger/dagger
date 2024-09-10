@@ -380,7 +380,7 @@ func (src *ModuleSource) LoadContext(ctx context.Context, dag *dagql.Server, pat
 // relative to the source module's root directory (./mod), but the path from the caller location would be `./ctx/mod`.
 //
 // This function returns both:
-// - the path to the context directory (location of the .git or `dagger.json`` file if it doesn't exist)
+// - the path to the context directory (location of the .git or `dagger.json“ file if it doesn't exist)
 // - the path to the source root directory (location of the `dagger.json` file)
 //
 // NOTE: this function is only valid for local module sources.
