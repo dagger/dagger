@@ -433,6 +433,8 @@ func renderPrimaryOutput(db *dagui.DB) error {
 		return nil
 	}
 
+	fmt.Fprintln(os.Stderr)
+
 	for _, l := range logs {
 		data := l.Body().AsString()
 		var stream int

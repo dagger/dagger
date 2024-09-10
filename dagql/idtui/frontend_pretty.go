@@ -281,8 +281,6 @@ func (fe *frontendPretty) finalRender() error {
 		if fe.msgPreFinalRender.Len() > 0 {
 			fmt.Fprint(os.Stderr, "\n"+fe.msgPreFinalRender.String()+"\n")
 		}
-
-		fmt.Fprintln(os.Stderr)
 	}
 
 	// If there are errors, show log output.
