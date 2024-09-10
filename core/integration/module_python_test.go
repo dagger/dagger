@@ -992,6 +992,71 @@ func (PythonSuite) TestDocs(ctx context.Context, t *testctx.T) {
 		require.True(t, obj.Get("constructor.args.#(name=onlyInit).defaultValue").Bool())
 	})
 
+	t.Run("InitVar", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := pythonModInit(t, c, `
+            import dataclasses
+            from typing import Annotated
+            from typing_extensions import Doc
+
+            import dagger
+            
+
+            @dagger.object_type
+            class Test:
+                com_url: dataclasses.InitVar[Annotated[str, Doc("A .com URL")]] = "https://example.com"
+                org_url: dataclasses.InitVar[Annotated[str, Doc("A .org URL")]] = "https://example.org"
+
+                # NB: not a dagger.field() to force serialization/deserialization in urls function
+                saved_urls: Annotated[list[str], Doc("List of URLs")] = dataclasses.field(init=False)
+
+                def __post_init__(self, com_url: str, org_url: str):
+                    self.saved_urls = [com_url, org_url]
+
+                @dagger.function
+                def urls(self) -> list[str]:
+                    return self.saved_urls
+        `)
+
+		obj := inspectModuleObjects(ctx, t, modGen).Get("0")
+
+		require.EqualValues(t, []any{"comUrl", "orgUrl"}, obj.Get("constructor.args.#.name").Value())
+		require.Equal(t, "A .com URL", obj.Get("constructor.args.#(name=comUrl).description").String())
+		require.Equal(t, "A .org URL", obj.Get("constructor.args.#(name=orgUrl).description").String())
+
+		require.Equal(t, "https://example.com", obj.Get("constructor.args.#(name=comUrl).defaultValue.@fromstr").String())
+		require.Equal(t, "https://example.org", obj.Get("constructor.args.#(name=orgUrl).defaultValue.@fromstr").String())
+
+		// Sanity check
+		out, err := modGen.With(daggerCall("urls", "--json")).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `["https://example.com", "https://example.org"]`, out)
+	})
+
+	t.Run("wrong InitVar syntax", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := pythonModInit(t, c, `
+            import dataclasses
+            from typing import Annotated
+            from typing_extensions import Doc
+
+            import dagger
+            
+
+            @dagger.object_type
+            class Test:
+                url: Annotated[dataclasses.InitVar[str], Doc("A URL")] = "https://example.com"
+
+                def __post_init__(self, url: str):
+                    ...
+        `)
+
+		_, err := modGen.With(daggerCall("--help")).Sync(ctx)
+		require.ErrorContains(t, err, "InitVar[typing.Annotated[str, Doc('A URL')]]")
+	})
+
 	t.Run("alternative constructor", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 

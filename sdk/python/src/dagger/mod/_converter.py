@@ -1,4 +1,3 @@
-import dataclasses
 import enum
 import functools
 import inspect
@@ -13,6 +12,7 @@ from dagger.mod._types import ObjectDefinition
 from dagger.mod._utils import (
     get_doc,
     is_annotated,
+    is_initvar,
     is_nullable,
     is_union,
     non_null,
@@ -70,9 +70,11 @@ def make_converter():
 @functools.cache
 def to_typedef(annotation: type) -> "TypeDef":  # noqa: C901, PLR0911
     """Convert Python object to API type."""
-    assert not is_annotated(
-        annotation
-    ), "Annotated types should be handled by the caller."
+    if is_initvar(annotation):
+        return to_typedef(annotation.type)
+
+    if is_annotated(annotation):
+        return to_typedef(strip_annotations(annotation))
 
     import dagger
     from dagger import dag
@@ -80,9 +82,6 @@ def to_typedef(annotation: type) -> "TypeDef":  # noqa: C901, PLR0911
     from dagger.client.base import Scalar
 
     td = dag.type_def()
-
-    if isinstance(annotation, dataclasses.InitVar):
-        annotation = annotation.type
 
     typ = TypeHint(annotation)
 
@@ -96,13 +95,11 @@ def to_typedef(annotation: type) -> "TypeDef":  # noqa: C901, PLR0911
         msg = f"Unsupported union type: {typ.hint}"
         raise TypeError(msg)
 
-    if typ is TypeHint(type(None)):
-        return td.with_kind(dagger.TypeDefKind.VOID_KIND)
-
     builtins = {
         str: dagger.TypeDefKind.STRING_KIND,
         int: dagger.TypeDefKind.INTEGER_KIND,
         bool: dagger.TypeDefKind.BOOLEAN_KIND,
+        type(None): dagger.TypeDefKind.VOID_KIND,
     }
 
     if typ.hint in builtins:
