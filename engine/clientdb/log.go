@@ -90,8 +90,8 @@ func LogsToPB(dbLog []Log) []*otlplogsv1.ResourceLogs {
 			SeverityText:   sd.SeverityText,
 			Body:           &bodyPb,
 			Attributes:     attrs,
-			TraceId:        []byte(tid[:]),
-			SpanId:         []byte(sid[:]),
+			TraceId:        tid[:],
+			SpanId:         sid[:],
 		})
 		ssm[k] = scopeLog
 
