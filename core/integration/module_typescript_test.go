@@ -700,7 +700,7 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
 
 		out, err := modGen.With(daggerQuery(`{runtimeDetection{version}}`)).Stdout(ctx)
 		require.NoError(t, err)
-		require.JSONEq(t, `{"runtimeDetection":{"version":"bun@1.0.11"}}`, out)
+		require.JSONEq(t, `{"runtimeDetection":{"version":"bun@1.1.23"}}`, out)
 	})
 }
 
