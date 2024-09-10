@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"dagger.io/dagger/telemetry"
+	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/client"
 )
 
@@ -51,6 +52,9 @@ dagger run python main.py
 	RunE:         Run,
 	Args:         cobra.MinimumNArgs(1),
 	SilenceUsage: true,
+	Annotations: map[string]string{
+		printTraceLinkKey: "true",
+	},
 }
 
 var waitDelay time.Duration
@@ -71,6 +75,10 @@ func init() {
 }
 
 func Run(cmd *cobra.Command, args []string) error {
+	if isPrintTraceLinkEnabled(cmd.Annotations) {
+		cmd.SetContext(idtui.WithPrintTraceLink(cmd.Context(), true))
+	}
+
 	err := run(cmd, args)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {

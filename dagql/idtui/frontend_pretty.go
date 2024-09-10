@@ -109,11 +109,14 @@ func (fe *frontendPretty) SetCloudURL(ctx context.Context, url string, msg strin
 		slog.Warn(msg)
 	}
 
-	if logged {
-		fe.msgPreFinalRender.WriteString(traceMessage(fe.profile, url, msg))
-	} else if !skipLoggedOutTraceMsg() {
-		fe.msgPreFinalRender.WriteString(fmt.Sprintf(loggedOutTraceMsg, url))
+	if cmdContext, ok := FromCmdContext(ctx); ok && cmdContext.printTraceLink {
+		if logged {
+			fe.msgPreFinalRender.WriteString(traceMessage(fe.profile, url, msg))
+		} else if !skipLoggedOutTraceMsg() {
+			fe.msgPreFinalRender.WriteString(fmt.Sprintf(loggedOutTraceMsg, url))
+		}
 	}
+
 	fe.mu.Unlock()
 }
 
@@ -232,23 +235,16 @@ func (fe *frontendPretty) finalRender() error {
 	fe.focusedIdx = -1
 	fe.recalculateViewLocked()
 
-	var renderedProgress bool
 	if fe.Debug || fe.Verbosity >= dagui.ShowCompletedVerbosity || fe.err != nil {
-		if fe.msgPreFinalRender.Len() > 0 {
-			fmt.Fprint(os.Stderr, fe.msgPreFinalRender.String()+"\n\n")
-		}
 		// Render progress to stderr so stdout stays clean.
 		out := NewOutput(os.Stderr, termenv.WithProfile(fe.profile))
-		renderedProgress = fe.renderProgress(out, true, fe.window.Height, "")
-	}
+		fe.renderProgress(out, true, fe.window.Height, "")
 
-	if renderedProgress {
-		// Print a blank line after progress if there is any primary output to
-		// show.
-		logs := fe.logs.Logs[fe.db.PrimarySpan]
-		if logs != nil && logs.UsedHeight() > 0 {
-			fmt.Fprintln(os.Stderr)
+		if fe.msgPreFinalRender.Len() > 0 {
+			fmt.Fprint(os.Stderr, "\n"+fe.msgPreFinalRender.String()+"\n")
 		}
+
+		fmt.Fprintln(os.Stderr)
 	}
 
 	// Replay the primary output log to stdout/stderr.
@@ -425,10 +421,9 @@ func (fe *frontendPretty) renderedRowLines(row *dagui.TraceRow, prefix string) [
 	return strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
 }
 
-func (fe *frontendPretty) renderProgress(out *termenv.Output, full bool, height int, prefix string) bool {
-	var renderedAny bool
+func (fe *frontendPretty) renderProgress(out *termenv.Output, full bool, height int, prefix string) {
 	if fe.rowsView == nil {
-		return false
+		return
 	}
 
 	rows := fe.rows
@@ -436,9 +431,8 @@ func (fe *frontendPretty) renderProgress(out *termenv.Output, full bool, height 
 	if full {
 		for _, row := range rows.Order {
 			fe.renderRow(out, row, full, "")
-			renderedAny = true
 		}
-		return renderedAny
+		return
 	}
 
 	if !fe.autoFocus {
@@ -461,7 +455,7 @@ func (fe *frontendPretty) renderProgress(out *termenv.Output, full bool, height 
 
 	if len(rows.Order) == 0 {
 		// NB: this is a bit redundant with above, but feels better to decouple
-		return renderedAny
+		return
 	}
 
 	if fe.autoFocus && len(rows.Order) > 0 {
@@ -472,9 +466,6 @@ func (fe *frontendPretty) renderProgress(out *termenv.Output, full bool, height 
 	lines := fe.renderLines(height, prefix)
 
 	fmt.Fprint(out, strings.Join(lines, "\n"))
-	renderedAny = true
-
-	return renderedAny
 }
 
 func (fe *frontendPretty) renderLines(height int, prefix string) []string {
