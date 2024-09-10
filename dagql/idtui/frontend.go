@@ -13,9 +13,7 @@ import (
 	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
 	"go.opentelemetry.io/otel/log"
-	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/term"
 
 	"dagger.io/dagger/telemetry"
@@ -23,6 +21,7 @@ import (
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/slog"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
 
 type cmdContextKey struct{}
@@ -61,7 +60,7 @@ type Frontend interface {
 	// SetPrimary tells the frontend which span should be treated like the focal
 	// point of the command. Its output will be displayed at the end, and its
 	// children will be promoted to the "top-level" of the TUI.
-	SetPrimary(spanID trace.SpanID)
+	SetPrimary(spanID dagui.SpanID)
 	Background(cmd tea.ExecCommand) error
 	// RevealAllSpans tells the frontend to show all spans, not just
 	// the spans beneath the primary span.
@@ -163,7 +162,7 @@ func (r *renderer) renderCall(
 	focused bool,
 ) error {
 	if r.rendering[call.Digest] {
-		slog.Warn("cycle detected while rendering call", "span", span.Name(), "call", call.String())
+		slog.Warn("cycle detected while rendering call", "span", span.Name, "call", call.String())
 		return nil
 	}
 	r.rendering[call.Digest] = true
@@ -273,7 +272,7 @@ func (r *renderer) renderSpan(
 	style := lipgloss.NewStyle()
 	if span != nil {
 		r.renderStatus(out, span, focused)
-		if len(span.Links()) > 0 {
+		if len(span.Links) > 0 {
 			style = style.Italic(true)
 		}
 	}
@@ -336,7 +335,7 @@ func (r *renderer) renderStatus(out *termenv.Output, span *dagui.Span, focused b
 	var symbol string
 	var color termenv.Color
 	switch {
-	case span.IsRunning():
+	case span.IsRunningOrLinksRunning():
 		symbol = DotFilled
 		color = termenv.ANSIYellow
 	case span.IsCached():
@@ -371,8 +370,8 @@ func (r *renderer) renderStatus(out *termenv.Output, span *dagui.Span, focused b
 
 func (r *renderer) renderDuration(out *termenv.Output, span *dagui.Span) {
 	fmt.Fprint(out, " ")
-	duration := out.String(dagui.FormatDuration(span.ActiveDuration(r.now)))
-	if span.IsRunning() {
+	duration := out.String(dagui.FormatDuration(span.Activity.Duration(r.now)))
+	if span.IsRunningOrLinksRunning() {
 		duration = duration.Foreground(termenv.ANSIYellow)
 	} else {
 		duration = duration.Faint()
@@ -381,7 +380,7 @@ func (r *renderer) renderDuration(out *termenv.Output, span *dagui.Span) {
 }
 
 func (r *renderer) renderCached(out *termenv.Output, span *dagui.Span) {
-	if !span.IsRunning() && span.IsCached() {
+	if !span.IsRunningOrLinksRunning() && span.IsCached() {
 		fmt.Fprintf(out, " %s", out.String("CACHED").
 			Foreground(termenv.ANSIBlue))
 	}

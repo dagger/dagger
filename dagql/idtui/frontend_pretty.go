@@ -15,7 +15,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 	"github.com/pkg/browser"
-	"go.opentelemetry.io/otel/codes"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
@@ -44,7 +43,7 @@ type frontendPretty struct {
 	eof          bool
 	backgrounded bool
 	autoFocus    bool
-	debugged     trace.SpanID
+	debugged     dagui.SpanID
 	focusedIdx   int
 	rowsView     *dagui.RowsView
 	rows         *dagui.Rows
@@ -81,7 +80,7 @@ func New() Frontend {
 
 		// set empty initial row state to avoid nil checks
 		rowsView: &dagui.RowsView{},
-		rows:     &dagui.Rows{BySpan: map[trace.SpanID]*dagui.TraceRow{}},
+		rows:     &dagui.Rows{BySpan: map[dagui.SpanID]*dagui.TraceRow{}},
 
 		// initial TUI state
 		window:     tea.WindowSizeMsg{Width: -1, Height: -1}, // be clear that it's not set
@@ -162,7 +161,7 @@ func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run 
 	return runErr
 }
 
-func (fe *frontendPretty) SetPrimary(spanID trace.SpanID) {
+func (fe *frontendPretty) SetPrimary(spanID dagui.SpanID) {
 	fe.mu.Lock()
 	fe.db.SetPrimarySpan(spanID)
 	fe.ZoomedSpan = spanID
@@ -173,7 +172,7 @@ func (fe *frontendPretty) SetPrimary(spanID trace.SpanID) {
 
 func (fe *frontendPretty) RevealAllSpans() {
 	fe.mu.Lock()
-	fe.ZoomedSpan = trace.SpanID{}
+	fe.ZoomedSpan = dagui.SpanID{}
 	fe.mu.Unlock()
 }
 
@@ -268,7 +267,7 @@ func (fe *frontendPretty) finalRender() error {
 	fe.recalculateViewLocked()
 
 	// Unfocus for the final render.
-	fe.FocusedSpan = trace.SpanID{}
+	fe.FocusedSpan = dagui.SpanID{}
 
 	r := newRenderer(fe.db, fe.window.Width, fe.FrontendOpts)
 
@@ -461,7 +460,7 @@ func (fe *frontendPretty) recalculateViewLocked() {
 	fe.rows = fe.rowsView.Rows(fe.FrontendOpts)
 	if len(fe.rows.Order) == 0 {
 		fe.focusedIdx = -1
-		fe.FocusedSpan = trace.SpanID{}
+		fe.FocusedSpan = dagui.SpanID{}
 		return
 	}
 	if len(fe.rows.Order) < fe.focusedIdx {
@@ -938,15 +937,15 @@ func (fe *frontendPretty) renderStep(out *termenv.Output, r *renderer, span *dag
 			return err
 		}
 	} else if span != nil {
-		if err := r.renderSpan(out, span, span.Name(), prefix, depth, isFocused); err != nil {
+		if err := r.renderSpan(out, span, span.Name, prefix, depth, isFocused); err != nil {
 			return err
 		}
 	}
 	fmt.Fprintln(out)
 
-	if span.Status().Code == codes.Error && span.Status().Description != "" {
+	if span.IsFailed() && span.Status.Description != "" {
 		// only print the first line
-		line := strings.Split(span.Status().Description, "\n")[0]
+		line := strings.Split(span.Status.Description, "\n")[0]
 		fmt.Fprint(out, prefix)
 		r.indent(out, depth)
 		fmt.Fprintf(out,
@@ -994,13 +993,13 @@ func (fe *frontendPretty) renderLogs(out *termenv.Output, r *renderer, logs *Vte
 }
 
 type prettyLogs struct {
-	Logs     map[trace.SpanID]*Vterm
+	Logs     map[dagui.SpanID]*Vterm
 	LogWidth int
 }
 
 func newPrettyLogs() *prettyLogs {
 	return &prettyLogs{
-		Logs:     make(map[trace.SpanID]*Vterm),
+		Logs:     make(map[dagui.SpanID]*Vterm),
 		LogWidth: -1,
 	}
 }
@@ -1014,13 +1013,14 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 }
 
 func (l *prettyLogs) spanLogs(id trace.SpanID) *Vterm {
-	term, found := l.Logs[id]
+	spanID := dagui.SpanID{SpanID: id}
+	term, found := l.Logs[spanID]
 	if !found {
 		term = NewVterm()
 		if l.LogWidth > -1 {
 			term.SetWidth(l.LogWidth)
 		}
-		l.Logs[id] = term
+		l.Logs[spanID] = term
 	}
 	return term
 }

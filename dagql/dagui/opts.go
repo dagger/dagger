@@ -2,8 +2,6 @@ package dagui
 
 import (
 	"time"
-
-	"go.opentelemetry.io/otel/trace"
 )
 
 type FrontendOpts struct {
@@ -39,10 +37,10 @@ type FrontendOpts struct {
 
 	// ZoomedSpan configures a span to be zoomed in on, revealing
 	// its child spans.
-	ZoomedSpan trace.SpanID
+	ZoomedSpan SpanID
 
 	// FocusedSpan is the currently selected span, i.e. the cursor position.
-	FocusedSpan trace.SpanID
+	FocusedSpan SpanID
 }
 
 const (
@@ -67,13 +65,13 @@ func (opts FrontendOpts) ShouldShow(span *Span) bool {
 	if span.Hidden(opts) {
 		return false
 	}
-	if span.IsFailed() {
+	if span.IsFailedOrCausedFailure() {
 		return true
 	}
 	if span.IsPending() {
 		return true
 	}
-	if span.IsRunning() {
+	if span.IsRunningOrLinksRunning() {
 		return true
 	}
 	// TODO: avoid breaking chains
@@ -83,11 +81,19 @@ func (opts FrontendOpts) ShouldShow(span *Span) bool {
 	// 	// ignore fast steps; signal:noise is too poor
 	// 	return false
 	// }
+	// TODO: bring back <100ms?
 	if opts.GCThreshold > 0 &&
-		time.Since(span.EndTime()) > opts.GCThreshold &&
+		time.Since(span.EndTime) > opts.GCThreshold &&
 		opts.Verbosity < ShowCompletedVerbosity {
 		// stop showing steps that ended after a given threshold
 		return false
 	}
+	// TODO: don't break chains
+	// if opts.TooFastThreshold > 0 &&
+	// 	span.ActiveDuration(time.Now()) < opts.TooFastThreshold &&
+	// 	opts.Verbosity < ShowSpammyVerbosity {
+	// 	// ignore fast steps; signal:noise is too poor
+	// 	return false
+	// }
 	return true
 }

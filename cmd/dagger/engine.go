@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"dagger.io/dagger/telemetry"
+	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/slog"
@@ -86,7 +87,7 @@ func initEngineTelemetry(ctx context.Context) (context.Context, func(error)) {
 	slog.SetDefault(slog.SpanLogger(ctx, InstrumentationLibrary))
 
 	// Set the span as the primary span for the frontend.
-	Frontend.SetPrimary(span.SpanContext().SpanID())
+	Frontend.SetPrimary(dagui.SpanID{SpanID: span.SpanContext().SpanID()})
 
 	// Direct command stdout/stderr to span stdio via OpenTelemetry.
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)

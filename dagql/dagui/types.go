@@ -4,19 +4,7 @@ import (
 	"time"
 
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/trace"
 )
-
-type Trace struct {
-	ID         trace.TraceID
-	Epoch, End time.Time
-	IsRunning  bool
-	db         *DB
-}
-
-func (trace *Trace) HexID() string {
-	return trace.ID.String()
-}
 
 type Task struct {
 	Span      sdktrace.ReadOnlySpan
@@ -50,18 +38,21 @@ type TraceRow struct {
 	IsRunningOrChildRunning bool
 	Previous                *TraceRow
 	Parent                  *Span
+	HasChildren             bool
 }
 
 type RowsView struct {
 	Zoomed *Span
 	Body   []*TraceTree
-	BySpan map[trace.SpanID]*TraceTree
+	BySpan map[SpanID]*TraceTree
 }
 
 func (db *DB) RowsView(opts FrontendOpts) *RowsView {
 	view := &RowsView{
-		Zoomed: db.Spans.Map[opts.ZoomedSpan],
-		BySpan: make(map[trace.SpanID]*TraceTree),
+		BySpan: make(map[SpanID]*TraceTree),
+	}
+	if zoomed, ok := db.Spans.Map[opts.ZoomedSpan]; ok {
+		view.Zoomed = zoomed
 	}
 	var spans []*Span
 	if view.Zoomed != nil {
@@ -82,7 +73,7 @@ func (db *DB) RowsView(opts FrontendOpts) *RowsView {
 
 func (db *DB) WalkSpans(opts FrontendOpts, spans []*Span, f func(*TraceTree)) {
 	var lastTree *TraceTree
-	seen := make(map[trace.SpanID]bool)
+	seen := make(map[SpanID]bool)
 	var walk func(*Span, *TraceTree)
 	walk = func(span *Span, parent *TraceTree) {
 		spanID := span.ID
@@ -111,10 +102,10 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans []*Span, f func(*TraceTree)) {
 		}
 		if span.Base != nil && lastTree != nil {
 			// TODO: sync with Cloud impl.
-			tree.Chained = span.Base.Digest == lastTree.Span.Digest
+			tree.Chained = span.Base.Digest == lastTree.Span.CallDigest
 			lastTree.Final = !tree.Chained
 		}
-		if span.IsRunning() {
+		if span.IsRunningOrLinksRunning() {
 			tree.setRunning()
 		}
 		f(tree)
@@ -137,12 +128,12 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans []*Span, f func(*TraceTree)) {
 
 type Rows struct {
 	Order  []*TraceRow
-	BySpan map[trace.SpanID]*TraceRow
+	BySpan map[SpanID]*TraceRow
 }
 
 func (lv *RowsView) Rows(opts FrontendOpts) *Rows {
 	rows := &Rows{
-		BySpan: make(map[trace.SpanID]*TraceRow, len(lv.Body)),
+		BySpan: make(map[SpanID]*TraceRow, len(lv.Body)),
 	}
 	var walk func(*TraceTree, *Span, int)
 	walk = func(tree *TraceTree, parent *Span, depth int) {
@@ -153,13 +144,14 @@ func (lv *RowsView) Rows(opts FrontendOpts) *Rows {
 			Depth:                   depth,
 			IsRunningOrChildRunning: tree.IsRunningOrChildRunning,
 			Parent:                  parent,
+			HasChildren:             len(tree.Children) > 0,
 		}
 		if len(rows.Order) > 0 {
 			row.Previous = rows.Order[len(rows.Order)-1]
 		}
 		rows.Order = append(rows.Order, row)
 		rows.BySpan[tree.Span.ID] = row
-		if tree.IsRunningOrChildRunning || tree.Span.IsFailed() || opts.Verbosity >= ExpandCompletedVerbosity {
+		if tree.IsRunningOrChildRunning || tree.Span.IsFailedOrCausedFailure() || opts.Verbosity >= ExpandCompletedVerbosity {
 			for _, child := range tree.Children {
 				walk(child, row.Span, depth+1)
 			}

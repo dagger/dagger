@@ -15,7 +15,6 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/muesli/termenv"
 	"github.com/pkg/browser"
-	"go.opentelemetry.io/otel/codes"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
@@ -28,18 +27,18 @@ type frontendPlain struct {
 
 	// db stores info about all the spans
 	db   *dagui.DB
-	data map[trace.SpanID]*spanData
+	data map[dagui.SpanID]*spanData
 
 	// idx is an incrementing counter to assign human-readable names to spans
 	idx uint
 
 	// lastContext stores the chain of parent spans for the span that was last
 	// rendered, from shallowest to deepest
-	lastContext []trace.SpanID
+	lastContext []dagui.SpanID
 	// lastContextLock is the span in lastContext that is being held for the
 	// contextHold duration (not always the last one rendered, since there are
 	// a couple points we need to manually transfer the lock for best results)
-	lastContextLock trace.SpanID
+	lastContextLock dagui.SpanID
 	// lastContextTime is the time at which the lastContext was rendered at
 	lastContextTime time.Time
 	// lastContextStartTime is the time at which the lastContext first acquired the lock
@@ -79,7 +78,7 @@ type spanData struct {
 	idx uint
 
 	// the parent span ID, if the span has a parent
-	parentID trace.SpanID
+	parentID dagui.SpanID
 
 	// ready indicates that the span is ready to be displayed - this allows to
 	// start bufferings logs before we've actually exported the span itself
@@ -105,7 +104,7 @@ func NewPlain() Frontend {
 	db := dagui.NewDB()
 	return &frontendPlain{
 		db:   db,
-		data: make(map[trace.SpanID]*spanData),
+		data: make(map[dagui.SpanID]*spanData),
 
 		profile:        ColorProfile(),
 		output:         NewOutput(os.Stderr),
@@ -158,11 +157,11 @@ func (fe *frontendPlain) addVirtualLog(span trace.Span, name string, fields ...s
 		line += " " + fe.output.String(fields[i]+"=").Faint().String() + fields[i+1]
 	}
 
-	spanID := span.SpanContext().SpanID()
+	spanID := dagui.SpanID{SpanID: span.SpanContext().SpanID()}
 	spanDt, ok := fe.data[spanID]
 	if !ok {
 		spanDt = &spanData{}
-		fe.data[span.SpanContext().SpanID()] = spanDt
+		fe.data[spanID] = spanDt
 	}
 	spanDt.logs = append(spanDt.logs, logLine{newCursorBuffer([]byte(line)), time.Now()})
 }
@@ -199,7 +198,7 @@ func (fe *frontendPlain) Run(ctx context.Context, opts dagui.FrontendOpts, run f
 	return runErr
 }
 
-func (fe *frontendPlain) SetPrimary(spanID trace.SpanID) {
+func (fe *frontendPlain) SetPrimary(spanID dagui.SpanID) {
 	fe.mu.Lock()
 	fe.db.PrimarySpan = spanID
 	fe.mu.Unlock()
@@ -207,7 +206,7 @@ func (fe *frontendPlain) SetPrimary(spanID trace.SpanID) {
 
 func (fe *frontendPlain) RevealAllSpans() {
 	fe.mu.Lock()
-	fe.FrontendOpts.ZoomedSpan = trace.SpanID{}
+	fe.FrontendOpts.ZoomedSpan = dagui.SpanID{}
 	fe.mu.Unlock()
 }
 
@@ -248,7 +247,7 @@ func (fe plainSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.Re
 	}
 
 	for _, span := range spans {
-		spanID := span.SpanContext().SpanID()
+		spanID := dagui.SpanID{SpanID: span.SpanContext().SpanID()}
 
 		spanDt, ok := fe.data[spanID]
 		if !ok {
@@ -258,7 +257,7 @@ func (fe plainSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.Re
 
 		// NOTE: assign parent ID unconditionally in case it was initialized at
 		// a time that we didn't have it (i.e. from a log)
-		spanDt.parentID = span.Parent().SpanID()
+		spanDt.parentID = dagui.SpanID{SpanID: span.Parent().SpanID()}
 
 		spanDt.ready = true
 	}
@@ -282,10 +281,11 @@ func (fe plainLogExporter) Export(ctx context.Context, logs []sdklog.Record) err
 		return err
 	}
 	for _, log := range logs {
-		spanDt, ok := fe.data[log.SpanID()]
+		spanID := dagui.SpanID{SpanID: log.SpanID()}
+		spanDt, ok := fe.data[spanID]
 		if !ok {
 			spanDt = &spanData{}
-			fe.data[log.SpanID()] = spanDt
+			fe.data[spanID] = spanDt
 		}
 
 		body := log.Body().AsString()
@@ -358,7 +358,7 @@ func (fe *frontendPlain) renderProgress() {
 	// from the db, or has been marked as passthrough, it will no longer appear
 	// in the logs row!
 	if len(fe.lastContext) > 0 {
-		newLock := trace.SpanID{}
+		newLock := dagui.SpanID{}
 		for _, spanID := range fe.lastContext {
 			span, ok := fe.db.Spans.Map[spanID]
 			if !ok || !span.Passthrough {
@@ -366,7 +366,7 @@ func (fe *frontendPlain) renderProgress() {
 				break
 			}
 
-			newLock = span.SpanContext().SpanID()
+			newLock = span.ID
 
 			if spanID == fe.lastContextLock {
 				// don't accidentally lock further in the context than we were before
@@ -381,9 +381,13 @@ func (fe *frontendPlain) renderProgress() {
 	}
 }
 
-func (fe *frontendPlain) renderRow(row *dagui.TraceTree) {
-	span := row.Span
+func (fe *frontendPlain) renderRow(tree *dagui.TraceTree) {
+	span := tree.Span
 	spanDt := fe.data[span.ID]
+	if spanDt == nil {
+		// slog.Warn("spanDt is nil", "id", span.ID.String())
+		return
+	}
 	if !spanDt.ready {
 		// don't render! this span hasn't been exported yet
 		return
@@ -391,38 +395,38 @@ func (fe *frontendPlain) renderRow(row *dagui.TraceTree) {
 
 	if !spanDt.started {
 		// render! this span has just started
-		depth, ok := fe.renderContext(row)
+		depth, ok := fe.renderContext(tree)
 		if !ok {
 			return
 		}
 		fe.renderStep(span, depth, false)
-		fe.renderLogs(row, depth)
+		fe.renderLogs(tree, depth)
 		spanDt.started = true
 	}
 
 	// render all the children - it's important that we render the children
 	// details first to avoid unnecessary context switches
-	for _, child := range row.Children {
+	for _, child := range tree.Children {
 		fe.renderRow(child)
 	}
 
 	if len(spanDt.logs) > 0 {
 		lastVertex := fe.lastVertex()
-		depth, ok := fe.renderContext(row)
+		depth, ok := fe.renderContext(tree)
 		if !ok {
 			return
 		}
-		if row.Span.ID != lastVertex {
+		if tree.Span.ID != lastVertex {
 			fe.renderStep(span, depth, spanDt.ended)
 		}
-		fe.renderLogs(row, depth)
+		fe.renderLogs(tree, depth)
 	}
-	if !spanDt.ended && !row.IsRunningOrChildRunning {
+	if !spanDt.ended && !tree.IsRunningOrChildRunning {
 		// render! this span has finished
 		// this renders last, so that we have the chance to render logs and
 		// finished children first - this ensures we get a LIFO structure
 		// to the logs which makes them easier to read
-		depth, ok := fe.renderContext(row)
+		depth, ok := fe.renderContext(tree)
 		if !ok {
 			return
 		}
@@ -431,10 +435,10 @@ func (fe *frontendPlain) renderRow(row *dagui.TraceTree) {
 
 		// nothing else *should* happen with this step, so we can switch
 		// context to the parent
-		if row.Parent == nil {
-			fe.lastContextLock = trace.SpanID{}
+		if tree.Parent == nil {
+			fe.lastContextLock = dagui.SpanID{}
 		} else {
-			fe.lastContextLock = row.Parent.Span.ID
+			fe.lastContextLock = tree.Parent.Span.ID
 		}
 	}
 }
@@ -462,25 +466,25 @@ func (fe *frontendPlain) renderStep(span *dagui.Span, depth int, done bool) {
 		}
 		r.renderCall(fe.output, nil, call, prefix, false, depth, false, span.Internal, false)
 	} else {
-		r.renderSpan(fe.output, nil, span.Name(), prefix, depth, false)
+		r.renderSpan(fe.output, nil, span.Name, prefix, depth, false)
 	}
 	if done {
-		if span.Status().Code == codes.Error {
+		if span.IsFailedOrCausedFailure() {
 			fmt.Fprint(fe.output, fe.output.String(" ERROR").Foreground(termenv.ANSIYellow))
 		} else {
 			fmt.Fprint(fe.output, fe.output.String(" DONE").Foreground(termenv.ANSIGreen))
 		}
-		duration := dagui.FormatDuration(span.EndTime().Sub(span.StartTime()))
+		duration := dagui.FormatDuration(span.Activity.Duration(time.Now()))
 		fmt.Fprint(fe.output, fe.output.String(fmt.Sprintf(" [%s]", duration)).Foreground(termenv.ANSIBrightBlack))
 
-		if span.Status().Code == codes.Error && span.Status().Description != "" {
+		if span.IsFailed() && span.Status.Description != "" {
 			fmt.Fprintln(fe.output)
 			fmt.Fprint(fe.output, prefix)
 			r.indent(fe.output, depth)
 			// print error description above it
 			fmt.Fprintf(fe.output,
 				fe.output.String("! %s").Foreground(termenv.ANSIYellow).String(),
-				span.Status().Description,
+				span.Status.Description,
 			)
 		}
 	}
@@ -511,7 +515,7 @@ func (fe *frontendPlain) renderLogs(row *dagui.TraceTree, depth int) {
 		r.indent(fe.output, depth)
 
 		if !logLine.time.IsZero() {
-			duration := dagui.FormatDuration(logLine.time.Sub(span.StartTime()))
+			duration := dagui.FormatDuration(logLine.time.Sub(span.StartTime))
 			fmt.Fprint(out, out.String(fmt.Sprintf("[%s] ", duration)).Foreground(termenv.ANSIBrightBlack))
 		}
 		pipe := out.String("|").Foreground(termenv.ANSIBrightBlack)
@@ -581,7 +585,7 @@ func (fe *frontendPlain) renderContext(row *dagui.TraceTree) (int, bool) {
 		depth += 1
 	}
 
-	fe.lastContext = make([]trace.SpanID, 0, len(currentContext))
+	fe.lastContext = make([]dagui.SpanID, 0, len(currentContext))
 	for _, row := range currentContext {
 		fe.lastContext = append(fe.lastContext, row.Span.ID)
 	}
@@ -592,9 +596,9 @@ func (fe *frontendPlain) renderContext(row *dagui.TraceTree) (int, bool) {
 	return depth, true
 }
 
-func (fe *frontendPlain) lastVertex() trace.SpanID {
+func (fe *frontendPlain) lastVertex() dagui.SpanID {
 	if len(fe.lastContext) == 0 {
-		return trace.SpanID{}
+		return dagui.SpanID{}
 	}
 	return fe.lastContext[len(fe.lastContext)-1]
 }

@@ -2,105 +2,206 @@ package dagui
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
+	"dagger.io/dagger/telemetry"
+	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/trace"
 
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/engine/slog"
 )
 
-type SpanSet = *OrderedSet[trace.SpanID, *Span]
+type SpanSet = *OrderedSet[SpanID, *Span]
 
 type Span struct {
-	sdktrace.ReadOnlySpan
+	SpanSnapshot
 
-	ParentSpan *Span
-	ChildSpans SpanSet
-	LinkedFrom SpanSet
-	LinksTo    SpanSet
+	// populated by wireUpSpan
+	ParentSpan   *Span          `json:"-"`
+	ChildSpans   SpanSet        `json:"-"`
+	LinkedFrom   SpanSet        `json:"-"`
+	LinksTo      SpanSet        `json:"-"`
+	RunningSpans SpanSet        `json:"-"`
+	FailedSpans  SpanSet        `json:"-"`
+	Call         *callpbv1.Call `json:"-"`
+	Base         *callpbv1.Call `json:"-"`
 
-	ID trace.SpanID
-
-	IsSelfRunning bool
-	RunningSpans  SpanSet
-
-	IsSelfFailed bool
-	FailedSpans  SpanSet
-
-	Digest string
-	Call   *callpbv1.Call
-	Base   *callpbv1.Call
-
-	EffectID  string
-	EffectIDs []string
-
-	Running  bool
-	Internal bool
-	Cached   bool
-	Canceled bool
-
-	Inputs []string
-
-	Encapsulate  bool
-	Encapsulated bool
-	Mask         bool
-	Passthrough  bool
-	Ignore       bool
-
-	db    *DB
-	trace *Trace
+	db *DB
 }
 
-func (span *Span) SetRunning(running bool) {
-	span.IsSelfRunning = running
+func (span *Span) Snapshot() SpanSnapshot {
+	// this is easier to calculate at export time since ChildSpans handles
+	// uniqueness for us
+	//
+	// TODO: don't count passthrough/internal children... but DO count children
+	// of passthrough spans
+	span.ChildCount = len(span.ChildSpans.Order)
+	return span.SpanSnapshot
+}
+
+type SpanSnapshot struct {
+	ID        SpanID
+	Name      string
+	StartTime time.Time
+	EndTime   time.Time
+
+	Activity Activity `json:",omitempty"`
+
+	ParentID SpanID        `json:",omitempty"`
+	Links    []SpanContext `json:",omitempty"`
+
+	Status sdktrace.Status `json:",omitempty"`
+
+	Internal bool `json:",omitempty"`
+	Cached   bool `json:",omitempty"`
+	Canceled bool `json:",omitempty"`
+
+	Encapsulate  bool `json:",omitempty"`
+	Encapsulated bool `json:",omitempty"`
+	Mask         bool `json:",omitempty"`
+	Passthrough  bool `json:",omitempty"`
+	Ignore       bool `json:",omitempty"`
+
+	Inputs []string `json:",omitempty"`
+	Output string   `json:",omitempty"`
+
+	EffectID         string   `json:",omitempty"`
+	EffectIDs        []string `json:",omitempty"`
+	EffectsCompleted []string `json:",omitempty"`
+
+	CallDigest  string `json:",omitempty"`
+	CallPayload string `json:",omitempty"`
+
+	ChildCount int  `json:",omitempty"`
+	HasLogs    bool `json:",omitempty"`
+}
+
+func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) {
+	defer func() {
+		// a bit of a shortcut, but there shouldn't be much going on
+		// here and all the conversion error handling code is
+		// annoying
+		if err := recover(); err != nil {
+			slog.Warn("panic processing attribute", "name", name, "val", val, "err", err)
+		}
+	}()
+
+	switch name {
+	case telemetry.DagDigestAttr:
+		snapshot.CallDigest = val.(string)
+
+	case telemetry.DagCallAttr:
+		snapshot.CallPayload = val.(string)
+
+	case telemetry.CachedAttr:
+		snapshot.Cached = val.(bool)
+
+	case telemetry.CanceledAttr:
+		snapshot.Canceled = val.(bool)
+
+	case telemetry.UIEncapsulateAttr:
+		snapshot.Encapsulate = val.(bool)
+
+	case telemetry.UIEncapsulatedAttr:
+		snapshot.Encapsulated = val.(bool)
+
+	case telemetry.UIInternalAttr:
+		snapshot.Internal = val.(bool)
+
+	case telemetry.UIPassthroughAttr:
+		snapshot.Passthrough = val.(bool)
+
+	case telemetry.DagInputsAttr:
+		snapshot.Inputs = sliceOf[string](val)
+
+	case telemetry.EffectIDsAttr:
+		snapshot.EffectIDs = sliceOf[string](val)
+
+	case telemetry.EffectsCompletedAttr:
+		snapshot.EffectsCompleted = sliceOf[string](val)
+
+	case telemetry.DagOutputAttr:
+		snapshot.Output = val.(string)
+
+	case telemetry.EffectIDAttr:
+		snapshot.EffectID = val.(string)
+	}
+}
+
+func sliceOf[T any](val any) []T {
+	if direct, ok := val.([]T); ok {
+		return direct
+	}
+	slice := val.([]any)
+	ts := make([]T, len(slice))
+	for i, v := range slice {
+		ts[i] = v.(T)
+	}
+	return ts
+}
+
+// PropagateStatusToParentsAndLinks updates the running and failed state of all
+// parent spans, linked spans, and their parents to reflect the span.
+//
+// NOTE: failed state only propagates to spans that installed the current
+// span's effect - it does _not_ propagate through the parent span.
+//
+// FIXME: propagate failures... carefully
+func (span *Span) PropagateStatusToParentsAndLinks() {
 	span.Parents(func(parent *Span) bool { // TODO: go 1.23
-		if running {
+		if span.IsRunningOrLinksRunning() {
 			parent.RunningSpans.Add(span)
 		} else {
 			parent.RunningSpans.Remove(span)
 		}
+		span.db.updatedSpans.Add(parent)
 		return true
 	})
+
+	for _, linked := range span.LinksTo.Order {
+		if span.IsRunning() {
+			linked.RunningSpans.Add(span)
+		} else {
+			linked.RunningSpans.Remove(span)
+		}
+
+		if span.IsFailed() {
+			linked.FailedSpans.Add(span)
+		}
+
+		span.db.updatedSpans.Add(linked)
+
+		linked.Activity.Add(span)
+
+		linked.Parents(func(parent *Span) bool { // TODO go 1.23
+			if span.IsRunning() {
+				parent.RunningSpans.Add(span)
+			} else {
+				parent.RunningSpans.Remove(span)
+			}
+			span.db.updatedSpans.Add(parent)
+			parent.Activity.Add(span)
+			return true
+		})
+	}
 }
 
-func (span *Span) Failed() { // TODO: this can't be undone
-	span.IsSelfFailed = true
-	if span.EffectID != "" {
-		// TODO: do we need to worry about _new_ spans arriving?
-		// FIXME: yep - likely when a span starts and finishes in same batch?
-		causes := span.db.CauseSpans[span.EffectID]
-		if span.EffectID == "sha256:b5b910ed7ac6c90422c4665fba0b50ffa0509d27e273406d6beb7a955e08009f" {
-			slog.Warn("recording effect failure", "id", span.EffectID,
-				"causes", causes != nil)
-		}
-		if causes != nil {
-			for _, cause := range causes.Order {
-				cause.Failed()
-			}
+func (span *Span) IsFailed() bool {
+	return span.Status.Code == codes.Error
+}
+
+func (span *Span) IsFailedOrCausedFailure() bool {
+	if span.Status.Code == codes.Error ||
+		len(span.FailedSpans.Order) > 0 {
+		return true
+	}
+	for _, effect := range span.EffectIDs {
+		if span.db.FailedEffects[effect] {
+			return true
 		}
 	}
-	// for parent := range span.Parents {
-	// 	if parent.Encapsulate {
-	// 		// Reached an encapsulation boundary; stop propagating.
-	// 		// TODO: test
-	// 		break
-	// 	}
-	// 	if failed {
-	// 		parent.FailedSpans.Add(span)
-	// 	} else {
-	// 		parent.FailedSpans.Remove(span)
-	// 	}
-	// 	if parent.Encapsulated {
-	// 		// TODO: test
-	// 		break
-	// 	}
-	// }
-	for _, parent := range span.LinksTo.Order {
-		parent.Failed()
-	}
+	return false
 }
 
 func (span *Span) Parents(f func(*Span) bool) {
@@ -120,15 +221,6 @@ func (span *Span) Parents(f func(*Span) bool) {
 			return
 		}
 	}
-	// for _, parent := range span.LinksTo.Order {
-	// 	if !f(parent) {
-	// 		return
-	// 	}
-	// 	parent.Parents(recurse)
-	// 	if !keepGoing {
-	// 		return
-	// 	}
-	// }
 }
 
 func (span *Span) VisibleParent(opts FrontendOpts) *Span {
@@ -167,7 +259,11 @@ func (span *Span) Hidden(opts FrontendOpts) bool {
 }
 
 func (span *Span) IsRunning() bool {
-	return span.IsSelfRunning || len(span.RunningSpans.Order) > 0
+	return span.EndTime.Before(span.StartTime)
+}
+
+func (span *Span) IsRunningOrLinksRunning() bool {
+	return span.IsRunning() || len(span.RunningSpans.Order) > 0
 }
 
 func (span *Span) IsPending() bool {
@@ -176,7 +272,7 @@ func (span *Span) IsPending() bool {
 }
 
 func (span *Span) PendingReason() (bool, []string) {
-	if span.IsRunning() {
+	if span.IsRunningOrLinksRunning() {
 		return false, []string{"span is running"}
 	}
 	var reasons []string
@@ -254,10 +350,6 @@ func (span *Span) HasParent(parent *Span) bool {
 	return span.ParentSpan.HasParent(parent)
 }
 
-func (span *Span) Name() string {
-	return span.ReadOnlySpan.Name()
-}
-
 // func (step *Step) Inputs() []string {
 // 	for _, vtx := range step.db.Intervals[step.Digest] {
 // 		return vtx.Inputs // assume all names are equal
@@ -269,117 +361,39 @@ func (span *Span) Name() string {
 // 	return nil
 // }
 
-func (span *Span) IsFailed() bool {
-	return span.IsSelfFailed || len(span.FailedSpans.Order) > 0
-}
-
 func (span *Span) IsInternal() bool {
 	return span.Internal
 }
 
-type SpanActivity struct {
-	Duration time.Duration
-	Min      time.Time
-	Max      time.Time
-}
-
 func (span *Span) SelfDuration(fallbackEnd time.Time) time.Duration {
-	if span.IsRunning() {
-		return fallbackEnd.Sub(span.StartTime())
+	if span.IsRunningOrLinksRunning() {
+		return fallbackEnd.Sub(span.StartTime)
 	}
-	return span.EndTimeOrFallback(fallbackEnd).Sub(span.StartTime())
-}
-
-func (span *Span) ActiveDuration(fallbackEnd time.Time) time.Duration {
-	facts := SpanActivity{
-		Min: span.StartTime(),
-		Max: span.EndTimeOrFallback(fallbackEnd),
-	}
-	facts.Duration = facts.Max.Sub(span.StartTime())
-
-	currentEnd := facts.Max
-
-	for _, effect := range span.LinkedFrom.Order {
-		start := effect.StartTime()
-		end := effect.EndTimeOrFallback(fallbackEnd)
-		duration := end.Sub(start)
-
-		if start.Before(facts.Min) {
-			facts.Min = start
-		}
-		if end.After(facts.Max) {
-			facts.Max = end
-		}
-
-		if start.Before(currentEnd) {
-			// If we started before the last completion, the only case we care about
-			// is if we exceed past it.
-			if end.After(currentEnd) {
-				facts.Duration += end.Sub(currentEnd)
-				currentEnd = end
-			}
-		} else {
-			// Started after the last completion, so we just add the duration.
-			facts.Duration += duration
-			currentEnd = end
-		}
-	}
-
-	return facts.Duration
+	return span.EndTimeOrFallback(fallbackEnd).Sub(span.StartTime)
 }
 
 func (span *Span) EndTimeOrFallback(fallbackEnd time.Time) time.Time {
-	if span.IsRunning() {
+	if span.IsRunningOrLinksRunning() {
 		return fallbackEnd
 	}
-	maxTime := span.ReadOnlySpan.EndTime()
+	maxTime := span.EndTime
 	for _, effect := range span.LinkedFrom.Order {
-		if effect.EndTime().After(maxTime) {
-			maxTime = effect.EndTime()
+		if effect.EndTime.After(maxTime) {
+			maxTime = effect.EndTime
 		}
 	}
 	return maxTime
 }
 
-func (span *Span) EndTime() time.Time {
+func (span *Span) EndTimeOrNow() time.Time {
 	return span.EndTimeOrFallback(time.Now())
 }
 
-func (span *Span) IsBefore(other *Span) bool {
-	return span.StartTime().Before(other.StartTime())
+func (span *Span) Before(other *Span) bool {
+	return span.StartTime.Before(other.StartTime)
 }
 
-type SpanBar struct {
-	Span          *Span
-	Duration      time.Duration
-	OffsetPercent float64
-	WidthPercent  float64
-}
-
-func (span *Span) Bar() SpanBar {
-	epoch := span.trace.Epoch
-	end := span.trace.End
-	if span.trace.IsRunning {
-		end = time.Now()
-	}
-	total := end.Sub(epoch)
-
-	started := span.StartTime()
-
-	var bar SpanBar
-	bar.OffsetPercent = float64(started.Sub(epoch)) / float64(total)
-	if span.EndTime().IsZero() {
-		bar.WidthPercent = 1 - bar.OffsetPercent
-	} else {
-		bar.Duration = span.EndTime().Sub(started)
-		bar.WidthPercent = float64(bar.Duration) / float64(total)
-	}
-	bar.Span = span
-
-	return bar
-}
-
-func (span *Span) Classes() string {
+func (span *Span) Classes() []string {
 	classes := []string{}
 	if span.Cached {
 		classes = append(classes, "cached")
@@ -393,10 +407,14 @@ func (span *Span) Classes() string {
 	if span.Internal {
 		classes = append(classes, "internal")
 	}
-	return strings.Join(classes, " ")
+	return classes
 }
 
 func FormatDuration(d time.Duration) string {
+	if d < 0 {
+		return "INVALID_DURATION"
+	}
+
 	days := int64(d.Hours()) / 24
 	hours := int64(d.Hours()) % 24
 	minutes := int64(d.Minutes()) % 60
