@@ -3569,7 +3569,7 @@ func (t *Test) Dirs(
   // +defaultPath="/"
   root *dagger.Directory,
 
-  // +defaultPath="../"
+  // +defaultPath="."
   relativeRoot *dagger.Directory,
 ) ([]string, error) {
   res, err := root.Entries(ctx)
@@ -3591,7 +3591,7 @@ func (t *Test) DirsIgnore(
   // +ignore=["**", "!backend", "!frontend"]
   root *dagger.Directory,
 
-  // +defaultPath="../"
+  // +defaultPath="."
   // +ignore=["dagger.json", "LICENSE"]
   relativeRoot *dagger.Directory,
 ) ([]string, error) {
@@ -3639,10 +3639,10 @@ func (t *Test) RootDirPath(
 func (t *Test) RelativeDirPath(
   ctx context.Context,
 
-  // +defaultPath="./sub"
+  // +defaultPath=".dagger/sub"
   modSrcDir *dagger.Directory,
 
-  // +defaultPath="../../backend"
+  // +defaultPath="../backend"
   backend *dagger.Directory,
 ) ([]string, error) {
   modSrcDirFiles, err := modSrcDir.Entries(ctx)
@@ -3663,7 +3663,7 @@ func (t *Test) Files(
   // +defaultPath="/ci/LICENSE"
   license *dagger.File,
 
-  // +defaultPath="./sub/sub.txt"
+  // +defaultPath="./dagger/sub/sub.txt"
   index *dagger.File,
 ) ([]string, error) {
   licenseName, err := license.Name(ctx)
@@ -3693,7 +3693,7 @@ class Test:
     async def dirs(
         self,
         root: Annotated[dagger.Directory, DefaultPath("/")],
-        relativeRoot: Annotated[dagger.Directory, DefaultPath("../")],
+        relativeRoot: Annotated[dagger.Directory, DefaultPath(".")],
     ) -> list[str]:
         return [
             *(await root.entries()),
@@ -3704,7 +3704,7 @@ class Test:
     async def dirs_ignore(
         self,
         root: Annotated[dagger.Directory, DefaultPath("/"), Ignore(["**","!backend", "!frontend"])],
-        relativeRoot: Annotated[dagger.Directory, DefaultPath("../"), Ignore(["dagger.json", "LICENSE"])],
+        relativeRoot: Annotated[dagger.Directory, DefaultPath("."), Ignore(["dagger.json", "LICENSE"])],
     ) -> list[str]:
         return [
             *(await root.entries()),
@@ -3727,8 +3727,8 @@ class Test:
     @function
     async def relative_dir_path(
         self,
-        mod_src_dir: Annotated[dagger.Directory, DefaultPath("./sub")],
-        backend: Annotated[dagger.Directory, DefaultPath("../../backend")],
+        mod_src_dir: Annotated[dagger.Directory, DefaultPath("./dagger/sub")],
+        backend: Annotated[dagger.Directory, DefaultPath("../backend")],
     ) -> list[str]:
         return [
             *(await mod_src_dir.entries()),
@@ -3739,7 +3739,7 @@ class Test:
     async def files(
         self,
         license: Annotated[dagger.File, DefaultPath("/ci/LICENSE")],
-        index: Annotated[dagger.File, DefaultPath("./sub/sub.txt")],
+        index: Annotated[dagger.File, DefaultPath("./dagger/sub/sub.txt")],
     ) -> list[str]:
         return [
             await license.name(),
@@ -3754,7 +3754,7 @@ class Test:
 @object()
 class Test {
   @func()
-  async dirs(@argument({ defaultPath: "/" }) root: Directory, @argument({ defaultPath: "../"}) relativeRoot: Directory): Promise<string[]> {
+  async dirs(@argument({ defaultPath: "/" }) root: Directory, @argument({ defaultPath: "."}) relativeRoot: Directory): Promise<string[]> {
     const res = await root.entries()
     const relativeRes = await relativeRoot.entries()
 
@@ -3764,7 +3764,7 @@ class Test {
   @func()
   async dirsIgnore(
     @argument({ defaultPath: "/", ignore: ["**", "!backend", "!frontend"] }) root: Directory,
-    @argument({ defaultPath: "../", ignore: ["dagger.json", "LICENSE"] }) relativeRoot: Directory,
+    @argument({ defaultPath: ".", ignore: ["dagger.json", "LICENSE"] }) relativeRoot: Directory,
   ): Promise<string[]> {
     const res = await root.entries();
     const relativeRes = await relativeRoot.entries();
@@ -3788,7 +3788,7 @@ class Test {
   @func()
   async relativeDirPath(
     @argument({ defaultPath: "./sub" }) modSrcDir: Directory,
-    @argument({ defaultPath: "../../backend" }) backend: Directory,
+    @argument({ defaultPath: "../backend" }) backend: Directory,
   ): Promise<string[]> {
     const modSrcDirFiles = await modSrcDir.entries()
     const backendFiles = await backend.entries()
@@ -3799,7 +3799,7 @@ class Test {
   @func()
   async files(
     @argument({ defaultPath: "/ci/LICENSE" }) license: File,
-    @argument({ defaultPath: "./sub/sub.txt" }) index: File,
+    @argument({ defaultPath: "./dagger/sub/sub.txt" }) index: File,
   ): Promise<string[]> {
     return [await license.name(), await index.name()]
   }
@@ -3876,7 +3876,7 @@ func (t *Test) Dirs(
   // +defaultPath="/"
   root *dagger.Directory,
 
-  // +defaultPath="../"
+  // +defaultPath="."
   relativeRoot *dagger.Directory,
 ) ([]string, error) {
   res, err := root.Entries(ctx)
@@ -3924,10 +3924,10 @@ func (t *Test) RootDirPath(
 func (t *Test) RelativeDirPath(
   ctx context.Context,
 
-  // +defaultPath="./sub"
+  // +defaultPath="./dagger/sub"
   modSrcDir *dagger.Directory,
 
-  // +defaultPath="../backend"
+  // +defaultPath="./backend"
   backend *dagger.Directory,
 ) ([]string, error) {
   modSrcDirFiles, err := modSrcDir.Entries(ctx)
@@ -3948,7 +3948,7 @@ func (t *Test) Files(
   // +defaultPath="/LICENSE"
   license *dagger.File,
 
-  // +defaultPath="../dagger.json"
+  // +defaultPath="./dagger.json"
   index *dagger.File,
 ) ([]string, error) {
   licenseName, err := license.Name(ctx)
@@ -3977,7 +3977,7 @@ class Test:
     async def dirs(
         self,
         root: Annotated[dagger.Directory, DefaultPath("/")],
-        relative_root: Annotated[dagger.Directory, DefaultPath("../")],
+        relative_root: Annotated[dagger.Directory, DefaultPath(".")],
     ) -> list[str]:
         return [
             *(await root.entries()),
@@ -4000,8 +4000,8 @@ class Test:
     @function
     async def relative_dir_path(
         self,
-        mod_src_dir: Annotated[dagger.Directory, DefaultPath("./sub")],
-        backend: Annotated[dagger.Directory, DefaultPath("../backend")],
+        mod_src_dir: Annotated[dagger.Directory, DefaultPath("./dagger/sub")],
+        backend: Annotated[dagger.Directory, DefaultPath("./backend")],
     ) -> list[str]:
         return [
             *(await mod_src_dir.entries()),
@@ -4012,7 +4012,7 @@ class Test:
     async def files(
         self,
         license: Annotated[dagger.File, DefaultPath("/LICENSE")],
-        index: Annotated[dagger.File, DefaultPath("../dagger.json")],
+        index: Annotated[dagger.File, DefaultPath("./dagger.json")],
     ) -> list[str]:
         return [
             await license.name(),
@@ -4029,7 +4029,7 @@ class Test {
   @func()
   async dirs(
     @argument({ defaultPath: "/" }) root: Directory,
-    @argument({ defaultPath: "../" }) relativeRoot: Directory,
+    @argument({ defaultPath: "." }) relativeRoot: Directory,
   ): Promise<string[]> {
     const res = await root.entries()
     const relativeRes = await relativeRoot.entries()
@@ -4052,8 +4052,8 @@ class Test {
 
   @func()
   async relativeDirPath(
-    @argument({ defaultPath: "./sub" }) modSrcDir: Directory,
-    @argument({ defaultPath: "../backend" }) backend: Directory,
+    @argument({ defaultPath: "./dagger/sub" }) modSrcDir: Directory,
+    @argument({ defaultPath: "./backend" }) backend: Directory,
   ): Promise<string[]> {
     const modSrcDirFiles = await modSrcDir.entries()
     const backendFiles = await backend.entries()
@@ -4064,7 +4064,7 @@ class Test {
   @func()
   async files(
     @argument({ defaultPath: "/LICENSE" }) license: File,
-  	@argument({ defaultPath: "../dagger.json" }) daggerConfig: File,
+  	@argument({ defaultPath: "./dagger.json" }) daggerConfig: File,
 	): Promise<string[]> {
     return [await license.name(), await daggerConfig.name()]
   }
@@ -4484,7 +4484,7 @@ func (ModuleSuite) TestIgnore(ctx context.Context, t *testctx.T) {
 		WithWorkdir("/work").
 		WithDirectory("/work/backend", c.Directory().WithNewFile("foo.txt", "foo").WithNewFile("bar.txt", "bar")).
 		WithDirectory("/work/frontend", c.Directory().WithNewFile("bar.txt", "bar")).
-		With(daggerExec("init", "--name=test", "--sdk=go", "--source=dagger")).
+		With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
 		WithWorkdir("/work/dagger").
 		With(sdkSource("go", `
 package main
