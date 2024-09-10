@@ -3639,7 +3639,7 @@ func (t *Test) RootDirPath(
 func (t *Test) RelativeDirPath(
   ctx context.Context,
 
-  // +defaultPath=".dagger/sub"
+  // +defaultPath="./dagger/sub"
   modSrcDir *dagger.Directory,
 
   // +defaultPath="../backend"
@@ -3787,7 +3787,7 @@ class Test {
 
   @func()
   async relativeDirPath(
-    @argument({ defaultPath: "./sub" }) modSrcDir: Directory,
+    @argument({ defaultPath: "./dagger/sub" }) modSrcDir: Directory,
     @argument({ defaultPath: "../backend" }) backend: Directory,
   ): Promise<string[]> {
     const modSrcDirFiles = await modSrcDir.entries()
@@ -4484,7 +4484,7 @@ func (ModuleSuite) TestIgnore(ctx context.Context, t *testctx.T) {
 		WithWorkdir("/work").
 		WithDirectory("/work/backend", c.Directory().WithNewFile("foo.txt", "foo").WithNewFile("bar.txt", "bar")).
 		WithDirectory("/work/frontend", c.Directory().WithNewFile("bar.txt", "bar")).
-		With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+		With(daggerExec("init", "--name=test", "--sdk=go", "--source=dagger")).
 		WithWorkdir("/work/dagger").
 		With(sdkSource("go", `
 package main
@@ -4497,7 +4497,7 @@ type Test struct{}
 
 func (t *Test) IgnoreAll(
   // +ignore=["**"]
-  // +defaultPath="."
+  // +defaultPath="./dagger"
   dir *dagger.Directory,
 ) *dagger.Directory {
   return dir
@@ -4505,7 +4505,7 @@ func (t *Test) IgnoreAll(
 
 func (t *Test) IgnoreThenReverseIgnore(
   // +ignore=["**", "!**"]
-  // +defaultPath="."
+  // +defaultPath="./dagger"
   dir *dagger.Directory,
 ) *dagger.Directory {
   return dir
@@ -4513,7 +4513,7 @@ func (t *Test) IgnoreThenReverseIgnore(
 
 func (t *Test) IgnoreThenReverseIgnoreThenExcludeGitFiles(
   // +ignore=["**", "!**", "*.git*"]
-  // +defaultPath="."
+  // +defaultPath="./dagger"
   dir *dagger.Directory,
 ) *dagger.Directory {
   return dir
@@ -4521,7 +4521,7 @@ func (t *Test) IgnoreThenReverseIgnoreThenExcludeGitFiles(
 
 func (t *Test) IgnoreThenExcludeFilesThenReverseIgnore(
   // +ignore=["**", "*.git*", "!**"]
-  // +defaultPath="."
+  // +defaultPath="./dagger"
   dir *dagger.Directory,
 ) *dagger.Directory {
   return dir
@@ -4529,7 +4529,7 @@ func (t *Test) IgnoreThenExcludeFilesThenReverseIgnore(
 
 func (t *Test) IgnoreDir(
   // +ignore=["internal"]
-  // +defaultPath="."
+  // +defaultPath="./dagger"
   dir *dagger.Directory,
 ) *dagger.Directory {
   return dir
@@ -4537,7 +4537,7 @@ func (t *Test) IgnoreDir(
 
 func (t *Test) IgnoreEverythingButMainGo(
   // +ignore=["**", "!main.go"]
-  // +defaultPath="."
+  // +defaultPath="./dagger"
   dir *dagger.Directory,
 ) *dagger.Directory {
   return dir
@@ -4545,7 +4545,7 @@ func (t *Test) IgnoreEverythingButMainGo(
 
 func (t *Test) NoIgnore(
   // +ignore=["!main.go"]
-  // +defaultPath="."
+  // +defaultPath="./dagger"
   dir *dagger.Directory,
 ) *dagger.Directory {
   return dir
@@ -4553,7 +4553,7 @@ func (t *Test) NoIgnore(
 
 func (t *Test) IgnoreEveryGoFileExceptMainGo(
   // +ignore=["**/*.go", "!main.go"]
-  // +defaultPath="."
+  // +defaultPath="./dagger"
   dir *dagger.Directory,
 ) *dagger.Directory {
   return dir
@@ -4561,7 +4561,7 @@ func (t *Test) IgnoreEveryGoFileExceptMainGo(
 
 func (t *Test) IgnoreDirButKeepFileInSubdir(
   // +ignore=["internal/telemetry", "!internal/telemetry/proxy.go"]
-  // +defaultPath="."
+  // +defaultPath="./dagger"
   dir *dagger.Directory,
 ) *dagger.Directory {
   return dir
