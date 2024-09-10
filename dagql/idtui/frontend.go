@@ -344,7 +344,7 @@ func (r *renderer) renderStatus(out *termenv.Output, span *dagui.Span, focused b
 	case span.Canceled:
 		symbol = IconSkipped
 		color = termenv.ANSIBrightBlack
-	case span.IsFailed():
+	case span.IsFailedOrCausedFailure():
 		symbol = IconFailure
 		color = termenv.ANSIRed
 	case span.IsPending():

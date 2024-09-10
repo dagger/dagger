@@ -181,7 +181,7 @@ func (db *DB) newSpan(spanID SpanID) *Span {
 		LinkedFrom:   NewSpanSet(),
 		LinksTo:      NewSpanSet(),
 		RunningSpans: NewSpanSet(),
-		FailedSpans:  NewSpanSet(),
+		FailedLinks:  NewSpanSet(),
 		db:           db,
 	}
 }

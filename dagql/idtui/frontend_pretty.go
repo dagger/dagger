@@ -971,6 +971,13 @@ func (fe *frontendPretty) renderStep(out *termenv.Output, r *renderer, span *dag
 			r.indent(out, depth+1)
 			fmt.Fprintln(out, prefix+"- "+reason)
 		}
+		failed, reasons := span.FailedReason()
+		r.indent(out, depth+1)
+		fmt.Fprintf(out, prefix+"? failed: %v\n", failed)
+		for _, reason := range reasons {
+			r.indent(out, depth+1)
+			fmt.Fprintln(out, prefix+"- "+reason)
+		}
 	}
 
 	return nil

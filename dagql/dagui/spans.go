@@ -23,7 +23,7 @@ type Span struct {
 	LinkedFrom   SpanSet        `json:"-"`
 	LinksTo      SpanSet        `json:"-"`
 	RunningSpans SpanSet        `json:"-"`
-	FailedSpans  SpanSet        `json:"-"`
+	FailedLinks  SpanSet        `json:"-"`
 	Call         *callpbv1.Call `json:"-"`
 	Base         *callpbv1.Call `json:"-"`
 
@@ -167,7 +167,7 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 		}
 
 		if span.IsFailed() {
-			linked.FailedSpans.Add(span)
+			linked.FailedLinks.Add(span)
 		}
 
 		span.db.updatedSpans.Add(linked)
@@ -193,7 +193,7 @@ func (span *Span) IsFailed() bool {
 
 func (span *Span) IsFailedOrCausedFailure() bool {
 	if span.Status.Code == codes.Error ||
-		len(span.FailedSpans.Order) > 0 {
+		len(span.FailedLinks.Order) > 0 {
 		return true
 	}
 	for _, effect := range span.EffectIDs {
@@ -202,6 +202,22 @@ func (span *Span) IsFailedOrCausedFailure() bool {
 		}
 	}
 	return false
+}
+
+func (span *Span) FailedReason() (bool, []string) {
+	var reasons []string
+	if span.Status.Code == codes.Error {
+		reasons = append(reasons, "span itself errored")
+	}
+	for _, failed := range span.FailedLinks.Order {
+		reasons = append(reasons, "span has failed link: "+failed.Name)
+	}
+	for _, effect := range span.EffectIDs {
+		if span.db.FailedEffects[effect] {
+			reasons = append(reasons, "span installed failed effect: "+effect)
+		}
+	}
+	return len(reasons) > 0, reasons
 }
 
 func (span *Span) Parents(f func(*Span) bool) {
@@ -263,7 +279,15 @@ func (span *Span) IsRunning() bool {
 }
 
 func (span *Span) IsRunningOrLinksRunning() bool {
-	return span.IsRunning() || len(span.RunningSpans.Order) > 0
+	if span.IsRunning() {
+		return true
+	}
+	for _, link := range span.LinkedFrom.Order {
+		if link.IsRunning() {
+			return true
+		}
+	}
+	return false
 }
 
 func (span *Span) IsPending() bool {
@@ -273,7 +297,14 @@ func (span *Span) IsPending() bool {
 
 func (span *Span) PendingReason() (bool, []string) {
 	if span.IsRunningOrLinksRunning() {
-		return false, []string{"span is running"}
+		var reasons []string
+		if span.IsRunning() {
+			reasons = append(reasons, "span is running")
+		}
+		for _, running := range span.RunningSpans.Order {
+			reasons = append(reasons, "span has running link: "+running.Name)
+		}
+		return false, reasons
 	}
 	var reasons []string
 	if len(span.EffectIDs) > 0 {
