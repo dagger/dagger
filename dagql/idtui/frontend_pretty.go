@@ -289,6 +289,7 @@ func (fe *frontendPretty) finalRender() error {
 		// when there's an error, because the error is better represented by
 		// the progress output and error summary.
 		fe.renderErrorLogs(out, r)
+		return nil
 	}
 
 	// Replay the primary output log to stdout/stderr.
