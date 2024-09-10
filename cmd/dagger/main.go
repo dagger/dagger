@@ -168,12 +168,52 @@ var rootCmd = &cobra.Command{
 		cobra.OnFinalize(func() {
 			t.Close()
 		})
+
+		checkForUpdates(cmd.Context())
+
 		t.Capture(cmd.Context(), "cli_command", map[string]string{
 			"name": commandName(cmd),
 		})
 
 		return nil
 	},
+}
+
+func checkForUpdates(ctx context.Context) {
+	ctx, cancel := context.WithCancel(ctx)
+
+	updateCh := make(chan string)
+	go func() {
+		defer close(updateCh)
+
+		updateAvailable, err := updateAvailable(ctx)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "\nFailed to check for updates: %v\n", err)
+			return
+		}
+
+		updateCh <- updateAvailable
+	}()
+
+	cobra.OnFinalize(func() {
+		select {
+		case updateAvailable := <-updateCh:
+			if updateAvailable == "" {
+				return
+			}
+			fmt.Fprintf(
+				os.Stderr,
+				"\nA new release of dagger is available: %s → %s\n"+
+					"To upgrade, see https://docs.dagger.io/install\n",
+				engine.Version,
+				updateAvailable,
+			)
+		default:
+			// If we didn't have enough time to check for updates,
+			// cancel the update check.
+			cancel()
+		}
+	})
 }
 
 func installGlobalFlags(flags *pflag.FlagSet) {
