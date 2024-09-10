@@ -150,7 +150,12 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 		})
 	}
 
-	var base *dagger.Container
+	base := dag.
+		Container(dagger.ContainerOpts{Platform: build.platform})
+	if build.version != "" {
+		base = base.WithLabel("io.dagger.version", build.version)
+	}
+
 	switch build.base {
 	case "alpine", "":
 		base = dag.
@@ -175,7 +180,7 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 				ln -s /sbin/ip6tables-legacy-restore /usr/sbin/ip6tables-restore
 			`})
 	case "ubuntu":
-		base = dag.Container(dagger.ContainerOpts{Platform: build.platform}).
+		base = base.
 			From("ubuntu:"+consts.UbuntuVersion).
 			WithEnvVariable("DEBIAN_FRONTEND", "noninteractive").
 			WithEnvVariable("DAGGER_APT_CACHE_BUSTER", fmt.Sprintf("%d", time.Now().Truncate(24*time.Hour).Unix())).
