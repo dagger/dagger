@@ -1,0 +1,6 @@
+kind: Changed
+body: The trace url is printed just before the final output to make it easy to find. Also, the url will be printed only for subset of dagger commands to reduce noise.
+time: 2024-09-10T19:10:26.083774+05:30
+custom:
+    Author: rajatjindal
+    PR: "8366"
