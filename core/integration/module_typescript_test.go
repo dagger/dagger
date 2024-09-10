@@ -693,7 +693,7 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
     	  	"@dagger.io/dagger": "./sdk"
   		  },
 				"dagger": {
-					"runtime": "bun@1.1.11"
+					"runtime": "bun@1.1.23"
 				}
 			}`,
 		)
