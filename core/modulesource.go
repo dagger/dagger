@@ -373,18 +373,18 @@ func (src *ModuleSource) LoadContext(ctx context.Context, dag *dagql.Server, pat
 // ResolveContextPathFromModule returns the absolute path to the module's context directory
 // based on the caller's host location.
 // It's necessary to use this function and not `ResolveContextPathFromCaller` because
-// the `SourceRootSubpath` is relative to the module source and not the caller after module's
+// the `SourceRootSubpath` is relative to the module root source dir and not the caller after module's
 // initialization which may leads to invalid paths.
 //
 // For example, if the module is in a subdirectory (/root/ctx/mod), the `SourceRootSubpath` will be
-// relative to the source module's root directory (./mod/src), but the path from the caller location would be `./ctx/mod`.
+// relative to the source module's root directory (./mod), but the path from the caller location would be `./ctx/mod`.
 //
 // This function returns both:
-// - the path to the context directory (location of the .git or .dagger.json if it doesn't exist)
-// - the path to the source root directory (location of `source` field in the module's dagger.json)
+// - the path to the context directory (location of the .git or `dagger.json“ file if it doesn't exist)
+// - the path to the source root directory (location of the `dagger.json` file)
 //
 // NOTE: this function is only valid for local module sources.
-func (src *ModuleSource) ResolveContextPathFromModule(ctx context.Context) (contextRootAbsPath, sourceRootAbsPath string, err error) {
+func (src *ModuleSource) ResolveContextPathFromModule(ctx context.Context) (contextRootAbsPath, moduleRootAbsPath string, err error) {
 	if src.Kind != ModuleSourceKindLocal {
 		return "", "", fmt.Errorf("cannot resolve non-local module source from caller")
 	}
@@ -403,27 +403,23 @@ func (src *ModuleSource) ResolveContextPathFromModule(ctx context.Context) (cont
 	if err != nil {
 		return "", "", fmt.Errorf("failed to stat source root: %w", err)
 	}
-	sourceRootAbsPath = sourceRootStat.Path
+	moduleRootAbsPath = sourceRootStat.Path
 
-	contextAbsPath, contextFound, err := callerHostFindUpContext(ctx, bk, sourceRootAbsPath)
+	contextAbsPath, contextFound, err := callerHostFindUpContext(ctx, bk, moduleRootAbsPath)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to find up root: %w", err)
 	}
 
 	if !contextFound {
 		// default to restricting to the source root dir, make it abs though for consistency
-		contextAbsPath = sourceRootAbsPath
+		contextAbsPath = moduleRootAbsPath
+	} else {
+		// If context is found, we can create the module root path by joining the
+		// context path with the module root subpath
+		moduleRootAbsPath = filepath.Join(contextAbsPath, src.AsLocalSource.Value.RootSubpath)
 	}
 
-	sourceSubPath, err := src.SourceSubpathWithDefault(ctx)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to get source subpath: %w", err)
-	}
-	// If context is found, we can create the source root path by joining the
-	// context path with the source root subpath
-	sourceRootAbsPath = filepath.Join(contextAbsPath, sourceSubPath)
-
-	return contextAbsPath, sourceRootAbsPath, nil
+	return contextAbsPath, moduleRootAbsPath, nil
 }
 
 // resolveContextPaths returns the context path to the .git directory
