@@ -22,7 +22,7 @@ const (
 	nodeVersionMaintenance = "18"
 	nodeVersionLTS         = "20"
 
-	bunVersion = "1.1.12"
+	bunVersion = "1.1.26"
 )
 
 type TypescriptSDK struct {
