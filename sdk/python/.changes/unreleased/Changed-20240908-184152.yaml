@@ -1,0 +1,30 @@
+kind: Changed
+body: |
+  Use `uv.lock` by default in new Dagger Modules
+
+  Simpler workflow with uv:
+  ```
+  dagger init --sdk=python my-module
+  cd my-module
+  uv run vim .
+  ```
+
+  To replace `uv.lock` with `requirements.lock`:
+  ```
+  uv export --no-hashes --no-emit-project --no-emit-package dagger-io -o requirements.txt
+  rm uv.lock
+  ```
+
+  To migrate an existing module's `requirements.lock` to `uv.lock`:
+  ```
+  dagger develop
+  uv add -r requirements.lock --editable ./sdk
+  rm requirements.lock
+  uv run vim .
+  ```
+
+  If both files exist, `uv.lock` will take precedence.
+time: 2024-09-08T18:41:52.021892Z
+custom:
+    Author: helderco
+    PR: "8311"

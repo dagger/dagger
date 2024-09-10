@@ -67,12 +67,7 @@ func (PythonSuite) TestInit(ctx context.Context, t *testctx.T) {
 
 		_, err := daggerCliBase(t, c).
 			With(daggerExec("init")).
-			With(fileContents("pyproject.toml", `
-[project]
-name = "main"
-version = "0.0.0"
-`,
-			)).
+			With(pyprojectExtra(nil, "")).
 			With(daggerExec("develop", "--sdk=python", "--source=.")).
 			Sync(ctx)
 
@@ -126,6 +121,9 @@ version = "0.0.0"
 }
 
 func (PythonSuite) TestProjectLayout(ctx context.Context, t *testctx.T) {
+	// NB: This is testing uv integration with different build backends,
+	// **not** different package managers.
+
 	testCases := []struct {
 		name string
 		path string
@@ -138,6 +136,13 @@ func (PythonSuite) TestProjectLayout(ctx context.Context, t *testctx.T) {
 [project]
 name = "main"
 version = "0.0.0"
+dependencies = ["dagger-io"]
+
+[tool.uv]
+package = true
+
+[tool.uv.sources]
+dagger-io = { path = "sdk", editable = true }
 `,
 		},
 		{
@@ -148,6 +153,13 @@ version = "0.0.0"
 [project]
 name = "main"
 version = "0.0.0"
+dependencies = ["dagger-io"]
+
+[tool.uv]
+package = true
+
+[tool.uv.sources]
+dagger-io = { path = "sdk", editable = true }
 `,
 		},
 		{
@@ -157,6 +169,13 @@ version = "0.0.0"
 [project]
 name = "main"
 version = "0.0.0"
+dependencies = ["dagger-io"]
+
+[tool.uv]
+package = true
+
+[tool.uv.sources]
+dagger-io = { path = "sdk", editable = true }
 
 [tool.setuptools]
 packages = ["main"]
@@ -169,6 +188,13 @@ packages = ["main"]
 [project]
 name = "main"
 version = "0.0.0"
+dependencies = ["dagger-io"]
+
+[tool.uv]
+package = true
+
+[tool.uv.sources]
+dagger-io = { path = "sdk", editable = true }
 
 [tool.setuptools]
 py-modules = ["main"]
@@ -182,6 +208,10 @@ py-modules = ["main"]
 [project]
 name = "main"
 version = "0.0.0"
+dependencies = ["dagger-io"]
+
+[tool.uv.sources]
+dagger-io = { path = "sdk", editable = true }
 
 [build-system]
 requires = ["hatchling"]
@@ -195,6 +225,10 @@ build-backend = "hatchling.build"
 [project]
 name = "main"
 version = "0.0.0"
+dependencies = ["dagger-io"]
+
+[tool.uv.sources]
+dagger-io = { path = "sdk", editable = true }
 
 [build-system]
 requires = ["hatchling"]
@@ -211,6 +245,10 @@ packages = ["src/main.py"]
 [project]
 name = "main"
 version = "0.0.0"
+dependencies = ["dagger-io"]
+
+[tool.uv.sources]
+dagger-io = { path = "sdk", editable = true }
 
 [build-system]
 requires = ["hatchling"]
@@ -227,6 +265,10 @@ packages = ["main"]
 [project]
 name = "main"
 version = "0.0.0"
+dependencies = ["dagger-io"]
+
+[tool.uv.sources]
+dagger-io = { path = "sdk", editable = true }
 
 [build-system]
 requires = ["hatchling"]
@@ -246,6 +288,12 @@ version = "0.0.0"
 authors = []
 description = ""
 
+[tool.poetry.dependencies]
+dagger-io = "*"
+
+[tool.uv.sources]
+dagger-io = { path = "sdk", editable = true }
+
 [build-system]
 requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
@@ -298,50 +346,68 @@ build-backend = "poetry.core.masonry.api"
 		},
 	}
 
-	for i, tc := range testCases {
+	for _, tc := range testCases {
 		tc := tc
 
 		t.Run(fmt.Sprintf("%s/%s", tc.name, tc.path), func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
 			out, err := daggerCliBase(t, c).
-				// uv caches a project's metadata by its absolute path so we can't change
-				// build backends and package location on the same `pyproject.toml` path
-				// concurrently because uv may return the cached metadata from another subtest.
-				WithWorkdir(fmt.Sprintf("/work/%s-%d", tc.name, i)).
-				With(fileContents("pyproject.toml", tc.conf)).
-				With(fileContents(tc.path, `
-from dagger import function
+				With(fileContents(tc.path, fmt.Sprintf(`
+import anyio
+import dagger
 
-@function
-def hello() -> str:
-    return "Hello, world!"
-`,
+@dagger.object_type
+class Test:
+    @dagger.function
+    async def whoami(self) -> str:
+        path = await anyio.Path(__file__).absolute()
+        return f"%s: {path}"
+`, tc.name),
 				)).
+				With(fileContents("pyproject.toml", tc.conf+"\n# "+tc.path)).
+				With(func(ctr *dagger.Container) *dagger.Container {
+					// For poetry projects, uv will fail to build due to missing
+					// [project] table in pyproject.toml. Support is possible
+					// via `uv pip` and requirements.lock though.
+					if tc.name != "poetry" {
+						return ctr.WithEnvVariable("TEST_LOCK_FILE", "uv.lock")
+					}
+					return pipLockMod(t, c, []string{"requirements.lock"})(
+						ctr.WithEnvVariable("TEST_LOCK_FILE", "requirements.lock"),
+					)
+				}).
 				With(daggerInitPython()).
-				With(daggerCall("hello")).
+				WithExec([]string{"sh", "-c", "grep dagger-io $TEST_LOCK_FILE"}).
+				With(daggerCall("whoami")).
 				Stdout(ctx)
 
 			require.NoError(t, err)
-			require.Equal(t, "Hello, world!", out)
+			require.Contains(t, out, tc.name)
+			require.Contains(t, out, tc.path)
 		})
 	}
 }
 
 func (PythonSuite) TestVersion(ctx context.Context, t *testctx.T) {
+	// NB: All "pinned" and "relaxed" tests intentionally choose patch versions that
+	// are not the latest, and major versions that aren't the default in the runtime.
+
 	source := pythonSource(`
 import sys
-from dagger import function
+import dagger
 
-@function
-def version() -> str:
-    v = sys.version_info
-    return f"{v.major}.{v.minor}.{v.micro}"
+@dagger.object_type
+class Test:
+    @dagger.function
+    def pinned(self) -> str:
+        v = sys.version_info
+        return f"{v.major}.{v.minor}.{v.micro}"
 
-@function
-def relaxed() -> str:
-    v = sys.version_info
-    return f"{v.major}.{v.minor}"
+    @dagger.function
+    def relaxed(self) -> str:
+        v = sys.version_info
+        return f"{v.major}.{v.minor}"
 `,
 	)
 
@@ -349,44 +415,44 @@ def relaxed() -> str:
 		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
-			With(pyprojectExtra(`requires-python = ">=3.10"`)).
+			With(pyprojectExtra(nil, `requires-python = ">=3.11"`)).
 			With(source).
 			With(daggerInitPython()).
 			With(daggerCall("relaxed")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
-		require.Equal(t, "3.10", out)
+		require.Equal(t, "3.11", out)
 	})
 
 	t.Run("pinned requires-python", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
-			// NB: This is **not** the latest version.
 			// Space after `==` is intentional.
-			With(pyprojectExtra(`requires-python = "== 3.10.10"`)).
+			With(pyprojectExtra(nil, `requires-python = "== 3.11.6"`)).
 			With(source).
 			With(daggerInitPython()).
-			With(daggerCall("version")).
+			With(daggerCall("pinned")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
-		require.Equal(t, "3.10.10", out)
+		require.Equal(t, "3.11.6", out)
 	})
 
 	t.Run("relaxed .python-version", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
-			With(fileContents(".python-version", "3.12")).
 			With(source).
+			With(pyprojectExtra(nil, `requires-python = ">=3.10"`)).
+			With(fileContents(".python-version", "3.11")).
 			With(daggerInitPython()).
 			With(daggerCall("relaxed")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
-		require.Equal(t, "3.12", out)
+		require.Equal(t, "3.11", out)
 	})
 
 	t.Run("pinned .python-version", func(ctx context.Context, t *testctx.T) {
@@ -396,7 +462,7 @@ def relaxed() -> str:
 			With(fileContents(".python-version", "3.12.1")).
 			With(source).
 			With(daggerInitPython()).
-			With(daggerCall("version")).
+			With(daggerCall("pinned")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
@@ -407,15 +473,15 @@ def relaxed() -> str:
 		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
-			With(pyprojectExtra(`requires-python = ">=3.10"`)).
-			With(fileContents(".python-version", "3.12")).
+			With(pyprojectExtra(nil, `requires-python = ">=3.10"`)).
+			With(fileContents(".python-version", "3.11")).
 			With(source).
 			With(daggerInitPython()).
 			With(daggerCall("relaxed")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
-		require.Equal(t, "3.12", out)
+		require.Equal(t, "3.11", out)
 	})
 
 	t.Run("pinned base image", func(ctx context.Context, t *testctx.T) {
@@ -423,18 +489,21 @@ def relaxed() -> str:
 
 		out, err := daggerCliBase(t, c).
 			// base image takes precedence over .python-version
-			With(fileContents(".python-version", "3.12")).
-			With(pyprojectExtra(`
+			// warning: uv will fail if these don't match, just testing the
+			// the runtime's version discovery
+			With(fileContents(".python-version", "3.12.2")).
+			With(pyprojectExtra(nil, `
                 [tool.dagger]
-                base-image = "python:3.10.13@sha256:d5b1fbbc00fd3b55620a9314222498bebf09c4bf606425bf464709ed6a79f202"
+                use-uv = false
+                base-image = "python:3.12.1-slim@sha256:a64ac5be6928c6a94f00b16e09cdf3ba3edd44452d10ffa4516a58004873573e"
             `)).
 			With(source).
 			With(daggerInitPython()).
-			With(daggerCall("version")).
+			With(daggerCall("pinned")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
-		require.Equal(t, "3.10.13", out)
+		require.Equal(t, "3.12.1", out)
 	})
 
 	t.Run("default", func(ctx context.Context, t *testctx.T) {
@@ -447,7 +516,7 @@ def relaxed() -> str:
 			Stdout(ctx)
 
 		require.NoError(t, err)
-		require.Equal(t, "3.11", out)
+		require.Equal(t, "3.12", out)
 	})
 }
 
@@ -482,23 +551,32 @@ func (PythonSuite) TestAltRuntime(ctx context.Context, t *testctx.T) {
 	t.Run("disabled custom config", func(ctx context.Context, t *testctx.T) {
 		out, err := base.
 			WithWorkdir("/work/test").
-			With(fileContents(".python-version", "3.12")).
+			With(pyprojectExtra(nil, `
+requires-python = ">=3.11"
+
+[tool.dagger]
+use-uv = false
+`)).
 			With(pythonSource(`
 import sys
-from dagger import function
+import dagger
 
-@function
-def version() -> str:
-    v = sys.version_info
-    return f"{v.major}.{v.minor}"
+@dagger.object_type
+class Test:
+    @dagger.function
+    def version(self) -> str:
+        v = sys.version_info
+        return f"{v.major}.{v.minor}"
 `,
 			)).
 			With(daggerExec("init", "--sdk=../extended", "--name=test", "--source=.")).
+			// use-uv = false should be ignored
+			WithExec([]string{"test", "-f", "uv.lock"}).
 			With(daggerCall("version")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
-		require.Equal(t, "3.11", out)
+		require.Equal(t, "3.12", out)
 	})
 }
 
@@ -506,22 +584,24 @@ func (PythonSuite) TestUv(ctx context.Context, t *testctx.T) {
 	t.Run("disabled", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		modGen := daggerCliBase(t, c).
-			With(pyprojectExtra(`
+		ctr, err := daggerCliBase(t, c).
+			With(pyprojectExtra(nil, `
                 [tool.dagger]
                 use-uv = false
             `)).
-			With(daggerInitPython())
+			With(daggerInitPython()).
+			// Only uv creates a lock
+			WithExec([]string{"test", "!", "-f", "uv.lock"}).
+			WithExec([]string{"test", "!", "-f", "requirements.lock"}).
+			Sync(ctx)
 
-		// Only uv creates a lock
-		files, err := modGen.Directory("").Entries(ctx)
 		require.NoError(t, err)
-		require.NotContains(t, files, "requirements.lock")
 
-		// Should still work with pip
-		out, err := modGen.
+		// Should still work with pip though
+		out, err := ctr.
 			With(daggerCall("container-echo", "--string-arg=hello", "stdout")).
 			Stdout(ctx)
+
 		require.NoError(t, err)
 		require.Equal(t, "hello\n", out)
 	})
@@ -533,7 +613,7 @@ func (PythonSuite) TestUv(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
-			With(pyprojectExtra(`
+			With(pyprojectExtra(nil, `
                 requires-python = "<3.11"
 
                 [tool.dagger]
@@ -553,25 +633,30 @@ func (PythonSuite) TestUv(ctx context.Context, t *testctx.T) {
 
 		source := pythonSource(`
 import anyio
-from dagger import function
+import dagger
 
-@function
-async def version() -> str:
-    try:
-        r = await anyio.run_process(["uv", "version"])
-    except FileNotFoundError:
-        return "n/d"
+@dagger.object_type
+class Test:
+    @dagger.function
+    async def version(self) -> str:
+        try:
+            r = await anyio.run_process(["uv", "version"])
+        except FileNotFoundError:
+            return "n/d"
 
-    # example output: uv 0.1.22 (9afb36052 2024-03-18)
-    parts = r.stdout.decode().split(" ")
-    return parts[1].strip()
+        # example output: uv 0.4.7 (a178051e8 2024-09-07)
+        parts = r.stdout.decode().split(" ")
+        return parts[1].strip()
 `,
 		)
 
 		out, err := daggerCliBase(t, c).
-			With(pyprojectExtra(`
+			// Intentionally using a version that's older than the runtime's default.
+			// Can't lag too far behind because the runtime may depend on some
+			// newer feature.
+			With(pyprojectExtra(nil, `
                 [tool.dagger]
-                uv-version = "0.2.20"
+                uv-version = "0.4.5"
             `)).
 			With(source).
 			With(daggerInitPython()).
@@ -579,119 +664,89 @@ async def version() -> str:
 			Stdout(ctx)
 
 		require.NoError(t, err)
-		require.Equal(t, "0.2.20", out)
+		require.Equal(t, "0.4.5", out)
 	})
 }
 
-func (PythonSuite) TestLock(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
-	base := daggerCliBase(t, c).With(pythonSource(`
-from importlib import metadata
-import anyio
-from dagger import function
-
-@function
-async def freeze() -> str:
-    r = await anyio.run_process(["uv", "pip", "freeze"])
-    return r.stdout.decode().strip()
-
-@function
-def version(name: str) -> str:
-    return metadata.version(name)
-`,
-	))
-
-	freeze, err := base.
-		With(daggerInitPython()).
-		With(daggerCall("freeze")).
-		Stdout(ctx)
-
-	require.NoError(t, err)
-
-	var lock strings.Builder
-	for _, line := range strings.Split(freeze, "\n") {
-		// Freeze includes the editable installs, which are not a part of the lock file.
-		if strings.HasPrefix(line, "-e") {
-			continue
-		}
-		if strings.HasPrefix(line, "platformdirs==") {
-			// Not the latest version so it's guaranteed to be different.
-			lock.WriteString("platformdirs==4.1.0\n")
-			continue
-		}
-		lock.WriteString(line)
-		lock.WriteString("\n")
-	}
-
-	requirements := lock.String()
-	t.Logf("requirements.lock:\n%s", requirements)
-
-	out, err := base.
-		With(fileContents("requirements.lock", requirements)).
-		With(daggerInitPython()).
-		With(daggerCall("version", "--name=platformdirs")).
-		Stdout(ctx)
-
-	require.NoError(t, err)
-	require.Equal(t, "4.1.0", out)
-}
-
-func (PythonSuite) TestLockAddedDep(ctx context.Context, t *testctx.T) {
-	source := pythonSource(`
-from importlib import metadata
-from dagger import function
-
-@function
-def version() -> str:
-    return metadata.version("packaging")
-`,
-	)
-
-	t.Run("new module", func(ctx context.Context, t *testctx.T) {
+func (PythonSuite) TestPipLock(ctx context.Context, t *testctx.T) {
+	t.Run("can run existing module", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
-			With(pyprojectExtra(`dependencies = ["packaging<24.0"]`)).
-			With(source).
-			With(daggerInitPython()).
-			WithExec([]string{"grep", "packaging==23.2", "requirements.lock"}).
-			With(daggerCall("version")).
+			With(pipLockMod(t, c, nil)).
+			With(daggerCall("--json")).
 			Stdout(ctx)
 
 		require.NoError(t, err)
-		require.Equal(t, "23.2", out)
+		require.Equal(t, "Test", gjson.Get(out, "_type").String())
 	})
 
-	t.Run("existing module", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		out, err := daggerCliBase(t, c).
-			With(daggerInitPython()).
-			// Add dependency to pyproject.toml
-			WithExec([]string{"sed", "-i", `/dependencies/ s/.*/dependencies = ["packaging<24.0"]/`, "pyproject.toml"}).
-			With(source).
-			With(daggerExec("develop")).
-			WithExec([]string{"grep", "packaging==23.2", "requirements.lock"}).
-			With(daggerCall("version")).
-			Stdout(ctx)
-
-		require.NoError(t, err)
-		require.Equal(t, "23.2", out)
-	})
-
-	t.Run("sdk overrides local changes", func(ctx context.Context, t *testctx.T) {
+	t.Run("no uv.lock on develop", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		_, err := daggerCliBase(t, c).
-			With(daggerInitPython()).
-			// Add dependency to sdk/pyproject.toml
-			WithExec([]string{"sed", "-i", `/platformdirs>=/ a  = "packaging<24.0",/`, "sdk/pyproject.toml"}).
-			With(source).
-			With(daggerCall("version")).
+			With(pipLockMod(t, c, nil)).
+			With(daggerExec("develop")).
+			WithExec([]string{"test", "!", "-f", "uv.lock"}).
+			With(daggerCall()).
 			Sync(ctx)
 
-		require.ErrorContains(t, err, "No package metadata was found for packaging")
+		require.NoError(t, err)
+	})
+
+	t.Run("no uv.lock on init", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		_, err := daggerCliBase(t, c).
+			With(pipLockMod(t, c, []string{"pyproject.toml", "requirements.lock"})).
+			With(daggerInitPython()).
+			WithExec([]string{"test", "!", "-f", "uv.lock"}).
+			Sync(ctx)
+
+		require.NoError(t, err)
+	})
+
+	t.Run("no locks on develop", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		_, err := daggerCliBase(t, c).
+			With(pipLockMod(t, c, []string{"**", "!requirements.lock"})).
+			With(daggerExec("develop")).
+			WithExec([]string{"test", "!", "-f", "uv.lock"}).
+			WithExec([]string{"test", "!", "-f", "requirements.lock"}).
+			Sync(ctx)
+
+		require.NoError(t, err)
+	})
+
+	t.Run("does not update pinned dependency", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := daggerCliBase(t, c).
+			With(pipLockMod(t, c, nil)).
+			With(daggerExec("develop")).
+			With(daggerCall("versions", "--names=platformdirs")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+
+		// this pinned version of platformdirs is known to not be the latest one
+		require.Equal(t, "platformdirs==4.2.0\n", out)
+	})
+
+	t.Run("new dependency", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := daggerCliBase(t, c).
+			With(pipLockMod(t, c, nil)).
+			WithExec([]string{"sh", "-c", `echo 'dependencies = ["packaging<24.0"]' >> pyproject.toml`}).
+			With(daggerExec("develop")).
+			WithExec([]string{"grep", "packaging==23.2", "requirements.lock"}).
+			With(daggerCall("versions", "--names=platformdirs,packaging")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "platformdirs==4.2.0\npackaging==23.2\n", out)
 	})
 }
 
@@ -1445,17 +1500,22 @@ func daggerInitPython(args ...string) dagger.WithContainerFunc {
 	return daggerInitPythonAt("", args...)
 }
 
-func pyprojectExtra(contents string) dagger.WithContainerFunc {
+func pyprojectExtra(dependencies []string, contents string) dagger.WithContainerFunc {
+	dependencies = append([]string{"dagger-io"}, dependencies...)
+	depLine := `dependencies = ["` + strings.Join(dependencies, `", "`) + `"]`
 	base := `
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.uv.sources]
+dagger-io = { path = "sdk", editable = true }
+
 [project]
 name = "main"
 version = "0.0.0"
 `
-	return fileContents("pyproject.toml", base+contents)
+	return fileContents("pyproject.toml", base+depLine+"\n"+contents)
 }
 
 func daggerInitPythonAt(modPath string, args ...string) dagger.WithContainerFunc {
@@ -1469,4 +1529,15 @@ func daggerInitPythonAt(modPath string, args ...string) dagger.WithContainerFunc
 		execArgs = append(execArgs, "--source=.")
 	}
 	return daggerExec(execArgs...)
+}
+
+func pipLockMod(t *testctx.T, c *dagger.Client, inc []string) dagger.WithContainerFunc {
+	t.Helper()
+	modSrc, err := filepath.Abs("./testdata/modules/python/pip-lock")
+	require.NoError(t, err)
+	return func(ctr *dagger.Container) *dagger.Container {
+		return ctr.WithDirectory("", c.Host().Directory(modSrc, dagger.HostDirectoryOpts{
+			Include: inc,
+		}))
+	}
 }

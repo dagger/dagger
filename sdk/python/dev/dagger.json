@@ -1,7 +1,11 @@
 {
   "name": "python-sdk-dev",
   "sdk": "python",
-  "exclude": ["**/.venv", "**/__pycache__", "**/.*cache"],
+  "exclude": [
+    "**/.venv",
+    "**/__pycache__",
+    "**/.*cache"
+  ],
   "dependencies": [
     {
       "name": "apko",
@@ -13,5 +17,5 @@
     }
   ],
   "source": ".",
-  "engineVersion": "v0.12.6"
+  "engineVersion": "v0.12.7"
 }

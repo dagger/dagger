@@ -8,9 +8,7 @@ dynamic = ["version"]
 description = "A client package for running Dagger pipelines in Python."
 readme = "README.md"
 license = "Apache-2.0"
-authors = [
-    {name = "Dagger", email = "hello@dagger.io"},
-]
+authors = [{ name = "Dagger", email = "hello@dagger.io" }]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -49,8 +47,8 @@ dependencies = [
 "Twitter" = "https://twitter.com/dagger_io"
 
 [tool.uv]
-preview = true
 dev-dependencies = [
+    "codegen",
     # lint
     "ruff>=0.3.4",
     "mypy>=1.8.0",
@@ -65,27 +63,25 @@ dev-dependencies = [
     "sphinx-rtd-theme>=2.0.0",
 ]
 
+[tool.uv.sources]
+codegen = { workspace = true }
+
+[tool.uv.workspace]
+members = ["codegen"]
+
 [tool.hatch.version]
 source = "vcs"
 fallback-version = "0.0.0"
 
 [tool.hatch.build.targets.sdist]
-only-include = [
-    "src",
-    "tests",
-    "docs",
-    "CHANGELOG.md",
-    "README.md",
-]
+only-include = ["src", "tests", "docs", "CHANGELOG.md", "README.md"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/dagger"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests/"]
-addopts = [
-    "--import-mode=importlib",
-]
+addopts = ["--import-mode=importlib"]
 markers = [
     "slow: mark test as slow (integration)",
     "provision: mark provisioning tests",

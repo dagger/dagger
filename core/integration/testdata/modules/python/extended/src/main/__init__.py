@@ -8,9 +8,11 @@ class ExtPythonSdk:
 
     @function
     async def codegen(
-        self, mod_source: dagger.ModuleSource, introspection_json: dagger.File
+        self,
+        mod_source: dagger.ModuleSource,
+        introspection_json: dagger.File,
     ) -> dagger.GeneratedCode:
-        sdk = self.common(mod_source, introspection_json)
+        sdk = self.common(mod_source, introspection_json).with_updates()
         return (
             dag.generated_code(sdk.container().directory(await sdk.source_path()))
             .with_vcs_generated_paths(["sdk/**"])
@@ -19,21 +21,22 @@ class ExtPythonSdk:
 
     @function
     def module_runtime(
-        self, mod_source: dagger.ModuleSource, introspection_json: dagger.File
+        self,
+        mod_source: dagger.ModuleSource,
+        introspection_json: dagger.File,
     ) -> dagger.Container:
-        return (
-            self.common(mod_source, introspection_json)
-            .with_install()
-            .container()
-            .with_entrypoint(["/runtime"])
-        )
+        return self.common(mod_source, introspection_json).with_install().container()
 
     def common(
-        self, mod_source: dagger.ModuleSource, introspection_json: dagger.File
+        self,
+        mod_source: dagger.ModuleSource,
+        introspection_json: dagger.File,
     ) -> dagger.PythonSdk:
         base = (
             dag.python_sdk(
-                sdk_source_dir=dag.current_module().source().directory("sdk")
+                # Not really necessary with context directory, but simplifies
+                # the test setup.
+                sdk_source_dir=dag.current_module().source().directory("sdk"),
             )
             .without_user_config()
             .load(mod_source)
@@ -46,7 +49,7 @@ class ExtPythonSdk:
         )
         return (
             base.with_container(ctr)
-            .with_template()
             .with_sdk(introspection_json)
+            .with_template()
             .with_source()
         )
