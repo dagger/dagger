@@ -76,12 +76,13 @@ func (opts FrontendOpts) ShouldShow(span *Span) bool {
 	if span.IsRunning() {
 		return true
 	}
-	if opts.TooFastThreshold > 0 &&
-		span.ActiveDuration(time.Now()) < opts.TooFastThreshold &&
-		opts.Verbosity < ShowSpammyVerbosity {
-		// ignore fast steps; signal:noise is too poor
-		return false
-	}
+	// TODO: avoid breaking chains
+	// if opts.TooFastThreshold > 0 &&
+	// 	span.ActiveDuration(time.Now()) < opts.TooFastThreshold &&
+	// 	opts.Verbosity < ShowSpammyVerbosity {
+	// 	// ignore fast steps; signal:noise is too poor
+	// 	return false
+	// }
 	if opts.GCThreshold > 0 &&
 		time.Since(span.EndTime()) > opts.GCThreshold &&
 		opts.Verbosity < ShowCompletedVerbosity {
