@@ -15,6 +15,6 @@ class MyModule:
     @function
     async def readFile(
         self,
-        source: Annotated[dagger.File, DefaultPath("./README.md")],
+        source: Annotated[dagger.File, DefaultPath("/README.md")],
     ) -> list[str]:
         return await source.contents()
