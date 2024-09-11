@@ -2,20 +2,26 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
+	"os"
 	"runtime"
-	"strings"
 
+	"dagger.io/dagger/telemetry"
+	"github.com/dagger/dagger/dagql/idtui"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
+	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/google/go-containerregistry/pkg/name"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/go-containerregistry/pkg/v1/types"
+	"github.com/muesli/termenv"
+
+	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	"golang.org/x/mod/semver"
 
 	"github.com/dagger/dagger/engine"
-)
-
-const (
-	versionURL = "https://dl.dagger.io/dagger/latest_version"
 )
 
 var versionCmd = &cobra.Command{
@@ -52,32 +58,108 @@ func updateAvailable(ctx context.Context) (string, error) {
 		return latest, nil
 	}
 
-	return "", nil
+	return latest, nil
 }
 
-func latestVersion(ctx context.Context) (string, error) {
-	req, err := http.NewRequest("GET", versionURL, nil)
-	if err != nil {
-		return "", err
-	}
-	req = req.WithContext(ctx)
+func latestVersion(ctx context.Context) (v string, rerr error) {
+	ctx, span := Tracer().Start(ctx, "check for updates")
+	defer telemetry.End(span, func() error { return rerr })
 
-	req.Header.Set(
-		"User-Agent",
-		fmt.Sprintf("dagger/%s (%s; %s)", engine.Version, runtime.GOOS, runtime.GOARCH),
+	imageRef := fmt.Sprintf("%s:latest", engine.EngineImageRepo)
+
+	ref, err := name.ParseReference(imageRef)
+	if err != nil {
+		return "", errors.Wrap(err, "parsing image reference")
+	}
+
+	desc, err := remote.Get(ref,
+		remote.WithContext(ctx),
+		// The default auth keychain parses the same docker credentials as used by the buildkit
+		// session attachable.
+		remote.WithAuthFromKeychain(authn.DefaultKeychain),
+		remote.WithUserAgent(enginetel.Labels{}.WithCILabels().WithAnonymousGitLabels(workdir).UserAgent()),
 	)
-
-	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", err
+		return "", errors.Wrap(err, "failed to resolve image")
 	}
 
-	defer resp.Body.Close()
-	data, err := io.ReadAll(resp.Body)
+	annotations, err := manifestAnnotations(desc)
 	if err != nil {
-		return "", err
+		return "", errors.Wrap(err, "failed to get annotations")
 	}
 
-	latestVersion := strings.TrimSuffix(string(data), "\n")
-	return latestVersion, nil
+	version, ok := annotations["org.opencontainers.image.version"]
+	if !ok {
+		return "", errors.New("no version found in annotations")
+	}
+
+	return version, nil
+}
+
+func manifestAnnotations(desc *remote.Descriptor) (map[string]string, error) {
+	annotations := make(map[string]string)
+
+	switch desc.MediaType {
+	case types.OCIImageIndex, types.DockerManifestList:
+		// Handle an OCI image index (v1.IndexManifest)
+		var index v1.IndexManifest
+
+		err := json.Unmarshal(desc.Manifest, &index)
+		if err != nil {
+			return nil, fmt.Errorf("error unmarshalling index: %w", err)
+		}
+
+		// Merge annotations at the index (top-level) if they exist
+		if index.Annotations != nil {
+			for key, value := range index.Annotations {
+				annotations[key] = value
+			}
+		}
+
+		for _, manifest := range index.Manifests {
+			if manifest.Annotations != nil {
+				for key, value := range manifest.Annotations {
+					annotations[key] = value
+				}
+			}
+		}
+
+	case types.OCIManifestSchema1, types.DockerManifestSchema2:
+		// Handle a single image manifest (v1.Manifest)
+		var manifest v1.Manifest
+
+		err := json.Unmarshal(desc.Manifest, &manifest)
+		if err != nil {
+			return nil, fmt.Errorf("error unmarshalling manifest: %w", err)
+		}
+
+		// Copy annotations into the map
+		if manifest.Annotations != nil {
+			for key, value := range manifest.Annotations {
+				annotations[key] = value
+			}
+		}
+
+	default:
+		return nil, fmt.Errorf("unsupported media type: %s\n", desc.MediaType)
+	}
+
+	return annotations, nil
+}
+
+func versionNag(latest string) {
+	output := idtui.NewOutput(os.Stderr)
+
+	fmt.Fprint(
+		os.Stderr, "\r\n"+
+			output.String("A new release of dagger is available: ").Foreground(termenv.ANSIYellow).String()+
+			output.String(engine.Version).Foreground(termenv.ANSICyan).String()+
+			" → "+
+			output.String(latest).Foreground(termenv.ANSICyan).String()+
+			"\n"+
+
+			"To upgrade, see https://docs.dagger.io/install\n"+
+			output.String("https://github.com/dagger/dagger/releases/tag/"+latest).Foreground(termenv.ANSIYellow).String()+
+			"\n",
+	)
 }

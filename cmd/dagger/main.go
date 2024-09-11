@@ -188,7 +188,7 @@ func checkForUpdates(ctx context.Context) {
 
 		updateAvailable, err := updateAvailable(ctx)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "\nFailed to check for updates: %v\n", err)
+			// Silently ignore the error -- it's already being caught by OTEL
 			return
 		}
 
@@ -201,13 +201,7 @@ func checkForUpdates(ctx context.Context) {
 			if updateAvailable == "" {
 				return
 			}
-			fmt.Fprintf(
-				os.Stderr,
-				"\nA new release of dagger is available: %s → %s\n"+
-					"To upgrade, see https://docs.dagger.io/install\n",
-				engine.Version,
-				updateAvailable,
-			)
+			versionNag(updateAvailable)
 		default:
 			// If we didn't have enough time to check for updates,
 			// cancel the update check.
