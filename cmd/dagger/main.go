@@ -76,7 +76,7 @@ func init() {
 
 	rootCmd.AddCommand(
 		listenCmd,
-		versionCmd,
+		versionCmd(),
 		queryCmd,
 		runCmd,
 		watchCmd,

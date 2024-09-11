@@ -24,15 +24,34 @@ import (
 	"github.com/dagger/dagger/engine"
 )
 
-var versionCmd = &cobra.Command{
-	Use:   "version",
-	Short: "Print dagger version",
-	// Disable version hook here to avoid double version check
-	PersistentPreRun: func(*cobra.Command, []string) {},
-	Args:             cobra.NoArgs,
-	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Fprintln(cmd.OutOrStdout(), long())
-	},
+var (
+	forceVersionCheck bool
+)
+
+func versionCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "version",
+		Short: "Print dagger version",
+		// Disable version hook here to avoid double version check
+		PersistentPreRun: func(*cobra.Command, []string) {},
+		Args:             cobra.NoArgs,
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Fprintln(cmd.OutOrStdout(), long())
+			if forceVersionCheck {
+				updateAvailable, err := updateAvailable(cmd.Context())
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "\nFailed to check for updates: %v\n", err)
+					os.Exit(1)
+					return
+				}
+				if updateAvailable != "" {
+					versionNag(updateAvailable)
+				}
+			}
+		},
+	}
+	cmd.Flags().BoolVar(&forceVersionCheck, "check", false, "Check for updates")
+	return cmd
 }
 
 func short() string {
