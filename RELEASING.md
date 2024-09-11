@@ -1,4 +1,4 @@
-# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-September%202,%202024-success?style=flat-square)
+# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-September%2011,%202024-success?style=flat-square)
 
 This describes how to release Dagger:
 
@@ -283,7 +283,7 @@ git checkout -b prep-${ENGINE_VERSION}
 - [ ] Bump SDK versions to the target version
 
 ```console
-dagger call --source=.:default sdk all bump --version="${ENGINE_VERSION}" -o ./
+dagger call sdk all bump --version="${ENGINE_VERSION}" -o ./
 git add sdk
 git commit -s -m "chore: bump sdk dependencies to ${ENGINE_VERSION}"
 ```
@@ -291,7 +291,7 @@ git commit -s -m "chore: bump sdk dependencies to ${ENGINE_VERSION}"
 - [ ] Bump Helm version to the target version
 
 ```console
-dagger call --source=.:default helm set-version --version="${ENGINE_VERSION}" -o ./helm/dagger/Chart.yaml
+dagger call helm set-version --version="${ENGINE_VERSION}" -o ./helm/dagger/Chart.yaml
 git add helm
 git commit -s -m "chore: bump helm dependency to ${ENGINE_VERSION}"
 ```
@@ -360,10 +360,10 @@ which publishes:
       `dev` module updated below will get `dagger.json`'s engine version bumped.
 
 ```console
-# install the cli to dagger-0.12.7, and symlink dagger to it
-curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=0.12.7 sh
-mv ~/.local/bin/dagger{,-0.12.7}
-ln -s ~/.local/bin/dagger{-0.12.7,}
+# install the cli to dagger-0.13.0, and symlink dagger to it
+curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin DAGGER_VERSION=0.13.0 sh
+mv ~/.local/bin/dagger{,-0.13.0}
+ln -s ~/.local/bin/dagger{-0.13.0,}
 
 dagger version
 dagger core version
@@ -374,6 +374,8 @@ dagger core version
   - The version numbers (of the form `<major>.<minor>.<patch>`) should be updated to the new version
   - The worker runner versions (of the form `dagger-v<major>-<minor>-<patch>-<worker>`)
   - e.g. if bumping 0.12.6->0.12.7, can run `find .github/ -type f -exec sed -i 's/0-12-6/0-12-7/g; s/0\.12\.6/0\.12\.7/g' {} +`
+
+- [ ] Regenerate `.github/` configs by running `dagger call -m .github generate -o .`
 
 - [ ] Open a PR with the title `Improve Releasing during $ENGINE_VERSION`
 
