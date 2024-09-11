@@ -1,0 +1,6 @@
+kind: Fixed
+body: Fix setting secrets on module object in constructor
+time: 2024-09-11T10:52:22.201566784+01:00
+custom:
+  Author: sipsma
+  PR: "8149"
