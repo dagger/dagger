@@ -1,6 +1,0 @@
-kind: Fixed
-body: 'cli: Fix default value on Platform flag'
-time: 2024-09-06T12:42:56.566557Z
-custom:
-    Author: helderco
-    PR: "8360"

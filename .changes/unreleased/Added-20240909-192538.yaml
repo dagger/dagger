@@ -1,6 +1,0 @@
-kind: Added
-body: 'TUI: add --no-exit/-E so you can poke around after the call completes'
-time: 2024-09-09T19:25:38.999850029-04:00
-custom:
-    Author: vito
-    PR: "8389"

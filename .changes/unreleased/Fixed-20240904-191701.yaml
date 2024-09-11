@@ -1,6 +1,0 @@
-kind: Fixed
-body: Fixed void types from core incorrectly being seen as named scalars
-time: 2024-09-04T19:17:01.089095Z
-custom:
-    Author: helderco
-    PR: "8336"

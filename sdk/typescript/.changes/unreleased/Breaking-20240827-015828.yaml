@@ -1,9 +1,0 @@
-kind: Breaking
-body: |-
-  Drop CommonJS support in favor of module to support new `graphql-request` version.
-
-  Bump `Bun` runtime version to `1.1.26` to support new `execa` version.
-time: 2024-08-27T01:58:28.936679+02:00
-custom:
-  Author: TomChv
-  PR: "8237"
