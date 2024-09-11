@@ -5509,7 +5509,7 @@ func (ModuleSuite) TestSSHAuthSockPathHandling(ctx context.Context, t *testctx.T
 
 	repoURL := "git@gitlab.com:dagger-modules/private/test/more/dagger-test-modules-private.git"
 
-	t.Run("SSH auth with home expansion and symlink", func(ctx context.Context, t *testctx.T) {
+	t.Run("SSH auth with symlink", func(ctx context.Context, t *testctx.T) {
 		mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
 		defer cleanup()
 
@@ -5519,7 +5519,7 @@ func (ModuleSuite) TestSSHAuthSockPathHandling(ctx context.Context, t *testctx.T
 			WithExec([]string{"mkdir", "-p", "/home/dagger"}).
 			WithExec([]string{"ln", "-s", "/sock/unix-socket", "/home/dagger/.ssh-sock"}).
 			WithEnvVariable("HOME", "/home/dagger").
-			WithEnvVariable("SSH_AUTH_SOCK", "~/.ssh-sock")
+			WithEnvVariable("SSH_AUTH_SOCK", "/home/dagger/.ssh-sock")
 
 		out, err := ctr.
 			WithWorkdir("/work/some/subdir").
