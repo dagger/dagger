@@ -1,0 +1,6 @@
+kind: Added
+body: Add `Container.withAnnotation` to set OCI annotations
+time: 2024-09-11T15:39:28.384408+02:00
+custom:
+    Author: aluzzardi
+    PR: "8409"
