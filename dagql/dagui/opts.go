@@ -90,19 +90,11 @@ func (opts FrontendOpts) ShouldShow(span *Span) bool {
 	// 	// ignore fast steps; signal:noise is too poor
 	// 	return false
 	// }
-	// TODO: bring back <100ms?
 	if opts.GCThreshold > 0 &&
 		time.Since(span.EndTime) > opts.GCThreshold &&
 		opts.Verbosity < ShowCompletedVerbosity {
 		// stop showing steps that ended after a given threshold
 		return false
 	}
-	// TODO: don't break chains
-	// if opts.TooFastThreshold > 0 &&
-	// 	span.ActiveDuration(time.Now()) < opts.TooFastThreshold &&
-	// 	opts.Verbosity < ShowSpammyVerbosity {
-	// 	// ignore fast steps; signal:noise is too poor
-	// 	return false
-	// }
 	return true
 }

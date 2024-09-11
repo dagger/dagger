@@ -957,6 +957,18 @@ func (fe *frontendPretty) renderStep(out *termenv.Output, r *renderer, span *dag
 	}
 
 	if span.ID == fe.debugged {
+		r.indent(out, depth+1)
+		fmt.Fprintf(out, prefix+"? encapsulate: %v\n", span.Encapsulate)
+		r.indent(out, depth+1)
+		fmt.Fprintf(out, prefix+"? encapsulated: %v\n", span.Encapsulated)
+		r.indent(out, depth+1)
+		fmt.Fprintf(out, prefix+"? internal: %v\n", span.Internal)
+		r.indent(out, depth+1)
+		fmt.Fprintf(out, prefix+"? canceled: %v\n", span.Canceled)
+		r.indent(out, depth+1)
+		fmt.Fprintf(out, prefix+"? passthrough: %v\n", span.Passthrough)
+		r.indent(out, depth+1)
+		fmt.Fprintf(out, prefix+"? ignore: %v\n", span.Ignore)
 		pending, reasons := span.PendingReason()
 		r.indent(out, depth+1)
 		fmt.Fprintf(out, prefix+"? pending: %v\n", pending)
@@ -977,6 +989,24 @@ func (fe *frontendPretty) renderStep(out *termenv.Output, r *renderer, span *dag
 		for _, reason := range reasons {
 			r.indent(out, depth+1)
 			fmt.Fprintln(out, prefix+"- "+reason)
+		}
+		if span.EffectID != "" {
+			r.indent(out, depth+1)
+			fmt.Fprintf(out, prefix+"? is effect: %s\n", span.EffectID)
+		}
+		if len(span.EffectIDs) > 0 {
+			r.indent(out, depth+1)
+			fmt.Fprintf(out, prefix+"? installed effects: %d\n", len(span.EffectIDs))
+			for _, id := range span.EffectIDs {
+				r.indent(out, depth+1)
+				fmt.Fprintln(out, prefix+" - "+id)
+				if spans := fe.db.EffectSpans[id]; spans != nil {
+					for _, effect := range spans.Order {
+						r.indent(out, depth+1)
+						fmt.Fprintln(out, prefix+"   - "+effect.Name)
+					}
+				}
+			}
 		}
 	}
 

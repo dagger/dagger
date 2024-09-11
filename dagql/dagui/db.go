@@ -475,9 +475,6 @@ func (db *DB) integrateSpan(span *Span) {
 		if db.CauseSpans[id] == nil {
 			db.CauseSpans[id] = NewSpanSet()
 		}
-		if id == "sha256:b5b910ed7ac6c90422c4665fba0b50ffa0509d27e273406d6beb7a955e08009f" {
-			slog.Warn("recording cause", "id", id, "span", span.ID)
-		}
 		db.CauseSpans[id].Add(span)
 	}
 
