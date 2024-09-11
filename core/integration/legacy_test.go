@@ -535,3 +535,49 @@ func (LegacySuite) TestModuleSourceCloneURL(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "https://github.com/dagger/dagger.git", res.ModuleSource.AsGitSource.CloneRef)
 	require.Equal(t, res.ModuleSource.AsGitSource.CloneRef, res.ModuleSource.AsGitSource.CloneURL)
 }
+
+func (LegacySuite) TestGoCodegenOptionals(ctx context.Context, t *testctx.T) {
+	// Changed in dagger/dagger#8106
+	//
+	// Ensure that Go's codegen produces a required argument in old schemas
+	// when there's a non-null with a default.
+
+	c := connect(ctx, t)
+
+	out, err := daggerCliBase(t, c).
+		With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+		WithWorkdir("/work").
+		WithNewFile("dagger.json", `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.12.7"}`).
+		WithNewFile("main.go", `package main
+
+import "context"
+
+type Test struct {}
+
+func (m *Test) Greet(ctx context.Context) (string, error) {
+    // In v0.13 *name* is an optional argument
+    return dag.Dep("Dagger").Greeting(ctx)
+}
+`,
+		).
+		WithWorkdir("/work/dep").
+		With(daggerExec("init", "--name=dep", "--sdk=python")).
+		With(sdkSource("python", `import dagger
+
+@dagger.object_type
+class Dep:
+    name: str = "World"
+
+    @dagger.function
+    def greeting(self) -> str:
+        return f"Hello, {self.name}!"
+`,
+		)).
+		WithWorkdir("/work").
+		With(daggerExec("install", "./dep")).
+		With(daggerCall("greet")).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, "Hello, Dagger!", out)
+}
