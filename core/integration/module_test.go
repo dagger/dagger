@@ -403,6 +403,13 @@ class Minimal {
 }
 
 func (ModuleSuite) TestOptionalDefaults(ctx context.Context, t *testctx.T) {
+	// Test expressiveness for following schema:
+	//   a: String!
+	//   b: String
+	//   c: String! = "foo"
+	//   d: String = null
+	//   e: String = "bar"
+
 	for _, tc := range []struct {
 		sdk      string
 		source   string
@@ -422,10 +429,8 @@ func (m *Test) Foo(
 	b *string,
 	// +default="foo"
 	c string,
-	// +optional
 	// +default=null
 	d *string,
-	// +optional
 	// +default="bar"
 	e *string,
 ) string {
@@ -549,6 +554,92 @@ class Test {
 				require.NoError(t, err)
 				require.Equal(t, tc.expected, out)
 			})
+		})
+	}
+}
+
+func (ModuleSuite) TestCodegenOptionals(ctx context.Context, t *testctx.T) {
+	// Same code as TestOptionalDefaults since it guarantees this is being
+	// registered correctly and equally by all SDKs.
+	src := `package main
+
+import "fmt"
+
+type Dep struct {}
+
+func (m *Dep) Ctl(
+	a string,
+	// +optional
+	b *string,
+	// +default="foo"
+	c string,
+	// +default=null
+	d *string,
+	// +default="bar"
+	e *string,
+) string {
+	return fmt.Sprintf("%+v, %+v, %+v, %+v, %+v", a, b, c, d, *e)
+}
+`
+	expected := "foo, <nil>, foo, <nil>, bar"
+
+	for _, tc := range []struct {
+		sdk    string
+		source string
+	}{
+		{
+			sdk: "go",
+			source: `package main
+
+import "context"
+
+type Test struct {}
+
+func (m *Test) Test(ctx context.Context) (string, error) {
+	return dag.Dep().Ctl(ctx, "foo")
+}
+`,
+		},
+		{
+			sdk: "python",
+			source: `import dagger
+from dagger import dag
+
+
+@dagger.object_type
+class Test:
+    @dagger.function
+    async def test(self) -> str:
+        return await dag.dep().ctl("foo")
+`,
+		},
+		{
+			sdk: "typescript",
+			source: `import { dag, object, func } from "@dagger.io/dagger"
+
+@object()
+class Test {
+  @func()
+  async test(): Promise<string> {
+    return await dag.dep().ctl("foo")
+  }
+}
+`,
+		},
+	} {
+		tc := tc
+
+		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			out, err := modInit(t, c, tc.sdk, tc.source).
+				With(withModInitAt("./dep", "go", src)).
+				With(daggerExec("install", "./dep")).
+				With(daggerCall("test")).
+				Stdout(ctx)
+
+			require.NoError(t, err)
+			require.Equal(t, expected, out)
 		})
 	}
 }

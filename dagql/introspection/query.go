@@ -160,7 +160,7 @@ type ResponseInputValues []ResponseInputValue
 
 func (i ResponseInputValues) HasOptionals() bool {
 	for _, v := range i {
-		if v.TypeRef.IsOptional() {
+		if v.IsOptional() {
 			return true
 		}
 	}
@@ -174,6 +174,10 @@ type ResponseInputValue struct {
 	TypeRef           *ResponseTypeRef `json:"type"`
 	IsDeprecated      bool             `json:"isDeprecated"`
 	DeprecationReason string           `json:"deprecationReason"`
+}
+
+func (v ResponseInputValue) IsOptional() bool {
+	return v.DefaultValue != nil || (v.TypeRef != nil && v.TypeRef.IsOptional())
 }
 
 type ResponseEnumValue struct {

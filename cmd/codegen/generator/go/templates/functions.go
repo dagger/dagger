@@ -73,6 +73,8 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 		"SortEnumFields":          funcs.sortEnumFields,
 		"FieldOptionsStructName":  funcs.fieldOptionsStructName,
 		"FieldFunction":           funcs.fieldFunction,
+		"IsArgOptional":           funcs.isArgOptional,
+		"HasOptionals":            funcs.hasOptionals,
 		"IsEnum":                  funcs.isEnum,
 		"IsPointer":               funcs.isPointer,
 		"FormatArrayField":        funcs.formatArrayField,
@@ -187,6 +189,31 @@ func (funcs goTemplateFuncs) fieldOptionsStructName(f introspection.Field, scope
 	return scope + formatName(f.ParentObject.Name) + formatName(f.Name) + "Opts"
 }
 
+// hasOptionals returns true if a field has optional arguments
+//
+// Note: This is only necessary to simplify backwards compatibility of a breaking change.
+func (funcs goTemplateFuncs) hasOptionals(i introspection.InputValues) bool {
+	if funcs.CheckVersionCompatibility("v0.13.0") {
+		return i.HasOptionals()
+	}
+	for _, v := range i {
+		if funcs.isArgOptional(v) {
+			return true
+		}
+	}
+	return false
+}
+
+// isArgOptional returns true if a field argument is optional
+//
+// Note: This is only necessary to simplify backwards compatibility of a breaking change.
+func (funcs goTemplateFuncs) isArgOptional(arg introspection.InputValue) bool {
+	if funcs.CheckVersionCompatibility("v0.13.0") {
+		return arg.IsOptional()
+	}
+	return arg.TypeRef.IsOptional()
+}
+
 // fieldFunction converts a field into a function signature
 // Example: `contents: String!` -> `func (r *File) Contents(ctx context.Context) (string, error)`
 func (funcs goTemplateFuncs) fieldFunction(f introspection.Field, topLevel bool, supportsVoid bool, scopes ...string) (string, error) {
@@ -214,7 +241,7 @@ func (funcs goTemplateFuncs) fieldFunction(f introspection.Field, topLevel bool,
 		args = append(args, "ctx context.Context")
 	}
 	for _, arg := range f.Args {
-		if arg.TypeRef.IsOptional() {
+		if funcs.isArgOptional(arg) {
 			continue
 		}
 
@@ -236,7 +263,7 @@ func (funcs goTemplateFuncs) fieldFunction(f introspection.Field, topLevel bool,
 	}
 
 	// Options (e.g. DirectoryContentsOptions -> <Object><Field>Options)
-	if f.Args.HasOptionals() {
+	if funcs.hasOptionals(f.Args) {
 		args = append(
 			args,
 			fmt.Sprintf("opts ...%s", funcs.fieldOptionsStructName(f, scopes...)),
