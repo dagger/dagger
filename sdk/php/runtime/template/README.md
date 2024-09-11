@@ -17,7 +17,7 @@ The intended workflow for reusable modules is to install them through the Dagger
 To initialise the module, call the following:
 
 ```
-dagger init --sdk="github.com/dagger/dagger/sdk/php" <path-to-module>
+dagger init --sdk="php" <path-to-module>
 ```
 
 This will create a `dagger.json` configuration file.
@@ -41,7 +41,7 @@ The `-m` flag must be a git url or relative file path. The argument may be omitt
 You can find out what methods are available by calling the following:
 
 ```
-dagger functions --m <path-to-module>
+dagger functions -m <path-to-module>
 ```
 
 You should find two functions:
@@ -111,6 +111,7 @@ That's a `Dagger Object` technically, albeit useless without any `Dagger Functio
 ### Dagger Functions
 
 A `Dagger Function` is a **public** method on a `Dagger Object` with the `#[DaggerFunction]` Attribute.
+If you want to add a doc-string for your function use the `#[Doc]` Attribute.
 
 Use the following examples for reference:
 
@@ -121,6 +122,7 @@ namespace DaggerModule;
 
 use Dagger\Attribute\DaggerFunction;
 use Dagger\Attribute\DaggerObject;
+use Dagger\Attribute\Doc;
 
 #[DaggerObject]
 class Example
@@ -135,7 +137,8 @@ class Example
          */
     }
 
-    #[DaggerFunction('documentation for the function')]
+    #[DaggerFunction]
+    #[Doc('documentation for the function')]
     public function myDocumentedDaggerFunction(): void
     {
         /**
@@ -211,8 +214,7 @@ final class MyModule
     #[DaggerFunction]
     public function __construct(
         public Directory $source
-    ): Container {
-        // ...
+    ) {
     }
 
     #[DaggerFunction]
@@ -233,8 +235,7 @@ dagger call --dir="path/to/dir" test
 ### Arguments
 
 All parameters on a `Dagger Function` are considered providable arguments,
-if you want additional metadata on an argument, such as a doc-string;
-use the `#[Argument]` Attribute.
+If you want to add a doc-string for your argument use the `#[Doc]` Attribute.
 
 If any of your arguments, or return values, are arrays. Please see the section on [Lists](#lists)
 
@@ -247,7 +248,7 @@ namespace DaggerModule;
 
 use Dagger\Attribute\DaggerFunction;
 use Dagger\Attribute\DaggerObject;
-use Dagger\Attribute\Argument;
+use Dagger\Attribute\Doc;
 
 #[DaggerObject]
 class Example
@@ -269,9 +270,10 @@ class Example
          // do something...
      }
 
-     #[DaggerFunction('documentation for function')]
+     #[DaggerFunction]
+     #[Doc('documentation for function')]
      public function myWellDocumentedDaggerFunction(
-         #[Argument('documentation for argument')]
+         #[Doc('documentation for argument')]
          string $value,
      ): string {
          // do something...
@@ -293,7 +295,7 @@ namespace DaggerModule;
 
 use Dagger\Attribute\DaggerFunction;
 use Dagger\Attribute\DaggerObject;
-use Dagger\Attribute\Argument;
+use Dagger\Attribute\Doc;
 use Dagger\Attribute\ListOfType;
 
 #[DaggerObject]
@@ -309,14 +311,16 @@ class Example
      /**
      * @param int[] $value
      */
-     #[DaggerFunction('Annotations are not supported')]
+     #[DaggerFunction]
+     #[Doc('Annotations are not supported')]
      public function myStillInvalidList(
          array $value,
      ): string {
          // do something...
      }
 
-     #[DaggerFunction('ListOfType attribute is supported')]
+     #[DaggerFunction]
+     #[Doc('ListOfType attribute is supported')]
      public function myValidList(
          #[ListOfType('int')]
          array $value,
@@ -337,13 +341,14 @@ namespace DaggerModule;
 
 use Dagger\Attribute\DaggerFunction;
 use Dagger\Attribute\DaggerObject;
-use Dagger\Attribute\Argument;
+use Dagger\Attribute\Doc;
 use Dagger\Attribute\ReturnsListOfType;
 
 #[DaggerObject]
 class Example
 {
-     #[DaggerFunction('The subtype of an array MUST be specified')]
+     #[DaggerFunction]
+     #[Doc('The subtype of an array MUST be specified')]
      public function myInvalidList(): array
      {
          // do something...
@@ -352,13 +357,15 @@ class Example
      /**
      * @return int[]
      */
-     #[DaggerFunction('Annotations are not supported')]
+     #[DaggerFunction]
+     #[Doc('Annotations are not supported')]
      public function myStillInvalidList(): array
      {
          // do something...
      }
 
-     #[DaggerFunction('ReturnsListOfType attribute is supported')]
+     #[DaggerFunction]
+     #[Doc(('ReturnsListOfType attribute is supported'))]
      #[ReturnsListOfType('int')]
      public function myValidList(): array
      {
@@ -368,3 +375,72 @@ class Example
      // ...
 }
 ```
+
+#### Directories and Files
+
+[Directories and Files can also specify additional meta data.](https://docs.dagger.io/manuals/developer/functions/#directories-and-files)
+
+
+##### Default Paths
+
+Default paths allow your module access files outside the *source directory* specified in your `dagger.json` file.
+Note that default paths are only applicable for paths within your project:
+- If it is a Git Repository, it is restricted to files in the same Git Repository.
+- If it is a non-repository, then it is restricted to files and sub-directories of the directory containing your `dagger.json` file.
+
+Note that you cannot easily instantiate a `Directory` or `File` object from scratch.
+So the standard way to specify defaults in PHP would be hard to apply.
+
+Instead, specify a `DefaultPath` attribute with a `string` path.
+
+If an absolute path is specified:
+- in a Git repository (defined by the presence of a .git sub-directory), the default context is the root of the Git repository.
+- in a non-repository location (defined by the absence of a .git sub-directory), the default context is the directory containing a `dagger.json` file.
+
+If a relative path is specified the default context is always the directory containing a `dagger.json` file.
+
+A default path is specified like so:
+
+```php
+#[DaggerFunction]
+public function myDaggerFunction(
+    #[DefaultPath('.')]
+    Directory $dir,
+): Container {
+    // ...
+}
+```
+A default path of `.` returns the directory containing your `dagger.json` file.
+
+If your `dagger.json` file is located in `~/my-project/src/`:
+
+- `.` resolves to `~/my-project/src/`
+- `..` resolves to `~/my-project/` **if it is a Git Repository** otherwise this is not allowed. 
+- `/`, if `~/my-project/` is a Git repository, resolves to `~/my-project/` because that is the root of your Git repository.
+- `/`, if `~/my-project/` is not a Git repository, resolves to `~/my-project/src/` because that is the directory containing your `dagger.json` file.
+
+- `./README.md` resolves to `~/my-project/src/README.md`
+- `../README.md` resolves to `~/my-project/README.md` **if it is a Git Repository** otherwise this is not allowed.
+- `/README.md`, if `~/my-project/` is a Git repository, resolves to `~/my-project/README.md` because that is the root of your Git repository.
+- `/`, if `~/my-project/` is not a Git repository, resolves to `~/my-project/src/README` because that is the directory containing your `dagger.json` file.
+
+For further detail, refer to [Directories and Files](https://docs.dagger.io/manuals/developer/functions/#directories-and-files).
+
+##### Ignore
+
+For Directories only: an `Ignore` Attribute can specify any number of strings for files|directories to ignore.
+
+The following example would ignore your `vendor/` and `tests/` directories:
+
+```php
+#[DaggerFunction]
+public function myDaggerFunction(
+    #[DefaultPath('.')]
+    #[Ignore('vendor/', 'tests/')]
+    Directory $dir,
+): Container {
+    // ...
+}
+```
+
+`Ignore` follows the [`.gitignore` syntax](https://git-scm.com/docs/gitignore/en) and should be referred to for further detail.

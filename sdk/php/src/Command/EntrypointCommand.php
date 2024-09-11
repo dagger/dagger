@@ -73,10 +73,17 @@ class EntrypointCommand extends Command
 
                 foreach ($daggerFunction->arguments as $argument) {
                     $func = $func->withArg(
-                        $argument->name,
-                        $this->getTypeDef($argument->type),
-                        $argument->description,
-                        $argument->default
+                        name: $argument->name,
+                        typeDef: $this
+                            ->getTypeDef($argument->type)
+                            ->withOptional(
+                                $argument->type->nullable ||
+                                $argument->defaultPath !== null /// @TODO Remove this once engine handles it.
+                            ),
+                        description: $argument->description,
+                        defaultValue: $argument->default,
+                        defaultPath: $argument->defaultPath,
+                        ignore: $argument->ignore,
                     );
                 }
 
@@ -145,7 +152,7 @@ class EntrypointCommand extends Command
 
     private function getTypeDef(ListOfType|Type $type): TypeDef
     {
-        $typeDef = dag()->typeDef()->withOptional($type->nullable);
+        $typeDef = dag()->typeDef();
 
         switch ($type->typeDefKind) {
             case TypeDefKind::BOOLEAN_KIND:

@@ -1,6 +1,6 @@
 {
   "name": "php-sdk-dev",
-  "sdk": "github.com/dagger/dagger/sdk/php",
+  "sdk": "php",
   "dependencies": [
     {
       "name": "always-exec",
@@ -8,5 +8,5 @@
     }
   ],
   "source": ".",
-  "engineVersion": "v0.13.0"
+  "engineVersion": "v0.13.3"
 }

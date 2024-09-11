@@ -19,7 +19,8 @@ class FindsDaggerObjectsTest extends TestCase
 {
     /** @param DaggerObject[] $expected */
     #[Test, DataProvider('provideDirectoriesToSearch')]
-    public function itFindsDaggerObjects(array $expected, string $dir): void {
+    public function itFindsDaggerObjects(array $expected, string $dir): void
+    {
         $actual = (new FindsDaggerObjects())($dir);
 
         self::assertEqualsCanonicalizing($expected, $actual);

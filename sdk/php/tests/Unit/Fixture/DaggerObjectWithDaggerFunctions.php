@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace Dagger\Tests\Unit\Fixture;
 
-use Dagger\Attribute\Argument;
 use Dagger\Attribute\DaggerFunction;
 use Dagger\Attribute\DaggerObject;
+use Dagger\Attribute\DefaultPath;
+use Dagger\Attribute\Doc;
+use Dagger\Attribute\Ignore;
 use Dagger\Container;
+use Dagger\Directory;
 use Dagger\File;
 use Dagger\Json;
 use Dagger\ValueObject;
@@ -67,7 +70,7 @@ final class DaggerObjectWithDaggerFunctions
 
     #[DaggerFunction]
     public function annotatedString(
-        #[Argument('this value should have a description')]
+        #[Doc('this value should have a description')]
         string $value
     ): void {
     }
@@ -94,6 +97,22 @@ final class DaggerObjectWithDaggerFunctions
     {
     }
 
+    #[DaggerFunction]
+    public function fileWithDefaultPath(
+        #[DefaultPath('./test')]
+        File $value
+    ): void {
+    }
+
+
+    #[DaggerFunction]
+    public function directoryWithIgnore(
+        #[DefaultPath('.')]
+            #[Ignore('vendor/', 'generated/', 'env')]
+        Directory $value
+    ): void {
+    }
+
     public function notADaggerFunction(): string {
         return 'DaggerFunctions MUST have the DaggerFunction Attribute';
     }
@@ -117,7 +136,7 @@ final class DaggerObjectWithDaggerFunctions
                 ),
                 new ValueObject\DaggerFunction(
                     'returnBool',
-                    '',
+                    null,
                     [],
                     new ValueObject\Type('bool')
                 ),
@@ -129,7 +148,7 @@ final class DaggerObjectWithDaggerFunctions
                 ),
                 new ValueObject\DaggerFunction(
                     'returnString',
-                    '',
+                    null,
                     [],
                     new ValueObject\Type('string')
                 ),
@@ -284,6 +303,35 @@ final class DaggerObjectWithDaggerFunctions
                             '',
                             new ValueObject\Type(File::class, true),
                             new Json('null'),
+                        ),
+                    ],
+                    new ValueObject\Type('void'),
+                ),
+                new ValueObject\DaggerFunction(
+                    'fileWithDefaultPath',
+                    null,
+                    [
+                        new ValueObject\Argument(
+                            'value',
+                            '',
+                            new ValueObject\Type(File::class, false),
+                            null,
+                            './test',
+                        ),
+                    ],
+                    new ValueObject\Type('void'),
+                ),
+                new ValueObject\DaggerFunction(
+                    'directoryWithIgnore',
+                    null,
+                    [
+                        new ValueObject\Argument(
+                            'value',
+                            '',
+                            new ValueObject\Type(Directory::class, false),
+                            null,
+                            '.',
+                            ['vendor/', 'generated/', 'env'],
                         ),
                     ],
                     new ValueObject\Type('void'),
