@@ -34,6 +34,7 @@ type frontendPretty struct {
 	runCtx      context.Context
 	interrupt   context.CancelCauseFunc
 	interrupted bool
+	quitting    bool
 	done        bool
 	err         error
 
@@ -588,7 +589,7 @@ func (fe *frontendPretty) View() string {
 		// doesn't have any garbage before/after
 		return ""
 	}
-	if fe.done && fe.eof {
+	if fe.quitting {
 		// print nothing; make way for the pristine output in the final render
 		return ""
 	}
@@ -617,7 +618,8 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		slog.Debug("run finished", "err", msg.err)
 		fe.done = true
 		fe.err = msg.err
-		if fe.eof {
+		if fe.eof && !fe.NoExit {
+			fe.quitting = true
 			return fe, tea.Quit
 		}
 		return fe, nil
@@ -625,7 +627,8 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 	case eofMsg: // received end of updates
 		slog.Debug("got EOF")
 		fe.eof = true
-		if fe.done {
+		if fe.done && !fe.NoExit {
+			fe.quitting = true
 			return fe, tea.Quit
 		}
 		return fe, nil
@@ -659,14 +662,21 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		fe.pressedKeyAt = time.Now()
 		switch msg.String() {
 		case "q", "ctrl+c":
+			if fe.done && fe.eof {
+				fe.quitting = true
+				// must have configured NoExit, and now they want
+				// to exit manually
+				return fe, tea.Quit
+			}
 			if fe.interrupted {
 				slog.Warn("exiting immediately")
+				fe.quitting = true
 				return fe, tea.Quit
 			} else {
 				slog.Warn("canceling... (press again to exit immediately)")
 			}
-			fe.interrupt(errors.New("interrupted"))
 			fe.interrupted = true
+			fe.interrupt(errors.New("interrupted"))
 			return fe, nil // tea.Quit is deferred until we receive doneMsg
 		case "ctrl+\\": // SIGQUIT
 			fe.restore()
