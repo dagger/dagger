@@ -342,7 +342,7 @@ Hello, world
 
 It is possible to automatically load a filesystem path as a `Directory` or `File` object in a Dagger Function, by passing it as a default context to the corresponding argument. The `Directory` or `File` loaded in this manner is not merely a string, but it is the actual filesystem state of the specified directory or file, managed by the Dagger Engine and handled in code just like any another variable.
 
-:::note
+:::important
 Default contexts are only available for arguments of type `Directory` and `File`. They are commonly used to load constant filesystem locations, such as an application's source code directory.
 :::
 
@@ -370,6 +370,7 @@ Here is an example of a Dagger Function with a default context for its directory
 
 Assuming the directory structure below, the following table describes how the argument is resolved:
 
+```shell
 .
 ├── README.md
 ├── my-module
@@ -383,7 +384,7 @@ Assuming the directory structure below, the following table describes how the ar
 │   └── ...
 ├── src
 │   └── ...
-
+```
 
 | Location | Default context ('defaultPath`) | Dagger Function invocation | `source` resolves to |
 | --- | --- | --- | --- |
