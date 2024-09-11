@@ -51,7 +51,7 @@ class HelloDagger {
       .node({ version: "21" })
       .withNpm()
       .withSource(source)
-      .install([])
+      .install()
       .container()
   }
 }
