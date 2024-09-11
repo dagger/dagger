@@ -37,7 +37,9 @@ func (cli *CLI) Binary(
 
 const (
 	// https://github.com/goreleaser/goreleaser/releases
-	goReleaserVersion = "v2.3.0"
+	goReleaserVersion = "v2.2.0"
+	// TODO: remove go1_23_1 👇 after upgrading to v2.3.0
+	// https://github.com/goreleaser/goreleaser/pull/5126#issuecomment-2338622698
 )
 
 // Publish the CLI using GoReleaser
@@ -167,8 +169,13 @@ func (cli *CLI) TestPublish(ctx context.Context) error {
 }
 
 func publishEnv(ctx context.Context) (*dagger.Container, error) {
+	// TODO: remove after upgrading to GoReleaser Pro v2.3.0
+	// https://github.com/goreleaser/goreleaser/pull/5126#issuecomment-2338622698
+	go1_23_1 := dag.Container().From("golang:1.23.1-alpine@sha256:ac67716dd016429be8d4c2c53a248d7bcdf06d34127d3dc451bda6aa5a87bc06").Directory("/usr/local/go")
+
 	ctr := dag.Container().
 		From(fmt.Sprintf("ghcr.io/goreleaser/goreleaser-pro:%s-pro", goReleaserVersion)).
+		WithDirectory("/usr/local/go", go1_23_1).
 		WithEntrypoint([]string{}).
 		WithExec([]string{"apk", "add", "aws-cli"})
 
