@@ -346,7 +346,7 @@ It is possible to automatically load a filesystem path as a `Directory` or `File
 Default contexts are only available for arguments of type `Directory` and `File`. They are commonly used to load constant filesystem locations, such as an application's source code directory.
 :::
 
-The default context is set by adding a `DefaultPath` pragma (Go), `DefaultPath` annotation (Python), or `defaultPath` decorator (TypeScript) on the corresponding Dagger Function argument.
+The default context is set by adding a `defaultPath` pragma (Go), `DefaultPath` annotation (Python), or `defaultPath` decorator (TypeScript) on the corresponding Dagger Function argument.
 
 The default context is resolved depending on various factors:
 - If an absolute path is specified:
