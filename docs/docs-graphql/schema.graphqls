@@ -1674,7 +1674,10 @@ type GitRef {
   id: GitRefID!
 
   """The filesystem tree at this ref."""
-  tree: Directory!
+  tree(
+    """Set to true to discard .git directory."""
+    discardGitDir: Boolean = false
+  ): Directory!
 }
 
 """
@@ -2440,9 +2443,6 @@ type Query {
 
   """Queries a Git repository."""
   git(
-    """Set to true to discard .git directory."""
-    discardGitDir: Boolean = false
-
     """A service which must be started before the repo is fetched."""
     experimentalServiceHost: ServiceID
 

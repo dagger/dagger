@@ -126,7 +126,23 @@ func (GitSuite) TestDiscardGitDir(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("git dir is not present", func(ctx context.Context, t *testctx.T) {
-		dir := c.Git("https://github.com/dagger/dagger", dagger.GitOpts{DiscardGitDir: true}).Branch("main").Tree()
+		dir := c.Git("https://github.com/dagger/dagger").Branch("main").Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
+		ent, _ := dir.Entries(ctx)
+		require.NotContains(t, ent, ".git")
+	})
+}
+
+func (GitSuite) TestKeepGitDir(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("git dir is present", func(ctx context.Context, t *testctx.T) {
+		dir := c.Git("https://github.com/dagger/dagger", dagger.GitOpts{KeepGitDir: true}).Branch("main").Tree()
+		ent, _ := dir.Entries(ctx)
+		require.Contains(t, ent, ".git")
+	})
+
+	t.Run("git dir is not present", func(ctx context.Context, t *testctx.T) {
+		dir := c.Git("https://github.com/dagger/dagger", dagger.GitOpts{KeepGitDir: true}).Branch("main").Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
 		ent, _ := dir.Entries(ctx)
 		require.NotContains(t, ent, ".git")
 	})
@@ -231,10 +247,11 @@ sleep infinity
 		ExperimentalServiceHost: sshSvc,
 		SSHKnownHosts:           fmt.Sprintf("[%s]:%d %s", sshHost, sshPort, strings.TrimSpace(hostPubKey)),
 		SSHAuthSocket:           c.Host().UnixSocket(sock),
-		DiscardGitDir:           true,
 	}).
 		Branch("main").
-		Tree().
+		Tree(dagger.GitRefTreeOpts{
+			DiscardGitDir: true,
+		}).
 		Entries(ctx)
 	require.NoError(t, err)
 	require.Equal(t, []string{"README.md"}, entries)

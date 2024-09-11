@@ -181,7 +181,6 @@ defmodule Dagger.Client do
   @doc "Queries a Git repository."
   @spec git(t(), String.t(), [
           {:keep_git_dir, boolean() | nil},
-          {:discard_git_dir, boolean() | nil},
           {:experimental_service_host, Dagger.ServiceID.t() | nil},
           {:ssh_known_hosts, String.t() | nil},
           {:ssh_auth_socket, Dagger.SocketID.t() | nil}
@@ -192,7 +191,6 @@ defmodule Dagger.Client do
       |> QB.select("git")
       |> QB.put_arg("url", url)
       |> QB.maybe_put_arg("keepGitDir", optional_args[:keep_git_dir])
-      |> QB.maybe_put_arg("discardGitDir", optional_args[:discard_git_dir])
       |> QB.maybe_put_arg("experimentalServiceHost", optional_args[:experimental_service_host])
       |> QB.maybe_put_arg("sshKnownHosts", optional_args[:ssh_known_hosts])
       |> QB.maybe_put_arg("sshAuthSocket", optional_args[:ssh_auth_socket])

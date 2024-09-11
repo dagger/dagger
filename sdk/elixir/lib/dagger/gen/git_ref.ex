@@ -30,10 +30,12 @@ defmodule Dagger.GitRef do
   end
 
   @doc "The filesystem tree at this ref."
-  @spec tree(t()) :: Dagger.Directory.t()
-  def tree(%__MODULE__{} = git_ref) do
+  @spec tree(t(), [{:discard_git_dir, boolean() | nil}]) :: Dagger.Directory.t()
+  def tree(%__MODULE__{} = git_ref, optional_args \\ []) do
     query_builder =
-      git_ref.query_builder |> QB.select("tree")
+      git_ref.query_builder
+      |> QB.select("tree")
+      |> QB.maybe_put_arg("discardGitDir", optional_args[:discard_git_dir])
 
     %Dagger.Directory{
       query_builder: query_builder,

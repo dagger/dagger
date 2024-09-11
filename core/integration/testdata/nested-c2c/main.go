@@ -119,7 +119,7 @@ func mirror(ctx context.Context, c *dagger.Client, mode, svcURL string) (*dagger
 		return httpService(ctx, c,
 			c.Directory().WithFile("index.html", c.HTTP(svcURL)))
 	case "git":
-		return gitService(ctx, c, c.Git(svcURL, dagger.GitOpts{DiscardGitDir: true}).Branch("main").Tree())
+		return gitService(ctx, c, c.Git(svcURL).Branch("main").Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}))
 	default:
 		fatal(fmt.Errorf("unknown mode: %q", mode))
 		return nil, ""
