@@ -148,6 +148,8 @@ func (e *ModuleEnum) Decoder() dagql.InputDecoder {
 
 func (e *ModuleEnum) DecodeInput(val any) (dagql.Input, error) {
 	switch x := val.(type) {
+	case nil:
+		return e.Lookup("")
 	case string:
 		return e.Lookup(x)
 	case dagql.Scalar[dagql.String]:

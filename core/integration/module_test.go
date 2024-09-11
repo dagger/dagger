@@ -3370,6 +3370,72 @@ func (m *Test) Hello() string {
 	require.NoError(t, err)
 }
 
+func (ModuleSuite) TestGetEmptyField(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("without constructor", func(ctx context.Context, t *testctx.T) {
+		out, err := goGitBase(t, c).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=test", "--sdk=go")).
+			With(sdkSource("go", `package main
+
+import "dagger/test/internal/dagger"
+
+type Test struct {
+	A string
+	B int
+	C *dagger.Container
+	D dagger.ImageLayerCompression
+	E dagger.Platform
+}
+
+`)).
+			With(daggerQuery("{test{a,b}}")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.JSONEq(t, `{"test": {"a": "", "b": 0}}`, out)
+		// NOTE:
+		// - trying to get C will try and decode an empty ID
+		// - trying to get D will fail to instantiate an empty enum
+		// - trying to get E will fail to parse the platform
+		// ...but, we should be able to get the other values (important for backwards-compat)
+	})
+
+	t.Run("with constructor", func(ctx context.Context, t *testctx.T) {
+		out, err := goGitBase(t, c).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=test", "--sdk=go")).
+			With(sdkSource("go", `package main
+
+import "dagger/test/internal/dagger"
+
+type Test struct {
+	A string
+	B int
+	C *dagger.Container
+	// these aren't tested here, since we can't give them zero values in the constructor
+	// D dagger.ImageLayerCompression
+	// E dagger.Platform
+}
+
+func New() *Test {
+	return &Test{}
+}
+`)).
+			With(daggerQuery("{test{a,b}}")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.JSONEq(t, `{"test": {"a": "", "b": 0}}`, out)
+		// NOTE:
+		// - trying to get C will try and decode an empty ID
+		// ...but, we should be able to get the other values (important for backwards-compat)
+	})
+}
+
 func (ModuleSuite) TestModuleSchemaVersion(ctx context.Context, t *testctx.T) {
 	t.Run("standalone", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
