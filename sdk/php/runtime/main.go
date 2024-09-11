@@ -25,7 +25,7 @@ type PhpSdk struct {
 func New(
 	// Directory with the PHP SDK source code.
 	// +optional
-	// +defaultPath=".."
+	// +defaultPath="/sdk/php"
 	// +ignore=["**", "!generated/", "!src/", "!scripts/", "!composer.json", "!composer.lock", "!LICENSE", "!README.md"]
 	sdkSourceDir *dagger.Directory,
 ) (*PhpSdk, error) {
