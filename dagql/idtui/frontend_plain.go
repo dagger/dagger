@@ -101,7 +101,7 @@ type spanData struct {
 }
 
 type logLine struct {
-	line string
+	line cursorBuffer
 	time time.Time
 }
 
@@ -168,7 +168,7 @@ func (fe *frontendPlain) addVirtualLog(span trace.Span, name string, fields ...s
 		spanDt = &spanData{}
 		fe.data[span.SpanContext().SpanID()] = spanDt
 	}
-	spanDt.logs = append(spanDt.logs, logLine{line: line})
+	spanDt.logs = append(spanDt.logs, logLine{newCursorBuffer([]byte(line)), time.Now()})
 	fe.wakeUpSpan(spanID)
 }
 
@@ -303,35 +303,22 @@ func (fe plainLogExporter) Export(ctx context.Context, logs []sdklog.Record) err
 				continue
 			}
 
-			// there's no neat way to handle carriage returns, so remove them
-			lineParts := strings.Split(line, "\r")
-			line = lineParts[len(lineParts)-1]
-
-			// TODO: we might also want to ignore escape sequences that move
-			// the cursor, while keeping colors/etc. this feels tricky.
+			hasNewline := line[len(line)-1] == '\n'
+			if hasNewline {
+				line = line[:len(line)-1]
+			}
 
 			if spanDt.logsPending && len(spanDt.logs) > 0 {
-				// append to the previous line
-				if len(lineParts) > 1 {
-					spanDt.logs[len(spanDt.logs)-1].line = line
-				} else {
-					spanDt.logs[len(spanDt.logs)-1].line += line
-				}
+				spanDt.logs[len(spanDt.logs)-1].line.Write([]byte(line))
 				spanDt.logs[len(spanDt.logs)-1].time = log.Timestamp()
 			} else {
-				// append the line to the logs
 				spanDt.logs = append(spanDt.logs, logLine{
-					line: line,
+					line: newCursorBuffer([]byte(line)),
 					time: log.Timestamp(),
 				})
 			}
 
-			// determine if this log line is full
-			if line == "" {
-				spanDt.logsPending = true
-			} else {
-				spanDt.logsPending = line[len(line)-1] != '\n'
-			}
+			spanDt.logsPending = !hasNewline
 		}
 	}
 	return nil
@@ -545,7 +532,7 @@ func (fe *frontendPlain) renderLogs(row *dagui.TraceTree, depth int) {
 			fmt.Fprint(out, out.String(fmt.Sprintf("[%s] ", duration)).Foreground(termenv.ANSIBrightBlack))
 		}
 		pipe := out.String("|").Foreground(termenv.ANSIBrightBlack)
-		fmt.Fprintln(out, pipe, strings.TrimSuffix(logLine.line, "\n"))
+		fmt.Fprintln(out, pipe, strings.TrimSuffix(logLine.line.String(), "\n"))
 	}
 }
 
