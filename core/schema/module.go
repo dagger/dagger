@@ -169,6 +169,13 @@ func (s *moduleSchema) Install() {
 			ArgDoc("name", `The name of the view to set.`).
 			ArgDoc("patterns", `The patterns to set as the view filters.`).
 			Doc(`Update the module source with a new named view.`),
+
+		dagql.Func("digest", s.moduleSourceDigest).
+			Doc(
+				`Return the module source's content digest.
+				The format of the digest is not guaranteed to be stable between releases of Dagger.
+				It is guaranteed to be stable between invocations of the same Dagger engine.`,
+			),
 	}.Install(s.dag)
 
 	dagql.Fields[*core.ModuleSourceView]{

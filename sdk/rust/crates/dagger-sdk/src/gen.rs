@@ -3698,6 +3698,11 @@ impl Directory {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Return the directory's digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine.
+    pub async fn digest(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("digest");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Retrieves a directory at the given path.
     ///
     /// # Arguments
@@ -5665,6 +5670,11 @@ impl ModuleSource {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }]
+    }
+    /// Return the module source's content digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine.
+    pub async fn digest(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("digest");
+        query.execute(self.graphql_client.clone()).await
     }
     /// The directory containing the module configuration and source code (source code may be in a subdir).
     ///

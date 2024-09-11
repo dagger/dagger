@@ -1150,3 +1150,41 @@ func (DirectorySuite) TestGlob(ctx context.Context, t *testctx.T) {
 		require.ErrorContains(t, err, "no such file or directory")
 	})
 }
+
+func (DirectorySuite) TestDigest(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("compute directory digest", func(ctx context.Context, t *testctx.T) {
+		dir := c.Directory().WithNewFile("/foo.txt", "Hello, World!")
+
+		digest, err := dir.Directory("/").Digest(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "sha256:48ac4b4b73af8a75a3c77e9dc6211d89321c6ed4f13c6987c6837ac58645bd89", digest)
+	})
+
+	t.Run("directory digest with same contents should be same", func(ctx context.Context, t *testctx.T) {
+		a := c.Directory().WithNewDirectory("a").WithNewFile("a/foo.txt", "Hello, World!")
+		b := c.Directory().WithNewDirectory("b").WithNewFile("b/foo.txt", "Hello, World!")
+
+		aDigest, err := a.Directory("a").Digest(ctx)
+		require.NoError(t, err)
+		bDigest, err := b.Directory("b").Digest(ctx)
+		require.NoError(t, err)
+		require.Equal(t, aDigest, bDigest)
+	})
+
+	t.Run("directory digest with different metadata should be different", func(ctx context.Context, t *testctx.T) {
+		fileWithOverwrittenMetadata := c.Directory().WithNewFile("foo.txt", "Hello, World!", dagger.DirectoryWithNewFileOpts{
+			Permissions: 0777,
+		}).File("foo.txt")
+		fileWithDefaultMetadata := c.Directory().WithNewFile("foo.txt", "Hello, World!").File("foo.txt")
+
+		digestFileWithOverwrittenMetadata, err := fileWithOverwrittenMetadata.Digest(ctx)
+		require.NoError(t, err)
+
+		digestFileWithDefaultMetadata, err := fileWithDefaultMetadata.Digest(ctx)
+		require.NoError(t, err)
+
+		require.NotEqual(t, digestFileWithOverwrittenMetadata, digestFileWithDefaultMetadata)
+	})
+}

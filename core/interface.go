@@ -217,10 +217,7 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 			Module:      iface.mod.IDModule(),
 		}
 
-		argTypeDefsByName := map[string]*TypeDef{}
 		for _, argMetadata := range fnTypeDef.Args {
-			argTypeDefsByName[argMetadata.Name] = argMetadata.TypeDef
-
 			// check whether this is a pre-existing object from a dependency module
 			argModType, ok, err := iface.mod.Deps.ModTypeFor(ctx, argMetadata.TypeDef)
 			if err != nil {

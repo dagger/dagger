@@ -2221,6 +2221,7 @@ func (r *DaggerEngineCacheEntrySet) MarshalJSON() ([]byte, error) {
 type Directory struct {
 	query *querybuilder.Selection
 
+	digest *string
 	export *string
 	id     *DirectoryID
 	sync   *DirectoryID
@@ -2280,6 +2281,19 @@ func (r *Directory) Diff(other *Directory) *Directory {
 	return &Directory{
 		query: q,
 	}
+}
+
+// Return the directory's digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine.
+func (r *Directory) Digest(ctx context.Context) (string, error) {
+	if r.digest != nil {
+		return *r.digest, nil
+	}
+	q := r.query.Select("digest")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // Retrieves a directory at the given path.
@@ -5373,6 +5387,7 @@ type ModuleSource struct {
 
 	asString                     *string
 	configExists                 *bool
+	digest                       *string
 	id                           *ModuleSourceID
 	kind                         *ModuleSourceKind
 	moduleName                   *string
@@ -5501,6 +5516,19 @@ func (r *ModuleSource) Dependencies(ctx context.Context) ([]ModuleDependency, er
 	}
 
 	return convert(response), nil
+}
+
+// Return the module source's content digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine.
+func (r *ModuleSource) Digest(ctx context.Context) (string, error) {
+	if r.digest != nil {
+		return *r.digest, nil
+	}
+	q := r.query.Select("digest")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // The directory containing the module configuration and source code (source code may be in a subdir).

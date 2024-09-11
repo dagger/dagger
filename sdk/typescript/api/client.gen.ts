@@ -3350,6 +3350,7 @@ export class DaggerEngineCacheEntrySet extends BaseClient {
  */
 export class Directory extends BaseClient {
   private readonly _id?: DirectoryID = undefined
+  private readonly _digest?: string = undefined
   private readonly _export?: string = undefined
   private readonly _sync?: DirectoryID = undefined
 
@@ -3359,12 +3360,14 @@ export class Directory extends BaseClient {
   constructor(
     parent?: { queryTree?: QueryTree[]; ctx: Context },
     _id?: DirectoryID,
+    _digest?: string,
     _export?: string,
     _sync?: DirectoryID,
   ) {
     super(parent)
 
     this._id = _id
+    this._digest = _digest
     this._export = _export
     this._sync = _sync
   }
@@ -3427,6 +3430,27 @@ export class Directory extends BaseClient {
       ],
       ctx: this._ctx,
     })
+  }
+
+  /**
+   * Return the directory's digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine.
+   */
+  digest = async (): Promise<string> => {
+    if (this._digest) {
+      return this._digest
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "digest",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
   }
 
   /**
@@ -6932,6 +6956,7 @@ export class ModuleSource extends BaseClient {
   private readonly _id?: ModuleSourceID = undefined
   private readonly _asString?: string = undefined
   private readonly _configExists?: boolean = undefined
+  private readonly _digest?: string = undefined
   private readonly _kind?: ModuleSourceKind = undefined
   private readonly _moduleName?: string = undefined
   private readonly _moduleOriginalName?: string = undefined
@@ -6947,6 +6972,7 @@ export class ModuleSource extends BaseClient {
     _id?: ModuleSourceID,
     _asString?: string,
     _configExists?: boolean,
+    _digest?: string,
     _kind?: ModuleSourceKind,
     _moduleName?: string,
     _moduleOriginalName?: string,
@@ -6959,6 +6985,7 @@ export class ModuleSource extends BaseClient {
     this._id = _id
     this._asString = _asString
     this._configExists = _configExists
+    this._digest = _digest
     this._kind = _kind
     this._moduleName = _moduleName
     this._moduleOriginalName = _moduleOriginalName
@@ -7128,6 +7155,27 @@ export class ModuleSource extends BaseClient {
           r.id,
         ),
     )
+  }
+
+  /**
+   * Return the module source's content digest. The format of the digest is not guaranteed to be stable between releases of Dagger. It is guaranteed to be stable between invocations of the same Dagger engine.
+   */
+  digest = async (): Promise<string> => {
+    if (this._digest) {
+      return this._digest
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "digest",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
   }
 
   /**

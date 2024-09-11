@@ -178,6 +178,20 @@ func (dir *Directory) Evaluate(ctx context.Context) (*buildkit.Result, error) {
 	})
 }
 
+func (dir *Directory) Digest(ctx context.Context) (string, error) {
+	result, err := dir.Evaluate(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to evaluate file: %w", err)
+	}
+
+	digest, err := result.Ref.Digest(ctx, dir.Dir)
+	if err != nil {
+		return "", fmt.Errorf("failed to compute digest: %w", err)
+	}
+
+	return digest.String(), nil
+}
+
 func (dir *Directory) Stat(ctx context.Context, bk *buildkit.Client, svcs *Services, src string) (*fstypes.Stat, error) {
 	src = path.Join(dir.Dir, src)
 
