@@ -25,7 +25,7 @@ Here's an example of a simple Dagger Function:
 ```python file=./snippets/functions/functions-simple/python/main.py
 ```
 
-:::note 
+:::note
 
 **Type annotations**
 
@@ -141,7 +141,7 @@ For example, for a module initialized with `dagger init --name=my-module`,
 the main object needs to be named `MyModule`.
 
 
-## Arguments 
+## Arguments
 
 Dagger Functions, just like regular functions, can accept arguments. In addition to basic types (string, boolean, integer, arrays...), Dagger also defines powerful core types which functions can use for their arguments, such as `Directory`, `Container`, `Service`, `Secret`, and many more.
 
@@ -304,23 +304,23 @@ Hello, world
 
 Function arguments can define a default value if no value is supplied for them.
 
-Here's an example of a Dagger Function with a default value for an argument:
+Here's an example of a Dagger Function with a default value for a string argument:
 
 <Tabs groupId="language">
 
 <TabItem value="Go">
-```go file=./snippets/functions/arguments-default/go/main.go
+```go file=./snippets/functions/arguments-default-string/go/main.go
 ```
 
 </TabItem>
 
 <TabItem value="Python">
-```python file=./snippets/functions/arguments-default/python/main.py
+```python file=./snippets/functions/arguments-default-string/python/main.py
 ```
 </TabItem>
 
 <TabItem value="TypeScript">
-```typescript file=./snippets/functions/arguments-default/typescript/index.ts
+```typescript file=./snippets/functions/arguments-default-string/typescript/index.ts
 ```
 </TabItem>
 
@@ -338,19 +338,116 @@ The result will look like this:
 Hello, world
 ```
 
+### Directories and files
+
+It is possible to automatically load a filesystem path as a `Directory` or `File` object in a Dagger Function, by passing it as a default context to the corresponding argument. The `Directory` or `File` loaded in this manner is not merely a string, but it is the actual filesystem state of the specified directory or file, managed by the Dagger Engine and handled in code just like any another variable.
+
+:::important
+Default contexts are only available for arguments of type `Directory` and `File`. They are commonly used to load constant filesystem locations, such as an application's source code directory.
+:::
+
+The default context is resolved as follows:
+- If an absolute path is specified:
+   - in a Git repository (defined by the presence of a `.git` sub-directory), the default context is the root of the Git repository.
+   - in a non-repository location (defined by the absence of a `.git` sub-directory), the default context is the directory containing a `dagger.json` file.
+- If a relative path is specified
+  - the default context is always the directory containing a `dagger.json` file.
+
+The best way to understand this is with an example. Consider the following directory structure, representing a project with a Dagger module in `my-module`:
+
+```shell
+.
+├── README.md
+├── my-module
+│   ├── dagger.json
+│   ├── ...
+│   └── src
+│       └── main
+├── index.html
+├── public
+│   └── ...
+├── src
+│   └── ...
+```
+
+Here are two Dagger Functions with default contexts for their directory and file arguments:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+The default context is set by adding a `defaultPath` pragma on the corresponding Dagger Function argument.
+
+```go file=./snippets/functions/arguments-context-dir-file/go/main.go
+```
+</TabItem>
+<TabItem value="Python">
+
+The default context is set by adding a `DefaultPath` annotation on the corresponding Dagger Function argument.
+
+```python file=./snippets/functions/arguments-context-dir-file/python/main.py
+```
+</TabItem>
+<TabItem value="TypeScript">
+
+The default context is set by adding an `@argument` decorator with a `defaultPath` parameter on the corresponding Dagger Function argument.
+
+```typescript file=./snippets/functions/arguments-context-dir-file/typescript/index.ts
+```
+</TabItem>
+</Tabs>
+
+The following table describes how the arguments are resolved for differing values of the default context and differing directory types.
+
+For a Git repository:
+
+| Default context ('defaultPath`) | Dagger Function invocation | `source` resolves to |
+| --- | --- | --- |
+| `/` | `dagger call -m my-module read-dir` | `/` |
+| `/src` | `dagger call -m my-module read-dir` | `/src` |
+| `.` | `dagger call -m my-module read-dir` | `/my-module` |
+| `..` | `dagger call -m my-module read-dir` | `/` |
+| `/README.md` | `dagger call -m my-module read-file` | `/README.md` |
+| `./README.md` | `dagger call -m my-module read-file` | Error: file does not exist |
+| `../README.md` | `dagger call -m my-module read-file` | `/README.md` |
+
+For a non-Git directory:
+
+| Default context ('defaultPath`) | Dagger Function invocation | `source` resolves to |
+| --- | --- | --- |
+| `/` | `dagger call -m my-module read-dir` | `/my-module` |
+| `/src` | `dagger call -m my-module read-dir` | `/my-module/src` |
+| `.` | `dagger call -m my-module read-dir` | `/my-module` |
+| `..` | `dagger call -m my-module read-dir` | Error: escaping default context directory root is not allowed |
+| `/README.md` | `dagger call -m my-module read-file` | Error: file does not exist |
+| `./README.md` | `dagger call -m my-module read-file` | Error: file does not exist |
+| `../README.md` | `dagger call -m my-module read-file` | Error: escaping default context directory root is not allowed |
+
+If a value is explicitly passed to the Dagger Function argument, it always overrides the default context.
+
+| Default context ('defaultPath`) | Dagger Function invocation | `source` resolves to |
+| --- | --- | --- |
+| `/` | `dagger call -m my-module read-dir --source=public` | `/public` |
+| `/src` | `dagger call -m my-module read-dir --source=public` | `/public` |
+| `.` | `dagger call -m my-module read-dir --source=public` | `/public` |
+| `..` | `dagger call -m my-module read-dir --source=public` | `/public` |
+
+:::tip
+It's also possible to provide an `ignore` parameter to a contextual argument of type `Directory` to automatically ignore or include files in the directory. The `ignore` parameter follows the [`.gitignore` syntax](https://git-scm.com/docs/gitignore/en): prefixing a path with `!` will actually include it instead of ignoring it.
+:::
+
 ## Return values
 
 Not only can Dagger Functions use Dagger's core types in their arguments; they can use them in their return value as well.
 
 This opens powerful applications to Dagger Functions. For example, a Dagger Function that builds binaries could take a directory with the source code as argument and return another directory containing just binaries or a container image with the binaries included.
 
-:::note 
+:::note
 If a function doesn’t have a return type annotation, it’ll be translated to the [dagger.Void][void-type] type in the API.
 
 [void-type]: https://dagger-io.readthedocs.io/en/latest/client.html#dagger.Void
 :::
 
-https://docs.dagger.io/api/reference/#definition-Void 
+https://docs.dagger.io/api/reference/#definition-Void
 
 Here's an example of a Dagger Function that accepts a `Directory` containing a Go application's source code as input, compiles it into a binary, and returns a `Container` with the binary:
 
@@ -394,4 +491,3 @@ hello
 Hello, world!
 /usr/local/bin #
 ```
-
