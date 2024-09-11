@@ -17,11 +17,8 @@ engine:
   labels: {}
 
   ### Customize Dagger Engine start args
-  #   "--oci-max-parallelism num-cpu" is kept as the default behaviour so that we don't surprise users.
-  #   You may want to remove it in your deployments. FTR: https://github.com/dagger/dagger/pull/7395
-  args:
-    - "--oci-max-parallelism"
-    - "num-cpu"
+  #
+  args: []
 
   resources:
     limits: {}

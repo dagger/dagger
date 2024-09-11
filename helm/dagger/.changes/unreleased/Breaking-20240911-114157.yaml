@@ -1,0 +1,6 @@
+kind: Breaking
+body: Removes default `oci-max-parallelism` `num-cpu` Engine setting. This options is known to be problematic in certain scenarios.
+time: 2024-09-11T11:41:57.264663+01:00
+custom:
+    Author: gerhard
+    PR: "8406"
