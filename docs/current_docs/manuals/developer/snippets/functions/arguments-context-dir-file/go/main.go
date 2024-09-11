@@ -14,3 +14,11 @@ func (m *MyModule) ReadDir(
 ) ([]string, error) {
 	return source.Entries(ctx)
 }
+
+func (m *MyModule) ReadFile(
+	ctx context.Context,
+	// +defaultPath="/README.md"
+	source *dagger.File,
+) (string, error) {
+	return source.Contents(ctx)
+}

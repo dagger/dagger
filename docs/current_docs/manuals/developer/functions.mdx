@@ -346,43 +346,23 @@ It is possible to automatically load a filesystem path as a `Directory` or `File
 Default contexts are only available for arguments of type `Directory` and `File`. They are commonly used to load constant filesystem locations, such as an application's source code directory.
 :::
 
-The default context is set by adding a `defaultPath` pragma (Go), `DefaultPath` annotation (Python), or `defaultPath` decorator (TypeScript) on the corresponding Dagger Function argument.
-
-The default context is resolved depending on various factors:
+The default context is resolved as follows:
 - If an absolute path is specified:
    - in a Git repository (defined by the presence of a `.git` sub-directory), the default context is the root of the Git repository.
    - in a non-repository location (defined by the absence of a `.git` sub-directory), the default context is the directory containing a `dagger.json` file.
 - If a relative path is specified
   - the default context is always the directory containing a `dagger.json` file.
 
-Here is an example of a Dagger Function with a default context for its directory argument:
-
-<Tabs groupId="language">
-<TabItem value="Go">
-```go file=./snippets/functions/arguments-contextual-dir/go/main.go
-```
-</TabItem>
-<TabItem value="Python">
-```python file=./snippets/functions/arguments-contextual-dir/python/main.py
-```
-</TabItem>
-<TabItem value="TypeScript">
-```typescript file=./snippets/functions/arguments-contextual-dir/typescript/index.ts
-```
-</TabItem>
-</Tabs>
-
-Assuming the directory structure below, the following table describes how the argument is resolved:
+The best way to understand this is with an example. Consider the following directory structure, representing a project with a Dagger module in `my-module`:
 
 ```shell
 .
 ├── README.md
 ├── my-module
-│   ├── sdk
 │   ├── dagger.json
 │   ├── ...
-├── .git
-│   └── ...
+│   └── src
+│       └── main
 ├── index.html
 ├── public
 │   └── ...
@@ -390,16 +370,57 @@ Assuming the directory structure below, the following table describes how the ar
 │   └── ...
 ```
 
-| Location | Default context ('defaultPath`) | Dagger Function invocation | `source` resolves to |
-| --- | --- | --- | --- |
-| Git repository | `/` | `dagger call -m my-module read-dir` | `/` |
-| Git repository | `/src` | `dagger call -m my-module read-dir` | `/src` |
-| Git repository | `.` | `dagger call -m my-module read-dir` | `/my-module` |
-| Git repository | `..` | `dagger call -m my-module read-dir` | `/` |
-| Non-Git directory | `/` | `dagger call -m my-module read-dir` | `/` |
-| Non-Git directory | `/src` | `dagger call -m my-module read-dir` | `/src` |
-| Non-Git directory | `.` | `dagger call -m my-module read-dir` | `/my-module` |
-| Non-Git directory | `..` | `dagger call -m my-module read-dir` | `/` |
+Here are two Dagger Functions with default contexts for their directory and file arguments:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+The default context is set by adding a `DefaultPath` annotation on the corresponding Dagger Function argument.
+
+```go file=./snippets/functions/arguments-context-dir-file/go/main.go
+```
+</TabItem>
+<TabItem value="Python">
+
+The default context is set by adding a `defaultPath` pragma on the corresponding Dagger Function argument.
+
+```python file=./snippets/functions/arguments-context-dir-file/python/main.py
+```
+</TabItem>
+<TabItem value="TypeScript">
+
+The default context is set by adding an `@argument` decorator with a `defaultPath` parameter on the corresponding Dagger Function argument.
+
+```typescript file=./snippets/functions/arguments-context-dir-file/typescript/index.ts
+```
+</TabItem>
+</Tabs>
+
+The following table describes how the arguments are resolved for differing values of the default context and differing directory types.
+
+For a Git repository:
+
+| Default context ('defaultPath`) | Dagger Function invocation | `source` resolves to |
+| --- | --- | --- |
+| `/` | `dagger call -m my-module read-dir` | `/` |
+| `/src` | `dagger call -m my-module read-dir` | `/src` |
+| `.` | `dagger call -m my-module read-dir` | `/my-module` |
+| `..` | `dagger call -m my-module read-dir` | `/` |
+| `/README.md` | `dagger call -m my-module read-file` | `/README.md` |
+| `./README.md` | `dagger call -m my-module read-file` | Error: file does not exist |
+| `../README.md` | `dagger call -m my-module read-file` | `/README.md` |
+
+For a non-Git directory:
+
+| Default context ('defaultPath`) | Dagger Function invocation | `source` resolves to |
+| --- | --- | --- |
+| `/` | `dagger call -m my-module read-dir` | `/my-module` |
+| `/src` | `dagger call -m my-module read-dir` | `/my-module/src` |
+| `.` | `dagger call -m my-module read-dir` | `/my-module` |
+| `..` | `dagger call -m my-module read-dir` | Error: escaping default context directory root is not allowed |
+| `/README.md` | `dagger call -m my-module read-file` | Error: file does not exist |
+| `./README.md` | `dagger call -m my-module read-file` | Error: file does not exist |
+| `../README.md` | `dagger call -m my-module read-file` | Error: escaping default context directory root is not allowed |
 
 If a value is explicitly passed to the Dagger Function argument, it always overrides the default context.
 
@@ -410,100 +431,9 @@ If a value is explicitly passed to the Dagger Function argument, it always overr
 | `.` | `dagger call -m my-module read-dir --source=public` | `/public` |
 | `..` | `dagger call -m my-module read-dir --source=public` | `/public` |
 
-
 :::tip
-It's also possible to provide an `ignore` parameter to a contextual argument of type `Directory` to automatically ignore or include files in the directory. The `ignore` parameter follows the `.gitignore` syntax: prefixing a path with `!` will actually include it instead of ignoring it.
+It's also possible to provide an `ignore` parameter to a contextual argument of type `Directory` to automatically ignore or include files in the directory. The `ignore` parameter follows the [`.gitignore` syntax](https://git-scm.com/docs/gitignore/en): prefixing a path with `!` will actually include it instead of ignoring it.
 :::
-
-
-/* TBC
-The context is set through the `defaultPath` parameter metadata pointing to a location inside the module's context directory.
-
-- If the path is absolute, its root is the path to the git repository containting that module (called `context directory`), falling into the location of the `dagger.json` if no `.git` directory is found.
-- If the path is relative, its root is the path to `dagger.json` location (called `root directory`).
-
-- `repoFiles` has an argument `repo` of type `Directory` and a `defaultPath` parameter metadata set to `/` and returns the list of files in the given directory.
-- `moduleFiles` has an argument `module` of type `Directory` and a `defaultPath` parameter metadata set to `.` and returns the list of files in the given directory.
-- `readme` has an argument `readmeFile` of type `File` and a `defaultPath` parameter metadata set to `/README.md` and returns the contents of the given file.
-
-<Tabs groupId="language">
-
-<TabItem value="Go">
-
-For the example, we will use a repository with the following files:
-
-```shell
-.
-├── README.md
-├── file.txt
-└── my-module
-    ├── dagger.gen.go
-    ├── dagger.json
-    ├── go.mod
-    ├── go.sum
-    ├── internal
-    └── main.go
-```
-
-To define a contextual argument, you can add the `+defaultPath` pragma to the function parameter and set it to the path to default to.
-
-```go file=./snippets/functions/arguments-contextual/go/main.go
-```
-
-</TabItem>
-
-<TabItem value="Python">
-
-For the example, we will use a repository with the following files:
-
-```shell
-.
-├── README.md
-├── file.txt
-└── my-module
-    ├── LICENSE
-    ├── dagger.json
-    ├── package.json
-    ├── sdk
-    ├── src
-    ├── tsconfig.json
-    └── yarn.lock
-```
-
-To define a contextual argument, you can annotate the function parameter with the `DefaultPath` annotation and set it to the path to default to.
-
-```python file=./snippets/functions/arguments-contextual/python/main.py
-```
-
-</TabItem>
-
-<TabItem value="Typescript">
-
-For the example, we will use a repository with the following files:
-
-```shell
-.
-├── README.md
-├── file.txt
-└── my-module
-    ├── LICENSE
-    ├── dagger.json
-    ├── package.json
-    ├── sdk
-    ├── src
-    ├── tsconfig.json
-    └── yarn.lock
-```
-
-To define a contextual argument, you can add the decorator `@argument` to the function parameter and set the `defaultPath` parameter metadata to the path to default to.
-
-```typescript file=./snippets/functions/arguments-contextual/typescript/index.ts
-```
-
-</TabItem>
-
-</Tabs>
-*/
 
 ## Return values
 
