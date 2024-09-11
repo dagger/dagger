@@ -1,7 +1,8 @@
 from typing import Annotated
 
 import dagger
-from dagger import  DefaultPath, function, object_type
+from dagger import DefaultPath, function, object_type
+
 
 @object_type
 class MyModule:
