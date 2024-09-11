@@ -357,6 +357,15 @@ type Container {
   """Retrieves the user to be set for all commands."""
   user: String!
 
+  """Add an OCI annotation to the image manifest."""
+  withAnnotation(
+    """The name of the annotation."""
+    name: String!
+
+    """The value of the annotation."""
+    value: String!
+  ): Container!
+
   """Configures default arguments for future commands."""
   withDefaultArgs(
     """

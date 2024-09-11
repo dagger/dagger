@@ -954,6 +954,17 @@ func (r *Container) User(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// Add an OCI annotation to the image manifest.
+func (r *Container) WithAnnotation(name string, value string) *Container {
+	q := r.query.Select("withAnnotation")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Container{
+		query: q,
+	}
+}
+
 // Configures default arguments for future commands.
 func (r *Container) WithDefaultArgs(args []string) *Container {
 	q := r.query.Select("withDefaultArgs")

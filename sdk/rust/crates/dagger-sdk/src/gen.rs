@@ -2157,6 +2157,22 @@ impl Container {
         let query = self.selection.select("user");
         query.execute(self.graphql_client.clone()).await
     }
+    /// Add an OCI annotation to the image manifest.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the annotation.
+    /// * `value` - The value of the annotation.
+    pub fn with_annotation(&self, name: impl Into<String>, value: impl Into<String>) -> Container {
+        let mut query = self.selection.select("withAnnotation");
+        query = query.arg("name", name.into());
+        query = query.arg("value", value.into());
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Configures default arguments for future commands.
     ///
     /// # Arguments

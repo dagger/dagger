@@ -465,6 +465,21 @@ defmodule Dagger.Container do
     Client.execute(container.client, query_builder)
   end
 
+  @doc "Add an OCI annotation to the image manifest."
+  @spec with_annotation(t(), String.t(), String.t()) :: Dagger.Container.t()
+  def with_annotation(%__MODULE__{} = container, name, value) do
+    query_builder =
+      container.query_builder
+      |> QB.select("withAnnotation")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("value", value)
+
+    %Dagger.Container{
+      query_builder: query_builder,
+      client: container.client
+    }
+  end
+
   @doc "Configures default arguments for future commands."
   @spec with_default_args(t(), [String.t()]) :: Dagger.Container.t()
   def with_default_args(%__MODULE__{} = container, args) do

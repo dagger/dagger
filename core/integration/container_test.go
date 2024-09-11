@@ -2805,6 +2805,34 @@ func (ContainerSuite) TestPublish(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "im-a-default-arg\n", output)
 }
 
+func (ContainerSuite) TestAnnotations(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	testRef := registryRef("container-annotations")
+
+	ctr := c.Container().From(alpineImage).WithAnnotation("org.opencontainers.image.version", "v0.1.2")
+	pushedRef, err := ctr.Publish(ctx, testRef)
+	require.NoError(t, err)
+	require.NotEqual(t, testRef, pushedRef)
+	require.Contains(t, pushedRef, "@sha256:")
+
+	parsedRef, err := name.ParseReference(pushedRef, name.Insecure)
+	require.NoError(t, err)
+
+	imgDesc, err := remote.Get(parsedRef, remote.WithTransport(http.DefaultTransport))
+	require.NoError(t, err)
+
+	img, err := imgDesc.Image()
+	require.NoError(t, err)
+
+	manifest, err := img.Manifest()
+	require.NoError(t, err)
+
+	fmt.Fprintf(os.Stderr, "Raw manifest:\n%+v\n", imgDesc.Manifest)
+
+	require.Equal(t, "v0.1.2", manifest.Annotations["v0.1.2"])
+}
+
 func (ContainerSuite) TestExecFromScratch(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

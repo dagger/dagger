@@ -1940,6 +1940,24 @@ export class Container extends BaseClient {
   }
 
   /**
+   * Add an OCI annotation to the image manifest.
+   * @param name The name of the annotation.
+   * @param value The value of the annotation.
+   */
+  withAnnotation = (name: string, value: string): Container => {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withAnnotation",
+          args: { name, value },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
    * Configures default arguments for future commands.
    * @param args Arguments to prepend to future executions (e.g., ["-v", "--no-cache"]).
    */

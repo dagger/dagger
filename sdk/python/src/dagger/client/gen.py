@@ -1096,6 +1096,23 @@ class Container(Type):
         _ctx = self._select("user", _args)
         return await _ctx.execute(str)
 
+    def with_annotation(self, name: str, value: str) -> Self:
+        """Add an OCI annotation to the image manifest.
+
+        Parameters
+        ----------
+        name:
+            The name of the annotation.
+        value:
+            The value of the annotation.
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+        ]
+        _ctx = self._select("withAnnotation", _args)
+        return Container(_ctx)
+
     def with_default_args(self, args: list[str]) -> Self:
         """Configures default arguments for future commands.
 
