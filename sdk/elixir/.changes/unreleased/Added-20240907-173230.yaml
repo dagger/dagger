@@ -1,6 +1,0 @@
-kind: Added
-body: Module can now specific argument as an optional
-time: 2024-09-07T17:32:30.861807874+07:00
-custom:
-    Author: wingyplus
-    PR: "8367"

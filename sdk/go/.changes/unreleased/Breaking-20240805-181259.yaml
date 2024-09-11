@@ -1,9 +1,0 @@
-kind: Breaking
-body: |-
-    Fix optional function arguments being generated as required in codegen
-
-    If there's a Module dependency with a non-null function argument, it will change from required to optional, in the generated client bindings.
-time: 2024-08-05T18:12:59.542179Z
-custom:
-    Author: helderco
-    PR: "8106"

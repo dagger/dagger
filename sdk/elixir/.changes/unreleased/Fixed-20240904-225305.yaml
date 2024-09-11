@@ -1,6 +1,0 @@
-kind: Fixed
-body: Fix return list of enums render incorrectly.
-time: 2024-09-04T22:53:05.763890994+07:00
-custom:
-    Author: wingyplus
-    PR: "8332"

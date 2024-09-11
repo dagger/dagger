@@ -1,9 +1,0 @@
-kind: Fixed
-body: |-
-  Allow top-level field access with no constructor
-
-  Previously, if a field access was made immediately after the default constructor was called, then the access would fail.
-time: 2024-09-11T10:17:24.388632197+01:00
-custom:
-  Author: jedevc
-  PR: "8331"

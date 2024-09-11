@@ -1,9 +1,0 @@
-kind: Fixed
-body: |-
-  Plain progress correctly displays carriage returns
-
-  Carriage returns could previously render weirdly in the output, displaying empty lines, and similar visual glitches.
-time: 2024-09-11T10:20:46.00360597+01:00
-custom:
-  Author: jedevc
-  PR: "8347"
