@@ -375,8 +375,8 @@ Assuming the directory structure below, the following table describes how the ar
 ├── README.md
 ├── my-module
 │   ├── sdk
+│   ├── dagger.json
 │   ├── ...
-├── dagger.json
 ├── .git
 │   └── ...
 ├── index.html
@@ -388,23 +388,23 @@ Assuming the directory structure below, the following table describes how the ar
 
 | Location | Default context ('defaultPath`) | Dagger Function invocation | `source` resolves to |
 | --- | --- | --- | --- |
-| Git repository | `/` | `dagger call read-dir` | `/` |
-| Git repository | `/src` | `dagger call read-dir` | `/src` |
-| Git repository | `.` | `dagger call read-dir` | `/my-module` |
-| Git repository | `..` | `dagger call read-dir` | `/` |
-| Non-Git directory | `/` | `dagger call read-dir` | `/` |
-| Non-Git directory | `/src` | `dagger call read-dir` | `/src` |
-| Non-Git directory | `.` | `dagger call read-dir` | `/my-module` |
-| Non-Git directory | `..` | `dagger call read-dir` | `/` |
+| Git repository | `/` | `dagger call -m my-module read-dir` | `/` |
+| Git repository | `/src` | `dagger call -m my-module read-dir` | `/src` |
+| Git repository | `.` | `dagger call -m my-module read-dir` | `/my-module` |
+| Git repository | `..` | `dagger call -m my-module read-dir` | `/` |
+| Non-Git directory | `/` | `dagger call -m my-module read-dir` | `/` |
+| Non-Git directory | `/src` | `dagger call -m my-module read-dir` | `/src` |
+| Non-Git directory | `.` | `dagger call -m my-module read-dir` | `/my-module` |
+| Non-Git directory | `..` | `dagger call -m my-module read-dir` | `/` |
 
 If a value is explicitly passed to the Dagger Function argument, it always overrides the default context.
 
 | Default context ('defaultPath`) | Dagger Function invocation | `source` resolves to |
 | --- | --- | --- |
-| `/` | `dagger call read-dir --source=public` | `/public` |
-| `/src` | `dagger call read-dir --source=public` | `/public` |
-| `.` | `dagger call read-dir --source=public` | `/public` |
-| `..` | `dagger call read-dir --source=public` | `/public` |
+| `/` | `dagger call -m my-module read-dir --source=public` | `/public` |
+| `/src` | `dagger call -m my-module read-dir --source=public` | `/public` |
+| `.` | `dagger call -m my-module read-dir --source=public` | `/public` |
+| `..` | `dagger call -m my-module read-dir --source=public` | `/public` |
 
 
 :::tip
