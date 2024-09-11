@@ -702,6 +702,20 @@ func (mod *Module) PBDefinitions(ctx context.Context) ([]*pb.Definition, error) 
 		}
 		defs = append(defs, dirDefs...)
 	}
+	if mod.GeneratedContextDirectory.Self != nil {
+		dirDefs, err := mod.GeneratedContextDirectory.Self.PBDefinitions(ctx)
+		if err != nil {
+			return nil, err
+		}
+		defs = append(defs, dirDefs...)
+	}
+	if mod.Runtime != nil {
+		dirDefs, err := mod.Runtime.PBDefinitions(ctx)
+		if err != nil {
+			return nil, err
+		}
+		defs = append(defs, dirDefs...)
+	}
 	return defs, nil
 }
 
