@@ -25,14 +25,17 @@ type PhpSdk struct {
 func New(
 	// Directory with the PHP SDK source code.
 	// +optional
-	// +defaultPath="/sdk/php"
-	// +ignore=["**/*", "!generated/", "!src/", "!scripts/", "!composer.json", "!composer.lock", "!LICENSE", "!README.md"]
+	// +defaultPath=".."
+	// +ignore=["**", "!generated/", "!src/", "!scripts/", "!composer.json", "!composer.lock", "!LICENSE", "!README.md"]
 	sdkSourceDir *dagger.Directory,
-) *PhpSdk {
+) (*PhpSdk, error) {
+	if sdkSourceDir == nil {
+		return nil, fmt.Errorf("sdk source directory not provided")
+	}
 	return &PhpSdk{
 		RequiredPaths: []string{},
 		SourceDir:     sdkSourceDir,
-	}
+	}, nil
 }
 
 func (m *PhpSdk) Codegen(
