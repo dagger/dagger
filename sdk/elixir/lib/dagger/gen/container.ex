@@ -456,6 +456,26 @@ defmodule Dagger.Container do
     }
   end
 
+  @doc """
+  Starts a Service and creates a tunnel that forwards traffic from the caller's network to that service.
+
+  Be sure to set any exposed ports before calling this api.
+  """
+  @spec up(t(), [{:ports, [Dagger.PortForward.t()]}, {:random, boolean() | nil}]) ::
+          :ok | {:error, term()}
+  def up(%__MODULE__{} = container, optional_args \\ []) do
+    query_builder =
+      container.query_builder
+      |> QB.select("up")
+      |> QB.maybe_put_arg("ports", optional_args[:ports])
+      |> QB.maybe_put_arg("random", optional_args[:random])
+
+    case Client.execute(container.client, query_builder) do
+      {:ok, _} -> :ok
+      error -> error
+    end
+  end
+
   @doc "Retrieves the user to be set for all commands."
   @spec user(t()) :: {:ok, String.t()} | {:error, term()}
   def user(%__MODULE__{} = container) do
