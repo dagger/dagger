@@ -62,13 +62,22 @@ func (opts FrontendOpts) ShouldShow(span *Span) bool {
 		// prevent focused span from disappearing
 		return true
 	}
-	if span.Hidden(opts) {
+	if span.Ignore {
+		// absolutely 100% boring spans, like 'id' and 'sync'
+		//
+		// this is ahead of failed check because 'sync' is often failed and is
+		// _still_ not interesting
 		return false
 	}
 	if span.IsFailedOrCausedFailure() {
+		// prioritize showing failed things, even if they're internal
 		return true
 	}
+	if span.Hidden(opts) {
+		return false
+	}
 	if span.IsPending() {
+		// reveal pending spans so the user can see what's queued to run
 		return true
 	}
 	if span.IsRunningOrLinksRunning() {

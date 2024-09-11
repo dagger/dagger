@@ -256,10 +256,6 @@ func (span *Span) VisibleParent(opts FrontendOpts) *Span {
 }
 
 func (span *Span) Hidden(opts FrontendOpts) bool {
-	if span.Ignore {
-		// absolutely 100% boring spans, like 'id' and 'sync'
-		return true
-	}
 	if span.IsInternal() && opts.Verbosity < ShowInternalVerbosity {
 		// internal spans are hidden by default
 		return true

@@ -408,10 +408,8 @@ func (db *DB) integrateSpan(span *Span) {
 
 			// We don't care about seeing the sync span itself - all relevant info
 			// should show up somewhere more familiar.
-			//
-			// TODO: making this Internal since otherwise we don't see errors?
 			if call.Field == "sync" {
-				span.Internal = true
+				span.Ignore = true
 			}
 
 			if span.CallDigest != "" {
