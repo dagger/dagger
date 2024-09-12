@@ -954,6 +954,17 @@ func (r *Container) User(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+// Retrieves this container plus the given OCI anotation.
+func (r *Container) WithAnnotation(name string, value string) *Container {
+	q := r.query.Select("withAnnotation")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Container{
+		query: q,
+	}
+}
+
 // Configures default arguments for future commands.
 func (r *Container) WithDefaultArgs(args []string) *Container {
 	q := r.query.Select("withDefaultArgs")
@@ -1533,6 +1544,16 @@ func (r *Container) WithUser(name string) *Container {
 func (r *Container) WithWorkdir(path string) *Container {
 	q := r.query.Select("withWorkdir")
 	q = q.Arg("path", path)
+
+	return &Container{
+		query: q,
+	}
+}
+
+// Retrieves this container minus the given OCI annotation.
+func (r *Container) WithoutAnnotation(name string) *Container {
+	q := r.query.Select("withoutAnnotation")
+	q = q.Arg("name", name)
 
 	return &Container{
 		query: q,

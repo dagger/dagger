@@ -357,6 +357,15 @@ type Container {
   """Retrieves the user to be set for all commands."""
   user: String!
 
+  """Retrieves this container plus the given OCI anotation."""
+  withAnnotation(
+    """The name of the annotation."""
+    name: String!
+
+    """The value of the annotation."""
+    value: String!
+  ): Container!
+
   """Configures default arguments for future commands."""
   withDefaultArgs(
     """
@@ -692,6 +701,12 @@ type Container {
 
     """Permission given to the written file (e.g., 0600)."""
     permissions: Int = 420
+  ): Container!
+
+  """Retrieves this container minus the given OCI annotation."""
+  withoutAnnotation(
+    """The name of the annotation."""
+    name: String!
   ): Container!
 
   """

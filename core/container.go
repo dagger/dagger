@@ -47,6 +47,11 @@ type DefaultTerminalCmdOpts struct {
 	InsecureRootCapabilities dagql.Optional[dagql.Boolean] `default:"false"`
 }
 
+type ContainerAnnotation struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
 // Container is a content-addressed container.
 type Container struct {
 	Query *Query
@@ -68,6 +73,9 @@ type Container struct {
 
 	// The platform of the container's rootfs.
 	Platform Platform `json:"platform,omitempty"`
+
+	// OCI annotations
+	Annotations []ContainerAnnotation `json:"annotations,omitempty"`
 
 	// Secrets to expose to the container.
 	Secrets []ContainerSecret `json:"secret_env,omitempty"`
@@ -1062,6 +1070,36 @@ func (container Container) Evaluate(ctx context.Context) (*buildkit.Result, erro
 	})
 }
 
+func (container *Container) WithAnnotation(ctx context.Context, key, value string) (*Container, error) {
+	container = container.Clone()
+
+	container.Annotations = append(container.Annotations, ContainerAnnotation{
+		Key:   key,
+		Value: value,
+	})
+
+	// set image ref to empty string
+	container.ImageRef = ""
+
+	return container, nil
+}
+
+func (container *Container) WithoutAnnotation(ctx context.Context, name string) (*Container, error) {
+	container = container.Clone()
+
+	for i, annotation := range container.Annotations {
+		if annotation.Key == name {
+			container.Annotations = append(container.Annotations[:i], container.Annotations[i+1:]...)
+			break
+		}
+	}
+
+	// set image ref to empty string
+	container.ImageRef = ""
+
+	return container, nil
+}
+
 func (container *Container) Publish(
 	ctx context.Context,
 	ref string,
@@ -1077,9 +1115,21 @@ func (container *Container) Publish(
 		mediaTypes = OCIMediaTypes
 	}
 
+	opts := map[string]string{
+		string(exptypes.OptKeyName):     ref,
+		string(exptypes.OptKeyPush):     strconv.FormatBool(true),
+		string(exptypes.OptKeyOCITypes): strconv.FormatBool(mediaTypes == OCIMediaTypes),
+	}
+	if forcedCompression != "" {
+		opts[string(exptypes.OptKeyLayerCompression)] = strings.ToLower(string(forcedCompression))
+		opts[string(exptypes.OptKeyForceCompression)] = strconv.FormatBool(true)
+	}
+
 	inputByPlatform := map[string]buildkit.ContainerExport{}
 	services := ServiceBindings{}
-	for _, variant := range append([]*Container{container}, platformVariants...) {
+
+	variants := append([]*Container{container}, platformVariants...)
+	for _, variant := range variants {
 		if variant.FS == nil {
 			continue
 		}
@@ -1087,7 +1137,8 @@ func (container *Container) Publish(
 		if err != nil {
 			return "", err
 		}
-		def, err := st.Marshal(ctx, llb.Platform(variant.Platform.Spec()))
+		platformSpec := variant.Platform.Spec()
+		def, err := st.Marshal(ctx, llb.Platform(platformSpec))
 		if err != nil {
 			return "", err
 		}
@@ -1100,21 +1151,26 @@ func (container *Container) Publish(
 			Definition: def.ToPB(),
 			Config:     variant.Config,
 		}
+
+		if len(variants) == 1 {
+			// single platform case
+			for _, annotation := range variant.Annotations {
+				opts[exptypes.AnnotationManifestKey(nil, annotation.Key)] = annotation.Value
+				opts[exptypes.AnnotationManifestDescriptorKey(nil, annotation.Key)] = annotation.Value
+			}
+		} else {
+			// multi platform case
+			for _, annotation := range variant.Annotations {
+				opts[exptypes.AnnotationManifestKey(&platformSpec, annotation.Key)] = annotation.Value
+				opts[exptypes.AnnotationManifestDescriptorKey(&platformSpec, annotation.Key)] = annotation.Value
+			}
+		}
+
 		services.Merge(variant.Services)
 	}
 	if len(inputByPlatform) == 0 {
 		// Could also just ignore and do nothing, airing on side of error until proven otherwise.
 		return "", errors.New("no containers to export")
-	}
-
-	opts := map[string]string{
-		string(exptypes.OptKeyName):     ref,
-		string(exptypes.OptKeyPush):     strconv.FormatBool(true),
-		string(exptypes.OptKeyOCITypes): strconv.FormatBool(mediaTypes == OCIMediaTypes),
-	}
-	if forcedCompression != "" {
-		opts[string(exptypes.OptKeyLayerCompression)] = strings.ToLower(string(forcedCompression))
-		opts[string(exptypes.OptKeyForceCompression)] = strconv.FormatBool(true)
 	}
 
 	svcs, err := container.Query.Services(ctx)

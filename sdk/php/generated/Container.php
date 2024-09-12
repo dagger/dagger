@@ -374,6 +374,17 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Retrieves this container plus the given OCI anotation.
+     */
+    public function withAnnotation(string $name, string $value): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withAnnotation');
+        $innerQueryBuilder->setArgument('name', $name);
+        $innerQueryBuilder->setArgument('value', $value);
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Configures default arguments for future commands.
      */
     public function withDefaultArgs(array $args): Container
@@ -762,6 +773,16 @@ class Container extends Client\AbstractObject implements Client\IdAble
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withWorkdir');
         $innerQueryBuilder->setArgument('path', $path);
+        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Retrieves this container minus the given OCI annotation.
+     */
+    public function withoutAnnotation(string $name): Container
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutAnnotation');
+        $innerQueryBuilder->setArgument('name', $name);
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

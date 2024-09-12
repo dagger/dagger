@@ -1940,6 +1940,24 @@ export class Container extends BaseClient {
   }
 
   /**
+   * Retrieves this container plus the given OCI anotation.
+   * @param name The name of the annotation.
+   * @param value The value of the annotation.
+   */
+  withAnnotation = (name: string, value: string): Container => {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withAnnotation",
+          args: { name, value },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
    * Configures default arguments for future commands.
    * @param args Arguments to prepend to future executions (e.g., ["-v", "--no-cache"]).
    */
@@ -2505,6 +2523,23 @@ export class Container extends BaseClient {
         {
           operation: "withWorkdir",
           args: { path },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Retrieves this container minus the given OCI annotation.
+   * @param name The name of the annotation.
+   */
+  withoutAnnotation = (name: string): Container => {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withoutAnnotation",
+          args: { name },
         },
       ],
       ctx: this._ctx,

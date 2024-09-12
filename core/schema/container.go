@@ -419,6 +419,15 @@ func (s *containerSchema) Install() {
 			Doc(`The error stream of the last executed command.`,
 				`Will execute default command if none is set, or error if there's no default.`),
 
+		dagql.Func("withAnnotation", s.withAnnotation).
+			Doc(`Retrieves this container plus the given OCI anotation.`).
+			ArgDoc("name", `The name of the annotation.`).
+			ArgDoc("value", `The value of the annotation.`),
+
+		dagql.Func("withoutAnnotation", s.withoutAnnotation).
+			Doc(`Retrieves this container minus the given OCI annotation.`).
+			ArgDoc("name", `The name of the annotation.`),
+
 		dagql.Func("publish", s.publish).
 			Impure("Writes to the specified Docker registry.").
 			Doc(`Publishes this container as a new image to the specified address.`,
@@ -1105,6 +1114,23 @@ func (s *containerSchema) withMountedDirectory(ctx context.Context, parent *core
 		return nil, err
 	}
 	return parent.WithMountedDirectory(ctx, args.Path, dir.Self, args.Owner, false)
+}
+
+type containerWithAnnotationArgs struct {
+	Name  string
+	Value string
+}
+
+func (s *containerSchema) withAnnotation(ctx context.Context, parent *core.Container, args containerWithAnnotationArgs) (*core.Container, error) {
+	return parent.WithAnnotation(ctx, args.Name, args.Value)
+}
+
+type containerWithoutAnnotationArgs struct {
+	Name string
+}
+
+func (s *containerSchema) withoutAnnotation(ctx context.Context, parent *core.Container, args containerWithoutAnnotationArgs) (*core.Container, error) {
+	return parent.WithoutAnnotation(ctx, args.Name)
 }
 
 type containerPublishArgs struct {
