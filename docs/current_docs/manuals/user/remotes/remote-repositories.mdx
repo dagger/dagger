@@ -17,23 +17,28 @@ dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call build --source=
 In addition to supporting public repositories, Dagger also supports the use of private repositories as directory arguments. Here is an example of a Dagger Function that FIXME:
 
 ```shell
-FIXME
-FIXME: Add example of "Buildkit ref style though: ref#branch:version" for private repos
+FIXME for Guillaume
+FIXME for Guillaume: Add example of "Buildkit ref style though: ref#branch:version" for private repos
 ```
 
 ## Consume Dagger modules in remote repositories
 
-FIXME: Add example of consuming Dagger module in public repo
 
-FIXME: Add example of consuming Dagger module in private repo
+
+```shell
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call build --source=https://github.com/dagger/dagger --args=./cmd/dagger export --path=./build
+```
+
+
+FIXME for Guillaume: Add example of consuming Dagger module in private repo
 
 
 ## Supported protocols and schemes
 
 Dagger supports various reference ("ref") schemes for remote repositories and modules, accommodating both HTTP and SSH protocols. These schemes are compatible with all Git repositories hosted on platforms such as GitHub, GitLab, BitBucket, Azure DevOps, Codeberg, and Sourcehut.
 
-FIXME: Update to also mention public/private repositories in this table
-FIXME: Add "Buildkit ref style though: ref#branch:version" for private repos
+FIXME for Guillaume: Update to also mention public/private repositories in this table
+FIXME for Guillaume: Add "Buildkit ref style though: ref#branch:version" for private repos
 
 | Protocol | Scheme            | Private Modules Support | Example                                      |
 |----------|-------------------|-------------------------|----------------------------------------------|
@@ -44,7 +49,7 @@ FIXME: Add "Buildkit ref style though: ref#branch:version" for private repos
 
 Dagger provides additional flexibility in referencing modules through the following options:
 
-FIXME: is the below only applicable for modules in private repos? or all private repos?
+FIXME question for Guillaume: is the below only applicable for modules in private repos? or all private repos?
 
 - The `.git` extension is optional for HTTP refs or explicit SSH refs, except for [GitLab, when referencing modules stored on a private repo or private subgroup](https://gitlab.com/gitlab-org/gitlab-foss/-/blob/master/lib/gitlab/middleware/go.rb#L229-237).
 - Monorepo support: Append `/subpath` to access a specific subdirectory within the repository.
@@ -60,7 +65,7 @@ This means that you must ensure that the `SSH_AUTH_SOCK` environment variable is
 
 ### Best practices
 
-FIXME: does below apply only for modules or for repos as dir arguments also?
+FIXME question for Guillaume: does below apply only for modules or for repos as dir arguments also?
 
 For quick and easy referencing:
 - Copy the repository ref from your preferred Git server's UI.
@@ -69,7 +74,7 @@ For quick and easy referencing:
 
 ### Known limitations and workarounds
 
-FIXME: does below  apply only for modules or for repos as dir arguments also?
+FIXME question for Guillaume: does below  apply only for modules or for repos as dir arguments also?
 
 This section outlines current limitations and provides workarounds for common issues. We're actively working on improvements for these areas.
 
