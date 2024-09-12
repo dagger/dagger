@@ -43,7 +43,7 @@ func New(
 	// Git directory, for metadata introspection
 	// +optional
 	// +defaultPath="/"
-	// +ignore=["!.git"]
+	// +ignore=["*", "!.git"]
 	gitDir *dagger.Directory,
 
 	// +optional
