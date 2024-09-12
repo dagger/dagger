@@ -866,6 +866,11 @@ export type ModuleSourceResolveDirectoryFromCallerOpts = {
    * If set, the name of the view to apply to the path.
    */
   viewName?: string
+
+  /**
+   * Patterns to ignore when loading the directory.
+   */
+  ignore?: string[]
 }
 
 export type ModuleSourceWithInitOpts = {
@@ -7412,6 +7417,7 @@ export class ModuleSource extends BaseClient {
    * Load a directory from the caller optionally with a given view applied.
    * @param path The path on the caller's filesystem to load.
    * @param opts.viewName If set, the name of the view to apply to the path.
+   * @param opts.ignore Patterns to ignore when loading the directory.
    */
   resolveDirectoryFromCaller = (
     path: string,

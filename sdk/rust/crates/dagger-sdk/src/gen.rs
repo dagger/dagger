@@ -5685,6 +5685,9 @@ pub struct ModuleSourceAsModuleOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ModuleSourceResolveDirectoryFromCallerOpts<'a> {
+    /// Patterns to ignore when loading the directory.
+    #[builder(setter(into, strip_option), default)]
+    pub ignore: Option<Vec<&'a str>>,
     /// If set, the name of the view to apply to the path.
     #[builder(setter(into, strip_option), default)]
     pub view_name: Option<&'a str>,
@@ -5865,6 +5868,9 @@ impl ModuleSource {
         query = query.arg("path", path.into());
         if let Some(view_name) = opts.view_name {
             query = query.arg("viewName", view_name);
+        }
+        if let Some(ignore) = opts.ignore {
+            query = query.arg("ignore", ignore);
         }
         Directory {
             proc: self.proc.clone(),

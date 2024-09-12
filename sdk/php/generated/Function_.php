@@ -70,7 +70,8 @@ class Function_ extends Client\AbstractObject implements Client\IdAble
         ?Json $defaultValue = null,
         ?string $defaultPath = '',
         ?array $ignore = null,
-    ): Function_ {
+    ): Function_
+    {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withArg');
         $innerQueryBuilder->setArgument('name', $name);
         $innerQueryBuilder->setArgument('typeDef', $typeDef);

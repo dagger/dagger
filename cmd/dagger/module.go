@@ -1287,6 +1287,7 @@ type modFunctionArg struct {
 	Description  string
 	TypeDef      *modTypeDef
 	DefaultValue dagger.JSON
+	Ignore       []string
 	flagName     string
 }
 

@@ -156,6 +156,7 @@ func (s *moduleSchema) Install() {
 			Impure(`Queries live caller-specific data from their filesystem.`).
 			ArgDoc("path", `The path on the caller's filesystem to load.`).
 			ArgDoc("viewName", `If set, the name of the view to apply to the path.`).
+			ArgDoc("ignore", `Patterns to ignore when loading the directory.`).
 			Doc(`Load a directory from the caller optionally with a given view applied.`),
 
 		dagql.Func("views", s.moduleSourceViews).

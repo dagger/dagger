@@ -137,6 +137,13 @@ func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts) ([]
 			return nil, fmt.Errorf("failed to convert arg %q: %w", input.Name, err)
 		}
 
+		if len(arg.metadata.Ignore) > 0 {
+			converted, err = fn.applyIgnoreOnDir(ctx, opts.Server, arg.metadata, converted)
+			if err != nil {
+				return nil, fmt.Errorf("failed to apply ignore pattern on arg %q: %w", input.Name, err)
+			}
+		}
+
 		encoded, err := json.Marshal(converted)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal arg %q: %w", input.Name, err)
@@ -433,6 +440,47 @@ func (fn *ModuleFunction) linkDependencyBlobs(ctx context.Context, cacheResult *
 		return fmt.Errorf("failed to add dependency blob: %w", err)
 	}
 	return nil
+}
+
+func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Server, arg *FunctionArg, value any) (any, error) {
+	if arg.TypeDef.Kind != TypeDefKindObject || arg.TypeDef.AsObject.Value.Name != "Directory" {
+		return nil, fmt.Errorf("argument %q must be of type Directory to apply ignore pattern", arg.OriginalName)
+	}
+
+	if dag == nil {
+		return nil, fmt.Errorf("dagql server is nil but required to ignore pattern on directory %q", arg.OriginalName)
+	}
+
+	switch value := value.(type) {
+	case DynamicID:
+		var ignoredDir dagql.Instance[*Directory]
+
+		err := dag.Select(ctx, dag.Root(), &ignoredDir,
+			dagql.Selector{
+				Field: "directory",
+			},
+			dagql.Selector{
+				Field: "withDirectory",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.String("/")},
+					{Name: "directory", Value: dagql.NewID[*Directory](value.ID())},
+					{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(arg.Ignore...))},
+				},
+			},
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to apply ignore pattern on directory %q: %w", arg.OriginalName, err)
+		}
+
+		dirID, err := ignoredDir.ID().Encode()
+		if err != nil {
+			return nil, fmt.Errorf("failed to encode filtered dir ID: %w", err)
+		}
+
+		return JSON(fmt.Sprintf(`%s`, dirID)), nil
+	default:
+		return nil, fmt.Errorf("argument %q must be of type Directory to apply ignore pattern", arg.OriginalName)
+	}
 }
 
 // loadContextualArg loads a contextual argument from the module context directory.
