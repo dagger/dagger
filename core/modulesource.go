@@ -309,9 +309,6 @@ func (src *ModuleSource) AutomaticGitignore(ctx context.Context) (*bool, error) 
 // If the module is git, it will load the directory from the git repository
 // using its context directory.
 func (src *ModuleSource) LoadContext(ctx context.Context, dag *dagql.Server, path string, ignore []string) (inst dagql.Instance[*Directory], err error) {
-	excludes := ignore
-	includes := []string{}
-
 	switch src.Kind {
 	case ModuleSourceKindLocal:
 		bk, err := src.Query.Buildkit(ctx)
@@ -353,7 +350,7 @@ func (src *ModuleSource) LoadContext(ctx context.Context, dag *dagql.Server, pat
 			return inst, fmt.Errorf("path %q is outside of context directory %q, path should be relative to the context directory", path, ctxPath)
 		}
 
-		_, desc, err := bk.LocalImport(localSourceCtx, src.Query.Platform().Spec(), path, excludes, includes)
+		_, desc, err := bk.LocalImport(localSourceCtx, src.Query.Platform().Spec(), path, ignore, []string{})
 		if err != nil {
 			return inst, fmt.Errorf("failed to import local module src: %w", err)
 		}
