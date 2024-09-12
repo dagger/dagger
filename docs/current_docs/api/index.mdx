@@ -326,12 +326,4 @@ dagger -m github.com/shykes/daggerverse/wolfi@v0.1.4 call container with-file --
 
 The Dagger API also provides functionality for loading Dagger modules. Dagger modules contain one or more Dagger Functions. When a Dagger module is loaded into the session, the Dagger API is [dynamically extended](./internals.mdx#api-extension-with-dagger-functions) with new Dagger Functions served by that module. So, after loading a Dagger module, an API client can now call all of the original core APIs _plus_ the new Dagger Functions provided by that module.
 
-Dagger Functions can also be called by other Dagger Functions, across languages. For example, a Python function can call a Go function, which can call a TypeScript function, and so on. Each Dagger SDK generates native code-bindings for all dependencies, which abstract away the underlying GraphQL queries. This gives you all the benefits of type-checking, code completion and other IDE features when developing Dagger Functions.
-
-This approach has multiple benefits:
-
-- It enables Dagger Function developers to use whichever language feels natural and intuitive to them, without having to think about interoperability.
-- Even though Dagger Functions may be written in different languages, they are all run by the same Dagger Engine. So common concerns like logging, scaling, monitoring and others only need to be solved once, and can then be applied for everyone.
-- Each Dagger SDK generates native code-bindings for all dependencies from the GraphQL API. This gives you all the benefits of type-checking, code completion and other IDE features for your favorite language when developing Dagger Functions.
-
-You are encouraged to write your own Dagger Functions and share them with others. Dagger also lets you import and reuse modules developed by your team, your organization or the broader Dagger community. The [Daggerverse](https://daggerverse.dev) is a free service run by Dagger, which indexes all publicly available Dagger modules and Dagger Functions, and lets you easily search and consume them.
+You are encouraged to write your own Dagger modules and share them with others. Dagger also lets you import and reuse modules developed by your team, your organization or the broader Dagger community. The [Daggerverse](https://daggerverse.dev) is a free service run by Dagger, which indexes all publicly available Dagger modules and Dagger Functions, and lets you easily search and consume them.
