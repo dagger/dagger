@@ -1,0 +1,30 @@
+✔ connect X.Xs
+│ ✔ starting engine X.Xs
+│ ✔ connecting to engine X.Xs
+│ ✔ starting session X.Xs
+
+✘ initialize X.Xs
+! input: module.withSource.initialize failed to initialize module: failed to call module "broken" to get functions: call constructor: process "go build -o /runtime ." did not complete successfully: exit code: 1
+│ ✔ resolving module ref X.Xs
+│ ✘ installing module X.Xs
+│ ! input: module.withSource.initialize failed to initialize module: failed to call module "broken" to get functions: call constructor: process "go build -o /runtime ." did not complete successfully: exit code: 1
+│ │ $ ModuleSource.resolveFromCaller: ModuleSource! X.Xs CACHED
+│ │ ✘ .asModule: Module! X.Xs
+│ │ │ ✘ Module.withSource(
+│ │ │ │ │ source: $ ModuleSource.resolveFromCaller: ModuleSource! X.Xs CACHED
+│ │ │ │ ): Module! X.Xs
+│ │ │ │ ✘ Container.withExec(args: ["go", "build", "-o", "/runtime", "."]): Container! X.Xs
+│ │ │ │ ┃ # dagger/broken
+│ │ │ │ ┃ ./main.go:6:6: undefined: ctx
+│ │ │ │ │ ✘ exec go build -o /runtime . X.Xs
+│ │ │ │ │ ! process "go build -o /runtime ." did not complete successfully: exit code: 1
+│ │ ✘ .initialize: Module! X.Xs
+│ │ ! failed to initialize module: failed to call module "broken" to get functions: call constructor: process "go build -o /runtime ." did not complete successfully: exit code: 1
+
+Setup tracing at https://dagger.cloud/traces/setup. To hide: export NOTHANKS=1
+
+Error: input: module.withSource.initialize failed to initialize module: failed to call module "broken" to get functions: call constructor: process "go build -o /runtime ." did not complete successfully: exit code: 1
+
+Stderr:
+# dagger/broken
+./main.go:6:6: undefined: ctx

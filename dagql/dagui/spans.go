@@ -106,6 +106,10 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) {
 	case telemetry.UIEncapsulatedAttr:
 		snapshot.Encapsulated = val.(bool)
 
+	// encapsulate any gRPC activity by default
+	case "rpc.service":
+		snapshot.Encapsulated = true
+
 	case telemetry.UIInternalAttr:
 		snapshot.Internal = val.(bool)
 

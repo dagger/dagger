@@ -27,6 +27,9 @@ import (
 type frontendPretty struct {
 	dagui.FrontendOpts
 
+	// don't show live progress; just print a full report at the end
+	reportOnly bool
+
 	// updated by Run
 	program     *tea.Program
 	run         func(context.Context) error
@@ -69,8 +72,17 @@ type frontendPretty struct {
 	msgPreFinalRender strings.Builder
 }
 
-func New() Frontend {
-	db := dagui.NewDB()
+func NewPretty() Frontend {
+	return NewWithDB(dagui.NewDB())
+}
+
+func NewReporter() Frontend {
+	fe := NewWithDB(dagui.NewDB())
+	fe.reportOnly = true
+	return fe
+}
+
+func NewWithDB(db *dagui.DB) *frontendPretty {
 	profile := ColorProfile()
 	view := new(strings.Builder)
 	return &frontendPretty{
@@ -143,15 +155,20 @@ func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run 
 	}
 	fe.FrontendOpts = opts
 
-	// find a TTY anywhere in stdio. stdout might be redirected, in which case we
-	// can show the TUI on stderr.
-	ttyIn, ttyOut := findTTYs()
+	var runErr error
+	if fe.reportOnly {
+		runErr = run(ctx)
+	} else {
+		// find a TTY anywhere in stdio. stdout might be redirected, in which case we
+		// can show the TUI on stderr.
+		ttyIn, ttyOut := findTTYs()
 
-	// run the function wrapped in the TUI
-	runErr := fe.runWithTUI(ctx, ttyIn, ttyOut, run)
+		// run the function wrapped in the TUI
+		runErr = fe.runWithTUI(ctx, ttyIn, ttyOut, run)
+	}
 
 	// print the final output display to stderr
-	if renderErr := fe.finalRender(); renderErr != nil {
+	if renderErr := fe.FinalRender(os.Stderr); renderErr != nil {
 		return renderErr
 	}
 
@@ -230,7 +247,11 @@ func (fe *frontendPretty) renderErrorLogs(out *termenv.Output, r *renderer) erro
 	if fe.rowsView == nil {
 		return nil
 	}
-	errTree := fe.db.CollectErrors(fe.rowsView)
+	rowsView := fe.db.RowsView(dagui.FrontendOpts{
+		ZoomedSpan: fe.db.PrimarySpan,
+		Verbosity:  dagui.ShowCompletedVerbosity,
+	})
+	errTree := fe.db.CollectErrors(rowsView)
 	var anyHasLogs bool
 	dagui.WalkTree(errTree, func(row *dagui.TraceTree, _ int) bool {
 		logs := fe.logs.Logs[row.Span.ID]
@@ -256,14 +277,17 @@ func (fe *frontendPretty) renderErrorLogs(out *termenv.Output, r *renderer) erro
 	return nil
 }
 
-// finalRender is called after the program has finished running and prints the
+// FinalRender is called after the program has finished running and prints the
 // final output after the TUI has exited.
-func (fe *frontendPretty) finalRender() error {
+func (fe *frontendPretty) FinalRender(w io.Writer) error {
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
 
 	// Render the full trace.
 	fe.ZoomedSpan = fe.db.PrimarySpan
+	if fe.reportOnly && fe.Verbosity < dagui.ExpandCompletedVerbosity {
+		fe.Verbosity = dagui.ExpandCompletedVerbosity
+	}
 	fe.recalculateViewLocked()
 
 	// Unfocus for the final render.
@@ -271,8 +295,7 @@ func (fe *frontendPretty) finalRender() error {
 
 	r := newRenderer(fe.db, fe.window.Width, fe.FrontendOpts)
 
-	// Render to stderr so stdout stays clean.
-	out := NewOutput(os.Stderr, termenv.WithProfile(fe.profile))
+	out := NewOutput(w, termenv.WithProfile(fe.profile))
 
 	if fe.Debug || fe.Verbosity >= dagui.ShowCompletedVerbosity || fe.err != nil {
 		fe.renderProgress(out, r, true, fe.window.Height, "")
@@ -914,10 +937,10 @@ func (fe *frontendPretty) renderRow(out *termenv.Output, r *renderer, row *dagui
 		fmt.Fprintln(out)
 	}
 	fe.renderStep(out, r, row.Span, row.Chained, row.Depth, prefix)
-	if final {
-		return
-	}
-	if row.IsRunningOrChildRunning || row.Span.IsFailed() || fe.Verbosity >= dagui.ShowSpammyVerbosity {
+	// if final {
+	// 	return
+	// }
+	if row.IsRunningOrChildRunning || row.Span.IsFailed() || fe.Verbosity >= dagui.ExpandCompletedVerbosity { // TODO: maybe only in final report?
 		if logs := fe.logs.Logs[row.Span.ID]; logs != nil {
 			fe.renderLogs(out, r,
 				logs,
@@ -1026,7 +1049,11 @@ func (fe *frontendPretty) renderLogs(out *termenv.Output, r *renderer, logs *Vte
 		fmt.Fprint(indentOut, pipe.String()+" ")
 		logs.SetPrefix(buf.String())
 	}
-	logs.SetHeight(height)
+	if height <= 0 {
+		logs.SetHeight(logs.UsedHeight())
+	} else {
+		logs.SetHeight(height)
+	}
 	fmt.Fprint(out, logs.View())
 }
 

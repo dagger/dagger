@@ -1596,7 +1596,7 @@ func (container *Container) ImageRefOrErr(ctx context.Context) (string, error) {
 	return "", errors.Errorf("Image reference can only be retrieved immediately after the 'Container.From' call. Error in fetching imageRef as the container image is changed")
 }
 
-func (container *Container) Service(ctx context.Context) (*Service, error) {
+func (container *Container) AsService(ctx context.Context) (*Service, error) {
 	if container.Meta == nil {
 		var err error
 		container, err = container.WithExec(ctx, ContainerExecOpts{

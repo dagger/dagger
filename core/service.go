@@ -302,29 +302,6 @@ func (svc *Service) startContainer(
 		}
 	}()
 
-	execCtx := buildkit.ContextFromDescription(ctx, execOp.Metadata.Description)
-	ctx, span := Tracer(ctx).Start(
-		// The parent is the call site that triggered it to start.
-		ctx,
-		// Match naming scheme of normal exec span.
-		fmt.Sprintf("exec %s", strings.Join(execOp.Meta.Args, " ")),
-		// This span continues the original withExec, by linking to it.
-		telemetry.Resume(execCtx),
-		// Hide this span so the user can just focus on the withExec.
-		telemetry.Internal(),
-		// The withExec span expects to see this effect, otherwise it'll still be
-		// pending.
-		trace.WithAttributes(attribute.String(telemetry.DagDigestAttr, execOp.OpDigest.String())),
-		trace.WithAttributes(attribute.String(telemetry.EffectIDAttr, execOp.OpDigest.String())),
-	)
-	defer func() {
-		if rerr != nil {
-			// NB: this is intentionally conditional; we only complete if there was
-			// an error starting. span.End is called when the service exits.
-			telemetry.End(span, func() error { return rerr })
-		}
-	}()
-
 	var domain string
 	if mod, err := svc.Query.CurrentModule(ctx); err == nil && svc.CustomHostname != "" {
 		domain = network.ModuleDomain(mod.InstanceID, clientMetadata.SessionID)
@@ -372,6 +349,7 @@ func (svc *Service) startContainer(
 
 			res, err := bk.Solve(ctx, bkgw.SolveRequest{
 				Definition: def,
+				Evaluate:   true,
 			})
 			if err != nil {
 				return nil, fmt.Errorf("solve mount %s: %w", m.Dest, err)
@@ -384,6 +362,29 @@ func (svc *Service) startContainer(
 			Mount: &mount,
 		}
 	}
+
+	execCtx := trace.ContextWithSpanContext(ctx, svc.Creator)
+	ctx, span := Tracer(ctx).Start(
+		// The parent is the call site that triggered it to start.
+		ctx,
+		// Match naming scheme of normal exec span.
+		fmt.Sprintf("exec %s", strings.Join(execOp.Meta.Args, " ")),
+		// This span continues the original withExec, by linking to it.
+		telemetry.Resume(execCtx),
+		// Hide this span so the user can just focus on the withExec.
+		telemetry.Internal(),
+		// The withExec span expects to see this effect, otherwise it'll still be
+		// pending.
+		trace.WithAttributes(attribute.String(telemetry.DagDigestAttr, execOp.OpDigest.String())),
+		trace.WithAttributes(attribute.String(telemetry.EffectIDAttr, execOp.OpDigest.String())),
+	)
+	defer func() {
+		if rerr != nil {
+			// NB: this is intentionally conditional; we only complete if there was
+			// an error starting. span.End is called when the service exits.
+			telemetry.End(span, func() error { return rerr })
+		}
+	}()
 
 	gc, err := bk.NewContainer(execCtx, buildkit.NewContainerRequest{
 		Mounts:            mounts,

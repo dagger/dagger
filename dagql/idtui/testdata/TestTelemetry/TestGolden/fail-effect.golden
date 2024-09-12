@@ -1,0 +1,28 @@
+✔ connect X.Xs
+│ ✔ starting engine X.Xs
+│ ✔ connecting to engine X.Xs
+│ ✔ starting session X.Xs
+
+✔ initialize X.Xs
+│ ✔ resolving module ref X.Xs
+│ ✔ installing module X.Xs
+│ ✔ analyzing module X.Xs
+
+✔ prepare X.Xs
+
+✔ viztest: Viztest! X.Xs
+✘ .failEffect: Container! X.Xs
+│ ✔ container: Container! X.Xs
+│ $ .from(address: "alpine"): Container! X.Xs CACHED
+│ ✘ .withExec(args: ["sh", "-c", "echo this is a failing effect; exit 1"]): Container! X.Xs
+│ ┃ this is a failing effect
+│ │ ✘ exec sh -c echo this is a failing effect; exit 1 X.Xs
+│ │ ! process "sh -c echo this is a failing effect; exit 1" did not complete successfully: exit code: 1
+
+Setup tracing at https://dagger.cloud/traces/setup. To hide: export NOTHANKS=1
+
+Error: input: container.from.withExec.sync process "sh -c echo this is a failing effect; exit 1" did not complete successfully: exit code: 1
+
+Stdout:
+this is a failing effect
+Run 'dagger call fail-effect --help' for usage.

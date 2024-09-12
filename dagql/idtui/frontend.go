@@ -45,13 +45,13 @@ func FromCmdContext(ctx context.Context) (*cmdContext, bool) {
 }
 
 // having a bit of fun with these. cc @vito @jedevc
-var skipLoggedOutTraceMsgEnvs = []string{"NOTHANKS", "SHUTUP", "GOAWAY", "STOPIT"}
+var SkipLoggedOutTraceMsgEnvs = []string{"NOTHANKS", "SHUTUP", "GOAWAY", "STOPIT"}
 
 // Keep this to one line, and 80 characters max (longest env var name is NOTHANKS)
 //
 //nolint:gosec
 var loggedOutTraceMsg = fmt.Sprintf("Setup tracing at %%s. To hide: export %s=1",
-	skipLoggedOutTraceMsgEnvs[rand.Intn(len(skipLoggedOutTraceMsgEnvs))])
+	SkipLoggedOutTraceMsgEnvs[rand.Intn(len(SkipLoggedOutTraceMsgEnvs))])
 
 type Frontend interface {
 	// Run starts a frontend, and runs the target function.
@@ -471,7 +471,7 @@ func renderPrimaryOutput(db *dagui.DB) error {
 }
 
 func skipLoggedOutTraceMsg() bool {
-	for _, env := range skipLoggedOutTraceMsgEnvs {
+	for _, env := range SkipLoggedOutTraceMsgEnvs {
 		if os.Getenv(env) != "" {
 			return true
 		}

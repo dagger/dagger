@@ -73,8 +73,7 @@ require (
 	github.com/tonistiigi/fsutil v0.0.0-20240424095704-91a3fc46842c
 	github.com/urfave/cli v1.22.15
 	github.com/vektah/gqlparser/v2 v2.5.16
-	github.com/vito/go-sse v1.1.2
-	github.com/vito/midterm v0.1.5-0.20240307214207-d0271a7ca452
+	github.com/vito/midterm v0.2.1-0.20240905015444-dcd33c7e1ab1
 	github.com/zeebo/xxh3 v1.0.2
 	go.etcd.io/bbolt v1.3.11
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.52.0
@@ -226,6 +225,7 @@ require (
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/samber/lo v1.44.0 // indirect
 	github.com/samber/slog-common v0.17.0 // indirect
+	github.com/sebdah/goldie/v2 v2.5.3
 	github.com/secure-systems-lab/go-securesystemslib v0.4.0 // indirect
 	github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3 // indirect
 	github.com/shibumi/go-pathspec v1.3.0 // indirect
@@ -243,6 +243,7 @@ require (
 	github.com/vbatts/tar-split v0.11.5 // indirect
 	github.com/vishvananda/netlink v1.2.1-beta.2 // indirect
 	github.com/vishvananda/netns v0.0.4 // indirect
+	github.com/vito/go-sse v1.1.2
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.52.0 // indirect

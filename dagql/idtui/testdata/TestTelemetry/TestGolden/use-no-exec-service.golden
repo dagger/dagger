@@ -1,0 +1,37 @@
+✔ connect X.Xs
+│ ✔ starting engine X.Xs
+│ ✔ connecting to engine X.Xs
+│ ✔ starting session X.Xs
+
+✔ initialize X.Xs
+│ ✔ resolving module ref X.Xs
+│ ✔ installing module X.Xs
+│ ✔ analyzing module X.Xs
+
+✔ prepare X.Xs
+
+✔ viztest: Viztest! X.Xs
+✔ .useNoExecService: String! X.Xs
+│ ✔ container: Container! X.Xs
+│ $ .from(address: "redis"): Container! X.Xs CACHED
+│ ✔ .withExposedPort(port: 6379): Container! X.Xs
+│ ✔ .asService: Service! X.Xs
+│ ┃ X:M XX XXX 20XX XX:XX:XX.XXX * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+│ ┃ X:M XX XXX 20XX XX:XX:XX.XXX * Redis version=7.4.0, bits=64, commit=00000000, modified=0, pid=7, just started
+│ ┃ X:M XX XXX 20XX XX:XX:XX.XXX # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+│ ┃ X:M XX XXX 20XX XX:XX:XX.XXX * monotonic clock: POSIX clock_gettime
+│ ┃ X:M XX XXX 20XX XX:XX:XX.XXX * Running mode=standalone, port=6379.
+│ ┃ X:M XX XXX 20XX XX:XX:XX.XXX * Server initialized
+│ ┃ X:M XX XXX 20XX XX:XX:XX.XXX * Ready to accept connections tcp
+│ 
+│ ✔ Container.withServiceBinding(
+│ │ │ alias: "redis"
+│ │ │ service: ✔ Container.asService: Service! X.Xs
+│ │ ): Container! X.Xs
+│ ✔ .withEnvVariable(name: "NOW", value: "20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X"): Container! X.Xs
+│ ✔ .withExec(args: ["redis-cli", "-h", "redis", "ping"]): Container! X.Xs
+│ ┃ PONG
+│ ✔ .stdout: String! X.Xs
+
+Setup tracing at https://dagger.cloud/traces/setup. To hide: export NOTHANKS=1
+
