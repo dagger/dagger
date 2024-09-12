@@ -173,7 +173,7 @@ func (s *moduleSchema) builtinSDK(ctx context.Context, root *core.Query, sdkName
 	case SDKTypescript:
 		return s.loadBuiltinSDK(ctx, root, sdkName, digest.Digest(os.Getenv(distconsts.TypescriptSDKManifestDigestEnvName)))
 	case SDKPHP:
-		return s.sdkForModule(ctx, root, "github.com/dagger/dagger/sdk/php/runtime"+sdkSuffix, dagql.Instance[*core.ModuleSource]{})
+		return s.sdkForModule(ctx, root, "github.com/dagger/dagger/sdk/php"+sdkSuffix, dagql.Instance[*core.ModuleSource]{})
 	case SDKElixir:
 		return s.sdkForModule(ctx, root, "github.com/dagger/dagger/sdk/elixir"+sdkSuffix, dagql.Instance[*core.ModuleSource]{})
 	}

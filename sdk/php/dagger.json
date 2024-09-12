@@ -11,6 +11,6 @@
     "README.md"
   ],
   "exclude": ["vendor/"],
-  "source": ".",
+  "source": "./runtime",
   "engineVersion": "v0.12.7"
 }
