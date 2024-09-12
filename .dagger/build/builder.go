@@ -150,12 +150,7 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 		})
 	}
 
-	base := dag.
-		Container(dagger.ContainerOpts{Platform: build.platform})
-	if build.version != "" {
-		base = base.WithLabel("io.dagger.version", build.version)
-	}
-
+	var base *dagger.Container
 	switch build.base {
 	case "alpine", "":
 		base = dag.
@@ -180,7 +175,7 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 				ln -s /sbin/ip6tables-legacy-restore /usr/sbin/ip6tables-restore
 			`})
 	case "ubuntu":
-		base = base.
+		base = dag.Container(dagger.ContainerOpts{Platform: build.platform}).
 			From("ubuntu:"+consts.UbuntuVersion).
 			WithEnvVariable("DEBIAN_FRONTEND", "noninteractive").
 			WithEnvVariable("DAGGER_APT_CACHE_BUSTER", fmt.Sprintf("%d", time.Now().Truncate(24*time.Hour).Unix())).
@@ -213,6 +208,10 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 			})
 	default:
 		return nil, fmt.Errorf("unsupported engine base %q", build.base)
+	}
+
+	if build.version != "" {
+		base = base.WithAnnotation(distconsts.OCIVersionAnnotation, build.version)
 	}
 
 	type binAndPath struct {

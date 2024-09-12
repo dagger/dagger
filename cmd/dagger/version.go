@@ -10,6 +10,7 @@ import (
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/dagger/dagger/engine/distconsts"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -108,7 +109,7 @@ func latestVersion(ctx context.Context) (v string, rerr error) {
 		return "", errors.Wrap(err, "failed to get annotations")
 	}
 
-	version, ok := annotations["org.opencontainers.image.version"]
+	version, ok := annotations[distconsts.OCIVersionAnnotation]
 	if !ok {
 		return "", errors.New("no version found in annotations")
 	}
@@ -161,7 +162,7 @@ func manifestAnnotations(desc *remote.Descriptor) (map[string]string, error) {
 		}
 
 	default:
-		return nil, fmt.Errorf("unsupported media type: %s\n", desc.MediaType)
+		return nil, fmt.Errorf("unsupported media type: %s", desc.MediaType)
 	}
 
 	return annotations, nil
