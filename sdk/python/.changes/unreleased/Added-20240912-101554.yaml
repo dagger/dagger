@@ -1,0 +1,6 @@
+kind: Added
+body: 'Added ''package-index'' pyproject.toml: [tool.dagger] attribute to allow the specification of a custom Python package index for all dagger Python module pulls.'
+time: 2024-09-12T10:15:54.934966809-05:00
+custom:
+    Author: ClifHouck
+    PR: "8431"
