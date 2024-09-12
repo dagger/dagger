@@ -73,6 +73,18 @@ If your GitHub repository contains a Dagger module, you can test the functionali
 dagger call -m github.com/ORGANIZATION/REPOSITORY@pull/NUMBER/merge --help
 ```
 
+#### Expose SSH agent in GitHub Actions
+
+When using SSH keys in GitHub Actions or other CI/CD environments, ensure proper SSH agent setup:
+
+```yaml
+- name: Set up SSH
+  run: |
+    eval "$(ssh-agent -s)"
+    ssh-add - <<< '${{ secrets.SSH_PRIVATE_KEY }}'
+```
+Replace `${{ secrets.SSH_PRIVATE_KEY }}` with your provider secret containing the private key.
+
 ## Resources
 
 If you have any questions about additional ways to use GitHub with Dagger, join our [Discord](https://discord.gg/dagger-io) and ask your questions in our [GitHub channel](https://discord.com/channels/707636530424053791/1117139064274034809).

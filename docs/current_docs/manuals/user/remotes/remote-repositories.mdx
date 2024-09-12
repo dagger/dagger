@@ -33,8 +33,6 @@ Dagger provides flexibility in referencing modules through the following options
 - **Monorepo support**: Append `/subpath` to access a specific subdirectory within the repository.
 - **Version specification**: Add `@version` to target a particular version of the module. This can be a tag, branch name, or full commit hash. If omitted, the default branch is used.
 
-These options are optional.
-
 ### SSH Refs and Authentication
 
 Here is an overview of how Dagger handles authentication when using SSH refs:
@@ -86,16 +84,3 @@ Currently, SSH refs are fully supported on UNIX-based systems (Linux and macOS).
 **Status**: Under [active investigation](https://github.com/dagger/dagger/issues/8337).
 
 **Workaround**: Use the full path instead of `~` when setting `SSH_AUTH_SOCK`.
-
-
-#### 4. CI/CD Integration (GitHub Actions)
-
-When using SSH keys in GitHub Actions or other CI/CD environments, ensure proper SSH agent setup:
-
-```yaml
-- name: Set up SSH
-  run: |
-    eval "$(ssh-agent -s)"
-    ssh-add - <<< '${{ secrets.SSH_PRIVATE_KEY }}'
-```
-Replace `${{ secrets.SSH_PRIVATE_KEY }}` with your provider secret containing the private key.
