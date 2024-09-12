@@ -169,7 +169,7 @@ var rootCmd = &cobra.Command{
 			t.Close()
 		})
 
-		checkForUpdates(cmd.Context())
+		checkForUpdates(cmd.Context(), cmd.ErrOrStderr())
 
 		t.Capture(cmd.Context(), "cli_command", map[string]string{
 			"name": commandName(cmd),
@@ -179,7 +179,7 @@ var rootCmd = &cobra.Command{
 	},
 }
 
-func checkForUpdates(ctx context.Context) {
+func checkForUpdates(ctx context.Context, w io.Writer) {
 	ctx, cancel := context.WithCancel(ctx)
 
 	updateCh := make(chan string)
@@ -201,7 +201,7 @@ func checkForUpdates(ctx context.Context) {
 			if updateAvailable == "" {
 				return
 			}
-			versionNag(updateAvailable)
+			versionNag(w, updateAvailable)
 		default:
 			// If we didn't have enough time to check for updates,
 			// cancel the update check.

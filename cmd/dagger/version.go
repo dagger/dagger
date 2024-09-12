@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"runtime"
 
@@ -40,12 +41,12 @@ func versionCmd() *cobra.Command {
 			if forceVersionCheck {
 				updateAvailable, err := updateAvailable(cmd.Context())
 				if err != nil {
-					fmt.Fprintf(os.Stderr, "\nFailed to check for updates: %v\n", err)
+					fmt.Fprintf(cmd.ErrOrStderr(), "\nFailed to check for updates: %v\n", err)
 					os.Exit(1)
 					return
 				}
 				if updateAvailable != "" {
-					versionNag(updateAvailable)
+					versionNag(cmd.ErrOrStderr(), updateAvailable)
 				}
 			}
 		},
@@ -166,19 +167,18 @@ func manifestAnnotations(desc *remote.Descriptor) (map[string]string, error) {
 	return annotations, nil
 }
 
-func versionNag(latest string) {
-	output := idtui.NewOutput(os.Stderr)
+func versionNag(w io.Writer, latest string) {
+	output := idtui.NewOutput(w)
 
-	fmt.Fprint(
-		os.Stderr, "\r\n"+
-			output.String("A new release of dagger is available: ").Foreground(termenv.ANSIYellow).String()+
-			output.String(engine.Version).Foreground(termenv.ANSICyan).String()+
-			" → "+
-			output.String(latest).Foreground(termenv.ANSICyan).String()+
-			"\n"+
+	fmt.Fprint(w, "\r\n"+
+		output.String("A new release of dagger is available: ").Foreground(termenv.ANSIYellow).String()+
+		output.String(engine.Version).Foreground(termenv.ANSICyan).String()+
+		" → "+
+		output.String(latest).Foreground(termenv.ANSICyan).String()+
+		"\n"+
 
-			"To upgrade, see https://docs.dagger.io/install\n"+
-			output.String("https://github.com/dagger/dagger/releases/tag/"+latest).Foreground(termenv.ANSIYellow).String()+
-			"\n",
+		"To upgrade, see https://docs.dagger.io/install\n"+
+		output.String("https://github.com/dagger/dagger/releases/tag/"+latest).Foreground(termenv.ANSIYellow).String()+
+		"\n",
 	)
 }
