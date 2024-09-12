@@ -73,7 +73,7 @@ jobs:
       - name: "testdev"
         uses: ./.github/actions/call
         with:
-          function: "test specific --run='TestModule' --skip='TestDev' --race=true --parallel=16"
+          function: "test specific --run='TestModule' --race=true --parallel=16"
           dev-engine: true
           upload-logs: true
 
@@ -85,7 +85,7 @@ jobs:
       - name: "testdev"
         uses: ./.github/actions/call
         with:
-          function: "test specific --run='TestGo|TestPython|TestTypescript|TestElixir|TestPHP' --skip='TestDev' --race=true --parallel=16"
+          function: "test specific --run='TestGo|TestPython|TestTypescript|TestElixir|TestPHP' --race=true --parallel=16"
           dev-engine: true
           upload-logs: true
 
@@ -97,6 +97,6 @@ jobs:
       - name: "testdev"
         uses: ./.github/actions/call
         with:
-          function: "test specific --run='TestContainer' --skip='TestDev' --race=true --parallel=16"
+          function: "test specific --run='TestContainer' --race=true --parallel=16"
           dev-engine: true
           upload-logs: true

@@ -57,7 +57,7 @@ jobs:
       - name: "testdev"
         uses: ./.github/actions/call
         with:
-          function: "test specific --run='TestModule|TestContainer' --skip='TestDev' --race=true --parallel=16"
+          function: "test specific --run='TestModule|TestContainer' --race=true --parallel=16"
           dev-engine: true
           upload-logs: true
 
