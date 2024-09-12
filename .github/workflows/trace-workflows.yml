@@ -5,6 +5,7 @@ on:
     workflows:
       - "Docs"
       - "Engine & CLI"
+      - "Engine & CLI split"
       - "Helm"
       - "Publish CLI & Engine"
       - "Publish Elixir SDK"
@@ -16,6 +17,20 @@ on:
       - "Publish TypeScript SDK"
       - "SDK"
       - "Benchmark"
+      - "elixir-dev"
+      - "elixir"
+      - "go-dev"
+      - "go"
+      - "java-dev"
+      - "java"
+      - "php-dev"
+      - "php"
+      - "python-dev"
+      - "python"
+      - "rust-dev"
+      - "rust"
+      - "typescript-dev"
+      - "typescript"
     types:
       - completed
 
