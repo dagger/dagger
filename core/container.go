@@ -1106,7 +1106,9 @@ func (container *Container) Publish(
 
 	inputByPlatform := map[string]buildkit.ContainerExport{}
 	services := ServiceBindings{}
-	for _, variant := range append([]*Container{container}, platformVariants...) {
+
+	variants := append([]*Container{container}, platformVariants...)
+	for _, variant := range variants {
 		if variant.FS == nil {
 			continue
 		}
@@ -1129,9 +1131,18 @@ func (container *Container) Publish(
 			Config:     variant.Config,
 		}
 
-		for _, annotation := range variant.Annotations {
-			opts[exptypes.AnnotationManifestKey(&platformSpec, annotation.Key)] = annotation.Value
-			opts[exptypes.AnnotationManifestDescriptorKey(&platformSpec, annotation.Key)] = annotation.Value
+		if len(variants) == 1 {
+			// single platform case
+			for _, annotation := range variant.Annotations {
+				opts[exptypes.AnnotationManifestKey(nil, annotation.Key)] = annotation.Value
+				opts[exptypes.AnnotationManifestDescriptorKey(nil, annotation.Key)] = annotation.Value
+			}
+		} else {
+			// multi platform case
+			for _, annotation := range variant.Annotations {
+				opts[exptypes.AnnotationManifestKey(&platformSpec, annotation.Key)] = annotation.Value
+				opts[exptypes.AnnotationManifestDescriptorKey(&platformSpec, annotation.Key)] = annotation.Value
+			}
 		}
 
 		services.Merge(variant.Services)

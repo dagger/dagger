@@ -2806,31 +2806,76 @@ func (ContainerSuite) TestPublish(ctx context.Context, t *testctx.T) {
 }
 
 func (ContainerSuite) TestAnnotations(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	build := func(c *dagger.Client, platform dagger.Platform) *dagger.Container {
+		return c.Container(dagger.ContainerOpts{Platform: platform}).
+			From(alpineImage).
+			WithAnnotation("org.opencontainers.image.version", "v0.1.2")
+	}
 
-	testRef := registryRef("container-annotations")
+	t.Run("single-platform", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
-	ctr := c.Container().From(alpineImage).WithAnnotation("org.opencontainers.image.version", "v0.1.2")
-	pushedRef, err := ctr.Publish(ctx, testRef)
-	require.NoError(t, err)
-	require.NotEqual(t, testRef, pushedRef)
-	require.Contains(t, pushedRef, "@sha256:")
+		testRef := registryRef("container-annotations")
 
-	parsedRef, err := name.ParseReference(pushedRef, name.Insecure)
-	require.NoError(t, err)
+		ctr := build(c, "")
+		pushedRef, err := ctr.Publish(ctx, testRef)
+		require.NoError(t, err)
+		require.NotEqual(t, testRef, pushedRef)
+		require.Contains(t, pushedRef, "@sha256:")
 
-	imgDesc, err := remote.Get(parsedRef, remote.WithTransport(http.DefaultTransport))
-	require.NoError(t, err)
+		parsedRef, err := name.ParseReference(pushedRef, name.Insecure)
+		require.NoError(t, err)
 
-	img, err := imgDesc.Image()
-	require.NoError(t, err)
+		imgDesc, err := remote.Get(parsedRef, remote.WithTransport(http.DefaultTransport))
+		require.NoError(t, err)
 
-	manifest, err := img.Manifest()
-	require.NoError(t, err)
+		// check on manifest
+		img, err := imgDesc.Image()
+		require.NoError(t, err)
+		manifest, err := img.Manifest()
+		require.NoError(t, err)
+		require.Equal(t, "v0.1.2", manifest.Annotations["org.opencontainers.image.version"])
+	})
 
-	fmt.Fprintf(os.Stderr, "Raw manifest:\n%+v\n", imgDesc.Manifest)
+	t.Run("multi-platform", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
-	require.Equal(t, "v0.1.2", manifest.Annotations["v0.1.2"])
+		testRef := registryRef("container-annotations")
+
+		pushedRef, err := c.Container().Publish(ctx, testRef, dagger.ContainerPublishOpts{
+			PlatformVariants: []*dagger.Container{
+				build(c, "linux/amd64"),
+				build(c, "linux/arm64"),
+			},
+		})
+		require.NoError(t, err)
+		require.NotEqual(t, testRef, pushedRef)
+		require.Contains(t, pushedRef, "@sha256:")
+
+		parsedRef, err := name.ParseReference(pushedRef, name.Insecure)
+		require.NoError(t, err)
+
+		imgDesc, err := remote.Get(parsedRef, remote.WithTransport(http.DefaultTransport))
+		require.NoError(t, err)
+
+		imgs, err := imgDesc.ImageIndex()
+		require.NoError(t, err)
+		idx, err := imgs.IndexManifest()
+		require.NoError(t, err)
+		require.Len(t, idx.Manifests, 2)
+		for _, manifestDesc := range idx.Manifests {
+			// check on manifest descriptor
+			require.Equal(t, "v0.1.2", manifestDesc.Annotations["org.opencontainers.image.version"])
+			require.NoError(t, err)
+
+			// check on manifest
+			img, err := imgs.Image(manifestDesc.Digest)
+			require.NoError(t, err)
+			manifest, err := img.Manifest()
+			require.NoError(t, err)
+			require.Equal(t, "v0.1.2", manifest.Annotations["org.opencontainers.image.version"])
+		}
+	})
 }
 
 func (ContainerSuite) TestExecFromScratch(ctx context.Context, t *testctx.T) {
