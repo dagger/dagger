@@ -4,6 +4,8 @@ slug: /manuals/user/remote-repositories
 
 # Remote Repositories
 
+## Use remote repositories as function arguments
+
 Dagger Functions that accept directory arguments are equally comfortable receiving local filesystem paths or remote Git repository references. In both cases, the CLI will convert it to an object referencing the contents of that filesystem path or Git repository location, and pass the resulting `Directory` object as argument to the Dagger Function.
 
 Here is an example of a Go builder Dagger Function that accepts a remote Git address (the address of Dagger's open-source repository) as a `Directory` argument, builds a binary version of the Dagger CLI and exports the build directory to the host filesystem as `./build`:
@@ -12,11 +14,26 @@ Here is an example of a Go builder Dagger Function that accepts a remote Git add
 dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call build --source=https://github.com/dagger/dagger --args=./cmd/dagger export --path=./build
 ```
 
-## Dagger Module Ref Schemes
+In addition to supporting public repositories, Dagger also supports the use of private repositories as directory arguments. Here is an example of a Dagger Function that FIXME:
 
-Dagger supports various reference ("ref") schemes for remote modules, accommodating both HTTP and SSH protocols. These schemes are compatible with all Git repositories hosted on platforms such as GitHub, GitLab, BitBucket, Azure DevOps, Codeberg, and Sourcehut.
+```shell
+FIXME
+FIXME: Add example of "Buildkit ref style though: ref#branch:version" for private repos
+```
 
-### Supported Protocols and Schemes
+## Consume Dagger modules in remote repositories
+
+FIXME: Add example of consuming Dagger module in public repo
+
+FIXME: Add example of consuming Dagger module in private repo
+
+
+## Supported protocols and schemes
+
+Dagger supports various reference ("ref") schemes for remote repositories and modules, accommodating both HTTP and SSH protocols. These schemes are compatible with all Git repositories hosted on platforms such as GitHub, GitLab, BitBucket, Azure DevOps, Codeberg, and Sourcehut.
+
+FIXME: Update to also mention public/private repositories in this table
+FIXME: Add "Buildkit ref style though: ref#branch:version" for private repos
 
 | Protocol | Scheme            | Private Modules Support | Example                                      |
 |----------|-------------------|-------------------------|----------------------------------------------|
@@ -25,62 +42,48 @@ Dagger supports various reference ("ref") schemes for remote modules, accommodat
 | SSH      | SCP-like          | Supported               | `git@github.com:username/repo.git[/subdir][@version]`     |
 | SSH      | Explicit SSH      | Supported               | `ssh://git@github.com/username/repo.git[/subdir][@version]` |
 
-### Additional Ref Options
+Dagger provides additional flexibility in referencing modules through the following options:
 
-Dagger provides flexibility in referencing modules through the following options:
+FIXME: is the below only applicable for modules in private repos? or all private repos?
 
 - The `.git` extension is optional for HTTP refs or explicit SSH refs, except for [GitLab, when referencing modules stored on a private repo or private subgroup](https://gitlab.com/gitlab-org/gitlab-foss/-/blob/master/lib/gitlab/middleware/go.rb#L229-237).
-- **Monorepo support**: Append `/subpath` to access a specific subdirectory within the repository.
-- **Version specification**: Add `@version` to target a particular version of the module. This can be a tag, branch name, or full commit hash. If omitted, the default branch is used.
+- Monorepo support: Append `/subpath` to access a specific subdirectory within the repository.
+- Version specification: Add `@version` to target a particular version of the module. This can be a tag, branch name, or full commit hash. If omitted, the default branch is used.
 
-### SSH Refs and Authentication
+### Configuring SSH authentication
 
-Here is an overview of how Dagger handles authentication when using SSH refs:
+Dagger mounts the socket specified by your host's `SSH_AUTH_SOCK` environment variable to the Dagger Engine. This is essential for SSH refs, as most Git servers use your SSH key for authentication and tracking purposes, even when cloning public repositories.
 
-Dagger mounts the socket specified by your host's `SSH_AUTH_SOCK` environment variable to the engine. This is essential for SSH refs, as most Git servers use your SSH key for authentication and tracking purposes, even when cloning public repositories. Ensure that the `SSH_AUTH_SOCK` environment variable is properly set in your environment when using SSH refs.
+This means that you must ensure that the `SSH_AUTH_SOCK` environment variable is properly set in your environment when using SSH refs with Dagger.
 
-For detailed instructions on setting up SSH authentication, including how to generate SSH keys, start the SSH agent, and add your keys, please refer to the following external documentation:
+[Read detailed instructions on setting up SSH authentication](https://docs.github.com/en/authentication/connecting-to-github-with-ssh), including how to generate SSH keys, start the SSH agent, and add your keys.
 
-[Connecting to GitHub with SSH](https://docs.github.com/en/authentication/connecting-to-github-with-ssh)
+### Best practices
 
-This guide provides comprehensive information on:
-
-- Generating SSH key pairs
-- Setting up public key authentication on Linux, macOS, and Windows
-- Configuring SSH clients
-- Best practices for SSH key management
-
-You can ensure that your SSH authentication is properly configured for use with Dagger by following this guide.
-
-### Best Practices
+FIXME: does below apply only for modules or for repos as dir arguments also?
 
 For quick and easy referencing:
 - Copy the repository ref from your preferred Git server's UI.
 - Add a `/subpath` if you need to target a specific directory within the repository.
 - Append `@version` if you want to specify a particular version or commit.
 
-### Known Limitations and Workarounds
+### Known limitations and workarounds
+
+FIXME: does below  apply only for modules or for repos as dir arguments also?
 
 This section outlines current limitations and provides workarounds for common issues. We're actively working on improvements for these areas.
 
-#### 1. Platform Support
+#### Windows support
 
 Currently, SSH refs are fully supported on UNIX-based systems (Linux and macOS). Windows support is under development. Track progress and contribute to the discussion in our [GitHub issue for Windows support](https://github.com/dagger/dagger/issues/8313).
 
-#### 2. Multiple SSH Keys
+#### Multiple SSH keys
 
-**Issue**: SSH forwarding may fail when multiple keys are loaded in your SSH agent.
+SSH forwarding may fail when multiple keys are loaded in your SSH agent. This is under active investigation in our [GitHub issue](https://github.com/dagger/dagger/issues/8288). Until this is resolved, the following workaround may be used:
 
-**Status**: Under [active investigation](https://github.com/dagger/dagger/issues/8288).
-
-**Workaround**: 
 1. Clear all loaded keys: `ssh-add -D`
-2. Add only the required key: `ssh-add /path/to/key`
+2. Add back only the required key: `ssh-add /path/to/key`
 
-#### 3. Environment Variable Expansion
+#### Environment variable expansion
 
-**Issue**: Shell expansion characters (e.g., `~`) in the `SSH_AUTH_SOCK` environment variable are not automatically expanded.
-
-**Status**: Under [active investigation](https://github.com/dagger/dagger/issues/8337).
-
-**Workaround**: Use the full path instead of `~` when setting `SSH_AUTH_SOCK`.
+Shell expansion characters (e.g., `~`) in the `SSH_AUTH_SOCK` environment variable are not automatically expanded. This is under active investigation in our [GitHub issue](https://github.com/dagger/dagger/issues/8337). Until this is resolved, the workaround is to use the full path instead of `~` when setting `SSH_AUTH_SOCK`.
