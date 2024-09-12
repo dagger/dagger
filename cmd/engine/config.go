@@ -4,10 +4,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/containerd/containerd/pkg/userns"
 	"github.com/moby/buildkit/cmd/buildkitd/config"
 	"github.com/moby/buildkit/util/appdefaults"
 	"github.com/moby/buildkit/util/archutil"
+	"github.com/moby/sys/userns"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 
