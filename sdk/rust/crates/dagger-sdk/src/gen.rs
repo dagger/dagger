@@ -2157,7 +2157,7 @@ impl Container {
         let query = self.selection.select("user");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Add an OCI annotation to the image manifest.
+    /// Retrieves this container plus the given OCI anotation.
     ///
     /// # Arguments
     ///
@@ -3119,6 +3119,20 @@ impl Container {
     pub fn with_workdir(&self, path: impl Into<String>) -> Container {
         let mut query = self.selection.select("withWorkdir");
         query = query.arg("path", path.into());
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves this container minus the given OCI annotation.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the annotation.
+    pub fn without_annotation(&self, name: impl Into<String>) -> Container {
+        let mut query = self.selection.select("withoutAnnotation");
+        query = query.arg("name", name.into());
         Container {
             proc: self.proc.clone(),
             selection: query,

@@ -47,7 +47,7 @@ type DefaultTerminalCmdOpts struct {
 	InsecureRootCapabilities dagql.Optional[dagql.Boolean] `default:"false"`
 }
 
-type Annotation struct {
+type ContainerAnnotation struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`
 }
@@ -75,7 +75,7 @@ type Container struct {
 	Platform Platform `json:"platform,omitempty"`
 
 	// OCI annotations
-	Annotations []Annotation `json:"annotations,omitempty"`
+	Annotations []ContainerAnnotation `json:"annotations,omitempty"`
 
 	// Secrets to expose to the container.
 	Secrets []ContainerSecret `json:"secret_env,omitempty"`
@@ -1072,10 +1072,31 @@ func (container Container) Evaluate(ctx context.Context) (*buildkit.Result, erro
 
 func (container *Container) WithAnnotation(ctx context.Context, key, value string) (*Container, error) {
 	container = container.Clone()
-	container.Annotations = append(container.Annotations, Annotation{
+
+	container.Annotations = append(container.Annotations, ContainerAnnotation{
 		Key:   key,
 		Value: value,
 	})
+
+	// set image ref to empty string
+	container.ImageRef = ""
+
+	return container, nil
+}
+
+func (container *Container) WithoutAnnotation(ctx context.Context, name string) (*Container, error) {
+	container = container.Clone()
+
+	for i, annotation := range container.Annotations {
+		if annotation.Key == name {
+			container.Annotations = append(container.Annotations[:i], container.Annotations[i+1:]...)
+			break
+		}
+	}
+
+	// set image ref to empty string
+	container.ImageRef = ""
+
 	return container, nil
 }
 

@@ -420,9 +420,13 @@ func (s *containerSchema) Install() {
 				`Will execute default command if none is set, or error if there's no default.`),
 
 		dagql.Func("withAnnotation", s.withAnnotation).
-			Doc(`Add an OCI annotation to the image manifest.`).
+			Doc(`Retrieves this container plus the given OCI anotation.`).
 			ArgDoc("name", `The name of the annotation.`).
 			ArgDoc("value", `The value of the annotation.`),
+
+		dagql.Func("withoutAnnotation", s.withoutAnnotation).
+			Doc(`Retrieves this container minus the given OCI annotation.`).
+			ArgDoc("name", `The name of the annotation.`),
 
 		dagql.Func("publish", s.publish).
 			Impure("Writes to the specified Docker registry.").
@@ -1119,6 +1123,14 @@ type containerWithAnnotationArgs struct {
 
 func (s *containerSchema) withAnnotation(ctx context.Context, parent *core.Container, args containerWithAnnotationArgs) (*core.Container, error) {
 	return parent.WithAnnotation(ctx, args.Name, args.Value)
+}
+
+type containerWithoutAnnotationArgs struct {
+	Name string
+}
+
+func (s *containerSchema) withoutAnnotation(ctx context.Context, parent *core.Container, args containerWithoutAnnotationArgs) (*core.Container, error) {
+	return parent.WithoutAnnotation(ctx, args.Name)
 }
 
 type containerPublishArgs struct {

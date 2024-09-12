@@ -1940,7 +1940,7 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Add an OCI annotation to the image manifest.
+   * Retrieves this container plus the given OCI anotation.
    * @param name The name of the annotation.
    * @param value The value of the annotation.
    */
@@ -2523,6 +2523,23 @@ export class Container extends BaseClient {
         {
           operation: "withWorkdir",
           args: { path },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Retrieves this container minus the given OCI annotation.
+   * @param name The name of the annotation.
+   */
+  withoutAnnotation = (name: string): Container => {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withoutAnnotation",
+          args: { name },
         },
       ],
       ctx: this._ctx,
