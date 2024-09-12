@@ -2930,6 +2930,77 @@ func (m *Test) Test(ctx context.Context) (string, error) {
 			require.NoError(t, err)
 			require.Equal(t, "HELLO FROM FOO", out)
 		})
+
+		t.Run("cached", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+			ctr := c.Container().From(golangImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
+
+			ctr = ctr.
+				WithWorkdir("/work/dep").
+				With(daggerExec("init", "--name=dep", "--sdk=go", "--source=.")).
+				WithNewFile("main.go", `package main
+
+import (
+	"dagger/dep/internal/dagger"
+)
+
+type Dep struct {}
+
+type SecretMount struct {
+	Secret *dagger.Secret
+	Path string
+}
+
+func (m *Dep) SecretMount(path string) *SecretMount {
+	return &SecretMount{
+		Secret: dag.SetSecret("foo", "hello from mount"),
+		Path:   path,
+	}
+}
+
+func (m *SecretMount) Mount(ctr *dagger.Container) *dagger.Container {
+	return ctr.WithMountedSecret(m.Path, m.Secret)
+}
+`,
+				)
+
+			ctr = ctr.
+				WithWorkdir("/work").
+				With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+				With(daggerExec("install", "./dep")).
+				WithNewFile("main.go", `package main
+
+import (
+	"context"
+  "fmt"
+)
+
+type Test struct {}
+
+func (m *Test) Foo(ctx context.Context) (string, error) {
+  return m.impl(ctx, "foo")
+}
+
+func (m *Test) Bar(ctx context.Context) (string, error) {
+  return m.impl(ctx, "bar")
+}
+
+func (m *Test) impl(ctx context.Context, name string) (string, error) {
+	mount := dag.Dep().SecretMount("/mnt/secret")
+	return dag.Container().
+		From("alpine").
+		With(mount.Mount).
+		WithExec([]string{"sh", "-c", fmt.Sprintf("(echo %s && cat /mnt/secret) | tr [a-z] [A-Z]", name)}).
+		Stdout(ctx)
+}
+`,
+				)
+
+			out, err := ctr.With(daggerQuery("{test{foo,bar}}")).Stdout(ctx)
+			require.NoError(t, err)
+			require.JSONEq(t, `{"test": {"foo": "FOO\nHELLO FROM MOUNT", "bar": "BAR\nHELLO FROM MOUNT"}}`, out)
+		})
 	})
 
 	t.Run("parent fields", func(ctx context.Context, t *testctx.T) {
