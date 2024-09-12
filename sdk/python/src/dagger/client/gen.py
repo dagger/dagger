@@ -501,7 +501,12 @@ class Container(Type):
         _ctx = self._select("defaultArgs", _args)
         return await _ctx.execute(list[str])
 
-    def directory(self, path: str) -> "Directory":
+    def directory(
+        self,
+        path: str,
+        *,
+        expand: bool | None = False,
+    ) -> "Directory":
         """Retrieves a directory at the given path.
 
         Mounts are included.
@@ -510,9 +515,14 @@ class Container(Type):
         ----------
         path:
             The path of the directory to retrieve (e.g., "./src").
+        expand:
+            Replace ${VAR} or $VAR in the value of path according to the
+            current environment variables defined in the container (e.g.
+            "/$VAR/foo").
         """
         _args = [
             Arg("path", path),
+            Arg("expand", expand, False),
         ]
         _ctx = self._select("directory", _args)
         return Directory(_ctx)
@@ -625,6 +635,7 @@ class Container(Type):
         platform_variants: "list[Container] | None" = None,
         forced_compression: ImageLayerCompression | None = None,
         media_types: ImageMediaTypes | None = ImageMediaTypes.OCIMediaTypes,
+        expand: bool | None = False,
     ) -> str:
         """Writes the container as an OCI tarball to the destination file path on
         the host.
@@ -652,6 +663,10 @@ class Container(Type):
             Defaults to OCI, which is largely compatible with most recent
             container runtimes, but Docker may be needed for older runtimes
             without OCI support.
+        expand:
+            Replace ${VAR} or $VAR in the value of path according to the
+            current environment variables defined in the container (e.g.
+            "/$VAR/foo").
 
         Returns
         -------
@@ -675,6 +690,7 @@ class Container(Type):
             ),
             Arg("forcedCompression", forced_compression, None),
             Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
+            Arg("expand", expand, False),
         ]
         _ctx = self._select("export", _args)
         return await _ctx.execute(str)
@@ -704,7 +720,12 @@ class Container(Type):
             for v in _ids
         ]
 
-    def file(self, path: str) -> "File":
+    def file(
+        self,
+        path: str,
+        *,
+        expand: bool | None = False,
+    ) -> "File":
         """Retrieves a file at the given path.
 
         Mounts are included.
@@ -713,9 +734,14 @@ class Container(Type):
         ----------
         path:
             The path of the file to retrieve (e.g., "./README.md").
+        expand:
+            Replace ${VAR} or $VAR in the value of path according to the
+            current environment variables defined in the container (e.g.
+            "/$VAR/foo.txt").
         """
         _args = [
             Arg("path", path),
+            Arg("expand", expand, False),
         ]
         _ctx = self._select("file", _args)
         return File(_ctx)
@@ -1211,6 +1237,7 @@ class Container(Type):
         exclude: list[str] | None = None,
         include: list[str] | None = None,
         owner: str | None = "",
+        expand: bool | None = False,
     ) -> Self:
         """Retrieves this container plus a directory written at the given path.
 
@@ -1231,6 +1258,10 @@ class Container(Type):
             The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
+        expand:
+            Replace ${VAR} or $VAR in the value of path according to the
+            current environment variables defined in the container (e.g.
+            "/$VAR/foo").
         """
         _args = [
             Arg("path", path),
@@ -1238,6 +1269,7 @@ class Container(Type):
             Arg("exclude", [] if exclude is None else exclude),
             Arg("include", [] if include is None else include),
             Arg("owner", owner, ""),
+            Arg("expand", expand, False),
         ]
         _ctx = self._select("withDirectory", _args)
         return Container(_ctx)
@@ -1280,8 +1312,8 @@ class Container(Type):
         value:
             The value of the environment variable. (e.g., "localhost").
         expand:
-            Replace `${VAR}` or `$VAR` in the value according to the current
-            environment variables defined in the container (e.g.,
+            Replace ${VAR} or $VAR in the value according to the current
+            environment variables defined in the container (e.g.
             "/opt/bin:$PATH").
         """
         _args = [
@@ -1302,6 +1334,7 @@ class Container(Type):
         redirect_stderr: str | None = "",
         experimental_privileged_nesting: bool | None = False,
         insecure_root_capabilities: bool | None = False,
+        expand: bool | None = False,
     ) -> Self:
         """Retrieves this container after executing the specified command inside
         it.
@@ -1334,6 +1367,9 @@ class Container(Type):
             --privileged" flag. Containerization does not provide any security
             guarantees when using this option. It should only be used when
             absolutely necessary and only with trusted commands.
+        expand:
+            Replace ${VAR} or $VAR in the args according to the current
+            environment variables defined in the container (e.g. "/$VAR/foo").
         """
         _args = [
             Arg("args", args),
@@ -1345,6 +1381,7 @@ class Container(Type):
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
             Arg("insecureRootCapabilities", insecure_root_capabilities, False),
+            Arg("expand", expand, False),
         ]
         _ctx = self._select("withExec", _args)
         return Container(_ctx)
@@ -1392,6 +1429,7 @@ class Container(Type):
         *,
         permissions: int | None = None,
         owner: str | None = "",
+        expand: bool | None = False,
     ) -> Self:
         """Retrieves this container plus the contents of the given file copied to
         the given path.
@@ -1409,12 +1447,17 @@ class Container(Type):
             The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
+        expand:
+            Replace ${VAR} or $VAR in the value of path according to the
+            current environment variables defined in the container (e.g.
+            "/$VAR/foo.txt").
         """
         _args = [
             Arg("path", path),
             Arg("source", source),
             Arg("permissions", permissions, None),
             Arg("owner", owner, ""),
+            Arg("expand", expand, False),
         ]
         _ctx = self._select("withFile", _args)
         return Container(_ctx)
@@ -1426,6 +1469,7 @@ class Container(Type):
         *,
         permissions: int | None = None,
         owner: str | None = "",
+        expand: bool | None = False,
     ) -> Self:
         """Retrieves this container plus the contents of the given files copied
         to the given path.
@@ -1443,12 +1487,17 @@ class Container(Type):
             The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
+        expand:
+            Replace ${VAR} or $VAR in the value of path according to the
+            current environment variables defined in the container (e.g.
+            "/$VAR/foo.txt").
         """
         _args = [
             Arg("path", path),
             Arg("sources", sources),
             Arg("permissions", permissions, None),
             Arg("owner", owner, ""),
+            Arg("expand", expand, False),
         ]
         _ctx = self._select("withFiles", _args)
         return Container(_ctx)
@@ -1487,6 +1536,7 @@ class Container(Type):
         source: "Directory | None" = None,
         sharing: CacheSharingMode | None = CacheSharingMode.SHARED,
         owner: str | None = "",
+        expand: bool | None = False,
     ) -> Self:
         """Retrieves this container plus a cache volume mounted at the given
         path.
@@ -1509,6 +1559,10 @@ class Container(Type):
             The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
+        expand:
+            Replace ${VAR} or $VAR in the value of path according to the
+            current environment variables defined in the container (e.g.
+            "/$VAR/foo").
         """
         _args = [
             Arg("path", path),
@@ -1516,6 +1570,7 @@ class Container(Type):
             Arg("source", source, None),
             Arg("sharing", sharing, CacheSharingMode.SHARED),
             Arg("owner", owner, ""),
+            Arg("expand", expand, False),
         ]
         _ctx = self._select("withMountedCache", _args)
         return Container(_ctx)
@@ -1526,6 +1581,7 @@ class Container(Type):
         source: "Directory",
         *,
         owner: str | None = "",
+        expand: bool | None = False,
     ) -> Self:
         """Retrieves this container plus a directory mounted at the given path.
 
@@ -1540,11 +1596,16 @@ class Container(Type):
             The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
+        expand:
+            Replace ${VAR} or $VAR in the value of path according to the
+            current environment variables defined in the container (e.g.
+            "/$VAR/foo").
         """
         _args = [
             Arg("path", path),
             Arg("source", source),
             Arg("owner", owner, ""),
+            Arg("expand", expand, False),
         ]
         _ctx = self._select("withMountedDirectory", _args)
         return Container(_ctx)
@@ -1555,6 +1616,7 @@ class Container(Type):
         source: "File",
         *,
         owner: str | None = "",
+        expand: bool | None = False,
     ) -> Self:
         """Retrieves this container plus a file mounted at the given path.
 
@@ -1569,11 +1631,16 @@ class Container(Type):
             The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
+        expand:
+            Replace ${VAR} or $VAR in the value of path according to the
+            current environment variables defined in the container (e.g.
+            "/$VAR/foo.txt").
         """
         _args = [
             Arg("path", path),
             Arg("source", source),
             Arg("owner", owner, ""),
+            Arg("expand", expand, False),
         ]
         _ctx = self._select("withMountedFile", _args)
         return Container(_ctx)
@@ -1585,6 +1652,7 @@ class Container(Type):
         *,
         owner: str | None = "",
         mode: int | None = 256,
+        expand: bool | None = False,
     ) -> Self:
         """Retrieves this container plus a secret mounted into a file at the
         given path.
@@ -1603,17 +1671,27 @@ class Container(Type):
         mode:
             Permission given to the mounted secret (e.g., 0600).
             This option requires an owner to be set to be active.
+        expand:
+            Replace ${VAR} or $VAR in the value of path according to the
+            current environment variables defined in the container (e.g.
+            "/$VAR/foo").
         """
         _args = [
             Arg("path", path),
             Arg("source", source),
             Arg("owner", owner, ""),
             Arg("mode", mode, 256),
+            Arg("expand", expand, False),
         ]
         _ctx = self._select("withMountedSecret", _args)
         return Container(_ctx)
 
-    def with_mounted_temp(self, path: str) -> Self:
+    def with_mounted_temp(
+        self,
+        path: str,
+        *,
+        expand: bool | None = False,
+    ) -> Self:
         """Retrieves this container plus a temporary directory mounted at the
         given path. Any writes will be ephemeral to a single withExec call;
         they will not be persisted to subsequent withExecs.
@@ -1622,9 +1700,14 @@ class Container(Type):
         ----------
         path:
             Location of the temporary directory (e.g., "/tmp/temp_dir").
+        expand:
+            Replace ${VAR} or $VAR in the value of path according to the
+            current environment variables defined in the container (e.g.
+            "/$VAR/foo").
         """
         _args = [
             Arg("path", path),
+            Arg("expand", expand, False),
         ]
         _ctx = self._select("withMountedTemp", _args)
         return Container(_ctx)
@@ -1636,6 +1719,7 @@ class Container(Type):
         *,
         permissions: int | None = 420,
         owner: str | None = "",
+        expand: bool | None = False,
     ) -> Self:
         """Retrieves this container plus a new file written at the given path.
 
@@ -1652,12 +1736,17 @@ class Container(Type):
             The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
+        expand:
+            Replace ${VAR} or $VAR in the value of path according to the
+            current environment variables defined in the container (e.g.
+            "/$VAR/foo.txt").
         """
         _args = [
             Arg("path", path),
             Arg("contents", contents),
             Arg("permissions", permissions, 420),
             Arg("owner", owner, ""),
+            Arg("expand", expand, False),
         ]
         _ctx = self._select("withNewFile", _args)
         return Container(_ctx)
@@ -1755,6 +1844,7 @@ class Container(Type):
         source: "Socket",
         *,
         owner: str | None = "",
+        expand: bool | None = False,
     ) -> Self:
         """Retrieves this container plus a socket forwarded to the given Unix
         socket path.
@@ -1770,11 +1860,16 @@ class Container(Type):
             The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
+        expand:
+            Replace ${VAR} or $VAR in the value of path according to the
+            current environment variables defined in the container (e.g.
+            "/$VAR/foo").
         """
         _args = [
             Arg("path", path),
             Arg("source", source),
             Arg("owner", owner, ""),
+            Arg("expand", expand, False),
         ]
         _ctx = self._select("withUnixSocket", _args)
         return Container(_ctx)
@@ -1793,16 +1888,26 @@ class Container(Type):
         _ctx = self._select("withUser", _args)
         return Container(_ctx)
 
-    def with_workdir(self, path: str) -> Self:
+    def with_workdir(
+        self,
+        path: str,
+        *,
+        expand: bool | None = False,
+    ) -> Self:
         """Retrieves this container with a different working directory.
 
         Parameters
         ----------
         path:
             The path to set as the working directory (e.g., "/app").
+        expand:
+            Replace ${VAR} or $VAR in the value of path according to the
+            current environment variables defined in the container (e.g.
+            "/$VAR/foo").
         """
         _args = [
             Arg("path", path),
+            Arg("expand", expand, False),
         ]
         _ctx = self._select("withWorkdir", _args)
         return Container(_ctx)
@@ -1829,16 +1934,26 @@ class Container(Type):
         _ctx = self._select("withoutDefaultArgs", _args)
         return Container(_ctx)
 
-    def without_directory(self, path: str) -> Self:
+    def without_directory(
+        self,
+        path: str,
+        *,
+        expand: bool | None = False,
+    ) -> Self:
         """Retrieves this container with the directory at the given path removed.
 
         Parameters
         ----------
         path:
             Location of the directory to remove (e.g., ".github/").
+        expand:
+            Replace ${VAR} or $VAR in the value of path according to the
+            current environment variables defined in the container (e.g.
+            "/$VAR/foo").
         """
         _args = [
             Arg("path", path),
+            Arg("expand", expand, False),
         ]
         _ctx = self._select("withoutDirectory", _args)
         return Container(_ctx)
@@ -1897,30 +2012,50 @@ class Container(Type):
         _ctx = self._select("withoutExposedPort", _args)
         return Container(_ctx)
 
-    def without_file(self, path: str) -> Self:
+    def without_file(
+        self,
+        path: str,
+        *,
+        expand: bool | None = False,
+    ) -> Self:
         """Retrieves this container with the file at the given path removed.
 
         Parameters
         ----------
         path:
             Location of the file to remove (e.g., "/file.txt").
+        expand:
+            Replace ${VAR} or $VAR in the value of path according to the
+            current environment variables defined in the container (e.g.
+            "/$VAR/foo.txt").
         """
         _args = [
             Arg("path", path),
+            Arg("expand", expand, False),
         ]
         _ctx = self._select("withoutFile", _args)
         return Container(_ctx)
 
-    def without_files(self, paths: list[str]) -> Self:
+    def without_files(
+        self,
+        paths: list[str],
+        *,
+        expand: bool | None = False,
+    ) -> Self:
         """Retrieves this container with the files at the given paths removed.
 
         Parameters
         ----------
         paths:
             Location of the files to remove (e.g., ["/file.txt"]).
+        expand:
+            Replace ${VAR} or $VAR in the value of paths according to the
+            current environment variables defined in the container (e.g.
+            "/$VAR/foo.txt").
         """
         _args = [
             Arg("paths", paths),
+            Arg("expand", expand, False),
         ]
         _ctx = self._select("withoutFiles", _args)
         return Container(_ctx)
@@ -1950,7 +2085,12 @@ class Container(Type):
         _ctx = self._select("withoutLabel", _args)
         return Container(_ctx)
 
-    def without_mount(self, path: str) -> Self:
+    def without_mount(
+        self,
+        path: str,
+        *,
+        expand: bool | None = False,
+    ) -> Self:
         """Retrieves this container after unmounting everything at the given
         path.
 
@@ -1958,9 +2098,14 @@ class Container(Type):
         ----------
         path:
             Location of the cache directory (e.g., "/cache/node_modules").
+        expand:
+            Replace ${VAR} or $VAR in the value of path according to the
+            current environment variables defined in the container (e.g.
+            "/$VAR/foo").
         """
         _args = [
             Arg("path", path),
+            Arg("expand", expand, False),
         ]
         _ctx = self._select("withoutMount", _args)
         return Container(_ctx)
@@ -1997,16 +2142,26 @@ class Container(Type):
         _ctx = self._select("withoutSecretVariable", _args)
         return Container(_ctx)
 
-    def without_unix_socket(self, path: str) -> Self:
+    def without_unix_socket(
+        self,
+        path: str,
+        *,
+        expand: bool | None = False,
+    ) -> Self:
         """Retrieves this container with a previously added Unix socket removed.
 
         Parameters
         ----------
         path:
             Location of the socket to remove (e.g., "/tmp/socket").
+        expand:
+            Replace ${VAR} or $VAR in the value of path according to the
+            current environment variables defined in the container (e.g.
+            "/$VAR/foo").
         """
         _args = [
             Arg("path", path),
+            Arg("expand", expand, False),
         ]
         _ctx = self._select("withoutUnixSocket", _args)
         return Container(_ctx)

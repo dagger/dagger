@@ -3682,6 +3682,10 @@
                             <h5 class="field-arguments-heading"> Arguments </h5>
                             <div class="field-argument-list">
                               <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>expand</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. &quot;/$VAR/foo&quot;).</p>
+                              </div>
+                              <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
                                 <p>The path of the directory to retrieve (e.g., &quot;./src&quot;).</p>
                               </div>
@@ -3756,6 +3760,10 @@
                             <h5 class="field-arguments-heading"> Arguments </h5>
                             <div class="field-argument-list">
                               <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>expand</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. &quot;/$VAR/foo&quot;).</p>
+                              </div>
+                              <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>forcedCompression</code></span> - <span class="property-type"><a href="#definition-ImageLayerCompression"><code>ImageLayerCompression</code></a></span></h6>
                                 <p>Force each layer of the exported image to use the specified compression algorithm.</p>
                                 <p>If this is unset, then if a layer already has a compressed blob in the engine&#39;s cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine&#39;s cache, then it will be compressed using Gzip.</p>
@@ -3798,6 +3806,10 @@
                           <div class="field-arguments">
                             <h5 class="field-arguments-heading"> Arguments </h5>
                             <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>expand</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. &quot;/$VAR/foo.txt&quot;).</p>
+                              </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
                                 <p>The path of the file to retrieve (e.g., &quot;./README.md&quot;).</p>
@@ -4081,6 +4093,10 @@
                                 <p>Patterns to exclude in the written directory (e.g. [&quot;node_modules/**&quot;, &quot;.gitignore&quot;, &quot;.git/&quot;]).</p>
                               </div>
                               <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>expand</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. &quot;/$VAR/foo&quot;).</p>
+                              </div>
+                              <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>include</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]</code></a></span></h6>
                                 <p>Patterns to include in the written directory (e.g. [&quot;*.go&quot;, &quot;go.mod&quot;, &quot;go.sum&quot;]).</p>
                               </div>
@@ -4130,7 +4146,7 @@
                             <div class="field-argument-list">
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>expand</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
-                                <p>Replace <code>${VAR}</code> or <code>$VAR</code> in the value according to the current environment variables defined in the container (e.g., &quot;/opt/bin:$PATH&quot;).</p>
+                                <p>Replace ${VAR} or $VAR in the value according to the current environment variables defined in the container (e.g. &quot;/opt/bin:$PATH&quot;).</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
@@ -4157,6 +4173,10 @@
                                 <h6 class="field-argument-name"><span class="property-name"><code>args</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span></h6>
                                 <p>Command to run instead of the container&#39;s default command (e.g., [&quot;run&quot;, &quot;main.go&quot;]).</p>
                                 <p>If empty, the container&#39;s default command is used.</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>expand</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Replace ${VAR} or $VAR in the args according to the current environment variables defined in the container (e.g. &quot;/$VAR/foo&quot;).</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>experimentalPrivilegedNesting</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
@@ -4237,6 +4257,10 @@
                             <h5 class="field-arguments-heading"> Arguments </h5>
                             <div class="field-argument-list">
                               <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>expand</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. &quot;/$VAR/foo.txt&quot;).</p>
+                              </div>
+                              <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>owner</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
                                 <p>A user:group to set for the file.</p>
                                 <p>The user and group can either be an ID (1000:1000) or a name (foo:bar).</p>
@@ -4267,6 +4291,10 @@
                           <div class="field-arguments">
                             <h5 class="field-arguments-heading"> Arguments </h5>
                             <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>expand</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. &quot;/$VAR/foo.txt&quot;).</p>
+                              </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>owner</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
                                 <p>A user:group to set for the files.</p>
@@ -4328,6 +4356,10 @@
                                 <p>Identifier of the cache volume to mount.</p>
                               </div>
                               <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>expand</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. &quot;/$VAR/foo&quot;).</p>
+                              </div>
+                              <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>owner</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
                                 <p>A user:group to set for the mounted cache directory.</p>
                                 <p>Note that this changes the ownership of the specified mount along with the initial filesystem provided by source (if any). It does not have any effect if/when the cache has already been created.</p>
@@ -4360,6 +4392,10 @@
                             <h5 class="field-arguments-heading"> Arguments </h5>
                             <div class="field-argument-list">
                               <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>expand</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. &quot;/$VAR/foo&quot;).</p>
+                              </div>
+                              <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>owner</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
                                 <p>A user:group to set for the mounted directory and its contents.</p>
                                 <p>The user and group can either be an ID (1000:1000) or a name (foo:bar).</p>
@@ -4387,6 +4423,10 @@
                             <h5 class="field-arguments-heading"> Arguments </h5>
                             <div class="field-argument-list">
                               <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>expand</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. &quot;/$VAR/foo.txt&quot;).</p>
+                              </div>
+                              <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>owner</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
                                 <p>A user or user:group to set for the mounted file.</p>
                                 <p>The user and group can either be an ID (1000:1000) or a name (foo:bar).</p>
@@ -4413,6 +4453,10 @@
                           <div class="field-arguments">
                             <h5 class="field-arguments-heading"> Arguments </h5>
                             <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>expand</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. &quot;/$VAR/foo&quot;).</p>
+                              </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>mode</code></span> - <span class="property-type"><a href="#definition-Int"><code>Int</code></a></span></h6>
                                 <p>Permission given to the mounted secret (e.g., 0600).</p>
@@ -4446,6 +4490,10 @@
                             <h5 class="field-arguments-heading"> Arguments </h5>
                             <div class="field-argument-list">
                               <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>expand</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. &quot;/$VAR/foo&quot;).</p>
+                              </div>
+                              <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
                                 <p>Location of the temporary directory (e.g., &quot;/tmp/temp_dir&quot;).</p>
                               </div>
@@ -4465,6 +4513,10 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>contents</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
                                 <p>Content of the file to write (e.g., &quot;Hello world!&quot;).</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>expand</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. &quot;/$VAR/foo.txt&quot;).</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>owner</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
@@ -4514,6 +4566,10 @@
                           <div class="field-arguments">
                             <h5 class="field-arguments-heading"> Arguments </h5>
                             <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>expand</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. &quot;/$VAR/foo&quot;).</p>
+                              </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
                                 <p>Location of the directory to remove (e.g., &quot;.github/&quot;).</p>
@@ -4587,6 +4643,10 @@
                             <h5 class="field-arguments-heading"> Arguments </h5>
                             <div class="field-argument-list">
                               <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>expand</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. &quot;/$VAR/foo.txt&quot;).</p>
+                              </div>
+                              <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
                                 <p>Location of the file to remove (e.g., &quot;/file.txt&quot;).</p>
                               </div>
@@ -4603,6 +4663,10 @@
                           <div class="field-arguments">
                             <h5 class="field-arguments-heading"> Arguments </h5>
                             <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>expand</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Replace ${VAR} or $VAR in the value of paths according to the current environment variables defined in the container (e.g. &quot;/$VAR/foo.txt&quot;).</p>
+                              </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>paths</code></span> - <span class="property-type"><a href="#definition-String"><code>[String!]!</code></a></span></h6>
                                 <p>Location of the files to remove (e.g., [&quot;/file.txt&quot;]).</p>
@@ -4644,6 +4708,10 @@
                           <div class="field-arguments">
                             <h5 class="field-arguments-heading"> Arguments </h5>
                             <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>expand</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. &quot;/$VAR/foo&quot;).</p>
+                              </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
                                 <p>Location of the cache directory (e.g., &quot;/cache/node_modules&quot;).</p>
@@ -4696,6 +4764,10 @@
                           <div class="field-arguments">
                             <h5 class="field-arguments-heading"> Arguments </h5>
                             <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>expand</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. &quot;/$VAR/foo&quot;).</p>
+                              </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
                                 <p>Location of the socket to remove (e.g., &quot;/tmp/socket&quot;).</p>
@@ -4818,6 +4890,10 @@
                             <h5 class="field-arguments-heading"> Arguments </h5>
                             <div class="field-argument-list">
                               <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>expand</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. &quot;/$VAR/foo&quot;).</p>
+                              </div>
+                              <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>owner</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
                                 <p>A user:group to set for the mounted socket.</p>
                                 <p>The user and group can either be an ID (1000:1000) or a name (foo:bar).</p>
@@ -4861,6 +4937,10 @@
                           <div class="field-arguments">
                             <h5 class="field-arguments-heading"> Arguments </h5>
                             <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>expand</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
+                                <p>Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. &quot;/$VAR/foo&quot;).</p>
+                              </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>path</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
                                 <p>The path to set as the working directory (e.g., &quot;/app&quot;).</p>

@@ -46,12 +46,16 @@ func TestCoreModTypeDefs(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, core.TypeDefKindObject, fileFn.ReturnType.Kind)
 	require.Equal(t, "File", fileFn.ReturnType.AsObject.Value.Name)
-	require.Len(t, fileFn.Args, 1)
+	require.Len(t, fileFn.Args, 2)
 
 	fileFnPathArg := fileFn.Args[0]
 	require.Equal(t, "path", fileFnPathArg.Name)
 	require.Equal(t, core.TypeDefKindString, fileFnPathArg.TypeDef.Kind)
 	require.False(t, fileFnPathArg.TypeDef.Optional)
+
+	fileFnExpandArg := fileFn.Args[1]
+	require.Equal(t, "expand", fileFnExpandArg.Name)
+	require.Equal(t, core.TypeDefKindBoolean, fileFnExpandArg.TypeDef.Kind)
 
 	withMountedDirectoryFn, ok := ctrObj.FunctionByName("withMountedDirectory")
 	require.True(t, ok)

@@ -1479,7 +1479,16 @@ pub struct ContainerBuildOpts<'a> {
     pub target: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct ContainerDirectoryOpts {
+    /// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    #[builder(setter(into, strip_option), default)]
+    pub expand: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct ContainerExportOpts {
+    /// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    #[builder(setter(into, strip_option), default)]
+    pub expand: Option<bool>,
     /// Force each layer of the exported image to use the specified compression algorithm.
     /// If this is unset, then if a layer already has a compressed blob in the engine's cache, that will be used (this can result in a mix of compression algorithms for different layers). If this is unset and a layer has no compressed blob in the engine's cache, then it will be compressed using Gzip.
     #[builder(setter(into, strip_option), default)]
@@ -1492,6 +1501,12 @@ pub struct ContainerExportOpts {
     /// Used for multi-platform image.
     #[builder(setter(into, strip_option), default)]
     pub platform_variants: Option<Vec<ContainerId>>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ContainerFileOpts {
+    /// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    #[builder(setter(into, strip_option), default)]
+    pub expand: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerImportOpts<'a> {
@@ -1552,6 +1567,9 @@ pub struct ContainerWithDirectoryOpts<'a> {
     /// Patterns to exclude in the written directory (e.g. ["node_modules/**", ".gitignore", ".git/"]).
     #[builder(setter(into, strip_option), default)]
     pub exclude: Option<Vec<&'a str>>,
+    /// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    #[builder(setter(into, strip_option), default)]
+    pub expand: Option<bool>,
     /// Patterns to include in the written directory (e.g. ["*.go", "go.mod", "go.sum"]).
     #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
@@ -1569,12 +1587,15 @@ pub struct ContainerWithEntrypointOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithEnvVariableOpts {
-    /// Replace `${VAR}` or `$VAR` in the value according to the current environment variables defined in the container (e.g., "/opt/bin:$PATH").
+    /// Replace ${VAR} or $VAR in the value according to the current environment variables defined in the container (e.g. "/opt/bin:$PATH").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithExecOpts<'a> {
+    /// Replace ${VAR} or $VAR in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    #[builder(setter(into, strip_option), default)]
+    pub expand: Option<bool>,
     /// Provides Dagger access to the executed command.
     /// Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
     #[builder(setter(into, strip_option), default)]
@@ -1609,6 +1630,9 @@ pub struct ContainerWithExposedPortOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithFileOpts<'a> {
+    /// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    #[builder(setter(into, strip_option), default)]
+    pub expand: Option<bool>,
     /// A user:group to set for the file.
     /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
     /// If the group is omitted, it defaults to the same as the user.
@@ -1620,6 +1644,9 @@ pub struct ContainerWithFileOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithFilesOpts<'a> {
+    /// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    #[builder(setter(into, strip_option), default)]
+    pub expand: Option<bool>,
     /// A user:group to set for the files.
     /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
     /// If the group is omitted, it defaults to the same as the user.
@@ -1631,6 +1658,9 @@ pub struct ContainerWithFilesOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithMountedCacheOpts<'a> {
+    /// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    #[builder(setter(into, strip_option), default)]
+    pub expand: Option<bool>,
     /// A user:group to set for the mounted cache directory.
     /// Note that this changes the ownership of the specified mount along with the initial filesystem provided by source (if any). It does not have any effect if/when the cache has already been created.
     /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
@@ -1646,6 +1676,9 @@ pub struct ContainerWithMountedCacheOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithMountedDirectoryOpts<'a> {
+    /// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    #[builder(setter(into, strip_option), default)]
+    pub expand: Option<bool>,
     /// A user:group to set for the mounted directory and its contents.
     /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
     /// If the group is omitted, it defaults to the same as the user.
@@ -1654,6 +1687,9 @@ pub struct ContainerWithMountedDirectoryOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithMountedFileOpts<'a> {
+    /// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    #[builder(setter(into, strip_option), default)]
+    pub expand: Option<bool>,
     /// A user or user:group to set for the mounted file.
     /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
     /// If the group is omitted, it defaults to the same as the user.
@@ -1662,6 +1698,9 @@ pub struct ContainerWithMountedFileOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithMountedSecretOpts<'a> {
+    /// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    #[builder(setter(into, strip_option), default)]
+    pub expand: Option<bool>,
     /// Permission given to the mounted secret (e.g., 0600).
     /// This option requires an owner to be set to be active.
     #[builder(setter(into, strip_option), default)]
@@ -1673,7 +1712,16 @@ pub struct ContainerWithMountedSecretOpts<'a> {
     pub owner: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct ContainerWithMountedTempOpts {
+    /// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    #[builder(setter(into, strip_option), default)]
+    pub expand: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithNewFileOpts<'a> {
+    /// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    #[builder(setter(into, strip_option), default)]
+    pub expand: Option<bool>,
     /// A user:group to set for the file.
     /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
     /// If the group is omitted, it defaults to the same as the user.
@@ -1685,11 +1733,26 @@ pub struct ContainerWithNewFileOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithUnixSocketOpts<'a> {
+    /// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    #[builder(setter(into, strip_option), default)]
+    pub expand: Option<bool>,
     /// A user:group to set for the mounted socket.
     /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
     /// If the group is omitted, it defaults to the same as the user.
     #[builder(setter(into, strip_option), default)]
     pub owner: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ContainerWithWorkdirOpts {
+    /// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    #[builder(setter(into, strip_option), default)]
+    pub expand: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ContainerWithoutDirectoryOpts {
+    /// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    #[builder(setter(into, strip_option), default)]
+    pub expand: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithoutEntrypointOpts {
@@ -1702,6 +1765,30 @@ pub struct ContainerWithoutExposedPortOpts {
     /// Port protocol to unexpose
     #[builder(setter(into, strip_option), default)]
     pub protocol: Option<NetworkProtocol>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ContainerWithoutFileOpts {
+    /// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    #[builder(setter(into, strip_option), default)]
+    pub expand: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ContainerWithoutFilesOpts {
+    /// Replace ${VAR} or $VAR in the value of paths according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    #[builder(setter(into, strip_option), default)]
+    pub expand: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ContainerWithoutMountOpts {
+    /// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    #[builder(setter(into, strip_option), default)]
+    pub expand: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ContainerWithoutUnixSocketOpts {
+    /// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    #[builder(setter(into, strip_option), default)]
+    pub expand: Option<bool>,
 }
 impl Container {
     /// Turn the container into a Service.
@@ -1818,9 +1905,33 @@ impl Container {
     /// # Arguments
     ///
     /// * `path` - The path of the directory to retrieve (e.g., "./src").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn directory(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("directory");
         query = query.arg("path", path.into());
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves a directory at the given path.
+    /// Mounts are included.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The path of the directory to retrieve (e.g., "./src").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn directory_opts(
+        &self,
+        path: impl Into<String>,
+        opts: ContainerDirectoryOpts,
+    ) -> Directory {
+        let mut query = self.selection.select("directory");
+        query = query.arg("path", path.into());
+        if let Some(expand) = opts.expand {
+            query = query.arg("expand", expand);
+        }
         Directory {
             proc: self.proc.clone(),
             selection: query,
@@ -1923,6 +2034,9 @@ impl Container {
         if let Some(media_types) = opts.media_types {
             query = query.arg("mediaTypes", media_types);
         }
+        if let Some(expand) = opts.expand {
+            query = query.arg("expand", expand);
+        }
         query.execute(self.graphql_client.clone()).await
     }
     /// Retrieves the list of exposed ports.
@@ -1941,9 +2055,29 @@ impl Container {
     /// # Arguments
     ///
     /// * `path` - The path of the file to retrieve (e.g., "./README.md").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn file(&self, path: impl Into<String>) -> File {
         let mut query = self.selection.select("file");
         query = query.arg("path", path.into());
+        File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves a file at the given path.
+    /// Mounts are included.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The path of the file to retrieve (e.g., "./README.md").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn file_opts(&self, path: impl Into<String>, opts: ContainerFileOpts) -> File {
+        let mut query = self.selection.select("file");
+        query = query.arg("path", path.into());
+        if let Some(expand) = opts.expand {
+            query = query.arg("expand", expand);
+        }
         File {
             proc: self.proc.clone(),
             selection: query,
@@ -2333,6 +2467,9 @@ impl Container {
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
         }
+        if let Some(expand) = opts.expand {
+            query = query.arg("expand", expand);
+        }
         Container {
             proc: self.proc.clone(),
             selection: query,
@@ -2487,6 +2624,9 @@ impl Container {
         if let Some(insecure_root_capabilities) = opts.insecure_root_capabilities {
             query = query.arg("insecureRootCapabilities", insecure_root_capabilities);
         }
+        if let Some(expand) = opts.expand {
+            query = query.arg("expand", expand);
+        }
         Container {
             proc: self.proc.clone(),
             selection: query,
@@ -2593,6 +2733,9 @@ impl Container {
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
         }
+        if let Some(expand) = opts.expand {
+            query = query.arg("expand", expand);
+        }
         Container {
             proc: self.proc.clone(),
             selection: query,
@@ -2637,6 +2780,9 @@ impl Container {
         }
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
+        }
+        if let Some(expand) = opts.expand {
+            query = query.arg("expand", expand);
         }
         Container {
             proc: self.proc.clone(),
@@ -2727,6 +2873,9 @@ impl Container {
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
         }
+        if let Some(expand) = opts.expand {
+            query = query.arg("expand", expand);
+        }
         Container {
             proc: self.proc.clone(),
             selection: query,
@@ -2785,6 +2934,9 @@ impl Container {
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
         }
+        if let Some(expand) = opts.expand {
+            query = query.arg("expand", expand);
+        }
         Container {
             proc: self.proc.clone(),
             selection: query,
@@ -2842,6 +2994,9 @@ impl Container {
         );
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
+        }
+        if let Some(expand) = opts.expand {
+            query = query.arg("expand", expand);
         }
         Container {
             proc: self.proc.clone(),
@@ -2904,6 +3059,9 @@ impl Container {
         if let Some(mode) = opts.mode {
             query = query.arg("mode", mode);
         }
+        if let Some(expand) = opts.expand {
+            query = query.arg("expand", expand);
+        }
         Container {
             proc: self.proc.clone(),
             selection: query,
@@ -2915,9 +3073,32 @@ impl Container {
     /// # Arguments
     ///
     /// * `path` - Location of the temporary directory (e.g., "/tmp/temp_dir").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_mounted_temp(&self, path: impl Into<String>) -> Container {
         let mut query = self.selection.select("withMountedTemp");
         query = query.arg("path", path.into());
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves this container plus a temporary directory mounted at the given path. Any writes will be ephemeral to a single withExec call; they will not be persisted to subsequent withExecs.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the temporary directory (e.g., "/tmp/temp_dir").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_mounted_temp_opts(
+        &self,
+        path: impl Into<String>,
+        opts: ContainerWithMountedTempOpts,
+    ) -> Container {
+        let mut query = self.selection.select("withMountedTemp");
+        query = query.arg("path", path.into());
+        if let Some(expand) = opts.expand {
+            query = query.arg("expand", expand);
+        }
         Container {
             proc: self.proc.clone(),
             selection: query,
@@ -2962,6 +3143,9 @@ impl Container {
         }
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
+        }
+        if let Some(expand) = opts.expand {
+            query = query.arg("expand", expand);
         }
         Container {
             proc: self.proc.clone(),
@@ -3127,6 +3311,9 @@ impl Container {
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
         }
+        if let Some(expand) = opts.expand {
+            query = query.arg("expand", expand);
+        }
         Container {
             proc: self.proc.clone(),
             selection: query,
@@ -3152,9 +3339,32 @@ impl Container {
     /// # Arguments
     ///
     /// * `path` - The path to set as the working directory (e.g., "/app").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_workdir(&self, path: impl Into<String>) -> Container {
         let mut query = self.selection.select("withWorkdir");
         query = query.arg("path", path.into());
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves this container with a different working directory.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The path to set as the working directory (e.g., "/app").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_workdir_opts(
+        &self,
+        path: impl Into<String>,
+        opts: ContainerWithWorkdirOpts,
+    ) -> Container {
+        let mut query = self.selection.select("withWorkdir");
+        query = query.arg("path", path.into());
+        if let Some(expand) = opts.expand {
+            query = query.arg("expand", expand);
+        }
         Container {
             proc: self.proc.clone(),
             selection: query,
@@ -3189,9 +3399,32 @@ impl Container {
     /// # Arguments
     ///
     /// * `path` - Location of the directory to remove (e.g., ".github/").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn without_directory(&self, path: impl Into<String>) -> Container {
         let mut query = self.selection.select("withoutDirectory");
         query = query.arg("path", path.into());
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves this container with the directory at the given path removed.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the directory to remove (e.g., ".github/").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn without_directory_opts(
+        &self,
+        path: impl Into<String>,
+        opts: ContainerWithoutDirectoryOpts,
+    ) -> Container {
+        let mut query = self.selection.select("withoutDirectory");
+        query = query.arg("path", path.into());
+        if let Some(expand) = opts.expand {
+            query = query.arg("expand", expand);
+        }
         Container {
             proc: self.proc.clone(),
             selection: query,
@@ -3283,9 +3516,32 @@ impl Container {
     /// # Arguments
     ///
     /// * `path` - Location of the file to remove (e.g., "/file.txt").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn without_file(&self, path: impl Into<String>) -> Container {
         let mut query = self.selection.select("withoutFile");
         query = query.arg("path", path.into());
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves this container with the file at the given path removed.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the file to remove (e.g., "/file.txt").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn without_file_opts(
+        &self,
+        path: impl Into<String>,
+        opts: ContainerWithoutFileOpts,
+    ) -> Container {
+        let mut query = self.selection.select("withoutFile");
+        query = query.arg("path", path.into());
+        if let Some(expand) = opts.expand {
+            query = query.arg("expand", expand);
+        }
         Container {
             proc: self.proc.clone(),
             selection: query,
@@ -3297,12 +3553,38 @@ impl Container {
     /// # Arguments
     ///
     /// * `paths` - Location of the files to remove (e.g., ["/file.txt"]).
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn without_files(&self, paths: Vec<impl Into<String>>) -> Container {
         let mut query = self.selection.select("withoutFiles");
         query = query.arg(
             "paths",
             paths.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
         );
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves this container with the files at the given paths removed.
+    ///
+    /// # Arguments
+    ///
+    /// * `paths` - Location of the files to remove (e.g., ["/file.txt"]).
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn without_files_opts(
+        &self,
+        paths: Vec<impl Into<String>>,
+        opts: ContainerWithoutFilesOpts,
+    ) -> Container {
+        let mut query = self.selection.select("withoutFiles");
+        query = query.arg(
+            "paths",
+            paths.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
+        if let Some(expand) = opts.expand {
+            query = query.arg("expand", expand);
+        }
         Container {
             proc: self.proc.clone(),
             selection: query,
@@ -3338,9 +3620,32 @@ impl Container {
     /// # Arguments
     ///
     /// * `path` - Location of the cache directory (e.g., "/cache/node_modules").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn without_mount(&self, path: impl Into<String>) -> Container {
         let mut query = self.selection.select("withoutMount");
         query = query.arg("path", path.into());
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves this container after unmounting everything at the given path.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the cache directory (e.g., "/cache/node_modules").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn without_mount_opts(
+        &self,
+        path: impl Into<String>,
+        opts: ContainerWithoutMountOpts,
+    ) -> Container {
+        let mut query = self.selection.select("withoutMount");
+        query = query.arg("path", path.into());
+        if let Some(expand) = opts.expand {
+            query = query.arg("expand", expand);
+        }
         Container {
             proc: self.proc.clone(),
             selection: query,
@@ -3382,9 +3687,32 @@ impl Container {
     /// # Arguments
     ///
     /// * `path` - Location of the socket to remove (e.g., "/tmp/socket").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn without_unix_socket(&self, path: impl Into<String>) -> Container {
         let mut query = self.selection.select("withoutUnixSocket");
         query = query.arg("path", path.into());
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves this container with a previously added Unix socket removed.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the socket to remove (e.g., "/tmp/socket").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn without_unix_socket_opts(
+        &self,
+        path: impl Into<String>,
+        opts: ContainerWithoutUnixSocketOpts,
+    ) -> Container {
+        let mut query = self.selection.select("withoutUnixSocket");
+        query = query.arg("path", path.into());
+        if let Some(expand) = opts.expand {
+            query = query.arg("expand", expand);
+        }
         Container {
             proc: self.proc.clone(),
             selection: query,
