@@ -25,6 +25,7 @@ const (
 	UvLock                = "uv.lock"
 	MainFilePath          = "src/main/__init__.py"
 	MainObjectName        = "Main"
+	DefaultPackageIndex   = "https://pypi.org/simple"
 )
 
 // UserConfig is the custom user configuration that users can add to their pyproject.toml.
@@ -46,6 +47,10 @@ type UserConfig struct {
 
 	// BaseImage is the image reference to use for the base container.
 	BaseImage string `toml:"base-image"`
+
+	// PackageIndex is the index to use for retrieving Python modules, if empty,
+	// defaults to DefaultPackageIndex.
+	PackageIndex string `toml:"package-index"`
 }
 
 func New(
@@ -218,6 +223,7 @@ func (m *PythonSdk) WithBase() (*PythonSdk, error) {
 		WithEnvVariable("UV_LINK_MODE", "copy").
 		WithEnvVariable("UV_NATIVE_TLS", "1").
 		WithEnvVariable("UV_PROJECT_ENVIRONMENT", "/opt/venv").
+		WithEnvVariable("UV_INDEX_URL", m.PackageIndex()).
 		WithWorkdir(path.Join(m.SourcePath, m.Discovery.SubPath)).
 		// These are informational only, to be leveraged by the target module
 		// if needed.
@@ -382,7 +388,7 @@ func (m *PythonSdk) WithInstall() *PythonSdk {
 			// If there's a lock file, we assume that all the dependencies are
 			// included in it so we can avoid resolving for them to get a faster
 			// install.
-			install = append(install, "--no-deps", "-r", PipCompileLock)
+			install = append(install, "--no-deps", "-r", PipCompileLock, "--index-url", m.PackageIndex())
 		}
 		// pip compiles by default, but not uv
 		install = append([]string{"uv"}, install...)

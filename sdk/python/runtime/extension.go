@@ -82,6 +82,13 @@ func (m *PythonSdk) UvVersion() string {
 	return m.Discovery.UserConfig().UvVersion
 }
 
+func (m *PythonSdk) PackageIndex() string {
+	if m.Discovery.UserConfig().PackageIndex != "" {
+		return m.Discovery.UserConfig().PackageIndex
+	}
+	return DefaultPackageIndex
+}
+
 // Override the uv version
 //
 // Needs to be called before Load. Enables uv if not already enabled.
