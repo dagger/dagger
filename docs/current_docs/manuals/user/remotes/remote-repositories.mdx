@@ -11,7 +11,7 @@ Dagger supports the use of remote repositories in two distinct ways:
 
 In both cases, Dagger supports the use of HTTP and SSH protocols for accessing remote repositories, compatible with all major Git hosting platforms such as GitHub, GitLab, BitBucket, Azure DevOps, Codeberg, and Sourcehut. For SSH references ("refs"), Dagger employs a unified authentication approach.
 
-## Remote repositories as directory arguments
+## Use remote repositories as directory arguments
 
 Dagger Functions that accept directory arguments are equally comfortable receiving local filesystem paths or remote Git repository references. In both cases, the CLI will convert it to an object referencing the contents of that filesystem path or Git repository location, and pass the resulting `Directory` object as argument to the Dagger Function.
 
@@ -60,7 +60,7 @@ dagger core container \
   stdout
 ```
 
-## Consume Dagger modules in remote repositories
+## Consume Dagger modules from remote repositories
 
 Modules don't need to be installed locally. Dagger lets you consume modules from both public and private Git repositories as well.
 
@@ -69,7 +69,7 @@ Modules don't need to be installed locally. Dagger lets you consume modules from
 Dagger supports various reference schemes for Dagger modules, as below:
 
 | Protocol | Scheme            | Public repositories | Private repositories | Example |
-|----------|-------------------|-----------------------|----------------------------------------------|
+|----------|-------------------|---------------------|----------------------|---------|
 | HTTP(S)  | Go-like ref style | Supported | In progress | `github.com/username/repo[/subdir][@version]`  |
 | HTTP(S)  | Git HTTP style    | Supported | In progress | `https://github.com/username/repo.git[/subdir][@version]` |
 | SSH      | SCP-like          | Supported | Supported | `git@github.com:username/repo.git[/subdir][@version]`     |
