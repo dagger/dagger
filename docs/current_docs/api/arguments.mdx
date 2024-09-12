@@ -137,6 +137,8 @@ HELLO, WORLD
 
 You can also pass a directory argument from the command-line. To do so, add the corresponding flag, followed by a local filesystem path or a remote Git reference. In both cases, the CLI will convert it to an object referencing the contents of that filesystem path or Git repository location, and pass the resulting `Directory` object as argument to the Dagger Function.
 
+### Local directories
+
 Here's an example of a Dagger Function that accepts a `Directory` as argument. The Dagger Function returns a tree representation of the files and directories at that path.
 
 <Tabs groupId="language">
@@ -154,7 +156,7 @@ Here's an example of a Dagger Function that accepts a `Directory` as argument. T
 </TabItem>
 </Tabs>
 
-Here is an example of passing a local filesystem path to this Dagger Function as argument:
+Here is an example of passing a local directory to this Dagger Function as argument:
 
 ```shell
 mkdir -p mydir/mysubdir
@@ -176,29 +178,52 @@ The result will look like this:
 2 directories, 5 files
 ```
 
-Here is an example of passing a remote filesystem path - a sub-directory from the `main` branch of Dagger's GitHub repository - to the same Dagger Function as an argument, instead of a local path:
+### Remote repositories
+
+Dagger supports the use of HTTP and SSH protocols for accessing remote repositories, compatible with all major Git hosting platforms such as GitHub, GitLab, BitBucket, Azure DevOps, Codeberg, and Sourcehut. For SSH references ("refs"), Dagger employs a unified authentication approach.
+
+Dagger supports the following reference schemes for directory arguments:
+
+| Protocol | Scheme     | Public repositories | Private repositories | Example |
+|----------|------------|---------------------|----------------------|---------|
+| HTTP(S)  | Git HTTP   | Supported | In progress | `https://github.com/username/repo.git[#version[:subdir]]` |
+| SSH      | Explicit   | Supported | Supported | `ssh://git@github.com/username/repo.git[#version[:subdir]]` |
+| SSH      | SCP-like   | Supported | Supported | `git@github.com:username/repo.git[#version[:subdir]]`     |
+
+:::note
+The reference scheme for directory arguments is currently under discussion [here](https://github.com/dagger/dagger/issues/6957) and [here](https://github.com/dagger/dagger/issues/6944) and may change in future.
+:::
+
+Dagger provides additional flexibility in referencing directory arguments through the following options:
+
+- Version specification: Add `#version` to target a particular version of the repository. This can be a tag, branch name, or full commit hash. If omitted, the default branch is used.
+- Monorepo support: Append `:subpath` after the version specification to access a specific subdirectory within the repository. Note that specifying a version is mandatory when including a subpath.
+
+:::important
+When referencing a specific subdirectory (subpath) within a repository, you must always include a version specification. The format is always `#version:subpath`.
+:::
+
+Here is an example of passing a remote repository (Dagger's open-source repository) over HTTPS as a `Directory` argument:
 
 ```shell
-dagger call tree --src=https://github.com/dagger/dagger#main:sdk --depth=1
+dagger core container \
+  from --address=alpine:latest \
+  with-directory --path=/src --directory=https://github.com/dagger/dagger \
+  with-exec --args="ls","/src" \
+  stdout
 ```
 
-The result will be the same file listing as [this GitHub page](https://github.com/dagger/dagger/tree/main/sdk):
+In addition to supporting HTTP(S) access for public repositories, Dagger also supports the use of SSH for both public and private repositories. Note that this requires [SSH authentication to be properly configured](./remote-repositories.mdx#configuring-ssh-authentication) on your Dagger host. Here is the same example, this time using SSH:
 
 ```shell
-.
-├── CONTRIBUTING.md
-├── cue
-├── dotnet
-├── elixir
-├── go
-├── java
-├── php
-├── python
-├── rust
-└── typescript
-
-10 directories, 1 file
+dagger core container \
+  from --address=alpine:latest \
+  with-directory --path=/src --directory=ssh://git@github.com/dagger/dagger \
+  with-exec --args="ls","/src" \
+  stdout
 ```
+
+For more information, refer to the [documentation on configuring SSH authentication for remote repositories, best practices, and current limitations](./remote-repositories.mdx).
 
 ## Container arguments
 
