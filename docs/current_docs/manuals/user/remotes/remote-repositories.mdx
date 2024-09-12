@@ -8,10 +8,14 @@ slug: /manuals/user/remote-repositories
 
 Dagger Functions that accept directory arguments are equally comfortable receiving local filesystem paths or remote Git repository references. In both cases, the CLI will convert it to an object referencing the contents of that filesystem path or Git repository location, and pass the resulting `Directory` object as argument to the Dagger Function.
 
-Here is an example of a Go builder Dagger Function that accepts a remote Git address (the address of Dagger's open-source repository) as a `Directory` argument, builds a binary version of the Dagger CLI and exports the build directory to the host filesystem as `./build`:
+Here is an example of passing a remote Git address (the address of Dagger's open-source repository) as a `Directory` argument:
 
 ```shell
-dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call build --source=https://github.com/dagger/dagger --args=./cmd/dagger export --path=./build
+dagger core container \
+  from --address=alpine:latest \
+  with-directory --path=/src --directory=https://github.com/dagger/dagger \
+  with-exec --args="ls","/src" \
+  stdout
 ```
 
 In addition to supporting public repositories, Dagger also supports the use of private repositories as directory arguments. Here is an example of a Dagger Function that FIXME:
@@ -23,7 +27,9 @@ FIXME for Guillaume: Add example of "Buildkit ref style though: ref#branch:versi
 
 ## Consume Dagger modules in remote repositories
 
+Modules don't need to be installed locally. Dagger lets you consume modules from both public and private Git repositories as well.
 
+Here is an example of using a Dagger module from a remote public repository. It accepts a remote Git address (the address of Dagger's open-source repository) as a `Directory` argument, builds a binary version of the Dagger CLI and exports the build directory to the host filesystem as `./build`:
 
 ```shell
 dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call build --source=https://github.com/dagger/dagger --args=./cmd/dagger export --path=./build
