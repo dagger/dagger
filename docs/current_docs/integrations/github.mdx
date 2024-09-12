@@ -53,6 +53,19 @@ The following example demonstrates how to use a Dagger Function in a GitHub Acti
 
 More information is available in the [Dagger for GitHub page](https://github.com/marketplace/actions/dagger-for-github).
 
+#### SSH configuration
+
+When using SSH keys in GitHub Actions, ensure proper SSH agent setup:
+
+```yaml
+- name: Set up SSH
+  run: |
+    eval "$(ssh-agent -s)"
+    ssh-add - <<< '${{ secrets.SSH_PRIVATE_KEY }}'
+```
+
+Replace `${{ secrets.SSH_PRIVATE_KEY }}` with your provider secret containing the private key.
+
 ### GitHub pull requests
 
 #### Pull requests as function arguments
