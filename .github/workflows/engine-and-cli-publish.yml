@@ -20,7 +20,7 @@ jobs:
   publish:
     if: ${{ github.repository == 'dagger/dagger' && github.event_name == 'push' }}
     # Use our own Dagger runner when running in the dagger/dagger repo (including PRs)
-    runs-on: dagger-g2-v0-13-5-16c-od
+    runs-on: dagger-g2-v0-13-5-16c
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
