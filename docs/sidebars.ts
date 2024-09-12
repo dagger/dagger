@@ -95,6 +95,7 @@ module.exports = {
             "api/enumerations",
             "api/interfaces",
             "api/runtimes",
+            "api/remote-repositories",
           ]
         },
         {
