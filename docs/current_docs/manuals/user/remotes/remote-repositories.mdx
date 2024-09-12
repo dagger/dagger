@@ -6,39 +6,26 @@ slug: /manuals/user/remote-repositories
 
 Dagger supports the use of remote repositories in two distinct ways:
 
-- As Dagger modules
 - As directory arguments to Dagger Functions
+- As Dagger modules
 
 In both cases, Dagger supports the use of HTTP and SSH protocols for accessing remote repositories, compatible with all major Git hosting platforms such as GitHub, GitLab, BitBucket, Azure DevOps, Codeberg, and Sourcehut. For SSH references ("refs"), Dagger employs a unified authentication approach.
 
 ## Supported protocols and schemes
 
-### Dagger modules (RFC Status)
+### Directory arguments
 
-Dagger supports various reference schemes for **modules**, as below:
+Dagger supports the following reference schemes for directory arguments:
 
-| Protocol | Scheme            | Private Repo Support | Example                                      |
-|----------|-------------------|-------------------------|----------------------------------------------|
-| HTTP     | Go-like ref style | In progress             | `github.com/username/repo[/subdir][@version]`  |
-| HTTP     | Git HTTP style    | In progress             | `https://github.com/username/repo.git[/subdir][@version]` |
-| SSH      | SCP-like          | Supported               | `git@github.com:username/repo.git[/subdir][@version]`     |
-| SSH      | Explicit SSH      | Supported               | `ssh://git@github.com/username/repo.git[/subdir][@version]` |
+| Protocol | Scheme     | Public repositories | Private repositories | Example |
+|----------|------------|---------------------|----------------------|---------|
+| HTTP(S)  | Git HTTP   | Supported | In progress | `https://github.com/username/repo.git[#version[:subdir]]` |
+| SSH      | Explicit   | Supported | Supported | `ssh://git@github.com/username/repo.git[#version[:subdir]]` |
+| SSH      | SCP-like   | Supported | Supported | `git@github.com:username/repo.git[#version[:subdir]]`     |
 
-Dagger provides additional flexibility in referencing modules through the following options:
-
-- The `.git` extension is optional for HTTP refs or explicit SSH refs, except for [GitLab, when referencing modules stored on a private repo or private subgroup](https://gitlab.com/gitlab-org/gitlab-foss/-/blob/master/lib/gitlab/middleware/go.rb#L229-237).
-- Monorepo support: Append `/subpath` to access a specific subdirectory within the repository.
-- Version specification: Add `@version` to target a particular version of the module. This can be a tag, branch name, or full commit hash. If omitted, the default branch is used.
-
-### Directory Arguments (RFC Status)
-
-Dagger supports the following reference schemes for **directory arguments**:
-
-| Protocol | Scheme     | Private Repo Support | Example                                                   |
-|----------|------------|----------------------|-----------------------------------------------------------|
-| HTTP     | Git HTTP   | In progress          | `https://github.com/username/repo.git[#version[:subdir]]` |
-| SSH      | Explicit   | Supported            | `ssh://git@github.com/username/repo.git[#version[:subdir]]` |
-| SSH      | SCP-like   | Supported            | `git@github.com:username/repo.git[#version[:subdir]]`     |
+:::note
+The reference scheme for directory arguments is currently under discussion [here](https://github.com/dagger/dagger/issues/6957) and [here](https://github.com/dagger/dagger/issues/6944) and may change in future.
+:::
 
 Dagger provides additional flexibility in referencing directory arguments through the following options:
 
@@ -49,10 +36,22 @@ Dagger provides additional flexibility in referencing directory arguments throug
 When referencing a specific subdirectory (subpath) within a repository, you must always include a version specification. The format is always `#version:subpath`.
 :::
 
-:::note
-The reference scheme for directory arguments is currently under investigation [here](https://github.com/dagger/dagger/issues/6957) and [here](https://github.com/dagger/dagger/issues/6944)
-:::
+### Dagger modules
 
+Dagger supports various reference schemes for Dagger modules, as below:
+
+| Protocol | Scheme            | Public repositories | Private repositories | Example |
+|----------|-------------------|-----------------------|----------------------------------------------|
+| HTTP(S)  | Go-like ref style | Supported | In progress | `github.com/username/repo[/subdir][@version]`  |
+| HTTP(S)  | Git HTTP style    | Supported | In progress | `https://github.com/username/repo.git[/subdir][@version]` |
+| SSH      | SCP-like          | Supported | Supported | `git@github.com:username/repo.git[/subdir][@version]`     |
+| SSH      | Explicit SSH      | Supported | Supported | `ssh://git@github.com/username/repo.git[/subdir][@version]` |
+
+Dagger provides additional flexibility in referencing modules through the following options:
+
+- The `.git` extension is optional for HTTP refs or explicit SSH refs, except for [GitLab, when referencing modules stored on a private repo or private subgroup](https://gitlab.com/gitlab-org/gitlab-foss/-/blob/master/lib/gitlab/middleware/go.rb#L229-237).
+- Monorepo support: Append `/subpath` to access a specific subdirectory within the repository.
+- Version specification: Add `@version` to target a particular version of the module. This can be a tag, branch name, or full commit hash. If omitted, the default branch is used.
 
 ### Configuring SSH authentication
 
@@ -64,25 +63,16 @@ This means that you must ensure that the `SSH_AUTH_SOCK` environment variable is
 
 ### Best practices
 
-#### Dagger modules
-
 For quick and easy referencing:
 - Copy the repository ref from your preferred Git server's UI.
-- Add a `/subpath` if you need to target a specific directory within the repository.
-- Append `@version` if you want to specify a particular version or commit.
-
-#### Directory arguments *(temporary)*
-
-For quick and easy referencing:
-- Copy the repository ref from your preferred Git server's UI.
-- Append `#version` if you want to specify a particular version or commit.
-- If you need to target a specific directory within the repository, use the format `#version:subpath`. Remember, the version is mandatory when specifying a subpath.
+- To specify a particular version or commit, append `#version` (for directory arguments) or `@version` (for modules).
+- To target a specific directory within the repository, use the format `#version:subpath` (for directory arguments) or add a `/subpath` (for modules). Remember that the version is mandatory when specifying a subpath.
 
 ## Remote repositories as directory arguments
 
 Dagger Functions that accept directory arguments are equally comfortable receiving local filesystem paths or remote Git repository references. In both cases, the CLI will convert it to an object referencing the contents of that filesystem path or Git repository location, and pass the resulting `Directory` object as argument to the Dagger Function.
 
-Here is an example of passing a remote Git address (the address of Dagger's open-source repository) as a `Directory` argument:
+Here is an example of passing a remote repository (Dagger's open-source repository) over HTTPS as a `Directory` argument:
 
 ```shell
 dagger core container \
@@ -92,7 +82,7 @@ dagger core container \
   stdout
 ```
 
-In addition to supporting public repositories, Dagger also supports the use of private repositories over SSH as directory arguments. Here is the same example, this time using SSH (note that this requires SSH authentication to be properly configured on your Dagger host):
+In addition to supporting HTTP(S) access for public repositories, Dagger also supports the use of SSH for both public and private repositories. Note that this requires [SSH authentication to be properly configured](#configuring-ssh-authentication) on your Dagger host. Here is the same example, this time using SSH:
 
 ```shell
 dagger core container \
@@ -106,7 +96,7 @@ dagger core container \
 
 Modules don't need to be installed locally. Dagger lets you consume modules from both public and private Git repositories as well.
 
-Here is an example of using a Go builder Dagger module from a public repository:
+Here is an example of using a Go builder Dagger module from a public repository over HTTPS:
 
 ```shell
 dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call \
@@ -114,7 +104,7 @@ dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call \
   export --path=./build
 ```
 
-Here is an example of using the same Dagger module with a ref authenticating via SSH:
+Here is the same example using SSH authentication. Note that this requires [SSH authentication to be properly configured](#configuring-ssh-authentication) on your Dagger host).
 
 ```shell
 dagger -m git@github.com:kpenfound/dagger-modules/golang@v0.2.0 call \
