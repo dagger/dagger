@@ -4,47 +4,18 @@ slug: /manuals/user/remote-repositories
 
 # Remote Repositories
 
-## Use remote repositories as function arguments
+Dagger supports the use of remote repositories in two distinct ways:
 
-Dagger Functions that accept directory arguments are equally comfortable receiving local filesystem paths or remote Git repository references. In both cases, the CLI will convert it to an object referencing the contents of that filesystem path or Git repository location, and pass the resulting `Directory` object as argument to the Dagger Function.
+- As Dagger modules
+- As directory arguments to Dagger Functions
 
-Here is an example of passing a remote Git address (the address of Dagger's open-source repository) as a `Directory` argument:
-
-```shell
-dagger core container \
-  from --address=alpine:latest \
-  with-directory --path=/src --directory=https://github.com/dagger/dagger \
-  with-exec --args="ls","/src" \
-  stdout
-```
-
-In addition to supporting public repositories, Dagger also supports the use of private repositories as directory arguments. Here is an example of a Dagger Function that FIXME:
-
-```shell
-FIXME for Guillaume
-FIXME for Guillaume: Add example of "Buildkit ref style though: ref#branch:version" for private repos
-```
-
-## Consume Dagger modules in remote repositories
-
-Modules don't need to be installed locally. Dagger lets you consume modules from both public and private Git repositories as well.
-
-Here is an example of using a Dagger module from a remote public repository. It accepts a remote Git address (the address of Dagger's open-source repository) as a `Directory` argument, builds a binary version of the Dagger CLI and exports the build directory to the host filesystem as `./build`:
-
-```shell
-dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call build --source=https://github.com/dagger/dagger --args=./cmd/dagger export --path=./build
-```
-
-
-FIXME for Guillaume: Add example of consuming Dagger module in private repo
-
+In both cases, Dagger supports the use of HTTP and SSH protocols for accessing remote repositories, compatible with all major Git hosting platforms such as GitHub, GitLab, BitBucket, Azure DevOps, Codeberg, and Sourcehut. For SSH references ("refs"), Dagger employs a unified authentication approach.
 
 ## Supported protocols and schemes
 
-Dagger supports various reference ("ref") schemes for remote repositories and modules, accommodating both HTTP and SSH protocols. These schemes are compatible with all Git repositories hosted on platforms such as GitHub, GitLab, BitBucket, Azure DevOps, Codeberg, and Sourcehut.
+Dagger supports various reference schemes for remote repositories and modules, as below.
 
-FIXME for Guillaume: Update to also mention public/private repositories in this table
-FIXME for Guillaume: Add "Buildkit ref style though: ref#branch:version" for private repos
+FIXME for Guillaume: Can we make this table work for both cases: ie modules and dir args? we can discuss
 
 | Protocol | Scheme            | Private Modules Support | Example                                      |
 |----------|-------------------|-------------------------|----------------------------------------------|
@@ -55,7 +26,7 @@ FIXME for Guillaume: Add "Buildkit ref style though: ref#branch:version" for pri
 
 Dagger provides additional flexibility in referencing modules through the following options:
 
-FIXME question for Guillaume: is the below only applicable for modules in private repos? or all private repos?
+FIXME question for Guillaume: is the below only applicable for MODULES in private repos? or all private repos?
 
 - The `.git` extension is optional for HTTP refs or explicit SSH refs, except for [GitLab, when referencing modules stored on a private repo or private subgroup](https://gitlab.com/gitlab-org/gitlab-foss/-/blob/master/lib/gitlab/middleware/go.rb#L229-237).
 - Monorepo support: Append `/subpath` to access a specific subdirectory within the repository.
@@ -71,30 +42,72 @@ This means that you must ensure that the `SSH_AUTH_SOCK` environment variable is
 
 ### Best practices
 
-FIXME question for Guillaume: does below apply only for modules or for repos as dir arguments also?
-
 For quick and easy referencing:
 - Copy the repository ref from your preferred Git server's UI.
 - Add a `/subpath` if you need to target a specific directory within the repository.
 - Append `@version` if you want to specify a particular version or commit.
 
-### Known limitations and workarounds
+## Remote repositories as directory arguments
 
-FIXME question for Guillaume: does below  apply only for modules or for repos as dir arguments also?
+Dagger Functions that accept directory arguments are equally comfortable receiving local filesystem paths or remote Git repository references. In both cases, the CLI will convert it to an object referencing the contents of that filesystem path or Git repository location, and pass the resulting `Directory` object as argument to the Dagger Function.
+
+Here is an example of passing a remote Git address (the address of Dagger's open-source repository) as a `Directory` argument:
+
+```shell
+dagger core container \
+  from --address=alpine:latest \
+  with-directory --path=/src --directory=https://github.com/dagger/dagger \
+  with-exec --args="ls","/src" \
+  stdout
+```
+
+In addition to supporting public repositories, Dagger also supports the use of private repositories over SSH as directory arguments. Here is the same example, this time using SSH (note that this requires SSH authentication to be properly configured on your Dagger host):
+
+```shell
+dagger core container \
+  from --address=alpine:latest \
+  with-directory --path=/src --directory=ssh://git@github.com/dagger/dagger \
+  with-exec --args="ls","/src" \
+  stdout
+```
+
+## Consume Dagger modules in remote repositories
+
+Modules don't need to be installed locally. Dagger lets you consume modules from both public and private Git repositories as well.
+
+Here is an example of using a Go builder Dagger module from a public repository:
+
+```shell
+dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call \
+  build --source=https://github.com/dagger/dagger --args=./cmd/dagger \
+  export --path=./build
+```
+
+Here is an example of using a Dagger module from a private repository:
+
+FIXME for Guillaume: Add example of consuming Dagger module in private repo
+
+## Known limitations and workarounds
 
 This section outlines current limitations and provides workarounds for common issues. We're actively working on improvements for these areas.
 
-#### Windows support
+### Windows is not supported
 
 Currently, SSH refs are fully supported on UNIX-based systems (Linux and macOS). Windows support is under development. Track progress and contribute to the discussion in our [GitHub issue for Windows support](https://github.com/dagger/dagger/issues/8313).
 
-#### Multiple SSH keys
+### Multiple SSH keys may cause SSH forwarding to fail
 
 SSH forwarding may fail when multiple keys are loaded in your SSH agent. This is under active investigation in our [GitHub issue](https://github.com/dagger/dagger/issues/8288). Until this is resolved, the following workaround may be used:
 
 1. Clear all loaded keys: `ssh-add -D`
 2. Add back only the required key: `ssh-add /path/to/key`
 
-#### Environment variable expansion
+### Environment variables are not automatically expanded
 
 Shell expansion characters (e.g., `~`) in the `SSH_AUTH_SOCK` environment variable are not automatically expanded. This is under active investigation in our [GitHub issue](https://github.com/dagger/dagger/issues/8337). Until this is resolved, the workaround is to use the full path instead of `~` when setting `SSH_AUTH_SOCK`.
+
+### `SSH_AUTH_SOCK` paths are not always handled correctly
+
+The Dagger CLI incorrectly handles the `SSH_AUTH_SOCK` path by converting it to a relative path from the Dagger CLI's current working directory. This can lead to issues with SSH forwarding, especially when the socket path is in the same directory tree as the working directory. A fix for this issue is [in progress](https://github.com/dagger/dagger/pull/8365)
+
+Until this is resolved, ensure that the `SSH_AUTH_SOCK` path is not on the same path as your current working directory (except for the root directory '/'). A simple workaround is to create a symlink in `/var/run` or `/tmp` that points to the value of `SSH_AUTH_SOCK`, and then export this new path as SSH_AUTH_SOCK.
