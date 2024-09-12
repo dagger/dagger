@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace Dagger\ValueObject;
 
 use Dagger\Attribute;
-use Dagger\Client;
-use Dagger\Json;
 use ReflectionClass;
 use RuntimeException;
 
@@ -26,7 +24,7 @@ final readonly class DaggerObject
         array $daggerFunctions,
     ) {
         $this->daggerFunctions = array_combine(
-            array_map(fn($v) => $v->name, $daggerFunctions),
+            array_map(fn($f) => $f->name, $daggerFunctions),
             $daggerFunctions,
         );
     }

@@ -19,6 +19,11 @@ final readonly class DaggerFunction
     ) {
     }
 
+    public function isConstructor(): bool
+    {
+        return $this->name === '';
+    }
+
     /**
      * @throws RuntimeException
      * - if missing DaggerFunction Attribute
@@ -37,34 +42,35 @@ final readonly class DaggerFunction
             $method->getParameters(),
         );
 
-        return new self(
-            $method->name,
-            $attribute->description,
-            $parameters,
-            self::getReturnType($method),
-        );
+        return $method->isConstructor() ?
+            new self(
+                '',
+                null,
+                $parameters,
+                new Type($method->getDeclaringClass()->name)
+            ) :
+            new self(
+                $method->name,
+                $attribute->description,
+                $parameters,
+                self::getReturnType($method),
+            );
     }
 
     private static function getReturnType(
         ReflectionMethod $method
-    ): ListOfType|Type {
-        $type = $method->getReturnType() ??
-            throw new RuntimeException(sprintf(
-                'DaggerFunction "%s" cannot be supported without a return type',
-                $method->name,
-            ));
+    ): null|ListOfType|Type {
+        $type = $method->getReturnType() ?? throw new RuntimeException(sprintf(
+            'DaggerFunction "%s" cannot be supported without a return type',
+            $method->name,
+        ));
 
         $attribute = (current($method
             ->getAttributes(Attribute\ReturnsListOfType::class)) ?: null)
             ?->newInstance();
 
-        if (!isset($attribute)) {
-            return Type::fromReflection($type);
-        }
-
-        return ListOfType::fromReflection(
-            $type,
-            $attribute,
-        );
+        return isset($attribute) ?
+            ListOfType::fromReflection($type, $attribute) :
+            Type::fromReflection($type);
     }
 }

@@ -173,10 +173,67 @@ class Example
 }
 ```
 
+#### Constructor
+
+You can expose PHP's magic method `__construct` as a `DaggerFunction`.
+If you do this, Dagger will use it as a constructor.
+
+This is only applicable to the base class of your Module: the class named identically to your Module.
+
+Let's say your module, among other things can run tests on a given source directory.
+It may look like this:
+
+```php
+#[DaggerObject]
+final class MyModule
+{
+    #[DaggerFunction]
+    public function test(Directory $source): Container
+    {
+        // ...
+    }
+
+    // ...
+```
+
+We could then call tests like so:
+
+```
+dagger call test --dir="path/to/dir"
+```
+
+But if multiple methods require a source directory, it may be better to supply a constructor.
+
+```php
+#[DaggerObject]
+final class MyModule
+{
+    #[DaggerFunction]
+    public function __construct(
+        public Directory $source
+    ): Container {
+        // ...
+    }
+
+    #[DaggerFunction]
+    public function test(): Container
+    {
+        // ...
+    }
+
+    // ...
+```
+
+We could then call tests like so:
+
+```
+dagger call --dir="path/to/dir" test
+```
+
 ### Arguments
 
 All parameters on a `Dagger Function` are considered providable arguments,
-if you want additional metadata on an argument, such as a doc-string; 
+if you want additional metadata on an argument, such as a doc-string;
 use the `#[Argument]` Attribute.
 
 If any of your arguments, or return values, are arrays. Please see the section on [Lists](#lists)
@@ -303,7 +360,7 @@ class Example
 
      #[DaggerFunction('ReturnsListOfType attribute is supported')]
      #[ReturnsListOfType('int')]
-     public function myValidList(): array 
+     public function myValidList(): array
      {
          // do something...
      }
