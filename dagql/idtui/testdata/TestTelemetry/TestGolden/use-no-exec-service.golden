@@ -17,7 +17,7 @@
 │ ✔ .withExposedPort(port: 6379): Container! X.Xs
 │ ✔ .asService: Service! X.Xs
 │ ┃ X:M XX XXX 20XX XX:XX:XX.XXX * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
-│ ┃ X:M XX XXX 20XX XX:XX:XX.XXX * Redis version=7.4.0, bits=64, commit=00000000, modified=0, pid=7, just started
+│ ┃ X:M XX XXX 20XX XX:XX:XX.XXX * Redis version=7.4.0, bits=64, commit=00000000, modified=0, pid=X, just started
 │ ┃ X:M XX XXX 20XX XX:XX:XX.XXX # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
 │ ┃ X:M XX XXX 20XX XX:XX:XX.XXX * monotonic clock: POSIX clock_gettime
 │ ┃ X:M XX XXX 20XX XX:XX:XX.XXX * Running mode=standalone, port=6379.

@@ -176,6 +176,11 @@ var scrubs = []scrubber{
 		"7:C 1 Jan 2020 00:00:00.000",
 		"X:M XX XXX 20XX XX:XX:XX.XXX",
 	},
+	{
+		regexp.MustCompile(`\bpid=\d+\b`),
+		"pid=8",
+		"pid=X",
+	},
 	// Durations
 	{
 		regexp.MustCompile(`\b(\d+m)?\d+\.\d+s\b`),
