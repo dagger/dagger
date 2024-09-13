@@ -1,0 +1,7 @@
+kind: Added
+body: '`ignore` combined with `defaultPath` now works if the module is fetch from
+  git instead of local.'
+time: 2024-09-13T12:20:08.722733+02:00
+custom:
+  Author: TomChv
+  PR: "8430"
