@@ -9,6 +9,7 @@ import (
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/moby/buildkit/identity"
 	"go.opentelemetry.io/otel/codes"
+	"golang.org/x/mod/semver"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/.dagger/build"
@@ -272,6 +273,10 @@ func (e *Engine) Publish(
 	// List of tags to use
 	tag []string,
 
+	// add `latest` to the list of tags if tags include a semver version
+	// +optional
+	maybeTagLatest bool,
+
 	// +optional
 	dryRun bool,
 
@@ -288,6 +293,15 @@ func (e *Engine) Publish(
 		Platforms []*dagger.Container
 		Tags      []string
 	}, len(targets))
+
+	if maybeTagLatest {
+		for _, t := range tag {
+			if strings.HasPrefix(t, "v") && semver.IsValid(t) {
+				tag = append(tag, "latest")
+				break
+			}
+		}
+	}
 
 	eg, egCtx := errgroup.WithContext(ctx)
 	for i, target := range targets {

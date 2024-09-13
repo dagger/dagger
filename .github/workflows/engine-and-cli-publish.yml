@@ -48,7 +48,7 @@ jobs:
             engine \
             publish \
             --image="$DAGGER_ENGINE_IMAGE" \
-            --tag="${{ github.ref_name}}" --tag="${{ github.sha }}" \
+            --tag="${{ github.ref_name}}" --tag="${{ github.sha }}" --maybe-tag-latest \
             --registry="$DAGGER_ENGINE_IMAGE_REGISTRY" \
             --registry-username="$DAGGER_ENGINE_IMAGE_USERNAME" \
             --registry-password=env:DAGGER_ENGINE_IMAGE_PASSWORD
