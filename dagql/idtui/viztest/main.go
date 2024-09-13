@@ -155,7 +155,7 @@ func (*Viztest) SameDiffClients(ctx context.Context, message string) (string, er
 // It can be used to test UI cues for tracking down the place where a slow
 // operation is configured, which is more interesting than the place where it
 // is un-lazied when you're trying to figure out where to optimize.
-func (*Viztest) Accounting(ctx context.Context) *dagger.Container {
+func (*Viztest) Accounting() *dagger.Container {
 	return dag.Container().
 		From("alpine").
 		WithEnvVariable("NOW", time.Now().String()).
@@ -164,7 +164,7 @@ func (*Viztest) Accounting(ctx context.Context) *dagger.Container {
 }
 
 // DeepSleep sleeps forever.
-func (*Viztest) DeepSleep(ctx context.Context) *dagger.Container {
+func (*Viztest) DeepSleep() *dagger.Container {
 	return dag.Container().
 		From("alpine").
 		WithExec([]string{"sleep", "infinity"})
@@ -175,7 +175,7 @@ func (v Viztest) Add(
 	// +default=1
 	diff int,
 ) *Viztest {
-	v.Num++
+	v.Num += diff
 	return &v
 }
 
