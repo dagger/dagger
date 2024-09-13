@@ -132,6 +132,9 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 		} else {
 			require.NoError(t, err)
 		}
+		// FIXME: there appears to be some delay before a cache is able to be hit
+		// by a separate session. no clue where this comes from (sorry) but a 10
+		// second wait passed 25 times in a row.
 		time.Sleep(10 * time.Second)
 	}()
 

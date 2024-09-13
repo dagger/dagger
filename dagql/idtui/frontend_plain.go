@@ -385,7 +385,7 @@ func (fe *frontendPlain) renderRow(tree *dagui.TraceTree) {
 	span := tree.Span
 	spanDt := fe.data[span.ID]
 	if spanDt == nil {
-		// slog.Warn("spanDt is nil", "id", span.ID.String())
+		slog.Warn("spanDt is nil", "id", span.ID.String())
 		return
 	}
 	if !spanDt.ready {
