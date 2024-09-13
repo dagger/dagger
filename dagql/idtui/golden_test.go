@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/koron-go/prefixw"
-	"github.com/sebdah/goldie/v2"
 	"github.com/stretchr/testify/require"
 	"github.com/vito/midterm"
 	"go.opentelemetry.io/otel"
@@ -26,6 +25,7 @@ import (
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"google.golang.org/protobuf/proto"
+	"gotest.tools/v3/golden"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/dagui"
@@ -66,14 +66,7 @@ type TelemetrySuite struct {
 	Home string
 }
 
-var (
-	enabled = "DAGGER_TELEMETRY_TESTS_ENABLED"
-)
-
 func TestTelemetry(t *testing.T) {
-	if os.Getenv(enabled) != "" {
-		t.Skip("Skipping Telemetry Tests")
-	}
 	testctx.Run(testCtx, t, TelemetrySuite{
 		Home: t.TempDir(),
 	}, Middleware()...)
@@ -92,7 +85,7 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 	} {
 		t.Run(ex.Function, func(ctx context.Context, t *testctx.T) {
 			out, _ := ex.Run(ctx, t, s)
-			goldie.New(t.T).Assert(t.T, t.Name(), out)
+			golden.Assert(t, out, t.Name())
 		})
 	}
 }
@@ -104,7 +97,7 @@ type Example struct {
 	Fail     bool
 }
 
-func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) ([]byte, *dagui.DB) {
+func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (string, *dagui.DB) {
 	db, otlpL := testDB(t)
 
 	if ex.Module == "" {
@@ -159,7 +152,7 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) ([]by
 		require.NoError(t, err)
 	}
 
-	return stabilize(errBuf.Bytes()), db
+	return stabilize(errBuf.String()), db
 }
 
 type scrubber struct {
@@ -244,9 +237,9 @@ func TestScrubbers(t *testing.T) {
 	}
 }
 
-func stabilize(out []byte) []byte {
+func stabilize(out string) string {
 	for _, s := range scrubs {
-		out = s.re.ReplaceAll(out, []byte(s.repl))
+		out = s.re.ReplaceAllString(out, s.repl)
 	}
 	return out
 }
