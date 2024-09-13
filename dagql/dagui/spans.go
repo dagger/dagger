@@ -27,6 +27,10 @@ type Span struct {
 	Call         *callpbv1.Call `json:"-"`
 	Base         *callpbv1.Call `json:"-"`
 
+	// Indicates that this span was actually exported to the database, and not
+	// just allocated due to a span parent or other relationship.
+	Received bool
+
 	db *DB
 }
 

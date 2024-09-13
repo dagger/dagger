@@ -89,7 +89,11 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans []*Span, f func(*TraceTree)) {
 			return
 		}
 
-		if span.Passthrough {
+		if span.Passthrough ||
+			// We inserted a stub for this span, but never received data for it. This
+			// can happen if we're within a larger trace - we'll allocate our parent,
+			// but not actually see it, so just move along to its children.
+			!span.Received {
 			for _, child := range span.ChildSpans.Order {
 				walk(child, parent)
 			}

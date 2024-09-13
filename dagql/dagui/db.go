@@ -72,6 +72,7 @@ func (db *DB) UpdatedSnapshots(filter map[SpanID]bool) []SpanSnapshot {
 func (db *DB) ImportSnapshots(snapshots []SpanSnapshot) {
 	for _, snapshot := range snapshots {
 		span := db.findOrAllocSpan(snapshot.ID)
+		span.Received = true
 		span.SpanSnapshot = snapshot
 		db.integrateSpan(span)
 	}
@@ -198,6 +199,7 @@ func (db *DB) recordOTelSpan(span sdktrace.ReadOnlySpan) { //nolint: gocyclo
 
 	// create or update the span itself
 	spanData := db.findOrAllocSpan(spanID)
+	spanData.Received = true
 	spanData.ParentID.SpanID = span.Parent().SpanID()
 	spanData.Name = span.Name()
 	spanData.StartTime = span.StartTime()
