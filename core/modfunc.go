@@ -330,6 +330,14 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		return nil, fmt.Errorf("failed to convert return value: %w", err)
 	}
 
+	// Get the client ID actually used during the function call - this might not
+	// be the same as execMD.ClientID if the function call was cached at the
+	// buildkit level
+	clientID, err := ctr.usedClientID(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("could not get used client id")
+	}
+
 	// If the function returned anything that's isolated per-client, this caller client should
 	// have access to it now since it was returned to them (i.e. secrets/sockets/etc).
 	returnedIDs := map[digest.Digest]*resource.ID{}
@@ -338,7 +346,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 	}
 
 	for _, id := range returnedIDs {
-		if err := fn.root.AddClientResourcesFromID(ctx, id, execMD.ClientID, false); err != nil {
+		if err := fn.root.AddClientResourcesFromID(ctx, id, clientID, false); err != nil {
 			return nil, fmt.Errorf("failed to add client resources from ID: %w", err)
 		}
 	}

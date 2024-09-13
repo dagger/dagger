@@ -879,6 +879,11 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 		return nil
 	}
 
+	clientIDPath := filepath.Join(state.metaMount.Source, MetaMountClientIDPath)
+	if err := os.WriteFile(clientIDPath, []byte(w.execMD.ClientID), 0o600); err != nil {
+		return fmt.Errorf("failed to write client id %s to %s: %w", w.execMD.ClientID, clientIDPath, err)
+	}
+
 	if w.execMD.SecretToken == "" {
 		w.execMD.SecretToken = randid.NewID()
 	}

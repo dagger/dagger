@@ -335,6 +335,10 @@ func (container *Container) Stderr(ctx context.Context) (string, error) {
 	return container.metaFileContents(ctx, buildkit.MetaMountStderrPath)
 }
 
+func (container *Container) usedClientID(ctx context.Context) (string, error) {
+	return container.metaFileContents(ctx, buildkit.MetaMountClientIDPath)
+}
+
 func (container *Container) metaFileContents(ctx context.Context, filePath string) (string, error) {
 	if container.Meta == nil {
 		return "", fmt.Errorf("%w: %s requires an exec", ErrNoCommand, filePath)
