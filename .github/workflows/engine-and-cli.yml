@@ -75,6 +75,17 @@ jobs:
         with:
           function: "engine publish --image=dagger-engine.dev --tag=main --dry-run"
 
+  test-telemetry:
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-0-16c-st-od' || 'ubuntu-latest' }}"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: "test"
+        uses: ./.github/actions/call
+        with:
+          function: "test telemetry --race=true --parallel=16"
+          upload-logs: true
+
   scan-engine:
     runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-3-8c' || 'ubuntu-latest' }}"
     timeout-minutes: 10
