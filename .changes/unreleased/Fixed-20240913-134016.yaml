@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+  Allow private secrets to pass between different modules
+time: 2024-09-13T13:40:16.517262613+01:00
+custom:
+  Author: jedevc
+  PR: "8358"
