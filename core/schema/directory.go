@@ -136,7 +136,7 @@ func (s *directorySchema) pipeline(ctx context.Context, parent *core.Directory, 
 
 func (s *directorySchema) directory(ctx context.Context, parent *core.Query, _ struct{}) (*core.Directory, error) {
 	platform := parent.Platform()
-	return core.NewScratchDirectory(parent, platform), nil
+	return core.NewScratchDirectory(ctx, parent, platform)
 }
 
 type subdirectoryArgs struct {

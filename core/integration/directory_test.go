@@ -1187,4 +1187,12 @@ func (DirectorySuite) TestDigest(ctx context.Context, t *testctx.T) {
 
 		require.NotEqual(t, digestFileWithOverwrittenMetadata, digestFileWithDefaultMetadata)
 	})
+
+	t.Run("scratch directory", func(ctx context.Context, t *testctx.T) {
+		dir := c.Directory()
+
+		digest, err := dir.Digest(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", digest)
+	})
 }

@@ -94,13 +94,14 @@ func (r *ref) ToState() (llb.State, error) {
 }
 
 func (r *ref) Digest(ctx context.Context, path string) (digest.Digest, error) {
+	if r == nil {
+		return contenthash.Checksum(ctx, nil, path, contenthash.ChecksumOpts{}, nil)
+	}
 	cacheRef, err := r.CacheRef(ctx)
 	if err != nil {
 		return "", err
 	}
-
 	sessionGroup := bksession.NewGroup(r.c.ID())
-
 	return contenthash.Checksum(ctx, cacheRef, path, contenthash.ChecksumOpts{}, sessionGroup)
 }
 

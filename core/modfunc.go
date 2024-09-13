@@ -268,7 +268,10 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 
 	ctr := fn.runtime
 
-	metaDir := NewScratchDirectory(mod.Query, mod.Query.Platform())
+	metaDir, err := NewScratchDirectory(ctx, mod.Query, mod.Query.Platform())
+	if err != nil {
+		return nil, fmt.Errorf("failed to create mod metadata directory: %w", err)
+	}
 	ctr, err = ctr.WithMountedDirectory(ctx, modMetaDirPath, metaDir, "", false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to mount mod metadata directory: %w", err)

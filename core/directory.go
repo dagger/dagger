@@ -80,15 +80,8 @@ func NewDirectory(query *Query, def *pb.Definition, dir string, platform Platfor
 	}
 }
 
-func NewScratchDirectory(query *Query, platform Platform) *Directory {
-	if query == nil {
-		panic("query must be non-nil")
-	}
-	return &Directory{
-		Query:    query,
-		Dir:      "/",
-		Platform: platform,
-	}
+func NewScratchDirectory(ctx context.Context, query *Query, platform Platform) (*Directory, error) {
+	return NewDirectorySt(ctx, query, llb.Scratch(), "/", platform, nil)
 }
 
 func NewDirectorySt(ctx context.Context, query *Query, st llb.State, dir string, platform Platform, services ServiceBindings) (*Directory, error) {

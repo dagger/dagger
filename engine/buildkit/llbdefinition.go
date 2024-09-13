@@ -14,6 +14,10 @@ import (
 )
 
 func DefToDAG(def *pb.Definition) (*OpDAG, error) {
+	if len(def.Def) == 0 {
+		return nil, nil
+	}
+
 	digestToOp := map[digest.Digest]*pb.Op{}
 	digestToMetadata := map[digest.Digest]*pb.OpMetadata{}
 	for _, dt := range def.Def {
@@ -129,6 +133,9 @@ func (dag *OpDAG) toString(builder *strings.Builder, indent string) string {
 }
 
 func (dag *OpDAG) Walk(f func(*OpDAG) error) error {
+	if dag == nil {
+		return nil
+	}
 	return dag.walk(f, map[*OpDAG]struct{}{})
 }
 
