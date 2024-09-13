@@ -155,16 +155,15 @@ func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run 
 	}
 	fe.FrontendOpts = opts
 
-	var runErr error
 	if fe.reportOnly {
-		runErr = run(ctx)
+		fe.err = run(ctx)
 	} else {
 		// find a TTY anywhere in stdio. stdout might be redirected, in which case we
 		// can show the TUI on stderr.
 		ttyIn, ttyOut := findTTYs()
 
 		// run the function wrapped in the TUI
-		runErr = fe.runWithTUI(ctx, ttyIn, ttyOut, run)
+		fe.err = fe.runWithTUI(ctx, ttyIn, ttyOut, run)
 	}
 
 	// print the final output display to stderr
@@ -175,7 +174,7 @@ func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run 
 	fe.db.WriteDot(opts.DotOutputFilePath, opts.DotFocusField, opts.DotShowInternal)
 
 	// return original err
-	return runErr
+	return fe.err
 }
 
 func (fe *frontendPretty) SetPrimary(spanID dagui.SpanID) {

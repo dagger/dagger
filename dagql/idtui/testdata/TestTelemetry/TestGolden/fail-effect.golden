@@ -21,8 +21,7 @@
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide: export NOTHANKS=1
 
-Error: input: container.from.withExec.sync process "sh -c echo this is a failing effect; exit 1" did not complete successfully: exit code: 1
+Error logs:
 
-Stdout:
+✘ .withExec(args: ["sh", "-c", "echo this is a failing effect; exit 1"]): Container! X.Xs
 this is a failing effect
-Run 'dagger call fail-effect --help' for usage.

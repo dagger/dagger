@@ -28,6 +28,3 @@
 │ ○ .withExec(args: ["sleep", "1"]): Container! X.Xs
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide: export NOTHANKS=1
-
-Error: input: viztest.pending call function "Pending": process "/runtime" did not complete successfully: exit code: 2
-

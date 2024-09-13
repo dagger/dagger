@@ -27,5 +27,8 @@
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide: export NOTHANKS=1
 
-Error: input: viztest.failLog call function "FailLog": process "/runtime" did not complete successfully: exit code: 2
+Error logs:
 
+✘ .withExec(args: ["sh", "-c", "echo im doing a lot of work; echo and then failing; exit 1"]): Container! X.Xs
+im doing a lot of work
+and then failing
