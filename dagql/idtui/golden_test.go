@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/koron-go/prefixw"
 	"github.com/sebdah/goldie/v2"
@@ -133,6 +134,7 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) ([]by
 		} else {
 			require.NoError(t, err)
 		}
+		time.Sleep(10 * time.Second)
 	}()
 
 	cmd := exec.Command("dagger", daggerArgs...)
@@ -309,6 +311,8 @@ func (o *otlpReceiver) TracesHandler(w http.ResponseWriter, r *http.Request) {
 			Processors: telemetry.SpanProcessors,
 		}.ExportSpans(r.Context(), spans)
 	}
+
+	w.WriteHeader(http.StatusCreated)
 }
 
 func (o *otlpReceiver) LogsHandler(w http.ResponseWriter, r *http.Request) {
@@ -340,6 +344,8 @@ func (o *otlpReceiver) LogsHandler(w http.ResponseWriter, r *http.Request) {
 			Processors: telemetry.LogProcessors,
 		}.Export(r.Context(), logs)
 	}
+
+	w.WriteHeader(http.StatusCreated)
 }
 
 func (o *otlpReceiver) MetricsHandler(w http.ResponseWriter, r *http.Request) {
