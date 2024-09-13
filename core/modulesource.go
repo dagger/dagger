@@ -377,7 +377,7 @@ func (src *ModuleSource) LoadContext(ctx context.Context, dag *dagql.Server, pat
 			return inst, fmt.Errorf("failed to get dir instance: %w", err)
 		}
 
-		if ignore == nil || len(ignore) == 0 {
+		if len(ignore) == 0 {
 			return loadedDir, nil
 		}
 
