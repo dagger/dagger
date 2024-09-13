@@ -104,6 +104,11 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 		ex.Module = "./viztest"
 	}
 
+	daggerBin := "dagger" // $PATH
+	if bin := os.Getenv("_EXPERIMENTAL_DAGGER_CLI_BIN"); bin != "" {
+		daggerBin = bin
+	}
+
 	daggerArgs := []string{"--progress=report", "call", "-m", ex.Module, ex.Function}
 	daggerArgs = append(daggerArgs, ex.Args...)
 
@@ -115,7 +120,7 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 	func() {
 		ctx, span := Tracer().Start(ctx, "warmup")
 		defer telemetry.End(span, func() error { return nil })
-		warmup := exec.Command("dagger", daggerArgs...)
+		warmup := exec.Command(daggerBin, daggerArgs...)
 		warmup.Env = append(
 			os.Environ(),
 			fmt.Sprintf("HOME=%s", s.Home), // ignore any local Dagger Cloud auth
@@ -130,7 +135,7 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 		time.Sleep(10 * time.Second)
 	}()
 
-	cmd := exec.Command("dagger", daggerArgs...)
+	cmd := exec.Command(daggerBin, daggerArgs...)
 	cmd.Env = append(
 		os.Environ(),
 		fmt.Sprintf("HOME=%s", s.Home), // ignore any local Dagger Cloud auth
