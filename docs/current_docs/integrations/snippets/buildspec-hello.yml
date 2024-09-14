@@ -8,7 +8,7 @@ env:
     DAGGER_CLOUD_TOKEN: "arn:aws:secretsmanager:...:dagger_cloud_token"
 
 phases:
-  pre_build:
+  install:
     commands:
       - echo "Installing Dagger CLI"
       - curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
