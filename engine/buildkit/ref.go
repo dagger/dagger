@@ -503,12 +503,15 @@ func debugContainer(ctx context.Context, execOp *bksolverpb.ExecOp, execErr *llb
 }
 
 func getExecMetaFile(ctx context.Context, c *Client, mntable snapshot.Mountable, fileName string) ([]byte, error) {
+	return ReadSnapshotPath(ctx, c, mntable, path.Join(MetaMountDestPath, fileName))
+}
+
+func ReadSnapshotPath(ctx context.Context, c *Client, mntable snapshot.Mountable, filePath string) ([]byte, error) {
 	ctx = withOutgoingContext(c, ctx)
-	filePath := path.Join(MetaMountDestPath, fileName)
 	stat, err := cacheutil.StatFile(ctx, mntable, filePath)
 	if err != nil {
 		// TODO: would be better to verify this is a "not exists" error, return err if not
-		bklog.G(ctx).Debugf("getExecMetaFile: failed to stat file: %v", err)
+		bklog.G(ctx).Debugf("ReadSnapshotPath: failed to stat file: %v", err)
 		return nil, nil
 	}
 
