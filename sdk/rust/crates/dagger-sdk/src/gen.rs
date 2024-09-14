@@ -405,6 +405,39 @@ impl EnvVariableId {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct ErrorId(pub String);
+impl From<&str> for ErrorId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+impl From<String> for ErrorId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl IntoID<ErrorId> for Error {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<ErrorId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<ErrorId> for ErrorId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<ErrorId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { Ok::<ErrorId, DaggerError>(self) })
+    }
+}
+impl ErrorId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct FieldTypeDefId(pub String);
 impl From<&str> for FieldTypeDefId {
     fn from(value: &str) -> Self {
@@ -4679,6 +4712,24 @@ impl EnvVariable {
     }
 }
 #[derive(Clone)]
+pub struct Error {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl Error {
+    /// A unique identifier for this Error.
+    pub async fn id(&self) -> Result<ErrorId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A description of the error.
+    pub async fn message(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("message");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+#[derive(Clone)]
 pub struct FieldTypeDef {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
@@ -5049,6 +5100,22 @@ impl FunctionCall {
     /// The name of the parent object of the function being called. If the function is top-level to the module, this is the name of the module.
     pub async fn parent_name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("parentName");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Return an error from the function.
+    ///
+    /// # Arguments
+    ///
+    /// * `error` - The error to return.
+    pub async fn return_error(&self, error: impl IntoID<ErrorId>) -> Result<Void, DaggerError> {
+        let mut query = self.selection.select("returnError");
+        query = query.arg_lazy(
+            "error",
+            Box::new(move || {
+                let error = error.clone();
+                Box::pin(async move { error.into_id().await.unwrap().quote() })
+            }),
+        );
         query.execute(self.graphql_client.clone()).await
     }
     /// Set the return value of the function call to the provided value.
@@ -6707,6 +6774,20 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Create a new error.
+    ///
+    /// # Arguments
+    ///
+    /// * `message` - A brief description of the error.
+    pub fn error(&self, message: impl Into<String>) -> Error {
+        let mut query = self.selection.select("error");
+        query = query.arg("message", message.into());
+        Error {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Creates a function.
     ///
     /// # Arguments
@@ -7024,6 +7105,22 @@ impl Query {
             }),
         );
         EnvVariable {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a Error from its ID.
+    pub fn load_error_from_id(&self, id: impl IntoID<ErrorId>) -> Error {
+        let mut query = self.selection.select("loadErrorFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        Error {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),

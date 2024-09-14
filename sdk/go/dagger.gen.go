@@ -4003,13 +4003,13 @@ func (r *FunctionCall) ParentName(ctx context.Context) (string, error) {
 }
 
 // Return an error from the function.
-func (r *FunctionCall) ReturnError(ctx context.Context, message *Error) error {
-	assertNotNil("message", message)
+func (r *FunctionCall) ReturnError(ctx context.Context, error *Error) error {
+	assertNotNil("error", error)
 	if r.returnError != nil {
 		return nil
 	}
 	q := r.query.Select("returnError")
-	q = q.Arg("message", message)
+	q = q.Arg("error", error)
 
 	return q.Execute(ctx)
 }

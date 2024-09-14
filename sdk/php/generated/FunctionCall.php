@@ -59,6 +59,16 @@ class FunctionCall extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Return an error from the function.
+     */
+    public function returnError(ErrorId|Error $error): void
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('returnError');
+        $leafQueryBuilder->setArgument('error', $error);
+        $this->queryLeaf($leafQueryBuilder, 'returnError');
+    }
+
+    /**
      * Set the return value of the function call to the provided value.
      */
     public function returnValue(Json $value): void

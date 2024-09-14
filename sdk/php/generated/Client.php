@@ -117,6 +117,16 @@ class Client extends Client\AbstractClient
     }
 
     /**
+     * Create a new error.
+     */
+    public function error(string $message): Error
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('error');
+        $innerQueryBuilder->setArgument('message', $message);
+        return new \Dagger\Error($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Creates a function.
      */
     public function function(string $name, TypeDefId|TypeDef $returnType): Function_
@@ -296,6 +306,16 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadEnvVariableFromID');
         $innerQueryBuilder->setArgument('id', $id);
         return new \Dagger\EnvVariable($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a Error from its ID.
+     */
+    public function loadErrorFromID(ErrorId|Error $id): Error
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadErrorFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\Error($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
