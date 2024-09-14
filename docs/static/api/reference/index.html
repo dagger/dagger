@@ -38,6 +38,7 @@
               <li><a href="#query-daggerEngine">daggerEngine</a></li>
               <li><a href="#query-defaultPlatform">defaultPlatform</a></li>
               <li><a href="#query-directory">directory</a></li>
+              <li><a href="#query-error">error</a></li>
               <li><a href="#query-function">function</a></li>
               <li><a href="#query-generatedCode">generatedCode</a></li>
               <li><a href="#query-git">git</a></li>
@@ -54,6 +55,7 @@
               <li><a href="#query-loadEnumTypeDefFromID">loadEnumTypeDefFromID</a></li>
               <li><a href="#query-loadEnumValueTypeDefFromID">loadEnumValueTypeDefFromID</a></li>
               <li><a href="#query-loadEnvVariableFromID">loadEnvVariableFromID</a></li>
+              <li><a href="#query-loadErrorFromID">loadErrorFromID</a></li>
               <li><a href="#query-loadFieldTypeDefFromID">loadFieldTypeDefFromID</a></li>
               <li><a href="#query-loadFileFromID">loadFileFromID</a></li>
               <li><a href="#query-loadFunctionArgFromID">loadFunctionArgFromID</a></li>
@@ -119,6 +121,8 @@
               <li><a href="#definition-EnumValueTypeDefID">EnumValueTypeDefID</a></li>
               <li><a href="#definition-EnvVariable">EnvVariable</a></li>
               <li><a href="#definition-EnvVariableID">EnvVariableID</a></li>
+              <li><a href="#definition-Error">Error</a></li>
+              <li><a href="#definition-ErrorID">ErrorID</a></li>
               <li><a href="#definition-FieldTypeDef">FieldTypeDef</a></li>
               <li><a href="#definition-FieldTypeDefID">FieldTypeDefID</a></li>
               <li><a href="#definition-File">File</a></li>
@@ -665,6 +669,58 @@
 }</span></span>
 </code></pre>
                   <p><a href="https://play.dagger.cloud/playground/ThUnHXcpmJY" target="_blank">Try it in the API Playground!</a></p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-error" class="operation operation-query" data-traverse-target="query-error">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>error</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Create a new error.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-Error"><code>Error!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>message</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span>
+                        </td>
+                        <td> A brief description of the error. </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
                 </div>
               </div>
             </div>
@@ -1560,6 +1616,59 @@
                       <tr>
                         <td>
                           <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-EnvVariableID"><code>EnvVariableID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-loadErrorFromID" class="operation operation-query" data-traverse-target="query-loadErrorFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadErrorFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a Error from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-Error"><code>Error!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-ErrorID"><code>ErrorID!</code></a></span>
                         </td>
                         <td>
                         </td>
@@ -5903,6 +6012,51 @@
               </div>
             </div>
           </section>
+          <section id="definition-Error" class="definition definition-object" data-traverse-target="definition-Error">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">Error</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Error-id" href="#Error-id"><code>id</code></a> - <span class="property-type"><a href="#definition-ErrorID"><code>ErrorID!</code></a></span> </td>
+                        <td> A unique identifier for this Error. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Error-message" href="#Error-message"><code>message</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> A description of the error. </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-ErrorID" class="definition definition-scalar" data-traverse-target="definition-ErrorID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">ErrorID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>ErrorID</code> scalar type represents an identifier for an object of type Error.</p>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="definition-FieldTypeDef" class="definition definition-object" data-traverse-target="definition-FieldTypeDef">
             <div class="definition-group-name">
               <a href="#group-Types">Types</a>
@@ -6307,6 +6461,23 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="FunctionCall-parentName" href="#FunctionCall-parentName"><code>parentName</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> The name of the parent object of the function being called. If the function is top-level to the module, this is the name of the module. </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="FunctionCall-returnError" href="#FunctionCall-returnError"><code>returnError</code></a> - <span class="property-type"><a href="#definition-Void"><code>Void</code></a></span> </td>
+                        <td> Return an error from the function. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>error</code></span> - <span class="property-type"><a href="#definition-ErrorID"><code>ErrorID!</code></a></span></h6>
+                                <p>The error to return.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="FunctionCall-returnValue" href="#FunctionCall-returnValue"><code>returnValue</code></a> - <span class="property-type"><a href="#definition-Void"><code>Void</code></a></span> </td>

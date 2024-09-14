@@ -1474,6 +1474,19 @@ The `EnvVariableID` scalar type represents an identifier for an object of type E
 """
 scalar EnvVariableID
 
+type Error {
+  """A unique identifier for this Error."""
+  id: ErrorID!
+
+  """A description of the error."""
+  message: String!
+}
+
+"""
+The `ErrorID` scalar type represents an identifier for an object of type Error.
+"""
+scalar ErrorID
+
 """
 A definition of a field on a custom object defined in a Module.
 
@@ -1679,6 +1692,12 @@ type FunctionCall {
   top-level to the module, this is the name of the module.
   """
   parentName: String!
+
+  """Return an error from the function."""
+  returnError(
+    """The error to return."""
+    error: ErrorID!
+  ): Void
 
   """Set the return value of the function call to the provided value."""
   returnValue(
@@ -2545,6 +2564,12 @@ type Query {
   """Creates an empty directory."""
   directory: Directory!
 
+  """Create a new error."""
+  error(
+    """A brief description of the error."""
+    message: String!
+  ): Error!
+
   """Creates a function."""
   function(
     """
@@ -2629,6 +2654,9 @@ type Query {
 
   """Load a EnvVariable from its ID."""
   loadEnvVariableFromID(id: EnvVariableID!): EnvVariable!
+
+  """Load a Error from its ID."""
+  loadErrorFromID(id: ErrorID!): Error!
 
   """Load a FieldTypeDef from its ID."""
   loadFieldTypeDefFromID(id: FieldTypeDefID!): FieldTypeDef!
