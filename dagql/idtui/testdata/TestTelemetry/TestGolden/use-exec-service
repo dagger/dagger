@@ -26,7 +26,7 @@
 │ ✔ .withExposedPort(port: 80): Container! X.Xs
 │ ✔ .asService: Service! X.Xs
 │ ┃ [::ffff:10.XX.XX.XX]:XXXXX: response:200
-│ 
+│
 │ $ Container.from(address: "alpine"): Container! X.Xs CACHED
 │ ✔ .withServiceBinding(
 │ │ │ alias: "exec-service"

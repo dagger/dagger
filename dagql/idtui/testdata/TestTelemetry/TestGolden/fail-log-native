@@ -1,0 +1,26 @@
+✔ connect X.Xs
+│ ✔ starting engine X.Xs
+│ ✔ connecting to engine X.Xs
+│ ✔ starting session X.Xs
+
+✔ initialize X.Xs
+│ ✔ resolving module ref X.Xs
+│ ✔ installing module X.Xs
+│ ✔ analyzing module X.Xs
+
+✔ prepare X.Xs
+
+✔ viztest: Viztest! X.Xs
+✘ .failLogNative: Void X.Xs
+┃ im doing a lot of work
+┃ and then failing
+! i failed
+
+Setup tracing at https://dagger.cloud/traces/setup. To hide: export NOTHANKS=1
+
+Error logs:
+
+✘ .failLogNative: Void X.Xs
+im doing a lot of work
+and then failing
+! i failed

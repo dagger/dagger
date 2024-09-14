@@ -23,7 +23,7 @@
 │ ┃ X:M XX XXX 20XX XX:XX:XX.XXX * Running mode=standalone, port=6379.
 │ ┃ X:M XX XXX 20XX XX:XX:XX.XXX * Server initialized
 │ ┃ X:M XX XXX 20XX XX:XX:XX.XXX * Ready to accept connections tcp
-│ 
+│
 │ ✔ Container.withServiceBinding(
 │ │ │ alias: "redis"
 │ │ │ service: ✔ Container.asService: Service! X.Xs

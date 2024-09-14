@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -192,7 +193,7 @@ func (*Viztest) LogStderr() {
 	fmt.Fprintln(os.Stderr, "Hello, world!")
 }
 
-// Fail fails after waiting for a certain amount of time.
+// FailLog runs a container that logs a message and then fails.
 func (*Viztest) FailLog(ctx context.Context) error {
 	_, err := dag.Container().
 		From("alpine").
@@ -202,8 +203,15 @@ func (*Viztest) FailLog(ctx context.Context) error {
 	return err
 }
 
-// Fail fails after waiting for a certain amount of time.
-func (*Viztest) Fail(ctx context.Context,
+// FailLogNative prints a message and then returns an error.
+func (*Viztest) FailLogNative(ctx context.Context) error {
+	fmt.Println("im doing a lot of work")
+	fmt.Println("and then failing")
+	return errors.New("i failed")
+}
+
+// FailSlow fails after waiting for a certain amount of time.
+func (*Viztest) FailSlow(ctx context.Context,
 	// +optional
 	// +default="10"
 	after string) error {

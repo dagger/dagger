@@ -70,6 +70,10 @@ func (opts FrontendOpts) ShouldShow(span *Span) bool {
 		return false
 	}
 	if span.IsFailedOrCausedFailure() {
+		if len(span.LinksTo.Order) > 0 {
+			// just show the originating span, since we're "merged" into it
+			return false
+		}
 		// prioritize showing failed things, even if they're internal
 		return true
 	}

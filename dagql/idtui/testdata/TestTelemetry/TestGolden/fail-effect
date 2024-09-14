@@ -16,8 +16,6 @@
 │ $ .from(address: "alpine"): Container! X.Xs CACHED
 │ ✘ .withExec(args: ["sh", "-c", "echo this is a failing effect; exit 1"]): Container! X.Xs
 │ ┃ this is a failing effect
-│ │ ✘ exec sh -c echo this is a failing effect; exit 1 X.Xs
-│ │ ! process "sh -c echo this is a failing effect; exit 1" did not complete successfully: exit code: 1
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide: export NOTHANKS=1
 

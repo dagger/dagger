@@ -3,6 +3,10 @@ package schema
 import (
 	"context"
 
+	"dagger.io/dagger/telemetry"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 )
@@ -26,6 +30,8 @@ func (s *errorSchema) Install() {
 func (s *errorSchema) error(ctx context.Context, _ *core.Query, args struct {
 	Message string `doc:"A description of the error."`
 }) (*core.Error, error) {
+	// We don't want to see these in the UI
+	trace.SpanFromContext(ctx).SetAttributes(attribute.Bool(telemetry.UIInternalAttr, true))
 	return &core.Error{
 		Message: args.Message,
 	}, nil

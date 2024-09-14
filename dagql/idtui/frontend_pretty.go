@@ -264,12 +264,13 @@ func (fe *frontendPretty) renderErrorLogs(out *termenv.Output, r *renderer) erro
 		fmt.Fprintln(out)
 		fmt.Fprintln(out, out.String("Error logs:").Bold())
 	}
-	dagui.WalkTree(errTree, func(row *dagui.TraceTree, _ int) bool {
-		logs := fe.logs.Logs[row.Span.ID]
+	dagui.WalkTree(errTree, func(tree *dagui.TraceTree, _ int) bool {
+		logs := fe.logs.Logs[tree.Span.ID]
 		if logs != nil && logs.UsedHeight() > 0 {
 			fmt.Fprintln(out)
-			fe.renderStep(out, r, row.Span, row.Chained, 0, "")
+			fe.renderStep(out, r, tree.Span, tree.Chained, 0, "")
 			fe.renderLogs(out, r, logs, -1, logs.UsedHeight(), "")
+			fe.renderStepError(out, r, tree.Span, tree.Depth(), "")
 		}
 		return false
 	})
@@ -936,10 +937,12 @@ func (fe *frontendPretty) renderRow(out *termenv.Output, r *renderer, row *dagui
 		fmt.Fprintln(out)
 	}
 	fe.renderStep(out, r, row.Span, row.Chained, row.Depth, prefix)
-	// if final {
-	// 	return
-	// }
-	if row.IsRunningOrChildRunning || row.Span.IsFailed() || fe.Verbosity >= dagui.ExpandCompletedVerbosity { // TODO: maybe only in final report?
+	fe.renderStepLogs(out, r, row, final, prefix)
+	fe.renderStepError(out, r, row.Span, row.Depth, prefix)
+}
+
+func (fe *frontendPretty) renderStepLogs(out *termenv.Output, r *renderer, row *dagui.TraceRow, final bool, prefix string) {
+	if row.IsRunningOrChildRunning || row.Span.IsFailed() || fe.Verbosity >= dagui.ExpandCompletedVerbosity {
 		if logs := fe.logs.Logs[row.Span.ID]; logs != nil {
 			fe.renderLogs(out, r,
 				logs,
@@ -948,6 +951,20 @@ func (fe *frontendPretty) renderRow(out *termenv.Output, r *renderer, row *dagui
 				prefix,
 			)
 		}
+	}
+}
+
+func (fe *frontendPretty) renderStepError(out *termenv.Output, r *renderer, span *dagui.Span, depth int, prefix string) {
+	if span.IsFailedOrCausedFailure() && span.Status.Description != "" {
+		// only print the first line
+		line := strings.Split(span.Status.Description, "\n")[0]
+		fmt.Fprint(out, prefix)
+		r.indent(out, depth)
+		fmt.Fprintf(out,
+			out.String("! %s").Foreground(termenv.ANSIYellow).String(),
+			line,
+		)
+		fmt.Fprintln(out)
 	}
 }
 
@@ -965,18 +982,6 @@ func (fe *frontendPretty) renderStep(out *termenv.Output, r *renderer, span *dag
 		}
 	}
 	fmt.Fprintln(out)
-
-	if span.IsFailed() && span.Status.Description != "" {
-		// only print the first line
-		line := strings.Split(span.Status.Description, "\n")[0]
-		fmt.Fprint(out, prefix)
-		r.indent(out, depth)
-		fmt.Fprintf(out,
-			out.String("! %s").Foreground(termenv.ANSIYellow).String(),
-			line,
-		)
-		fmt.Fprintln(out)
-	}
 
 	if span.ID == fe.debugged {
 		r.indent(out, depth+1)

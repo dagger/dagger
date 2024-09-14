@@ -77,6 +77,7 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 		{Function: "hello-world"},
 		{Function: "fail-log", Fail: true},
 		{Function: "fail-effect", Fail: true},
+		{Function: "fail-log-native", Fail: true},
 		{Function: "encapsulate"},
 		{Function: "pending", Fail: true},
 		{Function: "use-exec-service"},
@@ -224,11 +225,16 @@ var scrubs = []scrubber{
 		"12:34:56",
 		"XX:XX:XX",
 	},
-	// Trailing whitespace from logs (ignores NO_COLOR - bug)
+	// Trailing whitespace
 	{
 		regexp.MustCompile(`\s*` + regexp.QuoteMeta(midterm.Reset.Render())),
-		"	        \x1b[0m",
+		"	        \x1b[0m", // from logs (which ignore NO_COLOR for the reset - bug)
 		"",
+	},
+	{
+		regexp.MustCompile(`[ \t]\n`),
+		"foo	        \nbar",
+		"\n",
 	},
 	// Dagger Cloud logged out
 	{

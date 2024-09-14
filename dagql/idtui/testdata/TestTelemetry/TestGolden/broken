@@ -16,8 +16,6 @@
 │ │ │ │ ✘ Container.withExec(args: ["go", "build", "-o", "/runtime", "."]): Container! X.Xs
 │ │ │ │ ┃ # dagger/broken
 │ │ │ │ ┃ ./main.go:6:6: undefined: ctx
-│ │ │ │ │ ✘ exec go build -o /runtime . X.Xs
-│ │ │ │ │ ! process "go build -o /runtime ." did not complete successfully: exit code: 1
 │ │ ✘ .initialize: Module! X.Xs
 │ │ ! failed to initialize module: failed to call module "broken" to get functions: call constructor: process "go build -o /runtime ." did not complete successfully: exit code: 1
 
