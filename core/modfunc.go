@@ -479,7 +479,7 @@ func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Serve
 
 		return JSON(dirID), nil
 	default:
-		return nil, fmt.Errorf("argument %q must be of type Directory to apply ignore pattern", arg.OriginalName)
+		return nil, fmt.Errorf("argument %q must be of type Directory to apply ignore pattern but type is %v", arg.OriginalName, value)
 	}
 }
 
