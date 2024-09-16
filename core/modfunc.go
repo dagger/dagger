@@ -478,14 +478,10 @@ func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Serve
 		}
 
 		return JSON(dirID), nil
-	case *Directory:
+	case dagql.ID[*Directory]:
 		var ignoredDir dagql.Instance[*Directory]
-		dirInst, err := value.AsBlob(ctx, dag)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get directory contents: %w", err)
-		}
 
-		err = dag.Select(ctx, dag.Root(), &ignoredDir,
+		err := dag.Select(ctx, dag.Root(), &ignoredDir,
 			dagql.Selector{
 				Field: "directory",
 			},
@@ -493,7 +489,7 @@ func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Serve
 				Field: "withDirectory",
 				Args: []dagql.NamedInput{
 					{Name: "path", Value: dagql.String(arg.Ignore[0])},
-					{Name: "directory", Value: dagql.NewID[*Directory](dirInst.ID())},
+					{Name: "directory", Value: dagql.NewID[*Directory](value.ID())},
 					{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(arg.Ignore[1:]...))},
 				},
 			},
