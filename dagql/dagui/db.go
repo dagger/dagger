@@ -374,6 +374,9 @@ func (db *DB) integrateSpan(span *Span) {
 		linked.ChildSpans.Add(span)
 		linked.LinkedFrom.Add(span)
 		span.LinksTo.Add(linked)
+
+		// update any linked spans
+		db.updatedSpans.Add(linked)
 	}
 
 	// update span states, propagating them up through parents, too
@@ -452,6 +455,13 @@ func (db *DB) integrateSpan(span *Span) {
 		db.EffectSpans[span.EffectID].Add(span)
 		if span.IsFailed() {
 			db.FailedEffects[span.EffectID] = true
+		}
+		causes := db.CauseSpans[span.EffectID]
+		if causes != nil {
+			for _, cause := range causes.Order {
+				// update any causal spans
+				db.updatedSpans.Add(cause)
+			}
 		}
 	}
 

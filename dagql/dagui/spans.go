@@ -41,6 +41,9 @@ func (span *Span) Snapshot() SpanSnapshot {
 	// TODO: don't count passthrough/internal children... but DO count children
 	// of passthrough spans
 	span.ChildCount = len(span.ChildSpans.Order)
+	span.Failed = span.IsFailedOrCausedFailure()
+	span.Cached = span.IsCached()
+	span.Pending = span.IsPending()
 	return span.SpanSnapshot
 }
 
@@ -57,8 +60,10 @@ type SpanSnapshot struct {
 
 	Status sdktrace.Status `json:",omitempty"`
 
+	Failed   bool `json:",omitempty"` // includes links/caused failures
 	Internal bool `json:",omitempty"`
 	Cached   bool `json:",omitempty"`
+	Pending  bool `json:",omitempty"`
 	Canceled bool `json:",omitempty"`
 
 	Encapsulate  bool `json:",omitempty"`
@@ -200,6 +205,10 @@ func (span *Span) IsFailed() bool {
 }
 
 func (span *Span) IsFailedOrCausedFailure() bool {
+	if span.Failed {
+		// snapshotted, likely based on the following checks
+		return true
+	}
 	if span.Status.Code == codes.Error ||
 		len(span.FailedLinks.Order) > 0 {
 		return true
