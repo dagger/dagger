@@ -605,6 +605,7 @@ defmodule Dagger.Container do
           {:stdin, String.t() | nil},
           {:redirect_stdout, String.t() | nil},
           {:redirect_stderr, String.t() | nil},
+          {:valid_exit_codes, [integer()]},
           {:experimental_privileged_nesting, boolean() | nil},
           {:insecure_root_capabilities, boolean() | nil},
           {:expand, boolean() | nil},
@@ -619,6 +620,7 @@ defmodule Dagger.Container do
       |> QB.maybe_put_arg("stdin", optional_args[:stdin])
       |> QB.maybe_put_arg("redirectStdout", optional_args[:redirect_stdout])
       |> QB.maybe_put_arg("redirectStderr", optional_args[:redirect_stderr])
+      |> QB.maybe_put_arg("validExitCodes", optional_args[:valid_exit_codes])
       |> QB.maybe_put_arg(
         "experimentalPrivilegedNesting",
         optional_args[:experimental_privileged_nesting]

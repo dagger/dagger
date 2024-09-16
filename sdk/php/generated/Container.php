@@ -505,6 +505,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
         ?string $stdin = '',
         ?string $redirectStdout = '',
         ?string $redirectStderr = '',
+        ?array $validExitCodes = null,
         ?bool $experimentalPrivilegedNesting = false,
         ?bool $insecureRootCapabilities = false,
         ?bool $expand = false,
@@ -523,6 +524,9 @@ class Container extends Client\AbstractObject implements Client\IdAble
         }
         if (null !== $redirectStderr) {
         $innerQueryBuilder->setArgument('redirectStderr', $redirectStderr);
+        }
+        if (null !== $validExitCodes) {
+        $innerQueryBuilder->setArgument('validExitCodes', $validExitCodes);
         }
         if (null !== $experimentalPrivilegedNesting) {
         $innerQueryBuilder->setArgument('experimentalPrivilegedNesting', $experimentalPrivilegedNesting);

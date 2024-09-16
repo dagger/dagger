@@ -1172,6 +1172,8 @@ type ContainerWithExecOpts struct {
 	RedirectStdout string
 	// Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
 	RedirectStderr string
+	// Exit codes this command is allowed to exit with without error
+	ValidExitCodes []int
 	// Provides Dagger access to the executed command.
 	//
 	// Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
@@ -1205,6 +1207,10 @@ func (r *Container) WithExec(args []string, opts ...ContainerWithExecOpts) *Cont
 		// `redirectStderr` optional argument
 		if !querybuilder.IsZeroValue(opts[i].RedirectStderr) {
 			q = q.Arg("redirectStderr", opts[i].RedirectStderr)
+		}
+		// `validExitCodes` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ValidExitCodes) {
+			q = q.Arg("validExitCodes", opts[i].ValidExitCodes)
 		}
 		// `experimentalPrivilegedNesting` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {

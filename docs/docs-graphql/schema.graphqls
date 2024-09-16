@@ -552,6 +552,9 @@ type Container {
 
     """If the container has an entrypoint, prepend it to the args."""
     useEntrypoint: Boolean = false
+
+    """Exit codes this command is allowed to exit with without error"""
+    validExitCodes: [Int!] = []
   ): Container!
 
   """

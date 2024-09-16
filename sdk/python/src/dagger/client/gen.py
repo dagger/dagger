@@ -1340,6 +1340,7 @@ class Container(Type):
         stdin: str | None = "",
         redirect_stdout: str | None = "",
         redirect_stderr: str | None = "",
+        valid_exit_codes: list[int] | None = None,
         experimental_privileged_nesting: bool | None = False,
         insecure_root_capabilities: bool | None = False,
         expand: bool | None = False,
@@ -1365,6 +1366,8 @@ class Container(Type):
         redirect_stderr:
             Redirect the command's standard error to a file in the container
             (e.g., "/tmp/stderr").
+        valid_exit_codes:
+            Exit codes this command is allowed to exit with without error
         experimental_privileged_nesting:
             Provides Dagger access to the executed command.
             Do not use this option unless you trust the command being
@@ -1392,6 +1395,7 @@ class Container(Type):
             Arg("stdin", stdin, ""),
             Arg("redirectStdout", redirect_stdout, ""),
             Arg("redirectStderr", redirect_stderr, ""),
+            Arg("validExitCodes", [] if valid_exit_codes is None else valid_exit_codes),
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
