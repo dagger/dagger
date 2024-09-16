@@ -1035,6 +1035,10 @@ var skipLeaves = map[string][]string{
 		// file it is, best to skip it for now.
 		"contents",
 	},
+	"Secret": {
+		// Don't leak secrets.
+		"plaintext",
+	},
 }
 
 // GetLeafFunctions returns the leaf functions of a function provider, which are
