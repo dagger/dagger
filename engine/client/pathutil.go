@@ -1,8 +1,8 @@
 package client
 
 import (
+	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 )
@@ -58,22 +58,22 @@ func getDrive(path string) string {
 	return ""
 }
 
-// expandPath expands a given path to its absolute form, handling home directory
-// expansion (~ or ~user) and environment variable expansion. It aims to be cross-platform
-func expandPath(path string) (string, error) {
+// ExpandHomeDir expands a given path to its absolute form, handling home directory
+func ExpandHomeDir(homeDir string, path string) (string, error) {
+	if homeDir == "" {
+		return "", fmt.Errorf("homeDir is empty")
+	}
+
 	if path == "" {
-		return "", nil
+		return path, nil
 	}
 
-	// the ~ expansion is a unix convention
-	if strings.HasPrefix(path, "~") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", err
-		}
-		path = filepath.Join(home, path[1:])
+	if path[0] != '~' {
+		return path, nil
+	}
+	if len(path) > 1 && path[1] != '/' && path[1] != '\\' {
+		return "", errors.New("cannot expand home directory")
 	}
 
-	path = os.ExpandEnv(path)
-	return filepath.Abs(path)
+	return strings.Replace(path, "~", homeDir, 1), nil
 }

@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/csv"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -20,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/containerd/platforms"
+	"github.com/dagger/dagger/engine/client"
 	"github.com/moby/buildkit/util/gitutil"
 	"github.com/spf13/pflag"
 
@@ -352,7 +352,11 @@ func (v *directoryValue) Get(ctx context.Context, dag *dagger.Client, modSrc *da
 	// POSIX "portable filename character set":
 	// https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_282
 	path, viewName, _ := strings.Cut(path, ":")
-	path, err = expandHomeDir(path)
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return nil, err
+	}
+	path, err = client.ExpandHomeDir(homeDir, path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to expand home directory: %w", err)
 	}
@@ -430,7 +434,11 @@ func (v *fileValue) Get(_ context.Context, dag *dagger.Client, _ *dagger.ModuleS
 	vStr = strings.TrimPrefix(vStr, "file://")
 	if !filepath.IsAbs(vStr) {
 		var err error
-		vStr, err = expandHomeDir(vStr)
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return nil, err
+		}
+		vStr, err = client.ExpandHomeDir(homeDir, vStr)
 		if err != nil {
 			return nil, fmt.Errorf("failed to expand home directory: %w", err)
 		}
@@ -500,7 +508,11 @@ func (v *secretValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.Modul
 		plaintext = envPlaintext
 
 	case fileSecretSource:
-		sourceVal, err := expandHomeDir(v.sourceVal)
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return nil, err
+		}
+		sourceVal, err := client.ExpandHomeDir(homeDir, v.sourceVal)
 		if err != nil {
 			return nil, err
 		}
@@ -1013,19 +1025,4 @@ func writeAsCSV(vals []string) (string, error) {
 	}
 	w.Flush()
 	return strings.TrimSuffix(b.String(), "\n"), nil
-}
-
-func expandHomeDir(path string) (string, error) {
-	if path[0] != '~' {
-		return path, nil
-	}
-	if len(path) > 1 && path[1] != '/' && path[1] != '\\' {
-		return "", errors.New("cannot expand home directory")
-	}
-
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	return strings.Replace(path, "~", homeDir, 1), nil
 }

@@ -5228,6 +5228,10 @@ func mountedPrivateRepoSocket(c *dagger.Client, t *testctx.T) (dagger.WithContai
 	return func(ctr *dagger.Container) *dagger.Container {
 		sock := c.Host().UnixSocket(sockPath)
 		if sock != nil {
+			// Ensure that HOME env var is set, to ensure homePath expension in test suite
+			homeDir, _ := os.UserHomeDir()
+			ctr = ctr.WithEnvVariable("HOME", homeDir)
+
 			ctr = ctr.WithUnixSocket("/sock/unix-socket", sock)
 			ctr = ctr.WithEnvVariable("SSH_AUTH_SOCK", "/sock/unix-socket")
 		}
@@ -5509,7 +5513,7 @@ func (ModuleSuite) TestSSHAuthSockPathHandling(ctx context.Context, t *testctx.T
 
 	repoURL := "git@gitlab.com:dagger-modules/private/test/more/dagger-test-modules-private.git"
 
-	t.Run("SSH auth with symlink", func(ctx context.Context, t *testctx.T) {
+	t.Run("SSH auth with home expansion and symlink", func(ctx context.Context, t *testctx.T) {
 		mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
 		defer cleanup()
 
@@ -5517,12 +5521,14 @@ func (ModuleSuite) TestSSHAuthSockPathHandling(ctx context.Context, t *testctx.T
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			With(mountedSocket).
 			WithExec([]string{"mkdir", "-p", "/home/dagger"}).
-			WithExec([]string{"ln", "-s", "/sock/unix-socket", "/home/dagger/.ssh-sock"}).
 			WithEnvVariable("HOME", "/home/dagger").
-			WithEnvVariable("SSH_AUTH_SOCK", "/home/dagger/.ssh-sock")
+			WithExec([]string{"ln", "-s", "/sock/unix-socket", "/home/dagger/.ssh-sock"}).
+			WithEnvVariable("SSH_AUTH_SOCK", "~/.ssh-sock")
 
 		out, err := ctr.
 			WithWorkdir("/work/some/subdir").
+			WithExec([]string{"mkdir", "-p", "/home/dagger"}).
+			WithExec([]string{"sh", "-c", "cd", "/work/some/subdir"}).
 			With(daggerFunctions("-m", repoURL)).
 			Stdout(ctx)
 		require.NoError(t, err)
