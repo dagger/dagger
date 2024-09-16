@@ -6,10 +6,17 @@ import (
 	"io"
 	"net/http"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/containerd/containerd/content"
+	"github.com/dagger/dagger/engine/session"
 	"github.com/moby/buildkit/util/bklog"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
+
+const otelMagicacheDigestKey = "dagger.io/magicache.digest"
+const otelMagicacheSize = "dagger.io/magicache.size"
 
 type layerProvider struct {
 	httpClient  *http.Client
@@ -17,6 +24,13 @@ type layerProvider struct {
 }
 
 func (p *layerProvider) ReaderAt(ctx context.Context, desc ocispecs.Descriptor) (content.ReaderAt, error) {
+	ctx, span := telemetry.Tracer(ctx, session.InstrumentationLibrary).
+		Start(ctx, "magicache layer download")
+	span.SetAttributes(
+		attribute.String(otelMagicacheDigestKey, desc.Digest.String()),
+		attribute.Int64(otelMagicacheSize, desc.Size),
+	)
+
 	resp, err := p.cacheClient.GetLayerDownloadURL(ctx, GetLayerDownloadURLRequest{
 		Digest: desc.Digest,
 	})
@@ -29,6 +43,7 @@ func (p *layerProvider) ReaderAt(ctx context.Context, desc ocispecs.Descriptor) 
 		httpClient: p.httpClient,
 		url:        resp.URL,
 		desc:       desc,
+		span:       span,
 	}, nil
 }
 
@@ -38,11 +53,18 @@ type cacheMountProvider struct {
 }
 
 func (p *cacheMountProvider) ReaderAt(ctx context.Context, desc ocispecs.Descriptor) (content.ReaderAt, error) {
+	ctx, span := telemetry.Tracer(ctx, session.InstrumentationLibrary).
+		Start(ctx, "magicache cachemount download")
+	span.SetAttributes(
+		attribute.String(otelMagicacheDigestKey, desc.Digest.String()),
+		attribute.Int64(otelMagicacheSize, desc.Size),
+	)
 	return &urlReaderAt{
 		ctx:        ctx,
 		httpClient: p.httpClient,
 		url:        p.url,
 		desc:       desc,
+		span:       span,
 	}, nil
 }
 
@@ -58,6 +80,7 @@ type urlReaderAt struct {
 	httpClient *http.Client
 	url        string
 	desc       ocispecs.Descriptor
+	span       trace.Span
 
 	// internally set fields
 	body   io.ReadCloser
@@ -97,6 +120,10 @@ func (r *urlReaderAt) Size() int64 {
 }
 
 func (r *urlReaderAt) Close() error {
+	if r.span != nil {
+		r.span.End()
+	}
+
 	if r.body != nil {
 		return r.body.Close()
 	}
