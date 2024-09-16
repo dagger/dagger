@@ -82,11 +82,11 @@ func (m *PythonSdk) UvVersion() string {
 	return m.Discovery.UserConfig().UvVersion
 }
 
-func (m *PythonSdk) PackageIndex() string {
-	if m.Discovery.UserConfig().PackageIndex != "" {
-		return m.Discovery.UserConfig().PackageIndex
+func (m *PythonSdk) IndexUrl() string {
+	if m.Discovery.UvConfig().IndexUrl != "" {
+		return m.Discovery.UvConfig().IndexUrl
 	}
-	return DefaultPackageIndex
+	return DefaultPackageIndexUrl
 }
 
 // Override the uv version

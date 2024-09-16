@@ -24,6 +24,11 @@ var DirExcludes = []string{".venv", "sdk"}
 // files concurrently rather than making blocking calls later.
 var FileContents = []string{"pyproject.toml", ".python-version"}
 
+// Uv config bits we'd like to consume.
+type UvConfig struct {
+	IndexUrl string `toml:"index-url"`
+}
+
 // PyProject is the parsed pyproject.toml file.
 type PyProject struct {
 	Project struct {
@@ -32,6 +37,7 @@ type PyProject struct {
 	}
 	Tool struct {
 		Dagger UserConfig
+		Uv     UvConfig
 	}
 }
 
@@ -109,6 +115,10 @@ func (d *Discovery) GetImage(name string) (*Image, error) {
 // the "tool.dagger" table.
 func (d *Discovery) UserConfig() *UserConfig {
 	return &d.Config.Tool.Dagger
+}
+
+func (d *Discovery) UvConfig() *UvConfig {
+	return &d.Config.Tool.Uv
 }
 
 // HasFile returns true if the file exists in the original module's source directory.
