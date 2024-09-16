@@ -86,6 +86,9 @@ func (d *dockerDriver) create(ctx context.Context, imageRef string, opts *Driver
 		telemetry.End(span, func() error { return err })
 
 		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				return nil, err
+			}
 			slog.Warn("failed to resolve image; falling back to leftover engine", "error", err)
 			if strings.Contains(err.Error(), "DENIED") {
 				slog.Warn("check your docker registry auth; it might be incorrect or expired")
@@ -100,6 +103,9 @@ func (d *dockerDriver) create(ctx context.Context, imageRef string, opts *Driver
 	// And check if we are in a fallback case then perform fallback to most recent engine
 	leftoverEngines, err := collectLeftoverEngines(ctx)
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return nil, err
+		}
 		slog.Warn("failed to list containers", "error", err)
 		leftoverEngines = []string{}
 	}
@@ -149,6 +155,9 @@ func (d *dockerDriver) create(ctx context.Context, imageRef string, opts *Driver
 
 	// ensure the image is pulled
 	if _, err := traceExec(ctx, exec.CommandContext(ctx, "docker", "inspect", "--type=image", imageRef), telemetry.Encapsulated()); err != nil {
+		if errors.Is(err, context.Canceled) {
+			return nil, errors.Wrapf(err, "failed to inspect image")
+		}
 		if _, err := traceExec(ctx, exec.CommandContext(ctx, "docker", "pull", imageRef)); err != nil {
 			return nil, errors.Wrapf(err, "failed to pull image")
 		}
@@ -202,6 +211,9 @@ func garbageCollectEngines(ctx context.Context, log *slog.Logger, engines []stri
 		if output, err := traceExec(ctx, exec.CommandContext(ctx,
 			"docker", "rm", "-fv", engine,
 		)); err != nil {
+			if errors.Is(err, context.Canceled) {
+				return
+			}
 			if !strings.Contains(output, "already in progress") {
 				log.Warn("failed to remove old container", "container", engine, "error", err)
 			}
