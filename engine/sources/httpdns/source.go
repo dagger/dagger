@@ -475,7 +475,7 @@ func getFileName(urlStr, manualFilename string, resp *http.Response) string {
 }
 
 func searchHTTPURLDigest(ctx context.Context, store cache.MetadataStore, dgst digest.Digest) ([]cacheRefMetadata, error) {
-	mds, err := store.Search(ctx, string(dgst))
+	mds, err := store.Search(ctx, string(dgst), false)
 	if err != nil {
 		return nil, err
 	}

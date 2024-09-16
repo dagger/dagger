@@ -737,7 +737,7 @@ const keyGitSnapshot = "git-snapshot"
 const gitSnapshotIndex = keyGitSnapshot + "::"
 
 func search(ctx context.Context, store cache.MetadataStore, key string, idx string) ([]cacheRefMetadata, error) {
-	mds, err := store.Search(ctx, idx+key)
+	mds, err := store.Search(ctx, idx+key, false)
 	if err != nil {
 		return nil, err
 	}
