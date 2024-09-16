@@ -477,7 +477,7 @@ func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Serve
 			return nil, fmt.Errorf("failed to encode filtered dir ID: %w", err)
 		}
 
-		return JSON(fmt.Sprintf(`%s`, dirID)), nil
+		return JSON(dirID), nil
 	default:
 		return nil, fmt.Errorf("argument %q must be of type Directory to apply ignore pattern", arg.OriginalName)
 	}
