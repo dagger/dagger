@@ -708,6 +708,15 @@ func (sdk *goSDK) base(ctx context.Context) (dagql.Instance[*core.Container], er
 				},
 			},
 		},
+		dagql.Selector{
+			Field: "__withSystemEnvVariable",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "name",
+					Value: dagql.String("GODEBUG"),
+				},
+			},
+		},
 	); err != nil {
 		return inst, fmt.Errorf("failed to get container from go module sdk tarball: %w", err)
 	}
