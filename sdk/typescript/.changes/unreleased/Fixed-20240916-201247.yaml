@@ -1,0 +1,7 @@
+kind: Fixed
+body: Correctly forward traces with a customer propagator due to a changes in `graphql-request`
+  package on the header types that broke the propagation.
+time: 2024-09-16T20:12:47.344009+02:00
+custom:
+  Author: TomChv
+  PR: "8467"
