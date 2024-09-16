@@ -606,6 +606,7 @@ func (srv *Server) initializeDaggerClient(
 		)),
 	}
 	loggerOpts := []sdklog.LoggerProviderOption{
+		sdklog.WithResource(telemetry.Resource),
 		sdklog.WithProcessor(
 			sdklog.NewBatchProcessor(
 				srv.telemetryPubSub.Logs(client),
