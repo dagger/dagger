@@ -478,6 +478,36 @@ func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Serve
 		}
 
 		return JSON(dirID), nil
+	case *Directory:
+		var ignoredDir dagql.Instance[*Directory]
+		dirInst, err := value.AsBlob(ctx, dag)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get directory contents: %w", err)
+		}
+
+		err = dag.Select(ctx, dag.Root(), &ignoredDir,
+			dagql.Selector{
+				Field: "directory",
+			},
+			dagql.Selector{
+				Field: "withDirectory",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.String(arg.Ignore[0])},
+					{Name: "directory", Value: dagql.NewID[*Directory](dirInst.ID())},
+					{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(arg.Ignore[1:]...))},
+				},
+			},
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to apply ignore pattern on contextual directory %q: %w", arg.Name, err)
+		}
+
+		dirID, err := ignoredDir.ID().Encode()
+		if err != nil {
+			return nil, fmt.Errorf("failed to encode filtered dir ID: %w", err)
+		}
+
+		return JSON(dirID), nil
 	default:
 		return nil, fmt.Errorf("argument %q must be of type Directory to apply ignore pattern ([%s]) but type is %#v", arg.OriginalName, strings.Join(arg.Ignore, ", "), value)
 	}
