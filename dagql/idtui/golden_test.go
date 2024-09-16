@@ -337,9 +337,7 @@ func (o *otlpReceiver) LogsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logs := telemetry.LogsFromPB(req.ResourceLogs)
-	o.t.Logf("tests received %d logs", len(logs))
-	if err := o.logs.Export(r.Context(), logs); err != nil {
+	if err := telemetry.ReexportLogsFromPB(r.Context(), o.logs, &req); err != nil {
 		slog.Error("error exporting spans", "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -347,9 +345,11 @@ func (o *otlpReceiver) LogsHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Forward to the original telemetry so we can see it there too
 	if len(telemetry.LogProcessors) > 0 {
-		telemetry.LogForwarder{
+		if err := telemetry.ReexportLogsFromPB(r.Context(), telemetry.LogForwarder{
 			Processors: telemetry.LogProcessors,
-		}.Export(r.Context(), logs)
+		}, &req); err != nil {
+			slog.Warn("error forwarding logs", "error", err)
+		}
 	}
 
 	w.WriteHeader(http.StatusCreated)
