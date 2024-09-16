@@ -444,7 +444,7 @@ func (fn *ModuleFunction) linkDependencyBlobs(ctx context.Context, cacheResult *
 
 func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Server, arg *FunctionArg, value any) (any, error) {
 	if arg.TypeDef.Kind != TypeDefKindObject || arg.TypeDef.AsObject.Value.Name != "Directory" {
-		return nil, fmt.Errorf("argument %q must be of type Directory to apply ignore pattern", arg.OriginalName)
+		return nil, fmt.Errorf("argument %q must be of type Directory to apply ignore pattern: [%s]", arg.OriginalName, strings.Join(arg.Ignore, ","))
 	}
 
 	if dag == nil {
