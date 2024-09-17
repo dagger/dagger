@@ -24,62 +24,33 @@ The runtime container is currently hardcoded to run in Go 1.21  (although this m
 </TabItem>
 <TabItem value="Python">
 
-The runtime container is currently hardcoded to run in Python 3.11.1 using the [python:3.11-slim](https://hub.docker.com/_/python/tags?name=3.11-slim) base image by default. This can be overridden in `pyproject.toml` since [Dagger v0.11][v11]:
+The runtime container is based on the [python:3.12-slim](https://hub.docker.com/_/python/tags?name=3.12-slim) base image by default, but it can be overridden by setting [`requires-python`](https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#python-requires), or pinned with a `.python-version` file next to your `pyproject.toml`:
+
+```shell
+echo "3.11" > .python-version
+```
+
+This will instruct Dagger to use the `python:3.11-slim` base image instead.
+
+Pinning the interpreter version can be useful to prevent an automatic upgrade from a future version of Dagger, or to select a newer version.
+
+:::tip
+
+For more advanced needs, a **different base image** can be used by adding the following to your `pyproject.toml`:
 
 ```toml
 [tool.dagger]
 base-image = "acme/python:3.11"
 ```
 
-This can be useful to add a few requirements to the module's execution environment, such as system packages like `git`.
+This can be useful to add a few requirements to the module's execution environment such as system packages like `git`, or to add necessary environment variables, for example. However, don't deviate from the default base image too much or it may break in a future version of Dagger.
 
 :::warning
-Don't deviate from the default base image too much or it may break in a future version of Dagger. Override at own risk.
+ Override at own risk.
 :::
 
-The desired interpreter version can be pinned by creating a `.python-version` file next to your `pyproject.toml`:
+:::
 
-```console
-echo "3.11" > .python-version
-```
-
-This can be useful either to pin the version in case the default one gets an upgrade, or to choose a newer version.
-
-As an alternative, setting [`requires-python`](https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#python-requires) in `pyproject.toml` will also pin the version, but using a lower bound constraint (minimum version). For example, the following will use Python 3.11, even though Python 3.12 is available:
-
-```toml
-[project]
-requires-python = ">=3.11"
-```
-
-Each release of Dagger bundles the Python SDK inside the Dagger Engine container image. During the Dagger module's code generation phase, that directory is unpacked and installed automatically, including dependencies. That directory is the same one that is exported to the host as `./sdk` when running `dagger init --sdk=python` or `dagger develop --sdk=python`. Note that it is **not** the same as the directory obtained when installing from [dagger-io](https://pypi.org/project/dagger-io/).
-
-The runtime container installs the SDK as an editable install, similar to the following:
-
-```shell
-# executed by the runtime container
-uv pip install -e ./sdk
-```
-
-This is why the initial `pyproject.toml` file doesn't include any [dependencies](./dependencies.mdx).
-
-### UV installer
-
-[uv](https://github.com/astral-sh/uv) is used internally to create the virtual environment, install dependencies and create the [lock file](./dependencies.mdx#lock-file) (starting with Dagger v0.11.0). It's possible to specify a newer version, if needed, in `pyproject.toml`:
-
-```toml
-[tool.dagger]
-uv-version = "0.1.30"
-```
-
-If `pip` is required instead, `uv` can be disabled:
-
-```toml
-[tool.dagger]
-use-uv = false
-```
-
-Note, however, that [pinning](./dependencies.mdx#lock-file) via `requirements.lock` is only supported with `uv`.
 </TabItem>
 <TabItem value="TypeScript">
 
@@ -108,7 +79,6 @@ This is why the initial `package.json` doesn't include any dependencies except a
 }
 ```
 
-[^1]:
 </TabItem>
 </Tabs>
 
