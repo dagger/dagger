@@ -65,3 +65,118 @@ jobs:
         working-directory: /tmp/benchmark
         env:
           DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
+
+  benchmark-package-manager:
+    runs-on: "dagger-g2-main-4c"
+    if: ${{ github.repository == 'dagger/dagger' }}
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        package-manager: [pnpm, yarn, yarnv4, npm, bun]
+
+    steps: 
+      - name: dagger init (${{ matrix.package-manager }})
+        shell: bash
+        run: |
+          mkdir -p /tmp/benchmark
+          cd /tmp/benchmark
+
+          if [ "${{ matrix.package-manager }}" == "pnpm" ]; then
+            cat << EOF > package.json
+            {
+              "type": "module",
+              "dependencies": {
+                "typescript": "^5.5.4",
+                "@dagger.io/dagger": "./sdk"
+              }
+              "packageManager": "pnpm@8.15.4"
+            }
+            EOF
+          fi
+
+          if [ "${{ matrix.package-manager }}" == "npm" ]; then
+            cat << EOF > package.json
+            {
+              "type": "module",
+              "dependencies": {
+                "typescript": "^5.5.4",
+                "@dagger.io/dagger": "./sdk"
+              }
+              "packageManager": "npm@10.7.0"
+            }
+            EOF
+          fi
+
+          if [ "${{ matrix.package-manager }}" == "yarn" ]; then
+            cat << EOF > package.json
+            {
+              "type": "module",
+              "dependencies": {
+                "typescript": "^5.5.4",
+                "@dagger.io/dagger": "./sdk"
+              }
+              "packageManager": "yarn@1.22.22"
+            }
+            EOF
+          fi
+
+          if [ "${{ matrix.package-manager }}" == "yarnv4" ]; then
+            cat << EOF > package.json
+            {
+              "type": "module",
+              "dependencies": {
+                "typescript": "^5.5.4",
+                "@dagger.io/dagger": "./sdk"
+              }
+              "packageManager": "yarn@4.0.0"
+            }
+            EOF
+          fi
+
+          if [ "${{ matrix.package-manager }}" == "bun" ]; then
+            cat << EOF > package.json
+            {
+              "type": "module",
+              "dependencies": {
+                "typescript": "^5.5.4",
+                "@dagger.io/dagger": "./sdk"
+              }
+              "dagger": {
+                "runtime": "bun"
+              }
+            }
+            EOF
+          fi
+
+          dagger init --name=benchmark --sdk=typescript
+        env:
+          DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
+
+      - name: dagger functions@initial (${{ matrix.sdk }})
+        shell: bash
+        run: |
+          dagger functions
+        working-directory: /tmp/benchmark
+        env:
+          DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
+
+      - name: dagger functions@cached (${{ matrix.sdk }})
+        shell: bash
+        run: |
+          dagger functions
+        working-directory: /tmp/benchmark
+        env:
+          DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
+
+      - name: dagger functions@modified (${{ matrix.sdk }})
+        shell: bash
+        run: |
+          # invalidate the cache by modifying the source files
+          for file in "main.go" "src/index.ts" "src/main/__init__.py"; do
+            [ -f "$file" ] && echo >> $file
+          done
+
+          dagger functions
+        working-directory: /tmp/benchmark
+        env:
+          DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
