@@ -6,11 +6,11 @@ import TabItem from '@theme/TabItem';
 
 # Dagger API
 
-The Dagger API is an unified interface for dynamically composing Dagger pipelines. It provides a set of core functions and core types for creating and managing application delivery pipelines, including types for containers, artifacts, network services, and secrets.
+The Dagger API is an unified interface for composing Dagger pipelines. It provides a set of core functions and core types for creating and managing application delivery pipelines, including types for containers, artifacts, network services, and secrets.
 
 ## Functions
 
-Creating a pipeline with the Dagger API involves calling its functions. Typically, you will call multiple functions in sequence, chaining them together such that their operations form a pipeline. Here's an example:
+To create a pipeline with the Dagger API, you call multiple functions, combining them together in sequence to form a pipeline. Here's an example:
 
 ```shell
 dagger core container \
@@ -19,13 +19,13 @@ dagger core container \
   contents
 ```
 
-This example calls various functions from the Dagger API to create an `alpine` container and return the contents of the `/etc/os-release` file to the caller.
+This example calls multiple functions from the Dagger API in sequence to create a pipeline that builds an image from an `alpine` container and returns the contents of the `/etc/os-release` file to the caller.
 
 ## Types
 
 Like regular functions, Dagger functions can accept arguments. You can see this in the previous example: the `from` function accepts a container image address (`--address`) as argument, the file function accepts a filesystem location (`--path`) as argument, and so on.
 
-In addition to supporting basic types (string, boolean, integer, array...), the Dagger API also provides [powerful core types](./types.mdx) for working with pipelines, such as `Container`, `GitRepository`, `Directory`, `Service`, `Secret`, and many more, and lets you use these as arguments to Dagger Functions.
+In addition to supporting basic types (string, boolean, integer, array...), the Dagger API also provides [powerful core types](./types.mdx) for working with pipelines, such as `Container`, `GitRepository`, `Directory`, `Service`, `Secret`. You can use these core types as arguments to Dagger functions.
 
 Here's an example:
 
@@ -36,11 +36,11 @@ dagger core container \
   entries
 ```
 
-This example creates a scratch container, adds Dagger's GitHub repository to it, and returns the directory contents. In this case, the address of the GitHub repository is passed to the function as a `Directory` argument. The `Directory` loaded in this manner is not merely a string, but it is the actual filesystem state of the repository, managed by the Dagger Engine and handled in code just like any another variable.
+This example creates a scratch container, adds Dagger's GitHub repository to it, and returns the directory contents. In this case, the address of the GitHub repository is passed to the function as a `Directory` argument. The `Directory` loaded in this manner is not merely a string, but it is the actual filesystem state of the target directory, managed by the Dagger Engine and handled in code just like any another variable.
 
 ## Chaining
 
-Dagger's core types can be used as both function [arguments](./arguments.mdx) and [return values](./return-values.mdx). Each core type comes with functions of its own, which can be used to interact with the corresponding object.
+Each of Dagger's core types comes with functions of its own, which can be used to interact with the corresponding object.
 
 When calling a Dagger function that returns a core type, the Dagger API lets you follow up by calling one of that type's functions, which itself can return another type, and so on. This is called "function chaining", and is a core feature of Dagger.
 
@@ -57,7 +57,7 @@ dagger core container from --address="golang:latest" \
   export --path="./dagger.bin"
 ```
 
-This example chains multiple function calls:
+This example chains multiple function calls into a pipeline that builds the Dagger CLI from source and exports it to the Dagger host:
 - `from` returns a `golang` container image as a `Container` type
 - `with-directory` adds the Dagger open source repository to the container image filesystem
 - `with-workdir` sets the working directory to the Dagger repository
@@ -65,7 +65,7 @@ This example chains multiple function calls:
 - `file` returns the built binary as a `File` type
 - `export` exports the binary artifact to the Dagger host as `./dagger.bin`
 
-[See more examples of functions chaining](./chaining.mdx).
+As this example illustrates, function chaining is extremely powerful. See [more examples](./chaining.mdx) of it in action.
 
 ## Calling the Dagger API
 
@@ -89,6 +89,6 @@ The Dagger API is an HTTP API that uses GraphQL as its low-level language-agnost
 
 ## Extending the Dagger API
 
-The Dagger API can be [extended with custom functions and custom types](./functions.mdx), which are loaded via  Dagger modules. When a Dagger module is loaded into the session, the Dagger API is [dynamically extended](./internals.mdx#api-extension-with-dagger-functions) with new Dagger functions served by that module. So, after loading a Dagger module, an API client can now call all of the original core APIs _plus_ the new Dagger functions provided by that module.
+The Dagger API can be [extended with custom functions and custom types](./functions.mdx), which are loaded via Dagger modules. When a Dagger module is loaded, the Dagger API is [dynamically extended](./internals.mdx#api-extension-with-dagger-functions) with new Dagger functions served by that module. So, after loading a Dagger module, an API client can now call all of the original core APIs _plus_ the new Dagger functions provided by that module.
 
 You are encouraged to write your own Dagger modules and share them with others. Dagger also lets you import and reuse modules developed by your team, your organization or the broader Dagger community. The [Daggerverse](https://daggerverse.dev) is a free service run by Dagger, which indexes all publicly available Dagger modules and Dagger Functions, and lets you easily search and consume them.
