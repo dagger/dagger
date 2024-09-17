@@ -902,12 +902,18 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 
 	// include SSH_AUTH_SOCK if it's set in the exec's env vars
 	if sockPath, ok := state.origEnvMap["SSH_AUTH_SOCK"]; ok {
-		if homeDir, ok := state.origEnvMap["HOME"]; ok {
-			expandedPath, err := client.ExpandHomeDir(homeDir, sockPath)
-			if err != nil {
-				return fmt.Errorf("failed to expand homedir: %w", err)
+		if strings.HasPrefix(sockPath, "~") {
+			if homeDir, ok := state.origEnvMap["HOME"]; ok {
+				expandedPath, err := client.ExpandHomeDir(homeDir, sockPath)
+				if err != nil {
+					return fmt.Errorf("failed to expand homedir: %w", err)
+				}
+				w.execMD.SSHAuthSocketPath = expandedPath
+			} else {
+				return fmt.Errorf("HOME not set, cannot expand SSH_AUTH_SOCK path: %s", sockPath)
 			}
-			w.execMD.SSHAuthSocketPath = expandedPath
+		} else {
+			w.execMD.SSHAuthSocketPath = sockPath
 		}
 	}
 
