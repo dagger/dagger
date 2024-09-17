@@ -782,11 +782,10 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 		return inst, fmt.Errorf("failed to collect local module source deps: %w", err)
 	}
 
-	includeSet := map[string]struct{}{}
-	excludeSet := map[string]struct{}{
-		// always exclude .git dirs, we don't need them and they tend to invalidate cache a lot
-		"**/.git": {},
-	}
+	var includeSet core.SliceSet[string] = []string{}
+	// always exclude .git dirs, we don't need them and they tend to invalidate cache a lot
+	var excludeSet core.SliceSet[string] = []string{"**/.git"}
+
 	sdkSet := map[string]core.SDK{}
 	sourceRootPaths := collectedDeps.Keys()
 	for _, rootPath := range sourceRootPaths {
@@ -811,7 +810,7 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 			if localDep.modCfg == nil {
 				// uninitialized top-level module source, include it's source root dir (otherwise
 				// we could load everything if no other includes end up being specified)
-				includeSet[sourceRootRelPath] = struct{}{}
+				includeSet.Append(sourceRootAbsPath)
 				continue
 			}
 		} else {
@@ -825,7 +824,7 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 		}
 
 		// rebase user defined include/exclude relative to context
-		rebaseIncludeExclude := func(path string, set map[string]struct{}) error {
+		rebaseIncludeExclude := func(path string, set *core.SliceSet[string]) error {
 			isNegation := strings.HasPrefix(path, "!")
 			path = strings.TrimPrefix(path, "!")
 			absPath := filepath.Join(sourceRootAbsPath, path)
@@ -839,16 +838,16 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 			if isNegation {
 				relPath = "!" + relPath
 			}
-			set[relPath] = struct{}{}
+			set.Append(relPath)
 			return nil
 		}
 		for _, path := range localDep.modCfg.Include {
-			if err := rebaseIncludeExclude(path, includeSet); err != nil {
+			if err := rebaseIncludeExclude(path, &includeSet); err != nil {
 				return inst, err
 			}
 		}
 		for _, path := range localDep.modCfg.Exclude {
-			if err := rebaseIncludeExclude(path, excludeSet); err != nil {
+			if err := rebaseIncludeExclude(path, &excludeSet); err != nil {
 				return inst, err
 			}
 		}
@@ -858,7 +857,7 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 		if err != nil {
 			return inst, fmt.Errorf("failed to get relative path: %w", err)
 		}
-		includeSet[configRelPath] = struct{}{}
+		includeSet.Append(configRelPath)
 
 		// always include the source dir
 		source := localDep.modCfg.Source
@@ -873,7 +872,7 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 		if !filepath.IsLocal(sourceRelSubpath) {
 			return inst, fmt.Errorf("local module source path %q escapes context %q", sourceRelSubpath, contextAbsPath)
 		}
-		includeSet[sourceRelSubpath+"/**/*"] = struct{}{}
+		includeSet.Append(sourceRelSubpath + "/**/*")
 	}
 
 	for _, sdk := range sdkSet {
@@ -885,16 +884,16 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 			return inst, fmt.Errorf("failed to get sdk required paths: %w", err)
 		}
 		for _, path := range requiredPaths {
-			includeSet[path] = struct{}{}
+			includeSet.Append(path)
 		}
 	}
 
 	includes := make([]string, 0, len(includeSet))
-	for include := range includeSet {
+	for _, include := range includeSet {
 		includes = append(includes, include)
 	}
 	excludes := make([]string, 0, len(excludeSet))
-	for exclude := range excludeSet {
+	for _, exclude := range excludeSet {
 		excludes = append(excludes, exclude)
 	}
 

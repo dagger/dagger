@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -324,4 +325,18 @@ func resolveProvenance(ctx context.Context, bk *buildkit.Client, st llb.State) (
 
 func ptr[T any](v T) *T {
 	return &v
+}
+
+// SliceSet is a generic type that represents a set implemented as a slice.
+// TODO: it can eventually be replaced with a more performant underlying
+// data structure like a tree since the current implementation is O(n) but
+// it's fine as it's used ofor small sets currently.
+type SliceSet[T comparable] []T
+
+// Append adds an element to the SliceSet if it's not already present.
+func (s *SliceSet[T]) Append(element T) {
+	if slices.Contains(*s, element) {
+		return
+	}
+	*s = append(*s, element)
 }
