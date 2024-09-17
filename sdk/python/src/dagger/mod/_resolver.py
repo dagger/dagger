@@ -311,7 +311,7 @@ class FunctionResolver(Generic[P, R]):
         if not p.is_nullable and p.has_default and p.signature.default is None:
             msg = (
                 "Can't use a default value of None on a non-nullable type for "
-                "parameter '{param.name}'"
+                f"parameter '{param.name}'"
             )
             raise ValueError(msg)
 
