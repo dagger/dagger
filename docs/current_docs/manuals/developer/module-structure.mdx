@@ -186,7 +186,7 @@ The default template from `dagger develop` creates the following structure:
 ├── LICENSE
 ├── dagger
 │   ├── pyproject.toml
-│   ├── requirements.lock
+│   ├── uv.lock
 │   ├── sdk
 │   └── src
 │       └── main
@@ -198,111 +198,109 @@ In this structure:
 
 - `dagger.json` is the Dagger module configuration file.
 - `pyproject.toml` manages the Python project configuration.
-- `requirements.lock` manages the module dependencies.
+- `uv.lock` manages the module dependencies.
 - `src/main/` is where your Dagger module code goes.
 - `sdk/` contains the Python SDK.
 
-This structure hosts a `main` package inside a `src` directory. This follows a [Python convention](https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/) that requires a project to be installed in order to run its code. This prevents accidental usage of development code since the Python interpreter includes the current working directory as the first item on the import path (more information is available in this [blog post on Python packaging](https://blog.ionelmc.ro/2014/05/25/python-packaging/)).
+:::info
+Placing the source code under a `src` directory follows a common Python convention. To know more, see [src layout vs flat layout](https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/).
+:::
 
-Tools like [build](https://build.pypa.io/en/latest/), [Hatch](https://hatch.pypa.io/latest/), and [Poetry](https://python-poetry.org/docs/) already detect this project layout by default, but it's not required and can be overridden as long as `main` is installed correctly in `site-packages`, or is at least importable with `import main`.
+The Dagger module's code in Python can be split into multiple files by making `main` a [package](https://docs.python.org/3/tutorial/modules.html#packages), and ensuring the *main object* is imported in `__init__.py`. All the other object types should already be imported from there.
 
-Here is an example of moving the `main` package next to `pyproject.toml`, resulting in the following structure:
+For example:
+
+```python
+# src/main/__init__.py
+"""My very own Dagger module"""
+from .main import MyModule as MyModule
+
+# src/main/main.py
+import dagger
+
+from .test import Test  # in src/main/test.py
+from .lint import Lint  # in src/main/lint.py
+
+@dagger.object_type
+class MyModule:
+    @dagger.function
+    def test(self) -> Test:
+        return Test()
+
+    @dagger.function
+    def lint(self) -> Lint:
+        return Lint()
+```
+
+:::important
+Dagger expects that a Python Dagger module is structured like a [library](https://docs.astral.sh/uv/concepts/projects/#libraries), currently hardcoded with the name `main` (temporary limitation), so that the SDK is able to load the code with:
+
+```python
+import main
+```
+
+But **it's up to the Python [build system](https://docs.astral.sh/uv/concepts/projects/#build-systems)** to know where files are located in order to build and install the `main` package correctly.
+
+This affords a lot of flexibility in how Daggger Python modules can be structured, and which tools are supported.
+:::
+
+The default project template follows known conventions for structuring a Python library (src layout, package name after project name), which allows Python [build backends](https://www.python.org/dev/peps/pep-0517/) to automatically recognize where the files are. However, it's possible to change the project's name and file structure with a bit of extra configuration, as long as the build backend correctly builds the code in a way that allows the SDK to `import main` after installation.
+
+Here is an example of moving all the code into a single `main.py` [module](https://docs.python.org/3/tutorial/modules.html), resulting in the following structure:
 
 ```
 .
-├── main
-│  ├── __init__.py
-│  ├── lint.py
-│  └── test.py
+├── main.py
 ├── dagger.json
 ├── pyproject.toml
-└── requirements.lock
+└── uv.lock
 ```
 
-In this case, it is necessary to explicitly tell Poetry where to find the package, as shown below (truncated for brevity):
+`pyproject.toml` configuration:
+
+<Tabs groupId="build-systems">
+<TabItem value="hatchling">
 
 ```toml
-[tool.poetry]
-name = "awesome-module"
-packages = [{ include = "main" }]
-```
-
-### Project name
-
-The default project name in `pyproject.toml` is also `main`:
-
-```toml
-[project]
-name = "main"
-```
-
-This is because most package managers use the name of the project to find the package to build, under `./src`. So, if you change the name of the project, you also need to make sure your chosen tool can find the package.
-
-Here is an example of using a different project name with Poetry (truncated for brevity):
-
-```toml
-[tool.poetry]
-name = "awesome-module"
-packages = [{ include = "main", from = "src" }]
-```
-
-### Alternative project template
-
-If a different project layout is needed, `dagger init` won't override existing `pyproject.toml` and `.py` files. For example, to create the initial files with [Rye](https://rye-up.com):
-
-```shell
-rye init --name=main acme
-cd acme
-dagger init --sdk=python
-```
-
-Rye will create an initial `src/main/__init__.py` but Dagger won't recognize any Dagger Functions in it. Either remove it and let Dagger create the default one, or adapt it to your needs before running `dagger call`.
-
-### Other tools
-
-[Poetry](https://python-poetry.org) is a very popular workflow tool for Python. It doesn't fully support the [PEP 621](https://peps.python.org/pep-0621/) yet, but [it's coming](https://github.com/python-poetry/poetry/pull/9135).
-
-It does support [PEP 517](https://peps.python.org/pep-0517/) however, which makes it possible to use with Dagger. Same as in [alternative project template](#alternative-project-template), the project can be initialized with:
-
-```console
-mkdir acme
-cd acme
-poetry init --name main --python "^3.11"
-```
-
-Remove the `"readme"` entry in `pyproject.toml` so Dagger doesn't fail with the unknown file. Here's an example of a minimal Poetry configuration:
-
-```toml
-[tool.poetry]
-name = "main"
-version = "0.1.0"
-description = ""
-authors = []
-
-[tool.poetry.dependencies]
-python = ">=3.11"
-
 [build-system]
-requires = ["poetry-core"]
+requires = ["hatchling>=0.15.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["main.py"]
+```
+
+</TabItem>
+<TabItem value="poetry-core">
+
+```toml
+[build-system]
+requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
 ```
 
-After `dagger init --sdk=python`, the `./sdk` can be added as a development dependency:
-
-```console
-poetry add -e --group=dev ./sdk
-```
-
-Which adds the following to `pyproject.toml`:
+</TabItem>
+<TabItem value="setuptools">
 
 ```toml
-[tool.poetry.group.dev.dependencies]
-dagger-io = {path = "sdk", develop = true}
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["main"]
 ```
 
-## Other workflow tools
+</TabItem>
+</Tabs>
 
-Dagger is agnostic to the tool used [in development](./ide-integration.mdx). Similarly to Rye and Poetry, as long as the right standards are supported, Dagger should be able to use it too.
+:::note
+Build backends are independent from installers (or *build frontends*, see [PEP 517](https://www.python.org/dev/peps/pep-0517/)), even though some installers may provide both (as separate packages). For example, [hatch](https://pypi.org/project/hatch/) vs [hatchling](https://pypi.org/project/hatchling/), [poetry](https://pypi.org/project/poetry/) vs [poetry-core](https://pypi.org/project/poetry-core/).
+:::
+
+:::tip
+`dagger init` won't override existing `pyproject.toml` and `.py` files, so it's possible to use an external process to generate a different template, before calling `dagger init`.
+:::
 
 </TabItem>
 <TabItem value="TypeScript">
