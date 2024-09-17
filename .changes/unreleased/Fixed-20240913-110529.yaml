@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+  Fix `Directory.digest` on scratch directory
+time: 2024-09-13T11:05:29.343367542+01:00
+custom:
+  Author: jedevc
+  PR: "8445"
