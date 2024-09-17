@@ -1143,7 +1143,7 @@ func (f DirectConn) Do(r *http.Request) (*http.Response, error) {
 }
 
 func (f DirectConn) Host() string {
-	return ":mem:"
+	return "dagger"
 }
 
 func (f DirectConn) Close() error {
