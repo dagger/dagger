@@ -61,6 +61,8 @@ module.exports = {
       "collapsible": true,
       "collapsed": true,
       "items": [
+        "api/types",
+        "api/chaining",
         {
           "type": "category",
           "label": "Calling the API",
@@ -78,6 +80,7 @@ module.exports = {
           "collapsible": true,
           "collapsed": true,
           "items": [
+            "api/functions",
             "api/arguments",
             "api/return-values",
             "api/secrets",
@@ -125,7 +128,6 @@ module.exports = {
               "label": "TypeScript SDK Reference",
               "id": "reference/typescript/modules"
             },
-
           ]
         },
       ]
