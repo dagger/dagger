@@ -34,6 +34,8 @@ func sessionCmd() *cobra.Command {
 		SilenceUsage: true,
 	}
 	cmd.Flags().StringVar(&sessionVersion, "version", "", "")
+	// This is not used by kept for backward compatibility.
+	// We don't want SDKs failing because this flag is not defined.
 	cmd.Flags().Var(&sessionLabels, "label", "label that identifies the source of this session (e.g, --label 'dagger.io/sdk.name:python' --label 'dagger.io/sdk.version:0.5.2' --label 'dagger.io/sdk.async:true')")
 	return cmd
 }
@@ -56,8 +58,6 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-
-	labelsFlag := &sessionLabels
 
 	signalCh := make(chan os.Signal, 1)
 	signal.Notify(signalCh, syscall.SIGINT, syscall.SIGTERM)
@@ -83,7 +83,6 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 
 	return withEngine(ctx, client.Params{
 		SecretToken: sessionToken.String(),
-		UserAgent:   labelsFlag.Labels.WithCILabels().WithAnonymousGitLabels(workdir).UserAgent(),
 		Version:     sessionVersion,
 	}, func(ctx context.Context, sess *client.Client) error {
 		// Requests maintain their original trace context from the client, rather

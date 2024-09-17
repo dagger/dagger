@@ -12,9 +12,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger/telemetry"
-	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
-	"github.com/google/go-containerregistry/pkg/v1/remote"
 	connh "github.com/moby/buildkit/client/connhelper"
 	connhDocker "github.com/moby/buildkit/client/connhelper/dockercontainer"
 	"github.com/pkg/errors"
@@ -67,40 +65,14 @@ func (d *dockerDriver) create(ctx context.Context, imageRef string, opts *Driver
 	defer telemetry.End(span, func() error { return rerr })
 	slog := slog.SpanLogger(ctx, InstrumentationLibrary)
 
-	// Get the SHA digest of the image to use as an ID for the container we'll create
-	var id string
-	fallbackToLeftoverEngine := false
-	ref, err := name.ParseReference(imageRef)
+	id, err := resolveImageID(imageRef)
 	if err != nil {
-		return nil, errors.Wrap(err, "parsing image reference")
-	}
-	if digest, ok := ref.(name.Digest); ok {
-		// We already have the digest as part of the image ref
-		id = digest.DigestStr()
-	} else {
-		// We only have a tag in the image ref, so resolve it to a digest. The default
-		// auth keychain parses the same docker credentials as used by the buildkit
-		// session attachable.
-		_, span := otel.Tracer("").Start(ctx, "resolve image")
-		img, err := remote.Get(ref, remote.WithAuthFromKeychain(authn.DefaultKeychain), remote.WithUserAgent(opts.UserAgent))
-		telemetry.End(span, func() error { return err })
-
-		if err != nil {
-			if errors.Is(err, context.Canceled) {
-				return nil, err
-			}
-			slog.Warn("failed to resolve image; falling back to leftover engine", "error", err)
-			if strings.Contains(err.Error(), "DENIED") {
-				slog.Warn("check your docker registry auth; it might be incorrect or expired")
-			}
-			fallbackToLeftoverEngine = true
-		} else {
-			id = img.Digest.String()
-		}
+		return nil, err
 	}
 
-	// We collect leftover engine anyway since we garbage collect them at the end
-	// And check if we are in a fallback case then perform fallback to most recent engine
+	// run the container using that id in the name
+	containerName := containerNamePrefix + id
+
 	leftoverEngines, err := collectLeftoverEngines(ctx)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
@@ -109,34 +81,6 @@ func (d *dockerDriver) create(ctx context.Context, imageRef string, opts *Driver
 		slog.Warn("failed to list containers", "error", err)
 		leftoverEngines = []string{}
 	}
-	if fallbackToLeftoverEngine {
-		if len(leftoverEngines) == 0 {
-			return nil, errors.Errorf("no fallback container found")
-		}
-
-		// the first leftover engine may not be running, so make sure to start it
-		firstEngine := leftoverEngines[0]
-		cmd := exec.CommandContext(ctx, "docker", "start", firstEngine)
-		if output, err := traceExec(ctx, cmd); err != nil {
-			return nil, errors.Wrapf(err, "failed to start container: %s", output)
-		}
-
-		garbageCollectEngines(ctx, slog, leftoverEngines[1:])
-
-		return connhDocker.Helper(&url.URL{
-			Scheme: "docker-container",
-			Host:   firstEngine,
-		})
-	}
-
-	_, id, ok := strings.Cut(id, "sha256:")
-	if !ok {
-		return nil, errors.Errorf("invalid image reference %q", imageRef)
-	}
-	id = id[:hashLen]
-
-	// run the container using that id in the name
-	containerName := containerNamePrefix + id
 
 	for i, leftoverEngine := range leftoverEngines {
 		// if we already have a container with that name, attempt to start it
@@ -201,6 +145,28 @@ func (d *dockerDriver) create(ctx context.Context, imageRef string, opts *Driver
 		Scheme: "docker-container",
 		Host:   containerName,
 	})
+}
+
+func resolveImageID(imageRef string) (string, error) {
+	ref, err := name.ParseReference(imageRef)
+	if err != nil {
+		return "", errors.Wrap(err, "parsing image reference")
+	}
+	if digest, ok := ref.(name.Digest); ok {
+		// We already have the digest as part of the image ref
+		_, id, ok := strings.Cut(digest.DigestStr(), "sha256:")
+		if !ok {
+			return "", errors.Errorf("invalid image reference %q", imageRef)
+		}
+		return id[:hashLen], nil
+	}
+	if tag, ok := ref.(name.Tag); ok {
+		// Otherwise, fallback to the image tag
+		return tag.TagStr(), nil
+	}
+
+	// default to latest
+	return "latest", nil
 }
 
 func garbageCollectEngines(ctx context.Context, log *slog.Logger, engines []string) {

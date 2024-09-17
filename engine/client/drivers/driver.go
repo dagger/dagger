@@ -23,8 +23,6 @@ type Connector interface {
 }
 
 type DriverOpts struct {
-	UserAgent string
-
 	DaggerCloudToken string
 	GPUSupport       string
 }
