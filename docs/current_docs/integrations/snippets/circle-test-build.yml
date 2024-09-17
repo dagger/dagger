@@ -1,14 +1,8 @@
-yaml
 version: 2.1
 jobs:
   test:
     docker:
       - image: cimg/base:2024.09
-    environment: # for GitHub, GitLab, BitBucket only
-      CIRCLE_PIPELINE_NUMBER: << pipeline.number >> # for GitHub, GitLab, BitBucket only
-      CIRCLE_PIPELINE_TRIGGER_LOGIN: << pipeline.trigger_parameters.gitlab.user_username >> # for GitLab only
-      CIRCLE_PIPELINE_REPO_URL: << pipeline.trigger_parameters.gitlab.repo_url >> # for GitLab only
-      CIRCLE_PIPELINE_REPO_FULL_NAME: << pipeline.trigger_parameters.gitlab.repo_name >> # for GitLab only
     steps:
       - checkout
       - setup_remote_docker
@@ -17,7 +11,7 @@ jobs:
           command: curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
       - run:
           name: Test
-          command: dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call test --source=.
+          command: dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call test --source=https://github.com/golang/example#master:hello
       # for ephemeral runners only: override the default docker stop timeout and
       # give the Dagger Engine more time to push cache data to Dagger Cloud
       - run:
@@ -27,11 +21,6 @@ jobs:
   build:
     docker:
       - image: cimg/base:2024.09
-    environment: # for GitHub, GitLab, BitBucket only
-      CIRCLE_PIPELINE_NUMBER: << pipeline.number >> # for GitHub, GitLab, BitBucket only
-      CIRCLE_PIPELINE_TRIGGER_LOGIN: << pipeline.trigger_parameters.gitlab.user_username >> # for GitLab only
-      CIRCLE_PIPELINE_REPO_URL: << pipeline.trigger_parameters.gitlab.repo_url >> # for GitLab only
-      CIRCLE_PIPELINE_REPO_FULL_NAME: << pipeline.trigger_parameters.gitlab.repo_name >> # for GitLab only
     steps:
       - checkout
       - setup_remote_docker
@@ -40,7 +29,7 @@ jobs:
           command: curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
       - run:
           name: Build
-          command: dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call build-container --source=. --args=. publish --address=ttl.sh/my-app-$RANDOM
+          command: dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call build-container --source=https://github.com/golang/example#master:hello --args=. publish --address=ttl.sh/my-app-$RANDOM
       # for ephemeral runners only: override the default docker stop timeout and
       # give the Dagger Engine more time to push cache data to Dagger Cloud
       - run:
@@ -51,7 +40,7 @@ workflows:
   dagger:
     jobs:
       - test
-      - build
+      - build:
           requires:
             - test
 
