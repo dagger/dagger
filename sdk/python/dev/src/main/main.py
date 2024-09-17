@@ -30,6 +30,11 @@ class PythonSdkDev:
             DefaultPath("/sdk/python"),
             Ignore(
                 [
+                    "*",
+                    "!*.toml",
+                    "!*.lock",
+                    "!*/*.toml",
+                    "!*/*.lock",
                     "!dev/src/**/*.py",
                     "!docs/**/*.py",
                     "!docs/**/*.rst",
@@ -37,17 +42,8 @@ class PythonSdkDev:
                     "!src/**/py.typed",
                     "!tests/**/*.py",
                     "!codegen/**/*.py",
-                    "!ruff.toml",
-                    "!uv.lock",
                     "!README.md",
                     "!LICENSE",
-                    "!**/pyproject.toml",
-                    "!**/.gitignore",
-                    "!**/.ruff.toml",
-                    "dev/sdk",
-                    "**/__pycache__",
-                    "**/.*cache",
-                    "**/.venv",
                 ]
             ),
         ],
@@ -82,10 +78,14 @@ class PythonSdkDev:
     @classmethod
     def uv(cls, ctr: dagger.Container) -> dagger.Container:
         """Add the uv tool to the container."""
-        return ctr.with_directory(
-            "/usr/local/bin",
-            dag.container().from_(UV_IMAGE).rootfs(),
-            include=["uv*"],
+        return (
+            ctr.with_directory(
+                "/usr/local/bin",
+                dag.container().from_(UV_IMAGE).rootfs(),
+                include=["uv*"],
+            )
+            .with_env_variable("UV_LINK_MODE", "copy")
+            .with_env_variable("UV_PROJECT_ENVIRONMENT", "/opt/venv")
         )
 
     @classmethod
