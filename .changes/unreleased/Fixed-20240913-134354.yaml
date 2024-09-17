@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+  Handle session-wide cached functions that return secrets
+time: 2024-09-13T13:43:54.343379515+01:00
+custom:
+  Author: jedevc
+  PR: "8358"

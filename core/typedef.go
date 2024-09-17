@@ -76,9 +76,11 @@ func (fn *Function) FieldSpec() (dagql.FieldSpec, error) {
 		// NB: functions actually _are_ cached per-session, which matches the
 		// lifetime of the server, so we might as well consider them pure. That way
 		// there will be locking around concurrent calls, so the user won't see
-		// multiple in parallel. Reconsider if/when we have a global cache and/or
-		// figure out function caching.
-		ImpurityReason: "",
+		// multiple in parallel.
+		//
+		// However, we can't *quite* mark them as pure, since Call has special
+		// logic for transferring secrets between cached calls.
+		ImpurityReason: "secrets still need transferring on cached calls",
 	}
 	for _, arg := range fn.Args {
 		input := arg.TypeDef.ToInput()

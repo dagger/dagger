@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/opencontainers/go-digest"
 )
@@ -24,7 +24,7 @@ type ModType interface {
 
 	// CollectCoreIDs collects all the call IDs from core objects in the given value, whether
 	// it's idable itself or is a list/object containing idable values (recursively)
-	CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*call.ID) error
+	CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*resource.ID) error
 
 	// SourceMod is the module in which this type was originally defined
 	SourceMod() Mod
@@ -47,7 +47,7 @@ func (t *PrimitiveType) ConvertToSDKInput(ctx context.Context, value dagql.Typed
 	return value, nil
 }
 
-func (t *PrimitiveType) CollectCoreIDs(context.Context, dagql.Typed, map[digest.Digest]*call.ID) error {
+func (t *PrimitiveType) CollectCoreIDs(context.Context, dagql.Typed, map[digest.Digest]*resource.ID) error {
 	return nil
 }
 
@@ -110,7 +110,7 @@ func (t *ListType) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (an
 	return resultList, nil
 }
 
-func (t *ListType) CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*call.ID) error {
+func (t *ListType) CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*resource.ID) error {
 	if value == nil {
 		return nil
 	}
@@ -182,7 +182,7 @@ func (t *NullableType) ConvertToSDKInput(ctx context.Context, value dagql.Typed)
 	return result, nil
 }
 
-func (t *NullableType) CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*call.ID) error {
+func (t *NullableType) CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*resource.ID) error {
 	if value == nil {
 		return nil
 	}

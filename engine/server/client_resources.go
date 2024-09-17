@@ -7,10 +7,10 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/server/resource"
 )
 
-func (srv *Server) AddClientResourcesFromID(ctx context.Context, id *call.ID, sourceClientID string, skipTopLevel bool) error {
+func (srv *Server) AddClientResourcesFromID(ctx context.Context, id *resource.ID, sourceClientID string, skipTopLevel bool) error {
 	destClient, err := srv.clientFromContext(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get client from context: %w", err)
@@ -19,8 +19,8 @@ func (srv *Server) AddClientResourcesFromID(ctx context.Context, id *call.ID, so
 	return srv.addClientResourcesFromID(ctx, destClient, id, sourceClientID, skipTopLevel)
 }
 
-func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *daggerClient, id *call.ID, sourceClientID string, skipTopLevel bool) error {
-	walked, err := dagql.WalkID(id, skipTopLevel)
+func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *daggerClient, id *resource.ID, sourceClientID string, skipTopLevel bool) error {
+	walked, err := dagql.WalkID(&id.ID, skipTopLevel)
 	if err != nil {
 		return fmt.Errorf("failed to walk ID: %w", err)
 	}
@@ -50,6 +50,9 @@ func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *dag
 
 	srcClient, ok := srv.clientFromIDs(destClient.daggerSession.sessionID, sourceClientID)
 	if !ok {
+		if id.Optional {
+			return nil // no errors for this case
+		}
 		var err error
 		if len(secretIDs) > 0 {
 			err = errors.Join(err, errors.New("cached result contains unknown secret IDs"))
@@ -67,10 +70,17 @@ func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *dag
 
 	if len(secretIDs) > 0 {
 		secrets, err := dagql.LoadIDs(ctx, srcDag, secretIDs)
-		if err != nil {
+		if err != nil && !id.Optional {
 			return fmt.Errorf("failed to load secrets: %w", err)
 		}
 		for _, secret := range secrets {
+			if secret == nil {
+				continue
+			}
+			if id.Optional && !srcClient.secretStore.HasSecret(secret.IDDigest) {
+				// don't attempt to add the secret if it doesn't exist and was optional
+				continue
+			}
 			if err := destClient.secretStore.AddSecretFromOtherStore(secret, srcClient.secretStore); err != nil {
 				return fmt.Errorf("failed to add secret from source client %s: %w", srcClient.clientID, err)
 			}
@@ -79,10 +89,17 @@ func (srv *Server) addClientResourcesFromID(ctx context.Context, destClient *dag
 
 	if len(socketIDs) > 0 {
 		sockets, err := dagql.LoadIDs(ctx, srcDag, socketIDs)
-		if err != nil {
+		if err != nil && !id.Optional {
 			return fmt.Errorf("failed to load sockets: %w", err)
 		}
 		for _, socket := range sockets {
+			if socket == nil {
+				continue
+			}
+			if id.Optional && !srcClient.socketStore.HasSocket(socket.IDDigest) {
+				// don't attempt to add the socket if it doesn't exist and was optional
+				continue
+			}
 			if err := destClient.socketStore.AddSocketFromOtherStore(socket, srcClient.socketStore); err != nil {
 				return fmt.Errorf("failed to add socket from source client %s: %w", srcClient.clientID, err)
 			}

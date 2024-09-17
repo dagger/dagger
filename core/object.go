@@ -11,6 +11,7 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -81,7 +82,7 @@ func (t *ModuleObjectType) ConvertToSDKInput(ctx context.Context, value dagql.Ty
 	}
 }
 
-func (t *ModuleObjectType) CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*call.ID) error {
+func (t *ModuleObjectType) CollectCoreIDs(ctx context.Context, value dagql.Typed, ids map[digest.Digest]*resource.ID) error {
 	var obj *ModuleObject
 	switch value := value.(type) {
 	case nil:
@@ -103,7 +104,8 @@ func (t *ModuleObjectType) CollectCoreIDs(ctx context.Context, value dagql.Typed
 	for k, v := range obj.Fields {
 		fieldTypeDef, ok := t.typeDef.FieldByOriginalName(k)
 		if !ok {
-			// ok to not be ok when it's a private field
+			// if this is a private field, then we still should do best-effort collection
+			unknownCollectIDs(v, ids)
 			continue
 		}
 		modType, ok, err := t.mod.ModTypeFor(ctx, fieldTypeDef.TypeDef, true)
@@ -123,6 +125,32 @@ func (t *ModuleObjectType) CollectCoreIDs(ctx context.Context, value dagql.Typed
 	}
 
 	return nil
+}
+
+// unknownCollectIDs naively walks a json-decoded value from a module object
+// type, and tries to find *any* IDs that *might* be found
+func unknownCollectIDs(value any, ids map[digest.Digest]*resource.ID) {
+	switch value := value.(type) {
+	case nil:
+		return
+	case string:
+		var idp call.ID
+		if err := idp.Decode(value); err != nil {
+			return
+		}
+		ids[idp.Digest()] = &resource.ID{
+			ID:       idp,
+			Optional: true, // mark this id as optional, since it's a best-guess attempt
+		}
+	case []any:
+		for _, value := range value {
+			unknownCollectIDs(value, ids)
+		}
+	case map[string]any:
+		for _, value := range value {
+			unknownCollectIDs(value, ids)
+		}
+	}
 }
 
 func (t *ModuleObjectType) TypeDef() *TypeDef {
