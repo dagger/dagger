@@ -1005,6 +1005,18 @@ defmodule Dagger.Container do
     }
   end
 
+  @doc "Retrieves this container with the files at the given paths removed."
+  @spec without_files(t(), [String.t()]) :: Dagger.Container.t()
+  def without_files(%__MODULE__{} = container, paths) do
+    query_builder =
+      container.query_builder |> QB.select("withoutFiles") |> QB.put_arg("paths", paths)
+
+    %Dagger.Container{
+      query_builder: query_builder,
+      client: container.client
+    }
+  end
+
   @doc """
   Indicate that subsequent operations should not be featured more prominently in the UI.
 

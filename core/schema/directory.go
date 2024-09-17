@@ -64,6 +64,9 @@ func (s *directorySchema) Install() {
 		dagql.Func("withoutFile", s.withoutFile).
 			Doc(`Retrieves this directory with the file at the given path removed.`).
 			ArgDoc("path", `Location of the file to remove (e.g., "/file.txt").`),
+		dagql.Func("withoutFiles", s.withoutFiles).
+			Doc(`Retrieves this directory with the files at the given paths removed.`).
+			ArgDoc("paths", `Location of the file to remove (e.g., ["/file.txt"]).`),
 		dagql.Func("directory", s.subdirectory).
 			Doc(`Retrieves a directory at the given path.`).
 			ArgDoc("path", `Location of the directory to retrieve (e.g., "/src").`),
@@ -272,6 +275,14 @@ type withoutFileArgs struct {
 
 func (s *directorySchema) withoutFile(ctx context.Context, parent *core.Directory, args withoutFileArgs) (*core.Directory, error) {
 	return parent.Without(ctx, args.Path)
+}
+
+type withoutFilesArgs struct {
+	Paths []string
+}
+
+func (s *directorySchema) withoutFiles(ctx context.Context, parent *core.Directory, args withoutFilesArgs) (*core.Directory, error) {
+	return parent.Without(ctx, args.Paths...)
 }
 
 type diffArgs struct {

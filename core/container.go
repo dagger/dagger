@@ -522,12 +522,19 @@ func (container *Container) WithFile(ctx context.Context, destPath string, src *
 	})
 }
 
-func (container *Container) WithoutPath(ctx context.Context, destPath string) (*Container, error) {
+func (container *Container) WithoutPaths(ctx context.Context, destPaths ...string) (*Container, error) {
 	container = container.Clone()
 
-	return container.writeToPath(ctx, path.Dir(destPath), func(dir *Directory) (*Directory, error) {
-		return dir.Without(ctx, path.Base(destPath))
-	})
+	for _, destPath := range destPaths {
+		var err error
+		container, err = container.writeToPath(ctx, path.Dir(destPath), func(dir *Directory) (*Directory, error) {
+			return dir.Without(ctx, path.Base(destPath))
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	return container, nil
 }
 
 func (container *Container) WithFiles(ctx context.Context, destDir string, src []*File, permissions *int, owner string) (*Container, error) {

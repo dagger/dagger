@@ -263,6 +263,9 @@ func (s *containerSchema) Install() {
 		dagql.Func("withoutFile", s.withoutFile).
 			Doc(`Retrieves this container with the file at the given path removed.`).
 			ArgDoc("path", `Location of the file to remove (e.g., "/file.txt").`),
+		dagql.Func("withoutFiles", s.withoutFiles).
+			Doc(`Retrieves this container with the files at the given paths removed.`).
+			ArgDoc("paths", `Location of the files to remove (e.g., ["/file.txt"]).`),
 
 		dagql.Func("withFiles", s.withFiles).
 			Doc(`Retrieves this container plus the contents of the given files copied to the given path.`).
@@ -1368,7 +1371,7 @@ type containerWithoutDirectoryArgs struct {
 }
 
 func (s *containerSchema) withoutDirectory(ctx context.Context, parent *core.Container, args containerWithoutDirectoryArgs) (*core.Container, error) {
-	return parent.WithoutPath(ctx, args.Path)
+	return parent.WithoutPaths(ctx, args.Path)
 }
 
 type containerWithoutFileArgs struct {
@@ -1376,7 +1379,15 @@ type containerWithoutFileArgs struct {
 }
 
 func (s *containerSchema) withoutFile(ctx context.Context, parent *core.Container, args containerWithoutFileArgs) (*core.Container, error) {
-	return parent.WithoutPath(ctx, args.Path)
+	return parent.WithoutPaths(ctx, args.Path)
+}
+
+type containerWithoutFilesArgs struct {
+	Paths []string
+}
+
+func (s *containerSchema) withoutFiles(ctx context.Context, parent *core.Container, args containerWithoutFilesArgs) (*core.Container, error) {
+	return parent.WithoutPaths(ctx, args.Paths...)
 }
 
 type containerWithNewFileArgs struct {

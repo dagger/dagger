@@ -1642,6 +1642,16 @@ func (r *Container) WithoutFile(path string) *Container {
 	}
 }
 
+// Retrieves this container with the files at the given paths removed.
+func (r *Container) WithoutFiles(paths []string) *Container {
+	q := r.query.Select("withoutFiles")
+	q = q.Arg("paths", paths)
+
+	return &Container{
+		query: q,
+	}
+}
+
 // Indicate that subsequent operations should not be featured more prominently in the UI.
 //
 // This is the initial state of all containers.
@@ -2683,6 +2693,16 @@ func (r *Directory) WithoutDirectory(path string) *Directory {
 func (r *Directory) WithoutFile(path string) *Directory {
 	q := r.query.Select("withoutFile")
 	q = q.Arg("path", path)
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// Retrieves this directory with the files at the given paths removed.
+func (r *Directory) WithoutFiles(paths []string) *Directory {
+	q := r.query.Select("withoutFiles")
+	q = q.Arg("paths", paths)
 
 	return &Directory{
 		query: q,

@@ -1,0 +1,9 @@
+kind: Added
+body: |
+  New `Directory.withoutFiles` and `Container.withoutFiles` core APIs
+
+  These can be used to remove multiple files from a filesystem in one call.
+time: 2024-09-13T13:49:00.421742915+01:00
+custom:
+  Author: jedevc
+  PR: "8216"
