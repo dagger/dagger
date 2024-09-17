@@ -17,27 +17,23 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  benchmark:
+  benchmark-go:
+    name: Benchmark (Go)
     runs-on: "dagger-g2-main-4c"
     if: ${{ github.repository == 'dagger/dagger' }}
     timeout-minutes: 10
-
-    strategy:
-      matrix:
-        sdk: [go, python, typescript] # The SDKs you want to test
-
     steps:
-      - name: dagger init (${{ matrix.sdk }})
+      - name: dagger init (go)
         shell: bash
         run: |
           mkdir -p /tmp/benchmark
           cd /tmp/benchmark
 
-          dagger init --name=benchmark --sdk=${{ matrix.sdk }}
+          dagger init --name=benchmark --sdk=go
         env:
           DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
-
-      - name: dagger functions@initial (${{ matrix.sdk }})
+      
+      - name: dagger functions@initial (go)
         shell: bash
         run: |
           dagger functions
@@ -45,7 +41,7 @@ jobs:
         env:
           DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
 
-      - name: dagger functions@cached (${{ matrix.sdk }})
+      - name: dagger functions@cached (go)
         shell: bash
         run: |
           dagger functions
@@ -53,20 +49,62 @@ jobs:
         env:
           DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
 
-      - name: dagger functions@modified (${{ matrix.sdk }})
+      - name: dagger functions@modified (go)
         shell: bash
         run: |
           # invalidate the cache by modifying the source files
-          for file in "main.go" "src/index.ts" "src/main/__init__.py"; do
-            [ -f "$file" ] && echo >> $file
-          done
+          [ -f "main.go" ] && echo >> main.go
 
           dagger functions
         working-directory: /tmp/benchmark
         env:
           DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
 
-  benchmark-package-manager:
+  benchmark-python:
+    name: Benchmark (Python)
+    runs-on: "dagger-g2-main-4c"
+    if: ${{ github.repository == 'dagger/dagger' }}
+    timeout-minutes: 10    
+    steps:
+      - name: dagger init (python)
+        shell: bash
+        run: |
+          mkdir -p /tmp/benchmark
+          cd /tmp/benchmark
+
+          dagger init --name=benchmark --sdk=python
+        env:
+          DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
+
+      - name: dagger functions@initial (python)
+        shell: bash
+        run: |
+          dagger functions
+        working-directory: /tmp/benchmark
+        env:
+          DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
+
+      - name: dagger functions@cached (python)
+        shell: bash
+        run: |
+          dagger functions
+        working-directory: /tmp/benchmark
+        env:
+          DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
+
+      - name: dagger functions@modified (python)
+        shell: bash
+        run: |
+          # invalidate the cache by modifying the source files
+          [ -f "src/main/__init__.py" ] && echo >> src/main/__init__.py
+
+          dagger functions
+        working-directory: /tmp/benchmark
+        env:
+          DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
+
+  benchmark-typescript:
+    name: Benchmark (TypeScript::${{ matrix.package-manager }})
     runs-on: "dagger-g2-main-4c"
     if: ${{ github.repository == 'dagger/dagger' }}
     timeout-minutes: 10
@@ -75,7 +113,7 @@ jobs:
         package-manager: [pnpm, yarn, yarnv4, npm, bun]
 
     steps: 
-      - name: dagger init (${{ matrix.package-manager }})
+      - name: dagger init (typescript::${{ matrix.package-manager }})
         shell: bash
         run: |
           mkdir -p /tmp/benchmark
@@ -152,7 +190,7 @@ jobs:
         env:
           DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
 
-      - name: dagger functions@initial (${{ matrix.sdk }})
+      - name: dagger functions@initial (typescript::${{ matrix.package-manager }})
         shell: bash
         run: |
           dagger functions
@@ -160,7 +198,7 @@ jobs:
         env:
           DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
 
-      - name: dagger functions@cached (${{ matrix.sdk }})
+      - name: dagger functions@cached (typescript::${{ matrix.package-manager }})
         shell: bash
         run: |
           dagger functions
@@ -168,13 +206,11 @@ jobs:
         env:
           DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
 
-      - name: dagger functions@modified (${{ matrix.sdk }})
+      - name: dagger functions@modified (typescript::${{ matrix.package-manager }})
         shell: bash
         run: |
           # invalidate the cache by modifying the source files
-          for file in "main.go" "src/index.ts" "src/main/__init__.py"; do
-            [ -f "$file" ] && echo >> $file
-          done
+          [ -f "src/index.ts" ] && echo >> src/index.ts
 
           dagger functions
         working-directory: /tmp/benchmark
