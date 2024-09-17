@@ -580,9 +580,10 @@ class Dep:
 
 	require.NoError(t, err)
 	require.Equal(t, "Hello, Dagger!", out)
+}
 
 func (LegacySuite) TestGitWithKeepDir(ctx context.Context, t *testctx.T) {
-	// Changed in dagger/dagger#...
+	// Changed in dagger/dagger#8318
 	//
 	// Ensure that the old schemas default to keeping KeepGitDir.
 

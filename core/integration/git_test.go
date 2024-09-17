@@ -121,13 +121,15 @@ func (GitSuite) TestDiscardGitDir(ctx context.Context, t *testctx.T) {
 
 	t.Run("git dir is present", func(ctx context.Context, t *testctx.T) {
 		dir := c.Git("https://github.com/dagger/dagger").Branch("main").Tree()
-		ent, _ := dir.Entries(ctx)
+		ent, err := dir.Entries(ctx)
+		require.NoError(t, err)
 		require.Contains(t, ent, ".git")
 	})
 
 	t.Run("git dir is not present", func(ctx context.Context, t *testctx.T) {
 		dir := c.Git("https://github.com/dagger/dagger").Branch("main").Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
-		ent, _ := dir.Entries(ctx)
+		ent, err := dir.Entries(ctx)
+		require.NoError(t, err)
 		require.NotContains(t, ent, ".git")
 	})
 }
@@ -137,13 +139,15 @@ func (GitSuite) TestKeepGitDir(ctx context.Context, t *testctx.T) {
 
 	t.Run("git dir is present", func(ctx context.Context, t *testctx.T) {
 		dir := c.Git("https://github.com/dagger/dagger", dagger.GitOpts{KeepGitDir: true}).Branch("main").Tree()
-		ent, _ := dir.Entries(ctx)
+		ent, err := dir.Entries(ctx)
+		require.NoError(t, err)
 		require.Contains(t, ent, ".git")
 	})
 
 	t.Run("git dir is not present", func(ctx context.Context, t *testctx.T) {
 		dir := c.Git("https://github.com/dagger/dagger", dagger.GitOpts{KeepGitDir: true}).Branch("main").Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})
-		ent, _ := dir.Entries(ctx)
+		ent, err := dir.Entries(ctx)
+		require.NoError(t, err)
 		require.NotContains(t, ent, ".git")
 	})
 }

@@ -953,10 +953,10 @@ func (ServiceSuite) TestDirectoryEntries(ctx context.Context, t *testctx.T) {
 
 	entries, err := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
 		Branch("main").
-		Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}).
+		Tree().
 		Entries(ctx)
 	require.NoError(t, err)
-	require.Equal(t, []string{"README.md"}, entries)
+	require.Equal(t, []string{".git", "README.md"}, entries)
 }
 
 func (ServiceSuite) TestDirectorySync(ctx context.Context, t *testctx.T) {
@@ -979,13 +979,13 @@ func (ServiceSuite) TestDirectorySync(ctx context.Context, t *testctx.T) {
 		gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", content))
 		repo, err := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
 			Branch("main").
-			Tree(dagger.GitRefTreeOpts{DiscardGitDir: true}).
+			Tree().
 			Sync(ctx)
 		require.NoError(t, err)
 
 		entries, err := repo.Entries(ctx)
 		require.NoError(t, err)
-		require.Equal(t, []string{"README.md"}, entries)
+		require.Equal(t, []string{".git", "README.md"}, entries)
 	})
 }
 
@@ -1019,12 +1019,12 @@ func (ServiceSuite) TestWithDirectoryFileServices(ctx context.Context, t *testct
 	httpSrv, httpURL := httpService(ctx, t, c, content)
 
 	useBoth := c.Directory().
-		WithDirectory("/repo", c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitSrv}).Branch("main").Tree(dagger.GitRefTreeOpts{DiscardGitDir: true})).
+		WithDirectory("/repo", c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitSrv}).Branch("main").Tree()).
 		WithFile("/index.html", c.HTTP(httpURL, dagger.HTTPOpts{ExperimentalServiceHost: httpSrv}))
 
 	entries, err := useBoth.Directory("/repo").Entries(ctx)
 	require.NoError(t, err)
-	require.Equal(t, []string{"README.md"}, entries)
+	require.Equal(t, []string{".git", "README.md"}, entries)
 
 	fileContent, err := useBoth.File("/index.html").Contents(ctx)
 	require.NoError(t, err)
