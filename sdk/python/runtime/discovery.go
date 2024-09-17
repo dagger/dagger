@@ -140,6 +140,11 @@ func (d *Discovery) AddLockFile(lock *dagger.File) {
 	d.FileSet[PipCompileLock] = struct{}{}
 }
 
+// UseUvLock returns true if the runtime should expect a uv.lock file.
+func (d *Discovery) UseUvLock() bool {
+	return d.UserConfig().UseUv && (d.HasFile(UvLock) || !d.HasFile(PipCompileLock) && d.IsInit)
+}
+
 // AddDirectory adds a directory to the module's source.
 func (d *Discovery) AddDirectory(name string, dir *dagger.Directory) {
 	d.ContextDir = d.ContextDir.WithDirectory(path.Join(d.SubPath, name), dir)
