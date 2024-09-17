@@ -76,7 +76,7 @@ func init() {
 
 	rootCmd.AddCommand(
 		listenCmd,
-		versionCmd,
+		versionCmd(),
 		queryCmd,
 		runCmd,
 		watchCmd,
@@ -168,12 +168,46 @@ var rootCmd = &cobra.Command{
 		cobra.OnFinalize(func() {
 			t.Close()
 		})
+
+		checkForUpdates(cmd.Context(), cmd.ErrOrStderr())
+
 		t.Capture(cmd.Context(), "cli_command", map[string]string{
 			"name": commandName(cmd),
 		})
 
 		return nil
 	},
+}
+
+func checkForUpdates(ctx context.Context, w io.Writer) {
+	ctx, cancel := context.WithCancel(ctx)
+
+	updateCh := make(chan string)
+	go func() {
+		defer close(updateCh)
+
+		updateAvailable, err := updateAvailable(ctx)
+		if err != nil {
+			// Silently ignore the error -- it's already being caught by OTEL
+			return
+		}
+
+		updateCh <- updateAvailable
+	}()
+
+	cobra.OnFinalize(func() {
+		select {
+		case updateAvailable := <-updateCh:
+			if updateAvailable == "" {
+				return
+			}
+			versionNag(w, updateAvailable)
+		default:
+			// If we didn't have enough time to check for updates,
+			// cancel the update check.
+			cancel()
+		}
+	})
 }
 
 func installGlobalFlags(flags *pflag.FlagSet) {

@@ -28,3 +28,7 @@ const (
 	GolangVersion = "1.23.1"
 	GolangImage   = "golang:" + GolangVersion + "-alpine"
 )
+
+const (
+	OCIVersionAnnotation = "org.opencontainers.image.version"
+)
