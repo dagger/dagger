@@ -26,7 +26,8 @@ var FileContents = []string{"pyproject.toml", ".python-version"}
 
 // Uv config bits we'd like to consume.
 type UvConfig struct {
-	IndexUrl string `toml:"index-url"`
+	IndexUrl      string `toml:"index-url"`
+	ExtraIndexUrl string `toml:"extra-index-url"`
 }
 
 // PyProject is the parsed pyproject.toml file.

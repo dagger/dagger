@@ -82,11 +82,30 @@ func (m *PythonSdk) UvVersion() string {
 	return m.Discovery.UserConfig().UvVersion
 }
 
+// Lets us determine if [tool.uv] index-url is set or not.
+func (m *PythonSdk) IsUvIndexUrlSpecified() bool {
+	return m.Discovery.UvConfig().IndexUrl != ""
+}
+
+// IndexUrl specified by [tool.uv] index-url from project's
+// pyproject.toml configuration if specified, otherwise
+// defaults to DefaultPackageIndexUrl.
 func (m *PythonSdk) IndexUrl() string {
-	if m.Discovery.UvConfig().IndexUrl != "" {
+	if m.IsUvIndexUrlSpecified() {
 		return m.Discovery.UvConfig().IndexUrl
 	}
 	return DefaultPackageIndexUrl
+}
+
+// Lets us determine if [tool.uv] extra-index-url is set or not.
+func (m *PythonSdk) IsUvExtraIndexUrlSpecified() bool {
+	return m.Discovery.UvConfig().ExtraIndexUrl != ""
+}
+
+// ExtraIndexUrl specified by [tool.uv] extra-index-url from project's
+// pyproject.toml configuration.
+func (m *PythonSdk) ExtraIndexUrl() string {
+	return m.Discovery.UvConfig().ExtraIndexUrl
 }
 
 // Override the uv version

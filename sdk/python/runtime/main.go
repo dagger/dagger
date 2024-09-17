@@ -14,18 +14,18 @@ import (
 )
 
 const (
-	ModSourceDirPath      = "/src"
-	RuntimeExecutablePath = "/runtime"
-	GenDir                = "sdk"
-	GenPath               = "src/dagger/client/gen.py"
-	SchemaPath            = "/schema.json"
-	VenvPath              = "/opt/venv"
-	ProjectCfg            = "pyproject.toml"
-	PipCompileLock        = "requirements.lock"
-	UvLock                = "uv.lock"
-	MainFilePath          = "src/main/__init__.py"
-	MainObjectName        = "Main"
-	DefaultPackageIndex   = "https://pypi.org/simple"
+	ModSourceDirPath       = "/src"
+	RuntimeExecutablePath  = "/runtime"
+	GenDir                 = "sdk"
+	GenPath                = "src/dagger/client/gen.py"
+	SchemaPath             = "/schema.json"
+	VenvPath               = "/opt/venv"
+	ProjectCfg             = "pyproject.toml"
+	PipCompileLock         = "requirements.lock"
+	UvLock                 = "uv.lock"
+	MainFilePath           = "src/main/__init__.py"
+	MainObjectName         = "Main"
+	DefaultPackageIndexUrl = "https://pypi.org/simple"
 )
 
 // UserConfig is the custom user configuration that users can add to their pyproject.toml.
@@ -219,13 +219,19 @@ func (m *PythonSdk) WithBase() (*PythonSdk, error) {
 		WithEnvVariable("UV_LINK_MODE", "copy").
 		WithEnvVariable("UV_NATIVE_TLS", "1").
 		WithEnvVariable("UV_PROJECT_ENVIRONMENT", "/opt/venv").
-		WithEnvVariable("UV_INDEX_URL", m.IndexUrl()).
 		WithWorkdir(path.Join(m.SourcePath, m.Discovery.SubPath)).
 		// These are informational only, to be leveraged by the target module
 		// if needed.
 		WithEnvVariable("DAGGER_BASE_IMAGE", baseAddr).
 		WithEnvVariable("DAGGER_UV_IMAGE", uvAddr).
 		WithEnvVariable("UV_VERSION", uvTag)
+
+	if m.IsUvIndexUrlSpecified() {
+		m.Container = m.Container.WithEnvVariable("UV_INDEX_URL", m.IndexUrl())
+	}
+	if m.IsUvExtraIndexUrlSpecified() {
+		m.Container = m.Container.WithEnvVariable("UV_EXTRA_INDEX_URL", m.ExtraIndexUrl())
+	}
 
 	return m, nil
 }
@@ -384,7 +390,7 @@ func (m *PythonSdk) WithInstall() *PythonSdk {
 			// If there's a lock file, we assume that all the dependencies are
 			// included in it so we can avoid resolving for them to get a faster
 			// install.
-			install = append(install, "--no-deps", "-r", PipCompileLock, "--index-url", m.IndexUrl())
+			install = append(install, "--no-deps", "-r", PipCompileLock)
 		}
 		// pip compiles by default, but not uv
 		install = append([]string{"uv"}, install...)
