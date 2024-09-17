@@ -1,0 +1,6 @@
+kind: Fixed
+body: Fixed error message interpolation in Modules
+time: 2024-09-17T17:08:01.902631Z
+custom:
+    Author: helderco
+    PR: "8477"
