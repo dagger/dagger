@@ -147,6 +147,13 @@ type Container {
   envVariables: [EnvVariable!]!
 
   """
+  The exit code of the last executed command.
+  
+  Will execute default command if none is set, or error if there's no default.
+  """
+  exitCode: Int!
+
+  """
   EXPERIMENTAL API! Subject to change/removal at any time.
   
   Configures all available GPUs on the host to be accessible to this container.

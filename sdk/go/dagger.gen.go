@@ -327,6 +327,7 @@ type Container struct {
 	query *querybuilder.Selection
 
 	envVariable *string
+	exitCode    *int
 	export      *string
 	id          *ContainerID
 	imageRef    *string
@@ -539,6 +540,21 @@ func (r *Container) EnvVariables(ctx context.Context) ([]EnvVariable, error) {
 	}
 
 	return convert(response), nil
+}
+
+// The exit code of the last executed command.
+//
+// Will execute default command if none is set, or error if there's no default.
+func (r *Container) ExitCode(ctx context.Context) (int, error) {
+	if r.exitCode != nil {
+		return *r.exitCode, nil
+	}
+	q := r.query.Select("exitCode")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // EXPERIMENTAL API! Subject to change/removal at any time.

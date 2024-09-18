@@ -597,6 +597,30 @@ class Container(Type):
             for v in _ids
         ]
 
+    async def exit_code(self) -> int:
+        """The exit code of the last executed command.
+
+        Will execute default command if none is set, or error if there's no
+        default.
+
+        Returns
+        -------
+        int
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("exitCode", _args)
+        return await _ctx.execute(int)
+
     def experimental_with_all_gp_us(self) -> Self:
         """EXPERIMENTAL API! Subject to change/removal at any time.
 

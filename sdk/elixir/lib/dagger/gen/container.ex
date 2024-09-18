@@ -149,6 +149,19 @@ defmodule Dagger.Container do
   end
 
   @doc """
+  The exit code of the last executed command.
+
+  Will execute default command if none is set, or error if there's no default.
+  """
+  @spec exit_code(t()) :: {:ok, integer()} | {:error, term()}
+  def exit_code(%__MODULE__{} = container) do
+    query_builder =
+      container.query_builder |> QB.select("exitCode")
+
+    Client.execute(container.client, query_builder)
+  end
+
+  @doc """
   EXPERIMENTAL API! Subject to change/removal at any time.
 
   Configures all available GPUs on the host to be accessible to this container.

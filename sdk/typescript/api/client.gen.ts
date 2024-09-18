@@ -1360,6 +1360,7 @@ export class CacheVolume extends BaseClient {
 export class Container extends BaseClient {
   private readonly _id?: ContainerID = undefined
   private readonly _envVariable?: string = undefined
+  private readonly _exitCode?: number = undefined
   private readonly _export?: string = undefined
   private readonly _imageRef?: string = undefined
   private readonly _label?: string = undefined
@@ -1379,6 +1380,7 @@ export class Container extends BaseClient {
     parent?: { queryTree?: QueryTree[]; ctx: Context },
     _id?: ContainerID,
     _envVariable?: string,
+    _exitCode?: number,
     _export?: string,
     _imageRef?: string,
     _label?: string,
@@ -1395,6 +1397,7 @@ export class Container extends BaseClient {
 
     this._id = _id
     this._envVariable = _envVariable
+    this._exitCode = _exitCode
     this._export = _export
     this._imageRef = _imageRef
     this._label = _label
@@ -1614,6 +1617,29 @@ export class Container extends BaseClient {
           r.id,
         ),
     )
+  }
+
+  /**
+   * The exit code of the last executed command.
+   *
+   * Will execute default command if none is set, or error if there's no default.
+   */
+  exitCode = async (): Promise<number> => {
+    if (this._exitCode) {
+      return this._exitCode
+    }
+
+    const response: Awaited<number> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "exitCode",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
   }
 
   /**
