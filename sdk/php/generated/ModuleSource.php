@@ -160,8 +160,7 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
         string $path,
         ?string $viewName = null,
         ?array $ignore = null,
-    ): Directory
-    {
+    ): Directory {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('resolveDirectoryFromCaller');
         $innerQueryBuilder->setArgument('path', $path);
         if (null !== $viewName) {
