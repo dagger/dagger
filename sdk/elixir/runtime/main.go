@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"path"
 
 	"elixir-sdk/internal/dagger"
@@ -18,37 +19,20 @@ const (
 )
 
 func New(
+	// Directory with the Elixir SDK source code.
 	// +optional
 	// +defaultPath="/sdk/elixir"
+	// +ignore=["**","!LICENSE","!lib/**/*.ex","!.formatter.exs","!mix.exs","!mix.lock","!dagger_codegen/lib/**/*.ex","!dagger_codegen/mix.exs","!dagger_codegen/mix.lock"]
 	sdkSourceDir *dagger.Directory,
-) *ElixirSdk {
+) (*ElixirSdk, error) {
+	if sdkSourceDir == nil {
+		return nil, fmt.Errorf("sdk source directory not provided")
+	}
 	return &ElixirSdk{
-		SdkSourceDir: dag.Directory().
-			// NB: these patterns should match those in `dagger.json`.
-			// When `--sdk` points to a git remote the files aren't filtered
-			// using `dagger.json` include/exclude patterns since the whole
-			// repo is cloned. It's still useful to have the same patterns in
-			// `dagger.json` though, to avoid the unnecessary uploads when
-			// loading the SDK from a local path.
-			WithDirectory(
-				"/",
-				sdkSourceDir,
-				dagger.DirectoryWithDirectoryOpts{
-					Include: []string{
-						"LICENSE",
-						"lib/**/*.ex",
-						".formatter.exs",
-						"mix.exs",
-						"mix.lock",
-						"dagger_codegen/lib/**/*.ex",
-						"dagger_codegen/mix.exs",
-						"dagger_codegen/mix.lock",
-					},
-				},
-			),
+		SdkSourceDir:  sdkSourceDir,
 		RequiredPaths: []string{},
 		Container:     dag.Container(),
-	}
+	}, nil
 }
 
 type ElixirSdk struct {
