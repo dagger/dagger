@@ -21,6 +21,8 @@ import (
 	"github.com/containerd/containerd/mount"
 	ctdoci "github.com/containerd/containerd/oci"
 	"github.com/containerd/continuity/fs"
+	"github.com/dagger/dagger/engine/buildkit/resources"
+	resourcetypes "github.com/dagger/dagger/engine/buildkit/resources/types"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/moby/buildkit/executor"
 	"github.com/moby/buildkit/executor/oci"
@@ -103,6 +105,8 @@ type execState struct {
 	exitCodePath     string
 	metaMount        *specs.Mount
 	origEnvMap       map[string]string
+
+	cgroupRecorder resourcetypes.Recorder
 
 	doneErr error
 	done    chan struct{}
@@ -364,6 +368,65 @@ func (w *Worker) generateBaseSpec(ctx context.Context, state *execState) error {
 	state.cleanups.Add("base OCI spec cleanup", Infallible(ociSpecCleanup))
 
 	state.spec = baseSpec
+	return nil
+}
+
+func (w *Worker) setupCgroupMonitor(ctx context.Context, state *execState) error {
+	cgroupPath := state.spec.Linux.CgroupsPath
+	if cgroupPath == "" {
+		return nil
+	}
+
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	bklog.G(ctx).Debugf("cgroup path: %s", cgroupPath)
+
+	var err error
+	state.cgroupRecorder, err = w.resourceMonitor.RecordNamespace(cgroupPath, resources.RecordOpt{
+		NetworkSampler: state.networkNamespace,
+	})
+	if err != nil {
+		return fmt.Errorf("start cgroup recorder: %w", err)
+	}
+
+	spanMetrics := telemetry.NewSpanMetrics(ctx, InstrumentationLibrary)
+
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	state.cleanups.Add("TODO DUMP SAMPLES", Infallible(func() {
+		samples, err := state.cgroupRecorder.Samples()
+		if err != nil {
+			bklog.G(ctx).WithError(err).Error("failed to get cgroup samples")
+			return
+		}
+
+		for _, s := range samples.Samples {
+			bklog.G(ctx).Infof("cgroup samples: %+v", s)
+
+			if s.IOStat == nil {
+				continue
+			}
+			bklog.G(ctx).Infof("cgroup iostat: %+v", s.IOStat)
+			if ptr := s.IOStat.ReadBytes; ptr != nil {
+				bklog.G(ctx).Infof("cgroup read bytes: %d", *ptr)
+				spanMetrics.EmitDiskReadBytes(int(*ptr))
+			}
+			if ptr := s.IOStat.WriteBytes; ptr != nil {
+				bklog.G(ctx).Infof("cgroup write bytes: %d", *ptr)
+				spanMetrics.EmitDiskWriteBytes(int(*ptr))
+			}
+		}
+	}))
+
+	// TODO: async close if zero exit code? currently seeing this take less than 20 microseconds, is it ever slower? if not who cares
+	state.cleanups.Add("close cgroup recorder", Infallible(state.cgroupRecorder.Close))
+
 	return nil
 }
 

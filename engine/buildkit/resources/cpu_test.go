@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	resourcestypes "github.com/moby/buildkit/executor/resources/types"
+	resourcestypes "github.com/dagger/dagger/engine/buildkit/resources/types"
 	"github.com/stretchr/testify/require"
 )
 

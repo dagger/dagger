@@ -10,7 +10,8 @@ import (
 	"sync"
 	"time"
 
-	resourcestypes "github.com/moby/buildkit/executor/resources/types"
+	resourcestypes "github.com/dagger/dagger/engine/buildkit/resources/types"
+	bkresourcestypes "github.com/moby/buildkit/executor/resources/types"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/prometheus/procfs"
 )
@@ -136,7 +137,7 @@ func (r *cgroupRecord) sample(tm time.Time) (*resourcestypes.Sample, error) {
 		if err != nil {
 			return nil, err
 		}
-		sample.NetStat = net
+		sample.NetStat = (*resourcestypes.NetworkSample)(net)
 	}
 	return sample, nil
 }
@@ -181,7 +182,7 @@ type Monitor struct {
 }
 
 type NetworkSampler interface {
-	Sample() (*resourcestypes.NetworkSample, error)
+	Sample() (*bkresourcestypes.NetworkSample, error)
 }
 
 type RecordOpt struct {

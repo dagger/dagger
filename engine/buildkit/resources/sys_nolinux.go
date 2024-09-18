@@ -2,7 +2,7 @@
 
 package resources
 
-import resourcestypes "github.com/moby/buildkit/executor/resources/types"
+import resourcestypes "github.com/dagger/dagger/engine/buildkit/resources/types"
 
 func newSysSampler() (*Sampler[*resourcestypes.SysSample], error) {
 	return nil, nil

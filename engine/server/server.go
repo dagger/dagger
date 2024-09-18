@@ -21,6 +21,7 @@ import (
 	ctdsnapshot "github.com/containerd/containerd/snapshots"
 	"github.com/containerd/go-runc"
 	"github.com/containerd/platforms"
+	"github.com/dagger/dagger/engine/buildkit/resources"
 	controlapi "github.com/moby/buildkit/api/services/control"
 	apitypes "github.com/moby/buildkit/api/types"
 	bkcache "github.com/moby/buildkit/cache"
@@ -404,6 +405,11 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	logrus.Infof("found worker %q, labels=%v, platforms=%v", workerID, baseLabels, FormatPlatforms(srv.enabledPlatforms))
 	archutil.WarnIfUnsupported(srv.enabledPlatforms)
 
+	resourceMonitor, err := resources.NewMonitor()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create resource monitor: %w", err)
+	}
+
 	// registerDaggerCustomSources adds Dagger's custom sources to the worker.
 	hs, err := httpdns.NewSource(httpdns.Opt{
 		Opt: srchttp.Opt{
@@ -454,6 +460,8 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		NetworkProviders:    srv.networkProviders,
 		ParallelismSem:      srv.parallelismSem,
 		WorkerCache:         srv.workerCache,
+
+		ResourceMonitor: resourceMonitor,
 	})
 
 	//

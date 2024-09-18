@@ -1,6 +1,6 @@
 package resources
 
-import resourcestypes "github.com/moby/buildkit/executor/resources/types"
+import resourcestypes "github.com/dagger/dagger/engine/buildkit/resources/types"
 
 type SysSampler = Sub[*resourcestypes.SysSample]
 

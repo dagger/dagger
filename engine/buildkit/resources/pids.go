@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	resourcestypes "github.com/moby/buildkit/executor/resources/types"
+	resourcestypes "github.com/dagger/dagger/engine/buildkit/resources/types"
 	"github.com/pkg/errors"
 )
 

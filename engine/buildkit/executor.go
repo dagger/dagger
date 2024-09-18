@@ -26,7 +26,7 @@ import (
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/executor"
 	"github.com/moby/buildkit/executor/oci"
-	resourcestypes "github.com/moby/buildkit/executor/resources/types"
+	bkresourcestypes "github.com/moby/buildkit/executor/resources/types"
 	gatewayapi "github.com/moby/buildkit/frontend/gateway/pb"
 	randid "github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/solver"
@@ -144,7 +144,7 @@ func (w *Worker) Run(
 	mounts []executor.Mount,
 	procInfo executor.ProcessInfo,
 	started chan<- struct{},
-) (_ resourcestypes.Recorder, rerr error) {
+) (_ bkresourcestypes.Recorder, rerr error) {
 	if id == "" {
 		id = randid.NewID()
 	}
@@ -158,6 +158,7 @@ func (w *Worker) Run(
 		w.setupNetwork,
 		w.injectDumbInit,
 		w.generateBaseSpec,
+		w.setupCgroupMonitor,
 		w.filterEnvs,
 		w.setupRootfs,
 		w.setUserGroup,
@@ -251,6 +252,9 @@ func (w *Worker) run(
 			trace.SpanFromContext(ctx).AddEvent("Container started")
 			if started != nil {
 				close(started)
+			}
+			if state.cgroupRecorder != nil {
+				state.cgroupRecorder.Start()
 			}
 		})
 	}

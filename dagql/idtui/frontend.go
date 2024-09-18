@@ -367,6 +367,33 @@ func (r renderer) renderDuration(out *termenv.Output, span *dagui.Span) {
 		duration = duration.Faint()
 	}
 	fmt.Fprint(out, duration)
+
+	// TODO: dumb
+	logs := r.db.PrimaryLogs[r.db.PrimarySpan]
+	if len(logs) == 0 {
+		return
+	}
+	for _, l := range logs {
+		data := l.Body().AsString()
+
+		var metricsName string
+		l.WalkAttributes(func(attr log.KeyValue) bool {
+			// TODO: dumb
+			if attr.Key == telemetry.MetricsAttr {
+				metricsName = attr.Value.AsString()
+				return false
+			}
+			return true
+		})
+		if metricsName != "" {
+			str := out.String(fmt.Sprintf("METRIC %q: %s ", metricsName, data))
+			if _, err := fmt.Fprint(out, str.Bold()); err != nil {
+				return
+			}
+			continue
+		}
+	}
+
 }
 
 // var (
@@ -417,14 +444,17 @@ func renderPrimaryOutput(db *dagui.DB) error {
 
 	for _, l := range logs {
 		data := l.Body().AsString()
+
 		var stream int
 		l.WalkAttributes(func(attr log.KeyValue) bool {
 			if attr.Key == telemetry.StdioStreamAttr {
 				stream = int(attr.Value.AsInt64())
 				return false
 			}
+
 			return true
 		})
+
 		switch stream {
 		case 1: // stdout
 			if _, err := fmt.Fprint(os.Stdout, data); err != nil {
