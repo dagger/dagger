@@ -83,4 +83,28 @@ const (
 
 	// Indicates whether the log should be shown globally.
 	LogsGlobalAttr = "dagger.io/logs.global"
+
+	// OTel metric attribute so we can correlate metrics with spans
+	MetricsSpanID = "dagger.io/metrics.span"
+
+	// OTel metric attribute so we can correlate metrics with traces
+	MetricsTraceID = "dagger.io/metrics.trace"
+
+	// OTel metric for number of bytes read from disk by a container, as parsed from its cgroup
+	IOStatDiskReadBytes = "dagger.io/metrics.iostat.disk.readbytes"
+
+	// OTel metric for number of bytes written to disk by a container, as parsed from its cgroup
+	IOStatDiskWriteBytes = "dagger.io/metrics.iostat.disk.writebytes"
+
+	// OTel metric for number of microseconds SOME tasks in a cgroup were stalled on IO
+	IOStatPressureSomeTotal = "dagger.io/metrics.iostat.pressure.some.total"
+
+	// OTel metric units should be in UCUM format
+	// https://unitsofmeasure.org/ucum
+
+	// Bytes unit for OTel metrics
+	ByteUnitName = "byte"
+
+	// Microseconds unit for OTel metrics
+	MicrosecondUnitName = "us"
 )

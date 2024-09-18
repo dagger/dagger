@@ -21,6 +21,8 @@ import (
 	"github.com/containerd/containerd/mount"
 	ctdoci "github.com/containerd/containerd/oci"
 	"github.com/containerd/continuity/fs"
+	runc "github.com/containerd/go-runc"
+	"github.com/dagger/dagger/engine/buildkit/resources"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/moby/buildkit/executor"
 	"github.com/moby/buildkit/executor/oci"
@@ -31,6 +33,8 @@ import (
 	bknetwork "github.com/moby/buildkit/util/network"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/sourcegraph/conc/pool"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 
@@ -72,6 +76,9 @@ const (
 	OTelMetricsEndpointEnv  = "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT"
 
 	buildkitQemuEmulatorMountPoint = "/dev/.buildkit_qemu_emulator"
+
+	cgroupSampleInterval     = 3 * time.Second
+	finalCgroupSampleTimeout = 3 * time.Second
 )
 
 var removeEnvs = map[string]struct{}{
@@ -104,6 +111,9 @@ type execState struct {
 	metaMount        *specs.Mount
 	origEnvMap       map[string]string
 
+	startedOnce *sync.Once
+	startedCh   chan<- struct{}
+
 	doneErr error
 	done    chan struct{}
 
@@ -115,15 +125,18 @@ func newExecState(
 	procInfo *executor.ProcessInfo,
 	rootMount executor.Mount,
 	mounts []executor.Mount,
+	startedCh chan<- struct{},
 ) *execState {
 	return &execState{
-		id:        id,
-		procInfo:  procInfo,
-		rootMount: rootMount,
-		mounts:    mounts,
-		cleanups:  &Cleanups{},
-		done:      make(chan struct{}),
-		netNSJobs: make(chan func()),
+		id:          id,
+		procInfo:    procInfo,
+		rootMount:   rootMount,
+		mounts:      mounts,
+		cleanups:    &Cleanups{},
+		startedOnce: &sync.Once{},
+		startedCh:   startedCh,
+		done:        make(chan struct{}),
+		netNSJobs:   make(chan func()),
 	}
 }
 
@@ -700,12 +713,10 @@ func (w *Worker) setupOTel(ctx context.Context, state *execState) error {
 		OTelTracesEndpointEnv+"="+otelEndpoint+"/v1/traces",
 		// Indicate that the /v1/trace endpoint accepts live telemetry.
 		OTelTracesLiveEnv+"=1",
-		// Dagger sets up a log exporter too. Explicitly set it so things can
-		// detect support for it.
+		// Dagger sets up log+metric exporters too. Explicitly set them
+		// so things can detect support for it.
 		OTelLogsProtocolEnv+"="+otelProto,
 		OTelLogsEndpointEnv+"="+otelEndpoint+"/v1/logs",
-		// Dagger doesn't set up metrics yet, but we should set this anyway,
-		// since otherwise some tools default to localhost.
 		OTelMetricsProtocolEnv+"="+otelProto,
 		OTelMetricsEndpointEnv+"="+otelEndpoint+"/v1/metrics",
 	)
@@ -1084,6 +1095,9 @@ func (w *Worker) installCACerts(ctx context.Context, state *execState) error {
 			resolvConfPath:   state.resolvConfPath,
 			hostsFilePath:    state.hostsFilePath,
 
+			startedOnce: &sync.Once{},
+			startedCh:   make(chan struct{}),
+
 			done: make(chan struct{}),
 
 			netNSJobs: state.netNSJobs,
@@ -1104,8 +1118,7 @@ func (w *Worker) installCACerts(ctx context.Context, state *execState) error {
 		caExecState.spec.Process.Cwd = "/"
 		caExecState.spec.Process.Terminal = false
 
-		started := make(chan struct{}, 1)
-		if err := w.run(ctx, caExecState, started); err != nil {
+		if err := w.run(ctx, caExecState, w.runContainer); err != nil {
 			return fmt.Errorf("installer command failed: %w, output: %s", err, output.String())
 		}
 		return nil
@@ -1131,4 +1144,127 @@ func (w *Worker) installCACerts(ctx context.Context, state *execState) error {
 	}
 
 	return nil
+}
+
+func (w *Worker) runContainer(ctx context.Context, state *execState) (rerr error) {
+	bundle := filepath.Join(w.executorRoot, state.id)
+	if err := os.Mkdir(bundle, 0o711); err != nil {
+		return err
+	}
+	state.cleanups.Add("remove bundle", func() error {
+		return os.RemoveAll(bundle)
+	})
+
+	configPath := filepath.Join(bundle, "config.json")
+	f, err := os.Create(configPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	if err := json.NewEncoder(f).Encode(state.spec); err != nil {
+		return fmt.Errorf("failed to encode spec: %w", err)
+	}
+	f.Close()
+
+	lg := bklog.G(ctx).
+		WithField("id", state.id).
+		WithField("args", state.spec.Process.Args)
+	if w.execMD != nil {
+		lg = lg.WithField("caller_client_id", w.execMD.CallerClientID)
+		if w.execMD.CallID != nil {
+			lg = lg.WithField("call_id", w.execMD.CallID.Display())
+		}
+		if w.execMD.ClientID != "" {
+			lg = lg.WithField("nested_client_id", w.execMD.ClientID)
+		}
+	}
+	lg.Debug("starting container")
+	defer func() {
+		lg.WithError(rerr).Debug("container done")
+	}()
+
+	trace.SpanFromContext(ctx).AddEvent("Container created")
+
+	state.cleanups.Add("runc delete container", func() error {
+		return w.runc.Delete(context.WithoutCancel(ctx), state.id, &runc.DeleteOpts{})
+	})
+
+	cgroupPath := state.spec.Linux.CgroupsPath
+	if cgroupPath != "" && w.execMD != nil && w.execMD.CallID != nil {
+		meter := telemetry.Meter(ctx, InstrumentationLibrary)
+
+		commonAttrs := []attribute.KeyValue{
+			attribute.String(telemetry.DagDigestAttr, string(w.execMD.CallID.Digest())),
+		}
+		spanContext := trace.SpanContextFromContext(ctx)
+		if spanContext.HasSpanID() {
+			commonAttrs = append(commonAttrs,
+				attribute.String(telemetry.MetricsSpanID, spanContext.SpanID().String()),
+			)
+		}
+		if spanContext.HasTraceID() {
+			commonAttrs = append(commonAttrs,
+				attribute.String(telemetry.MetricsTraceID, spanContext.TraceID().String()),
+			)
+		}
+
+		cgroupSampler, err := resources.NewSampler(cgroupPath, meter, attribute.NewSet(commonAttrs...))
+		if err != nil {
+			return fmt.Errorf("create cgroup sampler: %w", err)
+		}
+
+		cgroupSamplerCtx, cgroupSamplerCancel := context.WithCancelCause(context.WithoutCancel(ctx))
+		cgroupSamplerPool := pool.New()
+
+		state.cleanups.Add("cancel cgroup sampler", Infallible(func() {
+			cgroupSamplerCancel(fmt.Errorf("container cleanup: %w", context.Canceled))
+			cgroupSamplerPool.Wait()
+		}))
+
+		cgroupSamplerPool.Go(func() {
+			ticker := time.NewTicker(cgroupSampleInterval)
+			defer ticker.Stop()
+
+			for {
+				select {
+				case <-cgroupSamplerCtx.Done():
+					// try a quick final sample before closing
+					finalCtx, finalCancel := context.WithTimeout(context.WithoutCancel(cgroupSamplerCtx), finalCgroupSampleTimeout)
+					defer finalCancel()
+					if err := cgroupSampler.Sample(finalCtx); err != nil {
+						bklog.G(ctx).Error("failed to sample cgroup after cancel", "err", err)
+					}
+
+					return
+				case <-ticker.C:
+					if err := cgroupSampler.Sample(cgroupSamplerCtx); err != nil {
+						bklog.G(ctx).Error("failed to sample cgroup", "err", err)
+					}
+				}
+			}
+		})
+	}
+
+	startedCallback := func() {
+		state.startedOnce.Do(func() {
+			trace.SpanFromContext(ctx).AddEvent("Container started")
+			if state.startedCh != nil {
+				close(state.startedCh)
+			}
+		})
+	}
+
+	killer := newRunProcKiller(w.runc, state.id)
+
+	runcCall := func(ctx context.Context, started chan<- int, io runc.IO, pidfile string) error {
+		_, err := w.runc.Run(ctx, state.id, bundle, &runc.CreateOpts{
+			Started:   started,
+			IO:        io,
+			ExtraArgs: []string{"--keep"},
+		})
+		return err
+	}
+
+	return exitError(ctx, state.exitCodePath, w.callWithIO(ctx, state.procInfo, startedCallback, killer, runcCall))
 }

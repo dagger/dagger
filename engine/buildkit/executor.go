@@ -15,7 +15,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
-	"sync"
 	"syscall"
 	"time"
 
@@ -26,7 +25,7 @@ import (
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/executor"
 	"github.com/moby/buildkit/executor/oci"
-	resourcestypes "github.com/moby/buildkit/executor/resources/types"
+	bkresourcestypes "github.com/moby/buildkit/executor/resources/types"
 	gatewayapi "github.com/moby/buildkit/frontend/gateway/pb"
 	randid "github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/solver"
@@ -144,7 +143,7 @@ func (w *Worker) Run(
 	mounts []executor.Mount,
 	procInfo executor.ProcessInfo,
 	started chan<- struct{},
-) (_ resourcestypes.Recorder, rerr error) {
+) (_ bkresourcestypes.Recorder, rerr error) {
 	if id == "" {
 		id = randid.NewID()
 	}
@@ -153,8 +152,8 @@ func (w *Worker) Run(
 		return nil, err
 	}
 
-	state := newExecState(id, &procInfo, rootMount, mounts)
-	return nil, w.run(ctx, state, started,
+	state := newExecState(id, &procInfo, rootMount, mounts, started)
+	return nil, w.run(ctx, state,
 		w.setupNetwork,
 		w.injectDumbInit,
 		w.generateBaseSpec,
@@ -170,16 +169,15 @@ func (w *Worker) Run(
 		w.createCWD,
 		w.setupNestedClient,
 		w.installCACerts,
+		w.runContainer,
 	)
 }
 
 func (w *Worker) run(
 	ctx context.Context,
 	state *execState,
-	started chan<- struct{},
 	setupFuncs ...executorSetupFunc,
 ) (rerr error) {
-	startedOnce := sync.Once{}
 	w.mu.Lock()
 	w.running[state.id] = state
 	w.mu.Unlock()
@@ -195,80 +193,21 @@ func (w *Worker) run(
 		}
 		state.doneErr = rerr
 
-		if started != nil {
-			startedOnce.Do(func() {
-				close(started)
+		if state.startedCh != nil {
+			state.startedOnce.Do(func() {
+				close(state.startedCh)
 			})
 		}
 	}()
 
 	for _, f := range setupFuncs {
 		if err := f(ctx, state); err != nil {
-			bklog.G(ctx).Errorf("executor setup failed: %v", err)
+			bklog.G(ctx).WithError(err).Error("executor run")
 			return err
 		}
 	}
 
-	bundle := filepath.Join(w.executorRoot, state.id)
-	if err := os.Mkdir(bundle, 0o711); err != nil {
-		return err
-	}
-	defer os.RemoveAll(bundle)
-
-	configPath := filepath.Join(bundle, "config.json")
-	f, err := os.Create(configPath)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	if err := json.NewEncoder(f).Encode(state.spec); err != nil {
-		return fmt.Errorf("failed to encode spec: %w", err)
-	}
-	f.Close()
-
-	lg := bklog.G(ctx).
-		WithField("id", state.id).
-		WithField("args", state.spec.Process.Args)
-	if w.execMD != nil {
-		lg = lg.WithField("caller_client_id", w.execMD.CallerClientID)
-		if w.execMD.CallID != nil {
-			lg = lg.WithField("call_id", w.execMD.CallID.Display())
-		}
-		if w.execMD.ClientID != "" {
-			lg = lg.WithField("nested_client_id", w.execMD.ClientID)
-		}
-	}
-	lg.Debug("starting container")
-	defer func() {
-		lg.WithError(rerr).Debug("container done")
-	}()
-
-	trace.SpanFromContext(ctx).AddEvent("Container created")
-	killer := newRunProcKiller(w.runc, state.id)
-	startedCallback := func() {
-		startedOnce.Do(func() {
-			trace.SpanFromContext(ctx).AddEvent("Container started")
-			if started != nil {
-				close(started)
-			}
-		})
-	}
-	runcCall := func(ctx context.Context, started chan<- int, io runc.IO, pidfile string) error {
-		_, err := w.runc.Run(ctx, state.id, bundle, &runc.CreateOpts{
-			Started:   started,
-			IO:        io,
-			ExtraArgs: []string{"--keep"},
-		})
-		return err
-	}
-	err = exitError(ctx, state.exitCodePath, w.callWithIO(ctx, state.procInfo, startedCallback, killer, runcCall))
-	if err != nil {
-		w.runc.Delete(context.TODO(), state.id, &runc.DeleteOpts{})
-		return err
-	}
-
-	return w.runc.Delete(context.TODO(), state.id, &runc.DeleteOpts{})
+	return nil
 }
 
 // Namespaced is something that has Linux namespaces set up.

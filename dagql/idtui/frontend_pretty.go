@@ -17,6 +17,8 @@ import (
 	"github.com/pkg/browser"
 	"go.opentelemetry.io/otel/codes"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/term"
@@ -304,6 +306,32 @@ func (fe *frontendPretty) Close() error {
 	if fe.program != nil {
 		fe.program.Send(eofMsg{})
 	}
+	return nil
+}
+
+func (fe *frontendPretty) MetricExporter() sdkmetric.Exporter {
+	return FrontendMetricExporter{fe}
+}
+
+type FrontendMetricExporter struct {
+	*frontendPretty
+}
+
+func (fe FrontendMetricExporter) Export(ctx context.Context, resourceMetrics *metricdata.ResourceMetrics) error {
+	fe.mu.Lock()
+	defer fe.mu.Unlock()
+	return fe.db.MetricExporter().Export(ctx, resourceMetrics)
+}
+
+func (fe FrontendMetricExporter) Temporality(ik sdkmetric.InstrumentKind) metricdata.Temporality {
+	return fe.db.Temporality(ik)
+}
+
+func (fe FrontendMetricExporter) Aggregation(ik sdkmetric.InstrumentKind) sdkmetric.Aggregation {
+	return fe.db.Aggregation(ik)
+}
+
+func (fe FrontendMetricExporter) ForceFlush(context.Context) error {
 	return nil
 }
 
