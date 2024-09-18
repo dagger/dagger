@@ -15,7 +15,7 @@ This SDK uses 🚙 Engine + 🚗 CLI version `v0.13.1`. [See what changed in tha
 
 
 ### Dependencies
-- Bump Engine to v0.13.1 by @<GitHub username> in https://github.com/dagger/dagger/pull/8488
+- Bump Engine to v0.13.1 by @sipsma in https://github.com/dagger/dagger/pull/8488
 
 ### What to do next
 - Read the [documentation](https://docs.dagger.io/sdk/go)
