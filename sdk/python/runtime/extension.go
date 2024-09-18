@@ -87,14 +87,9 @@ func (m *PythonSdk) IsUvIndexUrlSpecified() bool {
 	return m.Discovery.UvConfig().IndexUrl != ""
 }
 
-// IndexUrl specified by [tool.uv] index-url from project's
-// pyproject.toml configuration if specified, otherwise
-// defaults to DefaultPackageIndexUrl.
+// Uv's "index-url" setting
 func (m *PythonSdk) IndexUrl() string {
-	if m.IsUvIndexUrlSpecified() {
-		return m.Discovery.UvConfig().IndexUrl
-	}
-	return DefaultPackageIndexUrl
+	return m.Discovery.UvConfig().IndexUrl
 }
 
 // Lets us determine if [tool.uv] extra-index-url is set or not.
