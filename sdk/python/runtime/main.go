@@ -14,18 +14,17 @@ import (
 )
 
 const (
-	ModSourceDirPath       = "/src"
-	RuntimeExecutablePath  = "/runtime"
-	GenDir                 = "sdk"
-	GenPath                = "src/dagger/client/gen.py"
-	SchemaPath             = "/schema.json"
-	VenvPath               = "/opt/venv"
-	ProjectCfg             = "pyproject.toml"
-	PipCompileLock         = "requirements.lock"
-	UvLock                 = "uv.lock"
-	MainFilePath           = "src/main/__init__.py"
-	MainObjectName         = "Main"
-	DefaultPackageIndexUrl = "https://pypi.org/simple"
+	ModSourceDirPath      = "/src"
+	RuntimeExecutablePath = "/runtime"
+	GenDir                = "sdk"
+	GenPath               = "src/dagger/client/gen.py"
+	SchemaPath            = "/schema.json"
+	VenvPath              = "/opt/venv"
+	ProjectCfg            = "pyproject.toml"
+	PipCompileLock        = "requirements.lock"
+	UvLock                = "uv.lock"
+	MainFilePath          = "src/main/__init__.py"
+	MainObjectName        = "Main"
 )
 
 // UserConfig is the custom user configuration that users can add to their pyproject.toml.
@@ -226,11 +225,11 @@ func (m *PythonSdk) WithBase() (*PythonSdk, error) {
 		WithEnvVariable("DAGGER_UV_IMAGE", uvAddr).
 		WithEnvVariable("UV_VERSION", uvTag)
 
-	if m.IndexUrl() != "" {
-		m.Container = m.Container.WithEnvVariable("UV_INDEX_URL", m.IndexUrl())
+	if m.IndexURL() != "" {
+		m.Container = m.Container.WithEnvVariable("UV_INDEX_URL", m.IndexURL())
 	}
-	if m.ExtraIndexUrl() != "" {
-		m.Container = m.Container.WithEnvVariable("UV_EXTRA_INDEX_URL", m.ExtraIndexUrl())
+	if m.ExtraIndexURL() != "" {
+		m.Container = m.Container.WithEnvVariable("UV_EXTRA_INDEX_URL", m.ExtraIndexURL())
 	}
 
 	return m, nil
