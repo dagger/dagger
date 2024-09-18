@@ -63,7 +63,21 @@ func NewDB() *DB {
 
 func (db *DB) UpdatedSnapshots(filter map[SpanID]bool) []SpanSnapshot {
 	snapshots := snapshotSpans(db.updatedSpans.Order, func(span *Span) bool {
-		return filter == nil || filter[span.ParentID]
+		if filter == nil || filter[span.ParentID] {
+			// include subscribed (or all) spans
+			return true
+		}
+		if span.IsFailedOrCausedFailure() {
+			// include failed spans so we can summarize them without having to
+			// deep-dive.
+			return true
+		}
+		if span.Passthrough {
+			// include any passthrough spans to ensure failures are collected.
+			// the POST /query span for example never fails on its own.
+			return true
+		}
+		return false
 	})
 	db.updatedSpans = NewSpanSet()
 	return snapshots
@@ -498,9 +512,7 @@ func (db *DB) integrateSpan(span *Span) {
 	//
 	// FIXME: refactor? can we keep some sort of flat map of spans an append
 	// children to them instead of having the single big ordered list?
-	if db.Spans.Map[span.ID] != span {
-		db.Spans.Add(span)
-	}
+	db.Spans.Add(span)
 }
 
 func (db *DB) HighLevelSpan(call *callpbv1.Call) *Span {
@@ -704,14 +716,14 @@ func WalkTree(tree []*TraceTree, f func(*TraceTree, int) bool) {
 
 func (db *DB) CollectErrors(rows *RowsView) []*TraceTree {
 	reveal := make(map[*TraceTree]struct{})
-	var collect func(row *TraceTree)
 
-	collect = func(row *TraceTree) {
-		if !row.Span.IsFailedOrCausedFailure() {
+	var collect func(row *TraceTree)
+	collect = func(tree *TraceTree) {
+		if !tree.Span.IsFailedOrCausedFailure() {
 			return
 		}
-		reveal[row] = struct{}{}
-		for _, child := range row.Children {
+		reveal[tree] = struct{}{}
+		for _, child := range tree.Children {
 			collect(child)
 		}
 	}

@@ -60,13 +60,13 @@ func (db *DB) RowsView(opts FrontendOpts) *RowsView {
 	} else {
 		spans = db.Spans.Order
 	}
-	db.WalkSpans(opts, spans, func(row *TraceTree) {
-		if row.Parent != nil {
-			row.Parent.Children = append(row.Parent.Children, row)
+	db.WalkSpans(opts, spans, func(tree *TraceTree) {
+		if tree.Parent != nil {
+			tree.Parent.Children = append(tree.Parent.Children, tree)
 		} else {
-			view.Body = append(view.Body, row)
+			view.Body = append(view.Body, tree)
 		}
-		view.BySpan[row.Span.ID] = row
+		view.BySpan[tree.Span.ID] = tree
 	})
 	return view
 }
