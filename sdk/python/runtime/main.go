@@ -226,10 +226,10 @@ func (m *PythonSdk) WithBase() (*PythonSdk, error) {
 		WithEnvVariable("DAGGER_UV_IMAGE", uvAddr).
 		WithEnvVariable("UV_VERSION", uvTag)
 
-	if m.IsUvIndexUrlSpecified() {
+	if m.IndexUrl() != "" {
 		m.Container = m.Container.WithEnvVariable("UV_INDEX_URL", m.IndexUrl())
 	}
-	if m.IsUvExtraIndexUrlSpecified() {
+	if m.ExtraIndexUrl() != "" {
 		m.Container = m.Container.WithEnvVariable("UV_EXTRA_INDEX_URL", m.ExtraIndexUrl())
 	}
 
