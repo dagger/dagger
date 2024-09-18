@@ -97,8 +97,7 @@ func (m *PythonSdk) IsUvExtraIndexUrlSpecified() bool {
 	return m.Discovery.UvConfig().ExtraIndexUrl != ""
 }
 
-// ExtraIndexUrl specified by [tool.uv] extra-index-url from project's
-// pyproject.toml configuration.
+// Uv's "extra-index-url" setting
 func (m *PythonSdk) ExtraIndexUrl() string {
 	return m.Discovery.UvConfig().ExtraIndexUrl
 }
