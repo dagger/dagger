@@ -1,10 +1,13 @@
 package schema
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -864,13 +867,9 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 			sdkSet[localDep.sdkKey] = localDep.sdk
 		}
 
+		// Add excludes from .gitignore files first (to allow overrides)
 		for _, path := range localDep.ignores {
-			pattern := strings.TrimPrefix(path, "!")
-			if strings.HasPrefix(path, "!") {
-				includeSet[pattern] = struct{}{}
-			} else {
-				excludeSet[pattern] = struct{}{}
-			}
+			excludeSet.Append(path)
 		}
 
 		// rebase user defined include/exclude relative to context
@@ -1098,7 +1097,8 @@ type callerLocalDep struct {
 	sourceRootAbsPath string
 	modCfg            *modules.ModuleConfig
 	sdk               core.SDK
-	// patterns from .gitignore files
+	// ignores is a list of patterns to exclude. At the moment, it's only
+	// from .gitignore files, but could be expanded in the future.
 	ignores []string
 	// sdkKey is a unique identifier for the SDK, slightly different
 	// from the module ref for the SDK because custom local SDKs
@@ -1278,62 +1278,61 @@ func (s *moduleSchema) collectCallerLocalDeps(
 			return nil, fmt.Errorf("failed to load sdk: %w", err)
 		}
 
-		readGitIgnore := func(baseAbsPath string) error {
-			ignorePath := filepath.Join(baseAbsPath, ".gitignore")
+		pathParts := strings.Split(sourceRootRelPath, string(os.PathSeparator))
+
+		for i := 0; i <= len(pathParts); i++ {
+			currentRelPath := filepath.Join(pathParts[:i]...)
+			currentAbsPath := filepath.Join(contextAbsPath, currentRelPath)
+
+			// NB(helder): Considered a single bk.ImportLocal with the list of
+			// paths to .gitgnore files to include, but would then have to iterate
+			// the files in the core Directory object and get their contents.
+			// Not sure if that's better.
+
 			// No stat because we want the contents, otherwise it would be two calls
 			// for each file that exists.
-			ignoreBytes, err := bk.ReadCallerHostFile(ctx, ignorePath)
+			// TODO: Each .gitignore should be cached to avoid reading it multiple times
+			ignoreBytes, err := bk.ReadCallerHostFile(ctx, filepath.Join(currentAbsPath, ".gitignore"))
 			switch {
 			case err == nil:
-				lines := strings.Split(string(ignoreBytes), "\n")
-				for _, pattern := range lines {
-					pattern = strings.TrimSpace(pattern)
+				reader := bytes.NewReader(ignoreBytes)
+				scanner := bufio.NewScanner(reader)
+
+				for scanner.Scan() {
+					pattern := strings.TrimSpace(scanner.Text())
 					// ignore comments and empty lines
 					if pattern == "" || strings.HasPrefix(pattern, "#") {
 						continue
 					}
-					// patterns without a slash (beginnin, middle, or end) are recursive
-					if !strings.Contains(pattern, "/") {
+
+					isNegation := strings.HasPrefix(pattern, "!")
+					isDirectory := strings.HasSuffix(pattern, "/")
+
+					// If there is a separator at the end of the pattern then
+					// it will match only directories. However, filepath.Join
+					// removes it, and we need to check beginning and middle
+					// next, so doing it in advance.
+					pattern = strings.TrimPrefix(strings.TrimSuffix(pattern, "/"), "!")
+
+					// If the pattern doesn't have a separator at the beginning
+					// or middle (or both), then it's recursive.
+					if pattern != "**" && pattern != "*" && !strings.Contains(pattern, "/") {
 						pattern = "**/" + pattern
 					}
-					isNegation := strings.HasPrefix(pattern, "!")
-					pattern = strings.TrimPrefix(pattern, "!")
-					absPath := filepath.Join(baseAbsPath, pattern)
-					relPath, err := filepath.Rel(contextAbsPath, absPath)
-					if err != nil {
-						return fmt.Errorf("failed to get relative path of .gitignore pattern: %w", err)
-					}
-					if !filepath.IsLocal(relPath) {
-						return fmt.Errorf("local module .gitignore pattern %q escapes context %q", relPath, contextAbsPath)
-					}
+
+					rebased := filepath.Join(currentRelPath, pattern)
 					if isNegation {
-						relPath = "!" + relPath
+						rebased = "!" + rebased
 					}
-					localDep.ignores = append(localDep.ignores, relPath)
+					if isDirectory {
+						rebased = rebased + "/"
+					}
+
+					localDep.ignores = append(localDep.ignores, rebased)
 				}
 
 			case status.Code(err) != codes.NotFound:
-				return fmt.Errorf("error reading .gitignore file %s: %w", ignorePath, err)
-			}
-
-			return nil
-		}
-
-		ignoreBaseAbsPath := sourceRootAbsPath
-
-		for {
-			if err := readGitIgnore(ignoreBaseAbsPath); err != nil {
-				return nil, err
-			}
-
-			if ignoreBaseAbsPath == contextAbsPath {
-				break
-			}
-
-			ignoreBaseAbsPath = filepath.Dir(ignoreBaseAbsPath)
-
-			if len(ignoreBaseAbsPath) < len(contextAbsPath) {
-				break
+				return nil, fmt.Errorf("error reading .gitignore file %q: %w", currentAbsPath, err)
 			}
 		}
 
