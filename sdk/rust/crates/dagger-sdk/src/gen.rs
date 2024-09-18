@@ -2007,6 +2007,12 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         }]
     }
+    /// The exit code of the last executed command.
+    /// Will execute default command if none is set, or error if there's no default.
+    pub async fn exit_code(&self) -> Result<isize, DaggerError> {
+        let query = self.selection.select("exitCode");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// EXPERIMENTAL API! Subject to change/removal at any time.
     /// Configures all available GPUs on the host to be accessible to this container.
     /// This currently works for Nvidia devices only.

@@ -125,6 +125,17 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * The exit code of the last executed command.
+     *
+     * Will execute default command if none is set, or error if there's no default.
+     */
+    public function exitCode(): int
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('exitCode');
+        return (int)$this->queryLeaf($leafQueryBuilder, 'exitCode');
+    }
+
+    /**
      * EXPERIMENTAL API! Subject to change/removal at any time.
      *
      * Configures all available GPUs on the host to be accessible to this container.

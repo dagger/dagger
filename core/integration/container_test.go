@@ -4446,10 +4446,7 @@ func (ContainerSuite) TestExecWithExitCodes(ctx context.Context, t *testctx.T) {
 		Container struct {
 			From struct {
 				WithExec struct {
-					Stdout string
-				}
-				One struct {
-					Stdout string
+					ExitCode int
 				}
 			}
 		}
@@ -4460,31 +4457,33 @@ func (ContainerSuite) TestExecWithExitCodes(ctx context.Context, t *testctx.T) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withExec(args: ["sh", "-c", "exit 0"], validExitCodes: [0, 1]) {
-						stdout
+						exitCode
 					}
 				}
 			}
 		}`, &res, nil)
 	require.NoError(t, err)
+	require.Equal(t, 0, res.Container.From.WithExec.ExitCode)
 
 	err = testutil.Query(t,
 		`{
 			container {
 				from(address: "`+alpineImage+`") {
 					withExec(args: ["sh", "-c", "exit 1"], validExitCodes: [0, 1]) {
-						stdout
+						exitCode
 					}
 				}
 			}
 		}`, &res, nil)
 	require.NoError(t, err)
+	require.Equal(t, 1, res.Container.From.WithExec.ExitCode)
 
 	err = testutil.Query(t,
 		`{
 			container {
 				from(address: "`+alpineImage+`") {
 					withExec(args: ["sh", "-c", "exit 2"], validExitCodes: [0, 1]) {
-						stdout
+						exitCode
 					}
 				}
 			}
@@ -4496,7 +4495,7 @@ func (ContainerSuite) TestExecWithExitCodes(ctx context.Context, t *testctx.T) {
 			container {
 				from(address: "`+alpineImage+`") {
 					withExec(args: ["sh", "-c", "exit 0"], validExitCodes: [1]) {
-						stdout
+						exitCode
 					}
 				}
 			}

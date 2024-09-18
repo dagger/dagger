@@ -6,6 +6,7 @@ import (
 	"os"
 	"path"
 	"slices"
+	"strconv"
 	"strings"
 
 	"dagger.io/dagger/telemetry"
@@ -366,6 +367,21 @@ func (container *Container) Stdout(ctx context.Context) (string, error) {
 
 func (container *Container) Stderr(ctx context.Context) (string, error) {
 	return container.metaFileContents(ctx, buildkit.MetaMountStderrPath)
+}
+
+func (container *Container) ExitCode(ctx context.Context) (int, error) {
+	contents, err := container.metaFileContents(ctx, buildkit.MetaMountExitCodePath)
+	if err != nil {
+		return 0, err
+	}
+	contents = strings.TrimSpace(contents)
+
+	code, err := strconv.ParseInt(contents, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("could not parse exit code %q: %w", contents, err)
+	}
+
+	return int(code), nil
 }
 
 func (container *Container) usedClientID(ctx context.Context) (string, error) {
