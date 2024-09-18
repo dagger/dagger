@@ -32,28 +32,34 @@ final readonly class DaggerFunction
      */
     public static function fromReflection(ReflectionMethod $method): self
     {
-        $attribute = (current($method
+        $daggerFunction = (current($method
             ->getAttributes(Attribute\DaggerFunction::class)) ?: null)
-            ?->newInstance() ??
-            throw new RuntimeException('method is not a DaggerFunction');
+            ?->newInstance()
+            ?? throw new RuntimeException('method is not a DaggerFunction');
+
+        $description = (current($method
+            ->getAttributes(Attribute\Doc::class)) ?: null)
+            ?->newInstance()
+            ?->description;
 
         $parameters = array_map(
             fn($p) => Argument::fromReflection($p),
             $method->getParameters(),
         );
 
+
         return $method->isConstructor() ?
             new self(
-                '',
-                null,
-                $parameters,
-                new Type($method->getDeclaringClass()->name)
+                name: '',
+                description: null,
+                arguments: $parameters,
+                returnType: new Type($method->getDeclaringClass()->name)
             ) :
             new self(
-                $method->name,
-                $attribute->description,
-                $parameters,
-                self::getReturnType($method),
+                name: $method->name,
+                description: $description ?? $daggerFunction?->description,
+                arguments: $parameters,
+                returnType: self::getReturnType($method),
             );
     }
 

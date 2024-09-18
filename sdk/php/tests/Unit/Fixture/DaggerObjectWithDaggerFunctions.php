@@ -105,186 +105,190 @@ final class DaggerObjectWithDaggerFunctions
 
     public static function getValueObjectEquivalent(): ValueObject\DaggerObject
     {
-        return new ValueObject\DaggerObject(DaggerObjectWithDaggerFunctions::class, [
-            new ValueObject\DaggerFunction(
-                '',
-                null,
-                [],
-                new ValueObject\Type(self::class)
-            ),
-            new ValueObject\DaggerFunction(
-                'returnBool',
-                null,
-                [],
-                new ValueObject\Type('bool')
-            ),
-            new ValueObject\DaggerFunction(
-                'returnInt',
-                'this method returns 1',
-                [],
-                new ValueObject\Type('int')
-            ),
-            new ValueObject\DaggerFunction(
-                'returnString',
-                null,
-                [],
-                new ValueObject\Type('string')
-            ),
-            new ValueObject\DaggerFunction(
-                'requiredBool',
-                null,
-                [
-                    new ValueObject\Argument(
-                        'value',
-                        null,
-                        new ValueObject\Type('bool'),
-                        null,
-                    )
-                ],
-                new ValueObject\Type('void'),
-            ),
-            new ValueObject\DaggerFunction(
-                'requiredInt',
-                null,
-                [
-                    new ValueObject\Argument(
-                        'value',
-                        null,
-                        new ValueObject\Type('int'),
-                        null,
-                    )
-                ],
-                new ValueObject\Type('void'),
-            ),
-            new ValueObject\DaggerFunction(
-                'requiredString',
-                null,
-                [
-                    new ValueObject\Argument(
-                        'value',
-                        null,
-                        new ValueObject\Type('string'),
-                        null,
-                    )
-                ],
-                new ValueObject\Type('void'),
-            ),
-            new ValueObject\DaggerFunction(
-                'implicitlyOptionalString',
-                null,
-                [
-                    new ValueObject\Argument(
-                        'value',
-                        null,
-                        new ValueObject\Type('string', true),
-                        new Json('null'),
-                    )
-                ],
-                new ValueObject\Type('void'),
-            ),
-            new ValueObject\DaggerFunction(
-                'explicitlyOptionalString',
-                null,
-                [
-                    new ValueObject\Argument(
-                        'value',
-                        null,
-                        new ValueObject\Type('string', true),
-                        new Json('null'),
-                    )
-                ],
-                new ValueObject\Type('void'),
-            ),
-            new ValueObject\DaggerFunction(
-                'stringWithDefault',
-                null,
-                [
-                    new ValueObject\Argument(
-                        'value',
-                        null,
-                        new ValueObject\Type('string', true),
-                        new Json('"test"'),
-                    )
-                ],
-                new ValueObject\Type('void'),
-            ),
-            new ValueObject\DaggerFunction(
-                'annotatedString',
-                null,
-                [
-                    new ValueObject\Argument(
-                        'value',
-                        'this value should have a description',
-                        new ValueObject\Type('string'),
-                        null,
-                    ),
-                ],
-                new ValueObject\Type('void'),
-            ),
-            new ValueObject\DaggerFunction(
-                'requiredStrings',
-                null,
-                [
-                    new ValueObject\Argument(
-                        'first',
-                        null,
-                        new ValueObject\Type('string'),
-                        null,
-                    ),
-                    new ValueObject\Argument(
-                        'second',
-                        null,
-                        new ValueObject\Type('string'),
-                        null,
-                    ),
-                ],
-                new ValueObject\Type('void'),
-            ),
-            new ValueObject\DaggerFunction(
-                'stringsWithDefaults',
-                null,
-                [
-                    new ValueObject\Argument(
-                        'first',
-                        null,
-                        new ValueObject\Type('string'),
-                        new Json('"first"'),
-                    ),
-                    new ValueObject\Argument(
-                        'second',
-                        null,
-                        new ValueObject\Type('string'),
-                        new Json('"second"'),
-                    )
-                ],
-                new ValueObject\Type('void'),
-            ),
-            new ValueObject\DaggerFunction(
-                'implicitlyOptionalContainer',
-                null,
-                [
-                    new ValueObject\Argument(
-                        'value',
-                        null,
-                        new ValueObject\Type(Container::class, true),
-                        new Json('null'),
-                    ),
-                ],
-                new ValueObject\Type('void'),
-            ),
-            new ValueObject\DaggerFunction(
-                'explicitlyOptionalFile',
-                null,
-                [
-                    new ValueObject\Argument(
-                        'value',
-                        null,
-                        new ValueObject\Type(File::class, true),
-                        new Json('null'),
-                    ),
-                ],
-                new ValueObject\Type('void'),
-            ),
-        ]);
+        return new ValueObject\DaggerObject(
+            DaggerObjectWithDaggerFunctions::class,
+            '',
+            [
+                new ValueObject\DaggerFunction(
+                    '',
+                    null,
+                    [],
+                    new ValueObject\Type(self::class)
+                ),
+                new ValueObject\DaggerFunction(
+                    'returnBool',
+                    '',
+                    [],
+                    new ValueObject\Type('bool')
+                ),
+                new ValueObject\DaggerFunction(
+                    'returnInt',
+                    'this method returns 1',
+                    [],
+                    new ValueObject\Type('int')
+                ),
+                new ValueObject\DaggerFunction(
+                    'returnString',
+                    '',
+                    [],
+                    new ValueObject\Type('string')
+                ),
+                new ValueObject\DaggerFunction(
+                    'requiredBool',
+                    null,
+                    [
+                        new ValueObject\Argument(
+                            'value',
+                            '',
+                            new ValueObject\Type('bool'),
+                            null,
+                        )
+                    ],
+                    new ValueObject\Type('void'),
+                ),
+                new ValueObject\DaggerFunction(
+                    'requiredInt',
+                    null,
+                    [
+                        new ValueObject\Argument(
+                            'value',
+                            '',
+                            new ValueObject\Type('int'),
+                            null,
+                        )
+                    ],
+                    new ValueObject\Type('void'),
+                ),
+                new ValueObject\DaggerFunction(
+                    'requiredString',
+                    null,
+                    [
+                        new ValueObject\Argument(
+                            'value',
+                            '',
+                            new ValueObject\Type('string'),
+                            null,
+                        )
+                    ],
+                    new ValueObject\Type('void'),
+                ),
+                new ValueObject\DaggerFunction(
+                    'implicitlyOptionalString',
+                    null,
+                    [
+                        new ValueObject\Argument(
+                            'value',
+                            '',
+                            new ValueObject\Type('string', true),
+                            new Json('null'),
+                        )
+                    ],
+                    new ValueObject\Type('void'),
+                ),
+                new ValueObject\DaggerFunction(
+                    'explicitlyOptionalString',
+                    null,
+                    [
+                        new ValueObject\Argument(
+                            'value',
+                            '',
+                            new ValueObject\Type('string', true),
+                            new Json('null'),
+                        )
+                    ],
+                    new ValueObject\Type('void'),
+                ),
+                new ValueObject\DaggerFunction(
+                    'stringWithDefault',
+                    null,
+                    [
+                        new ValueObject\Argument(
+                            'value',
+                            '',
+                            new ValueObject\Type('string', true),
+                            new Json('"test"'),
+                        )
+                    ],
+                    new ValueObject\Type('void'),
+                ),
+                new ValueObject\DaggerFunction(
+                    'annotatedString',
+                    null,
+                    [
+                        new ValueObject\Argument(
+                            'value',
+                            'this value should have a description',
+                            new ValueObject\Type('string'),
+                            null,
+                        ),
+                    ],
+                    new ValueObject\Type('void'),
+                ),
+                new ValueObject\DaggerFunction(
+                    'requiredStrings',
+                    null,
+                    [
+                        new ValueObject\Argument(
+                            'first',
+                            '',
+                            new ValueObject\Type('string'),
+                            null,
+                        ),
+                        new ValueObject\Argument(
+                            'second',
+                            '',
+                            new ValueObject\Type('string'),
+                            null,
+                        ),
+                    ],
+                    new ValueObject\Type('void'),
+                ),
+                new ValueObject\DaggerFunction(
+                    'stringsWithDefaults',
+                    null,
+                    [
+                        new ValueObject\Argument(
+                            'first',
+                            '',
+                            new ValueObject\Type('string'),
+                            new Json('"first"'),
+                        ),
+                        new ValueObject\Argument(
+                            'second',
+                            '',
+                            new ValueObject\Type('string'),
+                            new Json('"second"'),
+                        )
+                    ],
+                    new ValueObject\Type('void'),
+                ),
+                new ValueObject\DaggerFunction(
+                    'implicitlyOptionalContainer',
+                    null,
+                    [
+                        new ValueObject\Argument(
+                            'value',
+                            '',
+                            new ValueObject\Type(Container::class, true),
+                            new Json('null'),
+                        ),
+                    ],
+                    new ValueObject\Type('void'),
+                ),
+                new ValueObject\DaggerFunction(
+                    'explicitlyOptionalFile',
+                    null,
+                    [
+                        new ValueObject\Argument(
+                            'value',
+                            '',
+                            new ValueObject\Type(File::class, true),
+                            new Json('null'),
+                        ),
+                    ],
+                    new ValueObject\Type('void'),
+                ),
+            ]
+        );
     }
 }

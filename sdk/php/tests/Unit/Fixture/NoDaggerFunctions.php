@@ -17,6 +17,6 @@ final class NoDaggerFunctions
 
     public static function getValueObjectEquivalent(): ValueObject\DaggerObject
     {
-        return new ValueObject\DaggerObject(self::class, []);
+        return new ValueObject\DaggerObject(self::class, '', []);
     }
 }

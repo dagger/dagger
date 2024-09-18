@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace Dagger\ValueObject;
 
 use Dagger\Attribute;
-use ReflectionClass;
-use RuntimeException;
 
 final readonly class DaggerObject
 {
@@ -16,12 +14,11 @@ final readonly class DaggerObject
      */
     public array $daggerFunctions;
 
-    /**
-     * @param DaggerFunction[] $daggerFunctions
-     */
+    /** @param DaggerFunction[] $daggerFunctions */
     public function __construct(
         public string $name,
-        array $daggerFunctions,
+        public string $description = '',
+        array $daggerFunctions = [],
     ) {
         $this->daggerFunctions = array_combine(
             array_map(fn($f) => $f->name, $daggerFunctions),
@@ -34,13 +31,18 @@ final readonly class DaggerObject
      * - if missing DaggerObject Attribute
      * - if any DaggerFunction parameter type is unsupported
      * - if any DaggerFunction return type is unsupported
-     * @param ReflectionClass<object> $class
      */
-    public static function fromReflection(ReflectionClass $class): self
+    public static function fromReflection(\ReflectionClass $class): self
     {
         if (empty($class->getAttributes(Attribute\DaggerObject::class))) {
-            throw new RuntimeException('class is not a DaggerObject');
+            throw new \RuntimeException('class is not a DaggerObject');
         }
+
+        $description = (current($class
+            ->getAttributes(Attribute\Doc::class)) ?: null)
+            ?->newInstance()
+            ?->description
+            ?? '';
 
         $methodReflections = array_filter(
             $class->getMethods(\ReflectionMethod::IS_PUBLIC),
@@ -52,6 +54,10 @@ final readonly class DaggerObject
             $methodReflections,
         );
 
-        return new self($class->name, $daggerFunctions);
+        return new self(
+            name: $class->name,
+            description: $description,
+            daggerFunctions: $daggerFunctions
+        );
     }
 }

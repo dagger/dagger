@@ -54,7 +54,7 @@ class ArgumentTest extends TestCase
     public static function provideReflectionParameters(): Generator
     {
         yield 'bool' => [
-            new Argument('value', null, new Type('bool'), null),
+            new Argument('value', '', new Type('bool'), null),
             self::getReflectionParameter(
                 DaggerObjectWithDaggerFunctions::class,
                 'requiredBool',
@@ -65,7 +65,7 @@ class ArgumentTest extends TestCase
         yield 'implicitly optional string' => [
             new Argument(
                 'value',
-                null,
+                '',
                 new Type('string', true),
                 new Json('null'),
             ),
@@ -79,7 +79,7 @@ class ArgumentTest extends TestCase
         yield 'explicitly optional string' => [
             new Argument(
                 'value',
-                null,
+                '',
                 new Type('string', true),
                 new Json('null'),
             ),
@@ -107,7 +107,7 @@ class ArgumentTest extends TestCase
         yield 'implicitly optional Container' => [
             new Argument(
                 'value',
-                null,
+                '',
                 new Type(Container::class, true),
                 new Json('null'),
             ),
@@ -121,7 +121,7 @@ class ArgumentTest extends TestCase
         yield 'explicitly optional File' => [
             new Argument(
                 'value',
-                null,
+                '',
                 new Type(File::class, true),
                 new Json('null'),
             ),
