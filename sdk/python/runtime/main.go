@@ -4,9 +4,7 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
 	_ "embed"
-	"encoding/hex"
 	"fmt"
 	"path"
 	"python-sdk/internal/dagger"
@@ -167,14 +165,10 @@ func (m *PythonSdk) Load(ctx context.Context, modSource *dagger.ModuleSource) (*
 		return nil, fmt.Errorf("runtime module load: %w", err)
 	}
 
-	// FIXME: ModuleSource.id is not stable
-	modID, err := m.Discovery.ModSource.ID(ctx)
+	modDigest, err := m.Discovery.ModSource.Digest(ctx)
 	if err != nil {
 		return nil, err
 	}
-	h := sha256.New()
-	fmt.Fprint(h, modID)
-	modDigest := hex.EncodeToString(h.Sum(nil))
 	m.SourcePath = path.Join(ModSourceDirPath, modDigest)
 
 	return m, nil
