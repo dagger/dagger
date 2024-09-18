@@ -118,6 +118,8 @@ func (d *Discovery) UserConfig() *UserConfig {
 	return &d.Config.Tool.Dagger
 }
 
+// UvConfig is the configuration the user can set in pyproject.toml, under
+// the "tool.uv" table.
 func (d *Discovery) UvConfig() *UvConfig {
 	return &d.Config.Tool.Uv
 }
