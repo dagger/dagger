@@ -2,5 +2,5 @@ kind: Added
 body: A Python project's tool.uv index-url setting will be respected and used as the index-url for dagger's codegen as well as project package retrieval via uv.
 time: 2024-09-16T12:23:24.696966201-05:00
 custom:
-    Author: Clif Houck
+    Author: ClifHouck
     PR: "8431"
