@@ -305,8 +305,9 @@ export RELEASE_PREP_PR=<PR>
 - [ ] Generate bump changes for each SDK + the helm charts
 
 ```console
+export GITHUB_USERNAME="YOUR USERNAME HERE" # replace with your username
 find sdk/go sdk/python sdk/typescript sdk/elixir sdk/php helm/dagger -maxdepth 1 -name .changie.yaml -execdir \
-      changie new --kind "Dependencies" --body "Bump Engine to ${ENGINE_VERSION}" --custom PR="${RELEASE_PREP_PR}" --custom Author="<GitHub username>" \;
+      changie new --kind "Dependencies" --body "Bump Engine to ${ENGINE_VERSION}" --custom PR="${RELEASE_PREP_PR}" --custom Author="${GITHUB_USERNAME}" \;
 ```
 
 - [ ] Generate release notes `.changes/**/v0.12.4.md` for all releases by
@@ -327,9 +328,10 @@ git commit -s -m "chore: add release notes for ${ENGINE_VERSION}"
 ```
 
 - [ ] Update `.changes/.next` with the next release number if known -
-     otherwise, make the file empty (but don't remove it).
+      otherwise, make the file empty (but don't remove it).
 
 - [ ] Update all dagger versions in `docs/current_docs/partials/_install-cli.mdx` to `$ENGINE_VERSION`
+
   - e.g. if bumping 0.12.5->0.12.6, can run `sed -i 's/0\.12\.5/0\.12\.6/g' docs/current_docs/partials/_install-cli.mdx`
 
 - [ ] `30 mins` Submit, review and merge the prep PR. The merge commit is what gets tagged in the next step.
@@ -350,6 +352,7 @@ git push "${DAGGER_REPO_REMOTE:?must be set}" "${ENGINE_VERSION:?must be set}"
 This will kick off
 [`.github./workflows/publish.yml`](https://github.com/dagger/dagger/actions/workflows/engine-and-cli-publish.yml)
 which publishes:
+
 - A new image to [ghcr.io/dagger/engine](https://github.com/dagger/dagger/pkgs/container/engine) (mirrored to registry.dagger.io/engine using https://github.com/dagger/registry-redirect).
 - New cli binaries to [dl.dagger.io](https://dl.dagger.io) (served from an S3 bucket, uploaded to by goreleaser)
 
@@ -458,6 +461,11 @@ cd .dagger
 go mod edit -require github.com/dagger/dagger/engine/distconsts@${ENGINE_VERSION:?must be set}
 go mod tidy
 cd ..
+
+# add, commit and push the changes to the PR
+git add .
+git commit -s -m "chore: bump internal tooling to ${ENGINE_VERSION:?must be set}"
+git push
 ```
 
 - Swap back to `$RELEASE_BRANCH` to continue
