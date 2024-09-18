@@ -137,12 +137,13 @@ func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts) ([]
 			return nil, fmt.Errorf("failed to convert arg %q: %w", input.Name, err)
 		}
 
-		if len(arg.metadata.Ignore) > 0 {
-			converted, err = fn.applyIgnoreOnDir(ctx, opts.Server, arg.metadata, converted)
-			if err != nil {
-				return nil, fmt.Errorf("failed to apply ignore pattern on arg %q: %w", input.Name, err)
-			}
-		}
+		// Disable for now until we figure out how to not "double-ignore" arguments from CLI
+		// if len(arg.metadata.Ignore) > 0 {
+		// 	converted, err = fn.applyIgnoreOnDir(ctx, opts.Server, arg.metadata, converted)
+		// 	if err != nil {
+		// 		return nil, fmt.Errorf("failed to apply ignore pattern on arg %q: %w", input.Name, err)
+		// 	}
+		// }
 
 		encoded, err := json.Marshal(converted)
 		if err != nil {

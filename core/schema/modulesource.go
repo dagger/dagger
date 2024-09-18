@@ -1266,7 +1266,8 @@ func (s *moduleSchema) moduleSourceResolveDirectoryFromCaller(
 		}
 	}
 
-	if len(args.Ignore) > 0 {
+	// If there's no view configured, we can apply ignore patterns.
+	if args.ViewName == nil && len(args.Ignore) > 0 {
 		excludes = append(excludes, args.Ignore...)
 	}
 
