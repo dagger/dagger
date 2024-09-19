@@ -267,9 +267,9 @@ dagger -m github.com/jpadams/daggerverse/trivy@v0.3.0 call scan-container --ctr=
 
 ## Secret arguments
 
-Secrets, such as credentials or access tokens, can be passed to Dagger Functions as arguments using the `Secret` core type.
+Dagger allows you to utilize confidential information, such as passwords, API keys, SSH keys and so on, in your Dagger modules and Dagger Functions, without exposing those secrets in plaintext logs, writing them into the filesystem of containers you're building, or inserting them into the cache.
 
-Here is an example of a Dagger Function which accepts a GitHub personal access token as a secret, and uses the token to authorize a request to the GitHub API:
+Secrets can be passed to Dagger Functions as arguments using the `Secret` core type. Here is an example of a Dagger Function which accepts a GitHub personal access token as a secret, and uses the token to authorize a request to the GitHub API:
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -292,13 +292,27 @@ Here is an example of a Dagger Function which accepts a GitHub personal access t
 </TabItem>
 </Tabs>
 
-Here is an example of calling this Dagger Function, with the secret sourced from a host environment variable named `GITHUB_API_TOKEN`:
+The result will be a JSON-formatted list of issues from Dagger's repository.
+
+When invoking the Dagger Function using the Dagger CLI, secrets can be sourced from host environment variables (`env:`), the host filesystem (`file:`) or the result of host command execution (`cmd:`).
+
+Here is an example call for this Dagger Function, with the secret sourced from a host environment variable named `GITHUB_API_TOKEN`:
 
 ```shell
 dagger call github-api --token=env:GITHUB_API_TOKEN
 ```
 
-The result will be a JSON-formatted list of issues from Dagger's GitHub repository.
+Secrets can also be passed from a host file using the `file` source:
+
+```shell
+dagger call github-api --token=file:./github.txt
+```
+
+...or as the result of executing a command on the host using the `cmd` source:
+
+```shell
+dagger call github-api --token=cmd:"gh auth token"
+```
 
 ## Service arguments
 

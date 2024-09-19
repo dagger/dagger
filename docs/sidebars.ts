@@ -63,9 +63,16 @@ module.exports = {
       "items": [
         "api/types",
         "api/chaining",
+        "api/caching",
+        "api/terminal",
+        "api/secrets",
         {
           "type": "category",
           "label": "Calling the API",
+          "link": {
+            "type": "doc",
+            "id": "api/calling"
+          },
           "collapsible": true,
           "collapsed": true,
           "items": [
@@ -76,29 +83,51 @@ module.exports = {
         },
         {
           "type": "category",
-          "label": "Extending the API",
+          "label": "Custom Functions",
+          "link": {
+            "type": "doc",
+            "id": "api/custom-functions"
+          },
           "collapsible": true,
           "collapsed": true,
           "items": [
-            "api/functions",
             "api/arguments",
             "api/return-values",
-            "api/secrets",
+            "api/ide-integration",
             "api/services",
             "api/cache-volumes",
-            "api/dependencies",
+            "api/packages",
             "api/error-handling",
-            "api/debugging",
-            "api/ide-integration",
             "api/documentation",
-            "api/structure-packaging",
-            "api/entrypoint-function",
-            "api/custom-types",
-            "api/state-functions",
             "api/enumerations",
             "api/interfaces",
-            "api/runtimes",
+          ]
+        },
+        {
+          "type": "category",
+          "label": "Custom Types",
+          "collapsible": true,
+          "collapsed": true,
+          "link": {
+            "type": "doc",
+            "id": "api/custom-types"
+          },
+          "items": [
+            "api/entrypoint-function",
+            "api/state-functions",
+
+          ]
+        },
+        {
+          "type": "category",
+          "label": "Modules",
+          "collapsible": true,
+          "collapsed": true,
+          "items": [
+            "api/structure-packaging",
+            "api/module-dependencies",
             "api/remote-repositories",
+            "api/publish",
           ]
         },
         {
@@ -142,66 +171,21 @@ module.exports = {
       "collapsible": true,
       "collapsed": true,
       "items": [
-        {
-          "type": "doc",
-          "id": "integrations/argo-workflows"
-        },
-        {
-          "type": "doc",
-          "id": "integrations/aws-codebuild"
-        },
-        {
-          "type": "doc",
-          "id": "integrations/azure-pipelines"
-        },
-        {
-          "type": "doc",
-          "id": "integrations/circleci"
-        },
-        {
-          "type": "doc",
-          "id": "integrations/github"
-        },
-        {
-          "type": "doc",
-          "id": "integrations/gitlab"
-        },
-        {
-          "type": "doc",
-          "id": "integrations/google-cloud-run"
-        },
-        {
-          "type": "doc",
-          "id": "integrations/java"
-        },
-        {
-          "type": "doc",
-          "id": "integrations/jenkins"
-        },
-        {
-          "type": "doc",
-          "id": "integrations/kubernetes"
-        },
-        {
-          "type": "doc",
-          "id": "integrations/nerdctl"
-        },
-        {
-          "type": "doc",
-          "id": "integrations/openshift"
-        },
-        {
-          "type": "doc",
-          "id": "integrations/php"
-        },
-        {
-          "type": "doc",
-          "id": "integrations/podman"
-        },
-        {
-          "type": "doc",
-          "id": "integrations/tekton"
-        }
+        "integrations/argo-workflows",
+        "integrations/aws-codebuild",
+        "integrations/azure-pipelines",
+        "integrations/circleci",
+        "integrations/github",
+        "integrations/gitlab",
+        "integrations/google-cloud-run",
+        "integrations/java",
+        "integrations/jenkins",
+        "integrations/kubernetes",
+        "integrations/nerdctl",
+        "integrations/openshift",
+        "integrations/php",
+        "integrations/podman",
+        "integrations/tekton",
       ]
     },
     {
@@ -214,27 +198,12 @@ module.exports = {
       "collapsible": true,
       "collapsed": true,
       "items": [
-        {
-          "type": "doc",
-          "id": "configuration/custom-runner"
-        },
-        {
-          "type": "doc",
-          "id": "configuration/custom-registry"
-        },
-        {
-          "type": "doc",
-          "id": "configuration/custom-ca"
-        },
-        {
-          "type": "doc",
-          "id": "configuration/proxy"
-        },
-        {
-          "type": "doc",
-          "id": "configuration/cloud"
-        },
-
+        "configuration/custom-runner",
+        "configuration/custom-registry",
+        "configuration/custom-ca",
+        "configuration/proxy",
+        "configuration/cloud",
+        "configuration/modules",
       ],
     },
     {
@@ -250,6 +219,10 @@ module.exports = {
     {
       "type": "doc",
       "id": "faq"
+    },
+    {
+      "type": "doc",
+      "id": "troubleshooting"
     },
     {
       "type": "doc",
