@@ -167,6 +167,11 @@ func (t *Test) testCmd(ctx context.Context) (*dagger.Container, error) {
 		return nil, err
 	}
 
+	// TODO: mitigation for https://github.com/dagger/dagger/issues/8031
+	// during our test suite
+	devEngine = devEngine.
+		WithEnvVariable("_DAGGER_ENGINE_SYSTEMENV_GODEBUG", "goindex=0")
+
 	devBinary, err := t.Dagger.CLI().Binary(ctx, "")
 	if err != nil {
 		return nil, err
