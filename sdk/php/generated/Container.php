@@ -365,6 +365,23 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Starts a Service and creates a tunnel that forwards traffic from the caller's network to that service.
+     *
+     * Be sure to set any exposed ports before calling this api.
+     */
+    public function up(?array $ports = null, ?bool $random = false): void
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('up');
+        if (null !== $ports) {
+        $leafQueryBuilder->setArgument('ports', $ports);
+        }
+        if (null !== $random) {
+        $leafQueryBuilder->setArgument('random', $random);
+        }
+        $this->queryLeaf($leafQueryBuilder, 'up');
+    }
+
+    /**
      * Retrieves the user to be set for all commands.
      */
     public function user(): string

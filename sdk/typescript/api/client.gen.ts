@@ -204,6 +204,20 @@ export type ContainerTerminalOpts = {
   insecureRootCapabilities?: boolean
 }
 
+export type ContainerUpOpts = {
+  /**
+   * List of frontend/backend port mappings to forward.
+   *
+   * Frontend is the port accepting traffic on the host, backend is the service port.
+   */
+  ports?: PortForward[]
+
+  /**
+   * Bind each tunnel port to a random port on the host.
+   */
+  random?: boolean
+}
+
 export type ContainerWithDefaultTerminalCmdOpts = {
   /**
    * Provides Dagger access to the executed command.
@@ -1219,6 +1233,7 @@ export class Container extends BaseClient {
   private readonly _stderr?: string = undefined
   private readonly _stdout?: string = undefined
   private readonly _sync?: ContainerID = undefined
+  private readonly _up?: Void = undefined
   private readonly _user?: string = undefined
   private readonly _workdir?: string = undefined
 
@@ -1237,6 +1252,7 @@ export class Container extends BaseClient {
     _stderr?: string,
     _stdout?: string,
     _sync?: ContainerID,
+    _up?: Void,
     _user?: string,
     _workdir?: string,
   ) {
@@ -1252,6 +1268,7 @@ export class Container extends BaseClient {
     this._stderr = _stderr
     this._stdout = _stdout
     this._sync = _sync
+    this._up = _up
     this._user = _user
     this._workdir = _workdir
   }
@@ -1916,6 +1933,32 @@ export class Container extends BaseClient {
       ],
       ctx: this._ctx,
     })
+  }
+
+  /**
+   * Starts a Service and creates a tunnel that forwards traffic from the caller's network to that service.
+   *
+   * Be sure to set any exposed ports before calling this api.
+   * @param opts.ports List of frontend/backend port mappings to forward.
+   *
+   * Frontend is the port accepting traffic on the host, backend is the service port.
+   * @param opts.random Bind each tunnel port to a random port on the host.
+   */
+  up = async (opts?: ContainerUpOpts): Promise<void> => {
+    if (this._up) {
+      return
+    }
+
+    await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "up",
+          args: { ...opts },
+        },
+      ],
+      await this._ctx.connection(),
+    )
   }
 
   /**

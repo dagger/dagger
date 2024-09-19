@@ -1075,6 +1075,46 @@ class Container(Type):
         _ctx = self._select("terminal", _args)
         return Container(_ctx)
 
+    async def up(
+        self,
+        *,
+        ports: list[PortForward] | None = None,
+        random: bool | None = False,
+    ) -> Void | None:
+        """Starts a Service and creates a tunnel that forwards traffic from the
+        caller's network to that service.
+
+        Be sure to set any exposed ports before calling this api.
+
+        Parameters
+        ----------
+        ports:
+            List of frontend/backend port mappings to forward.
+            Frontend is the port accepting traffic on the host, backend is the
+            service port.
+        random:
+            Bind each tunnel port to a random port on the host.
+
+        Returns
+        -------
+        Void | None
+            The absence of a value.  A Null Void is used as a placeholder for
+            resolvers that do not return anything.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("ports", [] if ports is None else ports),
+            Arg("random", random, False),
+        ]
+        _ctx = self._select("up", _args)
+        await _ctx.execute()
+
     async def user(self) -> str:
         """Retrieves the user to be set for all commands.
 
