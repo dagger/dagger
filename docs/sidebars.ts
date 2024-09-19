@@ -64,8 +64,8 @@ module.exports = {
         "api/types",
         "api/chaining",
         "api/caching",
-        "api/terminal",
         "api/secrets",
+        "api/terminal",
         {
           "type": "category",
           "label": "Calling the API",
