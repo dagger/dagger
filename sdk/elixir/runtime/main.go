@@ -58,16 +58,20 @@ func (m *ElixirSdk) ModuleRuntime(
 		return nil, err
 	}
 
+	elixirApplication := normalizeModName(modName)
+
 	ctr, err := m.Common(ctx, modSource, introspectionJSON)
 	if err != nil {
 		return nil, err
 	}
 
 	return ctr.
+		WithWorkdir(elixirApplication).
+		WithExec([]string{"mix", "deps.get", "--only", "dev"}).
 		WithEntrypoint([]string{
 			"mix", "cmd",
-			"--cd", path.Join(ModSourceDirPath, subPath, normalizeModName(modName)),
-			"mix do deps.get + dagger.invoke",
+			"--cd", path.Join(ModSourceDirPath, subPath, elixirApplication),
+			"mix dagger.invoke",
 		}), nil
 }
 
