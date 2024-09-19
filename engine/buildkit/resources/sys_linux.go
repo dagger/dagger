@@ -8,6 +8,7 @@ import (
 	"github.com/prometheus/procfs"
 )
 
+/* TODO: adapt?
 func newSysSampler() (*Sampler[*resourcestypes.SysSample], error) {
 	pfs, err := procfs.NewDefaultFS()
 	if err != nil {
@@ -18,6 +19,7 @@ func newSysSampler() (*Sampler[*resourcestypes.SysSample], error) {
 		return sampleSys(pfs, tm)
 	}), nil
 }
+*/
 
 func sampleSys(proc procfs.FS, tm time.Time) (*resourcestypes.SysSample, error) {
 	stat, err := proc.Stat()

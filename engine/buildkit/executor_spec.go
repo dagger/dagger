@@ -383,31 +383,32 @@ func (w *Worker) setupCgroupMonitor(ctx context.Context, state *execState) error
 	// TODO:
 	bklog.G(ctx).Debugf("cgroup path: %s", cgroupPath)
 
+	sampleCh := make(chan *resourcetypes.Sample, 64) // TODO: random number
+
 	var err error
 	state.cgroupRecorder, err = w.resourceMonitor.RecordNamespace(cgroupPath, resources.RecordOpt{
 		NetworkSampler: state.networkNamespace,
+		SampleCh:       sampleCh,
 	})
 	if err != nil {
 		return fmt.Errorf("start cgroup recorder: %w", err)
 	}
 
-	spanMetrics := telemetry.NewSpanMetrics(ctx, InstrumentationLibrary)
+	pushMetricsPool := pool.New()
+	pushMetricsPool.Go(func() {
+		// TODO: ACTUALLY PUSH METRICS
+		// TODO: ACTUALLY PUSH METRICS
+		// TODO: ACTUALLY PUSH METRICS
+		// TODO: ACTUALLY PUSH METRICS
+		// TODO: ACTUALLY PUSH METRICS
+		// spanMetrics := telemetry.NewSpanMetrics(ctx, InstrumentationLibrary)
 
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	state.cleanups.Add("TODO DUMP SAMPLES", Infallible(func() {
-		samples, err := state.cgroupRecorder.Samples()
-		if err != nil {
-			bklog.G(ctx).WithError(err).Error("failed to get cgroup samples")
-			return
-		}
+		for s := range sampleCh {
+			if s == nil {
+				continue
+			}
 
-		for _, s := range samples.Samples {
-			bklog.G(ctx).Infof("cgroup samples: %+v", s)
+			bklog.G(ctx).Infof("cgroup sample: %+v", s)
 
 			if s.IOStat == nil {
 				continue
@@ -415,17 +416,20 @@ func (w *Worker) setupCgroupMonitor(ctx context.Context, state *execState) error
 			bklog.G(ctx).Infof("cgroup iostat: %+v", s.IOStat)
 			if ptr := s.IOStat.ReadBytes; ptr != nil {
 				bklog.G(ctx).Infof("cgroup read bytes: %d", *ptr)
-				spanMetrics.EmitDiskReadBytes(int(*ptr))
+				// spanMetrics.EmitDiskReadBytes(int(*ptr))
 			}
 			if ptr := s.IOStat.WriteBytes; ptr != nil {
 				bklog.G(ctx).Infof("cgroup write bytes: %d", *ptr)
-				spanMetrics.EmitDiskWriteBytes(int(*ptr))
+				// spanMetrics.EmitDiskWriteBytes(int(*ptr))
 			}
 		}
-	}))
+	})
 
-	// TODO: async close if zero exit code? currently seeing this take less than 20 microseconds, is it ever slower? if not who cares
-	state.cleanups.Add("close cgroup recorder", Infallible(state.cgroupRecorder.Close))
+	state.cleanups.Add("wait for cgroup recorder", func() error {
+		err := state.cgroupRecorder.Close()
+		pushMetricsPool.Wait()
+		return err
+	})
 
 	return nil
 }
