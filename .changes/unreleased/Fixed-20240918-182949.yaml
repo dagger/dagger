@@ -1,0 +1,6 @@
+kind: Fixed
+body: removed noisy "check for updates" span
+time: 2024-09-18T18:29:49.196859053-04:00
+custom:
+    Author: vito
+    PR: "8491"

@@ -8,7 +8,6 @@ import (
 	"os"
 	"runtime"
 
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine/distconsts"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
@@ -83,9 +82,6 @@ func updateAvailable(ctx context.Context) (string, error) {
 }
 
 func latestVersion(ctx context.Context) (v string, rerr error) {
-	ctx, span := Tracer().Start(ctx, "check for updates")
-	defer telemetry.End(span, func() error { return rerr })
-
 	imageRef := fmt.Sprintf("%s:latest", engine.EngineImageRepo)
 
 	ref, err := name.ParseReference(imageRef)
