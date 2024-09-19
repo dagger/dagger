@@ -6,7 +6,7 @@ import TabItem from '@theme/TabItem';
 
 # Dagger API
 
-The Dagger API is an unified interface for composing Dagger pipelines. It provides a set of core functions and core types for creating and managing application delivery pipelines, including types for containers, files, directories, network services, secrets, and more.
+The Dagger API is an unified interface for composing Dagger pipelines. It provides a set of core functions and core types for creating and managing application delivery pipelines, including types for containers, files, directories, network services, secrets, and more. You can call these functions from `dagger`, the Dagger CLI, or from custom functions written in any supported programming language.
 
 ## Functions
 
@@ -65,7 +65,7 @@ This example chains multiple function calls into a pipeline that builds the Dagg
 - `file` returns the built binary as a `File` type
 - `export` exports the binary artifact to the Dagger host as `./dagger.bin`
 
-Functions can be chained with the CLI, or programmatically in a [custom Dagger function](./functions.mdx) using a Dagger SDK. The following are equivalent:
+Functions can be chained with the CLI, or programmatically in a [custom Dagger function](./custom-functions.mdx) using a Dagger SDK. The following are equivalent:
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -99,11 +99,13 @@ As these example illustrate, function chaining is extremely powerful. See [more 
 
 ## Calling the Dagger API
 
-You can call the Dagger API in multiple ways. In recommended order, they are:
+You can call the Dagger API from code using a custom Dagger function created with a type-safe Dagger SDK, or from the command line using the Dagger CLI.
+
+The different ways to call the Dagger API are:
 
 - From the Dagger CLI
   - [`dagger core`](./clients-cli.mdx#dagger-api) for core functions
-  - [`dagger call`](./clients-cli.mdx#dagger-functions) for [custom functions](./functions.mdx)
+  - [`dagger call`](./clients-cli.mdx#dagger-functions) for [custom functions](./custom-functions.mdx)
 - From a custom application created with a Dagger SDK
   - [`dagger run`](./clients-sdk.mdx#custom-applications)
 - From a [language-native GraphQL client](./clients-http.mdx#language-native-http-clients)
@@ -111,14 +113,14 @@ You can call the Dagger API in multiple ways. In recommended order, they are:
   - [`curl`](./clients-http.mdx#command-line-http-clients)
   - [`dagger query`](./clients-http.mdx#dagger-cli)
 
-The easiest and most common way to call Dagger functions is with the Dagger CLI. The CLI can call any Dagger function, either from your local filesystem or from a remote Git repository. It can be used interactively, from a shell script, or from a CI configuration. Apart from the Dagger CLI, no other infrastructure or tooling is required to call Dagger functions.
-
 :::note
-The Dagger API is an HTTP API that uses GraphQL as its low-level language-agnostic framework. However, in practice, calling the API using HTTP or GraphQL is optional. Typically, you will call the API using a custom Dagger function created with a type-safe Dagger SDK, or using the Dagger CLI.
+The Dagger CLI can call any Dagger function, either from your local filesystem or from a remote Git repository. The Dagger CLI can be used interactively, from a shell script, or from a CI configuration. Apart from the Dagger CLI, no other infrastructure or tooling is required to call Dagger functions.
 :::
 
 ## Extending the Dagger API
 
-The Dagger API can be [extended with custom functions and custom types](./functions.mdx), which are loaded via Dagger modules. When a Dagger module is loaded, the Dagger API is [dynamically extended](./internals.mdx#api-extension-with-dagger-functions) with new Dagger functions served by that module. So, after loading a Dagger module, an API client can now call all of the original core APIs _plus_ the new Dagger functions provided by that module.
+The Dagger API is extensible and shareable by design. You can extend the API with [custom functions](./custom-functions.mdx), which are loaded via Dagger modules. You are encouraged to write your own Dagger modules and share them with others.
 
-You are encouraged to write your own Dagger modules and share them with others. Dagger also lets you import and reuse modules developed by your team, your organization or the broader Dagger community. The [Daggerverse](https://daggerverse.dev) is a free service run by Dagger, which indexes all publicly available Dagger modules and Dagger Functions, and lets you easily search and consume them.
+Dagger also lets you import and reuse modules developed by your team, your organization or the broader Dagger community. The [Daggerverse](https://daggerverse.dev) is a free service run by Dagger, which indexes all publicly available Dagger modules and Dagger Functions, and lets you easily search and consume them.
+
+When a Dagger module is loaded, the Dagger API is [dynamically extended](./internals.mdx#api-extension-with-dagger-functions) with new Dagger functions served by that module. So, after loading a Dagger module, an API client can now call all of the original core functions _plus_ the new Dagger functions provided by that module.
