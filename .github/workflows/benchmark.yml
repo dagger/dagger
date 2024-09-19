@@ -1,12 +1,6 @@
 name: Benchmark
 
 on:
-  pull_request:
-    types:
-        - opened
-        - reopened
-        - synchronize
-        - ready_for_review
   # Run the workflow every day at 5AM UTC
   # That's 9PM PST, 12AM EST, 6AM CET
   schedule:
