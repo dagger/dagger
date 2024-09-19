@@ -23,8 +23,7 @@ concurrency:
 jobs:
   lint:
     runs-on:
-      - depot-ubuntu-22.04
-      - dagger-0.13.4
+      - depot-ubuntu-22.04-16
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -39,8 +38,7 @@ jobs:
 
   test:
     runs-on:
-      - depot-ubuntu-22.04
-      - dagger-0.13.4
+      - depot-ubuntu-22.04-32
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -55,8 +53,7 @@ jobs:
   # functionality rather than repeat every test already run in the other targets.
   testdev:
     runs-on:
-      - depot-ubuntu-22.04
-      - dagger-0.13.4
+      - depot-ubuntu-22.04-32
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -69,8 +66,7 @@ jobs:
 
   test-publish:
     runs-on:
-      - depot-ubuntu-22.04
-      - dagger-0.13.4
+      - depot-ubuntu-22.04-16
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -85,8 +81,7 @@ jobs:
 
   scan-engine:
     runs-on:
-      - depot-ubuntu-22.04
-      - dagger-0.13.4
+      - depot-ubuntu-22.04-8
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
