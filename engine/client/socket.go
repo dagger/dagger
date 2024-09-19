@@ -43,7 +43,15 @@ func (p SocketProvider) CheckAgent(ctx context.Context, req *sshforward.CheckAge
 	}
 	switch u.Scheme {
 	case "unix":
-		path := u.Path
+		var path string
+		if u.RawPath != "" {
+			path, err = url.PathUnescape(u.RawPath)
+			if err != nil {
+				return nil, status.Errorf(codes.Internal, "Error unescaping path: %s", err)
+			}
+		} else {
+			path = u.Path
+		}
 		if p.UnixPathMapper != nil {
 			path, err = p.UnixPathMapper(path)
 			if err != nil {
@@ -87,7 +95,16 @@ func (p SocketProvider) ForwardAgent(stream sshforward.SSH_ForwardAgentServer) e
 	switch connURL.Scheme {
 	case "unix":
 		network = "unix"
-		addr = connURL.Path
+	
+		if connURL.RawPath != "" {
+			addr, err = url.PathUnescape(connURL.RawPath)
+			if err != nil {
+				return status.Errorf(codes.Internal, "Error unescaping path: %s", err)
+			}
+		} else {
+			addr = connURL.Path
+		}
+
 		if p.UnixPathMapper != nil {
 			addr, err = p.UnixPathMapper(addr)
 			if err != nil {

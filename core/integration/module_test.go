@@ -5572,4 +5572,28 @@ func (ModuleSuite) TestSSHAuthSockPathHandling(ctx context.Context, t *testctx.T
 		lines = strings.Split(out, "\n")
 		require.Contains(t, lines, "fn     -")
 	})
+
+	t.Run("SSH auth with home expansion and symlink in complex path", func(ctx context.Context, t *testctx.T) {
+		mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
+		defer cleanup()
+
+		painfulPath := "/path with spaces/and/special/characters/!@#$%^&*()"
+
+		ctr := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			With(mountedSocket).
+			WithExec([]string{"mkdir", "-p", painfulPath}).
+			WithEnvVariable("HOME", painfulPath).
+			WithExec([]string{"ln", "-s", "/sock/unix-socket", painfulPath + "/.ssh-sock"}).
+			WithEnvVariable("SSH_AUTH_SOCK", "~/.ssh-sock")
+
+		out, err := ctr.
+			WithWorkdir(painfulPath).
+			WithExec([]string{"sh", "-c", fmt.Sprintf("cd '%s'", painfulPath)}).
+			With(daggerFunctions("-m", repoURL)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		lines := strings.Split(out, "\n")
+		require.Contains(t, lines, "fn     -")
+	})
 }

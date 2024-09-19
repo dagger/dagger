@@ -180,6 +180,7 @@ func (store *SocketStore) getSocketURLEncoded(sock *storedSocket) string {
 	case sock.HostPath != "":
 		u.Scheme = "unix"
 		u.Path = sock.HostPath
+		u.RawPath = u.EscapedPath()
 	default:
 		u.Scheme = sock.PortForward.Protocol.Network()
 		u.Host = fmt.Sprintf("%s:%d", sock.HostEndpoint, sock.PortForward.Backend)
