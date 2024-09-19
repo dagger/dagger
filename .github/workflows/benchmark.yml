@@ -126,70 +126,70 @@ jobs:
           cd /tmp/benchmark
 
           if [ "${{ matrix.package-manager }}" == "pnpm" ]; then
-            cat << EOF > package.json
-            {
-              "type": "module",
-              "dependencies": {
-                "typescript": "^5.5.4",
-                "@dagger.io/dagger": "./sdk"
-              }
-              "packageManager": "pnpm@8.15.4"
+          cat << EOF > package.json
+          {
+            "type": "module",
+            "dependencies": {
+              "typescript": "^5.5.4",
+              "@dagger.io/dagger": "./sdk"
             }
-            EOF
+            "packageManager": "pnpm@8.15.4"
+          }
+          EOF
           fi
 
           if [ "${{ matrix.package-manager }}" == "npm" ]; then
-            cat << EOF > package.json
-            {
-              "type": "module",
-              "dependencies": {
-                "typescript": "^5.5.4",
-                "@dagger.io/dagger": "./sdk"
-              }
-              "packageManager": "npm@10.7.0"
+          cat << EOF > package.json
+          {
+            "type": "module",
+            "dependencies": {
+              "typescript": "^5.5.4",
+              "@dagger.io/dagger": "./sdk"
             }
-            EOF
+            "packageManager": "npm@10.7.0"
+          }
+          EOF
           fi
 
           if [ "${{ matrix.package-manager }}" == "yarn" ]; then
-            cat << EOF > package.json
-            {
-              "type": "module",
-              "dependencies": {
-                "typescript": "^5.5.4",
-                "@dagger.io/dagger": "./sdk"
-              }
-              "packageManager": "yarn@1.22.22"
+          cat << EOF > package.json
+          {
+            "type": "module",
+            "dependencies": {
+              "typescript": "^5.5.4",
+              "@dagger.io/dagger": "./sdk"
             }
-            EOF
+            "packageManager": "yarn@1.22.22"
+          }
+          EOF
           fi
 
           if [ "${{ matrix.package-manager }}" == "yarnv4" ]; then
-            cat << EOF > package.json
-            {
-              "type": "module",
-              "dependencies": {
-                "typescript": "^5.5.4",
-                "@dagger.io/dagger": "./sdk"
-              }
-              "packageManager": "yarn@4.0.0"
+          cat << EOF > package.json
+          {
+            "type": "module",
+            "dependencies": {
+              "typescript": "^5.5.4",
+              "@dagger.io/dagger": "./sdk"
             }
-            EOF
+            "packageManager": "yarn@4.0.0"
+          }
+          EOF
           fi
 
           if [ "${{ matrix.package-manager }}" == "bun" ]; then
-            cat << EOF > package.json
-            {
-              "type": "module",
-              "dependencies": {
-                "typescript": "^5.5.4",
-                "@dagger.io/dagger": "./sdk"
-              }
-              "dagger": {
-                "runtime": "bun"
-              }
+          cat << EOF > package.json
+          {
+            "type": "module",
+            "dependencies": {
+              "typescript": "^5.5.4",
+              "@dagger.io/dagger": "./sdk"
             }
-            EOF
+            "dagger": {
+              "runtime": "bun"
+            }
+          }
+          EOF
           fi
 
           dagger init --name=benchmark --sdk=typescript
