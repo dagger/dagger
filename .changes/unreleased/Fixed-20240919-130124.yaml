@@ -1,0 +1,6 @@
+kind: Fixed
+body: fix log output having extra blank lines
+time: 2024-09-19T13:01:24.493932791-04:00
+custom:
+    Author: vito
+    PR: "8500"
