@@ -132,7 +132,7 @@ jobs:
             "dependencies": {
               "typescript": "^5.5.4",
               "@dagger.io/dagger": "./sdk"
-            }
+            },
             "packageManager": "pnpm@8.15.4"
           }
           EOF
@@ -145,7 +145,7 @@ jobs:
             "dependencies": {
               "typescript": "^5.5.4",
               "@dagger.io/dagger": "./sdk"
-            }
+            },
             "packageManager": "npm@10.7.0"
           }
           EOF
@@ -158,7 +158,7 @@ jobs:
             "dependencies": {
               "typescript": "^5.5.4",
               "@dagger.io/dagger": "./sdk"
-            }
+            },
             "packageManager": "yarn@1.22.22"
           }
           EOF
@@ -171,7 +171,7 @@ jobs:
             "dependencies": {
               "typescript": "^5.5.4",
               "@dagger.io/dagger": "./sdk"
-            }
+            },
             "packageManager": "yarn@4.0.0"
           }
           EOF
@@ -184,7 +184,7 @@ jobs:
             "dependencies": {
               "typescript": "^5.5.4",
               "@dagger.io/dagger": "./sdk"
-            }
+            },
             "dagger": {
               "runtime": "bun"
             }
