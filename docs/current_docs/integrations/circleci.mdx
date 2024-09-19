@@ -26,8 +26,11 @@ In a Dagger context, you won't have access to CircleCI's test splitting function
 
 - A CircleCI project
 - A GitHub, Bitbucket or GitLab repository connected to the CircleCI project
+- Docker, if using a [CircleCI execution environment](https://circleci.com/docs/executor-intro) other than `docker`
 
 ## Examples
+
+The examples below use the `docker` executor, which come with a Docker execution environment preconfigured. If using a [different executor](https://circleci.com/docs/executor-intro), such as `machine`, you must install Docker in the execution environment before proceeding with the examples.
 
 The following example demonstrates how to call a Dagger Function in a CircleCI workflow.
 
