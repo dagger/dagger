@@ -666,6 +666,31 @@ class Test:
 		require.NoError(t, err)
 		require.Equal(t, "0.4.5", out)
 	})
+
+	t.Run("uv with index-url", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		index_url := "https://pypi.org/simple"
+		ctr, err := daggerCliBase(t, c).
+			With(pyprojectExtra(nil, fmt.Stringf(`
+                [tool.uv]
+				index-url = "%s"
+            `, index_url))).
+			With(daggerInitPython()).
+			// Only uv creates a lock
+			WithExec([]string{"test", "-f", "uv.lock"}).
+			WithExec([]string{"test", "-f", "requirements.lock"}).
+			Sync(ctx)
+
+		require.NoError(t, err)
+
+		out, err := ctr.
+			With(daggerCall("container-echo", "--string-arg=hello $UV_INDEX_URL", "stdout")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, fmt.Sprintf("hello %s\n", index_url), out)
+	})
 }
 
 func (PythonSuite) TestPipLock(ctx context.Context, t *testctx.T) {
