@@ -1,7 +1,7 @@
 import ts from "typescript"
 
-import { UnknownDaggerError } from "../../../common/errors/UnknownDaggerError.js"
-import { Argument, Arguments } from "./argument.js"
+import { UnknownDaggerError } from "../../../common/errors/UnknownDaggerError.ts"
+import { Argument, Arguments } from "./argument.ts"
 
 export class Constructor {
   private checker: ts.TypeChecker

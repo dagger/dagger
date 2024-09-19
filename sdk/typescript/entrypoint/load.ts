@@ -1,13 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { dag, TypeDefKind } from "../api/client.gen.js"
-import { Args, Registry } from "../introspector/registry/registry.js"
-import { Constructor } from "../introspector/scanner/abtractions/constructor.js"
-import { DaggerEnum } from "../introspector/scanner/abtractions/enum.js"
-import { Method } from "../introspector/scanner/abtractions/method.js"
-import { DaggerModule } from "../introspector/scanner/abtractions/module.js"
-import { DaggerObject } from "../introspector/scanner/abtractions/object.js"
-import { TypeDef } from "../introspector/scanner/typeDefs.js"
-import { InvokeCtx } from "./context.js"
+import { dag, TypeDefKind } from "../api/client.gen.ts"
+import { Args, Registry } from "../introspector/registry/registry.ts"
+import { Constructor } from "../introspector/scanner/abtractions/constructor.ts"
+import { DaggerEnum } from "../introspector/scanner/abtractions/enum.ts"
+import { Method } from "../introspector/scanner/abtractions/method.ts"
+import { DaggerModule } from "../introspector/scanner/abtractions/module.ts"
+import { DaggerObject } from "../introspector/scanner/abtractions/object.ts"
+import { TypeDef } from "../introspector/scanner/typeDefs.ts"
+import { InvokeCtx } from "./context.ts"
 
 /**
  * Import all given typescript files so that trigger their decorators

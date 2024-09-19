@@ -1,8 +1,8 @@
 /**
  * Should be ignored
  */
-import { dag } from "../../../../api/client.gen.js"
-import { func, object } from "../../../decorators/decorators.js"
+import { dag } from "../../../../api/client.gen.ts"
+import { func, object } from "../../../decorators/decorators.ts"
 
 /**
  * Bar class

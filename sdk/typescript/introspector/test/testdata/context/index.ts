@@ -1,12 +1,12 @@
-import { func, object, argument } from "../../../decorators/decorators.js"
-import { Directory } from "../../../../api/client.gen.js"
-import { dag } from "../../../../api/client.gen.js"
+import { Directory } from "../../../../api/client.gen.ts"
+import { dag } from "../../../../api/client.gen.ts"
+import { func, object, argument } from "../../../decorators/decorators.ts"
 
 @object()
 export class Context {
   @func()
   helloWorld(
-    @argument({ defaultPath: "." }) 
+    @argument({ defaultPath: "." })
     dir: Directory,
   ): string {
     return `hello ${name}`
@@ -14,7 +14,7 @@ export class Context {
 
   @func()
   helloWorldIgnored(
-    @argument({ defaultPath: ".", ignore: ["dir"] }) 
+    @argument({ defaultPath: ".", ignore: ["dir"] })
     dir: Directory,
   ): string {
     return `hello ${name}`

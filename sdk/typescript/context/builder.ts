@@ -1,7 +1,7 @@
-import { ConnectOpts } from "../connectOpts.js"
-import { createGQLClient } from "../graphql/client.js"
-import { Bin, CLI_VERSION } from "../provisioning/index.js"
-import { Context } from "./context.js"
+import { ConnectOpts } from "../connectOpts.ts"
+import { createGQLClient } from "../graphql/client.ts"
+import { Bin, CLI_VERSION } from "../provisioning/index.ts"
+import { Context } from "./context.ts"
 
 /**
  * @hidden

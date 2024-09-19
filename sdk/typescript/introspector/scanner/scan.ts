@@ -1,6 +1,6 @@
 import ts from "typescript"
 
-import { DaggerModule } from "./abtractions/module.js"
+import { DaggerModule } from "./abtractions/module.ts"
 
 /**
  * Scan the list of TypeScript File using the TypeScript compiler API.

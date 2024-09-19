@@ -1,4 +1,4 @@
-import { func, object } from "../../../decorators/decorators.js"
+import { func, object } from "../../../decorators/decorators.ts"
 
 @object()
 class Primitives {

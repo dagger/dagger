@@ -1,10 +1,10 @@
 import ts from "typescript"
 
-import { TypeDefKind } from "../../../api/client.gen.js"
-import { UnknownDaggerError } from "../../../common/errors/UnknownDaggerError.js"
-import { field, func } from "../../decorators/decorators.js"
-import { TypeDef } from "../typeDefs.js"
-import { typeToTypedef } from "./typeToTypedef.js"
+import { TypeDefKind } from "../../../api/client.gen.ts"
+import { UnknownDaggerError } from "../../../common/errors/UnknownDaggerError.ts"
+import { field, func } from "../../decorators/decorators.ts"
+import { TypeDef } from "../typeDefs.ts"
+import { typeToTypedef } from "./typeToTypedef.ts"
 
 const DEPRECATED_PROPERTY_DECORATOR = field.name
 const PROPERTY_DECORATOR = func.name

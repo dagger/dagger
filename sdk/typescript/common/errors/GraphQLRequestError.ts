@@ -1,7 +1,7 @@
 import { ClientError } from "graphql-request"
 
-import { DaggerSDKError, DaggerSDKErrorOptions } from "./DaggerSDKError.js"
-import { ERROR_CODES, ERROR_NAMES } from "./errors-codes.js"
+import { DaggerSDKError, DaggerSDKErrorOptions } from "./DaggerSDKError.ts"
+import { ERROR_CODES, ERROR_NAMES } from "./errors-codes.ts"
 
 interface GraphQLRequestErrorOptions extends DaggerSDKErrorOptions {
   error: ClientError

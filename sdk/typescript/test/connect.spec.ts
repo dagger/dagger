@@ -7,11 +7,11 @@ import * as os from "os"
 import * as path from "path"
 import * as tar from "tar"
 
-import { dag } from "../api/client.gen.js"
-import { GraphQLRequestError } from "../common/errors/index.js"
-import { connect, close, connection } from "../connect.js"
-import * as bin from "../provisioning/bin.js"
-import { CLI_VERSION } from "../provisioning/default.js"
+import { dag } from "../api/client.gen.ts"
+import { GraphQLRequestError } from "../common/errors/index.ts"
+import { connect, close, connection } from "../connect.ts"
+import * as bin from "../provisioning/bin.ts"
+import { CLI_VERSION } from "../provisioning/default.ts"
 
 describe("TypeScript default client", function () {
   it("Should allow using the GQL client", async function () {
