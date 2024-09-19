@@ -74,7 +74,7 @@ require (
 	github.com/urfave/cli v1.22.15
 	github.com/vektah/gqlparser/v2 v2.5.16
 	github.com/vito/go-sse v1.1.2
-	github.com/vito/midterm v0.1.4
+	github.com/vito/midterm v0.1.5-0.20240307214207-d0271a7ca452
 	github.com/zeebo/xxh3 v1.0.2
 	go.etcd.io/bbolt v1.3.11
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.52.0
