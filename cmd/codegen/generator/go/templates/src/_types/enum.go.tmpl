@@ -1,4 +1,5 @@
 {{- if IsEnum . }}
+{{ .Description | Comment }}
 {{- $enumName := .Name }}
 type {{ $enumName }} string
 
