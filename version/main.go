@@ -106,8 +106,8 @@ func (v Version) Version(ctx context.Context) (string, error) {
 	return fmt.Sprintf("%s-%s-%s", next, commit, digest), nil
 }
 
-func (v Version) gitRepo() *dagger.GitRepo {
-	return dag.Git().Load(v.GitDir, dagger.GitLoadOpts{
+func (v Version) gitRepo() *dagger.SupergitRepo {
+	return dag.Supergit().Load(v.GitDir, dagger.SupergitLoadOpts{
 		Worktree: v.Inputs,
 	})
 }
