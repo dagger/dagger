@@ -78,7 +78,8 @@ func updateAvailable(ctx context.Context) (string, error) {
 		return latest, nil
 	}
 
-	return latest, nil
+	// We're already up to date, so there isn't a new version available
+	return "", nil
 }
 
 func latestVersion(ctx context.Context) (v string, rerr error) {
