@@ -37,13 +37,13 @@ func New(
 	// +ignore=["*", "!.git/HEAD", "!.git/refs", "!.git/config", "!.git/objects/*"]
 	gitDir *dagger.Directory,
 	// +optional
-	// +defaultPath="install.sh"
+	// +defaultPath="./install.sh"
 	unixInstallScript *dagger.File,
 	// +optional
-	// +defaultPath="install.ps1"
+	// +defaultPath="./install.ps1"
 	windowsInstallScript *dagger.File,
 	// +optional
-	// +defaultPath="get-ref.sh"
+	// +defaultPath="./get-ref.sh"
 	getRefScript *dagger.File,
 	// +optional
 	// +defaultPath="/"
