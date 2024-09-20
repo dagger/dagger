@@ -42,16 +42,9 @@ INSERT INTO logs (
 
 -- name: InsertMetric :one
 INSERT INTO metrics (
-    trace_id,
-    span_id,
-    name, 
-    description, 
-    unit, 
-    type, 
-    timestamp, 
     data
 ) VALUES (
-    ?, ?, ?, ?, ?, ?, ?, ?
+    ?
 ) RETURNING id;
 
 -- name: SelectSpansSince :many

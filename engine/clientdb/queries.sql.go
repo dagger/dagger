@@ -60,41 +60,14 @@ func (q *Queries) InsertLog(ctx context.Context, arg InsertLogParams) (int64, er
 
 const insertMetric = `-- name: InsertMetric :one
 INSERT INTO metrics (
-    trace_id,
-    span_id,
-    name, 
-    description, 
-    unit, 
-    type, 
-    timestamp, 
     data
 ) VALUES (
-    ?, ?, ?, ?, ?, ?, ?, ?
+    ?
 ) RETURNING id
 `
 
-type InsertMetricParams struct {
-	TraceID     sql.NullString
-	SpanID      sql.NullString
-	Name        string
-	Description sql.NullString
-	Unit        string
-	Type        string
-	Timestamp   int64
-	Data        []byte
-}
-
-func (q *Queries) InsertMetric(ctx context.Context, arg InsertMetricParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, insertMetric,
-		arg.TraceID,
-		arg.SpanID,
-		arg.Name,
-		arg.Description,
-		arg.Unit,
-		arg.Type,
-		arg.Timestamp,
-		arg.Data,
-	)
+func (q *Queries) InsertMetric(ctx context.Context, data []byte) (int64, error) {
+	row := q.db.QueryRowContext(ctx, insertMetric, data)
 	var id int64
 	err := row.Scan(&id)
 	return id, err
@@ -223,7 +196,7 @@ func (q *Queries) SelectLogsSince(ctx context.Context, arg SelectLogsSinceParams
 }
 
 const selectMetricsSince = `-- name: SelectMetricsSince :many
-SELECT id, trace_id, span_id, name, description, unit, type, timestamp, data FROM metrics WHERE id > ? ORDER BY id ASC LIMIT ?
+SELECT id, data FROM metrics WHERE id > ? ORDER BY id ASC LIMIT ?
 `
 
 type SelectMetricsSinceParams struct {
@@ -240,17 +213,7 @@ func (q *Queries) SelectMetricsSince(ctx context.Context, arg SelectMetricsSince
 	var items []Metric
 	for rows.Next() {
 		var i Metric
-		if err := rows.Scan(
-			&i.ID,
-			&i.TraceID,
-			&i.SpanID,
-			&i.Name,
-			&i.Description,
-			&i.Unit,
-			&i.Type,
-			&i.Timestamp,
-			&i.Data,
-		); err != nil {
+		if err := rows.Scan(&i.ID, &i.Data); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

@@ -45,12 +45,5 @@ CREATE TABLE IF NOT EXISTS logs (
 
 CREATE TABLE IF NOT EXISTS metrics (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    trace_id TEXT,
-    span_id TEXT,
-    name TEXT NOT NULL,
-    description TEXT,
-    unit TEXT NOT NULL,
-    type TEXT NOT NULL,
-    timestamp INTEGER NOT NULL, -- Nanoseconds from epoch
-    data BLOB -- JSON encoded metricdata.Aggregation
+    data BLOB -- JSON encoded otlpmetricsv1.ResourceMetrics
 ) STRICT;

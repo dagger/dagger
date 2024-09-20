@@ -148,6 +148,50 @@ func (ps *PubSub) LogsHandler(rw http.ResponseWriter, r *http.Request) {
 	rw.WriteHeader(http.StatusCreated)
 }
 
+func (ps *PubSub) MetricsHandler(rw http.ResponseWriter, r *http.Request) {
+	sessionID := r.Header.Get("X-Dagger-Session-ID")
+	clientID := r.Header.Get("X-Dagger-Client-ID")
+	client, err := ps.srv.getClient(sessionID, clientID)
+	if err != nil {
+		slog.Warn("error getting client", "err", err)
+		http.Error(rw, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		slog.Warn("error reading body", "err", err)
+		http.Error(rw, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	var req colmetricspb.ExportMetricsServiceRequest
+	if err := proto.Unmarshal(body, &req); err != nil {
+		slog.Error("error unmarshalling metrics request", "payload", string(body), "error", err)
+		http.Error(rw, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	slog.Debug("exporting metrics to clients", "clients", len(client.parents)+1)
+
+	eg := new(errgroup.Group)
+	for _, c := range append([]*daggerClient{client}, client.parents...) {
+		eg.Go(func() error {
+			if err := enginetel.ReexportMetricsFromPB(r.Context(), ps.Metrics(c), &req); err != nil {
+				return fmt.Errorf("export to %s: %w", c.clientID, err)
+			}
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		slog.Error("error exporting metrics", "err", err)
+		http.Error(rw, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	rw.WriteHeader(http.StatusCreated)
+}
+
 const otlpBatchSize = 1000
 
 func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request, client *daggerClient) error {
@@ -226,48 +270,40 @@ func (ps *PubSub) LogsSubscribeHandler(w http.ResponseWriter, r *http.Request, c
 	})
 }
 
-func (ps *PubSub) MetricsHandler(rw http.ResponseWriter, r *http.Request) {
-	sessionID := r.Header.Get("X-Dagger-Session-ID")
-	clientID := r.Header.Get("X-Dagger-Client-ID")
-	client, err := ps.srv.getClient(sessionID, clientID)
-	if err != nil {
-		slog.Warn("error getting client", "err", err)
-		http.Error(rw, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		slog.Warn("error reading body", "err", err)
-		http.Error(rw, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	var req colmetricspb.ExportMetricsServiceRequest
-	if err := proto.Unmarshal(body, &req); err != nil {
-		slog.Error("error unmarshalling metrics request", "payload", string(body), "error", err)
-		http.Error(rw, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	slog.Debug("exporting metrics to clients", "clients", len(client.parents)+1)
-
-	eg := new(errgroup.Group)
-	for _, c := range append([]*daggerClient{client}, client.parents...) {
-		eg.Go(func() error {
-			if err := enginetel.ReexportMetricsFromPB(r.Context(), ps.Metrics(c), &req); err != nil {
-				return fmt.Errorf("export to %s: %w", c.clientID, err)
+func (ps *PubSub) MetricsSubscribeHandler(w http.ResponseWriter, r *http.Request, client *daggerClient) error {
+	return ps.sseHandler(w, r, client, func(ctx context.Context, db *sql.DB, lastID string) (*sse.Event, bool, error) {
+		var since int64
+		if lastID != "" {
+			_, err := fmt.Sscanf(lastID, "%d", &since)
+			if err != nil {
+				return nil, false, fmt.Errorf("invalid last ID: %w", err)
 			}
-			return nil
+		}
+		q := clientdb.New(db)
+		metrics, err := q.SelectMetricsSince(ctx, clientdb.SelectMetricsSinceParams{
+			ID:    since,
+			Limit: otlpBatchSize,
 		})
-	}
-	if err := eg.Wait(); err != nil {
-		slog.Error("error exporting metrics", "err", err)
-		http.Error(rw, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	rw.WriteHeader(http.StatusCreated)
+		if err != nil {
+			return nil, false, fmt.Errorf("select metrics: %w", err)
+		}
+		if len(metrics) == 0 {
+			return nil, false, nil
+		}
+		since = metrics[len(metrics)-1].ID
+		// Marshal the metrics to OTLP.
+		payload, err := protojson.Marshal(&colmetricspb.ExportMetricsServiceRequest{
+			ResourceMetrics: clientdb.MetricsToPB(metrics),
+		})
+		if err != nil {
+			return nil, false, fmt.Errorf("marshal metrics: %w", err)
+		}
+		return &sse.Event{
+			Name: "metrics",
+			ID:   fmt.Sprintf("%d", since),
+			Data: payload,
+		}, true, nil
+	})
 }
 
 type SpansPubSub struct {
@@ -509,69 +545,19 @@ func (ps MetricsPubSub) Export(ctx context.Context, metrics *metricdata.Resource
 
 	queries := clientdb.New(tx)
 
-	for _, rec := range metrics.ScopeMetrics {
-		traceID := rec.TraceID().String()
-		spanID := rec.SpanID().String()
-		timestamp := rec.Timestamp().UnixNano()
-		severity := int64(rec.Severity())
+	pbMetrics, err := telemetry.ResourceMetricsToPB(metrics)
+	if err != nil {
+		return fmt.Errorf("convert metrics to pb: %w", err)
+	}
 
-		var body []byte
-		if !rec.Body().Empty() {
-			body, err = proto.Marshal(telemetry.LogValueToPB(rec.Body()))
-			if err != nil {
-				slog.Warn("failed to marshal log record body", "error", err)
-				continue
-			}
-		}
+	metricsPBBytes, err := protojson.Marshal(pbMetrics)
+	if err != nil {
+		return fmt.Errorf("marshal metrics to pb: %w", err)
+	}
 
-		attrs := []*otlpcommonv1.KeyValue{}
-		rec.WalkAttributes(func(kv log.KeyValue) bool {
-			attrs = append(attrs, &otlpcommonv1.KeyValue{
-				Key:   kv.Key,
-				Value: telemetry.LogValueToPB(kv.Value),
-			})
-			return true
-		})
-		attributes, err := clientdb.MarshalProtoJSONs(attrs)
-		if err != nil {
-			slog.Warn("failed to marshal log record attributes", "error", err)
-			continue
-		}
-
-		scope, err := protojson.Marshal(telemetry.InstrumentationScopeToPB(rec.InstrumentationScope()))
-		if err != nil {
-			slog.Warn("failed to marshal log record attributes", "error", err)
-			continue
-		}
-
-		res := rec.Resource()
-		resource, err := protojson.Marshal(telemetry.ResourceToPB(res))
-		if err != nil {
-			slog.Warn("failed to marshal log record attributes", "error", err)
-			continue
-		}
-
-		_, err = queries.InsertLog(ctx, clientdb.InsertLogParams{
-			TraceID: sql.NullString{
-				String: traceID,
-				Valid:  rec.TraceID().IsValid(),
-			},
-			SpanID: sql.NullString{
-				String: spanID,
-				Valid:  rec.SpanID().IsValid(),
-			},
-			Timestamp:            timestamp,
-			SeverityNumber:       severity,
-			SeverityText:         rec.SeverityText(),
-			Body:                 body,
-			Attributes:           attributes,
-			InstrumentationScope: scope,
-			Resource:             resource,
-			ResourceSchemaUrl:    res.SchemaURL(),
-		})
-		if err != nil {
-			return fmt.Errorf("insert log: %w", err)
-		}
+	_, err = queries.InsertMetric(ctx, metricsPBBytes)
+	if err != nil {
+		return fmt.Errorf("insert metrics: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -580,9 +566,6 @@ func (ps MetricsPubSub) Export(ctx context.Context, metrics *metricdata.Resource
 
 	return nil
 }
-
-func (ps LogsPubSub) ForceFlush(ctx context.Context) error { return nil }
-func (ps LogsPubSub) Shutdown(context.Context) error       { return nil }
 
 type Fetcher func(ctx context.Context, db *sql.DB, since string) (*sse.Event, bool, error)
 

@@ -23,15 +23,8 @@ type Log struct {
 }
 
 type Metric struct {
-	ID          int64
-	TraceID     sql.NullString
-	SpanID      sql.NullString
-	Name        string
-	Description sql.NullString
-	Unit        string
-	Type        string
-	Timestamp   int64
-	Data        []byte
+	ID   int64
+	Data []byte
 }
 
 type Span struct {
