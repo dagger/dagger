@@ -1,0 +1,9 @@
+kind: Added
+body: |-
+  Apply `ignore` function parameter metadata on any Directory passed from the CLI.
+
+  This extends the usage of `ignore` to not only dir loaded with `defaultPath` but any directory passed as function's param.
+time: 2024-09-20T12:27:01.295001+02:00
+custom:
+  Author: TomChv
+  PR: "8436"
