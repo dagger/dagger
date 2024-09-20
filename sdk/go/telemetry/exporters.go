@@ -4,6 +4,7 @@ import (
 	"context"
 
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
@@ -118,3 +119,9 @@ func (m LogForwarder) ForceFlush(ctx context.Context) error {
 	}
 	return eg.Wait()
 }
+
+type MetricsForwarder struct {
+	Processors []sdkmetric.Processor
+}
+
+var _ sdkmetric.Exporter = MetricsForwarder{}

@@ -79,13 +79,13 @@ require (
 	go.etcd.io/bbolt v1.3.11
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.52.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.52.0
-	go.opentelemetry.io/otel v1.27.0
+	go.opentelemetry.io/otel v1.30.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.3.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.27.0
 	go.opentelemetry.io/otel/log v0.3.0
-	go.opentelemetry.io/otel/sdk v1.27.0
+	go.opentelemetry.io/otel/sdk v1.30.0
 	go.opentelemetry.io/otel/sdk/log v0.3.0
-	go.opentelemetry.io/otel/trace v1.27.0
+	go.opentelemetry.io/otel/trace v1.30.0
 	go.opentelemetry.io/proto/otlp v1.3.1
 	golang.org/x/crypto v0.27.0
 	golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa
@@ -251,8 +251,8 @@ require (
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.27.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.27.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.27.0 // indirect
-	go.opentelemetry.io/otel/metric v1.27.0 // indirect
-	go.opentelemetry.io/otel/sdk/metric v1.27.0 // indirect
+	go.opentelemetry.io/otel/metric v1.30.0 // indirect
+	go.opentelemetry.io/otel/sdk/metric v1.30.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
 	google.golang.org/genproto v0.0.0-20240227224415-6ceb2ff114de // indirect

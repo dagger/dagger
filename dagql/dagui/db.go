@@ -6,14 +6,17 @@ import (
 	"sort"
 	"time"
 
-	"dagger.io/dagger/telemetry"
+	"github.com/opencontainers/go-digest"
 	"go.opentelemetry.io/otel/attribute"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/engine/slog"
-	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
 
 type DB struct {
@@ -33,6 +36,9 @@ type DB struct {
 
 	Effects    map[string]*Span
 	EffectSite map[string]*Span
+
+	// TODO: this is hard coded for Gauge int64 metricdata essentially right now
+	MetricsByCallDigest map[digest.Digest][]metricdata.DataPoint[int64]
 }
 
 func NewDB() *DB {
@@ -45,12 +51,13 @@ func NewDB() *DB {
 		Children:      make(map[trace.SpanID]map[trace.SpanID]struct{}),
 		ChildrenOrder: make(map[trace.SpanID][]trace.SpanID),
 
-		Calls:      make(map[string]*callpbv1.Call),
-		OutputOf:   make(map[string]map[string]struct{}),
-		Outputs:    make(map[string]map[string]struct{}),
-		Intervals:  make(map[string]map[time.Time]*Span),
-		Effects:    make(map[string]*Span),
-		EffectSite: make(map[string]*Span),
+		Calls:               make(map[string]*callpbv1.Call),
+		OutputOf:            make(map[string]map[string]struct{}),
+		Outputs:             make(map[string]map[string]struct{}),
+		Intervals:           make(map[string]map[time.Time]*Span),
+		Effects:             make(map[string]*Span),
+		EffectSite:          make(map[string]*Span),
+		MetricsByCallDigest: make(map[digest.Digest][]metricdata.DataPoint[int64]),
 	}
 }
 
@@ -129,6 +136,45 @@ func (db *DB) Shutdown(ctx context.Context) error {
 
 func (db *DB) ForceFlush(ctx context.Context) error {
 	return nil // noop
+}
+
+func (db *DB) MetricExporter() sdkmetric.Exporter {
+	return DBMetricExporter{db}
+}
+
+type DBMetricExporter struct {
+	*DB
+}
+
+func (db DBMetricExporter) Export(ctx context.Context, resourceMetrics *metricdata.ResourceMetrics) error {
+	for _, scopeMetric := range resourceMetrics.ScopeMetrics {
+		for _, metric := range scopeMetric.Metrics {
+			metric, ok := metric.Data.(*metricdata.Gauge[int64])
+			if !ok {
+				continue
+			}
+			for _, point := range metric.DataPoints {
+				callDgst, ok := point.Attributes.Value(telemetry.DagDigestAttr)
+				if !ok {
+					continue
+				}
+				db.MetricsByCallDigest[digest.Digest(callDgst.AsString())] = append(
+					db.MetricsByCallDigest[digest.Digest(callDgst.AsString())],
+					point,
+				)
+			}
+		}
+	}
+
+	return nil
+}
+
+func (db DBMetricExporter) Temporality(sdkmetric.InstrumentKind) metricdata.Temporality {
+	panic("idk yet")
+}
+
+func (db DBMetricExporter) Aggregation(sdkmetric.InstrumentKind) sdkmetric.Aggregation {
+	panic("idk yet")
 }
 
 // SetPrimarySpan allows the primary span to be explicitly set to a particular

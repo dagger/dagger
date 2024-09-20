@@ -87,7 +87,6 @@ const (
 	// TODO:
 	// TODO:
 	// TODO:
-	MetricsAttr        = "dagger.io/metrics"
 	DiskReadBytesAttr  = "disk.read.bytes"
 	DiskWriteBytesAttr = "disk.write.bytes"
 )

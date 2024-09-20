@@ -34,6 +34,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/propagation"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
@@ -154,6 +155,7 @@ type daggerClient struct {
 	db             *sql.DB
 	tracerProvider *sdktrace.TracerProvider
 	loggerProvider *sdklog.LoggerProvider
+	meterProvider  *sdkmetric.MeterProvider
 }
 
 type daggerClientState string
@@ -178,6 +180,10 @@ func (client *daggerClient) FlushTelemetry(ctx context.Context) error {
 		slog.ExtraDebug("force flushing client logs")
 		errs = errors.Join(errs, client.loggerProvider.ForceFlush(ctx))
 	}
+	if client.meterProvider != nil {
+		slog.ExtraDebug("force flushing client metrics")
+		errs = errors.Join(errs, client.meterProvider.ForceFlush(ctx))
+	}
 	return errs
 }
 
@@ -191,6 +197,10 @@ func (client *daggerClient) ShutdownTelemetry(ctx context.Context) error {
 	if client.loggerProvider != nil {
 		slog.ExtraDebug("force flushing client logs")
 		errs = errors.Join(errs, client.loggerProvider.Shutdown(ctx))
+	}
+	if client.meterProvider != nil {
+		slog.ExtraDebug("force flushing client metrics")
+		errs = errors.Join(errs, client.meterProvider.Shutdown(ctx))
 	}
 	return errs
 }
@@ -615,6 +625,14 @@ func (srv *Server) initializeDaggerClient(
 			),
 		),
 	}
+	meterOpts := []sdkmetric.Option{
+		sdkmetric.WithResource(telemetry.Resource),
+		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(
+			srv.telemetryPubSub.Metrics(client),
+			sdkmetric.WithInterval(telemetry.NearlyImmediate),
+		)),
+	}
+
 	// export to parent client DBs too
 	for _, parent := range client.parents {
 		tracerOpts = append(tracerOpts, sdktrace.WithSpanProcessor(
@@ -628,9 +646,16 @@ func (srv *Server) initializeDaggerClient(
 				sdklog.WithExportInterval(telemetry.NearlyImmediate),
 			),
 		))
+		meterOpts = append(meterOpts, sdkmetric.WithReader(
+			sdkmetric.NewPeriodicReader(
+				srv.telemetryPubSub.Metrics(parent),
+				sdkmetric.WithInterval(telemetry.NearlyImmediate),
+			),
+		))
 	}
 	client.tracerProvider = sdktrace.NewTracerProvider(tracerOpts...)
 	client.loggerProvider = sdklog.NewLoggerProvider(loggerOpts...)
+	client.meterProvider = sdkmetric.NewMeterProvider(meterOpts...)
 
 	client.state = clientStateInitialized
 	return nil
@@ -1044,8 +1069,9 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 		defer telemetry.End(span, func() error { return rerr })
 	}
 
-	// install a logger provider that records to the client's DB
+	// install a logger+meter provider that records to the client's DB
 	ctx = telemetry.WithLoggerProvider(ctx, client.loggerProvider)
+	ctx = telemetry.WithMeterProvider(ctx, client.meterProvider)
 	r = r.WithContext(ctx)
 
 	// get the schema we're gonna serve to this client based on which modules they have loaded, if any

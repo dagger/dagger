@@ -2,37 +2,25 @@ package telemetry
 
 import (
 	"context"
-	"strconv"
-	"time"
 
-	"go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/metric"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 )
 
-func NewSpanMetrics(ctx context.Context, name string) *SpanMetrics {
-	return &SpanMetrics{
-		ctx:    ctx,
-		logger: Logger(ctx, name),
+type meterProviderKey struct{}
+
+func WithMeterProvider(ctx context.Context, provider *sdkmetric.MeterProvider) context.Context {
+	return context.WithValue(ctx, meterProviderKey{}, provider)
+}
+
+func MeterProvider(ctx context.Context) *sdkmetric.MeterProvider {
+	meterProvider := sdkmetric.NewMeterProvider()
+	if val := ctx.Value(meterProviderKey{}); val != nil {
+		meterProvider = val.(*sdkmetric.MeterProvider)
 	}
+	return meterProvider
 }
 
-type SpanMetrics struct {
-	ctx    context.Context
-	logger log.Logger
-}
-
-func (sm *SpanMetrics) EmitDiskReadBytes(v int) {
-	sm.emitMetric(v, DiskReadBytesAttr)
-}
-
-func (sm *SpanMetrics) EmitDiskWriteBytes(v int) {
-	sm.emitMetric(v, DiskWriteBytesAttr)
-}
-
-func (sm *SpanMetrics) emitMetric(v int, attrVal string) {
-	rec := log.Record{}
-	rec.SetTimestamp(time.Now())
-	// rec.SetBody(log.IntValue(v))
-	rec.SetBody(log.StringValue(strconv.Itoa(v)))
-	rec.AddAttributes(log.String(MetricsAttr, attrVal))
-	sm.logger.Emit(sm.ctx, rec)
+func Meter(ctx context.Context, name string) metric.Meter {
+	return MeterProvider(ctx).Meter(name)
 }

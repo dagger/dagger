@@ -13,15 +13,7 @@ import (
 )
 
 const (
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
 	sampleInterval = 2 * time.Second
-	// sampleInterval = 10 * time.Millisecond
 )
 
 type cgroupRecorder struct {

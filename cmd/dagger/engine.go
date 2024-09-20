@@ -10,6 +10,7 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
@@ -45,6 +46,9 @@ func withEngine(
 		params.EngineLogs = telemetry.LogForwarder{
 			Processors: telemetry.LogProcessors,
 		}
+		params.EngineMetrics = telemetry.MetricForwarder{
+			Processors: telemetry.MetricProcessors,
+		}
 		params.WithTerminal = withTerminal
 		params.Interactive = interactive
 		params.InteractiveCommand = interactiveCommandParsed
@@ -66,12 +70,14 @@ func initEngineTelemetry(ctx context.Context) (context.Context, func(error)) {
 		Detect:   true,
 		Resource: Resource(),
 
-		LiveTraceExporters: []sdktrace.SpanExporter{Frontend.SpanExporter()},
-		LiveLogExporters:   []sdklog.Exporter{Frontend.LogExporter()},
+		LiveTraceExporters:  []sdktrace.SpanExporter{Frontend.SpanExporter()},
+		LiveLogExporters:    []sdklog.Exporter{Frontend.LogExporter()},
+		LiveMetricExporters: []sdkmetric.Exporter{Frontend.MetricExporter()},
 	}
 	if spans, logs, ok := enginetel.ConfiguredCloudExporters(ctx); ok {
 		telemetryCfg.LiveTraceExporters = append(telemetryCfg.LiveTraceExporters, spans)
 		telemetryCfg.LiveLogExporters = append(telemetryCfg.LiveLogExporters, logs)
+		// TODO: metrics to cloud
 	}
 	ctx = telemetry.Init(ctx, telemetryCfg)
 

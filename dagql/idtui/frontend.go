@@ -15,6 +15,7 @@ import (
 	"github.com/opencontainers/go-digest"
 	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/term"
@@ -68,9 +69,10 @@ type Frontend interface {
 	// beneath the primary span.
 	SetRevealAllSpans(bool)
 
-	// Can consume otel spans and logs.
+	// Can consume otel spans, logs and metrics.
 	SpanExporter() sdktrace.SpanExporter
 	LogExporter() sdklog.Exporter
+	MetricExporter() sdkmetric.Exporter
 
 	// ConnectedToEngine is called when the CLI connects to an engine.
 	ConnectedToEngine(ctx context.Context, name string, version string, clientID string)

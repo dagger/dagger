@@ -40,15 +40,25 @@ INSERT INTO logs (
     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 ) RETURNING id;
 
--- -- name: InsertMetric :one
--- INSERT INTO metrics (
---     name, description, unit, type, timestamp, data_points
--- ) VALUES (
---     ?, ?, ?, ?, ?, ?
--- ) RETURNING id;
+-- name: InsertMetric :one
+INSERT INTO metrics (
+    trace_id,
+    span_id,
+    name, 
+    description, 
+    unit, 
+    type, 
+    timestamp, 
+    data
+) VALUES (
+    ?, ?, ?, ?, ?, ?, ?, ?
+) RETURNING id;
 
 -- name: SelectSpansSince :many
 SELECT * FROM spans WHERE id > ? ORDER BY id ASC LIMIT ?;
 
 -- name: SelectLogsSince :many
 SELECT * FROM logs WHERE id > ? ORDER BY id ASC LIMIT ?;
+
+-- name: SelectMetricsSince :many
+SELECT * FROM metrics WHERE id > ? ORDER BY id ASC LIMIT ?;

@@ -377,12 +377,6 @@ func (w *Worker) setupCgroupMonitor(ctx context.Context, state *execState) error
 		return nil
 	}
 
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	bklog.G(ctx).Debugf("cgroup path: %s", cgroupPath)
-
 	sampleCh := make(chan *resourcetypes.Sample, 64) // TODO: random number
 
 	var err error
@@ -401,7 +395,8 @@ func (w *Worker) setupCgroupMonitor(ctx context.Context, state *execState) error
 		// TODO: ACTUALLY PUSH METRICS
 		// TODO: ACTUALLY PUSH METRICS
 		// TODO: ACTUALLY PUSH METRICS
-		// spanMetrics := telemetry.NewSpanMetrics(ctx, InstrumentationLibrary)
+		meter := telemetry.Meter(ctx, InstrumentationLibrary)
+		_ = meter
 
 		for s := range sampleCh {
 			if s == nil {
