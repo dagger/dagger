@@ -1205,20 +1205,22 @@ type gaugeFromPBResult struct {
 
 func gaugeFromPB(g *otlpmetricsv1.Gauge) gaugeFromPBResult {
 	dataPointsRes := dataPointsFromPB(g.DataPoints)
+	res := gaugeFromPBResult{}
 	switch {
 	case len(dataPointsRes.AsInt) > 0:
-		return gaugeFromPBResult{
+		res = gaugeFromPBResult{
 			AsInt: &metricdata.Gauge[int64]{
 				DataPoints: dataPointsRes.AsInt,
 			},
 		}
 	case len(dataPointsRes.AsDouble) > 0:
-		return gaugeFromPBResult{
+		res = gaugeFromPBResult{
 			AsDouble: &metricdata.Gauge[float64]{
 				DataPoints: dataPointsRes.AsDouble,
 			},
 		}
 	}
+	return res
 }
 
 // GaugeToPB returns an OTLP Metric_Gauge generated from g.
@@ -1254,22 +1256,20 @@ type dataPointsFromPBResult struct {
 }
 
 func dataPointsFromPB(dPts []*otlpmetricsv1.NumberDataPoint) dataPointsFromPBResult {
-	out := make([]metricdata.DataPoint[N], 0, len(dPts))
+	res := dataPointsFromPBResult{}
 	for _, dPt := range dPts {
-		var v N
 		switch pbV := dPt.Value.(type) {
 		case *otlpmetricsv1.NumberDataPoint_AsInt:
-			v = pbV.AsInt
+			res.AsInt = append(res.AsInt, metricdata.DataPoint[int64]{
+				Attributes: attribute.NewSet(AttributesFromProto(dPt.Attributes)...),
+				StartTime:  time.Unix(0, int64(dPt.StartTimeUnixNano)),
+				Time:       time.Unix(0, int64(dPt.TimeUnixNano)),
+				Value:      pbV.AsInt,
+				Examplars:  ExemplarsFromPB[int64](dPt.Exemplars),
+			})
 		case *otlpmetricsv1.NumberDataPoint_AsDouble:
 			v = pbV.AsDouble
 		}
-		out = append(out, metricdata.DataPoint[N]{
-			Attributes: AttrFromPB(dPt.Attributes),
-			StartTime:  timeFromUnixNano(dPt.StartTimeUnixNano),
-			Time:       timeFromUnixNano(dPt.TimeUnixNano),
-			Value:      v,
-			Exemplars:  ExemplarsFromPB(dPt.Exemplars),
-		})
 	}
 	return out
 }
