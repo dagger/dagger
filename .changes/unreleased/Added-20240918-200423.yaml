@@ -1,9 +1,0 @@
-kind: Added
-body: |-
-    New `Container.up` API
-
-    This is an alias to `.AsService().Up()`.
-time: 2024-09-18T20:04:23.659572+05:30
-custom:
-    Author: rajatjindal
-    PR: "8479"
