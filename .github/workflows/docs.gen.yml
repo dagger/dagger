@@ -16,7 +16,7 @@ concurrency:
     cancel-in-progress: true
 jobs:
     dagger:
-        runs-on: ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-1-4c' || 'ubuntu-latest' }}
+        runs-on: ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-2-4c' || 'ubuntu-latest' }}
         permissions:
             contents: read
         name: Docs
@@ -48,7 +48,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin sh
               env:
-                DAGGER_VERSION: v0.13.1
+                DAGGER_VERSION: v0.13.2
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
