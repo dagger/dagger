@@ -706,7 +706,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 			fe.zoomed = fe.db.PrimarySpan
 			fe.recalculateViewLocked()
 			return fe, nil
-		case "+":
+		case "+", "=":
 			fe.FrontendOpts.Verbosity++
 			fe.recalculateViewLocked()
 			return fe, nil
