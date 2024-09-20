@@ -428,7 +428,7 @@ func (db *DB) integrateSpan(span *Span) {
 			// We don't care about seeing the sync span itself - all relevant info
 			// should show up somewhere more familiar.
 			if call.Field == "sync" {
-				span.Ignore = true
+				span.Passthrough = true
 			}
 
 			if span.CallDigest != "" {
