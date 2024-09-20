@@ -1,5 +1,12 @@
 {
   "name": "version",
   "sdk": "go",
+  "dependencies": [
+    {
+      "name": "git",
+      "source": "github.com/shykes/git@4f46bfde5735e17612316a30bc5a43c3eefd6da2"
+    }
+  ],
+  "source": ".",
   "engineVersion": "v0.13.0"
 }
