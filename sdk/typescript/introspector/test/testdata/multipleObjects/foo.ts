@@ -3,8 +3,8 @@
  *
  * Compose of bar but its file description should be ignore.
  */
-import { func, object } from "../../../decorators/decorators.js"
-import { Bar } from "./bar.js"
+import { func, object } from "../../../decorators/decorators.ts"
+import { Bar } from "./bar.ts"
 
 /**
  * Foo class

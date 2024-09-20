@@ -3,6 +3,8 @@
     "target": "ES2022",
     "moduleResolution": "Node",
     "experimentalDecorators": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
     "paths": {
       "@dagger.io/dagger": ["./sdk"],
       "@dagger.io/dagger/telemetry": ["./sdk/telemetry"]

@@ -21,7 +21,9 @@
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
     "declaration": true,
-    "declarationMap": true
+    "declarationMap": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true
   },
   "$schema": "https://json.schemastore.org/tsconfig",
   "display": "dagger-nodejs-sdk"

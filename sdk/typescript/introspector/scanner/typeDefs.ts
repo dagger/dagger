@@ -1,4 +1,4 @@
-import { TypeDefKind } from "../../api/client.gen.js"
+import { TypeDefKind } from "../../api/client.gen.ts"
 
 /**
  * Base type of argument, field or return type.

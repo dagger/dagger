@@ -1,8 +1,8 @@
 import ts from "typescript"
 
-import { UnknownDaggerError } from "../../../common/errors/UnknownDaggerError.js"
-import { enumType } from "../../decorators/decorators.js"
-import { DaggerEnumValue, DaggerEnumValues } from "./enumValue.js"
+import { UnknownDaggerError } from "../../../common/errors/UnknownDaggerError.ts"
+import { enumType } from "../../decorators/decorators.ts"
+import { DaggerEnumValue, DaggerEnumValues } from "./enumValue.ts"
 
 export const ENUM_DECORATOR = enumType.name
 
