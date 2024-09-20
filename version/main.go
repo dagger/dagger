@@ -56,24 +56,48 @@ type Version struct {
 	Changes *dagger.Directory
 }
 
-func (v Version) Version(ctx context.Context) (string, error) {
+// Return whether the current version is a development version or not
+func (v Version) Dev(ctx context.Context) (bool, error) {
 	tag, err := v.SemverTag(ctx)
 	if err != nil {
-		return "", err
+		return false, err
 	}
-	if tag != "" {
-		// FIXME: we don't handle dirty checkout of a semvar tag checkout
-		return tag, nil
+	// The current implementation is:
+	// - If the current commit is semver-tagged, dev=false
+	// - Otherwise, dev=true
+	// FIXME: this is a flawed implementation..
+	return (tag == ""), nil
+}
+
+// Generate a version string from the current context
+// - If the current commit is a semver tag, the version is that tag
+// - If no git information is available, the version is "<next-version>-<diget>"
+// - In all other cases, the version is "<next-version>-<commit>-<digest>", where:
+//   - <next-version> is inferred from .changes/
+//   - <digest> is computed from the inputs directory
+func (v Version) Version(ctx context.Context) (string, error) {
+	if v.gitDirExists(ctx) {
+		tag, err := v.SemverTag(ctx)
+		if err != nil {
+			return "", err
+		}
+		if tag != "" {
+			// FIXME: we don't handle dirty checkout of a semvar tag checkout
+			return tag, nil
+		}
 	}
 	next, err := v.NextVersion(ctx)
 	if err != nil {
 		return "", err
 	}
-	commit, err := v.Commit(ctx)
+	digest, err := v.InputsDigest(ctx)
 	if err != nil {
 		return "", err
 	}
-	digest, err := v.InputsDigest(ctx)
+	if !v.gitDirExists(ctx) {
+		return fmt.Sprintf("%s-%s", next, digest), nil
+	}
+	commit, err := v.Commit(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -90,6 +114,9 @@ func (v Version) gitRepo() *dagger.GitRepo {
 
 // Return the semver-compatible tag pointing to the current tag, or an empty string
 func (v Version) SemverTag(ctx context.Context) (string, error) {
+	if !v.gitDirExists(ctx) {
+		return "", nil
+	}
 	tagsRaw, err := v.gitRepo().
 		Command([]string{"tag", "--points-at", "HEAD"}).
 		Stdout(ctx)
@@ -106,8 +133,19 @@ func (v Version) SemverTag(ctx context.Context) (string, error) {
 	return "", nil
 }
 
+func (v Version) gitDirExists(ctx context.Context) bool {
+	_, err := v.GitDir.Directory(".git").Entries(ctx)
+	if err != nil {
+		return false
+	}
+	return true
+}
+
 // Return the current git commit
 func (v Version) Commit(ctx context.Context) (string, error) {
+	if !v.gitDirExists(ctx) {
+		return "", nil
+	}
 	commit, err := v.gitRepo().
 		// FIXME: contribute GitRepo.head() uptsream
 		Command([]string{"rev-parse", "--short", "HEAD"}).

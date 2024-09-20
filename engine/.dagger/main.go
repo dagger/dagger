@@ -31,12 +31,6 @@ func New(
 	// +defaultPath="/"
 	// +ignore=["*", "!**.go", "!**/go.mod", "!**/go.sum", "!**.graphqls", "!**.proto", "!**.json", "!**.yaml", "!**/testdata", "!**.sql"]
 	source *dagger.Directory,
-	// Git commit to include in engine version
-	// +optional
-	commit string,
-	// Git tag to include in engine version, in short format
-	// +optional
-	tag string,
 	// Custom engine config values
 	// +optional
 	config []string,
@@ -74,17 +68,11 @@ func New(
 			return nil, fmt.Errorf("gpu support requires %q arch, not %q", "amd64", arch)
 		}
 	}
-	version, err := dag.Version(dagger.VersionOpts{
-		Commit: commit,
-		Tag:    tag,
-	}).Version(ctx)
+	version, err := dag.Version().Version(ctx)
 	if err != nil {
 		return nil, err
 	}
-	cli := dag.DaggerCli(dagger.DaggerCliOpts{
-		Tag:    tag,
-		Commit: commit,
-	}).Binary(dagger.DaggerCliBinaryOpts{
+	cli := dag.DaggerCli().Binary(dagger.DaggerCliBinaryOpts{
 		Platform: platform,
 	})
 	// FIXME: load go base image, to pass to gomod
@@ -103,7 +91,6 @@ func New(
 		Platform:     platform,
 		Distro:       distro,
 		GoVersion:    goVersion,
-		Tag:          tag,
 	}, nil
 }
 
