@@ -231,12 +231,12 @@ export DAGGER_REPO_REMOTE=origin
 Create a new branch off of the previous git tag being patched named `release-vX.Y.Z` (e.g. `release-v0.11.9`)
 
 ```console
-git switch -c ${RELEASE_BRANCH:?must be set}
+git switch -c $RELEASE_BRANCH
 
 # e.g. if creating a new v0.11.9 release off of v0.11.8, use v0.11.8 here
 git reset --hard <previous tag being patched>
 
-git push --set-upstream $DAGGER_REPO_REMOTE "${RELEASE_BRANCH:?must be set}"
+git push --set-upstream $DAGGER_REPO_REMOTE "$RELEASE_BRANCH"
 ```
 
 </details>
@@ -244,9 +244,9 @@ git push --set-upstream $DAGGER_REPO_REMOTE "${RELEASE_BRANCH:?must be set}"
 Setup the local branch to align with the remote branch being released
 
 ```console
-git checkout "${RELEASE_BRANCH:?must be set}"
+git checkout "$RELEASE_BRANCH"
 
-git pull $DAGGER_REPO_REMOTE "${RELEASE_BRANCH:?must be set}"
+git pull $DAGGER_REPO_REMOTE "$RELEASE_BRANCH"
 ```
 
 <details>
@@ -277,23 +277,23 @@ export CHANGIE_ENGINE_VERSION="$ENGINE_VERSION"
   - 🚨 Non-main branch release only: This PR will also include the cherry-picked commits mentioned above.
 
 ```console
-git checkout -b prep-${ENGINE_VERSION}
+git checkout -b prep-$ENGINE_VERSION
 ```
 
 - [ ] Bump SDK versions to the target version
 
 ```console
-dagger call sdk all bump --version="${ENGINE_VERSION}" -o ./
+dagger call sdk all bump --version="$ENGINE_VERSION" -o ./
 git add sdk
-git commit -s -m "chore: bump sdk dependencies to ${ENGINE_VERSION}"
+git commit -s -m "chore: bump sdk dependencies to $ENGINE_VERSION"
 ```
 
 - [ ] Bump Helm version to the target version
 
 ```console
-dagger call helm set-version --version="${ENGINE_VERSION}" -o ./helm/dagger/Chart.yaml
+dagger call helm set-version --version="$ENGINE_VERSION" -o ./helm/dagger/Chart.yaml
 git add helm
-git commit -s -m "chore: bump helm dependency to ${ENGINE_VERSION}"
+git commit -s -m "chore: bump helm dependency to $ENGINE_VERSION"
 ```
 
 - [ ] Push and open the PR as a draft, and capture the PR number:
@@ -307,7 +307,7 @@ export RELEASE_PREP_PR=<PR>
 ```console
 export GITHUB_USERNAME="YOUR USERNAME HERE" # replace with your username
 find sdk/go sdk/python sdk/typescript sdk/elixir sdk/php helm/dagger -maxdepth 1 -name .changie.yaml -execdir \
-      changie new --kind "Dependencies" --body "Bump Engine to ${ENGINE_VERSION}" --custom PR="${RELEASE_PREP_PR}" --custom Author="${GITHUB_USERNAME}" \;
+      changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom PR="$RELEASE_PREP_PR" --custom Author="$GITHUB_USERNAME" \;
 ```
 
 - [ ] Generate release notes `.changes/**/v0.12.4.md` for all releases by
@@ -324,7 +324,7 @@ find . sdk/go sdk/python sdk/typescript sdk/elixir sdk/php helm/dagger -maxdepth
 find . sdk/go sdk/python sdk/typescript sdk/elixir sdk/php helm/dagger -maxdepth 1 -name .changie.yaml -execdir changie merge \;
 git add **/.changes
 git add **/CHANGELOG.md
-git commit -s -m "chore: add release notes for ${ENGINE_VERSION}"
+git commit -s -m "chore: add release notes for $ENGINE_VERSION"
 ```
 
 - [ ] Update `.changes/.next` with the next release number if known -
@@ -341,12 +341,12 @@ git commit -s -m "chore: add release notes for ${ENGINE_VERSION}"
 - [ ] `30mins` When you have confirmed that all checks are green, run the following:
 
 ```console
-git checkout "${RELEASE_BRANCH:?must be set}"
-git pull "${DAGGER_REPO_REMOTE:?must be set}" "${RELEASE_BRANCH:?must be set}"
+git checkout "$RELEASE_BRANCH"
+git pull "$DAGGER_REPO_REMOTE" "$RELEASE_BRANCH"
 
 export ENGINE_GIT_SHA="$(git rev-parse --verify HEAD)"
-git tag "${ENGINE_VERSION:?must be set}" "${ENGINE_GIT_SHA:?must be set}"
-git push "${DAGGER_REPO_REMOTE:?must be set}" "${ENGINE_VERSION:?must be set}"
+git tag "$ENGINE_VERSION" "$ENGINE_GIT_SHA"
+git push "$DAGGER_REPO_REMOTE" "$ENGINE_VERSION"
 ```
 
 This will kick off
@@ -383,7 +383,7 @@ dagger core version
 - [ ] Open a PR with the title `Improve Releasing during $ENGINE_VERSION`
 
 ```console
-git checkout -b improve-releasing-during-${ENGINE_VERSION:?must be set}
+git checkout -b improve-releasing-during-$ENGINE_VERSION
 git add .  # or any other files changed during the last few steps
 git commit -s -m "Improve releasing during $ENGINE_VERSION"
 git push
@@ -392,7 +392,7 @@ git push
 - Swap back to `$RELEASE_BRANCH` to continue
 
 ```console
-git checkout "${RELEASE_BRANCH:?must be set}"
+git checkout "$RELEASE_BRANCH"
 ```
 
 <details>
@@ -417,8 +417,8 @@ export SDK_GIT_SHA=$ENGINE_GIT_SHA
 
 ```console
 cd sdk/go && export GO_SDK_VERSION=$(changie latest) && cd ../..
-git tag "sdk/go/${GO_SDK_VERSION:?must be set}" "${SDK_GIT_SHA:?must be set}"
-git push "${DAGGER_REPO_REMOTE:?must be set}" "sdk/go/${GO_SDK_VERSION:?must be set}"
+git tag "sdk/go/$GO_SDK_VERSION" "$SDK_GIT_SHA"
+git push "$DAGGER_REPO_REMOTE" "sdk/go/$GO_SDK_VERSION"
 ```
 
 This will trigger the [`publish-sdk-go`
@@ -437,7 +437,7 @@ the draft release, then:
 Finally:
 
 - [ ] Double-check that the releases was picked up by [pkg.go.dev](https://pkg.go.dev/dagger.io/dagger).
-      You can manually request this new version via `open https://pkg.go.dev/dagger.io/dagger@${GO_SDK_VERSION:?must be set}`.
+      You can manually request this new version via `open https://pkg.go.dev/dagger.io/dagger@$GO_SDK_VERSION`.
       The new version can take up to `60mins` to appear, it's OK to move on.
 
 ### Improve releasing 改善
@@ -445,7 +445,7 @@ Finally:
 - [ ] Swap to the release improvement branch
 
 ```console
-git checkout improve-releasing-during-${ENGINE_VERSION:?must be set}
+git checkout improve-releasing-during-$ENGINE_VERSION
 ```
 
 - [ ] Bump the Go SDK version in our internal CI targets (these aren't actually
@@ -453,25 +453,25 @@ git checkout improve-releasing-during-${ENGINE_VERSION:?must be set}
       practice regardless).
 
 ```console
-go mod edit -require dagger.io/dagger@${GO_SDK_VERSION:?must be set}
-go mod edit -require github.com/dagger/dagger/engine/distconsts@${GO_SDK_VERSION:?must be set}
+go mod edit -require dagger.io/dagger@$GO_SDK_VERSION
+go mod edit -require github.com/dagger/dagger/engine/distconsts@$GO_SDK_VERSION
 go mod tidy
 dagger develop
 cd .dagger
-go mod edit -require github.com/dagger/dagger/engine/distconsts@${ENGINE_VERSION:?must be set}
+go mod edit -require github.com/dagger/dagger/engine/distconsts@$ENGINE_VERSION
 go mod tidy
 cd ..
 
 # add, commit and push the changes to the PR
 git add .
-git commit -s -m "chore: bump internal tooling to ${ENGINE_VERSION:?must be set}"
+git commit -s -m "chore: bump internal tooling to $ENGINE_VERSION"
 git push
 ```
 
 - Swap back to `$RELEASE_BRANCH` to continue
 
 ```console
-git checkout "${RELEASE_BRANCH:?must be set}"
+git checkout "$RELEASE_BRANCH"
 ```
 
 ## 🐍 Python SDK ⏱ `5mins`
@@ -480,8 +480,8 @@ git checkout "${RELEASE_BRANCH:?must be set}"
 
 ```console
 cd sdk/python && export PYTHON_SDK_VERSION=$(changie latest) && cd ../..
-git tag "sdk/python/${PYTHON_SDK_VERSION:?must be set}" "${SDK_GIT_SHA:?must be set}"
-git push "${DAGGER_REPO_REMOTE:?must be set}" sdk/python/${PYTHON_SDK_VERSION}
+git tag "sdk/python/$PYTHON_SDK_VERSION" "$SDK_GIT_SHA"
+git push "$DAGGER_REPO_REMOTE" sdk/python/$PYTHON_SDK_VERSION
 ```
 
 This will trigger the [`Publish Python SDK`
@@ -503,8 +503,8 @@ the draft release, then:
 
 ```console
 cd sdk/typescript && export TYPESCRIPT_SDK_VERSION=$(changie latest) && cd ../..
-git tag "sdk/typescript/${TYPESCRIPT_SDK_VERSION:?must be set}" "${SDK_GIT_SHA:?must be set}"
-git push "${DAGGER_REPO_REMOTE:?must be set}" sdk/typescript/${TYPESCRIPT_SDK_VERSION}
+git tag "sdk/typescript/$TYPESCRIPT_SDK_VERSION" "$SDK_GIT_SHA"
+git push "$DAGGER_REPO_REMOTE" sdk/typescript/$TYPESCRIPT_SDK_VERSION
 ```
 
 This will trigger the [`Publish TypeScript SDK`
@@ -525,8 +525,8 @@ the draft release, then:
 
 ```console
 cd sdk/elixir && export ELIXIR_SDK_VERSION=$(changie latest) && cd ../..
-git tag "sdk/elixir/${ELIXIR_SDK_VERSION:?must be set}" "${SDK_GIT_SHA:?must be set}"
-git push "${DAGGER_REPO_REMOTE:?must be set}" sdk/elixir/${ELIXIR_SDK_VERSION}
+git tag "sdk/elixir/$ELIXIR_SDK_VERSION" "$SDK_GIT_SHA"
+git push "$DAGGER_REPO_REMOTE" sdk/elixir/$ELIXIR_SDK_VERSION
 ```
 
 This will trigger the [`Publish Elixir SDK`
@@ -547,8 +547,8 @@ the draft release, then:
 
 ```console
 cd sdk/php && export PHP_SDK_VERSION=$(changie latest) && cd ../..
-git tag "sdk/php/${PHP_SDK_VERSION:?must be set}" "${SDK_GIT_SHA:?must be set}"
-git push "${DAGGER_REPO_REMOTE:?must be set}" sdk/php/${PHP_SDK_VERSION}
+git tag "sdk/php/$PHP_SDK_VERSION" "$SDK_GIT_SHA"
+git push "$DAGGER_REPO_REMOTE" sdk/php/$PHP_SDK_VERSION
 ```
 
 This will trigger the [`Publish PHP SDK`
@@ -570,8 +570,8 @@ the draft release, then:
 
 ```console
 export HELM_CHART_VERSION=v"$(awk '/^version: / { print $2 }' helm/dagger/Chart.yaml)"
-git tag "helm/chart/${HELM_CHART_VERSION:?must be set}" "${SDK_GIT_SHA:?must be set}"
-git push "${DAGGER_REPO_REMOTE:?must be set}" "helm/chart/${HELM_CHART_VERSION:?must be set}"
+git tag "helm/chart/$HELM_CHART_VERSION" "$SDK_GIT_SHA"
+git push "$DAGGER_REPO_REMOTE" "helm/chart/$HELM_CHART_VERSION"
 ```
 
 This will trigger the [`publish-helm-chart`
