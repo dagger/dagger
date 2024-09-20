@@ -137,14 +137,6 @@ func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts) ([]
 			return nil, fmt.Errorf("failed to convert arg %q: %w", input.Name, err)
 		}
 
-		// Disable for now until we figure out how to not "double-ignore" arguments from CLI
-		// if len(arg.metadata.Ignore) > 0 {
-		// 	converted, err = fn.applyIgnoreOnDir(ctx, opts.Server, arg.metadata, converted)
-		// 	if err != nil {
-		// 		return nil, fmt.Errorf("failed to apply ignore pattern on arg %q: %w", input.Name, err)
-		// 	}
-		// }
-
 		encoded, err := json.Marshal(converted)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal arg %q: %w", input.Name, err)
@@ -442,73 +434,6 @@ func (fn *ModuleFunction) linkDependencyBlobs(ctx context.Context, cacheResult *
 	}
 	return nil
 }
-
-// func (fn *ModuleFunction) applyIgnoreOnDir(ctx context.Context, dag *dagql.Server, arg *FunctionArg, value any) (any, error) {
-// 	if arg.TypeDef.Kind != TypeDefKindObject || arg.TypeDef.AsObject.Value.Name != "Directory" {
-// 		return nil, fmt.Errorf("argument %q must be of type Directory to apply ignore pattern: [%s]", arg.OriginalName, strings.Join(arg.Ignore, ","))
-// 	}
-//
-// 	if dag == nil {
-// 		return nil, fmt.Errorf("dagql server is nil but required to ignore pattern on directory %q", arg.OriginalName)
-// 	}
-//
-// 	switch value := value.(type) {
-// 	case DynamicID:
-// 		var ignoredDir dagql.Instance[*Directory]
-//
-// 		err := dag.Select(ctx, dag.Root(), &ignoredDir,
-// 			dagql.Selector{
-// 				Field: "directory",
-// 			},
-// 			dagql.Selector{
-// 				Field: "withDirectory",
-// 				Args: []dagql.NamedInput{
-// 					{Name: "path", Value: dagql.String("/")},
-// 					{Name: "directory", Value: dagql.NewID[*Directory](value.ID())},
-// 					{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(arg.Ignore...))},
-// 				},
-// 			},
-// 		)
-// 		if err != nil {
-// 			return nil, fmt.Errorf("failed to apply ignore pattern on directory %q: %w", arg.OriginalName, err)
-// 		}
-//
-// 		dirID, err := ignoredDir.ID().Encode()
-// 		if err != nil {
-// 			return nil, fmt.Errorf("failed to encode filtered dir ID: %w", err)
-// 		}
-//
-// 		return JSON(dirID), nil
-// 	case dagql.ID[*Directory]:
-// 		var ignoredDir dagql.Instance[*Directory]
-//
-// 		err := dag.Select(ctx, dag.Root(), &ignoredDir,
-// 			dagql.Selector{
-// 				Field: "directory",
-// 			},
-// 			dagql.Selector{
-// 				Field: "withDirectory",
-// 				Args: []dagql.NamedInput{
-// 					{Name: "path", Value: dagql.String(arg.Ignore[0])},
-// 					{Name: "directory", Value: dagql.NewID[*Directory](value.ID())},
-// 					{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(arg.Ignore[1:]...))},
-// 				},
-// 			},
-// 		)
-// 		if err != nil {
-// 			return nil, fmt.Errorf("failed to apply ignore pattern on contextual directory %q: %w", arg.Name, err)
-// 		}
-//
-// 		dirID, err := ignoredDir.ID().Encode()
-// 		if err != nil {
-// 			return nil, fmt.Errorf("failed to encode filtered dir ID: %w", err)
-// 		}
-//
-// 		return JSON(dirID), nil
-// 	default:
-// 		return nil, fmt.Errorf("argument %q must be of type Directory to apply ignore pattern ([%s]) but type is %#v", arg.OriginalName, strings.Join(arg.Ignore, ", "), value)
-// 	}
-// }
 
 // loadContextualArg loads a contextual argument from the module context directory.
 //
