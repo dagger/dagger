@@ -58,7 +58,7 @@ type Version struct {
 
 // Return whether the current version is a development version or not
 func (v Version) Dev(ctx context.Context) (bool, error) {
-	tag, err := v.SemverTag(ctx)
+	tag, err := v.VersionTag(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -77,7 +77,7 @@ func (v Version) Dev(ctx context.Context) (bool, error) {
 //   - <digest> is computed from the inputs directory
 func (v Version) Version(ctx context.Context) (string, error) {
 	if v.gitDirExists(ctx) {
-		tag, err := v.SemverTag(ctx)
+		tag, err := v.VersionTag(ctx)
 		if err != nil {
 			return "", err
 		}
@@ -107,29 +107,96 @@ func (v Version) Version(ctx context.Context) (string, error) {
 }
 
 func (v Version) gitRepo() *dagger.SupergitRepo {
-	return dag.Supergit().Load(v.GitDir, dagger.SupergitLoadOpts{
-		Worktree: v.Inputs,
-	})
+	return dag.Supergit().
+		Load(v.GitDir, dagger.SupergitLoadOpts{
+			Worktree: v.Inputs,
+		}).
+		// Fetch all tag references, otherwise we'll miss tags if the repo is fetched by core git function
+		WithCommand([]string{"fetch", "--no-tags", "origin", "+refs/tags/*:refs/tags/*", "--depth=1"})
 }
 
-// Return the semver-compatible tag pointing to the current tag, or an empty string
-func (v Version) SemverTag(ctx context.Context) (string, error) {
+type VersionTag struct {
+	Component string
+	Version   string
+	Commit    string
+}
+
+// Return a list of version tags pointing to the current commit
+// A version tag is of the form [PATH/]SEMVER. Examples:
+//   - "v0.1.0"
+//   - "sdk/php/v0.1.1"
+//   - "bla/v1.1.0"
+func (v Version) VersionTags(ctx context.Context) ([]VersionTag, error) {
 	if !v.gitDirExists(ctx) {
-		return "", nil
+		return nil, nil
+	}
+	commit, err := v.Commit(ctx)
+	if err != nil {
+		return nil, err
 	}
 	tagsRaw, err := v.gitRepo().
 		Command([]string{"tag", "--points-at", "HEAD"}).
 		Stdout(ctx)
 	if err != nil {
+		return nil, err
+	}
+	var tags []VersionTag
+	for _, tag := range strings.Split(strings.Trim(tagsRaw, "\n"), "\n") {
+		if semver.IsValid(tag) {
+			tags = append(tags, VersionTag{Version: tag, Commit: commit})
+			continue
+		}
+		// Split the path by "/" and get the last part
+		parts := strings.Split(tag, "/")
+		if len(parts) < 2 {
+			continue // Ensure there are at least two path parts and the version
+		}
+		version := parts[len(parts)-1]
+		// Check if the last part is a valid semver
+		if !semver.IsValid(version) {
+			continue
+		}
+		tags = append(tags, VersionTag{
+			Version:   version,
+			Component: strings.Join(parts[:len(parts)-1], "/"),
+			Commit:    commit,
+		})
+	}
+	return tags, nil
+}
+
+// Return all tags pointing at the current commit
+func (v Version) Tags(ctx context.Context) ([]string, error) {
+	if !v.gitDirExists(ctx) {
+		return nil, nil
+	}
+	commit, err := v.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	tagsRaw, err := v.gitRepo().
+		Command([]string{"tag", "--points-at", commit}).
+		Stdout(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return strings.Split(strings.Trim(tagsRaw, "\n"), "\n"), nil
+}
+
+// Return the semver-compatible tag pointing to the current tag, or an empty string
+func (v Version) VersionTag(ctx context.Context) (string, error) {
+	tags, err := v.VersionTags(ctx)
+	if err != nil {
 		return "", err
 	}
-	tags := strings.Split(strings.Trim(tagsRaw, "\n"), "\n")
+	if len(tags) == 0 {
+		return "", nil
+	}
 	for _, tag := range tags {
-		if semver.IsValid(tag) {
-			return tag, nil
+		if tag.Component == "" {
+			return tag.Version, nil
 		}
 	}
-	// No semver-compatible tag pointing to the current commit
 	return "", nil
 }
 
