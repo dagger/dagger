@@ -230,6 +230,11 @@ module.exports = {
     },
     {
       "type": "link",
+      "label": "Documentation Archive",
+      "href": "https://archive.docs.dagger.io"
+    },
+    {
+      "type": "link",
       "label": "Changelog",
       "href": "https://github.com/dagger/dagger/blob/main/CHANGELOG.md"
     }
