@@ -68,7 +68,13 @@ func New(
 			return nil, fmt.Errorf("gpu support requires %q arch, not %q", "amd64", arch)
 		}
 	}
+	// FIXME: this go builder logic is duplicated with cmd/dagger.
+	// Move into a shared engine/builder
 	version, err := dag.Version().Version(ctx)
+	if err != nil {
+		return nil, err
+	}
+	imageTag, err := dag.Version().ImageTag(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -80,6 +86,7 @@ func New(
 	return &Engine{
 		Cli:          cli,
 		Version:      version,
+		ImageTag:     imageTag,
 		Source:       source,
 		Config:       config,
 		Args:         args,
@@ -95,13 +102,12 @@ func New(
 }
 
 type Engine struct {
-	Cli     *dagger.File      // +private
-	Source  *dagger.Directory // +private
-	Version string            // +private
-	Tag     string            // +private
-	Args    []string          // +private
-	Config  []string          // +private
-	Gomod   *dagger.Go        // +private
+	Cli      *dagger.File      // +private
+	Source   *dagger.Directory // +private
+	Version  string            // +private
+	ImageTag string            // +private
+	Args     []string          // +private
+	Config   []string          // +private
 
 	Race  bool // +private
 	Trace bool // +private
@@ -116,7 +122,7 @@ type Engine struct {
 
 // Build one of the binaries involved in the engine build
 func (e *Engine) Binary(pkg string) *dagger.File {
-	return e.Gomod.Binary(pkg, dagger.GoBinaryOpts{
+	return e.gomod().Binary(pkg, dagger.GoBinaryOpts{
 		Platform:  e.Platform,
 		NoSymbols: true,
 		NoDwarf:   true,
@@ -125,7 +131,7 @@ func (e *Engine) Binary(pkg string) *dagger.File {
 
 // An environment to build this engine
 func (e *Engine) Env() *dagger.Container {
-	return e.Gomod.Env()
+	return e.gomod().Env()
 }
 
 // Run engine tests
@@ -154,7 +160,7 @@ func (engine *Engine) Test(
 	// +optional
 	count int,
 ) error {
-	return engine.Gomod.Test(ctx, dagger.GoTestOpts{
+	return engine.gomod().Test(ctx, dagger.GoTestOpts{
 		Pkgs:     pkgs,
 		Run:      run,
 		Skip:     skip,
@@ -172,7 +178,7 @@ func (e *Engine) Tests(
 	// +optional
 	pkgs []string,
 ) (string, error) {
-	return e.Gomod.Tests(ctx, dagger.GoTestsOpts{
+	return e.gomod().Tests(ctx, dagger.GoTestsOpts{
 		Pkgs: pkgs,
 	})
 }
@@ -460,7 +466,7 @@ func (e *Engine) gomod() *dagger.Go {
 		Race: e.Race,
 		Values: []string{
 			"github.com/dagger/dagger/engine.Version=" + e.Version,
-			"github.com/dagger/dagger/engine.Tag=" + e.Tag,
+			"github.com/dagger/dagger/engine.Tag=" + e.ImageTag,
 		},
 	})
 }
