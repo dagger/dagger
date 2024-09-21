@@ -29,7 +29,7 @@ func New(
 	ctx context.Context,
 	// +optional
 	// +defaultPath="/"
-	// +ignore=["*", "!**.go", "!**/go.mod", "!**/go.sum", "!**.graphqls", "!**.proto", "!**.json", "!**.yaml", "!**/testdata", "!**.sql"]
+	// +ignore=["*", ".*", "!**.go", "!**/go.mod", "!**/go.sum", "!**.graphqls", "!**.proto", "!**.json", "!**.yaml", "!**/testdata", "!**.sql", "!**.graphqls", "!**.graphql"]
 	source *dagger.Directory,
 	// Custom engine config values
 	// +optional

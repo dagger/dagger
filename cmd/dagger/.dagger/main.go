@@ -14,7 +14,7 @@ func New(
 	ctx context.Context,
 	// +optional
 	// +defaultPath="/"
-	// +ignore=["*", "!/cmd/dagger/*", "!**/go.sum", "!**/go.mod", "!**/*.go"]
+	// +ignore=["*", ".*", "!/cmd/dagger/*", "!**/go.sum", "!**/go.mod", "!**/*.go", "!**.graphql", "!**.graphqls"]
 	source *dagger.Directory,
 	// Base image for go build environment
 	// +optional
