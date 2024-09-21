@@ -106,6 +106,31 @@ func (v Version) Version(ctx context.Context) (string, error) {
 	return fmt.Sprintf("%s-%s-%s", next, commit, digest), nil
 }
 
+// Return the tag to use when auto-downloading the engine image from the CLI
+func (v Version) ImageTag(ctx context.Context) (string, error) {
+	dev, err := v.Dev(ctx)
+	if err != nil {
+		return "", err
+	}
+	if !dev {
+		// For non-dev release, the image tag is the version tag
+		return v.VersionTag(ctx)
+	}
+	commit, err := v.Commit(ctx)
+	if err != nil {
+		return "", err
+	}
+	if commit != "" {
+		// For dev releases with available git dir: image tag is git commit
+		return commit, nil
+	}
+	// If no commit is available, return the input digest
+	// At the moment there is no scenario where this will be used,
+	// because no build without git information will be pushed to any official registry.
+	// But in the future this could be used for local auto-download registry perhaps.
+	return v.InputsDigest(ctx)
+}
+
 func (v Version) gitRepo() *dagger.SupergitRepo {
 	return dag.Supergit().
 		Load(v.GitDir, dagger.SupergitLoadOpts{
@@ -213,10 +238,9 @@ func (v Version) Commit(ctx context.Context) (string, error) {
 	if !v.gitDirExists(ctx) {
 		return "", nil
 	}
-	commit, err := v.gitRepo().
-		// FIXME: contribute GitRepo.head() uptsream
-		Command([]string{"rev-parse", "--short", "HEAD"}).
-		Stdout(ctx)
+	cmd := []string{"rev-parse", "HEAD"}
+	// FIXME: contribute GitRepo.head() uptsream
+	commit, err := v.gitRepo().Command(cmd).Stdout(ctx)
 	if err != nil {
 		return "", err
 	}
