@@ -4,7 +4,12 @@ import os
 from typing import Final, Literal
 
 from opentelemetry import context, propagate
-from opentelemetry.environment_variables import OTEL_PYTHON_TRACER_PROVIDER
+from opentelemetry.environment_variables import (
+    OTEL_LOGS_EXPORTER,
+    OTEL_METRICS_EXPORTER,
+    OTEL_PYTHON_TRACER_PROVIDER,
+    OTEL_TRACES_EXPORTER,
+)
 from opentelemetry.sdk._configuration import (
     _init_logging,
     _init_metrics,
@@ -64,19 +69,9 @@ def otel_configured() -> bool:
     return any(k for k in os.environ if k.startswith("OTEL_"))
 
 
-def otel_enabled(name: str = "") -> bool:
-    """Checks if a specific OpenTelemetry instrumentation is disabled.
-
-    Based on environment variables:
-    - If name is not provided, checks for global OTEL_SDK_DISABLED=true.
-    - Otherwise, checks for OTEL_PYTHON_{name}_INSTRUMENTATION_DISABLED=true.
-    """
-    name = (
-        f"OTEL_PYTHON_{name.upper()}_INSTRUMENTATION_DISABLED"
-        if name
-        else OTEL_SDK_DISABLED
-    )
-    return os.getenv(name, "").strip().lower() != "true"
+def otel_enabled() -> bool:
+    """Checks whether OpenTelemetry instrumentation is not disabled."""
+    return os.getenv(OTEL_SDK_DISABLED, "").strip().lower() != "true"
 
 
 class _BaseConfigurator(_BaseSDKConfigurator):
@@ -146,8 +141,15 @@ class _DaggerOtelConfigurator(_BaseConfigurator):
         # The default is a NoOpProvider.
         os.environ.setdefault(OTEL_PYTHON_TRACER_PROVIDER, "sdk_tracer_provider")
 
-        # TODO: The INSECURE env vars should be set by the shim next to ENDPOINT
-        # rather than in the SDK.
+        # TODO: The following env vars should be set by the shim rather than in the SDK.
+
+        for exporter in (
+            OTEL_TRACES_EXPORTER,
+            OTEL_LOGS_EXPORTER,
+            OTEL_METRICS_EXPORTER,
+        ):
+            os.environ.setdefault(exporter, "otlp")
+
         _vars = {
             OTEL_EXPORTER_OTLP_ENDPOINT: OTEL_EXPORTER_OTLP_INSECURE,
             OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: OTEL_EXPORTER_OTLP_METRICS_INSECURE,
@@ -166,16 +168,12 @@ class _DaggerOtelConfigurator(_BaseConfigurator):
             "logs": _init_logging,
         }
         all_exporters = _import_exporters(
-            *(_get_exporter_names(t) if otel_enabled(t) else [] for t in initializers)
+            *(_get_exporter_names(t) for t in initializers)
         )
 
         for (kind, init), exporters in zip(
             initializers.items(), all_exporters, strict=True
         ):
-            if not otel_enabled(kind):
-                logger.debug("Telemetry disabled for %s", kind)
-                continue
-
             logger.debug(
                 "Initializing %s telemetry with exporters: %s",
                 kind,
