@@ -667,29 +667,71 @@ class Test:
 		require.Equal(t, "0.4.5", out)
 	})
 
-	t.Run("uv with index-url", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
+	t.Run("index-url", func(ctx context.Context, t *testctx.T) {
+		source := pythonSource(`
+import contextlib
+import os
 
-		index_url := "https://pypi.org/simple"
-		ctr, err := daggerCliBase(t, c).
-			With(pyprojectExtra(nil, fmt.Stringf(`
-                [tool.uv]
-				index-url = "%s"
-            `, index_url))).
-			With(daggerInitPython()).
-			// Only uv creates a lock
-			WithExec([]string{"test", "-f", "uv.lock"}).
-			WithExec([]string{"test", "-f", "requirements.lock"}).
-			Sync(ctx)
+import dagger
 
-		require.NoError(t, err)
+@dagger.object_type
+class Test:
+    @dagger.function
+    def urls(self) -> list[str]:
+        res = []
+        with contextlib.suppress(KeyError):
+            res.append(os.environ["UV_INDEX_URL"])
+        with contextlib.suppress(KeyError):
+            res.append(os.environ["UV_EXTRA_INDEX_URL"])
+        return res
+`,
+		)
 
-		out, err := ctr.
-			With(daggerCall("container-echo", "--string-arg=hello $UV_INDEX_URL", "stdout")).
-			Stdout(ctx)
+		t.Run("with", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
 
-		require.NoError(t, err)
-		require.Equal(t, fmt.Sprintf("hello %s\n", index_url), out)
+			out, err := daggerCliBase(t, c).
+				With(source).
+				With(pyprojectExtra(nil, `
+                    [tool.uv]
+                    index-url = "https://pypi.org/simple"
+                    extra-index-url = "https://pypi.org/simple"
+                `)).
+				With(daggerInitPython()).
+				With(daggerCall("urls")).
+				Stdout(ctx)
+
+			require.NoError(t, err)
+			require.Equal(t, "https://pypi.org/simple\nhttps://pypi.org/simple\n", out)
+		})
+
+		t.Run("without", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			out, err := daggerCliBase(t, c).
+				With(source).
+				With(daggerInitPython()).
+				With(daggerCall("urls", "--json")).
+				Stdout(ctx)
+
+			require.NoError(t, err)
+			require.JSONEq(t, "[]", out)
+		})
+
+		t.Run("error", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			_, err := daggerCliBase(t, c).
+				With(source).
+				With(pyprojectExtra(nil, `
+                    [tool.uv]
+                    index-url = "https://pypi.example.com/simple"
+                `)).
+				With(daggerInitPython()).
+				Sync(ctx)
+
+			require.ErrorContains(t, err, "Failed to fetch wheel")
+		})
 	})
 }
 
