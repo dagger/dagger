@@ -29,14 +29,6 @@ type Release struct {
 func New(
 	ctx context.Context,
 	// +optional
-	gitTag string,
-	// +optional
-	gitCommit string,
-	// +optional
-	// +defaultPath="/"
-	// +ignore=["*", "!.git/HEAD", "!.git/refs", "!.git/config", "!.git/objects/*"]
-	gitDir *dagger.Directory,
-	// +optional
 	// +defaultPath="./install.sh"
 	unixInstallScript *dagger.File,
 	// +optional
@@ -50,22 +42,11 @@ func New(
 	// +ignore=["*", "!.changes/*.md", "!**/.changes/*.md"]
 	changeNotes *dagger.Directory,
 ) (Release, error) {
-	// FIXME: get gitTag and gitCommit from gitDir
 	return Release{
 		UnixInstallScript:    unixInstallScript,
 		WindowsInstallScript: windowsInstallScript,
-		Tag:                  gitTag,
-		Commit:               gitCommit,
 		ChangeNotes:          changeNotes,
 	}, nil
-}
-
-func git(workdir *dagger.Directory) *dagger.Container {
-	return dag.
-		Wolfi().
-		Container(dagger.WolfiContainerOpts{Packages: []string{"git"}}).
-		WithMountedDirectory("/src", workdir).
-		WithWorkdir("/src")
 }
 
 // Lint scripts files
@@ -100,52 +81,6 @@ func (r Release) Test(ctx context.Context) error {
 		// FIXME: move this to ../sdk/python/dev
 		return r.PublishPythonSDK(ctx, true, "", nil, "https://github.com/dagger/dagger.git", nil)
 	})
-	return eg.Wait()
-}
-
-// Verify that the CLI can be published, without actually publishing anything
-func (r Release) TestPublishCli(ctx context.Context) error {
-	// TODO: ideally this would also use go releaser, but we want to run this
-	// step in PRs and locally and we use goreleaser pro features that require
-	// a key which is private. For now, this just builds the CLI for the same
-	// targets so there's at least some coverage
-	eg, _ := errgroup.WithContext(context.Background())
-	// Test that the goreleaser environment is not broken
-	eg.Go(func() error {
-		_, err := r.Goreleaser().Sync(ctx)
-		return err
-	})
-	// Check that the build is not broken on any target platform
-	for _, os := range []string{"linux", "windows", "darwin"} {
-		for _, arch := range []string{"amd64", "arm64", "arm"} {
-			if arch == "arm" && os == "darwin" {
-				continue
-			}
-			platform := dagger.Platform(os + "/" + arch)
-			if arch == "arm" {
-				platform += "/v7" // not always correct but not sure of better way
-			}
-			eg.Go(func() error {
-				// FIXME: we only need the engine builder, maybe spin that out
-				goBase := dag.Engine(dagger.EngineOpts{
-					Commit:   r.Commit,
-					Tag:      r.Tag,
-					Platform: platform,
-				}).GoBase()
-				_, err := dag.
-					DaggerCli(dagger.DaggerCliOpts{
-						Tag:    r.Tag,
-						Commit: r.Commit,
-						Base:   goBase,
-					}).
-					Binary(dagger.DaggerCliBinaryOpts{
-						Platform: platform,
-					}).
-					Sync(ctx)
-				return err
-			})
-		}
-	}
 	return eg.Wait()
 }
 
@@ -189,7 +124,12 @@ func (r Release) PublishCli(
 	awsRegion *dagger.Secret,
 	awsBucket *dagger.Secret,
 	artefactsFQDN string,
+	// Test as much as possible, without actually publishing
+	dryRun bool,
 ) error {
+	if dryRun {
+
+	}
 	ctr := r.Goreleaser().WithMountedDirectory("", source)
 	// Verify tag
 	_, err := ctr.WithExec([]string{"git", "show-ref", "--verify", "refs/tags/" + tag}).Sync(ctx)
@@ -230,6 +170,45 @@ func (r Release) PublishCli(
 		}).
 		Sync(ctx)
 	return err
+}
+
+// Verify that the CLI can be published, without actually publishing anything
+func (r Release) TestPublishCli(ctx context.Context) error {
+	// TODO: ideally this would also use go releaser, but we want to run this
+	// step in PRs and locally and we use goreleaser pro features that require
+	// a key which is private. For now, this just builds the CLI for the same
+	// targets so there's at least some coverage
+	eg, _ := errgroup.WithContext(context.Background())
+	// Test that the goreleaser environment is not broken
+	eg.Go(func() error {
+		_, err := r.Goreleaser().Sync(ctx)
+		return err
+	})
+	// Check that the build is not broken on any target platform
+	for _, os := range []string{"linux", "windows", "darwin"} {
+		for _, arch := range []string{"amd64", "arm64", "arm"} {
+			if arch == "arm" && os == "darwin" {
+				continue
+			}
+			platform := dagger.Platform(os + "/" + arch)
+			if arch == "arm" {
+				platform += "/v7" // not always correct but not sure of better way
+			}
+			eg.Go(func() error {
+				_, err := dag.
+					DaggerCli(dagger.DaggerCliOpts{
+						// FIXME: we only need the engine builder, maybe spin that out
+						Base: dag.Engine(dagger.EngineOpts{Platform: platform}).GoBase(),
+					}).
+					Binary(dagger.DaggerCliBinaryOpts{
+						Platform: platform,
+					}).
+					Sync(ctx)
+				return err
+			})
+		}
+	}
+	return eg.Wait()
 }
 
 // Engine image targets to publish
@@ -618,4 +597,12 @@ func (r Release) GithubRelease(
 			// Latest:    false,  // can't do this yet
 		},
 	)
+}
+
+func git(workdir *dagger.Directory) *dagger.Container {
+	return dag.
+		Wolfi().
+		Container(dagger.WolfiContainerOpts{Packages: []string{"git"}}).
+		WithMountedDirectory("/src", workdir).
+		WithWorkdir("/src")
 }
