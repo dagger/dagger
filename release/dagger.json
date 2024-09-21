@@ -16,7 +16,7 @@
     },
     {
       "name": "go-sdk",
-      "source": "../sdk/go"
+      "source": "../sdk/go/dev"
     },
     {
       "name": "ps-analyzer",

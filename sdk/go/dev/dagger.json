@@ -1,0 +1,28 @@
+{
+  "name": "go-sdk-dev",
+  "sdk": "go",
+  "dependencies": [
+    {
+      "name": "codegen",
+      "source": "../../../cmd/codegen"
+    },
+    {
+      "name": "dirdiff",
+      "source": "../../../modules/dirdiff"
+    },
+    {
+      "name": "engine",
+      "source": "../../../engine"
+    },
+    {
+      "name": "go",
+      "source": "../../../modules/go"
+    },
+    {
+      "name": "sdk",
+      "source": "../.."
+    }
+  ],
+  "source": ".",
+  "engineVersion": "v0.13.3"
+}

@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"strings"
 
+	"dagger/sdk/go/dev/internal/dagger"
+
 	"github.com/dagger/dagger/engine/distconsts"
-	"github.com/dagger/dagger/sdk/go/.dagger/internal/dagger"
 	"go.opentelemetry.io/otel/codes"
 	"golang.org/x/sync/errgroup"
 )
@@ -16,18 +17,18 @@ func New(
 	// +defaultPath="/"
 	// +ignore=["*", "!sdk/go"]
 	source *dagger.Directory,
-) *GoSdk {
-	return &GoSdk{
+) *GoSdkDev {
+	return &GoSdkDev{
 		Source: source,
 	}
 }
 
-type GoSdk struct {
+type GoSdkDev struct {
 	Source *dagger.Directory // +private
 }
 
 // Lint the Go SDK
-func (t GoSdk) Lint(ctx context.Context) (rerr error) {
+func (t GoSdkDev) Lint(ctx context.Context) (rerr error) {
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() (rerr error) {
 		ctx, span := Tracer().Start(ctx, "lint the go source")
@@ -60,7 +61,7 @@ func (t GoSdk) Lint(ctx context.Context) (rerr error) {
 }
 
 // Test the Go SDK
-func (t GoSdk) Test(ctx context.Context) (rerr error) {
+func (t GoSdkDev) Test(ctx context.Context) (rerr error) {
 	_, err := t.Env().
 		WithExec([]string{"go", "test", "-v", "-skip=TestProvision", "./..."}).
 		Sync(ctx)
@@ -68,7 +69,7 @@ func (t GoSdk) Test(ctx context.Context) (rerr error) {
 }
 
 // Build an environment for developing the Go SDK
-func (t GoSdk) Env() *dagger.Container {
+func (t GoSdkDev) Env() *dagger.Container {
 	return dag.
 		Go(t.Source).
 		Env().
@@ -77,7 +78,7 @@ func (t GoSdk) Env() *dagger.Container {
 }
 
 // Regenerate the Go SDK API
-func (t GoSdk) Generate(ctx context.Context) (*dagger.Directory, error) {
+func (t GoSdkDev) Generate(ctx context.Context) (*dagger.Directory, error) {
 	generated := t.Env().
 		WithExec([]string{"go", "generate", "-v", "./..."}).
 		WithExec([]string{"go", "mod", "tidy"}).
@@ -86,7 +87,7 @@ func (t GoSdk) Generate(ctx context.Context) (*dagger.Directory, error) {
 }
 
 // Test the publishing process
-func (t GoSdk) TestPublish(ctx context.Context, tag string) error {
+func (t GoSdkDev) TestPublish(ctx context.Context, tag string) error {
 	return t.Publish(
 		ctx,
 		tag,
@@ -100,7 +101,7 @@ func (t GoSdk) TestPublish(ctx context.Context, tag string) error {
 }
 
 // Publish the Go SDK
-func (t GoSdk) Publish(
+func (t GoSdkDev) Publish(
 	ctx context.Context,
 	tag string,
 
@@ -157,7 +158,7 @@ func (t GoSdk) Publish(
 }
 
 // Bump the Go SDK's Engine dependency
-func (t GoSdk) Bump(ctx context.Context, version string) (*dagger.Directory, error) {
+func (t GoSdkDev) Bump(ctx context.Context, version string) (*dagger.Directory, error) {
 	// trim leading v from version
 	version = strings.TrimPrefix(version, "v")
 
@@ -177,7 +178,7 @@ const CLIVersion = %q
 // Package the SDK to be embeded in the engine container as a builtin.
 // The builtin container is converted to an OCI archive and copied into
 // the engine container.
-func (t GoSdk) Builtin(
+func (t GoSdkDev) Builtin(
 	ctx context.Context,
 	// +optional
 	platform dagger.Platform,
