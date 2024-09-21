@@ -16,20 +16,17 @@ func New(
 	// +defaultPath="/"
 	// +ignore=["*", "!/cmd/dagger/*", "!**/go.sum", "!**/go.mod", "!**/*.go"]
 	source *dagger.Directory,
-	// Git tag to use in version string
-	// +optional
-	tag string,
-	// Git commit to use in version string
-	// +optional
-	commit string,
 	// Base image for go build environment
 	// +optional
 	base *dagger.Container,
 ) (*DaggerCli, error) {
-	version, err := dag.Version(dagger.VersionOpts{
-		Commit: commit,
-		Tag:    tag,
-	}).Version(ctx)
+	// FIXME: this go builder config is duplicated with engine build
+	// move into a shared engine/builder module
+	version, err := dag.Version().Version(ctx)
+	if err != nil {
+		return nil, err
+	}
+	imageTag, err := dag.Version().ImageTag(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -39,7 +36,7 @@ func New(
 			Values: []string{
 				// FIXME: how to avoid duplication with engine module?
 				"github.com/dagger/dagger/engine.Version=" + version,
-				"github.com/dagger/dagger/engine.Tag=" + tag,
+				"github.com/dagger/dagger/engine.Tag=" + imageTag,
 			},
 		}),
 	}, nil
