@@ -142,6 +142,10 @@ In this Dagger module, each Dagger Function performs a different operation:
 </TabItem>
 </Tabs>
 
+:::tip IDE SUPPORT
+If you're writing the code above in an IDE, you can easily [configure your IDE to recognize your Dagger module](../manuals/developer/ide-integration.mdx). This can significantly speed things up, by giving you the benefits of automatic type-checking, intelligent code completion, and other IDE features when developing Dagger modules.
+:::
+
 :::warning
 A Dagger module's name is automatically generated based on the name of the directory where `dagger init` was executed. If you cloned the example application into a directory other than the default (`hello-dagger`), your generated module name will be different and the code samples above will not work until you update them to use the correct module name. Alternatively, you can override Dagger's default module names by specifying a name via the `--name` argument to `dagger init`.
 :::
