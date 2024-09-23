@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -17,6 +18,7 @@ import (
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/vcs"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/tonistiigi/fsutil/types"
@@ -213,16 +215,27 @@ type buildkitClient interface {
 // - if not, try to isolate root of git repo from the ref
 // - if nothing worked, fallback as local ref, as before
 func parseRefString(ctx context.Context, bk buildkitClient, refString string) parsedRefString {
+	ctx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("parseRefString: %s", refString), trace.WithSpanKind(trace.SpanKindInternal))
+	defer span.End()
 	localParsed := parsedRefString{
 		modPath: refString,
 		kind:    core.ModuleSourceKindLocal,
 		scheme:  core.NoScheme,
 	}
 
+	// if the refString is a relative path, we can short-circuit here as we
+	// don't really about the `stat` return as the refString will always
+	// be local in this case.
+	if strings.HasPrefix(refString, ".") {
+		return localParsed
+	}
+
 	// First, we stat ref in case the mod path github.com/username is a local directory
 	stat, err := bk.StatCallerHostPath(ctx, refString, false)
 	if err == nil && stat.IsDir() {
 		return localParsed
+	} else if err != nil {
+		slog.Debug("parseRefString stat error", "error", err)
 	}
 
 	// Parse scheme and attempt to parse as git endpoint
