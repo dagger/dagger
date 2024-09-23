@@ -325,7 +325,7 @@ func (container *Container) From(ctx context.Context, addr string) (*Container, 
 
 	fsSt := llb.Image(
 		digested.String(),
-		llb.WithCustomNamef("pull %s", ref),
+		llb.WithCustomNamef(buildkit.InternalPrefix+"pull %s", ref),
 		buildkit.WithTracePropagation(ctx),
 	)
 
