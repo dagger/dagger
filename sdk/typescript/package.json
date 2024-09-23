@@ -41,7 +41,8 @@
     "watch": "tsc -w",
     "test": "yarn run test:node",
     "test:bun": "bun run --bun mocha",
-    "test:node": "mocha",
+    "test:deno": "deno run -A npm:mocha",
+    "test:node": "mocha -n import=tsx",
     "test:generate-scan": "tsx ./introspector/test/testdata/generate_expected_scan.ts",
     "lint": "yarn eslint --max-warnings=0 .",
     "fmt": "yarn eslint --max-warnings=0 --fix .",
@@ -63,6 +64,7 @@
     "mocha": "^10.7.0",
     "prettier": "^3.3.3",
     "ts-node": "^10.9.2",
+    "tsx": "^4.19.1",
     "typescript-eslint": "^8.0.1"
   }
 }
