@@ -35,16 +35,26 @@ type Span struct {
 }
 
 func (span *Span) Snapshot() SpanSnapshot {
-	// this is easier to calculate at export time since ChildSpans handles
-	// uniqueness for us
-	//
-	// TODO: don't count passthrough/internal children... but DO count children
-	// of passthrough spans
-	span.ChildCount = len(span.ChildSpans.Order)
+	span.ChildCount = countChildren(span.ChildSpans)
 	span.Failed = span.IsFailedOrCausedFailure()
 	span.Cached = span.IsCached()
 	span.Pending = span.IsPending()
 	return span.SpanSnapshot
+}
+
+func countChildren(set SpanSet) int {
+	count := 0
+	for _, child := range set.Order {
+		if child.Passthrough {
+			count += countChildren(child.ChildSpans)
+		} else if !child.Hidden(FrontendOpts{
+			// TODO: this should reflect the client side setting
+			Verbosity: ShowInternalVerbosity - 1,
+		}) {
+			count += 1
+		}
+	}
+	return count
 }
 
 type SpanSnapshot struct {
