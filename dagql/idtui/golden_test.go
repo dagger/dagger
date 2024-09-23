@@ -315,7 +315,6 @@ func (o *otlpReceiver) TracesHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	spans := telemetry.SpansFromPB(req.ResourceSpans)
-	o.t.Logf("tests received %d spans", len(spans))
 	if err := o.traces.ExportSpans(r.Context(), spans); err != nil {
 		slog.Error("error exporting spans", "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
