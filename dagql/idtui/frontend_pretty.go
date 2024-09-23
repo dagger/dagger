@@ -270,7 +270,7 @@ func (fe *frontendPretty) renderErrorLogs(out *termenv.Output, r *renderer) erro
 			fmt.Fprintln(out)
 			fe.renderStep(out, r, tree.Span, tree.Chained, 0, "")
 			fe.renderLogs(out, r, logs, -1, logs.UsedHeight(), "")
-			fe.renderStepError(out, r, tree.Span, tree.Depth(), "")
+			fe.renderStepError(out, r, tree.Span, 0, "")
 		}
 		return false
 	})
