@@ -1,6 +1,5 @@
 export * from "./api/client.gen.ts"
 export * from "./common/errors/index.ts"
-export { gql } from "graphql-tag"
 export { GraphQLClient } from "graphql-request"
 export type { CallbackFct } from "./connect.ts"
 export { connect, connection, close } from "./connect.ts"
