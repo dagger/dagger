@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
@@ -69,6 +70,9 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	runOpts := []llb.RunOption{
 		llb.Args(args),
 		buildkit.WithTracePropagation(ctx),
+		llb.WithDescription(map[string]string{
+			telemetry.UIPassthroughAttr: "true",
+		}),
 	}
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)

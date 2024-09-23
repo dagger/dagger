@@ -174,6 +174,10 @@ func (sp *SpanProcessor) setupVertex(span sdktrace.ReadWriteSpan, vertex digest.
 		causeCtx = opCauseCtx
 	}
 
+	if llbOp.Metadata.Description[telemetry.UIPassthroughAttr] != "" {
+		span.SetAttributes(attribute.Bool(telemetry.UIPassthroughAttr, true))
+	}
+
 	if causeCtx.IsValid() {
 		// link the vertex span to its causal span
 		span.AddLink(trace.Link{SpanContext: causeCtx})
