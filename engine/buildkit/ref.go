@@ -112,8 +112,6 @@ func (r *ref) Evaluate(ctx context.Context) error {
 	}
 	_, err := r.Result(ctx)
 	if err != nil {
-		// writing log w/ %+v so that we can see stack traces embedded in err by buildkit's usage of pkg/errors
-		bklog.G(ctx).Errorf("ref evaluate error: %+v", err)
 		return err
 	}
 	return nil
@@ -231,6 +229,8 @@ func (r *ref) Result(ctx context.Context) (bksolver.CachedResult, error) {
 	ctx = withOutgoingContext(ctx)
 	res, err := r.resultProxy.Result(ctx)
 	if err != nil {
+		// writing log w/ %+v so that we can see stack traces embedded in err by buildkit's usage of pkg/errors
+		bklog.G(ctx).Errorf("ref evaluate error: %+v", err)
 		return nil, wrapError(ctx, err, r.c)
 	}
 	return res, nil

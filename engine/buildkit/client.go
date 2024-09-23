@@ -135,8 +135,6 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 	}
 	llbRes, err := gw.Solve(ctx, req, c.ID())
 	if err != nil {
-		// writing log w/ %+v so that we can see stack traces embedded in err by buildkit's usage of pkg/errors
-		bklog.G(ctx).Errorf("solve error: %+v", err)
 		return nil, wrapError(ctx, err, c)
 	}
 
@@ -782,7 +780,13 @@ func (gw *filteringGateway) Solve(ctx context.Context, req bkfrontend.SolveReque
 			req.Definition = newDef
 		}
 
-		return gw.FrontendLLBBridge.Solve(ctx, req, sid)
+		res, err := gw.FrontendLLBBridge.Solve(ctx, req, sid)
+		if err != nil {
+			// writing log w/ %+v so that we can see stack traces embedded in err by buildkit's usage of pkg/errors
+			bklog.G(ctx).Errorf("solve error: %+v", err)
+			return nil, err
+		}
+		return res, nil
 
 	case req.Frontend != "":
 		// HACK: don't force evaluation like this, we can write custom frontend
