@@ -82,6 +82,8 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 		{Function: "pending", Fail: true},
 		{Function: "use-exec-service"},
 		{Function: "use-no-exec-service"},
+		{Function: "docker-build"},
+		{Function: "docker-build-fail", Fail: true},
 		{Module: "./viztest/broken", Function: "broken", Fail: true},
 	} {
 		t.Run(ex.Function, func(ctx context.Context, t *testctx.T) {
@@ -127,6 +129,14 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 			fmt.Sprintf("HOME=%s", s.Home), // ignore any local Dagger Cloud auth
 		)
 		warmup.Env = append(warmup.Env, telemetry.PropagationEnv(ctx)...)
+		warmupBuf := new(bytes.Buffer)
+		defer func() {
+			if t.Failed() {
+				t.Logf("warmup failed! output:\n%s", warmupBuf.String())
+			}
+		}()
+		warmup.Stderr = warmupBuf
+		warmup.Stdout = warmupBuf
 		err := warmup.Run()
 		if ex.Fail {
 			require.Error(t, err)

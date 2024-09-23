@@ -631,7 +631,9 @@ func (w *Worker) setupOTel(ctx context.Context, state *execState) error {
 		return nil
 	}
 
-	ctx = trace.ContextWithSpanContext(ctx, w.causeCtx)
+	if w.causeCtx.IsValid() {
+		ctx = trace.ContextWithSpanContext(ctx, w.causeCtx)
+	}
 
 	var destSession string
 	var destClientID string

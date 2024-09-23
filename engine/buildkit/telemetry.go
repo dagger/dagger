@@ -149,10 +149,8 @@ func (sp *SpanProcessor) OnStart(ctx context.Context, span sdktrace.ReadWriteSpa
 	// convert [internal] prefix into internal attribute
 	if rest, ok := strings.CutPrefix(span.Name(), InternalPrefix); ok {
 		span.SetName(rest)
+		span.SetAttributes(attribute.Bool(telemetry.UIInternalAttr, true))
 	}
-
-	// all Buildkit spans are internal
-	span.SetAttributes(attribute.Bool(telemetry.UIInternalAttr, true))
 
 	// silence noisy registry lookups
 	if span.Name() == "remotes.docker.resolver.HTTPRequest" {
@@ -166,14 +164,18 @@ func (sp *SpanProcessor) OnStart(ctx context.Context, span sdktrace.ReadWriteSpa
 }
 
 func (sp *SpanProcessor) setupVertex(span sdktrace.ReadWriteSpan, vertex digest.Digest) {
-	llbOp, ok := sp.Client.LookupOp(vertex)
+	llbOp, causeCtx, ok := sp.Client.LookupOp(vertex)
 	if !ok {
 		return
 	}
 
-	// link the vertex span to its causal span
-	causeCtx := SpanContextFromDescription(llbOp.Metadata.Description)
+	opCauseCtx := SpanContextFromDescription(llbOp.Metadata.Description)
+	if opCauseCtx.IsValid() {
+		causeCtx = opCauseCtx
+	}
+
 	if causeCtx.IsValid() {
+		// link the vertex span to its causal span
 		span.AddLink(trace.Link{SpanContext: causeCtx})
 	}
 

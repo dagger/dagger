@@ -304,3 +304,32 @@ func (*Viztest) Colors256(ctx context.Context) (string, error) {
 		WithExec([]string{"pokemon-colorscripts", "-r", "1"}).
 		Stdout(ctx)
 }
+
+func (*Viztest) DockerBuildCached() *dagger.Container {
+	return dag.Directory().
+		WithNewFile("Dockerfile", `FROM alpine
+RUN echo hello, world!`).
+		DockerBuild()
+}
+
+func (*Viztest) DockerBuild() *dagger.Container {
+	return dag.Directory().
+		WithNewFile("bust", time.Now().String()).
+		WithNewFile("Dockerfile", `FROM alpine
+RUN echo hello, world!
+RUN echo what is up?
+RUN echo im another layer`).
+		DockerBuild()
+}
+
+func (*Viztest) DockerBuildFail() *dagger.Container {
+	return dag.Directory().
+		WithNewFile("bust", time.Now().String()).
+		WithNewFile("Dockerfile", `FROM alpine
+RUN echo hello, world!
+RUN echo hello, world!
+RUN echo what is up?
+RUN echo im failing && false
+`).
+		DockerBuild()
+}

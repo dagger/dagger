@@ -81,8 +81,13 @@ type Client struct {
 	closeMu  sync.RWMutex
 	execMap  sync.Map
 
-	ops   map[digest.Digest]*OpDAG
+	ops   map[digest.Digest]opCtx
 	opsmu sync.RWMutex
+}
+
+type opCtx struct {
+	od  *OpDAG
+	ctx trace.SpanContext
 }
 
 func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
@@ -93,7 +98,7 @@ func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
 		closeCtx: ctx,
 		cancel:   cancel,
 		execMap:  sync.Map{},
-		ops:      make(map[digest.Digest]*OpDAG),
+		ops:      make(map[digest.Digest]opCtx),
 	}
 
 	return client, nil
@@ -135,9 +140,13 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 		if err != nil {
 			return nil, err
 		}
+		spanCtx := trace.SpanContextFromContext(ctx)
 		c.opsmu.Lock()
 		dag.Walk(func(od *OpDAG) error {
-			c.ops[*od.OpDigest] = od
+			c.ops[*od.OpDigest] = opCtx{
+				od:  od,
+				ctx: spanCtx,
+			}
 			return nil
 		})
 		c.opsmu.Unlock()
@@ -177,11 +186,11 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 	return res, nil
 }
 
-func (c *Client) LookupOp(vertex digest.Digest) (*OpDAG, bool) {
+func (c *Client) LookupOp(vertex digest.Digest) (*OpDAG, trace.SpanContext, bool) {
 	c.opsmu.Lock()
-	llbop, ok := c.ops[vertex]
+	opCtx, ok := c.ops[vertex]
 	c.opsmu.Unlock()
-	return llbop, ok
+	return opCtx.od, opCtx.ctx, ok
 }
 
 func (c *Client) ResolveImageConfig(ctx context.Context, ref string, opt sourceresolver.Opt) (string, digest.Digest, []byte, error) {

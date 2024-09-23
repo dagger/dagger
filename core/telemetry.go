@@ -72,7 +72,7 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 		attrs = append(attrs, attribute.StringSlice(telemetry.DagInputsAttr, inputs))
 	}
 
-	if isInternal(ctx, id) {
+	if dagql.IsInternal(ctx) {
 		attrs = append(attrs, attribute.Bool(telemetry.UIInternalAttr, true))
 	}
 
@@ -153,12 +153,6 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 			span.SetAttributes(attribute.StringSlice(telemetry.EffectIDsAttr, effectIDs))
 		}
 	}
-}
-
-// isInternal detects whether a call's span should be marked internal.
-func isInternal(ctx context.Context, id *call.ID) bool {
-	return dagql.IsInternal(ctx) || // dagql.Select call
-		id.Field() == "sync" // sync is less interesting than the things it runs
 }
 
 // isIntrospection detects whether an ID is an introspection query.
