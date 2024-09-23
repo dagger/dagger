@@ -63,10 +63,19 @@ func LLB(desc ocispecs.Descriptor) llb.State {
 			attrs[k] = v
 		}
 	}
+	llb.WithCustomName(desc.Digest.String())
+	sourceID := fmt.Sprintf("%s://%s", BlobScheme, desc.Digest.String())
 	return llb.NewState(llb.NewSource(
-		fmt.Sprintf("%s://%s", BlobScheme, desc.Digest.String()),
+		sourceID,
 		attrs,
-		llb.Constraints{},
+		llb.Constraints{
+			Metadata: pb.OpMetadata{
+				Description: map[string]string{
+					// TODO: use InternalPrefix, but there's an import cycle
+					"llb.customname": "[internal] " + sourceID,
+				},
+			},
+		},
 	).Output())
 }
 

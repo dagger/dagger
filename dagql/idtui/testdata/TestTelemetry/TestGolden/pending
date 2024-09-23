@@ -15,6 +15,7 @@
 ! input: container.from.withExec.withExec.withEnvVariable.withExec.withExec.withExec.sync process "false" did not complete successfully: exit code: 1
 │ ✔ container: Container! X.Xs
 │ $ .from(address: "alpine"): Container! X.Xs CACHED
+│ │ ✔ resolving docker.io/library/alpine:latest X.Xs
 │ $ .withExec(args: ["echo", "im cached for good"]): Container! X.Xs CACHED
 │ $ .withExec(args: ["echo", "im also cached for good"]): Container! X.Xs CACHED
 │ ✔ .withEnvVariable(name: "NOW", value: "20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X"): Container! X.Xs

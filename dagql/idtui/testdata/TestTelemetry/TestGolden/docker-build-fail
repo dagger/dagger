@@ -1,0 +1,27 @@
+✔ connect X.Xs
+│ ✔ starting engine X.Xs
+│ ✔ connecting to engine X.Xs
+│ ✔ starting session X.Xs
+
+✔ initialize X.Xs
+│ ✔ resolving module ref X.Xs
+│ ✔ installing module X.Xs
+│ ✔ analyzing module X.Xs
+
+✔ prepare X.Xs
+
+✔ viztest: Viztest! X.Xs
+✘ .dockerBuildFail: Container! X.Xs
+│ ○ Directory.withNewFile(contents: "20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X", path: "bust"): Directory! X.Xs
+│ ○ .withNewFile(contents: "FROM alpine\nRUN echo hello, world!\nRUN echo hello, world!\nRUN echo what is up?\nRUN echo im failing && false\n", path: "Dockerfile"): Directory! X.Xs
+│ ✘ .dockerBuild: Container! X.Xs
+│ │ ✔ mkfile /bust X.Xs
+│ │ ✔ mkdir / X.Xs
+│ │ ✔ mkfile /Dockerfile X.Xs
+│ │ ✔ resolving docker.io/library/alpine:latest X.Xs
+│ │ $ [4/5] RUN echo what is up? X.Xs CACHED
+│ │ ✘ [5/5] RUN echo im failing && false X.Xs
+│ │ ┃ im failing
+│ │ ! process "/bin/sh -c echo im failing && false" did not complete successfully: exit code: 1
+
+Setup tracing at https://dagger.cloud/traces/setup. To hide: export NOTHANKS=1

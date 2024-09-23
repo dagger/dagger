@@ -1,0 +1,37 @@
+✔ connect X.Xs
+│ ✔ starting engine X.Xs
+│ ✔ connecting to engine X.Xs
+│ ✔ starting session X.Xs
+
+✔ initialize X.Xs
+│ ✔ resolving module ref X.Xs
+│ ✔ installing module X.Xs
+│ ✔ analyzing module X.Xs
+
+✔ prepare X.Xs
+
+✔ viztest: Viztest! X.Xs
+$ .dockerBuild: Container! X.Xs CACHED
+│ ○ Directory.withNewFile(contents: "20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X", path: "bust"): Directory! X.Xs
+│ ○ .withNewFile(contents: "FROM alpine\nRUN echo hello, world!\nRUN echo what is up?\nRUN echo im another layer", path: "Dockerfile"): Directory! X.Xs
+│ $ .dockerBuild: Container! X.Xs CACHED
+│ │ ✔ load cache: mkdir / X.Xs
+│ │ ✔ mkfile /bust X.Xs
+│ │ ✔ mkdir / X.Xs
+│ │ ✔ mkfile /Dockerfile X.Xs
+│ │ ✔ resolving docker.io/library/alpine:latest X.Xs
+│ │ $ [4/4] RUN echo im another layer X.Xs CACHED
+✔ .defaultArgs: [String!]! X.Xs
+
+✔ Container.mounts: [String!]! X.Xs
+
+✔ Container.user: String! X.Xs
+
+✔ Container.workdir: String! X.Xs
+
+✔ Container.entrypoint: [String!]! X.Xs
+
+✔ Container.platform: Platform! X.Xs
+
+Setup tracing at https://dagger.cloud/traces/setup. To hide: export NOTHANKS=1
+

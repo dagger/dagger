@@ -104,7 +104,10 @@ func (c *Client) BytesToBlob(
 	compressionType compression.Type,
 ) (_ *bksolverpb.Definition, desc specs.Descriptor, _ error) {
 	def, err := llb.Scratch().
-		File(llb.Mkfile(fileName, perms, bs)).
+		File(
+			llb.Mkfile(fileName, perms, bs),
+			llb.WithCustomNamef("%smkfile %s", InternalPrefix, fileName),
+		).
 		Marshal(ctx, WithTracePropagation(ctx))
 	if err != nil {
 		return nil, desc, fmt.Errorf("failed to create llb definition: %w", err)

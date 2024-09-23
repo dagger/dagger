@@ -9,6 +9,7 @@
 │ ✘ installing module X.Xs
 │ ! input: module.withSource.initialize failed to initialize module: failed to call module "broken" to get functions: call constructor: process "go build -o /runtime ." did not complete successfully: exit code: 1
 │ │ $ ModuleSource.resolveFromCaller: ModuleSource! X.Xs CACHED
+│ │ │ ✔ upload /app/dagql/idtui/viztest/broken from XXXXXXXXXXX (client id: XXXXXXXXXXX, session id: XXXXXXXXXXX) (exclude: **/.git) (include: dagger.json, ./**/*, **/go.mod, **/go.sum, **/go.work, **/go.work.sum, **/vendor/, **/*.go) X.Xs
 │ │ ✘ .asModule: Module! X.Xs
 │ │ │ ✘ Module.withSource(
 │ │ │ │ │ source: $ ModuleSource.resolveFromCaller: ModuleSource! X.Xs CACHED
