@@ -147,7 +147,7 @@ If you're writing the code above in an IDE, you can easily [configure your IDE t
 :::
 
 :::warning
-A Dagger module's name is automatically generated based on the name of the directory where `dagger init` was executed. If you cloned the example application into a directory other than the default (`hello-dagger`), your generated module name will be different and the code samples above will not work until you update them to use the correct module name. Alternatively, you can override Dagger's default module names by specifying a name via the `--name` argument to `dagger init`.
+The Dagger module's class name is automatically generated based on the name of the directory where `dagger init` was executed. If you cloned the example application into a directory other than the default (`hello-dagger`), or if you used a different TypeScript application altogether, the auto-generated class name will be different and the code samples above will not work until you update them to use the correct name. Alternatively, you can override Dagger's default class name by specifying a name via the `--name` argument to `dagger init`.
 :::
 
 ### Run the pipeline
