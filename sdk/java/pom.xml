@@ -235,18 +235,18 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <daggerengine.version>devel</daggerengine.version>
 
-        <assertj-core.version>3.26.0</assertj-core.version>
-        <commons-compress.version>1.26.2</commons-compress.version>
-        <commons-lang.version>3.14.0</commons-lang.version>
-        <exec-maven-plugin.version>3.3.0</exec-maven-plugin.version>
+        <assertj-core.version>3.26.3</assertj-core.version>
+        <commons-compress.version>1.27.1</commons-compress.version>
+        <commons-lang.version>3.17.0</commons-lang.version>
+        <exec-maven-plugin.version>3.4.1</exec-maven-plugin.version>
         <fluent-process.version>1.0.1</fluent-process.version>
-        <fmt-maven-plugin.version>2.23</fmt-maven-plugin.version>
+        <fmt-maven-plugin.version>2.24</fmt-maven-plugin.version>
         <inject-maven-plugin.version>1.7</inject-maven-plugin.version>
         <jakarta.json-api.version>2.1.3</jakarta.json-api.version>
         <jakarta.json.bind-api.version>3.0.1</jakarta.json.bind-api.version>
         <javapoet.version>1.13.0</javapoet.version>
         <json-path.version>2.9.0</json-path.version>
-        <junit.version>5.10.2</junit.version>
+        <junit.version>5.11.0</junit.version>
         <maven-assembly-plugin.version>3.6.0</maven-assembly-plugin.version>
         <maven-compiler-plugin.version>3.11.0</maven-compiler-plugin.version>
         <maven-failsafe-plugin.version>3.0.0</maven-failsafe-plugin.version>
@@ -257,10 +257,10 @@
         <maven-resources-plugin.version>3.3.1</maven-resources-plugin.version>
         <maven-source-plugin.version>3.3.0</maven-source-plugin.version>
         <maven-versions-plugin.version>2.16.0</maven-versions-plugin.version>
-        <mockito-core.version>5.12.0</mockito-core.version>
-        <slf4j-api.version>2.0.13</slf4j-api.version>
-        <slf4j-simple.version>2.0.13</slf4j-simple.version>
-        <smallrye-graphql.version>2.8.4</smallrye-graphql.version>
+        <mockito-core.version>5.13.0</mockito-core.version>
+        <slf4j-api.version>2.0.16</slf4j-api.version>
+        <slf4j-simple.version>2.0.16</slf4j-simple.version>
+        <smallrye-graphql.version>2.10.0</smallrye-graphql.version>
         <system-stubs-jupiter.version>2.1.6</system-stubs-jupiter.version>
         <xdg-java.version>0.1.1</xdg-java.version>
         <yasson.version>3.0.4</yasson.version>
