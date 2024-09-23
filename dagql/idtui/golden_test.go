@@ -82,8 +82,14 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 		{Function: "pending", Fail: true},
 		{Function: "use-exec-service"},
 		{Function: "use-no-exec-service"},
-		{Function: "docker-build"},
-		{Function: "docker-build-fail", Fail: true},
+		{Function: "docker-build", Args: []string{
+			"with-exec", "--args", "echo,hey",
+			"stdout",
+		}},
+		{Function: "docker-build-fail", Args: []string{
+			"with-exec", "--args", "echo,hey",
+			"stdout",
+		}, Fail: true},
 		{Module: "./viztest/broken", Function: "broken", Fail: true},
 	} {
 		t.Run(ex.Function, func(ctx context.Context, t *testctx.T) {
@@ -257,6 +263,13 @@ var scrubs = []scrubber{
 		regexp.MustCompile(`upload ([^ ]+) from [a-z0-9]+ \(client id: [a-z0-9]+, session id: [a-z0-9]+\)`),
 		"upload /app/dagql/idtui/viztest/broken from uiyf0ymsapvxhhgrsamouqh8h (client id: xutan9vz6sjtdcrqcqrd6cvh4, session id: u5mj1p0sw07k6579r3xcuiuf3)",
 		"upload $1 from XXXXXXXXXXX (client id: XXXXXXXXXXX, session id: XXXXXXXXXXX)",
+	},
+	// sha256:... digests
+	{
+		regexp.MustCompile(`sha256:[a-f0-9]{64}`),
+		// an almost natural deadbeef!
+		"docker.io/library/alpine:latest@sha256:beefdbd8a1da6d2915566fde36db9db0b524eb737fc57cd1367effd16dc0d06d",
+		"sha256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
 	},
 }
 

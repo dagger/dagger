@@ -15,6 +15,7 @@
 ┃ im doing a lot of work
 ┃ and then failing
 ! i failed
+! process "/runtime" did not complete successfully: exit code: 2
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide: export NOTHANKS=1
 
@@ -24,3 +25,4 @@ Error logs:
 im doing a lot of work
 and then failing
 ! i failed
+! process "/runtime" did not complete successfully: exit code: 2

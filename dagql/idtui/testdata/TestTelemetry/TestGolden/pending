@@ -13,6 +13,7 @@
 ✔ viztest: Viztest! X.Xs
 ✘ .pending: Void X.Xs
 ! input: container.from.withExec.withExec.withEnvVariable.withExec.withExec.withExec.sync process "false" did not complete successfully: exit code: 1
+! process "/runtime" did not complete successfully: exit code: 2
 │ ✔ container: Container! X.Xs
 │ $ .from(address: "alpine"): Container! X.Xs CACHED
 │ │ ✔ resolving docker.io/library/alpine:latest X.Xs
@@ -21,6 +22,7 @@
 │ ✔ .withEnvVariable(name: "NOW", value: "20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X"): Container! X.Xs
 │ ✔ .withExec(args: ["sleep", "1"]): Container! X.Xs
 │ ✘ .withExec(args: ["false"]): Container! X.Xs
+│ ! process "false" did not complete successfully: exit code: 1
 │ ○ .withExec(args: ["sleep", "1"]): Container! X.Xs
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide: export NOTHANKS=1

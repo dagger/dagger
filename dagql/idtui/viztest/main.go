@@ -305,30 +305,34 @@ func (*Viztest) Colors256(ctx context.Context) (string, error) {
 		Stdout(ctx)
 }
 
+// NOTE: All Dockerfile examples must use different images to ensure they don't
+// steal spans from each other when run in parallel.
+
 func (*Viztest) DockerBuildCached() *dagger.Container {
 	return dag.Directory().
-		WithNewFile("Dockerfile", `FROM alpine
-RUN echo hello, world!`).
+		WithNewFile("Dockerfile", `FROM busybox:1.36
+RUN echo hello, world!
+RUN echo we are both cached
+`).
 		DockerBuild()
 }
 
 func (*Viztest) DockerBuild() *dagger.Container {
 	return dag.Directory().
-		WithNewFile("bust", time.Now().String()).
-		WithNewFile("Dockerfile", `FROM alpine
+		WithNewFile("Dockerfile", `FROM busybox:1.35
+RUN echo the time is curently `+time.Now().String()+`
 RUN echo hello, world!
 RUN echo what is up?
-RUN echo im another layer`).
+RUN echo im another layer
+`).
 		DockerBuild()
 }
 
 func (*Viztest) DockerBuildFail() *dagger.Container {
 	return dag.Directory().
-		WithNewFile("bust", time.Now().String()).
-		WithNewFile("Dockerfile", `FROM alpine
+		WithNewFile("Dockerfile", `FROM busybox:1.34
+RUN echo the time is curently `+time.Now().String()+`
 RUN echo hello, world!
-RUN echo hello, world!
-RUN echo what is up?
 RUN echo im failing && false
 `).
 		DockerBuild()

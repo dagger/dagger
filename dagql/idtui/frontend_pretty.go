@@ -942,7 +942,7 @@ func (fe *frontendPretty) renderRow(out *termenv.Output, r *renderer, row *dagui
 }
 
 func (fe *frontendPretty) renderStepLogs(out *termenv.Output, r *renderer, row *dagui.TraceRow, final bool, prefix string) {
-	if row.IsRunningOrChildRunning || row.Span.IsFailed() || fe.Verbosity >= dagui.ExpandCompletedVerbosity {
+	if row.IsRunningOrChildRunning || row.Span.IsFailedOrCausedFailure() || fe.Verbosity >= dagui.ExpandCompletedVerbosity {
 		if logs := fe.logs.Logs[row.Span.ID]; logs != nil {
 			fe.renderLogs(out, r,
 				logs,
@@ -955,9 +955,12 @@ func (fe *frontendPretty) renderStepLogs(out *termenv.Output, r *renderer, row *
 }
 
 func (fe *frontendPretty) renderStepError(out *termenv.Output, r *renderer, span *dagui.Span, depth int, prefix string) {
-	if span.IsFailedOrCausedFailure() && span.Status.Description != "" {
+	for _, span := range span.Errors().Order {
 		// only print the first line
 		line := strings.Split(span.Status.Description, "\n")[0]
+		if line == "" {
+			line = "<no description>"
+		}
 		fmt.Fprint(out, prefix)
 		r.indent(out, depth)
 		fmt.Fprintf(out,

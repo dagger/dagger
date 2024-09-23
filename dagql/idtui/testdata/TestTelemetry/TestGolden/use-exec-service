@@ -32,7 +32,6 @@
 │
 │ $ Container.from(address: "alpine"): Container! X.Xs CACHED
 │ │ ✔ resolving docker.io/library/alpine:latest X.Xs
-│ │ $ pull docker.io/library/alpine:latest X.Xs CACHED
 │ ✔ .withServiceBinding(
 │ │ │ alias: "exec-service"
 │ │ │ service: ✔ Container.asService: Service! X.Xs

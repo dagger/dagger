@@ -11,12 +11,15 @@
 │ │ $ ModuleSource.resolveFromCaller: ModuleSource! X.Xs CACHED
 │ │ │ ✔ upload /app/dagql/idtui/viztest/broken from XXXXXXXXXXX (client id: XXXXXXXXXXX, session id: XXXXXXXXXXX) (exclude: **/.git) (include: dagger.json, ./**/*, **/go.mod, **/go.sum, **/go.work, **/go.work.sum, **/vendor/, **/*.go) X.Xs
 │ │ ✘ .asModule: Module! X.Xs
+│ │ ! process "go build -o /runtime ." did not complete successfully: exit code: 1
 │ │ │ ✘ Module.withSource(
 │ │ │ │ │ source: $ ModuleSource.resolveFromCaller: ModuleSource! X.Xs CACHED
 │ │ │ │ ): Module! X.Xs
+│ │ │ ! process "go build -o /runtime ." did not complete successfully: exit code: 1
 │ │ │ │ ✘ Container.withExec(args: ["go", "build", "-o", "/runtime", "."]): Container! X.Xs
 │ │ │ │ ┃ # dagger/broken
 │ │ │ │ ┃ ./main.go:6:6: undefined: ctx
+│ │ │ │ ! process "go build -o /runtime ." did not complete successfully: exit code: 1
 │ │ ✘ .initialize: Module! X.Xs
 │ │ ! failed to initialize module: failed to call module "broken" to get functions: call constructor: process "go build -o /runtime ." did not complete successfully: exit code: 1
 
@@ -27,3 +30,4 @@ Error logs:
 ✘ Container.withExec(args: ["go", "build", "-o", "/runtime", "."]): Container! X.Xs
 # dagger/broken
 ./main.go:6:6: undefined: ctx
+! process "go build -o /runtime ." did not complete successfully: exit code: 1

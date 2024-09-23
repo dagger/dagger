@@ -231,6 +231,30 @@ func (span *Span) IsFailedOrCausedFailure() bool {
 	return false
 }
 
+// Errors returns the individual errored spans contributing to the span's
+// Failed or CausedFailure status.
+func (span *Span) Errors() SpanSet {
+	errs := NewSpanSet()
+	if span.IsFailed() {
+		errs.Add(span)
+	}
+	for _, failed := range span.FailedLinks.Order {
+		errs.Add(failed)
+	}
+	for _, effect := range span.EffectIDs {
+		if span.db.FailedEffects[effect] {
+			if effectSpans := span.db.EffectSpans[effect]; effectSpans != nil {
+				for _, e := range effectSpans.Order {
+					if e.IsFailed() {
+						errs.Add(e)
+					}
+				}
+			}
+		}
+	}
+	return errs
+}
+
 func (span *Span) FailedReason() (bool, []string) {
 	var reasons []string
 	if span.Status.Code == codes.Error {

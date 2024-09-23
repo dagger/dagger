@@ -15,7 +15,6 @@
 │ ✔ container: Container! X.Xs
 │ $ .from(address: "redis"): Container! X.Xs CACHED
 │ │ ✔ resolving docker.io/library/redis:latest X.Xs
-│ │ $ pull docker.io/library/redis:latest X.Xs CACHED
 │ ✔ .withExposedPort(port: 6379): Container! X.Xs
 │ ✔ .asService: Service! X.Xs
 │ ┃ X:M XX XXX 20XX XX:XX:XX.XXX * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
