@@ -1,6 +1,27 @@
 import * as opentelemetry from "@opentelemetry/api"
 import { GraphQLClient } from "graphql-request"
 
+const createFetchWithTimeout =
+  (timeout: number) => async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (init?.signal) {
+      throw new Error(
+        "it looks like graphql-request started using AbortSignal on its own. Please check graphql-request's recent updates",
+      )
+    }
+
+    const controller = new AbortController()
+
+    const timerId = setTimeout(() => {
+      controller.abort()
+    }, timeout)
+
+    try {
+      return await fetch(input, { ...init, signal: controller.signal })
+    } finally {
+      clearTimeout(timerId)
+    }
+  }
+
 /**
  * Customer setter to inject trace parent into the request headers
  * This is required because `graphql-request` 7.0.1 changes its header
@@ -14,6 +35,7 @@ class CustomSetter {
 
 export function createGQLClient(port: number, token: string): GraphQLClient {
   const client = new GraphQLClient(`http://127.0.0.1:${port}/query`, {
+    fetch: createFetchWithTimeout(1000 * 60 * 30), // 30minutes timeout
     headers: {
       Authorization: "Basic " + Buffer.from(token + ":").toString("base64"),
     },
