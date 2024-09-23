@@ -128,13 +128,3 @@ SSH forwarding may fail when multiple keys are loaded in your SSH agent. This is
 
 1. Clear all loaded keys: `ssh-add -D`
 2. Add back only the required key: `ssh-add /path/to/key`
-
-### Environment variables are not automatically expanded
-
-Shell expansion characters (e.g., `~`) in the `SSH_AUTH_SOCK` environment variable are not automatically expanded. This is under active investigation in our [GitHub issue](https://github.com/dagger/dagger/issues/8337). Until this is resolved, the workaround is to use the full path instead of `~` when setting `SSH_AUTH_SOCK`.
-
-### `SSH_AUTH_SOCK` paths are not always handled correctly
-
-The Dagger CLI incorrectly handles the `SSH_AUTH_SOCK` path by converting it to a relative path from the Dagger CLI's current working directory. This can lead to issues with SSH forwarding, especially when the socket path is in the same directory tree as the working directory. A fix for this issue is [in progress](https://github.com/dagger/dagger/pull/8365)
-
-Until this is resolved, ensure that the `SSH_AUTH_SOCK` path is not on the same path as your current working directory (except for the root directory '/'). A simple workaround is to create a symlink in `/var/run` or `/tmp` that points to the value of `SSH_AUTH_SOCK`, and then export this new path as SSH_AUTH_SOCK.
