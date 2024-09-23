@@ -181,6 +181,7 @@ func (s *serviceSchema) up(ctx context.Context, svc dagql.Instance[*core.Service
 			"tunnel started",
 			"port", port.Port,
 			"protocol", port.Protocol.Network(),
+			"http_url", fmt.Sprintf("http://%s:%d", "localhost", port.Port),
 			"description", *port.Description,
 		)
 	}
