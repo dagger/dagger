@@ -19,7 +19,6 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
-use ReflectionFunction;
 use ReflectionMethod;
 use RuntimeException;
 
@@ -58,6 +57,17 @@ class DaggerFunctionTest extends TestCase
         DaggerFunction::fromReflection($reflection);
     }
 
+    #[Test]
+    #[DataProvider('provideNamesThatMayBeConstructors')]
+    public function itMayBeAConstructor(
+        bool $expected,
+        string $name,
+    ): void {
+        $sut = new DaggerFunction($name, null, [], new Type('void'));
+
+        self::assertSame($expected, $sut->isConstructor());
+    }
+
     #[Test, DataProvider('provideReflectionMethods')]
     public function ItBuildsFromReflectionMethod(
         DaggerFunction $expected,
@@ -66,6 +76,22 @@ class DaggerFunctionTest extends TestCase
         $actual = DaggerFunction::fromReflection($reflectionMethod);
 
         self::assertEquals($expected, $actual);
+    }
+
+    /** @return Generator<array{ 0: bool, 1:string }> */
+    public static function provideNamesThatMayBeConstructors(): Generator
+    {
+        $cases = [
+            [true, ''],
+            [false, '__construct'],
+            [false, '_construct'],
+            [false, 'construct'],
+            [false, '__toString'],
+        ];
+
+        foreach ($cases as [$isConstructor, $name]) {
+            yield $name => [$isConstructor, $name];
+        }
     }
 
     /** @return Generator<array{ 0: DaggerFunction, 1:ReflectionMethod}> */
