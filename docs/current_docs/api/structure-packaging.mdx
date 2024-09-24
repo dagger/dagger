@@ -15,12 +15,9 @@ You can split your Dagger module into multiple files, not just `main.go`. To do 
 
 ```
 .
-├── dagger
-│   ├── ...
-|   ├── internal
-│   └── ...
-│   ├── main.go
-│   └── utils.go
+│── ...
+│── main.go
+│── utils.go
 └── dagger.json
 ```
 
@@ -30,13 +27,10 @@ Additionally, you can also split your Dagger module into Go subpackages (for exa
 
 ```
 .
-├── dagger
-│   ├── ...
-|   ├── internal
-│   └── ...
-│   ├── main.go
-|   └── utils
-│       └── utils.go
+│── ...
+│── main.go
+|── utils
+│   └── utils.go
 └── dagger.json
 ```
 
