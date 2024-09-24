@@ -55,19 +55,22 @@ curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
 ```
 [View source](https://github.com/dagger/dagger/blob/main/install.sh)
 
-This installs `dagger` in `$HOME/.local/bin`:
+:::note
+This installs `dagger` in `$HOME/.local/bin` which is not generally in the user's $PATH
 
 ```shell
 type dagger
 dagger is $HOME/.local/bin/dagger
 ```
+:::
 
-If you want to install a specific version of `dagger`, you can run:
+
+If you want to set a specific version or install path, you can run:
 
 ```shell
-curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.13.3 sh
+curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.13.0 BIN_DIR=/usr/bin sudo -E sh
 
-./bin/dagger version
+/usr/bin/dagger version
 dagger v0.13.3 (registry.dagger.io/engine:v0.13.3) linux/amd64
 ```
 
