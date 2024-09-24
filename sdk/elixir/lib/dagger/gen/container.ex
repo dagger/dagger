@@ -456,6 +456,26 @@ defmodule Dagger.Container do
     }
   end
 
+  @doc """
+  Starts a Service and creates a tunnel that forwards traffic from the caller's network to that service.
+
+  Be sure to set any exposed ports before calling this api.
+  """
+  @spec up(t(), [{:ports, [Dagger.PortForward.t()]}, {:random, boolean() | nil}]) ::
+          :ok | {:error, term()}
+  def up(%__MODULE__{} = container, optional_args \\ []) do
+    query_builder =
+      container.query_builder
+      |> QB.select("up")
+      |> QB.maybe_put_arg("ports", optional_args[:ports])
+      |> QB.maybe_put_arg("random", optional_args[:random])
+
+    case Client.execute(container.client, query_builder) do
+      {:ok, _} -> :ok
+      error -> error
+    end
+  end
+
   @doc "Retrieves the user to be set for all commands."
   @spec user(t()) :: {:ok, String.t()} | {:error, term()}
   def user(%__MODULE__{} = container) do
@@ -463,6 +483,21 @@ defmodule Dagger.Container do
       container.query_builder |> QB.select("user")
 
     Client.execute(container.client, query_builder)
+  end
+
+  @doc "Retrieves this container plus the given OCI anotation."
+  @spec with_annotation(t(), String.t(), String.t()) :: Dagger.Container.t()
+  def with_annotation(%__MODULE__{} = container, name, value) do
+    query_builder =
+      container.query_builder
+      |> QB.select("withAnnotation")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("value", value)
+
+    %Dagger.Container{
+      query_builder: query_builder,
+      client: container.client
+    }
   end
 
   @doc "Configures default arguments for future commands."
@@ -900,6 +935,18 @@ defmodule Dagger.Container do
     }
   end
 
+  @doc "Retrieves this container minus the given OCI annotation."
+  @spec without_annotation(t(), String.t()) :: Dagger.Container.t()
+  def without_annotation(%__MODULE__{} = container, name) do
+    query_builder =
+      container.query_builder |> QB.select("withoutAnnotation") |> QB.put_arg("name", name)
+
+    %Dagger.Container{
+      query_builder: query_builder,
+      client: container.client
+    }
+  end
+
   @doc "Retrieves this container with unset default arguments for future commands."
   @spec without_default_args(t()) :: Dagger.Container.t()
   def without_default_args(%__MODULE__{} = container) do
@@ -971,6 +1018,18 @@ defmodule Dagger.Container do
   def without_file(%__MODULE__{} = container, path) do
     query_builder =
       container.query_builder |> QB.select("withoutFile") |> QB.put_arg("path", path)
+
+    %Dagger.Container{
+      query_builder: query_builder,
+      client: container.client
+    }
+  end
+
+  @doc "Retrieves this container with the files at the given paths removed."
+  @spec without_files(t(), [String.t()]) :: Dagger.Container.t()
+  def without_files(%__MODULE__{} = container, paths) do
+    query_builder =
+      container.query_builder |> QB.select("withoutFiles") |> QB.put_arg("paths", paths)
 
     %Dagger.Container{
       query_builder: query_builder,

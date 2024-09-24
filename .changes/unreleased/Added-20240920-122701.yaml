@@ -1,0 +1,12 @@
+kind: Added
+body: |-
+  Apply `ignore` function parameter metadata on Directory passed from the CLI.
+
+  This extends the usage of `ignore` to not only dir loaded with `defaultPath` but directory passed as function's param
+  from the CLI.
+
+  Note: ignore patterns are not applied for module to module calls.
+time: 2024-09-20T12:27:01.295001+02:00
+custom:
+  Author: TomChv
+  PR: "8436"

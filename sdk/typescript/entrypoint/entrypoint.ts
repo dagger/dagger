@@ -1,14 +1,14 @@
 import * as path from "path"
 import { fileURLToPath } from "url"
 
-import { dag } from "../api/client.gen.js"
-import { connection } from "../connect.js"
-import { Args } from "../introspector/registry/registry.js"
-import { scan } from "../introspector/scanner/scan.js"
-import { listFiles } from "../introspector/utils/files.js"
-import { invoke } from "./invoke.js"
-import { load } from "./load.js"
-import { register } from "./register.js"
+import { dag } from "../api/client.gen.ts"
+import { connection } from "../connect.ts"
+import { Args } from "../introspector/registry/registry.ts"
+import { scan } from "../introspector/scanner/scan.ts"
+import { listFiles } from "../introspector/utils/files.ts"
+import { invoke } from "./invoke.ts"
+import { load } from "./load.ts"
+import { register } from "./register.ts"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -59,6 +59,9 @@ export async function entrypoint() {
           })
         } catch (e) {
           if (e instanceof Error) {
+            if (e.cause) {
+              console.error(`${e.cause}`)
+            }
             console.error(`Error: ${e.message}`)
           } else {
             console.error(e)

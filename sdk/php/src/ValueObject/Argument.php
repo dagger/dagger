@@ -15,7 +15,7 @@ final readonly class Argument
 {
     public function __construct(
         public string $name,
-        public ?string $description,
+        public string $description,
         public ListOfType|Type $type,
         public ?Json $default = null,
     ) {
@@ -23,27 +23,35 @@ final readonly class Argument
 
     public static function fromReflection(ReflectionParameter $parameter): self
     {
-        $type = $parameter->getType() ??
-            throw new RuntimeException(sprintf(
-                'Argument "%s" cannot be supported without a typehint',
-                $parameter->name,
-            ));
+        $type = $parameter->getType() ?? throw new RuntimeException(sprintf(
+            'Argument "%s" cannot be supported without a typehint',
+            $parameter->name,
+        ));
 
+        /**
+         * @TODO remove once #[Argument] is removed
+         */
         $argument = (current($parameter
             ->getAttributes(Attribute\Argument::class)) ?: null)
-            ?->newInstance();
+            ?->newInstance()
+            ?->description;
+
+        $description = (current($parameter
+            ->getAttributes(Attribute\Doc::class)) ?: null)
+            ?->newInstance()
+            ?->description;
 
         $listOfType = (current($parameter
             ->getAttributes(Attribute\ListOfType::class)) ?: null)
             ?->newInstance();
 
         return new self(
-            $parameter->name,
-            $argument?->description,
-            $listOfType?->type === null ?
+            name: $parameter->name,
+            description: $description ?? $argument ?? '',
+            type: $listOfType?->type === null ?
                 Type::fromReflection($type) :
                 ListOfType::fromReflection($type, $listOfType),
-            self::getDefault($parameter),
+            default: self::getDefault($parameter),
         );
     }
 

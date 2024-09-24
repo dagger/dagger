@@ -41,6 +41,7 @@ func (sdk *SDK) All() *AllSDK {
 type sdkBase interface {
 	Lint(ctx context.Context) error
 	Test(ctx context.Context) error
+	TestPublish(ctx context.Context, tag string) error
 	Generate(ctx context.Context) (*dagger.Directory, error)
 	Bump(ctx context.Context, version string) (*dagger.Directory, error)
 }

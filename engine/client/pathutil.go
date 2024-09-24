@@ -1,6 +1,7 @@
 package client
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -55,4 +56,24 @@ func getDrive(path string) string {
 	}
 
 	return ""
+}
+
+// ExpandHomeDir expands a given path to its absolute form, handling home directory
+func ExpandHomeDir(homeDir string, path string) (string, error) {
+	if homeDir == "" {
+		return "", fmt.Errorf("homeDir is empty")
+	}
+
+	if path == "" {
+		return path, nil
+	}
+
+	if path[0] != '~' {
+		return path, nil
+	}
+	if len(path) > 1 && path[1] != '/' && path[1] != '\\' {
+		return "", errors.New("cannot expand home directory")
+	}
+
+	return strings.Replace(path, "~", homeDir, 1), nil
 }

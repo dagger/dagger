@@ -17,8 +17,8 @@ import (
 
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/dagql"
-	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -242,7 +242,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		if !ok {
 			return nil, fmt.Errorf("failed to find mod type for parent %q", fn.objDef.Name)
 		}
-		execMD.ParentIDs = map[digest.Digest]*call.ID{}
+		execMD.ParentIDs = map[digest.Digest]*resource.ID{}
 		if err := parentModType.CollectCoreIDs(ctx, opts.ParentTyped, execMD.ParentIDs); err != nil {
 			return nil, fmt.Errorf("failed to collect IDs from parent fields: %w", err)
 		}
@@ -268,7 +268,10 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 
 	ctr := fn.runtime
 
-	metaDir := NewScratchDirectory(mod.Query, mod.Query.Platform())
+	metaDir, err := NewScratchDirectory(ctx, mod.Query, mod.Query.Platform())
+	if err != nil {
+		return nil, fmt.Errorf("failed to create mod metadata directory: %w", err)
+	}
 	ctr, err = ctr.WithMountedDirectory(ctx, modMetaDirPath, metaDir, "", false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to mount mod metadata directory: %w", err)
@@ -330,15 +333,23 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		return nil, fmt.Errorf("failed to convert return value: %w", err)
 	}
 
+	// Get the client ID actually used during the function call - this might not
+	// be the same as execMD.ClientID if the function call was cached at the
+	// buildkit level
+	clientID, err := ctr.usedClientID(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("could not get used client id")
+	}
+
 	// If the function returned anything that's isolated per-client, this caller client should
 	// have access to it now since it was returned to them (i.e. secrets/sockets/etc).
-	returnedIDs := map[digest.Digest]*call.ID{}
+	returnedIDs := map[digest.Digest]*resource.ID{}
 	if err := fn.returnType.CollectCoreIDs(ctx, returnValueTyped, returnedIDs); err != nil {
 		return nil, fmt.Errorf("failed to collect IDs: %w", err)
 	}
 
 	for _, id := range returnedIDs {
-		if err := fn.root.AddClientResourcesFromID(ctx, id, execMD.ClientID, false); err != nil {
+		if err := fn.root.AddClientResourcesFromID(ctx, id, clientID, false); err != nil {
 			return nil, fmt.Errorf("failed to add client resources from ID: %w", err)
 		}
 	}

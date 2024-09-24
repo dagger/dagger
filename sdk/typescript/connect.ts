@@ -1,9 +1,9 @@
 import * as opentelemetry from "@opentelemetry/api"
 
-import { Client } from "./api/client.gen.js"
-import { ConnectOpts } from "./connectOpts.js"
-import { Context, defaultContext } from "./context/context.js"
-import * as telemetry from "./telemetry/telemetry.js"
+import { Client } from "./api/client.gen.ts"
+import { ConnectOpts } from "./connectOpts.ts"
+import { Context, defaultContext } from "./context/context.ts"
+import * as telemetry from "./telemetry/telemetry.ts"
 
 export type CallbackFct = (client: Client) => Promise<void>
 

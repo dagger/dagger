@@ -1,8 +1,8 @@
 import ts from "typescript"
 
-import { TypeDefKind } from "../../../api/client.gen.js"
-import { TypeDef } from "../typeDefs.js"
-import { isEnumDecorated } from "./enum.js"
+import { TypeDefKind } from "../../../api/client.gen.ts"
+import { TypeDef } from "../typeDefs.ts"
+import { isEnumDecorated } from "./enum.ts"
 
 /**
  * Convert a type into a Dagger Typedef using dynamic typing.

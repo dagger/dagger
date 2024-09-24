@@ -354,8 +354,34 @@ type Container {
     insecureRootCapabilities: Boolean = false
   ): Container!
 
+  """
+  Starts a Service and creates a tunnel that forwards traffic from the caller's network to that service.
+  
+  Be sure to set any exposed ports before calling this api.
+  """
+  up(
+    """
+    List of frontend/backend port mappings to forward.
+    
+    Frontend is the port accepting traffic on the host, backend is the service port.
+    """
+    ports: [PortForward!] = []
+
+    """Bind each tunnel port to a random port on the host."""
+    random: Boolean = false
+  ): Void
+
   """Retrieves the user to be set for all commands."""
   user: String!
+
+  """Retrieves this container plus the given OCI anotation."""
+  withAnnotation(
+    """The name of the annotation."""
+    name: String!
+
+    """The value of the annotation."""
+    value: String!
+  ): Container!
 
   """Configures default arguments for future commands."""
   withDefaultArgs(
@@ -694,6 +720,12 @@ type Container {
     permissions: Int = 420
   ): Container!
 
+  """Retrieves this container minus the given OCI annotation."""
+  withoutAnnotation(
+    """The name of the annotation."""
+    name: String!
+  ): Container!
+
   """
   Retrieves this container with unset default arguments for future commands.
   """
@@ -730,6 +762,12 @@ type Container {
   withoutFile(
     """Location of the file to remove (e.g., "/file.txt")."""
     path: String!
+  ): Container!
+
+  """Retrieves this container with the files at the given paths removed."""
+  withoutFiles(
+    """Location of the files to remove (e.g., ["/file.txt"])."""
+    paths: [String!]!
   ): Container!
 
   """
@@ -1231,6 +1269,12 @@ type Directory {
   withoutFile(
     """Location of the file to remove (e.g., "/file.txt")."""
     path: String!
+  ): Directory!
+
+  """Retrieves this directory with the files at the given paths removed."""
+  withoutFiles(
+    """Location of the file to remove (e.g., ["/file.txt"])."""
+    paths: [String!]!
   ): Directory!
 
   """
@@ -2106,6 +2150,9 @@ type ModuleSource {
 
   """Load a directory from the caller optionally with a given view applied."""
   resolveDirectoryFromCaller(
+    """Patterns to ignore when loading the directory."""
+    ignore: [String!] = []
+
     """The path on the caller's filesystem to load."""
     path: String!
 

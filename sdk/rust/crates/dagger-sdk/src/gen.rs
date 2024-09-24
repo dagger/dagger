@@ -1528,6 +1528,16 @@ pub struct ContainerTerminalOpts<'a> {
     pub insecure_root_capabilities: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct ContainerUpOpts {
+    /// List of frontend/backend port mappings to forward.
+    /// Frontend is the port accepting traffic on the host, backend is the service port.
+    #[builder(setter(into, strip_option), default)]
+    pub ports: Option<Vec<PortForward>>,
+    /// Bind each tunnel port to a random port on the host.
+    #[builder(setter(into, strip_option), default)]
+    pub random: Option<bool>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithDefaultTerminalCmdOpts {
     /// Provides Dagger access to the executed command.
     /// Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
@@ -2152,10 +2162,52 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Starts a Service and creates a tunnel that forwards traffic from the caller's network to that service.
+    /// Be sure to set any exposed ports before calling this api.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn up(&self) -> Result<Void, DaggerError> {
+        let query = self.selection.select("up");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Starts a Service and creates a tunnel that forwards traffic from the caller's network to that service.
+    /// Be sure to set any exposed ports before calling this api.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn up_opts(&self, opts: ContainerUpOpts) -> Result<Void, DaggerError> {
+        let mut query = self.selection.select("up");
+        if let Some(ports) = opts.ports {
+            query = query.arg("ports", ports);
+        }
+        if let Some(random) = opts.random {
+            query = query.arg("random", random);
+        }
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Retrieves the user to be set for all commands.
     pub async fn user(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("user");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// Retrieves this container plus the given OCI anotation.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the annotation.
+    /// * `value` - The value of the annotation.
+    pub fn with_annotation(&self, name: impl Into<String>, value: impl Into<String>) -> Container {
+        let mut query = self.selection.select("withAnnotation");
+        query = query.arg("name", name.into());
+        query = query.arg("value", value.into());
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// Configures default arguments for future commands.
     ///
@@ -3109,6 +3161,20 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Retrieves this container minus the given OCI annotation.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the annotation.
+    pub fn without_annotation(&self, name: impl Into<String>) -> Container {
+        let mut query = self.selection.select("withoutAnnotation");
+        query = query.arg("name", name.into());
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Retrieves this container with unset default arguments for future commands.
     pub fn without_default_args(&self) -> Container {
         let query = self.selection.select("withoutDefaultArgs");
@@ -3220,6 +3286,23 @@ impl Container {
     pub fn without_file(&self, path: impl Into<String>) -> Container {
         let mut query = self.selection.select("withoutFile");
         query = query.arg("path", path.into());
+        Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves this container with the files at the given paths removed.
+    ///
+    /// # Arguments
+    ///
+    /// * `paths` - Location of the files to remove (e.g., ["/file.txt"]).
+    pub fn without_files(&self, paths: Vec<impl Into<String>>) -> Container {
+        let mut query = self.selection.select("withoutFiles");
+        query = query.arg(
+            "paths",
+            paths.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
         Container {
             proc: self.proc.clone(),
             selection: query,
@@ -4160,6 +4243,23 @@ impl Directory {
     pub fn without_file(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("withoutFile");
         query = query.arg("path", path.into());
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Retrieves this directory with the files at the given paths removed.
+    ///
+    /// # Arguments
+    ///
+    /// * `paths` - Location of the file to remove (e.g., ["/file.txt"]).
+    pub fn without_files(&self, paths: Vec<impl Into<String>>) -> Directory {
+        let mut query = self.selection.select("withoutFiles");
+        query = query.arg(
+            "paths",
+            paths.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
         Directory {
             proc: self.proc.clone(),
             selection: query,
@@ -5585,6 +5685,9 @@ pub struct ModuleSourceAsModuleOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ModuleSourceResolveDirectoryFromCallerOpts<'a> {
+    /// Patterns to ignore when loading the directory.
+    #[builder(setter(into, strip_option), default)]
+    pub ignore: Option<Vec<&'a str>>,
     /// If set, the name of the view to apply to the path.
     #[builder(setter(into, strip_option), default)]
     pub view_name: Option<&'a str>,
@@ -5765,6 +5868,9 @@ impl ModuleSource {
         query = query.arg("path", path.into());
         if let Some(view_name) = opts.view_name {
             query = query.arg("viewName", view_name);
+        }
+        if let Some(ignore) = opts.ignore {
+            query = query.arg("ignore", ignore);
         }
         Directory {
             proc: self.proc.clone(),

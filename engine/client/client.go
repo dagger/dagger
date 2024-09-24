@@ -67,7 +67,6 @@ type Params struct {
 	SecretToken string
 
 	RunnerHost string // host of dagger engine runner serving buildkit apis
-	UserAgent  string
 
 	DisableHostRW bool
 
@@ -259,7 +258,6 @@ func (c *Client) startEngine(ctx context.Context) (rerr error) {
 	provisionCtx, provisionSpan := Tracer(ctx).Start(ctx, "starting engine")
 	provisionCtx, provisionCancel := context.WithTimeout(provisionCtx, 10*time.Minute)
 	c.connector, err = driver.Provision(provisionCtx, remote, &drivers.DriverOpts{
-		UserAgent:        c.UserAgent,
 		DaggerCloudToken: cloudToken,
 		GPUSupport:       os.Getenv(drivers.EnvGPUSupport),
 	})
@@ -681,13 +679,8 @@ func (c *Client) exportLogs(ctx context.Context, httpClient *httpClient) error {
 		if err := protojson.Unmarshal(data, &req); err != nil {
 			return fmt.Errorf("unmarshal spans: %w", err)
 		}
-
-		logs := telemetry.LogsFromPB(req.GetResourceLogs())
-
-		slog.ExtraDebug("received logs from engine", "len", len(logs))
-
-		if err := c.EngineLogs.Export(ctx, logs); err != nil {
-			return fmt.Errorf("export %d logs: %w", len(logs), err)
+		if err := enginetel.ReexportLogsFromPB(ctx, c.EngineLogs, &req); err != nil {
+			return fmt.Errorf("re-export logs: %w", err)
 		}
 		return nil
 	})
@@ -1040,13 +1033,15 @@ func allCacheConfigsFromEnv() (cacheImportConfigs []*controlapi.CacheOptionsEntr
 }
 
 func (c *Client) clientMetadata() engine.ClientMetadata {
-	// retrieve SSH_AUTH_SOCK path and make it relative
 	sshAuthSock := os.Getenv("SSH_AUTH_SOCK")
-	if sshAuthSock != "" {
-		if cwd, err := os.Getwd(); err == nil {
-			if relPath, err := LexicalRelativePath(cwd, sshAuthSock); err == nil {
-				sshAuthSock = relPath
-			}
+	// expand ~ into absolute path for consistent behavior with CLI
+	// ⚠️ When updating clientMetadata's logic, please also update setupNestedClient
+	// for consistent behavior of CLI inside nested execution
+	homeDir, err := os.UserHomeDir()
+	if err == nil {
+		expandedPath, err := ExpandHomeDir(homeDir, sshAuthSock)
+		if err == nil {
+			sshAuthSock = expandedPath
 		}
 	}
 
@@ -1148,7 +1143,7 @@ func (f DirectConn) Do(r *http.Request) (*http.Response, error) {
 }
 
 func (f DirectConn) Host() string {
-	return ":mem:"
+	return "dagger"
 }
 
 func (f DirectConn) Close() error {

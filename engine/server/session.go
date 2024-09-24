@@ -47,6 +47,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/cache"
+	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 )
@@ -395,7 +396,7 @@ type ClientInitOpts struct {
 	// Needed to handle finding any secrets, sockets or other client resources
 	// that this client should have access to due to being set in the parent
 	// object.
-	ParentIDs map[digest.Digest]*call.ID
+	ParentIDs map[digest.Digest]*resource.ID
 }
 
 // requires that client.stateMu is held
@@ -412,7 +413,7 @@ func (srv *Server) initializeDaggerClient(
 		if opts.CallerClientID == "" {
 			return fmt.Errorf("caller client ID is not set")
 		}
-		if err := srv.addClientResourcesFromID(ctx, client, opts.CallID, opts.CallerClientID, true); err != nil {
+		if err := srv.addClientResourcesFromID(ctx, client, &resource.ID{ID: *opts.CallID}, opts.CallerClientID, true); err != nil {
 			return fmt.Errorf("failed to add client resources from ID: %w", err)
 		}
 	}
@@ -606,6 +607,7 @@ func (srv *Server) initializeDaggerClient(
 		)),
 	}
 	loggerOpts := []sdklog.LoggerProviderOption{
+		sdklog.WithResource(telemetry.Resource),
 		sdklog.WithProcessor(
 			sdklog.NewBatchProcessor(
 				srv.telemetryPubSub.Logs(client),

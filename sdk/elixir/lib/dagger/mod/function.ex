@@ -33,8 +33,14 @@ defmodule Dagger.Mod.Function do
         dag
         |> define_type(Dagger.Client.type_def(dag), type)
 
+      opts =
+        arg_def
+        |> Keyword.take([:doc, :default_path, :ignore])
+        |> Enum.reject(fn {_, value} -> is_nil(value) end)
+        |> Enum.map(&normalize_arg_option/1)
+
       fun
-      |> Dagger.Function.with_arg(name, type_def)
+      |> Dagger.Function.with_arg(name, type_def, opts)
     end)
   end
 
@@ -76,4 +82,7 @@ defmodule Dagger.Mod.Function do
         |> Dagger.TypeDef.with_object(name)
     end
   end
+
+  defp normalize_arg_option({:doc, doc}), do: {:description, doc}
+  defp normalize_arg_option(opt), do: opt
 end

@@ -2804,6 +2804,203 @@ func (t *Test) GetCensored(ctx context.Context) (string, error) {
 			require.NoError(t, err)
 			require.Equal(t, "***\n", censoredOut)
 		})
+
+		t.Run("embedded through struct field", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+			ctr := c.Container().From(golangImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
+
+			ctr = ctr.
+				WithWorkdir("/work/dep").
+				With(daggerExec("init", "--name=dep", "--sdk=go", "--source=.")).
+				WithNewFile("main.go", `package main
+
+import (
+	"dagger/dep/internal/dagger"
+)
+
+type Dep struct {}
+
+type SecretMount struct {
+	Secret *dagger.Secret
+	Path string
+}
+
+func (m *Dep) SecretMount(path string) *SecretMount {
+	return &SecretMount{
+		Secret: dag.SetSecret("foo", "hello from foo"),
+		Path:   path,
+	}
+}
+
+func (m *SecretMount) Mount(ctr *dagger.Container) *dagger.Container {
+	return ctr.WithMountedSecret(m.Path, m.Secret)
+}
+`,
+				)
+
+			ctr = ctr.
+				WithWorkdir("/work").
+				With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+				With(daggerExec("install", "./dep")).
+				WithNewFile("main.go", `package main
+
+import (
+	"context"
+)
+
+type Test struct {}
+
+func (m *Test) Test(ctx context.Context) (string, error) {
+	mount := dag.Dep().SecretMount("/mnt/secret")
+	return dag.Container().
+		From("alpine").
+		With(mount.Mount).
+		WithExec([]string{"sh", "-c", "cat /mnt/secret | tr [a-z] [A-Z]"}).
+		Stdout(ctx)
+}
+`,
+				)
+
+			out, err := ctr.With(daggerCall("test")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "HELLO FROM FOO", out)
+		})
+
+		t.Run("embedded through private struct field", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+			ctr := c.Container().From(golangImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
+
+			ctr = ctr.
+				WithWorkdir("/work/dep").
+				With(daggerExec("init", "--name=dep", "--sdk=go", "--source=.")).
+				WithNewFile("main.go", `package main
+
+import (
+	"dagger/dep/internal/dagger"
+)
+
+type Dep struct {}
+
+type SecretMount struct {
+	// +private
+	Secret *dagger.Secret
+	// +private
+	Path string
+}
+
+func (m *Dep) SecretMount(path string) *SecretMount {
+	return &SecretMount{
+		Secret: dag.SetSecret("foo", "hello from foo"),
+		Path:   path,
+	}
+}
+
+func (m *SecretMount) Mount(ctr *dagger.Container) *dagger.Container {
+	return ctr.WithMountedSecret(m.Path, m.Secret)
+}
+`,
+				)
+
+			ctr = ctr.
+				WithWorkdir("/work").
+				With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+				With(daggerExec("install", "./dep")).
+				WithNewFile("main.go", `package main
+
+import (
+	"context"
+)
+
+type Test struct {}
+
+func (m *Test) Test(ctx context.Context) (string, error) {
+	mount := dag.Dep().SecretMount("/mnt/secret")
+	return dag.Container().
+		From("alpine").
+		With(mount.Mount).
+		WithExec([]string{"sh", "-c", "cat /mnt/secret | tr [a-z] [A-Z]"}).
+		Stdout(ctx)
+}
+`,
+				)
+
+			out, err := ctr.With(daggerCall("test")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "HELLO FROM FOO", out)
+		})
+
+		t.Run("cached", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+			ctr := c.Container().From(golangImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
+
+			ctr = ctr.
+				WithWorkdir("/work/dep").
+				With(daggerExec("init", "--name=dep", "--sdk=go", "--source=.")).
+				WithNewFile("main.go", `package main
+
+import (
+	"dagger/dep/internal/dagger"
+)
+
+type Dep struct {}
+
+type SecretMount struct {
+	Secret *dagger.Secret
+	Path string
+}
+
+func (m *Dep) SecretMount(path string) *SecretMount {
+	return &SecretMount{
+		Secret: dag.SetSecret("foo", "hello from mount"),
+		Path:   path,
+	}
+}
+
+func (m *SecretMount) Mount(ctr *dagger.Container) *dagger.Container {
+	return ctr.WithMountedSecret(m.Path, m.Secret)
+}
+`,
+				)
+
+			ctr = ctr.
+				WithWorkdir("/work").
+				With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+				With(daggerExec("install", "./dep")).
+				WithNewFile("main.go", `package main
+
+import (
+	"context"
+  "fmt"
+)
+
+type Test struct {}
+
+func (m *Test) Foo(ctx context.Context) (string, error) {
+  return m.impl(ctx, "foo")
+}
+
+func (m *Test) Bar(ctx context.Context) (string, error) {
+  return m.impl(ctx, "bar")
+}
+
+func (m *Test) impl(ctx context.Context, name string) (string, error) {
+	mount := dag.Dep().SecretMount("/mnt/secret")
+	return dag.Container().
+		From("alpine").
+		With(mount.Mount).
+		WithExec([]string{"sh", "-c", fmt.Sprintf("(echo %s && cat /mnt/secret) | tr [a-z] [A-Z]", name)}).
+		Stdout(ctx)
+}
+`,
+				)
+
+			out, err := ctr.With(daggerQuery("{test{foo,bar}}")).Stdout(ctx)
+			require.NoError(t, err)
+			require.JSONEq(t, `{"test": {"foo": "FOO\nHELLO FROM MOUNT", "bar": "BAR\nHELLO FROM MOUNT"}}`, out)
+		})
 	})
 
 	t.Run("parent fields", func(ctx context.Context, t *testctx.T) {
@@ -2822,6 +3019,48 @@ import (
 )
 
 type Test struct {
+	Ctr *dagger.Container
+}
+
+func (t *Test) FnA() *Test {
+	secret := dag.SetSecret("FOO", "omg")
+	t.Ctr = dag.Container().From("`+alpineImage+`").
+		WithSecretVariable("SECRET", secret)
+	return t
+}
+
+func (t *Test) FnB(ctx context.Context) (string, error) {
+	return t.Ctr.
+		WithExec([]string{"sh", "-c", "echo $SECRET | base64"}).
+		Stdout(ctx)
+}
+`,
+			)
+
+		encodedOut, err := ctr.With(daggerCall("fn-a", "fn-b")).Stdout(ctx)
+		require.NoError(t, err)
+		decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encodedOut))
+		require.NoError(t, err)
+		require.Equal(t, "omg\n", string(decoded))
+	})
+
+	t.Run("private parent fields", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		ctr := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
+
+		ctr = ctr.
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+			WithNewFile("main.go", `package main
+
+import (
+	"context"
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {
+	// +private
 	Ctr *dagger.Container
 }
 
@@ -4767,67 +5006,85 @@ func (t *Test) IgnoreDirButKeepFileInSubdir(
 }`)).
 		WithWorkdir("/work")
 
-	t.Run("ignore all", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerCall("ignore-all", "entries")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "", out)
+	t.Run("ignore with context directory", func(ctx context.Context, t *testctx.T) {
+		t.Run("ignore all", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCall("ignore-all", "entries")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "", out)
+		})
+
+		t.Run("ignore all then reverse ignore all", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCall("ignore-then-reverse-ignore", "entries")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, ".gitattributes\n.gitignore\ndagger.gen.go\ngo.mod\ngo.sum\ninternal\nmain.go\n", out)
+		})
+
+		t.Run("ignore all then reverse ignore then exclude files", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCall("ignore-then-reverse-ignore-then-exclude-git-files", "entries")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "dagger.gen.go\ngo.mod\ngo.sum\ninternal\nmain.go\n", out)
+		})
+
+		t.Run("ignore all then exclude files then reverse ignore", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCall("ignore-then-exclude-files-then-reverse-ignore", "entries")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, ".gitattributes\n.gitignore\ndagger.gen.go\ngo.mod\ngo.sum\ninternal\nmain.go\n", out)
+		})
+
+		t.Run("ignore dir", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCall("ignore-dir", "entries")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, ".gitattributes\n.gitignore\ndagger.gen.go\ngo.mod\ngo.sum\nmain.go\n", out)
+		})
+
+		t.Run("ignore everything but main.go", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCall("ignore-everything-but-main-go", "entries")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "main.go\n", out)
+		})
+
+		t.Run("no ignore", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCall("no-ignore", "entries")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, ".gitattributes\n.gitignore\ndagger.gen.go\ngo.mod\ngo.sum\ninternal\nmain.go\n", out)
+		})
+
+		t.Run("ignore every go files except main.go", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCall("ignore-every-go-file-except-main-go", "entries")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, ".gitattributes\n.gitignore\ngo.mod\ngo.sum\ninternal\nmain.go\n", out)
+
+			// Verify the directories exist but files are correctlyignored
+			out, err = modGen.With(daggerCall("ignore-every-go-file-except-main-go", "directory", "--path", "internal", "entries")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "dagger\nquerybuilder\ntelemetry\n", out)
+
+			out, err = modGen.With(daggerCall("ignore-every-go-file-except-main-go", "directory", "--path", "internal/telemetry", "entries")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "", out)
+		})
+
+		t.Run("ignore dir but keep file in subdir", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCall("ignore-dir-but-keep-file-in-subdir", "directory", "--path", "internal/telemetry", "entries")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "proxy.go\n", out)
+		})
 	})
 
-	t.Run("ignore all then reverse ignore all", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerCall("ignore-then-reverse-ignore", "entries")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, ".gitattributes\n.gitignore\ndagger.gen.go\ngo.mod\ngo.sum\ninternal\nmain.go\n", out)
-	})
+	// We don't need to test all ignore pattenrs, just that it works with given directory instead of the context one and that
+	// ignore is correctly applied.
+	t.Run("ignore with argument directory", func(ctx context.Context, t *testctx.T) {
+		t.Run("ignore all", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCall("ignore-all", "--dir", ".", "entries")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, "", out)
+		})
 
-	t.Run("ignore all then reverse ignore then exclude files", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerCall("ignore-then-reverse-ignore-then-exclude-git-files", "entries")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "dagger.gen.go\ngo.mod\ngo.sum\ninternal\nmain.go\n", out)
-	})
-
-	t.Run("ignore all then exclude files then reverse ignore", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerCall("ignore-then-exclude-files-then-reverse-ignore", "entries")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, ".gitattributes\n.gitignore\ndagger.gen.go\ngo.mod\ngo.sum\ninternal\nmain.go\n", out)
-	})
-
-	t.Run("ignore dir", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerCall("ignore-dir", "entries")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, ".gitattributes\n.gitignore\ndagger.gen.go\ngo.mod\ngo.sum\nmain.go\n", out)
-	})
-
-	t.Run("ignore everything but main.go", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerCall("ignore-everything-but-main-go", "entries")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "main.go\n", out)
-	})
-
-	t.Run("no ignore", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerCall("no-ignore", "entries")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, ".gitattributes\n.gitignore\ndagger.gen.go\ngo.mod\ngo.sum\ninternal\nmain.go\n", out)
-	})
-
-	t.Run("ignore every go files except main.go", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerCall("ignore-every-go-file-except-main-go", "entries")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, ".gitattributes\n.gitignore\ngo.mod\ngo.sum\ninternal\nmain.go\n", out)
-
-		// Verify the directories exist but files are correctlyignored
-		out, err = modGen.With(daggerCall("ignore-every-go-file-except-main-go", "directory", "--path", "internal", "entries")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "dagger\nquerybuilder\ntelemetry\n", out)
-
-		out, err = modGen.With(daggerCall("ignore-every-go-file-except-main-go", "directory", "--path", "internal/telemetry", "entries")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "", out)
-	})
-
-	t.Run("ignore dir but keep file in subdir", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerCall("ignore-dir-but-keep-file-in-subdir", "directory", "--path", "internal/telemetry", "entries")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "proxy.go\n", out)
+		t.Run("ignore all then reverse ignore all with different dir than the one set in context", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCall("ignore-then-reverse-ignore", "--dir", "/work", "entries")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, ".git\nLICENSE\nbackend\ndagger\ndagger.json\nfrontend\n", out)
+		})
 	})
 }
 
@@ -4989,6 +5246,10 @@ func mountedPrivateRepoSocket(c *dagger.Client, t *testctx.T) (dagger.WithContai
 	return func(ctr *dagger.Container) *dagger.Container {
 		sock := c.Host().UnixSocket(sockPath)
 		if sock != nil {
+			// Ensure that HOME env var is set, to ensure homePath expension in test suite
+			homeDir, _ := os.UserHomeDir()
+			ctr = ctr.WithEnvVariable("HOME", homeDir)
+
 			ctr = ctr.WithUnixSocket("/sock/unix-socket", sock)
 			ctr = ctr.WithEnvVariable("SSH_AUTH_SOCK", "/sock/unix-socket")
 		}
@@ -5262,5 +5523,71 @@ func (ModuleSuite) TestSSHAgentConnection(ctx context.Context, t *testctx.T) {
 			}
 			wg.Wait()
 		})
+	})
+}
+
+func (ModuleSuite) TestSSHAuthSockPathHandling(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	repoURL := "git@gitlab.com:dagger-modules/private/test/more/dagger-test-modules-private.git"
+
+	t.Run("SSH auth with home expansion and symlink", func(ctx context.Context, t *testctx.T) {
+		mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
+		defer cleanup()
+
+		ctr := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			With(mountedSocket).
+			WithExec([]string{"mkdir", "-p", "/home/dagger"}).
+			WithEnvVariable("HOME", "/home/dagger").
+			WithExec([]string{"ln", "-s", "/sock/unix-socket", "/home/dagger/.ssh-sock"}).
+			WithEnvVariable("SSH_AUTH_SOCK", "~/.ssh-sock")
+
+		out, err := ctr.
+			WithWorkdir("/work/some/subdir").
+			WithExec([]string{"mkdir", "-p", "/home/dagger"}).
+			WithExec([]string{"sh", "-c", "cd", "/work/some/subdir"}).
+			With(daggerFunctions("-m", repoURL)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		lines := strings.Split(out, "\n")
+		require.Contains(t, lines, "fn     -")
+	})
+
+	t.Run("SSH auth from different relative paths", func(ctx context.Context, t *testctx.T) {
+		mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
+		defer cleanup()
+
+		ctr := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			With(mountedSocket).
+			WithExec([]string{"mkdir", "-p", "/work/subdir"})
+
+		// Test from same directory as the socket
+		out, err := ctr.
+			WithWorkdir("/sock").
+			With(daggerFunctions("-m", repoURL)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		lines := strings.Split(out, "\n")
+		require.Contains(t, lines, "fn     -")
+
+		// Test from a subdirectory
+		out, err = ctr.
+			WithWorkdir("/work/subdir").
+			With(daggerFunctions("-m", repoURL)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		lines = strings.Split(out, "\n")
+		require.Contains(t, lines, "fn     -")
+
+		// Test from parent directory
+		out, err = ctr.
+			WithWorkdir("/").
+			With(daggerFunctions("-m", repoURL)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		lines = strings.Split(out, "\n")
+		require.Contains(t, lines, "fn     -")
 	})
 }

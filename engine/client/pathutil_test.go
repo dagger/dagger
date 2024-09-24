@@ -33,6 +33,18 @@ func TestLexicalRelativePath(t *testing.T) {
 			expected: ".",
 		},
 		{
+			name:     "Auth Sock",
+			cwdPath:  "/Users/user/project",
+			modPath:  "/Users/user/.ssh/auth.sock",
+			expected: "../.ssh/auth.sock",
+		},
+		{
+			name:     "Auth Sock",
+			cwdPath:  "/Users/user/project",
+			modPath:  "/Users/user/./.1password/agent.sock",
+			expected: "../.1password/agent.sock",
+		},
+		{
 			name:     "Windows style paths",
 			cwdPath:  `C:\Users\user`,
 			modPath:  `C:\Users\user\project`,

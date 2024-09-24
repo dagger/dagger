@@ -22,6 +22,7 @@ import (
 
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/slog"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/vito/go-sse/sse"
 )
 
@@ -55,7 +56,7 @@ func (ps *PubSub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ps.mux.ServeHTTP(w, r)
 }
 
-func (ps *PubSub) TracesHandler(rw http.ResponseWriter, r *http.Request) { //nolint: dupl
+func (ps *PubSub) TracesHandler(rw http.ResponseWriter, r *http.Request) {
 	sessionID := r.Header.Get("X-Dagger-Session-ID")
 	clientID := r.Header.Get("X-Dagger-Client-ID")
 	client, err := ps.srv.getClient(sessionID, clientID)
@@ -100,7 +101,7 @@ func (ps *PubSub) TracesHandler(rw http.ResponseWriter, r *http.Request) { //nol
 	rw.WriteHeader(http.StatusCreated)
 }
 
-func (ps *PubSub) LogsHandler(rw http.ResponseWriter, r *http.Request) { //nolint: dupl
+func (ps *PubSub) LogsHandler(rw http.ResponseWriter, r *http.Request) {
 	sessionID := r.Header.Get("X-Dagger-Session-ID")
 	clientID := r.Header.Get("X-Dagger-Client-ID")
 	client, err := ps.srv.getClient(sessionID, clientID)
@@ -124,14 +125,12 @@ func (ps *PubSub) LogsHandler(rw http.ResponseWriter, r *http.Request) { //nolin
 		return
 	}
 
-	logs := telemetry.LogsFromPB(req.ResourceLogs)
-
-	slog.Debug("exporting logs to clients", "logs", len(logs), "clients", len(client.parents)+1)
+	slog.Debug("exporting logs to clients", "clients", len(client.parents)+1)
 
 	eg := new(errgroup.Group)
 	for _, c := range append([]*daggerClient{client}, client.parents...) {
 		eg.Go(func() error {
-			if err := ps.Logs(c).Export(r.Context(), logs); err != nil {
+			if err := enginetel.ReexportLogsFromPB(r.Context(), ps.Logs(c), &req); err != nil {
 				return fmt.Errorf("export to %s: %w", c.clientID, err)
 			}
 			return nil
@@ -148,7 +147,7 @@ func (ps *PubSub) LogsHandler(rw http.ResponseWriter, r *http.Request) { //nolin
 
 const otlpBatchSize = 1000
 
-func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request, client *daggerClient) error { //nolint: dupl
+func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request, client *daggerClient) error {
 	return ps.sseHandler(w, r, client, func(ctx context.Context, db *sql.DB, lastID string) (*sse.Event, bool, error) {
 		var since int64
 		if lastID != "" {
@@ -188,7 +187,7 @@ func (ps *PubSub) TracesSubscribeHandler(w http.ResponseWriter, r *http.Request,
 	})
 }
 
-func (ps *PubSub) LogsSubscribeHandler(w http.ResponseWriter, r *http.Request, client *daggerClient) error { //nolint: dupl
+func (ps *PubSub) LogsSubscribeHandler(w http.ResponseWriter, r *http.Request, client *daggerClient) error {
 	return ps.sseHandler(w, r, client, func(ctx context.Context, db *sql.DB, lastID string) (*sse.Event, bool, error) {
 		var since int64
 		if lastID != "" {
@@ -208,14 +207,10 @@ func (ps *PubSub) LogsSubscribeHandler(w http.ResponseWriter, r *http.Request, c
 		if len(logs) == 0 {
 			return nil, false, nil
 		}
-		recs := make([]sdklog.Record, len(logs))
-		for i, log := range logs {
-			recs[i] = log.Record()
-			since = log.ID
-		}
+		since = logs[len(logs)-1].ID
 		// Marshal the logs to OTLP.
 		payload, err := protojson.Marshal(&collogspb.ExportLogsServiceRequest{
-			ResourceLogs: telemetry.LogsToPB(recs),
+			ResourceLogs: clientdb.LogsToPB(logs),
 		})
 		if err != nil {
 			return nil, false, fmt.Errorf("marshal logs: %w", err)
@@ -280,19 +275,19 @@ func (ps SpansPubSub) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnly
 			endTime.Int64 = 0
 			endTime.Valid = false
 		}
-		attributes, err := clientdb.MarshalProtos(telemetry.KeyValues(span.Attributes()))
+		attributes, err := clientdb.MarshalProtoJSONs(telemetry.KeyValues(span.Attributes()))
 		if err != nil {
 			slog.Warn("failed to marshal attributes", "error", err)
 			continue
 		}
 		droppedAttributesCount := int64(span.DroppedAttributes())
-		events, err := clientdb.MarshalProtos(telemetry.SpanEventsToPB(span.Events()))
+		events, err := clientdb.MarshalProtoJSONs(telemetry.SpanEventsToPB(span.Events()))
 		if err != nil {
 			slog.Warn("failed to marshal events", "error", err)
 			continue
 		}
 		droppedEventsCount := int64(span.DroppedEvents())
-		links, err := clientdb.MarshalProtos(telemetry.SpanLinksToPB(span.Links()))
+		links, err := clientdb.MarshalProtoJSONs(telemetry.SpanLinksToPB(span.Links()))
 		if err != nil {
 			slog.Warn("failed to marshal links", "error", err)
 			continue
@@ -300,12 +295,12 @@ func (ps SpansPubSub) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnly
 		droppedLinksCount := int64(span.DroppedLinks())
 		statusCode := int64(span.Status().Code)
 		statusMessage := span.Status().Description
-		instrumentationScope, err := protojson.Marshal(telemetry.InstrumentationScope(span.InstrumentationScope()))
+		instrumentationScope, err := protojson.Marshal(telemetry.InstrumentationScopeToPB(span.InstrumentationScope()))
 		if err != nil {
 			slog.Warn("failed to marshal instrumentation scope", "error", err)
 			continue
 		}
-		resource, err := protojson.Marshal(telemetry.ResourcePtr(span.Resource()))
+		resource, err := protojson.Marshal(telemetry.ResourcePtrToPB(span.Resource()))
 		if err != nil {
 			slog.Warn("failed to marshal resource", "error", err)
 			continue
@@ -396,7 +391,20 @@ func (ps LogsPubSub) Export(ctx context.Context, logs []sdklog.Record) error {
 			})
 			return true
 		})
-		attributes, err := clientdb.MarshalProtos(attrs)
+		attributes, err := clientdb.MarshalProtoJSONs(attrs)
+		if err != nil {
+			slog.Warn("failed to marshal log record attributes", "error", err)
+			continue
+		}
+
+		scope, err := protojson.Marshal(telemetry.InstrumentationScopeToPB(rec.InstrumentationScope()))
+		if err != nil {
+			slog.Warn("failed to marshal log record attributes", "error", err)
+			continue
+		}
+
+		res := rec.Resource()
+		resource, err := protojson.Marshal(telemetry.ResourceToPB(res))
 		if err != nil {
 			slog.Warn("failed to marshal log record attributes", "error", err)
 			continue
@@ -411,10 +419,14 @@ func (ps LogsPubSub) Export(ctx context.Context, logs []sdklog.Record) error {
 				String: spanID,
 				Valid:  rec.SpanID().IsValid(),
 			},
-			Timestamp:  timestamp,
-			Severity:   severity,
-			Body:       body,
-			Attributes: attributes,
+			Timestamp:            timestamp,
+			SeverityNumber:       severity,
+			SeverityText:         rec.SeverityText(),
+			Body:                 body,
+			Attributes:           attributes,
+			InstrumentationScope: scope,
+			Resource:             resource,
+			ResourceSchemaUrl:    res.SchemaURL(),
 		})
 		if err != nil {
 			return fmt.Errorf("insert log: %w", err)

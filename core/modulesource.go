@@ -309,9 +309,6 @@ func (src *ModuleSource) AutomaticGitignore(ctx context.Context) (*bool, error) 
 // If the module is git, it will load the directory from the git repository
 // using its context directory.
 func (src *ModuleSource) LoadContext(ctx context.Context, dag *dagql.Server, path string, ignore []string) (inst dagql.Instance[*Directory], err error) {
-	excludes := ignore
-	includes := []string{}
-
 	switch src.Kind {
 	case ModuleSourceKindLocal:
 		bk, err := src.Query.Buildkit(ctx)
@@ -353,7 +350,7 @@ func (src *ModuleSource) LoadContext(ctx context.Context, dag *dagql.Server, pat
 			return inst, fmt.Errorf("path %q is outside of context directory %q, path should be relative to the context directory", path, ctxPath)
 		}
 
-		_, desc, err := bk.LocalImport(localSourceCtx, src.Query.Platform().Spec(), path, excludes, includes)
+		_, desc, err := bk.LocalImport(localSourceCtx, src.Query.Platform().Spec(), path, ignore, []string{})
 		if err != nil {
 			return inst, fmt.Errorf("failed to import local module src: %w", err)
 		}
@@ -380,7 +377,30 @@ func (src *ModuleSource) LoadContext(ctx context.Context, dag *dagql.Server, pat
 			return inst, fmt.Errorf("failed to get dir instance: %w", err)
 		}
 
-		return loadedDir, nil
+		if len(ignore) == 0 {
+			return loadedDir, nil
+		}
+
+		var ignoredDir dagql.Instance[*Directory]
+
+		err = dag.Select(ctx, dag.Root(), &ignoredDir,
+			dagql.Selector{
+				Field: "directory",
+			},
+			dagql.Selector{
+				Field: "withDirectory",
+				Args: []dagql.NamedInput{
+					{Name: "path", Value: dagql.String("/")},
+					{Name: "directory", Value: dagql.NewID[*Directory](loadedDir.ID())},
+					{Name: "exclude", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(ignore...))},
+				},
+			},
+		)
+		if err != nil {
+			return inst, fmt.Errorf("failed to apply ignore pattern on contextual directory %q: %w", path, err)
+		}
+
+		return ignoredDir, nil
 	default:
 		return inst, fmt.Errorf("unsupported module src kind: %q", src.Kind)
 	}

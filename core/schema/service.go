@@ -21,6 +21,12 @@ func (s *serviceSchema) Install() {
 		dagql.Func("asService", s.containerAsService).
 			Doc(`Turn the container into a Service.`,
 				`Be sure to set any exposed ports before this conversion.`),
+		dagql.NodeFunc("up", s.containerUp).
+			Doc(`Starts a Service and creates a tunnel that forwards traffic from the caller's network to that service.`,
+				`Be sure to set any exposed ports before calling this api.`).
+			ArgDoc("random", `Bind each tunnel port to a random port on the host.`).
+			ArgDoc("ports", `List of frontend/backend port mappings to forward.`,
+				`Frontend is the port accepting traffic on the host, backend is the service port.`),
 	}.Install(s.srv)
 
 	dagql.Fields[*core.Service]{
@@ -60,6 +66,22 @@ func (s *serviceSchema) Install() {
 
 func (s *serviceSchema) containerAsService(ctx context.Context, parent *core.Container, args struct{}) (*core.Service, error) {
 	return parent.Service(ctx)
+}
+
+func (s *serviceSchema) containerUp(ctx context.Context, ctr dagql.Instance[*core.Container], args upArgs) (dagql.Nullable[core.Void], error) {
+	void := dagql.Null[core.Void]()
+
+	var svc dagql.Instance[*core.Service]
+	err := s.srv.Select(ctx, ctr, &svc,
+		dagql.Selector{
+			Field: "asService",
+		},
+	)
+	if err != nil {
+		return void, err
+	}
+
+	return s.up(ctx, svc, args)
 }
 
 func (s *serviceSchema) hostname(ctx context.Context, parent dagql.Instance[*core.Service], args struct{}) (dagql.String, error) {
@@ -159,6 +181,7 @@ func (s *serviceSchema) up(ctx context.Context, svc dagql.Instance[*core.Service
 			"tunnel started",
 			"port", port.Port,
 			"protocol", port.Protocol.Network(),
+			"http_url", fmt.Sprintf("http://%s:%d", "localhost", port.Port),
 			"description", *port.Description,
 		)
 	}

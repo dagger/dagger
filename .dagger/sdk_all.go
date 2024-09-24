@@ -33,6 +33,16 @@ func (t AllSDK) Test(ctx context.Context) error {
 	return eg.Wait()
 }
 
+func (t AllSDK) TestPublish(ctx context.Context, tag string) error {
+	eg, ctx := errgroup.WithContext(ctx)
+	for _, sdk := range t.SDK.allSDKs() {
+		eg.Go(func() error {
+			return sdk.TestPublish(ctx, tag)
+		})
+	}
+	return eg.Wait()
+}
+
 func (t AllSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 	eg, ctx := errgroup.WithContext(ctx)
 	dirs := make([]*dagger.Directory, len(t.SDK.allSDKs()))

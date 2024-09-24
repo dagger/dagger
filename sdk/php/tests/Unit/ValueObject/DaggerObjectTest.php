@@ -39,7 +39,7 @@ class DaggerObjectTest extends TestCase
     public static function provideReflectionClasses(): Generator
     {
         yield 'DaggerObject without DaggerFunctions' => [
-            new DaggerObject(NoDaggerFunctions::class, []),
+            NoDaggerFunctions::getValueObjectEquivalent(),
             new ReflectionClass(NoDaggerFunctions::class),
         ];
 

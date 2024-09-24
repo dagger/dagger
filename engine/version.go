@@ -82,7 +82,7 @@ func cleanVersion(v string) string {
 
 func CheckVersionCompatibility(version string, minVersion string) error {
 	v := version
-	if isDevVersion(v) && isDevVersion(Version) {
+	if IsDevVersion(v) && IsDevVersion(Version) {
 		// Both our version and our target version are dev versions - in this
 		// case, strip pre-release info from our target, we should pretend it's
 		// just the real thing here.
@@ -96,7 +96,7 @@ func CheckVersionCompatibility(version string, minVersion string) error {
 
 func CheckMaxVersionCompatibility(version string, maxVersion string) error {
 	v := version
-	if isDevVersion(v) && isDevVersion(Version) {
+	if IsDevVersion(v) && IsDevVersion(Version) {
 		// see CheckVersionCompatibility
 		v = BaseVersion(v)
 	}
@@ -130,7 +130,7 @@ func BaseVersion(version string) string {
 	return version
 }
 
-func isDevVersion(version string) bool {
+func IsDevVersion(version string) bool {
 	if version == "" {
 		return true
 	}

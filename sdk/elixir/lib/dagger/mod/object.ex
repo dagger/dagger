@@ -56,6 +56,7 @@ defmodule Dagger.Mod.Object do
   @type function_def() :: {function_name(), keyword()}
 
   alias Dagger.Mod.Object.Defn
+  alias Dagger.Mod.Object.Meta
 
   @doc """
   Get module documentation.
@@ -168,7 +169,9 @@ defmodule Dagger.Mod.Object do
 
   defp compile_args(args) do
     for {name, spec} <- args do
-      {name, [type: compile_typespec!(spec)]}
+      type = compile_typespec!(spec)
+      meta = spec |> extract_options() |> Keyword.put(:type, type)
+      {name, Meta.validate!(meta)}
     end
   end
 
@@ -209,7 +212,16 @@ defmodule Dagger.Mod.Object do
     {:optional, compile_typespec!(type)}
   end
 
+  ## Type with options
+
+  defp compile_typespec!({type, _}) do
+    compile_typespec!(type)
+  end
+
   defp compile_typespec!(unsupported_type) do
     raise ArgumentError, "type `#{Macro.to_string(unsupported_type)}` is not supported"
   end
+
+  defp extract_options({_, options}), do: options
+  defp extract_options(_), do: []
 end

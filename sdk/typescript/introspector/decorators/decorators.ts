@@ -1,7 +1,7 @@
 /**
  * Expose the decorator publicly, so they insert data into the global registry.
  */
-import { registry } from "../registry/registry.js"
+import { registry } from "../registry/registry.ts"
 
 /**
  * The definition of the `@object` decorator that should be on top of any

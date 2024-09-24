@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/csv"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -20,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/containerd/platforms"
+	"github.com/dagger/dagger/engine/client"
 	"github.com/moby/buildkit/util/gitutil"
 	"github.com/spf13/pflag"
 
@@ -114,7 +114,7 @@ type DaggerValue interface {
 	pflag.Value
 
 	// Get returns the final value for the query builder.
-	Get(context.Context, *dagger.Client, *dagger.ModuleSource) (any, error)
+	Get(context.Context, *dagger.Client, *dagger.ModuleSource, *modFunctionArg) (any, error)
 }
 
 // sliceValue is a pflag.Value that builds a slice of DaggerValue instances.
@@ -144,10 +144,10 @@ func (v *sliceValue[T]) String() string {
 	return "[" + out + "]"
 }
 
-func (v *sliceValue[T]) Get(ctx context.Context, c *dagger.Client, modSrc *dagger.ModuleSource) (any, error) {
+func (v *sliceValue[T]) Get(ctx context.Context, c *dagger.Client, modSrc *dagger.ModuleSource, modArg *modFunctionArg) (any, error) {
 	out := make([]any, len(v.value))
 	for i, v := range v.value {
-		outV, err := v.Get(ctx, c, modSrc)
+		outV, err := v.Get(ctx, c, modSrc, modArg)
 		if err != nil {
 			return nil, err
 		}
@@ -244,7 +244,7 @@ func (v *enumValue) String() string {
 	return v.value
 }
 
-func (v *enumValue) Get(ctx context.Context, dag *dagger.Client, modSrc *dagger.ModuleSource) (any, error) {
+func (v *enumValue) Get(ctx context.Context, dag *dagger.Client, modSrc *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
 	return v.value, nil
 }
 
@@ -281,7 +281,7 @@ func (v *containerValue) String() string {
 	return v.address
 }
 
-func (v *containerValue) Get(_ context.Context, c *dagger.Client, _ *dagger.ModuleSource) (any, error) {
+func (v *containerValue) Get(_ context.Context, c *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
 	if v.address == "" {
 		return nil, fmt.Errorf("container address cannot be empty")
 	}
@@ -309,7 +309,7 @@ func (v *directoryValue) String() string {
 	return v.address
 }
 
-func (v *directoryValue) Get(ctx context.Context, dag *dagger.Client, modSrc *dagger.ModuleSource) (any, error) {
+func (v *directoryValue) Get(ctx context.Context, dag *dagger.Client, modSrc *dagger.ModuleSource, modArg *modFunctionArg) (any, error) {
 	if v.String() == "" {
 		return nil, fmt.Errorf("directory address cannot be empty")
 	}
@@ -352,7 +352,11 @@ func (v *directoryValue) Get(ctx context.Context, dag *dagger.Client, modSrc *da
 	// POSIX "portable filename character set":
 	// https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap03.html#tag_03_282
 	path, viewName, _ := strings.Cut(path, ":")
-	path, err = expandHomeDir(path)
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return nil, err
+	}
+	path, err = client.ExpandHomeDir(homeDir, path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to expand home directory: %w", err)
 	}
@@ -360,6 +364,7 @@ func (v *directoryValue) Get(ctx context.Context, dag *dagger.Client, modSrc *da
 
 	return modSrc.ResolveDirectoryFromCaller(path, dagger.ModuleSourceResolveDirectoryFromCallerOpts{
 		ViewName: viewName,
+		Ignore:   modArg.Ignore,
 	}).Sync(ctx)
 }
 
@@ -396,7 +401,7 @@ func (v *fileValue) String() string {
 	return v.path
 }
 
-func (v *fileValue) Get(_ context.Context, dag *dagger.Client, _ *dagger.ModuleSource) (any, error) {
+func (v *fileValue) Get(_ context.Context, dag *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
 	vStr := v.String()
 	if vStr == "" {
 		return nil, fmt.Errorf("file path cannot be empty")
@@ -430,7 +435,11 @@ func (v *fileValue) Get(_ context.Context, dag *dagger.Client, _ *dagger.ModuleS
 	vStr = strings.TrimPrefix(vStr, "file://")
 	if !filepath.IsAbs(vStr) {
 		var err error
-		vStr, err = expandHomeDir(vStr)
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return nil, err
+		}
+		vStr, err = client.ExpandHomeDir(homeDir, vStr)
 		if err != nil {
 			return nil, fmt.Errorf("failed to expand home directory: %w", err)
 		}
@@ -481,7 +490,7 @@ func (v *secretValue) String() string {
 	return fmt.Sprintf("%s:%s", v.secretSource, v.sourceVal)
 }
 
-func (v *secretValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.ModuleSource) (any, error) {
+func (v *secretValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
 	var plaintext string
 
 	switch v.secretSource {
@@ -500,7 +509,11 @@ func (v *secretValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.Modul
 		plaintext = envPlaintext
 
 	case fileSecretSource:
-		sourceVal, err := expandHomeDir(v.sourceVal)
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return nil, err
+		}
+		sourceVal, err := client.ExpandHomeDir(homeDir, v.sourceVal)
 		if err != nil {
 			return nil, err
 		}
@@ -597,7 +610,7 @@ func (v *serviceValue) Set(s string) error {
 	return nil
 }
 
-func (v *serviceValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.ModuleSource) (any, error) {
+func (v *serviceValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
 	svc, err := c.Host().Service(v.ports, dagger.HostServiceOpts{Host: v.host}).Start(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to start service: %w", err)
@@ -644,7 +657,7 @@ func (v *portForwardValue) String() string {
 	return fmt.Sprintf("%d:%d", v.frontend, v.backend)
 }
 
-func (v *portForwardValue) Get(_ context.Context, c *dagger.Client, _ *dagger.ModuleSource) (any, error) {
+func (v *portForwardValue) Get(_ context.Context, c *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
 	return &dagger.PortForward{
 		Frontend: v.frontend,
 		Backend:  v.backend,
@@ -672,7 +685,7 @@ func (v *socketValue) Set(s string) error {
 	return nil
 }
 
-func (v *socketValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.ModuleSource) (any, error) {
+func (v *socketValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
 	return c.Host().UnixSocket(v.path), nil
 }
 
@@ -698,7 +711,7 @@ func (v *cacheVolumeValue) String() string {
 	return v.name
 }
 
-func (v *cacheVolumeValue) Get(_ context.Context, dag *dagger.Client, _ *dagger.ModuleSource) (any, error) {
+func (v *cacheVolumeValue) Get(_ context.Context, dag *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
 	if v.String() == "" {
 		return nil, fmt.Errorf("cacheVolume name cannot be empty")
 	}
@@ -725,7 +738,7 @@ func (v *moduleValue) String() string {
 	return v.ref
 }
 
-func (v *moduleValue) Get(ctx context.Context, dag *dagger.Client, _ *dagger.ModuleSource) (any, error) {
+func (v *moduleValue) Get(ctx context.Context, dag *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
 	if v.ref == "" {
 		return nil, fmt.Errorf("module ref cannot be empty")
 	}
@@ -756,7 +769,7 @@ func (v *moduleSourceValue) String() string {
 	return v.ref
 }
 
-func (v *moduleSourceValue) Get(ctx context.Context, dag *dagger.Client, _ *dagger.ModuleSource) (any, error) {
+func (v *moduleSourceValue) Get(ctx context.Context, dag *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
 	if v.ref == "" {
 		return nil, fmt.Errorf("module source ref cannot be empty")
 	}
@@ -790,7 +803,7 @@ func (v *platformValue) String() string {
 	return v.platform
 }
 
-func (v *platformValue) Get(ctx context.Context, dag *dagger.Client, _ *dagger.ModuleSource) (any, error) {
+func (v *platformValue) Get(ctx context.Context, dag *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
 	if v.platform == "" {
 		return nil, fmt.Errorf("platform cannot be empty")
 	}
@@ -1013,19 +1026,4 @@ func writeAsCSV(vals []string) (string, error) {
 	}
 	w.Flush()
 	return strings.TrimSuffix(b.String(), "\n"), nil
-}
-
-func expandHomeDir(path string) (string, error) {
-	if path[0] != '~' {
-		return path, nil
-	}
-	if len(path) > 1 && path[1] != '/' && path[1] != '\\' {
-		return "", errors.New("cannot expand home directory")
-	}
-
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	return strings.Replace(path, "~", homeDir, 1), nil
 }

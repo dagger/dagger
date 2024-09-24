@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/containerd/containerd/pkg/seed" //nolint:staticcheck // SA1019 deprecated
-	"github.com/containerd/containerd/pkg/userns"
 	"github.com/containerd/containerd/sys"
 	sddaemon "github.com/coreos/go-systemd/v22/daemon"
 	"github.com/docker/docker/pkg/reexec"
@@ -31,6 +30,7 @@ import (
 	"github.com/moby/buildkit/util/profiler"
 	"github.com/moby/buildkit/util/stack"
 	"github.com/moby/buildkit/version"
+	"github.com/moby/sys/userns"
 	sloglogrus "github.com/samber/slog-logrus/v2"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"

@@ -549,7 +549,7 @@ func LoadIDs[T Typed](ctx context.Context, srv *Server, ids []ID[T]) ([]T, error
 		})
 	}
 	if err := eg.Wait(); err != nil {
-		return nil, err
+		return out, err
 	}
 	return out, nil
 }

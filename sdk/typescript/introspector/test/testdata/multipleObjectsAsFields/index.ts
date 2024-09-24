@@ -1,6 +1,6 @@
-import { object, func } from "../../../decorators/decorators.js"
-import { Lint } from "./lint.js"
-import { Test } from "./test.js"
+import { object, func } from "../../../decorators/decorators.ts"
+import { Lint } from "./lint.ts"
+import { Test } from "./test.ts"
 
 @object()
 class MultipleObjectsAsFields {

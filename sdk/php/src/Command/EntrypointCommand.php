@@ -38,9 +38,9 @@ class EntrypointCommand extends Command
         $functionCall = dag()->currentFunctionCall();
 
         try {
-                return $functionCall->parentName() === '' ?
-                    $this->registerModule($functionCall) :
-                    $this->callFunctionOnParent($output, $functionCall);
+            return $functionCall->parentName() === '' ?
+                $this->registerModule($functionCall) :
+                $this->callFunctionOnParent($output, $functionCall);
         } catch (\Throwable $t) {
             $this->outputErrorInformation($input, $output, $t);
 
@@ -56,9 +56,10 @@ class EntrypointCommand extends Command
         $daggerObjects = (new FindsDaggerObjects())($src);
 
         foreach ($daggerObjects as $daggerObject) {
-            $objectTypeDef = dag()
-                ->typeDef()
-                ->withObject($this->normalizeClassname($daggerObject->name));
+            $objectTypeDef = dag()->typeDef()->withObject(
+                $this->normalizeClassname($daggerObject->name),
+                $daggerObject->description,
+            );
 
             foreach ($daggerObject->daggerFunctions as $daggerFunction) {
                 $func = dag()->function(
@@ -79,7 +80,9 @@ class EntrypointCommand extends Command
                     );
                 }
 
-                $objectTypeDef = $objectTypeDef->withFunction($func);
+                $objectTypeDef = $daggerFunction->isConstructor() ?
+                    $objectTypeDef->withConstructor($func) :
+                    $objectTypeDef->withFunction($func);
             }
 
             $daggerModule = $daggerModule->withObject($objectTypeDef);
@@ -109,13 +112,16 @@ class EntrypointCommand extends Command
             json_decode(json_encode($functionCall->inputArgs()), true)
         );
 
-        $class = $this->getSerialiser()->deserialise(
-            (string) $functionCall->parent(),
-            $parentName
-        );
-
         try {
-            $result = ($class)->$functionName(...$args);
+            if ($functionName !== '') {
+                $class = $this->getSerialiser()->deserialise(
+                    (string) $functionCall->parent(),
+                    $parentName
+                );
+                $result = ($class)->$functionName(...$args);
+            } else {
+                $result = new $parentName(...$args);
+            }
         } catch (QueryError $e) {
             if (!isset($e->getErrorDetails()['extensions'])) {
                 throw $e;
@@ -186,6 +192,10 @@ class EntrypointCommand extends Command
         string $functionName,
         array $arguments,
     ): array {
+        if ($functionName === '') {
+            $functionName = '__construct';
+        }
+
         $daggerFunction = DaggerFunction::fromReflection(
             new ReflectionMethod($className, $functionName)
         );

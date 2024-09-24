@@ -40,7 +40,7 @@ func Logger(ctx context.Context, name string) log.Logger {
 // stdout/stderr and terminates them with an EOF, to confirm that all data has
 // been received. It should not be used for general-purpose logging.
 //
-// Both streamsm must be closed to ensure that draining completes.
+// Both streams must be closed to ensure that draining completes.
 func SpanStdio(ctx context.Context, name string, attrs ...log.KeyValue) SpanStreams {
 	logger := Logger(ctx, name)
 	return SpanStreams{

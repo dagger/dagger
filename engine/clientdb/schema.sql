@@ -25,7 +25,8 @@ CREATE TABLE IF NOT EXISTS spans (
     status_code INTEGER NOT NULL,
     status_message TEXT NOT NULL,
     instrumentation_scope BLOB, -- JSON encoded *otlpcommonv1.InstrumentationScope
-    resource BLOB -- JSON encoded *otlpresourcev1.Resource
+    resource BLOB, -- JSON encoded *otlpresourcev1.Resource
+    resource_schema_url TEXT NOT NULL
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS logs (
@@ -33,7 +34,11 @@ CREATE TABLE IF NOT EXISTS logs (
     trace_id TEXT,
     span_id TEXT,
     timestamp INTEGER NOT NULL, -- Nanoseconds from epoch
-    severity INTEGER NOT NULL,
+    severity_number INTEGER NOT NULL,
+    severity_text TEXT NOT NULL,
     body BLOB, -- *Protobuf* encoded otlpcommon.v1.Any
-    attributes BLOB -- JSON encoded otlpcommon.v1.Key
+    attributes BLOB, -- JSON encoded []*otlpcommonv1.KeyValue
+    instrumentation_scope BLOB, -- JSON encoded *otlpcommonv1.InstrumentationScope
+    resource BLOB, -- JSON encoded *otlpresourcev1.Resource
+    resource_schema_url TEXT NOT NULL
 ) STRICT;

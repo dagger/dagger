@@ -4,9 +4,7 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
 	_ "embed"
-	"encoding/hex"
 	"fmt"
 	"path"
 	"python-sdk/internal/dagger"
@@ -116,7 +114,7 @@ func (m *PythonSdk) Codegen(
 			[]string{GenDir + "/**"},
 		).
 		WithVCSIgnoredPaths(
-			[]string{GenDir},
+			[]string{GenDir, ".venv", "**/__pycache__"},
 		), nil
 }
 
@@ -167,14 +165,10 @@ func (m *PythonSdk) Load(ctx context.Context, modSource *dagger.ModuleSource) (*
 		return nil, fmt.Errorf("runtime module load: %w", err)
 	}
 
-	// FIXME: ModuleSource.id is not stable
-	modID, err := m.Discovery.ModSource.ID(ctx)
+	modDigest, err := m.Discovery.ModSource.Digest(ctx)
 	if err != nil {
 		return nil, err
 	}
-	h := sha256.New()
-	fmt.Fprint(h, modID)
-	modDigest := hex.EncodeToString(h.Sum(nil))
 	m.SourcePath = path.Join(ModSourceDirPath, modDigest)
 
 	return m, nil
@@ -207,7 +201,6 @@ func (m *PythonSdk) WithBase() (*PythonSdk, error) {
 		// Base Python
 		From(baseAddr).
 		WithEnvVariable("PYTHONUNBUFFERED", "1").
-		WithEnvVariable("DAGGER_BASE_IMAGE", baseAddr).
 		// Pip
 		WithEnvVariable("PIP_DISABLE_PIP_VERSION_CHECK", "1").
 		WithEnvVariable("PIP_ROOT_USER_ACTION", "ignore").
@@ -221,12 +214,23 @@ func (m *PythonSdk) WithBase() (*PythonSdk, error) {
 			},
 		).
 		WithMountedCache("/root/.cache/uv", dag.CacheVolume("modpython-uv")).
-		WithEnvVariable("DAGGER_UV_IMAGE", uvAddr).
-		WithEnvVariable("UV_VERSION", uvTag).
 		WithEnvVariable("UV_SYSTEM_PYTHON", "1").
 		WithEnvVariable("UV_LINK_MODE", "copy").
 		WithEnvVariable("UV_NATIVE_TLS", "1").
-		WithWorkdir(path.Join(m.SourcePath, m.Discovery.SubPath))
+		WithEnvVariable("UV_PROJECT_ENVIRONMENT", "/opt/venv").
+		WithWorkdir(path.Join(m.SourcePath, m.Discovery.SubPath)).
+		// These are informational only, to be leveraged by the target module
+		// if needed.
+		WithEnvVariable("DAGGER_BASE_IMAGE", baseAddr).
+		WithEnvVariable("DAGGER_UV_IMAGE", uvAddr).
+		WithEnvVariable("UV_VERSION", uvTag)
+
+	if m.IndexURL() != "" {
+		m.Container = m.Container.WithEnvVariable("UV_INDEX_URL", m.IndexURL())
+	}
+	if m.ExtraIndexURL() != "" {
+		m.Container = m.Container.WithEnvVariable("UV_EXTRA_INDEX_URL", m.ExtraIndexURL())
+	}
 
 	return m, nil
 }
@@ -328,11 +332,12 @@ func (m *PythonSdk) WithUpdates() *PythonSdk {
 
 	// Update lock file but without upgrading dependencies.
 	switch {
-	case d.HasFile(UvLock) || !d.HasFile(PipCompileLock) && d.IsInit:
+	case d.UseUvLock():
 		// Support uv.lock. Takes precedence.
 		// Always update if uv.lock exists, but only create a new uv.lock
 		// if init and there's not already a requirements.lock.
 		ctr = ctr.WithExec([]string{"uv", "lock"})
+
 	case d.HasFile(PipCompileLock) && !d.IsInit:
 		// Support requirements.lock (legacy).
 		ctr = ctr.WithExec([]string{
@@ -356,16 +361,17 @@ func (m *PythonSdk) WithInstall() *PythonSdk {
 	ctr := m.Container.WithEnvVariable("UV_COMPILE_BYTECODE", "1")
 
 	// Support uv.lock for simple and fast project management workflow.
-	if m.UseUv() && m.Discovery.HasFile(UvLock) {
+	if m.Discovery.UseUvLock() {
 		// While best practice is to sync dependencies first with only pyproject.toml and
 		// uv.lock, user projects can have more required files for a minimally successful
 		// `uv sync --frozen --no-install-project --no-dev`.
 		// Besides, uv is fast enough that's not too bad to skip this optimization.
 		m.Container = ctr.
 			WithExec([]string{"uv", "sync", "--frozen", "--no-dev"}).
-			// Activate virtualenv for ./.venv to avoid having to prepend
-			// `uv run` to the entrypoint.
-			WithEnvVariable("VIRTUAL_ENV", path.Join(m.SourcePath, m.Discovery.SubPath, ".venv")).
+			// Activate virtualenv to avoid having to prepend `uv run` to the entrypoint.
+			WithEnvVariable("VIRTUAL_ENV", "$UV_PROJECT_ENVIRONMENT", dagger.ContainerWithEnvVariableOpts{
+				Expand: true,
+			}).
 			WithEnvVariable("PATH", "$VIRTUAL_ENV/bin:$PATH", dagger.ContainerWithEnvVariableOpts{
 				Expand: true,
 			})

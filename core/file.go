@@ -84,7 +84,11 @@ func NewFileWithContents(
 	ownership *Ownership,
 	platform Platform,
 ) (*File, error) {
-	dir, err := NewScratchDirectory(query, platform).WithNewFile(ctx, name, content, permissions, ownership)
+	dir, err := NewScratchDirectory(ctx, query, platform)
+	if err != nil {
+		return nil, err
+	}
+	dir, err = dir.WithNewFile(ctx, name, content, permissions, ownership)
 	if err != nil {
 		return nil, err
 	}

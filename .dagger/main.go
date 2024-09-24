@@ -10,8 +10,6 @@ import (
 
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/.dagger/internal/dagger"
-	"go.opentelemetry.io/otel/codes"
-	"golang.org/x/sync/errgroup"
 )
 
 // A dev environment for the DaggerDev Engine
@@ -43,7 +41,7 @@ func New(
 	// Git directory, for metadata introspection
 	// +optional
 	// +defaultPath="/"
-	// +ignore=["!.git"]
+	// +ignore=["*", "!.git"]
 	gitDir *dagger.Directory,
 
 	// +optional
@@ -96,15 +94,6 @@ func (dev *DaggerDev) WithModCodegen() *DaggerDev {
 	return &clone
 }
 
-type Check func(context.Context) error
-
-// Wrap 3 SDK-specific checks into a single check
-type SDKChecks interface {
-	Lint(ctx context.Context) error
-	Test(ctx context.Context) error
-	TestPublish(ctx context.Context, tag string) error
-}
-
 func (dev *DaggerDev) Ref(ctx context.Context) (string, error) {
 	// Said .git introspection logic:
 	ref, err := dag.
@@ -127,120 +116,6 @@ func (dev *DaggerDev) Ref(ctx context.Context) (string, error) {
 		return dev.GitRef, nil
 	}
 	return ref, nil
-}
-
-func (dev *DaggerDev) sdkCheck(sdk string) Check {
-	var checks SDKChecks
-	switch sdk {
-	case "python":
-		checks = &PythonSDK{Dagger: dev}
-	case "go":
-		checks = &GoSDK{Dagger: dev}
-	case "typescript":
-		checks = &TypescriptSDK{Dagger: dev}
-	case "php":
-		checks = &PHPSDK{Dagger: dev}
-	case "java":
-		checks = &JavaSDK{Dagger: dev}
-	case "rust":
-		checks = &RustSDK{Dagger: dev}
-	case "elixir":
-		checks = &ElixirSDK{Dagger: dev}
-	}
-	return func(ctx context.Context) (rerr error) {
-		lint := func() (rerr error) {
-			ctx, span := Tracer().Start(ctx, fmt.Sprintf("lint sdk/%s", sdk))
-			defer func() {
-				if rerr != nil {
-					span.SetStatus(codes.Error, rerr.Error())
-				}
-				span.End()
-			}()
-			return checks.Lint(ctx)
-		}
-		test := func() (rerr error) {
-			ctx, span := Tracer().Start(ctx, fmt.Sprintf("test sdk/%s", sdk))
-			defer func() {
-				if rerr != nil {
-					span.SetStatus(codes.Error, rerr.Error())
-				}
-				span.End()
-			}()
-			return checks.Test(ctx)
-		}
-		testPublish := func() (rerr error) {
-			ctx, span := Tracer().Start(ctx, fmt.Sprintf("test-publish sdk/%s", sdk))
-			defer func() {
-				if rerr != nil {
-					span.SetStatus(codes.Error, rerr.Error())
-				}
-				span.End()
-			}()
-			// Inspect .git to avoid dependencing on $GITHUB_REF
-			ref, err := dev.Ref(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to introspect git ref: %s", err.Error())
-			}
-			fmt.Printf("===> ref = \"%s\"\n", ref)
-			return checks.TestPublish(ctx, ref)
-		}
-		if err := lint(); err != nil {
-			return err
-		}
-		if err := test(); err != nil {
-			return err
-		}
-		if err := testPublish(); err != nil {
-			return err
-		}
-		return nil
-	}
-}
-
-const (
-	CheckDocs          = "docs"
-	CheckPythonSDK     = "sdk/python"
-	CheckGoSDK         = "sdk/go"
-	CheckTypescriptSDK = "sdk/typescript"
-	CheckPHPSDK        = "sdk/php"
-	CheckJavaSDK       = "sdk/java"
-	CheckRustSDK       = "sdk/rust"
-	CheckElixirSDK     = "sdk/elixir"
-)
-
-// Check that everything works. Use this as CI entrypoint.
-func (dev *DaggerDev) Check(ctx context.Context,
-	// Directories to check
-	// +optional
-	targets []string,
-) error {
-	var routes = map[string]Check{
-		CheckDocs:          (&Docs{Dagger: dev}).Lint,
-		CheckPythonSDK:     dev.sdkCheck("python"),
-		CheckGoSDK:         dev.sdkCheck("go"),
-		CheckTypescriptSDK: dev.sdkCheck("typescript"),
-		CheckPHPSDK:        dev.sdkCheck("php"),
-		CheckJavaSDK:       dev.sdkCheck("java"),
-		CheckRustSDK:       dev.sdkCheck("rust"),
-		CheckElixirSDK:     dev.sdkCheck("elixir"),
-	}
-	if len(targets) == 0 {
-		targets = make([]string, 0, len(routes))
-		for key := range routes {
-			targets = append(targets, key)
-		}
-	}
-	for _, target := range targets {
-		if _, exists := routes[target]; !exists {
-			return fmt.Errorf("no such target: %s", target)
-		}
-	}
-	eg, ctx := errgroup.WithContext(ctx)
-	for _, target := range targets {
-		check := routes[target]
-		eg.Go(func() error { return check(ctx) })
-	}
-	return eg.Wait()
 }
 
 // Develop the Dagger CLI

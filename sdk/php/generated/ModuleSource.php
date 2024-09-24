@@ -156,12 +156,18 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     /**
      * Load a directory from the caller optionally with a given view applied.
      */
-    public function resolveDirectoryFromCaller(string $path, ?string $viewName = null): Directory
-    {
+    public function resolveDirectoryFromCaller(
+        string $path,
+        ?string $viewName = null,
+        ?array $ignore = null,
+    ): Directory {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('resolveDirectoryFromCaller');
         $innerQueryBuilder->setArgument('path', $path);
         if (null !== $viewName) {
         $innerQueryBuilder->setArgument('viewName', $viewName);
+        }
+        if (null !== $ignore) {
+        $innerQueryBuilder->setArgument('ignore', $ignore);
         }
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

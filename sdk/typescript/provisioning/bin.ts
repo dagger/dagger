@@ -17,9 +17,9 @@ import {
   EngineSessionConnectParamsParseError,
   EngineSessionError,
   InitEngineSessionBinaryError,
-} from "../common/errors/index.js"
-import { createGQLClient } from "../graphql/client.js"
-import { ConnectOpts, EngineConn, ConnectParams } from "./engineconn.js"
+} from "../common/errors/index.ts"
+import { createGQLClient } from "../graphql/client.ts"
+import { ConnectOpts, EngineConn, ConnectParams } from "./engineconn.ts"
 
 const CLI_HOST = "dl.dagger.io"
 let OVERRIDE_CLI_URL: string

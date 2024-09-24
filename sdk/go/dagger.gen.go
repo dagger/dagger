@@ -336,6 +336,7 @@ type Container struct {
 	stderr      *string
 	stdout      *string
 	sync        *ContainerID
+	up          *Void
 	user        *string
 	workdir     *string
 }
@@ -941,6 +942,38 @@ func (r *Container) Terminal(opts ...ContainerTerminalOpts) *Container {
 	}
 }
 
+// ContainerUpOpts contains options for Container.Up
+type ContainerUpOpts struct {
+	// List of frontend/backend port mappings to forward.
+	//
+	// Frontend is the port accepting traffic on the host, backend is the service port.
+	Ports []PortForward
+	// Bind each tunnel port to a random port on the host.
+	Random bool
+}
+
+// Starts a Service and creates a tunnel that forwards traffic from the caller's network to that service.
+//
+// Be sure to set any exposed ports before calling this api.
+func (r *Container) Up(ctx context.Context, opts ...ContainerUpOpts) error {
+	if r.up != nil {
+		return nil
+	}
+	q := r.query.Select("up")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `ports` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Ports) {
+			q = q.Arg("ports", opts[i].Ports)
+		}
+		// `random` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Random) {
+			q = q.Arg("random", opts[i].Random)
+		}
+	}
+
+	return q.Execute(ctx)
+}
+
 // Retrieves the user to be set for all commands.
 func (r *Container) User(ctx context.Context) (string, error) {
 	if r.user != nil {
@@ -952,6 +985,17 @@ func (r *Container) User(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Retrieves this container plus the given OCI anotation.
+func (r *Container) WithAnnotation(name string, value string) *Container {
+	q := r.query.Select("withAnnotation")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Container{
+		query: q,
+	}
 }
 
 // Configures default arguments for future commands.
@@ -1539,6 +1583,16 @@ func (r *Container) WithWorkdir(path string) *Container {
 	}
 }
 
+// Retrieves this container minus the given OCI annotation.
+func (r *Container) WithoutAnnotation(name string) *Container {
+	q := r.query.Select("withoutAnnotation")
+	q = q.Arg("name", name)
+
+	return &Container{
+		query: q,
+	}
+}
+
 // Retrieves this container with unset default arguments for future commands.
 func (r *Container) WithoutDefaultArgs() *Container {
 	q := r.query.Select("withoutDefaultArgs")
@@ -1615,6 +1669,16 @@ func (r *Container) WithoutExposedPort(port int, opts ...ContainerWithoutExposed
 func (r *Container) WithoutFile(path string) *Container {
 	q := r.query.Select("withoutFile")
 	q = q.Arg("path", path)
+
+	return &Container{
+		query: q,
+	}
+}
+
+// Retrieves this container with the files at the given paths removed.
+func (r *Container) WithoutFiles(paths []string) *Container {
+	q := r.query.Select("withoutFiles")
+	q = q.Arg("paths", paths)
 
 	return &Container{
 		query: q,
@@ -2662,6 +2726,16 @@ func (r *Directory) WithoutDirectory(path string) *Directory {
 func (r *Directory) WithoutFile(path string) *Directory {
 	q := r.query.Select("withoutFile")
 	q = q.Arg("path", path)
+
+	return &Directory{
+		query: q,
+	}
+}
+
+// Retrieves this directory with the files at the given paths removed.
+func (r *Directory) WithoutFiles(paths []string) *Directory {
+	q := r.query.Select("withoutFiles")
+	q = q.Arg("paths", paths)
 
 	return &Directory{
 		query: q,
@@ -5648,6 +5722,8 @@ func (r *ModuleSource) ResolveDependency(dep *ModuleSource) *ModuleSource {
 type ModuleSourceResolveDirectoryFromCallerOpts struct {
 	// If set, the name of the view to apply to the path.
 	ViewName string
+	// Patterns to ignore when loading the directory.
+	Ignore []string
 }
 
 // Load a directory from the caller optionally with a given view applied.
@@ -5657,6 +5733,10 @@ func (r *ModuleSource) ResolveDirectoryFromCaller(path string, opts ...ModuleSou
 		// `viewName` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ViewName) {
 			q = q.Arg("viewName", opts[i].ViewName)
+		}
+		// `ignore` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Ignore) {
+			q = q.Arg("ignore", opts[i].Ignore)
 		}
 	}
 	q = q.Arg("path", path)

@@ -24,6 +24,12 @@ var DirExcludes = []string{".venv", "sdk"}
 // files concurrently rather than making blocking calls later.
 var FileContents = []string{"pyproject.toml", ".python-version"}
 
+// Uv config bits we'd like to consume.
+type UvConfig struct {
+	IndexURL      string `toml:"index-url"`
+	ExtraIndexURL string `toml:"extra-index-url"`
+}
+
 // PyProject is the parsed pyproject.toml file.
 type PyProject struct {
 	Project struct {
@@ -32,6 +38,7 @@ type PyProject struct {
 	}
 	Tool struct {
 		Dagger UserConfig
+		Uv     UvConfig
 	}
 }
 
@@ -111,6 +118,10 @@ func (d *Discovery) UserConfig() *UserConfig {
 	return &d.Config.Tool.Dagger
 }
 
+func (d *Discovery) UvConfig() *UvConfig {
+	return &d.Config.Tool.Uv
+}
+
 // HasFile returns true if the file exists in the original module's source directory.
 func (d *Discovery) HasFile(name string) bool {
 	_, ok := d.FileSet[name]
@@ -138,6 +149,11 @@ func (d *Discovery) GetFile(name string) *dagger.File {
 func (d *Discovery) AddLockFile(lock *dagger.File) {
 	d.AddFile(PipCompileLock, lock)
 	d.FileSet[PipCompileLock] = struct{}{}
+}
+
+// UseUvLock returns true if the runtime should expect a uv.lock file.
+func (d *Discovery) UseUvLock() bool {
+	return d.UserConfig().UseUv && (d.HasFile(UvLock) || !d.HasFile(PipCompileLock) && d.IsInit)
 }
 
 // AddDirectory adds a directory to the module's source.

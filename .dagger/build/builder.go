@@ -210,6 +210,10 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 		return nil, fmt.Errorf("unsupported engine base %q", build.base)
 	}
 
+	if build.version != "" {
+		base = base.WithAnnotation(distconsts.OCIVersionAnnotation, build.version)
+	}
+
 	type binAndPath struct {
 		path string
 		file *dagger.File

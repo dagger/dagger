@@ -1524,6 +1524,50 @@ type Test struct {
 		})
 	})
 
+	t.Run("return secret", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := modInit(t, c, "go", `package main
+
+import (
+	"dagger/test/internal/dagger"
+)
+
+type Test struct{}
+
+func (*Test) Secret() *dagger.Secret {
+    return dag.SetSecret("foo", "bar")
+}
+
+func (m *Test) Secrets() []*dagger.Secret {
+    return []*dagger.Secret{
+        m.Secret(),
+    }
+}
+`,
+		)
+
+		t.Run("single", func(context.Context, *testctx.T) {
+			out, err := modGen.
+				With(daggerCall("secret")).
+				Stdout(ctx)
+
+			require.NoError(t, err)
+			require.Contains(t, out, "foo")
+			require.NotContains(t, out, "bar")
+		})
+
+		t.Run("multiple", func(context.Context, *testctx.T) {
+			out, err := modGen.
+				With(daggerCall("secrets")).
+				Stdout(ctx)
+
+			require.NoError(t, err)
+			require.Contains(t, out, "foo")
+			require.NotContains(t, out, "bar")
+		})
+	})
+
 	t.Run("sync", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 

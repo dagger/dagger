@@ -3,12 +3,12 @@ import { describe, it } from "mocha"
 import * as path from "path"
 import { fileURLToPath } from "url"
 
-import { connection } from "../../connect.js"
-import { InvokeCtx } from "../../entrypoint/context.js"
-import { invoke } from "../../entrypoint/invoke.js"
-import { load } from "../../entrypoint/load.js"
-import { scan } from "../scanner/scan.js"
-import { listFiles } from "../utils/files.js"
+import { connection } from "../../connect.ts"
+import { InvokeCtx } from "../../entrypoint/context.ts"
+import { invoke } from "../../entrypoint/invoke.ts"
+import { load } from "../../entrypoint/load.ts"
+import { scan } from "../scanner/scan.ts"
+import { listFiles } from "../utils/files.ts"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)

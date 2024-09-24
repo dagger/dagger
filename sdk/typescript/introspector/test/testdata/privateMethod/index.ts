@@ -1,7 +1,7 @@
 /**
  * HelloWorld module with private things
  */
-import { func, object } from "../../../decorators/decorators.js"
+import { func, object } from "../../../decorators/decorators.ts"
 
 /**
  * PrivateMethod class

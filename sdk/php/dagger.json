@@ -1,18 +1,9 @@
 {
   "name": "php-sdk",
   "sdk": "go",
-  "include": [
-    "generated/",
-    "src/",
-    "scripts/",
-    "composer.json",
-    "composer.lock",
-    "LICENSE",
-    "README.md"
-  ],
   "exclude": [
     "vendor/"
   ],
   "source": "runtime",
-  "engineVersion": "v0.12.3"
+  "engineVersion": "v0.13.0"
 }

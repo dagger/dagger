@@ -5,7 +5,7 @@
 // @emitDecoratorMetadata
 import "reflect-metadata"
 
-import { UnknownDaggerError } from "../../common/errors/UnknownDaggerError.js"
+import { UnknownDaggerError } from "../../common/errors/UnknownDaggerError.ts"
 
 export type Class = { new (...args: any[]): any }
 

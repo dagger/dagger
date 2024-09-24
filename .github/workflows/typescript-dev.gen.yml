@@ -16,7 +16,7 @@ concurrency:
     cancel-in-progress: true
 jobs:
     dagger:
-        runs-on: ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-12-7-8c-dind' || 'ubuntu-latest' }}
+        runs-on: ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-3-8c-dind' || 'ubuntu-latest' }}
         permissions:
             contents: read
         name: typescript-dev
@@ -227,7 +227,7 @@ jobs:
                 ```
                 .
 
-                cat $tmp/stderr.txt
+                tail -n 1000 $tmp/stderr.txt
 
                 cat <<'.'
                 ```

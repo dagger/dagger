@@ -4,9 +4,29 @@ slug: /integrations/openshift
 
 # OpenShift
 
-Dagger provides a Helm chart to create a Dagger Engine DaemonSet on an OpenShift cluster. A DaemonSet ensures that all matching nodes run an instance of Dagger Engine.
+Dagger can be used to set up a Continuous Integration (CI) environment on an OpenShift cluster. This makes it possible to distribute CI workloads across multiple nodes and scale out as needed.
 
-First, create a `values.yaml` file to configure the Dagger Helm deployment. This includes a set of labels for the pod affinity and the taints and tolerations for the nodes.
+## How it works
+
+The architecture consists of a Dagger Engine DaemonSet which executes the pipelines and tainted nodes for dedicated workloads.
+
+Dagger provides a Helm chart to create a Dagger Engine DaemonSet. The DaemonSet ensures that all matching nodes in the cluster run an instance of Dagger.
+
+The Dagger DaemonSet configuration is designed to:
+
+- best utilize local Non-Volatile Memory Express (NVMe) hard drives of the worker nodes
+- reduce the amount of network latency and bandwidth requirements
+- simplify routing of Dagger SDK and CLI requests
+
+## Prerequisites
+
+- A functional OpenShift cluster.
+- The [Helm](https://helm.sh/) package manager installed on your local machine.
+- The [OpenShift CLI](https://docs.openshift.com/container-platform/4.13/cli_reference/openshift_cli/getting-started-cli.html) (`oc`) installed on your local machine.
+
+## Example
+
+Create a `values.yaml` file to configure the Dagger Helm deployment. This includes a set of labels for the pod affinity and the taints and tolerations for the nodes.
 
 ```yaml file=./snippets/openshift.yaml
 ```
@@ -19,17 +39,11 @@ Next, execute the following command for each node that is intended to host a Dag
 oc adm taint nodes NODE-NAME dagger-node=true:NoSchedule
 ```
 
-Install the Dagger Engine using the Dagger Helm chart and the configuration above:
+Install Dagger using the Dagger Helm chart and the configuration above:
 
 ```shell
 helm upgrade --create-namespace --install --namespace dagger dagger oci://registry.dagger.io/dagger-helm -f values.yaml
 ```
-
-The Dagger Engine DaemonSet configuration is designed to:
-
-- best utilize local Non-Volatile Memory Express (NVMe) hard drives of the worker nodes
-- reduce the amount of network latency and bandwidth requirements
-- simplify routing of Dagger SDK and CLI requests
 
 Finally, grant the necessary permissions for the `default` service account in the `dagger` namespace:
 
@@ -40,3 +54,11 @@ Without this step, pod creation will fail due to insufficient permissions to exe
 ```shell
 oc adm policy add-scc-to-user privileged -z default -n dagger
 ```
+
+## Resources
+
+If you have any questions about additional ways to use OpenShift with Dagger, join our [Discord](https://discord.gg/dagger-io) and ask your questions in our [Kubernetes channel](https://discord.com/channels/707636530424053791/1122942037096927353).
+
+## About OpenShift
+
+[OpenShift](https://www.redhat.com/en/technologies/cloud-computing/openshift) is a Kubernetes-based platform to build and deploy applications at scale.

@@ -1075,6 +1075,46 @@ class Container(Type):
         _ctx = self._select("terminal", _args)
         return Container(_ctx)
 
+    async def up(
+        self,
+        *,
+        ports: list[PortForward] | None = None,
+        random: bool | None = False,
+    ) -> Void | None:
+        """Starts a Service and creates a tunnel that forwards traffic from the
+        caller's network to that service.
+
+        Be sure to set any exposed ports before calling this api.
+
+        Parameters
+        ----------
+        ports:
+            List of frontend/backend port mappings to forward.
+            Frontend is the port accepting traffic on the host, backend is the
+            service port.
+        random:
+            Bind each tunnel port to a random port on the host.
+
+        Returns
+        -------
+        Void | None
+            The absence of a value.  A Null Void is used as a placeholder for
+            resolvers that do not return anything.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("ports", [] if ports is None else ports),
+            Arg("random", random, False),
+        ]
+        _ctx = self._select("up", _args)
+        await _ctx.execute()
+
     async def user(self) -> str:
         """Retrieves the user to be set for all commands.
 
@@ -1095,6 +1135,23 @@ class Container(Type):
         _args: list[Arg] = []
         _ctx = self._select("user", _args)
         return await _ctx.execute(str)
+
+    def with_annotation(self, name: str, value: str) -> Self:
+        """Retrieves this container plus the given OCI anotation.
+
+        Parameters
+        ----------
+        name:
+            The name of the annotation.
+        value:
+            The value of the annotation.
+        """
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+        ]
+        _ctx = self._select("withAnnotation", _args)
+        return Container(_ctx)
 
     def with_default_args(self, args: list[str]) -> Self:
         """Configures default arguments for future commands.
@@ -1750,6 +1807,20 @@ class Container(Type):
         _ctx = self._select("withWorkdir", _args)
         return Container(_ctx)
 
+    def without_annotation(self, name: str) -> Self:
+        """Retrieves this container minus the given OCI annotation.
+
+        Parameters
+        ----------
+        name:
+            The name of the annotation.
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("withoutAnnotation", _args)
+        return Container(_ctx)
+
     def without_default_args(self) -> Self:
         """Retrieves this container with unset default arguments for future
         commands.
@@ -1838,6 +1909,20 @@ class Container(Type):
             Arg("path", path),
         ]
         _ctx = self._select("withoutFile", _args)
+        return Container(_ctx)
+
+    def without_files(self, paths: list[str]) -> Self:
+        """Retrieves this container with the files at the given paths removed.
+
+        Parameters
+        ----------
+        paths:
+            Location of the files to remove (e.g., ["/file.txt"]).
+        """
+        _args = [
+            Arg("paths", paths),
+        ]
+        _ctx = self._select("withoutFiles", _args)
         return Container(_ctx)
 
     def without_focus(self) -> Self:
@@ -2909,6 +2994,20 @@ class Directory(Type):
             Arg("path", path),
         ]
         _ctx = self._select("withoutFile", _args)
+        return Directory(_ctx)
+
+    def without_files(self, paths: list[str]) -> Self:
+        """Retrieves this directory with the files at the given paths removed.
+
+        Parameters
+        ----------
+        paths:
+            Location of the file to remove (e.g., ["/file.txt"]).
+        """
+        _args = [
+            Arg("paths", paths),
+        ]
+        _ctx = self._select("withoutFiles", _args)
         return Directory(_ctx)
 
     def with_(self, cb: Callable[["Directory"], "Directory"]) -> "Directory":
@@ -5696,6 +5795,7 @@ class ModuleSource(Type):
         path: str,
         *,
         view_name: str | None = None,
+        ignore: list[str] | None = None,
     ) -> Directory:
         """Load a directory from the caller optionally with a given view applied.
 
@@ -5705,10 +5805,13 @@ class ModuleSource(Type):
             The path on the caller's filesystem to load.
         view_name:
             If set, the name of the view to apply to the path.
+        ignore:
+            Patterns to ignore when loading the directory.
         """
         _args = [
             Arg("path", path),
             Arg("viewName", view_name, None),
+            Arg("ignore", [] if ignore is None else ignore),
         ]
         _ctx = self._select("resolveDirectoryFromCaller", _args)
         return Directory(_ctx)

@@ -1,0 +1,102 @@
+name: Engine & CLI split
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+  # Enable manual trigger for easy debugging
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  test-modules:
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-3-16c-st-od' || 'ubuntu-latest' }}"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: "test"
+        uses: ./.github/actions/call
+        with:
+          function: "test specific --run=TestModule --race=true --parallel=16"
+          upload-logs: true
+
+  test-module-runtimes:
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-3-16c-st-od' || 'ubuntu-latest' }}"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: "test"
+        uses: ./.github/actions/call
+        with:
+          function: "test specific --run='TestGo|TestPython|TestTypescript|TestElixir|TestPHP' --race=true --parallel=16"
+          upload-logs: true
+
+  test-cli-engine:
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-3-16c-st-od' || 'ubuntu-latest' }}"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: "test"
+        uses: ./.github/actions/call
+        with:
+          function: "test specific --run='TestCLI|TestEngine' --race=true --parallel=16"
+          upload-logs: true
+
+  test-everything-else:
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-3-16c-st-od' || 'ubuntu-latest' }}"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: "test"
+        uses: ./.github/actions/call
+        with:
+          function: "test specific --skip='TestModule|TestGo|TestPython|TestTypescript|TestElixir|TestPHP|TestCLI|TestEngine' --race=true --parallel=16"
+          upload-logs: true
+
+  testdev-modules:
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-3-32c-dind-st-od' || 'ubuntu-latest' }}"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: "testdev"
+        uses: ./.github/actions/call
+        with:
+          function: "test specific --run='TestModule' --skip='TestDev' --race=true --parallel=16"
+          dev-engine: true
+          upload-logs: true
+
+  testdev-module-runtimes:
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-3-32c-dind-st-od' || 'ubuntu-latest' }}"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: "testdev"
+        uses: ./.github/actions/call
+        with:
+          function: "test specific --run='TestGo|TestPython|TestTypescript|TestElixir|TestPHP' --skip='TestDev' --race=true --parallel=16"
+          dev-engine: true
+          upload-logs: true
+
+  testdev-container:
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-3-32c-dind-st-od' || 'ubuntu-latest' }}"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: "testdev"
+        uses: ./.github/actions/call
+        with:
+          function: "test specific --run='TestContainer' --skip='TestDev' --race=true --parallel=16"
+          dev-engine: true
+          upload-logs: true

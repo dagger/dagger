@@ -879,6 +879,11 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 		return nil
 	}
 
+	clientIDPath := filepath.Join(state.metaMount.Source, MetaMountClientIDPath)
+	if err := os.WriteFile(clientIDPath, []byte(w.execMD.ClientID), 0o600); err != nil {
+		return fmt.Errorf("failed to write client id %s to %s: %w", w.execMD.ClientID, clientIDPath, err)
+	}
+
 	if w.execMD.SecretToken == "" {
 		w.execMD.SecretToken = randid.NewID()
 	}
@@ -896,8 +901,20 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	w.execMD.ClientStableID = randid.NewID()
 
 	// include SSH_AUTH_SOCK if it's set in the exec's env vars
-	if v, ok := state.origEnvMap["SSH_AUTH_SOCK"]; ok {
-		w.execMD.SSHAuthSocketPath = v
+	if sockPath, ok := state.origEnvMap["SSH_AUTH_SOCK"]; ok {
+		if strings.HasPrefix(sockPath, "~") {
+			if homeDir, ok := state.origEnvMap["HOME"]; ok {
+				expandedPath, err := client.ExpandHomeDir(homeDir, sockPath)
+				if err != nil {
+					return fmt.Errorf("failed to expand homedir: %w", err)
+				}
+				w.execMD.SSHAuthSocketPath = expandedPath
+			} else {
+				return fmt.Errorf("HOME not set, cannot expand SSH_AUTH_SOCK path: %s", sockPath)
+			}
+		} else {
+			w.execMD.SSHAuthSocketPath = sockPath
+		}
 	}
 
 	filesyncer, err := client.NewFilesyncer(

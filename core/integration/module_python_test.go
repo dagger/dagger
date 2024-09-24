@@ -666,6 +666,73 @@ class Test:
 		require.NoError(t, err)
 		require.Equal(t, "0.4.5", out)
 	})
+
+	t.Run("index-url", func(ctx context.Context, t *testctx.T) {
+		source := pythonSource(`
+import contextlib
+import os
+
+import dagger
+
+@dagger.object_type
+class Test:
+    @dagger.function
+    def urls(self) -> list[str]:
+        res = []
+        with contextlib.suppress(KeyError):
+            res.append(os.environ["UV_INDEX_URL"])
+        with contextlib.suppress(KeyError):
+            res.append(os.environ["UV_EXTRA_INDEX_URL"])
+        return res
+`,
+		)
+
+		t.Run("with", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			out, err := daggerCliBase(t, c).
+				With(source).
+				With(pyprojectExtra(nil, `
+                    [tool.uv]
+                    index-url = "https://pypi.org/simple"
+                    extra-index-url = "https://pypi.org/simple"
+                `)).
+				With(daggerInitPython()).
+				With(daggerCall("urls")).
+				Stdout(ctx)
+
+			require.NoError(t, err)
+			require.Equal(t, "https://pypi.org/simple\nhttps://pypi.org/simple\n", out)
+		})
+
+		t.Run("without", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			out, err := daggerCliBase(t, c).
+				With(source).
+				With(daggerInitPython()).
+				With(daggerCall("urls", "--json")).
+				Stdout(ctx)
+
+			require.NoError(t, err)
+			require.JSONEq(t, "[]", out)
+		})
+
+		t.Run("error", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			_, err := daggerCliBase(t, c).
+				With(source).
+				With(pyprojectExtra(nil, `
+                    [tool.uv]
+                    index-url = "https://pypi.example.com/simple"
+                `)).
+				With(daggerInitPython()).
+				Sync(ctx)
+
+			require.ErrorContains(t, err, "Failed to fetch wheel")
+		})
+	})
 }
 
 func (PythonSuite) TestPipLock(ctx context.Context, t *testctx.T) {

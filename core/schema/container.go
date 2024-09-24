@@ -263,6 +263,9 @@ func (s *containerSchema) Install() {
 		dagql.Func("withoutFile", s.withoutFile).
 			Doc(`Retrieves this container with the file at the given path removed.`).
 			ArgDoc("path", `Location of the file to remove (e.g., "/file.txt").`),
+		dagql.Func("withoutFiles", s.withoutFiles).
+			Doc(`Retrieves this container with the files at the given paths removed.`).
+			ArgDoc("paths", `Location of the files to remove (e.g., ["/file.txt"]).`),
 
 		dagql.Func("withFiles", s.withFiles).
 			Doc(`Retrieves this container plus the contents of the given files copied to the given path.`).
@@ -418,6 +421,15 @@ func (s *containerSchema) Install() {
 			View(BeforeVersion("v0.12.0")).
 			Doc(`The error stream of the last executed command.`,
 				`Will execute default command if none is set, or error if there's no default.`),
+
+		dagql.Func("withAnnotation", s.withAnnotation).
+			Doc(`Retrieves this container plus the given OCI anotation.`).
+			ArgDoc("name", `The name of the annotation.`).
+			ArgDoc("value", `The value of the annotation.`),
+
+		dagql.Func("withoutAnnotation", s.withoutAnnotation).
+			Doc(`Retrieves this container minus the given OCI annotation.`).
+			ArgDoc("name", `The name of the annotation.`),
 
 		dagql.Func("publish", s.publish).
 			Impure("Writes to the specified Docker registry.").
@@ -1107,6 +1119,23 @@ func (s *containerSchema) withMountedDirectory(ctx context.Context, parent *core
 	return parent.WithMountedDirectory(ctx, args.Path, dir.Self, args.Owner, false)
 }
 
+type containerWithAnnotationArgs struct {
+	Name  string
+	Value string
+}
+
+func (s *containerSchema) withAnnotation(ctx context.Context, parent *core.Container, args containerWithAnnotationArgs) (*core.Container, error) {
+	return parent.WithAnnotation(ctx, args.Name, args.Value)
+}
+
+type containerWithoutAnnotationArgs struct {
+	Name string
+}
+
+func (s *containerSchema) withoutAnnotation(ctx context.Context, parent *core.Container, args containerWithoutAnnotationArgs) (*core.Container, error) {
+	return parent.WithoutAnnotation(ctx, args.Name)
+}
+
 type containerPublishArgs struct {
 	Address           dagql.String
 	PlatformVariants  []core.ContainerID `default:"[]"`
@@ -1342,7 +1371,7 @@ type containerWithoutDirectoryArgs struct {
 }
 
 func (s *containerSchema) withoutDirectory(ctx context.Context, parent *core.Container, args containerWithoutDirectoryArgs) (*core.Container, error) {
-	return parent.WithoutPath(ctx, args.Path)
+	return parent.WithoutPaths(ctx, args.Path)
 }
 
 type containerWithoutFileArgs struct {
@@ -1350,7 +1379,15 @@ type containerWithoutFileArgs struct {
 }
 
 func (s *containerSchema) withoutFile(ctx context.Context, parent *core.Container, args containerWithoutFileArgs) (*core.Container, error) {
-	return parent.WithoutPath(ctx, args.Path)
+	return parent.WithoutPaths(ctx, args.Path)
+}
+
+type containerWithoutFilesArgs struct {
+	Paths []string
+}
+
+func (s *containerSchema) withoutFiles(ctx context.Context, parent *core.Container, args containerWithoutFilesArgs) (*core.Container, error) {
+	return parent.WithoutPaths(ctx, args.Paths...)
 }
 
 type containerWithNewFileArgs struct {

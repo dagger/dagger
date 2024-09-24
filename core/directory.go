@@ -80,15 +80,8 @@ func NewDirectory(query *Query, def *pb.Definition, dir string, platform Platfor
 	}
 }
 
-func NewScratchDirectory(query *Query, platform Platform) *Directory {
-	if query == nil {
-		panic("query must be non-nil")
-	}
-	return &Directory{
-		Query:    query,
-		Dir:      "/",
-		Platform: platform,
-	}
+func NewScratchDirectory(ctx context.Context, query *Query, platform Platform) (*Directory, error) {
+	return NewDirectorySt(ctx, query, llb.Scratch(), "/", platform, nil)
 }
 
 func NewDirectorySt(ctx context.Context, query *Query, st llb.State, dir string, platform Platform, services ServiceBindings) (*Directory, error) {
@@ -705,7 +698,7 @@ func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, e
 	return dir, nil
 }
 
-func (dir *Directory) Without(ctx context.Context, path string) (*Directory, error) {
+func (dir *Directory) Without(ctx context.Context, paths ...string) (*Directory, error) {
 	dir = dir.Clone()
 
 	st, err := dir.State()
@@ -713,8 +706,16 @@ func (dir *Directory) Without(ctx context.Context, path string) (*Directory, err
 		return nil, err
 	}
 
-	path = filepath.Join(dir.Dir, path)
-	err = dir.SetState(ctx, st.File(llb.Rm(path, llb.WithAllowWildcard(true), llb.WithAllowNotFound(true))))
+	var action *llb.FileAction
+	for _, path := range paths {
+		path = filepath.Join(dir.Dir, path)
+		if action == nil {
+			action = llb.Rm(path, llb.WithAllowWildcard(true), llb.WithAllowNotFound(true))
+		} else {
+			action = action.Rm(path, llb.WithAllowWildcard(true), llb.WithAllowNotFound(true))
+		}
+	}
+	err = dir.SetState(ctx, st.File(action))
 	if err != nil {
 		return nil, err
 	}

@@ -1,7 +1,7 @@
 import * as opentelemetry from "@opentelemetry/api"
 
-import { DaggerOtelConfigurator } from "./init.js"
-import { Tracer } from "./tracer.js"
+import { DaggerOtelConfigurator } from "./init.ts"
+import { Tracer } from "./tracer.ts"
 
 const DAGGER_TRACER_NAME = "dagger.io/sdk.typescript"
 

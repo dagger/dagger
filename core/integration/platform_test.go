@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -163,6 +164,27 @@ func (PlatformSuite) TestCacheMounts(ctx context.Context, t *testctx.T) {
 
 	cache := c.CacheVolume("test-platform-cache-mount")
 
+	// ensure the cache mount doesn't get pruned in the middle of the test by having a container
+	// run throughout with the cache mounted
+	ctx, cancel := context.WithCancelCause(ctx)
+	cancelErr := errors.New("test done")
+	t.Cleanup(func() {
+		cancel(cancelErr)
+	})
+	defer cancel(cancelErr)
+	var eg errgroup.Group
+	eg.Go(func() error {
+		_, err := c.Container().
+			From(alpineImage).
+			WithMountedCache("/cache", cache).
+			WithExec([]string{"sh", "-c", "sleep 9999"}).
+			Sync(ctx)
+		if errors.Is(err, cancelErr) {
+			return nil
+		}
+		return err
+	})
+
 	// make sure cache mounts are inherently platform-agnostic
 	cmds := make([]string, 0, len(platformToUname))
 	for platform := range platformToUname {
@@ -184,6 +206,9 @@ func (PlatformSuite) TestCacheMounts(ctx context.Context, t *testctx.T) {
 		WithExec([]string{"sh", "-x", "-c", strings.Join(cmds, " && ")}).
 		Sync(ctx)
 	require.NoError(t, err)
+
+	cancel(cancelErr)
+	require.NoError(t, eg.Wait())
 }
 
 func (PlatformSuite) TestInvalid(ctx context.Context, t *testctx.T) {
