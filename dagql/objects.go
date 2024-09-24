@@ -451,6 +451,8 @@ type FieldSpec struct {
 	DeprecatedReason string
 	// Module is the module that provides the field's implementation.
 	Module *call.Module
+	// Directives is the list of GraphQL directives attached to this field.
+	Directives []*ast.Directive
 
 	// extend is used during installation to copy the spec of a previous field
 	// with the same name
@@ -463,6 +465,9 @@ func (spec FieldSpec) FieldDefinition() *ast.FieldDefinition {
 		Description: spec.Description,
 		Arguments:   spec.Args.ArgumentDefinitions(),
 		Type:        spec.Type.Type(),
+	}
+	if len(spec.Directives) > 0 {
+		def.Directives = append([]*ast.Directive{}, spec.Directives...)
 	}
 	if spec.DeprecatedReason != "" {
 		def.Directives = append(def.Directives, deprecated(spec.DeprecatedReason))
@@ -491,6 +496,8 @@ type InputSpec struct {
 	// Sensitive indicates that the value of this arg is sensitive and should be
 	// omitted from telemetry.
 	Sensitive bool
+	// Directives is the list of GraphQL directives attached to this input.
+	Directives []*ast.Directive
 }
 
 type InputSpecs []InputSpec
@@ -515,6 +522,9 @@ func (specs InputSpecs) ArgumentDefinitions() []*ast.ArgumentDefinition {
 		if spec.Default != nil {
 			schemaArg.DefaultValue = spec.Default.ToLiteral().ToAST()
 		}
+		if len(spec.Directives) > 0 {
+			schemaArg.Directives = append([]*ast.Directive{}, spec.Directives...)
+		}
 		if spec.DeprecatedReason != "" {
 			schemaArg.Directives = append(schemaArg.Directives, deprecated(spec.DeprecatedReason))
 		}
@@ -533,6 +543,9 @@ func (specs InputSpecs) FieldDefinitions() []*ast.FieldDefinition {
 		}
 		if spec.Default != nil {
 			field.DefaultValue = spec.Default.ToLiteral().ToAST()
+		}
+		if len(spec.Directives) > 0 {
+			field.Directives = append([]*ast.Directive{}, spec.Directives...)
 		}
 		if spec.DeprecatedReason != "" {
 			field.Directives = append(field.Directives, deprecated(spec.DeprecatedReason))
