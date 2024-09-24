@@ -6,10 +6,6 @@ import TabItem from '@theme/TabItem';
 
 # Cache Volumes
 
-Cache volumes are especially useful when dealing with package managers such as `npm`, `maven`, `pip` and similar. Since these dependencies are usually locked to specific versions in the application's manifest, re-downloading them on every session is inefficient and time-consuming.
-
-For these tools to cache properly, they need their own cache data (usually a directory) to be persisted between sessions. By using a cache volume for this data, Dagger can reuse the cached contents across pipeline runs and reduce execution time.
-
 Cache volumes must be explicitly defined and used in your Dagger Function. Here is an example:
 
 <Tabs groupId="language">
