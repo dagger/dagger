@@ -15,7 +15,7 @@ import (
 // A dev environment for the DaggerDev Engine
 type DaggerDev struct {
 	Src     *dagger.Directory // +private
-	Version *VersionInfo
+	Version string
 	Tag     string
 
 	// When set, module codegen is automatically applied when retrieving the Dagger source code
@@ -45,26 +45,25 @@ func New(
 	gitDir *dagger.Directory,
 
 	// +optional
-	version string,
-	// +optional
-	tag string,
-
-	// +optional
 	dockerCfg *dagger.Secret,
 
 	// Git ref (used for test-publish checks)
 	// +optional
 	ref string,
 ) (*DaggerDev, error) {
-	versionInfo, err := newVersion(ctx, source, version)
+	v := dag.Version()
+	version, err := v.Version(ctx)
 	if err != nil {
 		return nil, err
 	}
-
+	tag, err := v.ImageTag(ctx)
+	if err != nil {
+		return nil, err
+	}
 	dev := &DaggerDev{
 		Src:       source,
-		Version:   versionInfo,
 		Tag:       tag,
+		Version:   version,
 		DockerCfg: dockerCfg,
 		GitRef:    ref,
 		GitDir:    gitDir,
@@ -237,7 +236,7 @@ func (dev *DaggerDev) Dev(
 		target = dag.Directory()
 	}
 
-	svc, err := dev.Engine().Service(ctx, "", dev.Version, image, gpuSupport)
+	svc, err := dev.Engine().Service(ctx, "", image, gpuSupport)
 	if err != nil {
 		return nil, err
 	}

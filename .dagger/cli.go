@@ -26,9 +26,6 @@ func (cli *CLI) Binary(
 	if err != nil {
 		return nil, err
 	}
-	builder = builder.
-		WithVersion(cli.Dagger.Version.String()).
-		WithTag(cli.Dagger.Tag)
 	if platform != "" {
 		builder = builder.WithPlatform(platform)
 	}
@@ -103,7 +100,7 @@ func (cli *CLI) Publish(
 		WithSecretVariable("AWS_REGION", awsRegion).
 		WithSecretVariable("AWS_BUCKET", awsBucket).
 		WithEnvVariable("ARTEFACTS_FQDN", artefactsFQDN).
-		WithEnvVariable("ENGINE_VERSION", cli.Dagger.Version.String()).
+		WithEnvVariable("ENGINE_VERSION", cli.Dagger.Version).
 		WithEnvVariable("ENGINE_TAG", cli.Dagger.Tag).
 		WithEntrypoint([]string{"/sbin/tini", "--", "/entrypoint.sh"}).
 		WithExec(args, dagger.ContainerWithExecOpts{
@@ -127,10 +124,6 @@ func (cli *CLI) TestPublish(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	builder = builder.
-		WithVersion(cli.Dagger.Version.String()).
-		WithTag(cli.Dagger.Tag)
-
 	var eg errgroup.Group
 	for _, os := range oses {
 		for _, arch := range arches {
