@@ -40,7 +40,7 @@ With Dagger's GraphQL API, while all of the above is true, each field in a query
     }
     ```
 
-    This query requests the `from` field of Dagger's `Container` object type, passing it the address of a container image as argument. To resolve this, Dagger will initialize a container from the image published at the given address and return a `Container` object representing the new container image.
+    This query requests the `from` field of Dagger's [`Container`](https://docs.dagger.io/api/reference/#definition-Container) object type, passing it the address of a container image as argument. To resolve this, Dagger will initialize a container from the image published at the given address and return a [`Container`](https://docs.dagger.io/api/reference/#definition-Container) object representing the new container image.
 
 1. Now, consider the next level of the query:
 
@@ -56,7 +56,7 @@ With Dagger's GraphQL API, while all of the above is true, each field in a query
     }
     ```
 
-    Here, the query requests the `withExec` field of the `Container` object returned in the previous step, passing it the command to be executed as an array of arguments. To resolve this, Dagger will  define the command for execution in the container image and return a `Container` object containing the execution results.
+    Here, the query requests the `withExec` field of the [`Container`](https://docs.dagger.io/api/reference/#definition-Container) object returned in the previous step, passing it the command to be executed as an array of arguments. To resolve this, Dagger will  define the command for execution in the container image and return a [`Container`](https://docs.dagger.io/api/reference/#definition-Container) object containing the execution results.
 
 1. Finally, consider the innermost level of the query:
 
@@ -72,13 +72,13 @@ With Dagger's GraphQL API, while all of the above is true, each field in a query
     }
     ```
 
-    Here, the query requests the `stdout` field of the `Container` object returned in the previous step. To resolve this, Dagger will return a `String` containing the result of the last executed command.
+    Here, the query requests the `stdout` field of the [`Container`](https://docs.dagger.io/api/reference/#definition-Container) object returned in the previous step. To resolve this, Dagger will return a `String` containing the result of the last executed command.
 
 ## State representation
 
 In a GraphQL schema, every object exposes an `id` field. This ID serves to uniquely identify and retrieve an object, and is also used by GraphQL's caching mechanism.
 
-In the Dagger GraphQL API too, objects expose an ID but here, the ID represents the object's state at a given time. Objects like `Container` and `Directory` should be thought of as collections of state, which are updated by subsequent field resolutions and whose ID represents their state at the instant of field resolution.
+In the Dagger GraphQL API too, objects expose an ID but here, the ID represents the object's state at a given time. Objects like [`Container`](https://docs.dagger.io/api/reference/#definition-Container) and [`Directory`](https://docs.dagger.io/api/reference/#definition-Directory) should be thought of as collections of state, which are updated by subsequent field resolutions and whose ID represents their state at the instant of field resolution.
 
 To illustrate this, consider the following query:
 
