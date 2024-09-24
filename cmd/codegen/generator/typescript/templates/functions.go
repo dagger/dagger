@@ -107,7 +107,7 @@ func isCustomScalar(t *introspection.Type) bool {
 func isEnum(t *introspection.Type) bool {
 	return t.Kind == introspection.TypeKindEnum &&
 		// We ignore the internal GraphQL enums
-		!strings.HasPrefix(t.Name, "__")
+		!strings.HasPrefix(t.Name, "_")
 }
 
 func isKeyword(s string) bool {

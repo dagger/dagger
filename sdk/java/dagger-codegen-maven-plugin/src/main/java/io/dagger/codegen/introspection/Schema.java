@@ -77,7 +77,7 @@ public class Schema {
   }
 
   public void visit(SchemaVisitor visitor) {
-    List<Type> filteredTypes = types.stream().filter(t -> !t.getName().startsWith("__")).toList();
+    List<Type> filteredTypes = types.stream().filter(t -> !t.getName().startsWith("_")).toList();
 
     filteredTypes.stream()
         .filter(t -> t.getKind() == TypeKind.SCALAR)

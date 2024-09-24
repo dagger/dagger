@@ -117,7 +117,7 @@ func (funcs goTemplateFuncs) formatDeprecation(s string) string {
 func (funcs goTemplateFuncs) isEnum(t introspection.Type) bool {
 	return t.Kind == introspection.TypeKindEnum &&
 		// We ignore the internal GraphQL enums
-		!strings.HasPrefix(t.Name, "__")
+		!strings.HasPrefix(t.Name, "_")
 }
 
 // isPointer returns true if value is a pointer.
