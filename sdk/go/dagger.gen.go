@@ -5722,6 +5722,8 @@ func (r *ModuleSource) ResolveDependency(dep *ModuleSource) *ModuleSource {
 type ModuleSourceResolveDirectoryFromCallerOpts struct {
 	// If set, the name of the view to apply to the path.
 	ViewName string
+	// Patterns to ignore when loading the directory.
+	Ignore []string
 }
 
 // Load a directory from the caller optionally with a given view applied.
@@ -5731,6 +5733,10 @@ func (r *ModuleSource) ResolveDirectoryFromCaller(path string, opts ...ModuleSou
 		// `viewName` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ViewName) {
 			q = q.Arg("viewName", opts[i].ViewName)
+		}
+		// `ignore` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Ignore) {
+			q = q.Arg("ignore", opts[i].Ignore)
 		}
 	}
 	q = q.Arg("path", path)

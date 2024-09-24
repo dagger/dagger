@@ -1235,6 +1235,7 @@ func (s *moduleSchema) moduleSourceResolveDirectoryFromCaller(
 	args struct {
 		Path     string
 		ViewName *string
+		Ignore   []string `default:"[]"`
 	},
 ) (inst dagql.Instance[*core.Directory], err error) {
 	path := args.Path
@@ -1263,6 +1264,11 @@ func (s *moduleSchema) moduleSourceResolveDirectoryFromCaller(
 				includes = append(includes, p)
 			}
 		}
+	}
+
+	// If there's no view configured, we can apply ignore patterns.
+	if args.ViewName == nil && len(args.Ignore) > 0 {
+		excludes = append(excludes, args.Ignore...)
 	}
 
 	_, desc, err := bk.LocalImport(

@@ -183,14 +183,17 @@ defmodule Dagger.ModuleSource do
   end
 
   @doc "Load a directory from the caller optionally with a given view applied."
-  @spec resolve_directory_from_caller(t(), String.t(), [{:view_name, String.t() | nil}]) ::
-          Dagger.Directory.t()
+  @spec resolve_directory_from_caller(t(), String.t(), [
+          {:view_name, String.t() | nil},
+          {:ignore, [String.t()]}
+        ]) :: Dagger.Directory.t()
   def resolve_directory_from_caller(%__MODULE__{} = module_source, path, optional_args \\ []) do
     query_builder =
       module_source.query_builder
       |> QB.select("resolveDirectoryFromCaller")
       |> QB.put_arg("path", path)
       |> QB.maybe_put_arg("viewName", optional_args[:view_name])
+      |> QB.maybe_put_arg("ignore", optional_args[:ignore])
 
     %Dagger.Directory{
       query_builder: query_builder,

@@ -558,7 +558,7 @@ func (fc *FuncCommand) selectFunc(fn *modFunction, cmd *cobra.Command) error {
 
 		switch v := val.(type) {
 		case DaggerValue:
-			obj, err := v.Get(fc.ctx, dag, fc.mod.Source)
+			obj, err := v.Get(fc.ctx, dag, fc.mod.Source, arg)
 			if err != nil {
 				return fmt.Errorf("failed to get value for argument %q: %w", arg.FlagName(), err)
 			}

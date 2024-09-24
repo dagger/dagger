@@ -2150,6 +2150,9 @@ type ModuleSource {
 
   """Load a directory from the caller optionally with a given view applied."""
   resolveDirectoryFromCaller(
+    """Patterns to ignore when loading the directory."""
+    ignore: [String!] = []
+
     """The path on the caller's filesystem to load."""
     path: String!
 

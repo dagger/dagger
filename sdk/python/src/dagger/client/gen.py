@@ -5795,6 +5795,7 @@ class ModuleSource(Type):
         path: str,
         *,
         view_name: str | None = None,
+        ignore: list[str] | None = None,
     ) -> Directory:
         """Load a directory from the caller optionally with a given view applied.
 
@@ -5804,10 +5805,13 @@ class ModuleSource(Type):
             The path on the caller's filesystem to load.
         view_name:
             If set, the name of the view to apply to the path.
+        ignore:
+            Patterns to ignore when loading the directory.
         """
         _args = [
             Arg("path", path),
             Arg("viewName", view_name, None),
+            Arg("ignore", [] if ignore is None else ignore),
         ]
         _ctx = self._select("resolveDirectoryFromCaller", _args)
         return Directory(_ctx)

@@ -114,7 +114,7 @@ type DaggerValue interface {
 	pflag.Value
 
 	// Get returns the final value for the query builder.
-	Get(context.Context, *dagger.Client, *dagger.ModuleSource) (any, error)
+	Get(context.Context, *dagger.Client, *dagger.ModuleSource, *modFunctionArg) (any, error)
 }
 
 // sliceValue is a pflag.Value that builds a slice of DaggerValue instances.
@@ -144,10 +144,10 @@ func (v *sliceValue[T]) String() string {
 	return "[" + out + "]"
 }
 
-func (v *sliceValue[T]) Get(ctx context.Context, c *dagger.Client, modSrc *dagger.ModuleSource) (any, error) {
+func (v *sliceValue[T]) Get(ctx context.Context, c *dagger.Client, modSrc *dagger.ModuleSource, modArg *modFunctionArg) (any, error) {
 	out := make([]any, len(v.value))
 	for i, v := range v.value {
-		outV, err := v.Get(ctx, c, modSrc)
+		outV, err := v.Get(ctx, c, modSrc, modArg)
 		if err != nil {
 			return nil, err
 		}
@@ -244,7 +244,7 @@ func (v *enumValue) String() string {
 	return v.value
 }
 
-func (v *enumValue) Get(ctx context.Context, dag *dagger.Client, modSrc *dagger.ModuleSource) (any, error) {
+func (v *enumValue) Get(ctx context.Context, dag *dagger.Client, modSrc *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
 	return v.value, nil
 }
 
@@ -281,7 +281,7 @@ func (v *containerValue) String() string {
 	return v.address
 }
 
-func (v *containerValue) Get(_ context.Context, c *dagger.Client, _ *dagger.ModuleSource) (any, error) {
+func (v *containerValue) Get(_ context.Context, c *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
 	if v.address == "" {
 		return nil, fmt.Errorf("container address cannot be empty")
 	}
@@ -309,7 +309,7 @@ func (v *directoryValue) String() string {
 	return v.address
 }
 
-func (v *directoryValue) Get(ctx context.Context, dag *dagger.Client, modSrc *dagger.ModuleSource) (any, error) {
+func (v *directoryValue) Get(ctx context.Context, dag *dagger.Client, modSrc *dagger.ModuleSource, modArg *modFunctionArg) (any, error) {
 	if v.String() == "" {
 		return nil, fmt.Errorf("directory address cannot be empty")
 	}
@@ -364,6 +364,7 @@ func (v *directoryValue) Get(ctx context.Context, dag *dagger.Client, modSrc *da
 
 	return modSrc.ResolveDirectoryFromCaller(path, dagger.ModuleSourceResolveDirectoryFromCallerOpts{
 		ViewName: viewName,
+		Ignore:   modArg.Ignore,
 	}).Sync(ctx)
 }
 
@@ -400,7 +401,7 @@ func (v *fileValue) String() string {
 	return v.path
 }
 
-func (v *fileValue) Get(_ context.Context, dag *dagger.Client, _ *dagger.ModuleSource) (any, error) {
+func (v *fileValue) Get(_ context.Context, dag *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
 	vStr := v.String()
 	if vStr == "" {
 		return nil, fmt.Errorf("file path cannot be empty")
@@ -489,7 +490,7 @@ func (v *secretValue) String() string {
 	return fmt.Sprintf("%s:%s", v.secretSource, v.sourceVal)
 }
 
-func (v *secretValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.ModuleSource) (any, error) {
+func (v *secretValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
 	var plaintext string
 
 	switch v.secretSource {
@@ -609,7 +610,7 @@ func (v *serviceValue) Set(s string) error {
 	return nil
 }
 
-func (v *serviceValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.ModuleSource) (any, error) {
+func (v *serviceValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
 	svc, err := c.Host().Service(v.ports, dagger.HostServiceOpts{Host: v.host}).Start(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to start service: %w", err)
@@ -656,7 +657,7 @@ func (v *portForwardValue) String() string {
 	return fmt.Sprintf("%d:%d", v.frontend, v.backend)
 }
 
-func (v *portForwardValue) Get(_ context.Context, c *dagger.Client, _ *dagger.ModuleSource) (any, error) {
+func (v *portForwardValue) Get(_ context.Context, c *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
 	return &dagger.PortForward{
 		Frontend: v.frontend,
 		Backend:  v.backend,
@@ -684,7 +685,7 @@ func (v *socketValue) Set(s string) error {
 	return nil
 }
 
-func (v *socketValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.ModuleSource) (any, error) {
+func (v *socketValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
 	return c.Host().UnixSocket(v.path), nil
 }
 
@@ -710,7 +711,7 @@ func (v *cacheVolumeValue) String() string {
 	return v.name
 }
 
-func (v *cacheVolumeValue) Get(_ context.Context, dag *dagger.Client, _ *dagger.ModuleSource) (any, error) {
+func (v *cacheVolumeValue) Get(_ context.Context, dag *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
 	if v.String() == "" {
 		return nil, fmt.Errorf("cacheVolume name cannot be empty")
 	}
@@ -737,7 +738,7 @@ func (v *moduleValue) String() string {
 	return v.ref
 }
 
-func (v *moduleValue) Get(ctx context.Context, dag *dagger.Client, _ *dagger.ModuleSource) (any, error) {
+func (v *moduleValue) Get(ctx context.Context, dag *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
 	if v.ref == "" {
 		return nil, fmt.Errorf("module ref cannot be empty")
 	}
@@ -768,7 +769,7 @@ func (v *moduleSourceValue) String() string {
 	return v.ref
 }
 
-func (v *moduleSourceValue) Get(ctx context.Context, dag *dagger.Client, _ *dagger.ModuleSource) (any, error) {
+func (v *moduleSourceValue) Get(ctx context.Context, dag *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
 	if v.ref == "" {
 		return nil, fmt.Errorf("module source ref cannot be empty")
 	}
@@ -802,7 +803,7 @@ func (v *platformValue) String() string {
 	return v.platform
 }
 
-func (v *platformValue) Get(ctx context.Context, dag *dagger.Client, _ *dagger.ModuleSource) (any, error) {
+func (v *platformValue) Get(ctx context.Context, dag *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
 	if v.platform == "" {
 		return nil, fmt.Errorf("platform cannot be empty")
 	}
