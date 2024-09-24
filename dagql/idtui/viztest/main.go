@@ -16,25 +16,25 @@ type Viztest struct {
 }
 
 // HelloWorld returns the string "Hello, world!"
-func (m *Viztest) HelloWorld() string {
+func (*Viztest) HelloWorld() string {
 	return "Hello, world!"
 }
 
 // LogThroughput logs the current time in a tight loop.
-func (m *Viztest) Spam() *dagger.Container {
+func (*Viztest) Spam() *dagger.Container {
 	for {
 		fmt.Println(time.Now())
 	}
 }
 
 // Encapsulate calls a failing function, but ultimately succeeds.
-func (m *Viztest) Encapsulate(ctx context.Context) error {
-	_ = m.FailLog(ctx)
+func (v *Viztest) Encapsulate(ctx context.Context) error {
+	_ = v.FailLog(ctx)
 	return nil // no error, that's the point
 }
 
 // FailEffect returns a function whose effects will fail when it runs.
-func (m *Viztest) FailEffect() *dagger.Container {
+func (*Viztest) FailEffect() *dagger.Container {
 	return dag.Container().
 		From("alpine").
 		WithExec([]string{"sh", "-c", "echo this is a failing effect; exit 1"})
@@ -65,7 +65,7 @@ func (*Viztest) ManyLines(n int) {
 	}
 }
 
-func (vt *Viztest) ManySpans(
+func (*Viztest) ManySpans(
 	ctx context.Context,
 	n int,
 	// +default=0
