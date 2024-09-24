@@ -1,9 +1,9 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import assert from "assert"
 
-import { dag, Container } from "../../api/client.gen.ts"
-import { connection } from "../../connect.ts"
-import { Registry } from "../registry/registry.ts"
+import { dag, Container } from "../../api/client.gen.js"
+import { connection } from "../../connect.js"
+import { Registry } from "../registry/registry.js"
 
 describe("Registry", function () {
   it("Should support function", async function () {

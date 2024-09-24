@@ -1,3 +1,3 @@
-import { getTracer } from "./telemetry.ts"
+import { getTracer } from "./telemetry.js"
 
 export { getTracer }

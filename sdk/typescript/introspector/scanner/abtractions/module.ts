@@ -1,7 +1,7 @@
 import ts from "typescript"
 
-import { DaggerEnum, DaggerEnums, isEnumDecorated } from "./enum.ts"
-import { DaggerObject, DaggerObjects, isObjectDecorated } from "./object.ts"
+import { DaggerEnum, DaggerEnums, isEnumDecorated } from "./enum.js"
+import { DaggerObject, DaggerObjects, isObjectDecorated } from "./object.js"
 
 export class DaggerModule {
   private checker: ts.TypeChecker

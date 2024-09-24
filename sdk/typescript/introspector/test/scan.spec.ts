@@ -5,8 +5,8 @@ import { describe, it } from "mocha"
 import * as path from "path"
 import { fileURLToPath } from "url"
 
-import { scan } from "../scanner/scan.ts"
-import { listFiles } from "../utils/files.ts"
+import { scan } from "../scanner/scan.js"
+import { listFiles } from "../utils/files.js"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)

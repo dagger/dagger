@@ -1,4 +1,4 @@
-import { func, object } from "../../../decorators/decorators.ts"
+import { func, object } from "../../../decorators/decorators.js"
 
 /**
  * VoidReturn class

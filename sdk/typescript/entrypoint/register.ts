@@ -5,18 +5,18 @@ import {
   ModuleID,
   TypeDef,
   TypeDefKind,
-} from "../api/client.gen.ts"
-import { Arguments } from "../introspector/scanner/abtractions/argument.ts"
-import { Constructor } from "../introspector/scanner/abtractions/constructor.ts"
-import { Method } from "../introspector/scanner/abtractions/method.ts"
-import { DaggerModule } from "../introspector/scanner/abtractions/module.ts"
+} from "../api/client.gen.js"
+import { Arguments } from "../introspector/scanner/abtractions/argument.js"
+import { Constructor } from "../introspector/scanner/abtractions/constructor.js"
+import { Method } from "../introspector/scanner/abtractions/method.js"
+import { DaggerModule } from "../introspector/scanner/abtractions/module.js"
 import {
   EnumTypeDef,
   ListTypeDef,
   ObjectTypeDef,
   ScalarTypeDef,
   TypeDef as ScannerTypeDef,
-} from "../introspector/scanner/typeDefs.ts"
+} from "../introspector/scanner/typeDefs.js"
 
 /**
  * Register the module files and returns its ID

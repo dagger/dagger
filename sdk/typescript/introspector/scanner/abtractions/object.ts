@@ -1,10 +1,10 @@
 import ts from "typescript"
 
-import { UnknownDaggerError } from "../../../common/errors/UnknownDaggerError.ts"
-import { object } from "../../decorators/decorators.ts"
-import { Constructor } from "./constructor.ts"
-import { Method, Methods, isMethodDecorated } from "./method.ts"
-import { Properties, Property } from "./property.ts"
+import { UnknownDaggerError } from "../../../common/errors/UnknownDaggerError.js"
+import { object } from "../../decorators/decorators.js"
+import { Constructor } from "./constructor.js"
+import { Method, Methods, isMethodDecorated } from "./method.js"
+import { Properties, Property } from "./property.js"
 
 export const OBJECT_DECORATOR = object.name
 

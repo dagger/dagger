@@ -2,7 +2,7 @@ import assert from "assert"
 import * as path from "path"
 import { fileURLToPath } from "url"
 
-import { listFiles } from "../utils/files.ts"
+import { listFiles } from "../utils/files.js"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
