@@ -60,7 +60,7 @@ func (sdk *SDK) allSDKs() []sdkBase {
 }
 
 func (dev *DaggerDev) installer(ctx context.Context, name string) (func(*dagger.Container) *dagger.Container, error) {
-	engineSvc, err := dev.Engine().Service(ctx, name, dev.Version, nil, false)
+	engineSvc, err := dev.Engine().Service(ctx, name, nil, false)
 	if err != nil {
 		return nil, err
 	}

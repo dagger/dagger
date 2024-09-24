@@ -73,24 +73,22 @@ func NewBuilder(ctx context.Context, source *dagger.Directory) (*Builder, error)
 			"**/_build",
 		},
 	})
-
+	v := dag.Version()
+	version, err := v.Version(ctx)
+	if err != nil {
+		return nil, err
+	}
+	tag, err := v.ImageTag(ctx)
+	if err != nil {
+		return nil, err
+	}
 	return &Builder{
 		source:       source,
 		platform:     dagger.Platform(platforms.DefaultString()),
 		platformSpec: platforms.DefaultSpec(),
+		version:      version,
+		tag:          tag,
 	}, nil
-}
-
-func (build *Builder) WithVersion(version string) *Builder {
-	b := *build
-	b.version = version
-	return &b
-}
-
-func (build *Builder) WithTag(tag string) *Builder {
-	b := *build
-	b.tag = tag
-	return &b
 }
 
 func (build *Builder) WithRace(race bool) *Builder {

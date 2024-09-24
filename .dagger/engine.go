@@ -80,8 +80,6 @@ func (e *Engine) Container(
 		return nil, err
 	}
 	builder = builder.
-		WithVersion(e.Dagger.Version.String()).
-		WithTag(e.Dagger.Tag).
 		WithRace(e.Race)
 	if platform != "" {
 		builder = builder.WithPlatform(platform)
@@ -128,17 +126,18 @@ func (e *Engine) Container(
 func (e *Engine) Service(
 	ctx context.Context,
 	name string,
-
-	// +optional
-	version *VersionInfo,
 	// +optional
 	image *Distro,
 	// +optional
 	gpuSupport bool,
 ) (*dagger.Service, error) {
+	version, err := dag.Version().Version(ctx)
+	if err != nil {
+		return nil, err
+	}
 	var cacheVolumeName string
-	if version != nil {
-		cacheVolumeName = "dagger-dev-engine-state-" + version.String()
+	if version != "" {
+		cacheVolumeName = "dagger-dev-engine-state-" + version
 	} else {
 		cacheVolumeName = "dagger-dev-engine-state-" + identity.NewID()
 	}

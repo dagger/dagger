@@ -3,6 +3,10 @@
   "sdk": "go",
   "dependencies": [
     {
+      "name": "version",
+      "source": "version"
+    },
+    {
       "name": "alpine",
       "source": "modules/alpine"
     },
