@@ -69,6 +69,18 @@ defmodule Dagger.FunctionArg do
     Client.execute(function_arg.client, query_builder)
   end
 
+  @doc "The location of this arg declaration."
+  @spec source_map(t()) :: Dagger.SourceMap.t()
+  def source_map(%__MODULE__{} = function_arg) do
+    query_builder =
+      function_arg.query_builder |> QB.select("sourceMap")
+
+    %Dagger.SourceMap{
+      query_builder: query_builder,
+      client: function_arg.client
+    }
+  end
+
   @doc "The type of the argument."
   @spec type_def(t()) :: Dagger.TypeDef.t()
   def type_def(%__MODULE__{} = function_arg) do

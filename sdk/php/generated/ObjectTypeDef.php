@@ -68,6 +68,15 @@ class ObjectTypeDef extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * The location of this object declaration.
+     */
+    public function sourceMap(): SourceMap
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('sourceMap');
+        return new \Dagger\SourceMap($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise.
      */
     public function sourceModuleName(): string

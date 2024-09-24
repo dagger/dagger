@@ -109,12 +109,18 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble
      *
      * Note that an enum's values may be omitted if the intent is only to refer to an enum. This is how functions are able to return their own, or any other circular reference.
      */
-    public function withEnum(string $name, ?string $description = ''): TypeDef
-    {
+    public function withEnum(
+        string $name,
+        ?string $description = '',
+        SourceMapId|SourceMap|null $sourceMap = null,
+    ): TypeDef {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEnum');
         $innerQueryBuilder->setArgument('name', $name);
         if (null !== $description) {
         $innerQueryBuilder->setArgument('description', $description);
+        }
+        if (null !== $sourceMap) {
+        $innerQueryBuilder->setArgument('sourceMap', $sourceMap);
         }
         return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
@@ -122,12 +128,18 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble
     /**
      * Adds a static value for an Enum TypeDef, failing if the type is not an enum.
      */
-    public function withEnumValue(string $value, ?string $description = ''): TypeDef
-    {
+    public function withEnumValue(
+        string $value,
+        ?string $description = '',
+        SourceMapId|SourceMap|null $sourceMap = null,
+    ): TypeDef {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withEnumValue');
         $innerQueryBuilder->setArgument('value', $value);
         if (null !== $description) {
         $innerQueryBuilder->setArgument('description', $description);
+        }
+        if (null !== $sourceMap) {
+        $innerQueryBuilder->setArgument('sourceMap', $sourceMap);
         }
         return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
@@ -135,13 +147,20 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble
     /**
      * Adds a static field for an Object TypeDef, failing if the type is not an object.
      */
-    public function withField(string $name, TypeDefId|TypeDef $typeDef, ?string $description = ''): TypeDef
-    {
+    public function withField(
+        string $name,
+        TypeDefId|TypeDef $typeDef,
+        ?string $description = '',
+        SourceMapId|SourceMap|null $sourceMap = null,
+    ): TypeDef {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withField');
         $innerQueryBuilder->setArgument('name', $name);
         $innerQueryBuilder->setArgument('typeDef', $typeDef);
         if (null !== $description) {
         $innerQueryBuilder->setArgument('description', $description);
+        }
+        if (null !== $sourceMap) {
+        $innerQueryBuilder->setArgument('sourceMap', $sourceMap);
         }
         return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
@@ -159,12 +178,18 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble
     /**
      * Returns a TypeDef of kind Interface with the provided name.
      */
-    public function withInterface(string $name, ?string $description = ''): TypeDef
-    {
+    public function withInterface(
+        string $name,
+        ?string $description = '',
+        SourceMapId|SourceMap|null $sourceMap = null,
+    ): TypeDef {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withInterface');
         $innerQueryBuilder->setArgument('name', $name);
         if (null !== $description) {
         $innerQueryBuilder->setArgument('description', $description);
+        }
+        if (null !== $sourceMap) {
+        $innerQueryBuilder->setArgument('sourceMap', $sourceMap);
         }
         return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
@@ -194,12 +219,18 @@ class TypeDef extends Client\AbstractObject implements Client\IdAble
      *
      * Note that an object's fields and functions may be omitted if the intent is only to refer to an object. This is how functions are able to return their own object, or any other circular reference.
      */
-    public function withObject(string $name, ?string $description = ''): TypeDef
-    {
+    public function withObject(
+        string $name,
+        ?string $description = '',
+        SourceMapId|SourceMap|null $sourceMap = null,
+    ): TypeDef {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withObject');
         $innerQueryBuilder->setArgument('name', $name);
         if (null !== $description) {
         $innerQueryBuilder->setArgument('description', $description);
+        }
+        if (null !== $sourceMap) {
+        $innerQueryBuilder->setArgument('sourceMap', $sourceMap);
         }
         return new \Dagger\TypeDef($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }

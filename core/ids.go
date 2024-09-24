@@ -32,6 +32,8 @@ type FunctionArgID = dagql.ID[*FunctionArg]
 
 type TypeDefID = dagql.ID[*TypeDef]
 
+type SourceMapID = dagql.ID[*SourceMap]
+
 type GeneratedCodeID = dagql.ID[*GeneratedCode]
 
 type GitRepositoryID = dagql.ID[*GitRepository]

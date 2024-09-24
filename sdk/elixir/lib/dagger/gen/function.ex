@@ -74,12 +74,25 @@ defmodule Dagger.Function do
     }
   end
 
+  @doc "The location of this function declaration."
+  @spec source_map(t()) :: Dagger.SourceMap.t()
+  def source_map(%__MODULE__{} = function) do
+    query_builder =
+      function.query_builder |> QB.select("sourceMap")
+
+    %Dagger.SourceMap{
+      query_builder: query_builder,
+      client: function.client
+    }
+  end
+
   @doc "Returns the function with the provided argument"
   @spec with_arg(t(), String.t(), Dagger.TypeDef.t(), [
           {:description, String.t() | nil},
           {:default_value, Dagger.JSON.t() | nil},
           {:default_path, String.t() | nil},
-          {:ignore, [String.t()]}
+          {:ignore, [String.t()]},
+          {:source_map, Dagger.SourceMapID.t() | nil}
         ]) :: Dagger.Function.t()
   def with_arg(%__MODULE__{} = function, name, type_def, optional_args \\ []) do
     query_builder =
@@ -91,6 +104,7 @@ defmodule Dagger.Function do
       |> QB.maybe_put_arg("defaultValue", optional_args[:default_value])
       |> QB.maybe_put_arg("defaultPath", optional_args[:default_path])
       |> QB.maybe_put_arg("ignore", optional_args[:ignore])
+      |> QB.maybe_put_arg("sourceMap", optional_args[:source_map])
 
     %Dagger.Function{
       query_builder: query_builder,
@@ -105,6 +119,20 @@ defmodule Dagger.Function do
       function.query_builder
       |> QB.select("withDescription")
       |> QB.put_arg("description", description)
+
+    %Dagger.Function{
+      query_builder: query_builder,
+      client: function.client
+    }
+  end
+
+  @doc "Returns the function with the given source map."
+  @spec with_source_map(t(), Dagger.SourceMap.t()) :: Dagger.Function.t()
+  def with_source_map(%__MODULE__{} = function, source_map) do
+    query_builder =
+      function.query_builder
+      |> QB.select("withSourceMap")
+      |> QB.put_arg("sourceMap", Dagger.ID.id!(source_map))
 
     %Dagger.Function{
       query_builder: query_builder,
