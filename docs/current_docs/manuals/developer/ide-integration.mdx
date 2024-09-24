@@ -87,7 +87,7 @@ Uv with `uv.lock` needs to have the SDK library (`dagger-io`, generated in `./sd
 </TabItem>
 <TabItem value="uv pip">
 
-When using a `requirements.lock` file, uv provides a faster ["pip interface"](https://docs.astral.sh/uv/pip/), that replaces multiple tools. It can manage the Python installation, virtual environment creation, and dependency installation.
+When using a `requirements.lock` file, uv provides a faster ["pip interface"](https://docs.astral.sh/uv/pip/) that replaces multiple tools. It can manage the Python installation, virtual environment creation, and dependency installation.
 
 For example:
 
@@ -173,7 +173,7 @@ If you place the virtual environment (`.venv`) inside the module, don't forget t
 
 ## Visual Studio Code
 
-The simplest way to get [autocompletions and IntelliSense](https://code.visualstudio.com/docs/python/editing#_autocomplete-and-intellisense) working is to open it with the directory hat has `.venv` (next to `.pyproject.toml`), because VS Code picks it up automatically when it's in the root of the [VS Code workspace](https://code.visualstudio.com/docs/python/python-tutorial#_start-vs-code-in-a-workspace-folder):
+The simplest way to get [autocompletions and IntelliSense](https://code.visualstudio.com/docs/python/editing#_autocomplete-and-intellisense) working is to open it with the directory that has `.venv` (next to `.pyproject.toml`), because the IDE picks it up automatically when it's in the root of the [workspace](https://code.visualstudio.com/docs/python/python-tutorial#_start-vs-code-in-a-workspace-folder):
 
 ```shell
 code .            
@@ -185,7 +185,7 @@ The virtual environment can also be created and managed from within the IDE inst
 
 ## PyCharm
 
-PyCharm is a very popular IDE for Python projects. Similarly to VS Code, the simplest way for PyCharm to recognize the Dagger types is to open it on the directory that has `.venv` and `pyproject.toml`, via the terminal or the GUI.
+PyCharm is a very popular IDE for Python projects. The simplest way for PyCharm to recognize the `dagger` package is to open the IDE in the directory that has `.venv` and `pyproject.toml`, via the terminal or the GUI.
 
 It can also create and manage the project environment, but may not support `uv.lock` yet, so best run `uv` from the terminal instead.
 

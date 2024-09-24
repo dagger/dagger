@@ -391,7 +391,7 @@ Dagger modules in Python are built to be installed, like libraries. At module cr
 With the `uv.lock` file, Dagger uses uv's [project management](https://docs.astral.sh/uv/concepts/projects/) capabilites, but it can be opted out by removing this file, in which case Dagger falls back to [the pip interface](https://docs.astral.sh/uv/pip/) instead.
 
 :::info
-Dagger also supports pinning dependencies with a `pip-tools` compatible **`requirements.lock`** file in order to support the use of other project managers like Poetry or Hatch locally (when developing).
+Dagger also supports pinning dependencies with a `pip-tools` compatible `requirements.lock` file in order to support the use of other project managers like Poetry or Hatch locally (when developing).
 
 In this case, Dagger installs dependencies with:
 
@@ -402,7 +402,7 @@ uv pip install -r requirements.lock -e ./sdk -e .
 
 Notice that the `./sdk` and `main` (in `.`) packages don't need to be in the `requirements.lock` file, **only the third party dependencies**.
 
-This means module developers can use any tool they want to manage their virtual environment and install dependencies, but if third-party dependencies aren't pinned in a `requiments.lock` file, the developers may get different versions between the Dagger execution environment and their own local environment.
+This means module developers can use any tool they want to manage their virtual environment and install dependencies, but if third-party dependencies aren't pinned in a `requirements.lock` file, the developers may get different versions between the Dagger execution environment and their own local environment.
 
 For example, Poetry has its own `poetry.lock` which Dagger doesn't recognize, but it can be exported as a `requirements.lock` file with:
 
