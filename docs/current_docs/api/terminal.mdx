@@ -10,6 +10,12 @@ Dagger provides an interactive terminal that can help greatly when trying to deb
 
 To use this, set one or more explicit breakpoints in your Dagger pipeline with the `Container.terminal()` method. Dagger then starts an interactive terminal session at each breakpoint. This lets you inspect a `Directory` or a `Container` at any point in your pipeline run, with all the necessary context available to you.
 
+Here is a simple example, which opens an interactive terminal in an `alpine` container:
+
+```shell
+dagger core container from --address=alpine terminal
+```
+
 Here is an example of a Dagger Function which opens an interactive terminal at two different points in the Dagger pipeline to inspect the built container:
 
 <Tabs groupId="language">
