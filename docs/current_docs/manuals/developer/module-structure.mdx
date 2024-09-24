@@ -32,11 +32,11 @@ echo "3.11" > .python-version
 
 This will instruct Dagger to use the `python:3.11-slim` base image instead.
 
-Pinning the interpreter version can be useful to prevent an automatic upgrade from a future version of Dagger, or to select a newer version.
+**Pinning the interpreter version** can be useful to **prevent an automatic upgrade** from a future version of Dagger, or to select a newer version.
 
 :::tip
 
-For more advanced needs, a **different base image** can be used by adding the following to your `pyproject.toml`:
+For more **advanced** needs, a **different base image** can be used by adding the following to your `pyproject.toml`:
 
 ```toml
 [tool.dagger]
@@ -45,10 +45,7 @@ base-image = "acme/python:3.11"
 
 This can be useful to add a few requirements to the module's execution environment such as system packages like `git`, or to add necessary environment variables, for example. However, don't deviate from the default base image too much or it may break in a future version of Dagger.
 
-:::warning
- Override at own risk.
-:::
-
+⚠️ **Override at own risk!**
 :::
 
 </TabItem>
@@ -183,14 +180,12 @@ The default template from `dagger develop` creates the following structure:
 
 ```
 .
-├── LICENSE
-├── dagger
-│   ├── pyproject.toml
-│   ├── uv.lock
-│   ├── sdk
-│   └── src
-│       └── main
-│           └── __init__.py
+├── pyproject.toml
+├── uv.lock
+├── sdk
+└── src
+│   └── main
+│       └── __init__.py
 └── dagger.json
 ```
 
@@ -200,7 +195,7 @@ In this structure:
 - `pyproject.toml` manages the Python project configuration.
 - `uv.lock` manages the module dependencies.
 - `src/main/` is where your Dagger module code goes.
-- `sdk/` contains the Python SDK.
+- `sdk/` contains the vendored Python SDK [client library](https://pypi.org/project/dagger-io/).
 
 :::info
 Placing the source code under a `src` directory follows a common Python convention. To know more, see [src layout vs flat layout](https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/).
@@ -244,7 +239,9 @@ But **it's up to the Python [build system](https://docs.astral.sh/uv/concepts/pr
 This affords a lot of flexibility in how Daggger Python modules can be structured, and which tools are supported.
 :::
 
-The default project template follows known conventions for structuring a Python library (src layout, package name after project name), which allows Python [build backends](https://www.python.org/dev/peps/pep-0517/) to automatically recognize where the files are. However, it's possible to change the project's name and file structure with a bit of extra configuration, as long as the build backend correctly builds the code in a way that allows the SDK to `import main` after installation.
+The default project template follows known conventions for structuring a Python library (src layout, package name matching project name), which allows Python [build backends](https://www.python.org/dev/peps/pep-0517/) to automatically recognize where the files are.
+
+However, it's possible to change the project's name and file structure with a bit of extra configuration, as long as the build backend correctly builds the code in a way that allows the SDK to `import main` after installation.
 
 Here is an example of moving all the code into a single `main.py` [module](https://docs.python.org/3/tutorial/modules.html), resulting in the following structure:
 
@@ -256,7 +253,7 @@ Here is an example of moving all the code into a single `main.py` [module](https
 └── uv.lock
 ```
 
-`pyproject.toml` configuration:
+And corresponding `pyproject.toml` configuration:
 
 <Tabs groupId="build-systems">
 <TabItem value="hatchling">
@@ -389,26 +386,33 @@ use (
 </TabItem>
 <TabItem value="Python">
 
-Dagger modules in Python are built to be installed, like libraries. The runtime container installs the module code with:
+Dagger modules in Python are built to be installed, like libraries. At module creation time, a `pyproject.toml` and `uv.lock` file will automatically be created that depend on the locally generated client library (in `./sdk`). This dependency is configured to be editable so that changes in the code don't require a re-install.
+
+With the `uv.lock` file, Dagger uses uv's [project management](https://docs.astral.sh/uv/concepts/projects/) capabilites, but it can be opted out by removing this file, in which case Dagger falls back to [the pip interface](https://docs.astral.sh/uv/pip/) instead.
+
+:::info
+Dagger also supports pinning dependencies with a `pip-tools` compatible **`requirements.lock`** file in order to support the use of other project managers like Poetry or Hatch locally (when developing).
+
+In this case, Dagger installs dependencies with:
 
 ```shell
 # executed by the runtime
-uv pip install -e .
+uv pip install -r requirements.lock -e ./sdk -e .
 ```
 
-Due to [PEP 517](https://peps.python.org/pep-0517/) and [`pip` supporting `pyproject.toml`](https://pip.pypa.io/en/stable/reference/build-system/pyproject-toml/), this means that all package managers that support the [build backend](https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#declaring-the-build-backend) standard are automatically supported.
+Notice that the `./sdk` and `main` (in `.`) packages don't need to be in the `requirements.lock` file, **only the third party dependencies**.
 
-For example, you can use [Hatch](https://hatch.pypa.io/latest/config/build/#build-system), [Poetry](https://python-poetry.org/docs/pyproject/#poetry-and-pep-517), or [PDM](https://pdm-project.org/latest/reference/build/), to manage a module's dependencies and configure how it's built and installed.
+This means module developers can use any tool they want to manage their virtual environment and install dependencies, but if third-party dependencies aren't pinned in a `requiments.lock` file, the developers may get different versions between the Dagger execution environment and their own local environment.
 
-Read more about this in the [Packaging Python Projects](https://packaging.python.org/en/latest/tutorials/packaging-projects/) tutorial.
+For example, Poetry has its own `poetry.lock` which Dagger doesn't recognize, but it can be exported as a `requirements.lock` file with:
 
-### Required `main` in `site-packages`
+```shell
+poetry export -o requirements.lock
+```
 
-The module's code isn't executed directly like a script, but it is rather imported under the hardcoded name `main` (although this may be configurable in future).
+It will have to be manually kept in sync, though.
 
-This means that after `uv pip install -e .`, there should be a Python module (or package) called `main` in the virtual environment's `site-packages/` directory inside the runtime container (`/opt/venv/lib/python-3.11/site-packages/main` by default).
-
-This is the most important requirement. The other conventions are flexible, as long as the above is verified.
+:::
 
 </TabItem>
 <TabItem value="TypeScript">
