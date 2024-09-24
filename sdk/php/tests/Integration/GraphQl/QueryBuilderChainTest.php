@@ -28,24 +28,8 @@ class QueryBuilderChainTest extends TestCase
         $queryFromId = $queryChainContainerFromId->getFullQuery()->__toString();
         $queryId = $queryChainContainerId->getFullQuery()->__toString();
 
-        // language=graphql
-        $expectedQueryFromId = <<<'GQL'
-query {
-container {
-from(address: "alpine:latest") {
-id
-}
-}
-}
-GQL;
-        // language=graphql
-        $expectedQueryId = <<<'GQL'
-query {
-container {
-id
-}
-}
-GQL;
+        $expectedQueryFromId = 'query { container { from(address: "alpine:latest") { id } } }';
+        $expectedQueryId = 'query { container { id } }';
 
         self::assertEquals(trim($expectedQueryFromId), trim($queryFromId));
         self::assertEquals(trim($expectedQueryId), trim($queryId));

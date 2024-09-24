@@ -1,9 +1,9 @@
 {
   "name": "daggermodule/php-sdk-dev",
-  "description": "",
+  "description": "Dagger PHP SDK Dev Module",
   "version": "1.0.0",
-  "minimum-stability": "dev",
-  "license": "proprietary",
+  "minimum-stability": "stable",
+  "license": "Apache-2.0",
   "authors": [
   ],
   "repositories": [
