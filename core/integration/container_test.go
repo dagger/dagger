@@ -2854,70 +2854,161 @@ func (ContainerSuite) TestAnnotations(ctx context.Context, t *testctx.T) {
 			WithAnnotation("org.opencontainers.image.version", "v0.1.2")
 	}
 
-	t.Run("single-platform", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
+	t.Run("publish", func(ctx context.Context, t *testctx.T) {
+		t.Run("single-platform", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
 
-		testRef := registryRef("container-annotations")
+			testRef := registryRef("container-annotations")
 
-		ctr := build(c, "")
-		pushedRef, err := ctr.Publish(ctx, testRef)
-		require.NoError(t, err)
-		require.NotEqual(t, testRef, pushedRef)
-		require.Contains(t, pushedRef, "@sha256:")
+			ctr := build(c, "")
+			pushedRef, err := ctr.Publish(ctx, testRef)
+			require.NoError(t, err)
+			require.NotEqual(t, testRef, pushedRef)
+			require.Contains(t, pushedRef, "@sha256:")
 
-		parsedRef, err := name.ParseReference(pushedRef, name.Insecure)
-		require.NoError(t, err)
+			parsedRef, err := name.ParseReference(pushedRef, name.Insecure)
+			require.NoError(t, err)
 
-		imgDesc, err := remote.Get(parsedRef, remote.WithTransport(http.DefaultTransport))
-		require.NoError(t, err)
-
-		// check on manifest
-		img, err := imgDesc.Image()
-		require.NoError(t, err)
-		manifest, err := img.Manifest()
-		require.NoError(t, err)
-		require.Equal(t, "v0.1.2", manifest.Annotations["org.opencontainers.image.version"])
-	})
-
-	t.Run("multi-platform", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		testRef := registryRef("container-annotations")
-
-		pushedRef, err := c.Container().Publish(ctx, testRef, dagger.ContainerPublishOpts{
-			PlatformVariants: []*dagger.Container{
-				build(c, "linux/amd64"),
-				build(c, "linux/arm64"),
-			},
-		})
-		require.NoError(t, err)
-		require.NotEqual(t, testRef, pushedRef)
-		require.Contains(t, pushedRef, "@sha256:")
-
-		parsedRef, err := name.ParseReference(pushedRef, name.Insecure)
-		require.NoError(t, err)
-
-		imgDesc, err := remote.Get(parsedRef, remote.WithTransport(http.DefaultTransport))
-		require.NoError(t, err)
-
-		imgs, err := imgDesc.ImageIndex()
-		require.NoError(t, err)
-		idx, err := imgs.IndexManifest()
-		require.NoError(t, err)
-		require.Len(t, idx.Manifests, 2)
-		for _, manifestDesc := range idx.Manifests {
-			// check on manifest descriptor
-			require.Equal(t, "v0.1.2", manifestDesc.Annotations["org.opencontainers.image.version"])
+			imgDesc, err := remote.Get(parsedRef, remote.WithTransport(http.DefaultTransport))
 			require.NoError(t, err)
 
 			// check on manifest
-			img, err := imgs.Image(manifestDesc.Digest)
+			img, err := imgDesc.Image()
 			require.NoError(t, err)
 			manifest, err := img.Manifest()
 			require.NoError(t, err)
 			require.Equal(t, "v0.1.2", manifest.Annotations["org.opencontainers.image.version"])
-		}
+		})
+
+		t.Run("multi-platform", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			testRef := registryRef("container-annotations")
+
+			pushedRef, err := c.Container().Publish(ctx, testRef, dagger.ContainerPublishOpts{
+				PlatformVariants: []*dagger.Container{
+					build(c, "linux/amd64"),
+					build(c, "linux/arm64"),
+				},
+			})
+			require.NoError(t, err)
+			require.NotEqual(t, testRef, pushedRef)
+			require.Contains(t, pushedRef, "@sha256:")
+
+			parsedRef, err := name.ParseReference(pushedRef, name.Insecure)
+			require.NoError(t, err)
+
+			imgDesc, err := remote.Get(parsedRef, remote.WithTransport(http.DefaultTransport))
+			require.NoError(t, err)
+
+			imgs, err := imgDesc.ImageIndex()
+			require.NoError(t, err)
+			idx, err := imgs.IndexManifest()
+			require.NoError(t, err)
+			require.Len(t, idx.Manifests, 2)
+			for _, manifestDesc := range idx.Manifests {
+				// check on manifest descriptor
+				require.Equal(t, "v0.1.2", manifestDesc.Annotations["org.opencontainers.image.version"])
+				require.NoError(t, err)
+
+				// check on manifest
+				img, err := imgs.Image(manifestDesc.Digest)
+				require.NoError(t, err)
+				manifest, err := img.Manifest()
+				require.NoError(t, err)
+				require.Equal(t, "v0.1.2", manifest.Annotations["org.opencontainers.image.version"])
+			}
+		})
 	})
+
+	testExport := func(asTarball bool) func(ctx context.Context, t *testctx.T) {
+		return func(ctx context.Context, t *testctx.T) {
+			t.Run("single-platform", func(ctx context.Context, t *testctx.T) {
+				c := connect(ctx, t)
+
+				dest := t.TempDir()
+				imageTar := filepath.Join(dest, "image.tar")
+
+				if asTarball {
+					ctr := build(c, "")
+					_, err := ctr.AsTarball().Export(ctx, imageTar)
+					require.NoError(t, err)
+				} else {
+					ctr := build(c, "")
+					_, err := ctr.Export(ctx, imageTar)
+					require.NoError(t, err)
+				}
+
+				entries := tarEntries(t, imageTar)
+				require.Contains(t, entries, "oci-layout")
+				require.Contains(t, entries, "index.json")
+
+				idxDt := readTarFile(t, imageTar, "index.json")
+				idx := ocispecs.Index{}
+				require.NoError(t, json.Unmarshal(idxDt, &idx))
+
+				mfstDt := readTarFile(t, imageTar, "blobs/sha256/"+idx.Manifests[0].Digest.Encoded())
+				mfst := ocispecs.Manifest{}
+				require.NoError(t, json.Unmarshal(mfstDt, &mfst))
+
+				require.Equal(t, "v0.1.2", mfst.Annotations["org.opencontainers.image.version"])
+			})
+
+			t.Run("multi-platform", func(ctx context.Context, t *testctx.T) {
+				c := connect(ctx, t)
+
+				dest := t.TempDir()
+				imageTar := filepath.Join(dest, "image.tar")
+
+				if asTarball {
+					_, err := c.Container().
+						AsTarball(dagger.ContainerAsTarballOpts{
+
+							PlatformVariants: []*dagger.Container{
+								build(c, "linux/amd64"),
+								build(c, "linux/arm64"),
+							},
+						}).
+						Export(ctx, imageTar)
+					require.NoError(t, err)
+				} else {
+					_, err := c.Container().Export(ctx, imageTar, dagger.ContainerExportOpts{
+						PlatformVariants: []*dagger.Container{
+							build(c, "linux/amd64"),
+							build(c, "linux/arm64"),
+						},
+					})
+					require.NoError(t, err)
+				}
+
+				entries := tarEntries(t, imageTar)
+				require.Contains(t, entries, "oci-layout")
+				require.Contains(t, entries, "index.json")
+
+				idxDt := readTarFile(t, imageTar, "index.json")
+				var idx ocispecs.Index
+				require.NoError(t, json.Unmarshal(idxDt, &idx))
+
+				idxDt = readTarFile(t, imageTar, "blobs/sha256/"+idx.Manifests[0].Digest.Encoded())
+				idx = ocispecs.Index{}
+				require.NoError(t, json.Unmarshal(idxDt, &idx))
+
+				require.Len(t, idx.Manifests, 2)
+				for _, manifestDesc := range idx.Manifests {
+					// check on manifest descriptor
+					require.Equal(t, "v0.1.2", manifestDesc.Annotations["org.opencontainers.image.version"])
+
+					// check on manifest
+					mfstDt := readTarFile(t, imageTar, "blobs/sha256/"+manifestDesc.Digest.Encoded())
+					mfst := ocispecs.Manifest{}
+					require.NoError(t, json.Unmarshal(mfstDt, &mfst))
+					require.Equal(t, "v0.1.2", mfst.Annotations["org.opencontainers.image.version"])
+				}
+			})
+		}
+	}
+	t.Run("export", testExport(false))
+	t.Run("export", testExport(true))
 }
 
 func (ContainerSuite) TestExecFromScratch(ctx context.Context, t *testctx.T) {

@@ -1247,9 +1247,20 @@ func (container *Container) Export(
 		mediaTypes = OCIMediaTypes
 	}
 
+	opts := map[string]string{
+		"tar":                           strconv.FormatBool(true),
+		string(exptypes.OptKeyOCITypes): strconv.FormatBool(mediaTypes == OCIMediaTypes),
+	}
+	if forcedCompression != "" {
+		opts[string(exptypes.OptKeyLayerCompression)] = strings.ToLower(string(forcedCompression))
+		opts[string(exptypes.OptKeyForceCompression)] = strconv.FormatBool(true)
+	}
+
 	inputByPlatform := map[string]buildkit.ContainerExport{}
 	services := ServiceBindings{}
-	for _, variant := range append([]*Container{container}, platformVariants...) {
+
+	variants := append([]*Container{container}, platformVariants...)
+	for _, variant := range variants {
 		if variant.FS == nil {
 			continue
 		}
@@ -1258,7 +1269,8 @@ func (container *Container) Export(
 			return err
 		}
 
-		def, err := st.Marshal(ctx, llb.Platform(variant.Platform.Spec()))
+		platformSpec := variant.Platform.Spec()
+		def, err := st.Marshal(ctx, llb.Platform(platformSpec))
 		if err != nil {
 			return err
 		}
@@ -1271,20 +1283,26 @@ func (container *Container) Export(
 			Definition: def.ToPB(),
 			Config:     variant.Config,
 		}
+
+		if len(variants) == 1 {
+			// single platform case
+			for _, annotation := range variant.Annotations {
+				opts[exptypes.AnnotationManifestKey(nil, annotation.Key)] = annotation.Value
+				opts[exptypes.AnnotationManifestDescriptorKey(nil, annotation.Key)] = annotation.Value
+			}
+		} else {
+			// multi platform case
+			for _, annotation := range variant.Annotations {
+				opts[exptypes.AnnotationManifestKey(&platformSpec, annotation.Key)] = annotation.Value
+				opts[exptypes.AnnotationManifestDescriptorKey(&platformSpec, annotation.Key)] = annotation.Value
+			}
+		}
+
 		services.Merge(variant.Services)
 	}
 	if len(inputByPlatform) == 0 {
 		// Could also just ignore and do nothing, airing on side of error until proven otherwise.
 		return errors.New("no containers to export")
-	}
-
-	opts := map[string]string{
-		"tar":                           strconv.FormatBool(true),
-		string(exptypes.OptKeyOCITypes): strconv.FormatBool(mediaTypes == OCIMediaTypes),
-	}
-	if forcedCompression != "" {
-		opts[string(exptypes.OptKeyLayerCompression)] = strings.ToLower(string(forcedCompression))
-		opts[string(exptypes.OptKeyForceCompression)] = strconv.FormatBool(true)
 	}
 
 	detach, _, err := svcs.StartBindings(ctx, services)
@@ -1317,9 +1335,20 @@ func (container *Container) AsTarball(
 		mediaTypes = OCIMediaTypes
 	}
 
+	opts := map[string]string{
+		"tar":                           strconv.FormatBool(true),
+		string(exptypes.OptKeyOCITypes): strconv.FormatBool(mediaTypes == OCIMediaTypes),
+	}
+	if forcedCompression != "" {
+		opts[string(exptypes.OptKeyLayerCompression)] = strings.ToLower(string(forcedCompression))
+		opts[string(exptypes.OptKeyForceCompression)] = strconv.FormatBool(true)
+	}
+
 	inputByPlatform := map[string]buildkit.ContainerExport{}
 	services := ServiceBindings{}
-	for _, variant := range append([]*Container{container}, platformVariants...) {
+
+	variants := append([]*Container{container}, platformVariants...)
+	for _, variant := range variants {
 		if variant.FS == nil {
 			continue
 		}
@@ -1328,7 +1357,8 @@ func (container *Container) AsTarball(
 			return nil, err
 		}
 
-		def, err := st.Marshal(ctx, llb.Platform(variant.Platform.Spec()))
+		platformSpec := variant.Platform.Spec()
+		def, err := st.Marshal(ctx, llb.Platform(platformSpec))
 		if err != nil {
 			return nil, err
 		}
@@ -1341,19 +1371,25 @@ func (container *Container) AsTarball(
 			Definition: def.ToPB(),
 			Config:     variant.Config,
 		}
+
+		if len(variants) == 1 {
+			// single platform case
+			for _, annotation := range variant.Annotations {
+				opts[exptypes.AnnotationManifestKey(nil, annotation.Key)] = annotation.Value
+				opts[exptypes.AnnotationManifestDescriptorKey(nil, annotation.Key)] = annotation.Value
+			}
+		} else {
+			// multi platform case
+			for _, annotation := range variant.Annotations {
+				opts[exptypes.AnnotationManifestKey(&platformSpec, annotation.Key)] = annotation.Value
+				opts[exptypes.AnnotationManifestDescriptorKey(&platformSpec, annotation.Key)] = annotation.Value
+			}
+		}
+
 		services.Merge(variant.Services)
 	}
 	if len(inputByPlatform) == 0 {
 		return nil, errors.New("no containers to export")
-	}
-
-	opts := map[string]string{
-		"tar":                           strconv.FormatBool(true),
-		string(exptypes.OptKeyOCITypes): strconv.FormatBool(mediaTypes == OCIMediaTypes),
-	}
-	if forcedCompression != "" {
-		opts[string(exptypes.OptKeyLayerCompression)] = strings.ToLower(string(forcedCompression))
-		opts[string(exptypes.OptKeyForceCompression)] = strconv.FormatBool(true)
 	}
 
 	detach, _, err := svcs.StartBindings(ctx, services)
