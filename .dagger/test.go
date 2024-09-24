@@ -119,7 +119,7 @@ func (t *Test) Telemetry(
 		tests = tests.WithMountedSecret("/root/.docker/config.json", t.Dagger.DockerCfg)
 	}
 
-	ran := t.goTest(ctx, tests, run, skip, "./dagql/idtui/", failfast, parallel, timeout, race, count, update)
+	ran := t.goTest(tests, run, skip, "./dagql/idtui/", failfast, parallel, timeout, race, count, update)
 	ran, err = ran.Sync(ctx)
 	if err != nil {
 		return nil, err
@@ -188,15 +188,13 @@ func (t *Test) test(
 		return err
 	}
 	_, err = t.goTest(
-		ctx,
 		cmd,
 		runTestRegex, skipTestRegex, pkg, failfast, parallel, timeout, race, count, false,
 	).Sync(ctx)
 	return err
-
 }
+
 func (t *Test) goTest(
-	ctx context.Context,
 	cmd *dagger.Container,
 	runTestRegex string,
 	skipTestRegex string,
