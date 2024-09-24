@@ -55,9 +55,36 @@ var (
 
 const (
 	moduleURLDefault = "."
-
-	defaultModuleSourceDirName = "."
 )
+
+// if the source root path already has some files
+// then use `srcRootPath/.dagger` for source
+func inferSourcePathDir(srcRootPath string) (string, error) {
+	list, err := os.ReadDir(srcRootPath)
+	if err != nil {
+		return "", err
+	}
+
+	for _, l := range list {
+		if l.Name() == "dagger.json" {
+			continue
+		}
+
+		// .dagger already exist, return that
+		if l.Name() == ".dagger" {
+			return ".dagger", nil
+		}
+
+		// ignore hidden files
+		if strings.HasPrefix(l.Name(), ".") {
+			continue
+		}
+
+		return ".dagger", nil
+	}
+
+	return ".", nil
+}
 
 func init() {
 	moduleFlags.StringVarP(&moduleURL, "mod", "m", "", "Path to the module directory. Either local path or a remote git repo")
@@ -149,17 +176,29 @@ If --sdk is specified, the given SDK is installed in the module. You can do this
 
 			// only bother setting source path if there's an sdk at this time
 			if sdk != "" {
+				// if user didn't specified moduleSourcePath explicitly,
+				// check if current dir is non-empty and infer the source
+				// path accordingly.
 				if moduleSourcePath == "" {
-					moduleSourcePath = filepath.Join(modConf.LocalRootSourcePath, defaultModuleSourceDirName)
+					inferredSourcePath, err := inferSourcePathDir(modConf.LocalRootSourcePath)
+					if err != nil {
+						return err
+					}
+
+					moduleSourcePath = filepath.Join(modConf.LocalRootSourcePath, inferredSourcePath)
 				}
-				// ensure source path is relative to the source root
-				sourceAbsPath, err := filepath.Abs(moduleSourcePath)
-				if err != nil {
-					return fmt.Errorf("failed to get absolute source path for %s: %w", moduleSourcePath, err)
-				}
-				moduleSourcePath, err = filepath.Rel(modConf.LocalRootSourcePath, sourceAbsPath)
-				if err != nil {
-					return fmt.Errorf("failed to get relative source path: %w", err)
+
+				if moduleSourcePath != "" {
+					// ensure source path is relative to the source root
+					sourceAbsPath, err := filepath.Abs(moduleSourcePath)
+					if err != nil {
+						return fmt.Errorf("failed to get absolute source path for %s: %w", moduleSourcePath, err)
+					}
+
+					moduleSourcePath, err = filepath.Rel(modConf.LocalRootSourcePath, sourceAbsPath)
+					if err != nil {
+						return fmt.Errorf("failed to get relative source path: %w", err)
+					}
 				}
 			}
 
@@ -368,8 +407,14 @@ This command is idempotent: you can run it at any time, any number of times. It 
 			}
 			// if SDK is set but source path isn't and the user didn't provide --source, we'll use the default source path
 			if modSDK != "" && modSourcePath == "" && developSourcePath == "" {
-				developSourcePath = filepath.Join(modConf.LocalRootSourcePath, defaultModuleSourceDirName)
+				inferredSourcePath, err := inferSourcePathDir(modConf.LocalRootSourcePath)
+				if err != nil {
+					return err
+				}
+
+				developSourcePath = filepath.Join(modConf.LocalRootSourcePath, inferredSourcePath)
 			}
+
 			// if there's no SDK and the user isn't changing the source path, there's nothing to do.
 			// error out rather than silently doing nothing.
 			if modSDK == "" && developSourcePath == "" {

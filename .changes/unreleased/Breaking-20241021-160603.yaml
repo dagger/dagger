@@ -1,0 +1,6 @@
+kind: Breaking
+body: use .dagger folder during init if current directory is not empty.
+time: 2024-10-21T16:06:03.457218+05:30
+custom:
+    Author: rajatjindal
+    PR: "8557"

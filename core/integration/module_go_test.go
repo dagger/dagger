@@ -100,7 +100,7 @@ func (GoSuite) TestInit(ctx context.Context, t *testctx.T) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			WithExec([]string{"go", "mod", "init", "example.com/test"}).
-			With(daggerExec("init", "--name=hasGoMod", "--merge", "--sdk=go"))
+			With(daggerExec("init", "--name=hasGoMod", "--merge", "--sdk=go", "--source=."))
 
 		out, err := modGen.
 			With(daggerQuery(`{hasGoMod{containerEcho(stringArg:"hello"){stdout}}}`)).
@@ -127,7 +127,7 @@ func (GoSuite) TestInit(ctx context.Context, t *testctx.T) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			WithExec([]string{"go", "work", "init"}).
-			With(daggerExec("init", "--name=hasGoMod", "--sdk=go"))
+			With(daggerExec("init", "--name=hasGoMod", "--sdk=go", "--source=."))
 
 		out, err := modGen.
 			With(daggerQuery(`{hasGoMod{containerEcho(stringArg:"hello"){stdout}}}`)).
@@ -151,7 +151,7 @@ func (GoSuite) TestInit(ctx context.Context, t *testctx.T) {
 			WithExec([]string{"go", "mod", "init", "example.com/test"}).
 			WithExec([]string{"go", "work", "init"}).
 			WithExec([]string{"go", "work", "use", "."}).
-			With(daggerExec("init", "--name=hasGoMod", "--sdk=go", "--merge"))
+			With(daggerExec("init", "--name=hasGoMod", "--sdk=go", "--merge", "--source=."))
 
 		out, err := modGen.
 			With(daggerQuery(`{hasGoMod{containerEcho(stringArg:"hello"){stdout}}}`)).
@@ -402,6 +402,56 @@ func (m *HasNotMainGo) Hello() string { return "Hello, world!" }
 		require.JSONEq(t, `{"bar":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 	})
 
+	t.Run("init module in .dagger if files present in current dir", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithNewFile("main.go", `package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("hello")
+}
+`).
+			WithExec([]string{"go", "mod", "init", "my-app"}).
+			With(daggerExec("init", "--name=bare", "--sdk=go"))
+
+		daggerDirEnts, err := modGen.Directory("/work/.dagger").Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, daggerDirEnts, "go.mod", "go.sum", "main.go")
+
+		out, err := modGen.
+			WithWorkdir("/work").
+			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+	})
+
+	t.Run("init module when current dir only has hidden dirs", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithExec([]string{"mkdir", "-p", ".git"}).
+			With(daggerExec("init", "--name=bare", "--sdk=go"))
+
+		daggerDirEnts, err := modGen.Directory("/work").Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, daggerDirEnts, "go.mod", "go.sum", "main.go")
+
+		out, err := modGen.
+			WithWorkdir("/work").
+			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+	})
+
 	t.Run("fails if go.mod exists without merge flag", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
@@ -409,7 +459,7 @@ func (m *HasNotMainGo) Hello() string { return "Hello, world!" }
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			WithExec([]string{"go", "mod", "init", "example.com/test"}).
-			With(daggerExec("init", "--name=hasGoMod", "--sdk=go"))
+			With(daggerExec("init", "--name=hasGoMod", "--sdk=go", "--source=."))
 
 		_, err := modGen.
 			With(daggerQuery(`{hasGoMod{containerEcho(stringArg:"hello"){stdout}}}`)).
@@ -429,6 +479,230 @@ func (m *HasNotMainGo) Hello() string { return "Hello, world!" }
 		sourceSubdirEnts, err := modGen.Directory("/work/some/subdir").Entries(ctx)
 		require.NoError(t, err)
 		require.Contains(t, sourceSubdirEnts, "go.mod", "go.sum")
+	})
+
+	t.Run("empty dir, init without sdk or source flag", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init"))
+
+		dirEnts, err := modGen.Directory("/work").Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, dirEnts, []string{"dagger.json"})
+	})
+
+	t.Run("empty dir, init with sdk but no source flag", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--sdk=go"))
+
+		dirEnts, err := modGen.Directory("/work").Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, dirEnts, "dagger.json", "go.mod", "go.sum", "main.go")
+	})
+
+	t.Run("non-empty dir, init without sdk or source flag", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		daggerjson, err := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithNewFile("main.go", `package main\n func main() {}`).
+			With(daggerExec("init")).
+			File("dagger.json").
+			Contents(ctx)
+
+		require.NoError(t, err)
+		require.NotContains(t, daggerjson, ".dagger")
+	})
+
+	t.Run("non-empty dir, init with sdk but no source flag", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithNewFile("main.go", `package main\n func main() {}`).
+			With(daggerExec("init", "--sdk=go"))
+
+		daggerjson, err := modGen.File("dagger.json").
+			Contents(ctx)
+
+		require.NoError(t, err)
+		require.Contains(t, daggerjson, ".dagger")
+
+		dirEnts, err := modGen.Directory(".dagger").Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, dirEnts, "go.mod", "go.sum", "main.go", "internal")
+	})
+
+	t.Run("non-empty dir, init without sdk but source flag", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithNewFile("main.go", `package main\n func main() {}`).
+			With(daggerExec("init", "--source=some-dir"))
+
+		daggerjson, err := modGen.File("dagger.json").
+			Contents(ctx)
+
+		require.NoError(t, err)
+		require.Contains(t, daggerjson, "some-dir")
+	})
+
+	t.Run("non-empty dir, init with sdk and source flag", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithNewFile("main.go", `package main\n func main() {}`).
+			With(daggerExec("init", "--source=some-dir", "--sdk=go"))
+
+		daggerjson, err := modGen.File("dagger.json").
+			Contents(ctx)
+
+		require.NoError(t, err)
+		require.Contains(t, daggerjson, "some-dir")
+
+		dirEnts, err := modGen.Directory("some-dir").Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, dirEnts, "go.mod", "go.sum", "main.go", "internal")
+	})
+
+	t.Run(".dagger dir exists, init without sdk or source flag", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithExec([]string{"sh", "-c", "mkdir -p .dagger"}).
+			With(daggerExec("init")).
+			With(daggerExec("develop", "--sdk=go"))
+
+		daggerjson, err := modGen.File("dagger.json").
+			Contents(ctx)
+
+		require.NoError(t, err)
+		require.Contains(t, daggerjson, ".dagger")
+	})
+
+	t.Run(".dagger dir exists, init without sdk but source flag", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithExec([]string{"sh", "-c", "mkdir -p .dagger"}).
+			With(daggerExec("init", "--source=some-dir"))
+
+		daggerjson, err := modGen.File("dagger.json").
+			Contents(ctx)
+
+		require.NoError(t, err)
+		require.Contains(t, daggerjson, "some-dir")
+	})
+
+	t.Run(".dagger dir exists, init with sdk and source flag", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithExec([]string{"sh", "-c", "mkdir -p .dagger"}).
+			With(daggerExec("init", "--source=some-dir", "--sdk=go"))
+
+		daggerjson, err := modGen.File("dagger.json").
+			Contents(ctx)
+
+		require.NoError(t, err)
+		require.Contains(t, daggerjson, "some-dir")
+
+		dirEnts, err := modGen.Directory("some-dir").Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, dirEnts, "go.mod", "go.sum", "main.go", "internal")
+	})
+
+	t.Run("empty dir, init without sdk or source flag and then develop", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init")).
+			With(daggerExec("develop", "--sdk=go"))
+
+		dirEnts, err := modGen.Directory("/work").Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, dirEnts, "dagger.json", "go.mod", "go.sum", "main.go", "internal")
+	})
+
+	t.Run("empty dir, init without sdk or source flag, then make dir non-empty and then develop", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init")).
+			WithNewFile("/work/main.go", `package main\n func main() {}`).
+			With(daggerExec("develop", "--sdk=go"))
+
+		dirEnts, err := modGen.Directory("/work/.dagger").Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, dirEnts, "go.mod", "go.sum", "main.go", "internal")
+	})
+
+	t.Run("init in subdir, without sdk or source flag", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "foo"))
+
+		dirEnts, err := modGen.Directory("/work/foo").Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, dirEnts, []string{"dagger.json"})
+	})
+
+	t.Run("init in subdir, with sdk but no source flag", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "foo", "--sdk=go"))
+
+		dirEnts, err := modGen.Directory("/work/foo").Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, dirEnts, "go.mod", "go.sum", "main.go", "internal", "dagger.json")
+	})
+
+	t.Run("init in subdir, with sdk and source flag", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "foo", "--sdk=go", "--source=foo/bar"))
+
+		dirEnts, err := modGen.Directory("/work/foo/bar").Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, dirEnts, "go.mod", "go.sum", "main.go", "internal", "dagger.json")
+
+		daggerjson, err := modGen.Directory("foo").File("dagger.json").
+			Contents(ctx)
+
+		require.NoError(t, err)
+		require.Contains(t, daggerjson, "bar")
 	})
 }
 
