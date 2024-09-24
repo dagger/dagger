@@ -16,7 +16,8 @@ async def test():
 
         async def test_version(version: str):
             python = (
-                client.container().from_(f"python:{version}-slim-buster")
+                client.container()
+                .from_(f"python:{version}-slim-buster")
                 # mount cloned repository into image
                 .with_directory("/src", src)
                 # set current working directory for next commands
