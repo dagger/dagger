@@ -19,6 +19,7 @@ import (
 	"github.com/moby/buildkit/identity"
 	bksession "github.com/moby/buildkit/session"
 	bksolver "github.com/moby/buildkit/solver"
+	"github.com/moby/buildkit/solver/pb"
 	bksolverpb "github.com/moby/buildkit/solver/pb"
 	solverresult "github.com/moby/buildkit/solver/result"
 	"github.com/moby/buildkit/util/bklog"
@@ -34,8 +35,6 @@ import (
 )
 
 const (
-	InternalPrefix = "[internal] "
-
 	// from buildkit, cannot change
 	EntitlementsJobKey = "llb.entitlements"
 
@@ -135,14 +134,14 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 	defer cancel(errors.New("solve done"))
 	ctx = withOutgoingContext(c, ctx)
 
-	if req.Definition != nil {
-		dag, err := DefToDAG(req.Definition)
+	recordOp := func(def *pb.Definition) error {
+		dag, err := DefToDAG(def)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		spanCtx := trace.SpanContextFromContext(ctx)
 		c.opsmu.Lock()
-		dag.Walk(func(od *OpDAG) error {
+		_ = dag.Walk(func(od *OpDAG) error {
 			c.ops[*od.OpDigest] = opCtx{
 				od:  od,
 				ctx: spanCtx,
@@ -150,6 +149,17 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 			return nil
 		})
 		c.opsmu.Unlock()
+		return nil
+	}
+	if req.Definition != nil {
+		if err := recordOp(req.Definition); err != nil {
+			return nil, fmt.Errorf("record def ops: %w", err)
+		}
+	}
+	for name, def := range req.FrontendInputs {
+		if err := recordOp(def); err != nil {
+			return nil, fmt.Errorf("record frontend input %s ops: %w", name, err)
+		}
 	}
 
 	// include upstream cache imports, if any

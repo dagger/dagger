@@ -2,6 +2,7 @@ package buildkit
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 	"sync"
 
@@ -22,6 +23,12 @@ func WithTracePropagation(ctx context.Context) llb.ConstraintsOpt {
 	mc := propagation.MapCarrier{}
 	telemetry.Propagator.Inject(ctx, mc)
 	return llb.WithDescription(mc)
+}
+
+func WithPassthrough() llb.ConstraintsOpt {
+	return llb.WithDescription(map[string]string{
+		telemetry.UIPassthroughAttr: "true",
+	})
 }
 
 func ContextFromDescription(ctx context.Context, desc map[string]string) context.Context {
@@ -69,8 +76,6 @@ type buildkitTracer struct {
 	provider *buildkitTraceProvider
 	tracer   trace.Tracer
 }
-
-const TelemetryComponent = "buildkit"
 
 func (t *buildkitTracer) Start(ctx context.Context, spanName string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
 	opts = append([]trace.SpanStartOption{
@@ -146,12 +151,6 @@ func (sp *SpanProcessor) OnStart(ctx context.Context, span sdktrace.ReadWriteSpa
 		sp.setupVertex(span, vertex)
 	}
 
-	// convert [internal] prefix into internal attribute
-	if rest, ok := strings.CutPrefix(span.Name(), InternalPrefix); ok {
-		span.SetName(rest)
-		span.SetAttributes(attribute.Bool(telemetry.UIInternalAttr, true))
-	}
-
 	// silence noisy registry lookups
 	if span.Name() == "remotes.docker.resolver.HTTPRequest" {
 		span.SetAttributes(attribute.Bool(telemetry.UIEncapsulatedAttr, true))
@@ -166,6 +165,7 @@ func (sp *SpanProcessor) OnStart(ctx context.Context, span sdktrace.ReadWriteSpa
 func (sp *SpanProcessor) setupVertex(span sdktrace.ReadWriteSpan, vertex digest.Digest) {
 	llbOp, causeCtx, ok := sp.Client.LookupOp(vertex)
 	if !ok {
+		slog.Warn("op not found for vertex", "vertex", vertex)
 		return
 	}
 
@@ -183,12 +183,6 @@ func (sp *SpanProcessor) setupVertex(span sdktrace.ReadWriteSpan, vertex digest.
 		span.AddLink(trace.Link{SpanContext: causeCtx})
 	}
 
-	// op, err := llbOp.Op.Marshal()
-	// if err == nil {
-	// span.SetAttributes(attribute.String("opDAG", llbOp.String()))
-	// span.SetAttributes("op", llbOp.OpDigest)
-	// }
-
 	// convert cache prefixes into cached attribute (this is set deep inside
 	// buildkit)
 	spanName, cached := strings.CutPrefix(span.Name(), "load cache: ")
@@ -197,12 +191,6 @@ func (sp *SpanProcessor) setupVertex(span sdktrace.ReadWriteSpan, vertex digest.
 		span.SetAttributes(attribute.Bool(telemetry.CachedAttr, true))
 	}
 
-	// sp.witnessedOpsL.Lock()
-	// doneEffects := opDeps(llbOp, sp.witnessedOps)
-	// sp.witnessedOpsL.Unlock()
-	// span.SetAttributes(
-	// 	attribute.StringSlice(telemetry.EffectsCompletedAttr, doneEffects),
-	// )
 	span.SetAttributes(DAGAttributes(llbOp)...)
 }
 

@@ -325,8 +325,10 @@ func (container *Container) From(ctx context.Context, addr string) (*Container, 
 
 	fsSt := llb.Image(
 		digested.String(),
-		llb.WithCustomNamef(buildkit.InternalPrefix+"pull %s", ref),
 		buildkit.WithTracePropagation(ctx),
+		llb.WithDescription(map[string]string{
+			telemetry.UIPassthroughAttr: "true",
+		}),
 	)
 
 	def, err := fsSt.Marshal(ctx, llb.Platform(platform.Spec()))

@@ -64,9 +64,6 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		return nil, err
 	}
 
-	spanName := fmt.Sprintf("exec %s", strings.Join(args, " "))
-	spanName = buildkit.InternalPrefix + spanName
-
 	runOpts := []llb.RunOption{
 		llb.Args(args),
 		buildkit.WithTracePropagation(ctx),
@@ -129,8 +126,6 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 			runOpts = append(runOpts, llb.AddEnv(buildkit.DaggerSessionIDEnv, clientMetadata.SessionID))
 		}
 	}
-
-	runOpts = append(runOpts, llb.WithCustomName(spanName))
 
 	metaSt, metaSourcePath := metaMount(ctx, opts.Stdin)
 
@@ -368,8 +363,8 @@ func metaMount(ctx context.Context, stdin string) (llb.State, string) {
 
 	return llb.Scratch().File(
 			meta,
-			llb.WithCustomName(buildkit.InternalPrefix+"creating dagger metadata"),
 			buildkit.WithTracePropagation(ctx),
+			buildkit.WithPassthrough(),
 		),
 		buildkit.MetaMountDestPath
 }

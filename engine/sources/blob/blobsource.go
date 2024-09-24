@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/containerd/containerd/labels"
 	"github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/client/llb"
@@ -71,8 +72,7 @@ func LLB(desc ocispecs.Descriptor) llb.State {
 		llb.Constraints{
 			Metadata: pb.OpMetadata{
 				Description: map[string]string{
-					// TODO: use InternalPrefix, but there's an import cycle
-					"llb.customname": "[internal] " + sourceID,
+					telemetry.UIPassthroughAttr: "true",
 				},
 			},
 		},

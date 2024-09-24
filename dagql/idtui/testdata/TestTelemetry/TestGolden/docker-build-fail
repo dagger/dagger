@@ -13,11 +13,9 @@
 ✔ viztest: Viztest! X.Xs
 ✘ .dockerBuildFail: Container! X.Xs
 ! process "/bin/sh -c echo im failing && false" did not complete successfully: exit code: 1
-│ ○ Directory.withNewFile(contents: "FROM busybox:1.34\nRUN echo the time is curently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X\nRUN echo hello, world!\nRUN echo im failing && false\n", path: "Dockerfile"): Directory! X.Xs
+│ ✔ Directory.withNewFile(contents: "FROM busybox:1.34\nRUN echo the time is curently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X\nRUN echo hello, world!\nRUN echo im failing && false\n", path: "Dockerfile"): Directory! X.Xs
 │ ✘ .dockerBuild: Container! X.Xs
 │ ! process "/bin/sh -c echo im failing && false" did not complete successfully: exit code: 1
-│ │ ✔ load cache: mkdir / X.Xs
-│ │ ✔ mkfile /Dockerfile X.Xs
 │ │ ✔ resolving docker.io/library/busybox:1.34 X.Xs
 │ │ $ [1/4] FROM docker.io/library/busybox:1.34@sha256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX X.Xs CACHED
 │ │ ✔ [2/4] RUN echo the time is curently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X X.Xs

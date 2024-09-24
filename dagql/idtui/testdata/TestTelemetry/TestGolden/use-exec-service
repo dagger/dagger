@@ -23,8 +23,6 @@
 │ ✔ .withExec(args: ["echo", "im busted by that buster"]): Container! X.Xs
 │ ┃ im busted by that buster
 │ ✔ .withNewFile(contents: "<h1>hello, world!</h1>", path: "/srv/index.html"): Container! X.Xs
-│ │ ✔ mkdir /srv X.Xs
-│ │ ✔ mkfile /srv/index.html X.Xs
 │ ✔ .withExec(args: ["httpd", "-v", "-h", "/srv", "-f"]): Container! X.Xs
 │ ✔ .withExposedPort(port: 80): Container! X.Xs
 │ ✔ .asService: Service! X.Xs
