@@ -944,7 +944,7 @@ func (ConfigSuite) TestDaggerGitWithSources(ctx context.Context, t *testctx.T) {
 				ctr := goGitBase(t, c).
 					With(mountedSocket).
 					WithWorkdir("/work").
-					With(daggerExec("init")).
+					With(daggerExec("init", "--source=.")).
 					With(daggerExec("install", "--name", "foo", testGitModuleRef(tc, "various-source-values/"+modSubpath)))
 
 				out, err := ctr.With(daggerCallAt("foo", "container-echo", "--string-arg", "hi", "stdout")).Stdout(ctx)

@@ -1921,7 +1921,7 @@ func (CallSuite) TestByName(ctx context.Context, t *testctx.T) {
 			`,
 			).
 			WithWorkdir("/work").
-			With(daggerExec("init")).
+			With(daggerExec("init", "--source=.")).
 			With(daggerExec("install", "--name", "foo", "./mod-a")).
 			With(daggerExec("install", "--name", "bar", "./mod-b"))
 
@@ -1966,7 +1966,7 @@ func (CallSuite) TestByName(ctx context.Context, t *testctx.T) {
 			`,
 			).
 			WithWorkdir("/work").
-			With(daggerExec("init")).
+			With(daggerExec("init", "--source=.")).
 			With(daggerExec("install", "--name", "foo", "/work/mod-a")).
 			With(daggerExec("install", "--name", "bar", "/work/mod-b"))
 
@@ -2029,7 +2029,7 @@ func (CallSuite) TestByName(ctx context.Context, t *testctx.T) {
 			`,
 			).
 			WithWorkdir("/work").
-			With(daggerExec("init")).
+			With(daggerExec("init", "--source=.")).
 			With(daggerExec("install", "--name", "foo", "/outside/mod-a"))
 
 		// call main module at /work path
@@ -2056,7 +2056,7 @@ func (CallSuite) TestByName(ctx context.Context, t *testctx.T) {
 			}
 			`,
 			).
-			With(daggerExec("init")).
+			With(daggerExec("init", "--source=.")).
 			With(daggerExec("install", "--name", "foo", "/work/test@test"))
 
 		// call main module at /work path
@@ -2076,7 +2076,7 @@ func (CallSuite) TestByName(ctx context.Context, t *testctx.T) {
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work").
 				With(mountedSocket).
-				With(daggerExec("init")).
+				With(daggerExec("init", "--source=.")).
 				With(daggerExec("install", "--name", "foo", testGitModuleRef(tc, ""))).
 				With(daggerExec("install", "--name", "bar", testGitModuleRef(tc, "subdir/dep2")))
 

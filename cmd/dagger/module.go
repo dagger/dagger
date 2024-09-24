@@ -59,6 +59,26 @@ const (
 	defaultModuleSourceDirName = "."
 )
 
+// TODO(rajatjindal): are there any other specific files
+// that we want to ignore
+func getDefaultSourcePathDir(srcRootPath string) (string, error) {
+	list, err := os.ReadDir(srcRootPath)
+	if err != nil {
+		return "", err
+	}
+
+	for _, l := range list {
+		// ignore hidden files
+		if strings.HasPrefix(l.Name(), ".") {
+			continue
+		}
+
+		return ".dagger", nil
+	}
+
+	return defaultModuleSourceDirName, nil
+}
+
 func init() {
 	moduleFlags.StringVarP(&moduleURL, "mod", "m", "", "Path to the module directory. Either local path or a remote git repo")
 
@@ -147,11 +167,19 @@ If --sdk is specified, the given SDK is installed in the module. You can do this
 				moduleName = filepath.Base(modConf.LocalRootSourcePath)
 			}
 
+			// if the source root path already has some files
+			// then use `srcRootPath/.dagger` for source
+			if moduleSourcePath == "" {
+				defaultSourcePathDir, err := getDefaultSourcePathDir(srcRootPath)
+				if err != nil {
+					return err
+				}
+
+				moduleSourcePath = filepath.Join(modConf.LocalRootSourcePath, defaultSourcePathDir)
+			}
+
 			// only bother setting source path if there's an sdk at this time
 			if sdk != "" {
-				if moduleSourcePath == "" {
-					moduleSourcePath = filepath.Join(modConf.LocalRootSourcePath, defaultModuleSourceDirName)
-				}
 				// ensure source path is relative to the source root
 				sourceAbsPath, err := filepath.Abs(moduleSourcePath)
 				if err != nil {
@@ -368,8 +396,14 @@ This command is idempotent: you can run it at any time, any number of times. It 
 			}
 			// if SDK is set but source path isn't and the user didn't provide --source, we'll use the default source path
 			if modSDK != "" && modSourcePath == "" && developSourcePath == "" {
-				developSourcePath = filepath.Join(modConf.LocalRootSourcePath, defaultModuleSourceDirName)
+				defaultSourcePathDir, err := getDefaultSourcePathDir(modConf.LocalRootSourcePath)
+				if err != nil {
+					return err
+				}
+
+				developSourcePath = filepath.Join(modConf.LocalRootSourcePath, defaultSourcePathDir)
 			}
+
 			// if there's no SDK and the user isn't changing the source path, there's nothing to do.
 			// error out rather than silently doing nothing.
 			if modSDK == "" && developSourcePath == "" {

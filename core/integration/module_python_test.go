@@ -53,7 +53,7 @@ func (PythonSuite) TestInit(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		out, err := daggerCliBase(t, c).
-			With(daggerExec("init")).
+			With(daggerExec("init", "--source=.")).
 			With(daggerExec("develop", "--sdk=python", "--source=.")).
 			With(daggerCall("container-echo", "--string-arg", "hello", "stdout")).
 			Stdout(ctx)
@@ -66,7 +66,7 @@ func (PythonSuite) TestInit(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		_, err := daggerCliBase(t, c).
-			With(daggerExec("init")).
+			With(daggerExec("init", "--source=.")).
 			With(pyprojectExtra(nil, "")).
 			With(daggerExec("develop", "--sdk=python", "--source=.")).
 			Sync(ctx)

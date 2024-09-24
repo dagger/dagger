@@ -100,7 +100,7 @@ func (GoSuite) TestInit(ctx context.Context, t *testctx.T) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			WithExec([]string{"go", "mod", "init", "example.com/test"}).
-			With(daggerExec("init", "--name=hasGoMod", "--merge", "--sdk=go"))
+			With(daggerExec("init", "--name=hasGoMod", "--merge", "--sdk=go", "--source=."))
 
 		out, err := modGen.
 			With(daggerQuery(`{hasGoMod{containerEcho(stringArg:"hello"){stdout}}}`)).
@@ -127,7 +127,7 @@ func (GoSuite) TestInit(ctx context.Context, t *testctx.T) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			WithExec([]string{"go", "work", "init"}).
-			With(daggerExec("init", "--name=hasGoMod", "--sdk=go"))
+			With(daggerExec("init", "--name=hasGoMod", "--sdk=go", "--source=."))
 
 		out, err := modGen.
 			With(daggerQuery(`{hasGoMod{containerEcho(stringArg:"hello"){stdout}}}`)).
@@ -151,7 +151,7 @@ func (GoSuite) TestInit(ctx context.Context, t *testctx.T) {
 			WithExec([]string{"go", "mod", "init", "example.com/test"}).
 			WithExec([]string{"go", "work", "init"}).
 			WithExec([]string{"go", "work", "use", "."}).
-			With(daggerExec("init", "--name=hasGoMod", "--sdk=go", "--merge"))
+			With(daggerExec("init", "--name=hasGoMod", "--sdk=go", "--merge", "--source=."))
 
 		out, err := modGen.
 			With(daggerQuery(`{hasGoMod{containerEcho(stringArg:"hello"){stdout}}}`)).
@@ -173,7 +173,7 @@ func (GoSuite) TestInit(ctx context.Context, t *testctx.T) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			WithExec([]string{"go", "work", "init"}).
-			With(daggerExec("init", "--name=hasGoMod", "--sdk=go", "subdir"))
+			With(daggerExec("init", "--name=hasGoMod", "--sdk=go", "subdir", "--source=subdir"))
 
 		out, err := modGen.
 			WithWorkdir("./subdir").
@@ -409,7 +409,7 @@ func (m *HasNotMainGo) Hello() string { return "Hello, world!" }
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			WithExec([]string{"go", "mod", "init", "example.com/test"}).
-			With(daggerExec("init", "--name=hasGoMod", "--sdk=go"))
+			With(daggerExec("init", "--name=hasGoMod", "--sdk=go", "--source=."))
 
 		_, err := modGen.
 			With(daggerQuery(`{hasGoMod{containerEcho(stringArg:"hello"){stdout}}}`)).
@@ -429,6 +429,43 @@ func (m *HasNotMainGo) Hello() string { return "Hello, world!" }
 		sourceSubdirEnts, err := modGen.Directory("/work/some/subdir").Entries(ctx)
 		require.NoError(t, err)
 		require.Contains(t, sourceSubdirEnts, "go.mod", "go.sum")
+	})
+
+	t.Run("init module in .dagger if files present in current dir", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithNewFile("main.go", `package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("hello")
+}
+`).
+			WithExec([]string{"go", "mod", "init", "my-app"}).
+			With(daggerExec("init", "--name=bare", "--sdk=go"))
+
+		daggerDirEnts, err := modGen.Directory("/work/.dagger").Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, daggerDirEnts, "go.mod", "go.sum", "main.go")
+	})
+
+	t.Run("init module when current dir only has hidden dirs", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithExec([]string{"mkdir", "-p", ".git"}).
+			WithExec([]string{"go", "mod", "init", "my-app"}).
+			With(daggerExec("init", "--name=bare", "--sdk=go"))
+
+		daggerDirEnts, err := modGen.Directory("/work").Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, daggerDirEnts, "go.mod", "go.sum", "main.go")
 	})
 }
 

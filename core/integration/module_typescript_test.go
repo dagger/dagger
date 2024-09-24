@@ -112,7 +112,7 @@ func (TypescriptSuite) TestInit(ctx context.Context, t *testctx.T) {
 	}
 		}`,
 			).
-			With(daggerExec("init", "--name=hasTsConfig", "--sdk=typescript"))
+			With(daggerExec("init", "--source=.", "--name=hasTsConfig", "--sdk=typescript"))
 
 		out, err := modGen.
 			With(daggerQuery(`{hasTsConfig{containerEcho(stringArg:"hello"){stdout}}}`)).
@@ -574,7 +574,7 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
 		modGen := c.Container().From("node:20-alpine").
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--name=Runtime-Detection", "--sdk=typescript")).
+			With(daggerExec("init", "--name=Runtime-Detection", "--sdk=typescript", "--source=.")).
 			With(sdkSource("typescript", `
 				import { dag, Container, Directory, object, func } from "@dagger.io/dagger";
 
