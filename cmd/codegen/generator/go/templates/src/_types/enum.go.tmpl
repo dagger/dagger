@@ -2,6 +2,7 @@
 {{ .Description | Comment }}
 {{- $enumName := .Name }}
 type {{ $enumName }} string
+{{- with .Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 
 func ({{ $enumName }}) IsEnum() {}
 
@@ -9,6 +10,7 @@ const (
 	{{- range $index, $field := .EnumValues | SortEnumFields }}
 	{{ $field.Description | Comment }}
 	{{ $field.Name | FormatEnum}} {{ $enumName }} = "{{ $field.Name }}"
+	{{- with .Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 	{{ end }}
 )
 
