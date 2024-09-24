@@ -93,65 +93,73 @@ go get github.com/spf13/cobra
 </TabItem>
 <TabItem value="Python">
 
-To add a Python dependency, [add it to `pyproject.toml`'s `dependencies`](https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#dependencies-and-requirements). For example:
+To add a Python package, add it to your `pyproject.toml` file using your chosen package manager. For example:
+
+<Tabs groupId="python-pm">
+<TabItem value="uv">
+
+```sh
+uv add requests
+```
+
+</TabItem>
+
+<TabItem value="poetry">
+
+```sh
+poetry add requests
+```
+
+</TabItem>
+
+<TabItem value="uv pip">
+
+Add the dependency manually to [`pyproject.toml`](https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#dependencies-and-requirements):
 
 ```toml
 [project]
 dependencies = [
-    "infisical-python>=2.1.8",
+    "requirements>=2.32.3",
 ]
 ```
 
-Of course, for tools that support it, you can simply use the CLI, as below:
+Then install into your virtual environment:
 
-```shell
-poetry add infisical-python
+```sh
+uv pip install -e ./sdk -e .
 ```
 
-### Lock file
-
-While Python doesn't have a [lock file standard](https://discuss.python.org/t/lock-files-again-but-this-time-w-sdists/46593/313) yet, other than using a tool that has a proprietary format (like Poetry), the most common way to do it is with a `pip`-compatible format like [`pip-tools`](https://pip-tools.readthedocs.io/en/latest/) uses.
-
-Since the introduction of [uv](./module-structure.mdx#uv-installer), dependencies are pinned by default using a `requirements.lock` file. If it exists, the Python SDK will use it directly to install dependencies, resulting in a faster installation.
-
-:::tip
-Check [compatibility with `pip` and `pip-tools`](https://github.com/astral-sh/uv/blob/main/PIP_COMPATIBILITY.md) if migrating from or integrating with those tools.
+:::note
+There's no need to activate the virtual environment before `uv pip install`, but it does need to exist.
 :::
 
-The lock file is only created automatically for new modules. For existing modules that don't have it, it can be created (and updated) manually. For example:
+</TabItem>
+<TabItem value="pip">
 
-```console
-uv pip compile --generate-hashes --upgrade -o requirements.lock pyproject.toml sdk/pyproject.toml
+Add the dependency manually to [`pyproject.toml`](https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#dependencies-and-requirements):
+
+```toml
+[project]
+dependencies = [
+    "requirements>=2.32.3",
+]
 ```
 
-The above command pulls in dependencies from `pyproject.toml` and `sdk/pyproject.toml`, gets their latest compatible versions, and writes them to `requirements.lock` with added hashes to verify integrity when downloading during install.
+Then install into your virtual environment:
 
-:::important
-Make sure that `./sdk/pyproject.toml` is up to date first with:
-
-```console
-dagger develop
+```sh
+python -m pip install -e ./sdk -e .
 ```
+
+</TabItem>
+</Tabs>
+
+:::tip
+If you haven't setup your local environment yet, see [IDE Integration](./ide-integration.mdx).
 :::
 
 :::note
-The lock file should only include dependencies, and not the editable installs for the `./sdk` and current module.
-:::
-
-#### Poetry's lock file
-
-Dagger doesn't support running the `poetry` CLI. It depends on standards like [PEP 517](./module-structure.mdx#language-native-packaging). That means that it doesn't know about the `poetry.lock` file, but the `requirements.lock` file can be generated with [`poetry export`](https://python-poetry.org/docs/cli#export):
-
-```console
-poetry export --with dev --without main -o requirements.lock
-```
-
-:::important
-The `dagger-io` dev dependency is [not exported correctly](https://github.com/python-poetry/poetry-plugin-export/issues/145), so it needs to be removed:
-
-```console
-sed -i '' '/dagger-io @/d' requirements.lock
-```
+Third-party dependencies are managed in the same way as any normal Python project. The only limitation is in "pinning" the dependencies. Currently, Dagger can install directly from a `uv.lock` file, or a [pip-tools compatible](https://docs.astral.sh/uv/pip/compile/#locking-requirements) `requirements.lock` file (notice `.lock` extension, not `.txt`). See [Language-native packaging](./module-structure.mdx#language-native-packaging) for more information.
 :::
 
 </TabItem>
