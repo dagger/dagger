@@ -26,7 +26,8 @@ type Schema struct {
 		Name string `json:"name,omitempty"`
 	} `json:"subscriptionType,omitempty"`
 
-	Types Types `json:"types"`
+	Types      Types `json:"types"`
+	Directives any   `json:"directives"`
 }
 
 func (s *Schema) Query() *Type {

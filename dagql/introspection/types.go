@@ -519,7 +519,7 @@ func (t *Type) Fields(includeDeprecated bool) []*Field {
 	}
 	fields := []*Field{}
 	for _, f := range t.def.Fields {
-		if strings.HasPrefix(f.Name, "__") {
+		if strings.HasPrefix(f.Name, "_") {
 			continue
 		}
 
