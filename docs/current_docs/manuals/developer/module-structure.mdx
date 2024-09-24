@@ -407,7 +407,7 @@ This means module developers can use any tool they want to manage their virtual 
 For example, Poetry has its own `poetry.lock` which Dagger doesn't recognize, but it can be exported as a `requirements.lock` file with:
 
 ```shell
-poetry export -o requirements.lock
+poetry export --without main -o requirements.lock
 ```
 
 It will have to be manually kept in sync, though.
