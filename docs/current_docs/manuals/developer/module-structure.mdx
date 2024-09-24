@@ -32,11 +32,11 @@ echo "3.11" > .python-version
 
 This will instruct Dagger to use the `python:3.11-slim` base image instead.
 
-**Pinning the interpreter version** can be useful to **prevent an automatic upgrade** from a future version of Dagger, or to select a newer version.
+Pinning the interpreter version can be useful to prevent an automatic upgrade from a future version of Dagger, or to select a newer version.
 
 :::tip
 
-For more **advanced** needs, a **different base image** can be used by adding the following to your `pyproject.toml`:
+For more advanced needs, a different base image can be used by adding the following to your `pyproject.toml`:
 
 ```toml
 [tool.dagger]
@@ -234,7 +234,7 @@ Dagger expects that a Python Dagger module is structured like a [library](https:
 import main
 ```
 
-But **it's up to the Python [build system](https://docs.astral.sh/uv/concepts/projects/#build-systems)** to know where files are located in order to build and install the `main` package correctly.
+But it's up to the Python [build system](https://docs.astral.sh/uv/concepts/projects/#build-systems) to know where files are located in order to build and install the `main` package correctly.
 
 This affords a lot of flexibility in how Daggger Python modules can be structured, and which tools are supported.
 :::
@@ -400,7 +400,7 @@ In this case, Dagger installs dependencies with:
 uv pip install -r requirements.lock -e ./sdk -e .
 ```
 
-Notice that the `./sdk` and `main` (in `.`) packages don't need to be in the `requirements.lock` file, **only the third party dependencies**.
+Notice that the `./sdk` and `main` (in `.`) packages don't need to be in the `requirements.lock` file, only the third party dependencies.
 
 This means module developers can use any tool they want to manage their virtual environment and install dependencies, but if third-party dependencies aren't pinned in a `requirements.lock` file, the developers may get different versions between the Dagger execution environment and their own local environment.
 
