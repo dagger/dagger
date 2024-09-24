@@ -30,6 +30,17 @@ func (funcs goTemplateFuncs) isModuleCode() bool {
 	return funcs.moduleName != ""
 }
 
+func (funcs goTemplateFuncs) moduleRelPath(path string) string {
+	return filepath.Join(
+		// path to the root of this module (since we're probably in internal/dagger/)
+		"../..",
+		// path from the module root to the context directory
+		funcs.moduleParent,
+		// path from the context directory to the desired path
+		path,
+	)
+}
+
 /*
 moduleMainSrc generates the source code of the main func for Dagger Module code using the Go SDK.
 

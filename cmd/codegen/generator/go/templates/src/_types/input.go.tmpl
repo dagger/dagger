@@ -3,5 +3,6 @@ type {{ .Name | FormatName }} struct {
 {{- range $field := .InputFields }}
 {{ $field.Description | Comment }}
 {{ $field.Name | FormatName }} {{ $field.TypeRef | FormatInputType }} `json:"{{ $field.Name }}{{if $field.DefaultValue}},omitempty{{end}}"`
+{{- with .Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 {{ end }}
 }
