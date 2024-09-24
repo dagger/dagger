@@ -80,13 +80,15 @@ func (ps *parseState) parseGoIface(t *types.Interface, named *types.Named) (*par
 	if doc := docForAstSpec(astSpec); doc != nil {
 		spec.doc = doc.Text()
 	}
+	spec.sourceMap = ps.sourceMap(astSpec)
 
 	return spec, nil
 }
 
 type parsedIfaceType struct {
-	name string
-	doc  string
+	name      string
+	doc       string
+	sourceMap *sourceMap
 
 	methods []*funcTypeSpec
 
@@ -103,6 +105,9 @@ func (spec *parsedIfaceType) TypeDefCode() (*Statement, error) {
 	withIfaceOptsCode := []Code{}
 	if spec.doc != "" {
 		withIfaceOptsCode = append(withIfaceOptsCode, Id("Description").Op(":").Lit(strings.TrimSpace(spec.doc)))
+	}
+	if spec.sourceMap != nil {
+		withIfaceOptsCode = append(withIfaceOptsCode, Id("SourceMap").Op(":").Add(spec.sourceMap.TypeDefCode()))
 	}
 	if len(withIfaceOptsCode) > 0 {
 		withIfaceArgsCode = append(withIfaceArgsCode, Id("dagger").Dot("TypeDefWithInterfaceOpts").Values(withIfaceOptsCode...))
