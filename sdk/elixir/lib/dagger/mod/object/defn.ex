@@ -44,6 +44,10 @@ defmodule Dagger.Mod.Object.Defn do
     var(v)
   end
 
+  defp typespec_arg({name, {type, _}}) do
+    typespec_arg({name, type})
+  end
+
   defp typespec_arg({_, type} = arg) do
     arg = var(arg)
 

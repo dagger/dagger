@@ -38,4 +38,14 @@ defmodule ObjectMod do
   defn optional_arg(s: String.t() | nil) :: String.t() do
     "Hello, #{s}"
   end
+
+  defn type_option(
+         dir:
+           {Dagger.Directory.t() | nil,
+            doc: "The directory to run on.",
+            default_path: "/sdk/elixir",
+            ignore: ["deps", "_build"]}
+       ) :: String.t() do
+    Dagger.Directory.id(dir)
+  end
 end
