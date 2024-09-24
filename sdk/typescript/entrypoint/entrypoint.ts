@@ -59,7 +59,10 @@ export async function entrypoint() {
           })
         } catch (e) {
           if (e instanceof Error) {
-            console.error(`Error: ${e.message}, ${e.cause}`)
+            if (e.cause) {
+              console.error(`${e.cause}`)
+            }
+            console.error(`Error: ${e.message}`)
           } else {
             console.error(e)
           }
