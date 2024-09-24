@@ -35,7 +35,7 @@ class CustomSetter {
 
 export function createGQLClient(port: number, token: string): GraphQLClient {
   const client = new GraphQLClient(`http://127.0.0.1:${port}/query`, {
-    fetch: createFetchWithTimeout(1000 * 60 * 30), // 30minutes timeout
+    fetch: createFetchWithTimeout(1000 * 60 * 60 * 24 * 7), // 1 week timeout so we should never hit that one.
     headers: {
       Authorization: "Basic " + Buffer.from(token + ":").toString("base64"),
     },
