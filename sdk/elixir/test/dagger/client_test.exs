@@ -332,7 +332,7 @@ defmodule Dagger.ClientTest do
              |> Sync.sync()
 
     assert Exception.message(error) == """
-           input: container.from.withExec.sync resolve: process \"foobar\" did not complete successfully: exit code: 2
+           input: container.from.withExec.sync process \"foobar\" did not complete successfully: exit code: 2
 
            Stderr:
            [dumb-init] foobar: No such file or directory
