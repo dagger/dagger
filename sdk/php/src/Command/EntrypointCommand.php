@@ -38,9 +38,9 @@ class EntrypointCommand extends Command
         $functionCall = dag()->currentFunctionCall();
 
         try {
-                return $functionCall->parentName() === '' ?
-                    $this->registerModule($functionCall) :
-                    $this->callFunctionOnParent($output, $functionCall);
+            return $functionCall->parentName() === '' ?
+                $this->registerModule($functionCall) :
+                $this->callFunctionOnParent($output, $functionCall);
         } catch (\Throwable $t) {
             $this->outputErrorInformation($input, $output, $t);
 
@@ -56,9 +56,10 @@ class EntrypointCommand extends Command
         $daggerObjects = (new FindsDaggerObjects())($src);
 
         foreach ($daggerObjects as $daggerObject) {
-            $objectTypeDef = dag()
-                ->typeDef()
-                ->withObject($this->normalizeClassname($daggerObject->name));
+            $objectTypeDef = dag()->typeDef()->withObject(
+                $this->normalizeClassname($daggerObject->name),
+                $daggerObject->description,
+            );
 
             foreach ($daggerObject->daggerFunctions as $daggerFunction) {
                 $func = dag()->function(

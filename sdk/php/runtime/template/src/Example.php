@@ -4,18 +4,20 @@ declare(strict_types=1);
 
 namespace DaggerModule;
 
-use Dagger\Attribute\Argument;
 use Dagger\Attribute\DaggerFunction;
 use Dagger\Attribute\DaggerObject;
+use Dagger\Attribute\Doc;
 use Dagger\Container;
 use Dagger\Directory;
 
 use function Dagger\dag;
 
 #[DaggerObject]
+#[Doc('A generated module for Example functions')]
 class Example
 {
-    #[DaggerFunction('Returns a container that echoes whatever string argument is provided')]
+    #[DaggerFunction]
+    #[Doc('Returns a container that echoes whatever string argument is provided')]
     public function containerEcho(string $stringArg): Container
     {
         return dag()
@@ -24,11 +26,12 @@ class Example
             ->withExec(['echo', $stringArg]);
     }
 
-    #[DaggerFunction('Returns lines that match a pattern in the files of the provided Directory')]
+    #[DaggerFunction]
+    #[Doc('Returns lines that match a pattern in the files of the provided Directory')]
     public function grepDir(
-        #[Argument('The directory to search')]
+        #[Doc('The directory to search')]
         Directory $directoryArg,
-        #[Argument('The pattern to search for')]
+        #[Doc('The pattern to search for')]
         string $pattern
     ): string {
         return dag()

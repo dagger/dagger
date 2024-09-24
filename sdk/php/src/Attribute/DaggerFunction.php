@@ -8,6 +8,10 @@ namespace Dagger\Attribute;
 final readonly class DaggerFunction
 {
     //@TODO support renaming argument with public string $name
+
+    /**
+     * @param string|null $description deprecated, use #[Doc]
+     */
     public function __construct(
         public ?string $description = null,
     ) {

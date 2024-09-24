@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace DaggerModule;
 
-use Dagger\Attribute\Argument;
 use Dagger\Attribute\DaggerFunction;
 use Dagger\Attribute\DaggerObject;
+use Dagger\Attribute\Doc;
 use Dagger\Container;
 use Dagger\Directory;
 use GraphQL\Exception\QueryError;
@@ -14,15 +14,17 @@ use GraphQL\Exception\QueryError;
 use function Dagger\dag;
 
 #[DaggerObject]
+#[Doc("The PHP SDK's development module.")]
 final class PhpSdkDev
 {
     private const SDK_ROOT='/src/sdk/php';
 
-    #[DaggerFunction('Run tests from source directory')]
+    #[DaggerFunction]
+    #[Doc('Run tests from source directory')]
     public function test(
-        #[Argument('Run tests from the given source directory')]
+        #[Doc('Run tests from the given source directory')]
         Directory $source,
-        #[Argument('Only run tests in the given group')]
+        #[Doc('Only run tests in the given group')]
         ?string $group = null,
     ): Container {
         return $this->base($source)->withExec(
@@ -31,8 +33,10 @@ final class PhpSdkDev
         );
     }
 
-    #[DaggerFunction('Lint the source directory')]
-    public function lint(Directory $source): Container {
+    #[DaggerFunction]
+    #[Doc('Run linter in source directory')]
+    public function lint(Directory $source): Container
+    {
         return $this->base($source)->withExec(['phpcs']);
     }
 
@@ -51,7 +55,8 @@ final class PhpSdkDev
      * This will most likely occur on a 4.0 release:
      * https://github.com/PHPCSStandards/PHP_CodeSniffer/issues/184
      */
-    #[DaggerFunction('Format the source directory')]
+    #[DaggerFunction]
+    #[Doc('Return diff from formatting source directory')]
     public function format(Directory $source): Directory
     {
         $result = dag()->alwaysExec()->exec($this->base($source), ['phpcbf']);
@@ -66,7 +71,8 @@ final class PhpSdkDev
         return $original->diff($result->directory(self::SDK_ROOT));
     }
 
-    #[DaggerFunction('Format the source directory')]
+    #[DaggerFunction]
+    #[Doc('Return stdout from formatting source directory')]
     public function formatStdout(Directory $source): string
     {
         $result = dag()->alwaysExec()->exec($this->base($source), ['phpcbf']);
