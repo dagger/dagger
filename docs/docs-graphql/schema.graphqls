@@ -16,6 +16,9 @@ changing the result. Meta fields are dropped from cache keys.
 """
 directive @meta on FIELD_DEFINITION
 
+"""Indicates the source information for where a given field is defined."""
+directive @sourceMap(module: String!, filename: String!, line: Int!, column: Int!) on SCALAR | OBJECT | FIELD_DEFINITION | ARGUMENT_DEFINITION | UNION | ENUM | ENUM_VALUE | INPUT_OBJECT
+
 """Key value object that represents a build argument."""
 input BuildArg {
   """The build argument name."""

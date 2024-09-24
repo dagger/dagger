@@ -39,6 +39,9 @@ fragment FullType on __Type {
     }
     isDeprecated
     deprecationReason
+    directives {
+      ...DirectiveApplication
+    }
   }
   inputFields {
     ...InputValue
@@ -51,9 +54,15 @@ fragment FullType on __Type {
     description
     isDeprecated
     deprecationReason
+    directives {
+      ...DirectiveApplication
+    }
   }
   possibleTypes {
     ...TypeRef
+  }
+  directives {
+    ...DirectiveApplication
   }
 }
 
@@ -66,6 +75,9 @@ fragment InputValue on __InputValue {
   defaultValue
   isDeprecated
   deprecationReason
+  directives {
+    ...DirectiveApplication
+  }
 }
 
 fragment TypeRef on __Type {
@@ -98,5 +110,13 @@ fragment TypeRef on __Type {
         }
       }
     }
+  }
+}
+
+fragment DirectiveApplication on _DirectiveApplication {
+  name
+  args {
+    name
+    value
   }
 }

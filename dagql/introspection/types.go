@@ -17,9 +17,12 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 		dagql.Func("__schema", func(ctx context.Context, self T, args struct{}) (*Schema, error) {
 			return WrapSchema(srv.Schema()), nil
 		}).Impure("A schema can be modified at runtime."),
+
+		// custom dagger field
 		dagql.Func("__schemaVersion", func(ctx context.Context, self T, args struct{}) (string, error) {
 			return srv.View, nil
 		}).View(dagql.AllView{}),
+
 		dagql.Func("__type", func(ctx context.Context, self T, args struct {
 			Name string
 		}) (*Type, error) {
@@ -37,6 +40,12 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 
 	for _, class := range []dagql.ObjectType{
 		dagql.NewClass[*Directive](dagql.ClassOpts[*Directive]{
+			NoIDs: true,
+		}),
+		dagql.NewClass[*DirectiveApplication](dagql.ClassOpts[*DirectiveApplication]{
+			NoIDs: true,
+		}),
+		dagql.NewClass[*DirectiveApplicationArg](dagql.ClassOpts[*DirectiveApplicationArg]{
 			NoIDs: true,
 		}),
 		dagql.NewClass[*EnumValue](dagql.ClassOpts[*EnumValue]{
@@ -129,6 +138,11 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 		dagql.Func("specifiedByURL", func(ctx context.Context, self *Type, args struct{}) (*string, error) {
 			return self.SpecifiedByURL(), nil
 		}),
+
+		// custom dagger field
+		dagql.Func("directives", func(ctx context.Context, self *Type, args struct{}) (dagql.Array[*DirectiveApplication], error) {
+			return self.Directives(), nil
+		}),
 	}.Install(srv)
 
 	dagql.Fields[*Directive]{
@@ -173,6 +187,11 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 		dagql.Func("deprecationReason", func(ctx context.Context, self *Field, args struct{}) (*string, error) {
 			return self.DeprecationReason(), nil
 		}),
+
+		// custom dagger field
+		dagql.Func("directives", func(ctx context.Context, self *Field, args struct{}) (dagql.Array[*DirectiveApplication], error) {
+			return self.Directives(), nil
+		}),
 	}.Install(srv)
 
 	dagql.Fields[*InputValue]{
@@ -198,6 +217,11 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 		dagql.Func("deprecationReason", func(ctx context.Context, self *InputValue, args struct{}) (*string, error) {
 			return self.DeprecationReason(), nil
 		}),
+
+		// custom dagger field
+		dagql.Func("directives", func(ctx context.Context, self *InputValue, args struct{}) (dagql.Array[*DirectiveApplication], error) {
+			return self.Directives(), nil
+		}),
 	}.Install(srv)
 
 	dagql.Fields[*EnumValue]{
@@ -212,6 +236,35 @@ func Install[T dagql.Typed](srv *dagql.Server) {
 		}),
 		dagql.Func("deprecationReason", func(ctx context.Context, self *EnumValue, args struct{}) (*string, error) {
 			return self.DeprecationReason(), nil
+		}),
+
+		// custom dagger field
+		dagql.Func("directives", func(ctx context.Context, self *EnumValue, args struct{}) (dagql.Array[*DirectiveApplication], error) {
+			return self.Directives(), nil
+		}),
+	}.Install(srv)
+
+	// custom dagger type
+	dagql.Fields[*DirectiveApplication]{
+		dagql.Func("name", func(ctx context.Context, self *DirectiveApplication, args struct{}) (dagql.String, error) {
+			return dagql.NewString(self.Name), nil
+		}),
+		dagql.Func("args", func(ctx context.Context, self *DirectiveApplication, _ struct{}) (dagql.Array[*DirectiveApplicationArg], error) {
+			return self.Args, nil
+		}),
+	}.Install(srv)
+
+	// custom dagger type
+	dagql.Fields[*DirectiveApplicationArg]{
+		dagql.Func("name", func(ctx context.Context, self *DirectiveApplicationArg, args struct{}) (dagql.String, error) {
+			return dagql.NewString(self.Name), nil
+		}),
+		dagql.Func("value", func(ctx context.Context, self *DirectiveApplicationArg, args struct{}) (dagql.Nullable[dagql.String], error) {
+			if self.Value == nil {
+				return dagql.Null[dagql.String](), nil
+			} else {
+				return dagql.NonNull(dagql.NewString(self.Value.Raw)), nil
+			}
 		}),
 	}.Install(srv)
 }
@@ -335,6 +388,10 @@ func (d *Directive) Type() *ast.Type {
 
 func (d *Directive) TypeDescription() string {
 	return "A GraphQL schema directive."
+}
+
+func (d *Directive) Description() string {
+	return d.description
 }
 
 var _ dagql.Typed = &InputValue{}
@@ -535,6 +592,7 @@ func (t *Type) Fields(includeDeprecated bool) []*Field {
 				description:  arg.Description,
 				DefaultValue: defaultValue(arg.DefaultValue),
 				deprecation:  arg.Directives.ForName("deprecated"),
+				directives:   arg.Directives,
 			})
 		}
 
@@ -543,6 +601,7 @@ func (t *Type) Fields(includeDeprecated bool) []*Field {
 			description: f.Description,
 			Args:        args,
 			Type_:       WrapTypeFromType(t.schema, f.Type),
+			directives:  f.Directives,
 			deprecation: f.Directives.ForName("deprecated"),
 		})
 	}
@@ -561,10 +620,15 @@ func (t *Type) InputFields() []*InputValue {
 			description:  f.Description,
 			Type_:        WrapTypeFromType(t.schema, f.Type),
 			DefaultValue: defaultValue(f.DefaultValue),
+			directives:   f.Directives,
 			deprecation:  f.Directives.ForName("deprecated"),
 		})
 	}
 	return res
+}
+
+func (t *Type) Directives() []*DirectiveApplication {
+	return directiveApplications(t.def.Directives)
 }
 
 func defaultValue(value *ast.Value) *string {
@@ -614,6 +678,7 @@ func (t *Type) EnumValues(includeDeprecated bool) []*EnumValue {
 		res = append(res, &EnumValue{
 			Name:        val.Name,
 			description: val.Description,
+			directives:  val.Directives,
 			deprecation: val.Directives.ForName("deprecated"),
 		})
 	}
@@ -657,9 +722,19 @@ type (
 		IsRepeatable bool
 	}
 
+	DirectiveApplication struct {
+		Name string
+		Args []*DirectiveApplicationArg
+	}
+	DirectiveApplicationArg struct {
+		Name  string
+		Value *ast.Value
+	}
+
 	EnumValue struct {
 		Name        string
 		description string
+		directives  []*ast.Directive
 		deprecation *ast.Directive
 	}
 
@@ -668,6 +743,7 @@ type (
 		description string
 		Type_       *Type
 		Args        []*InputValue
+		directives  []*ast.Directive
 		deprecation *ast.Directive
 	}
 
@@ -676,6 +752,7 @@ type (
 		description  string
 		DefaultValue *string
 		Type_        *Type
+		directives   []*ast.Directive
 		deprecation  *ast.Directive
 	}
 )
@@ -705,6 +782,10 @@ func (e *EnumValue) DeprecationReason() *string {
 	return &reason.Value.Raw
 }
 
+func (e *EnumValue) Directives() []*DirectiveApplication {
+	return directiveApplications(e.directives)
+}
+
 func (f *Field) Description() string {
 	return f.description
 }
@@ -728,6 +809,10 @@ func (f *Field) DeprecationReason() *string {
 	return &reason.Value.Raw
 }
 
+func (f *Field) Directives() []*DirectiveApplication {
+	return directiveApplications(f.directives)
+}
+
 func (i *InputValue) Description() string {
 	return i.description
 }
@@ -749,6 +834,70 @@ func (i *InputValue) DeprecationReason() *string {
 	return &reason.Value.Raw
 }
 
-func (d *Directive) Description() string {
-	return d.description
+func (i *InputValue) Directives() []*DirectiveApplication {
+	return directiveApplications(i.directives)
+}
+
+var _ dagql.Typed = &DirectiveApplication{}
+
+func (d *DirectiveApplication) Type() *ast.Type {
+	return &ast.Type{
+		// Some clients don't like custom introspection types like this :(
+		// NamedType: "__DirectiveApplication",
+		NamedType: "_DirectiveApplication",
+		NonNull:   true,
+	}
+}
+
+func (d *DirectiveApplication) TypeDescription() string {
+	return "A GraphQL schema directive application."
+}
+
+var _ dagql.Typed = &DirectiveApplicationArg{}
+
+func (d *DirectiveApplicationArg) Type() *ast.Type {
+	return &ast.Type{
+		// Some clients don't like custom introspection types like this :(
+		// NamedType: "__DirectiveApplicationArg",
+		NamedType: "_DirectiveApplicationArg",
+		NonNull:   true,
+	}
+}
+
+func (d *DirectiveApplicationArg) TypeDescription() string {
+	return "A GraphQL schema directive application arg."
+}
+
+func directiveApplications(directives []*ast.Directive) []*DirectiveApplication {
+	dIndex := map[string]DirectiveApplication{}
+	dNames := make([]string, 0, len(directives))
+
+	for _, d := range directives {
+		dNames = append(dNames, d.Name)
+		dIndex[d.Name] = directiveApplication(d)
+	}
+	sort.Strings(dNames)
+
+	res := make([]*DirectiveApplication, len(dNames))
+	for i, d := range dNames {
+		cp := dIndex[d]
+		res[i] = &cp
+	}
+
+	return res
+}
+
+func directiveApplication(d *ast.Directive) DirectiveApplication {
+	args := make([]*DirectiveApplicationArg, len(d.Arguments))
+	for i, arg := range d.Arguments {
+		args[i] = &DirectiveApplicationArg{
+			Name:  arg.Name,
+			Value: arg.Value,
+		}
+	}
+
+	return DirectiveApplication{
+		Name: d.Name,
+		Args: args,
+	}
 }
