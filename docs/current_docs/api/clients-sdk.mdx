@@ -292,20 +292,10 @@ build
 The Dagger Python SDK requires [Python 3.10 or later](https://docs.python.org/3/using/index.html).
 :::
 
-Using a [virtual environment](https://packaging.python.org/en/latest/tutorials/installing-packages/#creating-virtual-environments) is recommended. Create a virtual environment for your project:
+Install the Dagger Python SDK in your project:
 
 ```shell
-python3 -m venv .venv && source .venv/bin/activate
-```
-
-Install the Dagger Python SDK in your project's virtual environment using [PyPI](https://pypi.org/project/dagger-io/) or [Conda](https://anaconda.org/conda-forge/dagger-io) (from the [conda-forge](https://conda-forge.org/docs/user/introduction.html#how-can-i-install-packages-from-conda-forge) channel):
-
-```shell
-# using pypi
-pip install dagger-io
-
-# using conda
-conda install dagger-io
+uv add dagger-io
 ```
 
 This example demonstrates how to test a Python application against multiple Python versions using the Python SDK.
