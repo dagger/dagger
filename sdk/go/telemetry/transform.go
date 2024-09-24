@@ -1038,17 +1038,11 @@ func ResourceMetricsFromPB(pbResourceMetrics *otlpmetricsv1.ResourceMetrics) (*m
 	resourceMetrics := &metricdata.ResourceMetrics{
 		Resource: ResourceFromPB(pbResourceMetrics.GetSchemaUrl(), pbResourceMetrics.GetResource()),
 	}
-
-	for _, pbScopeMetrics := range pbResourceMetrics.GetScopeMetrics() {
-		scopeMetrics := metricdata.ScopeMetrics{
-			Scope: InstrumentationScopeFromPB(pbScopeMetrics.GetScope()),
-		}
-		for _, pbMetric := range pbScopeMetrics.GetMetrics() {
-			metric
-		}
-		resourceMetrics.ScopeMetrics = append(resourceMetrics.ScopeMetrics, scopeMetrics)
+	var err error
+	resourceMetrics.ScopeMetrics, err = ScopeMetricsFromPB(pbResourceMetrics.GetScopeMetrics())
+	if err != nil {
+		return nil, err
 	}
-
 	return resourceMetrics, nil
 }
 
@@ -1073,13 +1067,11 @@ func ScopeMetricsFromPB(pbScopeMetrics []*otlpmetricsv1.ScopeMetrics) ([]metricd
 		scopeMetric := metricdata.ScopeMetrics{
 			Scope: InstrumentationScopeFromPB(pbScopeMetric.GetScope()),
 		}
-		for _, pbMetric := range pbScopeMetric.GetMetrics() {
-			metric, err := MetricFromPB(pbMetric)
-			if err != nil {
-				errs = errors.Join(errs, err)
-				continue
-			}
-			scopeMetric.Metrics = append(scopeMetric.Metrics, metric)
+		var err error
+		scopeMetric.Metrics, err = MetricsFromPB(pbScopeMetric.GetMetrics())
+		if err != nil {
+			errs = errors.Join(errs, err)
+			continue
 		}
 		scopeMetrics = append(scopeMetrics, scopeMetric)
 	}
@@ -1122,6 +1114,7 @@ func MetricsFromPB(pbMetrics []*otlpmetricsv1.Metric) ([]metricdata.Metrics, err
 		}
 		out = append(out, metric)
 	}
+	return out, errs
 }
 
 // Metrics returns a slice of OTLP Metric generated from ms. If ms contains
@@ -1265,13 +1258,19 @@ func dataPointsFromPB(dPts []*otlpmetricsv1.NumberDataPoint) dataPointsFromPBRes
 				StartTime:  time.Unix(0, int64(dPt.StartTimeUnixNano)),
 				Time:       time.Unix(0, int64(dPt.TimeUnixNano)),
 				Value:      pbV.AsInt,
-				Examplars:  ExemplarsFromPB[int64](dPt.Exemplars),
+				Exemplars:  exemplarsFromPB(dPt.Exemplars).AsInt,
 			})
 		case *otlpmetricsv1.NumberDataPoint_AsDouble:
-			v = pbV.AsDouble
+			res.AsDouble = append(res.AsDouble, metricdata.DataPoint[float64]{
+				Attributes: attribute.NewSet(AttributesFromProto(dPt.Attributes)...),
+				StartTime:  time.Unix(0, int64(dPt.StartTimeUnixNano)),
+				Time:       time.Unix(0, int64(dPt.TimeUnixNano)),
+				Value:      pbV.AsDouble,
+				Exemplars:  exemplarsFromPB(dPt.Exemplars).AsDouble,
+			})
 		}
 	}
-	return out
+	return res
 }
 
 // DataPointsToPB returns a slice of OTLP NumberDataPoint generated from dPts.
@@ -1423,6 +1422,38 @@ func TemporalityToPB(t metricdata.Temporality) (otlpmetricsv1.AggregationTempora
 // The result does not depend on the location associated with t.
 func timeUnixNano(t time.Time) uint64 {
 	return uint64(max(0, t.UnixNano())) // nolint:gosec // Overflow checked.
+}
+
+type exemplarFromPBResult struct {
+	// only one of these will be set, depending on whether the ungeneric input
+	// resolves to in the returned generic type
+	AsInt    []metricdata.Exemplar[int64]
+	AsDouble []metricdata.Exemplar[float64]
+}
+
+func exemplarsFromPB(exemplars []*otlpmetricsv1.Exemplar) exemplarFromPBResult {
+	res := exemplarFromPBResult{}
+	for _, pbExemplar := range exemplars {
+		switch pbV := pbExemplar.Value.(type) {
+		case *otlpmetricsv1.Exemplar_AsInt:
+			res.AsInt = append(res.AsInt, metricdata.Exemplar[int64]{
+				FilteredAttributes: AttributesFromProto(pbExemplar.FilteredAttributes),
+				Time:               time.Unix(0, int64(pbExemplar.TimeUnixNano)),
+				Value:              pbV.AsInt,
+				SpanID:             pbExemplar.SpanId,
+				TraceID:            pbExemplar.TraceId,
+			})
+		case *otlpmetricsv1.Exemplar_AsDouble:
+			res.AsDouble = append(res.AsDouble, metricdata.Exemplar[float64]{
+				FilteredAttributes: AttributesFromProto(pbExemplar.FilteredAttributes),
+				Time:               time.Unix(0, int64(pbExemplar.TimeUnixNano)),
+				Value:              pbV.AsDouble,
+				SpanID:             pbExemplar.SpanId,
+				TraceID:            pbExemplar.TraceId,
+			})
+		}
+	}
+	return res
 }
 
 // ExemplarsToPB returns a slice of OTLP ExemplarsToPB generated from exemplars.

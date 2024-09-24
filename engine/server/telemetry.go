@@ -567,6 +567,26 @@ func (ps MetricsPubSub) Export(ctx context.Context, metrics *metricdata.Resource
 	return nil
 }
 
+func (ps MetricsPubSub) Temporality(sdkmetric.InstrumentKind) metricdata.Temporality {
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	panic("idk")
+}
+
+func (ps MetricsPubSub) Aggregation(sdkmetric.InstrumentKind) sdkmetric.Aggregation {
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	panic("idk")
+}
+func (ps MetricsPubSub) ForceFlush(ctx context.Context) error { return nil }
+func (ps MetricsPubSub) Shutdown(context.Context) error       { return nil }
+
 type Fetcher func(ctx context.Context, db *sql.DB, since string) (*sse.Event, bool, error)
 
 func (ps *PubSub) sseHandler(w http.ResponseWriter, r *http.Request, client *daggerClient, fetcher Fetcher) error {
