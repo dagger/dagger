@@ -53,7 +53,7 @@ With Dagger's GraphQL API, while all of the above is true, each field in a query
           }
         }
       }
-      }
+    }
     ```
 
     Here, the query requests the `withExec` field of the `Container` object returned in the previous step, passing it the command to be executed as an array of arguments. To resolve this, Dagger will  define the command for execution in the container image and return a `Container` object containing the execution results.
