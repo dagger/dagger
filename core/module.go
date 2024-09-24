@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -537,11 +538,12 @@ func (mod *Module) validateInterfaceTypeDef(ctx context.Context, typeDef *TypeDe
 	return nil
 }
 
-// prefix the given typedef (and any recursively referenced typedefs) with this module's name for any objects
-func (mod *Module) namespaceTypeDef(ctx context.Context, typeDef *TypeDef) error {
+// prefix the given typedef (and any recursively referenced typedefs) with this
+// module's name/path for any objects
+func (mod *Module) namespaceTypeDef(ctx context.Context, modPath string, typeDef *TypeDef) error {
 	switch typeDef.Kind {
 	case TypeDefKindList:
-		if err := mod.namespaceTypeDef(ctx, typeDef.AsList.Value.ElementTypeDef); err != nil {
+		if err := mod.namespaceTypeDef(ctx, modPath, typeDef.AsList.Value.ElementTypeDef); err != nil {
 			return err
 		}
 	case TypeDefKindObject:
@@ -554,35 +556,42 @@ func (mod *Module) namespaceTypeDef(ctx context.Context, typeDef *TypeDef) error
 		}
 		if !ok {
 			obj.Name = namespaceObject(obj.OriginalName, mod.Name(), mod.OriginalName)
+			obj.SourceMap = mod.namespaceSourceMap(modPath, obj.SourceMap)
 		}
 
 		for _, field := range obj.Fields {
-			if err := mod.namespaceTypeDef(ctx, field.TypeDef); err != nil {
+			if err := mod.namespaceTypeDef(ctx, modPath, field.TypeDef); err != nil {
 				return err
 			}
+			field.SourceMap = mod.namespaceSourceMap(modPath, field.SourceMap)
 		}
 
 		for _, fn := range obj.Functions {
-			if err := mod.namespaceTypeDef(ctx, fn.ReturnType); err != nil {
+			if err := mod.namespaceTypeDef(ctx, modPath, fn.ReturnType); err != nil {
 				return err
 			}
+			fn.SourceMap = mod.namespaceSourceMap(modPath, fn.SourceMap)
 
 			for _, arg := range fn.Args {
-				if err := mod.namespaceTypeDef(ctx, arg.TypeDef); err != nil {
+				if err := mod.namespaceTypeDef(ctx, modPath, arg.TypeDef); err != nil {
 					return err
 				}
+				arg.SourceMap = mod.namespaceSourceMap(modPath, arg.SourceMap)
 			}
 		}
 
 		if obj.Constructor.Valid {
-			if err := mod.namespaceTypeDef(ctx, obj.Constructor.Value.ReturnType); err != nil {
+			fn := obj.Constructor.Value
+			if err := mod.namespaceTypeDef(ctx, modPath, fn.ReturnType); err != nil {
 				return err
 			}
+			fn.SourceMap = mod.namespaceSourceMap(modPath, fn.SourceMap)
 
-			for _, arg := range obj.Constructor.Value.Args {
-				if err := mod.namespaceTypeDef(ctx, arg.TypeDef); err != nil {
+			for _, arg := range fn.Args {
+				if err := mod.namespaceTypeDef(ctx, modPath, arg.TypeDef); err != nil {
 					return err
 				}
+				arg.SourceMap = mod.namespaceSourceMap(modPath, arg.SourceMap)
 			}
 		}
 
@@ -596,17 +605,20 @@ func (mod *Module) namespaceTypeDef(ctx context.Context, typeDef *TypeDef) error
 		}
 		if !ok {
 			iface.Name = namespaceObject(iface.OriginalName, mod.Name(), mod.OriginalName)
+			iface.SourceMap = mod.namespaceSourceMap(modPath, iface.SourceMap)
 		}
 
 		for _, fn := range iface.Functions {
-			if err := mod.namespaceTypeDef(ctx, fn.ReturnType); err != nil {
+			if err := mod.namespaceTypeDef(ctx, modPath, fn.ReturnType); err != nil {
 				return err
 			}
+			fn.SourceMap = mod.namespaceSourceMap(modPath, fn.SourceMap)
 
 			for _, arg := range fn.Args {
-				if err := mod.namespaceTypeDef(ctx, arg.TypeDef); err != nil {
+				if err := mod.namespaceTypeDef(ctx, modPath, arg.TypeDef); err != nil {
 					return err
 				}
+				arg.SourceMap = mod.namespaceSourceMap(modPath, arg.SourceMap)
 			}
 		}
 	case TypeDefKindEnum:
@@ -620,9 +632,39 @@ func (mod *Module) namespaceTypeDef(ctx context.Context, typeDef *TypeDef) error
 
 		if !ok {
 			enum.Name = namespaceObject(enum.OriginalName, mod.Name(), mod.OriginalName)
+			enum.SourceMap = mod.namespaceSourceMap(modPath, enum.SourceMap)
+		}
+
+		for _, value := range enum.Values {
+			value.SourceMap = mod.namespaceSourceMap(modPath, value.SourceMap)
 		}
 	}
 	return nil
+}
+
+func (mod *Module) namespaceSourceMap(modPath string, sourceMap *SourceMap) *SourceMap {
+	if sourceMap == nil {
+		return nil
+	}
+
+	if mod.Source.Self.Kind != ModuleSourceKindLocal {
+		// TODO: handle remote git files
+		return nil
+	}
+
+	sourceMap.Module = mod.Name()
+	sourceMap.Filename = filepath.Join(modPath, sourceMap.Filename)
+	return sourceMap
+}
+
+// modulePath gets the prefix for the file sourcemaps, so that the sourcemap is
+// relative to the context directory
+func (mod *Module) modulePath(ctx context.Context) (string, error) {
+	sourceSubpath, err := mod.Source.Self.SourceSubpathWithDefault(ctx)
+	if err != nil {
+		return "", err
+	}
+	return sourceSubpath, nil
 }
 
 /*
@@ -770,7 +812,11 @@ func (mod *Module) WithObject(ctx context.Context, def *TypeDef) (*Module, error
 	}
 	if mod.NameField != "" {
 		def = def.Clone()
-		if err := mod.namespaceTypeDef(ctx, def); err != nil {
+		modPath, err := mod.modulePath(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get module path: %w", err)
+		}
+		if err := mod.namespaceTypeDef(ctx, modPath, def); err != nil {
 			return nil, fmt.Errorf("failed to namespace type def: %w", err)
 		}
 	}
@@ -795,7 +841,11 @@ func (mod *Module) WithInterface(ctx context.Context, def *TypeDef) (*Module, er
 	}
 	if mod.NameField != "" {
 		def = def.Clone()
-		if err := mod.namespaceTypeDef(ctx, def); err != nil {
+		modPath, err := mod.modulePath(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get module path: %w", err)
+		}
+		if err := mod.namespaceTypeDef(ctx, modPath, def); err != nil {
 			return nil, fmt.Errorf("failed to namespace type def: %w", err)
 		}
 	}
@@ -820,7 +870,11 @@ func (mod *Module) WithEnum(ctx context.Context, def *TypeDef) (*Module, error) 
 	}
 	if mod.NameField != "" {
 		def = def.Clone()
-		if err := mod.namespaceTypeDef(ctx, def); err != nil {
+		modPath, err := mod.modulePath(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get module path: %w", err)
+		}
+		if err := mod.namespaceTypeDef(ctx, modPath, def); err != nil {
 			return nil, fmt.Errorf("failed to namespace type def: %w", err)
 		}
 	}

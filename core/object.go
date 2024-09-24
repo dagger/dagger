@@ -196,7 +196,8 @@ func (t *ModuleObjectType) GetCallable(ctx context.Context, name string) (Callab
 }
 
 type ModuleObject struct {
-	Module  *Module
+	Module *Module
+
 	TypeDef *ObjectTypeDef
 	Fields  map[string]any
 }
@@ -244,10 +245,22 @@ func (obj *ModuleObject) TypeDescription() string {
 	return formatGqlDescription(obj.TypeDef.Description)
 }
 
+func (obj *ModuleObject) TypeDefinition(views ...string) *ast.Definition {
+	def := &ast.Definition{
+		Kind: ast.Object,
+		Name: obj.Type().Name(),
+	}
+	if obj.TypeDef.SourceMap != nil {
+		def.Directives = append(def.Directives, obj.TypeDef.SourceMap.TypeDirective())
+	}
+	return def
+}
+
 func (obj *ModuleObject) Install(ctx context.Context, dag *dagql.Server) error {
 	if obj.Module.InstanceID == nil {
 		return fmt.Errorf("installing object %q too early", obj.TypeDef.Name)
 	}
+
 	class := dagql.NewClass(dagql.ClassOpts[*ModuleObject]{
 		Typed: obj,
 	})
@@ -276,16 +289,21 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 	objDef := obj.TypeDef
 	mod := obj.Module
 
+	// if no constructor defined, install a basic one that initializes an empty object
 	if !objDef.Constructor.Valid {
-		// no constructor defined; install a basic one that initializes an empty
-		// object
+		spec := dagql.FieldSpec{
+			Name: gqlFieldName(mod.Name()),
+			// Description: "TODO", // XXX(vito)
+			Type:   obj,
+			Module: obj.Module.IDModule(),
+		}
+
+		if objDef.SourceMap != nil {
+			spec.Directives = append(spec.Directives, objDef.SourceMap.TypeDirective())
+		}
+
 		dag.Root().ObjectType().Extend(
-			dagql.FieldSpec{
-				Name: gqlFieldName(mod.Name()),
-				// Description: "TODO", // XXX(vito)
-				Type:   obj,
-				Module: obj.Module.IDModule(),
-			},
+			spec,
 			func(ctx context.Context, self dagql.Object, _ map[string]dagql.Input) (dagql.Typed, error) {
 				return &ModuleObject{
 					Module:  mod,
@@ -327,6 +345,15 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 
 	spec.Module = obj.Module.IDModule()
 
+	if fn.metadata.SourceMap != nil {
+		spec.Directives = append(spec.Directives, fn.metadata.SourceMap.TypeDirective())
+	}
+	for i, arg := range fn.metadata.Args {
+		if arg.SourceMap != nil {
+			spec.Args[i].Directives = append(spec.Args[i].Directives, arg.SourceMap.TypeDirective())
+		}
+	}
+
 	dag.Root().ObjectType().Extend(
 		spec,
 		func(ctx context.Context, self dagql.Object, args map[string]dagql.Input) (dagql.Typed, error) {
@@ -350,18 +377,16 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 }
 
 func (obj *ModuleObject) fields() (fields []dagql.Field[*ModuleObject]) {
-	mod := obj.Module
 	for _, field := range obj.TypeDef.Fields {
-		fields = append(fields, objField(mod, field))
+		fields = append(fields, objField(obj.Module, field))
 	}
 	return
 }
 
 func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) (fields []dagql.Field[*ModuleObject], err error) {
 	objDef := obj.TypeDef
-	mod := obj.Module
 	for _, fun := range obj.TypeDef.Functions {
-		objFun, err := objFun(ctx, mod, objDef, fun, dag)
+		objFun, err := objFun(ctx, obj.Module, objDef, fun, dag)
 		if err != nil {
 			return nil, err
 		}
@@ -371,13 +396,17 @@ func (obj *ModuleObject) functions(ctx context.Context, dag *dagql.Server) (fiel
 }
 
 func objField(mod *Module, field *FieldTypeDef) dagql.Field[*ModuleObject] {
+	spec := dagql.FieldSpec{
+		Name:        field.Name,
+		Description: field.Description,
+		Type:        field.TypeDef.ToTyped(),
+		Module:      mod.IDModule(),
+	}
+	if field.SourceMap != nil {
+		spec.Directives = append(spec.Directives, field.SourceMap.TypeDirective())
+	}
 	return dagql.Field[*ModuleObject]{
-		Spec: dagql.FieldSpec{
-			Name:        field.Name,
-			Description: field.Description,
-			Type:        field.TypeDef.ToTyped(),
-			Module:      mod.IDModule(),
-		},
+		Spec: spec,
 		Func: func(ctx context.Context, obj dagql.Instance[*ModuleObject], _ map[string]dagql.Input) (dagql.Typed, error) {
 			modType, ok, err := mod.ModTypeFor(ctx, field.TypeDef, true)
 			if err != nil {
@@ -415,6 +444,15 @@ func objFun(ctx context.Context, mod *Module, objDef *ObjectTypeDef, fun *Functi
 		return f, fmt.Errorf("failed to get field spec: %w", err)
 	}
 	spec.Module = mod.IDModule()
+	if fun.SourceMap != nil {
+		spec.Directives = append(spec.Directives, fun.SourceMap.TypeDirective())
+	}
+	for i, arg := range fun.Args {
+		if arg.SourceMap != nil {
+			spec.Args[i].Directives = append(spec.Args[i].Directives, arg.SourceMap.TypeDirective())
+		}
+	}
+
 	return dagql.Field[*ModuleObject]{
 		Spec: spec,
 		Func: func(ctx context.Context, obj dagql.Instance[*ModuleObject], args map[string]dagql.Input) (dagql.Typed, error) {

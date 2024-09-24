@@ -217,6 +217,9 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 			Type:        fnTypeDef.ReturnType.ToTyped(),
 			Module:      iface.mod.IDModule(),
 		}
+		if fnTypeDef.SourceMap != nil {
+			fieldDef.Directives = append(fieldDef.Directives, fnTypeDef.SourceMap.TypeDirective())
+		}
 
 		for _, argMetadata := range fnTypeDef.Args {
 			// check whether this is a pre-existing object from a dependency module
@@ -244,6 +247,9 @@ func (iface *InterfaceType) Install(ctx context.Context, dag *dagql.Server) erro
 				Name:        gqlArgName(argMetadata.Name),
 				Description: formatGqlDescription(argMetadata.Description),
 				Type:        argMetadata.TypeDef.ToInput(),
+			}
+			if argMetadata.SourceMap != nil {
+				inputSpec.Directives = append(inputSpec.Directives, argMetadata.SourceMap.TypeDirective())
 			}
 			fieldDef.Args = append(fieldDef.Args, inputSpec)
 		}
@@ -405,6 +411,17 @@ func (iface *InterfaceAnnotatedValue) Type() *ast.Type {
 
 func (iface *InterfaceAnnotatedValue) TypeDescription() string {
 	return iface.TypeDef.Description
+}
+
+func (iface *InterfaceAnnotatedValue) TypeDefinition(views ...string) *ast.Definition {
+	def := &ast.Definition{
+		Kind: ast.Object,
+		Name: iface.Type().Name(),
+	}
+	if iface.TypeDef.SourceMap != nil {
+		def.Directives = append(def.Directives, iface.TypeDef.SourceMap.TypeDirective())
+	}
+	return def
 }
 
 var _ HasPBDefinitions = (*InterfaceAnnotatedValue)(nil)

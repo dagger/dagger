@@ -48,6 +48,12 @@ func (s *moduleSchema) Install() {
 			ArgDoc("name", `Name of the function, in its original format from the implementation language.`).
 			ArgDoc("returnType", `Return type of the function.`),
 
+		dagql.Func("sourceMap", s.sourceMap).
+			Doc(`Creates source map metadata.`).
+			ArgDoc("filename", "The filename from the module source.").
+			ArgDoc("line", "The line number within the filename.").
+			ArgDoc("column", "The column number within the line."),
+
 		dagql.Func("currentModule", s.currentModule).
 			Impure(`Changes depending on which module is calling it.`).
 			Doc(`The module currently being served in the session, if any.`),
@@ -255,6 +261,10 @@ func (s *moduleSchema) Install() {
 			Doc(`Returns the function with the given doc string.`).
 			ArgDoc("description", `The doc string to set.`),
 
+		dagql.Func("withSourceMap", s.functionWithSourceMap).
+			Doc(`Returns the function with the given source map.`).
+			ArgDoc("sourceMap", `The source map for the function definition.`),
+
 		dagql.Func("withArg", s.functionWithArg).
 			Doc(`Returns the function with the provided argument`).
 			ArgDoc("name", `The name of the argument`).
@@ -268,6 +278,8 @@ func (s *moduleSchema) Install() {
 	dagql.Fields[*core.FunctionArg]{}.Install(s.dag)
 
 	dagql.Fields[*core.FunctionCallArgValue]{}.Install(s.dag)
+
+	dagql.Fields[*core.SourceMap]{}.Install(s.dag)
 
 	dagql.Fields[*core.TypeDef]{
 		dagql.Func("withOptional", s.typeDefWithOptional).
@@ -295,7 +307,8 @@ func (s *moduleSchema) Install() {
 			Doc(`Adds a static field for an Object TypeDef, failing if the type is not an object.`).
 			ArgDoc("name", `The name of the field in the object`).
 			ArgDoc("typeDef", `The type of the field`).
-			ArgDoc("description", `A doc string for the field, if any`),
+			ArgDoc("description", `A doc string for the field, if any`).
+			ArgDoc("sourceMap", `The source map for the field definition.`),
 
 		dagql.Func("withFunction", s.typeDefWithFunction).
 			Doc(`Adds a function for an Object or Interface TypeDef, failing if the type is not one of those kinds.`),
@@ -308,12 +321,14 @@ func (s *moduleSchema) Install() {
 				`Note that an enum's values may be omitted if the intent is only to refer to an enum.
 				This is how functions are able to return their own, or any other circular reference.`).
 			ArgDoc("name", `The name of the enum`).
-			ArgDoc("description", `A doc string for the enum, if any`),
+			ArgDoc("description", `A doc string for the enum, if any`).
+			ArgDoc("sourceMap", `The source map for the enum definition.`),
 
 		dagql.Func("withEnumValue", s.typeDefWithEnumValue).
 			Doc(`Adds a static value for an Enum TypeDef, failing if the type is not an enum.`).
 			ArgDoc("value", `The name of the value in the enum`).
-			ArgDoc("description", `A doc string for the value, if any`),
+			ArgDoc("description", `A doc string for the value, if any`).
+			ArgDoc("sourceMap", `The source map for the enum value definition.`),
 	}.Install(s.dag)
 
 	dagql.Fields[*core.ObjectTypeDef]{}.Install(s.dag)
@@ -372,30 +387,48 @@ func (s *moduleSchema) typeDefWithListOf(ctx context.Context, def *core.TypeDef,
 func (s *moduleSchema) typeDefWithObject(ctx context.Context, def *core.TypeDef, args struct {
 	Name        string
 	Description string `default:""`
+	SourceMap   dagql.Optional[core.SourceMapID]
 }) (*core.TypeDef, error) {
 	if args.Name == "" {
 		return nil, fmt.Errorf("object type def must have a name")
 	}
-	return def.WithObject(args.Name, args.Description), nil
+	sourceMap, err := s.loadSourceMap(ctx, args.SourceMap)
+	if err != nil {
+		return nil, err
+	}
+	return def.WithObject(args.Name, args.Description, sourceMap), nil
 }
 
 func (s *moduleSchema) typeDefWithInterface(ctx context.Context, def *core.TypeDef, args struct {
 	Name        string
 	Description string `default:""`
+	SourceMap   dagql.Optional[core.SourceMapID]
 }) (*core.TypeDef, error) {
-	return def.WithInterface(args.Name, args.Description), nil
+	if args.Name == "" {
+		return nil, fmt.Errorf("interface type def must have a name")
+	}
+	sourceMap, err := s.loadSourceMap(ctx, args.SourceMap)
+	if err != nil {
+		return nil, err
+	}
+	return def.WithInterface(args.Name, args.Description, sourceMap), nil
 }
 
 func (s *moduleSchema) typeDefWithObjectField(ctx context.Context, def *core.TypeDef, args struct {
 	Name        string
 	TypeDef     core.TypeDefID
 	Description string `default:""`
+	SourceMap   dagql.Optional[core.SourceMapID]
 }) (*core.TypeDef, error) {
 	fieldType, err := args.TypeDef.Load(ctx, s.dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode element type: %w", err)
 	}
-	return def.WithObjectField(args.Name, fieldType.Self, args.Description)
+	sourceMap, err := s.loadSourceMap(ctx, args.SourceMap)
+	if err != nil {
+		return nil, err
+	}
+	return def.WithObjectField(args.Name, fieldType.Self, args.Description, sourceMap)
 }
 
 func (s *moduleSchema) typeDefWithFunction(ctx context.Context, def *core.TypeDef, args struct {
@@ -426,23 +459,31 @@ func (s *moduleSchema) typeDefWithObjectConstructor(ctx context.Context, def *co
 func (s *moduleSchema) typeDefWithEnum(ctx context.Context, def *core.TypeDef, args struct {
 	Name        string
 	Description string `default:""`
+	SourceMap   dagql.Optional[core.SourceMapID]
 }) (*core.TypeDef, error) {
 	if args.Name == "" {
 		return nil, fmt.Errorf("enum type def must have a name")
 	}
-
-	return def.WithEnum(args.Name, args.Description), nil
+	sourceMap, err := s.loadSourceMap(ctx, args.SourceMap)
+	if err != nil {
+		return nil, err
+	}
+	return def.WithEnum(args.Name, args.Description, sourceMap), nil
 }
 
 func (s *moduleSchema) typeDefWithEnumValue(ctx context.Context, def *core.TypeDef, args struct {
 	Value       string
 	Description string `default:""`
+	SourceMap   dagql.Optional[core.SourceMapID]
 }) (*core.TypeDef, error) {
 	if args.Value == "" {
 		return nil, fmt.Errorf("enum value must not be empty")
 	}
-
-	return def.WithEnumValue(args.Value, args.Description)
+	sourceMap, err := s.loadSourceMap(ctx, args.SourceMap)
+	if err != nil {
+		return nil, err
+	}
+	return def.WithEnumValue(args.Value, args.Description, sourceMap)
 }
 
 func (s *moduleSchema) generatedCode(ctx context.Context, _ *core.Query, args struct {
@@ -482,6 +523,18 @@ func (s *moduleSchema) function(ctx context.Context, _ *core.Query, args struct 
 	return core.NewFunction(args.Name, returnType.Self), nil
 }
 
+func (s *moduleSchema) sourceMap(ctx context.Context, _ *core.Query, args struct {
+	Filename string
+	Line     int
+	Column   int
+}) (*core.SourceMap, error) {
+	return &core.SourceMap{
+		Filename: args.Filename,
+		Line:     args.Line,
+		Column:   args.Column,
+	}, nil
+}
+
 func (s *moduleSchema) functionWithDescription(ctx context.Context, fn *core.Function, args struct {
 	Description string
 }) (*core.Function, error) {
@@ -495,10 +548,16 @@ func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, a
 	DefaultValue core.JSON `default:""`
 	DefaultPath  string    `default:""`
 	Ignore       []string  `default:"[]"`
+	SourceMap    dagql.Optional[core.SourceMapID]
 }) (*core.Function, error) {
 	argType, err := args.TypeDef.Load(ctx, s.dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode arg type: %w", err)
+	}
+
+	sourceMap, err := s.loadSourceMap(ctx, args.SourceMap)
+	if err != nil {
+		return nil, err
 	}
 
 	// Check if both values are used, return an error if so.
@@ -525,7 +584,17 @@ func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, a
 		td = td.WithOptional(true)
 	}
 
-	return fn.WithArg(args.Name, td, args.Description, args.DefaultValue, args.DefaultPath, args.Ignore), nil
+	return fn.WithArg(args.Name, td, args.Description, args.DefaultValue, args.DefaultPath, args.Ignore, sourceMap), nil
+}
+
+func (s *moduleSchema) functionWithSourceMap(ctx context.Context, fn *core.Function, args struct {
+	SourceMap core.SourceMapID
+}) (*core.Function, error) {
+	sourceMap, err := args.SourceMap.Load(ctx, s.dag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode source map: %w", err)
+	}
+	return fn.WithSourceMap(sourceMap.Self), nil
 }
 
 func (s *moduleSchema) moduleDependency(
@@ -760,8 +829,7 @@ func (s *moduleSchema) moduleInitialize(
 func (s *moduleSchema) moduleWithSource(ctx context.Context, mod *core.Module, args struct {
 	Source        core.ModuleSourceID
 	EngineVersion dagql.Optional[dagql.String]
-},
-) (*core.Module, error) {
+}) (*core.Module, error) {
 	src, err := args.Source.Load(ctx, s.dag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode module source: %w", err)
@@ -1215,4 +1283,15 @@ func (s *moduleSchema) writeDaggerConfig(
 	}
 
 	return nil
+}
+
+func (s *moduleSchema) loadSourceMap(ctx context.Context, sourceMap dagql.Optional[core.SourceMapID]) (*core.SourceMap, error) {
+	if !sourceMap.Valid {
+		return nil, nil
+	}
+	sourceMapI, err := sourceMap.Value.Load(ctx, s.dag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode source map: %w", err)
+	}
+	return sourceMapI.Self, nil
 }
