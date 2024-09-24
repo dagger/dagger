@@ -537,6 +537,10 @@ type MetricsPubSub struct {
 func (ps MetricsPubSub) Export(ctx context.Context, metrics *metricdata.ResourceMetrics) error {
 	slog.ExtraDebug("pubsub exporting metrics", "client", ps.client.clientID, "count", len(metrics.ScopeMetrics))
 
+	if len(metrics.ScopeMetrics) == 0 {
+		return nil
+	}
+
 	tx, err := ps.client.db.Begin()
 	if err != nil {
 		return fmt.Errorf("export metrics %+v: begin tx: %w", metrics, err)
