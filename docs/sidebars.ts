@@ -63,7 +63,7 @@ module.exports = {
       "items": [
         "api/types",
         "api/chaining",
-        "api/cache-volumes",
+        "api/caching",
         "api/secrets",
         "api/terminal",
         {
@@ -95,6 +95,7 @@ module.exports = {
             "api/return-values",
             "api/ide-integration",
             "api/services",
+            "api/cache-volumes",
             "api/packages",
             "api/error-handling",
             "api/documentation",
