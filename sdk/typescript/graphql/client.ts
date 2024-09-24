@@ -1,4 +1,5 @@
 import * as opentelemetry from "@opentelemetry/api"
+import { Buffer } from "buffer"
 import { GraphQLClient } from "graphql-request"
 
 /**

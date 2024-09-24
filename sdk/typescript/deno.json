@@ -1,0 +1,13 @@
+{
+  "unstable": [
+    "bare-node-builtins",
+    "byonm"
+  ],
+  "nodeModulesDir": "auto",
+  "imports": {
+    "@opentelemetry/core": "npm:@opentelemetry/core@1.26.0",
+    "execa": "npm:execa@9.4.0",
+    "graphql-request": "npm:graphql-request@7.1.0",
+    "graphql-tag": "npm:graphql-tag@2.12.6"
+  }
+}

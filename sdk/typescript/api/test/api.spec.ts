@@ -1,6 +1,7 @@
 import assert from "assert"
 import { randomUUID } from "crypto"
 import fs from "fs"
+import { describe, it } from "mocha"
 
 import {
   ExecError,
@@ -84,24 +85,6 @@ describe("TypeScript SDK api", function () {
     )
   })
 
-  it("Pass a client with an explicit ID as a parameter", async function () {
-    this.timeout(60000)
-    await connect(async (client: Client) => {
-      const image = await client
-        .loadContainerFromID(
-          await client
-            .container()
-            .from("alpine:3.16.2")
-            .withExec(["apk", "add", "yarn"])
-            .id(),
-        )
-        .withMountedCache("/root/.cache", client.cacheVolume("cache_key"))
-        .withExec(["echo", "foo bar"])
-        .stdout()
-
-      assert.strictEqual(image, `foo bar\n`)
-    })
-  })
 
   it("Pass a cache volume with an implicit ID as a parameter", async function () {
     this.timeout(60000)
@@ -112,6 +95,25 @@ describe("TypeScript SDK api", function () {
         .from("alpine:3.16.2")
         .withExec(["apk", "add", "yarn"])
         .withMountedCache("/root/.cache", cacheVolume)
+        .withExec(["echo", "foo bar"])
+        .stdout()
+
+      assert.strictEqual(image, `foo bar\n`)
+    })
+  })
+
+  it("Pass a client with an explicit ID as a parameter", async function () {
+    this.timeout(60000)
+    await connect(async (client: Client) => {
+      const id = await client
+        .container()
+        .from("alpine:3.16.2")
+        .withExec(["apk", "add", "yarn"])
+        .id()
+
+      const image = await client
+        .loadContainerFromID(id)
+        .withMountedCache("/root/.cache", client.cacheVolume("cache_key"))
         .withExec(["echo", "foo bar"])
         .stdout()
 
@@ -333,7 +335,7 @@ describe("TypeScript SDK api", function () {
 
     await connect(
       async (client) => {
-        const seededPlatformVariants = []
+        const seededPlatformVariants: Container[] = []
 
         for (const platform in platforms) {
           const name = platforms[platform]
