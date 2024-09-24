@@ -17,6 +17,8 @@ import (
 	"github.com/pkg/browser"
 	"go.opentelemetry.io/otel/codes"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -328,6 +330,42 @@ func (fe plainLogExporter) Export(ctx context.Context, logs []sdklog.Record) err
 }
 
 func (fe *frontendPlain) ForceFlush(context.Context) error {
+	return nil
+}
+
+func (fe *frontendPlain) MetricExporter() sdkmetric.Exporter {
+	return PlainFrontendMetricExporter{fe}
+}
+
+type PlainFrontendMetricExporter struct {
+	*frontendPlain
+}
+
+func (fe PlainFrontendMetricExporter) Export(ctx context.Context, resourceMetrics *metricdata.ResourceMetrics) error {
+	fe.mu.Lock()
+	defer fe.mu.Unlock()
+	return fe.db.MetricExporter().Export(ctx, resourceMetrics)
+}
+
+func (fe PlainFrontendMetricExporter) Temporality(sdkmetric.InstrumentKind) metricdata.Temporality {
+	panic("idk yet")
+}
+
+func (fe PlainFrontendMetricExporter) Aggregation(sdkmetric.InstrumentKind) sdkmetric.Aggregation {
+	panic("idk yet")
+}
+
+func (fe PlainFrontendMetricExporter) ForceFlush(context.Context) error {
+	// TODO: idk yet
+	// TODO: idk yet
+	// TODO: idk yet
+	return nil
+}
+
+func (fe PlainFrontendMetricExporter) Shutdown(context.Context) error {
+	// TODO: idk yet
+	// TODO: idk yet
+	// TODO: idk yet
 	return nil
 }
 

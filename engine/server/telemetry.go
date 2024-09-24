@@ -584,6 +584,7 @@ func (ps MetricsPubSub) Aggregation(sdkmetric.InstrumentKind) sdkmetric.Aggregat
 	// TODO:
 	panic("idk")
 }
+
 func (ps MetricsPubSub) ForceFlush(ctx context.Context) error { return nil }
 func (ps MetricsPubSub) Shutdown(context.Context) error       { return nil }
 

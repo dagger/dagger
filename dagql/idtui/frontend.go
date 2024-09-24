@@ -369,33 +369,6 @@ func (r renderer) renderDuration(out *termenv.Output, span *dagui.Span) {
 		duration = duration.Faint()
 	}
 	fmt.Fprint(out, duration)
-
-	// TODO: dumb
-	logs := r.db.PrimaryLogs[r.db.PrimarySpan]
-	if len(logs) == 0 {
-		return
-	}
-	for _, l := range logs {
-		data := l.Body().AsString()
-
-		var metricsName string
-		l.WalkAttributes(func(attr log.KeyValue) bool {
-			// TODO: dumb
-			if attr.Key == telemetry.MetricsAttr {
-				metricsName = attr.Value.AsString()
-				return false
-			}
-			return true
-		})
-		if metricsName != "" {
-			str := out.String(fmt.Sprintf("METRIC %q: %s ", metricsName, data))
-			if _, err := fmt.Fprint(out, str.Bold()); err != nil {
-				return
-			}
-			continue
-		}
-	}
-
 }
 
 // var (

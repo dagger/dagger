@@ -936,7 +936,7 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 
 	mux := http.NewServeMux()
 	switch r.URL.Path {
-	case "/v1/traces", "/v1/logs":
+	case "/v1/traces", "/v1/logs", "/v1/metrics":
 		// Just get the client if it exists, don't init it.
 		client, err := srv.getClient(clientMetadata.SessionID, clientMetadata.ClientID)
 		if err != nil {

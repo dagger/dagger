@@ -18,6 +18,7 @@ import (
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/propagation"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
@@ -224,6 +225,9 @@ type Config struct {
 	// LiveLogExporters are exporters that receive logs in batches of ~100ms.
 	LiveLogExporters []sdklog.Exporter
 
+	// TODO: doc
+	LiveMetricExporters []sdkmetric.Exporter
+
 	// Resource is the resource describing this component and runtime
 	// environment.
 	Resource *resource.Resource
@@ -240,6 +244,7 @@ var LiveTracesEnabled = os.Getenv("OTEL_EXPORTER_OTLP_TRACES_LIVE") != ""
 var Resource *resource.Resource
 var SpanProcessors = []sdktrace.SpanProcessor{}
 var LogProcessors = []sdklog.Processor{}
+var MetricReaders = []sdkmetric.Reader{}
 
 func InitEmbedded(ctx context.Context, res *resource.Resource) context.Context {
 	traceCfg := Config{
@@ -310,6 +315,8 @@ func Init(ctx context.Context, cfg Config) context.Context {
 		if exp, ok := ConfiguredLogExporter(ctx); ok {
 			cfg.LiveLogExporters = append(cfg.LiveLogExporters, exp)
 		}
+
+		// TODO: configured metrics exporter?
 	}
 
 	traceOpts := []sdktrace.TracerProviderOption{
@@ -351,6 +358,20 @@ func Init(ctx context.Context, cfg Config) context.Context {
 			logOpts = append(logOpts, sdklog.WithProcessor(processor))
 		}
 		ctx = WithLoggerProvider(ctx, sdklog.NewLoggerProvider(logOpts...))
+	}
+
+	// Set up a metric provider if configured.
+	if len(cfg.LiveMetricExporters) > 0 {
+		meterOpts := []sdkmetric.Option{
+			sdkmetric.WithResource(cfg.Resource),
+		}
+		for _, exp := range cfg.LiveMetricExporters {
+			reader := sdkmetric.NewPeriodicReader(exp,
+				sdkmetric.WithInterval(NearlyImmediate))
+			MetricReaders = append(MetricReaders, reader)
+			meterOpts = append(meterOpts, sdkmetric.WithReader(reader))
+		}
+		ctx = WithMeterProvider(ctx, sdkmetric.NewMeterProvider(meterOpts...))
 	}
 
 	closeCtx = ctx

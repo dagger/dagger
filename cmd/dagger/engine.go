@@ -10,6 +10,7 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
@@ -45,8 +46,8 @@ func withEngine(
 		params.EngineLogs = telemetry.LogForwarder{
 			Processors: telemetry.LogProcessors,
 		}
-		params.EngineMetrics = telemetry.MetricForwarder{
-			Processors: telemetry.MetricProcessors,
+		params.EngineMetrics = telemetry.MetricsForwarder{
+			Readers: telemetry.MetricReaders,
 		}
 		params.WithTerminal = withTerminal
 		params.Interactive = interactive
