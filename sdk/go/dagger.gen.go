@@ -4187,9 +4187,21 @@ func (r *GitRef) MarshalJSON() ([]byte, error) {
 	return json.Marshal(id)
 }
 
+// GitRefTreeOpts contains options for GitRef.Tree
+type GitRefTreeOpts struct {
+	// Set to true to discard .git directory.
+	DiscardGitDir bool
+}
+
 // The filesystem tree at this ref.
-func (r *GitRef) Tree() *Directory {
+func (r *GitRef) Tree(opts ...GitRefTreeOpts) *Directory {
 	q := r.query.Select("tree")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `discardGitDir` optional argument
+		if !querybuilder.IsZeroValue(opts[i].DiscardGitDir) {
+			q = q.Arg("discardGitDir", opts[i].DiscardGitDir)
+		}
+	}
 
 	return &Directory{
 		query: q,
@@ -6432,7 +6444,7 @@ func (r *Client) GeneratedCode(code *Directory) *GeneratedCode {
 
 // GitOpts contains options for Client.Git
 type GitOpts struct {
-	// Set to true to keep .git directory.
+	// DEPRECATED: Set to true to keep .git directory.
 	KeepGitDir bool
 	// A service which must be started before the repo is fetched.
 	ExperimentalServiceHost *Service

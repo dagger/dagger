@@ -17,7 +17,7 @@ type GitRepository struct {
 
 	URL string `json:"url"`
 
-	KeepGitDir bool `json:"keepGitDir"`
+	DiscardGitDir bool `json:"discardGitDir"`
 
 	SSHKnownHosts string  `json:"sshKnownHosts"`
 	SSHAuthSocket *Socket `json:"sshAuthSocket"`
@@ -58,8 +58,8 @@ func (*GitRef) TypeDescription() string {
 	return "A git ref (tag, branch, or commit)."
 }
 
-func (ref *GitRef) Tree(ctx context.Context) (*Directory, error) {
-	st, err := ref.getState(ctx)
+func (ref *GitRef) Tree(ctx context.Context, discardGitDir bool) (*Directory, error) {
+	st, err := ref.getState(ctx, ref.Repo.DiscardGitDir || discardGitDir)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +71,7 @@ func (ref *GitRef) Commit(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to get buildkit client: %w", err)
 	}
-	st, err := ref.getState(ctx)
+	st, err := ref.getState(ctx, true)
 	if err != nil {
 		return "", err
 	}
@@ -85,10 +85,10 @@ func (ref *GitRef) Commit(ctx context.Context) (string, error) {
 	return p.Sources.Git[0].Commit, nil
 }
 
-func (ref *GitRef) getState(ctx context.Context) (llb.State, error) {
+func (ref *GitRef) getState(ctx context.Context, discardGitDir bool) (llb.State, error) {
 	opts := []llb.GitOption{}
 
-	if ref.Repo.KeepGitDir {
+	if !discardGitDir {
 		opts = append(opts, llb.KeepGitDir())
 	}
 	if ref.Repo.SSHKnownHosts != "" {

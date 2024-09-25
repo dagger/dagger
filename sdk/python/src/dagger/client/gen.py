@@ -4427,9 +4427,21 @@ class GitRef(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(GitRefID)
 
-    def tree(self) -> Directory:
-        """The filesystem tree at this ref."""
-        _args: list[Arg] = []
+    def tree(
+        self,
+        *,
+        discard_git_dir: bool | None = False,
+    ) -> Directory:
+        """The filesystem tree at this ref.
+
+        Parameters
+        ----------
+        discard_git_dir:
+            Set to true to discard .git directory.
+        """
+        _args = [
+            Arg("discardGitDir", discard_git_dir, False),
+        ]
         _ctx = self._select("tree", _args)
         return Directory(_ctx)
 
@@ -6532,7 +6544,7 @@ class Client(Root):
         self,
         url: str,
         *,
-        keep_git_dir: bool | None = False,
+        keep_git_dir: bool | None = True,
         experimental_service_host: "Service | None" = None,
         ssh_known_hosts: str | None = "",
         ssh_auth_socket: "Socket | None" = None,
@@ -6547,7 +6559,7 @@ class Client(Root):
             `git@{host}:{owner}/{repo}`.
             Suffix ".git" is optional.
         keep_git_dir:
-            Set to true to keep .git directory.
+            DEPRECATED: Set to true to keep .git directory.
         experimental_service_host:
             A service which must be started before the repo is fetched.
         ssh_known_hosts:
@@ -6557,7 +6569,7 @@ class Client(Root):
         """
         _args = [
             Arg("url", url),
-            Arg("keepGitDir", keep_git_dir, False),
+            Arg("keepGitDir", keep_git_dir, True),
             Arg("experimentalServiceHost", experimental_service_host, None),
             Arg("sshKnownHosts", ssh_known_hosts, ""),
             Arg("sshAuthSocket", ssh_auth_socket, None),

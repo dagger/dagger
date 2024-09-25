@@ -721,6 +721,13 @@ export type GeneratedCodeID = string & { __GeneratedCodeID: never }
  */
 export type GitModuleSourceID = string & { __GitModuleSourceID: never }
 
+export type GitRefTreeOpts = {
+  /**
+   * Set to true to discard .git directory.
+   */
+  discardGitDir?: boolean
+}
+
 /**
  * The `GitRefID` scalar type represents an identifier for an object of type GitRef.
  */
@@ -959,7 +966,7 @@ export type ClientContainerOpts = {
 
 export type ClientGitOpts = {
   /**
-   * Set to true to keep .git directory.
+   * DEPRECATED: Set to true to keep .git directory.
    */
   keepGitDir?: boolean
 
@@ -5630,13 +5637,15 @@ export class GitRef extends BaseClient {
 
   /**
    * The filesystem tree at this ref.
+   * @param opts.discardGitDir Set to true to discard .git directory.
    */
-  tree = (): Directory => {
+  tree = (opts?: GitRefTreeOpts): Directory => {
     return new Directory({
       queryTree: [
         ...this._queryTree,
         {
           operation: "tree",
+          args: { ...opts },
         },
       ],
       ctx: this._ctx,
@@ -8361,7 +8370,7 @@ export class Client extends BaseClient {
    * Can be formatted as `https://{host}/{owner}/{repo}`, `git@{host}:{owner}/{repo}`.
    *
    * Suffix ".git" is optional.
-   * @param opts.keepGitDir Set to true to keep .git directory.
+   * @param opts.keepGitDir DEPRECATED: Set to true to keep .git directory.
    * @param opts.experimentalServiceHost A service which must be started before the repo is fetched.
    * @param opts.sshKnownHosts Set SSH known hosts
    * @param opts.sshAuthSocket Set SSH auth socket

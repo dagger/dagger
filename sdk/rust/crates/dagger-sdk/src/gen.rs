@@ -4878,6 +4878,12 @@ pub struct GitRef {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct GitRefTreeOpts {
+    /// Set to true to discard .git directory.
+    #[builder(setter(into, strip_option), default)]
+    pub discard_git_dir: Option<bool>,
+}
 impl GitRef {
     /// The resolved commit id at this ref.
     pub async fn commit(&self) -> Result<String, DaggerError> {
@@ -4890,8 +4896,28 @@ impl GitRef {
         query.execute(self.graphql_client.clone()).await
     }
     /// The filesystem tree at this ref.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn tree(&self) -> Directory {
         let query = self.selection.select("tree");
+        Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// The filesystem tree at this ref.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn tree_opts(&self, opts: GitRefTreeOpts) -> Directory {
+        let mut query = self.selection.select("tree");
+        if let Some(discard_git_dir) = opts.discard_git_dir {
+            query = query.arg("discardGitDir", discard_git_dir);
+        }
         Directory {
             proc: self.proc.clone(),
             selection: query,
@@ -6180,7 +6206,7 @@ pub struct QueryGitOpts<'a> {
     /// A service which must be started before the repo is fetched.
     #[builder(setter(into, strip_option), default)]
     pub experimental_service_host: Option<ServiceId>,
-    /// Set to true to keep .git directory.
+    /// DEPRECATED: Set to true to keep .git directory.
     #[builder(setter(into, strip_option), default)]
     pub keep_git_dir: Option<bool>,
     /// Set SSH auth socket

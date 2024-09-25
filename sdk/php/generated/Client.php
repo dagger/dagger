@@ -142,7 +142,7 @@ class Client extends Client\AbstractClient
      */
     public function git(
         string $url,
-        ?bool $keepGitDir = false,
+        ?bool $keepGitDir = true,
         ServiceId|Service|null $experimentalServiceHost = null,
         ?string $sshKnownHosts = '',
         SocketId|Socket|null $sshAuthSocket = null,
