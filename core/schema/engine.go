@@ -17,7 +17,7 @@ var _ SchemaResolvers = &engineSchema{}
 
 func (s *engineSchema) Install() {
 	dagql.Fields[*core.Query]{
-		dagql.Func("daggerEngine", s.engine).
+		dagql.Func("engine", s.engine).
 			Doc("The Dagger engine container configuration and state"),
 
 		// This internal API allows queries to "freeze" the cache entry set they are operating on in

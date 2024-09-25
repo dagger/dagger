@@ -13,7 +13,7 @@ type Engine struct {
 
 func (*Engine) Type() *ast.Type {
 	return &ast.Type{
-		NamedType: "DaggerEngine",
+		NamedType: "Engine",
 		NonNull:   true,
 	}
 }
@@ -30,7 +30,7 @@ type EngineCache struct {
 
 func (*EngineCache) Type() *ast.Type {
 	return &ast.Type{
-		NamedType: "DaggerEngineCache",
+		NamedType: "EngineCache",
 		NonNull:   true,
 	}
 }
@@ -48,7 +48,7 @@ type EngineCacheEntrySet struct {
 
 func (*EngineCacheEntrySet) Type() *ast.Type {
 	return &ast.Type{
-		NamedType: "DaggerEngineCacheEntrySet",
+		NamedType: "EngineCacheEntrySet",
 		NonNull:   true,
 	}
 }
@@ -71,7 +71,7 @@ type EngineCacheEntry struct {
 
 func (*EngineCacheEntry) Type() *ast.Type {
 	return &ast.Type{
-		NamedType: "DaggerEngineCacheEntry",
+		NamedType: "EngineCacheEntry",
 		NonNull:   true,
 	}
 }
