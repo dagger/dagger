@@ -263,7 +263,8 @@ func (v *Viztest) UseCachedExecService(ctx context.Context) error {
 func (*Viztest) ExecService() *dagger.Service {
 	return dag.Container().
 		From("busybox").
-		WithNewFile("/srv/index.html", "<h1>hello, world!</h1>").
+		WithNewFile("/srv/index.html",
+			"<h1>hello, world!</h1><p>the time is "+time.Now().String()+"</p>").
 		WithExec([]string{"httpd", "-v", "-h", "/srv", "-f"}).
 		WithExposedPort(80).
 		AsService()
