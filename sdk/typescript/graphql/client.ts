@@ -1,6 +1,27 @@
 import * as opentelemetry from "@opentelemetry/api"
 import { GraphQLClient } from "graphql-request"
 
+const createFetchWithTimeout =
+  (timeout: number) => async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (init?.signal) {
+      throw new Error(
+        "Internal error: could not create fetch client with timeout",
+      )
+    }
+
+    const controller = new AbortController()
+
+    const timerId = setTimeout(() => {
+      controller.abort()
+    }, timeout)
+
+    try {
+      return await fetch(input, { ...init, signal: controller.signal })
+    } finally {
+      clearTimeout(timerId)
+    }
+  }
+
 /**
  * Customer setter to inject trace parent into the request headers
  * This is required because `graphql-request` 7.0.1 changes its header
@@ -14,6 +35,10 @@ class CustomSetter {
 
 export function createGQLClient(port: number, token: string): GraphQLClient {
   const client = new GraphQLClient(`http://127.0.0.1:${port}/query`, {
+    // 1 week timeout so we should never hit that one.
+    // This is to bypass the current graphql-request timeout, which depends on
+    // node-fetch and is 5minutes by default.
+    fetch: createFetchWithTimeout(1000 * 60 * 60 * 24 * 7),
     headers: {
       Authorization: "Basic " + Buffer.from(token + ":").toString("base64"),
     },
