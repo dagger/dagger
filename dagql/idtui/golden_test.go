@@ -81,12 +81,6 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 		{Function: "pending", Fail: true},
 		{Function: "use-exec-service"},
 		{Function: "use-no-exec-service"},
-		// FIXME: these constantly fail in CI/Dagger, but not against a local
-		// engine. spent a day investigating, don't have a good explanation. it
-		// fails because despite the warmup running to completion, the test gets a
-		// cache miss.
-		// {Function: "cached-execs"},
-		// {Function: "use-cached-exec-service"},
 		{Function: "docker-build", Args: []string{
 			"with-exec", "--args", "echo,hey",
 			"stdout",
@@ -96,10 +90,25 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 			"stdout",
 		}, Fail: true},
 		{Module: "./viztest/broken", Function: "broken", Fail: true},
+
+		// FIXME: these constantly fail in CI/Dagger, but not against a local
+		// engine. spent a day investigating, don't have a good explanation. it
+		// fails because despite the warmup running to completion, the test gets a
+		// cache miss.
+		{Function: "cached-execs", Flaky: "nested Dagger causes cache misses"},
+		{Function: "use-cached-exec-service", Flaky: "nested Dagger causes cache misses"},
 	} {
 		t.Run(ex.Function, func(ctx context.Context, t *testctx.T) {
 			out, _ := ex.Run(ctx, t, s)
-			golden.Assert(t, out, t.Name())
+			if ex.Flaky != "" {
+				cmp := golden.String(out, t.Name())()
+				if !cmp.Success() {
+					t.Log(cmp.(interface{ FailureMessage() string }).FailureMessage())
+					t.Skip("Flaky: " + ex.Flaky)
+				}
+			} else {
+				golden.Assert(t, out, t.Name())
+			}
 		})
 	}
 }
@@ -109,6 +118,7 @@ type Example struct {
 	Function string
 	Args     []string
 	Fail     bool
+	Flaky    string
 }
 
 func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (string, *dagui.DB) {
