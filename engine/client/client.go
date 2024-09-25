@@ -205,9 +205,8 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	if err := c.startEngine(connectCtx); err != nil {
 		return nil, nil, fmt.Errorf("start engine: %w", err)
 	}
-	err = engine.CheckVersionCompatibility(engine.NormalizeVersion(c.bkVersion), engine.MinimumEngineVersion)
-	if err != nil {
-		return nil, nil, fmt.Errorf("incompatible engine version: %w", err)
+	if !engine.CheckVersionCompatibility(engine.NormalizeVersion(c.bkVersion), engine.MinimumEngineVersion) {
+		return nil, nil, fmt.Errorf("incompatible engine version %s", engine.NormalizeVersion(c.bkVersion))
 	}
 
 	defer func() {

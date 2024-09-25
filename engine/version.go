@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"fmt"
 	"os"
 	"slices"
 	"strings"
@@ -80,30 +79,22 @@ func cleanVersion(v string) string {
 	return v
 }
 
-func CheckVersionCompatibility(version string, minVersion string) error {
-	v := version
-	if IsDevVersion(v) && IsDevVersion(Version) {
+func CheckVersionCompatibility(version string, minVersion string) bool {
+	if IsDevVersion(version) && IsDevVersion(Version) {
 		// Both our version and our target version are dev versions - in this
 		// case, strip pre-release info from our target, we should pretend it's
 		// just the real thing here.
-		v = BaseVersion(v)
+		version = BaseVersion(version)
 	}
-	if semver.Compare(v, minVersion) < 0 {
-		return fmt.Errorf("version %s does not meet required version %s", version, minVersion)
-	}
-	return nil
+	return semver.Compare(version, minVersion) >= 0
 }
 
-func CheckMaxVersionCompatibility(version string, maxVersion string) error {
-	v := version
-	if IsDevVersion(v) && IsDevVersion(Version) {
+func CheckMaxVersionCompatibility(version string, maxVersion string) bool {
+	if IsDevVersion(version) && IsDevVersion(Version) {
 		// see CheckVersionCompatibility
-		v = BaseVersion(v)
+		version = BaseVersion(version)
 	}
-	if semver.Compare(v, maxVersion) > 0 {
-		return fmt.Errorf("version %s is greater than supported version %s", version, maxVersion)
-	}
-	return nil
+	return semver.Compare(version, maxVersion) <= 0
 }
 
 func NormalizeVersion(version string) string {

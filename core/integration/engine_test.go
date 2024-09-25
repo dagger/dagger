@@ -324,7 +324,7 @@ func (EngineSuite) TestVersionCompat(ctx context.Context, t *testctx.T) {
 			clientVersion:    "v2.0.0",
 			clientMinVersion: "v3.0.0",
 			errs: []string{
-				"incompatible client version",
+				"incompatible client version v2.0.0",
 			},
 		},
 		{
@@ -335,7 +335,7 @@ func (EngineSuite) TestVersionCompat(ctx context.Context, t *testctx.T) {
 			clientVersion:    "v2.0.0",
 			clientMinVersion: "v1.0.0",
 			errs: []string{
-				"incompatible engine version",
+				"incompatible engine version v2.0.0",
 			},
 		},
 		{
@@ -346,7 +346,7 @@ func (EngineSuite) TestVersionCompat(ctx context.Context, t *testctx.T) {
 			clientVersion:    "v2.0.0",
 			clientMinVersion: "v3.0.0",
 			errs: []string{
-				"incompatible engine version",
+				"incompatible engine version v2.0.0",
 			},
 		},
 		{
@@ -365,7 +365,7 @@ func (EngineSuite) TestVersionCompat(ctx context.Context, t *testctx.T) {
 			clientVersion:    "v2.0.0-foobar",
 			clientMinVersion: "v2.0.0",
 			errs: []string{
-				"incompatible engine version",
+				"incompatible engine version v2.0.0-foobar",
 			},
 		},
 
@@ -386,7 +386,7 @@ func (EngineSuite) TestVersionCompat(ctx context.Context, t *testctx.T) {
 			clientVersion:    "v2.0.1-dev-456",
 			clientMinVersion: "v2.0.0-dev-123",
 			errs: []string{
-				"incompatible engine version",
+				"incompatible engine version v2.0.0-dev-123",
 			},
 		},
 
@@ -406,7 +406,7 @@ func (EngineSuite) TestVersionCompat(ctx context.Context, t *testctx.T) {
 			clientVersion:    "v2.0.0-foo-456",
 			clientMinVersion: "v2.0.0-foo-123",
 			errs: []string{
-				"incompatible engine version",
+				"incompatible engine version v2.0.0-foo-123",
 			},
 		},
 
@@ -480,10 +480,6 @@ func (EngineSuite) TestVersionCompat(ctx context.Context, t *testctx.T) {
 				for _, tcerr := range tc.errs {
 					require.Contains(t, stderr, tcerr)
 				}
-				// check that both the client and engine versions are present
-				// in the error message
-				require.Contains(t, stderr, tc.clientVersion)
-				require.Contains(t, stderr, tc.engineVersion)
 			}
 		})
 	}
@@ -519,8 +515,8 @@ func (EngineSuite) TestModuleVersionCompat(ctx context.Context, t *testctx.T) {
 			moduleVersion:    "v0.9.0",
 			moduleMinVersion: "v1.0.0",
 			errs: []string{
-				"module requires incompatible engine",
-				"does not meet required version",
+				"module requires dagger v0.9.0",
+				"support for that version has been removed",
 			},
 		},
 		{
@@ -529,8 +525,7 @@ func (EngineSuite) TestModuleVersionCompat(ctx context.Context, t *testctx.T) {
 			moduleVersion:    "v2.0.1",
 			moduleMinVersion: "v1.0.0",
 			errs: []string{
-				"module requires incompatible engine",
-				"greater than supported version",
+				"module requires dagger v2.0.1, but you have v2.0.0",
 			},
 		},
 		{
@@ -539,9 +534,8 @@ func (EngineSuite) TestModuleVersionCompat(ctx context.Context, t *testctx.T) {
 			moduleVersion:    "badbadbad",
 			moduleMinVersion: "v1.0.0",
 			errs: []string{
-				"module requires incompatible engine",
-				"does not meet required version",
-				"v0.11.9", // old-style dev versions are equivalent to v0.11.9
+				"module requires dagger v0.11.9", // old-style dev versions are equivalent to v0.11.9
+				"support for that version has been removed",
 			},
 		},
 	}

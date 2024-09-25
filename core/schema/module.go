@@ -780,11 +780,11 @@ func (s *moduleSchema) moduleWithSource(ctx context.Context, mod *core.Module, a
 	if err != nil {
 		return nil, fmt.Errorf("failed to update dagger.json: %w", err)
 	}
-	if err := engine.CheckVersionCompatibility(modCfg.EngineVersion, engine.MinimumModuleVersion); err != nil {
-		return nil, fmt.Errorf("module requires incompatible engine version: %w", err)
+	if !engine.CheckVersionCompatibility(modCfg.EngineVersion, engine.MinimumModuleVersion) {
+		return nil, fmt.Errorf("module requires dagger %s, but support for that version has been removed", modCfg.EngineVersion)
 	}
-	if err := engine.CheckMaxVersionCompatibility(modCfg.EngineVersion, engine.BaseVersion(engine.Version)); err != nil {
-		return nil, fmt.Errorf("module requires incompatible engine version: %w", err)
+	if !engine.CheckMaxVersionCompatibility(modCfg.EngineVersion, engine.BaseVersion(engine.Version)) {
+		return nil, fmt.Errorf("module requires dagger %s, but you have %s", modCfg.EngineVersion, engine.Version)
 	}
 
 	if err := s.updateDeps(ctx, mod, modCfg, src); err != nil {
