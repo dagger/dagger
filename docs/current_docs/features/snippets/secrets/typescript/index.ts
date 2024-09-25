@@ -4,12 +4,16 @@ import { dag, object, func, Secret } from "@dagger.io/dagger"
 class MyModule {
   @func()
 <<<<<<< HEAD
+<<<<<<< HEAD
   async githubApi(token: Secret): Promise<string> {
 =======
   async githubApi(
     token: Secret,
   ): Promise<string> {
 >>>>>>> 81388975a (Added code snippets to feature pages)
+=======
+  async githubApi(token: Secret): Promise<string> {
+>>>>>>> 2f22413a8 (Fix linter)
     return await dag
       .container()
       .from("alpine:3.17")
