@@ -5,7 +5,7 @@ const createFetchWithTimeout =
   (timeout: number) => async (input: RequestInfo | URL, init?: RequestInit) => {
     if (init?.signal) {
       throw new Error(
-        "it looks like graphql-request started using AbortSignal on its own. Please check graphql-request's recent updates",
+        "Internal error: could not create fetch client with timeout",
       )
     }
 
@@ -35,7 +35,10 @@ class CustomSetter {
 
 export function createGQLClient(port: number, token: string): GraphQLClient {
   const client = new GraphQLClient(`http://127.0.0.1:${port}/query`, {
-    fetch: createFetchWithTimeout(1000 * 60 * 60 * 24 * 7), // 1 week timeout so we should never hit that one.
+    // 1 week timeout so we should never hit that one.
+    // This is to bypass the current graphql-request timeout, which depends on
+    // node-fetch and is 5minutes by default.
+    fetch: createFetchWithTimeout(1000 * 60 * 60 * 24 * 7),
     headers: {
       Authorization: "Basic " + Buffer.from(token + ":").toString("base64"),
     },
