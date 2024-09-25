@@ -11,7 +11,7 @@ namespace Dagger;
 /**
  * A set of cache entries returned by a query to a cache
  */
-class DaggerEngineCacheEntrySet extends Client\AbstractObject implements Client\IdAble
+class EngineCacheEntrySet extends Client\AbstractObject implements Client\IdAble
 {
     /**
      * The total disk space used by the cache entries in this set.
@@ -41,11 +41,11 @@ class DaggerEngineCacheEntrySet extends Client\AbstractObject implements Client\
     }
 
     /**
-     * A unique identifier for this DaggerEngineCacheEntrySet.
+     * A unique identifier for this EngineCacheEntrySet.
      */
-    public function id(): DaggerEngineCacheEntrySetId
+    public function id(): EngineCacheEntrySetId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\DaggerEngineCacheEntrySetId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\EngineCacheEntrySetId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 }

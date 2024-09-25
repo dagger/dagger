@@ -35,9 +35,9 @@
               <li><a href="#query-currentFunctionCall">currentFunctionCall</a></li>
               <li><a href="#query-currentModule">currentModule</a></li>
               <li><a href="#query-currentTypeDefs">currentTypeDefs</a></li>
-              <li><a href="#query-daggerEngine">daggerEngine</a></li>
               <li><a href="#query-defaultPlatform">defaultPlatform</a></li>
               <li><a href="#query-directory">directory</a></li>
+              <li><a href="#query-engine">engine</a></li>
               <li><a href="#query-function">function</a></li>
               <li><a href="#query-generatedCode">generatedCode</a></li>
               <li><a href="#query-git">git</a></li>
@@ -46,11 +46,11 @@
               <li><a href="#query-loadCacheVolumeFromID">loadCacheVolumeFromID</a></li>
               <li><a href="#query-loadContainerFromID">loadContainerFromID</a></li>
               <li><a href="#query-loadCurrentModuleFromID">loadCurrentModuleFromID</a></li>
-              <li><a href="#query-loadDaggerEngineCacheEntryFromID">loadDaggerEngineCacheEntryFromID</a></li>
-              <li><a href="#query-loadDaggerEngineCacheEntrySetFromID">loadDaggerEngineCacheEntrySetFromID</a></li>
-              <li><a href="#query-loadDaggerEngineCacheFromID">loadDaggerEngineCacheFromID</a></li>
-              <li><a href="#query-loadDaggerEngineFromID">loadDaggerEngineFromID</a></li>
               <li><a href="#query-loadDirectoryFromID">loadDirectoryFromID</a></li>
+              <li><a href="#query-loadEngineCacheEntryFromID">loadEngineCacheEntryFromID</a></li>
+              <li><a href="#query-loadEngineCacheEntrySetFromID">loadEngineCacheEntrySetFromID</a></li>
+              <li><a href="#query-loadEngineCacheFromID">loadEngineCacheFromID</a></li>
+              <li><a href="#query-loadEngineFromID">loadEngineFromID</a></li>
               <li><a href="#query-loadEnumTypeDefFromID">loadEnumTypeDefFromID</a></li>
               <li><a href="#query-loadEnumValueTypeDefFromID">loadEnumValueTypeDefFromID</a></li>
               <li><a href="#query-loadEnvVariableFromID">loadEnvVariableFromID</a></li>
@@ -105,16 +105,16 @@
               <li><a href="#definition-ContainerID">ContainerID</a></li>
               <li><a href="#definition-CurrentModule">CurrentModule</a></li>
               <li><a href="#definition-CurrentModuleID">CurrentModuleID</a></li>
-              <li><a href="#definition-DaggerEngine">DaggerEngine</a></li>
-              <li><a href="#definition-DaggerEngineCache">DaggerEngineCache</a></li>
-              <li><a href="#definition-DaggerEngineCacheEntry">DaggerEngineCacheEntry</a></li>
-              <li><a href="#definition-DaggerEngineCacheEntryID">DaggerEngineCacheEntryID</a></li>
-              <li><a href="#definition-DaggerEngineCacheEntrySet">DaggerEngineCacheEntrySet</a></li>
-              <li><a href="#definition-DaggerEngineCacheEntrySetID">DaggerEngineCacheEntrySetID</a></li>
-              <li><a href="#definition-DaggerEngineCacheID">DaggerEngineCacheID</a></li>
-              <li><a href="#definition-DaggerEngineID">DaggerEngineID</a></li>
               <li><a href="#definition-Directory">Directory</a></li>
               <li><a href="#definition-DirectoryID">DirectoryID</a></li>
+              <li><a href="#definition-Engine">Engine</a></li>
+              <li><a href="#definition-EngineCache">EngineCache</a></li>
+              <li><a href="#definition-EngineCacheEntry">EngineCacheEntry</a></li>
+              <li><a href="#definition-EngineCacheEntryID">EngineCacheEntryID</a></li>
+              <li><a href="#definition-EngineCacheEntrySet">EngineCacheEntrySet</a></li>
+              <li><a href="#definition-EngineCacheEntrySetID">EngineCacheEntrySetID</a></li>
+              <li><a href="#definition-EngineCacheID">EngineCacheID</a></li>
+              <li><a href="#definition-EngineID">EngineID</a></li>
               <li><a href="#definition-EnumTypeDef">EnumTypeDef</a></li>
               <li><a href="#definition-EnumTypeDefID">EnumTypeDefID</a></li>
               <li><a href="#definition-EnumValueTypeDef">EnumValueTypeDef</a></li>
@@ -551,39 +551,6 @@
               </div>
             </div>
           </section>
-          <section id="query-daggerEngine" class="operation operation-query" data-traverse-target="query-daggerEngine">
-            <div class="operation-group-name">
-              <a href="#group-Queries">Queries</a>
-            </div>
-            <h2 class="operation-heading ">
-              <code>daggerEngine</code>
-            </h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>The Dagger engine container configuration and state</p>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-response doc-copy-section">
-                  <h5>Type</h5>
-                  <p>
-                    <a href="#definition-DaggerEngine"><code>DaggerEngine!</code></a>
-                  </p>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-example doc-copy-section">
-                  <h5>Example</h5>
-                </div>
-              </div>
-            </div>
-          </section>
           <section id="query-defaultPlatform" class="operation operation-query" data-traverse-target="query-defaultPlatform">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
@@ -666,6 +633,39 @@
   }</span></span>
 }</span></span>
 </code></pre>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-engine" class="operation operation-query" data-traverse-target="query-engine">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>engine</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The Dagger engine container configuration and state</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-Engine"><code>Engine!</code></a>
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
                 </div>
               </div>
             </div>
@@ -1151,218 +1151,6 @@
               </div>
             </div>
           </section>
-          <section id="query-loadDaggerEngineCacheEntryFromID" class="operation operation-query" data-traverse-target="query-loadDaggerEngineCacheEntryFromID">
-            <div class="operation-group-name">
-              <a href="#group-Queries">Queries</a>
-            </div>
-            <h2 class="operation-heading ">
-              <code>loadDaggerEngineCacheEntryFromID</code>
-            </h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>Load a DaggerEngineCacheEntry from its ID.</p>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-response doc-copy-section">
-                  <h5>Type</h5>
-                  <p>
-                    <a href="#definition-DaggerEngineCacheEntry"><code>DaggerEngineCacheEntry!</code></a>
-                  </p>
-                </div>
-                <div class="operation-arguments test doc-copy-section">
-                  <h5>Arguments</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-DaggerEngineCacheEntryID"><code>DaggerEngineCacheEntryID!</code></a></span>
-                        </td>
-                        <td>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-example doc-copy-section">
-                  <h5>Example</h5>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="query-loadDaggerEngineCacheEntrySetFromID" class="operation operation-query" data-traverse-target="query-loadDaggerEngineCacheEntrySetFromID">
-            <div class="operation-group-name">
-              <a href="#group-Queries">Queries</a>
-            </div>
-            <h2 class="operation-heading ">
-              <code>loadDaggerEngineCacheEntrySetFromID</code>
-            </h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>Load a DaggerEngineCacheEntrySet from its ID.</p>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-response doc-copy-section">
-                  <h5>Type</h5>
-                  <p>
-                    <a href="#definition-DaggerEngineCacheEntrySet"><code>DaggerEngineCacheEntrySet!</code></a>
-                  </p>
-                </div>
-                <div class="operation-arguments test doc-copy-section">
-                  <h5>Arguments</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-DaggerEngineCacheEntrySetID"><code>DaggerEngineCacheEntrySetID!</code></a></span>
-                        </td>
-                        <td>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-example doc-copy-section">
-                  <h5>Example</h5>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="query-loadDaggerEngineCacheFromID" class="operation operation-query" data-traverse-target="query-loadDaggerEngineCacheFromID">
-            <div class="operation-group-name">
-              <a href="#group-Queries">Queries</a>
-            </div>
-            <h2 class="operation-heading ">
-              <code>loadDaggerEngineCacheFromID</code>
-            </h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>Load a DaggerEngineCache from its ID.</p>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-response doc-copy-section">
-                  <h5>Type</h5>
-                  <p>
-                    <a href="#definition-DaggerEngineCache"><code>DaggerEngineCache!</code></a>
-                  </p>
-                </div>
-                <div class="operation-arguments test doc-copy-section">
-                  <h5>Arguments</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-DaggerEngineCacheID"><code>DaggerEngineCacheID!</code></a></span>
-                        </td>
-                        <td>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-example doc-copy-section">
-                  <h5>Example</h5>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="query-loadDaggerEngineFromID" class="operation operation-query" data-traverse-target="query-loadDaggerEngineFromID">
-            <div class="operation-group-name">
-              <a href="#group-Queries">Queries</a>
-            </div>
-            <h2 class="operation-heading ">
-              <code>loadDaggerEngineFromID</code>
-            </h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>Load a DaggerEngine from its ID.</p>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-response doc-copy-section">
-                  <h5>Type</h5>
-                  <p>
-                    <a href="#definition-DaggerEngine"><code>DaggerEngine!</code></a>
-                  </p>
-                </div>
-                <div class="operation-arguments test doc-copy-section">
-                  <h5>Arguments</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td>
-                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-DaggerEngineID"><code>DaggerEngineID!</code></a></span>
-                        </td>
-                        <td>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="operation-example doc-copy-section">
-                  <h5>Example</h5>
-                </div>
-              </div>
-            </div>
-          </section>
           <section id="query-loadDirectoryFromID" class="operation operation-query" data-traverse-target="query-loadDirectoryFromID">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
@@ -1399,6 +1187,218 @@
                       <tr>
                         <td>
                           <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-DirectoryID"><code>DirectoryID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-loadEngineCacheEntryFromID" class="operation operation-query" data-traverse-target="query-loadEngineCacheEntryFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadEngineCacheEntryFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a EngineCacheEntry from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-EngineCacheEntry"><code>EngineCacheEntry!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-EngineCacheEntryID"><code>EngineCacheEntryID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-loadEngineCacheEntrySetFromID" class="operation operation-query" data-traverse-target="query-loadEngineCacheEntrySetFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadEngineCacheEntrySetFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a EngineCacheEntrySet from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-EngineCacheEntrySet"><code>EngineCacheEntrySet!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-EngineCacheEntrySetID"><code>EngineCacheEntrySetID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-loadEngineCacheFromID" class="operation operation-query" data-traverse-target="query-loadEngineCacheFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadEngineCacheFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a EngineCache from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-EngineCache"><code>EngineCache!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-EngineCacheID"><code>EngineCacheID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-loadEngineFromID" class="operation operation-query" data-traverse-target="query-loadEngineFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadEngineFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a Engine from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-Engine"><code>Engine!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-EngineID"><code>EngineID!</code></a></span>
                         </td>
                         <td>
                         </td>
@@ -5197,248 +5197,6 @@
               </div>
             </div>
           </section>
-          <section id="definition-DaggerEngine" class="definition definition-object" data-traverse-target="definition-DaggerEngine">
-            <div class="definition-group-name">
-              <a href="#group-Types">Types</a>
-            </div>
-            <h2 class="definition-heading">DaggerEngine</h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="definition-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>The Dagger engine configuration and state</p>
-                </div>
-                <div class="definition-properties doc-copy-section">
-                  <h5>Fields</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Field Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="DaggerEngine-id" href="#DaggerEngine-id"><code>id</code></a> - <span class="property-type"><a href="#definition-DaggerEngineID"><code>DaggerEngineID!</code></a></span> </td>
-                        <td> A unique identifier for this DaggerEngine. </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="DaggerEngine-localCache" href="#DaggerEngine-localCache"><code>localCache</code></a> - <span class="property-type"><a href="#definition-DaggerEngineCache"><code>DaggerEngineCache!</code></a></span> </td>
-                        <td> The local (on-disk) cache for the Dagger engine </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="definition-DaggerEngineCache" class="definition definition-object" data-traverse-target="definition-DaggerEngineCache">
-            <div class="definition-group-name">
-              <a href="#group-Types">Types</a>
-            </div>
-            <h2 class="definition-heading">DaggerEngineCache</h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="definition-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>A cache storage for the Dagger engine</p>
-                </div>
-                <div class="definition-properties doc-copy-section">
-                  <h5>Fields</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Field Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="DaggerEngineCache-entrySet" href="#DaggerEngineCache-entrySet"><code>entrySet</code></a> - <span class="property-type"><a href="#definition-DaggerEngineCacheEntrySet"><code>DaggerEngineCacheEntrySet!</code></a></span> </td>
-                        <td> The current set of entries in the cache </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="DaggerEngineCache-id" href="#DaggerEngineCache-id"><code>id</code></a> - <span class="property-type"><a href="#definition-DaggerEngineCacheID"><code>DaggerEngineCacheID!</code></a></span> </td>
-                        <td> A unique identifier for this DaggerEngineCache. </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="DaggerEngineCache-keepBytes" href="#DaggerEngineCache-keepBytes"><code>keepBytes</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
-                        <td> The maximum bytes to keep in the cache without pruning, after which automatic pruning may kick in. <span class="deprecation-reason">Use minFreeSpace instead.</span>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="DaggerEngineCache-maxUsedSpace" href="#DaggerEngineCache-maxUsedSpace"><code>maxUsedSpace</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
-                        <td> The maximum bytes to keep in the cache without pruning. </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="DaggerEngineCache-minFreeSpace" href="#DaggerEngineCache-minFreeSpace"><code>minFreeSpace</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
-                        <td> The target amount of free disk space the garbage collector will attempt to leave. </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="DaggerEngineCache-prune" href="#DaggerEngineCache-prune"><code>prune</code></a> - <span class="property-type"><a href="#definition-Void"><code>Void</code></a></span> </td>
-                        <td> Prune the cache of releaseable entries </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="DaggerEngineCache-reservedSpace" href="#DaggerEngineCache-reservedSpace"><code>reservedSpace</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
-                        <td>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="definition-DaggerEngineCacheEntry" class="definition definition-object" data-traverse-target="definition-DaggerEngineCacheEntry">
-            <div class="definition-group-name">
-              <a href="#group-Types">Types</a>
-            </div>
-            <h2 class="definition-heading">DaggerEngineCacheEntry</h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="definition-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>An individual cache entry in a cache entry set</p>
-                </div>
-                <div class="definition-properties doc-copy-section">
-                  <h5>Fields</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Field Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="DaggerEngineCacheEntry-activelyUsed" href="#DaggerEngineCacheEntry-activelyUsed"><code>activelyUsed</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
-                        <td> Whether the cache entry is actively being used. </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="DaggerEngineCacheEntry-createdTimeUnixNano" href="#DaggerEngineCacheEntry-createdTimeUnixNano"><code>createdTimeUnixNano</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
-                        <td> The time the cache entry was created, in Unix nanoseconds. </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="DaggerEngineCacheEntry-description" href="#DaggerEngineCacheEntry-description"><code>description</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> The description of the cache entry. </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="DaggerEngineCacheEntry-diskSpaceBytes" href="#DaggerEngineCacheEntry-diskSpaceBytes"><code>diskSpaceBytes</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
-                        <td> The disk space used by the cache entry. </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="DaggerEngineCacheEntry-id" href="#DaggerEngineCacheEntry-id"><code>id</code></a> - <span class="property-type"><a href="#definition-DaggerEngineCacheEntryID"><code>DaggerEngineCacheEntryID!</code></a></span> </td>
-                        <td> A unique identifier for this DaggerEngineCacheEntry. </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="DaggerEngineCacheEntry-mostRecentUseTimeUnixNano" href="#DaggerEngineCacheEntry-mostRecentUseTimeUnixNano"><code>mostRecentUseTimeUnixNano</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
-                        <td> The most recent time the cache entry was used, in Unix nanoseconds. </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="definition-DaggerEngineCacheEntryID" class="definition definition-scalar" data-traverse-target="definition-DaggerEngineCacheEntryID">
-            <div class="definition-group-name">
-              <a href="#group-Types">Types</a>
-            </div>
-            <h2 class="definition-heading">DaggerEngineCacheEntryID</h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="definition-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>The <code>DaggerEngineCacheEntryID</code> scalar type represents an identifier for an object of type DaggerEngineCacheEntry.</p>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="definition-DaggerEngineCacheEntrySet" class="definition definition-object" data-traverse-target="definition-DaggerEngineCacheEntrySet">
-            <div class="definition-group-name">
-              <a href="#group-Types">Types</a>
-            </div>
-            <h2 class="definition-heading">DaggerEngineCacheEntrySet</h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="definition-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>A set of cache entries returned by a query to a cache</p>
-                </div>
-                <div class="definition-properties doc-copy-section">
-                  <h5>Fields</h5>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Field Name</th>
-                        <th>Description</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="DaggerEngineCacheEntrySet-diskSpaceBytes" href="#DaggerEngineCacheEntrySet-diskSpaceBytes"><code>diskSpaceBytes</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
-                        <td> The total disk space used by the cache entries in this set. </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="DaggerEngineCacheEntrySet-entries" href="#DaggerEngineCacheEntrySet-entries"><code>entries</code></a> - <span class="property-type"><a href="#definition-DaggerEngineCacheEntry"><code>[DaggerEngineCacheEntry!]!</code></a></span> </td>
-                        <td> The list of individual cache entries in the set </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="DaggerEngineCacheEntrySet-entryCount" href="#DaggerEngineCacheEntrySet-entryCount"><code>entryCount</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
-                        <td> The number of cache entries in this set. </td>
-                      </tr>
-                      <tr>
-                        <td data-property-name=""><a class="property-name" id="DaggerEngineCacheEntrySet-id" href="#DaggerEngineCacheEntrySet-id"><code>id</code></a> - <span class="property-type"><a href="#definition-DaggerEngineCacheEntrySetID"><code>DaggerEngineCacheEntrySetID!</code></a></span> </td>
-                        <td> A unique identifier for this DaggerEngineCacheEntrySet. </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="definition-DaggerEngineCacheEntrySetID" class="definition definition-scalar" data-traverse-target="definition-DaggerEngineCacheEntrySetID">
-            <div class="definition-group-name">
-              <a href="#group-Types">Types</a>
-            </div>
-            <h2 class="definition-heading">DaggerEngineCacheEntrySetID</h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="definition-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>The <code>DaggerEngineCacheEntrySetID</code> scalar type represents an identifier for an object of type DaggerEngineCacheEntrySet.</p>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="definition-DaggerEngineCacheID" class="definition definition-scalar" data-traverse-target="definition-DaggerEngineCacheID">
-            <div class="definition-group-name">
-              <a href="#group-Types">Types</a>
-            </div>
-            <h2 class="definition-heading">DaggerEngineCacheID</h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="definition-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>The <code>DaggerEngineCacheID</code> scalar type represents an identifier for an object of type DaggerEngineCache.</p>
-                </div>
-              </div>
-            </div>
-          </section>
-          <section id="definition-DaggerEngineID" class="definition definition-scalar" data-traverse-target="definition-DaggerEngineID">
-            <div class="definition-group-name">
-              <a href="#group-Types">Types</a>
-            </div>
-            <h2 class="definition-heading">DaggerEngineID</h2>
-            <div class="doc-row">
-              <div class="doc-copy">
-                <div class="definition-description doc-copy-section">
-                  <h5>Description</h5>
-                  <p>The <code>DaggerEngineID</code> scalar type represents an identifier for an object of type DaggerEngine.</p>
-                </div>
-              </div>
-            </div>
-          </section>
           <section id="definition-Directory" class="definition definition-object" data-traverse-target="definition-Directory">
             <div class="definition-group-name">
               <a href="#group-Types">Types</a>
@@ -5875,6 +5633,248 @@
                 <div class="definition-description doc-copy-section">
                   <h5>Description</h5>
                   <p>The <code>DirectoryID</code> scalar type represents an identifier for an object of type Directory.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-Engine" class="definition definition-object" data-traverse-target="definition-Engine">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">Engine</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The Dagger engine configuration and state</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Engine-id" href="#Engine-id"><code>id</code></a> - <span class="property-type"><a href="#definition-EngineID"><code>EngineID!</code></a></span> </td>
+                        <td> A unique identifier for this Engine. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Engine-localCache" href="#Engine-localCache"><code>localCache</code></a> - <span class="property-type"><a href="#definition-EngineCache"><code>EngineCache!</code></a></span> </td>
+                        <td> The local (on-disk) cache for the Dagger engine </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-EngineCache" class="definition definition-object" data-traverse-target="definition-EngineCache">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">EngineCache</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>A cache storage for the Dagger engine</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="EngineCache-entrySet" href="#EngineCache-entrySet"><code>entrySet</code></a> - <span class="property-type"><a href="#definition-EngineCacheEntrySet"><code>EngineCacheEntrySet!</code></a></span> </td>
+                        <td> The current set of entries in the cache </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="EngineCache-id" href="#EngineCache-id"><code>id</code></a> - <span class="property-type"><a href="#definition-EngineCacheID"><code>EngineCacheID!</code></a></span> </td>
+                        <td> A unique identifier for this EngineCache. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="EngineCache-keepBytes" href="#EngineCache-keepBytes"><code>keepBytes</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
+                        <td> The maximum bytes to keep in the cache without pruning, after which automatic pruning may kick in. <span class="deprecation-reason">Use minFreeSpace instead.</span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="EngineCache-maxUsedSpace" href="#EngineCache-maxUsedSpace"><code>maxUsedSpace</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
+                        <td> The maximum bytes to keep in the cache without pruning. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="EngineCache-minFreeSpace" href="#EngineCache-minFreeSpace"><code>minFreeSpace</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
+                        <td> The target amount of free disk space the garbage collector will attempt to leave. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="EngineCache-prune" href="#EngineCache-prune"><code>prune</code></a> - <span class="property-type"><a href="#definition-Void"><code>Void</code></a></span> </td>
+                        <td> Prune the cache of releaseable entries </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="EngineCache-reservedSpace" href="#EngineCache-reservedSpace"><code>reservedSpace</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-EngineCacheEntry" class="definition definition-object" data-traverse-target="definition-EngineCacheEntry">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">EngineCacheEntry</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>An individual cache entry in a cache entry set</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="EngineCacheEntry-activelyUsed" href="#EngineCacheEntry-activelyUsed"><code>activelyUsed</code></a> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean!</code></a></span> </td>
+                        <td> Whether the cache entry is actively being used. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="EngineCacheEntry-createdTimeUnixNano" href="#EngineCacheEntry-createdTimeUnixNano"><code>createdTimeUnixNano</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
+                        <td> The time the cache entry was created, in Unix nanoseconds. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="EngineCacheEntry-description" href="#EngineCacheEntry-description"><code>description</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The description of the cache entry. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="EngineCacheEntry-diskSpaceBytes" href="#EngineCacheEntry-diskSpaceBytes"><code>diskSpaceBytes</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
+                        <td> The disk space used by the cache entry. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="EngineCacheEntry-id" href="#EngineCacheEntry-id"><code>id</code></a> - <span class="property-type"><a href="#definition-EngineCacheEntryID"><code>EngineCacheEntryID!</code></a></span> </td>
+                        <td> A unique identifier for this EngineCacheEntry. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="EngineCacheEntry-mostRecentUseTimeUnixNano" href="#EngineCacheEntry-mostRecentUseTimeUnixNano"><code>mostRecentUseTimeUnixNano</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
+                        <td> The most recent time the cache entry was used, in Unix nanoseconds. </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-EngineCacheEntryID" class="definition definition-scalar" data-traverse-target="definition-EngineCacheEntryID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">EngineCacheEntryID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>EngineCacheEntryID</code> scalar type represents an identifier for an object of type EngineCacheEntry.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-EngineCacheEntrySet" class="definition definition-object" data-traverse-target="definition-EngineCacheEntrySet">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">EngineCacheEntrySet</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>A set of cache entries returned by a query to a cache</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="EngineCacheEntrySet-diskSpaceBytes" href="#EngineCacheEntrySet-diskSpaceBytes"><code>diskSpaceBytes</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
+                        <td> The total disk space used by the cache entries in this set. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="EngineCacheEntrySet-entries" href="#EngineCacheEntrySet-entries"><code>entries</code></a> - <span class="property-type"><a href="#definition-EngineCacheEntry"><code>[EngineCacheEntry!]!</code></a></span> </td>
+                        <td> The list of individual cache entries in the set </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="EngineCacheEntrySet-entryCount" href="#EngineCacheEntrySet-entryCount"><code>entryCount</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
+                        <td> The number of cache entries in this set. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="EngineCacheEntrySet-id" href="#EngineCacheEntrySet-id"><code>id</code></a> - <span class="property-type"><a href="#definition-EngineCacheEntrySetID"><code>EngineCacheEntrySetID!</code></a></span> </td>
+                        <td> A unique identifier for this EngineCacheEntrySet. </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-EngineCacheEntrySetID" class="definition definition-scalar" data-traverse-target="definition-EngineCacheEntrySetID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">EngineCacheEntrySetID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>EngineCacheEntrySetID</code> scalar type represents an identifier for an object of type EngineCacheEntrySet.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-EngineCacheID" class="definition definition-scalar" data-traverse-target="definition-EngineCacheID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">EngineCacheID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>EngineCacheID</code> scalar type represents an identifier for an object of type EngineCache.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-EngineID" class="definition definition-scalar" data-traverse-target="definition-EngineID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">EngineID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>EngineID</code> scalar type represents an identifier for an object of type Engine.</p>
                 </div>
               </div>
             </div>

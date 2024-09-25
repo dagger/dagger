@@ -11,23 +11,23 @@ namespace Dagger;
 /**
  * The Dagger engine configuration and state
  */
-class DaggerEngine extends Client\AbstractObject implements Client\IdAble
+class Engine extends Client\AbstractObject implements Client\IdAble
 {
     /**
-     * A unique identifier for this DaggerEngine.
+     * A unique identifier for this Engine.
      */
-    public function id(): DaggerEngineId
+    public function id(): EngineId
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('id');
-        return new \Dagger\DaggerEngineId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
+        return new \Dagger\EngineId((string)$this->queryLeaf($leafQueryBuilder, 'id'));
     }
 
     /**
      * The local (on-disk) cache for the Dagger engine
      */
-    public function localCache(): DaggerEngineCache
+    public function localCache(): EngineCache
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('localCache');
-        return new \Dagger\DaggerEngineCache($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+        return new \Dagger\EngineCache($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

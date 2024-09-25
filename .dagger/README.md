@@ -10,7 +10,7 @@ interactive local dev environment.
 
 In Dagger, a pipeline is a sequence of containerized functions, each passing
 its output to the next. Unlike typical CI and build tools, functions are
-composed *dynamically*. This can be done from the command-line with `dagger
+composed _dynamically_. This can be done from the command-line with `dagger
 call`.
 
 For example `dagger call foo bar baz` will call 3 functions (`foo`, `bar` and
@@ -23,7 +23,7 @@ directory, but you can override this with `-m`.
 
 To discover available functions in a given module: `dagger functions`.
 
-With that in mind: this document includes examples of *typical pipelines* that
+With that in mind: this document includes examples of _typical pipelines_ that
 are useful while developing Dagger. But remember, you are free to compose your
 own pipelines, either by modifying the examples, of starting from scratch. This
 flexibility is one of the killer features of Dagger.
@@ -93,7 +93,7 @@ All SDKs have the same functions defined:
 - `generate`: generates any auto-generated files against a dev engine
 - `bump`: bumps the SDK version number
 - `publish`: publishes the SDK to a registry
-    - Note: options for this function are SDK-specific
+  - Note: options for this function are SDK-specific
 
 ### Linting
 
@@ -116,6 +116,11 @@ Generate SDK static files (replace `<sdk>` with one of the supported SDKs):
 If you've made changes to the GraphQL schema, you will need to generate all sdks in one go prior to committing:
 
     dagger call sdk all generate export --path=.
+
+> [!NOTE]
+>
+> For `PHP` and `Elixir` SDKs it's important to manually delete the generated folder before running
+> this command
 
 ### Publish
 

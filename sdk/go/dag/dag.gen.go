@@ -86,12 +86,6 @@ func CurrentTypeDefs(ctx context.Context) ([]dagger.TypeDef, error) {
 	return client.CurrentTypeDefs(ctx)
 }
 
-// The Dagger engine container configuration and state
-func DaggerEngine() *dagger.DaggerEngine {
-	client := initClient()
-	return client.DaggerEngine()
-}
-
 // The default platform of the engine.
 func DefaultPlatform(ctx context.Context) (dagger.Platform, error) {
 	client := initClient()
@@ -102,6 +96,12 @@ func DefaultPlatform(ctx context.Context) (dagger.Platform, error) {
 func Directory() *dagger.Directory {
 	client := initClient()
 	return client.Directory()
+}
+
+// The Dagger engine container configuration and state
+func Engine() *dagger.Engine {
+	client := initClient()
+	return client.Engine()
 }
 
 // Creates a function.
@@ -152,34 +152,34 @@ func LoadCurrentModuleFromID(id dagger.CurrentModuleID) *dagger.CurrentModule {
 	return client.LoadCurrentModuleFromID(id)
 }
 
-// Load a DaggerEngineCacheEntry from its ID.
-func LoadDaggerEngineCacheEntryFromID(id dagger.DaggerEngineCacheEntryID) *dagger.DaggerEngineCacheEntry {
-	client := initClient()
-	return client.LoadDaggerEngineCacheEntryFromID(id)
-}
-
-// Load a DaggerEngineCacheEntrySet from its ID.
-func LoadDaggerEngineCacheEntrySetFromID(id dagger.DaggerEngineCacheEntrySetID) *dagger.DaggerEngineCacheEntrySet {
-	client := initClient()
-	return client.LoadDaggerEngineCacheEntrySetFromID(id)
-}
-
-// Load a DaggerEngineCache from its ID.
-func LoadDaggerEngineCacheFromID(id dagger.DaggerEngineCacheID) *dagger.DaggerEngineCache {
-	client := initClient()
-	return client.LoadDaggerEngineCacheFromID(id)
-}
-
-// Load a DaggerEngine from its ID.
-func LoadDaggerEngineFromID(id dagger.DaggerEngineID) *dagger.DaggerEngine {
-	client := initClient()
-	return client.LoadDaggerEngineFromID(id)
-}
-
 // Load a Directory from its ID.
 func LoadDirectoryFromID(id dagger.DirectoryID) *dagger.Directory {
 	client := initClient()
 	return client.LoadDirectoryFromID(id)
+}
+
+// Load a EngineCacheEntry from its ID.
+func LoadEngineCacheEntryFromID(id dagger.EngineCacheEntryID) *dagger.EngineCacheEntry {
+	client := initClient()
+	return client.LoadEngineCacheEntryFromID(id)
+}
+
+// Load a EngineCacheEntrySet from its ID.
+func LoadEngineCacheEntrySetFromID(id dagger.EngineCacheEntrySetID) *dagger.EngineCacheEntrySet {
+	client := initClient()
+	return client.LoadEngineCacheEntrySetFromID(id)
+}
+
+// Load a EngineCache from its ID.
+func LoadEngineCacheFromID(id dagger.EngineCacheID) *dagger.EngineCache {
+	client := initClient()
+	return client.LoadEngineCacheFromID(id)
+}
+
+// Load a Engine from its ID.
+func LoadEngineFromID(id dagger.EngineID) *dagger.Engine {
+	client := initClient()
+	return client.LoadEngineFromID(id)
 }
 
 // Load a EnumTypeDef from its ID.
