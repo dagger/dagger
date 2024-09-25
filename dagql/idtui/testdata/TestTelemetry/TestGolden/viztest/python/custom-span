@@ -1,0 +1,24 @@
+Expected stdout:
+
+hey dude!
+
+
+Expected stderr:
+
+✔ connect X.Xs
+│ ✔ starting engine X.Xs
+│ ✔ connecting to engine X.Xs
+│ ✔ starting session X.Xs
+
+✔ initialize X.Xs
+│ ✔ resolving module ref X.Xs
+│ ✔ installing module X.Xs
+│ ✔ analyzing module X.Xs
+
+✔ prepare X.Xs
+
+✔ python: Python! X.Xs
+✔ .customSpan: String! X.Xs
+
+
+Setup tracing at https://dagger.cloud/traces/setup. To hide: export NOTHANKS=1

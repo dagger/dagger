@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path"
 	"regexp"
 	"strings"
 	"testing"
@@ -89,7 +90,14 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 			"with-exec", "--args", "echo,hey",
 			"stdout",
 		}, Fail: true},
+
 		{Module: "./viztest/broken", Function: "broken", Fail: true},
+
+		{Module: "./viztest/python", Function: "pending", Fail: true},
+
+		// FIXME: this is actually showing broken output.
+		// update it once https://github.com/dagger/dagger/pull/8525 is merged.
+		{Module: "./viztest/python", Function: "custom-span"},
 
 		// FIXME: these constantly fail in CI/Dagger, but not against a local
 		// engine. spent a day investigating, don't have a good explanation. it
@@ -98,7 +106,7 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 		{Function: "cached-execs", Flaky: "nested Dagger causes cache misses"},
 		{Function: "use-cached-exec-service", Flaky: "nested Dagger causes cache misses"},
 	} {
-		t.Run(ex.Function, func(ctx context.Context, t *testctx.T) {
+		t.Run(path.Join(ex.Module, ex.Function), func(ctx context.Context, t *testctx.T) {
 			out, _ := ex.Run(ctx, t, s)
 			if ex.Flaky != "" {
 				cmp := golden.String(out, t.Name())()
@@ -245,6 +253,12 @@ var scrubs = []scrubber{
 		regexp.MustCompile(`\b20\d{2}-\d{2}-\d{2} \d+:\d+:\d+\.\d+ \+\d{4} UTC m=\+\d+.\d+\b`),
 		"2024-09-12 10:02:03.4567 +0000 UTC m=+0.987654321",
 		"20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X",
+	},
+	// datetime.datetime.now()
+	{
+		regexp.MustCompile(`\b20\d{2}-\d{2}-\d{2} \d+:\d+:\d+\.\d+`),
+		"2024-09-12 10:02:03.4567",
+		"20XX-XX-XX XX:XX:XX.XXXX",
 	},
 	// Dates
 	{
