@@ -8,7 +8,6 @@ import (
 	"sort"
 	"time"
 
-	"go.opentelemetry.io/otel/attribute"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	"github.com/dagger/dagger/dagql/call/callpbv1"
@@ -202,7 +201,7 @@ func (db *DB) newSpan(spanID SpanID) *Span {
 	}
 }
 
-func (db *DB) recordOTelSpan(span sdktrace.ReadOnlySpan) { //nolint: gocyclo
+func (db *DB) recordOTelSpan(span sdktrace.ReadOnlySpan) {
 	spanID := SpanID{span.SpanContext().SpanID()}
 
 	// mark the span as updated so we sync it to the frontend,
@@ -361,7 +360,7 @@ func (activity *Activity) mergeIntervals() {
 
 // integrateSpan takes a possibly newly created span and updates
 // database relationships and state
-func (db *DB) integrateSpan(span *Span) {
+func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 	// track the span's own interval
 	span.Activity.Add(span)
 	db.updatedSpans.Add(span)
@@ -679,15 +678,6 @@ loop:
 		return db.Simplify(smallest, false)
 	}
 	return smallest
-}
-
-func getAttr(attrs []attribute.KeyValue, key attribute.Key) (attribute.Value, bool) {
-	for _, attr := range attrs {
-		if attr.Key == key {
-			return attr.Value, true
-		}
-	}
-	return attribute.Value{}, false
 }
 
 // Function to check if a row is or contains a target row

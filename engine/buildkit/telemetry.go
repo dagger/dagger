@@ -4,7 +4,6 @@ import (
 	"context"
 	"log/slog"
 	"strings"
-	"sync"
 
 	"github.com/moby/buildkit/client/llb"
 	"github.com/opencontainers/go-digest"
@@ -116,16 +115,11 @@ func (s buildkitSpan) TracerProvider() trace.TracerProvider {
 // It must be used in combination with the buildkitTraceProvider.
 type SpanProcessor struct {
 	Client *Client
-
-	witnessedOps  map[digest.Digest]bool
-	witnessedOpsL sync.Mutex
 }
 
 func NewSpanProcessor(client *Client) *SpanProcessor {
 	return &SpanProcessor{
 		Client: client,
-
-		witnessedOps: map[digest.Digest]bool{},
 	}
 }
 

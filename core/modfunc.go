@@ -193,7 +193,7 @@ func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts) ([]
 	return callInputs, nil
 }
 
-func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typed, rerr error) {
+func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typed, rerr error) { //nolint: gocyclo
 	mod := fn.mod
 
 	lg := bklog.G(ctx).WithField("module", mod.Name()).WithField("function", fn.metadata.Name)
@@ -299,7 +299,10 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 	if err != nil {
 		id, ok, extractErr := extractError(ctx, bk, err)
 		if extractErr != nil {
-			return nil, fmt.Errorf("failed to extract error: %w (original error: %w)", extractErr, err)
+			return nil, errors.Join(
+				fmt.Errorf("failed to extract error: %w", extractErr),
+				fmt.Errorf("original error: %w", err),
+			)
 		}
 		if ok {
 			errInst, err := id.Load(ctx, opts.Server)
@@ -407,7 +410,7 @@ func extractError(ctx context.Context, client *buildkit.Client, baseErr error) (
 	// This was an exec error, we will retrieve the exec's output and include
 	// it in the error message
 
-	// get the mnt corresponding to the metadata where stdout/stderr are stored
+	// get the mnt containing module response data (in this case, the error ID)
 	var metaMountResult bksolver.Result
 	var foundMounts []string
 	for i, mnt := range execOp.Exec.Mounts {
@@ -418,6 +421,7 @@ func extractError(ctx context.Context, client *buildkit.Client, baseErr error) (
 		}
 	}
 	if metaMountResult == nil {
+		slog.Warn("failed to find meta mount", "mounts", foundMounts, "want", modMetaDirPath)
 		return id, false, nil
 	}
 

@@ -19,7 +19,6 @@ import (
 	"github.com/moby/buildkit/identity"
 	bksession "github.com/moby/buildkit/session"
 	bksolver "github.com/moby/buildkit/solver"
-	"github.com/moby/buildkit/solver/pb"
 	bksolverpb "github.com/moby/buildkit/solver/pb"
 	solverresult "github.com/moby/buildkit/solver/result"
 	"github.com/moby/buildkit/util/bklog"
@@ -134,7 +133,7 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 	defer cancel(errors.New("solve done"))
 	ctx = withOutgoingContext(c, ctx)
 
-	recordOp := func(def *pb.Definition) error {
+	recordOp := func(def *bksolverpb.Definition) error {
 		dag, err := DefToDAG(def)
 		if err != nil {
 			return err
@@ -744,12 +743,6 @@ func withOutgoingContext(c *Client, ctx context.Context) context.Context {
 	}
 	ctx = buildkitTelemetryProvider(c, ctx)
 	return ctx
-}
-
-type op struct {
-	Digest digest.Digest
-	Def    bksolverpb.Op
-	Meta   bksolverpb.OpMetadata
 }
 
 // filteringGateway is a helper gateway that filters+converts various
