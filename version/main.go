@@ -26,7 +26,7 @@ func New(
 	// - To avoid false negatives, include *all* inputs
 	// +optional
 	// +defaultPath="/"
-	// +ignore=["**_test.go", "**/.git*", "**/.venv", "**/.dagger", ".*", "bin", "**/node_modules", "**/testdata", "**.changes", "docs", "helm", "release", "version", "modules", "*.md", "LICENSE", "NOTICE", "hack"]
+	// +ignore=["**_test.go", "**/.git*", "**/.venv", "**/.dagger", ".*", "bin", "**/node_modules", "**/testdata/**", "**/.changes", ".changes", "docs", "helm", "release", "version", "modules", "*.md", "LICENSE", "NOTICE", "hack"]
 	inputs *dagger.Directory,
 	// +optional
 	// +defaultPath="/"
@@ -55,16 +55,36 @@ type Version struct {
 }
 
 // Return whether the current version is a development version or not
+// The definition is:
+// - If there are uncommitted changes to the inputs files, dev=true
+// - otherwise, dev=false
 func (v Version) Dev(ctx context.Context) (bool, error) {
-	tag, err := v.VersionTag(ctx)
+	diff, err := v.diff(ctx)
 	if err != nil {
 		return false, err
 	}
-	// The current implementation is:
-	// - If the current commit is semver-tagged, dev=false
-	// - Otherwise, dev=true
-	// FIXME: this is a flawed implementation..
-	return (tag == ""), nil
+	return len(strings.Trim(diff, "\n")) != 0, nil
+}
+
+// Return any uncommitted changes to input files
+func (v Version) diff(ctx context.Context) (string, error) {
+	ignores := []string{
+		// FIXME: this is copy-pasted from +ignore above. Find a way to DRY this up.
+		// FIXME: investigate behavior difference between dagger and git on: '**/testdata': dagger ignores, git requires extra /**
+		"**_test.go", "**/.git*", "**/.venv", "**/.dagger", ".*", "bin", "**/node_modules", "**/testdata/**", "**/.changes/**", "docs", "helm", "release", "version", "modules", "*.md", "LICENSE", "NOTICE", "hack",
+	}
+	args := []string{"git", "diff", "--"}
+	for _, ignore := range ignores {
+		args = append(args, ":(exclude)"+ignore)
+	}
+	return dag.Wolfi().
+		Container(dagger.WolfiContainerOpts{Packages: []string{"git"}}).
+		WithDirectory("/src", dag.Directory()).
+		WithWorkdir("/src").
+		WithDirectory(".", v.Inputs).
+		WithDirectory(".", v.GitDir).
+		WithExec(args).
+		Stdout(ctx)
 }
 
 // Generate a version string from the current context
