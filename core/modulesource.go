@@ -369,7 +369,7 @@ func (src *ModuleSource) LoadContext(ctx context.Context, dag *dagql.Server, pat
 
 		if !filepath.IsAbs(path) {
 			path = filepath.Join(src.AsGitSource.Value.RootSubpath, path)
-		} 
+		}
 
 		dir, err := ctxDir.Directory(ctx, path)
 		if err != nil {
