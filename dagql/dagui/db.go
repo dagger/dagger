@@ -3,6 +3,7 @@ package dagui
 import (
 	"context"
 	"fmt"
+	"iter"
 	"slices"
 	"sort"
 	"time"
@@ -243,11 +244,10 @@ type Activity struct {
 	CompletedIntervals []Interval
 	EarliestRunning    time.Time
 	EarliestRunningID  SpanID
-	// FIXME: finish
-	allRunning SpanSet
+	allRunning         SpanSet
 }
 
-func (activity *Activity) Intervals(now time.Time) func(func(Interval) bool) { // TODO go 1.23 iter.Seq[Interval] {
+func (activity *Activity) Intervals(now time.Time) iter.Seq[Interval] {
 	return func(yield func(Interval) bool) {
 		var lastIval *Interval
 		for _, ival := range activity.CompletedIntervals {
@@ -271,14 +271,9 @@ func (activity *Activity) Intervals(now time.Time) func(func(Interval) bool) { /
 
 func (activity *Activity) Duration(now time.Time) time.Duration {
 	var dur time.Duration
-	// TODO go 1.23
-	// for ival := range activity.Intervals(now) {
-	// 	dur += ival.End.Sub(ival.Start)
-	// }
-	activity.Intervals(now)(func(ival Interval) bool {
+	for ival := range activity.Intervals(now) {
 		dur += ival.End.Sub(ival.Start)
-		return true
-	})
+	}
 	return dur
 }
 
@@ -287,22 +282,30 @@ type Interval struct {
 	End   time.Time
 }
 
-func (activity *Activity) Add(span *Span) {
-	if span.IsRunning() {
-		if activity.EarliestRunning.IsZero() ||
-			span.StartTime.Before(activity.EarliestRunning) {
-			// FIXME: we need to also keep track of the other running ones
-			// incase the earliest one ends
-			activity.EarliestRunning = span.StartTime
-			activity.EarliestRunningID = span.ID
-		}
-		return
-	}
-
-	if activity.EarliestRunningID == span.ID {
+func (activity *Activity) updateEarliest() {
+	if len(activity.allRunning.Order) > 0 {
+		earliest := activity.allRunning.Order[0]
+		activity.EarliestRunning = earliest.StartTime
+		activity.EarliestRunningID = earliest.ID
+	} else {
 		activity.EarliestRunning = time.Time{}
 		activity.EarliestRunningID = SpanID{}
 	}
+}
+
+func (activity *Activity) Add(span *Span) {
+	if activity.allRunning == nil {
+		activity.allRunning = NewSpanSet()
+	}
+
+	if span.IsRunning() {
+		activity.allRunning.Add(span)
+		activity.updateEarliest()
+		return
+	}
+
+	activity.allRunning.Remove(span)
+	activity.updateEarliest()
 
 	ival := Interval{
 		Start: span.StartTime,
@@ -323,7 +326,6 @@ func (activity *Activity) Add(span *Span) {
 			return 0
 		}
 	})
-	// slog.Warn("inserting interval", "idx", idx, "ival", ival, "match", match)
 
 	activity.CompletedIntervals = slices.Insert(activity.CompletedIntervals, idx, ival)
 
