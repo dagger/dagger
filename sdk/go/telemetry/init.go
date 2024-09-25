@@ -367,7 +367,12 @@ func Init(ctx context.Context, cfg Config) context.Context {
 		}
 		for _, exp := range cfg.LiveMetricExporters {
 			reader := sdkmetric.NewPeriodicReader(exp,
-				sdkmetric.WithInterval(NearlyImmediate))
+				// TODO:
+				// TODO:
+				// TODO:
+				sdkmetric.WithInterval(1*time.Second),
+				sdkmetric.WithTimeout(1*time.Second),
+			)
 			MetricReaders = append(MetricReaders, reader)
 			meterOpts = append(meterOpts, sdkmetric.WithReader(reader))
 		}

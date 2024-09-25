@@ -253,6 +253,18 @@ func (r renderer) renderCall(
 		r.renderDuration(out, span)
 	}
 
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	for _, dataPoint := range r.db.MetricsByCallDigest[digest.Digest(call.Digest)] {
+		fmt.Fprint(out, " ")
+		displayMetric := out.String(fmt.Sprintf("%d", dataPoint.Value))
+		displayMetric = displayMetric.Foreground(termenv.ANSIGreen)
+		fmt.Fprint(out, displayMetric)
+	}
+
 	return nil
 }
 

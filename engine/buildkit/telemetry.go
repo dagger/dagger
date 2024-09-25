@@ -6,6 +6,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/embedded"
@@ -26,6 +27,7 @@ func buildkitTelemetryContext(ctx context.Context) context.Context {
 		tp: &buildkitTraceProvider{
 			tp: sp.TracerProvider(),
 			lp: telemetry.LoggerProvider(ctx),
+			mp: telemetry.MeterProvider(ctx),
 		},
 	})
 }
@@ -34,6 +36,7 @@ type buildkitTraceProvider struct {
 	embedded.TracerProvider
 	tp trace.TracerProvider
 	lp *sdklog.LoggerProvider
+	mp *sdkmetric.MeterProvider
 }
 
 func (tp *buildkitTraceProvider) Tracer(name string, options ...trace.TracerOption) trace.Tracer {
@@ -60,8 +63,9 @@ func (t *buildkitTracer) Start(ctx context.Context, spanName string, opts ...tra
 		trace.WithAttributes(attribute.Bool("buildkit", true)),
 	}, opts...)
 
-	// Restore logger provider from the original ctx the provider was created.
+	// Restore logger+metrics provider from the original ctx the provider was created.
 	ctx = telemetry.WithLoggerProvider(ctx, t.bkProvider.lp)
+	ctx = telemetry.WithMeterProvider(ctx, t.bkProvider.mp)
 
 	// Start the span, and make sure we return a span that has the provider.
 	ctx, span := t.tracer.Start(ctx, spanName, opts...)

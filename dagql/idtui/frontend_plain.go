@@ -344,15 +344,33 @@ type PlainFrontendMetricExporter struct {
 func (fe PlainFrontendMetricExporter) Export(ctx context.Context, resourceMetrics *metricdata.ResourceMetrics) error {
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
+
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	if len(resourceMetrics.ScopeMetrics) > 0 {
+		fmt.Fprintf(os.Stderr, "HOLY SHIT: %d %+v\n", len(resourceMetrics.ScopeMetrics), resourceMetrics.ScopeMetrics)
+	}
+
 	return fe.db.MetricExporter().Export(ctx, resourceMetrics)
 }
 
 func (fe PlainFrontendMetricExporter) Temporality(sdkmetric.InstrumentKind) metricdata.Temporality {
-	panic("idk yet")
+	// TODO: ?
+	// TODO: ?
+	// TODO: ?
+	return metricdata.DeltaTemporality
+	// return metricdata.CumulativeTemporality
 }
 
 func (fe PlainFrontendMetricExporter) Aggregation(sdkmetric.InstrumentKind) sdkmetric.Aggregation {
-	panic("idk yet")
+	// TODO: ?
+	// TODO: ?
+	// TODO: ?
+	return sdkmetric.AggregationDefault{}
 }
 
 func (fe PlainFrontendMetricExporter) ForceFlush(context.Context) error {

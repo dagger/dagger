@@ -46,9 +46,13 @@ func withEngine(
 		params.EngineLogs = telemetry.LogForwarder{
 			Processors: telemetry.LogProcessors,
 		}
+		/* TODO:
 		params.EngineMetrics = telemetry.MetricsForwarder{
 			Readers: telemetry.MetricReaders,
 		}
+		*/
+		params.EngineMetrics = Frontend.MetricExporter()
+
 		params.WithTerminal = withTerminal
 		params.Interactive = interactive
 		params.InteractiveCommand = interactiveCommandParsed

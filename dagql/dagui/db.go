@@ -170,11 +170,17 @@ func (db DBMetricExporter) Export(ctx context.Context, resourceMetrics *metricda
 }
 
 func (db DBMetricExporter) Temporality(sdkmetric.InstrumentKind) metricdata.Temporality {
-	panic("idk yet")
+	// TODO: ?
+	// TODO: ?
+	// TODO: ?
+	return metricdata.CumulativeTemporality
 }
 
 func (db DBMetricExporter) Aggregation(sdkmetric.InstrumentKind) sdkmetric.Aggregation {
-	panic("idk yet")
+	// TODO: ?
+	// TODO: ?
+	// TODO: ?
+	return sdkmetric.AggregationDefault{}
 }
 
 // SetPrimarySpan allows the primary span to be explicitly set to a particular

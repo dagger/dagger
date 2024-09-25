@@ -116,6 +116,9 @@ func (r *cgroupRecorder) sample(tm time.Time) (*resourcestypes.Sample, error) {
 }
 
 func (r *cgroupRecorder) Close() error {
+	if r.closeOnce == nil {
+		return nil
+	}
 	return r.closeOnce()
 }
 

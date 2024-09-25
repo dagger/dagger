@@ -33,6 +33,8 @@ import (
 	bknetwork "github.com/moby/buildkit/util/network"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/sourcegraph/conc/pool"
+	"go.opentelemetry.io/otel/attribute"
+	otelmetric "go.opentelemetry.io/otel/metric"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 
@@ -388,16 +390,14 @@ func (w *Worker) setupCgroupMonitor(ctx context.Context, state *execState) error
 		return fmt.Errorf("start cgroup recorder: %w", err)
 	}
 
+	meter := telemetry.Meter(ctx, InstrumentationLibrary)
+	diskWriteBytesMeter, err := meter.Int64Gauge("dagger.io/engine.idk")
+	if err != nil {
+		return fmt.Errorf("get disk read bytes meter: %w", err)
+	}
+
 	pushMetricsPool := pool.New()
 	pushMetricsPool.Go(func() {
-		// TODO: ACTUALLY PUSH METRICS
-		// TODO: ACTUALLY PUSH METRICS
-		// TODO: ACTUALLY PUSH METRICS
-		// TODO: ACTUALLY PUSH METRICS
-		// TODO: ACTUALLY PUSH METRICS
-		meter := telemetry.Meter(ctx, InstrumentationLibrary)
-		_ = meter
-
 		for s := range sampleCh {
 			if s == nil {
 				continue
@@ -411,11 +411,13 @@ func (w *Worker) setupCgroupMonitor(ctx context.Context, state *execState) error
 			bklog.G(ctx).Infof("cgroup iostat: %+v", s.IOStat)
 			if ptr := s.IOStat.ReadBytes; ptr != nil {
 				bklog.G(ctx).Infof("cgroup read bytes: %d", *ptr)
-				// spanMetrics.EmitDiskReadBytes(int(*ptr))
 			}
 			if ptr := s.IOStat.WriteBytes; ptr != nil {
 				bklog.G(ctx).Infof("cgroup write bytes: %d", *ptr)
-				// spanMetrics.EmitDiskWriteBytes(int(*ptr))
+				// TODO: overflow possible technically...
+				diskWriteBytesMeter.Record(ctx, int64(*ptr), otelmetric.WithAttributes(
+					attribute.String(telemetry.DagDigestAttr, string(w.execMD.CallID.Digest())),
+				))
 			}
 		}
 	})

@@ -324,11 +324,17 @@ func (fe FrontendMetricExporter) Export(ctx context.Context, resourceMetrics *me
 }
 
 func (fe FrontendMetricExporter) Temporality(sdkmetric.InstrumentKind) metricdata.Temporality {
-	panic("idk yet")
+	// TODO: ?
+	// TODO: ?
+	// TODO: ?
+	return metricdata.CumulativeTemporality
 }
 
 func (fe FrontendMetricExporter) Aggregation(sdkmetric.InstrumentKind) sdkmetric.Aggregation {
-	panic("idk yet")
+	// TODO: ?
+	// TODO: ?
+	// TODO: ?
+	return sdkmetric.AggregationDefault{}
 }
 
 func (fe FrontendMetricExporter) ForceFlush(context.Context) error {

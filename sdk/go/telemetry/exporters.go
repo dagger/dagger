@@ -2,6 +2,8 @@ package telemetry
 
 import (
 	"context"
+	"fmt"
+	"os"
 
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -128,6 +130,13 @@ type MetricsForwarder struct {
 var _ sdkmetric.Exporter = MetricsForwarder{}
 
 func (exp MetricsForwarder) Export(ctx context.Context, metrics *metricdata.ResourceMetrics) error {
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	fmt.Fprintf(os.Stderr, "METRICS FORWARDER EXPORT: %d\n", len(metrics.ScopeMetrics))
+
 	eg := new(errgroup.Group)
 	for _, r := range exp.Readers {
 		r := r
