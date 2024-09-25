@@ -4,7 +4,11 @@ import { dag, object, Directory, Container, func } from "@dagger.io/dagger"
 class MyModule {
   @func()
   async foo(): Container {
+<<<<<<< HEAD
     return await dag
+=======
+		return await dag
+>>>>>>> 2f22413a8 (Fix linter)
       .container()
       .from("alpine:latest")
       .terminal()
