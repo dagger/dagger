@@ -1,6 +1,6 @@
 Expected stdout:
 
-hey dude!
+hello from Python! it is currently 20XX-XX-XX XX:XX:XX.XXXX
 
 
 Expected stderr:

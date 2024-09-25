@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"dagger/viztest/internal/dagger"
+	"dagger/viztest/internal/telemetry"
 )
 
 type Viztest struct {
@@ -63,6 +64,12 @@ func (*Viztest) ManyLines(n int) {
 	for i := 1; i <= n; i++ {
 		fmt.Println("This is line", i, "of", n)
 	}
+}
+
+func (v *Viztest) CustomSpan(ctx context.Context) (res string, rerr error) {
+	ctx, span := Tracer().Start(ctx, "custom span")
+	defer telemetry.End(span, func() error { return rerr })
+	return v.Echo(ctx, "hello from Go! it is currently "+time.Now().String())
 }
 
 func (*Viztest) ManySpans(

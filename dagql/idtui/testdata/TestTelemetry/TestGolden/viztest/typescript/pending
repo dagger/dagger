@@ -1,0 +1,33 @@
+Expected stderr:
+
+✔ connect X.Xs
+│ ✔ starting engine X.Xs
+│ ✔ connecting to engine X.Xs
+│ ✔ starting session X.Xs
+
+✔ initialize X.Xs
+│ ✔ resolving module ref X.Xs
+│ ✔ installing module X.Xs
+│ ✔ analyzing module X.Xs
+
+✔ prepare X.Xs
+
+✔ typescript: Typescript! X.Xs
+✘ .pending: Void X.Xs
+┃ Error: process "false" did not complete successfully: exit code: 1
+! failed to extract error: cannot decode empty string as ID
+│ $ Container.from(address: "alpine:latest"): Container! X.Xs CACHED
+│ │ ✔ resolving docker.io/library/alpine:latest X.Xs
+│ ✔ .withEnvVariable(name: "NOW", value: "XXXX-XX-XXTXX:XX:XX.XXXZ"): Container! X.Xs
+│ ✔ .withExec(args: ["sleep", "1"]): Container! X.Xs
+│ ✘ .withExec(args: ["false"]): Container! X.Xs
+│ ! process "false" did not complete successfully: exit code: 1
+│ ○ .withExec(args: ["sleep", "1"]): Container! X.Xs
+
+Error logs:
+
+✘ .pending: Void X.Xs
+Error: process "false" did not complete successfully: exit code: 1
+! failed to extract error: cannot decode empty string as ID
+
+Setup tracing at https://dagger.cloud/traces/setup. To hide: export NOTHANKS=1

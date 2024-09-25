@@ -1,0 +1,31 @@
+Expected stdout:
+
+hello from Go! it is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
+
+
+Expected stderr:
+
+✔ connect X.Xs
+│ ✔ starting engine X.Xs
+│ ✔ connecting to engine X.Xs
+│ ✔ starting session X.Xs
+
+✔ initialize X.Xs
+│ ✔ resolving module ref X.Xs
+│ ✔ installing module X.Xs
+│ ✔ analyzing module X.Xs
+
+✔ prepare X.Xs
+
+✔ viztest: Viztest! X.Xs
+✔ .customSpan: String! X.Xs
+│ ✔ custom span X.Xs
+│ │ ✔ container: Container! X.Xs
+│ │ $ .from(address: "alpine"): Container! X.Xs CACHED
+│ │ │ ✔ resolving docker.io/library/alpine:latest X.Xs
+│ │ ✔ .withExec(args: ["echo", "hello from Go! it is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X"]): Container! X.Xs
+│ │ ┃ hello from Go! it is currently 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
+│ │ ✔ .stdout: String! X.Xs
+
+
+Setup tracing at https://dagger.cloud/traces/setup. To hide: export NOTHANKS=1

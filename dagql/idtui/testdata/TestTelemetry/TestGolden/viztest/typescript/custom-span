@@ -1,0 +1,30 @@
+Expected stdout:
+
+hello from TypeScript! it is currently XXXX-XX-XXTXX:XX:XX.XXXZ
+
+
+Expected stderr:
+
+✔ connect X.Xs
+│ ✔ starting engine X.Xs
+│ ✔ connecting to engine X.Xs
+│ ✔ starting session X.Xs
+
+✔ initialize X.Xs
+│ ✔ resolving module ref X.Xs
+│ ✔ installing module X.Xs
+│ ✔ analyzing module X.Xs
+
+✔ prepare X.Xs
+
+✔ typescript: Typescript! X.Xs
+✔ .customSpan: String! X.Xs
+│ ✔ custom span X.Xs
+│ │ $ Container.from(address: "alpine:latest"): Container! X.Xs CACHED
+│ │ │ ✔ resolving docker.io/library/alpine:latest X.Xs
+│ │ ✔ .withExec(args: ["echo", "hello from TypeScript! it is currently XXXX-XX-XXTXX:XX:XX.XXXZ"]): Container! X.Xs
+│ │ ┃ hello from TypeScript! it is currently XXXX-XX-XXTXX:XX:XX.XXXZ
+│ │ ✔ .stdout: String! X.Xs
+
+
+Setup tracing at https://dagger.cloud/traces/setup. To hide: export NOTHANKS=1
