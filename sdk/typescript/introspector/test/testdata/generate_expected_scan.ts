@@ -2,9 +2,9 @@ import * as fs from "fs"
 import * as path from "path"
 import { fileURLToPath } from "url"
 
-import { DaggerModule } from "../../scanner/abtractions/module.ts"
-import { scan } from "../../scanner/scan.ts"
-import { listFiles } from "../../utils/files.ts"
+import { scan } from "../../scanner/scan.js"
+import { listFiles } from "../../utils/files.js"
+import { DaggerModule } from "../../scanner/abtractions/module.js"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)

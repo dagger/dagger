@@ -7,8 +7,8 @@ import {
   UnknownDaggerError,
   NotAwaitedRequestError,
   ExecError,
-} from "../common/errors/index.ts"
-import { Metadata, QueryTree } from "./client.gen.ts"
+} from "../common/errors/index.js"
+import { Metadata, QueryTree } from "./client.gen.js"
 
 /**
  * Format argument into GraphQL query format.

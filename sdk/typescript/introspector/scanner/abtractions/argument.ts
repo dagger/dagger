@@ -1,11 +1,11 @@
 import ts from "typescript"
 
-import { TypeDefKind } from "../../../api/client.gen.ts"
-import { UnknownDaggerError } from "../../../common/errors/UnknownDaggerError.ts"
-import { argument } from "../../decorators/decorators.ts"
-import { ArgumentOptions } from "../../registry/registry.ts"
-import { TypeDef } from "../typeDefs.ts"
-import { typeToTypedef } from "./typeToTypedef.ts"
+import { TypeDefKind } from "../../../api/client.gen.js"
+import { UnknownDaggerError } from "../../../common/errors/UnknownDaggerError.js"
+import { argument } from "../../decorators/decorators.js"
+import { ArgumentOptions } from "../../registry/registry.js"
+import { TypeDef } from "../typeDefs.js"
+import { typeToTypedef } from "./typeToTypedef.js"
 
 export const ARGUMENT_DECORATOR = argument.name
 

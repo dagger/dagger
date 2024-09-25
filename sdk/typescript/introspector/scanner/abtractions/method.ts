@@ -1,11 +1,11 @@
 import ts from "typescript"
 
-import { TypeDefKind } from "../../../api/client.gen.ts"
-import { UnknownDaggerError } from "../../../common/errors/UnknownDaggerError.ts"
-import { func } from "../../decorators/decorators.ts"
-import { TypeDef } from "../typeDefs.ts"
-import { Argument, Arguments } from "./argument.ts"
-import { typeToTypedef } from "./typeToTypedef.ts"
+import { TypeDefKind } from "../../../api/client.gen.js"
+import { UnknownDaggerError } from "../../../common/errors/UnknownDaggerError.js"
+import { func } from "../../decorators/decorators.js"
+import { TypeDef } from "../typeDefs.js"
+import { Argument, Arguments } from "./argument.js"
+import { typeToTypedef } from "./typeToTypedef.js"
 
 export const METHOD_DECORATOR = func.name
 

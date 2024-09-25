@@ -1,5 +1,5 @@
-import { dag, Container } from "../../../../api/client.gen.ts"
-import { func, object } from "../../../decorators/decorators.ts"
+import { dag, Container } from "../../../../api/client.gen.js"
+import { func, object } from "../../../decorators/decorators.js"
 
 @object()
 export class Bar {

@@ -1,6 +1,6 @@
 import ts from "typescript"
 
-import { UnknownDaggerError } from "../../../common/errors/UnknownDaggerError.ts"
+import { UnknownDaggerError } from "../../../common/errors/UnknownDaggerError.js"
 
 export type DaggerEnumValues = { [name: string]: DaggerEnumValue }
 

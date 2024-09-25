@@ -1,5 +1,5 @@
-import { DaggerSDKError, DaggerSDKErrorOptions } from "./DaggerSDKError.ts"
-import { ERROR_CODES, ERROR_NAMES } from "./errors-codes.ts"
+import { DaggerSDKError, DaggerSDKErrorOptions } from "./DaggerSDKError.js"
+import { ERROR_CODES, ERROR_NAMES } from "./errors-codes.js"
 
 interface EngineSessionConnectParamsParseErrorOptions
   extends DaggerSDKErrorOptions {

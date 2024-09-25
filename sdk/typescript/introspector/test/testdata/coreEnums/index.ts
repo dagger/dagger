@@ -1,5 +1,6 @@
-import { ImageLayerCompression } from "../../../../api/client.gen.ts"
-import { func, object } from "../../../decorators/decorators.ts"
+import { ImageLayerCompression } from '../../../../api/client.gen.js'
+import { func, object } from "../../../decorators/decorators.js"
+
 
 @object()
 export class CoreEnums {

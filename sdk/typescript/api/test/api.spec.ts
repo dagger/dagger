@@ -5,7 +5,7 @@ import fs from "fs"
 import {
   ExecError,
   TooManyNestedObjectsError,
-} from "../../common/errors/index.ts"
+} from "../../common/errors/index.js"
 import {
   Client,
   ClientContainerOpts,
@@ -13,8 +13,8 @@ import {
   Container,
   Directory,
   NetworkProtocol,
-} from "../../index.ts"
-import { buildQuery, queryFlatten } from "../utils.ts"
+} from "../../index.js"
+import { buildQuery, queryFlatten } from "../utils.js"
 
 const querySanitizer = (query: string) => query.replace(/\s+/g, " ")
 

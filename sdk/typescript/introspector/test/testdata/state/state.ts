@@ -3,8 +3,8 @@
  *
  * Warning: Do not reproduce in production.
  */
-import { dag, Container } from "../../../../api/client.gen.ts"
-import { func, object } from "../../../decorators/decorators.ts"
+import { dag, Container } from "../../../../api/client.gen.js"
+import { func, object } from "../../../decorators/decorators.js"
 
 /**
  * State module

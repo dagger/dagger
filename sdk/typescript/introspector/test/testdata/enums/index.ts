@@ -1,9 +1,4 @@
-import {
-  func,
-  object,
-  field,
-  enumType,
-} from "../../../decorators/decorators.ts"
+import { func, object, field, enumType } from "../../../decorators/decorators.js"
 
 /**
  * Enum for Status

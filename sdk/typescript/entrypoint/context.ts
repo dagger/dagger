@@ -1,4 +1,4 @@
-import { Args } from "../introspector/registry/registry.ts"
+import { Args } from "../introspector/registry/registry.js"
 
 export type InvokeCtx = {
   parentName: string

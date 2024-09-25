@@ -14,8 +14,6 @@ if (!fs.existsSync(tsConfigPath)) {
       target: "ES2022",
       moduleResolution: "Node",
       experimentalDecorators: true,
-      noEmit: true,
-      allowImportingTsExtensions: true,
       paths: {
         "@dagger.io/dagger": ["./sdk"],
         "@dagger.io/dagger/telemetry": ["./sdk/telemetry"],
@@ -66,15 +64,6 @@ if (
   tsconfig.compilerOptions.paths[daggerTelemetryPathAlias] = [
     daggerTelemetryPath,
   ]
-
-  // Add noEmit & allowImportingTsExtensions if they are not part of the tsconfig
-  if (!tsconfig.compilerOptions.noEmit) {
-    tsconfig.compilerOptions.noEmit = true
-  }
-
-  if (!tsconfig.compilerOptions.allowImportingTsExtensions) {
-    tsconfig.compilerOptions.allowImportingTsExtensions = true
-  }
 
   fs.writeFileSync(tsConfigPath, JSON.stringify(tsconfig, null, 2))
 }
