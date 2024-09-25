@@ -51,15 +51,14 @@ The default template from `dagger develop` creates the following structure:
 ```
 .
 ├── LICENSE
-├── dagger
-│   ├── dagger.gen.go
-│   ├── go.mod
-│   ├── go.sum
-│   ├── internal
-│   │   ├── dagger
-│   │   ├── querybuilder
-│   │   └── telemetry
-│   └── main.go
+├── dagger.gen.go
+├── go.mod
+├── go.sum
+├── internal
+│   ├── dagger
+│   ├── querybuilder
+│   └── telemetry
+└── main.go
 └── dagger.json
 ```
 
@@ -79,10 +78,9 @@ In this structure:
 ```
 .
 ├── LICENSE
-├── dagger
-│   ├── pyproject.toml
-│   ├── uv.lock
-│   ├── sdk
+├── pyproject.toml
+├── uv.lock
+├── sdk
 │   └── src
 │       └── main
 │           └── __init__.py
@@ -95,9 +93,11 @@ In this structure:
 - `pyproject.toml` manages the Python project configuration.
 - `uv.lock` manages the module dependencies.
 - `src/main/` is where your Dagger module code goes. It contains sample code to help you get started.
-- `sdk/` contains the Python SDK.
+- `sdk/` contains the vendored Python SDK [client library](https://pypi.org/project/dagger-io/).
 
-This structure hosts a `main` package inside a `src` directory. This follows a [Python convention](https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/) that requires a project to be installed in order to run its code. This prevents accidental usage of development code since the Python interpreter includes the current working directory as the first item on the import path (more information is available in this [blog post on Python packaging](https://blog.ionelmc.ro/2014/05/25/python-packaging/)).
+:::info
+Placing the source code under a `src` directory follows a common Python convention. To know more, see [src layout vs flat layout](https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/).
+:::
 
 </TabItem>
 <TabItem value="TypeScript">
@@ -105,12 +105,11 @@ This structure hosts a `main` package inside a `src` directory. This follows a [
 ```
 .
 ├── LICENSE
-├── dagger
-│   ├── package.json
-│   ├── sdk
-│   ├── src
-│   │   └── index.ts
-│   └── tsconfig.json
+├── package.json
+├── sdk
+├── src
+│   └── index.ts
+└── tsconfig.json
 └── dagger.json
 ```
 
