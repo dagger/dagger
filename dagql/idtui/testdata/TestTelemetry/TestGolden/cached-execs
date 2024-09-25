@@ -11,16 +11,16 @@
 ✔ prepare X.Xs
 
 ✔ viztest: Viztest! X.Xs
-✘ .pending: Void X.Xs
-! input: container.from.withEnvVariable.withExec.withExec.withExec.sync process "false" did not complete successfully: exit code: 1
-! process "/runtime" did not complete successfully: exit code: 2
+✔ .cachedExecs: Void X.Xs
 │ ✔ container: Container! X.Xs
 │ $ .from(address: "alpine"): Container! X.Xs CACHED
 │ │ ✔ resolving docker.io/library/alpine:latest X.Xs
-│ ✔ .withEnvVariable(name: "NOW", value: "20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X"): Container! X.Xs
+│ $ .withExec(args: ["echo", "cached-execs cached for good"]): Container! X.Xs CACHED
+│ $ .withExec(args: ["echo", "im also cached for good"]): Container! X.Xs CACHED
+│ ✔ .withExec(args: ["echo", "im a buster", "20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X"]): Container! X.Xs
+│ ┃ im a buster 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
 │ ✔ .withExec(args: ["sleep", "1"]): Container! X.Xs
-│ ✘ .withExec(args: ["false"]): Container! X.Xs
-│ ! process "false" did not complete successfully: exit code: 1
-│ ○ .withExec(args: ["sleep", "1"]): Container! X.Xs
+│ ✔ .withExec(args: ["echo", "im busted by that buster"]): Container! X.Xs
+│ ┃ im busted by that buster
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide: export NOTHANKS=1

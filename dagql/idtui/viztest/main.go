@@ -224,14 +224,45 @@ func (*Viztest) FailSlow(ctx context.Context,
 	return err
 }
 
-func (*Viztest) ExecService() *dagger.Service {
+func (*Viztest) CachedExecService() *dagger.Service {
 	return dag.Container().
 		From("busybox").
-		WithExec([]string{"echo", "im cached for good"}).
+		WithExec([]string{"echo", "exec-service cached for good"}).
 		WithExec([]string{"echo", "im also cached for good"}).
 		WithExec([]string{"echo", "im a buster", time.Now().String()}).
 		WithExec([]string{"sleep", "1"}).
 		WithExec([]string{"echo", "im busted by that buster"}).
+		WithNewFile("/srv/index.html", "<h1>hello, world!</h1>").
+		WithExec([]string{"httpd", "-v", "-h", "/srv", "-f"}).
+		WithExposedPort(80).
+		AsService()
+}
+
+func (*Viztest) CachedExecs(ctx context.Context) error {
+	_, err := dag.Container().
+		From("alpine").
+		WithExec([]string{"echo", "cached-execs cached for good"}).
+		WithExec([]string{"echo", "im also cached for good"}).
+		WithExec([]string{"echo", "im a buster", time.Now().String()}).
+		WithExec([]string{"sleep", "1"}).
+		WithExec([]string{"echo", "im busted by that buster"}).
+		Sync(ctx)
+	return err
+}
+
+func (v *Viztest) UseCachedExecService(ctx context.Context) error {
+	_, err := dag.Container().
+		From("alpine").
+		WithServiceBinding("exec-service", v.CachedExecService()).
+		WithEnvVariable("NOW", time.Now().String()).
+		WithExec([]string{"wget", "-q", "-O-", "http://exec-service"}).
+		Sync(ctx)
+	return err
+}
+
+func (*Viztest) ExecService() *dagger.Service {
+	return dag.Container().
+		From("busybox").
 		WithNewFile("/srv/index.html", "<h1>hello, world!</h1>").
 		WithExec([]string{"httpd", "-v", "-h", "/srv", "-f"}).
 		WithExposedPort(80).
@@ -267,8 +298,6 @@ func (v *Viztest) UseNoExecService(ctx context.Context) (string, error) {
 func (*Viztest) Pending(ctx context.Context) error {
 	_, err := dag.Container().
 		From("alpine").
-		WithExec([]string{"echo", "im cached for good"}).
-		WithExec([]string{"echo", "im also cached for good"}).
 		WithEnvVariable("NOW", time.Now().String()).
 		WithExec([]string{"sleep", "1"}). // wait a bit to help eyeballing
 		WithExec([]string{"false"}).      // fail the pipeline

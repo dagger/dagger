@@ -12,7 +12,6 @@ import (
 	"regexp"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/koron-go/prefixw"
 	"github.com/stretchr/testify/require"
@@ -82,6 +81,8 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 		{Function: "pending", Fail: true},
 		{Function: "use-exec-service"},
 		{Function: "use-no-exec-service"},
+		{Function: "cached-execs"},
+		{Function: "use-cached-exec-service"},
 		{Function: "docker-build", Args: []string{
 			"with-exec", "--args", "echo,hey",
 			"stdout",
@@ -149,10 +150,6 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 		} else {
 			require.NoError(t, err)
 		}
-		// FIXME: there appears to be some delay before a cache is able to be hit
-		// by a separate session. no clue where this comes from (sorry) but a 10
-		// second wait passed 25 times in a row.
-		time.Sleep(30 * time.Second)
 	}()
 
 	cmd := exec.Command(daggerBin, daggerArgs...)
@@ -263,6 +260,16 @@ var scrubs = []scrubber{
 		regexp.MustCompile(`upload ([^ ]+) from [a-z0-9]+ \(client id: [a-z0-9]+, session id: [a-z0-9]+\)`),
 		"upload /app/dagql/idtui/viztest/broken from uiyf0ymsapvxhhgrsamouqh8h (client id: xutan9vz6sjtdcrqcqrd6cvh4, session id: u5mj1p0sw07k6579r3xcuiuf3)",
 		"upload /XXX/XXX/XXX from XXXXXXXXXXX (client id: XXXXXXXXXXX, session id: XXXXXXXXXXX)",
+	},
+	{
+		regexp.MustCompile(`\(include: [^)]+\)`),
+		"(include: dagql/idtui/viztest/broken/dagger.json, dagql/idtui/viztest/broken/**/*, **/go.mod, **/go.sum, **/go.work, **/go.work.sum, **/vendor/, **/*.go)",
+		"(include: XXXXXXXXXXX)",
+	},
+	{
+		regexp.MustCompile(`\(exclude: [^)]+\)`),
+		"(exclude: **/.git)",
+		"(exclude: XXXXXXXXXXX)",
 	},
 	// sha256:... digests
 	{

@@ -11,11 +11,18 @@
 ✔ prepare X.Xs
 
 ✔ viztest: Viztest! X.Xs
-✔ .useExecService: Void X.Xs
+✔ .useCachedExecService: Void X.Xs
 │ ✔ container: Container! X.Xs
 │ $ .from(address: "busybox"): Container! X.Xs CACHED
 │ │ ✔ resolving docker.io/library/busybox:latest X.Xs
-│ $ .withNewFile(contents: "<h1>hello, world!</h1>", path: "/srv/index.html"): Container! X.Xs CACHED
+│ $ .withExec(args: ["echo", "exec-service cached for good"]): Container! X.Xs CACHED
+│ $ .withExec(args: ["echo", "im also cached for good"]): Container! X.Xs CACHED
+│ ✔ .withExec(args: ["echo", "im a buster", "20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X"]): Container! X.Xs
+│ ┃ im a buster 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X
+│ ✔ .withExec(args: ["sleep", "1"]): Container! X.Xs
+│ ✔ .withExec(args: ["echo", "im busted by that buster"]): Container! X.Xs
+│ ┃ im busted by that buster
+│ ✔ .withNewFile(contents: "<h1>hello, world!</h1>", path: "/srv/index.html"): Container! X.Xs
 │ ✔ .withExec(args: ["httpd", "-v", "-h", "/srv", "-f"]): Container! X.Xs
 │ ✔ .withExposedPort(port: 80): Container! X.Xs
 │ ✔ .asService: Service! X.Xs
