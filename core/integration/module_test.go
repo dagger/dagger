@@ -5527,11 +5527,10 @@ func (ModuleSuite) TestSSHAgentConnection(ctx context.Context, t *testctx.T) {
 }
 
 func (ModuleSuite) TestSSHAuthSockPathHandling(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
 	repoURL := "git@gitlab.com:dagger-modules/private/test/more/dagger-test-modules-private.git"
 
 	t.Run("SSH auth with home expansion and symlink", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 		mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
 		defer cleanup()
 
@@ -5555,6 +5554,7 @@ func (ModuleSuite) TestSSHAuthSockPathHandling(ctx context.Context, t *testctx.T
 	})
 
 	t.Run("SSH auth from different relative paths", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 		mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
 		defer cleanup()
 
