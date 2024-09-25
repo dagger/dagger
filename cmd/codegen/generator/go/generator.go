@@ -54,17 +54,8 @@ func (g *GoGenerator) Init(ctx context.Context, schema *introspection.Schema, sc
 
 	mfs := memfs.New()
 
-	var overlay fs.FS = mfs
-	// if g.Config.ModuleName != "" {
-	// 	overlay = layerfs.New(
-	// 		mfs,
-	// 		&MountedFS{FS: dagger.QueryBuilder, Name: filepath.Join(outDir, "internal")},
-	// 		&MountedFS{FS: dagger.Telemetry, Name: filepath.Join(outDir, "internal")},
-	// 	)
-	// }
-
 	genSt := &generator.GeneratedState{
-		Overlay: overlay,
+		Overlay: mfs,
 		PostCommands: []*exec.Cmd{
 			// run 'go mod tidy' after generating to fix and prune dependencies
 			exec.Command("go", "mod", "tidy"),
@@ -75,7 +66,7 @@ func (g *GoGenerator) Init(ctx context.Context, schema *introspection.Schema, sc
 		genSt.PostCommands = append(genSt.PostCommands, exec.Command("go", "work", "use", "."))
 	}
 
-	pkgInfo, _, err := g.bootstrapMod(ctx, mfs)
+	pkgInfo, _, err := g.bootstrapMod(ctx, mfs, true)
 	if err != nil {
 		return nil, fmt.Errorf("bootstrap package: %w", err)
 	}
@@ -108,12 +99,6 @@ func (g *GoGenerator) Init(ctx context.Context, schema *introspection.Schema, sc
 func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema, schemaVersion string) (*generator.GeneratedState, error) {
 	generator.SetSchema(schema)
 
-	// 1. if no go.mod, generate go.mod
-	// 2. if no .go files, bootstrap package main
-	//  2a. generate dagger.gen.go from base client,
-	//  2b. add stub main.go
-	// 3. load package, generate dagger.gen.go (possibly again)
-
 	outDir := "."
 	if g.Config.ModuleName != "" {
 		outDir = filepath.Clean(g.Config.ModuleContextPath)
@@ -137,12 +122,8 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 			exec.Command("go", "mod", "tidy"),
 		},
 	}
-	if _, err := os.Stat(filepath.Join(g.Config.OutputDir, "go.work")); err == nil {
-		// run "go work use ." after generating if we had a go.work at the root
-		genSt.PostCommands = append(genSt.PostCommands, exec.Command("go", "work", "use", "."))
-	}
 
-	pkgInfo, partial, err := g.bootstrapMod(ctx, mfs)
+	pkgInfo, partial, err := g.bootstrapMod(ctx, mfs, false)
 	if err != nil {
 		return nil, fmt.Errorf("bootstrap package: %w", err)
 	}
@@ -194,7 +175,7 @@ type PackageInfo struct {
 	PackageImport string // import path of package in which this file appears
 }
 
-func (g *GoGenerator) bootstrapMod(ctx context.Context, mfs *memfs.FS) (*PackageInfo, bool, error) {
+func (g *GoGenerator) bootstrapMod(ctx context.Context, mfs *memfs.FS, createIfNotExists bool) (*PackageInfo, bool, error) {
 	// don't mess around go.mod if we're not building modules
 	if g.Config.ModuleName == "" {
 		if pkg, _, err := loadPackage(ctx, g.Config.OutputDir); err == nil {
@@ -211,88 +192,29 @@ func (g *GoGenerator) bootstrapMod(ctx context.Context, mfs *memfs.FS) (*Package
 	var modPath string
 	var mod *modfile.File
 
-	modname := fmt.Sprintf("dagger/%s", strcase.ToKebab(g.Config.ModuleName))
-	// check for a go.mod already for the dagger module
-	if content, err := os.ReadFile(filepath.Join(g.Config.OutputDir, g.Config.ModuleContextPath, "go.mod")); err == nil {
-		modPath = g.Config.ModuleContextPath
-
-		mod, err = modfile.ParseLax("go.mod", content, nil)
-		if err != nil {
-			return nil, false, fmt.Errorf("parse go.mod: %w", err)
-		}
-
-		if g.Config.Merge != nil && !*g.Config.Merge && mod.Module.Mod.Path != modname {
-			return nil, false, fmt.Errorf("existing go.mod does not match the module's path")
-		}
+	modName := fmt.Sprintf("dagger/%s", strcase.ToKebab(g.Config.ModuleName))
+	modPath, mod, sum, err := findGoMod(g.Config, modName)
+	if err != nil {
+		return nil, false, err
 	}
-
-	// if no go.mod is available, check the root output directory instead
-	// and if no merge is set
-	//
-	// this is a necessary part of bootstrapping: SDKs such as the Go SDK
-	// will want to have a runtime module that lives in the same Go module as
-	// the generated client, which typically lives in the parent directory.
-	if mod == nil && (g.Config.Merge == nil || *g.Config.Merge) {
-		if content, err := os.ReadFile(filepath.Join(g.Config.OutputDir, "go.mod")); err == nil {
-			modPath = "."
-			mod, err = modfile.ParseLax("go.mod", content, nil)
-			if err != nil {
-				return nil, false, fmt.Errorf("parse go.mod: %w", err)
-			}
-		}
-	}
-	// could not find a go.mod, so we can init a basic one
 	if mod == nil {
+		if !createIfNotExists {
+			return nil, false, fmt.Errorf("no go.mod found")
+		}
+
+		// could not find a go.mod, so we can init a basic one
 		modPath = g.Config.ModuleContextPath
 		mod = new(modfile.File)
 
-		mod.AddModuleStmt(modname)
+		mod.AddModuleStmt(modName)
 		mod.AddGoStmt(goVersion)
 
 		needsRegen = true
 	}
 
-	// sanity check the parsed go version
-	//
-	// if this fails, then the go.mod version is too high! and in that case, we
-	// won't be able to load the resulting package
-	if semver.Compare("v"+mod.Go.Version, "v"+goVersion) > 0 {
-		return nil, false, fmt.Errorf("existing go.mod has unsupported version %v (highest supported version is %v)", mod.Go.Version, goVersion)
+	if err := updateGoMod(mod, &sum); err != nil {
+		return nil, false, err
 	}
-
-	// use Go SDK's embedded go.mod as basis for pinning versions
-	sdkMod, err := modfile.Parse("go.mod", dagger.GoMod, nil)
-	if err != nil {
-		return nil, false, fmt.Errorf("parse embedded go.mod: %w", err)
-	}
-	modRequires := make(map[string]*modfile.Require)
-	for _, req := range mod.Require {
-		modRequires[req.Mod.Path] = req
-	}
-	for _, minReq := range sdkMod.Require {
-		// check if mod already at least this version
-		if currentReq, ok := modRequires[minReq.Mod.Path]; ok {
-			if semver.Compare(currentReq.Mod.Version, minReq.Mod.Version) >= 0 {
-				continue
-			}
-		}
-		modRequires[minReq.Mod.Path] = minReq
-		mod.AddNewRequire(minReq.Mod.Path, minReq.Mod.Version, minReq.Indirect)
-	}
-	// preserve any replace directives in sdk/go's go.mod (e.g. pre-1.0 packages)
-	for _, minReq := range sdkMod.Replace {
-		if _, ok := modRequires[minReq.New.Path]; ok { // ignore anything that's sdk/go only
-			mod.AddReplace(minReq.Old.Path, minReq.Old.Version, minReq.New.Path, minReq.New.Version)
-		}
-	}
-
-	// try and find a go.sum next to the go.mod, and use that to pin
-	sum, err := os.ReadFile(filepath.Join(g.Config.OutputDir, modPath, "go.sum"))
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return nil, false, fmt.Errorf("could not read go.sum: %w", err)
-	}
-	sum = append(sum, '\n')
-	sum = append(sum, dagger.GoSum...)
 
 	modBody, err := mod.Format()
 	if err != nil {
@@ -317,6 +239,100 @@ func (g *GoGenerator) bootstrapMod(ctx context.Context, mfs *memfs.FS) (*Package
 		// PackageName is unknown until we load the package
 		PackageImport: path.Join(mod.Module.Mod.Path, packageImport),
 	}, needsRegen, nil
+}
+
+func findGoMod(cfg generator.Config, modname string) (modPath string, mod *modfile.File, sum []byte, err error) {
+	// check for a go.mod already for the dagger module
+	if content, err := os.ReadFile(filepath.Join(cfg.OutputDir, cfg.ModuleContextPath, "go.mod")); err == nil {
+		modPath = cfg.ModuleContextPath
+
+		mod, err = modfile.ParseLax("go.mod", content, nil)
+		if err != nil {
+			return "", nil, nil, fmt.Errorf("parse go.mod: %w", err)
+		}
+
+		if cfg.Merge != nil && !*cfg.Merge && mod.Module.Mod.Path != modname {
+			return "", nil, nil, fmt.Errorf("existing go.mod does not match the module's path")
+		}
+
+		sum, err := os.ReadFile(filepath.Join(cfg.OutputDir, modPath, "go.sum"))
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return "", nil, nil, fmt.Errorf("could not read go.sum: %w", err)
+		}
+
+		return modPath, mod, sum, nil
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", nil, nil, fmt.Errorf("could not read go.mod: %w", err)
+	}
+
+	// if no go.mod is available, check the root output directory if merge is set
+	//
+	// this is a necessary part of bootstrapping: SDKs such as the Go SDK
+	// will want to have a runtime module that lives in the same Go module as
+	// the generated client, which typically lives in the parent directory.
+	if cfg.Merge == nil || *cfg.Merge {
+		if content, err := os.ReadFile(filepath.Join(cfg.OutputDir, "go.mod")); err == nil {
+			modPath = "."
+			mod, err = modfile.ParseLax("go.mod", content, nil)
+			if err != nil {
+				return "", nil, nil, fmt.Errorf("parse go.mod: %w", err)
+			}
+
+			sum, err := os.ReadFile(filepath.Join(cfg.OutputDir, modPath, "go.sum"))
+			if err != nil && !errors.Is(err, os.ErrNotExist) {
+				return "", nil, nil, fmt.Errorf("could not read go.sum: %w", err)
+			}
+
+			return modPath, mod, sum, nil
+		}
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", nil, nil, fmt.Errorf("could not read go.mod: %w", err)
+	}
+
+	// no go mod found
+	return "", nil, nil, nil
+}
+
+func updateGoMod(mod *modfile.File, sum *[]byte) error {
+	// sanity check the parsed go version
+	//
+	// if this fails, then the go.mod version is too high! and in that case, we
+	// won't be able to load the resulting package
+	if semver.Compare("v"+mod.Go.Version, "v"+goVersion) > 0 {
+		return fmt.Errorf("existing go.mod has unsupported version %v (highest supported version is %v)", mod.Go.Version, goVersion)
+	}
+
+	// use Go SDK's embedded go.mod as basis for pinning versions
+	sdkMod, err := modfile.Parse("go.mod", dagger.GoMod, nil)
+	if err != nil {
+		return fmt.Errorf("parse embedded go.mod: %w", err)
+	}
+	modRequires := make(map[string]*modfile.Require)
+	for _, req := range mod.Require {
+		modRequires[req.Mod.Path] = req
+	}
+	for _, minReq := range sdkMod.Require {
+		// check if mod already at least this version
+		if currentReq, ok := modRequires[minReq.Mod.Path]; ok {
+			if semver.Compare(currentReq.Mod.Version, minReq.Mod.Version) >= 0 {
+				continue
+			}
+		}
+		modRequires[minReq.Mod.Path] = minReq
+		mod.AddNewRequire(minReq.Mod.Path, minReq.Mod.Version, minReq.Indirect)
+	}
+	// preserve any replace directives in sdk/go's go.mod (e.g. pre-1.0 packages)
+	for _, minReq := range sdkMod.Replace {
+		if _, ok := modRequires[minReq.New.Path]; ok { // ignore anything that's sdk/go only
+			mod.AddReplace(minReq.Old.Path, minReq.Old.Version, minReq.New.Path, minReq.New.Version)
+		}
+	}
+
+	// update pins
+	*sum = append(*sum, '\n')
+	*sum = append(*sum, dagger.GoSum...)
+
+	return nil
 }
 
 func generateCode(

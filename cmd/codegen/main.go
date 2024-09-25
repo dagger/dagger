@@ -27,8 +27,7 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:  "codegen",
-	RunE: ClientGen,
+	Use: "codegen",
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		// if we got this far, CLI parsing worked just fine; no
 		// need to show usage for runtime errors
@@ -41,31 +40,34 @@ var introspectCmd = &cobra.Command{
 	RunE: Introspect,
 }
 
+var generateCmd = &cobra.Command{
+	Use:  "generate",
+	RunE: ClientGen,
+}
+
 var initCmd = &cobra.Command{
 	Use:  "init",
 	RunE: ClientInit,
 }
 
 func init() {
-	rootCmd.Flags().StringVar(&lang, "lang", "go", "language to generate")
-	rootCmd.Flags().StringVarP(&outputDir, "output", "o", ".", "output directory")
-	rootCmd.Flags().StringVar(&introspectionJSONPath, "introspection-json-path", "", "optional path to file containing pre-computed graphql introspection JSON")
-
-	rootCmd.Flags().StringVar(&modulePath, "module-context-path", "", "path to context directory of the module")
-	rootCmd.Flags().StringVar(&moduleName, "module-name", "", "name of module to generate code for")
-	rootCmd.Flags().BoolVar(&merge, "merge", false, "merge module deps with project's")
-
-	introspectCmd.Flags().StringVarP(&outputSchema, "output", "o", "", "save introspection result to file")
-	rootCmd.AddCommand(introspectCmd)
+	generateCmd.Flags().StringVar(&lang, "lang", "go", "language to generate")
+	generateCmd.Flags().StringVarP(&outputDir, "output", "o", ".", "output directory")
+	generateCmd.Flags().StringVar(&introspectionJSONPath, "introspection-json-path", "", "optional path to file containing pre-computed graphql introspection JSON")
+	generateCmd.Flags().StringVar(&modulePath, "module-context-path", "", "path to context directory of the module")
+	generateCmd.Flags().StringVar(&moduleName, "module-name", "", "name of module to generate code for")
+	rootCmd.AddCommand(generateCmd)
 
 	initCmd.Flags().StringVar(&lang, "lang", "go", "language to generate")
 	initCmd.Flags().StringVarP(&outputDir, "output", "o", ".", "output directory")
 	initCmd.Flags().StringVar(&introspectionJSONPath, "introspection-json-path", "", "optional path to file containing pre-computed graphql introspection JSON")
-
 	initCmd.Flags().StringVar(&modulePath, "module-context-path", "", "path to context directory of the module")
 	initCmd.Flags().StringVar(&moduleName, "module-name", "", "name of module to generate code for")
 	initCmd.Flags().BoolVar(&merge, "merge", false, "merge module deps with project's")
 	rootCmd.AddCommand(initCmd)
+
+	introspectCmd.Flags().StringVarP(&outputSchema, "output", "o", "", "save introspection result to file")
+	rootCmd.AddCommand(introspectCmd)
 }
 
 func ClientGen(cmd *cobra.Command, args []string) error {
@@ -75,19 +77,9 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// we're checking for the flag existence here as not setting the flag and
-	// setting it to false doesn't produce the same behavior.
-	var mergePtr *bool
-	if cmd.Flags().Changed("merge") {
-		mergePtr = &merge
-	}
-
 	cfg := generator.Config{
-		Lang: generator.SDKLang(lang),
-
+		Lang:      generator.SDKLang(lang),
 		OutputDir: outputDir,
-
-		Merge: mergePtr,
 	}
 
 	if moduleName != "" {
@@ -132,11 +124,9 @@ func ClientInit(cmd *cobra.Command, args []string) error {
 	}
 
 	cfg := generator.Config{
-		Lang: generator.SDKLang(lang),
-
+		Lang:      generator.SDKLang(lang),
 		OutputDir: outputDir,
-
-		Merge: mergePtr,
+		Merge:     mergePtr,
 	}
 
 	if moduleName != "" {

@@ -593,6 +593,8 @@ func (sdk *goSDK) baseWithCodegen(
 	var codegenArgs dagql.ArrayInput[dagql.String]
 	if init {
 		codegenArgs = append(codegenArgs, "init")
+	} else {
+		codegenArgs = append(codegenArgs, "generate")
 	}
 	codegenArgs = append(codegenArgs,
 		"--output", dagql.String(goSDKUserModContextDirPath),
@@ -600,10 +602,8 @@ func (sdk *goSDK) baseWithCodegen(
 		"--module-name", dagql.String(modName),
 		"--introspection-json-path", goSDKIntrospectionJSONPath,
 	)
-
-	if src.Self.WithInitConfig != nil {
-		codegenArgs = append(codegenArgs,
-			dagql.String("--merge="+strconv.FormatBool(src.Self.WithInitConfig.Merge)))
+	if init && src.Self.WithInitConfig != nil {
+		codegenArgs = append(codegenArgs, dagql.String("--merge="+strconv.FormatBool(src.Self.WithInitConfig.Merge)))
 	}
 
 	if err := sdk.dag.Select(ctx, ctr, &ctr, dagql.Selector{
