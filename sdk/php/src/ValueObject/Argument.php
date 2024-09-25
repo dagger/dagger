@@ -18,7 +18,17 @@ final readonly class Argument
         public string $description,
         public ListOfType|Type $type,
         public ?Json $default = null,
+        public ?string $defaultPath = null,
+        public ?array $ignore = null,
     ) {
+        if (!$type->nullable && $this->default == new Json('null')) {
+            throw new RuntimeException(sprintf(
+                'Non-nullable argument "%s" should not default to null.' .
+                ' This error should only occur if constructed manually.' .
+                ' Otherwise, it is a bug.',
+                $this->name,
+            ));
+        }
     }
 
     public static function fromReflection(ReflectionParameter $parameter): self
@@ -31,7 +41,7 @@ final readonly class Argument
         /**
          * @TODO remove once #[Argument] is removed
          */
-        $argument = (current($parameter
+        $argAttribute = (current($parameter
             ->getAttributes(Attribute\Argument::class)) ?: null)
             ?->newInstance()
             ?->description;
@@ -41,17 +51,27 @@ final readonly class Argument
             ?->newInstance()
             ?->description;
 
-        $listOfType = (current($parameter
+        $listOfTypeAttribute = (current($parameter
             ->getAttributes(Attribute\ListOfType::class)) ?: null)
+            ?->newInstance();
+
+        $defaultPathAttribute = (current($parameter
+            ->getAttributes(Attribute\DefaultPath::class)) ?: null)
+            ?->newInstance();
+
+        $ignoreAttribute = (current($parameter
+            ->getAttributes(Attribute\Ignore::class)) ?: null)
             ?->newInstance();
 
         return new self(
             name: $parameter->name,
-            description: $description ?? $argument ?? '',
-            type: $listOfType?->type === null ?
+            description: $description ?? $argAttribute?->description ?? '',
+            type: $listOfTypeAttribute?->type === null ?
                 Type::fromReflection($type) :
-                ListOfType::fromReflection($type, $listOfType),
+                ListOfType::fromReflection($type, $listOfTypeAttribute),
             default: self::getDefault($parameter),
+            defaultPath: $defaultPathAttribute?->path,
+            ignore: $ignoreAttribute?->ignore,
         );
     }
 
