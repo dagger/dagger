@@ -238,8 +238,14 @@ func (span *Span) Errors() SpanSet {
 	if span.IsFailed() {
 		errs.Add(span)
 	}
+	if len(errs.Order) > 0 {
+		return errs
+	}
 	for _, failed := range span.FailedLinks.Order {
 		errs.Add(failed)
+	}
+	if len(errs.Order) > 0 {
+		return errs
 	}
 	for _, effect := range span.EffectIDs {
 		if span.db.FailedEffects[effect] {
