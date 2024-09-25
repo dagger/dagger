@@ -48,11 +48,14 @@ const (
 )
 
 func New(
+	// Directory with the TypeScript SDK source code.
+	// +defaultPath=".."
+	// +ignore=["**", "!package.json", "!yarn.lock", "!tsconfig.json", "!LICENSE", "!README.md", "!**/*.ts", "**/test/", "node_modules/"]
 	// +optional
 	sdkSourceDir *dagger.Directory,
 ) *TypescriptSdk {
 	return &TypescriptSdk{
-		SDKSourceDir: sdkSourceDir,
+		SDKSourceDir: sdkSourceDir.WithoutDirectory("runtime"),
 		moduleConfig: &moduleConfig{},
 	}
 }
