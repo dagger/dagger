@@ -242,9 +242,9 @@ func (fe *frontendPretty) runWithTUI(ctx context.Context, ttyIn *os.File, ttyOut
 	return fe.err
 }
 
-func (fe *frontendPretty) renderErrorLogs(out *termenv.Output, r *renderer) {
+func (fe *frontendPretty) renderErrorLogs(out *termenv.Output, r *renderer) bool {
 	if fe.rowsView == nil {
-		return
+		return false
 	}
 	rowsView := fe.db.RowsView(dagui.FrontendOpts{
 		ZoomedSpan: fe.db.PrimarySpan,
@@ -274,6 +274,7 @@ func (fe *frontendPretty) renderErrorLogs(out *termenv.Output, r *renderer) {
 		}
 		return false
 	})
+	return len(errTree) > 0
 }
 
 // FinalRender is called after the program has finished running and prints the
@@ -310,8 +311,9 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 		// Counter-intuitively, we don't want to render the primary output
 		// when there's an error, because the error is better represented by
 		// the progress output and error summary.
-		fe.renderErrorLogs(out, r)
-		return nil
+		if fe.renderErrorLogs(out, r) {
+			return nil
+		}
 	}
 
 	// Replay the primary output log to stdout/stderr.
