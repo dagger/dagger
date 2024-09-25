@@ -159,9 +159,6 @@ class FunctionResolver(Generic[P, R]):
                 default = None
                 arg_type = arg_type.with_optional(True)
 
-            if param.default_path:
-                arg_type = arg_type.with_optional(True)
-
             fn = fn.with_arg(
                 param.name,
                 arg_type,
@@ -308,6 +305,8 @@ class FunctionResolver(Generic[P, R]):
             default_path=get_meta(param.annotation, DefaultPath),
         )
 
+        # These validations are already done by the engine, just repeating them
+        # here for better error messages.
         if not p.is_nullable and p.has_default and p.signature.default is None:
             msg = (
                 "Can't use a default value of None on a non-nullable type for "

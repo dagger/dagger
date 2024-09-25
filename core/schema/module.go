@@ -518,7 +518,14 @@ func (s *moduleSchema) functionWithArg(ctx context.Context, fn *core.Function, a
 		return nil, fmt.Errorf("can only set ignore for Directory type, not %s", argType.Self.AsObject.Value.Name)
 	}
 
-	return fn.WithArg(args.Name, argType.Self, args.Description, args.DefaultValue, args.DefaultPath, args.Ignore), nil
+	// When using a default path SDKs can't set a default value and the argument
+	// may be non-nullable, so we need to enforce it as optional.
+	td := argType.Self
+	if args.DefaultPath != "" {
+		td = td.WithOptional(true)
+	}
+
+	return fn.WithArg(args.Name, td, args.Description, args.DefaultValue, args.DefaultPath, args.Ignore), nil
 }
 
 func (s *moduleSchema) moduleDependency(
