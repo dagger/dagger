@@ -301,8 +301,10 @@ func (fe *frontendPretty) FinalRender(w io.Writer) error {
 		fe.renderProgress(out, r, true, fe.window.Height, "")
 
 		if fe.msgPreFinalRender.Len() > 0 {
-			fmt.Fprintln(os.Stderr)
-			fmt.Fprintln(os.Stderr, fe.msgPreFinalRender.String())
+			defer func() {
+				fmt.Fprintln(os.Stderr)
+				fmt.Fprintln(os.Stderr, fe.msgPreFinalRender.String())
+			}()
 		}
 	}
 
