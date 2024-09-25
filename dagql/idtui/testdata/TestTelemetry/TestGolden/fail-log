@@ -1,3 +1,5 @@
+Expected stderr:
+
 ✔ connect X.Xs
 │ ✔ starting engine X.Xs
 │ ✔ connecting to engine X.Xs
@@ -13,7 +15,6 @@
 ✔ viztest: Viztest! X.Xs
 ✘ .failLog: Void X.Xs
 ! input: container.from.withEnvVariable.withExec.sync process "sh -c echo im doing a lot of work; echo and then failing; exit 1" did not complete successfully: exit code: 1
-! process "/runtime" did not complete successfully: exit code: 2
 │ ✔ container: Container! X.Xs
 │ $ .from(address: "alpine"): Container! X.Xs CACHED
 │ │ ✔ resolving docker.io/library/alpine:latest X.Xs
@@ -23,11 +24,11 @@
 │ ┃ and then failing
 │ ! process "sh -c echo im doing a lot of work; echo and then failing; exit 1" did not complete successfully: exit code: 1
 
-Setup tracing at https://dagger.cloud/traces/setup. To hide: export NOTHANKS=1
-
 Error logs:
 
 ✘ .withExec(args: ["sh", "-c", "echo im doing a lot of work; echo and then failing; exit 1"]): Container! X.Xs
 im doing a lot of work
 and then failing
 ! process "sh -c echo im doing a lot of work; echo and then failing; exit 1" did not complete successfully: exit code: 1
+
+Setup tracing at https://dagger.cloud/traces/setup. To hide: export NOTHANKS=1

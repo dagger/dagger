@@ -1,3 +1,5 @@
+Expected stderr:
+
 ✔ connect X.Xs
 │ ✔ starting engine X.Xs
 │ ✔ connecting to engine X.Xs
@@ -20,10 +22,10 @@
 │ ┃ this is a failing effect
 │ ! process "sh -c echo this is a failing effect; exit 1" did not complete successfully: exit code: 1
 
-Setup tracing at https://dagger.cloud/traces/setup. To hide: export NOTHANKS=1
-
 Error logs:
 
 ✘ .withExec(args: ["sh", "-c", "echo this is a failing effect; exit 1"]): Container! X.Xs
 this is a failing effect
 ! process "sh -c echo this is a failing effect; exit 1" did not complete successfully: exit code: 1
+
+Setup tracing at https://dagger.cloud/traces/setup. To hide: export NOTHANKS=1

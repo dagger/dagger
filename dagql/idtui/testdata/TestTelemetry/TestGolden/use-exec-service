@@ -1,3 +1,5 @@
+Expected stderr:
+
 ✔ connect X.Xs
 │ ✔ starting engine X.Xs
 │ ✔ connecting to engine X.Xs

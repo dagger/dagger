@@ -1,3 +1,10 @@
+Expected stdout:
+
+hey
+
+
+Expected stderr:
+
 ✔ connect X.Xs
 │ ✔ starting engine X.Xs
 │ ✔ connecting to engine X.Xs
@@ -28,5 +35,5 @@
 ┃ hey
 ✔ .stdout: String! X.Xs
 
-Setup tracing at https://dagger.cloud/traces/setup. To hide: export NOTHANKS=1
 
+Setup tracing at https://dagger.cloud/traces/setup. To hide: export NOTHANKS=1

@@ -178,8 +178,9 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 	cmd.Env = append(cmd.Env, telemetry.PropagationEnv(ctx)...)
 
 	errBuf := new(bytes.Buffer)
+	outBuf := new(bytes.Buffer)
 	cmd.Stderr = io.MultiWriter(errBuf, prefixw.New(testutil.NewTWriter(t), "stderr: "))
-	cmd.Stdout = prefixw.New(testutil.NewTWriter(t), "stdout: ")
+	cmd.Stdout = io.MultiWriter(outBuf, prefixw.New(testutil.NewTWriter(t), "stdout: "))
 
 	err := cmd.Run()
 	if ex.Fail {
@@ -188,7 +189,17 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 		require.NoError(t, err)
 	}
 
-	return stabilize(errBuf.String()), db
+	// NOTE: stdout/stderr are in practice interleaved based on timing, but we
+	// need a stable representation, so we just keep them separate.
+	var expected string
+	if outBuf.Len() > 0 {
+		expected += "Expected stdout:\n\n" + outBuf.String() + "\n\n"
+	}
+	if errBuf.Len() > 0 {
+		expected += "Expected stderr:\n\n" + errBuf.String()
+	}
+
+	return stabilize(expected), db
 }
 
 type scrubber struct {
