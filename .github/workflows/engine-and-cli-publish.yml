@@ -27,24 +27,10 @@ jobs:
         with:
           go-version: "1.23"
           cache-dependency-path: ".dagger/go.sum"
-      - name: "Determine tag"
-        run: |
-          mkdir -p /tmp/publish
-          echo "${{ github.ref_name == 'main' && github.sha || github.ref_name }}" > /tmp/publish/tag
-      - name: "Determine version"
-        uses: ./.github/actions/call
-        with:
-          # determine the version before releasing any components - this keeps
-          # it consistent across all components (since pre-releases might have
-          # timestamps)
-          function: --version="$(cat /tmp/publish/tag)" version string
-          redirect: "/tmp/publish/version"
       - name: "Publish Engine"
         uses: ./.github/actions/call
         with:
           function: |-
-            --version="$(cat /tmp/publish/version)" \
-            --tag="$(cat /tmp/publish/tag)" \
             engine \
             publish \
             --image="$DAGGER_ENGINE_IMAGE" \
@@ -61,8 +47,6 @@ jobs:
         uses: ./.github/actions/call
         with:
           function: |-
-            --version="$(cat /tmp/publish/version)" \
-            --tag="$(cat /tmp/publish/tag)" \
             cli \
             publish \
             --git-dir=./.git \

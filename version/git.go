@@ -26,12 +26,14 @@ func (v *Version) Git() *Git {
 		// provided by the core git functions which are used by our remote git
 		// module sources)
 		remote := "https://github.com/dagger/dagger.git"
+		maxDepth := "2147483647" // see https://git-scm.com/docs/shallow
 		ctr = ctr.
-			// we need all the tags and the unshallowed repo, so we can
-			// determine which tags are in HEAD's history later
-			WithExec([]string{"git", "fetch", "--tags", "--unshallow", remote}).
+			// we need the unshallowed history, so we can determine which tags are in it later
+			WithExec([]string{"git", "fetch", "--no-tags", "--depth=" + maxDepth, remote, "HEAD"}).
 			// we need main, so we can determine the merge base for it later
-			WithExec([]string{"git", "fetch", "--no-tags", remote, "refs/heads/main:refs/heads/main"})
+			WithExec([]string{"git", "fetch", "--no-tags", "--depth=" + maxDepth, remote, "refs/heads/main:refs/heads/main"}).
+			// we need all the tags, so we can find all the release tags later
+			WithExec([]string{"git", "fetch", "--tags", "--force", remote})
 	}
 	return &Git{ctr}
 }
