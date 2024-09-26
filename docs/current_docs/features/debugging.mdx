@@ -1,0 +1,55 @@
+---
+slug: /features/debugging
+---
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Interactive Debugging
+
+Pipeline failures can be both frustrating and lead to wasted resources as the team seeks to understand what went wrong and why. Dagger's interactive debugging feature is an invaluable tool in this situation.
+
+Dagger lets users drop in to an interactive shell when a pipeline run fails, with all the context at the point of failure. This is similar to a debugger experience, but without needing to set breakpoints explicitly. No changes are required to your code.
+
+Here's an example of a pipeline run failing, and Dagger opening an interactive terminal at the point of failure:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+```go file=./snippets/debugging-1/go/main.go
+```
+</TabItem>
+<TabItem value="Python">
+```python file=./snippets/debugging-1/python/main.py
+```
+</TabItem>
+<TabItem value="TypeScript">
+```typescript file=./snippets/debugging-1/typescript/index.ts
+```
+</TabItem>
+</Tabs>
+
+See it in action:
+
+![Interactive debugging](/img/current_docs/features/debug-interactive.gif)
+
+You can also set one or more explicit breakpoints in your pipeline, which then starts an interactive terminal session at each breakpoint. This lets you inspect a directory or a container at any point in your pipeline run, with all the necessary context available to you.
+
+Here's another example, which opens an interactive terminal at two different points in a pipeline run to inspect the built container:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+```go file=./snippets/debugging-2/go/main.go
+```
+</TabItem>
+<TabItem value="Python">
+```python file=./snippets/debugging-2/python/main.py
+```
+</TabItem>
+<TabItem value="TypeScript">
+```typescript file=./snippets/debugging-2/typescript/index.ts
+```
+</TabItem>
+</Tabs>
+
+See it in action:
+
+![Debugging with breakpoints](/img/current_docs/features/debug-breakpoints.gif)
