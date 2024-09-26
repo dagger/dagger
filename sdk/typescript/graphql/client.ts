@@ -1,8 +1,14 @@
 import * as opentelemetry from "@opentelemetry/api"
 import { GraphQLClient } from "graphql-request"
+import fetch from "node-fetch"
+import {
+  RequestInfo as NodeFetchRequestInfo,
+  RequestInit as NodeFetchRequestInit,
+} from "node-fetch"
 
 const createFetchWithTimeout =
-  (timeout: number) => async (input: RequestInfo | URL, init?: RequestInit) => {
+  (timeout: number) =>
+  async (input: URL | RequestInfo, init?: RequestInit): Promise<Response> => {
     if (init?.signal) {
       throw new Error(
         "Internal error: could not create fetch client with timeout",
@@ -16,7 +22,10 @@ const createFetchWithTimeout =
     }, timeout)
 
     try {
-      return await fetch(input, { ...init, signal: controller.signal })
+      return (await fetch(input as NodeFetchRequestInfo, {
+        ...(init as NodeFetchRequestInit),
+        signal: controller.signal,
+      })) as unknown as Response
     } finally {
       clearTimeout(timerId)
     }
