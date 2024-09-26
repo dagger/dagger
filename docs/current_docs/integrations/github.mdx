@@ -72,18 +72,34 @@ Replace `${{ secrets.SSH_PRIVATE_KEY }}` with your provider secret containing th
 
 By default, the Dagger `Directory` type works with both local directories and [remote Git repositories](../../cookbook#copy-a-directory-or-remote-repository-to-a-container). This makes it easy to work with the directory tree at the root of a Git repository or a given branch.
 
-Given a Dagger Function called `foo` that accepts a `Directory` as argument, you can pass it a GitHub pull request URL as argument like this:
+Given a Dagger Function called `foo` that accepts a `Directory` as argument. You can pass it a GitHub pull request URL.
+
+You can use the `/merge` ref to pass a directory that has the head branch merged into the base branch like this:
 
 ```shell
 dagger call foo --directory=https://github.com/ORGANIZATION/REPOSITORY#pull/NUMBER/merge
 ```
 
-#### Pull requests as modules
-
-If your GitHub repository contains a Dagger module, you can test the functionality of a specific branch by calling the Dagger module with the corresponding pull request URL, as shown below:
+Or you can pass it the `/head` ref to use the branch from the PR like this:
 
 ```shell
+dagger call foo --directory=https://github.com/ORGANIZATION/REPOSITORY#pull/NUMBER/head
+```
+
+
+#### Pull requests as modules
+
+If your GitHub repository contains a Dagger module, you can test the functionality of a specific branch by calling the Dagger module with the corresponding pull request URL.
+
+You can use the `/merge` ref to pass a directory that has the head branch merged into the base branch like this:
+```shell
 dagger call -m github.com/ORGANIZATION/REPOSITORY@pull/NUMBER/merge --help
+```
+
+Or you can pass it the `/head` ref to use the branch from the PR like this:
+
+```shell
+dagger call -m github.com/ORGANIZATION/REPOSITORY@pull/NUMBER/head --help
 ```
 
 ## Resources
