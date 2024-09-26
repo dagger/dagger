@@ -13,8 +13,8 @@ var (
 	// Note: this is filled at link-time.
 	//
 	// - For official tagged releases, this is simple semver like vX.Y.Z
-	// - For builds off our repo's main branch, this is a commit ID
-	// - For dev builds, this is empty
+	// - For untagged builds, this is a commit sha for the last known commit from main
+	// - For dev builds, this is the last known commit from main (or maybe empty)
 	Tag string
 )
 
