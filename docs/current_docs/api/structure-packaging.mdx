@@ -57,13 +57,30 @@ func DoThing(client *dagger.Client) *dagger.Directory {
 <TabItem value="Python">
 The Dagger module's code in Python can be split into multiple files by making `main` a [package](https://docs.python.org/3/tutorial/modules.html#packages), and ensuring the *main object* is imported in `__init__.py`. All the other object types should already be imported from there.
 
-For example:
+For example given this directory structure:
+
+```
+.
+├── dagger.json
+├── src
+│   ├── main
+│   │   ├── __init__.py
+│   │   ├── main.py
+│   │   ├── test.py
+│   │   └── lint.py
+```
+
+The `__init__.py` file should import the main object from `main.py`:
 
 ```python
 # src/main/__init__.py
 """My very own Dagger module"""
 from .main import MyModule as MyModule
+```
 
+And the `main.py` file should import the other objects from their respective files:
+
+```python
 # src/main/main.py
 import dagger
 
