@@ -1,0 +1,22 @@
+---
+slug: /features/caching
+---
+
+# Caching
+
+One of Dagger's most powerful features is its ability to cache data across pipeline runs.
+
+Dagger caches two types of data:
+
+1. Layers: This refers to build instructions and the results of some API calls. This cache is implemented by Buildkit.
+2. Volumes: This refers to the contents of a Dagger filesystem volume and is persisted across Dagger Engine sessions. It is implemented by Dagger (distinct from Buildkit).
+
+## Layer caching
+
+Layer caching involves caching the layers of container images as they are built by Dagger. These layers are then automatically reused by Dagger on subsequent function calls if they remain unchanged.
+
+## Volume caching
+
+Volume caching involves caching specific parts of the filesystem and reusing them on subsequent function calls if they are unchanged. This is especially useful when dealing with package managers such as `npm`, `maven`, `pip` and similar. Since these dependencies are usually locked to specific versions in the application's manifest, re-downloading them on every session is inefficient and time-consuming.
+
+For these tools to cache properly, they need their own cache data (usually a directory) to be persisted between sessions. By using a cache volume for this data, Dagger can reuse the cached contents across pipeline runs and reduce execution time.

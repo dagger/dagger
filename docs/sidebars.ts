@@ -7,6 +7,23 @@ module.exports = {
       "label": "Introduction"
     },
     {
+      "type": "category",
+      "label": "Features",
+      "link": {
+        "type": "doc",
+        "id": "features/index"
+      },
+      "items": [
+        "features/programmable-pipelines",
+        "features/reusable-modules",
+        "features/caching",
+        "features/debugging",
+        "features/services",
+        "features/secrets",
+        "features/visualization",
+      ]
+    },
+    {
       "type": "doc",
       "label": "Installation",
       "id": "install"
