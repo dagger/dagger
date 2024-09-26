@@ -76,10 +76,7 @@ class EntrypointCommand extends Command
                         name: $argument->name,
                         typeDef: $this
                             ->getTypeDef($argument->type)
-                            ->withOptional(
-                                $argument->type->nullable ||
-                                $argument->defaultPath !== null /// @TODO Remove this once engine handles it.
-                            ),
+                            ->withOptional($argument->type->nullable),
                         description: $argument->description,
                         defaultValue: $argument->default,
                         defaultPath: $argument->defaultPath,

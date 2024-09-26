@@ -142,7 +142,6 @@ function addArg(args: Arguments): (fct: Function_) => Function_ {
       // If the argument is a contextual argument, it becomes optional.
       if (arg.defaultPath) {
         opts.defaultPath = arg.defaultPath
-        typeDef = typeDef.withOptional(true)
       }
 
       if (arg.ignore) {
