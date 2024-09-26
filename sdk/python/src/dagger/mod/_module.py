@@ -20,7 +20,7 @@ from rich.console import Console
 from typing_extensions import Self, dataclass_transform, overload
 
 import dagger
-from dagger import dag
+from dagger import dag, telemetry
 from dagger.log import configure_logging
 from dagger.mod._converter import make_converter
 from dagger.mod._exceptions import (
@@ -197,6 +197,7 @@ class Module:
     def __call__(self) -> None:
         if self._log_level is not None:
             configure_logging(self._log_level)
+        telemetry.initialize()
         anyio.run(self._run)
 
     async def _run(self):

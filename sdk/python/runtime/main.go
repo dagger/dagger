@@ -108,8 +108,7 @@ func (m *PythonSdk) Codegen(
 	if err != nil {
 		return nil, err
 	}
-	ctr := m.WithUpdates().Container
-	return dag.GeneratedCode(ctr.Directory(m.SourcePath)).
+	return dag.GeneratedCode(m.Container.Directory(m.SourcePath)).
 		WithVCSGeneratedPaths(
 			[]string{GenDir + "/**"},
 		).
@@ -156,7 +155,8 @@ func (m *PythonSdk) Common(
 	return m.
 		WithSDK(introspectionJSON).
 		WithTemplate().
-		WithSource(), nil
+		WithSource().
+		WithUpdates(), nil
 }
 
 // Get all the needed information from the module's metadata and source files
@@ -319,9 +319,6 @@ func (m *PythonSdk) WithSource() *PythonSdk {
 }
 
 // Make any updates to current source
-//
-// Should happen only on `dagger develop`, so `dagger call` reflects what's on
-// the host as much as possible.
 func (m *PythonSdk) WithUpdates() *PythonSdk {
 	if !m.UseUv() {
 		return m
@@ -364,10 +361,10 @@ func (m *PythonSdk) WithInstall() *PythonSdk {
 	if m.Discovery.UseUvLock() {
 		// While best practice is to sync dependencies first with only pyproject.toml and
 		// uv.lock, user projects can have more required files for a minimally successful
-		// `uv sync --frozen --no-install-project --no-dev`.
+		// `uv sync --no-install-project --no-dev`.
 		// Besides, uv is fast enough that's not too bad to skip this optimization.
 		m.Container = ctr.
-			WithExec([]string{"uv", "sync", "--frozen", "--no-dev"}).
+			WithExec([]string{"uv", "sync", "--no-dev"}).
 			// Activate virtualenv to avoid having to prepend `uv run` to the entrypoint.
 			WithEnvVariable("VIRTUAL_ENV", "$UV_PROJECT_ENVIRONMENT", dagger.ContainerWithEnvVariableOpts{
 				Expand: true,
