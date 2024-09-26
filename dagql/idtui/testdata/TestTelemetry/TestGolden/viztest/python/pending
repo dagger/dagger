@@ -22,7 +22,7 @@ Expected stderr:
 ┃ │ Stderr:                                                                      │
 ┃ │                                                                              │
 ┃ ╰──────────────────────────────────────────────────────────────────────────────╯
-! failed to extract error: cannot decode empty string as ID
+! process "/runtime" did not complete successfully: exit code: 1
 │ $ Container.from(address: "alpine:latest"): Container! X.Xs CACHED
 │ │ ✔ resolving docker.io/library/alpine:latest X.Xs
 │ ✔ .withEnvVariable(name: "NOW", value: "20XX-XX-XX XX:XX:XX.XXXX"): Container! X.Xs
@@ -42,6 +42,6 @@ Error logs:
 │ Stderr:                                                                      │
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-! failed to extract error: cannot decode empty string as ID
+! process "/runtime" did not complete successfully: exit code: 1
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide: export NOTHANKS=1

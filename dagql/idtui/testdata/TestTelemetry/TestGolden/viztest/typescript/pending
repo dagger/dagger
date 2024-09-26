@@ -15,7 +15,7 @@ Expected stderr:
 ✔ typescript: Typescript! X.Xs
 ✘ .pending: Void X.Xs
 ┃ Error: process "false" did not complete successfully: exit code: 1
-! failed to extract error: cannot decode empty string as ID
+! process "tsx --no-deprecation --tsconfig /src/tsconfig.json /src/src/__dagger.entrypoint.ts" did not complete successfully: exit code: 1
 │ $ Container.from(address: "alpine:latest"): Container! X.Xs CACHED
 │ │ ✔ resolving docker.io/library/alpine:latest X.Xs
 │ ✔ .withEnvVariable(name: "NOW", value: "XXXX-XX-XXTXX:XX:XX.XXXZ"): Container! X.Xs
@@ -28,6 +28,6 @@ Error logs:
 
 ✘ .pending: Void X.Xs
 Error: process "false" did not complete successfully: exit code: 1
-! failed to extract error: cannot decode empty string as ID
+! process "tsx --no-deprecation --tsconfig /src/tsconfig.json /src/src/__dagger.entrypoint.ts" did not complete successfully: exit code: 1
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide: export NOTHANKS=1

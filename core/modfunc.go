@@ -299,10 +299,9 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 	if err != nil {
 		id, ok, extractErr := extractError(ctx, bk, err)
 		if extractErr != nil {
-			return nil, errors.Join(
-				fmt.Errorf("failed to extract error: %w", extractErr),
-				fmt.Errorf("original error: %w", err),
-			)
+			// if the module hasn't provided us with a nice error, just return the
+			// original error
+			return nil, err
 		}
 		if ok {
 			errInst, err := id.Load(ctx, opts.Server)
