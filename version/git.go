@@ -17,7 +17,10 @@ func (v *Version) Git() *Git {
 		ctr = ctr.WithDirectory(".", v.Inputs)
 	}
 	if v.GitDir != nil {
-		ctr = ctr.WithDirectory(".", v.GitDir)
+		ctr = ctr.
+			WithDirectory(".", v.GitDir).
+			// enter detached head state, then we can rewrite all our refs however we like later
+			WithExec([]string{"sh", "-c", "git checkout $(git rev-parse HEAD)"})
 
 		// do various unshallowing operations (only the bare minimum is
 		// provided by the core git functions which are used by our remote git
