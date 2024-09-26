@@ -837,10 +837,10 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 		}
 
 		// rebase user defined include/exclude relative to context
-		rebaseIncludeExclude := func(path string, set *core.SliceSet[string]) error {
-			isNegation := strings.HasPrefix(path, "!")
-			path = strings.TrimPrefix(path, "!")
-			absPath := filepath.Join(sourceRootAbsPath, path)
+		rebaseIncludeExclude := func(baseAbsPath, pattern string, set *core.SliceSet[string]) error {
+			isNegation := strings.HasPrefix(pattern, "!")
+			pattern = strings.TrimPrefix(pattern, "!")
+			absPath := filepath.Join(baseAbsPath, pattern)
 			relPath, err := filepath.Rel(contextAbsPath, absPath)
 			if err != nil {
 				return fmt.Errorf("failed to get relative path of config include/exclude: %w", err)
@@ -854,13 +854,13 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 			set.Append(relPath)
 			return nil
 		}
-		for _, path := range localDep.modCfg.Include {
-			if err := rebaseIncludeExclude(path, &includeSet); err != nil {
+		for _, pattern := range localDep.modCfg.Include {
+			if err := rebaseIncludeExclude(localDep.sourceRootAbsPath, pattern, &includeSet); err != nil {
 				return inst, err
 			}
 		}
-		for _, path := range localDep.modCfg.Exclude {
-			if err := rebaseIncludeExclude(path, &excludeSet); err != nil {
+		for _, pattern := range localDep.modCfg.Exclude {
+			if err := rebaseIncludeExclude(localDep.sourceRootAbsPath, pattern, &excludeSet); err != nil {
 				return inst, err
 			}
 		}
