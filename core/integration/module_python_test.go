@@ -288,12 +288,6 @@ version = "0.0.0"
 authors = []
 description = ""
 
-[tool.poetry.dependencies]
-dagger-io = "*"
-
-[tool.uv.sources]
-dagger-io = { path = "sdk", editable = true }
-
 [build-system]
 requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
