@@ -210,7 +210,6 @@ func (t *Test) goTest(
 	args := []string{
 		"go",
 		"test",
-		"-v",
 	}
 
 	// Add ldflags
