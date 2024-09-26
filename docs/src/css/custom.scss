@@ -221,3 +221,7 @@ pre {
     mask-size: 100%;
   }
 }
+
+.DocCardList--no-description .card p {
+  display: none;
+}
