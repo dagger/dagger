@@ -2,12 +2,8 @@ package telemetry
 
 import (
 	"context"
-	"fmt"
-	"os"
 
 	sdklog "go.opentelemetry.io/otel/sdk/log"
-	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
-	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
@@ -118,61 +114,6 @@ func (m LogForwarder) ForceFlush(ctx context.Context) error {
 		e := e
 		eg.Go(func() error {
 			return e.ForceFlush(ctx)
-		})
-	}
-	return eg.Wait()
-}
-
-type MetricsForwarder struct {
-	Readers []sdkmetric.Reader
-}
-
-var _ sdkmetric.Exporter = MetricsForwarder{}
-
-func (exp MetricsForwarder) Export(ctx context.Context, metrics *metricdata.ResourceMetrics) error {
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	fmt.Fprintf(os.Stderr, "METRICS FORWARDER EXPORT: %d\n", len(metrics.ScopeMetrics))
-
-	eg := new(errgroup.Group)
-	for _, r := range exp.Readers {
-		r := r
-		eg.Go(func() error {
-			return r.Collect(ctx, metrics)
-		})
-	}
-	return eg.Wait()
-}
-
-func (exp MetricsForwarder) Temporality(sdkmetric.InstrumentKind) metricdata.Temporality {
-	// TODO:
-	// TODO:
-	// TODO:
-	panic("idk")
-}
-
-func (exp MetricsForwarder) Aggregation(sdkmetric.InstrumentKind) sdkmetric.Aggregation {
-	// TODO:
-	// TODO:
-	// TODO:
-	panic("idk")
-}
-
-func (exp MetricsForwarder) ForceFlush(ctx context.Context) error {
-	// TODO: ???
-	// TODO: ???
-	// TODO: ???
-	return nil
-}
-
-func (exp MetricsForwarder) Shutdown(ctx context.Context) error {
-	eg := new(errgroup.Group)
-	for _, r := range exp.Readers {
-		eg.Go(func() error {
-			return r.Shutdown(ctx)
 		})
 	}
 	return eg.Wait()

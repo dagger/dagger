@@ -711,14 +711,6 @@ func (c *Client) exportMetrics(ctx context.Context, httpClient *httpClient) erro
 		if err := protojson.Unmarshal(data, &req); err != nil {
 			return fmt.Errorf("unmarshal spans: %w", err)
 		}
-
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO:
-		// fmt.Fprintf(os.Stderr, "CONSUME METRICS: %d\n", len(req.ResourceMetrics))
-
 		if err := enginetel.ReexportMetricsFromPB(ctx, c.EngineMetrics, &req); err != nil {
 			return fmt.Errorf("re-export metrics: %w", err)
 		}
