@@ -17,13 +17,6 @@ func ReexportMetricsFromPB(ctx context.Context, exp sdkmetric.Exporter, req *col
 			return fmt.Errorf("failed to unmarshal resource metrics: %w", err)
 		}
 
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO:
-		// fmt.Fprintf(os.Stderr, "REEXPORT METRICS: %d\n", len(resourceMetrics.ScopeMetrics))
-
 		if err := exp.Export(ctx, resourceMetrics); err != nil {
 			return fmt.Errorf("failed to export resource metrics: %w", err)
 		}

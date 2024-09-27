@@ -4387,26 +4387,6 @@ func (ContainerSuite) TestEmptyExecDiff(ctx context.Context, t *testctx.T) {
 	require.Len(t, ents, 0)
 }
 
-// TODO:
-// TODO:
-// TODO:
-// TODO:
-// TODO:
-// TODO:
-// TODO:
-// TODO:
-func (ContainerSuite) TestTODO(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
-	_, err := c.Container().From(alpineImage).
-		WithEnvVariable("CACHEBUST", identity.NewID()).
-		WithExec([]string{"sh", "-c",
-			"dd if=/dev/zero of=/bigfile bs=1M count=100 && sync && sleep 30",
-		}).
-		Sync(ctx)
-	require.NoError(t, err)
-}
-
 // mountDockerConfig is a helper for mounting the host's docker config if it exists
 func mountDockerConfig(dag *dagger.Client) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {

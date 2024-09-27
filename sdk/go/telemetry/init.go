@@ -316,7 +316,7 @@ func Init(ctx context.Context, cfg Config) context.Context {
 			cfg.LiveLogExporters = append(cfg.LiveLogExporters, exp)
 		}
 
-		// TODO: configured metrics exporter?
+		// TODO: configured metrics exporter
 	}
 
 	traceOpts := []sdktrace.TracerProviderOption{
@@ -365,13 +365,12 @@ func Init(ctx context.Context, cfg Config) context.Context {
 		meterOpts := []sdkmetric.Option{
 			sdkmetric.WithResource(cfg.Resource),
 		}
+		const metricsExportInterval = 1 * time.Second
+		const metricsExportTimeout = 1 * time.Second
 		for _, exp := range cfg.LiveMetricExporters {
 			reader := sdkmetric.NewPeriodicReader(exp,
-				// TODO:
-				// TODO:
-				// TODO:
-				sdkmetric.WithInterval(1*time.Second),
-				sdkmetric.WithTimeout(1*time.Second),
+				sdkmetric.WithInterval(metricsExportInterval),
+				sdkmetric.WithTimeout(metricsExportTimeout),
 			)
 			MetricReaders = append(MetricReaders, reader)
 			meterOpts = append(meterOpts, sdkmetric.WithReader(reader))

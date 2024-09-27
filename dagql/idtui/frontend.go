@@ -253,29 +253,7 @@ func (r renderer) renderCall(
 		r.renderDuration(out, span)
 	}
 
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	metrics, ok := r.db.MetricsByCallDigest[digest.Digest(call.Digest)]
-	if !ok {
-		return nil
-	}
-	if dataPoints := metrics[telemetry.IOStatDiskReadBytes]; len(dataPoints) > 0 {
-		fmt.Fprint(out, " | ")
-		lastPoint := dataPoints[len(dataPoints)-1]
-		displayMetric := out.String(fmt.Sprintf("Disk Read Bytes: %d", lastPoint.Value))
-		displayMetric = displayMetric.Foreground(termenv.ANSIGreen)
-		fmt.Fprint(out, displayMetric)
-	}
-	if dataPoints := metrics[telemetry.IOStatDiskWriteBytes]; len(dataPoints) > 0 {
-		fmt.Fprint(out, " | ")
-		lastPoint := dataPoints[len(dataPoints)-1]
-		displayMetric := out.String(fmt.Sprintf("Disk Write Bytes: %d", lastPoint.Value))
-		displayMetric = displayMetric.Foreground(termenv.ANSIGreen)
-		fmt.Fprint(out, displayMetric)
-	}
+	r.renderMetrics(out, call)
 
 	return nil
 }
@@ -393,6 +371,27 @@ func (r renderer) renderDuration(out *termenv.Output, span *dagui.Span) {
 		duration = duration.Faint()
 	}
 	fmt.Fprint(out, duration)
+}
+
+func (r renderer) renderMetrics(out *termenv.Output, call *callpbv1.Call) {
+	metrics, ok := r.db.MetricsByCallDigest[digest.Digest(call.Digest)]
+	if !ok {
+		return
+	}
+	if dataPoints := metrics[telemetry.IOStatDiskReadBytes]; len(dataPoints) > 0 {
+		fmt.Fprint(out, " | ")
+		lastPoint := dataPoints[len(dataPoints)-1]
+		displayMetric := out.String(fmt.Sprintf("Disk Read Bytes: %d", lastPoint.Value))
+		displayMetric = displayMetric.Foreground(termenv.ANSIGreen)
+		fmt.Fprint(out, displayMetric)
+	}
+	if dataPoints := metrics[telemetry.IOStatDiskWriteBytes]; len(dataPoints) > 0 {
+		fmt.Fprint(out, " | ")
+		lastPoint := dataPoints[len(dataPoints)-1]
+		displayMetric := out.String(fmt.Sprintf("Disk Write Bytes: %d", lastPoint.Value))
+		displayMetric = displayMetric.Foreground(termenv.ANSIGreen)
+		fmt.Fprint(out, displayMetric)
+	}
 }
 
 // var (
