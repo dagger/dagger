@@ -251,9 +251,8 @@ func (r renderer) renderCall(
 
 	if span != nil {
 		r.renderDuration(out, span)
+		r.renderMetrics(out, span)
 	}
-
-	r.renderMetrics(out, call)
 
 	return nil
 }
@@ -283,6 +282,7 @@ func (r renderer) renderSpan(
 		// TODO: when a span has child spans that have progress, do 2-d progress
 		// fe.renderVertexTasks(out, span, depth)
 		r.renderDuration(out, span)
+		r.renderMetrics(out, span)
 	}
 
 	return nil
@@ -373,19 +373,19 @@ func (r renderer) renderDuration(out *termenv.Output, span *dagui.Span) {
 	fmt.Fprint(out, duration)
 }
 
-func (r renderer) renderMetrics(out *termenv.Output, call *callpbv1.Call) {
-	metrics, ok := r.db.MetricsByCallDigest[digest.Digest(call.Digest)]
-	if !ok {
+func (r renderer) renderMetrics(out *termenv.Output, span *dagui.Span) {
+	if span.MetricsByName == nil {
 		return
 	}
-	if dataPoints := metrics[telemetry.IOStatDiskReadBytes]; len(dataPoints) > 0 {
+
+	if dataPoints := span.MetricsByName[telemetry.IOStatDiskReadBytes]; len(dataPoints) > 0 {
 		fmt.Fprint(out, " | ")
 		lastPoint := dataPoints[len(dataPoints)-1]
 		displayMetric := out.String(fmt.Sprintf("Disk Read Bytes: %d", lastPoint.Value))
 		displayMetric = displayMetric.Foreground(termenv.ANSIGreen)
 		fmt.Fprint(out, displayMetric)
 	}
-	if dataPoints := metrics[telemetry.IOStatDiskWriteBytes]; len(dataPoints) > 0 {
+	if dataPoints := span.MetricsByName[telemetry.IOStatDiskWriteBytes]; len(dataPoints) > 0 {
 		fmt.Fprint(out, " | ")
 		lastPoint := dataPoints[len(dataPoints)-1]
 		displayMetric := out.String(fmt.Sprintf("Disk Write Bytes: %d", lastPoint.Value))

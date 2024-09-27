@@ -90,4 +90,6 @@ const (
 	ByteUnitName         = "byte"
 	IOStatDiskReadBytes  = "dagger.io/metrics.iostat.disk.readbytes"
 	IOStatDiskWriteBytes = "dagger.io/metrics.iostat.disk.writebytes"
+	MetricsSpanID        = "dagger.io/metrics.span"
+	MetricsTraceID       = "dagger.io/metrics.trace"
 )

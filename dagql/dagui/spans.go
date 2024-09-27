@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 
@@ -42,6 +43,10 @@ type Span struct {
 	Mask         bool
 	Passthrough  bool
 	Ignore       bool
+
+	// NOTE: this is hard coded for Gauge int64 metricdata essentially right now,
+	// needs generalization as more metric types get added
+	MetricsByName map[string][]metricdata.DataPoint[int64]
 
 	db    *DB
 	trace *Trace

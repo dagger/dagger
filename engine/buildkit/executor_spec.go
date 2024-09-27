@@ -1200,9 +1200,23 @@ func (w *Worker) runContainer(ctx context.Context, state *execState) (rerr error
 	cgroupPath := state.spec.Linux.CgroupsPath
 	if cgroupPath != "" {
 		meter := telemetry.Meter(ctx, InstrumentationLibrary)
-		cgroupSampler, err := resources.NewSampler(cgroupPath, meter, attribute.NewSet(
+
+		commonAttrs := []attribute.KeyValue{
 			attribute.String(telemetry.DagDigestAttr, string(w.execMD.CallID.Digest())),
-		))
+		}
+		spanContext := trace.SpanContextFromContext(ctx)
+		if spanContext.HasSpanID() {
+			commonAttrs = append(commonAttrs,
+				attribute.String(telemetry.MetricsSpanID, spanContext.SpanID().String()),
+			)
+		}
+		if spanContext.HasTraceID() {
+			commonAttrs = append(commonAttrs,
+				attribute.String(telemetry.MetricsTraceID, spanContext.TraceID().String()),
+			)
+		}
+
+		cgroupSampler, err := resources.NewSampler(cgroupPath, meter, attribute.NewSet(commonAttrs...))
 		if err != nil {
 			return fmt.Errorf("create cgroup sampler: %w", err)
 		}

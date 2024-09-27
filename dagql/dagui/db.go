@@ -6,7 +6,6 @@ import (
 	"sort"
 	"time"
 
-	"github.com/opencontainers/go-digest"
 	"go.opentelemetry.io/otel/attribute"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -36,10 +35,6 @@ type DB struct {
 
 	Effects    map[string]*Span
 	EffectSite map[string]*Span
-
-	// NOTE: this is hard coded for Gauge int64 metricdata essentially right now,
-	// needs generalization as more metric types get added
-	MetricsByCallDigest map[digest.Digest]map[string][]metricdata.DataPoint[int64]
 }
 
 func NewDB() *DB {
@@ -52,13 +47,12 @@ func NewDB() *DB {
 		Children:      make(map[trace.SpanID]map[trace.SpanID]struct{}),
 		ChildrenOrder: make(map[trace.SpanID][]trace.SpanID),
 
-		Calls:               make(map[string]*callpbv1.Call),
-		OutputOf:            make(map[string]map[string]struct{}),
-		Outputs:             make(map[string]map[string]struct{}),
-		Intervals:           make(map[string]map[time.Time]*Span),
-		Effects:             make(map[string]*Span),
-		EffectSite:          make(map[string]*Span),
-		MetricsByCallDigest: make(map[digest.Digest]map[string][]metricdata.DataPoint[int64]),
+		Calls:      make(map[string]*callpbv1.Call),
+		OutputOf:   make(map[string]map[string]struct{}),
+		Outputs:    make(map[string]map[string]struct{}),
+		Intervals:  make(map[string]map[time.Time]*Span),
+		Effects:    make(map[string]*Span),
+		EffectSite: make(map[string]*Span),
 	}
 }
 
@@ -164,19 +158,23 @@ func (db DBMetricExporter) Export(ctx context.Context, resourceMetrics *metricda
 			}
 
 			for _, point := range metricData.DataPoints {
-				callDgst, ok := point.Attributes.Value(telemetry.DagDigestAttr)
+				spanIDStr, ok := point.Attributes.Value(telemetry.MetricsSpanID)
+				if !ok {
+					continue
+				}
+				spanID, err := trace.SpanIDFromHex(spanIDStr.AsString())
+				if err != nil {
+					continue
+				}
+				span, ok := db.Spans[spanID]
 				if !ok {
 					continue
 				}
 
-				if _, ok := db.MetricsByCallDigest[digest.Digest(callDgst.AsString())]; !ok {
-					db.MetricsByCallDigest[digest.Digest(callDgst.AsString())] = make(map[string][]metricdata.DataPoint[int64])
+				if span.MetricsByName == nil {
+					span.MetricsByName = make(map[string][]metricdata.DataPoint[int64])
 				}
-
-				db.MetricsByCallDigest[digest.Digest(callDgst.AsString())][metric.Name] = append(
-					db.MetricsByCallDigest[digest.Digest(callDgst.AsString())][metric.Name],
-					point,
-				)
+				span.MetricsByName[metric.Name] = append(span.MetricsByName[metric.Name], point)
 			}
 		}
 	}
