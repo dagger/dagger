@@ -12,8 +12,6 @@ from dagger import Doc, function, object_type
 class MyModule:
     """Simple hello functions."""
 
-    """A function to say hello."""
-
     @function
     def hello(
         self,
@@ -22,8 +20,6 @@ class MyModule:
     ) -> str:
         """Return a greeting."""
         return f"{greeting}, {name}!"
-
-    """A function to say a loud hello."""
 
     @function
     def loud_hello(
