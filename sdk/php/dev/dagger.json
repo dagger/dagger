@@ -1,6 +1,6 @@
 {
   "name": "php-sdk-dev",
-  "sdk": "php",
+  "sdk": "php@05cab0d6502599671a9da7d338011edd3a76129c",
   "dependencies": [
     {
       "name": "always-exec",
