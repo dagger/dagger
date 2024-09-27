@@ -84,9 +84,9 @@ const (
 	// Indicates whether the log should be shown globally.
 	LogsGlobalAttr = "dagger.io/logs.global"
 
-	// TODO:
-	// TODO:
-	// TODO:
-	DiskReadBytesAttr  = "disk.read.bytes"
-	DiskWriteBytesAttr = "disk.write.bytes"
+	// TODO: doc
+	// TODO: doc
+	// TODO: doc
+	IOStatDiskReadBytes  = "dagger.io/metrics.iostat.disk.readbytes"
+	IOStatDiskWriteBytes = "dagger.io/metrics.iostat.disk.writebytes"
 )

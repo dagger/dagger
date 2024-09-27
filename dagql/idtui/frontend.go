@@ -258,9 +258,21 @@ func (r renderer) renderCall(
 	// TODO:
 	// TODO:
 	// TODO:
-	for _, dataPoint := range r.db.MetricsByCallDigest[digest.Digest(call.Digest)] {
-		fmt.Fprint(out, " ")
-		displayMetric := out.String(fmt.Sprintf("%d", dataPoint.Value))
+	metrics, ok := r.db.MetricsByCallDigest[digest.Digest(call.Digest)]
+	if !ok {
+		return nil
+	}
+	if dataPoints := metrics[telemetry.IOStatDiskReadBytes]; len(dataPoints) > 0 {
+		fmt.Fprint(out, " | ")
+		lastPoint := dataPoints[len(dataPoints)-1]
+		displayMetric := out.String(fmt.Sprintf("Disk Read Bytes: %d", lastPoint.Value))
+		displayMetric = displayMetric.Foreground(termenv.ANSIGreen)
+		fmt.Fprint(out, displayMetric)
+	}
+	if dataPoints := metrics[telemetry.IOStatDiskWriteBytes]; len(dataPoints) > 0 {
+		fmt.Fprint(out, " | ")
+		lastPoint := dataPoints[len(dataPoints)-1]
+		displayMetric := out.String(fmt.Sprintf("Disk Write Bytes: %d", lastPoint.Value))
 		displayMetric = displayMetric.Foreground(termenv.ANSIGreen)
 		fmt.Fprint(out, displayMetric)
 	}

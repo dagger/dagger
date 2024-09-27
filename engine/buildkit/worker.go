@@ -5,7 +5,6 @@ import (
 	"sync"
 
 	runc "github.com/containerd/go-runc"
-	"github.com/dagger/dagger/engine/buildkit/resources"
 	"github.com/docker/docker/pkg/idtools"
 	bkcache "github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/executor"
@@ -57,8 +56,6 @@ type sharedWorkerState struct {
 	parallelismSem   *semaphore.Weighted
 	workerCache      bkcache.Manager
 
-	resourceMonitor *resources.Monitor
-
 	running map[string]*execState
 	mu      sync.RWMutex
 }
@@ -86,8 +83,6 @@ type NewWorkerOpts struct {
 	NetworkProviders    map[pb.NetMode]network.Provider
 	ParallelismSem      *semaphore.Weighted
 	WorkerCache         bkcache.Manager
-
-	ResourceMonitor *resources.Monitor
 }
 
 func NewWorker(opts *NewWorkerOpts) *Worker {
@@ -110,8 +105,6 @@ func NewWorker(opts *NewWorkerOpts) *Worker {
 		entitlements:     opts.Entitlements,
 		parallelismSem:   opts.ParallelismSem,
 		workerCache:      opts.WorkerCache,
-
-		resourceMonitor: opts.ResourceMonitor,
 
 		running: make(map[string]*execState),
 	}}

@@ -38,7 +38,7 @@ type DB struct {
 	EffectSite map[string]*Span
 
 	// TODO: this is hard coded for Gauge int64 metricdata essentially right now
-	MetricsByCallDigest map[digest.Digest][]metricdata.DataPoint[int64]
+	MetricsByCallDigest map[digest.Digest]map[string][]metricdata.DataPoint[int64]
 }
 
 func NewDB() *DB {
@@ -57,7 +57,7 @@ func NewDB() *DB {
 		Intervals:           make(map[string]map[time.Time]*Span),
 		Effects:             make(map[string]*Span),
 		EffectSite:          make(map[string]*Span),
-		MetricsByCallDigest: make(map[digest.Digest][]metricdata.DataPoint[int64]),
+		MetricsByCallDigest: make(map[digest.Digest]map[string][]metricdata.DataPoint[int64]),
 	}
 }
 
@@ -149,17 +149,22 @@ type DBMetricExporter struct {
 func (db DBMetricExporter) Export(ctx context.Context, resourceMetrics *metricdata.ResourceMetrics) error {
 	for _, scopeMetric := range resourceMetrics.ScopeMetrics {
 		for _, metric := range scopeMetric.Metrics {
-			metric, ok := metric.Data.(*metricdata.Gauge[int64])
+			metricData, ok := metric.Data.(*metricdata.Gauge[int64])
 			if !ok {
 				continue
 			}
-			for _, point := range metric.DataPoints {
+			for _, point := range metricData.DataPoints {
 				callDgst, ok := point.Attributes.Value(telemetry.DagDigestAttr)
 				if !ok {
 					continue
 				}
-				db.MetricsByCallDigest[digest.Digest(callDgst.AsString())] = append(
-					db.MetricsByCallDigest[digest.Digest(callDgst.AsString())],
+
+				if _, ok := db.MetricsByCallDigest[digest.Digest(callDgst.AsString())]; !ok {
+					db.MetricsByCallDigest[digest.Digest(callDgst.AsString())] = make(map[string][]metricdata.DataPoint[int64])
+				}
+
+				db.MetricsByCallDigest[digest.Digest(callDgst.AsString())][metric.Name] = append(
+					db.MetricsByCallDigest[digest.Digest(callDgst.AsString())][metric.Name],
 					point,
 				)
 			}
