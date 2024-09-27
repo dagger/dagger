@@ -1,6 +1,5 @@
 """Run tests for multiple Python versions concurrently."""
 
-
 import sys
 
 import anyio
