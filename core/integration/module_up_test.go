@@ -137,7 +137,6 @@ func daggerUpAndGetEndpoint(ctx context.Context, t *testctx.T, modDir string, da
 
 	err := cmd.Start()
 	require.NoError(t, err)
-	cleanupExec(t, cmd)
 
 	return fmt.Sprintf("http://127.0.0.1:%s", trafficPort)
 }
@@ -160,7 +159,6 @@ func daggerUpAndGetEndpointFromLogs(ctx context.Context, t *testctx.T, modDir st
 
 	err = cmd.Start()
 	require.NoError(t, err)
-	cleanupExec(t, cmd)
 
 	_, matches, err := console.MatchLine(ctx, `tunnel started port=(\d+)`)
 	require.NoError(t, err)
