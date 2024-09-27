@@ -72,7 +72,7 @@ Replace `${{ secrets.SSH_PRIVATE_KEY }}` with your provider secret containing th
 
 By default, the Dagger `Directory` type works with both local directories and [remote Git repositories](../../cookbook#copy-a-directory-or-remote-repository-to-a-container). This makes it easy to work with the directory tree at the root of a Git repository or a given branch.
 
-Given a Dagger Function called `foo` that accepts a `Directory` as argument. You can pass it a GitHub pull request URL.
+Given a Dagger Function called `foo` that accepts a `Directory` as argument, you can pass it a GitHub pull request URL. Two options are available:
 
 * You can use the `/merge` ref to pass a directory that has the head branch merged into the base branch like this:
   ```shell
