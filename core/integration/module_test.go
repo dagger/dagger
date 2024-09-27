@@ -5333,6 +5333,7 @@ func cleanupExec(t testing.TB, cmd *exec.Cmd) {
 		for {
 			select {
 			case <-done:
+				t.Logf("exited: %v", cmd.Args)
 				return
 			case <-time.After(30 * time.Second):
 				if !t.Failed() {
