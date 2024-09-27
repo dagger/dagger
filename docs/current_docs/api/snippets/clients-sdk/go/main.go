@@ -3,9 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
 
-	"dagger.io/dagger"
+	"dagger.io/dagger/dag"
 )
 
 func main() {
@@ -22,23 +21,18 @@ func build(ctx context.Context) error {
 	arches := []string{"amd64", "arm64"}
 	goVersions := []string{"1.22", "1.23"}
 
-	// initialize Dagger client
-	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
-	if err != nil {
-		return err
-	}
-	defer client.Close()
+	defer dag.Close()
 
 	// get reference to the local project
-	src := client.Host().Directory(".")
+	src := dag.Host().Directory(".")
 
 	// create empty directory to put build outputs
-	outputs := client.Directory()
+	outputs := dag.Directory()
 
 	for _, version := range goVersions {
 		// get `golang` image for specified Go version
 		imageTag := fmt.Sprintf("golang:%s", version)
-		golang := client.Container().From(imageTag)
+		golang := dag.Container().From(imageTag)
 		// mount cloned repository into `golang` image
 		golang = golang.WithDirectory("/src", src).WithWorkdir("/src")
 
@@ -59,7 +53,7 @@ func build(ctx context.Context) error {
 		}
 	}
 	// write build artifacts to host
-	_, err = outputs.Export(ctx, ".")
+	_, err := outputs.Export(ctx, ".")
 	if err != nil {
 		return err
 	}
