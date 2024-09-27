@@ -31,37 +31,18 @@ For additional debugging information, add the `--debug` flag to the `dagger call
 
 ## Traces
 
-<<<<<<< HEAD
-<<<<<<< HEAD
 Dagger Cloud provides Traces, a browser-based interface focused on tracing and debugging Dagger Functions. A Trace represents one invocation of a Dagger Function, run locally or in CI. It contains detailed information about the operations performed by the Dagger Function.
 
 - Traces provides a UI to debug what went wrong when something fails, focusing on tracing what happened and when it happened.
 - Traces also helps you optimize your Dagger Functions as you author them, by giving you the detailed step-by-step execution of your pipeline and the associated telemetry.
 
 This is equally useful for debugging pipelines running on a developer's local environment and for pipelines in CI environments.
-=======
-Dagger Cloud provides Traces, a browser-based interface focused on tracing and debugging Dagger pipeline runs. A Trace represents one invocation of a Dagger Function, run locally or in CI. It contains detailed information about the operations performed by the Dagger Function.
-
-Traces provides a UI to debug what went wrong when something fails, focusing on tracing what happened and when it happened. Traces also helps you optimize your Dagger Functions as you author them, by giving you the detailed step-by-step execution of your pipeline and the associated telemetry. This is equally useful for debugging pipelines running on a developer's local environment and for pipelines in CI environments.
->>>>>>> da581bfb8 (Updated visualization page)
-=======
-Dagger Cloud provides Traces, a browser-based interface focused on tracing and debugging Dagger Functions. A Trace represents one invocation of a Dagger Function, run locally or in CI. It contains detailed information about the operations performed by the Dagger Function.
-
-- Traces provides a UI to debug what went wrong when something fails, focusing on tracing what happened and when it happened.
-- Traces also helps you optimize your Dagger Functions as you author them, by giving you the detailed step-by-step execution of your pipeline and the associated telemetry.
-
-This is equally useful for debugging pipelines running on a developer's local environment and for pipelines in CI environments.
->>>>>>> 45daf4453 (Added feedback)
 
 Here's an example of it in action:
 
 ![Dagger Trace](/img/current_docs/quickstart/trace.gif)
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
 
->>>>>>> 45daf4453 (Added feedback)
 :::info
 Dagger uses [OpenTelemetry](https://opentelemetry.io/) as its telemetry protocol. Each Dagger Function call is represented as an [OpenTelemetry trace](https://opentelemetry.io/docs/concepts/signals/traces/). The operations performed by the Dagger Function are represented as [OpenTelemetry spans](https://opentelemetry.io/docs/concepts/signals/traces/#spans). A span can emit several effects, which are the operations generated in the span. For example, the `withDirectory()` span generates all the necessary operations to provide a directory with excluded and included elements. For this, it first loads a directory, and then creates a new one from scratch inside the container, generating two distinct steps (effects).
 :::
@@ -93,17 +74,6 @@ You can click any of the Traces in the list to see detailed logs for each Trace.
 
 ![Trace log](/img/current_docs/features/trace-log.png)
 
-
 If there are any errors, Dagger Cloud automatically surfaces the main error and error message in the list.
-=======
-:::info
-Dagger uses [OpenTelemetry](https://opentelemetry.io/) as its telemetry protocol. Each Dagger Function call is represented as an [OpenTelemetry trace](https://opentelemetry.io/docs/concepts/signals/traces/). The operations performed by the Dagger Function are represented as [OpenTelemetry spans](https://opentelemetry.io/docs/concepts/signals/traces/#spans). A span can emit several effects, which are the operations generated in the span. For example, the `withDirectory()` span generates all the necessary operations to provide a directory with excluded and included elements. For this, it first loads a directory, and then creates a new one from scratch inside the container, generating two distinct steps (effects).
-:::
-
-If there are any errors, Dagger Cloud automatically brings you to the first error in the list.
->>>>>>> da581bfb8 (Updated visualization page)
-=======
-If there are any errors, Dagger Cloud automatically surfaces the main error and error message in the list.
->>>>>>> 45daf4453 (Added feedback)
 
 ![Trace error](/img/current_docs/features/trace-error.png)

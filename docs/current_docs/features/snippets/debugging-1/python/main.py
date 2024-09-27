@@ -1,10 +1,3 @@
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-import dagger
->>>>>>> 81388975a (Added code snippets to feature pages)
-=======
->>>>>>> 2f22413a8 (Fix linter)
 from dagger import dag, function, object_type
 
 
