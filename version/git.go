@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"dagger/version/internal/dagger"
+	"errors"
 	"slices"
 	"strings"
 
@@ -19,54 +20,55 @@ func git(ctx context.Context, gitDir *dagger.Directory, dir *dagger.Directory) (
 	}
 
 	if gitDir != nil {
-		entries, err := gitDir.Entries(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if slices.Contains(entries, ".git") {
-			ctr = ctr.
-				WithDirectory(".", gitDir).
-				// enter detached head state, then we can rewrite all our refs however we like later
-				WithExec([]string{"sh", "-c", "git checkout -q $(git rev-parse HEAD)"})
-
-			// do various unshallowing operations (only the bare minimum is
-			// provided by the core git functions which are used by our remote git
-			// module sources)
-			remote := "https://github.com/dagger/dagger.git"
-			maxDepth := "2147483647" // see https://git-scm.com/docs/shallow
-			ctr = ctr.
-				WithExec([]string{
-					"git", "fetch",
-					// force so that local tags get overridden if they were wrong
-					"--force",
-					// we need all the tags, so we can find all the release tags later
-					"--tags",
-					// we need the unshallowed history of our branches, so we
-					// can determine which tags are in it later
-					"--depth=" + maxDepth,
-					remote,
-					// update HEAD
-					"HEAD",
-					// update main
-					"refs/heads/main:refs/heads/main",
-				})
-		}
+		ctr = ctr.WithDirectory(".", gitDir)
 	}
 
-	return &Git{ctr}, nil
+	valid := false
+	entries, err := ctr.Directory(".").Entries(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if slices.Contains(entries, ".git") {
+		valid = true
+	}
+
+	if valid {
+		// enter detached head state, then we can rewrite all our refs however we like later
+		ctr = ctr.WithExec([]string{"sh", "-c", "git checkout -q $(git rev-parse HEAD)"})
+
+		// do various unshallowing operations (only the bare minimum is
+		// provided by the core git functions which are used by our remote git
+		// module sources)
+		remote := "https://github.com/dagger/dagger.git"
+		maxDepth := "2147483647" // see https://git-scm.com/docs/shallow
+		ctr = ctr.
+			WithExec([]string{
+				"git", "fetch",
+				// force so that local tags get overridden if they were wrong
+				"--force",
+				// we need all the tags, so we can find all the release tags later
+				"--tags",
+				// we need the unshallowed history of our branches, so we
+				// can determine which tags are in it later
+				"--depth=" + maxDepth,
+				remote,
+				// update HEAD
+				"HEAD",
+				// update main
+				"refs/heads/main:refs/heads/main",
+			})
+	}
+
+	return &Git{
+		Container: ctr,
+		Valid:     valid,
+	}, nil
 }
 
 // Git is an opinionated helper for performing various commands on our dagger repo.
 type Git struct {
 	Container *dagger.Container
-}
-
-func (git *Git) valid(ctx context.Context) (bool, error) {
-	entries, err := git.Container.Directory(".").Entries(ctx)
-	if err != nil {
-		return false, err
-	}
-	return slices.Contains(entries, ".git"), nil
+	Valid     bool
 }
 
 type VersionTag struct {
@@ -105,9 +107,7 @@ func (git *Git) VersionTags(
 	ctx context.Context,
 	component string, // +optional
 ) ([]VersionTag, error) {
-	if ok, err := git.valid(ctx); err != nil {
-		return nil, err
-	} else if !ok {
+	if !git.Valid {
 		return nil, nil
 	}
 
@@ -173,9 +173,7 @@ func (git *Git) Head(ctx context.Context) (*Commit, error) {
 }
 
 func (git *Git) Commit(ctx context.Context, ref string) (*Commit, error) {
-	if ok, err := git.valid(ctx); err != nil {
-		return nil, err
-	} else if !ok {
+	if !git.Valid {
 		return nil, nil
 	}
 
@@ -203,9 +201,7 @@ func (git *Git) Commit(ctx context.Context, ref string) (*Commit, error) {
 }
 
 func (git *Git) MergeBase(ctx context.Context, ref string, ref2 string) (*Commit, error) {
-	if ok, err := git.valid(ctx); err != nil {
-		return nil, err
-	} else if !ok {
+	if !git.Valid {
 		return nil, nil
 	}
 
@@ -234,9 +230,7 @@ func (git *Git) Dirty(ctx context.Context) (bool, error) {
 }
 
 func (git *Git) status(ctx context.Context) (string, error) {
-	if ok, err := git.valid(ctx); err != nil {
-		return "", err
-	} else if !ok {
+	if !git.Valid {
 		return "", nil
 	}
 
@@ -249,4 +243,25 @@ func (git *Git) status(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return strings.Trim(result, "\n"), nil
+}
+
+func (git *Git) FileAt(ctx context.Context, filename string, ref string) (string, error) {
+	if !git.Valid {
+		return "", nil
+	}
+
+	data, err := git.Container.WithExec([]string{"git", "show", ref + ":" + filename}).Stdout(ctx)
+	if err != nil {
+		var execErr *dagger.ExecError
+		if errors.As(err, &execErr) {
+			if strings.Contains(execErr.Stderr, "exists on disk, but not in") {
+				return "", nil
+			} else if strings.Contains(execErr.Stderr, "does not exist in") {
+				return "", nil
+			} else {
+				return "", err
+			}
+		}
+	}
+	return data, nil
 }
