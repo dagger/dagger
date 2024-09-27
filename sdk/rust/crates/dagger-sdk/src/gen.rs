@@ -6571,6 +6571,9 @@ pub struct QueryModuleDependencyOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryModuleSourceOpts<'a> {
+    /// The pinned version of the module source
+    #[builder(setter(into, strip_option), default)]
+    pub ref_pin: Option<&'a str>,
     /// The relative path to the module root from the host directory
     #[builder(setter(into, strip_option), default)]
     pub rel_host_path: Option<&'a str>,
@@ -7594,6 +7597,9 @@ impl Query {
     ) -> ModuleSource {
         let mut query = self.selection.select("moduleSource");
         query = query.arg("refString", ref_string.into());
+        if let Some(ref_pin) = opts.ref_pin {
+            query = query.arg("refPin", ref_pin);
+        }
         if let Some(stable) = opts.stable {
             query = query.arg("stable", stable);
         }

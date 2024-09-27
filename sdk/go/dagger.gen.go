@@ -7125,6 +7125,8 @@ func (r *Client) ModuleDependency(source *ModuleSource, opts ...ModuleDependency
 
 // ModuleSourceOpts contains options for Client.ModuleSource
 type ModuleSourceOpts struct {
+	// The pinned version of the module source
+	RefPin string
 	// If true, enforce that the source is a stable version for source kinds that support versioning.
 	Stable bool
 	// The relative path to the module root from the host directory
@@ -7135,6 +7137,10 @@ type ModuleSourceOpts struct {
 func (r *Client) ModuleSource(refString string, opts ...ModuleSourceOpts) *ModuleSource {
 	q := r.query.Select("moduleSource")
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `refPin` optional argument
+		if !querybuilder.IsZeroValue(opts[i].RefPin) {
+			q = q.Arg("refPin", opts[i].RefPin)
+		}
 		// `stable` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Stable) {
 			q = q.Arg("stable", opts[i].Stable)

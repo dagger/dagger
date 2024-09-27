@@ -155,6 +155,17 @@ func (src *ModuleSource) RefString() (string, error) {
 	}
 }
 
+func (src *ModuleSource) Pin() (string, error) {
+	switch src.Kind {
+	case ModuleSourceKindLocal:
+		return "", nil
+	case ModuleSourceKindGit:
+		return src.AsGitSource.Value.Pin(), nil
+	default:
+		return "", fmt.Errorf("unknown module src kind: %q", src.Kind)
+	}
+}
+
 func (src *ModuleSource) Symbolic() (string, error) {
 	switch src.Kind {
 	case ModuleSourceKindLocal:
@@ -744,7 +755,14 @@ func (src *GitModuleSource) RefString() string {
 	if subPath != "/" {
 		refPath += subPath
 	}
-	return fmt.Sprintf("%s@%s", refPath, src.Commit)
+	if src.Version != "" {
+		refPath += "@" + src.Version
+	}
+	return refPath
+}
+
+func (src *GitModuleSource) Pin() string {
+	return src.Commit
 }
 
 func (src *GitModuleSource) Symbolic() string {

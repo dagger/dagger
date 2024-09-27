@@ -320,6 +320,8 @@ func TestParseRefString(t *testing.T) {
 			require.Equal(t, tc.want.repoRootSubdir, parsed.repoRootSubdir)
 			require.Equal(t, tc.want.scheme, parsed.scheme)
 			require.Equal(t, tc.want.sshusername, parsed.sshusername)
+
+			require.Equal(t, tc.urlStr, parsed.String())
 		})
 	}
 }
