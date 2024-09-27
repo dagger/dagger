@@ -9,33 +9,42 @@ import (
 	"golang.org/x/mod/semver"
 )
 
-func (v *Version) Git() *Git {
+func git(ctx context.Context, gitDir *dagger.Directory, dir *dagger.Directory) (*Git, error) {
 	ctr := dag.Wolfi().
 		Container(dagger.WolfiContainerOpts{Packages: []string{"git"}}).
 		WithWorkdir("/src")
-	if v.Inputs != nil {
-		ctr = ctr.WithDirectory(".", v.Inputs)
-	}
-	if v.GitDir != nil {
-		ctr = ctr.
-			WithDirectory(".", v.GitDir).
-			// enter detached head state, then we can rewrite all our refs however we like later
-			WithExec([]string{"sh", "-c", "git checkout $(git rev-parse HEAD)"})
 
-		// do various unshallowing operations (only the bare minimum is
-		// provided by the core git functions which are used by our remote git
-		// module sources)
-		remote := "https://github.com/dagger/dagger.git"
-		maxDepth := "2147483647" // see https://git-scm.com/docs/shallow
-		ctr = ctr.
-			// we need the unshallowed history, so we can determine which tags are in it later
-			WithExec([]string{"git", "fetch", "--no-tags", "--depth=" + maxDepth, remote, "HEAD"}).
-			// we need main, so we can determine the merge base for it later
-			WithExec([]string{"git", "fetch", "--no-tags", "--depth=" + maxDepth, remote, "refs/heads/main:refs/heads/main"}).
-			// we need all the tags, so we can find all the release tags later
-			WithExec([]string{"git", "fetch", "--tags", "--force", remote})
+	if dir != nil {
+		ctr = ctr.WithDirectory(".", dir)
 	}
-	return &Git{ctr}
+
+	if gitDir != nil {
+		entries, err := gitDir.Entries(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if slices.Contains(entries, ".git") {
+			ctr = ctr.
+				WithDirectory(".", gitDir).
+				// enter detached head state, then we can rewrite all our refs however we like later
+				WithExec([]string{"sh", "-c", "git checkout -q $(git rev-parse HEAD)"})
+
+			// do various unshallowing operations (only the bare minimum is
+			// provided by the core git functions which are used by our remote git
+			// module sources)
+			remote := "https://github.com/dagger/dagger.git"
+			maxDepth := "2147483647" // see https://git-scm.com/docs/shallow
+			ctr = ctr.
+				// we need the unshallowed history, so we can determine which tags are in it later
+				WithExec([]string{"git", "fetch", "--no-tags", "--depth=" + maxDepth, remote, "HEAD"}).
+				// we need main, so we can determine the merge base for it later
+				WithExec([]string{"git", "fetch", "--no-tags", "--depth=" + maxDepth, remote, "refs/heads/main:refs/heads/main"}).
+				// we need all the tags, so we can find all the release tags later
+				WithExec([]string{"git", "fetch", "--tags", "--force", remote})
+		}
+	}
+
+	return &Git{ctr}, nil
 }
 
 // Git is an opinionated helper for performing various commands on our dagger repo.

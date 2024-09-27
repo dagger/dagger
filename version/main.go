@@ -17,6 +17,8 @@ import (
 )
 
 func New(
+	ctx context.Context,
+
 	// A directory containing all the inputs of the artifact to be versioned.
 	// An input is any file that changes the artifact if it changes.
 	// This directory is used to compute a digest. If any input changes, the digest changes.
@@ -35,14 +37,19 @@ func New(
 	// +defaultPath="/"
 	// +ignore=["*", "!.changes/*"]
 	changes *dagger.Directory,
-) Version {
-	return Version{
-		// NOTE: uploading the whole git dir is inefficient.
-		// we can stop doing it once dagger/dagger#8520 ships
-		GitDir:  gitDir,
+) (*Version, error) {
+	// NOTE: uploading the whole git dir is inefficient.
+	// we can stop doing it once dagger/dagger#8520 ships
+
+	git, err := git(ctx, gitDir, inputs)
+	if err != nil {
+		return nil, err
+	}
+	return &Version{
+		Git:     git,
 		Inputs:  inputs,
 		Changes: changes,
-	}
+	}, nil
 }
 
 // FIXME: this is copy-pasted from top-level +ignore. Find a way to DRY this up.
@@ -52,7 +59,8 @@ var ignores = []string{
 }
 
 type Version struct {
-	GitDir *dagger.Directory
+	Git *Git
+
 	Inputs *dagger.Directory
 
 	Changes *dagger.Directory
@@ -60,11 +68,11 @@ type Version struct {
 
 // Generate a version string from the current context
 func (v Version) Version(ctx context.Context) (string, error) {
-	dirty, err := v.Git().Dirty(ctx)
+	dirty, err := v.Git.Dirty(ctx)
 	if err != nil {
 		return "", err
 	}
-	head, err := v.Git().Head(ctx)
+	head, err := v.Git.Head(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -86,7 +94,7 @@ func (v Version) Version(ctx context.Context) (string, error) {
 		return fmt.Sprintf("%s-%s-dev-%s", next, pseudoversionTimestamp(time.Time{}), digest[:12]), nil
 	}
 
-	lastVersion, err := v.Git().VersionTagLatest(ctx, "")
+	lastVersion, err := v.Git.VersionTagLatest(ctx, "")
 	if err != nil {
 		return "", err
 	}
@@ -116,7 +124,7 @@ func pseudoversionTimestamp(t time.Time) string {
 
 // Return the tag to use when auto-downloading the engine image from the CLI
 func (v Version) ImageTag(ctx context.Context) (string, error) {
-	head, err := v.Git().Head(ctx)
+	head, err := v.Git.Head(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -126,21 +134,21 @@ func (v Version) ImageTag(ctx context.Context) (string, error) {
 		return "", nil
 	}
 
-	dirty, err := v.Git().Dirty(ctx)
+	dirty, err := v.Git.Dirty(ctx)
 	if err != nil {
 		return "", err
 	}
 	if dirty {
 		// this is a dev version - get the last commit from main on this branch
 		// (<commit>)
-		mergeBase, err := v.Git().MergeBase(ctx, "main", head.Commit)
+		mergeBase, err := v.Git.MergeBase(ctx, "main", head.Commit)
 		if err != nil {
 			return "", err
 		}
 		return mergeBase.Commit, nil
 	}
 
-	lastVersion, err := v.Git().VersionTagLatest(ctx, "")
+	lastVersion, err := v.Git.VersionTagLatest(ctx, "")
 	if err != nil {
 		return "", err
 	}
@@ -152,7 +160,7 @@ func (v Version) ImageTag(ctx context.Context) (string, error) {
 
 	// this is an untagged release - get the last commit from main on this branch
 	// <commit>
-	mergeBase, err := v.Git().MergeBase(ctx, "main", head.Commit)
+	mergeBase, err := v.Git.MergeBase(ctx, "main", head.Commit)
 	if err != nil {
 		return "", err
 	}
@@ -161,7 +169,7 @@ func (v Version) ImageTag(ctx context.Context) (string, error) {
 
 // Determine the last released version.
 func (v Version) LastReleaseVersion(ctx context.Context) (string, error) {
-	tag, err := v.Git().VersionTagLatest(ctx, "")
+	tag, err := v.Git.VersionTagLatest(ctx, "")
 	if err != nil {
 		return "", err
 	}
@@ -206,7 +214,7 @@ func (v Version) NextReleaseVersion(ctx context.Context) (string, error) {
 
 	// also try and determine what the last version from git was, so we can
 	// auto-determine a next version from that
-	lastVersion, err := v.Git().VersionTagLatest(ctx, "")
+	lastVersion, err := v.Git.VersionTagLatest(ctx, "")
 	if err != nil {
 		return "", err
 	}
