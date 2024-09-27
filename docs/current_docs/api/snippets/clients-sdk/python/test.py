@@ -3,21 +3,19 @@
 import sys
 
 import anyio
-
-import dagger
+from dagger import dag
 
 
 async def test():
     versions = ["3.8", "3.9", "3.10", "3.11"]
 
-    async with dagger.Connection(dagger.Config(log_output=sys.stderr)) as client:
+    async with dagger.connection(dagger.Config(log_output=sys.stderr)):
         # get reference to the local project
-        src = client.host().directory(".")
+        src = dag.host().directory(".")
 
         async def test_version(version: str):
             python = (
-                client.container()
-                .from_(f"python:{version}-slim-buster")
+                dag.container().from_(f"python:{version}-slim-buster")
                 # mount cloned repository into image
                 .with_directory("/src", src)
                 # set current working directory for next commands
