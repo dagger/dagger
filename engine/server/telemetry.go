@@ -271,15 +271,6 @@ func (ps *PubSub) LogsSubscribeHandler(w http.ResponseWriter, r *http.Request, c
 }
 
 func (ps *PubSub) MetricsSubscribeHandler(w http.ResponseWriter, r *http.Request, client *daggerClient) error {
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	slog.Debug("METRICS SUBSCRIBE HANDLER")
-
 	return ps.sseHandler(w, r, client, func(ctx context.Context, db *sql.DB, lastID string) (*sse.Event, bool, error) {
 		var since int64
 		if lastID != "" {
@@ -296,8 +287,6 @@ func (ps *PubSub) MetricsSubscribeHandler(w http.ResponseWriter, r *http.Request
 		if err != nil {
 			return nil, false, fmt.Errorf("select metrics: %w", err)
 		}
-
-		slog.Debug("SELECTED METRICS", "count", len(metrics))
 
 		if len(metrics) == 0 {
 			return nil, false, nil
@@ -548,14 +537,6 @@ type MetricsPubSub struct {
 
 func (ps MetricsPubSub) Export(ctx context.Context, metrics *metricdata.ResourceMetrics) error {
 	slog.ExtraDebug("pubsub exporting metrics", "client", ps.client.clientID, "count", len(metrics.ScopeMetrics))
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// debug.PrintStack()
-
 	if len(metrics.ScopeMetrics) == 0 {
 		return nil
 	}
@@ -591,17 +572,10 @@ func (ps MetricsPubSub) Export(ctx context.Context, metrics *metricdata.Resource
 }
 
 func (ps MetricsPubSub) Temporality(sdkmetric.InstrumentKind) metricdata.Temporality {
-	// TODO:
-	// TODO:
-	// TODO: ?
 	return metricdata.DeltaTemporality
-	// return metricdata.CumulativeTemporality
 }
 
 func (ps MetricsPubSub) Aggregation(sdkmetric.InstrumentKind) sdkmetric.Aggregation {
-	// TODO:
-	// TODO:
-	// TODO: ?
 	return sdkmetric.AggregationDefault{}
 }
 

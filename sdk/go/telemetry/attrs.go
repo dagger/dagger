@@ -87,6 +87,7 @@ const (
 	// TODO: doc
 	// TODO: doc
 	// TODO: doc
+	ByteUnitName         = "byte"
 	IOStatDiskReadBytes  = "dagger.io/metrics.iostat.disk.readbytes"
 	IOStatDiskWriteBytes = "dagger.io/metrics.iostat.disk.writebytes"
 )

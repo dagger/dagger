@@ -47,12 +47,12 @@ func newIOStatSampler(cgroupPath string, meter metric.Meter, commonAttrs attribu
 	}
 	var err error
 
-	s.readBytes, err = meter.Int64Gauge(telemetry.IOStatDiskReadBytes)
+	s.readBytes, err = meter.Int64Gauge(telemetry.IOStatDiskReadBytes, metric.WithUnit(telemetry.ByteUnitName))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create readBytes metric: %w", err)
 	}
 
-	s.writeBytes, err = meter.Int64Gauge(telemetry.IOStatDiskWriteBytes)
+	s.writeBytes, err = meter.Int64Gauge(telemetry.IOStatDiskWriteBytes, metric.WithUnit(telemetry.ByteUnitName))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create writeBytes metric: %w", err)
 	}

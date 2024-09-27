@@ -323,31 +323,15 @@ func (fe FrontendMetricExporter) Export(ctx context.Context, resourceMetrics *me
 	return fe.db.MetricExporter().Export(ctx, resourceMetrics)
 }
 
-func (fe FrontendMetricExporter) Temporality(sdkmetric.InstrumentKind) metricdata.Temporality {
-	// TODO: ?
-	// TODO: ?
-	// TODO: ?
-	return metricdata.CumulativeTemporality
+func (fe FrontendMetricExporter) Temporality(ik sdkmetric.InstrumentKind) metricdata.Temporality {
+	return fe.db.Temporality(ik)
 }
 
-func (fe FrontendMetricExporter) Aggregation(sdkmetric.InstrumentKind) sdkmetric.Aggregation {
-	// TODO: ?
-	// TODO: ?
-	// TODO: ?
-	return sdkmetric.AggregationDefault{}
+func (fe FrontendMetricExporter) Aggregation(ik sdkmetric.InstrumentKind) sdkmetric.Aggregation {
+	return fe.db.Aggregation(ik)
 }
 
 func (fe FrontendMetricExporter) ForceFlush(context.Context) error {
-	// TODO: idk yet
-	// TODO: idk yet
-	// TODO: idk yet
-	return nil
-}
-
-func (fe FrontendMetricExporter) Shutdown(context.Context) error {
-	// TODO: idk yet
-	// TODO: idk yet
-	// TODO: idk yet
 	return nil
 }
 

@@ -37,7 +37,8 @@ type DB struct {
 	Effects    map[string]*Span
 	EffectSite map[string]*Span
 
-	// TODO: this is hard coded for Gauge int64 metricdata essentially right now
+	// NOTE: this is hard coded for Gauge int64 metricdata essentially right now,
+	// needs generalization as more metric types get added
 	MetricsByCallDigest map[digest.Digest]map[string][]metricdata.DataPoint[int64]
 }
 
@@ -142,6 +143,14 @@ func (db *DB) MetricExporter() sdkmetric.Exporter {
 	return DBMetricExporter{db}
 }
 
+func (db *DB) Temporality(sdkmetric.InstrumentKind) metricdata.Temporality {
+	return metricdata.DeltaTemporality
+}
+
+func (db *DB) Aggregation(sdkmetric.InstrumentKind) sdkmetric.Aggregation {
+	return sdkmetric.AggregationDefault{}
+}
+
 type DBMetricExporter struct {
 	*DB
 }
@@ -153,6 +162,7 @@ func (db DBMetricExporter) Export(ctx context.Context, resourceMetrics *metricda
 			if !ok {
 				continue
 			}
+
 			for _, point := range metricData.DataPoints {
 				callDgst, ok := point.Attributes.Value(telemetry.DagDigestAttr)
 				if !ok {
@@ -172,20 +182,6 @@ func (db DBMetricExporter) Export(ctx context.Context, resourceMetrics *metricda
 	}
 
 	return nil
-}
-
-func (db DBMetricExporter) Temporality(sdkmetric.InstrumentKind) metricdata.Temporality {
-	// TODO: ?
-	// TODO: ?
-	// TODO: ?
-	return metricdata.CumulativeTemporality
-}
-
-func (db DBMetricExporter) Aggregation(sdkmetric.InstrumentKind) sdkmetric.Aggregation {
-	// TODO: ?
-	// TODO: ?
-	// TODO: ?
-	return sdkmetric.AggregationDefault{}
 }
 
 // SetPrimarySpan allows the primary span to be explicitly set to a particular
