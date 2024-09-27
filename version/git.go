@@ -35,12 +35,21 @@ func git(ctx context.Context, gitDir *dagger.Directory, dir *dagger.Directory) (
 			remote := "https://github.com/dagger/dagger.git"
 			maxDepth := "2147483647" // see https://git-scm.com/docs/shallow
 			ctr = ctr.
-				// we need the unshallowed history, so we can determine which tags are in it later
-				WithExec([]string{"git", "fetch", "--no-tags", "--depth=" + maxDepth, remote, "HEAD"}).
-				// we need main, so we can determine the merge base for it later
-				WithExec([]string{"git", "fetch", "--no-tags", "--depth=" + maxDepth, remote, "refs/heads/main:refs/heads/main"}).
-				// we need all the tags, so we can find all the release tags later
-				WithExec([]string{"git", "fetch", "--tags", "--force", remote})
+				WithExec([]string{
+					"git", "fetch",
+					// force so that local tags get overridden if they were wrong
+					"--force",
+					// we need all the tags, so we can find all the release tags later
+					"--tags",
+					// we need the unshallowed history of our branches, so we
+					// can determine which tags are in it later
+					"--depth=" + maxDepth,
+					remote,
+					// update HEAD
+					"HEAD",
+					// update main
+					"refs/heads/main:refs/heads/main",
+				})
 		}
 	}
 
