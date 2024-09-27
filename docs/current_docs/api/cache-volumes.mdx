@@ -1,5 +1,5 @@
 ---
-slug: /api/caching
+slug: /api/cache-volumes
 ---
 
 # Cache Volumes
@@ -7,6 +7,9 @@ slug: /api/caching
 Volume caching involves caching specific parts of the filesystem and reusing them on subsequent function calls if they are unchanged. This is especially useful when dealing with package managers such as `npm`, `maven`, `pip` and similar. Since these dependencies are usually locked to specific versions in the application's manifest, re-downloading them on every session is inefficient and time-consuming. By using a cache volume for these dependencies, Dagger can reuse the cached contents across Dagger Function runs and reduce execution time.
 
 Here's an example, which creates two cache volumes for Node.js dependencies:
+
+<Tabs groupId="language">
+<TabItem value="Dagger CLI">
 
 ```shell
 dagger core container \
@@ -18,9 +21,30 @@ dagger core container \
   with-exec --args="npm","install"
 ```
 
-This command will take some time to complete on the first run, as the cache volumes will not exist at that point. Subsequent runs will be significantly faster (assuming there is no other change), since Dagger will simply use the dependencies from the cache volumes instead of downloading them again.
+</TabItem>
+<TabItem value="Go">
 
-## Caching in Dagger Cloud
+```go file=../cookbook/snippets/cache-dependencies/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=../cookbook/snippets/cache-dependencies/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=../cookbook/snippets/cache-dependencies/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+This example will take some time to complete on the first run, as the cache volumes will not exist at that point. Subsequent runs will be significantly faster (assuming there is no other change), since Dagger will simply use the dependencies from the cache volumes instead of downloading them again.
+
+## Cache volumes in Dagger Cloud
 
 Dagger Cloud automatically detects and creates cache volumes when they are declared in your Dagger pipeline or custom functions.
 
@@ -55,20 +79,49 @@ Both caching mechanisms use an object store (S3 or S3-compatible).
 
 Data is encrypted in transit (the transport layer is HTTPS/TLS) and at rest (read more about data encryption in [CloudFlare R2](https://developers.cloudflare.com/r2/reference/data-security/), [AWS S3](https://docs.aws.amazon.com/AmazonS3/latest/userguide/access-bucket-intro.html) and [Google Cloud Storage](https://cloud.google.com/docs/security/encryption/default-encryption)).
 
-## Layer cache invalidation
+## Cache invalidation
+
+### Layer cache invalidation
 
 It may sometimes be necessary to explicitly force execution of specific pipeline steps, bypassing the Dagger layer cache. The typical approach for this is to invalidate the Dagger layer cache by introducing a volatile time variable at a specific point in the Dagger pipeline.
 
-Here is a simple example using the Dagger CLI:
+:::note
+Changes in mounted cache volumes or secrets do not invalidate the Dagger layer cache.
+:::
+
+Here is a simple example:
+
+<Tabs groupId="language">
+<TabItem value="Dagger CLI">
 
 ```shell
 dagger core container \
-  from --address=alpine:latest \
-  with-env-variable --name="CACHE_BUST" --value=`(date +%s)` \
+  from --address=alpine \
+  with-env-variable --name="CACHEBUSTER" --value=`(date +%s)` \
   with-exec --args="date"  \
   stdout
 ```
 
-In its current form, this example invalidates the cache by printing a different date and time value on every run. However, if the `CACHE_BUST` environment variable is removed, the same value (the date and time on the first run) is printed on every run.
+</TabItem>
+<TabItem value="Go">
 
-You can also see an [example of invalidating the layer cache in a custom function](../cookbook/cookbook.mdx#invalidate-cache).
+```go file=../cookbook/snippets/builds/cache/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=../cookbook/snippets/builds/cache/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=../cookbook/snippets/builds/cache/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+
+In its current form, this example invalidates the cache by printing a different date and time value on every run. However, if the `CACHEBUSTER` environment variable is removed, the same value (the date and time on the first run) is printed on every run.
