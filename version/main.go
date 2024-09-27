@@ -185,32 +185,14 @@ func (v Version) LastReleaseVersion(ctx context.Context) (string, error) {
 // or that version seems to have already been released, then we automagically
 // calculate the next patch release in the current series.
 func (v Version) NextReleaseVersion(ctx context.Context) (string, error) {
+	var nextVersion string
+
 	// if there's a defined next version, try and use that
-	entries, err := v.Changes.Directory(".changes").Entries(ctx)
+	content, err := v.Git.FileAt(ctx, ".changes/.next", "HEAD")
 	if err != nil {
 		return "", err
 	}
-	var nextVersion string
-	if slices.Contains(entries, ".next") {
-		content, err := v.Changes.File(".changes/.next").Contents(ctx)
-		if err != nil {
-			return "", err
-		}
-		for _, line := range strings.Split(content, "\n") {
-			line = strings.TrimSpace(line)
-			if len(line) == 0 {
-				// empty
-				continue
-			}
-			if strings.HasPrefix(line, "#") {
-				// comment
-				continue
-			}
-
-			nextVersion = baseVersion(line)
-			break
-		}
-	}
+	nextVersion = parseNextFile(content)
 
 	// also try and determine what the last version from git was, so we can
 	// auto-determine a next version from that
@@ -224,6 +206,22 @@ func (v Version) NextReleaseVersion(ctx context.Context) (string, error) {
 			// if the auto-bumped last version is greater than the defined
 			// version, we've probably forgotten to update `.changes/.next`
 			nextVersion = maybeNextVersion
+		}
+	}
+
+	// HACK: fallback to the contents
+	// we can remove this when remote modules have KeepGitDir by default
+	if nextVersion == "" {
+		entries, err := v.Changes.Directory(".changes").Entries(ctx)
+		if err != nil {
+			return "", err
+		}
+		if slices.Contains(entries, ".next") {
+			content, err := v.Changes.File(".changes/.next").Contents(ctx)
+			if err != nil {
+				return "", err
+			}
+			nextVersion = parseNextFile(content)
 		}
 	}
 
@@ -248,4 +246,21 @@ func baseVersion(version string) string {
 	version = strings.TrimSuffix(version, semver.Build(version))
 	version = strings.TrimSuffix(version, semver.Prerelease(version))
 	return version
+}
+
+func parseNextFile(content string) (version string) {
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if len(line) == 0 {
+			// empty
+			continue
+		}
+		if strings.HasPrefix(line, "#") {
+			// comment
+			continue
+		}
+
+		return baseVersion(line)
+	}
+	return ""
 }
