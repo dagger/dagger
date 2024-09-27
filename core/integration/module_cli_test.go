@@ -916,12 +916,8 @@ func (m *Test) Fn(ctx context.Context) (string, error) {
 				var modCfg modules.ModuleConfig
 				require.NoError(t, json.Unmarshal([]byte(out), &modCfg))
 				require.Len(t, modCfg.Dependencies, 1)
-				lastAtIndex := strings.LastIndex(modCfg.Dependencies[0].Source, "@")
-				require.NotEqual(t, lastAtIndex, -1)
-				url := modCfg.Dependencies[0].Source[:lastAtIndex]
-				commit := modCfg.Dependencies[0].Source[lastAtIndex+1:]
-				require.Equal(t, tc.gitTestRepoRef, url)
-				require.NotEmpty(t, commit)
+				require.Equal(t, tc.gitTestRepoRef, modCfg.Dependencies[0].Source)
+				require.NotEmpty(t, modCfg.Dependencies[0].Pin)
 			})
 		})
 	})
