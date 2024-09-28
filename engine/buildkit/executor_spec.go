@@ -80,8 +80,8 @@ const (
 	// TODO:?? made up values
 	// TODO:?? made up values
 	// TODO:?? made up values
-	cgroupSampleInterval     = time.Second
-	finalCgroupSampleTimeout = time.Second
+	cgroupSampleInterval     = 5 * time.Second
+	finalCgroupSampleTimeout = 5 * time.Second
 	// cgroupSampleInterval     = 50 * time.Millisecond
 	// finalCgroupSampleTimeout = 50 * time.Millisecond
 )
