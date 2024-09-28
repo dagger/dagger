@@ -1,10 +1,11 @@
+"""Run tests for multiple Python versions concurrently."""
+
 import sys
 
 import anyio
+
 import dagger
 from dagger import dag
-
-"""Run tests for multiple Python versions concurrently."""
 
 
 async def test():
@@ -16,7 +17,8 @@ async def test():
 
         async def test_version(version: str):
             python = (
-                dag.container().from_(f"python:{version}-slim-buster")
+                dag.container()
+                .from_(f"python:{version}-slim-buster")
                 # mount cloned repository into image
                 .with_directory("/src", src)
                 # set current working directory for next commands
