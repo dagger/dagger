@@ -431,17 +431,19 @@ class Module:
 
         Example usage::
 
-            @function
-            def foo() -> str:
-                return "bar"
+            @object_type
+            class Foo:
+                @function
+                def bar(self) -> str:
+                    return "foobar"
 
 
         Parameters
         ----------
         func:
-            Should be a top-level function or instance method in a class
-            decorated with :py:meth:`object_type`. Can be an async function
-            or a class, to use it's constructor.
+            Should be an instance method in a class decorated with
+            :py:meth:`object_type`. Can be an async function or a class,
+            to use it's constructor.
         name:
             An alternative name for the API. Useful to avoid conflicts with
             reserved words.

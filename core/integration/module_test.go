@@ -893,11 +893,13 @@ func (m *Use) UseHello(ctx context.Context) (string, error) {
 }
 `
 
-var usePythonOuter = `from dagger import dag, function
+var usePythonOuter = `import dagger
 
-@function
-def use_hello() -> str:
-    return dag.dep().hello()
+@dagger.object_type
+class Use:
+    @dagger.function
+    def use_hello(self) -> str:
+        return dag.dep().hello()
 `
 
 var useTSOuter = `
@@ -1113,14 +1115,16 @@ func (m *Use) Names(ctx context.Context) ([]string, error) {
 		},
 		{
 			sdk: "python",
-			source: `from dagger import dag, function
+			source: `import dagger
 
-@function
-async def names() -> list[str]:
-    return [
-        await dag.foo().name(),
-        await dag.bar().name(),
-    ]
+@dagger.object_type
+class Use:
+    @dagger.function
+    async def names(self) -> list[str]:
+        return [
+            await dag.foo().name(),
+            await dag.bar().name(),
+        ]
 `,
 		},
 		{
@@ -1754,14 +1758,17 @@ func (ModuleSuite) TestLotsOfFunctions(ctx context.Context, t *testctx.T) {
 	t.Run("python sdk", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		mainSrc := `from dagger import function
-		`
+		mainSrc := `import dagger
+
+@dagger.object_type
+class PotatoStack:
+`
 
 		for i := 0; i < funcCount; i++ {
 			mainSrc += fmt.Sprintf(`
-@function
-def potato_%d() -> str:
-    return "potato #%d"
+    @dagger.function
+    def potato_%d(self) -> str:
+        return "potato #%d"
 `, i, i)
 		}
 

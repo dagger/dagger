@@ -15,7 +15,7 @@ class Name:
     Example usage::
 
         @function
-        def pull(from_: Annotated[str, Name("from")]): ...
+        def pull(self, from_: Annotated[str, Name("from")]): ...
     """
 
     name: APIName
@@ -46,7 +46,7 @@ class DefaultPath:
     Example usage::
 
         @function
-        def build(src: Annotated[dagger.Directory, DefaultPath("..")]): ...
+        def build(self, src: Annotated[dagger.Directory, DefaultPath("..")]): ...
     """
 
     from_context: ContextPath
@@ -68,7 +68,7 @@ class Ignore:
     Example usage::
 
         @function
-        def build(src: Annotated[dagger.Directory, Ignore([".venv"])]): ...
+        def build(self, src: Annotated[dagger.Directory, Ignore([".venv"])]): ...
     """
 
     patterns: list[str]
