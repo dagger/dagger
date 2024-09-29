@@ -1,6 +1,8 @@
-from dagger import function
+import dagger
 
 
-@function(name="id")
-def id_() -> str:
-    return "NOOOO!!!!"
+@dagger.object_type
+class Test:
+    @dagger.function
+    def id_(self) -> str:
+        return "NOOOO!!!!"
