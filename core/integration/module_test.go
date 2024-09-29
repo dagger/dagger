@@ -5291,10 +5291,20 @@ func hostDaggerCommand(ctx context.Context, t testing.TB, workdir string, args .
 	return cmd
 }
 
+// command for a dagger cli call direct on the host
+// this should be used by commands that run in foreground
+func hostDaggerCommandSync(ctx context.Context, t testing.TB, workdir string, args ...string) *exec.Cmd {
+	t.Helper()
+	cmd := exec.Command(daggerCliPath(t), args...)
+	cmd.Env = append(os.Environ(), telemetry.PropagationEnv(ctx)...)
+	cmd.Dir = workdir
+	return cmd
+}
+
 // runs a dagger cli command directly on the host, rather than in an exec
 func hostDaggerExec(ctx context.Context, t testing.TB, workdir string, args ...string) ([]byte, error) { //nolint: unparam
 	t.Helper()
-	cmd := hostDaggerCommand(ctx, t, workdir, args...)
+	cmd := hostDaggerCommandSync(ctx, t, workdir, args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		err = fmt.Errorf("%s: %w", string(output), err)
@@ -5310,7 +5320,7 @@ func cleanupExec(t testing.TB, cmd *exec.Cmd) {
 		}
 		done := make(chan struct{})
 		go func() {
-			cmd.Wait()
+			_ = cmd.Wait()
 			close(done)
 		}()
 
