@@ -1,0 +1,16 @@
+name: dotnet sdk
+on:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Test
+      uses: dagger/dagger-for-github@v5
+      with:
+        verb: call
+        module: ./dev
+        args: test --source=.
+        cloud-token: ${{ secrets.DAGGER_CLOUD_TOKEN }}
