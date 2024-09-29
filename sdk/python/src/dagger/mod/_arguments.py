@@ -1,8 +1,6 @@
 import dataclasses
 import inspect
 
-from typing_extensions import deprecated
-
 from dagger.mod._types import APIName, ContextPath
 
 
@@ -22,15 +20,6 @@ class Name:
 
     def __str__(self) -> str:
         return self.name
-
-
-@deprecated("Arg is deprecated, use Name instead.")
-class Arg(Name):
-    """An alternative name when exposing a function argument to the API.
-
-    .. deprecated::
-        Use :py:class:`Name` instead.
-    """
 
 
 @dataclasses.dataclass(slots=True, frozen=True)
