@@ -51,20 +51,23 @@ func (t *Repeater) Render() string {
 		},
 		{
 			sdk: "python",
-			source: `from dagger import field, function, object_type
+			source: `import dagger
 
-@object_type
+@dagger.object_type
 class Repeater:
     message: str = field(default="")
     times: int = field(default=0)
 
-    @function
+    @dagger.function
     def render(self) -> str:
         return self.message * self.times
 
-@function
-def repeater(msg: str, times: int) -> Repeater:
-    return Repeater(message=msg, times=times)
+
+@dagger.object_type
+class Test:
+    @dagger.function
+    def repeater(self, msg: str, times: int) -> Repeater:
+        return Repeater(message=msg, times=times)
 `,
 		},
 		{
@@ -140,15 +143,16 @@ func (m *Foo) MyFunction() X {
 		},
 		{
 			sdk: "python",
-			source: `from dagger import field, function, object_type
+			source: `import dagger
 
-@object_type
+@dagger.object_type
 class X:
     message: str = field(default="")
 
-@function
-def my_function() -> X:
-    return X(message="foo")
+class Test:
+    @dagger.function
+    def my_function(self) -> X:
+        return X(message="foo")
 `,
 		},
 		{
