@@ -1,5 +1,4 @@
 # ruff: noqa: BLE001
-import contextlib
 import dataclasses
 import enum
 import functools
@@ -8,8 +7,7 @@ import json
 import logging
 import textwrap
 import typing
-import warnings
-from collections import Counter, defaultdict
+from collections import defaultdict
 from collections.abc import Callable, Mapping, MutableMapping
 from typing import Any, TypeAlias, TypeVar, cast
 
@@ -21,13 +19,11 @@ from typing_extensions import Self, dataclass_transform, overload
 
 import dagger
 from dagger import dag, telemetry
-from dagger.log import configure_logging
 from dagger.mod._converter import make_converter
 from dagger.mod._exceptions import (
     FatalError,
     FunctionError,
     InternalError,
-    NameConflictError,
     UserError,
 )
 from dagger.mod._resolver import (
@@ -64,17 +60,9 @@ Resolvers: TypeAlias = MutableMapping[ObjectDefinition, ObjectResolvers]
 
 
 class Module:
-    """Builder for a :py:class:`dagger.Module`.
+    """Builder for a :py:class:`dagger.Module`."""
 
-    Arguments
-    ---------
-    log_level:
-        Configure logging with this minimal level. If `None`, logging
-        is not configured.
-    """
-
-    def __init__(self, *, log_level: int | str | None = None):
-        self._log_level = log_level  # TODO: Hook debug from `--debug` flag in CLI?
+    def __init__(self):
         self._converter: cattrs.Converter = make_converter()
         self._resolvers: list[Resolver] = []
         self._fn_call = dag.current_function_call()
@@ -89,67 +77,30 @@ class Module:
     def add_resolver(self, resolver: Resolver):
         self._resolvers.append(resolver)
 
-    def get_resolvers(self, mod_name: str) -> Resolvers:  # noqa: C901
+    def get_resolvers(self, mod_name: str) -> Resolvers:
         grouped: Resolvers = defaultdict(dict)
-
-        # Convenience for having top-level functions be registered in
-        # a main object (object named after the module) implicitly.
         main_object = ObjectDefinition(to_pascal_case(mod_name))
 
-        # This is to validate if every object name corresponds to a different origin.
-        object_names: dict[ObjectName, set[type | None]] = defaultdict(set)
-
-        # This is to validate if an object doesn't have duplicate resolver names.
-        resolver_names: dict[tuple[ObjectName, ResolverName], int] = Counter()
-
         for resolver in self._resolvers:
-            obj_def: ObjectDefinition
-
             if resolver.origin is None:
-                if isinstance(resolver, FunctionResolver):
-                    func: Func = resolver.wrapped_func
-                    qualname = func.__qualname__.split("<locals>.", 1)[-1]
-                    if "." in qualname:
-                        msg = (
-                            f"Function “{qualname}” seems to be decorated in a "
-                            "class that is not itself decorated with @object_type"
-                        )
-                        raise UserError(msg)
+                msg = (
+                    f"Function “{resolver.original_name}” doesn't seem to be in "
+                    "an @object_type decorated class"
+                )
+                raise UserError(msg)
 
-                    warnings.warn(
-                        (
-                            "Top-level functions are deprecated and will be "
-                            "removed in a future release. Move to an instance "
-                            "method of a @dagger.object_type decorated class."
-                        ),
-                        DeprecationWarning,
-                        stacklevel=1,
-                    )
+            if not inspect.isclass(resolver.origin):
+                msg = (
+                    f"Unexpected non-class origin for “{resolver.original_name}”: "
+                    f" {resolver.origin!r}"
+                )
+                raise UserError(msg)
 
-                if isinstance(resolver, FieldResolver):
-                    msg = (
-                        f"Field “{resolver.original_name}” seems to be defined "
-                        "without a @object_type decorated class."
-                    )
-                    raise UserError(msg)
+            if not hasattr(resolver.origin, "__dagger_type__"):
+                msg = f"Class “{resolver.origin.__name__}” is missing @object_type."
+                raise UserError(msg)
 
-                obj_def = main_object
-            else:
-                if not inspect.isclass(resolver.origin):
-                    msg = (
-                        f"Unexpected non-class origin for “{resolver.original_name}”: "
-                        f" {resolver.origin!r}"
-                    )
-                    raise UserError(msg)
-
-                if not hasattr(resolver.origin, "__dagger_type__"):
-                    msg = f"Class “{resolver.origin.__name__}” is missing @object_type."
-                    raise UserError(msg)
-
-                obj_def = resolver.origin.__dagger_type__  # type: ignore generalTypeIssues
-
-            object_names[obj_def.name].add(resolver.origin)
-            resolver_names[(obj_def.name, resolver.name)] += 1
+            obj_def: ObjectDefinition = resolver.origin.__dagger_type__  # type: ignore generalTypeIssues
             grouped[obj_def][resolver.name] = resolver
 
         if main_object not in grouped:
@@ -158,21 +109,6 @@ class Module:
                 f"a “{main_object.name}” class decorated with @object_type."
             )
             raise UserError(msg)
-
-        with contextlib.suppress(StopIteration):
-            name = next(n for n, s in object_names.items() if len(s) > 1)
-            msg = f"Object “{name}” is defined multiple times."
-            if name == main_object.name:
-                msg = (
-                    f"{msg} Either define top-level functions or as methods "
-                    f"of a class named “{name}” but not both."
-                )
-            raise NameConflictError(msg)
-
-        if resolver_names.total() != len(resolver_names):
-            (pn, rn), c = resolver_names.most_common(1)[0]
-            msg = f"Resolver “{pn}.{rn}” is defined {c} times."
-            raise NameConflictError(msg)
 
         return grouped
 
@@ -195,8 +131,6 @@ class Module:
         return resolver
 
     def __call__(self) -> None:
-        if self._log_level is not None:
-            configure_logging(self._log_level)
         telemetry.initialize()
         anyio.run(self._run)
 
