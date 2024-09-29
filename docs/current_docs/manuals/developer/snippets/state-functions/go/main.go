@@ -4,11 +4,9 @@ import "fmt"
 
 type MyModule struct {
 	// The greeting to use
-	// +default="Hello"
 	Greeting string
 	// Who to greet
 	// +private
-	// +default="World"
 	Name string
 }
 
