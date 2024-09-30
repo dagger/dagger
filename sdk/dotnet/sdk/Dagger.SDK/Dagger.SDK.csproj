@@ -11,7 +11,7 @@
 
     <ItemGroup>
         <ProjectReference
-            Include="..\Dagger.SDK.SourceGenerator\Dagger.SDK.SourceGenerator\Dagger.SDK.SourceGenerator.csproj"
+            Include="..\Dagger.SDK.SourceGenerator\Dagger.SDK.SourceGenerator.csproj"
             OutputItemType="Analyzer"
             ReferenceOutputAssembly="false" />
     </ItemGroup>

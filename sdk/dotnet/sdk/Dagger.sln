@@ -7,9 +7,9 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Dagger.SDK", "Dagger.SDK\Da
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Dagger.SDK.Tests", "Dagger.SDK.Tests\Dagger.SDK.Tests.csproj", "{9B811549-D265-4E16-AC82-48C364A827E3}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Dagger.SDK.SourceGenerator", "Dagger.SDK.SourceGenerator\Dagger.SDK.SourceGenerator\Dagger.SDK.SourceGenerator.csproj", "{D5FEAFEF-A949-41DA-91B2-47724429A615}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Dagger.SDK.SourceGenerator", "Dagger.SDK.SourceGenerator\Dagger.SDK.SourceGenerator.csproj", "{0D876458-9F6E-4B9D-89D6-7B8D015B56A7}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Dagger.SDK.SourceGenerator.Tests", "Dagger.SDK.SourceGenerator\Dagger.SDK.SourceGenerator.Tests\Dagger.SDK.SourceGenerator.Tests.csproj", "{F3BFB0DF-A6F7-4F5A-8EF7-AEADFEA2EDE4}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Dagger.SDK.SourceGenerator.Tests", "Dagger.SDK.SourceGenerator.Tests\Dagger.SDK.SourceGenerator.Tests.csproj", "{3DC9AD9B-270B-4AE8-90FA-6D2A70C84483}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -28,13 +28,13 @@ Global
 		{9B811549-D265-4E16-AC82-48C364A827E3}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{9B811549-D265-4E16-AC82-48C364A827E3}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{9B811549-D265-4E16-AC82-48C364A827E3}.Release|Any CPU.Build.0 = Release|Any CPU
-		{D5FEAFEF-A949-41DA-91B2-47724429A615}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{D5FEAFEF-A949-41DA-91B2-47724429A615}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{D5FEAFEF-A949-41DA-91B2-47724429A615}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{D5FEAFEF-A949-41DA-91B2-47724429A615}.Release|Any CPU.Build.0 = Release|Any CPU
-		{F3BFB0DF-A6F7-4F5A-8EF7-AEADFEA2EDE4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{F3BFB0DF-A6F7-4F5A-8EF7-AEADFEA2EDE4}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{F3BFB0DF-A6F7-4F5A-8EF7-AEADFEA2EDE4}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{F3BFB0DF-A6F7-4F5A-8EF7-AEADFEA2EDE4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0D876458-9F6E-4B9D-89D6-7B8D015B56A7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0D876458-9F6E-4B9D-89D6-7B8D015B56A7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0D876458-9F6E-4B9D-89D6-7B8D015B56A7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0D876458-9F6E-4B9D-89D6-7B8D015B56A7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3DC9AD9B-270B-4AE8-90FA-6D2A70C84483}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3DC9AD9B-270B-4AE8-90FA-6D2A70C84483}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3DC9AD9B-270B-4AE8-90FA-6D2A70C84483}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3DC9AD9B-270B-4AE8-90FA-6D2A70C84483}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
