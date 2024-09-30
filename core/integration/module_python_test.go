@@ -118,6 +118,58 @@ func (PythonSuite) TestInit(ctx context.Context, t *testctx.T) {
 
 		require.ErrorContains(t, err, "merge is only supported")
 	})
+
+	t.Run("init module in .dagger if files present in current dir", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithNewFile("hello.py", `
+                from dagger import field, function, object_type
+
+                @object_type
+                class HelloWorld:
+                    my_name: str = field(default="World")
+
+                    @function
+                    def message(self) -> str:
+                        return f"Hello, {self.my_name}!"
+            `).
+			With(daggerExec("init", "--name=bare", "--sdk=python"))
+
+		daggerDirEnts, err := modGen.Directory("/work/.dagger").Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, daggerDirEnts, "pyproject.toml", "sdk", "src", "uv.lock")
+
+		out, err := modGen.
+			WithWorkdir("/work").
+			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+	})
+
+	t.Run("init module when current dir only has hidden dirs", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithExec([]string{"mkdir", "-p", ".git"}).
+			With(daggerExec("init", "--name=bare", "--sdk=python"))
+
+		daggerDirEnts, err := modGen.Directory("/work").Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, daggerDirEnts, "pyproject.toml", "sdk", "src", "uv.lock")
+
+		out, err := modGen.
+			WithWorkdir("/work").
+			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+	})
 }
 
 func (PythonSuite) TestProjectLayout(ctx context.Context, t *testctx.T) {

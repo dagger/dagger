@@ -451,6 +451,13 @@ func main() {
 		daggerDirEnts, err := modGen.Directory("/work/.dagger").Entries(ctx)
 		require.NoError(t, err)
 		require.Contains(t, daggerDirEnts, "go.mod", "go.sum", "main.go")
+
+		out, err := modGen.
+			WithWorkdir("/work").
+			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 	})
 
 	t.Run("init module when current dir only has hidden dirs", func(ctx context.Context, t *testctx.T) {
@@ -466,6 +473,13 @@ func main() {
 		daggerDirEnts, err := modGen.Directory("/work").Entries(ctx)
 		require.NoError(t, err)
 		require.Contains(t, daggerDirEnts, "go.mod", "go.sum", "main.go")
+
+		out, err := modGen.
+			WithWorkdir("/work").
+			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 	})
 }
 

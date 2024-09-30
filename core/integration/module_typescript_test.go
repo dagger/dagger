@@ -228,6 +228,60 @@ func (TypescriptSuite) TestInit(ctx context.Context, t *testctx.T) {
 			Stdout(ctx)
 		require.ErrorContains(t, err, "merge is only supported")
 	})
+
+	t.Run("init module in .dagger if files present in current dir", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithNewFile("/work/src/index.ts", `
+				import { dag, Container, object, func } from "@dagger.io/dagger"
+
+				@object()
+				class ExistingSource {
+				  @func()
+				  helloWorld(stringArg: string): Container {
+					return dag.container().from("alpine:latest").withExec(["echo", stringArg])
+				  }
+				}
+
+				`,
+			).
+			With(daggerExec("init", "--name=bare", "--sdk=typescript"))
+
+		daggerDirEnts, err := modGen.Directory("/work/.dagger").Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, daggerDirEnts, "package.json", "sdk", "src", "tsconfig.json", "yarn.lock")
+
+		out, err := modGen.
+			WithWorkdir("/work").
+			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+	})
+
+	t.Run("init module when current dir only has hidden dirs", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithExec([]string{"mkdir", "-p", ".git"}).
+			With(daggerExec("init", "--name=bare", "--sdk=typescript"))
+
+		daggerDirEnts, err := modGen.Directory("/work").Entries(ctx)
+		require.NoError(t, err)
+		require.Contains(t, daggerDirEnts, "dagger.json", "package.json", "sdk", "src", "tsconfig.json", "yarn.lock")
+
+		out, err := modGen.
+			WithWorkdir("/work").
+			With(daggerQuery(`{bare{containerEcho(stringArg:"hello"){stdout}}}`)).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
+	})
 }
 
 //go:embed testdata/modules/typescript/syntax/index.ts
