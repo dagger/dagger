@@ -15,7 +15,7 @@ import (
 //go:embed introspection.graphql
 var introspectionGraphql string
 
-const introspectionJsonPath = "/introspection.json"
+const introspectionJSONPath = "/introspection.json"
 
 func New(
 	// Dotnet SDK source.
@@ -44,10 +44,10 @@ func (m *DotnetSdkDev) Introspect() *dagger.File {
 		From("alpine:3.20").
 		With(installDaggerCli).
 		WithNewFile("/introspection.graphql", introspectionGraphql).
-		WithExec([]string{"sh", "-c", "dagger query < /introspection.graphql > " + introspectionJsonPath}, dagger.ContainerWithExecOpts{
+		WithExec([]string{"sh", "-c", "dagger query < /introspection.graphql > " + introspectionJSONPath}, dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		}).
-		File(introspectionJsonPath)
+		File(introspectionJSONPath)
 }
 
 // Testing the SDK.
