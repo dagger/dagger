@@ -8,12 +8,27 @@ import (
 	"strings"
 
 	"github.com/chzyer/readline"
+	"github.com/dagger/dagger/engine/client"
+	"github.com/spf13/cobra"
 	"mvdan.cc/sh/v3/expand"
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
 )
 
-func dsh(args []string) error {
+var shellCmd = &cobra.Command{
+	Use:   "shell",
+	Short: "Run an interactive dagger shell",
+	RunE: func(c *cobra.Command, args []string) error {
+		return withEngine(c.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
+			return dsh(ctx, engineClient, args)
+		})
+	},
+}
+
+// Interactive shell main loop
+func dsh(ctx context.Context, engineClient *client.Client, args []string) error {
+	// FIXME 1: introspect all dependencies & types
+	// FIXME 2: cool interactive repl
 	if err := shell("> "); err != nil {
 		return err
 	}
