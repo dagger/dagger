@@ -94,6 +94,7 @@ func init() {
 		callModCmd.Command(),
 		sessionCmd(),
 		newGenCmd(),
+		shellCmd,
 	)
 
 	rootCmd.AddGroup(moduleGroup)
@@ -121,9 +122,6 @@ var rootCmd = &cobra.Command{
 	Use:           "dagger",
 	Short:         "A tool to run CI/CD pipelines in containers, anywhere",
 	SilenceErrors: true, // handled in func main() instead
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return dsh(args)
-	},
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		// if we got this far, CLI parsing worked just fine; no
 		// need to show usage for runtime errors
