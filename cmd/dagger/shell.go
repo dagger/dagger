@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -36,7 +38,7 @@ func shell(ctx context.Context, engineClient *client.Client, args []string) erro
 	}
 	defer rl.Close()
 	runner, err := interp.New(
-		interp.StdIO(os.Stdin, os.Stdout, os.Stderr),
+		interp.StdIO(nil, os.Stdout, os.Stderr),
 		interp.ExecHandlers(shellDebug, shellBuiltin, shellCall),
 		interp.Env(expand.ListEnviron("FOO=bar")),
 	)
@@ -63,22 +65,50 @@ func shell(ctx context.Context, engineClient *client.Client, args []string) erro
 
 func shellDebug(next interp.ExecHandlerFunc) interp.ExecHandlerFunc {
 	return func(ctx context.Context, args []string) error {
-		fmt.Fprintf(os.Stderr, "# %s\n", strings.Join(args, " "))
+		// hctx := interp.HandlerCtx(ctx)
+		// fmt.Fprintf(hctx.Stderr, "[%s] stdin=%T %v\n", strings.Join(args, " "), hctx.Stdin, hctx.Stdin)
 		return next(ctx, args)
 	}
 }
 
+func readState(r io.Reader) ([][]string, error) {
+	var state [][]string
+	decoder := json.NewDecoder(r)
+	if err := decoder.Decode(&state); err != nil {
+		return nil, err
+	}
+	return state, nil
+}
+
+func writeState(state [][]string, w io.Writer) error {
+	return json.NewEncoder(w).Encode(state)
+}
+
 func shellCall(next interp.ExecHandlerFunc) interp.ExecHandlerFunc {
 	return func(ctx context.Context, args []string) error {
-		module := args[0]
-		args = append([]string{"call"}, args[1:]...)
-		return execDagger(ctx, module, args)
+		hctx := interp.HandlerCtx(ctx)
+		var (
+			state [][]string
+			err   error
+		)
+		if fstdin, ok := hctx.Stdin.(*os.File); ok && fstdin == nil {
+			fmt.Fprintf(hctx.Stderr, "ENTRYPOINT: %v\n", args)
+		} else {
+			fmt.Fprintf(hctx.Stderr, "CHAINED: %v\n", args)
+			state, err = readState(hctx.Stdin)
+			if (err != nil) && (err != io.EOF) {
+				// This means no stdin allowed that doesn't decode to a state, ever.
+				return fmt.Errorf("read state (%s): %s", args[0], err.Error())
+			}
+		}
+		outState := append(state, args)
+		fmt.Fprintf(hctx.Stderr, "%v --> (%s) --> %v\n", state, args[0], outState)
+		return writeState(outState, hctx.Stdout)
 	}
 }
 
 func shellBuiltin(next interp.ExecHandlerFunc) interp.ExecHandlerFunc {
 	return func(ctx context.Context, args []string) error {
-		fmt.Fprintf(os.Stderr, "# %s\n", strings.Join(args, " "))
 		if !strings.HasPrefix(args[0], ".") {
 			return next(ctx, args)
 		}
