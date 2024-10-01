@@ -71,39 +71,39 @@ func shellDebug(next interp.ExecHandlerFunc) interp.ExecHandlerFunc {
 	}
 }
 
-func readState(r io.Reader) ([][]string, error) {
-	var state [][]string
+func readQuery(r io.Reader) ([][]string, error) {
+	var q [][]string
 	decoder := json.NewDecoder(r)
-	if err := decoder.Decode(&state); err != nil {
+	if err := decoder.Decode(&q); err != nil {
 		return nil, err
 	}
-	return state, nil
+	return q, nil
 }
 
-func writeState(state [][]string, w io.Writer) error {
-	return json.NewEncoder(w).Encode(state)
+func writeQuery(q [][]string, w io.Writer) error {
+	return json.NewEncoder(w).Encode(q)
 }
 
 func shellCall(next interp.ExecHandlerFunc) interp.ExecHandlerFunc {
 	return func(ctx context.Context, args []string) error {
 		hctx := interp.HandlerCtx(ctx)
 		var (
-			state [][]string
+			query [][]string
 			err   error
 		)
 		if fstdin, ok := hctx.Stdin.(*os.File); ok && fstdin == nil {
 			fmt.Fprintf(hctx.Stderr, "ENTRYPOINT: %v\n", args)
 		} else {
 			fmt.Fprintf(hctx.Stderr, "CHAINED: %v\n", args)
-			state, err = readState(hctx.Stdin)
+			query, err = readQuery(hctx.Stdin)
 			if (err != nil) && (err != io.EOF) {
 				// This means no stdin allowed that doesn't decode to a state, ever.
 				return fmt.Errorf("read state (%s): %s", args[0], err.Error())
 			}
 		}
-		outState := append(state, args)
-		fmt.Fprintf(hctx.Stderr, "%v --> (%s) --> %v\n", state, args[0], outState)
-		return writeState(outState, hctx.Stdout)
+		outQuery := append(query, args)
+		fmt.Fprintf(hctx.Stderr, "%v --> (%s) --> %v\n", query, args[0], outQuery)
+		return writeQuery(outQuery, hctx.Stdout)
 	}
 }
 
