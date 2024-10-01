@@ -71,39 +71,85 @@ func shellDebug(next interp.ExecHandlerFunc) interp.ExecHandlerFunc {
 	}
 }
 
-func readQuery(r io.Reader) ([][]string, error) {
-	var q [][]string
-	decoder := json.NewDecoder(r)
-	if err := decoder.Decode(&q); err != nil {
+func readObject(ctx context.Context) (*Object, error) {
+	hctx := interp.HandlerCtx(ctx)
+	if fstdin, ok := hctx.Stdin.(*os.File); ok && fstdin == nil {
+		return nil, nil
+	}
+	decoder := json.NewDecoder(hctx.Stdin)
+	var o Object
+	err := decoder.Decode(&o)
+	if err == io.EOF {
+		// Empty input or non-json input: no input object
+		return &Object{Type: "EOF"}, nil
+	}
+	if err != nil {
 		return nil, err
 	}
-	return q, nil
+	return &o, nil
 }
 
-func writeQuery(q [][]string, w io.Writer) error {
-	return json.NewEncoder(w).Encode(q)
+type Object struct {
+	Type  string `json:"type"`
+	Calls []Call `json:"calls"`
+}
+
+func (o Object) Write(ctx context.Context) error {
+	htcx := interp.HandlerCtx(ctx)
+	return json.NewEncoder(htcx.Stdout).Encode(o)
+}
+
+func (o Object) WithCall(call Call) Object {
+	o.Calls = append(o.Calls, call)
+	return o
+}
+
+type Call struct {
+	Function  string                 `json:"function"`
+	Arguments map[string]interface{} `json:"arguments"`
+}
+
+func shellLog(ctx context.Context, msg string, args ...interface{}) {
+	hctx := interp.HandlerCtx(ctx)
+	fmt.Fprintf(hctx.Stderr, msg, args...)
 }
 
 func shellCall(next interp.ExecHandlerFunc) interp.ExecHandlerFunc {
 	return func(ctx context.Context, args []string) error {
-		hctx := interp.HandlerCtx(ctx)
-		var (
-			query [][]string
-			err   error
-		)
-		if fstdin, ok := hctx.Stdin.(*os.File); ok && fstdin == nil {
-			fmt.Fprintf(hctx.Stderr, "ENTRYPOINT: %v\n", args)
-		} else {
-			fmt.Fprintf(hctx.Stderr, "CHAINED: %v\n", args)
-			query, err = readQuery(hctx.Stdin)
-			if (err != nil) && (err != io.EOF) {
-				// This means no stdin allowed that doesn't decode to a state, ever.
-				return fmt.Errorf("read state (%s): %s", args[0], err.Error())
-			}
+		input, err := readObject(ctx)
+		if err != nil {
+			return err
 		}
-		outQuery := append(query, args)
-		fmt.Fprintf(hctx.Stderr, "%v --> (%s) --> %v\n", query, args[0], outQuery)
-		return writeQuery(outQuery, hctx.Stdout)
+		var output Object
+		if input == nil {
+			shellLog(ctx, "[%s] ENTRYPOINT!!\n", args[0])
+			// You're the entrypoint
+			// 1. Interpret args as same-module call (eg. 'build')
+			// 2. If no match: interpret args as core function call (eg. 'git')
+			// 3. If no match (to be done later): interpret args as dependency short name (eg. 'wolfi container')
+			// --> craft the call
+			output = Object{
+				Type: "FIXME-ENTRYPOINT",
+				Calls: []Call{
+					Call{
+						Function:  args[0],                      // FIXME: handle cases 2 and 3
+						Arguments: make(map[string]interface{}), // FIXME
+					},
+				},
+			}
+		} else if input.Type == "EOF" { // debug hack
+			shellLog(ctx, "[%s] eof\n", args[0])
+			return nil
+		} else {
+			// You're chaining
+			var call = Call{
+				Function:  args[0],
+				Arguments: make(map[string]interface{}), // FIXME
+			}
+			output = input.WithCall(call)
+			output.Type = "FIXME CHAINED"
+		}
+		return output.Write(ctx)
 	}
 }
 
