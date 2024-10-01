@@ -3,8 +3,8 @@
   "sdk": "go",
   "dependencies": [
     {
-      "name": "wolfi",
-      "source": "github.com/shykes/daggerverse/wolfi@daae822bfa6d67e9e241b92ebe43e029e0c2c043"
+      "name": "version",
+      "source": "version"
     },
     {
       "name": "alpine",
@@ -49,10 +49,6 @@
     {
       "name": "shellcheck",
       "source": "modules/shellcheck"
-    },
-    {
-      "name": "version",
-      "source": "version"
     },
     {
       "name": "wolfi",
