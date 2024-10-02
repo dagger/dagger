@@ -226,7 +226,12 @@ func newCall(ctx context.Context, dag *dagger.Client, modDef *moduleDef, modFunc
 		return nil, fmt.Errorf("not enough arguments: expected %d, got %d", len(reqs), len(args))
 	}
 
-	if err := flags.Parse(args); err != nil {
+	fargs := make([]string, 0, len(args)*2)
+	for i, arg := range reqs {
+		fargs = append(fargs, "--"+arg.flagName, args[i])
+	}
+
+	if err := flags.Parse(fargs); err != nil {
 		return nil, fmt.Errorf("error parsing flags: %w", err)
 	}
 
