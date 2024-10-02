@@ -94,18 +94,13 @@ func readObject(ctx context.Context) (*Object, error) {
 	if fstdin, ok := hctx.Stdin.(*os.File); ok && fstdin == nil {
 		return nil, nil
 	}
-	decoder := json.NewDecoder(hctx.Stdin)
-	var o Object
-	err := decoder.Decode(&o)
-	if err == io.EOF {
-		return nil, nil
-		// Empty input or non-json input: no input object
-		//return &Object{Type: "EOF"}, nil
-	}
+	b, err := io.ReadAll(hctx.Stdin)
 	if err != nil {
 		return nil, err
 	}
-	return &o, nil
+	var o Object
+	err = json.Unmarshal(b, &o)
+	return &o, err
 }
 
 type Object struct {
@@ -138,6 +133,7 @@ func shellCall(ctx context.Context, dag *dagger.Client, modDef *moduleDef, args 
 	if err != nil {
 		return err
 	}
+	shellLog(ctx, "[DBG] input: %v; args: %v\n", o, args)
 	if o == nil {
 		if strings.HasPrefix(args[0], ".") {
 			return shellBuiltin(ctx, dag, modDef, args)
@@ -157,35 +153,36 @@ func shellCall(ctx context.Context, dag *dagger.Client, modDef *moduleDef, args 
 		o = &Object{
 			Type: modDef.MainObject.AsObject.Name,
 		}
-		o.WithCall(*first)
+		o.Calls = append(o.Calls, *first)
 	}
 
 	objDef := modDef.GetObject(o.Type)
 	if objDef == nil {
 		return fmt.Errorf("could not find object type %q", o.Type)
 	}
-	// TODO: modDef.LoadTypeDef(objDef)
-
 	fnDef, err := GetFunction(objDef, args[0])
 	if err != nil {
 		return fmt.Errorf("%q does not have a %q function", o.Type, args[0])
 	}
 
-	ret := fnDef.ReturnType
-	if ret == nil {
-		return fmt.Errorf("function %q does not have a return type", fnDef.Name)
-	}
-	if ret.AsFunctionProvider() == nil {
+	modDef.LoadTypeDef(fnDef.ReturnType)
+	shellLog(ctx, "[DBG] fn: %s; retType: %v; retTypeName: %s\n", fnDef.Name, fnDef.ReturnType, fnDef.ReturnType.Name())
+
+	fnProv := fnDef.ReturnType
+
+	if fnProv == nil {
 		return fmt.Errorf("function %q does not return a function provider", fnDef.Name)
 	}
-	o.Type = ret.AsFunctionProvider().ProviderName()
+	o.Type = fnProv.Name()
 
 	call, err := newCall(ctx, dag, modDef, fnDef, args[1:])
 	if err != nil {
 		return fmt.Errorf("error creating call: %w", err)
 	}
 
-	o.WithCall(*call)
+	o.Calls = append(o.Calls, *call)
+
+	shellLog(ctx, "[DBG] output: %v\n", o)
 	return o.Write(ctx)
 }
 
