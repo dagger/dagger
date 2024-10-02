@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"text/tabwriter"
 
 	"dagger.io/dagger"
 	"github.com/chzyer/readline"
@@ -137,6 +138,9 @@ func shellCall(ctx context.Context, dag *dagger.Client, modDef *moduleDef, args 
 		return err
 	}
 	if o == nil {
+		if strings.HasPrefix(args[0], ".") {
+			return shellBuiltin(ctx, dag, modDef, args)
+		}
 		shellLog(ctx, "[%s] ENTRYPOINT!!\n", args[0])
 		// You're the entrypoint
 		// 1. Interpret args as same-module call (eg. 'build')
@@ -238,7 +242,7 @@ func reexec(ctx context.Context, args []string) error {
 	return cmd.Run()
 }
 
-func shellBuiltin(ctx context.Context, c *client.Client, args []string) error {
+func shellBuiltin(ctx context.Context, dag *dagger.Client, modDef *moduleDef, args []string) error {
 	if len(args) < 1 {
 		return fmt.Errorf("no specified builtin")
 	}
@@ -267,6 +271,14 @@ func shellBuiltin(ctx context.Context, c *client.Client, args []string) error {
 	case ".logout":
 	case ".core":
 	case ".config":
+	case ".functions":
+		functions := modDef.MainObject.AsFunctionProvider().GetFunctions()
+		w := tabwriter.NewWriter(interp.HandlerCtx(ctx).Stdout, 0, 0, 2, ' ', tabwriter.AlignRight)
+		fmt.Fprintln(w, "Function\tDescription\tReturn type")
+		fmt.Fprintln(w, "---\t---\t---")
+		for _, fn := range functions {
+			fmt.Fprintf(w, "%s\t%s\t%s", fn.Name, fn.Description, fn.ReturnType.Name())
+		}
 	default:
 		return fmt.Errorf("no such command: %s", args[0])
 	}
