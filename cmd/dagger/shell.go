@@ -96,8 +96,9 @@ func readObject(ctx context.Context) (*Object, error) {
 	var o Object
 	err := decoder.Decode(&o)
 	if err == io.EOF {
+		return nil, nil
 		// Empty input or non-json input: no input object
-		return &Object{Type: "EOF"}, nil
+		//return &Object{Type: "EOF"}, nil
 	}
 	if err != nil {
 		return nil, err
@@ -227,27 +228,32 @@ func newCall(ctx context.Context, dag *dagger.Client, modDef *moduleDef, modFunc
 	}, nil
 }
 
-func shellBuiltin(next interp.ExecHandlerFunc) interp.ExecHandlerFunc {
-	return func(ctx context.Context, args []string) error {
-		if !strings.HasPrefix(args[0], ".") {
-			return next(ctx, args)
-		}
-		args[0] = args[0][1:]
-		switch args[0] {
-		case "install":
-			return execDagger(ctx, "", args)
-		}
-		return next(ctx, args)
-	}
+// Re-execute the dagger command (hack)
+func reexec(ctx context.Context, args []string) error {
+	hctx := interp.HandlerCtx(ctx)
+	cmd := exec.CommandContext(ctx, "dagger", args...)
+	cmd.Stdout = hctx.Stdout
+	cmd.Stderr = hctx.Stderr
+	cmd.Stdin = hctx.Stdin
+	return cmd.Run()
 }
 
-func execDagger(ctx context.Context, module string, args []string) error {
-	if module != "" {
-		args = append([]string{"-m", module}, args...)
+func shellBuiltin(ctx context.Context, c *client.Client, name string, args []string) error {
+	switch name {
+	case ".help":
+	case ".install":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: .install MODULE")
+		}
+		return reexec(ctx, []string{"install", args[0]})
+	case "deps":
+	case ".uninstall":
+	case ".login":
+	case ".logout":
+	case ".core":
+	case ".config":
+	default:
+		return fmt.Errorf("no such command: %s", name)
 	}
-	cmd := exec.CommandContext(ctx, "dagger", args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
-	return cmd.Run()
+	return nil
 }
