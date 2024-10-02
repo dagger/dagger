@@ -238,22 +238,37 @@ func reexec(ctx context.Context, args []string) error {
 	return cmd.Run()
 }
 
-func shellBuiltin(ctx context.Context, c *client.Client, name string, args []string) error {
-	switch name {
+func shellBuiltin(ctx context.Context, c *client.Client, args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("no specified builtin")
+	}
+	switch args[0] {
 	case ".help":
+		shellLog(ctx, `
+.functions    list available functions
+.help         print this help message
+.install	  install a dependency
+.deps         list dependencies
+.uninstall    uninstall a dependency
+.login        login to Dagger Cloud
+.logout       logout from Dagger Cloud
+.core         load a core Dagger type
+`)
+		return nil
 	case ".install":
 		if len(args) < 1 {
 			return fmt.Errorf("usage: .install MODULE")
 		}
 		return reexec(ctx, []string{"install", args[0]})
-	case "deps":
+	case ".deps":
 	case ".uninstall":
 	case ".login":
+		return reexec(ctx, append([]string{"login"}, args...))
 	case ".logout":
 	case ".core":
 	case ".config":
 	default:
-		return fmt.Errorf("no such command: %s", name)
+		return fmt.Errorf("no such command: %s", args[0])
 	}
 	return nil
 }
