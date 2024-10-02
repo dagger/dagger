@@ -80,10 +80,10 @@ html[data-theme="dark"] {
   }
 
   @include mobile {
+    margin: auto;
     html[data-theme="light"] {
       background-color: black;
     }
-    margin: auto;
   }
 }
 
