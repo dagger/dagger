@@ -415,8 +415,12 @@ func (labels Labels) WithCILabels() Labels {
 		vendor = "CircleCI"
 	case os.Getenv("GITLAB_CI") == "true": //nolint:goconst
 		vendor = "GitLab"
-	case len(os.Getenv("JENKINS_HOME")) > 0:
+	case os.Getenv("JENKINS_HOME") != "":
 		vendor = "Jenkins"
+	case os.Getenv("BUILDKITE") == "true":
+		vendor = "Buildkite"
+	case os.Getenv("TEAMCITY_VERSION") != "":
+		vendor = "TeamCity"
 	}
 	if vendor != "" {
 		labels["dagger.io/ci.vendor"] = vendor
