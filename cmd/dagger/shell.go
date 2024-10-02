@@ -261,8 +261,11 @@ func shellBuiltin(ctx context.Context, dag *dagger.Client, modDef *moduleDef, ar
 	if len(args) < 1 {
 		return fmt.Errorf("no specified builtin")
 	}
+	if strings.HasPrefix(args[0], ".") {
+		args[0] = args[0][1:]
+	}
 	switch args[0] {
-	case ".help":
+	case "help":
 		shellLog(ctx, `
 .functions    list available functions
 .help         print this help message
@@ -274,25 +277,48 @@ func shellBuiltin(ctx context.Context, dag *dagger.Client, modDef *moduleDef, ar
 .core         load a core Dagger type
 `)
 		return nil
-	case ".install":
+	case "install":
 		if len(args) < 1 {
 			return fmt.Errorf("usage: .install MODULE")
 		}
-		return reexec(ctx, []string{"install", args[0]})
-	case ".deps":
-	case ".uninstall":
-	case ".login":
-		return reexec(ctx, append([]string{"login"}, args...))
-	case ".logout":
-	case ".core":
-	case ".config":
-	case ".functions":
+		return reexec(ctx, args)
+	case "deps":
+		deps, err := modDef.Source.AsModule().Dependencies(ctx)
+		if err != nil {
+			return err
+		}
+		w := tabwriter.NewWriter(interp.HandlerCtx(ctx).Stdout, 0, 0, 2, ' ', 0)
+		fmt.Fprintln(w, "NAME\tDESCRIPTION")
+		fmt.Fprintln(w, " \t ")
+		for _, dep := range deps {
+			name, err := dep.Name(ctx)
+			if err != nil {
+				return err
+			}
+			desc, err := dep.Description(ctx)
+			if err != nil {
+				return err
+			}
+			shortDesc := strings.SplitN(desc, "\n", 2)[0]
+			fmt.Fprintf(w, "%s\t%s\n", name, shortDesc)
+		}
+		return w.Flush()
+
+	case "uninstall":
+	case "login":
+		return reexec(ctx, args)
+	case "logout":
+		return reexec(ctx, args)
+	case "core":
+		return fmt.Errorf("FIXME: not yet implemented")
+	case "config":
+	case "functions":
 		functions := modDef.MainObject.AsFunctionProvider().GetFunctions()
 		w := tabwriter.NewWriter(interp.HandlerCtx(ctx).Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "Function\tDescription\tReturn type")
+		fmt.Fprintln(w, "NAME\tDESCRIPTION\tRETURN TYPEs")
 		fmt.Fprintln(w, "---\t---\t---")
 		for _, fn := range functions {
-			fmt.Fprintf(w, "%s\t%s\t%s\n", fn.Name, fn.Description, fn.ReturnType.Name())
+			fmt.Fprintf(w, "%s\t%s\t%s\n", fn.CmdName(), fn.Description, fn.ReturnType.Name())
 		}
 		return w.Flush()
 	default:
