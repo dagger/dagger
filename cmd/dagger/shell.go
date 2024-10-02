@@ -184,6 +184,7 @@ func shellCall(ctx context.Context, dag *dagger.Client, modDef *moduleDef, args 
 	o.Calls = append(o.Calls, *call)
 
 	shellLog(ctx, "[DBG] output: %v\n", o)
+
 	return o.Write(ctx)
 }
 
@@ -259,9 +260,9 @@ func reexec(ctx context.Context, args []string) error {
 func shellRequest(ctx context.Context, dag *dagger.Client, obj *Object) error {
 	q := querybuilder.Query().Client(dag.GraphQLClient())
 	for _, call := range obj.Calls {
-		q.Select(call.Function)
+		q = q.Select(call.Function)
 		for n, v := range call.Arguments {
-			q.Arg(n, v)
+			q = q.Arg(n, v)
 		}
 	}
 
