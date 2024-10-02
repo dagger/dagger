@@ -198,6 +198,9 @@ func (fe *frontendPlain) Run(ctx context.Context, opts dagui.FrontendOpts, run f
 
 	runErr := run(ctx)
 	fe.finalRender()
+
+	fe.db.WriteDot(opts.DotOutputFilePath, opts.DotFocusField, opts.DotShowInternal)
+
 	return runErr
 }
 

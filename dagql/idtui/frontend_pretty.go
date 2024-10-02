@@ -157,6 +157,8 @@ func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run 
 		return renderErr
 	}
 
+	fe.db.WriteDot(opts.DotOutputFilePath, opts.DotFocusField, opts.DotShowInternal)
+
 	// return original err
 	return runErr
 }
