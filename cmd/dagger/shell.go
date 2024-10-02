@@ -12,6 +12,7 @@ import (
 	"text/tabwriter"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/querybuilder"
 	"github.com/chzyer/readline"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/spf13/cobra"
@@ -255,6 +256,31 @@ func reexec(ctx context.Context, args []string) error {
 	return cmd.Run()
 }
 
+func shellRequest(ctx context.Context, dag *dagger.Client, obj *Object) error {
+	q := querybuilder.Query().Client(dag.GraphQLClient())
+	for _, call := range obj.Calls {
+		q.Select(call.Function)
+		for n, v := range call.Arguments {
+			q.Arg(n, v)
+		}
+	}
+
+	var response any
+	query, err := q.Build(ctx)
+	if err != nil {
+		return err
+	}
+	shellLog(ctx, "[DBG] query: %s\n", query)
+
+	q = q.Bind(&response)
+
+	if err := q.Execute(ctx); err != nil {
+		return fmt.Errorf("response from query: %w", err)
+	}
+
+	return nil
+}
+
 func shellBuiltin(ctx context.Context, dag *dagger.Client, modDef *moduleDef, args []string) error {
 	if len(args) < 1 {
 		return fmt.Errorf("no specified builtin")
@@ -293,22 +319,22 @@ func shellBuiltin(ctx context.Context, dag *dagger.Client, modDef *moduleDef, ar
 		o := &Object{
 			Type: "Directory",
 			Calls: []Call{
-				Call{
+				{
 					Function: "git",
 					Arguments: map[string]interface{}{
 						"url": gitUrl.String(),
 					},
 				},
-				Call{
+				{
 					Function: "ref",
 					Arguments: map[string]interface{}{
 						"name": ref,
 					},
 				},
-				Call{
+				{
 					Function: "tree",
 				},
-				Call{
+				{
 					Function: "directory",
 					Arguments: map[string]interface{}{
 						"path": subdir,
