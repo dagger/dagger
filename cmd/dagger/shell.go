@@ -148,9 +148,15 @@ func shellCall(ctx context.Context, dag *dagger.Client, modDef *moduleDef, args 
 		// 3. If no match (to be done later): interpret args as dependency short name (eg. 'wolfi container')
 		// --> craft the call
 
+		first, err := newCall(ctx, dag, modDef, modDef.MainObject.AsObject.Constructor, nil)
+		if err != nil {
+			return err
+		}
+
 		o = &Object{
 			Type: modDef.MainObject.AsObject.Name,
 		}
+		o.WithCall(*first)
 	}
 
 	objDef := modDef.GetObject(o.Type)
@@ -161,8 +167,17 @@ func shellCall(ctx context.Context, dag *dagger.Client, modDef *moduleDef, args 
 
 	fnDef, err := GetFunction(objDef, args[0])
 	if err != nil {
-		return fmt.Errorf("%q does not have a %q function", args[0], o.Type)
+		return fmt.Errorf("%q does not have a %q function", o.Type, args[0])
 	}
+
+	ret := fnDef.ReturnType
+	if ret == nil {
+		return fmt.Errorf("function %q does not have a return type", fnDef.Name)
+	}
+	if ret.AsFunctionProvider() == nil {
+		return fmt.Errorf("function %q does not return a function provider", fnDef.Name)
+	}
+	o.Type = ret.AsFunctionProvider().ProviderName()
 
 	call, err := newCall(ctx, dag, modDef, fnDef, args[1:])
 	if err != nil {
