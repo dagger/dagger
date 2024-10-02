@@ -1,6 +1,6 @@
 module github.com/dagger/dagger
 
-go 1.23.1
+go 1.23.2
 
 require (
 	github.com/99designs/gqlgen v0.17.49

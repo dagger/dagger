@@ -3,10 +3,6 @@
   "sdk": "go",
   "dependencies": [
     {
-      "name": "version",
-      "source": "version"
-    },
-    {
       "name": "alpine",
       "source": "modules/alpine"
     },
@@ -49,6 +45,10 @@
     {
       "name": "shellcheck",
       "source": "modules/shellcheck"
+    },
+    {
+      "name": "version",
+      "source": "version"
     },
     {
       "name": "wolfi",
