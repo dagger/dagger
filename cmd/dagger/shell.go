@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -277,6 +278,48 @@ func shellBuiltin(ctx context.Context, dag *dagger.Client, modDef *moduleDef, ar
 .core         load a core Dagger type
 `)
 		return nil
+	case "git":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: .git URL")
+		}
+		gitUrl, err := parseGitURL(args[1])
+		if err != nil {
+			return err
+		}
+		ref := gitUrl.Ref
+		if ref == "" {
+			ref = "main"
+		}
+		subdir := gitUrl.Path
+		gitUrl.Ref = ""
+		gitUrl.Path = ""
+		o := &Object{
+			Type: "Directory",
+			Calls: []Call{
+				Call{
+					Function: "git",
+					Arguments: map[string]interface{}{
+						"url": gitUrl.String(),
+					},
+				},
+				Call{
+					Function: "ref",
+					Arguments: map[string]interface{}{
+						"name": ref,
+					},
+				},
+				Call{
+					Function: "tree",
+				},
+				Call{
+					Function: "directory",
+					Arguments: map[string]interface{}{
+						"path": subdir,
+					},
+				},
+			},
+		}
+		return o.Write(ctx)
 	case "install":
 		if len(args) < 1 {
 			return fmt.Errorf("usage: .install MODULE")
@@ -325,4 +368,64 @@ func shellBuiltin(ctx context.Context, dag *dagger.Client, modDef *moduleDef, ar
 		return fmt.Errorf("no such command: %s", args[0])
 	}
 	return nil
+}
+
+// GitURL represents the different parts of a git-style URL.
+type GitURL struct {
+	Scheme string
+	Host   string
+	Owner  string
+	Repo   string
+	Ref    string
+	Path   string
+}
+
+// ParseGitURL parses a git-style URL into its components.
+func parseGitURL(gitURL string) (*GitURL, error) {
+	u, err := url.Parse(gitURL)
+	if err != nil {
+		return nil, err
+	}
+
+	// Splitting the path part to extract owner and repo
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	if len(parts) < 2 {
+		return nil, fmt.Errorf("invalid repository path: %s", u.Path)
+	}
+	owner := parts[0]
+	repo := parts[1]
+
+	// Check if there is a fragment (ref and path)
+	var ref, path string
+	if u.Fragment != "" {
+		fragmentParts := strings.SplitN(u.Fragment, "/", 2)
+		ref = fragmentParts[0]
+		if len(fragmentParts) > 1 {
+			path = fragmentParts[1]
+		}
+	}
+
+	return &GitURL{
+		Scheme: u.Scheme,
+		Host:   u.Host,
+		Owner:  owner,
+		Repo:   repo,
+		Ref:    ref,
+		Path:   path,
+	}, nil
+}
+
+// String reconstructs the git-style URL from its components.
+func (p GitURL) String() string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("%s://%s/%s/%s", p.Scheme, p.Host, p.Owner, p.Repo))
+
+	// Append branch and path if present
+	if p.Ref != "" {
+		sb.WriteString(fmt.Sprintf("#%s", p.Ref))
+		if p.Path != "" {
+			sb.WriteString(fmt.Sprintf("/%s", p.Path))
+		}
+	}
+	return sb.String()
 }
