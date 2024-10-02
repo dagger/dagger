@@ -7,7 +7,8 @@ class MyModule {
    */
   @func()
   async setEnvVar(): Promise<string> {
-    return await dag.container()
+    return await dag
+      .container()
       .from("alpine")
       .withEnvVariable("ENV_VAR", "VALUE")
       .withExec(["env"])
