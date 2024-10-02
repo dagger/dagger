@@ -17,7 +17,7 @@ import (
 	"github.com/dagger/dagger/engine/client"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"mvdan.cc/sh/v3/expand"
+	"golang.org/x/sync/errgroup"
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
 )
@@ -49,18 +49,6 @@ func shell(ctx context.Context, engineClient *client.Client, args []string) erro
 		panic(err)
 	}
 	defer rl.Close()
-
-	handler := func(next interp.ExecHandlerFunc) interp.ExecHandlerFunc {
-		return func(ctx context.Context, args []string) error {
-			return shellCall(ctx, dag, modDef, args)
-		}
-	}
-
-	runner, err := interp.New(
-		interp.StdIO(nil, os.Stdout, os.Stderr),
-		interp.ExecHandlers(shellDebug, handler),
-		interp.Env(expand.ListEnviron("FOO=bar")),
-	)
 	if err != nil {
 		return fmt.Errorf("Error setting up interpreter: %s", err)
 	}
@@ -74,9 +62,33 @@ func shell(ctx context.Context, engineClient *client.Client, args []string) erro
 		if err != nil {
 			return fmt.Errorf("Error parsing command: %s", err)
 		}
-		// Run the parsed command file
-		if err := runner.Run(context.Background(), file); err != nil {
-			fmt.Fprintf(os.Stderr, "%s\n", err)
+		handler := func(next interp.ExecHandlerFunc) interp.ExecHandlerFunc {
+			return func(ctx context.Context, args []string) error {
+				return shellCall(ctx, dag, modDef, args)
+			}
+		}
+		r, w := io.Pipe()
+		runner, err := interp.New(
+			interp.StdIO(nil, w, os.Stderr),
+			interp.ExecHandlers(shellDebug, handler),
+		)
+		eg, ctx := errgroup.WithContext(ctx)
+		eg.Go(func() error {
+			o, err := readObj(r)
+			if err != nil {
+				return err
+			}
+			// FIXME: send query
+			fmt.Printf("RESULT: %v\n", o)
+			return nil
+		})
+		eg.Go(func() error {
+			err := runner.Run(ctx, file)
+			w.Close()
+			return err
+		})
+		if err := eg.Wait(); err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err.Error())
 		}
 	}
 	return nil
@@ -91,11 +103,14 @@ func shellDebug(next interp.ExecHandlerFunc) interp.ExecHandlerFunc {
 }
 
 func readObject(ctx context.Context) (*Object, error) {
-	hctx := interp.HandlerCtx(ctx)
-	if fstdin, ok := hctx.Stdin.(*os.File); ok && fstdin == nil {
+	return readObj(interp.HandlerCtx(ctx).Stdin)
+}
+
+func readObj(r io.Reader) (*Object, error) {
+	if f, ok := r.(*os.File); ok && f == nil {
 		return nil, nil
 	}
-	b, err := io.ReadAll(hctx.Stdin)
+	b, err := io.ReadAll(r)
 	if err != nil {
 		return nil, err
 	}
