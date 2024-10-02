@@ -55,7 +55,7 @@ func shell(ctx context.Context, engineClient *client.Client, args []string) erro
 
 	runner, err := interp.New(
 		interp.StdIO(nil, os.Stdout, os.Stderr),
-		interp.ExecHandlers(shellDebug, shellBuiltin, handler),
+		interp.ExecHandlers(shellDebug, handler),
 		interp.Env(expand.ListEnviron("FOO=bar")),
 	)
 	if err != nil {
@@ -223,7 +223,7 @@ func newCall(ctx context.Context, dag *dagger.Client, modDef *moduleDef, modFunc
 	}
 
 	return &Call{
-		Function:  modFunc.ReturnType.Name(),
+		Function:  modFunc.Name,
 		Arguments: margs,
 	}, nil
 }
