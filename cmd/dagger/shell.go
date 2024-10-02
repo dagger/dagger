@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"dagger.io/dagger"
 	"github.com/chzyer/readline"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/spf13/cobra"
@@ -28,19 +29,16 @@ var shellCmd = &cobra.Command{
 	},
 }
 
-var shellModConf *moduleDef
-
 // Interactive shell main loop
 func shell(ctx context.Context, engineClient *client.Client, args []string) error {
 	// FIXME 1: introspect all dependencies & types
 	// FIXME 2: cool interactive repl
-    dag := engineClient.Dagger()
+	dag := engineClient.Dagger()
 
 	modDef, err := initializeModule(ctx, dag, true)
 	if err != nil {
 		return fmt.Errorf("error initializing module: %s", err)
 	}
-	shellModConf = modDef
 
 	prompt := "> "
 	rl, err := readline.New(prompt)
@@ -49,16 +47,16 @@ func shell(ctx context.Context, engineClient *client.Client, args []string) erro
 	}
 	defer rl.Close()
 
-    handler := func(next interp.ExecHandlerFunc) interp.ExecHandlerFunc {
-        return func(ctx context.Context, args []string) error {
-            return shellCall(ctx, dag, modDef, args, )
-        }
-    }
+	handler := func(next interp.ExecHandlerFunc) interp.ExecHandlerFunc {
+		return func(ctx context.Context, args []string) error {
+			return shellCall(ctx, dag, modDef, args)
+		}
+	}
 
 	runner, err := interp.New(
 		interp.StdIO(nil, os.Stdout, os.Stderr),
 		interp.ExecHandlers(shellDebug, shellBuiltin, handler),
-        interp.Env(expand.ListEnviron("FOO=bar")),
+		interp.Env(expand.ListEnviron("FOO=bar")),
 	)
 	if err != nil {
 		return fmt.Errorf("Error setting up interpreter: %s", err)
@@ -133,39 +131,44 @@ func shellLog(ctx context.Context, msg string, args ...interface{}) {
 }
 
 func shellCall(ctx context.Context, dag *dagger.Client, modDef *moduleDef, args []string) error {
-		o, err := readObject(ctx)
-		if err != nil {
-			return err
-		}
-		if o == nil {
-			shellLog(ctx, "[%s] ENTRYPOINT!!\n", args[0])
-			// You're the entrypoint
-			// 1. Interpret args as same-module call (eg. 'build')
-			// 2. If no match: interpret args as core function call (eg. 'git')
-			// 3. If no match (to be done later): interpret args as dependency short name (eg. 'wolfi container')
-			// --> craft the call
-
-			o = &Object{
-				Type: modDef.MainObject.AsObject.Name,
-			}
-		}
-
-		objDef := shellModConf.GetObject(o.Type)
-		if objDef == nil {
-			return fmt.Errorf("could not find object type %q", o.Type)
-		}
-
-		fnDef, err := GetFunction(objDef, args[0])
-		if err != nil {
-			return fmt.Errorf("%q does not have a %q function", args[0], o.Type)
-		}
-
-		o.WithCall(newCall(ctx, fnDef, args[1:]))
-		return o.Write(ctx)
+	o, err := readObject(ctx)
+	if err != nil {
+		return err
 	}
+	if o == nil {
+		shellLog(ctx, "[%s] ENTRYPOINT!!\n", args[0])
+		// You're the entrypoint
+		// 1. Interpret args as same-module call (eg. 'build')
+		// 2. If no match: interpret args as core function call (eg. 'git')
+		// 3. If no match (to be done later): interpret args as dependency short name (eg. 'wolfi container')
+		// --> craft the call
+
+		o = &Object{
+			Type: modDef.MainObject.AsObject.Name,
+		}
+	}
+
+	objDef := modDef.GetObject(o.Type)
+	if objDef == nil {
+		return fmt.Errorf("could not find object type %q", o.Type)
+	}
+	// TODO: modDef.LoadTypeDef(objDef)
+
+	fnDef, err := GetFunction(objDef, args[0])
+	if err != nil {
+		return fmt.Errorf("%q does not have a %q function", args[0], o.Type)
+	}
+
+	call, err := newCall(ctx, dag, modDef, fnDef, args[1:])
+	if err != nil {
+		return fmt.Errorf("error creating call: %w", err)
+	}
+
+	o.WithCall(*call)
+	return o.Write(ctx)
 }
 
-func newCall(ctx context.Context, modFunc *modFunction, args []string) (*Call, error) {
+func newCall(ctx context.Context, dag *dagger.Client, modDef *moduleDef, modFunc *modFunction, args []string) (*Call, error) {
 	flags := pflag.NewFlagSet(modFunc.Name, pflag.ContinueOnError)
 
 	var reqs []*modFunctionArg
@@ -175,7 +178,7 @@ func newCall(ctx context.Context, modFunc *modFunction, args []string) (*Call, e
 			continue
 		}
 
-		shellModConf.LoadTypeDef(arg.TypeDef)
+		modDef.LoadTypeDef(arg.TypeDef)
 
 		if err := arg.AddFlag(flags); err != nil {
 			return nil, fmt.Errorf("error addding flag: %w", err)
@@ -192,15 +195,18 @@ func newCall(ctx context.Context, modFunc *modFunction, args []string) (*Call, e
 		return nil, fmt.Errorf("error parsing flags: %w", err)
 	}
 
+	margs := make(map[string]interface{})
+
 	for i, arg := range reqs {
+		var val any
 		argDef := reqs[i]
 
 		flag := flags.Lookup(argDef.FlagName())
-		val := flag.Value
+		val = flag.Value
 
 		switch v := val.(type) {
 		case DaggerValue:
-			obj, err := v.Get(ctx, dag, shellModConf.Source, arg)
+			obj, err := v.Get(ctx, dag, modDef.Source, arg)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get value for argument %q: %w", arg.FlagName(), err)
 			}
@@ -211,11 +217,13 @@ func newCall(ctx context.Context, modFunc *modFunction, args []string) (*Call, e
 		case pflag.SliceValue:
 			val = v.GetSlice()
 		}
+
+		margs[arg.Name] = val
 	}
 
 	return &Call{
-		Function:  "",
-		Arguments: make(map[string]interface{}),
+		Function:  modFunc.ReturnType.Name(),
+		Arguments: margs,
 	}, nil
 }
 
