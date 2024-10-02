@@ -76,11 +76,13 @@ func shell(ctx context.Context, engineClient *client.Client, args []string) erro
 		eg.Go(func() error {
 			o, err := readObj(r)
 			if err != nil {
+				if o != nil {
+					fmt.Printf("%s\n", o.Data)
+					return nil
+				}
 				return err
 			}
-			// FIXME: send query
-			fmt.Printf("RESULT: %v\n", o)
-			return nil
+			return shellRequest(ctx, dag, o)
 		})
 		eg.Go(func() error {
 			err := runner.Run(ctx, file)
@@ -116,12 +118,14 @@ func readObj(r io.Reader) (*Object, error) {
 	}
 	var o Object
 	err = json.Unmarshal(b, &o)
+	o.Data = string(b)
 	return &o, err
 }
 
 type Object struct {
 	Type  string `json:"type"`
 	Calls []Call `json:"calls"`
+	Data  string `json:"data"`
 }
 
 func (o Object) Write(ctx context.Context) error {
@@ -149,12 +153,12 @@ func shellCall(ctx context.Context, dag *dagger.Client, modDef *moduleDef, args 
 	if err != nil {
 		return err
 	}
-	shellLog(ctx, "[DBG] input: %v; args: %v\n", o, args)
+	// shellLog(ctx, "[DBG] input: %v; args: %v\n", o, args)
 	if o == nil {
 		if strings.HasPrefix(args[0], ".") {
 			return shellBuiltin(ctx, dag, modDef, args)
 		}
-		shellLog(ctx, "[%s] ENTRYPOINT!!\n", args[0])
+		// shellLog(ctx, "[%s] ENTRYPOINT!!\n", args[0])
 		// You're the entrypoint
 		// 1. Interpret args as same-module call (eg. 'build')
 		// 2. If no match: interpret args as core function call (eg. 'git')
@@ -182,7 +186,7 @@ func shellCall(ctx context.Context, dag *dagger.Client, modDef *moduleDef, args 
 	}
 
 	modDef.LoadTypeDef(fnDef.ReturnType)
-	shellLog(ctx, "[DBG] fn: %s; retType: %v; retTypeName: %s\n", fnDef.Name, fnDef.ReturnType, fnDef.ReturnType.Name())
+	// shellLog(ctx, "[DBG] fn: %s; retType: %v; retTypeName: %s\n", fnDef.Name, fnDef.ReturnType, fnDef.ReturnType.Name())
 
 	fnProv := fnDef.ReturnType
 
@@ -198,7 +202,7 @@ func shellCall(ctx context.Context, dag *dagger.Client, modDef *moduleDef, args 
 
 	o.Calls = append(o.Calls, *call)
 
-	shellLog(ctx, "[DBG] output: %v\n", o)
+	// shellLog(ctx, "[DBG] output: %v\n", o)
 
 	return o.Write(ctx)
 }
@@ -287,18 +291,18 @@ func shellRequest(ctx context.Context, dag *dagger.Client, obj *Object) error {
 	}
 
 	var response any
-	query, err := q.Build(ctx)
-	if err != nil {
-		return err
-	}
-	shellLog(ctx, "[DBG] query: %s\n", query)
+	// query, err := q.Build(ctx)
+	// if err != nil {
+	// 	return err
+	// }
 
 	q = q.Bind(&response)
 
 	if err := q.Execute(ctx); err != nil {
 		return fmt.Errorf("response from query: %w", err)
 	}
-
+	printFunctionResult(os.Stdout, response)
+	// fmt.Printf("%s\n", response)
 	return nil
 }
 
