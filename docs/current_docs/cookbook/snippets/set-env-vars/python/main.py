@@ -5,7 +5,7 @@ from dagger import dag, function, object_type
 @object_type
 class MyModule:
     @function
-    async def set_env(self) -> str:
+    async def set_env_vars(self) -> str:
         """Set environment variables in a container"""
         return await (
             dag.container()
