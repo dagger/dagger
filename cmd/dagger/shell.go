@@ -273,12 +273,13 @@ func shellBuiltin(ctx context.Context, dag *dagger.Client, modDef *moduleDef, ar
 	case ".config":
 	case ".functions":
 		functions := modDef.MainObject.AsFunctionProvider().GetFunctions()
-		w := tabwriter.NewWriter(interp.HandlerCtx(ctx).Stdout, 0, 0, 2, ' ', tabwriter.AlignRight)
+		w := tabwriter.NewWriter(interp.HandlerCtx(ctx).Stdout, 0, 0, 2, ' ', 0)
 		fmt.Fprintln(w, "Function\tDescription\tReturn type")
 		fmt.Fprintln(w, "---\t---\t---")
 		for _, fn := range functions {
-			fmt.Fprintf(w, "%s\t%s\t%s", fn.Name, fn.Description, fn.ReturnType.Name())
+			fmt.Fprintf(w, "%s\t%s\t%s\n", fn.Name, fn.Description, fn.ReturnType.Name())
 		}
+		return w.Flush()
 	default:
 		return fmt.Errorf("no such command: %s", args[0])
 	}
