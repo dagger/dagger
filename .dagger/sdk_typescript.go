@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path"
 	"strings"
@@ -192,6 +193,12 @@ func (t TypescriptSDK) Publish(
 	build := t.nodeJsBase().
 		WithExec([]string{"npm", "run", "build"}).
 		WithExec([]string{"npm", "version", versionFlag})
+
+	_, err := build.Directory("dist").Entries(ctx)
+	if err != nil {
+		return errors.New("dist directory does not exist")
+	}
+
 	if !dryRun {
 		plaintext, err := npmToken.Plaintext(ctx)
 		if err != nil {
@@ -207,7 +214,7 @@ always-auth=true`, plaintext)
 	if dryRun {
 		publish = build.WithExec([]string{"npm", "publish", "--access", "public", "--dry-run"})
 	}
-	_, err := publish.Sync(ctx)
+	_, err = publish.Sync(ctx)
 	if err != nil {
 		return err
 	}
