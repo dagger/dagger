@@ -164,9 +164,9 @@ defmodule Dagger.TypeDef do
   @doc "Adds a static field for an Object TypeDef, failing if the type is not an object."
   @spec with_field(t(), String.t(), Dagger.TypeDef.t(), [{:description, String.t() | nil}]) ::
           Dagger.TypeDef.t()
-  def with_field(%__MODULE__{} = type_def, name, type_def, optional_args \\ []) do
+  def with_field(%__MODULE__{} = type_def_, name, type_def, optional_args \\ []) do
     query_builder =
-      type_def.query_builder
+      type_def_.query_builder
       |> QB.select("withField")
       |> QB.put_arg("name", name)
       |> QB.put_arg("typeDef", Dagger.ID.id!(type_def))
@@ -174,7 +174,7 @@ defmodule Dagger.TypeDef do
 
     %Dagger.TypeDef{
       query_builder: query_builder,
-      client: type_def.client
+      client: type_def_.client
     }
   end
 
