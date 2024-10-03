@@ -6,7 +6,7 @@ class MyModule {
    * Set environment variables in a container
    */
   @func()
-  async setEnv(): Promise<string> {
+  async setEnvVars(): Promise<string> {
     return await dag
       .container()
       .from("alpine")

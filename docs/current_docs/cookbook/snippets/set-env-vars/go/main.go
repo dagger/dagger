@@ -4,6 +4,8 @@ import (
 	"context"
 
 	"dagger/my-module/internal/dagger"
+
+	"dagger.io/dagger/dag"
 )
 
 type MyModule struct{}
@@ -14,7 +16,7 @@ type EnvVar struct {
 }
 
 // Set environment variables in a container
-func (m *MyModule) SetEnv(ctx context.Context) (string, error) {
+func (m *MyModule) SetEnvVars(ctx context.Context) (string, error) {
 	return dag.Container().
 		From("alpine").
 		With(EnvVariables([]*EnvVar{

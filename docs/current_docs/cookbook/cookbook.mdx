@@ -997,6 +997,29 @@ dagger call build --source=.
 
 ### Set environment variables in a container
 
+The following Dagger Function demonstrates how to set a single environment variable in a container.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/set-env-var/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/set-env-var/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/set-env-var/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
 The following Dagger Function demonstrates how to set multiple environment variables in a container.
 
 <Tabs groupId="language">
@@ -1022,10 +1045,16 @@ The following Dagger Function demonstrates how to set multiple environment varia
 
 #### Example
 
-Set environment variables in a container:
+Set a single environment variable in a container:
 
 ```shell
-dagger call set-env
+dagger call set-env-var
+```
+
+Set multiple environment variables in a container:
+
+```shell
+dagger call set-env-vars
 ```
 
 ### Persist service state across runs
