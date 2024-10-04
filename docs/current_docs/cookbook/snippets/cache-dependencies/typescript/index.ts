@@ -17,10 +17,6 @@ class MyModule {
       .from("node:21")
       .withDirectory("/src", source)
       .withWorkdir("/src")
-      .withMountedCache(
-        "/src/node_modules",
-        dag.cacheVolume("node-21-myapp-myenv"),
-      )
       .withMountedCache("/root/.npm", dag.cacheVolume("node-21"))
       .withExec(["npm", "install"])
   }

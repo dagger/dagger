@@ -16,8 +16,8 @@ class HelloDagger {
         .from("node:21-slim")
         // add the source code at /src
         .withDirectory("/src", source)
-        // mount the cache volume at /src/node_modules
-        .withMountedCache("/src/node_modules", nodeCache)
+        // mount the cache volume at /root/.npm
+        .withMountedCache("/root/.npm", nodeCache)
         // change the working directory to /src
         .withWorkdir("/src")
         // run npm install to install dependencies

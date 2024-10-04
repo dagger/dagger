@@ -48,7 +48,7 @@ class HelloDagger {
       .container()
       .from("node:21-slim")
       .withDirectory("/src", source)
-      .withMountedCache("/src/node_modules", nodeCache)
+      .withMountedCache("/root/.npm", nodeCache)
       .withWorkdir("/src")
       .withExec(["npm", "install"])
   }
