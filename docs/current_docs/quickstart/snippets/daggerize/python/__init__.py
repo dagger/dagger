@@ -46,7 +46,7 @@ class HelloDagger:
             dag.container()
             .from_("node:21-slim")
             .with_directory("/src", source)
-            .with_mounted_cache("/src/node_modules", node_cache)
+            .with_mounted_cache("/root/.npm", node_cache)
             .with_workdir("/src")
             .with_exec(["npm", "install"])
         )

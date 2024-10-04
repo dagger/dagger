@@ -16,7 +16,7 @@ async fn main() -> eyre::Result<()> {
             .container()
             .from("node:16")
             .with_mounted_directory("/src", host_source_dir)
-            .with_mounted_cache("/src/node_modules", node_cache);
+            .with_mounted_cache("/root/.npm", node_cache);
 
         let runner = source
             .with_workdir("/src")

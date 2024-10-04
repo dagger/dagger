@@ -13,8 +13,8 @@ func (m *HelloDagger) BuildEnv(source *dagger.Directory) *dagger.Container {
 		From("node:21-slim").
 		// add the source code at /src
 		WithDirectory("/src", source).
-		// mount the cache volume at /src/node_modules
-		WithMountedCache("/src/node_modules", nodeCache).
+		// mount the cache volume at /root/.npm
+		WithMountedCache("/root/.npm", nodeCache).
 		// change the working directory to /src
 		WithWorkdir("/src").
 		// run npm install to install dependencies
