@@ -149,7 +149,7 @@ func logValue(v any) log.Value {
 		}
 		return log.MapValue(kvs...)
 	case []any:
-		vals := make([]log.Value, len(x))
+		vals := make([]log.Value, 0, len(x))
 		for _, v := range x {
 			vals = append(vals, logValue(v))
 		}
