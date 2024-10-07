@@ -1198,7 +1198,7 @@ func (w *Worker) runContainer(ctx context.Context, state *execState) (rerr error
 	})
 
 	cgroupPath := state.spec.Linux.CgroupsPath
-	if cgroupPath != "" {
+	if cgroupPath != "" && w.execMD != nil && w.execMD.CallID != nil {
 		meter := telemetry.Meter(ctx, InstrumentationLibrary)
 
 		commonAttrs := []attribute.KeyValue{
