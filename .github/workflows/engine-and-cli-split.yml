@@ -22,7 +22,7 @@ concurrency:
 
 jobs:
   test-modules:
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-4-16c-st-od' || 'ubuntu-latest' }}"
+    runs-on: "nscloud-ubuntu-24.04-amd64-32x32"
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -33,7 +33,7 @@ jobs:
           upload-logs: true
 
   test-module-runtimes:
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-4-16c-st-od' || 'ubuntu-latest' }}"
+    runs-on: "nscloud-ubuntu-24.04-amd64-32x32"
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -44,7 +44,7 @@ jobs:
           upload-logs: true
 
   test-cli-engine:
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-4-16c-st-od' || 'ubuntu-latest' }}"
+    runs-on: "nscloud-ubuntu-24.04-amd64-32x32"
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -55,7 +55,7 @@ jobs:
           upload-logs: true
 
   test-everything-else:
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-4-16c-st-od' || 'ubuntu-latest' }}"
+    runs-on: "nscloud-ubuntu-24.04-amd64-32x32"
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -66,7 +66,7 @@ jobs:
           upload-logs: true
 
   testdev-modules:
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-4-32c-dind-st-od' || 'ubuntu-latest' }}"
+    runs-on: "nscloud-ubuntu-24.04-amd64-32x32"
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -78,7 +78,7 @@ jobs:
           upload-logs: true
 
   testdev-module-runtimes:
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-4-32c-dind-st-od' || 'ubuntu-latest' }}"
+    runs-on: "nscloud-ubuntu-24.04-amd64-32x64"
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -90,7 +90,7 @@ jobs:
           upload-logs: true
 
   testdev-container:
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-4-32c-dind-st-od' || 'ubuntu-latest' }}"
+    runs-on: "nscloud-ubuntu-24.04-amd64-32x32"
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
