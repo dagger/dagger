@@ -102,8 +102,6 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 
 		// Python SDK tests
 		{Module: "./viztest/python", Function: "pending", Fail: true},
-		// FIXME: this is actually showing broken output.
-		// update it once https://github.com/dagger/dagger/pull/8525 is merged.
 		{Module: "./viztest/python", Function: "custom-span"},
 
 		// TypeScript SDK tests

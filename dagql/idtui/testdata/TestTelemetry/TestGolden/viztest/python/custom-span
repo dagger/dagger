@@ -19,6 +19,12 @@ Expected stderr:
 
 ✔ python: Python! X.Xs
 ✔ .customSpan: String! X.Xs
+│ ✔ custom span X.Xs
+│ │ $ Container.from(address: "alpine:latest"): Container! X.Xs CACHED
+│ │ │ ✔ resolving docker.io/library/alpine:latest X.Xs
+│ │ ✔ .withExec(args: ["echo", "hello from Python! it is currently 20XX-XX-XX XX:XX:XX.XXXX"]): Container! X.Xs
+│ │ ┃ hello from Python! it is currently 20XX-XX-XX XX:XX:XX.XXXX
+│ │ ✔ .stdout: String! X.Xs
 
 
 Setup tracing at https://dagger.cloud/traces/setup. To hide: export NOTHANKS=1
