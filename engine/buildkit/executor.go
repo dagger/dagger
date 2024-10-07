@@ -94,6 +94,8 @@ type ExecutionMetadata struct {
 
 	// Path to the SSH auth socket. Used for Dagger-in-Dagger support.
 	SSHAuthSocketPath string
+
+	ServiceModuleScope *call.ID
 }
 
 const executionMetadataKey = "dagger.executionMetadata"

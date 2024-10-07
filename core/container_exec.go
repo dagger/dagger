@@ -88,6 +88,11 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	execMD.SystemEnvNames = container.SystemEnvNames
 	execMD.EnabledGPUs = container.EnabledGPUs
 
+	mod, err := container.Query.CurrentModule(ctx)
+	if err == nil {
+		execMD.ServiceModuleScope = mod.InstanceID
+	}
+
 	// if GPU parameters are set for this container pass them over:
 	if len(execMD.EnabledGPUs) > 0 {
 		if gpuSupportEnabled := os.Getenv("_EXPERIMENTAL_DAGGER_GPU_SUPPORT"); gpuSupportEnabled == "" {

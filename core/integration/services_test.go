@@ -166,6 +166,295 @@ func (ServiceSuite) TestHostnameEndpoint(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (ServiceSuite) TestWithHostname(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	srv := c.Container().
+		From(busyboxImage).
+		WithWorkdir("/srv").
+		WithNewFile("index.html", "Hello, world!").
+		WithExec([]string{"httpd", "-v", "-f"}).
+		WithExposedPort(80).
+		AsService().
+		WithHostname("wwwhatsup")
+
+	hn, err := srv.Hostname(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "wwwhatsup", hn)
+
+	ep, err := srv.Endpoint(ctx)
+	require.NoError(t, err)
+
+	require.Equal(t, hn+":80", ep)
+
+	_, err = srv.Start(ctx)
+	require.NoError(t, err)
+
+	resp, err := c.Container().
+		From(busyboxImage).
+		WithExec([]string{"wget", "-O-", "http://wwwhatsup"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "Hello, world!", resp)
+}
+
+func (ServiceSuite) TestWithHostnameModuleScoping(ctx context.Context, t *testctx.T) {
+	t.Run("works within module", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		_, err := goGitBase(t, c).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/hoster").
+			With(daggerExec("init", "--source=.", "--name=hoster", "--sdk=go")).
+			WithNewFile("main.go", `package main
+
+import (
+	"context"
+	"fmt"
+)
+
+type Hoster struct{}
+
+func (m *Hoster) Run(ctx context.Context) error {
+	srv := dag.Container().
+		From("`+busyboxImage+`").
+		WithWorkdir("/srv").
+		WithNewFile("index.html", "I am the one who hosts.").
+		WithExec([]string{"httpd", "-v", "-f"}).
+		WithExposedPort(80).
+		AsService().
+		WithHostname("wwwhatsup")
+	
+	_, err := srv.Start(ctx)
+	if err != nil {
+		return err
+	}
+
+	resp, err := dag.Container().
+		From("`+busyboxImage+`").
+		WithExec([]string{"wget", "-O-", "http://wwwhatsup"}).
+		Stdout(ctx)
+	if err != nil {
+		return err
+	}
+	if resp != "I am the one who hosts." {
+		return fmt.Errorf("unexpected response: %q", resp)
+	}
+
+	return nil
+}
+`,
+			).
+			With(daggerCall("run")).
+			Sync(ctx)
+		require.NoError(t, err)
+	})
+
+	t.Run("is not reachable across modules", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		_, err := goGitBase(t, c).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/caller").
+			With(daggerExec("init", "--source=.", "--name=caller", "--sdk=go")).
+			WithNewFile("main.go", `package main
+
+import (
+	"context"
+	"fmt"
+	"time"
+)
+
+type Caller struct{}
+
+func (m *Caller) Run(ctx context.Context) error {
+	resp, err := dag.Container().
+		From("`+busyboxImage+`").
+		WithEnvVariable("NOW", time.Now().String()).
+		WithExec([]string{"wget", "-O-", "http://wwwhatsup"}).
+		Stdout(ctx)
+	if err == nil {
+		return fmt.Errorf("should not have been able to reach service")
+	}
+
+	srv := dag.Container().
+		From("`+busyboxImage+`").
+		WithWorkdir("/srv").
+		WithNewFile("index.html", "I am within the called module.").
+		WithExec([]string{"httpd", "-v", "-f"}).
+		WithExposedPort(80).
+		AsService().
+		WithHostname("wwwhatsup")
+	
+	_, err = srv.Start(ctx)
+	if err != nil {
+		return err
+	}
+
+	resp, err = dag.Container().
+		From("`+busyboxImage+`").
+		WithEnvVariable("NOW", time.Now().String()).
+		WithExec([]string{"wget", "-O-", "http://wwwhatsup"}).
+		Stdout(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to reach service: %w", err)
+	}
+	if resp != "I am within the called module." {
+		return fmt.Errorf("unexpected response: %q", resp)
+	}
+	return nil
+}
+`,
+			).
+			WithWorkdir("/work/hoster").
+			With(daggerExec("init", "--source=.", "--name=hoster", "--sdk=go")).
+			With(daggerExec("install", "../caller")).
+			WithNewFile("main.go", `package main
+
+import (
+	"context"
+	"fmt"
+	"time"
+)
+
+type Hoster struct{}
+
+func (m *Hoster) Run(ctx context.Context) error {
+	srv := dag.Container().
+		From("`+busyboxImage+`").
+		WithWorkdir("/srv").
+		WithNewFile("index.html", "I am the one who hosts.").
+		WithExec([]string{"httpd", "-v", "-f"}).
+		WithExposedPort(80).
+		AsService().
+		WithHostname("wwwhatsup")
+	
+	_, err := srv.Start(ctx)
+	if err != nil {
+		return err
+	}
+
+	err = dag.Caller().Run(ctx)
+	if err != nil {
+		return err
+	}
+
+	resp, err := dag.Container().
+		From("`+busyboxImage+`").
+		WithEnvVariable("NOW", time.Now().String()).
+		WithExec([]string{"wget", "-O-", "http://wwwhatsup"}).
+		Stdout(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to reach service: %w", err)
+	}
+	if resp != "I am the one who hosts." {
+		return fmt.Errorf("unexpected response: %q", resp)
+	}
+
+	return nil
+}
+`,
+			).
+			With(daggerCall("run")).
+			Sync(ctx)
+		require.NoError(t, err)
+	})
+}
+
+//go:embed testdata/relay/main.go
+var relayMain string
+
+func (ServiceSuite) TestCircularServices(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	_, err := goGitBase(t, c).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work/caller").
+		With(daggerExec("init", "--source=.", "--name=caller", "--sdk=go")).
+		WithNewFile("relay/main.go", relayMain).
+		WithNewFile("main.go", `package main
+
+import (
+	"context"
+	"fmt"
+	"time"
+	"net/url"
+	_ "embed"
+
+	"golang.org/x/sync/errgroup"
+
+	"dagger/caller/internal/dagger"
+)
+
+type Caller struct{}
+
+//go:embed relay/main.go
+var relayMain string
+
+func (m *Caller) Service(hostname string) *dagger.Service {
+	return dag.Container().
+		From("`+golangImage+`").
+		WithWorkdir("/srv").
+		WithNewFile("main.go", relayMain).
+		WithEnvVariable("SELF", hostname).
+		WithExec([]string{"go", "run", "main.go"}).
+		WithExposedPort(80).
+		AsService().
+		WithHostname(hostname)
+}
+
+func (m *Caller) Run(ctx context.Context) error {
+	foo := m.Service("foo")
+	bar := m.Service("bar")
+	baz := m.Service("baz")
+
+	startGroup := new(errgroup.Group)
+	for _, srv := range []*dagger.Service{foo, bar, baz} {
+		startGroup.Go(func() error {
+			_, err := srv.Start(ctx)
+			return err
+		})
+	}
+	if err := startGroup.Wait(); err != nil {
+		return err
+	}
+
+	relayURL := &url.URL{
+		Scheme: "http",
+		Host:   "foo",
+		Path:   "/",
+		RawQuery: url.Values{
+			"relay": {
+				"http://bar",
+				"http://baz",
+				"http://foo",
+			},
+			"end": {"hello"},
+		}.Encode(),
+	}
+
+	resp, err := dag.Container().
+		From("`+busyboxImage+`").
+		WithEnvVariable("NOW", time.Now().String()).
+		WithExec([]string{"cat", "/etc/resolv.conf"}).
+		WithExec([]string{"wget", "-O-", relayURL.String()}).
+		Stdout(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to reach service: %w", err)
+	}
+	if resp != "http://bar: http://baz: http://foo: hello" {
+		return fmt.Errorf("unexpected response: %q", resp)
+	}
+
+	return nil
+}
+`,
+		).
+		With(daggerCall("run")).
+		Sync(ctx)
+	require.NoError(t, err)
+}
+
 func (ServiceSuite) TestPorts(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

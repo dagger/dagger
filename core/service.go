@@ -34,6 +34,9 @@ const (
 type Service struct {
 	Query *Query
 
+	// A custom hostname set by the user.
+	CustomHostname string
+
 	// Container is the container to run as a service.
 	Container *Container `json:"container"`
 
@@ -72,7 +75,16 @@ func (svc *Service) Clone() *Service {
 	return &cp
 }
 
+func (svc *Service) WithHostname(hostname string) *Service {
+	svc = svc.Clone()
+	svc.CustomHostname = hostname
+	return svc
+}
+
 func (svc *Service) Hostname(ctx context.Context, id *call.ID) (string, error) {
+	if svc.CustomHostname != "" {
+		return svc.CustomHostname, nil
+	}
 	switch {
 	case svc.TunnelUpstream != nil: // host=>container (127.0.0.1)
 		svcs, err := svc.Query.Services(ctx)
@@ -299,7 +311,11 @@ func (svc *Service) startContainer(
 		}
 	}()
 
-	fullHost := host + "." + network.ClientDomain(clientMetadata.SessionID)
+	fullHost := network.ClientDomain(clientMetadata.SessionID)
+	if mod, err := svc.Query.CurrentModule(ctx); err == nil {
+		fullHost = network.HostHash(mod.InstanceID.Digest()) + "." + fullHost
+	}
+	fullHost = host + "." + fullHost
 
 	bk, err := svc.Query.Buildkit(ctx)
 	if err != nil {
