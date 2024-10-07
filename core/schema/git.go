@@ -83,6 +83,9 @@ func (s *gitSchema) Install() {
 			View(AllVersion).
 			Doc(`The filesystem tree at this ref.`).
 			ArgDoc("discardGitDir", `Set to true to discard .git directory.`),
+		dagql.Func("authenticate", s.authenticate).
+			View(AllVersion).
+			Doc(`Authenticate the git repository and return the result.`),
 		dagql.Func("tree", s.treeLegacy).
 			View(BeforeVersion("v0.12.0")).
 			Doc(`The filesystem tree at this ref.`).
@@ -409,6 +412,20 @@ type treeArgs struct {
 
 func (s *gitSchema) tree(ctx context.Context, parent *core.GitRef, args treeArgs) (*core.Directory, error) {
 	return parent.Tree(ctx, args.DiscardGitDir)
+}
+
+type authArgs struct {
+	Protocol string
+	Host     string
+	Path     string
+}
+
+func (s *gitSchema) authenticate(ctx context.Context, parent *core.GitRef, args authArgs) (dagql.String, error) {
+	result, err := parent.Authenticate(ctx, args.Protocol, args.Host, args.Path)
+	if err != nil {
+		return "", fmt.Errorf("authentication error: %w", err)
+	}
+	return dagql.NewString(result), nil
 }
 
 type treeArgsLegacy struct {

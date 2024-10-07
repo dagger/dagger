@@ -580,6 +580,34 @@ func (c *Client) ListenHostToContainer(
 	}, nil
 }
 
+func (c *Client) GetCredential(ctx context.Context, protocol, host, path string) (*session.CredentialInfo, error) {
+	caller, err := c.GetMainClientCaller()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get main client caller: %w", err)
+	}
+	credentialClient := session.NewGitCredentialClient(caller.Conn())
+
+	request := &session.GitCredentialRequest{
+		Protocol: protocol,
+		Host:     host,
+		Path:     path,
+	}
+
+	response, err := credentialClient.GetCredential(ctx, request)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query the credentials: %w", err)
+	}
+
+	switch result := response.Result.(type) {
+	case *session.GitCredentialResponse_Credential:
+		return result.Credential, nil
+	case *session.GitCredentialResponse_Error:
+		return nil, fmt.Errorf("credential error: %s (%s)", result.Error.Message, result.Error.Type)
+	default:
+		return nil, fmt.Errorf("git credential: unexpected response type")
+	}
+}
+
 type TerminalClient struct {
 	Stdin    io.ReadCloser
 	Stdout   io.WriteCloser
