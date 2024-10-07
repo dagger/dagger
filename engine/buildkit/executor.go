@@ -202,7 +202,7 @@ func (w *Worker) run(
 
 	for _, f := range setupFuncs {
 		if err := f(ctx, state); err != nil {
-			bklog.G(ctx).Errorf("executor setup failed: %v", err)
+			bklog.G(ctx).WithError(err).Error("executor run")
 			return err
 		}
 	}
