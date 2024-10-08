@@ -59,13 +59,13 @@ func (c *Client) LocalImport(
 	}
 
 	localName := fmt.Sprintf("upload %s from %s (client id: %s, session id: %s)", srcPath, stableID, clientMetadata.ClientID, clientMetadata.SessionID)
-	if len(excludePatterns) > 0 {
-		localName += fmt.Sprintf(" (exclude: %s)", strings.Join(excludePatterns, ", "))
-		localOpts = append(localOpts, llb.ExcludePatterns(excludePatterns))
-	}
 	if len(includePatterns) > 0 {
 		localName += fmt.Sprintf(" (include: %s)", strings.Join(includePatterns, ", "))
 		localOpts = append(localOpts, llb.IncludePatterns(includePatterns))
+	}
+	if len(excludePatterns) > 0 {
+		localName += fmt.Sprintf(" (exclude: %s)", strings.Join(excludePatterns, ", "))
+		localOpts = append(localOpts, llb.ExcludePatterns(excludePatterns))
 	}
 	localOpts = append(localOpts, llb.WithCustomName(localName))
 	localLLB := llb.Local(srcPath, localOpts...)

@@ -1,0 +1,6 @@
+kind: Fixed
+body: Fix include/exclude patterns from a dependency incorrectly affecting a parent module
+time: 2024-09-26T13:23:11.073823Z
+custom:
+    Author: helderco
+    PR: "8575"

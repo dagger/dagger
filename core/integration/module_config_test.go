@@ -634,6 +634,79 @@ func (m *Coolsdk) RequiredPaths() []string {
 			require.Equal(t, "", strings.TrimSpace(out))
 		})
 	}
+
+	t.Run("dependency", func(ctx context.Context, t *testctx.T) {
+		source := func(name string) dagger.WithContainerFunc {
+			return sdkSourceAt(".dagger", "go", fmt.Sprintf(`package main
+
+import (
+	"io/fs"
+	"path/filepath"
+)
+
+type %[1]s struct{}
+
+func (m *%[1]s) ContextDirectory() ([]string, error) {
+	var files []string
+	err := filepath.WalkDir("/src", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() {
+			files = append(files, path)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return files, nil
+}
+`, name))
+		}
+
+		c := connect(ctx, t)
+
+		ctr := goGitBase(t, c).
+			With(daggerExec("init", "--sdk=go", "--name=test", "--source=.dagger")).
+			With(source("Test")).
+			WithNewFile("foo", "").
+			WithNewFile(".dagger/bar", "").
+			WithWorkdir("dep").
+			With(daggerExec("init", "--sdk=go", "--source=.dagger")).
+			With(source("Dep")).
+			WithNewFile("foo", "").
+			WithNewFile(".dagger/bar", "").
+			With(configFile(".", &modules.ModuleConfig{
+				Name:    "dep",
+				SDK:     "go",
+				Include: []string{"**/foo"},
+				Exclude: []string{"**/bar"},
+				Source:  ".dagger",
+			})).
+			WithWorkdir("..").
+			With(daggerExec("install", "./dep"))
+
+		t.Run("dependency filtered", func(ctx context.Context, t *testctx.T) {
+			out, err := ctr.
+				With(daggerCallAt("dep", "context-directory")).
+				Stdout(ctx)
+
+			require.NoError(t, err)
+			require.Contains(t, out, "/src/dep/foo")
+			require.NotContains(t, out, "/src/dep/.dagger/bar")
+		})
+
+		t.Run("main module not affected", func(ctx context.Context, t *testctx.T) {
+			out, err := ctr.
+				With(daggerCall("context-directory")).
+				Stdout(ctx)
+
+			require.NoError(t, err)
+			require.NotContains(t, out, "/src/foo")
+			require.Contains(t, out, "/src/.dagger/bar")
+		})
+	})
 }
 
 // verify that if there is no local .git in parent dirs then the context defaults to the source root
