@@ -139,6 +139,7 @@ func (d *rhelLike) detect() (bool, error) {
 		"/etc/redhat-release",
 		"/etc/redhat-version",
 		"/etc/centos-release",
+		"/etc/amazon-linux-release",
 	}); err != nil {
 		return false, err
 	} else if exists {
