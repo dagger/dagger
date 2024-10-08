@@ -7512,6 +7512,20 @@ impl Service {
         }
         query.execute(self.graphql_client.clone()).await
     }
+    /// Configures a hostname which can be used by clients within the session to reach this container.
+    ///
+    /// # Arguments
+    ///
+    /// * `hostname` - The hostname to use.
+    pub fn with_hostname(&self, hostname: impl Into<String>) -> Service {
+        let mut query = self.selection.select("withHostname");
+        query = query.arg("hostname", hostname.into());
+        Service {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
 }
 #[derive(Clone)]
 pub struct Socket {

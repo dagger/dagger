@@ -96,4 +96,14 @@ class Service extends Client\AbstractObject implements Client\IdAble
         }
         $this->queryLeaf($leafQueryBuilder, 'up');
     }
+
+    /**
+     * Configures a hostname which can be used by clients within the session to reach this container.
+     */
+    public function withHostname(string $hostname): Service
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withHostname');
+        $innerQueryBuilder->setArgument('hostname', $hostname);
+        return new \Dagger\Service($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
 }
