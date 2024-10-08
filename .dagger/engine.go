@@ -393,7 +393,7 @@ func (e *Engine) Scan(ctx context.Context) error {
 	}
 
 	ctr := dag.Container().
-		From("aquasec/trivy:0.53.0").
+		From("aquasec/trivy:0.56.1@sha256:c42bb3221509b0a9fa2291cd79a3a818b30a172ab87e9aac8a43997a5b56f293").
 		WithMountedDirectory("/mnt/ignores", ignoreFiles).
 		WithMountedCache("/root/.cache/", dag.CacheVolume("trivy-cache"))
 
