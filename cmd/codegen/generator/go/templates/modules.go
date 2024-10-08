@@ -312,9 +312,6 @@ func dispatch(ctx context.Context) (rerr error) {
 
 	fnCall := dag.CurrentFunctionCall()
 	defer func() {
-		if perr := recover(); perr != nil {
-			rerr = fmt.Errorf("panic: %v", perr)
-		}
 		if rerr != nil {
 			if ` + voidRet + ` := fnCall.ReturnError(ctx, dag.Error(rerr.Error())); err != nil {
 				fmt.Println("failed to return error:", err)
