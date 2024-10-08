@@ -79,6 +79,8 @@ type ExecutionMetadata struct {
 
 	// hostname -> list of aliases
 	HostAliases map[string][]string
+	// search domains to install prior to the session's domain
+	ExtraSearchDomains []string
 
 	RedirectStdoutPath string
 	RedirectStderrPath string
@@ -94,8 +96,6 @@ type ExecutionMetadata struct {
 
 	// Path to the SSH auth socket. Used for Dagger-in-Dagger support.
 	SSHAuthSocketPath string
-
-	ServiceModuleScope *call.ID
 }
 
 const executionMetadataKey = "dagger.executionMetadata"

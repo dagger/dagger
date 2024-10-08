@@ -364,14 +364,41 @@ func (m *Hoster) Run(ctx context.Context) error {
 //go:embed testdata/relay/main.go
 var relayMain string
 
-func (ServiceSuite) TestCircularServices(ctx context.Context, t *testctx.T) {
+func (ServiceSuite) TestWithHostnameCircular(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	_, err := goGitBase(t, c).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work/relayer").
+		With(daggerExec("init", "--source=.", "--name=relayer", "--sdk=go")).
+		WithNewFile("relay/main.go", relayMain).
+		WithNewFile("main.go", `package main
+
+import (
+	_ "embed"
+
+	"dagger/relayer/internal/dagger"
+)
+
+type Relayer struct{}
+
+//go:embed relay/main.go
+var relayMain string
+
+func (m *Relayer) Service() *dagger.Service {
+	return dag.Container().
+		From("`+golangImage+`").
+		WithWorkdir("/srv").
+		WithNewFile("main.go", relayMain).
+		WithExec([]string{"go", "run", "main.go"}).
+		WithExposedPort(80).
+		AsService()
+}
+`,
+		).
 		WithWorkdir("/work/caller").
 		With(daggerExec("init", "--source=.", "--name=caller", "--sdk=go")).
-		WithNewFile("relay/main.go", relayMain).
+		With(daggerExec("install", "../relayer")).
 		WithNewFile("main.go", `package main
 
 import (
@@ -379,7 +406,6 @@ import (
 	"fmt"
 	"time"
 	"net/url"
-	_ "embed"
 
 	"golang.org/x/sync/errgroup"
 
@@ -388,25 +414,10 @@ import (
 
 type Caller struct{}
 
-//go:embed relay/main.go
-var relayMain string
-
-func (m *Caller) Service(hostname string) *dagger.Service {
-	return dag.Container().
-		From("`+golangImage+`").
-		WithWorkdir("/srv").
-		WithNewFile("main.go", relayMain).
-		WithEnvVariable("SELF", hostname).
-		WithExec([]string{"go", "run", "main.go"}).
-		WithExposedPort(80).
-		AsService().
-		WithHostname(hostname)
-}
-
 func (m *Caller) Run(ctx context.Context) error {
-	foo := m.Service("foo")
-	bar := m.Service("bar")
-	baz := m.Service("baz")
+	foo := dag.Relayer().Service().WithHostname("foo")
+	bar := dag.Relayer().Service().WithHostname("bar")
+	baz := dag.Relayer().Service().WithHostname("baz")
 
 	startGroup := new(errgroup.Group)
 	for _, srv := range []*dagger.Service{foo, bar, baz} {
@@ -2131,7 +2142,7 @@ func calculateNestingLimit(ctx context.Context, c *dagger.Client, t *testctx.T) 
 		baseSearchLen := len(strings.TrimSpace(strings.TrimPrefix(baseSearch, "search")))
 
 		// next, calculate the length each additional domain will consume
-		domainLen := len(network.ClientDomain("dummy")) + 1 // account for space
+		domainLen := len(network.SessionDomain("dummy")) + 1 // account for space
 
 		// finally, divide the available space by the amount needed for each domain
 		calculatedNestingLimit = (256 - baseSearchLen) / domainLen

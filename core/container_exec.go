@@ -12,6 +12,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/network"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/identity"
 	"github.com/pkg/errors"
@@ -90,7 +91,10 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 
 	mod, err := container.Query.CurrentModule(ctx)
 	if err == nil {
-		execMD.ServiceModuleScope = mod.InstanceID
+		// allow the exec to reach services scoped to the module that
+		// installed it
+		execMD.ExtraSearchDomains = append(execMD.ExtraSearchDomains,
+			network.ModuleDomain(mod.InstanceID, clientMetadata.SessionID))
 	}
 
 	// if GPU parameters are set for this container pass them over:

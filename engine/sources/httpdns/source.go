@@ -107,7 +107,7 @@ type httpSourceHandler struct {
 func (hs *httpSourceHandler) client(g session.Group) *http.Client {
 	clientDomains := []string{}
 	if ns := hs.src.Namespace; ns != "" {
-		clientDomains = append(clientDomains, network.ClientDomain(ns))
+		clientDomains = append(clientDomains, network.SessionDomain(ns))
 	}
 
 	dns := *hs.dns

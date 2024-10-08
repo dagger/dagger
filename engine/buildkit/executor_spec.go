@@ -166,16 +166,9 @@ func (w *Worker) setupNetwork(ctx context.Context, state *execState) error {
 		return nil
 	}
 
-	extraSearchDomains := []string{
-		network.ClientDomain(w.execMD.SessionID),
-	}
-
-	if w.execMD.ServiceModuleScope != nil {
-		extraSearchDomains = append([]string{
-			network.HostHash(w.execMD.ServiceModuleScope.Digest()) + "." +
-				network.ClientDomain(w.execMD.SessionID),
-		}, extraSearchDomains...)
-	}
+	extraSearchDomains := []string{}
+	extraSearchDomains = append(extraSearchDomains, w.execMD.ExtraSearchDomains...)
+	extraSearchDomains = append(extraSearchDomains, network.SessionDomain(w.execMD.SessionID))
 
 	baseResolvFile, err := os.Open(state.resolvConfPath)
 	if err != nil {
@@ -950,7 +943,7 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 				}
 				var resolvedHost string
 				var errs error
-				for _, searchDomain := range []string{"", network.ClientDomain(w.execMD.SessionID)} {
+				for _, searchDomain := range []string{"", network.SessionDomain(w.execMD.SessionID)} {
 					qualified := hostName
 					if searchDomain != "" {
 						qualified += "." + searchDomain
