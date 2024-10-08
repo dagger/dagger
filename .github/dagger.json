@@ -3,14 +3,14 @@
   "sdk": "go",
   "dependencies": [
     {
-      "name": "gha",
-      "source": "github.com/shykes/gha@f0c4da95fb3e7e5351d17dfb1d20362d3ae8b2a2"
-    },
-    {
       "name": "dirdiff",
       "source": "../modules/dirdiff"
+    },
+    {
+      "name": "gha",
+      "source": "github.com/shykes/gha@f0c4da95fb3e7e5351d17dfb1d20362d3ae8b2a2"
     }
   ],
   "source": ".",
-  "engineVersion": "v0.12.6"
+  "engineVersion": "v0.13.3"
 }

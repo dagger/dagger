@@ -16,7 +16,7 @@ concurrency:
     cancel-in-progress: true
 jobs:
     dagger:
-        runs-on: ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-3-8c-dind' || 'ubuntu-latest' }}
+        runs-on: ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-3-8c-dind-od' || 'ubuntu-latest' }}
         permissions:
             contents: read
         name: go-dev

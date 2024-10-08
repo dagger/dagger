@@ -101,7 +101,6 @@ func (ci *CI) Runner(
 	daggerVersion string,
 	cpus int,
 	singleTenant bool,
-	noSpot bool,
 	dind bool,
 ) string {
 	runner := fmt.Sprintf(
@@ -115,10 +114,9 @@ func (ci *CI) Runner(
 	if singleTenant {
 		runner += "-st"
 	}
-	if noSpot {
-		// "on demand instances" are the opposite of spot instances in AWS jargon
-		runner += "-od"
-	}
+	// We only want on-demand instances, spot ones are too disruptive
+	runner += "-od"
+
 	// Fall back to default runner if repository is not upstream
 	// (this is GHA DSL and will be evaluated by the GHA runner)
 	return fmt.Sprintf(
@@ -129,40 +127,40 @@ func (ci *CI) Runner(
 	)
 }
 
-// Bronze runner: Multi-tenant spot instance, 4 cpu
+// Bronze runner: Multi-tenant instance, 4 cpu
 func (ci *CI) BronzeRunner(
 	// Enable docker-in-docker
 	// +optional
 	dind bool,
 ) string {
-	return ci.Runner(2, daggerVersion, 4, false, false, dind)
+	return ci.Runner(2, daggerVersion, 4, false, dind)
 }
 
-// Silver runner: Multi-tenant spot instance, 8 cpu
+// Silver runner: Multi-tenant instance, 8 cpu
 func (ci *CI) SilverRunner(
 	// Enable docker-in-docker
 	// +optional
 	dind bool,
 ) string {
-	return ci.Runner(2, daggerVersion, 8, false, false, dind)
+	return ci.Runner(2, daggerVersion, 8, false, dind)
 }
 
-// Gold runner: Single-tenant on-demand instance, 16 cpu
+// Gold runner: Single-tenant instance, 16 cpu
 func (ci *CI) GoldRunner(
 	// Enable docker-in-docker
 	// +optional
 	dind bool,
 ) string {
-	return ci.Runner(2, daggerVersion, 16, true, true, dind)
+	return ci.Runner(2, daggerVersion, 16, true, dind)
 }
 
-// Platinum runner: Single-tenant on-demand instance, 32 cpu
+// Platinum runner: Single-tenant instance, 32 cpu
 func (ci *CI) PlatinumRunner(
 	// Enable docker-in-docker
 	// +optional
 	dind bool,
 ) string {
-	return ci.Runner(2, daggerVersion, 32, true, true, dind)
+	return ci.Runner(2, daggerVersion, 32, true, dind)
 }
 
 // Generate Github Actions pipelines to call our Dagger pipelines
