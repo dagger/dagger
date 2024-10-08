@@ -1319,7 +1319,6 @@ func (s *containerSchema) withMountedTemp(ctx context.Context, parent *core.Cont
 		return nil, err
 	}
 
-	// TODO: is the optional safe to dereference?
 	return parent.WithMountedTemp(ctx, path, args.Size.Value.Int())
 }
 
