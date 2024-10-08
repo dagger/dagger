@@ -450,6 +450,7 @@ func (sdk *goSDK) Runtime(
 					Name: "args",
 					Value: dagql.ArrayInput[dagql.String]{
 						"go", "build",
+						"-ldflags", "-s -w", // strip DWARF debug symbols to save a few MBs of space
 						"-o", goSDKRuntimePath,
 						".",
 					},
