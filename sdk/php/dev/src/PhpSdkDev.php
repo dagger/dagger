@@ -17,7 +17,12 @@ use function Dagger\dag;
 #[Doc("The PHP SDK's development module.")]
 final class PhpSdkDev
 {
-    private const SDK_ROOT='/src/sdk/php';
+    private const SDK_ROOT = '/src/sdk/php';
+
+    #[DaggerFunction]
+    public function __construct(
+        private ?Container $container = null,
+    ) {}
 
     #[DaggerFunction]
     #[Doc('Run tests from source directory')]
@@ -28,8 +33,7 @@ final class PhpSdkDev
         ?string $group = null,
     ): Container {
         return $this->base($source)->withExec(
-            is_null($group) ? ['phpunit'] : ['phpunit', "--group=$group"],
-            experimentalPrivilegedNesting: true,
+            is_null($group) ? ['phpunit'] : ['phpunit', "--group=$group"]
         );
     }
 
@@ -88,7 +92,7 @@ final class PhpSdkDev
 
     private function base(Directory $source): Container
     {
-        return dag()
+        return $this->container ?? dag()
             ->container()
             ->from('php:8.3-cli-alpine')
             ->withFile('/usr/bin/composer', dag()

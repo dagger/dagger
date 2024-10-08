@@ -3,10 +3,14 @@ package core
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
+	"crypto/rand"
 	_ "embed"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"path"
@@ -4397,4 +4401,282 @@ func mountDockerConfig(dag *dagger.Client) dagger.WithContainerFunc {
 			dag.SetSecret("docker-config-"+identity.NewID(), string(content)),
 		)
 	}
+}
+
+func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	t.Run("env variable is expanded in WithNewFile", func(ctx context.Context, t *testctx.T) {
+		output, err := c.Container().
+			From("alpine:latest").
+			WithEnvVariable("foo", "bar").
+			WithNewFile("${foo}.txt", "contents in foo file", dagger.ContainerWithNewFileOpts{Expand: true}).
+			File("bar.txt").Contents(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "contents in foo file", output)
+	})
+
+	t.Run("env variable is expanded in WithFile", func(ctx context.Context, t *testctx.T) {
+		output, err := c.Container().
+			From("alpine:latest").
+			WithEnvVariable("foo", "bar").
+			WithFile(
+				"${foo}.txt",
+				c.Directory().WithNewFile("/foo.txt", "contents in foo file").File("/foo.txt"),
+				dagger.ContainerWithFileOpts{Expand: true},
+			).
+			File("bar.txt").Contents(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "contents in foo file", output)
+	})
+
+	t.Run("env variable is expanded in WithDirectory", func(ctx context.Context, t *testctx.T) {
+		output, err := c.Container().
+			From("alpine:latest").
+			WithEnvVariable("foo", "bar").
+			WithDirectory(
+				"/some-path/${foo}",
+				c.Directory().WithNewFile("/some-file.txt", "contents in foo file"),
+				dagger.ContainerWithDirectoryOpts{Expand: true},
+			).
+			Directory("/some-path/bar", dagger.ContainerDirectoryOpts{Expand: true}).
+			File("some-file.txt").
+			Contents(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "contents in foo file", output)
+	})
+
+	t.Run("env variable is expanded in Directory", func(ctx context.Context, t *testctx.T) {
+		output, err := c.Container().
+			From("alpine:latest").
+			WithEnvVariable("foo", "bar").
+			WithDirectory(
+				"/some-path/bar",
+				c.Directory().WithNewFile("/some-file.txt", "contents in foo file"),
+			).
+			Directory("/some-path/${foo}", dagger.ContainerDirectoryOpts{Expand: true}).
+			File("some-file.txt").
+			Contents(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "contents in foo file", output)
+	})
+
+	t.Run("env variable is expanded in File", func(ctx context.Context, t *testctx.T) {
+		output, err := c.Container().
+			From("alpine:latest").
+			WithEnvVariable("foo", "bar").
+			WithDirectory(
+				"/some-path/bar",
+				c.Directory().WithNewFile("/some-file.txt", "contents in foo file"),
+				dagger.ContainerWithDirectoryOpts{Expand: true},
+			).
+			File("/some-path/${foo}/some-file.txt", dagger.ContainerFileOpts{Expand: true}).
+			Contents(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "contents in foo file", output)
+	})
+
+	t.Run("env variable is expanded in WithMountedDirectory", func(ctx context.Context, t *testctx.T) {
+		output, err := c.Container().
+			From("alpine:latest").
+			WithEnvVariable("foo", "bar").
+			WithMountedDirectory(
+				"/some-path/${foo}",
+				c.Directory().WithNewFile("/some-file.txt", "contents in foo file"),
+				dagger.ContainerWithMountedDirectoryOpts{Expand: true},
+			).
+			File("/some-path/bar/some-file.txt", dagger.ContainerFileOpts{Expand: true}).
+			Contents(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "contents in foo file", output)
+	})
+
+	t.Run("env variable is expanded in WithMountedFile", func(ctx context.Context, t *testctx.T) {
+		output, err := c.Container().
+			From("alpine:latest").
+			WithEnvVariable("foo", "bar").
+			WithMountedFile(
+				"/some-path/${foo}/some-file.txt",
+				c.Directory().WithNewFile("/some-file.txt", "contents in foo file").File("/some-file.txt"),
+				dagger.ContainerWithMountedFileOpts{Expand: true},
+			).
+			File("/some-path/bar/some-file.txt").Contents(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "contents in foo file", output)
+	})
+
+	t.Run("env variable is expanded in WithoutDirectory", func(ctx context.Context, t *testctx.T) {
+		_, err := c.Container().
+			From("alpine:latest").
+			WithEnvVariable("foo", "bar").
+			WithExec([]string{"mkdir", "-p", "/some-path/bar"}).
+			WithoutDirectory(
+				"/some-path/${foo}",
+				dagger.ContainerWithoutDirectoryOpts{Expand: true},
+			).
+			WithExec([]string{"ls", "/some-path/bar"}).Stdout(ctx)
+
+		require.ErrorContains(t, err, "ls: /some-path/bar: No such file or directory")
+	})
+
+	t.Run("env variable is expanded in WithoutFile", func(ctx context.Context, t *testctx.T) {
+		_, err := c.Container().
+			From("alpine:latest").
+			WithEnvVariable("foo", "bar").
+			WithFile(
+				"/some-path/bar/some-file.txt",
+				c.Directory().WithNewFile("/some-file.txt", "contents in foo file").File("/some-file.txt"),
+			).
+			WithoutFile("/some-path/${foo}/some-file.txt", dagger.ContainerWithoutFileOpts{Expand: true}).
+			WithExec([]string{"ls", "/some-path/bar/some-file.txt"}).Stdout(ctx)
+
+		require.ErrorContains(t, err, "ls: /some-path/bar/some-file.txt: No such file or directory")
+	})
+
+	t.Run("env variable is expanded in WithoutFiles", func(ctx context.Context, t *testctx.T) {
+		_, err := c.Container().
+			From("alpine:latest").
+			WithEnvVariable("foo", "bar").
+			WithFile(
+				"/some-path/bar/some-file.txt",
+				c.Directory().WithNewFile("/some-file.txt", "contents in foo file").File("/some-file.txt"),
+			).
+			WithoutFiles([]string{"/some-path/${foo}/some-file.txt"}, dagger.ContainerWithoutFilesOpts{Expand: true}).
+			WithExec([]string{"ls", "/some-path/bar/some-file.txt"}).Stdout(ctx)
+
+		require.ErrorContains(t, err, "ls: /some-path/bar/some-file.txt: No such file or directory")
+	})
+
+	t.Run("env variable is expanded in WithExec", func(ctx context.Context, t *testctx.T) {
+		output, err := c.Container().
+			From("alpine:latest").
+			WithEnvVariable("foo", "bar").
+			WithExec([]string{"echo", `/some-arg/${foo}`}, dagger.ContainerWithExecOpts{Expand: true}).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "/some-arg/bar\n", output)
+	})
+
+	t.Run("env variable is expanded in WithoutMount", func(ctx context.Context, t *testctx.T) {
+		_, err := c.Container().
+			From("alpine:latest").
+			WithEnvVariable("foo", "bar").
+			WithMountedDirectory("/mnt/bar", c.Directory().WithNewDirectory("/foo")).
+			WithoutMount("/mnt/${foo}", dagger.ContainerWithoutMountOpts{Expand: true}).
+			WithExec([]string{"ls", `/mnt/bar`}).
+			Stdout(ctx)
+
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "ls: /mnt/bar: No such file or directory")
+	})
+
+	t.Run("env variable is expanded in WithUnixSocket", func(ctx context.Context, t *testctx.T) {
+		tmp := t.TempDir()
+		sock := filepath.Join(tmp, "test.sock")
+
+		l, err := net.Listen("unix", sock)
+		require.NoError(t, err)
+
+		defer l.Close()
+
+		output, err := c.Container().
+			From("alpine:latest").
+			WithEnvVariable("foo", "bar").
+			WithUnixSocket("/opt/${foo}.sock", c.Host().UnixSocket(sock), dagger.ContainerWithUnixSocketOpts{Expand: true}).
+			WithExec([]string{"ls", `/opt/bar.sock`}).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "/opt/bar.sock\n", output)
+	})
+
+	t.Run("env variable is expanded in WithoutUnixSocket", func(ctx context.Context, t *testctx.T) {
+		tmp := t.TempDir()
+		sock := filepath.Join(tmp, "test.sock")
+
+		l, err := net.Listen("unix", sock)
+		require.NoError(t, err)
+
+		defer l.Close()
+
+		_, err = c.Container().
+			From("alpine:latest").
+			WithEnvVariable("foo", "bar").
+			WithUnixSocket("/opt/bar.sock", c.Host().UnixSocket(sock)).
+			WithoutUnixSocket("/opt/${foo}.sock", dagger.ContainerWithoutUnixSocketOpts{Expand: true}).
+			WithExec([]string{"ls", `/opt/bar.sock`}).
+			Stdout(ctx)
+
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "ls: /opt/bar.sock: No such file or directory")
+	})
+
+	t.Run("env variable is expanded in WithMountedSecret", func(ctx context.Context, t *testctx.T) {
+		// Generate 512000 random bytes (non UTF-8)
+		// This is our current limit: secrets break at 512001 bytes
+		data := make([]byte, 512000)
+		_, err := rand.Read(data)
+		if err != nil {
+			panic(err)
+		}
+
+		// Compute the MD5 hash of the data
+		hash := md5.Sum(data)
+		hashStr := hex.EncodeToString(hash[:])
+
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "some-file"), data, 0o600))
+
+		secret := c.Host().SetSecretFile("mysecret", filepath.Join(dir, "some-file"))
+		output, err := c.Container().
+			From("alpine:latest").
+			WithEnvVariable("foo", "bar").
+			WithEnvVariable("CACHEBUST", identity.NewID()).
+			WithMountedSecret(
+				"/${foo}.mysecret",
+				secret,
+				dagger.ContainerWithMountedSecretOpts{Expand: true},
+			).
+			WithExec([]string{"md5sum", "/bar.mysecret"}).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		// Extract the MD5 hash from the command output
+		hashStrCmd := strings.Split(output, " ")[0]
+		require.Equal(t, hashStr, hashStrCmd)
+	})
+
+	t.Run("env variable is expanded in Export", func(ctx context.Context, t *testctx.T) {
+		wd := t.TempDir()
+
+		c := connect(ctx, t, dagger.WithWorkdir(wd))
+
+		entrypoint := []string{"sh", "-c", "im-a-entrypoint"}
+		ctr := c.Container().From(alpineImage).
+			WithEntrypoint(entrypoint)
+
+		actual, err := ctr.
+			WithEnvVariable("foo", "bar").
+			Export(ctx, "./${foo}.tar", dagger.ContainerExportOpts{Expand: true})
+		require.NoError(t, err)
+		require.Equal(t, filepath.Join(wd, "./bar.tar"), actual)
+
+		stat, err := os.Stat(filepath.Join(wd, "./bar.tar"))
+		require.NoError(t, err)
+		require.NotZero(t, stat.Size())
+		require.EqualValues(t, 0o600, stat.Mode().Perm())
+
+		entries := tarEntries(t, filepath.Join(wd, "./bar.tar"))
+		require.Contains(t, entries, "oci-layout")
+		require.Contains(t, entries, "index.json")
+		require.Contains(t, entries, "manifest.json")
+	})
 }

@@ -44,6 +44,9 @@ type ContainerExecOpts struct {
 
 	// (Internal-only) If this is a nested exec, exec metadata to use for it
 	NestedExecMetadata *buildkit.ExecutionMetadata `name:"-"`
+
+	// Expand the environment variables in args
+	Expand bool `default:"false"`
 }
 
 func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts) (*Container, error) { //nolint:gocyclo

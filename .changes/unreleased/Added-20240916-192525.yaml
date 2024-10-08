@@ -1,0 +1,6 @@
+kind: Added
+body: Allow expanding environment variables in more `Container` functions.
+time: 2024-09-16T19:25:25.589722+05:30
+custom:
+    Author: rajatjindal
+    PR: "8427"

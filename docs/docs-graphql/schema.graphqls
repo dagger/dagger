@@ -124,6 +124,12 @@ type Container {
   Mounts are included.
   """
   directory(
+    """
+    Replace ${VAR} or $VAR in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo").
+    """
+    expand: Boolean = false
+
     """The path of the directory to retrieve (e.g., "./src")."""
     path: String!
   ): Directory!
@@ -167,6 +173,12 @@ type Container {
   It can also export platform variants.
   """
   export(
+    """
+    Replace ${VAR} or $VAR in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo").
+    """
+    expand: Boolean = false
+
     """
     Force each layer of the exported image to use the specified compression algorithm.
     
@@ -213,6 +225,12 @@ type Container {
   Mounts are included.
   """
   file(
+    """
+    Replace ${VAR} or $VAR in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    """
+    expand: Boolean = false
+
     """The path of the file to retrieve (e.g., "./README.md")."""
     path: String!
   ): File!
@@ -425,6 +443,12 @@ type Container {
     exclude: [String!] = []
 
     """
+    Replace ${VAR} or $VAR in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo").
+    """
+    expand: Boolean = false
+
+    """
     Patterns to include in the written directory (e.g. ["*.go", "go.mod", "go.sum"]).
     """
     include: [String!] = []
@@ -454,8 +478,8 @@ type Container {
   """Retrieves this container plus the given environment variable."""
   withEnvVariable(
     """
-    Replace `${VAR}` or `$VAR` in the value according to the current environment
-    variables defined in the container (e.g., "/opt/bin:$PATH").
+    Replace ${VAR} or $VAR in the value according to the current environment
+    variables defined in the container (e.g. "/opt/bin:$PATH").
     """
     expand: Boolean = false
 
@@ -476,6 +500,12 @@ type Container {
     If empty, the container's default command is used.
     """
     args: [String!]!
+
+    """
+    Replace ${VAR} or $VAR in the args according to the current environment
+    variables defined in the container (e.g. "/$VAR/foo").
+    """
+    expand: Boolean = false
 
     """
     Provides Dagger access to the executed command.
@@ -541,6 +571,12 @@ type Container {
   """
   withFile(
     """
+    Replace ${VAR} or $VAR in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    """
+    expand: Boolean = false
+
+    """
     A user:group to set for the file.
     
     The user and group can either be an ID (1000:1000) or a name (foo:bar).
@@ -563,6 +599,12 @@ type Container {
   Retrieves this container plus the contents of the given files copied to the given path.
   """
   withFiles(
+    """
+    Replace ${VAR} or $VAR in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    """
+    expand: Boolean = false
+
     """
     A user:group to set for the files.
     
@@ -604,6 +646,12 @@ type Container {
     cache: CacheVolumeID!
 
     """
+    Replace ${VAR} or $VAR in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo").
+    """
+    expand: Boolean = false
+
+    """
     A user:group to set for the mounted cache directory.
     
     Note that this changes the ownership of the specified mount along with the
@@ -629,6 +677,12 @@ type Container {
   """Retrieves this container plus a directory mounted at the given path."""
   withMountedDirectory(
     """
+    Replace ${VAR} or $VAR in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo").
+    """
+    expand: Boolean = false
+
+    """
     A user:group to set for the mounted directory and its contents.
     
     The user and group can either be an ID (1000:1000) or a name (foo:bar).
@@ -646,6 +700,12 @@ type Container {
 
   """Retrieves this container plus a file mounted at the given path."""
   withMountedFile(
+    """
+    Replace ${VAR} or $VAR in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    """
+    expand: Boolean = false
+
     """
     A user or user:group to set for the mounted file.
     
@@ -666,6 +726,12 @@ type Container {
   Retrieves this container plus a secret mounted into a file at the given path.
   """
   withMountedSecret(
+    """
+    Replace ${VAR} or $VAR in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo").
+    """
+    expand: Boolean = false
+
     """
     Permission given to the mounted secret (e.g., 0600).
     
@@ -695,6 +761,12 @@ type Container {
   persisted to subsequent withExecs.
   """
   withMountedTemp(
+    """
+    Replace ${VAR} or $VAR in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo").
+    """
+    expand: Boolean = false
+
     """Location of the temporary directory (e.g., "/tmp/temp_dir")."""
     path: String!
   ): Container!
@@ -703,6 +775,12 @@ type Container {
   withNewFile(
     """Content of the file to write (e.g., "Hello world!")."""
     contents: String!
+
+    """
+    Replace ${VAR} or $VAR in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    """
+    expand: Boolean = false
 
     """
     A user:group to set for the file.
@@ -733,6 +811,12 @@ type Container {
 
   """Retrieves this container with the directory at the given path removed."""
   withoutDirectory(
+    """
+    Replace ${VAR} or $VAR in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo").
+    """
+    expand: Boolean = false
+
     """Location of the directory to remove (e.g., ".github/")."""
     path: String!
   ): Container!
@@ -760,12 +844,24 @@ type Container {
 
   """Retrieves this container with the file at the given path removed."""
   withoutFile(
+    """
+    Replace ${VAR} or $VAR in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    """
+    expand: Boolean = false
+
     """Location of the file to remove (e.g., "/file.txt")."""
     path: String!
   ): Container!
 
   """Retrieves this container with the files at the given paths removed."""
   withoutFiles(
+    """
+    Replace ${VAR} or $VAR in the value of paths according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    """
+    expand: Boolean = false
+
     """Location of the files to remove (e.g., ["/file.txt"])."""
     paths: [String!]!
   ): Container!
@@ -789,6 +885,12 @@ type Container {
   Retrieves this container after unmounting everything at the given path.
   """
   withoutMount(
+    """
+    Replace ${VAR} or $VAR in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo").
+    """
+    expand: Boolean = false
+
     """Location of the cache directory (e.g., "/cache/node_modules")."""
     path: String!
   ): Container!
@@ -815,6 +917,12 @@ type Container {
 
   """Retrieves this container with a previously added Unix socket removed."""
   withoutUnixSocket(
+    """
+    Replace ${VAR} or $VAR in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo").
+    """
+    expand: Boolean = false
+
     """Location of the socket to remove (e.g., "/tmp/socket")."""
     path: String!
   ): Container!
@@ -891,6 +999,12 @@ type Container {
   """
   withUnixSocket(
     """
+    Replace ${VAR} or $VAR in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo").
+    """
+    expand: Boolean = false
+
+    """
     A user:group to set for the mounted socket.
     
     The user and group can either be an ID (1000:1000) or a name (foo:bar).
@@ -914,6 +1028,12 @@ type Container {
 
   """Retrieves this container with a different working directory."""
   withWorkdir(
+    """
+    Replace ${VAR} or $VAR in the value of path according to the current
+    environment variables defined in the container (e.g. "/$VAR/foo").
+    """
+    expand: Boolean = false
+
     """The path to set as the working directory (e.g., "/app")."""
     path: String!
   ): Container!
