@@ -841,6 +841,73 @@ func (b *Baz) Hello() (string, error) {
 	require.Equal(t, "MinimalBaz", objs.Get("3.name").String())
 }
 
+func (GoSuite) TestErrors(ctx context.Context, t *testctx.T) {
+	var logs safeBuffer
+	c := connect(ctx, t, dagger.WithLogOutput(&logs))
+
+	ctr := daggerCliBase(t, c).
+		WithWorkdir("/src").
+		With(daggerExec("init", "--name=use-err", "--sdk=go")).
+		With(withModInitAt("./to-err", "go", `package main
+
+import (
+	"fmt"
+)
+
+type ToErr struct {}
+
+func (m *ToErr) Is(what string) error {
+	if what != "human" {
+		return fmt.Errorf("expected human, got %q", what)
+	}
+	return nil
+}
+
+func (m *ToErr) Panic(dont bool) {
+	if !dont {
+		panic("IM PANICKING")
+	}
+}
+`)).
+		With(daggerExec("install", "./to-err")).
+		With(sdkSource("go", `package main
+
+import (
+	"context"
+	"fmt"
+)
+
+type UseErr struct {}
+
+func (m *UseErr) Test(ctx context.Context) error {
+	if err := dag.ToErr().Is(ctx, "human"); err != nil {
+		return fmt.Errorf("unexpected error: %w", err)
+	}
+	// NOTE: would be nice to do away with some of the wrapping and awkward
+	// formatting, but until then strings are the easiest way to assert
+	expectedError := "input: toErr.is expected human, got \"banana\"\n"
+	if err := dag.ToErr().Is(ctx, "banana"); err == nil {
+		return fmt.Errorf("expected error, but it succeeded")
+	} else if err.Error() != expectedError {
+		return fmt.Errorf("unexpected error: %w (expected %q)", err, expectedError)
+	}
+	if err := dag.ToErr().Panic(ctx, true); err != nil {
+		return fmt.Errorf("unexpected error: %w", err)
+	}
+	expectedPanic := "input: toErr.panic panic: IM PANICKING\n"
+	if err := dag.ToErr().Panic(ctx, false); err == nil {
+		return fmt.Errorf("expected error, but it succeeded")
+	} else if err.Error() != expectedPanic {
+		return fmt.Errorf("unexpected error: %w (expected %q)", err, expectedPanic)
+	}
+	return nil
+}
+`))
+
+	_, err := ctr.With(daggerCall("test")).Sync(ctx)
+	require.NoError(t, err)
+}
+
 func (GoSuite) TestDocs(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
