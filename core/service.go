@@ -313,7 +313,7 @@ func (svc *Service) startContainer(
 	}()
 
 	var domain string
-	if mod, err := svc.Query.CurrentModule(ctx); err == nil {
+	if mod, err := svc.Query.CurrentModule(ctx); err == nil && svc.CustomHostname != "" {
 		domain = network.ModuleDomain(mod.InstanceID, clientMetadata.SessionID)
 		if !slices.Contains(execMD.ExtraSearchDomains, domain) {
 			// ensure a service can reach other services in the module that started

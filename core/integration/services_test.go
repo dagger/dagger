@@ -198,6 +198,183 @@ func (ServiceSuite) TestWithHostname(ctx context.Context, t *testctx.T) {
 	require.Equal(t, "Hello, world!", resp)
 }
 
+//go:embed testdata/counter/main.go
+var counterMain string
+
+func (ServiceSuite) TestContentAddressedModuleScoping(ctx context.Context, t *testctx.T) {
+	t.Run("addressable within module", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		_, err := goGitBase(t, c).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/hoster").
+			With(daggerExec("init", "--source=.", "--name=hoster", "--sdk=go")).
+			WithNewFile("main.go", `package main
+
+import (
+	"context"
+	"fmt"
+)
+
+type Hoster struct{}
+
+func (m *Hoster) Run(ctx context.Context) error {
+	srv := dag.Container().
+		From("`+busyboxImage+`").
+		WithWorkdir("/srv").
+		WithNewFile("index.html", "I am the one who hosts.").
+		WithExec([]string{"httpd", "-v", "-f"}).
+		WithExposedPort(80).
+		AsService()
+	
+	hn, err := srv.Hostname(ctx)
+	if err != nil {
+		return err
+	}
+
+	_, err = srv.Start(ctx)
+	if err != nil {
+		return err
+	}
+
+	resp, err := dag.Container().
+		From("`+busyboxImage+`").
+		WithExec([]string{"wget", "-O-", "http://"+hn}).
+		Stdout(ctx)
+	if err != nil {
+		return err
+	}
+	if resp != "I am the one who hosts." {
+		return fmt.Errorf("unexpected response: %q", resp)
+	}
+
+	return nil
+}
+`,
+			).
+			With(daggerCall("run")).
+			Sync(ctx)
+		require.NoError(t, err)
+	})
+
+	t.Run("addressable across modules", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		_, err := goGitBase(t, c).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/caller").
+			With(daggerExec("init", "--source=.", "--name=caller", "--sdk=go")).
+			WithNewFile("main.go", `package main
+
+import (
+	"context"
+	"strconv"
+	"time"
+
+	"dagger/caller/internal/dagger"
+)
+
+type Caller struct{}
+
+func (m *Caller) Count(ctx context.Context, service *dagger.Service, buster string) (int, error) {
+	hn, err := service.Hostname(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	resp, err := dag.Container().
+		From("`+busyboxImage+`").
+		WithEnvVariable("NOW", time.Now().String()).
+		WithExec([]string{"wget", "-O-", "http://"+hn}).
+		Stdout(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	return strconv.Atoi(resp)
+}
+`,
+			).
+			WithWorkdir("/work/hoster").
+			With(daggerExec("init", "--source=.", "--name=hoster", "--sdk=go")).
+			With(daggerExec("install", "../caller")).
+			WithNewFile("counter/main.go", counterMain).
+			WithNewFile("main.go", `package main
+
+import (
+	"context"
+	_ "embed"
+	"fmt"
+	"strconv"
+	"time"
+)
+
+type Hoster struct{}
+
+//go:embed counter/main.go
+var counterMain string
+
+func (m *Hoster) Run(ctx context.Context) error {
+	counter := dag.Container().
+		From("`+golangImage+`").
+		WithWorkdir("/srv").
+		WithNewFile("main.go", counterMain).
+		WithExec([]string{"go", "run", "main.go"}).
+		WithExposedPort(80).
+		AsService()
+
+	// explicitly start since we want to test that it's the same instance
+	// across the following call and subsequent cross-module calls
+	_, err := counter.Start(ctx)
+	if err != nil {
+		return err
+	}
+
+	// first query the service locally, to ensure the subsequent calls
+	// start at 2
+	resp, err := dag.Container().
+		From("`+busyboxImage+`").
+		WithEnvVariable("NOW", time.Now().String()).
+		WithServiceBinding("counter", counter).
+		WithExec([]string{"wget", "-O-", "http://counter"}).
+		Stdout(ctx)
+	if err != nil {
+		return err
+	}
+	n, err := strconv.Atoi(resp)
+	if err != nil {
+		return err
+	}
+	if n != 1 {
+		return fmt.Errorf("expected %d, got %d", 1, n)
+	}
+
+	n, err = dag.Caller().Count(ctx, counter, time.Now().String())
+	if err != nil {
+		return err
+	}
+	if n != 2 {
+		return fmt.Errorf("expected %d, got %d", 2, n)
+	}
+
+	n, err = dag.Caller().Count(ctx, counter, time.Now().String())
+	if err != nil {
+		return err
+	}
+	if n != 3 {
+		return fmt.Errorf("expected %d, got %d", 3, n)
+	}
+
+	return nil
+}
+`,
+			).
+			With(daggerCall("run")).
+			Sync(ctx)
+		require.NoError(t, err)
+	})
+}
+
 func (ServiceSuite) TestWithHostnameModuleScoping(ctx context.Context, t *testctx.T) {
 	t.Run("works within module", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
