@@ -77,11 +77,8 @@ func (dev *DaggerDev) installer(ctx context.Context, name string) (func(*dagger.
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "tcp://dagger-engine:1234").
 			WithMountedFile(cliBinaryPath, cliBinary).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinaryPath).
-			WithExec([]string{"ln", "-s", cliBinaryPath, "/usr/local/bin/dagger"})
-		if dev.DockerCfg != nil {
-			// this avoids rate limiting in our ci tests
-			ctr = ctr.WithMountedSecret("/root/.docker/config.json", dev.DockerCfg)
-		}
+			WithExec([]string{"ln", "-s", cliBinaryPath, "/usr/local/bin/dagger"}).
+			With(dev.withDockerCfg) // this avoids rate limiting in our ci tests
 		return ctr
 	}, nil
 }
