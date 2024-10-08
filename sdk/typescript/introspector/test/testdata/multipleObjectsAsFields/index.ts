@@ -3,7 +3,7 @@ import { Lint } from "./lint.js"
 import { Test } from "./test.js"
 
 @object()
-class MultipleObjectsAsFields {
+export class MultipleObjectsAsFields {
   @func()
   test: Test = new Test()
 

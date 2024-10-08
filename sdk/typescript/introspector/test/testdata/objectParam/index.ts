@@ -1,7 +1,7 @@
 import { func, object } from "../../../decorators/decorators.js"
 
 @object()
-class Message {
+export class Message {
   @func()
   content: string
 
@@ -11,7 +11,7 @@ class Message {
 }
 
 @object()
-class ObjectParam {
+export class ObjectParam {
   @func()
   sayHello(name: string): Message {
     return new Message("hello " + name)

@@ -1,4 +1,4 @@
-import { registry } from "../introspector/registry/registry.js"
+import { Executor } from "../introspector/executor/executor.js"
 import { Constructor } from "../introspector/scanner/abtractions/constructor.js"
 import { DaggerEnum } from "../introspector/scanner/abtractions/enum.js"
 import { Method } from "../introspector/scanner/abtractions/method.js"
@@ -27,7 +27,11 @@ function isConstructor(method: Method | Constructor): method is Constructor {
  * @param parentArgs The arguments of the parent object.
  * @param fnArgs The arguments of the function to call.
  */
-export async function invoke(module: DaggerModule, ctx: InvokeCtx) {
+export async function invoke(
+  executor: Executor,
+  module: DaggerModule,
+  ctx: InvokeCtx,
+) {
   const object = loadInvokedObject(module, ctx.parentName)
   if (!object) {
     throw new Error(`could not find object ${ctx.parentName}`)
@@ -38,10 +42,10 @@ export async function invoke(module: DaggerModule, ctx: InvokeCtx) {
     throw new Error(`could not find method ${ctx.fnName}`)
   }
 
-  const args = await loadArgs(registry, method, ctx)
-  const parentState = await loadParentState(registry, object, ctx)
+  const args = await loadArgs(executor, method, ctx)
+  const parentState = await loadParentState(executor, object, ctx)
 
-  let result = await registry.getResult(
+  let result = await executor.getResult(
     object.name,
     method.name,
     parentState,

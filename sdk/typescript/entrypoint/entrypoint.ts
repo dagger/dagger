@@ -3,7 +3,8 @@ import { fileURLToPath } from "url"
 
 import { dag } from "../api/client.gen.js"
 import { connection } from "../connect.js"
-import { Args } from "../introspector/registry/registry.js"
+import { Executor } from "../introspector/executor/executor.js"
+import { Args } from "../introspector/executor/executor.js"
 import { scan } from "../introspector/scanner/scan.js"
 import { listFiles } from "../introspector/utils/files.js"
 import { invoke } from "./invoke.js"
@@ -48,10 +49,11 @@ export async function entrypoint() {
           args[await arg.name()] = JSON.parse(await arg.value())
         }
 
-        await load(files)
+        const modules = await load(files)
+        const executor = new Executor(modules)
 
         try {
-          result = await invoke(scanResult, {
+          result = await invoke(executor, scanResult, {
             parentName,
             fnName,
             parentArgs,

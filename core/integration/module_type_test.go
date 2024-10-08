@@ -73,7 +73,7 @@ def repeater(msg: str, times: int) -> Repeater:
 import { object, func } from "@dagger.io/dagger"
 
 @object()
-class Repeater {
+export class Repeater {
   @func()
   message: string
 
@@ -92,7 +92,7 @@ class Repeater {
 }
 
 @object()
-class Test {
+export class Test {
   @func()
   repeater(msg: string, times: number): Repeater {
     return new Repeater(msg, times)
@@ -157,7 +157,7 @@ def my_function() -> X:
 import { object, func } from "@dagger.io/dagger"
 
 @object()
-class X {
+export class X {
   @func()
   message: string
 
@@ -167,7 +167,7 @@ class X {
 }
 
 @object()
-class Foo {
+export class Foo {
   @func()
   myFunction(): X {
     return new X("foo");
@@ -243,7 +243,7 @@ class Foo:
 import { object, func } from "@dagger.io/dagger"
 
 @object()
-class X {
+export class X {
   @func()
   message: string
 
@@ -265,7 +265,7 @@ class X {
 }
 
 @object()
-class Foo {
+export class Foo {
   @func()
   myFunction(): X {
     return new X("foo", "now", "user", "admin");
@@ -343,7 +343,7 @@ class Playground:
 import { object, func } from "@dagger.io/dagger"
 
 @object()
-class Bar {
+export class Bar {
   @func()
   msg: string;
 
@@ -353,7 +353,7 @@ class Bar {
 }
 
 @object()
-class Foo {
+export class Foo {
   @func()
   msgContainer: Bar;
 
@@ -363,7 +363,7 @@ class Foo {
 }
 
 @object()
-class Playground {
+export class Playground {
   @func()
   myFunction(): Foo {
     return new Foo(new Bar("hello world"));
@@ -449,7 +449,7 @@ class Playground:
 import { dag, Container, File, object, func } from "@dagger.io/dagger"
 
 @object()
-class Foo {
+export class Foo {
   @func()
   con: Container
 
@@ -463,7 +463,7 @@ class Foo {
 }
 
 @object()
-class Playground {
+export class Playground {
   @func()
   mySlice(): Container[] {
     return [
@@ -579,7 +579,7 @@ class Playground:
 import { dag, Container, object, func } from "@dagger.io/dagger"
 
 @object()
-class ScanReport {
+export class ScanReport {
   @func()
   contents: string
 
@@ -593,7 +593,7 @@ class ScanReport {
 }
 
 @object()
-class ScanResult {
+export class ScanResult {
   @func("targets")
   containers: Container[]
 
@@ -607,7 +607,7 @@ class ScanResult {
 }
 
 @object()
-class Playground {
+export class Playground {
   @func()
   async scan(): Promise<ScanResult> {
     return new ScanResult(
@@ -690,7 +690,7 @@ class Foo:
 import { object, func } from "@dagger.io/dagger"
 
 @object()
-class Foo {
+export class Foo {
   data: string = ""
 
   @func()
@@ -809,7 +809,7 @@ class Foo:
 import { object, func } from "@dagger.io/dagger"
 
 @object()
-class Message {
+export class Message {
   @func()
   content: string
 
@@ -819,7 +819,7 @@ class Message {
 }
 
 @object()
-class Foo {
+export class Foo {
   @func()
   sayHello(name: string): Message {
     return new Message("hello " + name)
@@ -940,7 +940,7 @@ class Test:
 			source: `import { object, func, Platform } from "@dagger.io/dagger"
 
 @object()
-class Test {
+export class Test {
 	@func()
 	fromPlatform(platform: Platform): string {
 		return platform as string
@@ -1051,7 +1051,7 @@ class Test:
 			source: `import { object, func, NetworkProtocol } from "@dagger.io/dagger";
 
 @object()
-class Test {
+export class Test {
   @func()
   fromProto(Proto: NetworkProtocol): string {
     return Proto as string;

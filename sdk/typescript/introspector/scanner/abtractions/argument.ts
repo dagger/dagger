@@ -3,7 +3,7 @@ import ts from "typescript"
 import { TypeDefKind } from "../../../api/client.gen.js"
 import { UnknownDaggerError } from "../../../common/errors/UnknownDaggerError.js"
 import { argument } from "../../decorators/decorators.js"
-import { ArgumentOptions } from "../../registry/registry.js"
+import { ArgumentOptions } from "../../decorators/decorators.js"
 import { TypeDef } from "../typeDefs.js"
 import { typeToTypedef } from "./typeToTypedef.js"
 
