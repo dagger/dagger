@@ -60,6 +60,10 @@ var (
 	web                      bool
 	noExit                   bool
 
+	dotOutputFilePath string
+	dotFocusField     string
+	dotShowInternal   bool
+
 	stdoutIsTTY = isatty.IsTerminal(os.Stdout.Fd())
 	stderrIsTTY = isatty.IsTerminal(os.Stderr.Fd())
 
@@ -222,7 +226,16 @@ func installGlobalFlags(flags *pflag.FlagSet) {
 	flags.BoolVarP(&web, "web", "w", false, "Open trace URL in a web browser")
 	flags.BoolVarP(&noExit, "no-exit", "E", false, "Leave the TUI running after completion")
 
-	for _, fl := range []string{"workdir"} {
+	flags.StringVar(&dotOutputFilePath, "dot-output", "", "If set, write the calls made during execution to a dot file at the given path before exiting")
+	flags.StringVar(&dotFocusField, "dot-focus-field", "", "In dot output, filter out vertices that aren't this field or descendents of this field")
+	flags.BoolVar(&dotShowInternal, "dot-show-internal", false, "In dot output, if true then include calls and spans marked as internal")
+
+	for _, fl := range []string{
+		"workdir",
+		"dot-output",
+		"dot-focus-field",
+		"dot-show-internal",
+	} {
 		if err := flags.MarkHidden(fl); err != nil {
 			fmt.Println("Error hiding flag: "+fl, err)
 			os.Exit(1)
@@ -296,6 +309,9 @@ func main() {
 	opts.Debug = debug                             // show everything
 	opts.OpenWeb = web
 	opts.NoExit = noExit
+	opts.DotOutputFilePath = dotOutputFilePath
+	opts.DotFocusField = dotFocusField
+	opts.DotShowInternal = dotShowInternal
 	if progress == "auto" {
 		if hasTTY {
 			progress = "tty"

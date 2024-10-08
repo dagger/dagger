@@ -27,6 +27,15 @@ type FrontendOpts struct {
 
 	// Leave the TUI running instead of exiting after completion.
 	NoExit bool
+
+	// DotOutputFilePath is the path to write the DOT output to after execution, if any
+	DotOutputFilePath string
+
+	// DotFocusField is the field name to focus on in the DOT output, if any
+	DotFocusField string
+
+	// DotShowInternal indicates whether to include internal steps in the DOT output
+	DotShowInternal bool
 }
 
 const (
