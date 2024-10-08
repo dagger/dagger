@@ -321,3 +321,10 @@ func (dev *DaggerDev) DevExport(
 		WithFile(cliPath, cliBin)
 	return dir, nil
 }
+
+func (dev *DaggerDev) withDockerCfg(ctr *dagger.Container) *dagger.Container {
+	if dev.DockerCfg == nil {
+		return ctr
+	}
+	return ctr.WithMountedSecret("/root/.docker/config.json", dev.DockerCfg)
+}
