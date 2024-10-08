@@ -262,7 +262,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		}
 
 		if mnt.Tmpfs {
-			mountOpts = append(mountOpts, llb.Tmpfs())
+			mountOpts = append(mountOpts, llb.Tmpfs(llb.TmpfsSize(int64(mnt.Size))))
 		}
 
 		if mnt.Readonly {

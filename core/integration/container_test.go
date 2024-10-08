@@ -1737,6 +1737,35 @@ func (ContainerSuite) TestWithMountedTemp(ctx context.Context, t *testctx.T) {
 		}`, &execRes, nil)
 	require.NoError(t, err)
 	require.Contains(t, execRes.Container.From.WithMountedTemp.WithExec.Stdout, "tmpfs /mnt/tmp tmpfs")
+	require.NotContains(t, execRes.Container.From.WithMountedTemp.WithExec.Stdout, "size=2k")
+}
+
+func (ContainerSuite) TestWithMountedTempSized(ctx context.Context, t *testctx.T) {
+	execRes := struct {
+		Container struct {
+			From struct {
+				WithMountedTemp struct {
+					WithExec struct {
+						Stdout string
+					}
+				}
+			}
+		}
+	}{}
+
+	err := testutil.Query(t, `{
+			container {
+				from(address: "`+alpineImage+`") {
+					withMountedTemp(path: "/mnt/tmp", size: 4000) {
+						withExec(args: ["grep", "/mnt/tmp", "/proc/mounts"]) {
+							stdout
+						}
+					}
+				}
+			}
+		}`, &execRes, nil)
+	require.NoError(t, err)
+	require.Contains(t, execRes.Container.From.WithMountedTemp.WithExec.Stdout, "size=4k")
 }
 
 func (ContainerSuite) TestWithDirectory(ctx context.Context, t *testctx.T) {
