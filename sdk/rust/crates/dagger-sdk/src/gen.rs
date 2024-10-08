@@ -2847,15 +2847,6 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Indicate that subsequent operations should be featured more prominently in the UI.
-    pub fn with_focus(&self) -> Container {
-        let query = self.selection.select("withFocus");
-        Container {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
     /// Retrieves this container plus the given label.
     ///
     /// # Arguments
@@ -3645,16 +3636,6 @@ impl Container {
         if let Some(expand) = opts.expand {
             query = query.arg("expand", expand);
         }
-        Container {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Indicate that subsequent operations should not be featured more prominently in the UI.
-    /// This is the initial state of all containers.
-    pub fn without_focus(&self) -> Container {
-        let query = self.selection.select("withoutFocus");
         Container {
             proc: self.proc.clone(),
             selection: query,
