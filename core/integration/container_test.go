@@ -1712,60 +1712,32 @@ func (ContainerSuite) TestWithMountedCacheFromDirectory(ctx context.Context, t *
 }
 
 func (ContainerSuite) TestWithMountedTemp(ctx context.Context, t *testctx.T) {
-	execRes := struct {
-		Container struct {
-			From struct {
-				WithMountedTemp struct {
-					WithExec struct {
-						Stdout string
-					}
-				}
-			}
-		}
-	}{}
+	c := connect(ctx, t)
 
-	err := testutil.Query(t, `{
-			container {
-				from(address: "`+alpineImage+`") {
-					withMountedTemp(path: "/mnt/tmp") {
-						withExec(args: ["grep", "/mnt/tmp", "/proc/mounts"]) {
-							stdout
-						}
-					}
-				}
-			}
-		}`, &execRes, nil)
-	require.NoError(t, err)
-	require.Contains(t, execRes.Container.From.WithMountedTemp.WithExec.Stdout, "tmpfs /mnt/tmp tmpfs")
-	require.NotContains(t, execRes.Container.From.WithMountedTemp.WithExec.Stdout, "size=2k")
-}
+	t.Run("default", func(ctx context.Context, t *testctx.T) {
+		output, err := c.Container().
+			From(alpineImage).
+			WithMountedTemp("/mnt/tmp").
+			WithExec([]string{"grep", "/mnt/tmp", "/proc/mounts"}).
+			Stdout(ctx)
 
-func (ContainerSuite) TestWithMountedTempSized(ctx context.Context, t *testctx.T) {
-	execRes := struct {
-		Container struct {
-			From struct {
-				WithMountedTemp struct {
-					WithExec struct {
-						Stdout string
-					}
-				}
-			}
-		}
-	}{}
+		require.NoError(t, err)
+		require.Contains(t, output, "tmpfs /mnt/tmp tmpfs")
+		require.NotContains(t, output, "size")
+	})
 
-	err := testutil.Query(t, `{
-			container {
-				from(address: "`+alpineImage+`") {
-					withMountedTemp(path: "/mnt/tmp", size: 4000) {
-						withExec(args: ["grep", "/mnt/tmp", "/proc/mounts"]) {
-							stdout
-						}
-					}
-				}
-			}
-		}`, &execRes, nil)
-	require.NoError(t, err)
-	require.Contains(t, execRes.Container.From.WithMountedTemp.WithExec.Stdout, "size=4k")
+	t.Run("sized", func(ctx context.Context, t *testctx.T) {
+		output, err := c.Container().
+			From(alpineImage).
+			WithMountedTemp("/mnt/tmp", dagger.ContainerWithMountedTempOpts{
+				Size: 4000,
+			}).
+			WithExec([]string{"grep", "/mnt/tmp", "/proc/mounts"}).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Contains(t, output, "size=4k")
+	})
 }
 
 func (ContainerSuite) TestWithDirectory(ctx context.Context, t *testctx.T) {

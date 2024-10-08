@@ -1716,6 +1716,9 @@ pub struct ContainerWithMountedTempOpts {
     /// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
+    /// Size of the temporary directory in bytes.
+    #[builder(setter(into, strip_option), default)]
+    pub size: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithNewFileOpts<'a> {
@@ -3096,6 +3099,9 @@ impl Container {
     ) -> Container {
         let mut query = self.selection.select("withMountedTemp");
         query = query.arg("path", path.into());
+        if let Some(size) = opts.size {
+            query = query.arg("size", size);
+        }
         if let Some(expand) = opts.expand {
             query = query.arg("expand", expand);
         }

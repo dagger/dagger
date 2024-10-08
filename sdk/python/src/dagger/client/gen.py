@@ -1690,6 +1690,7 @@ class Container(Type):
         self,
         path: str,
         *,
+        size: int | None = None,
         expand: bool | None = False,
     ) -> Self:
         """Retrieves this container plus a temporary directory mounted at the
@@ -1700,6 +1701,8 @@ class Container(Type):
         ----------
         path:
             Location of the temporary directory (e.g., "/tmp/temp_dir").
+        size:
+            Size of the temporary directory in bytes.
         expand:
             Replace ${VAR} or $VAR in the value of path according to the
             current environment variables defined in the container (e.g.
@@ -1707,6 +1710,7 @@ class Container(Type):
         """
         _args = [
             Arg("path", path),
+            Arg("size", size, None),
             Arg("expand", expand, False),
         ]
         _ctx = self._select("withMountedTemp", _args)

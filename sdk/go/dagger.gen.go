@@ -1518,6 +1518,8 @@ func (r *Container) WithMountedSecret(path string, source *Secret, opts ...Conta
 
 // ContainerWithMountedTempOpts contains options for Container.WithMountedTemp
 type ContainerWithMountedTempOpts struct {
+	// Size of the temporary directory in bytes.
+	Size int
 	// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
 }
@@ -1526,6 +1528,10 @@ type ContainerWithMountedTempOpts struct {
 func (r *Container) WithMountedTemp(path string, opts ...ContainerWithMountedTempOpts) *Container {
 	q := r.query.Select("withMountedTemp")
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `size` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Size) {
+			q = q.Arg("size", opts[i].Size)
+		}
 		// `expand` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Expand) {
 			q = q.Arg("expand", opts[i].Expand)
