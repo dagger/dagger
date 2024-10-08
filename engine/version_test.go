@@ -96,12 +96,7 @@ func TestVersionCompatibility(t *testing.T) {
 				minVersion = currentVersion
 			}
 
-			err := CheckVersionCompatibility(tc.targetVersion, minVersion)
-			if tc.compatible {
-				require.NoError(t, err)
-			} else {
-				require.Error(t, err)
-			}
+			require.Equal(t, tc.compatible, CheckVersionCompatibility(tc.targetVersion, minVersion))
 		})
 	}
 }
