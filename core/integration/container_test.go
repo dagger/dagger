@@ -1714,12 +1714,18 @@ func (ContainerSuite) TestWithMountedCacheFromDirectory(ctx context.Context, t *
 func (ContainerSuite) TestWithMountedTemp(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	t.Run("default", func(ctx context.Context, t *testctx.T) {
-		output, err := c.Container().
+	output := func(opts []dagger.ContainerWithMountedTempOpts) (string, error) {
+		o, err := c.Container().
 			From(alpineImage).
-			WithMountedTemp("/mnt/tmp").
+			WithMountedTemp("/mnt/tmp", opts...).
 			WithExec([]string{"grep", "/mnt/tmp", "/proc/mounts"}).
 			Stdout(ctx)
+
+		return o, err
+	}
+
+	t.Run("default", func(ctx context.Context, t *testctx.T) {
+		output, err := output([]dagger.ContainerWithMountedTempOpts{})
 
 		require.NoError(t, err)
 		require.Contains(t, output, "tmpfs /mnt/tmp tmpfs")
@@ -1727,13 +1733,9 @@ func (ContainerSuite) TestWithMountedTemp(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("sized", func(ctx context.Context, t *testctx.T) {
-		output, err := c.Container().
-			From(alpineImage).
-			WithMountedTemp("/mnt/tmp", dagger.ContainerWithMountedTempOpts{
-				Size: 4000,
-			}).
-			WithExec([]string{"grep", "/mnt/tmp", "/proc/mounts"}).
-			Stdout(ctx)
+		output, err := output([]dagger.ContainerWithMountedTempOpts{
+			{Size: 4000},
+		})
 
 		require.NoError(t, err)
 		require.Contains(t, output, "size=4k")
