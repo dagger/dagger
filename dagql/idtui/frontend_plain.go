@@ -344,46 +344,18 @@ type PlainFrontendMetricExporter struct {
 func (fe PlainFrontendMetricExporter) Export(ctx context.Context, resourceMetrics *metricdata.ResourceMetrics) error {
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
-
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	if len(resourceMetrics.ScopeMetrics) > 0 {
-		fmt.Fprintf(os.Stderr, "HOLY SHIT: %d %+v\n", len(resourceMetrics.ScopeMetrics), resourceMetrics.ScopeMetrics)
-	}
-
 	return fe.db.MetricExporter().Export(ctx, resourceMetrics)
 }
 
-func (fe PlainFrontendMetricExporter) Temporality(sdkmetric.InstrumentKind) metricdata.Temporality {
-	// TODO: ?
-	// TODO: ?
-	// TODO: ?
-	return metricdata.DeltaTemporality
-	// return metricdata.CumulativeTemporality
+func (fe PlainFrontendMetricExporter) Temporality(ik sdkmetric.InstrumentKind) metricdata.Temporality {
+	return fe.db.Temporality(ik)
 }
 
-func (fe PlainFrontendMetricExporter) Aggregation(sdkmetric.InstrumentKind) sdkmetric.Aggregation {
-	// TODO: ?
-	// TODO: ?
-	// TODO: ?
-	return sdkmetric.AggregationDefault{}
+func (fe PlainFrontendMetricExporter) Aggregation(ik sdkmetric.InstrumentKind) sdkmetric.Aggregation {
+	return fe.db.Aggregation(ik)
 }
 
 func (fe PlainFrontendMetricExporter) ForceFlush(context.Context) error {
-	// TODO: idk yet
-	// TODO: idk yet
-	// TODO: idk yet
-	return nil
-}
-
-func (fe PlainFrontendMetricExporter) Shutdown(context.Context) error {
-	// TODO: idk yet
-	// TODO: idk yet
-	// TODO: idk yet
 	return nil
 }
 
@@ -548,6 +520,7 @@ func (fe *frontendPlain) renderStep(span *dagui.Span, depth int, done bool) {
 		}
 		duration := dagui.FormatDuration(span.EndTime().Sub(span.StartTime()))
 		fmt.Fprint(fe.output, fe.output.String(fmt.Sprintf(" [%s]", duration)).Foreground(termenv.ANSIBrightBlack))
+		r.renderMetrics(fe.output, span)
 
 		if span.Status().Code == codes.Error && span.Status().Description != "" {
 			fmt.Fprintln(fe.output)

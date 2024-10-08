@@ -90,6 +90,10 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 		}
 	}
 
+	if cfg.Verbosity > 0 {
+		args = append(args, "-"+strings.Repeat("v", cfg.Verbosity))
+	}
+
 	env := os.Environ()
 
 	if cfg.RunnerHost != "" {

@@ -26,6 +26,7 @@ type Config struct {
 	RunnerHost      string
 	Conn            EngineConn
 	VersionOverride string
+	Verbosity       int
 }
 
 type ConnectParams struct {

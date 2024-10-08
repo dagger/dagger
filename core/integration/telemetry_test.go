@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"testing"
 	"time"
 
@@ -41,4 +42,28 @@ func (TelemetrySuite) TestInternalVertexes(ctx context.Context, t *testctx.T) {
 		require.NoError(t, c.Close()) // close + flush logs
 		require.NotContains(t, logs.String(), "merge (")
 	})
+}
+
+func (TelemetrySuite) TestMetrics(ctx context.Context, t *testctx.T) {
+	var logs safeBuffer
+	c := connect(ctx, t,
+		dagger.WithLogOutput(&logs),
+		dagger.WithVerbosity(3), // bump to -vvv so metrics show up
+	)
+
+	cmd := "dd if=/f of=/f2 iflag=direct oflag=direct bs=1M count=1 && sync && sleep 10"
+	_, err := c.Container().From(alpineImage).
+		WithEnvVariable("BUST", fmt.Sprintf("%d", time.Now().UTC().UnixNano())).
+		WithExec([]string{"sh", "-c",
+			"dd if=/dev/zero of=/f bs=1M count=1",
+		}).
+		WithExec([]string{"sh", "-c", cmd}).
+		Sync(ctx)
+	require.NoError(t, err)
+
+	require.NoError(t, c.Close()) // close + flush logs
+	require.Regexp(t,
+		regexp.MustCompile(`.*exec sh -c `+cmd+`.*\Disk Read Bytes:\s*\d{7}.*Disk Write Bytes:\s*\d{7}.*`),
+		logs.String(),
+	)
 }
