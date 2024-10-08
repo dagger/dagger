@@ -113,6 +113,10 @@ Generate SDK static files (replace `<sdk>` with one of the supported SDKs):
 
     dagger call sdk <sdk> generate export --path=.
 
+If you've made changes to the GraphQL schema, you will need to generate all sdks in one go prior to committing:
+
+    dagger call sdk all generate export --path=.
+
 ### Publish
 
 Dry-run an SDK publishing step (replace `<sdk>` with one of the supported SDKs):
