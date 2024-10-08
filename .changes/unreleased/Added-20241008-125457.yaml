@@ -1,0 +1,13 @@
+kind: Added
+body: |
+  Services can now be given an explicit hostname via `Service.withHostname`.
+
+  Previously, you could only express a DAG of services, because each service hostname was derived from the service's configuration, and changing a service to point to another service would inherently change that service's configuration.
+
+  Now you can set your own hostnames ahead of time, tell your services about each other's hostnames, and start they manually.
+
+  Services with custom hostnames are namespaced to the module that starts them, to prevent conflicts.
+time: 2024-10-08T12:54:57.125973062-04:00
+custom:
+    Author: vito
+    PR: "8641"
