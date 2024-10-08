@@ -4,8 +4,10 @@ import (
 	"encoding/base32"
 	"encoding/binary"
 	"encoding/hex"
+	"fmt"
 	"strings"
 
+	"github.com/dagger/dagger/dagql/call"
 	"github.com/opencontainers/go-digest"
 	"github.com/zeebo/xxh3"
 )
@@ -23,14 +25,19 @@ func HostHashStr(val string) string {
 	return strings.ToLower(b32(xxh3.HashString(val)))
 }
 
-// ClientDomain is a session-global domain suffix appended to every service's
-// hostname. It is randomly generated on the first call.
-//
-// Ideally we would base this on the Buildkit gateway session ID instead of
-// using global state, but for exporting we actually establish multiple gateway
-// sessions.
-func ClientDomain(sid string) string {
+// SessionDomain is a session-wide domain suffix for a given session ID.
+func SessionDomain(sid string) string {
 	return HostHashStr(sid) + DomainSuffix
+}
+
+// SessionDomain is a session-wide domain suffix for a given session ID.
+func ModuleDomain(modID *call.ID, sid string) string {
+	return fmt.Sprintf(
+		"%s.%s%s",
+		HostHash(modID.Digest()),
+		HostHashStr(sid),
+		DomainSuffix,
+	)
 }
 
 func b32(n uint64) string {

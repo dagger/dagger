@@ -7377,6 +7377,14 @@ type Service struct {
 	stop     *ServiceID
 	up       *Void
 }
+type WithServiceFunc func(r *Service) *Service
+
+// With calls the provided function with current Service.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *Service) With(f WithServiceFunc) *Service {
+	return f(r)
+}
 
 func (r *Service) WithGraphQLQuery(q *querybuilder.Selection) *Service {
 	return &Service{
@@ -7573,6 +7581,16 @@ func (r *Service) Up(ctx context.Context, opts ...ServiceUpOpts) error {
 	}
 
 	return q.Execute(ctx)
+}
+
+// Configures a hostname which can be used by clients within the session to reach this container.
+func (r *Service) WithHostname(hostname string) *Service {
+	q := r.query.Select("withHostname")
+	q = q.Arg("hostname", hostname)
+
+	return &Service{
+		query: q,
+	}
 }
 
 // A Unix or TCP/IP socket that can be mounted into a container.

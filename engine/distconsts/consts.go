@@ -27,6 +27,9 @@ const (
 
 	GolangVersion = "1.23.2"
 	GolangImage   = "golang:" + GolangVersion + "-alpine"
+
+	BusyboxVersion = "1.37.0"
+	BusyboxImage   = "busybox:" + BusyboxVersion
 )
 
 const (

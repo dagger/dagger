@@ -123,4 +123,16 @@ defmodule Dagger.Service do
       error -> error
     end
   end
+
+  @doc "Configures a hostname which can be used by clients within the session to reach this container."
+  @spec with_hostname(t(), String.t()) :: Dagger.Service.t()
+  def with_hostname(%__MODULE__{} = service, hostname) do
+    query_builder =
+      service.query_builder |> QB.select("withHostname") |> QB.put_arg("hostname", hostname)
+
+    %Dagger.Service{
+      query_builder: query_builder,
+      client: service.client
+    }
+  end
 end

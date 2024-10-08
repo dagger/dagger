@@ -7567,6 +7567,28 @@ class Service(Type):
         _ctx = self._select("up", _args)
         await _ctx.execute()
 
+    def with_hostname(self, hostname: str) -> Self:
+        """Configures a hostname which can be used by clients within the session
+        to reach this container.
+
+        Parameters
+        ----------
+        hostname:
+            The hostname to use.
+        """
+        _args = [
+            Arg("hostname", hostname),
+        ]
+        _ctx = self._select("withHostname", _args)
+        return Service(_ctx)
+
+    def with_(self, cb: Callable[["Service"], "Service"]) -> "Service":
+        """Call the provided callable with current Service.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
+
 
 @typecheck
 class Socket(Type):

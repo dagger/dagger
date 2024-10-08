@@ -166,7 +166,9 @@ func (w *Worker) setupNetwork(ctx context.Context, state *execState) error {
 		return nil
 	}
 
-	extraSearchDomain := network.ClientDomain(w.execMD.SessionID)
+	extraSearchDomains := []string{}
+	extraSearchDomains = append(extraSearchDomains, w.execMD.ExtraSearchDomains...)
+	extraSearchDomains = append(extraSearchDomains, network.SessionDomain(w.execMD.SessionID))
 
 	baseResolvFile, err := os.Open(state.resolvConfPath)
 	if err != nil {
@@ -205,7 +207,7 @@ func (w *Worker) setupNetwork(ctx context.Context, state *execState) error {
 		}
 
 		domains := strings.Fields(line)[1:]
-		domains = append(domains, extraSearchDomain)
+		domains = append(domains, extraSearchDomains...)
 		if _, err := fmt.Fprintln(ctrResolvFile, "search", strings.Join(domains, " ")); err != nil {
 			return fmt.Errorf("write resolv.conf: %w", err)
 		}
@@ -215,7 +217,7 @@ func (w *Worker) setupNetwork(ctx context.Context, state *execState) error {
 		return fmt.Errorf("read resolv.conf: %w", err)
 	}
 	if !replaced {
-		if _, err := fmt.Fprintln(ctrResolvFile, "search", extraSearchDomain); err != nil {
+		if _, err := fmt.Fprintln(ctrResolvFile, "search", strings.Join(extraSearchDomains, " ")); err != nil {
 			return fmt.Errorf("write resolv.conf: %w", err)
 		}
 	}
@@ -256,7 +258,7 @@ func (w *Worker) setupNetwork(ctx context.Context, state *execState) error {
 	for target, aliases := range w.execMD.HostAliases {
 		var ips []net.IP
 		var errs error
-		for _, domain := range []string{"", extraSearchDomain} {
+		for _, domain := range append([]string{""}, extraSearchDomains...) {
 			qualified := target
 			if domain != "" {
 				qualified += "." + domain
@@ -941,7 +943,7 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 				}
 				var resolvedHost string
 				var errs error
-				for _, searchDomain := range []string{"", network.ClientDomain(w.execMD.SessionID)} {
+				for _, searchDomain := range []string{"", network.SessionDomain(w.execMD.SessionID)} {
 					qualified := hostName
 					if searchDomain != "" {
 						qualified += "." + searchDomain

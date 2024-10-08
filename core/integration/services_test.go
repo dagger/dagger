@@ -166,6 +166,483 @@ func (ServiceSuite) TestHostnameEndpoint(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (ServiceSuite) TestWithHostname(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	srv := c.Container().
+		From(busyboxImage).
+		WithWorkdir("/srv").
+		WithNewFile("index.html", "Hello, world!").
+		WithExec([]string{"httpd", "-v", "-f"}).
+		WithExposedPort(80).
+		AsService().
+		WithHostname("wwwhatsup")
+
+	hn, err := srv.Hostname(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "wwwhatsup", hn)
+
+	ep, err := srv.Endpoint(ctx)
+	require.NoError(t, err)
+
+	require.Equal(t, hn+":80", ep)
+
+	_, err = srv.Start(ctx)
+	require.NoError(t, err)
+
+	resp, err := c.Container().
+		From(busyboxImage).
+		WithExec([]string{"wget", "-O-", "http://wwwhatsup"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "Hello, world!", resp)
+}
+
+//go:embed testdata/counter/main.go
+var counterMain string
+
+func (ServiceSuite) TestContentAddressedModuleScoping(ctx context.Context, t *testctx.T) {
+	t.Run("addressable within module", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		_, err := goGitBase(t, c).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/hoster").
+			With(daggerExec("init", "--source=.", "--name=hoster", "--sdk=go")).
+			WithNewFile("main.go", `package main
+
+import (
+	"context"
+	"fmt"
+)
+
+type Hoster struct{}
+
+func (m *Hoster) Run(ctx context.Context) error {
+	srv := dag.Container().
+		From("`+busyboxImage+`").
+		WithWorkdir("/srv").
+		WithNewFile("index.html", "I am the one who hosts.").
+		WithExec([]string{"httpd", "-v", "-f"}).
+		WithExposedPort(80).
+		AsService()
+	
+	hn, err := srv.Hostname(ctx)
+	if err != nil {
+		return err
+	}
+
+	_, err = srv.Start(ctx)
+	if err != nil {
+		return err
+	}
+
+	resp, err := dag.Container().
+		From("`+busyboxImage+`").
+		WithExec([]string{"wget", "-O-", "http://"+hn}).
+		Stdout(ctx)
+	if err != nil {
+		return err
+	}
+	if resp != "I am the one who hosts." {
+		return fmt.Errorf("unexpected response: %q", resp)
+	}
+
+	return nil
+}
+`,
+			).
+			With(daggerCall("run")).
+			Sync(ctx)
+		require.NoError(t, err)
+	})
+
+	t.Run("addressable across modules", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		_, err := goGitBase(t, c).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/caller").
+			With(daggerExec("init", "--source=.", "--name=caller", "--sdk=go")).
+			WithNewFile("main.go", `package main
+
+import (
+	"context"
+	"strconv"
+	"time"
+
+	"dagger/caller/internal/dagger"
+)
+
+type Caller struct{}
+
+func (m *Caller) Count(ctx context.Context, service *dagger.Service, buster string) (int, error) {
+	hn, err := service.Hostname(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	resp, err := dag.Container().
+		From("`+busyboxImage+`").
+		WithEnvVariable("NOW", time.Now().String()).
+		WithExec([]string{"wget", "-O-", "http://"+hn}).
+		Stdout(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	return strconv.Atoi(resp)
+}
+`,
+			).
+			WithWorkdir("/work/hoster").
+			With(daggerExec("init", "--source=.", "--name=hoster", "--sdk=go")).
+			With(daggerExec("install", "../caller")).
+			WithNewFile("counter/main.go", counterMain).
+			WithNewFile("main.go", `package main
+
+import (
+	"context"
+	_ "embed"
+	"fmt"
+	"strconv"
+	"time"
+)
+
+type Hoster struct{}
+
+//go:embed counter/main.go
+var counterMain string
+
+func (m *Hoster) Run(ctx context.Context) error {
+	counter := dag.Container().
+		From("`+golangImage+`").
+		WithWorkdir("/srv").
+		WithNewFile("main.go", counterMain).
+		WithExec([]string{"go", "run", "main.go"}).
+		WithExposedPort(80).
+		AsService()
+
+	// explicitly start since we want to test that it's the same instance
+	// across the following call and subsequent cross-module calls
+	_, err := counter.Start(ctx)
+	if err != nil {
+		return err
+	}
+
+	// first query the service locally, to ensure the subsequent calls
+	// start at 2
+	resp, err := dag.Container().
+		From("`+busyboxImage+`").
+		WithEnvVariable("NOW", time.Now().String()).
+		WithServiceBinding("counter", counter).
+		WithExec([]string{"wget", "-O-", "http://counter"}).
+		Stdout(ctx)
+	if err != nil {
+		return err
+	}
+	n, err := strconv.Atoi(resp)
+	if err != nil {
+		return err
+	}
+	if n != 1 {
+		return fmt.Errorf("expected %d, got %d", 1, n)
+	}
+
+	n, err = dag.Caller().Count(ctx, counter, time.Now().String())
+	if err != nil {
+		return err
+	}
+	if n != 2 {
+		return fmt.Errorf("expected %d, got %d", 2, n)
+	}
+
+	n, err = dag.Caller().Count(ctx, counter, time.Now().String())
+	if err != nil {
+		return err
+	}
+	if n != 3 {
+		return fmt.Errorf("expected %d, got %d", 3, n)
+	}
+
+	return nil
+}
+`,
+			).
+			With(daggerCall("run")).
+			Sync(ctx)
+		require.NoError(t, err)
+	})
+}
+
+func (ServiceSuite) TestWithHostnameModuleScoping(ctx context.Context, t *testctx.T) {
+	t.Run("works within module", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		_, err := goGitBase(t, c).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/hoster").
+			With(daggerExec("init", "--source=.", "--name=hoster", "--sdk=go")).
+			WithNewFile("main.go", `package main
+
+import (
+	"context"
+	"fmt"
+)
+
+type Hoster struct{}
+
+func (m *Hoster) Run(ctx context.Context) error {
+	srv := dag.Container().
+		From("`+busyboxImage+`").
+		WithWorkdir("/srv").
+		WithNewFile("index.html", "I am the one who hosts.").
+		WithExec([]string{"httpd", "-v", "-f"}).
+		WithExposedPort(80).
+		AsService().
+		WithHostname("wwwhatsup")
+	
+	_, err := srv.Start(ctx)
+	if err != nil {
+		return err
+	}
+
+	resp, err := dag.Container().
+		From("`+busyboxImage+`").
+		WithExec([]string{"wget", "-O-", "http://wwwhatsup"}).
+		Stdout(ctx)
+	if err != nil {
+		return err
+	}
+	if resp != "I am the one who hosts." {
+		return fmt.Errorf("unexpected response: %q", resp)
+	}
+
+	return nil
+}
+`,
+			).
+			With(daggerCall("run")).
+			Sync(ctx)
+		require.NoError(t, err)
+	})
+
+	t.Run("is not reachable across modules", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		_, err := goGitBase(t, c).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/caller").
+			With(daggerExec("init", "--source=.", "--name=caller", "--sdk=go")).
+			WithNewFile("main.go", `package main
+
+import (
+	"context"
+	"fmt"
+	"time"
+)
+
+type Caller struct{}
+
+func (m *Caller) Run(ctx context.Context) error {
+	resp, err := dag.Container().
+		From("`+busyboxImage+`").
+		WithEnvVariable("NOW", time.Now().String()).
+		WithExec([]string{"wget", "-O-", "http://wwwhatsup"}).
+		Stdout(ctx)
+	if err == nil {
+		return fmt.Errorf("should not have been able to reach service")
+	}
+
+	srv := dag.Container().
+		From("`+busyboxImage+`").
+		WithWorkdir("/srv").
+		WithNewFile("index.html", "I am within the called module.").
+		WithExec([]string{"httpd", "-v", "-f"}).
+		WithExposedPort(80).
+		AsService().
+		WithHostname("wwwhatsup")
+	
+	_, err = srv.Start(ctx)
+	if err != nil {
+		return err
+	}
+
+	resp, err = dag.Container().
+		From("`+busyboxImage+`").
+		WithEnvVariable("NOW", time.Now().String()).
+		WithExec([]string{"wget", "-O-", "http://wwwhatsup"}).
+		Stdout(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to reach service: %w", err)
+	}
+	if resp != "I am within the called module." {
+		return fmt.Errorf("unexpected response: %q", resp)
+	}
+	return nil
+}
+`,
+			).
+			WithWorkdir("/work/hoster").
+			With(daggerExec("init", "--source=.", "--name=hoster", "--sdk=go")).
+			With(daggerExec("install", "../caller")).
+			WithNewFile("main.go", `package main
+
+import (
+	"context"
+	"fmt"
+	"time"
+)
+
+type Hoster struct{}
+
+func (m *Hoster) Run(ctx context.Context) error {
+	srv := dag.Container().
+		From("`+busyboxImage+`").
+		WithWorkdir("/srv").
+		WithNewFile("index.html", "I am the one who hosts.").
+		WithExec([]string{"httpd", "-v", "-f"}).
+		WithExposedPort(80).
+		AsService().
+		WithHostname("wwwhatsup")
+	
+	_, err := srv.Start(ctx)
+	if err != nil {
+		return err
+	}
+
+	err = dag.Caller().Run(ctx)
+	if err != nil {
+		return err
+	}
+
+	resp, err := dag.Container().
+		From("`+busyboxImage+`").
+		WithEnvVariable("NOW", time.Now().String()).
+		WithExec([]string{"wget", "-O-", "http://wwwhatsup"}).
+		Stdout(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to reach service: %w", err)
+	}
+	if resp != "I am the one who hosts." {
+		return fmt.Errorf("unexpected response: %q", resp)
+	}
+
+	return nil
+}
+`,
+			).
+			With(daggerCall("run")).
+			Sync(ctx)
+		require.NoError(t, err)
+	})
+}
+
+//go:embed testdata/relay/main.go
+var relayMain string
+
+func (ServiceSuite) TestWithHostnameCircular(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	_, err := goGitBase(t, c).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work/relayer").
+		With(daggerExec("init", "--source=.", "--name=relayer", "--sdk=go")).
+		WithNewFile("relay/main.go", relayMain).
+		WithNewFile("main.go", `package main
+
+import (
+	_ "embed"
+
+	"dagger/relayer/internal/dagger"
+)
+
+type Relayer struct{}
+
+//go:embed relay/main.go
+var relayMain string
+
+func (m *Relayer) Service() *dagger.Service {
+	return dag.Container().
+		From("`+golangImage+`").
+		WithWorkdir("/srv").
+		WithNewFile("main.go", relayMain).
+		WithExec([]string{"go", "run", "main.go"}).
+		WithExposedPort(80).
+		AsService()
+}
+`,
+		).
+		WithWorkdir("/work/caller").
+		With(daggerExec("init", "--source=.", "--name=caller", "--sdk=go")).
+		With(daggerExec("install", "../relayer")).
+		WithNewFile("main.go", `package main
+
+import (
+	"context"
+	"fmt"
+	"time"
+	"net/url"
+
+	"golang.org/x/sync/errgroup"
+
+	"dagger/caller/internal/dagger"
+)
+
+type Caller struct{}
+
+func (m *Caller) Run(ctx context.Context) error {
+	foo := dag.Relayer().Service().WithHostname("foo")
+	bar := dag.Relayer().Service().WithHostname("bar")
+	baz := dag.Relayer().Service().WithHostname("baz")
+
+	startGroup := new(errgroup.Group)
+	for _, srv := range []*dagger.Service{foo, bar, baz} {
+		startGroup.Go(func() error {
+			_, err := srv.Start(ctx)
+			return err
+		})
+	}
+	if err := startGroup.Wait(); err != nil {
+		return err
+	}
+
+	relayURL := &url.URL{
+		Scheme: "http",
+		Host:   "foo",
+		Path:   "/",
+		RawQuery: url.Values{
+			"relay": {
+				"http://bar",
+				"http://baz",
+				"http://foo",
+			},
+			"end": {"hello"},
+		}.Encode(),
+	}
+
+	resp, err := dag.Container().
+		From("`+busyboxImage+`").
+		WithEnvVariable("NOW", time.Now().String()).
+		WithExec([]string{"cat", "/etc/resolv.conf"}).
+		WithExec([]string{"wget", "-O-", relayURL.String()}).
+		Stdout(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to reach service: %w", err)
+	}
+	if resp != "http://bar: http://baz: http://foo: hello" {
+		return fmt.Errorf("unexpected response: %q", resp)
+	}
+
+	return nil
+}
+`,
+		).
+		With(daggerCall("run")).
+		Sync(ctx)
+	require.NoError(t, err)
+}
+
 func (ServiceSuite) TestPorts(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
@@ -1842,7 +2319,7 @@ func calculateNestingLimit(ctx context.Context, c *dagger.Client, t *testctx.T) 
 		baseSearchLen := len(strings.TrimSpace(strings.TrimPrefix(baseSearch, "search")))
 
 		// next, calculate the length each additional domain will consume
-		domainLen := len(network.ClientDomain("dummy")) + 1 // account for space
+		domainLen := len(network.SessionDomain("dummy")) + 1 // account for space
 
 		// finally, divide the available space by the amount needed for each domain
 		calculatedNestingLimit = (256 - baseSearchLen) / domainLen

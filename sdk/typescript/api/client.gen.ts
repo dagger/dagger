@@ -9753,6 +9753,32 @@ export class Service extends BaseClient {
       await this._ctx.connection(),
     )
   }
+
+  /**
+   * Configures a hostname which can be used by clients within the session to reach this container.
+   * @param hostname The hostname to use.
+   */
+  withHostname = (hostname: string): Service => {
+    return new Service({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withHostname",
+          args: { hostname },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Call the provided function with current Service.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with = (arg: (param: Service) => Service) => {
+    return arg(this)
+  }
 }
 
 /**

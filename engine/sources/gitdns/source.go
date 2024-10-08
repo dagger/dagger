@@ -323,7 +323,7 @@ func (gs *gitSourceHandler) mountKnownHosts() (string, func() error, error) {
 func (gs *gitSourceHandler) dnsConfig() *oci.DNSConfig {
 	clientDomains := []string{}
 	if gs.src.Namespace != "" {
-		clientDomains = append(clientDomains, network.ClientDomain(gs.src.Namespace))
+		clientDomains = append(clientDomains, network.SessionDomain(gs.src.Namespace))
 	}
 	dns := *gs.dns
 	dns.SearchDomains = append(clientDomains, dns.SearchDomains...)

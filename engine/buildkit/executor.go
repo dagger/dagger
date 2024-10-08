@@ -79,6 +79,8 @@ type ExecutionMetadata struct {
 
 	// hostname -> list of aliases
 	HostAliases map[string][]string
+	// search domains to install prior to the session's domain
+	ExtraSearchDomains []string
 
 	RedirectStdoutPath string
 	RedirectStderrPath string

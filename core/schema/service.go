@@ -33,6 +33,10 @@ func (s *serviceSchema) Install() {
 		dagql.NodeFunc("hostname", s.hostname).
 			Doc(`Retrieves a hostname which can be used by clients to reach this container.`),
 
+		dagql.NodeFunc("withHostname", s.withHostname).
+			Doc(`Configures a hostname which can be used by clients within the session to reach this container.`).
+			ArgDoc("hostname", `The hostname to use.`),
+
 		dagql.NodeFunc("ports", s.ports).
 			Impure("A tunnel service's ports can change each time it is restarted.").
 			Doc(`Retrieves the list of ports provided by the service.`),
@@ -90,6 +94,12 @@ func (s *serviceSchema) hostname(ctx context.Context, parent dagql.Instance[*cor
 		return "", err
 	}
 	return dagql.NewString(hn), nil
+}
+
+func (s *serviceSchema) withHostname(ctx context.Context, parent dagql.Instance[*core.Service], args struct {
+	Hostname string
+}) (*core.Service, error) {
+	return parent.Self.WithHostname(args.Hostname), nil
 }
 
 func (s *serviceSchema) ports(ctx context.Context, parent dagql.Instance[*core.Service], args struct{}) (dagql.Array[core.Port], error) {

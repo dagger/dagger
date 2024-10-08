@@ -2864,6 +2864,14 @@ type Service {
     """Bind each tunnel port to a random port on the host."""
     random: Boolean = false
   ): Void
+
+  """
+  Configures a hostname which can be used by clients within the session to reach this container.
+  """
+  withHostname(
+    """The hostname to use."""
+    hostname: String!
+  ): Service!
 }
 
 """

@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -33,6 +34,9 @@ const (
 
 type Service struct {
 	Query *Query
+
+	// A custom hostname set by the user.
+	CustomHostname string
 
 	// Container is the container to run as a service.
 	Container *Container `json:"container"`
@@ -72,7 +76,16 @@ func (svc *Service) Clone() *Service {
 	return &cp
 }
 
+func (svc *Service) WithHostname(hostname string) *Service {
+	svc = svc.Clone()
+	svc.CustomHostname = hostname
+	return svc
+}
+
 func (svc *Service) Hostname(ctx context.Context, id *call.ID) (string, error) {
+	if svc.CustomHostname != "" {
+		return svc.CustomHostname, nil
+	}
 	switch {
 	case svc.TunnelUpstream != nil: // host=>container (127.0.0.1)
 		svcs, err := svc.Query.Services(ctx)
@@ -299,7 +312,21 @@ func (svc *Service) startContainer(
 		}
 	}()
 
-	fullHost := host + "." + network.ClientDomain(clientMetadata.SessionID)
+	var domain string
+	if mod, err := svc.Query.CurrentModule(ctx); err == nil && svc.CustomHostname != "" {
+		domain = network.ModuleDomain(mod.InstanceID, clientMetadata.SessionID)
+		if !slices.Contains(execMD.ExtraSearchDomains, domain) {
+			// ensure a service can reach other services in the module that started
+			// it, to support services returned by modules and re-configured with
+			// local hostnames. otherwise, the service is "stuck" in the installing
+			// module's domain.
+			execMD.ExtraSearchDomains = append(execMD.ExtraSearchDomains, domain)
+		}
+	} else {
+		domain = network.SessionDomain(clientMetadata.SessionID)
+	}
+
+	fullHost := host + "." + domain
 
 	bk, err := svc.Query.Buildkit(ctx)
 	if err != nil {
@@ -603,7 +630,7 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 		return nil, err
 	}
 
-	fullHost := host + "." + network.ClientDomain(clientMetadata.SessionID)
+	fullHost := host + "." + network.SessionDomain(clientMetadata.SessionID)
 
 	bk, err := svc.Query.Buildkit(ctx)
 	if err != nil {
