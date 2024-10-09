@@ -18,7 +18,7 @@ For example `dagger call foo bar baz` will call 3 functions (`foo`, `bar` and
 this case, `baz`) will be printed to the terminal.
 
 A module is a collection of functions (and types) which can be used by `dagger
-call`. By default, the current module will be infered from your working
+call`. By default, the current module will be inferred from your working
 directory, but you can override this with `-m`.
 
 To discover available functions in a given module: `dagger functions`.
@@ -80,6 +80,14 @@ Auto-generate docs components:
 
     dagger call docs generate -o .
 
+## GraphQL schema changes
+
+In core/schema, changes utilizing the dagql package modify the engine's GraphQL API. API documentation and SDK bindings must be generated and committed when modifying the schema.
+
+    dagger call sdk all generate export --path=.
+    dagger call docs generate export --path=.
+    
+
 ## SDKs
 
 ### List available SDKs
@@ -112,10 +120,6 @@ Run SDK tests (replace `<sdk>` with one of the supported SDKs):
 Generate SDK static files (replace `<sdk>` with one of the supported SDKs):
 
     dagger call sdk <sdk> generate export --path=.
-
-If you've made changes to the GraphQL schema, you will need to generate all sdks in one go prior to committing:
-
-    dagger call sdk all generate export --path=.
 
 ### Publish
 
