@@ -77,6 +77,10 @@ You can also use local modules as dependencies. However, they must be stored in 
 dagger install ./path/to/module
 ```
 
+:::note
+Installing a local module using a relative path is only possible if your project is initialized as a Git repository (the project root has a `.git` directory).
+:::
+
 ## Dependencies on third-party packages
 
 Dagger Functions are just regular code, written in your usual programming language. One of the key advantages of this approach is that it opens up access to your language's existing ecosystem of packages or modules. You can easily add and use these packages/modules as dependencies in your Dagger module via your language's package manager.
