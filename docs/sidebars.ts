@@ -83,7 +83,7 @@ module.exports = {
         },
         {
           "type": "category",
-          "label": "Custom Functions",
+          "label": "Writing Custom Functions",
           "link": {
             "type": "doc",
             "id": "api/custom-functions"
@@ -100,26 +100,14 @@ module.exports = {
             "api/documentation",
             "api/enumerations",
             "api/interfaces",
+            "api/custom-types",
+            "api/constructors",
+            "api/fields",
           ]
         },
         {
           "type": "category",
-          "label": "Custom Types",
-          "collapsible": true,
-          "collapsed": true,
-          "link": {
-            "type": "doc",
-            "id": "api/custom-types"
-          },
-          "items": [
-            "api/entrypoint-function",
-            "api/state-functions",
-
-          ]
-        },
-        {
-          "type": "category",
-          "label": "Modules",
+          "label": "Packaging and Publishing Functions",
           "collapsible": true,
           "collapsed": true,
           "items": [
