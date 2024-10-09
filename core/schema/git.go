@@ -412,7 +412,8 @@ func (s *gitSchema) tree(ctx context.Context, parent *core.GitRef, args treeArgs
 }
 
 type treeArgsLegacy struct {
-	treeArgs
+	DiscardGitDir bool `default:"false"`
+
 	SSHKnownHosts dagql.Optional[dagql.String]  `name:"sshKnownHosts"`
 	SSHAuthSocket dagql.Optional[core.SocketID] `name:"sshAuthSocket"`
 }
