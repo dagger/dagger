@@ -69,10 +69,6 @@ module.exports = {
         {
           "type": "category",
           "label": "Calling the API",
-          "link": {
-            "type": "doc",
-            "id": "api/calling"
-          },
           "collapsible": true,
           "collapsed": true,
           "items": [
@@ -83,37 +79,33 @@ module.exports = {
         },
         {
           "type": "category",
-          "label": "Writing Custom Functions",
-          "link": {
-            "type": "doc",
-            "id": "api/custom-functions"
-          },
+          "label": "Extending the API with Custom Functions",
           "collapsible": true,
           "collapsed": true,
           "items": [
+            "api/custom-functions",
             "api/arguments",
             "api/return-values",
             "api/ide-integration",
             "api/services",
             "api/packages",
+            "api/module-dependencies",
             "api/error-handling",
+            "api/remote-repositories",
+            "api/constructors",
             "api/documentation",
             "api/enumerations",
             "api/interfaces",
             "api/custom-types",
-            "api/constructors",
             "api/fields",
           ]
         },
         {
           "type": "category",
-          "label": "Packaging and Publishing Functions",
+          "label": "Packaging and Publishing Custom Functions",
           "collapsible": true,
           "collapsed": true,
           "items": [
-            "api/structure-packaging",
-            "api/module-dependencies",
-            "api/remote-repositories",
             "api/publish",
           ]
         },

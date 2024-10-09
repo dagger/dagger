@@ -97,6 +97,10 @@ dagger core container from --address="alpine:latest" \
 
 As these example illustrate, function chaining is extremely powerful. See [more examples](./chaining.mdx) of it in action.
 
+## Modules
+
+Dagger modules are collections of Dagger functions, packaged together for easy sharing and consumption. They are portable and reusable across languages.
+
 ## Calling the Dagger API
 
 You can call the Dagger API from code using a custom Dagger function created with a type-safe Dagger SDK, or from the command line using the Dagger CLI.
@@ -121,6 +125,6 @@ The Dagger CLI can call any Dagger function, either from your local filesystem o
 
 The Dagger API is extensible and shareable by design. You can extend the API with [custom functions](./custom-functions.mdx), which are loaded via Dagger modules. You are encouraged to write your own Dagger modules and share them with others.
 
-Dagger also lets you import and reuse modules developed by your team, your organization or the broader Dagger community. The [Daggerverse](https://daggerverse.dev) is a free service run by Dagger, which indexes all publicly available Dagger modules and Dagger Functions, and lets you easily search and consume them.
+Dagger also lets you import and reuse modules developed by your team, your organization or the broader Dagger community. The [Daggerverse](https://daggerverse.dev) is a free service run by Dagger, which indexes all publicly available Dagger modules and Dagger functions, and lets you easily search and consume them.
 
 When a Dagger module is loaded, the Dagger API is [dynamically extended](./internals.mdx#api-extension-with-dagger-functions) with new Dagger functions served by that module. So, after loading a Dagger module, an API client can now call all of the original core functions _plus_ the new Dagger functions provided by that module.
