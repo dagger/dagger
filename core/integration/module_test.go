@@ -1791,7 +1791,7 @@ def potato_%d() -> str:
 		import { object, func } from "@dagger.io/dagger"
 
 @object()
-class PotatoSack {
+export class PotatoSack {
 		`
 
 		for i := 0; i < funcCount; i++ {
@@ -4190,7 +4190,7 @@ class Test:
 				source: `import { Directory, File, object, func, argument } from "@dagger.io/dagger"
 
 @object()
-exportclass Test {
+export class Test {
   @func()
   async dirs(@argument({ defaultPath: "/" }) root: Directory, @argument({ defaultPath: "."}) relativeRoot: Directory): Promise<string[]> {
     const res = await root.entries()
