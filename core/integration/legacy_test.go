@@ -586,6 +586,43 @@ func (LegacySuite) TestGitWithKeepDir(ctx context.Context, t *testctx.T) {
 	// Changed in dagger/dagger#8318
 	//
 	// Ensure that the old schemas default to keeping KeepGitDir.
+	//
+	// v0.9.9 is a very old version that ensures we call treeLegacy+gitLegacy
+	// v0.12.6 is a more recent version that ensures we call gitLegacy
+
+	c := connect(ctx, t)
+
+	for _, version := range []string{"v0.9.9", "0.12.6"} {
+		ctr := daggerCliBase(t, c).
+			With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+			WithWorkdir("/work").
+			WithNewFile("dagger.json", fmt.Sprintf(`{"name": "test", "sdk": "go", "source": ".", "engineVersion": "%s"}`, version)).
+			WithNewFile("main.go", `package main
+
+import (
+	"context"
+	"dagger/test/internal/dagger"
+)
+
+type Test struct {}
+
+func (m *Test) GetCommit(ctx context.Context, cmtID string) (string, error) {
+	return dag.Git("github.com/dagger/dagger", dagger.GitOpts{KeepGitDir: true}).Commit(cmtID).Commit(ctx)
+}
+
+func (m *Test) GetContents(ctx context.Context, cmtID string) (string, error) {
+	return dag.Git("github.com/dagger/dagger", dagger.GitOpts{KeepGitDir: true}).Commit(cmtID).Tree().File(".git/HEAD").Contents(ctx)
+}
+`)
+
+		out, err := ctr.With(daggerCall("get-commit", "--cmtID=c80ac2c13df7d573a069938e01ca13f7a81f0345")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "c80ac2c13df7d573a069938e01ca13f7a81f0345", out)
+
+		out, err = ctr.With(daggerCall("get-contents", "--cmtID=c80ac2c13df7d573a069938e01ca13f7a81f0345")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "c80ac2c13df7d573a069938e01ca13f7a81f0345\n", out)
+	}
 
 	type result struct {
 		Commit string
@@ -602,30 +639,8 @@ func (LegacySuite) TestGitWithKeepDir(ctx context.Context, t *testctx.T) {
 		}
 	}{}
 
-	// v0.9.9 is a very old version that ensures we call treeLegacy+gitLegacy
-	// v0.12.6 is a more recent version that ensures we call gitLegacy
-	for _, version := range []string{"v0.9.9", "0.12.6"} {
-		err := testutil.Query(t,
-			`{
-			git(url: "github.com/dagger/dagger", keepGitDir: true) {
-				commit(id: "c80ac2c13df7d573a069938e01ca13f7a81f0345") {
-					commit
-					tree {
-						file(path: ".git/HEAD") {
-							contents
-						}
-					}
-				}
-			}
-		}`, &res, &testutil.QueryOptions{
-				Version: version,
-			})
-		require.NoError(t, err)
-		require.Equal(t, "c80ac2c13df7d573a069938e01ca13f7a81f0345", res.Git.Commit.Commit)
-		require.Equal(t, "c80ac2c13df7d573a069938e01ca13f7a81f0345\n", res.Git.Commit.Tree.File.Contents)
-
-		err = testutil.Query(t,
-			`{
+	err := testutil.Query(t,
+		`{
 			git(url: "github.com/dagger/dagger") {
 				commit(id: "c80ac2c13df7d573a069938e01ca13f7a81f0345") {
 					commit
@@ -637,8 +652,7 @@ func (LegacySuite) TestGitWithKeepDir(ctx context.Context, t *testctx.T) {
 				}
 			}
 		}`, &res, &testutil.QueryOptions{
-				Version: "v0.12.6",
-			})
-		require.ErrorContains(t, err, ".git/HEAD: no such file or directory")
-	}
+			Version: "v0.12.6",
+		})
+	require.ErrorContains(t, err, ".git/HEAD: no such file or directory")
 }
