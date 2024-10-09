@@ -1480,13 +1480,13 @@ pub struct ContainerBuildOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerDirectoryOpts {
-    /// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerExportOpts {
-    /// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
     /// Force each layer of the exported image to use the specified compression algorithm.
@@ -1504,7 +1504,7 @@ pub struct ContainerExportOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerFileOpts {
-    /// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
 }
@@ -1567,7 +1567,7 @@ pub struct ContainerWithDirectoryOpts<'a> {
     /// Patterns to exclude in the written directory (e.g. ["node_modules/**", ".gitignore", ".git/"]).
     #[builder(setter(into, strip_option), default)]
     pub exclude: Option<Vec<&'a str>>,
-    /// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
     /// Patterns to include in the written directory (e.g. ["*.go", "go.mod", "go.sum"]).
@@ -1587,13 +1587,13 @@ pub struct ContainerWithEntrypointOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithEnvVariableOpts {
-    /// Replace ${VAR} or $VAR in the value according to the current environment variables defined in the container (e.g. "/opt/bin:$PATH").
+    /// Replace "${VAR}" or "$VAR" in the value according to the current environment variables defined in the container (e.g. "/opt/bin:$PATH").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithExecOpts<'a> {
-    /// Replace ${VAR} or $VAR in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    /// Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
     /// Provides Dagger access to the executed command.
@@ -1634,7 +1634,7 @@ pub struct ContainerWithExposedPortOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithFileOpts<'a> {
-    /// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
     /// A user:group to set for the file.
@@ -1648,7 +1648,7 @@ pub struct ContainerWithFileOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithFilesOpts<'a> {
-    /// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
     /// A user:group to set for the files.
@@ -1662,7 +1662,7 @@ pub struct ContainerWithFilesOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithMountedCacheOpts<'a> {
-    /// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
     /// A user:group to set for the mounted cache directory.
@@ -1680,7 +1680,7 @@ pub struct ContainerWithMountedCacheOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithMountedDirectoryOpts<'a> {
-    /// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
     /// A user:group to set for the mounted directory and its contents.
@@ -1691,7 +1691,7 @@ pub struct ContainerWithMountedDirectoryOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithMountedFileOpts<'a> {
-    /// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
     /// A user or user:group to set for the mounted file.
@@ -1702,7 +1702,7 @@ pub struct ContainerWithMountedFileOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithMountedSecretOpts<'a> {
-    /// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
     /// Permission given to the mounted secret (e.g., 0600).
@@ -1717,7 +1717,7 @@ pub struct ContainerWithMountedSecretOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithMountedTempOpts {
-    /// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
     /// Size of the temporary directory in bytes.
@@ -1726,7 +1726,7 @@ pub struct ContainerWithMountedTempOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithNewFileOpts<'a> {
-    /// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
     /// A user:group to set for the file.
@@ -1740,7 +1740,7 @@ pub struct ContainerWithNewFileOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithUnixSocketOpts<'a> {
-    /// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
     /// A user:group to set for the mounted socket.
@@ -1751,13 +1751,13 @@ pub struct ContainerWithUnixSocketOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithWorkdirOpts {
-    /// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithoutDirectoryOpts {
-    /// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
 }
@@ -1775,25 +1775,25 @@ pub struct ContainerWithoutExposedPortOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithoutFileOpts {
-    /// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithoutFilesOpts {
-    /// Replace ${VAR} or $VAR in the value of paths according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+    /// Replace "${VAR}" or "$VAR" in the value of paths according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithoutMountOpts {
-    /// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithoutUnixSocketOpts {
-    /// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+    /// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
 }

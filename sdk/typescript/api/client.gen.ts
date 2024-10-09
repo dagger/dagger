@@ -134,7 +134,7 @@ export type ContainerBuildOpts = {
 
 export type ContainerDirectoryOpts = {
   /**
-   * Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   expand?: boolean
 }
@@ -162,14 +162,14 @@ export type ContainerExportOpts = {
   mediaTypes?: ImageMediaTypes
 
   /**
-   * Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   expand?: boolean
 }
 
 export type ContainerFileOpts = {
   /**
-   * Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
    */
   expand?: boolean
 }
@@ -272,7 +272,7 @@ export type ContainerWithDirectoryOpts = {
   owner?: string
 
   /**
-   * Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   expand?: boolean
 }
@@ -286,7 +286,7 @@ export type ContainerWithEntrypointOpts = {
 
 export type ContainerWithEnvVariableOpts = {
   /**
-   * Replace ${VAR} or $VAR in the value according to the current environment variables defined in the container (e.g. "/opt/bin:$PATH").
+   * Replace "${VAR}" or "$VAR" in the value according to the current environment variables defined in the container (e.g. "/opt/bin:$PATH").
    */
   expand?: boolean
 }
@@ -325,7 +325,7 @@ export type ContainerWithExecOpts = {
   insecureRootCapabilities?: boolean
 
   /**
-   * Replace ${VAR} or $VAR in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   * Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   expand?: boolean
 
@@ -370,7 +370,7 @@ export type ContainerWithFileOpts = {
   owner?: string
 
   /**
-   * Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
    */
   expand?: boolean
 }
@@ -391,7 +391,7 @@ export type ContainerWithFilesOpts = {
   owner?: string
 
   /**
-   * Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
    */
   expand?: boolean
 }
@@ -419,7 +419,7 @@ export type ContainerWithMountedCacheOpts = {
   owner?: string
 
   /**
-   * Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   expand?: boolean
 }
@@ -435,7 +435,7 @@ export type ContainerWithMountedDirectoryOpts = {
   owner?: string
 
   /**
-   * Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   expand?: boolean
 }
@@ -451,7 +451,7 @@ export type ContainerWithMountedFileOpts = {
   owner?: string
 
   /**
-   * Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
    */
   expand?: boolean
 }
@@ -474,7 +474,7 @@ export type ContainerWithMountedSecretOpts = {
   mode?: number
 
   /**
-   * Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   expand?: boolean
 }
@@ -486,7 +486,7 @@ export type ContainerWithMountedTempOpts = {
   size?: number
 
   /**
-   * Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   expand?: boolean
 }
@@ -507,7 +507,7 @@ export type ContainerWithNewFileOpts = {
   owner?: string
 
   /**
-   * Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
    */
   expand?: boolean
 }
@@ -523,21 +523,21 @@ export type ContainerWithUnixSocketOpts = {
   owner?: string
 
   /**
-   * Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   expand?: boolean
 }
 
 export type ContainerWithWorkdirOpts = {
   /**
-   * Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   expand?: boolean
 }
 
 export type ContainerWithoutDirectoryOpts = {
   /**
-   * Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   expand?: boolean
 }
@@ -558,28 +558,28 @@ export type ContainerWithoutExposedPortOpts = {
 
 export type ContainerWithoutFileOpts = {
   /**
-   * Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
    */
   expand?: boolean
 }
 
 export type ContainerWithoutFilesOpts = {
   /**
-   * Replace ${VAR} or $VAR in the value of paths according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+   * Replace "${VAR}" or "$VAR" in the value of paths according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
    */
   expand?: boolean
 }
 
 export type ContainerWithoutMountOpts = {
   /**
-   * Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   expand?: boolean
 }
 
 export type ContainerWithoutUnixSocketOpts = {
   /**
-   * Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   * Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   expand?: boolean
 }
@@ -1530,7 +1530,7 @@ export class Container extends BaseClient {
    *
    * Mounts are included.
    * @param path The path of the directory to retrieve (e.g., "./src").
-   * @param opts.expand Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   directory = (path: string, opts?: ContainerDirectoryOpts): Directory => {
     return new Directory({
@@ -1679,7 +1679,7 @@ export class Container extends BaseClient {
    * @param opts.mediaTypes Use the specified media types for the exported image's layers.
    *
    * Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
-   * @param opts.expand Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   export = async (
     path: string,
@@ -1753,7 +1753,7 @@ export class Container extends BaseClient {
    *
    * Mounts are included.
    * @param path The path of the file to retrieve (e.g., "./README.md").
-   * @param opts.expand Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
    */
   file = (path: string, opts?: ContainerFileOpts): File => {
     return new File({
@@ -2197,7 +2197,7 @@ export class Container extends BaseClient {
    * The user and group can either be an ID (1000:1000) or a name (foo:bar).
    *
    * If the group is omitted, it defaults to the same as the user.
-   * @param opts.expand Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   withDirectory = (
     path: string,
@@ -2241,7 +2241,7 @@ export class Container extends BaseClient {
    * Retrieves this container plus the given environment variable.
    * @param name The name of the environment variable (e.g., "HOST").
    * @param value The value of the environment variable. (e.g., "localhost").
-   * @param opts.expand Replace ${VAR} or $VAR in the value according to the current environment variables defined in the container (e.g. "/opt/bin:$PATH").
+   * @param opts.expand Replace "${VAR}" or "$VAR" in the value according to the current environment variables defined in the container (e.g. "/opt/bin:$PATH").
    */
   withEnvVariable = (
     name: string,
@@ -2273,7 +2273,7 @@ export class Container extends BaseClient {
    *
    * Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
    * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
-   * @param opts.expand Replace ${VAR} or $VAR in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   * @param opts.expand Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    * @param opts.noInit If set, skip the automatic init process injected into containers by default.
    *
    * This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
@@ -2334,7 +2334,7 @@ export class Container extends BaseClient {
    * The user and group can either be an ID (1000:1000) or a name (foo:bar).
    *
    * If the group is omitted, it defaults to the same as the user.
-   * @param opts.expand Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
    */
   withFile = (
     path: string,
@@ -2363,7 +2363,7 @@ export class Container extends BaseClient {
    * The user and group can either be an ID (1000:1000) or a name (foo:bar).
    *
    * If the group is omitted, it defaults to the same as the user.
-   * @param opts.expand Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
    */
   withFiles = (
     path: string,
@@ -2428,7 +2428,7 @@ export class Container extends BaseClient {
    * The user and group can either be an ID (1000:1000) or a name (foo:bar).
    *
    * If the group is omitted, it defaults to the same as the user.
-   * @param opts.expand Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   withMountedCache = (
     path: string,
@@ -2460,7 +2460,7 @@ export class Container extends BaseClient {
    * The user and group can either be an ID (1000:1000) or a name (foo:bar).
    *
    * If the group is omitted, it defaults to the same as the user.
-   * @param opts.expand Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   withMountedDirectory = (
     path: string,
@@ -2488,7 +2488,7 @@ export class Container extends BaseClient {
    * The user and group can either be an ID (1000:1000) or a name (foo:bar).
    *
    * If the group is omitted, it defaults to the same as the user.
-   * @param opts.expand Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
    */
   withMountedFile = (
     path: string,
@@ -2519,7 +2519,7 @@ export class Container extends BaseClient {
    * @param opts.mode Permission given to the mounted secret (e.g., 0600).
    *
    * This option requires an owner to be set to be active.
-   * @param opts.expand Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   withMountedSecret = (
     path: string,
@@ -2542,7 +2542,7 @@ export class Container extends BaseClient {
    * Retrieves this container plus a temporary directory mounted at the given path. Any writes will be ephemeral to a single withExec call; they will not be persisted to subsequent withExecs.
    * @param path Location of the temporary directory (e.g., "/tmp/temp_dir").
    * @param opts.size Size of the temporary directory in bytes.
-   * @param opts.expand Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   withMountedTemp = (
     path: string,
@@ -2570,7 +2570,7 @@ export class Container extends BaseClient {
    * The user and group can either be an ID (1000:1000) or a name (foo:bar).
    *
    * If the group is omitted, it defaults to the same as the user.
-   * @param opts.expand Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
    */
   withNewFile = (
     path: string,
@@ -2682,7 +2682,7 @@ export class Container extends BaseClient {
    * The user and group can either be an ID (1000:1000) or a name (foo:bar).
    *
    * If the group is omitted, it defaults to the same as the user.
-   * @param opts.expand Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   withUnixSocket = (
     path: string,
@@ -2721,7 +2721,7 @@ export class Container extends BaseClient {
   /**
    * Retrieves this container with a different working directory.
    * @param path The path to set as the working directory (e.g., "/app").
-   * @param opts.expand Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   withWorkdir = (path: string, opts?: ContainerWithWorkdirOpts): Container => {
     return new Container({
@@ -2771,7 +2771,7 @@ export class Container extends BaseClient {
   /**
    * Retrieves this container with the directory at the given path removed.
    * @param path Location of the directory to remove (e.g., ".github/").
-   * @param opts.expand Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   withoutDirectory = (
     path: string,
@@ -2851,7 +2851,7 @@ export class Container extends BaseClient {
   /**
    * Retrieves this container with the file at the given path removed.
    * @param path Location of the file to remove (e.g., "/file.txt").
-   * @param opts.expand Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
    */
   withoutFile = (path: string, opts?: ContainerWithoutFileOpts): Container => {
     return new Container({
@@ -2869,7 +2869,7 @@ export class Container extends BaseClient {
   /**
    * Retrieves this container with the files at the given paths removed.
    * @param paths Location of the files to remove (e.g., ["/file.txt"]).
-   * @param opts.expand Replace ${VAR} or $VAR in the value of paths according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of paths according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
    */
   withoutFiles = (
     paths: string[],
@@ -2924,7 +2924,7 @@ export class Container extends BaseClient {
   /**
    * Retrieves this container after unmounting everything at the given path.
    * @param path Location of the cache directory (e.g., "/cache/node_modules").
-   * @param opts.expand Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   withoutMount = (
     path: string,
@@ -2981,7 +2981,7 @@ export class Container extends BaseClient {
   /**
    * Retrieves this container with a previously added Unix socket removed.
    * @param path Location of the socket to remove (e.g., "/tmp/socket").
-   * @param opts.expand Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   withoutUnixSocket = (
     path: string,

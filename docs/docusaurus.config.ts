@@ -80,26 +80,28 @@ const config: Config = {
       "docusaurus-plugin-typedoc",
       {
         id: "current-generation",
+        plugin: ["typedoc-plugin-markdown", "typedoc-plugin-frontmatter"],
         entryPoints: [
           "../sdk/typescript/connect.ts",
           "../sdk/typescript/api/client.gen.ts",
           "../sdk/typescript/common/errors/index.ts",
         ],
         tsconfig: "../sdk/typescript/tsconfig.json",
-        out: "../current_docs/reference/typescript/",
+        out: "current_docs/reference/typescript/",
         excludeProtected: true,
         exclude: "../sdk/typescript/node_modules/**",
         skipErrorChecking: true,
         disableSources: true,
-        sidebar: {
-          categoryLabel: "TypeScript SDK Reference",
-        },
-        frontmatter: {
+        sanitizeComments: true,
+        frontmatterGlobals: {
           displayed_sidebar: "current",
           sidebar_label: "TypeScript SDK Reference",
           title: "TypeScript SDK Reference",
         },
-        hideMembersSymbol: true,
+        textContentMappings: {
+          "title.indexPage": "TypeScript SDK Reference",
+          "footer.text": ""
+        },
         requiredToBeDocumented: ["Class"],
       },
     ],

@@ -33,7 +33,10 @@ func (d Docs) Site() *dagger.Directory {
 	return dag.
 		Docusaurus(
 			d.Dagger.Source(),
-			dagger.DocusaurusOpts{Dir: "/src/docs", DisableCache: true},
+			dagger.DocusaurusOpts{
+				Dir:             "/src/docs",
+				CacheVolumeName: "dagger-docusaurus-site",
+			},
 		).
 		Build()
 }
@@ -115,6 +118,18 @@ func (d Docs) Lint(ctx context.Context) (rerr error) {
 			WithExec([]string{"/changie", "merge"}).
 			Directory("/src")
 		return dag.Dirdiff().AssertEqual(ctx, before, after, []string{"CHANGELOG.md"})
+	})
+
+	eg.Go(func() (rerr error) {
+		ctx, span := Tracer().Start(ctx, "check that site builds")
+		defer func() {
+			if rerr != nil {
+				span.SetStatus(codes.Error, rerr.Error())
+			}
+			span.End()
+		}()
+		_, err := d.Site().Sync(ctx)
+		return err
 	})
 
 	// Go is already linted by engine:lint
