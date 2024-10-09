@@ -1712,31 +1712,34 @@ func (ContainerSuite) TestWithMountedCacheFromDirectory(ctx context.Context, t *
 }
 
 func (ContainerSuite) TestWithMountedTemp(ctx context.Context, t *testctx.T) {
-	execRes := struct {
-		Container struct {
-			From struct {
-				WithMountedTemp struct {
-					WithExec struct {
-						Stdout string
-					}
-				}
-			}
-		}
-	}{}
+	c := connect(ctx, t)
 
-	err := testutil.Query(t, `{
-			container {
-				from(address: "`+alpineImage+`") {
-					withMountedTemp(path: "/mnt/tmp") {
-						withExec(args: ["grep", "/mnt/tmp", "/proc/mounts"]) {
-							stdout
-						}
-					}
-				}
-			}
-		}`, &execRes, nil)
-	require.NoError(t, err)
-	require.Contains(t, execRes.Container.From.WithMountedTemp.WithExec.Stdout, "tmpfs /mnt/tmp tmpfs")
+	output := func(opts []dagger.ContainerWithMountedTempOpts) (string, error) {
+		o, err := c.Container().
+			From(alpineImage).
+			WithMountedTemp("/mnt/tmp", opts...).
+			WithExec([]string{"grep", "/mnt/tmp", "/proc/mounts"}).
+			Stdout(ctx)
+
+		return o, err
+	}
+
+	t.Run("default", func(ctx context.Context, t *testctx.T) {
+		output, err := output([]dagger.ContainerWithMountedTempOpts{})
+
+		require.NoError(t, err)
+		require.Contains(t, output, "tmpfs /mnt/tmp tmpfs")
+		require.NotContains(t, output, "size")
+	})
+
+	t.Run("sized", func(ctx context.Context, t *testctx.T) {
+		output, err := output([]dagger.ContainerWithMountedTempOpts{
+			{Size: 4000},
+		})
+
+		require.NoError(t, err)
+		require.Contains(t, output, "size=4k")
+	})
 }
 
 func (ContainerSuite) TestWithDirectory(ctx context.Context, t *testctx.T) {

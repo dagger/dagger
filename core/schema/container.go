@@ -221,6 +221,7 @@ func (s *containerSchema) Install() {
 		dagql.Func("withMountedTemp", s.withMountedTemp).
 			Doc(`Retrieves this container plus a temporary directory mounted at the given path. Any writes will be ephemeral to a single withExec call; they will not be persisted to subsequent withExecs.`).
 			ArgDoc("path", `Location of the temporary directory (e.g., "/tmp/temp_dir").`).
+			ArgDoc("size", `Size of the temporary directory in bytes.`).
 			ArgDoc("expand",
 				"Replace ${VAR} or $VAR in the value of path according to the current "+
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
@@ -1308,6 +1309,7 @@ func (s *containerSchema) withMountedCache(ctx context.Context, parent *core.Con
 
 type containerWithMountedTempArgs struct {
 	Path   string
+	Size   dagql.Optional[dagql.Int]
 	Expand bool `default:"false"`
 }
 
@@ -1317,7 +1319,7 @@ func (s *containerSchema) withMountedTemp(ctx context.Context, parent *core.Cont
 		return nil, err
 	}
 
-	return parent.WithMountedTemp(ctx, path)
+	return parent.WithMountedTemp(ctx, path, args.Size.Value.Int())
 }
 
 type containerWithoutMountArgs struct {

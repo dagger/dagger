@@ -245,6 +245,9 @@ type ContainerMount struct {
 	// Configure the mount as a tmpfs.
 	Tmpfs bool `json:"tmpfs,omitempty"`
 
+	// Configure the size of the mounted tmpfs in bytes
+	Size int `json:"size,omitempty"`
+
 	// Configure the mount as read-only.
 	Readonly bool `json:"readonly,omitempty"`
 }
@@ -622,7 +625,7 @@ func (container *Container) WithMountedCache(ctx context.Context, target string,
 	return container, nil
 }
 
-func (container *Container) WithMountedTemp(ctx context.Context, target string) (*Container, error) {
+func (container *Container) WithMountedTemp(ctx context.Context, target string, size int) (*Container, error) {
 	container = container.Clone()
 
 	target = absPath(container.Config.WorkingDir, target)
@@ -630,6 +633,7 @@ func (container *Container) WithMountedTemp(ctx context.Context, target string) 
 	container.Mounts = container.Mounts.With(ContainerMount{
 		Target: target,
 		Tmpfs:  true,
+		Size:   size,
 	})
 
 	// set image ref to empty string

@@ -769,6 +769,9 @@ type Container {
 
     """Location of the temporary directory (e.g., "/tmp/temp_dir")."""
     path: String!
+
+    """Size of the temporary directory in bytes."""
+    size: Int
   ): Container!
 
   """Retrieves this container plus a new file written at the given path."""
