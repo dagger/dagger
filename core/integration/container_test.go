@@ -4683,3 +4683,25 @@ func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
 		require.Contains(t, entries, "manifest.json")
 	})
 }
+
+func (ContainerSuite) TestExecInit(ctx context.Context, t *testctx.T) {
+	t.Run("automatic init", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		out, err := c.Container().From(alpineImage).
+			WithExec([]string{"ps", "-o", "pid,comm"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "1 .init")
+	})
+
+	t.Run("disable automatic init", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		out, err := c.Container().From(alpineImage).
+			WithExec([]string{"ps", "-o", "pid,comm"}, dagger.ContainerWithExecOpts{
+				NoInit: true,
+			}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "1 ps")
+	})
+}

@@ -96,6 +96,9 @@ type ExecutionMetadata struct {
 
 	// Path to the SSH auth socket. Used for Dagger-in-Dagger support.
 	SSHAuthSocketPath string
+
+	// If true, skip injecting dumb-init into the container.
+	NoInit bool
 }
 
 const executionMetadataKey = "dagger.executionMetadata"

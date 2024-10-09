@@ -52,6 +52,7 @@ const (
 	DaggerRedirectStdoutEnv  = "_DAGGER_REDIRECT_STDOUT"
 	DaggerRedirectStderrEnv  = "_DAGGER_REDIRECT_STDERR"
 	DaggerHostnameAliasesEnv = "_DAGGER_HOSTNAME_ALIASES"
+	DaggerNoInitEnv          = "_DAGGER_NOINIT"
 
 	DaggerSessionPortEnv  = "DAGGER_SESSION_PORT"
 	DaggerSessionTokenEnv = "DAGGER_SESSION_TOKEN"
@@ -80,6 +81,7 @@ var removeEnvs = map[string]struct{}{
 	DaggerRedirectStdoutEnv:  {},
 	DaggerRedirectStderrEnv:  {},
 	DaggerHostnameAliasesEnv: {},
+	DaggerNoInitEnv:          {},
 }
 
 type execState struct {
@@ -319,6 +321,10 @@ func (m hostBindMountRef) IdentityMapping() *idtools.IdentityMapping {
 }
 
 func (w *Worker) injectDumbInit(_ context.Context, state *execState) error {
+	if w.execMD != nil && w.execMD.NoInit {
+		return nil
+	}
+
 	dumbInitPath := "/.init"
 	state.mounts = append(state.mounts, executor.Mount{
 		Src:      hostBindMount{srcPath: distconsts.DumbInitPath},

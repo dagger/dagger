@@ -1603,6 +1603,10 @@ pub struct ContainerWithExecOpts<'a> {
     /// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
     #[builder(setter(into, strip_option), default)]
     pub insecure_root_capabilities: Option<bool>,
+    /// If set, skip the automatic init process injected into containers by default.
+    /// This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
+    #[builder(setter(into, strip_option), default)]
+    pub no_init: Option<bool>,
     /// Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
     #[builder(setter(into, strip_option), default)]
     pub redirect_stderr: Option<&'a str>,
@@ -2629,6 +2633,9 @@ impl Container {
         }
         if let Some(expand) = opts.expand {
             query = query.arg("expand", expand);
+        }
+        if let Some(no_init) = opts.no_init {
+            query = query.arg("noInit", no_init);
         }
         Container {
             proc: self.proc.clone(),
