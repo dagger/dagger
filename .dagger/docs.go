@@ -33,7 +33,10 @@ func (d Docs) Site() *dagger.Directory {
 	return dag.
 		Docusaurus(
 			d.Dagger.Source(),
-			dagger.DocusaurusOpts{Dir: "/src/docs", DisableCache: true},
+			dagger.DocusaurusOpts{
+				Dir:             "/src/docs",
+				CacheVolumeName: "dagger-docusaurus-site",
+			},
 		).
 		Build()
 }
