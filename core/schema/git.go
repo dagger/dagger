@@ -39,7 +39,7 @@ func (s *gitSchema) Install() {
 			ArgDoc("sshAuthSocket", `Set SSH auth socket`).
 			ArgDoc("experimentalServiceHost", `A service which must be started before the repo is fetched.`),
 		dagql.Func("git", s.gitLegacy).
-			View(BeforeVersion("v0.13.0")).
+			View(BeforeVersion("v0.13.4")).
 			Doc(`Queries a Git repository.`).
 			ArgDoc("url",
 				`URL of the git repository.`,
