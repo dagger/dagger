@@ -83,14 +83,14 @@ func (s *containerSchema) Install() {
 				`Mounts are included.`).
 			ArgDoc("path", `The path of the directory to retrieve (e.g., "./src").`).
 			ArgDoc("expand",
-				"Replace ${VAR} or $VAR in the value of path according to the current "+
+				`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 
 		dagql.Func("file", s.file).
 			Doc(`Retrieves a file at the given path.`, `Mounts are included.`).
 			ArgDoc("path", `The path of the file to retrieve (e.g., "./README.md").`).
 			ArgDoc("expand",
-				"Replace ${VAR} or $VAR in the value of path according to the current "+
+				`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
 
 		dagql.Func("user", s.user).
@@ -111,7 +111,7 @@ func (s *containerSchema) Install() {
 			Doc(`Retrieves this container with a different working directory.`).
 			ArgDoc("path", `The path to set as the working directory (e.g., "/app").`).
 			ArgDoc("expand",
-				"Replace ${VAR} or $VAR in the value of path according to the current "+
+				`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 
 		dagql.Func("withoutWorkdir", s.withoutWorkdir).
@@ -130,7 +130,7 @@ func (s *containerSchema) Install() {
 			ArgDoc("name", `The name of the environment variable (e.g., "HOST").`).
 			ArgDoc("value", `The value of the environment variable. (e.g., "localhost").`).
 			ArgDoc("expand",
-				"Replace ${VAR} or $VAR in the value according to the current "+
+				`Replace "${VAR}" or "$VAR" in the value according to the current `+
 					`environment variables defined in the container (e.g. "/opt/bin:$PATH").`),
 
 		// NOTE: this is internal-only for now (hidden from codegen via the __ prefix) as we
@@ -203,7 +203,7 @@ func (s *containerSchema) Install() {
 				`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 				`If the group is omitted, it defaults to the same as the user.`).
 			ArgDoc("expand",
-				"Replace ${VAR} or $VAR in the value of path according to the current "+
+				`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 
 		dagql.Func("withMountedFile", s.withMountedFile).
@@ -215,7 +215,7 @@ func (s *containerSchema) Install() {
 				`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 				`If the group is omitted, it defaults to the same as the user.`).
 			ArgDoc("expand",
-				"Replace ${VAR} or $VAR in the value of path according to the current "+
+				`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
 
 		dagql.Func("withMountedTemp", s.withMountedTemp).
@@ -223,7 +223,7 @@ func (s *containerSchema) Install() {
 			ArgDoc("path", `Location of the temporary directory (e.g., "/tmp/temp_dir").`).
 			ArgDoc("size", `Size of the temporary directory in bytes.`).
 			ArgDoc("expand",
-				"Replace ${VAR} or $VAR in the value of path according to the current "+
+				`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 
 		dagql.Func("withMountedCache", s.withMountedCache).
@@ -240,7 +240,7 @@ func (s *containerSchema) Install() {
 				`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 				`If the group is omitted, it defaults to the same as the user.`).
 			ArgDoc("expand",
-				"Replace ${VAR} or $VAR in the value of path according to the current "+
+				`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 
 		dagql.Func("withMountedSecret", s.withMountedSecret).
@@ -254,7 +254,7 @@ func (s *containerSchema) Install() {
 			ArgDoc("mode", `Permission given to the mounted secret (e.g., 0600).`,
 				`This option requires an owner to be set to be active.`).
 			ArgDoc("expand",
-				"Replace ${VAR} or $VAR in the value of path according to the current "+
+				`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 
 		dagql.Func("withUnixSocket", s.withUnixSocket).
@@ -266,21 +266,21 @@ func (s *containerSchema) Install() {
 				`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 				`If the group is omitted, it defaults to the same as the user.`).
 			ArgDoc("expand",
-				"Replace ${VAR} or $VAR in the value of path according to the current "+
+				`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 
 		dagql.Func("withoutUnixSocket", s.withoutUnixSocket).
 			Doc(`Retrieves this container with a previously added Unix socket removed.`).
 			ArgDoc("path", `Location of the socket to remove (e.g., "/tmp/socket").`).
 			ArgDoc("expand",
-				"Replace ${VAR} or $VAR in the value of path according to the current "+
+				`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 
 		dagql.Func("withoutMount", s.withoutMount).
 			Doc(`Retrieves this container after unmounting everything at the given path.`).
 			ArgDoc("path", `Location of the cache directory (e.g., "/cache/node_modules").`).
 			ArgDoc("expand",
-				"Replace ${VAR} or $VAR in the value of path according to the current "+
+				`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 
 		dagql.Func("withFile", s.withFile).
@@ -293,21 +293,21 @@ func (s *containerSchema) Install() {
 				`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 				`If the group is omitted, it defaults to the same as the user.`).
 			ArgDoc("expand",
-				"Replace ${VAR} or $VAR in the value of path according to the current "+
+				`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
 
 		dagql.Func("withoutFile", s.withoutFile).
 			Doc(`Retrieves this container with the file at the given path removed.`).
 			ArgDoc("path", `Location of the file to remove (e.g., "/file.txt").`).
 			ArgDoc("expand",
-				"Replace ${VAR} or $VAR in the value of path according to the current "+
+				`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
 
 		dagql.Func("withoutFiles", s.withoutFiles).
 			Doc(`Retrieves this container with the files at the given paths removed.`).
 			ArgDoc("paths", `Location of the files to remove (e.g., ["/file.txt"]).`).
 			ArgDoc("expand",
-				"Replace ${VAR} or $VAR in the value of paths according to the current "+
+				`Replace "${VAR}" or "$VAR" in the value of paths according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
 
 		dagql.Func("withFiles", s.withFiles).
@@ -320,7 +320,7 @@ func (s *containerSchema) Install() {
 				`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 				`If the group is omitted, it defaults to the same as the user.`).
 			ArgDoc("expand",
-				"Replace ${VAR} or $VAR in the value of path according to the current "+
+				`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
 
 		dagql.Func("withNewFile", s.withNewFile).
@@ -334,7 +334,7 @@ func (s *containerSchema) Install() {
 				`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 				`If the group is omitted, it defaults to the same as the user.`).
 			ArgDoc("expand",
-				"Replace ${VAR} or $VAR in the value of path according to the current "+
+				`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo.txt").`),
 		dagql.Func("withNewFile", s.withNewFileLegacy).
 			View(BeforeVersion("v0.12.0")).
@@ -358,14 +358,14 @@ func (s *containerSchema) Install() {
 				`The user and group can either be an ID (1000:1000) or a name (foo:bar).`,
 				`If the group is omitted, it defaults to the same as the user.`).
 			ArgDoc("expand",
-				"Replace ${VAR} or $VAR in the value of path according to the current "+
+				`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 
 		dagql.Func("withoutDirectory", s.withoutDirectory).
 			Doc(`Retrieves this container with the directory at the given path removed.`).
 			ArgDoc("path", `Location of the directory to remove (e.g., ".github/").`).
 			ArgDoc("expand",
-				"Replace ${VAR} or $VAR in the value of path according to the current "+
+				`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 
 		dagql.Func("withExec", s.withExec).
@@ -398,7 +398,7 @@ func (s *containerSchema) Install() {
 				guarantees when using this option. It should only be used when
 				absolutely necessary and only with trusted commands.`).
 			ArgDoc("expand",
-				"Replace ${VAR} or $VAR in the args according to the current "+
+				`Replace "${VAR}" or "$VAR" in the args according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo").`).
 			ArgDoc("noInit",
 				`If set, skip the automatic init process injected into containers by default.`,
@@ -546,7 +546,7 @@ func (s *containerSchema) Install() {
 				container runtimes, but Docker may be needed for older runtimes without
 				OCI support.`).
 			ArgDoc("expand",
-				"Replace ${VAR} or $VAR in the value of path according to the current "+
+				`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),
 		dagql.Func("export", s.exportLegacy).
 			View(BeforeVersion("v0.12.0")).

@@ -516,7 +516,7 @@ class Container(Type):
         path:
             The path of the directory to retrieve (e.g., "./src").
         expand:
-            Replace ${VAR} or $VAR in the value of path according to the
+            Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
             "/$VAR/foo").
         """
@@ -664,7 +664,7 @@ class Container(Type):
             container runtimes, but Docker may be needed for older runtimes
             without OCI support.
         expand:
-            Replace ${VAR} or $VAR in the value of path according to the
+            Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
             "/$VAR/foo").
 
@@ -735,7 +735,7 @@ class Container(Type):
         path:
             The path of the file to retrieve (e.g., "./README.md").
         expand:
-            Replace ${VAR} or $VAR in the value of path according to the
+            Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
             "/$VAR/foo.txt").
         """
@@ -1259,7 +1259,7 @@ class Container(Type):
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
         expand:
-            Replace ${VAR} or $VAR in the value of path according to the
+            Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
             "/$VAR/foo").
         """
@@ -1312,7 +1312,7 @@ class Container(Type):
         value:
             The value of the environment variable. (e.g., "localhost").
         expand:
-            Replace ${VAR} or $VAR in the value according to the current
+            Replace "${VAR}" or "$VAR" in the value according to the current
             environment variables defined in the container (e.g.
             "/opt/bin:$PATH").
         """
@@ -1369,7 +1369,7 @@ class Container(Type):
             guarantees when using this option. It should only be used when
             absolutely necessary and only with trusted commands.
         expand:
-            Replace ${VAR} or $VAR in the args according to the current
+            Replace "${VAR}" or "$VAR" in the args according to the current
             environment variables defined in the container (e.g. "/$VAR/foo").
         no_init:
             If set, skip the automatic init process injected into containers
@@ -1456,7 +1456,7 @@ class Container(Type):
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
         expand:
-            Replace ${VAR} or $VAR in the value of path according to the
+            Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
             "/$VAR/foo.txt").
         """
@@ -1496,7 +1496,7 @@ class Container(Type):
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
         expand:
-            Replace ${VAR} or $VAR in the value of path according to the
+            Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
             "/$VAR/foo.txt").
         """
@@ -1568,7 +1568,7 @@ class Container(Type):
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
         expand:
-            Replace ${VAR} or $VAR in the value of path according to the
+            Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
             "/$VAR/foo").
         """
@@ -1605,7 +1605,7 @@ class Container(Type):
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
         expand:
-            Replace ${VAR} or $VAR in the value of path according to the
+            Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
             "/$VAR/foo").
         """
@@ -1640,7 +1640,7 @@ class Container(Type):
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
         expand:
-            Replace ${VAR} or $VAR in the value of path according to the
+            Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
             "/$VAR/foo.txt").
         """
@@ -1680,7 +1680,7 @@ class Container(Type):
             Permission given to the mounted secret (e.g., 0600).
             This option requires an owner to be set to be active.
         expand:
-            Replace ${VAR} or $VAR in the value of path according to the
+            Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
             "/$VAR/foo").
         """
@@ -1712,7 +1712,7 @@ class Container(Type):
         size:
             Size of the temporary directory in bytes.
         expand:
-            Replace ${VAR} or $VAR in the value of path according to the
+            Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
             "/$VAR/foo").
         """
@@ -1749,7 +1749,7 @@ class Container(Type):
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
         expand:
-            Replace ${VAR} or $VAR in the value of path according to the
+            Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
             "/$VAR/foo.txt").
         """
@@ -1873,7 +1873,7 @@ class Container(Type):
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
         expand:
-            Replace ${VAR} or $VAR in the value of path according to the
+            Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
             "/$VAR/foo").
         """
@@ -1913,7 +1913,7 @@ class Container(Type):
         path:
             The path to set as the working directory (e.g., "/app").
         expand:
-            Replace ${VAR} or $VAR in the value of path according to the
+            Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
             "/$VAR/foo").
         """
@@ -1959,7 +1959,7 @@ class Container(Type):
         path:
             Location of the directory to remove (e.g., ".github/").
         expand:
-            Replace ${VAR} or $VAR in the value of path according to the
+            Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
             "/$VAR/foo").
         """
@@ -2037,7 +2037,7 @@ class Container(Type):
         path:
             Location of the file to remove (e.g., "/file.txt").
         expand:
-            Replace ${VAR} or $VAR in the value of path according to the
+            Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
             "/$VAR/foo.txt").
         """
@@ -2061,7 +2061,7 @@ class Container(Type):
         paths:
             Location of the files to remove (e.g., ["/file.txt"]).
         expand:
-            Replace ${VAR} or $VAR in the value of paths according to the
+            Replace "${VAR}" or "$VAR" in the value of paths according to the
             current environment variables defined in the container (e.g.
             "/$VAR/foo.txt").
         """
@@ -2111,7 +2111,7 @@ class Container(Type):
         path:
             Location of the cache directory (e.g., "/cache/node_modules").
         expand:
-            Replace ${VAR} or $VAR in the value of path according to the
+            Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
             "/$VAR/foo").
         """
@@ -2167,7 +2167,7 @@ class Container(Type):
         path:
             Location of the socket to remove (e.g., "/tmp/socket").
         expand:
-            Replace ${VAR} or $VAR in the value of path according to the
+            Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
             "/$VAR/foo").
         """

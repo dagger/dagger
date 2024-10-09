@@ -462,7 +462,7 @@ func (r *Container) DefaultArgs(ctx context.Context) ([]string, error) {
 
 // ContainerDirectoryOpts contains options for Container.Directory
 type ContainerDirectoryOpts struct {
-	// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
 }
 
@@ -582,7 +582,7 @@ type ContainerExportOpts struct {
 	//
 	// Defaults to OCI, which is largely compatible with most recent container runtimes, but Docker may be needed for older runtimes without OCI support.
 	MediaTypes ImageMediaTypes
-	// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
 }
 
@@ -657,7 +657,7 @@ func (r *Container) ExposedPorts(ctx context.Context) ([]Port, error) {
 
 // ContainerFileOpts contains options for Container.File
 type ContainerFileOpts struct {
-	// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
 	Expand bool
 }
 
@@ -1080,7 +1080,7 @@ type ContainerWithDirectoryOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
-	// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
 }
 
@@ -1138,7 +1138,7 @@ func (r *Container) WithEntrypoint(args []string, opts ...ContainerWithEntrypoin
 
 // ContainerWithEnvVariableOpts contains options for Container.WithEnvVariable
 type ContainerWithEnvVariableOpts struct {
-	// Replace ${VAR} or $VAR in the value according to the current environment variables defined in the container (e.g. "/opt/bin:$PATH").
+	// Replace "${VAR}" or "$VAR" in the value according to the current environment variables defined in the container (e.g. "/opt/bin:$PATH").
 	Expand bool
 }
 
@@ -1175,7 +1175,7 @@ type ContainerWithExecOpts struct {
 	ExperimentalPrivilegedNesting bool
 	// Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
 	InsecureRootCapabilities bool
-	// Replace ${VAR} or $VAR in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+	// Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
 	// If set, skip the automatic init process injected into containers by default.
 	//
@@ -1277,7 +1277,7 @@ type ContainerWithFileOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
-	// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
 	Expand bool
 }
 
@@ -1317,7 +1317,7 @@ type ContainerWithFilesOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
-	// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
 	Expand bool
 }
 
@@ -1380,7 +1380,7 @@ type ContainerWithMountedCacheOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
-	// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
 }
 
@@ -1422,7 +1422,7 @@ type ContainerWithMountedDirectoryOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
-	// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
 }
 
@@ -1456,7 +1456,7 @@ type ContainerWithMountedFileOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
-	// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
 	Expand bool
 }
 
@@ -1494,7 +1494,7 @@ type ContainerWithMountedSecretOpts struct {
 	//
 	// This option requires an owner to be set to be active.
 	Mode int
-	// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
 }
 
@@ -1528,7 +1528,7 @@ func (r *Container) WithMountedSecret(path string, source *Secret, opts ...Conta
 type ContainerWithMountedTempOpts struct {
 	// Size of the temporary directory in bytes.
 	Size int
-	// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
 }
 
@@ -1562,7 +1562,7 @@ type ContainerWithNewFileOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
-	// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
 	Expand bool
 }
 
@@ -1653,7 +1653,7 @@ type ContainerWithUnixSocketOpts struct {
 	//
 	// If the group is omitted, it defaults to the same as the user.
 	Owner string
-	// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
 }
 
@@ -1691,7 +1691,7 @@ func (r *Container) WithUser(name string) *Container {
 
 // ContainerWithWorkdirOpts contains options for Container.WithWorkdir
 type ContainerWithWorkdirOpts struct {
-	// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
 }
 
@@ -1732,7 +1732,7 @@ func (r *Container) WithoutDefaultArgs() *Container {
 
 // ContainerWithoutDirectoryOpts contains options for Container.WithoutDirectory
 type ContainerWithoutDirectoryOpts struct {
-	// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
 }
 
@@ -1807,7 +1807,7 @@ func (r *Container) WithoutExposedPort(port int, opts ...ContainerWithoutExposed
 
 // ContainerWithoutFileOpts contains options for Container.WithoutFile
 type ContainerWithoutFileOpts struct {
-	// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
 	Expand bool
 }
 
@@ -1829,7 +1829,7 @@ func (r *Container) WithoutFile(path string, opts ...ContainerWithoutFileOpts) *
 
 // ContainerWithoutFilesOpts contains options for Container.WithoutFiles
 type ContainerWithoutFilesOpts struct {
-	// Replace ${VAR} or $VAR in the value of paths according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
+	// Replace "${VAR}" or "$VAR" in the value of paths according to the current environment variables defined in the container (e.g. "/$VAR/foo.txt").
 	Expand bool
 }
 
@@ -1872,7 +1872,7 @@ func (r *Container) WithoutLabel(name string) *Container {
 
 // ContainerWithoutMountOpts contains options for Container.WithoutMount
 type ContainerWithoutMountOpts struct {
-	// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
 }
 
@@ -1914,7 +1914,7 @@ func (r *Container) WithoutSecretVariable(name string) *Container {
 
 // ContainerWithoutUnixSocketOpts contains options for Container.WithoutUnixSocket
 type ContainerWithoutUnixSocketOpts struct {
-	// Replace ${VAR} or $VAR in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+	// Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
 	Expand bool
 }
 
