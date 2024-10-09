@@ -1,10 +1,8 @@
 module github.com/dagger/dagger/.dagger
 
-go 1.22.0
+go 1.23
 
-toolchain go1.22.5
-
-require github.com/dagger/dagger/engine/distconsts v0.13.3
+require github.com/dagger/dagger/engine/distconsts v0.13.4
 
 replace github.com/dagger/dagger/engine/distconsts => ../engine/distconsts
 
