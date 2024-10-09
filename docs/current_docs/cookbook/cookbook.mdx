@@ -453,8 +453,7 @@ dagger call build
 
 ### Invalidate cache
 
-The following function demonstrates how to invalidate the Dagger layer cache and force execution of subsequent pipeline steps, by
-introducing a volatile time variable at a specific point in the Dagger pipeline.
+The following function demonstrates how to invalidate the Dagger layer cache and force execution of subsequent pipeline steps, by introducing a volatile time variable at a specific point in the Dagger pipeline.
 
 :::note
 * This is a temporary workaround until cache invalidation support is officially added to Dagger.
@@ -484,7 +483,7 @@ introducing a volatile time variable at a specific point in the Dagger pipeline.
 
 #### Example
 
-Execute a build, invalidating the cache on each run:
+Print the date and time, invalidating the cache on each run. However, if the `CACHEBUSTER` environment variable is removed, the same value (the date and time on the first run) is printed on every run.
 
 ```shell
 dagger call build
