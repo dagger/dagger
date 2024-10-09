@@ -432,7 +432,7 @@ module.exports = {
         },
         {
           "type": "doc",
-          "label": "Reference",
+          "label": "Typescript SDK Reference",
           "id": "reference/typescript/modules"
         },
         {
@@ -443,7 +443,7 @@ module.exports = {
         {
           "type": "doc",
           "id": "manuals/developer/known-issues"
-        }
+        },
       ],
     },
     {
