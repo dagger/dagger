@@ -120,6 +120,18 @@ func (d Docs) Lint(ctx context.Context) (rerr error) {
 		return dag.Dirdiff().AssertEqual(ctx, before, after, []string{"CHANGELOG.md"})
 	})
 
+	eg.Go(func() (rerr error) {
+		ctx, span := Tracer().Start(ctx, "check that site builds")
+		defer func() {
+			if rerr != nil {
+				span.SetStatus(codes.Error, rerr.Error())
+			}
+			span.End()
+		}()
+		_, err := d.Site().Sync(ctx)
+		return err
+	})
+
 	// Go is already linted by engine:lint
 	// Python is already linted by sdk:python:lint
 	// TypeScript is already linted at sdk:typescript:lint
