@@ -1,4 +1,6 @@
+import { FunctionNotFound } from "../common/errors/FunctionNotFound.js"
 import { Executor } from "../introspector/executor/executor.js"
+import { registry } from "../introspector/registry/registry.js"
 import { Constructor } from "../introspector/scanner/abtractions/constructor.js"
 import { DaggerEnum } from "../introspector/scanner/abtractions/enum.js"
 import { Method } from "../introspector/scanner/abtractions/method.js"
@@ -45,12 +47,31 @@ export async function invoke(
   const args = await loadArgs(executor, method, ctx)
   const parentState = await loadParentState(executor, object, ctx)
 
-  let result = await executor.getResult(
-    object.name,
-    method.name,
-    parentState,
-    args,
-  )
+  // Disabling linter because the result could be anything.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let result: any = {}
+
+  try {
+    result = await executor.getResult(
+      object.name,
+      method.name,
+      parentState,
+      args,
+    )
+  } catch (e) {
+    // If the function isn't found because it's
+    // not exported, we try to get the result from the registry.
+    if (e instanceof FunctionNotFound) {
+      result = await registry.getResult(
+        object.name,
+        method.name,
+        parentState,
+        args,
+      )
+    } else {
+      throw e
+    }
+  }
 
   if (result) {
     let returnType: DaggerObject | DaggerEnum

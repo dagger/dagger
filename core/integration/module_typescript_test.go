@@ -1305,3 +1305,30 @@ export class Test {
 		require.JSONEq(t, `{"test": {"foo": "bar"}}`, out)
 	})
 }
+
+func (TypescriptSuite) TestNonExportedFunctionBackwardsCompatibility(ctx context.Context, t *testctx.T) {
+	t.Run("non-exported function", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=test", "--sdk=typescript")).
+			With(sdkSource("typescript", `
+import { field, object } from "@dagger.io/dagger"
+
+@object()
+class Test {
+  @func()
+	foo(): string {
+		return "bar"
+	}
+}			
+`,
+	))
+
+	out, err := modGen.With(daggerQuery(`{test{foo}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"test": {"foo": "bar"}}`, out)
+	}
+}
