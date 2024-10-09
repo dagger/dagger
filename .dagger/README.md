@@ -70,6 +70,12 @@ Connect to it from a dagger cli:
     dagger call -m github.com/shykes/daggerverse/hello@main hello
     # hello, world!
 
+## Generation
+
+In core/schema, changes utilizing the dagql package modify the engine's GraphQL API. API documentation and SDK bindings must be generated and committed when modifying the schema. See "Docs" and "SDKs" below for more granular generation functionality.
+
+    dagger call generate export --path=.
+
 ## Docs
 
 Lint the docs:
@@ -80,12 +86,6 @@ Auto-generate docs components:
 
     dagger call docs generate -o .
 
-## GraphQL schema changes
-
-In core/schema, changes utilizing the dagql package modify the engine's GraphQL API. API documentation and SDK bindings must be generated and committed when modifying the schema.
-
-    dagger call sdk all generate export --path=.
-    dagger call docs generate export --path=.
     
 
 ## SDKs
@@ -117,7 +117,7 @@ Run SDK tests (replace `<sdk>` with one of the supported SDKs):
 
 ### Generate
 
-Generate SDK static files (replace `<sdk>` with one of the supported SDKs):
+Generate SDK static files (replace `<sdk>` with one of the supported SDKs, or "all" for all of them):
 
     dagger call sdk <sdk> generate export --path=.
 

@@ -201,6 +201,20 @@ func (dev *DaggerDev) Test() *Test {
 	return &Test{Dagger: dev}
 }
 
+// Run all code generation - SDKs, docs, etc
+func (dev *DaggerDev) Generate(ctx context.Context) (*dagger.Directory, error) {
+	docs, error := dev.Docs().Generate(ctx)
+	if error != nil {
+		return nil, error
+	}
+	sdks, error := dev.SDK().All().Generate(ctx)
+	if error != nil {
+		return nil, error
+	}
+
+	return docs.WithDirectory(".", sdks), nil
+}
+
 // Develop Dagger SDKs
 func (dev *DaggerDev) SDK() *SDK {
 	return &SDK{
