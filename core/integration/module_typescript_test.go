@@ -139,10 +139,10 @@ func (TypescriptSuite) TestInit(ctx context.Context, t *testctx.T) {
 				import { dag, Container, object, func } from "@dagger.io/dagger"
 
 				@object()
-				export export class ExistingSource {
+				export class ExistingSource {
 				  @func()
 				  helloWorld(stringArg: string): Container {
-					return dag.container().from("alpine:latest").withExec(["echo", stringArg])
+						return dag.container().from("alpine:latest").withExec(["echo", stringArg])
 				  }
 				}
 
