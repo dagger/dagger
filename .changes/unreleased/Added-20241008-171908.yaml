@@ -1,9 +1,0 @@
-kind: Added
-body: |-
-  Add `noInit` option to `withExec` to support disabling automatic init process.
-
-  Use cases that strictly require the user exec is PID 1 of the container are now supported by setting `noInit` to true.
-time: 2024-10-08T17:19:08.364837213-07:00
-custom:
-  Author: sipsma
-  PR: "8656"
