@@ -1604,8 +1604,7 @@ pub struct ContainerWithExecOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub insecure_root_capabilities: Option<bool>,
     /// If set, skip the automatic init process injected into containers by default.
-    /// This should only be used if the user requires that their exec process be the
-    /// pid 1 process in the container. Otherwise it may result in unexpected behavior.
+    /// This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
     #[builder(setter(into, strip_option), default)]
     pub no_init: Option<bool>,
     /// Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").

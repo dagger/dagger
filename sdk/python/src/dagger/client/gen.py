@@ -1375,9 +1375,8 @@ class Container(Type):
             If set, skip the automatic init process injected into containers
             by default.
             This should only be used if the user requires that their exec
-            process be the
-            pid 1 process in the container. Otherwise it may result in
-            unexpected behavior.
+            process be the pid 1 process in the container. Otherwise it may
+            result in unexpected behavior.
         """
         _args = [
             Arg("args", args),

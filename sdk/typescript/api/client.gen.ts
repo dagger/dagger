@@ -332,9 +332,7 @@ export type ContainerWithExecOpts = {
   /**
    * If set, skip the automatic init process injected into containers by default.
    *
-   * This should only be used if the user requires that their exec process be the
-   *
-   * pid 1 process in the container. Otherwise it may result in unexpected behavior.
+   * This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
    */
   noInit?: boolean
 }
@@ -2273,9 +2271,7 @@ export class Container extends BaseClient {
    * @param opts.expand Replace ${VAR} or $VAR in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    * @param opts.noInit If set, skip the automatic init process injected into containers by default.
    *
-   * This should only be used if the user requires that their exec process be the
-   *
-   * pid 1 process in the container. Otherwise it may result in unexpected behavior.
+   * This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
    */
   withExec = (args: string[], opts?: ContainerWithExecOpts): Container => {
     return new Container({

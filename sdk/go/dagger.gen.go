@@ -1179,9 +1179,7 @@ type ContainerWithExecOpts struct {
 	Expand bool
 	// If set, skip the automatic init process injected into containers by default.
 	//
-	// This should only be used if the user requires that their exec process be the
-	//
-	// pid 1 process in the container. Otherwise it may result in unexpected behavior.
+	// This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
 	NoInit bool
 }
 
