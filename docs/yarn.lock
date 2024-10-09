@@ -3097,12 +3097,7 @@ clone-deep@^4.0.1:
     kind-of "^6.0.2"
     shallow-clone "^3.0.0"
 
-clsx@^1.2.1:
-  version "1.2.1"
-  resolved "https://registry.yarnpkg.com/clsx/-/clsx-1.2.1.tgz#0ddc4a20a549b59c93a4116bb26f5294ca17dc12"
-  integrity sha512-EcR6r5a8bj6pu3ycsa/E/cKVGuTgZJZdsyUYHOksG/UHIiKfjxzRxYJpyVBwYaQeOvghal9fcc4PidlgzugAQg==
-
-clsx@^2.0.0:
+clsx@^2.0.0, clsx@^2.1.1:
   version "2.1.1"
   resolved "https://registry.yarnpkg.com/clsx/-/clsx-2.1.1.tgz#eed397c9fd8bd882bfb18deab7102049a2f32999"
   integrity sha512-eYm0QWBtUrBWZWG0d386OGAw16Z995PiOVo2B7bjWSbHedGl5e0ZWaq65kOGgUSNesEIDkB9ISbTg/JK9dhCZA==
@@ -3970,12 +3965,12 @@ dns-packet@^5.2.2:
   dependencies:
     "@leichtgewicht/ip-codec" "^2.0.1"
 
-docusaurus-plugin-image-zoom@^1.0.1:
-  version "1.0.1"
-  resolved "https://registry.yarnpkg.com/docusaurus-plugin-image-zoom/-/docusaurus-plugin-image-zoom-1.0.1.tgz#17afec39f2e630cac50a4ed3a8bbdad8d0aa8b9d"
-  integrity sha512-96IpSKUx2RWy3db9aZ0s673OQo5DWgV9UVWouS+CPOSIVEdCWh6HKmWf6tB9rsoaiIF3oNn9keiyv6neEyKb1Q==
+docusaurus-plugin-image-zoom@^2.0.0:
+  version "2.0.0"
+  resolved "https://registry.yarnpkg.com/docusaurus-plugin-image-zoom/-/docusaurus-plugin-image-zoom-2.0.0.tgz#961603e5865677500bcd4bc9a8a95ea8188ee540"
+  integrity sha512-TWHQZeoiged+95CESlZk++lihzl3pqw34n0/fbexx2AocmFhbo9K2scYDgYB8amki4/X6mUCLTPZE1pQvT+00Q==
   dependencies:
-    medium-zoom "^1.0.6"
+    medium-zoom "^1.0.8"
     validate-peer-dependencies "^2.2.0"
 
 docusaurus-plugin-sass@^0.2.5:
@@ -6027,7 +6022,7 @@ media-typer@0.3.0:
   resolved "https://registry.yarnpkg.com/media-typer/-/media-typer-0.3.0.tgz#8710d7af0aa626f8fffa1ce00168545263255748"
   integrity sha512-dq+qelQ9akHpcOl/gUVRTxVIOkAJ1wR3QAvb4RsVjS8oVoFjDGTc679wJYmUmknUF5HwMLOgb5O+a3KxfWapPQ==
 
-medium-zoom@^1.0.6:
+medium-zoom@^1.0.8:
   version "1.1.0"
   resolved "https://registry.yarnpkg.com/medium-zoom/-/medium-zoom-1.1.0.tgz#6efb6bbda861a02064ee71a2617a8dc4381ecc71"
   integrity sha512-ewyDsp7k4InCUp3jRmwHBRFGyjBimKps/AJLjRSox+2q/2H4p/PNpQf+pwONWlJiOudkBXtbdmVbFjqyybfTmQ==
@@ -8843,10 +8838,10 @@ typedoc@^0.26.8:
     shiki "^1.16.2"
     yaml "^2.5.1"
 
-typescript@^5.3.2:
-  version "5.6.2"
-  resolved "https://registry.yarnpkg.com/typescript/-/typescript-5.6.2.tgz#d1de67b6bef77c41823f822df8f0b3bcff60a5a0"
-  integrity sha512-NW8ByodCSNCwZeghjN3o+JX5OFH0Ojg6sadjEKY4huZ52TqbJTJnDo5+Tw98lSy63NZvi4n+ez5m2u5d4PkZyw==
+typescript@^5.6.3:
+  version "5.6.3"
+  resolved "https://registry.yarnpkg.com/typescript/-/typescript-5.6.3.tgz#5f3449e31c9d94febb17de03cc081dd56d81db5b"
+  integrity sha512-hjcS1mhfuyi4WW8IWtjP7brDrG2cuDZukyrYrSauoXGNgx0S7zceP07adYkJycEr56BOUTNPzbInooiN3fn1qw==
 
 uc.micro@^2.0.0, uc.micro@^2.1.0:
   version "2.1.0"
