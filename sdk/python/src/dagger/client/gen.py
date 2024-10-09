@@ -1335,6 +1335,7 @@ class Container(Type):
         experimental_privileged_nesting: bool | None = False,
         insecure_root_capabilities: bool | None = False,
         expand: bool | None = False,
+        no_init: bool | None = False,
     ) -> Self:
         """Retrieves this container after executing the specified command inside
         it.
@@ -1370,6 +1371,13 @@ class Container(Type):
         expand:
             Replace ${VAR} or $VAR in the args according to the current
             environment variables defined in the container (e.g. "/$VAR/foo").
+        no_init:
+            If set, skip the automatic init process injected into containers
+            by default.
+            This should only be used if the user requires that their exec
+            process be the
+            pid 1 process in the container. Otherwise it may result in
+            unexpected behavior.
         """
         _args = [
             Arg("args", args),
@@ -1382,6 +1390,7 @@ class Container(Type):
             ),
             Arg("insecureRootCapabilities", insecure_root_capabilities, False),
             Arg("expand", expand, False),
+            Arg("noInit", no_init, False),
         ]
         _ctx = self._select("withExec", _args)
         return Container(_ctx)

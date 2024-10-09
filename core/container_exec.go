@@ -48,6 +48,10 @@ type ContainerExecOpts struct {
 
 	// Expand the environment variables in args
 	Expand bool `default:"false"`
+
+	// Skip the init process injected into containers by default so that the
+	// user's process is PID 1
+	NoInit bool `default:"false"`
 }
 
 func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts) (*Container, error) { //nolint:gocyclo
@@ -91,6 +95,13 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	execMD.RedirectStderrPath = opts.RedirectStderr
 	execMD.SystemEnvNames = container.SystemEnvNames
 	execMD.EnabledGPUs = container.EnabledGPUs
+
+	if opts.NoInit {
+		execMD.NoInit = true
+		// include an env var (which will be removed before the exec actually runs) so that execs with
+		// inits disabled will be cached differently than those with them enabled by buildkit
+		runOpts = append(runOpts, llb.AddEnv(buildkit.DaggerNoInitEnv, "true"))
+	}
 
 	mod, err := container.Query.CurrentModule(ctx)
 	if err == nil {
