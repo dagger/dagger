@@ -229,6 +229,11 @@ var scrubs = []scrubber{
 		"X:M XX XXX 20XX XX:XX:XX.XXX",
 	},
 	{
+		regexp.MustCompile(`Redis version=\d+.\d+.\d+`),
+		"* Redis version=7.4.1, bits=64, commit=00000000, modified=0",
+		"Redis version=X.X.X",
+	},
+	{
 		regexp.MustCompile(`\bpid=\d+\b`),
 		"pid=8",
 		"pid=X",
