@@ -1,0 +1,1 @@
+wolfi container | with-directory $(git | branch | tree) /src | with-workdir | terminal
