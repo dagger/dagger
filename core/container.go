@@ -92,10 +92,6 @@ type Container struct {
 	// Services to start before running the container.
 	Services ServiceBindings `json:"services,omitempty"`
 
-	// Focused indicates whether subsequent operations will be
-	// focused, i.e. shown more prominently in the UI.
-	Focused bool `json:"focused"`
-
 	// The args to invoke when using the terminal api on this container.
 	DefaultTerminalCmd DefaultTerminalCmdOpts `json:"defaultTerminalCmd,omitempty"`
 

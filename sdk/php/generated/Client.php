@@ -146,7 +146,8 @@ class Client extends Client\AbstractClient
         ServiceId|Service|null $experimentalServiceHost = null,
         ?string $sshKnownHosts = '',
         SocketId|Socket|null $sshAuthSocket = null,
-    ): GitRepository {
+    ): GitRepository
+    {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('git');
         $innerQueryBuilder->setArgument('url', $url);
         if (null !== $keepGitDir) {
@@ -221,7 +222,8 @@ class Client extends Client\AbstractClient
      */
     public function loadDaggerEngineCacheEntryFromID(
         DaggerEngineCacheEntryId|DaggerEngineCacheEntry $id,
-    ): DaggerEngineCacheEntry {
+    ): DaggerEngineCacheEntry
+    {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadDaggerEngineCacheEntryFromID');
         $innerQueryBuilder->setArgument('id', $id);
         return new \Dagger\DaggerEngineCacheEntry($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
@@ -232,7 +234,8 @@ class Client extends Client\AbstractClient
      */
     public function loadDaggerEngineCacheEntrySetFromID(
         DaggerEngineCacheEntrySetId|DaggerEngineCacheEntrySet $id,
-    ): DaggerEngineCacheEntrySet {
+    ): DaggerEngineCacheEntrySet
+    {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadDaggerEngineCacheEntrySetFromID');
         $innerQueryBuilder->setArgument('id', $id);
         return new \Dagger\DaggerEngineCacheEntrySet($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
@@ -333,7 +336,8 @@ class Client extends Client\AbstractClient
      */
     public function loadFunctionCallArgValueFromID(
         FunctionCallArgValueId|FunctionCallArgValue $id,
-    ): FunctionCallArgValue {
+    ): FunctionCallArgValue
+    {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadFunctionCallArgValueFromID');
         $innerQueryBuilder->setArgument('id', $id);
         return new \Dagger\FunctionCallArgValue($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
