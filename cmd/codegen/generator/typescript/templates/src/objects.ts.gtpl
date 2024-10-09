@@ -1,7 +1,7 @@
 {{ define "objects" }}
 	{{- range .Types }}
-		{{- if HasPrefix .Name "__" }}
-			{{- /* we ignore types prefixed by __ */ -}}
+		{{- if HasPrefix .Name "_" }}
+			{{- /* we ignore types prefixed by _ */ -}}
 		{{- else }}
 {{ "" }}		{{- template "object" . }}
 		{{- end }}

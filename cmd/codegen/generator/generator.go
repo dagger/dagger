@@ -34,6 +34,8 @@ type Config struct {
 	ModuleName string
 	// ModuleContextPath is the subpath where a module can be found.
 	ModuleContextPath string
+	// ModuleParentPath is the path from the subpath to the output
+	ModuleParentPath string
 
 	// IntrospectionJSON is an optional pre-computed introspection json string.
 	IntrospectionJSON string

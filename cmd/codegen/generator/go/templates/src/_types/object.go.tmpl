@@ -1,6 +1,7 @@
 {{- if ne .Name "Query" }}
 {{ .Description | Comment }}
 type {{ .Name | FormatName }} struct {
+{{- with .Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 	query *querybuilder.Selection
 
     {{ range $field := .Fields }}
@@ -45,6 +46,7 @@ type {{ $field | FieldOptionsStructName }} struct {
 	{{- else }}
 	{{ $arg.Name | FormatName }} {{ $arg.TypeRef | FormatInputType }}
 	{{- end }}
+	{{- with .Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 	{{- end }}
 	{{- end }}
 }
@@ -59,6 +61,7 @@ type {{ $field | FieldOptionsStructName }} struct {
 {{- $convertID := $field | ConvertID }}
 {{- $supportsVoid := CheckVersionCompatibility "v0.12.0" }}
 {{ FieldFunction $field false $supportsVoid }} {
+{{- with .Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 	{{- range $arg := $field.Args }}
 	    {{- if and (IsPointer $arg) (not (IsArgOptional $arg)) }}
         assertNotNil("{{ $arg.Name}}", {{ $arg.Name }})

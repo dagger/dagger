@@ -1329,6 +1329,41 @@ impl SocketId {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct SourceMapId(pub String);
+impl From<&str> for SourceMapId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+impl From<String> for SourceMapId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl IntoID<SourceMapId> for SourceMap {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<SourceMapId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<SourceMapId> for SourceMapId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<SourceMapId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<SourceMapId, DaggerError>(self) })
+    }
+}
+impl SourceMapId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct TerminalId(pub String);
 impl From<&str> for TerminalId {
     fn from(value: &str) -> Self {
@@ -4630,6 +4665,15 @@ impl EnumTypeDef {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The location of this enum declaration.
+    pub fn source_map(&self) -> SourceMap {
+        let query = self.selection.select("sourceMap");
+        SourceMap {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// If this EnumTypeDef is associated with a Module, the name of the module. Unset otherwise.
     pub async fn source_module_name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("sourceModuleName");
@@ -4666,6 +4710,15 @@ impl EnumValueTypeDef {
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// The location of this enum value declaration.
+    pub fn source_map(&self) -> SourceMap {
+        let query = self.selection.select("sourceMap");
+        SourceMap {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
 }
 #[derive(Clone)]
@@ -4712,6 +4765,15 @@ impl FieldTypeDef {
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// The location of this field declaration.
+    pub fn source_map(&self) -> SourceMap {
+        let query = self.selection.select("sourceMap");
+        SourceMap {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// The type of the field.
     pub fn type_def(&self) -> TypeDef {
@@ -4868,6 +4930,8 @@ pub struct FunctionWithArgOpts<'a> {
     /// Patterns to ignore when loading the contextual argument value.
     #[builder(setter(into, strip_option), default)]
     pub ignore: Option<Vec<&'a str>>,
+    #[builder(setter(into, strip_option), default)]
+    pub source_map: Option<SourceMapId>,
 }
 impl Function {
     /// Arguments accepted by the function, if any.
@@ -4898,6 +4962,15 @@ impl Function {
     pub fn return_type(&self) -> TypeDef {
         let query = self.selection.select("returnType");
         TypeDef {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// The location of this function declaration.
+    pub fn source_map(&self) -> SourceMap {
+        let query = self.selection.select("sourceMap");
+        SourceMap {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -4960,6 +5033,9 @@ impl Function {
         if let Some(ignore) = opts.ignore {
             query = query.arg("ignore", ignore);
         }
+        if let Some(source_map) = opts.source_map {
+            query = query.arg("sourceMap", source_map);
+        }
         Function {
             proc: self.proc.clone(),
             selection: query,
@@ -4974,6 +5050,26 @@ impl Function {
     pub fn with_description(&self, description: impl Into<String>) -> Function {
         let mut query = self.selection.select("withDescription");
         query = query.arg("description", description.into());
+        Function {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Returns the function with the given source map.
+    ///
+    /// # Arguments
+    ///
+    /// * `source_map` - The source map for the function definition.
+    pub fn with_source_map(&self, source_map: impl IntoID<SourceMapId>) -> Function {
+        let mut query = self.selection.select("withSourceMap");
+        query = query.arg_lazy(
+            "sourceMap",
+            Box::new(move || {
+                let source_map = source_map.clone();
+                Box::pin(async move { source_map.into_id().await.unwrap().quote() })
+            }),
+        );
         Function {
             proc: self.proc.clone(),
             selection: query,
@@ -5017,6 +5113,15 @@ impl FunctionArg {
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// The location of this arg declaration.
+    pub fn source_map(&self) -> SourceMap {
+        let query = self.selection.select("sourceMap");
+        SourceMap {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// The type of the argument.
     pub fn type_def(&self) -> TypeDef {
@@ -5686,6 +5791,15 @@ impl InterfaceTypeDef {
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// The location of this interface declaration.
+    pub fn source_map(&self) -> SourceMap {
+        let query = self.selection.select("sourceMap");
+        SourceMap {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// If this InterfaceTypeDef is associated with a Module, the name of the module. Unset otherwise.
     pub async fn source_module_name(&self) -> Result<String, DaggerError> {
@@ -6490,6 +6604,15 @@ impl ObjectTypeDef {
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
+    }
+    /// The location of this object declaration.
+    pub fn source_map(&self) -> SourceMap {
+        let query = self.selection.select("sourceMap");
+        SourceMap {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
     }
     /// If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise.
     pub async fn source_module_name(&self) -> Result<String, DaggerError> {
@@ -7476,6 +7599,22 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Load a SourceMap from its ID.
+    pub fn load_source_map_from_id(&self, id: impl IntoID<SourceMapId>) -> SourceMap {
+        let mut query = self.selection.select("loadSourceMapFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        SourceMap {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Load a Terminal from its ID.
     pub fn load_terminal_from_id(&self, id: impl IntoID<TerminalId>) -> Terminal {
         let mut query = self.selection.select("loadTerminalFromID");
@@ -7649,6 +7788,24 @@ impl Query {
         query = query.arg("name", name.into());
         query = query.arg("plaintext", plaintext.into());
         Secret {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Creates source map metadata.
+    ///
+    /// # Arguments
+    ///
+    /// * `filename` - The filename from the module source.
+    /// * `line` - The line number within the filename.
+    /// * `column` - The column number within the line.
+    pub fn source_map(&self, filename: impl Into<String>, line: isize, column: isize) -> SourceMap {
+        let mut query = self.selection.select("sourceMap");
+        query = query.arg("filename", filename.into());
+        query = query.arg("line", line);
+        query = query.arg("column", column);
+        SourceMap {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -7882,6 +8039,39 @@ impl Socket {
     }
 }
 #[derive(Clone)]
+pub struct SourceMap {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl SourceMap {
+    /// The column number within the line.
+    pub async fn column(&self) -> Result<isize, DaggerError> {
+        let query = self.selection.select("column");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The filename from the module source.
+    pub async fn filename(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("filename");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A unique identifier for this SourceMap.
+    pub async fn id(&self) -> Result<SourceMapId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The line number within the filename.
+    pub async fn line(&self) -> Result<isize, DaggerError> {
+        let query = self.selection.select("line");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The module dependency this was declared in.
+    pub async fn module(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("module");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+#[derive(Clone)]
 pub struct Terminal {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
@@ -7911,28 +8101,41 @@ pub struct TypeDefWithEnumOpts<'a> {
     /// A doc string for the enum, if any
     #[builder(setter(into, strip_option), default)]
     pub description: Option<&'a str>,
+    /// The source map for the enum definition.
+    #[builder(setter(into, strip_option), default)]
+    pub source_map: Option<SourceMapId>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct TypeDefWithEnumValueOpts<'a> {
     /// A doc string for the value, if any
     #[builder(setter(into, strip_option), default)]
     pub description: Option<&'a str>,
+    /// The source map for the enum value definition.
+    #[builder(setter(into, strip_option), default)]
+    pub source_map: Option<SourceMapId>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct TypeDefWithFieldOpts<'a> {
     /// A doc string for the field, if any
     #[builder(setter(into, strip_option), default)]
     pub description: Option<&'a str>,
+    /// The source map for the field definition.
+    #[builder(setter(into, strip_option), default)]
+    pub source_map: Option<SourceMapId>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct TypeDefWithInterfaceOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub description: Option<&'a str>,
+    #[builder(setter(into, strip_option), default)]
+    pub source_map: Option<SourceMapId>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct TypeDefWithObjectOpts<'a> {
     #[builder(setter(into, strip_option), default)]
     pub description: Option<&'a str>,
+    #[builder(setter(into, strip_option), default)]
+    pub source_map: Option<SourceMapId>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct TypeDefWithScalarOpts<'a> {
@@ -8058,6 +8261,9 @@ impl TypeDef {
         if let Some(description) = opts.description {
             query = query.arg("description", description);
         }
+        if let Some(source_map) = opts.source_map {
+            query = query.arg("sourceMap", source_map);
+        }
         TypeDef {
             proc: self.proc.clone(),
             selection: query,
@@ -8094,6 +8300,9 @@ impl TypeDef {
         query = query.arg("value", value.into());
         if let Some(description) = opts.description {
             query = query.arg("description", description);
+        }
+        if let Some(source_map) = opts.source_map {
+            query = query.arg("sourceMap", source_map);
         }
         TypeDef {
             proc: self.proc.clone(),
@@ -8149,6 +8358,9 @@ impl TypeDef {
         if let Some(description) = opts.description {
             query = query.arg("description", description);
         }
+        if let Some(source_map) = opts.source_map {
+            query = query.arg("sourceMap", source_map);
+        }
         TypeDef {
             proc: self.proc.clone(),
             selection: query,
@@ -8199,6 +8411,9 @@ impl TypeDef {
         query = query.arg("name", name.into());
         if let Some(description) = opts.description {
             query = query.arg("description", description);
+        }
+        if let Some(source_map) = opts.source_map {
+            query = query.arg("sourceMap", source_map);
         }
         TypeDef {
             proc: self.proc.clone(),
@@ -8262,6 +8477,9 @@ impl TypeDef {
         query = query.arg("name", name.into());
         if let Some(description) = opts.description {
             query = query.arg("description", description);
+        }
+        if let Some(source_map) = opts.source_map {
+            query = query.arg("sourceMap", source_map);
         }
         TypeDef {
             proc: self.proc.clone(),
