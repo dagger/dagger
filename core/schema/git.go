@@ -39,7 +39,7 @@ func (s *gitSchema) Install() {
 			ArgDoc("sshAuthSocket", `Set SSH auth socket`).
 			ArgDoc("experimentalServiceHost", `A service which must be started before the repo is fetched.`),
 		dagql.Func("git", s.gitLegacy).
-			View(BeforeVersion("v0.13.0")).
+			View(BeforeVersion("v0.13.4")).
 			Doc(`Queries a Git repository.`).
 			ArgDoc("url",
 				`URL of the git repository.`,
@@ -412,7 +412,8 @@ func (s *gitSchema) tree(ctx context.Context, parent *core.GitRef, args treeArgs
 }
 
 type treeArgsLegacy struct {
-	treeArgs
+	DiscardGitDir bool `default:"false"`
+
 	SSHKnownHosts dagql.Optional[dagql.String]  `name:"sshKnownHosts"`
 	SSHAuthSocket dagql.Optional[core.SocketID] `name:"sshAuthSocket"`
 }
