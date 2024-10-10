@@ -1,7 +1,7 @@
 import { dag, Directory, object, func } from "@dagger.io/dagger";
 
 @object()
-class Minimal {
+export class Minimal {
   @func()
   src?: Directory;
 

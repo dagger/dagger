@@ -1,5 +1,6 @@
 import assert from "assert"
 import { describe, it } from "mocha"
+import Module from "node:module"
 import * as path from "path"
 import { fileURLToPath } from "url"
 
@@ -7,6 +8,7 @@ import { connection } from "../../connect.js"
 import { InvokeCtx } from "../../entrypoint/context.js"
 import { invoke } from "../../entrypoint/invoke.js"
 import { load } from "../../entrypoint/load.js"
+import { Executor } from "../executor/executor.js"
 import { scan } from "../scanner/scan.js"
 import { listFiles } from "../utils/files.js"
 
@@ -27,7 +29,8 @@ describe("Invoke typescript function", function () {
     const files = await listFiles(`${rootDirectory}/helloWorld`)
 
     // Load function
-    await load(files)
+    const modules = await load(files)
+    const executor = new Executor(modules)
 
     const scanResult = scan(files)
 
@@ -39,7 +42,7 @@ describe("Invoke typescript function", function () {
       fnArgs: { name: "world" },
     }
 
-    const result = await invoke(scanResult, input)
+    const result = await invoke(executor, scanResult, input)
 
     // We verify the result, this could be serialized and set using `dag.ReturnValue` as a response
     assert.equal(result, "hello world")
@@ -51,7 +54,8 @@ describe("Invoke typescript function", function () {
     const files = await listFiles(`${rootDirectory}/multipleObjects`)
 
     // Load function
-    await load(files)
+    const modules = await load(files)
+    const executor = new Executor(modules)
 
     const scanResult = scan(files)
 
@@ -68,7 +72,7 @@ describe("Invoke typescript function", function () {
 
     // We wrap the execution into a Dagger connection
     await connection(async () => {
-      const result = await invoke(scanResult, input)
+      const result = await invoke(executor, scanResult, input)
 
       // We verify the result, this could be serialized and set using `dag.ReturnValue` as a response
       assert.equal(result, "hello world")
@@ -81,7 +85,8 @@ describe("Invoke typescript function", function () {
     const files = await listFiles(`${rootDirectory}/multiArgs`)
 
     // Load function
-    await load(files)
+    const modules = await load(files)
+    const executor = new Executor(modules)
 
     const scanResult = scan(files)
 
@@ -99,7 +104,7 @@ describe("Invoke typescript function", function () {
 
     // We wrap the execution into a Dagger connection
     await connection(async () => {
-      const result = await invoke(scanResult, input)
+      const result = await invoke(executor, scanResult, input)
 
       // We verify the result
       assert.equal(result, 11)
@@ -112,7 +117,8 @@ describe("Invoke typescript function", function () {
     const files = await listFiles(`${rootDirectory}/state`)
 
     // Load function
-    await load(files)
+    const modules = await load(files)
+    const executor = new Executor(modules)
 
     const scanResult = scan(files)
 
@@ -131,7 +137,7 @@ describe("Invoke typescript function", function () {
           fnArgs: { version: "3.16.0" },
         }
 
-        const inputBaseResult = await invoke(scanResult, inputBase)
+        const inputBaseResult = await invoke(executor, scanResult, inputBase)
 
         // Assert state has been updated by the function
         assert.equal("3.16.0", inputBaseResult.version)
@@ -149,7 +155,11 @@ describe("Invoke typescript function", function () {
           },
         }
 
-        const inputInstallResult = await invoke(scanResult, inputInstall)
+        const inputInstallResult = await invoke(
+          executor,
+          scanResult,
+          inputInstall,
+        )
 
         // Verify state conservation
         assert.equal("3.16.0", inputInstallResult.version)
@@ -167,7 +177,7 @@ describe("Invoke typescript function", function () {
           },
         }
 
-        const result = await invoke(scanResult, inputExec)
+        const result = await invoke(executor, scanResult, inputExec)
 
         // We verify the result, this could be serialized and set using `dag.ReturnValue` as a response
         // In that case, we verify it's not failing and that it returned a value
@@ -183,7 +193,8 @@ describe("Invoke typescript function", function () {
     const files = await listFiles(`${rootDirectory}/multipleObjectsAsFields`)
 
     // Load function
-    await load(files)
+    const modules = await load(files)
+    const executor = new Executor(modules)
 
     const scanResult = scan(files)
 
@@ -194,7 +205,11 @@ describe("Invoke typescript function", function () {
       fnArgs: {},
     }
 
-    const constructorResult = await invoke(scanResult, constructorInput)
+    const constructorResult = await invoke(
+      executor,
+      scanResult,
+      constructorInput,
+    )
     // Verify object instantiation
     assert.notStrictEqual(undefined, constructorResult)
     assert.notStrictEqual(undefined, constructorResult.test)
@@ -208,7 +223,7 @@ describe("Invoke typescript function", function () {
       fnArgs: {},
     }
 
-    const testEchoResult = await invoke(scanResult, invokeTestEcho)
+    const testEchoResult = await invoke(executor, scanResult, invokeTestEcho)
     assert.strictEqual("world", testEchoResult)
 
     // Call echo method
@@ -219,7 +234,7 @@ describe("Invoke typescript function", function () {
       fnArgs: {},
     }
 
-    const lintEchoResult = await invoke(scanResult, invokeLintEcho)
+    const lintEchoResult = await invoke(executor, scanResult, invokeLintEcho)
     assert.strictEqual("world", lintEchoResult)
   })
 
@@ -284,13 +299,14 @@ describe("Invoke typescript function", function () {
         const files = await listFiles(`${rootDirectory}/variadic`)
 
         // Load function
-        await load(files)
+        const modules = await load(files)
+        const executor = new Executor(modules)
 
         const scanResult = scan(files)
 
         // We wrap the execution into a Dagger connection
         await connection(async () => {
-          const result = await invoke(scanResult, ctx)
+          const result = await invoke(executor, scanResult, ctx)
 
           // We verify the result
           assert.equal(result, expected)
@@ -307,7 +323,8 @@ describe("Invoke typescript function", function () {
       const files = await listFiles(`${rootDirectory}/alias`)
 
       // Load function
-      await load(files)
+      const modules = await load(files)
+      const executor = new Executor(modules)
 
       const scanResult = scan(files)
 
@@ -322,7 +339,11 @@ describe("Invoke typescript function", function () {
           fnArgs: {},
         }
 
-        const constructorResult = await invoke(scanResult, constructorInput)
+        const constructorResult = await invoke(
+          executor,
+          scanResult,
+          constructorInput,
+        )
 
         assert.equal("test", constructorResult.prefix)
         assert.notStrictEqual(undefined, constructorResult.container)
@@ -335,7 +356,7 @@ describe("Invoke typescript function", function () {
           fnArgs: { name: "Dagger" },
         }
 
-        const result = await invoke(scanResult, input)
+        const result = await invoke(executor, scanResult, input)
         assert.equal("hello Dagger", result)
       })
     })
@@ -346,7 +367,8 @@ describe("Invoke typescript function", function () {
       const files = await listFiles(`${rootDirectory}/alias`)
 
       // Load function
-      await load(files)
+      const modules = await load(files)
+      const executor = new Executor(modules)
 
       const scanResult = scan(files)
       await connection(async () => {
@@ -359,7 +381,11 @@ describe("Invoke typescript function", function () {
           fnArgs: {},
         }
 
-        const constructorResult = await invoke(scanResult, constructorInput)
+        const constructorResult = await invoke(
+          executor,
+          scanResult,
+          constructorInput,
+        )
 
         assert.equal("test", constructorResult.prefix)
         assert.notStrictEqual(undefined, constructorResult.container)
@@ -372,7 +398,7 @@ describe("Invoke typescript function", function () {
           fnArgs: { name: "Dagger" },
         }
 
-        const result = await invoke(scanResult, input)
+        const result = await invoke(executor, scanResult, input)
         assert.equal("test Dagger", result)
       })
     })
@@ -385,7 +411,8 @@ describe("Invoke typescript function", function () {
       const files = await listFiles(`${rootDirectory}/optionalParameter`)
 
       // Load function
-      await load(files)
+      const modules = await load(files)
+      const executor = new Executor(modules)
 
       const scanResult = scan(files)
 
@@ -397,7 +424,7 @@ describe("Invoke typescript function", function () {
         fnArgs: { a: "foo" },
       }
 
-      const result = await invoke(scanResult, input)
+      const result = await invoke(executor, scanResult, input)
 
       // We verify the result, this could be serialized and set using `dag.ReturnValue` as a response
       assert.equal(result, `"foo", null, , "foo", null, "bar"`)
@@ -409,7 +436,8 @@ describe("Invoke typescript function", function () {
       const files = await listFiles(`${rootDirectory}/optionalParameter`)
 
       // Load function
-      await load(files)
+      const modules = await load(files)
+      const executor = new Executor(modules)
 
       const scanResult = scan(files)
 
@@ -427,7 +455,7 @@ describe("Invoke typescript function", function () {
         },
       }
 
-      const result = await invoke(scanResult, input)
+      const result = await invoke(executor, scanResult, input)
 
       // We verify the result, this could be serialized and set using `dag.ReturnValue` as a response
       assert.equal(result, `"foo", null, "ho", "ah", "baz", null`)
@@ -440,7 +468,8 @@ describe("Invoke typescript function", function () {
     const files = await listFiles(`${rootDirectory}/objectParam`)
 
     // Load function
-    await load(files)
+    const modules = await load(files)
+    const executor = new Executor(modules)
 
     const scanResult = scan(files)
 
@@ -453,7 +482,7 @@ describe("Invoke typescript function", function () {
       },
     }
 
-    const resultUpper = await invoke(scanResult, inputUpper)
+    const resultUpper = await invoke(executor, scanResult, inputUpper)
 
     // We verify the result, this could be serialized and set using `dag.ReturnValue` as a response
     assert.equal(resultUpper.content, "HELLO WORLD")
@@ -471,7 +500,7 @@ describe("Invoke typescript function", function () {
       },
     }
 
-    const resultUppers = await invoke(scanResult, inputUppers)
+    const resultUppers = await invoke(executor, scanResult, inputUppers)
 
     // We verify the result, this could be serialized and set using `dag.ReturnValue` as a response
     assert.deepEqual(resultUppers, [
@@ -487,7 +516,8 @@ describe("Invoke typescript function", function () {
     const files = await listFiles(`${rootDirectory}/list`)
 
     // Load function
-    await load(files)
+    const modules = await load(files)
+    const executor = new Executor(modules)
 
     const scanResult = scan(files)
 
@@ -500,7 +530,7 @@ describe("Invoke typescript function", function () {
       },
     }
 
-    const resultList = await invoke(scanResult, input)
+    const resultList = await invoke(executor, scanResult, input)
 
     assert.equal(resultList.length, 3)
     assert.deepEqual(resultList, [{ value: -1 }, { value: 2 }, { value: 3 }])
@@ -510,14 +540,16 @@ describe("Invoke typescript function", function () {
     this.timeout(60000)
 
     const files = await listFiles(`${rootDirectory}/enums`)
+    let modules: Module[] = []
 
     // Load function
     try {
-      await load(files)
+      modules = await load(files)
     } catch {
       assert.fail("failed to load files")
     }
 
+    const executor = new Executor(modules)
     const module = scan(files)
 
     const inputDefault = {
@@ -529,7 +561,7 @@ describe("Invoke typescript function", function () {
       fnArgs: {},
     }
 
-    const resultDefault = await invoke(module, inputDefault)
+    const resultDefault = await invoke(executor, module, inputDefault)
 
     assert.equal(resultDefault, "ACTIVE")
 
@@ -544,7 +576,7 @@ describe("Invoke typescript function", function () {
       },
     }
 
-    const resultSet = await invoke(module, inputSet)
+    const resultSet = await invoke(executor, module, inputSet)
 
     const inputAfterSet = {
       parentName: "Enums",
@@ -553,7 +585,7 @@ describe("Invoke typescript function", function () {
       fnArgs: {},
     }
 
-    const resultAfterSet = await invoke(module, inputAfterSet)
+    const resultAfterSet = await invoke(executor, module, inputAfterSet)
 
     assert.equal(resultAfterSet, "INACTIVE")
   })

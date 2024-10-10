@@ -1,7 +1,7 @@
 import { func, object } from "../../../decorators/decorators.js"
 
 @object()
-class Primitives {
+export class Primitives {
   @func()
   str(v: String): String {
     return v

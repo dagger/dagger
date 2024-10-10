@@ -2432,7 +2432,7 @@ class Test:
 			source: `import { dag, enumType, func, object } from "@dagger.io/dagger"
 
 @enumType()
-class Language {
+export class Language {
   static readonly Go: string = "GO"
   static readonly Python: string = "PYTHON"
   static readonly TypeScript: string = "TYPESCRIPT"

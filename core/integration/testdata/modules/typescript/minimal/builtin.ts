@@ -1,7 +1,7 @@
 import { Directory, object, func } from "@dagger.io/dagger"
 
 @object()
-class Minimal {
+export class Minimal {
   @func()
   async read(dir: Directory): Promise<string> {
     return dir.file("foo").contents()

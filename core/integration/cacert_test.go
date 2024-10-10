@@ -391,7 +391,7 @@ import { object, func } from "@dagger.io/dagger";
 import * as https from "https";
 
 @object()
-class Test {
+export class Test {
 	@func()
     async getHttp(): Promise<string> {
         const url = "https://server";
