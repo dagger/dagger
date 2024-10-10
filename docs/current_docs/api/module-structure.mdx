@@ -281,7 +281,7 @@ Dagger modules written for use with the Go SDK are automatically created as [Go 
 
 After using new dependencies in your code, update your `go.mod`/`go.sum` with the newly imported dependencies by using [`go mod tidy`](https://go.dev/ref/mod#go-mod-tidy).
 
-### Go workspaces
+#### Go workspaces
 
 Since it's common to have a sub-directory inside your main project containing your Dagger module code, you can manage your modules using [Go workspaces](https://go.dev/ref/mod#workspaces).
 
@@ -296,7 +296,7 @@ use (
 )
 ```
 
-### Go vendor
+#### Go vendor
 
 [Go vendor](https://go.dev/ref/mod#go-mod-vendor) directories are not currently supported. See [https://github.com/dagger/dagger/issues/6076](https://github.com/dagger/dagger/issues/6076) for more information.
 
