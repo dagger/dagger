@@ -1,0 +1,69 @@
+---
+slug: /api/enumerations
+displayed_sidebar: "current"
+toc_max_heading_level: 2
+title: "Enumerations"
+---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Enumerations
+
+Dagger supports custom enumeration (enum) types, which can be used to restrict possible values for a string argument.
+
+:::note
+Following the [GraphQL specification](https://spec.graphql.org/October2021/#Name), enums are represented as strings in the Dagger API GraphQL schema and follow these rules:
+- Enum names cannot start with digits, and can only be composed of alphabets, digits or `_`.
+- Enum values are case-sensitive, and by convention should be upper-cased.
+:::
+
+Here is an example of a Dagger Function that takes two arguments: an image reference and a severity filter. The latter is defined as an enum named `Severity`:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+```go file=./snippets/enums/go/main.go
+```
+</TabItem>
+<TabItem value="Python">
+```python file=./snippets/enums/python/main.py
+```
+
+:::note
+`dagger.Enum` is a convenience base class for defining documentation, but you can also use `enum.Enum` directly.
+:::
+</TabItem>
+<TabItem value="TypeScript">
+```typescript file=./snippets/enums/typescript/index.ts
+```
+</TabItem>
+</Tabs>
+
+Enumeration choices will be displayed when calling `--help` on a Dagger Function:
+
+```shell
+dagger call scan --help
+```
+
+The result will be:
+
+```shell
+USAGE
+  dagger call scan [arguments]
+
+ARGUMENTS
+      --ref string                                  [required]
+      --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL   [required]
+```
+
+Here's an example of calling the Dagger Function with an invalid enum argument:
+
+```shell
+dagger call scan --ref=hello-world:latest --severity=FOO
+```
+
+This will result in an error that displays possible values, as follows:
+
+```shell
+Error: invalid argument "FOO" for "--severity" flag: value should be one of UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+Run 'dagger call scan --help' for usage.
+```

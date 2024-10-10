@@ -114,14 +114,6 @@ const config: Config = {
       additionalLanguages: ["php", "rust", "elixir", "bash", "toml", "powershell"],
       theme: prismThemes.dracula,
     },
-    announcementBar: {
-      id: "changed_docs",
-      content:
-        'We\'ve recently updated our documentation. For the previous documentation, visit <a target="_blank" rel="noopener noreferrer" href="https://archive.docs.dagger.io/0.9/">archive.docs.dagger.io/0.9/</a>.',
-      backgroundColor: "#3d66ff",
-      textColor: "#ffffff",
-      isCloseable: false,
-    },
     navbar: {
       logo: {
         alt: "Dagger Logo",

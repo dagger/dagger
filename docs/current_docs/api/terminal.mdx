@@ -1,0 +1,89 @@
+---
+slug: /api/terminal
+---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Interactive Terminal
+
+Dagger provides an interactive terminal that can help greatly when trying to debug a pipeline failure.
+
+To use this, set one or more explicit breakpoints in your Dagger pipeline with the `Container.terminal()` method. Dagger then starts an interactive terminal session at each breakpoint. This lets you inspect a `Directory` or a `Container` at any point in your pipeline run, with all the necessary context available to you.
+
+Here is a simple example, which opens an interactive terminal in an `alpine` container:
+
+```shell
+dagger core container from --address=alpine terminal
+```
+
+Here is an example of a Dagger Function which opens an interactive terminal at two different points in the Dagger pipeline to inspect the built container:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/debugging/go/terminal-container/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+```python file=./snippets/debugging/python/terminal-container/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/debugging/typescript/terminal-container/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+The `Container.terminal()` method can be chained. It returns a `Container`, so it can be injected at any point in a pipeline (in this example, between `Container.from()` and `Container.withExec()` methods).
+
+:::tip
+Multiple terminals are supported in the same Dagger Function; they will open in sequence.
+:::
+
+It's also possible to inspect a directory using the `Container.terminal()` method. Here is an example of a Dagger Function which opens an interactive terminal on a directory:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/debugging/go/terminal-directory-1/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+```python file=./snippets/debugging/python/terminal-directory-1/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/debugging/typescript/terminal-directory-1/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+Under the hood, this creates a new container (defaults to `alpine`) and starts a shell, mounting the directory inside. This container can be customized using additional options. Here is a more complex example, which produces the same result as the previous one but this time using an `ubuntu` container image and `bash` shell instead of the default `alpine` container image and `sh` shell:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/debugging/go/terminal-directory-2/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+```python file=./snippets/debugging/python/terminal-directory-2/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/debugging/typescript/terminal-directory-2/index.ts
+```
+
+</TabItem>
+</Tabs>
