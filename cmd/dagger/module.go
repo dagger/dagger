@@ -1029,6 +1029,7 @@ var skipLeaves = map[string][]string{
 		// stdout and stderr may be arbitrarily large and jarring to see (e.g. test suites)
 		"stdout",
 		"stderr",
+		"exitCode",
 	},
 	"File": {
 		// This could be a binary file, so until we can tell which type of

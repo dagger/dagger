@@ -125,6 +125,17 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * The exit code of the last executed command.
+     *
+     * Will execute default command if none is set, or error if there's no default.
+     */
+    public function exitCode(): int
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('exitCode');
+        return (int)$this->queryLeaf($leafQueryBuilder, 'exitCode');
+    }
+
+    /**
      * EXPERIMENTAL API! Subject to change/removal at any time.
      *
      * Configures all available GPUs on the host to be accessible to this container.
@@ -505,6 +516,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
         ?string $stdin = '',
         ?string $redirectStdout = '',
         ?string $redirectStderr = '',
+        ?array $validExitCodes = null,
         ?bool $experimentalPrivilegedNesting = false,
         ?bool $insecureRootCapabilities = false,
         ?bool $expand = false,
@@ -523,6 +535,9 @@ class Container extends Client\AbstractObject implements Client\IdAble
         }
         if (null !== $redirectStderr) {
         $innerQueryBuilder->setArgument('redirectStderr', $redirectStderr);
+        }
+        if (null !== $validExitCodes) {
+        $innerQueryBuilder->setArgument('validExitCodes', $validExitCodes);
         }
         if (null !== $experimentalPrivilegedNesting) {
         $innerQueryBuilder->setArgument('experimentalPrivilegedNesting', $experimentalPrivilegedNesting);

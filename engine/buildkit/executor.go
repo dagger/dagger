@@ -262,7 +262,7 @@ func (w *Worker) run(
 		})
 		return err
 	}
-	err = exitError(ctx, state.exitCodePath, w.callWithIO(ctx, state.procInfo, startedCallback, killer, runcCall))
+	err = exitError(ctx, state.exitCodePath, w.callWithIO(ctx, state.procInfo, startedCallback, killer, runcCall), state.procInfo.Meta.ValidExitCodes)
 	if err != nil {
 		w.runc.Delete(context.TODO(), state.id, &runc.DeleteOpts{})
 		return err
@@ -411,7 +411,7 @@ func (w *Worker) Exec(ctx context.Context, id string, process executor.ProcessIn
 	}
 
 	err = w.exec(ctx, id, spec.Process, process, nil)
-	return exitError(ctx, "", err)
+	return exitError(ctx, "", err, process.Meta.ValidExitCodes)
 }
 
 func (w *Worker) exec(ctx context.Context, id string, specsProcess *specs.Process, process executor.ProcessInfo, started func()) error {
@@ -437,46 +437,50 @@ func (w *Worker) validateEntitlements(meta executor.Meta) error {
 	})
 }
 
-func exitError(ctx context.Context, exitCodePath string, err error) error {
-	if err != nil {
-		exitErr := &gatewayapi.ExitError{
-			ExitCode: gatewayapi.UnknownExitStatus,
-			Err:      err,
-		}
+func exitError(ctx context.Context, exitCodePath string, err error, validExitCodes []int) error {
+	exitErr := &gatewayapi.ExitError{ExitCode: uint32(gatewayapi.UnknownExitStatus), Err: err}
+
+	if err == nil {
+		exitErr.ExitCode = 0
+	} else {
 		var runcExitError *runc.ExitError
-		if errors.As(err, &runcExitError) && runcExitError.Status >= 0 {
-			exitErr = &gatewayapi.ExitError{
-				ExitCode: uint32(runcExitError.Status),
-			}
+		if errors.As(err, &runcExitError) {
+			exitErr = &gatewayapi.ExitError{ExitCode: uint32(runcExitError.Status)}
 		}
+	}
 
-		if exitCodePath != "" {
-			if err := os.WriteFile(exitCodePath, []byte(fmt.Sprintf("%d", exitErr.ExitCode)), 0o600); err != nil {
-				bklog.G(ctx).Errorf("failed to write exit code %d to %s: %v", exitErr.ExitCode, exitCodePath, err)
-			}
-		}
-
-		trace.SpanFromContext(ctx).AddEvent(
-			"Container exited",
-			trace.WithAttributes(
-				attribute.Int("exit.code", int(exitErr.ExitCode)),
-			),
-		)
-
-		select {
-		case <-ctx.Done():
-			exitErr.Err = fmt.Errorf("%s: %w", exitErr.Error(), context.Cause(ctx))
-			return exitErr
-		default:
-			return stack.Enable(exitErr)
+	if exitCodePath != "" {
+		if err := os.WriteFile(exitCodePath, []byte(fmt.Sprintf("%d", exitErr.ExitCode)), 0o600); err != nil {
+			bklog.G(ctx).Errorf("failed to write exit code %d to %s: %v", exitErr.ExitCode, exitCodePath, err)
 		}
 	}
 
 	trace.SpanFromContext(ctx).AddEvent(
 		"Container exited",
-		trace.WithAttributes(attribute.Int("exit.code", 0)),
+		trace.WithAttributes(attribute.Int("exit.code", int(exitErr.ExitCode))),
 	)
-	return nil
+
+	if validExitCodes == nil {
+		// no exit codes specified, so only 0 is allowed
+		if exitErr.ExitCode == 0 {
+			return nil
+		}
+	} else {
+		for _, code := range validExitCodes {
+			// exit code in allowed list, so exit cleanly
+			if code == int(exitErr.ExitCode) {
+				return nil
+			}
+		}
+	}
+
+	select {
+	case <-ctx.Done():
+		exitErr.Err = fmt.Errorf("%s: %w", exitErr.Error(), context.Cause(ctx))
+		return exitErr
+	default:
+		return stack.Enable(exitErr)
+	}
 }
 
 type forwardIO struct {

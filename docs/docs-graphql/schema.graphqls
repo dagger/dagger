@@ -147,6 +147,13 @@ type Container {
   envVariables: [EnvVariable!]!
 
   """
+  The exit code of the last executed command.
+  
+  Will execute default command if none is set, or error if there's no default.
+  """
+  exitCode: Int!
+
+  """
   EXPERIMENTAL API! Subject to change/removal at any time.
   
   Configures all available GPUs on the host to be accessible to this container.
@@ -549,6 +556,9 @@ type Container {
 
     """If the container has an entrypoint, prepend it to the args."""
     useEntrypoint: Boolean = false
+
+    """Exit codes this command is allowed to exit with without error"""
+    validExitCodes: [Int!] = []
   ): Container!
 
   """
