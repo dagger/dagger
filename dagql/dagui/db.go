@@ -152,7 +152,7 @@ type DBMetricExporter struct {
 func (db DBMetricExporter) Export(ctx context.Context, resourceMetrics *metricdata.ResourceMetrics) error {
 	for _, scopeMetric := range resourceMetrics.ScopeMetrics {
 		for _, metric := range scopeMetric.Metrics {
-			metricData, ok := metric.Data.(*metricdata.Gauge[int64])
+			metricData, ok := metric.Data.(metricdata.Gauge[int64])
 			if !ok {
 				continue
 			}

@@ -1145,14 +1145,15 @@ func metricFromPB(pbMetric *otlpmetricsv1.Metric) (metricdata.Metrics, error) {
 	// TODO: rest of cases once needed (hand-writing this rather than copy-pasting from internal otlp package)
 	case *otlpmetricsv1.Metric_Gauge:
 		res := gaugeFromPB(a.Gauge)
+		// NOTE: setting m.Data to non-pointer value is important, metrics exporters will fail if it's a pointer
 		switch {
 		case res.AsInt != nil:
-			m.Data = res.AsInt
+			m.Data = *res.AsInt
 		case res.AsDouble != nil:
-			m.Data = res.AsDouble
+			m.Data = *res.AsDouble
 		}
 	default:
-		return m, fmt.Errorf("unknown aggregation: %T", a)
+		return m, fmt.Errorf("unknown aggregation from pb: %T", a)
 	}
 	return m, nil
 }
@@ -1184,7 +1185,7 @@ func metricToPB(m metricdata.Metrics) (*otlpmetricsv1.Metric, error) {
 	case metricdata.Summary:
 		out.Data = SummaryToPB(a)
 	default:
-		return out, fmt.Errorf("unknown aggregation: %T", a)
+		return out, fmt.Errorf("unknown aggregation to pb: %T", a)
 	}
 	return out, err
 }

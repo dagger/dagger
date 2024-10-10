@@ -77,7 +77,7 @@ type Params struct {
 
 	EngineTrace   sdktrace.SpanExporter
 	EngineLogs    sdklog.Exporter
-	EngineMetrics sdkmetric.Exporter
+	EngineMetrics []sdkmetric.Exporter
 
 	// Log level (0 = INFO)
 	LogLevel slog.Level
@@ -709,7 +709,7 @@ func (c *Client) exportMetrics(ctx context.Context, httpClient *httpClient) erro
 	return exp.Consume(ctx, func(data []byte) error {
 		var req colmetricspb.ExportMetricsServiceRequest
 		if err := protojson.Unmarshal(data, &req); err != nil {
-			return fmt.Errorf("unmarshal spans: %w", err)
+			return fmt.Errorf("unmarshal metrics: %w", err)
 		}
 		if err := enginetel.ReexportMetricsFromPB(ctx, c.EngineMetrics, &req); err != nil {
 			return fmt.Errorf("re-export metrics: %w", err)

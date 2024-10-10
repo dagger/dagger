@@ -46,8 +46,7 @@ func withEngine(
 		params.EngineLogs = telemetry.LogForwarder{
 			Processors: telemetry.LogProcessors,
 		}
-		// TODO: export to multiple places (i.e. cloud), just going right to frontend for now
-		params.EngineMetrics = Frontend.MetricExporter()
+		params.EngineMetrics = telemetry.MetricExporters
 
 		params.WithTerminal = withTerminal
 		params.Interactive = interactive

@@ -344,6 +344,13 @@ type PlainFrontendMetricExporter struct {
 func (fe PlainFrontendMetricExporter) Export(ctx context.Context, resourceMetrics *metricdata.ResourceMetrics) error {
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
+
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	fmt.Fprintf(os.Stderr, "LOOK: %+v\n", resourceMetrics)
+
 	return fe.db.MetricExporter().Export(ctx, resourceMetrics)
 }
 

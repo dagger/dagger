@@ -718,12 +718,10 @@ func (w *Worker) setupOTel(ctx context.Context, state *execState) error {
 		OTelTracesEndpointEnv+"="+otelEndpoint+"/v1/traces",
 		// Indicate that the /v1/trace endpoint accepts live telemetry.
 		OTelTracesLiveEnv+"=1",
-		// Dagger sets up a log exporter too. Explicitly set it so things can
-		// detect support for it.
+		// Dagger sets up log+metric exporters too. Explicitly set them
+		// so things can detect support for it.
 		OTelLogsProtocolEnv+"="+otelProto,
 		OTelLogsEndpointEnv+"="+otelEndpoint+"/v1/logs",
-		// Dagger doesn't set up metrics yet, but we should set this anyway,
-		// since otherwise some tools default to localhost.
 		OTelMetricsProtocolEnv+"="+otelProto,
 		OTelMetricsEndpointEnv+"="+otelEndpoint+"/v1/metrics",
 	)
