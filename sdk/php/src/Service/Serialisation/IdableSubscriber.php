@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Dagger\Service\Serialisation;
 
-use Dagger\Client\AbstractScalar;
 use Dagger\Client\IdAble;
 use JMS\Serializer\EventDispatcher\EventSubscriberInterface;
 use JMS\Serializer\EventDispatcher\PreDeserializeEvent;
@@ -23,14 +22,11 @@ final readonly class IdableSubscriber implements EventSubscriberInterface
             [
                 'event' => 'serializer.pre_serialize',
                 'method' => 'onPreSerialize',
-                'format' => 'json',
-                'priority' => 0,
+                'interface' => IdAble::class,
             ],
             [
                 'event' => 'serializer.pre_deserialize',
                 'method' => 'onPreDeserialize',
-                'format' => 'json',
-                'priority' => 0,
             ],
         ];
     }

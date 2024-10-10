@@ -25,17 +25,24 @@ final class FindsDaggerObjects
             (new BetterReflection())->astLocator()
         ));
 
-        $daggerObjects = array_filter(
+        $betterReflections =  array_filter(
             $reflector->reflectAllClasses(),
-            fn($class) => $this->isDaggerObject($class)
+            fn($o) => $this->isDaggerObject($o),
         );
 
-        return array_values(array_map(
-            fn($d) => ValueObject\DaggerObject::fromReflection(
-                new \ReflectionClass($d->getName())
-            ),
-            $daggerObjects
-        ));
+        $builtinReflections = array_map(
+            fn($r) => $r->isEnum() ?
+                new \ReflectionEnum($r->getName()) :
+                new \ReflectionClass($r->getName()),
+            $betterReflections
+        );
+
+        return array_map(
+            fn($d) => $d instanceof \ReflectionEnum ?
+                ValueObject\DaggerEnum::fromReflection($d) :
+                ValueObject\DaggerClass::fromReflection($d),
+            $builtinReflections
+        );
     }
 
     private function isDaggerObject(ReflectionClass $class): bool

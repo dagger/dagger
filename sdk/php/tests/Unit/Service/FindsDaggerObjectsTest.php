@@ -3,7 +3,11 @@
 namespace Dagger\Tests\Unit\Service;
 
 use Dagger\Service\FindsDaggerObjects;
+use Dagger\Tests\Unit\Fixture\DaggerObject\HandlingEnums;
 use Dagger\Tests\Unit\Fixture\DaggerObjectWithDaggerFunctions;
+use Dagger\Tests\Unit\Fixture\Enum\IntBackedDummy;
+use Dagger\Tests\Unit\Fixture\Enum\StringBackedDummy;
+use Dagger\Tests\Unit\Fixture\Enum\UnitDummy;
 use Dagger\Tests\Unit\Fixture\NoDaggerFunctions;
 use Dagger\ValueObject\DaggerObject;
 use Generator;
@@ -23,7 +27,7 @@ class FindsDaggerObjectsTest extends TestCase
     {
         $actual = (new FindsDaggerObjects())($dir);
 
-        self::assertEqualsCanonicalizing($expected, $actual);
+        self::assertEqualsCanonicalizing($expected, array_values($actual));
     }
 
     /** @return Generator<array{ 0: DaggerObject[], 1: string}> */
@@ -33,7 +37,10 @@ class FindsDaggerObjectsTest extends TestCase
             [
                 NoDaggerFunctions::getValueObjectEquivalent(),
                 DaggerObjectWithDaggerFunctions::getValueObjectEquivalent(),
-
+                HandlingEnums::getValueObjectEquivalent(),
+                StringBackedDummy::getValueObjectEquivalent(),
+                IntBackedDummy::getValueObjectEquivalent(),
+                UnitDummy::getValueObjectEquivalent(),
             ],
             __DIR__ . '/../Fixture',
         ];
