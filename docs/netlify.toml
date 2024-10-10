@@ -15,7 +15,9 @@
   status = 302
   force = true
 
-# start: specific redirects for v0.3 docs
+
+###### start: specific redirects for v0.13 docs ######
+
 [[redirects]]
   # redirect old FAQ index page
   from = "/162770/faq"
@@ -52,14 +54,13 @@
   to = "/"
   status = 301
 
+# redirect developer manual pages
 [[redirects]]
-  # redirect all developer manual pages
   from = "/manuals/developer/*"
   to = "/api"
   status = 301
 
 [[redirects]]
-  # redirect developer guide index
   from = "/developer-guide"
   to = "/api"
   status = 301
@@ -94,18 +95,23 @@
   to = "/configuration"
   status = 301
 
+# redirect integrations pages
 [[redirects]]
-  # redirect containerd pages
+  # redirect containerd page
   from = "/integrations/containerd"
   to = "/integrations/nerdctl"
   status = 301
 
 [[redirects]]
-  # redirect integrations pages
   from = "/integrations/:docid/:slug"
   to = "/integrations/:slug"
   status = 301
-# end: specific redirects for v0.3 docs
+
+###### end: specific redirects for v0.3 docs ######
+
+
+
+###### start: specific redirects for v0.1 docs ######
 
 [[redirects]]
   # redirect v0.1 docs to archive.docs.dagger.io/0.1/
@@ -113,7 +119,6 @@
   to = "https://archive.docs.dagger.io/0.1/:splat"
   status = 301
 
-# start: specific redirects for v0.1 docs
 [[redirects]]
   from = "/1001/install"
   to = "https://archive.docs.dagger.io/0.1/1001/install"
@@ -190,7 +195,11 @@
   from = "/v0.1/reference"
   to = "https://archive.docs.dagger.io/0.1/reference"
   status = 301
-# end: specific redirects for v0.1 docs
+
+###### end: specific redirects for v0.1 docs ######
+
+
+###### start: specific redirects for v0.2 docs ######
 
 [[redirects]]
   # redirect v0.2 docs to archive.docs.dagger.io/0.2/
@@ -198,7 +207,6 @@
   to = "https://archive.docs.dagger.io/0.2/:splat"
   status = 301
 
-# start: specific redirects for v0.2 docs
 [[redirects]]
   from = "/dgr18/overview"
   to = "https://archive.docs.dagger.io/0.2/dgr18/overview"
@@ -438,9 +446,14 @@
   from = "/1248/aws-sam"
   to = "https://archive.docs.dagger.io/0.2/1248/aws-sam"
   status = 301
-# end: specific redirects for v0.2 docs
 
-# redirect for v0.9 pages starting with /sdk/*
+###### end: specific redirects for v0.2 docs  ######
+
+
+
+
+###### start: specific redirects for v0.9 docs  ######
+
 [[redirects]]
   from = "/sdk/*"
   to = "https://archive.docs.dagger.io/0.9/sdk/:splat"
@@ -451,25 +464,21 @@
   to = "https://archive.docs.dagger.io/0.9/sdk/nodejs/:splat"
   status = 301
 
-# redirect for v0.9 pages starting with /cloud/*
 [[redirects]]
   from = "/cloud/*"
   to = "https://archive.docs.dagger.io/0.9/cloud/:splat"
   status = 301
 
-# redirect for v0.9 pages starting with /cli/*
 [[redirects]]
   from = "/cli/*"
   to = "https://archive.docs.dagger.io/0.9/cli/:splat"
   status = 301
 
-# redirect for v0.9 pages starting with /api/*
 [[redirects]]
   from = "/api/*"
   to = "https://archive.docs.dagger.io/0.9/api/:splat"
   status = 301
 
-# start: redirects for specific v0.9 pages
 [[redirects]]
   from = "/cookbook"
   to = "https://archive.docs.dagger.io/0.9/cookbook"
@@ -839,10 +848,14 @@
   from = "/quickstart/428201/custom-modules"
   to = "/quickstart/428201/custom-function"
   status = 301
-# end: redirects for specific v0.9 pages
+
+###### end: redirects for specific v0.9 pages ######
+
+
 
 # redirect to the playground's embed to maintain same origin
 # see https://github.com/dagger/dagger/pull/4753
+# used for 0.9 archive
 [[redirects]]
   from = "/embed/*"
   to = "https://play.dagger.cloud/embed/:splat"
