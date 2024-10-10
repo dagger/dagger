@@ -542,8 +542,10 @@ type Test struct {
 
 		go console.ExpectEOF()
 
+		t.Logf("ON FAILURE WAITING")
 		err = cmd.Wait()
 		require.Error(t, err)
+		t.Logf("ON FAILURE WAITED")
 
 		//  We try again with an invalid shell to confirm we replaced the default command
 		cmd = hostDaggerCommand(ctx, t, modDir, "--interactive", "--interactive-command", "/bin/noexist", "call", "ctr")
