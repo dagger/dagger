@@ -17,7 +17,7 @@ This is a simple way to accept module-wide configuration, or just to set a few a
 The default constructor for a module can be overridden by registering a custom constructor. Its parameters are available as flags in the `dagger call` command directly.
 
 :::important
-Dagger modules have only one constructor. Entrypoint function of [custom types](./custom-types.mdx) are not registered; they are constructed by the function that [chains](./index.mdx#chaining) them.
+Dagger modules have only one constructors. Constructors of [custom types](./custom-types.mdx) are not registered; they are constructed by the function that [chains](./index.mdx#chaining) them.
 :::
 
 Here is an example module with a custom constructor:
@@ -67,7 +67,7 @@ If you plan to use constructor fields in other module functions, ensure that the
 
 ## Default values for complex types
 
-Entrypoint functions can be passed both simple and complex types (such as `Container`, `Directory`, `Service` etc.) as arguments. Default values can be assigned in both cases.
+Constructors can be passed both simple and complex types (such as `Container`, `Directory`, `Service` etc.) as arguments. Default values can be assigned in both cases.
 
 Here is an example of a Dagger module with a default constructor argument of type `Container`:
 
