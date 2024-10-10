@@ -48,20 +48,6 @@ final readonly class Type
         return $class->implementsInterface(IdAble::class);
     }
 
-    public function getShortName(): string
-    {
-        if (!class_exists($this->name)) {
-            throw new RuntimeException(sprintf(
-                'cannot get short class name from type: %s',
-                $this->name,
-            ));
-        }
-
-        $class = new ReflectionClass($this->name);
-
-        return $class->getShortName();
-    }
-
     private function getTypeDefKind(string $nameOfType): TypeDefKind
     {
         switch ($nameOfType) {

@@ -73,13 +73,6 @@ class TypeTest extends TestCase
         self::assertEquals($expected, (new Type($type))->typeDefKind);
     }
 
-    #[Test]
-    #[DataProvider('provideShortNames')]
-    public function itGetsShortClassNames(string $expected, string $type): void
-    {
-        self::assertEquals($expected, (new Type($type))->getShortName());
-    }
-
     /** @return Generator<array{0:ReflectionType}> */
     public static function provideUnsupportedReflectionTypes(): Generator
     {
@@ -223,22 +216,6 @@ class TypeTest extends TestCase
             yield $scalar => [
                 Dagger\TypeDefKind::SCALAR_KIND,
                 $scalar,
-            ];
-        }
-    }
-
-    /** @return Generator<array{ 0: string, 1:class-string}> */
-    public static function provideShortNames(): Generator
-    {
-        $classes = array_merge(
-            self::provideIdAbleClasses(),
-            self::provideAbstractScalars(),
-        );
-
-        foreach ($classes as $class) {
-            yield $class => [
-                (new ReflectionClass($class))->getShortName(),
-                $class,
             ];
         }
     }
