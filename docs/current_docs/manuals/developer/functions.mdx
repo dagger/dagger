@@ -348,10 +348,14 @@ Default contexts are only available for arguments of type `Directory` and `File`
 
 The default context is resolved as follows:
 - If an absolute path is specified:
-   - in a Git repository (defined by the presence of a `.git` sub-directory), the default context is the root of the Git repository.
-   - in a non-repository location (defined by the absence of a `.git` sub-directory), the default context is the directory containing a `dagger.json` file.
+   - in a Git repository (defined by the presence of a `.git` sub-directory), resolution starts from the root of the Git repository.
+   - in a non-repository location (defined by the absence of a `.git` sub-directory), resolution starts from the directory containing a `dagger.json` file.
 - If a relative path is specified
-  - the default context is always the directory containing a `dagger.json` file.
+  - resolution always starts from the directory containing a `dagger.json` file.
+
+:::important
+For security reasons, it is not possible to retrieve files or directories outside the default context's root directory.
+:::
 
 The best way to understand this is with an example. Consider the following directory structure, representing a project with a Dagger module in `my-module`:
 
