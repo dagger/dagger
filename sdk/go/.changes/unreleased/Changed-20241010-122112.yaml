@@ -1,0 +1,9 @@
+kind: Changed
+body: |-
+  Deprecated unscoped enum values
+
+  Enum values should now be accessed with the name prefixed by the name of the enum type - for example, "Shared" becomes "CacheSharingModeLocked".
+time: 2024-10-10T12:21:12.088823248+01:00
+custom:
+  Author: jedevc
+  PR: "8669"

@@ -14,7 +14,7 @@ import (
 const errorTypeName = "error"
 
 var voidDef = Qual("dag", "TypeDef").Call().
-	Dot("WithKind").Call(Id("dagger").Dot("VoidKind")).
+	Dot("WithKind").Call(Id("dagger").Dot("TypeDefKindVoidKind")).
 	Dot("WithOptional").Call(Lit(true))
 
 func (ps *parseState) parseGoFunc(parentType *types.Named, fn *types.Func) (*funcTypeSpec, error) {
