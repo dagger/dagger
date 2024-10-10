@@ -99,6 +99,8 @@ message Module {
   // A human-readable ref which may be interpreted by an external system to
   // yield the same module.
   string ref = 3;
+  // The pinned version of the module.
+  string pin = 4;
 }
 
 // A named value passed to a GraphQL field or contained in an input object.

@@ -27,6 +27,7 @@ import (
 type moduleSourceArgs struct {
 	// avoiding name "ref" due to that being a reserved word in some SDKs (e.g. Rust)
 	RefString string
+	RefPin    string `default:""`
 
 	Stable bool `default:"false"`
 
@@ -41,9 +42,6 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 	parsed := parseRefString(ctx, bk, args.RefString)
-	if args.Stable && !parsed.hasVersion && parsed.kind == core.ModuleSourceKindGit {
-		return nil, fmt.Errorf("no version provided for stable remote ref: %s", args.RefString)
-	}
 
 	src := &core.ModuleSource{
 		Query: query,
@@ -102,10 +100,10 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 			subPath = parsed.repoRootSubdir
 		}
 
-		var commitRefSelector dagql.Selector
+		commitRef := args.RefPin
 		if parsed.hasVersion {
 			modVersion := parsed.modVersion
-			if parsed.hasVersion && isSemver(modVersion) {
+			if isSemver(modVersion) {
 				var tags dagql.Array[dagql.String]
 				err := s.dag.Select(ctx, s.dag.Root(), &tags,
 					dagql.Selector{
@@ -133,20 +131,27 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 				}
 				modVersion = matched
 			}
-			commitRefSelector = dagql.Selector{
-				Field: "commit",
-				Args: []dagql.NamedInput{
-					// reassign modVersion to matched tag which could be subPath/tag
-					{Name: "id", Value: dagql.String(modVersion)},
-				},
-			}
 			src.AsGitSource.Value.Version = modVersion
-		} else {
-			if args.Stable {
+			if commitRef == "" {
+				commitRef = modVersion
+			}
+		}
+
+		var commitRefSelector dagql.Selector
+		if commitRef == "" {
+			if args.Stable && !parsed.hasVersion {
 				return nil, fmt.Errorf("no version provided for stable remote ref: %s", args.RefString)
 			}
 			commitRefSelector = dagql.Selector{
 				Field: "head",
+			}
+		} else {
+			commitRefSelector = dagql.Selector{
+				Field: "commit",
+				Args: []dagql.NamedInput{
+					// reassign modVersion to matched tag which could be subPath/tag
+					{Name: "id", Value: dagql.String(commitRef)},
+				},
 			}
 		}
 
@@ -202,6 +207,23 @@ type parsedRefString struct {
 	repoRootSubdir string
 	scheme         core.SchemeType
 	sshusername    string
+}
+
+func (ref parsedRefString) String() string {
+	s := ref.modPath
+	if ref.scheme == core.SchemeSCPLike {
+		s = strings.Replace(s, "/", ":", 1)
+	}
+
+	if ref.sshusername != "" {
+		s = ref.sshusername + "@" + s
+	}
+	if ref.hasVersion {
+		s = s + "@" + ref.modVersion
+	}
+
+	s = ref.scheme.Prefix() + s
+	return s
 }
 
 // interface used for host interaction mocking
@@ -455,6 +477,7 @@ func (s *moduleSchema) moduleSourceDependencies(
 						Field: "moduleSource",
 						Args: []dagql.NamedInput{
 							{Name: "refString", Value: dagql.String(depCfg.Source)},
+							{Name: "refPin", Value: dagql.String(depCfg.Pin)},
 						},
 					},
 				)
@@ -661,6 +684,10 @@ func (s *moduleSchema) moduleSourceResolveDependency(
 		if err != nil {
 			return inst, fmt.Errorf("failed to get module source ref string: %w", err)
 		}
+		newPin, err := src.Pin()
+		if err != nil {
+			return inst, fmt.Errorf("failed to get module source pin: %w", err)
+		}
 
 		var newDepSrc dagql.Instance[*core.ModuleSource]
 		err = s.dag.Select(ctx, s.dag.Root(), &newDepSrc,
@@ -668,6 +695,7 @@ func (s *moduleSchema) moduleSourceResolveDependency(
 				Field: "moduleSource",
 				Args: []dagql.NamedInput{
 					{Name: "refString", Value: dagql.String(newDepRefStr)},
+					{Name: "refPin", Value: dagql.String(newPin)},
 					{Name: "stable", Value: dagql.Boolean(true)},
 				},
 			},
@@ -1133,9 +1161,14 @@ func (s *moduleSchema) collectCallerLocalDeps(
 				if err != nil {
 					return nil, fmt.Errorf("failed to get ref string for dependency: %w", err)
 				}
+				pin, err := dep.Self.Source.Self.Pin()
+				if err != nil {
+					return nil, fmt.Errorf("failed to get ref string for dependency: %w", err)
+				}
 				modCfg.Dependencies = append(modCfg.Dependencies, &modules.ModuleConfigDependency{
 					Name:   dep.Self.Name,
 					Source: refString,
+					Pin:    pin,
 				})
 			}
 		}
