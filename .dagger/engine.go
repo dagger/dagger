@@ -398,6 +398,17 @@ func (e *Engine) Scan(ctx context.Context) error {
 		WithMountedCache("/root/.cache/", dag.CacheVolume("trivy-cache")).
 		With(e.Dagger.withDockerCfg)
 
+	commonArgs := []string{
+		"--db-repository=public.ecr.aws/aquasecurity/trivy-db",
+		"--format=json",
+		"--exit-code=1",
+		"--severity=CRITICAL,HIGH",
+		"--show-suppressed",
+	}
+	if len(ignoreFileNames) > 0 {
+		commonArgs = append(commonArgs, "--ignorefile=/mnt/ignores/"+ignoreFileNames[0])
+	}
+
 	eg, ctx := errgroup.WithContext(ctx)
 
 	eg.Go(func() error {
@@ -405,16 +416,10 @@ func (e *Engine) Scan(ctx context.Context) error {
 		args := []string{
 			"trivy",
 			"fs",
-			"--format=json",
-			"--exit-code=1",
 			"--scanners=vuln",
 			"--vuln-type=library",
-			"--severity=CRITICAL,HIGH",
-			"--show-suppressed",
 		}
-		if len(ignoreFileNames) > 0 {
-			args = append(args, "--ignorefile=/mnt/ignores/"+ignoreFileNames[0])
-		}
+		args = append(args, commonArgs...)
 		args = append(args, "/mnt/src")
 
 		// HACK: filter out directories that present occasional issues
@@ -435,15 +440,9 @@ func (e *Engine) Scan(ctx context.Context) error {
 		args := []string{
 			"trivy",
 			"image",
-			"--format=json",
-			"--exit-code=1",
 			"--vuln-type=os,library",
-			"--severity=CRITICAL,HIGH",
-			"--show-suppressed",
 		}
-		if len(ignoreFileNames) > 0 {
-			args = append(args, "--ignorefile=/mnt/ignores/"+ignoreFileNames[0])
-		}
+		args = append(args, commonArgs...)
 		engineTarball := "/mnt/engine.tar"
 		args = append(args, "--input", engineTarball)
 
