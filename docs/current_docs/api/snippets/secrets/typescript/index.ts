@@ -8,11 +8,7 @@ class MyModule {
       .container()
       .from("alpine:latest")
       .withSecretVariable("MY_SECRET", token)
-      .withExec([
-        "sh",
-        "-c",
-        `echo this is the secret: $MY_SECRET`,
-      ])
+      .withExec(["sh", "-c", `echo this is the secret: $MY_SECRET`])
       .stdout()
   }
 }
