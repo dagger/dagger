@@ -759,6 +759,42 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (TypescriptSuite) TestCustomBaseImage(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work")
+
+	t.Run("should use custom base image if different than node or bun", func(ctx context.Context, t *testctx.T) {
+		modGen = modGen.
+			WithNewFile("package.json", `{
+			"dagger": {
+				"runtime": "iron/node:18-dev@sha256:72e7bf712edf4f137ca8e540d67f3b60ee73a982dd1e14ba04d0dac066e0eaa8",
+			}
+		}`).
+			With(daggerExec("init", "--name=custom-base-image", "--sdk=typescript", "--source=."))
+
+		out, err := modGen.With(daggerCall("container-echo", "--string-arg", "hello", "stdout")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello\n", out)
+	})
+
+	t.Run("should use custom base image if different than node or bun", func(ctx context.Context, t *testctx.T) {
+		modGen = modGen.
+			WithNewFile("package.json", `{
+			"dagger": {
+				"runtime": "iron/node:latest",
+			}
+		}`).
+			With(daggerExec("init", "--name=custom-base-image", "--sdk=typescript", "--source=."))
+
+		out, err := modGen.With(daggerCall("container-echo", "--string-arg", "hello", "stdout")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello\n", out)
+	})
+}
+
 func (TypescriptSuite) TestPackageManagerDetection(ctx context.Context, t *testctx.T) {
 	t.Run("should default to yarn", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
