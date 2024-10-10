@@ -1315,7 +1315,7 @@ func (TypescriptSuite) TestNonExportedFunctionBackwardsCompatibility(ctx context
 			WithWorkdir("/work").
 			With(daggerExec("init", "--name=test", "--sdk=typescript")).
 			With(sdkSource("typescript", `
-import { field, object } from "@dagger.io/dagger"
+import { func, object } from "@dagger.io/dagger"
 
 @object()
 class Test {
