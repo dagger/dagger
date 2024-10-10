@@ -91,7 +91,6 @@ module.exports = {
             "api/packages",
             "api/module-dependencies",
             "api/error-handling",
-            "api/remote-repositories",
             "api/constructors",
             "api/documentation",
             "api/enumerations",
@@ -102,10 +101,12 @@ module.exports = {
         },
         {
           "type": "category",
-          "label": "Packaging and Publishing Custom Functions",
+          "label": "Working with Modules",
           "collapsible": true,
           "collapsed": true,
           "items": [
+            "api/module-structure",
+            "api/remote-modules",
             "api/publish",
           ]
         },
