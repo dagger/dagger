@@ -338,4 +338,19 @@ defmodule Dagger.ClientTest do
            [dumb-init] foobar: No such file or directory
            """
   end
+
+  test "iss 8601 - Dagger.Directory.with_directory/4 should not crash", %{dag: dag} do
+    dir =
+      dag
+      |> Client.directory()
+      |> Directory.with_new_directory("/abcd")
+
+    assert {:ok, entries} =
+             dag
+             |> Client.directory()
+             |> Directory.with_directory("/", dir)
+             |> Directory.entries()
+
+    assert entries == ["abcd"]
+  end
 end

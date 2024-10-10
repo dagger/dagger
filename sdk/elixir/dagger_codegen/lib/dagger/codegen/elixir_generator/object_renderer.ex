@@ -46,6 +46,17 @@ defmodule Dagger.Codegen.ElixirGenerator.ObjectRenderer do
     fun_name = Formatter.format_function_name(field.name)
     {optional_args, required_args} = Enum.split_with(field.args, &InputValue.is_optional?/1)
 
+    collision? = fn required_arg ->
+      Formatter.format_var_name(required_arg.name) == module_var
+    end
+
+    module_var =
+      if Enum.any?(required_args, collision?) do
+        module_var <> "_"
+      else
+        module_var
+      end
+
     [
       Renderer.render_deprecated(field),
       ?\n,

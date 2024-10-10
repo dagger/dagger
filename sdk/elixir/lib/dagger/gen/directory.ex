@@ -194,9 +194,9 @@ defmodule Dagger.Directory do
           {:exclude, [String.t()]},
           {:include, [String.t()]}
         ]) :: Dagger.Directory.t()
-  def with_directory(%__MODULE__{} = directory, path, directory, optional_args \\ []) do
+  def with_directory(%__MODULE__{} = directory_, path, directory, optional_args \\ []) do
     query_builder =
-      directory.query_builder
+      directory_.query_builder
       |> QB.select("withDirectory")
       |> QB.put_arg("path", path)
       |> QB.put_arg("directory", Dagger.ID.id!(directory))
@@ -205,7 +205,7 @@ defmodule Dagger.Directory do
 
     %Dagger.Directory{
       query_builder: query_builder,
-      client: directory.client
+      client: directory_.client
     }
   end
 
