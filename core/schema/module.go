@@ -81,6 +81,10 @@ func (s *moduleSchema) Install() {
 			Impure(`Updates internal engine state with the given value.`).
 			Doc(`Set the return value of the function call to the provided value.`).
 			ArgDoc("value", `JSON serialization of the return value.`),
+		dagql.Func("returnError", s.functionCallReturnError).
+			Impure(`Updates internal engine state with the given value.`).
+			Doc(`Return an error from the function.`).
+			ArgDoc("error", `The error to return.`),
 	}.Install(s.dag)
 
 	dagql.Fields[*core.ModuleSource]{
@@ -581,6 +585,14 @@ func (s *moduleSchema) functionCallReturnValue(ctx context.Context, fnCall *core
 ) (dagql.Nullable[core.Void], error) {
 	// TODO: error out if caller is not coming from a module
 	return dagql.Null[core.Void](), fnCall.ReturnValue(ctx, args.Value)
+}
+
+func (s *moduleSchema) functionCallReturnError(ctx context.Context, fnCall *core.FunctionCall, args struct {
+	Error dagql.ID[*core.Error]
+},
+) (dagql.Nullable[core.Void], error) {
+	// TODO: error out if caller is not coming from a module
+	return dagql.Null[core.Void](), fnCall.ReturnError(ctx, args.Error)
 }
 
 func (s *moduleSchema) moduleWithDescription(ctx context.Context, mod *core.Module, args struct {

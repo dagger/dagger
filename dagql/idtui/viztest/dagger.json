@@ -1,0 +1,6 @@
+{
+  "name": "viztest",
+  "sdk": "go",
+  "source": ".",
+  "engineVersion": "v0.13.3"
+}

@@ -20,6 +20,10 @@ func Encapsulated() trace.SpanStartOption {
 	return trace.WithAttributes(attribute.Bool(UIEncapsulatedAttr, true))
 }
 
+func Resume(ctx context.Context) trace.SpanStartOption {
+	return trace.WithLinks(trace.Link{SpanContext: trace.SpanContextFromContext(ctx)})
+}
+
 // Internal can be applied to a span to indicate that this span should not be
 // shown to the user by default.
 func Internal() trace.SpanStartOption {

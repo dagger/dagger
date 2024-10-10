@@ -319,7 +319,7 @@ func (c *Client) subscribeTelemetry(ctx context.Context) (rerr error) {
 }
 
 func (c *Client) startSession(ctx context.Context) (rerr error) {
-	ctx, sessionSpan := Tracer(ctx).Start(ctx, "starting session")
+	ctx, sessionSpan := Tracer(ctx).Start(ctx, "starting session", telemetry.Encapsulate())
 	defer telemetry.End(sessionSpan, func() error { return rerr })
 
 	clientMetadata := c.clientMetadata()
@@ -678,7 +678,7 @@ func (c *Client) exportLogs(ctx context.Context, httpClient *httpClient) error {
 		if err := protojson.Unmarshal(data, &req); err != nil {
 			return fmt.Errorf("unmarshal spans: %w", err)
 		}
-		if err := enginetel.ReexportLogsFromPB(ctx, c.EngineLogs, &req); err != nil {
+		if err := telemetry.ReexportLogsFromPB(ctx, c.EngineLogs, &req); err != nil {
 			return fmt.Errorf("re-export logs: %w", err)
 		}
 		return nil

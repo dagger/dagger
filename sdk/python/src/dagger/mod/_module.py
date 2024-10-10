@@ -213,7 +213,12 @@ class Module:
             else self._register
         )
 
-        result = await fn(mod_name)
+        try:
+            result = await fn(mod_name)
+        except FunctionError as e:
+            logger.exception("Error while executing function")
+            await self._fn_call.return_error(dag.error(str(e)))
+            raise SystemExit(2) from None
 
         try:
             output = json.dumps(result)
@@ -225,7 +230,7 @@ class Module:
             "output => %s",
             textwrap.shorten(repr(output), 144),
         )
-        await dag.current_function_call().return_value(dagger.JSON(output))
+        await self._fn_call.return_value(dagger.JSON(output))
 
     async def _register(self, mod_name: str) -> dagger.ModuleID:
         resolvers = self.get_resolvers(mod_name)

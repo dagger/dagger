@@ -18,6 +18,7 @@ import (
 	"github.com/moby/buildkit/util/network"
 	"github.com/moby/buildkit/worker"
 	"github.com/moby/buildkit/worker/base"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/semaphore"
 )
 
@@ -33,7 +34,8 @@ here). For simplicity, this Worker struct also implements that Executor interfac
 */
 type Worker struct {
 	*sharedWorkerState
-	execMD *ExecutionMetadata
+	causeCtx trace.SpanContext
+	execMD   *ExecutionMetadata
 }
 
 type sharedWorkerState struct {
@@ -123,7 +125,10 @@ func (w *Worker) ResolveOp(vtx solver.Vertex, s frontend.FrontendLLBBridge, sm *
 				return nil, err
 			}
 			if ok {
-				w = w.withExecMD(*execMD)
+				w = w.execWorker(
+					SpanContextFromDescription(vtx.Options().Description),
+					*execMD,
+				)
 			}
 			return ops.NewExecOp(
 				vtx,
@@ -142,8 +147,8 @@ func (w *Worker) ResolveOp(vtx solver.Vertex, s frontend.FrontendLLBBridge, sm *
 	return w.Worker.ResolveOp(vtx, s, sm)
 }
 
-func (w *Worker) withExecMD(execMD ExecutionMetadata) *Worker {
-	return &Worker{sharedWorkerState: w.sharedWorkerState, execMD: &execMD}
+func (w *Worker) execWorker(causeCtx trace.SpanContext, execMD ExecutionMetadata) *Worker {
+	return &Worker{sharedWorkerState: w.sharedWorkerState, causeCtx: causeCtx, execMD: &execMD}
 }
 
 /*

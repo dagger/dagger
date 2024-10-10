@@ -51,12 +51,15 @@ const (
 	// Indicates that this span was a cache hit and did nothing.
 	CachedAttr = "dagger.io/dag.cached"
 
+	// A list of completed effect IDs.
+	//
+	// This is primarily used for cached ops - since we don't see a span for a
+	// cached op's inputs, we'll just say they completed by listing all of them
+	// in this attribute.
+	EffectsCompletedAttr = "dagger.io/effects.completed"
+
 	// Indicates that this span was interrupted.
 	CanceledAttr = "dagger.io/dag.canceled"
-
-	// The base64-encoded, protobuf-marshalled Buildkit LLB op payload that this
-	// span represents.
-	LLBOpAttr = "dagger.io/llb.op"
 
 	// The IDs of effects which will be correlated to this span.
 	//

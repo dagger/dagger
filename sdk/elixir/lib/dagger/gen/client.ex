@@ -149,6 +149,18 @@ defmodule Dagger.Client do
     }
   end
 
+  @doc "Create a new error."
+  @spec error(t(), String.t()) :: Dagger.Error.t()
+  def error(%__MODULE__{} = client, message) do
+    query_builder =
+      client.query_builder |> QB.select("error") |> QB.put_arg("message", message)
+
+    %Dagger.Error{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
   @doc "Creates a function."
   @spec function(t(), String.t(), Dagger.TypeDef.t()) :: Dagger.Function.t()
   def function(%__MODULE__{} = client, name, return_type) do
@@ -364,6 +376,18 @@ defmodule Dagger.Client do
       client.query_builder |> QB.select("loadEnvVariableFromID") |> QB.put_arg("id", id)
 
     %Dagger.EnvVariable{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
+  @doc "Load a Error from its ID."
+  @spec load_error_from_id(t(), Dagger.ErrorID.t()) :: Dagger.Error.t()
+  def load_error_from_id(%__MODULE__{} = client, id) do
+    query_builder =
+      client.query_builder |> QB.select("loadErrorFromID") |> QB.put_arg("id", id)
+
+    %Dagger.Error{
       query_builder: query_builder,
       client: client.client
     }
