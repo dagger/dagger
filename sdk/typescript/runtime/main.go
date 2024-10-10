@@ -58,7 +58,10 @@ func New(
 }
 
 type moduleConfig struct {
-	runtime        SupportedTSRuntime
+	runtime SupportedTSRuntime
+
+	// Custom base image
+	image          string
 	runtimeVersion string
 
 	packageManager        SupportedPackageManager
@@ -244,6 +247,7 @@ func (t *TypescriptSdk) Base() (*dagger.Container, error) {
 
 	runtime := t.moduleConfig.runtime
 	version := t.moduleConfig.runtimeVersion
+	image := t.moduleConfig.image
 
 	switch runtime {
 	case Bun:
@@ -259,7 +263,9 @@ func (t *TypescriptSdk) Base() (*dagger.Container, error) {
 				Sharing: dagger.Private,
 			}), nil
 	case Node:
-		if version != "" {
+		if image != "" {
+			ctr.From(image)
+		} else if version != "" {
 			ctr = ctr.From(fmt.Sprintf("%s:%s-alpine", Node, version))
 		} else {
 			ctr = ctr.From(nodeImageRef)
@@ -384,12 +390,12 @@ func (t *TypescriptSdk) generateClient(ctr *dagger.Container, introspectionJSON 
 // If none of the above is present, node will be used.
 //
 // If the runtime is detected and pinned to a specific version, it will also return the pinned version.
-func (t *TypescriptSdk) detectRuntime(ctx context.Context) (SupportedTSRuntime, string, error) {
+func (t *TypescriptSdk) detectRuntime(ctx context.Context) error {
 	// If we find a package.json, we check if the runtime is specified in `dagger.runtime` field.
 	if t.moduleConfig.hasFile("package.json") {
 		json, err := t.moduleConfig.source.File("package.json").Contents(ctx)
 		if err != nil {
-			return "", "", fmt.Errorf("failed to read package.json: %w", err)
+			return fmt.Errorf("failed to read package.json: %w", err)
 		}
 
 		value := gjson.Get(json, "dagger.runtime").String()
@@ -400,26 +406,34 @@ func (t *TypescriptSdk) detectRuntime(ctx context.Context) (SupportedTSRuntime, 
 
 			switch runtime := SupportedTSRuntime(runtime); runtime {
 			case Bun, Node:
-				return runtime, version, nil
+				t.moduleConfig.runtime = runtime
+				t.moduleConfig.runtimeVersion = version
+
+				return nil
+			// Custom base image different from node or bun
 			default:
-				return "", "", fmt.Errorf("detected unknown runtime: %s", runtime)
+				t.moduleConfig.runtime = Node
+				t.moduleConfig.image = value
 			}
 		}
 	}
 
 	// Try to detect runtime from lock files
 	if t.moduleConfig.hasFile("bun.lockb") {
-		return Bun, "", nil
+		t.moduleConfig.runtime = Bun
+
+		return nil
 	}
 
 	if t.moduleConfig.hasFile("package-lock.json") ||
 		t.moduleConfig.hasFile("yarn.lock") ||
 		t.moduleConfig.hasFile("pnpm-lock.yaml") {
-		return Node, "", nil
+		t.moduleConfig.runtime = Node
+
+		return nil
 	}
 
-	// Default to node
-	return Node, "", nil
+	return nil
 }
 
 // detectPackageManager detects the package manager from the user's module.
@@ -563,6 +577,7 @@ func (t *TypescriptSdk) analyzeModuleConfig(ctx context.Context, modSource *dagg
 	if t.moduleConfig == nil {
 		t.moduleConfig = &moduleConfig{
 			entries: make(map[string]bool),
+			runtime: Node,
 		}
 	}
 
@@ -588,8 +603,7 @@ func (t *TypescriptSdk) analyzeModuleConfig(ctx context.Context, modSource *dagg
 		}
 	}
 
-	t.moduleConfig.runtime, t.moduleConfig.runtimeVersion, err = t.detectRuntime(ctx)
-	if err != nil {
+	if err := t.detectRuntime(ctx); err != nil {
 		return fmt.Errorf("failed to detect module runtime: %w", err)
 	}
 
