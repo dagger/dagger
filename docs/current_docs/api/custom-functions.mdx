@@ -6,7 +6,7 @@ import TabItem from '@theme/TabItem';
 
 # Custom Functions
 
-In addition to providing a set of core functions and types, the Dagger API can also be extended with custom Dagger Functions and custom types. These custom Dagger Functions are just regular code, written in your usual language using a type-safe Dagger SDK, and packaged and shared in Dagger [modules](../features/reusable-modules.mdx).
+In addition to providing a set of core functions and types, the Dagger API can also be extended with custom Dagger Functions and custom types. These custom Dagger Functions are just regular code, written in your usual language using a type-safe Dagger SDK, and packaged and shared in Dagger [modules](../features/modules.mdx).
 
 When a Dagger module is loaded into a Dagger session, the Dagger API is [dynamically extended](./internals.mdx#api-extension-with-dagger-functions) with new functions served by that module. So, after loading a Dagger module, an API client can now call all of the original core functions plus the new functions provided by that module.
 
@@ -210,7 +210,7 @@ The process your code executes in will currently be with the `root` user, but wi
 
 The current working directory of your code will be an initially empty directory. You can write and read files and directories in this directory if needed. This includes using the `Container.export()`, `Directory.export()` or `File.export()` APIs to write those artifacts to this local directory if needed.
 
-## Understand module structure
+## Deep dive: Module internals
 
 ### Module layout
 
@@ -484,7 +484,7 @@ Dagger modules written for use with the Go SDK are automatically created as [Go 
 
 After using new dependencies in your code, update your `go.mod`/`go.sum` with the newly imported dependencies by using [`go mod tidy`](https://go.dev/ref/mod#go-mod-tidy).
 
-### Go workspaces
+#### Go workspaces
 
 Since it's common to have a sub-directory inside your main project containing your Dagger module code, you can manage your modules using [Go workspaces](https://go.dev/ref/mod#workspaces).
 
@@ -499,7 +499,7 @@ use (
 )
 ```
 
-### Go vendor
+#### Go vendor
 
 [Go vendor](https://go.dev/ref/mod#go-mod-vendor) directories are not currently supported. See [https://github.com/dagger/dagger/issues/6076](https://github.com/dagger/dagger/issues/6076) for more information.
 
