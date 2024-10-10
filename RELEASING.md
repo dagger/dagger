@@ -426,13 +426,7 @@ workflow](https://github.com/dagger/dagger/actions/workflows/sdk-go-publish.yml)
 which publishes to [🐙
 github.com/dagger/dagger-go-sdk](https://github.com/dagger/dagger-go-sdk/tags).
 
-The release notes should be automatically uploaded as a draft to the
-[Dagger releases](https://github.com/dagger/dagger/releases) page. Navigate to
-the draft release, then:
-
-- [ ] Check that release notes look good in `Preview`
-- [ ] ⚠️ De-select **Set as the latest release** (only used for 🚙 Engine + 🚗 CLI releases)
-- [ ] Click on **Publish release**
+The release notes should be automatically uploaded to the [Dagger releases](https://github.com/dagger/dagger/releases) page.
 
 Finally:
 
@@ -488,14 +482,7 @@ This will trigger the [`Publish Python SDK`
 workflow](https://github.com/dagger/dagger/actions/workflows/sdk-python-publish.yml)
 which publishes [dagger-io to 🐍 PyPI](https://pypi.org/project/dagger-io)
 
-The release notes should be automatically uploaded as a draft to the
-[Dagger releases](https://github.com/dagger/dagger/releases) page. Navigate to
-the draft release, then:
-
-- [ ] ⚠️ De-select **Set as the latest release** (only used for 🚙 Engine + 🚗 CLI releases)
-- [ ] Check that release notes look good in `Preview`. FWIW:
-      https://readthedocs.org/projects/dagger-io/builds/
-- [ ] Click on **Publish release**
+The release notes should be automatically uploaded to the [Dagger releases](https://github.com/dagger/dagger/releases) page.
 
 ## ⬢ TypeScript SDK ⏱ `5mins`
 
@@ -509,15 +496,9 @@ git push "$DAGGER_REPO_REMOTE" sdk/typescript/$TYPESCRIPT_SDK_VERSION
 
 This will trigger the [`Publish TypeScript SDK`
 workflow](https://github.com/dagger/dagger/actions/workflows/sdk-typescript-publish.yml)
-which publishes a new version to [⬢ npmjs.com/package/@dagger.io/dagger](https://www.npmjs.com/package/@dagger.io/dagger)
+which publishes a new version to [⬢ npmjs.com/package/@dagger.io/dagger](https://www.npmjs.com/package/@dagger.io/dagger).
 
-The release notes should be automatically uploaded as a draft to the
-[Dagger releases](https://github.com/dagger/dagger/releases) page. Navigate to
-the draft release, then:
-
-- [ ] Check that release notes look good in `Preview`
-- [ ] ⚠️ De-select **Set as the latest release** (only used for 🚙 Engine + 🚗 CLI releases)
-- [ ] Click on **Publish release**
+The release notes should be automatically uploaded to the [Dagger releases](https://github.com/dagger/dagger/releases) page.
 
 ## 🧪 Elixir SDK ⏱ `5mins`
 
@@ -531,15 +512,9 @@ git push "$DAGGER_REPO_REMOTE" sdk/elixir/$ELIXIR_SDK_VERSION
 
 This will trigger the [`Publish Elixir SDK`
 workflow](https://github.com/dagger/dagger/actions/workflows/sdk-elixir-publish.yml)
-which publishes a new version to [🧪 hex.pm/packages/dagger](https://hex.pm/packages/dagger)
+which publishes a new version to [🧪 hex.pm/packages/dagger](https://hex.pm/packages/dagger).
 
-The release notes should be automatically uploaded as a draft to the
-[Dagger releases](https://github.com/dagger/dagger/releases) page. Navigate to
-the draft release, then:
-
-- [ ] Check that release notes look good in `Preview`
-- [ ] ⚠️ De-select **Set as the latest release** (only used for 🚙 Engine + 🚗 CLI releases)
-- [ ] Click on **Publish release**
+The release notes should be automatically uploaded to the [Dagger releases](https://github.com/dagger/dagger/releases) page.
 
 ## 🐘 PHP SDK ⏱ `5mins`
 
@@ -556,13 +531,7 @@ workflow](https://github.com/dagger/dagger/actions/workflows/sdk-php-publish.yml
 which publishes to
 [github.com/dagger/dagger-php-sdk](https://github.com/dagger/dagger-php-sdk/tags).
 
-The release notes should be automatically uploaded as a draft to the
-[Dagger releases](https://github.com/dagger/dagger/releases) page. Navigate to
-the draft release, then:
-
-- [ ] Check that release notes look good in `Preview`
-- [ ] ⚠️ De-select **Set as the latest release** (only used for 🚙 Engine + 🚗 CLI releases)
-- [ ] Click on **Publish release**
+The release notes should be automatically uploaded to the [Dagger releases](https://github.com/dagger/dagger/releases) page.
 
 ## ☸️ Helm chart ⏱ `2mins`
 
