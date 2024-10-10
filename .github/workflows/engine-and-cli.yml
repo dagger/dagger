@@ -22,7 +22,7 @@ concurrency:
 
 jobs:
   lint:
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-4-16c' || 'ubuntu-latest' }}"
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-4-16c-od' || 'ubuntu-latest' }}"
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -62,7 +62,7 @@ jobs:
           upload-logs: true
 
   test-publish:
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-4-16c' || 'ubuntu-latest' }}"
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-4-16c-od' || 'ubuntu-latest' }}"
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
