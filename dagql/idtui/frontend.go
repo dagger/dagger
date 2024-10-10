@@ -15,6 +15,7 @@ import (
 	"github.com/opencontainers/go-digest"
 	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/term"
@@ -68,9 +69,10 @@ type Frontend interface {
 	// beneath the primary span.
 	SetRevealAllSpans(bool)
 
-	// Can consume otel spans and logs.
+	// Can consume otel spans, logs and metrics.
 	SpanExporter() sdktrace.SpanExporter
 	LogExporter() sdklog.Exporter
+	MetricExporter() sdkmetric.Exporter
 
 	// ConnectedToEngine is called when the CLI connects to an engine.
 	ConnectedToEngine(ctx context.Context, name string, version string, clientID string)
@@ -249,6 +251,7 @@ func (r renderer) renderCall(
 
 	if span != nil {
 		r.renderDuration(out, span)
+		r.renderMetrics(out, span)
 	}
 
 	return nil
@@ -279,6 +282,7 @@ func (r renderer) renderSpan(
 		// TODO: when a span has child spans that have progress, do 2-d progress
 		// fe.renderVertexTasks(out, span, depth)
 		r.renderDuration(out, span)
+		r.renderMetrics(out, span)
 	}
 
 	return nil
@@ -369,6 +373,27 @@ func (r renderer) renderDuration(out *termenv.Output, span *dagui.Span) {
 	fmt.Fprint(out, duration)
 }
 
+func (r renderer) renderMetrics(out *termenv.Output, span *dagui.Span) {
+	if span.MetricsByName == nil {
+		return
+	}
+
+	if dataPoints := span.MetricsByName[telemetry.IOStatDiskReadBytes]; len(dataPoints) > 0 {
+		fmt.Fprint(out, " | ")
+		lastPoint := dataPoints[len(dataPoints)-1]
+		displayMetric := out.String(fmt.Sprintf("Disk Read Bytes: %d", lastPoint.Value))
+		displayMetric = displayMetric.Foreground(termenv.ANSIGreen)
+		fmt.Fprint(out, displayMetric)
+	}
+	if dataPoints := span.MetricsByName[telemetry.IOStatDiskWriteBytes]; len(dataPoints) > 0 {
+		fmt.Fprint(out, " | ")
+		lastPoint := dataPoints[len(dataPoints)-1]
+		displayMetric := out.String(fmt.Sprintf("Disk Write Bytes: %d", lastPoint.Value))
+		displayMetric = displayMetric.Foreground(termenv.ANSIGreen)
+		fmt.Fprint(out, displayMetric)
+	}
+}
+
 // var (
 // 	progChars = []string{"⠀", "⡀", "⣀", "⣄", "⣤", "⣦", "⣶", "⣷", "⣿"}
 // )
@@ -417,14 +442,17 @@ func renderPrimaryOutput(db *dagui.DB) error {
 
 	for _, l := range logs {
 		data := l.Body().AsString()
+
 		var stream int
 		l.WalkAttributes(func(attr log.KeyValue) bool {
 			if attr.Key == telemetry.StdioStreamAttr {
 				stream = int(attr.Value.AsInt64())
 				return false
 			}
+
 			return true
 		})
+
 		switch stream {
 		case 1: // stdout
 			if _, err := fmt.Fprint(os.Stdout, data); err != nil {
