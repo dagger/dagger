@@ -139,6 +139,8 @@ You can also pass a directory argument from the command-line. To do so, add the 
 
 ### Local directories
 
+Dagger Functions do not have access to the filesystem of the host you invoke the Dagger Function from (i.e. the host you execute a CLI command like `dagger call` from). Instead, host directories need to be explicitly passed as arguments to Dagger Functions.
+
 Here's an example of a Dagger Function that accepts a `Directory` as argument. The Dagger Function returns a tree representation of the files and directories at that path.
 
 <Tabs groupId="language">
