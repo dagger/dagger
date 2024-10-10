@@ -73,7 +73,7 @@ require (
 	github.com/tonistiigi/fsutil v0.0.0-20240424095704-91a3fc46842c
 	github.com/urfave/cli v1.22.15
 	github.com/vektah/gqlparser/v2 v2.5.16
-	github.com/vito/midterm v0.2.1-0.20240905015444-dcd33c7e1ab1
+	github.com/vito/midterm v0.2.1-0.20241010185339-8a89bc9f6c26
 	github.com/zeebo/xxh3 v1.0.2
 	go.etcd.io/bbolt v1.3.11
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.52.0
@@ -269,6 +269,13 @@ require (
 require (
 	dagger.io/dagger v0.13.3
 	github.com/dagger/dagger/engine/distconsts v0.13.3
+)
+
+require (
+	github.com/danielgatis/go-ansicode v1.0.6 // indirect
+	github.com/danielgatis/go-iterator v0.0.1 // indirect
+	github.com/danielgatis/go-utf8 v1.0.0 // indirect
+	github.com/danielgatis/go-vte v1.0.8 // indirect
 )
 
 replace (
