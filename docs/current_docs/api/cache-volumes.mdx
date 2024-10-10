@@ -8,7 +8,7 @@ import TabItem from '@theme/TabItem';
 
 Volume caching involves caching specific parts of the filesystem and reusing them on subsequent function calls if they are unchanged. This is especially useful when dealing with package managers such as `npm`, `maven`, `pip` and similar. Since these dependencies are usually locked to specific versions in the application's manifest, re-downloading them on every session is inefficient and time-consuming. By using a cache volume for these dependencies, Dagger can reuse the cached contents across Dagger Function runs and reduce execution time.
 
-Here's an example, which creates two cache volumes for Node.js dependencies:
+Here's an example:
 
 <Tabs groupId="language">
 <TabItem value="Dagger CLI">
@@ -18,7 +18,6 @@ dagger core container \
   from --address=node:21 \
   with-directory --path=/src --directory=https://github.com/dagger/hello-dagger \
   with-workdir --path=/src \
-  with-mounted-cache --path=/src/node_modules --cache=node-21-myapp-myenv \
   with-mounted-cache --path=/root/.npm --cache=node-21 \
   with-exec --args="npm","install"
 ```
