@@ -1325,10 +1325,10 @@ class Test {
 	}
 }			
 `,
-	))
+			))
 
-	out, err := modGen.With(daggerQuery(`{test{foo}}`)).Stdout(ctx)
-	require.NoError(t, err)
-	require.JSONEq(t, `{"test": {"foo": "bar"}}`, out)
+		out, err := modGen.With(daggerQuery(`{test{foo}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"test": {"foo": "bar"}}`, out)
 	})
 }
