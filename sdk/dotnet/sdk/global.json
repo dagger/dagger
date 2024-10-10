@@ -1,0 +1,5 @@
+﻿{
+  "msbuild-sdks": {
+    "MSTest.Sdk": "3.4.0"
+  }
+}
