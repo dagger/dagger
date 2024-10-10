@@ -943,7 +943,7 @@ func (ModuleSuite) TestUseLocal(ctx context.Context, t *testctx.T) {
 				With(daggerExec("init", "--name=dep", "--sdk=go")).
 				With(sdkSource("go", useInner)).
 				WithWorkdir("/work").
-				With(daggerExec("init", "--name=use", "--sdk="+tc.sdk)).
+				With(daggerExec("init", "--name=use", "--sdk="+tc.sdk, "--source=.")).
 				With(sdkSource(tc.sdk, tc.source)).
 				With(daggerExec("install", "./dep"))
 
@@ -998,7 +998,7 @@ func (ModuleSuite) TestCodegenOnDepChange(ctx context.Context, t *testctx.T) {
 				With(daggerExec("init", "--name=dep", "--sdk=go")).
 				With(sdkSource("go", useInner)).
 				WithWorkdir("/work").
-				With(daggerExec("init", "--name=use", "--sdk="+tc.sdk)).
+				With(daggerExec("init", "--name=use", "--sdk="+tc.sdk, "--source=.")).
 				With(sdkSource(tc.sdk, tc.source)).
 				With(daggerExec("install", "./dep"))
 
@@ -1059,7 +1059,7 @@ func (ModuleSuite) TestSyncDeps(ctx context.Context, t *testctx.T) {
 				With(daggerExec("init", "--name=dep", "--sdk=go")).
 				With(sdkSource("go", useInner)).
 				WithWorkdir("/work").
-				With(daggerExec("init", "--name=use", "--sdk="+tc.sdk)).
+				With(daggerExec("init", "--name=use", "--sdk="+tc.sdk, "--source=.")).
 				With(sdkSource(tc.sdk, tc.source)).
 				With(daggerExec("install", "./dep"))
 
@@ -1164,7 +1164,7 @@ class Use {
 				).
 				With(daggerExec("init", "--source=.", "--name=bar", "--sdk=go")).
 				WithWorkdir("/work").
-				With(daggerExec("init", "--name=use", "--sdk="+tc.sdk)).
+				With(daggerExec("init", "--name=use", "--sdk="+tc.sdk, "--source=.")).
 				With(daggerExec("install", "./foo")).
 				With(daggerExec("install", "./bar")).
 				With(sdkSource(tc.sdk, tc.source)).
@@ -1811,7 +1811,7 @@ class PotatoSack {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(sdkSource("typescript", mainSrc)).
-			With(daggerExec("init", "--name=potatoSack", "--sdk=typescript"))
+			With(daggerExec("init", "--name=potatoSack", "--sdk=typescript", "--source=."))
 
 		var eg errgroup.Group
 		for i := 0; i < funcCount; i++ {
@@ -3630,7 +3630,7 @@ func (m *Dep) DepFn(s *dagger.Secret) string {
 }
 `)).
 		WithWorkdir("/work").
-		With(daggerExec("init", "--name=test", "--sdk=go")).
+		With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
 		With(sdkSource("go", `package main
 
 import (
