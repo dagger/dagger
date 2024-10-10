@@ -1,5 +1,5 @@
 ---
-slug: /manual/troubleshooting
+slug: /troubleshooting
 ---
 
 # Troubleshooting
@@ -87,11 +87,11 @@ To resolve this error, you must remove the environment variable, disable Rosetta
     docker rm -fv $(docker ps --filter name="dagger-engine-*" -q) && docker rmi $(docker images -q --filter reference=registry.dagger.io/engine)
     ```
 
-## Other errors
+### Other errors
 
 To troubleshoot other Dagger Function errors, try the following techniques.
 
-## Rerun commands with `--interactive`
+#### Rerun commands with `--interactive`
 
 Run `dagger call` with the `--interactive` (`-i` for short) flag to open a terminal in the context of a pipeline failure. No changes are required to your Dagger Function code.
 
@@ -99,13 +99,13 @@ Run `dagger call` with the `--interactive` (`-i` for short) flag to open a termi
 Interactive mode defaults to executing `/bin/sh` when opening a terminal. Change the command to execute with the `--interactive-command` flag.
 :::
 
-### Rerun commands with `--debug`
+#### Rerun commands with `--debug`
 
 The Dagger CLI tries to keep its output concise by default. If you're running
 into issues and want to debug with more detailed output, you can run any `dagger`
 subcommand with the `--debug` flag to have it reveal all available information.
 
-### Access the Dagger Engine logs
+#### Access the Dagger Engine logs
 
 The Dagger Engine runs in a dedicated Docker container and emits log messages as it works. Here's how to access these logs:
 
