@@ -250,9 +250,8 @@ func githubRelease(ctx context.Context, opts githubReleaseOpts) error {
 		opts.tag,
 		dagger.GhReleaseCreateOpts{
 			VerifyTag: true,
-			Draft:     true,
 			NotesFile: opts.notes,
-			// Latest:    false,  // can't do this yet
+			Latest:    dagger.False,
 		},
 	)
 }
