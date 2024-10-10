@@ -30,10 +30,10 @@ If you do not have Homebrew installed, or you want to install a specific version
 
 ```shell
 cd /usr/local
-curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.13.4 sh
+curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.13.5 sh
 
 ./bin/dagger version
-dagger v0.13.4 (registry.dagger.io/engine:v0.13.4) darwin/arm64
+dagger v0.13.5 (registry.dagger.io/engine:v0.13.5) darwin/arm64
 ```
 [View source](https://github.com/dagger/dagger/blob/main/install.sh)
 
@@ -41,7 +41,7 @@ If your user account doesn't have sufficient privileges to install in `/usr/loca
 
 ```shell
 cd /usr/local
-curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.13.4 sudo -E sh
+curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.13.5 sudo -E sh
 ```
 
 </TabItem>
@@ -71,7 +71,7 @@ If you want to set a specific version or install path, you can run:
 curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.13.0 BIN_DIR=/usr/bin sudo -E sh
 
 /usr/bin/dagger version
-dagger v0.13.4 (registry.dagger.io/engine:v0.13.4) linux/amd64
+dagger v0.13.5 (registry.dagger.io/engine:v0.13.5) linux/amd64
 ```
 
 </TabItem>
@@ -98,7 +98,7 @@ To install a specific version of Dagger, specify the version with the `-DaggerVe
 
 ```powershell
 Invoke-WebRequest -UseBasicParsing -Uri https://dl.dagger.io/dagger/install.ps1 | Invoke-Expression;
-Install-Dagger -DaggerVersion 0.13.4
+Install-Dagger -DaggerVersion 0.13.5
 ```
 
 For an interactive installation process, include the `-Interactive` switch.
