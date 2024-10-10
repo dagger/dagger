@@ -5268,7 +5268,7 @@ func (m *Dep) Collect(MyEnum, MyInterface) error {
 				// enum
 				`\ntype DepMyEnum string // dep \(../../dep/main.go:16\)\n`,
 				// enum value
-				`\n\s*Myenuma DepMyEnum = "MyEnumA" // dep \(../../dep/main.go:18\)\n`,
+				`\n\s*DepMyEnumMyEnumA DepMyEnum = "MyEnumA" // dep \(../../dep/main.go:18\)\n`,
 
 				// interface
 				`\ntype DepMyInterface struct { // dep \(../../dep/main.go:22\)\n`,
