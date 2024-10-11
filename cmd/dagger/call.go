@@ -79,9 +79,6 @@ available functions.
 					return err
 				}
 				nextType := nextFunc.ReturnType
-				if nextType.AsList != nil {
-					nextType = nextType.AsList.ElementTypeDef
-				}
 				if nextType.AsFunctionProvider() != nil {
 					// sipsma explains why 'nextType.AsObject' is not enough:
 					// > when we're returning the hierarchies of TypeDefs from the API,
@@ -107,7 +104,7 @@ available functions.
 			skipped := make([]string, 0)
 			for _, fn := range fns {
 				if fn.IsUnsupported() {
-					skipped = append(skipped, cliName(fn.Name))
+					skipped = append(skipped, fn.CmdName())
 					continue
 				}
 				desc := strings.SplitN(fn.Description, "\n", 2)[0]
