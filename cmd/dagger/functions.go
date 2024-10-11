@@ -477,10 +477,6 @@ func (fc *FuncCommand) addSubCommands(ctx context.Context, cmd *cobra.Command, t
 	fc.mod.LoadTypeDef(typeDef)
 
 	fnProvider := typeDef.AsFunctionProvider()
-	if fnProvider == nil && typeDef.AsList != nil {
-		fnProvider = typeDef.AsList.ElementTypeDef.AsFunctionProvider()
-	}
-
 	if fnProvider == nil {
 		return
 	}
@@ -491,7 +487,7 @@ func (fc *FuncCommand) addSubCommands(ctx context.Context, cmd *cobra.Command, t
 
 	for _, fn := range fnProvider.GetFunctions() {
 		if fn.IsUnsupported() {
-			skipped = append(skipped, cliName(fn.Name))
+			skipped = append(skipped, fn.CmdName())
 			continue
 		}
 		subCmd := fc.makeSubCmd(ctx, fn)
@@ -541,99 +537,64 @@ func (fc *FuncCommand) selectFunc(fn *modFunction, cmd *cobra.Command) error {
 
 	fc.q = fc.q.Select(fn.Name)
 
-	for _, arg := range fn.SupportedArgs() {
-		var val any
-
-		flag := cmd.Flags().Lookup(arg.FlagName())
-		if flag == nil {
-			return fmt.Errorf("no flag for %q", arg.FlagName())
-		}
-
-		// Don't send optional arguments that weren't set.
-		if arg.TypeDef.Optional && !flag.Changed {
-			continue
-		}
-
-		val = flag.Value
-
-		switch v := val.(type) {
-		case DaggerValue:
-			obj, err := v.Get(fc.ctx, dag, fc.mod.Source, arg)
-			if err != nil {
-				return fmt.Errorf("failed to get value for argument %q: %w", arg.FlagName(), err)
-			}
-			if obj == nil {
-				return fmt.Errorf("no value for argument: %s", arg.FlagName())
-			}
-			val = obj
-		case pflag.SliceValue:
-			val = v.GetSlice()
-		}
-
-		fc.q = fc.q.Arg(arg.Name, val)
-	}
-
-	return nil
+	return fn.WalkValues(fc.ctx, cmd.Flags(), fc.mod, dag, func(a *modFunctionArg, v any) {
+		fc.q = fc.q.Arg(a.Name, v)
+	})
 }
 
 // RunE is the final command in the function chain, where the API request is made.
 func (fc *FuncCommand) RunE(ctx context.Context, fn *modFunction) func(*cobra.Command, []string) error {
-	typeDef := fn.ReturnType
 	return func(cmd *cobra.Command, args []string) error {
-		t := typeDef
-		if t.AsList != nil {
-			t = t.AsList.ElementTypeDef
-		}
-
-		switch t.Kind {
-		case dagger.ObjectKind, dagger.InterfaceKind:
-			origSel := fc.q
-			obj := t.AsFunctionProvider()
-
-			if err := fc.SelectObjectLeaf(ctx, obj); err != nil {
-				return err
-			}
-
-			// If the selection didn't change, it means SelectObjectLeaf
-			// didn't handle it, probably because there's no scalars to select
-			// for printing. Rather than error, just return an empty
-			// response without making an API request. At minimum, the
-			// object's name will be returned.
-			if origSel == fc.q {
-				response := map[string]any{}
-				return fc.HandleResponse(cmd, typeDef, response)
-			}
+		q, err := handleObjectLeaf(ctx, fc.q, fn.ReturnType)
+		if err != nil {
+			return err
 		}
 
 		// Silence usage from this point on as errors don't likely come
 		// from wrong CLI usage.
 		fc.showUsage = false
 
-		var response any
-
-		if err := fc.Request(ctx, &response); err != nil {
-			return err
-		}
-
-		return fc.HandleResponse(cmd, typeDef, response)
+		return executeRequest(ctx, q, fn.ReturnType, cmd.OutOrStdout(), cmd.ErrOrStderr())
 	}
 }
 
-func (fc *FuncCommand) SelectObjectLeaf(ctx context.Context, obj functionProvider) error {
-	fc.selectedObject = obj
+func executeRequest(ctx context.Context, q *querybuilder.Selection, returnType *modTypeDef, o, e io.Writer) error {
+	// It's possible that a chain ending in an object doesn't have anything
+	// else to sub-select. In that case `q` will be nil to signal that we
+	// just want to return the object's name, without making an API request.
+	if q == nil {
+		return handleResponse(returnType, nil, o, e)
+	}
+
+	var response any
+
+	if err := makeRequest(ctx, q, &response); err != nil {
+		return err
+	}
+
+	return handleResponse(returnType, response, o, e)
+}
+
+func handleObjectLeaf(ctx context.Context, q *querybuilder.Selection, typeDef *modTypeDef) (*querybuilder.Selection, error) {
+	obj := typeDef.AsFunctionProvider()
+	if obj == nil {
+		return q, nil
+	}
+
 	typeName := obj.ProviderName()
+	origSel := q
 
 	// Convenience for sub-selecting `export` when `--output` is used
 	// on a core type that supports it.
 	// TODO: Replace with interface when possible.
-	switch typeName {
-	case Container, Directory, File:
-		if outputPath != "" {
-			fc.q = fc.q.Select("export").Arg("path", outputPath)
+	if outputPath != "" {
+		switch typeName {
+		case Container, Directory, File:
+			q = q.Select("export").Arg("path", outputPath)
 			if typeName == File {
-				fc.q = fc.q.Arg("allowParentDirPath", true)
+				q = q.Arg("allowParentDirPath", true)
 			}
-			return nil
+			return q, nil
 		}
 	}
 
@@ -644,11 +605,11 @@ func (fc *FuncCommand) SelectObjectLeaf(ctx context.Context, obj functionProvide
 		// from that response before continuing.
 		// TODO: Use an interface when possible.
 		var id string
-		fc.q = fc.q.Select("sync")
-		if err := fc.Request(ctx, &id); err != nil {
-			return err
+		q = q.Select("sync")
+		if err := makeRequest(ctx, q, &id); err != nil {
+			return nil, err
 		}
-		fc.q = fc.q.Root().Select(fmt.Sprintf("load%sFromID", typeName)).Arg("id", id)
+		q = q.Root().Select(fmt.Sprintf("load%sFromID", typeName)).Arg("id", id)
 	}
 
 	fns := GetLeafFunctions(obj)
@@ -657,18 +618,27 @@ func (fc *FuncCommand) SelectObjectLeaf(ctx context.Context, obj functionProvide
 		names = append(names, f.Name)
 	}
 	if len(names) > 0 {
-		fc.q = fc.q.SelectMultiple(names...)
+		q = q.SelectMultiple(names...)
 	}
 
-	return nil
+	// If the selection didn't change, it means selectObjectLeaf
+	// didn't handle it, probably because there's no scalars to select
+	// for printing. Rather than error, just return an empty
+	// response without making an API request. At minimum, the
+	// object's name will be returned.
+	if q == origSel {
+		return nil, nil
+	}
+
+	return q, nil
 }
 
-func (fc *FuncCommand) Request(ctx context.Context, response any) error {
-	query, _ := fc.q.Build(ctx)
+func makeRequest(ctx context.Context, q *querybuilder.Selection, response any) error {
+	query, _ := q.Build(ctx)
 
 	slog.Debug("executing query", "query", query)
 
-	q := fc.q.Bind(&response)
+	q = q.Bind(&response)
 
 	if err := q.Execute(ctx); err != nil {
 		return fmt.Errorf("response from query: %w", err)
@@ -677,20 +647,20 @@ func (fc *FuncCommand) Request(ctx context.Context, response any) error {
 	return nil
 }
 
-func (fc *FuncCommand) HandleResponse(cmd *cobra.Command, modType *modTypeDef, response any) error {
-	if modType.Kind == dagger.VoidKind {
+func handleResponse(returnType *modTypeDef, response any, o, e io.Writer) error {
+	if returnType.Kind == dagger.VoidKind {
 		return nil
 	}
 
 	// Handle the `export` convenience.
-	switch modType.Name() {
+	switch returnType.Name() {
 	case Container, Directory, File:
 		if outputPath != "" {
 			respPath, ok := response.(string)
 			if !ok {
 				return fmt.Errorf("unexpected response %T: %+v", response, response)
 			}
-			cmd.PrintErrf("Saved to %q.\n", respPath)
+			fmt.Fprint(e, "Saved to %q.\n", respPath)
 			return nil
 		}
 	}
@@ -698,8 +668,8 @@ func (fc *FuncCommand) HandleResponse(cmd *cobra.Command, modType *modTypeDef, r
 	var outputFormat string
 
 	// Command chain ended in an object.
-	if fc.selectedObject != nil {
-		typeName := fc.selectedObject.ProviderName()
+	if returnType.AsFunctionProvider() != nil {
+		typeName := returnType.AsFunctionProvider().ProviderName()
 
 		if typeName == "Query" {
 			typeName = "Client"
@@ -769,21 +739,12 @@ func (fc *FuncCommand) HandleResponse(cmd *cobra.Command, modType *modTypeDef, r
 			slog.Warn("Failed to get absolute path", "error", err)
 			path = outputPath
 		}
-		cmd.PrintErrf("Saved output to %q.\n", path)
+		fmt.Fprint(e, "Saved output to %q.\n", path)
 	}
 
-	writer := cmd.OutOrStdout()
-	buf.WriteTo(writer)
+	_, err := buf.WriteTo(o)
 
-	// TODO(vito) right now when stdoutIsTTY we'll be printing to a Progrock
-	// vertex, which currently adds its own linebreak (as well as all the
-	// other UI clutter), so there's no point doing this. consider adding
-	// back when we switch to printing "clean" output on exit.
-	// if stdoutIsTTY && !strings.HasSuffix(buf.String(), "\n") {
-	// 	fmt.Fprintln(writer, "⏎")
-	// }
-
-	return nil
+	return err
 }
 
 // addPayload merges a map into a response from getting an object's values.
