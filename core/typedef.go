@@ -376,7 +376,7 @@ func (typeDef *TypeDef) ToInput() dagql.Input {
 	case TypeDefKindScalar:
 		typed = dagql.NewScalar[dagql.String](typeDef.AsScalar.Value.Name, dagql.String(""))
 	case TypeDefKindEnum:
-		typed = dagql.NewScalar[dagql.String](typeDef.AsEnum.Value.Name, dagql.String(""))
+		typed = &dagql.EnumValueName{Enum: typeDef.AsEnum.Value.Name}
 	case TypeDefKindList:
 		typed = dagql.DynamicArrayInput{
 			Elem: typeDef.AsList.Value.ElementTypeDef.ToInput(),
