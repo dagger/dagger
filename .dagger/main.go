@@ -219,6 +219,11 @@ func (dev *DaggerDev) Helm() *Helm {
 	return &Helm{Dagger: dev, Source: dev.Source().Directory("helm/dagger")}
 }
 
+// Run Dagger release-related tasks
+func (dev *DaggerDev) Release() *Release {
+	return &Release{SDK: dev.SDK(), Helm: dev.Helm()}
+}
+
 // Creates a dev container that has a running CLI connected to a dagger engine
 func (dev *DaggerDev) Dev(
 	ctx context.Context,
