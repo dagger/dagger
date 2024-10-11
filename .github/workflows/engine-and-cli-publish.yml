@@ -126,6 +126,8 @@ jobs:
         shell: bash
       - name: "Install Docker"
         run: |
+          echo "Install colima..."
+          brew install colima
           echo "Install docker CLI..."
           brew install docker
           echo "Start Docker daemon via Colima..."
