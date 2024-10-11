@@ -280,20 +280,12 @@ export CHANGIE_ENGINE_VERSION="$ENGINE_VERSION"
 git checkout -b prep-$ENGINE_VERSION
 ```
 
-- [ ] Bump SDK versions to the target version
+- [ ] Bump SDK+Helm Chart versions to the target version
 
 ```console
-dagger call sdk all bump --version="$ENGINE_VERSION" -o ./
-git add sdk
-git commit -s -m "chore: bump sdk dependencies to $ENGINE_VERSION"
-```
-
-- [ ] Bump Helm version to the target version
-
-```console
-dagger call helm set-version --version="$ENGINE_VERSION" -o ./helm/dagger/Chart.yaml
-git add helm
-git commit -s -m "chore: bump helm dependency to $ENGINE_VERSION"
+dagger call release bump --version="$ENGINE_VERSION" -o ./
+git add sdk helm
+git commit -s -m "chore: bump sdk+helm dependencies to $ENGINE_VERSION"
 ```
 
 - [ ] Push and open the PR as a draft, and capture the PR number:
