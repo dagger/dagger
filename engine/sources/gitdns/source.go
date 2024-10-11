@@ -238,6 +238,7 @@ func (gs *gitSourceHandler) getAuthToken(ctx context.Context, g session.Group) e
 	if err != nil {
 		return err
 	}
+
 	return gs.sm.Any(ctx, g, func(ctx context.Context, _ string, caller session.Caller) error {
 		for _, s := range sec {
 			dt, err := secrets.GetSecret(ctx, caller, s.name)
@@ -247,10 +248,21 @@ func (gs *gitSourceHandler) getAuthToken(ctx context.Context, g session.Group) e
 				}
 				return err
 			}
-			if s.token {
-				dt = []byte("basic " + base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("x-access-token:%s", dt))))
+
+			if strings.Contains(gs.src.Remote, "bitbucket.org") {
+				// For Bitbucket Cloud Git operations, always use x-token-auth
+				// https://support.atlassian.com/bitbucket-cloud/docs/using-access-tokens/
+				gs.auth = []string{
+					"-c", fmt.Sprintf("credential.helper=!f() { echo \"username=x-token-auth\"; echo \"password=%s\"; }; f", string(dt)),
+					"-c", "credential.https://bitbucket.org.username=x-token-auth",
+					"-c", "credential.useHttpPath=true",
+				}
+			} else {
+				if s.token {
+					dt = []byte("basic " + base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("x-access-token:%s", dt))))
+				}
+				gs.auth = []string{"-c", "http." + tokenScope(gs.src.Remote) + ".extraheader=Authorization: " + string(dt)}
 			}
-			gs.auth = []string{"-c", "http." + tokenScope(gs.src.Remote) + ".extraheader=Authorization: " + string(dt)}
 			break
 		}
 		return nil
