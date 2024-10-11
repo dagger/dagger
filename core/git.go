@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/moby/buildkit/client/llb"
+	"github.com/moby/buildkit/util/bklog"
 	"github.com/pkg/errors"
 	"github.com/vektah/gqlparser/v2/ast"
 
@@ -58,6 +59,7 @@ func (*GitRef) TypeDescription() string {
 	return "A git ref (tag, branch, or commit)."
 }
 
+// // todo(guillaume):
 func (ref *GitRef) Authenticate(ctx context.Context, protocol string, host string, path string) (string, error) {
 	bk, err := ref.Query.Buildkit(ctx)
 	if err != nil {
@@ -66,12 +68,14 @@ func (ref *GitRef) Authenticate(ctx context.Context, protocol string, host strin
 
 	credentials, err := bk.GetCredential(ctx, protocol, host, path)
 	if err != nil {
-		return "", fmt.Errorf("failed to retrieve git credentials from host: %w", err)
+		return "", fmt.Errorf("core: failed to retrieve git credentials from host: %w", err)
 	}
 
 	if credentials == nil {
 		return "", fmt.Errorf("no credentials found")
 	}
+
+	bklog.G(ctx).Debugf("🔥 |%v|%+v|\n", credentials, path)
 
 	// Use the credentials to create an authentication string
 	// _ := fmt.Sprintf("%s:%s", credentials.Username, credentials.Password)

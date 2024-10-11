@@ -16,6 +16,7 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/sources/gitdns"
+	"github.com/moby/buildkit/util/bklog"
 	"github.com/moby/buildkit/util/gitutil"
 )
 
@@ -179,6 +180,58 @@ func (s *gitSchema) git(ctx context.Context, parent *core.Query, args gitArgs) (
 		discardGitDir = !*args.KeepGitDir
 	}
 
+	// infer protocol, host, path from ref
+	remote, err := gitutil.ParseURL(args.URL)
+	if errors.Is(err, gitutil.ErrUnknownProtocol) {
+		remote, err = gitutil.ParseURL("https://" + args.URL)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse Git URL: %w", err)
+	}
+
+	var authToken *core.Secret = nil
+	if remote.Scheme == "https" || remote.Scheme == "http" {
+		// Auth token retrieval
+		// todo(guillaume): MIGHT NEED ACCESSOR
+		bk, err := parent.Buildkit(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get buildkit: %w", err)
+		}
+
+		bklog.G(ctx).Debugf("🎃 remote: |%+v|\n", remote)
+
+		credentials, err := bk.GetCredential(ctx, remote.Scheme, remote.Host, remote.Path)
+		// credentials, err := bk.GetCredential(ctx, "https", "github.com", "dagger/dagger.io")
+		if err != nil {
+			return nil, fmt.Errorf("core/schema: failed to retrieve git credentials from host: %w", err)
+		}
+		bklog.G(ctx).Debugf("🎃🎃 credentials.Password |%v|%+v|\n", remote, credentials)
+
+		// todo(guillaume): scope accessor ressource ??
+
+		var secretAuthToken dagql.Instance[*core.Secret]
+		if err := s.srv.Select(ctx, s.srv.Root(), &secretAuthToken,
+			dagql.Selector{
+				Field: "setSecret",
+				Args: []dagql.NamedInput{
+					{
+						Name:  "name",
+						Value: dagql.NewString("gitAuthtoken"),
+					},
+					{
+						Name:  "plaintext",
+						Value: dagql.NewString(credentials.Password),
+					},
+				},
+			},
+		); err != nil {
+			return nil, fmt.Errorf("failed to create a new secret with the git the auth token: %w", err)
+		}
+		authToken = secretAuthToken.Self
+
+		bklog.G(ctx).Debugf("🎃🎃 secretAuthToken |%+v|%+v|\n", remote, secretAuthToken)
+	}
+
 	return &core.GitRepository{
 		Query:         parent,
 		URL:           args.URL,
@@ -187,6 +240,7 @@ func (s *gitSchema) git(ctx context.Context, parent *core.Query, args gitArgs) (
 		SSHAuthSocket: authSock,
 		Services:      svcs,
 		Platform:      parent.Platform(),
+		AuthToken:     authToken,
 	}, nil
 }
 
