@@ -1381,4 +1381,73 @@ export class Test {
 			})
 		}
 	})
+
+	t.Run("custom conflicting enum type", func(ctx context.Context, t *testctx.T) {
+		depSrc := `package main
+
+type Dep struct{}
+
+type MyEnum string
+
+const (
+	MyEnumFalse MyEnum = "false"
+	MyEnumTrue  MyEnum = "true"
+	MyEnumNull  MyEnum = "null"
+)
+
+func (m *Dep) Thing(f MyEnum) MyEnum {
+	return f
+}
+`
+
+		type testCase struct {
+			sdk    string
+			source string
+		}
+		for _, tc := range []testCase{
+			{
+				sdk: "go",
+				source: `package main
+
+import (
+	"context"
+	"fmt"
+	"dagger/test/internal/dagger"
+)
+
+type Test struct{}
+
+func (m *Test) Test(ctx context.Context) (string, error) {
+	f, err := dag.Dep().Thing(ctx, dagger.False)
+	if err != nil {
+		return "", err
+	}
+	t, err := dag.Dep().Thing(ctx, dagger.True)
+	if err != nil {
+		return "", err
+	}
+	n, err := dag.Dep().Thing(ctx, dagger.Null)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprint(f, t, n), nil
+}
+`,
+			},
+		} {
+			tc := tc
+
+			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
+				c := connect(ctx, t)
+
+				modGen := modInit(t, c, tc.sdk, tc.source).
+					With(withModInitAt("./dep", "go", depSrc)).
+					With(daggerExec("install", "./dep"))
+
+				out, err := modGen.With(daggerQuery(`{test{test}}`)).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "falsetruenull", gjson.Get(out, "test.test").String())
+			})
+		}
+	})
 }
