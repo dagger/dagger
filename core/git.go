@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/moby/buildkit/client/llb"
-	"github.com/moby/buildkit/util/bklog"
 	"github.com/pkg/errors"
 	"github.com/vektah/gqlparser/v2/ast"
 
@@ -57,33 +56,6 @@ func (*GitRef) Type() *ast.Type {
 
 func (*GitRef) TypeDescription() string {
 	return "A git ref (tag, branch, or commit)."
-}
-
-// // todo(guillaume):
-func (ref *GitRef) Authenticate(ctx context.Context, protocol string, host string, path string) (string, error) {
-	bk, err := ref.Query.Buildkit(ctx)
-	if err != nil {
-		return "", fmt.Errorf("failed to get buildkit client: %w", err)
-	}
-
-	credentials, err := bk.GetCredential(ctx, protocol, host, path)
-	if err != nil {
-		return "", fmt.Errorf("core: failed to retrieve git credentials from host: %w", err)
-	}
-
-	if credentials == nil {
-		return "", fmt.Errorf("no credentials found")
-	}
-
-	bklog.G(ctx).Debugf("🔥 |%v|%+v|\n", credentials, path)
-
-	// Use the credentials to create an authentication string
-	// _ := fmt.Sprintf("%s:%s", credentials.Username, credentials.Password)
-
-	// In a real scenario, you might use this authString to set up git config or perform an authenticated operation
-	// For this test, we'll just return a message indicating success
-	return fmt.Sprintf("Successfully authenticated as %s for %s://%s/%s with passkey %s",
-		credentials.Username, credentials.Protocol, credentials.Host, ref.Repo.URL, credentials.Password), nil
 }
 
 func (ref *GitRef) Tree(ctx context.Context, discardGitDir bool) (*Directory, error) {
