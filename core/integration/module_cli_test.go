@@ -506,7 +506,6 @@ func (CLISuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
 		t.Run("fails on git", func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
-
 			mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
 			t.Cleanup(cleanup)
 
@@ -854,7 +853,6 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 		t.Run("git", func(ctx context.Context, t *testctx.T) {
 			t.Run("happy", func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
-
 				mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
 				t.Cleanup(cleanup)
 
@@ -882,7 +880,6 @@ func (m *Test) Fn(ctx context.Context) (string, error) {
 
 			t.Run("sad", func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
-
 				mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
 				t.Cleanup(cleanup)
 
@@ -905,7 +902,6 @@ func (m *Test) Fn(ctx context.Context) (string, error) {
 
 			t.Run("unpinned gets pinned", func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
-
 				mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
 				t.Cleanup(cleanup)
 

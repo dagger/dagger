@@ -70,31 +70,53 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 
 	t.Run("malicious config", func(ctx context.Context, t *testctx.T) {
 		// verify a maliciously/incorrectly constructed dagger.json is still handled correctly
-		c := connect(ctx, t)
+		// c := connect(ctx, t)
 
-		base := goGitBase(t, c).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/tmp/foo").
-			With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
-			WithWorkdir("/work/dep").
-			With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
-			WithNewFile("/work/dep/main.go", `package main
+		// base := goGitBase(t, c).
+		// 	WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		// 	WithWorkdir("/tmp/foo").
+		// 	With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
+		// 	WithWorkdir("/work/dep").
+		// 	With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
+		// 	WithNewFile("/work/dep/main.go", `package main
 
-        import "context"
+		// import "context"
 
-        type Dep struct {}
+		// type Dep struct {}
 
-        func (m *Dep) GetSource(ctx context.Context) *dagger.Directory {
-            return dag.CurrentModule().Source()
-        }
-        `,
-			).
-			WithWorkdir("/work").
-			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go"))
+		// func (m *Dep) GetSource(ctx context.Context) *dagger.Directory {
+		//     return dag.CurrentModule().Source()
+		// }
+		// `,
+		// 	).
+		// 	WithWorkdir("/work").
+		// 	With(daggerExec("init", "--source=.", "--name=test", "--sdk=go"))
 
 		t.Run("source points out of root", func(ctx context.Context, t *testctx.T) {
 			t.Run("local", func(ctx context.Context, t *testctx.T) {
-				base := base.
+				c := connect(ctx, t)
+
+				base := goGitBase(t, c).
+					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+					WithWorkdir("/tmp/foo").
+					With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
+					WithWorkdir("/work/dep").
+					With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
+					WithNewFile("/work/dep/main.go", `package main
+
+		import "context"
+
+		type Dep struct {}
+
+		func (m *Dep) GetSource(ctx context.Context) *dagger.Directory {
+		    return dag.CurrentModule().Source()
+		}
+		`,
+					).
+					WithWorkdir("/work").
+					With(daggerExec("init", "--source=.", "--name=test", "--sdk=go"))
+
+				base = base.
 					With(configFile(".", &modules.ModuleConfig{
 						Name:   "evil",
 						SDK:    "go",
@@ -112,7 +134,29 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 			})
 
 			t.Run("local with absolute path", func(ctx context.Context, t *testctx.T) {
-				base := base.
+				c := connect(ctx, t)
+
+				base := goGitBase(t, c).
+					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+					WithWorkdir("/tmp/foo").
+					With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
+					WithWorkdir("/work/dep").
+					With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
+					WithNewFile("/work/dep/main.go", `package main
+
+		import "context"
+
+		type Dep struct {}
+
+		func (m *Dep) GetSource(ctx context.Context) *dagger.Directory {
+		    return dag.CurrentModule().Source()
+		}
+		`,
+					).
+					WithWorkdir("/work").
+					With(daggerExec("init", "--source=.", "--name=test", "--sdk=go"))
+
+				base = base.
 					With(configFile(".", &modules.ModuleConfig{
 						Name:   "evil",
 						SDK:    "go",
@@ -131,8 +175,29 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 
 			testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
 				t.Run("git", func(ctx context.Context, t *testctx.T) {
+					c := connect(ctx, t)
 					mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
 					t.Cleanup(cleanup)
+
+					base := goGitBase(t, c).
+						WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+						WithWorkdir("/tmp/foo").
+						With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
+						WithWorkdir("/work/dep").
+						With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
+						WithNewFile("/work/dep/main.go", `package main
+
+					import "context"
+
+					type Dep struct {}
+
+					func (m *Dep) GetSource(ctx context.Context) *dagger.Directory {
+					    return dag.CurrentModule().Source()
+					}
+					`,
+						).
+						WithWorkdir("/work").
+						With(daggerExec("init", "--source=.", "--name=test", "--sdk=go"))
 
 					_, err := base.With(mountedSocket).With(daggerCallAt(testGitModuleRef(tc, "invalid/bad-source"), "container-echo", "--string-arg", "plz fail")).Sync(ctx)
 					require.ErrorContains(t, err, `source path "../../../" contains parent directory components`)
@@ -142,7 +207,26 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 
 		t.Run("dep points out of root", func(ctx context.Context, t *testctx.T) {
 			t.Run("local", func(ctx context.Context, t *testctx.T) {
-				base := base.
+				c := connect(ctx, t)
+				base := goGitBase(t, c).
+					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+					WithWorkdir("/tmp/foo").
+					With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
+					WithWorkdir("/work/dep").
+					With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
+					WithNewFile("/work/dep/main.go", `package main
+
+					import "context"
+
+					type Dep struct {}
+
+					func (m *Dep) GetSource(ctx context.Context) *dagger.Directory {
+					    return dag.CurrentModule().Source()
+					}
+					`,
+					).
+					WithWorkdir("/work").
+					With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
 					With(configFile(".", &modules.ModuleConfig{
 						Name: "evil",
 						SDK:  "go",
@@ -182,7 +266,29 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 			})
 
 			t.Run("local with absolute path", func(ctx context.Context, t *testctx.T) {
-				base := base.
+				c := connect(ctx, t)
+
+				base := goGitBase(t, c).
+					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+					WithWorkdir("/tmp/foo").
+					With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
+					WithWorkdir("/work/dep").
+					With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
+					WithNewFile("/work/dep/main.go", `package main
+
+		import "context"
+
+		type Dep struct {}
+
+		func (m *Dep) GetSource(ctx context.Context) *dagger.Directory {
+		    return dag.CurrentModule().Source()
+		}
+		`,
+					).
+					WithWorkdir("/work").
+					With(daggerExec("init", "--source=.", "--name=test", "--sdk=go"))
+
+				base = base.
 					With(configFile(".", &modules.ModuleConfig{
 						Name: "evil",
 						SDK:  "go",
@@ -223,8 +329,29 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 
 			testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
 				t.Run("git", func(ctx context.Context, t *testctx.T) {
+					c := connect(ctx, t)
 					mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
 					t.Cleanup(cleanup)
+
+					base := goGitBase(t, c).
+						WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+						WithWorkdir("/tmp/foo").
+						With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
+						WithWorkdir("/work/dep").
+						With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
+						WithNewFile("/work/dep/main.go", `package main
+
+		import "context"
+
+		type Dep struct {}
+
+		func (m *Dep) GetSource(ctx context.Context) *dagger.Directory {
+		    return dag.CurrentModule().Source()
+		}
+		`,
+						).
+						WithWorkdir("/work").
+						With(daggerExec("init", "--source=.", "--name=test", "--sdk=go"))
 
 					_, err := base.With(mountedSocket).With(daggerCallAt(testGitModuleRef(tc, "invalid/bad-dep"), "container-echo", "--string-arg", "plz fail")).Sync(ctx)
 					require.ErrorContains(t, err, `module dep source root path "../../../foo" escapes root`)
@@ -1010,7 +1137,6 @@ func (ConfigSuite) TestDaggerGitWithSources(ctx context.Context, t *testctx.T) {
 			modSubpath := modSubpath
 			t.Run(modSubpath, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
-
 				mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
 				t.Cleanup(cleanup)
 
