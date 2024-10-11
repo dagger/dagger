@@ -95,7 +95,7 @@ jobs:
       always() &&
       github.repository == 'dagger/dagger' &&
       (needs.publish.result == 'success' || needs.publish.result == 'skipped')
-    runs-on: macos-15
+    runs-on: macos-13
     steps:
       - name: "Set CLI Test URL"
         run: |
@@ -124,15 +124,12 @@ jobs:
           echo "_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL=${CHECKSUMS_URL}" >> $GITHUB_ENV
           echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=${RUNNER_HOST}" >> $GITHUB_ENV
         shell: bash
+
       - name: "Install Docker"
-        run: |
-          echo "Install colima..."
-          brew install colima
-          echo "Install docker CLI..."
-          brew install docker
-          echo "Start Docker daemon via Colima..."
-          echo "⚠️ Use mount-type 9p so that launched containers can chown: https://github.com/abiosoft/colima/issues/54#issuecomment-1250217077"
-          colima start --mount-type 9p
+        uses: douglascamata/setup-docker-macos-action@v1-alpha.14
+        env:
+          HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
+      - uses: docker/setup-qemu-action@v3
 
       - uses: actions/checkout@v4
 
