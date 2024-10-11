@@ -261,6 +261,14 @@ gh pr ready
 - [ ] `30 mins` Review and merge the prep PR. The merged commit is what gets tagged in the next step.
   - 🚨 Non-main branch release only: Ideally use "Rebase and Merge" rather than squashing commits when merging so we can more easily preserve the history of the cherry-picked commits.
 
+- [ ] Ensure that all GitHub Actions checks pass for the dagger.io PR which
+      gets automatically created part of this PR. The PR is configured to deploy a
+      Daggerverse preview environment with a `main` Dagger Engine (the one that is
+      just about to be released). If all checks pass, close that PR & delete the
+      branch (this will clean up the infra that gets provisioned). If checks fail, cc
+      @jpadams @marcosnils @matipan @gerhard in the release thread and wait for a
+      response before continuing with the release (this might be a blocker).
+
 ## 🚀 Release ⏱ `10mins`
 
 - [ ] When you have confirmed that all checks on `$RELEASE_BRANCH` are green, run the following:
