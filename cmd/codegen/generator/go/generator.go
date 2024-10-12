@@ -5,7 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"go/ast"
 	"go/format"
+	"go/parser"
 	"go/token"
 	"io/fs"
 	"os"
@@ -28,6 +30,7 @@ import (
 	"github.com/dagger/dagger/cmd/codegen/generator"
 	"github.com/dagger/dagger/cmd/codegen/generator/go/templates"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
+	"github.com/dagger/dagger/cmd/codegen/trace"
 )
 
 const (
@@ -348,6 +351,9 @@ func renderFile(
 }
 
 func loadPackage(ctx context.Context, dir string) (*packages.Package, *token.FileSet, error) {
+	ctx, span := trace.Tracer().Start(ctx, "loadPackage")
+	defer span.End()
+
 	fset := token.NewFileSet()
 	pkgs, err := packages.Load(&packages.Config{
 		Context: ctx,
@@ -357,8 +363,20 @@ func loadPackage(ctx context.Context, dir string) (*packages.Package, *token.Fil
 		Mode: packages.NeedName |
 			packages.NeedTypes |
 			packages.NeedSyntax |
-			packages.NeedTypesInfo |
 			packages.NeedModule,
+		ParseFile: func(fset *token.FileSet, filename string, src []byte) (*ast.File, error) {
+			astFile, err := parser.ParseFile(fset, filename, src, parser.ParseComments)
+			if err != nil {
+				return nil, err
+			}
+			// strip function bodies since we don't need them and don't need to waste time in packages.Load with type checking them
+			for _, decl := range astFile.Decls {
+				if fn, ok := decl.(*ast.FuncDecl); ok {
+					fn.Body = nil
+				}
+			}
+			return astFile, nil
+		},
 	}, ".")
 	if err != nil {
 		return nil, nil, err
