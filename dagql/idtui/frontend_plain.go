@@ -216,7 +216,7 @@ func (fe *frontendPlain) SetRevealAllSpans(val bool) {
 	fe.mu.Unlock()
 }
 
-func (fe *frontendPlain) Background(cmd tea.ExecCommand) error {
+func (fe *frontendPlain) Background(cmd tea.ExecCommand, raw bool) error {
 	return fmt.Errorf("not implemented")
 }
 

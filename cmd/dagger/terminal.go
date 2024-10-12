@@ -24,11 +24,11 @@ func withTerminal(fn func(stdin io.Reader, stdout, stderr io.Writer) error) erro
 
 	return Frontend.Background(&terminalSession{
 		fn: fn,
-	})
+	}, true)
 }
 
 type terminalSession struct {
-	fn func(io.Reader, io.Writer, io.Writer) error
+	fn func(stdin io.Reader, stdout io.Writer, stderr io.Writer) error
 
 	stdin  io.Reader
 	stdout io.Writer
