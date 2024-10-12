@@ -377,6 +377,10 @@ func loadPackage(ctx context.Context, dir string) (*packages.Package, *token.Fil
 			}
 			return astFile, nil
 		},
+		// Print some debug logs with timing information to stdout
+		Logf: func(format string, args ...interface{}) {
+			fmt.Printf(format+"\n", args...)
+		},
 	}, ".")
 	if err != nil {
 		return nil, nil, err
