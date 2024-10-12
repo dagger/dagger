@@ -27,10 +27,12 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 )
 
-type cmdContextKey struct{}
-type cmdContext struct {
-	printTraceLink bool
-}
+type (
+	cmdContextKey struct{}
+	cmdContext    struct {
+		printTraceLink bool
+	}
+)
 
 // WithPrintTraceLink is used for enabling printing the trace link
 // for the selected commands.
@@ -64,7 +66,7 @@ type Frontend interface {
 	// point of the command. Its output will be displayed at the end, and its
 	// children will be promoted to the "top-level" of the TUI.
 	SetPrimary(spanID trace.SpanID)
-	Background(cmd tea.ExecCommand) error
+	Background(cmd tea.ExecCommand, raw bool) error
 	// RevealAllSpans tells the frontend to show all spans, not just the spans
 	// beneath the primary span.
 	SetRevealAllSpans(bool)
