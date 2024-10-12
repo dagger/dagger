@@ -74,6 +74,10 @@ type shellCallHandler struct {
 	// cfg holds the final values for the module's constructor, i.e., the module configuration
 	cfg map[string]any
 
+	// switch to Frontend.Background for rendering output while the TUI is
+	// running when in interactive mode
+	term bool
+
 	// outBuf is used to capture the final output that the runner produces
 	outBuf *bytes.Buffer
 
@@ -170,6 +174,7 @@ func (h *shellCallHandler) runPath(ctx context.Context, path string) error {
 }
 
 func (h *shellCallHandler) runInteractive(ctx context.Context) error {
+	h.term = stdoutIsTTY
 	h.withTerminal(func(_, e io.Writer) error {
 		fmt.Fprintln(e, `Dagger interactive shell. Type ".help" for more information.`)
 		return nil
@@ -213,6 +218,13 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 
 func (h *shellCallHandler) withTerminal(fn func(stdout, stderr io.Writer) error) error {
 	// TODO: handle TUI
+	if h.term {
+		return Frontend.Background(&terminalSession{
+			fn: func(_ io.Reader, o, e io.Writer) error {
+				return fn(o, e)
+			},
+		}, false)
+	}
 	return fn(h.stdout, h.stderr)
 }
 
