@@ -56,10 +56,10 @@ func (set *OrderedSet[K, V]) UnmarshalJSON(p []byte) error {
 	return nil
 }
 
-func (set *OrderedSet[K, V]) Add(value V) {
+func (set *OrderedSet[K, V]) Add(value V) bool {
 	key := set.KeyFunc(value)
 	if _, ok := set.Map[key]; ok {
-		return
+		return false
 	}
 	set.Map[key] = value
 	if set.LessFunc != nil {
@@ -67,12 +67,13 @@ func (set *OrderedSet[K, V]) Add(value V) {
 	} else {
 		set.Order = append(set.Order, value)
 	}
+	return true
 }
 
-func (set *OrderedSet[K, V]) Remove(value V) {
+func (set *OrderedSet[K, V]) Remove(value V) bool {
 	key := set.KeyFunc(value)
 	if _, ok := set.Map[key]; !ok {
-		return
+		return false
 	}
 	delete(set.Map, key)
 	var removeIdx int
@@ -83,6 +84,7 @@ func (set *OrderedSet[K, V]) Remove(value V) {
 		}
 	}
 	set.Order = append(set.Order[:removeIdx], set.Order[removeIdx+1:]...)
+	return true
 }
 
 func (set *OrderedSet[K, V]) Clear() {

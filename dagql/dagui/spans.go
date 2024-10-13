@@ -169,44 +169,54 @@ func sliceOf[T any](val any) []T {
 //
 // NOTE: failed state only propagates to spans that installed the current
 // span's effect - it does _not_ propagate through the parent span.
-//
-// FIXME: propagate failures... carefully
 func (span *Span) PropagateStatusToParentsAndLinks() {
-	span.Parents(func(parent *Span) bool { // TODO: go 1.23
+	for parent := range span.Parents {
+		var changed bool
 		if span.IsRunningOrLinksRunning() {
-			parent.RunningSpans.Add(span)
+			changed = parent.RunningSpans.Add(span)
 		} else {
-			parent.RunningSpans.Remove(span)
+			changed = parent.RunningSpans.Remove(span)
 		}
-		span.db.updatedSpans.Add(parent)
-		return true
-	})
+		if changed {
+			slog.Debug("propagate status to parent", "parent", parent.Name, "child", span.Name)
+			span.db.updatedSpans.Add(parent)
+		}
+	}
 
 	for _, linked := range span.LinksTo.Order {
+		var changed bool
 		if span.IsRunning() {
-			linked.RunningSpans.Add(span)
+			changed = linked.RunningSpans.Add(span)
 		} else {
-			linked.RunningSpans.Remove(span)
+			changed = linked.RunningSpans.Remove(span)
 		}
 
 		if span.IsFailed() {
 			linked.FailedLinks.Add(span)
 		}
 
-		span.db.updatedSpans.Add(linked)
+		if linked.Activity.Add(span) {
+			changed = true
+		}
 
-		linked.Activity.Add(span)
+		if changed {
+			span.db.updatedSpans.Add(linked)
+		}
 
-		linked.Parents(func(parent *Span) bool { // TODO go 1.23
+		for parent := range linked.Parents {
+			var changed bool
 			if span.IsRunning() {
-				parent.RunningSpans.Add(span)
+				changed = parent.RunningSpans.Add(span)
 			} else {
-				parent.RunningSpans.Remove(span)
+				changed = parent.RunningSpans.Remove(span)
 			}
-			span.db.updatedSpans.Add(parent)
-			parent.Activity.Add(span)
-			return true
-		})
+			if parent.Activity.Add(span) {
+				changed = true
+			}
+			if changed {
+				span.db.updatedSpans.Add(parent)
+			}
+		}
 	}
 }
 

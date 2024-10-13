@@ -75,7 +75,11 @@ func (db *DB) UpdatedSnapshots(filter map[SpanID]bool) []SpanSnapshot {
 		if span.Passthrough {
 			// include any passthrough spans to ensure failures are collected.
 			// the POST /query span for example never fails on its own.
-			return true
+			for _, child := range span.ChildSpans.Order {
+				if child.IsFailedOrCausedFailure() {
+					return true
+				}
+			}
 		}
 		return false
 	})
@@ -281,25 +285,32 @@ type Interval struct {
 	End   time.Time
 }
 
-func (activity *Activity) updateEarliest() {
+func (activity *Activity) updateEarliest() (changed bool) {
 	if len(activity.allRunning.Order) > 0 {
 		earliest := activity.allRunning.Order[0]
 		activity.EarliestRunning = earliest.StartTime
 		activity.EarliestRunningID = earliest.ID
-	} else {
+		changed = true
+	} else if activity.EarliestRunningID.IsValid() {
 		activity.EarliestRunning = time.Time{}
 		activity.EarliestRunningID = SpanID{}
+		changed = true
 	}
+	return
 }
 
-func (activity *Activity) Add(span *Span) {
+func (activity *Activity) Add(span *Span) (changed bool) {
 	if activity.allRunning == nil {
 		activity.allRunning = NewSpanSet()
 	}
 
 	if span.IsRunning() {
-		activity.allRunning.Add(span)
-		activity.updateEarliest()
+		if activity.allRunning.Add(span) {
+			changed = true
+		}
+		if activity.updateEarliest() {
+			changed = true
+		}
 		return
 	}
 
@@ -313,7 +324,7 @@ func (activity *Activity) Add(span *Span) {
 
 	if len(activity.CompletedIntervals) == 0 {
 		activity.CompletedIntervals = append(activity.CompletedIntervals, ival)
-		return
+		return true
 	}
 
 	idx, _ := slices.BinarySearchFunc(activity.CompletedIntervals, ival, func(a, b Interval) int {
@@ -326,9 +337,18 @@ func (activity *Activity) Add(span *Span) {
 		}
 	})
 
-	activity.CompletedIntervals = slices.Insert(activity.CompletedIntervals, idx, ival)
+	// optimization: if the new interval is wholly subsumed by an existing
+	// interval we can skip adding it. this is also handled by mergeIntervals,
+	// but it's harder to return false after the fact.
+	for _, existing := range activity.CompletedIntervals {
+		if ival.Start.After(existing.Start) && ival.End.Before(existing.End) {
+			return false
+		}
+	}
 
+	activity.CompletedIntervals = slices.Insert(activity.CompletedIntervals, idx, ival)
 	activity.mergeIntervals()
+	return true
 }
 
 // mergeIntervals merges overlapping intervals in the activity.
@@ -389,9 +409,6 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 		linked.ChildSpans.Add(span)
 		linked.LinkedFrom.Add(span)
 		span.LinksTo.Add(linked)
-
-		// update any linked spans
-		db.updatedSpans.Add(linked)
 	}
 
 	// update span states, propagating them up through parents, too
