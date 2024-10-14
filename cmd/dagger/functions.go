@@ -660,7 +660,7 @@ func handleResponse(returnType *modTypeDef, response any, o, e io.Writer) error 
 			if !ok {
 				return fmt.Errorf("unexpected response %T: %+v", response, response)
 			}
-			fmt.Fprint(e, "Saved to %q.\n", respPath)
+			fmt.Fprintf(e, "Saved to %q.\n", respPath)
 			return nil
 		}
 	}
@@ -739,10 +739,13 @@ func handleResponse(returnType *modTypeDef, response any, o, e io.Writer) error 
 			slog.Warn("Failed to get absolute path", "error", err)
 			path = outputPath
 		}
-		fmt.Fprint(e, "Saved output to %q.\n", path)
+		fmt.Fprintf(e, "Saved output to %q.\n", path)
 	}
 
 	_, err := buf.WriteTo(o)
+	if stdoutIsTTY && !strings.HasSuffix(buf.String(), "\n") {
+		fmt.Fprintln(o)
+	}
 
 	return err
 }

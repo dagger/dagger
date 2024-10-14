@@ -157,6 +157,10 @@ func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run 
 	return runErr
 }
 
+func (fe *frontendPretty) Opts() *dagui.FrontendOpts {
+	return &fe.FrontendOpts
+}
+
 func (fe *frontendPretty) SetPrimary(spanID trace.SpanID) {
 	fe.mu.Lock()
 	fe.db.SetPrimarySpan(spanID)
@@ -579,16 +583,13 @@ type doneMsg struct {
 }
 
 func (fe *frontendPretty) spawn() (msg tea.Msg) {
-	// defer func() {
-	// 	if r := recover(); r != nil {
-	// 		fe.restore()
-	// 		panic(r)
-	// 	}
-	// }()
 	return doneMsg{fe.run(fe.runCtx)}
 }
 
-type backgroundDoneMsg struct{}
+type backgroundDoneMsg struct {
+	backgroundMsg
+	err error
+}
 
 func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nolint: gocyclo
 	switch msg := msg.(type) {
@@ -626,12 +627,12 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 			}
 		}
 		return fe, tea.Exec(cmd, func(err error) tea.Msg {
-			msg.errs <- err
-			return backgroundDoneMsg{}
+			return backgroundDoneMsg{msg, err}
 		})
 
 	case backgroundDoneMsg:
 		fe.backgrounded = false
+		msg.errs <- msg.err
 		return fe, nil
 
 	case tea.MouseMsg:
@@ -978,11 +979,9 @@ func (ts *wrapCommand) Run() error {
 	if err := ts.before(); err != nil {
 		return err
 	}
-	if err := ts.ExecCommand.Run(); err != nil {
-		return err
+	err := ts.ExecCommand.Run()
+	if err2 := ts.after(); err == nil {
+		err = err2
 	}
-	if err := ts.after(); err != nil {
-		return err
-	}
-	return nil
+	return err
 }
