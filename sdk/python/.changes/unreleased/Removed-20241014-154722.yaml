@@ -1,0 +1,9 @@
+kind: Removed
+body: |-
+    Removed deprecated `Arg` and top-level functions
+
+    Use `Name` and object methods instead.
+time: 2024-10-14T15:47:22.763283Z
+custom:
+    Author: helderco
+    PR: "8708"
