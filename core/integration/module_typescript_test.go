@@ -1320,9 +1320,9 @@ import { func, object } from "@dagger.io/dagger"
 @object()
 class Test {
   @func()
-	foo(): string {
-		return "bar"
-	}
+  foo(): string {
+    return "bar"
+  }
 }			
 `,
 			))
