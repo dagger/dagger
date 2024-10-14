@@ -206,6 +206,10 @@ func (fe *frontendPlain) Run(ctx context.Context, opts dagui.FrontendOpts, run f
 	return runErr
 }
 
+func (fe *frontendPlain) Opts() *dagui.FrontendOpts {
+	return &fe.FrontendOpts
+}
+
 func (fe *frontendPlain) SetPrimary(spanID trace.SpanID) {
 	fe.mu.Lock()
 	fe.db.PrimarySpan = spanID

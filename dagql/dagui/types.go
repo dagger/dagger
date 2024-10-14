@@ -54,6 +54,10 @@ type RowsView struct {
 }
 
 func (db *DB) RowsView(zoomedID trace.SpanID) *RowsView {
+	if !zoomedID.IsValid() {
+		return &RowsView{}
+	}
+
 	view := &RowsView{
 		Zoomed: db.Spans[zoomedID],
 	}
