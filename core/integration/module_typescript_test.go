@@ -762,15 +762,13 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
 func (TypescriptSuite) TestCustomBaseImage(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	modGen := c.Container().From(golangImage).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithWorkdir("/work")
-
 	t.Run("should use custom base image if different than node or bun", func(ctx context.Context, t *testctx.T) {
-		modGen = modGen.
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
 			WithNewFile("package.json", `{
 			"dagger": {
-				"runtime": "iron/node:18-dev@sha256:72e7bf712edf4f137ca8e540d67f3b60ee73a982dd1e14ba04d0dac066e0eaa8",
+				"runtime": "jitesoft/node:20.18.0@sha256:96282943ebef704f41f337c86393835995b6ac46549c53b3f285f306ea1d9789",
 			}
 		}`).
 			With(daggerExec("init", "--name=custom-base-image", "--sdk=typescript", "--source=."))
@@ -781,10 +779,12 @@ func (TypescriptSuite) TestCustomBaseImage(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("should use custom base image if different than node or bun", func(ctx context.Context, t *testctx.T) {
-		modGen = modGen.
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
 			WithNewFile("package.json", `{
 			"dagger": {
-				"runtime": "iron/node:latest",
+				"runtime": "jitesoft/node:20.18.0",
 			}
 		}`).
 			With(daggerExec("init", "--name=custom-base-image", "--sdk=typescript", "--source=."))
