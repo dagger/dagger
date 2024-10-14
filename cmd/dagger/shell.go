@@ -194,6 +194,7 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 	var runErr error
 	for {
 		Frontend.SetPrimary(trace.SpanID{})
+		Frontend.Opts().CustomExit = func() {}
 
 		if h.stderrBuf.Len() > 0 {
 			runErr = h.withTerminal(func(_ io.Reader, _, stderr io.Writer) error {
@@ -233,6 +234,7 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 			// EOF or Ctrl+D to exit
 			if errors.Is(err, io.EOF) || errors.Is(err, readline.ErrInterrupt) {
 				Frontend.Opts().Verbosity = 0
+				Frontend.Opts().CustomExit = nil
 				break
 			}
 			return err
@@ -243,7 +245,9 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 		}
 
 		ctx, span := Tracer().Start(ctx, line)
+		ctx, cancel := context.WithCancel(ctx)
 		Frontend.SetPrimary(span.SpanContext().SpanID())
+		Frontend.Opts().CustomExit = cancel
 		runErr = h.run(ctx, strings.NewReader(line), "")
 		if runErr != nil {
 			span.SetStatus(codes.Error, runErr.Error())

@@ -682,6 +682,11 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		fe.pressedKeyAt = time.Now()
 		switch msg.String() {
 		case "q", "ctrl+c":
+			if fe.CustomExit != nil {
+				fe.CustomExit()
+				return fe, nil
+			}
+
 			if fe.done && fe.eof {
 				fe.quitting = true
 				// must have configured NoExit, and now they want
