@@ -1,7 +1,7 @@
 import { func, object } from "../../../decorators/decorators.js"
 
 @object()
-class Integer {
+export class Integer {
   @func()
   value: number
 
@@ -17,7 +17,7 @@ class Integer {
 
 @object()
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-class List {
+export class List {
   @func()
   create(...n: number[]): Integer[] {
     return n.map((v) => new Integer(v))

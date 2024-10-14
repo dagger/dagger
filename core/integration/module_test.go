@@ -212,7 +212,7 @@ import { object, func } from '@dagger.io/dagger'
  * Test object, short description
  */
 @object()
-class Test {
+export class Test {
     @func()
     foo: string = "foo"
 }
@@ -253,7 +253,7 @@ import { Foo } from "./foo"
  * Test object, short description
  */
 @object()
-class Test {
+export class Test {
     @func()
     foo(): Foo {
         return new Foo()
@@ -345,7 +345,7 @@ class Minimal:
 import { object, func } from "@dagger.io/dagger"
 
 @object()
-class Minimal {
+export class Minimal {
   @func()
   foo: string
 
@@ -463,7 +463,7 @@ class Test:
 			source: `import { object, func } from "@dagger.io/dagger"
 
 @object()
-class Test {
+export class Test {
   @func()
   foo(
     a: string,
@@ -618,7 +618,7 @@ class Test:
 			source: `import { dag, object, func } from "@dagger.io/dagger"
 
 @object()
-class Test {
+export class Test {
   @func()
   async test(): Promise<string> {
     return await dag.dep().ctl("foo")
@@ -687,7 +687,7 @@ import { dag, object, func } from "@dagger.io/dagger"
 var someDefault = dag.container().from("` + alpineImage + `")
 
 @object()
-class Foo {
+export class Foo {
   @func()
   async fn(): Promise<string> {
     return someDefault.withExec(["echo", "foo"]).stdout()
@@ -904,7 +904,7 @@ var useTSOuter = `
 import { dag, object, func } from '@dagger.io/dagger'
 
 @object()
-class Use {
+export class Use {
 	@func()
 	async useHello(): Promise<string> {
 		return dag.dep().hello()
@@ -1129,7 +1129,7 @@ async def names() -> list[str]:
 import { dag, object, func } from '@dagger.io/dagger'
 
 @object()
-class Use {
+export class Use {
 	@func()
 	async names(): Promise<string[]> {
 		return [await dag.foo().name(), await dag.bar().name()]
@@ -1274,7 +1274,7 @@ class Test:
 import { Directory, object, func } from '@dagger.io/dagger';
 
 @object()
-class Test {
+export class Test {
 	@func()
 	foo: string
 
@@ -1414,7 +1414,7 @@ class Test:
 import { dag, object, func } from "@dagger.io/dagger"
 
 @object()
-class Test {
+export class Test {
   @func()
   alpineVersion: string
 
@@ -1486,7 +1486,7 @@ class Test:
 import { object, func } from "@dagger.io/dagger"
 
 @object()
-class Test {
+export class Test {
   @func()
   foo: string
 
@@ -1568,7 +1568,7 @@ class Test:
 import { dag, File, object, func } from "@dagger.io/dagger"
 
 @object()
-class Test {
+export class Test {
   @func()
   foo: File = dag.directory().withNewFile("foo.txt", "%s").file("foo.txt")
 
@@ -1661,7 +1661,7 @@ class Wrapper:
 import { dag, Container, object, func } from "@dagger.io/dagger"
 
 @object()
-class WrappedContainer {
+export class WrappedContainer {
   @func()
   unwrap: Container
 
@@ -1676,7 +1676,7 @@ class WrappedContainer {
 }
 
 @object()
-class Wrapper {
+export class Wrapper {
   @func()
   container(): WrappedContainer {
     return new WrappedContainer(dag.container().from("` + alpineImage + `"))
@@ -1791,7 +1791,7 @@ def potato_%d() -> str:
 		import { object, func } from "@dagger.io/dagger"
 
 @object()
-class PotatoSack {
+export class PotatoSack {
 		`
 
 		for i := 0; i < funcCount; i++ {
@@ -4190,7 +4190,7 @@ class Test:
 				source: `import { Directory, File, object, func, argument } from "@dagger.io/dagger"
 
 @object()
-class Test {
+export class Test {
   @func()
   async dirs(@argument({ defaultPath: "/" }) root: Directory, @argument({ defaultPath: "."}) relativeRoot: Directory): Promise<string[]> {
     const res = await root.entries()
@@ -4463,7 +4463,7 @@ class Test:
 				source: `import { Directory, File, object, func, argument } from "@dagger.io/dagger"
 
 @object()
-class Test {
+export class Test {
   @func()
   async dirs(
     @argument({ defaultPath: "/" }) root: Directory,
@@ -4653,7 +4653,7 @@ class Test:
 				sdk: "typescript",
 				source: `import { Directory, File,object, func, argument } from "@dagger.io/dagger"
 @object()
-class Test {
+export class Test {
   @func()
   async tooHighRelativeDirPath(@argument({ defaultPath: "../../../" }) backend: Directory): Promise<string[]> {
     // The engine should throw an error
