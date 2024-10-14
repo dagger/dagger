@@ -21,6 +21,8 @@ import (
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
 )
@@ -78,8 +80,9 @@ type shellCallHandler struct {
 	// running when in interactive mode
 	term bool
 
-	// outBuf is used to capture the final output that the runner produces
-	outBuf *bytes.Buffer
+	// stdoutBuf is used to capture the final output that the runner produces
+	stdoutBuf *bytes.Buffer
+	stderrBuf *bytes.Buffer
 
 	// debug writes to the handler context's stderr what the arguments, input,
 	// and output are for each commmand that the exec handler processes
@@ -93,10 +96,11 @@ type shellCallHandler struct {
 // - File: when a file path is provided as an argument
 // - Code: when code is passed inline using the `-c,--code` flag or via stdin
 func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
-	h.outBuf = new(bytes.Buffer)
+	h.stdoutBuf = new(bytes.Buffer)
+	h.stderrBuf = new(bytes.Buffer)
 
 	r, err := interp.New(
-		interp.StdIO(nil, h.outBuf, h.stderr),
+		interp.StdIO(nil, h.stdoutBuf, h.stderrBuf),
 		interp.ExecHandlers(h.Exec),
 	)
 	if err != nil {
@@ -135,7 +139,7 @@ func (h *shellCallHandler) run(ctx context.Context, reader io.Reader, name strin
 		return err
 	}
 
-	h.outBuf.Reset()
+	h.stdoutBuf.Reset()
 	h.runner.Reset()
 
 	err = h.runner.Run(ctx, file)
@@ -148,9 +152,9 @@ func (h *shellCallHandler) run(ctx context.Context, reader io.Reader, name strin
 
 	// Reading state may advance the buffer's position so just copy it now
 	// in case it's not a state value so we can print it.
-	output := h.outBuf.String()
+	output := h.stdoutBuf.String()
 
-	s, err := readShellState(h.outBuf)
+	s, err := readShellState(h.stdoutBuf)
 	if err != nil {
 		return err
 	}
@@ -158,8 +162,8 @@ func (h *shellCallHandler) run(ctx context.Context, reader io.Reader, name strin
 		return h.Result(ctx, *s)
 	}
 
-	return h.withTerminal(func(o, _ io.Writer) error {
-		_, err := fmt.Fprint(o, output)
+	return h.withTerminal(func(_ io.Reader, stdout, _ io.Writer) error {
+		_, err := fmt.Fprint(stdout, output)
 		return err
 	})
 }
@@ -175,33 +179,60 @@ func (h *shellCallHandler) runPath(ctx context.Context, path string) error {
 
 func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 	h.term = stdoutIsTTY
-	h.withTerminal(func(_, e io.Writer) error {
-		fmt.Fprintln(e, `Dagger interactive shell. Type ".help" for more information.`)
+	h.withTerminal(func(_ io.Reader, _, stderr io.Writer) error {
+		fmt.Fprintln(stderr, `Dagger interactive shell. Type ".help" for more information.`)
 		return nil
 	})
+
+	var rl *readline.Instance
+	defer func() {
+		if rl != nil {
+			rl.Close()
+		}
+	}()
+
 	var runErr error
 	for {
+		Frontend.SetPrimary(trace.SpanID{})
+
+		if h.stderrBuf.Len() > 0 {
+			runErr = h.withTerminal(func(_ io.Reader, _, stderr io.Writer) error {
+				_, err := fmt.Fprint(stderr, h.stderrBuf.String())
+				h.stderrBuf.Reset()
+				return err
+			})
+		}
 		if runErr != nil {
-			runErr = h.withTerminal(func(_, e io.Writer) error {
-				fmt.Fprintf(e, "Error: %s\n", runErr.Error())
-				return nil
+			runErr = h.withTerminal(func(_ io.Reader, _, stderr io.Writer) error {
+				_, err := fmt.Fprintf(stderr, "Error: %s\n", runErr.Error())
+				return err
 			})
 		}
 
 		var line string
 
-		err := h.withTerminal(func(_, _ io.Writer) error {
-			rl, err := readline.New("> ")
-			if err != nil {
-				return err
+		err := h.withTerminal(func(stdin io.Reader, stdout, stderr io.Writer) error {
+			var err error
+			if rl == nil {
+				// NOTE: this relies on multiple calls to withTerminal
+				// returning the same readers/writers each time
+				rl, err = readline.NewEx(&readline.Config{
+					Prompt: "> ",
+					Stdin:  io.NopCloser(stdin),
+					Stdout: stdout,
+					Stderr: stderr,
+				})
+				if err != nil {
+					return err
+				}
 			}
-			defer rl.Close()
 			line, err = rl.Readline()
 			return err
 		})
 		if err != nil {
 			// EOF or Ctrl+D to exit
 			if errors.Is(err, io.EOF) || errors.Is(err, readline.ErrInterrupt) {
+				Frontend.Opts().Verbosity = 0
 				break
 			}
 			return err
@@ -211,21 +242,28 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 			continue
 		}
 
+		ctx, span := Tracer().Start(ctx, line)
+		Frontend.SetPrimary(span.SpanContext().SpanID())
 		runErr = h.run(ctx, strings.NewReader(line), "")
+		if runErr != nil {
+			span.SetStatus(codes.Error, runErr.Error())
+		}
+		span.End()
 	}
+
 	return nil
 }
 
-func (h *shellCallHandler) withTerminal(fn func(stdout, stderr io.Writer) error) error {
+func (h *shellCallHandler) withTerminal(fn func(stdin io.Reader, stdout, stderr io.Writer) error) error {
 	// TODO: handle TUI
 	if h.term {
 		return Frontend.Background(&terminalSession{
-			fn: func(_ io.Reader, o, e io.Writer) error {
-				return fn(o, e)
+			fn: func(stdin io.Reader, stdout, stderr io.Writer) error {
+				return fn(stdin, stdout, stderr)
 			},
 		}, false)
 	}
-	return fn(h.stdout, h.stderr)
+	return fn(h.stdin, h.stdout, h.stderr)
 }
 
 func (h *shellCallHandler) Exec(next interp.ExecHandlerFunc) interp.ExecHandlerFunc {
@@ -358,8 +396,24 @@ func (h *shellCallHandler) Result(ctx context.Context, s ShellState) error {
 		return err
 	}
 
-	return h.withTerminal(func(o, e io.Writer) error {
-		return executeRequest(ctx, q, fn.ReturnType, o, e)
+	return h.executeRequest(ctx, q, fn.ReturnType)
+}
+
+func (h *shellCallHandler) executeRequest(ctx context.Context, q *querybuilder.Selection, returnType *modTypeDef) error {
+	if q == nil {
+		return h.withTerminal(func(stdin io.Reader, stdout, stderr io.Writer) error {
+			return handleResponse(returnType, nil, stdout, stderr)
+		})
+	}
+
+	var response any
+
+	if err := makeRequest(ctx, q, &response); err != nil {
+		return err
+	}
+
+	return h.withTerminal(func(stdin io.Reader, stdout, stderr io.Writer) error {
+		return handleResponse(returnType, response, stdout, stderr)
 	})
 }
 
@@ -475,9 +529,7 @@ func (h *shellCallHandler) Builtin(ctx context.Context, args []string) error {
 	if len(args) < 1 {
 		return fmt.Errorf("no specified builtin")
 	}
-	if strings.HasPrefix(args[0], ".") {
-		args[0] = args[0][1:]
-	}
+	args[0] = strings.TrimPrefix(args[0], ".")
 	switch args[0] {
 	case "help":
 		shellLog(ctx, `
@@ -489,7 +541,7 @@ func (h *shellCallHandler) Builtin(ctx context.Context, args []string) error {
 .login        login to Dagger Cloud
 .logout       logout from Dagger Cloud
 .core         load a core Dagger type
-`)
+`[1:])
 		return nil
 	case "git":
 		if len(args) < 2 {

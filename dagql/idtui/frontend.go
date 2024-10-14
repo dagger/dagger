@@ -62,6 +62,9 @@ type Frontend interface {
 	// Run starts a frontend, and runs the target function.
 	Run(ctx context.Context, opts dagui.FrontendOpts, f func(context.Context) error) error
 
+	// Opts returns the opts of the currently running frontend.
+	Opts() *dagui.FrontendOpts
+
 	// SetPrimary tells the frontend which span should be treated like the focal
 	// point of the command. Its output will be displayed at the end, and its
 	// children will be promoted to the "top-level" of the TUI.
