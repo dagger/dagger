@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/cmd/codegen/generator"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 )
@@ -56,6 +57,7 @@ func init() {
 
 func ClientGen(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
+	ctx = telemetry.InitEmbedded(ctx, nil)
 	dag, err := dagger.Connect(ctx)
 	if err != nil {
 		return err
