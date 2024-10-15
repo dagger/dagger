@@ -1353,13 +1353,13 @@ func (f *modFunction) WalkValues(ctx context.Context, flags *pflag.FlagSet, md *
 			return fmt.Errorf("no flag for %q", a.FlagName())
 		}
 
-		// Don't send optional arguments that weren't set.
-		if a.TypeDef.Optional && !flag.Changed {
-			continue
-		}
+		if !flag.Changed {
+			if a.IsRequired() {
+				missingFlags = append(missingFlags, a.FlagName())
+			}
 
-		if !a.TypeDef.Optional && !flag.Changed {
-			missingFlags = append(missingFlags, a.FlagName())
+			// don't send optional arguments that weren't set.
+			continue
 		}
 
 		v = flag.Value

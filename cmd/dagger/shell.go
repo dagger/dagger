@@ -60,6 +60,10 @@ var shellCmd = &cobra.Command{
 			return handler.RunAll(ctx, args)
 		})
 	},
+	Hidden: true,
+	Annotations: map[string]string{
+		"experimental": "true",
+	},
 }
 
 type shellCallHandler struct {
@@ -259,7 +263,6 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 }
 
 func (h *shellCallHandler) withTerminal(fn func(stdin io.Reader, stdout, stderr io.Writer) error) error {
-	// TODO: handle TUI
 	if h.term {
 		return Frontend.Background(&terminalSession{
 			fn: func(stdin io.Reader, stdout, stderr io.Writer) error {
@@ -491,7 +494,7 @@ func (s ShellState) WithCall(fn *modFunction, argValues map[string]any) *ShellSt
 	return &ShellState{
 		Calls: append(s.Calls, FunctionCall{
 			Object:       typeName,
-			Name:         fn.CmdName(),
+			Name:         fn.Name,
 			ReturnObject: fn.ReturnType.Name(),
 			Arguments:    argValues,
 		}),
