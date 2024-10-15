@@ -41,11 +41,7 @@ The next step is to connect to Dagger Cloud from your local development environm
 
 You can visualize and debug your local Dagger pipeline runs with Dagger Cloud to identify issues before pushing them to CI.
 
-To configure for local development, use the following command:
-
-```shell
-dagger login
-```
+To configure for local development, run the `dagger login` command.
 
 :::tip Multiple Dagger Cloud organizations
 To use Dagger Cloud locally when you have multiple organizations linked to your account, you must use `dagger login ORGANIZATION-NAME` instead.
@@ -55,11 +51,18 @@ The Dagger CLI will invite you to authenticate your device by displaying a link 
 
 ```shell
 $ dagger login
-Browser opened to: https://auth.dagger.cloud/activate?user_code=FCNP-SRLM
-Confirmation code: FCNP-SRLM
+Browser opened to: https://auth.dagger.cloud/activate?user_code=XXXX-YYYY
+Confirmation code: XXXX-YYYY
 ```
 
-Once you confirm your authentication code, your Dagger CLI will be authenticated and you will get redirected to your newly created Dagger Cloud organization.
+Once you confirm your authentication code, your Dagger CLI will be authenticated and you can now visualize and debug your local Dagger pipeline runs.
+
+:::info
+If you do not want to use `dagger login`, set your Dagger Cloud token as an environment variable. For example:
+```shell
+export DAGGER_CLOUD_TOKEN={your token}
+```
+:::
 
 #### Connect from your CI environment
 
