@@ -3,12 +3,12 @@
   "sdk": "go",
   "dependencies": [
     {
-      "name": "dirdiff",
-      "source": "../modules/dirdiff"
+      "name": "gha",
+      "source": "github.com/gerhard/gha@9f051afa2b895b5a4281d8bafb07f7a5d50d1efd"
     },
     {
-      "name": "gha",
-      "source": "github.com/shykes/gha@f0c4da95fb3e7e5351d17dfb1d20362d3ae8b2a2"
+      "name": "dirdiff",
+      "source": "../modules/dirdiff"
     }
   ],
   "source": ".",
