@@ -397,11 +397,12 @@ func (fe *frontendPlain) finalRender() {
 }
 
 func (fe *frontendPlain) renderProgress() {
-	scope := fe.db.PrimarySpan
+	var rowsView *dagui.RowsView
 	if fe.RevealAllSpans {
-		scope = trace.SpanID{}
+		rowsView = fe.db.RowsViewAll()
+	} else {
+		rowsView = fe.db.RowsView(fe.db.PrimarySpan)
 	}
-	rowsView := fe.db.RowsView(scope)
 
 	// quickly sanity check the context - if a span from it has gone missing
 	// from the db, or has been marked as passthrough, it will no longer appear

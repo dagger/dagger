@@ -20,6 +20,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/term"
 
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/slog"
@@ -181,8 +182,11 @@ func (fe *frontendPretty) runWithTUI(ctx context.Context, run func(context.Conte
 	// set up ctx cancellation so the TUI can interrupt via keypresses
 	fe.runCtx, fe.interrupt = context.WithCancelCause(ctx)
 
+	_, out := findTTYs()
+
 	// keep program state so we can send messages to it
 	fe.program = tea.NewProgram(fe,
+		tea.WithOutput(out),
 		tea.WithMouseCellMotion(),
 	)
 
@@ -419,7 +423,11 @@ func (fe *frontendPretty) Render(out *termenv.Output) error {
 }
 
 func (fe *frontendPretty) recalculateViewLocked() {
-	fe.rowsView = fe.db.RowsView(fe.zoomed)
+	if fe.RevealAllSpans {
+		fe.rowsView = fe.db.RowsViewAll()
+	} else {
+		fe.rowsView = fe.db.RowsView(fe.zoomed)
+	}
 	fe.rows = fe.rowsView.Rows(fe.FrontendOpts)
 	fe.focus(fe.rows.BySpan[fe.focused])
 }
@@ -976,6 +984,19 @@ func (l *prettyLogs) SetWidth(width int) {
 
 func (l *prettyLogs) Shutdown(ctx context.Context) error {
 	return nil
+}
+
+func findTTYs() (in *os.File, out *os.File) {
+	if term.IsTerminal(int(os.Stdin.Fd())) {
+		in = os.Stdin
+	}
+	for _, f := range []*os.File{os.Stderr, os.Stdout} {
+		if term.IsTerminal(int(f.Fd())) {
+			out = f
+			break
+		}
+	}
+	return
 }
 
 type frameMsg time.Time
