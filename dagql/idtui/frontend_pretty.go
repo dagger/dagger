@@ -20,7 +20,6 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
-	"golang.org/x/term"
 
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/slog"
@@ -977,19 +976,6 @@ func (l *prettyLogs) SetWidth(width int) {
 
 func (l *prettyLogs) Shutdown(ctx context.Context) error {
 	return nil
-}
-
-func findTTYs() (in *os.File, out *os.File) {
-	if term.IsTerminal(int(os.Stdin.Fd())) {
-		in = os.Stdin
-	}
-	for _, f := range []*os.File{os.Stderr, os.Stdout} {
-		if term.IsTerminal(int(f.Fd())) {
-			out = f
-			break
-		}
-	}
-	return
 }
 
 type frameMsg time.Time

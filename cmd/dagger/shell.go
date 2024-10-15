@@ -47,7 +47,7 @@ var shellCmd = &cobra.Command{
 			// since its types are different.
 			modDef, err := initializeModule(ctx, dag, true)
 			if err != nil {
-				return fmt.Errorf("error initializing module: %s", err)
+				return fmt.Errorf("error initializing module: %w", err)
 			}
 			handler := &shellCallHandler{
 				dag:    dag,
@@ -89,7 +89,7 @@ type shellCallHandler struct {
 	stderrBuf *bytes.Buffer
 
 	// debug writes to the handler context's stderr what the arguments, input,
-	// and output are for each commmand that the exec handler processes
+	// and output are for each command that the exec handler processes
 	debug bool
 }
 
@@ -276,7 +276,7 @@ func (h *shellCallHandler) withTerminal(fn func(stdin io.Reader, stdout, stderr 
 func (h *shellCallHandler) Exec(next interp.ExecHandlerFunc) interp.ExecHandlerFunc {
 	return func(ctx context.Context, args []string) error {
 		if h.debug {
-			shellLog(ctx, "[DBG] args: %v\n", args)
+			shellLogf(ctx, "[DBG] args: %v\n", args)
 		}
 
 		s, err := shellState(ctx)
@@ -285,7 +285,7 @@ func (h *shellCallHandler) Exec(next interp.ExecHandlerFunc) interp.ExecHandlerF
 		}
 
 		if h.debug {
-			shellLog(ctx, "[DBG] input: %v\n", s)
+			shellLogf(ctx, "[DBG] input: %v\n", s)
 		}
 
 		// First command in pipe line: e.g., `cmd1 | cmd2 | cmd3`
@@ -305,15 +305,15 @@ func (h *shellCallHandler) Exec(next interp.ExecHandlerFunc) interp.ExecHandlerF
 		}
 
 		if h.debug {
-			shellLog(ctx, "[DBG] output: %v\n", s)
+			shellLogf(ctx, "[DBG] output: %v\n", s)
 		}
 
 		return s.Write(ctx)
 	}
 }
 
-func (h *shellCallHandler) entrypointCall(ctx context.Context, args []string) (*ShellState, error) {
-	// shellLog(ctx, "[%s] ENTRYPOINT!!\n", args[0])
+func (h *shellCallHandler) entrypointCall(ctx context.Context, args []string) (*ShellState, error) { //nolint:unparam
+	// shellLogf(ctx, "[%s] ENTRYPOINT!!\n", args[0])
 
 	// You're the entrypoint
 	// 1. Interpret args as same-module call (eg. 'build')
@@ -424,7 +424,12 @@ func (h *shellCallHandler) executeRequest(ctx context.Context, q *querybuilder.S
 	})
 }
 
-func shellLog(ctx context.Context, msg string, args ...any) {
+func shellLog(ctx context.Context, msg string) {
+	hctx := interp.HandlerCtx(ctx)
+	fmt.Fprint(hctx.Stderr, msg)
+}
+
+func shellLogf(ctx context.Context, msg string, args ...any) {
 	hctx := interp.HandlerCtx(ctx)
 	fmt.Fprintf(hctx.Stderr, msg, args...)
 }
@@ -554,17 +559,17 @@ func (h *shellCallHandler) Builtin(ctx context.Context, args []string) error {
 		if len(args) < 2 {
 			return fmt.Errorf("usage: .git URL")
 		}
-		gitUrl, err := parseGitURL(args[1])
+		gitURL, err := parseGitURL(args[1])
 		if err != nil {
 			return err
 		}
-		ref := gitUrl.Ref
+		ref := gitURL.Ref
 		if ref == "" {
 			ref = "main"
 		}
-		subdir := gitUrl.Path
-		gitUrl.Ref = ""
-		gitUrl.Path = ""
+		subdir := gitURL.Path
+		gitURL.Ref = ""
+		gitURL.Path = ""
 
 		s := &ShellState{
 			Calls: []FunctionCall{
@@ -572,7 +577,7 @@ func (h *shellCallHandler) Builtin(ctx context.Context, args []string) error {
 					Object: "Query",
 					Name:   "git",
 					Arguments: map[string]any{
-						"url": gitUrl.String(),
+						"url": gitURL.String(),
 					},
 					ReturnObject: "GitRepository",
 				},
