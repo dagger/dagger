@@ -5402,7 +5402,7 @@ func withModInitAt(dir, sdk, contents string) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
 		ctr = ctr.With(daggerExec("init", "--name="+filepath.Base(dir), "--sdk="+sdk, dir))
 		if contents != "" {
-			ctr = ctr.With(sdkSource(sdk, contents))
+			ctr = ctr.With(sdkSourceAt(dir, sdk, contents))
 		}
 		return ctr
 	}
