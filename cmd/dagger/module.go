@@ -961,7 +961,7 @@ func (m *moduleDef) GetObject(name string) *modObject {
 func (m *moduleDef) GetObjectFunction(objectName, functionName string) (*modFunction, error) {
 	fp := m.GetFunctionProvider(objectName)
 	if fp == nil {
-		return nil, fmt.Errorf("module %q does not have a %q object or interface", objectName)
+		return nil, fmt.Errorf("module %q does not have a %q object or interface", m.Name, objectName)
 	}
 	fn, err := GetFunction(fp, functionName)
 	if err != nil {
