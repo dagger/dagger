@@ -98,9 +98,6 @@ type FuncCommand struct {
 	// arguments rather than a debug level log.
 	warnSkipped bool
 
-	// selectedObject is not empty if the command chain end in an object.
-	selectedObject functionProvider
-
 	q   *querybuilder.Selection
 	c   *client.Client
 	ctx context.Context
