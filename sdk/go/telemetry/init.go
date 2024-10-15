@@ -24,28 +24,18 @@ import (
 	"google.golang.org/grpc"
 )
 
-func OTelConfigured() bool {
-	for _, env := range os.Environ() {
-		if strings.HasPrefix(env, "OTEL_") {
-			return true
-		}
-	}
-	return false
-}
-
-var configuredSpanExporter sdktrace.SpanExporter
-var configuredSpanExporterOnce sync.Once
+var (
+	configuredSpanExporter     sdktrace.SpanExporter
+	configuredSpanExporterOnce sync.Once
+)
 
 func ConfiguredSpanExporter(ctx context.Context) (sdktrace.SpanExporter, bool) {
 	ctx = context.WithoutCancel(ctx)
 
 	configuredSpanExporterOnce.Do(func() {
-		if !OTelConfigured() {
-			return
-		}
-
 		var err error
 
+		// handle protocol first so we can guess the full uri from a top-level OTLP endpoint
 		var proto string
 		if v := os.Getenv("OTEL_EXPORTER_OTLP_TRACES_PROTOCOL"); v != "" {
 			proto = v
@@ -69,6 +59,10 @@ func ConfiguredSpanExporter(ctx context.Context) (sdktrace.SpanExporter, bool) {
 			} else {
 				endpoint = v
 			}
+		}
+
+		if endpoint == "" {
+			return
 		}
 
 		switch proto {
