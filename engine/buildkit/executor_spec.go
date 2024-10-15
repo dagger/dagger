@@ -25,6 +25,7 @@ import (
 	"github.com/dagger/dagger/engine/buildkit/resources"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/docker/docker/pkg/idtools"
+	"github.com/google/uuid"
 	"github.com/moby/buildkit/executor"
 	"github.com/moby/buildkit/executor/oci"
 	randid "github.com/moby/buildkit/identity"
@@ -148,6 +149,11 @@ func (w *Worker) setupNetwork(ctx context.Context, state *execState) error {
 	provider, ok := w.networkProviders[state.procInfo.Meta.NetMode]
 	if !ok {
 		return fmt.Errorf("unknown network mode %s", state.procInfo.Meta.NetMode)
+	}
+	// if our process spec allows changes to the netns and doesn't have a hostname, assign one so buildkit doesn't default to pooled network namespaces
+	// ideally, we'd be less aggressive and find a way to CLONE_NEWNET the parent netns, but for now isolation is preferable to unpredictable rule bleeding.
+	if state.procInfo.Meta.SecurityMode == pb.SecurityMode_INSECURE && state.procInfo.Meta.Hostname == "" {
+		state.procInfo.Meta.Hostname = uuid.NewString()
 	}
 	networkNamespace, err := provider.New(ctx, state.procInfo.Meta.Hostname)
 	if err != nil {
