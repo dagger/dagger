@@ -565,29 +565,59 @@ func (h *shellCallHandler) Builtin(ctx context.Context, args []string) error {
 		subdir := gitUrl.Path
 		gitUrl.Ref = ""
 		gitUrl.Path = ""
+
 		s := &ShellState{
 			Calls: []FunctionCall{
 				{
-					Name: "git",
+					Object: "Query",
+					Name:   "git",
 					Arguments: map[string]any{
 						"url": gitUrl.String(),
 					},
+					ReturnObject: "GitRepository",
 				},
 				{
-					Name: "ref",
+					Object: "GitRepository",
+					Name:   "ref",
 					Arguments: map[string]interface{}{
 						"name": ref,
 					},
+					ReturnObject: "GitRef",
 				},
 				{
-					Name: "tree",
-				},
-				{
-					Name:         "directory",
+					Object:       "GitRef",
+					Name:         "tree",
 					ReturnObject: "Directory",
+				},
+				{
+					Object: "Directory",
+					Name:   "directory",
 					Arguments: map[string]interface{}{
 						"path": subdir,
 					},
+					ReturnObject: "Directory",
+				},
+			},
+		}
+		return s.Write(ctx)
+	case "container":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: .container REF")
+		}
+		s := &ShellState{
+			Calls: []FunctionCall{
+				{
+					Object:       "Query",
+					Name:         "container",
+					ReturnObject: "Container",
+				},
+				{
+					Object: "Container",
+					Name:   "from",
+					Arguments: map[string]interface{}{
+						"address": args[1],
+					},
+					ReturnObject: "Container",
 				},
 			},
 		}
