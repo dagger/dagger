@@ -8,6 +8,7 @@ use Dagger;
 use Dagger\Service\DecodesValue;
 use Dagger\Service\FindsDaggerObjects;
 use Dagger\Service\FindsSrcDirectory;
+use Dagger\Service\NormalizesClassName;
 use Dagger\Service\Serialisation;
 use Dagger\TypeDef;
 use Dagger\TypeDefKind;
@@ -57,7 +58,7 @@ class EntrypointCommand extends Command
 
         foreach ($daggerObjects as $daggerObject) {
             $objectTypeDef = dag()->typeDef()->withObject(
-                $this->normalizeClassname($daggerObject->name),
+                NormalizesClassName::trimLeadingNamespace($daggerObject->name),
                 $daggerObject->description,
             );
 
@@ -158,9 +159,13 @@ class EntrypointCommand extends Command
             case TypeDefKind::VOID_KIND:
                 return $typeDef->withKind($type->typeDefKind);
             case TypeDefKind::SCALAR_KIND:
-                return $typeDef->withScalar($type->getShortName());
+                return $typeDef->withScalar(
+                    NormalizesClassName::shorten($type->name)
+                );
             case TypeDefKind::ENUM_KIND:
-                return $typeDef->withEnum($type->getShortName());
+                return $typeDef->withEnum(
+                    NormalizesClassName::shorten($type->name)
+                );
             case TypeDefKind::LIST_KIND:
                 return $typeDef->withListOf($this->getTypeDef($type->subtype));
             case TypeDefKind::INTERFACE_KIND:
@@ -170,20 +175,17 @@ class EntrypointCommand extends Command
                 ));
             case TypeDefKind::OBJECT_KIND:
                 if ($type->isIdable()) {
-                    return $typeDef->withObject($type->getShortName());
+                    return $typeDef->withObject(
+                        NormalizesClassName::shorten($type->name)
+                    );
                 }
 
-                return $typeDef->withObject($this->normalizeClassname($type->name));
+                return $typeDef->withObject(
+                    NormalizesClassName::trimLeadingNamespace($type->name)
+                );
             default:
                 throw new RuntimeException("No support exists for $type->name");
         }
-    }
-
-    private function normalizeClassname(string $classname): string
-    {
-        $classname = str_replace('DaggerModule', '', $classname);
-        $classname = ltrim($classname, '\\');
-        return str_replace('\\', ':', $classname);
     }
 
     /**

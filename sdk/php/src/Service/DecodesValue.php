@@ -70,7 +70,7 @@ final readonly class DecodesValue
                 ));
             case TypeDefKind::OBJECT_KIND:
                 if ($type->isIdable()) {
-                    $method = sprintf('load%sFromId', $type->getShortName());
+                    $method = sprintf('load%sFromId', NormalizesClassName::shorten($type->name));
                     $id = sprintf('%sId', $type->name);
 
                     return $this->client->$method(new $id(json_decode($value)));
