@@ -5390,17 +5390,21 @@ func modInit(t *testctx.T, c *dagger.Client, sdk, contents string) *dagger.Conta
 
 func withModInit(sdk, contents string) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
-		return ctr.
-			With(daggerExec("init", "--name=test", "--sdk="+sdk)).
-			With(sdkSource(sdk, contents))
+		ctr = ctr.With(daggerExec("init", "--name=test", "--sdk="+sdk))
+		if contents != "" {
+			ctr = ctr.With(sdkSource(sdk, contents))
+		}
+		return ctr
 	}
 }
 
 func withModInitAt(dir, sdk, contents string) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
-		return ctr.
-			With(daggerExec("init", "--name="+filepath.Base(dir), "--sdk="+sdk, dir)).
-			With(sdkSourceAt(dir, sdk, contents))
+		ctr = ctr.With(daggerExec("init", "--name="+filepath.Base(dir), "--sdk="+sdk, dir))
+		if contents != "" {
+			ctr = ctr.With(sdkSource(sdk, contents))
+		}
+		return ctr
 	}
 }
 
