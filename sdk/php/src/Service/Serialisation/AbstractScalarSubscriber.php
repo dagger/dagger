@@ -22,14 +22,11 @@ final readonly class AbstractScalarSubscriber implements EventSubscriberInterfac
             [
                 'event' => 'serializer.pre_serialize',
                 'method' => 'onPreSerialize',
-                'format' => 'json',
-                'priority' => 0,
+                'interface' => AbstractScalar::class,
             ],
             [
                 'event' => 'serializer.pre_deserialize',
                 'method' => 'onPreDeserialize',
-                'format' => 'json',
-                'priority' => 0,
             ],
         ];
     }
