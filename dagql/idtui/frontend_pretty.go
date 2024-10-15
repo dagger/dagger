@@ -650,14 +650,22 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 	case backgroundMsg:
 		fe.backgrounded = true
 		cmd := msg.cmd
+
 		if msg.raw {
+			var restore func() error
 			cmd = &wrapCommand{
 				ExecCommand: cmd,
 				before: func() error {
-					return fe.program.RestoreTerminal()
+					ttyFd := int(os.Stdout.Fd())
+					oldState, err := term.MakeRaw(ttyFd)
+					if err != nil {
+						return err
+					}
+					restore = func() error { return term.Restore(ttyFd, oldState) }
+					return nil
 				},
 				after: func() error {
-					return fe.program.ReleaseTerminal()
+					return restore()
 				},
 			}
 		}
