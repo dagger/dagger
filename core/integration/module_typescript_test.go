@@ -768,7 +768,7 @@ func (TypescriptSuite) TestCustomBaseImage(ctx context.Context, t *testctx.T) {
 			WithWorkdir("/work").
 			WithNewFile("package.json", `{
 			"dagger": {
-				"runtime": "jitesoft/node:20.18.0@sha256:96282943ebef704f41f337c86393835995b6ac46549c53b3f285f306ea1d9789",
+				"runtime": "vasektechnology/node-alpine:test@sha256:ce757edbc0509ede4ef9d2d9e1b329dc43762fa55ccf55be00b51fe2da0fa473"
 			}
 		}`).
 			With(daggerExec("init", "--name=custom-base-image", "--sdk=typescript", "--source=."))
@@ -784,7 +784,7 @@ func (TypescriptSuite) TestCustomBaseImage(ctx context.Context, t *testctx.T) {
 			WithWorkdir("/work").
 			WithNewFile("package.json", `{
 			"dagger": {
-				"runtime": "jitesoft/node:20.18.0",
+				"runtime": "vasektechnology/node-alpine:test"
 			}
 		}`).
 			With(daggerExec("init", "--name=custom-base-image", "--sdk=typescript", "--source=."))

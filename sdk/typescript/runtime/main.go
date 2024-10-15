@@ -264,7 +264,7 @@ func (t *TypescriptSdk) Base() (*dagger.Container, error) {
 			}), nil
 	case Node:
 		if image != "" {
-			ctr.From(image)
+			ctr = ctr.From(image)
 		} else if version != "" {
 			ctr = ctr.From(fmt.Sprintf("%s:%s-alpine", Node, version))
 		} else {
