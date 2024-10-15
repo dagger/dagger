@@ -11,11 +11,13 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"text/tabwriter"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/querybuilder"
+	"github.com/adrg/xdg"
 	"github.com/chzyer/readline"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/mattn/go-isatty"
@@ -219,14 +221,18 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 		err := h.withTerminal(func(stdin io.Reader, stdout, stderr io.Writer) error {
 			var err error
 			if rl == nil {
+				cfg, err := loadReadlineConfig()
+				if err != nil {
+					return err
+				}
+
 				// NOTE: this relies on multiple calls to withTerminal
 				// returning the same readers/writers each time
-				rl, err = readline.NewEx(&readline.Config{
-					Prompt: "> ",
-					Stdin:  io.NopCloser(stdin),
-					Stdout: stdout,
-					Stderr: stderr,
-				})
+				cfg.Stdin = io.NopCloser(stdin)
+				cfg.Stdout = stdout
+				cfg.Stderr = stderr
+
+				rl, err = readline.NewEx(cfg)
 				if err != nil {
 					return err
 				}
@@ -735,4 +741,18 @@ func (p GitURL) String() string {
 		}
 	}
 	return sb.String()
+}
+
+func loadReadlineConfig() (*readline.Config, error) {
+	dataRoot := filepath.Join(xdg.DataHome, "dagger")
+	err := os.MkdirAll(dataRoot, 0o700)
+	if err != nil {
+		return nil, err
+	}
+
+	return &readline.Config{
+		Prompt:       "> ",
+		HistoryFile:  filepath.Join(dataRoot, "histfile"),
+		HistoryLimit: 1000,
+	}, nil
 }
