@@ -70,9 +70,9 @@ Connect to it from a dagger cli:
     dagger call -m github.com/shykes/daggerverse/hello@main hello
     # hello, world!
 
-## Generation
+## Code Generation
 
-In core/schema, changes utilizing the dagql package modify the engine's GraphQL API. API documentation and SDK bindings must be generated and committed when modifying the schema. See "Docs" and "SDKs" below for more granular generation functionality.
+In core/schema, changes utilizing the dagql package modify the engine's GraphQL API. API documentation and SDK bindings must be generated and committed when modifying the schema. See "Docs" and "SDKs" below for more granular generation functionality. This command also runs go generate for engine code.
 
     dagger call generate export --path=.
 
