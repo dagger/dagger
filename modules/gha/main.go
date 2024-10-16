@@ -8,221 +8,166 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"errors"
-	"fmt"
 	"regexp"
-	"sort"
 	"strings"
 
+	"github.com/dagger/dagger/modules/gha/api"
 	"github.com/dagger/dagger/modules/gha/internal/dagger"
-	"golang.org/x/mod/semver"
-	"mvdan.cc/sh/shell"
+	"github.com/iancoleman/strcase"
 )
 
-func New(
-	// Disable sending traces to Dagger Cloud
+type Gha struct{}
+
+type Settings struct{}
+
+type Pipeline struct {
+	Name string
+	Jobs []Job
+	// +private
+	Triggers               api.WorkflowTriggers
+	PullRequestConcurrency string
+	// +private
+	Permissions Permissions
+}
+
+func (m *Gha) Generate(pipelines []*Pipeline,
 	// +optional
-	noTraces bool,
+	asJSON bool,
+	// +optional
+	// +default=".gen.yml"
+	fileExtension string,
+) *dagger.Directory {
+	dir := dag.Directory()
+	for _, p := range pipelines {
+		dir = dir.WithDirectory(".", p.Config(asJSON, fileExtension))
+	}
+	return dir.WithFile(".github/workflows/.gitattributes", m.gitAttributes(fileExtension))
+}
+
+func (m *Gha) gitAttributes(fileExtension string) *dagger.File {
+	// Need a custom file extension to match generated files in .gitattributes
+	if ext := fileExtension; ext == ".yml" || ext == ".yaml" {
+		return nil
+	}
+
+	return dag.
+		Directory().
+		WithNewFile(
+			".gitattributes",
+			"**"+fileExtension+" linguist-generated").
+		File(".gitattributes")
+}
+
+type Job struct {
+	Name    string
+	Command string
+
+	// The maximum number of minutes to run the pipeline before killing the process
+	TimeoutMinutes int
+	// Run the pipeline in debug mode
+	Debug bool
+	// Use a sparse git checkout, only including the given paths
+	// Example: ["src", "tests", "Dockerfile"]
+	SparseCheckout []string
+	// Enable lfs on git checkout
+	LFS bool
+	// Github secrets to inject into the pipeline environment.
+	// For each secret, an env variable with the same name is created.
+	// Example: ["PROD_DEPLOY_TOKEN", "PRIVATE_SSH_KEY"]
+	Secrets []string
+	// Dispatch jobs to the given runner
+	// Example: ["ubuntu-latest"]
+	Runner []string
+	// The Dagger module to load
+	Module string
+	// Dagger version to run this pipeline
+	DaggerVersion string
+	// Public Dagger Cloud token, for open-source projects. DO NOT PASS YOUR PRIVATE DAGGER CLOUD TOKEN!
+	// This is for a special "public" token which can safely be shared publicly.
+	// To get one, contact support@dagger.io
+	PublicToken string
+	// Explicitly stop the dagger engine after completing the pipeline.
+	StopEngine bool
+}
+
+func (p *Pipeline) WithJob(
+	name string,
+	command string,
+
 	// Public Dagger Cloud token, for open-source projects. DO NOT PASS YOUR PRIVATE DAGGER CLOUD TOKEN!
 	// This is for a special "public" token which can safely be shared publicly.
 	// To get one, contact support@dagger.io
 	// +optional
 	publicToken string,
-	// Dagger version to run in the Github Actions pipelines
-	// +optional
-	// +default="latest"
-	daggerVersion string,
-	// Explicitly stop the Dagger Engine after completing the pipeline
+	// Explicitly stop the dagger engine after completing the pipeline.
 	// +optional
 	stopEngine bool,
-	// Encode all files as JSON (which is also valid YAML)
-	// +optional
-	asJson bool,
-	// Configure a default runner for all workflows
-	// See https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/using-self-hosted-runners-in-a-workflow
-	// +optional
-	runner []string,
-	// File extension to use for generated workflow files
-	// +optional
-	// +default=".gen.yml"
-	fileExtension string,
-	// Existing repository root, to merge existing content
-	// +optional
-	// +ignore=["!.github"]
-	repository *dagger.Directory,
-	// Default timeout for CI jobs, in minutes
+	// The maximum number of minutes to run the pipeline before killing the process
 	// +optional
 	timeoutMinutes int,
-) *Gha {
-	if runner == nil {
-		runner = []string{"ubuntu-latest"}
-	}
-
-	return &Gha{Settings: Settings{
-		PublicToken:    publicToken,
-		NoTraces:       noTraces,
-		DaggerVersion:  daggerVersion,
-		StopEngine:     stopEngine,
-		AsJson:         asJson,
-		Runner:         runner,
-		FileExtension:  fileExtension,
-		Repository:     repository,
-		TimeoutMinutes: timeoutMinutes,
-	}}
-}
-
-type Gha struct {
-	// +private
-	Pipelines []*Pipeline
-	// Settings for this Github Actions project
-	Settings Settings
-}
-
-type Settings struct {
-	PublicToken            string
-	DaggerVersion          string
-	NoTraces               bool
-	StopEngine             bool
-	AsJson                 bool
-	Runner                 []string
-	PullRequestConcurrency string
-	Debug                  bool
-	FileExtension          string
-	Repository             *dagger.Directory
-	TimeoutMinutes         int
-	Permissions            Permissions
-}
-
-// Validate a Github Actions configuration (best effort)
-func (m *Gha) Validate(ctx context.Context, repo *dagger.Directory) (*Gha, error) {
-	for _, p := range m.Pipelines {
-		if err := p.Check(ctx, repo); err != nil {
-			return m, err
-		}
-	}
-	return m, nil
-}
-
-// Export the configuration to a .github directory
-func (m *Gha) Config(ctx context.Context) *dagger.Directory {
-	return m.
-		otherWorkflows(ctx).
-		WithDirectory(".", m.generatedWorkflows()).
-		WithDirectory(".", m.gitAttributes(ctx))
-}
-
-func (m *Gha) otherWorkflows(ctx context.Context) *dagger.Directory {
-	dir := dag.Directory()
-	if repo := m.Settings.Repository; repo != nil {
-		if filenames, err := repo.Directory(".github/workflows").Entries(ctx); err == nil {
-			for _, filename := range filenames {
-				workflow := repo.File(".github/workflows/" + filename)
-				if contents, err := repo.File(".github/workflows/" + filename).Contents(ctx); err == nil {
-					if !strings.HasPrefix(contents, "# This file was generated.") {
-						dir = dir.WithFile(".github/workflows/"+filename, workflow)
-					}
-				}
-			}
-		}
-	}
-	return dir
-}
-
-func (m *Gha) generatedWorkflows() *dagger.Directory {
-	dir := dag.Directory()
-	for _, p := range m.Pipelines {
-		dir = dir.WithDirectory(".", p.Config())
-	}
-	return dir
-}
-
-func (m *Gha) gitAttributes(ctx context.Context) *dagger.Directory {
-	// Need a custom file extension to match generated files in .gitattributes
-	if ext := m.Settings.FileExtension; ext == ".yml" || ext == ".yaml" {
-		return dag.Directory()
-	}
-	repo := m.Settings.Repository
-	// Need access to the existing .gitattributes, to avoid appending the same line multiple times
-	if repo == nil {
-		return dag.Directory()
-	}
-	attributes, err := repo.File(".github/.gitattributes").Contents(ctx)
-	// Need access to the existing .gitattributes, to avoid appending the same line multiple times
-	if err != nil {
-		// FIXME: differentiate between file not found and other errors. I can never remember how
-		return dag.Directory()
-	}
-	return dag.
-		Directory().
-		WithNewFile(
-			".github/.gitattributes",
-			appendOnce(attributes, "**"+m.Settings.FileExtension+" linguist-generated"),
-		)
-}
-
-// Append a line to a string, only if it doesn't already exist
-func appendOnce(s, line string) string {
-	if !lineMatch(s, line) {
-		return s + "\n" + line + "\n"
-	}
-	return s
-}
-
-// Check if a string contains a line
-func lineMatch(s, line string) bool {
-	scanner := bufio.NewScanner(strings.NewReader(s))
-	for scanner.Scan() {
-		if strings.TrimSpace(scanner.Text()) == line {
-			return true
-		}
-	}
-	return false
-}
-
-// Add a pipeline
-func (m *Gha) WithPipeline(
-	// Pipeline name
-	name string,
-	// The Dagger command to execute
-	// Example 'build --source=.'
-	command string,
-	// The Dagger module to load
+	// Run the pipeline in debug mode
 	// +optional
-	module string,
-	// Dispatch jobs to the given runner
-	// Example: ["ubuntu-latest"]
+	debug bool,
+	// Use a sparse git checkout, only including the given paths
+	// Example: ["src", "tests", "Dockerfile"]
 	// +optional
-	runner []string,
+	sparseCheckout []string,
+	// Enable lfs on git checkout
+	// +optional
+	lfs bool,
 	// Github secrets to inject into the pipeline environment.
 	// For each secret, an env variable with the same name is created.
 	// Example: ["PROD_DEPLOY_TOKEN", "PRIVATE_SSH_KEY"]
 	// +optional
 	secrets []string,
-	// Use a sparse git checkout, only including the given paths
-	// Example: ["src", "tests", "Dockerfile"]
+	// Dispatch jobs to the given runner
+	// Example: ["ubuntu-latest"]
 	// +optional
-	sparseCheckout []string,
-	// (DEPRECATED) allow this pipeline to be manually "dispatched"
+	runner []string,
+	// The Dagger module to load
 	// +optional
-	// +deprecated
-	dispatch bool,
-	// Disable manual "dispatch" of this pipeline
-	// +optional
-	noDispatch bool,
-	// Enable lfs on git checkout
-	// +optional
-	lfs bool,
-	// Run the pipeline in debug mode
-	// +optional
-	debug bool,
+	module string,
 	// Dagger version to run this pipeline
 	// +optional
 	daggerVersion string,
-	// The maximum number of minutes to run the pipeline before killing the process
+) *Pipeline {
+	p.Jobs = append(p.Jobs, Job{
+		Name:           name,
+		PublicToken:    publicToken,
+		StopEngine:     stopEngine,
+		Command:        command,
+		TimeoutMinutes: timeoutMinutes,
+		Debug:          debug,
+		SparseCheckout: sparseCheckout,
+		LFS:            lfs,
+		Secrets:        secrets,
+		Runner:         runner,
+		Module:         module,
+		DaggerVersion:  daggerVersion,
+	})
+	return p
+}
+
+// Add a pipeline
+//
+//nolint:gocyclo
+func (m *Gha) Pipeline(
+	// Pipeline name
+	name string,
+	// Configure this pipeline's concurrency for each PR.
+	// This is triggered when the pipeline is scheduled concurrently on the same PR.
+	//   - allow: all instances are allowed to run concurrently
+	//   - queue: new instances are queued, and run sequentially
+	//   - preempt: new instances run immediately, older ones are canceled
+	// Possible values: "allow", "preempt", "queue"
 	// +optional
-	timeoutMinutes int,
+	// +default="allow"
+	pullRequestConcurrency string,
+	// Disable manual "dispatch" of this pipeline
+	// +optional
+	noDispatch bool,
 	// Permissions to grant the pipeline
 	// +optional
 	permissions Permissions,
@@ -238,15 +183,6 @@ func (m *Gha) WithPipeline(
 	// Run the pipeline on any pull request activity
 	// +optional
 	onPullRequest bool,
-	// Configure this pipeline's concurrency for each PR.
-	// This is triggered when the pipeline is scheduled concurrently on the same PR.
-	//   - allow: all instances are allowed to run concurrently
-	//   - queue: new instances are queued, and run sequentially
-	//   - preempt: new instances run immediately, older ones are canceled
-	// Possible values: "allow", "preempt", "queue"
-	// +optional
-	// +default="allow"
-	pullRequestConcurrency string,
 	// +optional
 	onPullRequestBranches []string,
 	// +optional
@@ -270,7 +206,7 @@ func (m *Gha) WithPipeline(
 	// +optional
 	onPullRequestSynchronize bool,
 	// +optional
-	onPullRequestConverted_to_draft bool,
+	onPullRequestConvertedToDraft bool,
 	// +optional
 	onPullRequestLocked bool,
 	// +optional
@@ -305,36 +241,20 @@ func (m *Gha) WithPipeline(
 	// Run the pipeline at a schedule time
 	// +optional
 	onSchedule []string,
-) *Gha {
+) *Pipeline {
 	p := &Pipeline{
-		Name:           name,
-		Command:        command,
-		Module:         module,
-		Secrets:        secrets,
-		SparseCheckout: sparseCheckout,
-		LFS:            lfs,
-		Settings:       m.Settings,
+		Name: name,
+		Jobs: []Job{},
 	}
+
 	if !noDispatch {
-		p.Triggers.WorkflowDispatch = &WorkflowDispatchEvent{}
+		p.Triggers.WorkflowDispatch = &api.WorkflowDispatchEvent{}
 	}
 	if pullRequestConcurrency != "" {
-		p.Settings.PullRequestConcurrency = pullRequestConcurrency
+		p.PullRequestConcurrency = pullRequestConcurrency
 	}
 	if permissions != nil {
-		p.Settings.Permissions = permissions
-	}
-	if debug {
-		p.Settings.Debug = debug
-	}
-	if daggerVersion != "" {
-		p.Settings.DaggerVersion = daggerVersion
-	}
-	if runner != nil {
-		p.Settings.Runner = runner
-	}
-	if timeoutMinutes != 0 {
-		p.Settings.TimeoutMinutes = timeoutMinutes
+		p.Permissions = permissions
 	}
 	if onIssueComment {
 		p.OnIssueComment(nil)
@@ -384,7 +304,7 @@ func (m *Gha) WithPipeline(
 	if onPullRequestSynchronize {
 		p.OnPullRequest([]string{"synchronize"}, nil, nil)
 	}
-	if onPullRequestConverted_to_draft {
+	if onPullRequestConvertedToDraft {
 		p.OnPullRequest([]string{"converted_to_draft"}, nil, nil)
 	}
 	if onPullRequestLocked {
@@ -432,8 +352,7 @@ func (m *Gha) WithPipeline(
 	if onSchedule != nil {
 		p.OnSchedule(onSchedule)
 	}
-	m.Pipelines = append(m.Pipelines, p)
-	return m
+	return p
 }
 
 func (p *Pipeline) OnIssueComment(
@@ -443,7 +362,7 @@ func (p *Pipeline) OnIssueComment(
 	types []string,
 ) *Pipeline {
 	if p.Triggers.IssueComment == nil {
-		p.Triggers.IssueComment = &IssueCommentEvent{}
+		p.Triggers.IssueComment = &api.IssueCommentEvent{}
 	}
 	p.Triggers.IssueComment.Types = append(p.Triggers.IssueComment.Types, types...)
 	return p
@@ -463,7 +382,7 @@ func (p *Pipeline) OnPullRequest(
 	paths []string,
 ) *Pipeline {
 	if p.Triggers.PullRequest == nil {
-		p.Triggers.PullRequest = &PullRequestEvent{}
+		p.Triggers.PullRequest = &api.PullRequestEvent{}
 	}
 	p.Triggers.PullRequest.Types = append(p.Triggers.PullRequest.Types, types...)
 	p.Triggers.PullRequest.Branches = append(p.Triggers.PullRequest.Branches, branches...)
@@ -481,7 +400,7 @@ func (p *Pipeline) OnPush(
 	tags []string,
 ) *Pipeline {
 	if p.Triggers.Push == nil {
-		p.Triggers.Push = &PushEvent{}
+		p.Triggers.Push = &api.PushEvent{}
 	}
 	p.Triggers.Push.Branches = append(p.Triggers.Push.Branches, branches...)
 	p.Triggers.Push.Tags = append(p.Triggers.Push.Tags, tags...)
@@ -495,57 +414,36 @@ func (p *Pipeline) OnSchedule(
 	expressions []string,
 ) *Pipeline {
 	if p.Triggers.Schedule == nil {
-		p.Triggers.Schedule = make([]ScheduledEvent, len(expressions))
+		p.Triggers.Schedule = make([]api.ScheduledEvent, len(expressions))
 		for i, expression := range expressions {
-			p.Triggers.Schedule[i] = ScheduledEvent{Cron: expression}
+			p.Triggers.Schedule[i] = api.ScheduledEvent{Cron: expression}
 		}
 	}
 	return p
 }
 
-// Lookup a pipeline
-func (m *Gha) pipeline(name string) *Pipeline {
-	for _, p := range m.Pipelines {
-		if p.Name == name {
-			return p
-		}
-	}
-	return nil
-}
-
 // A Dagger pipeline to be called from a Github Actions configuration
-type Pipeline struct {
-	// +private
-	Name string
-	// +private
-	Module string
-	// +private
-	Command string
-	// +private
-	Secrets []string
-	// +private
-	SparseCheckout []string
-	// +private
-	LFS bool
-	// +private
-	Settings Settings
-	// +private
-	Triggers WorkflowTriggers
+func (p *Pipeline) Config(
+	// Encode all files as JSON (which is also valid YAML)
+	// +optional
+	asJSON bool,
+	// File extension to use for generated workflow files
+	// +optional
+	// +default=".gen.yml"
+	fileExtension string,
+) *dagger.Directory {
+	return workflowConfig(p.asWorkflow(), p.workflowFilename(fileExtension), asJSON)
 }
 
-func (p *Pipeline) Config() *dagger.Directory {
-	return p.asWorkflow().Config(p.workflowFilename(), p.Settings.AsJson)
-}
-
-func (p *Pipeline) concurrency() *WorkflowConcurrency {
-	setting := p.Settings.PullRequestConcurrency
+func (p *Pipeline) concurrency() *api.WorkflowConcurrency {
+	setting := p.PullRequestConcurrency
 	if setting == "" || setting == "allow" {
 		return nil
 	}
 	if (setting != "queue") && (setting != "preempt") {
 		panic("Unsupported value for 'pullRequestConcurrency': " + setting)
 	}
-	concurrency := &WorkflowConcurrency{
+	concurrency := &api.WorkflowConcurrency{
 		// If in a pull request: concurrency group is unique to workflow + head branch
 		// If NOT in a pull request: concurrency group is unique to run ID -> no grouping
 		Group: "${{ github.workflow }}-${{ github.head_ref || github.run_id }}",
@@ -556,10 +454,10 @@ func (p *Pipeline) concurrency() *WorkflowConcurrency {
 	return concurrency
 }
 
-func (p *Pipeline) checkSecretNames() error {
+func (j *Job) checkSecretNames() error {
 	// check if the secret name contains only alphanumeric characters and underscores.
 	validName := regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
-	for _, secretName := range p.Secrets {
+	for _, secretName := range j.Secrets {
 		if !validName.MatchString(secretName) {
 			return errors.New("invalid secret name: '" + secretName + "' must contain only alphanumeric characters and underscores")
 		}
@@ -567,12 +465,12 @@ func (p *Pipeline) checkSecretNames() error {
 	return nil
 }
 
-func (p *Pipeline) checkCommandAndModule(ctx context.Context, repo *dagger.Directory) error {
+func (j *Job) checkCommandAndModule(ctx context.Context, repo *dagger.Directory) error {
 	script := "dagger call"
-	if p.Module != "" {
-		script = script + " -m '" + p.Module + "' "
+	if j.Module != "" {
+		script = script + " -m '" + j.Module + "' "
 	}
-	script = script + p.Command + " --help"
+	script = script + j.Command + " --help"
 	_, err := dag.
 		Wolfi().
 		Container(dagger.WolfiContainerOpts{
@@ -594,209 +492,58 @@ func (p *Pipeline) Check(
 	// +defaultPath="/"
 	repo *dagger.Directory,
 ) error {
-	if err := p.checkSecretNames(); err != nil {
-		return err
-	}
-	if err := p.checkCommandAndModule(ctx, repo); err != nil {
-		return err
+	for _, job := range p.Jobs {
+		if err := job.checkSecretNames(); err != nil {
+			return err
+		}
+		if err := job.checkCommandAndModule(ctx, repo); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
 // Generate a GHA workflow from a Dagger pipeline definition.
 // The workflow will have no triggers, they should be filled separately.
-func (p *Pipeline) asWorkflow() Workflow {
-	var steps []JobStep
-	// FIXME: make checkout configurable
-	steps = append(steps, p.checkoutStep())
-	steps = append(steps, p.installDaggerSteps()...)
-	steps = append(steps, p.warmEngineStep(), p.callDaggerStep())
-	if p.Settings.StopEngine {
-		steps = append(steps, p.stopEngineStep())
+func (p *Pipeline) asWorkflow() api.Workflow {
+	jobs := map[string]api.Job{}
+	for _, job := range p.Jobs {
+		steps := []api.JobStep{}
+		// FIXME: make checkout configurable
+		steps = append(steps, job.checkoutStep())
+		steps = append(steps, job.installDaggerSteps()...)
+		steps = append(steps, job.warmEngineStep(), job.callDaggerStep())
+		if job.StopEngine {
+			steps = append(steps, job.stopEngineStep())
+		}
+
+		jobs[idify(job.Name)] = api.Job{
+			// The job name is used by the "required checks feature" in branch protection rules
+			Name:           job.Name,
+			RunsOn:         job.Runner,
+			Steps:          steps,
+			TimeoutMinutes: job.TimeoutMinutes,
+			Outputs: map[string]string{
+				"stdout": "${{ steps.exec.outputs.stdout }}",
+				"stderr": "${{ steps.exec.outputs.stderr }}", // FIXME: max output size is 1MB
+			},
+		}
 	}
-	return Workflow{
+	return api.Workflow{
 		Name:        p.Name,
 		On:          p.Triggers,
 		Concurrency: p.concurrency(),
-		Jobs: map[string]Job{
-			p.jobID(): Job{
-				// The job name is used by the "required checks feature" in branch protection rules
-				Name:           p.Name,
-				RunsOn:         p.Settings.Runner,
-				Permissions:    p.JobPermissions(),
-				Steps:          steps,
-				TimeoutMinutes: p.Settings.TimeoutMinutes,
-				Outputs: map[string]string{
-					"stdout": "${{ steps.exec.outputs.stdout }}",
-					"stderr": "${{ steps.exec.outputs.stderr }}",
-				},
-			},
-		},
+		Jobs:        jobs,
+		Permissions: p.Permissions.Permissions(),
 	}
 }
 
-func (p *Pipeline) JobPermissions() *JobPermissions {
-	return p.Settings.Permissions.JobPermissions()
+func (p *Pipeline) workflowFilename(fileExtension string) string {
+	return idify(p.Name) + fileExtension
 }
 
-func (p *Pipeline) workflowFilename() string {
-	var name string
-	// Convert to lowercase
-	name = strings.ToLower(p.Name)
-	// Replace spaces and special characters with hyphens
-	re := regexp.MustCompile(`[^a-z0-9]+`)
-	name = re.ReplaceAllString(name, "-")
-	// Trim leading and trailing hyphens
-	name = strings.Trim(name, "-")
-	// Add the file extension
-	return name + p.Settings.FileExtension
-}
-
-func (p *Pipeline) jobID() string {
-	return "dagger"
-}
-
-func (p *Pipeline) checkoutStep() JobStep {
-	step := JobStep{
-		Name: "Checkout",
-		Uses: "actions/checkout@v4",
-		With: map[string]string{},
-	}
-	if p.SparseCheckout != nil {
-		// Include common dagger paths in the checkout, to make
-		// sure local modules work by default
-		// FIXME: this is only a guess, we need the 'source' field of dagger.json
-		//  to be sure.
-		sparseCheckout := append(p.SparseCheckout, "dagger.json", ".dagger", "dagger", "ci")
-		step.With["sparse-checkout"] = strings.Join(sparseCheckout, "\n")
-	}
-	if p.LFS {
-		step.With["lfs"] = "true"
-	}
-	return step
-}
-
-func (p *Pipeline) warmEngineStep() JobStep {
-	return p.bashStep("warm-engine", nil)
-}
-
-func (p *Pipeline) installDaggerSteps() []JobStep {
-	if v := p.Settings.DaggerVersion; (v == "latest") || (semver.IsValid(v)) {
-		return []JobStep{
-			p.bashStep("install-dagger", map[string]string{"DAGGER_VERSION": v}),
-		}
-	}
-	// Interpret dagger version as a local source, and build it (dev engine)
-	return []JobStep{
-		// Install latest dagger to bootstrap dev dagger
-		// FIXME: let's daggerize this, using dagger in dagger :)
-		p.bashStep("install-dagger", map[string]string{"DAGGER_VERSION": "latest"}),
-		JobStep{
-			Name: "Install go",
-			Uses: "actions/setup-go@v5",
-			With: map[string]string{
-				"go-version":            "1.22",
-				"cache-dependency-path": "dev/go.sum",
-			},
-		},
-		p.bashStep("start-dev-dagger", map[string]string{
-			"DAGGER_SOURCE": p.Settings.DaggerVersion,
-			// create separate outputs and containers for each job run (to prevent
-			// collisions with shared docker containers).
-			"_EXPERIMENTAL_DAGGER_DEV_OUTPUT":    "./bin/dev-${{ github.run_id }}",
-			"_EXPERIMENTAL_DAGGER_DEV_CONTAINER": "dagger-engine.dev-${{ github.run_id }}di",
-		}),
-	}
-}
-
-// Analyze the pipeline command, and return a list of env variables it references
-func (p *Pipeline) envLookups() []string {
-	var lookups = make(map[string]interface{})
-	_, err := shell.Expand(p.Command, func(name string) string {
-		lookups[name] = nil
-		return name
-	})
-	if err != nil {
-		// An error might mean an invalid command OR a bug or incomatibility in our parser,
-		// let's not surface it for now.
-		return nil
-	}
-	result := make([]string, 0, len(lookups))
-	for name, _ := range lookups {
-		if name == "IFS" {
-			continue
-		}
-		result = append(result, name)
-	}
-	sort.Strings(result)
-	return result
-}
-
-func (p *Pipeline) callDaggerStep() JobStep {
-	env := map[string]string{}
-	// Debug mode
-	if p.Settings.Debug {
-		env["DEBUG"] = "1"
-	}
-	// Inject dagger command
-	env["COMMAND"] = "dagger call -q " + p.Command
-	// Inject user-defined secrets
-	for _, secretName := range p.Secrets {
-		env[secretName] = fmt.Sprintf("${{ secrets.%s }}", secretName)
-	}
-	// Inject module name
-	if p.Module != "" {
-		env["DAGGER_MODULE"] = p.Module
-	}
-	// Inject Dagger Cloud token
-	if !p.Settings.NoTraces {
-		if p.Settings.PublicToken != "" {
-			env["DAGGER_CLOUD_TOKEN"] = p.Settings.PublicToken
-			// For backwards compatibility with older engines
-			env["_EXPERIMENTAL_DAGGER_CLOUD_TOKEN"] = p.Settings.PublicToken
-		} else {
-			env["DAGGER_CLOUD_TOKEN"] = "${{ secrets.DAGGER_CLOUD_TOKEN }}"
-			// For backwards compatibility with older engines
-			env["_EXPERIMENTAL_DAGGER_CLOUD_TOKEN"] = "${{ secrets.DAGGER_CLOUD_TOKEN }}"
-		}
-	}
-	for _, key := range p.envLookups() {
-		if strings.HasPrefix(key, "GITHUB_") {
-			// Inject Github context keys
-			// github.ref becomes $GITHUB_REF, etc.
-			env[key] = fmt.Sprintf("${{ github.%s }}", strings.ToLower(key))
-		} else if strings.HasPrefix(key, "RUNNER_") {
-			// Inject Runner context keys
-			// runner.ref becomes $RUNNER_REF, etc.
-			env[key] = fmt.Sprintf("${{ runner.%s }}", strings.ToLower(key))
-		}
-	}
-	return p.bashStep("exec", env)
-}
-
-func (p *Pipeline) stopEngineStep() JobStep {
-	return p.bashStep("scripts/stop-engine.sh", nil)
-}
-
-// Return a github actions step which executes the script embedded at scripts/<filename>.sh
-// The script must be checked in with the module source code.
-func (p *Pipeline) bashStep(id string, env map[string]string) JobStep {
-	filename := "scripts/" + id + ".sh"
-	script, err := dag.
-		CurrentModule().
-		Source().
-		File(filename).
-		Contents(context.Background())
-	if err != nil {
-		// We skip error checking for simplicity
-		// (don't want to plumb error checking everywhere)
-		panic(err)
-	}
-	return JobStep{
-		Name:  filename,
-		ID:    id,
-		Shell: "bash",
-		Run:   script,
-		Env:   env,
-	}
+func idify(name string) string {
+	re := regexp.MustCompile(`[^a-zA-Z0-9]+`)
+	name = strings.ToLower(re.ReplaceAllString(name, "-"))
+	return strcase.ToKebab(name)
 }
