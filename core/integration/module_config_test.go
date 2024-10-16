@@ -177,7 +177,7 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 				t.Run("git", func(ctx context.Context, t *testctx.T) {
 					c := connect(ctx, t)
 					mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
-					t.Cleanup(cleanup)
+					defer cleanup()
 
 					base := goGitBase(t, c).
 						WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -331,7 +331,7 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 				t.Run("git", func(ctx context.Context, t *testctx.T) {
 					c := connect(ctx, t)
 					mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
-					t.Cleanup(cleanup)
+					defer cleanup()
 
 					base := goGitBase(t, c).
 						WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -1138,7 +1138,7 @@ func (ConfigSuite) TestDaggerGitWithSources(ctx context.Context, t *testctx.T) {
 			t.Run(modSubpath, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 				mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
-				t.Cleanup(cleanup)
+				defer cleanup()
 
 				ctr := goGitBase(t, c).
 					With(mountedSocket).

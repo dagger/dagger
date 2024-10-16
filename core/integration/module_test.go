@@ -2374,7 +2374,7 @@ func (m *Test) Fn() string {
 		t.Run("git", func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 			mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
-			t.Cleanup(cleanup)
+			defer cleanup()
 
 			ctr := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
