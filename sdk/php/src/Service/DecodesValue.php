@@ -6,8 +6,9 @@ namespace Dagger\Service;
 
 use Dagger\Client;
 use Dagger\TypeDefKind;
-use Dagger\ValueObject\ListOfType;
-use Dagger\ValueObject\Type;
+use Dagger\ValueObject\TypeHint;
+use Dagger\ValueObject\TypeHint\ListOfType;
+use Dagger\ValueObject\TypeHint\Type;
 use RuntimeException;
 
 final readonly class DecodesValue
@@ -22,9 +23,9 @@ final readonly class DecodesValue
      * @throws RuntimeException
      * if no support exists for decoding the type given
      */
-    public function __invoke(string $value, ListOfType|Type $type): mixed
+    public function __invoke(string $value, TypeHint $type): mixed
     {
-        if ($type->nullable && in_array($value, ['', 'null'])) {
+        if ($type->isNullable() && in_array($value, ['', 'null'])) {
             return null;
         }
 
@@ -45,43 +46,43 @@ final readonly class DecodesValue
         $valueWithoutOuterBrackets = substr($value, 1, strlen($value) - 2);
 
         return array_map(
-            fn($v) => $this($v, $list->subtype),
+            fn($v) => $this($v, $list->getSubtype()),
             explode(',', $valueWithoutOuterBrackets),
         );
     }
 
     private function decodeType(string $value, Type $type): mixed
     {
-        switch ($type->typeDefKind) {
+        switch ($type->getTypeDefKind()) {
             case TypeDefKind::BOOLEAN_KIND:
             case TypeDefKind::INTEGER_KIND:
             case TypeDefKind::STRING_KIND:
                 return json_decode($value, true);
             case TypeDefKind::SCALAR_KIND:
-                return new ($type->name)($value);
+                return new ($type->getName())($value);
             case TypeDefKind::VOID_KIND:
                 return null;
             case TypeDefKind::ENUM_KIND:
-                return ($type->name)::from($value);
+                return ($type->getName())::from($value);
             case TypeDefKind::INTERFACE_KIND:
                 throw new RuntimeException(sprintf(
                     'Currently cannot decode custom interfaces: %s',
-                    $type->name
+                    $type->getName(),
                 ));
             case TypeDefKind::OBJECT_KIND:
                 if ($type->isIdable()) {
-                    $method = sprintf('load%sFromId', NormalizesClassName::shorten($type->name));
-                    $id = sprintf('%sId', $type->name);
+                    $method = sprintf('load%sFromId', NormalizesClassName::shorten($type->getName()));
+                    $id = sprintf('%sId', $type->getName());
 
                     return $this->client->$method(new $id(json_decode($value)));
                 }
 
                 throw new RuntimeException(sprintf(
                     'Currently cannot decode custom classes: %s',
-                    $type->name
+                    $type->getName(),
                 ));
             default:
-                throw new RuntimeException("Cannot decode $type->name");
+                throw new RuntimeException("Cannot decode {$type->getName()}");
         }
     }
 }

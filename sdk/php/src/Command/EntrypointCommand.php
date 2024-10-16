@@ -13,8 +13,8 @@ use Dagger\Service\Serialisation;
 use Dagger\TypeDef;
 use Dagger\TypeDefKind;
 use Dagger\ValueObject\DaggerFunction;
-use Dagger\ValueObject\ListOfType;
-use Dagger\ValueObject\Type;
+use Dagger\ValueObject\TypeHint;
+use Dagger\ValueObject\TypeHint\ListOfType;
 use GraphQL\Exception\QueryError;
 use ReflectionMethod;
 use RuntimeException;
@@ -75,9 +75,7 @@ class EntrypointCommand extends Command
                 foreach ($daggerFunction->arguments as $argument) {
                     $func = $func->withArg(
                         name: $argument->name,
-                        typeDef: $this
-                            ->getTypeDef($argument->type)
-                            ->withOptional($argument->type->nullable),
+                        typeDef: $this->getTypeDef($argument->type),
                         description: $argument->description,
                         defaultValue: $argument->default,
                         defaultPath: $argument->defaultPath,
@@ -148,43 +146,40 @@ class EntrypointCommand extends Command
     }
 
 
-    private function getTypeDef(ListOfType|Type $type): TypeDef
+    private function getTypeDef(TypeHint $type): TypeDef
     {
-        $typeDef = dag()->typeDef();
+        $typeDef = dag()->typeDef()->withOptional($type->isNullable());
 
-        switch ($type->typeDefKind) {
+        if ($type instanceof ListOfType) {
+            return $typeDef->withListOf($this->getTypeDef($type->getSubtype()));
+        }
+
+        switch ($type->getTypeDefKind()) {
             case TypeDefKind::BOOLEAN_KIND:
             case TypeDefKind::INTEGER_KIND:
             case TypeDefKind::STRING_KIND:
             case TypeDefKind::VOID_KIND:
-                return $typeDef->withKind($type->typeDefKind);
+                return $typeDef->withKind($type->getTypeDefKind());
             case TypeDefKind::SCALAR_KIND:
                 return $typeDef->withScalar(
-                    NormalizesClassName::shorten($type->name)
+                    NormalizesClassName::shorten($type->getName())
                 );
             case TypeDefKind::ENUM_KIND:
                 return $typeDef->withEnum(
-                    NormalizesClassName::shorten($type->name)
+                    NormalizesClassName::shorten($type->getName())
                 );
-            case TypeDefKind::LIST_KIND:
-                return $typeDef->withListOf($this->getTypeDef($type->subtype));
+            case TypeDefKind::OBJECT_KIND:
+                return $typeDef->withObject($type->isIdable() ?
+                    NormalizesClassName::shorten($type->getName()) :
+                    NormalizesClassName::trimLeadingNamespace($type->getName())
+                );
             case TypeDefKind::INTERFACE_KIND:
                 throw new RuntimeException(sprintf(
                     'Currently cannot handle custom interfaces: %s',
-                    $type->name
+                    $type->getName(),
                 ));
-            case TypeDefKind::OBJECT_KIND:
-                if ($type->isIdable()) {
-                    return $typeDef->withObject(
-                        NormalizesClassName::shorten($type->name)
-                    );
-                }
-
-                return $typeDef->withObject(
-                    NormalizesClassName::trimLeadingNamespace($type->name)
-                );
             default:
-                throw new RuntimeException("No support exists for $type->name");
+                throw new RuntimeException("No support exists for {$type->getName()}");
         }
     }
 

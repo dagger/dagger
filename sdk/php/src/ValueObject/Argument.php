@@ -7,6 +7,8 @@ namespace Dagger\ValueObject;
 use Dagger\Attribute;
 use Dagger\Client\IdAble;
 use Dagger\Json;
+use Dagger\ValueObject\TypeHint\ListOfType;
+use Dagger\ValueObject\TypeHint\Type;
 use ReflectionParameter;
 use Roave\BetterReflection\Reflection\ReflectionParameter as BetterReflectionParameter;
 use RuntimeException;
@@ -16,12 +18,12 @@ final readonly class Argument
     public function __construct(
         public string $name,
         public string $description,
-        public ListOfType|Type $type,
+        public TypeHint $type,
         public ?Json $default = null,
         public ?string $defaultPath = null,
         public ?array $ignore = null,
     ) {
-        if (!$type->nullable && $this->default == new Json('null')) {
+        if (!$type->isNullable() && $this->default == new Json('null')) {
             throw new RuntimeException(sprintf(
                 'Non-nullable argument "%s" should not default to null.' .
                 ' This error should only occur if constructed manually.' .

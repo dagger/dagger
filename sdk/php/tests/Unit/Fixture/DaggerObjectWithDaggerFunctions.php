@@ -132,25 +132,25 @@ final class DaggerObjectWithDaggerFunctions
                     '',
                     null,
                     [],
-                    new ValueObject\Type(self::class)
+                    new ValueObject\TypeHint\Type(self::class)
                 ),
                 new ValueObject\DaggerFunction(
                     'returnBool',
                     null,
                     [],
-                    new ValueObject\Type('bool')
+                    new ValueObject\TypeHint\Type('bool')
                 ),
                 new ValueObject\DaggerFunction(
                     'returnInt',
                     'this method returns 1',
                     [],
-                    new ValueObject\Type('int')
+                    new ValueObject\TypeHint\Type('int')
                 ),
                 new ValueObject\DaggerFunction(
                     'returnString',
                     null,
                     [],
-                    new ValueObject\Type('string')
+                    new ValueObject\TypeHint\Type('string')
                 ),
                 new ValueObject\DaggerFunction(
                     'requiredBool',
@@ -159,11 +159,11 @@ final class DaggerObjectWithDaggerFunctions
                         new ValueObject\Argument(
                             'value',
                             '',
-                            new ValueObject\Type('bool'),
+                            new ValueObject\TypeHint\Type('bool'),
                             null,
                         )
                     ],
-                    new ValueObject\Type('void'),
+                    new ValueObject\TypeHint\Type('void'),
                 ),
                 new ValueObject\DaggerFunction(
                     'requiredInt',
@@ -172,11 +172,11 @@ final class DaggerObjectWithDaggerFunctions
                         new ValueObject\Argument(
                             'value',
                             '',
-                            new ValueObject\Type('int'),
+                            new ValueObject\TypeHint\Type('int'),
                             null,
                         )
                     ],
-                    new ValueObject\Type('void'),
+                    new ValueObject\TypeHint\Type('void'),
                 ),
                 new ValueObject\DaggerFunction(
                     'requiredString',
@@ -185,11 +185,11 @@ final class DaggerObjectWithDaggerFunctions
                         new ValueObject\Argument(
                             'value',
                             '',
-                            new ValueObject\Type('string'),
+                            new ValueObject\TypeHint\Type('string'),
                             null,
                         )
                     ],
-                    new ValueObject\Type('void'),
+                    new ValueObject\TypeHint\Type('void'),
                 ),
                 new ValueObject\DaggerFunction(
                     'implicitlyOptionalString',
@@ -198,11 +198,11 @@ final class DaggerObjectWithDaggerFunctions
                         new ValueObject\Argument(
                             'value',
                             '',
-                            new ValueObject\Type('string', true),
+                            new ValueObject\TypeHint\Type('string', true),
                             new Json('null'),
                         )
                     ],
-                    new ValueObject\Type('void'),
+                    new ValueObject\TypeHint\Type('void'),
                 ),
                 new ValueObject\DaggerFunction(
                     'explicitlyOptionalString',
@@ -211,11 +211,11 @@ final class DaggerObjectWithDaggerFunctions
                         new ValueObject\Argument(
                             'value',
                             '',
-                            new ValueObject\Type('string', true),
+                            new ValueObject\TypeHint\Type('string', true),
                             new Json('null'),
                         )
                     ],
-                    new ValueObject\Type('void'),
+                    new ValueObject\TypeHint\Type('void'),
                 ),
                 new ValueObject\DaggerFunction(
                     'stringWithDefault',
@@ -224,11 +224,11 @@ final class DaggerObjectWithDaggerFunctions
                         new ValueObject\Argument(
                             'value',
                             '',
-                            new ValueObject\Type('string', true),
+                            new ValueObject\TypeHint\Type('string', true),
                             new Json('"test"'),
                         )
                     ],
-                    new ValueObject\Type('void'),
+                    new ValueObject\TypeHint\Type('void'),
                 ),
                 new ValueObject\DaggerFunction(
                     'annotatedString',
@@ -237,11 +237,11 @@ final class DaggerObjectWithDaggerFunctions
                         new ValueObject\Argument(
                             'value',
                             'this value should have a description',
-                            new ValueObject\Type('string'),
+                            new ValueObject\TypeHint\Type('string'),
                             null,
                         ),
                     ],
-                    new ValueObject\Type('void'),
+                    new ValueObject\TypeHint\Type('void'),
                 ),
                 new ValueObject\DaggerFunction(
                     'requiredStrings',
@@ -250,17 +250,17 @@ final class DaggerObjectWithDaggerFunctions
                         new ValueObject\Argument(
                             'first',
                             '',
-                            new ValueObject\Type('string'),
+                            new ValueObject\TypeHint\Type('string'),
                             null,
                         ),
                         new ValueObject\Argument(
                             'second',
                             '',
-                            new ValueObject\Type('string'),
+                            new ValueObject\TypeHint\Type('string'),
                             null,
                         ),
                     ],
-                    new ValueObject\Type('void'),
+                    new ValueObject\TypeHint\Type('void'),
                 ),
                 new ValueObject\DaggerFunction(
                     'stringsWithDefaults',
@@ -269,17 +269,17 @@ final class DaggerObjectWithDaggerFunctions
                         new ValueObject\Argument(
                             'first',
                             '',
-                            new ValueObject\Type('string'),
+                            new ValueObject\TypeHint\Type('string'),
                             new Json('"first"'),
                         ),
                         new ValueObject\Argument(
                             'second',
                             '',
-                            new ValueObject\Type('string'),
+                            new ValueObject\TypeHint\Type('string'),
                             new Json('"second"'),
                         )
                     ],
-                    new ValueObject\Type('void'),
+                    new ValueObject\TypeHint\Type('void'),
                 ),
                 new ValueObject\DaggerFunction(
                     'implicitlyOptionalContainer',
@@ -288,11 +288,11 @@ final class DaggerObjectWithDaggerFunctions
                         new ValueObject\Argument(
                             'value',
                             '',
-                            new ValueObject\Type(Container::class, true),
+                            new ValueObject\TypeHint\Type(Container::class, true),
                             new Json('null'),
                         ),
                     ],
-                    new ValueObject\Type('void'),
+                    new ValueObject\TypeHint\Type('void'),
                 ),
                 new ValueObject\DaggerFunction(
                     'explicitlyOptionalFile',
@@ -301,11 +301,11 @@ final class DaggerObjectWithDaggerFunctions
                         new ValueObject\Argument(
                             'value',
                             '',
-                            new ValueObject\Type(File::class, true),
+                            new ValueObject\TypeHint\Type(File::class, true),
                             new Json('null'),
                         ),
                     ],
-                    new ValueObject\Type('void'),
+                    new ValueObject\TypeHint\Type('void'),
                 ),
                 new ValueObject\DaggerFunction(
                     'fileWithDefaultPath',
@@ -314,12 +314,12 @@ final class DaggerObjectWithDaggerFunctions
                         new ValueObject\Argument(
                             'value',
                             '',
-                            new ValueObject\Type(File::class, false),
+                            new ValueObject\TypeHint\Type(File::class, false),
                             null,
                             './test',
                         ),
                     ],
-                    new ValueObject\Type('void'),
+                    new ValueObject\TypeHint\Type('void'),
                 ),
                 new ValueObject\DaggerFunction(
                     'directoryWithIgnore',
@@ -328,13 +328,13 @@ final class DaggerObjectWithDaggerFunctions
                         new ValueObject\Argument(
                             'value',
                             '',
-                            new ValueObject\Type(Directory::class, false),
+                            new ValueObject\TypeHint\Type(Directory::class, false),
                             null,
                             '.',
                             ['vendor/', 'generated/', 'env'],
                         ),
                     ],
-                    new ValueObject\Type('void'),
+                    new ValueObject\TypeHint\Type('void'),
                 ),
             ]
         );

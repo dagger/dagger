@@ -4,8 +4,8 @@ namespace Dagger\Tests\Unit\Service;
 
 use Dagger\Client;
 use Dagger\Service\DecodesValue;
-use Dagger\ValueObject\ListOfType;
-use Dagger\ValueObject\Type;
+use Dagger\ValueObject\TypeHint\ListOfType;
+use Dagger\ValueObject\TypeHint\Type;
 use Generator;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;

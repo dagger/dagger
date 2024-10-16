@@ -9,7 +9,7 @@ use Dagger\Attribute;
 final readonly class DaggerObject
 {
     /**
-     *@var array<string,DaggerFunction[]
+     * @var DaggerFunction[]
      * name => DaggerFunction pairs
      */
     public array $daggerFunctions;

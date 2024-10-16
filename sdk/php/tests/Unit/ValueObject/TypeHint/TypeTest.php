@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Dagger\Tests\Unit\ValueObject;
+namespace Dagger\Tests\Unit\ValueObject\TypeHint;
 
 use Closure;
 use Countable;
 use Dagger;
-use Dagger\ValueObject\Type;
+use Dagger\ValueObject\TypeHint\Type;
 use DateTimeImmutable;
 use Generator;
 use Iterator;
@@ -16,7 +16,6 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
-use ReflectionClass;
 use ReflectionFunction;
 use ReflectionNamedType;
 use ReflectionType;
@@ -70,7 +69,7 @@ class TypeTest extends TestCase
     #[Test]
     #[DataProvider('provideTypeDefKinds')]
     public function itHasTypeDefKind(Dagger\TypeDefKind $expected, string $type): void {
-        self::assertEquals($expected, (new Type($type))->typeDefKind);
+        self::assertEquals($expected, (new Type($type))->getTypeDefKind());
     }
 
     /** @return Generator<array{0:ReflectionType}> */

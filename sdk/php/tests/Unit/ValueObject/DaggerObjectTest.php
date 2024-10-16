@@ -4,15 +4,9 @@ declare(strict_types=1);
 
 namespace Dagger\Tests\Unit\ValueObject;
 
-use Dagger\Container;
-use Dagger\File;
-use Dagger\Json;
 use Dagger\Tests\Unit\Fixture\DaggerObjectWithDaggerFunctions;
-use Dagger\ValueObject\Argument;
-use Dagger\ValueObject\DaggerFunction;
-use Dagger\ValueObject\DaggerObject;
-use Dagger\ValueObject\Type;
 use Dagger\Tests\Unit\Fixture\NoDaggerFunctions;
+use Dagger\ValueObject\DaggerObject;
 use Generator;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
