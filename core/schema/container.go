@@ -232,7 +232,7 @@ func (s *containerSchema) Install() {
 
 		dagql.Func("withMountedCache", s.withMountedCache).
 			Doc(`Retrieves this container plus a cache volume mounted at the given path.`).
-			ArgDoc("path", `Location of the cache directory (e.g., "/cache/node_modules").`).
+			ArgDoc("path", `Location of the cache directory (e.g., "/root/.npm").`).
 			ArgDoc("cache", `Identifier of the cache volume to mount.`).
 			ArgDoc("source", `Identifier of the directory to use as the cache volume's root.`).
 			ArgDoc("sharing", `Sharing mode of the cache volume.`).
@@ -282,7 +282,7 @@ func (s *containerSchema) Install() {
 
 		dagql.Func("withoutMount", s.withoutMount).
 			Doc(`Retrieves this container after unmounting everything at the given path.`).
-			ArgDoc("path", `Location of the cache directory (e.g., "/cache/node_modules").`).
+			ArgDoc("path", `Location of the cache directory (e.g., "/root/.npm").`).
 			ArgDoc("expand",
 				`Replace "${VAR}" or "$VAR" in the value of path according to the current `+
 					`environment variables defined in the container (e.g. "/$VAR/foo").`),

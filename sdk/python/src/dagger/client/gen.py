@@ -1595,7 +1595,7 @@ class Container(Type):
         Parameters
         ----------
         path:
-            Location of the cache directory (e.g., "/cache/node_modules").
+            Location of the cache directory (e.g., "/root/.npm").
         cache:
             Identifier of the cache volume to mount.
         source:
@@ -2142,7 +2142,7 @@ class Container(Type):
         Parameters
         ----------
         path:
-            Location of the cache directory (e.g., "/cache/node_modules").
+            Location of the cache directory (e.g., "/root/.npm").
         expand:
             Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.

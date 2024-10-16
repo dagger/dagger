@@ -2490,7 +2490,7 @@ export class Container extends BaseClient {
 
   /**
    * Retrieves this container plus a cache volume mounted at the given path.
-   * @param path Location of the cache directory (e.g., "/cache/node_modules").
+   * @param path Location of the cache directory (e.g., "/root/.npm").
    * @param cache Identifier of the cache volume to mount.
    * @param opts.source Identifier of the directory to use as the cache volume's root.
    * @param opts.sharing Sharing mode of the cache volume.
@@ -2979,7 +2979,7 @@ export class Container extends BaseClient {
 
   /**
    * Retrieves this container after unmounting everything at the given path.
-   * @param path Location of the cache directory (e.g., "/cache/node_modules").
+   * @param path Location of the cache directory (e.g., "/root/.npm").
    * @param opts.expand Replace "${VAR}" or "$VAR" in the value of path according to the current environment variables defined in the container (e.g. "/$VAR/foo").
    */
   withoutMount = (

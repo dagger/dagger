@@ -680,7 +680,7 @@ type Container {
     """
     owner: String = ""
 
-    """Location of the cache directory (e.g., "/cache/node_modules")."""
+    """Location of the cache directory (e.g., "/root/.npm")."""
     path: String!
 
     """Sharing mode of the cache volume."""
@@ -903,7 +903,7 @@ type Container {
     """
     expand: Boolean = false
 
-    """Location of the cache directory (e.g., "/cache/node_modules")."""
+    """Location of the cache directory (e.g., "/root/.npm")."""
     path: String!
   ): Container!
 
