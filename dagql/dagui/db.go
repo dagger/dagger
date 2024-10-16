@@ -39,6 +39,11 @@ type DB struct {
 	// sync, which includes any parent spans whose overall active time intervals
 	// or status were modified via a child or linked span.
 	updatedSpans SpanSet
+
+	// seenSpans keeps track of which spans have been observed via
+	// UpdatedSnapshots so that we can know whether we need to send them when we
+	// finally see them
+	seenSpans map[SpanID]struct{}
 }
 
 func NewDB() *DB {
@@ -58,7 +63,17 @@ func NewDB() *DB {
 		EffectSpans:      make(map[string]SpanSet),
 
 		updatedSpans: NewSpanSet(),
+		seenSpans:    make(map[SpanID]struct{}),
 	}
+}
+
+func (db *DB) seen(spanID SpanID) {
+	db.seenSpans[spanID] = struct{}{}
+}
+
+func (db *DB) hasSeen(spanID SpanID) bool {
+	_, seen := db.seenSpans[spanID]
+	return seen
 }
 
 func (db *DB) UpdatedSnapshots(filter map[SpanID]bool) []SpanSnapshot {
@@ -83,6 +98,23 @@ func (db *DB) UpdatedSnapshots(filter map[SpanID]bool) []SpanSnapshot {
 		}
 		return false
 	})
+	for spanID := range filter {
+		span := db.Spans.Map[spanID]
+		if span == nil {
+			continue
+		}
+		if !db.hasSeen(spanID) {
+			snapshots = append(snapshots, span.Snapshot())
+		}
+		for p := range span.Parents {
+			if !db.hasSeen(p.ID) {
+				snapshots = append(snapshots, p.Snapshot())
+			}
+		}
+	}
+	for _, snapshot := range snapshots {
+		db.seen(snapshot.ID)
+	}
 	db.updatedSpans = NewSpanSet()
 	return snapshots
 }
@@ -120,9 +152,20 @@ func snapshotSpans(spans []*Span, filter func(*Span) bool) []SpanSnapshot {
 }
 
 func (db *DB) SpanSnapshots(id SpanID) []SpanSnapshot {
-	return snapshotSpans(db.Spans.Order, func(span *Span) bool {
+	snaps := snapshotSpans(db.Spans.Order, func(span *Span) bool {
 		return span.ParentID == id || span.ID == id
 	})
+	if span := db.Spans.Map[id]; span != nil {
+		for p := range span.Parents {
+			if !db.hasSeen(p.ID) {
+				snaps = append(snaps, p.Snapshot())
+			}
+		}
+	}
+	for _, snapshot := range snaps {
+		db.seen(snapshot.ID)
+	}
+	return snaps
 }
 
 var _ sdktrace.SpanExporter = (*DB)(nil)
