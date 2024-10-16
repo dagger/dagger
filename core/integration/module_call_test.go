@@ -859,7 +859,6 @@ func (m *Test) ToStatus(status string) Status {
 	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
 		t.Run("module args", func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
-
 			mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
 			defer cleanup()
 
@@ -2068,7 +2067,6 @@ func (CallSuite) TestByName(ctx context.Context, t *testctx.T) {
 	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
 		t.Run("git", func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
-
 			mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
 			defer cleanup()
 
@@ -2093,9 +2091,8 @@ func (CallSuite) TestByName(ctx context.Context, t *testctx.T) {
 
 func (CallSuite) TestGitMod(ctx context.Context, t *testctx.T) {
 	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
-		c := connect(ctx, t)
-
 		t.Run("go", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
 			mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
 			defer cleanup()
 
@@ -2109,6 +2106,7 @@ func (CallSuite) TestGitMod(ctx context.Context, t *testctx.T) {
 		})
 
 		t.Run("typescript", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
 			mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
 			defer cleanup()
 
@@ -2122,6 +2120,7 @@ func (CallSuite) TestGitMod(ctx context.Context, t *testctx.T) {
 		})
 
 		t.Run("python", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
 			mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
 			defer cleanup()
 
