@@ -4,12 +4,12 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -19,9 +19,12 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+type Distro string
+
+// FIXME: these names stutter - but "alpine" clashes with the name of the module
 const (
-	alpineRepository  = "https://dl-cdn.alpinelinux.org/alpine"
-	alpineReleasesURL = "https://alpinelinux.org/releases.json"
+	DistroAlpine Distro = "DISTRO_ALPINE"
+	DistroWolfi  Distro = "DISTRO_WOLFI"
 )
 
 func New(
@@ -35,6 +38,11 @@ func New(
 	// APK packages to install
 	// +optional
 	packages []string,
+
+	// Alpine distribution to use
+	// +optional
+	// +default="DISTRO_ALPINE"
+	distro Distro,
 ) (Alpine, error) {
 	if arch == "" {
 		arch = runtime.GOARCH
@@ -57,6 +65,7 @@ func New(
 	}
 
 	return Alpine{
+		Distro:   distro,
 		Branch:   branch,
 		Arch:     arch,
 		Packages: packages,
@@ -67,6 +76,8 @@ func New(
 
 // An Alpine Linux configuration
 type Alpine struct {
+	// The distro to use
+	Distro Distro
 	// The hardware architecture to build for
 	Arch string
 	// The Alpine branch to download packages from
@@ -75,51 +86,70 @@ type Alpine struct {
 	Packages []string
 
 	// the GOARCH equivalent of Arch
-	//+private
+	// +private
 	GoArch string
 }
 
 // Build an Alpine Linux container
 func (m *Alpine) Container(ctx context.Context) (*dagger.Container, error) {
-	keys, err := m.keys()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get alpine keys: %w", err)
+	var branch *goapk.ReleaseBranch
+	var repos []string
+	var pkgs []string
+
+	switch m.Distro {
+	case DistroAlpine:
+		releases, err := alpineReleases()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get alpine releases: %w", err)
+		}
+		branch = releases.GetReleaseBranch(m.Branch)
+		if branch == nil {
+			return nil, fmt.Errorf("failed to get alpine release %q", m.Branch)
+		}
+		repos = alpineRepositories(*branch)
+
+		pkgs = []string{"alpine-baselayout", "alpine-release", "busybox", "apk-tools"}
+	case DistroWolfi:
+		releases := wolfiReleases()
+		if m.Branch != "edge" {
+			return nil, fmt.Errorf("failed to get wolfi release %q", m.Branch)
+		}
+		branch = releases.GetReleaseBranch("main")
+		if branch == nil {
+			return nil, fmt.Errorf("failed to get wolfi release %q", m.Branch)
+		}
+		repos = wolfiRepositories()
+
+		pkgs = []string{"wolfi-baselayout", "busybox", "apk-tools"}
+	default:
+		return nil, fmt.Errorf("unknown distro %q", m.Distro)
 	}
 
-	mainRepo := goapk.NewRepositoryFromComponents(
-		alpineRepository,
-		m.Branch,
-		"main",
-		m.Arch,
-	)
-	communityRepo := goapk.NewRepositoryFromComponents(
-		alpineRepository,
-		m.Branch,
-		"community",
-		m.Arch,
-	)
-
-	indexes, err := goapk.GetRepositoryIndexes(ctx, []string{mainRepo.URI, communityRepo.URI}, keys, "", goapk.WithHTTPClient(http.DefaultClient))
+	keys, err := fetchKeys(*branch, m.Arch)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get alpine main indexes: %w", err)
+		return nil, fmt.Errorf("failed to get keys: %w", err)
+	}
+	indexes, err := goapk.GetRepositoryIndexes(ctx, repos, keys, m.Arch, goapk.WithHTTPClient(http.DefaultClient))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get indexes: %w", err)
 	}
 
 	pkgResolver := goapk.NewPkgResolver(ctx, indexes)
-
-	pkgs := append([]string{"alpine-baselayout", "alpine-release", "busybox"}, m.Packages...)
+	pkgs = append(pkgs, m.Packages...)
 
 	repoPkgs, conflicts, err := pkgResolver.GetPackagesWithDependencies(ctx, pkgs, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get alpine packages: %w", err)
+		return nil, fmt.Errorf("failed to get packages: %w", err)
 	}
 	if len(conflicts) > 0 {
 		// TODO: confirm that ignoring also matches apk add behavior (seems like it does)
-		fmt.Printf("alpine package conflicts: %v\n", conflicts)
+		fmt.Printf("package conflicts: %v\n", conflicts)
 	}
 
 	setupBase := dag.Container().From("busybox:latest")
 
 	type alpinePackage struct {
+		name        string
 		dir         *dagger.Directory
 		preInstall  *dagger.File
 		postInstall *dagger.File
@@ -142,7 +172,8 @@ func (m *Alpine) Container(ctx context.Context) (*dagger.Container, error) {
 				WithExec([]string{"tar", "-xf", mntPath})
 
 			alpinePkg := &alpinePackage{
-				dir: unpacked.Directory(outDir),
+				name: pkg.PackageName(),
+				dir:  unpacked.Directory(outDir),
 			}
 
 			entries, err := alpinePkg.dir.Entries(ctx)
@@ -175,45 +206,41 @@ func (m *Alpine) Container(ctx context.Context) (*dagger.Container, error) {
 
 	ctr := dag.Container(dagger.ContainerOpts{Platform: dagger.Platform(m.GoArch)})
 	for _, pkg := range alpinePkgs {
-		if pkg.preInstall != nil {
-			ctr = ctr.
-				WithMountedFile("/tmp/script", pkg.preInstall).
-				WithExec([]string{"/tmp/script"}).
-				WithoutMount("/tmp/script")
-		}
+		ctr = ctr.With(pkgscript("pre-install", pkg.name, pkg.preInstall))
 		ctr = ctr.WithDirectory("/", pkg.dir, dagger.ContainerWithDirectoryOpts{
 			Exclude: pkg.rmFileNames,
 		})
-		if pkg.postInstall != nil {
-			ctr = ctr.
-				WithMountedFile("/tmp/script", pkg.postInstall).
-				WithExec([]string{"/tmp/script"}).
-				WithoutMount("/tmp/script")
-		}
+		ctr = ctr.With(pkgscript("post-install", pkg.name, pkg.postInstall))
 	}
 	for _, pkg := range alpinePkgs {
-		if pkg.trigger != nil {
-			ctr = ctr.
-				WithMountedFile("/tmp/script", pkg.trigger).
-				WithExec([]string{"/tmp/script"}).
-				WithoutMount("/tmp/script")
-		}
+		ctr = ctr.With(pkgscript("trigger", pkg.name, pkg.trigger))
 	}
+
+	ctr = ctr.WithNewFile("/etc/apk/repositories", strings.Join(repos, "\n")+"\n")
+
+	// NOTE: this creates the package database - this allows doing apk install
+	// later, which is probably not desirable
+	repoPkgNames := make([]string, 0, len(repoPkgs))
+	for _, pkg := range repoPkgs {
+		repoPkgNames = append(repoPkgNames, pkg.PackageName())
+	}
+	slices.Sort(repoPkgNames)
+	ctr = ctr.WithNewFile("/etc/apk/world", strings.Join(repoPkgNames, "\n")+"\n")
+
+	ctr = ctr.WithEnvVariable("PATH", strings.Join([]string{
+		"/usr/local/sbin",
+		"/usr/local/bin",
+		"/usr/sbin",
+		"/usr/bin",
+		"/sbin",
+		"/bin",
+	}, ":"))
 
 	return ctr, nil
 }
 
-func (m *Alpine) keys() (map[string][]byte, error) {
-	releases, err := m.releases()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get alpine releases: %w", err)
-	}
-	branch := releases.GetReleaseBranch(m.Branch)
-	if branch == nil {
-		return nil, fmt.Errorf("failed to get alpine branch for version %s", m.Branch)
-	}
-	urls := branch.KeysFor(m.Arch, time.Now())
-
+func fetchKeys(branch goapk.ReleaseBranch, arch string) (map[string][]byte, error) {
+	urls := branch.KeysFor(arch, time.Now())
 	keys := make(map[string][]byte)
 	for _, u := range urls {
 		res, err := http.Get(u)
@@ -233,23 +260,16 @@ func (m *Alpine) keys() (map[string][]byte, error) {
 	return keys, nil
 }
 
-func (m *Alpine) releases() (*goapk.Releases, error) {
-	res, err := http.Get(alpineReleasesURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get alpine releases: %w", err)
-	}
-	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unable to get alpine releases at %s: %v", alpineReleasesURL, res.Status)
-	}
-	b, err := io.ReadAll(res.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read alpine releases: %w", err)
-	}
-	var releases goapk.Releases
-	if err := json.Unmarshal(b, &releases); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal alpine releases: %w", err)
-	}
+func pkgscript(kind string, pkg string, script *dagger.File) dagger.WithContainerFunc {
+	return func(ctr *dagger.Container) *dagger.Container {
+		if script == nil {
+			return ctr
+		}
 
-	return &releases, nil
+		path := fmt.Sprintf("/tmp/%s.%s", pkg, kind)
+		return ctr.
+			WithMountedFile(path, script).
+			WithExec([]string{path}).
+			WithoutMount(path)
+	}
 }
