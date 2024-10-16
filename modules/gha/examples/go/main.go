@@ -7,68 +7,76 @@ import (
 type Examples struct{}
 
 // Access Github secrets
-func (m *Examples) Gha_Secrets() *dagger.Directory {
+func (m *Examples) GhaSecrets() *dagger.Directory {
 	return dag.
 		Gha().
-		WithPipeline(
-			"deploy docs",
+		Pipeline("deploy docs").
+		WithJob(
+			"deploy-docs",
 			"deploy-docs --source=. --password env:$DOCS_SERVER_PASSWORD",
-			dagger.GhaWithPipelineOpts{
+			dagger.GhaPipelineWithJobOpts{
 				Secrets: []string{"DOCS_SERVER_PASSWORD"},
-			}).
+			},
+		).
 		Config()
 }
 
 // Limit per-PR concurrency for expensive test pipelines
-func (m *Examples) Gha_Concurrency() *dagger.Directory {
+func (m *Examples) GhaConcurrency() *dagger.Directory {
 	return dag.
 		Gha().
-		WithPipeline(
+		Pipeline(
 			"Giant test suite",
-			"test --all",
-			dagger.GhaWithPipelineOpts{
+			dagger.GhaPipelineOpts{
 				PullRequestConcurrency: "preempt",
-			},
+			}).
+		WithJob(
+			"test",
+			"test --all",
 		).
 		Config()
 }
 
 // Access github context information magically injected as env variables
-func (m *Examples) Gha_GithubContext() *dagger.Directory {
+func (m *Examples) GhaGithubContext() *dagger.Directory {
 	return dag.
 		Gha().
-		WithPipeline(
+		Pipeline(
 			"lint all branches",
-			"lint --source=${GITHUB_REPOSITORY_URL}#${GITHUB_REF}",
-			dagger.GhaWithPipelineOpts{
+			dagger.GhaPipelineOpts{
 				OnPush: true,
-			},
-		).
+			}).
+		WithJob("lin", "lint --source=${GITHUB_REPOSITORY_URL}#${GITHUB_REF}").
 		Config()
 }
 
 // Compose a pipeline from an external module, instead of the one embedded in the repo.
-func (m *Examples) Gha_CustomModule() *dagger.Directory {
+func (m *Examples) GhaCustomModule() *dagger.Directory {
 	return dag.
 		Gha().
-		WithPipeline(
-			"say hello",
+		Pipeline("say hello").
+		WithJob(
+			"hello",
 			"hello --name=$GITHUB_REPOSITORY_OWNER",
-			dagger.GhaWithPipelineOpts{
+			dagger.GhaPipelineWithJobOpts{
 				Module: "github.com/shykes/hello",
 			}).
 		Config()
 }
 
 // Build and publish a container on push
-func (m *Examples) Gha_OnPush() *dagger.Directory {
+func (m *Examples) GhaOnPush() *dagger.Directory {
 	return dag.
 		Gha().
-		WithPipeline(
+		Pipeline(
 			"build and publish app container from main",
-			"publish --source=. --registry-user=$REGISTRY_USER --registry-password=$REGISTRY_PASSWORD",
-			dagger.GhaWithPipelineOpts{
+			dagger.GhaPipelineOpts{
 				OnPushBranches: []string{"main"},
+			}).
+		WithJob(
+			"publish",
+			"publish --source=. --registry-user=$REGISTRY_USER --registry-password=$REGISTRY_PASSWORD",
+			dagger.GhaPipelineWithJobOpts{
 				Secrets: []string{
 					"REGISTRY_USER", "REGISTRY_PASSWORD",
 				},
@@ -77,16 +85,15 @@ func (m *Examples) Gha_OnPush() *dagger.Directory {
 }
 
 // Call integration tests on pull requests
-func (m *Examples) Gha_OnPullRequest() *dagger.Directory {
+func (m *Examples) GhaOnPullRequest() *dagger.Directory {
 	return dag.
 		Gha().
-		WithPipeline(
+		Pipeline(
 			"test pull requests",
-			"test --all --source=.",
-			dagger.GhaWithPipelineOpts{
+			dagger.GhaPipelineOpts{
 				OnPullRequestOpened:      true,
 				OnPullRequestSynchronize: true,
-			},
-		).
+			}).
+		WithJob("test", "test --all --source=.").
 		Config()
 }

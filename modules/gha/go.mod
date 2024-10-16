@@ -22,6 +22,7 @@ require (
 )
 
 require (
+	github.com/iancoleman/strcase v0.3.0
 	golang.org/x/mod v0.20.0
 	mvdan.cc/sh v2.6.4+incompatible
 )
