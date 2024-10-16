@@ -30,12 +30,12 @@ func wolfiReleases() *goapk.Releases {
 				Arches:        arches,
 				Repos:         []goapk.Repo{{Name: repo}},
 				Keys: map[string][]goapk.RepoKeys{
-					"aarch64": []goapk.RepoKeys{
+					"aarch64": {
 						{
 							URL: signingKey,
 						},
 					},
-					"x86_64": []goapk.RepoKeys{
+					"x86_64": {
 						{
 							URL: signingKey,
 						},

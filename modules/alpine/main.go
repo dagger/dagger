@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"path/filepath"
 	"runtime"
-	"slices"
 	"strings"
 	"time"
 
@@ -148,7 +147,7 @@ func (m *Alpine) Container(ctx context.Context) (*dagger.Container, error) {
 
 	setupBase := dag.Container().From("busybox:latest")
 
-	type alpinePackage struct {
+	type apkPkg struct {
 		name        string
 		dir         *dagger.Directory
 		preInstall  *dagger.File
@@ -158,7 +157,7 @@ func (m *Alpine) Container(ctx context.Context) (*dagger.Container, error) {
 	}
 
 	var eg errgroup.Group
-	alpinePkgs := make([]*alpinePackage, len(repoPkgs))
+	alpinePkgs := make([]*apkPkg, len(repoPkgs))
 	for i, pkg := range repoPkgs {
 		eg.Go(func() error {
 			url := pkg.URL()
@@ -171,7 +170,7 @@ func (m *Alpine) Container(ctx context.Context) (*dagger.Container, error) {
 				WithWorkdir(outDir).
 				WithExec([]string{"tar", "-xf", mntPath})
 
-			alpinePkg := &alpinePackage{
+			alpinePkg := &apkPkg{
 				name: pkg.PackageName(),
 				dir:  unpacked.Directory(outDir),
 			}
@@ -216,16 +215,17 @@ func (m *Alpine) Container(ctx context.Context) (*dagger.Container, error) {
 		ctr = ctr.With(pkgscript("trigger", pkg.name, pkg.trigger))
 	}
 
-	ctr = ctr.WithNewFile("/etc/apk/repositories", strings.Join(repos, "\n")+"\n")
-
-	// NOTE: this creates the package database - this allows doing apk install
-	// later, which is probably not desirable
-	repoPkgNames := make([]string, 0, len(repoPkgs))
-	for _, pkg := range repoPkgs {
-		repoPkgNames = append(repoPkgNames, pkg.PackageName())
-	}
-	slices.Sort(repoPkgNames)
-	ctr = ctr.WithNewFile("/etc/apk/world", strings.Join(repoPkgNames, "\n")+"\n")
+	// NOTE: "apk add" will not work in this container. Generally this is a good
+	// thing since it's more efficient to install all packages here and keep
+	// the output container immutable.
+	//
+	// However, if the need to support that arises the following would be needed:
+	// * /etc/apk/arch with the architecture written
+	// * /etc/apk/repositories with the list of repo urls
+	// * /etc/apk/world with each top level installed package name written
+	// * /etc/apk/keys/ with a file for each key
+	// * /lib/apk/db/installed with package metadata for each installed pkg
+	//   * the goapk.PackageToInstalled + AddInstalledPackage code helps here
 
 	ctr = ctr.WithEnvVariable("PATH", strings.Join([]string{
 		"/usr/local/sbin",
