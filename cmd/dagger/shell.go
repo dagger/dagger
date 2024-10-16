@@ -209,17 +209,19 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 		Frontend.Opts().CustomExit = func() {}
 
 		if h.stderrBuf.Len() > 0 {
-			runErr = h.withTerminal(func(_ io.Reader, _, stderr io.Writer) error {
-				_, err := fmt.Fprint(stderr, h.stderrBuf.String())
+			h.withTerminal(func(_ io.Reader, _, stderr io.Writer) error {
+				fmt.Fprint(stderr, h.stderrBuf.String())
 				h.stderrBuf.Reset()
-				return err
+				return nil
 			})
 		}
 		if runErr != nil {
-			runErr = h.withTerminal(func(_ io.Reader, _, stderr io.Writer) error {
-				_, err := fmt.Fprintf(stderr, "Error: %s\n", runErr.Error())
-				return err
+			h.withTerminal(func(_ io.Reader, _, stderr io.Writer) error {
+				fmt.Fprintf(stderr, "Error: %s\n", runErr.Error())
+				return nil
 			})
+			// Reset runError for next command
+			runErr = nil
 		}
 
 		var line string
