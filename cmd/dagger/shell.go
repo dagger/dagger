@@ -454,6 +454,11 @@ func shellLogf(ctx context.Context, msg string, args ...any) {
 	fmt.Fprintf(hctx.Stderr, msg, args...)
 }
 
+func shellWrite(ctx context.Context, msg string) {
+	hctx := interp.HandlerCtx(ctx)
+	fmt.Fprint(hctx.Stdout, msg)
+}
+
 func shellState(ctx context.Context) (*ShellState, error) {
 	return readShellState(interp.HandlerCtx(ctx).Stdin)
 }
@@ -595,15 +600,15 @@ func (h *shellCallHandler) Builtin(ctx context.Context, args []string) error {
 	args[0] = strings.TrimPrefix(args[0], ".")
 	switch args[0] {
 	case "help":
-		shellLog(ctx, `
+		shellWrite(ctx, `
 .functions    list available functions
-.help         print this help message
-.install	  install a dependency
 .deps         list dependencies
+.core         load a core Dagger type
+.install      install a dependency
 .uninstall    uninstall a dependency
 .login        login to Dagger Cloud
 .logout       logout from Dagger Cloud
-.core         load a core Dagger type
+.help         print this help message
 `[1:])
 		return nil
 	case "git":
@@ -678,10 +683,12 @@ func (h *shellCallHandler) Builtin(ctx context.Context, args []string) error {
 			},
 		}
 		return s.Write(ctx)
-	case "install":
+	case "install", "uninstall":
 		if len(args) < 1 {
-			return fmt.Errorf("usage: .install MODULE")
+			return fmt.Errorf("usage: .%s <module>", args[0])
 		}
+		return reexec(ctx, args)
+	case "login", "logout":
 		return reexec(ctx, args)
 	case "deps":
 		deps, err := h.mod.Source.AsModule().Dependencies(ctx)
@@ -705,11 +712,6 @@ func (h *shellCallHandler) Builtin(ctx context.Context, args []string) error {
 		}
 		return w.Flush()
 
-	case "uninstall":
-	case "login":
-		return reexec(ctx, args)
-	case "logout":
-		return reexec(ctx, args)
 	case "core":
 		return fmt.Errorf("FIXME: not yet implemented")
 	case "config":
