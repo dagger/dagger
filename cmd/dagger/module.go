@@ -1314,6 +1314,16 @@ func (f *modFunction) HasRequiredArgs() bool {
 	return false
 }
 
+func (f *modFunction) RequiredArgs() []*modFunctionArg {
+	args := make([]*modFunctionArg, 0, len(f.Args))
+	for _, arg := range f.Args {
+		if arg.IsRequired() {
+			args = append(args, arg)
+		}
+	}
+	return args
+}
+
 func (f *modFunction) SupportedArgs() []*modFunctionArg {
 	args := make([]*modFunctionArg, 0, len(f.Args))
 	for _, arg := range f.Args {

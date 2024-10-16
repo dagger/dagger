@@ -338,10 +338,15 @@ func (h *shellCallHandler) entrypointCall(ctx context.Context, args []string) (*
 	// 3. If no match (to be done later): interpret args as dependency short name (eg. 'wolfi container')
 	// --> craft the call
 
-	obj := h.mod.MainObject.AsObject
-	//
-	// TODO: constructor arguments
-	return ShellState{}.WithCall(obj.Constructor, h.cfg), nil
+	fn := h.mod.MainObject.AsObject.Constructor
+	expected := len(fn.RequiredArgs())
+	actual := len(h.cfg)
+
+	if expected > actual {
+		return nil, fmt.Errorf(`missing %d required argument(s) for the module. Use ".config [options]" to set them`, expected-actual)
+	}
+
+	return ShellState{}.WithCall(fn, h.cfg), nil
 }
 
 // call is executed for every command that the exec handler processes
@@ -715,6 +720,16 @@ func (h *shellCallHandler) Builtin(ctx context.Context, args []string) error {
 	case "core":
 		return fmt.Errorf("FIXME: not yet implemented")
 	case "config":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: .config [options]")
+		}
+		cfg, err := h.argumentValues(ctx, h.mod.MainObject.AsObject.Constructor, args[1:])
+		if err != nil {
+			return err
+		}
+		h.cfg = cfg
+		return nil
+
 	case "functions":
 		return functionListRun(
 			ctx,
@@ -725,7 +740,6 @@ func (h *shellCallHandler) Builtin(ctx context.Context, args []string) error {
 	default:
 		return fmt.Errorf("no such command: %s", args[0])
 	}
-	return nil
 }
 
 // GitURL represents the different parts of a git-style URL.
