@@ -413,9 +413,6 @@ func (h *shellCallHandler) argumentValues(ctx context.Context, fn *modFunction, 
 // Result handles making the final request and printing the response
 func (h *shellCallHandler) Result(ctx context.Context, s ShellState) error {
 	prev := s.Function()
-	if prev == nil {
-		return fmt.Errorf("no function call found for command")
-	}
 
 	fn, err := prev.GetDef(h.mod)
 	if err != nil {
@@ -537,25 +534,22 @@ func (s ShellState) Write(ctx context.Context) error {
 }
 
 // Function returns the last function in the chain, if not empty
-func (s ShellState) Function() *FunctionCall {
+func (s ShellState) Function() FunctionCall {
 	if len(s.Calls) == 0 {
-		return nil
+		// The first call is a field under Query.
+		return FunctionCall{
+			ReturnObject: "Query",
+		}
 	}
-	return &s.Calls[len(s.Calls)-1]
+	return s.Calls[len(s.Calls)-1]
 }
 
 // WithCall returns a new state with the given function call added to the chain
 func (s ShellState) WithCall(fn *modFunction, argValues map[string]any) *ShellState {
-	var typeName string
-	if prev := s.Function(); prev != nil {
-		typeName = prev.ReturnObject
-	} else {
-		// If it's the first call, it's a field under Query
-		typeName = "Query"
-	}
+	prev := s.Function()
 	return &ShellState{
 		Calls: append(s.Calls, FunctionCall{
-			Object:       typeName,
+			Object:       prev.ReturnObject,
 			Name:         fn.Name,
 			ReturnObject: fn.ReturnType.Name(),
 			Arguments:    argValues,
@@ -666,28 +660,6 @@ func (h *shellCallHandler) Builtin(ctx context.Context, args []string) error {
 			},
 		}
 		return s.Write(ctx)
-	case "container":
-		if len(args) < 2 {
-			return fmt.Errorf("usage: .container REF")
-		}
-		s := &ShellState{
-			Calls: []FunctionCall{
-				{
-					Object:       "Query",
-					Name:         "container",
-					ReturnObject: "Container",
-				},
-				{
-					Object: "Container",
-					Name:   "from",
-					Arguments: map[string]interface{}{
-						"address": args[1],
-					},
-					ReturnObject: "Container",
-				},
-			},
-		}
-		return s.Write(ctx)
 	case "install", "uninstall":
 		if len(args) < 1 {
 			return fmt.Errorf("usage: .%s <module>", args[0])
@@ -718,7 +690,16 @@ func (h *shellCallHandler) Builtin(ctx context.Context, args []string) error {
 		return w.Flush()
 
 	case "core":
-		return fmt.Errorf("FIXME: not yet implemented")
+		if len(args) < 2 {
+			return fmt.Errorf("usage: .core <function> [options]")
+		}
+		s := &ShellState{}
+		s, err := h.call(ctx, s, args[1], args[2:])
+		if err != nil {
+			return err
+		}
+		return s.Write(ctx)
+
 	case "config":
 		if len(args) < 2 {
 			return fmt.Errorf("usage: .config [options]")
