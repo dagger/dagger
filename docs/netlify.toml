@@ -212,6 +212,11 @@
   status = 301
 
 [[redirects]]
+  from = "manuals/user/cloud/741031/user-interface"
+  to = "/configuration/cloud#traces"
+  status = 301
+
+[[redirects]]
   from = "/manuals/user/consume-artifacts"
   to = "/api/chaining"
   status = 301
