@@ -716,14 +716,12 @@ func (h *shellCallHandler) Builtin(ctx context.Context, args []string) error {
 		return fmt.Errorf("FIXME: not yet implemented")
 	case "config":
 	case "functions":
-		functions := h.mod.MainObject.AsFunctionProvider().GetFunctions()
-		w := tabwriter.NewWriter(interp.HandlerCtx(ctx).Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "NAME\tDESCRIPTION\tRETURN TYPEs")
-		fmt.Fprintln(w, "---\t---\t---")
-		for _, fn := range functions {
-			fmt.Fprintf(w, "%s\t%s\t%s\n", fn.CmdName(), fn.Description, fn.ReturnType.Name())
-		}
-		return w.Flush()
+		return functionListRun(
+			ctx,
+			h.mod.MainObject.AsFunctionProvider(),
+			interp.HandlerCtx(ctx).Stdout,
+			false,
+		)
 	default:
 		return fmt.Errorf("no such command: %s", args[0])
 	}
