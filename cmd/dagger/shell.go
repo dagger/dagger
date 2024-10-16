@@ -31,6 +31,7 @@ import (
 
 var shellCode string
 
+// shellStatePrefix is the prefix that identifies a shell state in input/output
 const shellStatePrefix = "DSH:"
 
 func init() {
@@ -38,7 +39,7 @@ func init() {
 }
 
 var shellCmd = &cobra.Command{
-	Use:   "shell [FILE]...",
+	Use:   "shell [options] [file...]",
 	Short: "Run an interactive dagger shell",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return withEngine(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
@@ -86,8 +87,10 @@ type shellCallHandler struct {
 	// running when in interactive mode
 	term bool
 
-	// stdoutBuf is used to capture the final output that the runner produces
+	// stdoutBuf is used to capture the final stdout that the runner produces
 	stdoutBuf *bytes.Buffer
+
+	// stderrBuf is used to capture the final stderr that the runner produces
 	stderrBuf *bytes.Buffer
 
 	// debug writes to the handler context's stderr what the arguments, input,
@@ -139,6 +142,7 @@ func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
 	return nil
 }
 
+// run parses code and and executes the interpreter's Runner
 func (h *shellCallHandler) run(ctx context.Context, reader io.Reader, name string) error {
 	file, err := syntax.NewParser().Parse(reader, name)
 	if err != nil {
@@ -174,6 +178,7 @@ func (h *shellCallHandler) run(ctx context.Context, reader io.Reader, name strin
 	})
 }
 
+// runPath executes code from a file
 func (h *shellCallHandler) runPath(ctx context.Context, path string) error {
 	f, err := os.Open(path)
 	if err != nil {
@@ -183,6 +188,7 @@ func (h *shellCallHandler) runPath(ctx context.Context, path string) error {
 	return h.run(ctx, f, path)
 }
 
+// runInteractive executes the runner on a REPL (Read-Eval-Print Loop)
 func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 	h.term = stdoutIsTTY
 	h.withTerminal(func(_ io.Reader, _, stderr io.Writer) error {
@@ -268,6 +274,7 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 	return nil
 }
 
+// withTerminal handles using stdin, stdout, and stderr when the TUI is runnin
 func (h *shellCallHandler) withTerminal(fn func(stdin io.Reader, stdout, stderr io.Writer) error) error {
 	if h.term {
 		return Frontend.Background(&terminalSession{
@@ -279,6 +286,7 @@ func (h *shellCallHandler) withTerminal(fn func(stdin io.Reader, stdout, stderr 
 	return fn(h.stdin, h.stdout, h.stderr)
 }
 
+// Exec is the main handler function for the runner to execute simple commands
 func (h *shellCallHandler) Exec(next interp.ExecHandlerFunc) interp.ExecHandlerFunc {
 	return func(ctx context.Context, args []string) error {
 		if h.debug {
@@ -318,6 +326,7 @@ func (h *shellCallHandler) Exec(next interp.ExecHandlerFunc) interp.ExecHandlerF
 	}
 }
 
+// entrypointCall is executed when it's the first in a command pipeline
 func (h *shellCallHandler) entrypointCall(ctx context.Context, args []string) (*ShellState, error) { //nolint:unparam
 	// shellLogf(ctx, "[%s] ENTRYPOINT!!\n", args[0])
 
@@ -333,6 +342,7 @@ func (h *shellCallHandler) entrypointCall(ctx context.Context, args []string) (*
 	return ShellState{}.WithCall(obj.Constructor, h.cfg), nil
 }
 
+// call is executed for every command that the exec handler processes
 func (h *shellCallHandler) call(ctx context.Context, prev *ShellState, name string, args []string) (*ShellState, error) {
 	call := prev.Function()
 
@@ -349,6 +359,7 @@ func (h *shellCallHandler) call(ctx context.Context, prev *ShellState, name stri
 	return prev.WithCall(fn, argValues), nil
 }
 
+// argumentValues returns a map of argument names and their parsed values
 func (h *shellCallHandler) argumentValues(ctx context.Context, fn *modFunction, args []string) (map[string]any, error) {
 	flags := pflag.NewFlagSet(fn.CmdName(), pflag.ContinueOnError)
 
@@ -367,9 +378,9 @@ func (h *shellCallHandler) argumentValues(ctx context.Context, fn *modFunction, 
 		return nil, fmt.Errorf("not enough arguments in %q: expected %d, got %d", fn.Name, len(reqArgs), len(args))
 	}
 
-	// Required fargs here are positional but we have fargs lot of power in our
+	// Required args here are positional but we have a lot of power in our
 	// custom flags, so to take advantage of them just add the corresponding
-	// `--flag-name` fargs so pflags can parse them.
+	// `--flag-name` args so pflags can parse them.
 	fargs := make([]string, 0, len(reqArgs)+len(args))
 	for i, arg := range reqArgs {
 		fargs = append(fargs, "--"+arg.flagName, args[i])
@@ -392,10 +403,11 @@ func (h *shellCallHandler) argumentValues(ctx context.Context, fn *modFunction, 
 	return a, err
 }
 
+// Result handles making the final request and printing the response
 func (h *shellCallHandler) Result(ctx context.Context, s ShellState) error {
 	prev := s.Function()
 	if prev == nil {
-		return fmt.Errorf("no function call in shell state")
+		return fmt.Errorf("no function call found for command")
 	}
 
 	fn, err := prev.GetDef(h.mod)
@@ -444,6 +456,12 @@ func shellState(ctx context.Context) (*ShellState, error) {
 	return readShellState(interp.HandlerCtx(ctx).Stdin)
 }
 
+// readShellState deserializes shell state
+//
+// We use an hardocded prefix when writing and reading state to make it easy
+// to detect if a given input is a shell state or not. This way we can tell
+// the difference between a serialized state that failed to unmarshal and
+// non-state data.
 func readShellState(input io.Reader) (*ShellState, error) {
 	if f, ok := input.(*os.File); ok && f == nil {
 		return nil, nil
@@ -470,10 +488,28 @@ func readShellState(input io.Reader) (*ShellState, error) {
 	return &s, nil
 }
 
+// ShellState is an intermediate representation of a query
+//
+// The query builder serializes to a GraphQL query but not back from it so we
+// use this data structure to keep track of the command chain in order to
+// make it easy to create a querybuilder.Selection from it, when needed.
+//
+// We could alternatively encode this in the querybuilder itself, except that
+// this state also includes key pieces of information from introspection that
+// make it very easy to validate and get the next function's definition.
+//
+// This state is passed around from the stdout of an exec handler to then next
+// one's stdin. Each handler in the chain should add a corresponding FunctionCall
+// to the state and write it to stdout for the next handler to read.
 type ShellState struct {
 	Calls []FunctionCall `json:"calls"`
 }
 
+// FunctionCall represents a querybyilder.Selection
+//
+// The query builder only cares about the name of the function and its arguments,
+// but we also keep track of its object's name and return type to make it easy
+// to get the right definition from the introspection data.
 type FunctionCall struct {
 	Object       string         `json:"object"`
 	Name         string         `json:"name"`
@@ -481,12 +517,14 @@ type FunctionCall struct {
 	ReturnObject string         `json:"returnObject"`
 }
 
+// Write serializes the shell state to the current exec handler's stdout
 func (s ShellState) Write(ctx context.Context) error {
 	htcx := interp.HandlerCtx(ctx)
 	fmt.Fprint(htcx.Stdout, shellStatePrefix)
 	return json.NewEncoder(htcx.Stdout).Encode(s)
 }
 
+// Function returns the last function in the chain, if not empty
 func (s ShellState) Function() *FunctionCall {
 	if len(s.Calls) == 0 {
 		return nil
@@ -494,6 +532,7 @@ func (s ShellState) Function() *FunctionCall {
 	return &s.Calls[len(s.Calls)-1]
 }
 
+// WithCall returns a new state with the given function call added to the chain
 func (s ShellState) WithCall(fn *modFunction, argValues map[string]any) *ShellState {
 	var typeName string
 	if prev := s.Function(); prev != nil {
@@ -512,6 +551,7 @@ func (s ShellState) WithCall(fn *modFunction, argValues map[string]any) *ShellSt
 	}
 }
 
+// QueryBuilder returns a querybuilder.Selection from the shell state
 func (s ShellState) QueryBuilder(dag *dagger.Client) *querybuilder.Selection {
 	q := querybuilder.Query().Client(dag.GraphQLClient())
 	for _, call := range s.Calls {
@@ -523,10 +563,13 @@ func (s ShellState) QueryBuilder(dag *dagger.Client) *querybuilder.Selection {
 	return q
 }
 
+// GetDef returns the introspection definition for this function call
 func (f FunctionCall) GetDef(modDef *moduleDef) (*modFunction, error) {
 	return modDef.GetObjectFunction(f.Object, f.Name)
 }
 
+// GetNextDef returns the introspection definition for the next function call, based on
+// the current return type and name of the next function
 func (f FunctionCall) GetNextDef(modDef *moduleDef, name string) (*modFunction, error) {
 	return modDef.GetObjectFunction(f.ReturnObject, name)
 }
