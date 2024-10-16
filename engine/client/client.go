@@ -320,7 +320,8 @@ func (c *Client) subscribeTelemetry(ctx context.Context) (rerr error) {
 	}
 	if c.EngineMetrics != nil {
 		if err := c.exportMetrics(ctx, httpClient); err != nil {
-			return fmt.Errorf("export metrics: %w", err)
+			// metrics are best effort and only in newer engines, so don't fail the client if they aren't found
+			slog.Error("export metrics failed", "err", err)
 		}
 	}
 	return nil
