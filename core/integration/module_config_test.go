@@ -877,10 +877,10 @@ var vcsTestCases = []vcsTestCase{
 	// Note: This format is also valid for private GitHub repositories
 	{
 		name:                     "SSH Public GitHub",
-		gitTestRepoRef:           "git@github.com:grouville/dagger-test-modules.git",
+		gitTestRepoRef:           "git@github.com:dagger/dagger-test-modules.git",
 		gitTestRepoCommit:        "323d56c9ece3492d13f58b8b603d31a7c511cd41",
 		expectedHost:             "github.com",
-		expectedBaseHTMLURL:      "github.com/grouville/dagger-test-modules",
+		expectedBaseHTMLURL:      "github.com/dagger/dagger-test-modules",
 		expectedURLPathComponent: "tree",
 		expectedPathPrefix:       "",
 		skipProxyTest:            true,
