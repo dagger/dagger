@@ -438,6 +438,9 @@ func (mod *Module) validateObjectTypeDef(ctx context.Context, typeDef *TypeDef) 
 		if gqlFieldName(field.Name) == "id" {
 			return fmt.Errorf("cannot define field with reserved name %q on object %q", field.Name, obj.Name)
 		}
+		if gqlFieldName(field.Name) == "sync" {
+			return fmt.Errorf("cannot define field with reserved name %q on object %q", field.Name, obj.Name)
+		}
 		fieldType, ok, err := mod.Deps.ModTypeFor(ctx, field.TypeDef)
 		if err != nil {
 			return fmt.Errorf("failed to get mod type for type def: %w", err)

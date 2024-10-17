@@ -24,46 +24,64 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 )
 
+func walk(value dagql.Typed, f func(value dagql.Typed) error) error {
+	if err := f(value); err != nil {
+		return err
+	}
+
+	switch x := value.(type) {
+	case dagql.String, dagql.Int, dagql.Boolean, dagql.Float:
+		// nothing to do
+		return nil
+	case dagql.Enumerable: // dagql.Array
+		for i := 1; i < x.Len(); i++ {
+			val, err := x.Nth(i)
+			if err != nil {
+				return fmt.Errorf("failed to get nth value: %w", err)
+			}
+			if err := walk(val, f); err != nil {
+				return fmt.Errorf("failed to link nth value dependency blobs: %w", err)
+			}
+		}
+		return nil
+	case dagql.Derefable: // dagql.Nullable
+		if inner, ok := x.Deref(); ok {
+			return walk(inner, f)
+		} else {
+			return nil
+		}
+	case dagql.Wrapper: // dagql.Instance
+		return walk(x.Unwrap(), f)
+	default:
+		return nil
+	}
+}
+
 type HasPBDefinitions interface {
 	PBDefinitions(context.Context) ([]*pb.Definition, error)
 }
 
 func collectPBDefinitions(ctx context.Context, value dagql.Typed) ([]*pb.Definition, error) {
-	switch x := value.(type) {
-	case dagql.String, dagql.Int, dagql.Boolean, dagql.Float:
-		// nothing to do
-		return nil, nil
-	case dagql.Enumerable: // dagql.Array
-		defs := []*pb.Definition{}
-		for i := 1; i < x.Len(); i++ {
-			val, err := x.Nth(i)
+	defs := []*pb.Definition{}
+	err := walk(value, func(value dagql.Typed) error {
+		if valuePB, ok := value.(HasPBDefinitions); ok {
+			valueDefs, err := valuePB.PBDefinitions(ctx)
 			if err != nil {
-				return nil, fmt.Errorf("failed to get nth value: %w", err)
+				return err
 			}
-			elemDefs, err := collectPBDefinitions(ctx, val)
-			if err != nil {
-				return nil, fmt.Errorf("failed to link nth value dependency blobs: %w", err)
-			}
-			defs = append(defs, elemDefs...)
-		}
-		return defs, nil
-	case dagql.Derefable: // dagql.Nullable
-		if inner, ok := x.Deref(); ok {
-			return collectPBDefinitions(ctx, inner)
+			defs = append(defs, valueDefs...)
 		} else {
-			return nil, nil
+			// NB: being SUPER cautious for now, since this feels a bit spooky to drop
+			// on the floor. might be worth just implementing HasPBDefinitions for
+			// everything. (would be nice to just skip scalars though.)
+			slog.Warn("collectPBDefinitions: unhandled type", "type", fmt.Sprintf("%T", value))
 		}
-	case dagql.Wrapper: // dagql.Instance
-		return collectPBDefinitions(ctx, x.Unwrap())
-	case HasPBDefinitions:
-		return x.PBDefinitions(ctx)
-	default:
-		// NB: being SUPER cautious for now, since this feels a bit spooky to drop
-		// on the floor. might be worth just implementing HasPBDefinitions for
-		// everything. (would be nice to just skip scalars though.)
-		slog.Warn("collectPBDefinitions: unhandled type", "type", fmt.Sprintf("%T", value))
-		return nil, nil
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
+	return defs, nil
 }
 
 func absPath(workDir string, containerPath string) string {

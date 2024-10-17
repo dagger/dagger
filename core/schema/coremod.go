@@ -143,6 +143,9 @@ func (m *CoreMod) TypeDefs(ctx context.Context) ([]*core.TypeDef, error) {
 					isIdable = true
 					continue
 				}
+				if introspectionField.Name == "sync" {
+					continue
+				}
 
 				fn := &core.Function{
 					Name:        introspectionField.Name,
