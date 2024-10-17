@@ -1,4 +1,4 @@
-package httpdns
+package containerimagedns
 
 import (
 	"strconv"

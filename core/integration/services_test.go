@@ -1266,6 +1266,37 @@ func (ServiceSuite) TestContainerPublish(ctx context.Context, t *testctx.T) {
 	require.Equal(t, fileContent, content)
 }
 
+func (ServiceSuite) TestRegistryServiceRoundtrip(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// Set up registry service
+	registry := c.Container().
+		From("registry:2").
+		WithExposedPort(5000).
+		AsService()
+
+	registryHost, err := registry.Hostname(ctx)
+	require.NoError(t, err)
+
+	// Push a basic image to the registry
+	baseImage := c.Container().From(alpineImage)
+	pushedRef := fmt.Sprintf("%s:5000/test-image:latest", registryHost)
+	_, err = baseImage.Publish(ctx, pushedRef)
+	require.NoError(t, err)
+
+	// Create a new container by From-ing through the registry Service Binding
+	_, err = c.Container().
+		WithServiceBinding("registry", registry). // unclear whether this should be necessary?
+		From(pushedRef).
+		WithExec([]string{"echo", "foundit"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+
+	// Ensure we can't access the image without the service binding
+	_, err = c.Container().From("registry:5000/test-image:latest").ID(ctx)
+	require.Error(t, err)
+}
+
 func (ContainerSuite) TestRootFSServices(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
