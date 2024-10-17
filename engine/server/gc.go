@@ -4,22 +4,19 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"time"
 
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/cmd/buildkitd/config"
 	"github.com/moby/buildkit/util/bklog"
+	"github.com/moby/buildkit/util/disk"
 	"github.com/moby/buildkit/util/imageutil"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/core"
 )
 
-const DefaultDiskSpacePercentage int64 = 75
-
-// The KeepBytes setting to use for automatic local cache GC.
-func (srv *Server) EngineLocalCacheKeepBytes() int64 {
-	return srv.workerGCKeepBytes
+func (srv *Server) EngineLocalCachePolicy() bkclient.PruneInfo {
+	return srv.workerDefaultGCPolicy
 }
 
 // Return all the cache entries in the local cache. No support for filtering yet.
@@ -143,52 +140,65 @@ func getGCPolicy(cfg config.GCConfig, root string) []bkclient.PruneInfo {
 	if cfg.GC != nil && !*cfg.GC {
 		return nil
 	}
+	dstat, _ := disk.GetDiskStat(root)
 	if len(cfg.GCPolicy) == 0 {
-		cfg.GCPolicy = defaultGCPolicy(cfg.GCKeepStorage)
+		cfg.GCPolicy = defaultGCPolicy(cfg, dstat)
 	}
 	out := make([]bkclient.PruneInfo, 0, len(cfg.GCPolicy))
 	for _, rule := range cfg.GCPolicy {
+		//nolint:staticcheck
+		if rule.ReservedSpace == (config.DiskSpace{}) && rule.KeepBytes != (config.DiskSpace{}) {
+			rule.ReservedSpace = rule.KeepBytes
+		}
 		out = append(out, bkclient.PruneInfo{
-			Filter:       rule.Filters,
-			All:          rule.All,
-			KeepBytes:    rule.KeepBytes.AsBytes(root),
-			KeepDuration: rule.KeepDuration.Duration,
+			Filter:        rule.Filters,
+			All:           rule.All,
+			KeepDuration:  rule.KeepDuration.Duration,
+			ReservedSpace: rule.ReservedSpace.AsBytes(dstat),
+			MaxUsedSpace:  rule.MaxUsedSpace.AsBytes(dstat),
+			MinFreeSpace:  rule.MinFreeSpace.AsBytes(dstat),
 		})
 	}
 	return out
 }
 
-func defaultGCPolicy(keep config.DiskSpace) []config.GCPolicy {
-	if keep == (config.DiskSpace{}) {
-		keep = config.DiskSpace{Percentage: DefaultDiskSpacePercentage}
+func getDefaultGCPolicy(cfg config.GCConfig, root string) bkclient.PruneInfo {
+	// the last policy is the default one
+	policies := getGCPolicy(cfg, root)
+	return policies[len(policies)-1]
+}
+
+func defaultGCPolicy(cfg config.GCConfig, dstat disk.DiskStat) []config.GCPolicy {
+	if cfg.IsUnset() {
+		cfg.GCReservedSpace = cfg.GCKeepStorage //nolint: staticcheck // backwards-compat
 	}
-	return []config.GCPolicy{
-		// if build cache uses more than 512MB delete the most easily reproducible data after it has not been used for 2 days
-		{
-			Filters:      []string{"type==source.local,type==exec.cachemount,type==source.git.checkout"},
-			KeepDuration: config.Duration{Duration: time.Duration(48) * time.Hour}, // 48h
-			KeepBytes:    config.DiskSpace{Bytes: 512 * 1e6},                       // 512MB
-		},
-		// remove any data not used for 60 days
-		{
-			KeepDuration: config.Duration{Duration: time.Duration(60) * 24 * time.Hour}, // 60d
-			KeepBytes:    keep,
-		},
-		// keep the unshared build cache under cap
-		{
-			KeepBytes: keep,
-		},
-		// if previous policies were insufficient start deleting internal data to keep build cache under cap
-		{
-			All:       true,
-			KeepBytes: keep,
-		},
+	if cfg.IsUnset() {
+		// use our own default caps, so we can configure the limits ourselves
+		cfg = DetectDefaultGCCap(dstat)
+	}
+	return config.DefaultGCPolicy(cfg, dstat)
+}
+
+func DetectDefaultGCCap(dstat disk.DiskStat) config.GCConfig {
+	reserve := config.DiskSpace{Percentage: diskSpaceReservePercentage}
+	if reserve.AsBytes(dstat) > diskSpaceReserveBytes {
+		reserve = config.DiskSpace{Bytes: diskSpaceReserveBytes}
+	}
+	max := config.DiskSpace{Percentage: diskSpaceMaxPercentage}
+	if max.AsBytes(dstat) > diskSpaceMaxBytes {
+		max = config.DiskSpace{Bytes: diskSpaceMaxBytes}
+	}
+	return config.GCConfig{
+		GCReservedSpace: reserve,
+		GCMinFreeSpace:  config.DiskSpace{Percentage: diskSpaceFreePercentage},
+		GCMaxUsedSpace:  max,
 	}
 }
 
-func getGCKeepBytesFromConfig(keep config.DiskSpace, root string) int64 {
-	if keep == (config.DiskSpace{}) {
-		keep = config.DiskSpace{Percentage: DefaultDiskSpacePercentage}
-	}
-	return keep.AsBytes(root)
-}
+const (
+	diskSpaceReservePercentage int64 = 10
+	diskSpaceReserveBytes      int64 = 10 * 1e9 // 10GB
+	diskSpaceFreePercentage    int64 = 20
+	diskSpaceMaxPercentage     int64 = 80
+	diskSpaceMaxBytes          int64 = 200 * 1e9 // 200GB
+)

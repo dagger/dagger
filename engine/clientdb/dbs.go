@@ -78,6 +78,10 @@ func (dbs *DBs) Open(clientID string) (*sql.DB, error) {
 func (dbs *DBs) GC(keep map[string]bool) error {
 	ents, err := os.ReadDir(dbs.Root)
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			// no databases found
+			return nil
+		}
 		return fmt.Errorf("readdir %s: %w", dbs.Root, err)
 	}
 	var removed []string
