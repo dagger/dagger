@@ -156,7 +156,7 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 				Branch: consts.AlpineVersion,
 				Packages: []string{
 					// for Buildkit
-					"git", "openssh", "pigz", "xz",
+					"git", "openssh-client", "pigz", "xz",
 					// for CNI
 					"dnsmasq", "iptables", "ip6tables", "iptables-legacy",
 				},
@@ -195,7 +195,7 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 	case "wolfi":
 		pkgs := []string{
 			// for Buildkit
-			"git", "openssh", "pigz", "xz",
+			"git", "openssh-client", "pigz", "xz",
 			// for CNI
 			"iptables", "ip6tables", "dnsmasq",
 		}
