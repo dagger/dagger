@@ -36,6 +36,7 @@ A tool to run CI/CD pipelines in containers, anywhere
 * [dagger logout](#dagger-logout)	 - Log out from Dagger Cloud
 * [dagger query](#dagger-query)	 - Send API queries to a dagger engine
 * [dagger run](#dagger-run)	 - Run a command in a Dagger session
+* [dagger uninstall](#dagger-uninstall)	 - Uninstall a dependency
 * [dagger version](#dagger-version)	 - Print dagger version
 
 ## dagger call
@@ -491,6 +492,42 @@ dagger run python main.py
 ```
       --cleanup-timeout duration   max duration to wait between SIGTERM and SIGKILL on interrupt (default 10s)
       --focus                      Only show output for focused commands.
+```
+
+### Options inherited from parent commands
+
+```
+  -d, --debug                        Show debug logs and full verbosity
+  -i, --interactive                  Spawn a terminal on container exec failure
+      --interactive-command string   Change the default command for interactive mode (default "/bin/sh")
+  -E, --no-exit                      Leave the TUI running after completion
+      --progress string              Progress output format (auto, plain, tty) (default "auto")
+  -q, --quiet count                  Reduce verbosity (show progress, but clean up at the end)
+  -s, --silent                       Do not show progress at all
+  -v, --verbose count                Increase verbosity (use -vv or -vvv for more)
+  -w, --web                          Open trace URL in a web browser
+```
+
+### SEE ALSO
+
+* [dagger](#dagger)	 - A tool to run CI/CD pipelines in containers, anywhere
+
+## dagger uninstall
+
+Uninstall a dependency
+
+### Synopsis
+
+Uninstall module as a dependency from the current module. The target module must be local.
+
+```
+dagger uninstall [options] <module>
+```
+
+### Examples
+
+```
+dagger uninstall github.com/shykes/daggerverse/hello
 ```
 
 ### Options inherited from parent commands

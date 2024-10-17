@@ -6107,6 +6107,16 @@ func (r *ModuleSource) WithView(name string, patterns []string) *ModuleSource {
 	}
 }
 
+// Remove the provided dependencies from the module source's dependency list.
+func (r *ModuleSource) WithoutDependencies(dependencies []*ModuleDependency) *ModuleSource {
+	q := r.query.Select("withoutDependencies")
+	q = q.Arg("dependencies", dependencies)
+
+	return &ModuleSource{
+		query: q,
+	}
+}
+
 // A named set of path filters that can be applied to directory arguments provided to functions.
 type ModuleSourceView struct {
 	query *querybuilder.Selection
