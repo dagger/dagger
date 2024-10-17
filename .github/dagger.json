@@ -8,7 +8,7 @@
     },
     {
       "name": "gha",
-      "source": "github.com/shykes/gha@f6c91e490043946d71100645be8253471ba626bd"
+      "source": "../modules/gha"
     }
   ],
   "source": ".",
