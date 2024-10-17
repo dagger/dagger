@@ -586,7 +586,7 @@ type ContainerExportOpts struct {
 	Expand bool
 }
 
-// Writes the container as an OCI tarball to the destination file path on the host.
+// Writes the container as an OCI tarball to the destination file path on the current runtime container spawned by Dagger engine.
 //
 // It can also export platform variants.
 func (r *Container) Export(ctx context.Context, path string, opts ...ContainerExportOpts) (string, error) {
@@ -2633,7 +2633,7 @@ type DirectoryExportOpts struct {
 	Wipe bool
 }
 
-// Writes the contents of the directory to a path on the host.
+// Writes the contents of the directory to a path on the current runtime container spawned by the Dagger engine.
 func (r *Directory) Export(ctx context.Context, path string, opts ...DirectoryExportOpts) (string, error) {
 	if r.export != nil {
 		return *r.export, nil
@@ -3383,7 +3383,7 @@ type FileExportOpts struct {
 	AllowParentDirPath bool
 }
 
-// Writes the file to a file path on the host.
+// Writes the file to a file path on the current runtime container spawned by Dagger engine.
 func (r *File) Export(ctx context.Context, path string, opts ...FileExportOpts) (string, error) {
 	if r.export != nil {
 		return *r.export, nil

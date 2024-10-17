@@ -638,7 +638,7 @@ class Container(Type):
         expand: bool | None = False,
     ) -> str:
         """Writes the container as an OCI tarball to the destination file path on
-        the host.
+        the current runtime container spawned by Dagger engine.
 
         It can also export platform variants.
 
@@ -2820,7 +2820,8 @@ class Directory(Type):
         *,
         wipe: bool | None = False,
     ) -> str:
-        """Writes the contents of the directory to a path on the host.
+        """Writes the contents of the directory to a path on the current runtime
+        container spawned by the Dagger engine.
 
         Parameters
         ----------
@@ -3586,7 +3587,8 @@ class File(Type):
         *,
         allow_parent_dir_path: bool | None = False,
     ) -> str:
-        """Writes the file to a file path on the host.
+        """Writes the file to a file path on the current runtime container
+        spawned by Dagger engine.
 
         Parameters
         ----------
