@@ -11,11 +11,12 @@ type Module struct {
 	id *ID
 }
 
-func NewModule(id *ID, name, ref string) *Module {
+func NewModule(id *ID, name, ref, pin string) *Module {
 	return &Module{
 		pb: &callpbv1.Module{
 			Name:       name,
 			Ref:        ref,
+			Pin:        pin,
 			CallDigest: id.pb.Digest,
 		},
 		id: id,

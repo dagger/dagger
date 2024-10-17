@@ -119,7 +119,11 @@ func (mod *Module) IDModule() *call.Module {
 		// propagating error
 		panic(err)
 	}
-	return call.NewModule(mod.InstanceID, mod.Name(), ref)
+	pin, err := mod.Source.Self.Pin()
+	if err != nil {
+		panic(err)
+	}
+	return call.NewModule(mod.InstanceID, mod.Name(), ref, pin)
 }
 
 func (mod *Module) Initialize(ctx context.Context, oldID *call.ID, newID *call.ID, dag *dagql.Server) (*Module, error) {
