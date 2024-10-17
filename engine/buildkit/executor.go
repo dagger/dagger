@@ -38,7 +38,6 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 )
@@ -91,8 +90,6 @@ type ExecutionMetadata struct {
 	SystemEnvNames []string
 
 	EnabledGPUs []string
-
-	SpanContext propagation.MapCarrier
 
 	// Path to the SSH auth socket. Used for Dagger-in-Dagger support.
 	SSHAuthSocketPath string

@@ -15,6 +15,7 @@ import (
 const (
 	modMetaDirPath    = "/.daggermod"
 	modMetaOutputPath = "output.json"
+	modMetaErrorPath  = "error"
 
 	ModuleName = "daggercore"
 )

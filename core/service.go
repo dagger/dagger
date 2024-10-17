@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -33,6 +34,10 @@ const (
 )
 
 type Service struct {
+	// The span that created the service, which future runs of the service will
+	// link to.
+	Creator trace.SpanContext
+
 	Query *Query
 
 	// A custom hostname set by the user.
@@ -228,12 +233,6 @@ func (svc *Service) Start(
 	}
 }
 
-func (svc *Service) startSpan(ctx context.Context, id *call.ID, name string) (context.Context, trace.Span) {
-	ctx, span := Tracer(ctx).Start(ctx, "start "+name, trace.WithAttributes(
-		attribute.String(telemetry.EffectIDAttr, serviceEffect(id))))
-	return ctx, span
-}
-
 //nolint:gocyclo
 func (svc *Service) startContainer(
 	ctx context.Context,
@@ -303,15 +302,6 @@ func (svc *Service) startContainer(
 		}
 	}()
 
-	ctx, span := svc.startSpan(ctx, id, strings.Join(execOp.Meta.Args, " "))
-	defer func() {
-		if rerr != nil {
-			// NB: this is intentionally conditional; we only complete if there was
-			// an error starting. span.End is called when the service exits.
-			telemetry.End(span, func() error { return rerr })
-		}
-	}()
-
 	var domain string
 	if mod, err := svc.Query.CurrentModule(ctx); err == nil && svc.CustomHostname != "" {
 		domain = network.ModuleDomain(mod.InstanceID, clientMetadata.SessionID)
@@ -359,6 +349,7 @@ func (svc *Service) startContainer(
 
 			res, err := bk.Solve(ctx, bkgw.SolveRequest{
 				Definition: def,
+				Evaluate:   true,
 			})
 			if err != nil {
 				return nil, fmt.Errorf("solve mount %s: %w", m.Dest, err)
@@ -372,7 +363,30 @@ func (svc *Service) startContainer(
 		}
 	}
 
-	gc, err := bk.NewContainer(ctx, buildkit.NewContainerRequest{
+	execCtx := trace.ContextWithSpanContext(ctx, svc.Creator)
+	ctx, span := Tracer(ctx).Start(
+		// The parent is the call site that triggered it to start.
+		ctx,
+		// Match naming scheme of normal exec span.
+		fmt.Sprintf("exec %s", strings.Join(execOp.Meta.Args, " ")),
+		// This span continues the original withExec, by linking to it.
+		telemetry.Resume(execCtx),
+		// Hide this span so the user can just focus on the withExec.
+		telemetry.Internal(),
+		// The withExec span expects to see this effect, otherwise it'll still be
+		// pending.
+		trace.WithAttributes(attribute.String(telemetry.DagDigestAttr, execOp.OpDigest.String())),
+		trace.WithAttributes(attribute.String(telemetry.EffectIDAttr, execOp.OpDigest.String())),
+	)
+	defer func() {
+		if rerr != nil {
+			// NB: this is intentionally conditional; we only complete if there was
+			// an error starting. span.End is called when the service exits.
+			telemetry.End(span, func() error { return rerr })
+		}
+	}()
+
+	gc, err := bk.NewContainer(execCtx, buildkit.NewContainerRequest{
 		Mounts:            mounts,
 		Hostname:          fullHost,
 		Platform:          &pbPlatform,
@@ -410,7 +424,7 @@ func (svc *Service) startContainer(
 		stderrClient, stderrCtr = io.Pipe()
 	}
 
-	svcProc, err := gc.Start(ctx, bkgw.StartRequest{
+	svcProc, err := gc.Start(execCtx, bkgw.StartRequest{
 		Args:         execOp.Meta.Args,
 		Env:          env,
 		Cwd:          execOp.Meta.Cwd,
@@ -436,6 +450,8 @@ func (svc *Service) startContainer(
 		forwardStderr(stderrClient)
 	}
 
+	var stopped atomic.Bool
+
 	var exitErr error
 	exited := make(chan struct{})
 	go func() {
@@ -452,12 +468,18 @@ func (svc *Service) startContainer(
 			close(exited)
 		}()
 
-		// terminate the span; we're not interested in setting an error, since
-		// services return a benign error like `exit status 1` on exit
-		defer span.End()
-
 		exitErr = svcProc.Wait()
 		slog.Info("service exited", "err", exitErr)
+
+		// show the exit status; doing so won't fail anything, and is
+		// helpful for troubleshooting
+		defer telemetry.End(span, func() error {
+			if stopped.Load() {
+				// stopped; we don't care about the exit result (likely 137)
+				return nil
+			}
+			return exitErr
+		})
 
 		// detach dependent services when process exits
 		detachDeps()
@@ -471,6 +493,7 @@ func (svc *Service) startContainer(
 	}()
 
 	stopSvc := func(ctx context.Context, force bool) error {
+		stopped.Store(true)
 		sig := syscall.SIGTERM
 		if force {
 			sig = syscall.SIGKILL
@@ -664,7 +687,9 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 		})
 	}
 
-	ctx, span := svc.startSpan(ctx, id, strings.Join(descs, ", "))
+	ctx, span := Tracer(ctx).Start(ctx, strings.Join(descs, ", "), trace.WithLinks(
+		trace.Link{SpanContext: svc.Creator},
+	))
 	defer func() {
 		if rerr != nil {
 			// NB: this is intentionally conditional; we only complete if there was

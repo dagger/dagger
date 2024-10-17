@@ -331,7 +331,9 @@ func main() {
 			fmt.Fprintf(os.Stderr, "no tty available for progress %q\n", progress)
 			os.Exit(1)
 		}
-		Frontend = idtui.New()
+		Frontend = idtui.NewPretty()
+	case "report":
+		Frontend = idtui.NewReporter()
 	default:
 		fmt.Fprintf(os.Stderr, "unknown progress type %q\n", progress)
 		os.Exit(1)

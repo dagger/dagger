@@ -54,7 +54,7 @@ func (db *DB) getDotDag(focusField string, showInternal bool) *dotDag {
 		vtxByCallDgst: make(map[string]*dotVtx),
 	}
 
-	for _, span := range db.Spans {
+	for _, span := range db.Spans.Order {
 		call := span.Call
 		if call == nil {
 			continue
@@ -223,7 +223,7 @@ func (dag *dotDag) writeTo(out io.Writer) {
 		}
 		label := buf.String()
 
-		duration := vtx.span.ActiveDuration(time.Now())
+		duration := vtx.span.Activity.Duration(time.Now())
 		label += fmt.Sprintf("\n%s", duration)
 
 		thicc := false

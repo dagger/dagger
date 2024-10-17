@@ -650,7 +650,7 @@ func (s *Server) resolvePath(ctx context.Context, self Object, sel Selection) (r
 
 	val, chainedID, err := s.cachedSelect(ctx, self, sel.Selector)
 	if err != nil {
-		return nil, fmt.Errorf("resolve: %w", err)
+		return nil, err
 	}
 
 	if val == nil {

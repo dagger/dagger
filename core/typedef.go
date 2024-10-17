@@ -1080,6 +1080,27 @@ func (fnCall *FunctionCall) ReturnValue(ctx context.Context, val JSON) error {
 	)
 }
 
+func (fnCall *FunctionCall) ReturnError(ctx context.Context, errID dagql.ID[*Error]) error {
+	// The return is implemented by exporting the result back to the caller's
+	// filesystem. This ensures that the result is cached as part of the module
+	// function's Exec while also keeping SDKs as agnostic as possible to the
+	// format + location of that result.
+	bk, err := fnCall.Query.Buildkit(ctx)
+	if err != nil {
+		return fmt.Errorf("get buildkit client: %w", err)
+	}
+	enc, err := errID.Encode()
+	if err != nil {
+		return fmt.Errorf("encode error ID: %w", err)
+	}
+	return bk.IOReaderExport(
+		ctx,
+		strings.NewReader(enc),
+		filepath.Join(modMetaDirPath, modMetaErrorPath),
+		0o600,
+	)
+}
+
 type FunctionCallArgValue struct {
 	Name  string `field:"true" doc:"The name of the argument."`
 	Value JSON   `field:"true" doc:"The value of the argument represented as a JSON serialized string."`

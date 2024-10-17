@@ -194,32 +194,16 @@ func (term *Vterm) LastLine() string {
 	if used == 0 {
 		return ""
 	}
-
 	var lastLine string
 	for row := used - 1; row >= 0; row-- {
-		var lastFormat midterm.Format
-
 		buf := new(strings.Builder)
-		for col, r := range term.vt.Content[row] {
-			f := term.vt.Format[row][col]
-
-			if f != lastFormat {
-				lastFormat = f
-				buf.Write([]byte(f.Render()))
-			}
-
-			buf.Write([]byte(string(r)))
-		}
-
+		_ = term.vt.RenderLine(buf, row)
 		if strings.TrimSpace(buf.String()) == "" {
 			continue
 		}
-
 		lastLine = strings.TrimRightFunc(buf.String(), unicode.IsSpace)
-
 		break
 	}
-
 	return lastLine + reset
 }
 

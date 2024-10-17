@@ -88,7 +88,7 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 		// Requests maintain their original trace context from the client, rather
 		// than appearing beneath the dagger session span, so in order to see any
 		// logs we need to reveal everything.
-		Frontend.SetRevealAllSpans(true)
+		Frontend.RevealAllSpans()
 
 		srv := http.Server{
 			Handler:           sess,

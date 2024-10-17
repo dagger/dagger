@@ -69,7 +69,7 @@ func (s *serviceSchema) Install() {
 }
 
 func (s *serviceSchema) containerAsService(ctx context.Context, parent *core.Container, args struct{}) (*core.Service, error) {
-	return parent.Service(ctx)
+	return parent.AsService(ctx)
 }
 
 func (s *serviceSchema) containerUp(ctx context.Context, ctr dagql.Instance[*core.Container], args upArgs) (dagql.Nullable[core.Void], error) {
