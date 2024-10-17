@@ -46,7 +46,6 @@ import (
 	"github.com/moby/buildkit/solver/llbsolver/mounts"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/source"
-	srcimg "github.com/moby/buildkit/source/containerimage"
 	srcgit "github.com/moby/buildkit/source/git"
 	srchttp "github.com/moby/buildkit/source/http"
 	"github.com/moby/buildkit/util/archutil"
@@ -75,7 +74,6 @@ import (
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/sources/blob"
-	imgdns "github.com/dagger/dagger/engine/sources/containerimagedns"
 	"github.com/dagger/dagger/engine/sources/gitdns"
 	"github.com/dagger/dagger/engine/sources/httpdns"
 )
@@ -419,16 +417,16 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	}
 	srv.workerSourceManager.Register(hs)
 
-	is, err := imgdns.NewSource(imgdns.Opt{
-		SourceOpt: srcimg.SourceOpt{
-			CacheAccessor: srv.workerCache,
-		},
-		BaseDNSConfig: srv.dns,
-	})
-	if err != nil {
-		return nil, err
-	}
-	srv.workerSourceManager.Register(is)
+	// 	is, err := imgdns.NewSource(imgdns.Opt{
+	// 		SourceOpt: srcimg.SourceOpt{
+	// 			CacheAccessor: srv.workerCache,
+	// 		},
+	// 		BaseDNSConfig: srv.dns,
+	// 	})
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+	// 	srv.workerSourceManager.Register(is)
 
 	gs, err := gitdns.NewSource(gitdns.Opt{
 		Opt: srcgit.Opt{

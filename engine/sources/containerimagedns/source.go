@@ -112,7 +112,7 @@ func (ish *imgSourceHandler) client(g session.Group) *http.Client {
 	dns := *ish.dns
 	dns.SearchDomains = append(clientDomains, dns.SearchDomains...)
 
-	return &http.Client{Transport: newTransport(hs.transport, hs.sm, g, &dns)}
+	return &http.Client{Transport: newTransport(ish.transport, ish.sm, g, &dns)}
 }
 
 // urlHash is internal hash the etag is stored by that doesn't leak outside
