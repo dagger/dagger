@@ -27,6 +27,7 @@ import (
 	"github.com/moby/buildkit/util/apicaps"
 	"github.com/moby/buildkit/util/appcontext"
 	"github.com/moby/buildkit/util/bklog"
+	"github.com/moby/buildkit/util/disk"
 	"github.com/moby/buildkit/util/profiler"
 	"github.com/moby/buildkit/util/stack"
 	"github.com/moby/buildkit/version"
@@ -207,15 +208,13 @@ func addFlags(app *cli.App) {
 			Name:  "oci-max-parallelism",
 			Usage: "maximum number of parallel build steps that can be run at the same time (or \"num-cpu\" to automatically set to the number of CPUs). 0 means unlimited parallelism.",
 		},
-		cli.Int64Flag{
+		cli.StringFlag{
 			Name:  "oci-worker-gc-keepstorage",
-			Usage: "Amount of storage GC keep locally (MB)",
-			Value: func() int64 {
-				keep := defaultConf.Workers.OCI.GCKeepStorage.AsBytes(defaultConf.Root)
-				if keep == 0 {
-					keep = config.DiskSpace{Percentage: server.DefaultDiskSpacePercentage}.AsBytes(defaultConf.Root)
-				}
-				return keep / 1e6
+			Usage: "Amount of storage GC keep locally, format \"Reserved[,Free[,Maximum]]\" (MB)",
+			Value: func() string {
+				cfg := defaultConf.Workers.OCI.GCConfig
+				dstat, _ := disk.GetDiskStat(defaultConf.Root)
+				return gcConfigToString(cfg, dstat)
 			}(),
 			Hidden: len(defaultConf.Workers.OCI.GCPolicy) != 0,
 		},
@@ -607,7 +606,13 @@ func applyMainFlags(c *cli.Context, cfg *config.Config) error {
 	}
 
 	if c.GlobalIsSet("oci-worker-gc-keepstorage") {
-		cfg.Workers.OCI.GCKeepStorage = config.DiskSpace{Bytes: c.GlobalInt64("oci-worker-gc-keepstorage") * 1e6}
+		gc, err := stringToGCConfig(c.GlobalString("oci-worker-gc-keepstorage"))
+		if err != nil {
+			return err
+		}
+		cfg.Workers.OCI.GCReservedSpace = gc.GCReservedSpace
+		cfg.Workers.OCI.GCMaxUsedSpace = gc.GCMaxUsedSpace
+		cfg.Workers.OCI.GCMinFreeSpace = gc.GCMinFreeSpace
 	}
 
 	if c.GlobalIsSet("oci-worker-net") {

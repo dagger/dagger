@@ -41,11 +41,35 @@ class DaggerEngineCache extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * The maximum bytes to keep in the cache without pruning.
+     */
+    public function maxUsedSpace(): int
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('maxUsedSpace');
+        return (int)$this->queryLeaf($leafQueryBuilder, 'maxUsedSpace');
+    }
+
+    /**
+     * The target amount of free disk space the garbage collector will attempt to leave.
+     */
+    public function minFreeSpace(): int
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('minFreeSpace');
+        return (int)$this->queryLeaf($leafQueryBuilder, 'minFreeSpace');
+    }
+
+    /**
      * Prune the cache of releaseable entries
      */
     public function prune(): void
     {
         $leafQueryBuilder = new \Dagger\Client\QueryBuilder('prune');
         $this->queryLeaf($leafQueryBuilder, 'prune');
+    }
+
+    public function reservedSpace(): int
+    {
+        $leafQueryBuilder = new \Dagger\Client\QueryBuilder('reservedSpace');
+        return (int)$this->queryLeaf($leafQueryBuilder, 'reservedSpace');
     }
 }

@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/containerd/containerd/content"
+	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/util/leaseutil"
 	"github.com/vektah/gqlparser/v2/ast"
 
@@ -88,8 +89,8 @@ type Server interface {
 	// Prune everything that is releasable in the local cache. No support for filtering yet.
 	PruneEngineLocalCacheEntries(context.Context) (*EngineCacheEntrySet, error)
 
-	// The KeepBytes setting to use for automatic local cache GC.
-	EngineLocalCacheKeepBytes() int64
+	// The default local cache policy to use for automatic local cache GC.
+	EngineLocalCachePolicy() bkclient.PruneInfo
 
 	// A map of unique IDs for the result of a given cache entry set query, allowing further queries on the result
 	// to operate on a stable result rather than the live state.
