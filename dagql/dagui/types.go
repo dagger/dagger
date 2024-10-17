@@ -57,13 +57,17 @@ func (db *DB) RowsView(zoomedID trace.SpanID) *RowsView {
 	view := &RowsView{
 		Zoomed: db.Spans[zoomedID],
 	}
-	var spans []*Span
-	if view.Zoomed != nil {
-		spans = view.Zoomed.ChildrenAndEffects()
-	} else {
-		spans = db.SpanOrder
+	if view.Zoomed == nil {
+		// zoomed to invalid span
+		return &RowsView{}
 	}
-	view.Body = db.CollectTree(spans)
+	view.Body = db.CollectTree(view.Zoomed.ChildrenAndEffects())
+	return view
+}
+
+func (db *DB) RowsViewAll() *RowsView {
+	view := &RowsView{}
+	view.Body = db.CollectTree(db.SpanOrder)
 	return view
 }
 

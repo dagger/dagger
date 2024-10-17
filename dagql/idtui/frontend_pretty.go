@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 	"sync"
@@ -56,7 +55,6 @@ type frontendPretty struct {
 	cloudURL string
 
 	// TUI state/config
-	restore    func()  // restore terminal
 	fps        float64 // frames per second
 	profile    termenv.Profile
 	window     tea.WindowSizeMsg // set by BubbleTea
@@ -145,12 +143,8 @@ func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run 
 	}
 	fe.FrontendOpts = opts
 
-	// find a TTY anywhere in stdio. stdout might be redirected, in which case we
-	// can show the TUI on stderr.
-	ttyIn, ttyOut := findTTYs()
-
 	// run the function wrapped in the TUI
-	runErr := fe.runWithTUI(ctx, ttyIn, ttyOut, run)
+	runErr := fe.runWithTUI(ctx, run)
 
 	// print the final output display to stderr
 	if renderErr := fe.finalRender(); renderErr != nil {
@@ -161,6 +155,10 @@ func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run 
 
 	// return original err
 	return runErr
+}
+
+func (fe *frontendPretty) Opts() *dagui.FrontendOpts {
+	return &fe.FrontendOpts
 }
 
 func (fe *frontendPretty) SetPrimary(spanID trace.SpanID) {
@@ -176,34 +174,17 @@ func (fe *frontendPretty) SetRevealAllSpans(val bool) {
 	fe.mu.Unlock()
 }
 
-func (fe *frontendPretty) runWithTUI(ctx context.Context, ttyIn *os.File, ttyOut *os.File, run func(context.Context) error) error {
-	var stdin io.Reader
-	if ttyIn != nil {
-		stdin = ttyIn
-
-		// Bubbletea will just receive an `io.Reader` for its input rather than the
-		// raw TTY *os.File, so we need to set up the TTY ourselves.
-		ttyFd := int(ttyIn.Fd())
-		oldState, err := term.MakeRaw(ttyFd)
-		if err != nil {
-			return err
-		}
-		fe.restore = func() { _ = term.Restore(ttyFd, oldState) }
-		defer fe.restore()
-	}
-
+func (fe *frontendPretty) runWithTUI(ctx context.Context, run func(context.Context) error) error {
 	// wire up the run so we can call it asynchronously with the TUI running
 	fe.run = run
 	// set up ctx cancellation so the TUI can interrupt via keypresses
 	fe.runCtx, fe.interrupt = context.WithCancelCause(ctx)
 
+	_, out := findTTYs()
+
 	// keep program state so we can send messages to it
 	fe.program = tea.NewProgram(fe,
-		tea.WithInput(stdin),
-		tea.WithOutput(ttyOut),
-		// We set up the TTY ourselves, so Bubbletea's panic handler becomes
-		// counter-productive.
-		tea.WithoutCatchPanics(),
+		tea.WithOutput(out),
 		tea.WithMouseCellMotion(),
 	)
 
@@ -309,13 +290,15 @@ func (fe *frontendPretty) Close() error {
 
 type backgroundMsg struct {
 	cmd  tea.ExecCommand
+	raw  bool
 	errs chan<- error
 }
 
-func (fe *frontendPretty) Background(cmd tea.ExecCommand) error {
+func (fe *frontendPretty) Background(cmd tea.ExecCommand, raw bool) error {
 	errs := make(chan error, 1)
 	fe.program.Send(backgroundMsg{
 		cmd:  cmd,
+		raw:  raw,
 		errs: errs,
 	})
 	return <-errs
@@ -412,7 +395,11 @@ func (fe *frontendPretty) Render(out *termenv.Output) error {
 }
 
 func (fe *frontendPretty) recalculateViewLocked() {
-	fe.rowsView = fe.db.RowsView(fe.zoomed)
+	if fe.RevealAllSpans {
+		fe.rowsView = fe.db.RowsViewAll()
+	} else {
+		fe.rowsView = fe.db.RowsView(fe.zoomed)
+	}
 	fe.rows = fe.rowsView.Rows(fe.FrontendOpts)
 	fe.focus(fe.rows.BySpan[fe.focused])
 }
@@ -603,16 +590,13 @@ type doneMsg struct {
 }
 
 func (fe *frontendPretty) spawn() (msg tea.Msg) {
-	defer func() {
-		if r := recover(); r != nil {
-			fe.restore()
-			panic(r)
-		}
-	}()
 	return doneMsg{fe.run(fe.runCtx)}
 }
 
-type backgroundDoneMsg struct{}
+type backgroundDoneMsg struct {
+	backgroundMsg
+	err error
+}
 
 func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nolint: gocyclo
 	switch msg := msg.(type) {
@@ -637,12 +621,33 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 
 	case backgroundMsg:
 		fe.backgrounded = true
-		return fe, tea.Exec(msg.cmd, func(err error) tea.Msg {
-			msg.errs <- err
-			return backgroundDoneMsg{}
+		cmd := msg.cmd
+
+		if msg.raw {
+			var restore func() error
+			cmd = &wrapCommand{
+				ExecCommand: cmd,
+				before: func() error {
+					ttyFd := int(os.Stdout.Fd())
+					oldState, err := term.MakeRaw(ttyFd)
+					if err != nil {
+						return err
+					}
+					restore = func() error { return term.Restore(ttyFd, oldState) }
+					return nil
+				},
+				after: func() error {
+					return restore()
+				},
+			}
+		}
+		return fe, tea.Exec(cmd, func(err error) tea.Msg {
+			return backgroundDoneMsg{msg, err}
 		})
 
 	case backgroundDoneMsg:
+		fe.backgrounded = false
+		msg.errs <- msg.err
 		return fe, nil
 
 	case tea.MouseMsg:
@@ -664,6 +669,11 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		fe.pressedKeyAt = time.Now()
 		switch msg.String() {
 		case "q", "ctrl+c":
+			if fe.CustomExit != nil {
+				fe.CustomExit()
+				return fe, nil
+			}
+
 			if fe.done && fe.eof {
 				fe.quitting = true
 				// must have configured NoExit, and now they want
@@ -681,7 +691,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 			fe.interrupt(errors.New("interrupted"))
 			return fe, nil // tea.Quit is deferred until we receive doneMsg
 		case "ctrl+\\": // SIGQUIT
-			fe.restore()
+			fe.program.ReleaseTerminal()
 			sigquit()
 			return fe, nil
 		case "down", "j":
@@ -975,4 +985,23 @@ func frame(fps float64) tea.Cmd {
 	return tea.Tick(time.Duration(float64(time.Second)/fps), func(t time.Time) tea.Msg {
 		return frameMsg(t)
 	})
+}
+
+type wrapCommand struct {
+	tea.ExecCommand
+	before func() error
+	after  func() error
+}
+
+var _ tea.ExecCommand = (*wrapCommand)(nil)
+
+func (ts *wrapCommand) Run() error {
+	if err := ts.before(); err != nil {
+		return err
+	}
+	err := ts.ExecCommand.Run()
+	if err2 := ts.after(); err == nil {
+		err = err2
+	}
+	return err
 }
