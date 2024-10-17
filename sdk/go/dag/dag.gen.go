@@ -53,9 +53,9 @@ func BuiltinContainer(digest string) *dagger.Container {
 }
 
 // Constructs a cache volume for a given cache key.
-func CacheVolume(key string) *dagger.CacheVolume {
+func CacheVolume(key string, opts ...dagger.CacheVolumeOpts) *dagger.CacheVolume {
 	client := initClient()
-	return client.CacheVolume(key)
+	return client.CacheVolume(key, opts...)
 }
 
 // Creates a scratch container.

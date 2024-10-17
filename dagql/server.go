@@ -623,6 +623,26 @@ func NewInstanceForCurrentID[P, T Typed](
 	}, nil
 }
 
+// InstanceWithNewSelector creates a new Instance that's set to the ID calculated
+// using new selector.
+//
+// This is useful in scenarios where we want to inject something into the selector
+// automatically without exposing it to the user. e.g. namespacing of the selector
+func InstanceWithNewSelector[P, T Typed](
+	ctx context.Context,
+	srv *Server,
+	parent Instance[P],
+	self T,
+	sel Selector,
+) (Instance[T], error) {
+	id, err := parent.IDFor(ctx, sel)
+	if err != nil {
+		return Instance[T]{}, err
+	}
+
+	return NewInstanceForCurrentID(idToContext(ctx, id), srv, parent, self)
+}
+
 func NoopDone(res Typed, cached bool, rerr error) {}
 
 func (s *Server) cachedSelect(ctx context.Context, self Object, sel Selector) (res Typed, chained *call.ID, rerr error) {
