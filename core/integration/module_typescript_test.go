@@ -760,9 +760,9 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
 }
 
 func (TypescriptSuite) TestCustomBaseImage(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
 	t.Run("should use custom base image if different than node or bun", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
@@ -779,6 +779,8 @@ func (TypescriptSuite) TestCustomBaseImage(ctx context.Context, t *testctx.T) {
 	})
 
 	t.Run("should use custom base image if different than node or bun", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
