@@ -6308,7 +6308,7 @@ impl ModuleSource {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// The dependencies of the module source. Includes dependencies from the configuration and any extras from withDependencies calls.
+    /// The effective module source dependencies from the configuration, and calls to withDependencies and withoutDependencies.
     pub fn dependencies(&self) -> Vec<ModuleDependency> {
         let query = self.selection.select("dependencies");
         vec![ModuleDependency {
@@ -6584,6 +6584,26 @@ impl ModuleSource {
         query = query.arg(
             "patterns",
             patterns
+                .into_iter()
+                .map(|i| i.into())
+                .collect::<Vec<String>>(),
+        );
+        ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Remove the provided dependencies from the module source's dependency list.
+    ///
+    /// # Arguments
+    ///
+    /// * `dependencies` - The dependencies to remove.
+    pub fn without_dependencies(&self, dependencies: Vec<impl Into<String>>) -> ModuleSource {
+        let mut query = self.selection.select("withoutDependencies");
+        query = query.arg(
+            "dependencies",
+            dependencies
                 .into_iter()
                 .map(|i| i.into())
                 .collect::<Vec<String>>(),

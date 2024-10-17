@@ -5960,7 +5960,7 @@ func (r *ModuleSource) ContextDirectory() *Directory {
 	}
 }
 
-// The dependencies of the module source. Includes dependencies from the configuration and any extras from withDependencies calls.
+// The effective module source dependencies from the configuration, and calls to withDependencies and withoutDependencies.
 func (r *ModuleSource) Dependencies(ctx context.Context) ([]ModuleDependency, error) {
 	q := r.query.Select("dependencies")
 
@@ -6302,6 +6302,16 @@ func (r *ModuleSource) WithView(name string, patterns []string) *ModuleSource {
 	q := r.query.Select("withView")
 	q = q.Arg("name", name)
 	q = q.Arg("patterns", patterns)
+
+	return &ModuleSource{
+		query: q,
+	}
+}
+
+// Remove the provided dependencies from the module source's dependency list.
+func (r *ModuleSource) WithoutDependencies(dependencies []string) *ModuleSource {
+	q := r.query.Select("withoutDependencies")
+	q = q.Arg("dependencies", dependencies)
 
 	return &ModuleSource{
 		query: q,

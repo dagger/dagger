@@ -71,7 +71,7 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * The dependencies of the module source. Includes dependencies from the configuration and any extras from withDependencies calls.
+     * The effective module source dependencies from the configuration, and calls to withDependencies and withoutDependencies.
      */
     public function dependencies(): array
     {
@@ -288,6 +288,16 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withView');
         $innerQueryBuilder->setArgument('name', $name);
         $innerQueryBuilder->setArgument('patterns', $patterns);
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Remove the provided dependencies from the module source's dependency list.
+     */
+    public function withoutDependencies(array $dependencies): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutDependencies');
+        $innerQueryBuilder->setArgument('dependencies', $dependencies);
         return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

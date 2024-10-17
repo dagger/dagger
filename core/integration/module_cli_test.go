@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/testctx"
 	"github.com/stretchr/testify/require"
@@ -1077,5 +1078,225 @@ func (m *OtherObj) FnE() *dagger.Container {
 		require.Contains(t, lines, "other-field-c   doc for OtherFieldC")
 		require.Contains(t, lines, "other-field-d   doc for OtherFieldD")
 		require.Contains(t, lines, "fn-e            doc for FnE")
+	})
+}
+
+func (CLISuite) TestDaggerUnInstall(ctx context.Context, t *testctx.T) {
+	t.Run("local dep", func(ctx context.Context, t *testctx.T) {
+		t.Run("uninstall a dependency currently used in module", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			ctr := c.Container().
+				From(alpineImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				WithWorkdir("/work/bar").
+				With(daggerExec("init", "--sdk=go", "--name=bar", "--source=.")).
+				WithWorkdir("/work").
+				With(daggerExec("init", "--sdk=go", "--name=foo", "--source=.")).
+				With(daggerExec("install", "./bar")).
+				WithNewFile("main.go", `package main
+
+import (
+	"context"
+)
+
+type Foo struct{}
+
+func (f *Foo) ContainerEcho(ctx context.Context, input string) (string, error) {
+	return dag.Bar().ContainerEcho(input).Stdout(ctx)
+}
+`)
+
+			daggerjson, err := ctr.File("dagger.json").Contents(ctx)
+			require.NoError(t, err)
+			require.Contains(t, daggerjson, "bar")
+
+			daggerjson, err = ctr.With(daggerExec("uninstall", "bar")).
+				File("dagger.json").Contents(ctx)
+			require.NoError(t, err)
+			require.NotContains(t, daggerjson, "bar")
+		})
+
+		testcases := []struct {
+			name            string
+			modName         string
+			installCmd      []string
+			beforeUninstall dagger.WithContainerFunc
+			uninstallCmd    []string
+		}{
+			{
+				name:         "uninstall a dependency configured in dagger.json by name",
+				modName:      "baz",
+				installCmd:   []string{"install", "./bar", "--name=baz"},
+				uninstallCmd: []string{"uninstall", "baz"},
+			},
+			{
+				name:         "uninstall a dependency configured in dagger.json",
+				modName:      "bar",
+				installCmd:   []string{"install", "./bar"},
+				uninstallCmd: []string{"uninstall", "bar"},
+			},
+			{
+				name:         "uninstall a dependency configured in dagger.json using relative path syntax",
+				modName:      "bar",
+				installCmd:   []string{"install", "./bar"},
+				uninstallCmd: []string{"uninstall", "./bar"},
+			},
+			{
+				name:         "uninstall a dependency not configured in dagger.json",
+				modName:      "bar",
+				installCmd:   []string{},
+				uninstallCmd: []string{"uninstall", "./bar"},
+			},
+			{
+				name:       "dependency source is removed before calling uninstall",
+				modName:    "bar",
+				installCmd: []string{"install", "./bar"},
+				beforeUninstall: func(ctr *dagger.Container) *dagger.Container {
+					return ctr.WithoutDirectory("/work/bar")
+				},
+				uninstallCmd: []string{"uninstall", "bar"},
+			},
+			{
+				name:       "dependency source is removed before calling uninstall using relative path",
+				modName:    "bar",
+				installCmd: []string{"install", "./bar"},
+				beforeUninstall: func(ctr *dagger.Container) *dagger.Container {
+					return ctr.WithoutDirectory("/work/bar")
+				},
+				uninstallCmd: []string{"uninstall", "./bar"},
+			},
+		}
+
+		for _, tc := range testcases {
+			t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+				c := connect(ctx, t)
+
+				ctr := c.Container().
+					From(alpineImage).
+					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+					WithWorkdir("/work/bar").
+					With(daggerExec("init", "--sdk=go", "--name=bar", "--source=.")).
+					WithWorkdir("/work").
+					With(daggerExec("init", "--sdk=go", "--name=foo", "--source=."))
+
+				if len(tc.installCmd) > 0 {
+					ctr = ctr.With(daggerExec(tc.installCmd...))
+				}
+
+				daggerjson, err := ctr.File("dagger.json").Contents(ctx)
+				require.NoError(t, err)
+
+				if len(tc.installCmd) > 0 {
+					require.Contains(t, daggerjson, tc.modName)
+				}
+
+				if tc.beforeUninstall != nil {
+					tc.beforeUninstall(ctr)
+				}
+
+				daggerjson, err = ctr.With(daggerExec(tc.uninstallCmd...)).
+					File("dagger.json").Contents(ctx)
+				require.NoError(t, err)
+				require.NotContains(t, daggerjson, tc.modName)
+			})
+		}
+	})
+
+	t.Run("git dependency", func(ctx context.Context, t *testctx.T) {
+		testcases := []struct {
+			// the mod used when running dagger install <mod>.
+			// empty means the dep is not installed
+			installCmdMod string
+
+			// the mod used when running dagger uninstall <mod>
+			uninstallCmdMod string
+
+			expectedError string
+		}{
+			{
+				installCmdMod:   "github.com/shykes/daggerverse/hello@v0.3.0",
+				uninstallCmdMod: "github.com/shykes/daggerverse/hello@v0.3.0",
+				expectedError:   "",
+			},
+			{
+				installCmdMod:   "github.com/shykes/daggerverse/hello@v0.3.0",
+				uninstallCmdMod: "github.com/shykes/daggerverse/hello",
+				expectedError:   "",
+			},
+			{
+				installCmdMod:   "github.com/shykes/daggerverse/hello@v0.3.0",
+				uninstallCmdMod: "hello",
+				expectedError:   "",
+			},
+			{
+				installCmdMod:   "github.com/shykes/daggerverse/hello",
+				uninstallCmdMod: "github.com/shykes/daggerverse/hello",
+				expectedError:   "",
+			},
+			{
+				installCmdMod:   "github.com/shykes/daggerverse/hello",
+				uninstallCmdMod: "github.com/shykes/daggerverse/hello@v0.3.0",
+				expectedError:   `version "v0.3.0" was requested to be uninstalled but the dependency "github.com/shykes/daggerverse/hello" was originally installed without a specific version. Try re-running the uninstall command without specifying the version number`,
+			},
+			{
+				installCmdMod:   "github.com/shykes/daggerverse/hello",
+				uninstallCmdMod: "hello",
+				expectedError:   "",
+			},
+			{
+				installCmdMod:   "github.com/shykes/daggerverse/hello@v0.1.2",
+				uninstallCmdMod: "github.com/shykes/daggerverse/hello@v0.3.0",
+				expectedError:   `version "v0.3.0" was requested to be uninstalled but the installed version is "v0.1.2"`,
+			},
+			{
+				installCmdMod:   "",
+				uninstallCmdMod: "github.com/shykes/daggerverse/hello@v0.3.0",
+				expectedError:   "",
+			},
+			{
+				installCmdMod:   "",
+				uninstallCmdMod: "github.com/shykes/daggerverse/hello",
+				expectedError:   "",
+			},
+			{
+				installCmdMod:   "",
+				uninstallCmdMod: "hello",
+				expectedError:   "",
+			},
+		}
+
+		for _, tc := range testcases {
+			t.Run(fmt.Sprintf("installed using %q, uninstalled using %q", tc.installCmdMod, tc.uninstallCmdMod), func(ctx context.Context, t *testctx.T) {
+				c := connect(ctx, t)
+
+				ctr := c.Container().
+					From(alpineImage).
+					WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+					WithWorkdir("/work").
+					With(daggerExec("init", "--sdk=go", "--name=foo", "--source=."))
+
+				if tc.installCmdMod != "" {
+					ctr = ctr.With(daggerExec("install", tc.installCmdMod))
+				}
+
+				daggerjson, err := ctr.File("dagger.json").Contents(ctx)
+				require.NoError(t, err)
+
+				if tc.installCmdMod != "" {
+					require.Contains(t, daggerjson, "hello")
+				}
+
+				daggerjson, err = ctr.With(daggerExec("uninstall", tc.uninstallCmdMod)).
+					File("dagger.json").Contents(ctx)
+
+				if tc.expectedError != "" {
+					require.ErrorContains(t, err, tc.expectedError)
+				} else {
+					require.NoError(t, err)
+					require.NotContains(t, daggerjson, "hello")
+				}
+			})
+		}
 	})
 }

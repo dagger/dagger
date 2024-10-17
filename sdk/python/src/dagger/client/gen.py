@@ -6016,8 +6016,8 @@ class ModuleSource(Type):
         return Directory(_ctx)
 
     async def dependencies(self) -> list[ModuleDependency]:
-        """The dependencies of the module source. Includes dependencies from the
-        configuration and any extras from withDependencies calls.
+        """The effective module source dependencies from the configuration, and
+        calls to withDependencies and withoutDependencies.
         """
         _args: list[Arg] = []
         _ctx = self._select("dependencies", _args)
@@ -6421,6 +6421,21 @@ class ModuleSource(Type):
             Arg("patterns", patterns),
         ]
         _ctx = self._select("withView", _args)
+        return ModuleSource(_ctx)
+
+    def without_dependencies(self, dependencies: list[str]) -> Self:
+        """Remove the provided dependencies from the module source's dependency
+        list.
+
+        Parameters
+        ----------
+        dependencies:
+            The dependencies to remove.
+        """
+        _args = [
+            Arg("dependencies", dependencies),
+        ]
+        _ctx = self._select("withoutDependencies", _args)
         return ModuleSource(_ctx)
 
     def with_(self, cb: Callable[["ModuleSource"], "ModuleSource"]) -> "ModuleSource":
