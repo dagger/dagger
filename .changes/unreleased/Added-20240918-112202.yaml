@@ -1,0 +1,6 @@
+kind: Added
+body: New `Container.exitCode` API to get the exit code of the last `withExec`
+time: 2024-09-18T11:22:02.960270602+01:00
+custom:
+  Author: jedevc
+  PR: "8466"

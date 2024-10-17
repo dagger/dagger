@@ -1619,6 +1619,9 @@ pub struct ContainerWithExecOpts<'a> {
     /// If the container has an entrypoint, prepend it to the args.
     #[builder(setter(into, strip_option), default)]
     pub use_entrypoint: Option<bool>,
+    /// Exit codes this command is allowed to exit with without error
+    #[builder(setter(into, strip_option), default)]
+    pub valid_exit_codes: Option<Vec<isize>>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithExposedPortOpts<'a> {
@@ -1968,6 +1971,12 @@ impl Container {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }]
+    }
+    /// The exit code of the last executed command.
+    /// Will execute default command if none is set, or error if there's no default.
+    pub async fn exit_code(&self) -> Result<isize, DaggerError> {
+        let query = self.selection.select("exitCode");
+        query.execute(self.graphql_client.clone()).await
     }
     /// EXPERIMENTAL API! Subject to change/removal at any time.
     /// Configures all available GPUs on the host to be accessible to this container.
@@ -2621,6 +2630,9 @@ impl Container {
         }
         if let Some(redirect_stderr) = opts.redirect_stderr {
             query = query.arg("redirectStderr", redirect_stderr);
+        }
+        if let Some(valid_exit_codes) = opts.valid_exit_codes {
+            query = query.arg("validExitCodes", valid_exit_codes);
         }
         if let Some(experimental_privileged_nesting) = opts.experimental_privileged_nesting {
             query = query.arg(

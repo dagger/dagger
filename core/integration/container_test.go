@@ -4387,6 +4387,68 @@ func (ContainerSuite) TestEmptyExecDiff(ctx context.Context, t *testctx.T) {
 	require.Len(t, ents, 0)
 }
 
+func (ContainerSuite) TestExecWithExitCodes(ctx context.Context, t *testctx.T) {
+	res := struct {
+		Container struct {
+			From struct {
+				WithExec struct {
+					ExitCode int
+				}
+			}
+		}
+	}{}
+
+	err := testutil.Query(t,
+		`{
+			container {
+				from(address: "`+alpineImage+`") {
+					withExec(args: ["sh", "-c", "exit 0"], validExitCodes: [0, 1]) {
+						exitCode
+					}
+				}
+			}
+		}`, &res, nil)
+	require.NoError(t, err)
+	require.Equal(t, 0, res.Container.From.WithExec.ExitCode)
+
+	err = testutil.Query(t,
+		`{
+			container {
+				from(address: "`+alpineImage+`") {
+					withExec(args: ["sh", "-c", "exit 1"], validExitCodes: [0, 1]) {
+						exitCode
+					}
+				}
+			}
+		}`, &res, nil)
+	require.NoError(t, err)
+	require.Equal(t, 1, res.Container.From.WithExec.ExitCode)
+
+	err = testutil.Query(t,
+		`{
+			container {
+				from(address: "`+alpineImage+`") {
+					withExec(args: ["sh", "-c", "exit 2"], validExitCodes: [0, 1]) {
+						exitCode
+					}
+				}
+			}
+		}`, &res, nil)
+	require.ErrorContains(t, err, "exit code: 2")
+
+	err = testutil.Query(t,
+		`{
+			container {
+				from(address: "`+alpineImage+`") {
+					withExec(args: ["sh", "-c", "exit 0"], validExitCodes: [1]) {
+						exitCode
+					}
+				}
+			}
+		}`, &res, nil)
+	require.ErrorContains(t, err, "exit code: 0")
+}
+
 // mountDockerConfig is a helper for mounting the host's docker config if it exists
 func mountDockerConfig(dag *dagger.Client) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
