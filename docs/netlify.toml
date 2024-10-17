@@ -429,6 +429,16 @@
   to = "/integrations/:slug"
   status = 301
 
+[[redirects]]
+  from = "/cloud/*"
+  to = "/configuration/cloud"
+  status = 301
+
+[[redirects]]
+  from = "/cli/*"
+  to = "/reference/cli"
+  status = 301
+
 ###### end: specific redirects for v0.3 docs ######
 
 
@@ -784,21 +794,6 @@
 [[redirects]]
   from = "/current/sdk/nodejs/*"
   to = "https://archive.docs.dagger.io/0.9/sdk/nodejs/:splat"
-  status = 301
-
-[[redirects]]
-  from = "/cloud/*"
-  to = "https://archive.docs.dagger.io/0.9/cloud/:splat"
-  status = 301
-
-[[redirects]]
-  from = "/cli/*"
-  to = "https://archive.docs.dagger.io/0.9/cli/:splat"
-  status = 301
-
-[[redirects]]
-  from = "/cookbook"
-  to = "https://archive.docs.dagger.io/0.9/cookbook"
   status = 301
 
 [[redirects]]
