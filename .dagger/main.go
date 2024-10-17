@@ -236,12 +236,15 @@ func (dev *DaggerDev) Dev(
 	// Enable experimental GPU support
 	// +optional
 	gpuSupport bool,
+	// Share cache globally
+	// +optional
+	sharedCache bool,
 ) (*dagger.Container, error) {
 	if target == nil {
 		target = dag.Directory()
 	}
 
-	svc, err := dev.Engine().Service(ctx, "", image, gpuSupport)
+	svc, err := dev.Engine().Service(ctx, "", image, gpuSupport, sharedCache)
 	if err != nil {
 		return nil, err
 	}
