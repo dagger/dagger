@@ -1,4 +1,4 @@
-module github.com/shykes/gha
+module github.com/dagger/dagger/modules/gha
 
 go 1.22.5
 

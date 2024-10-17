@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/shykes/gha/examples/go/internal/dagger"
+	"github.com/dagger/dagger/modules/gha/examples/go/internal/dagger"
 )
 
 type Examples struct{}
