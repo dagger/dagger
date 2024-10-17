@@ -1,9 +1,6 @@
 from typing import cast
 
-import pytest
-
 from dagger.mod import Module
-from dagger.mod._exceptions import NameConflictError, UserError
 from dagger.mod._resolver import FunctionResolver
 
 
@@ -45,72 +42,14 @@ def test_object_type_resolvers():
     ]
 
 
-def test_no_main_object():
-    mod = Module()
-
-    @mod.object_type
-    class Bar:
-        @mod.function
-        def method(self): ...
-
-    with pytest.raises(UserError, match="doesn't define"):
-        mod.get_resolvers("foo")
-
-
-def test_toplevel_and_class_conflict():
+def test_func_doc():
     mod = Module()
 
     @mod.object_type
     class Foo:
         @mod.function
-        def method(self): ...
-
-    @mod.function
-    def func(): ...
-
-    with pytest.raises(NameConflictError, match="not both"):
-        mod.get_resolvers("foo")
-
-
-def test_resolver_name_conflict():
-    mod = Module()
-
-    @mod.function
-    def foo(): ...
-
-    @mod.function(name="foo")
-    def foo_(): ...
-
-    with pytest.raises(NameConflictError, match="“Foo.foo” is defined 2 times"):
-        mod.get_resolvers("foo")
-
-
-@pytest.mark.parametrize(
-    ("mod_name", "class_name"),
-    [
-        ("foo", "Foo"),
-        ("foo-bar", "FooBar"),
-        ("foo_bar", "FooBar"),
-        ("fooBar", "FooBar"),
-        ("FooBar", "FooBar"),
-    ],
-)
-def test_main_object_name(mod_name, class_name):
-    mod = Module()
-
-    @mod.function
-    def func(): ...
-
-    resolvers = mod.get_resolvers(mod_name)
-    assert next(iter(resolvers.keys())).name == class_name
-
-
-def test_func_doc():
-    mod = Module()
-
-    @mod.function
-    def fn_with_doc():
-        """Foo."""
+        def fn_with_doc(self):
+            """Foo."""
 
     r = get_resolver(mod, "Foo", "fn_with_doc")
 
