@@ -3756,7 +3756,7 @@
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Container-export" href="#Container-export"><code>export</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td>
-                          <p>Writes the container as an OCI tarball to the destination file path on the host.</p>
+                          <p>Writes the container as an OCI tarball to the destination file path on the current runtime container spawned by Dagger engine.</p>
                           <p>It can also export platform variants.</p>
                         </td>
                       </tr>
@@ -5446,7 +5446,7 @@
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Directory-export" href="#Directory-export"><code>export</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> Writes the contents of the directory to a path on the host. </td>
+                        <td> Writes the contents of the directory to a path on the current runtime container spawned by the Dagger engine. </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">
@@ -6020,7 +6020,7 @@
                       </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="File-export" href="#File-export"><code>export</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
-                        <td> Writes the file to a file path on the host. </td>
+                        <td> Writes the file to a file path on the current runtime container spawned by Dagger engine. </td>
                       </tr>
                       <tr class="row-field-arguments">
                         <td colspan="2">

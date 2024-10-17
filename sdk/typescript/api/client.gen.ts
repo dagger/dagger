@@ -1669,7 +1669,7 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Writes the container as an OCI tarball to the destination file path on the host.
+   * Writes the container as an OCI tarball to the destination file path on the current runtime container spawned by Dagger engine.
    *
    * It can also export platform variants.
    * @param path Host's destination path (e.g., "./tarball").
@@ -3794,7 +3794,7 @@ export class Directory extends BaseClient {
   }
 
   /**
-   * Writes the contents of the directory to a path on the host.
+   * Writes the contents of the directory to a path on the current runtime container spawned by the Dagger engine.
    * @param path Location of the copied directory (e.g., "logs/").
    * @param opts.wipe If true, then the host directory will be wiped clean before exporting so that it exactly matches the directory being exported; this means it will delete any files on the host that aren't in the exported dir. If false (the default), the contents of the directory will be merged with any existing contents of the host directory, leaving any existing files on the host that aren't in the exported directory alone.
    */
@@ -4630,7 +4630,7 @@ export class File extends BaseClient {
   }
 
   /**
-   * Writes the file to a file path on the host.
+   * Writes the file to a file path on the current runtime container spawned by Dagger engine.
    * @param path Location of the written directory (e.g., "output.txt").
    * @param opts.allowParentDirPath If allowParentDirPath is true, the path argument can be a directory path, in which case the file will be created in that directory.
    */
