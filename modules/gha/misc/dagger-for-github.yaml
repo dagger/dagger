@@ -1,0 +1,84 @@
+# A copy of the dagger-for-github action, for reference.
+# See https://github.com/dagger/dagger-for-github
+# Note: we don't use this file directly. Rather, we copy-paste snippets in order
+# to gradually replace it.
+name: "Dagger for GitHub"
+description: "Run dagger commands in Github Actions"
+inputs:
+  version:
+    description: "Dagger Version"
+    required: false
+    default: "0.12.4"
+  dagger-flags:
+    description: "Dagger CLI Flags"
+    required: false
+    default: "--progress plain"
+  verb:
+    description: "CLI verb (call, run, download, up, functions, shell, query)"
+    required: false
+    default: "call"
+  workdir:
+    description: "The working directory in which to run the Dagger CLI"
+    required: false
+    default: "."
+  cloud-token:
+    description: "Dagger Cloud Token"
+    required: false
+    default: ""
+  module:
+    description: "Dagger module to call. Local or Git"
+    required: false
+    default: ""
+  args:
+    description: "Arguments to pass to CLI"
+    required: false
+    default: ""
+  engine-stop:
+    description: "Whether to stop the Dagger Engine after this run"
+    required: false
+    default: "true"
+runs:
+  using: "composite"
+  steps:
+    - shell: bash
+      run: |
+        set -o pipefail
+        # Fallback to /usr/local for backwards compatability
+        prefix_dir="${RUNNER_TEMP:-/usr/local}"
+        # Ensure the dir is writable otherwise fallback to tmpdir
+        if [[ ! -d "$prefix_dir" ]] || [[ ! -w "$prefix_dir" ]]; then
+            prefix_dir="$(mktemp -d)"
+        fi
+        printf '%s/bin' "$prefix_dir" >> $GITHUB_PATH
+
+        # If the dagger version is 'latest', set the version back to an empty
+        # string. This allows the install script to detect and install the latest
+        # version itself
+        VERSION=${{ inputs.version }}
+        if [[ "$VERSION" == "latest" ]]; then
+          VERSION=
+        fi
+
+        # The install.sh script creates path ${prefix_dir}/bin
+        curl -fsS https://dl.dagger.io/dagger/install.sh \
+        | BIN_DIR=${prefix_dir}/bin DAGGER_VERSION=$VERSION sh
+
+    - shell: bash
+      env:
+        INPUT_MODULE: ${{ inputs.module }}
+      run: |
+        cd ${{ inputs.workdir }} && { \
+        DAGGER_CLOUD_TOKEN=${{ inputs.cloud-token }} \
+        dagger \
+        ${{ inputs.dagger-flags }} \
+        ${{ inputs.verb }} \
+        ${INPUT_MODULE:+-m $INPUT_MODULE} \
+        ${{ inputs.args }}; }
+
+    - if: inputs.engine-stop == 'true'
+      shell: bash
+      run: |
+        mapfile -t containers < <(docker ps --filter name="dagger-engine-*" -q)
+        if [[ "${#containers[@]}" -gt 0 ]]; then
+          docker stop -t 300 "${containers[@]}";
+        fi
