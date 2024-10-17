@@ -25,7 +25,12 @@ func (*Engine) TypeDescription() string {
 type EngineCache struct {
 	Query *Query
 
+	// TODO: deprecate keepBytes
 	KeepBytes int `field:"true" doc:"The maximum bytes to keep in the cache without pruning, after which automatic pruning may kick in."`
+
+	MaxUsedSpace  int `field:"true" doc:"The maximum bytes to keep in the cache without pruning."`
+	ReservedSpace int `field:"true" docs:"The minimum amount of disk space this policy is guaranteed to retain."`
+	MinFreeSpace  int `field:"true" doc:"The target amount of free disk space the garbage collector will attempt to leave."`
 }
 
 func (*EngineCache) Type() *ast.Type {
