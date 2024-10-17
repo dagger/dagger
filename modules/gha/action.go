@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"path"
 
-	"github.com/shykes/gha/internal/dagger"
+	"github.com/dagger/dagger/modules/gha/internal/dagger"
 )
 
 // Action represents the top-level structure of a GitHub Actions action YAML file.
