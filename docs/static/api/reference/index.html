@@ -80,6 +80,7 @@
               <li><a href="#query-loadSecretFromID">loadSecretFromID</a></li>
               <li><a href="#query-loadServiceFromID">loadServiceFromID</a></li>
               <li><a href="#query-loadSocketFromID">loadSocketFromID</a></li>
+              <li><a href="#query-loadSourceMapFromID">loadSourceMapFromID</a></li>
               <li><a href="#query-loadTerminalFromID">loadTerminalFromID</a></li>
               <li><a href="#query-loadTypeDefFromID">loadTypeDefFromID</a></li>
               <li><a href="#query-module">module</a></li>
@@ -87,6 +88,7 @@
               <li><a href="#query-moduleSource">moduleSource</a></li>
               <li><a href="#query-secret">secret</a></li>
               <li><a href="#query-setSecret">setSecret</a></li>
+              <li><a href="#query-sourceMap">sourceMap</a></li>
               <li><a href="#query-typeDef">typeDef</a></li>
               <li><a href="#query-version">version</a></li>
             </ul>
@@ -180,6 +182,8 @@
               <li><a href="#definition-ServiceID">ServiceID</a></li>
               <li><a href="#definition-Socket">Socket</a></li>
               <li><a href="#definition-SocketID">SocketID</a></li>
+              <li><a href="#definition-SourceMap">SourceMap</a></li>
+              <li><a href="#definition-SourceMapID">SourceMapID</a></li>
               <li><a href="#definition-String">String</a></li>
               <li><a href="#definition-Terminal">Terminal</a></li>
               <li><a href="#definition-TerminalID">TerminalID</a></li>
@@ -2955,6 +2959,59 @@
               </div>
             </div>
           </section>
+          <section id="query-loadSourceMapFromID" class="operation operation-query" data-traverse-target="query-loadSourceMapFromID">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>loadSourceMapFromID</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Load a SourceMap from its ID.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-SourceMap"><code>SourceMap!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>id</code></span> - <span class="property-type"><a href="#definition-SourceMapID"><code>SourceMapID!</code></a></span>
+                        </td>
+                        <td>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="query-loadTerminalFromID" class="operation operation-query" data-traverse-target="query-loadTerminalFromID">
             <div class="operation-group-name">
               <a href="#group-Queries">Queries</a>
@@ -3328,6 +3385,70 @@
                           <span class="property-name"><code>plaintext</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span>
                         </td>
                         <td> The plaintext of the secret </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-sourceMap" class="operation operation-query" data-traverse-target="query-sourceMap">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>sourceMap</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Creates source map metadata.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-SourceMap"><code>SourceMap!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>column</code></span> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span>
+                        </td>
+                        <td> The column number within the line. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>filename</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span>
+                        </td>
+                        <td> The filename from the module source. </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>line</code></span> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span>
+                        </td>
+                        <td> The line number within the filename. </td>
                       </tr>
                     </tbody>
                   </table>
@@ -5779,6 +5900,10 @@
                         <td> The name of the enum. </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="EnumTypeDef-sourceMap" href="#EnumTypeDef-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap!</code></a></span> </td>
+                        <td> The location of this enum declaration. </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="EnumTypeDef-sourceModuleName" href="#EnumTypeDef-sourceModuleName"><code>sourceModuleName</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> If this EnumTypeDef is associated with a Module, the name of the module. Unset otherwise. </td>
                       </tr>
@@ -5838,6 +5963,10 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="EnumValueTypeDef-name" href="#EnumValueTypeDef-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> The name of the enum value. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="EnumValueTypeDef-sourceMap" href="#EnumValueTypeDef-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap!</code></a></span> </td>
+                        <td> The location of this enum value declaration. </td>
                       </tr>
                     </tbody>
                   </table>
@@ -5945,6 +6074,10 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="FieldTypeDef-name" href="#FieldTypeDef-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> The name of the field in lowerCamelCase format. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="FieldTypeDef-sourceMap" href="#FieldTypeDef-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap!</code></a></span> </td>
+                        <td> The location of this field declaration. </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="FieldTypeDef-typeDef" href="#FieldTypeDef-typeDef"><code>typeDef</code></a> - <span class="property-type"><a href="#definition-TypeDef"><code>TypeDef!</code></a></span> </td>
@@ -6146,6 +6279,10 @@
                         <td data-property-name=""><a class="property-name" id="Function-returnType" href="#Function-returnType"><code>returnType</code></a> - <span class="property-type"><a href="#definition-TypeDef"><code>TypeDef!</code></a></span> </td>
                         <td> The type returned by the function. </td>
                       </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="Function-sourceMap" href="#Function-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap!</code></a></span> </td>
+                        <td> The location of this function declaration. </td>
+                      </tr>
                       <tr class="row-has-field-arguments">
                         <td data-property-name=""><a class="property-name" id="Function-withArg" href="#Function-withArg"><code>withArg</code></a> - <span class="property-type"><a href="#definition-Function"><code>Function!</code></a></span> </td>
                         <td> Returns the function with the provided argument </td>
@@ -6176,6 +6313,9 @@
                                 <p>The name of the argument</p>
                               </div>
                               <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>sourceMap</code></span> - <span class="property-type"><a href="#definition-SourceMapID"><code>SourceMapID</code></a></span></h6>
+                              </div>
+                              <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>typeDef</code></span> - <span class="property-type"><a href="#definition-TypeDefID"><code>TypeDefID!</code></a></span></h6>
                                 <p>The type of the argument</p>
                               </div>
@@ -6195,6 +6335,23 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
                                 <p>The doc string to set.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="Function-withSourceMap" href="#Function-withSourceMap"><code>withSourceMap</code></a> - <span class="property-type"><a href="#definition-Function"><code>Function!</code></a></span> </td>
+                        <td> Returns the function with the given source map. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>sourceMap</code></span> - <span class="property-type"><a href="#definition-SourceMapID"><code>SourceMapID!</code></a></span></h6>
+                                <p>The source map for the function definition.</p>
                               </div>
                             </div>
                           </div>
@@ -6251,6 +6408,10 @@
                       <tr>
                         <td data-property-name=""><a class="property-name" id="FunctionArg-name" href="#FunctionArg-name"><code>name</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> The name of the argument in lowerCamelCase format. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="FunctionArg-sourceMap" href="#FunctionArg-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap!</code></a></span> </td>
+                        <td> The location of this arg declaration. </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="FunctionArg-typeDef" href="#FunctionArg-typeDef"><code>typeDef</code></a> - <span class="property-type"><a href="#definition-TypeDef"><code>TypeDef!</code></a></span> </td>
@@ -7224,6 +7385,10 @@
                         <td> The name of the interface. </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="InterfaceTypeDef-sourceMap" href="#InterfaceTypeDef-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap!</code></a></span> </td>
+                        <td> The location of this interface declaration. </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="InterfaceTypeDef-sourceModuleName" href="#InterfaceTypeDef-sourceModuleName"><code>sourceModuleName</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> If this InterfaceTypeDef is associated with a Module, the name of the module. Unset otherwise. </td>
                       </tr>
@@ -8187,6 +8352,10 @@
                         <td> The name of the object. </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="ObjectTypeDef-sourceMap" href="#ObjectTypeDef-sourceMap"><code>sourceMap</code></a> - <span class="property-type"><a href="#definition-SourceMap"><code>SourceMap!</code></a></span> </td>
+                        <td> The location of this object declaration. </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="ObjectTypeDef-sourceModuleName" href="#ObjectTypeDef-sourceModuleName"><code>sourceModuleName</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td> If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise. </td>
                       </tr>
@@ -8691,6 +8860,67 @@
               </div>
             </div>
           </section>
+          <section id="definition-SourceMap" class="definition definition-object" data-traverse-target="definition-SourceMap">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">SourceMap</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Source location information.</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Fields</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Field Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="SourceMap-column" href="#SourceMap-column"><code>column</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
+                        <td> The column number within the line. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="SourceMap-filename" href="#SourceMap-filename"><code>filename</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The filename from the module source. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="SourceMap-id" href="#SourceMap-id"><code>id</code></a> - <span class="property-type"><a href="#definition-SourceMapID"><code>SourceMapID!</code></a></span> </td>
+                        <td> A unique identifier for this SourceMap. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="SourceMap-line" href="#SourceMap-line"><code>line</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
+                        <td> The line number within the filename. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="SourceMap-module" href="#SourceMap-module"><code>module</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
+                        <td> The module dependency this was declared in. </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-SourceMapID" class="definition definition-scalar" data-traverse-target="definition-SourceMapID">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">SourceMapID</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>The <code>SourceMapID</code> scalar type represents an identifier for an object of type SourceMap.</p>
+                </div>
+              </div>
+            </div>
+          </section>
           <section id="definition-String" class="definition definition-scalar" data-traverse-target="definition-String">
             <div class="definition-group-name">
               <a href="#group-Types">Types</a>
@@ -8850,6 +9080,10 @@
                                 <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
                                 <p>The name of the enum</p>
                               </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>sourceMap</code></span> - <span class="property-type"><a href="#definition-SourceMapID"><code>SourceMapID</code></a></span></h6>
+                                <p>The source map for the enum definition.</p>
+                              </div>
                             </div>
                           </div>
                         </td>
@@ -8866,6 +9100,10 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>description</code></span> - <span class="property-type"><a href="#definition-String"><code>String</code></a></span></h6>
                                 <p>A doc string for the value, if any</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>sourceMap</code></span> - <span class="property-type"><a href="#definition-SourceMapID"><code>SourceMapID</code></a></span></h6>
+                                <p>The source map for the enum value definition.</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>value</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
@@ -8891,6 +9129,10 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
                                 <p>The name of the field in the object</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>sourceMap</code></span> - <span class="property-type"><a href="#definition-SourceMapID"><code>SourceMapID</code></a></span></h6>
+                                <p>The source map for the field definition.</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>typeDef</code></span> - <span class="property-type"><a href="#definition-TypeDefID"><code>TypeDefID!</code></a></span></h6>
@@ -8930,6 +9172,9 @@
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>sourceMap</code></span> - <span class="property-type"><a href="#definition-SourceMapID"><code>SourceMapID</code></a></span></h6>
                               </div>
                             </div>
                           </div>
@@ -8984,6 +9229,9 @@
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>sourceMap</code></span> - <span class="property-type"><a href="#definition-SourceMapID"><code>SourceMapID</code></a></span></h6>
                               </div>
                             </div>
                           </div>

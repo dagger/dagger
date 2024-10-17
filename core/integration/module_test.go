@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"syscall"
@@ -5194,6 +5195,93 @@ func schemaVersion(ctx context.Context) (string, error) {
 		require.NoError(t, err)
 		require.JSONEq(t, `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v0.9.9"}`, daggerJSON)
 	})
+}
+
+func (ModuleSuite) TestTypedefSourceMaps(ctx context.Context, t *testctx.T) {
+	baseSrc := `package main
+
+type Test struct {}
+    `
+
+	tcs := []struct {
+		sdk     string
+		src     string
+		matches []string
+	}{
+		{
+			sdk: "go",
+			src: `package main
+
+import "context"
+
+type Dep struct {
+    FieldDef string
+}
+
+func (m *Dep) FuncDef(
+	arg1 string,
+	arg2 string, // +optional
+) string {
+    return ""
+}
+
+type MyEnum string
+const (
+    MyEnumA MyEnum = "MyEnumA"
+    MyEnumB MyEnum = "MyEnumB"
+)
+
+type MyInterface interface {
+	DaggerObject
+	Do(ctx context.Context, val int) (string, error)
+}
+
+func (m *Dep) Collect(MyEnum, MyInterface) error {
+    // force all the types here to be collected
+    return nil
+}
+    `,
+			matches: []string{
+				// struct
+				`\ntype Dep struct { // dep \(../../dep/main.go:5\)\n`,
+				// struct field
+				`\nfunc \(.* \*Dep\) FieldDef\(.* // dep \(../../dep/main.go:6\)\n`,
+				// struct func
+				`\nfunc \(.* \*Dep\) FuncDef\(.* // dep \(../../dep/main.go:9\)\n`,
+				// struct func arg
+				`\n\s*Arg2 string // dep \(../../dep/main.go:11\)\n`,
+
+				// enum
+				`\ntype DepMyEnum string // dep \(../../dep/main.go:16\)\n`,
+				// enum value
+				`\n\s*Myenuma DepMyEnum = "MyEnumA" // dep \(../../dep/main.go:18\)\n`,
+
+				// interface
+				`\ntype DepMyInterface struct { // dep \(../../dep/main.go:22\)\n`,
+				// interface func
+				`\nfunc \(.* \*DepMyInterface\) Do\(.* // dep \(../../dep/main.go:24\)\n`,
+			},
+		},
+	}
+
+	for _, tc := range tcs {
+		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			modGen := modInit(t, c, tc.sdk, baseSrc).
+				With(withModInitAt("./dep", "go", tc.src)).
+				With(daggerExec("install", "./dep"))
+
+			codegenContents, err := modGen.File(sdkCodegenFile(t, tc.sdk)).Contents(ctx)
+			require.NoError(t, err)
+
+			for _, match := range tc.matches {
+				matched, err := regexp.MatchString(match, codegenContents)
+				require.NoError(t, err)
+				require.Truef(t, matched, "%s did not match contents:\n%s", match, codegenContents)
+			}
+		})
+	}
 }
 
 func daggerExec(args ...string) dagger.WithContainerFunc {
