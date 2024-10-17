@@ -187,7 +187,7 @@ defmodule Dagger.Container do
   end
 
   @doc """
-  Writes the container as an OCI tarball to the destination file path on the current runtime container spawned by Dagger engine.
+  Writes the container as an OCI tarball to the destination file path on the current runtime container spawned by Dagger engine. When running in a module, it's written to the runtime container setup by the SDK.
 
   It can also export platform variants.
   """
