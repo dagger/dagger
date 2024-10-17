@@ -99,7 +99,7 @@ class Directory extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Writes the contents of the directory to a path on the host.
+     * Writes the contents of the directory to a path on the current runtime container spawned by the Dagger engine.
      */
     public function export(string $path, ?bool $wipe = false): string
     {

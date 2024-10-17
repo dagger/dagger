@@ -32,7 +32,7 @@ defmodule Dagger.File do
     Client.execute(file.client, query_builder)
   end
 
-  @doc "Writes the file to a file path on the host."
+  @doc "Writes the file to a file path on the current runtime container spawned by Dagger engine."
   @spec export(t(), String.t(), [{:allow_parent_dir_path, boolean() | nil}]) ::
           {:ok, String.t()} | {:error, term()}
   def export(%__MODULE__{} = file, path, optional_args \\ []) do

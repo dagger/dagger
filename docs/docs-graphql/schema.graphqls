@@ -168,7 +168,8 @@ type Container {
   ): Container!
 
   """
-  Writes the container as an OCI tarball to the destination file path on the host.
+  Writes the container as an OCI tarball to the destination file path on the
+  current runtime container spawned by Dagger engine.
   
   It can also export platform variants.
   """
@@ -1256,7 +1257,9 @@ type Directory {
     path: String
   ): [String!]!
 
-  """Writes the contents of the directory to a path on the host."""
+  """
+  Writes the contents of the directory to a path on the current runtime container spawned by the Dagger engine.
+  """
   export(
     """Location of the copied directory (e.g., "logs/")."""
     path: String!
@@ -1525,7 +1528,9 @@ type File {
     excludeMetadata: Boolean = false
   ): String!
 
-  """Writes the file to a file path on the host."""
+  """
+  Writes the file to a file path on the current runtime container spawned by Dagger engine.
+  """
   export(
     """
     If allowParentDirPath is true, the path argument can be a directory path, in

@@ -35,7 +35,7 @@ class File extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Writes the file to a file path on the host.
+     * Writes the file to a file path on the current runtime container spawned by Dagger engine.
      */
     public function export(string $path, ?bool $allowParentDirPath = false): string
     {

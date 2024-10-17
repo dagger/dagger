@@ -88,8 +88,8 @@ func (s *directorySchema) Install() {
 			ArgDoc("other", `Identifier of the directory to compare.`),
 		dagql.Func("export", s.export).
 			View(AllVersion).
-			Impure("Writes to the local host.").
-			Doc(`Writes the contents of the directory to a path on the host.`).
+			Impure("Writes to the current runtime container.").
+			Doc(`Writes the contents of the directory to a path on the current runtime container spawned by the Dagger engine.`).
 			ArgDoc("path", `Location of the copied directory (e.g., "logs/").`).
 			ArgDoc("wipe", `If true, then the host directory will be wiped clean before exporting so that it exactly matches the directory being exported; this means it will delete any files on the host that aren't in the exported dir. If false (the default), the contents of the directory will be merged with any existing contents of the host directory, leaving any existing files on the host that aren't in the exported directory alone.`),
 		dagql.Func("export", s.exportLegacy).

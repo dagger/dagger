@@ -103,7 +103,7 @@ defmodule Dagger.Directory do
     Client.execute(directory.client, query_builder)
   end
 
-  @doc "Writes the contents of the directory to a path on the host."
+  @doc "Writes the contents of the directory to a path on the current runtime container spawned by the Dagger engine."
   @spec export(t(), String.t(), [{:wipe, boolean() | nil}]) ::
           {:ok, String.t()} | {:error, term()}
   def export(%__MODULE__{} = directory, path, optional_args \\ []) do
