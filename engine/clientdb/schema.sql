@@ -42,3 +42,8 @@ CREATE TABLE IF NOT EXISTS logs (
     resource BLOB, -- JSON encoded *otlpresourcev1.Resource
     resource_schema_url TEXT NOT NULL
 ) STRICT;
+
+CREATE TABLE IF NOT EXISTS metrics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    data BLOB -- JSON encoded otlpmetricsv1.ResourceMetrics
+) STRICT;

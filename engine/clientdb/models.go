@@ -22,6 +22,11 @@ type Log struct {
 	ResourceSchemaUrl    string
 }
 
+type Metric struct {
+	ID   int64
+	Data []byte
+}
+
 type Span struct {
 	ID                     int64
 	TraceID                string

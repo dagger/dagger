@@ -34,6 +34,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
+	colmetricspb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"golang.org/x/net/http2"
 	"golang.org/x/sync/errgroup"
@@ -52,6 +53,7 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 )
 
 type Params struct {
@@ -73,8 +75,9 @@ type Params struct {
 	EngineCallback   func(context.Context, string, string, string)
 	CloudURLCallback func(context.Context, string, string, bool)
 
-	EngineTrace sdktrace.SpanExporter
-	EngineLogs  sdklog.Exporter
+	EngineTrace   sdktrace.SpanExporter
+	EngineLogs    sdklog.Exporter
+	EngineMetrics []sdkmetric.Exporter
 
 	// Log level (0 = INFO)
 	LogLevel slog.Level
@@ -313,6 +316,12 @@ func (c *Client) subscribeTelemetry(ctx context.Context) (rerr error) {
 	if c.EngineLogs != nil {
 		if err := c.exportLogs(ctx, httpClient); err != nil {
 			return fmt.Errorf("export logs: %w", err)
+		}
+	}
+	if c.EngineMetrics != nil {
+		if err := c.exportMetrics(ctx, httpClient); err != nil {
+			// metrics are best effort and only in newer engines, so don't fail the client if they aren't found
+			slog.Error("export metrics failed", "err", err)
 		}
 	}
 	return nil
@@ -680,6 +689,31 @@ func (c *Client) exportLogs(ctx context.Context, httpClient *httpClient) error {
 		}
 		if err := enginetel.ReexportLogsFromPB(ctx, c.EngineLogs, &req); err != nil {
 			return fmt.Errorf("re-export logs: %w", err)
+		}
+		return nil
+	})
+}
+
+func (c *Client) exportMetrics(ctx context.Context, httpClient *httpClient) error {
+	// NB: we never actually want to interrupt this, since it's relied upon for
+	// seeing what's going on, even during shutdown
+	ctx = context.WithoutCancel(ctx)
+
+	exp := &otlpConsumer{
+		path:       "/v1/metrics",
+		traceID:    trace.SpanContextFromContext(ctx).TraceID(),
+		clientID:   c.ID,
+		httpClient: httpClient,
+		eg:         c.telemetry,
+	}
+
+	return exp.Consume(ctx, func(data []byte) error {
+		var req colmetricspb.ExportMetricsServiceRequest
+		if err := protojson.Unmarshal(data, &req); err != nil {
+			return fmt.Errorf("unmarshal metrics: %w", err)
+		}
+		if err := enginetel.ReexportMetricsFromPB(ctx, c.EngineMetrics, &req); err != nil {
+			return fmt.Errorf("re-export metrics: %w", err)
 		}
 		return nil
 	})

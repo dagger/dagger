@@ -14,10 +14,13 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/propagation"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
@@ -65,6 +68,7 @@ func ConfiguredSpanExporter(ctx context.Context) (sdktrace.SpanExporter, bool) {
 			return
 		}
 
+		//nolint:dupl
 		switch proto {
 		case "http/protobuf", "http":
 			headers := map[string]string{}
@@ -81,7 +85,7 @@ func ConfiguredSpanExporter(ctx context.Context) (sdktrace.SpanExporter, bool) {
 			var u *url.URL
 			u, err = url.Parse(endpoint)
 			if err != nil {
-				slog.Warn("bad OTLP logs endpoint %q: %w", endpoint, err)
+				slog.Warn("bad OTLP span endpoint %q: %w", endpoint, err)
 				return
 			}
 			opts := []otlptracegrpc.Option{
@@ -182,6 +186,81 @@ func ConfiguredLogExporter(ctx context.Context) (sdklog.Exporter, bool) {
 	return configuredLogExporter, configuredLogExporter != nil
 }
 
+var configuredMetricExporter sdkmetric.Exporter
+var configuredMetricExporterOnce sync.Once
+
+func ConfiguredMetricExporter(ctx context.Context) (sdkmetric.Exporter, bool) {
+	ctx = context.WithoutCancel(ctx)
+
+	configuredMetricExporterOnce.Do(func() {
+		var err error
+
+		var endpoint string
+		if v := os.Getenv("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT"); v != "" {
+			endpoint = v
+		} else if v := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"); v != "" {
+			// we can't assume all OTLP endpoints support metrics. better to be explicit
+			// than have noisy otel errors.
+			return
+		}
+		if endpoint == "" {
+			return
+		}
+
+		var proto string
+		if v := os.Getenv("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL"); v != "" {
+			proto = v
+		} else if v := os.Getenv("OTEL_EXPORTER_OTLP_PROTOCOL"); v != "" {
+			proto = v
+		} else {
+			// https://github.com/open-telemetry/opentelemetry-specification/blob/v1.8.0/specification/protocol/exporter.md#specify-protocol
+			proto = "http/protobuf"
+		}
+
+		//nolint:dupl
+		switch proto {
+		case "http/protobuf", "http":
+			headers := map[string]string{}
+			if hs := os.Getenv("OTEL_EXPORTER_OTLP_HEADERS"); hs != "" {
+				for _, header := range strings.Split(hs, ",") {
+					name, value, _ := strings.Cut(header, "=")
+					headers[name] = value
+				}
+			}
+			configuredMetricExporter, err = otlpmetrichttp.New(ctx,
+				otlpmetrichttp.WithEndpointURL(endpoint),
+				otlpmetrichttp.WithHeaders(headers))
+
+		case "grpc":
+			var u *url.URL
+			u, err = url.Parse(endpoint)
+			if err != nil {
+				slog.Warn("bad OTLP metrics endpoint %q: %w", endpoint, err)
+				return
+			}
+			opts := []otlpmetricgrpc.Option{
+				otlpmetricgrpc.WithEndpointURL(endpoint),
+			}
+			if u.Scheme == "unix" {
+				dialer := func(ctx context.Context, addr string) (net.Conn, error) {
+					return net.Dial(u.Scheme, u.Path)
+				}
+				opts = append(opts,
+					otlpmetricgrpc.WithDialOption(grpc.WithContextDialer(dialer)),
+					otlpmetricgrpc.WithInsecure())
+			}
+			configuredMetricExporter, err = otlpmetricgrpc.New(ctx, opts...)
+
+		default:
+			err = fmt.Errorf("unknown OTLP protocol: %s", proto)
+		}
+		if err != nil {
+			slog.Warn("failed to configure metrics", "error", err)
+		}
+	})
+	return configuredMetricExporter, configuredMetricExporter != nil
+}
+
 // fallbackResource is the fallback resource definition. A more specific
 // resource should be set in Init.
 func fallbackResource() *resource.Resource {
@@ -218,6 +297,9 @@ type Config struct {
 	// LiveLogExporters are exporters that receive logs in batches of ~100ms.
 	LiveLogExporters []sdklog.Exporter
 
+	// LiveMetricExporters are exporters that receive metrics in batches of ~1s.
+	LiveMetricExporters []sdkmetric.Exporter
+
 	// Resource is the resource describing this component and runtime
 	// environment.
 	Resource *resource.Resource
@@ -234,6 +316,7 @@ var LiveTracesEnabled = os.Getenv("OTEL_EXPORTER_OTLP_TRACES_LIVE") != ""
 var Resource *resource.Resource
 var SpanProcessors = []sdktrace.SpanProcessor{}
 var LogProcessors = []sdklog.Processor{}
+var MetricExporters = []sdkmetric.Exporter{}
 
 func InitEmbedded(ctx context.Context, res *resource.Resource) context.Context {
 	traceCfg := Config{
@@ -245,6 +328,9 @@ func InitEmbedded(ctx context.Context, res *resource.Resource) context.Context {
 	}
 	if exp, ok := ConfiguredLogExporter(ctx); ok {
 		traceCfg.LiveLogExporters = append(traceCfg.LiveLogExporters, exp)
+	}
+	if exp, ok := ConfiguredMetricExporter(ctx); ok {
+		traceCfg.LiveMetricExporters = append(traceCfg.LiveMetricExporters, exp)
 	}
 	return Init(ctx, traceCfg)
 }
@@ -304,6 +390,9 @@ func Init(ctx context.Context, cfg Config) context.Context {
 		if exp, ok := ConfiguredLogExporter(ctx); ok {
 			cfg.LiveLogExporters = append(cfg.LiveLogExporters, exp)
 		}
+		if exp, ok := ConfiguredMetricExporter(ctx); ok {
+			cfg.LiveMetricExporters = append(cfg.LiveMetricExporters, exp)
+		}
 	}
 
 	traceOpts := []sdktrace.TracerProviderOption{
@@ -345,6 +434,24 @@ func Init(ctx context.Context, cfg Config) context.Context {
 			logOpts = append(logOpts, sdklog.WithProcessor(processor))
 		}
 		ctx = WithLoggerProvider(ctx, sdklog.NewLoggerProvider(logOpts...))
+	}
+
+	// Set up a metric provider if configured.
+	if len(cfg.LiveMetricExporters) > 0 {
+		meterOpts := []sdkmetric.Option{
+			sdkmetric.WithResource(cfg.Resource),
+		}
+		const metricsExportInterval = 1 * time.Second
+		const metricsExportTimeout = 1 * time.Second
+		for _, exp := range cfg.LiveMetricExporters {
+			MetricExporters = append(MetricExporters, exp)
+			reader := sdkmetric.NewPeriodicReader(exp,
+				sdkmetric.WithInterval(metricsExportInterval),
+				sdkmetric.WithTimeout(metricsExportTimeout),
+			)
+			meterOpts = append(meterOpts, sdkmetric.WithReader(reader))
+		}
+		ctx = WithMeterProvider(ctx, sdkmetric.NewMeterProvider(meterOpts...))
 	}
 
 	closeCtx = ctx

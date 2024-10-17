@@ -63,6 +63,13 @@ func WithVersionOverride(version string) ClientOpt {
 	})
 }
 
+// WithVerbosity sets the verbosity level for the progress output
+func WithVerbosity(level int) ClientOpt {
+	return clientOptFunc(func(cfg *engineconn.Config) {
+		cfg.Verbosity = level
+	})
+}
+
 // WithRunnerHost sets the runner host URL for provisioning and connecting to
 // an engine.
 //
