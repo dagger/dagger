@@ -1,4 +1,4 @@
-module github.com/shykes/gha/examples/go
+module github.com/dagger/dagger/modules/gha/examples/go
 
 go 1.22.5
 

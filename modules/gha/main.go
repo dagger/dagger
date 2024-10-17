@@ -16,7 +16,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/shykes/gha/internal/dagger"
+	"github.com/dagger/dagger/modules/gha/internal/dagger"
 	"golang.org/x/mod/semver"
 	"mvdan.cc/sh/shell"
 )
