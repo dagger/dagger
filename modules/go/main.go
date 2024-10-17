@@ -37,16 +37,22 @@ type Go struct {
 }
 
 // Build a base container with Go installed and configured
-func (p *Go) Base() *dagger.Container {
+func (p *Go) Base(
+	// Any extra apk packages that should be included in the base image
+	// +optional
+	extraPackages []string,
+) *dagger.Container {
+	pkgs := []string{
+		"go~" + p.Version,
+		// gcc is needed to run go test -race https://github.com/golang/go/issues/9918 (???)
+		"build-base",
+		// adding the git CLI to inject vcs info into the go binaries
+		"git",
+	}
+	pkgs = append(pkgs, extraPackages...)
 	return dag.
 		Wolfi().
-		Container(dagger.WolfiContainerOpts{Packages: []string{
-			"go~" + p.Version,
-			// gcc is needed to run go test -race https://github.com/golang/go/issues/9918 (???)
-			"build-base",
-			// adding the git CLI to inject vcs info into the go binaries
-			"git",
-		}}).
+		Container(dagger.WolfiContainerOpts{Packages: pkgs}).
 		WithEnvVariable("GOLANG_VERSION", p.Version).
 		WithEnvVariable("GOPATH", "/go").
 		WithEnvVariable("PATH", "${GOPATH}/bin:${PATH}", dagger.ContainerWithEnvVariableOpts{Expand: true}).
@@ -60,9 +66,13 @@ func (p *Go) Base() *dagger.Container {
 //   - Build a base container with Go tooling installed and configured
 //   - Mount the source code
 //   - Download dependencies
-func (p *Go) Env() *dagger.Container {
+func (p *Go) Env(
+	// Any extra apk packages that should be included in the base image
+	// +optional
+	extraPackages []string,
+) *dagger.Container {
 	return p.
-		Base().
+		Base(extraPackages).
 		WithEnvVariable("CGO_ENABLED", "0").
 		WithWorkdir("/app").
 		// run `go mod download` with only go.mod files (re-run only if mod files have changed)
@@ -93,7 +103,7 @@ func (p *Go) Lint(
 			ctx, span := Tracer().Start(ctx, "tidy "+path.Clean(pkg))
 			defer span.End()
 			beforeTidy := p.Source.Directory(pkg)
-			afterTidy := p.Env().WithWorkdir(pkg).WithExec([]string{"go", "mod", "tidy"}).Directory(".")
+			afterTidy := p.Env(nil).WithWorkdir(pkg).WithExec([]string{"go", "mod", "tidy"}).Directory(".")
 			err := dag.Dirdiff().AssertEqual(ctx, beforeTidy, afterTidy, []string{"go.mod", "go.sum"})
 			if err != nil {
 				span.SetStatus(codes.Error, err.Error())

@@ -210,7 +210,6 @@ func (e *Engine) Generate() *dagger.Directory {
 
 	// protobuf dependencies
 	generated = generated.
-		WithExec([]string{"apk", "add", "protoc=~3.21.12"}).
 		WithExec([]string{"go", "install", "google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.2"}).
 		WithExec([]string{"go", "install", "github.com/gogo/protobuf/protoc-gen-gogoslick@v1.3.2"}).
 		WithExec([]string{"go", "install", "google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.4.0"})

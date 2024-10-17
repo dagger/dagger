@@ -22,14 +22,12 @@ func (w *Wolfi) Container(
 	// +optional
 	overlays []*dagger.Container,
 ) *dagger.Container {
-	config := dag.
-		Apko().
-		WithPackages(packages).
-		WithWolfi()
-	if arch != "" {
-		config = config.WithArchs([]string{arch})
-	}
-	ctr := config.AsContainer()
+	config := dag.Alpine(dagger.AlpineOpts{
+		Distro:   dagger.DistroWolfi,
+		Packages: packages,
+		Arch:     arch,
+	})
+	ctr := config.Container()
 	for _, overlay := range overlays {
 		ctr = ctr.WithDirectory("/", overlay.Rootfs())
 	}
