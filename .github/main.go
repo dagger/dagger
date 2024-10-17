@@ -30,11 +30,11 @@ func New(
 	ci.Gha = dag.Gha(dagger.GhaOpts{
 		DaggerVersion: daggerVersion,
 		PublicToken:   "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw",
-		Runner:        ci.BronzeRunner(false),
+		Runner:        []string{ci.BronzeRunner(false)},
 		Repository:    repository,
 	})
 	return ci.
-		WithPipeline("Docs", "docs lint", "", false).
+		WithPipeline("Docs", "docs lint", nil, false).
 		WithSdkPipelines("python").
 		WithSdkPipelines("typescript").
 		WithSdkPipelines("go").
@@ -51,7 +51,7 @@ func (ci *CI) WithPipeline(
 	// Pipeline command
 	command string,
 	// +optional
-	runner string,
+	runner []string,
 	// Build the local engine source, and run the pipeline with it
 	// +optional
 	devEngine bool,
@@ -66,7 +66,7 @@ func (ci *CI) WithPipeline(
 		TimeoutMinutes:              10,
 		Permissions:                 []dagger.GhaPermission{dagger.ReadContents},
 	}
-	if runner != "" {
+	if len(runner) != 0 {
 		opts.Runner = runner
 	}
 	if devEngine {
@@ -84,13 +84,13 @@ func (ci *CI) WithSdkPipelines(sdk string) *CI {
 		WithPipeline(
 			sdk,
 			"check --targets=sdk/"+sdk,
-			"",
+			nil,
 			false,
 		).
 		WithPipeline(
 			sdk+"-dev",
 			"check --targets=sdk/"+sdk,
-			ci.SilverRunner(true),
+			[]string{ci.SilverRunner(true)},
 			true,
 		)
 }
