@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -196,6 +197,15 @@ func (m *Alpine) withPkgs(
 			entries, err := alpinePkg.dir.Entries(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to get alpine package entries: %w", err)
+			}
+
+			// HACK: /lib64 is a link, so don't overwrite it
+			// - wolfi-baselayout links /lib64 -> /lib
+			// - ld-linux installs to /lib64
+			if m.Distro == DistroWolfi && pkg.PackageName() != "wolfi-baselayout" && slices.Contains(entries, "lib64") {
+				alpinePkg.dir = alpinePkg.dir.
+					WithDirectory("/lib", alpinePkg.dir.Directory("/lib64")).
+					WithoutDirectory("/lib64")
 			}
 
 			for _, entry := range entries {
