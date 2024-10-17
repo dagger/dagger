@@ -1200,12 +1200,12 @@ func (w *Worker) runContainer(ctx context.Context, state *execState) (rerr error
 		spanContext := trace.SpanContextFromContext(ctx)
 		if spanContext.HasSpanID() {
 			commonAttrs = append(commonAttrs,
-				attribute.String(telemetry.MetricsSpanID, spanContext.SpanID().String()),
+				attribute.String(telemetry.MetricsSpanIDAttr, spanContext.SpanID().String()),
 			)
 		}
 		if spanContext.HasTraceID() {
 			commonAttrs = append(commonAttrs,
-				attribute.String(telemetry.MetricsTraceID, spanContext.TraceID().String()),
+				attribute.String(telemetry.MetricsTraceIDAttr, spanContext.TraceID().String()),
 			)
 		}
 

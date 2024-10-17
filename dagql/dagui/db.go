@@ -158,7 +158,7 @@ func (db DBMetricExporter) Export(ctx context.Context, resourceMetrics *metricda
 			}
 
 			for _, point := range metricData.DataPoints {
-				spanIDStr, ok := point.Attributes.Value(telemetry.MetricsSpanID)
+				spanIDStr, ok := point.Attributes.Value(telemetry.MetricsSpanIDAttr)
 				if !ok {
 					continue
 				}
