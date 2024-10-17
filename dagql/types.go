@@ -913,16 +913,11 @@ func (e *EnumValues[T]) TypeDefinition(views ...string) *ast.Definition {
 }
 
 func (e *EnumValues[T]) DecodeInput(val any) (Input, error) {
-	switch x := val.(type) {
-	case nil:
-		return e.Lookup("")
-	case string:
-		return e.Lookup(x)
-	case Scalar[String]:
-		return e.Lookup(string(x.Value))
-	default:
-		return nil, fmt.Errorf("cannot create Enum from %T", x)
+	v, err := (&EnumValueName{Enum: e.TypeName()}).DecodeInput(val)
+	if err != nil {
+		return nil, err
 	}
+	return e.Lookup(v.(*EnumValueName).Value)
 }
 
 func (e *EnumValues[T]) PossibleValues() ast.EnumValueList {
@@ -960,6 +955,54 @@ func (e *EnumValues[T]) Register(val T, desc ...string) T {
 func (e *EnumValues[T]) Install(srv *Server) {
 	var zero T
 	srv.scalars[zero.Type().Name()] = e
+}
+
+type EnumValueName struct {
+	Enum  string
+	Value string
+}
+
+var _ Input = &EnumValueName{}
+
+func (e *EnumValueName) TypeName() string {
+	return e.Enum
+}
+
+func (e *EnumValueName) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: e.Enum,
+		NonNull:   true,
+	}
+}
+
+func (e *EnumValueName) TypeDefinition(views ...string) *ast.Definition {
+	return &ast.Definition{
+		Kind: ast.Enum,
+		Name: e.TypeName(),
+	}
+}
+
+func (e *EnumValueName) ToLiteral() call.Literal {
+	return call.NewLiteralEnum(e.Value)
+}
+
+func (e *EnumValueName) Decoder() InputDecoder {
+	return e
+}
+
+func (e *EnumValueName) DecodeInput(val any) (Input, error) {
+	switch x := val.(type) {
+	case *EnumValueName:
+		return &EnumValueName{Enum: e.Enum, Value: x.Value}, nil
+	case string:
+		return &EnumValueName{Enum: e.Enum, Value: x}, nil
+	default:
+		return nil, fmt.Errorf("cannot create enum name from %T", x)
+	}
+}
+
+func (e *EnumValueName) MarshalJSON() ([]byte, error) {
+	return json.Marshal(e.Value)
 }
 
 func MustInputSpec(val Type) InputObjectSpec {

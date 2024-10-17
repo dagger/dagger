@@ -613,11 +613,13 @@ func (mod *Module) namespaceTypeDef(ctx context.Context, typeDef *TypeDef) error
 		enum := typeDef.AsEnum.Value
 
 		// only namespace enums defined in this module
-		_, ok, err := mod.Deps.ModTypeFor(ctx, typeDef)
+		mtype, ok, err := mod.Deps.ModTypeFor(ctx, typeDef)
 		if err != nil {
 			return fmt.Errorf("failed to get mod type for type def: %w", err)
 		}
-
+		if ok {
+			enum.Values = mtype.TypeDef().AsEnum.Value.Values
+		}
 		if !ok {
 			enum.Name = namespaceObject(enum.OriginalName, mod.Name(), mod.OriginalName)
 		}
