@@ -416,6 +416,17 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	}
 	srv.workerSourceManager.Register(hs)
 
+	// 	is, err := imgdns.NewSource(imgdns.Opt{
+	// 		SourceOpt: srcimg.SourceOpt{
+	// 			CacheAccessor: srv.workerCache,
+	// 		},
+	// 		BaseDNSConfig: srv.dns,
+	// 	})
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+	// 	srv.workerSourceManager.Register(is)
+
 	gs, err := gitdns.NewSource(gitdns.Opt{
 		Opt: srcgit.Opt{
 			CacheAccessor: srv.workerCache,
