@@ -6418,6 +6418,20 @@ impl ModuleSource {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Remove the provided dependencies from the module source's dependency list.
+    ///
+    /// # Arguments
+    ///
+    /// * `dependencies` - The dependencies to remove.
+    pub fn without_dependencies(&self, dependencies: Vec<ModuleDependencyId>) -> ModuleSource {
+        let mut query = self.selection.select("withoutDependencies");
+        query = query.arg("dependencies", dependencies);
+        ModuleSource {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
 }
 #[derive(Clone)]
 pub struct ModuleSourceView {

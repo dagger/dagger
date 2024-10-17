@@ -290,4 +290,14 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
         $innerQueryBuilder->setArgument('patterns', $patterns);
         return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
+
+    /**
+     * Remove the provided dependencies from the module source's dependency list.
+     */
+    public function withoutDependencies(array $dependencies): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutDependencies');
+        $innerQueryBuilder->setArgument('dependencies', $dependencies);
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
 }

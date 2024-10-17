@@ -345,6 +345,47 @@ var moduleInstallCmd = &cobra.Command{
 	},
 }
 
+var moduleUnInstallCmd = &cobra.Command{
+	Use:     "uninstall [options] <module>",
+	Short:   "Uninstall a dependency",
+	Long:    "Uninstall module as a dependency from the current module. The target module must be local.",
+	Example: "dagger uninstall github.com/shykes/daggerverse/hello",
+	GroupID: moduleGroup.ID,
+	Args:    cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, extraArgs []string) (rerr error) {
+		ctx := cmd.Context()
+		return withEngine(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
+			dag := engineClient.Dagger()
+			modConf, err := getDefaultModuleConfiguration(ctx, dag, true, false)
+			if err != nil {
+				return fmt.Errorf("failed to get configured module: %w", err)
+			}
+			if modConf.SourceKind != dagger.LocalSource {
+				return fmt.Errorf("module must be local")
+			}
+
+			depRefStr := extraArgs[0]
+			depSrc := dag.ModuleSource(depRefStr)
+
+			dep := dag.ModuleDependency(depSrc)
+
+			modSrc := modConf.Source.
+				WithoutDependencies([]*dagger.ModuleDependency{dep}).
+				ResolveFromCaller()
+
+			_, err = modSrc.
+				AsModule().
+				GeneratedContextDiff().
+				Export(ctx, modConf.LocalContextPath)
+			if err != nil {
+				return fmt.Errorf("failed to generate code: %w", err)
+			}
+
+			return nil
+		})
+	},
+}
+
 var moduleDevelopCmd = &cobra.Command{
 	Use:   "develop [options]",
 	Short: "Prepare a local module for development",

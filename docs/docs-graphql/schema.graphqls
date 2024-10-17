@@ -2233,8 +2233,7 @@ type ModuleSource {
   contextDirectory: Directory!
 
   """
-  The dependencies of the module source. Includes dependencies from the
-  configuration and any extras from withDependencies calls.
+  The effective module source dependencies from the configuration, and calls to withDependencies and withoutDependencies.
   """
   dependencies: [ModuleDependency!]!
 
@@ -2348,6 +2347,14 @@ type ModuleSource {
   withName(
     """The name to set."""
     name: String!
+  ): ModuleSource!
+
+  """
+  Remove the provided dependencies from the module source's dependency list.
+  """
+  withoutDependencies(
+    """The dependencies to remove."""
+    dependencies: [ModuleDependencyID!]!
   ): ModuleSource!
 
   """Update the module source with a new SDK."""
