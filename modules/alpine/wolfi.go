@@ -7,18 +7,24 @@ import (
 )
 
 const (
-	wolfiRepository = "https://packages.wolfi.dev"
+	wolfiRepository      = "https://packages.wolfi.dev"
+	chainguardRepository = "https://packages.cgr.dev"
 )
 
 func wolfiRepositories() []string {
 	osRepo := fmt.Sprintf("%s/%s", wolfiRepository, "os")
-	return []string{osRepo}
+	extrasRepo := fmt.Sprintf("%s/%s", chainguardRepository, "extras")
+	return []string{osRepo, extrasRepo}
 }
 
 func wolfiReleases() *goapk.Releases {
 	arches := []string{"aarch64", "x86_64"}
-	repo := "os"
-	signingKey := fmt.Sprintf("%s/%s/wolfi-signing.rsa.pub", wolfiRepository, repo)
+
+	wolfiRepo := "os"
+	wolfiSigningKey := fmt.Sprintf("%s/%s/wolfi-signing.rsa.pub", wolfiRepository, wolfiRepo)
+
+	extrasRepo := "extras"
+	extrasSigningKey := fmt.Sprintf("%s/%s/chainguard-extras.rsa.pub", chainguardRepository, extrasRepo)
 
 	return &goapk.Releases{
 		Architectures: arches,
@@ -28,17 +34,18 @@ func wolfiReleases() *goapk.Releases {
 				ReleaseBranch: "main",
 				GitBranch:     "main",
 				Arches:        arches,
-				Repos:         []goapk.Repo{{Name: repo}},
+				Repos: []goapk.Repo{
+					{Name: wolfiRepo},
+					{Name: extrasRepo},
+				},
 				Keys: map[string][]goapk.RepoKeys{
 					"aarch64": {
-						{
-							URL: signingKey,
-						},
+						{URL: wolfiSigningKey},
+						{URL: extrasSigningKey},
 					},
 					"x86_64": {
-						{
-							URL: signingKey,
-						},
+						{URL: wolfiSigningKey},
+						{URL: extrasSigningKey},
 					},
 				},
 			},

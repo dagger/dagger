@@ -93,7 +93,7 @@ type Alpine struct {
 func (m *Alpine) Container(ctx context.Context) (*dagger.Container, error) {
 	var branch *goapk.ReleaseBranch
 	var repos []string
-	var pkgs []string
+	var basePkgs []string
 
 	switch m.Distro {
 	case DistroAlpine:
@@ -107,7 +107,7 @@ func (m *Alpine) Container(ctx context.Context) (*dagger.Container, error) {
 		}
 		repos = alpineRepositories(*branch)
 
-		pkgs = []string{"alpine-baselayout", "alpine-release", "busybox", "apk-tools"}
+		basePkgs = []string{"alpine-baselayout", "alpine-release", "busybox", "apk-tools"}
 	case DistroWolfi:
 		releases := wolfiReleases()
 		if m.Branch != "edge" {
@@ -119,7 +119,7 @@ func (m *Alpine) Container(ctx context.Context) (*dagger.Container, error) {
 		}
 		repos = wolfiRepositories()
 
-		pkgs = []string{"wolfi-baselayout", "busybox", "apk-tools"}
+		basePkgs = []string{"wolfi-baselayout", "busybox", "apk-tools"}
 	default:
 		return nil, fmt.Errorf("unknown distro %q", m.Distro)
 	}
@@ -134,8 +134,26 @@ func (m *Alpine) Container(ctx context.Context) (*dagger.Container, error) {
 	}
 
 	pkgResolver := goapk.NewPkgResolver(ctx, indexes)
-	pkgs = append(pkgs, m.Packages...)
 
+	ctr := dag.Container(dagger.ContainerOpts{Platform: dagger.Platform("linux/" + m.GoArch)})
+	ctr, err = m.withPkgs(ctx, ctr, pkgResolver, basePkgs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create base container: %w", err)
+	}
+	ctr, err = m.withPkgs(ctx, ctr, pkgResolver, m.Packages)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create package container: %w", err)
+	}
+
+	return ctr, nil
+}
+
+func (m *Alpine) withPkgs(
+	ctx context.Context,
+	ctr *dagger.Container,
+	pkgResolver *goapk.PkgResolver,
+	pkgs []string,
+) (*dagger.Container, error) {
 	repoPkgs, conflicts, err := pkgResolver.GetPackagesWithDependencies(ctx, pkgs, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get packages: %w", err)
@@ -203,7 +221,6 @@ func (m *Alpine) Container(ctx context.Context) (*dagger.Container, error) {
 		return nil, fmt.Errorf("failed to get alpine packages: %w", err)
 	}
 
-	ctr := dag.Container(dagger.ContainerOpts{Platform: dagger.Platform(m.GoArch)})
 	for _, pkg := range alpinePkgs {
 		ctr = ctr.With(pkgscript("pre-install", pkg.name, pkg.preInstall))
 		ctr = ctr.WithDirectory("/", pkg.dir, dagger.ContainerWithDirectoryOpts{
