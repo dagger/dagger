@@ -54,6 +54,12 @@
   to = "/"
   status = 301
 
+[[redirects]]
+  # redirect modules feature page
+  from = "/features/reusable-modules"
+  to = "/features/modules"
+  status = 301
+
 # redirects for developer manual pages
 [[redirects]]
   from = "/developer-guide"
@@ -175,6 +181,16 @@
   to = "/configuration/modules"
   status = 301
 
+[[redirects]]
+  from = "/reference/typescript/classes/api_client_gen.container"
+  to = "/reference/typescript/api/client.gen/classes/Container"
+  status = 301
+
+[[redirects]]
+  from = "/manuals/developer/go"
+  to = "/api"
+  status = 301
+
 # redirects for user manual pages
 [[redirects]]
   from = "/manuals/user"
@@ -207,13 +223,13 @@
   status = 301
 
 [[redirects]]
-  from = "/manuals/user/cloud-get-started"
-  to = "/configuration/cloud#traces"
+  from = "/manuals/user/cloud/*"
+  to = "/configuration/cloud"
   status = 301
 
 [[redirects]]
-  from = "manuals/user/cloud/741031/user-interface"
-  to = "/configuration/cloud#traces"
+  from = "/manuals/user/cloud-get-started"
+  to = "/configuration/cloud"
   status = 301
 
 [[redirects]]
@@ -368,7 +384,17 @@
   status = 301
 
 [[redirects]]
+  from = "/manuals/administrator/272381/custom-registry"
+  to = "/configuration/custom-registry"
+  status = 301
+
+[[redirects]]
   from = "/manuals/administrator/custom-runner"
+  to = "/configuration/custom-runner"
+  status = 301
+
+[[redirects]]
+  from = "/manuals/administrator/472258/custom-runner"
   to = "/configuration/custom-runner"
   status = 301
 
@@ -768,11 +794,6 @@
 [[redirects]]
   from = "/cli/*"
   to = "https://archive.docs.dagger.io/0.9/cli/:splat"
-  status = 301
-
-[[redirects]]
-  from = "/api/*"
-  to = "https://archive.docs.dagger.io/0.9/api/:splat"
   status = 301
 
 [[redirects]]
