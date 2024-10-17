@@ -8,8 +8,8 @@
   ],
   "dependencies": [
     {
-      "name": "apko",
-      "source": "github.com/vito/daggerverse/apko@d168f0a3422c4979f8ad5fe9f37ba3bc7f0df0a6"
+      "name": "wolfi",
+      "source": "../../../modules/wolfi"
     },
     {
       "name": "dockerd",
