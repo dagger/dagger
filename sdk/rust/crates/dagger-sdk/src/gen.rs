@@ -2002,7 +2002,7 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Writes the container as an OCI tarball to the destination file path on the current runtime container spawned by Dagger engine.
+    /// Writes the container as an OCI tarball to the destination file path on the current runtime container spawned by Dagger engine. When running in a module, it's written to the runtime container setup by the SDK.
     /// It can also export platform variants.
     ///
     /// # Arguments
@@ -2016,7 +2016,7 @@ impl Container {
         query = query.arg("path", path.into());
         query.execute(self.graphql_client.clone()).await
     }
-    /// Writes the container as an OCI tarball to the destination file path on the current runtime container spawned by Dagger engine.
+    /// Writes the container as an OCI tarball to the destination file path on the current runtime container spawned by Dagger engine. When running in a module, it's written to the runtime container setup by the SDK.
     /// It can also export platform variants.
     ///
     /// # Arguments
