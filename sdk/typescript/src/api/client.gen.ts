@@ -1101,6 +1101,10 @@ export type PortForward = {
  */
 export type PortID = string & { __PortID: never }
 
+export type ClientCacheVolumeOpts = {
+  namespace?: string
+}
+
 export type ClientContainerOpts = {
   /**
    * Platform to initialize the container with.
