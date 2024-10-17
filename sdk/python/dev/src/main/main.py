@@ -3,8 +3,9 @@ from typing import Annotated, Final, Literal, Self, get_args
 
 import dagger
 from dagger import DefaultPath, Doc, Ignore, dag, field, function, object_type
-from main.docs import Docs
-from main.test import TestSuite
+
+from .docs import Docs
+from .test import TestSuite
 
 UV_IMAGE: Final[str] = os.getenv("DAGGER_UV_IMAGE", "ghcr.io/astral-sh/uv:latest")
 UV_VERSION: Final[str] = os.getenv("UV_VERSION", "")
@@ -51,7 +52,7 @@ class PythonSdkDev:
             dagger.Container | None,
             Doc("Base container"),
         ] = None,
-    ):
+    ) -> "PythonSdkDev":
         """Create an instance to develop the Python SDK."""
         if container is None:
             container = (
@@ -98,7 +99,7 @@ class PythonSdkDev:
 
     @classmethod
     def tools_cache(cls, *args: str):
-        """Setup the cache directory for multiple tools."""
+        """Set up the cache directory for multiple tools."""
 
         def _tools(ctr: dagger.Container) -> dagger.Container:
             for tool in args:
