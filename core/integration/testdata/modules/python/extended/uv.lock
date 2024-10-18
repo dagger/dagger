@@ -94,6 +94,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "aiohttp", specifier = ">=3.9.3" },
+    { name = "codegen", editable = "sdk/codegen" },
     { name = "mypy", specifier = ">=1.8.0" },
     { name = "pytest", specifier = ">=8.0.2" },
     { name = "pytest-httpx", specifier = ">=0.30.0" },
