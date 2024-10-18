@@ -130,19 +130,23 @@ func (e *Engine) Service(
 	image *Distro,
 	// +optional
 	gpuSupport bool,
+	// +optional
+	sharedCache bool,
 ) (*dagger.Service, error) {
-	version, err := dag.Version().Version(ctx)
-	if err != nil {
-		return nil, err
-	}
-	var cacheVolumeName string
-	if version != "" {
-		cacheVolumeName = "dagger-dev-engine-state-" + version
-	} else {
-		cacheVolumeName = "dagger-dev-engine-state-" + identity.NewID()
-	}
-	if name != "" {
-		cacheVolumeName += "-" + name
+	cacheVolumeName := "dagger-dev-engine-state"
+	if !sharedCache {
+		version, err := dag.Version().Version(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if version != "" {
+			cacheVolumeName = "dagger-dev-engine-state-" + version
+		} else {
+			cacheVolumeName = "dagger-dev-engine-state-" + identity.NewID()
+		}
+		if name != "" {
+			cacheVolumeName += "-" + name
+		}
 	}
 
 	e = e.
