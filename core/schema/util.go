@@ -102,3 +102,7 @@ func (maxVersion BeforeVersion) Contains(version string) bool {
 	}
 	return semver.Compare(version, string(maxVersion)) < 0
 }
+
+func ptr[T any](v T) *T {
+	return &v
+}
