@@ -133,7 +133,6 @@ func (m *Alpine) Container(ctx context.Context) (*dagger.Container, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get indexes: %w", err)
 	}
-
 	pkgResolver := goapk.NewPkgResolver(ctx, indexes)
 
 	ctr := dag.Container(dagger.ContainerOpts{Platform: dagger.Platform("linux/" + m.GoArch)})
@@ -145,6 +144,27 @@ func (m *Alpine) Container(ctx context.Context) (*dagger.Container, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create package container: %w", err)
 	}
+
+	// NOTE: "apk add" will not work in this container. Generally this is a good
+	// thing since it's more efficient to install all packages here and keep
+	// the output container immutable.
+	//
+	// However, if the need to support that arises the following would be needed:
+	// * /etc/apk/arch with the architecture written
+	// * /etc/apk/repositories with the list of repo urls
+	// * /etc/apk/world with each top level installed package name written
+	// * /etc/apk/keys/ with a file for each key
+	// * /lib/apk/db/installed with package metadata for each installed pkg
+	//   * the goapk.PackageToInstalled + AddInstalledPackage code helps here
+
+	ctr = ctr.WithEnvVariable("PATH", strings.Join([]string{
+		"/usr/local/sbin",
+		"/usr/local/bin",
+		"/usr/sbin",
+		"/usr/bin",
+		"/sbin",
+		"/bin",
+	}, ":"))
 
 	return ctr, nil
 }
@@ -202,6 +222,8 @@ func (m *Alpine) withPkgs(
 			// HACK: /lib64 is a link, so don't overwrite it
 			// - wolfi-baselayout links /lib64 -> /lib
 			// - ld-linux installs to /lib64
+			// TODO: this should *probably* apply to /usr/lib64/ and
+			// /usr/local/lib64/ as well
 			if m.Distro == DistroWolfi && pkg.PackageName() != "wolfi-baselayout" && slices.Contains(entries, "lib64") {
 				alpinePkg.dir = alpinePkg.dir.
 					WithDirectory("/lib", alpinePkg.dir.Directory("/lib64")).
@@ -241,27 +263,6 @@ func (m *Alpine) withPkgs(
 	for _, pkg := range alpinePkgs {
 		ctr = ctr.With(pkgscript("trigger", pkg.name, pkg.trigger))
 	}
-
-	// NOTE: "apk add" will not work in this container. Generally this is a good
-	// thing since it's more efficient to install all packages here and keep
-	// the output container immutable.
-	//
-	// However, if the need to support that arises the following would be needed:
-	// * /etc/apk/arch with the architecture written
-	// * /etc/apk/repositories with the list of repo urls
-	// * /etc/apk/world with each top level installed package name written
-	// * /etc/apk/keys/ with a file for each key
-	// * /lib/apk/db/installed with package metadata for each installed pkg
-	//   * the goapk.PackageToInstalled + AddInstalledPackage code helps here
-
-	ctr = ctr.WithEnvVariable("PATH", strings.Join([]string{
-		"/usr/local/sbin",
-		"/usr/local/bin",
-		"/usr/sbin",
-		"/usr/bin",
-		"/sbin",
-		"/bin",
-	}, ":"))
 
 	return ctr, nil
 }

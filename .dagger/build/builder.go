@@ -148,6 +148,21 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 		})
 	}
 
+	if build.gpuSupport {
+		switch build.platformSpec.Architecture {
+		case "amd64":
+		default:
+			return nil, fmt.Errorf("gpu support requires %q arch, not %q", "amd64", build.platformSpec.Architecture)
+		}
+
+		switch build.base {
+		case "ubuntu":
+		case "wolfi":
+		default:
+			return nil, fmt.Errorf("gpu support requires %q base, not %q", "ubuntu or wolfi", build.base)
+		}
+	}
+
 	var base *dagger.Container
 	switch build.base {
 	case "alpine", "":
@@ -192,6 +207,12 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 				"--set", "ip6tables", "/usr/sbin/ip6tables-legacy",
 			}).
 			WithoutEnvVariable("DAGGER_APT_CACHE_BUSTER")
+		if build.gpuSupport {
+			base = base.
+				With(util.ShellCmd(`curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg`)).
+				With(util.ShellCmd(`curl -s -L https://nvidia.github.io/libnvidia-container/experimental/"$(. /etc/os-release;echo $ID$VERSION_ID)"/libnvidia-container.list | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | tee /etc/apt/sources.list.d/nvidia-container-toolkit.list`)).
+				With(util.ShellCmd(`apt-get update && apt-get install -y nvidia-container-toolkit`))
+		}
 	case "wolfi":
 		pkgs := []string{
 			// for Buildkit
@@ -253,24 +274,6 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 	ctr = ctr.
 		WithExec([]string{"ln", "-s", "/usr/bin/dial-stdio", "/usr/bin/buildctl"}).
 		WithDirectory(distconsts.EngineDefaultStateDir, dag.Directory())
-
-	if build.gpuSupport {
-		switch build.platformSpec.Architecture {
-		case "amd64":
-		default:
-			return nil, fmt.Errorf("gpu support requires %q arch, not %q", "amd64", build.platformSpec.Architecture)
-		}
-
-		switch build.base {
-		case "ubuntu":
-			ctr = ctr.With(util.ShellCmd(`curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg`))
-			ctr = ctr.With(util.ShellCmd(`curl -s -L https://nvidia.github.io/libnvidia-container/experimental/"$(. /etc/os-release;echo $ID$VERSION_ID)"/libnvidia-container.list | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | tee /etc/apt/sources.list.d/nvidia-container-toolkit.list`))
-			ctr = ctr.With(util.ShellCmd(`apt-get update && apt-get install -y nvidia-container-toolkit`))
-		case "wolfi":
-		default:
-			return nil, fmt.Errorf("gpu support requires %q base, not %q", "ubuntu or wolfi", build.base)
-		}
-	}
 
 	if err := eg.Wait(); err != nil {
 		return nil, err
