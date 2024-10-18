@@ -2725,6 +2725,15 @@ type Query {
   """Load a TypeDef from its ID."""
   loadTypeDefFromID(id: TypeDefID!): TypeDef!
 
+  """Maps a secret to an external secret store and returns the secret."""
+  mapSecret(
+    """The user defined name for this secret"""
+    name: String!
+
+    """The URI of the secret store"""
+    uri: String!
+  ): Secret!
+
   """Create a new module."""
   module: Module!
 

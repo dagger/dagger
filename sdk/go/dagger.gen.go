@@ -7091,6 +7091,17 @@ func (r *Client) LoadTypeDefFromID(id TypeDefID) *TypeDef {
 	}
 }
 
+// Maps a secret to an external secret store and returns the secret.
+func (r *Client) MapSecret(name string, uri string) *Secret {
+	q := r.query.Select("mapSecret")
+	q = q.Arg("name", name)
+	q = q.Arg("uri", uri)
+
+	return &Secret{
+		query: q,
+	}
+}
+
 // Create a new module.
 func (r *Client) Module() *Module {
 	q := r.query.Select("module")
