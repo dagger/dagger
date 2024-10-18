@@ -51,8 +51,8 @@ func (j *Job) installDaggerSteps() []api.JobStep {
 			Name: "Install go",
 			Uses: "actions/setup-go@v5",
 			With: map[string]string{
-				"go-version":            "1.22",
-				"cache-dependency-path": "dev/go.sum",
+				"go-version":            "1.23",
+				"cache-dependency-path": ".dagger/go.sum",
 			},
 		},
 		j.bashStep("start-dev-dagger", map[string]string{
