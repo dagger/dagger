@@ -322,10 +322,6 @@ git commit -s -m "chore: add release notes for $ENGINE_VERSION"
 - [ ] Update `.changes/.next` with the next release number if known -
       otherwise, make the file empty (but don't remove it).
 
-- [ ] Update all dagger versions in `docs/current_docs/partials/_install-cli.mdx` to `$ENGINE_VERSION`
-
-  - e.g. if bumping 0.12.5->0.12.6, can run `sed -i 's/0\.12\.5/0\.12\.6/g' docs/current_docs/partials/_install-cli.mdx`
-
 - [ ] `30 mins` Submit, review and merge the prep PR. The merge commit is what gets tagged in the next step.
   - 🚨 Non-main branch release only: Ideally use "Rebase and Merge" rather than squashing commits when merging so we can more easily preserve the history of the cherry-picked commits.
 - [ ] Ensure that all checks are green ✅ on the `$RELEASE_BRANCH` that you are about to release.
