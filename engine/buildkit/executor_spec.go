@@ -24,6 +24,7 @@ import (
 	runc "github.com/containerd/go-runc"
 	"github.com/dagger/dagger/engine/buildkit/resources"
 	"github.com/docker/docker/pkg/idtools"
+	"github.com/google/uuid"
 	"github.com/moby/buildkit/executor"
 	"github.com/moby/buildkit/executor/oci"
 	randid "github.com/moby/buildkit/identity"
@@ -147,6 +148,11 @@ func (w *Worker) setupNetwork(ctx context.Context, state *execState) error {
 	provider, ok := w.networkProviders[state.procInfo.Meta.NetMode]
 	if !ok {
 		return fmt.Errorf("unknown network mode %s", state.procInfo.Meta.NetMode)
+	}
+	// if our process spec doesn't have a hostname, assign one so buildkit doesn't default to pooled network namespaces
+	// this is too aggressive, in practice: it seems to ensure that each successive WithExec call has a completely fresh netns
+	if state.procInfo.Meta.Hostname == "" {
+		state.procInfo.Meta.Hostname = uuid.New().String()
 	}
 	networkNamespace, err := provider.New(ctx, state.procInfo.Meta.Hostname)
 	if err != nil {
