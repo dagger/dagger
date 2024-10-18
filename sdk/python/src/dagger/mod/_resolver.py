@@ -1,6 +1,5 @@
 import dataclasses
 import inspect
-import json
 import logging
 import types
 from collections.abc import Callable, Mapping
@@ -9,12 +8,10 @@ from typing import (
     Any,
     Generic,
     ParamSpec,
-    Protocol,
     TypeAlias,
     cast,
     get_type_hints,
     overload,
-    runtime_checkable,
 )
 
 import cattrs
@@ -22,10 +19,7 @@ from beartype.door import TypeHint
 from graphql.pyutils import camel_to_snake
 from typing_extensions import Self, TypeVar
 
-import dagger
-from dagger import dag
-from dagger.mod._arguments import DefaultPath, Ignore, Parameter
-from dagger.mod._converter import to_typedef
+from dagger.mod._arguments import Parameter
 from dagger.mod._exceptions import UserError
 from dagger.mod._types import APIName, PythonName
 from dagger.mod._utils import (
@@ -33,8 +27,9 @@ from dagger.mod._utils import (
     await_maybe,
     get_alt_constructor,
     get_alt_name,
+    get_default_path,
     get_doc,
-    get_meta,
+    get_ignore,
     is_nullable,
     normalize_name,
     transform_error,
@@ -48,70 +43,16 @@ P = ParamSpec("P")
 Func: TypeAlias = Callable[P, R]
 
 
-@runtime_checkable
-class Resolver(Protocol):
-    original_name: PythonName
-    name: APIName
-    doc: str | None
-    origin: type | None
-
-    def register(self, typedef: dagger.TypeDef) -> dagger.TypeDef:
-        """Register the type definition for this resolver."""
-        ...
-
-    async def get_result(
-        self,
-        converter: cattrs.Converter,
-        root: object | None,
-        inputs: Mapping[APIName, Any],
-    ) -> Any:
-        """Call resolver and return the result."""
-        ...
-
-    @property
-    def return_type(self) -> type:
-        """Return the resolved return type of the wrapped function."""
-        ...
-
-
 @dataclasses.dataclass(kw_only=True, slots=True)
-class FieldResolver:
+class Field:
     original_name: PythonName
-    name: APIName = dataclasses.field(repr=False)
-    doc: str | None = dataclasses.field(repr=False)
-
-    origin: type | None
-    """The class where this field is defined in."""
-
-    type_annotation: type
+    name_override: dataclasses.InitVar[APIName | None]
+    name: APIName = dataclasses.field(init=False)
     is_optional: bool
+    return_type: Any
 
-    def register(self, typedef: dagger.TypeDef) -> dagger.TypeDef:
-        return typedef.with_field(
-            self.name,
-            to_typedef(self.return_type),
-            description=self.doc or None,
-        )
-
-    async def get_result(
-        self,
-        converter: cattrs.Converter,
-        root: object | None,
-        inputs: Mapping[APIName, Any],
-    ) -> Any:
-        # NB: This is only useful in unit tests because the API server
-        # resolves trivial fields automatically, without invoking the
-        # module.
-        assert not inputs
-        return getattr(root, self.original_name)
-
-    @property
-    def return_type(self) -> type:
-        return self.type_annotation
-
-    def __str__(self):
-        assert self.origin is not None
-        return f"{self.origin.__name__}.{self.original_name}"
+    def __post_init__(self, name_override: APIName | None):
+        self.name = name_override or normalize_name(self.original_name)
 
 
 # Can't use slots because of @cached_property.
@@ -123,101 +64,25 @@ class FunctionResolver(Generic[P, R]):
     name: APIName = dataclasses.field(repr=False)
     doc: str | None = dataclasses.field(repr=False)
 
-    # NB: If `wrapped_func` is a class, it's only useful to know if the
-    # class's constructor is being added to another class.
-    origin: type | None
-    """Parent class of instance method."""
-
     wrapped_func: Func[P, R]
 
     def __str__(self):
         return repr(self.sig_func)
 
-    def register(self, typedef: dagger.TypeDef) -> dagger.TypeDef:
-        """Add a new object to current module."""
-        fn = dag.function(self.name, to_typedef(self.return_type))
-
-        if self.func_doc is not None:
-            fn = fn.with_description(self.func_doc)
-
-        for param in self.parameters.values():
-            arg_type = to_typedef(param.resolved_type)
-
-            try:
-                default = self._serialize_default_value(param)
-            except TypeError as e:
-                # Rather than failing on a default value that's not JSON
-                # serializable and going through hoops to support more and more
-                # types, just don't register it. It'll still be registered
-                # as optional so the API server will call the function without
-                # it and let Python handle it.
-                logger.debug(
-                    "Not registering default value for %s: %s",
-                    param.signature,
-                    e,
-                )
-                default = None
-                arg_type = arg_type.with_optional(True)
-
-            fn = fn.with_arg(
-                param.name,
-                arg_type,
-                description=param.doc,
-                default_value=default,
-                # The engine should validate if these are set on the right types.
-                default_path=(
-                    param.default_path.from_context if param.default_path else None
-                ),
-                ignore=param.ignore.patterns if param.ignore else None,
-            )
-
-        return typedef.with_function(fn) if self.name else typedef.with_constructor(fn)
-
-    def _serialize_default_value(self, param: Parameter) -> dagger.JSON | None:
-        if not param.has_default:
-            return None
-        return dagger.JSON(json.dumps(param.signature.default))
-
     @property
+    def is_constructor(self) -> bool:
+        return self.name == ""
+
+    @cached_property
     def return_type(self) -> type:
         """Return the resolved return type of the wrapped function."""
-        _wrapped_cls = (
-            cast(type, self.wrapped_func)
-            if inspect.isclass(self.wrapped_func)
-            else None
-        )
-
+        if inspect.isclass(cls := self.wrapped_func):
+            return cls
         try:
-            r: type = self.type_hints["return"]
+            return self.type_hints["return"]
         except KeyError:
             # When no return type is specified, assume None.
-            return _wrapped_cls or type(None)
-
-        if _wrapped_cls is not None:
-            if self.sig_func.__name__ == "__init__":
-                if r is not type(None):
-                    msg = (
-                        "Expected None return type "
-                        f"in __init__ constructor, got {r!r}"
-                    )
-                    raise UserError(msg)
-                return _wrapped_cls
-
-            if r not in (Self, self.wrapped_func):
-                msg = (
-                    f"Expected `{self.wrapped_func.__name__}` return type "
-                    f"in {self.sig_func!r}, got {r!r}"
-                )
-                raise UserError(msg)
-            return _wrapped_cls
-
-        if r is Self:
-            if self.origin is None:
-                msg = "Can't return Self without parent class"
-                raise UserError(msg)
-            return self.origin
-
-        return r
+            return type(None)
 
     @property
     def func(self):
@@ -227,7 +92,7 @@ class FunctionResolver(Generic[P, R]):
         # It's simpler not to execute `__init__` directly since it's unbound.
         return get_alt_constructor(self.wrapped_func) or self.wrapped_func
 
-    @property
+    @cached_property
     def func_doc(self):
         """Return the description for the callable to invoke."""
         return self.doc if self.doc is not None else get_doc(self.func)
@@ -255,17 +120,12 @@ class FunctionResolver(Generic[P, R]):
 
         Keys are the Python parameter names.
         """
-        is_method = (
-            inspect.isclass(self.wrapped_func)
-            and self.sig_func.__name__ == "__init__"
-            or self.origin
-        )
         mapping: dict[PythonName, Parameter] = {}
 
         for param in self.signature.parameters.values():
             # Skip `self` parameter on instance methods.
             # It will be added manually on `get_result`.
-            if is_method and param.name == "self":
+            if param.name == "self":
                 continue
 
             if param.kind is inspect.Parameter.POSITIONAL_ONLY:
@@ -295,53 +155,29 @@ class FunctionResolver(Generic[P, R]):
         # The Parameter class is just a simple data object. We calculate all
         # the attributes here to avoid cyclic imports from utils, as this is
         # the only place where it needs to be created.
-        p = Parameter(
+        return Parameter(
             name=get_alt_name(param.annotation) or normalize_name(param.name),
             signature=param,
             resolved_type=annotation,
             is_nullable=is_nullable(TypeHint(annotation)),
             doc=get_doc(param.annotation),
-            ignore=get_meta(param.annotation, Ignore),
-            default_path=get_meta(param.annotation, DefaultPath),
+            ignore=get_ignore(param.annotation),
+            default_path=get_default_path(param.annotation),
         )
-
-        # These validations are already done by the engine, just repeating them
-        # here for better error messages.
-        if not p.is_nullable and p.has_default and p.signature.default is None:
-            msg = (
-                "Can't use a default value of None on a non-nullable type for "
-                f"parameter '{param.name}'"
-            )
-            raise ValueError(msg)
-
-        if p.default_path:
-            if p.has_default and not (p.is_nullable and p.signature.default is None):
-                msg = (
-                    "Can't use DefaultPath with a default value for "
-                    f"parameter '{param.name}'"
-                )
-                raise AssertionError(msg)
-
-            if not p.default_path.from_context:
-                # NB: We could instead warn or just ignore, but it's better to fail
-                # fast to avoid astonishment.
-                msg = (
-                    "DefaultPath can't be used with an empty path in "
-                    f"parameter '{param.name}'"
-                )
-                raise ValueError(msg)
-
-        return p
 
     async def get_result(
         self,
         converter: cattrs.Converter,
-        root: object | None,
+        root: object,
         inputs: Mapping[APIName, Any],
     ) -> Any:
         # NB: `root` is only needed on instance methods (with first `self` argument).
         # Use bound instance method to remove `self` from the list of arguments.
-        func = getattr(root, self.original_name) if root else self.func
+        func = (
+            self.func
+            if inspect.isclass(self.func)
+            else getattr(root, self.original_name)
+        )
 
         signature = (
             self.signature
@@ -349,10 +185,12 @@ class FunctionResolver(Generic[P, R]):
             else inspect.signature(func, follow_wrapped=True)
         )
 
-        logger.debug("func => %s", repr(signature))
-        logger.debug("input args => %s", repr(inputs))
-        kwargs = await self._convert_inputs(converter, inputs)
-        logger.debug("structured args => %s", repr(kwargs))
+        kwargs = await self.convert_inputs(converter, inputs)
+
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug("func => %s", repr(signature))
+            logger.debug("input args => %s", repr(inputs))
+            logger.debug("structured args => %s", repr(kwargs))
 
         try:
             bound = signature.bind(**kwargs)
@@ -362,7 +200,7 @@ class FunctionResolver(Generic[P, R]):
 
         return await await_maybe(func(*bound.args, **bound.kwargs))
 
-    async def _convert_inputs(
+    async def convert_inputs(
         self,
         converter: cattrs.Converter,
         inputs: Mapping[APIName, Any],
@@ -406,35 +244,32 @@ class Function(Generic[P, R]):
     func: Func[P, R]
     name: APIName | None = None
     doc: str | None = None
-    resolver: Resolver = dataclasses.field(init=False)
 
-    def __post_init__(self):
-        original_name = self.func.__name__
-        normalized_name = normalize_name(original_name)
-        if self.name is None and normalized_name != original_name:
-            self.name = normalized_name
-        name = original_name if self.name is None else self.name
-        origin = None
+    @property
+    def original_name(self) -> str:
+        return self.func.__name__
 
-        if inspect.isclass(self.func):
-            if self.name is None:
-                name = camel_to_snake(name)
-            elif self.name == "":
-                origin = self.func
+    @property
+    def is_class(self) -> bool:
+        return inspect.isclass(self.func)
 
-        self.resolver = FunctionResolver(
-            original_name=original_name,
+    def get_resolver(self) -> FunctionResolver[P, R]:
+        if (name := self.name) is None:
+            name = (
+                camel_to_snake(self.original_name)
+                if self.is_class
+                else normalize_name(self.original_name)
+            )
+        return FunctionResolver(
+            original_name=self.original_name,
             name=name,
             wrapped_func=self.func,
             doc=self.doc,
-            origin=origin,
         )
 
-    def __set_name__(self, owner: type, name: str):
+    def __set_name__(self, _: type, name: str):
         if self.name is None:
             self.name = name
-            self.resolver.name = name
-        self.resolver.origin = owner
 
     @overload
     def __get__(self, instance: None, owner: None = None) -> Self: ...
@@ -445,13 +280,19 @@ class Function(Generic[P, R]):
     def __get__(self, instance: object | None, owner: None = None) -> Func[P, R] | Self:
         if instance is None:
             return self
-        if inspect.isclass(self.func):
+        if self.is_class:
             return cast(Func[P, R], self.func)
         return cast(Func[P, R], types.MethodType(self.func, instance))
 
     def __call__(self, *args: P.args, **kwargs: P.kwargs) -> R:
-        # NB: This is only needed for top-level functions because only
-        # class attributes can access descriptors via `__get__`. For
-        # the top-level functions, you'll get this `Function` instance
-        # instead, so we need to proxy the call to the wrapped function.
         return self.func(*args, **kwargs)
+
+
+@dataclasses.dataclass(slots=True)
+class ObjectType:
+    cls: type
+    fields: dict[APIName, Field] = dataclasses.field(default_factory=dict)
+    functions: dict[APIName, FunctionResolver] = dataclasses.field(default_factory=dict)
+
+    def add_constructor(self):
+        self.functions[""] = Function(name="", func=self.cls).get_resolver()

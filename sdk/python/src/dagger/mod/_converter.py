@@ -8,7 +8,6 @@ from collections.abc import Collection
 from beartype.door import TypeHint
 from cattrs.preconf.json import make_converter as make_json_converter
 
-from dagger.mod._types import ObjectDefinition
 from dagger.mod._utils import (
     get_doc,
     is_annotated,
@@ -123,14 +122,6 @@ def to_typedef(annotation: type) -> "TypeDef":  # noqa: C901, PLR0911
             raise TypeError(msg) from None
 
     if inspect.isclass(cls := typ.hint):
-        custom_obj: ObjectDefinition | None = getattr(cls, "__dagger_type__", None)
-
-        if custom_obj is not None:
-            return td.with_object(
-                custom_obj.name,
-                description=custom_obj.doc,
-            )
-
         if is_id_type_subclass(cls):
             return td.with_object(cls.__name__)
 

@@ -26,7 +26,6 @@ from dagger._connection import connect as connect
 from dagger._connection import close as close
 
 # Modules.
-from dagger.mod import Arg as Arg
 from dagger.mod import DefaultPath as DefaultPath
 from dagger.mod import Doc as Doc
 from dagger.mod import Ignore as Ignore

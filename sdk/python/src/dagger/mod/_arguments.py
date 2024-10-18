@@ -1,9 +1,12 @@
 import dataclasses
 import inspect
+import json
+import logging
 
-from typing_extensions import deprecated
-
+import dagger
 from dagger.mod._types import APIName, ContextPath
+
+logger = logging.getLogger(__name__)
 
 
 @dataclasses.dataclass(slots=True, frozen=True)
@@ -15,22 +18,13 @@ class Name:
     Example usage::
 
         @function
-        def pull(from_: Annotated[str, Name("from")]): ...
+        def pull(self, from_: Annotated[str, Name("from")]): ...
     """
 
     name: APIName
 
     def __str__(self) -> str:
         return self.name
-
-
-@deprecated("Arg is deprecated, use Name instead.")
-class Arg(Name):
-    """An alternative name when exposing a function argument to the API.
-
-    .. deprecated::
-        Use :py:class:`Name` instead.
-    """
 
 
 @dataclasses.dataclass(slots=True, frozen=True)
@@ -46,7 +40,7 @@ class DefaultPath:
     Example usage::
 
         @function
-        def build(src: Annotated[dagger.Directory, DefaultPath("..")]): ...
+        def build(self, src: Annotated[dagger.Directory, DefaultPath("..")]): ...
     """
 
     from_context: ContextPath
@@ -68,7 +62,7 @@ class Ignore:
     Example usage::
 
         @function
-        def build(src: Annotated[dagger.Directory, Ignore([".venv"])]): ...
+        def build(self, src: Annotated[dagger.Directory, Ignore([".venv"])]): ...
     """
 
     patterns: list[str]
@@ -81,7 +75,7 @@ class Ignore:
         return hash(tuple(self.patterns))
 
 
-@dataclasses.dataclass(slots=True, frozen=True, kw_only=True)
+@dataclasses.dataclass(slots=True, kw_only=True)
 class Parameter:
     """Parameter from function signature in :py:class:`FunctionResolver`."""
 
@@ -93,9 +87,30 @@ class Parameter:
     is_nullable: bool
 
     # Metadata
-    doc: str | None
-    ignore: Ignore | None = None
-    default_path: DefaultPath | None = None
+    doc: str | None = None
+    ignore: list[str] | None = None
+    default_path: ContextPath | None = None
+    default_value: dagger.JSON | None = None
+
+    def __post_init__(self):
+        self._validate()
+
+        if not self.has_default:
+            return
+        try:
+            self.default_value = dagger.JSON(json.dumps(self.signature.default))
+        except TypeError as e:
+            # Rather than failing on a default value that's not JSON
+            # serializable and going through hoops to support more and more
+            # types, just don't register it. It'll still be registered
+            # as optional so the API server will call the function without
+            # it and let Python handle it.
+            logger.debug(
+                "Not registering default value for %s: %s",
+                self.signature,
+                e,
+            )
+            self.is_nullable = True
 
     @property
     def has_default(self) -> bool:
@@ -104,3 +119,32 @@ class Parameter:
     @property
     def is_optional(self) -> bool:
         return self.has_default or self.default_path is not None or self.is_nullable
+
+    def _validate(self):
+        # These validations are already done by the engine, just repeating them
+        # here for better error messages.
+        if not self.is_nullable and self.has_default and self.signature.default is None:
+            msg = (
+                "Can't use a default value of None on a non-nullable type for "
+                f"parameter '{self.signature.name}'"
+            )
+            raise ValueError(msg)
+
+        if self.default_path:
+            if self.has_default and not (
+                self.is_nullable and self.signature.default is None
+            ):
+                msg = (
+                    "Can't use DefaultPath with a default value for "
+                    f"parameter '{self.signature.name}'"
+                )
+                raise AssertionError(msg)
+
+            if not self.default_path:
+                # NB: We could instead warn or just ignore, but it's better to fail
+                # fast to avoid astonishment.
+                msg = (
+                    "DefaultPath can't be used with an empty path in "
+                    f"parameter '{self.signature.name}'"
+                )
+                raise ValueError(msg)

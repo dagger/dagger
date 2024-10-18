@@ -9,8 +9,6 @@ import (
 	"path"
 	"python-sdk/internal/dagger"
 	"strings"
-
-	"github.com/iancoleman/strcase"
 )
 
 const (
@@ -23,7 +21,6 @@ const (
 	ProjectCfg            = "pyproject.toml"
 	PipCompileLock        = "requirements.lock"
 	UvLock                = "uv.lock"
-	MainFilePath          = "src/main/__init__.py"
 	MainObjectName        = "Main"
 )
 
@@ -67,6 +64,12 @@ func New(
 	}, nil
 }
 
+//go:embed template/pyproject.toml
+var tplToml string
+
+//go:embed template/__init__.py
+var tplInit string
+
 //go:embed template/main.py
 var tplMain string
 
@@ -85,15 +88,47 @@ type PythonSdk struct {
 	// Resulting container after each composing step
 	Container *dagger.Container
 
-	// SourcePath is a unique host path for the module being loaded
+	// The original module's name
+	ModName string
+
+	// The normalized python distribution package name (in pyproject.toml)
+	ProjectName string
+
+	// The normalized python import package name (in the filesystem)
+	PackageName string
+
+	// The normalized main object name in python
+	MainObjectName string
+
+	// The source needed to load and run a module
+	ModSource *dagger.ModuleSource
+
+	// ContextDir is a copy of the context directory from the module source
+	//
+	// We add files to this directory, always joining paths with the source's
+	// subpath. We could use modSource.Directory("") for that if it was read-only,
+	// but since we have to mount the context directory in the end, rather than
+	// mounting the context dir and then mounting the forked source dir on top,
+	// we fork the context dir instead so there's only one mount in the end.
+	ContextDir *dagger.Directory
+
+	// ContextDirPath is a unique host path for the module being loaded
 	//
 	// HACK: this property is computed as a unique value for a ModuleSource to
 	// provide a unique path on the filesystem. This is because the uv cache
 	// uses hashes of source paths - so we need to have something unique, or we
 	// can get very real conflicts in the uv cache.
-	SourcePath string
+	ContextDirPath string
 
-	// Discovery holds the logic for getting more information from the target module
+	// Relative path from the context directory to the source directory
+	SubPath string
+
+	// True if the module is new and we need to create files from the template
+	//
+	// It's assumed that this is the case if there's no pyproject.toml file.
+	IsInit bool
+
+	// Discovery holds the logic for getting more information from the target module.
 	// +private
 	Discovery *Discovery
 }
@@ -108,7 +143,7 @@ func (m *PythonSdk) Codegen(
 	if err != nil {
 		return nil, err
 	}
-	return dag.GeneratedCode(m.Container.Directory(m.SourcePath)).
+	return dag.GeneratedCode(m.Container.Directory(m.ContextDirPath)).
 		WithVCSGeneratedPaths(
 			[]string{GenDir + "/**"},
 		).
@@ -161,15 +196,12 @@ func (m *PythonSdk) Common(
 
 // Get all the needed information from the module's metadata and source files
 func (m *PythonSdk) Load(ctx context.Context, modSource *dagger.ModuleSource) (*PythonSdk, error) {
-	if err := m.Discovery.Load(ctx, modSource); err != nil {
+	m.ModSource = modSource
+	m.ContextDir = modSource.ContextDirectory()
+
+	if err := m.Discovery.Load(ctx, m); err != nil {
 		return nil, fmt.Errorf("runtime module load: %w", err)
 	}
-
-	modDigest, err := m.Discovery.ModSource.Digest(ctx)
-	if err != nil {
-		return nil, err
-	}
-	m.SourcePath = path.Join(ModSourceDirPath, modDigest)
 
 	return m, nil
 }
@@ -218,12 +250,15 @@ func (m *PythonSdk) WithBase() (*PythonSdk, error) {
 		WithEnvVariable("UV_LINK_MODE", "copy").
 		WithEnvVariable("UV_NATIVE_TLS", "1").
 		WithEnvVariable("UV_PROJECT_ENVIRONMENT", "/opt/venv").
-		WithWorkdir(path.Join(m.SourcePath, m.Discovery.SubPath)).
+		WithWorkdir(path.Join(m.ContextDirPath, m.SubPath)).
+		WithEnvVariable("DAGGER_MODULE", m.ModName).
+		WithEnvVariable("DAGGER_MAIN_OBJECT", m.MainObjectName).
+		WithEnvVariable("DAGGER_PYTHON_PACKAGE", m.PackageName).
 		// These are informational only, to be leveraged by the target module
 		// if needed.
 		WithEnvVariable("DAGGER_BASE_IMAGE", baseAddr).
 		WithEnvVariable("DAGGER_UV_IMAGE", uvAddr).
-		WithEnvVariable("UV_VERSION", uvTag)
+		WithEnvVariable("DAGGER_UV_VERSION", uvTag)
 
 	if m.IndexURL() != "" {
 		m.Container = m.Container.WithEnvVariable("UV_INDEX_URL", m.IndexURL())
@@ -240,14 +275,13 @@ func (m *PythonSdk) WithBase() (*PythonSdk, error) {
 // The following files are added:
 // - /runtime
 // - <source>/pyproject.toml
-// - <source>/src/main/__init__.py
+// - <source>/src/<package_name>/__init__.py
+// - <source>/src/<package_name>/main.py
 func (m *PythonSdk) WithTemplate() *PythonSdk {
-	template := dag.CurrentModule().Source().Directory("template")
-
 	m.Container = m.Container.
 		WithFile(
 			RuntimeExecutablePath,
-			template.File("runtime.py"),
+			dag.CurrentModule().Source().File("template/runtime.py"),
 			dagger.ContainerWithFileOpts{Permissions: 0o755},
 		).
 		WithEntrypoint([]string{RuntimeExecutablePath})
@@ -267,18 +301,25 @@ func (m *PythonSdk) WithTemplate() *PythonSdk {
 	// Throwing an error on missing files when not a new module is less
 	// surprising, which is done during discovery.
 
-	if d.IsInit {
+	if m.IsInit {
 		// On `dagger init --sdk`, one can first set a `pyproject.toml` to
 		// change the base image, but if it's `dagger develop --sdk` the
 		// existence of this file will set d.IsInit = true, thus skipping
 		// this entire branch.
 		if !d.HasFile(ProjectCfg) {
-			d.AddFile(ProjectCfg, template.File(ProjectCfg))
+			m.AddNewFile(
+				ProjectCfg,
+				strings.ReplaceAll(tplToml, "main", m.ProjectName),
+			)
 		}
 		if !d.HasFile("*.py") {
-			d.AddNewFile(
-				MainFilePath,
-				strings.ReplaceAll(tplMain, MainObjectName, strcase.ToCamel(d.ModName)),
+			m.AddNewFile(
+				path.Join("src", m.PackageName, "__init__.py"),
+				strings.ReplaceAll(tplInit, MainObjectName, m.MainObjectName),
+			)
+			m.AddNewFile(
+				path.Join("src", m.PackageName, "main.py"),
+				strings.ReplaceAll(tplMain, MainObjectName, m.MainObjectName),
 			)
 		}
 	}
@@ -291,8 +332,7 @@ func (m *PythonSdk) WithTemplate() *PythonSdk {
 // This includes regenerating the client bindings for the current API schema
 // (codegen).
 func (m *PythonSdk) WithSDK(introspectionJSON *dagger.File) *PythonSdk {
-	d := m.Discovery
-	d.AddDirectory(GenDir, m.SdkSourceDir)
+	m.AddDirectory(GenDir, m.SdkSourceDir)
 
 	// Allow empty introspection to facilitate debugging the container with a
 	// `dagger call module-runtime terminal` command.
@@ -306,7 +346,7 @@ func (m *PythonSdk) WithSDK(introspectionJSON *dagger.File) *PythonSdk {
 			}).
 			File("/gen.py")
 
-		d.AddFile(path.Join(GenDir, GenPath), genFile)
+		m.AddFile(path.Join(GenDir, GenPath), genFile)
 	}
 
 	return m
@@ -314,7 +354,7 @@ func (m *PythonSdk) WithSDK(introspectionJSON *dagger.File) *PythonSdk {
 
 // Add the module's source code
 func (m *PythonSdk) WithSource() *PythonSdk {
-	m.Container = m.Container.WithMountedDirectory(m.SourcePath, m.Discovery.ContextDir)
+	m.Container = m.Container.WithMountedDirectory(m.ContextDirPath, m.ContextDir)
 	return m
 }
 
@@ -329,13 +369,13 @@ func (m *PythonSdk) WithUpdates() *PythonSdk {
 
 	// Update lock file but without upgrading dependencies.
 	switch {
-	case d.UseUvLock():
+	case m.UseUvLock():
 		// Support uv.lock. Takes precedence.
 		// Always update if uv.lock exists, but only create a new uv.lock
 		// if init and there's not already a requirements.lock.
 		ctr = ctr.WithExec([]string{"uv", "lock"})
 
-	case d.HasFile(PipCompileLock) && !d.IsInit:
+	case d.HasFile(PipCompileLock) && !m.IsInit:
 		// Support requirements.lock (legacy).
 		ctr = ctr.WithExec([]string{
 			"uv", "pip", "compile", "-q", "--universal",
@@ -358,7 +398,7 @@ func (m *PythonSdk) WithInstall() *PythonSdk {
 	ctr := m.Container.WithEnvVariable("UV_COMPILE_BYTECODE", "1")
 
 	// Support uv.lock for simple and fast project management workflow.
-	if m.Discovery.UseUvLock() {
+	if m.UseUvLock() {
 		// While best practice is to sync dependencies first with only pyproject.toml and
 		// uv.lock, user projects can have more required files for a minimally successful
 		// `uv sync --no-install-project --no-dev`.
