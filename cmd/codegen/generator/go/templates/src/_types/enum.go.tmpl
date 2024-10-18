@@ -4,10 +4,18 @@ type {{ $enumName }} string
 
 func ({{ $enumName }}) IsEnum() {}
 
+{{- $needsScopedEnums := CheckVersionCompatibility "v0.14.0" | not }}
 const (
 	{{- range $index, $field := .EnumValues | SortEnumFields }}
+	{{- $fieldName := ($field.Name | FormatEnum) }}
+	{{- $fullFieldName := print $enumName $fieldName }}
 	{{ $field.Description | Comment }}
-	{{ $field.Name | FormatEnum}} {{ $enumName }} = "{{ $field.Name }}"
+	{{ $fullFieldName }} {{ $enumName }} = "{{ $field.Name }}"
+	{{ if $needsScopedEnums }}
+	{{ $field.Description | Comment }}
+	{{ print "use " $fullFieldName " instead" | FormatDeprecation }}
+	{{ $fieldName }} {{ $enumName }} = {{ $fullFieldName }}
+	{{ end }}
 	{{ end }}
 )
 

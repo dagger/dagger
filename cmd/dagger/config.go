@@ -444,7 +444,7 @@ func (run configSubcmdRun) runE(localOnly bool) cobraRunE {
 				if err != nil {
 					return fmt.Errorf("failed to get module kind: %w", err)
 				}
-				if kind != dagger.LocalSource {
+				if kind != dagger.ModuleSourceKindLocalSource {
 					return fmt.Errorf("command only valid for local modules")
 				}
 			}
