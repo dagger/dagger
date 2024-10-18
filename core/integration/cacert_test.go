@@ -369,11 +369,14 @@ func (m *Test) GetHttp(ctx context.Context) (string, error) {
 				With(daggerExec("init", "--name=test", "--sdk=python")).
 				With(sdkSource("python", `
 import urllib.request
-from dagger import function
 
-@function
-def get_http() -> str:
-		return urllib.request.urlopen("https://server").read().decode("utf-8")
+import dagger
+
+@dagger.object_type
+class Test:
+    @dagger.function
+    def get_http(self) -> str:
+            return urllib.request.urlopen("https://server").read().decode("utf-8")
 `)).
 				With(daggerCall("get-http")).
 				Stdout(ctx)

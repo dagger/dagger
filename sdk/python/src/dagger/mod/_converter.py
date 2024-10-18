@@ -8,9 +8,9 @@ from collections.abc import Collection
 from beartype.door import TypeHint
 from cattrs.preconf.json import make_converter as make_json_converter
 
-from dagger.mod._types import ObjectDefinition
 from dagger.mod._utils import (
     get_doc,
+    get_object_type,
     is_annotated,
     is_initvar,
     is_nullable,
@@ -68,7 +68,7 @@ def make_converter():
 
 
 @functools.cache
-def to_typedef(annotation: type) -> "TypeDef":  # noqa: C901, PLR0911
+def to_typedef(annotation: type) -> "TypeDef":  # noqa: C901, PLR0911, PLR0912
     """Convert Python object to API type."""
     if is_initvar(annotation):
         return to_typedef(annotation.type)
@@ -123,13 +123,10 @@ def to_typedef(annotation: type) -> "TypeDef":  # noqa: C901, PLR0911
             raise TypeError(msg) from None
 
     if inspect.isclass(cls := typ.hint):
-        custom_obj: ObjectDefinition | None = getattr(cls, "__dagger_type__", None)
-
-        if custom_obj is not None:
-            return td.with_object(
-                custom_obj.name,
-                description=custom_obj.doc,
-            )
+        if obj_type := get_object_type(cls):
+            if obj_type.interface:
+                return td.with_interface(cls.__name__)
+            return td.with_object(cls.__name__)
 
         if is_id_type_subclass(cls):
             return td.with_object(cls.__name__)

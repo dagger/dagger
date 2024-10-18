@@ -1,13 +1,15 @@
 import builtins
 import dataclasses
 import functools
+import importlib
+import importlib.util
 import inspect
 import operator
 import types
 import typing
 from collections.abc import Coroutine
 from functools import partial
-from typing import Any, TypeAlias, TypeGuard, TypeVar, cast
+from typing import Any, TypeAlias, TypeVar, cast
 
 import anyio
 import anyio.from_thread
@@ -18,8 +20,8 @@ import typing_extensions
 from beartype.door import TypeHint, UnionTypeHint
 from graphql.pyutils import snake_to_camel
 
-from dagger.mod._arguments import Name
-from dagger.mod._types import ObjectDefinition
+from dagger.mod._arguments import DefaultPath, Ignore, Name
+from dagger.mod._types import ContextPath
 
 asyncify = anyio.to_thread.run_sync
 syncify = anyio.from_thread.run
@@ -27,6 +29,9 @@ syncify = anyio.from_thread.run
 T = TypeVar("T")
 
 AwaitableOrValue: TypeAlias = Coroutine[Any, Any, T] | T
+
+if typing.TYPE_CHECKING:
+    from dagger.mod._resolver import ObjectType
 
 
 async def await_maybe(value: AwaitableOrValue[T]) -> T:
@@ -108,6 +113,18 @@ def get_doc(obj: Any) -> str | None:
     return None
 
 
+def get_ignore(obj: Any) -> list[str] | None:
+    """Get the last Ignore() of an annotated type."""
+    meta = get_meta(obj, Ignore)
+    return meta.patterns if meta else None
+
+
+def get_default_path(obj: Any) -> ContextPath | None:
+    """Get the last DefaultPath() of an annotated type."""
+    meta = get_meta(obj, DefaultPath)
+    return meta.from_context if meta else None
+
+
 def get_alt_name(annotation: type) -> str | None:
     """Get an alternative name in last Name() of an annotated type."""
     return annotated.name if (annotated := get_meta(annotation, Name)) else None
@@ -161,9 +178,13 @@ def strip_annotations(t: _T) -> _T:
     return strip_annotations(typing.get_args(t)[0]) if is_annotated(t) else t
 
 
-def is_mod_object_type(cls) -> TypeGuard[ObjectDefinition]:
+def is_mod_object_type(cls) -> bool:
     """Check if the given class was decorated with @object_type."""
-    return isinstance(getattr(cls, "__dagger_type__", None), ObjectDefinition)
+    return hasattr(cls, "__dagger_object_type__")
+
+
+def get_object_type(cls: type) -> ObjectType | None:
+    return getattr(cls, "__dagger_object_type__", None)
 
 
 def get_alt_constructor(cls) -> types.MethodType | None:
@@ -173,3 +194,12 @@ def get_alt_constructor(cls) -> types.MethodType | None:
         if inspect.ismethod(fn) and fn.__self__ is cls:
             return fn
     return None
+
+
+def get_parent_module_doc(obj: type) -> str | None:
+    """Get the docstring of the parent module."""
+    spec = importlib.util.find_spec(obj.__module__)
+    if not spec or not spec.parent:
+        return None
+    mod = importlib.import_module(spec.parent)
+    return inspect.getdoc(mod)
