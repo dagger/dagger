@@ -1,6 +1,7 @@
 package telemetry
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -10,11 +11,13 @@ import (
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/sdk/instrumentation"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	otlpcommonv1 "go.opentelemetry.io/proto/otlp/common/v1"
 	otlplogsv1 "go.opentelemetry.io/proto/otlp/logs/v1"
+	otlpmetricsv1 "go.opentelemetry.io/proto/otlp/metrics/v1"
 	otlpresourcev1 "go.opentelemetry.io/proto/otlp/resource/v1"
 	otlptracev1 "go.opentelemetry.io/proto/otlp/trace/v1"
 )
@@ -958,4 +961,493 @@ func LogValueToPB(v log.Value) *otlpcommonv1.AnyValue {
 		}
 	}
 	return av
+}
+
+func ResourceMetricsFromPB(pbResourceMetrics *otlpmetricsv1.ResourceMetrics) (*metricdata.ResourceMetrics, error) {
+	resourceMetrics := &metricdata.ResourceMetrics{
+		Resource: ResourceFromPB(pbResourceMetrics.GetSchemaUrl(), pbResourceMetrics.GetResource()),
+	}
+	var err error
+	resourceMetrics.ScopeMetrics, err = ScopeMetricsFromPB(pbResourceMetrics.GetScopeMetrics())
+	if err != nil {
+		return nil, err
+	}
+	return resourceMetrics, nil
+}
+
+// ResourceMetrics returns an OTLP ResourceMetrics generated from rm. If rm
+// contains invalid ScopeMetrics, an error will be returned along with an OTLP
+// ResourceMetrics that contains partial OTLP ScopeMetrics.
+func ResourceMetricsToPB(rm *metricdata.ResourceMetrics) (*otlpmetricsv1.ResourceMetrics, error) {
+	sms, err := ScopeMetricsToPB(rm.ScopeMetrics)
+	return &otlpmetricsv1.ResourceMetrics{
+		Resource: &otlpresourcev1.Resource{
+			Attributes: iterator(rm.Resource.Iter()),
+		},
+		ScopeMetrics: sms,
+		SchemaUrl:    rm.Resource.SchemaURL(),
+	}, err
+}
+
+func ScopeMetricsFromPB(pbScopeMetrics []*otlpmetricsv1.ScopeMetrics) ([]metricdata.ScopeMetrics, error) {
+	var errs error
+	scopeMetrics := make([]metricdata.ScopeMetrics, 0, len(pbScopeMetrics))
+	for _, pbScopeMetric := range pbScopeMetrics {
+		scopeMetric := metricdata.ScopeMetrics{
+			Scope: InstrumentationScopeFromPB(pbScopeMetric.GetScope()),
+		}
+		var err error
+		scopeMetric.Metrics, err = MetricsFromPB(pbScopeMetric.GetMetrics())
+		if err != nil {
+			errs = errors.Join(errs, err)
+			continue
+		}
+		scopeMetrics = append(scopeMetrics, scopeMetric)
+	}
+	return scopeMetrics, errs
+}
+
+// ScopeMetrics returns a slice of OTLP ScopeMetrics generated from sms. If
+// sms contains invalid metric values, an error will be returned along with a
+// slice that contains partial OTLP ScopeMetrics.
+func ScopeMetricsToPB(sms []metricdata.ScopeMetrics) ([]*otlpmetricsv1.ScopeMetrics, error) {
+	var errs error
+	out := make([]*otlpmetricsv1.ScopeMetrics, 0, len(sms))
+	for _, sm := range sms {
+		ms, err := MetricsToPB(sm.Metrics)
+		if err != nil {
+			errs = errors.Join(errs, err)
+			continue
+		}
+
+		out = append(out, &otlpmetricsv1.ScopeMetrics{
+			Scope: &otlpcommonv1.InstrumentationScope{
+				Name:    sm.Scope.Name,
+				Version: sm.Scope.Version,
+			},
+			Metrics:   ms,
+			SchemaUrl: sm.Scope.SchemaURL,
+		})
+	}
+	return out, errs
+}
+
+func MetricsFromPB(pbMetrics []*otlpmetricsv1.Metric) ([]metricdata.Metrics, error) {
+	var errs error
+	out := make([]metricdata.Metrics, 0, len(pbMetrics))
+	for _, pbMetric := range pbMetrics {
+		metric, err := metricFromPB(pbMetric)
+		if err != nil {
+			errs = errors.Join(errs, err)
+			continue
+		}
+		out = append(out, metric)
+	}
+	return out, errs
+}
+
+// Metrics returns a slice of OTLP Metric generated from ms. If ms contains
+// invalid metric values, an error will be returned along with a slice that
+// contains partial OTLP Metrics.
+func MetricsToPB(ms []metricdata.Metrics) ([]*otlpmetricsv1.Metric, error) {
+	var errs error
+	out := make([]*otlpmetricsv1.Metric, 0, len(ms))
+	for _, m := range ms {
+		o, err := metricToPB(m)
+		if err != nil {
+			// Do not include invalid data. Drop the metric, report the error.
+			errs = errors.Join(errs, err)
+			continue
+		}
+		out = append(out, o)
+	}
+	return out, errs
+}
+
+func metricFromPB(pbMetric *otlpmetricsv1.Metric) (metricdata.Metrics, error) {
+	m := metricdata.Metrics{
+		Name:        pbMetric.Name,
+		Description: pbMetric.Description,
+		Unit:        pbMetric.Unit,
+	}
+	switch a := pbMetric.Data.(type) {
+	// TODO: rest of cases once needed (hand-writing this rather than copy-pasting from internal otlp package)
+	case *otlpmetricsv1.Metric_Gauge:
+		res := gaugeFromPB(a.Gauge)
+		// NOTE: setting m.Data to non-pointer value is important, metrics exporters will fail if it's a pointer
+		switch {
+		case res.AsInt != nil:
+			m.Data = *res.AsInt
+		case res.AsDouble != nil:
+			m.Data = *res.AsDouble
+		}
+	default:
+		return m, fmt.Errorf("unknown aggregation from pb: %T", a)
+	}
+	return m, nil
+}
+
+func metricToPB(m metricdata.Metrics) (*otlpmetricsv1.Metric, error) {
+	var err error
+	out := &otlpmetricsv1.Metric{
+		Name:        m.Name,
+		Description: m.Description,
+		Unit:        m.Unit,
+	}
+	switch a := m.Data.(type) {
+	case metricdata.Gauge[int64]:
+		out.Data = GaugeToPB(a)
+	case metricdata.Gauge[float64]:
+		out.Data = GaugeToPB(a)
+	case metricdata.Sum[int64]:
+		out.Data, err = SumToPB(a)
+	case metricdata.Sum[float64]:
+		out.Data, err = SumToPB(a)
+	case metricdata.Histogram[int64]:
+		out.Data, err = HistogramToPB(a)
+	case metricdata.Histogram[float64]:
+		out.Data, err = HistogramToPB(a)
+	case metricdata.ExponentialHistogram[int64]:
+		out.Data, err = ExponentialHistogramToPB(a)
+	case metricdata.ExponentialHistogram[float64]:
+		out.Data, err = ExponentialHistogramToPB(a)
+	case metricdata.Summary:
+		out.Data = SummaryToPB(a)
+	default:
+		return out, fmt.Errorf("unknown aggregation to pb: %T", a)
+	}
+	return out, err
+}
+
+type gaugeFromPBResult struct {
+	// only one of these will be set, depending on whether the ungeneric input
+	// resolves to in the returned generic type
+	AsInt    *metricdata.Gauge[int64]
+	AsDouble *metricdata.Gauge[float64]
+}
+
+func gaugeFromPB(g *otlpmetricsv1.Gauge) gaugeFromPBResult {
+	dataPointsRes := dataPointsFromPB(g.DataPoints)
+	res := gaugeFromPBResult{}
+	switch {
+	case len(dataPointsRes.AsInt) > 0:
+		res = gaugeFromPBResult{
+			AsInt: &metricdata.Gauge[int64]{
+				DataPoints: dataPointsRes.AsInt,
+			},
+		}
+	case len(dataPointsRes.AsDouble) > 0:
+		res = gaugeFromPBResult{
+			AsDouble: &metricdata.Gauge[float64]{
+				DataPoints: dataPointsRes.AsDouble,
+			},
+		}
+	}
+	return res
+}
+
+// GaugeToPB returns an OTLP Metric_Gauge generated from g.
+func GaugeToPB[N int64 | float64](g metricdata.Gauge[N]) *otlpmetricsv1.Metric_Gauge {
+	return &otlpmetricsv1.Metric_Gauge{
+		Gauge: &otlpmetricsv1.Gauge{
+			DataPoints: DataPointsToPB(g.DataPoints),
+		},
+	}
+}
+
+// SumToPB returns an OTLP Metric_Sum generated from s. An error is returned
+// if the temporality of s is unknown.
+func SumToPB[N int64 | float64](s metricdata.Sum[N]) (*otlpmetricsv1.Metric_Sum, error) {
+	t, err := TemporalityToPB(s.Temporality)
+	if err != nil {
+		return nil, err
+	}
+	return &otlpmetricsv1.Metric_Sum{
+		Sum: &otlpmetricsv1.Sum{
+			AggregationTemporality: t,
+			IsMonotonic:            s.IsMonotonic,
+			DataPoints:             DataPointsToPB(s.DataPoints),
+		},
+	}, nil
+}
+
+type dataPointsFromPBResult struct {
+	// only one of these will be set, depending on whether the ungeneric input
+	// resolves to in the returned generic type
+	AsInt    []metricdata.DataPoint[int64]
+	AsDouble []metricdata.DataPoint[float64]
+}
+
+func dataPointsFromPB(dPts []*otlpmetricsv1.NumberDataPoint) dataPointsFromPBResult {
+	res := dataPointsFromPBResult{}
+	for _, dPt := range dPts {
+		switch pbV := dPt.Value.(type) {
+		case *otlpmetricsv1.NumberDataPoint_AsInt:
+			res.AsInt = append(res.AsInt, metricdata.DataPoint[int64]{
+				Attributes: attribute.NewSet(AttributesFromProto(dPt.Attributes)...),
+				StartTime:  time.Unix(0, int64(dPt.StartTimeUnixNano)),
+				Time:       time.Unix(0, int64(dPt.TimeUnixNano)),
+				Value:      pbV.AsInt,
+				Exemplars:  exemplarsFromPB(dPt.Exemplars).AsInt,
+			})
+		case *otlpmetricsv1.NumberDataPoint_AsDouble:
+			res.AsDouble = append(res.AsDouble, metricdata.DataPoint[float64]{
+				Attributes: attribute.NewSet(AttributesFromProto(dPt.Attributes)...),
+				StartTime:  time.Unix(0, int64(dPt.StartTimeUnixNano)),
+				Time:       time.Unix(0, int64(dPt.TimeUnixNano)),
+				Value:      pbV.AsDouble,
+				Exemplars:  exemplarsFromPB(dPt.Exemplars).AsDouble,
+			})
+		}
+	}
+	return res
+}
+
+// DataPointsToPB returns a slice of OTLP NumberDataPoint generated from dPts.
+func DataPointsToPB[N int64 | float64](dPts []metricdata.DataPoint[N]) []*otlpmetricsv1.NumberDataPoint {
+	out := make([]*otlpmetricsv1.NumberDataPoint, 0, len(dPts))
+	for _, dPt := range dPts {
+		ndp := &otlpmetricsv1.NumberDataPoint{
+			Attributes:        iterator(dPt.Attributes.Iter()),
+			StartTimeUnixNano: timeUnixNano(dPt.StartTime),
+			TimeUnixNano:      timeUnixNano(dPt.Time),
+			Exemplars:         ExemplarsToPB(dPt.Exemplars),
+		}
+		switch v := any(dPt.Value).(type) {
+		case int64:
+			ndp.Value = &otlpmetricsv1.NumberDataPoint_AsInt{
+				AsInt: v,
+			}
+		case float64:
+			ndp.Value = &otlpmetricsv1.NumberDataPoint_AsDouble{
+				AsDouble: v,
+			}
+		}
+		out = append(out, ndp)
+	}
+	return out
+}
+
+// HistogramToPB returns an OTLP Metric_Histogram generated from h. An error is
+// returned if the temporality of h is unknown.
+func HistogramToPB[N int64 | float64](h metricdata.Histogram[N]) (*otlpmetricsv1.Metric_Histogram, error) {
+	t, err := TemporalityToPB(h.Temporality)
+	if err != nil {
+		return nil, err
+	}
+	return &otlpmetricsv1.Metric_Histogram{
+		Histogram: &otlpmetricsv1.Histogram{
+			AggregationTemporality: t,
+			DataPoints:             HistogramDataPointsToPB(h.DataPoints),
+		},
+	}, nil
+}
+
+// HistogramDataPointsToPB returns a slice of OTLP HistogramDataPoint generated
+// from dPts.
+func HistogramDataPointsToPB[N int64 | float64](dPts []metricdata.HistogramDataPoint[N]) []*otlpmetricsv1.HistogramDataPoint {
+	out := make([]*otlpmetricsv1.HistogramDataPoint, 0, len(dPts))
+	for _, dPt := range dPts {
+		sum := float64(dPt.Sum)
+		hdp := &otlpmetricsv1.HistogramDataPoint{
+			Attributes:        iterator(dPt.Attributes.Iter()),
+			StartTimeUnixNano: timeUnixNano(dPt.StartTime),
+			TimeUnixNano:      timeUnixNano(dPt.Time),
+			Count:             dPt.Count,
+			Sum:               &sum,
+			BucketCounts:      dPt.BucketCounts,
+			ExplicitBounds:    dPt.Bounds,
+			Exemplars:         ExemplarsToPB(dPt.Exemplars),
+		}
+		if v, ok := dPt.Min.Value(); ok {
+			vF64 := float64(v)
+			hdp.Min = &vF64
+		}
+		if v, ok := dPt.Max.Value(); ok {
+			vF64 := float64(v)
+			hdp.Max = &vF64
+		}
+		out = append(out, hdp)
+	}
+	return out
+}
+
+// ExponentialHistogramToPB returns an OTLP Metric_ExponentialHistogram generated from h. An error is
+// returned if the temporality of h is unknown.
+func ExponentialHistogramToPB[N int64 | float64](h metricdata.ExponentialHistogram[N]) (*otlpmetricsv1.Metric_ExponentialHistogram, error) {
+	t, err := TemporalityToPB(h.Temporality)
+	if err != nil {
+		return nil, err
+	}
+	return &otlpmetricsv1.Metric_ExponentialHistogram{
+		ExponentialHistogram: &otlpmetricsv1.ExponentialHistogram{
+			AggregationTemporality: t,
+			DataPoints:             ExponentialHistogramDataPointsToPB(h.DataPoints),
+		},
+	}, nil
+}
+
+// ExponentialHistogramDataPointsToPB returns a slice of OTLP ExponentialHistogramDataPoint generated
+// from dPts.
+func ExponentialHistogramDataPointsToPB[N int64 | float64](dPts []metricdata.ExponentialHistogramDataPoint[N]) []*otlpmetricsv1.ExponentialHistogramDataPoint {
+	out := make([]*otlpmetricsv1.ExponentialHistogramDataPoint, 0, len(dPts))
+	for _, dPt := range dPts {
+		sum := float64(dPt.Sum)
+		ehdp := &otlpmetricsv1.ExponentialHistogramDataPoint{
+			Attributes:        iterator(dPt.Attributes.Iter()),
+			StartTimeUnixNano: timeUnixNano(dPt.StartTime),
+			TimeUnixNano:      timeUnixNano(dPt.Time),
+			Count:             dPt.Count,
+			Sum:               &sum,
+			Scale:             dPt.Scale,
+			ZeroCount:         dPt.ZeroCount,
+			Exemplars:         ExemplarsToPB(dPt.Exemplars),
+
+			Positive: ExponentialHistogramDataPointBucketsToPB(dPt.PositiveBucket),
+			Negative: ExponentialHistogramDataPointBucketsToPB(dPt.NegativeBucket),
+		}
+		if v, ok := dPt.Min.Value(); ok {
+			vF64 := float64(v)
+			ehdp.Min = &vF64
+		}
+		if v, ok := dPt.Max.Value(); ok {
+			vF64 := float64(v)
+			ehdp.Max = &vF64
+		}
+		out = append(out, ehdp)
+	}
+	return out
+}
+
+// ExponentialHistogramDataPointBucketsToPB returns an OTLP ExponentialHistogramDataPoint_Buckets generated
+// from bucket.
+func ExponentialHistogramDataPointBucketsToPB(bucket metricdata.ExponentialBucket) *otlpmetricsv1.ExponentialHistogramDataPoint_Buckets {
+	return &otlpmetricsv1.ExponentialHistogramDataPoint_Buckets{
+		Offset:       bucket.Offset,
+		BucketCounts: bucket.Counts,
+	}
+}
+
+// TemporalityToPB returns an OTLP AggregationTemporality generated from t. If t
+// is unknown, an error is returned along with the invalid
+// AggregationTemporality_AGGREGATION_TEMPORALITY_UNSPECIFIED.
+func TemporalityToPB(t metricdata.Temporality) (otlpmetricsv1.AggregationTemporality, error) {
+	switch t {
+	case metricdata.DeltaTemporality:
+		return otlpmetricsv1.AggregationTemporality_AGGREGATION_TEMPORALITY_DELTA, nil
+	case metricdata.CumulativeTemporality:
+		return otlpmetricsv1.AggregationTemporality_AGGREGATION_TEMPORALITY_CUMULATIVE, nil
+	default:
+		err := fmt.Errorf("unknown temporality: %s", t)
+		return otlpmetricsv1.AggregationTemporality_AGGREGATION_TEMPORALITY_UNSPECIFIED, err
+	}
+}
+
+// timeUnixNano returns t as a Unix time, the number of nanoseconds elapsed
+// since January 1, 1970 UTC as uint64.
+// The result is undefined if the Unix time
+// in nanoseconds cannot be represented by an int64
+// (a date before the year 1678 or after 2262).
+// timeUnixNano on the zero Time returns 0.
+// The result does not depend on the location associated with t.
+func timeUnixNano(t time.Time) uint64 {
+	return uint64(max(0, t.UnixNano()))
+}
+
+type exemplarFromPBResult struct {
+	// only one of these will be set, depending on whether the ungeneric input
+	// resolves to in the returned generic type
+	AsInt    []metricdata.Exemplar[int64]
+	AsDouble []metricdata.Exemplar[float64]
+}
+
+func exemplarsFromPB(exemplars []*otlpmetricsv1.Exemplar) exemplarFromPBResult {
+	res := exemplarFromPBResult{}
+	for _, pbExemplar := range exemplars {
+		switch pbV := pbExemplar.Value.(type) {
+		case *otlpmetricsv1.Exemplar_AsInt:
+			res.AsInt = append(res.AsInt, metricdata.Exemplar[int64]{
+				FilteredAttributes: AttributesFromProto(pbExemplar.FilteredAttributes),
+				Time:               time.Unix(0, int64(pbExemplar.TimeUnixNano)),
+				Value:              pbV.AsInt,
+				SpanID:             pbExemplar.SpanId,
+				TraceID:            pbExemplar.TraceId,
+			})
+		case *otlpmetricsv1.Exemplar_AsDouble:
+			res.AsDouble = append(res.AsDouble, metricdata.Exemplar[float64]{
+				FilteredAttributes: AttributesFromProto(pbExemplar.FilteredAttributes),
+				Time:               time.Unix(0, int64(pbExemplar.TimeUnixNano)),
+				Value:              pbV.AsDouble,
+				SpanID:             pbExemplar.SpanId,
+				TraceID:            pbExemplar.TraceId,
+			})
+		}
+	}
+	return res
+}
+
+// ExemplarsToPB returns a slice of OTLP ExemplarsToPB generated from exemplars.
+func ExemplarsToPB[N int64 | float64](exemplars []metricdata.Exemplar[N]) []*otlpmetricsv1.Exemplar {
+	out := make([]*otlpmetricsv1.Exemplar, 0, len(exemplars))
+	for _, exemplar := range exemplars {
+		e := &otlpmetricsv1.Exemplar{
+			FilteredAttributes: KeyValues(exemplar.FilteredAttributes),
+			TimeUnixNano:       timeUnixNano(exemplar.Time),
+			SpanId:             exemplar.SpanID,
+			TraceId:            exemplar.TraceID,
+		}
+		switch v := any(exemplar.Value).(type) {
+		case int64:
+			e.Value = &otlpmetricsv1.Exemplar_AsInt{
+				AsInt: v,
+			}
+		case float64:
+			e.Value = &otlpmetricsv1.Exemplar_AsDouble{
+				AsDouble: v,
+			}
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
+// SummaryToPB returns an OTLP Metric_Summary generated from s.
+func SummaryToPB(s metricdata.Summary) *otlpmetricsv1.Metric_Summary {
+	return &otlpmetricsv1.Metric_Summary{
+		Summary: &otlpmetricsv1.Summary{
+			DataPoints: SummaryDataPointsToPB(s.DataPoints),
+		},
+	}
+}
+
+// SummaryDataPointsToPB returns a slice of OTLP SummaryDataPoint generated from
+// dPts.
+func SummaryDataPointsToPB(dPts []metricdata.SummaryDataPoint) []*otlpmetricsv1.SummaryDataPoint {
+	out := make([]*otlpmetricsv1.SummaryDataPoint, 0, len(dPts))
+	for _, dPt := range dPts {
+		sdp := &otlpmetricsv1.SummaryDataPoint{
+			Attributes:        iterator(dPt.Attributes.Iter()),
+			StartTimeUnixNano: timeUnixNano(dPt.StartTime),
+			TimeUnixNano:      timeUnixNano(dPt.Time),
+			Count:             dPt.Count,
+			Sum:               dPt.Sum,
+			QuantileValues:    QuantileValuesToPB(dPt.QuantileValues),
+		}
+		out = append(out, sdp)
+	}
+	return out
+}
+
+// QuantileValuesToPB returns a slice of OTLP SummaryDataPoint_ValueAtQuantile
+// generated from quantiles.
+func QuantileValuesToPB(quantiles []metricdata.QuantileValue) []*otlpmetricsv1.SummaryDataPoint_ValueAtQuantile {
+	out := make([]*otlpmetricsv1.SummaryDataPoint_ValueAtQuantile, 0, len(quantiles))
+	for _, q := range quantiles {
+		quantile := &otlpmetricsv1.SummaryDataPoint_ValueAtQuantile{
+			Quantile: q.Quantile,
+			Value:    q.Value,
+		}
+		out = append(out, quantile)
+	}
+	return out
 }

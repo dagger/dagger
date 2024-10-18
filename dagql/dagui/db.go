@@ -6,14 +6,16 @@ import (
 	"sort"
 	"time"
 
-	"dagger.io/dagger/telemetry"
 	"go.opentelemetry.io/otel/attribute"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/engine/slog"
-	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
 
 type DB struct {
@@ -129,6 +131,55 @@ func (db *DB) Shutdown(ctx context.Context) error {
 
 func (db *DB) ForceFlush(ctx context.Context) error {
 	return nil // noop
+}
+
+func (db *DB) MetricExporter() sdkmetric.Exporter {
+	return DBMetricExporter{db}
+}
+
+func (db *DB) Temporality(sdkmetric.InstrumentKind) metricdata.Temporality {
+	return metricdata.DeltaTemporality
+}
+
+func (db *DB) Aggregation(sdkmetric.InstrumentKind) sdkmetric.Aggregation {
+	return sdkmetric.AggregationDefault{}
+}
+
+type DBMetricExporter struct {
+	*DB
+}
+
+func (db DBMetricExporter) Export(ctx context.Context, resourceMetrics *metricdata.ResourceMetrics) error {
+	for _, scopeMetric := range resourceMetrics.ScopeMetrics {
+		for _, metric := range scopeMetric.Metrics {
+			metricData, ok := metric.Data.(metricdata.Gauge[int64])
+			if !ok {
+				continue
+			}
+
+			for _, point := range metricData.DataPoints {
+				spanIDStr, ok := point.Attributes.Value(telemetry.MetricsSpanIDAttr)
+				if !ok {
+					continue
+				}
+				spanID, err := trace.SpanIDFromHex(spanIDStr.AsString())
+				if err != nil {
+					continue
+				}
+				span, ok := db.Spans[spanID]
+				if !ok {
+					continue
+				}
+
+				if span.MetricsByName == nil {
+					span.MetricsByName = make(map[string][]metricdata.DataPoint[int64])
+				}
+				span.MetricsByName[metric.Name] = append(span.MetricsByName[metric.Name], point)
+			}
+		}
+	}
+
+	return nil
 }
 
 // SetPrimarySpan allows the primary span to be explicitly set to a particular

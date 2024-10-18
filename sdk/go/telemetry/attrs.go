@@ -83,4 +83,10 @@ const (
 
 	// Indicates whether the log should be shown globally.
 	LogsGlobalAttr = "dagger.io/logs.global"
+
+	// OTel metric attribute so we can correlate metrics with spans
+	MetricsSpanIDAttr = "dagger.io/metrics.span"
+
+	// OTel metric attribute so we can correlate metrics with traces
+	MetricsTraceIDAttr = "dagger.io/metrics.trace"
 )

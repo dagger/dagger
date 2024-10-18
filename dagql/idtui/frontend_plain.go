@@ -17,6 +17,8 @@ import (
 	"github.com/pkg/browser"
 	"go.opentelemetry.io/otel/codes"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -331,6 +333,33 @@ func (fe *frontendPlain) ForceFlush(context.Context) error {
 	return nil
 }
 
+func (fe *frontendPlain) MetricExporter() sdkmetric.Exporter {
+	return PlainFrontendMetricExporter{fe}
+}
+
+type PlainFrontendMetricExporter struct {
+	*frontendPlain
+}
+
+func (fe PlainFrontendMetricExporter) Export(ctx context.Context, resourceMetrics *metricdata.ResourceMetrics) error {
+	fe.mu.Lock()
+	defer fe.mu.Unlock()
+
+	return fe.db.MetricExporter().Export(ctx, resourceMetrics)
+}
+
+func (fe PlainFrontendMetricExporter) Temporality(ik sdkmetric.InstrumentKind) metricdata.Temporality {
+	return fe.db.Temporality(ik)
+}
+
+func (fe PlainFrontendMetricExporter) Aggregation(ik sdkmetric.InstrumentKind) sdkmetric.Aggregation {
+	return fe.db.Aggregation(ik)
+}
+
+func (fe PlainFrontendMetricExporter) ForceFlush(context.Context) error {
+	return nil
+}
+
 // wake up all spans up to the root span
 func (fe *frontendPlain) wakeUpSpan(spanID trace.SpanID) {
 	for sleeper := fe.data[spanID]; sleeper != nil; sleeper = fe.data[sleeper.parentID] {
@@ -492,6 +521,7 @@ func (fe *frontendPlain) renderStep(span *dagui.Span, depth int, done bool) {
 		}
 		duration := dagui.FormatDuration(span.EndTime().Sub(span.StartTime()))
 		fmt.Fprint(fe.output, fe.output.String(fmt.Sprintf(" [%s]", duration)).Foreground(termenv.ANSIBrightBlack))
+		r.renderMetrics(fe.output, span)
 
 		if span.Status().Code == codes.Error && span.Status().Description != "" {
 			fmt.Fprintln(fe.output)
