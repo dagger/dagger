@@ -407,7 +407,7 @@ func (srv *Server) initializeDaggerClient(
 	opts *ClientInitOpts,
 ) error {
 	// initialize all the buildkit+session attachable state for the client
-	client.secretStore = core.NewSecretStore()
+	client.secretStore = core.NewSecretStore(srv.bkSessionManager)
 	client.socketStore = core.NewSocketStore(srv.bkSessionManager)
 	if opts.CallID != nil {
 		if opts.CallerClientID == "" {

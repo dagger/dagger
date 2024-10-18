@@ -3,18 +3,14 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/csv"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"net"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"strconv"
 	"strings"
 
@@ -456,8 +452,7 @@ func (v *fileValue) Get(_ context.Context, dag *dagger.Client, _ *dagger.ModuleS
 // secretValue is a pflag.Value that builds a dagger.Secret from a name and a
 // plaintext value.
 type secretValue struct {
-	secretSource string
-	sourceVal    string
+	uri string
 }
 
 const (
@@ -471,81 +466,27 @@ func (v *secretValue) Type() string {
 }
 
 func (v *secretValue) Set(s string) error {
-	secretSource, val, ok := strings.Cut(s, ":")
-	if !ok {
-		// case of e.g. `--token MY_ENV_SECRET`, which is shorthand for `--token env:MY_ENV_SECRET`
-		val = secretSource
-		secretSource = envSecretSource
+	if !strings.Contains(s, ":") {
+		// case of e.g. `--token MY_ENV_SECRET`, which is shorthand for `--token env://MY_ENV_SECRET`
+		s = "env://" + s
 	}
-	v.secretSource = secretSource
-	v.sourceVal = val
+	// legacy secrets in the form of `--token env:MY_ENV_SECRET` instead of `env://MY_ENV_SECRET`
+	secretSource, val, _ := strings.Cut(s, ":")
+	if !strings.HasPrefix(val, "//") {
+		s = secretSource + "://" + val
+	}
+
+	v.uri = s
 
 	return nil
 }
 
 func (v *secretValue) String() string {
-	if v.sourceVal == "" {
-		return ""
-	}
-	return fmt.Sprintf("%s:%s", v.secretSource, v.sourceVal)
+	return v.uri
 }
 
 func (v *secretValue) Get(ctx context.Context, c *dagger.Client, _ *dagger.ModuleSource, _ *modFunctionArg) (any, error) {
-	var plaintext string
-
-	switch v.secretSource {
-	case envSecretSource:
-		envPlaintext, ok := os.LookupEnv(v.sourceVal)
-		if !ok {
-			// Don't show the entire env var name, in case the user accidentally passed the value instead...
-			// This is important because users originally *did* have to pass the value, before we changed to
-			// passing by name instead.
-			key := v.sourceVal
-			if len(key) >= 4 {
-				key = key[:3] + "..."
-			}
-			return nil, fmt.Errorf("secret env var not found: %q", key)
-		}
-		plaintext = envPlaintext
-
-	case fileSecretSource:
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return nil, err
-		}
-		sourceVal, err := client.ExpandHomeDir(homeDir, v.sourceVal)
-		if err != nil {
-			return nil, err
-		}
-		filePlaintext, err := os.ReadFile(sourceVal)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read secret file %q: %w", v.sourceVal, err)
-		}
-		plaintext = string(filePlaintext)
-
-	case commandSecretSource:
-		var stdoutBytes []byte
-		var err error
-		if runtime.GOOS == "windows" {
-			stdoutBytes, err = exec.CommandContext(ctx, "cmd.exe", "/C", v.sourceVal).Output()
-		} else {
-			// #nosec G204
-			stdoutBytes, err = exec.CommandContext(ctx, "sh", "-c", v.sourceVal).Output()
-		}
-		if err != nil {
-			return nil, fmt.Errorf("failed to run secret command %q: %w", v.sourceVal, err)
-		}
-		plaintext = string(stdoutBytes)
-
-	default:
-		return nil, fmt.Errorf("unsupported secret arg source: %q", v.secretSource)
-	}
-
-	// NB: If we allow getting the name from the dagger.Secret instance,
-	// it can be vulnerable to brute force attacks.
-	hash := sha256.Sum256([]byte(plaintext))
-	secretName := hex.EncodeToString(hash[:])
-	return c.SetSecret(secretName, plaintext), nil
+	return c.MapSecret(v.uri, v.uri), nil
 }
 
 // serviceValue is a pflag.Value that builds a dagger.Service from a host:port

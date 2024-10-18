@@ -1751,9 +1751,9 @@ func (s *containerSchema) withRegistryAuth(ctx context.Context, parent *core.Con
 	if err != nil {
 		return nil, err
 	}
-	secretBytes, ok := secretStore.GetSecretPlaintext(secret.Self.IDDigest)
-	if !ok {
-		return nil, fmt.Errorf("secret %s not found", secret.Self.IDDigest)
+	secretBytes, err := secretStore.GetSecretPlaintext(ctx, secret.Self.IDDigest)
+	if err != nil {
+		return nil, err
 	}
 
 	auth, err := parent.Query.Auth(ctx)

@@ -711,6 +711,21 @@ defmodule Dagger.Client do
     }
   end
 
+  @doc "Maps a secret to an external secret store and returns the secret."
+  @spec map_secret(t(), String.t(), String.t()) :: Dagger.Secret.t()
+  def map_secret(%__MODULE__{} = client, name, uri) do
+    query_builder =
+      client.query_builder
+      |> QB.select("mapSecret")
+      |> QB.put_arg("name", name)
+      |> QB.put_arg("uri", uri)
+
+    %Dagger.Secret{
+      query_builder: query_builder,
+      client: client.client
+    }
+  end
+
   @doc "Create a new module."
   @spec module(t()) :: Dagger.Module.t()
   def module(%__MODULE__{} = client) do

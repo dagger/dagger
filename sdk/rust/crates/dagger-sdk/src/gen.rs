@@ -7508,6 +7508,22 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
+    /// Maps a secret to an external secret store and returns the secret.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The user defined name for this secret
+    /// * `uri` - The URI of the secret store
+    pub fn map_secret(&self, name: impl Into<String>, uri: impl Into<String>) -> Secret {
+        let mut query = self.selection.select("mapSecret");
+        query = query.arg("name", name.into());
+        query = query.arg("uri", uri.into());
+        Secret {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
     /// Create a new module.
     pub fn module(&self) -> Module {
         let query = self.selection.select("module");

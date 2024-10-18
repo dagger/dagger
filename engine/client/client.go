@@ -328,6 +328,8 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 	attachables := []bksession.Attachable{
 		// sockets
 		SocketProvider{EnableHostNetworkAccess: !c.DisableHostRW},
+		// secrets
+		SecretProvider{},
 		// registry auth
 		authprovider.NewDockerAuthProvider(config.LoadDefaultConfigFile(os.Stderr), nil),
 		// host=>container networking

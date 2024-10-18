@@ -9225,6 +9225,24 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Maps a secret to an external secret store and returns the secret.
+   * @param name The user defined name for this secret
+   * @param uri The URI of the secret store
+   */
+  mapSecret = (name: string, uri: string): Secret => {
+    return new Secret({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "mapSecret",
+          args: { name, uri },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
    * Create a new module.
    */
   module_ = (): Module_ => {
