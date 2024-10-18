@@ -55,8 +55,8 @@ class PythonSdkDev:
         """Create an instance to develop the Python SDK."""
         if container is None:
             container = (
-                dag.apko()
-                .wolfi(["libgcc"])
+                dag.wolfi()
+                .container(packages=["libgcc"])
                 .with_env_variable("PYTHONUNBUFFERED", "1")
                 .with_env_variable(
                     "PATH",
