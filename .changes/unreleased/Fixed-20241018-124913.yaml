@@ -1,0 +1,9 @@
+kind: Fixed
+body: |-
+  Speed up fully cached initialize time by caching more internal SDK operations.
+
+  Dagger wasn't caching as many SDK operations as it could. With this change Dagger's own CI modules initialize ~1s faster when fully cached.
+time: 2024-10-18T12:49:13.053522292-07:00
+custom:
+  Author: sipsma
+  PR: "8735"

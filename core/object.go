@@ -341,6 +341,7 @@ func (obj *ModuleObject) installConstructor(ctx context.Context, dag *dagql.Serv
 				Inputs:       callInput,
 				ParentTyped:  nil,
 				ParentFields: nil,
+				Cache:        dagql.IsInternal(ctx),
 				Server:       dag,
 			})
 		},
