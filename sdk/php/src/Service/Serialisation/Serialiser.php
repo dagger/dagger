@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 namespace Dagger\Service\Serialisation;
 
+use Dagger\ValueObject\Argument;
+use Dagger\ValueObject\ListOfType;
+use Dagger\ValueObject\Type;
+use Dagger\ValueObject\TypeHint;
+use JMS\Serializer\DeserializationContext;
 use JMS\Serializer\EventDispatcher\EventDispatcher;
 use JMS\Serializer\EventDispatcher\PreDeserializeEvent;
 use JMS\Serializer\EventDispatcher\PreSerializeEvent;
@@ -12,6 +17,7 @@ use JMS\Serializer\Handler\SubscribingHandlerInterface;
 use JMS\Serializer\SerializationContext;
 use JMS\Serializer\Serializer;
 use JMS\Serializer\SerializerBuilder;
+use RuntimeException;
 
 final readonly class Serialiser
 {
@@ -51,16 +57,14 @@ final readonly class Serialiser
         );
     }
 
-    public function deserialise(string $value, string $type): mixed
+    public function deserialise(string $value, TypeHint $typeHint): mixed
     {
         if ($value === 'null') {
-            return null;
+            return $typeHint->nullable ? null :
+                throw new RuntimeException('value cannot be null');
         }
 
-        return $this->serializer->deserialize(
-            $value,
-            $type,
-            'json',
-        );
+        return $this->serializer
+            ->deserialize($value, $typeHint->getName(), 'json');
     }
 }

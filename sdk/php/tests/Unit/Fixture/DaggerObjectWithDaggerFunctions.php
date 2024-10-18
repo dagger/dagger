@@ -124,7 +124,7 @@ final class DaggerObjectWithDaggerFunctions
 
     public static function getValueObjectEquivalent(): ValueObject\DaggerObject
     {
-        return new ValueObject\DaggerObject(
+        return new ValueObject\DaggerClass(
             DaggerObjectWithDaggerFunctions::class,
             '',
             [
