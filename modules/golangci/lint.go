@@ -24,8 +24,19 @@ func (gl Golangci) Lint(
 	// Lint a specific path within the source directory
 	// +optional
 	path string,
+	// A cache volume to use for go module downloads
+	// +optional
+	goModCache *dagger.CacheVolume,
+	// A cache volume to use for go build
+	// +optional
+	goBuildCache *dagger.CacheVolume,
 ) LintRun {
-	return LintRun{Source: source, Path: path}
+	return LintRun{
+		Source:       source,
+		Path:         path,
+		GoModCache:   goModCache,
+		GoBuildCache: goBuildCache,
+	}
 }
 
 // The result of running the GolangCI lint tool
@@ -34,6 +45,10 @@ type LintRun struct {
 	Source *dagger.Directory
 	// +private
 	Path string
+	// +private
+	GoModCache *dagger.CacheVolume
+	// +private
+	GoBuildCache *dagger.CacheVolume
 }
 
 func (run LintRun) Issues(ctx context.Context) ([]*Issue, error) {
@@ -115,12 +130,24 @@ func (run LintRun) Report() *dagger.File {
 		"--issues-exit-code", "0",
 		"--config", path.Join(home, ".golangci.yml"),
 	}
+
+	goModCache := run.GoModCache
+	if goModCache == nil {
+		goModCache = dag.CacheVolume("go-mod")
+	}
+	goBuildCache := run.GoBuildCache
+	if goBuildCache == nil {
+		goBuildCache = dag.CacheVolume("go-build")
+	}
+
 	return dag.
 		Container().
 		From(lintImage).
 		// FIXME should be "${HOME}/.golangci.yml"
 		WithFile(path.Join(home, ".golangci.yml"), dag.CurrentModule().Source().File("lint-config.yml"), dagger.ContainerWithFileOpts{}).
 		WithMountedDirectory("/src", run.Source).
+		WithMountedCache("/go/pkg/mod", goModCache).
+		WithMountedCache("/root/.cache/go-build", goBuildCache).
 		WithWorkdir(path.Join("/src", run.Path)).
 		// Uncomment to debug:
 		// WithEnvVariable("DEBUG_CMD", strings.Join(cmd, " ")).
