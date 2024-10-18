@@ -1,0 +1,19 @@
+kind: Added
+body: |-
+  Allow external custom runtime as base image using `dagger.runtime` field in the `package.json`.
+
+  *Note*: Only alpine based image are supported as runtime base image.
+
+  Example:
+
+  ```json
+  {
+    "dagger": {
+      "runtime": "my-repo/my-custom-node-runtime:v1"
+    }
+  }
+  ```
+time: 2024-10-15T17:47:24.048124+02:00
+custom:
+  Author: TomChv
+  PR: "8675"
