@@ -1,2 +1,3 @@
 {{ .Description | Comment }}
 type {{ .Name | FormatName }} string
+{{- with .Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}

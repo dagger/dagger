@@ -48,7 +48,7 @@ func (v *Visitor) visit(kind TypeKind, ignore map[string]any) []*Type {
 	for _, t := range v.schema.Types {
 		if t.Kind == kind {
 			// internal GraphQL type
-			if strings.HasPrefix(t.Name, "__") {
+			if strings.HasPrefix(t.Name, "_") {
 				continue
 			}
 			if ignore != nil {

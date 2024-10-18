@@ -37,4 +37,16 @@ defmodule Dagger.EnumValueTypeDef do
 
     Client.execute(enum_value_type_def.client, query_builder)
   end
+
+  @doc "The location of this enum value declaration."
+  @spec source_map(t()) :: Dagger.SourceMap.t()
+  def source_map(%__MODULE__{} = enum_value_type_def) do
+    query_builder =
+      enum_value_type_def.query_builder |> QB.select("sourceMap")
+
+    %Dagger.SourceMap{
+      query_builder: query_builder,
+      client: enum_value_type_def.client
+    }
+  end
 end

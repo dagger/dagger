@@ -132,13 +132,17 @@ defmodule Dagger.TypeDef do
 
   Note that an enum's values may be omitted if the intent is only to refer to an enum. This is how functions are able to return their own, or any other circular reference.
   """
-  @spec with_enum(t(), String.t(), [{:description, String.t() | nil}]) :: Dagger.TypeDef.t()
+  @spec with_enum(t(), String.t(), [
+          {:description, String.t() | nil},
+          {:source_map, Dagger.SourceMapID.t() | nil}
+        ]) :: Dagger.TypeDef.t()
   def with_enum(%__MODULE__{} = type_def, name, optional_args \\ []) do
     query_builder =
       type_def.query_builder
       |> QB.select("withEnum")
       |> QB.put_arg("name", name)
       |> QB.maybe_put_arg("description", optional_args[:description])
+      |> QB.maybe_put_arg("sourceMap", optional_args[:source_map])
 
     %Dagger.TypeDef{
       query_builder: query_builder,
@@ -147,13 +151,17 @@ defmodule Dagger.TypeDef do
   end
 
   @doc "Adds a static value for an Enum TypeDef, failing if the type is not an enum."
-  @spec with_enum_value(t(), String.t(), [{:description, String.t() | nil}]) :: Dagger.TypeDef.t()
+  @spec with_enum_value(t(), String.t(), [
+          {:description, String.t() | nil},
+          {:source_map, Dagger.SourceMapID.t() | nil}
+        ]) :: Dagger.TypeDef.t()
   def with_enum_value(%__MODULE__{} = type_def, value, optional_args \\ []) do
     query_builder =
       type_def.query_builder
       |> QB.select("withEnumValue")
       |> QB.put_arg("value", value)
       |> QB.maybe_put_arg("description", optional_args[:description])
+      |> QB.maybe_put_arg("sourceMap", optional_args[:source_map])
 
     %Dagger.TypeDef{
       query_builder: query_builder,
@@ -162,8 +170,10 @@ defmodule Dagger.TypeDef do
   end
 
   @doc "Adds a static field for an Object TypeDef, failing if the type is not an object."
-  @spec with_field(t(), String.t(), Dagger.TypeDef.t(), [{:description, String.t() | nil}]) ::
-          Dagger.TypeDef.t()
+  @spec with_field(t(), String.t(), Dagger.TypeDef.t(), [
+          {:description, String.t() | nil},
+          {:source_map, Dagger.SourceMapID.t() | nil}
+        ]) :: Dagger.TypeDef.t()
   def with_field(%__MODULE__{} = type_def_, name, type_def, optional_args \\ []) do
     query_builder =
       type_def_.query_builder
@@ -171,6 +181,7 @@ defmodule Dagger.TypeDef do
       |> QB.put_arg("name", name)
       |> QB.put_arg("typeDef", Dagger.ID.id!(type_def))
       |> QB.maybe_put_arg("description", optional_args[:description])
+      |> QB.maybe_put_arg("sourceMap", optional_args[:source_map])
 
     %Dagger.TypeDef{
       query_builder: query_builder,
@@ -193,13 +204,17 @@ defmodule Dagger.TypeDef do
   end
 
   @doc "Returns a TypeDef of kind Interface with the provided name."
-  @spec with_interface(t(), String.t(), [{:description, String.t() | nil}]) :: Dagger.TypeDef.t()
+  @spec with_interface(t(), String.t(), [
+          {:description, String.t() | nil},
+          {:source_map, Dagger.SourceMapID.t() | nil}
+        ]) :: Dagger.TypeDef.t()
   def with_interface(%__MODULE__{} = type_def, name, optional_args \\ []) do
     query_builder =
       type_def.query_builder
       |> QB.select("withInterface")
       |> QB.put_arg("name", name)
       |> QB.maybe_put_arg("description", optional_args[:description])
+      |> QB.maybe_put_arg("sourceMap", optional_args[:source_map])
 
     %Dagger.TypeDef{
       query_builder: query_builder,
@@ -238,13 +253,17 @@ defmodule Dagger.TypeDef do
 
   Note that an object's fields and functions may be omitted if the intent is only to refer to an object. This is how functions are able to return their own object, or any other circular reference.
   """
-  @spec with_object(t(), String.t(), [{:description, String.t() | nil}]) :: Dagger.TypeDef.t()
+  @spec with_object(t(), String.t(), [
+          {:description, String.t() | nil},
+          {:source_map, Dagger.SourceMapID.t() | nil}
+        ]) :: Dagger.TypeDef.t()
   def with_object(%__MODULE__{} = type_def, name, optional_args \\ []) do
     query_builder =
       type_def.query_builder
       |> QB.select("withObject")
       |> QB.put_arg("name", name)
       |> QB.maybe_put_arg("description", optional_args[:description])
+      |> QB.maybe_put_arg("sourceMap", optional_args[:source_map])
 
     %Dagger.TypeDef{
       query_builder: query_builder,

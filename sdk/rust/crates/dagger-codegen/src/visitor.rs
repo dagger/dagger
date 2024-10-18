@@ -72,7 +72,7 @@ impl Visitor {
             .filter(|t| match t.full_type.kind.as_ref().unwrap() == &item.kind {
                 true => match (item.ignore.as_ref(), t.full_type.name.as_ref()) {
                     (Some(ignore), Some(name)) => {
-                        if name.starts_with("__") {
+                        if name.starts_with("_") {
                             return false;
                         }
                         if ignore.contains(name) {
@@ -82,7 +82,7 @@ impl Visitor {
                         true
                     }
                     (None, Some(name)) => {
-                        if name.starts_with("__") {
+                        if name.starts_with("_") {
                             return false;
                         }
                         true

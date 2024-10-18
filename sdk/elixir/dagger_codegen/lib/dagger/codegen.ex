@@ -31,7 +31,7 @@ defmodule Dagger.Codegen do
   defp maybe_sort_fields(fields), do: Enum.sort_by(fields, & &1.name)
 
   defp graphql_primitive_types(type) do
-    String.starts_with?(type.name, "__") or
+    String.starts_with?(type.name, "_") or
       type.name in ["String", "Float", "Int", "Boolean", "DateTime", "ID"]
   end
 
