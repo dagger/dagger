@@ -51,9 +51,8 @@ func (p *Go) Base() *dagger.Container {
 		WithEnvVariable("GOPATH", "/go").
 		WithEnvVariable("PATH", "${GOPATH}/bin:${PATH}", dagger.ContainerWithEnvVariableOpts{Expand: true}).
 		WithDirectory("/usr/local/bin", dag.Directory()).
-		WithMountedCache("/go/pkg/mod", dag.CacheVolume("go-mod")).
-		// include a cache for go build
-		WithMountedCache("/root/.cache/go-build", dag.CacheVolume("go-build"))
+		WithMountedCache("/go/pkg/mod", p.goModCache()).
+		WithMountedCache("/root/.cache/go-build", p.goBuildCache())
 }
 
 // Prepare a build environment for the given Go source code
@@ -86,7 +85,11 @@ func (p *Go) Lint(
 			defer span.End()
 			return dag.
 				Golangci().
-				Lint(p.Source, dagger.GolangciLintOpts{Path: pkg}).
+				Lint(p.Source, dagger.GolangciLintOpts{
+					Path:         pkg,
+					GoModCache:   p.goModCache(),
+					GoBuildCache: p.goBuildCache(),
+				}).
 				Assert(ctx)
 		})
 		eg.Go(func() error {
@@ -102,4 +105,12 @@ func (p *Go) Lint(
 		})
 	}
 	return eg.Wait()
+}
+
+func (p *Go) goModCache() *dagger.CacheVolume {
+	return dag.CacheVolume("go-mod")
+}
+
+func (p *Go) goBuildCache() *dagger.CacheVolume {
+	return dag.CacheVolume("go-build")
 }
