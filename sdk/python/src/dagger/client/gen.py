@@ -7137,6 +7137,7 @@ class Client(Root):
         self,
         ref_string: str,
         *,
+        ref_pin: str | None = "",
         stable: bool | None = False,
         rel_host_path: str | None = "",
     ) -> ModuleSource:
@@ -7146,6 +7147,8 @@ class Client(Root):
         ----------
         ref_string:
             The string ref representation of the module source
+        ref_pin:
+            The pinned version of the module source
         stable:
             If true, enforce that the source is a stable version for source
             kinds that support versioning.
@@ -7154,6 +7157,7 @@ class Client(Root):
         """
         _args = [
             Arg("refString", ref_string),
+            Arg("refPin", ref_pin, ""),
             Arg("stable", stable, False),
             Arg("relHostPath", rel_host_path, ""),
         ]

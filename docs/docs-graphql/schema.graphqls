@@ -2744,6 +2744,9 @@ type Query {
 
   """Create a new module source instance from a source ref string."""
   moduleSource(
+    """The pinned version of the module source"""
+    refPin: String = ""
+
     """The string ref representation of the module source"""
     refString: String!
 
