@@ -428,18 +428,17 @@ Hello, world
 
 ### Directories and files
 
-It is possible to automatically load a filesystem path as a `Directory` or `File` object in a Dagger Function, by passing it as a default context to the corresponding argument. The `Directory` or `File` loaded in this manner is not merely a string, but it is the actual filesystem state of the specified directory or file, managed by the Dagger Engine and handled in code just like any another variable.
+It is possible to automatically load a filesystem path as a `Directory` or `File` object in a Dagger Function, by passing it as a "default path" to the corresponding argument. The `Directory` or `File` loaded in this manner is not merely a string, but it is the actual filesystem state of the specified directory or file, managed by the Dagger Engine and handled in code just like any another variable.
 
 :::important
 Default contexts are only available for arguments of type `Directory` and `File`. They are commonly used to load constant filesystem locations, such as an application's source code directory.
 :::
 
-The default context is resolved as follows:
-- If an absolute path is specified:
-   - in a Git repository (defined by the presence of a `.git` sub-directory), the default context is the root of the Git repository.
-   - in a non-repository location (defined by the absence of a `.git` sub-directory), the default context is the directory containing a `dagger.json` file.
-- If a relative path is specified
-  - the default context is always the directory containing a `dagger.json` file.
+When determining how to resolve a default path, Dagger first identifies a "context directory". The context directory is either the repository root (for Git repositories, as defined by the presence of a `.git` sub-directory), or the directory containing a `dagger.json` file (for all other cases). The default path is then resolved starting from the context directory.
+
+:::important
+For security reasons, it is not possible to retrieve files or directories outside the context directory.
+:::
 
 The best way to understand this is with an example. Consider the following directory structure, representing a project with a Dagger module in `my-module`:
 
@@ -458,66 +457,66 @@ The best way to understand this is with an example. Consider the following direc
 │   └── ...
 ```
 
-Here are two Dagger Functions with default contexts for their directory and file arguments:
+Here are two Dagger Functions with default paths for their directory and file arguments:
 
 <Tabs groupId="language">
 <TabItem value="Go">
 
-The default context is set by adding a `defaultPath` pragma on the corresponding Dagger Function argument.
+The default path is set by adding a `defaultPath` pragma on the corresponding Dagger Function `source` argument.
 
 ```go file=./snippets/functions/arguments-context-dir-file/go/main.go
 ```
 </TabItem>
 <TabItem value="Python">
 
-The default context is set by adding a `DefaultPath` annotation on the corresponding Dagger Function argument.
+The default path is set by adding a `DefaultPath` annotation on the corresponding Dagger Function `source` argument.
 
 ```python file=./snippets/functions/arguments-context-dir-file/python/main.py
 ```
 </TabItem>
 <TabItem value="TypeScript">
 
-The default context is set by adding an `@argument` decorator with a `defaultPath` parameter on the corresponding Dagger Function argument.
+The default path is set by adding an `@argument` decorator with a `defaultPath` parameter on the corresponding Dagger Function `source` argument.
 
 ```typescript file=./snippets/functions/arguments-context-dir-file/typescript/index.ts
 ```
 </TabItem>
 </Tabs>
 
-The following table describes how the arguments are resolved for differing values of the default context and differing directory types.
+The following table describes how the arguments are resolved for differing values of the default path and differing directory types.
 
 For a Git repository:
 
-| Default context ('defaultPath`) | Dagger Function invocation | `source` resolves to |
-| --- | --- | --- |
-| `/` | `dagger call -m my-module read-dir` | `/` |
-| `/src` | `dagger call -m my-module read-dir` | `/src` |
-| `.` | `dagger call -m my-module read-dir` | `/my-module` |
-| `..` | `dagger call -m my-module read-dir` | `/` |
-| `/README.md` | `dagger call -m my-module read-file` | `/README.md` |
-| `./README.md` | `dagger call -m my-module read-file` | Error: file does not exist |
-| `../README.md` | `dagger call -m my-module read-file` | `/README.md` |
+| Default path ('defaultPath`) | Context directory | Dagger Function invocation | `source` argument resolves to |
+| --- | --- | --- | --- |
+| `/` | `/` | `dagger call -m my-module read-dir` | `/` |
+| `/src` | `/` | `dagger call -m my-module read-dir` | `/src` |
+| `.` | `/` | `dagger call -m my-module read-dir` | `/` |
+| `..` | `/` | `dagger call -m my-module read-dir` | `Error: path outside context directory` |
+| `/README.md` | `/` | `dagger call -m my-module read-file` | `/README.md` |
+| `./README.md` | `/` | `dagger call -m my-module read-file` | `/README.md` |
+| `../README.md`| `/`  | `dagger call -m my-module read-file` | `Error: path outside context directory` |
 
 For a non-Git directory:
 
-| Default context ('defaultPath`) | Dagger Function invocation | `source` resolves to |
-| --- | --- | --- |
-| `/` | `dagger call -m my-module read-dir` | `/my-module` |
-| `/src` | `dagger call -m my-module read-dir` | `/my-module/src` |
-| `.` | `dagger call -m my-module read-dir` | `/my-module` |
-| `..` | `dagger call -m my-module read-dir` | Error: escaping default context directory root is not allowed |
-| `/README.md` | `dagger call -m my-module read-file` | Error: file does not exist |
-| `./README.md` | `dagger call -m my-module read-file` | Error: file does not exist |
-| `../README.md` | `dagger call -m my-module read-file` | Error: escaping default context directory root is not allowed |
+| Default path ('defaultPath`) | Context directory | Dagger Function invocation | `source` argument resolves to |
+| --- | --- | --- | --- |
+| `/` | `/my-module` | `dagger call -m my-module read-dir` | `/my-module` |
+| `/src` | `/my-module` | `dagger call -m my-module read-dir` | `/my-module/src` |
+| `.` | `/my-module` | `dagger call -m my-module read-dir` | `/my-module` |
+| `..` | `/my-module` | `dagger call -m my-module read-dir` | `Error: path outside context directory` |
+| `/README.md` | `/my-module` | `dagger call -m my-module read-file` | `Error: file does not exist` |
+| `./README.md` | `/my-module` | `dagger call -m my-module read-file` | `Error: file does not exist` |
+| `../README.md` | `/my-module` | `dagger call -m my-module read-file` | `Error: path outside context directory` |
 
-If a value is explicitly passed to the Dagger Function argument, it always overrides the default context.
+If a value is explicitly passed to the Dagger Function argument, it always overrides the default path.
 
-| Default context ('defaultPath`) | Dagger Function invocation | `source` resolves to |
+| Default path ('defaultPath`) | Dagger Function invocation | `source` argument resolves to |
 | --- | --- | --- |
-| `/` | `dagger call -m my-module read-dir --source=public` | `/public` |
-| `/src` | `dagger call -m my-module read-dir --source=public` | `/public` |
-| `.` | `dagger call -m my-module read-dir --source=public` | `/public` |
-| `..` | `dagger call -m my-module read-dir --source=public` | `/public` |
+| `/` | `dagger call -m my-module read-dir --source=public` | `./public` |
+| `/src` | `dagger call -m my-module read-dir --source=public` | `./public` |
+| `.` | `dagger call -m my-module read-dir --source=public` | `./public` |
+| `..` | `dagger call -m my-module read-dir --source=public` | `./public` |
 
 :::tip
 It's also possible to provide an `ignore` parameter to a contextual argument of type `Directory` to [automatically ignore or include files in the directory](./fs-filters.mdx). The `ignore` parameter follows the [`.gitignore` syntax](https://git-scm.com/docs/gitignore): prefixing a path with `!` will actually include it instead of ignoring it.
