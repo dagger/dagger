@@ -67,6 +67,11 @@
   status = 301
 
 [[redirects]]
+  from = "/developer-guide/go/264203/functions"
+  to = "/api/custom-functions"
+  status = 301
+
+[[redirects]]
   from = "/manuals/developer"
   to = "/api"
   status = 301
@@ -210,6 +215,11 @@
 [[redirects]]
   from = "/manuals/user/artifacts"
   to = "/api/return-values"
+  status = 301
+
+[[redirects]]
+  from = "/api/254103/build-custom-client"
+  to = "/api/http"
   status = 301
 
 [[redirects]]
@@ -422,6 +432,11 @@
 [[redirects]]
   from = "/integrations/containerd"
   to = "/integrations/nerdctl"
+  status = 301
+
+[[redirects]]
+  from = "/integrations/github-actions"
+  to = "/integrations/github"
   status = 301
 
 [[redirects]]
