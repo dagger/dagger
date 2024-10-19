@@ -22,24 +22,6 @@ Volume caching involves caching specific parts of the filesystem and reusing the
 
 For these tools to cache properly, they need their own cache data (usually a directory) to be persisted between sessions. By using a cache volume for this data, Dagger can reuse the cached contents across pipeline runs and reduce execution time.
 
-## Caching best practices
-
-- For the layer cache:
-  - Layers are cached in sequence, and a change in any one layer invalidates that and all subsequent layers. Pay attention to the order of your build operations, and sequence non-volatile operations before volatile ones to avoid invalidating the cache early.
-  - It may sometimes be necessary to explicitly force execution of specific pipeline operations, bypassing the Dagger layer cache. The typical approach for this is to [invalidate the Dagger layer cache](../cookbook/cookbook.mdx#invalidate-cache) by introducing a volatile time variable at a specific point in the Dagger pipeline
-
-- For the volume cache:
-  - Cache the tool's own cache directory instead of caching the installed dependencies directory. For example, with `node` and `npm`, use a cache volume for the  `~/.npm` cache directory and not for the project's `node_modules` directory.
-
-## Cache size and pruning
-
-The layer cache size configuration is managed by [Buildkit's garbage collector](https://github.com/moby/buildkit/blob/master/docs/buildkitd.toml.md?plain=1#L83-L94).
-
-To free up disk space used by the cache, use the following command:
-
-```shell
-dagger core dagger-engine local-cache prune
-```
 
 ## Learn more
 
