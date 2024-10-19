@@ -184,6 +184,7 @@ module.exports = {
         "configuration/proxy",
         "configuration/cloud",
         "configuration/modules",
+        "configuration/cache",
       ],
     },
     {
