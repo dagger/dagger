@@ -59,7 +59,7 @@ To implement a pre-call filter in your Dagger Function, add an `ignore` paramete
 
 Here's an example of a Dagger Function that excludes everything in a given directory except Go source code files:
 
-```go file=./snippets/filesystem-filters/pre-call/go/main.go
+```go file=./snippets/fs-filters/pre-call/go/main.go
 ```
 
 </TabItem>
@@ -67,7 +67,7 @@ Here's an example of a Dagger Function that excludes everything in a given direc
 
 Here's an example of a Dagger Function that excludes everything in a given directory except Python source code files:
 
-```python file=./snippets/filesystem-filters/pre-call/python/main.py
+```python file=./snippets/fs-filters/pre-call/python/main.py
 ```
 
 </TabItem>
@@ -75,7 +75,7 @@ Here's an example of a Dagger Function that excludes everything in a given direc
 
 Here's an example of a Dagger Function that excludes everything in a given directory except TypeScript source code files:
 
-```typescript file=./snippets/filesystem-filters/pre-call/typescript/index.ts
+```typescript file=./snippets/fs-filters/pre-call/typescript/index.ts
 ```
 
 </TabItem>
@@ -153,7 +153,7 @@ A good example of this is a multi-stage build. Imagine a Dagger Function that re
 
 To implement a post-call filter in your Dagger Function, use the `DirectoryWithDirectoryOpts` or `ContainerWithDirectoryOpts` structs, which support `Include` and `Exclude` patterns for `Directory` objects. Here's an example:
 
-```go file=./snippets/filesystem-filters/post-call/go/main.go
+```go file=./snippets/fs-filters/post-call/go/main.go
 ```
 
 </TabItem>
@@ -161,7 +161,7 @@ To implement a post-call filter in your Dagger Function, use the `DirectoryWithD
 
 To implement a post-call filter in your Dagger Function, use the `include` and `exclude` parameters when working with `Directory` objects. Here's an example:
 
-```python file=./snippets/filesystem-filters/post-call/python/main.py
+```python file=./snippets/fs-filters/post-call/python/main.py
 ```
 
 </TabItem>
@@ -169,7 +169,7 @@ To implement a post-call filter in your Dagger Function, use the `include` and `
 
 To implement a post-call filter in your Dagger Function, use the `include` and `exclude` parameters when working with `Directory` objects. Here's an example:
 
-```typescript file=./snippets/filesystem-filters/post-call/typescript/index.ts
+```typescript file=./snippets/fs-filters/post-call/typescript/index.ts
 ```
 
 </TabItem>
