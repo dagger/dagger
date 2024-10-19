@@ -4,7 +4,7 @@ import {
   argument,
   func,
   Directory,
-  Container
+  Container,
 } from "@dagger.io/dagger"
 
 @object()

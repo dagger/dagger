@@ -15,7 +15,9 @@ class MyModule {
       .container()
       .from("alpine:latest")
       .withDirectory("/app", builder.directory("/src/hello"),
-        { include: ["hello.bin"] },
+        {
+          include: ["hello.bin"]
+        }
       )
       .withEntrypoint(["/app/hello.bin"])
   }
