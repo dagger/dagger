@@ -3,8 +3,6 @@ package main
 import (
 	"context"
 	"dagger/my-module/internal/dagger"
-
-	"dagger.io/dagger/dag"
 )
 
 type MyModule struct{}
@@ -16,7 +14,7 @@ func (m *MyModule) Foo(
 	builder := dag.
 		Container().
 		From("golang:latest").
-		WithDirectory("/src", source, dagger.ContainerWithDirectoryOpts{Exlcude: []string{"*.git", "internal"}}).
+		WithDirectory("/src", source, dagger.ContainerWithDirectoryOpts{Exclude: []string{"*.git", "internal"}}).
 		WithWorkdir("/src/hello").
 		WithExec([]string{"go", "build", "-o", "hello.bin", "."})
 	return dag.
