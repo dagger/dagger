@@ -14,11 +14,9 @@ class MyModule {
     return dag
       .container()
       .from("alpine:latest")
-      .withDirectory("/app", builder.directory("/src/hello"),
-        {
-          include: ["hello.bin"]
-        }
-      )
+      .withDirectory("/app", builder.directory("/src/hello"), {
+          include: ["hello.bin"],
+      })
       .withEntrypoint(["/app/hello.bin"])
   }
 }

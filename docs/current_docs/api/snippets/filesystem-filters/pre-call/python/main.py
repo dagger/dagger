@@ -9,9 +9,7 @@ class MyModule:
     @function
     async def foo(
         self,
-        source: Annotated[
-            dagger.Directory, Ignore(["*", "!**/*.py"])
-        ],
+        source: Annotated[dagger.Directory, Ignore(["*", "!**/*.py"])],
     ) -> dagger.Container:
         return await (
             dag.container().from_("alpine:latest").with_directory("/src", source).sync()
