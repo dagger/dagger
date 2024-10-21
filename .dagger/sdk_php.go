@@ -129,7 +129,7 @@ func (t PHPSDK) Publish(
 	githubToken *dagger.Secret,
 ) error {
 	version, isVersioned := strings.CutPrefix(tag, "sdk/php/")
-	if err := gitPublish(ctx, gitPublishOpts{
+	if err := gitPublish(ctx, t.Dagger.Git, gitPublishOpts{
 		sdk:         "php",
 		source:      gitRepoSource,
 		sourcePath:  "sdk/php/",

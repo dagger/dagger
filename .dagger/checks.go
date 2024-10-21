@@ -2,9 +2,9 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
+	"github.com/dagger/dagger/.dagger/internal/dagger"
 	"go.opentelemetry.io/otel/codes"
 	"golang.org/x/sync/errgroup"
 )
@@ -70,12 +70,22 @@ func (dev *DaggerDev) checksForSDK(name string, sdk sdkBase) []Check {
 		{
 			Name: name + "/test-publish",
 			Check: func(ctx context.Context) error {
-				// Inspect .git to avoid dependencing on $GITHUB_REF
-				ref, err := dev.Ref(ctx)
+				branches, err := dev.Git.Branches(ctx, dagger.VersionGitBranchesOpts{
+					Commit: "HEAD",
+				})
 				if err != nil {
-					return fmt.Errorf("failed to introspect git ref: %s", err.Error())
+					return err
 				}
-				return sdk.TestPublish(ctx, ref)
+				var name string
+				if len(branches) == 0 {
+					name = "HEAD"
+				} else {
+					name, err = branches[0].Branch(ctx)
+					if err != nil {
+						return err
+					}
+				}
+				return sdk.TestPublish(ctx, name)
 			},
 		},
 	}

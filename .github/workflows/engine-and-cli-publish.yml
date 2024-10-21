@@ -19,22 +19,17 @@ on:
 jobs:
   publish:
     if: ${{ github.repository == 'dagger/dagger' && github.event_name == 'push' }}
-    # Use our own Dagger runner when running in the dagger/dagger repo (including PRs)
     runs-on: dagger-g2-v0-13-5-16c
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.23"
-          cache-dependency-path: ".dagger/go.sum"
       - name: "Publish Engine"
         uses: ./.github/actions/call
         with:
           function: |-
             engine \
             publish \
+            --tag="${{ github.ref_name }}" --tag="${{ github.sha }}" \
             --image="$DAGGER_ENGINE_IMAGE" \
-            --tag="${{ github.ref_name}}" --tag="${{ github.sha }}" --maybe-tag-latest \
             --registry="$DAGGER_ENGINE_IMAGE_REGISTRY" \
             --registry-username="$DAGGER_ENGINE_IMAGE_USERNAME" \
             --registry-password=env:DAGGER_ENGINE_IMAGE_PASSWORD
@@ -49,7 +44,6 @@ jobs:
           function: |-
             cli \
             publish \
-            --git-dir=./.git \
             --github-org-name="$GH_ORG_NAME" \
             --github-token=env:GITHUB_TOKEN \
             --goreleaser-key=env:GORELEASER_KEY \

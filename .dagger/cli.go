@@ -41,8 +41,6 @@ const (
 func (cli *CLI) Publish(
 	ctx context.Context,
 
-	gitDir *dagger.Directory,
-
 	githubOrgName string,
 	githubToken *dagger.Secret,
 
@@ -61,8 +59,8 @@ func (cli *CLI) Publish(
 	}
 	ctr = ctr.
 		WithWorkdir("/app").
-		WithMountedDirectory("/app", cli.Dagger.Source()).
-		WithDirectory("/app/.git", gitDir)
+		WithDirectory("/app", cli.Dagger.Source()).
+		WithDirectory("/app", cli.Dagger.Git.Directory())
 
 	tag := cli.Dagger.Tag
 	_, err = ctr.WithExec([]string{"git", "show-ref", "--verify", "refs/tags/" + tag}).Sync(ctx)

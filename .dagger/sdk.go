@@ -115,7 +115,7 @@ type gitPublishOpts struct {
 	dryRun bool
 }
 
-func gitPublish(ctx context.Context, opts gitPublishOpts) error {
+func gitPublish(ctx context.Context, git *dagger.VersionGit, opts gitPublishOpts) error {
 	base := opts.sourceEnv
 	if base == nil {
 		base = dag.
@@ -126,8 +126,7 @@ func gitPublish(ctx context.Context, opts gitPublishOpts) error {
 			Container()
 	}
 
-	// FIXME: move this into std modules
-	git := base.
+	base = base.
 		WithExec([]string{"git", "config", "--global", "user.name", opts.username}).
 		WithExec([]string{"git", "config", "--global", "user.email", opts.email})
 	if !opts.dryRun {
@@ -136,17 +135,17 @@ func gitPublish(ctx context.Context, opts gitPublishOpts) error {
 			return err
 		}
 		encodedPAT := base64.URLEncoding.EncodeToString([]byte("pat:" + githubTokenRaw))
-		git = git.
+		base = base.
 			WithEnvVariable("GIT_CONFIG_COUNT", "1").
 			WithEnvVariable("GIT_CONFIG_KEY_0", "http.https://github.com/.extraheader").
 			WithSecretVariable("GIT_CONFIG_VALUE_0", dag.SetSecret("GITHUB_HEADER", fmt.Sprintf("AUTHORIZATION: Basic %s", encodedPAT)))
 	}
 
-	result := git.
+	result := base.
 		WithEnvVariable("CACHEBUSTER", identity.NewID()).
 		WithWorkdir("/src/dagger").
-		WithExec([]string{"git", "clone", opts.source, "."}).
-		WithExec([]string{"git", "fetch", "origin", "-v", "--update-head-ok", fmt.Sprintf("refs/*%[1]s:refs/*%[1]s", strings.TrimPrefix(opts.sourceTag, "refs/"))}).
+		WithDirectory(".", git.Directory()).
+		WithExec([]string{"git", "restore", "."}). // clean up the dirty state
 		WithEnvVariable("FILTER_BRANCH_SQUELCH_WARNING", "1").
 		WithExec([]string{
 			"git", "filter-branch", "-f", "--prune-empty",
@@ -171,7 +170,7 @@ func gitPublish(ctx context.Context, opts gitPublishOpts) error {
 			return err
 		}
 
-		destCommit, err := git.
+		destCommit, err := base.
 			WithEnvVariable("CACHEBUSTER", identity.NewID()).
 			WithWorkdir("/src/dagger").
 			WithExec([]string{"git", "clone", opts.dest, "."}).
