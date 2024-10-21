@@ -841,6 +841,9 @@ func (s *moduleSchema) updateDeps(
 	modCfg *modules.ModuleConfig,
 	src dagql.Instance[*core.ModuleSource],
 ) error {
+	ctx, span := core.Tracer(ctx).Start(ctx, "initialize dependencies")
+	defer span.End()
+
 	var deps []dagql.Instance[*core.ModuleDependency]
 	err := s.dag.Select(ctx, src, &deps, dagql.Selector{Field: "dependencies"})
 	if err != nil {
@@ -959,6 +962,9 @@ func (s *moduleSchema) updateCodegenAndRuntime(
 	mod *core.Module,
 	src dagql.Instance[*core.ModuleSource],
 ) error {
+	ctx, span := core.Tracer(ctx).Start(ctx, "build module")
+	defer span.End()
+
 	if mod.NameField == "" || mod.SDKConfig == "" {
 		// can't codegen yet
 		return nil
