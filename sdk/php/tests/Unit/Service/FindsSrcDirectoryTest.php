@@ -2,12 +2,9 @@
 
 namespace Dagger\Tests\Unit\Service;
 
-use Dagger\Client;
-use Dagger\Service\DecodesValue;
 use Dagger\Service\FindsSrcDirectory;
 use Generator;
 use org\bovigo\vfs\vfsStream;
-use org\bovigo\vfs\vfsStreamDirectory;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;

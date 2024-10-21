@@ -8,7 +8,6 @@ use Dagger\Attribute;
 use Dagger\Client\IdAble;
 use Dagger\Json;
 use ReflectionParameter;
-use Roave\BetterReflection\Reflection\ReflectionParameter as BetterReflectionParameter;
 use RuntimeException;
 
 final readonly class Argument
@@ -16,7 +15,7 @@ final readonly class Argument
     public function __construct(
         public string $name,
         public string $description,
-        public ListOfType|Type $type,
+        public TypeHint $type,
         public ?Json $default = null,
         public ?string $defaultPath = null,
         public ?array $ignore = null,
@@ -78,13 +77,7 @@ final readonly class Argument
     private static function getDefault(ReflectionParameter $parameter): ?Json
     {
         if ($parameter->isDefaultValueAvailable()) {
-            $betterReflection = BetterReflectionParameter
-                ::createFromClassNameAndMethod(
-                    $parameter->getDeclaringClass()->getName(),
-                    $parameter->getDeclaringFunction()->getName(),
-                    $parameter->getName(),
-                );
-            $default = $betterReflection->getDefaultValue();
+            $default = $parameter->getDefaultValue();
             return new Json(json_encode(
                 $default instanceof IdAble ? (string) $default->id() : $default
             ));

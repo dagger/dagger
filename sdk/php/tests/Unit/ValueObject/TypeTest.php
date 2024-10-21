@@ -8,6 +8,7 @@ use Closure;
 use Countable;
 use Dagger;
 use Dagger\ValueObject\Type;
+use Dagger\Tests\Unit\Fixture;
 use DateTimeImmutable;
 use Generator;
 use Iterator;
@@ -34,7 +35,7 @@ class TypeTest extends TestCase
     }
 
     #[Test]
-    public function itShouldNotBeConstructedForArrays(): void
+    public function itCannotSupportArray(): void
     {
         self::expectException(\DomainException::class);
 
@@ -53,7 +54,7 @@ class TypeTest extends TestCase
 
     #[Test]
     #[DataProvider('provideReflectionNamedTypes')]
-    public function ItBuildsFromReflectionNamedType(
+    public function itBuildsFromReflectionNamedType(
         Type $expected,
         ReflectionNamedType $reflectionType,
     ): void {
@@ -63,13 +64,15 @@ class TypeTest extends TestCase
     #[Test]
     #[DataProvider('provideIdAbleTypes')]
     #[DataProvider('provideNonIdAbleTypes')]
-    public function itSaysIfItIsIdAble(bool $expected, string $type): void {
+    public function itSaysIfItIsIdAble(bool $expected, string $type): void
+    {
         self::assertSame($expected, (new Type($type))->isIdable());
     }
 
     #[Test]
     #[DataProvider('provideTypeDefKinds')]
-    public function itHasTypeDefKind(Dagger\TypeDefKind $expected, string $type): void {
+    public function itHasTypeDefKind(Dagger\TypeDefKind $expected, string $type): void
+    {
         self::assertEquals($expected, (new Type($type))->typeDefKind);
     }
 
@@ -91,7 +94,7 @@ class TypeTest extends TestCase
         ];
     }
 
-    /** @return Generator<array{ 0: Type, 1:ReflectionNamedType}> */
+    /** @return Generator<array{ 0:Type, 1:ReflectionNamedType }> */
     public static function provideReflectionNamedTypes(): Generator
     {
         $reflectReturnType = fn(Closure $fn) => (
@@ -160,17 +163,39 @@ class TypeTest extends TestCase
             new Type(Dagger\File::class, true),
             $reflectReturnType(fn(): ?Dagger\File => null),
         ];
+
+        yield Dagger\NetworkProtocol::class => [
+            new Type(Dagger\NetworkProtocol::class, false),
+            $reflectReturnType(fn(): Dagger\NetworkProtocol => self
+                ::createStub(Dagger\NetworkProtocol::class)),
+        ];
+
+        yield sprintf('nullable %s', Dagger\NetworkProtocol::class) => [
+            new Type(Dagger\NetworkProtocol::class, true),
+            $reflectReturnType(fn(): ?Dagger\NetworkProtocol => null),
+        ];
+
+        yield Fixture\Enum\StringBackedDummy::class => [
+            new Type(Fixture\Enum\StringBackedDummy::class, false),
+            $reflectReturnType(fn(): Fixture\Enum\StringBackedDummy => self
+                ::createStub(Fixture\Enum\StringBackedDummy::class)),
+        ];
+
+        yield sprintf('nullable %s', Fixture\Enum\StringBackedDummy::class) => [
+            new Type(Fixture\Enum\StringBackedDummy::class, true),
+            $reflectReturnType(fn(): ?Fixture\Enum\StringBackedDummy => null),
+        ];
     }
 
-    /** @return Generator<array{ 0: true, 1:class-string}> */
+    /** @return Generator<array{ 0:true, 1:class-string }> */
     public static function provideIdAbleTypes(): Generator
     {
-        foreach (self::provideIdAbleClasses() as $idAble) {
+        foreach (self::provideIdAbles() as $idAble) {
             yield $idAble => [true, $idAble];
         }
     }
 
-    /** @return Generator<array{ 0: false, 1:string}> */
+    /** @return Generator<array{ 0:false, 1:string }> */
     public static function provideNonIdAbleTypes(): Generator
     {
         $nonIdAbles = [
@@ -187,7 +212,7 @@ class TypeTest extends TestCase
         }
     }
 
-    /** @return Generator<array{ 0: Dagger\TypeDefKind, 1:string}> */
+    /** @return Generator<array{ 0:Dagger\TypeDefKind, 1:string }> */
     public static function provideTypeDefKinds(): Generator
     {
         yield 'bool' => [Dagger\TypeDefKind::BOOLEAN_KIND, 'bool'];
@@ -200,23 +225,16 @@ class TypeTest extends TestCase
             DateTimeImmutable::class
         ];
 
-        yield 'abstract scalar' => [
-            Dagger\TypeDefKind::SCALAR_KIND,
-            Dagger\Platform::class,
-        ];
-
-        foreach (self::provideIdAbleClasses() as $idAbleClass) {
-            yield $idAbleClass => [
-                Dagger\TypeDefKind::OBJECT_KIND,
-                $idAbleClass,
-            ];
+        foreach (self::provideIdAbles() as $idable) {
+            yield $idable => [Dagger\TypeDefKind::OBJECT_KIND, $idable];
         }
 
         foreach (self::provideAbstractScalars() as $scalar) {
-            yield $scalar => [
-                Dagger\TypeDefKind::SCALAR_KIND,
-                $scalar,
-            ];
+            yield $scalar => [Dagger\TypeDefKind::SCALAR_KIND, $scalar];
+        }
+
+        foreach (self::provideEnums() as $enum) {
+            yield $enum => [Dagger\TypeDefKind::ENUM_KIND, $enum];
         }
     }
 
@@ -259,12 +277,26 @@ class TypeTest extends TestCase
         ];
     }
 
-        /** @return class-string[] */
+    /** @return class-string[] */
     private static function provideAbstractScalars(): array
     {
         return [
             Dagger\Platform::class,
             Dagger\Json::class,
+        ];
+    }
+
+    /** @return class-string[] */
+    private static function provideEnums(): array
+    {
+        return [
+            Dagger\CacheSharingMode::class,
+            Dagger\ImageLayerCompression::class,
+            Dagger\ImageMediaTypes::class,
+            Dagger\ModuleSourceKind::class,
+            Dagger\NetworkProtocol::class,
+            Dagger\TypeDefKind::class,
+            Fixture\Enum\StringBackedDummy::class,
         ];
     }
 }
