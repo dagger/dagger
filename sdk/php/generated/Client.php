@@ -90,15 +90,6 @@ class Client extends Client\AbstractClient
     }
 
     /**
-     * The Dagger engine container configuration and state
-     */
-    public function daggerEngine(): DaggerEngine
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('daggerEngine');
-        return new \Dagger\DaggerEngine($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * The default platform of the engine.
      */
     public function defaultPlatform(): Platform
@@ -114,6 +105,15 @@ class Client extends Client\AbstractClient
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('directory');
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * The Dagger engine container configuration and state
+     */
+    public function engine(): Engine
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('engine');
+        return new \Dagger\Engine($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
@@ -217,48 +217,6 @@ class Client extends Client\AbstractClient
     }
 
     /**
-     * Load a DaggerEngineCacheEntry from its ID.
-     */
-    public function loadDaggerEngineCacheEntryFromID(
-        DaggerEngineCacheEntryId|DaggerEngineCacheEntry $id,
-    ): DaggerEngineCacheEntry {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadDaggerEngineCacheEntryFromID');
-        $innerQueryBuilder->setArgument('id', $id);
-        return new \Dagger\DaggerEngineCacheEntry($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Load a DaggerEngineCacheEntrySet from its ID.
-     */
-    public function loadDaggerEngineCacheEntrySetFromID(
-        DaggerEngineCacheEntrySetId|DaggerEngineCacheEntrySet $id,
-    ): DaggerEngineCacheEntrySet {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadDaggerEngineCacheEntrySetFromID');
-        $innerQueryBuilder->setArgument('id', $id);
-        return new \Dagger\DaggerEngineCacheEntrySet($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Load a DaggerEngineCache from its ID.
-     */
-    public function loadDaggerEngineCacheFromID(DaggerEngineCacheId|DaggerEngineCache $id): DaggerEngineCache
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadDaggerEngineCacheFromID');
-        $innerQueryBuilder->setArgument('id', $id);
-        return new \Dagger\DaggerEngineCache($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Load a DaggerEngine from its ID.
-     */
-    public function loadDaggerEngineFromID(DaggerEngineId|DaggerEngine $id): DaggerEngine
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadDaggerEngineFromID');
-        $innerQueryBuilder->setArgument('id', $id);
-        return new \Dagger\DaggerEngine($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Load a Directory from its ID.
      */
     public function loadDirectoryFromID(DirectoryId|Directory $id): Directory
@@ -266,6 +224,46 @@ class Client extends Client\AbstractClient
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadDirectoryFromID');
         $innerQueryBuilder->setArgument('id', $id);
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a EngineCacheEntry from its ID.
+     */
+    public function loadEngineCacheEntryFromID(EngineCacheEntryId|EngineCacheEntry $id): EngineCacheEntry
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadEngineCacheEntryFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\EngineCacheEntry($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a EngineCacheEntrySet from its ID.
+     */
+    public function loadEngineCacheEntrySetFromID(EngineCacheEntrySetId|EngineCacheEntrySet $id): EngineCacheEntrySet
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadEngineCacheEntrySetFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\EngineCacheEntrySet($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a EngineCache from its ID.
+     */
+    public function loadEngineCacheFromID(EngineCacheId|EngineCache $id): EngineCache
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadEngineCacheFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\EngineCache($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Load a Engine from its ID.
+     */
+    public function loadEngineFromID(EngineId|Engine $id): Engine
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('loadEngineFromID');
+        $innerQueryBuilder->setArgument('id', $id);
+        return new \Dagger\Engine($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
     /**
