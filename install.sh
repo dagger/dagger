@@ -235,6 +235,26 @@ End of functions from https://github.com/client9/shlib
 ------------------------------------------------------------------------
 EOF
 
+help() {
+  cat <<EOF
+Usage: $0
+
+Install:
+  $0
+
+Install to <path/to/dir>:
+  BIN_DIR=<path/to/dir> $0
+
+Install specified version <vX.Y.Z>:
+  DAGGER_VERSION=<vX.Y.Z> $0
+
+Install latest nightly build:
+  DAGGER_COMMIT=head $0
+Install specified nightly build <commit sha>:
+  DAGGER_COMMIT=<commit sha> $0
+EOF
+}
+
 uname_os() {
   os=$(uname -s | tr '[:upper:]' '[:lower:]')
   case "$os" in
@@ -374,4 +394,9 @@ execute() {
   rm -rf "${tmpdir}"
 }
 
-execute
+if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+  help
+else
+  execute
+fi
+
