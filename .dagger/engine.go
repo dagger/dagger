@@ -272,12 +272,6 @@ func (e *Engine) Publish(
 
 	// Image target to push to
 	image string,
-	// List of tags to use
-	tag []string,
-
-	// add `latest` to the list of tags if tags include a semver version
-	// +optional
-	maybeTagLatest bool,
 
 	// +optional
 	dryRun bool,
@@ -289,6 +283,28 @@ func (e *Engine) Publish(
 	// +optional
 	registryPassword *dagger.Secret,
 ) error {
+	var tags []string
+
+	commit, err := e.Dagger.Git.Head().Commit(ctx)
+	if err != nil {
+		return err
+	}
+	versionTag, err := e.Dagger.Git.
+		VersionTagLatest(dagger.VersionGitVersionTagLatestOpts{
+			Commit: commit,
+		}).
+		Commit(ctx)
+	if err != nil {
+		return err
+	}
+	tags = append(tags, commit)
+	if versionTag != "" {
+		tags = append(tags, versionTag)
+	}
+	if semver.IsValid(versionTag) {
+		tags = append(tags, "latest")
+	}
+
 	// collect all the targets that we are trying to build together, along with
 	// where they need to go to
 	targetResults := make([]struct {
@@ -296,19 +312,10 @@ func (e *Engine) Publish(
 		Tags      []string
 	}, len(targets))
 
-	if maybeTagLatest {
-		for _, t := range tag {
-			if strings.HasPrefix(t, "v") && semver.IsValid(t) {
-				tag = append(tag, "latest")
-				break
-			}
-		}
-	}
-
 	eg, egCtx := errgroup.WithContext(ctx)
 	for i, target := range targets {
 		// determine the target tags
-		for _, tag := range tag {
+		for _, tag := range tags {
 			targetResults[i].Tags = append(targetResults[i].Tags, fmt.Sprintf(target.Tag, tag))
 		}
 

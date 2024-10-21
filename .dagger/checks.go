@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"go.opentelemetry.io/otel/codes"
@@ -70,12 +69,7 @@ func (dev *DaggerDev) checksForSDK(name string, sdk sdkBase) []Check {
 		{
 			Name: name + "/test-publish",
 			Check: func(ctx context.Context) error {
-				// Inspect .git to avoid dependencing on $GITHUB_REF
-				ref, err := dev.Ref(ctx)
-				if err != nil {
-					return fmt.Errorf("failed to introspect git ref: %s", err.Error())
-				}
-				return sdk.TestPublish(ctx, ref)
+				return sdk.TestPublish(ctx, dev.GitRef)
 			},
 		},
 	}

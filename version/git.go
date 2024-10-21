@@ -60,6 +60,7 @@ func git(ctx context.Context, gitDir *dagger.Directory, dir *dagger.Directory) (
 	}
 
 	return &Git{
+		Directory: gitDir,
 		Container: ctr,
 		Valid:     valid,
 	}, nil
@@ -67,8 +68,12 @@ func git(ctx context.Context, gitDir *dagger.Directory, dir *dagger.Directory) (
 
 // Git is an opinionated helper for performing various commands on our dagger repo.
 type Git struct {
+	Directory *dagger.Directory
+
+	// +private
 	Container *dagger.Container
-	Valid     bool
+	// +private
+	Valid bool
 }
 
 type VersionTag struct {
@@ -88,9 +93,12 @@ type VersionTag struct {
 func (git *Git) VersionTagLatest(
 	ctx context.Context,
 
+	// Optional component tag prefix
 	component string, // +optional
+	// Optional commit sha to get tags for
+	commit string, // +optional
 ) (*VersionTag, error) {
-	versions, err := git.VersionTags(ctx, component)
+	versions, err := git.VersionTags(ctx, component, commit)
 	if err != nil {
 		return nil, err
 	}
@@ -105,7 +113,11 @@ func (git *Git) VersionTagLatest(
 // versions are sorted in ascending order
 func (git *Git) VersionTags(
 	ctx context.Context,
+
+	// Optional component tag prefix
 	component string, // +optional
+	// Optional commit sha to get tags for
+	commit string, // +optional
 ) ([]VersionTag, error) {
 	if !git.Valid {
 		return nil, nil
@@ -141,9 +153,12 @@ func (git *Git) VersionTags(
 		if len(parts) != 3 {
 			continue
 		}
-		tag, commit, date := parts[0], parts[1], parts[2]
+		tag, tagCommit, date := parts[0], parts[1], parts[2]
 		version := strings.TrimPrefix(tag, component+"/")
 		if !semver.IsValid(version) {
+			continue
+		}
+		if commit != "" && tagCommit != commit {
 			continue
 		}
 
@@ -151,7 +166,7 @@ func (git *Git) VersionTags(
 			Component: component,
 			Version:   version,
 			Date:      date,
-			Commit:    commit,
+			Commit:    tagCommit,
 		}
 		versionTags = append(versionTags, versionTag)
 	}
