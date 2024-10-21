@@ -71,6 +71,7 @@ func init() {
 	funcListCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	listenCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	queryCmd.PersistentFlags().AddFlagSet(moduleFlags)
+	shellCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	configCmd.PersistentFlags().AddFlagSet(moduleFlags)
 
 	moduleInitCmd.Flags().StringVar(&sdk, "sdk", "", "Optionally install a Dagger SDK")
@@ -912,6 +913,24 @@ func (m *moduleDef) GetObject(name string) *modObject {
 	return nil
 }
 
+func (m *moduleDef) GetObjectFunction(objectName, functionName string) (*modFunction, error) {
+	fp := m.GetFunctionProvider(objectName)
+	if fp == nil {
+		return nil, fmt.Errorf("module %q does not have a %q object or interface", m.Name, objectName)
+	}
+	fn, err := GetFunction(fp, functionName)
+	if err != nil {
+		return nil, err
+	}
+	// We need to load references to types with their type definitions because
+	// the introspection doesn't recursively add them, just their names.
+	m.LoadTypeDef(fn.ReturnType)
+	for _, arg := range fn.Args {
+		m.LoadTypeDef(arg.TypeDef)
+	}
+	return fn, nil
+}
+
 // GetInterface retrieves a saved interface type definition from the module.
 func (m *moduleDef) GetInterface(name string) *modInterface {
 	for _, iface := range m.AsInterfaces() {
@@ -1085,16 +1104,16 @@ func GetFunction(o functionProvider, name string) (*modFunction, error) {
 }
 
 func (t *modTypeDef) Name() string {
-	if t.AsObject != nil {
-		return t.AsObject.Name
-	}
-	if t.AsInterface != nil {
-		return t.AsInterface.Name
+	if fp := t.AsFunctionProvider(); fp != nil {
+		return fp.ProviderName()
 	}
 	return ""
 }
 
 func (t *modTypeDef) AsFunctionProvider() functionProvider {
+	if t.AsList != nil {
+		t = t.AsList.ElementTypeDef
+	}
 	if t.AsObject != nil {
 		return t.AsObject
 	}
@@ -1250,6 +1269,16 @@ func (f *modFunction) HasRequiredArgs() bool {
 	return false
 }
 
+func (f *modFunction) RequiredArgs() []*modFunctionArg {
+	args := make([]*modFunctionArg, 0, len(f.Args))
+	for _, arg := range f.Args {
+		if arg.IsRequired() {
+			args = append(args, arg)
+		}
+	}
+	return args
+}
+
 func (f *modFunction) SupportedArgs() []*modFunctionArg {
 	args := make([]*modFunctionArg, 0, len(f.Args))
 	for _, arg := range f.Args {
@@ -1270,15 +1299,58 @@ func (f *modFunction) IsUnsupported() bool {
 }
 
 func (f *modFunction) ReturnsCoreObject() bool {
-	t := f.ReturnType
-	if t.AsList != nil {
-		t = t.AsList.ElementTypeDef
-	}
-	fp := t.AsFunctionProvider()
-	if fp != nil {
+	if fp := f.ReturnType.AsFunctionProvider(); fp != nil {
 		return fp.IsCore()
 	}
 	return false
+}
+
+// WalkValues calls a function for each argument with a supported flag, and its value
+// after parsing.
+func (f *modFunction) WalkValues(ctx context.Context, flags *pflag.FlagSet, md *moduleDef, dag *dagger.Client, fn func(*modFunctionArg, any)) error {
+	missingFlags := []string{}
+
+	for _, a := range f.SupportedArgs() {
+		var v any
+
+		flag := flags.Lookup(a.FlagName())
+		if flag == nil {
+			return fmt.Errorf("no flag for %q", a.FlagName())
+		}
+
+		if !flag.Changed {
+			if a.IsRequired() {
+				missingFlags = append(missingFlags, a.FlagName())
+			}
+
+			// don't send optional arguments that weren't set.
+			continue
+		}
+
+		v = flag.Value
+
+		switch val := v.(type) {
+		case DaggerValue:
+			obj, err := val.Get(ctx, dag, md.Source, a)
+			if err != nil {
+				return fmt.Errorf("failed to get value for argument %q: %w", a.FlagName(), err)
+			}
+			if obj == nil {
+				return fmt.Errorf("no value for argument: %s", a.FlagName())
+			}
+			v = obj
+		case pflag.SliceValue:
+			v = val.GetSlice()
+		}
+
+		fn(a, v)
+	}
+
+	if len(missingFlags) > 0 {
+		return fmt.Errorf(`required flag(s) "%s" not set`, strings.Join(missingFlags, `", "`))
+	}
+
+	return nil
 }
 
 // modFunctionArg is a representation of dagger.FunctionArg.
