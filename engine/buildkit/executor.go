@@ -93,6 +93,8 @@ type ExecutionMetadata struct {
 
 	SpanContext propagation.MapCarrier
 
+	CacheVolumes []string
+
 	// Path to the SSH auth socket. Used for Dagger-in-Dagger support.
 	SSHAuthSocketPath string
 
@@ -158,6 +160,7 @@ func (w *Worker) Run(
 		w.injectDumbInit,
 		w.generateBaseSpec,
 		w.filterEnvs,
+		w.setupCacheVolumes,
 		w.setupRootfs,
 		w.setUserGroup,
 		w.setExitCodePath,
