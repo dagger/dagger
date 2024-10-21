@@ -204,6 +204,7 @@ func (s *moduleSchema) newModuleSDK(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get cache for sdk module %s: %w", sdkModMeta.Self.Name(), err)
 	}
+	dag.Around(core.AroundFunc)
 
 	if err := sdkModMeta.Self.Install(ctx, dag); err != nil {
 		return nil, fmt.Errorf("failed to install sdk module %s: %w", sdkModMeta.Self.Name(), err)
