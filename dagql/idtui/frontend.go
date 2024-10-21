@@ -396,10 +396,25 @@ func (r renderer) renderMetrics(out *termenv.Output, span *dagui.Span) {
 		lastPoint := dataPoints[len(dataPoints)-1]
 		if lastPoint.Value != 0 {
 			fmt.Fprint(out, " | ")
-			displayMetric := out.String(fmt.Sprintf("IO Pressure Time: %dµs", lastPoint.Value))
+			displayMetric := out.String(fmt.Sprintf("IO Pressure: %dµs", lastPoint.Value))
 			displayMetric = displayMetric.Foreground(termenv.ANSIGreen)
 			fmt.Fprint(out, displayMetric)
 		}
+	}
+
+	if dataPoints := span.MetricsByName[telemetry.CPUStatPressureSomeTotal]; len(dataPoints) > 0 {
+		lastPoint := dataPoints[len(dataPoints)-1]
+		fmt.Fprint(out, " | ")
+		displayMetric := out.String(fmt.Sprintf("CPU Pressure (some): %dµs", lastPoint.Value))
+		displayMetric = displayMetric.Foreground(termenv.ANSIGreen)
+		fmt.Fprint(out, displayMetric)
+	}
+	if dataPoints := span.MetricsByName[telemetry.CPUStatPressureFullTotal]; len(dataPoints) > 0 {
+		lastPoint := dataPoints[len(dataPoints)-1]
+		fmt.Fprint(out, " | ")
+		displayMetric := out.String(fmt.Sprintf("CPU Pressure (full): %dµs", lastPoint.Value))
+		displayMetric = displayMetric.Foreground(termenv.ANSIGreen)
+		fmt.Fprint(out, displayMetric)
 	}
 }
 

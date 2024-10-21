@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
 
 	"dagger.io/dagger/telemetry"
 	"go.opentelemetry.io/otel/attribute"
@@ -17,9 +15,7 @@ import (
 const (
 	ioStatFile     = "io.stat"
 	ioPressureFile = "io.pressure"
-)
 
-const (
 	ioReadBytes  = "rbytes"
 	ioWriteBytes = "wbytes"
 )
@@ -71,25 +67,13 @@ func (s *ioStatSampler) sample(ctx context.Context) error {
 		return fmt.Errorf("failed to read %s: %w", s.ioStatFilePath, err)
 	}
 
-	// Format here: https://docs.kernel.org/admin-guide/cgroup-v2.html#io-interface-files
-	lines := strings.Split(string(fileBytes), "\n")
-	for _, line := range lines {
-		parts := strings.Fields(line)
-		if len(parts) < 2 {
-			continue
-		}
-
-		for _, part := range parts[1:] {
-			key, value := parseKeyValue(part)
-			if key == "" {
-				continue
-			}
-
-			switch key {
+	for _, kvs := range nestedKeyValuesInt64(fileBytes) {
+		for k, v := range kvs {
+			switch k {
 			case ioReadBytes:
-				sample.readBytes.add(value)
+				sample.readBytes.add(v)
 			case ioWriteBytes:
-				sample.writeBytes.add(value)
+				sample.writeBytes.add(v)
 			}
 		}
 	}
@@ -139,37 +123,9 @@ func (s *ioPressureSampler) sample(ctx context.Context) error {
 		return fmt.Errorf("failed to read %s: %w", s.ioPressureFilePath, err)
 	}
 
-	// Format here: https://docs.kernel.org/accounting/psi.html#psi
-	lines := strings.Split(string(fileBytes), "\n")
-	for _, line := range lines {
-		fields := strings.Fields(line)
-		if len(fields) != 5 {
-			continue
-		}
-		pressureKind := fields[0]
-		if pressureKind != "some" {
-			continue
-		}
-		k, v := parseKeyValue(fields[4])
-		if k != "total" {
-			continue
-		}
-		sample.someTotal.add(v)
-	}
-
+	p := parsePressure(fileBytes)
+	sample.someTotal.add(p.someTotal)
 	sample.someTotal.record(ctx)
 
 	return nil
-}
-
-func parseKeyValue(kv string) (string, int64) {
-	key, valueStr, ok := strings.Cut(kv, "=")
-	if !ok {
-		return "", 0
-	}
-	value, err := strconv.ParseInt(valueStr, 10, 64)
-	if err != nil {
-		return "", 0
-	}
-	return key, value
 }
