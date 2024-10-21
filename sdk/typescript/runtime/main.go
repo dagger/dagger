@@ -365,6 +365,7 @@ func (t *TypescriptSdk) generateClient(ctr *dagger.Container, introspectionJSON 
 		// Execute the code generator using the given introspection file.
 		WithExec([]string{
 			codegenBinPath,
+			"generate",
 			"--lang", "typescript",
 			"--output", ModSourceDirPath,
 			"--module-name", t.moduleConfig.name,
