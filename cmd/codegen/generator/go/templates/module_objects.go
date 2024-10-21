@@ -80,6 +80,8 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 		spec.doc = doc.Text()
 	}
 
+	spec.sourceMap = ps.sourceMap(astSpec)
+
 	astTypeSpec, ok := astSpec.(*ast.TypeSpec)
 	if !ok {
 		return nil, fmt.Errorf("expected type spec, got %T", astSpec)
@@ -136,6 +138,8 @@ func (ps *parseState) parseGoStruct(t *types.Struct, named *types.Named) (*parse
 
 		fieldSpec.doc = comment
 
+		fieldSpec.sourceMap = ps.sourceMap(astFields[i])
+
 		spec.fields = append(spec.fields, fieldSpec)
 	}
 
@@ -153,6 +157,7 @@ type parsedObjectType struct {
 	name       string
 	moduleName string
 	doc        string
+	sourceMap  *sourceMap
 
 	fields      []*fieldSpec
 	methods     []*funcTypeSpec
@@ -170,6 +175,9 @@ func (spec *parsedObjectType) TypeDefCode() (*Statement, error) {
 	withObjectOptsCode := []Code{}
 	if spec.doc != "" {
 		withObjectOptsCode = append(withObjectOptsCode, Id("Description").Op(":").Lit(strings.TrimSpace(spec.doc)))
+	}
+	if spec.sourceMap != nil {
+		withObjectOptsCode = append(withObjectOptsCode, Id("SourceMap").Op(":").Add(spec.sourceMap.TypeDefCode()))
 	}
 	if len(withObjectOptsCode) > 0 {
 		withObjectArgsCode = append(withObjectArgsCode, Id("dagger").Dot("TypeDefWithObjectOpts").Values(withObjectOptsCode...))
@@ -198,11 +206,17 @@ func (spec *parsedObjectType) TypeDefCode() (*Statement, error) {
 			Lit(field.name),
 			fieldTypeDefCode,
 		}
+		var withFieldOpts []Code
 		if field.doc != "" {
+			withFieldOpts = append(withFieldOpts, Id("Description").Op(":").Lit(field.doc))
+		}
+		if field.sourceMap != nil {
+			withFieldOpts = append(withFieldOpts, Id("SourceMap").Op(":").Add(field.sourceMap.TypeDefCode()))
+		}
+		if len(withFieldOpts) > 0 {
 			withFieldArgsCode = append(withFieldArgsCode,
-				Id("dagger").Dot("TypeDefWithFieldOpts").Values(
-					Id("Description").Op(":").Lit(field.doc),
-				))
+				Id("dagger").Dot("TypeDefWithFieldOpts").Values(withFieldOpts...),
+			)
 		}
 		typeDefCode = dotLine(typeDefCode, "WithField").Call(withFieldArgsCode...)
 	}
@@ -495,9 +509,10 @@ func (spec *parsedObjectType) setFieldsToMarshalStructCode(field *fieldSpec) *St
 }
 
 type fieldSpec struct {
-	name     string
-	doc      string
-	typeSpec ParsedType
+	name      string
+	doc       string
+	sourceMap *sourceMap
+	typeSpec  ParsedType
 
 	// isPrivate is true if the field is marked with the +private pragma
 	isPrivate bool

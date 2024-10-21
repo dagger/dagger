@@ -43,6 +43,15 @@ class FieldTypeDef extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * The location of this field declaration.
+     */
+    public function sourceMap(): SourceMap
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('sourceMap');
+        return new \Dagger\SourceMap($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * The type of the field.
      */
     public function typeDef(): TypeDef

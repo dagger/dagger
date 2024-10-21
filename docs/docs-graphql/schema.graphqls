@@ -16,6 +16,9 @@ changing the result. Meta fields are dropped from cache keys.
 """
 directive @meta on FIELD_DEFINITION
 
+"""Indicates the source information for where a given field is defined."""
+directive @sourceMap(module: String!, filename: String!, line: Int!, column: Int!) on SCALAR | OBJECT | FIELD_DEFINITION | ARGUMENT_DEFINITION | UNION | ENUM | ENUM_VALUE | INPUT_OBJECT
+
 """Key value object that represents a build argument."""
 input BuildArg {
   """The build argument name."""
@@ -1437,6 +1440,9 @@ type EnumTypeDef {
   """The name of the enum."""
   name: String!
 
+  """The location of this enum declaration."""
+  sourceMap: SourceMap!
+
   """
   If this EnumTypeDef is associated with a Module, the name of the module. Unset otherwise.
   """
@@ -1461,6 +1467,9 @@ type EnumValueTypeDef {
 
   """The name of the enum value."""
   name: String!
+
+  """The location of this enum value declaration."""
+  sourceMap: SourceMap!
 }
 
 """
@@ -1500,6 +1509,9 @@ type FieldTypeDef {
 
   """The name of the field in lowerCamelCase format."""
   name: String!
+
+  """The location of this field declaration."""
+  sourceMap: SourceMap!
 
   """The type of the field."""
   typeDef: TypeDef!
@@ -1594,6 +1606,9 @@ type Function {
   """The type returned by the function."""
   returnType: TypeDef!
 
+  """The location of this function declaration."""
+  sourceMap: SourceMap!
+
   """Returns the function with the provided argument"""
   withArg(
     """
@@ -1614,6 +1629,7 @@ type Function {
 
     """The name of the argument"""
     name: String!
+    sourceMap: SourceMapID
 
     """The type of the argument"""
     typeDef: TypeDefID!
@@ -1623,6 +1639,12 @@ type Function {
   withDescription(
     """The doc string to set."""
     description: String!
+  ): Function!
+
+  """Returns the function with the given source map."""
+  withSourceMap(
+    """The source map for the function definition."""
+    sourceMap: SourceMapID!
   ): Function!
 }
 
@@ -1658,6 +1680,9 @@ type FunctionArg {
 
   """The name of the argument in lowerCamelCase format."""
   name: String!
+
+  """The location of this arg declaration."""
+  sourceMap: SourceMap!
 
   """The type of the argument."""
   typeDef: TypeDef!
@@ -2020,6 +2045,9 @@ type InterfaceTypeDef {
 
   """The name of the interface."""
   name: String!
+
+  """The location of this interface declaration."""
+  sourceMap: SourceMap!
 
   """
   If this InterfaceTypeDef is associated with a Module, the name of the module. Unset otherwise.
@@ -2428,6 +2456,9 @@ type ObjectTypeDef {
   """The name of the object."""
   name: String!
 
+  """The location of this object declaration."""
+  sourceMap: SourceMap!
+
   """
   If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise.
   """
@@ -2719,6 +2750,9 @@ type Query {
   """Load a Socket from its ID."""
   loadSocketFromID(id: SocketID!): Socket!
 
+  """Load a SourceMap from its ID."""
+  loadSourceMapFromID(id: SourceMapID!): SourceMap!
+
   """Load a Terminal from its ID."""
   loadTerminalFromID(id: TerminalID!): Terminal!
 
@@ -2774,6 +2808,18 @@ type Query {
     """The plaintext of the secret"""
     plaintext: String!
   ): Secret!
+
+  """Creates source map metadata."""
+  sourceMap(
+    """The column number within the line."""
+    column: Int!
+
+    """The filename from the module source."""
+    filename: String!
+
+    """The line number within the filename."""
+    line: Int!
+  ): SourceMap!
 
   """Create a new TypeDef."""
   typeDef: TypeDef!
@@ -2904,6 +2950,29 @@ The `SocketID` scalar type represents an identifier for an object of type Socket
 """
 scalar SocketID
 
+"""Source location information."""
+type SourceMap {
+  """The column number within the line."""
+  column: Int!
+
+  """The filename from the module source."""
+  filename: String!
+
+  """A unique identifier for this SourceMap."""
+  id: SourceMapID!
+
+  """The line number within the filename."""
+  line: Int!
+
+  """The module dependency this was declared in."""
+  module: String!
+}
+
+"""
+The `SourceMapID` scalar type represents an identifier for an object of type SourceMap.
+"""
+scalar SourceMapID
+
 """An interactive terminal that clients can connect to."""
 type Terminal {
   """A unique identifier for this Terminal."""
@@ -2981,6 +3050,9 @@ type TypeDef {
 
     """The name of the enum"""
     name: String!
+
+    """The source map for the enum definition."""
+    sourceMap: SourceMapID
   ): TypeDef!
 
   """
@@ -2989,6 +3061,9 @@ type TypeDef {
   withEnumValue(
     """A doc string for the value, if any"""
     description: String = ""
+
+    """The source map for the enum value definition."""
+    sourceMap: SourceMapID
 
     """The name of the value in the enum"""
     value: String!
@@ -3004,6 +3079,9 @@ type TypeDef {
     """The name of the field in the object"""
     name: String!
 
+    """The source map for the field definition."""
+    sourceMap: SourceMapID
+
     """The type of the field"""
     typeDef: TypeDefID!
   ): TypeDef!
@@ -3014,7 +3092,7 @@ type TypeDef {
   withFunction(function: FunctionID!): TypeDef!
 
   """Returns a TypeDef of kind Interface with the provided name."""
-  withInterface(description: String = "", name: String!): TypeDef!
+  withInterface(description: String = "", name: String!, sourceMap: SourceMapID): TypeDef!
 
   """Sets the kind of the type."""
   withKind(kind: TypeDefKind!): TypeDef!
@@ -3031,7 +3109,7 @@ type TypeDef {
   only to refer to an object. This is how functions are able to return their own
   object, or any other circular reference.
   """
-  withObject(description: String = "", name: String!): TypeDef!
+  withObject(description: String = "", name: String!, sourceMap: SourceMapID): TypeDef!
 
   """Sets whether this type can be set to null."""
   withOptional(optional: Boolean!): TypeDef!
