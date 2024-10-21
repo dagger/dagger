@@ -39,11 +39,12 @@ func (GitSuite) TestGit(ctx context.Context, t *testctx.T) {
 
 	res := struct {
 		Git struct {
-			Head   result
-			Ref    result
-			Commit result
-			Branch result
-			Tag    result
+			Head         result
+			Ref          result
+			Commit       result
+			Branch       result
+			Tag          result
+			HiddenCommit result
 		}
 	}{}
 
@@ -90,6 +91,14 @@ func (GitSuite) TestGit(ctx context.Context, t *testctx.T) {
 						}
 					}
 				}
+				hiddenCommit: commit(id: "318970484f692d7a76cfa533c5d47458631c9654") {
+					commit
+					tree {
+						file(path: "README.md") {
+							contents
+						}
+					}
+				}
 			}
 		}`, &res, nil)
 	require.NoError(t, err)
@@ -114,6 +123,11 @@ func (GitSuite) TestGit(ctx context.Context, t *testctx.T) {
 	// v0.9.5
 	require.Equal(t, res.Git.Tag.Commit, "9ea5ea7c848fef2a2c47cce0716d5fcb8d6bedeb")
 	require.Contains(t, res.Git.Tag.Tree.File.Contents, "Dagger")
+
+	// $ git ls-remote https://github.com/dagger/dagger.git | grep pull/8735
+	// 318970484f692d7a76cfa533c5d47458631c9654	refs/pull/8735/head
+	require.Equal(t, res.Git.HiddenCommit.Commit, "318970484f692d7a76cfa533c5d47458631c9654")
+	require.Contains(t, res.Git.HiddenCommit.Tree.File.Contents, "Dagger")
 }
 
 func (GitSuite) TestDiscardGitDir(ctx context.Context, t *testctx.T) {
