@@ -355,4 +355,18 @@ defmodule Dagger.ModuleSource do
       client: module_source.client
     }
   end
+
+  @doc "Remove the provided dependencies from the module source's dependency list."
+  @spec without_dependencies(t(), [Dagger.ModuleDependencyID.t()]) :: Dagger.ModuleSource.t()
+  def without_dependencies(%__MODULE__{} = module_source, dependencies) do
+    query_builder =
+      module_source.query_builder
+      |> QB.select("withoutDependencies")
+      |> QB.put_arg("dependencies", dependencies)
+
+    %Dagger.ModuleSource{
+      query_builder: query_builder,
+      client: module_source.client
+    }
+  end
 end

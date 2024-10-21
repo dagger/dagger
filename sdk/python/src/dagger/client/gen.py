@@ -6192,6 +6192,24 @@ class ModuleSource(Type):
         _ctx = self._select("withView", _args)
         return ModuleSource(_ctx)
 
+    def without_dependencies(
+        self,
+        dependencies: list[ModuleDependency],
+    ) -> Self:
+        """Remove the provided dependencies from the module source's dependency
+        list.
+
+        Parameters
+        ----------
+        dependencies:
+            The dependencies to remove.
+        """
+        _args = [
+            Arg("dependencies", dependencies),
+        ]
+        _ctx = self._select("withoutDependencies", _args)
+        return ModuleSource(_ctx)
+
     def with_(self, cb: Callable[["ModuleSource"], "ModuleSource"]) -> "ModuleSource":
         """Call the provided callable with current ModuleSource.
 

@@ -7851,6 +7851,23 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
+   * Remove the provided dependencies from the module source's dependency list.
+   * @param dependencies The dependencies to remove.
+   */
+  withoutDependencies = (dependencies: ModuleDependency[]): ModuleSource => {
+    return new ModuleSource({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withoutDependencies",
+          args: { dependencies },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
    * Call the provided function with current ModuleSource.
    *
    * This is useful for reusability and readability by not breaking the calling chain.
