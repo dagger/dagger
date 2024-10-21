@@ -90,6 +90,7 @@ module.exports = {
             "api/module-dependencies",
             "api/packages",
             "api/services",
+            "api/fs-filters",
             "api/documentation",
             "api/error-handling",
             "api/constructors",
