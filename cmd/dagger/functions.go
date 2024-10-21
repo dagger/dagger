@@ -586,7 +586,7 @@ func (fc *FuncCommand) RunE(ctx context.Context, fn *modFunction) func(*cobra.Co
 		}
 
 		switch t.Kind {
-		case dagger.ObjectKind, dagger.InterfaceKind:
+		case dagger.TypeDefKindObjectKind, dagger.TypeDefKindInterfaceKind:
 			origSel := fc.q
 			obj := t.AsFunctionProvider()
 
@@ -678,7 +678,7 @@ func (fc *FuncCommand) Request(ctx context.Context, response any) error {
 }
 
 func (fc *FuncCommand) HandleResponse(cmd *cobra.Command, modType *modTypeDef, response any) error {
-	if modType.Kind == dagger.VoidKind {
+	if modType.Kind == dagger.TypeDefKindVoidKind {
 		return nil
 	}
 
