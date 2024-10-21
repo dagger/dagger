@@ -7102,6 +7102,23 @@ class Client(Root):
         _ctx = self._select("loadTypeDefFromID", _args)
         return TypeDef(_ctx)
 
+    def map_secret(self, name: str, uri: str) -> "Secret":
+        """Maps a secret to an external secret store and returns the secret.
+
+        Parameters
+        ----------
+        name:
+            The user defined name for this secret
+        uri:
+            The URI of the secret store
+        """
+        _args = [
+            Arg("name", name),
+            Arg("uri", uri),
+        ]
+        _ctx = self._select("mapSecret", _args)
+        return Secret(_ctx)
+
     def module(self) -> Module:
         """Create a new module."""
         _args: list[Arg] = []

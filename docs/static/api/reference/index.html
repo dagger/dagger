@@ -82,6 +82,7 @@
               <li><a href="#query-loadSocketFromID">loadSocketFromID</a></li>
               <li><a href="#query-loadTerminalFromID">loadTerminalFromID</a></li>
               <li><a href="#query-loadTypeDefFromID">loadTypeDefFromID</a></li>
+              <li><a href="#query-mapSecret">mapSecret</a></li>
               <li><a href="#query-module">module</a></li>
               <li><a href="#query-moduleDependency">moduleDependency</a></li>
               <li><a href="#query-moduleSource">moduleSource</a></li>
@@ -3047,6 +3048,64 @@
                         </td>
                         <td>
                         </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-example doc-copy-section">
+                  <h5>Example</h5>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="query-mapSecret" class="operation operation-query" data-traverse-target="query-mapSecret">
+            <div class="operation-group-name">
+              <a href="#group-Queries">Queries</a>
+            </div>
+            <h2 class="operation-heading ">
+              <code>mapSecret</code>
+            </h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Maps a secret to an external secret store and returns the secret.</p>
+                </div>
+              </div>
+            </div>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="operation-response doc-copy-section">
+                  <h5>Type</h5>
+                  <p>
+                    <a href="#definition-Secret"><code>Secret!</code></a>
+                  </p>
+                </div>
+                <div class="operation-arguments test doc-copy-section">
+                  <h5>Arguments</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span>
+                        </td>
+                        <td> The user defined name for this secret </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <span class="property-name"><code>uri</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span>
+                        </td>
+                        <td> The URI of the secret store </td>
                       </tr>
                     </tbody>
                   </table>
