@@ -132,6 +132,13 @@ func (cli *gitCLI) run(ctx context.Context, args ...string) (_ *bytes.Buffer, er
 					continue
 				}
 			}
+			if strings.Contains(errbuf.String(), "upload-pack: not our ref") {
+				// https://github.com/git/git/blob/34b6ce9b30747131b6e781ff718a45328aa887d0/upload-pack.c
+				if newArgs := argsNoCommitRefspec(args); len(args) > len(newArgs) {
+					args = newArgs
+					continue
+				}
+			}
 			return buf, errors.Errorf("git error: %s\nstderr:\n%s", err, errbuf.String())
 		}
 		return buf, nil
@@ -156,4 +163,20 @@ func argsNoDepth(args []string) []string {
 		}
 	}
 	return out
+}
+
+func argsNoCommitRefspec(args []string) []string {
+	if len(args) <= 2 {
+		return args
+	}
+	if args[0] != "fetch" {
+		return args
+	}
+
+	// assume the refspec is the last arg
+	if isCommitSHA(args[len(args)-1]) {
+		return args[:len(args)-1]
+	}
+
+	return args
 }
