@@ -1,0 +1,46 @@
+---
+slug: /configuration/cache
+---
+
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Cache
+
+Dagger caches two types of data:
+
+1. Layers: This refers to build instructions and the results of some API calls. This cache is implemented by Buildkit.
+2. Volumes: This refers to the contents of a Dagger filesystem volume and is persisted across Dagger Engine sessions. It is implemented by Dagger (distinct from Buildkit).
+
+## Cache inspection
+
+- Show all the cache entry metadata:
+
+    ```shell
+    echo '{daggerEngine{localCache{entrySet{entries{description diskSpaceBytes}}}}}' | dagger query
+    ```
+
+- Show high level summaries of cache usage:
+
+    ```shell
+    echo '{daggerEngine{localCache{entrySet{entryCount diskSpaceBytes}}}}' | dagger query
+    ```
+
+## Cache pruning
+
+The layer cache size configuration is managed by [Buildkit's garbage collector](https://github.com/moby/buildkit/blob/master/docs/buildkitd.toml.md?plain=1#L83-L94).
+
+To free up disk space used by the cache, use the following command:
+
+```shell
+dagger core dagger-engine local-cache prune
+```
+
+## Best practices
+
+- For the layer cache:
+  - Layers are cached in sequence, and a change in any one layer invalidates that and all subsequent layers. Pay attention to the order of your build operations, and sequence non-volatile operations before volatile ones to avoid invalidating the cache early.
+  - It may sometimes be necessary to explicitly force execution of specific pipeline operations, bypassing the Dagger layer cache. The typical approach for this is to [invalidate the Dagger layer cache](../cookbook/cookbook.mdx#invalidate-cache) by introducing a volatile time variable at a specific point in the Dagger pipeline
+
+- For the volume cache:
+  - Cache the tool's own cache directory instead of caching the installed dependencies directory. For example, with `node` and `npm`, use a cache volume for the  `~/.npm` cache directory and not for the project's `node_modules` directory.
