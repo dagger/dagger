@@ -12,17 +12,27 @@ type Release struct {
 	SDK *SDK
 	// +private
 	Helm *Helm
+	// +private
+	Docs *Docs
 }
 
 // Bump the engine version used by all SDKs and the Helm chart
 func (r *Release) Bump(ctx context.Context, version string) (*dagger.Directory, error) {
 	var eg errgroup.Group
+
 	var sdkDir *dagger.Directory
+	var docsDir *dagger.Directory
 	var helmFile *dagger.File
 
 	eg.Go(func() error {
 		var err error
 		sdkDir, err = r.SDK.All().Bump(ctx, version)
+		return err
+	})
+
+	eg.Go(func() error {
+		var err error
+		docsDir, err = r.Docs.Bump(version)
 		return err
 	})
 
@@ -36,6 +46,9 @@ func (r *Release) Bump(ctx context.Context, version string) (*dagger.Directory, 
 		return nil, err
 	}
 
-	dir := sdkDir.WithFile("helm/dagger/Chart.yaml", helmFile)
+	dir := dag.Directory().
+		WithDirectory("", sdkDir).
+		WithDirectory("", docsDir).
+		WithFile("helm/dagger/Chart.yaml", helmFile)
 	return dir, nil
 }

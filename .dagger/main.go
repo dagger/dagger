@@ -223,7 +223,7 @@ func (dev *DaggerDev) Helm() *Helm {
 
 // Run Dagger release-related tasks
 func (dev *DaggerDev) Release() *Release {
-	return &Release{SDK: dev.SDK(), Helm: dev.Helm()}
+	return &Release{SDK: dev.SDK(), Helm: dev.Helm(), Docs: dev.Docs()}
 }
 
 // Creates a dev container that has a running CLI connected to a dagger engine
