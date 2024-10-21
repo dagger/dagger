@@ -19,9 +19,9 @@
     "@docusaurus/preset-classic": "^3.5.2",
     "@docusaurus/theme-classic": "^3.5.2",
     "@docusaurus/theme-mermaid": "^3.5.2",
-    "@mdx-js/react": "^3.0.0",
-    "clsx": "^1.2.1",
-    "docusaurus-plugin-image-zoom": "^1.0.1",
+    "@mdx-js/react": "^3.1.0",
+    "clsx": "^2.1.1",
+    "docusaurus-plugin-image-zoom": "^2.0.0",
     "docusaurus-plugin-sass": "^0.2.5",
     "docusaurus-plugin-typedoc": "^1.0.5",
     "posthog-docusaurus": "^2.0.0",
@@ -29,11 +29,11 @@
     "react": "^18.0.0",
     "react-dom": "^18.0.0",
     "remark-code-import": "^1.2.0",
-    "sass": "^1.32.13",
-    "typedoc": "^0.26.8",
+    "sass": "^1.80.3",
+    "typedoc": "^0.26.10",
     "typedoc-plugin-frontmatter": "^1.0.0",
     "typedoc-plugin-markdown": "^4.2.9",
-    "typescript": "^5.3.2"
+    "typescript": "^5.6.3"
   },
   "devDependencies": {
     "@docusaurus/module-type-aliases": "^3.5.2",
