@@ -4,7 +4,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -14,9 +13,12 @@ import (
 
 // A dev environment for the DaggerDev Engine
 type DaggerDev struct {
-	Src     *dagger.Directory // +private
+	Src *dagger.Directory // +private
+
 	Version string
 	Tag     string
+	Git     *dagger.VersionGit // +private
+	GitRef  string             // +private
 
 	// When set, module codegen is automatically applied when retrieving the Dagger source code
 	ModCodegen        bool
@@ -25,10 +27,6 @@ type DaggerDev struct {
 	// Can be used by nested clients to forward docker credentials to avoid
 	// rate limits
 	DockerCfg *dagger.Secret // +private
-
-	// +private
-	GitRef string
-	GitDir *dagger.Directory
 }
 
 func New(
@@ -47,7 +45,7 @@ func New(
 	// +optional
 	dockerCfg *dagger.Secret,
 
-	// Git ref (used for test-publish checks)
+	// Git ref override (used for test-publish checks)
 	// +optional
 	ref string,
 ) (*DaggerDev, error) {
@@ -60,13 +58,22 @@ func New(
 	if err != nil {
 		return nil, err
 	}
+
+	if ref == "" {
+		// HACK: is this actually neccessary any more?
+		ref, err = v.Git().Head().Commit(ctx)
+		if err != nil {
+			return nil, err
+		}
+		ref = "HEAD"
+	}
 	dev := &DaggerDev{
 		Src:       source,
 		Tag:       tag,
+		Git:       v.Git(),
+		GitRef:    ref,
 		Version:   version,
 		DockerCfg: dockerCfg,
-		GitRef:    ref,
-		GitDir:    gitDir,
 	}
 
 	modules, err := dev.containing(ctx, "dagger.json")
@@ -91,30 +98,6 @@ func (dev *DaggerDev) WithModCodegen() *DaggerDev {
 	clone := *dev
 	clone.ModCodegen = true
 	return &clone
-}
-
-func (dev *DaggerDev) Ref(ctx context.Context) (string, error) {
-	// Said .git introspection logic:
-	ref, err := dag.
-		Wolfi().
-		Container(dagger.WolfiContainerOpts{Packages: []string{"git"}}).
-		WithMountedDirectory("/src", dev.GitDir).
-		WithWorkdir("/src").
-		WithMountedFile("/bin/get-ref.sh", dag.CurrentModule().Source().File("get-ref.sh")).
-		WithExec([]string{"sh", "/bin/get-ref.sh"}).
-		Stdout(ctx)
-	if err != nil {
-		return "", err
-	}
-	ref = strings.TrimRight(ref, "\n")
-	fmt.Printf("git ref: from $GITHUB_REF='%s', from .git='%s'\n", dev.GitRef, ref)
-	// FIXME: this shouldn't be needed.
-	//  but at the moment it is, because introspection from .git
-	//  doesn't work with TestPublish() for some reason.
-	if (dev.GitRef != "") && (ref != dev.GitRef) {
-		return dev.GitRef, nil
-	}
-	return ref, nil
 }
 
 // Develop the Dagger CLI

@@ -73,7 +73,7 @@ jobs:
       - name: "test publish engine"
         uses: ./.github/actions/call
         with:
-          function: "engine publish --image=dagger-engine.dev --tag=main --dry-run"
+          function: "engine publish --image=dagger-engine.dev --dry-run"
 
   scan-engine:
     runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-5-8c' || 'ubuntu-latest' }}"
