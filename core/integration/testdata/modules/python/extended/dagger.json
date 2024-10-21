@@ -1,10 +1,6 @@
 {
   "name": "ext-python-sdk",
   "sdk": "python",
-  "exclude": [
-    ".venv",
-    "sdk"
-  ],
   "dependencies": [
     {
       "name": "python-sdk",
@@ -12,5 +8,5 @@
     }
   ],
   "source": ".",
-  "engineVersion": "v0.12.7"
+  "engineVersion": "v0.13.0"
 }
