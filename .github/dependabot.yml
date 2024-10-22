@@ -16,22 +16,12 @@ updates:
         applies-to: version-updates
         patterns:
           - "*"
-
-  - package-ecosystem: "gomod"
-    directory: "/dev"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "07:00"
-      timezone: "UTC"
-    labels:
-      - "kind/dependencies"
-      - "area/ci"
-    groups:
-      engine-tools:
-        applies-to: version-updates
-        patterns:
-          - "*"
+        exclude-patterns:
+          # these are fiddly, we want to do them manually
+          - "go.opentelemetry.io/*"
+          - "github.com/moby/buildkit"
+          - "github.com/tonistiigi/fsutil"
+          - "github.com/vito/midterm"
 
   - package-ecosystem: "npm"
     directory: "/sdk/typescript"
@@ -80,6 +70,9 @@ updates:
         applies-to: version-updates
         patterns:
           - "*"
+        exclude-patterns:
+          # these are fiddly, we want to do them manually
+          - "go.opentelemetry.io/*"
 
   - package-ecosystem: "pip"
     directory: "/sdk/python"
@@ -114,7 +107,7 @@ updates:
           - "*"
 
   - package-ecosystem: "docker"
-    directory: "/dev/ruff/build"
+    directory: "/modules/ruff/build"
     schedule:
       interval: "weekly"
       day: "monday"
