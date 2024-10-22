@@ -283,36 +283,72 @@ func (mnts ContainerMounts) With(newMnt ContainerMount) ContainerMounts {
 	return mntsCp
 }
 
-func (container *Container) From(ctx context.Context, addr string) (*Container, error) {
+func (container *Container) FromRefString(ctx context.Context, addr string) (*Container, error) {
 	bk, err := container.Query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
-	container = container.Clone()
-
 	platform := container.Platform
 
 	refName, err := reference.ParseNormalizedNamed(addr)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to parse image address %s: %w", addr, err)
+	}
+	// add a default :latest if no tag or digest, otherwise this is a no-op
+	refName = reference.TagNameOnly(refName)
+
+	if refName, isCanonical := refName.(reference.Canonical); isCanonical {
+		return container.FromCanonicalRef(ctx, refName, nil)
 	}
 
-	ref := reference.TagNameOnly(refName).String()
-
-	_, digest, cfgBytes, err := bk.ResolveImageConfig(ctx, ref, sourceresolver.Opt{
+	_, digest, cfgBytes, err := bk.ResolveImageConfig(ctx, refName.String(), sourceresolver.Opt{
 		Platform: ptr(platform.Spec()),
 		ImageOpt: &sourceresolver.ResolveImageOpt{
 			ResolveMode: llb.ResolveModeDefault.String(),
 		},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve image %s: %w", ref, err)
+		return nil, fmt.Errorf("failed to resolve image %s: %w", refName.String(), err)
+	}
+	canonRefName, err := reference.WithDigest(refName, digest)
+	if err != nil {
+		return nil, fmt.Errorf("failed to set digest on image %s: %w", refName.String(), err)
 	}
 
-	digested, err := reference.WithDigest(refName, digest)
+	return container.FromCanonicalRef(ctx, canonRefName, cfgBytes)
+}
+
+func (container *Container) FromCanonicalRef(
+	ctx context.Context,
+	refName reference.Canonical,
+	// cfgBytes is optional, will be retrieved if not provided
+	cfgBytes []byte,
+) (*Container, error) {
+	container = container.Clone()
+
+	bk, err := container.Query.Buildkit(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+
+	platform := container.Platform
+
+	refStr := refName.String()
+
+	// since this is an image ref w/ a digest, always check the local cache for the image
+	// first before making any network requests
+	resolveMode := llb.ResolveModePreferLocal
+	if cfgBytes == nil {
+		_, _, cfgBytes, err = bk.ResolveImageConfig(ctx, refStr, sourceresolver.Opt{
+			Platform: ptr(platform.Spec()),
+			ImageOpt: &sourceresolver.ResolveImageOpt{
+				ResolveMode: resolveMode.String(),
+			},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve image %s: %w", refStr, err)
+		}
 	}
 
 	var imgSpec specs.Image
@@ -321,8 +357,9 @@ func (container *Container) From(ctx context.Context, addr string) (*Container, 
 	}
 
 	fsSt := llb.Image(
-		digested.String(),
-		llb.WithCustomNamef("pull %s", ref),
+		refStr,
+		llb.WithCustomNamef("pull %s", refStr),
+		resolveMode,
 	)
 
 	def, err := fsSt.Marshal(ctx, llb.Platform(platform.Spec()))
@@ -333,7 +370,7 @@ func (container *Container) From(ctx context.Context, addr string) (*Container, 
 	container.FS = def.ToPB()
 
 	container.Config = mergeImageConfig(container.Config, imgSpec.Config)
-	container.ImageRef = digested.String()
+	container.ImageRef = refStr
 	container.Platform = Platform(platforms.Normalize(imgSpec.Platform))
 
 	return container, nil

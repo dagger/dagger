@@ -1,0 +1,11 @@
+kind: Fixed
+body: |-
+  Optimize container.From for image refs with digests.
+
+  Previously, if container.From was given an image ref with a digest and that image already existed in the local cache, the engine would still waste time resolving metadata over the network from the registry.
+
+  Now, if a digested image ref already exists locally, the network requests are skipped entirely.
+time: 2024-10-18T15:37:44.578042988-07:00
+custom:
+  Author: sipsma
+  PR: "8736"
