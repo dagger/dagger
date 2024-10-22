@@ -4657,6 +4657,18 @@ func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
 		require.Equal(t, hashStr, hashStrCmd)
 	})
 
+	t.Run("using secret variable with expand returns error", func(ctx context.Context, t *testctx.T) {
+		secret := c.SetSecret("gitea-token", "password2")
+		_, err := c.Container().
+			From("alpine:latest").
+			WithEnvVariable("CACHEBUST", identity.NewID()).
+			WithSecretVariable("GITEA_TOKEN", secret).
+			WithExec([]string{"sh", "-c", "test ${GITEA_TOKEN} = \"password\""}, dagger.ContainerWithExecOpts{Expand: true}).
+			Sync(ctx)
+
+		require.ErrorContains(t, err, "expand cannot be used with secret env variable \"GITEA_TOKEN\"")
+	})
+
 	t.Run("env variable is expanded in Export", func(ctx context.Context, t *testctx.T) {
 		wd := t.TempDir()
 
