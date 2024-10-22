@@ -733,17 +733,12 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.Instance[*core.
 	refName = reference.TagNameOnly(refName)
 
 	if refName, isCanonical := refName.(reference.Canonical); isCanonical {
-		ctr, err := parent.Self.FromCanonical(ctx, refName)
+		ctr, err := parent.Self.FromCanonicalRef(ctx, refName, nil)
 		if err != nil {
 			return inst, err
 		}
 
-		return dagql.Instance[*core.Container]{
-			Constructor: dagql.CurrentID(ctx),
-			Self:        ctr,
-			Class:       parent.Class,
-			Module:      parent.Module,
-		}, nil
+		return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, ctr)
 	}
 
 	// Doesn't have a digest, resolve that now and re-call this field using the canonical

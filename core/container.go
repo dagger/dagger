@@ -283,7 +283,7 @@ func (mnts ContainerMounts) With(newMnt ContainerMount) ContainerMounts {
 	return mntsCp
 }
 
-func (container *Container) From(ctx context.Context, addr string) (*Container, error) {
+func (container *Container) FromRefString(ctx context.Context, addr string) (*Container, error) {
 	bk, err := container.Query.Buildkit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
@@ -299,10 +299,10 @@ func (container *Container) From(ctx context.Context, addr string) (*Container, 
 	refName = reference.TagNameOnly(refName)
 
 	if refName, isCanonical := refName.(reference.Canonical); isCanonical {
-		return container.FromCanonical(ctx, refName)
+		return container.FromCanonicalRef(ctx, refName, nil)
 	}
 
-	_, digest, _, err := bk.ResolveImageConfig(ctx, refName.String(), sourceresolver.Opt{
+	_, digest, cfgBytes, err := bk.ResolveImageConfig(ctx, refName.String(), sourceresolver.Opt{
 		Platform: ptr(platform.Spec()),
 		ImageOpt: &sourceresolver.ResolveImageOpt{
 			ResolveMode: llb.ResolveModeDefault.String(),
@@ -316,10 +316,15 @@ func (container *Container) From(ctx context.Context, addr string) (*Container, 
 		return nil, fmt.Errorf("failed to set digest on image %s: %w", refName.String(), err)
 	}
 
-	return container.FromCanonical(ctx, canonRefName)
+	return container.FromCanonicalRef(ctx, canonRefName, cfgBytes)
 }
 
-func (container *Container) FromCanonical(ctx context.Context, refName reference.Canonical) (*Container, error) {
+func (container *Container) FromCanonicalRef(
+	ctx context.Context,
+	refName reference.Canonical,
+	// cfgBytes is optional, will be retrieved if not provided
+	cfgBytes []byte,
+) (*Container, error) {
 	container = container.Clone()
 
 	bk, err := container.Query.Buildkit(ctx)
@@ -334,14 +339,16 @@ func (container *Container) FromCanonical(ctx context.Context, refName reference
 	// since this is an image ref w/ a digest, always check the local cache for the image
 	// first before making any network requests
 	resolveMode := llb.ResolveModePreferLocal
-	_, _, cfgBytes, err := bk.ResolveImageConfig(ctx, refStr, sourceresolver.Opt{
-		Platform: ptr(platform.Spec()),
-		ImageOpt: &sourceresolver.ResolveImageOpt{
-			ResolveMode: resolveMode.String(),
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve image %s: %w", refStr, err)
+	if cfgBytes == nil {
+		_, _, cfgBytes, err = bk.ResolveImageConfig(ctx, refStr, sourceresolver.Opt{
+			Platform: ptr(platform.Spec()),
+			ImageOpt: &sourceresolver.ResolveImageOpt{
+				ResolveMode: resolveMode.String(),
+			},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve image %s: %w", refStr, err)
+		}
 	}
 
 	var imgSpec specs.Image
