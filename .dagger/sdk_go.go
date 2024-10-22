@@ -122,7 +122,7 @@ func (t GoSDK) Publish(
 ) error {
 	version, isVersioned := strings.CutPrefix(tag, "sdk/go/")
 
-	if err := gitPublish(ctx, gitPublishOpts{
+	if err := gitPublish(ctx, t.Dagger.Git, gitPublishOpts{
 		sdk:          "go",
 		source:       gitRepoSource,
 		sourceTag:    tag,

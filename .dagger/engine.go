@@ -275,10 +275,6 @@ func (e *Engine) Publish(
 	// List of tags to use
 	tag []string,
 
-	// add `latest` to the list of tags if tags include a semver version
-	// +optional
-	maybeTagLatest bool,
-
 	// +optional
 	dryRun bool,
 
@@ -289,22 +285,19 @@ func (e *Engine) Publish(
 	// +optional
 	registryPassword *dagger.Secret,
 ) error {
+	for _, t := range tag {
+		if semver.IsValid(t) {
+			tag = append(tag, "latest")
+			break
+		}
+	}
+
 	// collect all the targets that we are trying to build together, along with
 	// where they need to go to
 	targetResults := make([]struct {
 		Platforms []*dagger.Container
 		Tags      []string
 	}, len(targets))
-
-	if maybeTagLatest {
-		for _, t := range tag {
-			if strings.HasPrefix(t, "v") && semver.IsValid(t) {
-				tag = append(tag, "latest")
-				break
-			}
-		}
-	}
-
 	eg, egCtx := errgroup.WithContext(ctx)
 	for i, target := range targets {
 		// determine the target tags
