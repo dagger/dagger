@@ -4,7 +4,7 @@
   "dependencies": [
     {
       "name": "wolfi",
-      "source": "github.com/shykes/daggerverse/wolfi@daae822bfa6d67e9e241b92ebe43e029e0c2c043"
+      "source": "../wolfi"
     }
   ],
   "source": ".",
