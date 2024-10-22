@@ -30,7 +30,7 @@ func New(
 	inputs *dagger.Directory,
 	// +optional
 	// +defaultPath="/"
-	// +ignore=["*", "!.git", "!**/.gitignore"]
+	// +ignore=["*", "!.git", "!**/.gitignore", ".git/config"]
 	gitDir *dagger.Directory,
 	// .changes file used to extract version information
 	// +optional
