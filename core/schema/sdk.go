@@ -478,6 +478,26 @@ func (sdk *goSDK) Runtime(
 				},
 			},
 		},
+		// remove shared cache mounts from final container so module code can't
+		// do weird things with them like IPC, etc.
+		dagql.Selector{
+			Field: "withoutMount",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.String("/go/pkg/mod"),
+				},
+			},
+		},
+		dagql.Selector{
+			Field: "withoutMount",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.String("/root/.cache/go-build"),
+				},
+			},
+		},
 	); err != nil {
 		return nil, fmt.Errorf("failed to exec go build in go module sdk container runtime: %w", err)
 	}
