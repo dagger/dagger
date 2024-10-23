@@ -36,8 +36,10 @@ func (d Docs) Site() *dagger.Directory {
 		Docusaurus(
 			d.Dagger.Source(),
 			dagger.DocusaurusOpts{
-				Dir:             "/src/docs",
-				CacheVolumeName: "dagger-docusaurus-site",
+				Dir: "/src/docs",
+				// HACK: cache seems to cause weird ephemeral errors occasionally -
+				// probably because of cache sharing
+				DisableCache: true,
 			},
 		).
 		Build()
