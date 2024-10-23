@@ -113,7 +113,7 @@ func (m *DotnetSdkDev) Format() *dagger.Directory {
 
 func (m *DotnetSdkDev) Base() *dagger.Container {
 	return dag.Container().
-		From("mcr.microsoft.com/dotnet/sdk:8.0").
+		From("mcr.microsoft.com/dotnet/sdk:8.0-alpine3.20").
 		WithMountedDirectory("/src", m.Source).
 		WithWorkdir("/src/sdk").
 		WithExec([]string{"dotnet", "tool", "restore"})

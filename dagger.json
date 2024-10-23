@@ -4,6 +4,10 @@
   "sdk": "go",
   "dependencies": [
     {
+      "name": "dotnet-sdk-dev",
+      "source": "sdk/dotnet/dev"
+    },
+    {
       "name": "alpine",
       "source": "modules/alpine"
     },
