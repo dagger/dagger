@@ -2,12 +2,13 @@ package main
 
 import (
 	"context"
-	"dagger/version/internal/dagger"
 	"errors"
 	"slices"
 	"strings"
 
 	"golang.org/x/mod/semver"
+
+	"github.com/dagger/dagger/version/internal/dagger"
 )
 
 // Git is an opinionated helper for performing various commands on our dagger repo.
@@ -46,10 +47,12 @@ func git(ctx context.Context, gitDir *dagger.Directory, dir *dagger.Directory) (
 		// enter detached head state, then we can rewrite all our refs however we like later
 		ctr = ctr.WithExec([]string{"sh", "-c", "git checkout -q $(git rev-parse HEAD)"})
 
+		// manually add a remote (since .git/config was removed earlier)
+		ctr = ctr.WithExec([]string{"git", "remote", "add", "origin", "https://github.com/dagger/dagger.git"})
+
 		// do various unshallowing operations (only the bare minimum is
 		// provided by the core git functions which are used by our remote git
 		// module sources)
-		remote := "https://github.com/dagger/dagger.git"
 		maxDepth := "2147483647" // see https://git-scm.com/docs/shallow
 		ctr = ctr.
 			WithExec([]string{
@@ -61,7 +64,7 @@ func git(ctx context.Context, gitDir *dagger.Directory, dir *dagger.Directory) (
 				// we need the unshallowed history of our branches, so we
 				// can determine which tags are in it later
 				"--depth=" + maxDepth,
-				remote,
+				"origin",
 				// update HEAD
 				"HEAD",
 				// update main
