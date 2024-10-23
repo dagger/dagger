@@ -1,0 +1,22 @@
+name: dagger
+on:
+  push:
+    branches: [main]
+
+jobs:
+  hello:
+    name: hello
+    runs-on: depot-ubuntu-latest-*,dagger=0.13.5
+    steps:
+      -
+        name: Call Dagger Function
+        uses: dagger/dagger-for-github@v6
+        with:
+          version: "0.13.5"
+          verb: call
+          module: github.com/shykes/daggerverse/hello@v0.1.2
+          args: hello --greeting="bonjour" --name="monde"
+          # assumes the Dagger Cloud token is in
+          # a repository secret named DAGGER_CLOUD_TOKEN
+          # set via the GitHub UI/CLI
+          cloud-token: ${{ secrets.DAGGER_CLOUD_TOKEN }}
