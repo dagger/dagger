@@ -6,7 +6,6 @@ package main
 
 import (
 	"context"
-	"dagger/version/internal/dagger"
 	"fmt"
 	"slices"
 	"strconv"
@@ -14,6 +13,8 @@ import (
 	"time"
 
 	"golang.org/x/mod/semver"
+
+	"github.com/dagger/dagger/version/internal/dagger"
 )
 
 func New(
@@ -40,6 +41,9 @@ func New(
 ) (*Version, error) {
 	// NOTE: uploading the whole git dir is inefficient.
 	// we can stop doing it once dagger/dagger#8520 ships
+
+	// NOTE: .git/config is excluded, since *some* tools (GitHub actions)
+	// produce weird configs with custom headers set
 
 	git, err := git(ctx, gitDir, inputs)
 	if err != nil {
