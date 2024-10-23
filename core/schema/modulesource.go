@@ -465,9 +465,9 @@ func (s *moduleSchema) moduleSourceDependencies(
 		return nil, fmt.Errorf("failed to get module config: %w", err)
 	}
 
-	var existingDeps []dagql.Instance[*core.ModuleDependency]
+	existingDeps := []dagql.Instance[*core.ModuleDependency]{}
+	uninstalledDeps := map[string]struct{}{}
 	if ok && len(modCfg.Dependencies) > 0 {
-		existingDeps = []dagql.Instance[*core.ModuleDependency]{}
 		var eg errgroup.Group
 		for _, depCfg := range modCfg.Dependencies {
 			eg.Go(func() error {
@@ -498,6 +498,7 @@ func (s *moduleSchema) moduleSourceDependencies(
 
 					// the currentDep is being uninstalled
 					if currentDep == removedDep {
+						uninstalledDeps[removedDep] = struct{}{}
 						return nil
 					}
 				}
@@ -535,6 +536,19 @@ func (s *moduleSchema) moduleSourceDependencies(
 		}
 		if err := eg.Wait(); err != nil {
 			return nil, fmt.Errorf("failed to load pre-configured dependencies: %w", err)
+		}
+	}
+
+	// return error if any dependency was asked to be uninstalled,
+	// but it is not found in existing dependencies list
+	for _, dep := range src.Self.WithoutDependencies {
+		removedDep, err := dep.Self.Source.Self.Symbolic()
+		if err != nil {
+			return nil, err
+		}
+
+		if _, ok := uninstalledDeps[removedDep]; !ok {
+			return nil, fmt.Errorf("\n\ndependency with name %q was requested to be uninstalled, but it is not found in the dependencies list", removedDep)
 		}
 	}
 

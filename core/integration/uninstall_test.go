@@ -105,7 +105,7 @@ func (f *Foo) ContainerEcho(ctx context.Context, input string) (string, error) {
 			With(daggerExec("init", "--sdk=go", "--name=foo", "--source=.")).
 			With(daggerExec("uninstall", "bar")).
 			File("dagger.json").Contents(ctx)
-		require.NoError(t, err)
+		require.ErrorContains(t, err, `"bar" not found in the dependencies list`)
 	})
 
 	// this one currently fails - do we need to handle this?
@@ -186,7 +186,7 @@ func (UnInstallSuite) TestUninstallGitRefDep(ctx context.Context, t *testctx.T) 
 
 		_, err := ctr.With(daggerExec("uninstall", "github.com/shykes/daggerverse/hello@v0.3.0")).
 			File("dagger.json").Contents(ctx)
-		require.NoError(t, err)
+		require.ErrorContains(t, err, `"github.com/shykes/daggerverse/hello" not found in the dependencies list`)
 	})
 
 	// this one is currently failing - I think this should be fixed
