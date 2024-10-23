@@ -39,7 +39,7 @@ func New(
 	stopEngine bool,
 	// Encode all files as JSON (which is also valid YAML)
 	// +optional
-	asJson bool,
+	asJSON bool,
 	// Configure a default runner for all workflows
 	// See https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/using-self-hosted-runners-in-a-workflow
 	// +optional
@@ -65,7 +65,7 @@ func New(
 		NoTraces:       noTraces,
 		DaggerVersion:  daggerVersion,
 		StopEngine:     stopEngine,
-		AsJson:         asJson,
+		AsJSON:         asJSON,
 		Runner:         runner,
 		FileExtension:  fileExtension,
 		Repository:     repository,
@@ -85,7 +85,7 @@ type Settings struct {
 	DaggerVersion          string
 	NoTraces               bool
 	StopEngine             bool
-	AsJson                 bool
+	AsJSON                 bool
 	Runner                 []string
 	PullRequestConcurrency string
 	Debug                  bool
@@ -182,6 +182,8 @@ func lineMatch(s, line string) bool {
 }
 
 // Add a pipeline
+//
+//nolint:gocyclo
 func (m *Gha) WithPipeline(
 	// Pipeline name
 	name string,
@@ -207,6 +209,7 @@ func (m *Gha) WithPipeline(
 	// (DEPRECATED) allow this pipeline to be manually "dispatched"
 	// +optional
 	// +deprecated
+	//nolint: unparam
 	dispatch bool,
 	// Disable manual "dispatch" of this pipeline
 	// +optional
@@ -270,7 +273,7 @@ func (m *Gha) WithPipeline(
 	// +optional
 	onPullRequestSynchronize bool,
 	// +optional
-	onPullRequestConverted_to_draft bool,
+	onPullRequestConvertedToDraft bool,
 	// +optional
 	onPullRequestLocked bool,
 	// +optional
@@ -337,100 +340,100 @@ func (m *Gha) WithPipeline(
 		p.Settings.TimeoutMinutes = timeoutMinutes
 	}
 	if onIssueComment {
-		p.OnIssueComment(nil)
+		p = p.OnIssueComment(nil)
 	}
 	if onIssueCommentCreated {
-		p.OnIssueComment([]string{"created"})
+		p = p.OnIssueComment([]string{"created"})
 	}
 	if onIssueCommentDeleted {
-		p.OnIssueComment([]string{"deleted"})
+		p = p.OnIssueComment([]string{"deleted"})
 	}
 	if onIssueCommentEdited {
-		p.OnIssueComment([]string{"edited"})
+		p = p.OnIssueComment([]string{"edited"})
 	}
 	if onPullRequest {
-		p.OnPullRequest(nil, nil, nil)
+		p = p.OnPullRequest(nil, nil, nil)
 	}
 	if onPullRequestBranches != nil {
-		p.OnPullRequest(nil, onPullRequestBranches, nil)
+		p = p.OnPullRequest(nil, onPullRequestBranches, nil)
 	}
 	if onPullRequestPaths != nil {
-		p.OnPullRequest([]string{"paths"}, nil, onPullRequestPaths)
+		p = p.OnPullRequest([]string{"paths"}, nil, onPullRequestPaths)
 	}
 	if onPullRequestAssigned {
-		p.OnPullRequest([]string{"assigned"}, nil, nil)
+		p = p.OnPullRequest([]string{"assigned"}, nil, nil)
 	}
 	if onPullRequestUnassigned {
-		p.OnPullRequest([]string{"unassigned"}, nil, nil)
+		p = p.OnPullRequest([]string{"unassigned"}, nil, nil)
 	}
 	if onPullRequestLabeled {
-		p.OnPullRequest([]string{"labeled"}, nil, nil)
+		p = p.OnPullRequest([]string{"labeled"}, nil, nil)
 	}
 	if onPullRequestUnlabeled {
-		p.OnPullRequest([]string{"unlabeled"}, nil, nil)
+		p = p.OnPullRequest([]string{"unlabeled"}, nil, nil)
 	}
 	if onPullRequestOpened {
-		p.OnPullRequest([]string{"opened"}, nil, nil)
+		p = p.OnPullRequest([]string{"opened"}, nil, nil)
 	}
 	if onPullRequestEdited {
-		p.OnPullRequest([]string{"edited"}, nil, nil)
+		p = p.OnPullRequest([]string{"edited"}, nil, nil)
 	}
 	if onPullRequestClosed {
-		p.OnPullRequest([]string{"closed"}, nil, nil)
+		p = p.OnPullRequest([]string{"closed"}, nil, nil)
 	}
 	if onPullRequestReopened {
-		p.OnPullRequest([]string{"reopened"}, nil, nil)
+		p = p.OnPullRequest([]string{"reopened"}, nil, nil)
 	}
 	if onPullRequestSynchronize {
-		p.OnPullRequest([]string{"synchronize"}, nil, nil)
+		p = p.OnPullRequest([]string{"synchronize"}, nil, nil)
 	}
-	if onPullRequestConverted_to_draft {
-		p.OnPullRequest([]string{"converted_to_draft"}, nil, nil)
+	if onPullRequestConvertedToDraft {
+		p = p.OnPullRequest([]string{"converted_to_draft"}, nil, nil)
 	}
 	if onPullRequestLocked {
-		p.OnPullRequest([]string{"locked"}, nil, nil)
+		p = p.OnPullRequest([]string{"locked"}, nil, nil)
 	}
 	if onPullRequestUnlocked {
-		p.OnPullRequest([]string{"unlocked"}, nil, nil)
+		p = p.OnPullRequest([]string{"unlocked"}, nil, nil)
 	}
 	if onPullRequestEnqueued {
-		p.OnPullRequest([]string{"enqueued"}, nil, nil)
+		p = p.OnPullRequest([]string{"enqueued"}, nil, nil)
 	}
 	if onPullRequestDequeued {
-		p.OnPullRequest([]string{"dequeued"}, nil, nil)
+		p = p.OnPullRequest([]string{"dequeued"}, nil, nil)
 	}
 	if onPullRequestMilestoned {
-		p.OnPullRequest([]string{"milestoned"}, nil, nil)
+		p = p.OnPullRequest([]string{"milestoned"}, nil, nil)
 	}
 	if onPullRequestDemilestoned {
-		p.OnPullRequest([]string{"demilestoned"}, nil, nil)
+		p = p.OnPullRequest([]string{"demilestoned"}, nil, nil)
 	}
 	if onPullRequestReadyForReview {
-		p.OnPullRequest([]string{"ready_for_review"}, nil, nil)
+		p = p.OnPullRequest([]string{"ready_for_review"}, nil, nil)
 	}
 	if onPullRequestReviewRequested {
-		p.OnPullRequest([]string{"review_requested"}, nil, nil)
+		p = p.OnPullRequest([]string{"review_requested"}, nil, nil)
 	}
 	if onPullRequestReviewRequestRemoved {
-		p.OnPullRequest([]string{"review_request_removed"}, nil, nil)
+		p = p.OnPullRequest([]string{"review_request_removed"}, nil, nil)
 	}
 	if onPullRequestAutoMergeEnabled {
-		p.OnPullRequest([]string{"auto_merge_enabled"}, nil, nil)
+		p = p.OnPullRequest([]string{"auto_merge_enabled"}, nil, nil)
 	}
 	if onPullRequestAutoMergeDisabled {
-		p.OnPullRequest([]string{"auto_merge_disabled"}, nil, nil)
+		p = p.OnPullRequest([]string{"auto_merge_disabled"}, nil, nil)
 	}
 	if onPush {
-		p.OnPush(nil, nil)
+		p = p.OnPush(nil, nil)
 	}
 	if onPushBranches != nil {
-		p.OnPush(onPushBranches, nil)
+		p = p.OnPush(onPushBranches, nil)
 	}
 	if onPushTags != nil {
-		p.OnPush(nil, onPushTags)
+		p = p.OnPush(nil, onPushTags)
 	}
 	if onSchedule != nil {
-		p.OnSchedule(onSchedule)
+		p = p.OnSchedule(onSchedule)
 	}
 	m.Pipelines = append(m.Pipelines, p)
 	return m
@@ -503,16 +506,6 @@ func (p *Pipeline) OnSchedule(
 	return p
 }
 
-// Lookup a pipeline
-func (m *Gha) pipeline(name string) *Pipeline {
-	for _, p := range m.Pipelines {
-		if p.Name == name {
-			return p
-		}
-	}
-	return nil
-}
-
 // A Dagger pipeline to be called from a Github Actions configuration
 type Pipeline struct {
 	// +private
@@ -534,7 +527,7 @@ type Pipeline struct {
 }
 
 func (p *Pipeline) Config() *dagger.Directory {
-	return p.asWorkflow().Config(p.workflowFilename(), p.Settings.AsJson)
+	return p.asWorkflow().Config(p.workflowFilename(), p.Settings.AsJSON)
 }
 
 func (p *Pipeline) concurrency() *WorkflowConcurrency {
@@ -619,7 +612,7 @@ func (p *Pipeline) asWorkflow() Workflow {
 		On:          p.Triggers,
 		Concurrency: p.concurrency(),
 		Jobs: map[string]Job{
-			p.jobID(): Job{
+			p.jobID(): {
 				// The job name is used by the "required checks feature" in branch protection rules
 				Name:           p.Name,
 				RunsOn:         p.Settings.Runner,
@@ -667,7 +660,8 @@ func (p *Pipeline) checkoutStep() JobStep {
 		// sure local modules work by default
 		// FIXME: this is only a guess, we need the 'source' field of dagger.json
 		//  to be sure.
-		sparseCheckout := append(p.SparseCheckout, "dagger.json", ".dagger", "dagger", "ci")
+		sparseCheckout := append([]string{}, p.SparseCheckout...)
+		sparseCheckout = append(sparseCheckout, "dagger.json", ".dagger", "dagger", "ci")
 		step.With["sparse-checkout"] = strings.Join(sparseCheckout, "\n")
 	}
 	if p.LFS {
@@ -691,7 +685,7 @@ func (p *Pipeline) installDaggerSteps() []JobStep {
 		// Install latest dagger to bootstrap dev dagger
 		// FIXME: let's daggerize this, using dagger in dagger :)
 		p.bashStep("install-dagger", map[string]string{"DAGGER_VERSION": "latest"}),
-		JobStep{
+		{
 			Name: "Install go",
 			Uses: "actions/setup-go@v5",
 			With: map[string]string{
@@ -722,7 +716,7 @@ func (p *Pipeline) envLookups() []string {
 		return nil
 	}
 	result := make([]string, 0, len(lookups))
-	for name, _ := range lookups {
+	for name := range lookups {
 		if name == "IFS" {
 			continue
 		}

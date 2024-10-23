@@ -37,7 +37,7 @@ func (perms Permissions) JobPermissions() (p *JobPermissions) {
 		case "pages":
 			p.Pages = perm.Level()
 		case "id_token":
-			p.IdToken = perm.Level()
+			p.IDToken = perm.Level()
 		case "repository_projects":
 			p.RepositoryProjects = perm.Level()
 		case "statuses":
@@ -50,7 +50,7 @@ func (perms Permissions) JobPermissions() (p *JobPermissions) {
 			p.Discussions = perm.Level()
 		}
 	}
-	return
+	return p
 }
 
 func (p Permission) parts() (PermissionLevel, string) {
@@ -81,7 +81,7 @@ const (
 	ReadDeployments         Permission = "read_deployments"
 	ReadPullRequests        Permission = "read_pull_requests"
 	ReadPages               Permission = "read_pages"
-	ReadIdToken             Permission = "read_id_token"
+	ReadIDToken             Permission = "read_id_token"
 	ReadRepositoryProjects  Permission = "read_repository_projects"
 	ReadStatuses            Permission = "read_statuses"
 	ReadMetadata            Permission = "read_metadata"
@@ -94,7 +94,7 @@ const (
 	WriteDeployments        Permission = "write_deployments"
 	WritePullRequests       Permission = "write_pull_requests"
 	WritePages              Permission = "write_pages"
-	WriteIdToken            Permission = "write_id_token"
+	WriteIDToken            Permission = "write_id_token"
 	WriteRepositoryProjects Permission = "write_repository_projects"
 	WriteStatuses           Permission = "write_statuses"
 	WriteMetadata           Permission = "write_metadata"
