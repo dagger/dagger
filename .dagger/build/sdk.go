@@ -135,6 +135,19 @@ func (build *Builder) goSDKContent(ctx context.Context) (*sdkContent, error) {
 	sdkCtrTarball := base.
 		WithEnvVariable("GOTOOLCHAIN", "auto").
 		WithFile("/usr/local/bin/codegen", build.CodegenBinary()).
+		// pre-cache stdlib
+		WithExec([]string{"go", "build", "std"}).
+		// pre-cache common deps
+		WithDirectory("/sdk", build.source.Directory("sdk/go")).
+		WithExec([]string{"go", "list",
+			"-C", "/sdk",
+			"-e",
+			"-export=true",
+			"-compiled=true",
+			"-deps=true",
+			"-test=false",
+			".",
+		}).
 		AsTarball(dagger.ContainerAsTarballOpts{
 			ForcedCompression: dagger.Uncompressed,
 		})
