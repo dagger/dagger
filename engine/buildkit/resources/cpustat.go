@@ -36,17 +36,26 @@ func newCPUStatSampler(cgroupPath string, meter metric.Meter, commonAttrs attrib
 	}
 	var err error
 
-	s.cpuUsage, err = meter.Int64Gauge(telemetry.CPUStatUsage, metric.WithUnit(telemetry.MicrosecondUnitName))
+	s.cpuUsage, err = meter.Int64Gauge(telemetry.CPUStatUsage,
+		metric.WithUnit(telemetry.MicrosecondUnitName),
+		metric.WithDescription("The total CPU time used by all tasks in the container"),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cpuUsage metric: %w", err)
 	}
 
-	s.cpuUser, err = meter.Int64Gauge(telemetry.CPUStatUser, metric.WithUnit(telemetry.MicrosecondUnitName))
+	s.cpuUser, err = meter.Int64Gauge(telemetry.CPUStatUser,
+		metric.WithUnit(telemetry.MicrosecondUnitName),
+		metric.WithDescription("The total CPU time spent in user mode by all tasks in the container"),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cpuUser metric: %w", err)
 	}
 
-	s.cpuSystem, err = meter.Int64Gauge(telemetry.CPUStatSystem, metric.WithUnit(telemetry.MicrosecondUnitName))
+	s.cpuSystem, err = meter.Int64Gauge(telemetry.CPUStatSystem,
+		metric.WithUnit(telemetry.MicrosecondUnitName),
+		metric.WithDescription("The total CPU time spent in kernel mode by all tasks in the container"),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cpuSystem metric: %w", err)
 	}
@@ -105,12 +114,18 @@ func newCPUPressureSampler(cgroupPath string, meter metric.Meter, commonAttrs at
 	}
 	var err error
 
-	s.someTotal, err = meter.Int64Gauge(telemetry.CPUStatPressureSomeTotal, metric.WithUnit(telemetry.MicrosecondUnitName))
+	s.someTotal, err = meter.Int64Gauge(telemetry.CPUStatPressureSomeTotal,
+		metric.WithUnit(telemetry.MicrosecondUnitName),
+		metric.WithDescription("The total time that any task in the container has been throttled due to CPU pressure"),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create someTotal metric: %w", err)
 	}
 
-	s.fullTotal, err = meter.Int64Gauge(telemetry.CPUStatPressureFullTotal, metric.WithUnit(telemetry.MicrosecondUnitName))
+	s.fullTotal, err = meter.Int64Gauge(telemetry.CPUStatPressureFullTotal,
+		metric.WithUnit(telemetry.MicrosecondUnitName),
+		metric.WithDescription("The total time that all tasks in the container have simultaneously been throttled due to CPU pressure"),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create fullTotal metric: %w", err)
 	}

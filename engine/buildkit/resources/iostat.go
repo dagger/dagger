@@ -35,12 +35,18 @@ func newIOStatSampler(cgroupPath string, meter metric.Meter, commonAttrs attribu
 	}
 	var err error
 
-	s.readBytes, err = meter.Int64Gauge(telemetry.IOStatDiskReadBytes, metric.WithUnit(telemetry.ByteUnitName))
+	s.readBytes, err = meter.Int64Gauge(telemetry.IOStatDiskReadBytes,
+		metric.WithUnit(telemetry.ByteUnitName),
+		metric.WithDescription("The total number of bytes read from the disk by all tasks in the container (not including disk read cache)"),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create readBytes metric: %w", err)
 	}
 
-	s.writeBytes, err = meter.Int64Gauge(telemetry.IOStatDiskWriteBytes, metric.WithUnit(telemetry.ByteUnitName))
+	s.writeBytes, err = meter.Int64Gauge(telemetry.IOStatDiskWriteBytes,
+		metric.WithUnit(telemetry.ByteUnitName),
+		metric.WithDescription("The total number of bytes written to the disk by all tasks in the container (not including disk write cache)"),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create writeBytes metric: %w", err)
 	}
@@ -98,7 +104,10 @@ func newIOPressureSampler(cgroupPath string, meter metric.Meter, commonAttrs att
 	}
 	var err error
 
-	s.someTotal, err = meter.Int64Gauge(telemetry.IOStatPressureSomeTotal, metric.WithUnit(telemetry.MicrosecondUnitName))
+	s.someTotal, err = meter.Int64Gauge(telemetry.IOStatPressureSomeTotal,
+		metric.WithUnit(telemetry.MicrosecondUnitName),
+		metric.WithDescription("The total time in microseconds that tasks in the container were throttled due to I/O pressure"),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create some total metric: %w", err)
 	}
