@@ -105,6 +105,8 @@ type shellCallHandler struct {
 // - File: when a file path is provided as an argument
 // - Code: when code is passed inline using the `-c,--code` flag or via stdin
 func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
+	h.term = !silent && (hasTTY && progress == "auto" || progress == "tty")
+
 	h.stdoutBuf = new(bytes.Buffer)
 	h.stderrBuf = new(bytes.Buffer)
 
@@ -150,6 +152,18 @@ func (h *shellCallHandler) run(ctx context.Context, reader io.Reader, name strin
 	}
 
 	h.stdoutBuf.Reset()
+
+	// Make sure every run flushes any stderr output.
+	defer func() {
+		h.withTerminal(func(_ io.Reader, _, stderr io.Writer) error {
+			if h.stderrBuf.Len() > 0 {
+				fmt.Fprint(stderr, h.stderrBuf.String())
+				h.stderrBuf.Reset()
+			}
+			return nil
+		})
+	}()
+
 	h.runner.Reset()
 
 	err = h.runner.Run(ctx, file)
@@ -190,7 +204,6 @@ func (h *shellCallHandler) runPath(ctx context.Context, path string) error {
 
 // runInteractive executes the runner on a REPL (Read-Eval-Print Loop)
 func (h *shellCallHandler) runInteractive(ctx context.Context) error {
-	h.term = stdoutIsTTY
 	h.withTerminal(func(_ io.Reader, _, stderr io.Writer) error {
 		fmt.Fprintln(stderr, `Dagger interactive shell. Type ".help" for more information.`)
 		return nil
@@ -208,13 +221,6 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 		Frontend.SetPrimary(trace.SpanID{})
 		Frontend.Opts().CustomExit = func() {}
 
-		if h.stderrBuf.Len() > 0 {
-			h.withTerminal(func(_ io.Reader, _, stderr io.Writer) error {
-				fmt.Fprint(stderr, h.stderrBuf.String())
-				h.stderrBuf.Reset()
-				return nil
-			})
-		}
 		if runErr != nil {
 			h.withTerminal(func(_ io.Reader, _, stderr io.Writer) error {
 				fmt.Fprintf(stderr, "Error: %s\n", runErr.Error())
