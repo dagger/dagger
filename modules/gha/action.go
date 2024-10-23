@@ -61,7 +61,7 @@ type Runs struct {
 // Step represents an individual step in a composite action.
 type CompositeActionStep struct {
 	Name             string            `json:"name,omitempty"`              // The name of the step.
-	Id               string            `json:"id,omitempty"`                // An ID to reference the step in outputs.
+	ID               string            `json:"id,omitempty"`                // An ID to reference the step in outputs.
 	Uses             string            `json:"uses,omitempty"`              // An action to run as part of the step (e.g., actions/checkout@v2).
 	Run              string            `json:"run,omitempty"`               // A shell command to run as part of the step.
 	Shell            string            `json:"shell,omitempty"`             // The shell to use for the 'run' command.

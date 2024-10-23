@@ -7,7 +7,7 @@ import (
 type Examples struct{}
 
 // Access Github secrets
-func (m *Examples) Gha_Secrets() *dagger.Directory {
+func (m *Examples) GhaSecrets() *dagger.Directory {
 	return dag.
 		Gha().
 		WithPipeline(
@@ -20,7 +20,7 @@ func (m *Examples) Gha_Secrets() *dagger.Directory {
 }
 
 // Limit per-PR concurrency for expensive test pipelines
-func (m *Examples) Gha_Concurrency() *dagger.Directory {
+func (m *Examples) GhaConcurrency() *dagger.Directory {
 	return dag.
 		Gha().
 		WithPipeline(
@@ -34,7 +34,7 @@ func (m *Examples) Gha_Concurrency() *dagger.Directory {
 }
 
 // Access github context information magically injected as env variables
-func (m *Examples) Gha_GithubContext() *dagger.Directory {
+func (m *Examples) GhaGithubContext() *dagger.Directory {
 	return dag.
 		Gha().
 		WithPipeline(
@@ -48,7 +48,7 @@ func (m *Examples) Gha_GithubContext() *dagger.Directory {
 }
 
 // Compose a pipeline from an external module, instead of the one embedded in the repo.
-func (m *Examples) Gha_CustomModule() *dagger.Directory {
+func (m *Examples) GhaCustomModule() *dagger.Directory {
 	return dag.
 		Gha().
 		WithPipeline(
@@ -61,7 +61,7 @@ func (m *Examples) Gha_CustomModule() *dagger.Directory {
 }
 
 // Build and publish a container on push
-func (m *Examples) Gha_OnPush() *dagger.Directory {
+func (m *Examples) GhaOnPush() *dagger.Directory {
 	return dag.
 		Gha().
 		WithPipeline(
@@ -77,7 +77,7 @@ func (m *Examples) Gha_OnPush() *dagger.Directory {
 }
 
 // Call integration tests on pull requests
-func (m *Examples) Gha_OnPullRequest() *dagger.Directory {
+func (m *Examples) GhaOnPullRequest() *dagger.Directory {
 	return dag.
 		Gha().
 		WithPipeline(

@@ -24,13 +24,13 @@ func (w Workflow) Config(
 	// Filename of the workflow file under .github/workflows/
 	filename string,
 	// Encode the workflow as JSON, which is valid YAML
-	asJson bool,
+	asJSON bool,
 ) *dagger.Directory {
 	var (
 		contents []byte
 		err      error
 	)
-	if asJson {
+	if asJSON {
 		contents, err = json.MarshalIndent(w, "", " ")
 	} else {
 		contents, err = yaml.Marshal(w)
@@ -135,7 +135,7 @@ type JobPermissions struct {
 	Deployments        PermissionLevel `json:"deployments,omitempty" yaml:"deployments,omitempty"`
 	PullRequests       PermissionLevel `json:"pull-requests,omitempty" yaml:"pull-requests,omitempty"`
 	Pages              PermissionLevel `json:"pages,omitempty" yaml:"pages,omitempty"`
-	IdToken            PermissionLevel `json:"id-token,omitempty" yaml:"id-token,omitempty"`
+	IDToken            PermissionLevel `json:"id-token,omitempty" yaml:"id-token,omitempty"`
 	RepositoryProjects PermissionLevel `json:"repository-projects,omitempty" yaml:"repository-projects,omitempty"`
 	Statuses           PermissionLevel `json:"statuses,omitempty" yaml:"statuses,omitempty"`
 	Metadata           PermissionLevel `json:"metadata,omitempty" yaml:"metadata,omitempty"`
