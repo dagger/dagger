@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
 
 	"dagger.io/dagger/telemetry"
 	"go.opentelemetry.io/otel/attribute"
@@ -17,9 +15,7 @@ import (
 const (
 	ioStatFile     = "io.stat"
 	ioPressureFile = "io.pressure"
-)
 
-const (
 	ioReadBytes  = "rbytes"
 	ioWriteBytes = "wbytes"
 )
@@ -39,12 +35,18 @@ func newIOStatSampler(cgroupPath string, meter metric.Meter, commonAttrs attribu
 	}
 	var err error
 
-	s.readBytes, err = meter.Int64Gauge(telemetry.IOStatDiskReadBytes, metric.WithUnit(telemetry.ByteUnitName))
+	s.readBytes, err = meter.Int64Gauge(telemetry.IOStatDiskReadBytes,
+		metric.WithUnit(telemetry.ByteUnitName),
+		metric.WithDescription("The total number of bytes read from the disk by all tasks in the container (not including disk read cache)"),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create readBytes metric: %w", err)
 	}
 
-	s.writeBytes, err = meter.Int64Gauge(telemetry.IOStatDiskWriteBytes, metric.WithUnit(telemetry.ByteUnitName))
+	s.writeBytes, err = meter.Int64Gauge(telemetry.IOStatDiskWriteBytes,
+		metric.WithUnit(telemetry.ByteUnitName),
+		metric.WithDescription("The total number of bytes written to the disk by all tasks in the container (not including disk write cache)"),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create writeBytes metric: %w", err)
 	}
@@ -71,25 +73,13 @@ func (s *ioStatSampler) sample(ctx context.Context) error {
 		return fmt.Errorf("failed to read %s: %w", s.ioStatFilePath, err)
 	}
 
-	// Format here: https://docs.kernel.org/admin-guide/cgroup-v2.html#io-interface-files
-	lines := strings.Split(string(fileBytes), "\n")
-	for _, line := range lines {
-		parts := strings.Fields(line)
-		if len(parts) < 2 {
-			continue
-		}
-
-		for _, part := range parts[1:] {
-			key, value := parseKeyValue(part)
-			if key == "" {
-				continue
-			}
-
-			switch key {
+	for _, kvs := range nestedKeyValuesInt64(fileBytes) {
+		for k, v := range kvs {
+			switch k {
 			case ioReadBytes:
-				sample.readBytes.add(value)
+				sample.readBytes.add(v)
 			case ioWriteBytes:
-				sample.writeBytes.add(value)
+				sample.writeBytes.add(v)
 			}
 		}
 	}
@@ -114,7 +104,10 @@ func newIOPressureSampler(cgroupPath string, meter metric.Meter, commonAttrs att
 	}
 	var err error
 
-	s.someTotal, err = meter.Int64Gauge(telemetry.IOStatPressureSomeTotal, metric.WithUnit(telemetry.MicrosecondUnitName))
+	s.someTotal, err = meter.Int64Gauge(telemetry.IOStatPressureSomeTotal,
+		metric.WithUnit(telemetry.MicrosecondUnitName),
+		metric.WithDescription("The total time in microseconds that tasks in the container were throttled due to I/O pressure"),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create some total metric: %w", err)
 	}
@@ -139,37 +132,9 @@ func (s *ioPressureSampler) sample(ctx context.Context) error {
 		return fmt.Errorf("failed to read %s: %w", s.ioPressureFilePath, err)
 	}
 
-	// Format here: https://docs.kernel.org/accounting/psi.html#psi
-	lines := strings.Split(string(fileBytes), "\n")
-	for _, line := range lines {
-		fields := strings.Fields(line)
-		if len(fields) != 5 {
-			continue
-		}
-		pressureKind := fields[0]
-		if pressureKind != "some" {
-			continue
-		}
-		k, v := parseKeyValue(fields[4])
-		if k != "total" {
-			continue
-		}
-		sample.someTotal.add(v)
-	}
-
+	p := parsePressure(fileBytes)
+	sample.someTotal.add(p.someTotal)
 	sample.someTotal.record(ctx)
 
 	return nil
-}
-
-func parseKeyValue(kv string) (string, int64) {
-	key, valueStr, ok := strings.Cut(kv, "=")
-	if !ok {
-		return "", 0
-	}
-	value, err := strconv.ParseInt(valueStr, 10, 64)
-	if err != nil {
-		return "", 0
-	}
-	return key, value
 }

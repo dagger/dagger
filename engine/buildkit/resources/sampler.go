@@ -20,6 +20,9 @@ type Sampler struct {
 
 	ioStat     *ioStatSampler
 	ioPressure *ioPressureSampler
+
+	cpuStat     *cpuStatSampler
+	cpuPressure *cpuPressureSampler
 }
 
 func NewSampler(
@@ -43,6 +46,16 @@ func NewSampler(
 		return nil, fmt.Errorf("failed to create ioPressure sampler: %w", err)
 	}
 
+	s.cpuStat, err = newCPUStatSampler(s.cgroupPath, meter, s.commonAttrs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create cpuStat sampler: %w", err)
+	}
+
+	s.cpuPressure, err = newCPUPressureSampler(s.cgroupPath, meter, s.commonAttrs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create cpuPressure sampler: %w", err)
+	}
+
 	return s, nil
 }
 
@@ -55,6 +68,14 @@ func (s *Sampler) Sample(ctx context.Context) error {
 
 	eg.Go(func() error {
 		return s.ioPressure.sample(ctx)
+	})
+
+	eg.Go(func() error {
+		return s.cpuStat.sample(ctx)
+	})
+
+	eg.Go(func() error {
+		return s.cpuPressure.sample(ctx)
 	})
 
 	return eg.Wait()
