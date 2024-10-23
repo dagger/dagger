@@ -47,7 +47,7 @@ func (build *Builder) pythonSDKContent(ctx context.Context) (*sdkContent, error)
 	sdkCtrTarball := dag.Container().
 		WithRootfs(rootfs).
 		AsTarball(dagger.ContainerAsTarballOpts{
-			ForcedCompression: dagger.Uncompressed,
+			ForcedCompression: dagger.Zstd,
 		})
 
 	sdkDir := dag.
@@ -98,7 +98,7 @@ func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, er
 		WithRootfs(rootfs).
 		WithFile("/codegen", build.CodegenBinary()).
 		AsTarball(dagger.ContainerAsTarballOpts{
-			ForcedCompression: dagger.Uncompressed,
+			ForcedCompression: dagger.Zstd,
 		})
 
 	sdkDir := dag.
@@ -135,8 +135,21 @@ func (build *Builder) goSDKContent(ctx context.Context) (*sdkContent, error) {
 	sdkCtrTarball := base.
 		WithEnvVariable("GOTOOLCHAIN", "auto").
 		WithFile("/usr/local/bin/codegen", build.CodegenBinary()).
+		// pre-cache stdlib
+		WithExec([]string{"go", "build", "std"}).
+		// pre-cache common deps
+		WithDirectory("/sdk", build.source.Directory("sdk/go")).
+		WithExec([]string{"go", "list",
+			"-C", "/sdk",
+			"-e",
+			"-export=true",
+			"-compiled=true",
+			"-deps=true",
+			"-test=false",
+			".",
+		}).
 		AsTarball(dagger.ContainerAsTarballOpts{
-			ForcedCompression: dagger.Uncompressed,
+			ForcedCompression: dagger.Zstd,
 		})
 
 	sdkDir := base.

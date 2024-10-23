@@ -593,55 +593,61 @@ func (sdk *goSDK) baseWithCodegen(
 			dagql.String("--merge="+strconv.FormatBool(src.Self.WithInitConfig.Merge)))
 	}
 
-	if err := sdk.dag.Select(ctx, ctr, &ctr, dagql.Selector{
-		Field: "withMountedFile",
-		Args: []dagql.NamedInput{
-			{
-				Name:  "path",
-				Value: dagql.NewString(goSDKIntrospectionJSONPath),
-			},
-			{
-				Name:  "source",
-				Value: dagql.NewID[*core.File](schemaJSONFile.ID()),
-			},
-		},
-	}, dagql.Selector{
-		Field: "withMountedDirectory",
-		Args: []dagql.NamedInput{
-			{
-				Name:  "path",
-				Value: dagql.NewString(goSDKUserModContextDirPath),
-			},
-			{
-				Name:  "source",
-				Value: dagql.NewID[*core.Directory](updatedContextDir.ID()),
+	if err := sdk.dag.Select(ctx, ctr, &ctr,
+		dagql.Selector{
+			Field: "withMountedFile",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.NewString(goSDKIntrospectionJSONPath),
+				},
+				{
+					Name:  "source",
+					Value: dagql.NewID[*core.File](schemaJSONFile.ID()),
+				},
 			},
 		},
-	}, dagql.Selector{
-		Field: "withWorkdir",
-		Args: []dagql.NamedInput{
-			{
-				Name:  "path",
-				Value: dagql.NewString(filepath.Join(goSDKUserModContextDirPath, srcSubpath)),
+		dagql.Selector{
+			Field: "withMountedDirectory",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.NewString(goSDKUserModContextDirPath),
+				},
+				{
+					Name:  "source",
+					Value: dagql.NewID[*core.Directory](updatedContextDir.ID()),
+				},
 			},
 		},
-	}, dagql.Selector{
-		Field: "withoutDefaultArgs",
-	}, dagql.Selector{
-		Field: "withExec",
-		Args: []dagql.NamedInput{
-			{
-				Name: "args",
-				Value: append(dagql.ArrayInput[dagql.String]{
-					"codegen",
-				}, codegenArgs...),
-			},
-			{
-				Name:  "experimentalPrivilegedNesting",
-				Value: dagql.NewBoolean(true),
+		dagql.Selector{
+			Field: "withWorkdir",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "path",
+					Value: dagql.NewString(filepath.Join(goSDKUserModContextDirPath, srcSubpath)),
+				},
 			},
 		},
-	}); err != nil {
+		dagql.Selector{
+			Field: "withoutDefaultArgs",
+		},
+		dagql.Selector{
+			Field: "withExec",
+			Args: []dagql.NamedInput{
+				{
+					Name: "args",
+					Value: append(dagql.ArrayInput[dagql.String]{
+						"codegen",
+					}, codegenArgs...),
+				},
+				{
+					Name:  "experimentalPrivilegedNesting",
+					Value: dagql.NewBoolean(true),
+				},
+			},
+		},
+	); err != nil {
 		return ctr, fmt.Errorf("failed to mount introspection json file into go module sdk container codegen: %w", err)
 	}
 
@@ -650,6 +656,34 @@ func (sdk *goSDK) baseWithCodegen(
 
 func (sdk *goSDK) base(ctx context.Context) (dagql.Instance[*core.Container], error) {
 	var inst dagql.Instance[*core.Container]
+
+	var baseCtr dagql.Instance[*core.Container]
+	if err := sdk.dag.Select(ctx, sdk.dag.Root(), &baseCtr,
+		dagql.Selector{
+			Field: "builtinContainer",
+			Args: []dagql.NamedInput{
+				{
+					Name:  "digest",
+					Value: dagql.String(os.Getenv(distconsts.GoSDKManifestDigestEnvName)),
+				},
+			},
+		},
+	); err != nil {
+		return inst, fmt.Errorf("failed to get base container from go module sdk tarball: %w", err)
+	}
+
+	var modCacheBaseDir dagql.Instance[*core.Directory]
+	if err := sdk.dag.Select(ctx, baseCtr, &modCacheBaseDir, dagql.Selector{
+		Field: "directory",
+		Args: []dagql.NamedInput{
+			{
+				Name:  "path",
+				Value: dagql.String("/go/pkg/mod"),
+			},
+		},
+	}); err != nil {
+		return inst, fmt.Errorf("failed to get mod cache base dir from go module sdk tarball: %w", err)
+	}
 
 	var modCache dagql.Instance[*core.CacheVolume]
 	if err := sdk.dag.Select(ctx, sdk.dag.Root(), &modCache, dagql.Selector{
@@ -663,6 +697,20 @@ func (sdk *goSDK) base(ctx context.Context) (dagql.Instance[*core.Container], er
 	}); err != nil {
 		return inst, fmt.Errorf("failed to get mod cache from go module sdk tarball: %w", err)
 	}
+
+	var buildCacheBaseDir dagql.Instance[*core.Directory]
+	if err := sdk.dag.Select(ctx, baseCtr, &buildCacheBaseDir, dagql.Selector{
+		Field: "directory",
+		Args: []dagql.NamedInput{
+			{
+				Name:  "path",
+				Value: dagql.String("/root/.cache/go-build"),
+			},
+		},
+	}); err != nil {
+		return inst, fmt.Errorf("failed to get build cache base dir from go module sdk tarball: %w", err)
+	}
+
 	var buildCache dagql.Instance[*core.CacheVolume]
 	if err := sdk.dag.Select(ctx, sdk.dag.Root(), &buildCache, dagql.Selector{
 		Field: "cacheVolume",
@@ -677,16 +725,7 @@ func (sdk *goSDK) base(ctx context.Context) (dagql.Instance[*core.Container], er
 	}
 
 	var ctr dagql.Instance[*core.Container]
-	if err := sdk.dag.Select(ctx, sdk.dag.Root(), &ctr,
-		dagql.Selector{
-			Field: "builtinContainer",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "digest",
-					Value: dagql.String(os.Getenv(distconsts.GoSDKManifestDigestEnvName)),
-				},
-			},
-		},
+	if err := sdk.dag.Select(ctx, baseCtr, &ctr,
 		dagql.Selector{
 			Field: "withMountedCache",
 			Args: []dagql.NamedInput{
@@ -701,6 +740,10 @@ func (sdk *goSDK) base(ctx context.Context) (dagql.Instance[*core.Container], er
 				{
 					Name:  "sharing",
 					Value: core.CacheSharingModeShared,
+				},
+				{
+					Name:  "source",
+					Value: dagql.Opt(dagql.NewID[*core.Directory](modCacheBaseDir.ID())),
 				},
 			},
 		},
@@ -718,6 +761,10 @@ func (sdk *goSDK) base(ctx context.Context) (dagql.Instance[*core.Container], er
 				{
 					Name:  "sharing",
 					Value: core.CacheSharingModeShared,
+				},
+				{
+					Name:  "source",
+					Value: dagql.Opt(dagql.NewID[*core.Directory](buildCacheBaseDir.ID())),
 				},
 			},
 		},

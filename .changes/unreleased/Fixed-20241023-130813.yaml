@@ -1,0 +1,11 @@
+kind: Fixed
+body: |-
+  Speed up initialization of modules with lots of dependencies using the Go SDK in engines with no cache.
+
+  Various dependencies of Go SDK modules are now pre-cached in the engine image, which avoids significant CPU pressure when building Go SDK modules in parallel with no cache.
+
+  The engine image size increase is expected to be offset by these improvements.
+time: 2024-10-23T13:08:13.514095498-07:00
+custom:
+  Author: sipsma
+  PR: "8761"

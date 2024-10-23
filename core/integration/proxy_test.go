@@ -393,13 +393,16 @@ func (ContainerSuite) TestSystemGoProxy(ctx context.Context, t *testctx.T) {
 			t.Run("system HTTP go proxy", func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
 
-				// just a subset of modules we expect to be downloaded since trying to go one to one would
-				// be too fragile whenever the SDK changes
+				// Just a subset of modules we expect to be downloaded since trying to go one to one would
+				// be too fragile whenever the SDK changes.
+				// NOTE: this is also impacted by engine pre-caching of SDK deps, so what shows up here are
+				// deps in testGitModuleRef that aren't pre-cached.
+				// If updating this test becomes a nuisance, we might want to use a custom test git module ref
+				// that specifically has some extra deps not in the Go SDK.
 				expectedGoModDownloads := []string{
-					"github.com/99designs/gqlgen",
-					"github.com/Khan/genqlient",
-					"go.opentelemetry.io/otel/exporters/otlp/otlptrace",
-					"golang.org/x/sync",
+					"github.com/andreyvit/diff",
+					"github.com/davecgh/go-spew",
+					"github.com/go-logr/logr",
 				}
 
 				executeTestEnvName := fmt.Sprintf("DAGGER_TEST_%s", strings.ToUpper(t.Name()))
