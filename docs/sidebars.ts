@@ -155,6 +155,7 @@ module.exports = {
         "integrations/aws-codebuild",
         "integrations/azure-pipelines",
         "integrations/circleci",
+        "integrations/depot",
         "integrations/github",
         "integrations/gitlab",
         "integrations/google-cloud-run",
