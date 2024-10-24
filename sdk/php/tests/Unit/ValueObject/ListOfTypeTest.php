@@ -26,11 +26,28 @@ use ReflectionClass;
 use ReflectionFunction;
 use ReflectionNamedType;
 use ReflectionType;
+use UnitEnum;
 
 #[Group('unit')]
 #[CoversClass(ListOfType::class)]
 class ListOfTypeTest extends TestCase
 {
+    #[Test]
+    public function itIsListTypeDefKind(): void
+    {
+        self::assertEquals(
+            TypeDefKind::LIST_KIND,
+            (new ListOfType(new Type('string')))->typeDefKind
+        );
+    }
+
+    #[Test]
+    #[DataProvider('provideNames')]
+    public function itGetsName(ListOfType $sut, string $name): void
+    {
+        self::assertSame($name, $sut->getName());
+    }
+
     #[Test]
     #[DataProvider('provideUnsupportedReflectionTypes')]
     public function itOnlyBuildsFromReflectionNamedType(
@@ -69,29 +86,40 @@ class ListOfTypeTest extends TestCase
         self::assertEquals($expected, $actual);
     }
 
-    #[Test]
-    public function itIsListTypeDefKind(): void {
-        self::assertEquals(
-            TypeDefKind::LIST_KIND,
-            (new ListOfType(new Type('string')))->typeDefKind
-        );
+    /** @return Generator<array{0:ReflectionType}> */
+    public static function provideNames(): Generator
+    {
+        foreach (
+            [
+                'array<bool>' => new ListOfType(new Type('bool')),
+                'array<int>' => new ListOfType(new Type('int')),
+                'array<string>' => new ListOfType(new Type('string')),
+                'array<array<array<int>>>' => new ListOfType(new ListOfType(new ListOfType(new Type('int')))),
+                sprintf('array<%s>', UnitEnum::class) => new ListOfType(new Type(UnitEnum::class)),
+            ] as $name => $type
+        ) {
+            yield $name => [$type, $name];
+        }
     }
 
     /** @return Generator<array{0:ReflectionType}> */
     public static function provideUnsupportedReflectionTypes(): Generator
     {
         yield 'union type' => [
-            (new ReflectionFunction(function(): Iterator&Countable {}))
+            (new ReflectionFunction(function (): Iterator&Countable {
+            }))
                 ->getReturnType(),
         ];
 
         yield 'intersection type' => [
-            (new ReflectionFunction(function(): Iterator|Countable {}))
+            (new ReflectionFunction(function (): Iterator|Countable {
+            }))
                 ->getReturnType(),
         ];
 
         yield 'custom reflection type' => [
-            (new class () extends ReflectionType {}),
+            (new class () extends ReflectionType {
+            }),
         ];
     }
 

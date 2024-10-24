@@ -7,7 +7,10 @@ namespace Dagger\Tests\Unit\ValueObject;
 use Dagger\Container;
 use Dagger\File;
 use Dagger\Json;
+use Dagger\NetworkProtocol;
+use Dagger\Tests\Unit\Fixture\DaggerObject\HandlingEnums;
 use Dagger\Tests\Unit\Fixture\DaggerObjectWithDaggerFunctions;
+use Dagger\Tests\Unit\Fixture\Enum\StringBackedDummy;
 use Dagger\ValueObject\Argument;
 use Dagger\ValueObject\Type;
 use Generator;
@@ -155,6 +158,62 @@ class ArgumentTest extends TestCase
                 DaggerObjectWithDaggerFunctions::class,
                 'fileWithDefaultPath',
                 'value',
+            )
+        ];
+
+        yield sprintf('required %s', NetworkProtocol::class) => [
+            new Argument(
+                'arg',
+                '',
+                new Type(NetworkProtocol::class, false),
+                null,
+            ),
+            self::getReflectionParameter(
+                HandlingEnums::class,
+                'requiredNetworkProtocol',
+                'arg',
+            )
+        ];
+
+        yield sprintf('default %s', NetworkProtocol::class) => [
+            new Argument(
+                'arg',
+                '',
+                new Type(NetworkProtocol::class, false),
+                new Json('"TCP"'),
+            ),
+            self::getReflectionParameter(
+                HandlingEnums::class,
+                'defaultNetworkProtocol',
+                'arg',
+            )
+        ];
+
+        yield sprintf('required %s', StringBackedDummy::class) => [
+            new Argument(
+                'arg',
+                '',
+                new Type(StringBackedDummy::class, false),
+                null,
+            ),
+            self::getReflectionParameter(
+                HandlingEnums::class,
+                'requiredStringBackedEnum',
+                'arg',
+            )
+        ];
+
+        yield sprintf('default %s', StringBackedDummy::class) => [
+            new Argument(
+                'arg',
+                '',
+                new Type(StringBackedDummy::class, false),
+                new Json('"hello, "'),
+            ),
+            self::getReflectionParameter(
+                HandlingEnums::class,
+                'defaultStringBackedEnum',
+                'arg',
             )
         ];
     }

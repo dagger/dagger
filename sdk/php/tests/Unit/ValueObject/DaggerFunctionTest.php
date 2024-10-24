@@ -8,9 +8,12 @@ use Dagger\Attribute\DaggerObject;
 use Dagger\Container;
 use Dagger\File;
 use Dagger\Json;
+use Dagger\NetworkProtocol;
+use Dagger\Tests\Unit\Fixture\DaggerObject\HandlingEnums;
 use Dagger\Tests\Unit\Fixture\DaggerObjectWithDaggerFunctions;
-use Dagger\ValueObject\DaggerFunction;
+use Dagger\Tests\Unit\Fixture\Enum\StringBackedDummy;
 use Dagger\ValueObject\Argument;
+use Dagger\ValueObject\DaggerFunction;
 use Dagger\ValueObject\Type;
 use Generator;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -27,11 +30,11 @@ use RuntimeException;
 class DaggerFunctionTest extends TestCase
 {
     #[Test]
-    public function itThrowsIfBuiltFromNonDaggerFunctions(): void
+    public function itOnlyReflectsDaggerFunctions(): void
     {
         $reflection = new ReflectionMethod(
-            DaggerObjectWithDaggerFunctions::class,
-            'notADaggerFunction',
+            self::class,
+            'itOnlyReflectsDaggerFunctions',
         );
 
         self::expectException(RuntimeException::class);
@@ -40,14 +43,11 @@ class DaggerFunctionTest extends TestCase
     }
 
     #[Test]
-    public function ItRequiresReturnType(): void
+    public function itMustHaveAReturnType(): void
     {
         $reflection = (new ReflectionClass(new #[DaggerObject] class () {
                 #[\Dagger\Attribute\DaggerFunction]
-                public function noReturnType()
-                {
-                    return 'hello world';
-                }
+                public function noReturnType() {return 'hello world';}
             }))->getMethod('noReturnType');
 
         self::expectExceptionMessage(
@@ -68,8 +68,9 @@ class DaggerFunctionTest extends TestCase
         self::assertSame($expected, $sut->isConstructor());
     }
 
-    #[Test, DataProvider('provideReflectionMethods')]
-    public function ItBuildsFromReflectionMethod(
+    #[DataProvider('provideReflectionMethods')]
+    #[DataProvider('provideMethodsHandlingEnums')]
+    public function itBuildsFromReflectionMethod(
         DaggerFunction $expected,
         ReflectionMethod $reflectionMethod,
     ): void {
@@ -186,6 +187,90 @@ class DaggerFunctionTest extends TestCase
             new ReflectionMethod(
                 DaggerObjectWithDaggerFunctions::class,
                 'explicitlyOptionalFile',
+            ),
+        ];
+    }
+
+    /** @return Generator<array{ 0: DaggerFunction, 1:ReflectionMethod}> */
+    public static function provideMethodsHandlingEnums(): Generator
+    {
+        yield 'built-in enum' => [
+            new DaggerFunction(
+                'requiredNetworkProtocol',
+                'Test handling of built-in enums',
+                [
+                    new Argument(
+                        'arg',
+                        null,
+                        new Type(NetworkProtocol::class, false),
+                        null,
+                    ),
+                ],
+                new Type(NetworkProtocol::class),
+            ),
+            new ReflectionMethod(
+                HandlingEnums::class,
+                'requiredNetworkProtocol',
+            ),
+        ];
+
+        yield 'default built-in enum' => [
+            new DaggerFunction(
+                'defaultNetworkProtocol',
+                'Test handling of defaults for built-in enums',
+                [
+                    new Argument(
+                        'arg',
+                        null,
+                        new Type(NetworkProtocol::class, false),
+                        new Json('"TCP"'),
+                    ),
+                ],
+                new Type(NetworkProtocol::class),
+            ),
+            new ReflectionMethod(
+                HandlingEnums::class,
+                'defaultNetworkProtocol',
+            ),
+        ];
+
+        yield 'custom enum' => [
+            new DaggerFunction(
+                'requiredStringBackedEnum',
+                'Test handling of custom string-backed enums',
+                [
+                    new Argument(
+                        'arg',
+                        null,
+                        new Type(StringBackedDummy::class, false),
+                        null,
+                    ),
+                ],
+                new Type(StringBackedDummy::class),
+            ),
+            new ReflectionMethod(
+                HandlingEnums::class,
+                'requiredStringBackedEnum',
+            ),
+        ];
+
+        yield 'default custom enum' => [
+            new DaggerFunction(
+                'defaultStringBackedEnum',
+                'Test handling of defaults for custom string-backed enums',
+                [
+                    new Argument(
+                        'arg',
+                        null,
+                        new Type(StringBackedDummy::class, false),
+                        new Json('"hello"'),
+                    ),
+                ],
+                new Type(StringBackedDummy::class),
+            ),
+            new ReflectionMethod(
+                HandlingEnums::class,
+                'defaultStringBackedEnum',
             ),
         ];
     }
