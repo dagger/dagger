@@ -35,9 +35,6 @@ const (
 // use-uv = false
 // ```
 type UserConfig struct {
-	// UseUv is for choosing the faster uv tool instead of pip to install packages.
-	UseUv bool `toml:"use-uv"`
-
 	// UvVersion is the version of the uv tool to use.
 	//
 	// By default, it's pinned to a specific version in each dagger version.
@@ -46,6 +43,9 @@ type UserConfig struct {
 
 	// BaseImage is the image reference to use for the base container.
 	BaseImage string `toml:"base-image"`
+
+	// UseUv is for choosing the faster uv tool instead of pip to install packages.
+	UseUv bool `toml:"use-uv"`
 }
 
 func New(
@@ -79,11 +79,12 @@ type PythonSdk struct {
 	// Directory with the Python SDK source code
 	SdkSourceDir *dagger.Directory
 
-	// List of patterns to always include when loading Python modules
-	RequiredPaths []string
-
 	// Resulting container after each composing step
 	Container *dagger.Container
+
+	// Discovery holds the logic for getting more information from the target module
+	// +private
+	Discovery *Discovery
 
 	// SourcePath is a unique host path for the module being loaded
 	//
@@ -92,10 +93,9 @@ type PythonSdk struct {
 	// uses hashes of source paths - so we need to have something unique, or we
 	// can get very real conflicts in the uv cache.
 	SourcePath string
-
-	// Discovery holds the logic for getting more information from the target module
-	// +private
-	Discovery *Discovery
+	//
+	// List of patterns to always include when loading Python modules
+	RequiredPaths []string
 }
 
 // Generated code for the Python module
@@ -225,11 +225,15 @@ func (m *PythonSdk) WithBase() (*PythonSdk, error) {
 		WithEnvVariable("DAGGER_UV_IMAGE", uvAddr).
 		WithEnvVariable("UV_VERSION", uvTag)
 
-	if m.IndexURL() != "" {
-		m.Container = m.Container.WithEnvVariable("UV_INDEX_URL", m.IndexURL())
-	}
-	if m.ExtraIndexURL() != "" {
-		m.Container = m.Container.WithEnvVariable("UV_EXTRA_INDEX_URL", m.ExtraIndexURL())
+	for _, cfg := range m.Discovery.UvConfig().Index {
+		if cfg.Name != "" {
+			continue
+		}
+		if cfg.Default {
+			m.Container = m.Container.WithEnvVariable("UV_INDEX_URL", cfg.URL)
+		} else {
+			m.Container = m.Container.WithEnvVariable("UV_EXTRA_INDEX_URL", cfg.URL)
+		}
 	}
 
 	return m, nil

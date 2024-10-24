@@ -26,8 +26,13 @@ var FileContents = []string{"pyproject.toml", ".python-version"}
 
 // Uv config bits we'd like to consume.
 type UvConfig struct {
-	IndexURL      string `toml:"index-url"`
-	ExtraIndexURL string `toml:"extra-index-url"`
+	Index []UvIndexConfig `toml:"index"`
+}
+
+type UvIndexConfig struct {
+	Name    string `toml:"name"`
+	URL     string `toml:"url"`
+	Default bool   `toml:"default"`
 }
 
 // PyProject is the parsed pyproject.toml file.
@@ -37,8 +42,8 @@ type PyProject struct {
 		RequiresPython string `toml:"requires-python"`
 	}
 	Tool struct {
-		Dagger UserConfig
 		Uv     UvConfig
+		Dagger UserConfig
 	}
 }
 

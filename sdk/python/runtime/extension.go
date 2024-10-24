@@ -82,16 +82,6 @@ func (m *PythonSdk) UvVersion() string {
 	return m.Discovery.UserConfig().UvVersion
 }
 
-// Uv's "index-url" setting
-func (m *PythonSdk) IndexURL() string {
-	return m.Discovery.UvConfig().IndexURL
-}
-
-// Uv's "extra-index-url" setting
-func (m *PythonSdk) ExtraIndexURL() string {
-	return m.Discovery.UvConfig().ExtraIndexURL
-}
-
 // Override the uv version
 //
 // Needs to be called before Load. Enables uv if not already enabled.
