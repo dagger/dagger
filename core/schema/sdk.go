@@ -641,10 +641,6 @@ func (sdk *goSDK) baseWithCodegen(
 						"codegen",
 					}, codegenArgs...),
 				},
-				{
-					Name:  "experimentalPrivilegedNesting",
-					Value: dagql.NewBoolean(true),
-				},
 			},
 		},
 	); err != nil {

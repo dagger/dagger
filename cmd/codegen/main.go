@@ -58,10 +58,6 @@ func init() {
 func ClientGen(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	ctx = telemetry.InitEmbedded(ctx, nil)
-	dag, err := dagger.Connect(ctx)
-	if err != nil {
-		return err
-	}
 
 	// we're checking for the flag existence here as not setting the flag and
 	// setting it to false doesn't produce the same behavior.
@@ -107,7 +103,7 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 		cfg.IntrospectionJSON = string(introspectionJSON)
 	}
 
-	return Generate(ctx, cfg, dag)
+	return Generate(ctx, cfg)
 }
 
 func Introspect(cmd *cobra.Command, args []string) error {
