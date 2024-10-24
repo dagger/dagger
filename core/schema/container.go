@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -1479,10 +1480,28 @@ func expandEnvVar(ctx context.Context, parent *core.Container, input string, exp
 		return "", err
 	}
 
-	return os.Expand(input, func(k string) string {
+	secretEnvs := []string{}
+	for _, secret := range parent.Secrets {
+		secretEnvs = append(secretEnvs, secret.EnvName)
+	}
+
+	var secretEnvFoundError error
+	expanded := os.Expand(input, func(k string) string {
+		// set error if its a secret env variable
+		if slices.Contains(secretEnvs, k) {
+			secretEnvFoundError = fmt.Errorf("expand cannot be used with secret env variable %q", k)
+			return ""
+		}
+
 		v, _ := core.LookupEnv(cfg.Env, k)
 		return v
-	}), nil
+	})
+
+	if secretEnvFoundError != nil {
+		return "", secretEnvFoundError
+	}
+
+	return expanded, nil
 }
 
 type containerWithSecretVariableArgs struct {
