@@ -6,7 +6,7 @@ on:
 jobs:
   test:
     name: test
-    runs-on: depot-ubuntu-latest-*,dagger=0.13.5
+    runs-on: depot-ubuntu-22.04,dagger=0.13.5
     steps:
       - name: Checkout
         uses: actions/checkout@v4
