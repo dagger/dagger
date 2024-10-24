@@ -1,9 +1,0 @@
-kind: Fixed
-body: |
-    Allow cloning hidden commits that are not part of a normal clone
-
-    For example, `refs/pull/<pr>/head`, or `refs/pull/<pr>/merge`.
-time: 2024-10-21T15:07:17.272068377+01:00
-custom:
-    Author: jedevc
-    PR: "8747"
