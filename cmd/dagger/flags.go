@@ -586,7 +586,7 @@ func (v *serviceValue) Set(s string) error {
 		v.ports = append(v.ports, dagger.PortForward{
 			Backend:  nPort,
 			Frontend: nPort,
-			Protocol: dagger.Tcp,
+			Protocol: dagger.NetworkProtocolTcp,
 		})
 	case "udp":
 		host, port, err := net.SplitHostPort(u.Host)
@@ -601,7 +601,7 @@ func (v *serviceValue) Set(s string) error {
 		v.ports = append(v.ports, dagger.PortForward{
 			Backend:  nPort,
 			Frontend: nPort,
-			Protocol: dagger.Udp,
+			Protocol: dagger.NetworkProtocolUdp,
 		})
 	default:
 		return fmt.Errorf("unsupported service address. Must be a valid tcp:// or udp:// URL")
@@ -823,22 +823,22 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) error {
 	}
 
 	switch r.TypeDef.Kind {
-	case dagger.StringKind:
+	case dagger.TypeDefKindStringKind:
 		val, _ := getDefaultValue[string](r)
 		flags.String(name, val, usage)
 		return nil
 
-	case dagger.IntegerKind:
+	case dagger.TypeDefKindIntegerKind:
 		val, _ := getDefaultValue[int](r)
 		flags.Int(name, val, usage)
 		return nil
 
-	case dagger.BooleanKind:
+	case dagger.TypeDefKindBooleanKind:
 		val, _ := getDefaultValue[bool](r)
 		flags.Bool(name, val, usage)
 		return nil
 
-	case dagger.ScalarKind:
+	case dagger.TypeDefKindScalarKind:
 		scalarName := r.TypeDef.AsScalar.Name
 		defVal, _ := getDefaultValue[string](r)
 
@@ -853,7 +853,7 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) error {
 		flags.String(name, defVal, usage)
 		return nil
 
-	case dagger.EnumKind:
+	case dagger.TypeDefKindEnumKind:
 		enumName := r.TypeDef.AsEnum.Name
 		defVal, _ := getDefaultValue[string](r)
 
@@ -870,7 +870,7 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) error {
 
 		return nil
 
-	case dagger.ObjectKind:
+	case dagger.TypeDefKindObjectKind:
 		objName := r.TypeDef.AsObject.Name
 
 		if name == "id" && r.TypeDef.AsObject.IsCore() {
@@ -894,7 +894,7 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) error {
 			Type: fmt.Sprintf("%q object", objName),
 		}
 
-	case dagger.InputKind:
+	case dagger.TypeDefKindInputKind:
 		inputName := r.TypeDef.AsInput.Name
 
 		if val := GetCustomFlagValue(inputName); val != nil {
@@ -908,26 +908,26 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) error {
 			Type: fmt.Sprintf("%q input", inputName),
 		}
 
-	case dagger.ListKind:
+	case dagger.TypeDefKindListKind:
 		elementType := r.TypeDef.AsList.ElementTypeDef
 
 		switch elementType.Kind {
-		case dagger.StringKind:
+		case dagger.TypeDefKindStringKind:
 			val, _ := getDefaultValue[[]string](r)
 			flags.StringSlice(name, val, usage)
 			return nil
 
-		case dagger.IntegerKind:
+		case dagger.TypeDefKindIntegerKind:
 			val, _ := getDefaultValue[[]int](r)
 			flags.IntSlice(name, val, usage)
 			return nil
 
-		case dagger.BooleanKind:
+		case dagger.TypeDefKindBooleanKind:
 			val, _ := getDefaultValue[[]bool](r)
 			flags.BoolSlice(name, val, usage)
 			return nil
 
-		case dagger.ScalarKind:
+		case dagger.TypeDefKindScalarKind:
 			scalarName := elementType.AsScalar.Name
 			defVal, _ := getDefaultValue[[]string](r)
 
@@ -943,7 +943,7 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) error {
 			flags.StringSlice(name, defVal, usage)
 			return nil
 
-		case dagger.EnumKind:
+		case dagger.TypeDefKindEnumKind:
 			enumName := elementType.AsEnum.Name
 			defVal, _ := getDefaultValue[[]string](r)
 
@@ -961,7 +961,7 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) error {
 
 			return nil
 
-		case dagger.ObjectKind:
+		case dagger.TypeDefKindObjectKind:
 			objName := elementType.AsObject.Name
 
 			val, err := GetCustomFlagValueSlice(objName, nil)
@@ -979,7 +979,7 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) error {
 				Type: fmt.Sprintf("list of %q objects", objName),
 			}
 
-		case dagger.InputKind:
+		case dagger.TypeDefKindInputKind:
 			inputName := elementType.AsInput.Name
 
 			val, err := GetCustomFlagValueSlice(inputName, nil)
@@ -997,7 +997,7 @@ func (r *modFunctionArg) AddFlag(flags *pflag.FlagSet) error {
 				Type: fmt.Sprintf("list of %q inputs", inputName),
 			}
 
-		case dagger.ListKind:
+		case dagger.TypeDefKindListKind:
 			return &UnsupportedFlagError{
 				Name: name,
 				Type: "list of lists",
