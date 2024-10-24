@@ -58,7 +58,7 @@ func (m *ElixirSdk) ModuleRuntime(
 		return nil, err
 	}
 
-	elixirApplication := normalizeModName(modName)
+	elixirApplication := toElixirApplicationName(modName)
 
 	ctr, err := m.Common(ctx, modSource, introspectionJSON)
 	if err != nil {
@@ -71,7 +71,7 @@ func (m *ElixirSdk) ModuleRuntime(
 		WithEntrypoint([]string{
 			"mix", "cmd",
 			"--cd", path.Join(ModSourceDirPath, subPath, elixirApplication),
-			"mix dagger.invoke",
+			fmt.Sprintf("mix dagger.entrypoint.invoke %s", toElixirModuleName(modName)),
 		}), nil
 }
 
@@ -104,7 +104,7 @@ func (m *ElixirSdk) Common(ctx context.Context,
 	}
 	m = m.Base(modSource, subPath).
 		WithSDK(introspectionJSON).
-		WithNewElixirPackage(ctx, normalizeModName(modName))
+		WithNewElixirPackage(ctx, toElixirApplicationName(modName))
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -196,6 +196,10 @@ func mixProjectCaches(prefix string) (depsCache *dagger.CacheVolume, buildCache 
 	return dag.CacheVolume(prefix + "-deps"), dag.CacheVolume(prefix + "-build")
 }
 
-func normalizeModName(name string) string {
+func toElixirApplicationName(name string) string {
 	return strcase.ToSnake(name)
+}
+
+func toElixirModuleName(name string) string {
+	return strcase.ToCamel(name)
 }

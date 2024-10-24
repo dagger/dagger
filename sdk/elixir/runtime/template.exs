@@ -17,12 +17,10 @@ defmodule Main do
       )
 
     module = render_module(module: Macro.camelize(mod))
-    mix_task = render_mix_task(module: Macro.camelize(mod))
 
     File.write!(Path.join([mod, ".formatter.exs"]), dot_formatter_exs)
     File.write!(Path.join([mod, "mix.exs"]), mix_exs)
     File.write!(Path.join([mod, "lib", "#{mod_name}.ex"]), module)
-    File.write!(Path.join([mod, "lib", "mix", "tasks", "dagger.invoke.ex"]), mix_task)
   end
 
   defp atom(string), do: ":#{string}"
@@ -112,19 +110,6 @@ defmodule Main do
   """
 
   EEx.function_from_string(:def, :render_module, @module_ex, [:assigns])
-
-  @mix_task_ex """
-  defmodule Mix.Tasks.Dagger.Invoke do
-    use Mix.Task
-
-    def run(_args) do
-      Application.ensure_all_started(:dagger)
-      Dagger.Mod.invoke(<%= @module %>)
-    end
-  end
-  """
-
-  EEx.function_from_string(:def, :render_mix_task, @mix_task_ex, [:assigns])
 end
 
 Main.run(System.argv())
