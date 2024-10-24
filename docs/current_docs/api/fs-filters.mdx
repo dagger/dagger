@@ -6,6 +6,10 @@ import TabItem from '@theme/TabItem';
 
 # Directory Filters
 
+When you pass a directory to a Dagger Function as argument, Dagger uploads everything in that directory tree to the Dagger Engine. For large monorepos or directories containing large-sized files, this can significantly slow down your Dagger Function while filesystem contents are transferred. To mitigate this problem, Dagger lets you apply filters to control which files and directories are uploaded.
+
+## Directory arguments
+
 Dagger Functions do not have access to the filesystem of the host you invoke the Dagger Function from (i.e. the host you execute a CLI command like `dagger call` from). Instead, host files and directories need to be explicitly passed as command-line arguments to Dagger Functions.
 
 There are two important reasons for this.
