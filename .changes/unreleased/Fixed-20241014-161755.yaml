@@ -1,7 +1,0 @@
-kind: Fixed
-body: |
-    Allow custom enums that include ambiguous names (such as "true"/"false")
-time: 2024-10-14T16:17:55.998067541+01:00
-custom:
-    Author: jedevc
-    PR: "8682"

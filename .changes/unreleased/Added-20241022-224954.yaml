@@ -1,7 +1,0 @@
-kind: Added
-body: |
-  Add CPU pressure metrics for execs to TUI output.
-time: 2024-10-22T22:49:54.977668671-07:00
-custom:
-  Author: sipsma
-  PR: "8750"
