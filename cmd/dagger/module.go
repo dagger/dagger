@@ -365,7 +365,7 @@ var moduleUnInstallCmd = &cobra.Command{
 			}
 
 			depRefStr := extraArgs[0]
-			depSrc := dag.ModuleSource(depRefStr)
+			depSrc := dag.ModuleSource(depRefStr, dagger.ModuleSourceOpts{})
 
 			dep := dag.ModuleDependency(depSrc)
 

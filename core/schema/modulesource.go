@@ -471,6 +471,21 @@ func (s *moduleSchema) moduleSourceDependencies(
 		var eg errgroup.Group
 		for _, depCfg := range modCfg.Dependencies {
 			eg.Go(func() error {
+				for _, dep := range src.Self.WithoutDependencies {
+					removedDep, err := dep.Self.Source.Self.Symbolic()
+					if err != nil {
+						return err
+					}
+
+					// the currentDep is being uninstalled
+					if depCfg.Source == removedDep {
+						uninstalledDeps[removedDep] = struct{}{}
+						return nil
+					}
+				}
+
+				fmt.Errorf("WHAT %q", depCfg.Source)
+
 				var depSrc dagql.Instance[*core.ModuleSource]
 				err := s.dag.Select(ctx, s.dag.Root(), &depSrc,
 					dagql.Selector{
@@ -483,24 +498,6 @@ func (s *moduleSchema) moduleSourceDependencies(
 				)
 				if err != nil {
 					return fmt.Errorf("failed to create module source from dependency: %w", err)
-				}
-
-				currentDep, err := depSrc.Self.Symbolic()
-				if err != nil {
-					return err
-				}
-
-				for _, dep := range src.Self.WithoutDependencies {
-					removedDep, err := dep.Self.Source.Self.Symbolic()
-					if err != nil {
-						return err
-					}
-
-					// the currentDep is being uninstalled
-					if currentDep == removedDep {
-						uninstalledDeps[removedDep] = struct{}{}
-						return nil
-					}
 				}
 
 				var resolvedDepSrc dagql.Instance[*core.ModuleSource]
@@ -1236,6 +1233,9 @@ func (s *moduleSchema) collectCallerLocalDeps(
 				if err != nil {
 					return nil, fmt.Errorf("failed to get ref string for dependency: %w", err)
 				}
+				if dep.Self.Name == "bar" {
+					return nil, fmt.Errorf("I WAS HERE DUDE")
+				}
 				modCfg.Dependencies = append(modCfg.Dependencies, &modules.ModuleConfigDependency{
 					Name:   dep.Self.Name,
 					Source: refString,
@@ -1250,6 +1250,24 @@ func (s *moduleSchema) collectCallerLocalDeps(
 		}
 
 		for _, depCfg := range modCfg.Dependencies {
+			skip := false
+			for _, removedDep := range src.WithoutDependencies {
+				removedX, err := removedDep.Self.Source.Self.Symbolic()
+				if err != nil {
+					return nil, err
+				}
+
+				// ignore the dependency that we are currently uninstalling
+				if depCfg.Source == removedX {
+					skip = true
+					break
+				}
+			}
+
+			if skip {
+				continue
+			}
+
 			parsed := parseRefString(ctx, bk, depCfg.Source)
 			if parsed.kind != core.ModuleSourceKindLocal {
 				continue
