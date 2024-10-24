@@ -3,6 +3,7 @@ package templates
 import (
 	"encoding/json"
 	"fmt"
+	"go/ast"
 	"go/types"
 	"maps"
 	"strconv"
@@ -27,6 +28,7 @@ func (ps *parseState) parseGoFunc(parentType *types.Named, fn *types.Func) (*fun
 		return nil, fmt.Errorf("failed to find decl for method %s: %w", fn.Name(), err)
 	}
 	spec.doc = funcDecl.Doc.Text()
+	spec.sourceMap = ps.sourceMap(funcDecl)
 
 	sig, ok := fn.Type().(*types.Signature)
 	if !ok {
@@ -78,8 +80,9 @@ func (ps *parseState) parseGoFunc(parentType *types.Named, fn *types.Func) (*fun
 }
 
 type funcTypeSpec struct {
-	name string
-	doc  string
+	name      string
+	doc       string
+	sourceMap *sourceMap
 
 	argSpecs []paramSpec
 
@@ -108,6 +111,9 @@ func (spec *funcTypeSpec) TypeDefCode() (*Statement, error) {
 	if spec.doc != "" {
 		fnTypeDefCode = dotLine(fnTypeDefCode, "WithDescription").Call(Lit(strings.TrimSpace(spec.doc)))
 	}
+	if spec.sourceMap != nil {
+		fnTypeDefCode = dotLine(fnTypeDefCode, "WithSourceMap").Call(spec.sourceMap.TypeDefCode())
+	}
 
 	for _, argSpec := range spec.argSpecs {
 		if argSpec.isContext {
@@ -126,6 +132,9 @@ func (spec *funcTypeSpec) TypeDefCode() (*Statement, error) {
 		argOptsCode := []Code{}
 		if argSpec.description != "" {
 			argOptsCode = append(argOptsCode, Id("Description").Op(":").Lit(argSpec.description))
+		}
+		if argSpec.sourceMap != nil {
+			argOptsCode = append(argOptsCode, Id("SourceMap").Op(":").Add(argSpec.sourceMap.TypeDefCode()))
 		}
 		if argSpec.defaultValue != "" {
 			var v any
@@ -188,7 +197,7 @@ func (ps *parseState) parseParamSpecs(parentType *types.Named, fn *types.Func) (
 	specs := make([]paramSpec, 0, params.Len())
 
 	i := 0
-	if spec, err := ps.parseParamSpecVar(params.At(i), "", ""); err == nil && spec.isContext {
+	if spec, err := ps.parseParamSpecVar(params.At(i), nil, "", ""); err == nil && spec.isContext {
 		specs = append(specs, spec)
 		i++
 	}
@@ -216,7 +225,7 @@ func (ps *parseState) parseParamSpecs(parentType *types.Named, fn *types.Func) (
 
 			paramFields := unpackASTFields(stype.Fields)
 			for f := 0; f < paramType.NumFields(); f++ {
-				spec, err := ps.parseParamSpecVar(paramType.Field(f), paramFields[f].Doc.Text(), paramFields[f].Comment.Text())
+				spec, err := ps.parseParamSpecVar(paramType.Field(f), paramFields[f], paramFields[f].Doc.Text(), paramFields[f].Comment.Text())
 				if err != nil {
 					return nil, err
 				}
@@ -235,7 +244,7 @@ func (ps *parseState) parseParamSpecs(parentType *types.Named, fn *types.Func) (
 	paramFields := unpackASTFields(fnDecl.Type.Params)
 	for ; i < params.Len(); i++ {
 		docComment, lineComment := ps.commentForFuncField(fnDecl, paramFields, i)
-		spec, err := ps.parseParamSpecVar(params.At(i), docComment.Text(), lineComment.Text())
+		spec, err := ps.parseParamSpecVar(params.At(i), paramFields[i], docComment.Text(), lineComment.Text())
 		if err != nil {
 			return nil, err
 		}
@@ -250,7 +259,7 @@ func (ps *parseState) parseParamSpecs(parentType *types.Named, fn *types.Func) (
 	return specs, nil
 }
 
-func (ps *parseState) parseParamSpecVar(field *types.Var, docComment string, lineComment string) (paramSpec, error) {
+func (ps *parseState) parseParamSpecVar(field *types.Var, astField *ast.Field, docComment string, lineComment string) (paramSpec, error) {
 	if _, ok := field.Type().(*types.Struct); ok {
 		return paramSpec{}, fmt.Errorf("nested structs are not supported")
 	}
@@ -323,9 +332,15 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, docComment string, lin
 		name = typeSpec.GoType().String()
 	}
 
+	var sourceMap *sourceMap
+	if astField != nil {
+		sourceMap = ps.sourceMap(astField)
+	}
+
 	return paramSpec{
 		name:         name,
 		paramType:    paramType,
+		sourceMap:    sourceMap,
 		typeSpec:     typeSpec,
 		optional:     optional,
 		isContext:    isContext,
@@ -339,6 +354,7 @@ func (ps *parseState) parseParamSpecVar(field *types.Var, docComment string, lin
 type paramSpec struct {
 	name        string
 	description string
+	sourceMap   *sourceMap
 
 	optional bool
 	variadic bool

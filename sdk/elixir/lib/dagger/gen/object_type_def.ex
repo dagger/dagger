@@ -90,6 +90,18 @@ defmodule Dagger.ObjectTypeDef do
     Client.execute(object_type_def.client, query_builder)
   end
 
+  @doc "The location of this object declaration."
+  @spec source_map(t()) :: Dagger.SourceMap.t()
+  def source_map(%__MODULE__{} = object_type_def) do
+    query_builder =
+      object_type_def.query_builder |> QB.select("sourceMap")
+
+    %Dagger.SourceMap{
+      query_builder: query_builder,
+      client: object_type_def.client
+    }
+  end
+
   @doc "If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise."
   @spec source_module_name(t()) :: {:ok, String.t()} | {:error, term()}
   def source_module_name(%__MODULE__{} = object_type_def) do
