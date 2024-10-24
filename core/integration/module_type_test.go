@@ -55,8 +55,8 @@ func (t *Repeater) Render() string {
 
 @dagger.object_type
 class Repeater:
-    message: str = field(default="")
-    times: int = field(default=0)
+    message: str = dagger.field(default="")
+    times: int = dagger.field(default=0)
 
     @dagger.function
     def render(self) -> str:
@@ -147,9 +147,10 @@ func (m *Foo) MyFunction() X {
 
 @dagger.object_type
 class X:
-    message: str = field(default="")
+    message: str = dagger.field(default="")
 
-class Test:
+@dagger.object_type
+class Foo:
     @dagger.function
     def my_function(self) -> X:
         return X(message="foo")

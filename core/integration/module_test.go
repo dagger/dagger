@@ -894,6 +894,7 @@ func (m *Use) UseHello(ctx context.Context) (string, error) {
 `
 
 var usePythonOuter = `import dagger
+from dagger import dag
 
 @dagger.object_type
 class Use:
@@ -1116,6 +1117,7 @@ func (m *Use) Names(ctx context.Context) ([]string, error) {
 		{
 			sdk: "python",
 			source: `import dagger
+from dagger import dag
 
 @dagger.object_type
 class Use:
@@ -1761,7 +1763,7 @@ func (ModuleSuite) TestLotsOfFunctions(ctx context.Context, t *testctx.T) {
 		mainSrc := `import dagger
 
 @dagger.object_type
-class PotatoStack:
+class PotatoSack:
 `
 
 		for i := 0; i < funcCount; i++ {
@@ -1772,7 +1774,12 @@ class PotatoStack:
 `, i, i)
 		}
 
-		modGen := pythonModInit(t, c, mainSrc)
+		modGen := c.Container().
+			From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(sdkSource("python", mainSrc)).
+			With(daggerExec("init", "--source=.", "--name=potatoSack", "--sdk=python"))
 
 		var eg errgroup.Group
 		for i := 0; i < funcCount; i++ {

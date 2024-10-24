@@ -1373,14 +1373,14 @@ func (PythonSuite) TestNameOverrides(ctx context.Context, t *testctx.T) {
 	modGen := pythonModInit(t, c, `
         from typing import Annotated
 
-        from dagger import Arg, field, function, object_type
+        from dagger import Name, field, function, object_type
 
         @object_type
         class Test:
             field_: str = field(name="field")
 
             @function(name="func")
-            def func_(self, arg_: Annotated[str, Arg(name="arg")] = "") -> str:
+            def func_(self, arg_: Annotated[str, Name(name="arg")] = "") -> str:
                 return ""
         `)
 
