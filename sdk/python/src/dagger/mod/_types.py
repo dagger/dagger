@@ -14,12 +14,6 @@ class FieldDefinition:
     optional: bool = False
 
 
-@dataclasses.dataclass(slots=True, frozen=True)
-class ObjectDefinition:
-    name: PythonName
-    doc: str | None = dataclasses.field(default=None, compare=False)
-
-
 class Enum(base.Enum):
     """A string based :py:class:`enum.Enum` with optional descriptions for the values.
 
