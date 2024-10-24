@@ -2,80 +2,16 @@
 
 This describes how to release Dagger:
 
-- [🚙 Engine + 🚗 CLI ⏱ `30mins`](#-engine---cli--30mins)
-- [🐹 Go SDK ⏱ `10mins`](#-go-sdk--10mins)
-- [🐍 Python SDK ⏱ `5mins`](#-python-sdk--5mins)
-- [⬢ TypeScript SDK ⏱ `5mins`](#-typescript-sdk--5mins)
-- [🧪 Elixir SDK ⏱ `5mins`](#-elixir-sdk--5mins)
-- [🐘 PHP SDK ⏱ `5mins`](#-php-sdk--5mins)
-- [☸️ Helm chart ⏱ `2mins`](#%EF%B8%8F-helm-chart--2mins)
+- [📝 Preparation ⏱ `30mins`](#-preparation--30mins)
+- [🚀 Release ⏱ `10mins`](#-release--10mins)
 - [📒 Documentation ⏱ `5mins`](#-documentation--5mins)
 - [🌌 Daggerverse ⏱ `2mins`](#-daggerverse--2mins)
-- [☁️ Dagger Cloud ⏱ `2mins`](#-dagger-cloud--2mins)
-- [🪣 Install scripts ⏱ `2mins`](#-install-scripts--2mins#)
-- [🐙 dagger-for-github ⏱ `10mins`](#-dagger-for-github--10mins#)
-- [🍺 dagger Homebrew ⏱ `2mins`](#-dagger-homebrew--2mins#)
-- [❄️ nix ⏱ `2mins`](#-nix--2mins#)
-- [⚙️ CI ⏱ `2mins`](#-ci--2mins)
-
-This is a high-level diagram of how all the pieces fit together:
-
-```mermaid
-flowchart TB
-    repo(["🐙 github.com/dagger/dagger"])
-    docs["📒 Documentation"]
-    ci["⚙️ CI"]
-    repo -.-> docs & ci
-
-    subgraph Dagger
-        engine("🚙 Engine")
-        cli("🚗 CLI &nbsp;")
-    end
-
-    repo ==> engine & cli
-
-    S3["🗄 dl.dagger.io/dagger"]
-    brew-tap["🐙 github.com/dagger/homebrew-tap"]
-    github-action["🐙 github.com/dagger/dagger-for-github"]
-    nix["❄️ github.com/dagger/nix"]
-    cli --> S3 ------> brew-tap & github-action & nix
-
-    registry["📦 registry.dagger.io/engine"]
-    ghcr["🐙 ghcr.io/dagger/engine"]
-    engine --> ghcr --> registry
-
-    go["🐹 Go SDK"]
-    go-repo["🐙 github.com/dagger/dagger-go-sdk"]
-    go-pkg["🐹 dagger.io/dagger"]
-    go-ref["🐹 pkg.go.dev/dagger.io/dagger"]
-    daggerverse["🌌 Daggerverse"]
-    cloud["☁️ Dagger Cloud"]
-
-    repo ==> go --> go-repo --> go-pkg & go-ref
-    go-pkg -.-> daggerverse & cloud
-    registry -.- S3 -.- go & python & typescript & elixir & php & helm
-
-    python["🐍 Python SDK"]
-    pypi["🐍 pypi.org/project/dagger-io"]
-    readthedocs["📖 dagger-io.readthedocs.io"]
-    repo ==> python --> pypi & readthedocs
-
-    typescript["⬢ TypeScript SDK"]
-    npm["⬢ npmjs.com/@dagger.io/dagger"]
-    repo ==> typescript --> npm
-
-    elixir["🧪 Elixir SDK"]
-    hex["🧪 hex.pm/packages/dagger"]
-    repo ==> elixir --> hex
-
-    php["🐘 PHP SDK"]
-    php-repo["🐙 github.com/dagger/dagger-php-sdk"]
-    php-pkg["🐘 packagist.org/packages/dagger/dagger"]
-    repo ======> php --> php-repo --> php-pkg
-
-    helm["☸️ Helm chart"]
-    repo ======> helm
-```
+- [🌥️ Dagger Cloud ⏱ `2mins`](#-dagger-cloud--2mins)
+- [🪣 Install scripts ⏱ `2mins`](#-install-scripts--2mins)
+- [🐙 dagger-for-github ⏱ `10mins`](#-dagger-for-github--10mins)
+- [🍺 dagger Homebrew ⏱ `2mins`](#-dagger-homebrew--2mins)
+- [❄️ nix ⏱ `2mins`](#-nix--2mins)
+- [⚙️ Improvements ⏱ `2mins`](#-improvements--2mins)
 
 ## Let the team know
 
@@ -188,7 +124,7 @@ to dagger.
 - [gh](https://cli.github.com/) github cli tool
 - [golang](https://go.dev)
 
-## 🚙 Engine + 🚗 CLI ⏱ `30mins`
+## 📝 Preparation ⏱ `30mins`
 
 > [!WARNING]
 >
@@ -320,9 +256,10 @@ git commit -s -m "chore: add release notes for $ENGINE_VERSION"
 
 - [ ] `30 mins` Submit, review and merge the prep PR. The merge commit is what gets tagged in the next step.
   - 🚨 Non-main branch release only: Ideally use "Rebase and Merge" rather than squashing commits when merging so we can more easily preserve the history of the cherry-picked commits.
-- [ ] Ensure that all checks are green ✅ on the `$RELEASE_BRANCH` that you are about to release.
-  - 🚨 Non-main branch release only: currently, CI does not run on non-main branches and some of the workflows are currently hardcoded with `main` so it's not safe to manually run them. So for now this has to be skipped in this case.
-- [ ] `30mins` When you have confirmed that all checks are green, run the following:
+
+## 🚀 Release ⏱ `10mins`
+
+- [ ] When you have confirmed that all checks on `$RELEASE_BRANCH` are green, run the following:
 
 ```console
 git checkout "$RELEASE_BRANCH"
@@ -333,18 +270,20 @@ git tag "$ENGINE_VERSION" "$ENGINE_GIT_SHA"
 git push "$DAGGER_REPO_REMOTE" "$ENGINE_VERSION"
 ```
 
-This will kick off
-[`.github./workflows/publish.yml`](https://github.com/dagger/dagger/actions/workflows/engine-and-cli-publish.yml)
-which publishes:
+This will kick off [`.github/workflows/publish.yml`](https://github.com/dagger/dagger/actions/workflows/publish.yml) which publishes:
 
 - A new image to [ghcr.io/dagger/engine](https://github.com/dagger/dagger/pkgs/container/engine) (mirrored to registry.dagger.io/engine using https://github.com/dagger/registry-redirect).
 - New cli binaries to [dl.dagger.io](https://dl.dagger.io) (served from an S3 bucket, uploaded to by goreleaser)
+- Go packages to [🐙 dagger.io/dagger](https://pkg.go.dev/dagger.io/dagger) via [github.com/dagger/dagger-go-sdk](https://github.com/dagger/dagger-go-sdk/tags).
+- Python packages to [🐍 dagger-io](https://pypi.org/project/dagger-io).
+- Typescript packages to [⬢ npmjs.com/package/@dagger.io/dagger](https://www.npmjs.com/package/@dagger.io/dagger).
+- Elixir packages to [🧪 hex.pm/packages/dagger](https://hex.pm/packages/dagger).
+- PHP packages to [🐘 packagist.org/packages/dagger/dagger](https://packagist.org/packages/dagger/dagger) via [github.com/dagger/dagger-php-sdk](https://github.com/dagger/dagger-php-sdk/tags).
+- Helm charts to [☸️ registry.dagger.io/dagger-helm](https://github.com/dagger/dagger/pkgs/container/dagger-helm).
 
-### Improve releasing 改善
+Finally:
 
-- [ ] Download and install the latest release, and continue the rest of the
-      release process using the just-released CLI. This is needed now so the
-      `dev` module updated below will get `dagger.json`'s engine version bumped.
+- [ ] Double-check the engine+cli release:
 
 ```console
 # install the cli to dagger-0.13.0, and symlink dagger to it
@@ -356,75 +295,30 @@ dagger version
 dagger core version
 ```
 
-- [ ] Update all dagger versions in `.github/` to `$ENGINE_VERSION`
+- [ ] Double-check that all the above packages have been correctly published
+      and updated to their latest versions.
 
-  - The version numbers (of the form `<major>.<minor>.<patch>`) should be updated to the new version
-  - The worker runner versions (of the form `dagger-v<major>-<minor>-<patch>-<worker>`)
-  - e.g. if bumping 0.12.6->0.12.7, can run `find .github/ -type f -exec sed -i 's/0-12-6/0-12-7/g; s/0\.12\.6/0\.12\.7/g' {} +`
-
-- [ ] Regenerate `.github/` configs by running `dagger call -m .github generate -o .`
-
-- [ ] Open a PR with the title `Improve Releasing during $ENGINE_VERSION`
-
-```console
-git checkout -b improve-releasing-during-$ENGINE_VERSION
-git add .  # or any other files changed during the last few steps
-git commit -s -m "Improve releasing during $ENGINE_VERSION"
-git push
-```
-
-- Swap back to `$RELEASE_BRANCH` to continue
-
-```console
-git checkout "$RELEASE_BRANCH"
-```
-
-<details>
-<summary>🚨 Non-main branch release only:</summary>
-
-Change the branch the PR is being merged into from `main` to the `release-vX.Y.Z` branch.
-
-</details>
-
-## 🐹 Go SDK ⏱ `10mins`
-
-- [ ] Ensure that all checks are green ✅ on the `$RELEASE_BRANCH`
-      branch that you are about to release. This will usually be the commit that
-      bumps the Engine version, the one that you merged earlier.
-  - 🚨 Non-main branch release only: currently, CI does not run on non-main branches and some of the workflows are currently hardcoded with `main` so it's not safe to manually run them. So for now this has to be skipped in this case.
-
-```console
-export SDK_GIT_SHA=$ENGINE_GIT_SHA
-```
-
-- [ ] Tag & publish:
-
-```console
-cd sdk/go && export GO_SDK_VERSION=$(changie latest) && cd ../..
-git tag "sdk/go/$GO_SDK_VERSION" "$SDK_GIT_SHA"
-git push "$DAGGER_REPO_REMOTE" "sdk/go/$GO_SDK_VERSION"
-```
-
-This will trigger the [`publish-sdk-go`
-workflow](https://github.com/dagger/dagger/actions/workflows/sdk-go-publish.yml)
-which publishes to [🐙
-github.com/dagger/dagger-go-sdk](https://github.com/dagger/dagger-go-sdk/tags).
-
-The release notes should be automatically uploaded to the [Dagger releases](https://github.com/dagger/dagger/releases) page.
-
-Finally:
-
-- [ ] Double-check that the releases was picked up by [pkg.go.dev](https://pkg.go.dev/dagger.io/dagger).
-      You can manually request this new version via `open https://pkg.go.dev/dagger.io/dagger@$GO_SDK_VERSION`.
-      The new version can take up to `60mins` to appear, it's OK to move on.
+- [ ] Double-check that git tags + github releases have been made for each component.
 
 ### Improve releasing 改善
 
-- [ ] Swap to the release improvement branch
+🚨 Non-main branch release only: you'll likely want the changes from this PR in both `$RELEASE_BRANCH` and `main`.
+
+- [ ] Download and install the latest release, and continue the rest of the
+      release process using the just-released CLI. This is needed now so the
+      `.dagger` module updated below will get `dagger.json`'s engine version bumped.
+
+- [ ] Update the dagger version in `.github/main.go`, then regenerate
+`.github/` configs:
 
 ```console
-git checkout improve-releasing-during-$ENGINE_VERSION
+dagger call -m .github generate directory --path=.github/workflows export --path=.github/workflows --wipe
 ```
+
+- [ ] Update non-autogenerated `.github` configs to `$ENGINE_VERSION`
+  - The version numbers (of the form `<major>.<minor>.<patch>`) should be updated to the new version
+  - The worker runner versions (of the form `dagger-v<major>-<minor>-<patch>-<worker>`)
+  - e.g. if bumping 0.12.6->0.12.7, can run `find .github/ -type f -exec sed -i 's/0-12-6/0-12-7/g; s/0\.12\.6/0\.12\.7/g' {} +`
 
 - [ ] Bump the Go SDK version in our internal CI targets (these aren't actually
       used anywhere since we use the modularized go SDK - but it's good
@@ -446,91 +340,20 @@ git commit -s -m "chore: bump internal tooling to $ENGINE_VERSION"
 git push
 ```
 
+- [ ] Open a PR with the title `Improve Releasing during $ENGINE_VERSION`
+
+```console
+git checkout -b improve-releasing-during-$ENGINE_VERSION
+git add .  # or any other files changed during the last few steps
+git commit -s -m "Improve releasing during $ENGINE_VERSION"
+git push
+```
+
 - Swap back to `$RELEASE_BRANCH` to continue
 
 ```console
 git checkout "$RELEASE_BRANCH"
 ```
-
-## 🐍 Python SDK ⏱ `5mins`
-
-- [ ] Tag & publish:
-
-```console
-cd sdk/python && export PYTHON_SDK_VERSION=$(changie latest) && cd ../..
-git tag "sdk/python/$PYTHON_SDK_VERSION" "$SDK_GIT_SHA"
-git push "$DAGGER_REPO_REMOTE" sdk/python/$PYTHON_SDK_VERSION
-```
-
-This will trigger the [`Publish Python SDK`
-workflow](https://github.com/dagger/dagger/actions/workflows/sdk-python-publish.yml)
-which publishes [dagger-io to 🐍 PyPI](https://pypi.org/project/dagger-io)
-
-The release notes should be automatically uploaded to the [Dagger releases](https://github.com/dagger/dagger/releases) page.
-
-## ⬢ TypeScript SDK ⏱ `5mins`
-
-- [ ] Tag & publish:
-
-```console
-cd sdk/typescript && export TYPESCRIPT_SDK_VERSION=$(changie latest) && cd ../..
-git tag "sdk/typescript/$TYPESCRIPT_SDK_VERSION" "$SDK_GIT_SHA"
-git push "$DAGGER_REPO_REMOTE" sdk/typescript/$TYPESCRIPT_SDK_VERSION
-```
-
-This will trigger the [`Publish TypeScript SDK`
-workflow](https://github.com/dagger/dagger/actions/workflows/sdk-typescript-publish.yml)
-which publishes a new version to [⬢ npmjs.com/package/@dagger.io/dagger](https://www.npmjs.com/package/@dagger.io/dagger).
-
-The release notes should be automatically uploaded to the [Dagger releases](https://github.com/dagger/dagger/releases) page.
-
-## 🧪 Elixir SDK ⏱ `5mins`
-
-- [ ] Tag & publish:
-
-```console
-cd sdk/elixir && export ELIXIR_SDK_VERSION=$(changie latest) && cd ../..
-git tag "sdk/elixir/$ELIXIR_SDK_VERSION" "$SDK_GIT_SHA"
-git push "$DAGGER_REPO_REMOTE" sdk/elixir/$ELIXIR_SDK_VERSION
-```
-
-This will trigger the [`Publish Elixir SDK`
-workflow](https://github.com/dagger/dagger/actions/workflows/sdk-elixir-publish.yml)
-which publishes a new version to [🧪 hex.pm/packages/dagger](https://hex.pm/packages/dagger).
-
-The release notes should be automatically uploaded to the [Dagger releases](https://github.com/dagger/dagger/releases) page.
-
-## 🐘 PHP SDK ⏱ `5mins`
-
-- [ ] Tag & publish:
-
-```console
-cd sdk/php && export PHP_SDK_VERSION=$(changie latest) && cd ../..
-git tag "sdk/php/$PHP_SDK_VERSION" "$SDK_GIT_SHA"
-git push "$DAGGER_REPO_REMOTE" sdk/php/$PHP_SDK_VERSION
-```
-
-This will trigger the [`Publish PHP SDK`
-workflow](https://github.com/dagger/dagger/actions/workflows/sdk-php-publish.yml)
-which publishes to
-[github.com/dagger/dagger-php-sdk](https://github.com/dagger/dagger-php-sdk/tags).
-
-The release notes should be automatically uploaded to the [Dagger releases](https://github.com/dagger/dagger/releases) page.
-
-## ☸️ Helm chart ⏱ `2mins`
-
-- [ ] Tag & publish:
-
-```console
-export HELM_CHART_VERSION=v"$(awk '/^version: / { print $2 }' helm/dagger/Chart.yaml)"
-git tag "helm/chart/$HELM_CHART_VERSION" "$SDK_GIT_SHA"
-git push "$DAGGER_REPO_REMOTE" "helm/chart/$HELM_CHART_VERSION"
-```
-
-This will trigger the [`publish-helm-chart`
-workflow](https://github.com/dagger/dagger/actions/workflows/helm-publish.yml)
-which publishes to [🐙
-registry.dagger.io/dagger-helm](https://github.com/dagger/dagger/pkgs/container/dagger-helm).
 
 ## 🚨 Non-main branch release only
 
@@ -606,7 +429,7 @@ production deployment via Netlify as follows:
 - [ ] Mention in the release thread on Discord that Daggerverse can be updated
       to the just-released version. cc @marcosnils @matipan @grouville
 
-## ☁️ Dagger Cloud ⏱ `2mins`
+## 🌥️ Dagger Cloud ⏱ `2mins`
 
 - [ ] Mention in the release thread on Discord that Dagger Cloud can be updated
       to the just-released version. cc @marcosnils @matipan @sipsma
@@ -670,12 +493,15 @@ git push origin v6 --force #need to force since moving this tag
 - [ ] Check that Dagger nix flake has been updated to latest, e.g. [dagger: ->
       v0.12.5](https://github.com/dagger/nix/commit/5053689af7d18e67254ba0b2d60fa916b7370104)
 
-## Last step
+## ⚙️ Improvements ⏱ `2mins` 
 
 - [ ] When all the above done, remember to add the `RELEASING.md` changes to
       the `improve-releasing-during-v...` PR that you have opened earlier (remember
       to toggle all the checkboxes back to `[ ]`). Here is an example:
       https://github.com/dagger/dagger/pull/5658
+
+## Last step
+
 - [ ] Close the Discord release thread you created in [Let the team know](#let-the-team-know)
 - [ ] Close the GitHub milestone you created in [Let the team know](#let-the-team-know)
   - If there are remaining PRs/issues that were not resolved, then move
