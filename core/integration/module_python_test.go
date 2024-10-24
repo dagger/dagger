@@ -776,7 +776,7 @@ class Test:
 				With(daggerInitPython()).
 				Sync(ctx)
 
-			require.ErrorContains(t, err, "Failed to fetch wheel")
+			require.ErrorContains(t, err, "Failed to prepare distributions")
 		})
 	})
 }
