@@ -1,0 +1,9 @@
+kind: Added
+body: |-
+    Dagger entrypoint invoke is now moved to `dagger_sdk`.
+
+    It's recommended to remove the mix task in `lib/mix/tasks/dagger.invoke.ex`.
+time: 2024-10-24T15:35:31.138498+07:00
+custom:
+    Author: wingyplus
+    PR: "8769"
