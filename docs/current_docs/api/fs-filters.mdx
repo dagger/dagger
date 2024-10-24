@@ -38,15 +38,15 @@ It is worth noting that Dagger already uses caching to optimize file uploads. Su
 
 Pre-call filtering means that a directory is filtered before it's uploaded to the Dagger Engine container. This is useful for:
 
-- Monorepos containing multiple files and directories. Typically in a monorepo, your Dagger Function only operates on a subset (representing a specific component or feature) of your repository, so uploading the entire worktree on every call imposes a prohibitive cost.
+- Large monorepos. Typically your Dagger Function only operates on a subset of the monorepo, representing a specific component or feature. Uploading the entire worktree imposes a prohibitive cost.
 
-- Repositories containing binary objects. Binary objects, such as audio/video files, are usually extremely large in size and therefore take time to upload. If they're not directly relevant, you'll usually want your Dagger Function to ignore them.
+- Large files, such as audio/video files and other binary content. These files take time to upload. If they're not directly relevant, you'll usually want your Dagger Function to ignore them.
 
   :::tip
   The `.git` directory is a good example of both these cases. It contains a lot of data, including large binary objects, and for projects with a long version history, it can sometimes be larger than your actual source code.
   :::
 
-- Dependencies. If you're developing locally, you'll typically have your project dependencies installed locally as well: `node_modules` (Node.js), `.venv` (Python), `vendor` (PHP) and so on. When you call your Dagger Function locally, Dagger will upload all these installed dependencies as well. This is both bad practice and inefficient. Typically, you'll want your Dagger Function to ignore locally-installed dependencies and only operate on the project source code.
+- Dependencies. If you're developing locally, you'll typically have your project dependencies installed locally: `node_modules` (Node.js), `.venv` (Python), `vendor` (PHP) and so on. When you call your Dagger Function locally, Dagger will upload all these installed dependencies as well. This is both bad practice and inefficient. Typically, you'll want your Dagger Function to ignore locally-installed dependencies and only operate on the project source code.
 
 :::note
 At the time of writing, Dagger does not read exclusion patterns from existing `.dockerignore`/`.gitignore` files. If you already use these files, you'll need to manually implement the same patterns in your Dagger Function.
@@ -93,7 +93,7 @@ Here are a few examples of useful patterns:
 +ignore=["bin"]
 
 // exclude Python dependencies
-+ignore=["**/.venv","**/__pycache__"]
++ignore=["**/.venv", "**/__pycache__"]
 
 // exclude Node.js dependencies
 +ignore=["**/node_modules"]
@@ -111,7 +111,7 @@ Ignore(["**_test.go", "**/testdata/**"])
 Ignore(["bin"])
 
 # exclude Python dependencies
-Ignore(["**/.venv","**/__pycache__"])
+Ignore(["**/.venv", "**/__pycache__"])
 
 # exclude Node.js dependencies
 Ignore(["**/node_modules"])
@@ -129,7 +129,7 @@ Ignore(["*", "!.git", "!**/.gitignore"])
 @argument({ ignore: ["bin"] })
 
 // exclude Python dependencies
-@argument({ ignore: ["**/.venv","**/__pycache__"] })
+@argument({ ignore: ["**/.venv", "**/__pycache__"] })
 
 // exclude Node.js dependencies
 @argument({ ignore: ["**/node_modules"] })
@@ -204,7 +204,7 @@ dirOpts := dagger.DirectoryWithDirectoryOpts{
 <TabItem value="Python">
 ```python
 # exclude all Markdown files
-include=["*.md*"]
+exclude=["*.md*"]
 
 # include only the build output directory
 include=["build"]
@@ -219,7 +219,7 @@ exclude=["*.git"]
 <TabItem value="TypeScript">
 ```typescript
 // exclude all Markdown files
-const dirOpts = { include: ["*.md*"] }
+const dirOpts = { exclude: ["*.md*"] }
 
 // include only the build output directory
 const dirOpts = { include: ["build"] }
@@ -228,7 +228,7 @@ const dirOpts = { include: ["build"] }
 const dirOpts = { include: ["*.zip"] }
 
 // exclude Git metadata
-const dirOpts = { include: ["*.git"] }
+const dirOpts = { exclude: ["*.git"] }
 ```
 </TabItem>
 </Tabs>
