@@ -1,7 +1,0 @@
-kind: Changed
-body: '`dagger install` now preserves the original source input, and tracks a separate
-  `pin` field for the exact remote commit'
-time: 2024-10-08T13:35:27.589270907+01:00
-custom:
-  Author: jedevc
-  PR: "8587"
