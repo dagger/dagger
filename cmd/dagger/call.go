@@ -92,12 +92,12 @@ available functions.
 				return fmt.Errorf("function %q returns type %q with no further functions available", field, nextType.Kind)
 			}
 
-			return functionListRun(ctx, o, cmd.OutOrStdout(), true)
+			return functionListRun(o, cmd.OutOrStdout(), true)
 		})
 	},
 }
 
-func functionListRun(ctx context.Context, o functionProvider, writer io.Writer, skipUnsupported bool) error {
+func functionListRun(o functionProvider, writer io.Writer, skipUnsupported bool) error {
 	fns := o.GetFunctions()
 
 	tw := tabwriter.NewWriter(writer, 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
