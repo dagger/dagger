@@ -182,13 +182,21 @@ func (fe *frontendPretty) runWithTUI(ctx context.Context, run func(context.Conte
 	// set up ctx cancellation so the TUI can interrupt via keypresses
 	fe.runCtx, fe.interrupt = context.WithCancelCause(ctx)
 
-	_, out := findTTYs()
+	opts := []tea.ProgramOption{
+		tea.WithMouseCellMotion(),
+	}
+	in, out := findTTYs()
+	if in != nil {
+		opts = append(opts, tea.WithInput(in))
+	} else {
+		opts = append(opts, tea.WithInput(nil))
+	}
+	if out != nil {
+		opts = append(opts, tea.WithOutput(out))
+	}
 
 	// keep program state so we can send messages to it
-	fe.program = tea.NewProgram(fe,
-		tea.WithOutput(out),
-		tea.WithMouseCellMotion(),
-	)
+	fe.program = tea.NewProgram(fe, opts...)
 
 	// prevent browser.OpenURL from breaking the TUI if it fails
 	browser.Stdout = fe.browserBuf
