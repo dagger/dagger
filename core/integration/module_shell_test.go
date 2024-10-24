@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"dagger.io/dagger"
@@ -23,16 +24,59 @@ func daggerShell(script string) dagger.WithContainerFunc {
 	}
 }
 
-func (ShellSuite) TestBasicContainer(ctx context.Context, t *testctx.T) {
+func (ShellSuite) TestFallbackToCore(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	script := ".container alpine:latest | with-exec apk,add,git | with-workdir /src | with-exec git,clone,https://github.com/dagger/dagger.git,.,--depth=1 | file README.md | contents"
-	out, err := daggerCliBase(t, c).
-		With(withModInit("go", "")).
+	script := fmt.Sprintf("container | from %s | with-exec apk,add,git | with-workdir /src | with-exec git,clone,https://github.com/dagger/dagger.git,.,--depth=1 | file README.md | contents", alpineImage)
+	out, err := modInit(t, c, "go", "").
 		With(daggerShell(script)).
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "What is Dagger?")
+}
+
+func (ShellSuite) TestDefaultToModule(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	out, err := modInit(t, c, "go", `package main
+
+import (
+	"dagger/test/internal/dagger"
+)
+
+type Test struct{}
+
+func (m *Test) Container() *dagger.Container {
+    return dag.Container(). From("`+alpineImage+`")
+}
+`,
+	).
+		With(daggerShell("container | with-exec cat,/etc/os-release | stdout")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "Alpine Linux")
+}
+
+func (ShellSuite) TestForceCore(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	out, err := modInit(t, c, "go", `package main
+
+import (
+	"dagger/test/internal/dagger"
+)
+
+type Test struct{}
+
+func (m *Test) Container() *dagger.Container {
+    return dag.Container(). From("`+golangImage+`")
+}
+`,
+	).
+		With(daggerShell(fmt.Sprintf(".core container | from %s | with-exec cat,/etc/os-release | stdout", alpineImage))).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "Alpine Linux")
 }
 
 func (ShellSuite) TestBasicGit(ctx context.Context, t *testctx.T) {
