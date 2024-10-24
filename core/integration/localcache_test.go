@@ -74,7 +74,7 @@ func (EngineSuite) TestLocalCacheGCKeepBytesConfig(ctx context.Context, t *testc
 				expectedGCConfigKeepBytes = getEngineKeepBytesByPercent(ctx, t, c2, int(server.DefaultDiskSpacePercentage))
 			}
 
-			actualGCConfigKeepBytes, err := c2.DaggerEngine().LocalCache().KeepBytes(ctx)
+			actualGCConfigKeepBytes, err := c2.Engine().LocalCache().KeepBytes(ctx)
 			require.NoError(t, err)
 			require.Equal(t, expectedGCConfigKeepBytes, actualGCConfigKeepBytes)
 		})
@@ -100,7 +100,7 @@ func (EngineSuite) TestLocalCacheAutomaticGC(ctx context.Context, t *testctx.T) 
 	require.NoError(t, err)
 	t.Cleanup(func() { c2.Close() })
 
-	cacheEnts := c2.DaggerEngine().LocalCache().EntrySet()
+	cacheEnts := c2.Engine().LocalCache().EntrySet()
 	previousUsedBytes, err := cacheEnts.DiskSpaceBytes(ctx)
 	require.NoError(t, err)
 
@@ -111,7 +111,7 @@ func (EngineSuite) TestLocalCacheAutomaticGC(ctx context.Context, t *testctx.T) 
 	require.NoError(t, err)
 	require.NoError(t, c3.Close())
 
-	cacheEnts = c2.DaggerEngine().LocalCache().EntrySet()
+	cacheEnts = c2.Engine().LocalCache().EntrySet()
 	newUsedBytes, err := cacheEnts.DiskSpaceBytes(ctx)
 	require.NoError(t, err)
 	require.Greater(t, newUsedBytes, previousUsedBytes)
@@ -123,7 +123,7 @@ func (EngineSuite) TestLocalCacheAutomaticGC(ctx context.Context, t *testctx.T) 
 	_, err = c4.Container().From(alpineImage).WithExec([]string{"dd", "if=/dev/zero", "of=/bigfile", "bs=1M", "count=2048"}).Sync(ctx)
 	require.NoError(t, err)
 
-	cacheEnts = c2.DaggerEngine().LocalCache().EntrySet()
+	cacheEnts = c2.Engine().LocalCache().EntrySet()
 	newUsedBytes, err = cacheEnts.DiskSpaceBytes(ctx)
 	require.NoError(t, err)
 	require.Greater(t, newUsedBytes, previousUsedBytes)
@@ -134,7 +134,7 @@ func (EngineSuite) TestLocalCacheAutomaticGC(ctx context.Context, t *testctx.T) 
 	require.NoError(t, c4.Close())
 	tryCount := 300
 	for i := range tryCount {
-		cacheEnts = c2.DaggerEngine().LocalCache().EntrySet()
+		cacheEnts = c2.Engine().LocalCache().EntrySet()
 		newUsedBytes, err = cacheEnts.DiskSpaceBytes(ctx)
 		require.NoError(t, err)
 
@@ -190,7 +190,7 @@ func (EngineSuite) TestLocalCacheManualGC(ctx context.Context, t *testctx.T) {
 	// some parts of session cleanup happen asynchronously so we need retries here
 	const tryCount = 10
 	for i := range tryCount {
-		ents, err := c2.DaggerEngine().LocalCache().EntrySet().Entries(ctx)
+		ents, err := c2.Engine().LocalCache().EntrySet().Entries(ctx)
 		require.NoError(t, err)
 		var alpineImageEnt *cacheEntryVals
 		var touchFooEnt *cacheEntryVals
@@ -219,9 +219,9 @@ func (EngineSuite) TestLocalCacheManualGC(ctx context.Context, t *testctx.T) {
 	}
 
 	// prune everything
-	err = c2.DaggerEngine().LocalCache().Prune(ctx)
+	err = c2.Engine().LocalCache().Prune(ctx)
 	require.NoError(t, err)
-	newEnts, err := c2.DaggerEngine().LocalCache().EntrySet().Entries(ctx)
+	newEnts, err := c2.Engine().LocalCache().EntrySet().Entries(ctx)
 	require.NoError(t, err)
 	require.Len(t, newEnts, 1) // 1 because there are cache entries created internally when each session starts (the file containing the core schema)
 }
@@ -258,7 +258,7 @@ type cacheEntryVals struct {
 	ActivelyUsed              bool
 }
 
-func getCacheEntryVals(ctx context.Context, t *testctx.T, ent dagger.DaggerEngineCacheEntry) *cacheEntryVals {
+func getCacheEntryVals(ctx context.Context, t *testctx.T, ent dagger.EngineCacheEntry) *cacheEntryVals {
 	t.Helper()
 
 	vals := &cacheEntryVals{}
