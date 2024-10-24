@@ -16,7 +16,3 @@ jobs:
           verb: call
           module: github.com/shykes/daggerverse/hello@v0.1.2
           args: hello --greeting="bonjour" --name="monde"
-          # assumes the Dagger Cloud token is in
-          # a repository secret named DAGGER_CLOUD_TOKEN
-          # set via the GitHub UI/CLI
-          cloud-token: ${{ secrets.DAGGER_CLOUD_TOKEN }}
