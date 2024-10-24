@@ -1,5 +1,5 @@
-# This file was generated. See https://daggerverse.dev/mod/github.com/shykes/gha
-name: java-dev
+# This file was generated. See https://daggerverse.dev/mod/github.com/dagger/dagger/modules/gha
+name: Github
 "on":
     push:
         branches:
@@ -11,16 +11,16 @@ name: java-dev
             - synchronize
             - ready_for_review
     workflow_dispatch: {}
+permissions:
+    contents: read
 concurrency:
     group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
     cancel-in-progress: true
 jobs:
-    dagger:
+    github:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-5-8c-dind' || 'ubuntu-latest' }}
-        permissions:
-            contents: read
-        name: java-dev
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-5-4c' || 'ubuntu-latest' }}
+        name: Github
         steps:
             - name: Checkout
               uses: actions/checkout@v4
@@ -49,50 +49,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin sh
               env:
-                DAGGER_VERSION: latest
-              shell: bash
-            - name: Install go
-              uses: actions/setup-go@v5
-              with:
-                cache-dependency-path: dev/go.sum
-                go-version: "1.22"
-            - name: scripts/start-dev-dagger.sh
-              id: start-dev-dagger
-              run: |
-                #!/bin/bash --noprofile --norc -e -o pipefail
-
-                GITHUB_ENV="${GITHUB_ENV:=github.env}"
-                DAGGER_SOURCE="${DAGGER_SOURCE:=.}"
-
-                if [ ! -d "$DAGGER_SOURCE" ]; then
-                    dagger core \
-                        directory \
-                        with-directory --path=. --directory="$DAGGER_SOURCE" \
-                        export --path=dagger-source
-                    DAGGER_SOURCE=./dagger-source
-                fi
-
-                echo "::group::Starting dev engine"
-                if ! [[ -x "$(command -v docker)" ]]; then
-                    echo "docker is not installed"
-                    exit 1
-                fi
-
-                (
-                    cd "$DAGGER_SOURCE"/.dagger/mage
-                    go run main.go -w ../.. engine:dev
-                ) \
-                | sed 's/^export //' \
-                | while IFS= read -r line; do
-                    eval echo "$line"
-                done \
-                | tee "${GITHUB_ENV}"
-
-                echo "::endgroup::"
-              env:
-                _EXPERIMENTAL_DAGGER_DEV_CONTAINER: dagger-engine.dev-${{ github.run_id }}di
-                _EXPERIMENTAL_DAGGER_DEV_OUTPUT: ./bin/dev-${{ github.run_id }}
-                DAGGER_SOURCE: .
+                DAGGER_VERSION: v0.13.5
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -239,8 +196,9 @@ jobs:
                 exit $EXIT_CODE
               env:
                 _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
-                COMMAND: dagger call -q --docker-cfg=file:$HOME/.docker/config.json check --targets=sdk/java
+                COMMAND: dagger call -q check
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
+                DAGGER_MODULE: .github
               shell: bash
         timeout-minutes: 10
         outputs:

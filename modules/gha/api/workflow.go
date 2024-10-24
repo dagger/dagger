@@ -1,46 +1,12 @@
-package main
-
-import (
-	"encoding/json"
-
-	"github.com/dagger/dagger/modules/gha/internal/dagger"
-	"gopkg.in/yaml.v3"
-)
-
-const (
-	genHeader = "# This file was generated. See https://daggerverse.dev/mod/github.com/dagger/dagger/modules/gha"
-)
+package api
 
 type Workflow struct {
 	Name        string               `json:"name,omitempty" yaml:"name,omitempty"`
 	On          WorkflowTriggers     `json:"on" yaml:"on"`
+	Permissions *Permissions         `json:"permissions,omitempty" yaml:"permissions,omitempty"`
+	Env         map[string]string    `json:"env,omitempty" yaml:"env,omitempty"`
 	Concurrency *WorkflowConcurrency `json:"concurrency,omitempty" yaml:"concurrency,omitempty"`
 	Jobs        map[string]Job       `json:"jobs" yaml:"jobs"`
-	Env         map[string]string    `json:"env,omitempty" yaml:"env,omitempty"`
-}
-
-// Generate an overlay config directory for this workflow
-func (w Workflow) Config(
-	// Filename of the workflow file under .github/workflows/
-	filename string,
-	// Encode the workflow as JSON, which is valid YAML
-	asJSON bool,
-) *dagger.Directory {
-	var (
-		contents []byte
-		err      error
-	)
-	if asJSON {
-		contents, err = json.MarshalIndent(w, "", " ")
-	} else {
-		contents, err = yaml.Marshal(w)
-	}
-	if err != nil {
-		panic(err)
-	}
-	return dag.
-		Directory().
-		WithNewFile(".github/workflows/"+filename, genHeader+"\n"+string(contents))
 }
 
 type WorkflowConcurrency struct {
@@ -89,7 +55,6 @@ type DispatchInput struct {
 
 type Job struct {
 	RunsOn         []string          `json:"runs-on" yaml:"runs-on"`
-	Permissions    *JobPermissions   `json:"permissions,omitempty" yaml:"permissions,omitempty"`
 	Name           string            `json:"name" yaml:"name"`
 	Needs          []string          `json:"needs,omitempty" yaml:"needs,omitempty"`
 	Steps          []JobStep         `json:"steps" yaml:"steps"`
@@ -127,7 +92,7 @@ const (
 )
 
 // Permissions defines the permission levels for various scopes in a job.
-type JobPermissions struct {
+type Permissions struct {
 	Contents           PermissionLevel `json:"contents,omitempty" yaml:"contents,omitempty"`
 	Issues             PermissionLevel `json:"issues,omitempty" yaml:"issues,omitempty"`
 	Actions            PermissionLevel `json:"actions,omitempty" yaml:"actions,omitempty"`

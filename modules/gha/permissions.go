@@ -1,26 +1,21 @@
 package main
 
 import (
-	"fmt"
 	"strings"
+
+	"github.com/dagger/dagger/modules/gha/api"
 )
 
 type Permission string
 
 type Permissions []Permission
 
-func (perms Permissions) JobPermissions() (p *JobPermissions) {
-	defer func() {
-		fmt.Printf("%v.JobPermissions() -> %v\n", perms, p)
-	}()
+func (perms Permissions) Permissions() *api.Permissions {
 	if perms == nil {
 		return nil
 	}
-	p = new(JobPermissions)
+	p := new(api.Permissions)
 	for _, perm := range perms {
-		object := perm.Object()
-		level := perm.Level()
-		fmt.Printf("applying permission '%s': object=%v level=%v\n", perm, object, level)
 		switch perm.Object() {
 		case "contents":
 			p.Contents = perm.Level()
@@ -53,9 +48,9 @@ func (perms Permissions) JobPermissions() (p *JobPermissions) {
 	return p
 }
 
-func (p Permission) parts() (PermissionLevel, string) {
+func (p Permission) parts() (api.PermissionLevel, string) {
 	parts := strings.SplitN(string(p), "_", 2)
-	level := PermissionLevel(parts[0])
+	level := api.PermissionLevel(parts[0])
 	var object string
 	if len(parts) >= 2 {
 		object = parts[1]
@@ -63,7 +58,7 @@ func (p Permission) parts() (PermissionLevel, string) {
 	return level, object
 }
 
-func (p Permission) Level() PermissionLevel {
+func (p Permission) Level() api.PermissionLevel {
 	level, _ := p.parts()
 	return level
 }
