@@ -15,7 +15,7 @@ When running a CI pipeline on a Dagger-powered Depot GitHub Actions Runner, the 
 1. Each Depot GitHub Actions Runner is automatically connected to an already running Dagger Engine (this exists outside of the Depot GitHub Runner). The external Dagger Engine comes with caching pre-configured.
 1. The "Dagger for GitHub" GitHub Action installs the Dagger CLI, and then calls the specified sub-command, module, function name, and arguments.
 1. The Dagger CLI running inside a Depot GitHub Runner gets automatically connected to Dagger Cloud.
-1. The Dagger CLI is also configured to connect to the external Dagger Engine which is already
+1. The Dagger CLI is also pre-configured to connect to the external Dagger Engine with persistent caching
 1. The Dagger CLI executes the specified sub-command and sends telemetry to Dagger Cloud.
 1. The workflow completes with success or failure. Logs appear in GitHub as usual. They also appear in Dagger Cloud.
 
