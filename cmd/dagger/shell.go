@@ -204,8 +204,7 @@ func (h *shellCallHandler) run(ctx context.Context, reader io.Reader, name strin
 	}
 
 	syntax.Walk(file, func(node syntax.Node) bool {
-		switch node := node.(type) {
-		case *syntax.CmdSubst:
+		if node, ok := node.(*syntax.CmdSubst); ok {
 			// Rewrite command substitutions from $(foo; bar) to $(exec <&-; foo; bar)
 			// so that all the original commands run with a closed (nil) standard input.
 			node.Stmts = append([]*syntax.Stmt{{
@@ -393,7 +392,7 @@ func (h *shellCallHandler) Exec(next interp.ExecHandlerFunc) interp.ExecHandlerF
 			// Ensure any error from the handler is written to stdout so that
 			// the next command in the chain knows about it.
 			if e := (ShellState{Error: &m}.Write(ctx)); e != nil {
-				return fmt.Errorf("failed to encode error (%w): %w", err, e)
+				return fmt.Errorf("failed to encode error (%q): %w", m, e)
 			}
 			// There's a bug in the library where a handler that does `return err`
 			// is fatal but NewExitStatus` is not. With a fatal error, if this
@@ -460,7 +459,7 @@ func (h *shellCallHandler) cmd(ctx context.Context, args []string) error {
 }
 
 // entrypointCall is executed when it's the first in a command pipeline
-func (h *shellCallHandler) entrypointCall(ctx context.Context, args []string) (*ShellState, error) { //nolint:unparam
+func (h *shellCallHandler) entrypointCall(ctx context.Context, args []string) (*ShellState, error) {
 	if h.debug {
 		shellLogf(ctx, "[DBG] └ Entrypoint(%v)\n", args)
 	}
@@ -694,11 +693,6 @@ func (h *shellCallHandler) executeRequest(ctx context.Context, q *querybuilder.S
 	return h.withTerminal(func(stdin io.Reader, stdout, stderr io.Writer) error {
 		return handleResponse(returnType, response, stdout, stderr)
 	})
-}
-
-func shellLog(ctx context.Context, msg string) {
-	hctx := interp.HandlerCtx(ctx)
-	fmt.Fprint(hctx.Stderr, msg)
 }
 
 func shellLogf(ctx context.Context, msg string, args ...any) {
@@ -956,7 +950,6 @@ func (h *shellCallHandler) Builtin(ctx context.Context, args []string) error {
 	case "core":
 		if len(args) < 2 {
 			return functionListRun(
-				ctx,
 				h.mod.GetFunctionProvider("Query"),
 				interp.HandlerCtx(ctx).Stdout,
 				false,
@@ -982,7 +975,6 @@ func (h *shellCallHandler) Builtin(ctx context.Context, args []string) error {
 
 	case "functions":
 		return functionListRun(
-			ctx,
 			h.mod.MainObject.AsFunctionProvider(),
 			interp.HandlerCtx(ctx).Stdout,
 			false,
