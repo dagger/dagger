@@ -35,12 +35,3 @@ To free up disk space used by the cache, use the following command:
 ```shell
 dagger core dagger-engine local-cache prune
 ```
-
-## Best practices
-
-- For the layer cache:
-  - Layers are cached in sequence, and a change in any one layer invalidates that and all subsequent layers. Pay attention to the order of your build operations, and sequence non-volatile operations before volatile ones to avoid invalidating the cache early.
-  - It may sometimes be necessary to explicitly force execution of specific pipeline operations, bypassing the Dagger layer cache. The typical approach for this is to [invalidate the Dagger layer cache](../cookbook/cookbook.mdx#invalidate-cache) by introducing a volatile time variable at a specific point in the Dagger pipeline
-
-- For the volume cache:
-  - Cache the tool's own cache directory instead of caching the installed dependencies directory. For example, with `node` and `npm`, use a cache volume for the  `~/.npm` cache directory and not for the project's `node_modules` directory.
