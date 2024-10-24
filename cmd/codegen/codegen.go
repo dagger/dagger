@@ -15,13 +15,42 @@ import (
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 )
 
+func Init(ctx context.Context, cfg generator.Config, dag *dagger.Client) (err error) {
+	return generate(ctx, cfg, dag, generator.Generator.Init)
+}
+
 func Generate(ctx context.Context, cfg generator.Config, dag *dagger.Client) (err error) {
+	return generate(ctx, cfg, dag, generator.Generator.Generate)
+}
+
+type generatorFunc func(generator generator.Generator, ctx context.Context, introspectionSchema *introspection.Schema, introspectionSchemaVersion string) (*generator.GeneratedState, error)
+
+func generate(ctx context.Context, cfg generator.Config, dag *dagger.Client, generateF generatorFunc) (err error) {
 	logsW := os.Stdout
 
 	if cfg.ModuleName != "" {
 		fmt.Fprintf(logsW, "generating %s module: %s\n", cfg.Lang, cfg.ModuleName)
 	} else {
 		fmt.Fprintf(logsW, "generating %s SDK client\n", cfg.Lang)
+	}
+
+	var gen generator.Generator
+	switch cfg.Lang {
+	case generator.SDKLangGo:
+		gen = &gogenerator.GoGenerator{
+			Config: cfg,
+		}
+	case generator.SDKLangTypeScript:
+		gen = &typescriptgenerator.TypeScriptGenerator{
+			Config: cfg,
+		}
+
+	default:
+		sdks := []string{
+			string(generator.SDKLangGo),
+			string(generator.SDKLangTypeScript),
+		}
+		return fmt.Errorf("use target SDK language: %s: %w", sdks, generator.ErrUnknownSDKLang)
 	}
 
 	var introspectionSchema *introspection.Schema
@@ -39,9 +68,10 @@ func Generate(ctx context.Context, cfg generator.Config, dag *dagger.Client) (er
 			return err
 		}
 	}
+	generator.SetSchemaParents(introspectionSchema)
 
 	for ctx.Err() == nil {
-		generated, err := generate(ctx, introspectionSchema, introspectionSchemaVersion, cfg)
+		generated, err := generateF(gen, ctx, introspectionSchema, introspectionSchemaVersion)
 		if err != nil {
 			return err
 		}
@@ -74,29 +104,4 @@ func Generate(ctx context.Context, cfg generator.Config, dag *dagger.Client) (er
 	}
 
 	return ctx.Err()
-}
-
-func generate(ctx context.Context, introspectionSchema *introspection.Schema, introspectionSchemaVersion string, cfg generator.Config) (*generator.GeneratedState, error) {
-	generator.SetSchemaParents(introspectionSchema)
-
-	var gen generator.Generator
-	switch cfg.Lang {
-	case generator.SDKLangGo:
-		gen = &gogenerator.GoGenerator{
-			Config: cfg,
-		}
-	case generator.SDKLangTypeScript:
-		gen = &typescriptgenerator.TypeScriptGenerator{
-			Config: cfg,
-		}
-
-	default:
-		sdks := []string{
-			string(generator.SDKLangGo),
-			string(generator.SDKLangTypeScript),
-		}
-		return nil, fmt.Errorf("use target SDK language: %s: %w", sdks, generator.ErrUnknownSDKLang)
-	}
-
-	return gen.Generate(ctx, introspectionSchema, introspectionSchemaVersion)
 }
