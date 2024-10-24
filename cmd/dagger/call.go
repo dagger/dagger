@@ -97,7 +97,7 @@ available functions.
 	},
 }
 
-func functionListRun(ctx context.Context, o functionProvider, writer io.Writer, showSkipped bool) error {
+func functionListRun(ctx context.Context, o functionProvider, writer io.Writer, skipUnsupported bool) error {
 	fns := o.GetFunctions()
 
 	tw := tabwriter.NewWriter(writer, 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
@@ -111,7 +111,7 @@ func functionListRun(ctx context.Context, o functionProvider, writer io.Writer, 
 	})
 	skipped := make([]string, 0)
 	for _, fn := range fns {
-		if fn.IsUnsupported() {
+		if skipUnsupported && fn.IsUnsupported() {
 			skipped = append(skipped, fn.CmdName())
 			continue
 		}
@@ -124,7 +124,7 @@ func functionListRun(ctx context.Context, o functionProvider, writer io.Writer, 
 			desc,
 		)
 	}
-	if showSkipped && len(skipped) > 0 {
+	if len(skipped) > 0 {
 		msg := fmt.Sprintf("Skipped %d function(s) with unsupported types: %s", len(skipped), strings.Join(skipped, ", "))
 		fmt.Fprintf(tw, "\n%s\n",
 			termenv.String(msg).Faint().String(),

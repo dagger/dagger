@@ -271,7 +271,7 @@ require (
 	dagger.io/dagger v0.13.5
 	github.com/chzyer/readline v1.5.1
 	github.com/dagger/dagger/engine/distconsts v0.13.5
-	mvdan.cc/sh/v3 v3.9.0
+	mvdan.cc/sh/v3 v3.10.0
 )
 
 replace (
