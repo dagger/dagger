@@ -7729,7 +7729,7 @@
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="ModuleSource-dependencies" href="#ModuleSource-dependencies"><code>dependencies</code></a> - <span class="property-type"><a href="#definition-ModuleDependency"><code>[ModuleDependency!]!</code></a></span> </td>
-                        <td> The dependencies of the module source. Includes dependencies from the configuration and any extras from withDependencies calls. </td>
+                        <td> The effective module source dependencies from the configuration, and calls to withDependencies and withoutDependencies. </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="ModuleSource-digest" href="#ModuleSource-digest"><code>digest</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
@@ -7910,6 +7910,23 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>name</code></span> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span></h6>
                                 <p>The name to set.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr class="row-has-field-arguments">
+                        <td data-property-name=""><a class="property-name" id="ModuleSource-withoutDependencies" href="#ModuleSource-withoutDependencies"><code>withoutDependencies</code></a> - <span class="property-type"><a href="#definition-ModuleSource"><code>ModuleSource!</code></a></span> </td>
+                        <td> Remove the provided dependencies from the module source's dependency list. </td>
+                      </tr>
+                      <tr class="row-field-arguments">
+                        <td colspan="2">
+                          <div class="field-arguments">
+                            <h5 class="field-arguments-heading"> Arguments </h5>
+                            <div class="field-argument-list">
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>dependencies</code></span> - <span class="property-type"><a href="#definition-ModuleDependencyID"><code>[ModuleDependencyID!]!</code></a></span></h6>
+                                <p>The dependencies to remove.</p>
                               </div>
                             </div>
                           </div>

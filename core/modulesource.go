@@ -65,12 +65,13 @@ type ModuleSource struct {
 	AsGitSource dagql.Nullable[*GitModuleSource] `field:"true" doc:"If the source is a of kind git, the git source representation of it."`
 
 	// Settings that can be used to initialize or override the source's configuration
-	WithName          string
-	WithDependencies  []dagql.Instance[*ModuleDependency]
-	WithSDK           string
-	WithInitConfig    *ModuleInitConfig
-	WithSourceSubpath string
-	WithViews         []*ModuleSourceView
+	WithName            string
+	WithDependencies    []dagql.Instance[*ModuleDependency]
+	WithoutDependencies []dagql.Instance[*ModuleDependency]
+	WithSDK             string
+	WithInitConfig      *ModuleInitConfig
+	WithSourceSubpath   string
+	WithViews           []*ModuleSourceView
 }
 
 func (src *ModuleSource) Type() *ast.Type {
@@ -678,7 +679,7 @@ func (src *LocalModuleSource) RefString() string {
 	if filepath.IsAbs(srcPath) {
 		srcPath = strings.TrimPrefix(filepath.Clean(srcPath), "/")
 	}
-	return srcPath
+	return filepath.Clean(srcPath)
 }
 
 func (src *LocalModuleSource) Symbolic() string {

@@ -465,12 +465,27 @@ func (s *moduleSchema) moduleSourceDependencies(
 		return nil, fmt.Errorf("failed to get module config: %w", err)
 	}
 
-	var existingDeps []dagql.Instance[*core.ModuleDependency]
+	existingDeps := []dagql.Instance[*core.ModuleDependency]{}
+	uninstalledDeps := map[string]struct{}{}
 	if ok && len(modCfg.Dependencies) > 0 {
-		existingDeps = make([]dagql.Instance[*core.ModuleDependency], len(modCfg.Dependencies))
 		var eg errgroup.Group
-		for i, depCfg := range modCfg.Dependencies {
+		for _, depCfg := range modCfg.Dependencies {
 			eg.Go(func() error {
+				for _, dep := range src.Self.WithoutDependencies {
+					removedDep, err := dep.Self.Source.Self.Symbolic()
+					if err != nil {
+						return err
+					}
+
+					// the currentDep is being uninstalled
+					if depCfg.Source == removedDep {
+						uninstalledDeps[removedDep] = struct{}{}
+						return nil
+					}
+				}
+
+				fmt.Errorf("WHAT %q", depCfg.Source)
+
 				var depSrc dagql.Instance[*core.ModuleSource]
 				err := s.dag.Select(ctx, s.dag.Root(), &depSrc,
 					dagql.Selector{
@@ -498,7 +513,8 @@ func (s *moduleSchema) moduleSourceDependencies(
 					return fmt.Errorf("failed to resolve dependency: %w", err)
 				}
 
-				err = s.dag.Select(ctx, s.dag.Root(), &existingDeps[i],
+				var onedep dagql.Instance[*core.ModuleDependency]
+				err = s.dag.Select(ctx, s.dag.Root(), &onedep,
 					dagql.Selector{
 						Field: "moduleDependency",
 						Args: []dagql.NamedInput{
@@ -510,11 +526,26 @@ func (s *moduleSchema) moduleSourceDependencies(
 				if err != nil {
 					return fmt.Errorf("failed to create module dependency: %w", err)
 				}
+
+				existingDeps = append(existingDeps, onedep)
 				return nil
 			})
 		}
 		if err := eg.Wait(); err != nil {
 			return nil, fmt.Errorf("failed to load pre-configured dependencies: %w", err)
+		}
+	}
+
+	// return error if any dependency was asked to be uninstalled,
+	// but it is not found in existing dependencies list
+	for _, dep := range src.Self.WithoutDependencies {
+		removedDep, err := dep.Self.Source.Self.Symbolic()
+		if err != nil {
+			return nil, err
+		}
+
+		if _, ok := uninstalledDeps[removedDep]; !ok {
+			return nil, fmt.Errorf("\n\ndependency with name %q was requested to be uninstalled, but it is not found in the dependencies list", removedDep)
 		}
 	}
 
@@ -597,6 +628,23 @@ func (s *moduleSchema) moduleSourceWithDependencies(
 		return nil, fmt.Errorf("failed to load module source dependencies from ids: %w", err)
 	}
 	src.WithDependencies = append(src.WithDependencies, newDeps...)
+	return src, nil
+}
+
+func (s *moduleSchema) moduleSourceWithoutDependencies(
+	ctx context.Context,
+	src *core.ModuleSource,
+	args struct {
+		Dependencies []core.ModuleDependencyID
+	},
+) (*core.ModuleSource, error) {
+	src = src.Clone()
+	removedDeps, err := collectIDInstances(ctx, s.dag, args.Dependencies)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load module source dependencies from ids: %w", err)
+	}
+
+	src.WithoutDependencies = removedDeps
 	return src, nil
 }
 
@@ -1051,6 +1099,26 @@ func (s *moduleSchema) normalizeCallerLoadedSource(
 			return inst, fmt.Errorf("failed to set dependency: %w", err)
 		}
 	}
+
+	if len(src.WithoutDependencies) > 0 {
+		depIDs := make([]core.ModuleDependencyID, len(src.WithoutDependencies))
+		for i, dep := range src.WithoutDependencies {
+			depIDs[i] = dagql.NewID[*core.ModuleDependency](dep.ID())
+		}
+
+		err = s.dag.Select(ctx, inst, &inst,
+			dagql.Selector{
+				Field: "withoutDependencies",
+				Args: []dagql.NamedInput{
+					{Name: "dependencies", Value: dagql.ArrayInput[core.ModuleDependencyID](depIDs)},
+				},
+			},
+		)
+		if err != nil {
+			return inst, fmt.Errorf("failed to set dependency: %w", err)
+		}
+	}
+
 	if src.WithViews != nil {
 		for _, view := range src.WithViews {
 			err = s.dag.Select(ctx, inst, &inst,
@@ -1165,6 +1233,9 @@ func (s *moduleSchema) collectCallerLocalDeps(
 				if err != nil {
 					return nil, fmt.Errorf("failed to get ref string for dependency: %w", err)
 				}
+				if dep.Self.Name == "bar" {
+					return nil, fmt.Errorf("I WAS HERE DUDE")
+				}
 				modCfg.Dependencies = append(modCfg.Dependencies, &modules.ModuleConfigDependency{
 					Name:   dep.Self.Name,
 					Source: refString,
@@ -1179,6 +1250,24 @@ func (s *moduleSchema) collectCallerLocalDeps(
 		}
 
 		for _, depCfg := range modCfg.Dependencies {
+			skip := false
+			for _, removedDep := range src.WithoutDependencies {
+				removedX, err := removedDep.Self.Source.Self.Symbolic()
+				if err != nil {
+					return nil, err
+				}
+
+				// ignore the dependency that we are currently uninstalling
+				if depCfg.Source == removedX {
+					skip = true
+					break
+				}
+			}
+
+			if skip {
+				continue
+			}
+
 			parsed := parseRefString(ctx, bk, depCfg.Source)
 			if parsed.kind != core.ModuleSourceKindLocal {
 				continue

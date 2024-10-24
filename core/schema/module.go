@@ -117,11 +117,15 @@ func (s *moduleSchema) Install() {
 			ArgDoc("name", `The name to set.`),
 
 		dagql.NodeFunc("dependencies", s.moduleSourceDependencies).
-			Doc(`The dependencies of the module source. Includes dependencies from the configuration and any extras from withDependencies calls.`),
+			Doc(`The effective module source dependencies from the configuration, and calls to withDependencies and withoutDependencies.`),
 
 		dagql.Func("withDependencies", s.moduleSourceWithDependencies).
 			Doc(`Append the provided dependencies to the module source's dependency list.`).
 			ArgDoc("dependencies", `The dependencies to append.`),
+
+		dagql.Func("withoutDependencies", s.moduleSourceWithoutDependencies).
+			Doc(`Remove the provided dependencies from the module source's dependency list.`).
+			ArgDoc("dependencies", `The dependencies to remove.`),
 
 		dagql.Func("withSDK", s.moduleSourceWithSDK).
 			Doc(`Update the module source with a new SDK.`).
@@ -849,6 +853,7 @@ func (s *moduleSchema) updateDeps(
 	if err != nil {
 		return fmt.Errorf("failed to load module dependencies: %w", err)
 	}
+
 	mod.DependencyConfig = make([]*core.ModuleDependency, len(deps))
 	for i, dep := range deps {
 		// verify that the dependency config actually exists
