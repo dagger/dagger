@@ -1,26 +1,28 @@
 """Command line interface for the dagger extension runtime."""
 
 import importlib
-import inspect
+import importlib.metadata
+import importlib.util
 import logging
+import os
 import sys
-import types
-from typing import cast
+import typing
 
 import rich.traceback
 from rich.console import Console
 
-from dagger.log import configure_logging
-from dagger.mod import default_module
 from dagger.mod._exceptions import FatalError, UserError
 from dagger.mod._module import Module
+
+ENTRY_POINT_NAME: typing.Final[str] = "main_object"
+ENTRY_POINT_GROUP: typing.Final[str] = typing.cast(str, __package__)
 
 errors = Console(stderr=True, style="red")
 logger = logging.getLogger(__name__)
 
 
 def app():
-    """Entrypoint for a dagger extension."""
+    """Entrypoint for a Python Dagger module."""
     # TODO: Create custom exception hook to control exit code.
     rich.traceback.install(
         console=errors,
@@ -31,58 +33,52 @@ def app():
         ],
     )
     try:
-        pymod = import_module()
-        mod = get_module(pymod).with_description(inspect.getdoc(pymod))
-        mod()
+        load_module()()
     except FatalError as e:
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.exception("Fatal error")
+        logger.exception("Fatal error")
         e.rich_print()
         sys.exit(1)
 
 
-def import_module(module_name: str = "main") -> types.ModuleType:
-    """Import python module with given name."""
-    # TODO: Allow configuring which package/module to use.
+def load_module() -> Module:
+    """Load the dagger.Module instance via the main object entry point."""
     try:
-        return importlib.import_module(module_name)
-    except ModuleNotFoundError as e:
-        if e.name != module_name:
-            raise
-        # If the main module isn't found the user won't be able to set debug level.
-        # TODO: Allow setting debug level with a pyproject.toml setting.
-        if not logger.isEnabledFor(logging.DEBUG):
-            configure_logging(logging.DEBUG)
+        cls: type = get_entry_point().load()
+    except (ModuleNotFoundError, AttributeError) as e:
         msg = (
-            f'The "{module_name}" module could not be found. '
-            f'Did you create a "src/{module_name}" module or package and '
-            "correctly set it up in pyproject.toml to be included in the build?"
+            "Main object not found. You can configure it explicitly by adding "
+            "an entry point to your pyproject.toml file. For example:\n"
+            "\n"
+            f'[project.entry-points."{ENTRY_POINT_GROUP}"]\n'
+            f"{ENTRY_POINT_NAME} = 'my_module:MyModule'\n"
         )
         raise UserError(msg) from e
 
+    try:
+        return cls.__dagger_module__
+    except AttributeError as e:
+        msg = "The main object must be a class decorated with @dagger.object_type"
+        raise UserError(msg) from e
 
-def get_module(module: types.ModuleType) -> Module:
-    """Get the environment instance from the main module."""
-    # Check for any attribute that is an instance of `Module`.
-    mods = (
-        cast(Module, attr)
-        for name, attr in inspect.getmembers(
-            module, lambda obj: isinstance(obj, Module)
-        )
-        if not name.startswith("_")
+
+def get_entry_point() -> importlib.metadata.EntryPoint:
+    """Get the entry point for the main object."""
+    sel = importlib.metadata.entry_points(
+        group=ENTRY_POINT_GROUP,
+        name=ENTRY_POINT_NAME,
     )
+    if ep := next(iter(sel), None):
+        return ep
 
-    # Use the default module unless the user overrides it with own instance.
-    if not (mod := next(mods, None)):
-        return default_module()
+    import_pkg = os.getenv("DAGGER_PYTHON_PACKAGE", "main")
+    main_object = os.getenv("DAGGER_MAIN_OBJECT", "Main")
 
-    # We could pick the first but it can be confusing to ignore the others.
-    if next(mods, None):
-        cls_path = f"{Module.__module__}.{Module.__qualname__}"
-        msg = (
-            f"Multiple `{cls_path}` instances were found in module "
-            f"{module.__qualname__}. Please ensure that there is only one defined."
-        )
-        raise UserError(msg)
+    # Fallback for modules that still use the "main" package name.
+    if not importlib.util.find_spec(import_pkg):
+        import_pkg = "main"
 
-    return mod
+    return importlib.metadata.EntryPoint(
+        group=ENTRY_POINT_GROUP,
+        name=ENTRY_POINT_NAME,
+        value=f"{import_pkg}:{main_object}",
+    )

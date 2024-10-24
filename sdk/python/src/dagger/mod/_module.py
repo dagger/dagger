@@ -1,50 +1,44 @@
 # ruff: noqa: BLE001
-import contextlib
 import dataclasses
 import enum
-import functools
 import inspect
 import json
 import logging
 import textwrap
 import typing
-import warnings
-from collections import Counter, defaultdict
-from collections.abc import Callable, Mapping, MutableMapping
-from typing import Any, TypeAlias, TypeVar, cast
+from collections.abc import Callable, Mapping
+from typing import Any, TypeGuard, TypeVar, cast
 
 import anyio
 import cattrs
 import cattrs.gen
+from beartype import beartype
 from rich.console import Console
-from typing_extensions import Self, dataclass_transform, overload
+from typing_extensions import dataclass_transform, overload
 
 import dagger
 from dagger import dag, telemetry
-from dagger.log import configure_logging
-from dagger.mod._converter import make_converter
+from dagger.mod._converter import make_converter, to_typedef
 from dagger.mod._exceptions import (
     FatalError,
     FunctionError,
     InternalError,
-    NameConflictError,
     UserError,
 )
 from dagger.mod._resolver import (
-    FieldResolver,
+    Field,
     Func,
     Function,
-    FunctionResolver,
+    ObjectType,
     P,
     R,
-    Resolver,
 )
-from dagger.mod._types import APIName, FieldDefinition, ObjectDefinition
+from dagger.mod._types import APIName, FieldDefinition
 from dagger.mod._utils import (
     asyncify,
     get_doc,
+    get_parent_module_doc,
     is_annotated,
-    normalize_name,
     to_pascal_case,
     transform_error,
 )
@@ -52,151 +46,21 @@ from dagger.mod._utils import (
 errors = Console(stderr=True, style="bold red")
 logger = logging.getLogger(__name__)
 
-FIELD_DEF_KEY = "dagger_field"
+FIELD_DEF_KEY: typing.Final[str] = "dagger_field"
 
 T = TypeVar("T", bound=type)
 
-ObjectName: TypeAlias = str
-ResolverName: TypeAlias = str
-
-ObjectResolvers: TypeAlias = MutableMapping[ResolverName, Resolver]
-Resolvers: TypeAlias = MutableMapping[ObjectDefinition, ObjectResolvers]
-
 
 class Module:
-    """Builder for a :py:class:`dagger.Module`.
+    """Builder for a :py:class:`dagger.Module`."""
 
-    Arguments
-    ---------
-    log_level:
-        Configure logging with this minimal level. If `None`, logging
-        is not configured.
-    """
-
-    def __init__(self, *, log_level: int | str | None = None):
-        self._log_level = log_level  # TODO: Hook debug from `--debug` flag in CLI?
+    def __init__(self):
         self._converter: cattrs.Converter = make_converter()
-        self._resolvers: list[Resolver] = []
         self._fn_call = dag.current_function_call()
-        self._mod = dag.module()
+        self._objects: dict[str, ObjectType] = {}
         self._enums: dict[str, type[enum.Enum]] = {}
 
-    def with_description(self, description: str | None) -> Self:
-        if description:
-            self._mod = self._mod.with_description(description)
-        return self
-
-    def add_resolver(self, resolver: Resolver):
-        self._resolvers.append(resolver)
-
-    def get_resolvers(self, mod_name: str) -> Resolvers:  # noqa: C901
-        grouped: Resolvers = defaultdict(dict)
-
-        # Convenience for having top-level functions be registered in
-        # a main object (object named after the module) implicitly.
-        main_object = ObjectDefinition(to_pascal_case(mod_name))
-
-        # This is to validate if every object name corresponds to a different origin.
-        object_names: dict[ObjectName, set[type | None]] = defaultdict(set)
-
-        # This is to validate if an object doesn't have duplicate resolver names.
-        resolver_names: dict[tuple[ObjectName, ResolverName], int] = Counter()
-
-        for resolver in self._resolvers:
-            obj_def: ObjectDefinition
-
-            if resolver.origin is None:
-                if isinstance(resolver, FunctionResolver):
-                    func: Func = resolver.wrapped_func
-                    qualname = func.__qualname__.split("<locals>.", 1)[-1]
-                    if "." in qualname:
-                        msg = (
-                            f"Function “{qualname}” seems to be decorated in a "
-                            "class that is not itself decorated with @object_type"
-                        )
-                        raise UserError(msg)
-
-                    warnings.warn(
-                        (
-                            "Top-level functions are deprecated and will be "
-                            "removed in a future release. Move to an instance "
-                            "method of a @dagger.object_type decorated class."
-                        ),
-                        DeprecationWarning,
-                        stacklevel=1,
-                    )
-
-                if isinstance(resolver, FieldResolver):
-                    msg = (
-                        f"Field “{resolver.original_name}” seems to be defined "
-                        "without a @object_type decorated class."
-                    )
-                    raise UserError(msg)
-
-                obj_def = main_object
-            else:
-                if not inspect.isclass(resolver.origin):
-                    msg = (
-                        f"Unexpected non-class origin for “{resolver.original_name}”: "
-                        f" {resolver.origin!r}"
-                    )
-                    raise UserError(msg)
-
-                if not hasattr(resolver.origin, "__dagger_type__"):
-                    msg = f"Class “{resolver.origin.__name__}” is missing @object_type."
-                    raise UserError(msg)
-
-                obj_def = resolver.origin.__dagger_type__  # type: ignore generalTypeIssues
-
-            object_names[obj_def.name].add(resolver.origin)
-            resolver_names[(obj_def.name, resolver.name)] += 1
-            grouped[obj_def][resolver.name] = resolver
-
-        if main_object not in grouped:
-            msg = (
-                f"Module “{mod_name}” doesn't define any top-level functions or "
-                f"a “{main_object.name}” class decorated with @object_type."
-            )
-            raise UserError(msg)
-
-        with contextlib.suppress(StopIteration):
-            name = next(n for n, s in object_names.items() if len(s) > 1)
-            msg = f"Object “{name}” is defined multiple times."
-            if name == main_object.name:
-                msg = (
-                    f"{msg} Either define top-level functions or as methods "
-                    f"of a class named “{name}” but not both."
-                )
-            raise NameConflictError(msg)
-
-        if resolver_names.total() != len(resolver_names):
-            (pn, rn), c = resolver_names.most_common(1)[0]
-            msg = f"Resolver “{pn}.{rn}” is defined {c} times."
-            raise NameConflictError(msg)
-
-        return grouped
-
-    def get_resolver(
-        self,
-        resolvers: Resolvers,
-        parent_name: str,
-        name: str,
-    ) -> Resolver:
-        suffix = f".{name}" if name else "()"
-        resolver_str = f"{parent_name}{suffix}"
-        try:
-            resolver = resolvers[ObjectDefinition(parent_name)][name]
-        except KeyError as e:
-            msg = f"Unable to find resolver: {resolver_str}"
-            raise FatalError(msg) from e
-
-        logger.debug("resolver => %s", resolver_str)
-
-        return resolver
-
     def __call__(self) -> None:
-        if self._log_level is not None:
-            configure_logging(self._log_level)
         telemetry.initialize()
         anyio.run(self._run)
 
@@ -206,14 +70,20 @@ class Module:
 
     async def serve(self):
         mod_name = await dag.current_module().name()
-        parent_name = await self._fn_call.parent_name()
-        fn = (
-            functools.partial(self._invoke, parent_name)
-            if parent_name
-            else self._register
-        )
+        main_obj_name = to_pascal_case(mod_name)
 
-        result = await fn(mod_name)
+        if main_obj_name not in self._objects:
+            msg = (
+                f"No `@dagger.object_type` decorated class named {main_obj_name} "
+                "was found"
+            )
+            raise UserError(msg)
+
+        # If parent_name is empty it means we need to register the type definitions.
+        if parent_name := await self._fn_call.parent_name():
+            result = await self._invoke(parent_name)
+        else:
+            result = await self._register(main_obj_name)
 
         try:
             output = json.dumps(result)
@@ -221,55 +91,112 @@ class Module:
             msg = f"Failed to serialize result: {e}"
             raise InternalError(msg) from e
 
-        logger.debug(
-            "output => %s",
-            textwrap.shorten(repr(output), 144),
-        )
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "output => %s",
+                textwrap.shorten(repr(output), 144),
+            )
+
         await dag.current_function_call().return_value(dagger.JSON(output))
 
-    async def _register(self, mod_name: str) -> dagger.ModuleID:
-        resolvers = self.get_resolvers(mod_name)
-        mod_name = to_pascal_case(mod_name)
+    async def _register(self, main_obj_name: str) -> dagger.ModuleID:  # noqa: C901, PLR0912
+        mod = dag.module()
 
-        # Resolvers are collected at import time, but only actually
-        # registered during "serve".
-        mod = self._mod
+        # Object types
+        for obj_name, obj_type in self._objects.items():
+            # Main object
+            if obj_name == main_obj_name:
+                # Module description from main object's parent module
+                if desc := get_parent_module_doc(obj_type.cls):
+                    mod = mod.with_description(desc)
 
-        for obj, obj_resolvers in resolvers.items():
-            if obj.name == "":
-                msg = "Unexpected empty object name"
-                raise InternalError(msg)
+                # Module constructor is the main object's constructor
+                obj_type.add_constructor()
 
-            typedef = dag.type_def().with_object(
-                obj.name,
-                description=obj.doc,
-            )
-            for r in obj_resolvers.values():
-                if r.name == "" and obj.name != mod_name:
-                    # Skip constructors of classes that are not the main object.
-                    continue
+            # Object/interface type
+            obj_type_def = dag.type_def()
+            obj_doc = get_doc(obj_type.cls)
 
-                typedef = r.register(typedef)
-                logger.debug("registered => %s", str(r))
+            if obj_type.interface:
+                obj_type_def = obj_type_def.with_interface(
+                    obj_name,
+                    description=obj_doc,
+                )
+            else:
+                obj_type_def = obj_type_def.with_object(
+                    obj_name,
+                    description=obj_doc,
+                )
 
-            mod = mod.with_object(typedef)
+            # Object fields
+            if obj_type.fields:
+                types = typing.get_type_hints(obj_type.cls)
 
+                for field_name, field in obj_type.fields.items():
+                    obj_type_def = obj_type_def.with_field(
+                        field_name,
+                        to_typedef(types[field.original_name]),
+                        description=get_doc(field.return_type),
+                    )
+
+            # Object functions
+            for func_name, func in obj_type.functions.items():
+                func_type_def = dag.function(func_name, to_typedef(func.return_type))
+
+                if func_doc := func.func_doc:
+                    func_type_def = func_type_def.with_description(func_doc)
+
+                for param in func.parameters.values():
+                    arg_type_def = to_typedef(param.resolved_type)
+
+                    if param.is_nullable:
+                        arg_type_def = arg_type_def.with_optional(True)
+
+                    func_type_def = func_type_def.with_arg(
+                        param.name,
+                        arg_type_def,
+                        description=param.doc,
+                        default_value=param.default_value,
+                        default_path=param.default_path,
+                        ignore=param.ignore,
+                    )
+
+                obj_type_def = (
+                    obj_type_def.with_constructor(func_type_def)
+                    if func.is_constructor
+                    else obj_type_def.with_function(func_type_def)
+                )
+
+            # Add object/interface to module
+            if obj_type.interface:
+                mod = mod.with_interface(obj_type_def)
+            else:
+                mod = mod.with_object(obj_type_def)
+
+        # Enum types
         for name, cls in self._enums.items():
-            typedef = dag.type_def().with_enum(name, description=get_doc(cls))
+            enum_def = dag.type_def().with_enum(name, description=get_doc(cls))
             for member in cls:
-                typedef = typedef.with_enum_value(
+                enum_def = enum_def.with_enum_value(
                     str(member.value),
                     description=getattr(member, "description", None),
                 )
-            mod = mod.with_enum(typedef)
+            mod = mod.with_enum(enum_def)
 
         return await mod.id()
 
-    async def _invoke(self, parent_name: str, mod_name: str) -> Any:
-        resolvers = self.get_resolvers(mod_name)
+    async def _invoke(self, parent_name: str) -> Any:
         name = await self._fn_call.name()
         parent_json = await self._fn_call.parent()
         input_args = await self._fn_call.input_args()
+
+        parent_state: dict[str, Any] = {}
+        if parent_json.strip():
+            try:
+                parent_state = json.loads(parent_json)
+            except ValueError as e:
+                msg = f"Unable to decode parent value `{parent_json}`: {e}"
+                raise FatalError(msg) from e
 
         inputs = {}
         for arg in input_args:
@@ -285,77 +212,80 @@ class Module:
                 msg = f"Unable to decode input argument `{arg_name}`: {e}"
                 raise InternalError(msg) from e
 
-        logger.debug(
-            "invoke => %s",
-            {
-                "parent_name": parent_name,
-                "parent_json": textwrap.shorten(parent_json, 144),
-                "name": name,
-                "input_args": textwrap.shorten(repr(inputs), 144),
-            },
-        )
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "invoke => %s",
+                {
+                    "parent_name": parent_name,
+                    "parent_json": textwrap.shorten(parent_json, 144),
+                    "name": name,
+                    "input_args": textwrap.shorten(repr(inputs), 144),
+                },
+            )
 
-        resolver = self.get_resolver(resolvers, parent_name, name)
-        return await self.get_result(resolver, parent_json, inputs)
+        return await self.get_result(parent_name, parent_state, name, inputs)
 
     async def get_result(
         self,
-        resolver: Resolver,
-        parent_json: dagger.JSON,
+        parent_name: str,
+        parent_state: Mapping[str, Any],
+        name: str,
         inputs: Mapping[str, Any],
     ) -> Any:
-        root = None
-        if resolver.origin and not (
-            isinstance(resolver, FunctionResolver)
-            and inspect.isclass(resolver.wrapped_func)
-        ):
-            root = await self.get_root(resolver.origin, parent_json)
+        result: Any
 
         try:
-            result = await resolver.get_result(self._converter, root, inputs)
-        except Exception as e:
-            raise FunctionError(e) from e
+            obj_def = self._objects[parent_name]
+        except KeyError as e:
+            msg = f"Unable to find parent object '{parent_name}' for function '{name}'"
+            raise ValueError(msg) from e
+
+        # Instantiate parent object using class and attributes as primitive values.
+        parent = await asyncify(self._converter.structure, parent_state, obj_def.cls)
+
+        if logger.isEnabledFor(logging.DEBUG):
+            suffix = f".{name}" if name else "()"
+            resolver_str = f"{parent_name}{suffix}"
+            logger.debug("resolver => %s", resolver_str)
+
+        # This won't likely get executed because the engine returns the value
+        # of fields directly, without calling the SDK. Handled here just in case.
+        if fn := obj_def.fields.get(name, None):
+            result = getattr(parent, fn.original_name)
+        else:
+            try:
+                fn = obj_def.functions[name]
+            except KeyError as e:
+                msg = f"Unable to find function '{name}' in object '{parent_name}'"
+                raise ValueError(msg) from e
+            try:
+                result = await fn.get_result(self._converter, parent, inputs)
+            except Exception as e:
+                raise FunctionError(e) from e
 
         if inspect.iscoroutine(result):
             msg = "Result is a coroutine. Did you forget to add async/await?"
             raise UserError(msg)
 
-        logger.debug(
-            "result => %s",
-            textwrap.shorten(repr(result), 144),
-        )
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "result => %s",
+                textwrap.shorten(repr(result), 144),
+            )
 
         try:
             return await asyncify(
                 self._converter.unstructure,
                 result,
-                resolver.return_type,
+                fn.return_type,
             )
         except Exception as e:
             msg = transform_error(
                 e,
                 "Failed to unstructure result",
-                getattr(root, resolver.original_name, None),
+                getattr(obj_def.cls, fn.original_name, None),
             )
             raise UserError(msg) from e
-
-    async def get_root(
-        self,
-        origin: type,
-        parent_json: dagger.JSON,
-    ) -> object | None:
-        parent: dict[str, Any] = {}
-        if parent_json.strip():
-            try:
-                parent = json.loads(parent_json)
-            except ValueError as e:
-                msg = f"Unable to decode parent value `{parent_json}`: {e}"
-                raise FatalError(msg) from e
-
-        if not parent:
-            return origin()
-
-        return await asyncify(self._converter.structure, parent, origin)
 
     def field(
         self,
@@ -431,17 +361,19 @@ class Module:
 
         Example usage::
 
-            @function
-            def foo() -> str:
-                return "bar"
+            @object_type
+            class Foo:
+                @function
+                def bar(self) -> str:
+                    return "foobar"
 
 
         Parameters
         ----------
         func:
-            Should be a top-level function or instance method in a class
-            decorated with :py:meth:`object_type`. Can be an async function
-            or a class, to use it's constructor.
+            Should be an instance method in a class decorated with
+            :py:meth:`object_type`. Can be an async function or a class,
+            to use it's constructor.
         name:
             An alternative name for the API. Useful to avoid conflicts with
             reserved words.
@@ -455,10 +387,7 @@ class Module:
                 msg = f"Expected a callable, got {type(func)}."
                 raise UserError(msg)
 
-            f = Function(func, name, doc)
-            self.add_resolver(f.resolver)
-
-            return f
+            return Function(func, name, doc)
 
         return wrapper(func) if func else wrapper
 
@@ -516,30 +445,42 @@ class Module:
 
         return wrapper(cls) if cls else wrapper
 
-    def _process_type(self, cls: T) -> T:
-        types = typing.get_type_hints(cls)
+    def _process_type(self, cls: T, interface: bool = False) -> T:
+        obj_def = ObjectType(cls, interface=interface)
 
-        overrides = {}
+        cls.__dagger_module__ = self
+        cls.__dagger_object_type__ = obj_def
+        self._objects[cls.__name__] = obj_def
+
+        # Find all methods decorated with `@mod.function`
+        def _is_function(obj: Any) -> TypeGuard[Function]:
+            return isinstance(obj, Function)
+
+        for name, fn in inspect.getmembers(cls, _is_function):
+            obj_def.functions[name] = fn.get_resolver()
+
+        if interface:
+            return cls
+
+        # Register hooks for renaming field names in `mod.field()`.
+        attr_overrides = {}
 
         # Find all fields exposed with `mod.field()`.
         for field in dataclasses.fields(cls):
             field_def: FieldDefinition | None
             if field_def := field.metadata.get(FIELD_DEF_KEY, None):
-                r: Resolver = FieldResolver(
-                    name=field_def.name or normalize_name(field.name),
+                r = Field(
                     original_name=field.name,
-                    doc=get_doc(field.type),
-                    type_annotation=types[field.name],
+                    name_override=field_def.name,
                     is_optional=field_def.optional,
-                    origin=cls,
+                    return_type=field.type,
                 )
 
-                if r.name != field.name:
-                    overrides[field.name] = cattrs.gen.override(rename=r.name)
+                if r.name != r.original_name:
+                    attr_overrides[r.original_name] = cattrs.gen.override(rename=r.name)
 
-                self.add_resolver(r)
+                obj_def.fields[r.name] = r
 
-        # Register hooks for renaming field names in `mod.field()`.
         # Include fields that are excluded from the constructor.
         self._converter.register_unstructure_hook(
             cls,
@@ -547,7 +488,7 @@ class Module:
                 cls,
                 self._converter,
                 _cattrs_include_init_false=True,
-                **overrides,
+                **attr_overrides,
             ),
         )
         self._converter.register_structure_hook(
@@ -556,26 +497,24 @@ class Module:
                 cls,
                 self._converter,
                 _cattrs_include_init_false=True,
-                **overrides,
+                **attr_overrides,
             ),
         )
 
-        # Save metadata in the class for later access.
-        # These can be recalculated at any time but it helps to check if
-        # this class was properly decorated and also acts as a placeholder
-        # for later additions to the decorator arguments.
-        cls.__dagger_type__ = ObjectDefinition(  # type: ignore generalTypeIssues
-            # Classes should already be in PascalCase, just normalizing here
-            # to avoid a mismatch with the module name in PascalCase
-            # (for the main object).
-            name=to_pascal_case(cls.__name__),
-            doc=get_doc(cls),
-        )
-
-        # Constructor.
-        self.function(name="")(cls)
-
         return cls
+
+    @overload
+    def interface(self, cls: T) -> T: ...
+
+    @overload
+    def interface(self) -> Callable[[T], T]: ...
+
+    def interface(self, cls: T | None = None) -> T | Callable[[T], T]:
+        def wrapper(cls: T) -> T:
+            new_cls = beartype(typing.runtime_checkable(cls))
+            return self._process_type(new_cls, interface=True)
+
+        return wrapper(cls) if cls else wrapper
 
     @overload
     def enum_type(self, cls: T) -> T: ...
