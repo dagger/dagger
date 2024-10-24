@@ -8,6 +8,7 @@ import (
 	"github.com/dagger/dagger/.dagger/internal/dagger"
 	"github.com/dagger/dagger/.dagger/util"
 	"github.com/moby/buildkit/identity"
+	"golang.org/x/mod/semver"
 	"helm.sh/helm/v3/pkg/chart"
 	"sigs.k8s.io/yaml"
 )
@@ -137,32 +138,49 @@ func (h *Helm) Publish(
 	tag string,
 
 	// +optional
+	// +default="https://github.com/dagger/dagger.git"
+	gitRepoSource string,
+	// +optional
 	githubToken *dagger.Secret,
 
 	// +optional
 	dryRun bool,
 ) error {
-	version := strings.TrimPrefix(tag, "helm/chart/v")
-	helm := h.chart()
+	version := strings.TrimPrefix(tag, "helm/chart/")
 
+	helm := h.chart()
 	if githubToken != nil {
 		helm = helm.WithSecretVariable("GITHUB_TOKEN", githubToken)
 	}
 
-	pkgCmd := "helm package ."
-
 	if dryRun {
-		helm = helm.With(util.ShellCmd(pkgCmd))
+		helm = helm.With(util.ShellCmd("helm package ."))
 	} else {
 		helm = helm.
 			With(util.ShellCmds(
 				"helm registry login ghcr.io/dagger --username dagger --password $GITHUB_TOKEN",
-				pkgCmd,
-				"helm push dagger-helm-"+version+".tgz oci://ghcr.io/dagger",
+				"helm package .",
+				"helm push dagger-helm-"+strings.TrimPrefix(version, "v")+".tgz oci://ghcr.io/dagger",
 				"helm registry logout ghcr.io/dagger",
 			))
 	}
-
 	_, err := helm.Sync(ctx)
-	return err
+	if err != nil {
+		return err
+	}
+
+	if semver.IsValid(version) {
+		if err := sdkGithubRelease(ctx, h.Dagger.Git, sdkGithubReleaseOpts{
+			tag:         "helm/chart/" + version,
+			target:      tag,
+			notes:       sdkChangeNotes(h.Dagger.Src, "helm/dagger", version),
+			gitRepo:     gitRepoSource,
+			githubToken: githubToken,
+			dryRun:      dryRun,
+		}); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

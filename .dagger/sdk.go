@@ -198,9 +198,10 @@ func gitPublish(ctx context.Context, git *dagger.VersionGit, opts gitPublishOpts
 	return err
 }
 
-type githubReleaseOpts struct {
-	tag   string
-	notes *dagger.File
+type sdkGithubReleaseOpts struct {
+	tag    string
+	target string
+	notes  *dagger.File
 
 	gitRepo     string
 	githubToken *dagger.Secret
@@ -208,7 +209,7 @@ type githubReleaseOpts struct {
 	dryRun bool
 }
 
-func githubRelease(ctx context.Context, opts githubReleaseOpts) error {
+func sdkGithubRelease(ctx context.Context, git *dagger.VersionGit, opts sdkGithubReleaseOpts) error {
 	u, err := url.Parse(opts.gitRepo)
 	if err != nil {
 		return err
@@ -218,11 +219,16 @@ func githubRelease(ctx context.Context, opts githubReleaseOpts) error {
 	}
 	githubRepo := strings.TrimPrefix(strings.TrimSuffix(u.Path, ".git"), "/")
 
+	commit, err := git.Commit(opts.target).Commit(ctx)
+	if err != nil {
+		return err
+	}
+
 	if opts.dryRun {
-		// sanity check tag is in target repo
+		// sanity check target commit is in target repo
 		_, err = dag.
 			Git(fmt.Sprintf("https://github.com/%s", githubRepo)).
-			Ref(opts.tag).
+			Commit(commit).
 			Tree().
 			Sync(ctx)
 		if err != nil {
@@ -248,13 +254,13 @@ func githubRelease(ctx context.Context, opts githubReleaseOpts) error {
 		opts.tag,
 		opts.tag,
 		dagger.GhReleaseCreateOpts{
-			VerifyTag: true,
+			Target:    commit,
 			NotesFile: opts.notes,
 			Latest:    dagger.LatestFalse,
 		},
 	)
 }
 
-func sdkChangeNotes(src *dagger.Directory, sdk string, version string) *dagger.File {
-	return src.File(fmt.Sprintf("sdk/%s/.changes/%s.md", sdk, version))
+func sdkChangeNotes(src *dagger.Directory, path string, version string) *dagger.File {
+	return src.File(fmt.Sprintf("%s/.changes/%s.md", path, version))
 }

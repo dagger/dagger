@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"go.opentelemetry.io/otel/codes"
+	"golang.org/x/mod/semver"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/.dagger/internal/dagger"
@@ -128,7 +129,8 @@ func (t PHPSDK) Publish(
 	// +optional
 	githubToken *dagger.Secret,
 ) error {
-	version, isVersioned := strings.CutPrefix(tag, "sdk/php/")
+	version := strings.TrimPrefix(tag, "sdk/php/")
+
 	if err := gitPublish(ctx, t.Dagger.Git, gitPublishOpts{
 		sdk:         "php",
 		source:      gitRepoSource,
@@ -144,10 +146,11 @@ func (t PHPSDK) Publish(
 		return err
 	}
 
-	if isVersioned {
-		if err := githubRelease(ctx, githubReleaseOpts{
-			tag:         tag,
-			notes:       sdkChangeNotes(t.Dagger.Src, "php", version),
+	if semver.IsValid(version) {
+		if err := sdkGithubRelease(ctx, t.Dagger.Git, sdkGithubReleaseOpts{
+			tag:         "sdk/php/" + version,
+			target:      tag,
+			notes:       sdkChangeNotes(t.Dagger.Src, "sdk/php", version),
 			gitRepo:     gitRepoSource,
 			githubToken: githubToken,
 			dryRun:      dryRun,

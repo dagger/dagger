@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"go.opentelemetry.io/otel/codes"
+	"golang.org/x/mod/semver"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/.dagger/internal/dagger"
@@ -120,7 +121,7 @@ func (t GoSDK) Publish(
 	// +optional
 	githubToken *dagger.Secret,
 ) error {
-	version, isVersioned := strings.CutPrefix(tag, "sdk/go/")
+	version := strings.TrimPrefix(tag, "sdk/go/")
 
 	if err := gitPublish(ctx, t.Dagger.Git, gitPublishOpts{
 		sdk:          "go",
@@ -139,9 +140,10 @@ func (t GoSDK) Publish(
 		return err
 	}
 
-	if isVersioned {
-		if err := githubRelease(ctx, githubReleaseOpts{
-			tag:         tag,
+	if semver.IsValid(version) {
+		if err := sdkGithubRelease(ctx, t.Dagger.Git, sdkGithubReleaseOpts{
+			tag:         "sdk/go/" + version,
+			target:      tag,
 			notes:       sdkChangeNotes(t.Dagger.Src, "go", version),
 			gitRepo:     gitRepoSource,
 			githubToken: githubToken,

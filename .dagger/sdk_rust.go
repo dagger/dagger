@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 
+	"golang.org/x/mod/semver"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/.dagger/internal/dagger"
@@ -111,7 +112,7 @@ func (r RustSDK) Publish(
 	// +optional
 	githubToken *dagger.Secret,
 ) error {
-	version, isVersioned := strings.CutPrefix(tag, "sdk/rust/")
+	version := strings.TrimPrefix(tag, "sdk/rust/")
 
 	versionFlag := strings.TrimPrefix(version, "v")
 	if dryRun {
@@ -146,10 +147,11 @@ func (r RustSDK) Publish(
 		return err
 	}
 
-	if isVersioned {
-		if err := githubRelease(ctx, githubReleaseOpts{
-			tag:         tag,
-			notes:       sdkChangeNotes(r.Dagger.Src, "rust", version),
+	if semver.IsValid(version) {
+		if err := sdkGithubRelease(ctx, r.Dagger.Git, sdkGithubReleaseOpts{
+			tag:         "sdk/rust/" + version,
+			target:      tag,
+			notes:       sdkChangeNotes(r.Dagger.Src, "sdk/rust", version),
 			gitRepo:     gitRepoSource,
 			githubToken: githubToken,
 			dryRun:      dryRun,

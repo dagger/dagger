@@ -1,4 +1,4 @@
-name: Publish CLI & Engine
+name: Publish
 on:
   push:
     branches: ["main"]
@@ -68,16 +68,139 @@ jobs:
           message: "🚙 Engine + 🚗 CLI: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
           discord-webhook: ${{ secrets.NEW_RELEASE_DISCORD_WEBHOOK }}
 
-  scan-engine:
+  publish-sdk-go:
+    needs: publish
     runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-5-4c' || 'ubuntu-latest' }}"
-    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: "scan"
+      - name: "go publish"
         uses: ./.github/actions/call
+        env:
+          RELEASE_DAGGER_CI_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
         with:
-          function: "engine scan"
+          function: sdk go publish --tag="${{ github.ref_name }}" --github-token=env:RELEASE_DAGGER_CI_TOKEN
+      - name: "notify"
+        if: github.ref_name != 'main'
+        uses: ./.github/actions/notify
+        with:
+          message: "🐹 Go SDK: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
+          discord-webhook: ${{ secrets.NEW_RELEASE_DISCORD_WEBHOOK }}
 
+  publish-sdk-php:
+    needs: publish
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-5-4c' || 'ubuntu-latest' }}"
+    steps:
+      - uses: actions/checkout@v4
+      - name: "php publish"
+        uses: ./.github/actions/call
+        env:
+          RELEASE_DAGGER_CI_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
+        with:
+          function: sdk php publish --tag="${{ github.ref_name }}" --github-token=env:RELEASE_DAGGER_CI_TOKEN
+      - name: "notify"
+        if: github.ref_name != 'main'
+        uses: ./.github/actions/notify
+        with:
+          message: "🐘 PHP SDK: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
+          discord-webhook: ${{ secrets.NEW_RELEASE_DISCORD_WEBHOOK }}
+
+  publish-sdk-python:
+    needs: publish
+    if: github.ref_name != 'main'
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-5-4c' || 'ubuntu-latest' }}"
+    steps:
+      - uses: actions/checkout@v4
+      - name: "python publish"
+        uses: ./.github/actions/call
+        env:
+          RELEASE_DAGGER_CI_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
+          RELEASE_PYPI_TOKEN: ${{ secrets.RELEASE_PYPI_TOKEN }}
+          RELEASE_PYPI_REPO: ${{ secrets.RELEASE_PYPI_REPO }}
+        with:
+          function: sdk python publish --tag="${{ github.ref_name }}" --github-token=env:RELEASE_DAGGER_CI_TOKEN --pypi-repo="$RELEASE_PYPI_REPO" --pypi-token=env:RELEASE_PYPI_TOKEN
+      - name: "notify"
+        uses: ./.github/actions/notify
+        with:
+          message: "🐍 Python SDK: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
+          discord-webhook: ${{ secrets.NEW_RELEASE_DISCORD_WEBHOOK }}
+
+  publish-sdk-typescript:
+    needs: publish
+    if: github.ref_name != 'main'
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-5-4c' || 'ubuntu-latest' }}"
+    steps:
+      - uses: actions/checkout@v4
+      - name: "typescript publish"
+        uses: ./.github/actions/call
+        env:
+          RELEASE_DAGGER_CI_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
+          RELEASE_NPM_TOKEN: ${{ secrets.RELEASE_NPM_TOKEN }}
+        with:
+          function: sdk typescript publish --tag="${{ github.ref_name }}" --github-token=env:RELEASE_DAGGER_CI_TOKEN --npm-token=env:RELEASE_NPM_TOKEN
+      - name: "notify"
+        uses: ./.github/actions/notify
+        with:
+          message: "⬢ TypeScript SDK: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
+          discord-webhook: ${{ secrets.NEW_RELEASE_DISCORD_WEBHOOK }}
+
+
+  publish-sdk-elixir:
+    needs: publish
+    if: github.ref_name != 'main'
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-5-4c' || 'ubuntu-latest' }}"
+    steps:
+      - uses: actions/checkout@v4
+      - name: "elixir publish"
+        uses: ./.github/actions/call
+        env:
+          RELEASE_DAGGER_CI_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
+          HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
+        with:
+          function: sdk elixir publish --tag="${{ github.ref_name }}" --github-token=env:RELEASE_DAGGER_CI_TOKEN --hex-apikey=env:HEX_API_KEY
+      - name: "notify"
+        uses: ./.github/actions/notify
+        with:
+          message: "🧪 Elixir SDK: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
+          discord-webhook: ${{ secrets.NEW_RELEASE_DISCORD_WEBHOOK }}
+
+  publish-sdk-rust:
+    needs: publish
+    if: github.ref_name != 'main'
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-5-4c' || 'ubuntu-latest' }}"
+    steps:
+      - uses: actions/checkout@v4
+      - name: "go publish"
+        uses: ./.github/actions/call
+        env:
+          RELEASE_DAGGER_CI_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        with:
+          function: sdk rust publish --tag="${{ github.ref_name }}"  --github-token=env:RELEASE_DAGGER_CI_TOKEN --cargo-registry-token=env:CARGO_REGISTRY_TOKEN
+      - name: "notify"
+        uses: ./.github/actions/notify
+        with:
+          message: "⚙️ Rust SDK: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
+          discord-webhook: ${{ secrets.NEW_RELEASE_DISCORD_WEBHOOK }}
+
+  publish-helm:
+    needs: publish
+    if: github.ref_name != 'main'
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-5-4c' || 'ubuntu-latest' }}"
+    steps:
+      - uses: actions/checkout@v4
+      - name: "helm publish"
+        uses: ./.github/actions/call
+        env:
+          RELEASE_DAGGER_CI_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
+        with:
+          function: helm publish --tag=${{ github.ref_name }} --github-token=env:RELEASE_DAGGER_CI_TOKEN
+      - name: "notify"
+        uses: ./.github/actions/notify
+        with:
+          message: "☸️ Helm Chart: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
+          discord-webhook: ${{ secrets.NEW_RELEASE_DISCORD_WEBHOOK }}
+
+  # TODO: daggerize provisioning tests
   test-provision-macos:
     name: "Test SDK Provision / macos"
     # We want to test the SDKs in a CLI dependency bump PR, in which case publish
@@ -164,6 +287,7 @@ jobs:
         if: always()
         run: docker logs $(docker ps -q --filter name=dagger-engine)
 
+  # TODO: daggerize provisioning tests
   test-provision-go-linux:
     name: "Test SDK Provision / go / linux"
     needs: publish
@@ -212,6 +336,7 @@ jobs:
         if: always()
         run: docker logs $(docker ps -q --filter name=dagger-engine)
 
+  # TODO: daggerize provisioning tests
   test-provision-python-linux:
     name: "Test SDK Provision / python / linux"
     needs: publish
@@ -260,6 +385,7 @@ jobs:
         if: always()
         run: docker logs $(docker ps -q --filter name=dagger-engine)
 
+  # TODO: daggerize provisioning tests
   test-provision-typescript-linux:
     name: "Test SDK Provision / TypeScript / linux"
     needs: publish

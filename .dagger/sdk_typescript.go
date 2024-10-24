@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"go.opentelemetry.io/otel/codes"
+	"golang.org/x/mod/semver"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/.dagger/build"
@@ -184,7 +185,7 @@ func (t TypescriptSDK) Publish(
 	// +optional
 	githubToken *dagger.Secret,
 ) error {
-	version, isVersioned := strings.CutPrefix(tag, "sdk/typescript/")
+	version := strings.TrimPrefix(tag, "sdk/typescript/")
 	versionFlag := strings.TrimPrefix(version, "v")
 	if dryRun {
 		versionFlag = "prepatch"
@@ -219,10 +220,11 @@ always-auth=true`, plaintext)
 		return err
 	}
 
-	if isVersioned {
-		if err := githubRelease(ctx, githubReleaseOpts{
-			tag:         tag,
-			notes:       sdkChangeNotes(t.Dagger.Src, "typescript", version),
+	if semver.IsValid(version) {
+		if err := sdkGithubRelease(ctx, t.Dagger.Git, sdkGithubReleaseOpts{
+			tag:         "sdk/typescript/" + version,
+			target:      tag,
+			notes:       sdkChangeNotes(t.Dagger.Src, "sdk/typescript", version),
 			gitRepo:     gitRepoSource,
 			githubToken: githubToken,
 			dryRun:      dryRun,
