@@ -342,6 +342,8 @@ github.com/jackpal/gateway v1.0.15 h1:yb4Gltgr8ApHWWnSyybnDL1vURbqw7ooo7IIL5VZSe
 github.com/jackpal/gateway v1.0.15/go.mod h1:dbyEDcDhHUh9EmjB9ung81elMUZfG0SoNc2TfTbcj4c=
 github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 h1:BQSFePA1RWJOlocH6Fxy8MmwDt+yVQYULKfN0RoTN8A=
 github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99/go.mod h1:1lJo3i6rXxKeerYnT8Nvf0QmHCRC1n8sfWVwXF2Frvo=
+github.com/jedevc/buildkit v0.8.2-0.20241010144035-f69c0798296a h1:K9UO7rrIfncBVWEJI/RLybN7415v145t9x9jNe/MfCM=
+github.com/jedevc/buildkit v0.8.2-0.20241010144035-f69c0798296a/go.mod h1:QLaQ4vyvIrzCaeg/4saPBcEibMXiGvIe+HaP5Ji0LCY=
 github.com/jmespath/go-jmespath v0.4.0 h1:BEgLn5cpjn8UN1mAw4NjwDrS35OdebyEtFe+9YPoQUg=
 github.com/jmespath/go-jmespath v0.4.0/go.mod h1:T8mJZnbsbmF+m6zOOFylbeCJqk5+pHWvzYPziyZiYoo=
 github.com/jmespath/go-jmespath/internal/testify v1.5.1 h1:shLQSRRSCCPj3f2gpwzGwWFoC7ycTf1rcQZHOlsJ6N8=
@@ -405,8 +407,6 @@ github.com/mitchellh/hashstructure/v2 v2.0.2 h1:vGKWl0YJqUNxE8d+h8f6NJLcCJrgbhC4
 github.com/mitchellh/hashstructure/v2 v2.0.2/go.mod h1:MG3aRVU/N29oo/V/IhBX8GR/zz4kQkprJgF2EVszyDE=
 github.com/mitchellh/mapstructure v1.5.1-0.20231216201459-8508981c8b6c h1:cqn374mizHuIWj+OSJCajGr/phAmuMug9qIX3l9CflE=
 github.com/mitchellh/mapstructure v1.5.1-0.20231216201459-8508981c8b6c/go.mod h1:bFUtVrKA4DC2yAKiSyO/QUcy7e+RRV2QTWOzhPopBRo=
-github.com/moby/buildkit v0.16.0-rc2.0.20240912123401-2a7accc029ec h1:37JRYt8q1yM7HUwnTuJrYwZuq91ZrYppFAywJQ2Jfwo=
-github.com/moby/buildkit v0.16.0-rc2.0.20240912123401-2a7accc029ec/go.mod h1:Xqx/5GlrqE1yIRORk0NSCVDFpQAU1WjlT6KHYZdisIQ=
 github.com/moby/docker-image-spec v1.3.1 h1:jMKff3w6PgbfSa69GfNg+zN/XLhfXJGnEx3Nl2EsFP0=
 github.com/moby/docker-image-spec v1.3.1/go.mod h1:eKmb5VW8vQEh/BAr2yvVNvuiJuY6UIocYsFu/DxxRpo=
 github.com/moby/locker v1.0.1 h1:fOXqR41zeveg4fFODix+1Ch4mj/gT0NE1XJbp/epuBg=
