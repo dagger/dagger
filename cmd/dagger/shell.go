@@ -128,12 +128,6 @@ func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
 		// runs before any of that, so we can use it to change the arguments
 		// slightly in order to resolve naming conflicts. For example, "echo"
 		// is an interpreter builtin but can also be a Dagger function.
-
-		// Bypass interpreter builtins otherwise we can't have a function named
-		// "echo" for example.
-		// The CallHandler is executed before anything else, and interpreter so we can make
-		// changes to the arguments before running interpreter builtins,
-		// interpreter functions, or the exec handlers, in order to .
 		interp.CallHandler(func(ctx context.Context, args []string) ([]string, error) {
 			if isFirstShellCommand(ctx) {
 				// When there's a Dagger function with a name that conflicts
@@ -728,7 +722,7 @@ func shellState(ctx context.Context) (*ShellState, []byte, error) {
 
 // readShellState deserializes shell state
 //
-// We use an hardocded prefix when writing and reading state to make it easy
+// We use an hardcoded prefix when writing and reading state to make it easy
 // to detect if a given input is a shell state or not. This way we can tell
 // the difference between a serialized state that failed to unmarshal and
 // non-state data.
