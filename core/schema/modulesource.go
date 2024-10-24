@@ -1,10 +1,13 @@
 package schema
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -14,6 +17,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
@@ -864,6 +868,11 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 			sdkSet[localDep.sdkKey] = localDep.sdk
 		}
 
+		// Add excludes from .gitignore files first (to allow overrides)
+		for _, path := range localDep.ignores {
+			excludeSet.Append(path)
+		}
+
 		// rebase user defined include/exclude relative to context
 		rebaseIncludeExclude := func(baseAbsPath, pattern string, set *core.SliceSet[string]) error {
 			isNegation := strings.HasPrefix(pattern, "!")
@@ -1089,6 +1098,9 @@ type callerLocalDep struct {
 	sourceRootAbsPath string
 	modCfg            *modules.ModuleConfig
 	sdk               core.SDK
+	// ignores is a list of patterns to exclude. At the moment, it's only
+	// from .gitignore files, but could be expanded in the future.
+	ignores []string
 	// sdkKey is a unique identifier for the SDK, slightly different
 	// from the module ref for the SDK because custom local SDKs
 	// use their local path for sdkKey, which allows us to de-dupe
@@ -1111,7 +1123,7 @@ func (s *moduleSchema) collectCallerLocalDeps(
 	// cache of sourceRootAbsPath -> *callerLocalDep
 	collectedDeps dagql.CacheMap[string, *callerLocalDep],
 ) error {
-	_, _, err := collectedDeps.GetOrInitialize(ctx, sourceRootAbsPath, func(ctx context.Context) (*callerLocalDep, error) {
+	_, _, err := collectedDeps.GetOrInitialize(ctx, sourceRootAbsPath, func(ctx context.Context) (_ *callerLocalDep, rerr error) {
 		sourceRootRelPath, err := filepath.Rel(contextAbsPath, sourceRootAbsPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get source root relative path: %w", err)
@@ -1265,6 +1277,82 @@ func (s *moduleSchema) collectCallerLocalDeps(
 			}
 		default:
 			return nil, fmt.Errorf("failed to load sdk: %w", err)
+		}
+
+		err = func() (rerr error) {
+			tracer := trace.SpanFromContext(ctx).TracerProvider().Tracer(InstrumentationLibrary)
+			ctx, span := tracer.Start(ctx, fmt.Sprintf("get patterns from .gitignore files up to %s", sourceRootAbsPath))
+			defer telemetry.End(span, func() error { return rerr })
+
+			stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
+			defer stdio.Close()
+
+			pathParts := strings.Split(sourceRootRelPath, string(os.PathSeparator))
+
+			for i := 0; i <= len(pathParts); i++ {
+				currentRelPath := filepath.Join(pathParts[:i]...)
+				currentAbsPath := filepath.Join(contextAbsPath, currentRelPath)
+
+				// NB(helder): Considered a single bk.ImportLocal with the list of
+				// paths to .gitgnore files to include, but would then have to iterate
+				// the files in the core Directory object and get their contents.
+				// Not sure if that's better.
+
+				// No stat because we want the contents, otherwise it would be two calls
+				// for each file that exists.
+				// TODO: Each .gitignore should be cached to avoid reading it multiple times
+				ignoreBytes, err := bk.ReadCallerHostFile(ctx, filepath.Join(currentAbsPath, ".gitignore"))
+				switch {
+				case err == nil:
+					fmt.Fprintln(stdio.Stdout, fmt.Sprintf("reading %s", filepath.Join(currentAbsPath, ".gitignore")))
+
+					reader := bytes.NewReader(ignoreBytes)
+					scanner := bufio.NewScanner(reader)
+
+					for scanner.Scan() {
+						pattern := strings.TrimSpace(scanner.Text())
+						// ignore comments and empty lines
+						if pattern == "" || strings.HasPrefix(pattern, "#") {
+							continue
+						}
+
+						isNegation := strings.HasPrefix(pattern, "!")
+						isDirectory := strings.HasSuffix(pattern, "/")
+
+						// If there is a separator at the end of the pattern then
+						// it will match only directories. However, filepath.Join
+						// removes it, and we need to check beginning and middle
+						// next, so doing it in advance.
+						pattern = strings.TrimPrefix(strings.TrimSuffix(pattern, "/"), "!")
+
+						// If the pattern doesn't have a separator at the beginning
+						// or middle (or both), then it's recursive.
+						if pattern != "**" && pattern != "*" && !strings.Contains(pattern, "/") {
+							pattern = "**/" + pattern
+						}
+
+						rebased := filepath.Join(currentRelPath, pattern)
+						if isNegation {
+							rebased = "!" + rebased
+						}
+						if isDirectory {
+							rebased = rebased + "/"
+						}
+
+						localDep.ignores = append(localDep.ignores, rebased)
+					}
+
+				case status.Code(err) == codes.NotFound:
+					fmt.Fprintln(stdio.Stderr, fmt.Sprintf("doesn't exist %s", filepath.Join(currentAbsPath, ".gitignore")))
+				default:
+					return fmt.Errorf("error reading .gitignore file %q: %w", currentAbsPath, err)
+				}
+			}
+
+			return nil
+		}()
+		if err != nil {
+			return nil, err
 		}
 
 		return localDep, nil
