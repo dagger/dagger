@@ -8,7 +8,6 @@ defmodule Mix.Tasks.Dagger.Entrypoint.Invoke do
 
   ## Arguments
 
-  - `otp_app` - The OTP application to load before invoke.
   - `module` - A main module to invoke. (e.g. `Potato`)
   """
 
