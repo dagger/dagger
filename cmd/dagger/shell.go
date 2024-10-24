@@ -31,10 +31,6 @@ import (
 // shellCode is the code to be executed in the shell command
 var shellCode string
 
-// ErrShellDefaultCmd is returned when a command doesn't have state in stdin,
-// used to signal that the exec handler should fallback to the default handler
-var ErrShellDefaultCmd = errors.New("shell: no state found")
-
 // shellStatePrefix is the prefix that identifies a shell state in input/output
 const shellStatePrefix = "DSH:"
 
@@ -385,9 +381,6 @@ func (h *shellCallHandler) Exec(next interp.ExecHandlerFunc) interp.ExecHandlerF
 		}
 
 		err := h.cmd(ctx, args)
-		if errors.Is(err, ErrShellDefaultCmd) {
-			return next(ctx, args)
-		}
 		if err != nil {
 			m := err.Error()
 			if h.debug {
@@ -425,12 +418,6 @@ func (h *shellCallHandler) cmd(ctx context.Context, args []string) error {
 		st, err = h.entrypointCall(ctx, args)
 		if err != nil {
 			return err
-		}
-		// If the first command doesn't match a constructor, fall back to
-		// the default exec handler, which will try to execute a command
-		// if it's found in $PATH (e.g., `cat`).
-		if st == nil {
-			return ErrShellDefaultCmd
 		}
 	} else {
 		var b []byte
@@ -488,7 +475,7 @@ func (h *shellCallHandler) entrypointCall(ctx context.Context, args []string) (*
 
 	// TODO: 3. Dependency short name (eg. 'wolfi container')
 
-	return nil, nil
+	return nil, fmt.Errorf("there is no module or core function %q", args[0])
 }
 
 // functionCall is executed for every command that the exec handler processes
