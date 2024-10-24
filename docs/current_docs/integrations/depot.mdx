@@ -11,8 +11,8 @@ Depot provides managed, Dagger-powered GitHub Actions runners. These runners, wh
 When running a CI pipeline on a Dagger-powered Depot GitHub Actions Runner, the general workflow looks like this:
 
 1. GitHub emits a repository event which triggers a workflow
-1. Depot receives this event, processes it, and runs one or more jobs in the workflow, each running in an isolated Depot GitHub Actions Runner.
-1. Each Depot GitHub Actions Runner is automatically connected to an already running Dagger Engine (this exists outside of the Depot GitHub Runner). The external Dagger is pre-configured to cache your previous runs out of the box.
+1. Depot receives this event, processes it, and runs one or more jobs in the workflow, each running in an isolated Depot GitHub Actions Runner. The Depot GitHub Actions Runner has the Dagger CLI pre-installed.
+1. Each Depot GitHub Actions Runner is automatically connected to an already running Dagger Engine (this exists outside of the Depot GitHub Runner). The external Dagger Engine comes with caching pre-configured.
 1. The "Dagger for GitHub" GitHub Action installs the Dagger CLI, and then calls the specified sub-command, module, function name, and arguments.
 1. The Dagger CLI running inside a Depot GitHub Runner gets automatically connected to Dagger Cloud.
 1. The Dagger CLI is also configured to connect to the external Dagger Engine which is already
