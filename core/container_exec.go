@@ -143,14 +143,17 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 
 		// include the engine version so that these execs get invalidated if the engine/API change
 		runOpts = append(runOpts, llb.AddEnv(buildkit.DaggerEngineVersionEnv, engine.Version))
+	}
 
-		// include a digest of the current call so that we scope of the cache of the ExecOp to this call
+	if execMD.CachePerSession {
+		// include the SessionID here so that we bust cache once-per-session
+		runOpts = append(runOpts, llb.AddEnv(buildkit.DaggerSessionIDEnv, clientMetadata.SessionID))
+	}
+
+	if execMD.CacheByCall {
+		// include a digest of the current call so that we scope of the cache of the ExecOp to this call's args
+		// and receiver values. Currently only used for module function calls.
 		runOpts = append(runOpts, llb.AddEnv(buildkit.DaggerCallDigestEnv, string(dagql.CurrentID(ctx).Digest())))
-
-		if execMD.CachePerSession {
-			// include the SessionID here so that we bust cache once-per-session
-			runOpts = append(runOpts, llb.AddEnv(buildkit.DaggerSessionIDEnv, clientMetadata.SessionID))
-		}
 	}
 
 	runOpts = append(runOpts, llb.WithCustomName(spanName))

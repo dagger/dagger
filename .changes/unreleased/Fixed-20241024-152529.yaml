@@ -1,0 +1,7 @@
+kind: Fixed
+body: Fix excessive cache invalidation of `withExec`s using the `ExperimentalPrivilegedNesting`
+  flag
+time: 2024-10-24T15:25:29.532874059-07:00
+custom:
+  Author: sipsma
+  PR: "8776"

@@ -224,6 +224,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		CallID:          dagql.CurrentID(ctx),
 		ExecID:          identity.NewID(),
 		CachePerSession: !opts.Cache,
+		CacheByCall:     true, // scope the cache key to the function arguments+receiver values
 		Internal:        true,
 		SpanContext:     propagation.MapCarrier{},
 	}
