@@ -327,10 +327,14 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 		})
 		if err != nil {
 			// EOF or Ctrl+D to exit
-			if errors.Is(err, io.EOF) || errors.Is(err, readline.ErrInterrupt) {
+			if errors.Is(err, io.EOF) {
 				Frontend.Opts().Verbosity = 0
 				Frontend.Opts().CustomExit = nil
 				break
+			}
+			// Ctrl+C should move to the next line
+			if errors.Is(err, readline.ErrInterrupt) {
+				continue
 			}
 			return err
 		}
