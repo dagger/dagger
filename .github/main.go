@@ -41,7 +41,8 @@ func New(
 		WithSdkPipelines("java").
 		WithSdkPipelines("elixir").
 		WithSdkPipelines("rust").
-		WithSdkPipelines("php")
+		WithSdkPipelines("php").
+		WithSdkPipelines("dotnet")
 }
 
 // Add a pipeline with our project-specific defaults

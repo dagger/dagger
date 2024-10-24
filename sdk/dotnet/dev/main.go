@@ -59,7 +59,7 @@ func (m *DotnetSdkDev) Test(ctx context.Context) error {
 	_, err := m.Base().
 		WithFile("Dagger.SDK/introspection.json", m.Introspect()).
 		WithExec([]string{"dotnet", "restore"}).
-		WithExec([]string{"dotnet", "build", "--no-restore"}).
+		WithExec([]string{"dotnet", "build", "--no-restore", "-v", "diag"}).
 		WithExec([]string{"dotnet", "test", "--no-build"}, dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		}).
@@ -113,7 +113,7 @@ func (m *DotnetSdkDev) Format() *dagger.Directory {
 
 func (m *DotnetSdkDev) Base() *dagger.Container {
 	return dag.Container().
-		From("mcr.microsoft.com/dotnet/sdk:8.0").
+		From("mcr.microsoft.com/dotnet/sdk:8.0-alpine3.20").
 		WithMountedDirectory("/src", m.Source).
 		WithWorkdir("/src/sdk").
 		WithExec([]string{"dotnet", "tool", "restore"})

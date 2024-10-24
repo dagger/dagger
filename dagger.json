@@ -15,6 +15,10 @@
       "source": "github.com/levlaz/daggerverse/docusaurus@e494cec1aa8f9faab1e0f12b2e5eea4a2321f2de"
     },
     {
+      "name": "dotnet-sdk-dev",
+      "source": "sdk/dotnet/dev"
+    },
+    {
       "name": "gh",
       "source": "github.com/jedevc/daggerverse-sagikazarmark/gh@a104424df38ca8b0b758f699dcfeeb0c2210cc2e"
     },
