@@ -211,16 +211,16 @@ dirOpts := dagger.DirectoryWithDirectoryOpts{
 <TabItem value="Python">
 ```python
 # exclude all Markdown files
-exclude=["*.md*"]
+dir_opts = {"exclude": ["*.md*"]}
 
 # include only the build output directory
-include=["build"]
+dir_opts = {"include": ["build"]}
 
 # include only ZIP files
-include=["*.zip"]
+dir_opts = {"include": ["*.zip"]}
 
 # exclude Git metadata
-exclude=["*.git"]
+dir_opts = {"exclude": ["*.git"]}
 ```
 </TabItem>
 <TabItem value="TypeScript">
