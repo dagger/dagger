@@ -74,7 +74,14 @@ type ExecutionMetadata struct {
 	// object.
 	ParentIDs map[digest.Digest]*resource.ID
 
+	// If true, scope the exec cache key to the current session ID. It will be cached in the context
+	// of the session but invalidated across different sessions.
 	CachePerSession bool
+
+	// If true, scope the exec cache key to the current dagql call digest. This is needed currently
+	// for module function calls specifically so that their cache key is based on their arguments and
+	// receiver object.
+	CacheByCall bool
 
 	// hostname -> list of aliases
 	HostAliases map[string][]string
