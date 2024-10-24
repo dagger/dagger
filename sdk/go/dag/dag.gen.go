@@ -368,6 +368,12 @@ func LoadTypeDefFromID(id dagger.TypeDefID) *dagger.TypeDef {
 	return client.LoadTypeDefFromID(id)
 }
 
+// Maps a secret to an external secret store and returns the secret.
+func MapSecret(name string, uri string) *dagger.Secret {
+	client := initClient()
+	return client.MapSecret(name, uri)
+}
+
 // Create a new module.
 func Module() *dagger.Module {
 	client := initClient()
