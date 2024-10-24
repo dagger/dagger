@@ -1020,6 +1020,20 @@ func (m *moduleDef) GetInput(name string) *modInput {
 	return nil
 }
 
+// HasCoreFunction checks if there's a core function (under Query) with the given name.
+func (m *moduleDef) HasCoreFunction(name string) bool {
+	o := m.GetFunctionProvider("Query")
+	if o == nil || !o.IsCore() {
+		return false
+	}
+	return HasFunction(o, name)
+}
+
+// HasFunction checks if the module has a top level function with the given name.
+func (m *moduleDef) HasFunction(name string) bool {
+	return HasFunction(m.MainObject.AsFunctionProvider(), name)
+}
+
 // LoadTypeDef attempts to replace a function's return object type or argument's
 // object type with with one from the module's object type definitions, to
 // recover missing function definitions in those places when chaining functions.
@@ -1081,6 +1095,15 @@ func HasAvailableFunctions(o functionProvider) bool {
 		}
 	}
 	return false
+}
+
+// HasFunction checks if an object has a function with the given name.
+func HasFunction(o functionProvider, name string) bool {
+	if o == nil {
+		return false
+	}
+	fn, _ := GetFunction(o, name)
+	return fn != nil
 }
 
 // skipLeaves is a map of provider names to function names that should be skipped
@@ -1305,6 +1328,16 @@ func (f *modFunction) CmdName() string {
 	return f.cmdName
 }
 
+// GetArg returns the argument definition corresponding to the given name.
+func (f *modFunction) GetArg(name string) (*modFunctionArg, error) {
+	for _, a := range f.Args {
+		if a.FlagName() == name {
+			return a, nil
+		}
+	}
+	return nil, fmt.Errorf("no argument %q in function %q", name, f.CmdName())
+}
+
 func (f *modFunction) HasRequiredArgs() bool {
 	for _, arg := range f.Args {
 		if arg.IsRequired() {
@@ -1348,54 +1381,6 @@ func (f *modFunction) ReturnsCoreObject() bool {
 		return fp.IsCore()
 	}
 	return false
-}
-
-// WalkValues calls a function for each argument with a supported flag, and its value
-// after parsing.
-func (f *modFunction) WalkValues(ctx context.Context, flags *pflag.FlagSet, md *moduleDef, dag *dagger.Client, fn func(*modFunctionArg, any)) error {
-	missingFlags := []string{}
-
-	for _, a := range f.SupportedArgs() {
-		var v any
-
-		flag := flags.Lookup(a.FlagName())
-		if flag == nil {
-			return fmt.Errorf("no flag for %q", a.FlagName())
-		}
-
-		if !flag.Changed {
-			if a.IsRequired() {
-				missingFlags = append(missingFlags, a.FlagName())
-			}
-
-			// don't send optional arguments that weren't set.
-			continue
-		}
-
-		v = flag.Value
-
-		switch val := v.(type) {
-		case DaggerValue:
-			obj, err := val.Get(ctx, dag, md.Source, a)
-			if err != nil {
-				return fmt.Errorf("failed to get value for argument %q: %w", a.FlagName(), err)
-			}
-			if obj == nil {
-				return fmt.Errorf("no value for argument: %s", a.FlagName())
-			}
-			v = obj
-		case pflag.SliceValue:
-			v = val.GetSlice()
-		}
-
-		fn(a, v)
-	}
-
-	if len(missingFlags) > 0 {
-		return fmt.Errorf(`required flag(s) "%s" not set`, strings.Join(missingFlags, `", "`))
-	}
-
-	return nil
 }
 
 // modFunctionArg is a representation of dagger.FunctionArg.

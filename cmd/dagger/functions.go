@@ -530,13 +530,36 @@ func (fc *FuncCommand) makeSubCmd(ctx context.Context, fn *modFunction) *cobra.C
 
 // selectFunc adds the function selection to the query.
 func (fc *FuncCommand) selectFunc(fn *modFunction, cmd *cobra.Command) error {
-	dag := fc.c.Dagger()
-
 	fc.q = fc.q.Select(fn.Name)
 
-	return fn.WalkValues(fc.ctx, cmd.Flags(), fc.mod, dag, func(a *modFunctionArg, v any) {
+	missingFlags := []string{}
+	for _, a := range fn.SupportedArgs() {
+		flag, err := a.GetFlag(cmd.Flags())
+		if err != nil {
+			return err
+		}
+
+		if !flag.Changed {
+			if a.IsRequired() {
+				missingFlags = append(missingFlags, a.FlagName())
+			}
+			// don't send optional arguments that weren't set
+			continue
+		}
+
+		v, err := a.GetFlagValue(fc.ctx, flag, fc.c.Dagger(), fc.mod)
+		if err != nil {
+			return err
+		}
+
 		fc.q = fc.q.Arg(a.Name, v)
-	})
+	}
+
+	if len(missingFlags) > 0 {
+		return fmt.Errorf(`required flag(s) "%s" not set`, strings.Join(missingFlags, `", "`))
+	}
+
+	return nil
 }
 
 // RunE is the final command in the function chain, where the API request is made.
