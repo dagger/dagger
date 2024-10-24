@@ -107,3 +107,98 @@ func (CacheSuite) TestLocalImportCacheReuse(ctx context.Context, t *testctx.T) {
 
 	require.Equal(t, out1, out2)
 }
+
+func (CacheSuite) TestCacheIsNamespaced(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	fooTmpl := `package main
+	import (
+		"context"
+	)
+
+	type Foo struct {}
+	func (f *Foo) GetCacheVolumeId(ctx context.Context) (string, error) {
+		id, err := dag.CacheVolume("volume-name").ID(ctx)
+		return string(id), err
+	}
+	`
+	barTmpl := `package main
+	import (
+		"context"
+	)
+
+	type Bar struct {}
+	func (b *Bar) GetCacheVolumeId(ctx context.Context) (string, error) {
+		id, err := dag.CacheVolume("volume-name").ID(ctx)
+		return string(id), err
+	}
+	`
+	ctr := c.Container().
+		From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work/bar").
+		With(daggerExec("init", "--name=bar", "--source=.", "--sdk=go")).
+		WithNewFile("main.go", barTmpl).
+		WithWorkdir("/work/foo").
+		With(daggerExec("init", "--name=foo", "--source=.", "--sdk=go")).
+		WithNewFile("main.go", fooTmpl)
+
+	fooID, err := ctr.
+		WithWorkdir("/work/foo").
+		With(daggerExec("call", "get-cache-volume-id")).
+		Stdout(ctx)
+	require.NoError(t, err)
+
+	barID, err := ctr.
+		WithWorkdir("/work/bar").
+		With(daggerExec("call", "get-cache-volume-id")).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+	require.NotEqual(t, fooID, barID)
+}
+
+func (CacheSuite) TestCacheIdSameAcrossSession(ctx context.Context, t *testctx.T) {
+	session1 := connect(ctx, t)
+
+	fooTmpl := `package main
+	import (
+		"context"
+	)
+
+	type Foo struct {}
+	func (f *Foo) GetCacheVolumeId(ctx context.Context) (string, error) {
+		id, err := dag.CacheVolume("volume-name").ID(ctx)
+		return string(id), err
+	}
+	`
+
+	ctr1 := session1.Container().
+		From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, session1)).
+		WithWorkdir("/work/foo").
+		With(daggerExec("init", "--name=foo", "--source=.", "--sdk=go")).
+		WithNewFile("main.go", fooTmpl)
+
+	fooID, err := ctr1.
+		WithWorkdir("/work/foo").
+		With(daggerExec("call", "get-cache-volume-id")).
+		Stdout(ctx)
+	require.NoError(t, err)
+
+	session2 := connect(ctx, t)
+	ctr2 := session2.Container().
+		From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, session2)).
+		WithWorkdir("/work/foo").
+		With(daggerExec("init", "--name=foo", "--source=.", "--sdk=go")).
+		WithNewFile("main.go", fooTmpl)
+
+	fooID2, err := ctr2.
+		WithWorkdir("/work/foo").
+		With(daggerExec("call", "get-cache-volume-id")).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, fooID, fooID2)
+}
