@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	daggerVersion      = "v0.13.5"
+	daggerVersion      = "v0.13.6"
 	upstreamRepository = "dagger/dagger"
 	defaultRunner      = "ubuntu-latest"
 )
