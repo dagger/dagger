@@ -67,11 +67,6 @@
   status = 301
 
 [[redirects]]
-  from = "/developer-guide/go/264203/functions"
-  to = "/api/custom-functions"
-  status = 301
-
-[[redirects]]
   from = "/manuals/developer"
   to = "/api"
   status = 301
@@ -189,6 +184,16 @@
 [[redirects]]
   from = "/reference/typescript/classes/api_client_gen.container"
   to = "/reference/typescript/api/client.gen/classes/Container"
+  status = 301
+
+[[redirects]]
+  from = "/developer-guide/go/264203/functions"
+  to = "/api/custom-functions"
+  status = 301
+
+[[redirects]]
+  from = "/developer-guide/python/820256/module-structure"
+  to = "/api/module-structure"
   status = 301
 
 [[redirects]]
@@ -339,6 +344,11 @@
 
 [[redirects]]
   from = "/manuals/user/troubleshooting"
+  to = "/troubleshooting"
+  status = 301
+
+[[redirects]]
+  from = "/manuals/user/932727/troubleshooting"
   to = "/troubleshooting"
   status = 301
 
