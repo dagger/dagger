@@ -1,0 +1,6 @@
+kind: Added
+body: Add imagePullSecrets to allow pulling from private registry.
+time: 2024-10-25T15:25:17.272304+02:00
+custom:
+    Author: Jacob Lorenzen
+    PR: "8785"
