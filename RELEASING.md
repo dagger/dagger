@@ -1,4 +1,4 @@
-# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-October%209,%202024-success?style=flat-square)
+# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-October%2025,%202024-success?style=flat-square)
 
 This describes how to release Dagger:
 
@@ -10,7 +10,6 @@ This describes how to release Dagger:
 - [🐘 PHP SDK ⏱ `5mins`](#-php-sdk--5mins)
 - [☸️ Helm chart ⏱ `2mins`](#%EF%B8%8F-helm-chart--2mins)
 - [📒 Documentation ⏱ `5mins`](#-documentation--5mins)
-- [🛝 Playground ⏱ `2mins`](#-playground--2mins)
 - [🌌 Daggerverse ⏱ `2mins`](#-daggerverse--2mins)
 - [☁️ Dagger Cloud ⏱ `2mins`](#-dagger-cloud--2mins)
 - [🪣 Install scripts ⏱ `2mins`](#-install-scripts--2mins#)
@@ -49,15 +48,12 @@ flowchart TB
     go-repo["🐙 github.com/dagger/dagger-go-sdk"]
     go-pkg["🐹 dagger.io/dagger"]
     go-ref["🐹 pkg.go.dev/dagger.io/dagger"]
-    playground["🛝 Playground"]
     daggerverse["🌌 Daggerverse"]
     cloud["☁️ Dagger Cloud"]
 
     repo ==> go --> go-repo --> go-pkg & go-ref
     go-pkg -.-> daggerverse & cloud
     registry -.- S3 -.- go & python & typescript & elixir & php & helm
-
-    registry -.....- playground
 
     python["🐍 Python SDK"]
     pypi["🐍 pypi.org/project/dagger-io"]
@@ -280,12 +276,12 @@ export CHANGIE_ENGINE_VERSION="$ENGINE_VERSION"
 git checkout -b prep-$ENGINE_VERSION
 ```
 
-- [ ] Bump SDK+Helm Chart versions to the target version
+- [ ] Bump internal versions (sdks + docs + helm chart) to the target version
 
 ```console
 dagger call release bump --version="$ENGINE_VERSION" -o ./
-git add sdk helm
-git commit -s -m "chore: bump sdk+helm dependencies to $ENGINE_VERSION"
+git add docs sdk helm
+git commit -s -m "chore: bump dependencies to $ENGINE_VERSION"
 ```
 
 - [ ] Push and open the PR as a draft, and capture the PR number:
@@ -605,17 +601,9 @@ production deployment via Netlify as follows:
 > this error, click "Options -> Clear cache and retry with latest branch commit"
 > to recreate the deployment with a clean cache.
 
-## 🛝 Playground ⏱ `2mins`
-
-The [Dagger Playground](https://play.dagger.cloud) is set to automatically
-update once there's a new release of the Dagger Engine.
-
-- [ ] Mention in the release thread on Discord that Playground can be updated
-      to the just-released version. cc @marcosnils @matipan @gerhard
-
 ## 🌌 Daggerverse ⏱ `2mins`
 
-- [ ] Mention in the release thread on Discord that Playground can be updated
+- [ ] Mention in the release thread on Discord that Daggerverse can be updated
       to the just-released version. cc @marcosnils @matipan @grouville
 
 ## ☁️ Dagger Cloud ⏱ `2mins`
