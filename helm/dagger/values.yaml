@@ -30,6 +30,10 @@ engine:
     #    cpu: "1"
     #    memory: 1Gi
 
+  ### Set a an imagePullSecrets if you need to pull from a private registry
+  imagePullSecrets: []
+  # - name: regcred
+
   image:
     ### Set a ref if you want to use a custom Dagger image
     #   NOTE: you will need to ensure that a compatible dagger CLI is embedded in the image, otherwise readiness probes will fail

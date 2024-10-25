@@ -25,6 +25,10 @@ spec:
         name: {{ include "dagger.fullname" . }}-engine
         {{- include "dagger.labels" . | nindent 8 }}
     spec:
+      {{- with .Values.engine.imagePullSecrets }}
+      imagesPullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- with .Values.engine.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
