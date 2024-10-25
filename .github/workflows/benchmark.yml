@@ -5,6 +5,12 @@ on:
   # That's 9PM PST, 12AM EST, 6AM CET
   schedule:
     - cron: "0 5 * * *"
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
   # Enable manual trigger for easy debugging
   workflow_dispatch:
 
