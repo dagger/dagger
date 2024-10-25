@@ -1,0 +1,11 @@
+kind: Changed
+body: |-
+    Updated default cache policies to avoid consuming too much disk
+
+    The new policies cap engine disk usage at 200GB maximum, and will additionally
+    attempt to co-operate with other applications using the disk and adjust its
+    cache usage accordingly.
+time: 2024-10-25T14:41:22.428554576+01:00
+custom:
+    Author: jedevc
+    PR: "8725"
