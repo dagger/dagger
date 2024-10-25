@@ -88,6 +88,7 @@ jobs:
         shell: bash
         run: |
           dagger functions
+          sleep 5000
         working-directory: /tmp/benchmark
         env:
           DAGGER_CLOUD_TOKEN: "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
