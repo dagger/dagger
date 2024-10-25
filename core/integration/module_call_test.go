@@ -1747,6 +1747,10 @@ func (t *Test) Files() []*dagger.File {
     }
 }
 
+func (*Test) Deploy() string {
+    return "here be dragons!"
+}
+
 type Foo struct {
     Ctr *dagger.Container
 }

@@ -1128,13 +1128,23 @@ var skipLeaves = map[string][]string{
 	},
 }
 
-// GetLeafFunctions returns the leaf functions of a function provider, which are
-// functions that have no arguments and return a scalar or list of scalars.
+// GetLeafFunctions returns the leaf functions of an object or interface
+//
+// Leaf functions return simple values like a scalar or a list of scalars.
+// If from a module, they are limited to fields. But if from a core type,
+// any function without arguments is considered, excluding a few hardcoded
+// ones.
 //
 // Functions that return an ID are excluded since the CLI can't handle them
 // as input arguments yet, so they'd add noise when listing an object's leaves.
 func GetLeafFunctions(fp functionProvider) []*modFunction {
-	fns := fp.GetFunctions()
+	var fns []*modFunction
+	// not including interfaces from modules because interfaces don't have fields
+	if fp.IsCore() {
+		fns = fp.GetFunctions()
+	} else if obj, ok := fp.(*modObject); ok {
+		fns = obj.GetFieldFunctions()
+	}
 	r := make([]*modFunction, 0, len(fns))
 
 	for _, fn := range fns {
@@ -1241,17 +1251,19 @@ func skipFunction(obj, field string) bool {
 // which are treated as functions with no arguments.
 func (o *modObject) GetFunctions() []*modFunction {
 	fns := make([]*modFunction, 0, len(o.Fields)+len(o.Functions))
-	for _, f := range o.Fields {
-		fns = append(fns, &modFunction{
-			Name:        f.Name,
-			Description: f.Description,
-			ReturnType:  f.TypeDef,
-		})
-	}
+	fns = append(fns, o.GetFieldFunctions()...)
 	for _, f := range o.Functions {
 		if !skipFunction(o.Name, f.Name) {
 			fns = append(fns, f)
 		}
+	}
+	return fns
+}
+
+func (o *modObject) GetFieldFunctions() []*modFunction {
+	fns := make([]*modFunction, 0, len(o.Fields))
+	for _, f := range o.Fields {
+		fns = append(fns, f.AsFunction())
 	}
 	return fns
 }
@@ -1310,6 +1322,14 @@ type modField struct {
 	Name        string
 	Description string
 	TypeDef     *modTypeDef
+}
+
+func (f *modField) AsFunction() *modFunction {
+	return &modFunction{
+		Name:        f.Name,
+		Description: f.Description,
+		ReturnType:  f.TypeDef,
+	}
 }
 
 // modFunction is a representation of dagger.Function.
