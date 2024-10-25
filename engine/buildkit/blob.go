@@ -5,15 +5,13 @@ import (
 	"fmt"
 	"io/fs"
 
-	cacheconfig "github.com/moby/buildkit/cache/config"
+	"github.com/dagger/dagger/engine/sources/local"
+	"github.com/moby/buildkit/cache/contenthash"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	bksolverpb "github.com/moby/buildkit/solver/pb"
-	"github.com/moby/buildkit/util/compression"
 	bkworker "github.com/moby/buildkit/worker"
-	specs "github.com/opencontainers/image-spec/specs-go/v1"
-
-	"github.com/dagger/dagger/engine/sources/blob"
+	"github.com/opencontainers/go-digest"
 )
 
 // DefToBlob converts the given llb definition to a content addressed blob valid for the
@@ -21,11 +19,61 @@ import (
 // dir imports into stable, content-defined sources.
 // NOTE: it's currently assumed that the provided definition is a single layer. Definitions
 // can be squashed into a single layer by copying from them to scratch.
+// TODO: update above docs ^
+// TODO: update above docs ^
+// TODO: update above docs ^
 func (c *Client) DefToBlob(
 	ctx context.Context,
 	pbDef *bksolverpb.Definition,
-	compressionType compression.Type,
-) (_ *bksolverpb.Definition, desc specs.Descriptor, _ error) {
+) (digest.Digest, error) {
+	res, err := c.Solve(ctx, bkgw.SolveRequest{
+		Definition: pbDef,
+		Evaluate:   true,
+	})
+	if err != nil {
+		return "", err
+	}
+	resultProxy, err := res.SingleRef()
+	if err != nil {
+		return "", fmt.Errorf("failed to get single ref: %w", err)
+	}
+	cachedRes, err := resultProxy.Result(ctx)
+	if err != nil {
+		return "", wrapError(ctx, err, c)
+	}
+	workerRef, ok := cachedRes.Sys().(*bkworker.WorkerRef)
+	if !ok {
+		return "", fmt.Errorf("invalid ref: %T", cachedRes.Sys())
+	}
+	ref := workerRef.ImmutableRef
+
+	// TODO: weird to import local here, split out to separate shared pkg
+	md := local.CacheRefMetadata{RefMetadata: ref}
+	dgst, ok := md.GetContentHashKey()
+	if ok {
+		return dgst, nil
+	}
+
+	// TODO: wrap with internal span so we can catch slowness
+	dgst, err = contenthash.Checksum(ctx, ref, "/", contenthash.ChecksumOpts{}, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to checksum ref: %w", err)
+	}
+	if err := md.SetContentHashKey(dgst); err != nil {
+		return "", fmt.Errorf("failed to set content hash key: %w", err)
+	}
+
+	return dgst, nil
+
+	/* TODO: this isn't needed anymore, right?
+	// Force an unlazy of the ref in case it is a reference to remote cache
+	err = ref.Extract(ctx, nil)
+	if err != nil {
+		return nil, desc, fmt.Errorf("failed to extract ref: %w", err)
+	}
+	*/
+
+	/* TODO:
 	if compressionType == nil {
 		compressionType = compression.Zstd
 	}
@@ -94,6 +142,7 @@ func (c *Client) DefToBlob(
 	}
 
 	return blobPB, desc, nil
+	*/
 }
 
 func (c *Client) BytesToBlob(
@@ -101,13 +150,12 @@ func (c *Client) BytesToBlob(
 	fileName string,
 	perms fs.FileMode,
 	bs []byte,
-	compressionType compression.Type,
-) (_ *bksolverpb.Definition, desc specs.Descriptor, _ error) {
+) (digest.Digest, error) {
 	def, err := llb.Scratch().
 		File(llb.Mkfile(fileName, perms, bs)).
 		Marshal(ctx, WithTracePropagation(ctx), WithPassthrough())
 	if err != nil {
-		return nil, desc, fmt.Errorf("failed to create llb definition: %w", err)
+		return "", fmt.Errorf("failed to create llb definition: %w", err)
 	}
-	return c.DefToBlob(ctx, def.ToPB(), compressionType)
+	return c.DefToBlob(ctx, def.ToPB())
 }

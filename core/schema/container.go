@@ -1800,7 +1800,7 @@ func (s *containerSchema) asTarball(ctx context.Context, parent *core.Container,
 	if err != nil {
 		return nil, err
 	}
-	return parent.AsTarball(ctx, variants, args.ForcedCompression.Value, args.MediaTypes)
+	return parent.AsTarball(ctx, s.srv, variants, args.ForcedCompression.Value, args.MediaTypes)
 }
 
 type containerImportArgs struct {

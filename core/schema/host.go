@@ -8,7 +8,6 @@ import (
 
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/content/local"
-	"github.com/containerd/containerd/labels"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	bkworker "github.com/moby/buildkit/worker"
@@ -38,29 +37,13 @@ func (s *hostSchema) Install() {
 		}).Doc(`Queries the host environment.`),
 
 		dagql.Func("blob", func(ctx context.Context, parent *core.Query, args struct {
-			Digest       string `doc:"Digest of the blob"`
-			Size         int64  `doc:"Size of the blob"`
-			MediaType    string `doc:"Media type of the blob"`
-			Uncompressed string `doc:"Digest of the uncompressed blob"`
+			Digest string `doc:"Digest of the blob"`
 		}) (*core.Directory, error) {
 			dig, err := digest.Parse(args.Digest)
 			if err != nil {
 				return nil, fmt.Errorf("failed to parse digest: %w", err)
 			}
-			uncompressedDig, err := digest.Parse(args.Uncompressed)
-			if err != nil {
-				return nil, fmt.Errorf("failed to parse digest: %w", err)
-			}
-			blobDef, err := blob.LLB(specs.Descriptor{
-				MediaType: args.MediaType,
-				Digest:    dig,
-				Size:      args.Size,
-				Annotations: map[string]string{
-					// uncompressed label is required to be set by buildkit's GetByBlob
-					// implementation
-					labels.LabelUncompressed: uncompressedDig.String(),
-				},
-			}).Marshal(ctx, buildkit.WithTracePropagation(ctx))
+			blobDef, err := blob.LLB(dig).Marshal(ctx, buildkit.WithTracePropagation(ctx))
 			if err != nil {
 				return nil, fmt.Errorf("failed to marshal blob source: %w", err)
 			}

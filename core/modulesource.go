@@ -362,12 +362,12 @@ func (src *ModuleSource) LoadContext(ctx context.Context, dag *dagql.Server, pat
 			return inst, fmt.Errorf("path %q is outside of context directory %q, path should be relative to the context directory", path, ctxPath)
 		}
 
-		_, desc, err := bk.LocalImport(localSourceCtx, src.Query.Platform().Spec(), path, ignore, []string{})
+		dgst, err := bk.LocalImport(localSourceCtx, src.Query.Platform().Spec(), path, ignore, []string{})
 		if err != nil {
 			return inst, fmt.Errorf("failed to import local module src: %w", err)
 		}
 
-		inst, err = LoadBlob(localSourceCtx, dag, desc)
+		inst, err = LoadBlob(localSourceCtx, dag, dgst)
 		if err != nil {
 			return inst, fmt.Errorf("failed to load local module src: %w", err)
 		}

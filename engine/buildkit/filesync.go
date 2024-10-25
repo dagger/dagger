@@ -20,7 +20,7 @@ import (
 	"github.com/moby/buildkit/snapshot"
 	bksolverpb "github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/bklog"
-	"github.com/moby/buildkit/util/compression"
+	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	fsutiltypes "github.com/tonistiigi/fsutil/types"
 
@@ -34,17 +34,15 @@ func (c *Client) LocalImport(
 	srcPath string,
 	excludePatterns []string,
 	includePatterns []string,
-) (*bksolverpb.Definition, specs.Descriptor, error) {
-	var desc specs.Descriptor
-
+) (digest.Digest, error) {
 	srcPath = path.Clean(srcPath)
 	if srcPath == ".." || strings.HasPrefix(srcPath, "../") {
-		return nil, desc, fmt.Errorf("path %q escapes workdir; use an absolute path instead", srcPath)
+		return "", fmt.Errorf("path %q escapes workdir; use an absolute path instead", srcPath)
 	}
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return nil, desc, err
+		return "", fmt.Errorf("failed to get requester session ID: %w", err)
 	}
 
 	stableID := clientMetadata.ClientStableID
@@ -55,7 +53,7 @@ func (c *Client) LocalImport(
 
 	localOpts := []llb.LocalOption{
 		llb.SessionID(clientMetadata.ClientID),
-		llb.SharedKeyHint(strings.Join([]string{stableID, srcPath}, " ")),
+		llb.SharedKeyHint(stableID),
 		WithTracePropagation(ctx),
 	}
 
@@ -71,26 +69,13 @@ func (c *Client) LocalImport(
 	localOpts = append(localOpts, llb.WithCustomName(localName))
 	localLLB := llb.Local(srcPath, localOpts...)
 
-	// We still need to do a copy here for now because buildkit's cache calls
-	// Finalize on refs when getting their blobs which makes the cache ref for the
-	// local ref unable to be reused.
-	//
-	// TODO: we should ensure that this doesn't create a new cache entry, without
-	// this the entire local directory is uploaded to the cache. See also
-	// blobSource.CacheKey for more context
-	copyLLB := llb.Scratch().File(
-		llb.Copy(localLLB, "/", "/"),
-		WithTracePropagation(ctx),
-		WithPassthrough(),
-	)
-
-	copyDef, err := copyLLB.Marshal(ctx, llb.Platform(platform))
+	localDef, err := localLLB.Marshal(ctx, llb.Platform(platform))
 	if err != nil {
-		return nil, desc, err
+		return "", fmt.Errorf("failed to marshal local LLB: %w", err)
 	}
-	copyPB := copyDef.ToPB()
+	localPB := localDef.ToPB()
 
-	return c.DefToBlob(ctx, copyPB, compression.Zstd)
+	return c.DefToBlob(ctx, localPB)
 }
 
 // Import a directory from the engine container, as opposed to from a client
@@ -100,10 +85,10 @@ func (c *Client) EngineContainerLocalImport(
 	srcPath string,
 	excludePatterns []string,
 	includePatterns []string,
-) (*bksolverpb.Definition, specs.Descriptor, error) {
+) (digest.Digest, error) {
 	hostname, err := os.Hostname()
 	if err != nil {
-		return nil, specs.Descriptor{}, fmt.Errorf("failed to get hostname for engine local import: %w", err)
+		return "", fmt.Errorf("failed to get hostname for engine local import: %w", err)
 	}
 	ctx = engine.ContextWithClientMetadata(ctx, &engine.ClientMetadata{
 		ClientID:       c.ID(),

@@ -18,7 +18,6 @@ import (
 	"github.com/moby/buildkit/util/bklog"
 	bkworker "github.com/moby/buildkit/worker"
 	"github.com/opencontainers/go-digest"
-	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/dagql"
@@ -493,6 +492,7 @@ func moduleAnalyticsProps(mod *Module, prefix string, props map[string]string) {
 // cache entry. That would result callers being able to evaluate the result of
 // a function call but hitting an error about missing content.
 func (fn *ModuleFunction) linkDependencyBlobs(ctx context.Context, cacheResult *buildkit.Result, value dagql.Typed) error {
+	/* TODO: update
 	if value == nil {
 		return nil
 	}
@@ -517,6 +517,8 @@ func (fn *ModuleFunction) linkDependencyBlobs(ctx context.Context, cacheResult *
 	if err := cacheResult.Ref.AddDependencyBlobs(ctx, dependencyBlobs); err != nil {
 		return fmt.Errorf("failed to add dependency blob: %w", err)
 	}
+	return nil
+	*/
 	return nil
 }
 

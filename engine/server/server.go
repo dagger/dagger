@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/containerd/containerd/content"
-	"github.com/containerd/containerd/content/local"
+	localcontentstore "github.com/containerd/containerd/content/local"
 	"github.com/containerd/containerd/diff/apply"
 	"github.com/containerd/containerd/diff/walking"
 	ctdmetadata "github.com/containerd/containerd/metadata"
@@ -77,6 +77,7 @@ import (
 	"github.com/dagger/dagger/engine/sources/blob"
 	"github.com/dagger/dagger/engine/sources/gitdns"
 	"github.com/dagger/dagger/engine/sources/httpdns"
+	"github.com/dagger/dagger/engine/sources/local"
 )
 
 const (
@@ -294,7 +295,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		return nil, fmt.Errorf("failed to create snapshotter: %w", err)
 	}
 
-	srv.localContentStore, err = local.NewStore(srv.contentStoreRootDir)
+	srv.localContentStore, err = localcontentstore.NewStore(srv.contentStoreRootDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create content store: %w", err)
 	}
@@ -445,6 +446,14 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		return nil, err
 	}
 	srv.workerSourceManager.Register(bs)
+
+	ls, err := local.NewSource(local.Opt{
+		CacheAccessor: srv.workerCache,
+	})
+	if err != nil {
+		return nil, err
+	}
+	srv.workerSourceManager.Register(ls)
 
 	srv.worker = buildkit.NewWorker(&buildkit.NewWorkerOpts{
 		WorkerRoot:       srv.workerRootDir,
