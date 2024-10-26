@@ -16,7 +16,6 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/sources/gitdns"
-	"github.com/moby/buildkit/util/bklog"
 	"github.com/moby/buildkit/util/gitutil"
 )
 
@@ -121,6 +120,12 @@ func (s *gitSchema) git(ctx context.Context, parent *core.Query, args gitArgs) (
 			Hostname: host,
 		})
 	}
+
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get client metadata from context: %w", err)
+	}
+
 	var authSock *core.Socket = nil
 	if args.SSHAuthSocket.Valid {
 		sock, err := args.SSHAuthSocket.Value.Load(ctx, s.srv)
@@ -133,11 +138,6 @@ func (s *gitSchema) git(ctx context.Context, parent *core.Query, args gitArgs) (
 		socketStore, err := parent.Sockets(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get socket store: %w", err)
-		}
-
-		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get client metadata from context: %w", err)
 		}
 
 		if clientMetadata != nil && clientMetadata.SSHAuthSocketPath != "" {
@@ -177,7 +177,6 @@ func (s *gitSchema) git(ctx context.Context, parent *core.Query, args gitArgs) (
 		discardGitDir = !*args.KeepGitDir
 	}
 
-	// infer protocol, host, path from ref
 	remote, err := gitutil.ParseURL(args.URL)
 	if errors.Is(err, gitutil.ErrUnknownProtocol) {
 		remote, err = gitutil.ParseURL("https://" + args.URL)
@@ -187,46 +186,44 @@ func (s *gitSchema) git(ctx context.Context, parent *core.Query, args gitArgs) (
 	}
 
 	var authToken *core.Secret = nil
-	if remote.Scheme == "https" || remote.Scheme == "http" {
-		// Auth token retrieval
-		// todo(guillaume): MIGHT NEED ACCESSOR
-		bk, err := parent.Buildkit(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get buildkit: %w", err)
-		}
+	mainClientCallerID, err := parent.Server.MainClientCallerID(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve mainClientCallerID: %w", err)
+	}
 
-		bklog.G(ctx).Debugf("🎃 remote: |%+v|\n", remote)
+	// Only use the PAT token if its the main client
+	if clientMetadata != nil && clientMetadata.ClientID == mainClientCallerID {
+		if remote.Scheme == "https" || remote.Scheme == "http" {
+			bk, err := parent.Buildkit(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get buildkit: %w", err)
+			}
 
-		credentials, err := bk.GetCredential(ctx, remote.Scheme, remote.Host, remote.Path)
-		// credentials, err := bk.GetCredential(ctx, "https", "github.com", "dagger/dagger.io")
-		if err != nil {
-			return nil, fmt.Errorf("core/schema: failed to retrieve git credentials from host: %w", err)
-		}
-		bklog.G(ctx).Debugf("🎃🎃 credentials.Password |%v|%+v|\n", remote, credentials)
+			credentials, err := bk.GetCredential(ctx, remote.Scheme, remote.Host, remote.Path)
+			if err != nil {
+				return nil, fmt.Errorf("core/schema: failed to retrieve git credentials from host: %w", err)
+			}
 
-		// todo(guillaume): scope accessor ressource ??
-
-		var secretAuthToken dagql.Instance[*core.Secret]
-		if err := s.srv.Select(ctx, s.srv.Root(), &secretAuthToken,
-			dagql.Selector{
-				Field: "setSecret",
-				Args: []dagql.NamedInput{
-					{
-						Name:  "name",
-						Value: dagql.NewString("gitAuthtoken"),
-					},
-					{
-						Name:  "plaintext",
-						Value: dagql.NewString(credentials.Password),
+			var secretAuthToken dagql.Instance[*core.Secret]
+			if err := s.srv.Select(ctx, s.srv.Root(), &secretAuthToken,
+				dagql.Selector{
+					Field: "setSecret",
+					Args: []dagql.NamedInput{
+						{
+							Name:  "name",
+							Value: dagql.NewString("gitAuthtoken"),
+						},
+						{
+							Name:  "plaintext",
+							Value: dagql.NewString(credentials.Password),
+						},
 					},
 				},
-			},
-		); err != nil {
-			return nil, fmt.Errorf("failed to create a new secret with the git the auth token: %w", err)
+			); err != nil {
+				return nil, fmt.Errorf("failed to create a new secret with the git the auth token: %w", err)
+			}
+			authToken = secretAuthToken.Self
 		}
-		authToken = secretAuthToken.Self
-
-		bklog.G(ctx).Debugf("🎃🎃 secretAuthToken |%+v|%+v|\n", remote, secretAuthToken)
 	}
 
 	return &core.GitRepository{

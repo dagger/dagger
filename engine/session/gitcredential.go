@@ -72,7 +72,6 @@ func (s GitCredentialAttachable) GetCredential(ctx context.Context, req *GitCred
 	cmd.Env = append(os.Environ(),
 		"GIT_TERMINAL_PROMPT=0", // Do not trigger the terminal password
 		"SSH_ASKPASS=echo",      // Do not ask for SSH auth
-		// GIT_TRACE=1,
 	)
 
 	// Run the command
