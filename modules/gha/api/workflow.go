@@ -62,6 +62,7 @@ type Job struct {
 	Strategy       *Strategy         `json:"strategy,omitempty" yaml:"strategy,omitempty"`
 	TimeoutMinutes int               `json:"timeout-minutes,omitempty" yaml:"timeout-minutes,omitempty"`
 	Outputs        map[string]string `json:"outputs,omitempty" yaml:"outputs,omitempty"`
+	RunIf          string            `json:"if,omitempty" yaml:"if,omitempty"`
 }
 
 type JobStep struct {

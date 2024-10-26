@@ -38,6 +38,8 @@ type Job struct {
 	PublicToken string
 	// Explicitly stop the dagger engine after completing the workflow.
 	StopEngine bool
+	// Determines when this workflow should run.
+	RunIf string
 }
 
 func (gha *Gha) Job(
@@ -80,6 +82,9 @@ func (gha *Gha) Job(
 	// Dagger version to run this workflow
 	// +optional
 	daggerVersion string,
+	// Determines when this workflow should run
+	// +optional
+	runIf string,
 ) *Job {
 	j := &Job{
 		Name:           name,
@@ -94,6 +99,7 @@ func (gha *Gha) Job(
 		Runner:         runner,
 		Module:         module,
 		DaggerVersion:  daggerVersion,
+		RunIf:          runIf,
 	}
 	j.applyDefaults(gha.JobDefaults)
 	return j
@@ -140,6 +146,7 @@ func (j *Job) applyDefaults(other *Job) *Job {
 	setDefault(&j.TimeoutMinutes, other.TimeoutMinutes)
 	setDefault(&j.Debug, other.Debug)
 	mergeDefault(&j.Runner, other.Runner)
+	setDefault(&j.RunIf, other.RunIf)
 	setDefault(&j.Module, other.Module)
 	setDefault(&j.DaggerVersion, other.DaggerVersion)
 	return j

@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/dagger/dagger/.github/internal/dagger"
 )
@@ -39,7 +38,7 @@ func New() *CI {
 
 		DaggerRunner: dag.Gha(dagger.GhaOpts{
 			JobDefaults: dag.Gha().Job("", "", dagger.GhaJobOpts{
-				Runner:         []string{BronzeRunner(false)},
+				Runner:         NewDaggerRunner(daggerVersion).Medium().Cached().RunsOn(),
 				TimeoutMinutes: timeoutMinutes,
 			}),
 			WorkflowDefaults: dag.Gha().Workflow("", dagger.GhaWorkflowOpts{
@@ -69,16 +68,11 @@ func New() *CI {
 		).
 		withSDKWorkflows(
 			ci.DaggerRunner,
-			"SDKs",
-			"python",
-			"typescript",
-			"go",
-			"java",
-			"elixir",
-			"rust",
-			"php",
+			ci.DaggerRunner.Workflow("SDKs"),
+			NewDaggerRunner(daggerVersion),
 		).
-		withPrepareReleaseWorkflow()
+		withNightlyWorkflows().
+		withPrepareReleaseWorkflow(NewDaggerRunner(daggerVersion))
 }
 
 // Generate Github Actions workflows to call our Dagger workflows
@@ -126,26 +120,96 @@ func (ci *CI) withModuleWorkflow(runner *dagger.Gha, module string, name string,
 	return ci
 }
 
-func (ci *CI) withSDKWorkflows(runner *dagger.Gha, name string, sdks ...string) *CI {
-	w := runner.Workflow(name)
-	for _, sdk := range sdks {
-		command := daggerCommand("check --targets=sdk/" + sdk)
-		w = w.
-			WithJob(runner.Job(sdk, command)).
-			WithJob(runner.Job(sdk+"-dev", command, dagger.GhaJobOpts{
-				DaggerVersion: ".",
-				Runner:        []string{SilverRunner(true)},
-			}))
-	}
+func (ci *CI) withSDKWorkflows(runner *dagger.Gha, workflow *dagger.GhaWorkflow, compute Runner) *CI {
+	workflow = workflow.
+		WithJob(runner.Job("python", daggerCommand("check --targets=sdk/python"), dagger.GhaJobOpts{
+			Runner: compute.Medium().Cached().RunsOn(),
+		})).
+		WithJob(runner.Job("python-dev", daggerCommand("check --targets=sdk/python"), dagger.GhaJobOpts{
+			DaggerVersion: ".",
+			Runner:        compute.Large().DaggerInDocker().RunsOn(),
+		})).
+		WithJob(runner.Job("typescript", daggerCommand("check --targets=sdk/typescript"), dagger.GhaJobOpts{
+			Runner: compute.Medium().Cached().RunsOn(),
+		})).
+		WithJob(runner.Job("typescript-dev", daggerCommand("check --targets=sdk/typescript"), dagger.GhaJobOpts{
+			DaggerVersion: ".",
+			Runner:        compute.Large().DaggerInDocker().RunsOn(),
+		})).
+		WithJob(runner.Job("go", daggerCommand("check --targets=sdk/go"), dagger.GhaJobOpts{
+			Runner: compute.Medium().Cached().RunsOn(),
+		})).
+		WithJob(runner.Job("go-dev", daggerCommand("check --targets=sdk/go"), dagger.GhaJobOpts{
+			DaggerVersion: ".",
+			Runner:        compute.Large().DaggerInDocker().RunsOn(),
+		})).
+		WithJob(runner.Job("java", daggerCommand("check --targets=sdk/java"), dagger.GhaJobOpts{
+			Runner: compute.Medium().Cached().RunsOn(),
+		})).
+		WithJob(runner.Job("java-dev", daggerCommand("check --targets=sdk/java"), dagger.GhaJobOpts{
+			DaggerVersion: ".",
+			Runner:        compute.Large().DaggerInDocker().RunsOn(),
+		})).
+		WithJob(runner.Job("elixir", daggerCommand("check --targets=sdk/elixir"), dagger.GhaJobOpts{
+			Runner: compute.XLarge().Cached().RunsOn(),
+		})).
+		WithJob(runner.Job("elixir-dev", daggerCommand("check --targets=sdk/elixir"), dagger.GhaJobOpts{
+			DaggerVersion: ".",
+			Runner:        compute.XLarge().DaggerInDocker().RunsOn(),
+		})).
+		WithJob(runner.Job("rust", daggerCommand("check --targets=sdk/rust"), dagger.GhaJobOpts{
+			Runner:         compute.XLarge().Cached().RunsOn(),
+			TimeoutMinutes: 15,
+		})).
+		WithJob(runner.Job("rust-dev", daggerCommand("check --targets=sdk/rust"), dagger.GhaJobOpts{
+			DaggerVersion:  ".",
+			Runner:         compute.XLarge().DaggerInDocker().RunsOn(),
+			TimeoutMinutes: 15,
+		})).
+		WithJob(runner.Job("php", daggerCommand("check --targets=sdk/php"), dagger.GhaJobOpts{
+			Runner: compute.Medium().Cached().RunsOn(),
+		})).
+		WithJob(runner.Job("php-dev", daggerCommand("check --targets=sdk/php"), dagger.GhaJobOpts{
+			DaggerVersion: ".",
+			Runner:        compute.Large().DaggerInDocker().RunsOn(),
+		}))
+	ci.Workflows = ci.Workflows.WithWorkflow(workflow)
 
-	ci.Workflows = ci.Workflows.WithWorkflow(w)
 	return ci
 }
 
-func (ci *CI) withPrepareReleaseWorkflow() *CI {
+func (ci *CI) withNightlyWorkflows() *CI {
+	runner := dag.Gha(dagger.GhaOpts{
+		JobDefaults: dag.Gha().Job("", "", dagger.GhaJobOpts{
+			RunIf: fmt.Sprintf("${{ github.repository == '%s' }}", upstreamRepository),
+		}),
+		WorkflowDefaults: dag.Gha().Workflow("", dagger.GhaWorkflowOpts{
+			PullRequestConcurrency: "preempt",
+			Permissions:            []dagger.GhaPermission{dagger.GhaPermissionReadContents},
+			OnSchedule:             []string{"6 0 * * *"},
+		}),
+	})
+	computeVariants := []Runner{
+		NewDepotRunner(daggerVersion),
+		NewNamespaceRunner(daggerVersion).
+			AddLabel("nscloud-cache-size-100gb").
+			AddLabel("nscloud-exp-container-image-cache"),
+	}
+
+	for _, compute := range computeVariants {
+		ci = ci.withSDKWorkflows(
+			ci.DaggerRunner,
+			runner.Workflow(compute.Pipeline("SDKs")),
+			compute)
+	}
+
+	return ci
+}
+
+func (ci *CI) withPrepareReleaseWorkflow(compute Runner) *CI {
 	gha := dag.Gha(dagger.GhaOpts{
 		JobDefaults: dag.Gha().Job("", "", dagger.GhaJobOpts{
-			Runner:         []string{BronzeRunner(false)},
+			Runner:         compute.Medium().Cached().RunsOn(),
 			DaggerVersion:  daggerVersion,
 			TimeoutMinutes: timeoutMinutes,
 		}),
@@ -172,70 +236,4 @@ func (ci *CI) withPrepareReleaseWorkflow() *CI {
 
 func daggerCommand(command string) string {
 	return fmt.Sprintf(`--docker-cfg=file:$HOME/.docker/config.json %s`, command)
-}
-
-// Assemble a runner name for a workflow
-func Runner(
-	generation int,
-	daggerVersion string,
-	cpus int,
-	singleTenant bool,
-	dind bool,
-) string {
-	runner := fmt.Sprintf(
-		"dagger-g%d-%s-%dc",
-		generation,
-		strings.ReplaceAll(daggerVersion, ".", "-"),
-		cpus)
-	if dind {
-		runner += "-dind"
-	}
-	if singleTenant {
-		runner += "-st"
-	}
-
-	// Fall back to default runner if repository is not upstream
-	// (this is GHA DSL and will be evaluated by the GHA runner)
-	return fmt.Sprintf(
-		"${{ github.repository == '%s' && '%s' || '%s' }}",
-		upstreamRepository,
-		runner,
-		defaultRunner,
-	)
-}
-
-// Bronze runner: Multi-tenant instance, 4 cpu
-func BronzeRunner(
-	// Enable docker-in-docker
-	// +optional
-	dind bool,
-) string {
-	return Runner(2, daggerVersion, 4, false, dind)
-}
-
-// Silver runner: Multi-tenant instance, 8 cpu
-func SilverRunner(
-	// Enable docker-in-docker
-	// +optional
-	dind bool,
-) string {
-	return Runner(2, daggerVersion, 8, false, dind)
-}
-
-// Gold runner: Single-tenant instance, 16 cpu
-func GoldRunner(
-	// Enable docker-in-docker
-	// +optional
-	dind bool,
-) string {
-	return Runner(2, daggerVersion, 16, true, dind)
-}
-
-// Platinum runner: Single-tenant instance, 32 cpu
-func PlatinumRunner(
-	// Enable docker-in-docker
-	// +optional
-	dind bool,
-) string {
-	return Runner(2, daggerVersion, 32, true, dind)
 }

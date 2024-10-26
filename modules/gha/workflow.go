@@ -396,6 +396,7 @@ func (w *Workflow) asWorkflow() api.Workflow {
 			// The job name is used by the "required checks feature" in branch protection rules
 			Name:           job.Name,
 			RunsOn:         job.Runner,
+			RunIf:          job.RunIf,
 			Steps:          steps,
 			TimeoutMinutes: job.TimeoutMinutes,
 			Outputs: map[string]string{

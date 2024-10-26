@@ -1,15 +1,8 @@
 # This file was generated. See https://daggerverse.dev/mod/github.com/dagger/dagger/modules/gha
-name: SDKs
+name: SDKs-on-namespace
 "on":
-    push:
-        branches:
-            - main
-    pull_request:
-        types:
-            - opened
-            - reopened
-            - synchronize
-            - ready_for_review
+    schedule:
+        - cron: 6 0 * * *
     workflow_dispatch: {}
 permissions:
     contents: read
@@ -19,7 +12,9 @@ concurrency:
 jobs:
     elixir:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-7-16c' || 'ubuntu-latest' }}
+            - nscloud-cache-size-100gb
+            - nscloud-exp-container-image-cache
+            - nscloud-ubuntu-22.04-amd64-16x32-with-cache
         name: elixir
         steps:
             - name: Checkout
@@ -205,7 +200,9 @@ jobs:
             stdout: ${{ steps.exec.outputs.stdout }}
     elixir-dev:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-7-16c-dind' || 'ubuntu-latest' }}
+            - nscloud-cache-size-100gb
+            - nscloud-exp-container-image-cache
+            - nscloud-ubuntu-22.04-amd64-16x32
         name: elixir-dev
         steps:
             - name: Checkout
@@ -434,7 +431,9 @@ jobs:
             stdout: ${{ steps.exec.outputs.stdout }}
     go:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-7-4c' || 'ubuntu-latest' }}
+            - nscloud-cache-size-100gb
+            - nscloud-exp-container-image-cache
+            - nscloud-ubuntu-22.04-amd64-4x8-with-cache
         name: go
         steps:
             - name: Checkout
@@ -620,7 +619,9 @@ jobs:
             stdout: ${{ steps.exec.outputs.stdout }}
     go-dev:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-7-8c-dind' || 'ubuntu-latest' }}
+            - nscloud-cache-size-100gb
+            - nscloud-exp-container-image-cache
+            - nscloud-ubuntu-22.04-amd64-8x16
         name: go-dev
         steps:
             - name: Checkout
@@ -849,7 +850,9 @@ jobs:
             stdout: ${{ steps.exec.outputs.stdout }}
     java:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-7-4c' || 'ubuntu-latest' }}
+            - nscloud-cache-size-100gb
+            - nscloud-exp-container-image-cache
+            - nscloud-ubuntu-22.04-amd64-4x8-with-cache
         name: java
         steps:
             - name: Checkout
@@ -1035,7 +1038,9 @@ jobs:
             stdout: ${{ steps.exec.outputs.stdout }}
     java-dev:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-7-8c-dind' || 'ubuntu-latest' }}
+            - nscloud-cache-size-100gb
+            - nscloud-exp-container-image-cache
+            - nscloud-ubuntu-22.04-amd64-8x16
         name: java-dev
         steps:
             - name: Checkout
@@ -1264,7 +1269,9 @@ jobs:
             stdout: ${{ steps.exec.outputs.stdout }}
     php:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-7-4c' || 'ubuntu-latest' }}
+            - nscloud-cache-size-100gb
+            - nscloud-exp-container-image-cache
+            - nscloud-ubuntu-22.04-amd64-4x8-with-cache
         name: php
         steps:
             - name: Checkout
@@ -1450,7 +1457,9 @@ jobs:
             stdout: ${{ steps.exec.outputs.stdout }}
     php-dev:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-7-8c-dind' || 'ubuntu-latest' }}
+            - nscloud-cache-size-100gb
+            - nscloud-exp-container-image-cache
+            - nscloud-ubuntu-22.04-amd64-8x16
         name: php-dev
         steps:
             - name: Checkout
@@ -1679,7 +1688,9 @@ jobs:
             stdout: ${{ steps.exec.outputs.stdout }}
     python:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-7-4c' || 'ubuntu-latest' }}
+            - nscloud-cache-size-100gb
+            - nscloud-exp-container-image-cache
+            - nscloud-ubuntu-22.04-amd64-4x8-with-cache
         name: python
         steps:
             - name: Checkout
@@ -1865,7 +1876,9 @@ jobs:
             stdout: ${{ steps.exec.outputs.stdout }}
     python-dev:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-7-8c-dind' || 'ubuntu-latest' }}
+            - nscloud-cache-size-100gb
+            - nscloud-exp-container-image-cache
+            - nscloud-ubuntu-22.04-amd64-8x16
         name: python-dev
         steps:
             - name: Checkout
@@ -2094,7 +2107,9 @@ jobs:
             stdout: ${{ steps.exec.outputs.stdout }}
     rust:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-7-16c' || 'ubuntu-latest' }}
+            - nscloud-cache-size-100gb
+            - nscloud-exp-container-image-cache
+            - nscloud-ubuntu-22.04-amd64-16x32-with-cache
         name: rust
         steps:
             - name: Checkout
@@ -2280,7 +2295,9 @@ jobs:
             stdout: ${{ steps.exec.outputs.stdout }}
     rust-dev:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-7-16c-dind' || 'ubuntu-latest' }}
+            - nscloud-cache-size-100gb
+            - nscloud-exp-container-image-cache
+            - nscloud-ubuntu-22.04-amd64-16x32
         name: rust-dev
         steps:
             - name: Checkout
@@ -2509,7 +2526,9 @@ jobs:
             stdout: ${{ steps.exec.outputs.stdout }}
     typescript:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-7-4c' || 'ubuntu-latest' }}
+            - nscloud-cache-size-100gb
+            - nscloud-exp-container-image-cache
+            - nscloud-ubuntu-22.04-amd64-4x8-with-cache
         name: typescript
         steps:
             - name: Checkout
@@ -2695,7 +2714,9 @@ jobs:
             stdout: ${{ steps.exec.outputs.stdout }}
     typescript-dev:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-7-8c-dind' || 'ubuntu-latest' }}
+            - nscloud-cache-size-100gb
+            - nscloud-exp-container-image-cache
+            - nscloud-ubuntu-22.04-amd64-8x16
         name: typescript-dev
         steps:
             - name: Checkout
