@@ -25,6 +25,7 @@ import (
 
 	"github.com/dagger/dagger/engine/clientdb"
 	"github.com/dagger/dagger/engine/slog"
+	enginetel "github.com/dagger/dagger/engine/telemetry"
 	"github.com/vito/go-sse/sse"
 )
 
