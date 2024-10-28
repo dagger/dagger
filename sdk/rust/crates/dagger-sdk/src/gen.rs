@@ -3896,9 +3896,23 @@ impl DaggerEngineCache {
         let query = self.selection.select("keepBytes");
         query.execute(self.graphql_client.clone()).await
     }
+    /// The maximum bytes to keep in the cache without pruning.
+    pub async fn max_used_space(&self) -> Result<isize, DaggerError> {
+        let query = self.selection.select("maxUsedSpace");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The target amount of free disk space the garbage collector will attempt to leave.
+    pub async fn min_free_space(&self) -> Result<isize, DaggerError> {
+        let query = self.selection.select("minFreeSpace");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Prune the cache of releaseable entries
     pub async fn prune(&self) -> Result<Void, DaggerError> {
         let query = self.selection.select("prune");
+        query.execute(self.graphql_client.clone()).await
+    }
+    pub async fn reserved_space(&self) -> Result<isize, DaggerError> {
+        let query = self.selection.select("reservedSpace");
         query.execute(self.graphql_client.clone()).await
     }
 }

@@ -2149,9 +2149,12 @@ func (r *DaggerEngine) LocalCache() *DaggerEngineCache {
 type DaggerEngineCache struct {
 	query *querybuilder.Selection
 
-	id        *DaggerEngineCacheID
-	keepBytes *int
-	prune     *Void
+	id            *DaggerEngineCacheID
+	keepBytes     *int
+	maxUsedSpace  *int
+	minFreeSpace  *int
+	prune         *Void
+	reservedSpace *int
 }
 
 func (r *DaggerEngineCache) WithGraphQLQuery(q *querybuilder.Selection) *DaggerEngineCache {
@@ -2210,11 +2213,39 @@ func (r *DaggerEngineCache) MarshalJSON() ([]byte, error) {
 }
 
 // The maximum bytes to keep in the cache without pruning, after which automatic pruning may kick in.
+//
+// Deprecated: Use minFreeSpace instead.
 func (r *DaggerEngineCache) KeepBytes(ctx context.Context) (int, error) {
 	if r.keepBytes != nil {
 		return *r.keepBytes, nil
 	}
 	q := r.query.Select("keepBytes")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The maximum bytes to keep in the cache without pruning.
+func (r *DaggerEngineCache) MaxUsedSpace(ctx context.Context) (int, error) {
+	if r.maxUsedSpace != nil {
+		return *r.maxUsedSpace, nil
+	}
+	q := r.query.Select("maxUsedSpace")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The target amount of free disk space the garbage collector will attempt to leave.
+func (r *DaggerEngineCache) MinFreeSpace(ctx context.Context) (int, error) {
+	if r.minFreeSpace != nil {
+		return *r.minFreeSpace, nil
+	}
+	q := r.query.Select("minFreeSpace")
 
 	var response int
 
@@ -2230,6 +2261,18 @@ func (r *DaggerEngineCache) Prune(ctx context.Context) error {
 	q := r.query.Select("prune")
 
 	return q.Execute(ctx)
+}
+
+func (r *DaggerEngineCache) ReservedSpace(ctx context.Context) (int, error) {
+	if r.reservedSpace != nil {
+		return *r.reservedSpace, nil
+	}
+	q := r.query.Select("reservedSpace")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // An individual cache entry in a cache entry set

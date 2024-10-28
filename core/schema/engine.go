@@ -60,9 +60,13 @@ func (s *engineSchema) localCache(ctx context.Context, parent *core.Engine, args
 	if err := parent.Query.RequireMainClient(ctx); err != nil {
 		return nil, err
 	}
+	policy := parent.Query.Clone().EngineLocalCachePolicy()
 	return &core.EngineCache{
-		Query:     parent.Query,
-		KeepBytes: int(parent.Query.EngineLocalCacheKeepBytes()),
+		Query:         parent.Query,
+		ReservedSpace: int(policy.ReservedSpace),
+		MaxUsedSpace:  int(policy.MaxUsedSpace),
+		MinFreeSpace:  int(policy.MinFreeSpace),
+		KeepBytes:     int(policy.ReservedSpace),
 	}, nil
 }
 

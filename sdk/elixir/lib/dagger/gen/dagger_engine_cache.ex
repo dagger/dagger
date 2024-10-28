@@ -32,11 +32,30 @@ defmodule Dagger.DaggerEngineCache do
     Client.execute(dagger_engine_cache.client, query_builder)
   end
 
+  @deprecated "Use minFreeSpace instead."
   @doc "The maximum bytes to keep in the cache without pruning, after which automatic pruning may kick in."
   @spec keep_bytes(t()) :: {:ok, integer()} | {:error, term()}
   def keep_bytes(%__MODULE__{} = dagger_engine_cache) do
     query_builder =
       dagger_engine_cache.query_builder |> QB.select("keepBytes")
+
+    Client.execute(dagger_engine_cache.client, query_builder)
+  end
+
+  @doc "The maximum bytes to keep in the cache without pruning."
+  @spec max_used_space(t()) :: {:ok, integer()} | {:error, term()}
+  def max_used_space(%__MODULE__{} = dagger_engine_cache) do
+    query_builder =
+      dagger_engine_cache.query_builder |> QB.select("maxUsedSpace")
+
+    Client.execute(dagger_engine_cache.client, query_builder)
+  end
+
+  @doc "The target amount of free disk space the garbage collector will attempt to leave."
+  @spec min_free_space(t()) :: {:ok, integer()} | {:error, term()}
+  def min_free_space(%__MODULE__{} = dagger_engine_cache) do
+    query_builder =
+      dagger_engine_cache.query_builder |> QB.select("minFreeSpace")
 
     Client.execute(dagger_engine_cache.client, query_builder)
   end
@@ -51,5 +70,13 @@ defmodule Dagger.DaggerEngineCache do
       {:ok, _} -> :ok
       error -> error
     end
+  end
+
+  @spec reserved_space(t()) :: {:ok, integer()} | {:error, term()}
+  def reserved_space(%__MODULE__{} = dagger_engine_cache) do
+    query_builder =
+      dagger_engine_cache.query_builder |> QB.select("reservedSpace")
+
+    Client.execute(dagger_engine_cache.client, query_builder)
   end
 end

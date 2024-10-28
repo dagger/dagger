@@ -1128,10 +1128,19 @@ type DaggerEngineCache {
   """
   The maximum bytes to keep in the cache without pruning, after which automatic pruning may kick in.
   """
-  keepBytes: Int!
+  keepBytes: Int! @deprecated(reason: "Use minFreeSpace instead.")
+
+  """The maximum bytes to keep in the cache without pruning."""
+  maxUsedSpace: Int!
+
+  """
+  The target amount of free disk space the garbage collector will attempt to leave.
+  """
+  minFreeSpace: Int!
 
   """Prune the cache of releaseable entries"""
   prune: Void
+  reservedSpace: Int!
 }
 
 """An individual cache entry in a cache entry set"""

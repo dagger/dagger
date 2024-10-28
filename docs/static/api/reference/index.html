@@ -5148,12 +5148,26 @@
                         <td> A unique identifier for this DaggerEngineCache. </td>
                       </tr>
                       <tr>
-                        <td data-property-name=""><a class="property-name" id="DaggerEngineCache-keepBytes" href="#DaggerEngineCache-keepBytes"><code>keepBytes</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
-                        <td> The maximum bytes to keep in the cache without pruning, after which automatic pruning may kick in. </td>
+                        <td data-property-name="" class="definition-deprecated"><a class="property-name" id="DaggerEngineCache-keepBytes" href="#DaggerEngineCache-keepBytes"><code>keepBytes</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
+                        <td> The maximum bytes to keep in the cache without pruning, after which automatic pruning may kick in. <span class="deprecation-reason">Use minFreeSpace instead.</span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="DaggerEngineCache-maxUsedSpace" href="#DaggerEngineCache-maxUsedSpace"><code>maxUsedSpace</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
+                        <td> The maximum bytes to keep in the cache without pruning. </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="DaggerEngineCache-minFreeSpace" href="#DaggerEngineCache-minFreeSpace"><code>minFreeSpace</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
+                        <td> The target amount of free disk space the garbage collector will attempt to leave. </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="DaggerEngineCache-prune" href="#DaggerEngineCache-prune"><code>prune</code></a> - <span class="property-type"><a href="#definition-Void"><code>Void</code></a></span> </td>
                         <td> Prune the cache of releaseable entries </td>
+                      </tr>
+                      <tr>
+                        <td data-property-name=""><a class="property-name" id="DaggerEngineCache-reservedSpace" href="#DaggerEngineCache-reservedSpace"><code>reservedSpace</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
+                        <td>
+                        </td>
                       </tr>
                     </tbody>
                   </table>

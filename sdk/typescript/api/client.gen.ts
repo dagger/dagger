@@ -3245,7 +3245,10 @@ export class DaggerEngine extends BaseClient {
 export class DaggerEngineCache extends BaseClient {
   private readonly _id?: DaggerEngineCacheID = undefined
   private readonly _keepBytes?: number = undefined
+  private readonly _maxUsedSpace?: number = undefined
+  private readonly _minFreeSpace?: number = undefined
   private readonly _prune?: Void = undefined
+  private readonly _reservedSpace?: number = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -3254,13 +3257,19 @@ export class DaggerEngineCache extends BaseClient {
     parent?: { queryTree?: QueryTree[]; ctx: Context },
     _id?: DaggerEngineCacheID,
     _keepBytes?: number,
+    _maxUsedSpace?: number,
+    _minFreeSpace?: number,
     _prune?: Void,
+    _reservedSpace?: number,
   ) {
     super(parent)
 
     this._id = _id
     this._keepBytes = _keepBytes
+    this._maxUsedSpace = _maxUsedSpace
+    this._minFreeSpace = _minFreeSpace
     this._prune = _prune
+    this._reservedSpace = _reservedSpace
   }
 
   /**
@@ -3301,6 +3310,7 @@ export class DaggerEngineCache extends BaseClient {
 
   /**
    * The maximum bytes to keep in the cache without pruning, after which automatic pruning may kick in.
+   * @deprecated Use minFreeSpace instead.
    */
   keepBytes = async (): Promise<number> => {
     if (this._keepBytes) {
@@ -3312,6 +3322,48 @@ export class DaggerEngineCache extends BaseClient {
         ...this._queryTree,
         {
           operation: "keepBytes",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * The maximum bytes to keep in the cache without pruning.
+   */
+  maxUsedSpace = async (): Promise<number> => {
+    if (this._maxUsedSpace) {
+      return this._maxUsedSpace
+    }
+
+    const response: Awaited<number> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "maxUsedSpace",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * The target amount of free disk space the garbage collector will attempt to leave.
+   */
+  minFreeSpace = async (): Promise<number> => {
+    if (this._minFreeSpace) {
+      return this._minFreeSpace
+    }
+
+    const response: Awaited<number> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "minFreeSpace",
         },
       ],
       await this._ctx.connection(),
@@ -3337,6 +3389,23 @@ export class DaggerEngineCache extends BaseClient {
       ],
       await this._ctx.connection(),
     )
+  }
+  reservedSpace = async (): Promise<number> => {
+    if (this._reservedSpace) {
+      return this._reservedSpace
+    }
+
+    const response: Awaited<number> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "reservedSpace",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
   }
 }
 

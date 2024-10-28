@@ -106,12 +106,12 @@ type Server struct {
 	// buildkit+containerd entities/DBs
 	//
 
-	baseWorker          *base.Worker
-	worker              *buildkit.Worker
-	workerCacheMetaDB   *metadata.Store
-	workerCache         bkcache.Manager
-	workerSourceManager *source.Manager
-	workerGCKeepBytes   int64
+	baseWorker            *base.Worker
+	worker                *buildkit.Worker
+	workerCacheMetaDB     *metadata.Store
+	workerCache           bkcache.Manager
+	workerSourceManager   *source.Manager
+	workerDefaultGCPolicy bkclient.PruneInfo
 
 	bkSessionManager *bksession.Manager
 
@@ -391,6 +391,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		GarbageCollect:  srv.containerdMetaDB.GarbageCollect,
 		ParallelismSem:  srv.parallelismSem,
 		MetadataStore:   srv.workerCacheMetaDB,
+		Root:            srv.rootDir,
 		MountPoolRoot:   srv.buildkitMountPoolDir,
 		ResourceMonitor: nil, // we don't use it
 	})
@@ -399,7 +400,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	}
 	srv.workerCache = srv.baseWorker.CacheMgr
 	srv.workerSourceManager = srv.baseWorker.SourceManager
-	srv.workerGCKeepBytes = getGCKeepBytesFromConfig(ociCfg.GCConfig.GCKeepStorage, srv.rootDir)
+	srv.workerDefaultGCPolicy = getDefaultGCPolicy(ociCfg.GCConfig, srv.rootDir)
 
 	logrus.Infof("found worker %q, labels=%v, platforms=%v", workerID, baseLabels, FormatPlatforms(srv.enabledPlatforms))
 	archutil.WarnIfUnsupported(srv.enabledPlatforms)
