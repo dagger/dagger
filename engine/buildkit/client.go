@@ -585,26 +585,26 @@ func (c *Client) GetCredential(ctx context.Context, protocol, host, path string)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get main client caller: %w", err)
 	}
-	credentialClient := session.NewGitCredentialClient(caller.Conn())
 
-	request := &session.GitCredentialRequest{
+	response, err := session.NewGitCredentialClient(caller.Conn()).GetCredential(ctx, &session.GitCredentialRequest{
 		Protocol: protocol,
 		Host:     host,
 		Path:     path,
-	}
-
-	response, err := credentialClient.GetCredential(ctx, request)
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to query the credentials: %w", err)
+		return nil, fmt.Errorf("failed to query credentials: %w", err)
 	}
 
 	switch result := response.Result.(type) {
 	case *session.GitCredentialResponse_Credential:
 		return result.Credential, nil
 	case *session.GitCredentialResponse_Error:
-		return nil, fmt.Errorf("credential error: %s (%s)", result.Error.Message, result.Error.Type)
+		return nil, &session.GitCredentialError{
+			Type:    result.Error.Type,
+			Message: result.Error.Message,
+		}
 	default:
-		return nil, fmt.Errorf("git credential: unexpected response type")
+		return nil, fmt.Errorf("unexpected response type")
 	}
 }
 

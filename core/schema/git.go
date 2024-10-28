@@ -15,6 +15,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/session"
 	"github.com/dagger/dagger/engine/sources/gitdns"
 	"github.com/moby/buildkit/util/gitutil"
 )
@@ -201,28 +202,33 @@ func (s *gitSchema) git(ctx context.Context, parent *core.Query, args gitArgs) (
 
 			credentials, err := bk.GetCredential(ctx, remote.Scheme, remote.Host, remote.Path)
 			if err != nil {
-				return nil, fmt.Errorf("core/schema: failed to retrieve git credentials from host: %w", err)
-			}
-
-			var secretAuthToken dagql.Instance[*core.Secret]
-			if err := s.srv.Select(ctx, s.srv.Root(), &secretAuthToken,
-				dagql.Selector{
-					Field: "setSecret",
-					Args: []dagql.NamedInput{
-						{
-							Name:  "name",
-							Value: dagql.NewString("gitAuthtoken"),
-						},
-						{
-							Name:  "plaintext",
-							Value: dagql.NewString(credentials.Password),
+				if session.IsCredentialNotFound(err) {
+					slog.Info("no git credentials found, continuing without authentication")
+				} else {
+					return nil, fmt.Errorf("core/schema: failed to retrieve git credentials from host: %w", err)
+				}
+			} else {
+				// Credentials found, create and set auth token
+				var secretAuthToken dagql.Instance[*core.Secret]
+				if err := s.srv.Select(ctx, s.srv.Root(), &secretAuthToken,
+					dagql.Selector{
+						Field: "setSecret",
+						Args: []dagql.NamedInput{
+							{
+								Name:  "name",
+								Value: dagql.NewString("gitAuthtoken"),
+							},
+							{
+								Name:  "plaintext",
+								Value: dagql.NewString(credentials.Password),
+							},
 						},
 					},
-				},
-			); err != nil {
-				return nil, fmt.Errorf("failed to create a new secret with the git the auth token: %w", err)
+				); err != nil {
+					return nil, fmt.Errorf("failed to create a new secret with the git the auth token: %w", err)
+				}
+				authToken = secretAuthToken.Self
 			}
-			authToken = secretAuthToken.Self
 		}
 	}
 
