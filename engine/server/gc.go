@@ -184,14 +184,10 @@ func DetectDefaultGCCap(dstat disk.DiskStat) config.GCConfig {
 	if reserve.AsBytes(dstat) > diskSpaceReserveBytes {
 		reserve = config.DiskSpace{Bytes: diskSpaceReserveBytes}
 	}
-	max := config.DiskSpace{Percentage: diskSpaceMaxPercentage}
-	if max.AsBytes(dstat) > diskSpaceMaxBytes {
-		max = config.DiskSpace{Bytes: diskSpaceMaxBytes}
-	}
 	return config.GCConfig{
 		GCReservedSpace: reserve,
 		GCMinFreeSpace:  config.DiskSpace{Percentage: diskSpaceFreePercentage},
-		GCMaxUsedSpace:  max,
+		GCMaxUsedSpace:  config.DiskSpace{Percentage: diskSpaceMaxPercentage},
 	}
 }
 
@@ -199,6 +195,5 @@ const (
 	diskSpaceReservePercentage int64 = 10
 	diskSpaceReserveBytes      int64 = 10 * 1e9 // 10GB
 	diskSpaceFreePercentage    int64 = 20
-	diskSpaceMaxPercentage     int64 = 80
-	diskSpaceMaxBytes          int64 = 200 * 1e9 // 200GB
+	diskSpaceMaxPercentage     int64 = 75
 )
