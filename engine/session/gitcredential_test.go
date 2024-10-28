@@ -2,33 +2,69 @@ package session
 
 import (
 	"context"
-	"io/ioutil"
-	"os"
-	"os/exec"
-	"path/filepath"
+	"encoding/json"
 	"testing"
-	"time"
+
+	"dagger.io/dagger"
+	"dagger.io/dagger/telemetry"
+	"github.com/dagger/dagger/testctx"
+	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/log"
+	"go.opentelemetry.io/otel/trace"
 )
 
-// TODO(guillaume): to be run inside a container
-const (
-	gitPath         = "/usr/local/bin/git"
-	homeDir         = "/root"
-	gitConfigPath   = homeDir + "/.gitconfig"
-	credentialsPath = homeDir + "/.git-credentials"
-)
+func connect(ctx context.Context, t *testctx.T, opts ...dagger.ClientOpt) *dagger.Client {
+	// opts = append([]dagger.ClientOpt{
+	// 	dagger.WithLogOutput(testutil.NewTWriter(t.T)),
+	// }, opts...)
+	client, err := dagger.Connect(ctx, opts...)
+	require.NoError(t, err)
+	t.Cleanup(func() { client.Close() })
+	return client
+}
 
-func TestGitCredentialErrors(t *testing.T) {
+var testCtx = context.Background()
+
+type GitCredentialSuite struct{}
+
+func Tracer() trace.Tracer {
+	return otel.Tracer(InstrumentationLibrary)
+}
+
+func Logger() log.Logger {
+	return telemetry.Logger(testCtx, InstrumentationLibrary)
+}
+
+func Middleware() []testctx.Middleware {
+	return []testctx.Middleware{
+		testctx.WithParallel,
+		testctx.WithOTelLogging(Logger()),
+		testctx.WithOTelTracing(Tracer()),
+	}
+}
+
+func TestGitCredential(t *testing.T) {
+	testctx.Run(testCtx, t, GitCredentialSuite{}, Middleware()...)
+}
+
+// This tests the proto, but having a hard time implementing the test
+func (GitCredentialSuite) TestGitCredentialErrors(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
 	tests := []struct {
 		name           string
-		setup          func() error
-		cleanup        func()
+		setup          func(*dagger.Container) *dagger.Container
 		request        *GitCredentialRequest
 		expectedError  ErrorInfo_ErrorType
 		expectedReason string
 	}{
 		{
 			name: "INVALID_REQUEST",
+			setup: func(c *dagger.Container) *dagger.Container {
+				return c.WithEnvVariable("HOME", "/root").
+					WithEnvVariable("GIT_CONFIG_GLOBAL", "/root/.gitconfig")
+			},
 			request: &GitCredentialRequest{
 				Protocol: "",
 				Host:     "",
@@ -38,12 +74,8 @@ func TestGitCredentialErrors(t *testing.T) {
 		},
 		{
 			name: "NO_GIT",
-			setup: func() error {
-				// Temporarily rename git executable
-				return os.Rename("/usr/bin/git", "/usr/bin/git_temp")
-			},
-			cleanup: func() {
-				os.Rename("/usr/bin/git_temp", "/usr/bin/git")
+			setup: func(c *dagger.Container) *dagger.Container {
+				return c.WithExec([]string{"mv", "/usr/bin/git", "/usr/bin/git_temp"})
 			},
 			request: &GitCredentialRequest{
 				Protocol: "https",
@@ -54,15 +86,10 @@ func TestGitCredentialErrors(t *testing.T) {
 		},
 		{
 			name: "NO_CREDENTIAL_HELPER",
-			setup: func() error {
-				cmd := exec.Command("git", "config", "--global", "--unset", "credential.helper")
-				cmd.Env = os.Environ()
-				return cmd.Run()
-			},
-			cleanup: func() {
-				cmd := exec.Command("git", "config", "--global", "--unset", "credential.helper")
-				cmd.Env = os.Environ()
-				cmd.Run()
+			setup: func(c *dagger.Container) *dagger.Container {
+				return c.WithEnvVariable("HOME", "/root").
+					WithEnvVariable("GIT_CONFIG_GLOBAL", "/root/.gitconfig").
+					WithExec([]string{"git", "config", "--global", "--unset", "credential.helper", "||", "true"})
 			},
 			request: &GitCredentialRequest{
 				Protocol: "https",
@@ -73,19 +100,14 @@ func TestGitCredentialErrors(t *testing.T) {
 		},
 		{
 			name: "TIMEOUT",
-			setup: func() error {
-				// Create a git credential helper that sleeps
-				err := os.WriteFile("/tmp/slow_helper.sh", []byte("#!/bin/sh\nsleep 11\n"), 0755)
-				if err != nil {
-					return err
-				}
-				// Configure git to use our slow helper as credential helper
-				cmd := exec.Command("git", "config", "--global", "credential.helper", "/tmp/slow_helper.sh")
-				return cmd.Run()
-			},
-			cleanup: func() {
-				os.Remove("/tmp/slow_helper.sh")
-				exec.Command("git", "config", "--global", "--unset", "credential.helper").Run()
+			setup: func(c *dagger.Container) *dagger.Container {
+				return c.WithEnvVariable("HOME", "/root").
+					WithEnvVariable("GIT_CONFIG_GLOBAL", "/root/.gitconfig").
+					WithNewFile("/tmp/slow_helper.sh", `#!/bin/sh
+sleep 31
+`).
+					WithExec([]string{"chmod", "+x", "/tmp/slow_helper.sh"}).
+					WithExec([]string{"git", "config", "--global", "credential.helper", "/tmp/slow_helper.sh"})
 			},
 			request: &GitCredentialRequest{
 				Protocol: "https",
@@ -96,6 +118,10 @@ func TestGitCredentialErrors(t *testing.T) {
 		},
 		{
 			name: "CREDENTIAL_RETRIEVAL_FAILED",
+			setup: func(c *dagger.Container) *dagger.Container {
+				return c.WithEnvVariable("HOME", "/root").
+					WithEnvVariable("GIT_CONFIG_GLOBAL", "/root/.gitconfig")
+			},
 			request: &GitCredentialRequest{
 				Protocol: "https",
 				Host:     "nonexistent.com",
@@ -105,61 +131,84 @@ func TestGitCredentialErrors(t *testing.T) {
 		},
 	}
 
-	s := NewGitCredentialAttachable(context.TODO())
-
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Create a temporary directory
-			tempDir, err := ioutil.TempDir("", "git_test")
-			if err != nil {
-				t.Fatalf("Failed to create temp dir: %v", err)
-			}
-			defer os.RemoveAll(tempDir)
+		t.Run(tt.name, func(ctx context.Context, t *testctx.T) {
+			// Setup base container
+			container := c.Container().
+				From("golang:1.16").
+				WithExec([]string{"apt-get", "update"}).
+				WithExec([]string{"apt-get", "install", "-y", "git"})
 
-			// Set HOME and GIT_CONFIG_GLOBAL to use tempDir
-			os.Setenv("HOME", tempDir)
-			os.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(tempDir, ".gitconfig"))
-			defer func() {
-				os.Unsetenv("HOME")
-				os.Unsetenv("GIT_CONFIG_GLOBAL")
-			}()
-
-			// Ensure git commands use the updated environment
-			if tt.name != "NO_GIT" {
-				cmd := exec.Command("git", "config", "--global", "credential.helper", "store")
-				cmd.Env = os.Environ()
-				if err := cmd.Run(); err != nil {
-					t.Fatalf("Failed to set credential.helper: %v", err)
-				}
-			}
-
+			// Apply test-specific setup
 			if tt.setup != nil {
-				if err := tt.setup(); err != nil {
-					t.Fatalf("Setup failed: %v", err)
-				}
-			}
-			if tt.cleanup != nil {
-				defer tt.cleanup()
+				container = tt.setup(container)
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
+			// Create a file with the request
+			requestJSON, err := json.Marshal(tt.request)
+			require.NoError(t, err)
 
-			response, err := s.GetCredential(ctx, tt.request)
-			if err != nil {
-				t.Fatalf("Unexpected error: %v", err)
-			}
+			container = container.
+				WithNewFile("/request.json", string(requestJSON)).
+				// Copy the git credential implementation into the container
+				WithMountedFile("/git_credential.go", c.Host().File("./git_credential.go"))
 
-			if errorResponse, ok := response.Result.(*GitCredentialResponse_Error); ok {
-				if errorResponse.Error.Type != tt.expectedError {
-					t.Errorf("Expected error type %v, got %v", tt.expectedError, errorResponse.Error.Type)
-				}
-				if errorResponse.Error.Message != tt.expectedReason {
-					t.Errorf("Expected error message '%s', got '%s'", tt.expectedReason, errorResponse.Error.Message)
-				}
-			} else {
-				t.Errorf("Expected error response, got success")
-			}
+			// Create a test program to run the git credential implementation
+			testProgram := `
+package main
+
+import (
+    "context"
+    "encoding/json"
+    "fmt"
+    "io/ioutil"
+    "os"
+)
+
+func main() {
+    // Read request
+    data, err := ioutil.ReadFile("/request.json")
+    if err != nil {
+        panic(err)
+    }
+
+    var request GitCredentialRequest
+    if err := json.Unmarshal(data, &request); err != nil {
+        panic(err)
+    }
+
+    // Create GitCredentialAttachable and run test
+    s := NewGitCredentialAttachable(context.Background())
+    response, err := s.GetCredential(context.Background(), &request)
+    if err != nil {
+        panic(err)
+    }
+
+    // Write response
+    responseJSON, err := json.Marshal(response)
+    if err != nil {
+        panic(err)
+    }
+    fmt.Println(string(responseJSON))
+}
+`
+			container = container.
+				WithNewFile("/test.go", testProgram).
+				WithExec([]string{"go", "run", "/test.go"})
+
+			// Get the output and parse the response
+			output, err := container.Stdout(ctx)
+			require.NoError(t, err)
+
+			var response GitCredentialResponse
+			err = json.Unmarshal([]byte(output), &response)
+			require.NoError(t, err)
+
+			// Check error response
+			errorResponse, ok := response.Result.(*GitCredentialResponse_Error)
+			require.True(t, ok, "Expected error response, got success")
+			require.Equal(t, tt.expectedError, errorResponse.Error.Type)
+			require.Equal(t, tt.expectedReason, errorResponse.Error.Message)
 		})
 	}
 }
