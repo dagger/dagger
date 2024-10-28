@@ -17,6 +17,7 @@ import (
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/solver/pb"
+	"github.com/sourcegraph/conc/pool"
 	"github.com/vektah/gqlparser/v2/ast"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -325,6 +326,7 @@ func (svc *Service) startContainer(
 
 	pbPlatform := pb.PlatformFromSpec(ctr.Platform.Spec())
 
+	mountsG := pool.New().WithErrors()
 	mounts := make([]buildkit.ContainerMount, len(execOp.Mounts))
 	for i, m := range execOp.Mounts {
 		mount := bkgw.Mount{
@@ -347,20 +349,25 @@ func (svc *Service) startContainer(
 				return nil, fmt.Errorf("marshal mount %s: %w", m.Dest, err)
 			}
 
-			res, err := bk.Solve(ctx, bkgw.SolveRequest{
-				Definition: def,
-				Evaluate:   true,
+			mountsG.Go(func() error {
+				res, err := bk.Solve(ctx, bkgw.SolveRequest{
+					Definition: def,
+					Evaluate:   true,
+				})
+				if err != nil {
+					return fmt.Errorf("solve mount %s: %w", m.Dest, err)
+				}
+				mount.Ref = res.Ref
+				return nil
 			})
-			if err != nil {
-				return nil, fmt.Errorf("solve mount %s: %w", m.Dest, err)
-			}
-
-			mount.Ref = res.Ref
 		}
 
 		mounts[i] = buildkit.ContainerMount{
 			Mount: &mount,
 		}
+	}
+	if err := mountsG.Wait(); err != nil {
+		return nil, err
 	}
 
 	execCtx := trace.ContextWithSpanContext(ctx, svc.Creator)
