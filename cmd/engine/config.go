@@ -4,7 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/moby/buildkit/cmd/buildkitd/config"
+	bkconfig "github.com/moby/buildkit/cmd/buildkitd/config"
 	"github.com/moby/buildkit/util/appdefaults"
 	"github.com/moby/buildkit/util/archutil"
 	"github.com/moby/sys/userns"
@@ -15,28 +15,28 @@ import (
 	"github.com/dagger/dagger/engine/server"
 )
 
-func defaultConfigPath() string {
+func defaultBuildkitConfigPath() string {
 	if userns.RunningInUserNS() {
 		return filepath.Join(appdefaults.UserConfigDir(), "buildkitd.toml")
 	}
 	return filepath.Join(appdefaults.ConfigDir, "buildkitd.toml")
 }
 
-func defaultConf() (config.Config, error) {
-	cfg, err := config.LoadFile(defaultConfigPath())
+func defaultBuildkitConfig() (bkconfig.Config, error) {
+	cfg, err := bkconfig.LoadFile(defaultBuildkitConfigPath())
 	if err != nil {
 		var pe *os.PathError
 		if !errors.As(err, &pe) {
-			return config.Config{}, err
+			return bkconfig.Config{}, err
 		}
 		logrus.Warnf("failed to load default config: %v", err)
 	}
-	setDefaultConfig(&cfg, nil)
+	setDefaultBuildkitConfig(&cfg, nil)
 
 	return cfg, nil
 }
 
-func setDefaultConfig(cfg *config.Config, netConf *networkConfig) {
+func setDefaultBuildkitConfig(cfg *bkconfig.Config, netConf *networkConfig) {
 	orig := *cfg
 
 	if cfg.Root == "" {
@@ -55,7 +55,7 @@ func setDefaultConfig(cfg *config.Config, netConf *networkConfig) {
 	}
 
 	if cfg.DNS == nil {
-		cfg.DNS = &config.DNSConfig{}
+		cfg.DNS = &bkconfig.DNSConfig{}
 	}
 
 	if netConf != nil {
@@ -90,7 +90,7 @@ func setDefaultConfig(cfg *config.Config, netConf *networkConfig) {
 	}
 }
 
-func setNetworkDefaults(cfg *config.NetworkConfig, cniConfigPath string) {
+func setNetworkDefaults(cfg *bkconfig.NetworkConfig, cniConfigPath string) {
 	if cfg.Mode == "" {
 		cfg.Mode = "cni"
 	}

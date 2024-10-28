@@ -24,7 +24,7 @@ import (
 	sgzlayer "github.com/containerd/stargz-snapshotter/fs/layer"
 	sgzsource "github.com/containerd/stargz-snapshotter/fs/source"
 	remotesn "github.com/containerd/stargz-snapshotter/snapshot"
-	"github.com/moby/buildkit/cmd/buildkitd/config"
+	bkconfig "github.com/moby/buildkit/cmd/buildkitd/config"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/util/resolver"
 	"github.com/pelletier/go-toml"
@@ -34,7 +34,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-func newSnapshotter(rootDir string, cfg config.OCIConfig, sm *session.Manager, hosts docker.RegistryHosts) (ctdsnapshot.Snapshotter, string, error) {
+func newSnapshotter(rootDir string, cfg bkconfig.OCIConfig, sm *session.Manager, hosts docker.RegistryHosts) (ctdsnapshot.Snapshotter, string, error) {
 	var (
 		name    = cfg.Snapshotter
 		address = cfg.ProxySnapshotterPath

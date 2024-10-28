@@ -21,9 +21,10 @@ import (
 	"github.com/containerd/containerd/pkg/seed" //nolint:staticcheck // SA1019 deprecated
 	"github.com/containerd/containerd/sys"
 	sddaemon "github.com/coreos/go-systemd/v22/daemon"
+	"github.com/dagger/dagger/engine/config"
 	"github.com/docker/docker/pkg/reexec"
 	"github.com/gofrs/flock"
-	"github.com/moby/buildkit/cmd/buildkitd/config"
+	bkconfig "github.com/moby/buildkit/cmd/buildkitd/config"
 	"github.com/moby/buildkit/util/apicaps"
 	"github.com/moby/buildkit/util/appcontext"
 	"github.com/moby/buildkit/util/bklog"
@@ -61,7 +62,7 @@ func init() {
 }
 
 func addFlags(app *cli.App) {
-	defaultConf, err := defaultConf()
+	defaultConf, err := defaultBuildkitConfig()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%+v\n", err)
 		os.Exit(1)
@@ -91,7 +92,7 @@ func addFlags(app *cli.App) {
 		cli.StringFlag{
 			Name:  "config",
 			Usage: "path to config file",
-			Value: defaultConfigPath(),
+			Value: defaultBuildkitConfigPath(),
 		},
 		cli.BoolFlag{
 			Name:  "debug",
@@ -266,8 +267,14 @@ func main() { //nolint:gocyclo
 
 		ctx = InitTelemetry(ctx)
 
+		bklog.G(ctx).Debug("loading buildkit config file")
+		bkcfg, err := bkconfig.LoadFile(c.GlobalString("config"))
+		if err != nil {
+			return err
+		}
+
 		bklog.G(ctx).Debug("loading engine config file")
-		cfg, err := config.LoadFile(c.GlobalString("config"))
+		cfg, err := config.LoadDefault()
 		if err != nil {
 			return err
 		}
@@ -284,9 +291,9 @@ func main() { //nolint:gocyclo
 		}
 
 		bklog.G(ctx).Debug("setting engine configs from defaults and flags")
-		setDefaultConfig(&cfg, netConf)
+		setDefaultBuildkitConfig(&bkcfg, netConf)
 
-		if err := applyMainFlags(c, &cfg); err != nil {
+		if err := applyMainFlags(c, &bkcfg); err != nil {
 			return err
 		}
 
@@ -301,21 +308,36 @@ func main() { //nolint:gocyclo
 		}
 		noiseReduceHook.ignoreLogger.SetOutput(io.Discard)
 
-		switch {
-		case cfg.Trace:
-			slogOpts.Level = slog.LevelTrace
-			logrus.SetLevel(logrus.TraceLevel)
-			// don't add noise reduction hook for trace level
-		case c.IsSet("extra-debug"):
-			slogOpts.Level = slog.LevelExtraDebug
-			logrus.SetLevel(logrus.DebugLevel)
-			// don't add noise reduction hook for extra debug level
-		case cfg.Debug:
-			slogOpts.Level = slog.LevelDebug
-			logrus.SetLevel(logrus.DebugLevel)
-			logrus.AddHook(noiseReduceHook)
-		default:
-			logrus.AddHook(noiseReduceHook)
+		logLevel := cfg.LogLevel
+		if logLevel == "" {
+			switch {
+			case bkcfg.Trace:
+				logLevel = config.LevelTrace
+			case c.IsSet("extra-debug"):
+				logLevel = config.LevelExtraDebug
+			case bkcfg.Debug:
+				logLevel = config.LevelDebug
+			default:
+				logLevel = config.LevelDebug
+			}
+		}
+		if logLevel != "" {
+			slogLevel, err := logLevel.ToSlogLevel()
+			if err != nil {
+				return err
+			}
+			slogOpts.Level = slogLevel
+
+			logrusLevel, err := logLevel.ToLogrusLevel()
+			if err != nil {
+				return err
+			}
+			logrus.SetLevel(logrusLevel)
+
+			if slogLevel >= slog.LevelDebug {
+				// add noise reduction hook for less verbose levels
+				logrus.AddHook(noiseReduceHook)
+			}
 		}
 
 		sloglogrus.LogLevels[slog.LevelExtraDebug] = logrus.DebugLevel
@@ -324,8 +346,8 @@ func main() { //nolint:gocyclo
 
 		bklog.G(context.Background()).Debugf("engine name: %s", engineName)
 
-		if cfg.GRPC.DebugAddress != "" {
-			if err := setupDebugHandlers(cfg.GRPC.DebugAddress); err != nil {
+		if bkcfg.GRPC.DebugAddress != "" {
+			if err := setupDebugHandlers(bkcfg.GRPC.DebugAddress); err != nil {
 				return err
 			}
 		}
@@ -334,11 +356,11 @@ func main() { //nolint:gocyclo
 		grpcServer := grpc.NewServer(grpc.StatsHandler(otelgrpc.NewServerHandler()))
 
 		// relative path does not work with nightlyone/lockfile
-		root, err := filepath.Abs(cfg.Root)
+		root, err := filepath.Abs(bkcfg.Root)
 		if err != nil {
 			return err
 		}
-		cfg.Root = root
+		bkcfg.Root = root
 
 		if err := os.MkdirAll(root, 0o700); err != nil {
 			return fmt.Errorf("failed to create %s: %w", root, err)
@@ -361,13 +383,13 @@ func main() { //nolint:gocyclo
 
 		ents := c.GlobalStringSlice("allow-insecure-entitlement")
 		if len(ents) > 0 {
-			cfg.Entitlements = []string{}
+			bkcfg.Entitlements = []string{}
 			for _, e := range ents {
 				switch e {
 				case "security.insecure":
-					cfg.Entitlements = append(cfg.Entitlements, e)
+					bkcfg.Entitlements = append(bkcfg.Entitlements, e)
 				case "network.host":
-					cfg.Entitlements = append(cfg.Entitlements, e)
+					bkcfg.Entitlements = append(bkcfg.Entitlements, e)
 				default:
 					return fmt.Errorf("invalid entitlement : %s", e)
 				}
@@ -376,16 +398,17 @@ func main() { //nolint:gocyclo
 
 		bklog.G(ctx).Debug("creating engine server")
 		srv, err := server.NewServer(ctx, &server.NewServerOpts{
-			Config: &cfg,
-			Name:   engineName,
+			Name:           engineName,
+			Config:         &cfg,
+			BuildkitConfig: &bkcfg,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to create engine: %w", err)
 		}
 		defer srv.Close()
 
-		go logMetrics(context.Background(), cfg.Root, srv)
-		if cfg.Trace {
+		go logMetrics(context.Background(), bkcfg.Root, srv)
+		if bkcfg.Trace {
 			go logTraceMetrics(context.Background())
 		}
 
@@ -416,7 +439,7 @@ func main() { //nolint:gocyclo
 			return fmt.Errorf("failed to configure http2 server: %w", err)
 		}
 		errCh := make(chan error, 1)
-		if err := serveAPI(cfg.GRPC, httpServer, errCh); err != nil {
+		if err := serveAPI(bkcfg.GRPC, httpServer, errCh); err != nil {
 			return err
 		}
 
@@ -466,7 +489,7 @@ func main() { //nolint:gocyclo
 }
 
 func serveAPI(
-	cfg config.GRPCConfig,
+	cfg bkconfig.GRPCConfig,
 	httpServer *http.Server,
 	errCh chan error,
 ) error {
@@ -516,7 +539,7 @@ func serveAPI(
 }
 
 //nolint:gocyclo
-func applyMainFlags(c *cli.Context, cfg *config.Config) error {
+func applyMainFlags(c *cli.Context, cfg *bkconfig.Config) error {
 	if c.IsSet("debug") {
 		cfg.Debug = c.Bool("debug")
 	}
@@ -721,7 +744,7 @@ func getListener(addr string, uid, gid int, tlsConfig *tls.Config) (net.Listener
 	}
 }
 
-func serverCredentials(cfg config.TLSConfig) (*tls.Config, error) {
+func serverCredentials(cfg bkconfig.TLSConfig) (*tls.Config, error) {
 	certFile := cfg.Cert
 	keyFile := cfg.Key
 	caFile := cfg.CA

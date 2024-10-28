@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/engine/config"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/dagger/testctx"
 )
@@ -49,17 +50,8 @@ func (EngineSuite) TestLocalCacheGCKeepBytesConfig(ctx context.Context, t *testc
 			minFreeSpace:  "10%",
 		},
 	} {
-		tc := tc
-		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
-			var opts []func(*dagger.Container) *dagger.Container
-			if tc.keepStorage != "" {
-				opts = append(opts, engineWithConfig(ctx, t, engineConfigWithKeepBytes(tc.keepStorage)))
-			}
-			if tc.reservedSpace != "" || tc.maxUsedSpace != "" || tc.minFreeSpace != "" {
-				opts = append(opts, engineWithConfig(ctx, t, engineConfigWithGC(tc.reservedSpace, tc.minFreeSpace, tc.maxUsedSpace)))
-			}
-
-			engineSvc, err := c.Host().Tunnel(devEngineContainer(c, opts...).AsService()).Start(ctx)
+		f := func(ctx context.Context, t *testctx.T, engine *dagger.Container) {
+			engineSvc, err := c.Host().Tunnel(engine.AsService()).Start(ctx)
 			require.NoError(t, err)
 			t.Cleanup(func() { engineSvc.Stop(ctx) })
 
@@ -96,6 +88,28 @@ func (EngineSuite) TestLocalCacheGCKeepBytesConfig(ctx context.Context, t *testc
 				require.NoError(t, err)
 				require.Equal(t, expectedReservedSpace, actualReservedSpace)
 			}
+		}
+
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			var opts []func(*dagger.Container) *dagger.Container
+			if tc.keepStorage != "" {
+				opts = append(opts, engineWithConfig(ctx, t, engineConfigWithKeepBytes(tc.keepStorage)))
+			}
+			if tc.reservedSpace != "" || tc.maxUsedSpace != "" || tc.minFreeSpace != "" {
+				opts = append(opts, engineWithConfig(ctx, t, engineConfigWithGC(tc.reservedSpace, tc.minFreeSpace, tc.maxUsedSpace)))
+			}
+			f(ctx, t, devEngineContainer(c, opts...))
+		})
+
+		t.Run(tc.name+" (bk opts)", func(ctx context.Context, t *testctx.T) {
+			var opts []func(*dagger.Container) *dagger.Container
+			if tc.keepStorage != "" {
+				opts = append(opts, engineWithBkConfig(ctx, t, bkConfigWithKeepBytes(tc.keepStorage)))
+			}
+			if tc.reservedSpace != "" || tc.maxUsedSpace != "" || tc.minFreeSpace != "" {
+				opts = append(opts, engineWithBkConfig(ctx, t, bkConfigWithGC(tc.reservedSpace, tc.minFreeSpace, tc.maxUsedSpace)))
+			}
+			f(ctx, t, devEngineContainer(c, opts...))
 		})
 	}
 }
@@ -133,16 +147,8 @@ func (EngineSuite) TestLocalCacheAutomaticGC(ctx context.Context, t *testctx.T) 
 			target:        fmt.Sprint(1024 * 1024 * 1024), // 1GB
 		},
 	} {
-		t.Run(tc.name, func(context.Context, *testctx.T) {
-			var opts []func(*dagger.Container) *dagger.Container
-			if tc.keepStorage != "" {
-				opts = append(opts, engineWithConfig(ctx, t, engineConfigWithKeepBytes(tc.keepStorage)))
-			}
-			if tc.reservedSpace != "" || tc.maxUsedSpace != "" || tc.minFreeSpace != "" {
-				opts = append(opts, engineWithConfig(ctx, t, engineConfigWithGC(tc.reservedSpace, tc.minFreeSpace, tc.maxUsedSpace)))
-			}
-
-			engineSvc, err := c.Host().Tunnel(devEngineContainer(c, opts...).AsService()).Start(ctx)
+		f := func(ctx context.Context, t *testctx.T, engine *dagger.Container) {
+			engineSvc, err := c.Host().Tunnel(engine.AsService()).Start(ctx)
 			require.NoError(t, err)
 			t.Cleanup(func() { engineSvc.Stop(ctx) })
 
@@ -217,11 +223,51 @@ func (EngineSuite) TestLocalCacheAutomaticGC(ctx context.Context, t *testctx.T) 
 
 				t.Fatalf("Expected used bytes to decrease below %d from gc, got %d", target, newUsedBytes)
 			}
+		}
+
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			var opts []func(*dagger.Container) *dagger.Container
+			if tc.keepStorage != "" {
+				opts = append(opts, engineWithConfig(ctx, t, engineConfigWithKeepBytes(tc.keepStorage)))
+			}
+			if tc.reservedSpace != "" || tc.maxUsedSpace != "" || tc.minFreeSpace != "" {
+				opts = append(opts, engineWithConfig(ctx, t, engineConfigWithGC(tc.reservedSpace, tc.minFreeSpace, tc.maxUsedSpace)))
+			}
+			f(ctx, t, devEngineContainer(c, opts...))
+		})
+
+		t.Run(tc.name+" (bk opts)", func(ctx context.Context, t *testctx.T) {
+			var opts []func(*dagger.Container) *dagger.Container
+			if tc.keepStorage != "" {
+				opts = append(opts, engineWithBkConfig(ctx, t, bkConfigWithKeepBytes(tc.keepStorage)))
+			}
+			if tc.reservedSpace != "" || tc.maxUsedSpace != "" || tc.minFreeSpace != "" {
+				opts = append(opts, engineWithBkConfig(ctx, t, bkConfigWithGC(tc.reservedSpace, tc.minFreeSpace, tc.maxUsedSpace)))
+			}
+			f(ctx, t, devEngineContainer(c, opts...))
 		})
 	}
 }
 
-func engineConfigWithKeepBytes(keepStorage string) func(context.Context, *testctx.T, bkconfig.Config) bkconfig.Config {
+func engineConfigWithKeepBytes(keepStorage string) func(context.Context, *testctx.T, config.Config) config.Config {
+	return func(ctx context.Context, t *testctx.T, cfg config.Config) config.Config {
+		t.Helper()
+		require.NoError(t, cfg.GC.ReservedSpace.UnmarshalJSON([]byte(keepStorage)))
+		return cfg
+	}
+}
+
+func engineConfigWithGC(reserved, minFree, maxUsed string) func(context.Context, *testctx.T, config.Config) config.Config {
+	return func(ctx context.Context, t *testctx.T, cfg config.Config) config.Config {
+		t.Helper()
+		require.NoError(t, cfg.GC.ReservedSpace.UnmarshalJSON([]byte(reserved)))
+		require.NoError(t, cfg.GC.MinFreeSpace.UnmarshalJSON([]byte(minFree)))
+		require.NoError(t, cfg.GC.MaxUsedSpace.UnmarshalJSON([]byte(maxUsed)))
+		return cfg
+	}
+}
+
+func bkConfigWithKeepBytes(keepStorage string) func(context.Context, *testctx.T, bkconfig.Config) bkconfig.Config {
 	return func(ctx context.Context, t *testctx.T, cfg bkconfig.Config) bkconfig.Config {
 		t.Helper()
 		require.NoError(t, cfg.Workers.OCI.GCKeepStorage.UnmarshalText([]byte(keepStorage))) //nolint: staticcheck
@@ -229,7 +275,7 @@ func engineConfigWithKeepBytes(keepStorage string) func(context.Context, *testct
 	}
 }
 
-func engineConfigWithGC(reserved, minFree, maxUsed string) func(context.Context, *testctx.T, bkconfig.Config) bkconfig.Config {
+func bkConfigWithGC(reserved, minFree, maxUsed string) func(context.Context, *testctx.T, bkconfig.Config) bkconfig.Config {
 	return func(ctx context.Context, t *testctx.T, cfg bkconfig.Config) bkconfig.Config {
 		t.Helper()
 		require.NoError(t, cfg.Workers.OCI.GCReservedSpace.UnmarshalText([]byte(reserved)))

@@ -1,10 +1,12 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -16,6 +18,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/config"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/dagger/testctx"
@@ -62,14 +65,47 @@ func devEngineContainer(c *dagger.Client, withs ...func(*dagger.Container) *dagg
 		})
 }
 
-func engineWithConfig(ctx context.Context, t *testctx.T, cfgFns ...func(context.Context, *testctx.T, bkconfig.Config) bkconfig.Config) func(*dagger.Container) *dagger.Container {
+func engineWithConfig(ctx context.Context, t *testctx.T, cfgFns ...func(context.Context, *testctx.T, config.Config) config.Config) func(*dagger.Container) *dagger.Container {
 	return func(ctr *dagger.Container) *dagger.Container {
 		t.Helper()
-		existingCfgStr, err := ctr.File("/etc/dagger/engine.toml").Contents(ctx)
-		require.NoError(t, err)
 
-		cfg, err := bkconfig.Load(strings.NewReader(existingCfgStr))
+		var cfg config.Config
+
+		entries, err := ctr.Directory("/etc/dagger").Entries(ctx)
 		require.NoError(t, err)
+		if slices.Contains(entries, "engine.json") {
+			existingCfgStr, err := ctr.File("/etc/dagger/engine.json").Contents(ctx)
+			require.NoError(t, err)
+			cfg, err = config.Load(strings.NewReader(existingCfgStr))
+			require.NoError(t, err)
+		}
+
+		for _, cfgFn := range cfgFns {
+			cfg = cfgFn(ctx, t, cfg)
+		}
+
+		var buf bytes.Buffer
+		require.NoError(t, cfg.Save(&buf))
+		return ctr.WithNewFile("/etc/dagger/engine.json", buf.String())
+	}
+}
+
+func engineWithBkConfig(ctx context.Context, t *testctx.T, cfgFns ...func(context.Context, *testctx.T, bkconfig.Config) bkconfig.Config) func(*dagger.Container) *dagger.Container {
+	return func(ctr *dagger.Container) *dagger.Container {
+		t.Helper()
+
+		var cfg bkconfig.Config
+
+		entries, err := ctr.Directory("/etc/dagger").Entries(ctx)
+		require.NoError(t, err)
+		if slices.Contains(entries, "engine.toml") {
+			existingCfgStr, err := ctr.File("/etc/dagger/engine.toml").Contents(ctx)
+			require.NoError(t, err)
+
+			cfg, err = bkconfig.Load(strings.NewReader(existingCfgStr))
+			require.NoError(t, err)
+		}
+
 		for _, cfgFn := range cfgFns {
 			cfg = cfgFn(ctx, t, cfg)
 		}

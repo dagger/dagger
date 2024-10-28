@@ -1,0 +1,137 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dagger/dagger/engine/config/config",
+  "$ref": "#/$defs/Config",
+  "$defs": {
+    "Config": {
+      "properties": {
+        "logLevel": {
+          "type": "string",
+          "enum": [
+            "error",
+            "warn",
+            "info",
+            "debug",
+            "debugextra",
+            "trace"
+          ],
+          "description": "LogLevel defines the engine's logging level."
+        },
+        "gc": {
+          "$ref": "#/$defs/GCConfig",
+          "description": "GC configures the engine's garbage collector."
+        },
+        "security": {
+          "$ref": "#/$defs/Security",
+          "description": "Security allows configuring various security settings for the engine."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "DiskSpace": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-9][0-9.]*([kKmMgGtTpP][iI]?)?[bB]?$"
+        },
+        {
+          "type": "string",
+          "pattern": "^[0-9]+%$"
+        },
+        {
+          "type": "number"
+        }
+      ],
+      "description": "DiskSpace is either an integer number of bytes (e.g. 512000000), a string with a byte unit suffix (e.g. \"512MB\"), or a string percentage of the total disk space (e.g. \"10%\")."
+    },
+    "Duration": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$"
+        },
+        {
+          "type": "string",
+          "pattern": "^[0-9]+$"
+        },
+        {
+          "type": "number"
+        }
+      ],
+      "description": "Duration is either an integer number of seconds (e.g. 3600), or a string representation of the time (e.g. \"1h30m\")."
+    },
+    "GCConfig": {
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enabled controls whether the garbage collector is enabled - it is switched on by default (and generally shouldn't be turned off, except for very short-lived dagger instances)."
+        },
+        "reservedSpace": {
+          "$ref": "#/$defs/DiskSpace",
+          "description": "ReservedSpace is the minimum amount of disk space this policy is guaranteed to retain. Any usage below this threshold will not be reclaimed during garbage collection."
+        },
+        "maxUsedSpace": {
+          "$ref": "#/$defs/DiskSpace",
+          "description": "MaxUsedSpace is the maximum amount of disk space this policy is allowed to use. Any usage exceeding this limit will be cleaned up during a garbage collection sweep."
+        },
+        "minFreeSpace": {
+          "$ref": "#/$defs/DiskSpace",
+          "description": "MinFreeSpace is the target amount of free disk space the garbage collector will attempt to leave. However, it will never let the available space fall below ReservedSpace."
+        },
+        "policies": {
+          "items": {
+            "$ref": "#/$defs/GCPolicy"
+          },
+          "type": "array",
+          "description": "Policies are a list of manually configured policies - if not specified, an automatic default will be generated from the top-level disk space parameters."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "GCPolicy": {
+      "properties": {
+        "all": {
+          "type": "boolean",
+          "description": "All matches every cache record."
+        },
+        "filters": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Filters are a list of containerd filters to match specific cache records. The available filters are: \"id\", \"parents\", \"description\", \"inuse\", \"mutable\", \"immutable\", \"type\", \"shared\", and \"private\"."
+        },
+        "keepDuration": {
+          "$ref": "#/$defs/Duration",
+          "description": "KeepDuration specifies the minimum amount of time to keep records in this policy."
+        },
+        "reservedSpace": {
+          "$ref": "#/$defs/DiskSpace",
+          "description": "ReservedSpace is the minimum amount of disk space this policy is guaranteed to retain. Any usage below this threshold will not be reclaimed during garbage collection."
+        },
+        "maxUsedSpace": {
+          "$ref": "#/$defs/DiskSpace",
+          "description": "MaxUsedSpace is the maximum amount of disk space this policy is allowed to use. Any usage exceeding this limit will be cleaned up during a garbage collection sweep."
+        },
+        "minFreeSpace": {
+          "$ref": "#/$defs/DiskSpace",
+          "description": "MinFreeSpace is the target amount of free disk space the garbage collector will attempt to leave. However, it will never let the available space fall below ReservedSpace."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "Security": {
+      "properties": {
+        "insecureRootCapabilities": {
+          "type": "boolean",
+          "description": "InsecureRootCapabilities controls whether the argument of the same name is permitted in Container.withExec - it is allowed by default. Disabling this option ensures that dagger build containers do not run as privileged, and is a basic form of security hardening."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    }
+  }
+}

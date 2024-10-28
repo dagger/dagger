@@ -57,6 +57,11 @@ var targets = []target{
 		path:  "./core/modules",
 		value: &modules.ModuleConfig{},
 	},
+	{
+		id:    "engine.json",
+		path:  "./engine/config",
+		value: &config.Config{},
+	},
 }
 
 type target struct {

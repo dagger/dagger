@@ -9,9 +9,11 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"dagger.io/dagger/telemetry"
+	"github.com/adrg/xdg"
 	"github.com/google/go-containerregistry/pkg/name"
 	connh "github.com/moby/buildkit/client/connhelper"
 	connhDocker "github.com/moby/buildkit/client/connhelper/dockercontainer"
@@ -19,8 +21,13 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/dagger/dagger/engine/config"
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/slog"
+)
+
+var (
+	engineConfigPath = filepath.Join(xdg.ConfigHome, "dagger", "engine.json")
 )
 
 func init() {
@@ -116,6 +123,14 @@ func (d *dockerDriver) create(ctx context.Context, imageRef string, opts *Driver
 		"-v", distconsts.EngineDefaultStateDir,
 		"--privileged",
 	)
+
+	// mount the config path
+	if _, err := os.Stat(engineConfigPath); err == nil {
+		cmd.Args = append(cmd.Args, "-v", engineConfigPath+":"+config.DefaultConfigPath())
+	} else if !errors.Is(err, os.ErrNotExist) {
+		slog.Warn("could not stat config", "path", engineConfigPath, "error", err)
+	}
+
 	// explicitly pass current env vars; if we append more below existing ones like DOCKER_HOST
 	// won't be passed to the cmd
 	cmd.Env = os.Environ()
