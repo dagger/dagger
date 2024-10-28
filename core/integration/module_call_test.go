@@ -1760,8 +1760,8 @@ type Foo struct {
 	t.Run("main object", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.With(daggerCall()).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "Test", gjson.Get(out, "_type").String())
-		require.Equal(t, alpineImage, gjson.Get(out, "baseImage").String())
+		// Deploy function should not be included
+		require.JSONEq(t, fmt.Sprintf(`{"_type": "Test", "baseImage": "%s"}`, alpineImage), out)
 	})
 
 	t.Run("no scalars", func(ctx context.Context, t *testctx.T) {
