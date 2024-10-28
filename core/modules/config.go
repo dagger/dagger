@@ -14,7 +14,10 @@ const EngineVersionLatest string = "latest"
 // ModuleConfig is the config for a single module as loaded from a dagger.json file.
 type ModuleConfig struct {
 	// The name of the module.
-	Name string `json:"name,omitempty"`
+	Name string `json:"name"`
+
+	// The version of the engine this module was last updated with.
+	EngineVersion string `json:"engineVersion"`
 
 	// The SDK this module uses
 	SDK string `json:"sdk,omitempty"`
@@ -30,9 +33,6 @@ type ModuleConfig struct {
 
 	// The path, relative to this config file, to the subdir containing the module's implementation source code.
 	Source string `json:"source,omitempty"`
-
-	// The version of the engine this module was last updated with.
-	EngineVersion string `json:"engineVersion,omitempty"`
 
 	// Named views defined for this module, which are sets of directory filters that can be applied to
 	// directory arguments provided to functions.
@@ -84,7 +84,7 @@ type ModuleConfigDependency struct {
 	Source string `json:"source"`
 
 	// The pinned version of the module dependency.
-	Pin string `json:"pin,omitempty"`
+	Pin string `json:"pin"`
 }
 
 func (depCfg *ModuleConfigDependency) UnmarshalJSON(data []byte) error {
