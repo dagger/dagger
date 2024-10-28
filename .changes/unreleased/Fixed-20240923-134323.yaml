@@ -1,7 +1,0 @@
-kind: Fixed
-body: |
-  Include container annotations on `Export` and `AsTarball`
-time: 2024-09-23T13:43:23.656447187+01:00
-custom:
-  Author: jedevc
-  PR: "8543"

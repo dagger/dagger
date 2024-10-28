@@ -28,16 +28,33 @@ import (
 //go:embed private_key_ro_dagger_modules_test.pem
 var base64EncodedPrivateKey string
 
+// Private key used to test the new SSH modules ref format
+// This key is just for GitHub, to transition between the fork and the main dagger-test-modules repo
+//
+//go:embed private_key_ro_dagger_modules_test_github.pem
+var base64EncodedPrivateKeyGitHub string
+
 func setupPrivateRepoSSHAgent(t *testctx.T) (string, func()) {
 	decodedPrivateKey, err := base64.StdEncoding.DecodeString(base64EncodedPrivateKey)
+	require.NoError(t, err, "Failed to decode base64 private key")
+
+	decodedPrivateKeyGitHub, err := base64.StdEncoding.DecodeString(base64EncodedPrivateKeyGitHub)
 	require.NoError(t, err, "Failed to decode base64 private key")
 
 	key, err := ssh.ParseRawPrivateKey(decodedPrivateKey)
 	require.NoError(t, err, "Failed to parse private key")
 
+	keyGitHub, err := ssh.ParseRawPrivateKey(decodedPrivateKeyGitHub)
+	require.NoError(t, err, "Failed to parse private key")
+
 	sshAgent := agent.NewKeyring()
 	err = sshAgent.Add(agent.AddedKey{
 		PrivateKey: key,
+	})
+	require.NoError(t, err)
+
+	err = sshAgent.Add(agent.AddedKey{
+		PrivateKey: keyGitHub,
 	})
 	require.NoError(t, err)
 

@@ -1,4 +1,4 @@
-# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-September%2011,%202024-success?style=flat-square)
+# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-October%2025,%202024-success?style=flat-square)
 
 This describes how to release Dagger:
 
@@ -10,7 +10,6 @@ This describes how to release Dagger:
 - [🐘 PHP SDK ⏱ `5mins`](#-php-sdk--5mins)
 - [☸️ Helm chart ⏱ `2mins`](#%EF%B8%8F-helm-chart--2mins)
 - [📒 Documentation ⏱ `5mins`](#-documentation--5mins)
-- [🛝 Playground ⏱ `2mins`](#-playground--2mins)
 - [🌌 Daggerverse ⏱ `2mins`](#-daggerverse--2mins)
 - [☁️ Dagger Cloud ⏱ `2mins`](#-dagger-cloud--2mins)
 - [🪣 Install scripts ⏱ `2mins`](#-install-scripts--2mins#)
@@ -49,15 +48,12 @@ flowchart TB
     go-repo["🐙 github.com/dagger/dagger-go-sdk"]
     go-pkg["🐹 dagger.io/dagger"]
     go-ref["🐹 pkg.go.dev/dagger.io/dagger"]
-    playground["🛝 Playground"]
     daggerverse["🌌 Daggerverse"]
     cloud["☁️ Dagger Cloud"]
 
     repo ==> go --> go-repo --> go-pkg & go-ref
     go-pkg -.-> daggerverse & cloud
     registry -.- S3 -.- go & python & typescript & elixir & php & helm
-
-    registry -.....- playground
 
     python["🐍 Python SDK"]
     pypi["🐍 pypi.org/project/dagger-io"]
@@ -280,20 +276,12 @@ export CHANGIE_ENGINE_VERSION="$ENGINE_VERSION"
 git checkout -b prep-$ENGINE_VERSION
 ```
 
-- [ ] Bump SDK versions to the target version
+- [ ] Bump internal versions (sdks + docs + helm chart) to the target version
 
 ```console
-dagger call sdk all bump --version="$ENGINE_VERSION" -o ./
-git add sdk
-git commit -s -m "chore: bump sdk dependencies to $ENGINE_VERSION"
-```
-
-- [ ] Bump Helm version to the target version
-
-```console
-dagger call helm set-version --version="$ENGINE_VERSION" -o ./helm/dagger/Chart.yaml
-git add helm
-git commit -s -m "chore: bump helm dependency to $ENGINE_VERSION"
+dagger call release bump --version="$ENGINE_VERSION" -o ./
+git add docs sdk helm
+git commit -s -m "chore: bump dependencies to $ENGINE_VERSION"
 ```
 
 - [ ] Push and open the PR as a draft, and capture the PR number:
@@ -329,10 +317,6 @@ git commit -s -m "chore: add release notes for $ENGINE_VERSION"
 
 - [ ] Update `.changes/.next` with the next release number if known -
       otherwise, make the file empty (but don't remove it).
-
-- [ ] Update all dagger versions in `docs/current_docs/partials/_install-cli.mdx` to `$ENGINE_VERSION`
-
-  - e.g. if bumping 0.12.5->0.12.6, can run `sed -i 's/0\.12\.5/0\.12\.6/g' docs/current_docs/partials/_install-cli.mdx`
 
 - [ ] `30 mins` Submit, review and merge the prep PR. The merge commit is what gets tagged in the next step.
   - 🚨 Non-main branch release only: Ideally use "Rebase and Merge" rather than squashing commits when merging so we can more easily preserve the history of the cherry-picked commits.
@@ -426,13 +410,7 @@ workflow](https://github.com/dagger/dagger/actions/workflows/sdk-go-publish.yml)
 which publishes to [🐙
 github.com/dagger/dagger-go-sdk](https://github.com/dagger/dagger-go-sdk/tags).
 
-The release notes should be automatically uploaded as a draft to the
-[Dagger releases](https://github.com/dagger/dagger/releases) page. Navigate to
-the draft release, then:
-
-- [ ] Check that release notes look good in `Preview`
-- [ ] ⚠️ De-select **Set as the latest release** (only used for 🚙 Engine + 🚗 CLI releases)
-- [ ] Click on **Publish release**
+The release notes should be automatically uploaded to the [Dagger releases](https://github.com/dagger/dagger/releases) page.
 
 Finally:
 
@@ -488,14 +466,7 @@ This will trigger the [`Publish Python SDK`
 workflow](https://github.com/dagger/dagger/actions/workflows/sdk-python-publish.yml)
 which publishes [dagger-io to 🐍 PyPI](https://pypi.org/project/dagger-io)
 
-The release notes should be automatically uploaded as a draft to the
-[Dagger releases](https://github.com/dagger/dagger/releases) page. Navigate to
-the draft release, then:
-
-- [ ] ⚠️ De-select **Set as the latest release** (only used for 🚙 Engine + 🚗 CLI releases)
-- [ ] Check that release notes look good in `Preview`. FWIW:
-      https://readthedocs.org/projects/dagger-io/builds/
-- [ ] Click on **Publish release**
+The release notes should be automatically uploaded to the [Dagger releases](https://github.com/dagger/dagger/releases) page.
 
 ## ⬢ TypeScript SDK ⏱ `5mins`
 
@@ -509,15 +480,9 @@ git push "$DAGGER_REPO_REMOTE" sdk/typescript/$TYPESCRIPT_SDK_VERSION
 
 This will trigger the [`Publish TypeScript SDK`
 workflow](https://github.com/dagger/dagger/actions/workflows/sdk-typescript-publish.yml)
-which publishes a new version to [⬢ npmjs.com/package/@dagger.io/dagger](https://www.npmjs.com/package/@dagger.io/dagger)
+which publishes a new version to [⬢ npmjs.com/package/@dagger.io/dagger](https://www.npmjs.com/package/@dagger.io/dagger).
 
-The release notes should be automatically uploaded as a draft to the
-[Dagger releases](https://github.com/dagger/dagger/releases) page. Navigate to
-the draft release, then:
-
-- [ ] Check that release notes look good in `Preview`
-- [ ] ⚠️ De-select **Set as the latest release** (only used for 🚙 Engine + 🚗 CLI releases)
-- [ ] Click on **Publish release**
+The release notes should be automatically uploaded to the [Dagger releases](https://github.com/dagger/dagger/releases) page.
 
 ## 🧪 Elixir SDK ⏱ `5mins`
 
@@ -531,15 +496,9 @@ git push "$DAGGER_REPO_REMOTE" sdk/elixir/$ELIXIR_SDK_VERSION
 
 This will trigger the [`Publish Elixir SDK`
 workflow](https://github.com/dagger/dagger/actions/workflows/sdk-elixir-publish.yml)
-which publishes a new version to [🧪 hex.pm/packages/dagger](https://hex.pm/packages/dagger)
+which publishes a new version to [🧪 hex.pm/packages/dagger](https://hex.pm/packages/dagger).
 
-The release notes should be automatically uploaded as a draft to the
-[Dagger releases](https://github.com/dagger/dagger/releases) page. Navigate to
-the draft release, then:
-
-- [ ] Check that release notes look good in `Preview`
-- [ ] ⚠️ De-select **Set as the latest release** (only used for 🚙 Engine + 🚗 CLI releases)
-- [ ] Click on **Publish release**
+The release notes should be automatically uploaded to the [Dagger releases](https://github.com/dagger/dagger/releases) page.
 
 ## 🐘 PHP SDK ⏱ `5mins`
 
@@ -556,13 +515,7 @@ workflow](https://github.com/dagger/dagger/actions/workflows/sdk-php-publish.yml
 which publishes to
 [github.com/dagger/dagger-php-sdk](https://github.com/dagger/dagger-php-sdk/tags).
 
-The release notes should be automatically uploaded as a draft to the
-[Dagger releases](https://github.com/dagger/dagger/releases) page. Navigate to
-the draft release, then:
-
-- [ ] Check that release notes look good in `Preview`
-- [ ] ⚠️ De-select **Set as the latest release** (only used for 🚙 Engine + 🚗 CLI releases)
-- [ ] Click on **Publish release**
+The release notes should be automatically uploaded to the [Dagger releases](https://github.com/dagger/dagger/releases) page.
 
 ## ☸️ Helm chart ⏱ `2mins`
 
@@ -648,17 +601,9 @@ production deployment via Netlify as follows:
 > this error, click "Options -> Clear cache and retry with latest branch commit"
 > to recreate the deployment with a clean cache.
 
-## 🛝 Playground ⏱ `2mins`
-
-The [Dagger Playground](https://play.dagger.cloud) is set to automatically
-update once there's a new release of the Dagger Engine.
-
-- [ ] Mention in the release thread on Discord that Playground can be updated
-      to the just-released version. cc @marcosnils @matipan @gerhard
-
 ## 🌌 Daggerverse ⏱ `2mins`
 
-- [ ] Mention in the release thread on Discord that Playground can be updated
+- [ ] Mention in the release thread on Discord that Daggerverse can be updated
       to the just-released version. cc @marcosnils @matipan @grouville
 
 ## ☁️ Dagger Cloud ⏱ `2mins`

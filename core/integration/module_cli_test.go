@@ -185,7 +185,7 @@ func (CLISuite) TestDaggerInitLICENSE(ctx context.Context, t *testctx.T) {
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
-			With(daggerExec("init", "--name=no-license"))
+			With(daggerExec("init", "--name=no-license", "--source=."))
 
 		files, err := modGen.Directory(".").Entries(ctx)
 		require.NoError(t, err)
@@ -361,7 +361,7 @@ func (CLISuite) TestDaggerInitGit(ctx context.Context, t *testctx.T) {
 
 			t.Run("does not configure .gitignore if disabled", func(ctx context.Context, t *testctx.T) {
 				modGen := goGitBase(t, c).
-					With(daggerExec("init", "--name=bare"))
+					With(daggerExec("init", "--name=bare", "--source=."))
 
 				// TODO: use dagger config to set this once support is added there
 				modCfgContents, err := modGen.File("dagger.json").Contents(ctx)
@@ -406,7 +406,7 @@ func (CLISuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 			`,
 			).
 			WithWorkdir("/work").
-			With(daggerExec("init")).
+			With(daggerExec("init", "--source=.")).
 			With(daggerExec("install", "./dep"))
 
 		// should be able to invoke dep without name+sdk set yet
@@ -474,7 +474,7 @@ func (CLISuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 			`,
 			).
 			WithWorkdir("/work").
-			With(daggerExec("init")).
+			With(daggerExec("init", "--source=.")).
 			With(daggerExec("install", "./dep")).
 			WithWorkdir("/var").
 			With(daggerExec("develop", "-m", "../work", "--source=../work/some/subdir", "--sdk=go")).
@@ -506,9 +506,8 @@ func (CLISuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
 		t.Run("fails on git", func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
-
 			mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
-			t.Cleanup(cleanup)
+			defer cleanup()
 
 			_, err := goGitBase(t, c).
 				With(mountedSocket).
@@ -537,7 +536,7 @@ func (CLISuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
         `,
 			).
 			WithWorkdir(absPath).
-			With(daggerExec("init")).
+			With(daggerExec("init", "--source=.")).
 			With(daggerExec("install", "./dep")).
 			WithWorkdir("/var").
 			With(daggerExec("develop", "-m", absPath, "--source="+absPath+"/some/subdir", "--sdk=go")).
@@ -854,9 +853,8 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 		t.Run("git", func(ctx context.Context, t *testctx.T) {
 			t.Run("happy", func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
-
 				mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
-				t.Cleanup(cleanup)
+				defer cleanup()
 
 				out, err := goGitBase(t, c).
 					With(mountedSocket).
@@ -882,9 +880,8 @@ func (m *Test) Fn(ctx context.Context) (string, error) {
 
 			t.Run("sad", func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
-
 				mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
-				t.Cleanup(cleanup)
+				defer cleanup()
 
 				_, err := goGitBase(t, c).
 					With(mountedSocket).
@@ -905,9 +902,8 @@ func (m *Test) Fn(ctx context.Context) (string, error) {
 
 			t.Run("unpinned gets pinned", func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
-
 				mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
-				t.Cleanup(cleanup)
+				defer cleanup()
 
 				out, err := goGitBase(t, c).
 					With(mountedSocket).
@@ -920,12 +916,8 @@ func (m *Test) Fn(ctx context.Context) (string, error) {
 				var modCfg modules.ModuleConfig
 				require.NoError(t, json.Unmarshal([]byte(out), &modCfg))
 				require.Len(t, modCfg.Dependencies, 1)
-				lastAtIndex := strings.LastIndex(modCfg.Dependencies[0].Source, "@")
-				require.NotEqual(t, lastAtIndex, -1)
-				url := modCfg.Dependencies[0].Source[:lastAtIndex]
-				commit := modCfg.Dependencies[0].Source[lastAtIndex+1:]
-				require.Equal(t, tc.gitTestRepoRef, url)
-				require.NotEmpty(t, commit)
+				require.Equal(t, tc.gitTestRepoRef, modCfg.Dependencies[0].Source)
+				require.NotEmpty(t, modCfg.Dependencies[0].Pin)
 			})
 		})
 	})

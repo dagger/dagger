@@ -508,6 +508,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
         ?bool $experimentalPrivilegedNesting = false,
         ?bool $insecureRootCapabilities = false,
         ?bool $expand = false,
+        ?bool $noInit = false,
     ): Container {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withExec');
         $innerQueryBuilder->setArgument('args', $args);
@@ -531,6 +532,9 @@ class Container extends Client\AbstractObject implements Client\IdAble
         }
         if (null !== $expand) {
         $innerQueryBuilder->setArgument('expand', $expand);
+        }
+        if (null !== $noInit) {
+        $innerQueryBuilder->setArgument('noInit', $noInit);
         }
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
@@ -733,10 +737,13 @@ class Container extends Client\AbstractObject implements Client\IdAble
     /**
      * Retrieves this container plus a temporary directory mounted at the given path. Any writes will be ephemeral to a single withExec call; they will not be persisted to subsequent withExecs.
      */
-    public function withMountedTemp(string $path, ?bool $expand = false): Container
+    public function withMountedTemp(string $path, ?int $size = null, ?bool $expand = false): Container
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withMountedTemp');
         $innerQueryBuilder->setArgument('path', $path);
+        if (null !== $size) {
+        $innerQueryBuilder->setArgument('size', $size);
+        }
         if (null !== $expand) {
         $innerQueryBuilder->setArgument('expand', $expand);
         }

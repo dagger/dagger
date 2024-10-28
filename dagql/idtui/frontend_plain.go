@@ -16,6 +16,8 @@ import (
 	"github.com/muesli/termenv"
 	"github.com/pkg/browser"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -198,6 +200,10 @@ func (fe *frontendPlain) Run(ctx context.Context, opts dagui.FrontendOpts, run f
 	return runErr
 }
 
+func (fe *frontendPlain) Opts() *dagui.FrontendOpts {
+	return &fe.FrontendOpts
+}
+
 func (fe *frontendPlain) SetPrimary(spanID dagui.SpanID) {
 	fe.mu.Lock()
 	fe.db.PrimarySpan = spanID
@@ -210,7 +216,7 @@ func (fe *frontendPlain) RevealAllSpans() {
 	fe.mu.Unlock()
 }
 
-func (fe *frontendPlain) Background(cmd tea.ExecCommand) error {
+func (fe *frontendPlain) Background(cmd tea.ExecCommand, raw bool) error {
 	return fmt.Errorf("not implemented")
 }
 
@@ -323,6 +329,33 @@ func (fe plainLogExporter) Export(ctx context.Context, logs []sdklog.Record) err
 }
 
 func (fe *frontendPlain) ForceFlush(context.Context) error {
+	return nil
+}
+
+func (fe *frontendPlain) MetricExporter() sdkmetric.Exporter {
+	return PlainFrontendMetricExporter{fe}
+}
+
+type PlainFrontendMetricExporter struct {
+	*frontendPlain
+}
+
+func (fe PlainFrontendMetricExporter) Export(ctx context.Context, resourceMetrics *metricdata.ResourceMetrics) error {
+	fe.mu.Lock()
+	defer fe.mu.Unlock()
+
+	return fe.db.MetricExporter().Export(ctx, resourceMetrics)
+}
+
+func (fe PlainFrontendMetricExporter) Temporality(ik sdkmetric.InstrumentKind) metricdata.Temporality {
+	return fe.db.Temporality(ik)
+}
+
+func (fe PlainFrontendMetricExporter) Aggregation(ik sdkmetric.InstrumentKind) sdkmetric.Aggregation {
+	return fe.db.Aggregation(ik)
+}
+
+func (fe PlainFrontendMetricExporter) ForceFlush(context.Context) error {
 	return nil
 }
 
@@ -476,6 +509,7 @@ func (fe *frontendPlain) renderStep(span *dagui.Span, depth int, done bool) {
 		}
 		duration := dagui.FormatDuration(span.Activity.Duration(time.Now()))
 		fmt.Fprint(fe.output, fe.output.String(fmt.Sprintf(" [%s]", duration)).Foreground(termenv.ANSIBrightBlack))
+		r.renderMetrics(fe.output, span)
 
 		if span.IsFailed() && span.Status.Description != "" {
 			fmt.Fprintln(fe.output)

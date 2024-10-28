@@ -47,7 +47,7 @@ func (m *ModuleEnumType) ConvertFromSDKResult(ctx context.Context, value any) (d
 
 		val, err := decoder.DecodeInput(value)
 		if err != nil {
-			return nil, fmt.Errorf("%T.ConvertFromSDKResult: invalid enum value %q for %q", m, value, m.typeDef.Name)
+			return nil, fmt.Errorf("%T.ConvertFromSDKResult: invalid enum value %q for %q: %w", m, value, m.typeDef.Name, err)
 		}
 
 		return val, nil
@@ -148,18 +148,11 @@ func (e *ModuleEnum) Decoder() dagql.InputDecoder {
 }
 
 func (e *ModuleEnum) DecodeInput(val any) (dagql.Input, error) {
-	switch x := val.(type) {
-	case nil:
-		return e.Lookup("")
-	case string:
-		return e.Lookup(x)
-	case dagql.Scalar[dagql.String]:
-		return e.Lookup(string(x.Value))
-	case *ModuleEnum:
-		return e.Lookup(x.Value)
-	default:
-		return nil, fmt.Errorf("cannot create dynamic Enum from %T", x)
+	v, err := (&dagql.EnumValueName{Enum: e.TypeName()}).DecodeInput(val)
+	if err != nil {
+		return nil, err
 	}
+	return e.Lookup(v.(*dagql.EnumValueName).Value)
 }
 
 func (e *ModuleEnum) Lookup(val string) (dagql.Input, error) {

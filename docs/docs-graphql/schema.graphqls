@@ -125,7 +125,7 @@ type Container {
   """
   directory(
     """
-    Replace ${VAR} or $VAR in the value of path according to the current
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
     environment variables defined in the container (e.g. "/$VAR/foo").
     """
     expand: Boolean = false
@@ -174,7 +174,7 @@ type Container {
   """
   export(
     """
-    Replace ${VAR} or $VAR in the value of path according to the current
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
     environment variables defined in the container (e.g. "/$VAR/foo").
     """
     expand: Boolean = false
@@ -226,7 +226,7 @@ type Container {
   """
   file(
     """
-    Replace ${VAR} or $VAR in the value of path according to the current
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
     environment variables defined in the container (e.g. "/$VAR/foo.txt").
     """
     expand: Boolean = false
@@ -443,7 +443,7 @@ type Container {
     exclude: [String!] = []
 
     """
-    Replace ${VAR} or $VAR in the value of path according to the current
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
     environment variables defined in the container (e.g. "/$VAR/foo").
     """
     expand: Boolean = false
@@ -478,7 +478,7 @@ type Container {
   """Retrieves this container plus the given environment variable."""
   withEnvVariable(
     """
-    Replace ${VAR} or $VAR in the value according to the current environment
+    Replace "${VAR}" or "$VAR" in the value according to the current environment
     variables defined in the container (e.g. "/opt/bin:$PATH").
     """
     expand: Boolean = false
@@ -502,7 +502,7 @@ type Container {
     args: [String!]!
 
     """
-    Replace ${VAR} or $VAR in the args according to the current environment
+    Replace "${VAR}" or "$VAR" in the args according to the current environment
     variables defined in the container (e.g. "/$VAR/foo").
     """
     expand: Boolean = false
@@ -523,6 +523,14 @@ type Container {
     trusted commands.
     """
     insecureRootCapabilities: Boolean = false
+
+    """
+    If set, skip the automatic init process injected into containers by default.
+    
+    This should only be used if the user requires that their exec process be the
+    pid 1 process in the container. Otherwise it may result in unexpected behavior.
+    """
+    noInit: Boolean = false
 
     """
     Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
@@ -571,7 +579,7 @@ type Container {
   """
   withFile(
     """
-    Replace ${VAR} or $VAR in the value of path according to the current
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
     environment variables defined in the container (e.g. "/$VAR/foo.txt").
     """
     expand: Boolean = false
@@ -600,7 +608,7 @@ type Container {
   """
   withFiles(
     """
-    Replace ${VAR} or $VAR in the value of path according to the current
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
     environment variables defined in the container (e.g. "/$VAR/foo.txt").
     """
     expand: Boolean = false
@@ -646,7 +654,7 @@ type Container {
     cache: CacheVolumeID!
 
     """
-    Replace ${VAR} or $VAR in the value of path according to the current
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
     environment variables defined in the container (e.g. "/$VAR/foo").
     """
     expand: Boolean = false
@@ -677,7 +685,7 @@ type Container {
   """Retrieves this container plus a directory mounted at the given path."""
   withMountedDirectory(
     """
-    Replace ${VAR} or $VAR in the value of path according to the current
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
     environment variables defined in the container (e.g. "/$VAR/foo").
     """
     expand: Boolean = false
@@ -701,7 +709,7 @@ type Container {
   """Retrieves this container plus a file mounted at the given path."""
   withMountedFile(
     """
-    Replace ${VAR} or $VAR in the value of path according to the current
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
     environment variables defined in the container (e.g. "/$VAR/foo.txt").
     """
     expand: Boolean = false
@@ -727,7 +735,7 @@ type Container {
   """
   withMountedSecret(
     """
-    Replace ${VAR} or $VAR in the value of path according to the current
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
     environment variables defined in the container (e.g. "/$VAR/foo").
     """
     expand: Boolean = false
@@ -762,13 +770,16 @@ type Container {
   """
   withMountedTemp(
     """
-    Replace ${VAR} or $VAR in the value of path according to the current
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
     environment variables defined in the container (e.g. "/$VAR/foo").
     """
     expand: Boolean = false
 
     """Location of the temporary directory (e.g., "/tmp/temp_dir")."""
     path: String!
+
+    """Size of the temporary directory in bytes."""
+    size: Int
   ): Container!
 
   """Retrieves this container plus a new file written at the given path."""
@@ -777,7 +788,7 @@ type Container {
     contents: String!
 
     """
-    Replace ${VAR} or $VAR in the value of path according to the current
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
     environment variables defined in the container (e.g. "/$VAR/foo.txt").
     """
     expand: Boolean = false
@@ -812,7 +823,7 @@ type Container {
   """Retrieves this container with the directory at the given path removed."""
   withoutDirectory(
     """
-    Replace ${VAR} or $VAR in the value of path according to the current
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
     environment variables defined in the container (e.g. "/$VAR/foo").
     """
     expand: Boolean = false
@@ -845,7 +856,7 @@ type Container {
   """Retrieves this container with the file at the given path removed."""
   withoutFile(
     """
-    Replace ${VAR} or $VAR in the value of path according to the current
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
     environment variables defined in the container (e.g. "/$VAR/foo.txt").
     """
     expand: Boolean = false
@@ -857,7 +868,7 @@ type Container {
   """Retrieves this container with the files at the given paths removed."""
   withoutFiles(
     """
-    Replace ${VAR} or $VAR in the value of paths according to the current
+    Replace "${VAR}" or "$VAR" in the value of paths according to the current
     environment variables defined in the container (e.g. "/$VAR/foo.txt").
     """
     expand: Boolean = false
@@ -886,7 +897,7 @@ type Container {
   """
   withoutMount(
     """
-    Replace ${VAR} or $VAR in the value of path according to the current
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
     environment variables defined in the container (e.g. "/$VAR/foo").
     """
     expand: Boolean = false
@@ -918,7 +929,7 @@ type Container {
   """Retrieves this container with a previously added Unix socket removed."""
   withoutUnixSocket(
     """
-    Replace ${VAR} or $VAR in the value of path according to the current
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
     environment variables defined in the container (e.g. "/$VAR/foo").
     """
     expand: Boolean = false
@@ -999,7 +1010,7 @@ type Container {
   """
   withUnixSocket(
     """
-    Replace ${VAR} or $VAR in the value of path according to the current
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
     environment variables defined in the container (e.g. "/$VAR/foo").
     """
     expand: Boolean = false
@@ -1029,7 +1040,7 @@ type Container {
   """Retrieves this container with a different working directory."""
   withWorkdir(
     """
-    Replace ${VAR} or $VAR in the value of path according to the current
+    Replace "${VAR}" or "$VAR" in the value of path according to the current
     environment variables defined in the container (e.g. "/$VAR/foo").
     """
     expand: Boolean = false
@@ -1117,10 +1128,19 @@ type DaggerEngineCache {
   """
   The maximum bytes to keep in the cache without pruning, after which automatic pruning may kick in.
   """
-  keepBytes: Int!
+  keepBytes: Int! @deprecated(reason: "Use minFreeSpace instead.")
+
+  """The maximum bytes to keep in the cache without pruning."""
+  maxUsedSpace: Int!
+
+  """
+  The target amount of free disk space the garbage collector will attempt to leave.
+  """
+  minFreeSpace: Int!
 
   """Prune the cache of releaseable entries"""
   prune: Void
+  reservedSpace: Int!
 }
 
 """An individual cache entry in a cache entry set"""
@@ -2761,6 +2781,9 @@ type Query {
 
   """Create a new module source instance from a source ref string."""
   moduleSource(
+    """The pinned version of the module source"""
+    refPin: String = ""
+
     """The string ref representation of the module source"""
     refString: String!
 

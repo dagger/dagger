@@ -6,7 +6,7 @@ import pytest
 from typing_extensions import Self
 
 import dagger
-from dagger import Arg, Doc, dag
+from dagger import Doc, Name, dag
 from dagger.mod import Module
 from dagger.mod._exceptions import FatalError
 from dagger.mod._resolver import FunctionResolver
@@ -51,9 +51,11 @@ async def test_unstructure_structure():
         async def bar(self) -> str:
             return await self.ctr.with_exec(["echo", "-n", self.msg]).stdout()
 
-    @mod.function
-    def foo() -> Bar:
-        return Bar(ctr=dag.container().from_("alpine"))
+    @mod.object_type
+    class Foo:
+        @mod.function
+        def foo(self) -> Bar:
+            return Bar(ctr=dag.container().from_("alpine"))
 
     async with dagger.connection():
         resolver = mod.get_resolver(mod.get_resolvers("foo"), "Foo", "foo")
@@ -74,26 +76,41 @@ class TestNameOverrides:
 
         @_mod.object_type
         class Bar:
-            with_: str = _mod.field(name="with")
+            with_: str = _mod.field()
+            with_x: str = _mod.field(name="withx")
 
-        @_mod.function
-        def bar() -> Bar:
-            return Bar(with_="bar")
+        @_mod.object_type
+        class Foo:
+            @_mod.function
+            def bar(self) -> Bar:
+                return Bar(with_="bar", with_x="bax")
 
-        @_mod.function(name="import")
-        def import_(from_: Annotated[str, Arg("from")]) -> str:
-            return from_
+            @_mod.function
+            def import_(self, from_: str) -> str:
+                return from_
+
+            @_mod.function(name="importx")
+            def import_x(self, from_x: Annotated[str, Name("fromx")]) -> str:
+                return from_x
 
         return _mod
 
-    async def test_function_and_arg_name(self, mod: Module):
+    async def test_function_and_arg_name_default(self, mod: Module):
         assert await get_result(mod, "Foo", {}, "import", {"from": "egg"}) == "egg"
 
+    async def test_function_and_arg_name_custom(self, mod: Module):
+        assert await get_result(mod, "Foo", {}, "importx", {"fromx": "egg"}) == "egg"
+
     async def test_field_unstructure(self, mod: Module):
-        assert await get_result(mod, "Foo", {}, "bar", {}) == {"with": "bar"}
+        assert await get_result(mod, "Foo", {}, "bar", {}) == {
+            "with": "bar",
+            "withx": "bax",
+        }
 
     async def test_field_structure(self, mod: Module):
-        assert await get_result(mod, "Bar", {"with": "baz"}, "with", {}) == "baz"
+        state = {"with": "baz", "withx": "bat"}
+        assert await get_result(mod, "Bar", state, "with", {}) == "baz"
+        assert await get_result(mod, "Bar", state, "withx", {}) == "bat"
 
 
 async def test_method_returns_self():
@@ -288,7 +305,7 @@ class TestFunctionFromExternalConstructor:
             baz: int = _mod.field(default=144)
 
         @_mod.object_type
-        class Test:
+        class Foo:
             egg: str = _mod.field(default="chick")
 
             # TODO: Written as `function()(Bar)` to avoid Pyright false negative
@@ -300,19 +317,12 @@ class TestFunctionFromExternalConstructor:
             # create a `Test.bat() -> Bar` constructor function
             bat = _mod.function(name="bat")(Bar)
 
-        # create a `Foo.test() -> Test` constructor function
-        _mod.function(Test)
-
-        # creates a `Foo.tset() -> Test` constructor function
-        _mod.function(Test, name="tset")
-
         return _mod
 
     async def test_chain(self, mod: Module):
-        # Assert Foo.test().bar() -> Bar
+        # Assert Foo.bar() -> Bar
         chains = [
-            ("Foo", "test", {"egg": "chick"}),
-            ("Test", "bas", {"baz": 144}),
+            ("Foo", "bas", {"baz": 144}),
             ("Bar", "baz", 144),
         ]
         result = {}
@@ -321,10 +331,9 @@ class TestFunctionFromExternalConstructor:
             assert result == expected
 
     async def test_name_overrides_and_inputs(self, mod: Module):
-        # Assert Foo.tset(egg="hen").bat(baz=33) -> Bar
+        # Assert Foo.bat(baz=33) -> Bar
         chains = [
-            ("Foo", "tset", {"egg": "hen"}),
-            ("Test", "bat", {"baz": 33}),
+            ("Foo", "bat", {"baz": 33}),
             ("Bar", "baz", {}),
         ]
         result = {}
@@ -395,35 +404,6 @@ async def test_constructor_with_init_var():
     }
     with pytest.raises(FatalError):
         await get_result(mod, "Foo", {}, "bar", {})
-
-
-async def test_can_call_top_level_function():
-    mod = Module()
-
-    @mod.function
-    def foo(msg: str) -> str:
-        return bar(msg)
-
-    @mod.function
-    def bar(msg: str) -> str:
-        return msg
-
-    assert await get_result(mod, "Foo", {}, "foo", {"msg": "foobar"}) == "foobar"
-
-
-async def test_can_call_top_level_async_function():
-    mod = Module()
-
-    @mod.function
-    async def foo(msg: str) -> str:
-        return await bar(msg)
-
-    @mod.function
-    async def bar(msg: str) -> str:
-        return msg
-
-    assert await bar("rab") == "rab"
-    assert await get_result(mod, "Foo", {}, "foo", {"msg": "foobar"}) == "foobar"
 
 
 def test_exposed_field_not_in_constructor():

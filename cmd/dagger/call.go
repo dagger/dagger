@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 
@@ -65,12 +66,7 @@ available functions.
 			if err != nil {
 				return err
 			}
-			tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
 			var o functionProvider = mod.MainObject.AsFunctionProvider()
-			fmt.Fprintf(tw, "%s\t%s\n",
-				termenv.String("Name").Bold(),
-				termenv.String("Description").Bold(),
-			)
 			// Walk the hypothetical function pipeline specified by the args
 			for _, field := range cmd.Flags().Args() {
 				// Lookup the next function in the specified pipeline
@@ -79,9 +75,6 @@ available functions.
 					return err
 				}
 				nextType := nextFunc.ReturnType
-				if nextType.AsList != nil {
-					nextType = nextType.AsList.ElementTypeDef
-				}
 				if nextType.AsFunctionProvider() != nil {
 					// sipsma explains why 'nextType.AsObject' is not enough:
 					// > when we're returning the hierarchies of TypeDefs from the API,
@@ -99,33 +92,43 @@ available functions.
 				return fmt.Errorf("function %q returns type %q with no further functions available", field, nextType.Kind)
 			}
 
-			// List functions on the final object
-			fns := o.GetFunctions()
-			sort.Slice(fns, func(i, j int) bool {
-				return fns[i].Name < fns[j].Name
-			})
-			skipped := make([]string, 0)
-			for _, fn := range fns {
-				if fn.IsUnsupported() {
-					skipped = append(skipped, cliName(fn.Name))
-					continue
-				}
-				desc := strings.SplitN(fn.Description, "\n", 2)[0]
-				if desc == "" {
-					desc = "-"
-				}
-				fmt.Fprintf(tw, "%s\t%s\n",
-					cliName(fn.Name),
-					desc,
-				)
-			}
-			if len(skipped) > 0 {
-				msg := fmt.Sprintf("Skipped %d function(s) with unsupported types: %s", len(skipped), strings.Join(skipped, ", "))
-				fmt.Fprintf(tw, "\n%s\n",
-					termenv.String(msg).Faint().String(),
-				)
-			}
-			return tw.Flush()
+			return functionListRun(o, cmd.OutOrStdout(), true)
 		})
 	},
+}
+
+func functionListRun(o functionProvider, writer io.Writer, skipUnsupported bool) error {
+	fns := o.GetFunctions()
+
+	tw := tabwriter.NewWriter(writer, 0, 0, 3, ' ', tabwriter.DiscardEmptyColumns)
+	fmt.Fprintf(tw, "%s\t%s\n",
+		termenv.String("Name").Bold(),
+		termenv.String("Description").Bold(),
+	)
+	// List functions on the final object
+	sort.Slice(fns, func(i, j int) bool {
+		return fns[i].Name < fns[j].Name
+	})
+	skipped := make([]string, 0)
+	for _, fn := range fns {
+		if skipUnsupported && fn.IsUnsupported() {
+			skipped = append(skipped, fn.CmdName())
+			continue
+		}
+		desc := strings.SplitN(fn.Description, "\n", 2)[0]
+		if desc == "" {
+			desc = "-"
+		}
+		fmt.Fprintf(tw, "%s\t%s\n",
+			cliName(fn.Name),
+			desc,
+		)
+	}
+	if len(skipped) > 0 {
+		msg := fmt.Sprintf("Skipped %d function(s) with unsupported types: %s", len(skipped), strings.Join(skipped, ", "))
+		fmt.Fprintf(tw, "\n%s\n",
+			termenv.String(msg).Faint().String(),
+		)
+	}
+	return tw.Flush()
 }

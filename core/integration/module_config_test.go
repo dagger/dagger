@@ -70,31 +70,34 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 
 	t.Run("malicious config", func(ctx context.Context, t *testctx.T) {
 		// verify a maliciously/incorrectly constructed dagger.json is still handled correctly
-		c := connect(ctx, t)
 
-		base := goGitBase(t, c).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/tmp/foo").
-			With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
-			WithWorkdir("/work/dep").
-			With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
-			WithNewFile("/work/dep/main.go", `package main
+		baseCtr := func(t *testctx.T, c *dagger.Client) *dagger.Container {
+			return goGitBase(t, c).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				WithWorkdir("/tmp/foo").
+				With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
+				WithWorkdir("/work/dep").
+				With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
+				WithNewFile("/work/dep/main.go", `package main
 
-        import "context"
+			import "context"
 
-        type Dep struct {}
+			type Dep struct {}
 
-        func (m *Dep) GetSource(ctx context.Context) *dagger.Directory {
-            return dag.CurrentModule().Source()
-        }
-        `,
-			).
-			WithWorkdir("/work").
-			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go"))
+			func (m *Dep) GetSource(ctx context.Context) *dagger.Directory {
+			    return dag.CurrentModule().Source()
+			}
+			`,
+				).
+				WithWorkdir("/work").
+				With(daggerExec("init", "--source=.", "--name=test", "--sdk=go"))
+		}
 
 		t.Run("source points out of root", func(ctx context.Context, t *testctx.T) {
 			t.Run("local", func(ctx context.Context, t *testctx.T) {
-				base := base.
+				c := connect(ctx, t)
+
+				base := baseCtr(t, c).
 					With(configFile(".", &modules.ModuleConfig{
 						Name:   "evil",
 						SDK:    "go",
@@ -112,7 +115,9 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 			})
 
 			t.Run("local with absolute path", func(ctx context.Context, t *testctx.T) {
-				base := base.
+				c := connect(ctx, t)
+
+				base := baseCtr(t, c).
 					With(configFile(".", &modules.ModuleConfig{
 						Name:   "evil",
 						SDK:    "go",
@@ -131,10 +136,11 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 
 			testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
 				t.Run("git", func(ctx context.Context, t *testctx.T) {
+					c := connect(ctx, t)
 					mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
-					t.Cleanup(cleanup)
+					defer cleanup()
 
-					_, err := base.With(mountedSocket).With(daggerCallAt(testGitModuleRef(tc, "invalid/bad-source"), "container-echo", "--string-arg", "plz fail")).Sync(ctx)
+					_, err := baseCtr(t, c).With(mountedSocket).With(daggerCallAt(testGitModuleRef(tc, "invalid/bad-source"), "container-echo", "--string-arg", "plz fail")).Sync(ctx)
 					require.ErrorContains(t, err, `source path "../../../" contains parent directory components`)
 				})
 			})
@@ -142,7 +148,8 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 
 		t.Run("dep points out of root", func(ctx context.Context, t *testctx.T) {
 			t.Run("local", func(ctx context.Context, t *testctx.T) {
-				base := base.
+				c := connect(ctx, t)
+				base := baseCtr(t, c).
 					With(configFile(".", &modules.ModuleConfig{
 						Name: "evil",
 						SDK:  "go",
@@ -182,7 +189,9 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 			})
 
 			t.Run("local with absolute path", func(ctx context.Context, t *testctx.T) {
-				base := base.
+				c := connect(ctx, t)
+
+				base := baseCtr(t, c).
 					With(configFile(".", &modules.ModuleConfig{
 						Name: "evil",
 						SDK:  "go",
@@ -223,10 +232,11 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 
 			testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
 				t.Run("git", func(ctx context.Context, t *testctx.T) {
+					c := connect(ctx, t)
 					mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
-					t.Cleanup(cleanup)
+					defer cleanup()
 
-					_, err := base.With(mountedSocket).With(daggerCallAt(testGitModuleRef(tc, "invalid/bad-dep"), "container-echo", "--string-arg", "plz fail")).Sync(ctx)
+					_, err := baseCtr(t, c).With(mountedSocket).With(daggerCallAt(testGitModuleRef(tc, "invalid/bad-dep"), "container-echo", "--string-arg", "plz fail")).Sync(ctx)
 					require.ErrorContains(t, err, `module dep source root path "../../../foo" escapes root`)
 				})
 			})
@@ -510,7 +520,7 @@ class Test:
 import { dag, Directory, object, func } from "@dagger.io/dagger"
 
 @object()
-class Test {
+export class Test {
   @func()
   fn(): Directory {
     return dag.currentModule().source()
@@ -802,7 +812,7 @@ var vcsTestCases = []vcsTestCase{
 	{
 		name:                     "GitHub public",
 		gitTestRepoRef:           "github.com/dagger/dagger-test-modules",
-		gitTestRepoCommit:        "8723e276a45b2e620ba3185cb07dc35e2be5bc86",
+		gitTestRepoCommit:        "323d56c9ece3492d13f58b8b603d31a7c511cd41",
 		expectedHost:             "github.com",
 		expectedBaseHTMLURL:      "github.com/dagger/dagger-test-modules",
 		expectedURLPathComponent: "tree",
@@ -811,7 +821,7 @@ var vcsTestCases = []vcsTestCase{
 	{
 		name:                     "GitLab public",
 		gitTestRepoRef:           "gitlab.com/dagger-modules/test/more/dagger-test-modules-public",
-		gitTestRepoCommit:        "8723e276a45b2e620ba3185cb07dc35e2be5bc86",
+		gitTestRepoCommit:        "323d56c9ece3492d13f58b8b603d31a7c511cd41",
 		expectedHost:             "gitlab.com",
 		expectedBaseHTMLURL:      "gitlab.com/dagger-modules/test/more/dagger-test-modules-public",
 		expectedURLPathComponent: "tree",
@@ -820,7 +830,7 @@ var vcsTestCases = []vcsTestCase{
 	{
 		name:                     "BitBucket public",
 		gitTestRepoRef:           "bitbucket.org/dagger-modules/dagger-test-modules-public",
-		gitTestRepoCommit:        "8723e276a45b2e620ba3185cb07dc35e2be5bc86",
+		gitTestRepoCommit:        "323d56c9ece3492d13f58b8b603d31a7c511cd41",
 		expectedHost:             "bitbucket.org",
 		expectedBaseHTMLURL:      "bitbucket.org/dagger-modules/dagger-test-modules-public",
 		expectedURLPathComponent: "src",
@@ -829,7 +839,7 @@ var vcsTestCases = []vcsTestCase{
 	{
 		name:                     "Azure DevOps public",
 		gitTestRepoRef:           "dev.azure.com/daggere2e/public/_git/dagger-test-modules",
-		gitTestRepoCommit:        "8723e276a45b2e620ba3185cb07dc35e2be5bc86",
+		gitTestRepoCommit:        "323d56c9ece3492d13f58b8b603d31a7c511cd41",
 		expectedHost:             "dev.azure.com",
 		expectedBaseHTMLURL:      "dev.azure.com/daggere2e/public/_git/dagger-test-modules",
 		expectedURLPathComponent: "commit",
@@ -843,7 +853,7 @@ var vcsTestCases = []vcsTestCase{
 	{
 		name:                     "SSH Private GitLab",
 		gitTestRepoRef:           "ssh://gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private.git",
-		gitTestRepoCommit:        "8723e276a45b2e620ba3185cb07dc35e2be5bc86",
+		gitTestRepoCommit:        "323d56c9ece3492d13f58b8b603d31a7c511cd41",
 		expectedHost:             "gitlab.com",
 		expectedBaseHTMLURL:      "gitlab.com/dagger-modules/private/test/more/dagger-test-modules-private",
 		expectedURLPathComponent: "tree",
@@ -855,7 +865,7 @@ var vcsTestCases = []vcsTestCase{
 	{
 		name:                     "SSH Private BitBucket",
 		gitTestRepoRef:           "git@bitbucket.org:dagger-modules/private-modules-test.git",
-		gitTestRepoCommit:        "8723e276a45b2e620ba3185cb07dc35e2be5bc86",
+		gitTestRepoCommit:        "323d56c9ece3492d13f58b8b603d31a7c511cd41",
 		expectedHost:             "bitbucket.org",
 		expectedBaseHTMLURL:      "bitbucket.org/dagger-modules/private-modules-test",
 		expectedURLPathComponent: "src",
@@ -867,10 +877,10 @@ var vcsTestCases = []vcsTestCase{
 	// Note: This format is also valid for private GitHub repositories
 	{
 		name:                     "SSH Public GitHub",
-		gitTestRepoRef:           "git@github.com:grouville/dagger-test-modules.git",
-		gitTestRepoCommit:        "8723e276a45b2e620ba3185cb07dc35e2be5bc86",
+		gitTestRepoRef:           "git@github.com:dagger/dagger-test-modules.git",
+		gitTestRepoCommit:        "323d56c9ece3492d13f58b8b603d31a7c511cd41",
 		expectedHost:             "github.com",
-		expectedBaseHTMLURL:      "github.com/grouville/dagger-test-modules",
+		expectedBaseHTMLURL:      "github.com/dagger/dagger-test-modules",
 		expectedURLPathComponent: "tree",
 		expectedPathPrefix:       "",
 		skipProxyTest:            true,
@@ -881,7 +891,7 @@ var vcsTestCases = []vcsTestCase{
 	//	{
 	//		name:                     "SSH Private Azure",
 	//		gitTestRepoRef:           "git@ssh.dev.azure.com:v3/daggere2e/private/dagger-test-modules",
-	//		gitTestRepoCommit:        "8723e276a45b2e620ba3185cb07dc35e2be5bc86",
+	//		gitTestRepoCommit:        "323d56c9ece3492d13f58b8b603d31a7c511cd41",
 	//		expectedHost:             "dev.azure.com",
 	//		expectedBaseHTMLURL:      "dev.azure.com/daggere2e/private/_git/dagger-test-modules",
 	//		expectedURLPathComponent: "commit",
@@ -1010,14 +1020,13 @@ func (ConfigSuite) TestDaggerGitWithSources(ctx context.Context, t *testctx.T) {
 			modSubpath := modSubpath
 			t.Run(modSubpath, func(ctx context.Context, t *testctx.T) {
 				c := connect(ctx, t)
-
 				mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
-				t.Cleanup(cleanup)
+				defer cleanup()
 
 				ctr := goGitBase(t, c).
 					With(mountedSocket).
 					WithWorkdir("/work").
-					With(daggerExec("init")).
+					With(daggerExec("init", "--source=.")).
 					With(daggerExec("install", "--name", "foo", testGitModuleRef(tc, "various-source-values/"+modSubpath)))
 
 				out, err := ctr.With(daggerCallAt("foo", "container-echo", "--string-arg", "hi", "stdout")).Stdout(ctx)
@@ -1265,4 +1274,204 @@ func (m *Test) Fn(dir *dagger.Directory) *dagger.Directory {
 	out, err = ctr.With(daggerExec("config", "views")).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "", strings.TrimSpace(out))
+}
+
+func (ConfigSuite) TestDepPins(ctx context.Context, t *testctx.T) {
+	// check that pins are correctly followed and loaded
+
+	c := connect(ctx, t)
+
+	repo := "github.com/dagger/dagger-test-modules/versioned"
+	branch := "main"
+	commit := "82adc5f7997e43ab3027810347298405f32a44db"
+
+	ctr := goGitBase(t, c).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+		WithNewFile("/work/main.go", `package main
+			import (
+				"context"
+				"strings"
+			)
+
+			type Test struct {}
+
+			func (m *Test) Hello(ctx context.Context) (string, error) {
+				s, err := dag.Versioned().Hello(ctx)
+				if err != nil {
+					return "", err
+				}
+				return strings.ToUpper(s), nil
+			}
+			`,
+		)
+
+	modCfgContents, err := ctr.
+		File("dagger.json").
+		Contents(ctx)
+	require.NoError(t, err)
+
+	var modCfg modules.ModuleConfig
+	require.NoError(t, json.Unmarshal([]byte(modCfgContents), &modCfg))
+	modCfg.Dependencies = append(modCfg.Dependencies, &modules.ModuleConfigDependency{
+		Name:   "versioned",
+		Source: repo + "@" + branch,
+		Pin:    commit,
+	})
+	rewrittenModCfg, err := json.Marshal(modCfg)
+	require.NoError(t, err)
+	ctr = ctr.WithNewFile("dagger.json", string(rewrittenModCfg))
+
+	out, err := ctr.With(daggerExec("call", "hello")).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "VERSION 2")
+}
+
+func (ConfigSuite) TestDepPinsStayPinned(ctx context.Context, t *testctx.T) {
+	// check that pins stay pinned when running "dagger develop"
+
+	c := connect(ctx, t)
+
+	repo := "github.com/dagger/dagger-test-modules/versioned"
+	branch := "main"
+	commit := "82adc5f7997e43ab3027810347298405f32a44db"
+
+	ctr := goGitBase(t, c).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--source=.", "--name=test", "--sdk=go"))
+
+	modCfgContents, err := ctr.
+		File("dagger.json").
+		Contents(ctx)
+	require.NoError(t, err)
+	var modCfg modules.ModuleConfig
+	require.NoError(t, json.Unmarshal([]byte(modCfgContents), &modCfg))
+	modCfg.Dependencies = append(modCfg.Dependencies, &modules.ModuleConfigDependency{
+		Name:   "versioned",
+		Source: repo + "@" + branch,
+		Pin:    commit,
+	})
+	rewrittenModCfg, err := json.Marshal(modCfg)
+	require.NoError(t, err)
+	ctr = ctr.WithNewFile("dagger.json", string(rewrittenModCfg))
+
+	ctr = ctr.With(daggerExec("develop"))
+	modCfgContents, err = ctr.
+		File("dagger.json").
+		Contents(ctx)
+	require.NoError(t, err)
+	var modCfgNew modules.ModuleConfig
+	require.NoError(t, json.Unmarshal([]byte(modCfgContents), &modCfgNew))
+	require.Equal(t, modCfg, modCfgNew)
+}
+
+func (ConfigSuite) TestDepWritePins(ctx context.Context, t *testctx.T) {
+	// check that pins are correctly written into dagger.json
+
+	t.Run("install head", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// get the latest commit on main
+		repo := "github.com/dagger/dagger-test-modules"
+		commit, err := c.Git(repo).Head().Commit(ctx)
+		require.NoError(t, err)
+
+		ctr := goGitBase(t, c).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/dep").
+			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+			With(daggerExec("install", repo))
+
+		modCfgContents, err := ctr.
+			File("dagger.json").
+			Contents(ctx)
+		require.NoError(t, err)
+
+		var modCfg modules.ModuleConfig
+		require.NoError(t, json.Unmarshal([]byte(modCfgContents), &modCfg))
+		require.Len(t, modCfg.Dependencies, 1)
+		dep := modCfg.Dependencies[0]
+
+		require.Equal(t, "root-mod", dep.Name)
+		require.Equal(t, repo, dep.Source)
+		require.Equal(t, commit, dep.Pin)
+	})
+
+	t.Run("install branch", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// get the latest commit on main
+		repo := "github.com/dagger/dagger-test-modules"
+		branch := "main"
+		commit, err := c.Git(repo).Branch(branch).Commit(ctx)
+		require.NoError(t, err)
+
+		ctr := goGitBase(t, c).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/dep").
+			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+			With(daggerExec("install", repo+"@"+branch))
+
+		modCfgContents, err := ctr.
+			File("dagger.json").
+			Contents(ctx)
+		require.NoError(t, err)
+
+		var modCfg modules.ModuleConfig
+		require.NoError(t, json.Unmarshal([]byte(modCfgContents), &modCfg))
+		require.Len(t, modCfg.Dependencies, 1)
+		dep := modCfg.Dependencies[0]
+
+		require.Equal(t, "root-mod", dep.Name)
+		require.Equal(t, repo+"@"+branch, dep.Source)
+		require.Equal(t, commit, dep.Pin)
+	})
+
+	t.Run("from legacy", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		// get the latest commit on main
+		repo := "github.com/dagger/dagger-test-modules"
+		branch := "main"
+		commit, err := c.Git(repo).Branch(branch).Commit(ctx)
+		require.NoError(t, err)
+
+		ctr := goGitBase(t, c).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work/dep").
+			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go"))
+		modCfgContents, err := ctr.
+			File("dagger.json").
+			Contents(ctx)
+		require.NoError(t, err)
+
+		var modCfg modules.ModuleConfig
+		require.NoError(t, json.Unmarshal([]byte(modCfgContents), &modCfg))
+		modCfg.Dependencies = append(modCfg.Dependencies, &modules.ModuleConfigDependency{
+			Name:   "root-mod",
+			Source: repo + "@" + commit,
+		})
+		rewrittenModCfg, err := json.Marshal(modCfg)
+		require.NoError(t, err)
+
+		ctr = ctr.
+			WithNewFile("dagger.json", string(rewrittenModCfg)).
+			With(daggerExec("develop"))
+
+		modCfgContents, err = ctr.
+			File("dagger.json").
+			Contents(ctx)
+		require.NoError(t, err)
+
+		modCfg = modules.ModuleConfig{}
+		require.NoError(t, json.Unmarshal([]byte(modCfgContents), &modCfg))
+		require.Len(t, modCfg.Dependencies, 1)
+		dep := modCfg.Dependencies[0]
+
+		require.Equal(t, "root-mod", dep.Name)
+		require.Equal(t, repo+"@"+commit, dep.Source)
+		require.Equal(t, commit, dep.Pin)
+	})
 }

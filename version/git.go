@@ -2,13 +2,24 @@ package main
 
 import (
 	"context"
-	"dagger/version/internal/dagger"
 	"errors"
 	"slices"
 	"strings"
 
 	"golang.org/x/mod/semver"
+
+	"github.com/dagger/dagger/version/internal/dagger"
 )
+
+// Git is an opinionated helper for performing various commands on our dagger repo.
+type Git struct {
+	Directory *dagger.Directory
+
+	// +private
+	Container *dagger.Container
+	// +private
+	Valid bool
+}
 
 func git(ctx context.Context, gitDir *dagger.Directory, dir *dagger.Directory) (*Git, error) {
 	ctr := dag.Wolfi().
@@ -36,10 +47,12 @@ func git(ctx context.Context, gitDir *dagger.Directory, dir *dagger.Directory) (
 		// enter detached head state, then we can rewrite all our refs however we like later
 		ctr = ctr.WithExec([]string{"sh", "-c", "git checkout -q $(git rev-parse HEAD)"})
 
+		// manually add a remote (since .git/config was removed earlier)
+		ctr = ctr.WithExec([]string{"git", "remote", "add", "origin", "https://github.com/dagger/dagger.git"})
+
 		// do various unshallowing operations (only the bare minimum is
 		// provided by the core git functions which are used by our remote git
 		// module sources)
-		remote := "https://github.com/dagger/dagger.git"
 		maxDepth := "2147483647" // see https://git-scm.com/docs/shallow
 		ctr = ctr.
 			WithExec([]string{
@@ -51,7 +64,7 @@ func git(ctx context.Context, gitDir *dagger.Directory, dir *dagger.Directory) (
 				// we need the unshallowed history of our branches, so we
 				// can determine which tags are in it later
 				"--depth=" + maxDepth,
-				remote,
+				"origin",
 				// update HEAD
 				"HEAD",
 				// update main
@@ -61,17 +74,15 @@ func git(ctx context.Context, gitDir *dagger.Directory, dir *dagger.Directory) (
 
 	return &Git{
 		Container: ctr,
+		Directory: dag.Directory().WithDirectory(".git", ctr.Directory(".git")),
 		Valid:     valid,
 	}, nil
 }
 
-// Git is an opinionated helper for performing various commands on our dagger repo.
-type Git struct {
-	Container *dagger.Container
-	Valid     bool
-}
-
 type VersionTag struct {
+	// The raw tag
+	Tag string
+
 	// The component this belongs to.
 	Component string
 	// The semver version for this component.
@@ -79,7 +90,7 @@ type VersionTag struct {
 	// The commit hash.
 	Commit string
 
-	// The tag creator date.
+	// The creator date.
 	// Distinct from *author* date, and not to be confused with the underlying commit date.
 	Date string
 }
@@ -88,9 +99,12 @@ type VersionTag struct {
 func (git *Git) VersionTagLatest(
 	ctx context.Context,
 
+	// Optional component tag prefix
 	component string, // +optional
+	// Optional commit sha to get tags for
+	commit string, // +optional
 ) (*VersionTag, error) {
-	versions, err := git.VersionTags(ctx, component)
+	versions, err := git.VersionTags(ctx, component, commit)
 	if err != nil {
 		return nil, err
 	}
@@ -105,7 +119,11 @@ func (git *Git) VersionTagLatest(
 // versions are sorted in ascending order
 func (git *Git) VersionTags(
 	ctx context.Context,
+
+	// Optional component tag prefix
 	component string, // +optional
+	// Optional commit sha to get tags for
+	commit string, // +optional
 ) ([]VersionTag, error) {
 	if !git.Valid {
 		return nil, nil
@@ -117,20 +135,23 @@ func (git *Git) VersionTags(
 		componentFilter = component + "/" + componentFilter
 	}
 
-	tagsRaw, err := git.Container.
-		WithExec([]string{
-			"git",
-			"tag",
-			// filter to only the desired component
-			"-l", componentFilter,
-			// filter to reachable commits from HEAD
-			"--merged=HEAD",
-			// format as "<tag> <commit> <date>"
-			"--format", "%(refname:lstrip=2) %(objectname) %(creatordate:iso-strict)",
-			// sort by ascending semver
-			"--sort", "version:refname",
-		}).
-		Stdout(ctx)
+	tagsArgs := []string{
+		"git",
+		"tag",
+		// filter to only the desired component
+		"-l", componentFilter,
+		// filter to reachable commits from HEAD
+		"--merged=HEAD",
+		// format as "<tag> <commit> <date>"
+		"--format", "%(refname:lstrip=2) %(objectname) %(creatordate:iso-strict)",
+		// sort by ascending semver
+		"--sort", "version:refname",
+	}
+	if commit != "" {
+		// filter to specified commit
+		tagsArgs = append(tagsArgs, "--points-at", commit)
+	}
+	tagsRaw, err := git.Container.WithExec(tagsArgs).Stdout(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -141,22 +162,75 @@ func (git *Git) VersionTags(
 		if len(parts) != 3 {
 			continue
 		}
-		tag, commit, date := parts[0], parts[1], parts[2]
+		tag, tagCommit, date := parts[0], parts[1], parts[2]
 		version := strings.TrimPrefix(tag, component+"/")
 		if !semver.IsValid(version) {
 			continue
 		}
 
-		versionTag := VersionTag{
+		versionTags = append(versionTags, VersionTag{
+			Tag:       tag,
 			Component: component,
 			Version:   version,
 			Date:      date,
-			Commit:    commit,
-		}
-		versionTags = append(versionTags, versionTag)
+			Commit:    tagCommit,
+		})
 	}
 
 	return versionTags, nil
+}
+
+type Branch struct {
+	// The raw branch
+	Branch string
+	// The commit hash.
+	Commit string
+}
+
+func (git *Git) Branches(
+	ctx context.Context,
+
+	// Optional commit sha to get branches for
+	commit string, // +optional
+) ([]Branch, error) {
+	if !git.Valid {
+		return nil, nil
+	}
+
+	branchArgs := []string{
+		"git",
+		"branch",
+		// filter to reachable commits from HEAD
+		"--merged=HEAD",
+		// format as "<tag> <commit>"
+		"--format", "%(refname:lstrip=2) %(objectname)",
+		// sort by ascending semver
+		"--sort", "version:refname",
+	}
+	if commit != "" {
+		// filter to specified commit
+		branchArgs = append(branchArgs, "--points-at", commit)
+	}
+	branchesRaw, err := git.Container.WithExec(branchArgs).Stdout(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var branches []Branch
+	for _, line := range strings.Split(branchesRaw, "\n") {
+		parts := strings.Split(line, " ")
+		if len(parts) != 2 {
+			continue
+		}
+		branch, branchCommit := parts[0], parts[1]
+
+		branches = append(branches, Branch{
+			Branch: branch,
+			Commit: branchCommit,
+		})
+	}
+
+	return branches, nil
 }
 
 type Commit struct {

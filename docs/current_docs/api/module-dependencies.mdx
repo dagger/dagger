@@ -1,0 +1,109 @@
+---
+slug: /api/module-dependencies
+---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Module Dependencies
+
+You can call Dagger Functions from any other Dagger module in your own Dagger module simply by adding it as a module dependency with `dagger install`, as in the following example:
+
+```sh
+dagger install github.com/shykes/daggerverse/hello@v0.3.0
+```
+
+This module will be added to your `dagger.json`:
+
+```json
+...
+"dependencies": [
+  {
+    "name": "hello",
+    "source": "github.com/shykes/daggerverse/hello@54d86c6002d954167796e41886a47c47d95a626d"
+  }
+]
+```
+
+When you add a dependency to your module with `dagger install`, the dependent module will be added to the code-generation routines and can be accessed from your own module's code.
+
+The entrypoint to accessing dependent modules from your own module's code is `dag`, the Dagger client, which is pre-initialized. It contains all the core types (like `Container`, `Directory`, etc.), as well as bindings to any dependencies your module has declared.
+
+Here is an example of accessing the installed `hello` module from your own module's code:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go
+func (m *MyModule) Greeting(ctx context.Context) (string, error) {
+  return dag.Hello().Hello(ctx)
+}
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python
+@function
+async def greeting(self) -> str:
+  return await dag.hello().hello()
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript
+@func()
+async greeting(): Promise<string> {
+  return await dag.hello().hello()
+}
+```
+
+</TabItem>
+</Tabs>
+
+Here is a more complex example. It is a Dagger Function that utilizes a module from the Daggerverse to build a Go project, then chains a Dagger API method to open an interactive terminal session in the build directory.
+
+First, install the module:
+
+```shell
+dagger install github.com/kpenfound/dagger-modules/golang@v0.2.0
+```
+
+Next, create a new Dagger Function:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+```go file=./snippets/dependencies/chaining/go/main.go
+```
+</TabItem>
+<TabItem value="Python">
+```python file=./snippets/dependencies/chaining/python/main.py
+```
+</TabItem>
+<TabItem value="TypeScript">
+```typescript file=./snippets/dependencies/chaining/typescript/index.ts
+```
+</TabItem>
+</Tabs>
+
+This Dagger Function accepts two arguments - the source directory and a list of build arguments - and does the following:
+
+- It invokes the Golang module via the `dag` Dagger client.
+- It calls a Dagger Function from the module to build the source code and return a just-in-time directory with the compiled binary.
+- It chains a core Dagger API method to open an interactive terminal session in the returned directory.
+
+Here is an example call for this Dagger Function:
+
+```shell
+dagger call example --build-src=https://github.com/golang/example#master:/hello --build-args=.
+```
+
+You can also use local modules as dependencies. However, they must be stored in a sub-directory of your module. For example:
+
+```sh
+dagger install ./path/to/module
+```
+
+:::note
+Installing a module using a local path (relative or absolute) is only possible if your module is within the repository root (for Git repositories) or the directory containing the `dagger.json` file (for all other cases).
+:::

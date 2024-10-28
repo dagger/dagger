@@ -1,8 +1,8 @@
-from typing import Annotated
-
-from dagger import Arg, function
+import dagger
 
 
-@function
-def fn(id_: Annotated[str, Arg("id")]) -> str:
-    return id_
+@dagger.object_type
+class Test:
+    @dagger.function
+    def fn(self, id_: str) -> str:
+        return id_

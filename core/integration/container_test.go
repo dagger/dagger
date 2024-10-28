@@ -1712,31 +1712,34 @@ func (ContainerSuite) TestWithMountedCacheFromDirectory(ctx context.Context, t *
 }
 
 func (ContainerSuite) TestWithMountedTemp(ctx context.Context, t *testctx.T) {
-	execRes := struct {
-		Container struct {
-			From struct {
-				WithMountedTemp struct {
-					WithExec struct {
-						Stdout string
-					}
-				}
-			}
-		}
-	}{}
+	c := connect(ctx, t)
 
-	err := testutil.Query(t, `{
-			container {
-				from(address: "`+alpineImage+`") {
-					withMountedTemp(path: "/mnt/tmp") {
-						withExec(args: ["grep", "/mnt/tmp", "/proc/mounts"]) {
-							stdout
-						}
-					}
-				}
-			}
-		}`, &execRes, nil)
-	require.NoError(t, err)
-	require.Contains(t, execRes.Container.From.WithMountedTemp.WithExec.Stdout, "tmpfs /mnt/tmp tmpfs")
+	output := func(opts []dagger.ContainerWithMountedTempOpts) (string, error) {
+		o, err := c.Container().
+			From(alpineImage).
+			WithMountedTemp("/mnt/tmp", opts...).
+			WithExec([]string{"grep", "/mnt/tmp", "/proc/mounts"}).
+			Stdout(ctx)
+
+		return o, err
+	}
+
+	t.Run("default", func(ctx context.Context, t *testctx.T) {
+		output, err := output([]dagger.ContainerWithMountedTempOpts{})
+
+		require.NoError(t, err)
+		require.Contains(t, output, "tmpfs /mnt/tmp tmpfs")
+		require.NotContains(t, output, "size")
+	})
+
+	t.Run("sized", func(ctx context.Context, t *testctx.T) {
+		output, err := output([]dagger.ContainerWithMountedTempOpts{
+			{Size: 4000},
+		})
+
+		require.NoError(t, err)
+		require.Contains(t, output, "size=4k")
+	})
 }
 
 func (ContainerSuite) TestWithDirectory(ctx context.Context, t *testctx.T) {
@@ -4360,16 +4363,70 @@ func (ContainerSuite) TestWithMountedSecretMode(ctx context.Context, t *testctx.
 }
 
 func (ContainerSuite) TestNestedExec(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
+	t.Run("basic", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
 
-	_, err := c.Container().From(alpineImage).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithNewFile("/query.graphql", `{ defaultPlatform }`). // arbitrary valid query
-		WithExec([]string{"dagger", "query", "--debug", "--doc", "/query.graphql"}, dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
-		}).
-		Sync(ctx)
-	require.NoError(t, err)
+		_, err := c.Container().From(alpineImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithNewFile("/query.graphql", `{ defaultPlatform }`). // arbitrary valid query
+			WithExec([]string{"dagger", "query", "--debug", "--doc", "/query.graphql"}, dagger.ContainerWithExecOpts{
+				ExperimentalPrivilegedNesting: true,
+			}).
+			Sync(ctx)
+		require.NoError(t, err)
+	})
+
+	t.Run("caching", func(ctx context.Context, t *testctx.T) {
+		// This is regression test for a bug where nested exec cache keys were scoped to the dagql call ID digest
+		// of the exec, which subtly resulted in content-based caching not working for nested execs.
+		c1 := connect(ctx, t)
+		c2 := connect(ctx, t)
+
+		// write /tmpdir/a/f and /tmpdir/b/f
+		tmpDir := t.TempDir()
+		const subdirA = "a"
+		const subdirB = "b"
+		const subfileName = "f"
+		require.NoError(t, os.Mkdir(filepath.Join(tmpDir, subdirA), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(tmpDir, subdirA, subfileName), []byte("1"), 0o644))
+		require.NoError(t, os.Mkdir(filepath.Join(tmpDir, subdirB), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(tmpDir, subdirB, subfileName), []byte("1"), 0o644))
+
+		runCtrs := func(c *dagger.Client, dir *dagger.Directory, subdir string) string {
+			t.Helper()
+			out, err := c.Container().From(alpineImage).
+				WithDirectory("/mnt", dir.Directory(subdir)).
+				WithExec([]string{"sh", "-c", "head -c 128 /dev/random | sha256sum"}).
+				Stdout(ctx)
+			require.NoError(t, err)
+			return out
+		}
+
+		hostDir1 := c1.Host().Directory(tmpDir)
+		// run an exec that has /tmpdir/a/f included
+		output1a := runCtrs(c1, hostDir1, subdirA)
+		// run an exec that has /tmpdir/b/f included
+		output1b := runCtrs(c1, hostDir1, subdirB)
+		// sanity check: those should be different execs, *not* cached
+		require.NotEqual(t, output1a, output1b)
+
+		// change /tmpdir/b/f
+		require.NoError(t, os.WriteFile(filepath.Join(tmpDir, subdirB, subfileName), []byte("2"), 0o644))
+
+		hostDir2 := c2.Host().Directory(tmpDir)
+		// run an exec that has /tmpdir/a/f included
+		output2a := runCtrs(c2, hostDir2, subdirA)
+		// run an exec that has /tmpdir/b/f included
+		output2b := runCtrs(c2, hostDir2, subdirB)
+		// sanity check: those should be different execs, *not* cached
+		require.NotEqual(t, output2a, output2b)
+
+		// we only changed /tmpdir/b/f, so the execs that included /tmpdir/a/f should be cached across clients
+		// this is the assertion that failed before the fix this test was added for
+		require.Equal(t, output1a, output2a)
+		// and the execs that included /tmpdir/b/f should not be cached across clients since we modified that file
+		require.NotEqual(t, output1b, output2b)
+	})
 }
 
 func (ContainerSuite) TestEmptyExecDiff(ctx context.Context, t *testctx.T) {
@@ -4654,6 +4711,18 @@ func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
 		require.Equal(t, hashStr, hashStrCmd)
 	})
 
+	t.Run("using secret variable with expand returns error", func(ctx context.Context, t *testctx.T) {
+		secret := c.SetSecret("gitea-token", "password2")
+		_, err := c.Container().
+			From("alpine:latest").
+			WithEnvVariable("CACHEBUST", identity.NewID()).
+			WithSecretVariable("GITEA_TOKEN", secret).
+			WithExec([]string{"sh", "-c", "test ${GITEA_TOKEN} = \"password\""}, dagger.ContainerWithExecOpts{Expand: true}).
+			Sync(ctx)
+
+		require.ErrorContains(t, err, "expand cannot be used with secret env variable \"GITEA_TOKEN\"")
+	})
+
 	t.Run("env variable is expanded in Export", func(ctx context.Context, t *testctx.T) {
 		wd := t.TempDir()
 
@@ -4678,5 +4747,27 @@ func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
 		require.Contains(t, entries, "oci-layout")
 		require.Contains(t, entries, "index.json")
 		require.Contains(t, entries, "manifest.json")
+	})
+}
+
+func (ContainerSuite) TestExecInit(ctx context.Context, t *testctx.T) {
+	t.Run("automatic init", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		out, err := c.Container().From(alpineImage).
+			WithExec([]string{"ps", "-o", "pid,comm"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "1 .init")
+	})
+
+	t.Run("disable automatic init", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		out, err := c.Container().From(alpineImage).
+			WithExec([]string{"ps", "-o", "pid,comm"}, dagger.ContainerWithExecOpts{
+				NoInit: true,
+			}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "1 ps")
 	})
 }

@@ -426,6 +426,17 @@ func (labels Labels) WithCILabels() Labels {
 		labels["dagger.io/ci.vendor"] = vendor
 	}
 
+	provider := ""
+	switch {
+	case os.Getenv("DEPOT_PROJECT_ID") != "":
+		provider = "Depot"
+	case os.Getenv("NAMESPACE_GITHUB_RUNTIME") != "":
+		provider = "Namespace"
+	}
+	if provider != "" {
+		labels["dagger.io/ci.provider"] = provider
+	}
+
 	return labels
 }
 

@@ -148,6 +148,21 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 		})
 	}
 
+	if build.gpuSupport {
+		switch build.platformSpec.Architecture {
+		case "amd64":
+		default:
+			return nil, fmt.Errorf("gpu support requires %q arch, not %q", "amd64", build.platformSpec.Architecture)
+		}
+
+		switch build.base {
+		case "ubuntu":
+		case "wolfi":
+		default:
+			return nil, fmt.Errorf("gpu support requires %q base, not %q", "ubuntu or wolfi", build.base)
+		}
+	}
+
 	var base *dagger.Container
 	switch build.base {
 	case "alpine", "":
@@ -156,7 +171,7 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 				Branch: consts.AlpineVersion,
 				Packages: []string{
 					// for Buildkit
-					"git", "openssh", "pigz", "xz",
+					"git", "openssh-client", "pigz", "xz",
 					// for CNI
 					"dnsmasq", "iptables", "ip6tables", "iptables-legacy",
 				},
@@ -192,17 +207,27 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 				"--set", "ip6tables", "/usr/sbin/ip6tables-legacy",
 			}).
 			WithoutEnvVariable("DAGGER_APT_CACHE_BUSTER")
+		if build.gpuSupport {
+			base = base.
+				With(util.ShellCmd(`curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg`)).
+				With(util.ShellCmd(`curl -s -L https://nvidia.github.io/libnvidia-container/experimental/"$(. /etc/os-release;echo $ID$VERSION_ID)"/libnvidia-container.list | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | tee /etc/apt/sources.list.d/nvidia-container-toolkit.list`)).
+				With(util.ShellCmd(`apt-get update && apt-get install -y nvidia-container-toolkit`))
+		}
 	case "wolfi":
+		pkgs := []string{
+			// for Buildkit
+			"git", "openssh-client", "pigz", "xz",
+			// for CNI
+			"iptables", "ip6tables", "dnsmasq",
+		}
+		if build.gpuSupport {
+			pkgs = append(pkgs, "nvidia-driver", "nvidia-tools")
+		}
 		base = dag.
 			Wolfi().
 			Container(dagger.WolfiContainerOpts{
-				Packages: []string{
-					// for Buildkit
-					"git", "openssh", "pigz", "xz",
-					// for CNI
-					"iptables", "ip6tables", "dnsmasq",
-				},
-				Arch: build.platformSpec.Architecture,
+				Packages: pkgs,
+				Arch:     build.platformSpec.Architecture,
 			})
 	default:
 		return nil, fmt.Errorf("unsupported engine base %q", build.base)
@@ -249,27 +274,6 @@ func (build *Builder) Engine(ctx context.Context) (*dagger.Container, error) {
 	ctr = ctr.
 		WithExec([]string{"ln", "-s", "/usr/bin/dial-stdio", "/usr/bin/buildctl"}).
 		WithDirectory(distconsts.EngineDefaultStateDir, dag.Directory())
-
-	if build.gpuSupport {
-		switch build.platformSpec.Architecture {
-		case "amd64":
-		default:
-			return nil, fmt.Errorf("gpu support requires %q arch, not %q", "amd64", build.platformSpec.Architecture)
-		}
-
-		switch build.base {
-		case "ubuntu":
-			ctr = ctr.With(util.ShellCmd(`curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg`))
-			ctr = ctr.With(util.ShellCmd(`curl -s -L https://nvidia.github.io/libnvidia-container/experimental/"$(. /etc/os-release;echo $ID$VERSION_ID)"/libnvidia-container.list | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | tee /etc/apt/sources.list.d/nvidia-container-toolkit.list`))
-			ctr = ctr.With(util.ShellCmd(`apt-get update && apt-get install -y nvidia-container-toolkit`))
-		case "wolfi":
-			ctr = ctr.With(util.ShellCmd(`apk add chainguard-keys`))
-			ctr = ctr.With(util.ShellCmd(`echo "https://packages.cgr.dev/extras" >> /etc/apk/repositories`))
-			ctr = ctr.With(util.ShellCmd(`apk update && apk add nvidia-driver nvidia-tools`))
-		default:
-			return nil, fmt.Errorf("gpu support requires %q base, not %q", "ubuntu or wolfi", build.base)
-		}
-	}
 
 	if err := eg.Wait(); err != nil {
 		return nil, err

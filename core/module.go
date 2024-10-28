@@ -119,7 +119,11 @@ func (mod *Module) IDModule() *call.Module {
 		// propagating error
 		panic(err)
 	}
-	return call.NewModule(mod.InstanceID, mod.Name(), ref)
+	pin, err := mod.Source.Self.Pin()
+	if err != nil {
+		panic(err)
+	}
+	return call.NewModule(mod.InstanceID, mod.Name(), ref, pin)
 }
 
 func (mod *Module) Initialize(ctx context.Context, oldID *call.ID, newID *call.ID, dag *dagql.Server) (*Module, error) {
@@ -613,11 +617,13 @@ func (mod *Module) namespaceTypeDef(ctx context.Context, typeDef *TypeDef) error
 		enum := typeDef.AsEnum.Value
 
 		// only namespace enums defined in this module
-		_, ok, err := mod.Deps.ModTypeFor(ctx, typeDef)
+		mtype, ok, err := mod.Deps.ModTypeFor(ctx, typeDef)
 		if err != nil {
 			return fmt.Errorf("failed to get mod type for type def: %w", err)
 		}
-
+		if ok {
+			enum.Values = mtype.TypeDef().AsEnum.Value.Values
+		}
 		if !ok {
 			enum.Name = namespaceObject(enum.OriginalName, mod.Name(), mod.OriginalName)
 		}

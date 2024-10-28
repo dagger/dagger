@@ -1,0 +1,104 @@
+---
+slug: /api/packages
+---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Third-Party Packages
+
+Dagger Functions are just regular code, written in your usual programming language. One of the key advantages of this approach is that it opens up access to your language's existing ecosystem of packages or modules. You can easily import these packages/modules in your Dagger module via your language's package manager.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+To add a Go module, add it to your `go.mod` file using `go get`. For example:
+
+```shell
+go get github.com/spf13/cobra
+```
+
+</TabItem>
+<TabItem value="Python">
+
+To add a Python package, add it to your `pyproject.toml` file using your chosen package manager. For example:
+
+<Tabs groupId="python-pm">
+<TabItem value="uv">
+
+```sh
+uv add requests
+```
+
+</TabItem>
+
+<TabItem value="poetry">
+
+```sh
+poetry add requests
+```
+
+</TabItem>
+
+<TabItem value="uv pip">
+
+Add the dependency manually to [`pyproject.toml`](https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#dependencies-and-requirements):
+
+```toml
+[project]
+dependencies = [
+    "requirements>=2.32.3",
+]
+```
+
+Then install into your virtual environment:
+
+```sh
+uv pip install -e ./sdk -e .
+```
+
+:::note
+There's no need to activate the virtual environment before `uv pip install`, but it does need to exist.
+:::
+
+</TabItem>
+<TabItem value="pip">
+
+Add the dependency manually to [`pyproject.toml`](https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#dependencies-and-requirements):
+
+```toml
+[project]
+dependencies = [
+    "requirements>=2.32.3",
+]
+```
+
+Then install into your virtual environment:
+
+```sh
+python -m pip install -e ./sdk -e .
+```
+
+</TabItem>
+</Tabs>
+
+:::tip
+If you haven't setup your local environment yet, see [IDE Integration](./ide-integration.mdx).
+:::
+
+:::note
+Third-party dependencies are managed in the same way as any normal Python project. The only limitation is in "pinning" the dependencies. Currently, Dagger can install directly from a `uv.lock` file, or a [pip-tools compatible](https://docs.astral.sh/uv/pip/compile/#locking-requirements) `requirements.lock` file (notice `.lock` extension, not `.txt`). See [Language-native packaging](./custom-functions.mdx#language-native-packaging) for more information.
+:::
+
+</TabItem>
+<TabItem value="TypeScript">
+
+To add a TypeScript package, add it to the `package.json` file using your favorite package manager. For example:
+
+```shell
+npm install pm2
+```
+
+Pinning a specific dependency version or adding local dependencies are supported, in the same way as any Node.js project.
+
+</TabItem>
+</Tabs>

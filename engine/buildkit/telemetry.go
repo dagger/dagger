@@ -10,6 +10,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/propagation"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/embedded"
@@ -51,6 +52,7 @@ func buildkitTelemetryProvider(client *Client, ctx context.Context) context.Cont
 		tp: &buildkitTraceProvider{
 			tp:     sp.TracerProvider(),
 			lp:     telemetry.LoggerProvider(ctx),
+			mp:     telemetry.MeterProvider(ctx),
 			client: client,
 		},
 	})
@@ -60,6 +62,7 @@ type buildkitTraceProvider struct {
 	embedded.TracerProvider
 	tp     trace.TracerProvider
 	lp     *sdklog.LoggerProvider
+	mp     *sdkmetric.MeterProvider
 	client *Client
 }
 
@@ -85,8 +88,9 @@ func (t *buildkitTracer) Start(ctx context.Context, spanName string, opts ...tra
 		trace.WithAttributes(attribute.Bool("buildkit", true)),
 	}, opts...)
 
-	// Restore logger provider from the original ctx the provider was created.
+	// Restore logger+metrics provider from the original ctx the provider was created.
 	ctx = telemetry.WithLoggerProvider(ctx, t.provider.lp)
+	ctx = telemetry.WithMeterProvider(ctx, t.provider.mp)
 
 	if strings.HasPrefix(spanName, "cache request: ") {
 		// these wrap calls to CacheMap (set deep inside buildkit)

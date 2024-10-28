@@ -94,6 +94,7 @@ func init() {
 		callModCmd.Command(),
 		sessionCmd(),
 		newGenCmd(),
+		shellCmd,
 	)
 
 	rootCmd.AddGroup(moduleGroup)

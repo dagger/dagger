@@ -51,20 +51,23 @@ func (t *Repeater) Render() string {
 		},
 		{
 			sdk: "python",
-			source: `from dagger import field, function, object_type
+			source: `import dagger
 
-@object_type
+@dagger.object_type
 class Repeater:
-    message: str = field(default="")
-    times: int = field(default=0)
+    message: str = dagger.field(default="")
+    times: int = dagger.field(default=0)
 
-    @function
+    @dagger.function
     def render(self) -> str:
         return self.message * self.times
 
-@function
-def repeater(msg: str, times: int) -> Repeater:
-    return Repeater(message=msg, times=times)
+
+@dagger.object_type
+class Test:
+    @dagger.function
+    def repeater(self, msg: str, times: int) -> Repeater:
+        return Repeater(message=msg, times=times)
 `,
 		},
 		{
@@ -73,7 +76,7 @@ def repeater(msg: str, times: int) -> Repeater:
 import { object, func } from "@dagger.io/dagger"
 
 @object()
-class Repeater {
+export class Repeater {
   @func()
   message: string
 
@@ -92,7 +95,7 @@ class Repeater {
 }
 
 @object()
-class Test {
+export class Test {
   @func()
   repeater(msg: string, times: number): Repeater {
     return new Repeater(msg, times)
@@ -140,15 +143,17 @@ func (m *Foo) MyFunction() X {
 		},
 		{
 			sdk: "python",
-			source: `from dagger import field, function, object_type
+			source: `import dagger
 
-@object_type
+@dagger.object_type
 class X:
-    message: str = field(default="")
+    message: str = dagger.field(default="")
 
-@function
-def my_function() -> X:
-    return X(message="foo")
+@dagger.object_type
+class Foo:
+    @dagger.function
+    def my_function(self) -> X:
+        return X(message="foo")
 `,
 		},
 		{
@@ -157,7 +162,7 @@ def my_function() -> X:
 import { object, func } from "@dagger.io/dagger"
 
 @object()
-class X {
+export class X {
   @func()
   message: string
 
@@ -167,7 +172,7 @@ class X {
 }
 
 @object()
-class Foo {
+export class Foo {
   @func()
   myFunction(): X {
     return new X("foo");
@@ -243,7 +248,7 @@ class Foo:
 import { object, func } from "@dagger.io/dagger"
 
 @object()
-class X {
+export class X {
   @func()
   message: string
 
@@ -265,7 +270,7 @@ class X {
 }
 
 @object()
-class Foo {
+export class Foo {
   @func()
   myFunction(): X {
     return new X("foo", "now", "user", "admin");
@@ -343,7 +348,7 @@ class Playground:
 import { object, func } from "@dagger.io/dagger"
 
 @object()
-class Bar {
+export class Bar {
   @func()
   msg: string;
 
@@ -353,7 +358,7 @@ class Bar {
 }
 
 @object()
-class Foo {
+export class Foo {
   @func()
   msgContainer: Bar;
 
@@ -363,7 +368,7 @@ class Foo {
 }
 
 @object()
-class Playground {
+export class Playground {
   @func()
   myFunction(): Foo {
     return new Foo(new Bar("hello world"));
@@ -449,7 +454,7 @@ class Playground:
 import { dag, Container, File, object, func } from "@dagger.io/dagger"
 
 @object()
-class Foo {
+export class Foo {
   @func()
   con: Container
 
@@ -463,7 +468,7 @@ class Foo {
 }
 
 @object()
-class Playground {
+export class Playground {
   @func()
   mySlice(): Container[] {
     return [
@@ -579,7 +584,7 @@ class Playground:
 import { dag, Container, object, func } from "@dagger.io/dagger"
 
 @object()
-class ScanReport {
+export class ScanReport {
   @func()
   contents: string
 
@@ -593,7 +598,7 @@ class ScanReport {
 }
 
 @object()
-class ScanResult {
+export class ScanResult {
   @func("targets")
   containers: Container[]
 
@@ -607,7 +612,7 @@ class ScanResult {
 }
 
 @object()
-class Playground {
+export class Playground {
   @func()
   async scan(): Promise<ScanResult> {
     return new ScanResult(
@@ -690,7 +695,7 @@ class Foo:
 import { object, func } from "@dagger.io/dagger"
 
 @object()
-class Foo {
+export class Foo {
   data: string = ""
 
   @func()
@@ -809,7 +814,7 @@ class Foo:
 import { object, func } from "@dagger.io/dagger"
 
 @object()
-class Message {
+export class Message {
   @func()
   content: string
 
@@ -819,7 +824,7 @@ class Message {
 }
 
 @object()
-class Foo {
+export class Foo {
   @func()
   sayHello(name: string): Message {
     return new Message("hello " + name)
@@ -940,7 +945,7 @@ class Test:
 			source: `import { object, func, Platform } from "@dagger.io/dagger"
 
 @object()
-class Test {
+export class Test {
 	@func()
 	fromPlatform(platform: Platform): string {
 		return platform as string
@@ -1051,7 +1056,7 @@ class Test:
 			source: `import { object, func, NetworkProtocol } from "@dagger.io/dagger";
 
 @object()
-class Test {
+export class Test {
   @func()
   fromProto(Proto: NetworkProtocol): string {
     return Proto as string;
@@ -1378,6 +1383,75 @@ export class Test {
 				out, err := modGen.With(daggerQuery(`{test{test}}`)).Stdout(ctx)
 				require.NoError(t, err)
 				require.Equal(t, "INACTIVE", gjson.Get(out, "test.test").String())
+			})
+		}
+	})
+
+	t.Run("custom conflicting enum type", func(ctx context.Context, t *testctx.T) {
+		depSrc := `package main
+
+type Dep struct{}
+
+type MyEnum string
+
+const (
+	MyEnumFalse MyEnum = "false"
+	MyEnumTrue  MyEnum = "true"
+	MyEnumNull  MyEnum = "null"
+)
+
+func (m *Dep) Thing(f MyEnum) MyEnum {
+	return f
+}
+`
+
+		type testCase struct {
+			sdk    string
+			source string
+		}
+		for _, tc := range []testCase{
+			{
+				sdk: "go",
+				source: `package main
+
+import (
+	"context"
+	"fmt"
+	"dagger/test/internal/dagger"
+)
+
+type Test struct{}
+
+func (m *Test) Test(ctx context.Context) (string, error) {
+	f, err := dag.Dep().Thing(ctx, dagger.False)
+	if err != nil {
+		return "", err
+	}
+	t, err := dag.Dep().Thing(ctx, dagger.True)
+	if err != nil {
+		return "", err
+	}
+	n, err := dag.Dep().Thing(ctx, dagger.Null)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprint(f, t, n), nil
+}
+`,
+			},
+		} {
+			tc := tc
+
+			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
+				c := connect(ctx, t)
+
+				modGen := modInit(t, c, tc.sdk, tc.source).
+					With(withModInitAt("./dep", "go", depSrc)).
+					With(daggerExec("install", "./dep"))
+
+				out, err := modGen.With(daggerQuery(`{test{test}}`)).Stdout(ctx)
+				require.NoError(t, err)
+				require.Equal(t, "falsetruenull", gjson.Get(out, "test.test").String())
 			})
 		}
 	})

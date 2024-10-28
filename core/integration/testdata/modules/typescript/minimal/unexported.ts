@@ -1,7 +1,7 @@
 import { object, func } from "@dagger.io/dagger"
 
 @object()
-class Foo {
+export class Foo {
     @func()
     hello(name: string): Foo {
         return new Foo()

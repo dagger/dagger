@@ -765,6 +765,7 @@ defmodule Dagger.Client do
 
   @doc "Create a new module source instance from a source ref string."
   @spec module_source(t(), String.t(), [
+          {:ref_pin, String.t() | nil},
           {:stable, boolean() | nil},
           {:rel_host_path, String.t() | nil}
         ]) :: Dagger.ModuleSource.t()
@@ -773,6 +774,7 @@ defmodule Dagger.Client do
       client.query_builder
       |> QB.select("moduleSource")
       |> QB.put_arg("refString", ref_string)
+      |> QB.maybe_put_arg("refPin", optional_args[:ref_pin])
       |> QB.maybe_put_arg("stable", optional_args[:stable])
       |> QB.maybe_put_arg("relHostPath", optional_args[:rel_host_path])
 

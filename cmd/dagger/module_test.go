@@ -215,7 +215,7 @@ func TestParseGit(t *testing.T) {
 		tc := tc
 		t.Run(tc.urlStr, func(t *testing.T) {
 			t.Parallel()
-			parsedGit, err := parseGit(tc.urlStr)
+			parsedGit, err := parseGitURL(tc.urlStr)
 			require.NoError(t, err)
 			require.NotNil(t, parsedGit)
 			require.Equal(t, tc.want, parsedGit)

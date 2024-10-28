@@ -16,6 +16,8 @@ import (
 	"github.com/muesli/termenv"
 	"github.com/pkg/browser"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/term"
@@ -57,7 +59,6 @@ type frontendPretty struct {
 	cloudURL string
 
 	// TUI state/config
-	restore    func()  // restore terminal
 	fps        float64 // frames per second
 	profile    termenv.Profile
 	window     tea.WindowSizeMsg // set by BubbleTea
@@ -158,12 +159,8 @@ func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run 
 	if fe.reportOnly {
 		fe.err = run(ctx)
 	} else {
-		// find a TTY anywhere in stdio. stdout might be redirected, in which case we
-		// can show the TUI on stderr.
-		ttyIn, ttyOut := findTTYs()
-
 		// run the function wrapped in the TUI
-		fe.err = fe.runWithTUI(ctx, ttyIn, ttyOut, run)
+		fe.err = fe.runWithTUI(ctx, run)
 	}
 
 	// print the final output display to stderr
@@ -175,6 +172,10 @@ func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run 
 
 	// return original err
 	return fe.err
+}
+
+func (fe *frontendPretty) Opts() *dagui.FrontendOpts {
+	return &fe.FrontendOpts
 }
 
 func (fe *frontendPretty) SetPrimary(spanID dagui.SpanID) {
@@ -192,36 +193,27 @@ func (fe *frontendPretty) RevealAllSpans() {
 	fe.mu.Unlock()
 }
 
-func (fe *frontendPretty) runWithTUI(ctx context.Context, ttyIn *os.File, ttyOut *os.File, run func(context.Context) error) error {
-	var stdin io.Reader
-	if ttyIn != nil {
-		stdin = ttyIn
-
-		// Bubbletea will just receive an `io.Reader` for its input rather than the
-		// raw TTY *os.File, so we need to set up the TTY ourselves.
-		ttyFd := int(ttyIn.Fd())
-		oldState, err := term.MakeRaw(ttyFd)
-		if err != nil {
-			return err
-		}
-		fe.restore = func() { _ = term.Restore(ttyFd, oldState) }
-		defer fe.restore()
-	}
-
+func (fe *frontendPretty) runWithTUI(ctx context.Context, run func(context.Context) error) error {
 	// wire up the run so we can call it asynchronously with the TUI running
 	fe.run = run
 	// set up ctx cancellation so the TUI can interrupt via keypresses
 	fe.runCtx, fe.interrupt = context.WithCancelCause(ctx)
 
-	// keep program state so we can send messages to it
-	fe.program = tea.NewProgram(fe,
-		tea.WithInput(stdin),
-		tea.WithOutput(ttyOut),
-		// We set up the TTY ourselves, so Bubbletea's panic handler becomes
-		// counter-productive.
-		tea.WithoutCatchPanics(),
+	opts := []tea.ProgramOption{
 		tea.WithMouseCellMotion(),
-	)
+	}
+	in, out := findTTYs()
+	if in != nil {
+		opts = append(opts, tea.WithInput(in))
+	} else {
+		opts = append(opts, tea.WithInput(nil))
+	}
+	if out != nil {
+		opts = append(opts, tea.WithOutput(out))
+	}
+
+	// keep program state so we can send messages to it
+	fe.program = tea.NewProgram(fe, opts...)
 
 	// prevent browser.OpenURL from breaking the TUI if it fails
 	browser.Stdout = fe.browserBuf
@@ -375,15 +367,43 @@ func (fe *frontendPretty) Close() error {
 	return nil
 }
 
+func (fe *frontendPretty) MetricExporter() sdkmetric.Exporter {
+	return FrontendMetricExporter{fe}
+}
+
+type FrontendMetricExporter struct {
+	*frontendPretty
+}
+
+func (fe FrontendMetricExporter) Export(ctx context.Context, resourceMetrics *metricdata.ResourceMetrics) error {
+	fe.mu.Lock()
+	defer fe.mu.Unlock()
+	return fe.db.MetricExporter().Export(ctx, resourceMetrics)
+}
+
+func (fe FrontendMetricExporter) Temporality(ik sdkmetric.InstrumentKind) metricdata.Temporality {
+	return fe.db.Temporality(ik)
+}
+
+func (fe FrontendMetricExporter) Aggregation(ik sdkmetric.InstrumentKind) sdkmetric.Aggregation {
+	return fe.db.Aggregation(ik)
+}
+
+func (fe FrontendMetricExporter) ForceFlush(context.Context) error {
+	return nil
+}
+
 type backgroundMsg struct {
 	cmd  tea.ExecCommand
+	raw  bool
 	errs chan<- error
 }
 
-func (fe *frontendPretty) Background(cmd tea.ExecCommand) error {
+func (fe *frontendPretty) Background(cmd tea.ExecCommand, raw bool) error {
 	errs := make(chan error, 1)
 	fe.program.Send(backgroundMsg{
 		cmd:  cmd,
+		raw:  raw,
 		errs: errs,
 	})
 	return <-errs
@@ -676,16 +696,13 @@ type doneMsg struct {
 }
 
 func (fe *frontendPretty) spawn() (msg tea.Msg) {
-	defer func() {
-		if r := recover(); r != nil {
-			fe.restore()
-			panic(r)
-		}
-	}()
 	return doneMsg{fe.run(fe.runCtx)}
 }
 
-type backgroundDoneMsg struct{}
+type backgroundDoneMsg struct {
+	backgroundMsg
+	err error
+}
 
 func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nolint: gocyclo
 	switch msg := msg.(type) {
@@ -710,12 +727,33 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 
 	case backgroundMsg:
 		fe.backgrounded = true
-		return fe, tea.Exec(msg.cmd, func(err error) tea.Msg {
-			msg.errs <- err
-			return backgroundDoneMsg{}
+		cmd := msg.cmd
+
+		if msg.raw {
+			var restore func() error
+			cmd = &wrapCommand{
+				ExecCommand: cmd,
+				before: func() error {
+					ttyFd := int(os.Stdout.Fd())
+					oldState, err := term.MakeRaw(ttyFd)
+					if err != nil {
+						return err
+					}
+					restore = func() error { return term.Restore(ttyFd, oldState) }
+					return nil
+				},
+				after: func() error {
+					return restore()
+				},
+			}
+		}
+		return fe, tea.Exec(cmd, func(err error) tea.Msg {
+			return backgroundDoneMsg{msg, err}
 		})
 
 	case backgroundDoneMsg:
+		fe.backgrounded = false
+		msg.errs <- msg.err
 		return fe, nil
 
 	case tea.MouseMsg:
@@ -737,6 +775,11 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 		fe.pressedKeyAt = time.Now()
 		switch msg.String() {
 		case "q", "ctrl+c":
+			if fe.CustomExit != nil {
+				fe.CustomExit()
+				return fe, nil
+			}
+
 			if fe.done && fe.eof {
 				fe.quitting = true
 				// must have configured NoExit, and now they want
@@ -754,7 +797,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 			fe.interrupt(errors.New("interrupted"))
 			return fe, nil // tea.Quit is deferred until we receive doneMsg
 		case "ctrl+\\": // SIGQUIT
-			fe.restore()
+			fe.program.ReleaseTerminal()
 			sigquit()
 			return fe, nil
 		case "down", "j":
@@ -1130,4 +1173,23 @@ func frame(fps float64) tea.Cmd {
 	return tea.Tick(time.Duration(float64(time.Second)/fps), func(t time.Time) tea.Msg {
 		return frameMsg(t)
 	})
+}
+
+type wrapCommand struct {
+	tea.ExecCommand
+	before func() error
+	after  func() error
+}
+
+var _ tea.ExecCommand = (*wrapCommand)(nil)
+
+func (ts *wrapCommand) Run() error {
+	if err := ts.before(); err != nil {
+		return err
+	}
+	err := ts.ExecCommand.Run()
+	if err2 := ts.after(); err == nil {
+		err = err2
+	}
+	return err
 }

@@ -55,9 +55,36 @@ var (
 
 const (
 	moduleURLDefault = "."
-
-	defaultModuleSourceDirName = "."
 )
+
+// if the source root path already has some files
+// then use `srcRootPath/.dagger` for source
+func inferSourcePathDir(srcRootPath string) (string, error) {
+	list, err := os.ReadDir(srcRootPath)
+	if err != nil {
+		return "", err
+	}
+
+	for _, l := range list {
+		if l.Name() == "dagger.json" {
+			continue
+		}
+
+		// .dagger already exist, return that
+		if l.Name() == ".dagger" {
+			return ".dagger", nil
+		}
+
+		// ignore hidden files
+		if strings.HasPrefix(l.Name(), ".") {
+			continue
+		}
+
+		return ".dagger", nil
+	}
+
+	return ".", nil
+}
 
 func init() {
 	moduleFlags.StringVarP(&moduleURL, "mod", "m", "", "Path to the module directory. Either local path or a remote git repo")
@@ -71,6 +98,7 @@ func init() {
 	funcListCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	listenCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	queryCmd.PersistentFlags().AddFlagSet(moduleFlags)
+	shellCmd.PersistentFlags().AddFlagSet(moduleFlags)
 	configCmd.PersistentFlags().AddFlagSet(moduleFlags)
 
 	moduleInitCmd.Flags().StringVar(&sdk, "sdk", "", "Optionally install a Dagger SDK")
@@ -149,17 +177,29 @@ If --sdk is specified, the given SDK is installed in the module. You can do this
 
 			// only bother setting source path if there's an sdk at this time
 			if sdk != "" {
+				// if user didn't specified moduleSourcePath explicitly,
+				// check if current dir is non-empty and infer the source
+				// path accordingly.
 				if moduleSourcePath == "" {
-					moduleSourcePath = filepath.Join(modConf.LocalRootSourcePath, defaultModuleSourceDirName)
+					inferredSourcePath, err := inferSourcePathDir(modConf.LocalRootSourcePath)
+					if err != nil {
+						return err
+					}
+
+					moduleSourcePath = filepath.Join(modConf.LocalRootSourcePath, inferredSourcePath)
 				}
-				// ensure source path is relative to the source root
-				sourceAbsPath, err := filepath.Abs(moduleSourcePath)
-				if err != nil {
-					return fmt.Errorf("failed to get absolute source path for %s: %w", moduleSourcePath, err)
-				}
-				moduleSourcePath, err = filepath.Rel(modConf.LocalRootSourcePath, sourceAbsPath)
-				if err != nil {
-					return fmt.Errorf("failed to get relative source path: %w", err)
+
+				if moduleSourcePath != "" {
+					// ensure source path is relative to the source root
+					sourceAbsPath, err := filepath.Abs(moduleSourcePath)
+					if err != nil {
+						return fmt.Errorf("failed to get absolute source path for %s: %w", moduleSourcePath, err)
+					}
+
+					moduleSourcePath, err = filepath.Rel(modConf.LocalRootSourcePath, sourceAbsPath)
+					if err != nil {
+						return fmt.Errorf("failed to get relative source path: %w", err)
+					}
 				}
 			}
 
@@ -368,8 +408,14 @@ This command is idempotent: you can run it at any time, any number of times. It 
 			}
 			// if SDK is set but source path isn't and the user didn't provide --source, we'll use the default source path
 			if modSDK != "" && modSourcePath == "" && developSourcePath == "" {
-				developSourcePath = filepath.Join(modConf.LocalRootSourcePath, defaultModuleSourceDirName)
+				inferredSourcePath, err := inferSourcePathDir(modConf.LocalRootSourcePath)
+				if err != nil {
+					return err
+				}
+
+				developSourcePath = filepath.Join(modConf.LocalRootSourcePath, inferredSourcePath)
 			}
+
 			// if there's no SDK and the user isn't changing the source path, there's nothing to do.
 			// error out rather than silently doing nothing.
 			if modSDK == "" && developSourcePath == "" {
@@ -912,6 +958,24 @@ func (m *moduleDef) GetObject(name string) *modObject {
 	return nil
 }
 
+func (m *moduleDef) GetObjectFunction(objectName, functionName string) (*modFunction, error) {
+	fp := m.GetFunctionProvider(objectName)
+	if fp == nil {
+		return nil, fmt.Errorf("module %q does not have a %q object or interface", m.Name, objectName)
+	}
+	fn, err := GetFunction(fp, functionName)
+	if err != nil {
+		return nil, err
+	}
+	// We need to load references to types with their type definitions because
+	// the introspection doesn't recursively add them, just their names.
+	m.LoadTypeDef(fn.ReturnType)
+	for _, arg := range fn.Args {
+		m.LoadTypeDef(arg.TypeDef)
+	}
+	return fn, nil
+}
+
 // GetInterface retrieves a saved interface type definition from the module.
 func (m *moduleDef) GetInterface(name string) *modInterface {
 	for _, iface := range m.AsInterfaces() {
@@ -954,6 +1018,20 @@ func (m *moduleDef) GetInput(name string) *modInput {
 		}
 	}
 	return nil
+}
+
+// HasCoreFunction checks if there's a core function (under Query) with the given name.
+func (m *moduleDef) HasCoreFunction(name string) bool {
+	o := m.GetFunctionProvider("Query")
+	if o == nil || !o.IsCore() {
+		return false
+	}
+	return HasFunction(o, name)
+}
+
+// HasFunction checks if the module has a top level function with the given name.
+func (m *moduleDef) HasFunction(name string) bool {
+	return HasFunction(m.MainObject.AsFunctionProvider(), name)
 }
 
 // LoadTypeDef attempts to replace a function's return object type or argument's
@@ -1017,6 +1095,15 @@ func HasAvailableFunctions(o functionProvider) bool {
 		}
 	}
 	return false
+}
+
+// HasFunction checks if an object has a function with the given name.
+func HasFunction(o functionProvider, name string) bool {
+	if o == nil {
+		return false
+	}
+	fn, _ := GetFunction(o, name)
+	return fn != nil
 }
 
 // skipLeaves is a map of provider names to function names that should be skipped
@@ -1085,16 +1172,16 @@ func GetFunction(o functionProvider, name string) (*modFunction, error) {
 }
 
 func (t *modTypeDef) Name() string {
-	if t.AsObject != nil {
-		return t.AsObject.Name
-	}
-	if t.AsInterface != nil {
-		return t.AsInterface.Name
+	if fp := t.AsFunctionProvider(); fp != nil {
+		return fp.ProviderName()
 	}
 	return ""
 }
 
 func (t *modTypeDef) AsFunctionProvider() functionProvider {
+	if t.AsList != nil {
+		t = t.AsList.ElementTypeDef
+	}
 	if t.AsObject != nil {
 		return t.AsObject
 	}
@@ -1241,6 +1328,16 @@ func (f *modFunction) CmdName() string {
 	return f.cmdName
 }
 
+// GetArg returns the argument definition corresponding to the given name.
+func (f *modFunction) GetArg(name string) (*modFunctionArg, error) {
+	for _, a := range f.Args {
+		if a.FlagName() == name {
+			return a, nil
+		}
+	}
+	return nil, fmt.Errorf("no argument %q in function %q", name, f.CmdName())
+}
+
 func (f *modFunction) HasRequiredArgs() bool {
 	for _, arg := range f.Args {
 		if arg.IsRequired() {
@@ -1248,6 +1345,16 @@ func (f *modFunction) HasRequiredArgs() bool {
 		}
 	}
 	return false
+}
+
+func (f *modFunction) RequiredArgs() []*modFunctionArg {
+	args := make([]*modFunctionArg, 0, len(f.Args))
+	for _, arg := range f.Args {
+		if arg.IsRequired() {
+			args = append(args, arg)
+		}
+	}
+	return args
 }
 
 func (f *modFunction) SupportedArgs() []*modFunctionArg {
@@ -1270,12 +1377,7 @@ func (f *modFunction) IsUnsupported() bool {
 }
 
 func (f *modFunction) ReturnsCoreObject() bool {
-	t := f.ReturnType
-	if t.AsList != nil {
-		t = t.AsList.ElementTypeDef
-	}
-	fp := t.AsFunctionProvider()
-	if fp != nil {
+	if fp := f.ReturnType.AsFunctionProvider(); fp != nil {
 		return fp.IsCore()
 	}
 	return false

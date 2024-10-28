@@ -212,7 +212,7 @@ import { object, func } from '@dagger.io/dagger'
  * Test object, short description
  */
 @object()
-class Test {
+export class Test {
     @func()
     foo: string = "foo"
 }
@@ -253,7 +253,7 @@ import { Foo } from "./foo"
  * Test object, short description
  */
 @object()
-class Test {
+export class Test {
     @func()
     foo(): Foo {
         return new Foo()
@@ -345,7 +345,7 @@ class Minimal:
 import { object, func } from "@dagger.io/dagger"
 
 @object()
-class Minimal {
+export class Minimal {
   @func()
   foo: string
 
@@ -463,7 +463,7 @@ class Test:
 			source: `import { object, func } from "@dagger.io/dagger"
 
 @object()
-class Test {
+export class Test {
   @func()
   foo(
     a: string,
@@ -618,7 +618,7 @@ class Test:
 			source: `import { dag, object, func } from "@dagger.io/dagger"
 
 @object()
-class Test {
+export class Test {
   @func()
   async test(): Promise<string> {
     return await dag.dep().ctl("foo")
@@ -687,7 +687,7 @@ import { dag, object, func } from "@dagger.io/dagger"
 var someDefault = dag.container().from("` + alpineImage + `")
 
 @object()
-class Foo {
+export class Foo {
   @func()
   async fn(): Promise<string> {
     return someDefault.withExec(["echo", "foo"]).stdout()
@@ -893,18 +893,21 @@ func (m *Use) UseHello(ctx context.Context) (string, error) {
 }
 `
 
-var usePythonOuter = `from dagger import dag, function
+var usePythonOuter = `import dagger
+from dagger import dag
 
-@function
-def use_hello() -> str:
-    return dag.dep().hello()
+@dagger.object_type
+class Use:
+    @dagger.function
+    def use_hello(self) -> str:
+        return dag.dep().hello()
 `
 
 var useTSOuter = `
 import { dag, object, func } from '@dagger.io/dagger'
 
 @object()
-class Use {
+export class Use {
 	@func()
 	async useHello(): Promise<string> {
 		return dag.dep().hello()
@@ -943,7 +946,7 @@ func (ModuleSuite) TestUseLocal(ctx context.Context, t *testctx.T) {
 				With(daggerExec("init", "--name=dep", "--sdk=go")).
 				With(sdkSource("go", useInner)).
 				WithWorkdir("/work").
-				With(daggerExec("init", "--name=use", "--sdk="+tc.sdk)).
+				With(daggerExec("init", "--name=use", "--sdk="+tc.sdk, "--source=.")).
 				With(sdkSource(tc.sdk, tc.source)).
 				With(daggerExec("install", "./dep"))
 
@@ -998,7 +1001,7 @@ func (ModuleSuite) TestCodegenOnDepChange(ctx context.Context, t *testctx.T) {
 				With(daggerExec("init", "--name=dep", "--sdk=go")).
 				With(sdkSource("go", useInner)).
 				WithWorkdir("/work").
-				With(daggerExec("init", "--name=use", "--sdk="+tc.sdk)).
+				With(daggerExec("init", "--name=use", "--sdk="+tc.sdk, "--source=.")).
 				With(sdkSource(tc.sdk, tc.source)).
 				With(daggerExec("install", "./dep"))
 
@@ -1059,7 +1062,7 @@ func (ModuleSuite) TestSyncDeps(ctx context.Context, t *testctx.T) {
 				With(daggerExec("init", "--name=dep", "--sdk=go")).
 				With(sdkSource("go", useInner)).
 				WithWorkdir("/work").
-				With(daggerExec("init", "--name=use", "--sdk="+tc.sdk)).
+				With(daggerExec("init", "--name=use", "--sdk="+tc.sdk, "--source=.")).
 				With(sdkSource(tc.sdk, tc.source)).
 				With(daggerExec("install", "./dep"))
 
@@ -1113,14 +1116,17 @@ func (m *Use) Names(ctx context.Context) ([]string, error) {
 		},
 		{
 			sdk: "python",
-			source: `from dagger import dag, function
+			source: `import dagger
+from dagger import dag
 
-@function
-async def names() -> list[str]:
-    return [
-        await dag.foo().name(),
-        await dag.bar().name(),
-    ]
+@dagger.object_type
+class Use:
+    @dagger.function
+    async def names(self) -> list[str]:
+        return [
+            await dag.foo().name(),
+            await dag.bar().name(),
+        ]
 `,
 		},
 		{
@@ -1129,7 +1135,7 @@ async def names() -> list[str]:
 import { dag, object, func } from '@dagger.io/dagger'
 
 @object()
-class Use {
+export class Use {
 	@func()
 	async names(): Promise<string[]> {
 		return [await dag.foo().name(), await dag.bar().name()]
@@ -1164,7 +1170,7 @@ class Use {
 				).
 				With(daggerExec("init", "--source=.", "--name=bar", "--sdk=go")).
 				WithWorkdir("/work").
-				With(daggerExec("init", "--name=use", "--sdk="+tc.sdk)).
+				With(daggerExec("init", "--name=use", "--sdk="+tc.sdk, "--source=.")).
 				With(daggerExec("install", "./foo")).
 				With(daggerExec("install", "./bar")).
 				With(sdkSource(tc.sdk, tc.source)).
@@ -1274,7 +1280,7 @@ class Test:
 import { Directory, object, func } from '@dagger.io/dagger';
 
 @object()
-class Test {
+export class Test {
 	@func()
 	foo: string
 
@@ -1414,7 +1420,7 @@ class Test:
 import { dag, object, func } from "@dagger.io/dagger"
 
 @object()
-class Test {
+export class Test {
   @func()
   alpineVersion: string
 
@@ -1486,7 +1492,7 @@ class Test:
 import { object, func } from "@dagger.io/dagger"
 
 @object()
-class Test {
+export class Test {
   @func()
   foo: string
 
@@ -1568,7 +1574,7 @@ class Test:
 import { dag, File, object, func } from "@dagger.io/dagger"
 
 @object()
-class Test {
+export class Test {
   @func()
   foo: File = dag.directory().withNewFile("foo.txt", "%s").file("foo.txt")
 
@@ -1661,7 +1667,7 @@ class Wrapper:
 import { dag, Container, object, func } from "@dagger.io/dagger"
 
 @object()
-class WrappedContainer {
+export class WrappedContainer {
   @func()
   unwrap: Container
 
@@ -1676,7 +1682,7 @@ class WrappedContainer {
 }
 
 @object()
-class Wrapper {
+export class Wrapper {
   @func()
   container(): WrappedContainer {
     return new WrappedContainer(dag.container().from("` + alpineImage + `"))
@@ -1754,18 +1760,26 @@ func (ModuleSuite) TestLotsOfFunctions(ctx context.Context, t *testctx.T) {
 	t.Run("python sdk", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
-		mainSrc := `from dagger import function
-		`
+		mainSrc := `import dagger
+
+@dagger.object_type
+class PotatoSack:
+`
 
 		for i := 0; i < funcCount; i++ {
 			mainSrc += fmt.Sprintf(`
-@function
-def potato_%d() -> str:
-    return "potato #%d"
+    @dagger.function
+    def potato_%d(self) -> str:
+        return "potato #%d"
 `, i, i)
 		}
 
-		modGen := pythonModInit(t, c, mainSrc)
+		modGen := c.Container().
+			From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(sdkSource("python", mainSrc)).
+			With(daggerExec("init", "--source=.", "--name=potatoSack", "--sdk=python"))
 
 		var eg errgroup.Group
 		for i := 0; i < funcCount; i++ {
@@ -1791,7 +1805,7 @@ def potato_%d() -> str:
 		import { object, func } from "@dagger.io/dagger"
 
 @object()
-class PotatoSack {
+export class PotatoSack {
 		`
 
 		for i := 0; i < funcCount; i++ {
@@ -1811,7 +1825,7 @@ class PotatoSack {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			With(sdkSource("typescript", mainSrc)).
-			With(daggerExec("init", "--name=potatoSack", "--sdk=typescript"))
+			With(daggerExec("init", "--name=potatoSack", "--sdk=typescript", "--source=."))
 
 		var eg errgroup.Group
 		for i := 0; i < funcCount; i++ {
@@ -2373,9 +2387,8 @@ func (m *Test) Fn() string {
 	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
 		t.Run("git", func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
-
 			mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
-			t.Cleanup(cleanup)
+			defer cleanup()
 
 			ctr := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -3630,7 +3643,7 @@ func (m *Dep) DepFn(s *dagger.Secret) string {
 }
 `)).
 		WithWorkdir("/work").
-		With(daggerExec("init", "--name=test", "--sdk=go")).
+		With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
 		With(sdkSource("go", `package main
 
 import (
@@ -4190,7 +4203,7 @@ class Test:
 				source: `import { Directory, File, object, func, argument } from "@dagger.io/dagger"
 
 @object()
-class Test {
+export class Test {
   @func()
   async dirs(@argument({ defaultPath: "/" }) root: Directory, @argument({ defaultPath: "."}) relativeRoot: Directory): Promise<string[]> {
     const res = await root.entries()
@@ -4463,7 +4476,7 @@ class Test:
 				source: `import { Directory, File, object, func, argument } from "@dagger.io/dagger"
 
 @object()
-class Test {
+export class Test {
   @func()
   async dirs(
     @argument({ defaultPath: "/" }) root: Directory,
@@ -4653,7 +4666,7 @@ class Test:
 				sdk: "typescript",
 				source: `import { Directory, File,object, func, argument } from "@dagger.io/dagger"
 @object()
-class Test {
+export class Test {
   @func()
   async tooHighRelativeDirPath(@argument({ defaultPath: "../../../" }) backend: Directory): Promise<string[]> {
     // The engine should throw an error
@@ -5391,17 +5404,21 @@ func modInit(t *testctx.T, c *dagger.Client, sdk, contents string) *dagger.Conta
 
 func withModInit(sdk, contents string) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
-		return ctr.
-			With(daggerExec("init", "--name=test", "--sdk="+sdk)).
-			With(sdkSource(sdk, contents))
+		ctr = ctr.With(daggerExec("init", "--name=test", "--sdk="+sdk))
+		if contents != "" {
+			ctr = ctr.With(sdkSource(sdk, contents))
+		}
+		return ctr
 	}
 }
 
 func withModInitAt(dir, sdk, contents string) dagger.WithContainerFunc {
 	return func(ctr *dagger.Container) *dagger.Container {
-		return ctr.
-			With(daggerExec("init", "--name="+filepath.Base(dir), "--sdk="+sdk, dir)).
-			With(sdkSourceAt(dir, sdk, contents))
+		ctr = ctr.With(daggerExec("init", "--name="+filepath.Base(dir), "--sdk="+sdk, dir))
+		if contents != "" {
+			ctr = ctr.With(sdkSourceAt(dir, sdk, contents))
+		}
+		return ctr
 	}
 }
 

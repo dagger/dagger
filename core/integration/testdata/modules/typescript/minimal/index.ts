@@ -4,7 +4,7 @@ import { object, func } from "@dagger.io/dagger";
  * This is the Minimal object
  */
 @object()
-class Minimal {
+export class Minimal {
   /**
    * This is a field
    */

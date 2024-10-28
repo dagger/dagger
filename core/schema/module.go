@@ -35,6 +35,7 @@ func (s *moduleSchema) Install() {
 		dagql.Func("moduleSource", s.moduleSource).
 			Doc(`Create a new module source instance from a source ref string.`).
 			ArgDoc("refString", `The string ref representation of the module source`).
+			ArgDoc("refPin", `The pinned version of the module source`).
 			ArgDoc("relHostPath", `The relative path to the module root from the host directory`).
 			ArgDoc("stable", `If true, enforce that the source is a stable version for source kinds that support versioning.`),
 
@@ -852,6 +853,9 @@ func (s *moduleSchema) updateDeps(
 	modCfg *modules.ModuleConfig,
 	src dagql.Instance[*core.ModuleSource],
 ) error {
+	ctx, span := core.Tracer(ctx).Start(ctx, "initialize dependencies")
+	defer span.End()
+
 	var deps []dagql.Instance[*core.ModuleDependency]
 	err := s.dag.Select(ctx, src, &deps, dagql.Selector{Field: "dependencies"})
 	if err != nil {
@@ -927,7 +931,7 @@ func (s *moduleSchema) updateDeps(
 	// keep the module config in sync
 	modCfg.Dependencies = make([]*modules.ModuleConfigDependency, len(mod.DependencyConfig))
 	for i, dep := range mod.DependencyConfig {
-		var srcStr string
+		var srcStr, pinStr string
 		switch dep.Source.Self.Kind {
 		case core.ModuleSourceKindLocal:
 			// make it relative to this module's source root
@@ -943,6 +947,7 @@ func (s *moduleSchema) updateDeps(
 
 		case core.ModuleSourceKindGit:
 			srcStr = dep.Source.Self.AsGitSource.Value.RefString()
+			pinStr = dep.Source.Self.AsGitSource.Value.Pin()
 
 		default:
 			return fmt.Errorf("unsupported dependency source kind: %s", dep.Source.Self.Kind)
@@ -957,6 +962,7 @@ func (s *moduleSchema) updateDeps(
 		modCfg.Dependencies[i] = &modules.ModuleConfigDependency{
 			Name:   depName,
 			Source: srcStr,
+			Pin:    pinStr,
 		}
 	}
 
@@ -968,6 +974,9 @@ func (s *moduleSchema) updateCodegenAndRuntime(
 	mod *core.Module,
 	src dagql.Instance[*core.ModuleSource],
 ) error {
+	ctx, span := core.Tracer(ctx).Start(ctx, "build module")
+	defer span.End()
+
 	if mod.NameField == "" || mod.SDKConfig == "" {
 		// can't codegen yet
 		return nil

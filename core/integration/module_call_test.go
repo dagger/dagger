@@ -859,7 +859,6 @@ func (m *Test) ToStatus(status string) Status {
 	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
 		t.Run("module args", func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
-
 			mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
 			defer cleanup()
 
@@ -1921,7 +1920,7 @@ func (CallSuite) TestByName(ctx context.Context, t *testctx.T) {
 			`,
 			).
 			WithWorkdir("/work").
-			With(daggerExec("init")).
+			With(daggerExec("init", "--source=.")).
 			With(daggerExec("install", "--name", "foo", "./mod-a")).
 			With(daggerExec("install", "--name", "bar", "./mod-b"))
 
@@ -1966,7 +1965,7 @@ func (CallSuite) TestByName(ctx context.Context, t *testctx.T) {
 			`,
 			).
 			WithWorkdir("/work").
-			With(daggerExec("init")).
+			With(daggerExec("init", "--source=.")).
 			With(daggerExec("install", "--name", "foo", "/work/mod-a")).
 			With(daggerExec("install", "--name", "bar", "/work/mod-b"))
 
@@ -2029,7 +2028,7 @@ func (CallSuite) TestByName(ctx context.Context, t *testctx.T) {
 			`,
 			).
 			WithWorkdir("/work").
-			With(daggerExec("init")).
+			With(daggerExec("init", "--source=.")).
 			With(daggerExec("install", "--name", "foo", "/outside/mod-a"))
 
 		// call main module at /work path
@@ -2056,7 +2055,7 @@ func (CallSuite) TestByName(ctx context.Context, t *testctx.T) {
 			}
 			`,
 			).
-			With(daggerExec("init")).
+			With(daggerExec("init", "--source=.")).
 			With(daggerExec("install", "--name", "foo", "/work/test@test"))
 
 		// call main module at /work path
@@ -2068,7 +2067,6 @@ func (CallSuite) TestByName(ctx context.Context, t *testctx.T) {
 	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
 		t.Run("git", func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
-
 			mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
 			defer cleanup()
 
@@ -2076,7 +2074,7 @@ func (CallSuite) TestByName(ctx context.Context, t *testctx.T) {
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work").
 				With(mountedSocket).
-				With(daggerExec("init")).
+				With(daggerExec("init", "--source=.")).
 				With(daggerExec("install", "--name", "foo", testGitModuleRef(tc, ""))).
 				With(daggerExec("install", "--name", "bar", testGitModuleRef(tc, "subdir/dep2")))
 
@@ -2093,9 +2091,8 @@ func (CallSuite) TestByName(ctx context.Context, t *testctx.T) {
 
 func (CallSuite) TestGitMod(ctx context.Context, t *testctx.T) {
 	testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
-		c := connect(ctx, t)
-
 		t.Run("go", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
 			mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
 			defer cleanup()
 
@@ -2109,6 +2106,7 @@ func (CallSuite) TestGitMod(ctx context.Context, t *testctx.T) {
 		})
 
 		t.Run("typescript", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
 			mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
 			defer cleanup()
 
@@ -2122,6 +2120,7 @@ func (CallSuite) TestGitMod(ctx context.Context, t *testctx.T) {
 		})
 
 		t.Run("python", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
 			mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
 			defer cleanup()
 
@@ -2432,7 +2431,7 @@ class Test:
 			source: `import { dag, enumType, func, object } from "@dagger.io/dagger"
 
 @enumType()
-class Language {
+export class Language {
   static readonly Go: string = "GO"
   static readonly Python: string = "PYTHON"
   static readonly TypeScript: string = "TYPESCRIPT"

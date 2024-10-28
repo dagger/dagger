@@ -1,11 +1,13 @@
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
+import CodeBlock from '@theme/CodeBlock';
+import { daggerVersion } from './version';
 
 :::info
-The `dagger` CLI is available for installation on macOS, Linux, and Windows to run locally or in a CI environment.
+The Dagger CLI is available for installation on macOS, Linux, and Windows to run locally or in a CI environment.
 :::
 
-Install the `dagger` CLI following the steps below.
+Install the Dagger CLI following the steps below.
 
 <Tabs>
 <TabItem value="macOS">
@@ -16,76 +18,96 @@ We assume that you have [Homebrew](https://brew.sh/) installed. If you do, you c
 brew install dagger/tap/dagger
 ```
 
+:::note
 This installs `dagger` in:
 
 ```shell
 type dagger
-# macOS ARM:
-dagger is /opt/homebrew/bin/dagger
-# macOS Intel:
-dagger is /usr/local/bin/dagger
+# Expected output on macOS ARM:
+# dagger is /opt/homebrew/bin/dagger
+# Expected output on macOS Intel:
+# dagger is /usr/local/bin/dagger
 ```
+:::
 
-If you do not have Homebrew installed, or you want to install a specific version of `dagger`, you can run:
+If you do not have Homebrew installed, you can use [install.sh](https://github.com/dagger/dagger/blob/main/install.sh):
 
-```shell
-cd /usr/local
-curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.13.3 sh
+<CodeBlock language="shell">
+{`curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=/usr/local/bin sh`}
+</CodeBlock>
 
-./bin/dagger version
-dagger v0.13.3 (registry.dagger.io/engine:v0.13.3) darwin/arm64
-```
-[View source](https://github.com/dagger/dagger/blob/main/install.sh)
+If your user account doesn't have sufficient privileges to install in
+`/usr/local` and `sudo` is available, you can set `BIN_DIR` and use `sudo -E`:
 
-If your user account doesn't have sufficient privileges to install in `/usr/local` and `sudo` is available, use the following command instead:
+<CodeBlock language="shell">
+{`curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=/usr/local/bin sudo -E sh`}
+</CodeBlock>
 
-```shell
-cd /usr/local
-curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.13.3 sudo -E sh
-```
+If you want to set a specific version, you can set `DAGGER_VERSION`:
+
+<CodeBlock language="shell">
+{`curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=${daggerVersion} BIN_DIR=/usr/local/bin sh`}
+</CodeBlock>
+
+To see the installed version of dagger:
+
+<CodeBlock language="shell">
+{`./bin/dagger version\n`}
+{`# Expected output: dagger v${daggerVersion} (registry.dagger.io/engine:v${daggerVersion}) darwin/amd64`}
+</CodeBlock>
 
 </TabItem>
 
 <TabItem value="Linux">
 
-The quickest way of installing `dagger` on Linux is to run the following command:
+The quickest way of installing `dagger` on Linux is to use [install.sh](https://github.com/dagger/dagger/blob/main/install.sh):
 
 ```shell
 curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
 ```
-[View source](https://github.com/dagger/dagger/blob/main/install.sh)
 
 :::note
-This installs `dagger` in `$HOME/.local/bin` which is not generally in the user's $PATH
+This installs `dagger` in `$HOME/.local/bin`:
 
 ```shell
 type dagger
-dagger is $HOME/.local/bin/dagger
+# Expected output: dagger is $HOME/.local/bin/dagger
 ```
+
+You may need to add it to your `$PATH` environment variable.
 :::
 
-
-If you want to set a specific version or install path, you can run:
+If you want to install globally, and `sudo` is available, you can specify an
+alternative install location by setting `BIN_DIR` and using `sudo -E`:
 
 ```shell
-curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.13.0 BIN_DIR=/usr/bin sudo -E sh
-
-/usr/bin/dagger version
-dagger v0.13.3 (registry.dagger.io/engine:v0.13.3) linux/amd64
+curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=/usr/local/bin sudo -E sh
 ```
+
+If you want to set a specific version, you can set `DAGGER_VERSION`:
+
+<CodeBlock language="shell">
+{`curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=${daggerVersion} BIN_DIR=$HOME/.local/bin sh`}
+</CodeBlock>
+
+To see the installed version of dagger:
+
+<CodeBlock language="shell">
+{`./bin/dagger version\n`}
+{`# Expected output: dagger v${daggerVersion} (registry.dagger.io/engine:v${daggerVersion}) linux/amd64`}
+</CodeBlock>
 
 </TabItem>
 
 <TabItem value="Windows">
 
-`dagger` can be installed on Windows via a PowerShell 7.0 script.
+The Dagger CLI can be installed on Windows via a PowerShell 7.0 script.
 
-The quickest way of installing `dagger` on Windows is to run the following command:
+The quickest way of installing `dagger` on Windows is to use [install.ps1](https://github.com/dagger/dagger/blob/main/install.ps1):
 
 ```powershell
 Invoke-WebRequest -UseBasicParsing -Uri https://dl.dagger.io/dagger/install.ps1 | Invoke-Expression; Install-Dagger
 ```
-[View source](https://github.com/dagger/dagger/blob/main/install.ps1)
 
 To install Dagger to a custom location, specify the location using the `-InstallPath` parameter.
 
@@ -96,10 +118,10 @@ Install-Dagger -InstallPath C:\tools\dagger
 
 To install a specific version of Dagger, specify the version with the `-DaggerVersion` parameter.
 
-```powershell
-Invoke-WebRequest -UseBasicParsing -Uri https://dl.dagger.io/dagger/install.ps1 | Invoke-Expression;
-Install-Dagger -DaggerVersion 0.13.3
-```
+<CodeBlock language="powershell">
+{`Invoke-WebRequest -UseBasicParsing -Uri https://dl.dagger.io/dagger/install.ps1 | Invoke-Expression;\n`}
+{`Install-Dagger -DaggerVersion ${daggerVersion}`}
+</CodeBlock>
 
 For an interactive installation process, include the `-Interactive` switch.
 

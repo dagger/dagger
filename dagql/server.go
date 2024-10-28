@@ -568,6 +568,30 @@ func CurrentID(ctx context.Context) *call.ID {
 	return val.(*call.ID)
 }
 
+// NewInstanceForCurrentID creates a new Instance that's set to the current ID from
+// the given self value.
+func NewInstanceForCurrentID[P, T Typed](
+	ctx context.Context,
+	srv *Server,
+	parent Instance[P],
+	self T,
+) (Instance[T], error) {
+	objType, ok := srv.ObjectType(self.Type().Name())
+	if !ok {
+		return Instance[T]{}, fmt.Errorf("unknown type %q", self.Type().Name())
+	}
+	class, ok := objType.(Class[T])
+	if !ok {
+		return Instance[T]{}, fmt.Errorf("not a Class: %T", objType)
+	}
+	return Instance[T]{
+		Constructor: CurrentID(ctx),
+		Self:        self,
+		Class:       class,
+		Module:      parent.Module,
+	}, nil
+}
+
 func NoopDone(res Typed, cached bool, rerr error) {}
 
 func (s *Server) cachedSelect(ctx context.Context, self Object, sel Selector) (res Typed, chained *call.ID, rerr error) {

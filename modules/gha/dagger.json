@@ -1,0 +1,12 @@
+{
+  "name": "gha",
+  "sdk": "go",
+  "dependencies": [
+    {
+      "name": "wolfi",
+      "source": "../wolfi"
+    }
+  ],
+  "source": ".",
+  "engineVersion": "v0.13.5"
+}

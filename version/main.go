@@ -6,7 +6,6 @@ package main
 
 import (
 	"context"
-	"dagger/version/internal/dagger"
 	"fmt"
 	"slices"
 	"strconv"
@@ -14,6 +13,8 @@ import (
 	"time"
 
 	"golang.org/x/mod/semver"
+
+	"github.com/dagger/dagger/version/internal/dagger"
 )
 
 func New(
@@ -30,7 +31,7 @@ func New(
 	inputs *dagger.Directory,
 	// +optional
 	// +defaultPath="/"
-	// +ignore=["*", "!.git", "!**/.gitignore"]
+	// +ignore=["*", "!.git", "!**/.gitignore", ".git/config"]
 	gitDir *dagger.Directory,
 	// .changes file used to extract version information
 	// +optional
@@ -40,6 +41,9 @@ func New(
 ) (*Version, error) {
 	// NOTE: uploading the whole git dir is inefficient.
 	// we can stop doing it once dagger/dagger#8520 ships
+
+	// NOTE: .git/config is excluded, since *some* tools (GitHub actions)
+	// produce weird configs with custom headers set
 
 	git, err := git(ctx, gitDir, inputs)
 	if err != nil {
@@ -61,8 +65,10 @@ var ignores = []string{
 type Version struct {
 	Git *Git
 
+	// +private
 	Inputs *dagger.Directory
 
+	// +private
 	Changes *dagger.Directory
 }
 
@@ -94,14 +100,14 @@ func (v Version) Version(ctx context.Context) (string, error) {
 		return fmt.Sprintf("%s-%s-dev-%s", next, pseudoversionTimestamp(time.Time{}), digest[:12]), nil
 	}
 
-	lastVersion, err := v.Git.VersionTagLatest(ctx, "")
+	versionTag, err := v.Git.VersionTagLatest(ctx, "", head.Commit)
 	if err != nil {
 		return "", err
 	}
-	if lastVersion != nil && lastVersion.Commit == head.Commit {
+	if versionTag != nil {
 		// this is a tagged release - we got a release tag for this commit
 		// (v<major>.<minor>.<patch>)
-		return lastVersion.Version, nil
+		return versionTag.Version, nil
 	}
 
 	// this is an untagged release - we didn't find a release tag
@@ -148,14 +154,14 @@ func (v Version) ImageTag(ctx context.Context) (string, error) {
 		return mergeBase.Commit, nil
 	}
 
-	lastVersion, err := v.Git.VersionTagLatest(ctx, "")
+	versionTag, err := v.Git.VersionTagLatest(ctx, "", head.Commit)
 	if err != nil {
 		return "", err
 	}
-	if lastVersion != nil && lastVersion.Commit == head.Commit {
+	if versionTag != nil {
 		// this is a tagged release
 		// (v<major>.<minor>.<patch>)
-		return lastVersion.Version, nil
+		return versionTag.Version, nil
 	}
 
 	// this is an untagged release - get the last commit from main on this branch
@@ -169,7 +175,7 @@ func (v Version) ImageTag(ctx context.Context) (string, error) {
 
 // Determine the last released version.
 func (v Version) LastReleaseVersion(ctx context.Context) (string, error) {
-	tag, err := v.Git.VersionTagLatest(ctx, "")
+	tag, err := v.Git.VersionTagLatest(ctx, "", "")
 	if err != nil {
 		return "", err
 	}
@@ -196,7 +202,7 @@ func (v Version) NextReleaseVersion(ctx context.Context) (string, error) {
 
 	// also try and determine what the last version from git was, so we can
 	// auto-determine a next version from that
-	lastVersion, err := v.Git.VersionTagLatest(ctx, "")
+	lastVersion, err := v.Git.VersionTagLatest(ctx, "", "")
 	if err != nil {
 		return "", err
 	}

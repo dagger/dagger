@@ -46,6 +46,10 @@ type ContainerExecOpts struct {
 
 	// Expand the environment variables in args
 	Expand bool `default:"false"`
+
+	// Skip the init process injected into containers by default so that the
+	// user's process is PID 1
+	NoInit bool `default:"false"`
 }
 
 func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts) (*Container, error) { //nolint:gocyclo
@@ -90,6 +94,13 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 	execMD.SystemEnvNames = container.SystemEnvNames
 	execMD.EnabledGPUs = container.EnabledGPUs
 
+	if opts.NoInit {
+		execMD.NoInit = true
+		// include an env var (which will be removed before the exec actually runs) so that execs with
+		// inits disabled will be cached differently than those with them enabled by buildkit
+		runOpts = append(runOpts, llb.AddEnv(buildkit.DaggerNoInitEnv, "true"))
+	}
+
 	mod, err := container.Query.CurrentModule(ctx)
 	if err == nil {
 		// allow the exec to reach services scoped to the module that
@@ -114,14 +125,17 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 
 		// include the engine version so that these execs get invalidated if the engine/API change
 		runOpts = append(runOpts, llb.AddEnv(buildkit.DaggerEngineVersionEnv, engine.Version))
+	}
 
-		// include a digest of the current call so that we scope of the cache of the ExecOp to this call
+	if execMD.CachePerSession {
+		// include the SessionID here so that we bust cache once-per-session
+		runOpts = append(runOpts, llb.AddEnv(buildkit.DaggerSessionIDEnv, clientMetadata.SessionID))
+	}
+
+	if execMD.CacheByCall {
+		// include a digest of the current call so that we scope of the cache of the ExecOp to this call's args
+		// and receiver values. Currently only used for module function calls.
 		runOpts = append(runOpts, llb.AddEnv(buildkit.DaggerCallDigestEnv, string(dagql.CurrentID(ctx).Digest())))
-
-		if execMD.CachePerSession {
-			// include the SessionID here so that we bust cache once-per-session
-			runOpts = append(runOpts, llb.AddEnv(buildkit.DaggerSessionIDEnv, clientMetadata.SessionID))
-		}
 	}
 
 	metaSt, metaSourcePath := metaMount(ctx, opts.Stdin)
@@ -251,7 +265,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		}
 
 		if mnt.Tmpfs {
-			mountOpts = append(mountOpts, llb.Tmpfs())
+			mountOpts = append(mountOpts, llb.Tmpfs(llb.TmpfsSize(int64(mnt.Size))))
 		}
 
 		if mnt.Readonly {

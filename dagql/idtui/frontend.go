@@ -13,6 +13,8 @@ import (
 	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
 	"go.opentelemetry.io/otel/log"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"golang.org/x/term"
 
@@ -21,13 +23,14 @@ import (
 	"github.com/dagger/dagger/dagql/call/callpbv1"
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/slog"
-	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
 
-type cmdContextKey struct{}
-type cmdContext struct {
-	printTraceLink bool
-}
+type (
+	cmdContextKey struct{}
+	cmdContext    struct {
+		printTraceLink bool
+	}
+)
 
 // WithPrintTraceLink is used for enabling printing the trace link
 // for the selected commands.
@@ -57,18 +60,22 @@ type Frontend interface {
 	// Run starts a frontend, and runs the target function.
 	Run(ctx context.Context, opts dagui.FrontendOpts, f func(context.Context) error) error
 
+	// Opts returns the opts of the currently running frontend.
+	Opts() *dagui.FrontendOpts
+
 	// SetPrimary tells the frontend which span should be treated like the focal
 	// point of the command. Its output will be displayed at the end, and its
 	// children will be promoted to the "top-level" of the TUI.
 	SetPrimary(spanID dagui.SpanID)
-	Background(cmd tea.ExecCommand) error
+	Background(cmd tea.ExecCommand, raw bool) error
 	// RevealAllSpans tells the frontend to show all spans, not just
 	// the spans beneath the primary span.
 	RevealAllSpans()
 
-	// Can consume otel spans and logs.
+	// Can consume otel spans, logs and metrics.
 	SpanExporter() sdktrace.SpanExporter
 	LogExporter() sdklog.Exporter
+	MetricExporter() sdkmetric.Exporter
 
 	// ConnectedToEngine is called when the CLI connects to an engine.
 	ConnectedToEngine(ctx context.Context, name string, version string, clientID string)
@@ -252,6 +259,7 @@ func (r *renderer) renderCall(
 
 	if span != nil {
 		r.renderDuration(out, span)
+		r.renderMetrics(out, span)
 		r.renderCached(out, span)
 	}
 
@@ -282,6 +290,7 @@ func (r *renderer) renderSpan(
 		// TODO: when a span has child spans that have progress, do 2-d progress
 		// fe.renderVertexTasks(out, span, depth)
 		r.renderDuration(out, span)
+		r.renderMetrics(out, span)
 		r.renderCached(out, span)
 	}
 
@@ -383,6 +392,51 @@ func (r *renderer) renderCached(out *termenv.Output, span *dagui.Span) {
 	if !span.IsRunningOrLinksRunning() && span.IsCached() {
 		fmt.Fprintf(out, " %s", out.String("CACHED").
 			Foreground(termenv.ANSIBlue))
+	}
+}
+
+func (r renderer) renderMetrics(out *termenv.Output, span *dagui.Span) {
+	if span.MetricsByName == nil {
+		return
+	}
+
+	if dataPoints := span.MetricsByName[telemetry.IOStatDiskReadBytes]; len(dataPoints) > 0 {
+		lastPoint := dataPoints[len(dataPoints)-1]
+		fmt.Fprint(out, " | ")
+		displayMetric := out.String(fmt.Sprintf("Disk Read Bytes: %d", lastPoint.Value))
+		displayMetric = displayMetric.Foreground(termenv.ANSIGreen)
+		fmt.Fprint(out, displayMetric)
+	}
+	if dataPoints := span.MetricsByName[telemetry.IOStatDiskWriteBytes]; len(dataPoints) > 0 {
+		lastPoint := dataPoints[len(dataPoints)-1]
+		fmt.Fprint(out, " | ")
+		displayMetric := out.String(fmt.Sprintf("Disk Write Bytes: %d", lastPoint.Value))
+		displayMetric = displayMetric.Foreground(termenv.ANSIGreen)
+		fmt.Fprint(out, displayMetric)
+	}
+	if dataPoints := span.MetricsByName[telemetry.IOStatPressureSomeTotal]; len(dataPoints) > 0 {
+		lastPoint := dataPoints[len(dataPoints)-1]
+		if lastPoint.Value != 0 {
+			fmt.Fprint(out, " | ")
+			displayMetric := out.String(fmt.Sprintf("IO Pressure: %dµs", lastPoint.Value))
+			displayMetric = displayMetric.Foreground(termenv.ANSIGreen)
+			fmt.Fprint(out, displayMetric)
+		}
+	}
+
+	if dataPoints := span.MetricsByName[telemetry.CPUStatPressureSomeTotal]; len(dataPoints) > 0 {
+		lastPoint := dataPoints[len(dataPoints)-1]
+		fmt.Fprint(out, " | ")
+		displayMetric := out.String(fmt.Sprintf("CPU Pressure (some): %dµs", lastPoint.Value))
+		displayMetric = displayMetric.Foreground(termenv.ANSIGreen)
+		fmt.Fprint(out, displayMetric)
+	}
+	if dataPoints := span.MetricsByName[telemetry.CPUStatPressureFullTotal]; len(dataPoints) > 0 {
+		lastPoint := dataPoints[len(dataPoints)-1]
+		fmt.Fprint(out, " | ")
+		displayMetric := out.String(fmt.Sprintf("CPU Pressure (full): %dµs", lastPoint.Value))
+		displayMetric = displayMetric.Foreground(termenv.ANSIGreen)
+		fmt.Fprint(out, displayMetric)
 	}
 }
 

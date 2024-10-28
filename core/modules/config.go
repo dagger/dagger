@@ -82,6 +82,9 @@ type ModuleConfigDependency struct {
 
 	// The source ref of the module dependency.
 	Source string `json:"source"`
+
+	// The pinned version of the module dependency.
+	Pin string `json:"pin,omitempty"`
 }
 
 func (depCfg *ModuleConfigDependency) UnmarshalJSON(data []byte) error {

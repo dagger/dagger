@@ -8,14 +8,14 @@
   ],
   "dependencies": [
     {
-      "name": "apko",
-      "source": "github.com/vito/daggerverse/apko@d168f0a3422c4979f8ad5fe9f37ba3bc7f0df0a6"
-    },
-    {
       "name": "dockerd",
       "source": "github.com/kpenfound/dagger-modules/dockerd@57352e06a1cfbcb5307c009d37c0201b2719b935"
+    },
+    {
+      "name": "wolfi",
+      "source": "../../../modules/wolfi"
     }
   ],
   "source": ".",
-  "engineVersion": "v0.13.3"
+  "engineVersion": "v0.13.5"
 }

@@ -1,0 +1,524 @@
+---
+slug: /api/arguments
+---
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Arguments
+
+Dagger Functions, just like regular functions, can accept arguments. In addition to basic types (string, boolean, integer, arrays...), Dagger also defines powerful core types which Dagger Functions can use for their arguments, such as `Directory`, `Container`, `Service`, `Secret`, and many more.
+
+When calling a Dagger Function from the CLI, its arguments are exposed as command-line flags. How the flag is interpreted depends on the argument type.
+
+:::important
+Dagger Functions execute in containers and thus do not have default access to your host environment (host files, directories, environment variables, etc.). Access to these host resources can only be granted by explicitly passing them as argument values to the Dagger Function.
+- Files and directories: Dagger Functions can accept arguments of type `File` or `Directory`. Pass files and directories on your host by specifying their path as the value of the argument when using `dagger call`.
+- Environment variables: Pass environment variable values as argument values when invoking a function by just using the standard shell convention of using `$ENV_VAR_NAME` when using `dagger call`.
+- Local network services: Dagger Functions that accept an argument of type `Service` can be passed local network services in the form `tcp://<host>:<port>`.
+:::
+
+## String arguments
+
+To pass a string argument to a Dagger Function, add the corresponding flag to the `dagger call` command, followed by the string value.
+
+Here is an example of a Dagger Function that accepts a string argument:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+```go file=./snippets/functions/arguments-string/go/main.go
+```
+</TabItem>
+<TabItem value="Python">
+```python file=./snippets/functions/arguments-string/python/main.py
+```
+
+Even though the Python runtime doesn't enforce [type annotations][typing] at runtime,
+it's important to define them with Dagger Functions. The Python SDK needs the
+typing information at runtime to correctly report to the API. It can't rely on
+[type inference][inference], which is only possible for external [static type
+checkers][type-checker].
+
+If a function doesn't have a return type annotation, it'll be declared as `None`,
+which translates to the [dagger.Void][void] type in the API:
+
+```python
+@function
+def hello(self):
+    return "Hello world!"
+
+# Error: cannot convert string to Void
+```
+
+It's fine however, when no value actually needs to be returned:
+
+```python
+@function
+def hello(self):
+    ...
+    # no return
+```
+
+[@function]: https://dagger-io.readthedocs.io/en/latest/module.html#dagger.function
+[@object_type]: https://dagger-io.readthedocs.io/en/latest/module.html#dagger.object_type
+[typing]: https://docs.python.org/3/library/typing.html
+[inference]: https://mypy.readthedocs.io/en/stable/type_inference_and_annotations.html
+[type-checker]: https://realpython.com/python-type-checking/#static-type-checking
+[void]: https://dagger-io.readthedocs.io/en/latest/client.html#dagger.Void
+
+</TabItem>
+<TabItem value="TypeScript">
+```typescript file=./snippets/functions/arguments-string/typescript/index.ts
+```
+</TabItem>
+</Tabs>
+
+Here is an example call for this Dagger Function:
+
+```shell
+dagger call get-user --gender=male
+```
+
+The result will look something like this:
+
+```shell
+{
+  "title": "Mr",
+  "first": "Hans-Werner",
+  "last": "Thielen"
+}
+```
+
+To pass host environment variables as arguments when invoking a Dagger Function, use the standard shell convention of `$ENV_VAR_NAME` when using `dagger call`.
+
+Here is an example of passing a host environment variable containing a string value to a Dagger Function:
+
+```shell
+export GREETING=bonjour
+dagger -m github.com/shykes/daggerverse/hello@v0.3.0 call hello --greeting=$GREETING
+```
+
+## Boolean arguments
+
+To pass a Boolean argument to a Dagger Function, simply add the corresponding flag, like so:
+
+- To set the argument to true: `--foo=true`, or simply `--foo`
+- To set the argument to false: `--foo=false`
+
+Here is an example of a Dagger Function that accepts a Boolean argument:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+```go file=./snippets/functions/arguments-boolean/go/main.go
+```
+</TabItem>
+<TabItem value="Python">
+```python file=./snippets/functions/arguments-boolean/python/main.py
+```
+</TabItem>
+<TabItem value="TypeScript">
+```typescript file=./snippets/functions/arguments-boolean/typescript/index.ts
+```
+</TabItem>
+</Tabs>
+
+Here is an example call for this Dagger Function:
+
+```shell
+dagger call hello --shout=true
+```
+
+The result will look like this:
+
+```shell
+HELLO, WORLD
+```
+
+## Directory arguments
+
+You can also pass a directory argument from the command-line. To do so, add the corresponding flag, followed by a local filesystem path or a remote Git reference. In both cases, the CLI will convert it to an object referencing the contents of that filesystem path or Git repository location, and pass the resulting `Directory` object as argument to the Dagger Function.
+
+### Local directories
+
+Dagger Functions do not have access to the filesystem of the host you invoke the Dagger Function from (i.e. the host you execute a CLI command like `dagger call` from). Instead, host directories need to be explicitly passed as arguments to Dagger Functions.
+
+Here's an example of a Dagger Function that accepts a `Directory` as argument. The Dagger Function returns a tree representation of the files and directories at that path.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+```go file=./snippets/functions/arguments-directory/go/main.go
+```
+</TabItem>
+<TabItem value="Python">
+```python file=./snippets/functions/arguments-directory/python/main.py
+```
+</TabItem>
+<TabItem value="TypeScript">
+```typescript file=./snippets/functions/arguments-directory/typescript/index.ts
+```
+</TabItem>
+</Tabs>
+
+Here is an example of passing a local directory to this Dagger Function as argument:
+
+```shell
+mkdir -p mydir/mysubdir
+touch mydir/a mydir/b mydir/c mydir/mysubdir/y mydir/mysubdir/z
+dagger call tree --src=mydir --depth=2
+```
+
+The result will look like this:
+
+```shell
+.
+├── a
+├── b
+├── c
+└── mysubdir
+    ├── y
+    └── z
+
+2 directories, 5 files
+```
+
+### Remote repositories
+
+Dagger supports the use of HTTP and SSH protocols for accessing remote repositories, compatible with all major Git hosting platforms such as GitHub, GitLab, BitBucket, Azure DevOps, Codeberg, and Sourcehut. For SSH references ("refs"), Dagger employs a unified authentication approach.
+
+Dagger supports the following reference schemes for directory arguments:
+
+| Protocol | Scheme     | Public repositories | Private repositories | Example |
+|----------|------------|---------------------|----------------------|---------|
+| HTTP(S)  | Git HTTP   | Supported | In progress | `https://github.com/username/repo.git[#version[:subdir]]` |
+| SSH      | Explicit   | Supported | Supported | `ssh://git@github.com/username/repo.git[#version[:subdir]]` |
+| SSH      | SCP-like   | Supported | Supported | `git@github.com:username/repo.git[#version[:subdir]]`     |
+
+:::note
+The reference scheme for directory arguments is currently under discussion [here](https://github.com/dagger/dagger/issues/6957) and [here](https://github.com/dagger/dagger/issues/6944) and may change in future.
+:::
+
+Dagger provides additional flexibility in referencing directory arguments through the following options:
+
+- Version specification: Add `#version` to target a particular version of the repository. This can be a tag, branch name, or full commit hash. If omitted, the default branch is used.
+- Monorepo support: Append `:subpath` after the version specification to access a specific subdirectory within the repository. Note that specifying a version is mandatory when including a subpath.
+
+:::important
+When referencing a specific subdirectory (subpath) within a repository, you must always include a version specification. The format is always `#version:subpath`.
+:::
+
+Here is an example of passing a remote repository (Dagger's open-source repository) over HTTPS as a `Directory` argument:
+
+```shell
+dagger core container \
+  from --address=alpine:latest \
+  with-directory --path=/src --directory=https://github.com/dagger/dagger \
+  with-exec --args="ls","/src" \
+  stdout
+```
+
+In addition to supporting HTTP(S) access for public repositories, Dagger also supports the use of SSH for both public and private repositories. Note that this requires [SSH authentication to be properly configured](./remote-modules.mdx#configuring-ssh-authentication) on your Dagger host. Here is the same example, this time using SSH:
+
+```shell
+dagger core container \
+  from --address=alpine:latest \
+  with-directory --path=/src --directory=ssh://git@github.com/dagger/dagger \
+  with-exec --args="ls","/src" \
+  stdout
+```
+
+For more information, refer to the [documentation on configuring SSH authentication for remote repositories, best practices, and current limitations](./remote-modules.mdx).
+
+## Container arguments
+
+Just like directories, you can pass a container to a Dagger Function from the command-line. To do so, add the corresponding flag, followed by the address of an OCI image. The CLI will dynamically pull the image, and pass the resulting `Container` object as argument to the Dagger Function.
+
+Here is an example of a Dagger Function that accepts a container image reference as an argument. The Dagger Function returns operating system information for the container.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+```go file=./snippets/functions/arguments-container/go/main.go
+```
+</TabItem>
+<TabItem value="Python">
+```python file=./snippets/functions/arguments-container/python/main.py
+```
+</TabItem>
+<TabItem value="TypeScript">
+```typescript file=./snippets/functions/arguments-container/typescript/index.ts
+```
+</TabItem>
+</Tabs>
+
+
+Here is an example of passing a container image reference to this Dagger Function as an argument.
+
+```shell
+dagger call os-info --ctr=ubuntu:latest
+```
+
+The result will look like this:
+
+```shell
+Linux buildkitsandbox 6.1.0-22-cloud-amd64 #1 SMP PREEMPT_DYNAMIC Debian 6.1.94-1 (2024-06-21) x86_64 x86_64 x86_64 GNU/Linux
+```
+
+Here is another example of passing a container image reference to a Dagger Function as an argument. The Dagger Function scans the container using Trivy and reports any vulnerabilities found.
+
+```shell
+dagger -m github.com/jpadams/daggerverse/trivy@v0.3.0 call scan-container --ctr=index.docker.io/alpine:latest
+```
+
+## Secret arguments
+
+Dagger allows you to utilize confidential information, such as passwords, API keys, SSH keys and so on, in your Dagger [modules](../features/modules.mdx) and Dagger Functions, without exposing those secrets in plaintext logs, writing them into the filesystem of containers you're building, or inserting them into the cache.
+
+Secrets can be passed to Dagger Functions as arguments using the `Secret` core type. Here is an example of a Dagger Function which accepts a GitHub personal access token as a secret, and uses the token to authorize a request to the GitHub API:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=../cookbook/snippets/secret-variable/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=../cookbook/snippets/secret-variable/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=../cookbook/snippets/secret-variable/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+The result will be a JSON-formatted list of issues from Dagger's repository.
+
+When invoking the Dagger Function using the Dagger CLI, secrets can be sourced from host environment variables (`env:`), the host filesystem (`file:`) or the result of host command execution (`cmd:`).
+
+Here is an example call for this Dagger Function, with the secret sourced from a host environment variable named `GITHUB_API_TOKEN`:
+
+```shell
+dagger call github-api --token=env:GITHUB_API_TOKEN
+```
+
+Secrets can also be passed from a host file using the `file` source:
+
+```shell
+dagger call github-api --token=file:./github.txt
+```
+
+...or as the result of executing a command on the host using the `cmd` source:
+
+```shell
+dagger call github-api --token=cmd:"gh auth token"
+```
+
+## Service arguments
+
+Host network services or sockets can be passed to Dagger Functions as arguments. To do so, add the corresponding flag, followed by a service or socket reference.
+
+### TCP and UDP services
+
+To pass host TCP or UDP network services as arguments when invoking a Dagger Function, specify them in the form `tcp://<host>:<port>` or `udp://<host>:<port>`.
+
+Assume that you have a PostgresQL database running locally on port 5432, as with:
+
+```shell
+docker run -d -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres
+```
+
+Here is an example of passing this host service as argument to a PostgreSQL client Dagger Function, which drops you to a prompt from where you can execute SQL queries:
+
+```shell
+dagger -m github.com/kpenfound/dagger-modules/postgres@v0.1.0 call client --db=postgres --user=postgres --password=postgres --server=tcp://localhost:5432
+```
+
+### Unix sockets
+
+Similar to host TCP/UDP services, Dagger Functions can also be granted access to host Unix sockets when the client is running on Linux or MacOS.
+
+To pass host Unix sockets as arguments when invoking a Dagger Function, specify them by their path on the host.
+
+For example, assuming you have Docker on your host with the Docker daemon listening on a Unix socket at `/var/run/docker.sock`, you can pass this socket to a Docker client Dagger Function as follows:
+
+```shell
+dagger -m github.com/sipsma/daggerverse/docker-client@v0.0.1 call --sock=/var/run/docker.sock version
+```
+
+## Optional arguments
+
+Function arguments can be marked as optional. In this case, the Dagger CLI will not display an error if the argument is omitted in the function call.
+
+Here's an example of a Dagger Function with an optional argument:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+```go file=./snippets/functions/arguments-optional/go/main.go
+```
+</TabItem>
+<TabItem value="Python">
+```python file=./snippets/functions/arguments-optional/python/main.py
+```
+</TabItem>
+<TabItem value="TypeScript">
+```typescript file=./snippets/functions/arguments-optional/typescript/index.ts
+```
+</TabItem>
+</Tabs>
+
+Here is an example call for this Dagger Function, with the optional argument:
+
+```shell
+dagger call hello --name=John
+```
+
+The result will look like this:
+
+```shell
+Hello, John
+```
+
+Here is an example call for this Dagger Function, without the optional argument:
+
+```shell
+dagger call hello
+```
+
+The result will look like this:
+
+```shell
+Hello, world
+```
+
+## Default values
+
+Function arguments can define a default value if no value is supplied for them.
+
+Here's an example of a Dagger Function with a default value for a string argument:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+```go file=./snippets/functions/arguments-default-string/go/main.go
+```
+</TabItem>
+<TabItem value="Python">
+```python file=./snippets/functions/arguments-default-string/python/main.py
+```
+</TabItem>
+<TabItem value="TypeScript">
+```typescript file=./snippets/functions/arguments-default-string/typescript/index.ts
+```
+</TabItem>
+</Tabs>
+
+Here is an example call for this Dagger Function, without the required argument:
+
+```shell
+dagger call hello
+```
+
+The result will look like this:
+
+```shell
+Hello, world
+```
+
+### Directories and files
+
+It is possible to automatically load a filesystem path as a `Directory` or `File` object in a Dagger Function, by passing it as a default context to the corresponding argument. The `Directory` or `File` loaded in this manner is not merely a string, but it is the actual filesystem state of the specified directory or file, managed by the Dagger Engine and handled in code just like any another variable.
+
+:::important
+Default contexts are only available for arguments of type `Directory` and `File`. They are commonly used to load constant filesystem locations, such as an application's source code directory.
+:::
+
+The default context is resolved as follows:
+- If an absolute path is specified:
+   - in a Git repository (defined by the presence of a `.git` sub-directory), the default context is the root of the Git repository.
+   - in a non-repository location (defined by the absence of a `.git` sub-directory), the default context is the directory containing a `dagger.json` file.
+- If a relative path is specified
+  - the default context is always the directory containing a `dagger.json` file.
+
+The best way to understand this is with an example. Consider the following directory structure, representing a project with a Dagger module in `my-module`:
+
+```shell
+.
+├── README.md
+├── my-module
+│   ├── dagger.json
+│   ├── ...
+│   └── src
+│       └── main
+├── index.html
+├── public
+│   └── ...
+├── src
+│   └── ...
+```
+
+Here are two Dagger Functions with default contexts for their directory and file arguments:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+The default context is set by adding a `defaultPath` pragma on the corresponding Dagger Function argument.
+
+```go file=./snippets/functions/arguments-context-dir-file/go/main.go
+```
+</TabItem>
+<TabItem value="Python">
+
+The default context is set by adding a `DefaultPath` annotation on the corresponding Dagger Function argument.
+
+```python file=./snippets/functions/arguments-context-dir-file/python/main.py
+```
+</TabItem>
+<TabItem value="TypeScript">
+
+The default context is set by adding an `@argument` decorator with a `defaultPath` parameter on the corresponding Dagger Function argument.
+
+```typescript file=./snippets/functions/arguments-context-dir-file/typescript/index.ts
+```
+</TabItem>
+</Tabs>
+
+The following table describes how the arguments are resolved for differing values of the default context and differing directory types.
+
+For a Git repository:
+
+| Default context ('defaultPath`) | Dagger Function invocation | `source` resolves to |
+| --- | --- | --- |
+| `/` | `dagger call -m my-module read-dir` | `/` |
+| `/src` | `dagger call -m my-module read-dir` | `/src` |
+| `.` | `dagger call -m my-module read-dir` | `/my-module` |
+| `..` | `dagger call -m my-module read-dir` | `/` |
+| `/README.md` | `dagger call -m my-module read-file` | `/README.md` |
+| `./README.md` | `dagger call -m my-module read-file` | Error: file does not exist |
+| `../README.md` | `dagger call -m my-module read-file` | `/README.md` |
+
+For a non-Git directory:
+
+| Default context ('defaultPath`) | Dagger Function invocation | `source` resolves to |
+| --- | --- | --- |
+| `/` | `dagger call -m my-module read-dir` | `/my-module` |
+| `/src` | `dagger call -m my-module read-dir` | `/my-module/src` |
+| `.` | `dagger call -m my-module read-dir` | `/my-module` |
+| `..` | `dagger call -m my-module read-dir` | Error: escaping default context directory root is not allowed |
+| `/README.md` | `dagger call -m my-module read-file` | Error: file does not exist |
+| `./README.md` | `dagger call -m my-module read-file` | Error: file does not exist |
+| `../README.md` | `dagger call -m my-module read-file` | Error: escaping default context directory root is not allowed |
+
+If a value is explicitly passed to the Dagger Function argument, it always overrides the default context.
+
+| Default context ('defaultPath`) | Dagger Function invocation | `source` resolves to |
+| --- | --- | --- |
+| `/` | `dagger call -m my-module read-dir --source=public` | `/public` |
+| `/src` | `dagger call -m my-module read-dir --source=public` | `/public` |
+| `.` | `dagger call -m my-module read-dir --source=public` | `/public` |
+| `..` | `dagger call -m my-module read-dir --source=public` | `/public` |
+
+:::tip
+It's also possible to provide an `ignore` parameter to a contextual argument of type `Directory` to [automatically ignore or include files in the directory](./fs-filters.mdx). The `ignore` parameter follows the [`.gitignore` syntax](https://git-scm.com/docs/gitignore): prefixing a path with `!` will actually include it instead of ignoring it.
+:::

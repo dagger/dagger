@@ -176,7 +176,7 @@ func (dir *Directory) Terminal(
 		if err != nil {
 			return fmt.Errorf("failed to create terminal container: %w", err)
 		}
-		ctr, err = ctr.From(ctx, defaultTerminalImage)
+		ctr, err = ctr.FromRefString(ctx, defaultTerminalImage)
 		if err != nil {
 			return fmt.Errorf("failed to create terminal container: %w", err)
 		}

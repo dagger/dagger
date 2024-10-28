@@ -58,6 +58,21 @@ func (q *Queries) InsertLog(ctx context.Context, arg InsertLogParams) (int64, er
 	return id, err
 }
 
+const insertMetric = `-- name: InsertMetric :one
+INSERT INTO metrics (
+    data
+) VALUES (
+    ?
+) RETURNING id
+`
+
+func (q *Queries) InsertMetric(ctx context.Context, data []byte) (int64, error) {
+	row := q.db.QueryRowContext(ctx, insertMetric, data)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
 const insertSpan = `-- name: InsertSpan :one
 INSERT INTO spans (
     trace_id,
@@ -180,8 +195,39 @@ func (q *Queries) SelectLogsSince(ctx context.Context, arg SelectLogsSinceParams
 	return items, nil
 }
 
-const selectSpansSince = `-- name: SelectSpansSince :many
+const selectMetricsSince = `-- name: SelectMetricsSince :many
+SELECT id, data FROM metrics WHERE id > ? ORDER BY id ASC LIMIT ?
+`
 
+type SelectMetricsSinceParams struct {
+	ID    int64
+	Limit int64
+}
+
+func (q *Queries) SelectMetricsSince(ctx context.Context, arg SelectMetricsSinceParams) ([]Metric, error) {
+	rows, err := q.db.QueryContext(ctx, selectMetricsSince, arg.ID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Metric
+	for rows.Next() {
+		var i Metric
+		if err := rows.Scan(&i.ID, &i.Data); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectSpansSince = `-- name: SelectSpansSince :many
 SELECT id, trace_id, span_id, trace_state, parent_span_id, flags, name, kind, start_time, end_time, attributes, dropped_attributes_count, events, dropped_events_count, links, dropped_links_count, status_code, status_message, instrumentation_scope, resource, resource_schema_url FROM spans WHERE id > ? ORDER BY id ASC LIMIT ?
 `
 
@@ -190,16 +236,6 @@ type SelectSpansSinceParams struct {
 	Limit int64
 }
 
-// -- name: InsertMetric :one
-// INSERT INTO metrics (
-//
-//	name, description, unit, type, timestamp, data_points
-//
-// ) VALUES (
-//
-//	?, ?, ?, ?, ?, ?
-//
-// ) RETURNING id;
 func (q *Queries) SelectSpansSince(ctx context.Context, arg SelectSpansSinceParams) ([]Span, error) {
 	rows, err := q.db.QueryContext(ctx, selectSpansSince, arg.ID, arg.Limit)
 	if err != nil {

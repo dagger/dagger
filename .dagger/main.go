@@ -4,7 +4,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -14,9 +13,11 @@ import (
 
 // A dev environment for the DaggerDev Engine
 type DaggerDev struct {
-	Src     *dagger.Directory // +private
+	Src *dagger.Directory // +private
+
 	Version string
 	Tag     string
+	Git     *dagger.VersionGit // +private
 
 	// When set, module codegen is automatically applied when retrieving the Dagger source code
 	ModCodegen        bool
@@ -25,10 +26,6 @@ type DaggerDev struct {
 	// Can be used by nested clients to forward docker credentials to avoid
 	// rate limits
 	DockerCfg *dagger.Secret // +private
-
-	// +private
-	GitRef string
-	GitDir *dagger.Directory
 }
 
 func New(
@@ -38,18 +35,8 @@ func New(
 	// +ignore=["bin", ".git", "**/node_modules", "**/.venv", "**/__pycache__"]
 	source *dagger.Directory,
 
-	// Git directory, for metadata introspection
-	// +optional
-	// +defaultPath="/"
-	// +ignore=["*", "!.git"]
-	gitDir *dagger.Directory,
-
 	// +optional
 	dockerCfg *dagger.Secret,
-
-	// Git ref (used for test-publish checks)
-	// +optional
-	ref string,
 ) (*DaggerDev, error) {
 	v := dag.Version()
 	version, err := v.Version(ctx)
@@ -60,13 +47,13 @@ func New(
 	if err != nil {
 		return nil, err
 	}
+
 	dev := &DaggerDev{
 		Src:       source,
 		Tag:       tag,
+		Git:       v.Git(),
 		Version:   version,
 		DockerCfg: dockerCfg,
-		GitRef:    ref,
-		GitDir:    gitDir,
 	}
 
 	modules, err := dev.containing(ctx, "dagger.json")
@@ -91,30 +78,6 @@ func (dev *DaggerDev) WithModCodegen() *DaggerDev {
 	clone := *dev
 	clone.ModCodegen = true
 	return &clone
-}
-
-func (dev *DaggerDev) Ref(ctx context.Context) (string, error) {
-	// Said .git introspection logic:
-	ref, err := dag.
-		Wolfi().
-		Container(dagger.WolfiContainerOpts{Packages: []string{"git"}}).
-		WithMountedDirectory("/src", dev.GitDir).
-		WithWorkdir("/src").
-		WithMountedFile("/bin/get-ref.sh", dag.CurrentModule().Source().File("get-ref.sh")).
-		WithExec([]string{"sh", "/bin/get-ref.sh"}).
-		Stdout(ctx)
-	if err != nil {
-		return "", err
-	}
-	ref = strings.TrimRight(ref, "\n")
-	fmt.Printf("git ref: from $GITHUB_REF='%s', from .git='%s'\n", dev.GitRef, ref)
-	// FIXME: this shouldn't be needed.
-	//  but at the moment it is, because introspection from .git
-	//  doesn't work with TestPublish() for some reason.
-	if (dev.GitRef != "") && (ref != dev.GitRef) {
-		return dev.GitRef, nil
-	}
-	return ref, nil
 }
 
 // Develop the Dagger CLI
@@ -171,7 +134,9 @@ type GoToolchain struct {
 }
 
 func (gtc *GoToolchain) Env() *dagger.Container {
-	return gtc.Go.Env()
+	return gtc.Go.Env(dagger.GoEnvOpts{
+		ExtraPackages: []string{"protoc~3.21.12"},
+	})
 }
 
 func (gtc *GoToolchain) Lint(
@@ -219,6 +184,11 @@ func (dev *DaggerDev) Helm() *Helm {
 	return &Helm{Dagger: dev, Source: dev.Source().Directory("helm/dagger")}
 }
 
+// Run Dagger release-related tasks
+func (dev *DaggerDev) Release() *Release {
+	return &Release{SDK: dev.SDK(), Helm: dev.Helm(), Docs: dev.Docs()}
+}
+
 // Creates a dev container that has a running CLI connected to a dagger engine
 func (dev *DaggerDev) Dev(
 	ctx context.Context,
@@ -231,12 +201,15 @@ func (dev *DaggerDev) Dev(
 	// Enable experimental GPU support
 	// +optional
 	gpuSupport bool,
+	// Share cache globally
+	// +optional
+	sharedCache bool,
 ) (*dagger.Container, error) {
 	if target == nil {
 		target = dag.Directory()
 	}
 
-	svc, err := dev.Engine().Service(ctx, "", image, gpuSupport)
+	svc, err := dev.Engine().Service(ctx, "", image, gpuSupport, sharedCache)
 	if err != nil {
 		return nil, err
 	}

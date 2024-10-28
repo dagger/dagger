@@ -1,7 +1,7 @@
 import { object, func } from "@dagger.io/dagger";
 
 @object()
-class Test {
+export class Test {
   @func()
   fn(): CustomObject {
     return new CustomObject("NOOOO!!!!");
@@ -9,7 +9,7 @@ class Test {
 }
 
 @object()
-class CustomObject {
+export class CustomObject {
   @func()
   ID: string;
 
