@@ -269,7 +269,7 @@ base_url() {
   arch="$(uname_arch)"
   if [ -n "$DAGGER_COMMIT" ]; then
     path="main/${DAGGER_COMMIT}"
-  elif [ -n "$DAGGER_VERSION" ]; then
+  elif [ -n "$DAGGER_VERSION" ] && [ "$DAGGER_VERSION" != "latest" ]; then
     path="releases/${DAGGER_VERSION}"
   else
     path="releases/$(latest_version)"
@@ -283,7 +283,7 @@ tarball() {
   arch="$(uname_arch)"
   if [ -n "$DAGGER_COMMIT" ]; then
     version="${DAGGER_COMMIT}"
-  elif [ -n "$DAGGER_VERSION" ]; then
+  elif [ -n "$DAGGER_VERSION" ] && [ "$DAGGER_VERSION" != "latest" ]; then
     version="v${DAGGER_VERSION}"
   else
     version="v$(latest_version)"
