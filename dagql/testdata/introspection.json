@@ -7,7 +7,8 @@
       {
         "kind": "SCALAR",
         "name": "Boolean",
-        "description": "The `Boolean` scalar type represents `true` or `false`."
+        "description": "The `Boolean` scalar type represents `true` or `false`.",
+        "directives": []
       },
       {
         "kind": "ENUM",
@@ -18,43 +19,51 @@
             "name": "UP",
             "description": "Upward.",
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "DOWN",
             "description": "Downward.",
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "LEFT",
             "description": "Leftward.",
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "RIGHT",
             "description": "Rightward.",
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "INERT",
             "description": "No direction.",
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           }
-        ]
+        ],
+        "directives": []
       },
       {
         "kind": "SCALAR",
         "name": "Float",
-        "description": "The `Float` scalar type represents signed double-precision fractional values as specified by [IEEE 754](http://en.wikipedia.org/wiki/IEEE_floating_point)."
+        "description": "The `Float` scalar type represents signed double-precision fractional values as specified by [IEEE 754](http://en.wikipedia.org/wiki/IEEE_floating_point).",
+        "directives": []
       },
       {
         "kind": "SCALAR",
         "name": "Int",
-        "description": "The `Int` scalar type represents non-fractional signed whole numeric values. Int can represent values between -(2^31) and 2^31 - 1."
+        "description": "The `Int` scalar type represents non-fractional signed whole numeric values. Int can represent values between -(2^31) and 2^31 - 1.",
+        "directives": []
       },
       {
         "kind": "OBJECT",
@@ -72,7 +81,18 @@
             },
             "args": [],
             "isDeprecated": true,
-            "deprecationReason": "use something else"
+            "deprecationReason": "use something else",
+            "directives": [
+              {
+                "name": "deprecated",
+                "args": [
+                  {
+                    "name": "reason",
+                    "value": "use something else"
+                  }
+                ]
+              }
+            ]
           },
           {
             "name": "field",
@@ -86,7 +106,8 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "id",
@@ -100,14 +121,17 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           }
-        ]
+        ],
+        "directives": []
       },
       {
         "kind": "SCALAR",
         "name": "IntrospectTestID",
-        "description": "The `IntrospectTestID` scalar type represents an identifier for an object of type IntrospectTest."
+        "description": "The `IntrospectTestID` scalar type represents an identifier for an object of type IntrospectTest.",
+        "directives": []
       },
       {
         "kind": "OBJECT",
@@ -126,7 +150,8 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "from",
@@ -140,7 +165,8 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "id",
@@ -154,7 +180,8 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "length",
@@ -168,7 +195,8 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "to",
@@ -182,14 +210,17 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           }
-        ]
+        ],
+        "directives": []
       },
       {
         "kind": "SCALAR",
         "name": "LineID",
-        "description": "The `LineID` scalar type represents an identifier for an object of type Line."
+        "description": "The `LineID` scalar type represents an identifier for an object of type Line.",
+        "directives": []
       },
       {
         "kind": "OBJECT",
@@ -208,7 +239,8 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "line",
@@ -233,11 +265,13 @@
                   }
                 },
                 "isDeprecated": false,
-                "deprecationReason": ""
+                "deprecationReason": "",
+                "directives": []
               }
             ],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "neighbors",
@@ -257,7 +291,8 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "self",
@@ -271,7 +306,8 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "shift",
@@ -296,7 +332,8 @@
                   }
                 },
                 "isDeprecated": false,
-                "deprecationReason": ""
+                "deprecationReason": "",
+                "directives": []
               },
               {
                 "name": "amount",
@@ -307,11 +344,13 @@
                   "name": "Int"
                 },
                 "isDeprecated": false,
-                "deprecationReason": ""
+                "deprecationReason": "",
+                "directives": []
               }
             ],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "shiftLeft",
@@ -333,11 +372,13 @@
                   "name": "Int"
                 },
                 "isDeprecated": false,
-                "deprecationReason": ""
+                "deprecationReason": "",
+                "directives": []
               }
             ],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "x",
@@ -351,7 +392,8 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "y",
@@ -365,14 +407,17 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           }
-        ]
+        ],
+        "directives": []
       },
       {
         "kind": "SCALAR",
         "name": "PointID",
-        "description": "The `PointID` scalar type represents an identifier for an object of type Point."
+        "description": "The `PointID` scalar type represents an identifier for an object of type Point.",
+        "directives": []
       },
       {
         "kind": "OBJECT",
@@ -401,11 +446,13 @@
                   }
                 },
                 "isDeprecated": false,
-                "deprecationReason": ""
+                "deprecationReason": "",
+                "directives": []
               }
             ],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "argDocChain",
@@ -430,11 +477,13 @@
                   }
                 },
                 "isDeprecated": false,
-                "deprecationReason": ""
+                "deprecationReason": "",
+                "directives": []
               }
             ],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "deprecatedArg",
@@ -459,11 +508,23 @@
                   }
                 },
                 "isDeprecated": true,
-                "deprecationReason": "use something else"
+                "deprecationReason": "use something else",
+                "directives": [
+                  {
+                    "name": "deprecated",
+                    "args": [
+                      {
+                        "name": "reason",
+                        "value": "use something else"
+                      }
+                    ]
+                  }
+                ]
               }
             ],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "deprecatedArgChain",
@@ -488,11 +549,23 @@
                   }
                 },
                 "isDeprecated": true,
-                "deprecationReason": "because I said so"
+                "deprecationReason": "because I said so",
+                "directives": [
+                  {
+                    "name": "deprecated",
+                    "args": [
+                      {
+                        "name": "reason",
+                        "value": "because I said so"
+                      }
+                    ]
+                  }
+                ]
               }
             ],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "deprecatedField",
@@ -517,11 +590,23 @@
                   }
                 },
                 "isDeprecated": false,
-                "deprecationReason": ""
+                "deprecationReason": "",
+                "directives": []
               }
             ],
             "isDeprecated": true,
-            "deprecationReason": "use something else\n\nanother para"
+            "deprecationReason": "use something else\n\nanother para",
+            "directives": [
+              {
+                "name": "deprecated",
+                "args": [
+                  {
+                    "name": "reason",
+                    "value": "use something else\n\nanother para"
+                  }
+                ]
+              }
+            ]
           },
           {
             "name": "fieldDoc",
@@ -535,7 +620,8 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "impureField",
@@ -549,7 +635,18 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": [
+              {
+                "name": "impure",
+                "args": [
+                  {
+                    "name": "reason",
+                    "value": "Because I said so."
+                  }
+                ]
+              }
+            ]
           },
           {
             "name": "loadIntrospectTestFromID",
@@ -574,11 +671,23 @@
                   }
                 },
                 "isDeprecated": false,
-                "deprecationReason": ""
+                "deprecationReason": "",
+                "directives": []
               }
             ],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": [
+              {
+                "name": "impure",
+                "args": [
+                  {
+                    "name": "reason",
+                    "value": "The given ID ultimately determines the purity of its result."
+                  }
+                ]
+              }
+            ]
           },
           {
             "name": "loadLineFromID",
@@ -603,11 +712,23 @@
                   }
                 },
                 "isDeprecated": false,
-                "deprecationReason": ""
+                "deprecationReason": "",
+                "directives": []
               }
             ],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": [
+              {
+                "name": "impure",
+                "args": [
+                  {
+                    "name": "reason",
+                    "value": "The given ID ultimately determines the purity of its result."
+                  }
+                ]
+              }
+            ]
           },
           {
             "name": "loadPointFromID",
@@ -632,11 +753,23 @@
                   }
                 },
                 "isDeprecated": false,
-                "deprecationReason": ""
+                "deprecationReason": "",
+                "directives": []
               }
             ],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": [
+              {
+                "name": "impure",
+                "args": [
+                  {
+                    "name": "reason",
+                    "value": "The given ID ultimately determines the purity of its result."
+                  }
+                ]
+              }
+            ]
           },
           {
             "name": "metaField",
@@ -650,7 +783,13 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": [
+              {
+                "name": "meta",
+                "args": []
+              }
+            ]
           },
           {
             "name": "point",
@@ -672,7 +811,8 @@
                   "name": "Int"
                 },
                 "isDeprecated": false,
-                "deprecationReason": ""
+                "deprecationReason": "",
+                "directives": []
               },
               {
                 "name": "y",
@@ -683,18 +823,101 @@
                   "name": "Int"
                 },
                 "isDeprecated": false,
-                "deprecationReason": ""
+                "deprecationReason": "",
+                "directives": []
               }
             ],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           }
-        ]
+        ],
+        "directives": []
       },
       {
         "kind": "SCALAR",
         "name": "String",
-        "description": "The `String` scalar type represents textual data, represented as UTF-8 character sequences. The String type is most often used by GraphQL to represent free-form human-readable text."
+        "description": "The `String` scalar type represents textual data, represented as UTF-8 character sequences. The String type is most often used by GraphQL to represent free-form human-readable text.",
+        "directives": []
+      },
+      {
+        "kind": "OBJECT",
+        "name": "_DirectiveApplication",
+        "description": "A GraphQL schema directive application.",
+        "fields": [
+          {
+            "name": "args",
+            "description": "",
+            "type": {
+              "kind": "NON_NULL",
+              "ofType": {
+                "kind": "LIST",
+                "ofType": {
+                  "kind": "NON_NULL",
+                  "ofType": {
+                    "kind": "OBJECT",
+                    "name": "_DirectiveApplicationArg"
+                  }
+                }
+              }
+            },
+            "args": [],
+            "isDeprecated": false,
+            "deprecationReason": "",
+            "directives": []
+          },
+          {
+            "name": "name",
+            "description": "",
+            "type": {
+              "kind": "NON_NULL",
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "String"
+              }
+            },
+            "args": [],
+            "isDeprecated": false,
+            "deprecationReason": "",
+            "directives": []
+          }
+        ],
+        "directives": []
+      },
+      {
+        "kind": "OBJECT",
+        "name": "_DirectiveApplicationArg",
+        "description": "A GraphQL schema directive application arg.",
+        "fields": [
+          {
+            "name": "name",
+            "description": "",
+            "type": {
+              "kind": "NON_NULL",
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "String"
+              }
+            },
+            "args": [],
+            "isDeprecated": false,
+            "deprecationReason": "",
+            "directives": []
+          },
+          {
+            "name": "value",
+            "description": "",
+            "type": {
+              "kind": "SCALAR",
+              "name": "String"
+            },
+            "args": [],
+            "isDeprecated": false,
+            "deprecationReason": "",
+            "directives": []
+          }
+        ],
+        "directives": []
       },
       {
         "kind": "OBJECT",
@@ -719,7 +942,8 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "description",
@@ -733,7 +957,8 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "locations",
@@ -753,7 +978,8 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "name",
@@ -767,9 +993,11 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           }
-        ]
+        ],
+        "directives": []
       },
       {
         "kind": "ENUM",
@@ -780,117 +1008,137 @@
             "name": "QUERY",
             "description": "",
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "MUTATION",
             "description": "",
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "SUBSCRIPTION",
             "description": "",
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "FIELD",
             "description": "",
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "FRAGMENT_DEFINITION",
             "description": "",
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "FRAGMENT_SPREAD",
             "description": "",
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "INLINE_FRAGMENT",
             "description": "",
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "VARIABLE_DEFINITION",
             "description": "",
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "SCHEMA",
             "description": "",
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "SCALAR",
             "description": "",
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "OBJECT",
             "description": "",
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "FIELD_DEFINITION",
             "description": "",
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "ARGUMENT_DEFINITION",
             "description": "",
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "INTERFACE",
             "description": "",
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "UNION",
             "description": "",
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "ENUM",
             "description": "",
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "ENUM_VALUE",
             "description": "",
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "INPUT_OBJECT",
             "description": "",
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "INPUT_FIELD_DEFINITION",
             "description": "",
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           }
-        ]
+        ],
+        "directives": []
       },
       {
         "kind": "OBJECT",
@@ -906,7 +1154,8 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "description",
@@ -920,7 +1169,29 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
+          },
+          {
+            "name": "directives",
+            "description": "",
+            "type": {
+              "kind": "NON_NULL",
+              "ofType": {
+                "kind": "LIST",
+                "ofType": {
+                  "kind": "NON_NULL",
+                  "ofType": {
+                    "kind": "OBJECT",
+                    "name": "_DirectiveApplication"
+                  }
+                }
+              }
+            },
+            "args": [],
+            "isDeprecated": false,
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "isDeprecated",
@@ -934,7 +1205,8 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "name",
@@ -948,9 +1220,11 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           }
-        ]
+        ],
+        "directives": []
       },
       {
         "kind": "OBJECT",
@@ -975,7 +1249,8 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "deprecationReason",
@@ -986,7 +1261,8 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "description",
@@ -1000,7 +1276,29 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
+          },
+          {
+            "name": "directives",
+            "description": "",
+            "type": {
+              "kind": "NON_NULL",
+              "ofType": {
+                "kind": "LIST",
+                "ofType": {
+                  "kind": "NON_NULL",
+                  "ofType": {
+                    "kind": "OBJECT",
+                    "name": "_DirectiveApplication"
+                  }
+                }
+              }
+            },
+            "args": [],
+            "isDeprecated": false,
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "isDeprecated",
@@ -1014,7 +1312,8 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "name",
@@ -1028,7 +1327,8 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "type",
@@ -1042,9 +1342,11 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           }
-        ]
+        ],
+        "directives": []
       },
       {
         "kind": "OBJECT",
@@ -1060,7 +1362,8 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "deprecationReason",
@@ -1071,7 +1374,8 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "description",
@@ -1085,7 +1389,29 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
+          },
+          {
+            "name": "directives",
+            "description": "",
+            "type": {
+              "kind": "NON_NULL",
+              "ofType": {
+                "kind": "LIST",
+                "ofType": {
+                  "kind": "NON_NULL",
+                  "ofType": {
+                    "kind": "OBJECT",
+                    "name": "_DirectiveApplication"
+                  }
+                }
+              }
+            },
+            "args": [],
+            "isDeprecated": false,
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "isDeprecated",
@@ -1099,7 +1425,8 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "name",
@@ -1113,7 +1440,8 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "type",
@@ -1127,9 +1455,11 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           }
-        ]
+        ],
+        "directives": []
       },
       {
         "kind": "OBJECT",
@@ -1148,7 +1478,8 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "directives",
@@ -1168,7 +1499,8 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "mutationType",
@@ -1179,7 +1511,8 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "queryType",
@@ -1193,7 +1526,8 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "subscriptionType",
@@ -1204,7 +1538,8 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "types",
@@ -1224,9 +1559,11 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           }
-        ]
+        ],
+        "directives": []
       },
       {
         "kind": "OBJECT",
@@ -1245,7 +1582,29 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
+          },
+          {
+            "name": "directives",
+            "description": "",
+            "type": {
+              "kind": "NON_NULL",
+              "ofType": {
+                "kind": "LIST",
+                "ofType": {
+                  "kind": "NON_NULL",
+                  "ofType": {
+                    "kind": "OBJECT",
+                    "name": "_DirectiveApplication"
+                  }
+                }
+              }
+            },
+            "args": [],
+            "isDeprecated": false,
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "enumValues",
@@ -1273,11 +1632,13 @@
                   "name": "Boolean"
                 },
                 "isDeprecated": false,
-                "deprecationReason": ""
+                "deprecationReason": "",
+                "directives": []
               }
             ],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "fields",
@@ -1305,11 +1666,13 @@
                   "name": "Boolean"
                 },
                 "isDeprecated": false,
-                "deprecationReason": ""
+                "deprecationReason": "",
+                "directives": []
               }
             ],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "inputFields",
@@ -1329,7 +1692,8 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "interfaces",
@@ -1349,7 +1713,8 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "kind",
@@ -1363,7 +1728,8 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "name",
@@ -1374,7 +1740,8 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "ofType",
@@ -1385,7 +1752,8 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "possibleTypes",
@@ -1405,7 +1773,8 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "specifiedByURL",
@@ -1416,9 +1785,11 @@
             },
             "args": [],
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           }
-        ]
+        ],
+        "directives": []
       },
       {
         "kind": "ENUM",
@@ -1429,56 +1800,83 @@
             "name": "SCALAR",
             "description": "",
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "OBJECT",
             "description": "",
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "INTERFACE",
             "description": "",
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "UNION",
             "description": "",
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "ENUM",
             "description": "",
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "INPUT_OBJECT",
             "description": "",
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "LIST",
             "description": "",
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           },
           {
             "name": "NON_NULL",
             "description": "",
             "isDeprecated": false,
-            "deprecationReason": ""
+            "deprecationReason": "",
+            "directives": []
           }
-        ]
+        ],
+        "directives": []
       }
     ],
     "directives": [
       {
-        "name": "deprecated",
+        "args": [
+          {
+            "defaultValue": "\"No longer supported\"",
+            "deprecationReason": null,
+            "description": "Explains why this element was deprecated, usually also including a suggestion for how to access supported similar data. Formatted in [Markdown](https://daringfireball.net/projects/markdown/).",
+            "directives": [],
+            "isDeprecated": false,
+            "name": "reason",
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            }
+          }
+        ],
         "description": "The @deprecated built-in directive is used within the type system definition language to indicate deprecated portions of a GraphQL service's schema, such as deprecated fields on a type, arguments on a field, input fields on an input type, or values of an enum type.",
         "locations": [
           "FIELD_DEFINITION",
@@ -1486,56 +1884,125 @@
           "INPUT_FIELD_DEFINITION",
           "ENUM_VALUE"
         ],
-        "args": [
-          {
-            "name": "reason",
-            "description": "Explains why this element was deprecated, usually also including a suggestion for how to access supported similar data. Formatted in [Markdown](https://daringfireball.net/projects/markdown/).",
-            "defaultValue": "\"No longer supported\"",
-            "type": {
-              "kind": "NON_NULL",
-              "ofType": {
-                "kind": "SCALAR",
-                "name": "String"
-              }
-            },
-            "isDeprecated": false,
-            "deprecationReason": ""
-          }
-        ],
-        "isRepeatable": false
+        "name": "deprecated"
       },
       {
-        "name": "impure",
+        "args": [
+          {
+            "defaultValue": null,
+            "deprecationReason": null,
+            "description": "Explains why this element is impure, i.e. whether it performs side effects or yield a different result with the same arguments.",
+            "directives": [],
+            "isDeprecated": false,
+            "name": "reason",
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            }
+          }
+        ],
         "description": "Indicates that a field may resolve to different values when called repeatedly with the same inputs, or that the field has side effects. Impure fields are never cached.",
         "locations": [
           "FIELD_DEFINITION"
         ],
-        "args": [
-          {
-            "name": "reason",
-            "description": "Explains why this element is impure, i.e. whether it performs side effects or yield a different result with the same arguments.",
-            "defaultValue": null,
-            "type": {
-              "kind": "NON_NULL",
-              "ofType": {
-                "kind": "SCALAR",
-                "name": "String"
-              }
-            },
-            "isDeprecated": false,
-            "deprecationReason": ""
-          }
-        ],
-        "isRepeatable": false
+        "name": "impure"
       },
       {
-        "name": "meta",
+        "args": [],
         "description": "Indicates that a field's selection can be removed from any query without changing the result. Meta fields are dropped from cache keys.",
         "locations": [
           "FIELD_DEFINITION"
         ],
-        "args": [],
-        "isRepeatable": false
+        "name": "meta"
+      },
+      {
+        "args": [
+          {
+            "defaultValue": null,
+            "deprecationReason": null,
+            "description": "",
+            "directives": [],
+            "isDeprecated": false,
+            "name": "module",
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            }
+          },
+          {
+            "defaultValue": null,
+            "deprecationReason": null,
+            "description": "",
+            "directives": [],
+            "isDeprecated": false,
+            "name": "filename",
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "String",
+                "ofType": null
+              }
+            }
+          },
+          {
+            "defaultValue": null,
+            "deprecationReason": null,
+            "description": "",
+            "directives": [],
+            "isDeprecated": false,
+            "name": "line",
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              }
+            }
+          },
+          {
+            "defaultValue": null,
+            "deprecationReason": null,
+            "description": "",
+            "directives": [],
+            "isDeprecated": false,
+            "name": "column",
+            "type": {
+              "kind": "NON_NULL",
+              "name": null,
+              "ofType": {
+                "kind": "SCALAR",
+                "name": "Int",
+                "ofType": null
+              }
+            }
+          }
+        ],
+        "description": "Indicates the source information for where a given field is defined.",
+        "locations": [
+          "SCALAR",
+          "OBJECT",
+          "FIELD_DEFINITION",
+          "ARGUMENT_DEFINITION",
+          "UNION",
+          "ENUM",
+          "ENUM_VALUE",
+          "INPUT_OBJECT"
+        ],
+        "name": "sourceMap"
       }
     ]
   },

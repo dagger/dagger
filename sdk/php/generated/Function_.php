@@ -61,6 +61,15 @@ class Function_ extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * The location of this function declaration.
+     */
+    public function sourceMap(): SourceMap
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('sourceMap');
+        return new \Dagger\SourceMap($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Returns the function with the provided argument
      */
     public function withArg(
@@ -70,6 +79,7 @@ class Function_ extends Client\AbstractObject implements Client\IdAble
         ?Json $defaultValue = null,
         ?string $defaultPath = '',
         ?array $ignore = null,
+        SourceMapId|SourceMap|null $sourceMap = null,
     ): Function_ {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withArg');
         $innerQueryBuilder->setArgument('name', $name);
@@ -86,6 +96,9 @@ class Function_ extends Client\AbstractObject implements Client\IdAble
         if (null !== $ignore) {
         $innerQueryBuilder->setArgument('ignore', $ignore);
         }
+        if (null !== $sourceMap) {
+        $innerQueryBuilder->setArgument('sourceMap', $sourceMap);
+        }
         return new \Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 
@@ -96,6 +109,16 @@ class Function_ extends Client\AbstractObject implements Client\IdAble
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withDescription');
         $innerQueryBuilder->setArgument('description', $description);
+        return new \Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
+     * Returns the function with the given source map.
+     */
+    public function withSourceMap(SourceMapId|SourceMap $sourceMap): Function_
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withSourceMap');
+        $innerQueryBuilder->setArgument('sourceMap', $sourceMap);
         return new \Dagger\Function_($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 }

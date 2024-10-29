@@ -114,21 +114,29 @@ func (e *ModuleEnum) TypeDescription() string {
 }
 
 func (e *ModuleEnum) TypeDefinition(views ...string) *ast.Definition {
-	return &ast.Definition{
+	def := &ast.Definition{
 		Kind:        ast.Enum,
 		Name:        e.TypeName(),
 		EnumValues:  e.PossibleValues(),
 		Description: e.TypeDescription(),
 	}
+	if e.TypeDef.SourceMap != nil {
+		def.Directives = append(def.Directives, e.TypeDef.SourceMap.TypeDirective())
+	}
+	return def
 }
 
 func (e *ModuleEnum) PossibleValues() ast.EnumValueList {
 	var values ast.EnumValueList
 	for _, val := range e.TypeDef.Values {
-		values = append(values, &ast.EnumValueDefinition{
+		def := &ast.EnumValueDefinition{
 			Name:        val.Name,
 			Description: val.Description,
-		})
+		}
+		if val.SourceMap != nil {
+			def.Directives = append(def.Directives, val.SourceMap.TypeDirective())
+		}
+		values = append(values, def)
 	}
 
 	return values

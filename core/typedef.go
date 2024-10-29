@@ -23,6 +23,8 @@ type Function struct {
 	Args        []*FunctionArg `field:"true" doc:"Arguments accepted by the function, if any."`
 	ReturnType  *TypeDef       `field:"true" doc:"The type returned by the function."`
 
+	SourceMap *SourceMap `field:"true" doc:"The location of this function declaration."`
+
 	// Below are not in public API
 
 	// OriginalName of the parent object
@@ -63,6 +65,9 @@ func (fn Function) Clone() *Function {
 	}
 	if fn.ReturnType != nil {
 		cp.ReturnType = fn.ReturnType.Clone()
+	}
+	if fn.SourceMap != nil {
+		cp.SourceMap = fn.SourceMap.Clone()
 	}
 	return &cp
 }
@@ -114,17 +119,24 @@ func (fn *Function) WithDescription(desc string) *Function {
 	return fn
 }
 
-func (fn *Function) WithArg(name string, typeDef *TypeDef, desc string, defaultValue JSON, defaultPath string, ignore []string) *Function {
+func (fn *Function) WithArg(name string, typeDef *TypeDef, desc string, defaultValue JSON, defaultPath string, ignore []string, sourceMap *SourceMap) *Function {
 	fn = fn.Clone()
 	fn.Args = append(fn.Args, &FunctionArg{
 		Name:         strcase.ToLowerCamel(name),
 		Description:  desc,
+		SourceMap:    sourceMap,
 		TypeDef:      typeDef,
 		DefaultValue: defaultValue,
 		OriginalName: name,
 		DefaultPath:  defaultPath,
 		Ignore:       ignore,
 	})
+	return fn
+}
+
+func (fn *Function) WithSourceMap(sourceMap *SourceMap) *Function {
+	fn = fn.Clone()
+	fn.SourceMap = sourceMap
 	return fn
 }
 
@@ -183,12 +195,13 @@ func (fn *Function) LookupArg(name string) (*FunctionArg, bool) {
 
 type FunctionArg struct {
 	// Name is the standardized name of the argument (lowerCamelCase), as used for the resolver in the graphql schema
-	Name         string   `field:"true" doc:"The name of the argument in lowerCamelCase format."`
-	Description  string   `field:"true" doc:"A doc string for the argument, if any."`
-	TypeDef      *TypeDef `field:"true" doc:"The type of the argument."`
-	DefaultValue JSON     `field:"true" doc:"A default value to use for this argument when not explicitly set by the caller, if any."`
-	DefaultPath  string   `field:"true" doc:"Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory"`
-	Ignore       []string `field:"true" doc:"Only applies to arguments of type Directory. The ignore patterns are applied to the input directory, and matching entries are filtered out, in a cache-efficient manner."`
+	Name         string     `field:"true" doc:"The name of the argument in lowerCamelCase format."`
+	Description  string     `field:"true" doc:"A doc string for the argument, if any."`
+	SourceMap    *SourceMap `field:"true" doc:"The location of this arg declaration."`
+	TypeDef      *TypeDef   `field:"true" doc:"The type of the argument."`
+	DefaultValue JSON       `field:"true" doc:"A default value to use for this argument when not explicitly set by the caller, if any."`
+	DefaultPath  string     `field:"true" doc:"Only applies to arguments of type File or Directory. If the argument is not set, load it from the given path in the context directory"`
+	Ignore       []string   `field:"true" doc:"Only applies to arguments of type Directory. The ignore patterns are applied to the input directory, and matching entries are filtered out, in a cache-efficient manner."`
 
 	// Below are not in public API
 
@@ -198,7 +211,12 @@ type FunctionArg struct {
 
 func (arg FunctionArg) Clone() *FunctionArg {
 	cp := arg
-	cp.TypeDef = arg.TypeDef.Clone()
+	if arg.TypeDef != nil {
+		cp.TypeDef = arg.TypeDef.Clone()
+	}
+	if arg.SourceMap != nil {
+		cp.SourceMap = arg.SourceMap.Clone()
+	}
 	// NB(vito): don't bother copying DefaultValue, it's already 'any' so it's
 	// hard to imagine anything actually mutating it at runtime vs. replacing it
 	// wholesale.
@@ -429,15 +447,15 @@ func (typeDef *TypeDef) WithListOf(elem *TypeDef) *TypeDef {
 	return typeDef
 }
 
-func (typeDef *TypeDef) WithObject(name, desc string) *TypeDef {
+func (typeDef *TypeDef) WithObject(name, desc string, sourceMap *SourceMap) *TypeDef {
 	typeDef = typeDef.WithKind(TypeDefKindObject)
-	typeDef.AsObject = dagql.NonNull(NewObjectTypeDef(name, desc))
+	typeDef.AsObject = dagql.NonNull(NewObjectTypeDef(name, desc).WithSourceMap(sourceMap))
 	return typeDef
 }
 
-func (typeDef *TypeDef) WithInterface(name, desc string) *TypeDef {
+func (typeDef *TypeDef) WithInterface(name, desc string, sourceMap *SourceMap) *TypeDef {
 	typeDef = typeDef.WithKind(TypeDefKindInterface)
-	typeDef.AsInterface = dagql.NonNull(NewInterfaceTypeDef(name, desc))
+	typeDef.AsInterface = dagql.NonNull(NewInterfaceTypeDef(name, desc).WithSourceMap(sourceMap))
 	return typeDef
 }
 
@@ -447,7 +465,7 @@ func (typeDef *TypeDef) WithOptional(optional bool) *TypeDef {
 	return typeDef
 }
 
-func (typeDef *TypeDef) WithObjectField(name string, fieldType *TypeDef, desc string) (*TypeDef, error) {
+func (typeDef *TypeDef) WithObjectField(name string, fieldType *TypeDef, desc string, sourceMap *SourceMap) (*TypeDef, error) {
 	if !typeDef.AsObject.Valid {
 		return nil, fmt.Errorf("cannot add function to non-object type: %s", typeDef.Kind)
 	}
@@ -456,6 +474,7 @@ func (typeDef *TypeDef) WithObjectField(name string, fieldType *TypeDef, desc st
 		Name:         strcase.ToLowerCamel(name),
 		OriginalName: name,
 		Description:  desc,
+		SourceMap:    sourceMap,
 		TypeDef:      fieldType,
 	})
 	return typeDef, nil
@@ -490,13 +509,13 @@ func (typeDef *TypeDef) WithObjectConstructor(fn *Function) (*TypeDef, error) {
 	return typeDef, nil
 }
 
-func (typeDef *TypeDef) WithEnum(name, desc string) *TypeDef {
+func (typeDef *TypeDef) WithEnum(name, desc string, sourceMap *SourceMap) *TypeDef {
 	typeDef = typeDef.WithKind(TypeDefKindEnum)
-	typeDef.AsEnum = dagql.NonNull(NewEnumTypeDef(name, desc))
+	typeDef.AsEnum = dagql.NonNull(NewEnumTypeDef(name, desc, sourceMap))
 	return typeDef
 }
 
-func (typeDef *TypeDef) WithEnumValue(name, desc string) (*TypeDef, error) {
+func (typeDef *TypeDef) WithEnumValue(name, desc string, sourceMap *SourceMap) (*TypeDef, error) {
 	if !typeDef.AsEnum.Valid {
 		return nil, fmt.Errorf("cannot add value to non-enum type: %s", typeDef.Kind)
 	}
@@ -522,7 +541,7 @@ func (typeDef *TypeDef) WithEnumValue(name, desc string) (*TypeDef, error) {
 	}
 
 	typeDef = typeDef.Clone()
-	typeDef.AsEnum.Value.Values = append(typeDef.AsEnum.Value.Values, NewEnumValueTypeDef(name, desc))
+	typeDef.AsEnum.Value.Values = append(typeDef.AsEnum.Value.Values, NewEnumValueTypeDef(name, desc, sourceMap))
 
 	return typeDef, nil
 }
@@ -573,6 +592,7 @@ type ObjectTypeDef struct {
 	// Name is the standardized name of the object (CamelCase), as used for the object in the graphql schema
 	Name        string                    `field:"true" doc:"The name of the object."`
 	Description string                    `field:"true" doc:"The doc string for the object, if any."`
+	SourceMap   *SourceMap                `field:"true" doc:"The location of this object declaration."`
 	Fields      []*FieldTypeDef           `field:"true" doc:"Static fields defined on this object, if any."`
 	Functions   []*Function               `field:"true" doc:"Functions defined on this object, if any."`
 	Constructor dagql.Nullable[*Function] `field:"true" doc:"The function used to construct new instances of this object, if any"`
@@ -623,7 +643,17 @@ func (obj ObjectTypeDef) Clone() *ObjectTypeDef {
 		cp.Constructor.Value = obj.Constructor.Value.Clone()
 	}
 
+	if cp.SourceMap != nil {
+		cp.SourceMap = cp.SourceMap.Clone()
+	}
+
 	return &cp
+}
+
+func (obj *ObjectTypeDef) WithSourceMap(sourceMap *SourceMap) *ObjectTypeDef {
+	obj = obj.Clone()
+	obj.SourceMap = sourceMap
+	return obj
 }
 
 func (obj *ObjectTypeDef) FieldByName(name string) (*FieldTypeDef, bool) {
@@ -694,6 +724,8 @@ type FieldTypeDef struct {
 	Description string   `field:"true" doc:"A doc string for the field, if any."`
 	TypeDef     *TypeDef `field:"true" doc:"The type of the field."`
 
+	SourceMap *SourceMap `field:"true" doc:"The location of this field declaration."`
+
 	// Below are not in public API
 
 	// The original name of the object as provided by the SDK that defined it, used
@@ -721,6 +753,9 @@ func (typeDef FieldTypeDef) Clone() *FieldTypeDef {
 	if typeDef.TypeDef != nil {
 		cp.TypeDef = typeDef.TypeDef.Clone()
 	}
+	if typeDef.SourceMap != nil {
+		cp.SourceMap = typeDef.SourceMap.Clone()
+	}
 	return &cp
 }
 
@@ -728,6 +763,7 @@ type InterfaceTypeDef struct {
 	// Name is the standardized name of the interface (CamelCase), as used for the interface in the graphql schema
 	Name        string      `field:"true" doc:"The name of the interface."`
 	Description string      `field:"true" doc:"The doc string for the interface, if any."`
+	SourceMap   *SourceMap  `field:"true" doc:"The location of this interface declaration."`
 	Functions   []*Function `field:"true" doc:"Functions defined on this interface, if any."`
 	// SourceModuleName is currently only set when returning the TypeDef from the Objects field on Module
 	SourceModuleName string `field:"true" doc:"If this InterfaceTypeDef is associated with a Module, the name of the module. Unset otherwise."`
@@ -765,8 +801,17 @@ func (iface InterfaceTypeDef) Clone() *InterfaceTypeDef {
 	for i, fn := range iface.Functions {
 		cp.Functions[i] = fn.Clone()
 	}
+	if cp.SourceMap != nil {
+		cp.SourceMap = cp.SourceMap.Clone()
+	}
 
 	return &cp
+}
+
+func (iface *InterfaceTypeDef) WithSourceMap(sourceMap *SourceMap) *InterfaceTypeDef {
+	iface = iface.Clone()
+	iface.SourceMap = sourceMap
+	return iface
 }
 
 func (iface *InterfaceTypeDef) IsSubtypeOf(otherIface *InterfaceTypeDef) bool {
@@ -898,6 +943,7 @@ type EnumTypeDef struct {
 	Name        string              `field:"true" doc:"The name of the enum."`
 	Description string              `field:"true" doc:"A doc string for the enum, if any."`
 	Values      []*EnumValueTypeDef `field:"true" doc:"The values of the enum."`
+	SourceMap   *SourceMap          `field:"true" doc:"The location of this enum declaration."`
 
 	// SourceModuleName is currently only set when returning the TypeDef from the Enum field on Module
 	SourceModuleName string `field:"true" doc:"If this EnumTypeDef is associated with a Module, the name of the module. Unset otherwise."`
@@ -934,11 +980,12 @@ func (enum *EnumTypeDef) ListValues() ast.EnumValueList {
 	return values
 }
 
-func NewEnumTypeDef(name, description string) *EnumTypeDef {
+func NewEnumTypeDef(name, description string, sourceMap *SourceMap) *EnumTypeDef {
 	return &EnumTypeDef{
 		Name:         strcase.ToCamel(name),
 		OriginalName: name,
 		Description:  description,
+		SourceMap:    sourceMap,
 	}
 }
 
@@ -949,13 +996,17 @@ func (enum EnumTypeDef) Clone() *EnumTypeDef {
 	for i, value := range enum.Values {
 		cp.Values[i] = value.Clone()
 	}
+	if enum.SourceMap != nil {
+		cp.SourceMap = enum.SourceMap.Clone()
+	}
 
 	return &cp
 }
 
 type EnumValueTypeDef struct {
-	Name        string `field:"true" doc:"The name of the enum value."`
-	Description string `field:"true" doc:"A doc string for the enum value, if any."`
+	Name        string     `field:"true" doc:"The name of the enum value."`
+	Description string     `field:"true" doc:"A doc string for the enum value, if any."`
+	SourceMap   *SourceMap `field:"true" doc:"The location of this enum value declaration."`
 }
 
 func (*EnumValueTypeDef) Type() *ast.Type {
@@ -969,15 +1020,20 @@ func (*EnumValueTypeDef) TypeDescription() string {
 	return "A definition of a value in a custom enum defined in a Module."
 }
 
-func NewEnumValueTypeDef(name, description string) *EnumValueTypeDef {
+func NewEnumValueTypeDef(name, description string, sourceMap *SourceMap) *EnumValueTypeDef {
 	return &EnumValueTypeDef{
 		Name:        name,
 		Description: description,
+		SourceMap:   sourceMap,
 	}
 }
 
 func (enumValue EnumValueTypeDef) Clone() *EnumValueTypeDef {
 	cp := enumValue
+
+	if enumValue.SourceMap != nil {
+		cp.SourceMap = enumValue.SourceMap.Clone()
+	}
 
 	return &cp
 }
@@ -1094,4 +1150,63 @@ func (*FunctionCallArgValue) Type() *ast.Type {
 
 func (*FunctionCallArgValue) TypeDescription() string {
 	return "A value passed as a named argument to a function call."
+}
+
+type SourceMap struct {
+	Module   string `field:"true" doc:"The module dependency this was declared in."`
+	Filename string `field:"true" doc:"The filename from the module source."`
+	Line     int    `field:"true" doc:"The line number within the filename."`
+	Column   int    `field:"true" doc:"The column number within the line."`
+}
+
+func (*SourceMap) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "SourceMap",
+		NonNull:   true,
+	}
+}
+
+func (*SourceMap) TypeDescription() string {
+	return "Source location information."
+}
+
+func (sourceMap SourceMap) Clone() *SourceMap {
+	cp := sourceMap
+	return &cp
+}
+
+func (sourceMap *SourceMap) TypeDirective() *ast.Directive {
+	return &ast.Directive{
+		Name: "sourceMap",
+		Arguments: ast.ArgumentList{
+			{
+				Name: "module",
+				Value: &ast.Value{
+					Kind: ast.StringValue,
+					Raw:  sourceMap.Module,
+				},
+			},
+			{
+				Name: "filename",
+				Value: &ast.Value{
+					Kind: ast.StringValue,
+					Raw:  sourceMap.Filename,
+				},
+			},
+			{
+				Name: "line",
+				Value: &ast.Value{
+					Kind: ast.IntValue,
+					Raw:  fmt.Sprint(sourceMap.Line),
+				},
+			},
+			{
+				Name: "column",
+				Value: &ast.Value{
+					Kind: ast.IntValue,
+					Raw:  fmt.Sprint(sourceMap.Column),
+				},
+			},
+		},
+	}
 }

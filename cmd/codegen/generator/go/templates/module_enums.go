@@ -54,6 +54,7 @@ func (ps *parseState) parseGoEnum(t *types.Basic, named *types.Named) (*parsedEn
 		if doc := docForAstSpec(astSpec); doc != nil {
 			valueSpec.doc = doc.Text()
 		}
+		valueSpec.sourceMap = ps.sourceMap(astSpec)
 		spec.values = append(spec.values, valueSpec)
 	}
 	if len(spec.values) == 0 {
@@ -70,6 +71,8 @@ func (ps *parseState) parseGoEnum(t *types.Basic, named *types.Named) (*parsedEn
 		spec.doc = doc.Text()
 	}
 
+	spec.sourceMap = ps.sourceMap(astSpec)
+
 	return spec, nil
 }
 
@@ -77,6 +80,7 @@ type parsedEnumType struct {
 	name       string
 	moduleName string
 	doc        string
+	sourceMap  *sourceMap
 
 	values []*parsedEnumValue
 
@@ -84,37 +88,47 @@ type parsedEnumType struct {
 }
 
 type parsedEnumValue struct {
-	value string
-	doc   string
+	value     string
+	doc       string
+	sourceMap *sourceMap
 }
 
 var _ NamedParsedType = &parsedEnumType{}
 
 func (spec *parsedEnumType) TypeDefCode() (*Statement, error) {
-	withObjectArgsCode := []Code{
+	withEnumArgsCode := []Code{
 		Lit(spec.name),
 	}
-	withObjectOptsCode := []Code{}
+	withEnumOptsCode := []Code{}
 	if spec.doc != "" {
-		withObjectOptsCode = append(withObjectOptsCode, Id("Description").Op(":").Lit(strings.TrimSpace(spec.doc)))
+		withEnumOptsCode = append(withEnumOptsCode, Id("Description").Op(":").Lit(strings.TrimSpace(spec.doc)))
 	}
-	if len(withObjectOptsCode) > 0 {
-		withObjectArgsCode = append(withObjectArgsCode, Id("dagger").Dot("TypeDefWithEnumOpts").Values(withObjectOptsCode...))
+	if spec.sourceMap != nil {
+		withEnumOptsCode = append(withEnumOptsCode, Id("SourceMap").Op(":").Add(spec.sourceMap.TypeDefCode()))
+	}
+	if len(withEnumOptsCode) > 0 {
+		withEnumArgsCode = append(withEnumArgsCode, Id("dagger").Dot("TypeDefWithEnumOpts").Values(withEnumOptsCode...))
 	}
 
-	typeDefCode := Qual("dag", "TypeDef").Call().Dot("WithEnum").Call(withObjectArgsCode...)
+	typeDefCode := Qual("dag", "TypeDef").Call().Dot("WithEnum").Call(withEnumArgsCode...)
 
 	for _, val := range spec.values {
-		fnTypeDefCode := []Code{
+		valueTypeDefCode := []Code{
 			Lit(val.value),
 		}
+		var withEnumValueOpts []Code
 		if val.doc != "" {
-			fnTypeDefCode = append(fnTypeDefCode,
-				Id("dagger").Dot("TypeDefWithEnumValueOpts").Values(
-					Id("Description").Op(":").Lit(strings.TrimSpace(val.doc)),
-				))
+			withEnumValueOpts = append(withEnumValueOpts, Id("Description").Op(":").Lit(strings.TrimSpace(val.doc)))
 		}
-		typeDefCode = dotLine(typeDefCode, "WithEnumValue").Call(fnTypeDefCode...)
+		if val.sourceMap != nil {
+			withEnumValueOpts = append(withEnumValueOpts, Id("SourceMap").Op(":").Add(val.sourceMap.TypeDefCode()))
+		}
+		if len(withEnumValueOpts) > 0 {
+			valueTypeDefCode = append(valueTypeDefCode,
+				Id("dagger").Dot("TypeDefWithEnumValueOpts").Values(withEnumValueOpts...),
+			)
+		}
+		typeDefCode = dotLine(typeDefCode, "WithEnumValue").Call(valueTypeDefCode...)
 	}
 
 	return typeDefCode, nil
