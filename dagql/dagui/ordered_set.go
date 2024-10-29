@@ -93,14 +93,20 @@ func (set *OrderedSet[K, V]) Clear() {
 }
 
 func insert[T any](slice []T, value T, less func(a, b T) bool) []T {
-	var i int
-	for i = 0; i < len(slice); i++ {
-		if !less(slice[i], value) {
-			break
+	// Find insertion point using binary search
+	left, right := 0, len(slice)
+	for left < right {
+		mid := (left + right) / 2
+		if less(slice[mid], value) {
+			left = mid + 1
+		} else {
+			right = mid
 		}
 	}
+
+	// Insert at the found position (left)
 	slice = append(slice, value)
-	copy(slice[i+1:], slice[i:])
-	slice[i] = value
+	copy(slice[left+1:], slice[left:])
+	slice[left] = value
 	return slice
 }
