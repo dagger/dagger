@@ -1,6 +1,7 @@
 kind: Added
 body: |
-  New `exitCodes` arg for `Container.withExec` which allows specifying a list of exit codes which the command can return without failing out immediately
+  New `expect` arg for `Container.withExec` which allows specifying valid
+  return statuses for which the command can return without failing immediately
 time: 2024-09-16T17:52:22.604393342+01:00
 custom:
   Author: jedevc

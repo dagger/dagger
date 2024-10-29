@@ -1189,7 +1189,7 @@ type ContainerWithExecOpts struct {
 	// Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
 	RedirectStderr string
 	// Exit codes this command is allowed to exit with without error
-	ValidExitCodes []int
+	Expect ReturnType
 	// Provides Dagger access to the executed command.
 	//
 	// Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
@@ -1224,9 +1224,9 @@ func (r *Container) WithExec(args []string, opts ...ContainerWithExecOpts) *Cont
 		if !querybuilder.IsZeroValue(opts[i].RedirectStderr) {
 			q = q.Arg("redirectStderr", opts[i].RedirectStderr)
 		}
-		// `validExitCodes` optional argument
-		if !querybuilder.IsZeroValue(opts[i].ValidExitCodes) {
-			q = q.Arg("validExitCodes", opts[i].ValidExitCodes)
+		// `expect` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Expect) {
+			q = q.Arg("expect", opts[i].Expect)
 		}
 		// `experimentalPrivilegedNesting` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
@@ -8479,6 +8479,19 @@ const (
 
 	// Deprecated: use NetworkProtocolUdp instead
 	Udp NetworkProtocol = NetworkProtocolUdp
+)
+
+// Expected return type of an execution
+type ReturnType string
+
+func (ReturnType) IsEnum() {}
+
+const (
+	Any ReturnType = "ANY"
+
+	Failure ReturnType = "FAILURE"
+
+	Success ReturnType = "SUCCESS"
 )
 
 // Distinguishes the different kinds of TypeDefs.

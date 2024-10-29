@@ -517,6 +517,9 @@ type Container {
     """
     expand: Boolean = false
 
+    """Exit codes this command is allowed to exit with without error"""
+    expect: ReturnType = SUCCESS
+
     """
     Provides Dagger access to the executed command.
     
@@ -559,9 +562,6 @@ type Container {
 
     """If the container has an entrypoint, prepend it to the args."""
     useEntrypoint: Boolean = false
-
-    """Exit codes this command is allowed to exit with without error"""
-    validExitCodes: [Int!] = []
   ): Container!
 
   """
@@ -2845,6 +2845,13 @@ type Query {
 
   """Get the current Dagger Engine version."""
   version: String!
+}
+
+"""Expected return type of an execution"""
+enum ReturnType {
+  SUCCESS
+  FAILURE
+  ANY
 }
 
 """A definition of a custom scalar defined in a Module."""

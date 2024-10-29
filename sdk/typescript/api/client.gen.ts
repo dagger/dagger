@@ -315,7 +315,7 @@ export type ContainerWithExecOpts = {
   /**
    * Exit codes this command is allowed to exit with without error
    */
-  validExitCodes?: number[]
+  expect?: ReturnType
 
   /**
    * Provides Dagger access to the executed command.
@@ -1157,6 +1157,14 @@ export type ClientSecretOpts = {
   accessor?: string
 }
 
+/**
+ * Expected return type of an execution
+ */
+export enum ReturnType {
+  Any = "ANY",
+  Failure = "FAILURE",
+  Success = "SUCCESS",
+}
 /**
  * The `ScalarTypeDefID` scalar type represents an identifier for an object of type ScalarTypeDef.
  */
@@ -2328,7 +2336,7 @@ export class Container extends BaseClient {
    * @param opts.stdin Content to write to the command's standard input before closing (e.g., "Hello world").
    * @param opts.redirectStdout Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
    * @param opts.redirectStderr Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
-   * @param opts.validExitCodes Exit codes this command is allowed to exit with without error
+   * @param opts.expect Exit codes this command is allowed to exit with without error
    * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
    *
    * Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
@@ -2339,12 +2347,16 @@ export class Container extends BaseClient {
    * This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
    */
   withExec = (args: string[], opts?: ContainerWithExecOpts): Container => {
+    const metadata: Metadata = {
+      expect: { is_enum: true },
+    }
+
     return new Container({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withExec",
-          args: { args, ...opts },
+          args: { args, ...opts, __metadata: metadata },
         },
       ],
       ctx: this._ctx,

@@ -275,6 +275,16 @@ class NetworkProtocol(Enum):
     UDP = "UDP"
 
 
+class ReturnType(Enum):
+    """Expected return type of an execution"""
+
+    ANY = "ANY"
+
+    FAILURE = "FAILURE"
+
+    SUCCESS = "SUCCESS"
+
+
 class TypeDefKind(Enum):
     """Distinguishes the different kinds of TypeDefs."""
 
@@ -1364,7 +1374,7 @@ class Container(Type):
         stdin: str | None = "",
         redirect_stdout: str | None = "",
         redirect_stderr: str | None = "",
-        valid_exit_codes: list[int] | None = None,
+        expect: ReturnType | None = ReturnType.SUCCESS,
         experimental_privileged_nesting: bool | None = False,
         insecure_root_capabilities: bool | None = False,
         expand: bool | None = False,
@@ -1390,7 +1400,7 @@ class Container(Type):
         redirect_stderr:
             Redirect the command's standard error to a file in the container
             (e.g., "/tmp/stderr").
-        valid_exit_codes:
+        expect:
             Exit codes this command is allowed to exit with without error
         experimental_privileged_nesting:
             Provides Dagger access to the executed command.
@@ -1419,7 +1429,7 @@ class Container(Type):
             Arg("stdin", stdin, ""),
             Arg("redirectStdout", redirect_stdout, ""),
             Arg("redirectStderr", redirect_stderr, ""),
-            Arg("validExitCodes", [] if valid_exit_codes is None else valid_exit_codes),
+            Arg("expect", expect, ReturnType.SUCCESS),
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
@@ -8384,6 +8394,7 @@ __all__ = [
     "Port",
     "PortForward",
     "PortID",
+    "ReturnType",
     "ScalarTypeDef",
     "ScalarTypeDefID",
     "Secret",

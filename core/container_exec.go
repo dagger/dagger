@@ -39,7 +39,7 @@ type ContainerExecOpts struct {
 	RedirectStderr string `default:""`
 
 	// Exit codes this exec is allowed to exit with
-	ValidExitCodes []int `default:"[]"`
+	Expect ReturnTypes `default:"SUCCESS"`
 
 	// Provide the executed command access back to the Dagger API
 	ExperimentalPrivilegedNesting bool `default:"false"`
@@ -299,9 +299,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		runOpts = append(runOpts, llb.AddMount(mnt.Target, srcSt, mountOpts...))
 	}
 
-	if len(opts.ValidExitCodes) > 0 {
-		runOpts = append(runOpts, llb.ValidExitCodes(opts.ValidExitCodes...))
-	}
+	runOpts = append(runOpts, llb.ValidExitCodes(opts.Expect.ReturnCodes()...))
 
 	if opts.InsecureRootCapabilities {
 		runOpts = append(runOpts, llb.Security(llb.SecurityModeInsecure))

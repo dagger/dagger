@@ -1631,6 +1631,9 @@ pub struct ContainerWithExecOpts<'a> {
     /// Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
+    /// Exit codes this command is allowed to exit with without error
+    #[builder(setter(into, strip_option), default)]
+    pub expect: Option<ReturnType>,
     /// Provides Dagger access to the executed command.
     /// Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
     #[builder(setter(into, strip_option), default)]
@@ -1654,9 +1657,6 @@ pub struct ContainerWithExecOpts<'a> {
     /// If the container has an entrypoint, prepend it to the args.
     #[builder(setter(into, strip_option), default)]
     pub use_entrypoint: Option<bool>,
-    /// Exit codes this command is allowed to exit with without error
-    #[builder(setter(into, strip_option), default)]
-    pub valid_exit_codes: Option<Vec<isize>>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithExposedPortOpts<'a> {
@@ -2666,8 +2666,8 @@ impl Container {
         if let Some(redirect_stderr) = opts.redirect_stderr {
             query = query.arg("redirectStderr", redirect_stderr);
         }
-        if let Some(valid_exit_codes) = opts.valid_exit_codes {
-            query = query.arg("validExitCodes", valid_exit_codes);
+        if let Some(expect) = opts.expect {
+            query = query.arg("expect", expect);
         }
         if let Some(experimental_privileged_nesting) = opts.experimental_privileged_nesting {
             query = query.arg(
@@ -8605,6 +8605,15 @@ pub enum NetworkProtocol {
     Tcp,
     #[serde(rename = "UDP")]
     Udp,
+}
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum ReturnType {
+    #[serde(rename = "ANY")]
+    Any,
+    #[serde(rename = "FAILURE")]
+    Failure,
+    #[serde(rename = "SUCCESS")]
+    Success,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum TypeDefKind {
