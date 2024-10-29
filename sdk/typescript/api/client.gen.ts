@@ -1670,7 +1670,7 @@ export class Container extends BaseClient {
   /**
    * The exit code of the last executed command.
    *
-   * Will execute default command if none is set, or error if there's no default.
+   * Returns an error if no command was set.
    */
   exitCode = async (): Promise<number> => {
     if (this._exitCode) {
@@ -2056,7 +2056,7 @@ export class Container extends BaseClient {
   /**
    * The error stream of the last executed command.
    *
-   * Will execute default command if none is set, or error if there's no default.
+   * Returns an error if no command was set.
    */
   stderr = async (): Promise<string> => {
     if (this._stderr) {
@@ -2079,7 +2079,7 @@ export class Container extends BaseClient {
   /**
    * The output stream of the last executed command.
    *
-   * Will execute default command if none is set, or error if there's no default.
+   * Returns an error if no command was set.
    */
   stdout = async (): Promise<string> => {
     if (this._stdout) {

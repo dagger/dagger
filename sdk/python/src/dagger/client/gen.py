@@ -616,8 +616,7 @@ class Container(Type):
     async def exit_code(self) -> int:
         """The exit code of the last executed command.
 
-        Will execute default command if none is set, or error if there's no
-        default.
+        Returns an error if no command was set.
 
         Returns
         -------
@@ -1037,8 +1036,7 @@ class Container(Type):
     async def stderr(self) -> str:
         """The error stream of the last executed command.
 
-        Will execute default command if none is set, or error if there's no
-        default.
+        Returns an error if no command was set.
 
         Returns
         -------
@@ -1061,8 +1059,7 @@ class Container(Type):
     async def stdout(self) -> str:
         """The output stream of the last executed command.
 
-        Will execute default command if none is set, or error if there's no
-        default.
+        Returns an error if no command was set.
 
         Returns
         -------

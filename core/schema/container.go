@@ -475,12 +475,12 @@ func (s *containerSchema) Install() {
 		dagql.Func("stdout", s.stdout).
 			View(AllVersion).
 			Doc(`The output stream of the last executed command.`,
-				`Will execute default command if none is set, or error if there's no default.`),
+				`Returns an error if no command was set.`),
 
 		dagql.Func("stderr", s.stderr).
 			View(AllVersion).
 			Doc(`The error stream of the last executed command.`,
-				`Will execute default command if none is set, or error if there's no default.`),
+				`Returns an error if no command was set.`),
 
 		dagql.Func("stdout", s.stdoutLegacy).
 			View(BeforeVersion("v0.12.0")).
@@ -494,7 +494,7 @@ func (s *containerSchema) Install() {
 
 		dagql.Func("exitCode", s.exitCode).
 			Doc(`The exit code of the last executed command.`,
-				`Will execute default command if none is set, or error if there's no default.`),
+				`Returns an error if no command was set.`),
 
 		dagql.Func("withAnnotation", s.withAnnotation).
 			Doc(`Retrieves this container plus the given OCI anotation.`).

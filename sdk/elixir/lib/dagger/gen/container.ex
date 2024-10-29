@@ -151,7 +151,7 @@ defmodule Dagger.Container do
   @doc """
   The exit code of the last executed command.
 
-  Will execute default command if none is set, or error if there's no default.
+  Returns an error if no command was set.
   """
   @spec exit_code(t()) :: {:ok, integer()} | {:error, term()}
   def exit_code(%__MODULE__{} = container) do
@@ -409,7 +409,7 @@ defmodule Dagger.Container do
   @doc """
   The error stream of the last executed command.
 
-  Will execute default command if none is set, or error if there's no default.
+  Returns an error if no command was set.
   """
   @spec stderr(t()) :: {:ok, String.t()} | {:error, term()}
   def stderr(%__MODULE__{} = container) do
@@ -422,7 +422,7 @@ defmodule Dagger.Container do
   @doc """
   The output stream of the last executed command.
 
-  Will execute default command if none is set, or error if there's no default.
+  Returns an error if no command was set.
   """
   @spec stdout(t()) :: {:ok, String.t()} | {:error, term()}
   def stdout(%__MODULE__{} = container) do

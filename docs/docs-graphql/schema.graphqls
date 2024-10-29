@@ -152,7 +152,7 @@ type Container {
   """
   The exit code of the last executed command.
   
-  Will execute default command if none is set, or error if there's no default.
+  Returns an error if no command was set.
   """
   exitCode: Int!
 
@@ -336,14 +336,14 @@ type Container {
   """
   The error stream of the last executed command.
   
-  Will execute default command if none is set, or error if there's no default.
+  Returns an error if no command was set.
   """
   stderr: String!
 
   """
   The output stream of the last executed command.
   
-  Will execute default command if none is set, or error if there's no default.
+  Returns an error if no command was set.
   """
   stdout: String!
 

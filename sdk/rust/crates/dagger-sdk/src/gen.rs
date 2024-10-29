@@ -2008,7 +2008,7 @@ impl Container {
         }]
     }
     /// The exit code of the last executed command.
-    /// Will execute default command if none is set, or error if there's no default.
+    /// Returns an error if no command was set.
     pub async fn exit_code(&self) -> Result<isize, DaggerError> {
         let query = self.selection.select("exitCode");
         query.execute(self.graphql_client.clone()).await
@@ -2292,13 +2292,13 @@ impl Container {
         }
     }
     /// The error stream of the last executed command.
-    /// Will execute default command if none is set, or error if there's no default.
+    /// Returns an error if no command was set.
     pub async fn stderr(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("stderr");
         query.execute(self.graphql_client.clone()).await
     }
     /// The output stream of the last executed command.
-    /// Will execute default command if none is set, or error if there's no default.
+    /// Returns an error if no command was set.
     pub async fn stdout(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("stdout");
         query.execute(self.graphql_client.clone()).await

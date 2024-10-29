@@ -547,7 +547,7 @@ func (r *Container) EnvVariables(ctx context.Context) ([]EnvVariable, error) {
 
 // The exit code of the last executed command.
 //
-// Will execute default command if none is set, or error if there's no default.
+// Returns an error if no command was set.
 func (r *Container) ExitCode(ctx context.Context) (int, error) {
 	if r.exitCode != nil {
 		return *r.exitCode, nil
@@ -913,7 +913,7 @@ func (r *Container) Rootfs() *Directory {
 
 // The error stream of the last executed command.
 //
-// Will execute default command if none is set, or error if there's no default.
+// Returns an error if no command was set.
 func (r *Container) Stderr(ctx context.Context) (string, error) {
 	if r.stderr != nil {
 		return *r.stderr, nil
@@ -928,7 +928,7 @@ func (r *Container) Stderr(ctx context.Context) (string, error) {
 
 // The output stream of the last executed command.
 //
-// Will execute default command if none is set, or error if there's no default.
+// Returns an error if no command was set.
 func (r *Container) Stdout(ctx context.Context) (string, error) {
 	if r.stdout != nil {
 		return *r.stdout, nil

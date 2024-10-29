@@ -127,7 +127,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
     /**
      * The exit code of the last executed command.
      *
-     * Will execute default command if none is set, or error if there's no default.
+     * Returns an error if no command was set.
      */
     public function exitCode(): int
     {
@@ -334,7 +334,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
     /**
      * The error stream of the last executed command.
      *
-     * Will execute default command if none is set, or error if there's no default.
+     * Returns an error if no command was set.
      */
     public function stderr(): string
     {
@@ -345,7 +345,7 @@ class Container extends Client\AbstractObject implements Client\IdAble
     /**
      * The output stream of the last executed command.
      *
-     * Will execute default command if none is set, or error if there's no default.
+     * Returns an error if no command was set.
      */
     public function stdout(): string
     {
