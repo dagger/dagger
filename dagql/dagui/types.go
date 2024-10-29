@@ -105,8 +105,8 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans []*Span, f func(*TraceTree)) {
 			Parent: parent,
 		}
 		if span.Base != nil && lastTree != nil {
-			// TODO: sync with Cloud impl.
-			tree.Chained = span.Base.Digest == lastTree.Span.CallDigest
+			tree.Chained = span.Base.Digest == lastTree.Span.CallDigest ||
+				span.Base.Digest == lastTree.Span.Output
 			lastTree.Final = !tree.Chained
 		}
 		if span.IsRunningOrLinksRunning() {
