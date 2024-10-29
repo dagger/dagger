@@ -57,6 +57,8 @@ func WithOTelTracing(tracer trace.Tracer) Middleware {
 		t.Cleanup(func() {
 			if t.Failed() {
 				span.SetStatus(codes.Error, "test failed")
+			} else {
+				span.SetStatus(codes.Ok, "")
 			}
 			span.End()
 		})

@@ -637,10 +637,12 @@ func StatusCodeFromPB(st *otlptracev1.Status) codes.Code {
 		return codes.Unset
 	}
 	switch st.Code {
+	case otlptracev1.Status_STATUS_CODE_OK:
+		return codes.Ok
 	case otlptracev1.Status_STATUS_CODE_ERROR:
 		return codes.Error
 	default:
-		return codes.Ok
+		return codes.Unset
 	}
 }
 

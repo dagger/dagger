@@ -1130,10 +1130,6 @@ func (s *moduleSchema) updateCodegenAndRuntime(
 		return fmt.Errorf("failed to get module runtime: %w", err)
 	}
 
-	if _, err := mod.Runtime.Evaluate(ctx); err != nil {
-		return fmt.Errorf("failed to evaluate runtime: %w", err)
-	}
-
 	return nil
 }
 

@@ -824,12 +824,14 @@ func (db *DB) CollectErrors(rows *RowsView) []*TraceTree {
 
 	var collect func(row *TraceTree)
 	collect = func(tree *TraceTree) {
-		if !tree.Span.IsFailedOrCausedFailure() {
-			return
+		failed := tree.Span.IsFailedOrCausedFailure()
+		if failed {
+			reveal[tree] = struct{}{}
 		}
-		reveal[tree] = struct{}{}
-		for _, child := range tree.Children {
-			collect(child)
+		if failed || tree.Span.IsUnset() {
+			for _, child := range tree.Children {
+				collect(child)
+			}
 		}
 	}
 

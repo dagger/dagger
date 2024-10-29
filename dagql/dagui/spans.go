@@ -225,8 +225,16 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 	}
 }
 
+func (span *Span) IsOK() bool {
+	return span.Status.Code == codes.Ok
+}
+
 func (span *Span) IsFailed() bool {
 	return span.Status.Code == codes.Error
+}
+
+func (span *Span) IsUnset() bool {
+	return span.Status.Code == codes.Unset
 }
 
 func (span *Span) IsFailedOrCausedFailure() bool {
