@@ -27,6 +27,7 @@ import (
 	"golang.org/x/tools/imports"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/cmd/codegen/generator"
 	"github.com/dagger/dagger/cmd/codegen/generator/go/templates"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
@@ -350,9 +351,9 @@ func renderFile(
 	return formatted, nil
 }
 
-func loadPackage(ctx context.Context, dir string) (*packages.Package, *token.FileSet, error) {
+func loadPackage(ctx context.Context, dir string) (_ *packages.Package, _ *token.FileSet, rerr error) {
 	ctx, span := trace.Tracer().Start(ctx, "loadPackage")
-	defer span.End()
+	defer telemetry.End(span, func() error { return rerr })
 
 	fset := token.NewFileSet()
 	pkgs, err := packages.Load(&packages.Config{

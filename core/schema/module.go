@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"dagger.io/dagger/telemetry"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/core"
@@ -852,9 +853,9 @@ func (s *moduleSchema) updateDeps(
 	mod *core.Module,
 	modCfg *modules.ModuleConfig,
 	src dagql.Instance[*core.ModuleSource],
-) error {
+) (rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "initialize dependencies")
-	defer span.End()
+	defer telemetry.End(span, func() error { return rerr })
 
 	var deps []dagql.Instance[*core.ModuleDependency]
 	err := s.dag.Select(ctx, src, &deps, dagql.Selector{Field: "dependencies"})
@@ -973,9 +974,9 @@ func (s *moduleSchema) updateCodegenAndRuntime(
 	ctx context.Context,
 	mod *core.Module,
 	src dagql.Instance[*core.ModuleSource],
-) error {
+) (rerr error) {
 	ctx, span := core.Tracer(ctx).Start(ctx, "build module")
-	defer span.End()
+	defer telemetry.End(span, func() error { return rerr })
 
 	if mod.NameField == "" || mod.SDKConfig == "" {
 		// can't codegen yet
@@ -1127,6 +1128,10 @@ func (s *moduleSchema) updateCodegenAndRuntime(
 	mod.Runtime, err = sdk.Runtime(ctx, mod.Deps, src)
 	if err != nil {
 		return fmt.Errorf("failed to get module runtime: %w", err)
+	}
+
+	if _, err := mod.Runtime.Evaluate(ctx); err != nil {
+		return fmt.Errorf("failed to evaluate runtime: %w", err)
 	}
 
 	return nil

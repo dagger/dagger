@@ -744,8 +744,8 @@ func (svc *Service) startReverseTunnel(ctx context.Context, id *call.ID) (runnin
 			},
 			Host:  fullHost,
 			Ports: checkPorts,
-			Stop: func(context.Context, bool) error {
-				defer span.End()
+			Stop: func(context.Context, bool) (rerr error) {
+				defer telemetry.End(span, func() error { return rerr })
 				stop(errors.New("service stop called"))
 				waitCtx, waitCancel := context.WithTimeout(context.WithoutCancel(svcCtx), 10*time.Second)
 				defer waitCancel()
