@@ -3219,7 +3219,7 @@ func (ContainerSuite) TestImport(ctx context.Context, t *testctx.T) {
 	t.Run("Docker", func(ctx context.Context, t *testctx.T) {
 		out, err := c.Container().
 			Import(c.Container().From(alpineImage).WithEnvVariable("FOO", "bar").AsTarball(dagger.ContainerAsTarballOpts{
-				MediaTypes: dagger.ImageMediaTypesDockermediatypes,
+				MediaTypes: dagger.ImageMediaTypesDockerMediaTypes,
 			})).
 			WithExec([]string{"sh", "-c", "echo $FOO"}).Stdout(ctx)
 		require.NoError(t, err)
@@ -4001,7 +4001,7 @@ func (ContainerSuite) TestForceCompression(ctx context.Context, t *testctx.T) {
 			"application/vnd.oci.image.layer.v1.tar",
 		},
 		{
-			dagger.ImageLayerCompressionEstargz,
+			dagger.ImageLayerCompressionEstarGz,
 			"application/vnd.oci.image.layer.v1.tar+gzip",
 		},
 	} {
@@ -4069,11 +4069,11 @@ func (ContainerSuite) TestMediaTypes(ctx context.Context, t *testctx.T) {
 			"application/vnd.oci.image.layer.v1.tar+gzip",
 		},
 		{
-			dagger.ImageMediaTypesOcimediatypes,
+			dagger.ImageMediaTypesOcimediaTypes,
 			"application/vnd.oci.image.layer.v1.tar+gzip",
 		},
 		{
-			dagger.ImageMediaTypesDockermediatypes,
+			dagger.ImageMediaTypesDockerMediaTypes,
 			"application/vnd.docker.image.rootfs.diff.tar.gzip",
 		},
 	} {
@@ -4296,7 +4296,7 @@ func (ContainerSuite) TestImageLoadCompatibility(ctx context.Context, t *testctx
 		})
 		require.NoError(t, err)
 
-		for _, mediaType := range []dagger.ImageMediaTypes{dagger.ImageMediaTypesOcimediatypes, dagger.ImageMediaTypesDockermediatypes} {
+		for _, mediaType := range []dagger.ImageMediaTypes{dagger.ImageMediaTypesOcimediaTypes, dagger.ImageMediaTypesDockerMediaTypes} {
 			mediaType := mediaType
 			for _, compression := range []dagger.ImageLayerCompression{dagger.ImageLayerCompressionGzip, dagger.ImageLayerCompressionZstd, dagger.ImageLayerCompressionUncompressed} {
 				compression := compression

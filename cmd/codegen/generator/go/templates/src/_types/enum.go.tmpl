@@ -9,8 +9,8 @@ func ({{ $enumName }}) IsEnum() {}
 {{- $needsScopedEnums := CheckVersionCompatibility "v0.14.0" | not }}
 const (
 	{{- range $index, $field := .EnumValues | SortEnumFields }}
-	{{- $fieldName := ($field.Name | FormatEnum) }}
-	{{- $fullFieldName := print $enumName $fieldName }}
+	{{- $fieldName := ($field.Name | FormatEnum "") }}
+	{{- $fullFieldName := print ($field.Name | FormatEnum $enumName) }}
 	{{ $field.Description | Comment }}
 	{{ $fullFieldName }} {{ $enumName }} = "{{ $field.Name }}"
 	{{- with .Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}

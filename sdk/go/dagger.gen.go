@@ -8387,10 +8387,10 @@ type ImageLayerCompression string
 func (ImageLayerCompression) IsEnum() {}
 
 const (
-	ImageLayerCompressionEstargz ImageLayerCompression = "EStarGZ"
+	ImageLayerCompressionEstarGz ImageLayerCompression = "EStarGZ"
 
-	// Deprecated: use ImageLayerCompressionEstargz instead
-	Estargz ImageLayerCompression = ImageLayerCompressionEstargz
+	// Deprecated: use ImageLayerCompressionEstarGz instead
+	Estargz ImageLayerCompression = ImageLayerCompressionEstarGz
 
 	ImageLayerCompressionGzip ImageLayerCompression = "Gzip"
 
@@ -8414,15 +8414,15 @@ type ImageMediaTypes string
 func (ImageMediaTypes) IsEnum() {}
 
 const (
-	ImageMediaTypesDockermediatypes ImageMediaTypes = "DockerMediaTypes"
+	ImageMediaTypesDockerMediaTypes ImageMediaTypes = "DockerMediaTypes"
 
-	// Deprecated: use ImageMediaTypesDockermediatypes instead
-	Dockermediatypes ImageMediaTypes = ImageMediaTypesDockermediatypes
+	// Deprecated: use ImageMediaTypesDockerMediaTypes instead
+	Dockermediatypes ImageMediaTypes = ImageMediaTypesDockerMediaTypes
 
-	ImageMediaTypesOcimediatypes ImageMediaTypes = "OCIMediaTypes"
+	ImageMediaTypesOcimediaTypes ImageMediaTypes = "OCIMediaTypes"
 
-	// Deprecated: use ImageMediaTypesOcimediatypes instead
-	Ocimediatypes ImageMediaTypes = ImageMediaTypesOcimediatypes
+	// Deprecated: use ImageMediaTypesOcimediaTypes instead
+	Ocimediatypes ImageMediaTypes = ImageMediaTypesOcimediaTypes
 )
 
 // The kind of module source.
