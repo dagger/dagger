@@ -3,6 +3,10 @@
   "sdk": "go",
   "dependencies": [
     {
+      "name": "gha",
+      "source": "github.com/shykes/gha@bf36a0b37a75882e4a985179f090d86d2ad1dfb4"
+    },
+    {
       "name": "alpine",
       "source": "modules/alpine"
     },
