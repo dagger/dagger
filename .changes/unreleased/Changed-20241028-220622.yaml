@@ -1,0 +1,9 @@
+kind: Changed
+body: |-
+    cli: limit printing objects to state
+
+    Previously, when a function chain in `dagger call` ended in an object, we'd print all functions that return a simple value and don't have any arguments. Now, only object fields will be included, not all functions.
+time: 2024-10-28T22:06:22.898442-01:00
+custom:
+    Author: helderco
+    PR: "8788"
