@@ -8,7 +8,7 @@ from .docs import Docs
 from .test import TestSuite
 
 UV_IMAGE: Final[str] = os.getenv("DAGGER_UV_IMAGE", "ghcr.io/astral-sh/uv:latest")
-UV_VERSION: Final[str] = os.getenv("UV_VERSION", "")
+UV_VERSION: Final[str] = os.getenv("DAGGER_UV_VERSION", os.getenv("UV_VERSION", ""))
 HATCH_VERSION: Final[str] = "1.12.0"
 SUPPORTED_VERSIONS: Final = Literal["3.12", "3.11", "3.10"]
 
