@@ -1817,9 +1817,15 @@ type ReturnTypes string
 var ReturnTypesEnum = dagql.NewEnum[ReturnTypes]()
 
 var (
-	ReturnSuccess = ReturnTypesEnum.Register("SUCCESS")
-	ReturnFailure = ReturnTypesEnum.Register("FAILURE")
-	ReturnAny     = ReturnTypesEnum.Register("ANY")
+	ReturnSuccess = ReturnTypesEnum.Register("SUCCESS",
+		`A successful execution (exit code 0)`,
+	)
+	ReturnFailure = ReturnTypesEnum.Register("FAILURE",
+		`A failed execution (exit codes 1-127)`,
+	)
+	ReturnAny = ReturnTypesEnum.Register("ANY",
+		`Any execution (exit codes 0-127)`,
+	)
 )
 
 func (expect ReturnTypes) Type() *ast.Type {

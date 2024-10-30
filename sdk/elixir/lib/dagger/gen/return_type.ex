@@ -4,12 +4,15 @@ defmodule Dagger.ReturnType do
 
   @type t() :: :SUCCESS | :FAILURE | :ANY
 
+  @doc "A successful execution (exit code 0)"
   @spec success() :: :SUCCESS
   def success(), do: :SUCCESS
 
+  @doc "A failed execution (exit codes 1-127)"
   @spec failure() :: :FAILURE
   def failure(), do: :FAILURE
 
+  @doc "Any execution (exit codes 0-127)"
   @spec any() :: :ANY
   def any(), do: :ANY
 

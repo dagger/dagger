@@ -1116,6 +1116,7 @@ var skipLeaves = map[string][]string{
 		// stdout and stderr may be arbitrarily large and jarring to see (e.g. test suites)
 		"stdout",
 		"stderr",
+		// avoid potential error if no previous execution
 		"exitCode",
 	},
 	"File": {

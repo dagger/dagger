@@ -8487,11 +8487,26 @@ type ReturnType string
 func (ReturnType) IsEnum() {}
 
 const (
-	Any ReturnType = "ANY"
+	// Any execution (exit codes 0-127)
+	ReturnTypeAny ReturnType = "ANY"
 
-	Failure ReturnType = "FAILURE"
+	// Any execution (exit codes 0-127)
+	// Deprecated: use ReturnTypeAny instead
+	Any ReturnType = ReturnTypeAny
 
-	Success ReturnType = "SUCCESS"
+	// A failed execution (exit codes 1-127)
+	ReturnTypeFailure ReturnType = "FAILURE"
+
+	// A failed execution (exit codes 1-127)
+	// Deprecated: use ReturnTypeFailure instead
+	Failure ReturnType = ReturnTypeFailure
+
+	// A successful execution (exit code 0)
+	ReturnTypeSuccess ReturnType = "SUCCESS"
+
+	// A successful execution (exit code 0)
+	// Deprecated: use ReturnTypeSuccess instead
+	Success ReturnType = ReturnTypeSuccess
 )
 
 // Distinguishes the different kinds of TypeDefs.

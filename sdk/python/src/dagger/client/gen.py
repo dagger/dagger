@@ -279,10 +279,13 @@ class ReturnType(Enum):
     """Expected return type of an execution"""
 
     ANY = "ANY"
+    """Any execution (exit codes 0-127)"""
 
     FAILURE = "FAILURE"
+    """A failed execution (exit codes 1-127)"""
 
     SUCCESS = "SUCCESS"
+    """A successful execution (exit code 0)"""
 
 
 class TypeDefKind(Enum):

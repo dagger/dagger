@@ -1161,8 +1161,19 @@ export type ClientSecretOpts = {
  * Expected return type of an execution
  */
 export enum ReturnType {
+  /**
+   * Any execution (exit codes 0-127)
+   */
   Any = "ANY",
+
+  /**
+   * A failed execution (exit codes 1-127)
+   */
   Failure = "FAILURE",
+
+  /**
+   * A successful execution (exit code 0)
+   */
   Success = "SUCCESS",
 }
 /**
