@@ -6,17 +6,17 @@ import {
   TypeDef,
   TypeDefKind,
 } from "../api/client.gen.js"
-import { Arguments } from "../introspector/scanner/abtractions/argument.js"
-import { Constructor } from "../introspector/scanner/abtractions/constructor.js"
-import { Method } from "../introspector/scanner/abtractions/method.js"
-import { DaggerModule } from "../introspector/scanner/abtractions/module.js"
+import { DaggerArguments as Arguments } from "../introspector/scanner/dagger_module/argument.js"
+import { DaggerConstructor as Constructor } from "../introspector/scanner/dagger_module/constructor.js"
+import { DaggerFunction as Method } from "../introspector/scanner/dagger_module/function.js"
+import { DaggerModule } from "../introspector/scanner/dagger_module/module.js"
 import {
   EnumTypeDef,
   ListTypeDef,
   ObjectTypeDef,
   ScalarTypeDef,
   TypeDef as ScannerTypeDef,
-} from "../introspector/scanner/typeDefs.js"
+} from "../introspector/scanner/typedef.js"
 
 /**
  * Register the module files and returns its ID
@@ -50,7 +50,7 @@ export async function register(
       if (field.isExposed) {
         typeDef = typeDef.withField(
           field.alias ?? field.name,
-          addTypeDef(field.type),
+          addTypeDef(field.type!),
           {
             description: field.description,
           },
@@ -99,7 +99,7 @@ function addConstructor(constructor: Constructor, owner: TypeDef): Function_ {
  */
 function addFunction(fct: Method): Function_ {
   return dag
-    .function_(fct.alias ?? fct.name, addTypeDef(fct.returnType))
+    .function_(fct.alias ?? fct.name, addTypeDef(fct.returnType!))
     .withDescription(fct.description)
     .with(addArg(fct.arguments))
 }
@@ -114,7 +114,7 @@ function addArg(args: Arguments): (fct: Function_) => Function_ {
         description: arg.description,
       }
 
-      let typeDef = addTypeDef(arg.type)
+      let typeDef = addTypeDef(arg.type!)
       if (arg.isOptional) {
         typeDef = typeDef.withOptional(true)
       }
@@ -132,7 +132,7 @@ function addArg(args: Arguments): (fct: Function_) => Function_ {
       // to workaround the fact that the API isn't aware of the default value and will
       // expect it to be set as required input.
       if (arg.defaultValue) {
-        if (isPrimitiveType(arg.type)) {
+        if (isPrimitiveType(arg.type!)) {
           opts.defaultValue = arg.defaultValue as string & { __JSON: never }
         } else {
           typeDef = typeDef.withOptional(true)

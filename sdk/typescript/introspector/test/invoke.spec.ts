@@ -32,7 +32,7 @@ describe("Invoke typescript function", function () {
     const modules = await load(files)
     const executor = new Executor(modules)
 
-    const scanResult = scan(files)
+    const scanResult = await scan(files, "helloWorld")
 
     // Mocking the fetch from the dagger API
     const input = {
@@ -57,7 +57,7 @@ describe("Invoke typescript function", function () {
     const modules = await load(files)
     const executor = new Executor(modules)
 
-    const scanResult = scan(files)
+    const scanResult = await scan(files, "multipleObjects")
 
     // Mocking the fetch from the dagger API
     const input = {
@@ -88,7 +88,7 @@ describe("Invoke typescript function", function () {
     const modules = await load(files)
     const executor = new Executor(modules)
 
-    const scanResult = scan(files)
+    const scanResult = await scan(files, "multiArgs")
 
     // Mocking the fetch from the dagger API
     const input = {
@@ -120,7 +120,7 @@ describe("Invoke typescript function", function () {
     const modules = await load(files)
     const executor = new Executor(modules)
 
-    const scanResult = scan(files)
+    const scanResult = await scan(files, "state")
 
     // We wrap the execution into a Dagger connection
     await connection(
@@ -196,7 +196,7 @@ describe("Invoke typescript function", function () {
     const modules = await load(files)
     const executor = new Executor(modules)
 
-    const scanResult = scan(files)
+    const scanResult = await scan(files, "multipleObjectsAsFields")
 
     const constructorInput = {
       parentName: "MultipleObjectsAsFields",
@@ -302,7 +302,7 @@ describe("Invoke typescript function", function () {
         const modules = await load(files)
         const executor = new Executor(modules)
 
-        const scanResult = scan(files)
+        const scanResult = await scan(files, "variadic")
 
         // We wrap the execution into a Dagger connection
         await connection(async () => {
@@ -326,7 +326,7 @@ describe("Invoke typescript function", function () {
       const modules = await load(files)
       const executor = new Executor(modules)
 
-      const scanResult = scan(files)
+      const scanResult = await scan(files, "alias")
 
       // We wrap the execution into a Dagger connection
       await connection(async () => {
@@ -370,7 +370,7 @@ describe("Invoke typescript function", function () {
       const modules = await load(files)
       const executor = new Executor(modules)
 
-      const scanResult = scan(files)
+      const scanResult = await scan(files, "alias")
       await connection(async () => {
         const constructorInput = {
           parentName: "Alias", // class name
@@ -414,7 +414,7 @@ describe("Invoke typescript function", function () {
       const modules = await load(files)
       const executor = new Executor(modules)
 
-      const scanResult = scan(files)
+      const scanResult = await scan(files, "optionalParameter")
 
       // Mocking the fetch from the dagger API
       const input = {
@@ -439,7 +439,7 @@ describe("Invoke typescript function", function () {
       const modules = await load(files)
       const executor = new Executor(modules)
 
-      const scanResult = scan(files)
+      const scanResult = await scan(files, "optionalParameter")
 
       // Mocking the fetch from the dagger API
       const input = {
@@ -471,7 +471,7 @@ describe("Invoke typescript function", function () {
     const modules = await load(files)
     const executor = new Executor(modules)
 
-    const scanResult = scan(files)
+    const scanResult = await scan(files, "objectParam")
 
     const inputUpper = {
       parentName: "ObjectParam",
@@ -519,7 +519,7 @@ describe("Invoke typescript function", function () {
     const modules = await load(files)
     const executor = new Executor(modules)
 
-    const scanResult = scan(files)
+    const scanResult = await scan(files, "list")
 
     const input = {
       parentName: "List",
@@ -550,7 +550,7 @@ describe("Invoke typescript function", function () {
     }
 
     const executor = new Executor(modules)
-    const module = scan(files)
+    const module = await scan(files, "enums")
 
     const inputDefault = {
       parentName: "Enums",

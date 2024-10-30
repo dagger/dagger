@@ -4,12 +4,14 @@ import Module from "node:module"
 import { dag, TypeDefKind } from "../api/client.gen.js"
 import { Executor } from "../introspector/executor/executor.js"
 import { Args } from "../introspector/executor/executor.js"
-import { Constructor } from "../introspector/scanner/abtractions/constructor.js"
-import { DaggerEnum } from "../introspector/scanner/abtractions/enum.js"
-import { Method } from "../introspector/scanner/abtractions/method.js"
-import { DaggerModule } from "../introspector/scanner/abtractions/module.js"
-import { DaggerObject } from "../introspector/scanner/abtractions/object.js"
-import { TypeDef } from "../introspector/scanner/typeDefs.js"
+import { DaggerConstructor as Constructor } from "../introspector/scanner/dagger_module/constructor.js"
+import { DaggerEnum } from "../introspector/scanner/dagger_module/enum.js"
+import { DaggerEnumBase } from "../introspector/scanner/dagger_module/enumBase.js"
+import { DaggerFunction as Method } from "../introspector/scanner/dagger_module/function.js"
+import { DaggerModule } from "../introspector/scanner/dagger_module/module.js"
+import { DaggerObject } from "../introspector/scanner/dagger_module/object.js"
+import { DaggerObjectBase } from "../introspector/scanner/dagger_module/objectBase.js"
+import { TypeDef } from "../introspector/scanner/typedef.js"
 import { InvokeCtx } from "./context.js"
 
 /**
@@ -32,7 +34,7 @@ export function loadInvokedObject(
   module: DaggerModule,
   parentName: string,
 ): DaggerObject {
-  return module.objects[parentName]
+  return module.objects[parentName] as DaggerObject
 }
 
 export function loadInvokedMethod(
@@ -60,10 +62,14 @@ export async function loadArgs(
   const args: Args = {}
 
   // Load arguments
-  for (const argName of method.getArgOrder()) {
+  for (const argName of method.getArgsOrder()) {
     const argument = method.arguments[argName]
     if (!argument) {
       throw new Error(`could not find argument ${argName}`)
+    }
+
+    if (!argument.type) {
+      throw new Error(`could not find type for argument ${argName}`)
     }
 
     const loadedArg = await loadValue(
@@ -116,6 +122,10 @@ export async function loadParentState(
     const property = object.properties[key]
     if (!property) {
       throw new Error(`could not find parent property ${key}`)
+    }
+
+    if (!property.type) {
+      throw new Error(`could not find type for parent property ${key}`)
     }
 
     parentState[property.name] = await loadValue(executor, value, property.type)
@@ -192,8 +202,11 @@ export function loadObjectReturnType(
   module: DaggerModule,
   object: DaggerObject,
   method: Method,
-): DaggerObject | DaggerEnum {
+): DaggerObjectBase | DaggerEnumBase {
   const retType = method.returnType
+  if (!retType) {
+    throw new Error(`could not find return type for ${method.name}`)
+  }
 
   switch (retType.kind) {
     case TypeDefKind.ListKind: {
@@ -218,7 +231,7 @@ export function loadObjectReturnType(
 export async function loadResult(
   result: any,
   module: DaggerModule,
-  object: DaggerObject | DaggerEnum,
+  object: DaggerObjectBase | DaggerEnumBase,
 ): Promise<any> {
   // Handle IDable objects
   if (result && typeof result?.id === "function") {
@@ -246,7 +259,11 @@ export async function loadResult(
         throw new Error(`could not find result property ${key}`)
       }
 
-      let referencedObject: DaggerObject | undefined = undefined
+      if (!property.type) {
+        throw new Error(`could not find type for result property ${key}`)
+      }
+
+      let referencedObject: DaggerObjectBase | undefined = undefined
 
       // Handle nested objects
       if (property.type.kind === TypeDefKind.ObjectKind) {

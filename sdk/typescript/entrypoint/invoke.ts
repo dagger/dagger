@@ -1,11 +1,11 @@
 import { FunctionNotFound } from "../common/errors/FunctionNotFound.js"
 import { Executor } from "../introspector/executor/executor.js"
 import { registry } from "../introspector/registry/registry.js"
-import { Constructor } from "../introspector/scanner/abtractions/constructor.js"
-import { DaggerEnum } from "../introspector/scanner/abtractions/enum.js"
-import { Method } from "../introspector/scanner/abtractions/method.js"
-import { DaggerModule } from "../introspector/scanner/abtractions/module.js"
-import { DaggerObject } from "../introspector/scanner/abtractions/object.js"
+import { DaggerConstructor as Constructor } from "../introspector/scanner/dagger_module/constructor.js"
+import { DaggerEnumBase } from "../introspector/scanner/dagger_module/enumBase.js"
+import { DaggerFunction as Method } from "../introspector/scanner/dagger_module/function.js"
+import { DaggerModule } from "../introspector/scanner/dagger_module/module.js"
+import { DaggerObjectBase } from "../introspector/scanner/dagger_module/objectBase.js"
 import { InvokeCtx } from "./context.js"
 import {
   loadResult,
@@ -74,7 +74,7 @@ export async function invoke(
   }
 
   if (result) {
-    let returnType: DaggerObject | DaggerEnum
+    let returnType: DaggerObjectBase | DaggerEnumBase
 
     // Handle alias serialization by getting the return type to load
     // if the function called isn't a constructor.

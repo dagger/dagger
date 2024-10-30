@@ -1,72 +1,11 @@
 {
   "name": "Alias",
   "objects": {
-    "Bar": {
-      "name": "Bar",
-      "description": "",
-      "constructor": {
-        "args": {
-          "baz": {
-            "name": "baz",
-            "description": "",
-            "type": {
-              "kind": "STRING_KIND"
-            },
-            "isVariadic": false,
-            "isNullable": false,
-            "isOptional": false,
-            "defaultValue": "\"baz\""
-          },
-          "foo": {
-            "name": "foo",
-            "description": "",
-            "type": {
-              "kind": "INTEGER_KIND"
-            },
-            "isVariadic": false,
-            "isNullable": false,
-            "isOptional": false,
-            "defaultValue": "4"
-          }
-        }
-      },
-      "methods": {
-        "zoo": {
-          "name": "za",
-          "description": "",
-          "alias": "zoo",
-          "arguments": {},
-          "returnType": {
-            "kind": "STRING_KIND"
-          }
-        }
-      },
-      "properties": {
-        "bar": {
-          "name": "baz",
-          "description": "",
-          "alias": "bar",
-          "type": {
-            "kind": "STRING_KIND"
-          },
-          "isExposed": true
-        },
-        "oof": {
-          "name": "foo",
-          "description": "",
-          "alias": "oof",
-          "type": {
-            "kind": "INTEGER_KIND"
-          },
-          "isExposed": true
-        }
-      }
-    },
     "Alias": {
       "name": "Alias",
       "description": "",
       "constructor": {
-        "args": {
+        "arguments": {
           "ctr": {
             "name": "ctr",
             "description": "",
@@ -189,6 +128,67 @@
           "type": {
             "kind": "OBJECT_KIND",
             "name": "Container"
+          },
+          "isExposed": true
+        }
+      }
+    },
+    "Bar": {
+      "name": "Bar",
+      "description": "",
+      "constructor": {
+        "arguments": {
+          "baz": {
+            "name": "baz",
+            "description": "",
+            "type": {
+              "kind": "STRING_KIND"
+            },
+            "isVariadic": false,
+            "isNullable": false,
+            "isOptional": true,
+            "defaultValue": "baz"
+          },
+          "foo": {
+            "name": "foo",
+            "description": "",
+            "type": {
+              "kind": "INTEGER_KIND"
+            },
+            "isVariadic": false,
+            "isNullable": false,
+            "isOptional": true,
+            "defaultValue": "4"
+          }
+        }
+      },
+      "methods": {
+        "zoo": {
+          "name": "za",
+          "description": "",
+          "alias": "zoo",
+          "arguments": {},
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        }
+      },
+      "properties": {
+        "bar": {
+          "name": "baz",
+          "description": "",
+          "alias": "bar",
+          "type": {
+            "kind": "STRING_KIND"
+          },
+          "isExposed": true
+        },
+        "oof": {
+          "name": "foo",
+          "description": "",
+          "alias": "oof",
+          "type": {
+            "kind": "INTEGER_KIND"
           },
           "isExposed": true
         }

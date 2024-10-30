@@ -1,8 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import assert from "assert"
 import * as fs from "fs"
-import { describe, it } from "mocha"
-import * as path from "path"
+import path from "path"
 import { fileURLToPath } from "url"
 
 import { scan } from "../scanner/scan.js"
@@ -17,50 +16,54 @@ type TestCase = {
   directory: string
 }
 
-describe("scan static TypeScript", function () {
+describe("scan by reference TypeScript", function () {
   const testCases: TestCase[] = [
     {
       name: "Should correctly scan a basic class with one method",
       directory: "helloWorld",
     },
     {
-      name: "Should correctly scan multiple arguments",
-      directory: "multiArgs",
+      name: "Should correctly resolve references",
+      directory: "references",
     },
     {
-      name: "Should supports multiple files and classes that returns classes",
-      directory: "multipleObjects",
-    },
-    {
-      name: "Should not expose private methods from a class",
-      directory: "privateMethod",
-    },
-    {
-      name: "Should scan classes' properties to keep a state",
-      directory: "state",
-    },
-    {
-      name: "Should detect optional parameters of a method",
+      name: "Should correctly handle optional parameters",
       directory: "optionalParameter",
     },
     {
-      name: "Should correctly handle function with void return",
-      directory: "voidReturn",
+      name: "Should correctly handle context",
+      directory: "context",
     },
     {
-      name: "Should introspect constructor",
-      directory: "constructor",
+      name: "Should correctly scan scalar",
+      directory: "scalar",
     },
     {
-      name: "Should correctly scan variadic arguments",
+      name: "Should correctly scan enums",
+      directory: "enums",
+    },
+    {
+      name: "Should correctly scan list",
+      directory: "list",
+    },
+    {
+      name: "Should correctly scan variadic",
       directory: "variadic",
     },
     {
-      name: "Should correctly scan alias",
-      directory: "alias",
+      name: "Should correctly scan void return",
+      directory: "voidReturn",
     },
     {
-      name: "Should correctly serialize object param",
+      name: "Should correctly scan state",
+      directory: "state",
+    },
+    {
+      name: "Should correctly scan private method",
+      directory: "privateMethod",
+    },
+    {
+      name: "Should correctly scan object param",
       directory: "objectParam",
     },
     {
@@ -68,38 +71,49 @@ describe("scan static TypeScript", function () {
       directory: "multipleObjectsAsFields",
     },
     {
-      name: "Should correctly scan scalar arguments",
-      directory: "scalar",
-    },
-    {
-      name: "Should correctly scan list of objects",
-      directory: "list",
-    },
-    {
-      name: "Should correctly scan enums",
-      directory: "enums",
+      name: "Should correctly scan multiple objects",
+      directory: "multipleObjects",
     },
     {
       name: "Should correctly scan core enums",
       directory: "coreEnums",
     },
     {
-      name: "Should correctly scan contextual arguments",
-      directory: "context",
+      name: "Should correctly scan constructor",
+      directory: "constructor",
+    },
+    {
+      name: "Should correctly scan alias",
+      directory: "alias",
     },
   ]
 
   for (const test of testCases) {
     it(test.name, async function () {
-      const files = await listFiles(`${rootDirectory}/${test.directory}`)
-      const result = scan(files, test.directory)
-      const jsonResult = JSON.stringify(result, null, 2)
-      const expected = fs.readFileSync(
-        `${rootDirectory}/${test.directory}/expected.json`,
-        "utf-8",
-      )
+      this.timeout(60000)
 
-      assert.deepEqual(JSON.parse(jsonResult), JSON.parse(expected))
+      try {
+        const files = await listFiles(`${rootDirectory}/${test.directory}`)
+        const result = await scan(files, test.directory)
+        const jsonResult = JSON.stringify(result, null, 2)
+        const expected = fs.readFileSync(
+          `${rootDirectory}/${test.directory}/expected.json`,
+          "utf-8",
+        )
+
+        assert.deepStrictEqual(
+          JSON.parse(jsonResult),
+          JSON.parse(expected),
+          `
+Expected:
+${expected}
+Got: 
+${jsonResult}
+        `,
+        )
+      } catch (e) {
+        assert.fail(e as Error)
+      }
     })
   }
 
@@ -117,10 +131,13 @@ describe("scan static TypeScript", function () {
       try {
         const files = await listFiles(`${rootDirectory}/invalid`)
 
-        scan(files, "invalid")
+        await scan(files, "invalid")
         assert.fail("Should throw an error")
       } catch (e: any) {
-        assert.equal(e.message, "no objects found in the module")
+        assert.equal(
+          e.message,
+          "could not find module entrypoint: class Invalid. Please export it.",
+        )
       }
     })
 
@@ -128,10 +145,13 @@ describe("scan static TypeScript", function () {
       try {
         const files = await listFiles(`${rootDirectory}/noDecorators`)
 
-        scan(files, "noDecorators")
+        await scan(files, "noDecorators")
         assert.fail("Should throw an error")
       } catch (e: any) {
-        assert.equal(e.message, "no objects found in the module")
+        assert.match(
+          e.message,
+          /is used by the module but not exposed with a dagger decorator/,
+        )
       }
     })
 
@@ -139,7 +159,7 @@ describe("scan static TypeScript", function () {
       try {
         const files = await listFiles(`${rootDirectory}/primitives`)
 
-        const f = scan(files, "primitives")
+        const f = await scan(files, "primitives")
         // Trigger the module resolution with a strigify
         JSON.stringify(f, null, 2)
 
@@ -147,7 +167,7 @@ describe("scan static TypeScript", function () {
       } catch (e: any) {
         assert.equal(
           e.message,
-          "Use of primitive String type detected, did you mean string?",
+          'String is a reserved word, please use "string" instead.',
         )
       }
     })

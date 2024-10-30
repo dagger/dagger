@@ -49,12 +49,12 @@ export class Minimal {
   }
 
   @func()
-  echoOptional(msg = "default"): string {
+  echoOptional(msg: string = "default"): string {
     return this.echo(msg);
   }
 
   @func()
-  echoOptionalSlice(msg = ["foobar"]): string {
+  echoOptionalSlice(msg: string[] = ["foobar"]): string {
     return this.echo(msg.join("+"));
   }
 

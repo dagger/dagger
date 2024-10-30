@@ -35,7 +35,7 @@
       "name": "MultipleObjectsAsFields",
       "description": "",
       "constructor": {
-        "args": {}
+        "arguments": {}
       },
       "methods": {},
       "properties": {

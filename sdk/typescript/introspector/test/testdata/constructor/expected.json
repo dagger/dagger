@@ -1,11 +1,12 @@
 {
   "name": "Constructor",
+  "description": "Constructor module",
   "objects": {
-    "HelloWorld": {
-      "name": "HelloWorld",
-      "description": "HelloWorld class",
+    "Constructor": {
+      "name": "Constructor",
+      "description": "Constructor class",
       "constructor": {
-        "args": {
+        "arguments": {
           "name": {
             "name": "name",
             "description": "",
@@ -14,8 +15,8 @@
             },
             "isVariadic": false,
             "isNullable": false,
-            "isOptional": false,
-            "defaultValue": "\"world\""
+            "isOptional": true,
+            "defaultValue": "world"
           }
         }
       },
