@@ -15,7 +15,6 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/session"
 	"github.com/dagger/dagger/engine/sources/gitdns"
 	"github.com/moby/buildkit/util/gitutil"
 )
@@ -202,11 +201,7 @@ func (s *gitSchema) git(ctx context.Context, parent *core.Query, args gitArgs) (
 
 			credentials, err := bk.GetCredential(ctx, remote.Scheme, remote.Host, remote.Path)
 			if err != nil {
-				if session.IsCredentialNotFound(err) {
-					slog.Info("no git credentials found, continuing without authentication")
-				} else {
-					return nil, fmt.Errorf("core/schema: failed to retrieve git credentials from host: %w", err)
-				}
+				slog.Warn(fmt.Sprintf("failed to retrieve git credentials, continuing without authentication: %s", err.Error()))
 			} else {
 				// Credentials found, create and set auth token
 				var secretAuthToken dagql.Instance[*core.Secret]

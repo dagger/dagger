@@ -35,9 +35,26 @@ func (s GitCredentialAttachable) Register(srv *grpc.Server) {
 
 var errCredentialNotFound = errors.New("credential not found")
 
-// GetCredential retrieves Git credentials for the given request.
-// It uses the local Git credential helper to fetch the credentials.
+func newErrorResponse(errorType ErrorInfo_ErrorType, message string) *GitCredentialResponse {
+	return &GitCredentialResponse{
+		Result: &GitCredentialResponse_Error{
+			Error: &ErrorInfo{
+				Type:    errorType,
+				Message: message,
+			},
+		},
+	}
+}
+
+// GetCredential retrieves Git credentials for the given request using the local Git credential system.
 // The function has a timeout of 30 seconds and ensures thread-safe execution.
+//
+// It follows Git's credential helper protocol and error handling:
+// - If Git can't find or execute a helper: CREDENTIAL_RETRIEVAL_FAILED
+// - If a helper returns invalid format or no credentials: Git handles it as a failure (CREDENTIAL_RETRIEVAL_FAILED)
+// - If the command times out: TIMEOUT
+// - If Git is not installed: NO_GIT
+// - If the request is invalid: INVALID_REQUEST
 func (s GitCredentialAttachable) GetCredential(ctx context.Context, req *GitCredentialRequest) (*GitCredentialResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -70,8 +87,8 @@ func (s GitCredentialAttachable) GetCredential(ctx context.Context, req *GitCred
 	cmd.Stdin = strings.NewReader(input)
 
 	cmd.Env = append(os.Environ(),
-		"GIT_TERMINAL_PROMPT=0", // Do not trigger the terminal password
-		"SSH_ASKPASS=echo",      // Do not ask for SSH auth
+		"GIT_TERMINAL_PROMPT=0",
+		"SSH_ASKPASS=echo",
 	)
 
 	// Run the command
@@ -85,10 +102,7 @@ func (s GitCredentialAttachable) GetCredential(ctx context.Context, req *GitCred
 	// Parse the output
 	cred, err := parseGitCredentialOutput(stdout.Bytes())
 	if err != nil {
-		if err == errCredentialNotFound {
-			return newErrorResponse(CREDENTIAL_NOT_FOUND, "No matching credentials found"), nil
-		}
-		return newErrorResponse(INVALID_CREDENTIAL_FORMAT, fmt.Sprintf("Failed to parse git credential output: %v", err)), nil
+		return newErrorResponse(CREDENTIAL_RETRIEVAL_FAILED, fmt.Sprintf("Failed to retrieve credentials: %v", err)), nil
 	}
 
 	return &GitCredentialResponse{
@@ -98,34 +112,34 @@ func (s GitCredentialAttachable) GetCredential(ctx context.Context, req *GitCred
 	}, nil
 }
 
-func newErrorResponse(errorType ErrorInfo_ErrorType, message string) *GitCredentialResponse {
-	return &GitCredentialResponse{
-		Result: &GitCredentialResponse_Error{
-			Error: &ErrorInfo{
-				Type:    errorType,
-				Message: message,
-			},
-		},
-	}
-}
-
 func parseGitCredentialOutput(output []byte) (*CredentialInfo, error) {
+	if len(output) == 0 {
+		return nil, fmt.Errorf("no output from credential helper")
+	}
+
 	cred := make(map[string]string)
 	scanner := bufio.NewScanner(bytes.NewReader(output))
 
 	for scanner.Scan() {
-		parts := strings.SplitN(scanner.Text(), "=", 2)
-		if len(parts) == 2 {
-			cred[parts[0]] = parts[1]
+		line := scanner.Text()
+		if line == "" {
+			continue
 		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("invalid format: line doesn't match key=value pattern")
+		}
+
+		cred[parts[0]] = parts[1]
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error reading git credential output: %v", err)
+		return nil, fmt.Errorf("error reading credential helper output: %v", err)
 	}
 
 	if cred["username"] == "" || cred["password"] == "" {
-		return nil, errCredentialNotFound
+		// should not be possible
+		return nil, fmt.Errorf("incomplete credentials: missing username or password")
 	}
 
 	return &CredentialInfo{

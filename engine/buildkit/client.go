@@ -599,10 +599,7 @@ func (c *Client) GetCredential(ctx context.Context, protocol, host, path string)
 	case *session.GitCredentialResponse_Credential:
 		return result.Credential, nil
 	case *session.GitCredentialResponse_Error:
-		return nil, &session.GitCredentialError{
-			Type:    result.Error.Type,
-			Message: result.Error.Message,
-		}
+		return nil, fmt.Errorf("git credential error: %s", result.Error.Message)
 	default:
 		return nil, fmt.Errorf("unexpected response type")
 	}
