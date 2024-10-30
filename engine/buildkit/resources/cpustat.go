@@ -76,7 +76,7 @@ func (s *cpuStatSampler) sample(ctx context.Context) error {
 		cpuSystem: newInt64GaugeSample(s.cpuSystem, s.commonAttrs),
 	}
 
-	bs, err := os.ReadFile(filepath.Join(s.cpuStatFilePath, cpuStatFile))
+	bs, err := os.ReadFile(s.cpuStatFilePath)
 	if err != nil {
 		return fmt.Errorf("failed to read cpu.stat file: %w", err)
 	}
