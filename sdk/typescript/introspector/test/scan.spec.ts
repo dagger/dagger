@@ -134,10 +134,7 @@ ${jsonResult}
         await scan(files, "invalid")
         assert.fail("Should throw an error")
       } catch (e: any) {
-        assert.equal(
-          e.message,
-          "could not find module entrypoint: class Invalid. Please export it.",
-        )
+        assert.match(e.message, /could not find main object Invalid/)
       }
     })
 

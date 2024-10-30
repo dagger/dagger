@@ -320,7 +320,7 @@ export class AST {
 
     switch (kind) {
       case ts.SyntaxKind.StringLiteral:
-        return expression.getText()
+        return eval(expression.getText())
       case ts.SyntaxKind.NumericLiteral:
         return `${parseInt(expression.getText())}`
       case ts.SyntaxKind.TrueKeyword:

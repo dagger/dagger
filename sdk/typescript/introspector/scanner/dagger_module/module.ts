@@ -96,7 +96,7 @@ export class DaggerModule {
     )
     if (!mainObjectNode) {
       throw new IntrospectionError(
-        `could not find main object symbol or node ${this.name} in module ${JSON.stringify(mainModule, null, 2)} located at ${this.ast.files}`,
+        `could not find main object ${this.name} in module ${JSON.stringify(mainModule, null, 2) ?? ""} located at ${this.ast.files}`,
       )
     }
 
