@@ -1631,6 +1631,9 @@ pub struct ContainerWithExecOpts<'a> {
     /// Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
     #[builder(setter(into, strip_option), default)]
     pub expand: Option<bool>,
+    /// Exit codes this command is allowed to exit with without error
+    #[builder(setter(into, strip_option), default)]
+    pub expect: Option<ReturnType>,
     /// Provides Dagger access to the executed command.
     /// Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
     #[builder(setter(into, strip_option), default)]
@@ -2004,6 +2007,12 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         }]
     }
+    /// The exit code of the last executed command.
+    /// Returns an error if no command was set.
+    pub async fn exit_code(&self) -> Result<isize, DaggerError> {
+        let query = self.selection.select("exitCode");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// EXPERIMENTAL API! Subject to change/removal at any time.
     /// Configures all available GPUs on the host to be accessible to this container.
     /// This currently works for Nvidia devices only.
@@ -2283,13 +2292,13 @@ impl Container {
         }
     }
     /// The error stream of the last executed command.
-    /// Will execute default command if none is set, or error if there's no default.
+    /// Returns an error if no command was set.
     pub async fn stderr(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("stderr");
         query.execute(self.graphql_client.clone()).await
     }
     /// The output stream of the last executed command.
-    /// Will execute default command if none is set, or error if there's no default.
+    /// Returns an error if no command was set.
     pub async fn stdout(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("stdout");
         query.execute(self.graphql_client.clone()).await
@@ -2656,6 +2665,9 @@ impl Container {
         }
         if let Some(redirect_stderr) = opts.redirect_stderr {
             query = query.arg("redirectStderr", redirect_stderr);
+        }
+        if let Some(expect) = opts.expect {
+            query = query.arg("expect", expect);
         }
         if let Some(experimental_privileged_nesting) = opts.experimental_privileged_nesting {
             query = query.arg(
@@ -8593,6 +8605,15 @@ pub enum NetworkProtocol {
     Tcp,
     #[serde(rename = "UDP")]
     Udp,
+}
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum ReturnType {
+    #[serde(rename = "ANY")]
+    Any,
+    #[serde(rename = "FAILURE")]
+    Failure,
+    #[serde(rename = "SUCCESS")]
+    Success,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum TypeDefKind {

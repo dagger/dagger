@@ -1266,5 +1266,5 @@ func (w *Worker) runContainer(ctx context.Context, state *execState) (rerr error
 		return err
 	}
 
-	return exitError(ctx, state.exitCodePath, w.callWithIO(ctx, state.procInfo, startedCallback, killer, runcCall))
+	return exitError(ctx, state.exitCodePath, w.callWithIO(ctx, state.procInfo, startedCallback, killer, runcCall), state.procInfo.Meta.ValidExitCodes)
 }

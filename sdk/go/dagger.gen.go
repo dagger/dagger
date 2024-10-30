@@ -330,6 +330,7 @@ type Container struct {
 	query *querybuilder.Selection
 
 	envVariable *string
+	exitCode    *int
 	export      *string
 	id          *ContainerID
 	imageRef    *string
@@ -542,6 +543,21 @@ func (r *Container) EnvVariables(ctx context.Context) ([]EnvVariable, error) {
 	}
 
 	return convert(response), nil
+}
+
+// The exit code of the last executed command.
+//
+// Returns an error if no command was set.
+func (r *Container) ExitCode(ctx context.Context) (int, error) {
+	if r.exitCode != nil {
+		return *r.exitCode, nil
+	}
+	q := r.query.Select("exitCode")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
 }
 
 // EXPERIMENTAL API! Subject to change/removal at any time.
@@ -897,7 +913,7 @@ func (r *Container) Rootfs() *Directory {
 
 // The error stream of the last executed command.
 //
-// Will execute default command if none is set, or error if there's no default.
+// Returns an error if no command was set.
 func (r *Container) Stderr(ctx context.Context) (string, error) {
 	if r.stderr != nil {
 		return *r.stderr, nil
@@ -912,7 +928,7 @@ func (r *Container) Stderr(ctx context.Context) (string, error) {
 
 // The output stream of the last executed command.
 //
-// Will execute default command if none is set, or error if there's no default.
+// Returns an error if no command was set.
 func (r *Container) Stdout(ctx context.Context) (string, error) {
 	if r.stdout != nil {
 		return *r.stdout, nil
@@ -1172,6 +1188,8 @@ type ContainerWithExecOpts struct {
 	RedirectStdout string
 	// Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
 	RedirectStderr string
+	// Exit codes this command is allowed to exit with without error
+	Expect ReturnType
 	// Provides Dagger access to the executed command.
 	//
 	// Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
@@ -1205,6 +1223,10 @@ func (r *Container) WithExec(args []string, opts ...ContainerWithExecOpts) *Cont
 		// `redirectStderr` optional argument
 		if !querybuilder.IsZeroValue(opts[i].RedirectStderr) {
 			q = q.Arg("redirectStderr", opts[i].RedirectStderr)
+		}
+		// `expect` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Expect) {
+			q = q.Arg("expect", opts[i].Expect)
 		}
 		// `experimentalPrivilegedNesting` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
@@ -8457,6 +8479,34 @@ const (
 
 	// Deprecated: use NetworkProtocolUdp instead
 	Udp NetworkProtocol = NetworkProtocolUdp
+)
+
+// Expected return type of an execution
+type ReturnType string
+
+func (ReturnType) IsEnum() {}
+
+const (
+	// Any execution (exit codes 0-127)
+	ReturnTypeAny ReturnType = "ANY"
+
+	// Any execution (exit codes 0-127)
+	// Deprecated: use ReturnTypeAny instead
+	Any ReturnType = ReturnTypeAny
+
+	// A failed execution (exit codes 1-127)
+	ReturnTypeFailure ReturnType = "FAILURE"
+
+	// A failed execution (exit codes 1-127)
+	// Deprecated: use ReturnTypeFailure instead
+	Failure ReturnType = ReturnTypeFailure
+
+	// A successful execution (exit code 0)
+	ReturnTypeSuccess ReturnType = "SUCCESS"
+
+	// A successful execution (exit code 0)
+	// Deprecated: use ReturnTypeSuccess instead
+	Success ReturnType = ReturnTypeSuccess
 )
 
 // Distinguishes the different kinds of TypeDefs.

@@ -149,6 +149,19 @@ defmodule Dagger.Container do
   end
 
   @doc """
+  The exit code of the last executed command.
+
+  Returns an error if no command was set.
+  """
+  @spec exit_code(t()) :: {:ok, integer()} | {:error, term()}
+  def exit_code(%__MODULE__{} = container) do
+    query_builder =
+      container.query_builder |> QB.select("exitCode")
+
+    Client.execute(container.client, query_builder)
+  end
+
+  @doc """
   EXPERIMENTAL API! Subject to change/removal at any time.
 
   Configures all available GPUs on the host to be accessible to this container.
@@ -396,7 +409,7 @@ defmodule Dagger.Container do
   @doc """
   The error stream of the last executed command.
 
-  Will execute default command if none is set, or error if there's no default.
+  Returns an error if no command was set.
   """
   @spec stderr(t()) :: {:ok, String.t()} | {:error, term()}
   def stderr(%__MODULE__{} = container) do
@@ -409,7 +422,7 @@ defmodule Dagger.Container do
   @doc """
   The output stream of the last executed command.
 
-  Will execute default command if none is set, or error if there's no default.
+  Returns an error if no command was set.
   """
   @spec stdout(t()) :: {:ok, String.t()} | {:error, term()}
   def stdout(%__MODULE__{} = container) do
@@ -605,6 +618,7 @@ defmodule Dagger.Container do
           {:stdin, String.t() | nil},
           {:redirect_stdout, String.t() | nil},
           {:redirect_stderr, String.t() | nil},
+          {:expect, Dagger.ReturnType.t() | nil},
           {:experimental_privileged_nesting, boolean() | nil},
           {:insecure_root_capabilities, boolean() | nil},
           {:expand, boolean() | nil},
@@ -619,6 +633,7 @@ defmodule Dagger.Container do
       |> QB.maybe_put_arg("stdin", optional_args[:stdin])
       |> QB.maybe_put_arg("redirectStdout", optional_args[:redirect_stdout])
       |> QB.maybe_put_arg("redirectStderr", optional_args[:redirect_stderr])
+      |> QB.maybe_put_arg("expect", optional_args[:expect])
       |> QB.maybe_put_arg(
         "experimentalPrivilegedNesting",
         optional_args[:experimental_privileged_nesting]

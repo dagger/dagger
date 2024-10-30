@@ -275,6 +275,19 @@ class NetworkProtocol(Enum):
     UDP = "UDP"
 
 
+class ReturnType(Enum):
+    """Expected return type of an execution"""
+
+    ANY = "ANY"
+    """Any execution (exit codes 0-127)"""
+
+    FAILURE = "FAILURE"
+    """A failed execution (exit codes 1-127)"""
+
+    SUCCESS = "SUCCESS"
+    """A successful execution (exit code 0)"""
+
+
 class TypeDefKind(Enum):
     """Distinguishes the different kinds of TypeDefs."""
 
@@ -436,7 +449,8 @@ class Container(Type):
         _args = [
             Arg(
                 "platformVariants",
-                [] if platform_variants is None else platform_variants,
+                () if platform_variants is None else platform_variants,
+                (),
             ),
             Arg("forcedCompression", forced_compression, None),
             Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
@@ -479,8 +493,8 @@ class Container(Type):
             Arg("context", context),
             Arg("dockerfile", dockerfile, "Dockerfile"),
             Arg("target", target, ""),
-            Arg("buildArgs", [] if build_args is None else build_args),
-            Arg("secrets", [] if secrets is None else secrets),
+            Arg("buildArgs", () if build_args is None else build_args, ()),
+            Arg("secrets", () if secrets is None else secrets, ()),
         ]
         _ctx = self._select("build", _args)
         return Container(_ctx)
@@ -602,6 +616,29 @@ class Container(Type):
             for v in _ids
         ]
 
+    async def exit_code(self) -> int:
+        """The exit code of the last executed command.
+
+        Returns an error if no command was set.
+
+        Returns
+        -------
+        int
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("exitCode", _args)
+        return await _ctx.execute(int)
+
     def experimental_with_all_gp_us(self) -> Self:
         """EXPERIMENTAL API! Subject to change/removal at any time.
 
@@ -691,7 +728,8 @@ class Container(Type):
             Arg("path", path),
             Arg(
                 "platformVariants",
-                [] if platform_variants is None else platform_variants,
+                () if platform_variants is None else platform_variants,
+                (),
             ),
             Arg("forcedCompression", forced_compression, None),
             Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
@@ -983,7 +1021,8 @@ class Container(Type):
             Arg("address", address),
             Arg(
                 "platformVariants",
-                [] if platform_variants is None else platform_variants,
+                () if platform_variants is None else platform_variants,
+                (),
             ),
             Arg("forcedCompression", forced_compression, None),
             Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
@@ -1000,8 +1039,7 @@ class Container(Type):
     async def stderr(self) -> str:
         """The error stream of the last executed command.
 
-        Will execute default command if none is set, or error if there's no
-        default.
+        Returns an error if no command was set.
 
         Returns
         -------
@@ -1024,8 +1062,7 @@ class Container(Type):
     async def stdout(self) -> str:
         """The output stream of the last executed command.
 
-        Will execute default command if none is set, or error if there's no
-        default.
+        Returns an error if no command was set.
 
         Returns
         -------
@@ -1097,7 +1134,7 @@ class Container(Type):
             absolutely necessary and only with trusted commands.
         """
         _args = [
-            Arg("cmd", [] if cmd is None else cmd),
+            Arg("cmd", () if cmd is None else cmd, ()),
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
@@ -1140,7 +1177,7 @@ class Container(Type):
             If the API returns an error.
         """
         _args = [
-            Arg("ports", [] if ports is None else ports),
+            Arg("ports", () if ports is None else ports, ()),
             Arg("random", random, False),
         ]
         _ctx = self._select("up", _args)
@@ -1271,8 +1308,8 @@ class Container(Type):
         _args = [
             Arg("path", path),
             Arg("directory", directory),
-            Arg("exclude", [] if exclude is None else exclude),
-            Arg("include", [] if include is None else include),
+            Arg("exclude", () if exclude is None else exclude, ()),
+            Arg("include", () if include is None else include, ()),
             Arg("owner", owner, ""),
             Arg("expand", expand, False),
         ]
@@ -1337,6 +1374,7 @@ class Container(Type):
         stdin: str | None = "",
         redirect_stdout: str | None = "",
         redirect_stderr: str | None = "",
+        expect: ReturnType | None = ReturnType.SUCCESS,
         experimental_privileged_nesting: bool | None = False,
         insecure_root_capabilities: bool | None = False,
         expand: bool | None = False,
@@ -1362,6 +1400,8 @@ class Container(Type):
         redirect_stderr:
             Redirect the command's standard error to a file in the container
             (e.g., "/tmp/stderr").
+        expect:
+            Exit codes this command is allowed to exit with without error
         experimental_privileged_nesting:
             Provides Dagger access to the executed command.
             Do not use this option unless you trust the command being
@@ -1389,6 +1429,7 @@ class Container(Type):
             Arg("stdin", stdin, ""),
             Arg("redirectStdout", redirect_stdout, ""),
             Arg("redirectStderr", redirect_stderr, ""),
+            Arg("expect", expect, ReturnType.SUCCESS),
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
@@ -2311,8 +2352,8 @@ class CurrentModule(Type):
         """
         _args = [
             Arg("path", path),
-            Arg("exclude", [] if exclude is None else exclude),
-            Arg("include", [] if include is None else include),
+            Arg("exclude", () if exclude is None else exclude, ()),
+            Arg("include", () if include is None else include, ()),
         ]
         _ctx = self._select("workdir", _args)
         return Directory(_ctx)
@@ -2855,8 +2896,8 @@ class Directory(Type):
             Arg("platform", platform, None),
             Arg("dockerfile", dockerfile, "Dockerfile"),
             Arg("target", target, ""),
-            Arg("buildArgs", [] if build_args is None else build_args),
-            Arg("secrets", [] if secrets is None else secrets),
+            Arg("buildArgs", () if build_args is None else build_args, ()),
+            Arg("secrets", () if secrets is None else secrets, ()),
         ]
         _ctx = self._select("dockerBuild", _args)
         return Container(_ctx)
@@ -3049,7 +3090,7 @@ class Directory(Type):
             If set, override the default container used for the terminal.
         """
         _args = [
-            Arg("cmd", [] if cmd is None else cmd),
+            Arg("cmd", () if cmd is None else cmd, ()),
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
@@ -3085,8 +3126,8 @@ class Directory(Type):
         _args = [
             Arg("path", path),
             Arg("directory", directory),
-            Arg("exclude", [] if exclude is None else exclude),
-            Arg("include", [] if include is None else include),
+            Arg("exclude", () if exclude is None else exclude, ()),
+            Arg("include", () if include is None else include, ()),
         ]
         _ctx = self._select("withDirectory", _args)
         return Directory(_ctx)
@@ -3976,7 +4017,7 @@ class Function(Type):
             Arg("description", description, ""),
             Arg("defaultValue", default_value, None),
             Arg("defaultPath", default_path, ""),
-            Arg("ignore", [] if ignore is None else ignore),
+            Arg("ignore", () if ignore is None else ignore, ()),
             Arg("sourceMap", source_map, None),
         ]
         _ctx = self._select("withArg", _args)
@@ -4924,8 +4965,8 @@ class Host(Type):
         """
         _args = [
             Arg("path", path),
-            Arg("exclude", [] if exclude is None else exclude),
-            Arg("include", [] if include is None else include),
+            Arg("exclude", () if exclude is None else exclude, ()),
+            Arg("include", () if include is None else include, ()),
         ]
         _ctx = self._select("directory", _args)
         return Directory(_ctx)
@@ -5044,7 +5085,7 @@ class Host(Type):
         """
         _args = [
             Arg("service", service),
-            Arg("ports", [] if ports is None else ports),
+            Arg("ports", () if ports is None else ports, ()),
             Arg("native", native, False),
         ]
         _ctx = self._select("tunnel", _args)
@@ -6118,7 +6159,7 @@ class ModuleSource(Type):
         _args = [
             Arg("path", path),
             Arg("viewName", view_name, None),
-            Arg("ignore", [] if ignore is None else ignore),
+            Arg("ignore", () if ignore is None else ignore, ()),
         ]
         _ctx = self._select("resolveDirectoryFromCaller", _args)
         return Directory(_ctx)
@@ -7744,7 +7785,7 @@ class Service(Type):
             If the API returns an error.
         """
         _args = [
-            Arg("ports", [] if ports is None else ports),
+            Arg("ports", () if ports is None else ports, ()),
             Arg("random", random, False),
         ]
         _ctx = self._select("up", _args)
@@ -8353,6 +8394,7 @@ __all__ = [
     "Port",
     "PortForward",
     "PortID",
+    "ReturnType",
     "ScalarTypeDef",
     "ScalarTypeDefID",
     "Secret",

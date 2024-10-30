@@ -1,0 +1,8 @@
+kind: Added
+body: |
+  New `expect` arg for `Container.withExec` which allows specifying valid
+  return statuses for which the command can return without failing immediately
+time: 2024-09-16T17:52:22.604393342+01:00
+custom:
+  Author: jedevc
+  PR: "8466"

@@ -1757,6 +1757,7 @@ type ImageLayerCompression string
 var ImageLayerCompressions = dagql.NewEnum[ImageLayerCompression]()
 
 var (
+	// FIXME: should be canonicalized as GZIP, ZSTD, ESTARGZ, UNCOMPRESSED
 	CompressionGzip         = ImageLayerCompressions.Register("Gzip")
 	CompressionZstd         = ImageLayerCompressions.Register("Zstd")
 	CompressionEStarGZ      = ImageLayerCompressions.Register("EStarGZ")
@@ -1787,6 +1788,7 @@ type ImageMediaTypes string
 var ImageMediaTypesEnum = dagql.NewEnum[ImageMediaTypes]()
 
 var (
+	// FIXME: should be canonicalized as OCI_MEDIA_TYPES, DOCKER_MEDIA_TYPES
 	OCIMediaTypes    = ImageMediaTypesEnum.Register("OCIMediaTypes")
 	DockerMediaTypes = ImageMediaTypesEnum.Register("DockerMediaTypes")
 )
@@ -1808,4 +1810,64 @@ func (proto ImageMediaTypes) Decoder() dagql.InputDecoder {
 
 func (proto ImageMediaTypes) ToLiteral() call.Literal {
 	return ImageMediaTypesEnum.Literal(proto)
+}
+
+type ReturnTypes string
+
+var ReturnTypesEnum = dagql.NewEnum[ReturnTypes]()
+
+var (
+	ReturnSuccess = ReturnTypesEnum.Register("SUCCESS",
+		`A successful execution (exit code 0)`,
+	)
+	ReturnFailure = ReturnTypesEnum.Register("FAILURE",
+		`A failed execution (exit codes 1-127)`,
+	)
+	ReturnAny = ReturnTypesEnum.Register("ANY",
+		`Any execution (exit codes 0-127)`,
+	)
+)
+
+func (expect ReturnTypes) Type() *ast.Type {
+	return &ast.Type{
+		NamedType: "ReturnType",
+		NonNull:   true,
+	}
+}
+
+func (expect ReturnTypes) TypeDescription() string {
+	return "Expected return type of an execution"
+}
+
+func (expect ReturnTypes) Decoder() dagql.InputDecoder {
+	return ReturnTypesEnum
+}
+
+func (expect ReturnTypes) ToLiteral() call.Literal {
+	return ReturnTypesEnum.Literal(expect)
+}
+
+// ReturnCodes gets the valid exit codes allowed for a specific return status
+//
+// NOTE: exit status codes above 127 are likely from exiting via a signal - we
+// shouldn't try and handle these.
+func (expect ReturnTypes) ReturnCodes() []int {
+	switch expect {
+	case ReturnSuccess:
+		return []int{0}
+	case ReturnFailure:
+		codes := make([]int, 0, 127)
+		for i := 1; i <= 127; i++ {
+			codes = append(codes, i)
+		}
+		return codes
+	case ReturnAny:
+		codes := make([]int, 0, 128)
+		for i := 0; i <= 127; i++ {
+			codes = append(codes, i)
+		}
+		return codes
+	default:
+		return nil
+	}
 }

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path"
 	"slices"
+	"strconv"
 	"strings"
 
 	"dagger.io/dagger/telemetry"
@@ -36,6 +37,9 @@ type ContainerExecOpts struct {
 
 	// Redirect the command's standard error to a file in the container
 	RedirectStderr string `default:""`
+
+	// Exit codes this exec is allowed to exit with
+	Expect ReturnTypes `default:"SUCCESS"`
 
 	// Provide the executed command access back to the Dagger API
 	ExperimentalPrivilegedNesting bool `default:"false"`
@@ -295,6 +299,8 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		runOpts = append(runOpts, llb.AddMount(mnt.Target, srcSt, mountOpts...))
 	}
 
+	runOpts = append(runOpts, llb.ValidExitCodes(opts.Expect.ReturnCodes()...))
+
 	if opts.InsecureRootCapabilities {
 		runOpts = append(runOpts, llb.Security(llb.SecurityModeInsecure))
 	}
@@ -359,6 +365,21 @@ func (container *Container) Stdout(ctx context.Context) (string, error) {
 
 func (container *Container) Stderr(ctx context.Context) (string, error) {
 	return container.metaFileContents(ctx, buildkit.MetaMountStderrPath)
+}
+
+func (container *Container) ExitCode(ctx context.Context) (int, error) {
+	contents, err := container.metaFileContents(ctx, buildkit.MetaMountExitCodePath)
+	if err != nil {
+		return 0, err
+	}
+	contents = strings.TrimSpace(contents)
+
+	code, err := strconv.ParseInt(contents, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("could not parse exit code %q: %w", contents, err)
+	}
+
+	return int(code), nil
 }
 
 func (container *Container) usedClientID(ctx context.Context) (string, error) {

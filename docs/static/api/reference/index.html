@@ -174,6 +174,7 @@
               <li><a href="#definition-Port">Port</a></li>
               <li><a href="#definition-PortForward">PortForward</a></li>
               <li><a href="#definition-PortID">PortID</a></li>
+              <li><a href="#definition-ReturnType">ReturnType</a></li>
               <li><a href="#definition-ScalarTypeDef">ScalarTypeDef</a></li>
               <li><a href="#definition-ScalarTypeDefID">ScalarTypeDefID</a></li>
               <li><a href="#definition-Secret">Secret</a></li>
@@ -3846,6 +3847,13 @@
                         <td> Retrieves the list of environment variables passed to commands. </td>
                       </tr>
                       <tr>
+                        <td data-property-name=""><a class="property-name" id="Container-exitCode" href="#Container-exitCode"><code>exitCode</code></a> - <span class="property-type"><a href="#definition-Int"><code>Int!</code></a></span> </td>
+                        <td>
+                          <p>The exit code of the last executed command.</p>
+                          <p>Returns an error if no command was set.</p>
+                        </td>
+                      </tr>
+                      <tr>
                         <td data-property-name=""><a class="property-name" id="Container-experimentalWithAllGPUs" href="#Container-experimentalWithAllGPUs"><code>experimentalWithAllGPUs</code></a> - <span class="property-type"><a href="#definition-Container"><code>Container!</code></a></span> </td>
                         <td>
                           <p>EXPERIMENTAL API! Subject to change/removal at any time.</p>
@@ -4066,14 +4074,14 @@
                         <td data-property-name=""><a class="property-name" id="Container-stderr" href="#Container-stderr"><code>stderr</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td>
                           <p>The error stream of the last executed command.</p>
-                          <p>Will execute default command if none is set, or error if there&#39;s no default.</p>
+                          <p>Returns an error if no command was set.</p>
                         </td>
                       </tr>
                       <tr>
                         <td data-property-name=""><a class="property-name" id="Container-stdout" href="#Container-stdout"><code>stdout</code></a> - <span class="property-type"><a href="#definition-String"><code>String!</code></a></span> </td>
                         <td>
                           <p>The output stream of the last executed command.</p>
-                          <p>Will execute default command if none is set, or error if there&#39;s no default.</p>
+                          <p>Returns an error if no command was set.</p>
                         </td>
                       </tr>
                       <tr>
@@ -4304,6 +4312,10 @@
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>expand</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
                                 <p>Replace &quot;${VAR}&quot; or &quot;$VAR&quot; in the args according to the current environment variables defined in the container (e.g. &quot;/$VAR/foo&quot;).</p>
+                              </div>
+                              <div class="field-argument">
+                                <h6 class="field-argument-name"><span class="property-name"><code>expect</code></span> - <span class="property-type"><a href="#definition-ReturnType"><code>ReturnType</code></a></span></h6>
+                                <p>Exit codes this command is allowed to exit with without error</p>
                               </div>
                               <div class="field-argument">
                                 <h6 class="field-argument-name"><span class="property-name"><code>experimentalPrivilegedNesting</code></span> - <span class="property-type"><a href="#definition-Boolean"><code>Boolean</code></a></span></h6>
@@ -8580,6 +8592,62 @@
                 <div class="definition-description doc-copy-section">
                   <h5>Description</h5>
                   <p>The <code>PortID</code> scalar type represents an identifier for an object of type Port.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="definition-ReturnType" class="definition definition-enum" data-traverse-target="definition-ReturnType">
+            <div class="definition-group-name">
+              <a href="#group-Types">Types</a>
+            </div>
+            <h2 class="definition-heading">ReturnType</h2>
+            <div class="doc-row">
+              <div class="doc-copy">
+                <div class="definition-description doc-copy-section">
+                  <h5>Description</h5>
+                  <p>Expected return type of an execution</p>
+                </div>
+                <div class="definition-properties doc-copy-section">
+                  <h5>Values</h5>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Enum Value</th>
+                        <th>Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>
+                          <p><code>SUCCESS</code></p>
+                        </td>
+                        <td> A successful execution (exit code 0) </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>FAILURE</code></p>
+                        </td>
+                        <td> A failed execution (exit codes 1-127) </td>
+                      </tr>
+                      <tr>
+                        <td>
+                          <p><code>ANY</code></p>
+                        </td>
+                        <td> Any execution (exit codes 0-127) </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="doc-examples">
+                <div class="example-section example-section-is-code">
+                  <h5>Example</h5>
+                  <html>
+                    <head></head>
+                    <body><pre><code class="hljs language-gql"><span class="hljs-symbol">"SUCCESS"</span>
+</code></pre>
+                    </body>
+                  </html>
                 </div>
               </div>
             </div>
