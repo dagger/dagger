@@ -8360,13 +8360,25 @@ func (CacheSharingMode) IsEnum() {}
 
 const (
 	// Shares the cache volume amongst many build pipelines, but will serialize the writes
-	Locked CacheSharingMode = "LOCKED"
+	CacheSharingModeLocked CacheSharingMode = "LOCKED"
+
+	// Shares the cache volume amongst many build pipelines, but will serialize the writes
+	// Deprecated: use CacheSharingModeLocked instead
+	Locked CacheSharingMode = CacheSharingModeLocked
 
 	// Keeps a cache volume for a single build pipeline
-	Private CacheSharingMode = "PRIVATE"
+	CacheSharingModePrivate CacheSharingMode = "PRIVATE"
+
+	// Keeps a cache volume for a single build pipeline
+	// Deprecated: use CacheSharingModePrivate instead
+	Private CacheSharingMode = CacheSharingModePrivate
 
 	// Shares the cache volume amongst many build pipelines
-	Shared CacheSharingMode = "SHARED"
+	CacheSharingModeShared CacheSharingMode = "SHARED"
+
+	// Shares the cache volume amongst many build pipelines
+	// Deprecated: use CacheSharingModeShared instead
+	Shared CacheSharingMode = CacheSharingModeShared
 )
 
 // Compression algorithm to use for image layers.
@@ -8375,13 +8387,25 @@ type ImageLayerCompression string
 func (ImageLayerCompression) IsEnum() {}
 
 const (
-	Estargz ImageLayerCompression = "EStarGZ"
+	ImageLayerCompressionEstarGz ImageLayerCompression = "EStarGZ"
 
-	Gzip ImageLayerCompression = "Gzip"
+	// Deprecated: use ImageLayerCompressionEstarGz instead
+	Estargz ImageLayerCompression = ImageLayerCompressionEstarGz
 
-	Uncompressed ImageLayerCompression = "Uncompressed"
+	ImageLayerCompressionGzip ImageLayerCompression = "Gzip"
 
-	Zstd ImageLayerCompression = "Zstd"
+	// Deprecated: use ImageLayerCompressionGzip instead
+	Gzip ImageLayerCompression = ImageLayerCompressionGzip
+
+	ImageLayerCompressionUncompressed ImageLayerCompression = "Uncompressed"
+
+	// Deprecated: use ImageLayerCompressionUncompressed instead
+	Uncompressed ImageLayerCompression = ImageLayerCompressionUncompressed
+
+	ImageLayerCompressionZstd ImageLayerCompression = "Zstd"
+
+	// Deprecated: use ImageLayerCompressionZstd instead
+	Zstd ImageLayerCompression = ImageLayerCompressionZstd
 )
 
 // Mediatypes to use in published or exported image metadata.
@@ -8390,9 +8414,15 @@ type ImageMediaTypes string
 func (ImageMediaTypes) IsEnum() {}
 
 const (
-	Dockermediatypes ImageMediaTypes = "DockerMediaTypes"
+	ImageMediaTypesDockerMediaTypes ImageMediaTypes = "DockerMediaTypes"
 
-	Ocimediatypes ImageMediaTypes = "OCIMediaTypes"
+	// Deprecated: use ImageMediaTypesDockerMediaTypes instead
+	Dockermediatypes ImageMediaTypes = ImageMediaTypesDockerMediaTypes
+
+	ImageMediaTypesOcimediaTypes ImageMediaTypes = "OCIMediaTypes"
+
+	// Deprecated: use ImageMediaTypesOcimediaTypes instead
+	Ocimediatypes ImageMediaTypes = ImageMediaTypesOcimediaTypes
 )
 
 // The kind of module source.
@@ -8401,9 +8431,15 @@ type ModuleSourceKind string
 func (ModuleSourceKind) IsEnum() {}
 
 const (
-	GitSource ModuleSourceKind = "GIT_SOURCE"
+	ModuleSourceKindGitSource ModuleSourceKind = "GIT_SOURCE"
 
-	LocalSource ModuleSourceKind = "LOCAL_SOURCE"
+	// Deprecated: use ModuleSourceKindGitSource instead
+	GitSource ModuleSourceKind = ModuleSourceKindGitSource
+
+	ModuleSourceKindLocalSource ModuleSourceKind = "LOCAL_SOURCE"
+
+	// Deprecated: use ModuleSourceKindLocalSource instead
+	LocalSource ModuleSourceKind = ModuleSourceKindLocalSource
 )
 
 // Transport layer network protocol associated to a port.
@@ -8412,9 +8448,15 @@ type NetworkProtocol string
 func (NetworkProtocol) IsEnum() {}
 
 const (
-	Tcp NetworkProtocol = "TCP"
+	NetworkProtocolTcp NetworkProtocol = "TCP"
 
-	Udp NetworkProtocol = "UDP"
+	// Deprecated: use NetworkProtocolTcp instead
+	Tcp NetworkProtocol = NetworkProtocolTcp
+
+	NetworkProtocolUdp NetworkProtocol = "UDP"
+
+	// Deprecated: use NetworkProtocolUdp instead
+	Udp NetworkProtocol = NetworkProtocolUdp
 )
 
 // Distinguishes the different kinds of TypeDefs.
@@ -8424,42 +8466,92 @@ func (TypeDefKind) IsEnum() {}
 
 const (
 	// A boolean value.
-	BooleanKind TypeDefKind = "BOOLEAN_KIND"
+	TypeDefKindBooleanKind TypeDefKind = "BOOLEAN_KIND"
+
+	// A boolean value.
+	// Deprecated: use TypeDefKindBooleanKind instead
+	BooleanKind TypeDefKind = TypeDefKindBooleanKind
 
 	// A GraphQL enum type and its values
 	//
 	// Always paired with an EnumTypeDef.
-	EnumKind TypeDefKind = "ENUM_KIND"
+	TypeDefKindEnumKind TypeDefKind = "ENUM_KIND"
+
+	// A GraphQL enum type and its values
+	//
+	// Always paired with an EnumTypeDef.
+	// Deprecated: use TypeDefKindEnumKind instead
+	EnumKind TypeDefKind = TypeDefKindEnumKind
 
 	// A graphql input type, used only when representing the core API via TypeDefs.
-	InputKind TypeDefKind = "INPUT_KIND"
+	TypeDefKindInputKind TypeDefKind = "INPUT_KIND"
+
+	// A graphql input type, used only when representing the core API via TypeDefs.
+	// Deprecated: use TypeDefKindInputKind instead
+	InputKind TypeDefKind = TypeDefKindInputKind
 
 	// An integer value.
-	IntegerKind TypeDefKind = "INTEGER_KIND"
+	TypeDefKindIntegerKind TypeDefKind = "INTEGER_KIND"
+
+	// An integer value.
+	// Deprecated: use TypeDefKindIntegerKind instead
+	IntegerKind TypeDefKind = TypeDefKindIntegerKind
 
 	// A named type of functions that can be matched+implemented by other objects+interfaces.
 	//
 	// Always paired with an InterfaceTypeDef.
-	InterfaceKind TypeDefKind = "INTERFACE_KIND"
+	TypeDefKindInterfaceKind TypeDefKind = "INTERFACE_KIND"
+
+	// A named type of functions that can be matched+implemented by other objects+interfaces.
+	//
+	// Always paired with an InterfaceTypeDef.
+	// Deprecated: use TypeDefKindInterfaceKind instead
+	InterfaceKind TypeDefKind = TypeDefKindInterfaceKind
 
 	// A list of values all having the same type.
 	//
 	// Always paired with a ListTypeDef.
-	ListKind TypeDefKind = "LIST_KIND"
+	TypeDefKindListKind TypeDefKind = "LIST_KIND"
+
+	// A list of values all having the same type.
+	//
+	// Always paired with a ListTypeDef.
+	// Deprecated: use TypeDefKindListKind instead
+	ListKind TypeDefKind = TypeDefKindListKind
 
 	// A named type defined in the GraphQL schema, with fields and functions.
 	//
 	// Always paired with an ObjectTypeDef.
-	ObjectKind TypeDefKind = "OBJECT_KIND"
+	TypeDefKindObjectKind TypeDefKind = "OBJECT_KIND"
+
+	// A named type defined in the GraphQL schema, with fields and functions.
+	//
+	// Always paired with an ObjectTypeDef.
+	// Deprecated: use TypeDefKindObjectKind instead
+	ObjectKind TypeDefKind = TypeDefKindObjectKind
 
 	// A scalar value of any basic kind.
-	ScalarKind TypeDefKind = "SCALAR_KIND"
+	TypeDefKindScalarKind TypeDefKind = "SCALAR_KIND"
+
+	// A scalar value of any basic kind.
+	// Deprecated: use TypeDefKindScalarKind instead
+	ScalarKind TypeDefKind = TypeDefKindScalarKind
 
 	// A string value.
-	StringKind TypeDefKind = "STRING_KIND"
+	TypeDefKindStringKind TypeDefKind = "STRING_KIND"
+
+	// A string value.
+	// Deprecated: use TypeDefKindStringKind instead
+	StringKind TypeDefKind = TypeDefKindStringKind
 
 	// A special kind used to signify that no value is returned.
 	//
 	// This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
-	VoidKind TypeDefKind = "VOID_KIND"
+	TypeDefKindVoidKind TypeDefKind = "VOID_KIND"
+
+	// A special kind used to signify that no value is returned.
+	//
+	// This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
+	// Deprecated: use TypeDefKindVoidKind instead
+	VoidKind TypeDefKind = TypeDefKindVoidKind
 )

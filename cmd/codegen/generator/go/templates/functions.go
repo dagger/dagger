@@ -149,10 +149,14 @@ func formatName(s string) string {
 }
 
 // formatEnum formats a GraphQL Enum value into a Go equivalent
-// Example: `fooId` -> `FooID`
-func (funcs goTemplateFuncs) formatEnum(s string) string {
-	s = strings.ToLower(s)
-	return strcase.ToCamel(s)
+// Example: `FOO_VALUE` -> `FooValue`, `FooValue` -> `FooValue`
+func (funcs goTemplateFuncs) formatEnum(parent string, s string) string {
+	if parent == "" {
+		// legacy path - terrible, removes all the casing :(
+		s = strings.ToLower(s)
+	}
+	s = strcase.ToCamel(s)
+	return parent + s
 }
 
 func (funcs goTemplateFuncs) sortEnumFields(s []introspection.EnumValue) []introspection.EnumValue {

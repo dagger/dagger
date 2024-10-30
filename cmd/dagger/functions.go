@@ -668,7 +668,7 @@ func makeRequest(ctx context.Context, q *querybuilder.Selection, response any) e
 }
 
 func handleResponse(returnType *modTypeDef, response any, o, e io.Writer) error {
-	if returnType.Kind == dagger.VoidKind {
+	if returnType.Kind == dagger.TypeDefKindVoidKind {
 		return nil
 	}
 
