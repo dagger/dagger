@@ -41,9 +41,9 @@ func Close() error {
 }
 
 // Retrieves a content-addressed blob.
-func Blob(digest string, size int, mediaType string, uncompressed string) *dagger.Directory {
+func Blob(digest string) *dagger.Directory {
 	client := initClient()
-	return client.Blob(digest, size, mediaType, uncompressed)
+	return client.Blob(digest)
 }
 
 // Retrieves a container builtin to the engine.

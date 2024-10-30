@@ -10,15 +10,10 @@ defmodule Dagger.Client do
   @type t() :: %__MODULE__{}
 
   @doc "Retrieves a content-addressed blob."
-  @spec blob(t(), String.t(), integer(), String.t(), String.t()) :: Dagger.Directory.t()
-  def blob(%__MODULE__{} = client, digest, size, media_type, uncompressed) do
+  @spec blob(t(), String.t()) :: Dagger.Directory.t()
+  def blob(%__MODULE__{} = client, digest) do
     query_builder =
-      client.query_builder
-      |> QB.select("blob")
-      |> QB.put_arg("digest", digest)
-      |> QB.put_arg("size", size)
-      |> QB.put_arg("mediaType", media_type)
-      |> QB.put_arg("uncompressed", uncompressed)
+      client.query_builder |> QB.select("blob") |> QB.put_arg("digest", digest)
 
     %Dagger.Directory{
       query_builder: query_builder,

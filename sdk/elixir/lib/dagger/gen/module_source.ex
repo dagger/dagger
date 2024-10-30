@@ -67,7 +67,7 @@ defmodule Dagger.ModuleSource do
     Client.execute(module_source.client, query_builder)
   end
 
-  @doc "The directory containing everything needed to load load and use the module."
+  @doc "The directory containing everything needed to load and use the module."
   @spec context_directory(t()) :: Dagger.Directory.t()
   def context_directory(%__MODULE__{} = module_source) do
     query_builder =

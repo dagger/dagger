@@ -7718,7 +7718,7 @@ export class ModuleSource extends BaseClient {
   }
 
   /**
-   * The directory containing everything needed to load load and use the module.
+   * The directory containing everything needed to load and use the module.
    */
   contextDirectory = (): Directory => {
     return new Directory({
@@ -8656,22 +8656,14 @@ export class Client extends BaseClient {
   /**
    * Retrieves a content-addressed blob.
    * @param digest Digest of the blob
-   * @param size Size of the blob
-   * @param mediaType Media type of the blob
-   * @param uncompressed Digest of the uncompressed blob
    */
-  blob = (
-    digest: string,
-    size: number,
-    mediaType: string,
-    uncompressed: string,
-  ): Directory => {
+  blob = (digest: string): Directory => {
     return new Directory({
       queryTree: [
         ...this._queryTree,
         {
           operation: "blob",
-          args: { digest, size, mediaType, uncompressed },
+          args: { digest },
         },
       ],
       ctx: this._ctx,
