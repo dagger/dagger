@@ -1,8 +1,32 @@
 #Requires -Version 7.0
 
+<#
+.Description
+    Download and install dagger.
+.PARAMETER DaggerVersion
+    Semver version of dagger to install.
+.PARAMETER DaggerCommit
+    Commit SHA for a dev build of dagger to install.
+.EXAMPLE
+    .\install.ps1
+    Install with default settings.
+.EXAMPLE
+    .\install.ps1 -InstallPath path\to\dir
+    Install to path/to/dir.
+.EXAMPLE
+    .\install.ps1 -DaggerVersion vX.Y.Z
+    Install specified version vX.Y.Z.
+.EXAMPLE
+    .\install.ps1 -DaggerCommit head
+    Install latest dev build.
+.EXAMPLE
+    .\install.ps1 -DaggerCommit [commit]
+    Install specified dev build [commit].
+#>
+
 Param (
     [Parameter(Mandatory = $false)][System.Management.Automation.SemanticVersion]$DaggerVersion,
-    [Parameter(Mandatory = $false)][string][ValidatePattern("^(?:[0-9a-fA-F]{40})?$")]$DaggerCommit,
+    [Parameter(Mandatory = $false)][string][ValidatePattern("^(?:head|(?:[0-9a-fA-F]{40}))?$")]$DaggerCommit,
     [Parameter(Mandatory = $false)][string]$DownloadPath = [System.IO.Path]::GetTempFileName(),
     [Parameter(Mandatory = $false)][string]$InstallPath = "$env:USERPROFILE\dagger",
     [Parameter(Mandatory = $false)][switch]$AddToPath = $false,
@@ -412,7 +436,7 @@ if ($isInvoked) {
     function Install-Dagger {
         Param (
             [Parameter(Mandatory = $false)][System.Management.Automation.SemanticVersion]$DaggerVersion,
-            [Parameter(Mandatory = $false)][string][ValidatePattern("^(?:[0-9a-fA-F]{40})?$")]$DaggerCommit,
+            [Parameter(Mandatory = $false)][string][ValidatePattern("^(?:head|(?:[0-9a-fA-F]{40}))?$")]$DaggerCommit,
             [Parameter(Mandatory = $false)][string]$DownloadPath = [System.IO.Path]::GetTempFileName(),
             [Parameter(Mandatory = $false)][string]$InstallPath = "$env:USERPROFILE\dagger",
             [Parameter(Mandatory = $false)][switch]$AddToPath = $false,
