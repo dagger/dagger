@@ -12,7 +12,7 @@ import { Commands } from "./commands"
 @object()
 class Node {
   @func()
-  version = "18-alpine"
+  version = "lts-alpine"
 
   @func()
   container: Container
