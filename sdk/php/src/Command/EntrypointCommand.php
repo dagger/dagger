@@ -171,8 +171,7 @@ class EntrypointCommand extends Command
             case TypeDefKind::OBJECT_KIND:
                 return $typeDef->withObject($type->isIdable() ?
                     NormalizesClassName::shorten($type->getName()) :
-                    NormalizesClassName::trimLeadingNamespace($type->getName())
-                );
+                    NormalizesClassName::trimLeadingNamespace($type->getName()));
             case TypeDefKind::INTERFACE_KIND:
                 throw new RuntimeException(sprintf(
                     'Currently cannot handle custom interfaces: %s',
