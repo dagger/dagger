@@ -358,8 +358,9 @@ export class AST {
         return this.resolveParameterDefaultValueTypeReference(expression, value)
       }
       default: {
-        throw new IntrospectionError(
-          `default value '${expression.getText()}' at ${AST.getNodePosition(expression)} cannot be resolved, dagger does not support object or function as default value.`,
+        console.warn(
+          `default value '${expression.getText()}' at ${AST.getNodePosition(expression)} cannot be resolved, dagger does not support object or function as default value. 
+          The value will be ignored by the introspection and resolve at the runtime.`,
         )
       }
     }

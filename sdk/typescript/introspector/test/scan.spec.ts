@@ -164,7 +164,7 @@ ${jsonResult}
       } catch (e: any) {
         assert.equal(
           e.message,
-          'String is a reserved word, please use "string" instead.',
+          `Use of primitive 'String' type detected, please use 'string' instead.`,
         )
       }
     })

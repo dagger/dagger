@@ -223,19 +223,19 @@ export class DaggerModule {
       // Handle primitives here
       if (reference === "String") {
         throw new IntrospectionError(
-          `String is a reserved word, please use "string" instead.`,
+          `Use of primitive 'String' type detected, please use 'string' instead.`,
         )
       }
 
       if (reference === "Boolean") {
         throw new IntrospectionError(
-          `Boolean is a reserved word, please use "boolean" instead.`,
+          `Use of primitive 'Boolean' type detected, please use 'boolean' instead.`,
         )
       }
 
       if (reference === "Number") {
         throw new IntrospectionError(
-          `Number is a reserved word, please use "number" instead.`,
+          `Use of primitive 'Number' type detected, please use 'number' instead.`,
         )
       }
 

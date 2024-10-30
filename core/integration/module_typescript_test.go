@@ -485,9 +485,9 @@ func (TypescriptSuite) TestSignatureUnexported(ctx context.Context, t *testctx.T
 
 	objs := inspectModuleObjects(ctx, t, modGen)
 
-	require.Equal(t, 2, len(objs.Array()))
-	require.Equal(t, "Minimal", objs.Get("1.name").String())
-	require.Equal(t, "MinimalFoo", objs.Get("0.name").String())
+	// Now that we resolve by reference, we should only have one object
+	require.Equal(t, 1, len(objs.Array()))
+	require.Equal(t, "Minimal", objs.Get("0.name").String())
 }
 
 func (TypescriptSuite) TestDocs(ctx context.Context, t *testctx.T) {
