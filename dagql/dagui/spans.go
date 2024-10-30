@@ -39,7 +39,10 @@ type Span struct {
 	db *DB
 }
 
+// Snapshot returns a snapshot of the span's current state, incrementing its
+// Version with every call.
 func (span *Span) Snapshot() SpanSnapshot {
+	span.Version++
 	span.ChildCount = countChildren(span.ChildSpans)
 	span.Failed = span.IsFailedOrCausedFailure()
 	span.Cached = span.IsCached()
@@ -63,6 +66,9 @@ func countChildren(set SpanSet) int {
 }
 
 type SpanSnapshot struct {
+	// Monotonically increasing number for each update seen for this span.
+	Version int
+
 	ID        SpanID
 	Name      string
 	StartTime time.Time
