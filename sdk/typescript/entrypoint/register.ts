@@ -133,7 +133,9 @@ function addArg(args: Arguments): (fct: Function_) => Function_ {
       // expect it to be set as required input.
       if (arg.defaultValue) {
         if (isPrimitiveType(arg.type!)) {
-          opts.defaultValue = arg.defaultValue as string & { __JSON: never }
+          opts.defaultValue = JSON.stringify(arg.defaultValue) as string & {
+            __JSON: never
+          }
         } else {
           typeDef = typeDef.withOptional(true)
         }

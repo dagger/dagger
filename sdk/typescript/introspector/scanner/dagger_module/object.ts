@@ -31,7 +31,7 @@ export class DaggerObject implements DaggerObjectBase {
 
     if (!this.ast.isNodeDecoratedWith(node, OBJECT_DECORATOR)) {
       throw new IntrospectionError(
-        `class ${this.name} in ${AST.getNodePosition(node)} is used by the module but not exposed with a dagger decorator.`,
+        `class ${this.name} at ${AST.getNodePosition(node)} is used by the module but not exposed with a dagger decorator.`,
       )
     }
 

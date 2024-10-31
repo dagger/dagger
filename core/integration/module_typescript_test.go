@@ -1283,7 +1283,7 @@ export class Test {
 `))
 
 		_, err := modGen.With(daggerQuery(`{test{str("hello")}}`)).Stdout(ctx)
-		require.ErrorContains(t, err, "Use of primitive String type detected, did you mean string?")
+		require.ErrorContains(t, err, "Use of primitive 'String' type detected, please use 'string' instead.")
 	})
 
 	t.Run("should throw error on Number", func(ctx context.Context, t *testctx.T) {
@@ -1306,7 +1306,7 @@ export class Test {
 `))
 
 		_, err := modGen.With(daggerQuery(`{test{integer(4)}}`)).Stdout(ctx)
-		require.ErrorContains(t, err, "Use of primitive Number type detected, did you mean number?")
+		require.ErrorContains(t, err, "Use of primitive 'Number' type detected, please use 'number' instead.")
 	})
 
 	t.Run("should throw error on Boolean", func(ctx context.Context, t *testctx.T) {
@@ -1329,7 +1329,7 @@ export class Test {
 `))
 
 		_, err := modGen.With(daggerQuery(`{test{bool(false)}}`)).Stdout(ctx)
-		require.ErrorContains(t, err, "Use of primitive Boolean type detected, did you mean boolean?")
+		require.ErrorContains(t, err, "Use of primitive 'Boolean' type detected, please use 'boolean' instead.")
 	})
 }
 

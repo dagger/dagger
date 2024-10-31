@@ -42,6 +42,7 @@ export class DaggerArgument {
     this.isOptional =
       this.isVariadic ||
       this.defaultValue !== undefined ||
+      this.node.initializer !== undefined ||
       this.isNullable ||
       this.node.questionToken !== undefined
 

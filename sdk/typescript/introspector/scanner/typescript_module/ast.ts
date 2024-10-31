@@ -320,15 +320,15 @@ export class AST {
 
     switch (kind) {
       case ts.SyntaxKind.StringLiteral:
-        return eval(expression.getText())
+        return `${eval(expression.getText())}`
       case ts.SyntaxKind.NumericLiteral:
-        return `${parseInt(expression.getText())}`
+        return parseInt(expression.getText())
       case ts.SyntaxKind.TrueKeyword:
-        return `${true}`
+        return true
       case ts.SyntaxKind.FalseKeyword:
-        return `${false}`
+        return false
       case ts.SyntaxKind.NullKeyword:
-        return "null"
+        return null
       case ts.SyntaxKind.ArrayLiteralExpression:
         return eval(expression.getText())
       case ts.SyntaxKind.Identifier: {

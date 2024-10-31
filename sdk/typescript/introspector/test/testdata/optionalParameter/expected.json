@@ -56,7 +56,7 @@
               "isVariadic": false,
               "isNullable": false,
               "isOptional": true,
-              "defaultValue": "0"
+              "defaultValue": 0
             },
             "b": {
               "name": "b",
@@ -67,7 +67,7 @@
               "isVariadic": false,
               "isNullable": false,
               "isOptional": true,
-              "defaultValue": "0"
+              "defaultValue": 0
             }
           },
           "returnType": {
@@ -87,7 +87,7 @@
               "isVariadic": false,
               "isNullable": false,
               "isOptional": true,
-              "defaultValue": "false"
+              "defaultValue": false
             }
           },
           "returnType": {
@@ -148,7 +148,7 @@
               "isVariadic": false,
               "isNullable": true,
               "isOptional": true,
-              "defaultValue": "null"
+              "defaultValue": null
             },
             "f": {
               "name": "f",

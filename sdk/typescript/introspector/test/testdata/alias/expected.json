@@ -158,7 +158,7 @@
             "isVariadic": false,
             "isNullable": false,
             "isOptional": true,
-            "defaultValue": "4"
+            "defaultValue": 4
           }
         }
       },
