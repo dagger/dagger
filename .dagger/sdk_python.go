@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"go.opentelemetry.io/otel/codes"
+	"golang.org/x/mod/semver"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/.dagger/internal/dagger"
@@ -165,9 +166,10 @@ func (t PythonSDK) Publish(
 	// +optional
 	githubToken *dagger.Secret,
 ) error {
-	version, isVersioned := strings.CutPrefix(tag, "sdk/python/")
+	version := strings.TrimPrefix(tag, "sdk/python/")
+	setuptoolsVersion := version
 	if dryRun {
-		version = "v0.0.0"
+		setuptoolsVersion = "v0.0.0"
 	}
 	if pypiRepo == "" || pypiRepo == "pypi" {
 		pypiRepo = "main"
@@ -175,7 +177,7 @@ func (t PythonSDK) Publish(
 
 	// TODO: move this to PythonSDKDev
 	result := t.dev().Container().
-		WithEnvVariable("SETUPTOOLS_SCM_PRETEND_VERSION", strings.TrimPrefix(version, "v")).
+		WithEnvVariable("SETUPTOOLS_SCM_PRETEND_VERSION", strings.TrimPrefix(setuptoolsVersion, "v")).
 		WithEnvVariable("HATCH_INDEX_REPO", pypiRepo).
 		WithEnvVariable("HATCH_INDEX_USER", "__token__").
 		WithExec([]string{"uvx", "hatch", "build"})
@@ -189,10 +191,11 @@ func (t PythonSDK) Publish(
 		return err
 	}
 
-	if isVersioned {
-		if err := githubRelease(ctx, githubReleaseOpts{
-			tag:         tag,
-			notes:       sdkChangeNotes(t.Dagger.Src, "python", version),
+	if semver.IsValid(version) {
+		if err := githubRelease(ctx, t.Dagger.Git, githubReleaseOpts{
+			tag:         "sdk/python/" + version,
+			target:      tag,
+			notes:       changeNotes(t.Dagger.Src, "sdk/python", version),
 			gitRepo:     gitRepoSource,
 			githubToken: githubToken,
 			dryRun:      dryRun,

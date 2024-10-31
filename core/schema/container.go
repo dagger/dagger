@@ -390,6 +390,7 @@ func (s *containerSchema) Install() {
 			ArgDoc("redirectStderr",
 				`Redirect the command's standard error to a file in the container (e.g.,
 			"/tmp/stderr").`).
+			ArgDoc("expect", `Exit codes this command is allowed to exit with without error`).
 			ArgDoc("experimentalPrivilegedNesting",
 				`Provides Dagger access to the executed command.`,
 				`Do not use this option unless you trust the command being executed;
@@ -428,6 +429,7 @@ func (s *containerSchema) Install() {
 			ArgDoc("redirectStderr",
 				`Redirect the command's standard error to a file in the container (e.g.,
 			"/tmp/stderr").`).
+			ArgDoc("expect", `Exit codes this command is allowed to exit with without error`).
 			ArgDoc("experimentalPrivilegedNesting",
 				`Provides Dagger access to the executed command.`,
 				`Do not use this option unless you trust the command being executed;
@@ -457,6 +459,7 @@ func (s *containerSchema) Install() {
 			ArgDoc("redirectStderr",
 				`Redirect the command's standard error to a file in the container (e.g.,
 			"/tmp/stderr").`).
+			ArgDoc("expect", `Exit codes this command is allowed to exit with without error`).
 			ArgDoc("experimentalPrivilegedNesting",
 				`Provides Dagger access to the executed command.`,
 				`Do not use this option unless you trust the command being executed;
@@ -472,12 +475,12 @@ func (s *containerSchema) Install() {
 		dagql.Func("stdout", s.stdout).
 			View(AllVersion).
 			Doc(`The output stream of the last executed command.`,
-				`Will execute default command if none is set, or error if there's no default.`),
+				`Returns an error if no command was set.`),
 
 		dagql.Func("stderr", s.stderr).
 			View(AllVersion).
 			Doc(`The error stream of the last executed command.`,
-				`Will execute default command if none is set, or error if there's no default.`),
+				`Returns an error if no command was set.`),
 
 		dagql.Func("stdout", s.stdoutLegacy).
 			View(BeforeVersion("v0.12.0")).
@@ -488,6 +491,10 @@ func (s *containerSchema) Install() {
 			View(BeforeVersion("v0.12.0")).
 			Doc(`The error stream of the last executed command.`,
 				`Will execute default command if none is set, or error if there's no default.`),
+
+		dagql.Func("exitCode", s.exitCode).
+			Doc(`The exit code of the last executed command.`,
+				`Returns an error if no command was set.`),
 
 		dagql.Func("withAnnotation", s.withAnnotation).
 			Doc(`Retrieves this container plus the given OCI anotation.`).
@@ -879,6 +886,9 @@ type containerExecArgsLegacy struct {
 	// Redirect the command's standard error to a file in the container
 	RedirectStderr string `default:""`
 
+	// Exit codes this exec is allowed to exit with
+	Expect core.ReturnTypes `default:"SUCCESS"`
+
 	// Provide the executed command access back to the Dagger API
 	ExperimentalPrivilegedNesting bool `default:"false"`
 
@@ -896,6 +906,7 @@ func (s *containerSchema) withExecLegacy(ctx context.Context, parent *core.Conta
 		Stdin:                         args.Stdin,
 		RedirectStdout:                args.RedirectStdout,
 		RedirectStderr:                args.RedirectStderr,
+		Expect:                        args.Expect,
 		ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting,
 		InsecureRootCapabilities:      args.InsecureRootCapabilities,
 		NestedExecMetadata:            args.NestedExecMetadata,
@@ -909,6 +920,10 @@ func (s *containerSchema) stdout(ctx context.Context, parent *core.Container, _ 
 
 func (s *containerSchema) stderr(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {
 	return parent.Stderr(ctx)
+}
+
+func (s *containerSchema) exitCode(ctx context.Context, parent *core.Container, _ struct{}) (int, error) {
+	return parent.ExitCode(ctx)
 }
 
 func (s *containerSchema) stdoutLegacy(ctx context.Context, parent *core.Container, _ struct{}) (string, error) {

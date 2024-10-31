@@ -313,6 +313,11 @@ export type ContainerWithExecOpts = {
   redirectStderr?: string
 
   /**
+   * Exit codes this command is allowed to exit with without error
+   */
+  expect?: ReturnType
+
+  /**
    * Provides Dagger access to the executed command.
    *
    * Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
@@ -1153,6 +1158,25 @@ export type ClientSecretOpts = {
 }
 
 /**
+ * Expected return type of an execution
+ */
+export enum ReturnType {
+  /**
+   * Any execution (exit codes 0-127)
+   */
+  Any = "ANY",
+
+  /**
+   * A failed execution (exit codes 1-127)
+   */
+  Failure = "FAILURE",
+
+  /**
+   * A successful execution (exit code 0)
+   */
+  Success = "SUCCESS",
+}
+/**
  * The `ScalarTypeDefID` scalar type represents an identifier for an object of type ScalarTypeDef.
  */
 export type ScalarTypeDefID = string & { __ScalarTypeDefID: never }
@@ -1395,6 +1419,7 @@ export class CacheVolume extends BaseClient {
 export class Container extends BaseClient {
   private readonly _id?: ContainerID = undefined
   private readonly _envVariable?: string = undefined
+  private readonly _exitCode?: number = undefined
   private readonly _export?: string = undefined
   private readonly _imageRef?: string = undefined
   private readonly _label?: string = undefined
@@ -1414,6 +1439,7 @@ export class Container extends BaseClient {
     parent?: { queryTree?: QueryTree[]; ctx: Context },
     _id?: ContainerID,
     _envVariable?: string,
+    _exitCode?: number,
     _export?: string,
     _imageRef?: string,
     _label?: string,
@@ -1430,6 +1456,7 @@ export class Container extends BaseClient {
 
     this._id = _id
     this._envVariable = _envVariable
+    this._exitCode = _exitCode
     this._export = _export
     this._imageRef = _imageRef
     this._label = _label
@@ -1649,6 +1676,29 @@ export class Container extends BaseClient {
           r.id,
         ),
     )
+  }
+
+  /**
+   * The exit code of the last executed command.
+   *
+   * Returns an error if no command was set.
+   */
+  exitCode = async (): Promise<number> => {
+    if (this._exitCode) {
+      return this._exitCode
+    }
+
+    const response: Awaited<number> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "exitCode",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
   }
 
   /**
@@ -2017,7 +2067,7 @@ export class Container extends BaseClient {
   /**
    * The error stream of the last executed command.
    *
-   * Will execute default command if none is set, or error if there's no default.
+   * Returns an error if no command was set.
    */
   stderr = async (): Promise<string> => {
     if (this._stderr) {
@@ -2040,7 +2090,7 @@ export class Container extends BaseClient {
   /**
    * The output stream of the last executed command.
    *
-   * Will execute default command if none is set, or error if there's no default.
+   * Returns an error if no command was set.
    */
   stdout = async (): Promise<string> => {
     if (this._stdout) {
@@ -2297,6 +2347,7 @@ export class Container extends BaseClient {
    * @param opts.stdin Content to write to the command's standard input before closing (e.g., "Hello world").
    * @param opts.redirectStdout Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
    * @param opts.redirectStderr Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
+   * @param opts.expect Exit codes this command is allowed to exit with without error
    * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
    *
    * Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
@@ -2307,12 +2358,16 @@ export class Container extends BaseClient {
    * This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
    */
   withExec = (args: string[], opts?: ContainerWithExecOpts): Container => {
+    const metadata: Metadata = {
+      expect: { is_enum: true },
+    }
+
     return new Container({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withExec",
-          args: { args, ...opts },
+          args: { args, ...opts, __metadata: metadata },
         },
       ],
       ctx: this._ctx,

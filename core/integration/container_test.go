@@ -3219,7 +3219,7 @@ func (ContainerSuite) TestImport(ctx context.Context, t *testctx.T) {
 	t.Run("Docker", func(ctx context.Context, t *testctx.T) {
 		out, err := c.Container().
 			Import(c.Container().From(alpineImage).WithEnvVariable("FOO", "bar").AsTarball(dagger.ContainerAsTarballOpts{
-				MediaTypes: dagger.Dockermediatypes,
+				MediaTypes: dagger.ImageMediaTypesDockerMediaTypes,
 			})).
 			WithExec([]string{"sh", "-c", "echo $FOO"}).Stdout(ctx)
 		require.NoError(t, err)
@@ -3989,19 +3989,19 @@ func (ContainerSuite) TestForceCompression(ctx context.Context, t *testctx.T) {
 		expectedOCIMediaType string
 	}{
 		{
-			dagger.Gzip,
+			dagger.ImageLayerCompressionGzip,
 			"application/vnd.oci.image.layer.v1.tar+gzip",
 		},
 		{
-			dagger.Zstd,
+			dagger.ImageLayerCompressionZstd,
 			"application/vnd.oci.image.layer.v1.tar+zstd",
 		},
 		{
-			dagger.Uncompressed,
+			dagger.ImageLayerCompressionUncompressed,
 			"application/vnd.oci.image.layer.v1.tar",
 		},
 		{
-			dagger.Estargz,
+			dagger.ImageLayerCompressionEstarGz,
 			"application/vnd.oci.image.layer.v1.tar+gzip",
 		},
 	} {
@@ -4069,11 +4069,11 @@ func (ContainerSuite) TestMediaTypes(ctx context.Context, t *testctx.T) {
 			"application/vnd.oci.image.layer.v1.tar+gzip",
 		},
 		{
-			dagger.Ocimediatypes,
+			dagger.ImageMediaTypesOcimediaTypes,
 			"application/vnd.oci.image.layer.v1.tar+gzip",
 		},
 		{
-			dagger.Dockermediatypes,
+			dagger.ImageMediaTypesDockerMediaTypes,
 			"application/vnd.docker.image.rootfs.diff.tar.gzip",
 		},
 	} {
@@ -4296,9 +4296,9 @@ func (ContainerSuite) TestImageLoadCompatibility(ctx context.Context, t *testctx
 		})
 		require.NoError(t, err)
 
-		for _, mediaType := range []dagger.ImageMediaTypes{dagger.Ocimediatypes, dagger.Dockermediatypes} {
+		for _, mediaType := range []dagger.ImageMediaTypes{dagger.ImageMediaTypesOcimediaTypes, dagger.ImageMediaTypesDockerMediaTypes} {
 			mediaType := mediaType
-			for _, compression := range []dagger.ImageLayerCompression{dagger.Gzip, dagger.Zstd, dagger.Uncompressed} {
+			for _, compression := range []dagger.ImageLayerCompression{dagger.ImageLayerCompressionGzip, dagger.ImageLayerCompressionZstd, dagger.ImageLayerCompressionUncompressed} {
 				compression := compression
 				t.Run(fmt.Sprintf("%s-%s-%s-%s", t.Name(), dockerVersion, mediaType, compression), func(ctx context.Context, t *testctx.T) {
 					tmpdir := t.TempDir()
@@ -4321,7 +4321,7 @@ func (ContainerSuite) TestImageLoadCompatibility(ctx context.Context, t *testctx
 						WithExec([]string{"docker", "load", "-i", "/" + path.Base(tmpfile)})
 
 					output, err := ctr.Stdout(ctx)
-					if dockerVersion == "20.10" && compression == dagger.Zstd {
+					if dockerVersion == "20.10" && compression == dagger.ImageLayerCompressionZstd {
 						// zstd support in docker wasn't added until 23, so sanity check that it fails
 						require.Error(t, err)
 					} else {
@@ -4439,6 +4439,120 @@ func (ContainerSuite) TestEmptyExecDiff(ctx context.Context, t *testctx.T) {
 	ents, err := base.Rootfs().Diff(base.WithExec([]string{"true"}).Rootfs()).Entries(ctx)
 	require.NoError(t, err)
 	require.Len(t, ents, 0)
+}
+
+func (ContainerSuite) TestExecExpect(ctx context.Context, t *testctx.T) {
+	t.Run("any", func(ctx context.Context, t *testctx.T) {
+		res := struct {
+			Container struct {
+				From struct {
+					WithExec struct {
+						ExitCode int
+					}
+				}
+			}
+		}{}
+
+		err := testutil.Query(t,
+			`{
+			container {
+				from(address: "`+alpineImage+`") {
+					withExec(args: ["sh", "-c", "exit 0"], expect: ANY) {
+						exitCode
+					}
+				}
+			}
+		}`, &res, nil)
+		require.NoError(t, err)
+		require.Equal(t, 0, res.Container.From.WithExec.ExitCode)
+
+		err = testutil.Query(t,
+			`{
+			container {
+				from(address: "`+alpineImage+`") {
+					withExec(args: ["sh", "-c", "exit 1"], expect: ANY) {
+						exitCode
+					}
+				}
+			}
+		}`, &res, nil)
+		require.NoError(t, err)
+		require.Equal(t, 1, res.Container.From.WithExec.ExitCode)
+	})
+
+	t.Run("success", func(ctx context.Context, t *testctx.T) {
+		res := struct {
+			Container struct {
+				From struct {
+					WithExec struct {
+						ExitCode int
+					}
+				}
+			}
+		}{}
+
+		err := testutil.Query(t,
+			`{
+			container {
+				from(address: "`+alpineImage+`") {
+					withExec(args: ["sh", "-c", "exit 0"], expect: SUCCESS) {
+						exitCode
+					}
+				}
+			}
+		}`, &res, nil)
+		require.NoError(t, err)
+		require.Equal(t, 0, res.Container.From.WithExec.ExitCode)
+
+		err = testutil.Query(t,
+			`{
+			container {
+				from(address: "`+alpineImage+`") {
+					withExec(args: ["sh", "-c", "exit 1"], expect: SUCCESS) {
+						exitCode
+					}
+				}
+			}
+		}`, &res, nil)
+		require.ErrorContains(t, err, "exit code: 1")
+	})
+
+	t.Run("failure", func(ctx context.Context, t *testctx.T) {
+		res := struct {
+			Container struct {
+				From struct {
+					WithExec struct {
+						ExitCode int
+					}
+				}
+			}
+		}{}
+
+		err := testutil.Query(t,
+			`{
+			container {
+				from(address: "`+alpineImage+`") {
+					withExec(args: ["sh", "-c", "exit 0"], expect: FAILURE) {
+						exitCode
+					}
+				}
+			}
+		}`, &res, nil)
+		require.ErrorContains(t, err, "exit code: 0")
+
+		err = testutil.Query(t,
+			`{
+			container {
+				from(address: "`+alpineImage+`") {
+					withExec(args: ["sh", "-c", "exit 1"], expect: FAILURE) {
+						exitCode
+					}
+				}
+			}
+		}`, &res, nil)
+		require.NoError(t, err)
+		require.Equal(t, 1, res.Container.From.WithExec.ExitCode)
+	})
 }
 
 // mountDockerConfig is a helper for mounting the host's docker config if it exists

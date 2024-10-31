@@ -656,3 +656,56 @@ func (m *Test) GetContents(ctx context.Context, cmtID string) (string, error) {
 		})
 	require.ErrorContains(t, err, ".git/HEAD: no such file or directory")
 }
+
+func (LegacySuite) TestGoUnscopedEnumValues(ctx context.Context, t *testctx.T) {
+	// Changed in dagger/dagger#8669
+	//
+	// Ensure that old dagger unscoped enum values are preserved.
+
+	c := connect(ctx, t)
+
+	mod := daggerCliBase(t, c).
+		With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
+		WithNewFile("dagger.json", `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.13.4"}`).
+		WithNewFile("main.go", `package main
+
+import "dagger/test/internal/dagger"
+
+type Test struct {}
+
+func (m *Test) OldProto(proto dagger.NetworkProtocol) dagger.NetworkProtocol {
+	switch proto {
+	case dagger.Tcp:
+		return dagger.Udp
+	case dagger.Udp:
+		return dagger.Tcp
+	default:
+		panic("nope")
+	}
+}
+
+func (m *Test) NewProto(proto dagger.NetworkProtocol) dagger.NetworkProtocol {
+	switch proto {
+	case dagger.NetworkProtocolTcp:
+		return dagger.NetworkProtocolUdp
+	case dagger.NetworkProtocolUdp:
+		return dagger.NetworkProtocolTcp
+	default:
+		panic("nope")
+	}
+}
+`,
+		)
+
+	out, err := mod.
+		With(daggerCall("old-proto", "--proto=TCP")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "UDP")
+
+	out, err = mod.
+		With(daggerCall("new-proto", "--proto=TCP")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "UDP")
+}

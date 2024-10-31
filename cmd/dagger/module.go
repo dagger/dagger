@@ -163,7 +163,7 @@ If --sdk is specified, the given SDK is installed in the module. You can do this
 				return fmt.Errorf("failed to get configured module: %w", err)
 			}
 
-			if modConf.SourceKind != dagger.LocalSource {
+			if modConf.SourceKind != dagger.ModuleSourceKindLocalSource {
 				return fmt.Errorf("module must be local")
 			}
 			if modConf.ModuleSourceConfigExists {
@@ -248,7 +248,7 @@ var moduleInstallCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("failed to get configured module: %w", err)
 			}
-			if modConf.SourceKind != dagger.LocalSource {
+			if modConf.SourceKind != dagger.ModuleSourceKindLocalSource {
 				return fmt.Errorf("module must be local")
 			}
 			if !modConf.FullyInitialized() {
@@ -261,7 +261,7 @@ var moduleInstallCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("failed to get module ref kind: %w", err)
 			}
-			if depSrcKind == dagger.LocalSource {
+			if depSrcKind == dagger.ModuleSourceKindLocalSource {
 				// need to ensure that local dep paths are relative to the parent root source
 				depAbsPath, err := filepath.Abs(depRefStr)
 				if err != nil {
@@ -305,7 +305,7 @@ var moduleInstallCmd = &cobra.Command{
 				return err
 			}
 
-			if depSrcKind == dagger.GitSource {
+			if depSrcKind == dagger.ModuleSourceKindGitSource {
 				git := depSrc.AsGitSource()
 				gitURL, err := git.CloneRef(ctx)
 				if err != nil {
@@ -331,7 +331,7 @@ var moduleInstallCmd = &cobra.Command{
 					"git_version":   gitVersion,
 					"git_commit":    gitCommit,
 				})
-			} else if depSrcKind == dagger.LocalSource {
+			} else if depSrcKind == dagger.ModuleSourceKindLocalSource {
 				analytics.Ctx(ctx).Capture(ctx, "module_install", map[string]string{
 					"module_name":   name,
 					"install_name":  installName,
@@ -375,7 +375,7 @@ This command is idempotent: you can run it at any time, any number of times. It 
 			if err != nil {
 				return fmt.Errorf("failed to get configured module: %w", err)
 			}
-			if modConf.SourceKind != dagger.LocalSource {
+			if modConf.SourceKind != dagger.ModuleSourceKindLocalSource {
 				return fmt.Errorf("module must be local")
 			}
 
@@ -486,7 +486,7 @@ forced), to avoid mistakenly depending on uncommitted files.
 			if err != nil {
 				return fmt.Errorf("failed to get configured module: %w", err)
 			}
-			if modConf.SourceKind != dagger.LocalSource {
+			if modConf.SourceKind != dagger.ModuleSourceKindLocalSource {
 				return fmt.Errorf("module must be local")
 			}
 			if !modConf.FullyInitialized() {
@@ -661,7 +661,7 @@ func getModuleConfigurationForSourceRef(
 		return nil, fmt.Errorf("failed to get module ref kind: %w", err)
 	}
 
-	if conf.SourceKind == dagger.GitSource {
+	if conf.SourceKind == dagger.ModuleSourceKindGitSource {
 		conf.ModuleSourceConfigExists, err = conf.Source.ConfigExists(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to check if module config exists: %w", err)
@@ -694,7 +694,7 @@ func getModuleConfigurationForSourceRef(
 					return nil, err
 				}
 				depSrcRef := namedDep.Source
-				if depKind == dagger.LocalSource {
+				if depKind == dagger.ModuleSourceKindLocalSource {
 					depSrcRef = filepath.Join(defaultFindupConfigDir, namedDep.Source)
 				}
 				return getModuleConfigurationForSourceRef(ctx, dag, depSrcRef, false, resolveFromCaller)
@@ -861,7 +861,7 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client) error 
 
 	for _, typeDef := range res.TypeDefs {
 		switch typeDef.Kind {
-		case dagger.ObjectKind:
+		case dagger.TypeDefKindObjectKind:
 			obj := typeDef.AsObject
 			// FIXME: we could get the real constructor's name through the field
 			// in Query which would avoid the need to convert the module name,
@@ -883,11 +883,11 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client) error 
 				}
 			}
 			m.Objects = append(m.Objects, typeDef)
-		case dagger.InterfaceKind:
+		case dagger.TypeDefKindInterfaceKind:
 			m.Interfaces = append(m.Interfaces, typeDef)
-		case dagger.EnumKind:
+		case dagger.TypeDefKindEnumKind:
 			m.Enums = append(m.Enums, typeDef)
-		case dagger.InputKind:
+		case dagger.TypeDefKindInputKind:
 			m.Inputs = append(m.Inputs, typeDef)
 		}
 	}
@@ -1116,6 +1116,8 @@ var skipLeaves = map[string][]string{
 		// stdout and stderr may be arbitrarily large and jarring to see (e.g. test suites)
 		"stdout",
 		"stderr",
+		// avoid potential error if no previous execution
+		"exitCode",
 	},
 	"File": {
 		// This could be a binary file, so until we can tell which type of
@@ -1149,13 +1151,13 @@ func GetLeafFunctions(fp functionProvider) []*modFunction {
 
 	for _, fn := range fns {
 		kind := fn.ReturnType.Kind
-		if kind == dagger.ListKind {
+		if kind == dagger.TypeDefKindListKind {
 			kind = fn.ReturnType.AsList.ElementTypeDef.Kind
 		}
 		switch kind {
-		case dagger.ObjectKind, dagger.InterfaceKind, dagger.VoidKind:
+		case dagger.TypeDefKindObjectKind, dagger.TypeDefKindInterfaceKind, dagger.TypeDefKindVoidKind:
 			continue
-		case dagger.ScalarKind:
+		case dagger.TypeDefKindScalarKind:
 			// FIXME: ID types are coming from TypeDef with the wrong case ("Id")
 			if fn.ReturnType.AsScalar.Name == fmt.Sprintf("%sId", fp.ProviderName()) {
 				continue
