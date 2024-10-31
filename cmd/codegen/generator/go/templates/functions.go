@@ -21,6 +21,7 @@ func GoTemplateFuncs(
 	schema *introspection.Schema,
 	schemaVersion string,
 	moduleName string,
+	moduleParent string,
 	pkg *packages.Package,
 	fset *token.FileSet,
 	pass int,
@@ -29,6 +30,7 @@ func GoTemplateFuncs(
 		CommonFunctions: generator.NewCommonFunctions(schemaVersion, &FormatTypeFunc{}),
 		ctx:             ctx,
 		moduleName:      moduleName,
+		moduleParent:    moduleParent,
 		modulePkg:       pkg,
 		moduleFset:      fset,
 		schema:          schema,
@@ -41,6 +43,7 @@ type goTemplateFuncs struct {
 	*generator.CommonFunctions
 	ctx           context.Context
 	moduleName    string
+	moduleParent  string
 	modulePkg     *packages.Package
 	moduleFset    *token.FileSet
 	schema        *introspection.Schema
@@ -82,6 +85,7 @@ func (funcs goTemplateFuncs) FuncMap() template.FuncMap {
 		"IsPartial":               funcs.isPartial,
 		"IsModuleCode":            funcs.isModuleCode,
 		"ModuleMainSrc":           funcs.moduleMainSrc,
+		"ModuleRelPath":           funcs.moduleRelPath,
 	}
 }
 
@@ -117,7 +121,7 @@ func (funcs goTemplateFuncs) formatDeprecation(s string) string {
 func (funcs goTemplateFuncs) isEnum(t introspection.Type) bool {
 	return t.Kind == introspection.TypeKindEnum &&
 		// We ignore the internal GraphQL enums
-		!strings.HasPrefix(t.Name, "__")
+		!strings.HasPrefix(t.Name, "_")
 }
 
 // isPointer returns true if value is a pointer.
@@ -145,10 +149,14 @@ func formatName(s string) string {
 }
 
 // formatEnum formats a GraphQL Enum value into a Go equivalent
-// Example: `fooId` -> `FooID`
-func (funcs goTemplateFuncs) formatEnum(s string) string {
-	s = strings.ToLower(s)
-	return strcase.ToCamel(s)
+// Example: `FOO_VALUE` -> `FooValue`, `FooValue` -> `FooValue`
+func (funcs goTemplateFuncs) formatEnum(parent string, s string) string {
+	if parent == "" {
+		// legacy path - terrible, removes all the casing :(
+		s = strings.ToLower(s)
+	}
+	s = strcase.ToCamel(s)
+	return parent + s
 }
 
 func (funcs goTemplateFuncs) sortEnumFields(s []introspection.EnumValue) []introspection.EnumValue {

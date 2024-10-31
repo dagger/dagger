@@ -211,6 +211,11 @@ class SocketID(Scalar):
     of type Socket."""
 
 
+class SourceMapID(Scalar):
+    """The `SourceMapID` scalar type represents an identifier for an
+    object of type SourceMap."""
+
+
 class TerminalID(Scalar):
     """The `TerminalID` scalar type represents an identifier for an object
     of type Terminal."""
@@ -273,6 +278,19 @@ class NetworkProtocol(Enum):
     TCP = "TCP"
 
     UDP = "UDP"
+
+
+class ReturnType(Enum):
+    """Expected return type of an execution"""
+
+    ANY = "ANY"
+    """Any execution (exit codes 0-127)"""
+
+    FAILURE = "FAILURE"
+    """A failed execution (exit codes 1-127)"""
+
+    SUCCESS = "SUCCESS"
+    """A successful execution (exit code 0)"""
 
 
 class TypeDefKind(Enum):
@@ -436,7 +454,8 @@ class Container(Type):
         _args = [
             Arg(
                 "platformVariants",
-                [] if platform_variants is None else platform_variants,
+                () if platform_variants is None else platform_variants,
+                (),
             ),
             Arg("forcedCompression", forced_compression, None),
             Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
@@ -479,8 +498,8 @@ class Container(Type):
             Arg("context", context),
             Arg("dockerfile", dockerfile, "Dockerfile"),
             Arg("target", target, ""),
-            Arg("buildArgs", [] if build_args is None else build_args),
-            Arg("secrets", [] if secrets is None else secrets),
+            Arg("buildArgs", () if build_args is None else build_args, ()),
+            Arg("secrets", () if secrets is None else secrets, ()),
         ]
         _ctx = self._select("build", _args)
         return Container(_ctx)
@@ -602,6 +621,29 @@ class Container(Type):
             for v in _ids
         ]
 
+    async def exit_code(self) -> int:
+        """The exit code of the last executed command.
+
+        Returns an error if no command was set.
+
+        Returns
+        -------
+        int
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("exitCode", _args)
+        return await _ctx.execute(int)
+
     def experimental_with_all_gp_us(self) -> Self:
         """EXPERIMENTAL API! Subject to change/removal at any time.
 
@@ -691,7 +733,8 @@ class Container(Type):
             Arg("path", path),
             Arg(
                 "platformVariants",
-                [] if platform_variants is None else platform_variants,
+                () if platform_variants is None else platform_variants,
+                (),
             ),
             Arg("forcedCompression", forced_compression, None),
             Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
@@ -983,7 +1026,8 @@ class Container(Type):
             Arg("address", address),
             Arg(
                 "platformVariants",
-                [] if platform_variants is None else platform_variants,
+                () if platform_variants is None else platform_variants,
+                (),
             ),
             Arg("forcedCompression", forced_compression, None),
             Arg("mediaTypes", media_types, ImageMediaTypes.OCIMediaTypes),
@@ -1000,8 +1044,7 @@ class Container(Type):
     async def stderr(self) -> str:
         """The error stream of the last executed command.
 
-        Will execute default command if none is set, or error if there's no
-        default.
+        Returns an error if no command was set.
 
         Returns
         -------
@@ -1024,8 +1067,7 @@ class Container(Type):
     async def stdout(self) -> str:
         """The output stream of the last executed command.
 
-        Will execute default command if none is set, or error if there's no
-        default.
+        Returns an error if no command was set.
 
         Returns
         -------
@@ -1097,7 +1139,7 @@ class Container(Type):
             absolutely necessary and only with trusted commands.
         """
         _args = [
-            Arg("cmd", [] if cmd is None else cmd),
+            Arg("cmd", () if cmd is None else cmd, ()),
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
@@ -1140,7 +1182,7 @@ class Container(Type):
             If the API returns an error.
         """
         _args = [
-            Arg("ports", [] if ports is None else ports),
+            Arg("ports", () if ports is None else ports, ()),
             Arg("random", random, False),
         ]
         _ctx = self._select("up", _args)
@@ -1271,8 +1313,8 @@ class Container(Type):
         _args = [
             Arg("path", path),
             Arg("directory", directory),
-            Arg("exclude", [] if exclude is None else exclude),
-            Arg("include", [] if include is None else include),
+            Arg("exclude", () if exclude is None else exclude, ()),
+            Arg("include", () if include is None else include, ()),
             Arg("owner", owner, ""),
             Arg("expand", expand, False),
         ]
@@ -1337,6 +1379,7 @@ class Container(Type):
         stdin: str | None = "",
         redirect_stdout: str | None = "",
         redirect_stderr: str | None = "",
+        expect: ReturnType | None = ReturnType.SUCCESS,
         experimental_privileged_nesting: bool | None = False,
         insecure_root_capabilities: bool | None = False,
         expand: bool | None = False,
@@ -1362,6 +1405,8 @@ class Container(Type):
         redirect_stderr:
             Redirect the command's standard error to a file in the container
             (e.g., "/tmp/stderr").
+        expect:
+            Exit codes this command is allowed to exit with without error
         experimental_privileged_nesting:
             Provides Dagger access to the executed command.
             Do not use this option unless you trust the command being
@@ -1389,6 +1434,7 @@ class Container(Type):
             Arg("stdin", stdin, ""),
             Arg("redirectStdout", redirect_stdout, ""),
             Arg("redirectStderr", redirect_stderr, ""),
+            Arg("expect", expect, ReturnType.SUCCESS),
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
@@ -2311,8 +2357,8 @@ class CurrentModule(Type):
         """
         _args = [
             Arg("path", path),
-            Arg("exclude", [] if exclude is None else exclude),
-            Arg("include", [] if include is None else include),
+            Arg("exclude", () if exclude is None else exclude, ()),
+            Arg("include", () if include is None else include, ()),
         ]
         _ctx = self._select("workdir", _args)
         return Directory(_ctx)
@@ -2855,8 +2901,8 @@ class Directory(Type):
             Arg("platform", platform, None),
             Arg("dockerfile", dockerfile, "Dockerfile"),
             Arg("target", target, ""),
-            Arg("buildArgs", [] if build_args is None else build_args),
-            Arg("secrets", [] if secrets is None else secrets),
+            Arg("buildArgs", () if build_args is None else build_args, ()),
+            Arg("secrets", () if secrets is None else secrets, ()),
         ]
         _ctx = self._select("dockerBuild", _args)
         return Container(_ctx)
@@ -3049,7 +3095,7 @@ class Directory(Type):
             If set, override the default container used for the terminal.
         """
         _args = [
-            Arg("cmd", [] if cmd is None else cmd),
+            Arg("cmd", () if cmd is None else cmd, ()),
             Arg(
                 "experimentalPrivilegedNesting", experimental_privileged_nesting, False
             ),
@@ -3085,8 +3131,8 @@ class Directory(Type):
         _args = [
             Arg("path", path),
             Arg("directory", directory),
-            Arg("exclude", [] if exclude is None else exclude),
-            Arg("include", [] if include is None else include),
+            Arg("exclude", () if exclude is None else exclude, ()),
+            Arg("include", () if include is None else include, ()),
         ]
         _ctx = self._select("withDirectory", _args)
         return Directory(_ctx)
@@ -3330,6 +3376,12 @@ class EnumTypeDef(Type):
         _ctx = self._select("name", _args)
         return await _ctx.execute(str)
 
+    def source_map(self) -> "SourceMap":
+        """The location of this enum declaration."""
+        _args: list[Arg] = []
+        _ctx = self._select("sourceMap", _args)
+        return SourceMap(_ctx)
+
     async def source_module_name(self) -> str:
         """If this EnumTypeDef is associated with a Module, the name of the
         module. Unset otherwise.
@@ -3443,6 +3495,12 @@ class EnumValueTypeDef(Type):
         _args: list[Arg] = []
         _ctx = self._select("name", _args)
         return await _ctx.execute(str)
+
+    def source_map(self) -> "SourceMap":
+        """The location of this enum value declaration."""
+        _args: list[Arg] = []
+        _ctx = self._select("sourceMap", _args)
+        return SourceMap(_ctx)
 
 
 @typecheck
@@ -3636,6 +3694,12 @@ class FieldTypeDef(Type):
         _args: list[Arg] = []
         _ctx = self._select("name", _args)
         return await _ctx.execute(str)
+
+    def source_map(self) -> "SourceMap":
+        """The location of this field declaration."""
+        _args: list[Arg] = []
+        _ctx = self._select("sourceMap", _args)
+        return SourceMap(_ctx)
 
     def type_def(self) -> "TypeDef":
         """The type of the field."""
@@ -3963,6 +4027,12 @@ class Function(Type):
         _ctx = self._select("returnType", _args)
         return TypeDef(_ctx)
 
+    def source_map(self) -> "SourceMap":
+        """The location of this function declaration."""
+        _args: list[Arg] = []
+        _ctx = self._select("sourceMap", _args)
+        return SourceMap(_ctx)
+
     def with_arg(
         self,
         name: str,
@@ -3972,6 +4042,7 @@ class Function(Type):
         default_value: JSON | None = None,
         default_path: str | None = "",
         ignore: list[str] | None = None,
+        source_map: "SourceMap | None" = None,
     ) -> Self:
         """Returns the function with the provided argument
 
@@ -3991,6 +4062,7 @@ class Function(Type):
             from context directory, relative to root directory.
         ignore:
             Patterns to ignore when loading the contextual argument value.
+        source_map:
         """
         _args = [
             Arg("name", name),
@@ -3998,7 +4070,8 @@ class Function(Type):
             Arg("description", description, ""),
             Arg("defaultValue", default_value, None),
             Arg("defaultPath", default_path, ""),
-            Arg("ignore", [] if ignore is None else ignore),
+            Arg("ignore", () if ignore is None else ignore, ()),
+            Arg("sourceMap", source_map, None),
         ]
         _ctx = self._select("withArg", _args)
         return Function(_ctx)
@@ -4015,6 +4088,20 @@ class Function(Type):
             Arg("description", description),
         ]
         _ctx = self._select("withDescription", _args)
+        return Function(_ctx)
+
+    def with_source_map(self, source_map: "SourceMap") -> Self:
+        """Returns the function with the given source map.
+
+        Parameters
+        ----------
+        source_map:
+            The source map for the function definition.
+        """
+        _args = [
+            Arg("sourceMap", source_map),
+        ]
+        _ctx = self._select("withSourceMap", _args)
         return Function(_ctx)
 
     def with_(self, cb: Callable[["Function"], "Function"]) -> "Function":
@@ -4161,6 +4248,12 @@ class FunctionArg(Type):
         _args: list[Arg] = []
         _ctx = self._select("name", _args)
         return await _ctx.execute(str)
+
+    def source_map(self) -> "SourceMap":
+        """The location of this arg declaration."""
+        _args: list[Arg] = []
+        _ctx = self._select("sourceMap", _args)
+        return SourceMap(_ctx)
 
     def type_def(self) -> "TypeDef":
         """The type of the argument."""
@@ -4952,8 +5045,8 @@ class Host(Type):
         """
         _args = [
             Arg("path", path),
-            Arg("exclude", [] if exclude is None else exclude),
-            Arg("include", [] if include is None else include),
+            Arg("exclude", () if exclude is None else exclude, ()),
+            Arg("include", () if include is None else include, ()),
         ]
         _ctx = self._select("directory", _args)
         return Directory(_ctx)
@@ -5072,7 +5165,7 @@ class Host(Type):
         """
         _args = [
             Arg("service", service),
-            Arg("ports", [] if ports is None else ports),
+            Arg("ports", () if ports is None else ports, ()),
             Arg("native", native, False),
         ]
         _ctx = self._select("tunnel", _args)
@@ -5258,6 +5351,12 @@ class InterfaceTypeDef(Type):
         _args: list[Arg] = []
         _ctx = self._select("name", _args)
         return await _ctx.execute(str)
+
+    def source_map(self) -> "SourceMap":
+        """The location of this interface declaration."""
+        _args: list[Arg] = []
+        _ctx = self._select("sourceMap", _args)
+        return SourceMap(_ctx)
 
     async def source_module_name(self) -> str:
         """If this InterfaceTypeDef is associated with a Module, the name of the
@@ -6140,7 +6239,7 @@ class ModuleSource(Type):
         _args = [
             Arg("path", path),
             Arg("viewName", view_name, None),
-            Arg("ignore", [] if ignore is None else ignore),
+            Arg("ignore", () if ignore is None else ignore, ()),
         ]
         _ctx = self._select("resolveDirectoryFromCaller", _args)
         return Directory(_ctx)
@@ -6539,6 +6638,12 @@ class ObjectTypeDef(Type):
         _args: list[Arg] = []
         _ctx = self._select("name", _args)
         return await _ctx.execute(str)
+
+    def source_map(self) -> "SourceMap":
+        """The location of this object declaration."""
+        _args: list[Arg] = []
+        _ctx = self._select("sourceMap", _args)
+        return SourceMap(_ctx)
 
     async def source_module_name(self) -> str:
         """If this ObjectTypeDef is associated with a Module, the name of the
@@ -7258,6 +7363,14 @@ class Client(Root):
         _ctx = self._select("loadSocketFromID", _args)
         return Socket(_ctx)
 
+    def load_source_map_from_id(self, id: SourceMapID) -> "SourceMap":
+        """Load a SourceMap from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadSourceMapFromID", _args)
+        return SourceMap(_ctx)
+
     def load_terminal_from_id(self, id: TerminalID) -> "Terminal":
         """Load a Terminal from its ID."""
         _args = [
@@ -7369,6 +7482,31 @@ class Client(Root):
         ]
         _ctx = self._select("setSecret", _args)
         return Secret(_ctx)
+
+    def source_map(
+        self,
+        filename: str,
+        line: int,
+        column: int,
+    ) -> "SourceMap":
+        """Creates source map metadata.
+
+        Parameters
+        ----------
+        filename:
+            The filename from the module source.
+        line:
+            The line number within the filename.
+        column:
+            The column number within the line.
+        """
+        _args = [
+            Arg("filename", filename),
+            Arg("line", line),
+            Arg("column", column),
+        ]
+        _ctx = self._select("sourceMap", _args)
+        return SourceMap(_ctx)
 
     def type_def(self) -> "TypeDef":
         """Create a new TypeDef."""
@@ -7749,7 +7887,7 @@ class Service(Type):
             If the API returns an error.
         """
         _args = [
-            Arg("ports", [] if ports is None else ports),
+            Arg("ports", () if ports is None else ports, ()),
             Arg("random", random, False),
         ]
         _ctx = self._select("up", _args)
@@ -7805,6 +7943,119 @@ class Socket(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(SocketID)
+
+
+@typecheck
+class SourceMap(Type):
+    """Source location information."""
+
+    async def column(self) -> int:
+        """The column number within the line.
+
+        Returns
+        -------
+        int
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("column", _args)
+        return await _ctx.execute(int)
+
+    async def filename(self) -> str:
+        """The filename from the module source.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("filename", _args)
+        return await _ctx.execute(str)
+
+    async def id(self) -> SourceMapID:
+        """A unique identifier for this SourceMap.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        SourceMapID
+            The `SourceMapID` scalar type represents an identifier for an
+            object of type SourceMap.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(SourceMapID)
+
+    async def line(self) -> int:
+        """The line number within the filename.
+
+        Returns
+        -------
+        int
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("line", _args)
+        return await _ctx.execute(int)
+
+    async def module(self) -> str:
+        """The module dependency this was declared in.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("module", _args)
+        return await _ctx.execute(str)
 
 
 @typecheck
@@ -7986,6 +8237,7 @@ class TypeDef(Type):
         name: str,
         *,
         description: str | None = "",
+        source_map: SourceMap | None = None,
     ) -> Self:
         """Returns a TypeDef of kind Enum with the provided name.
 
@@ -7999,10 +8251,13 @@ class TypeDef(Type):
             The name of the enum
         description:
             A doc string for the enum, if any
+        source_map:
+            The source map for the enum definition.
         """
         _args = [
             Arg("name", name),
             Arg("description", description, ""),
+            Arg("sourceMap", source_map, None),
         ]
         _ctx = self._select("withEnum", _args)
         return TypeDef(_ctx)
@@ -8012,6 +8267,7 @@ class TypeDef(Type):
         value: str,
         *,
         description: str | None = "",
+        source_map: SourceMap | None = None,
     ) -> Self:
         """Adds a static value for an Enum TypeDef, failing if the type is not an
         enum.
@@ -8022,10 +8278,13 @@ class TypeDef(Type):
             The name of the value in the enum
         description:
             A doc string for the value, if any
+        source_map:
+            The source map for the enum value definition.
         """
         _args = [
             Arg("value", value),
             Arg("description", description, ""),
+            Arg("sourceMap", source_map, None),
         ]
         _ctx = self._select("withEnumValue", _args)
         return TypeDef(_ctx)
@@ -8036,6 +8295,7 @@ class TypeDef(Type):
         type_def: Self,
         *,
         description: str | None = "",
+        source_map: SourceMap | None = None,
     ) -> Self:
         """Adds a static field for an Object TypeDef, failing if the type is not
         an object.
@@ -8048,11 +8308,14 @@ class TypeDef(Type):
             The type of the field
         description:
             A doc string for the field, if any
+        source_map:
+            The source map for the field definition.
         """
         _args = [
             Arg("name", name),
             Arg("typeDef", type_def),
             Arg("description", description, ""),
+            Arg("sourceMap", source_map, None),
         ]
         _ctx = self._select("withField", _args)
         return TypeDef(_ctx)
@@ -8072,11 +8335,13 @@ class TypeDef(Type):
         name: str,
         *,
         description: str | None = "",
+        source_map: SourceMap | None = None,
     ) -> Self:
         """Returns a TypeDef of kind Interface with the provided name."""
         _args = [
             Arg("name", name),
             Arg("description", description, ""),
+            Arg("sourceMap", source_map, None),
         ]
         _ctx = self._select("withInterface", _args)
         return TypeDef(_ctx)
@@ -8104,6 +8369,7 @@ class TypeDef(Type):
         name: str,
         *,
         description: str | None = "",
+        source_map: SourceMap | None = None,
     ) -> Self:
         """Returns a TypeDef of kind Object with the provided name.
 
@@ -8114,6 +8380,7 @@ class TypeDef(Type):
         _args = [
             Arg("name", name),
             Arg("description", description, ""),
+            Arg("sourceMap", source_map, None),
         ]
         _ctx = self._select("withObject", _args)
         return TypeDef(_ctx)
@@ -8231,6 +8498,7 @@ __all__ = [
     "Port",
     "PortForward",
     "PortID",
+    "ReturnType",
     "ScalarTypeDef",
     "ScalarTypeDefID",
     "Secret",
@@ -8239,6 +8507,8 @@ __all__ = [
     "ServiceID",
     "Socket",
     "SocketID",
+    "SourceMap",
+    "SourceMapID",
     "Terminal",
     "TerminalID",
     "TypeDef",

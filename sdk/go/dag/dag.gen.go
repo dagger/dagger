@@ -368,6 +368,12 @@ func LoadSocketFromID(id dagger.SocketID) *dagger.Socket {
 	return client.LoadSocketFromID(id)
 }
 
+// Load a SourceMap from its ID.
+func LoadSourceMapFromID(id dagger.SourceMapID) *dagger.SourceMap {
+	client := initClient()
+	return client.LoadSourceMapFromID(id)
+}
+
 // Load a Terminal from its ID.
 func LoadTerminalFromID(id dagger.TerminalID) *dagger.Terminal {
 	client := initClient()
@@ -410,6 +416,12 @@ func Secret(name string, opts ...dagger.SecretOpts) *dagger.Secret {
 func SetSecret(name string, plaintext string) *dagger.Secret {
 	client := initClient()
 	return client.SetSecret(name, plaintext)
+}
+
+// Creates source map metadata.
+func SourceMap(filename string, line int, column int) *dagger.SourceMap {
+	client := initClient()
+	return client.SourceMap(filename, line, column)
 }
 
 // Create a new TypeDef.

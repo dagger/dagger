@@ -114,7 +114,8 @@ func (labels Labels) WithVCSLabels(workdir string) Labels {
 		WithGitHubLabels().
 		WithGitLabLabels().
 		WithCircleCILabels().
-		WithJenkinsLabels()
+		WithJenkinsLabels().
+		WithHarnessLabels()
 }
 
 func (labels Labels) WithGitLabels(workdir string) Labels {
@@ -382,6 +383,25 @@ func (labels Labels) WithJenkinsLabels() Labels {
 	return labels
 }
 
+func (labels Labels) WithHarnessLabels() Labels {
+	if len(os.Getenv("HARNESS_ACCOUNT_ID")) == 0 {
+		return labels
+	}
+	// in Harness, vcs labels take precedence over provider env variables
+	_, ok := labels["dagger.io/git.branch"]
+
+	if !ok {
+		remoteBranch := os.Getenv("GIT_BRANCH")
+		if remoteBranch != "" {
+			if _, branch, ok := strings.Cut(remoteBranch, "/"); ok {
+				labels["dagger.io/git.branch"] = branch
+			}
+		}
+		labels["dagger.io/git.ref"] = os.Getenv("GIT_COMMIT")
+	}
+	return labels
+}
+
 type repoIsh interface {
 	GetFullName() string
 	GetHTMLURL() string
@@ -417,6 +437,8 @@ func (labels Labels) WithCILabels() Labels {
 		vendor = "GitLab"
 	case os.Getenv("JENKINS_HOME") != "":
 		vendor = "Jenkins"
+	case os.Getenv("HARNESS_ACCOUNT_ID") != "":
+		vendor = "Harness"
 	case os.Getenv("BUILDKITE") == "true":
 		vendor = "Buildkite"
 	case os.Getenv("TEAMCITY_VERSION") != "":

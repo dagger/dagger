@@ -42,6 +42,18 @@ defmodule Dagger.FieldTypeDef do
     Client.execute(field_type_def.client, query_builder)
   end
 
+  @doc "The location of this field declaration."
+  @spec source_map(t()) :: Dagger.SourceMap.t()
+  def source_map(%__MODULE__{} = field_type_def) do
+    query_builder =
+      field_type_def.query_builder |> QB.select("sourceMap")
+
+    %Dagger.SourceMap{
+      query_builder: query_builder,
+      client: field_type_def.client
+    }
+  end
+
   @doc "The type of the field."
   @spec type_def(t()) :: Dagger.TypeDef.t()
   def type_def(%__MODULE__{} = field_type_def) do

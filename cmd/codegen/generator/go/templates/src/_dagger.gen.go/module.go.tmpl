@@ -59,7 +59,7 @@ type {{ $field | FieldOptionsStructName }} = dagger.{{ $field | FieldOptionsStru
 const (
 	{{- range $index, $field := .EnumValues | SortEnumFields }}
 	{{ $field.Description | Comment }}
-	{{ $field.Name | FormatEnum }} {{ $enumName }} = dagger.{{ $field.Name | FormatEnum }}
+	{{ $field.Name | FormatEnum "" }} {{ $enumName }} = dagger.{{ $field.Name | FormatEnum "" }}
 	{{ end }}
 )
 {{- end }}

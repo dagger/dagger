@@ -2,7 +2,9 @@ package templates
 
 import (
 	"fmt"
+	"go/token"
 	"go/types"
+	"path/filepath"
 
 	. "github.com/dave/jennifer/jen" //nolint:stylecheck
 	"github.com/iancoleman/strcase"
@@ -171,15 +173,15 @@ func (spec *parsedPrimitiveType) TypeDefCode() (*Statement, error) {
 		// NOTE: this is odd, but it doesn't matter, because the module won't
 		// pass the compilation step if there are invalid types - we just want
 		// to not error out horribly in codegen
-		kind = Id("dagger").Dot("VoidKind")
+		kind = Id("dagger").Dot("TypeDefKindVoidKind")
 	} else {
 		switch spec.goType.Info() {
 		case types.IsString:
-			kind = Id("dagger").Dot("StringKind")
+			kind = Id("dagger").Dot("TypeDefKindStringKind")
 		case types.IsInteger:
-			kind = Id("dagger").Dot("IntegerKind")
+			kind = Id("dagger").Dot("TypeDefKindIntegerKind")
 		case types.IsBoolean:
-			kind = Id("dagger").Dot("BooleanKind")
+			kind = Id("dagger").Dot("TypeDefKindBooleanKind")
 		default:
 			return nil, fmt.Errorf("unsupported basic type: %+v", spec.goType)
 		}
@@ -303,4 +305,30 @@ func (spec *parsedIfaceTypeReference) Name() string {
 
 func (spec *parsedIfaceTypeReference) ModuleName() string {
 	return spec.moduleName
+}
+
+type sourceMap struct {
+	filename string
+	line     int
+	column   int
+}
+
+func (ps *parseState) sourceMap(item interface{ Pos() token.Pos }) *sourceMap {
+	pos := item.Pos()
+	position := ps.fset.Position(pos)
+
+	filename, err := filepath.Rel(ps.pkg.Module.Dir, position.Filename)
+	if err != nil {
+		filename = position.Filename
+	}
+
+	return &sourceMap{
+		filename: filename,
+		line:     position.Line,
+		column:   position.Column,
+	}
+}
+
+func (spec *sourceMap) TypeDefCode() *Statement {
+	return Qual("dag", "SourceMap").Call(Lit(spec.filename), Lit(spec.line), Lit(spec.column))
 }

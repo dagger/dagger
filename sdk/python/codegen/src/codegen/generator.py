@@ -435,6 +435,8 @@ class _InputField:
 
         default_value = graphql.default_value
         self.default_is_mutable = isinstance(default_value, list)
+        if self.default_is_mutable:
+            default_value = ()
 
         if not is_required_type(graphql.type) and not self.has_default:
             default_value = None
@@ -480,7 +482,7 @@ class _InputField:
         params = [quote(self.graphql_name), self.name]
         if self.default_is_mutable:
             params[1] = f"{self.default_value} if {self.name} is None else {self.name}"
-        elif self.has_default:
+        if self.has_default:
             params.append(self.default_value)
         return f"Arg({', '.join(params)}),"
 

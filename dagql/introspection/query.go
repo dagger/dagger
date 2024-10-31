@@ -18,7 +18,7 @@ type ResponseSchema struct {
 	Types            ResponseSchemaTypes `json:"types"`
 	// Interfaces    ResponseSchemaTypes `json:"interfaces"`
 	// PossibleTypes ResponseSchemaTypes `json:"possibleTypes"`
-	Directives []ResponseDirective `json:"directives"`
+	Directives any `json:"directives"`
 }
 
 type ResponseNamedType struct {
@@ -26,34 +26,14 @@ type ResponseNamedType struct {
 }
 
 type ResponseDirective struct {
-	Name         string                      `json:"name"`
-	Description  string                      `json:"description"`
-	Locations    []ResponseDirectiveLocation `json:"locations"`
-	Args         []ResponseInputValue        `json:"args"`
-	IsRepeatable bool                        `json:"isRepeatable"`
+	Name string          `json:"name"`
+	Args []*DirectiveArg `json:"args"`
 }
 
-type ResponseDirectiveLocation string
-
-func (s *ResponseSchema) Query() *ResponseType {
-	return s.Types.Get(s.QueryType.Name)
+type DirectiveArg struct {
+	Name  string  `json:"name"`
+	Value *string `json:"value"`
 }
-
-func (s *ResponseSchema) Mutation() *ResponseType {
-	return s.Types.Get(s.MutationType.Name)
-}
-
-func (s *ResponseSchema) Subscription() *ResponseType {
-	return s.Types.Get(s.SubscriptionType.Name)
-}
-
-// func (s *SchemaResponse) Visit(handlers VisitHandlers) error {
-// 	v := Visitor{
-// 		schema:   s,
-// 		handlers: handlers,
-// 	}
-// 	return v.Run()
-// }
 
 type ResponseTypeKind string
 
@@ -86,6 +66,7 @@ type ResponseType struct {
 	EnumValues    []ResponseEnumValue  `json:"enumValues,omitempty"`
 	Interfaces    ResponseSchemaTypes  `json:"interfaces,omitempty"`
 	PossibleTypes ResponseSchemaTypes  `json:"possibleTypes,omitempty"`
+	Directives    []ResponseDirective  `json:"directives"`
 }
 
 type ResponseSchemaTypes []*ResponseType
@@ -106,6 +87,7 @@ type ResponseField struct {
 	Args              ResponseInputValues `json:"args"`
 	IsDeprecated      bool                `json:"isDeprecated"`
 	DeprecationReason string              `json:"deprecationReason"`
+	Directives        []ResponseDirective `json:"directives"`
 
 	ParentObject *Type `json:"-"`
 }
@@ -168,12 +150,13 @@ func (i ResponseInputValues) HasOptionals() bool {
 }
 
 type ResponseInputValue struct {
-	Name              string           `json:"name"`
-	Description       string           `json:"description"`
-	DefaultValue      *string          `json:"defaultValue"`
-	TypeRef           *ResponseTypeRef `json:"type"`
-	IsDeprecated      bool             `json:"isDeprecated"`
-	DeprecationReason string           `json:"deprecationReason"`
+	Name              string              `json:"name"`
+	Description       string              `json:"description"`
+	DefaultValue      *string             `json:"defaultValue"`
+	TypeRef           *ResponseTypeRef    `json:"type"`
+	IsDeprecated      bool                `json:"isDeprecated"`
+	DeprecationReason string              `json:"deprecationReason"`
+	Directives        []ResponseDirective `json:"directives"`
 }
 
 func (v ResponseInputValue) IsOptional() bool {
@@ -181,8 +164,9 @@ func (v ResponseInputValue) IsOptional() bool {
 }
 
 type ResponseEnumValue struct {
-	Name              string `json:"name"`
-	Description       string `json:"description"`
-	IsDeprecated      bool   `json:"isDeprecated"`
-	DeprecationReason string `json:"deprecationReason"`
+	Name              string              `json:"name"`
+	Description       string              `json:"description"`
+	IsDeprecated      bool                `json:"isDeprecated"`
+	DeprecationReason string              `json:"deprecationReason"`
+	Directives        []ResponseDirective `json:"directives"`
 }

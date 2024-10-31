@@ -1,13 +1,25 @@
 {{- if IsEnum . }}
+{{ .Description | Comment }}
 {{- $enumName := .Name }}
 type {{ $enumName }} string
+{{- with .Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
 
 func ({{ $enumName }}) IsEnum() {}
 
+{{- $needsScopedEnums := CheckVersionCompatibility "v0.14.0" | not }}
 const (
 	{{- range $index, $field := .EnumValues | SortEnumFields }}
+	{{- $fieldName := ($field.Name | FormatEnum "") }}
+	{{- $fullFieldName := print ($field.Name | FormatEnum $enumName) }}
 	{{ $field.Description | Comment }}
-	{{ $field.Name | FormatEnum}} {{ $enumName }} = "{{ $field.Name }}"
+	{{ $fullFieldName }} {{ $enumName }} = "{{ $field.Name }}"
+	{{- with .Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
+	{{ if $needsScopedEnums }}
+	{{ $field.Description | Comment }}
+	{{ print "use " $fullFieldName " instead" | FormatDeprecation }}
+	{{ $fieldName }} {{ $enumName }} = {{ $fullFieldName }}
+	{{- with .Directives.SourceMap -}} // {{ .Module }} ({{ .Filelink | ModuleRelPath }}) {{- end }}
+	{{ end }}
 	{{ end }}
 )
 

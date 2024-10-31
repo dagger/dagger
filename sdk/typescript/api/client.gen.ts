@@ -313,6 +313,11 @@ export type ContainerWithExecOpts = {
   redirectStderr?: string
 
   /**
+   * Exit codes this command is allowed to exit with without error
+   */
+  expect?: ReturnType
+
+  /**
    * Provides Dagger access to the executed command.
    *
    * Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
@@ -822,6 +827,7 @@ export type FunctionWithArgOpts = {
    * Patterns to ignore when loading the contextual argument value.
    */
   ignore?: string[]
+  sourceMap?: SourceMap
 }
 
 /**
@@ -1157,6 +1163,25 @@ export type ClientSecretOpts = {
 }
 
 /**
+ * Expected return type of an execution
+ */
+export enum ReturnType {
+  /**
+   * Any execution (exit codes 0-127)
+   */
+  Any = "ANY",
+
+  /**
+   * A failed execution (exit codes 1-127)
+   */
+  Failure = "FAILURE",
+
+  /**
+   * A successful execution (exit code 0)
+   */
+  Success = "SUCCESS",
+}
+/**
  * The `ScalarTypeDefID` scalar type represents an identifier for an object of type ScalarTypeDef.
  */
 export type ScalarTypeDefID = string & { __ScalarTypeDefID: never }
@@ -1210,6 +1235,11 @@ export type ServiceID = string & { __ServiceID: never }
 export type SocketID = string & { __SocketID: never }
 
 /**
+ * The `SourceMapID` scalar type represents an identifier for an object of type SourceMap.
+ */
+export type SourceMapID = string & { __SourceMapID: never }
+
+/**
  * The `TerminalID` scalar type represents an identifier for an object of type Terminal.
  */
 export type TerminalID = string & { __TerminalID: never }
@@ -1219,6 +1249,11 @@ export type TypeDefWithEnumOpts = {
    * A doc string for the enum, if any
    */
   description?: string
+
+  /**
+   * The source map for the enum definition.
+   */
+  sourceMap?: SourceMap
 }
 
 export type TypeDefWithEnumValueOpts = {
@@ -1226,6 +1261,11 @@ export type TypeDefWithEnumValueOpts = {
    * A doc string for the value, if any
    */
   description?: string
+
+  /**
+   * The source map for the enum value definition.
+   */
+  sourceMap?: SourceMap
 }
 
 export type TypeDefWithFieldOpts = {
@@ -1233,14 +1273,21 @@ export type TypeDefWithFieldOpts = {
    * A doc string for the field, if any
    */
   description?: string
+
+  /**
+   * The source map for the field definition.
+   */
+  sourceMap?: SourceMap
 }
 
 export type TypeDefWithInterfaceOpts = {
   description?: string
+  sourceMap?: SourceMap
 }
 
 export type TypeDefWithObjectOpts = {
   description?: string
+  sourceMap?: SourceMap
 }
 
 export type TypeDefWithScalarOpts = {
@@ -1377,6 +1424,7 @@ export class CacheVolume extends BaseClient {
 export class Container extends BaseClient {
   private readonly _id?: ContainerID = undefined
   private readonly _envVariable?: string = undefined
+  private readonly _exitCode?: number = undefined
   private readonly _export?: string = undefined
   private readonly _imageRef?: string = undefined
   private readonly _label?: string = undefined
@@ -1396,6 +1444,7 @@ export class Container extends BaseClient {
     parent?: { queryTree?: QueryTree[]; ctx: Context },
     _id?: ContainerID,
     _envVariable?: string,
+    _exitCode?: number,
     _export?: string,
     _imageRef?: string,
     _label?: string,
@@ -1412,6 +1461,7 @@ export class Container extends BaseClient {
 
     this._id = _id
     this._envVariable = _envVariable
+    this._exitCode = _exitCode
     this._export = _export
     this._imageRef = _imageRef
     this._label = _label
@@ -1631,6 +1681,29 @@ export class Container extends BaseClient {
           r.id,
         ),
     )
+  }
+
+  /**
+   * The exit code of the last executed command.
+   *
+   * Returns an error if no command was set.
+   */
+  exitCode = async (): Promise<number> => {
+    if (this._exitCode) {
+      return this._exitCode
+    }
+
+    const response: Awaited<number> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "exitCode",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
   }
 
   /**
@@ -1999,7 +2072,7 @@ export class Container extends BaseClient {
   /**
    * The error stream of the last executed command.
    *
-   * Will execute default command if none is set, or error if there's no default.
+   * Returns an error if no command was set.
    */
   stderr = async (): Promise<string> => {
     if (this._stderr) {
@@ -2022,7 +2095,7 @@ export class Container extends BaseClient {
   /**
    * The output stream of the last executed command.
    *
-   * Will execute default command if none is set, or error if there's no default.
+   * Returns an error if no command was set.
    */
   stdout = async (): Promise<string> => {
     if (this._stdout) {
@@ -2279,6 +2352,7 @@ export class Container extends BaseClient {
    * @param opts.stdin Content to write to the command's standard input before closing (e.g., "Hello world").
    * @param opts.redirectStdout Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
    * @param opts.redirectStderr Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
+   * @param opts.expect Exit codes this command is allowed to exit with without error
    * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
    *
    * Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
@@ -2289,12 +2363,16 @@ export class Container extends BaseClient {
    * This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
    */
   withExec = (args: string[], opts?: ContainerWithExecOpts): Container => {
+    const metadata: Metadata = {
+      expect: { is_enum: true },
+    }
+
     return new Container({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withExec",
-          args: { args, ...opts },
+          args: { args, ...opts, __metadata: metadata },
         },
       ],
       ctx: this._ctx,
@@ -4262,6 +4340,21 @@ export class EnumTypeDef extends BaseClient {
   }
 
   /**
+   * The location of this enum declaration.
+   */
+  sourceMap = (): SourceMap => {
+    return new SourceMap({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "sourceMap",
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
    * If this EnumTypeDef is associated with a Module, the name of the module. Unset otherwise.
    */
   sourceModuleName = async (): Promise<string> => {
@@ -4406,6 +4499,21 @@ export class EnumValueTypeDef extends BaseClient {
     )
 
     return response
+  }
+
+  /**
+   * The location of this enum value declaration.
+   */
+  sourceMap = (): SourceMap => {
+    return new SourceMap({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "sourceMap",
+        },
+      ],
+      ctx: this._ctx,
+    })
   }
 }
 
@@ -4645,6 +4753,21 @@ export class FieldTypeDef extends BaseClient {
     )
 
     return response
+  }
+
+  /**
+   * The location of this field declaration.
+   */
+  sourceMap = (): SourceMap => {
+    return new SourceMap({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "sourceMap",
+        },
+      ],
+      ctx: this._ctx,
+    })
   }
 
   /**
@@ -5044,6 +5167,21 @@ export class Function_ extends BaseClient {
   }
 
   /**
+   * The location of this function declaration.
+   */
+  sourceMap = (): SourceMap => {
+    return new SourceMap({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "sourceMap",
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
    * Returns the function with the provided argument
    * @param name The name of the argument
    * @param typeDef The type of the argument
@@ -5080,6 +5218,23 @@ export class Function_ extends BaseClient {
         {
           operation: "withDescription",
           args: { description },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Returns the function with the given source map.
+   * @param sourceMap The source map for the function definition.
+   */
+  withSourceMap = (sourceMap: SourceMap): Function_ => {
+    return new Function_({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withSourceMap",
+          args: { sourceMap },
         },
       ],
       ctx: this._ctx,
@@ -5248,6 +5403,21 @@ export class FunctionArg extends BaseClient {
     )
 
     return response
+  }
+
+  /**
+   * The location of this arg declaration.
+   */
+  sourceMap = (): SourceMap => {
+    return new SourceMap({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "sourceMap",
+        },
+      ],
+      ctx: this._ctx,
+    })
   }
 
   /**
@@ -6564,6 +6734,21 @@ export class InterfaceTypeDef extends BaseClient {
     )
 
     return response
+  }
+
+  /**
+   * The location of this interface declaration.
+   */
+  sourceMap = (): SourceMap => {
+    return new SourceMap({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "sourceMap",
+        },
+      ],
+      ctx: this._ctx,
+    })
   }
 
   /**
@@ -8282,6 +8467,21 @@ export class ObjectTypeDef extends BaseClient {
   }
 
   /**
+   * The location of this object declaration.
+   */
+  sourceMap = (): SourceMap => {
+    return new SourceMap({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "sourceMap",
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
    * If this ObjectTypeDef is associated with a Module, the name of the module. Unset otherwise.
    */
   sourceModuleName = async (): Promise<string> => {
@@ -9390,6 +9590,22 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Load a SourceMap from its ID.
+   */
+  loadSourceMapFromID = (id: SourceMapID): SourceMap => {
+    return new SourceMap({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "loadSourceMapFromID",
+          args: { id },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
    * Load a Terminal from its ID.
    */
   loadTerminalFromID = (id: TerminalID): Terminal => {
@@ -9510,6 +9726,25 @@ export class Client extends BaseClient {
         {
           operation: "setSecret",
           args: { name, plaintext },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Creates source map metadata.
+   * @param filename The filename from the module source.
+   * @param line The line number within the filename.
+   * @param column The column number within the line.
+   */
+  sourceMap = (filename: string, line: number, column: number): SourceMap => {
+    return new SourceMap({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "sourceMap",
+          args: { filename, line, column },
         },
       ],
       ctx: this._ctx,
@@ -10036,6 +10271,142 @@ export class Socket extends BaseClient {
 }
 
 /**
+ * Source location information.
+ */
+export class SourceMap extends BaseClient {
+  private readonly _id?: SourceMapID = undefined
+  private readonly _column?: number = undefined
+  private readonly _filename?: string = undefined
+  private readonly _line?: number = undefined
+  private readonly _module?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: SourceMapID,
+    _column?: number,
+    _filename?: string,
+    _line?: number,
+    _module?: string,
+  ) {
+    super(parent)
+
+    this._id = _id
+    this._column = _column
+    this._filename = _filename
+    this._line = _line
+    this._module = _module
+  }
+
+  /**
+   * A unique identifier for this SourceMap.
+   */
+  id = async (): Promise<SourceMapID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<SourceMapID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * The column number within the line.
+   */
+  column = async (): Promise<number> => {
+    if (this._column) {
+      return this._column
+    }
+
+    const response: Awaited<number> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "column",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * The filename from the module source.
+   */
+  filename = async (): Promise<string> => {
+    if (this._filename) {
+      return this._filename
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "filename",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * The line number within the filename.
+   */
+  line = async (): Promise<number> => {
+    if (this._line) {
+      return this._line
+    }
+
+    const response: Awaited<number> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "line",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * The module dependency this was declared in.
+   */
+  module_ = async (): Promise<string> => {
+    if (this._module) {
+      return this._module
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "module",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+}
+
+/**
  * An interactive terminal that clients can connect to.
  */
 export class Terminal extends BaseClient {
@@ -10306,6 +10677,7 @@ export class TypeDef extends BaseClient {
    * Note that an enum's values may be omitted if the intent is only to refer to an enum. This is how functions are able to return their own, or any other circular reference.
    * @param name The name of the enum
    * @param opts.description A doc string for the enum, if any
+   * @param opts.sourceMap The source map for the enum definition.
    */
   withEnum = (name: string, opts?: TypeDefWithEnumOpts): TypeDef => {
     return new TypeDef({
@@ -10324,6 +10696,7 @@ export class TypeDef extends BaseClient {
    * Adds a static value for an Enum TypeDef, failing if the type is not an enum.
    * @param value The name of the value in the enum
    * @param opts.description A doc string for the value, if any
+   * @param opts.sourceMap The source map for the enum value definition.
    */
   withEnumValue = (value: string, opts?: TypeDefWithEnumValueOpts): TypeDef => {
     return new TypeDef({
@@ -10343,6 +10716,7 @@ export class TypeDef extends BaseClient {
    * @param name The name of the field in the object
    * @param typeDef The type of the field
    * @param opts.description A doc string for the field, if any
+   * @param opts.sourceMap The source map for the field definition.
    */
   withField = (
     name: string,

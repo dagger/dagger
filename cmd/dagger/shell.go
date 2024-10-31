@@ -866,16 +866,19 @@ func (h *shellCallHandler) Builtin(ctx context.Context, args []string) error {
 	switch args[0] {
 	case "help":
 		shellWrite(ctx, `
-.functions    list available functions
-.deps         list dependencies
 .config       set module constructor options
+.container    create a new container
 .core         load a core Dagger type
+.deps         list dependencies
+.directory    create a new directory
+.functions    list available functions
 .git          load a directory from a git URL
+.help         print this help message
+.http         download a file over http
 .install      install a dependency
-.uninstall    uninstall a dependency
 .login        login to Dagger Cloud
 .logout       logout from Dagger Cloud
-.help         print this help message
+.uninstall    uninstall a dependency
 `[1:])
 		return nil
 	case "git":
@@ -952,7 +955,13 @@ func (h *shellCallHandler) Builtin(ctx context.Context, args []string) error {
 			return err
 		}
 		return s.Write(ctx)
-
+	case "container", "directory", "http":
+		s := &ShellState{}
+		s, err := h.functionCall(ctx, s, args[0], args[1:])
+		if err != nil {
+			return err
+		}
+		return s.Write(ctx)
 	case "config":
 		if len(args) < 2 {
 			return fmt.Errorf("usage: .config [options]")

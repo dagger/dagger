@@ -16,9 +16,10 @@ type Docs struct {
 }
 
 const (
-	generatedSchemaPath       = "docs/docs-graphql/schema.graphqls"
-	generatedCliZenPath       = "docs/current_docs/reference/cli.mdx"
-	generatedAPIReferencePath = "docs/static/api/reference/index.html"
+	generatedSchemaPath           = "docs/docs-graphql/schema.graphqls"
+	generatedCliZenPath           = "docs/current_docs/reference/cli.mdx"
+	generatedAPIReferencePath     = "docs/static/api/reference/index.html"
+	generatedDaggerJSONSchemaPath = "docs/current_docs/reference/dagger.schema.json"
 )
 
 const cliZenFrontmatter = `---
@@ -89,7 +90,7 @@ func (d Docs) Lint(ctx context.Context) (rerr error) {
 	})
 
 	eg.Go(func() (rerr error) {
-		ctx, span := Tracer().Start(ctx, "check that generated GraphQL and CLI references are up-to-date")
+		ctx, span := Tracer().Start(ctx, "check that generated docs are up-to-date")
 		defer func() {
 			if rerr != nil {
 				span.SetStatus(codes.Error, rerr.Error())
@@ -163,12 +164,22 @@ func (d Docs) Generate(ctx context.Context) (*dagger.Directory, error) {
 		apiRef = d.GenerateSchemaReference()
 		return nil
 	})
+	var configSchemas *dagger.Directory
+	eg.Go(func() error {
+		configSchemas = d.GenerateConfigSchemas()
+		return nil
+	})
 
 	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
 
-	return sdl.WithDirectory("/", cli).WithDirectory("/", apiRef), nil
+	result := dag.Directory().
+		WithDirectory("", sdl).
+		WithDirectory("", cli).
+		WithDirectory("", apiRef).
+		WithDirectory("", configSchemas)
+	return result, nil
 }
 
 // Regenerate the CLI reference docs
@@ -205,6 +216,20 @@ func (d Docs) GenerateSchemaReference() *dagger.Directory {
 		WithExec([]string{"yarn", "run", "spectaql", "./docs-graphql/config.yml", "-t", "."}).
 		File("index.html")
 	return dag.Directory().WithFile(generatedAPIReferencePath, generatedHTML)
+}
+
+// Regenerate the config schemas
+func (d Docs) GenerateConfigSchemas() *dagger.Directory {
+	daggerJSONSchema := dag.
+		Go(d.Dagger.Source()).
+		Env().
+		WithExec([]string{"go", "run", "./cmd/json-schema", "dagger.json"}, dagger.ContainerWithExecOpts{
+			RedirectStdout: "dagger.schema.json",
+		}).
+		File("dagger.schema.json")
+	return dag.
+		Directory().
+		WithFile(generatedDaggerJSONSchemaPath, daggerJSONSchema)
 }
 
 // Bump the Go SDK's Engine dependency

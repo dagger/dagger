@@ -162,6 +162,37 @@ var coreDirectives = []DirectiveSpec{
 			DirectiveLocationFieldDefinition,
 		},
 	},
+	{
+		Name:        "sourceMap",
+		Description: FormatDescription(`Indicates the source information for where a given field is defined.`),
+		Args: []InputSpec{
+			{
+				Name: "module",
+				Type: String(""),
+			},
+			{
+				Name: "filename",
+				Type: String(""),
+			},
+			{
+				Name: "line",
+				Type: Int(0),
+			}, {
+				Name: "column",
+				Type: Int(0),
+			},
+		},
+		Locations: []DirectiveLocation{
+			DirectiveLocationScalar,
+			DirectiveLocationObject,
+			DirectiveLocationFieldDefinition,
+			DirectiveLocationArgumentDefinition,
+			DirectiveLocationUnion,
+			DirectiveLocationEnum,
+			DirectiveLocationEnumValue,
+			DirectiveLocationInputObject,
+		},
+	},
 }
 
 // Root returns the root object of the server. It is suitable for passing to

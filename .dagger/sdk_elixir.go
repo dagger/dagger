@@ -8,6 +8,7 @@ import (
 
 	"dagger.io/dagger/telemetry"
 	"go.opentelemetry.io/otel/codes"
+	"golang.org/x/mod/semver"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/.dagger/internal/dagger"
@@ -160,7 +161,7 @@ func (t ElixirSDK) Publish(
 	// +optional
 	githubToken *dagger.Secret,
 ) error {
-	version, isVersioned := strings.CutPrefix(tag, "sdk/elixir/")
+	version := strings.TrimPrefix(tag, "sdk/elixir/")
 	mixFile := "/sdk/elixir/mix.exs"
 
 	ctr := t.elixirBase(elixirVersions[elixirLatestVersion])
@@ -188,10 +189,11 @@ func (t ElixirSDK) Publish(
 		return err
 	}
 
-	if isVersioned {
-		if err := githubRelease(ctx, githubReleaseOpts{
-			tag:         tag,
-			notes:       sdkChangeNotes(t.Dagger.Src, "elixir", version),
+	if semver.IsValid(version) {
+		if err := githubRelease(ctx, t.Dagger.Git, githubReleaseOpts{
+			tag:         "sdk/elixir/" + version,
+			target:      tag,
+			notes:       changeNotes(t.Dagger.Src, "sdk/elixir", version),
 			gitRepo:     gitRepoSource,
 			githubToken: githubToken,
 			dryRun:      dryRun,

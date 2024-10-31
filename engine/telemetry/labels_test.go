@@ -431,6 +431,48 @@ func TestLoadJenkinsLabels(t *testing.T) {
 	}
 }
 
+func TestLoadHarnessLabels(t *testing.T) {
+	type Example struct {
+		Name   string
+		Env    map[string]string
+		Labels telemetry.Labels
+	}
+
+	for _, example := range []Example{
+		{
+			Name: "Harness",
+			Env: map[string]string{
+				"HARNESS_ACCOUNT_ID": "HJx5u_v9SiS9yjBWyF1y6g",
+				"GIT_BRANCH":         "origin/test-feature",
+				"GIT_COMMIT":         "abc123",
+			},
+			Labels: telemetry.Labels{
+				"dagger.io/git.branch": "test-feature",
+				"dagger.io/git.ref":    "abc123",
+			},
+		},
+	} {
+		example := example
+		t.Run(example.Name, func(t *testing.T) {
+			// Set environment variables
+			for k, v := range example.Env {
+				t.Setenv(k, v)
+			}
+
+			// Run the function and collect the result
+			labels := telemetry.Labels{}.WithHarnessLabels()
+
+			// Clean up environment variables
+			for k := range example.Env {
+				os.Unsetenv(k)
+			}
+
+			// Make assertions
+			require.Subset(t, labels, example.Labels)
+		})
+	}
+}
+
 func run(t *testing.T, exe string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command(exe, args...)

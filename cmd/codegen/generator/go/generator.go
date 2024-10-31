@@ -287,7 +287,7 @@ func generateCode(
 	fset *token.FileSet,
 	pass int,
 ) error {
-	funcs := templates.GoTemplateFuncs(ctx, schema, schemaVersion, cfg.ModuleName, pkg, fset, pass)
+	funcs := templates.GoTemplateFuncs(ctx, schema, schemaVersion, cfg.ModuleName, cfg.ModuleParentPath, pkg, fset, pass)
 	tmpls := templates.Templates(funcs)
 
 	for k, tmpl := range tmpls {

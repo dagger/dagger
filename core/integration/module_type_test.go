@@ -1324,11 +1324,18 @@ func (m *Dep) Invert(status Status) Status {
 				sdk: "go",
 				source: `package main
 
-import "context"
+import (
+	"context"
+	"dagger/test/internal/dagger"
+)
 
 type Test struct{}
 
-func (m *Test) Test(ctx context.Context) (string, error) {
+func (m *Test) Active() (string) {
+	return string(dagger.DepStatusActive)
+}
+
+func (m *Test) Inactive(ctx context.Context) (string, error) {
 	status, err := dag.Dep().Active(ctx)
 	if err != nil {
 		return "", err
@@ -1344,12 +1351,16 @@ func (m *Test) Test(ctx context.Context) (string, error) {
 			{
 				sdk: "python",
 				source: `import dagger
-from dagger import dag
+from dagger import dag, DepStatus
 
 @dagger.object_type
 class Test:
     @dagger.function
-    async def test(self) -> str:
+    def active(self) -> str:
+        return str(DepStatus.ACTIVE)
+
+    @dagger.function
+    async def inactive(self) -> str:
         status = await dag.dep().active()
         status = await dag.dep().invert(status)
         return str(status)
@@ -1357,12 +1368,17 @@ class Test:
 			},
 			{
 				sdk: "typescript",
-				source: `import { dag, func, object } from "@dagger.io/dagger"
+				source: `import { dag, func, object, DepStatus } from "@dagger.io/dagger"
 
 @object()
 export class Test {
   @func()
-  async test(): Promise<string> {
+  active(): string {
+    return DepStatus.Active;
+  }
+
+  @func()
+  async inactive(): Promise<string> {
     let status = await dag.dep().active();
     status = await dag.dep().invert(status);
     return status;
@@ -1380,9 +1396,10 @@ export class Test {
 					With(withModInitAt("./dep", "go", depSrc)).
 					With(daggerExec("install", "./dep"))
 
-				out, err := modGen.With(daggerQuery(`{test{test}}`)).Stdout(ctx)
+				out, err := modGen.With(daggerQuery(`{test{active inactive}}`)).Stdout(ctx)
 				require.NoError(t, err)
-				require.Equal(t, "INACTIVE", gjson.Get(out, "test.test").String())
+				require.Equal(t, "ACTIVE", gjson.Get(out, "test.active").String())
+				require.Equal(t, "INACTIVE", gjson.Get(out, "test.inactive").String())
 			})
 		}
 	})
@@ -1423,15 +1440,15 @@ import (
 type Test struct{}
 
 func (m *Test) Test(ctx context.Context) (string, error) {
-	f, err := dag.Dep().Thing(ctx, dagger.False)
+	f, err := dag.Dep().Thing(ctx, dagger.DepMyEnumFalse)
 	if err != nil {
 		return "", err
 	}
-	t, err := dag.Dep().Thing(ctx, dagger.True)
+	t, err := dag.Dep().Thing(ctx, dagger.DepMyEnumTrue)
 	if err != nil {
 		return "", err
 	}
-	n, err := dag.Dep().Thing(ctx, dagger.Null)
+	n, err := dag.Dep().Thing(ctx, dagger.DepMyEnumNull)
 	if err != nil {
 		return "", err
 	}
