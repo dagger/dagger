@@ -17,7 +17,7 @@ concurrency:
 jobs:
     dagger:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-6-8c-dind' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-7-8c-dind' || 'ubuntu-latest' }}
         permissions:
             contents: read
         name: python-dev
