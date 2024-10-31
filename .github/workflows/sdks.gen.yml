@@ -19,7 +19,7 @@ concurrency:
 jobs:
     elixir:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-6-4c' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-7-4c' || 'ubuntu-latest' }}
         name: elixir
         steps:
             - name: Checkout
@@ -49,7 +49,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin sh
               env:
-                DAGGER_VERSION: v0.13.6
+                DAGGER_VERSION: v0.13.7
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -205,7 +205,7 @@ jobs:
             stdout: ${{ steps.exec.outputs.stdout }}
     elixir-dev:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-6-8c-dind' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-7-8c-dind' || 'ubuntu-latest' }}
         name: elixir-dev
         steps:
             - name: Checkout
@@ -434,7 +434,7 @@ jobs:
             stdout: ${{ steps.exec.outputs.stdout }}
     go:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-6-4c' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-7-4c' || 'ubuntu-latest' }}
         name: go
         steps:
             - name: Checkout
@@ -464,7 +464,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin sh
               env:
-                DAGGER_VERSION: v0.13.6
+                DAGGER_VERSION: v0.13.7
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -620,7 +620,7 @@ jobs:
             stdout: ${{ steps.exec.outputs.stdout }}
     go-dev:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-6-8c-dind' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-7-8c-dind' || 'ubuntu-latest' }}
         name: go-dev
         steps:
             - name: Checkout
@@ -849,7 +849,7 @@ jobs:
             stdout: ${{ steps.exec.outputs.stdout }}
     java:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-6-4c' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-7-4c' || 'ubuntu-latest' }}
         name: java
         steps:
             - name: Checkout
@@ -879,7 +879,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin sh
               env:
-                DAGGER_VERSION: v0.13.6
+                DAGGER_VERSION: v0.13.7
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -1035,7 +1035,7 @@ jobs:
             stdout: ${{ steps.exec.outputs.stdout }}
     java-dev:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-6-8c-dind' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-7-8c-dind' || 'ubuntu-latest' }}
         name: java-dev
         steps:
             - name: Checkout
@@ -1264,7 +1264,7 @@ jobs:
             stdout: ${{ steps.exec.outputs.stdout }}
     php:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-6-4c' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-7-4c' || 'ubuntu-latest' }}
         name: php
         steps:
             - name: Checkout
@@ -1294,7 +1294,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin sh
               env:
-                DAGGER_VERSION: v0.13.6
+                DAGGER_VERSION: v0.13.7
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -1450,7 +1450,7 @@ jobs:
             stdout: ${{ steps.exec.outputs.stdout }}
     php-dev:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-6-8c-dind' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-7-8c-dind' || 'ubuntu-latest' }}
         name: php-dev
         steps:
             - name: Checkout
@@ -1679,7 +1679,7 @@ jobs:
             stdout: ${{ steps.exec.outputs.stdout }}
     python:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-6-4c' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-7-4c' || 'ubuntu-latest' }}
         name: python
         steps:
             - name: Checkout
@@ -1709,7 +1709,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin sh
               env:
-                DAGGER_VERSION: v0.13.6
+                DAGGER_VERSION: v0.13.7
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -1865,7 +1865,7 @@ jobs:
             stdout: ${{ steps.exec.outputs.stdout }}
     python-dev:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-6-8c-dind' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-7-8c-dind' || 'ubuntu-latest' }}
         name: python-dev
         steps:
             - name: Checkout
@@ -2094,7 +2094,7 @@ jobs:
             stdout: ${{ steps.exec.outputs.stdout }}
     rust:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-6-4c' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-7-4c' || 'ubuntu-latest' }}
         name: rust
         steps:
             - name: Checkout
@@ -2124,7 +2124,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin sh
               env:
-                DAGGER_VERSION: v0.13.6
+                DAGGER_VERSION: v0.13.7
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -2280,7 +2280,7 @@ jobs:
             stdout: ${{ steps.exec.outputs.stdout }}
     rust-dev:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-6-8c-dind' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-7-8c-dind' || 'ubuntu-latest' }}
         name: rust-dev
         steps:
             - name: Checkout
@@ -2509,7 +2509,7 @@ jobs:
             stdout: ${{ steps.exec.outputs.stdout }}
     typescript:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-6-4c' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-7-4c' || 'ubuntu-latest' }}
         name: typescript
         steps:
             - name: Checkout
@@ -2539,7 +2539,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin sh
               env:
-                DAGGER_VERSION: v0.13.6
+                DAGGER_VERSION: v0.13.7
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine
@@ -2695,7 +2695,7 @@ jobs:
             stdout: ${{ steps.exec.outputs.stdout }}
     typescript-dev:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-6-8c-dind' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-7-8c-dind' || 'ubuntu-latest' }}
         name: typescript-dev
         steps:
             - name: Checkout

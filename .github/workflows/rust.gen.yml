@@ -1,5 +1,5 @@
 # This file was generated. See https://daggerverse.dev/mod/github.com/dagger/dagger/modules/gha
-name: Docs
+name: rust
 "on":
     push:
         branches:
@@ -11,16 +11,16 @@ name: Docs
             - synchronize
             - ready_for_review
     workflow_dispatch: {}
-permissions:
-    contents: read
 concurrency:
     group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
     cancel-in-progress: true
 jobs:
-    docs:
+    dagger:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-7-4c' || 'ubuntu-latest' }}
-        name: Docs
+        permissions:
+            contents: read
+        name: rust
         steps:
             - name: Checkout
               uses: actions/checkout@v4
@@ -196,7 +196,7 @@ jobs:
                 exit $EXIT_CODE
               env:
                 _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
-                COMMAND: dagger call -q --docker-cfg=file:$HOME/.docker/config.json docs lint
+                COMMAND: dagger call -q --docker-cfg=file:$HOME/.docker/config.json check --targets=sdk/rust
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
               shell: bash
         timeout-minutes: 10
