@@ -144,7 +144,7 @@ func (t GoSDK) Publish(
 		if err := githubRelease(ctx, t.Dagger.Git, githubReleaseOpts{
 			tag:         "sdk/go/" + version,
 			target:      tag,
-			notes:       changeNotes(t.Dagger.Src, "go", version),
+			notes:       changeNotes(t.Dagger.Src, "sdk/go", version),
 			gitRepo:     gitRepoSource,
 			githubToken: githubToken,
 			dryRun:      dryRun,
