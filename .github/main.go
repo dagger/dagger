@@ -64,7 +64,7 @@ func (ci *CI) WithPipeline(
 		OnPullRequestReadyForReview: true,
 		PullRequestConcurrency:      "preempt",
 		TimeoutMinutes:              10,
-		Permissions:                 []dagger.GhaPermission{dagger.ReadContents},
+		Permissions:                 []dagger.GhaPermission{dagger.GhaPermissionReadContents},
 	}
 	if len(runner) != 0 {
 		opts.Runner = runner

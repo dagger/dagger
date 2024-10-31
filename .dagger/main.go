@@ -276,7 +276,7 @@ func (dev *DaggerDev) DevExport(
 	}
 	engineTar := engineCtr.AsTarball(dagger.ContainerAsTarballOpts{
 		// use gzip to avoid incompatibility w/ older docker versions
-		ForcedCompression: dagger.Gzip,
+		ForcedCompression: dagger.ImageLayerCompressionGzip,
 	})
 
 	cli := dev.CLI()
