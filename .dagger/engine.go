@@ -158,7 +158,7 @@ func (e *Engine) Service(
 		return nil, err
 	}
 	devEngine = devEngine.
-		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
+		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
 		WithMountedCache(distconsts.EngineDefaultStateDir, dag.CacheVolume(cacheVolumeName), dagger.ContainerWithMountedCacheOpts{
 			// only one engine can run off it's local state dir at a time; Private means that we will attempt to re-use
 			// these cache volumes if they are not already locked to another running engine but otherwise will create a new
@@ -360,7 +360,7 @@ func (e *Engine) Publish(
 				_, err := ctr.
 					Publish(ctx, fmt.Sprintf("%s:%s", image, tag), dagger.ContainerPublishOpts{
 						PlatformVariants:  result.Platforms,
-						ForcedCompression: dagger.Gzip, // use gzip to avoid incompatibility w/ older docker versions
+						ForcedCompression: dagger.ImageLayerCompressionGzip, // use gzip to avoid incompatibility w/ older docker versions
 					})
 				if err != nil {
 					return err
