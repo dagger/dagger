@@ -1,4 +1,4 @@
-# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-October%2025,%202024-success?style=flat-square)
+# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-October%2031,%202024-success?style=flat-square)
 
 This describes how to release Dagger:
 
@@ -223,13 +223,14 @@ git commit -s -m "chore: bump dependencies to $ENGINE_VERSION"
 - [ ] Push and open the PR as a draft, and capture the PR number:
 
 ```console
-export RELEASE_PREP_PR=<PR>
+gh pr create --draft --title "chore: prep for v0.13.7" --body "" | tee /tmp/prep-pr.txt
+export RELEASE_PREP_PR=$(cat /tmp/prep-pr.txt | sed -r 's/^[^0-9]*([0-9]+).*/\1/')
 ```
 
 - [ ] Generate bump changes for each SDK + the helm charts
 
 ```console
-export GITHUB_USERNAME="YOUR USERNAME HERE" # replace with your username
+export GITHUB_USERNAME=$(gh api /user --jq .login)
 find sdk/go sdk/python sdk/typescript sdk/elixir sdk/php helm/dagger -maxdepth 1 -name .changie.yaml -execdir \
       changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom PR="$RELEASE_PREP_PR" --custom Author="$GITHUB_USERNAME" \;
 ```
@@ -254,7 +255,13 @@ git commit -s -m "chore: add release notes for $ENGINE_VERSION"
 - [ ] Update `.changes/.next` with the next release number if known -
       otherwise, make the file empty (but don't remove it).
 
-- [ ] `30 mins` Submit, review and merge the prep PR. The merge commit is what gets tagged in the next step.
+- [ ] Bring the prep PR out of draft:
+
+```console
+gh pr ready
+```
+
+- [ ] `30 mins` Review and merge the prep PR. The merged commit is what gets tagged in the next step.
   - 🚨 Non-main branch release only: Ideally use "Rebase and Merge" rather than squashing commits when merging so we can more easily preserve the history of the cherry-picked commits.
 
 ## 🚀 Release ⏱ `10mins`
@@ -304,6 +311,12 @@ dagger core version
 
 🚨 Non-main branch release only: you'll likely want the changes from this PR in both `$RELEASE_BRANCH` and `main`.
 
+- [ ] Start an release improvements branch:
+
+```console
+git checkout -b improve-releasing-during-$ENGINE_VERSION
+```
+
 - [ ] Download and install the latest release, and continue the rest of the
       release process using the just-released CLI. This is needed now so the
       `.dagger` module updated below will get `dagger.json`'s engine version bumped.
@@ -325,8 +338,8 @@ dagger call -m .github generate directory --path=.github/workflows export --path
       practice regardless).
 
 ```console
-go mod edit -require dagger.io/dagger@$GO_SDK_VERSION
-go mod edit -require github.com/dagger/dagger/engine/distconsts@$GO_SDK_VERSION
+go mod edit -require dagger.io/dagger@$ENGINE_VERSION
+go mod edit -require github.com/dagger/dagger/engine/distconsts@$ENGINE_VERSION
 go mod tidy
 dagger develop
 cd .dagger
@@ -343,16 +356,9 @@ git push
 - [ ] Open a PR with the title `Improve Releasing during $ENGINE_VERSION`
 
 ```console
-git checkout -b improve-releasing-during-$ENGINE_VERSION
 git add .  # or any other files changed during the last few steps
 git commit -s -m "Improve releasing during $ENGINE_VERSION"
 git push
-```
-
-- Swap back to `$RELEASE_BRANCH` to continue
-
-```console
-git checkout "$RELEASE_BRANCH"
 ```
 
 ## 🚨 Non-main branch release only
