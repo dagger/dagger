@@ -88,6 +88,7 @@ func init() {
 		moduleInitCmd,
 		moduleInstallCmd,
 		moduleUnInstallCmd,
+		moduleUpdateCmd,
 		moduleDevelopCmd,
 		modulePublishCmd,
 		funcListCmd,
