@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"hash"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,7 +25,6 @@ import (
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/moby/buildkit/util/progress"
 	"github.com/moby/locker"
-	"github.com/moby/patternmatcher"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/tonistiigi/fsutil"
 	fscopy "github.com/tonistiigi/fsutil/copy"
@@ -239,134 +237,9 @@ func (ls *localSourceHandler) snapshot(ctx context.Context, session session.Grou
 		clientPath = statMsg.Path
 	}
 
-	syncCtx, cancelSync := context.WithCancelCause(ctx)
-	defer cancelSync(fmt.Errorf("sync done: %w", context.Canceled))
-
-	syncCtx = engine.LocalImportOpts{
-		Path:            clientPath,
-		IncludePatterns: ls.src.IncludePatterns,
-		ExcludePatterns: ls.src.ExcludePatterns,
-		FollowPaths:     ls.src.FollowPaths,
-	}.AppendToOutgoingContext(syncCtx)
-
-	syncCtx, syncSpan := newSpan(syncCtx, "sync")
-
-	diffCopyClient, err := filesync.NewFileSyncClient(caller.Conn()).DiffCopy(syncCtx)
-	if err != nil {
-		syncSpan.End()
-		return nil, fmt.Errorf("failed to create diff copy client: %w", err)
+	if err := ls.sync(ctx, ref, clientPath, caller); err != nil {
+		return nil, fmt.Errorf("failed to sync: %w", err)
 	}
-	defer diffCopyClient.CloseSend()
-
-	var includeMatcher, excludeMatcher *patternmatcher.PatternMatcher
-	if len(ls.src.IncludePatterns) > 0 {
-		includeMatcher, err = patternmatcher.New(ls.src.IncludePatterns)
-		if err != nil {
-			syncSpan.End()
-			return nil, fmt.Errorf("failed to create include matcher: %w", err)
-		}
-	}
-	if len(ls.src.ExcludePatterns) > 0 {
-		excludeMatcher, err = patternmatcher.New(ls.src.ExcludePatterns)
-		if err != nil {
-			syncSpan.End()
-			return nil, fmt.Errorf("failed to create exclude matcher: %w", err)
-		}
-	}
-
-	cacheCtx := &cacheUpdater{
-		cacheCtx: ref.cacheCtx,
-		subpath:  clientPath,
-	}
-	receiveOpt := fsutil.ReceiveOpt{
-		NotifyHashed:  cacheCtx.HandleChange,
-		ContentHasher: cacheCtx.ContentHasher(),
-		ProgressCb:    newProgressHandler(ctx, "transferring "+clientPath+":"),
-		Differ:        ls.src.Differ,
-		Filter: func(p string, stat *fstypes.Stat) bool {
-			if ref.idmap != nil {
-				identity, err := ref.idmap.ToHost(idtools.Identity{
-					UID: int(stat.Uid),
-					GID: int(stat.Gid),
-				})
-				if err != nil {
-					return false
-				}
-				stat.Uid = uint32(identity.UID)
-				stat.Gid = uint32(identity.GID)
-			}
-
-			// TODO: having to pattern match every path is not ideal for performance
-			// TODO: much better would be to add support for FilterFS to fsutil.Receive
-
-			// only check include/exclude if this is a delete
-			if stat.Path != "" {
-				return true
-			}
-
-			if includeMatcher != nil {
-				match, err := includeMatcher.MatchesOrParentMatches(p)
-				if err != nil {
-					bklog.G(syncCtx).Debugf("failed to match include: %v", err)
-					return false
-				}
-				if !match {
-					return false
-				}
-			}
-			if excludeMatcher != nil {
-				match, err := excludeMatcher.MatchesOrParentMatches(p)
-				if err != nil {
-					bklog.G(syncCtx).Debugf("failed to match exclude: %v", err)
-					return false
-				}
-				if match {
-					return false
-				}
-			}
-
-			return true
-		},
-	}
-
-	// TODO: hack
-	// TODO: hack
-	// TODO: hack, fix with proper sync of parent dirs
-	_, err = os.Lstat(filepath.Join(ref.mntPath, clientPath))
-	if os.IsNotExist(err) {
-		statCtx := engine.LocalImportOpts{
-			Path:              clientPath,
-			StatPathOnly:      true,
-			StatReturnAbsPath: true,
-		}.AppendToOutgoingContext(ctx)
-
-		diffCopyClient, err := filesync.NewFileSyncClient(caller.Conn()).DiffCopy(statCtx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create diff copy client: %w", err)
-		}
-		var statMsg fstypes.Stat
-		if err := diffCopyClient.RecvMsg(&statMsg); err != nil {
-			diffCopyClient.CloseSend()
-			return nil, fmt.Errorf("failed to receive stat message: %w", err)
-		}
-		diffCopyClient.CloseSend()
-
-		if err := os.MkdirAll(filepath.Join(ref.mntPath, clientPath), os.FileMode(statMsg.Mode)); err != nil {
-			syncSpan.End()
-			return nil, fmt.Errorf("failed to create directory: %w", err)
-		}
-		if err := cacheCtx.cacheCtx.HandleChange(fsutil.ChangeKindAdd, clientPath, &dumb{&statMsg}, nil); err != nil {
-			syncSpan.End()
-			return nil, fmt.Errorf("failed to handle change: %w", err)
-		}
-	}
-
-	err = fsutil.Receive(syncCtx, diffCopyClient, filepath.Join(ref.mntPath, clientPath), receiveOpt)
-	if err != nil {
-		syncSpan.End()
-		return nil, fmt.Errorf("failed to receive fs changes: %w", err)
-	}
-	syncSpan.End()
 
 	checksumCtx, checksumSpan := newSpan(ctx, "checksum")
 	dgst, err := ref.cacheCtx.Checksum(
@@ -463,11 +336,79 @@ func (ls *localSourceHandler) snapshot(ctx context.Context, session session.Grou
 	if err != nil {
 		return nil, fmt.Errorf("failed to commit: %w", err)
 	}
+
 	if err := (CacheRefMetadata{finalRef}).SetContentHashKey(dgst); err != nil {
 		return nil, fmt.Errorf("failed to set content hash key: %w", err)
 	}
 
 	return finalRef, nil
+}
+
+func (ls *localSourceHandler) sync(ctx context.Context, ref *filesyncCacheRef, clientPath string, caller session.Caller) (rerr error) {
+	ctx, syncSpan := newSpan(ctx, "sync")
+	defer syncSpan.End()
+
+	// TODO: hack
+	// TODO: hack
+	// TODO: hack, fix with proper sync of parent dirs
+	_, err := os.Lstat(filepath.Join(ref.mntPath, clientPath))
+	if os.IsNotExist(err) {
+		statCtx := engine.LocalImportOpts{
+			Path:              clientPath,
+			StatPathOnly:      true,
+			StatReturnAbsPath: true,
+		}.AppendToOutgoingContext(ctx)
+
+		diffCopyClient, err := filesync.NewFileSyncClient(caller.Conn()).DiffCopy(statCtx)
+		if err != nil {
+			return fmt.Errorf("failed to create diff copy client: %w", err)
+		}
+		var statMsg fstypes.Stat
+		if err := diffCopyClient.RecvMsg(&statMsg); err != nil {
+			diffCopyClient.CloseSend()
+			return fmt.Errorf("failed to receive stat message: %w", err)
+		}
+		diffCopyClient.CloseSend()
+
+		if err := os.MkdirAll(filepath.Join(ref.mntPath, clientPath), os.FileMode(statMsg.Mode)); err != nil {
+			return fmt.Errorf("failed to create directory: %w", err)
+		}
+		h, err := contenthash.NewFromStat(&statMsg)
+		if err != nil {
+			return fmt.Errorf("failed to create content hash: %w", err)
+		}
+		dgst := digest.NewDigest(digest.SHA256, h)
+		statInfo := &HashedStatInfo{StatInfo: StatInfo{&statMsg}, dgst: dgst}
+		if err := ref.cacheCtx.HandleChange(fsutil.ChangeKindAdd, clientPath, statInfo, nil); err != nil {
+			return fmt.Errorf("failed to handle change: %w", err)
+		}
+	}
+
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer func() {
+		cancel(rerr)
+	}()
+
+	remote, err := newRemoteFS(ctx, caller, clientPath, ls.src.IncludePatterns, ls.src.ExcludePatterns)
+	if err != nil {
+		return fmt.Errorf("failed to create remote fs: %w", err)
+	}
+	defer func() {
+		if err := remote.Close(); err != nil {
+			rerr = errors.Join(rerr, fmt.Errorf("failed to close remote fs: %w", err))
+		}
+	}()
+
+	local, err := NewLocalFS(ref.sharedState, clientPath, ls.src.IncludePatterns, ls.src.ExcludePatterns)
+	if err != nil {
+		return fmt.Errorf("failed to create local fs: %w", err)
+	}
+	err = local.Sync(ctx, remote)
+	if err != nil {
+		return fmt.Errorf("failed to sync to local fs: %w", err)
+	}
+
+	return nil
 }
 
 type filesyncCacheRef struct {
@@ -476,6 +417,8 @@ type filesyncCacheRef struct {
 	mounter snapshot.Mounter
 	mntPath string
 	idmap   *idtools.IdentityMapping
+
+	sharedState *localFSSharedState
 
 	cacheCtx contenthash.CacheContext
 
@@ -554,6 +497,13 @@ func (ls *localSourceHandler) getRef(
 			return nil, nil, fmt.Errorf("failed to get cache context: %w", err)
 		}
 
+		ref.sharedState = &localFSSharedState{
+			rootPath: ref.mntPath,
+			contentHasher: func(kind ChangeKind, path string, fi os.FileInfo, err error) error {
+				return ref.cacheCtx.HandleChange(fsutil.ChangeKind(kind), path, fi, err)
+			},
+		}
+
 		ls.mu.Lock()
 		ls.refs[clientKey] = ref
 		ls.mu.Unlock()
@@ -611,78 +561,6 @@ func newProgressHandler(ctx context.Context, id string) func(int, bool) {
 			}
 		}
 	}
-}
-
-// TODO: delete
-// TODO: delete
-// TODO: delete
-type dumb struct {
-	stat *fstypes.Stat
-}
-
-var _ os.FileInfo = (*dumb)(nil)
-
-func (d *dumb) Name() string {
-	return filepath.Base(d.stat.Path)
-}
-
-func (d *dumb) Size() int64 {
-	return d.stat.Size_
-}
-
-func (d *dumb) Mode() os.FileMode {
-	return os.FileMode(d.stat.Mode)
-}
-
-func (d *dumb) ModTime() time.Time {
-	return time.Unix(d.stat.ModTime/1e9, d.stat.ModTime%1e9)
-}
-
-func (d *dumb) IsDir() bool {
-	return d.stat.IsDir()
-}
-
-func (d *dumb) Sys() interface{} {
-	return d.stat
-}
-
-func (d *dumb) Digest() digest.Digest {
-	hasher, err := contenthash.NewFromStat(d.stat)
-	if err != nil {
-		panic(err)
-	}
-	return digest.NewDigest(digest.SHA256, hasher)
-}
-
-type cacheUpdater struct {
-	cacheCtx contenthash.CacheContext
-	// TODO: doc why
-	// TODO: doc why
-	subpath string
-}
-
-func (cu *cacheUpdater) MarkSupported(bool) {
-}
-
-func (cu *cacheUpdater) ContentHasher() fsutil.ContentHasher {
-	return func(stat *fstypes.Stat) (hash.Hash, error) {
-		if stat == nil {
-			return contenthash.NewFromStat(stat)
-		}
-		// TODO: sync pool?
-		// TODO: sync pool?
-		// TODO: sync pool?
-		statCpy := *stat
-		statCpy.Path = filepath.Join(cu.subpath, statCpy.Path)
-		statCpy.Path = strings.TrimPrefix(statCpy.Path, "/")
-		return contenthash.NewFromStat(&statCpy)
-	}
-}
-
-func (cu *cacheUpdater) HandleChange(kind fsutil.ChangeKind, path string, fi os.FileInfo, err error) error {
-	path = filepath.Join(cu.subpath, path)
-	path = strings.TrimPrefix(path, "/")
-	return cu.cacheCtx.HandleChange(kind, path, fi, err)
 }
 
 const (
