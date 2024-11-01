@@ -1003,17 +1003,18 @@ func (fe *frontendPretty) renderStepLogs(out *termenv.Output, r *renderer, row *
 func (fe *frontendPretty) renderStepError(out *termenv.Output, r *renderer, span *dagui.Span, depth int, prefix string) {
 	for _, span := range span.Errors().Order {
 		// only print the first line
-		line := strings.Split(span.Status.Description, "\n")[0]
-		if line == "" {
-			line = "<no description>"
+		for _, line := range strings.Split(span.Status.Description, "\n") {
+			if line == "" {
+				continue
+			}
+			fmt.Fprint(out, prefix)
+			r.indent(out, depth)
+			fmt.Fprintf(out,
+				out.String("! %s").Foreground(termenv.ANSIYellow).String(),
+				line,
+			)
+			fmt.Fprintln(out)
 		}
-		fmt.Fprint(out, prefix)
-		r.indent(out, depth)
-		fmt.Fprintf(out,
-			out.String("! %s").Foreground(termenv.ANSIYellow).String(),
-			line,
-		)
-		fmt.Fprintln(out)
 	}
 }
 
