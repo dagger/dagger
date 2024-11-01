@@ -93,7 +93,7 @@ exit 1
 `).
 					WithExec([]string{"chmod", "+x", "/usr/local/bin/git-credential-invalid"}).
 					WithExec([]string{"git", "config", "--global", "credential.helper", "invalid"}).
-					// Prevent Git from falling back to interactive prompts
+					// Prevent Git from falling back to interactive prompts in no-tty environment
 					WithEnvVariable("GIT_ASKPASS", "")
 			},
 			request: &GitCredentialRequest{

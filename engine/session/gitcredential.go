@@ -4,7 +4,6 @@ import (
 	"bufio"
 	bytes "bytes"
 	context "context"
-	"errors"
 	fmt "fmt"
 	"os"
 	"os/exec"
@@ -32,8 +31,6 @@ func NewGitCredentialAttachable(rootCtx context.Context) GitCredentialAttachable
 func (s GitCredentialAttachable) Register(srv *grpc.Server) {
 	RegisterGitCredentialServer(srv, s)
 }
-
-var errCredentialNotFound = errors.New("credential not found")
 
 func newErrorResponse(errorType ErrorInfo_ErrorType, message string) *GitCredentialResponse {
 	return &GitCredentialResponse{
@@ -134,7 +131,7 @@ func parseGitCredentialOutput(output []byte) (*CredentialInfo, error) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error reading credential helper output: %v", err)
+		return nil, fmt.Errorf("error reading credential helper output: %w", err)
 	}
 
 	if cred["username"] == "" || cred["password"] == "" {

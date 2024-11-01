@@ -16,6 +16,10 @@ import (
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/sources/gitdns"
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
+	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/go-git/go-git/v5/storage/memory"
 	"github.com/moby/buildkit/util/gitutil"
 )
 
@@ -104,6 +108,7 @@ type gitArgs struct {
 }
 
 func (s *gitSchema) git(ctx context.Context, parent *core.Query, args gitArgs) (*core.GitRepository, error) {
+	// 1. Setup experimental service host
 	var svcs core.ServiceBindings
 	if args.ExperimentalServiceHost.Valid {
 		svc, err := args.ExperimentalServiceHost.Value.Load(ctx, s.srv)
@@ -121,11 +126,13 @@ func (s *gitSchema) git(ctx context.Context, parent *core.Query, args gitArgs) (
 		})
 	}
 
+	// 2. Get client metadata
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get client metadata from context: %w", err)
 	}
 
+	// 3. Setup SSH authentication
 	var authSock *core.Socket = nil
 	if args.SSHAuthSocket.Valid {
 		sock, err := args.SSHAuthSocket.Value.Load(ctx, s.srv)
@@ -133,96 +140,122 @@ func (s *gitSchema) git(ctx context.Context, parent *core.Query, args gitArgs) (
 			return nil, err
 		}
 		authSock = sock.Self
-	} else {
+	} else if clientMetadata != nil && clientMetadata.SSHAuthSocketPath != "" {
 		// Fallback to using the client's SSH agent socket if available
 		socketStore, err := parent.Sockets(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get socket store: %w", err)
 		}
 
-		if clientMetadata != nil && clientMetadata.SSHAuthSocketPath != "" {
-			accessor, err := core.GetClientResourceAccessor(ctx, parent, clientMetadata.SSHAuthSocketPath)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get client resource name: %w", err)
-			}
+		accessor, err := core.GetClientResourceAccessor(ctx, parent, clientMetadata.SSHAuthSocketPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get client resource name: %w", err)
+		}
 
-			var sockInst dagql.Instance[*core.Socket]
-			if err := s.srv.Select(ctx, s.srv.Root(), &sockInst,
-				dagql.Selector{
-					Field: "host",
-				},
-				dagql.Selector{
-					Field: "__internalSocket",
-					Args: []dagql.NamedInput{
-						{
-							Name:  "accessor",
-							Value: dagql.NewString(accessor),
-						},
+		var sockInst dagql.Instance[*core.Socket]
+		if err := s.srv.Select(ctx, s.srv.Root(), &sockInst,
+			dagql.Selector{
+				Field: "host",
+			},
+			dagql.Selector{
+				Field: "__internalSocket",
+				Args: []dagql.NamedInput{
+					{
+						Name:  "accessor",
+						Value: dagql.NewString(accessor),
 					},
 				},
-			); err != nil {
-				return nil, fmt.Errorf("failed to select internal socket: %w", err)
-			}
-
-			if err := socketStore.AddUnixSocket(sockInst.Self, clientMetadata.ClientID, clientMetadata.SSHAuthSocketPath); err != nil {
-				return nil, fmt.Errorf("failed to add unix socket to store: %w", err)
-			}
-			authSock = sockInst.Self
+			},
+		); err != nil {
+			return nil, fmt.Errorf("failed to select internal socket: %w", err)
 		}
+
+		if err := socketStore.AddUnixSocket(sockInst.Self, clientMetadata.ClientID, clientMetadata.SSHAuthSocketPath); err != nil {
+			return nil, fmt.Errorf("failed to add unix socket to store: %w", err)
+		}
+		authSock = sockInst.Self
 	}
 
+	// 4. Handle git directory configuration
 	discardGitDir := false
 	if args.KeepGitDir != nil {
 		slog.Warn("The 'keepGitDir' argument is deprecated. Use `tree`'s `discardGitDir' instead.")
 		discardGitDir = !*args.KeepGitDir
 	}
 
-	remote, err := gitutil.ParseURL(args.URL)
-	if errors.Is(err, gitutil.ErrUnknownProtocol) {
-		remote, err = gitutil.ParseURL("https://" + args.URL)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse Git URL: %w", err)
-	}
-
+	// 5. Handle PAT auth
 	var authToken *core.Secret = nil
 	mainClientCallerID, err := parent.Server.MainClientCallerID(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to retrieve mainClientCallerID: %w", err)
 	}
 
-	// Only use the PAT token if its the main client
+	// Isolate auth token to main client
 	if clientMetadata != nil && clientMetadata.ClientID == mainClientCallerID {
+		// extract scheme from ref
+		remote, err := gitutil.ParseURL(args.URL)
+		if errors.Is(err, gitutil.ErrUnknownProtocol) {
+			remote, err = gitutil.ParseURL("https://" + args.URL)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse Git URL: %w", err)
+		}
+
 		if remote.Scheme == "https" || remote.Scheme == "http" {
-			bk, err := parent.Buildkit(ctx)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get buildkit: %w", err)
+			// Check if repo is public
+			repo := git.NewRemote(memory.NewStorage(), &config.RemoteConfig{
+				Name: "origin",
+				URLs: []string{remote.Remote},
+			})
+
+			_, err := repo.List(&git.ListOptions{Auth: nil})
+			if err == nil {
+				// Repository is public, no need for auth token
+				return &core.GitRepository{
+					Query:         parent,
+					URL:           args.URL,
+					DiscardGitDir: discardGitDir,
+					SSHKnownHosts: args.SSHKnownHosts,
+					SSHAuthSocket: authSock,
+					Services:      svcs,
+					Platform:      parent.Platform(),
+					AuthToken:     nil,
+				}, nil
 			}
 
-			credentials, err := bk.GetCredential(ctx, remote.Scheme, remote.Host, remote.Path)
-			if err != nil {
-				slog.Warn(fmt.Sprintf("failed to retrieve git credentials, continuing without authentication: %s", err.Error()))
-			} else {
-				// Credentials found, create and set auth token
-				var secretAuthToken dagql.Instance[*core.Secret]
-				if err := s.srv.Select(ctx, s.srv.Root(), &secretAuthToken,
-					dagql.Selector{
-						Field: "setSecret",
-						Args: []dagql.NamedInput{
-							{
-								Name:  "name",
-								Value: dagql.NewString("gitAuthtoken"),
-							},
-							{
-								Name:  "plaintext",
-								Value: dagql.NewString(credentials.Password),
+			// Only proceed with auth if repo requires authentication
+			if errors.Is(err, transport.ErrAuthenticationRequired) {
+				bk, err := parent.Buildkit(ctx)
+				if err != nil {
+					return nil, fmt.Errorf("failed to get buildkit: %w", err)
+				}
+
+				// Retrieve credential from host
+				credentials, err := bk.GetCredential(ctx, remote.Scheme, remote.Host, remote.Path)
+				if err == nil {
+					// Credentials found, create and set auth token
+					var secretAuthToken dagql.Instance[*core.Secret]
+					if err := s.srv.Select(ctx, s.srv.Root(), &secretAuthToken,
+						dagql.Selector{
+							Field: "setSecret",
+							Args: []dagql.NamedInput{
+								{
+									Name:  "name",
+									Value: dagql.NewString("gitAuthtoken"),
+								},
+								{
+									Name:  "plaintext",
+									Value: dagql.NewString(credentials.Password),
+								},
 							},
 						},
-					},
-				); err != nil {
-					return nil, fmt.Errorf("failed to create a new secret with the git the auth token: %w", err)
+					); err != nil {
+						return nil, fmt.Errorf("failed to create a new secret with the git auth token: %w", err)
+					}
+					authToken = secretAuthToken.Self
+				} else {
+					slog.Warn(fmt.Sprintf("failed to retrieve git credentials, continuing without authentication: %s", err.Error()))
 				}
-				authToken = secretAuthToken.Self
 			}
 		}
 	}
