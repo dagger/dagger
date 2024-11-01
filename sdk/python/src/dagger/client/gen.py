@@ -6406,6 +6406,28 @@ class ModuleSource(Type):
         _ctx = self._select("withSourceSubpath", _args)
         return ModuleSource(_ctx)
 
+    def with_update_dependencies(
+        self,
+        dependencies: list[str],
+        *,
+        all: bool | None = False,
+    ) -> Self:
+        """Update one or more module dependencies.
+
+        Parameters
+        ----------
+        dependencies:
+            The dependencies to update.
+        all:
+            Update all dependencies
+        """
+        _args = [
+            Arg("dependencies", dependencies),
+            Arg("all", all, False),
+        ]
+        _ctx = self._select("withUpdateDependencies", _args)
+        return ModuleSource(_ctx)
+
     def with_view(self, name: str, patterns: list[str]) -> Self:
         """Update the module source with a new named view.
 

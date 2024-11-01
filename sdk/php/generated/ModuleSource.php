@@ -281,6 +281,19 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
+     * Update one or more module dependencies.
+     */
+    public function withUpdateDependencies(array $dependencies, ?bool $all = false): ModuleSource
+    {
+        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withUpdateDependencies');
+        $innerQueryBuilder->setArgument('dependencies', $dependencies);
+        if (null !== $all) {
+        $innerQueryBuilder->setArgument('all', $all);
+        }
+        return new \Dagger\ModuleSource($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
+    }
+
+    /**
      * Update the module source with a new named view.
      */
     public function withView(string $name, array $patterns): ModuleSource

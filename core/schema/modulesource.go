@@ -514,6 +514,106 @@ func (s *moduleSchema) filterUnInstalledDeps(ctx context.Context, bk *buildkit.C
 	return effectiveDependencies, nil
 }
 
+func (s *moduleSchema) applyDepUpdates(ctx context.Context, bk *buildkit.Client, currentDeps []*modules.ModuleConfigDependency, updateList []string, updateAll bool) ([]*modules.ModuleConfigDependency, error) {
+	if len(updateList) == 0 && !updateAll {
+		return currentDeps, nil
+	}
+
+	updatesDepsMap := map[string]parsedRefString{}
+	toBeUpdated := map[string]string{}
+	for _, dep := range updateList {
+		depParsed := parseRefString(ctx, bk, dep)
+
+		// for scenario where user tries to update using name
+		var cleanDepPath = filepath.Clean(depParsed.modPath)
+
+		updatesDepsMap[cleanDepPath] = depParsed
+		toBeUpdated[cleanDepPath] = dep
+	}
+
+	var needsUpdate = func(currentDep *modules.ModuleConfigDependency, updateDepsMap map[string]parsedRefString, updateAll bool) (*modules.ModuleConfigDependency, bool) {
+		currentDepParsed := parseRefString(ctx, bk, currentDep.Source)
+		if updateAll {
+			source := currentDepParsed.modPath
+			if currentDepParsed.hasVersion {
+				source += "@" + currentDepParsed.modVersion
+			}
+
+			return &modules.ModuleConfigDependency{
+				Name:   currentDep.Name,
+				Source: source,
+				Pin:    "",
+			}, true
+		}
+
+		for cleanDepPath, updateDepParsed := range updateDepsMap {
+			// if dep is full path then use that
+			if currentDepParsed.modPath == updateDepParsed.modPath || currentDep.Name == cleanDepPath {
+				delete(toBeUpdated, cleanDepPath)
+
+				source := currentDepParsed.modPath
+				// if a specific version was requested, use that
+				// else use whatever version current version is configured to use
+				if updateDepParsed.hasVersion {
+					source += "@" + updateDepParsed.modVersion
+				} else if currentDepParsed.hasVersion {
+					source += "@" + currentDepParsed.modVersion
+				}
+
+				return &modules.ModuleConfigDependency{
+					Name:   currentDep.Name,
+					Source: source,
+					Pin:    "",
+				}, true
+			}
+
+			if !strings.Contains(updateDepParsed.modPath, "@") {
+				continue
+			}
+
+			// for scenarios such as "dagger update <just-name>@<version>"
+			name, version, _ := strings.Cut(cleanDepPath, "@")
+			if currentDep.Name == name {
+				delete(toBeUpdated, cleanDepPath)
+
+				source := currentDepParsed.modPath
+				if version != "" {
+					source += "@" + version
+				}
+				return &modules.ModuleConfigDependency{
+					Name:   currentDep.Name,
+					Source: source,
+					Pin:    "",
+				}, true
+			}
+		}
+
+		return nil, false
+	}
+
+	updatedDependencies := []*modules.ModuleConfigDependency{}
+	for _, currentDep := range currentDeps {
+		if updatedDep, ok := needsUpdate(currentDep, updatesDepsMap, updateAll); ok {
+			updatedDependencies = append(updatedDependencies, updatedDep)
+			continue
+		}
+
+		updatedDependencies = append(updatedDependencies, currentDep)
+	}
+
+	// error out if there are dependencies which were requested to be updated
+	// but not found in the current list of dependencies
+	if len(toBeUpdated) > 0 {
+		deps := []string{}
+		for _, v := range toBeUpdated {
+			deps = append(deps, v)
+		}
+		return nil, fmt.Errorf("dependency %q was requested to be updated, but it is not found in the dependencies list", strings.Join(deps, ","))
+	}
+
+	return updatedDependencies, nil
+}
+
 func (s *moduleSchema) moduleSourceDependencies(
 	ctx context.Context,
 	src dagql.Instance[*core.ModuleSource],
@@ -536,9 +636,14 @@ func (s *moduleSchema) moduleSourceDependencies(
 			return nil, err
 		}
 
-		existingDeps = make([]dagql.Instance[*core.ModuleDependency], len(filteredDeps))
+		updatedDeps, err := s.applyDepUpdates(ctx, bk, filteredDeps, src.Self.WithUpdateDependencies, src.Self.WithUpdateAllDependencies)
+		if err != nil {
+			return nil, err
+		}
+
+		existingDeps = make([]dagql.Instance[*core.ModuleDependency], len(updatedDeps))
 		var eg errgroup.Group
-		for i, depCfg := range filteredDeps {
+		for i, depCfg := range updatedDeps {
 			eg.Go(func() error {
 				var depSrc dagql.Instance[*core.ModuleSource]
 				err := s.dag.Select(ctx, s.dag.Root(), &depSrc,
@@ -642,15 +747,41 @@ func (s *moduleSchema) moduleSourceDependencies(
 		depSet[symbolic] = dep
 	}
 
+	uniqueNameMap := map[string]struct{}{}
 	finalDeps := make([]dagql.Instance[*core.ModuleDependency], 0, len(depSet))
 	for _, dep := range depSet {
+		if _, exists := uniqueNameMap[dep.Self.Name]; dep.Self.Name != "" && exists {
+			return nil, fmt.Errorf("two or more dependencies are trying to use the same name %q", dep.Self.Name)
+		}
+		uniqueNameMap[dep.Self.Name] = struct{}{}
 		finalDeps = append(finalDeps, dep)
 	}
+
 	sort.Slice(finalDeps, func(i, j int) bool {
 		return finalDeps[i].Self.Name < finalDeps[j].Self.Name
 	})
 
 	return finalDeps, nil
+}
+
+func (s *moduleSchema) moduleSourceWithUpdateDependencies(
+	ctx context.Context,
+	src *core.ModuleSource,
+	args struct {
+		Dependencies []string
+		All          bool `default:"false"`
+	},
+) (*core.ModuleSource, error) {
+	src = src.Clone()
+
+	if len(args.Dependencies) > 0 && args.All {
+		return nil, fmt.Errorf("cannot update all dependencies when a list of dependencies to update has been provided")
+	}
+
+	src.WithUpdateDependencies = args.Dependencies
+	src.WithUpdateAllDependencies = args.All
+
+	return src, nil
 }
 
 func (s *moduleSchema) moduleSourceWithDependencies(
@@ -1130,6 +1261,21 @@ func (s *moduleSchema) normalizeCallerLoadedSource(
 		)
 		if err != nil {
 			return inst, fmt.Errorf("failed to set dependency: %w", err)
+		}
+	}
+
+	if len(src.WithUpdateDependencies) > 0 || src.WithUpdateAllDependencies {
+		err = s.dag.Select(ctx, inst, &inst,
+			dagql.Selector{
+				Field: "withUpdateDependencies",
+				Args: []dagql.NamedInput{
+					{Name: "dependencies", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(src.WithUpdateDependencies...))},
+					{Name: "all", Value: dagql.NewBoolean(src.WithUpdateAllDependencies)},
+				},
+			},
+		)
+		if err != nil {
+			return inst, fmt.Errorf("failed to set update dependency: %w", err)
 		}
 	}
 

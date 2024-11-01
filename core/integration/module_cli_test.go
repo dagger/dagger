@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -676,6 +677,27 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 		})
 	})
 
+	t.Run("installing a dependency with duplicate name is not allowed", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		ctr := c.Container().
+			From("alpine:latest").
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--sdk=go", "--name=foo", "--source=.")).
+			With(daggerExec("install", "github.com/shykes/daggerverse/docker@v0.4.1"))
+
+		daggerjson, err := ctr.File("dagger.json").Contents(ctx)
+		require.NoError(t, err)
+		require.Contains(t, daggerjson, "github.com/shykes/daggerverse/docker@docker/v0.4.1")
+
+		_, err = ctr.
+			With(daggerExec("install", "github.com/shykes/daggerverse/wolfi@v0.1.4", "--name=docker")).
+			Sync(ctx)
+
+		require.ErrorContains(t, err, "two or more dependencies are trying to use the same name")
+	})
+
 	t.Run("install dep from various places", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
@@ -1299,4 +1321,267 @@ func (f *Foo) ContainerEcho(ctx context.Context, input string) (string, error) {
 			})
 		}
 	})
+}
+
+func (CLISuite) TestDaggerUpdate(ctx context.Context, t *testctx.T) {
+	var daggerjsonContains = func(list []string) func(t *testctx.T, daggerjson string) {
+		return func(t *testctx.T, daggerjson string) {
+			for _, s := range list {
+				require.Contains(t, daggerjson, s)
+			}
+		}
+	}
+
+	var daggerjsonNotContains = func(list []string) func(t *testctx.T, daggerjson string) {
+		return func(t *testctx.T, daggerjson string) {
+			for _, s := range list {
+				require.NotContains(t, daggerjson, s)
+			}
+		}
+	}
+
+	testcases := []struct {
+		name          string
+		initCmd       []string
+		installCmds   [][]string
+		verifySetup   func(t *testctx.T, daggerjson string)
+		updateCmd     []string
+		verifyFns     []func(t *testctx.T, daggerjson string)
+		expectedError string
+	}{
+		{
+			name:    "existing dep has version, update cmd has version",
+			initCmd: []string{"init", "--sdk=go", "--name=foo", "--source=."},
+			installCmds: [][]string{
+				{"install", "github.com/shykes/daggerverse/docker@v0.4.1"},
+			},
+			verifySetup: daggerjsonContains([]string{`"github.com/shykes/daggerverse/docker@docker/v0.4.1"`}),
+			updateCmd:   []string{"update", "github.com/shykes/daggerverse/docker@v0.4.2"},
+			verifyFns: []func(t *testctx.T, daggerjson string){
+				daggerjsonContains([]string{`"github.com/shykes/daggerverse/docker@docker/v0.4.2"`}),
+				daggerjsonNotContains([]string{`github.com/shykes/daggerverse/docker@docker/v0.4.1`}),
+			},
+			expectedError: "",
+		},
+		{
+			name:    "existing dep has branch, update cmd has version",
+			initCmd: []string{"init", "--sdk=go", "--name=foo", "--source=."},
+			installCmds: [][]string{
+				{"install", "github.com/shykes/daggerverse/docker@main"},
+			},
+			verifySetup: daggerjsonContains([]string{`"github.com/shykes/daggerverse/docker@main"`}),
+			updateCmd:   []string{"update", "github.com/shykes/daggerverse/docker@v0.4.2"},
+			verifyFns: []func(t *testctx.T, daggerjson string){
+				daggerjsonContains([]string{`"github.com/shykes/daggerverse/docker@docker/v0.4.2"`}),
+				daggerjsonNotContains([]string{`github.com/shykes/daggerverse/docker@main`}),
+			},
+			expectedError: "",
+		},
+		{
+			name:    "existing dep dont have version, update cmd has version",
+			initCmd: []string{"init", "--sdk=go", "--name=foo", "--source=."},
+			installCmds: [][]string{
+				{"install", "github.com/shykes/daggerverse/docker"},
+			},
+			verifySetup: daggerjsonContains([]string{`"github.com/shykes/daggerverse/docker"`}),
+			updateCmd:   []string{"update", "github.com/shykes/daggerverse/docker@v0.4.2"},
+			verifyFns: []func(t *testctx.T, daggerjson string){
+				daggerjsonContains([]string{`github.com/shykes/daggerverse/docker@docker/v0.4.2`}),
+				daggerjsonNotContains([]string{`"github.com/shykes/daggerverse/docker"`}),
+			},
+			expectedError: "",
+		},
+		{
+			name:    "existing dep dont have version, update cmd dont have version",
+			initCmd: []string{"init", "--sdk=go", "--name=foo", "--source=."},
+			installCmds: [][]string{
+				{"install", "github.com/shykes/daggerverse/docker"},
+			},
+			verifySetup: daggerjsonContains([]string{`"github.com/shykes/daggerverse/docker"`}),
+			updateCmd:   []string{"update", "github.com/shykes/daggerverse/docker"},
+			verifyFns: []func(t *testctx.T, daggerjson string){
+				daggerjsonContains([]string{`"github.com/shykes/daggerverse/docker"`}),
+			},
+			expectedError: "",
+		},
+		{
+			name:    "existing dep use branch, update cmd dont have version",
+			initCmd: []string{"init", "--sdk=go", "--name=foo", "--source=."},
+			installCmds: [][]string{
+				{"install", "github.com/shykes/daggerverse/docker@main"},
+			},
+			verifySetup: daggerjsonContains([]string{`"github.com/shykes/daggerverse/docker@main"`}),
+			updateCmd:   []string{"update", "github.com/shykes/daggerverse/docker"},
+			verifyFns: []func(t *testctx.T, daggerjson string){
+				daggerjsonContains([]string{`"github.com/shykes/daggerverse/docker@main`}),
+				daggerjsonNotContains([]string{`"github.com/shykes/daggerverse/docker"`}),
+			},
+			expectedError: "",
+		},
+		{
+			name:    "existing dep have version, update cmd dont have version",
+			initCmd: []string{"init", "--sdk=go", "--name=foo", "--source=."},
+			installCmds: [][]string{
+				{"install", "github.com/shykes/daggerverse/docker@v0.4.2"},
+			},
+			verifySetup: daggerjsonContains([]string{`"github.com/shykes/daggerverse/docker@docker/v0.4.2"`}),
+			updateCmd:   []string{"update", "github.com/shykes/daggerverse/docker"},
+			verifyFns: []func(t *testctx.T, daggerjson string){
+				daggerjsonContains([]string{`github.com/shykes/daggerverse/docker@docker/v0.4.2`}),
+				daggerjsonNotContains([]string{`"github.com/shykes/daggerverse/docker"`}),
+			},
+			expectedError: "",
+		},
+		{
+			name:    "existing dep dont have version, update cmd use name without version",
+			initCmd: []string{"init", "--sdk=go", "--name=foo", "--source=."},
+			installCmds: [][]string{
+				{"install", "github.com/shykes/daggerverse/docker"},
+			},
+			verifySetup: daggerjsonContains([]string{`"github.com/shykes/daggerverse/docker"`}),
+			updateCmd:   []string{"update", "docker"},
+			verifyFns: []func(t *testctx.T, daggerjson string){
+				daggerjsonContains([]string{`"github.com/shykes/daggerverse/docker"`}),
+			},
+			expectedError: "",
+		},
+		{
+			name:    "existing dep use branch, update cmd use name without version",
+			initCmd: []string{"init", "--sdk=go", "--name=foo", "--source=."},
+			installCmds: [][]string{
+				{"install", "github.com/shykes/daggerverse/docker@main"},
+			},
+			verifySetup: daggerjsonContains([]string{`"github.com/shykes/daggerverse/docker@main"`}),
+			updateCmd:   []string{"update", "docker"},
+			verifyFns: []func(t *testctx.T, daggerjson string){
+				daggerjsonContains([]string{`"github.com/shykes/daggerverse/docker@main`}),
+				daggerjsonNotContains([]string{`"github.com/shykes/daggerverse/docker"`}),
+			},
+			expectedError: "",
+		},
+		{
+			name:    "existing dep have version, update cmd use name without version",
+			initCmd: []string{"init", "--sdk=go", "--name=foo", "--source=."},
+			installCmds: [][]string{
+				{"install", "github.com/shykes/daggerverse/docker@v0.4.2"},
+			},
+			verifySetup: daggerjsonContains([]string{`"github.com/shykes/daggerverse/docker@docker/v0.4.2"`}),
+			updateCmd:   []string{"update", "docker"},
+			verifyFns: []func(t *testctx.T, daggerjson string){
+				daggerjsonContains([]string{`github.com/shykes/daggerverse/docker@docker/v0.4.2`}),
+				daggerjsonNotContains([]string{`"github.com/shykes/daggerverse/docker"`}),
+			},
+			expectedError: "",
+		},
+		{
+			name:    "existing dep dont have version, update cmd use name with version",
+			initCmd: []string{"init", "--sdk=go", "--name=foo", "--source=."},
+			installCmds: [][]string{
+				{"install", "github.com/shykes/daggerverse/docker"},
+			},
+			verifySetup: daggerjsonContains([]string{`"github.com/shykes/daggerverse/docker"`}),
+			updateCmd:   []string{"update", "docker@v0.4.2"},
+			verifyFns: []func(t *testctx.T, daggerjson string){
+				daggerjsonContains([]string{`"github.com/shykes/daggerverse/docker@docker/v0.4.2"`}),
+			},
+			expectedError: "",
+		},
+		{
+			name:    "existing dep use branch, update cmd use name with version",
+			initCmd: []string{"init", "--sdk=go", "--name=foo", "--source=."},
+			installCmds: [][]string{
+				{"install", "github.com/shykes/daggerverse/docker@main"},
+			},
+			verifySetup: daggerjsonContains([]string{`"github.com/shykes/daggerverse/docker@main"`}),
+			updateCmd:   []string{"update", "docker@v0.4.2"},
+			verifyFns: []func(t *testctx.T, daggerjson string){
+				daggerjsonContains([]string{`"github.com/shykes/daggerverse/docker@docker/v0.4.2`}),
+				daggerjsonNotContains([]string{`"github.com/shykes/daggerverse/docker@main"`}),
+			},
+			expectedError: "",
+		},
+		{
+			name:    "existing dep have version, update cmd use name with version",
+			initCmd: []string{"init", "--sdk=go", "--name=foo", "--source=."},
+			installCmds: [][]string{
+				{"install", "github.com/shykes/daggerverse/docker@v0.4.1"},
+			},
+			verifySetup: daggerjsonContains([]string{`"github.com/shykes/daggerverse/docker@docker/v0.4.1"`}),
+			updateCmd:   []string{"update", "docker@v0.4.2"},
+			verifyFns: []func(t *testctx.T, daggerjson string){
+				daggerjsonContains([]string{`github.com/shykes/daggerverse/docker@docker/v0.4.2`}),
+				daggerjsonNotContains([]string{`"github.com/shykes/daggerverse/docker@docker/v0.4.1"`}),
+			},
+			expectedError: "",
+		},
+		{
+			name:          "update a dependency not configured in dagger.json",
+			initCmd:       []string{"init", "--sdk=go", "--name=foo", "--source=."},
+			installCmds:   [][]string{},
+			updateCmd:     []string{"update", "github.com/shykes/daggerverse/docker@v0.4.2"},
+			expectedError: `dependency "github.com/shykes/daggerverse/docker@v0.4.2" was requested to be updated, but it is not found in the dependencies list`,
+		},
+		{
+			name:    "can update all dependencies",
+			initCmd: []string{"init", "--sdk=go", "--name=foo", "--source=."},
+			installCmds: [][]string{
+				{"install", "github.com/shykes/daggerverse/docker@v0.4.1"},
+				{"install", "github.com/shykes/daggerverse/wolfi@v0.1.3"},
+			},
+			verifySetup: daggerjsonContains([]string{`"github.com/shykes/daggerverse/docker@docker/v0.4.1"`, `"github.com/shykes/daggerverse/wolfi@wolfi/v0.1.3"`}),
+			updateCmd:   []string{"update"},
+			verifyFns: []func(t *testctx.T, daggerjson string){
+				// Before and after contents are same as we are not moving the tags here.
+				// In real world, this will get re-pinnned if the tags have moved.
+				// This command essentially verifies that the version from source field is not
+				// removed.
+				daggerjsonContains([]string{`"github.com/shykes/daggerverse/docker@docker/v0.4.1"`, `"github.com/shykes/daggerverse/wolfi@wolfi/v0.1.3"`}),
+			},
+			expectedError: "",
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			ctr := c.Container().
+				From("alpine:latest").
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+				WithWorkdir("/work").
+				With(daggerExec(tc.initCmd...))
+
+			for _, instcmd := range tc.installCmds {
+				ctr = ctr.With(daggerExec(instcmd...))
+			}
+
+			daggerjson, err := ctr.File("dagger.json").Contents(ctx)
+			require.NoError(t, err)
+
+			// verify that installation worked as expected
+			if tc.verifySetup != nil {
+				tc.verifySetup(t, daggerjson)
+			}
+
+			daggerjson, err = ctr.
+				With(daggerExec(tc.updateCmd...)).
+				File("dagger.json").
+				Contents(ctx)
+
+			if tc.expectedError != "" {
+				var execErr *dagger.ExecError
+				if errors.As(err, &execErr) {
+					require.Contains(t, execErr.Stderr, tc.expectedError)
+				} else {
+					require.ErrorContains(t, err, tc.expectedError)
+				}
+
+			} else {
+				require.NoError(t, err)
+				for _, verifyFn := range tc.verifyFns {
+					verifyFn(t, daggerjson)
+				}
+			}
+		})
+	}
 }
