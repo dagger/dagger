@@ -203,6 +203,18 @@ dagger -m github.com/shykes/daggerverse/hello@v0.3.0 call hello
 
 Trigger your CI workflow by pushing a commit or opening a pull request.
 
+### Public traces
+
+Dagger Cloud automatically detects if the traces produced by your pipelines originate from
+a CI system and a public repository. When both conditions are met, Dagger Cloud allows
+public access to these traces without requiring an invitation to the organization.
+
+To modify this default setting, navigate to the organization settings page.
+Under the `Configuration` tab, toggle the `Trace Repository Visibility` switch to control access
+to trace data as needed.
+
+![public traces](/img/current_docs/api/public-traces.png)
+
 ## Organizations
 
 A member account grants a person access to log in to a Dagger Cloud organization to diagnose pipeline failures and collaborate on changes. Member information shown on the *All Runs* and *All Changes* pages is populated by the VCS you have integrated with Dagger Cloud. Deleting a member of a Dagger Cloud organization will not remove their runs and changes from Dagger Cloud.
