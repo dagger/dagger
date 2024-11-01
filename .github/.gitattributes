@@ -2,5 +2,3 @@
 /internal/dagger/** linguist-generated
 /internal/querybuilder/** linguist-generated
 /internal/telemetry/** linguist-generated
-
-**.gen.yml linguist-generated
