@@ -395,19 +395,21 @@ func (activity *Activity) updateEarliest() (changed bool) {
 	return
 }
 
-func (activity *Activity) Add(span *Span) (changed bool) {
+func (activity *Activity) Add(span *Span) bool {
 	if activity.allRunning == nil {
 		activity.allRunning = NewSpanSet()
 	}
 
 	if span.IsRunning() {
+		var changed bool
+		// written a little awkwardly to avoid short-circuiting
 		if activity.allRunning.Add(span) {
 			changed = true
 		}
 		if activity.updateEarliest() {
 			changed = true
 		}
-		return
+		return changed
 	}
 
 	activity.allRunning.Remove(span)
