@@ -17,7 +17,7 @@ def anyio_backend():
 
 @pytest.fixture
 def alpine_version():
-    return "3.20.1"
+    return "3.20.2"
 
 
 @pytest.fixture

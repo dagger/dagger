@@ -36,6 +36,7 @@ class PythonSdkDev:
                     "!*.lock",
                     "!*/*.toml",
                     "!*/*.lock",
+                    "!.python-version",
                     "!dev/src/**/*.py",
                     "!docs/**/*.py",
                     "!docs/**/*.rst",
