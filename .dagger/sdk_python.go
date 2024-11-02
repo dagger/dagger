@@ -18,9 +18,7 @@ const (
 	pythonGeneratedAPIPath = "sdk/python/src/dagger/client/gen.py"
 )
 
-var (
-	pythonVersions = []string{"3.10", "3.11", "3.12"}
-)
+var pythonVersions = []string{"3.10", "3.11", "3.12"}
 
 type PythonSDK struct {
 	Dagger *DaggerDev // +private

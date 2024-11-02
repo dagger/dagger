@@ -1,6 +1,5 @@
-import json
 from dataclasses import InitVar
-from typing import Annotated, cast
+from typing import Annotated
 
 import pytest
 from typing_extensions import Self
@@ -9,33 +8,14 @@ import dagger
 from dagger import Doc, Name, dag
 from dagger.mod import Module
 from dagger.mod._exceptions import FatalError
-from dagger.mod._resolver import FunctionResolver
 
 pytestmark = [
     pytest.mark.anyio,
 ]
 
 
-def get_resolver(mod: Module, parent_name: str, resolver_name: str):
-    return mod.get_resolver(
-        mod.get_resolvers("foo"),
-        parent_name,
-        resolver_name,
-    )
-
-
-async def get_result(
-    mod: Module,
-    parent_name: str,
-    parent: dict,
-    resolver_name: str,
-    inputs: dict,
-):
-    return await mod.get_result(
-        get_resolver(mod, parent_name, resolver_name),
-        dagger.JSON(json.dumps(parent)),
-        inputs,
-    )
+def set_main_object(mod: Module, name: str):
+    mod.get_object(name).add_constructor()
 
 
 @pytest.mark.slow
@@ -58,15 +38,10 @@ async def test_unstructure_structure():
             return Bar(ctr=dag.container().from_("alpine"))
 
     async with dagger.connection():
-        resolver = mod.get_resolver(mod.get_resolvers("foo"), "Foo", "foo")
-        result = await mod.get_result(resolver, dagger.JSON({}), {})
+        parent = await mod.get_result("Foo", {}, "foo", {})
+        result = await mod.get_result("Bar", parent, "bar", {})
 
-        parent = dagger.JSON(json.dumps(result))
-
-        resolver = mod.get_resolver(mod.get_resolvers("foo"), "Bar", "bar")
-        result = await mod.get_result(resolver, parent, {})
-
-        assert result == "foobar"
+    assert result == "foobar"
 
 
 class TestNameOverrides:
@@ -81,6 +56,8 @@ class TestNameOverrides:
 
         @_mod.object_type
         class Foo:
+            from_: str = _mod.field(default="")
+
             @_mod.function
             def bar(self) -> Bar:
                 return Bar(with_="bar", with_x="bax")
@@ -96,21 +73,23 @@ class TestNameOverrides:
         return _mod
 
     async def test_function_and_arg_name_default(self, mod: Module):
-        assert await get_result(mod, "Foo", {}, "import", {"from": "egg"}) == "egg"
+        parent = await mod.get_result("Foo", {}, "", {"from": "foo"})
+        assert await mod.get_result("Foo", parent, "from", {}) == "foo"
+        assert await mod.get_result("Foo", {}, "import", {"from": "egg"}) == "egg"
 
     async def test_function_and_arg_name_custom(self, mod: Module):
-        assert await get_result(mod, "Foo", {}, "importx", {"fromx": "egg"}) == "egg"
+        assert await mod.get_result("Foo", {}, "importx", {"fromx": "egg"}) == "egg"
 
     async def test_field_unstructure(self, mod: Module):
-        assert await get_result(mod, "Foo", {}, "bar", {}) == {
+        assert await mod.get_result("Foo", {}, "bar", {}) == {
             "with": "bar",
             "withx": "bax",
         }
 
     async def test_field_structure(self, mod: Module):
         state = {"with": "baz", "withx": "bat"}
-        assert await get_result(mod, "Bar", state, "with", {}) == "baz"
-        assert await get_result(mod, "Bar", state, "withx", {}) == "bat"
+        assert await mod.get_result("Bar", state, "with", {}) == "baz"
+        assert await mod.get_result("Bar", state, "withx", {}) == "bat"
 
 
 async def test_method_returns_self():
@@ -125,7 +104,7 @@ async def test_method_returns_self():
             self.message = "foobar"
             return self
 
-    assert await get_result(mod, "Foo", {}, "bar", {}) == {"message": "foobar"}
+    assert await mod.get_result("Foo", {}, "bar", {}) == {"message": "foobar"}
 
 
 async def test_constructor_post_init():
@@ -142,8 +121,8 @@ async def test_constructor_post_init():
 
     assert Foo().test == "foobar"
     assert Foo(foo="oof", bar="rab").test == "oofrab"
-    assert await get_result(mod, "Foo", {}, "test", {}) == "foobar"
-    assert await get_result(mod, "Foo", {}, "", {}) == {
+    assert await mod.get_result("Foo", {}, "test", {}) == "foobar"
+    assert await mod.get_result("Foo", {}, "", {}) == {
         "foo": "foo",
         "bar": "bar",
         "test": "foobar",
@@ -164,9 +143,9 @@ async def test_overridden_init_constructor():
 
     assert Foo().foo == "barman"
     assert Foo(bar="bat").foo == "batman"
-    assert await get_result(mod, "Foo", {}, "", {}) == {"foo": "barman"}
-    assert await get_result(mod, "Foo", {}, "", {"bar": "bat"}) == {"foo": "batman"}
-    assert await get_result(mod, "Foo", {}, "", {"foo": "stool"}) == {"foo": "barstool"}
+    assert await mod.get_result("Foo", {}, "", {}) == {"foo": "barman"}
+    assert await mod.get_result("Foo", {}, "", {"bar": "bat"}) == {"foo": "batman"}
+    assert await mod.get_result("Foo", {}, "", {"foo": "stool"}) == {"foo": "barstool"}
 
 
 async def test_alt_constructor():
@@ -189,8 +168,8 @@ async def test_alt_constructor():
 
     assert Foo().foo == "oof"
     assert Foo.create().foo == "bar"
-    assert await get_result(mod, "Foo", {}, "", {}) == {"foo": "bar"}
-    assert await get_result(mod, "Foo", {}, "", {"bar": "baz"}) == {"foo": "baz"}
+    assert await mod.get_result("Foo", {}, "", {}) == {"foo": "bar"}
+    assert await mod.get_result("Foo", {}, "", {"bar": "baz"}) == {"foo": "baz"}
 
 
 async def test_constructor_doc():
@@ -200,8 +179,7 @@ async def test_constructor_doc():
     class Foo:
         """Object doc."""
 
-    constructor = cast(FunctionResolver, get_resolver(mod, "Foo", ""))
-    assert constructor.func_doc == "Object doc."
+    assert mod.get_object("Foo").get_constructor().doc == "Object doc."
 
 
 async def test_alt_constructor_doc():
@@ -216,8 +194,7 @@ async def test_alt_constructor_doc():
             """Constructor doc."""
             return cls()
 
-    constructor = cast(FunctionResolver, get_resolver(mod, "Foo", ""))
-    assert constructor.func_doc == "Constructor doc."
+    assert mod.get_object("Foo").get_constructor().doc == "Constructor doc."
 
 
 async def test_alt_async_constructor():
@@ -232,10 +209,10 @@ async def test_alt_async_constructor():
         foo: str = mod.field()
 
         @classmethod
-        async def create(cls, foo: str | None = None):
-            if foo is None:
-                foo = await default_value()
-            return cls(foo=foo)
+        async def create(cls, bar: str | None = None):
+            if bar is None:
+                bar = await default_value()
+            return cls(foo=bar)
 
     # Default constructor is still available but argument is mandatory.
     with pytest.raises(TypeError):
@@ -245,8 +222,8 @@ async def test_alt_async_constructor():
     assert (await Foo.create()).foo == "bar"
 
     # From the API, the alternative constructor should be used.
-    assert await get_result(mod, "Foo", {}, "", {}) == {"foo": "bar"}
-    assert await get_result(mod, "Foo", {}, "", {"foo": "baz"}) == {"foo": "baz"}
+    assert await mod.get_result("Foo", {}, "", {}) == {"foo": "bar"}
+    assert await mod.get_result("Foo", {}, "", {"bar": "baz"}) == {"foo": "baz"}
 
 
 async def test_no_method_alt_constructor():
@@ -260,8 +237,8 @@ async def test_no_method_alt_constructor():
         def create(self, bar: str):
             return Foo(foo=f"{bar}!")
 
-    assert await get_result(mod, "Foo", {}, "", {}) == {"foo": "oof"}
-    assert await get_result(mod, "Foo", {}, "", {"foo": "foo"}) == {"foo": "foo"}
+    assert await mod.get_result("Foo", {}, "", {}) == {"foo": "oof"}
+    assert await mod.get_result("Foo", {}, "", {"foo": "foo"}) == {"foo": "foo"}
 
 
 async def test_no_staticmethod_alt_constructor():
@@ -276,8 +253,8 @@ async def test_no_staticmethod_alt_constructor():
         def create(bar: str):
             return Foo(foo=f"{bar}!")
 
-    assert await get_result(mod, "Foo", {}, "", {}) == {"foo": "oof"}
-    assert await get_result(mod, "Foo", {}, "", {"foo": "foo"}) == {"foo": "foo"}
+    assert await mod.get_result("Foo", {}, "", {}) == {"foo": "oof"}
+    assert await mod.get_result("Foo", {}, "", {"foo": "foo"}) == {"foo": "foo"}
 
 
 async def test_non_constructor_create_function():
@@ -292,7 +269,7 @@ async def test_non_constructor_create_function():
         def create(self) -> str:
             return f"{self.foo}bar"
 
-    assert await get_result(mod, "Foo", {}, "create", {}) == "foobar"
+    assert await mod.get_result("Foo", {}, "create", {}) == "foobar"
 
 
 class TestFunctionFromExternalConstructor:
@@ -326,8 +303,8 @@ class TestFunctionFromExternalConstructor:
             ("Bar", "baz", 144),
         ]
         result = {}
-        for parent_name, resolver, expected in chains:
-            result = await get_result(mod, parent_name, result, resolver, {})
+        for parent_name, function, expected in chains:
+            result = await mod.get_result(parent_name, result, function, {})
             assert result == expected
 
     async def test_name_overrides_and_inputs(self, mod: Module):
@@ -337,8 +314,8 @@ class TestFunctionFromExternalConstructor:
             ("Bar", "baz", {}),
         ]
         result = {}
-        for parent_name, resolver, inputs in chains:
-            result = await get_result(mod, parent_name, result, resolver, inputs)
+        for parent_name, function, inputs in chains:
+            result = await mod.get_result(parent_name, result, function, inputs)
             if inputs:
                 assert result == inputs
         assert result == 33
@@ -354,19 +331,14 @@ class TestFunctionFromExternalConstructor:
         @mod.object_type
         class Foo:
             foo: str = mod.field(default="foo")
-
             test = mod.function()(Test)
 
         @mod.object_type
         class Bar:
             bar: str = mod.field(default="bar")
-
             test = mod.function()(Test)
 
-        assert get_resolver(mod, "Test", "").origin is Test
-        assert get_resolver(mod, origin, "").origin is locals()[origin]
-        assert get_resolver(mod, origin, "test").origin is locals()[origin]
-        assert await get_result(mod, origin, {}, "test", {}) == {"egg": "white"}
+        assert await mod.get_result(origin, {}, "test", {}) == {"egg": "white"}
 
 
 async def test_external_alt_constructor():
@@ -384,7 +356,7 @@ async def test_external_alt_constructor():
     class Foo:
         bar = mod.function()(Bar)
 
-    assert await get_result(mod, "Foo", {}, "bar", {"bat": "bat"}) == {"bar": "bat"}
+    assert await mod.get_result("Foo", {}, "bar", {"bat": "bat"}) == {"bar": "bat"}
 
 
 async def test_constructor_with_init_var():
@@ -398,12 +370,12 @@ async def test_constructor_with_init_var():
         def __post_init__(self, bar: str):
             self.foo = self.foo + bar
 
-    assert await get_result(mod, "Foo", {}, "foo", {}) == "foobar"
-    assert await get_result(mod, "Foo", {}, "", {"foo": "rab", "bar": "oof"}) == {
+    assert await mod.get_result("Foo", {}, "foo", {}) == "foobar"
+    assert await mod.get_result("Foo", {}, "", {"foo": "rab", "bar": "oof"}) == {
         "foo": "raboof",
     }
     with pytest.raises(FatalError):
-        await get_result(mod, "Foo", {}, "bar", {})
+        await mod.get_result("Foo", {}, "bar", {})
 
 
 def test_exposed_field_not_in_constructor():
