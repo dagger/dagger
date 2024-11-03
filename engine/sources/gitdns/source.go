@@ -206,8 +206,9 @@ func (gs *gitSourceHandler) shaToCacheKey(sha string) string {
 }
 
 type authSecret struct {
-	token bool
-	name  string
+	token      bool
+	name       string
+	credHelper bool
 }
 
 func (gs *gitSourceHandler) authSecretNames() (sec []authSecret, _ error) {
@@ -215,17 +216,23 @@ func (gs *gitSourceHandler) authSecretNames() (sec []authSecret, _ error) {
 	if err != nil {
 		return nil, err
 	}
+
+	isBitbucket := u.Host == "bitbucket.org"
 	if gs.src.AuthHeaderSecret != "" {
 		sec = append(sec, authSecret{name: gs.src.AuthHeaderSecret + "." + u.Host})
-	}
-	if gs.src.AuthTokenSecret != "" {
-		sec = append(sec, authSecret{name: gs.src.AuthTokenSecret + "." + u.Host, token: true})
-	}
-	if gs.src.AuthHeaderSecret != "" {
 		sec = append(sec, authSecret{name: gs.src.AuthHeaderSecret})
 	}
 	if gs.src.AuthTokenSecret != "" {
-		sec = append(sec, authSecret{name: gs.src.AuthTokenSecret, token: true})
+		sec = append(sec, authSecret{
+			name:       gs.src.AuthTokenSecret + "." + u.Host,
+			token:      true,
+			credHelper: isBitbucket,
+		})
+		sec = append(sec, authSecret{
+			name:       gs.src.AuthTokenSecret,
+			token:      true,
+			credHelper: isBitbucket,
+		})
 	}
 	return sec, nil
 }
@@ -249,20 +256,23 @@ func (gs *gitSourceHandler) getAuthToken(ctx context.Context, g session.Group) e
 				return err
 			}
 
-			if strings.Contains(gs.src.Remote, "bitbucket.org") {
-				// For Bitbucket Cloud Git operations, always use x-token-auth
-				// https://support.atlassian.com/bitbucket-cloud/docs/using-access-tokens/
-				gs.auth = []string{
-					"-c", fmt.Sprintf("credential.helper=!f() { echo \"username=x-token-auth\"; echo \"password=%s\"; }; f", string(dt)),
-					"-c", "credential.https://bitbucket.org.username=x-token-auth",
-					"-c", "credential.useHttpPath=true",
+			// Handle token authentication
+			if s.token {
+				if s.credHelper {
+					// For Bitbucket Cloud Git operations, use credential helper
+					gs.auth = []string{
+						"-c", fmt.Sprintf("credential.helper=!f() { echo \"username=x-token-auth\"; echo \"password=%s\"; }; f", string(dt)),
+						"-c", "credential.https://bitbucket.org.username=x-token-auth",
+						"-c", "credential.useHttpPath=true",
+					}
+					break
 				}
-			} else {
-				if s.token {
-					dt = []byte("basic " + base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("x-access-token:%s", dt))))
-				}
-				gs.auth = []string{"-c", "http." + tokenScope(gs.src.Remote) + ".extraheader=Authorization: " + string(dt)}
+				// Encode token as basic auth header
+				dt = []byte("basic " + base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("x-access-token:%s", dt))))
 			}
+
+			// Set auth header (used for both auth headers and encoded tokens)
+			gs.auth = []string{"-c", "http." + tokenScope(gs.src.Remote) + ".extraheader=Authorization: " + string(dt)}
 			break
 		}
 		return nil
