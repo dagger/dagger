@@ -10,6 +10,7 @@ from typing import cast
 import rich.traceback
 from rich.console import Console
 
+from dagger import telemetry
 from dagger.log import configure_logging
 from dagger.mod import default_module
 from dagger.mod._exceptions import FatalError, UserError
@@ -21,6 +22,8 @@ logger = logging.getLogger(__name__)
 
 def app():
     """Entrypoint for a dagger extension."""
+    telemetry.initialize()
+
     # TODO: Create custom exception hook to control exit code.
     rich.traceback.install(
         console=errors,
@@ -32,7 +35,7 @@ def app():
     )
     try:
         pymod = import_module()
-        mod = get_module(pymod).with_description(inspect.getdoc(pymod))
+        mod = get_module(pymod)
         mod()
     except FatalError as e:
         if logger.isEnabledFor(logging.DEBUG):

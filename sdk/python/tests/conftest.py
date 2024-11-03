@@ -1,6 +1,13 @@
 import pytest
 
 
+@pytest.fixture(scope="session", autouse=True)
+def setup_telemetry():
+    import dagger.telemetry
+
+    dagger.telemetry.initialize()
+
+
 @pytest.fixture(scope="session")
 def anyio_backend():
     # TODO: remove when other backends can be supported
@@ -10,7 +17,7 @@ def anyio_backend():
 
 @pytest.fixture
 def alpine_version():
-    return "3.20.1"
+    return "3.20.2"
 
 
 @pytest.fixture

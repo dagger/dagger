@@ -10,5 +10,5 @@ class Foo:
 
 
 def test_method_returns_resolved_forward_reference():
-    resolver = mod.get_resolver(mod.get_resolvers("foo"), "Foo", "method")
-    assert resolver.return_type == Foo
+    fn = mod.get_object("Foo").functions["method"]
+    assert fn.return_type == Foo
