@@ -257,7 +257,7 @@ func (fe FrontendSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
 	defer fe.recalculateViewLocked() // recalculate view *after* updating the db
-	slog.Debug("frontend exporting spans", "spans", len(spans))
+	slog.ExtraDebug("frontend exporting spans", "spans", len(spans))
 	return fe.db.ExportSpans(ctx, spans)
 }
 

@@ -304,7 +304,7 @@ func (c *Client) subscribeTelemetry(ctx context.Context) (rerr error) {
 
 	slog := slog.With("client", c.ID)
 
-	slog.Debug("subscribing to telemetry", "remote", c.RunnerHost)
+	slog.ExtraDebug("subscribing to telemetry", "remote", c.RunnerHost)
 
 	c.telemetry = new(errgroup.Group)
 	httpClient := c.newTelemetryHTTPClient()

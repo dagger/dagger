@@ -85,7 +85,7 @@ func (db *DB) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) er
 		}
 
 		if span.StartTime().Before(traceData.Epoch) {
-			slog.Debug("new epoch", "old", traceData.Epoch, "new", span.StartTime())
+			slog.ExtraDebug("new epoch", "old", traceData.Epoch, "new", span.StartTime())
 			traceData.Epoch = span.StartTime()
 		}
 
@@ -94,7 +94,7 @@ func (db *DB) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) er
 		}
 
 		if span.EndTime().After(traceData.End) {
-			slog.Debug("new end", "old", traceData.End, "new", span.EndTime())
+			slog.ExtraDebug("new end", "old", traceData.End, "new", span.EndTime())
 			traceData.End = span.EndTime()
 		}
 
@@ -229,14 +229,14 @@ func (db *DB) maybeRecordSpan(traceData *Trace, span sdktrace.ReadOnlySpan) { //
 	spanData.ReadOnlySpan = span
 	spanData.IsSelfRunning = span.EndTime().Before(span.StartTime())
 
-	slog.Debug("recording span", "span", span.Name(), "id", spanID)
+	slog.ExtraDebug("recording span", "span", span.Name(), "id", spanID)
 
 	// track parent/child relationships
 	if parent := span.Parent(); parent.IsValid() {
 		if db.Children[parent.SpanID()] == nil {
 			db.Children[parent.SpanID()] = make(map[trace.SpanID]struct{})
 		}
-		slog.Debug("recording span child", "span", span.Name(), "parent", parent.SpanID(), "child", spanID)
+		slog.ExtraDebug("recording span child", "span", span.Name(), "parent", parent.SpanID(), "child", spanID)
 		if _, found := db.Children[parent.SpanID()][spanID]; !found {
 			db.Children[parent.SpanID()][spanID] = struct{}{}
 			db.ChildrenOrder[parent.SpanID()] = append(db.ChildrenOrder[parent.SpanID()], spanID)
