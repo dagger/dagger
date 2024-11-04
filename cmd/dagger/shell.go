@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"text/tabwriter"
 
@@ -98,6 +99,8 @@ type shellCallHandler struct {
 	// debug writes to the handler context's stderr what the arguments, input,
 	// and output are for each command that the exec handler processes
 	debug bool
+
+	builtins []*ShellCommand
 }
 
 // RunAll is the entry point for the shell command
@@ -125,21 +128,18 @@ func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
 		// slightly in order to resolve naming conflicts. For example, "echo"
 		// is an interpreter builtin but can also be a Dagger function.
 		interp.CallHandler(func(ctx context.Context, args []string) ([]string, error) {
-			if isFirstShellCommand(ctx) {
-				// When there's a Dagger function with a name that conflicts
-				// with an interpreter builtin, the Dagger function is favored.
-				// To force the builtin to execute instead, prefix the command
-				// with "..". For example: "container | from $(..echo alpine)".
-				if strings.HasPrefix(args[0], "..") {
-					args[0] = strings.TrimPrefix(args[0], "..")
-					return args, nil
-				}
-				// If the command is an interpreter builtin but has a matching
-				// module or core function, prepend `.dag` to bypass interpreter
-				// builtins ensure the exec handler is executed.
-				if isInterpBuiltin(args[0]) && (h.mod.HasFunction(args[0]) || h.mod.HasCoreFunction(args[0])) {
-					return append([]string{".dag"}, args...), nil
-				}
+			// When there's a Dagger function with a name that conflicts
+			// with an interpreter builtin, the Dagger function is favored.
+			// To force the builtin to execute instead, prefix the command
+			// with "..". For example: "container | from $(..echo alpine)".
+			if strings.HasPrefix(args[0], "..") {
+				args[0] = strings.TrimPrefix(args[0], "..")
+				return args, nil
+			}
+			// If the command is an interpreter builtin, bypass the interpreter
+			// builtins to ensure the exec handler is executed.
+			if isInterpBuiltin(args[0]) {
+				return append([]string{".dag"}, args...), nil
 			}
 			return args, nil
 		}),
@@ -149,6 +149,7 @@ func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
 		return err
 	}
 	h.runner = r
+	h.registerBuiltins()
 
 	// Example: `dagger shell -c 'container | workdir'`
 	if shellCode != "" {
@@ -272,7 +273,7 @@ func (h *shellCallHandler) runPath(ctx context.Context, path string) error {
 // runInteractive executes the runner on a REPL (Read-Eval-Print Loop)
 func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 	h.withTerminal(func(_ io.Reader, _, stderr io.Writer) error {
-		fmt.Fprintln(stderr, `Dagger interactive shell. Type ".help" for more information.`)
+		fmt.Fprintln(stderr, `Dagger interactive shell. Type ".help" for more information. Press Ctrl+D to exit.`)
 		return nil
 	})
 
@@ -353,6 +354,25 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 	return nil
 }
 
+func loadReadlineConfig() (*readline.Config, error) {
+	dataRoot := filepath.Join(xdg.DataHome, "dagger")
+	err := os.MkdirAll(dataRoot, 0o700)
+	if err != nil {
+		return nil, err
+	}
+
+	return &readline.Config{
+		// We need a prompt that conveys the unique nature of the Dagger shell. Per gpt4:
+		// The ⋈ symbol, known as the bowtie, has deep roots in relational databases and set theory,
+		// where it denotes a join operation. This makes it especially fitting for a DAG environment,
+		// as it suggests the idea of dependencies, intersections, and points where separate paths
+		// or data sets come together.
+		Prompt:       "⋈ ",
+		HistoryFile:  filepath.Join(dataRoot, "histfile"),
+		HistoryLimit: 1000,
+	}, nil
+}
+
 // withTerminal handles using stdin, stdout, and stderr when the TUI is runnin
 func (h *shellCallHandler) withTerminal(fn func(stdin io.Reader, stdout, stderr io.Writer) error) error {
 	if h.term {
@@ -409,11 +429,14 @@ func (h *shellCallHandler) cmd(ctx context.Context, args []string) error {
 	var st *ShellState
 	var err error
 
+	builtin, err := h.BuiltinCommand(args[0])
+	if err != nil {
+		return err
+	}
+
 	if isFirstShellCommand(ctx) {
-		// Our builtin commands start with a period, but should only be the
-		// first command in a pipeline.
-		if len(args[0]) > 1 && strings.HasPrefix(args[0], ".") {
-			return h.Builtin(ctx, args)
+		if builtin != nil {
+			return builtin.Execute(ctx, args[1:], nil)
 		}
 		st, err = h.entrypointCall(ctx, args)
 		if err != nil {
@@ -435,6 +458,10 @@ func (h *shellCallHandler) cmd(ctx context.Context, args []string) error {
 
 	if h.debug {
 		shellLogf(ctx, "[DBG] IN(%v): %v\n", args, st)
+	}
+
+	if builtin != nil {
+		return builtin.Execute(ctx, args[1:], st)
 	}
 
 	st, err = h.functionCall(ctx, st, args[0], args[1:])
@@ -691,11 +718,6 @@ func shellLogf(ctx context.Context, msg string, args ...any) {
 	fmt.Fprintf(hctx.Stderr, msg, args...)
 }
 
-func shellWrite(ctx context.Context, msg string) {
-	hctx := interp.HandlerCtx(ctx)
-	fmt.Fprint(hctx.Stdout, msg)
-}
-
 // First command in pipeline: e.g., `cmd1 | cmd2 | cmd3`
 func isFirstShellCommand(ctx context.Context) bool {
 	return interp.HandlerCtx(ctx).Stdin == nil
@@ -846,164 +868,325 @@ func (f FunctionCall) GetNextDef(modDef *moduleDef, name string) (*modFunction, 
 	return modDef.GetObjectFunction(f.ReturnObject, name)
 }
 
-// Re-execute the dagger command (hack)
-func reexec(ctx context.Context, args []string) error {
-	hctx := interp.HandlerCtx(ctx)
-	cmd := exec.CommandContext(ctx, "dagger", args...)
-	cmd.Stdout = hctx.Stdout
-	cmd.Stderr = hctx.Stderr
-	cmd.Stdin = hctx.Stdin
-	return cmd.Run()
+// ShellCommand is a Dagger Shell builtin command
+type ShellCommand struct {
+	// Use is the one-line usage message.
+	Use string
+	//
+	// Short is the short description shown in the '.help' output.
+	Short string
+
+	// Args is the expected number of positional arguments.
+	Args int
+
+	// Run is the function that will be executed if it's the first command
+	// in the pipeline and RunState is not defined.
+	Run func(cmd *ShellCommand, args []string) error
+
+	// RunState is the function for executing a command that can be chained
+	// in a pipeline.
+	//
+	// If defined, it's always used, even if it's the first command in the
+	// pipeline. For commands that should only be the first, define `Run` instead.
+	RunState func(cmd *ShellCommand, args []string, st *ShellState) error
+
+	// Hidden hides the command from `.help`.
+	Hidden bool
+
+	ctx    context.Context
+	out    io.Writer
+	outErr io.Writer
 }
 
-// TODO: Some builtins may make sense only in certain cases, for example, only
-// when in interactive, or only as a first argument vs anywhere in the chain.
-func (h *shellCallHandler) Builtin(ctx context.Context, args []string) error {
-	if len(args) < 1 {
-		return fmt.Errorf("no specified builtin")
-	}
-	args[0] = strings.TrimPrefix(args[0], ".")
-	switch args[0] {
-	case "help":
-		shellWrite(ctx, `
-.config       set module constructor options
-.container    create a new container
-.core         load a core Dagger type
-.deps         list dependencies
-.directory    create a new directory
-.functions    list available functions
-.git          load a directory from a git URL
-.help         print this help message
-.http         download a file over http
-.install      install a dependency
-.login        login to Dagger Cloud
-.logout       logout from Dagger Cloud
-.uninstall    uninstall a dependency
-`[1:])
-		return nil
-	case "git":
-		if len(args) < 2 {
-			return fmt.Errorf("usage: .git <url>")
-		}
-		gitURL, err := parseGitURL(args[1])
-		if err != nil {
-			return err
-		}
-		gitDir := makeGitDirectory(gitURL, h.dag)
-
-		// It would be nice to get the querybuilder from `dagger.Directory`
-		// instance. That way we could return the object directly instead
-		// of via the ID.
-		id, err := gitDir.ID(ctx)
-		if err != nil {
-			return err
-		}
-
-		core := ShellState{}
-
-		// Could use h.functionCall but this avoids passing the id through
-		// h.parseArgumentValues which adds unnecessary complication to
-		// bypass the flag parsing.
-		fn, err := core.Function().GetNextDef(h.mod, "load-directory-from-id")
-		if err != nil {
-			return err
-		}
-
-		values := map[string]any{"id": string(id)}
-		return core.WithCall(fn, values).Write(ctx)
-
-	case "install", "uninstall":
-		if len(args) < 1 {
-			return fmt.Errorf("usage: .%s <module>", args[0])
-		}
-		return reexec(ctx, args)
-	case "login", "logout":
-		return reexec(ctx, args)
-	case "deps":
-		deps, err := h.mod.Source.AsModule().Dependencies(ctx)
-		if err != nil {
-			return err
-		}
-		w := tabwriter.NewWriter(interp.HandlerCtx(ctx).Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "NAME\tDESCRIPTION")
-		fmt.Fprintln(w, " \t ")
-		for _, dep := range deps {
-			name, err := dep.Name(ctx)
-			if err != nil {
-				return err
-			}
-			desc, err := dep.Description(ctx)
-			if err != nil {
-				return err
-			}
-			shortDesc := strings.SplitN(desc, "\n", 2)[0]
-			fmt.Fprintf(w, "%s\t%s\n", name, shortDesc)
-		}
-		return w.Flush()
-
-	case "core":
-		if len(args) < 2 {
-			return functionListRun(
-				h.mod.GetFunctionProvider("Query"),
-				interp.HandlerCtx(ctx).Stdout,
-				false,
-			)
-		}
-		s := &ShellState{}
-		s, err := h.functionCall(ctx, s, args[1], args[2:])
-		if err != nil {
-			return err
-		}
-		return s.Write(ctx)
-	case "container", "directory", "http":
-		s := &ShellState{}
-		s, err := h.functionCall(ctx, s, args[0], args[1:])
-		if err != nil {
-			return err
-		}
-		return s.Write(ctx)
-	case "config":
-		if len(args) < 2 {
-			return fmt.Errorf("usage: .config [options]")
-		}
-		cfg, err := h.parseArgumentValues(ctx, h.mod.MainObject.AsObject.Constructor, args[1:])
-		if err != nil {
-			return err
-		}
-		h.cfg = cfg
-		return nil
-
-	case "functions":
-		return functionListRun(
-			h.mod.MainObject.AsFunctionProvider(),
-			interp.HandlerCtx(ctx).Stdout,
-			false,
-		)
-	case "debug":
-		// Toggles debug mode, which can be useful when in interactive mode
-		h.debug = !h.debug
-		return nil
-
-	default:
-		return fmt.Errorf("no such command: %s", args[0])
-	}
+// CleanName is the command name without the "." prefix.
+func (c *ShellCommand) CleanName() string {
+	return strings.TrimPrefix(c.Name(), ".")
 }
 
-func loadReadlineConfig() (*readline.Config, error) {
-	dataRoot := filepath.Join(xdg.DataHome, "dagger")
-	err := os.MkdirAll(dataRoot, 0o700)
-	if err != nil {
-		return nil, err
+// Name is the command name.
+func (c *ShellCommand) Name() string {
+	name := c.Use
+	i := strings.Index(name, " ")
+	if i >= 0 {
+		name = name[:i]
+	}
+	return name
+}
+
+func (c *ShellCommand) Print(a ...any) error {
+	_, err := fmt.Fprint(c.out, a...)
+	return err
+}
+
+func (c *ShellCommand) Println(a ...any) error {
+	_, err := fmt.Fprintln(c.out, a...)
+	return err
+}
+
+func (c *ShellCommand) Printf(format string, a ...any) error {
+	_, err := fmt.Fprintf(c.out, format, a...)
+	return err
+}
+
+func (c *ShellCommand) SetContext(ctx context.Context) {
+	c.ctx = ctx
+	c.out = interp.HandlerCtx(ctx).Stdout
+	c.outErr = interp.HandlerCtx(ctx).Stderr
+}
+
+func (c *ShellCommand) Context() context.Context {
+	return c.ctx
+}
+
+// Send writes the state to the command's stdout.
+func (c *ShellCommand) Send(st *ShellState) error {
+	return st.WriteTo(c.out)
+}
+
+func (c *ShellCommand) Printer() io.Writer {
+	return c.out
+}
+
+func (c *ShellCommand) Execute(ctx context.Context, args []string, st *ShellState) error {
+	if st != nil && c.RunState == nil {
+		return fmt.Errorf("command %q cannot be chained", c.Name())
+	}
+	if len(args) < c.Args {
+		return fmt.Errorf("usage: %s", c.Use)
+	}
+	c.SetContext(ctx)
+	if c.RunState != nil {
+		return c.RunState(c, args, st)
+	}
+	return c.Run(c, args)
+}
+
+func (h *shellCallHandler) BuiltinCommand(name string) (*ShellCommand, error) {
+	if name == "." || !strings.HasPrefix(name, ".") {
+		return nil, nil
+	}
+	for _, c := range h.builtins {
+		if c.Name() == name {
+			return c, nil
+		}
+	}
+	return nil, fmt.Errorf("no such command: %s", name)
+}
+
+func (h *shellCallHandler) Builtins() []*ShellCommand {
+	l := make([]*ShellCommand, 0, len(h.builtins))
+	for _, c := range h.builtins {
+		if !c.Hidden {
+			l = append(l, c)
+		}
+	}
+	return l
+}
+
+func (h *shellCallHandler) addBuiltin(cmds ...*ShellCommand) {
+	h.builtins = append(h.builtins, cmds...)
+}
+
+func (h *shellCallHandler) registerBuiltins() { //nolint:gocyclo
+	h.addBuiltin(
+		&ShellCommand{
+			Use:    ".debug",
+			Hidden: true,
+			Run: func(cmd *ShellCommand, args []string) error {
+				// Toggles debug mode, which can be useful when in interactive mode
+				h.debug = !h.debug
+				return nil
+			},
+		},
+		&ShellCommand{
+			Use:   ".help",
+			Short: "print this help message",
+			Run: func(cmd *ShellCommand, args []string) error {
+				line := nameShortWrapped(h.Builtins(), func(c *ShellCommand) (string, string) {
+					return c.Name(), c.Short
+				})
+				return cmd.Println(line)
+			},
+		},
+		&ShellCommand{
+			Use:   ".config [options]",
+			Short: "set module constructor options",
+			Args:  1, // at least one, i..e, not empty
+			Run: func(cmd *ShellCommand, args []string) error {
+				cfg, err := h.parseArgumentValues(cmd.Context(), h.mod.MainObject.AsObject.Constructor, args[1:])
+				if err != nil {
+					return err
+				}
+				h.cfg = cfg
+				return nil
+			},
+		},
+		&ShellCommand{
+			Use:   ".deps",
+			Short: "list dependencies",
+			Run: func(cmd *ShellCommand, args []string) error {
+				ctx := cmd.Context()
+				deps, err := h.mod.Source.AsModule().Dependencies(ctx)
+				if err != nil {
+					return err
+				}
+				w := tabwriter.NewWriter(cmd.Printer(), 0, 0, 2, ' ', 0)
+				fmt.Fprintln(w, "NAME\tDESCRIPTION")
+				fmt.Fprintln(w, " \t ")
+				for _, dep := range deps {
+					name, err := dep.Name(ctx)
+					if err != nil {
+						return err
+					}
+					desc, err := dep.Description(ctx)
+					if err != nil {
+						return err
+					}
+					shortDesc := strings.SplitN(desc, "\n", 2)[0]
+					fmt.Fprintf(w, "%s\t%s\n", name, shortDesc)
+				}
+				return w.Flush()
+			},
+		},
+		&ShellCommand{
+			Use:   ".functions",
+			Short: "list available functions",
+			Run: func(cmd *ShellCommand, args []string) error {
+				return functionListRun(
+					h.mod.MainObject.AsFunctionProvider(),
+					cmd.Printer(),
+					false,
+				)
+			},
+		},
+		&ShellCommand{
+			Use:   ".core [function]",
+			Short: "load a core Dagger type",
+			Run: func(cmd *ShellCommand, args []string) error {
+				ctx := cmd.Context()
+
+				if len(args) == 0 {
+					return functionListRun(
+						h.mod.GetFunctionProvider("Query"),
+						cmd.Printer(),
+						false,
+					)
+				}
+
+				st := &ShellState{}
+				st, err := h.functionCall(ctx, st, args[0], args[1:])
+				if err != nil {
+					return err
+				}
+
+				return cmd.Send(st)
+			},
+		},
+		&ShellCommand{
+			Use:   ".git <url>",
+			Short: "load a directory from a git URL",
+			Args:  1,
+			Run: func(cmd *ShellCommand, args []string) error {
+				ctx := cmd.Context()
+
+				gitURL, err := parseGitURL(args[0])
+				if err != nil {
+					return err
+				}
+				gitDir := makeGitDirectory(gitURL, h.dag)
+
+				// It would be nice to get the querybuilder from `dagger.Directory`
+				// instance. That way we could return the object directly instead
+				// of via the ID.
+				id, err := gitDir.ID(ctx)
+				if err != nil {
+					return err
+				}
+
+				core := ShellState{}
+
+				// Could use h.functionCall but this avoids passing the id through
+				// h.parseArgumentValues which adds unnecessary complication to
+				// bypass the flag parsing.
+				fn, err := core.Function().GetNextDef(h.mod, "load-directory-from-id")
+				if err != nil {
+					return err
+				}
+
+				values := map[string]any{"id": string(id)}
+				return cmd.Send(core.WithCall(fn, values))
+			},
+		},
+	)
+
+	coreAlias := func(cmd *ShellCommand, args []string) error {
+		ctx := cmd.Context()
+
+		st := &ShellState{}
+		st, err := h.functionCall(ctx, st, cmd.CleanName(), args)
+		if err != nil {
+			return err
+		}
+
+		return cmd.Send(st)
 	}
 
-	return &readline.Config{
-		// We need a prompt that conveys the unique nature of the Dagger shell. Per gpt4:
-		// The ⋈ symbol, known as the bowtie, has deep roots in relational databases and set theory,
-		// where it denotes a join operation. This makes it especially fitting for a DAG environment,
-		// as it suggests the idea of dependencies, intersections, and points where separate paths
-		// or data sets come together.
-		Prompt:       "⋈ ",
-		HistoryFile:  filepath.Join(dataRoot, "histfile"),
-		HistoryLimit: 1000,
-	}, nil
+	h.addBuiltin(
+		&ShellCommand{
+			Use:   ".container",
+			Short: "create a new container",
+			Run:   coreAlias,
+		},
+		&ShellCommand{
+			Use:   ".directory",
+			Short: "create a new directory",
+			Run:   coreAlias,
+		},
+		&ShellCommand{
+			Use:   ".http",
+			Short: "download a file over http",
+			Run:   coreAlias,
+		},
+	)
+
+	// Re-execute the dagger command (hack)
+	reexec := func(cmd *ShellCommand, args []string) error {
+		args = append([]string{cmd.Name()}, args...)
+		ctx := cmd.Context()
+		hctx := interp.HandlerCtx(ctx)
+		c := exec.CommandContext(ctx, "dagger", args...)
+		c.Stdout = hctx.Stdout
+		c.Stderr = hctx.Stderr
+		c.Stdin = hctx.Stdin
+		return c.Run()
+	}
+
+	h.addBuiltin(
+		&ShellCommand{
+			Use:   ".install <module>",
+			Short: "install a dependency",
+			Args:  1,
+			Run:   reexec,
+		},
+		&ShellCommand{
+			Use:   ".uninstall <module>",
+			Short: "uninstall a dependency",
+			Args:  1,
+			Run:   reexec,
+		},
+		&ShellCommand{
+			Use:   ".login",
+			Short: "login to Dagger Cloud",
+			Run:   reexec,
+		},
+		&ShellCommand{
+			Use:   ".logout",
+			Short: "logout from Dagger Cloud",
+			Run:   reexec,
+		},
+	)
+
+	sort.Slice(h.builtins, func(i, j int) bool {
+		return h.builtins[i].Use < h.builtins[j].Use
+	})
 }
