@@ -115,13 +115,9 @@ func functionListRun(o functionProvider, writer io.Writer, skipUnsupported bool)
 			skipped = append(skipped, fn.CmdName())
 			continue
 		}
-		desc := strings.SplitN(fn.Description, "\n", 2)[0]
-		if desc == "" {
-			desc = "-"
-		}
 		fmt.Fprintf(tw, "%s\t%s\n",
-			cliName(fn.Name),
-			desc,
+			fn.CmdName(),
+			fn.Short(),
 		)
 	}
 	if len(skipped) > 0 {

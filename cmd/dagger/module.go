@@ -1079,6 +1079,34 @@ type modTypeDef struct {
 	AsEnum      *modEnum
 }
 
+func (t *modTypeDef) String() string {
+	switch t.Kind {
+	case dagger.TypeDefKindStringKind:
+		return "string"
+	case dagger.TypeDefKindIntegerKind:
+		return "int"
+	case dagger.TypeDefKindBooleanKind:
+		return "bool"
+	case dagger.TypeDefKindScalarKind:
+		return t.AsScalar.Name
+	case dagger.TypeDefKindEnumKind:
+		return t.AsEnum.Name
+	case dagger.TypeDefKindInputKind:
+		return t.AsInput.Name
+	case dagger.TypeDefKindObjectKind:
+		return t.AsObject.Name
+	case dagger.TypeDefKindInterfaceKind:
+		return t.AsInterface.Name
+	case dagger.TypeDefKindListKind:
+		return "[]" + t.AsList.ElementTypeDef.String()
+	case dagger.TypeDefKindVoidKind:
+		return ""
+	}
+	// this should never happen because all values for kind are covered,
+	// unless a new one is added and this code isn't updated
+	return "<unknown>"
+}
+
 type functionProvider interface {
 	ProviderName() string
 	GetFunctions() []*modFunction
@@ -1305,6 +1333,14 @@ type modEnum struct {
 	Values []*modEnumValue
 }
 
+func (e *modEnum) ValueNames() []string {
+	values := make([]string, 0, len(e.Values))
+	for _, v := range e.Values {
+		values = append(values, v.Name)
+	}
+	return values
+}
+
 type modEnumValue struct {
 	Name string
 }
@@ -1350,6 +1386,14 @@ func (f *modFunction) CmdName() string {
 	return f.cmdName
 }
 
+func (f *modFunction) Short() string {
+	s := strings.SplitN(f.Description, "\n", 2)[0]
+	if s == "" {
+		s = "-"
+	}
+	return s
+}
+
 // GetArg returns the argument definition corresponding to the given name.
 func (f *modFunction) GetArg(name string) (*modFunctionArg, error) {
 	for _, a := range f.Args {
@@ -1373,6 +1417,16 @@ func (f *modFunction) RequiredArgs() []*modFunctionArg {
 	args := make([]*modFunctionArg, 0, len(f.Args))
 	for _, arg := range f.Args {
 		if arg.IsRequired() {
+			args = append(args, arg)
+		}
+	}
+	return args
+}
+
+func (f *modFunction) OptionalArgs() []*modFunctionArg {
+	args := make([]*modFunctionArg, 0, len(f.Args))
+	for _, arg := range f.Args {
+		if !arg.IsRequired() {
 			args = append(args, arg)
 		}
 	}
@@ -1411,6 +1465,7 @@ type modFunctionArg struct {
 	Description  string
 	TypeDef      *modTypeDef
 	DefaultValue dagger.JSON
+	DefaultPath  string
 	Ignore       []string
 	flagName     string
 }
@@ -1421,6 +1476,44 @@ func (r *modFunctionArg) FlagName() string {
 		r.flagName = cliName(r.Name)
 	}
 	return r.flagName
+}
+
+func (r *modFunctionArg) Usage() string {
+	return fmt.Sprintf("--%s %s", r.FlagName(), r.TypeDef.String())
+}
+
+func (r *modFunctionArg) Short() string {
+	return strings.SplitN(r.Description, "\n", 2)[0]
+}
+
+func (r *modFunctionArg) Long() string {
+	sb := new(strings.Builder)
+	multiline := strings.Contains(r.Description, "\n")
+
+	if r.Description != "" {
+		sb.WriteString(r.Description)
+	}
+
+	if defVal := r.defValue(); defVal != "" {
+		if multiline {
+			sb.WriteString("\n\n")
+		} else if sb.Len() > 0 {
+			sb.WriteString(" ")
+		}
+		sb.WriteString(fmt.Sprintf("(default: %s)", defVal))
+	}
+
+	if r.TypeDef.Kind == dagger.TypeDefKindEnumKind {
+		names := strings.Join(r.TypeDef.AsEnum.ValueNames(), ", ")
+		if multiline {
+			sb.WriteString("\n\n")
+		} else if sb.Len() > 0 {
+			sb.WriteString(" ")
+		}
+		sb.WriteString(fmt.Sprintf("(possible values: %s)", names))
+	}
+
+	return sb.String()
 }
 
 func (r *modFunctionArg) IsRequired() bool {
@@ -1438,6 +1531,30 @@ func getDefaultValue[T any](r *modFunctionArg) (T, error) {
 	var val T
 	err := json.Unmarshal([]byte(r.DefaultValue), &val)
 	return val, err
+}
+
+// DefValue is the default value (as text); for the usage message
+func (r *modFunctionArg) defValue() string {
+	if r.DefaultPath != "" {
+		return fmt.Sprintf("%q", r.DefaultPath)
+	}
+	if r.DefaultValue == "" {
+		return ""
+	}
+	t := r.TypeDef
+	switch t.Kind {
+	case dagger.TypeDefKindStringKind:
+		v, err := getDefaultValue[string](r)
+		if err == nil {
+			return fmt.Sprintf("%q", v)
+		}
+	default:
+		v, err := getDefaultValue[any](r)
+		if err == nil {
+			return fmt.Sprintf("%v", v)
+		}
+	}
+	return ""
 }
 
 // gqlObjectName converts casing to a GraphQL object  name

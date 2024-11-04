@@ -854,6 +854,14 @@ func (s ShellState) QueryBuilder(dag *dagger.Client) *querybuilder.Selection {
 	return q
 }
 
+// GetDef returns the introspection definition for the last function call
+func (s *ShellState) GetDef(modDef *moduleDef) (*modFunction, error) {
+	if s == nil {
+		return modDef.MainObject.AsObject.Constructor, nil
+	}
+	return s.Function().GetDef(modDef)
+}
+
 // GetDef returns the introspection definition for this function call
 func (f FunctionCall) GetDef(modDef *moduleDef) (*modFunction, error) {
 	return modDef.GetObjectFunction(f.Object, f.Name)
@@ -961,6 +969,31 @@ func (c *ShellCommand) Execute(ctx context.Context, args []string, st *ShellStat
 	return c.Run(c, args)
 }
 
+func shellFunctionUseLine(fn *modFunction, isConstructor bool) string {
+	sb := new(strings.Builder)
+	if isConstructor {
+		if len(fn.Args) == 0 {
+			return ""
+		}
+		sb.WriteString(".config")
+	} else {
+		sb.WriteString("... | ")
+		sb.WriteString(fn.CmdName())
+	}
+	for _, arg := range fn.RequiredArgs() {
+		sb.WriteString(" <")
+		sb.WriteString(arg.FlagName())
+		sb.WriteString(">")
+	}
+	if len(fn.OptionalArgs()) > 0 {
+		sb.WriteString(" [options]")
+	}
+	if isConstructor {
+		sb.WriteString("; <function>")
+	}
+	return sb.String()
+}
+
 func (h *shellCallHandler) BuiltinCommand(name string) (*ShellCommand, error) {
 	if name == "." || !strings.HasPrefix(name, ".") {
 		return nil, nil
@@ -1006,6 +1039,77 @@ func (h *shellCallHandler) registerBuiltins() { //nolint:gocyclo
 					return c.Name(), c.Short
 				})
 				return cmd.Println(line)
+			},
+		},
+		&ShellCommand{
+			Use:   ".doc",
+			Short: "show documentation for a function",
+			RunState: func(cmd *ShellCommand, args []string, st *ShellState) error {
+				fn, err := st.GetDef(h.mod)
+				if err != nil {
+					return err
+				}
+
+				type help struct {
+					title string
+					body  string
+				}
+
+				var helpGroups []help
+
+				if fn.Description != "" {
+					helpGroups = append(helpGroups, help{"", fn.Description})
+				}
+
+				if usage := shellFunctionUseLine(fn, st == nil); usage != "" {
+					helpGroups = append(helpGroups, help{"Usage", usage})
+				}
+
+				helpGroups = append(helpGroups, help{"Returns", fn.ReturnType.String()})
+
+				if args := fn.RequiredArgs(); len(args) > 0 {
+					helpGroups = append(
+						helpGroups,
+						help{
+							"Required Arguments",
+							nameShortWrapped(args, func(a *modFunctionArg) (string, string) {
+								return strings.TrimPrefix(a.Usage(), "--"), a.Long()
+							}),
+						},
+					)
+				}
+
+				if args := fn.OptionalArgs(); len(args) > 0 {
+					helpGroups = append(
+						helpGroups,
+						help{
+							"Optional Arguments",
+							nameShortWrapped(args, func(a *modFunctionArg) (string, string) {
+								return a.Usage(), a.Long()
+							}),
+						},
+					)
+				}
+
+				for i, grp := range helpGroups {
+					if grp.title != "" {
+						cmd.Println(toUpperBold(grp.title))
+						if !strings.HasPrefix(grp.body, "  ") {
+							cmd.Print("  ")
+						}
+					}
+					cmd.Print(grp.body)
+					if !strings.HasSuffix(grp.body, "\n") {
+						cmd.Println()
+					}
+					if i < len(helpGroups)-1 {
+						cmd.Println()
+					}
+				}
+
+				// TODO: fix progress logs showing after the output when non-interactive
+				cmd.Println()
+				return nil
 			},
 		},
 		&ShellCommand{
