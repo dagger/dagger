@@ -600,8 +600,8 @@ github.com/vishvananda/netns v0.0.4 h1:Oeaw1EM2JMxD51g9uhtC0D7erkIjgmj8+JZc26m1Y
 github.com/vishvananda/netns v0.0.4/go.mod h1:SpkAiCQRtJ6TvvxPnOSyH3BMl6unz3xZlaprSwhNNJM=
 github.com/vito/go-sse v1.1.2 h1:FLQ1J0tMGN7pKa3KOyZCHojYDR0Z/L/y+3ejUO3P+tM=
 github.com/vito/go-sse v1.1.2/go.mod h1:2wkcaQ+jtlZ94Uve8gYZjFpL68luAjssTINA2hpgcZs=
-github.com/vito/midterm v0.1.5-0.20240307214207-d0271a7ca452 h1:I5FdiUvkD++87hOiZYuDu0BqsaJXAnpOCed3kqkjCEE=
-github.com/vito/midterm v0.1.5-0.20240307214207-d0271a7ca452/go.mod h1:2ujYuyOObdWrQtnXAzwSBcPRKhC5Q96ex0nsf2Dmfzk=
+github.com/vito/midterm v0.2.0 h1:pEgUZA38GoOuJC8SV8Eqi4PALqGbPvBPzkCcEwF8x9M=
+github.com/vito/midterm v0.2.0/go.mod h1:2ujYuyOObdWrQtnXAzwSBcPRKhC5Q96ex0nsf2Dmfzk=
 github.com/wk8/go-ordered-map/v2 v2.1.8 h1:5h/BUHu93oj4gIdvHHHGsScSTMijfx5PeYkE/fJgbpc=
 github.com/wk8/go-ordered-map/v2 v2.1.8/go.mod h1:5nJHM5DyteebpVlHnWMV0rPz6Zp7+xBAnxjb1X5vnTw=
 github.com/xanzy/ssh-agent v0.3.3 h1:+/15pJfg/RsTxqYcX6fHqOXZwwMP+2VyYWJeWM2qQFM=
