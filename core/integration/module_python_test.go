@@ -168,6 +168,48 @@ func (PythonSuite) TestInit(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 	})
+
+	t.Run("specify a custom location for the main object", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithNewFile("pyproject.toml", `
+[project]
+name = "hello-world"
+version = "0.0.0"
+dependencies = ["dagger-io"]
+
+[tool.uv.sources]
+dagger-io = { path = "sdk", editable = true }
+
+[project.entry-points."dagger.mod"]
+main_object = "hello_world.main:HelloWorld"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+`,
+			).
+			WithNewFile("src/hello_world/__init__.py", "# No main object import").
+			WithNewFile("src/hello_world/main.py", `import dagger
+
+@dagger.object_type
+class HelloWorld:
+    my_name: str = dagger.field(default="World")
+
+    @dagger.function
+    def message(self) -> str:
+        return f"Hello, {self.my_name}!"
+`,
+			).
+			With(daggerExec("init", "--name=hello-world", "--sdk=python", "--source=."))
+
+		out, err := modGen.With(daggerQuery(`{helloWorld{message}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"helloWorld":{"message":"Hello, World!"}}`, out)
+	})
 }
 
 func (PythonSuite) TestProjectLayout(ctx context.Context, t *testctx.T) {
