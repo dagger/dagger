@@ -15,9 +15,14 @@ func TestProjectNameNormalization(t *testing.T) {
 		"friendly_bard",
 		"friendly--bard",
 		"friendly-.bard",
-		"FrIeNdLy-..-bArD",
+		"Friendly-..-bard",
 		"friendly--bard",
 		"_friendly . bard_",
+		"--friendly_bard--",
+		" friendly_bard ",
+		"friendly bard",
+		"Friendly Bard",
+		"friendlyBard",
 	}
 	for _, input := range inputs {
 		// require.Equal(t, "friendly-bard",  NormalizeProjectName(input)

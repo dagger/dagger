@@ -15,8 +15,6 @@ import (
 	"dagger.io/dagger"
 )
 
-const pythonSourcePath = "src/main/__init__.py"
-
 // Group all tests that are specific to Python only.
 type PythonSuite struct{}
 
@@ -79,7 +77,7 @@ func (PythonSuite) TestInit(ctx context.Context, t *testctx.T) {
 
 		out, err := daggerCliBase(t, c).
 			With(daggerInitPython("--name=hello-world")).
-			With(pythonSource(`
+			With(fileContents("src/hello_world/__init__.py", `
                 from dagger import field, function, object_type
 
                 @object_type
@@ -183,10 +181,10 @@ func (PythonSuite) TestProjectLayout(ctx context.Context, t *testctx.T) {
 	}{
 		{
 			name: "setuptools",
-			path: "src/main/__init__.py",
+			path: "src/test/__init__.py",
 			conf: `
 [project]
-name = "main"
+name = "test"
 version = "0.0.0"
 dependencies = ["dagger-io"]
 
@@ -198,12 +196,11 @@ dagger-io = { path = "sdk", editable = true }
 `,
 		},
 		{
-			// This is the old template layout.
 			name: "setuptools",
 			path: "src/main.py",
 			conf: `
 [project]
-name = "main"
+name = "test"
 version = "0.0.0"
 dependencies = ["dagger-io"]
 
@@ -216,10 +213,10 @@ dagger-io = { path = "sdk", editable = true }
 		},
 		{
 			name: "setuptools",
-			path: "main/__init__.py",
+			path: "test/__init__.py",
 			conf: `
 [project]
-name = "main"
+name = "test"
 version = "0.0.0"
 dependencies = ["dagger-io"]
 
@@ -230,7 +227,7 @@ package = true
 dagger-io = { path = "sdk", editable = true }
 
 [tool.setuptools]
-packages = ["main"]
+packages = ["test"]
 `,
 		},
 		{
@@ -238,7 +235,7 @@ packages = ["main"]
 			path: "main.py",
 			conf: `
 [project]
-name = "main"
+name = "test"
 version = "0.0.0"
 dependencies = ["dagger-io"]
 
@@ -253,12 +250,11 @@ py-modules = ["main"]
 `,
 		},
 		{
-			// This is the **current** template layout.
 			name: "hatch",
-			path: "src/main/__init__.py",
+			path: "src/test/__init__.py",
 			conf: `
 [project]
-name = "main"
+name = "test"
 version = "0.0.0"
 dependencies = ["dagger-io"]
 
@@ -275,7 +271,7 @@ build-backend = "hatchling.build"
 			path: "src/main.py",
 			conf: `
 [project]
-name = "main"
+name = "test"
 version = "0.0.0"
 dependencies = ["dagger-io"]
 
@@ -292,10 +288,10 @@ packages = ["src/main.py"]
 		},
 		{
 			name: "hatch",
-			path: "main/__init__.py",
+			path: "test/__init__.py",
 			conf: `
 [project]
-name = "main"
+name = "test"
 version = "0.0.0"
 dependencies = ["dagger-io"]
 
@@ -307,7 +303,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["main"]
+packages = ["test"]
 `,
 		},
 		{
@@ -315,7 +311,7 @@ packages = ["main"]
 			path: "main.py",
 			conf: `
 [project]
-name = "main"
+name = "test"
 version = "0.0.0"
 dependencies = ["dagger-io"]
 
@@ -332,10 +328,10 @@ packages = ["main.py"]
 		},
 		{
 			name: "poetry",
-			path: "src/main/__init__.py",
+			path: "src/test/__init__.py",
 			conf: `
 [tool.poetry]
-name = "main"
+name = "test"
 version = "0.0.0"
 authors = []
 description = ""
@@ -350,10 +346,11 @@ build-backend = "poetry.core.masonry.api"
 			path: "src/main.py",
 			conf: `
 [tool.poetry]
-name = "main"
+name = "test"
 version = "0.0.0"
 authors = []
 description = ""
+packages = [{include = "main.py", from = "src"}]
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
@@ -362,10 +359,10 @@ build-backend = "poetry.core.masonry.api"
 		},
 		{
 			name: "poetry",
-			path: "main/__init__.py",
+			path: "test/__init__.py",
 			conf: `
 [tool.poetry]
-name = "main"
+name = "test"
 version = "0.0.0"
 authors = []
 description = ""
@@ -380,10 +377,11 @@ build-backend = "poetry.core.masonry.api"
 			path: "main.py",
 			conf: `
 [tool.poetry]
-name = "main"
+name = "test"
 version = "0.0.0"
 authors = []
 description = ""
+packages = [{include = "main.py"}]
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
@@ -670,7 +668,7 @@ func (PythonSuite) TestUv(ctx context.Context, t *testctx.T) {
 			Stdout(ctx)
 
 		t.Logf("out: %s", out)
-		require.ErrorContains(t, err, "pip is looking at multiple versions of main")
+		require.ErrorContains(t, err, "pip is looking at multiple versions of test")
 		require.ErrorContains(t, err, "requires a different Python")
 	})
 
@@ -1469,16 +1467,16 @@ func (PythonSuite) TestWithOtherModuleTypes(ctx context.Context, t *testctx.T) {
 	ctr := goGitBase(t, c).
 		WithWorkdir("/work/dep").
 		With(daggerInitPython("--name=dep")).
-		With(pythonSource(`
-            from dagger import field, function, object_type
+		With(fileContents("src/dep/__init__.py", `
+            import dagger
 
-            @object_type
+            @dagger.object_type
             class Obj:
-                foo: str = field()
+                foo: str = dagger.field()
 
-            @object_type
+            @dagger.object_type
             class Dep:
-                @function
+                @dagger.function
                 def fn(self) -> Obj:
                     return Obj(foo="foo")
         `)).
@@ -1646,7 +1644,7 @@ func pythonSource(contents string) dagger.WithContainerFunc {
 }
 
 func pythonSourceAt(modPath, contents string) dagger.WithContainerFunc {
-	return fileContents(path.Join(modPath, pythonSourcePath), contents)
+	return fileContents(path.Join(modPath, "src/test/__init__.py"), contents)
 }
 
 func pythonModInit(t testing.TB, c *dagger.Client, source string) *dagger.Container {
@@ -1672,7 +1670,7 @@ build-backend = "hatchling.build"
 dagger-io = { path = "sdk", editable = true }
 
 [project]
-name = "main"
+name = "test"
 version = "0.0.0"
 `
 	return fileContents("pyproject.toml", base+depLine+"\n"+contents)

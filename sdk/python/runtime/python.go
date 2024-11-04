@@ -1,29 +1,27 @@
 package main
 
 import (
-	"regexp"
 	"strings"
 
 	"github.com/iancoleman/strcase"
 )
 
-var (
-	canonicalize = regexp.MustCompile(`[._-]+`)
-	disallowed   = regexp.MustCompile(`[^a-z0-9-]+`)
-)
-
 // NormalizeProjectName normalizes the project name in pyproject.toml
 //
-// Additionally to PEP 508, non-allowed characters are simply removed
-// instead of raising an error.
+// Should return a valid name like described in PEP 508, but instead of erroring
+// on non-allowed characters, it's converting to a valid name, because the
+// name in `dagger.json` could be anything right now.
+//
+// That means we allow camelCase and spaces to be converted to `-`, unlike PEP 508
+// which ignores casing and removes spaces.
 //
 // See https://packaging.python.org/en/latest/specifications/name-normalization/
 func NormalizeProjectName(n string) string {
-	n = strings.ToLower(n)
-	n = canonicalize.ReplaceAllString(n, "-")
-	n = disallowed.ReplaceAllString(n, "")
-	n = strings.Trim(n, "-")
-	return n
+	// Since the main object name is the `PascalCase` version of the
+	// module's name, let's just convert to `kebab-case` from that to make
+	// sure that converting to `PascalCase` from the project name returns
+	// the same result.
+	return strcase.ToKebab(NormalizeObjectName(n))
 }
 
 // NormalizePackageName normalizes the name of the directory where the
@@ -35,5 +33,5 @@ func NormalizePackageName(n string) string {
 // NormalizeObjectName normalizes the name of the class that is the main
 // Dagger object of the module
 func NormalizeObjectName(n string) string {
-	return strcase.ToCamel(NormalizeProjectName(n))
+	return strcase.ToCamel(n)
 }
