@@ -5,5 +5,3 @@ query {
   }
 }
 ```
-
-<a href="https://play.dagger.cloud/playground/fjnjn7cKORa" target="_blank">Try it in the API Playground!</a>
