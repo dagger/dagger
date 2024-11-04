@@ -1,25 +1,23 @@
 import builtins
 import dataclasses
 import functools
+import importlib
+import importlib.util
 import inspect
 import operator
-import types
 import typing
-from collections.abc import Coroutine
-from functools import partial
-from typing import Any, TypeAlias, TypeGuard, TypeVar, cast
+from collections.abc import Callable, Coroutine
+from typing import Any, TypeAlias, TypeVar, cast
 
 import anyio
 import anyio.from_thread
 import anyio.to_thread
-import cattrs
-import cattrs.v
 import typing_extensions
 from beartype.door import TypeHint, UnionTypeHint
 from graphql.pyutils import snake_to_camel
 
-from dagger.mod._arguments import Name
-from dagger.mod._types import ObjectDefinition
+from dagger.mod._arguments import DefaultPath, Ignore, Name
+from dagger.mod._types import ContextPath
 
 asyncify = anyio.to_thread.run_sync
 syncify = anyio.from_thread.run
@@ -31,31 +29,6 @@ AwaitableOrValue: TypeAlias = Coroutine[Any, Any, T] | T
 
 async def await_maybe(value: AwaitableOrValue[T]) -> T:
     return await value if inspect.iscoroutine(value) else cast(T, value)
-
-
-def transform_error(
-    exc: Exception,
-    msg: str = "",
-    origin: Any | None = None,
-    typ: type | None = None,
-) -> str:
-    """Transform a cattrs error into a list of error messages."""
-    path = "$"
-
-    if origin is not None:
-        path = getattr(origin, "__qualname__", "")
-        if hasattr(origin, "__module__"):
-            path = f"{origin.__module__}.{path}"
-
-    fn = partial(cattrs.transform_error, path=path)
-
-    if typ is not None:
-        fn = partial(
-            fn, format_exception=lambda e, _: cattrs.v.format_exception(e, typ)
-        )
-
-    errors = "; ".join(error.removesuffix(" @ $") for error in fn(exc))
-    return f"{msg}: {errors}" if msg else errors
 
 
 def to_pascal_case(s: str) -> str:
@@ -108,6 +81,18 @@ def get_doc(obj: Any) -> str | None:
     return None
 
 
+def get_ignore(obj: Any) -> list[str] | None:
+    """Get the last Ignore() of an annotated type."""
+    meta = get_meta(obj, Ignore)
+    return meta.patterns if meta else None
+
+
+def get_default_path(obj: Any) -> ContextPath | None:
+    """Get the last DefaultPath() of an annotated type."""
+    meta = get_meta(obj, DefaultPath)
+    return meta.from_context if meta else None
+
+
 def get_alt_name(annotation: type) -> str | None:
     """Get an alternative name in last Name() of an annotated type."""
     return annotated.name if (annotated := get_meta(annotation, Name)) else None
@@ -143,7 +128,7 @@ def non_null(th: TypeHint) -> TypeHint:
 _T = TypeVar("_T", bound=type)
 
 
-def is_annotated(annotation: type) -> typing.TypeGuard[typing.Annotated]:
+def is_annotated(annotation: type) -> bool:
     """Check if the given type is an annotated type."""
     return typing.get_origin(annotation) in (
         typing.Annotated,
@@ -161,15 +146,24 @@ def strip_annotations(t: _T) -> _T:
     return strip_annotations(typing.get_args(t)[0]) if is_annotated(t) else t
 
 
-def is_mod_object_type(cls) -> TypeGuard[ObjectDefinition]:
+def is_mod_object_type(cls) -> bool:
     """Check if the given class was decorated with @object_type."""
-    return isinstance(getattr(cls, "__dagger_type__", None), ObjectDefinition)
+    return hasattr(cls, "__dagger_module__")
 
 
-def get_alt_constructor(cls) -> types.MethodType | None:
+def get_alt_constructor(cls: type[T]) -> Callable[..., T] | None:
     """Get classmethod named `create` from object type."""
     if inspect.isclass(cls) and is_mod_object_type(cls):
         fn = getattr(cls, "create", None)
         if inspect.ismethod(fn) and fn.__self__ is cls:
             return fn
     return None
+
+
+def get_parent_module_doc(obj: type) -> str | None:
+    """Get the docstring of the parent module."""
+    spec = importlib.util.find_spec(obj.__module__)
+    if not spec or not spec.parent:
+        return None
+    mod = importlib.import_module(spec.parent)
+    return inspect.getdoc(mod)

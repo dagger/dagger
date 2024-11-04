@@ -8,16 +8,16 @@ APIName: TypeAlias = str
 ContextPath: TypeAlias = str
 
 
-@dataclasses.dataclass(slots=True)
+@dataclasses.dataclass(slots=True, frozen=True)
 class FieldDefinition:
     name: APIName | None
     optional: bool = False
 
 
 @dataclasses.dataclass(slots=True, frozen=True)
-class ObjectDefinition:
-    name: PythonName
-    doc: str | None = dataclasses.field(default=None, compare=False)
+class FunctionDefinition:
+    name: APIName | None = None
+    doc: str | None = None
 
 
 class Enum(base.Enum):

@@ -2,7 +2,8 @@ from typing import Annotated
 
 import dagger
 from dagger import Doc, function, object_type
-from main.utils import mounted_workdir
+
+from .utils import mounted_workdir
 
 
 @object_type

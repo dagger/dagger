@@ -11,15 +11,15 @@ name: Docs
             - synchronize
             - ready_for_review
     workflow_dispatch: {}
+permissions:
+    contents: read
 concurrency:
     group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
     cancel-in-progress: true
 jobs:
-    dagger:
+    docs:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-6-4c' || 'ubuntu-latest' }}
-        permissions:
-            contents: read
         name: Docs
         steps:
             - name: Checkout
