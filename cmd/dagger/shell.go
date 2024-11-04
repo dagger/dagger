@@ -13,7 +13,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"text/tabwriter"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/querybuilder"
@@ -1134,9 +1133,10 @@ func (h *shellCallHandler) registerBuiltins() { //nolint:gocyclo
 				if err != nil {
 					return err
 				}
-				w := tabwriter.NewWriter(cmd.Printer(), 0, 0, 2, ' ', 0)
-				fmt.Fprintln(w, "NAME\tDESCRIPTION")
-				fmt.Fprintln(w, " \t ")
+
+				// Get the Name and Description of each dependency beforehand
+				// because nameShortWrapped doesn't handle errors.
+				lines := make([]string, 0, len(deps))
 				for _, dep := range deps {
 					name, err := dep.Name(ctx)
 					if err != nil {
@@ -1147,9 +1147,19 @@ func (h *shellCallHandler) registerBuiltins() { //nolint:gocyclo
 						return err
 					}
 					shortDesc := strings.SplitN(desc, "\n", 2)[0]
-					fmt.Fprintf(w, "%s\t%s\n", name, shortDesc)
+					if shortDesc == "" {
+						shortDesc = "-"
+					}
+					lines = append(lines, name+"\x00"+shortDesc)
 				}
-				return w.Flush()
+
+				cmd.Println(toUpperBold("Module Dependencies"))
+				cmd.Println(nameShortWrapped(lines, func(line string) (string, string) {
+					s := strings.SplitN(line, "\x00", 2)
+					return s[0], s[1]
+				}))
+
+				return nil
 			},
 		},
 		&ShellCommand{
@@ -1186,11 +1196,12 @@ func (h *shellCallHandler) registerBuiltins() { //nolint:gocyclo
 				ctx := cmd.Context()
 
 				if len(args) == 0 {
-					return functionListRun(
-						h.mod.GetFunctionProvider("Query"),
-						cmd.Printer(),
-						false,
-					)
+					fp := h.mod.GetFunctionProvider("Query")
+					cmd.Println(toUpperBold("Available Functions"))
+					cmd.Println(nameShortWrapped(fp.GetFunctions(), func(f *modFunction) (string, string) {
+						return f.CmdName(), f.Short()
+					}))
+					return nil
 				}
 
 				st := &ShellState{}
