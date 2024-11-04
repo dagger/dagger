@@ -179,9 +179,12 @@ class ExecError(QueryError):
 
     def __str__(self):
         """Prints the error message with stdout and stderr."""
-        # As a default when just printing the error, include the stdout
-        # and stderr for visibility
-        return f"{self.message}\nStdout:\n{self.stdout}\nStderr:\n{self.stderr}"
+        msg = self.message
+        if self.stdout:
+            msg += f"\nStdout:\n{self.stdout}"
+        if self.stderr:
+            msg += f"\nStderr:\n{self.stderr}"
+        return msg
 
 
 __all__ = [
