@@ -2,6 +2,7 @@ package dagui
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	"dagger.io/dagger/telemetry"
@@ -537,10 +538,10 @@ func FormatDuration(d time.Duration) string {
 	case d < time.Minute:
 		return fmt.Sprintf("%.1fs", seconds)
 	case d < time.Hour:
-		return fmt.Sprintf("%dm%.1fs", minutes, seconds)
+		return fmt.Sprintf("%dm%ds", minutes, int(math.Round(seconds)))
 	case d < 24*time.Hour:
-		return fmt.Sprintf("%dh%dm%.1fs", hours, minutes, seconds)
+		return fmt.Sprintf("%dh%dm%ds", hours, minutes, int(math.Round(seconds)))
 	default:
-		return fmt.Sprintf("%dd%dh%dm%.1fs", days, hours, minutes, seconds)
+		return fmt.Sprintf("%dd%dh%dm%ds", days, hours, minutes, int(math.Round(seconds)))
 	}
 }
