@@ -6,7 +6,7 @@ on:
 jobs:
   test:
     name: test
-    runs-on: depot-ubuntu-22.04,dagger=0.13.5
+    runs-on: depot-ubuntu-22.04,dagger=0.13.7
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -14,13 +14,13 @@ jobs:
         name: Test
         uses: dagger/dagger-for-github@v6
         with:
-          version: "0.13.5"
+          version: "0.13.7"
           verb: call
           module: github.com/kpenfound/dagger-modules/golang@v0.2.0
           args: test --source=.
   build:
     name: build
-    runs-on: ubuntu-latest
+    runs-on: depot-ubuntu-22.04,dagger=0.13.7
     needs: test
     steps:
       - name: Checkout
@@ -29,7 +29,7 @@ jobs:
         name: Call Dagger Function
         uses: dagger/dagger-for-github@v6
         with:
-          version: "latest"
+          version: "0.13.7"
           verb: call
           module: github.com/kpenfound/dagger-modules/golang@v0.2.0
           args: build-container --source=. --args=. publish --address=ttl.sh/my-app-$RANDOM
