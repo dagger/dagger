@@ -72,6 +72,9 @@ type Params struct {
 
 	DisableHostRW bool
 
+	// Enable collecting Stdout and Stderr for failed execs.
+	ExecErrorOutput bool
+
 	EngineCallback   func(context.Context, string, string, string)
 	CloudURLCallback func(context.Context, string, string, bool)
 
@@ -1098,6 +1101,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		Interactive:               c.Interactive,
 		InteractiveCommand:        c.InteractiveCommand,
 		SSHAuthSocketPath:         sshAuthSock,
+		ExecErrorOutput:           c.ExecErrorOutput,
 	}
 }
 

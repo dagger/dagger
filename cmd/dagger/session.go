@@ -82,8 +82,9 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 	port := l.Addr().(*net.TCPAddr).Port
 
 	return withEngine(ctx, client.Params{
-		SecretToken: sessionToken.String(),
-		Version:     sessionVersion,
+		SecretToken:     sessionToken.String(),
+		Version:         sessionVersion,
+		ExecErrorOutput: true,
 	}, func(ctx context.Context, sess *client.Client) error {
 		// Requests maintain their original trace context from the client, rather
 		// than appearing beneath the dagger session span, so in order to see any

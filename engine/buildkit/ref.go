@@ -12,6 +12,7 @@ import (
 	"github.com/containerd/containerd/leases"
 	"github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/dagger/dagger/engine"
 	bkcache "github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/cache/contenthash"
 	cacheutil "github.com/moby/buildkit/cache/util"
@@ -286,6 +287,11 @@ func ConvertToWorkerCacheResult(ctx context.Context, res *solverresult.Result[*r
 }
 
 func wrapError(ctx context.Context, baseErr error, client *Client) error {
+	clientMeta, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get client metadata: %w", err)
+	}
+
 	var slowCacheErr *bksolver.SlowCacheError
 	if errors.As(baseErr, &slowCacheErr) {
 		if slowCacheErr.Result != nil {
@@ -349,13 +355,16 @@ func wrapError(ctx context.Context, baseErr error, client *Client) error {
 		return errors.Join(err, baseErr)
 	}
 
-	stdoutBytes, err := getExecMetaFile(ctx, client, mntable, MetaMountStdoutPath)
-	if err != nil {
-		return errors.Join(err, baseErr)
-	}
-	stderrBytes, err := getExecMetaFile(ctx, client, mntable, MetaMountStderrPath)
-	if err != nil {
-		return errors.Join(err, baseErr)
+	var stdoutBytes, stderrBytes []byte
+	if clientMeta.ExecErrorOutput {
+		stdoutBytes, err = getExecMetaFile(ctx, client, mntable, MetaMountStdoutPath)
+		if err != nil {
+			return errors.Join(err, baseErr)
+		}
+		stderrBytes, err = getExecMetaFile(ctx, client, mntable, MetaMountStderrPath)
+		if err != nil {
+			return errors.Join(err, baseErr)
+		}
 	}
 
 	exitCodeBytes, err := getExecMetaFile(ctx, client, mntable, MetaMountExitCodePath)
