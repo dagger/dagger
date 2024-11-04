@@ -1155,12 +1155,28 @@ func (h *shellCallHandler) registerBuiltins() { //nolint:gocyclo
 		&ShellCommand{
 			Use:   ".functions",
 			Short: "list available functions",
-			Run: func(cmd *ShellCommand, args []string) error {
-				return functionListRun(
-					h.mod.MainObject.AsFunctionProvider(),
-					cmd.Printer(),
-					false,
-				)
+			RunState: func(cmd *ShellCommand, args []string, st *ShellState) error {
+				var fp functionProvider
+
+				if st == nil {
+					fp = h.mod.MainObject.AsFunctionProvider()
+				} else {
+					fn, err := st.Function().GetDef(h.mod)
+					if err != nil {
+						return err
+					}
+					fp = fn.ReturnType.AsFunctionProvider()
+					if fp == nil {
+						return fmt.Errorf("no available functions for %q", fn.CmdName())
+					}
+				}
+
+				cmd.Println(toUpperBold("Available Functions"))
+				cmd.Println(nameShortWrapped(fp.GetFunctions(), func(f *modFunction) (string, string) {
+					return f.CmdName(), f.Short()
+				}))
+
+				return nil
 			},
 		},
 		&ShellCommand{
