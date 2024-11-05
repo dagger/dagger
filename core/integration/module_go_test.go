@@ -464,7 +464,8 @@ func main() {
 		_, err := modGen.
 			With(daggerQuery(`{hasGoMod{containerEcho(stringArg:"hello"){stdout}}}`)).
 			Stdout(ctx)
-		require.ErrorContains(t, err, "existing go.mod does not")
+		require.Error(t, err)
+		require.Regexp(t, "existing go.mod does not", err.Error())
 	})
 
 	t.Run("do not merge go.mod with parent", func(ctx context.Context, t *testctx.T) {
