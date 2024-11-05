@@ -20,6 +20,7 @@ import (
 	"github.com/chzyer/readline"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/mattn/go-isatty"
+	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"go.opentelemetry.io/otel/codes"
@@ -968,28 +969,49 @@ func (c *ShellCommand) Execute(ctx context.Context, args []string, st *ShellStat
 	return c.Run(c, args)
 }
 
-func shellFunctionUseLine(fn *modFunction, isConstructor bool) string {
+func (h *shellCallHandler) functionUseLine(fn *modFunction, st *ShellState, withArgs bool) string {
 	sb := new(strings.Builder)
-	if isConstructor {
+
+	// TODO: Save the actual command args in the state so we can play it
+	// back reliably. Otherwise getting the commands from the calls chain
+	// may not be entirely accurate since we can have builtins doing
+	// shortcut calls. For example, hard to tell a chain was produced with
+	// the `.git` command.
+	switch {
+	case st == nil:
 		if len(fn.Args) == 0 {
+			// If the constructor has no arguments, there's no point in
+			// offering `.config`.
 			return ""
 		}
 		sb.WriteString(".config")
-	} else {
+	case len(st.Calls) == 1:
+		// Core function
+		sb.WriteString(".core ")
+		sb.WriteString(fn.CmdName())
+	case len(st.Calls) == 2 && st.Calls[0].ReturnObject == h.mod.MainObject.Name():
+		// Only one module function call, after the constructor.
+		sb.WriteString(fn.CmdName())
+	case len(st.Calls) > 1:
 		sb.WriteString("... | ")
 		sb.WriteString(fn.CmdName())
 	}
-	for _, arg := range fn.RequiredArgs() {
-		sb.WriteString(" <")
-		sb.WriteString(arg.FlagName())
-		sb.WriteString(">")
+
+	if withArgs {
+		for _, arg := range fn.RequiredArgs() {
+			sb.WriteString(" <")
+			sb.WriteString(arg.FlagName())
+			sb.WriteString(">")
+		}
+		if len(fn.OptionalArgs()) > 0 {
+			sb.WriteString(" [options]")
+		}
 	}
-	if len(fn.OptionalArgs()) > 0 {
-		sb.WriteString(" [options]")
-	}
-	if isConstructor {
+
+	if st == nil {
 		sb.WriteString("; <function>")
 	}
+
 	return sb.String()
 }
 
@@ -1034,6 +1056,7 @@ func (h *shellCallHandler) registerBuiltins() { //nolint:gocyclo
 			Use:   ".help",
 			Short: "print this help message",
 			Run: func(cmd *ShellCommand, args []string) error {
+				cmd.Println(toUpperBold("Available Commands"))
 				line := nameShortWrapped(h.Builtins(), func(c *ShellCommand) (string, string) {
 					return c.Name(), c.Short
 				})
@@ -1049,6 +1072,9 @@ func (h *shellCallHandler) registerBuiltins() { //nolint:gocyclo
 					return err
 				}
 
+				// this struct simplifies how we add spacing between each
+				// section, especially since each of them may or may not
+				// be printed
 				type help struct {
 					title string
 					body  string
@@ -1060,11 +1086,13 @@ func (h *shellCallHandler) registerBuiltins() { //nolint:gocyclo
 					helpGroups = append(helpGroups, help{"", fn.Description})
 				}
 
-				if usage := shellFunctionUseLine(fn, st == nil); usage != "" {
+				if usage := h.functionUseLine(fn, st, true); usage != "" {
 					helpGroups = append(helpGroups, help{"Usage", usage})
 				}
 
-				helpGroups = append(helpGroups, help{"Returns", fn.ReturnType.String()})
+				if ret := fn.ReturnType.String(); ret != "" {
+					helpGroups = append(helpGroups, help{"Returns", ret})
+				}
 
 				if args := fn.RequiredArgs(); len(args) > 0 {
 					helpGroups = append(
@@ -1088,6 +1116,18 @@ func (h *shellCallHandler) registerBuiltins() { //nolint:gocyclo
 							}),
 						},
 					)
+				}
+
+				if fn.ReturnType.AsFunctionProvider() != nil {
+					curr := h.functionUseLine(fn, st, false)
+					if st == nil {
+						curr = ""
+					}
+					if curr != "" {
+						curr += " | "
+					}
+					curr += ".functions"
+					helpGroups = append(helpGroups, help{"", fmt.Sprintf("Use %q for available functions.", curr)})
 				}
 
 				for i, grp := range helpGroups {
@@ -1181,10 +1221,24 @@ func (h *shellCallHandler) registerBuiltins() { //nolint:gocyclo
 					}
 				}
 
+				fns := fp.GetFunctions()
 				cmd.Println(toUpperBold("Available Functions"))
-				cmd.Println(nameShortWrapped(fp.GetFunctions(), func(f *modFunction) (string, string) {
+
+				if len(fns) == 0 {
+					cmd.Println("  " + termenv.String("None").Italic().String())
+					return nil
+				}
+
+				cmd.Println(nameShortWrapped(fns, func(f *modFunction) (string, string) {
 					return f.CmdName(), f.Short()
 				}))
+
+				var prev string
+				if st != nil {
+					prev = "... | "
+				}
+				prev += "<function> | .doc"
+				cmd.Printf("Use %q for more information on a function.\n", prev)
 
 				return nil
 			},
