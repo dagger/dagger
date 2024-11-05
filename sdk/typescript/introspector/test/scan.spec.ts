@@ -86,6 +86,10 @@ describe("scan by reference TypeScript", function () {
       name: "Should correctly scan alias",
       directory: "alias",
     },
+    {
+      name: "Should correctly scan minimal",
+      directory: "minimal",
+    },
   ]
 
   for (const test of testCases) {

@@ -131,7 +131,7 @@ function addArg(args: Arguments): (fct: Function_) => Function_ {
       // If it has a default value but is not primitive, we set the value as optional
       // to workaround the fact that the API isn't aware of the default value and will
       // expect it to be set as required input.
-      if (arg.defaultValue) {
+      if (arg.defaultValue !== undefined) {
         if (isPrimitiveType(arg.type!)) {
           opts.defaultValue = JSON.stringify(arg.defaultValue) as string & {
             __JSON: never

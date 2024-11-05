@@ -40,11 +40,11 @@ export class DaggerArgument {
     this.isVariadic = this.node.dotDotDotToken !== undefined
     this.isNullable = this.getIsNullable()
     this.isOptional =
-      this.isVariadic ||
-      this.defaultValue !== undefined ||
-      this.node.initializer !== undefined ||
-      this.isNullable ||
-      this.node.questionToken !== undefined
+      this.isVariadic || // if arguments has ...
+      (this.defaultValue === undefined && // if argument has a default value that couldn't be resolved.
+        this.node.initializer !== undefined) ||
+      this.isNullable || // if argument is nullable
+      this.node.questionToken !== undefined // if argument has ?
 
     const decoratorArguments = this.ast.getDecoratorArgument<ArgumentOptions>(
       this.node,
