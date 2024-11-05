@@ -434,7 +434,12 @@ It is possible to automatically load a filesystem path as a `Directory` or `File
 Default contexts are only available for arguments of type `Directory` and `File`. They are commonly used to load constant filesystem locations, such as an application's source code directory.
 :::
 
-When determining how to resolve a default path, Dagger first identifies a "context directory". The context directory is either the repository root (for Git repositories, as defined by the presence of a `.git` sub-directory), or the directory containing a `dagger.json` file (for all other cases). The default path is then resolved starting from the context directory.
+When determining how to resolve a default path, Dagger first identifies a "context directory".
+
+- For Git repositories (defined by the presence of a `.git` sub-directory), the context directory is the repository root (for absolute paths), or the directory containing a `dagger.json` file (for relative paths).
+- For all other cases, the context directory is the directory containing a `dagger.json` file.
+
+The default path is then resolved starting from the context directory.
 
 :::important
 For security reasons, it is not possible to retrieve files or directories outside the context directory.
@@ -483,31 +488,31 @@ The default path is set by adding an `@argument` decorator with a `defaultPath` 
 </TabItem>
 </Tabs>
 
-The following table describes how the arguments are resolved for differing values of the default path and differing directory types.
+The following table describes how the context directory and `source` argument is resolved, depending on whether or not the project directory is a Git repository.
 
-For a Git repository:
+When the given project directory is a Git repository:
 
 | Default path ('defaultPath`) | Context directory | Dagger Function invocation | `source` argument resolves to |
 | --- | --- | --- | --- |
 | `/` | `/` | `dagger call -m my-module read-dir` | `/` |
 | `/src` | `/` | `dagger call -m my-module read-dir` | `/src` |
-| `.` | `/` | `dagger call -m my-module read-dir` | `/` |
-| `..` | `/` | `dagger call -m my-module read-dir` | `Error: path outside context directory` |
 | `/README.md` | `/` | `dagger call -m my-module read-file` | `/README.md` |
-| `./README.md` | `/` | `dagger call -m my-module read-file` | `/README.md` |
-| `../README.md`| `/`  | `dagger call -m my-module read-file` | `Error: path outside context directory` |
+| `.` | `/my-module` | `dagger call -m my-module read-dir` | `/my-module` |
+| `..` | `/my-module` | `dagger call -m my-module read-dir` | `/` |
+| `./README.md` | `/my-module` | `dagger call -m my-module read-file` | `Error: no such file or directory` |
+| `../README.md`| `/my-module`  | `dagger call -m my-module read-file` | `/README.md` |
 
-For a non-Git directory:
+When the given project directory is not a Git repository:
 
 | Default path ('defaultPath`) | Context directory | Dagger Function invocation | `source` argument resolves to |
 | --- | --- | --- | --- |
 | `/` | `/my-module` | `dagger call -m my-module read-dir` | `/my-module` |
 | `/src` | `/my-module` | `dagger call -m my-module read-dir` | `/my-module/src` |
+| `/README.md` | `/my-module` | `dagger call -m my-module read-file` | `Error: no such file or directory` |
 | `.` | `/my-module` | `dagger call -m my-module read-dir` | `/my-module` |
-| `..` | `/my-module` | `dagger call -m my-module read-dir` | `Error: path outside context directory` |
-| `/README.md` | `/my-module` | `dagger call -m my-module read-file` | `Error: file does not exist` |
-| `./README.md` | `/my-module` | `dagger call -m my-module read-file` | `Error: file does not exist` |
-| `../README.md` | `/my-module` | `dagger call -m my-module read-file` | `Error: path outside context directory` |
+| `..` | `/my-module` | `dagger call -m my-module read-dir` | `Error: path outside of context directory` |
+| `./README.md` | `/my-module` | `dagger call -m my-module read-file` | `Error: no such file or directory` |
+| `../README.md` | `/my-module` | `dagger call -m my-module read-file` | `Error: path outside of context directory` |
 
 If a value is explicitly passed to the Dagger Function argument, it always overrides the default path.
 
