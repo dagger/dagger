@@ -10,14 +10,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      -
-        name: Test
+      - name: Test
         uses: dagger/dagger-for-github@v6
         with:
           version: "0.13.7"
           verb: call
           module: github.com/kpenfound/dagger-modules/golang@v0.2.0
           args: test --source=.
+          engine-stop: false
   build:
     name: build
     runs-on: depot-ubuntu-22.04,dagger=0.13.7
@@ -25,11 +25,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      -
-        name: Call Dagger Function
+      - name: Call Dagger Function
         uses: dagger/dagger-for-github@v6
         with:
           version: "0.13.7"
           verb: call
           module: github.com/kpenfound/dagger-modules/golang@v0.2.0
           args: build-container --source=. --args=. publish --address=ttl.sh/my-app-$RANDOM
+          engine-stop: false
