@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	daggerVersion      = "v0.13.6"
+	daggerVersion      = "v0.13.7"
 	upstreamRepository = "dagger/dagger"
 	defaultRunner      = "ubuntu-latest"
 	publicToken        = "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
@@ -44,7 +44,7 @@ func New() *CI {
 			}),
 			WorkflowDefaults: dag.Gha().Workflow("", dagger.GhaWorkflowOpts{
 				PullRequestConcurrency:      "preempt",
-				Permissions:                 []dagger.GhaPermission{dagger.ReadContents},
+				Permissions:                 []dagger.GhaPermission{dagger.GhaPermissionReadContents},
 				OnPushBranches:              []string{"main"},
 				OnPullRequestOpened:         true,
 				OnPullRequestReopened:       true,

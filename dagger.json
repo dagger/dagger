@@ -1,14 +1,17 @@
 {
   "name": "dagger-dev",
+  "engineVersion": "v0.13.7",
   "sdk": "go",
   "dependencies": [
     {
       "name": "alpine",
-      "source": "modules/alpine"
+      "source": "modules/alpine",
+      "pin": ""
     },
     {
       "name": "dirdiff",
-      "source": "modules/dirdiff"
+      "source": "modules/dirdiff",
+      "pin": ""
     },
     {
       "name": "docusaurus",
@@ -17,16 +20,18 @@
     },
     {
       "name": "gh",
-      "source": "github.com/jedevc/daggerverse-sagikazarmark/gh@a104424df38ca8b0b758f699dcfeeb0c2210cc2e",
-      "pin": "a104424df38ca8b0b758f699dcfeeb0c2210cc2e"
+      "source": "github.com/sagikazarmark/daggerverse/gh",
+      "pin": "68e9daa611183f5334b4059bac6f4aad62da7a37"
     },
     {
       "name": "go",
-      "source": "modules/go"
+      "source": "modules/go",
+      "pin": ""
     },
     {
       "name": "graphql",
-      "source": "modules/graphql"
+      "source": "modules/graphql",
+      "pin": ""
     },
     {
       "name": "k3s",
@@ -35,29 +40,34 @@
     },
     {
       "name": "php-sdk-dev",
-      "source": "sdk/php/dev"
+      "source": "sdk/php/dev",
+      "pin": ""
     },
     {
       "name": "ps-analyzer",
-      "source": "modules/ps-analyzer"
+      "source": "modules/ps-analyzer",
+      "pin": ""
     },
     {
       "name": "python-sdk-dev",
-      "source": "sdk/python/dev"
+      "source": "sdk/python/dev",
+      "pin": ""
     },
     {
       "name": "shellcheck",
-      "source": "modules/shellcheck"
+      "source": "modules/shellcheck",
+      "pin": ""
     },
     {
       "name": "version",
-      "source": "version"
+      "source": "version",
+      "pin": ""
     },
     {
       "name": "wolfi",
-      "source": "modules/wolfi"
+      "source": "modules/wolfi",
+      "pin": ""
     }
   ],
-  "source": ".dagger",
-  "engineVersion": "v0.13.6"
+  "source": ".dagger"
 }

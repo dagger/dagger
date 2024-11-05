@@ -47,7 +47,7 @@ func (build *Builder) pythonSDKContent(ctx context.Context) (*sdkContent, error)
 	sdkCtrTarball := dag.Container().
 		WithRootfs(rootfs).
 		AsTarball(dagger.ContainerAsTarballOpts{
-			ForcedCompression: dagger.Zstd,
+			ForcedCompression: dagger.ImageLayerCompressionZstd,
 		})
 
 	sdkDir := dag.
@@ -98,7 +98,7 @@ func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, er
 		WithRootfs(rootfs).
 		WithFile("/codegen", build.CodegenBinary()).
 		AsTarball(dagger.ContainerAsTarballOpts{
-			ForcedCompression: dagger.Zstd,
+			ForcedCompression: dagger.ImageLayerCompressionZstd,
 		})
 
 	sdkDir := dag.
@@ -149,7 +149,7 @@ func (build *Builder) goSDKContent(ctx context.Context) (*sdkContent, error) {
 			".",
 		}).
 		AsTarball(dagger.ContainerAsTarballOpts{
-			ForcedCompression: dagger.Zstd,
+			ForcedCompression: dagger.ImageLayerCompressionZstd,
 		})
 
 	sdkDir := base.

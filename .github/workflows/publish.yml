@@ -19,7 +19,7 @@ on:
 jobs:
   publish:
     if: ${{ github.repository == 'dagger/dagger' && github.event_name == 'push' }}
-    runs-on: dagger-g2-v0-13-6-16c
+    runs-on: dagger-g2-v0-13-7-16c
     steps:
       - uses: actions/checkout@v4
       - name: "Publish Engine"
@@ -70,7 +70,7 @@ jobs:
 
   publish-sdk-go:
     needs: publish
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-6-4c' || 'ubuntu-latest' }}"
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-7-4c' || 'ubuntu-latest' }}"
     steps:
       - uses: actions/checkout@v4
       - name: "go publish"
@@ -88,7 +88,7 @@ jobs:
 
   publish-sdk-php:
     needs: publish
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-6-4c' || 'ubuntu-latest' }}"
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-7-4c' || 'ubuntu-latest' }}"
     steps:
       - uses: actions/checkout@v4
       - name: "php publish"
@@ -107,7 +107,7 @@ jobs:
   publish-sdk-python:
     needs: publish
     if: github.ref_name != 'main'
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-6-4c' || 'ubuntu-latest' }}"
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-7-4c' || 'ubuntu-latest' }}"
     steps:
       - uses: actions/checkout@v4
       - name: "python publish"
@@ -127,7 +127,7 @@ jobs:
   publish-sdk-typescript:
     needs: publish
     if: github.ref_name != 'main'
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-6-4c' || 'ubuntu-latest' }}"
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-7-4c' || 'ubuntu-latest' }}"
     steps:
       - uses: actions/checkout@v4
       - name: "typescript publish"
@@ -147,7 +147,7 @@ jobs:
   publish-sdk-elixir:
     needs: publish
     if: github.ref_name != 'main'
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-6-4c' || 'ubuntu-latest' }}"
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-7-4c' || 'ubuntu-latest' }}"
     steps:
       - uses: actions/checkout@v4
       - name: "elixir publish"
@@ -163,29 +163,10 @@ jobs:
           message: "🧪 Elixir SDK: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
           discord-webhook: ${{ secrets.NEW_RELEASE_DISCORD_WEBHOOK }}
 
-  publish-sdk-rust:
-    needs: publish
-    if: github.ref_name != 'main'
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-6-4c' || 'ubuntu-latest' }}"
-    steps:
-      - uses: actions/checkout@v4
-      - name: "go publish"
-        uses: ./.github/actions/call
-        env:
-          RELEASE_DAGGER_CI_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        with:
-          function: sdk rust publish --tag="${{ github.ref_name }}"  --github-token=env:RELEASE_DAGGER_CI_TOKEN --cargo-registry-token=env:CARGO_REGISTRY_TOKEN
-      - name: "notify"
-        uses: ./.github/actions/notify
-        with:
-          message: "⚙️ Rust SDK: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
-          discord-webhook: ${{ secrets.NEW_RELEASE_DISCORD_WEBHOOK }}
-
   publish-helm:
     needs: publish
     if: github.ref_name != 'main'
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-6-4c' || 'ubuntu-latest' }}"
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-7-4c' || 'ubuntu-latest' }}"
     steps:
       - uses: actions/checkout@v4
       - name: "helm publish"
