@@ -1,0 +1,58 @@
+---
+slug: /integrations/github-actions
+---
+
+# GitHub Actions
+
+Dagger provides a GitHub Action that can be used in any GitHub Actions workflow to call one or more Dagger Functions on specific events, such as a new commit.
+
+## How it works
+
+When running a CI pipeline with Dagger using a standard GitHub Actions runner, the general workflow looks like this:
+
+1. GitHub receives a workflow trigger based on a repository event.
+1. GitHub begins processing the jobs and steps in the workflow.
+1. GitHub finds the "Dagger for GitHub" action and passes control to it.
+1. The "Dagger for GitHub" action calls the Dagger CLI with the specified sub-command, module, function name, and arguments.
+1. The Dagger CLI attempts to find an existing Dagger Engine or spins up a new one inside the GitHub Actions runner.
+1. The Dagger CLI executes the specified sub-command and sends telemetry to Dagger Cloud if the `DAGGER_CLOUD_TOKEN` environment variable is set.
+1. The workflow completes with success or failure. Logs appear in GitHub as usual.
+
+## Prerequisites
+
+- A GitHub repository
+
+## Examples
+
+The following example demonstrates how to call a Dagger Function on a standard GitHub runner in a GitHub Actions workflow.
+
+```yaml title=".github/workflows/dagger.yml" file=./snippets/github-hello.yml
+```
+
+The following is a more complex example demonstrating how to create a GitHub Actions workflow that checks out source code, calls a Dagger Function to test the project, and then calls another Dagger Function to build and publish a container image of the project. This example uses a simple [Go application](https://github.com/kpenfound/greetings-api) and assumes that you have already forked it in your own GitHub repository.
+
+```yaml title=".github/workflows/dagger.yml" file=./snippets/github-test-build.yml
+```
+
+More information is available in the [Dagger for GitHub page](https://github.com/marketplace/actions/dagger-for-github).
+
+### SSH configuration
+
+When using SSH keys in GitHub Actions, ensure proper SSH agent setup:
+
+```yaml
+- name: Set up SSH
+  run: |
+    eval "$(ssh-agent -s)"
+    ssh-add - <<< '${{ secrets.SSH_PRIVATE_KEY }}'
+```
+
+Replace `${{ secrets.SSH_PRIVATE_KEY }}` with your provider secret containing the private key.
+
+## Resources
+
+If you have any questions about additional ways to use GitHub with Dagger, join our [Discord](https://discord.gg/dagger-io) and ask your questions in our [GitHub channel](https://discord.com/channels/707636530424053791/1117139064274034809).
+
+## About GitHub
+
+[GitHub](https://github.com/) is a popular Web-based platform used for version control and collaboration. It allows developers to store and manage their code in repositories, track changes over time, and collaborate with other developers on projects.
