@@ -190,7 +190,6 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 			changed = parent.RunningSpans.Remove(span)
 		}
 		if changed {
-			slog.Debug("propagate status to parent", "parent", parent.Name, "child", span.Name)
 			span.db.updatedSpans.Add(parent)
 		}
 	}
