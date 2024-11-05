@@ -979,6 +979,7 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 
 		mux.Handle(engine.SessionAttachablesEndpoint, httpHandlerFunc(srv.serveSessionAttachables, client))
 		mux.Handle(engine.QueryEndpoint, httpHandlerFunc(srv.serveQuery, client))
+		mux.Handle(engine.InitEndpoint, httpHandlerFunc(srv.serveInit, client))
 		mux.Handle(engine.ShutdownEndpoint, httpHandlerFunc(srv.serveShutdown, client))
 		sess.endpointMu.RLock()
 		for path, handler := range sess.endpoints {
@@ -1114,6 +1115,22 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 	}()
 
 	gqlSrv.ServeHTTP(w, r)
+	return nil
+}
+
+func (srv *Server) serveInit(w http.ResponseWriter, _ *http.Request, client *daggerClient) (rerr error) {
+	sess := client.daggerSession
+	slog := slog.With(
+		"isMainClient", client.clientID == sess.mainClientCallerID,
+		"sessionID", sess.sessionID,
+		"clientID", client.clientID,
+		"mainClientID", sess.mainClientCallerID)
+
+	slog.Trace("initialized client")
+
+	// nothing to actually do, client was passed in
+	w.WriteHeader(http.StatusNoContent)
+
 	return nil
 }
 

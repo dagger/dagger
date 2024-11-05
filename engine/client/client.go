@@ -189,6 +189,9 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		c.nestedSessionPort = nestedSessionPort
 		c.SecretToken = os.Getenv("DAGGER_SESSION_TOKEN")
 		c.httpClient = c.newHTTPClient()
+		if err := c.init(connectCtx); err != nil {
+			return nil, nil, fmt.Errorf("initialize nested client: %w", err)
+		}
 		if err := c.subscribeTelemetry(connectCtx); err != nil {
 			return nil, nil, fmt.Errorf("subscribe to telemetry: %w", err)
 		}
@@ -720,6 +723,25 @@ func (c *Client) exportMetrics(ctx context.Context, httpClient *httpClient) erro
 		}
 		return nil
 	})
+}
+
+func (c *Client) init(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", "http://dagger"+engine.InitEndpoint, nil)
+	if err != nil {
+		return fmt.Errorf("new request: %w", err)
+	}
+
+	req.SetBasicAuth(c.SecretToken, "")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("do shutdown: %w", err)
+	}
+
+	return resp.Body.Close()
 }
 
 func (c *Client) shutdownServer() error {

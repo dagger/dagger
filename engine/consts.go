@@ -64,6 +64,7 @@ const (
 	AllProxyEnvName   = "ALL_PROXY"
 
 	SessionAttachablesEndpoint = "/sessionAttachables"
+	InitEndpoint               = "/init"
 	QueryEndpoint              = "/query"
 	ShutdownEndpoint           = "/shutdown"
 
