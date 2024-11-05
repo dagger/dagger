@@ -1412,7 +1412,12 @@ func httpHandlerFunc[T any](fn func(http.ResponseWriter, *http.Request, T) error
 		if err == nil {
 			return
 		}
-		bklog.G(r.Context()).WithError(err).Error("failed to serve request")
+
+		bklog.G(r.Context()).
+			WithField("method", r.Method).
+			WithField("path", r.URL.Path).
+			WithError(err).Error("failed to serve request")
+
 		// check whether this is a hijacked connection, if so we can't write any http errors to it
 		if _, testErr := w.Write(nil); testErr == http.ErrHijacked {
 			return
