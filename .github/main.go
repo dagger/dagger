@@ -44,7 +44,7 @@ func New() *CI {
 			}),
 			WorkflowDefaults: dag.Gha().Workflow("", dagger.GhaWorkflowOpts{
 				PullRequestConcurrency:      "preempt",
-				Permissions:                 []dagger.GhaPermission{dagger.ReadContents},
+				Permissions:                 []dagger.GhaPermission{dagger.GhaPermissionReadContents},
 				OnPushBranches:              []string{"main"},
 				OnPullRequestOpened:         true,
 				OnPullRequestReopened:       true,
