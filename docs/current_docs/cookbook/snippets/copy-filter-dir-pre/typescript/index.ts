@@ -11,7 +11,7 @@ import {
 class MyModule {
   @func()
   async copy_directory_with_exclusions(
-    @argument({ ignore: ["*", "!**/*.mdx"] }) source: Directory,
+    @argument({ ignore: ["*", "!**/*.md"] }) source: Directory,
   ): Promise<Container> {
     return await dag
       .container()

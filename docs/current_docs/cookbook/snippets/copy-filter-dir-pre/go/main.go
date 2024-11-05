@@ -9,7 +9,7 @@ type MyModule struct{}
 
 func (m *MyModule) CopyDirectoryWithExclusions(
 	ctx context.Context,
-	// +ignore=["*", "!**/*.mdx"]
+	// +ignore=["*", "!**/*.md"]
 	source *dagger.Directory,
 ) (*dagger.Container, error) {
 	return dag.

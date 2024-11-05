@@ -256,12 +256,10 @@ This is an example of [pre-call filtering](../api/fs-filters.mdx#pre-call-filter
     dagger call copy-directory-with-exclusions --source=../docs
     ```
 
-- Copy the `docs/current_docs` directory of the public `dagger/dagger` GitHub repository to `/src` in the container, excluding everything except Markdown files, and list the contents of the directory:
+- Copy the public `dagger/dagger` GitHub repository to `/src` in the container, excluding everything except Markdown files, and list the contents of the `/src` directory in the container:
 
     ```shell
-    dagger call \
-      copy-directory-with-exclusions --source=https://github.com/dagger/dagger#main:docs/current_docs \
-      entries
+    dagger call copy-directory-with-exclusions --source=https://github.com/dagger/dagger#main directory --path=/src entries
     ```
 
 ## Builds
