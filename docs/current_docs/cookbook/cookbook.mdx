@@ -55,16 +55,13 @@ When working with private Git repositories, ensure that [SSH authentication is p
 - Copy the private `user/foo` GitHub repository to `/src` in the container and return the modified container:
 
     ```shell
-    dagger call copy-directory --source=ssh://git@github.com/user/foo#main#main
+    dagger call copy-directory --source=ssh://git@github.com/user/foo#main
     ```
 
 - Copy the public `dagger/dagger` GitHub repository to `/src` in the container and list the contents of the directory:
 
     ```shell
-    dagger call \
-      copy-directory --source=https://github.com/dagger/dagger#main \
-      directory --path=/src \
-      entries
+    dagger call copy-directory --source=https://github.com/dagger/dagger#main  directory --path=/src entries
     ```
 
 ### Modify a copied directory or remote repository in a container
@@ -123,10 +120,7 @@ When working with private Git repositories, ensure that [SSH authentication is p
 - Copy the public `dagger/dagger` GitHub repository to `/src` in the container, add a file to it, and list the contents of the directory:
 
     ```shell
-    dagger call \
-      copy-and-modify-directory --source=https://github.com/dagger/dagger#main \
-      directory --path=/src \
-      entries
+    dagger call copy-and-modify-directory --source=https://github.com/dagger/dagger#main directory --path=/src entries
     ```
 
 ### Copy a file to a container
@@ -165,10 +159,7 @@ The following Dagger Function accepts a `File` argument representing the host fi
 -  Copy the `/home/admin/archives.zip` file on the host to the `/src` directory in the container and list the contents of the directory:
 
     ```shell
-    dagger call \
-      copy-file --f=/home/admin/archives.zip \
-      directory --path=/src \
-      entries
+    dagger call copy-file --f=/home/admin/archives.zip directory --path=/src entries
     ```
 
 ### Copy a subset of a directory or remote repository to a container
@@ -211,19 +202,13 @@ When working with private Git repositories, ensure that [SSH authentication is p
 - Copy the public `dagger/dagger` GitHub repository to `/src` in the container, excluding all Markdown files, and list the contents of the directory:
 
     ```shell
-    dagger call \
-      copy-directory-with-exclusions --source=https://github.com/dagger/dagger#main --exclude-file=*.md \
-      directory --path=/src \
-      entries
+    dagger call copy-directory-with-exclusions --source=https://github.com/dagger/dagger#main --exclude-file='*.md' directory --path=/src entries
     ```
 
 - Copy the private `user/foo` GitHub repository to `/src` in the container, excluding all Markdown files, and list the contents of the directory:
 
     ```shell
-    dagger call \
-      copy-directory-with-exclusions --source=ssh://git@github.com/user/foo#main --exclude-file=*.md \
-      directory --path=/src \
-      entries
+    dagger call copy-directory-with-exclusions --source=ssh://git@github.com/user/foo#main --exclude-file='*.md' directory --path=/src entries
     ```
 
 ## Builds
@@ -721,9 +706,7 @@ The Dagger Function below creates and returns an HTTP service. This service can 
 - Expose the HTTP service instantiated by a Dagger Function to the host on a different host port:
 
     ```shell
-    dagger call \
-      http-service \
-      up --ports 9000:8080
+    dagger call  http-service up --ports 9000:8080
 
     # access the service from the host
     curl localhost:9000
@@ -943,17 +926,13 @@ The following Dagger Functions return a just-in-time directory and file. These o
 - Export the directory returned by the Dagger Function to the `/home/admin/export` path on the host:
 
     ```shell
-    dagger call \
-      get-dir \
-      export --path=/home/admin/export
+    dagger call get-dir export --path=/home/admin/export
     ```
 
 - Export the file returned by the Dagger Function to the `/home/admin/myfile` path on the host:
 
     ```shell
-    dagger call \
-      get-file \
-      export --path=/home/admin/myfile
+    dagger call get-file export --path=/home/admin/myfile
     ```
 
 ### Export a container image to the host
@@ -986,9 +965,7 @@ The following Dagger Function returns a just-in-time container. This can be expo
 Export the container image returned by the Dagger Function as an OCI tarball to the `/home/admin/mycontainer.tgz` path on the host. This OCI tarball can then be loaded into Docker with `docker load ...`.
 
 ```shell
-dagger call \
-  base \
-  export --path=/home/admin/mycontainer.tgz
+dagger call base export --path=/home/admin/mycontainer.tgz
 ```
 
 ## Optimizations
