@@ -1,0 +1,56 @@
+kind: Added
+time: 2024-11-05T13:55:03.696161+01:00
+body: |
+  Add support for non-decorable keywords by resolving declarations by references.
+
+  Support native `enum` keyword to define enumeration without decorators.
+  Example
+  ```ts
+  enum Example {
+    A = "A",
+    B = "B",
+  }
+  ```
+
+  Support native `type` keyword to define type without decorators.
+  This can be use to define data object or primitive type.
+  Example
+  ```ts
+  type Example = {
+    a: string
+    b: number
+  }
+
+  type Integer = number
+  type Foo = string
+  ```
+  Note: If the type is a data object, all properties will be exposed
+  to API & CLI.
+
+  Support resolution of variable and enumerations as default values if they
+  are exported by the same module.
+  Example
+  ```ts
+  export enum Example {
+    A = "A",
+    B = "B",
+  }
+
+  export const defaultValue = "foo"
+
+  @object()
+  class Test {
+    @func()
+    defaultEnumVar(value: Example = Example.A): Example {
+      return value
+    }
+
+    @func
+    defaultStringVar(value: string = defaultValue): string {
+      return value
+    }
+  }
+  ```
+custom:
+  Author: TomChv
+  PR: "8824"
