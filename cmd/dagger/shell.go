@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -20,7 +21,8 @@ import (
 	"github.com/chzyer/readline"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/mattn/go-isatty"
-	"github.com/muesli/termenv"
+	"github.com/muesli/reflow/indent"
+	"github.com/muesli/reflow/wordwrap"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"go.opentelemetry.io/otel/codes"
@@ -29,13 +31,30 @@ import (
 	"mvdan.cc/sh/v3/syntax"
 )
 
+const (
+	// shellStatePrefix is the prefix that identifies a shell state in input/output
+	shellStatePrefix = "DSH:"
+	helpIndent       = uint(2)
+	shellHandlerExit = 200
+)
+
+var coreGroup = &cobra.Group{
+	ID:    "core",
+	Title: "Dagger Core Commands",
+}
+
+var shellGroups = []*cobra.Group{
+	moduleGroup,
+	coreGroup,
+	cloudGroup,
+	{
+		ID:    "",
+		Title: "Additional Commands",
+	},
+}
+
 // shellCode is the code to be executed in the shell command
 var shellCode string
-
-// shellStatePrefix is the prefix that identifies a shell state in input/output
-const shellStatePrefix = "DSH:"
-
-const shellHandlerExit = 200
 
 func init() {
 	shellCmd.Flags().StringVarP(&shellCode, "code", "c", "", "command to be executed")
@@ -483,7 +502,8 @@ func (h *shellCallHandler) entrypointCall(ctx context.Context, args []string) (*
 	}
 
 	// 1. Same-module call (eg. 'build')
-	if h.mod.HasFunction(args[0]) {
+	//
+	if h.mod.HasFunction(h.mod.MainObject.AsFunctionProvider(), args[0]) {
 		fn := h.mod.MainObject.AsObject.Constructor
 		expected := len(fn.RequiredArgs())
 		actual := len(h.cfg)
@@ -776,8 +796,8 @@ type ShellState struct {
 	Error *string        `json:"error,omitempty"`
 }
 
-func (s ShellState) IsError() bool {
-	return s.Error != nil
+func (st ShellState) IsError() bool {
+	return st.Error != nil
 }
 
 // FunctionCall represents a querybyilder.Selection
@@ -793,11 +813,11 @@ type FunctionCall struct {
 }
 
 // Write serializes the shell state to the current exec handler's stdout
-func (s ShellState) Write(ctx context.Context) error {
-	return s.WriteTo(interp.HandlerCtx(ctx).Stdout)
+func (st ShellState) Write(ctx context.Context) error {
+	return st.WriteTo(interp.HandlerCtx(ctx).Stdout)
 }
 
-func (s ShellState) WriteTo(w io.Writer) error {
+func (st ShellState) WriteTo(w io.Writer) error {
 	var buf bytes.Buffer
 
 	// Encode state in base64 to avoid issues with spaces being turned into
@@ -805,7 +825,7 @@ func (s ShellState) WriteTo(w io.Writer) error {
 	bEnc := base64.NewEncoder(base64.StdEncoding, &buf)
 	jEnc := json.NewEncoder(bEnc)
 
-	if err := jEnc.Encode(s); err != nil {
+	if err := jEnc.Encode(st); err != nil {
 		return err
 	}
 	if err := bEnc.Close(); err != nil {
@@ -819,21 +839,21 @@ func (s ShellState) WriteTo(w io.Writer) error {
 }
 
 // Function returns the last function in the chain, if not empty
-func (s ShellState) Function() FunctionCall {
-	if len(s.Calls) == 0 {
+func (st ShellState) Function() FunctionCall {
+	if len(st.Calls) == 0 {
 		// The first call is a field under Query.
 		return FunctionCall{
 			ReturnObject: "Query",
 		}
 	}
-	return s.Calls[len(s.Calls)-1]
+	return st.Calls[len(st.Calls)-1]
 }
 
 // WithCall returns a new state with the given function call added to the chain
-func (s ShellState) WithCall(fn *modFunction, argValues map[string]any) *ShellState {
-	prev := s.Function()
+func (st ShellState) WithCall(fn *modFunction, argValues map[string]any) *ShellState {
+	prev := st.Function()
 	return &ShellState{
-		Calls: append(s.Calls, FunctionCall{
+		Calls: append(st.Calls, FunctionCall{
 			Object:       prev.ReturnObject,
 			Name:         fn.Name,
 			ReturnObject: fn.ReturnType.Name(),
@@ -843,9 +863,9 @@ func (s ShellState) WithCall(fn *modFunction, argValues map[string]any) *ShellSt
 }
 
 // QueryBuilder returns a querybuilder.Selection from the shell state
-func (s ShellState) QueryBuilder(dag *dagger.Client) *querybuilder.Selection {
+func (st ShellState) QueryBuilder(dag *dagger.Client) *querybuilder.Selection {
 	q := querybuilder.Query().Client(dag.GraphQLClient())
-	for _, call := range s.Calls {
+	for _, call := range st.Calls {
 		q = q.Select(call.Name)
 		for n, v := range call.Arguments {
 			q = q.Arg(n, v)
@@ -854,24 +874,30 @@ func (s ShellState) QueryBuilder(dag *dagger.Client) *querybuilder.Selection {
 	return q
 }
 
+// GetTypeDef returns the introspection definition for the return type of the last function call
+func (st *ShellState) GetTypeDef(modDef *moduleDef) (*modTypeDef, error) {
+	fn, err := st.GetDef(modDef)
+	return fn.ReturnType, err
+}
+
 // GetDef returns the introspection definition for the last function call
-func (s *ShellState) GetDef(modDef *moduleDef) (*modFunction, error) {
-	if s == nil {
+func (st *ShellState) GetDef(modDef *moduleDef) (*modFunction, error) {
+	if st == nil {
 		return modDef.MainObject.AsObject.Constructor, nil
 	}
-	return s.Function().GetDef(modDef)
+	return st.Function().GetDef(modDef)
 }
 
 // GetDef returns the introspection definition for this function call
 func (f FunctionCall) GetDef(modDef *moduleDef) (*modFunction, error) {
-	return modDef.GetObjectFunction(f.Object, f.Name)
+	return modDef.GetObjectFunction(f.Object, cliName(f.Name))
 }
 
 // GetNextDef returns the introspection definition for the next function call, based on
 // the current return type and name of the next function
 func (f FunctionCall) GetNextDef(modDef *moduleDef, name string) (*modFunction, error) {
 	if f.ReturnObject == "" {
-		return nil, fmt.Errorf("cannot chain %q after %q returning a non-object type", name, f.Name)
+		return nil, fmt.Errorf("cannot pipe %q after %q returning a non-object type", name, f.Name)
 	}
 	return modDef.GetObjectFunction(f.ReturnObject, name)
 }
@@ -898,6 +924,11 @@ type ShellCommand struct {
 	// pipeline. For commands that should only be the first, define `Run` instead.
 	RunState func(cmd *ShellCommand, args []string, st *ShellState) error
 
+	HelpFunc func(cmd *ShellCommand) string
+
+	// The group id under which this command is grouped in the '.help' output
+	GroupID string
+
 	// Hidden hides the command from `.help`.
 	Hidden bool
 
@@ -919,6 +950,22 @@ func (c *ShellCommand) Name() string {
 		name = name[:i]
 	}
 	return name
+}
+
+func (c *ShellCommand) Help() string {
+	if c.HelpFunc != nil {
+		return c.HelpFunc(c)
+	}
+
+	var doc ShellDoc
+
+	if c.Short != "" {
+		doc.Add("", c.Short)
+	}
+
+	doc.Add("Usage", c.Use)
+
+	return doc.String()
 }
 
 func (c *ShellCommand) Print(a ...any) error {
@@ -969,62 +1016,60 @@ func (c *ShellCommand) Execute(ctx context.Context, args []string, st *ShellStat
 	return c.Run(c, args)
 }
 
-func (h *shellCallHandler) functionUseLine(fn *modFunction, st *ShellState, withArgs bool) string {
+func (h *shellCallHandler) functionUseLine(fp functionProvider, fn *modFunction) string {
 	sb := new(strings.Builder)
 
-	// TODO: Save the actual command args in the state so we can play it
-	// back reliably. Otherwise getting the commands from the calls chain
-	// may not be entirely accurate since we can have builtins doing
-	// shortcut calls. For example, hard to tell a chain was produced with
-	// the `.git` command.
-	switch {
-	case st == nil:
-		if len(fn.Args) == 0 {
-			// If the constructor has no arguments, there's no point in
-			// offering `.config`.
-			return ""
-		}
-		sb.WriteString(".config")
-	case len(st.Calls) == 1:
-		// Core function
-		sb.WriteString(".core ")
-		sb.WriteString(fn.CmdName())
-	case len(st.Calls) == 2 && st.Calls[0].ReturnObject == h.mod.MainObject.Name():
-		// Only one module function call, after the constructor.
-		sb.WriteString(fn.CmdName())
-	case len(st.Calls) > 1:
-		sb.WriteString("... | ")
-		sb.WriteString(fn.CmdName())
+	if fp != nil && fp.ProviderName() == "Query" && h.HasBuiltin("."+fn.CmdName()) {
+		sb.WriteString(".")
 	}
 
-	if withArgs {
-		for _, arg := range fn.RequiredArgs() {
-			sb.WriteString(" <")
-			sb.WriteString(arg.FlagName())
-			sb.WriteString(">")
-		}
-		if len(fn.OptionalArgs()) > 0 {
-			sb.WriteString(" [options]")
-		}
+	sb.WriteString(fn.CmdName())
+
+	for _, arg := range fn.RequiredArgs() {
+		sb.WriteString(" <")
+		sb.WriteString(arg.FlagName())
+		sb.WriteString(">")
 	}
 
-	if st == nil {
-		sb.WriteString("; <function>")
+	if len(fn.OptionalArgs()) > 0 {
+		sb.WriteString(" [options]")
 	}
 
 	return sb.String()
 }
 
-func (h *shellCallHandler) BuiltinCommand(name string) (*ShellCommand, error) {
-	if name == "." || !strings.HasPrefix(name, ".") {
-		return nil, nil
-	}
+func (h *shellCallHandler) HasBuiltin(name string) bool {
+	return h.getBuiltin(name) != nil
+}
+
+func (h *shellCallHandler) getBuiltin(name string) *ShellCommand {
 	for _, c := range h.builtins {
 		if c.Name() == name {
-			return c, nil
+			return c
 		}
 	}
-	return nil, fmt.Errorf("no such command: %s", name)
+	return nil
+}
+
+func (h *shellCallHandler) BuiltinCommand(name string) (*ShellCommand, error) {
+	if !strings.HasPrefix(name, ".") {
+		return nil, nil
+	}
+	cmd := h.getBuiltin(name)
+	if cmd == nil {
+		return nil, fmt.Errorf("no such command: %s", name)
+	}
+	return cmd, nil
+}
+
+func (h *shellCallHandler) GroupBuiltins(groupID string) []*ShellCommand {
+	l := make([]*ShellCommand, 0, len(h.builtins))
+	for _, c := range h.Builtins() {
+		if c.GroupID == groupID {
+			l = append(l, c)
+		}
+	}
+	return l
 }
 
 func (h *shellCallHandler) Builtins() []*ShellCommand {
@@ -1041,7 +1086,150 @@ func (h *shellCallHandler) addBuiltin(cmds ...*ShellCommand) {
 	h.builtins = append(h.builtins, cmds...)
 }
 
-func (h *shellCallHandler) registerBuiltins() { //nolint:gocyclo
+type ShellDoc struct {
+	Groups []ShellDocSection
+}
+
+type ShellDocSection struct {
+	Title string
+	Body  string
+}
+
+func (d *ShellDoc) Add(title, body string) {
+	d.Groups = append(d.Groups, ShellDocSection{Title: title, Body: body})
+}
+
+func (d ShellDoc) String() string {
+	width := getViewWidth()
+
+	sb := new(strings.Builder)
+	for i, grp := range d.Groups {
+		body := grp.Body
+
+		if grp.Title != "" {
+			sb.WriteString(toUpperBold(grp.Title))
+			sb.WriteString("\n")
+
+			// Pad body if there's a title
+			if !strings.HasPrefix(body, strings.Repeat(" ", int(helpIndent))) {
+				wrapped := wordwrap.String(grp.Body, width-int(helpIndent))
+				body = indent.String(wrapped, helpIndent)
+			}
+		}
+		sb.WriteString(body)
+		if !strings.HasSuffix(body, "\n") {
+			sb.WriteString("\n")
+		}
+		// Extra new line between groups
+		if i < len(d.Groups)-1 {
+			sb.WriteString("\n")
+		}
+	}
+	return sb.String()
+}
+
+func (h *shellCallHandler) FunctionDoc(fp functionProvider, fn *modFunction) string {
+	var doc ShellDoc
+
+	if fn.Description != "" {
+		doc.Add("", fn.Description)
+	}
+
+	usage := h.functionUseLine(fp, fn)
+	if usage != "" {
+		doc.Add("Usage", usage)
+	}
+
+	if args := fn.RequiredArgs(); len(args) > 0 {
+		doc.Add(
+			"Required Arguments",
+			nameShortWrapped(args, func(a *modFunctionArg) (string, string) {
+				return strings.TrimPrefix(a.Usage(), "--"), a.Long()
+			}),
+		)
+	}
+
+	if args := fn.OptionalArgs(); len(args) > 0 {
+		doc.Add(
+			"Optional Arguments",
+			nameShortWrapped(args, func(a *modFunctionArg) (string, string) {
+				return a.Usage(), a.Long()
+			}),
+		)
+	}
+
+	if rettype := fn.ReturnType.Short(); rettype != "" {
+		doc.Add("Returns", rettype)
+	}
+
+	if fn.ReturnType.AsFunctionProvider() != nil {
+		usage := strings.TrimSuffix(usage, " [options]")
+		usage += " | .doc"
+		doc.Add("", fmt.Sprintf("Use %q for available functions.", usage))
+	}
+
+	return doc.String()
+}
+
+func (h *shellCallHandler) TypeDoc(t *modTypeDef) string {
+	var doc ShellDoc
+
+	doc.Add("Type: "+t.KindDisplay(), t.Long())
+
+	fp := t.AsFunctionProvider()
+	if fp == nil {
+		// If not an object, only have the type to show.
+		return doc.String()
+	}
+
+	// The module constructor creates the main object instance
+	if !fp.IsCore() && fp.ProviderName() == h.mod.MainObject.Name() {
+		fn := h.mod.MainObject.AsObject.Constructor
+
+		var constructor string
+		if len(fn.Args) > 0 {
+			constructor = ".config" + strings.TrimPrefix(h.functionUseLine(fp, fn), fn.CmdName())
+		}
+		if fn.Description != "" {
+			constructor += "\n\n" + fn.Description
+		}
+		if constructor != "" {
+			doc.Add("Constructor", constructor)
+		}
+		if args := fn.RequiredArgs(); len(args) > 0 {
+			doc.Add(
+				"Required Arguments",
+				nameShortWrapped(args, func(a *modFunctionArg) (string, string) {
+					return strings.TrimPrefix(a.Usage(), "--"), a.Long()
+				}),
+			)
+		}
+		if args := fn.OptionalArgs(); len(args) > 0 {
+			doc.Add(
+				"Optional Arguments",
+				nameShortWrapped(args, func(a *modFunctionArg) (string, string) {
+					return a.Usage(), a.Long()
+				}),
+			)
+		}
+	}
+
+	if fns := fp.GetFunctions(); len(fns) > 0 {
+		doc.Add(
+			"Available Functions",
+			nameShortWrapped(fns, func(f *modFunction) (string, string) {
+				return f.CmdName(), f.Short()
+			}),
+		)
+
+		usage := ".doc <function>"
+		doc.Add("", fmt.Sprintf("Use %q for more information on a function.\n", usage))
+	}
+
+	return doc.String()
+}
+
+func (h *shellCallHandler) registerBuiltins() {
 	h.addBuiltin(
 		&ShellCommand{
 			Use:    ".debug",
@@ -1053,108 +1241,75 @@ func (h *shellCallHandler) registerBuiltins() { //nolint:gocyclo
 			},
 		},
 		&ShellCommand{
-			Use:   ".help",
-			Short: "print this help message",
+			Use:   ".help [command]",
+			Short: "Print this help message",
 			Run: func(cmd *ShellCommand, args []string) error {
-				cmd.Println(toUpperBold("Available Commands"))
-				line := nameShortWrapped(h.Builtins(), func(c *ShellCommand) (string, string) {
-					return c.Name(), c.Short
-				})
-				return cmd.Println(line)
+				if len(args) > 1 {
+					return fmt.Errorf("usage: %s", cmd.Use)
+				}
+
+				if len(args) == 1 {
+					c, err := h.BuiltinCommand(args[0])
+					if err != nil {
+						return err
+					}
+					return cmd.Println(c.Help())
+				}
+
+				var doc ShellDoc
+
+				for _, group := range shellGroups {
+					cmds := h.GroupBuiltins(group.ID)
+					if len(cmds) == 0 {
+						continue
+					}
+					doc.Add(
+						group.Title,
+						nameShortWrapped(cmds, func(c *ShellCommand) (string, string) {
+							return c.Name(), c.Short
+						}),
+					)
+				}
+
+				doc.Add("", `Use ".help <command>" for more information.`)
+
+				return cmd.Println(doc.String())
 			},
 		},
 		&ShellCommand{
-			Use:   ".doc",
-			Short: "show documentation for a function",
+			Use:   ".doc [function]",
+			Short: "Show documentation for a type, or a function",
 			RunState: func(cmd *ShellCommand, args []string, st *ShellState) error {
-				fn, err := st.GetDef(h.mod)
+				if len(args) > 1 {
+					return fmt.Errorf("usage: %s", cmd.Use)
+				}
+
+				t, err := st.GetTypeDef(h.mod)
 				if err != nil {
 					return err
 				}
 
-				// this struct simplifies how we add spacing between each
-				// section, especially since each of them may or may not
-				// be printed
-				type help struct {
-					title string
-					body  string
+				if len(args) == 0 {
+					return cmd.Println(h.TypeDoc(t))
 				}
 
-				var helpGroups []help
-
-				if fn.Description != "" {
-					helpGroups = append(helpGroups, help{"", fn.Description})
+				fp := t.AsFunctionProvider()
+				if fp == nil {
+					return fmt.Errorf("type %q does not provide functions", t.String())
+				}
+				fn, err := h.mod.GetFunction(fp, args[0])
+				if err != nil {
+					return err
 				}
 
-				if usage := h.functionUseLine(fn, st, true); usage != "" {
-					helpGroups = append(helpGroups, help{"Usage", usage})
-				}
-
-				if ret := fn.ReturnType.String(); ret != "" {
-					helpGroups = append(helpGroups, help{"Returns", ret})
-				}
-
-				if args := fn.RequiredArgs(); len(args) > 0 {
-					helpGroups = append(
-						helpGroups,
-						help{
-							"Required Arguments",
-							nameShortWrapped(args, func(a *modFunctionArg) (string, string) {
-								return strings.TrimPrefix(a.Usage(), "--"), a.Long()
-							}),
-						},
-					)
-				}
-
-				if args := fn.OptionalArgs(); len(args) > 0 {
-					helpGroups = append(
-						helpGroups,
-						help{
-							"Optional Arguments",
-							nameShortWrapped(args, func(a *modFunctionArg) (string, string) {
-								return a.Usage(), a.Long()
-							}),
-						},
-					)
-				}
-
-				if fn.ReturnType.AsFunctionProvider() != nil {
-					curr := h.functionUseLine(fn, st, false)
-					if st == nil {
-						curr = ""
-					}
-					if curr != "" {
-						curr += " | "
-					}
-					curr += ".functions"
-					helpGroups = append(helpGroups, help{"", fmt.Sprintf("Use %q for available functions.", curr)})
-				}
-
-				for i, grp := range helpGroups {
-					if grp.title != "" {
-						cmd.Println(toUpperBold(grp.title))
-						if !strings.HasPrefix(grp.body, "  ") {
-							cmd.Print("  ")
-						}
-					}
-					cmd.Print(grp.body)
-					if !strings.HasSuffix(grp.body, "\n") {
-						cmd.Println()
-					}
-					if i < len(helpGroups)-1 {
-						cmd.Println()
-					}
-				}
-
-				// TODO: fix progress logs showing after the output when non-interactive
-				cmd.Println()
-				return nil
+				return cmd.Println(h.FunctionDoc(fp, fn))
 			},
 		},
 		&ShellCommand{
-			Use:   ".config [options]",
-			Short: "set module constructor options",
-			Args:  1, // at least one, i..e, not empty
+			Use:     ".config [options]",
+			Short:   "Set module constructor options",
+			GroupID: moduleGroup.ID,
+			Args:    1, // at least one, i..e, not empty
 			Run: func(cmd *ShellCommand, args []string) error {
 				cfg, err := h.parseArgumentValues(cmd.Context(), h.mod.MainObject.AsObject.Constructor, args[1:])
 				if err != nil {
@@ -1165,8 +1320,9 @@ func (h *shellCallHandler) registerBuiltins() { //nolint:gocyclo
 			},
 		},
 		&ShellCommand{
-			Use:   ".deps",
-			Short: "list dependencies",
+			Use:     ".deps",
+			Short:   "List module dependencies",
+			GroupID: moduleGroup.ID,
 			Run: func(cmd *ShellCommand, args []string) error {
 				ctx := cmd.Context()
 				deps, err := h.mod.Source.AsModule().Dependencies(ctx)
@@ -1193,69 +1349,40 @@ func (h *shellCallHandler) registerBuiltins() { //nolint:gocyclo
 					lines = append(lines, name+"\x00"+shortDesc)
 				}
 
-				cmd.Println(toUpperBold("Module Dependencies"))
-				cmd.Println(nameShortWrapped(lines, func(line string) (string, string) {
-					s := strings.SplitN(line, "\x00", 2)
-					return s[0], s[1]
-				}))
+				var doc ShellDoc
 
-				return nil
-			},
-		},
-		&ShellCommand{
-			Use:   ".functions",
-			Short: "list available functions",
-			RunState: func(cmd *ShellCommand, args []string, st *ShellState) error {
-				var fp functionProvider
+				doc.Add(
+					"Module Dependencies",
+					nameShortWrapped(lines, func(line string) (string, string) {
+						s := strings.SplitN(line, "\x00", 2)
+						return s[0], s[1]
+					}),
+				)
 
-				if st == nil {
-					fp = h.mod.MainObject.AsFunctionProvider()
-				} else {
-					fn, err := st.Function().GetDef(h.mod)
-					if err != nil {
-						return err
-					}
-					fp = fn.ReturnType.AsFunctionProvider()
-					if fp == nil {
-						return fmt.Errorf("no available functions for %q", fn.CmdName())
-					}
-				}
-
-				fns := fp.GetFunctions()
-				cmd.Println(toUpperBold("Available Functions"))
-
-				if len(fns) == 0 {
-					cmd.Println("  " + termenv.String("None").Italic().String())
-					return nil
-				}
-
-				cmd.Println(nameShortWrapped(fns, func(f *modFunction) (string, string) {
-					return f.CmdName(), f.Short()
-				}))
-
-				var prev string
-				if st != nil {
-					prev = "... | "
-				}
-				prev += "<function> | .doc"
-				cmd.Printf("Use %q for more information on a function.\n", prev)
-
-				return nil
+				return cmd.Println(doc.String())
 			},
 		},
 		&ShellCommand{
 			Use:   ".core [function]",
-			Short: "load a core Dagger type",
+			Short: "Load a core Dagger type",
+			// On the "Additional" command group on purpose
+			GroupID: "",
 			Run: func(cmd *ShellCommand, args []string) error {
 				ctx := cmd.Context()
 
 				if len(args) == 0 {
+					var doc ShellDoc
+
 					fp := h.mod.GetFunctionProvider("Query")
-					cmd.Println(toUpperBold("Available Functions"))
-					cmd.Println(nameShortWrapped(fp.GetFunctions(), func(f *modFunction) (string, string) {
-						return f.CmdName(), f.Short()
-					}))
-					return nil
+
+					doc.Add(
+						"Available Functions",
+						nameShortWrapped(fp.GetFunctions(), func(f *modFunction) (string, string) {
+							return f.CmdName(), f.Short()
+						}),
+					)
+
+					return cmd.Println(doc.String())
 				}
 
 				st := &ShellState{}
@@ -1267,109 +1394,73 @@ func (h *shellCallHandler) registerBuiltins() { //nolint:gocyclo
 				return cmd.Send(st)
 			},
 		},
-		&ShellCommand{
-			Use:   ".git <url>",
-			Short: "load a directory from a git URL",
-			Args:  1,
-			Run: func(cmd *ShellCommand, args []string) error {
-				ctx := cmd.Context()
-
-				gitURL, err := parseGitURL(args[0])
-				if err != nil {
-					return err
-				}
-				gitDir := makeGitDirectory(gitURL, h.dag)
-
-				// It would be nice to get the querybuilder from `dagger.Directory`
-				// instance. That way we could return the object directly instead
-				// of via the ID.
-				id, err := gitDir.ID(ctx)
-				if err != nil {
-					return err
-				}
-
-				core := ShellState{}
-
-				// Could use h.functionCall but this avoids passing the id through
-				// h.parseArgumentValues which adds unnecessary complication to
-				// bypass the flag parsing.
-				fn, err := core.Function().GetNextDef(h.mod, "load-directory-from-id")
-				if err != nil {
-					return err
-				}
-
-				values := map[string]any{"id": string(id)}
-				return cmd.Send(core.WithCall(fn, values))
-			},
-		},
 	)
 
-	coreAlias := func(cmd *ShellCommand, args []string) error {
-		ctx := cmd.Context()
-
-		st := &ShellState{}
-		st, err := h.functionCall(ctx, st, cmd.CleanName(), args)
-		if err != nil {
-			return err
+	rootType := h.mod.GetFunctionProvider("Query")
+	for _, fn := range rootType.GetFunctions() {
+		var hidden bool
+		// TODO: Don't hardcode this list.
+		forSDKs := []string{
+			"function",
+			"module",
+			"module-dependency",
+			"module-source",
+			"source-map",
 		}
+		if (strings.HasPrefix(fn.CmdName(), "load-") && strings.HasSuffix(fn.CmdName(), "-from-id")) || slices.Contains(forSDKs, fn.CmdName()) {
+			hidden = true
+		}
+		h.addBuiltin(
+			&ShellCommand{
+				Use:     "." + fn.CmdName(),
+				Short:   fn.Short(),
+				GroupID: coreGroup.ID,
+				Hidden:  hidden,
+				HelpFunc: func(cmd *ShellCommand) string {
+					return h.FunctionDoc(rootType, fn)
+				},
+				Run: func(cmd *ShellCommand, args []string) error {
+					ctx := cmd.Context()
 
-		return cmd.Send(st)
+					st := &ShellState{}
+					st, err := h.functionCall(ctx, st, fn.CmdName(), args)
+					if err != nil {
+						return err
+					}
+
+					return cmd.Send(st)
+				},
+			},
+		)
 	}
 
-	h.addBuiltin(
-		&ShellCommand{
-			Use:   ".container",
-			Short: "create a new container",
-			Run:   coreAlias,
-		},
-		&ShellCommand{
-			Use:   ".directory",
-			Short: "create a new directory",
-			Run:   coreAlias,
-		},
-		&ShellCommand{
-			Use:   ".http",
-			Short: "download a file over http",
-			Run:   coreAlias,
-		},
-	)
-
-	// Re-execute the dagger command (hack)
-	reexec := func(cmd *ShellCommand, args []string) error {
-		args = append([]string{cmd.Name()}, args...)
-		ctx := cmd.Context()
-		hctx := interp.HandlerCtx(ctx)
-		c := exec.CommandContext(ctx, "dagger", args...)
-		c.Stdout = hctx.Stdout
-		c.Stderr = hctx.Stderr
-		c.Stdin = hctx.Stdin
-		return c.Run()
+	cobraCmds := []*cobra.Command{
+		moduleInstallCmd,
+		// TODO: Add uninstall command when available.
+		loginCmd,
+		logoutCmd,
 	}
 
-	h.addBuiltin(
-		&ShellCommand{
-			Use:   ".install <module>",
-			Short: "install a dependency",
-			Args:  1,
-			Run:   reexec,
-		},
-		&ShellCommand{
-			Use:   ".uninstall <module>",
-			Short: "uninstall a dependency",
-			Args:  1,
-			Run:   reexec,
-		},
-		&ShellCommand{
-			Use:   ".login",
-			Short: "login to Dagger Cloud",
-			Run:   reexec,
-		},
-		&ShellCommand{
-			Use:   ".logout",
-			Short: "logout from Dagger Cloud",
-			Run:   reexec,
-		},
-	)
+	for _, c := range cobraCmds {
+		h.addBuiltin(
+			&ShellCommand{
+				Use:     "." + c.Use,
+				Short:   c.Short,
+				GroupID: c.GroupID,
+				Run: func(cmd *ShellCommand, args []string) error {
+					// Re-execute the dagger command (hack)
+					args = append([]string{cmd.Name()}, args...)
+					ctx := cmd.Context()
+					hctx := interp.HandlerCtx(ctx)
+					c := exec.CommandContext(ctx, "dagger", args...)
+					c.Stdout = hctx.Stdout
+					c.Stderr = hctx.Stderr
+					c.Stdin = hctx.Stdin
+					return c.Run()
+				},
+			},
+		)
+	}
 
 	sort.Slice(h.builtins, func(i, j int) bool {
 		return h.builtins[i].Use < h.builtins[j].Use

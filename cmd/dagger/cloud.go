@@ -14,30 +14,30 @@ import (
 	"github.com/dagger/dagger/internal/cloud/auth"
 )
 
+var cloudGroup = &cobra.Group{
+	ID:    "cloud",
+	Title: "Dagger Cloud Commands",
+}
+
+var cloudCLI = &CloudCLI{}
+
+var loginCmd = &cobra.Command{
+	Use:     "login [options] [org]",
+	Short:   "Log in to Dagger Cloud",
+	GroupID: cloudGroup.ID,
+	RunE:    cloudCLI.Login,
+}
+
+var logoutCmd = &cobra.Command{
+	Use:     "logout",
+	Short:   "Log out from Dagger Cloud",
+	GroupID: cloudGroup.ID,
+	RunE:    cloudCLI.Logout,
+}
+
 func init() {
-	cloud := &CloudCLI{}
-
-	group := &cobra.Group{
-		ID:    "cloud",
-		Title: "Dagger Cloud Commands",
-	}
-	rootCmd.AddGroup(group)
-
-	loginCmd := &cobra.Command{
-		Use:     "login [options] [org]",
-		Short:   "Log in to Dagger Cloud",
-		GroupID: group.ID,
-		RunE:    cloud.Login,
-	}
-	rootCmd.AddCommand(loginCmd)
-
-	logoutCmd := &cobra.Command{
-		Use:     "logout",
-		Short:   "Log out from Dagger Cloud",
-		GroupID: group.ID,
-		RunE:    cloud.Logout,
-	}
-	rootCmd.AddCommand(logoutCmd)
+	rootCmd.AddGroup(cloudGroup)
+	rootCmd.AddCommand(loginCmd, logoutCmd)
 }
 
 type CloudCLI struct{}

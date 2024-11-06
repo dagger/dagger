@@ -70,7 +70,7 @@ available functions.
 			// Walk the hypothetical function pipeline specified by the args
 			for _, field := range cmd.Flags().Args() {
 				// Lookup the next function in the specified pipeline
-				nextFunc, err := GetFunction(o, field)
+				nextFunc, err := mod.GetFunction(o, field)
 				if err != nil {
 					return err
 				}
