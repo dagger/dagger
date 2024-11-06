@@ -4,21 +4,16 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"strconv"
 
 	"github.com/containerd/containerd/remotes/docker"
 	"github.com/dagger/dagger/engine/sources/netconfhttp"
 	"github.com/dagger/dagger/network"
-	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/executor/oci"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/solver"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/source"
 	srcimg "github.com/moby/buildkit/source/containerimage"
-	"github.com/moby/buildkit/util/resolver"
-	digest "github.com/opencontainers/go-digest"
-	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 )
 
@@ -31,8 +26,6 @@ type Source struct {
 	*srcimg.Source
 	BaseDNSConfig *oci.DNSConfig
 }
-
-var _ source.Source = &Source{}
 
 func NewSource(opt SourceOpt) (*Source, error) {
 	src, err := srcimg.NewSource(opt.SourceOpt)
@@ -93,108 +86,4 @@ func (is *Source) Resolve(ctx context.Context, id source.Identifier, sm *session
 	}
 
 	return is.Source.Resolve(ctx, id, sm, vtx)
-}
-
-type resolveImageResult struct {
-	dgst digest.Digest
-	dt   []byte
-}
-
-func (is *Source) registryIdentifier(ref string, attrs map[string]string, platform *pb.Platform) (source.Identifier, error) {
-	id, err := srcimg.NewImageIdentifier(ref)
-	if err != nil {
-		return nil, err
-	}
-
-	if platform != nil {
-		id.Platform = &ocispecs.Platform{
-			OS:           platform.OS,
-			Architecture: platform.Architecture,
-			Variant:      platform.Variant,
-			OSVersion:    platform.OSVersion,
-		}
-		if platform.OSFeatures != nil {
-			id.Platform.OSFeatures = append([]string{}, platform.OSFeatures...)
-		}
-	}
-
-	for k, v := range attrs {
-		switch k {
-		case pb.AttrImageResolveMode:
-			rm, err := resolver.ParseImageResolveMode(v)
-			if err != nil {
-				return nil, err
-			}
-			id.ResolveMode = rm
-		case pb.AttrImageRecordType:
-			rt, err := parseImageRecordType(v)
-			if err != nil {
-				return nil, err
-			}
-			id.RecordType = rt
-		case pb.AttrImageLayerLimit:
-			l, err := strconv.Atoi(v)
-			if err != nil {
-				return nil, errors.Wrapf(err, "invalid layer limit %s", v)
-			}
-			if l <= 0 {
-				return nil, errors.Errorf("invalid layer limit %s", v)
-			}
-			id.LayerLimit = &l
-		}
-	}
-
-	return id, nil
-}
-
-func (is *Source) ociIdentifier(ref string, attrs map[string]string, platform *pb.Platform) (source.Identifier, error) {
-	id, err := srcimg.NewOCIIdentifier(ref)
-	if err != nil {
-		return nil, err
-	}
-
-	if platform != nil {
-		id.Platform = &ocispecs.Platform{
-			OS:           platform.OS,
-			Architecture: platform.Architecture,
-			Variant:      platform.Variant,
-			OSVersion:    platform.OSVersion,
-		}
-		if platform.OSFeatures != nil {
-			id.Platform.OSFeatures = append([]string{}, platform.OSFeatures...)
-		}
-	}
-
-	for k, v := range attrs {
-		switch k {
-		case pb.AttrOCILayoutSessionID:
-			id.SessionID = v
-		case pb.AttrOCILayoutStoreID:
-			id.StoreID = v
-		case pb.AttrOCILayoutLayerLimit:
-			l, err := strconv.Atoi(v)
-			if err != nil {
-				return nil, errors.Wrapf(err, "invalid layer limit %s", v)
-			}
-			if l <= 0 {
-				return nil, errors.Errorf("invalid layer limit %s", v)
-			}
-			id.LayerLimit = &l
-		}
-	}
-
-	return id, nil
-}
-
-func parseImageRecordType(v string) (client.UsageRecordType, error) {
-	switch client.UsageRecordType(v) {
-	case "", client.UsageRecordTypeRegular:
-		return client.UsageRecordTypeRegular, nil
-	case client.UsageRecordTypeInternal:
-		return client.UsageRecordTypeInternal, nil
-	case client.UsageRecordTypeFrontend:
-		return client.UsageRecordTypeFrontend, nil
-	default:
-		return "", errors.Errorf("invalid record type %s", v)
-	}
 }

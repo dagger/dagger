@@ -406,23 +406,23 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	logrus.Infof("found worker %q, labels=%v, platforms=%v", workerID, baseLabels, FormatPlatforms(srv.enabledPlatforms))
 	archutil.WarnIfUnsupported(srv.enabledPlatforms)
 
-	imgsrc, err := containerimagedns.NewSource(containerimagedns.SourceOpt{
+	imgSrc, err := containerimagedns.NewSource(containerimagedns.SourceOpt{
 		SourceOpt:     srv.baseWorker.ImageSource.SourceOpt,
 		BaseDNSConfig: srv.dns,
 	})
 	if err != nil {
 		return nil, err
 	}
-	srv.workerSourceManager.Register(imgsrc)
+	srv.workerSourceManager.Register(imgSrc)
 
-	ocisrc, err := containerimagedns.NewSource(containerimagedns.SourceOpt{
+	ociSrc, err := containerimagedns.NewSource(containerimagedns.SourceOpt{
 		SourceOpt:     srv.baseWorker.OCILayoutSource.SourceOpt,
 		BaseDNSConfig: srv.dns,
 	})
 	if err != nil {
 		return nil, err
 	}
-	srv.workerSourceManager.Register(ocisrc)
+	srv.workerSourceManager.Register(ociSrc)
 
 	// registerDaggerCustomSources adds Dagger's custom sources to the worker.
 	hs, err := httpdns.NewSource(httpdns.Opt{
