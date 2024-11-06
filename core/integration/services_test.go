@@ -35,6 +35,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/dag"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/dagger/network"
 	"github.com/dagger/dagger/testctx"
@@ -1264,6 +1265,41 @@ func (ServiceSuite) TestContainerPublish(ctx context.Context, t *testctx.T) {
 		From(pushedRef).Rootfs().File("/index.html").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, fileContent, content)
+}
+
+func (ServiceSuite) TestRegistryServiceFrom(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	// Set up registry service
+	registry := c.Container().
+		From("registry:2").
+		WithExposedPort(5000).
+		AsService()
+
+	registryHost, err := registry.Hostname(ctx)
+	require.NoError(t, err)
+
+	baseImage := c.Container().From(alpineImage)
+	pushedRef := fmt.Sprintf("%s:5000/test-image:latest", registryHost)
+	scopeoRef := fmt.Sprintf("docker://%s", pushedRef)
+	_, err = dag.Container().From("quay.io/skopeo/stable").
+		WithServiceBinding("registry", registry).
+		WithMountedFile("/work/image.tar", baseImage.AsTarball()).
+		WithExec([]string{"skopeo", "copy", "--all", "--dest-tls-verify=false", "docker-archive:/work/image.tar", scopeoRef}).
+		Sync(ctx)
+	require.NoError(t, err)
+
+	// Create a new container by From-ing through the registry Service Binding
+	_, err = c.Container().
+		WithServiceBinding("registry", registry). // unclear whether this should be necessary?
+		From(pushedRef).
+		WithExec([]string{"echo", "foundit"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+
+	// Ensure we can't access the image without the service binding
+	_, err = c.Container().From("registry:5000/test-image:latest").ID(ctx)
+	require.Error(t, err)
 }
 
 func (ServiceSuite) TestRegistryServiceRoundtrip(ctx context.Context, t *testctx.T) {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -46,6 +47,7 @@ import (
 	"github.com/moby/buildkit/solver/llbsolver/mounts"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/source"
+	"github.com/moby/buildkit/source/containerimage"
 	srcgit "github.com/moby/buildkit/source/git"
 	srchttp "github.com/moby/buildkit/source/http"
 	"github.com/moby/buildkit/util/archutil"
@@ -76,6 +78,7 @@ import (
 	"github.com/dagger/dagger/engine/sources/blob"
 	"github.com/dagger/dagger/engine/sources/gitdns"
 	"github.com/dagger/dagger/engine/sources/httpdns"
+	"github.com/dagger/dagger/engine/sources/netconfhttp"
 )
 
 const (
@@ -417,16 +420,24 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	}
 	srv.workerSourceManager.Register(hs)
 
-	// 	is, err := imgdns.NewSource(imgdns.Opt{
-	// 		SourceOpt: srcimg.SourceOpt{
-	// 			CacheAccessor: srv.workerCache,
-	// 		},
-	// 		BaseDNSConfig: srv.dns,
-	// 	})
-	// 	if err != nil {
-	// 		return nil, err
-	// 	}
-	// 	srv.workerSourceManager.Register(is)
+	imgSourceOpt := srv.baseWorker.ImageSource.SourceOpt
+	fmt.Println("!!!!!! this part logs at least")
+	imgSourceOpt.RegistryHosts = func(namespace string) ([]docker.RegistryHost, error) {
+		fmt.Println("!!!!!! this is actually happening !!!!!!")
+		hosts, err := srv.baseWorker.ImageSource.RegistryHosts(namespace)
+		if err != nil {
+			return nil, err
+		}
+		for i := range hosts {
+			hosts[i].Client = &http.Client{Transport: netconfhttp.NewTransport(hosts[i].Client.Transport, srv.dns)}
+		}
+		return hosts, nil
+	}
+	is, err := containerimage.NewSource(imgSourceOpt)
+	if err != nil {
+		return nil, err
+	}
+	srv.workerSourceManager.Register(is)
 
 	gs, err := gitdns.NewSource(gitdns.Opt{
 		Opt: srcgit.Opt{
