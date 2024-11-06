@@ -150,6 +150,10 @@ module.exports = {
     {
       "type": "category",
       "label": "Integrating Dagger with CI",
+      "link": {
+        "type": "doc",
+        "id": "integrations/ci"
+      },
       "collapsible": true,
       "collapsed": true,
       "items": [
