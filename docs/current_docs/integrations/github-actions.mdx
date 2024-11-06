@@ -9,11 +9,11 @@ import TabItem from "@theme/TabItem";
 
 Dagger provides a GitHub Action that can be used in any GitHub Actions workflow to call one or more Dagger Functions on specific events, such as a new commit.
 
-Dagger has also partnered with [Depot](https://depot.dev/) to provide managed, Dagger-powered GitHub Actions runners. These runners, which serve as drop-in replacements for GitHub's own runners, come with Dagger pre-installed and pre-configured to best practices, automatic persistent layer caching, and multi-architecture support. They make it faster and easier to run Dagger pipelines in GitHub repositories.
+Dagger has also partnered with [Depot](https://depot.dev/) to provide managed, Dagger Powered GitHub Actions runners. These runners, which serve as drop-in replacements for GitHub's own runners, come with Dagger pre-installed and pre-configured to best practices, automatic persistent layer caching, and multi-architecture support. They make it faster and easier to run Dagger pipelines in GitHub repositories.
 
 ## How it works
 
-Depending on whether you choose a standard GitHub Actions runner or a Dagger-powered Depot GitHub Actions Runner, here's how it works.
+Depending on whether you choose a standard GitHub Actions runner or a Dagger Powered Depot GitHub Actions Runner, here's how it works.
 
 <Tabs groupId="runner">
 <TabItem value="GitHub">
@@ -31,7 +31,7 @@ When running a CI pipeline with Dagger using a standard GitHub Actions runner, t
 </TabItem>
 <TabItem value="Depot">
 
-When running a CI pipeline on a Dagger-powered Depot GitHub Actions Runner, the general workflow looks like this:
+When running a CI pipeline on a Dagger Powered Depot GitHub Actions Runner, the general workflow looks like this:
 
 1. GitHub emits a repository event which triggers a workflow
 1. Depot receives this event, processes it, and runs one or more jobs in the workflow, each running in an isolated Depot GitHub Actions Runner.
@@ -84,7 +84,7 @@ More information is available in the [Dagger for GitHub page](https://github.com
 </TabItem>
 <TabItem value="Depot">
 
-The following example demonstrates how to call a Dagger Function on a Dagger-powered Depot runner in a GitHub Actions workflow. The `runs-on` clause specifies the runner and Dagger versions.
+The following example demonstrates how to call a Dagger Function on a Dagger Powered Depot runner in a GitHub Actions workflow. The `runs-on` clause specifies the runner and Dagger versions.
 
 ```yaml title=".github/workflows/dagger.yml" file=./snippets/depot-hello.yml
 ```
