@@ -43,6 +43,11 @@ func New(
 	// +optional
 	// +default="DISTRO_ALPINE"
 	distro Distro,
+
+	// Don't install base system: specified packages only
+	// +optional
+	// +default=false
+	noBase bool,
 ) (Alpine, error) {
 	if arch == "" {
 		arch = runtime.GOARCH
@@ -69,8 +74,8 @@ func New(
 		Branch:   branch,
 		Arch:     arch,
 		Packages: packages,
-
-		GoArch: goArch,
+		NoBase:   noBase,
+		GoArch:   goArch,
 	}, nil
 }
 
@@ -88,6 +93,9 @@ type Alpine struct {
 	// the GOARCH equivalent of Arch
 	// +private
 	GoArch string
+	// Disable installing the base system
+	// +private
+	NoBase bool
 }
 
 // Build an Alpine Linux container
@@ -136,9 +144,11 @@ func (m *Alpine) Container(ctx context.Context) (*dagger.Container, error) {
 	pkgResolver := goapk.NewPkgResolver(ctx, indexes)
 
 	ctr := dag.Container(dagger.ContainerOpts{Platform: dagger.Platform("linux/" + m.GoArch)})
-	ctr, err = m.withPkgs(ctx, ctr, pkgResolver, basePkgs)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create base container: %w", err)
+	if !m.NoBase {
+		ctr, err = m.withPkgs(ctx, ctr, pkgResolver, basePkgs)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create base container: %w", err)
+		}
 	}
 	ctr, err = m.withPkgs(ctx, ctr, pkgResolver, m.Packages)
 	if err != nil {
@@ -300,4 +310,14 @@ func pkgscript(kind string, pkg string, script *dagger.File) dagger.WithContaine
 			WithExec([]string{path}).
 			WithoutMount(path)
 	}
+}
+
+// Install this Alpine configuration as an overlay over an existing container.
+// Use at your own risk.
+func (m *Alpine) Install(ctx context.Context, c *dagger.Container) (*dagger.Container, error) {
+	ctr, err := m.Container(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return c.WithDirectory("/", ctr.Rootfs()), nil
 }

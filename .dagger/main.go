@@ -125,7 +125,19 @@ func (dev *DaggerDev) containing(ctx context.Context, filename string) ([]string
 
 // Dagger's Go toolchain
 func (dev *DaggerDev) Go() *GoToolchain {
-	return &GoToolchain{Go: dag.Go(dev.Source())}
+	// Modify the standard Go container by installing the protoc binary
+	overlay := dag.Alpine(dagger.AlpineOpts{
+		//NoBase: true,
+		Distro: dagger.AlpineDistroDistroWolfi,
+		Packages: []string{
+			"protoc~3.21.12",
+		}})
+	return &GoToolchain{Go: dag.Go(
+		dev.Source(),
+		dagger.GoOpts{
+			Overlays: []*dagger.GoOverlay{overlay.AsGoOverlay()},
+		},
+	)}
 }
 
 type GoToolchain struct {

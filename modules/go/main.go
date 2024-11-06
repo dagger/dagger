@@ -32,6 +32,10 @@ func New(
 	// +optional
 	buildCache *dagger.CacheVolume,
 
+	// Install optional mods to the go environment
+	// +optional
+	overlays []Overlay,
+
 	// Use a custom base container.
 	// The container must have Go installed.
 	// +optional
@@ -76,10 +80,6 @@ func New(
 				"build-base",
 				// adding the git CLI to inject vcs info into the go binaries
 				"git",
-				// Install protoc for protobug support by default
-				// The specific version is dictated by Dagger's own requirement
-				// FIXME: make this optional with overlay support
-				"protoc~3.21.12",
 			}}).
 			WithEnvVariable("GOLANG_VERSION", version).
 			WithEnvVariable("GOPATH", "/go").
@@ -96,6 +96,7 @@ func New(
 		ModuleCache: moduleCache,
 		BuildCache:  buildCache,
 		Base:        base,
+		Overlays:    overlays,
 		Ldflags:     ldflags,
 		Values:      values,
 		Cgo:         cgo,
@@ -120,6 +121,8 @@ type Go struct {
 	// Base container from which to run all operations
 	Base *dagger.Container
 
+	Overlays []Overlay // +private
+
 	// Pass arguments to 'go build -ldflags''
 	Ldflags []string
 
@@ -131,6 +134,13 @@ type Go struct {
 
 	// Enable race detector
 	Race bool
+}
+
+// A container mod is a custom modification that can be installed on a container
+type Overlay interface {
+	dagger.DaggerObject
+	// Install the mod on a given container
+	Install(c *dagger.Container) *dagger.Container
 }
 
 // Download dependencies into the module cache
@@ -146,13 +156,20 @@ func (p Go) Download() Go {
 
 // Prepare a build environment for the given Go source code:
 //   - Build a base container with Go tooling installed and configured
-//   - Apply configuration
+//   - Apply configuration and overlays
 //   - Mount the source code
 func (p Go) Env(
 	// +optional
 	platform dagger.Platform,
 ) *dagger.Container {
 	return p.Base.
+		// Install overlays
+		With(func(c *dagger.Container) *dagger.Container {
+			for _, overlay := range p.Overlays {
+				c = overlay.Install(c)
+			}
+			return c
+		}).
 		// Configure CGO
 		WithEnvVariable("CGO_ENABLED", func() string {
 			if p.Cgo {
