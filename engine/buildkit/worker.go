@@ -1,19 +1,25 @@
 package buildkit
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"sync"
 
 	runc "github.com/containerd/go-runc"
+	"github.com/dagger/dagger/engine/sources/containerimagedns"
 	"github.com/docker/docker/pkg/idtools"
 	bkcache "github.com/moby/buildkit/cache"
+	"github.com/moby/buildkit/client/llb/sourceresolver"
 	"github.com/moby/buildkit/executor"
 	"github.com/moby/buildkit/executor/oci"
 	"github.com/moby/buildkit/frontend"
+	"github.com/moby/buildkit/session"
 	bksession "github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/solver"
 	"github.com/moby/buildkit/solver/llbsolver/ops"
 	"github.com/moby/buildkit/solver/pb"
+	"github.com/moby/buildkit/source/containerimage"
 	"github.com/moby/buildkit/util/entitlements"
 	"github.com/moby/buildkit/util/network"
 	"github.com/moby/buildkit/worker"
@@ -57,6 +63,7 @@ type sharedWorkerState struct {
 	entitlements     entitlements.Set
 	parallelismSem   *semaphore.Weighted
 	workerCache      bkcache.Manager
+	dnsImageSource   *containerimagedns.Source
 
 	running map[string]*execState
 	mu      sync.RWMutex
@@ -85,6 +92,7 @@ type NewWorkerOpts struct {
 	NetworkProviders    map[pb.NetMode]network.Provider
 	ParallelismSem      *semaphore.Weighted
 	WorkerCache         bkcache.Manager
+	DNSImageSource      *containerimagedns.Source
 }
 
 func NewWorker(opts *NewWorkerOpts) *Worker {
@@ -107,6 +115,7 @@ func NewWorker(opts *NewWorkerOpts) *Worker {
 		entitlements:     opts.Entitlements,
 		parallelismSem:   opts.ParallelismSem,
 		workerCache:      opts.WorkerCache,
+		dnsImageSource:   opts.DNSImageSource,
 
 		running: make(map[string]*execState),
 	}}
@@ -145,6 +154,69 @@ func (w *Worker) ResolveOp(vtx solver.Vertex, s frontend.FrontendLLBBridge, sm *
 
 	// otherwise, just use the default base.Worker's ResolveOp
 	return w.Worker.ResolveOp(vtx, s, sm)
+}
+
+func (w *Worker) ResolveSourceMetadata(ctx context.Context, op *pb.SourceOp, opt sourceresolver.Opt, sm *session.Manager, g session.Group) (*sourceresolver.MetaResponse, error) {
+	if opt.SourcePolicies != nil {
+		return nil, errors.New("source policies can not be set for worker")
+	}
+
+	var platform *pb.Platform
+	if p := opt.Platform; p != nil {
+		platform = &pb.Platform{
+			Architecture: p.Architecture,
+			OS:           p.OS,
+			Variant:      p.Variant,
+			OSVersion:    p.OSVersion,
+		}
+	}
+
+	id, err := w.SourceManager.Identifier(&pb.Op_Source{Source: op}, platform)
+	if err != nil {
+		return nil, err
+	}
+
+	if imgid, ok := id.(containerimagedns.Identifier); ok {
+		switch idt := imgid.Identifier.(type) {
+		case *containerimage.ImageIdentifier:
+			if opt.ImageOpt == nil {
+				opt.ImageOpt = &sourceresolver.ResolveImageOpt{}
+			}
+			dgst, config, err := w.dnsImageSource.Source.ResolveImageConfig(ctx, idt.Reference.String(), opt, sm, g)
+			if err != nil {
+				return nil, err
+			}
+			return &sourceresolver.MetaResponse{
+				Op: op,
+				Image: &sourceresolver.ResolveImageResponse{
+					Digest: dgst,
+					Config: config,
+				},
+			}, nil
+		case *containerimage.OCIIdentifier:
+			opt.OCILayoutOpt = &sourceresolver.ResolveOCILayoutOpt{
+				Store: sourceresolver.ResolveImageConfigOptStore{
+					StoreID:   idt.StoreID,
+					SessionID: idt.SessionID,
+				},
+			}
+			dgst, config, err := w.OCILayoutSource.ResolveImageConfig(ctx, idt.Reference.String(), opt, sm, g)
+			if err != nil {
+				return nil, err
+			}
+			return &sourceresolver.MetaResponse{
+				Op: op,
+				Image: &sourceresolver.ResolveImageResponse{
+					Digest: dgst,
+					Config: config,
+				},
+			}, nil
+		}
+	}
+
+	return &sourceresolver.MetaResponse{
+		Op: op,
+	}, nil
 }
 
 func (w *Worker) execWorker(causeCtx trace.SpanContext, execMD ExecutionMetadata) *Worker {

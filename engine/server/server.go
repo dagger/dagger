@@ -415,15 +415,6 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	}
 	srv.workerSourceManager.Register(imgSrc)
 
-	ociSrc, err := containerimagedns.NewSource(containerimagedns.SourceOpt{
-		SourceOpt:     srv.baseWorker.OCILayoutSource.SourceOpt,
-		BaseDNSConfig: srv.dns,
-	})
-	if err != nil {
-		return nil, err
-	}
-	srv.workerSourceManager.Register(ociSrc)
-
 	// registerDaggerCustomSources adds Dagger's custom sources to the worker.
 	hs, err := httpdns.NewSource(httpdns.Opt{
 		Opt: srchttp.Opt{
@@ -474,6 +465,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		NetworkProviders:    srv.networkProviders,
 		ParallelismSem:      srv.parallelismSem,
 		WorkerCache:         srv.workerCache,
+		DNSImageSource:      imgSrc,
 	})
 
 	//

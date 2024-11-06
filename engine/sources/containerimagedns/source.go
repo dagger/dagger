@@ -48,7 +48,7 @@ func (is *Source) Identifier(scheme, ref string, attrs map[string]string, platfo
 	if err != nil {
 		return nil, err
 	}
-	id := &Identifier{Identifier: srcid}
+	id := Identifier{Identifier: srcid}
 
 	if v, ok := attrs[AttrDNSNamespace]; ok {
 		id.Namespace = v
@@ -57,14 +57,13 @@ func (is *Source) Identifier(scheme, ref string, attrs map[string]string, platfo
 }
 
 func (is *Source) Resolve(ctx context.Context, id source.Identifier, sm *session.Manager, vtx solver.Vertex) (source.SourceInstance, error) {
-	imgid, ok := id.(*Identifier)
+	imgid, ok := id.(Identifier)
 	if !ok {
-		return nil, errors.Errorf("invalid image identifier %v", id)
+		return nil, errors.Errorf("invalid image identifier %#v", id)
 	}
 
-	// set registryhosts, call srcimg.Resolve
 	baseRegistryHosts := is.Source.RegistryHosts
-	is.RegistryHosts = func(namespace string) ([]docker.RegistryHost, error) {
+	is.Source.RegistryHosts = func(namespace string) ([]docker.RegistryHost, error) {
 		fmt.Println("!!!!!! this is actually happening !!!!!!")
 		clientDomains := []string{}
 		if ns := imgid.Namespace; ns != "" {
@@ -78,12 +77,12 @@ func (is *Source) Resolve(ctx context.Context, id source.Identifier, sm *session
 		if err != nil {
 			return nil, err
 		}
-		fmt.Printf("srv.dns: %v\n", is.BaseDNSConfig)
+		fmt.Printf("modified dns: %#v\n", dns)
 		for i := range hosts {
 			hosts[i].Client = &http.Client{Transport: netconfhttp.NewTransport(hosts[i].Client.Transport, dns)}
 		}
 		return hosts, nil
 	}
 
-	return is.Source.Resolve(ctx, id, sm, vtx)
+	return is.Source.Resolve(ctx, imgid.Identifier, sm, vtx)
 }

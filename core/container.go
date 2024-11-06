@@ -34,7 +34,9 @@ import (
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/sources/containerimagedns"
 )
 
 type DefaultTerminalCmdOpts struct {
@@ -354,8 +356,14 @@ func (container *Container) FromCanonicalRef(
 		return nil, err
 	}
 
-	fsSt := llb.Image(
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	fsSt := containerimagedns.Image(
 		refStr,
+		clientMetadata.SessionID,
 		llb.WithCustomNamef("pull %s", refStr),
 		resolveMode,
 		buildkit.WithTracePropagation(ctx),
