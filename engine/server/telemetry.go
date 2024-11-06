@@ -321,14 +321,6 @@ func (ps *PubSub) Spans(client *daggerClient) sdktrace.SpanExporter {
 	}
 }
 
-func spanNames(spans []sdktrace.ReadOnlySpan) []string {
-	names := make([]string, len(spans))
-	for i, span := range spans {
-		names[i] = span.Name()
-	}
-	return names
-}
-
 func (ps SpansPubSub) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
 	slog.ExtraDebug("pubsub exporting spans", "client", ps.client.clientID, "count", len(spans))
 
