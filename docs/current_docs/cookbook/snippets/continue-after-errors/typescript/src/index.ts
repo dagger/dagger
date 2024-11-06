@@ -30,7 +30,7 @@ class MyModule {
       .from("alpine")
       // add script with execution permission to simulate a testing tool.
       .withNewFile("/run-tests", SCRIPT, { permissions: 0o750 })
-      // if the exit code isn't needed: "run-tests; true
+      // run-tests but allow any return code
       .withExec(["/run-tests"], { expect: ReturnType.Any })
       // the result of `sync` is the container, which allows continued chaining
       .sync()
