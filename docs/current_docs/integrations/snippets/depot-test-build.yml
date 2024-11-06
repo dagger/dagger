@@ -11,7 +11,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Test
-        run: dagger call -m github.com/kpenfound/dagger-modules/golang@v0.2.0 test --source=.
+        run: dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call test --source=.
   build:
     name: build
     runs-on: depot-ubuntu-22.04,dagger=0.13.7
@@ -20,4 +20,4 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Build
-        run: dagger call -m github.com/kpenfound/dagger-modules/golang@v0.2.0 build-container --source=. --args=. publish --address=ttl.sh/my-app-$RANDOM
+        run: dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call build-container --source=. --args=. publish --address=ttl.sh/my-app-$RANDOM
