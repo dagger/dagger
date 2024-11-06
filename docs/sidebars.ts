@@ -149,11 +149,7 @@ module.exports = {
     },
     {
       "type": "category",
-      "label": "Integrations",
-      "link": {
-        "type": "doc",
-        "id": "integrations/index"
-      },
+      "label": "Integrating Dagger with CI",
       "collapsible": true,
       "collapsed": true,
       "items": [
@@ -162,17 +158,29 @@ module.exports = {
         "integrations/azure-pipelines",
         "integrations/circleci",
         "integrations/github-actions",
-        "integrations/github",
         "integrations/gitlab",
+        "integrations/jenkins",
+        "integrations/tekton",
+      ]
+    },
+    {
+      "type": "category",
+      "label": "Integrations",
+      "link": {
+        "type": "doc",
+        "id": "integrations/index"
+      },
+      "collapsible": true,
+      "collapsed": true,
+      "items": [
+        "integrations/github",
         "integrations/google-cloud-run",
         "integrations/java",
-        "integrations/jenkins",
         "integrations/kubernetes",
         "integrations/nerdctl",
         "integrations/openshift",
         "integrations/php",
         "integrations/podman",
-        "integrations/tekton",
       ]
     },
     {
