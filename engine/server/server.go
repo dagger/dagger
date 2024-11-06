@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -75,9 +74,9 @@ import (
 	"github.com/dagger/dagger/engine/distconsts"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/sources/blob"
+	"github.com/dagger/dagger/engine/sources/containerimagedns"
 	"github.com/dagger/dagger/engine/sources/gitdns"
 	"github.com/dagger/dagger/engine/sources/httpdns"
-	"github.com/dagger/dagger/engine/sources/netconfhttp"
 )
 
 const (
@@ -407,21 +406,23 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	logrus.Infof("found worker %q, labels=%v, platforms=%v", workerID, baseLabels, FormatPlatforms(srv.enabledPlatforms))
 	archutil.WarnIfUnsupported(srv.enabledPlatforms)
 
-	fmt.Println("!!!!!! this part logs at least")
-	baseRegistryHosts := srv.baseWorker.ImageSource.RegistryHosts
-	srv.baseWorker.ImageSource.RegistryHosts = func(namespace string) ([]docker.RegistryHost, error) {
-		fmt.Println("!!!!!! this is actually happening !!!!!!")
-		hosts, err := baseRegistryHosts(namespace)
-		if err != nil {
-			return nil, err
-		}
-		fmt.Printf("srv.dns: %v\n", srv.dns)
-		fmt.Printf("hosts: %v\n", hosts)
-		for i := range hosts {
-			hosts[i].Client = &http.Client{Transport: netconfhttp.NewTransport(hosts[i].Client.Transport, srv.dns)}
-		}
-		return hosts, nil
+	imgsrc, err := containerimagedns.NewSource(containerimagedns.SourceOpt{
+		SourceOpt:     srv.baseWorker.ImageSource.SourceOpt,
+		BaseDNSConfig: srv.dns,
+	})
+	if err != nil {
+		return nil, err
 	}
+	srv.workerSourceManager.Register(imgsrc)
+
+	ocisrc, err := containerimagedns.NewSource(containerimagedns.SourceOpt{
+		SourceOpt:     srv.baseWorker.OCILayoutSource.SourceOpt,
+		BaseDNSConfig: srv.dns,
+	})
+	if err != nil {
+		return nil, err
+	}
+	srv.workerSourceManager.Register(ocisrc)
 
 	// registerDaggerCustomSources adds Dagger's custom sources to the worker.
 	hs, err := httpdns.NewSource(httpdns.Opt{

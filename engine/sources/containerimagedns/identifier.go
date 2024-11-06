@@ -1,13 +1,12 @@
 package containerimagedns
 
 import (
-	bkimg "github.com/moby/buildkit/source/containerimage"
+	"github.com/moby/buildkit/source"
 )
 
 const AttrDNSNamespace = "dagger.dns.namespace"
 
-type ImageIdentifier struct {
-	bkimg.ImageIdentifier
-
+type Identifier struct {
+	source.Identifier
 	Namespace string
 }
