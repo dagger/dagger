@@ -1,0 +1,69 @@
+---
+slug: /configuration/cache
+---
+
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Cache
+
+Dagger caches two types of data:
+
+1. Layers: This refers to build instructions and the results of some API calls.
+2. Volumes: This refers to the contents of a Dagger filesystem volume and is persisted across Dagger Engine sessions.
+
+## Cache inspection
+
+- Show all the cache entry metadata:
+
+    ```shell
+    dagger query <<EOF
+    {
+      daggerEngine {
+        localCache {
+          entrySet {
+            entries {
+              description
+              diskSpaceBytes
+            }
+          }
+        }
+      }
+    }
+    EOF
+    ```
+
+- Show high level summaries of cache usage:
+
+    ```shell
+    dagger query <<EOF
+    {
+      daggerEngine {
+        localCache {
+          entrySet {
+            entryCount
+            diskSpaceBytes
+          }
+        }
+      }
+    }
+    EOF
+    ```
+
+## Cache pruning
+
+The layer cache size configuration is managed by [BuildKit's garbage collector](https://github.com/moby/buildkit/blob/v0.17.0/docs/buildkitd.toml.md?plain=1#L66-L82).
+
+To free up disk space used by the cache, use the following command:
+
+```shell
+dagger query <<EOF
+{
+  daggerEngine {
+    localCache {
+      prune
+    }
+  }
+}
+EOF
+```
