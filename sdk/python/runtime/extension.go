@@ -82,14 +82,37 @@ func (m *PythonSdk) UvVersion() string {
 	return m.Discovery.UserConfig().UvVersion
 }
 
-// Uv's "index-url" setting
+// Uv's default index URL setting
 func (m *PythonSdk) IndexURL() string {
-	return m.Discovery.UvConfig().IndexURL
+	for _, cfg := range m.Discovery.UvConfig().Index {
+		if cfg.Name != "" {
+			continue
+		}
+		if cfg.Default {
+			return cfg.URL
+		}
+	}
+	// deprecated
+	if len(m.Discovery.UvConfig().Index) == 0 {
+		return m.Discovery.UvConfig().IndexURL
+	}
+	return ""
 }
 
 // Uv's "extra-index-url" setting
 func (m *PythonSdk) ExtraIndexURL() string {
-	return m.Discovery.UvConfig().ExtraIndexURL
+	for _, cfg := range m.Discovery.UvConfig().Index {
+		if cfg.Name != "" {
+			continue
+		}
+		if !cfg.Default {
+			return cfg.URL
+		}
+	}
+	if len(m.Discovery.UvConfig().Index) == 0 {
+		return m.Discovery.UvConfig().ExtraIndexURL
+	}
+	return ""
 }
 
 // Override the uv version

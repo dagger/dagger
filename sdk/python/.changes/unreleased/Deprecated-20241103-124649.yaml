@@ -1,0 +1,8 @@
+kind: Deprecated
+body: |+
+    In modules, the `index-url` and `index-extra-url` settings in `[tool.uv]` are now deprecated in favor of the new `[[tool.uv.index]]` setting
+
+time: 2024-11-03T12:46:49.422162-01:00
+custom:
+    Author: helderco
+    PR: "8772"

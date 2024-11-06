@@ -26,8 +26,21 @@ var FileContents = []string{"pyproject.toml", ".python-version"}
 
 // Uv config bits we'd like to consume.
 type UvConfig struct {
-	IndexURL      string `toml:"index-url"`
+	// Index is a list of uv index configurations.
+	// Ssee [uv v0.4.23](https://github.com/astral-sh/uv/releases/tag/0.4.23)
+	Index []UvIndexConfig `toml:"index"`
+
+	// Deprecated: use "Index" instead
+	IndexURL string `toml:"index-url"`
+	//
+	// Deprecated: use "Index" instead
 	ExtraIndexURL string `toml:"extra-index-url"`
+}
+
+type UvIndexConfig struct {
+	Name    string `toml:"name"`
+	URL     string `toml:"url"`
+	Default bool   `toml:"default"`
 }
 
 // PyProject is the parsed pyproject.toml file.
@@ -37,8 +50,8 @@ type PyProject struct {
 		RequiresPython string `toml:"requires-python"`
 	}
 	Tool struct {
-		Dagger UserConfig
 		Uv     UvConfig
+		Dagger UserConfig
 	}
 }
 

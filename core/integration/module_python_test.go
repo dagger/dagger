@@ -739,8 +739,29 @@ class Test:
 			out, err := daggerCliBase(t, c).
 				With(source).
 				With(pyprojectExtra(nil, `
+                    [[tool.uv.index]]
+                    url = "https://test.pypi.org/simple"
+                    default = true
+
+                    [[tool.uv.index]]
+                    url = "https://pypi.org/simple"
+                `)).
+				With(daggerInitPython()).
+				With(daggerCall("urls")).
+				Stdout(ctx)
+
+			require.NoError(t, err)
+			require.Equal(t, "https://test.pypi.org/simple\nhttps://pypi.org/simple\n", out)
+		})
+
+		t.Run("backwards compat", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			out, err := daggerCliBase(t, c).
+				With(source).
+				With(pyprojectExtra(nil, `
                     [tool.uv]
-                    index-url = "https://pypi.org/simple"
+                    index-url = "https://test.pypi.org/simple"
                     extra-index-url = "https://pypi.org/simple"
                 `)).
 				With(daggerInitPython()).
@@ -748,7 +769,32 @@ class Test:
 				Stdout(ctx)
 
 			require.NoError(t, err)
-			require.Equal(t, "https://pypi.org/simple\nhttps://pypi.org/simple\n", out)
+			require.Equal(t, "https://test.pypi.org/simple\nhttps://pypi.org/simple\n", out)
+		})
+
+		t.Run("preference", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			out, err := daggerCliBase(t, c).
+				With(source).
+				With(pyprojectExtra(nil, `
+                    [tool.uv]
+                    index-url = "https://test.example.org/simple"
+                    extra-index-url = "https://example.org/simple"
+
+                    [[tool.uv.index]]
+                    url = "https://test.pypi.org/simple"
+                    default = true
+
+                    [[tool.uv.index]]
+                    url = "https://pypi.org/simple"
+                `)).
+				With(daggerInitPython()).
+				With(daggerCall("urls")).
+				Stdout(ctx)
+
+			require.NoError(t, err)
+			require.Equal(t, "https://test.pypi.org/simple\nhttps://pypi.org/simple\n", out)
 		})
 
 		t.Run("without", func(ctx context.Context, t *testctx.T) {
@@ -770,8 +816,9 @@ class Test:
 			_, err := daggerCliBase(t, c).
 				With(source).
 				With(pyprojectExtra(nil, `
-                    [tool.uv]
-                    index-url = "https://pypi.example.com/simple"
+                    [[tool.uv.index]]
+                    url = "https://pypi.example.com/simple"
+                    default = true
                 `)).
 				With(daggerInitPython()).
 				Sync(ctx)
