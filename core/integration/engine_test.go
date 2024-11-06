@@ -31,6 +31,13 @@ func TestEngine(t *testing.T) {
 	testctx.Run(testCtx, t, EngineSuite{}, Middleware()...)
 }
 
+func devEngineContainerAsService(ctr *dagger.Container) *dagger.Service {
+	return ctr.AsService(dagger.ContainerAsServiceOpts{
+		UseEntrypoint:            true,
+		InsecureRootCapabilities: true,
+	})
+}
+
 // devEngineContainer returns a nested dev engine.
 func devEngineContainer(c *dagger.Client, withs ...func(*dagger.Container) *dagger.Container) *dagger.Container {
 	// This loads the engine.tar file from the host into the container, that
@@ -53,15 +60,12 @@ func devEngineContainer(c *dagger.Client, withs ...func(*dagger.Container) *dagg
 	return ctr.
 		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-state-"+identity.NewID())).
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
-		WithExec([]string{
+		WithDefaultArgs([]string{
 			"--addr", "tcp://0.0.0.0:1234",
 			"--addr", "unix:///var/run/buildkit/buildkitd.sock",
 			// avoid network conflicts with other tests
 			"--network-name", deviceName,
 			"--network-cidr", cidr,
-		}, dagger.ContainerWithExecOpts{
-			UseEntrypoint:            true,
-			InsecureRootCapabilities: true,
 		})
 }
 
@@ -185,7 +189,7 @@ func (ClientSuite) TestWaitsForEngine(ctx context.Context, t *testctx.T) {
 			WithEntrypoint([]string{"/usr/local/bin/slow-entrypoint.sh"})
 	})
 
-	clientCtr := engineClientContainer(ctx, t, c, devEngine.AsService())
+	clientCtr := engineClientContainer(ctx, t, c, devEngineContainerAsService(devEngine))
 	_, err := clientCtr.
 		WithNewFile("/query.graphql", `{ version }`). // arbitrary valid query
 		WithExec([]string{"dagger", "query", "--doc", "/query.graphql"}).Sync(ctx)
@@ -198,11 +202,11 @@ func (EngineSuite) TestSetsNameFromEnv(ctx context.Context, t *testctx.T) {
 
 	engineName := "my-special-engine"
 	engineVersion := engine.Version + "-special"
-	devEngineSvc := devEngineContainer(c, func(c *dagger.Container) *dagger.Container {
+	devEngineSvc := devEngineContainerAsService(devEngineContainer(c, func(c *dagger.Container) *dagger.Container {
 		return c.
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_ENGINE_NAME", engineName).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", engineVersion)
-	}).AsService()
+	}))
 
 	clientCtr := engineClientContainer(ctx, t, c, devEngineSvc)
 
@@ -223,14 +227,16 @@ func (EngineSuite) TestSetsNameFromEnv(ctx context.Context, t *testctx.T) {
 func (EngineSuite) TestDaggerRun(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	devEngine := devEngineContainer(c).AsService()
+	devEngine := devEngineContainerAsService(devEngineContainer(c))
+
 	clientCtr := engineClientContainer(ctx, t, c, devEngine)
 
-	runCommand := fmt.Sprintf(`
+	command := fmt.Sprintf(`
 		export NO_COLOR=1
 		jq -n '{query:"{container{from(address: \"%s\"){file(path: \"/etc/alpine-release\"){contents}}}}"}' | \
 		dagger run sh -c 'curl -s \
 			-u $DAGGER_SESSION_TOKEN: \
+			--max-time 30 \
 			-H "content-type:application/json" \
 			-d @- \
 			http://127.0.0.1:$DAGGER_SESSION_PORT/query'`,
@@ -239,7 +245,7 @@ func (EngineSuite) TestDaggerRun(ctx context.Context, t *testctx.T) {
 
 	clientCtr = clientCtr.
 		WithExec([]string{"apk", "add", "jq", "curl"}).
-		WithExec([]string{"sh", "-c", runCommand})
+		WithExec([]string{"sh", "-c", command})
 
 	stdout, err := clientCtr.Stdout(ctx)
 	require.NoError(t, err)
@@ -255,7 +261,7 @@ func (EngineSuite) TestDaggerRun(ctx context.Context, t *testctx.T) {
 func (ClientSuite) TestSendsLabelsInTelemetry(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	devEngine := devEngineContainer(c).AsService()
+	devEngine := devEngineContainerAsService(devEngineContainer(c))
 	thisRepoPath, err := filepath.Abs("../..")
 	require.NoError(t, err)
 
@@ -280,7 +286,7 @@ func (ClientSuite) TestSendsLabelsInTelemetry(ctx context.Context, t *testctx.T)
 
 	fakeCloud := withCode.
 		WithMountedCache("/events", eventsVol).
-		WithExec([]string{
+		WithDefaultArgs([]string{
 			"go", "run", "./core/integration/testdata/telemetry/",
 		}).
 		WithExposedPort(8080).
@@ -468,11 +474,12 @@ func (EngineSuite) TestVersionCompat(ctx context.Context, t *testctx.T) {
 			enginesMu.Lock()
 			devEngineSvc, ok := engines[devEngineSvcKey]
 			if !ok {
-				devEngineSvc = devEngineContainer(c, func(c *dagger.Container) *dagger.Container {
+				devEngine := devEngineContainer(c, func(c *dagger.Container) *dagger.Container {
 					return c.
 						WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", tc.engineVersion).
 						WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", tc.clientMinVersion)
-				}).AsService()
+				})
+				devEngineSvc = devEngineContainerAsService(devEngine)
 				engines[devEngineSvcKey] = devEngineSvc
 			}
 			enginesMu.Unlock()
@@ -580,11 +587,12 @@ func (EngineSuite) TestModuleVersionCompat(ctx context.Context, t *testctx.T) {
 			enginesMu.Lock()
 			devEngineSvc, ok := engines[devEngineSvcKey]
 			if !ok {
-				devEngineSvc = devEngineContainer(c, func(c *dagger.Container) *dagger.Container {
+				devEngine := devEngineContainer(c, func(c *dagger.Container) *dagger.Container {
 					return c.
 						WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", tc.engineVersion).
 						WithEnvVariable("_EXPERIMENTAL_DAGGER_MIN_VERSION", tc.moduleMinVersion)
-				}).AsService()
+				})
+				devEngineSvc = devEngineContainerAsService(devEngine)
 				engines[devEngineSvcKey] = devEngineSvc
 			}
 			enginesMu.Unlock()

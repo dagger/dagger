@@ -254,7 +254,7 @@ sleep infinity
 	sshSvc := hostKeyGen.
 		WithMountedFile("/root/start.sh", setupScript).
 		WithExposedPort(sshPort).
-		WithExec([]string{"sh", "/root/start.sh"}).
+		WithDefaultArgs([]string{"sh", "/root/start.sh"}).
 		AsService()
 
 	sshHost, err := sshSvc.Hostname(ctx)

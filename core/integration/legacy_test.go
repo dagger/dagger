@@ -756,3 +756,119 @@ func (LegacySuite) TestContainerWithFocus(ctx context.Context, t *testctx.T) {
 		})
 	require.NoError(t, err)
 }
+
+func (LegacySuite) TestContainerAsService(ctx context.Context, t *testctx.T) {
+	// Changed in dagger/dagger#8865
+	//
+	// Ensure that the legacy AsService api uses entrypoint by default
+	// and use WithExec if that is configured
+
+	c := connect(ctx, t)
+
+	serversource := `package main
+
+import (
+	"fmt"
+	"net/http"
+	"os"
+	"strings"
+)
+
+func main() {
+	http.HandleFunc("/hello", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "args: %s", strings.Join(os.Args, ","))
+	})
+
+	fmt.Println(http.ListenAndServe(":8080", nil))
+}`
+
+	daggermodmaingo := `package main
+
+import (
+	"context"
+	"dagger/foo/internal/dagger"
+)
+
+type Foo struct{}
+
+func (f *Foo) TestServiceUpEntrypoint(ctx context.Context, app *dagger.File) (string, error) {
+	svc, err := f.StartEntrypointByDefault(ctx, app)
+	if err != nil {
+		return "", err
+	}
+
+	return dag.Container().
+		From("alpine:3.20.2").
+		WithExec([]string{"sh", "-c", "apk add curl"}).
+		WithServiceBinding("myapp", svc).
+		WithExec([]string{"sh", "-c", "curl -vXGET 'http://myapp:8080/hello'"}).
+		Stdout(ctx)
+}
+
+func (f *Foo) StartEntrypointByDefault(ctx context.Context, app *dagger.File) (*dagger.Service, error) {
+	return dag.Container().
+		From("alpine:3.20.2").
+		WithFile("/bin/app", app).
+		WithEntrypoint([]string{"/bin/app", "via-entrypoint"}).
+		WithDefaultArgs([]string{"/bin/app", "via-default-args"}).
+		WithExposedPort(8080).
+		AsService(), nil
+}
+
+func (f *Foo) TestServiceUpWithExec(ctx context.Context, app *dagger.File) (string, error) {
+	svc, err := f.UseWithExecWhenAvailable(ctx, app)
+	if err != nil {
+		return "", err
+	}
+
+	return dag.Container().
+		From("alpine:3.20.2").
+		WithExec([]string{"sh", "-c", "apk add curl"}).
+		WithServiceBinding("myapp", svc).
+		WithExec([]string{"sh", "-c", "curl -vXGET 'http://myapp:8080/hello'"}).
+		Stdout(ctx)
+}
+
+func (f *Foo) UseWithExecWhenAvailable(ctx context.Context, app *dagger.File) (*dagger.Service, error) {
+	return dag.Container().
+		From("alpine:3.20.2").
+		WithFile("/bin/app", app).
+		WithEntrypoint([]string{"/bin/app", "via-entrypoint"}).
+		WithDefaultArgs([]string{"/bin/app", "via-default-args"}).
+		WithExec([]string{"/bin/app", "via-withExec"}).
+		WithExposedPort(8080).
+		AsService(), nil
+}
+`
+
+	app := c.Container().
+		From(golangImage).
+		WithWorkdir("/work").
+		WithNewFile("main.go", serversource).
+		WithExec([]string{"go", "build", "-o=app", "main.go"}).
+		File("/work/app")
+
+	ctr := daggerCliBase(t, c).
+		WithWorkdir("/work/").
+		WithFile("app", app).
+		WithNewFile("main.go", daggermodmaingo).
+		WithNewFile("dagger.json", `{"name": "foo", "sdk": "go", "source": ".", "engineVersion": "v0.13.7"}`)
+
+	// verify that the engine uses the entrypoint when serving the legacy AsService api
+	t.Run("use entrypoint by default", func(ctx context.Context, t *testctx.T) {
+		output, err := ctr.
+			With(daggerExec("call", "test-service-up-entrypoint", "--app=app")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "args: /bin/app,via-entrypoint,/bin/app,via-default-args", output)
+	})
+
+	// verify that the engine uses the entrypoint when serving the legacy AsService api
+	t.Run("use withExec when used", func(ctx context.Context, t *testctx.T) {
+		output, err := ctr.
+			With(daggerExec("call", "test-service-up-with-exec", "--app=app")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "args: /bin/app,via-withExec", output)
+	})
+}

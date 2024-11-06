@@ -4781,3 +4781,74 @@ func (ContainerSuite) TestExecInit(ctx context.Context, t *testctx.T) {
 		require.Contains(t, out, "1 ps")
 	})
 }
+
+func (ContainerSuite) TestContainerAsService(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	maingo := `package main
+
+import (
+	"fmt"
+	"net/http"
+	"os"
+	"strings"
+)
+
+func main() {
+	http.HandleFunc("/hello", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "args: %s", strings.Join(os.Args, ","))
+	})
+
+	fmt.Println(http.ListenAndServe(":8080", nil))
+}`
+	buildctr := c.Container().
+		From(golangImage).
+		WithWorkdir("/work").
+		WithNewFile("/work/main.go", maingo).
+		WithExec([]string{"go", "build", "-o=app", "main.go"})
+
+	binctr := c.Container().
+		From(alpineImage).
+		WithFile("/bin/app", buildctr.File("/work/app")).
+		WithEntrypoint([]string{"/bin/app", "via-entrypoint"}).
+		WithDefaultArgs([]string{"/bin/app", "via-default-args"}).
+		WithExposedPort(8080)
+
+	curlctr := c.Container().
+		From(alpineImage).
+		WithExec([]string{"sh", "-c", "apk add curl"})
+
+	t.Run("use default args by default", func(ctx context.Context, t *testctx.T) {
+		output, err := curlctr.
+			WithServiceBinding("myapp", binctr.AsService()).
+			WithExec([]string{"sh", "-c", "curl -vXGET 'http://myapp:8080/hello'"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "args: /bin/app,via-default-args", output)
+	})
+
+	t.Run("can override default args", func(ctx context.Context, t *testctx.T) {
+		withargsOverwritten := binctr.
+			AsService(dagger.ContainerAsServiceOpts{Args: []string{"sh", "-c", "/bin/app via-service-override"}})
+
+		output, err := curlctr.
+			WithServiceBinding("myapp", withargsOverwritten).
+			WithExec([]string{"sh", "-c", "curl -vXGET 'http://myapp:8080/hello'"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "args: /bin/app,via-service-override", output)
+	})
+
+	t.Run("can enable entrypoint", func(ctx context.Context, t *testctx.T) {
+		withargsOverwritten := binctr.
+			AsService(dagger.ContainerAsServiceOpts{
+				UseEntrypoint: true,
+			})
+
+		output, err := curlctr.
+			WithServiceBinding("myapp", withargsOverwritten).
+			WithExec([]string{"sh", "-c", "curl -vXGET 'http://myapp:8080/hello'"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "args: /bin/app,via-entrypoint,/bin/app,via-default-args", output)
+	})
+}

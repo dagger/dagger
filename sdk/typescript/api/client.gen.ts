@@ -83,6 +83,44 @@ export enum CacheSharingMode {
  */
 export type CacheVolumeID = string & { __CacheVolumeID: never }
 
+export type ContainerAsServiceOpts = {
+  /**
+   * Command to run instead of the container's default command (e.g., ["go", "run", "main.go"]).
+   *
+   * If empty, the container's default command is used.
+   */
+  args?: string[]
+
+  /**
+   * If the container has an entrypoint, prepend it to the args.
+   */
+  useEntrypoint?: boolean
+
+  /**
+   * Provides Dagger access to the executed command.
+   *
+   * Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
+   */
+  experimentalPrivilegedNesting?: boolean
+
+  /**
+   * Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
+   */
+  insecureRootCapabilities?: boolean
+
+  /**
+   * Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   */
+  expand?: boolean
+
+  /**
+   * If set, skip the automatic init process injected into containers by default.
+   *
+   * This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
+   */
+  noInit?: boolean
+}
+
 export type ContainerAsTarballOpts = {
   /**
    * Identifiers for other platform specific containers.
@@ -1500,13 +1538,26 @@ export class Container extends BaseClient {
    * Turn the container into a Service.
    *
    * Be sure to set any exposed ports before this conversion.
+   * @param opts.args Command to run instead of the container's default command (e.g., ["go", "run", "main.go"]).
+   *
+   * If empty, the container's default command is used.
+   * @param opts.useEntrypoint If the container has an entrypoint, prepend it to the args.
+   * @param opts.experimentalPrivilegedNesting Provides Dagger access to the executed command.
+   *
+   * Do not use this option unless you trust the command being executed; the command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
+   * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command with "sudo" or executing "docker run" with the "--privileged" flag. Containerization does not provide any security guarantees when using this option. It should only be used when absolutely necessary and only with trusted commands.
+   * @param opts.expand Replace "${VAR}" or "$VAR" in the args according to the current environment variables defined in the container (e.g. "/$VAR/foo").
+   * @param opts.noInit If set, skip the automatic init process injected into containers by default.
+   *
+   * This should only be used if the user requires that their exec process be the pid 1 process in the container. Otherwise it may result in unexpected behavior.
    */
-  asService = (): Service => {
+  asService = (opts?: ContainerAsServiceOpts): Service => {
     return new Service({
       queryTree: [
         ...this._queryTree,
         {
           operation: "asService",
+          args: { ...opts },
         },
       ],
       ctx: this._ctx,
@@ -2345,7 +2396,7 @@ export class Container extends BaseClient {
 
   /**
    * Retrieves this container after executing the specified command inside it.
-   * @param args Command to run instead of the container's default command (e.g., ["run", "main.go"]).
+   * @param args Command to run instead of the container's default command (e.g., ["go", "run", "main.go"]).
    *
    * If empty, the container's default command is used.
    * @param opts.useEntrypoint If the container has an entrypoint, prepend it to the args.

@@ -376,7 +376,7 @@ func (s *containerSchema) Install() {
 			View(AllVersion).
 			Doc(`Retrieves this container after executing the specified command inside it.`).
 			ArgDoc("args",
-				`Command to run instead of the container's default command (e.g., ["run", "main.go"]).`,
+				`Command to run instead of the container's default command (e.g., ["go", "run", "main.go"]).`,
 				`If empty, the container's default command is used.`).
 			ArgDoc("useEntrypoint",
 				`If the container has an entrypoint, prepend it to the args.`).

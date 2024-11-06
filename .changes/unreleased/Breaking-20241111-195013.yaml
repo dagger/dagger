@@ -1,0 +1,11 @@
+kind: Breaking
+body: |-
+    AsService now runs "DefaultCmd" by default instead of last "Exec" command.
+
+    User can override the args by providing "ContainerAsServiceOpts.Args" option. They can also configure the container to use Entrypoint by using "ContainerAsServiceOpts.UseEntrypoint" option.
+
+    See sdk documentation for additional options.
+time: 2024-12-06T08:20:21.242739+05:30
+custom:
+    Author: rajatjindal
+    PR: "8865"

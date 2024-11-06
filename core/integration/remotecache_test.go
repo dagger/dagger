@@ -17,10 +17,11 @@ import (
 const cliBinPath = "/.dagger-cli"
 
 func getDevEngineForRemoteCache(ctx context.Context, c *dagger.Client, cache *dagger.Service, cacheName string) (devEngineSvc *dagger.Service, endpoint string, err error) {
-	devEngineSvc = devEngineContainer(c, func(c *dagger.Container) *dagger.Container {
+	devEngine := devEngineContainer(c, func(c *dagger.Container) *dagger.Container {
 		return c.WithServiceBinding(cacheName, cache)
-	}).AsService()
+	})
 
+	devEngineSvc = devEngineContainerAsService(devEngine)
 	endpoint, err = devEngineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{
 		Port:   1234,
 		Scheme: "tcp",
@@ -41,7 +42,7 @@ func (RemoteCacheSuite) TestRegistry(ctx context.Context, t *testctx.T) {
 	registry := c.Container().From("registry:2").
 		WithMountedCache("/var/lib/registry/", c.CacheVolume("remote-cache-registry-"+identity.NewID())).
 		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
-		AsService()
+		AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
 
 	cacheEnv := "type=registry,ref=registry:5000/test-cache,mode=max"
 
@@ -118,7 +119,7 @@ func (RemoteCacheSuite) TestLazyBlobs(ctx context.Context, t *testctx.T) {
 	registry := c.Container().From("registry:2").
 		WithMountedCache("/var/lib/registry/", c.CacheVolume("remote-cache-registry-"+identity.NewID())).
 		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
-		AsService()
+		AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
 
 	cacheEnv := "type=registry,ref=registry:5000/test-cache,mode=max"
 
@@ -180,7 +181,7 @@ func (RemoteCacheSuite) TestS3(ctx context.Context, t *testctx.T) {
 		s3 := c.Container().From("minio/minio").
 			WithMountedCache("/data", c.CacheVolume("minio-cache")).
 			WithExposedPort(9000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
-			WithExec([]string{"minio", "server", "/data"}).
+			WithDefaultArgs([]string{"minio", "server", "/data"}).
 			AsService()
 
 		s3Endpoint, err := s3.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 9000, Scheme: "http"})
@@ -260,7 +261,7 @@ func (RemoteCacheSuite) TestRegistryMultipleConfigs(ctx context.Context, t *test
 	registry := c.Container().From("registry:2").
 		WithMountedCache("/var/lib/registry/", c.CacheVolume("remote-cache-registry-"+identity.NewID())).
 		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
-		AsService()
+		AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
 
 	cacheConfigEnv1 := "type=registry,ref=registry:5000/test-cache:latest,mode=max"
 	cacheConfigEnv2 := "type=registry,ref=registry:5000/test-cache-b:latest,mode=max"
@@ -358,7 +359,7 @@ func (RemoteCacheSuite) TestRegistrySeparateImportExport(ctx context.Context, t 
 	registry := c.Container().From("registry:2").
 		WithMountedCache("/var/lib/registry/", c.CacheVolume("remote-cache-registry-"+identity.NewID())).
 		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
-		AsService()
+		AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
 
 	daggerCli := daggerCliFile(t, c)
 
@@ -486,7 +487,7 @@ func (RemoteCacheSuite) TestRegistryFastCacheBlobSource(ctx context.Context, t *
 	registry := c.Container().From("registry:2").
 		WithMountedCache("/var/lib/registry/", c.CacheVolume("remote-cache-registry-"+identity.NewID())).
 		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
-		AsService()
+		AsService(dagger.ContainerAsServiceOpts{UseEntrypoint: true})
 
 	cacheConfig := "type=registry,ref=registry:5000/test-cache:latest,mode=max"
 

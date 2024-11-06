@@ -358,9 +358,6 @@ func registry() *dagger.Service {
 	return dag.Container().
 		From("registry:2").
 		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
-		WithExec(nil, dagger.ContainerWithExecOpts{
-			UseEntrypoint: true,
-		}).
 		AsService()
 }
 
@@ -373,8 +370,5 @@ func privateRegistry() *dagger.Service {
 		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_REALM", "Registry Realm").
 		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_PATH", "/auth/htpasswd").
 		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
-		WithExec(nil, dagger.ContainerWithExecOpts{
-			UseEntrypoint: true,
-		}).
 		AsService()
 }

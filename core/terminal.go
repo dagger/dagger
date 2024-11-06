@@ -68,15 +68,12 @@ func (container *Container) Terminal(
 		output.String("dagger").Foreground(termenv.ANSIYellow).String(),
 		output.String(`$(pwd | sed "s|^$HOME|~|")`).Faint().String(),
 	))
-	container, err = container.WithExec(ctx, ContainerExecOpts{
+
+	svc, err := container.AsService(ctx, ContainerAsServiceArgs{
 		Args:                          args.Cmd,
 		ExperimentalPrivilegedNesting: args.ExperimentalPrivilegedNesting.Value.Bool(),
 		InsecureRootCapabilities:      args.InsecureRootCapabilities.Value.Bool(),
 	})
-	if err != nil {
-		return fmt.Errorf("failed to create container for interactive terminal: %w", err)
-	}
-	svc, err := container.AsService(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to create service for interactive terminal: %w", err)
 	}

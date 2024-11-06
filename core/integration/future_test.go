@@ -25,8 +25,8 @@ func futureClient(ctx context.Context, t *testctx.T, futureVersion string) *dagg
 
 	devEngine := devEngineContainer(c, func(c *dagger.Container) *dagger.Container {
 		return c.WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", futureVersion)
-	}).AsService()
-	devClient := engineClientContainer(ctx, t, c, devEngine)
+	})
+	devClient := engineClientContainer(ctx, t, c, devEngineContainerAsService(devEngine))
 	devClient = devClient.WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", futureVersion)
 
 	return devClient.
