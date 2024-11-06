@@ -11,12 +11,6 @@ jobs:
       - run:
           name: Call Dagger Function
           command: dagger -m github.com/shykes/daggerverse/hello@v0.1.2 call hello --greeting="bonjour" --name="monde"
-      # for ephemeral runners only: override the default docker stop timeout and
-      # give the Dagger Engine more time to push cache data to Dagger Cloud
-      - run:
-          name: Stop Dagger Engine
-          command: docker stop -t 300 $(docker ps --filter name="dagger-engine-*" -q)
-          when: always
 workflows:
   dagger:
     jobs:
