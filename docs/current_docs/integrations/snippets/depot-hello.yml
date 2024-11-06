@@ -9,4 +9,4 @@ jobs:
     runs-on: depot-ubuntu-22.04,dagger=0.13.7
     steps:
       - name: Call Dagger Function
-        run: dagger call -m github.com/shykes/daggerverse/hello@v0.1.2 hello --greeting="bonjour" --name="monde"
+        run: dagger -m github.com/shykes/daggerverse/hello@v0.1.2 call hello --greeting="bonjour" --name="monde"
