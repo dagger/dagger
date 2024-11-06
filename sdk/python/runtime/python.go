@@ -1,27 +1,47 @@
 package main
 
 import (
+	"regexp"
 	"strings"
 
 	"github.com/iancoleman/strcase"
 )
 
+var (
+	canonicalize = regexp.MustCompile(`[._-]+`)
+	disallowed   = regexp.MustCompile(`[^a-z0-9-]+`)
+)
+
 // NormalizeProjectName normalizes the project name in pyproject.toml
 //
-// Should return a valid name like described in PEP 508, but instead of erroring
-// on non-allowed characters, it's converting to a valid name, because the
-// name in `dagger.json` could be anything right now.
-//
-// That means we allow camelCase and spaces to be converted to `-`, unlike PEP 508
-// which ignores casing and removes spaces.
+// Additionally to PEP 508, non-allowed characters are simply removed
+// instead of raising an error.
 //
 // See https://packaging.python.org/en/latest/specifications/name-normalization/
 func NormalizeProjectName(n string) string {
+	// project name is case insensitive
+	n = strings.ToLower(n)
+	// valid non alphanumeric chars, even if repeated, should be replaced
+	// with a single "-"
+	n = canonicalize.ReplaceAllString(n, "-")
+	// instead of erroring, remove any other disallowed characters
+	n = disallowed.ReplaceAllString(n, "")
+	// remove leading and trailing dashes
+	return strings.Trim(n, "-")
+}
+
+// NormalizeProjectNameFromModule normalizes the project name in `pyproject.toml`
+// from the module name in `dagger.json`.
+//
+// Since the name in `dagger.json` currently allows more than what's valid for
+// `pyproject.toml`, we allow `camelCase` and convert spaces to `-` before
+// normalizing the name to PEP 508 standard.
+func NormalizeProjectNameFromModule(n string) string {
 	// Since the main object name is the `PascalCase` version of the
-	// module's name, let's just convert to `kebab-case` from that to make
-	// sure that converting to `PascalCase` from the project name returns
-	// the same result.
-	return strcase.ToKebab(NormalizeObjectName(n))
+	// module's name, let's just convert to `kebab-case` from that.
+	n = NormalizeObjectName(n)
+	n = strcase.ToKebab(n)
+	return NormalizeProjectName(n)
 }
 
 // NormalizePackageName normalizes the name of the directory where the

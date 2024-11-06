@@ -12,6 +12,7 @@ import rich.traceback
 from rich.console import Console
 
 from dagger import telemetry
+from dagger.log import configure_logging
 from dagger.mod._exceptions import FatalError, UserError
 from dagger.mod._module import Module
 
@@ -51,6 +52,10 @@ def load_module() -> Module:
     try:
         cls: type = get_entry_point().load()
     except (ModuleNotFoundError, AttributeError) as e:
+        # If the main module isn't found the user won't be able to set debug level.
+        # TODO: Allow setting debug level with a pyproject.toml setting.
+        if not logger.isEnabledFor(logging.DEBUG):
+            configure_logging(logging.DEBUG)
         msg = (
             "Main object not found. You can configure it explicitly by adding "
             "an entry point to your pyproject.toml file. For example:\n"

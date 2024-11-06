@@ -7,6 +7,7 @@ import (
 )
 
 func TestProjectNameNormalization(t *testing.T) {
+	// Valid "dagger.json" names
 	inputs := []string{
 		"friendly-bard",
 		"Friendly-Bard",
@@ -26,6 +27,23 @@ func TestProjectNameNormalization(t *testing.T) {
 	}
 	for _, input := range inputs {
 		// require.Equal(t, "friendly-bard",  NormalizeProjectName(input)
-		require.Equalf(t, "friendly-bard", NormalizeProjectName(input), "input: %s", input)
+		require.Equalf(t, "friendly-bard", NormalizeProjectNameFromModule(input), "input: %s", input)
+	}
+}
+
+func TestPackageNameNormalization(t *testing.T) {
+	// Valid "pyproject.toml" names
+	inputs := []string{
+		"friendly-bard",
+		"Friendly-Bard",
+		"FRIENDLY-BARD",
+		"friendly.bard",
+		"friendly_bard",
+		"friendly--bard",
+		"FrIeNdLy-._.-bArD",
+	}
+	for _, input := range inputs {
+		// require.Equal(t, "friendly-bard",  NormalizeProjectName(input)
+		require.Equalf(t, "friendly_bard", NormalizePackageName(input), "input: %s", input)
 	}
 }

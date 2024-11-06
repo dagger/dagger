@@ -226,9 +226,9 @@ func (d *Discovery) loadModInfo(ctx context.Context, m *PythonSdk) error {
 		}
 		d.mu.Lock()
 		m.ModName = modName
-		m.ProjectName = NormalizeProjectName(modName)
-		m.PackageName = NormalizePackageName(modName)
 		m.MainObjectName = NormalizeObjectName(modName)
+		m.ProjectName = NormalizeProjectNameFromModule(modName)
+		m.PackageName = NormalizePackageName(modName)
 		d.mu.Unlock()
 		return nil
 	})
@@ -372,8 +372,8 @@ func (d *Discovery) loadConfig(ctx context.Context, m *PythonSdk) error {
 
 	// For an existing pyproject.toml, the project name may divert from the default
 	if d.Config.Project.Name != "" {
-		m.ProjectName = NormalizeProjectName(d.Config.Project.Name)
-		m.PackageName = NormalizePackageName(d.Config.Project.Name)
+		m.ProjectName = d.Config.Project.Name
+		m.PackageName = NormalizePackageName(m.ProjectName)
 	}
 
 	return nil

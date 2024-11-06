@@ -210,6 +210,98 @@ class HelloWorld:
 		require.NoError(t, err)
 		require.JSONEq(t, `{"helloWorld":{"message":"Hello, World!"}}`, out)
 	})
+
+	t.Run("different dagger and python project names", func(ctx context.Context, t *testctx.T) {
+		// Name in dagger.json: "test"
+		// Name in pyproject.toml: "hello-world"
+		// Expected main object name: "Test"
+		// Expected import package name: "hello_world"
+
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithNewFile("pyproject.toml", `
+[project]
+name = "hello-world"
+version = "0.0.0"
+dependencies = ["dagger-io"]
+
+[tool.uv.sources]
+dagger-io = { path = "sdk", editable = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+`,
+			).
+			WithNewFile("src/hello_world/__init__.py", "from .main import Test as Test").
+			WithNewFile("src/hello_world/main.py", `import dagger
+
+@dagger.object_type
+class Test:
+    my_name: str = dagger.field(default="World")
+
+    @dagger.function
+    def message(self) -> str:
+        return f"Hello, {self.my_name}!"
+`,
+			).
+			With(daggerExec("init", "--name=test", "--sdk=python", "--source=."))
+
+		out, err := modGen.With(daggerQuery(`{test{message}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"test":{"message":"Hello, World!"}}`, out)
+	})
+
+	t.Run("fallback to main import package name", func(ctx context.Context, t *testctx.T) {
+		// Name in dagger.json: "test"
+		// Name in pyproject.toml: "hello-world"
+		// Source code in `src/main/__init__.py`
+		// Expected main object name: "Test"
+		// Expected import package name: "hello_world", but fallback to "main"
+
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithNewFile("pyproject.toml", `
+[project]
+name = "hello-world"
+version = "0.0.0"
+dependencies = ["dagger-io"]
+
+[tool.uv.sources]
+dagger-io = { path = "sdk", editable = true }
+
+# See https://hatch.pypa.io/latest/config/build/#packages
+[tool.hatch.build.targets.wheel]
+packages = ["src/main"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+`,
+			).
+			WithNewFile("src/main/__init__.py", `import dagger
+
+@dagger.object_type
+class Test:
+    my_name: str = dagger.field(default="World")
+
+    @dagger.function
+    def message(self) -> str:
+        return f"Hello, {self.my_name}!"
+`,
+			).
+			With(daggerExec("init", "--name=test", "--sdk=python", "--source=."))
+
+		out, err := modGen.With(daggerQuery(`{test{message}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"test":{"message":"Hello, World!"}}`, out)
+	})
 }
 
 func (PythonSuite) TestProjectLayout(ctx context.Context, t *testctx.T) {
