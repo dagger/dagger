@@ -26,15 +26,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: "helm lint"
+      - name: "helm check"
         uses: ./.github/actions/call
         with:
-          function: "helm lint"
-      - name: "helm test"
-        uses: ./.github/actions/call
-        with:
-          function: "helm test"
-      - name: "helm test publish"
-        uses: ./.github/actions/call
-        with:
-          function: "helm publish --dry-run=true --tag=main"
+          function: "check --targets=helm"
