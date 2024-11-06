@@ -1276,14 +1276,15 @@ func (ServiceSuite) TestRegistryServiceFrom(ctx context.Context, t *testctx.T) {
 		WithExposedPort(5000).
 		AsService()
 
-	registryHost, err := registry.Hostname(ctx)
-	require.NoError(t, err)
+		// registryHost, err := registry.Hostname(ctx)
+		// require.NoError(t, err)
 
+	registryHost := "registry123"
 	baseImage := c.Container().From(alpineImage)
 	pushedRef := fmt.Sprintf("%s:5000/test-image:latest", registryHost)
 	scopeoRef := fmt.Sprintf("docker://%s", pushedRef)
-	_, err = dag.Container().From("quay.io/skopeo/stable").
-		WithServiceBinding("registry", registry).
+	_, err := dag.Container().From("quay.io/skopeo/stable").
+		WithServiceBinding(registryHost, registry).
 		WithMountedFile("/work/image.tar", baseImage.AsTarball()).
 		WithExec([]string{"skopeo", "copy", "--all", "--dest-tls-verify=false", "docker-archive:/work/image.tar", scopeoRef}).
 		Sync(ctx)
@@ -1291,7 +1292,7 @@ func (ServiceSuite) TestRegistryServiceFrom(ctx context.Context, t *testctx.T) {
 
 	// Create a new container by From-ing through the registry Service Binding
 	_, err = c.Container().
-		WithServiceBinding("registry", registry). // unclear whether this should be necessary?
+		WithServiceBinding(registryHost, registry). // unclear whether this should be necessary?
 		From(pushedRef).
 		WithExec([]string{"echo", "foundit"}).
 		Stdout(ctx)

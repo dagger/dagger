@@ -47,7 +47,6 @@ import (
 	"github.com/moby/buildkit/solver/llbsolver/mounts"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/source"
-	"github.com/moby/buildkit/source/containerimage"
 	srcgit "github.com/moby/buildkit/source/git"
 	srchttp "github.com/moby/buildkit/source/http"
 	"github.com/moby/buildkit/util/archutil"
@@ -408,6 +407,22 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	logrus.Infof("found worker %q, labels=%v, platforms=%v", workerID, baseLabels, FormatPlatforms(srv.enabledPlatforms))
 	archutil.WarnIfUnsupported(srv.enabledPlatforms)
 
+	fmt.Println("!!!!!! this part logs at least")
+	baseRegistryHosts := srv.baseWorker.ImageSource.RegistryHosts
+	srv.baseWorker.ImageSource.RegistryHosts = func(namespace string) ([]docker.RegistryHost, error) {
+		fmt.Println("!!!!!! this is actually happening !!!!!!")
+		hosts, err := baseRegistryHosts(namespace)
+		if err != nil {
+			return nil, err
+		}
+		fmt.Printf("srv.dns: %v\n", srv.dns)
+		fmt.Printf("hosts: %v\n", hosts)
+		for i := range hosts {
+			hosts[i].Client = &http.Client{Transport: netconfhttp.NewTransport(hosts[i].Client.Transport, srv.dns)}
+		}
+		return hosts, nil
+	}
+
 	// registerDaggerCustomSources adds Dagger's custom sources to the worker.
 	hs, err := httpdns.NewSource(httpdns.Opt{
 		Opt: srchttp.Opt{
@@ -419,25 +434,6 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		return nil, err
 	}
 	srv.workerSourceManager.Register(hs)
-
-	imgSourceOpt := srv.baseWorker.ImageSource.SourceOpt
-	fmt.Println("!!!!!! this part logs at least")
-	imgSourceOpt.RegistryHosts = func(namespace string) ([]docker.RegistryHost, error) {
-		fmt.Println("!!!!!! this is actually happening !!!!!!")
-		hosts, err := srv.baseWorker.ImageSource.RegistryHosts(namespace)
-		if err != nil {
-			return nil, err
-		}
-		for i := range hosts {
-			hosts[i].Client = &http.Client{Transport: netconfhttp.NewTransport(hosts[i].Client.Transport, srv.dns)}
-		}
-		return hosts, nil
-	}
-	is, err := containerimage.NewSource(imgSourceOpt)
-	if err != nil {
-		return nil, err
-	}
-	srv.workerSourceManager.Register(is)
 
 	gs, err := gitdns.NewSource(gitdns.Opt{
 		Opt: srcgit.Opt{
