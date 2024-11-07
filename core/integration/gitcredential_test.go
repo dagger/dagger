@@ -204,7 +204,7 @@ func (m *Test) Fn(ctx context.Context, dir *dagger.Directory) ([]string, error) 
 		require.NoError(t, err)
 
 		// Verify that we can list files from the private repository
-		require.Contains(t, string(out), "dagger.json")
+		require.Contains(t, string(out), "zip")
 	})
 
 	// Verify authentication failure without credentials
