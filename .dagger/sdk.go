@@ -65,10 +65,7 @@ func (dev *DaggerDev) installer(ctx context.Context, name string) (func(*dagger.
 		return nil, err
 	}
 
-	cliBinary, err := dev.CLI().Binary(ctx, "")
-	if err != nil {
-		return nil, err
-	}
+	cliBinary := dag.DaggerCli().Binary()
 	cliBinaryPath := "/.dagger-cli"
 
 	return func(ctr *dagger.Container) *dagger.Container {
