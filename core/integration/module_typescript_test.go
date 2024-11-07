@@ -1343,8 +1343,18 @@ func (TypescriptSuite) TestNativeEnumType(ctx context.Context, t *testctx.T) {
 		With(sdkSource("typescript", `
 import { object, func } from "@dagger.io/dagger"
 
+/**
+ * Test Enum
+ */
 export enum TestEnum {
+    /**
+		 * A
+		 */
     A = "a",
+
+		/**
+		 * B
+		 */
     B = "b",
 }
 
@@ -1356,6 +1366,14 @@ export class Test {
   }
 }
   `))
+
+	t.Run("native enum type - doc", func(ctx context.Context, t *testctx.T) {
+		schema := inspectModule(ctx, t, modGen)
+
+		require.Equal(t, "Test Enum", schema.Get("enums.#.asEnum|#(name=TestEnum).description").String())
+		require.Equal(t, "A", schema.Get("enums.#.asEnum|#(name=TestEnum).values.#(name=a).description").String())
+		require.Equal(t, "B", schema.Get("enums.#.asEnum|#(name=TestEnum).values.#(name=b).description").String())
+	})
 
 	t.Run("native enum type - correct input / output", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.With(daggerCall("test-enum", "--test", "b")).Stdout(ctx)
@@ -1518,9 +1536,19 @@ export class Test {
 			With(sdkSource("typescript", `
 import { func, object } from "@dagger.io/dagger"
 
+/**
+ * Test Person
+ */
 export type Person = {
+	/**
+	 * Age
+	 */
   age: number
-  name: string
+  
+	/**
+	 * Name
+	 */
+	name: string
 }
 
 @object()
@@ -1530,6 +1558,14 @@ export class Test {
     return { age, name }
   }
 }`))
+
+		t.Run("type keyword - doc", func(ctx context.Context, t *testctx.T) {
+			schema := inspectModule(ctx, t, modGen)
+
+			require.Equal(t, "Test Person", schema.Get("objects.#.asObject|#(name=TestPerson).description").String())
+			require.Equal(t, "Age", schema.Get("objects.#.asObject|#(name=TestPerson).fields.#(name=age).description").String())
+			require.Equal(t, "Name", schema.Get("objects.#.asObject|#(name=TestPerson).fields.#(name=name).description").String())
+		})
 
 		out, err := modGen.With(daggerCall("person", "--age", "42", "--name", "John")).Stdout(ctx)
 		require.NoError(t, err)
