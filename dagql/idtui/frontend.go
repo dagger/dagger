@@ -439,6 +439,22 @@ func (r renderer) renderMetrics(out *termenv.Output, span *dagui.Span) {
 		displayMetric = displayMetric.Foreground(termenv.ANSIGreen)
 		fmt.Fprint(out, displayMetric)
 	}
+
+	if dataPoints := span.MetricsByName[telemetry.MemoryCurrentBytes]; len(dataPoints) > 0 {
+		lastPoint := dataPoints[len(dataPoints)-1]
+		fmt.Fprint(out, " | ")
+		displayMetric := out.String(fmt.Sprintf("Memory Bytes (current): %s", humanize.Bytes(uint64(lastPoint.Value))))
+		displayMetric = displayMetric.Foreground(termenv.ANSIGreen)
+		fmt.Fprint(out, displayMetric)
+	}
+
+	if dataPoints := span.MetricsByName[telemetry.MemoryPeakBytes]; len(dataPoints) > 0 {
+		lastPoint := dataPoints[len(dataPoints)-1]
+		fmt.Fprint(out, " | ")
+		displayMetric := out.String(fmt.Sprintf("Memory Bytes (peak): %s", humanize.Bytes(uint64(lastPoint.Value))))
+		displayMetric = displayMetric.Foreground(termenv.ANSIGreen)
+		fmt.Fprint(out, displayMetric)
+	}
 }
 
 func durationString(microseconds int64) string {

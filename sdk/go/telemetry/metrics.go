@@ -32,6 +32,12 @@ const (
 	// OTel metric for number of microseconds ALL tasks in a cgroup were stalled on CPU due to resource contention
 	CPUStatPressureFullTotal = "dagger.io/metrics.cpustat.pressure.full.total"
 
+	// OTel metric for bytes of memory currently consumed by this cgroup and its descendents
+	MemoryCurrentBytes = "dagger.io/metrics.memory.current"
+
+	// OTel metric for peak memory bytes consumed by this cgroup and its descendents
+	MemoryPeakBytes = "dagger.io/metrics.memory.peak"
+
 	// OTel metric units should be in UCUM format
 	// https://unitsofmeasure.org/ucum
 
