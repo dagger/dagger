@@ -361,6 +361,7 @@ func (container *Container) FromCanonicalRef(
 		return nil, err
 	}
 
+	// llb.Image(ref string, opts ...llb.ImageOption)
 	fsSt := containerimagedns.Image(
 		refStr,
 		clientMetadata.SessionID,
