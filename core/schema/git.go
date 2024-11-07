@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -208,7 +210,7 @@ func (s *gitSchema) git(ctx context.Context, parent *core.Query, args gitArgs) (
 				URLs: []string{remote.Remote},
 			})
 
-			_, err := repo.List(&git.ListOptions{Auth: nil})
+			_, err := repo.ListContext(ctx, &git.ListOptions{Auth: nil})
 			if err == nil {
 				// Repository is public, no need for auth token
 				return &core.GitRepository{
@@ -235,13 +237,17 @@ func (s *gitSchema) git(ctx context.Context, parent *core.Query, args gitArgs) (
 				if err == nil {
 					// Credentials found, create and set auth token
 					var secretAuthToken dagql.Instance[*core.Secret]
+					// NB: If we allow getting the name from the dagger.Secret instance,
+					// it can be vulnerable to brute force attacks.
+					hash := sha256.Sum256([]byte(credentials.Password))
+					secretName := hex.EncodeToString(hash[:])
 					if err := s.srv.Select(ctx, s.srv.Root(), &secretAuthToken,
 						dagql.Selector{
 							Field: "setSecret",
 							Args: []dagql.NamedInput{
 								{
 									Name:  "name",
-									Value: dagql.NewString("gitAuthtoken"),
+									Value: dagql.NewString(secretName),
 								},
 								{
 									Name:  "plaintext",
