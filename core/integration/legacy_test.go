@@ -562,7 +562,7 @@ func (m *Test) Greet(ctx context.Context) (string, error) {
 		).
 		WithWorkdir("/work/dep").
 		With(daggerExec("init", "--name=dep", "--sdk=python")).
-		With(sdkSource("python", `import dagger
+		With(fileContents("src/dep/__init__.py", `import dagger
 
 @dagger.object_type
 class Dep:

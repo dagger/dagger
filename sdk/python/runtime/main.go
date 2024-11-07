@@ -21,7 +21,6 @@ const (
 	ProjectCfg            = "pyproject.toml"
 	PipCompileLock        = "requirements.lock"
 	UvLock                = "uv.lock"
-	MainFilePath          = "src/main/__init__.py"
 	MainObjectName        = "Main"
 )
 
@@ -65,6 +64,12 @@ func New(
 	}, nil
 }
 
+//go:embed template/pyproject.toml
+var tplToml string
+
+//go:embed template/__init__.py
+var tplInit string
+
 //go:embed template/main.py
 var tplMain string
 
@@ -85,6 +90,12 @@ type PythonSdk struct {
 
 	// The original module's name
 	ModName string
+
+	// The normalized python distribution package name (in pyproject.toml)
+	ProjectName string
+
+	// The normalized python import package name (in the filesystem)
+	PackageName string
 
 	// The normalized main object name in Python
 	MainObjectName string
@@ -240,6 +251,8 @@ func (m *PythonSdk) WithBase() (*PythonSdk, error) {
 		WithEnvVariable("UV_NATIVE_TLS", "1").
 		WithEnvVariable("UV_PROJECT_ENVIRONMENT", "/opt/venv").
 		WithWorkdir(path.Join(m.ContextDirPath, m.SubPath)).
+		WithEnvVariable("DAGGER_MODULE", m.ModName).
+		WithEnvVariable("DAGGER_DEFAULT_PYTHON_PACKAGE", m.PackageName).
 		WithEnvVariable("DAGGER_MAIN_OBJECT", m.MainObjectName).
 		// These are informational only, to be leveraged by the target module
 		// if needed.
@@ -262,14 +275,13 @@ func (m *PythonSdk) WithBase() (*PythonSdk, error) {
 // The following files are added:
 // - /runtime
 // - <source>/pyproject.toml
-// - <source>/src/main/__init__.py
+// - <source>/src/<package_name>/__init__.py
+// - <source>/src/<package_name>/main.py
 func (m *PythonSdk) WithTemplate() *PythonSdk {
-	template := dag.CurrentModule().Source().Directory("template")
-
 	m.Container = m.Container.
 		WithFile(
 			RuntimeExecutablePath,
-			template.File("runtime.py"),
+			dag.CurrentModule().Source().File("template/runtime.py"),
 			dagger.ContainerWithFileOpts{Permissions: 0o755},
 		).
 		WithEntrypoint([]string{RuntimeExecutablePath})
@@ -295,11 +307,18 @@ func (m *PythonSdk) WithTemplate() *PythonSdk {
 		// existence of this file will set d.IsInit = true, thus skipping
 		// this entire branch.
 		if !d.HasFile(ProjectCfg) {
-			m.AddFile(ProjectCfg, template.File(ProjectCfg))
+			m.AddNewFile(
+				ProjectCfg,
+				strings.ReplaceAll(tplToml, "main", m.ProjectName),
+			)
 		}
 		if !d.HasFile("*.py") {
 			m.AddNewFile(
-				MainFilePath,
+				path.Join("src", m.PackageName, "__init__.py"),
+				strings.ReplaceAll(tplInit, MainObjectName, m.MainObjectName),
+			)
+			m.AddNewFile(
+				path.Join("src", m.PackageName, "main.py"),
 				strings.ReplaceAll(tplMain, MainObjectName, m.MainObjectName),
 			)
 		}

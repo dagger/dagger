@@ -130,13 +130,13 @@ func (TypeSuite) TestReturnTypeDetection(ctx context.Context, t *testctx.T) {
 			sdk: "go",
 			source: `package main
 
-type Foo struct {}
+type Test struct {}
 
 type X struct {
 	Message string ` + "`json:\"message\"`" + `
 }
 
-func (m *Foo) MyFunction() X {
+func (m *Test) MyFunction() X {
 	return X{Message: "foo"}
 }
 `,
@@ -150,7 +150,7 @@ class X:
     message: str = dagger.field(default="")
 
 @dagger.object_type
-class Foo:
+class Test:
     @dagger.function
     def my_function(self) -> X:
         return X(message="foo")
@@ -172,7 +172,7 @@ export class X {
 }
 
 @object()
-export class Foo {
+export class Test {
   @func()
   myFunction(): X {
     return new X("foo");
@@ -186,15 +186,12 @@ export class Foo {
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
-			modGen := c.Container().From(golangImage).
-				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-				WithWorkdir("/work").
-				With(daggerExec("init", "--name=foo", "--sdk="+tc.sdk)).
-				With(sdkSource(tc.sdk, tc.source))
+			out, err := modInit(t, c, tc.sdk, tc.source).
+				With(daggerQuery(`{test{myFunction{message}}}`)).
+				Stdout(ctx)
 
-			out, err := modGen.With(daggerQuery(`{foo{myFunction{message}}}`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"foo":{"myFunction":{"message":"foo"}}}`, out)
+			require.JSONEq(t, `{"test":{"myFunction":{"message":"foo"}}}`, out)
 		})
 	}
 }
@@ -210,7 +207,7 @@ func (TypeSuite) TestReturnObject(ctx context.Context, t *testctx.T) {
 			sdk: "go",
 			source: `package main
 
-type Foo struct {}
+type Test struct {}
 
 type X struct {
 	Message string ` + "`json:\"message\"`" + `
@@ -219,7 +216,7 @@ type X struct {
 	From string
 }
 
-func (m *Foo) MyFunction() X {
+func (m *Test) MyFunction() X {
 	return X{Message: "foo", When: "now", To: "user", From: "admin"}
 }
 `,
@@ -236,7 +233,7 @@ class X:
     from_: str = field(default="", name="from")
 
 @object_type
-class Foo:
+class Test:
     @function
     def my_function(self) -> X:
         return X(message="foo", when="now", to="user", from_="admin")
@@ -270,7 +267,7 @@ export class X {
 }
 
 @object()
-export class Foo {
+export class Test {
   @func()
   myFunction(): X {
     return new X("foo", "now", "user", "admin");
@@ -284,15 +281,12 @@ export class Foo {
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
-			modGen := c.Container().From(golangImage).
-				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-				WithWorkdir("/work").
-				With(daggerExec("init", "--name=foo", "--sdk="+tc.sdk)).
-				With(sdkSource(tc.sdk, tc.source))
+			out, err := modInit(t, c, tc.sdk, tc.source).
+				With(daggerQuery(`{test{myFunction{message, recipient, from, timestamp}}}`)).
+				Stdout(ctx)
 
-			out, err := modGen.With(daggerQuery(`{foo{myFunction{message, recipient, from, timestamp}}}`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"foo":{"myFunction":{"message":"foo", "recipient":"user", "from":"admin", "timestamp":"now"}}}`, out)
+			require.JSONEq(t, `{"test":{"myFunction":{"message":"foo", "recipient":"user", "from":"admin", "timestamp":"now"}}}`, out)
 		})
 	}
 }
@@ -308,7 +302,7 @@ func (TypeSuite) TestReturnNestedObject(ctx context.Context, t *testctx.T) {
 			sdk: "go",
 			source: `package main
 
-type Playground struct{}
+type Test struct{}
 
 type Foo struct {
 	MsgContainer Bar
@@ -318,7 +312,7 @@ type Bar struct {
 	Msg string
 }
 
-func (m *Playground) MyFunction() Foo {
+func (m *Test) MyFunction() Foo {
 	return Foo{MsgContainer: Bar{Msg: "hello world"}}
 }
 `,
@@ -336,7 +330,7 @@ class Foo:
     msg_container: Bar = field()
 
 @object_type
-class Playground:
+class Test:
     @function
     def my_function(self) -> Foo:
         return Foo(msg_container=Bar(msg="hello world"))
@@ -368,7 +362,7 @@ export class Foo {
 }
 
 @object()
-export class Playground {
+export class Test {
   @func()
   myFunction(): Foo {
     return new Foo(new Bar("hello world"));
@@ -382,15 +376,12 @@ export class Playground {
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
-			modGen := c.Container().From(golangImage).
-				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-				WithWorkdir("/work").
-				With(daggerExec("init", "--name=playground", "--sdk="+tc.sdk)).
-				With(sdkSource(tc.sdk, tc.source))
+			out, err := modInit(t, c, tc.sdk, tc.source).
+				With(daggerQuery(`{test{myFunction{msgContainer{msg}}}}`)).
+				Stdout(ctx)
 
-			out, err := modGen.With(daggerQuery(`{playground{myFunction{msgContainer{msg}}}}`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"playground":{"myFunction":{"msgContainer":{"msg": "hello world"}}}}`, out)
+			require.JSONEq(t, `{"test":{"myFunction":{"msgContainer":{"msg": "hello world"}}}}`, out)
 		})
 	}
 }
@@ -407,12 +398,12 @@ func (TypeSuite) TestReturnCompositeCore(ctx context.Context, t *testctx.T) {
 			source: `package main
 
 import (
-	"dagger/playground/internal/dagger"
+	"dagger/test/internal/dagger"
 )
 
-type Playground struct{}
+type Test struct{}
 
-func (m *Playground) MySlice() []*dagger.Container {
+func (m *Test) MySlice() []*dagger.Container {
 	return []*dagger.Container{dag.Container().From("` + alpineImage + `").WithExec([]string{"echo", "hello world"})}
 }
 
@@ -422,7 +413,7 @@ type Foo struct {
 	UnsetFile *dagger.File
 }
 
-func (m *Playground) MyStruct() *Foo {
+func (m *Test) MyStruct() *Foo {
 	return &Foo{Con: dag.Container().From("` + alpineImage + `").WithExec([]string{"echo", "hello world"})}
 }
 `,
@@ -430,20 +421,20 @@ func (m *Playground) MyStruct() *Foo {
 		{
 			sdk: "python",
 			source: `import dagger
-from dagger import dag, field, function, object_type
+from dagger import dag
 
-@object_type
+@dagger.object_type
 class Foo:
-    con: dagger.Container = field()
-    unset_file: dagger.File | None = field(default=None)
+    con: dagger.Container = dagger.field()
+    unset_file: dagger.File | None = dagger.field(default=None)
 
-@object_type
-class Playground:
-    @function
+@dagger.object_type
+class Test:
+    @dagger.function
     def my_slice(self) -> list[dagger.Container]:
         return [dag.container().from_("` + alpineImage + `").with_exec(["echo", "hello world"])]
 
-    @function
+    @dagger.function
     def my_struct(self) -> Foo:
         return Foo(con=dag.container().from_("` + alpineImage + `").with_exec(["echo", "hello world"]))
 `,
@@ -468,7 +459,7 @@ export class Foo {
 }
 
 @object()
-export class Playground {
+export class Test {
   @func()
   mySlice(): Container[] {
     return [
@@ -491,19 +482,15 @@ export class Playground {
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
-			modGen := c.Container().From(golangImage).
-				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-				WithWorkdir("/work").
-				With(daggerExec("init", "--name=playground", "--sdk="+tc.sdk)).
-				With(sdkSource(tc.sdk, tc.source))
+			modGen := modInit(t, c, tc.sdk, tc.source)
 
-			out, err := modGen.With(daggerQuery(`{playground{mySlice{stdout}}}`)).Stdout(ctx)
+			out, err := modGen.With(daggerQuery(`{test{mySlice{stdout}}}`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"playground":{"mySlice":[{"stdout":"hello world\n"}]}}`, out)
+			require.JSONEq(t, `{"test":{"mySlice":[{"stdout":"hello world\n"}]}}`, out)
 
-			out, err = modGen.With(daggerQuery(`{playground{myStruct{con{stdout}}}}`)).Stdout(ctx)
+			out, err = modGen.With(daggerQuery(`{test{myStruct{con{stdout}}}}`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"playground":{"myStruct":{"con":{"stdout":"hello world\n"}}}}`, out)
+			require.JSONEq(t, `{"test":{"myStruct":{"con":{"stdout":"hello world\n"}}}}`, out)
 		})
 	}
 }
@@ -520,10 +507,10 @@ func (TypeSuite) TestReturnComplexThing(ctx context.Context, t *testctx.T) {
 			source: `package main
 
 import (
-	"dagger/playground/internal/dagger"
+	"dagger/test/internal/dagger"
 )
 
-type Playground struct{}
+type Test struct{}
 
 type ScanResult struct {
 	Containers	[]*dagger.Container ` + "`json:\"targets\"`" + `
@@ -535,7 +522,7 @@ type ScanReport struct {
 	Authors  []string ` + "`json:\"Authors\"`" + `
 }
 
-func (m *Playground) Scan() ScanResult {
+func (m *Test) Scan() ScanResult {
 	return ScanResult{
 		Containers: []*dagger.Container{
 			dag.Container().From("` + alpineImage + `").WithExec([]string{"echo", "hello world"}),
@@ -551,21 +538,21 @@ func (m *Playground) Scan() ScanResult {
 		{
 			sdk: "python",
 			source: `import dagger
-from dagger import dag, field, function, object_type
+from dagger import dag
 
-@object_type
+@dagger.object_type
 class ScanReport:
-    contents: str = field()
-    authors: list[str] = field()
+    contents: str = dagger.field()
+    authors: list[str] = dagger.field()
 
-@object_type
+@dagger.object_type
 class ScanResult:
-    containers: list[dagger.Container] = field(name="targets")
-    report: ScanReport = field()
+    containers: list[dagger.Container] = dagger.field(name="targets")
+    report: ScanReport = dagger.field()
 
-@object_type
-class Playground:
-    @function
+@dagger.object_type
+class Test:
+    @dagger.function
     def scan(self) -> ScanResult:
         return ScanResult(
             containers=[
@@ -612,7 +599,7 @@ export class ScanResult {
 }
 
 @object()
-export class Playground {
+export class Test {
   @func()
   async scan(): Promise<ScanResult> {
     return new ScanResult(
@@ -631,15 +618,12 @@ export class Playground {
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
-			modGen := c.Container().From(golangImage).
-				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-				WithWorkdir("/work").
-				With(daggerExec("init", "--name=playground", "--sdk="+tc.sdk)).
-				With(sdkSource(tc.sdk, tc.source))
+			out, err := modInit(t, c, tc.sdk, tc.source).
+				With(daggerQuery(`{test{scan{targets{stdout},report{contents,authors}}}}`)).
+				Stdout(ctx)
 
-			out, err := modGen.With(daggerQuery(`{playground{scan{targets{stdout},report{contents,authors}}}}`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"playground":{"scan":{"targets":[{"stdout":"hello world\n"}],"report":{"contents":"hello world","authors":["foo","bar"]}}}}`, out)
+			require.JSONEq(t, `{"test":{"scan":{"targets":[{"stdout":"hello world\n"}],"report":{"contents":"hello world","authors":["foo","bar"]}}}}`, out)
 		})
 	}
 }
@@ -655,16 +639,16 @@ func (TypeSuite) TestIDableType(ctx context.Context, t *testctx.T) {
 			sdk: "go",
 			source: `package main
 
-type Foo struct {
+type Test struct {
 	Data string
 }
 
-func (m *Foo) Set(data string) *Foo {
+func (m *Test) Set(data string) *Test {
 	m.Data = data
 	return m
 }
 
-func (m *Foo) Get() string {
+func (m *Test) Get() string {
 	return m.Data
 }
 `,
@@ -673,18 +657,18 @@ func (m *Foo) Get() string {
 			sdk: "python",
 			source: `from typing import Self
 
-from dagger import field, function, object_type
+import dagger
 
-@object_type
-class Foo:
+@dagger.object_type
+class Test:
     data: str = ""
 
-    @function
+    @dagger.function
     def set(self, data: str) -> Self:
         self.data = data
         return self
 
-    @function
+    @dagger.function
     def get(self) -> str:
         return self.data
 `,
@@ -695,11 +679,11 @@ class Foo:
 import { object, func } from "@dagger.io/dagger"
 
 @object()
-export class Foo {
+export class Test {
   data: string = ""
 
   @func()
-  set(data: string): Foo {
+  set(data: string): Test {
     this.data = data
     return this
   }
@@ -717,29 +701,25 @@ export class Foo {
 		t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 
-			modGen := c.Container().From(golangImage).
-				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-				WithWorkdir("/work").
-				With(daggerExec("init", "--name=foo", "--sdk="+tc.sdk)).
-				With(sdkSource(tc.sdk, tc.source))
+			modGen := modInit(t, c, tc.sdk, tc.source)
 
 			// sanity check
-			out, err := modGen.With(daggerQuery(`{foo{set(data: "abc"){get}}}`)).Stdout(ctx)
+			out, err := modGen.With(daggerQuery(`{test{set(data: "abc"){get}}}`)).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"foo":{"set":{"get": "abc"}}}`, out)
+			require.JSONEq(t, `{"test":{"set":{"get": "abc"}}}`, out)
 
-			out, err = modGen.With(daggerQuery(`{foo{set(data: "abc"){id}}}`)).Stdout(ctx)
+			out, err = modGen.With(daggerQuery(`{test{set(data: "abc"){id}}}`)).Stdout(ctx)
 			require.NoError(t, err)
-			id := gjson.Get(out, "foo.set.id").String()
+			id := gjson.Get(out, "test.set.id").String()
 
 			var idp call.ID
 			err = idp.Decode(id)
 			require.NoError(t, err)
-			require.Equal(t, idp.Display(), `foo.set(data: "abc"): Foo!`)
+			require.Equal(t, idp.Display(), `test.set(data: "abc"): Test!`)
 
-			out, err = modGen.With(daggerQuery(`{loadFooFromID(id: "%s"){get}}`, id)).Stdout(ctx)
+			out, err = modGen.With(daggerQuery(`{loadTestFromID(id: "%s"){get}}`, id)).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"loadFooFromID":{"get": "abc"}}`, out)
+			require.JSONEq(t, `{"loadTestFromID":{"get": "abc"}}`, out)
 		})
 	}
 }
@@ -760,22 +740,22 @@ func (TypeSuite) TestArgOwnType(ctx context.Context, t *testctx.T) {
 
 import "strings"
 
-type Foo struct{}
+type Test struct{}
 
 type Message struct {
 	Content string
 }
 
-func (m *Foo) SayHello(name string) Message {
+func (m *Test) SayHello(name string) Message {
 	return Message{Content: "hello " + name}
 }
 
-func (m *Foo) Upper(msg Message) Message {
+func (m *Test) Upper(msg Message) Message {
 	msg.Content = strings.ToUpper(msg.Content)
 	return msg
 }
 
-func (m *Foo) Uppers(msg []Message) []Message {
+func (m *Test) Uppers(msg []Message) []Message {
 	for i := range msg {
 		msg[i].Content = strings.ToUpper(msg[i].Content)
 	}
@@ -784,24 +764,24 @@ func (m *Foo) Uppers(msg []Message) []Message {
 		},
 		{
 			sdk: "python",
-			source: `from dagger import field, function, object_type
+			source: `import dagger
 
-@object_type
+@dagger.object_type
 class Message:
-    content: str = field()
+    content: str = dagger.field()
 
-@object_type
-class Foo:
-    @function
+@dagger.object_type
+class Test:
+    @dagger.function
     def say_hello(self, name: str) -> Message:
         return Message(content=f"hello {name}")
 
-    @function
+    @dagger.function
     def upper(self, msg: Message) -> Message:
         msg.content = msg.content.upper()
         return msg
 
-    @function
+    @dagger.function
     def uppers(self, msg: list[Message]) -> list[Message]:
         for m in msg:
             m.content = m.content.upper()
@@ -824,7 +804,7 @@ export class Message {
 }
 
 @object()
-export class Foo {
+export class Test {
   @func()
   sayHello(name: string): Message {
     return new Message("hello " + name)
@@ -855,24 +835,24 @@ export class Foo {
 			modGen := c.Container().From(golangImage).
 				WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 				WithWorkdir("/work").
-				With(daggerExec("init", "--name=foo", "--sdk="+tc.sdk)).
+				With(daggerExec("init", "--name=test", "--sdk="+tc.sdk)).
 				With(sdkSource(tc.sdk, tc.source))
 
-			out, err := modGen.With(daggerQuery(`{foo{sayHello(name: "world"){id}}}`)).Stdout(ctx)
+			out, err := modGen.With(daggerQuery(`{test{sayHello(name: "world"){id}}}`)).Stdout(ctx)
 			require.NoError(t, err)
-			id := gjson.Get(out, "foo.sayHello.id").String()
+			id := gjson.Get(out, "test.sayHello.id").String()
 			var idp call.ID
 			err = idp.Decode(id)
 			require.NoError(t, err)
-			require.Equal(t, idp.Display(), `foo.sayHello(name: "world"): FooMessage!`)
+			require.Equal(t, idp.Display(), `test.sayHello(name: "world"): TestMessage!`)
 
-			out, err = modGen.With(daggerQuery(`{foo{upper(msg:"%s"){content}}}`, id)).Stdout(ctx)
+			out, err = modGen.With(daggerQuery(`{test{upper(msg:"%s"){content}}}`, id)).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"foo":{"upper":{"content": "HELLO WORLD"}}}`, out)
+			require.JSONEq(t, `{"test":{"upper":{"content": "HELLO WORLD"}}}`, out)
 
-			out, err = modGen.With(daggerQuery(`{foo{uppers(msg:["%s", "%s"]){content}}}`, id, id)).Stdout(ctx)
+			out, err = modGen.With(daggerQuery(`{test{uppers(msg:["%s", "%s"]){content}}}`, id, id)).Stdout(ctx)
 			require.NoError(t, err)
-			require.JSONEq(t, `{"foo":{"uppers":[{"content": "HELLO WORLD"}, {"content": "HELLO WORLD"}]}}`, out)
+			require.JSONEq(t, `{"test":{"uppers":[{"content": "HELLO WORLD"}, {"content": "HELLO WORLD"}]}}`, out)
 		})
 	}
 }

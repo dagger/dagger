@@ -227,6 +227,8 @@ func (d *Discovery) loadModInfo(ctx context.Context, m *PythonSdk) error {
 		d.mu.Lock()
 		m.ModName = modName
 		m.MainObjectName = NormalizeObjectName(modName)
+		m.ProjectName = NormalizeProjectNameFromModule(modName)
+		m.PackageName = NormalizePackageName(modName)
 		d.mu.Unlock()
 		return nil
 	})
@@ -298,15 +300,12 @@ func (d *Discovery) loadFiles(ctx context.Context, m *PythonSdk) error {
 		}
 	}
 
-	// TODO: This can be a performance bottleneck for large directories,
-	// which can happen even unintentionally by not excluding certain
-	// patterns from module load.
 	eg.Go(func() error {
 		// We'll use a glob pattern in fileSet to check for the existence of
 		// python files later. The error is normal when the target directory
 		// on `dagger init` doesn't exist, but just ignore otherwise (best
 		// effort).
-		entries, err := m.Source().Glob(gctx, "**/*.py")
+		entries, err := m.Source().Glob(gctx, "src/**/*.py|*.py")
 		if len(entries) > 0 {
 			d.mu.Lock()
 			d.FileSet["*.py"] = struct{}{}
@@ -323,7 +322,7 @@ func (d *Discovery) loadFiles(ctx context.Context, m *PythonSdk) error {
 }
 
 // loadConfig loads the pyproject.toml file.
-func (d *Discovery) loadConfig(ctx context.Context, _ *PythonSdk) error {
+func (d *Discovery) loadConfig(ctx context.Context, m *PythonSdk) error {
 	contents, ok := d.Files["pyproject.toml"]
 	if !ok {
 		return nil
@@ -370,6 +369,12 @@ func (d *Discovery) loadConfig(ctx context.Context, _ *PythonSdk) error {
 
 	d.Images[BaseImageName] = baseImage
 	d.Images[UvImageName] = uvImage
+
+	// For an existing pyproject.toml, the project name may divert from the default
+	if d.Config.Project.Name != "" {
+		m.ProjectName = d.Config.Project.Name
+		m.PackageName = NormalizePackageName(m.ProjectName)
+	}
 
 	return nil
 }
