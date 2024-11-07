@@ -645,11 +645,6 @@ type Container {
     sources: [FileID!]!
   ): Container!
 
-  """
-  Indicate that subsequent operations should be featured more prominently in the UI.
-  """
-  withFocus: Container!
-
   """Retrieves this container plus the given label."""
   withLabel(
     """The name of the label (e.g., "org.opencontainers.artifact.created")."""
@@ -889,13 +884,6 @@ type Container {
     """Location of the files to remove (e.g., ["/file.txt"])."""
     paths: [String!]!
   ): Container!
-
-  """
-  Indicate that subsequent operations should not be featured more prominently in the UI.
-  
-  This is the initial state of all containers.
-  """
-  withoutFocus: Container!
 
   """Retrieves this container minus the given environment label."""
   withoutLabel(

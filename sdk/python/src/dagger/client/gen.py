@@ -1556,14 +1556,6 @@ class Container(Type):
         _ctx = self._select("withFiles", _args)
         return Container(_ctx)
 
-    def with_focus(self) -> Self:
-        """Indicate that subsequent operations should be featured more
-        prominently in the UI.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("withFocus", _args)
-        return Container(_ctx)
-
     def with_label(self, name: str, value: str) -> Self:
         """Retrieves this container plus the given label.
 
@@ -2116,16 +2108,6 @@ class Container(Type):
             Arg("expand", expand, False),
         ]
         _ctx = self._select("withoutFiles", _args)
-        return Container(_ctx)
-
-    def without_focus(self) -> Self:
-        """Indicate that subsequent operations should not be featured more
-        prominently in the UI.
-
-        This is the initial state of all containers.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("withoutFocus", _args)
         return Container(_ctx)
 
     def without_label(self, name: str) -> Self:

@@ -1371,15 +1371,6 @@ func (r *Container) WithFiles(path string, sources []*File, opts ...ContainerWit
 	}
 }
 
-// Indicate that subsequent operations should be featured more prominently in the UI.
-func (r *Container) WithFocus() *Container {
-	q := r.query.Select("withFocus")
-
-	return &Container{
-		query: q,
-	}
-}
-
 // Retrieves this container plus the given label.
 func (r *Container) WithLabel(name string, value string) *Container {
 	q := r.query.Select("withLabel")
@@ -1868,17 +1859,6 @@ func (r *Container) WithoutFiles(paths []string, opts ...ContainerWithoutFilesOp
 		}
 	}
 	q = q.Arg("paths", paths)
-
-	return &Container{
-		query: q,
-	}
-}
-
-// Indicate that subsequent operations should not be featured more prominently in the UI.
-//
-// This is the initial state of all containers.
-func (r *Container) WithoutFocus() *Container {
-	q := r.query.Select("withoutFocus")
 
 	return &Container{
 		query: q,

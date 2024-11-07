@@ -1,0 +1,7 @@
+kind: Breaking
+body: |
+  Remove deprecated `Container.withFocus` and `Container.withoutFocus`
+time: 2024-10-08T18:15:43.775091231+01:00
+custom:
+  Author: jedevc
+  PR: "8647"

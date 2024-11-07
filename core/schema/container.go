@@ -631,9 +631,11 @@ func (s *containerSchema) Install() {
 			ArgDoc("service", `Identifier of the service container`),
 
 		dagql.Func("withFocus", s.withFocus).
+			View(BeforeVersion("v0.13.4")).
 			Doc(`Indicate that subsequent operations should be featured more prominently in the UI.`),
 
 		dagql.Func("withoutFocus", s.withoutFocus).
+			View(BeforeVersion("v0.13.4")).
 			Doc(`Indicate that subsequent operations should not be featured more prominently in the UI.`,
 				`This is the initial state of all containers.`),
 
@@ -1952,15 +1954,11 @@ func (s *containerSchema) exposedPorts(ctx context.Context, parent *core.Contain
 }
 
 func (s *containerSchema) withFocus(ctx context.Context, parent *core.Container, args struct{}) (*core.Container, error) {
-	child := parent.Clone()
-	child.Focused = true
-	return child, nil
+	return parent, nil
 }
 
 func (s *containerSchema) withoutFocus(ctx context.Context, parent *core.Container, args struct{}) (*core.Container, error) {
-	child := parent.Clone()
-	child.Focused = false
-	return child, nil
+	return parent, nil
 }
 
 type containerWithDefaultTerminalCmdArgs struct {

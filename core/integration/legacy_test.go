@@ -709,3 +709,28 @@ func (m *Test) NewProto(proto dagger.NetworkProtocol) dagger.NetworkProtocol {
 	require.NoError(t, err)
 	require.Contains(t, out, "UDP")
 }
+
+func (LegacySuite) TestContainerWithFocus(ctx context.Context, t *testctx.T) {
+	// Changed in dagger/dagger#8647
+	//
+	// Ensure that the old schemas still have withFocus/withoutFocus.
+
+	var res any
+	err := testutil.Query(t,
+		`{
+			container {
+				from(address: "alpine") {
+					withFocus {
+						withoutFocus {
+							withExec(args: ["echo", "hello world"]) {
+								sync
+							}
+						}
+					}
+				}
+			}
+		}`, &res, &testutil.QueryOptions{
+			Version: "v0.13.3",
+		})
+	require.NoError(t, err)
+}
