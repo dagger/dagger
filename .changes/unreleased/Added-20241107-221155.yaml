@@ -1,0 +1,12 @@
+kind: Added
+body: |-
+    Add support for git credential managers to retrieve Personal Access Tokens (PAT) when loading private dagger modules
+
+     - Enables private git repository support for HTTP/HTTPS refs
+     - Works alongside existing SSH authentication support
+     - Compatible with standard git credential managers and credential helpers
+     - Supports common git hosting platforms (GitHub, GitLab, Bitbucket, etc.)
+time: 2024-11-07T22:11:55.567485506Z
+custom:
+    Author: grouville
+    PR: "8805"
