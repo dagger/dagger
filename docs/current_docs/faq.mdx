@@ -154,14 +154,6 @@ Traces, a browser-based interface focused on tracing and debugging Dagger pipeli
 
 Dagger Cloud collects telemetry from all your organization's Dagger Engines, whether they run in development or CI, and presents it all to you in one place. This gives you a unique view on all pipelines, both pre-push and post-push.
 
-### Does Dagger Cloud store my cache data?
-
-Yes. For caching to work, it requires two components: a centralized storage service and an orchestrator. Dagger Cloud provides both, in one integrated package.
-
-### Where does Dagger Cloud store my cache data?
-
-Dagger Cloud features a global data storage service spanning 26 regions across 3 cloud providers: AWS, Google Cloud Platform, and Cloudflare R2. The region closest to your compute is automatically selected.
-
 ### Why am I seeing `dagger functions` in the local trace list?
 
 All commands that require module initialization at an engine level will send telemetry to Dagger Cloud.
