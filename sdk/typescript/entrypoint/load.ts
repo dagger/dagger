@@ -173,7 +173,6 @@ export async function loadValue(
         return dag[`load${objectType}FromID`](value)
       }
 
-      // TODO(supports subfields serialization)
       return executor.buildClass(objectType, value)
     }
     // Cannot use `,` to specify multiple matching case so instead we use fallthrough.

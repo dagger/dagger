@@ -18,6 +18,10 @@ export class DaggerObject implements DaggerObjectBase {
 
   private symbol: ts.Symbol
 
+  kind(): "class" | "object" {
+    return "class"
+  }
+
   constructor(
     private readonly node: ts.ClassDeclaration,
     private readonly ast: AST,

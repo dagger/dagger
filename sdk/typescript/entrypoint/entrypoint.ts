@@ -50,7 +50,7 @@ export async function entrypoint() {
         }
 
         const modules = await load(files)
-        const executor = new Executor(modules)
+        const executor = new Executor(modules, scanResult)
 
         try {
           result = await invoke(executor, scanResult, {

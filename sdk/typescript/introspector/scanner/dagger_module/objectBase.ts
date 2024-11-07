@@ -25,6 +25,8 @@ export interface DaggerObjectBase {
   methods: DaggerFunctions
   properties: DaggerObjectPropertiesBase
 
+  kind(): "class" | "object"
+
   propagateReferences(references: References): void
 }
 

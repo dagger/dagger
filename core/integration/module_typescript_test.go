@@ -76,12 +76,12 @@ func (TypescriptSuite) TestInit(ctx context.Context, t *testctx.T) {
   "description": "My module",
   "main": "index.js",
   "scripts": {
-	"test": "echo \"Error: no test specified\" && exit 1"
+  "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "John doe",
   "license": "MIT",
-	"type": "module"
-	}`,
+  "type": "module"
+  }`,
 			).
 			With(daggerExec("init", "--source=.", "--name=hasPkgJson", "--sdk=typescript"))
 
@@ -106,12 +106,12 @@ func (TypescriptSuite) TestInit(ctx context.Context, t *testctx.T) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			WithNewFile("/work/tsconfig.json", `{
-	"compilerOptions": {
-	  "target": "ES2022",
-	  "moduleResolution": "Node",
-	  "experimentalDecorators": true
-	}
-		}`,
+  "compilerOptions": {
+    "target": "ES2022",
+    "moduleResolution": "Node",
+    "experimentalDecorators": true
+  }
+    }`,
 			).
 			With(daggerExec("init", "--source=.", "--name=hasTsConfig", "--sdk=typescript"))
 
@@ -136,17 +136,17 @@ func (TypescriptSuite) TestInit(ctx context.Context, t *testctx.T) {
 			WithWorkdir("/work").
 			WithDirectory("/work/src", c.Directory()).
 			WithNewFile("/work/src/index.ts", `
-				import { dag, Container, object, func } from "@dagger.io/dagger"
+        import { dag, Container, object, func } from "@dagger.io/dagger"
 
-				@object()
-				export class ExistingSource {
-				  @func()
-				  helloWorld(stringArg: string): Container {
-					return dag.container().from("alpine:latest").withExec(["echo", stringArg])
-				  }
-				}
+        @object()
+        export class ExistingSource {
+          @func()
+          helloWorld(stringArg: string): Container {
+          return dag.container().from("alpine:latest").withExec(["echo", stringArg])
+          }
+        }
 
-				`,
+        `,
 			).
 			With(daggerExec("init", "--source=.", "--name=existingSource", "--sdk=typescript"))
 
@@ -216,11 +216,11 @@ func (TypescriptSuite) TestInit(ctx context.Context, t *testctx.T) {
   "description": "My module",
   "main": "index.js",
   "scripts": {
-	"test": "echo \"Error: no test specified\" && exit 1"
+  "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "John doe",
   "license": "MIT"
-	}`,
+  }`,
 			).
 			With(daggerExec("init", "--source=.", "--merge", "--name=hasPkgJson", "--sdk=typescript"))
 
@@ -237,17 +237,17 @@ func (TypescriptSuite) TestInit(ctx context.Context, t *testctx.T) {
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			WithNewFile("/work/src/index.ts", `
-				import { dag, Container, object, func } from "@dagger.io/dagger"
+        import { dag, Container, object, func } from "@dagger.io/dagger"
 
-				@object()
-				class ExistingSource {
-				  @func()
-				  helloWorld(stringArg: string): Container {
-					return dag.container().from("alpine:latest").withExec(["echo", stringArg])
-				  }
-				}
+        @object()
+        class ExistingSource {
+          @func()
+          helloWorld(stringArg: string): Container {
+          return dag.container().from("alpine:latest").withExec(["echo", stringArg])
+          }
+        }
 
-				`,
+        `,
 			).
 			With(daggerExec("init", "--name=bare", "--sdk=typescript"))
 
@@ -566,17 +566,17 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
 		WithWorkdir("/work").
 		With(daggerExec("init", "--name=Runtime-Detection", "--sdk=typescript")).
 		With(sdkSource("typescript", `
-			import { dag, Container, Directory, object, func } from "@dagger.io/dagger";
-			@object()
-			export class RuntimeDetection {
-			  @func()
-			  echoRuntime(): string {
-			    const isBunRuntime = typeof Bun === "object";
-			    return isBunRuntime ? "bun" : "node";
-			  }
+      import { dag, Container, Directory, object, func } from "@dagger.io/dagger";
+      @object()
+      export class RuntimeDetection {
+        @func()
+        echoRuntime(): string {
+          const isBunRuntime = typeof Bun === "object";
+          return isBunRuntime ? "bun" : "node";
+        }
 
-				@func()
-				version(): string {
+        @func()
+        version(): string {
           const isBunRuntime = typeof Bun === "object";
           const runtime = isBunRuntime ? "bun" : "node";
           let version = "";
@@ -589,9 +589,9 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
           }
 
           return runtime + "@" + version;
-				}
-			}
-		`))
+        }
+      }
+    `))
 
 	t.Run("should default to node", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.With(daggerQuery(`{runtimeDetection{echoRuntime}}`)).Stdout(ctx)
@@ -601,10 +601,10 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
 
 	t.Run("should use package.json configuration node", func(ctx context.Context, t *testctx.T) {
 		modGen := modGen.WithNewFile("/work/package.json", `{
-				"dagger": {
-					"runtime": "node"
-				}
-			}`,
+        "dagger": {
+          "runtime": "node"
+        }
+      }`,
 		)
 
 		out, err := modGen.With(daggerQuery(`{runtimeDetection{echoRuntime}}`)).Stdout(ctx)
@@ -614,10 +614,10 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
 
 	t.Run("should use package.json configuration bun", func(ctx context.Context, t *testctx.T) {
 		modGen := modGen.WithNewFile("/work/package.json", `{
-				"dagger": {
-					"runtime": "bun"
-				}
-			}`,
+        "dagger": {
+          "runtime": "bun"
+        }
+      }`,
 		)
 
 		out, err := modGen.With(daggerQuery(`{runtimeDetection{echoRuntime}}`)).Stdout(ctx)
@@ -631,17 +631,17 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
 			WithWorkdir("/work").
 			With(daggerExec("init", "--name=Runtime-Detection", "--sdk=typescript", "--source=.")).
 			With(sdkSource("typescript", `
-				import { dag, Container, Directory, object, func } from "@dagger.io/dagger";
+        import { dag, Container, Directory, object, func } from "@dagger.io/dagger";
 
-				@object()
-				export class RuntimeDetection {
-				  @func()
-				  echoRuntime(): string {
-					const isBunRuntime = typeof Bun === "object";
-					return isBunRuntime ? "bun" : "node";
-				  }
-				}
-			`)).
+        @object()
+        export class RuntimeDetection {
+          @func()
+          echoRuntime(): string {
+          const isBunRuntime = typeof Bun === "object";
+          return isBunRuntime ? "bun" : "node";
+          }
+        }
+      `)).
 			WithExec([]string{"npm", "install", "--package-lock-only"})
 
 		out, err := modGen.With(daggerQuery(`{runtimeDetection{echoRuntime}}`)).Stdout(ctx)
@@ -655,17 +655,17 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
 			WithWorkdir("/work").
 			With(daggerExec("init", "--name=Runtime-Detection", "--sdk=typescript")).
 			With(sdkSource("typescript", `
-				import { dag, Container, Directory, object, func } from "@dagger.io/dagger";
+        import { dag, Container, Directory, object, func } from "@dagger.io/dagger";
 
-				@object()
-				export class RuntimeDetection {
-				  @func()
-				  echoRuntime(): string {
-					const isBunRuntime = typeof Bun === "object";
-					return isBunRuntime ? "bun" : "node";
-				  }
-				}
-			`)).
+        @object()
+        export class RuntimeDetection {
+          @func()
+          echoRuntime(): string {
+          const isBunRuntime = typeof Bun === "object";
+          return isBunRuntime ? "bun" : "node";
+          }
+        }
+      `)).
 			WithExec([]string{"bun", "install"})
 
 		out, err := modGen.With(daggerQuery(`{runtimeDetection{echoRuntime}}`)).Stdout(ctx)
@@ -679,22 +679,22 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
 			WithWorkdir("/work").
 			With(daggerExec("init", "--name=Runtime-Detection", "--sdk=typescript")).
 			With(sdkSource("typescript", `
-				import { dag, Container, Directory, object, func } from "@dagger.io/dagger";
+        import { dag, Container, Directory, object, func } from "@dagger.io/dagger";
 
-				@object()
-				export class RuntimeDetection {
-				  @func()
-				  echoRuntime(): string {
-					const isBunRuntime = typeof Bun === "object";
-					return isBunRuntime ? "bun" : "node";
-				  }
-				}
-			`)).
+        @object()
+        export class RuntimeDetection {
+          @func()
+          echoRuntime(): string {
+          const isBunRuntime = typeof Bun === "object";
+          return isBunRuntime ? "bun" : "node";
+          }
+        }
+      `)).
 			WithNewFile("/work/package.json", `{
-					"dagger": {
-						"runtime": "bun"
-					}
-				}`,
+          "dagger": {
+            "runtime": "bun"
+          }
+        }`,
 			).
 			WithExec([]string{"npm", "install", "--package-lock-only"})
 
@@ -705,10 +705,10 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
 
 	t.Run("should error if configured runtime is unknown", func(ctx context.Context, t *testctx.T) {
 		modGen := modGen.WithNewFile("/work/package.json", `{
-				"dagger": {
-					"runtime": "xyz"
-				}
-			}`,
+        "dagger": {
+          "runtime": "xyz"
+        }
+      }`,
 		)
 		_, err := modGen.With(daggerQuery(`{runtimeDetection{echoRuntime}}`)).Stdout(ctx)
 		require.Error(t, err)
@@ -716,10 +716,10 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
 
 	t.Run("should detect specific pinned node version 20.15.0", func(ctx context.Context, t *testctx.T) {
 		modGen := modGen.WithNewFile("/work/package.json", `{
-				"dagger": {
-					"runtime": "node@20.15.0"
-				}
-			}`,
+        "dagger": {
+          "runtime": "node@20.15.0"
+        }
+      }`,
 		)
 
 		out, err := modGen.With(daggerQuery(`{runtimeDetection{version}}`)).Stdout(ctx)
@@ -729,10 +729,10 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
 
 	t.Run("should detect a specific pinned node version 22.4.0", func(ctx context.Context, t *testctx.T) {
 		modGen := modGen.WithNewFile("/work/package.json", `{
-				"dagger": {
-					"runtime": "node@22.4.0"
-				}
-			}`,
+        "dagger": {
+          "runtime": "node@22.4.0"
+        }
+      }`,
 		)
 
 		out, err := modGen.With(daggerQuery(`{runtimeDetection{version}}`)).Stdout(ctx)
@@ -743,14 +743,14 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
 	t.Run("should detect a specific pinned bun version", func(ctx context.Context, t *testctx.T) {
 		// We need to explicitly add the typescript version because the default bun's version is different.
 		modGen := modGen.WithNewFile("/work/package.json", `{
-		    "dependencies": {
-    	  	"typescript": "^5.3.2",
-    	  	"@dagger.io/dagger": "./sdk"
-  		  },
-				"dagger": {
-					"runtime": "bun@1.1.23"
-				}
-			}`,
+        "dependencies": {
+          "typescript": "^5.3.2",
+          "@dagger.io/dagger": "./sdk"
+        },
+        "dagger": {
+          "runtime": "bun@1.1.23"
+        }
+      }`,
 		)
 
 		out, err := modGen.With(daggerQuery(`{runtimeDetection{version}}`)).Stdout(ctx)
@@ -796,7 +796,7 @@ func (TypescriptSuite) TestPackageManagerDetection(ctx context.Context, t *testc
     "typescript": "^5.3.2",
     "@dagger.io/dagger": "./sdk"
   },
-	"packageManager": "pnpm@8.15.4"
+  "packageManager": "pnpm@8.15.4"
 }`).
 			With(daggerExec("develop"))
 
@@ -824,7 +824,7 @@ func (TypescriptSuite) TestPackageManagerDetection(ctx context.Context, t *testc
     "typescript": "^5.3.2",
     "@dagger.io/dagger": "./sdk"
   },
-	"packageManager": "npm@10.7.0"
+  "packageManager": "npm@10.7.0"
 }`).
 			With(daggerExec("develop"))
 
@@ -849,8 +849,8 @@ func (TypescriptSuite) TestPackageManagerDetection(ctx context.Context, t *testc
 			WithNewFile("package.json", `
 {
   "dependencies": {
-	  "typescript": "^5.3.2",
-	  "@dagger.io/dagger": "./sdk"
+    "typescript": "^5.3.2",
+    "@dagger.io/dagger": "./sdk"
   }
 }`).
 			WithExec([]string{"npm", "install", "--package-lock-only"}).
@@ -877,8 +877,8 @@ func (TypescriptSuite) TestPackageManagerDetection(ctx context.Context, t *testc
 			WithNewFile("package.json", `
 {
   "dependencies": {
-	  "typescript": "^5.3.2",
-	  "@dagger.io/dagger": "./sdk"
+    "typescript": "^5.3.2",
+    "@dagger.io/dagger": "./sdk"
   }
 }`).
 			WithExec([]string{"npm", "install", "-g", "pnpm@9.5.0"}).
@@ -904,7 +904,7 @@ func (TypescriptSuite) TestWithOtherModuleTypes(ctx context.Context, t *testctx.
 		WithWorkdir("/work/dep").
 		With(daggerExec("init", "--name=dep", "--sdk=typescript")).
 		With(sdkSource("typescript", `
-	import {  object, func } from "@dagger.io/dagger"
+  import {  object, func } from "@dagger.io/dagger"
 
 @object()
 export class Dep {
@@ -935,16 +935,16 @@ export class Foo {}
 	t.Run("return as other module object", func(ctx context.Context, t *testctx.T) {
 		t.Run("direct", func(ctx context.Context, t *testctx.T) {
 			_, err := ctr.With(sdkSource("typescript", `
-			import { object, func, DepObj } from "@dagger.io/dagger"
+      import { object, func, DepObj } from "@dagger.io/dagger"
 
-			@object()
-			export class Test {
-			  @func()
-			  fn(): DepObj {
-				 return new DepObj()
-			  }
-			}
-			`)).
+      @object()
+      export class Test {
+        @func()
+        fn(): DepObj {
+         return new DepObj()
+        }
+      }
+      `)).
 				With(daggerFunctions()).
 				Stdout(ctx)
 			require.Error(t, err)
@@ -956,16 +956,16 @@ export class Foo {}
 
 		t.Run("list", func(ctx context.Context, t *testctx.T) {
 			_, err := ctr.With(sdkSource("typescript", `
-			import { object, func, DepObj } from "@dagger.io/dagger"
+      import { object, func, DepObj } from "@dagger.io/dagger"
 
-			@object()
-			export class Test {
-			  @func()
-			  fn(): DepObj[] {
-				 return [new DepObj()]
-			  }
-			}
-			`)).
+      @object()
+      export class Test {
+        @func()
+        fn(): DepObj[] {
+         return [new DepObj()]
+        }
+      }
+      `)).
 				With(daggerFunctions()).
 				Stdout(ctx)
 			require.Error(t, err)
@@ -986,7 +986,7 @@ export class Test {
   @func()
   fn(obj: DepObj): void {}
 }
-			`)).
+      `)).
 				With(daggerFunctions()).
 				Stdout(ctx)
 			require.Error(t, err)
@@ -1006,7 +1006,7 @@ export class Test {
   @func()
   fn(obj: DepObj[]): void {}
 }
-			`)).
+      `)).
 				With(daggerFunctions()).
 				Stdout(ctx)
 			require.Error(t, err)
@@ -1036,7 +1036,7 @@ export class Obj {
   @func()
   foo: DepObj
 }
-			`)).
+      `)).
 				With(daggerFunctions()).
 				Stdout(ctx)
 			require.Error(t, err)
@@ -1064,7 +1064,7 @@ export class Obj {
   @func()
   foo: DepObj[]
 }
-			`)).
+      `)).
 				With(daggerFunctions()).
 				Stdout(ctx)
 			require.Error(t, err)
@@ -1091,7 +1091,7 @@ import { object, func } from "@dagger.io/dagger"
 export class Alias {
   @func("bar")
   foo(): string {
-	return "hello world"
+  return "hello world"
   }
 }
 `))
@@ -1113,25 +1113,25 @@ import { object, func } from "@dagger.io/dagger"
 
 @object()
 export class SubSub {
-	@func("zoo")
-	subSubHello(): string {
-		return "hello world"
-	}
+  @func("zoo")
+  subSubHello(): string {
+    return "hello world"
+  }
 }
 
 @object()
 export class Sub {
-	@func("hello")
-	subHello(): SubSub {
-		return new SubSub()
-	}
+  @func("hello")
+  subHello(): SubSub {
+    return new SubSub()
+  }
 }
 
 @object()
 export class Alias {
   @func("bar")
   foo(): Sub {
-	return new Sub()
+  return new Sub()
   }
 }
 `))
@@ -1153,36 +1153,36 @@ import { object, func, func } from "@dagger.io/dagger"
 
 @object()
 export class SuperSubSub {
-	@func("farFarNested")
-	far = true
+  @func("farFarNested")
+  far = true
 }
 
 @object()
 export class SubSub {
-	@func("zoo")
-	a = 4
+  @func("zoo")
+  a = 4
 
-	@func("hey")
-	b = [true, false, true]
+  @func("hey")
+  b = [true, false, true]
 
-	@func("far")
-	subsubsub = new SuperSubSub()
+  @func("far")
+  subsubsub = new SuperSubSub()
 }
 
 @object()
 export class Sub {
-	@func("hello")
-	hey = "a"
+  @func("hello")
+  hey = "a"
 
-	@func("foo")
-	sub = new SubSub()
+  @func("foo")
+  sub = new SubSub()
 }
 
 @object()
 export class Alias {
   @func("bar")
   foo(): Sub {
-	return new Sub()
+  return new Sub()
   }
 }
 `))
@@ -1333,6 +1333,293 @@ export class Test {
 	})
 }
 
+func (TypescriptSuite) TestNativeEnumType(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--name=test", "--sdk=typescript")).
+		With(sdkSource("typescript", `
+import { object, func } from "@dagger.io/dagger"
+
+export enum TestEnum {
+    A = "a",
+    B = "b",
+}
+
+@object()
+export class Test {
+  @func()
+  testEnum(test: TestEnum = TestEnum.A): TestEnum {
+    return test
+  }
+}
+  `))
+
+	t.Run("native enum type - correct input / output", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(daggerCall("test-enum", "--test", "b")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, `b`, out)
+	})
+
+	t.Run("native enum type - default value by reference", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(daggerCall("test-enum")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, `a`, out)
+	})
+}
+
+func (TypescriptSuite) TestReferencedDefaultValue(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	modGen := c.Container().From(golangImage).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--name=test", "--sdk=typescript")).
+		With(sdkSource("typescript", `
+import { func, object } from "@dagger.io/dagger"
+
+export const stringDefaultValue = "world"
+export const integerDefaultValue = 4
+export const booleanDefaultValue = true
+
+@object()
+export class Test {
+  @func()
+  str(s: string = stringDefaultValue): string {
+    return s
+  }
+
+  @func()
+  integer(n: number = integerDefaultValue): number {
+    return n
+  }
+
+  @func()
+  bool(b: boolean = booleanDefaultValue): boolean {
+    return b
+  }
+}
+  `))
+
+	t.Run("string variable default value", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(daggerCall("str")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, `world`, out)
+	})
+
+	t.Run("integer variable default value", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(daggerCall("integer")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, `4`, out)
+	})
+
+	t.Run("boolean variable default value", func(ctx context.Context, t *testctx.T) {
+		out, err := modGen.With(daggerCall("bool")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, `true`, out)
+	})
+}
+
+func (TypescriptSuite) TestTypeKeyword(ctx context.Context, t *testctx.T) {
+	t.Run("wrap primitive type", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=test", "--sdk=typescript")).
+			With(sdkSource("typescript", `
+import { func, object } from "@dagger.io/dagger"
+  
+export type Text = string
+export type Integer = number
+export type Online = boolean
+  
+@object()
+export class Test {
+  @func()
+  str(s: Text): Text {
+    return s
+  }
+  
+  @func()
+  integer(n: Integer): Integer {
+    return n
+  }
+  
+  @func()
+  bool(arg: Online): Online {
+    return arg
+  }
+
+  @func()
+  defaultStr(s: Text = "hello"): Text {
+    return s
+  }
+
+  @func()
+  defaultInteger(n: Integer = 4): Integer {
+    return n
+  }
+
+  @func()
+  defaultBool(arg: Online = true): Online {
+    return arg
+  }
+}
+    `))
+
+		t.Run("string", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCall("str", "--s", "world")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, `world`, out)
+		})
+
+		t.Run("integer ", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCall("integer", "--n", "4")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, `4`, out)
+		})
+
+		t.Run("boolean", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCall("bool", "--arg=true")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, `true`, out)
+		})
+
+		t.Run("string default value", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCall("default-str")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, `hello`, out)
+		})
+
+		t.Run("integer default value", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCall("default-integer")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, `4`, out)
+		})
+
+		t.Run("boolean default value", func(ctx context.Context, t *testctx.T) {
+			out, err := modGen.With(daggerCall("default-bool")).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, `true`, out)
+		})
+	})
+
+	t.Run("object type definition", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=test", "--sdk=typescript")).
+			With(sdkSource("typescript", `
+import { func, object } from "@dagger.io/dagger"
+
+export type Person = {
+  age: number
+  name: string
+}
+
+@object()
+export class Test {
+  @func()
+  person(age: number, name: string): Person {
+    return { age, name }
+  }
+}`))
+
+		out, err := modGen.With(daggerCall("person", "--age", "42", "--name", "John")).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"_type": "TestPerson", "age": 42, "name": "John"}`, out)
+
+		out, err = modGen.With(daggerCall("person", "--age", "42", "--name", "John", "age")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, `42`, out)
+
+		out, err = modGen.With(daggerCall("person", "--age", "42", "--name", "John", "name")).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, `John`, out)
+	})
+
+	t.Run("nested object type definition", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--name=test", "--sdk=typescript")).
+			With(sdkSource("typescript", `
+import { func, object } from "@dagger.io/dagger"
+  
+export type Organisation = {
+  name: string
+  members: Person[]
+}
+
+export type Person = {
+  age: number
+  name: string
+}
+  
+@object()
+export class Test {
+  _orgs: Organisation[]
+
+  constructor() {
+    this._orgs = [
+      {
+        name: "dagger",
+        members: [
+          {
+            age: 42,
+            name: "John"
+          },
+          {
+            age: 24,
+            name: "Jane"
+          }
+        ]
+      },
+      {
+        name: "GitHub",
+        members: [
+          {
+            age: 42,
+            name: "John"
+          },
+          {
+            age: 24,
+            name: "Jane"
+          }
+        ]
+      }
+    ]
+  }
+
+  @func()
+  orgs(): Organisation[] {
+    return this._orgs
+  }
+
+  @func()
+  orgByName(name: string): Organisation {
+    return this._orgs.find(org => org.name === name)
+  }
+}`))
+
+		out, err := modGen.With(daggerCall("orgs")).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `[{"_type": "TestOrganisation", "name": "dagger"}, {"_type": "TestOrganisation", "name": "GitHub"}]`, out)
+
+		out, err = modGen.With(daggerCall("org-by-name", "--name", "GitHub", "members")).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `[{"_type": "TestPerson", "age": 42, "name": "John"}, {"_type": "TestPerson", "age": 24, "name": "Jane"}]`, out)
+	})
+}
+
 func (TypescriptSuite) TestDeprecatedFieldDecorator(ctx context.Context, t *testctx.T) {
 	t.Run("@field still working", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
@@ -1349,7 +1636,7 @@ export class Test {
   @field()
   foo: string = "bar"
 
-	constructor() {}
+  constructor() {}
 }
 `,
 			))
@@ -1377,7 +1664,7 @@ class Test {
   foo(): string {
     return "bar"
   }
-}			
+}      
 `,
 			))
 
