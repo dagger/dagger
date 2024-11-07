@@ -2,7 +2,8 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
+	"os"
+
 	"strings"
 )
 
@@ -17,7 +18,7 @@ type FileEntry struct {
 // Function to process each file entry
 func processFile(entry FileEntry) error {
 	// Read the contents of the source file
-	content, err := ioutil.ReadFile(entry.SourceFilename)
+	content, err := os.ReadFile(entry.SourceFilename)
 	if err != nil {
 		return fmt.Errorf("error reading file %s: %w", entry.SourceFilename, err)
 	}
@@ -27,10 +28,10 @@ func processFile(entry FileEntry) error {
 	// handle <Embed .. /> (with spaces)
 	modifiedContent := strings.ReplaceAll(string(content), "<Embed id=\""+entry.EmbedID+"\" />", "```"+entry.Language+" file="+entry.ScriptFilename+"\r```")
 	// handle <Embed ../> (without spaces)
-	modifiedContent = strings.ReplaceAll(string(modifiedContent), "<Embed id=\""+entry.EmbedID+"\"/>", "```"+entry.Language+" file="+entry.ScriptFilename+"\r```")
+	modifiedContent = strings.ReplaceAll(modifiedContent, "<Embed id=\""+entry.EmbedID+"\"/>", "```"+entry.Language+" file="+entry.ScriptFilename+"\r```")
 
 	// Write the modified content back to the source file
-	err = ioutil.WriteFile(entry.SourceFilename, []byte(modifiedContent), 0644)
+	err = os.WriteFile(entry.SourceFilename, []byte(modifiedContent), 0644)
 	if err != nil {
 		return fmt.Errorf("error writing to file %s: %w", entry.SourceFilename, err)
 	}
