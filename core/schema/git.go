@@ -134,16 +134,28 @@ func (s *gitSchema) git(ctx context.Context, parent *core.Query, args gitArgs) (
 		return nil, fmt.Errorf("failed to get client metadata from context: %w", err)
 	}
 
-	// 3. Setup SSH authentication
+	// 3. Setup authentication
 	var authSock *core.Socket = nil
+	var authToken *core.Secret = nil
+
+	// First parse the ref scheme to determine auth strategy
+	remote, err := gitutil.ParseURL(args.URL)
+	if errors.Is(err, gitutil.ErrUnknownProtocol) {
+		remote, err = gitutil.ParseURL("https://" + args.URL)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse Git URL: %w", err)
+	}
+
+	// Handle explicit SSH socket if provided
 	if args.SSHAuthSocket.Valid {
 		sock, err := args.SSHAuthSocket.Value.Load(ctx, s.srv)
 		if err != nil {
 			return nil, err
 		}
 		authSock = sock.Self
-	} else if clientMetadata != nil && clientMetadata.SSHAuthSocketPath != "" {
-		// Fallback to using the client's SSH agent socket if available
+	} else if remote.Scheme == "ssh" && clientMetadata != nil && clientMetadata.SSHAuthSocketPath != "" {
+		// For SSH refs, try to load client's SSH socket if no explicit socket was provided
 		socketStore, err := parent.Sockets(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get socket store: %w", err)
@@ -178,32 +190,14 @@ func (s *gitSchema) git(ctx context.Context, parent *core.Query, args gitArgs) (
 		authSock = sockInst.Self
 	}
 
-	// 4. Handle git directory configuration
-	discardGitDir := false
-	if args.KeepGitDir != nil {
-		slog.Warn("The 'keepGitDir' argument is deprecated. Use `tree`'s `discardGitDir' instead.")
-		discardGitDir = !*args.KeepGitDir
-	}
-
-	// 5. Handle PAT auth
-	var authToken *core.Secret = nil
-	mainClientCallerID, err := parent.Server.MainClientCallerID(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to retrieve mainClientCallerID: %w", err)
-	}
-
-	// Isolate auth token to main client
-	if clientMetadata != nil && clientMetadata.ClientID == mainClientCallerID {
-		// extract scheme from ref
-		remote, err := gitutil.ParseURL(args.URL)
-		if errors.Is(err, gitutil.ErrUnknownProtocol) {
-			remote, err = gitutil.ParseURL("https://" + args.URL)
-		}
+	// For HTTP(S) refs, handle PAT auth if we're the main client
+	if (remote.Scheme == "https" || remote.Scheme == "http") && clientMetadata != nil {
+		mainClientCallerID, err := parent.Server.MainClientCallerID(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse Git URL: %w", err)
+			return nil, fmt.Errorf("failed to retrieve mainClientCallerID: %w", err)
 		}
 
-		if remote.Scheme == "https" || remote.Scheme == "http" {
+		if clientMetadata.ClientID == mainClientCallerID {
 			// Check if repo is public
 			repo := git.NewRemote(memory.NewStorage(), &config.RemoteConfig{
 				Name: "origin",
@@ -211,22 +205,8 @@ func (s *gitSchema) git(ctx context.Context, parent *core.Query, args gitArgs) (
 			})
 
 			_, err := repo.ListContext(ctx, &git.ListOptions{Auth: nil})
-			if err == nil {
-				// Repository is public, no need for auth token
-				return &core.GitRepository{
-					Query:         parent,
-					URL:           args.URL,
-					DiscardGitDir: discardGitDir,
-					SSHKnownHosts: args.SSHKnownHosts,
-					SSHAuthSocket: authSock,
-					Services:      svcs,
-					Platform:      parent.Platform(),
-					AuthToken:     nil,
-				}, nil
-			}
-
-			// Only proceed with auth if repo requires authentication
-			if errors.Is(err, transport.ErrAuthenticationRequired) {
+			if err != nil && errors.Is(err, transport.ErrAuthenticationRequired) {
+				// Only proceed with auth if repo requires authentication
 				bk, err := parent.Buildkit(ctx)
 				if err != nil {
 					return nil, fmt.Errorf("failed to get buildkit: %w", err)
@@ -237,8 +217,6 @@ func (s *gitSchema) git(ctx context.Context, parent *core.Query, args gitArgs) (
 				if err == nil {
 					// Credentials found, create and set auth token
 					var secretAuthToken dagql.Instance[*core.Secret]
-					// NB: If we allow getting the name from the dagger.Secret instance,
-					// it can be vulnerable to brute force attacks.
 					hash := sha256.Sum256([]byte(credentials.Password))
 					secretName := hex.EncodeToString(hash[:])
 					if err := s.srv.Select(ctx, s.srv.Root(), &secretAuthToken,
@@ -264,6 +242,13 @@ func (s *gitSchema) git(ctx context.Context, parent *core.Query, args gitArgs) (
 				}
 			}
 		}
+	}
+
+	// 4. Handle git directory configuration
+	discardGitDir := false
+	if args.KeepGitDir != nil {
+		slog.Warn("The 'keepGitDir' argument is deprecated. Use `tree`'s `discardGitDir' instead.")
+		discardGitDir = !*args.KeepGitDir
 	}
 
 	return &core.GitRepository{
