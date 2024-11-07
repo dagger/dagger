@@ -136,6 +136,9 @@ NOTE: At the time of writing, this is a completely manual process. This is becau
 
 ## Build 0.9 sub-site
 
+- Copy the following to a temporary location (`temp`) from the `main` branch before beginning
+  - `docs\archived_docs\assets`
+  - `docs\src\scripts\replace-embeds.go`
 - Clone branch `v0.9.x` at last commit 77a53a8
 - Delete `docs/versioned_docs/version-zenith` sub-directory
 - Delete `docs/versioned_sidebars/version-zenith-sidebars.json` file
@@ -238,6 +241,14 @@ NOTE: At the time of writing, this is a completely manual process. This is becau
   - Replace `(../sdk/python/)` URL links with `(/0.9/sdk/python/)` URL links
   - Replace `(../sdk/go/)` URL links with `(/0.9/sdk/go/)` URL links
   - Replace `(../api/)` URL links with `(/0.9/api/)` URL links
+- Replace embedded snippets with file references
+  - Remove `import QuickstartDoc from '@site/src/components/quickstartDoc.js'` in all pages
+  - Remove `<QuickstartDoc embeds={ids}>` in all pages
+  - Remove `</QuickstartDoc>` in all pages
+  - Move `temp/assets/0.9/api/snippets/*` to `docs/current_docs/api/snippets` (snippets which previously existed only as embeds, not files)
+  - Move `temp/assets/0.9/quickstart/snippets/*` to `docs/current_docs/quickstart/snippets` (snippets which previously existed only as embeds, not files)
+  - From the `docs` directory, run the command `go run src/scripts/replace-embeds.go` to replace all embedded snippets with file references
+  - Perform a search over the `docs` directory tree to confirm that there are no orphaned `<Embed` directives
 - Run `npm run build` and store the `build/` directory as `site/0.9`
 
 ## Build top-level site (archive.docs.dagger.io)
