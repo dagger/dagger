@@ -34,7 +34,7 @@ In this structure:
     - `querybuilder` has utilities for building GraphQL queries (used internally by the `dagger` package).
     - `telemetry` has utilities for sending Dagger Engine telemetry.
 
-For examples of modules written in Go, see [Daggerverse Modules in Go](https://daggerverse.dev/search?sdk=go)
+For examples of modules written in Go, see [Daggerverse Modules in Go](https://daggerverse.dev/search?sdk=go).
 
 </TabItem>
 <TabItem value="Python">
@@ -46,8 +46,9 @@ For examples of modules written in Go, see [Daggerverse Modules in Go](https://d
 ├── uv.lock
 ├── sdk
 ├── src
-│   └── main
-│       └── __init__.py
+│   └── my_module
+│       ├── __init__.py
+│       └── main.py
 └── dagger.json
 ```
 
@@ -55,15 +56,15 @@ In this structure:
 
 - `dagger.json` is the Dagger module configuration file.
 - `pyproject.toml` manages the Python project configuration.
-- `uv.lock` manages the module dependencies.
-- `src/main/` is where your Dagger module code goes. It contains sample code to help you get started.
+- `uv.lock` manages the module's pinned dependencies.
+- `src/my_module/` is where your Dagger module code goes. It contains sample code to help you get started.
 - `sdk/` contains the vendored Python SDK [client library](https://pypi.org/project/dagger-io/).
 
 :::info
 Placing the source code under a `src` directory follows a common Python convention. To know more, see [src layout vs flat layout](https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/).
 :::
 
-For examples of modules written in Python, see [Daggerverse Modules in Python](https://daggerverse.dev/search?sdk=python)
+For examples of modules written in Python, see [Daggerverse Modules in Python](https://daggerverse.dev/search?sdk=python).
 
 </TabItem>
 <TabItem value="TypeScript">
@@ -86,7 +87,7 @@ In this structure:
 - `src/` is where your Dagger module code goes. It contains sample code to help you get started.
 - `sdk/` contains the TypeScript SDK.
 
-For examples of modules written in Typescript, see [Daggerverse Modules in Typescript](https://daggerverse.dev/search?sdk=typescript)
+For examples of modules written in Typescript, see [Daggerverse Modules in Typescript](https://daggerverse.dev/search?sdk=typescript).
 
 </TabItem>
 </Tabs>
