@@ -210,6 +210,38 @@ When working with private Git repositories, ensure that [SSH authentication is p
     ```shell
     dagger call copy-directory-with-exclusions --source=ssh://git@github.com/user/foo#main --exclude-file='*.md' directory --path=/src entries
     ```
+### Copy a file to the Dagger Engine runtime container for custom processing
+
+The following Dagger Function accepts a `File` argument and copies the specified file to the Dagger Engine module runtime container. This makes it possible to add one or more files to the runtime container and manipulate them using custom logic.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/copy-dir-runtime/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/copy-dir-runtime/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/copy-dir-runtime/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Copy the `data.json` host file to the runtime container and process it:
+
+```shell
+dagger call copy-file --source=../data.json
+```
 
 ## Builds
 
