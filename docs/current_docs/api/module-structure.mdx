@@ -104,7 +104,7 @@ class MyModule:
 :::important
 Dagger expects that a Python Dagger module is structured like a [library](https://docs.astral.sh/uv/concepts/projects/#libraries), so that the SDK is able to load the code with an import, but it's up to the Python [build system](https://docs.astral.sh/uv/concepts/projects/#build-systems) to know where files are located in order to build and install the Python package correctly.
 
-This affords a lot of flexibility in how Daggger Python modules can be structured, and which tools are supported.
+This affords a lot of flexibility in how Dagger Python modules can be structured, and which tools are supported.
 :::
 
 The default project template follows known conventions for structuring a Python library (src layout, package name matching project name), which allows Python [build backends](https://www.python.org/dev/peps/pep-0517/) to automatically recognize where the files are.
@@ -171,14 +171,13 @@ py-modules = ["main"]
 :::
 
 :::tip CUSTOMIZE IMPORT PACKAGE
-The Python SDK looks for the main object of the Dagger module in the Pyhton [import package that is named after the distribution package name](https://packaging.python.org/en/latest/discussions/distribution-package-vs-import-package/#how-do-distribution-package-names-and-import-package-names-compare) (in particular, using underscores `_` as a word separator).
+The Python SDK looks for the *main object* of the Dagger module in the Python [import package that is named after the distribution package name](https://packaging.python.org/en/latest/discussions/distribution-package-vs-import-package/#how-do-distribution-package-names-and-import-package-names-compare) (in particular, using underscores `_` as a word separator).
 
-If they are different, you explicitly tell the Python SDK where the main object needs to be imported from, using the following entry point configuration in `pyproject.toml`:
+If they are different, you must explicitly tell the Python SDK where the main object needs to be imported from, using the following entry point configuration in `pyproject.toml`:
 
 ```toml
 [project.entry-points."dagger.mod"]
 main_object = "<import package>:<main object>"
-````
 
 For example, for a Dagger module named `my-module`:
 
