@@ -35,8 +35,10 @@ func (t *Test) All(
 	timeout string,
 	// +optional
 	race bool,
+	// +optional
+	verbose bool,
 ) error {
-	return t.test(ctx, "", "", "./...", failfast, parallel, timeout, race, 1)
+	return t.test(ctx, "", "", "./...", failfast, parallel, timeout, race, 1, verbose)
 }
 
 // List all tests
@@ -77,8 +79,11 @@ func (t *Test) Specific(
 	// +default=1
 	// +optional
 	count int,
+	// Enable verbose output
+	// +optional
+	verbose bool,
 ) error {
-	return t.test(ctx, run, skip, pkg, failfast, parallel, timeout, race, count)
+	return t.test(ctx, run, skip, pkg, failfast, parallel, timeout, race, count, verbose)
 }
 
 func (t *Test) test(
@@ -91,12 +96,17 @@ func (t *Test) test(
 	timeout string,
 	race bool,
 	count int,
+	verbose bool,
 ) error {
 	cgoEnabledEnv := "0"
 	args := []string{
 		"go",
 		"test",
-		"-v",
+	}
+
+	// allow verbose
+	if verbose {
+		args = append(args, "-v")
 	}
 
 	// Add ldflags

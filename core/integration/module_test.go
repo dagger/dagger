@@ -2458,11 +2458,11 @@ func (ModuleSuite) TestEngineError(ctx context.Context, t *testctx.T) {
 func (ModuleSuite) TestDaggerListen(ctx context.Context, t *testctx.T) {
 	t.Run("with mod", func(ctx context.Context, t *testctx.T) {
 		modDir := t.TempDir()
-		_, err := hostDaggerExec(ctx, t, modDir, "--debug", "init", "--source=.", "--name=test", "--sdk=go")
+		_, err := hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
 		require.NoError(t, err)
 
 		addr := "127.0.0.1:12456"
-		listenCmd := hostDaggerCommand(ctx, t, modDir, "--debug", "listen", "--listen", addr)
+		listenCmd := hostDaggerCommand(ctx, t, modDir, "listen", "--listen", addr)
 		listenCmd.Env = append(listenCmd.Env, "DAGGER_SESSION_TOKEN=lol")
 		listenCmd.Stdout = testutil.NewTWriter(t)
 		listenCmd.Stderr = testutil.NewTWriter(t)
@@ -2479,7 +2479,7 @@ func (ModuleSuite) TestDaggerListen(ctx context.Context, t *testctx.T) {
 			backoff.WithMaxElapsedTime(time.Minute),
 		))
 
-		callCmd := hostDaggerCommand(ctx, t, modDir, "--debug", "call", "container-echo", "--string-arg=hi", "stdout")
+		callCmd := hostDaggerCommand(ctx, t, modDir, "call", "container-echo", "--string-arg=hi", "stdout")
 		callCmd.Env = append(callCmd.Env, "DAGGER_SESSION_PORT=12456", "DAGGER_SESSION_TOKEN=lol")
 		callCmd.Stderr = testutil.NewTWriter(t)
 		out, err := callCmd.Output()
@@ -2494,16 +2494,16 @@ func (ModuleSuite) TestDaggerListen(ctx context.Context, t *testctx.T) {
 			// mod load fails but should still be able to query base api
 
 			modDir := t.TempDir()
-			_, err := hostDaggerExec(ctx, t, modDir, "--debug", "init", "--source=.", "--name=test", "--sdk=go")
+			_, err := hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
 			require.NoError(t, err)
 
-			listenCmd := hostDaggerCommand(ctx, t, modDir, "--debug", "listen", "--disable-host-read-write", "--listen", "127.0.0.1:12457")
+			listenCmd := hostDaggerCommand(ctx, t, modDir, "listen", "--disable-host-read-write", "--listen", "127.0.0.1:12457")
 			listenCmd.Env = append(listenCmd.Env, "DAGGER_SESSION_TOKEN=lol")
 			require.NoError(t, listenCmd.Start())
 
 			var out []byte
 			for range limitTicker(time.Second, 60) {
-				callCmd := hostDaggerCommand(ctx, t, modDir, "--debug", "query")
+				callCmd := hostDaggerCommand(ctx, t, modDir, "query")
 				callCmd.Stdin = strings.NewReader(fmt.Sprintf(`query{container{from(address:"%s"){file(path:"/etc/alpine-release"){contents}}}}`, alpineImage))
 				callCmd.Stderr = testutil.NewTWriter(t)
 				callCmd.Env = append(callCmd.Env, "DAGGER_SESSION_PORT=12457", "DAGGER_SESSION_TOKEN=lol")
@@ -2520,14 +2520,14 @@ func (ModuleSuite) TestDaggerListen(ctx context.Context, t *testctx.T) {
 		t.Run("without mod", func(ctx context.Context, t *testctx.T) {
 			tmpdir := t.TempDir()
 
-			listenCmd := hostDaggerCommand(ctx, t, tmpdir, "--debug", "listen", "--disable-host-read-write", "--listen", "127.0.0.1:12458")
+			listenCmd := hostDaggerCommand(ctx, t, tmpdir, "listen", "--disable-host-read-write", "--listen", "127.0.0.1:12458")
 			listenCmd.Env = append(listenCmd.Env, "DAGGER_SESSION_TOKEN=lol")
 			require.NoError(t, listenCmd.Start())
 
 			var out []byte
 			var err error
 			for range limitTicker(time.Second, 60) {
-				callCmd := hostDaggerCommand(ctx, t, tmpdir, "--debug", "query")
+				callCmd := hostDaggerCommand(ctx, t, tmpdir, "query")
 				callCmd.Stdin = strings.NewReader(fmt.Sprintf(`query{container{from(address:"%s"){file(path:"/etc/alpine-release"){contents}}}}`, alpineImage))
 				callCmd.Stderr = testutil.NewTWriter(t)
 				callCmd.Env = append(callCmd.Env, "DAGGER_SESSION_PORT=12458", "DAGGER_SESSION_TOKEN=lol")
@@ -5289,7 +5289,7 @@ func (m *Dep) Collect(MyEnum, MyInterface) error {
 
 func daggerExec(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger", "--debug"}, args...), dagger.ContainerWithExecOpts{
+		return c.WithExec(append([]string{"dagger"}, args...), dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		})
 	}
@@ -5302,7 +5302,7 @@ func daggerQuery(query string, args ...any) dagger.WithContainerFunc {
 func daggerQueryAt(modPath string, query string, args ...any) dagger.WithContainerFunc {
 	query = fmt.Sprintf(query, args...)
 	return func(c *dagger.Container) *dagger.Container {
-		execArgs := []string{"dagger", "--debug", "query"}
+		execArgs := []string{"dagger", "query"}
 		if modPath != "" {
 			execArgs = append(execArgs, "-m", modPath)
 		}
@@ -5319,7 +5319,7 @@ func daggerCall(args ...string) dagger.WithContainerFunc {
 
 func daggerCallAt(modPath string, args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		execArgs := []string{"dagger", "--debug", "call"}
+		execArgs := []string{"dagger", "call"}
 		if modPath != "" {
 			execArgs = append(execArgs, "-m", modPath)
 		}
@@ -5349,7 +5349,7 @@ func mountedPrivateRepoSocket(c *dagger.Client, t *testctx.T) (dagger.WithContai
 
 func daggerFunctions(args ...string) dagger.WithContainerFunc {
 	return func(c *dagger.Container) *dagger.Container {
-		return c.WithExec(append([]string{"dagger", "--debug", "functions"}, args...), dagger.ContainerWithExecOpts{
+		return c.WithExec(append([]string{"dagger", "functions"}, args...), dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		})
 	}
