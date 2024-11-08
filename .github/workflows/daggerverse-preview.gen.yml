@@ -193,9 +193,10 @@ jobs:
                 exit $EXIT_CODE
               env:
                 _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
-                COMMAND: dagger call -q --docker-cfg=file:$HOME/.docker/config.json deploy-preview-with-dagger-main --github-token=env:DAGGER_CI_GITHUB_TOKEN
+                COMMAND: dagger call -q deploy-preview-with-dagger-main --github-token=env:DAGGER_CI_GITHUB_TOKEN
                 DAGGER_CI_GITHUB_TOKEN: ${{ secrets.DAGGER_CI_GITHUB_TOKEN }}
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
+                DAGGER_MODULE: modules/daggerverse
               shell: bash
         timeout-minutes: 10
         outputs:
