@@ -1,34 +1,33 @@
-import { dag, object, func, enumType } from "@dagger.io/dagger"
+import { dag, object, func } from "@dagger.io/dagger"
 
 /**
  * Vulnerability severity levels
  */
-@enumType()
-class Severity {
+export enum Severity {
   /**
    * Undetermined risk; analyze further.
    */
-  static readonly Unknown: string = "UNKNOWN"
+  Unknown = "UNKNOWN",
 
   /**
    * Minimal risk; routine fix.
    */
-  static readonly Low: string = "LOW"
+  Low = "LOW",
 
   /**
    * Moderate risk; timely fix.
    */
-  static readonly Medium: string = "MEDIUM"
+  Medium = "MEDIUM",
 
   /**
    * Serious risk; quick fix needed.
    */
-  static readonly High: string = "HIGH"
+  High = "HIGH",
 
   /**
    * Severe risk; immediate action.
    */
-  static readonly Critical: string = "CRITICAL"
+  Critical = "CRITICAL",
 }
 
 @object()
