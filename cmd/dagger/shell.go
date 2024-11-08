@@ -635,7 +635,7 @@ func (h *shellCallHandler) parseArgumentValues(ctx context.Context, fn *modFunct
 
 	// Finally, get the values from the flags that haven't been resolved yet.
 	for _, a := range fn.Args {
-		if _, exists := values[a.Name]; exists || a.IsUnsupportedFlag() {
+		if _, exists := values[a.Name]; exists {
 			continue
 		}
 		flag, err := a.GetFlag(flags)
