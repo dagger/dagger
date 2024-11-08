@@ -1221,7 +1221,7 @@ func (w *Worker) runContainer(ctx context.Context, state *execState) (rerr error
 			)
 		}
 
-		cgroupSampler, err := resources.NewSampler(cgroupPath, meter, attribute.NewSet(commonAttrs...))
+		cgroupSampler, err := resources.NewSampler(cgroupPath, state.networkNamespace, meter, attribute.NewSet(commonAttrs...))
 		if err != nil {
 			return fmt.Errorf("create cgroup sampler: %w", err)
 		}
