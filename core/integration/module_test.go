@@ -2452,7 +2452,7 @@ func (ModuleSuite) TestEngineError(ctx context.Context, t *testctx.T) {
 		).
 		With(daggerCall("fn")).
 		Sync(ctx)
-	require.ErrorContains(t, err, "dag.DaggerEngine undefined")
+	require.ErrorContains(t, err, "dag.Engine undefined")
 }
 
 func (ModuleSuite) TestDaggerListen(ctx context.Context, t *testctx.T) {
