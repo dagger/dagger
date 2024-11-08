@@ -19,7 +19,7 @@ Dagger caches two types of data:
     ```shell
     dagger query <<EOF
     {
-      daggerEngine {
+      engine {
         localCache {
           entrySet {
             entries {
@@ -38,7 +38,7 @@ Dagger caches two types of data:
     ```shell
     dagger query <<EOF
     {
-      daggerEngine {
+      engine {
         localCache {
           entrySet {
             entryCount
@@ -59,7 +59,7 @@ To free up disk space used by the cache, use the following command:
 ```shell
 dagger query <<EOF
 {
-  daggerEngine {
+  engine {
     localCache {
       prune
     }

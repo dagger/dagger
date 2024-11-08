@@ -4755,7 +4755,7 @@ func (m *Dep) GetRelSource(
 	// +ignore=["**", "!yo"]
 	source *dagger.Directory,
 ) *dagger.Directory {
-  return source 
+  return source
 }
 `,
 			).
@@ -4812,9 +4812,9 @@ func (m *Test) GetRelDepSource() *dagger.Directory {
 import (
 	"dagger/dep/internal/dagger"
 )
-		
+
 type Dep struct{}
-		
+
 func (m *Dep) GetSource(
 	// +defaultPath="/dep"
 	// +ignore=["**", "!yo"]
@@ -4828,7 +4828,7 @@ func (m *Dep) GetRelSource(
 	// +ignore=["**","!yo"]
 	source *dagger.Directory,
 ) *dagger.Directory {
-	return source 
+	return source
 }
 		`).
 			WithNewFile("yo", "yo")
@@ -4844,9 +4844,9 @@ import (
 	"dagger/test/internal/dagger"
 	"github.com/Khan/genqlient/graphql"
 )
-			
+
 type Test struct{}
-			
+
 func (m *Test) GetDepSource(ctx context.Context, src *dagger.Directory) (*dagger.Directory, error) {
 	err := src.AsModule().Initialize().Serve(ctx)
 	if err != nil {

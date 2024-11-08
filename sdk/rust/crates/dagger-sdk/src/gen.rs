@@ -115,156 +115,6 @@ impl CurrentModuleId {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
-pub struct DaggerEngineCacheEntryId(pub String);
-impl From<&str> for DaggerEngineCacheEntryId {
-    fn from(value: &str) -> Self {
-        Self(value.to_string())
-    }
-}
-impl From<String> for DaggerEngineCacheEntryId {
-    fn from(value: String) -> Self {
-        Self(value)
-    }
-}
-impl IntoID<DaggerEngineCacheEntryId> for DaggerEngineCacheEntry {
-    fn into_id(
-        self,
-    ) -> std::pin::Pin<
-        Box<
-            dyn core::future::Future<Output = Result<DaggerEngineCacheEntryId, DaggerError>> + Send,
-        >,
-    > {
-        Box::pin(async move { self.id().await })
-    }
-}
-impl IntoID<DaggerEngineCacheEntryId> for DaggerEngineCacheEntryId {
-    fn into_id(
-        self,
-    ) -> std::pin::Pin<
-        Box<
-            dyn core::future::Future<Output = Result<DaggerEngineCacheEntryId, DaggerError>> + Send,
-        >,
-    > {
-        Box::pin(async move { Ok::<DaggerEngineCacheEntryId, DaggerError>(self) })
-    }
-}
-impl DaggerEngineCacheEntryId {
-    fn quote(&self) -> String {
-        format!("\"{}\"", self.0.clone())
-    }
-}
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
-pub struct DaggerEngineCacheEntrySetId(pub String);
-impl From<&str> for DaggerEngineCacheEntrySetId {
-    fn from(value: &str) -> Self {
-        Self(value.to_string())
-    }
-}
-impl From<String> for DaggerEngineCacheEntrySetId {
-    fn from(value: String) -> Self {
-        Self(value)
-    }
-}
-impl IntoID<DaggerEngineCacheEntrySetId> for DaggerEngineCacheEntrySet {
-    fn into_id(
-        self,
-    ) -> std::pin::Pin<
-        Box<
-            dyn core::future::Future<Output = Result<DaggerEngineCacheEntrySetId, DaggerError>>
-                + Send,
-        >,
-    > {
-        Box::pin(async move { self.id().await })
-    }
-}
-impl IntoID<DaggerEngineCacheEntrySetId> for DaggerEngineCacheEntrySetId {
-    fn into_id(
-        self,
-    ) -> std::pin::Pin<
-        Box<
-            dyn core::future::Future<Output = Result<DaggerEngineCacheEntrySetId, DaggerError>>
-                + Send,
-        >,
-    > {
-        Box::pin(async move { Ok::<DaggerEngineCacheEntrySetId, DaggerError>(self) })
-    }
-}
-impl DaggerEngineCacheEntrySetId {
-    fn quote(&self) -> String {
-        format!("\"{}\"", self.0.clone())
-    }
-}
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
-pub struct DaggerEngineCacheId(pub String);
-impl From<&str> for DaggerEngineCacheId {
-    fn from(value: &str) -> Self {
-        Self(value.to_string())
-    }
-}
-impl From<String> for DaggerEngineCacheId {
-    fn from(value: String) -> Self {
-        Self(value)
-    }
-}
-impl IntoID<DaggerEngineCacheId> for DaggerEngineCache {
-    fn into_id(
-        self,
-    ) -> std::pin::Pin<
-        Box<dyn core::future::Future<Output = Result<DaggerEngineCacheId, DaggerError>> + Send>,
-    > {
-        Box::pin(async move { self.id().await })
-    }
-}
-impl IntoID<DaggerEngineCacheId> for DaggerEngineCacheId {
-    fn into_id(
-        self,
-    ) -> std::pin::Pin<
-        Box<dyn core::future::Future<Output = Result<DaggerEngineCacheId, DaggerError>> + Send>,
-    > {
-        Box::pin(async move { Ok::<DaggerEngineCacheId, DaggerError>(self) })
-    }
-}
-impl DaggerEngineCacheId {
-    fn quote(&self) -> String {
-        format!("\"{}\"", self.0.clone())
-    }
-}
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
-pub struct DaggerEngineId(pub String);
-impl From<&str> for DaggerEngineId {
-    fn from(value: &str) -> Self {
-        Self(value.to_string())
-    }
-}
-impl From<String> for DaggerEngineId {
-    fn from(value: String) -> Self {
-        Self(value)
-    }
-}
-impl IntoID<DaggerEngineId> for DaggerEngine {
-    fn into_id(
-        self,
-    ) -> std::pin::Pin<
-        Box<dyn core::future::Future<Output = Result<DaggerEngineId, DaggerError>> + Send>,
-    > {
-        Box::pin(async move { self.id().await })
-    }
-}
-impl IntoID<DaggerEngineId> for DaggerEngineId {
-    fn into_id(
-        self,
-    ) -> std::pin::Pin<
-        Box<dyn core::future::Future<Output = Result<DaggerEngineId, DaggerError>> + Send>,
-    > {
-        Box::pin(async move { Ok::<DaggerEngineId, DaggerError>(self) })
-    }
-}
-impl DaggerEngineId {
-    fn quote(&self) -> String {
-        format!("\"{}\"", self.0.clone())
-    }
-}
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct DirectoryId(pub String);
 impl From<&str> for DirectoryId {
     fn from(value: &str) -> Self {
@@ -295,6 +145,144 @@ impl IntoID<DirectoryId> for DirectoryId {
     }
 }
 impl DirectoryId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct EngineCacheEntryId(pub String);
+impl From<&str> for EngineCacheEntryId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+impl From<String> for EngineCacheEntryId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl IntoID<EngineCacheEntryId> for EngineCacheEntry {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<EngineCacheEntryId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<EngineCacheEntryId> for EngineCacheEntryId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<EngineCacheEntryId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<EngineCacheEntryId, DaggerError>(self) })
+    }
+}
+impl EngineCacheEntryId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct EngineCacheEntrySetId(pub String);
+impl From<&str> for EngineCacheEntrySetId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+impl From<String> for EngineCacheEntrySetId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl IntoID<EngineCacheEntrySetId> for EngineCacheEntrySet {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<EngineCacheEntrySetId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<EngineCacheEntrySetId> for EngineCacheEntrySetId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<EngineCacheEntrySetId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<EngineCacheEntrySetId, DaggerError>(self) })
+    }
+}
+impl EngineCacheEntrySetId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct EngineCacheId(pub String);
+impl From<&str> for EngineCacheId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+impl From<String> for EngineCacheId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl IntoID<EngineCacheId> for EngineCache {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<EngineCacheId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<EngineCacheId> for EngineCacheId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<
+        Box<dyn core::future::Future<Output = Result<EngineCacheId, DaggerError>> + Send>,
+    > {
+        Box::pin(async move { Ok::<EngineCacheId, DaggerError>(self) })
+    }
+}
+impl EngineCacheId {
+    fn quote(&self) -> String {
+        format!("\"{}\"", self.0.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct EngineId(pub String);
+impl From<&str> for EngineId {
+    fn from(value: &str) -> Self {
+        Self(value.to_string())
+    }
+}
+impl From<String> for EngineId {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+impl IntoID<EngineId> for Engine {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<EngineId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { self.id().await })
+    }
+}
+impl IntoID<EngineId> for EngineId {
+    fn into_id(
+        self,
+    ) -> std::pin::Pin<Box<dyn core::future::Future<Output = Result<EngineId, DaggerError>> + Send>>
+    {
+        Box::pin(async move { Ok::<EngineId, DaggerError>(self) })
+    }
+}
+impl EngineId {
     fn quote(&self) -> String {
         format!("\"{}\"", self.0.clone())
     }
@@ -3877,144 +3865,6 @@ impl CurrentModule {
     }
 }
 #[derive(Clone)]
-pub struct DaggerEngine {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
-}
-impl DaggerEngine {
-    /// A unique identifier for this DaggerEngine.
-    pub async fn id(&self) -> Result<DaggerEngineId, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// The local (on-disk) cache for the Dagger engine
-    pub fn local_cache(&self) -> DaggerEngineCache {
-        let query = self.selection.select("localCache");
-        DaggerEngineCache {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-}
-#[derive(Clone)]
-pub struct DaggerEngineCache {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
-}
-impl DaggerEngineCache {
-    /// The current set of entries in the cache
-    pub fn entry_set(&self) -> DaggerEngineCacheEntrySet {
-        let query = self.selection.select("entrySet");
-        DaggerEngineCacheEntrySet {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// A unique identifier for this DaggerEngineCache.
-    pub async fn id(&self) -> Result<DaggerEngineCacheId, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// The maximum bytes to keep in the cache without pruning, after which automatic pruning may kick in.
-    pub async fn keep_bytes(&self) -> Result<isize, DaggerError> {
-        let query = self.selection.select("keepBytes");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// The maximum bytes to keep in the cache without pruning.
-    pub async fn max_used_space(&self) -> Result<isize, DaggerError> {
-        let query = self.selection.select("maxUsedSpace");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// The target amount of free disk space the garbage collector will attempt to leave.
-    pub async fn min_free_space(&self) -> Result<isize, DaggerError> {
-        let query = self.selection.select("minFreeSpace");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// Prune the cache of releaseable entries
-    pub async fn prune(&self) -> Result<Void, DaggerError> {
-        let query = self.selection.select("prune");
-        query.execute(self.graphql_client.clone()).await
-    }
-    pub async fn reserved_space(&self) -> Result<isize, DaggerError> {
-        let query = self.selection.select("reservedSpace");
-        query.execute(self.graphql_client.clone()).await
-    }
-}
-#[derive(Clone)]
-pub struct DaggerEngineCacheEntry {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
-}
-impl DaggerEngineCacheEntry {
-    /// Whether the cache entry is actively being used.
-    pub async fn actively_used(&self) -> Result<bool, DaggerError> {
-        let query = self.selection.select("activelyUsed");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// The time the cache entry was created, in Unix nanoseconds.
-    pub async fn created_time_unix_nano(&self) -> Result<isize, DaggerError> {
-        let query = self.selection.select("createdTimeUnixNano");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// The description of the cache entry.
-    pub async fn description(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("description");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// The disk space used by the cache entry.
-    pub async fn disk_space_bytes(&self) -> Result<isize, DaggerError> {
-        let query = self.selection.select("diskSpaceBytes");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this DaggerEngineCacheEntry.
-    pub async fn id(&self) -> Result<DaggerEngineCacheEntryId, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// The most recent time the cache entry was used, in Unix nanoseconds.
-    pub async fn most_recent_use_time_unix_nano(&self) -> Result<isize, DaggerError> {
-        let query = self.selection.select("mostRecentUseTimeUnixNano");
-        query.execute(self.graphql_client.clone()).await
-    }
-}
-#[derive(Clone)]
-pub struct DaggerEngineCacheEntrySet {
-    pub proc: Option<Arc<DaggerSessionProc>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
-}
-impl DaggerEngineCacheEntrySet {
-    /// The total disk space used by the cache entries in this set.
-    pub async fn disk_space_bytes(&self) -> Result<isize, DaggerError> {
-        let query = self.selection.select("diskSpaceBytes");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// The list of individual cache entries in the set
-    pub fn entries(&self) -> Vec<DaggerEngineCacheEntry> {
-        let query = self.selection.select("entries");
-        vec![DaggerEngineCacheEntry {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }]
-    }
-    /// The number of cache entries in this set.
-    pub async fn entry_count(&self) -> Result<isize, DaggerError> {
-        let query = self.selection.select("entryCount");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// A unique identifier for this DaggerEngineCacheEntrySet.
-    pub async fn id(&self) -> Result<DaggerEngineCacheEntrySetId, DaggerError> {
-        let query = self.selection.select("id");
-        query.execute(self.graphql_client.clone()).await
-    }
-}
-#[derive(Clone)]
 pub struct Directory {
     pub proc: Option<Arc<DaggerSessionProc>>,
     pub selection: Selection,
@@ -4648,6 +4498,144 @@ impl Directory {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }
+    }
+}
+#[derive(Clone)]
+pub struct Engine {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl Engine {
+    /// A unique identifier for this Engine.
+    pub async fn id(&self) -> Result<EngineId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The local (on-disk) cache for the Dagger engine
+    pub fn local_cache(&self) -> EngineCache {
+        let query = self.selection.select("localCache");
+        EngineCache {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+}
+#[derive(Clone)]
+pub struct EngineCache {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl EngineCache {
+    /// The current set of entries in the cache
+    pub fn entry_set(&self) -> EngineCacheEntrySet {
+        let query = self.selection.select("entrySet");
+        EngineCacheEntrySet {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// A unique identifier for this EngineCache.
+    pub async fn id(&self) -> Result<EngineCacheId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The maximum bytes to keep in the cache without pruning, after which automatic pruning may kick in.
+    pub async fn keep_bytes(&self) -> Result<isize, DaggerError> {
+        let query = self.selection.select("keepBytes");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The maximum bytes to keep in the cache without pruning.
+    pub async fn max_used_space(&self) -> Result<isize, DaggerError> {
+        let query = self.selection.select("maxUsedSpace");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The target amount of free disk space the garbage collector will attempt to leave.
+    pub async fn min_free_space(&self) -> Result<isize, DaggerError> {
+        let query = self.selection.select("minFreeSpace");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Prune the cache of releaseable entries
+    pub async fn prune(&self) -> Result<Void, DaggerError> {
+        let query = self.selection.select("prune");
+        query.execute(self.graphql_client.clone()).await
+    }
+    pub async fn reserved_space(&self) -> Result<isize, DaggerError> {
+        let query = self.selection.select("reservedSpace");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+#[derive(Clone)]
+pub struct EngineCacheEntry {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl EngineCacheEntry {
+    /// Whether the cache entry is actively being used.
+    pub async fn actively_used(&self) -> Result<bool, DaggerError> {
+        let query = self.selection.select("activelyUsed");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The time the cache entry was created, in Unix nanoseconds.
+    pub async fn created_time_unix_nano(&self) -> Result<isize, DaggerError> {
+        let query = self.selection.select("createdTimeUnixNano");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The description of the cache entry.
+    pub async fn description(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("description");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The disk space used by the cache entry.
+    pub async fn disk_space_bytes(&self) -> Result<isize, DaggerError> {
+        let query = self.selection.select("diskSpaceBytes");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A unique identifier for this EngineCacheEntry.
+    pub async fn id(&self) -> Result<EngineCacheEntryId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The most recent time the cache entry was used, in Unix nanoseconds.
+    pub async fn most_recent_use_time_unix_nano(&self) -> Result<isize, DaggerError> {
+        let query = self.selection.select("mostRecentUseTimeUnixNano");
+        query.execute(self.graphql_client.clone()).await
+    }
+}
+#[derive(Clone)]
+pub struct EngineCacheEntrySet {
+    pub proc: Option<Arc<DaggerSessionProc>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl EngineCacheEntrySet {
+    /// The total disk space used by the cache entries in this set.
+    pub async fn disk_space_bytes(&self) -> Result<isize, DaggerError> {
+        let query = self.selection.select("diskSpaceBytes");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The list of individual cache entries in the set
+    pub fn entries(&self) -> Vec<EngineCacheEntry> {
+        let query = self.selection.select("entries");
+        vec![EngineCacheEntry {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }]
+    }
+    /// The number of cache entries in this set.
+    pub async fn entry_count(&self) -> Result<isize, DaggerError> {
+        let query = self.selection.select("entryCount");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// A unique identifier for this EngineCacheEntrySet.
+    pub async fn id(&self) -> Result<EngineCacheEntrySetId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
     }
 }
 #[derive(Clone)]
@@ -6830,15 +6818,6 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }]
     }
-    /// The Dagger engine container configuration and state
-    pub fn dagger_engine(&self) -> DaggerEngine {
-        let query = self.selection.select("daggerEngine");
-        DaggerEngine {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
     /// The default platform of the engine.
     pub async fn default_platform(&self) -> Result<Platform, DaggerError> {
         let query = self.selection.select("defaultPlatform");
@@ -6848,6 +6827,15 @@ impl Query {
     pub fn directory(&self) -> Directory {
         let query = self.selection.select("directory");
         Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// The Dagger engine container configuration and state
+    pub fn engine(&self) -> Engine {
+        let query = self.selection.select("engine");
+        Engine {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -7035,79 +7023,6 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         }
     }
-    /// Load a DaggerEngineCacheEntry from its ID.
-    pub fn load_dagger_engine_cache_entry_from_id(
-        &self,
-        id: impl IntoID<DaggerEngineCacheEntryId>,
-    ) -> DaggerEngineCacheEntry {
-        let mut query = self.selection.select("loadDaggerEngineCacheEntryFromID");
-        query = query.arg_lazy(
-            "id",
-            Box::new(move || {
-                let id = id.clone();
-                Box::pin(async move { id.into_id().await.unwrap().quote() })
-            }),
-        );
-        DaggerEngineCacheEntry {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Load a DaggerEngineCacheEntrySet from its ID.
-    pub fn load_dagger_engine_cache_entry_set_from_id(
-        &self,
-        id: impl IntoID<DaggerEngineCacheEntrySetId>,
-    ) -> DaggerEngineCacheEntrySet {
-        let mut query = self.selection.select("loadDaggerEngineCacheEntrySetFromID");
-        query = query.arg_lazy(
-            "id",
-            Box::new(move || {
-                let id = id.clone();
-                Box::pin(async move { id.into_id().await.unwrap().quote() })
-            }),
-        );
-        DaggerEngineCacheEntrySet {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Load a DaggerEngineCache from its ID.
-    pub fn load_dagger_engine_cache_from_id(
-        &self,
-        id: impl IntoID<DaggerEngineCacheId>,
-    ) -> DaggerEngineCache {
-        let mut query = self.selection.select("loadDaggerEngineCacheFromID");
-        query = query.arg_lazy(
-            "id",
-            Box::new(move || {
-                let id = id.clone();
-                Box::pin(async move { id.into_id().await.unwrap().quote() })
-            }),
-        );
-        DaggerEngineCache {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
-    /// Load a DaggerEngine from its ID.
-    pub fn load_dagger_engine_from_id(&self, id: impl IntoID<DaggerEngineId>) -> DaggerEngine {
-        let mut query = self.selection.select("loadDaggerEngineFromID");
-        query = query.arg_lazy(
-            "id",
-            Box::new(move || {
-                let id = id.clone();
-                Box::pin(async move { id.into_id().await.unwrap().quote() })
-            }),
-        );
-        DaggerEngine {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        }
-    }
     /// Load a Directory from its ID.
     pub fn load_directory_from_id(&self, id: impl IntoID<DirectoryId>) -> Directory {
         let mut query = self.selection.select("loadDirectoryFromID");
@@ -7119,6 +7034,76 @@ impl Query {
             }),
         );
         Directory {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a EngineCacheEntry from its ID.
+    pub fn load_engine_cache_entry_from_id(
+        &self,
+        id: impl IntoID<EngineCacheEntryId>,
+    ) -> EngineCacheEntry {
+        let mut query = self.selection.select("loadEngineCacheEntryFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        EngineCacheEntry {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a EngineCacheEntrySet from its ID.
+    pub fn load_engine_cache_entry_set_from_id(
+        &self,
+        id: impl IntoID<EngineCacheEntrySetId>,
+    ) -> EngineCacheEntrySet {
+        let mut query = self.selection.select("loadEngineCacheEntrySetFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        EngineCacheEntrySet {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a EngineCache from its ID.
+    pub fn load_engine_cache_from_id(&self, id: impl IntoID<EngineCacheId>) -> EngineCache {
+        let mut query = self.selection.select("loadEngineCacheFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        EngineCache {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// Load a Engine from its ID.
+    pub fn load_engine_from_id(&self, id: impl IntoID<EngineId>) -> Engine {
+        let mut query = self.selection.select("loadEngineFromID");
+        query = query.arg_lazy(
+            "id",
+            Box::new(move || {
+                let id = id.clone();
+                Box::pin(async move { id.into_id().await.unwrap().quote() })
+            }),
+        );
+        Engine {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
