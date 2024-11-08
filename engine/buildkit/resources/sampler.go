@@ -26,10 +26,13 @@ type Sampler struct {
 
 	memoryCurrent *memoryCurrentSampler
 	memoryPeak    *memoryPeakSampler
+
+	netNS *netNSSampler
 }
 
 func NewSampler(
 	cgroupNSSubpath string,
+	netNS BKNetworkSampler,
 	meter metric.Meter,
 	commonAttrs attribute.Set,
 ) (*Sampler, error) {
@@ -69,6 +72,11 @@ func NewSampler(
 		return nil, fmt.Errorf("failed to create memoryCurrentSampler sampler: %w", err)
 	}
 
+	s.netNS, err = newNetNSSampler(netNS, meter, commonAttrs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create netNS sampler: %w", err)
+	}
+
 	return s, nil
 }
 
@@ -97,6 +105,10 @@ func (s *Sampler) Sample(ctx context.Context) error {
 
 	eg.Go(func() error {
 		return s.memoryPeak.sample(ctx)
+	})
+
+	eg.Go(func() error {
+		return s.netNS.sample(ctx)
 	})
 
 	return eg.Wait()

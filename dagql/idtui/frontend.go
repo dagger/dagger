@@ -401,43 +401,61 @@ func (r renderer) renderMetrics(out *termenv.Output, span *dagui.Span) {
 		return
 	}
 
-	if dataPoints := span.MetricsByName[telemetry.IOStatDiskReadBytes]; len(dataPoints) > 0 {
-		lastPoint := dataPoints[len(dataPoints)-1]
-		fmt.Fprint(out, " | ")
-		displayMetric := out.String(fmt.Sprintf("Disk Read: %s", humanize.Bytes(uint64(lastPoint.Value))))
-		displayMetric = displayMetric.Foreground(termenv.ANSIGreen)
-		fmt.Fprint(out, displayMetric)
-	}
-	if dataPoints := span.MetricsByName[telemetry.IOStatDiskWriteBytes]; len(dataPoints) > 0 {
-		lastPoint := dataPoints[len(dataPoints)-1]
-		fmt.Fprint(out, " | ")
-		displayMetric := out.String(fmt.Sprintf("Disk Write: %s", humanize.Bytes(uint64(lastPoint.Value))))
-		displayMetric = displayMetric.Foreground(termenv.ANSIGreen)
-		fmt.Fprint(out, displayMetric)
-	}
-	if dataPoints := span.MetricsByName[telemetry.IOStatPressureSomeTotal]; len(dataPoints) > 0 {
-		lastPoint := dataPoints[len(dataPoints)-1]
-		if lastPoint.Value != 0 {
-			fmt.Fprint(out, " | ")
-			displayMetric := out.String(fmt.Sprintf("IO Pressure: %s", durationString(lastPoint.Value)))
-			displayMetric = displayMetric.Foreground(termenv.ANSIGreen)
-			fmt.Fprint(out, displayMetric)
-		}
-	}
+	// IO Stats
+	r.renderMetric(out, span, telemetry.IOStatDiskReadBytes, "Disk Read", humanizeBytes)
+	r.renderMetric(out, span, telemetry.IOStatDiskWriteBytes, "Disk Write", humanizeBytes)
+	r.renderMetricIfNonzero(out, span, telemetry.IOStatPressureSomeTotal, "IO Pressure", durationString)
 
-	if dataPoints := span.MetricsByName[telemetry.CPUStatPressureSomeTotal]; len(dataPoints) > 0 {
+	// CPU Stats
+	r.renderMetricIfNonzero(out, span, telemetry.CPUStatPressureSomeTotal, "CPU Pressure (some)", durationString)
+	r.renderMetricIfNonzero(out, span, telemetry.CPUStatPressureFullTotal, "CPU Pressure (full)", durationString)
+
+	// Network Stats
+	r.renderNetworkMetric(out, span, telemetry.NetstatRxBytes, telemetry.NetstatRxDropped, telemetry.NetstatRxPackets, "Network Rx")
+	r.renderNetworkMetric(out, span, telemetry.NetstatTxBytes, telemetry.NetstatTxDropped, telemetry.NetstatTxPackets, "Network Tx")
+}
+
+func (r renderer) renderMetric(out *termenv.Output, span *dagui.Span, metricName string, label string, formatValue func(int64) string) {
+	if dataPoints := span.MetricsByName[metricName]; len(dataPoints) > 0 {
 		lastPoint := dataPoints[len(dataPoints)-1]
 		fmt.Fprint(out, " | ")
-		displayMetric := out.String(fmt.Sprintf("CPU Pressure (some): %s", durationString(lastPoint.Value)))
+		displayMetric := out.String(fmt.Sprintf("%s: %s", label, formatValue(lastPoint.Value)))
 		displayMetric = displayMetric.Foreground(termenv.ANSIGreen)
 		fmt.Fprint(out, displayMetric)
 	}
-	if dataPoints := span.MetricsByName[telemetry.CPUStatPressureFullTotal]; len(dataPoints) > 0 {
+}
+
+func (r renderer) renderMetricIfNonzero(out *termenv.Output, span *dagui.Span, metricName string, label string, formatValue func(int64) string) {
+	if dataPoints := span.MetricsByName[metricName]; len(dataPoints) > 0 {
 		lastPoint := dataPoints[len(dataPoints)-1]
-		fmt.Fprint(out, " | ")
-		displayMetric := out.String(fmt.Sprintf("CPU Pressure (full): %s", durationString(lastPoint.Value)))
-		displayMetric = displayMetric.Foreground(termenv.ANSIGreen)
-		fmt.Fprint(out, displayMetric)
+		if lastPoint.Value == 0 {
+			return
+		}
+		r.renderMetric(out, span, metricName, label, formatValue)
+	}
+}
+
+func (r renderer) renderNetworkMetric(out *termenv.Output, span *dagui.Span, bytesMetric, droppedMetric, packetsMetric, label string) {
+	r.renderMetricIfNonzero(out, span, bytesMetric, label, humanizeBytes)
+	if dataPoints := span.MetricsByName[bytesMetric]; len(dataPoints) > 0 {
+		renderPacketLoss(out, span, droppedMetric, packetsMetric)
+	}
+}
+
+func renderPacketLoss(out *termenv.Output, span *dagui.Span, droppedMetric, packetsMetric string) {
+	if drops := span.MetricsByName[droppedMetric]; len(drops) > 0 {
+		if packets := span.MetricsByName[packetsMetric]; len(packets) > 0 {
+			lastDrops := drops[len(drops)-1]
+			lastPackets := packets[len(packets)-1]
+			if lastDrops.Value > 0 && lastPackets.Value > 0 {
+				droppedPercent := (float64(lastDrops.Value) / float64(lastPackets.Value)) * 100
+				if droppedPercent > 0 {
+					displaydropped := out.String(fmt.Sprintf(" (%.3g%% dropped)", droppedPercent))
+					displaydropped = displaydropped.Foreground(termenv.ANSIRed)
+					fmt.Fprint(out, displaydropped)
+				}
+			}
+		}
 	}
 
 	if dataPoints := span.MetricsByName[telemetry.MemoryCurrentBytes]; len(dataPoints) > 0 {
@@ -460,6 +478,10 @@ func (r renderer) renderMetrics(out *termenv.Output, span *dagui.Span) {
 func durationString(microseconds int64) string {
 	duration := time.Duration(microseconds) * time.Microsecond
 	return duration.String()
+}
+
+func humanizeBytes(v int64) string {
+	return humanize.Bytes(uint64(v))
 }
 
 // var (

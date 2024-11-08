@@ -38,6 +38,24 @@ const (
 	// OTel metric for peak memory bytes consumed by this cgroup and its descendents
 	MemoryPeakBytes = "dagger.io/metrics.memory.peak"
 
+	// OTel metric for number of bytes received by a container, pulled from buildkit's network namespace representation
+	NetstatRxBytes = "dagger.io/metrics.netstat.rx.bytes"
+
+	// OTel metric for number of packets received by a container, pulled from buildkit's network namespace representation
+	NetstatRxPackets = "dagger.io/metrics.netstat.rx.packets"
+
+	// OTel metric for number of received packets dropped by a container, pulled from buildkit's network namespace representation
+	NetstatRxDropped = "dagger.io/metrics.netstat.rx.dropped"
+
+	// OTel metric for number of bytes transmitted by a container, pulled from buildkit's network namespace representation
+	NetstatTxBytes = "dagger.io/metrics.netstat.tx.bytes"
+
+	// OTel metric for number of packets transmitted by a container, pulled from buildkit's network namespace representation
+	NetstatTxPackets = "dagger.io/metrics.netstat.tx.packets"
+
+	// OTel metric for number of transmitted packets dropped by a container, pulled from buildkit's network namespace representation
+	NetstatTxDropped = "dagger.io/metrics.netstat.tx.dropped"
+
 	// OTel metric units should be in UCUM format
 	// https://unitsofmeasure.org/ucum
 

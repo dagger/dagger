@@ -342,6 +342,12 @@ var scrubs = []scrubber{
 		" | Disk Read: 9.3 kB",
 		"",
 	},
+	// Network telemetry
+	{
+		regexp.MustCompile(`\s?\| Network (Tx|Rx): \d+(\.\d+)?\s(B|kB|MB|GB|TB)(\s\(\d+(\.\d+)?\% dropped\))?`),
+		" | Network Tx: 3 kB (0.1% dropped)",
+		"",
+	},
 }
 
 func TestScrubbers(t *testing.T) {
