@@ -58,7 +58,7 @@ func DoThing(client *dagger.Client) *dagger.Directory {
 
 </TabItem>
 <TabItem value="Python">
-The Dagger module's code in Python can be split into multiple files by making `main` a [package](https://docs.python.org/3/tutorial/modules.html#packages), and ensuring the *main object* is imported in `__init__.py`. All the other object types should already be imported from there.
+The Dagger module's code in Python can be split into multiple files by making a [package](https://docs.python.org/3/tutorial/modules.html#packages) and ensuring the *main object* is imported in `__init__.py`. All the other object types should already be imported from there.
 
 For example given this directory structure:
 
@@ -66,7 +66,7 @@ For example given this directory structure:
 .
 ├── dagger.json
 ├── src
-│   ├── main
+│   ├── my_module
 │   │   ├── __init__.py
 │   │   ├── main.py
 │   │   ├── test.py
@@ -76,7 +76,7 @@ For example given this directory structure:
 The `__init__.py` file should import the main object from `main.py`:
 
 ```python
-# src/main/__init__.py
+# src/my_module/__init__.py
 """My very own Dagger module"""
 from .main import MyModule as MyModule
 ```
@@ -84,11 +84,11 @@ from .main import MyModule as MyModule
 And the `main.py` file should import the other objects from their respective files:
 
 ```python
-# src/main/main.py
+# src/my_module/main.py
 import dagger
 
-from .test import Test  # in src/main/test.py
-from .lint import Lint  # in src/main/lint.py
+from .test import Test  # in src/my_module/test.py
+from .lint import Lint  # in src/my_module/lint.py
 
 @dagger.object_type
 class MyModule:
@@ -102,21 +102,24 @@ class MyModule:
 ```
 
 :::important
-Dagger expects that a Python Dagger module is structured like a [library](https://docs.astral.sh/uv/concepts/projects/#libraries), currently hardcoded with the name `main` (temporary limitation), so that the SDK is able to load the code with:
+Dagger expects that a Python Dagger module is structured like a [library](https://docs.astral.sh/uv/concepts/projects/#libraries), so that the SDK is able to load the code with an import, but it's up to the Python [build system](https://docs.astral.sh/uv/concepts/projects/#build-systems) to know where files are located in order to build and install the Python package correctly.
 
-```python
-import main
-```
-
-But it's up to the Python [build system](https://docs.astral.sh/uv/concepts/projects/#build-systems) to know where files are located in order to build and install the `main` package correctly.
-
-This affords a lot of flexibility in how Daggger Python modules can be structured, and which tools are supported.
+This affords a lot of flexibility in how Dagger Python modules can be structured, and which tools are supported.
 :::
 
 The default project template follows known conventions for structuring a Python library (src layout, package name matching project name), which allows Python [build backends](https://www.python.org/dev/peps/pep-0517/) to automatically recognize where the files are.
 
-However, it's possible to change the project's name and file structure with a bit of extra configuration, as long as the build backend correctly builds the code in a way that allows the SDK to `import main` after installation.
+However, it's possible to change the project's name and file structure with a bit of extra configuration, as long as the build backend correctly builds the code in a way that allows the SDK to import it after installation (i.e., must be installed in `site-packages`).
 
+:::note
+Build backends are independent from installers (or *build frontends*, see [PEP 517](https://www.python.org/dev/peps/pep-0517/)), even though some installers may provide both (as separate packages). For example, [hatch](https://pypi.org/project/hatch/) vs [hatchling](https://pypi.org/project/hatchling/), [poetry](https://pypi.org/project/poetry/) vs [poetry-core](https://pypi.org/project/poetry-core/).
+:::
+
+:::tip
+`dagger init` won't override existing `pyproject.toml` and `.py` files, so it's possible to use an external process to generate a different template, before calling `dagger init`.
+:::
+
+:::tip SINGLE FILE MODULE
 Here is an example of moving all the code into a single `main.py` [module](https://docs.python.org/3/tutorial/modules.html), resulting in the following structure:
 
 ```
@@ -165,12 +168,35 @@ py-modules = ["main"]
 </TabItem>
 </Tabs>
 
-:::note
-Build backends are independent from installers (or *build frontends*, see [PEP 517](https://www.python.org/dev/peps/pep-0517/)), even though some installers may provide both (as separate packages). For example, [hatch](https://pypi.org/project/hatch/) vs [hatchling](https://pypi.org/project/hatchling/), [poetry](https://pypi.org/project/poetry/) vs [poetry-core](https://pypi.org/project/poetry-core/).
 :::
 
-:::tip
-`dagger init` won't override existing `pyproject.toml` and `.py` files, so it's possible to use an external process to generate a different template, before calling `dagger init`.
+:::tip CUSTOMIZE IMPORT PACKAGE
+The Python SDK looks for the *main object* of the Dagger module in the Python [import package that is named after the distribution package name](https://packaging.python.org/en/latest/discussions/distribution-package-vs-import-package/#how-do-distribution-package-names-and-import-package-names-compare) (in particular, using underscores `_` as a word separator).
+
+If they are different, you must explicitly tell the Python SDK where the main object needs to be imported from, using the following entry point configuration in `pyproject.toml`:
+
+```toml
+[project.entry-points."dagger.mod"]
+main_object = "<import package>:<main object>"
+```
+
+For example, for a Dagger module named `my-module`:
+
+- Main object: `MyModule` (required to be the name in `dagger.json`, in PascalCase)
+- Default distribution package: `my-module` (in `pyproject.toml`; can be changed)
+- Default import package: `src/my_module` (normalized after distribution package name; can be changed)
+
+Then, the default `main_object` entry point that the Python SDK looks for is `my_module:MyModule`, with a fallback to `main:MyModule` for backwards compatibility.
+
+Thus, if you have the following configuration:
+
+```toml
+[project.entry-points."dagger.mod"]
+main_object = "my_module.main:MyModule"
+```
+
+Then the import in `__init__.py` is no longer needed since Dagger knows to import from `my_module.main` directly.
+
 :::
 
 </TabItem>
@@ -317,7 +343,7 @@ In this case, Dagger installs dependencies with:
 uv pip install -r requirements.lock -e ./sdk -e .
 ```
 
-Notice that the `./sdk` and `main` (in `.`) packages don't need to be in the `requirements.lock` file, only the third party dependencies.
+Notice that the `./sdk` and `.` packages don't need to be in the `requirements.lock` file, only the third party dependencies.
 
 This means module developers can use any tool they want to manage their virtual environment and install dependencies, but if third-party dependencies aren't pinned in a `requirements.lock` file, the developers may get different versions between the Dagger execution environment and their own local environment.
 

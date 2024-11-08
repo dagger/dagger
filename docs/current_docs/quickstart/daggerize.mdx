@@ -73,7 +73,7 @@ This will generate a `dagger.json` module metadata file, an initial `dagger/main
 dagger init --sdk=python --source=./dagger
 ```
 
-This will generate a `dagger.json` module metadata file, initial `dagger/src/main/__init__.py` source code template, `dagger/pyproject.toml` and `dagger/uv.lock` files, as well as a generated `dagger/sdk` folder for local development.
+This will generate a `dagger.json` module metadata file, initial `dagger/src/hello_dagger/__init__.py`  and `dagger/src/hello_dagger/main.py` source code template, `dagger/pyproject.toml` and `dagger/uv.lock` files, as well as a generated `dagger/sdk` folder for local development.
 </TabItem>
 <TabItem value="TypeScript">
 
@@ -111,7 +111,7 @@ In this Dagger module, each Dagger Function performs a different operation:
 </TabItem>
 <TabItem value="Python">
 
-Replace the generated `dagger/src/main/__init__.py` file with the following code, which adds four Dagger Functions to your Dagger module:
+Replace the generated `dagger/src/hello_dagger/main.py` file with the following code, which adds four Dagger Functions to your Dagger module:
 
 ```python file=./snippets/daggerize/python/__init__.py
 ```
