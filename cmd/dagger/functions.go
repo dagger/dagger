@@ -344,7 +344,7 @@ func initializeModule(ctx context.Context, dag *dagger.Client, loadModule bool) 
 func (fc *FuncCommand) loadCommand(c *cobra.Command, a []string) (rcmd *cobra.Command, rargs []string, rerr error) {
 	ctx := c.Context()
 
-	spanCtx, span := Tracer().Start(ctx, "prepare", telemetry.Encapsulate())
+	spanCtx, span := Tracer().Start(ctx, "parsing command line arguments", telemetry.Encapsulate())
 	defer telemetry.End(span, func() error { return rerr })
 	fc.ctx = spanCtx
 
