@@ -70,7 +70,7 @@ available functions.
 			// Walk the hypothetical function pipeline specified by the args
 			for _, field := range cmd.Flags().Args() {
 				// Lookup the next function in the specified pipeline
-				nextFunc, err := GetFunction(o, field)
+				nextFunc, err := mod.GetFunction(o, field)
 				if err != nil {
 					return err
 				}
@@ -115,13 +115,9 @@ func functionListRun(o functionProvider, writer io.Writer, skipUnsupported bool)
 			skipped = append(skipped, fn.CmdName())
 			continue
 		}
-		desc := strings.SplitN(fn.Description, "\n", 2)[0]
-		if desc == "" {
-			desc = "-"
-		}
 		fmt.Fprintf(tw, "%s\t%s\n",
-			cliName(fn.Name),
-			desc,
+			fn.CmdName(),
+			fn.Short(),
 		)
 	}
 	if len(skipped) > 0 {

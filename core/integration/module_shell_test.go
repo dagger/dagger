@@ -82,7 +82,7 @@ func (m *Test) Container() *dagger.Container {
 func (ShellSuite) TestBasicGit(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	script := ".git https://github.com/dagger/dagger.git | file README.md | contents"
+	script := ".git https://github.com/dagger/dagger | head | tree | file README.md | contents"
 	out, err := daggerCliBase(t, c).
 		With(withModInit("go", "")).
 		With(daggerShell(script)).

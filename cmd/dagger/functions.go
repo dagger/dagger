@@ -504,7 +504,7 @@ func (fc *FuncCommand) addSubCommands(ctx context.Context, cmd *cobra.Command, t
 func (fc *FuncCommand) makeSubCmd(ctx context.Context, fn *modFunction) *cobra.Command {
 	newCmd := &cobra.Command{
 		Use:                   cliName(fn.Name),
-		Short:                 strings.SplitN(fn.Description, "\n", 2)[0],
+		Short:                 fn.Short(),
 		Long:                  fn.Description,
 		GroupID:               funcGroup.ID,
 		DisableFlagsInUseLine: true,

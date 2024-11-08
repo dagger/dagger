@@ -892,6 +892,8 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client) error 
 		}
 	}
 
+	m.LoadFunctionTypeDefs(m.MainObject.AsObject.Constructor)
+
 	return nil
 }
 
@@ -963,17 +965,17 @@ func (m *moduleDef) GetObjectFunction(objectName, functionName string) (*modFunc
 	if fp == nil {
 		return nil, fmt.Errorf("module %q does not have a %q object or interface", m.Name, objectName)
 	}
-	fn, err := GetFunction(fp, functionName)
-	if err != nil {
-		return nil, err
+	return m.GetFunction(fp, functionName)
+}
+
+func (m *moduleDef) GetFunction(fp functionProvider, functionName string) (*modFunction, error) {
+	for _, fn := range fp.GetFunctions() {
+		if fn.Name == functionName || fn.CmdName() == functionName {
+			m.LoadFunctionTypeDefs(fn)
+			return fn, nil
+		}
 	}
-	// We need to load references to types with their type definitions because
-	// the introspection doesn't recursively add them, just their names.
-	m.LoadTypeDef(fn.ReturnType)
-	for _, arg := range fn.Args {
-		m.LoadTypeDef(arg.TypeDef)
-	}
-	return fn, nil
+	return nil, fmt.Errorf("no function %q in type %q", functionName, fp.ProviderName())
 }
 
 // GetInterface retrieves a saved interface type definition from the module.
@@ -1022,16 +1024,21 @@ func (m *moduleDef) GetInput(name string) *modInput {
 
 // HasCoreFunction checks if there's a core function (under Query) with the given name.
 func (m *moduleDef) HasCoreFunction(name string) bool {
-	o := m.GetFunctionProvider("Query")
-	if o == nil || !o.IsCore() {
-		return false
-	}
-	return HasFunction(o, name)
+	fp := m.GetFunctionProvider("Query")
+	return m.HasFunction(fp, name)
 }
 
-// HasFunction checks if the module has a top level function with the given name.
-func (m *moduleDef) HasFunction(name string) bool {
-	return HasFunction(m.MainObject.AsFunctionProvider(), name)
+// HasFunction checks if an object has a function with the given name.
+func (m *moduleDef) HasFunction(fp functionProvider, name string) bool {
+	if fp == nil {
+		return false
+	}
+	fn, _ := m.GetFunction(fp, name)
+	return fn != nil
+}
+
+func (m *moduleDef) IsConstructor(name string) bool {
+	return m.HasCoreFunction(name) || m.MainObject.AsObject.Constructor.CmdName() == name
 }
 
 // LoadTypeDef attempts to replace a function's return object type or argument's
@@ -1067,6 +1074,15 @@ func (m *moduleDef) LoadTypeDef(typeDef *modTypeDef) {
 	}
 }
 
+func (m *moduleDef) LoadFunctionTypeDefs(fn *modFunction) {
+	// We need to load references to types with their type definitions because
+	// the introspection doesn't recursively add them, just their names.
+	m.LoadTypeDef(fn.ReturnType)
+	for _, arg := range fn.Args {
+		m.LoadTypeDef(arg.TypeDef)
+	}
+}
+
 // modTypeDef is a representation of dagger.TypeDef.
 type modTypeDef struct {
 	Kind        dagger.TypeDefKind
@@ -1077,6 +1093,102 @@ type modTypeDef struct {
 	AsList      *modList
 	AsScalar    *modScalar
 	AsEnum      *modEnum
+}
+
+func (t *modTypeDef) String() string {
+	switch t.Kind {
+	case dagger.TypeDefKindStringKind:
+		return "string"
+	case dagger.TypeDefKindIntegerKind:
+		return "int"
+	case dagger.TypeDefKindBooleanKind:
+		return "bool"
+	case dagger.TypeDefKindVoidKind:
+		return "void"
+	case dagger.TypeDefKindScalarKind:
+		return t.AsScalar.Name
+	case dagger.TypeDefKindEnumKind:
+		return t.AsEnum.Name
+	case dagger.TypeDefKindInputKind:
+		return t.AsInput.Name
+	case dagger.TypeDefKindObjectKind:
+		return t.AsObject.Name
+	case dagger.TypeDefKindInterfaceKind:
+		return t.AsInterface.Name
+	case dagger.TypeDefKindListKind:
+		return "[]" + t.AsList.ElementTypeDef.String()
+	default:
+		// this should never happen because all values for kind are covered,
+		// unless a new one is added and this code isn't updated
+		return ""
+	}
+}
+
+func (t *modTypeDef) KindDisplay() string {
+	switch t.Kind {
+	case dagger.TypeDefKindStringKind,
+		dagger.TypeDefKindIntegerKind,
+		dagger.TypeDefKindBooleanKind:
+		return "Scalar"
+	case dagger.TypeDefKindScalarKind,
+		dagger.TypeDefKindVoidKind:
+		return "Custom scalar"
+	case dagger.TypeDefKindEnumKind:
+		return "Enum"
+	case dagger.TypeDefKindInputKind:
+		return "Input"
+	case dagger.TypeDefKindObjectKind:
+		return "Object"
+	case dagger.TypeDefKindInterfaceKind:
+		return "Interface"
+	case dagger.TypeDefKindListKind:
+		return "List of " + strings.ToLower(t.AsList.ElementTypeDef.KindDisplay()) + "s"
+	default:
+		return ""
+	}
+}
+
+func (t *modTypeDef) Description() string {
+	switch t.Kind {
+	case dagger.TypeDefKindStringKind,
+		dagger.TypeDefKindIntegerKind,
+		dagger.TypeDefKindBooleanKind:
+		return "Primitive type."
+	case dagger.TypeDefKindVoidKind:
+		return ""
+	case dagger.TypeDefKindScalarKind:
+		return t.AsScalar.Description
+	case dagger.TypeDefKindEnumKind:
+		return t.AsEnum.Description
+	case dagger.TypeDefKindInputKind:
+		return t.AsInput.Description
+	case dagger.TypeDefKindObjectKind:
+		return t.AsObject.Description
+	case dagger.TypeDefKindInterfaceKind:
+		return t.AsInterface.Description
+	case dagger.TypeDefKindListKind:
+		return t.AsList.ElementTypeDef.Description()
+	default:
+		// this should never happen because all values for kind are covered,
+		// unless a new one is added and this code isn't updated
+		return ""
+	}
+}
+
+func (t *modTypeDef) Short() string {
+	s := t.String()
+	if d := t.Description(); d != "" {
+		s = fmt.Sprintf("%s - %s", s, strings.SplitN(d, "\n", 2)[0])
+	}
+	return s
+}
+
+func (t *modTypeDef) Long() string {
+	s := t.String()
+	if d := t.Description(); d != "" {
+		s = fmt.Sprintf("%s - %s", s, d)
+	}
+	return s
 }
 
 type functionProvider interface {
@@ -1095,15 +1207,6 @@ func HasAvailableFunctions(o functionProvider) bool {
 		}
 	}
 	return false
-}
-
-// HasFunction checks if an object has a function with the given name.
-func HasFunction(o functionProvider, name string) bool {
-	if o == nil {
-		return false
-	}
-	fn, _ := GetFunction(o, name)
-	return fn != nil
 }
 
 // skipLeaves is a map of provider names to function names that should be skipped
@@ -1174,15 +1277,6 @@ func GetLeafFunctions(fp functionProvider) []*modFunction {
 	return r
 }
 
-func GetFunction(o functionProvider, name string) (*modFunction, error) {
-	for _, fn := range o.GetFunctions() {
-		if fn.Name == name || fn.CmdName() == name {
-			return fn, nil
-		}
-	}
-	return nil, fmt.Errorf("no function %q in type %q", name, o.ProviderName())
-}
-
 func (t *modTypeDef) Name() string {
 	if fp := t.AsFunctionProvider(); fp != nil {
 		return fp.ProviderName()
@@ -1206,6 +1300,7 @@ func (t *modTypeDef) AsFunctionProvider() functionProvider {
 // modObject is a representation of dagger.ObjectTypeDef.
 type modObject struct {
 	Name             string
+	Description      string
 	Functions        []*modFunction
 	Fields           []*modField
 	Constructor      *modFunction
@@ -1272,6 +1367,7 @@ func (o *modObject) GetFieldFunctions() []*modFunction {
 
 type modInterface struct {
 	Name             string
+	Description      string
 	Functions        []*modFunction
 	SourceModuleName string
 }
@@ -1297,21 +1393,33 @@ func (o *modInterface) GetFunctions() []*modFunction {
 }
 
 type modScalar struct {
-	Name string
+	Name        string
+	Description string
 }
 
 type modEnum struct {
-	Name   string
-	Values []*modEnumValue
+	Name        string
+	Description string
+	Values      []*modEnumValue
+}
+
+func (e *modEnum) ValueNames() []string {
+	values := make([]string, 0, len(e.Values))
+	for _, v := range e.Values {
+		values = append(values, v.Name)
+	}
+	return values
 }
 
 type modEnumValue struct {
-	Name string
+	Name        string
+	Description string
 }
 
 type modInput struct {
-	Name   string
-	Fields []*modField
+	Name        string
+	Description string
+	Fields      []*modField
 }
 
 // modList is a representation of dagger.ListTypeDef.
@@ -1350,6 +1458,14 @@ func (f *modFunction) CmdName() string {
 	return f.cmdName
 }
 
+func (f *modFunction) Short() string {
+	s := strings.SplitN(f.Description, "\n", 2)[0]
+	if s == "" {
+		s = "-"
+	}
+	return s
+}
+
 // GetArg returns the argument definition corresponding to the given name.
 func (f *modFunction) GetArg(name string) (*modFunctionArg, error) {
 	for _, a := range f.Args {
@@ -1373,6 +1489,16 @@ func (f *modFunction) RequiredArgs() []*modFunctionArg {
 	args := make([]*modFunctionArg, 0, len(f.Args))
 	for _, arg := range f.Args {
 		if arg.IsRequired() {
+			args = append(args, arg)
+		}
+	}
+	return args
+}
+
+func (f *modFunction) OptionalArgs() []*modFunctionArg {
+	args := make([]*modFunctionArg, 0, len(f.Args))
+	for _, arg := range f.Args {
+		if !arg.IsRequired() {
 			args = append(args, arg)
 		}
 	}
@@ -1411,6 +1537,7 @@ type modFunctionArg struct {
 	Description  string
 	TypeDef      *modTypeDef
 	DefaultValue dagger.JSON
+	DefaultPath  string
 	Ignore       []string
 	flagName     string
 }
@@ -1421,6 +1548,44 @@ func (r *modFunctionArg) FlagName() string {
 		r.flagName = cliName(r.Name)
 	}
 	return r.flagName
+}
+
+func (r *modFunctionArg) Usage() string {
+	return fmt.Sprintf("--%s %s", r.FlagName(), r.TypeDef.String())
+}
+
+func (r *modFunctionArg) Short() string {
+	return strings.SplitN(r.Description, "\n", 2)[0]
+}
+
+func (r *modFunctionArg) Long() string {
+	sb := new(strings.Builder)
+	multiline := strings.Contains(r.Description, "\n")
+
+	if r.Description != "" {
+		sb.WriteString(r.Description)
+	}
+
+	if defVal := r.defValue(); defVal != "" {
+		if multiline {
+			sb.WriteString("\n\n")
+		} else if sb.Len() > 0 {
+			sb.WriteString(" ")
+		}
+		sb.WriteString(fmt.Sprintf("(default: %s)", defVal))
+	}
+
+	if r.TypeDef.Kind == dagger.TypeDefKindEnumKind {
+		names := strings.Join(r.TypeDef.AsEnum.ValueNames(), ", ")
+		if multiline {
+			sb.WriteString("\n\n")
+		} else if sb.Len() > 0 {
+			sb.WriteString(" ")
+		}
+		sb.WriteString(fmt.Sprintf("(possible values: %s)", names))
+	}
+
+	return sb.String()
 }
 
 func (r *modFunctionArg) IsRequired() bool {
@@ -1438,6 +1603,30 @@ func getDefaultValue[T any](r *modFunctionArg) (T, error) {
 	var val T
 	err := json.Unmarshal([]byte(r.DefaultValue), &val)
 	return val, err
+}
+
+// DefValue is the default value (as text); for the usage message
+func (r *modFunctionArg) defValue() string {
+	if r.DefaultPath != "" {
+		return fmt.Sprintf("%q", r.DefaultPath)
+	}
+	if r.DefaultValue == "" {
+		return ""
+	}
+	t := r.TypeDef
+	switch t.Kind {
+	case dagger.TypeDefKindStringKind:
+		v, err := getDefaultValue[string](r)
+		if err == nil {
+			return fmt.Sprintf("%q", v)
+		}
+	default:
+		v, err := getDefaultValue[any](r)
+		if err == nil {
+			return fmt.Sprintf("%v", v)
+		}
+	}
+	return ""
 }
 
 // gqlObjectName converts casing to a GraphQL object  name

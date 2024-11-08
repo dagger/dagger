@@ -48,6 +48,7 @@ fragment FunctionParts on Function {
 		name
 		description
 		defaultValue
+        defaultPath
 		ignore
 		typeDef {
 			...TypeDefRefParts
@@ -69,6 +70,7 @@ query TypeDefs {
 		optional
 		asObject {
 			name
+			description
 			sourceModuleName
 			constructor {
 				...FunctionParts
@@ -82,15 +84,19 @@ query TypeDefs {
 		}
 		asScalar {
 			name
+			description
 		}
 		asEnum {
 			name
+			description
 			values {
 				name
+			    description
 			}
 		}
 		asInterface {
 			name
+			description
 			sourceModuleName
 			functions {
 				...FunctionParts
