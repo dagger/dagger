@@ -1590,125 +1590,71 @@ func (ContainerSuite) TestWithMountedFile(ctx context.Context, t *testctx.T) {
 }
 
 func (ContainerSuite) TestWithMountedCache(ctx context.Context, t *testctx.T) {
-	cacheID := newCache(t)
+	c := connect(ctx, t)
 
-	execRes := struct {
-		Container struct {
-			From struct {
-				WithEnvVariable struct {
-					WithMountedCache struct {
-						WithExec struct {
-							Stdout string
-						}
-					}
-				}
-			}
-		}
-	}{}
+	cache := c.CacheVolume(t.Name())
 
-	query := `query Test($cache: CacheVolumeID!, $rand: String!) {
-			container {
-				from(address: "` + alpineImage + `") {
-					withEnvVariable(name: "RAND", value: $rand) {
-						withMountedCache(path: "/mnt/cache", cache: $cache) {
-							withExec(args: ["sh", "-c", "echo $RAND >> /mnt/cache/file; cat /mnt/cache/file"]) {
-								stdout
-							}
-						}
-					}
-				}
-			}
-		}`
+	wait := preventCacheMountPrune(ctx, t, c, cache)
 
 	rand1 := identity.NewID()
-	err := testutil.Query(t, query, &execRes, &testutil.QueryOptions{Variables: map[string]any{
-		"cache": cacheID,
-		"rand":  rand1,
-	}})
+	out1, err := c.Container().
+		From(alpineImage).
+		WithEnvVariable("RAND", rand1).
+		WithMountedCache("/mnt/cache", cache).
+		WithExec([]string{"sh", "-c", "echo $RAND >> /mnt/cache/sub-file; cat /mnt/cache/sub-file"}).
+		Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, rand1+"\n", execRes.Container.From.WithEnvVariable.WithMountedCache.WithExec.Stdout)
+	require.Equal(t, rand1+"\n", out1)
 
 	rand2 := identity.NewID()
-	err = testutil.Query(t, query, &execRes, &testutil.QueryOptions{Variables: map[string]any{
-		"cache": cacheID,
-		"rand":  rand2,
-	}})
+	out2, err := c.Container().
+		From(alpineImage).
+		WithEnvVariable("RAND", rand2).
+		WithMountedCache("/mnt/cache", cache).
+		WithExec([]string{"sh", "-c", "echo $RAND >> /mnt/cache/sub-file; cat /mnt/cache/sub-file"}).
+		Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, rand1+"\n"+rand2+"\n", execRes.Container.From.WithEnvVariable.WithMountedCache.WithExec.Stdout)
+	require.Equal(t, rand1+"\n"+rand2+"\n", out2)
+
+	require.NoError(t, wait())
 }
 
 func (ContainerSuite) TestWithMountedCacheFromDirectory(ctx context.Context, t *testctx.T) {
-	dirRes := struct {
-		Directory struct {
-			WithNewFile struct {
-				Directory struct {
-					ID core.DirectoryID
-				}
-			}
-		}
-	}{}
+	c := connect(ctx, t)
 
-	err := testutil.Query(t,
-		`{
-			directory {
-				withNewFile(path: "some-dir/sub-file", contents: "initial-content\n") {
-					directory(path: "some-dir") {
-						id
-					}
-				}
-			}
-		}`, &dirRes, nil)
-	require.NoError(t, err)
+	cache := c.CacheVolume(t.Name())
 
-	initialID := dirRes.Directory.WithNewFile.Directory.ID
+	srcDir := c.Directory().
+		WithNewFile("some-dir/sub-file", "initial-content\n").
+		Directory("some-dir")
 
-	cacheID := newCache(t)
-
-	execRes := struct {
-		Container struct {
-			From struct {
-				WithEnvVariable struct {
-					WithMountedCache struct {
-						WithExec struct {
-							Stdout string
-						}
-					}
-				}
-			}
-		}
-	}{}
-
-	query := `query Test($cache: CacheVolumeID!, $rand: String!, $init: DirectoryID!) {
-			container {
-				from(address: "` + alpineImage + `") {
-					withEnvVariable(name: "RAND", value: $rand) {
-						withMountedCache(path: "/mnt/cache", cache: $cache, source: $init) {
-							withExec(args: ["sh", "-c", "echo $RAND >> /mnt/cache/sub-file; cat /mnt/cache/sub-file"]) {
-								stdout
-							}
-						}
-					}
-				}
-			}
-		}`
+	wait := preventCacheMountPrune(ctx, t, c, cache, dagger.ContainerWithMountedCacheOpts{Source: srcDir})
 
 	rand1 := identity.NewID()
-	err = testutil.Query(t, query, &execRes, &testutil.QueryOptions{Variables: map[string]any{
-		"init":  initialID,
-		"rand":  rand1,
-		"cache": cacheID,
-	}})
+	out1, err := c.Container().
+		From(alpineImage).
+		WithEnvVariable("RAND", rand1).
+		WithMountedCache("/mnt/cache", cache, dagger.ContainerWithMountedCacheOpts{
+			Source: srcDir,
+		}).
+		WithExec([]string{"sh", "-c", "echo $RAND >> /mnt/cache/sub-file; cat /mnt/cache/sub-file"}).
+		Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "initial-content\n"+rand1+"\n", execRes.Container.From.WithEnvVariable.WithMountedCache.WithExec.Stdout)
+	require.Equal(t, "initial-content\n"+rand1+"\n", out1)
 
 	rand2 := identity.NewID()
-	err = testutil.Query(t, query, &execRes, &testutil.QueryOptions{Variables: map[string]any{
-		"init":  initialID,
-		"rand":  rand2,
-		"cache": cacheID,
-	}})
+	out2, err := c.Container().
+		From(alpineImage).
+		WithEnvVariable("RAND", rand2).
+		WithMountedCache("/mnt/cache", cache, dagger.ContainerWithMountedCacheOpts{
+			Source: srcDir,
+		}).
+		WithExec([]string{"sh", "-c", "echo $RAND >> /mnt/cache/sub-file; cat /mnt/cache/sub-file"}).
+		Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "initial-content\n"+rand1+"\n"+rand2+"\n", execRes.Container.From.WithEnvVariable.WithMountedCache.WithExec.Stdout)
+	require.Equal(t, "initial-content\n"+rand1+"\n"+rand2+"\n", out2)
+
+	require.NoError(t, wait())
 }
 
 func (ContainerSuite) TestWithMountedTemp(ctx context.Context, t *testctx.T) {
