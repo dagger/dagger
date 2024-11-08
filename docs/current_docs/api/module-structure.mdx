@@ -178,6 +178,7 @@ If they are different, you must explicitly tell the Python SDK where the main ob
 ```toml
 [project.entry-points."dagger.mod"]
 main_object = "<import package>:<main object>"
+```
 
 For example, for a Dagger module named `my-module`:
 
@@ -192,7 +193,7 @@ Thus, if you have the following configuration:
 ```toml
 [project.entry-points."dagger.mod"]
 main_object = "my_module.main:MyModule"
-````
+```
 
 Then the import in `__init__.py` is no longer needed since Dagger knows to import from `my_module.main` directly.
 
