@@ -69,7 +69,7 @@ import (
 type Test struct{}
 
 func (m *Test) Container() *dagger.Container {
-    return dag.Container(). From("`+golangImage+`")
+    return dag.Container().From("`+golangImage+`")
 }
 `,
 	).
@@ -101,4 +101,28 @@ func (ShellSuite) TestBasicModule(ctx context.Context, t *testctx.T) {
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "hello-world-im-here")
+}
+
+func (ShellSuite) TestPassingID(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	source := `package main
+
+import "context"
+
+type Test struct{}
+
+func (m *Test) DirectoryID(ctx context.Context) (string, error) {
+	id, err := dag.Directory().WithNewFile("foo", "bar").ID(ctx)
+	return string(id), err
+}
+`
+	script := ".load-directory-from-id $(directory-id) | file foo | contents"
+
+	out, err := modInit(t, c, "go", source).
+		With(daggerShell(script)).
+		Stdout(ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, "bar", out)
 }
