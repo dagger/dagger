@@ -1,6 +1,0 @@
-kind: Breaking
-body: rename `dagger-engine` core GraphQL queryo to `engine`
-time: 2024-09-26T18:10:00.286940716-03:00
-custom:
-    Author: Marcos Lilljedahl
-    PR: "8568"

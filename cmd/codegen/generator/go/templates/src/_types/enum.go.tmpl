@@ -6,7 +6,7 @@ type {{ $enumName }} string
 
 func ({{ $enumName }}) IsEnum() {}
 
-{{- $needsScopedEnums := CheckVersionCompatibility "v0.14.0" | not }}
+{{- $needsScopedEnums := CheckVersionCompatibility "v0.15.0" | not }}
 const (
 	{{- range $index, $field := .EnumValues | SortEnumFields }}
 	{{- $fieldName := ($field.Name | FormatEnum "") }}
