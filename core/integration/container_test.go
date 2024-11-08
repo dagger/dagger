@@ -4369,7 +4369,7 @@ func (ContainerSuite) TestNestedExec(ctx context.Context, t *testctx.T) {
 		_, err := c.Container().From(alpineImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithNewFile("/query.graphql", `{ defaultPlatform }`). // arbitrary valid query
-			WithExec([]string{"dagger", "query", "--debug", "--doc", "/query.graphql"}, dagger.ContainerWithExecOpts{
+			WithExec([]string{"dagger", "query", "--doc", "/query.graphql"}, dagger.ContainerWithExecOpts{
 				ExperimentalPrivilegedNesting: true,
 			}).
 			Sync(ctx)

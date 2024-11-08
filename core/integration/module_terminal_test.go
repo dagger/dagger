@@ -46,11 +46,11 @@ type Test struct {
 `, alpineImage)), 0644)
 		require.NoError(t, err)
 
-		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "init", "--source=.", "--name=test", "--sdk=go")
+		_, err = hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
 		require.NoError(t, err)
 
 		// cache the module load itself so there's less to wait for in the shell invocation below
-		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "functions")
+		_, err = hostDaggerExec(ctx, t, modDir, "functions")
 		require.NoError(t, err)
 
 		// timeout for waiting for each expected line is very generous in case CI is under heavy load or something
@@ -120,11 +120,11 @@ type Test struct {
 	`, alpineImage)), 0644)
 		require.NoError(t, err)
 
-		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "init", "--source=.", "--name=test", "--sdk=go")
+		_, err = hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
 		require.NoError(t, err)
 
 		// cache the module load itself so there's less to wait for in the shell invocation below
-		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "functions")
+		_, err = hostDaggerExec(ctx, t, modDir, "functions")
 		require.NoError(t, err)
 
 		// timeout for waiting for each expected line is very generous in case CI is under heavy load or something
@@ -201,11 +201,11 @@ type Test struct {
 	`, alpineImage)), 0644)
 		require.NoError(t, err)
 
-		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "init", "--source=.", "--name=test", "--sdk=go")
+		_, err = hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
 		require.NoError(t, err)
 
 		// cache the module load itself so there's less to wait for in the shell invocation below
-		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "functions")
+		_, err = hostDaggerExec(ctx, t, modDir, "functions")
 		require.NoError(t, err)
 
 		// timeout for waiting for each expected line is very generous in case CI is under heavy load or something
@@ -278,11 +278,11 @@ type Test struct {
 	`, alpineImage)), 0644)
 		require.NoError(t, err)
 
-		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "init", "--source=.", "--name=test", "--sdk=go")
+		_, err = hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
 		require.NoError(t, err)
 
 		// cache the returned container so there's less to wait for in the shell invocation below
-		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "call", "ctr", "sync")
+		_, err = hostDaggerExec(ctx, t, modDir, "call", "ctr", "sync")
 		require.NoError(t, err)
 
 		console, err := newTUIConsole(t, 60*time.Second)
@@ -348,11 +348,11 @@ type Test struct {
 	 `), 0644)
 		require.NoError(t, err)
 
-		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "init", "--source=.", "--name=test", "--sdk=go")
+		_, err = hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
 		require.NoError(t, err)
 
 		// cache the module load itself so there's less to wait for in the shell invocation below
-		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "functions")
+		_, err = hostDaggerExec(ctx, t, modDir, "functions")
 		require.NoError(t, err)
 
 		thisRepoPath, err := filepath.Abs("../..")
@@ -438,11 +438,11 @@ type Test struct {
 `), 0644)
 		require.NoError(t, err)
 
-		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "init", "--source=.", "--name=test", "--sdk=go")
+		_, err = hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
 		require.NoError(t, err)
 
 		// cache the module load itself so there's less to wait for in the shell invocation below
-		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "functions")
+		_, err = hostDaggerExec(ctx, t, modDir, "functions")
 		require.NoError(t, err)
 
 		// timeout for waiting for each expected line is very generous in case CI is under heavy load or something
@@ -503,11 +503,11 @@ type Test struct {
 	`, alpineImage)), 0644)
 		require.NoError(t, err)
 
-		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "init", "--source=.", "--name=test", "--sdk=go")
+		_, err = hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
 		require.NoError(t, err)
 
 		// cache the module load itself so there's less to wait for in the shell invocation below
-		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "functions")
+		_, err = hostDaggerExec(ctx, t, modDir, "functions")
 		require.NoError(t, err)
 
 		// timeout for waiting for each expected line is very generous in case CI is under heavy load or something
