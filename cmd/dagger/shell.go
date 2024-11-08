@@ -562,7 +562,7 @@ func (h *shellCallHandler) parseArgumentValues(ctx context.Context, fn *modFunct
 			break
 		}
 		if i >= len(req) {
-			return nil, fmt.Errorf("too many positional arguments: expected %d", len(req))
+			return nil, fmt.Errorf("accepts at most %d positional argument(s)", len(req))
 		}
 		pos = append(pos, "--"+req[i].FlagName(), arg)
 	}
@@ -1016,7 +1016,7 @@ type PositionalArgs func(args []string) error
 func MinimumArgs(n int) PositionalArgs {
 	return func(args []string) error {
 		if len(args) < n {
-			return fmt.Errorf("requires at least %d arg(s), only received %d", n, len(args))
+			return fmt.Errorf("requires at least %d arg(s), received %d", n, len(args))
 		}
 		return nil
 	}
@@ -1031,19 +1031,13 @@ func MaximumArgs(n int) PositionalArgs {
 	}
 }
 
-func RangeArgs(min, max int) PositionalArgs {
-	return func(args []string) error {
-		if len(args) < min || len(args) > max {
-			return fmt.Errorf("accepts between %d and %d arg(s), received %d", min, max, len(args))
-		}
-		return nil
-	}
-}
-
 func ExactArgs(n int) PositionalArgs {
 	return func(args []string) error {
-		if len(args) != n {
-			return fmt.Errorf("accepts %d arg(s), received %d", n, len(args))
+		if len(args) < n {
+			return fmt.Errorf("missing %d positional argument(s)", n-len(args))
+		}
+		if len(args) > n {
+			return fmt.Errorf("accepts at most %d positional argument(s), received %d", n, len(args))
 		}
 		return nil
 	}
@@ -1062,7 +1056,7 @@ func (c *ShellCommand) Execute(ctx context.Context, args []string, st *ShellStat
 	}
 	if c.Args != nil {
 		if err := c.Args(args); err != nil {
-			return fmt.Errorf("%w\nusage: %s", err, c.Use)
+			return fmt.Errorf("command %q %w\nusage: %s", c.Name(), err, c.Use)
 		}
 	}
 	c.SetContext(ctx)
@@ -1075,7 +1069,7 @@ func (c *ShellCommand) Execute(ctx context.Context, args []string, st *ShellStat
 func (h *shellCallHandler) functionUseLine(fp functionProvider, fn *modFunction) string {
 	sb := new(strings.Builder)
 
-	if fp != nil && fp.ProviderName() == "Query" && h.HasBuiltin("."+fn.CmdName()) {
+	if fp != nil && fp.ProviderName() == "Query" && h.mod.HasFunction(fp, fn.CmdName()) {
 		sb.WriteString(".")
 	}
 
@@ -1100,7 +1094,10 @@ func (h *shellCallHandler) HasBuiltin(name string) bool {
 
 func (h *shellCallHandler) getBuiltin(name string) *ShellCommand {
 	for _, c := range h.builtins {
-		if c.Name() == name && !(c.RequiresModule && !h.IsModuleLoaded()) {
+		if c.RequiresModule && !h.IsModuleLoaded() {
+			continue
+		}
+		if c.Name() == name {
 			return c
 		}
 	}
@@ -1113,7 +1110,7 @@ func (h *shellCallHandler) BuiltinCommand(name string) (*ShellCommand, error) {
 	}
 	cmd := h.getBuiltin(name)
 	if cmd == nil {
-		return nil, fmt.Errorf("no such command: %s", name)
+		return nil, fmt.Errorf("no such command %q", name)
 	}
 	return cmd, nil
 }
@@ -1131,7 +1128,10 @@ func (h *shellCallHandler) GroupBuiltins(groupID string) []*ShellCommand {
 func (h *shellCallHandler) Builtins() []*ShellCommand {
 	l := make([]*ShellCommand, 0, len(h.builtins))
 	for _, c := range h.builtins {
-		if !c.Hidden && !(c.RequiresModule && !h.IsModuleLoaded()) {
+		if c.RequiresModule && !h.IsModuleLoaded() {
+			continue
+		}
+		if !c.Hidden {
 			l = append(l, c)
 		}
 	}
@@ -1289,7 +1289,7 @@ func (h *shellCallHandler) IsModuleLoaded() bool {
 	return h.mod.MainObject.Name() != "Query"
 }
 
-func (h *shellCallHandler) registerBuiltins() {
+func (h *shellCallHandler) registerBuiltins() { //nolint: gocyclo
 	h.addBuiltin(
 		&ShellCommand{
 			Use:    ".debug",
@@ -1310,6 +1310,12 @@ func (h *shellCallHandler) registerBuiltins() {
 					c, err := h.BuiltinCommand(args[0])
 					if err != nil {
 						return err
+					}
+					if c == nil {
+						if !strings.HasPrefix(args[0], ".") && h.HasBuiltin("."+args[0]) {
+							return fmt.Errorf("no such command %q, did you mean %q?", args[0], "."+args[0])
+						}
+						return fmt.Errorf("no such command %q", args[0])
 					}
 					return cmd.Println(c.Help())
 				}
@@ -1389,7 +1395,6 @@ func (h *shellCallHandler) registerBuiltins() {
 			Short: "Load a core Dagger type",
 			// On the "Additional" command group on purpose
 			GroupID: "",
-			Args:    MaximumArgs(1),
 			Run: func(cmd *ShellCommand, args []string) error {
 				ctx := cmd.Context()
 
@@ -1427,7 +1432,7 @@ func (h *shellCallHandler) registerBuiltins() {
 					Use:     ".config" + strings.TrimPrefix(h.functionUseLine(fp, fn), fn.CmdName()),
 					Short:   "Set module constructor options",
 					GroupID: moduleGroup.ID,
-					Args:    RangeArgs(len(fn.RequiredArgs()), len(fn.Args)),
+					Args:    ExactArgs(len(fn.RequiredArgs())),
 					Run: func(cmd *ShellCommand, args []string) error {
 						// TODO: allow .config (without args) to print current values
 						cfg, err := h.parseArgumentValues(cmd.Context(), fn, args)
@@ -1502,13 +1507,14 @@ func (h *shellCallHandler) registerBuiltins() {
 		if (strings.HasPrefix(fn.CmdName(), "load-") && strings.HasSuffix(fn.CmdName(), "-from-id")) || slices.Contains(forSDKs, fn.CmdName()) {
 			hidden = true
 		}
+
 		h.addBuiltin(
 			&ShellCommand{
-				Use:     "." + fn.CmdName(),
+				Use:     h.functionUseLine(rootType, fn),
 				Short:   fn.Short(),
 				GroupID: coreGroup.ID,
 				Hidden:  hidden,
-				Args:    RangeArgs(len(fn.RequiredArgs()), len(fn.Args)),
+				Args:    ExactArgs(len(fn.RequiredArgs())),
 				HelpFunc: func(cmd *ShellCommand) string {
 					return h.FunctionDoc(rootType, fn)
 				},
