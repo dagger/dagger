@@ -222,8 +222,14 @@ class PythonSdkDev:
         return [self.test(version) for version in self.supported_versions()]
 
     @function
-    def build(self, version: str = "0.0.0") -> dagger.Container:
-        """Build Python SDK package for distribution."""
+    def build(
+        self,
+        version: Annotated[
+            str,
+            Doc("The version for the distribution package"),
+        ] = "0.0.0",
+    ) -> dagger.Container:
+        """Build the Python SDK client library package for distribution."""
         return (
             self.container.with_env_variable("SETUPTOOLS_SCM_PRETEND_VERSION", version)
             .without_directory("dist")
@@ -233,9 +239,18 @@ class PythonSdkDev:
     @function
     def publish(
         self,
-        token: dagger.Secret,
-        version: str = "0.0.0",
-        url: str = "",
+        token: Annotated[
+            dagger.Secret,
+            Doc("The token for the upload"),
+        ],
+        version: Annotated[
+            str,
+            Doc("The version for the distribution package to publish"),
+        ] = "0.0.0",
+        url: Annotated[
+            str,
+            Doc("The URL of the upload endpoint (empty means PyPI)"),
+        ] = "",
     ) -> dagger.Container:
         """Publish Python SDK client library to PyPI."""
         ctr = self.build(version).with_secret_variable("UV_PUBLISH_TOKEN", token)
@@ -248,9 +263,16 @@ class PythonSdkDev:
     @function
     async def test_publish(
         self,
-        token: dagger.Secret,
-        version: str = "0.0.0",
+        token: Annotated[
+            dagger.Secret,
+            Doc("TestPyPI token"),
+        ],
+        version: Annotated[
+            str,
+            Doc("The version for the distribution package to publish"),
+        ] = "0.0.0",
     ) -> dagger.Container:
+        """Test the publishing of the Python SDK client library to TestPyPI."""
         return self.publish(token, version, url="https://test.pypi.org/legacy/")
 
     @function
