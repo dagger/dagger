@@ -1,0 +1,6 @@
+kind: Added
+body: Add support for TRACEPARENT. The user will see what's function doing in the TUI.
+time: 2024-11-09T10:39:11.945216+07:00
+custom:
+    Author: wingyplus
+    PR: "8896"
