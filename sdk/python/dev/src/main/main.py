@@ -9,8 +9,7 @@ from .test import TestSuite
 
 UV_IMAGE: Final[str] = os.getenv("DAGGER_UV_IMAGE", "ghcr.io/astral-sh/uv:latest")
 UV_VERSION: Final[str] = os.getenv("DAGGER_UV_VERSION", os.getenv("UV_VERSION", ""))
-HATCH_VERSION: Final[str] = "1.12.0"
-SUPPORTED_VERSIONS: Final = Literal["3.12", "3.11", "3.10"]
+SUPPORTED_VERSIONS: Final = Literal["3.12", "3.11", "3.10", "3.13"]
 
 
 @object_type
@@ -65,9 +64,8 @@ class PythonSdkDev:
                     "/root/.local/bin:/usr/local/bin:$PATH",
                     expand=True,
                 )
-                .with_(cls.tools_cache("uv", "hatch", "ruff", "mypy"))
+                .with_(cls.tools_cache("uv", "ruff", "mypy"))
                 .with_(cls.uv)
-                .with_(cls.hatch)
             )
         return cls(
             container=(
@@ -89,14 +87,6 @@ class PythonSdkDev:
             .with_env_variable("UV_LINK_MODE", "copy")
             .with_env_variable("UV_PROJECT_ENVIRONMENT", "/opt/venv")
         )
-
-    @classmethod
-    def hatch(cls, ctr: dagger.Container) -> dagger.Container:
-        """Install the Hatch tool."""
-        args = ["uv", "tool", "install", f"hatch=={HATCH_VERSION}"]
-        if UV_VERSION:
-            args += ["--with", f"uv=={UV_VERSION}"]
-        return ctr.with_exec(args)
 
     @classmethod
     def tools_cache(cls, *args: str):
@@ -232,11 +222,36 @@ class PythonSdkDev:
         return [self.test(version) for version in self.supported_versions()]
 
     @function
-    def build(self) -> dagger.Directory:
+    def build(self, version: str = "0.0.0") -> dagger.Container:
         """Build Python SDK package for distribution."""
-        return self.container.with_exec(["uvx", "hatch", "build", "--clean"]).directory(
-            "dist"
+        return (
+            self.container.with_env_variable("SETUPTOOLS_SCM_PRETEND_VERSION", version)
+            .without_directory("dist")
+            .with_exec(["uv", "build"])
         )
+
+    @function
+    def publish(
+        self,
+        token: dagger.Secret,
+        version: str = "0.0.0",
+        url: str = "",
+    ) -> dagger.Container:
+        """Publish Python SDK client library to PyPI."""
+        ctr = self.build(version).with_secret_variable("UV_PUBLISH_TOKEN", token)
+
+        if url:
+            ctr = ctr.with_env_variable("UV_PUBLISH_URL", url)
+
+        return ctr.with_exec(["uv", "publish"])
+
+    @function
+    async def test_publish(
+        self,
+        token: dagger.Secret,
+        version: str = "0.0.0",
+    ) -> dagger.Container:
+        return self.publish(token, version, url="https://test.pypi.org/legacy/")
 
     @function
     def docs(self) -> Docs:

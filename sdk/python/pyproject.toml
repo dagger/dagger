@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling", "hatch-vcs"]
+requires = ["hatchling==1.25.0", "hatch-vcs==0.4.0"]
 build-backend = "hatchling.build"
 
 [project]
@@ -7,10 +7,9 @@ name = "dagger-io"
 dynamic = ["version"]
 description = "A client package for running Dagger pipelines in Python."
 readme = "README.md"
-license = "Apache-2.0"
 authors = [{ name = "Dagger", email = "hello@dagger.io" }]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "Framework :: AnyIO",
     "Framework :: Pytest",
@@ -20,6 +19,7 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Typing :: Typed",

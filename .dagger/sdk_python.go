@@ -18,23 +18,8 @@ const (
 	pythonGeneratedAPIPath = "sdk/python/src/dagger/client/gen.py"
 )
 
-var pythonVersions = []string{"3.10", "3.11", "3.12"}
-
 type PythonSDK struct {
 	Dagger *DaggerDev // +private
-}
-
-// dev instantiates a PythonSDKDev instance, with source directory
-// from `sdk/python` subdir.
-func (t PythonSDK) dev(opts ...dagger.PythonSDKDevOpts) *dagger.PythonSDKDev {
-	return dag.PythonSDKDev(opts...)
-}
-
-// directory takes a directory returned by PythonSDKDev which is relative
-// to `sdk/python` and returns a new directory relative to the repo's
-// root.
-func (t PythonSDK) directory(dist *dagger.Directory) *dagger.Directory {
-	return dag.Directory().WithDirectory(pythonSubdir, dist)
 }
 
 // Lint the Python SDK
@@ -52,7 +37,7 @@ func (t PythonSDK) Lint(ctx context.Context) (rerr error) {
 			span.End()
 		}()
 		// Preserve same file hierarchy for docs because of extend rules in .ruff.toml
-		_, err := t.dev().
+		_, err := dag.PythonSDKDev().
 			WithDirectory(
 				dag.Directory().
 					WithDirectory(
@@ -110,11 +95,16 @@ func (t PythonSDK) Test(ctx context.Context) (rerr error) {
 		return err
 	}
 
-	base := t.dev().Container().With(installer)
-	dev := t.dev(dagger.PythonSDKDevOpts{Container: base})
+	base := dag.PythonSDKDev().Container().With(installer)
+	dev := dag.PythonSDKDev(dagger.PythonSDKDevOpts{Container: base})
+
+	versions, err := dag.PythonSDKDev().SupportedVersions(ctx)
+	if err != nil {
+		return err
+	}
 
 	eg, ctx := errgroup.WithContext(ctx)
-	for _, version := range pythonVersions {
+	for _, version := range versions {
 		eg.Go(func() error {
 			_, err := dev.
 				Test(dagger.PythonSDKDevTestOpts{Version: version}).
@@ -137,7 +127,10 @@ func (t PythonSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 	if err != nil {
 		return nil, err
 	}
-	return t.directory(t.dev().Generate(introspection)), nil
+	return dag.Directory().WithDirectory(
+		pythonSubdir,
+		dag.PythonSDKDev().Generate(introspection),
+	), nil
 }
 
 // Test the publishing process
@@ -165,26 +158,20 @@ func (t PythonSDK) Publish(
 	githubToken *dagger.Secret,
 ) error {
 	version := strings.TrimPrefix(tag, "sdk/python/")
-	setuptoolsVersion := version
-	if dryRun {
-		setuptoolsVersion = "v0.0.0"
-	}
-	if pypiRepo == "" || pypiRepo == "pypi" {
-		pypiRepo = "main"
-	}
 
-	// TODO: move this to PythonSDKDev
-	result := t.dev().Container().
-		WithEnvVariable("SETUPTOOLS_SCM_PRETEND_VERSION", strings.TrimPrefix(setuptoolsVersion, "v")).
-		WithEnvVariable("HATCH_INDEX_REPO", pypiRepo).
-		WithEnvVariable("HATCH_INDEX_USER", "__token__").
-		WithExec([]string{"uvx", "hatch", "build"})
-	if !dryRun {
-		result = result.
-			WithSecretVariable("HATCH_INDEX_AUTH", pypiToken).
-			WithExec([]string{"uvx", "hatch", "publish"})
+	var ctr *dagger.Container
+	if dryRun {
+		ctr = dag.PythonSDKDev().Build()
+	} else {
+		opts := dagger.PythonSDKDevPublishOpts{
+			Version: strings.TrimPrefix(version, "v"),
+		}
+		if pypiRepo == "test" {
+			opts.URL = "https://test.pypi.org/legacy/"
+		}
+		ctr = dag.PythonSDKDev().Publish(pypiToken, opts)
 	}
-	_, err := result.Sync(ctx)
+	_, err := ctr.Sync(ctx)
 	if err != nil {
 		return err
 	}
