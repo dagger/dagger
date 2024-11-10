@@ -3,9 +3,7 @@ from collections.abc import Sequence
 import pytest
 
 import dagger
-from dagger.client._core import (
-    Root,
-)
+from dagger.client._core import Root
 from dagger.client._guards import is_id_type, is_id_type_sequence, typecheck
 from dagger.client.base import Scalar, Type
 
