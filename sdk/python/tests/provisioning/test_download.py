@@ -17,8 +17,8 @@ from aiohttp.test_utils import TestServer
 from anyio.streams.file import FileReadStream
 
 import dagger
-from dagger._engine import download
 from dagger._managers import asyncify
+from dagger.provisioning import _download as download
 
 
 @pytest.fixture(autouse=True)
