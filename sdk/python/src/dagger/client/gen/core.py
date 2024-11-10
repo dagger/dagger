@@ -6,134 +6,153 @@ from dataclasses import dataclass
 
 from typing_extensions import Self
 
-from dagger.client._core import Arg, Root
+from dagger.client._core import Arg
 from dagger.client._guards import typecheck
 from dagger.client.base import Enum, Input, Scalar, Type
 
 
 class CacheVolumeID(Scalar):
     """The `CacheVolumeID` scalar type represents an identifier for an
-    object of type CacheVolume."""
+    object of type CacheVolume.
+    """
 
 
 class ContainerID(Scalar):
     """The `ContainerID` scalar type represents an identifier for an
-    object of type Container."""
+    object of type Container.
+    """
 
 
 class CurrentModuleID(Scalar):
     """The `CurrentModuleID` scalar type represents an identifier for an
-    object of type CurrentModule."""
+    object of type CurrentModule.
+    """
 
 
 class DirectoryID(Scalar):
     """The `DirectoryID` scalar type represents an identifier for an
-    object of type Directory."""
+    object of type Directory.
+    """
 
 
 class EngineCacheEntryID(Scalar):
     """The `EngineCacheEntryID` scalar type represents an identifier for
-    an object of type EngineCacheEntry."""
+    an object of type EngineCacheEntry.
+    """
 
 
 class EngineCacheEntrySetID(Scalar):
     """The `EngineCacheEntrySetID` scalar type represents an identifier
-    for an object of type EngineCacheEntrySet."""
+    for an object of type EngineCacheEntrySet.
+    """
 
 
 class EngineCacheID(Scalar):
     """The `EngineCacheID` scalar type represents an identifier for an
-    object of type EngineCache."""
+    object of type EngineCache.
+    """
 
 
 class EngineID(Scalar):
     """The `EngineID` scalar type represents an identifier for an object
-    of type Engine."""
+    of type Engine.
+    """
 
 
 class EnumTypeDefID(Scalar):
     """The `EnumTypeDefID` scalar type represents an identifier for an
-    object of type EnumTypeDef."""
+    object of type EnumTypeDef.
+    """
 
 
 class EnumValueTypeDefID(Scalar):
     """The `EnumValueTypeDefID` scalar type represents an identifier for
-    an object of type EnumValueTypeDef."""
+    an object of type EnumValueTypeDef.
+    """
 
 
 class EnvVariableID(Scalar):
     """The `EnvVariableID` scalar type represents an identifier for an
-    object of type EnvVariable."""
-
-
-class ErrorID(Scalar):
-    """The `ErrorID` scalar type represents an identifier for an object of
-    type Error."""
+    object of type EnvVariable.
+    """
 
 
 class FieldTypeDefID(Scalar):
     """The `FieldTypeDefID` scalar type represents an identifier for an
-    object of type FieldTypeDef."""
+    object of type FieldTypeDef.
+    """
 
 
 class FileID(Scalar):
     """The `FileID` scalar type represents an identifier for an object of
-    type File."""
+    type File.
+    """
 
 
 class FunctionArgID(Scalar):
     """The `FunctionArgID` scalar type represents an identifier for an
-    object of type FunctionArg."""
+    object of type FunctionArg.
+    """
 
 
 class FunctionCallArgValueID(Scalar):
     """The `FunctionCallArgValueID` scalar type represents an identifier
-    for an object of type FunctionCallArgValue."""
+    for an object of type FunctionCallArgValue.
+    """
 
 
 class FunctionCallID(Scalar):
     """The `FunctionCallID` scalar type represents an identifier for an
-    object of type FunctionCall."""
+    object of type FunctionCall.
+    """
 
 
 class FunctionID(Scalar):
     """The `FunctionID` scalar type represents an identifier for an object
-    of type Function."""
+    of type Function.
+    """
 
 
 class GeneratedCodeID(Scalar):
     """The `GeneratedCodeID` scalar type represents an identifier for an
-    object of type GeneratedCode."""
+    object of type GeneratedCode.
+    """
 
 
 class GitModuleSourceID(Scalar):
     """The `GitModuleSourceID` scalar type represents an identifier for an
-    object of type GitModuleSource."""
+    object of type GitModuleSource.
+    """
 
 
 class GitRefID(Scalar):
     """The `GitRefID` scalar type represents an identifier for an object
-    of type GitRef."""
+    of type GitRef.
+    """
 
 
 class GitRepositoryID(Scalar):
     """The `GitRepositoryID` scalar type represents an identifier for an
-    object of type GitRepository."""
+    object of type GitRepository.
+    """
 
 
 class HostID(Scalar):
     """The `HostID` scalar type represents an identifier for an object of
-    type Host."""
+    type Host.
+    """
 
 
 class InputTypeDefID(Scalar):
     """The `InputTypeDefID` scalar type represents an identifier for an
-    object of type InputTypeDef."""
+    object of type InputTypeDef.
+    """
 
 
 class InterfaceTypeDefID(Scalar):
     """The `InterfaceTypeDefID` scalar type represents an identifier for
-    an object of type InterfaceTypeDef."""
+    an object of type InterfaceTypeDef.
+    """
 
 
 class JSON(Scalar):
@@ -142,98 +161,111 @@ class JSON(Scalar):
 
 class LabelID(Scalar):
     """The `LabelID` scalar type represents an identifier for an object of
-    type Label."""
+    type Label.
+    """
 
 
 class ListTypeDefID(Scalar):
     """The `ListTypeDefID` scalar type represents an identifier for an
-    object of type ListTypeDef."""
+    object of type ListTypeDef.
+    """
 
 
 class LocalModuleSourceID(Scalar):
     """The `LocalModuleSourceID` scalar type represents an identifier for
-    an object of type LocalModuleSource."""
+    an object of type LocalModuleSource.
+    """
 
 
 class ModuleDependencyID(Scalar):
     """The `ModuleDependencyID` scalar type represents an identifier for
-    an object of type ModuleDependency."""
+    an object of type ModuleDependency.
+    """
 
 
 class ModuleID(Scalar):
     """The `ModuleID` scalar type represents an identifier for an object
-    of type Module."""
+    of type Module.
+    """
 
 
 class ModuleSourceID(Scalar):
     """The `ModuleSourceID` scalar type represents an identifier for an
-    object of type ModuleSource."""
+    object of type ModuleSource.
+    """
 
 
 class ModuleSourceViewID(Scalar):
     """The `ModuleSourceViewID` scalar type represents an identifier for
-    an object of type ModuleSourceView."""
+    an object of type ModuleSourceView.
+    """
 
 
 class ObjectTypeDefID(Scalar):
     """The `ObjectTypeDefID` scalar type represents an identifier for an
-    object of type ObjectTypeDef."""
+    object of type ObjectTypeDef.
+    """
 
 
 class Platform(Scalar):
     """The platform config OS and architecture in a Container.  The format
     is [os]/[platform]/[version] (e.g., "darwin/arm64/v7",
-    "windows/amd64", "linux/arm64")."""
+    "windows/amd64", "linux/arm64").
+    """
 
 
 class PortID(Scalar):
     """The `PortID` scalar type represents an identifier for an object of
-    type Port."""
-
-
-class SDKConfigID(Scalar):
-    """The `SDKConfigID` scalar type represents an identifier for an
-    object of type SDKConfig."""
+    type Port.
+    """
 
 
 class ScalarTypeDefID(Scalar):
     """The `ScalarTypeDefID` scalar type represents an identifier for an
-    object of type ScalarTypeDef."""
+    object of type ScalarTypeDef.
+    """
 
 
 class SecretID(Scalar):
     """The `SecretID` scalar type represents an identifier for an object
-    of type Secret."""
+    of type Secret.
+    """
 
 
 class ServiceID(Scalar):
     """The `ServiceID` scalar type represents an identifier for an object
-    of type Service."""
+    of type Service.
+    """
 
 
 class SocketID(Scalar):
     """The `SocketID` scalar type represents an identifier for an object
-    of type Socket."""
+    of type Socket.
+    """
 
 
 class SourceMapID(Scalar):
     """The `SourceMapID` scalar type represents an identifier for an
-    object of type SourceMap."""
+    object of type SourceMap.
+    """
 
 
 class TerminalID(Scalar):
     """The `TerminalID` scalar type represents an identifier for an object
-    of type Terminal."""
+    of type Terminal.
+    """
 
 
 class TypeDefID(Scalar):
     """The `TypeDefID` scalar type represents an identifier for an object
-    of type TypeDef."""
+    of type TypeDef.
+    """
 
 
 class Void(Scalar):
     """The absence of a value.  A Null Void is used as a placeholder for
-    resolvers that do not return anything."""
+    resolvers that do not return anything.
+    """
 
 
 class CacheSharingMode(Enum):
@@ -309,9 +341,6 @@ class TypeDefKind(Enum):
 
     Always paired with an EnumTypeDef.
     """
-
-    FLOAT_KIND = "FLOAT_KIND"
-    """A float value."""
 
     INPUT_KIND = "INPUT_KIND"
     """A graphql input type, used only when representing the core API via TypeDefs."""
@@ -422,59 +451,12 @@ class CacheVolume(Type):
 class Container(Type):
     """An OCI-compatible container, also known as a Docker container."""
 
-    def as_service(
-        self,
-        *,
-        args: list[str] | None = None,
-        use_entrypoint: bool | None = False,
-        experimental_privileged_nesting: bool | None = False,
-        insecure_root_capabilities: bool | None = False,
-        expand: bool | None = False,
-        no_init: bool | None = False,
-    ) -> "Service":
+    def as_service(self) -> "Service":
         """Turn the container into a Service.
 
         Be sure to set any exposed ports before this conversion.
-
-        Parameters
-        ----------
-        args:
-            Command to run instead of the container's default command (e.g.,
-            ["go", "run", "main.go"]).
-            If empty, the container's default command is used.
-        use_entrypoint:
-            If the container has an entrypoint, prepend it to the args.
-        experimental_privileged_nesting:
-            Provides Dagger access to the executed command.
-            Do not use this option unless you trust the command being
-            executed; the command being executed WILL BE GRANTED FULL ACCESS
-            TO YOUR HOST FILESYSTEM.
-        insecure_root_capabilities:
-            Execute the command with all root capabilities. This is similar to
-            running a command with "sudo" or executing "docker run" with the "
-            --privileged" flag. Containerization does not provide any security
-            guarantees when using this option. It should only be used when
-            absolutely necessary and only with trusted commands.
-        expand:
-            Replace "${VAR}" or "$VAR" in the args according to the current
-            environment variables defined in the container (e.g. "/$VAR/foo").
-        no_init:
-            If set, skip the automatic init process injected into containers
-            by default.
-            This should only be used if the user requires that their exec
-            process be the pid 1 process in the container. Otherwise it may
-            result in unexpected behavior.
         """
-        _args = [
-            Arg("args", () if args is None else args, ()),
-            Arg("useEntrypoint", use_entrypoint, False),
-            Arg(
-                "experimentalPrivilegedNesting", experimental_privileged_nesting, False
-            ),
-            Arg("insecureRootCapabilities", insecure_root_capabilities, False),
-            Arg("expand", expand, False),
-            Arg("noInit", no_init, False),
-        ]
+        _args: list[Arg] = []
         _ctx = self._select("asService", _args)
         return Service(_ctx)
 
@@ -1208,12 +1190,6 @@ class Container(Type):
         *,
         ports: list[PortForward] | None = None,
         random: bool | None = False,
-        args: list[str] | None = None,
-        use_entrypoint: bool | None = False,
-        experimental_privileged_nesting: bool | None = False,
-        insecure_root_capabilities: bool | None = False,
-        expand: bool | None = False,
-        no_init: bool | None = False,
     ) -> Void | None:
         """Starts a Service and creates a tunnel that forwards traffic from the
         caller's network to that service.
@@ -1228,32 +1204,6 @@ class Container(Type):
             service port.
         random:
             Bind each tunnel port to a random port on the host.
-        args:
-            Command to run instead of the container's default command (e.g.,
-            ["go", "run", "main.go"]).
-            If empty, the container's default command is used.
-        use_entrypoint:
-            If the container has an entrypoint, prepend it to the args.
-        experimental_privileged_nesting:
-            Provides Dagger access to the executed command.
-            Do not use this option unless you trust the command being
-            executed; the command being executed WILL BE GRANTED FULL ACCESS
-            TO YOUR HOST FILESYSTEM.
-        insecure_root_capabilities:
-            Execute the command with all root capabilities. This is similar to
-            running a command with "sudo" or executing "docker run" with the "
-            --privileged" flag. Containerization does not provide any security
-            guarantees when using this option. It should only be used when
-            absolutely necessary and only with trusted commands.
-        expand:
-            Replace "${VAR}" or "$VAR" in the args according to the current
-            environment variables defined in the container (e.g. "/$VAR/foo").
-        no_init:
-            If set, skip the automatic init process injected into containers
-            by default.
-            This should only be used if the user requires that their exec
-            process be the pid 1 process in the container. Otherwise it may
-            result in unexpected behavior.
 
         Returns
         -------
@@ -1271,14 +1221,6 @@ class Container(Type):
         _args = [
             Arg("ports", () if ports is None else ports, ()),
             Arg("random", random, False),
-            Arg("args", () if args is None else args, ()),
-            Arg("useEntrypoint", use_entrypoint, False),
-            Arg(
-                "experimentalPrivilegedNesting", experimental_privileged_nesting, False
-            ),
-            Arg("insecureRootCapabilities", insecure_root_capabilities, False),
-            Arg("expand", expand, False),
-            Arg("noInit", no_init, False),
         ]
         _ctx = self._select("up", _args)
         await _ctx.execute()
@@ -1487,7 +1429,7 @@ class Container(Type):
         ----------
         args:
             Command to run instead of the container's default command (e.g.,
-            ["go", "run", "main.go"]).
+            ["run", "main.go"]).
             If empty, the container's default command is used.
         use_entrypoint:
             If the container has an entrypoint, prepend it to the args.
@@ -1690,7 +1632,7 @@ class Container(Type):
         Parameters
         ----------
         path:
-            Location of the cache directory (e.g., "/root/.npm").
+            Location of the cache directory (e.g., "/cache/node_modules").
         cache:
             Identifier of the cache volume to mount.
         source:
@@ -2237,7 +2179,7 @@ class Container(Type):
         Parameters
         ----------
         path:
-            Location of the cache directory (e.g., "/root/.npm").
+            Location of the cache directory (e.g., "/cache/node_modules").
         expand:
             Replace "${VAR}" or "$VAR" in the value of path according to the
             current environment variables defined in the container (e.g.
@@ -3016,11 +2958,9 @@ class Engine(Type):
 class EngineCache(Type):
     """A cache storage for the Dagger engine"""
 
-    def entry_set(self, *, key: str | None = "") -> "EngineCacheEntrySet":
+    def entry_set(self) -> "EngineCacheEntrySet":
         """The current set of entries in the cache"""
-        _args = [
-            Arg("key", key, ""),
-        ]
+        _args: list[Arg] = []
         _ctx = self._select("entrySet", _args)
         return EngineCacheEntrySet(_ctx)
 
@@ -3654,59 +3594,12 @@ class EnvVariable(Type):
 
 
 @typecheck
-class Error(Type):
-    async def id(self) -> ErrorID:
-        """A unique identifier for this Error.
-
-        Note
-        ----
-        This is lazily evaluated, no operation is actually run.
-
-        Returns
-        -------
-        ErrorID
-            The `ErrorID` scalar type represents an identifier for an object
-            of type Error.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("id", _args)
-        return await _ctx.execute(ErrorID)
-
-    async def message(self) -> str:
-        """A description of the error.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("message", _args)
-        return await _ctx.execute(str)
-
-
-@typecheck
 class FieldTypeDef(Type):
     """A definition of a field on a custom object defined in a Module.  A
     field on an object has a static value, as opposed to a function on an
     object whose value is computed by invoking code (and can accept
-    arguments)."""
+    arguments).
+    """
 
     async def description(self) -> str:
         """A doc string for the field, if any.
@@ -4011,7 +3904,8 @@ class File(Type):
 class Function(Type):
     """Function represents a resolver provided by a Module.  A function
     always evaluates against a parent object and is given a set of named
-    arguments."""
+    arguments.
+    """
 
     async def args(self) -> list["FunctionArg"]:
         """Arguments accepted by the function, if any."""
@@ -4195,7 +4089,8 @@ class Function(Type):
 class FunctionArg(Type):
     """An argument accepted by a function.  This is a specification for an
     argument at function definition time, not an argument passed at
-    function call time."""
+    function call time.
+    """
 
     async def default_path(self) -> str:
         """Only applies to arguments of type File or Directory. If the argument
@@ -4452,33 +4347,6 @@ class FunctionCall(Type):
         _args: list[Arg] = []
         _ctx = self._select("parentName", _args)
         return await _ctx.execute(str)
-
-    async def return_error(self, error: Error) -> Void | None:
-        """Return an error from the function.
-
-        Parameters
-        ----------
-        error:
-            The error to return.
-
-        Returns
-        -------
-        Void | None
-            The absence of a value.  A Null Void is used as a placeholder for
-            resolvers that do not return anything.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args = [
-            Arg("error", error),
-        ]
-        _ctx = self._select("returnError", _args)
-        await _ctx.execute()
 
     async def return_value(self, value: JSON) -> Void | None:
         """Set the return value of the function call to the provided value.
@@ -5032,7 +4900,7 @@ class GitRepository(Type):
         *,
         patterns: list[str] | None = None,
     ) -> list[str]:
-        """tags that match any of the given glob patterns.
+        """Tags that match any of the given glob patterns.
 
         Parameters
         ----------
@@ -5271,7 +5139,8 @@ class InputTypeDef(Type):
     args. This is currently only used to represent pre-existing usage of
     graphql input types in the core API. It is not used by user modules
     and shouldn't ever be as user module accept input objects via their id
-    rather than graphql input types."""
+    rather than graphql input types.
+    """
 
     async def fields(self) -> list[FieldTypeDef]:
         """Static fields defined on this input object, if any."""
@@ -5569,7 +5438,8 @@ class ListTypeDef(Type):
 @typecheck
 class LocalModuleSource(Type):
     """Module source that that originates from a path locally relative to
-    an arbitrary directory."""
+    an arbitrary directory.
+    """
 
     def context_directory(self) -> Directory:
         """The directory containing everything needed to load load and use the
@@ -5853,11 +5723,27 @@ class Module(Type):
         _ctx = self._select("runtime", _args)
         return Container(_ctx)
 
-    def sdk(self) -> "SDKConfig":
-        """The SDK config used by this module."""
+    async def sdk(self) -> str:
+        """The SDK used by this module. Either a name of a builtin SDK or a
+        module source ref string pointing to the SDK's implementation.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
         _args: list[Arg] = []
         _ctx = self._select("sdk", _args)
-        return SDKConfig(_ctx)
+        return await _ctx.execute(str)
 
     async def serve(self) -> Void | None:
         """Serve a module's API in the current session.
@@ -6015,7 +5901,8 @@ class ModuleDependency(Type):
 @typecheck
 class ModuleSource(Type):
     """The source needed to load and run a module, along with any metadata
-    about the source such as versions/urls/etc."""
+    about the source such as versions/urls/etc.
+    """
 
     def as_git_source(self) -> GitModuleSource:
         """If the source is a of kind git, the git source representation of it."""
@@ -6089,14 +5976,16 @@ class ModuleSource(Type):
         return await _ctx.execute(bool)
 
     def context_directory(self) -> Directory:
-        """The directory containing everything needed to load and use the module."""
+        """The directory containing everything needed to load load and use the
+        module.
+        """
         _args: list[Arg] = []
         _ctx = self._select("contextDirectory", _args)
         return Directory(_ctx)
 
     async def dependencies(self) -> list[ModuleDependency]:
-        """The effective module source dependencies from the configuration, and
-        calls to withDependencies and withoutDependencies.
+        """The dependencies of the module source. Includes dependencies from the
+        configuration and any extras from withDependencies calls.
         """
         _args: list[Arg] = []
         _ctx = self._select("dependencies", _args)
@@ -6240,27 +6129,6 @@ class ModuleSource(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("moduleOriginalName", _args)
-        return await _ctx.execute(str)
-
-    async def pin(self) -> str:
-        """The pinned version of this module source.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("pin", _args)
         return await _ctx.execute(str)
 
     async def resolve_context_path_from_caller(self) -> str:
@@ -6478,16 +6346,16 @@ class ModuleSource(Type):
         _ctx = self._select("withName", _args)
         return ModuleSource(_ctx)
 
-    def with_sdk(self, source: str) -> Self:
+    def with_sdk(self, sdk: str) -> Self:
         """Update the module source with a new SDK.
 
         Parameters
         ----------
-        source:
-            The SDK source to set.
+        sdk:
+            The SDK to set.
         """
         _args = [
-            Arg("source", source),
+            Arg("sdk", sdk),
         ]
         _ctx = self._select("withSDK", _args)
         return ModuleSource(_ctx)
@@ -6504,20 +6372,6 @@ class ModuleSource(Type):
             Arg("path", path),
         ]
         _ctx = self._select("withSourceSubpath", _args)
-        return ModuleSource(_ctx)
-
-    def with_update_dependencies(self, dependencies: list[str]) -> Self:
-        """Update one or more module dependencies.
-
-        Parameters
-        ----------
-        dependencies:
-            The dependencies to update.
-        """
-        _args = [
-            Arg("dependencies", dependencies),
-        ]
-        _ctx = self._select("withUpdateDependencies", _args)
         return ModuleSource(_ctx)
 
     def with_view(self, name: str, patterns: list[str]) -> Self:
@@ -6537,21 +6391,6 @@ class ModuleSource(Type):
         _ctx = self._select("withView", _args)
         return ModuleSource(_ctx)
 
-    def without_dependencies(self, dependencies: list[str]) -> Self:
-        """Remove the provided dependencies from the module source's dependency
-        list.
-
-        Parameters
-        ----------
-        dependencies:
-            The dependencies to remove.
-        """
-        _args = [
-            Arg("dependencies", dependencies),
-        ]
-        _ctx = self._select("withoutDependencies", _args)
-        return ModuleSource(_ctx)
-
     def with_(self, cb: Callable[["ModuleSource"], "ModuleSource"]) -> "ModuleSource":
         """Call the provided callable with current ModuleSource.
 
@@ -6563,7 +6402,8 @@ class ModuleSource(Type):
 @typecheck
 class ModuleSourceView(Type):
     """A named set of path filters that can be applied to directory
-    arguments provided to functions."""
+    arguments provided to functions.
+    """
 
     async def id(self) -> ModuleSourceViewID:
         """A unique identifier for this ModuleSourceView.
@@ -6889,814 +6729,6 @@ class Port(Type):
 
 
 @typecheck
-class Client(Root):
-    """The root of the DAG."""
-
-    def builtin_container(self, digest: str) -> Container:
-        """Retrieves a container builtin to the engine.
-
-        Parameters
-        ----------
-        digest:
-            Digest of the image manifest
-        """
-        _args = [
-            Arg("digest", digest),
-        ]
-        _ctx = self._select("builtinContainer", _args)
-        return Container(_ctx)
-
-    def cache_volume(
-        self,
-        key: str,
-        *,
-        namespace: str | None = "",
-    ) -> CacheVolume:
-        """Constructs a cache volume for a given cache key.
-
-        Parameters
-        ----------
-        key:
-            A string identifier to target this cache volume (e.g., "modules-
-            cache").
-        namespace:
-        """
-        _args = [
-            Arg("key", key),
-            Arg("namespace", namespace, ""),
-        ]
-        _ctx = self._select("cacheVolume", _args)
-        return CacheVolume(_ctx)
-
-    def container(
-        self,
-        *,
-        platform: Platform | None = None,
-    ) -> Container:
-        """Creates a scratch container.
-
-        Optional platform argument initializes new containers to execute and
-        publish as that platform. Platform defaults to that of the builder's
-        host.
-
-        Parameters
-        ----------
-        platform:
-            Platform to initialize the container with.
-        """
-        _args = [
-            Arg("platform", platform, None),
-        ]
-        _ctx = self._select("container", _args)
-        return Container(_ctx)
-
-    def current_function_call(self) -> FunctionCall:
-        """The FunctionCall context that the SDK caller is currently executing
-        in.
-
-        If the caller is not currently executing in a function, this will
-        return an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("currentFunctionCall", _args)
-        return FunctionCall(_ctx)
-
-    def current_module(self) -> CurrentModule:
-        """The module currently being served in the session, if any."""
-        _args: list[Arg] = []
-        _ctx = self._select("currentModule", _args)
-        return CurrentModule(_ctx)
-
-    async def current_type_defs(self) -> list["TypeDef"]:
-        """The TypeDef representations of the objects currently being served in
-        the session.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("currentTypeDefs", _args)
-        _ctx = TypeDef(_ctx)._select("id", [])
-
-        @dataclass
-        class Response:
-            id: TypeDefID
-
-        _ids = await _ctx.execute(list[Response])
-        return [
-            TypeDef(
-                Client.from_context(_ctx)._select(
-                    "loadTypeDefFromID",
-                    [Arg("id", v.id)],
-                )
-            )
-            for v in _ids
-        ]
-
-    async def default_platform(self) -> Platform:
-        """The default platform of the engine.
-
-        Returns
-        -------
-        Platform
-            The platform config OS and architecture in a Container.  The
-            format is [os]/[platform]/[version] (e.g., "darwin/arm64/v7",
-            "windows/amd64", "linux/arm64").
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("defaultPlatform", _args)
-        return await _ctx.execute(Platform)
-
-    def directory(self) -> Directory:
-        """Creates an empty directory."""
-        _args: list[Arg] = []
-        _ctx = self._select("directory", _args)
-        return Directory(_ctx)
-
-    def engine(self) -> Engine:
-        """The Dagger engine container configuration and state"""
-        _args: list[Arg] = []
-        _ctx = self._select("engine", _args)
-        return Engine(_ctx)
-
-    def error(self, message: str) -> Error:
-        """Create a new error.
-
-        Parameters
-        ----------
-        message:
-            A brief description of the error.
-        """
-        _args = [
-            Arg("message", message),
-        ]
-        _ctx = self._select("error", _args)
-        return Error(_ctx)
-
-    def function(self, name: str, return_type: "TypeDef") -> Function:
-        """Creates a function.
-
-        Parameters
-        ----------
-        name:
-            Name of the function, in its original format from the
-            implementation language.
-        return_type:
-            Return type of the function.
-        """
-        _args = [
-            Arg("name", name),
-            Arg("returnType", return_type),
-        ]
-        _ctx = self._select("function", _args)
-        return Function(_ctx)
-
-    def generated_code(self, code: Directory) -> GeneratedCode:
-        """Create a code generation result, given a directory containing the
-        generated code.
-        """
-        _args = [
-            Arg("code", code),
-        ]
-        _ctx = self._select("generatedCode", _args)
-        return GeneratedCode(_ctx)
-
-    def git(
-        self,
-        url: str,
-        *,
-        keep_git_dir: bool | None = True,
-        experimental_service_host: "Service | None" = None,
-        ssh_known_hosts: str | None = "",
-        ssh_auth_socket: "Socket | None" = None,
-    ) -> GitRepository:
-        """Queries a Git repository.
-
-        Parameters
-        ----------
-        url:
-            URL of the git repository.
-            Can be formatted as `https://{host}/{owner}/{repo}`,
-            `git@{host}:{owner}/{repo}`.
-            Suffix ".git" is optional.
-        keep_git_dir:
-            DEPRECATED: Set to true to keep .git directory.
-        experimental_service_host:
-            A service which must be started before the repo is fetched.
-        ssh_known_hosts:
-            Set SSH known hosts
-        ssh_auth_socket:
-            Set SSH auth socket
-        """
-        _args = [
-            Arg("url", url),
-            Arg("keepGitDir", keep_git_dir, True),
-            Arg("experimentalServiceHost", experimental_service_host, None),
-            Arg("sshKnownHosts", ssh_known_hosts, ""),
-            Arg("sshAuthSocket", ssh_auth_socket, None),
-        ]
-        _ctx = self._select("git", _args)
-        return GitRepository(_ctx)
-
-    def host(self) -> Host:
-        """Queries the host environment."""
-        _args: list[Arg] = []
-        _ctx = self._select("host", _args)
-        return Host(_ctx)
-
-    def http(
-        self,
-        url: str,
-        *,
-        experimental_service_host: "Service | None" = None,
-    ) -> File:
-        """Returns a file containing an http remote url content.
-
-        Parameters
-        ----------
-        url:
-            HTTP url to get the content from (e.g., "https://docs.dagger.io").
-        experimental_service_host:
-            A service which must be started before the URL is fetched.
-        """
-        _args = [
-            Arg("url", url),
-            Arg("experimentalServiceHost", experimental_service_host, None),
-        ]
-        _ctx = self._select("http", _args)
-        return File(_ctx)
-
-    def load_cache_volume_from_id(self, id: CacheVolumeID) -> CacheVolume:
-        """Load a CacheVolume from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadCacheVolumeFromID", _args)
-        return CacheVolume(_ctx)
-
-    def load_container_from_id(self, id: ContainerID) -> Container:
-        """Load a Container from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadContainerFromID", _args)
-        return Container(_ctx)
-
-    def load_current_module_from_id(self, id: CurrentModuleID) -> CurrentModule:
-        """Load a CurrentModule from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadCurrentModuleFromID", _args)
-        return CurrentModule(_ctx)
-
-    def load_directory_from_id(self, id: DirectoryID) -> Directory:
-        """Load a Directory from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadDirectoryFromID", _args)
-        return Directory(_ctx)
-
-    def load_engine_cache_entry_from_id(
-        self, id: EngineCacheEntryID
-    ) -> EngineCacheEntry:
-        """Load a EngineCacheEntry from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadEngineCacheEntryFromID", _args)
-        return EngineCacheEntry(_ctx)
-
-    def load_engine_cache_entry_set_from_id(
-        self, id: EngineCacheEntrySetID
-    ) -> EngineCacheEntrySet:
-        """Load a EngineCacheEntrySet from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadEngineCacheEntrySetFromID", _args)
-        return EngineCacheEntrySet(_ctx)
-
-    def load_engine_cache_from_id(self, id: EngineCacheID) -> EngineCache:
-        """Load a EngineCache from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadEngineCacheFromID", _args)
-        return EngineCache(_ctx)
-
-    def load_engine_from_id(self, id: EngineID) -> Engine:
-        """Load a Engine from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadEngineFromID", _args)
-        return Engine(_ctx)
-
-    def load_enum_type_def_from_id(self, id: EnumTypeDefID) -> EnumTypeDef:
-        """Load a EnumTypeDef from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadEnumTypeDefFromID", _args)
-        return EnumTypeDef(_ctx)
-
-    def load_enum_value_type_def_from_id(
-        self, id: EnumValueTypeDefID
-    ) -> EnumValueTypeDef:
-        """Load a EnumValueTypeDef from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadEnumValueTypeDefFromID", _args)
-        return EnumValueTypeDef(_ctx)
-
-    def load_env_variable_from_id(self, id: EnvVariableID) -> EnvVariable:
-        """Load a EnvVariable from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadEnvVariableFromID", _args)
-        return EnvVariable(_ctx)
-
-    def load_error_from_id(self, id: ErrorID) -> Error:
-        """Load a Error from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadErrorFromID", _args)
-        return Error(_ctx)
-
-    def load_field_type_def_from_id(self, id: FieldTypeDefID) -> FieldTypeDef:
-        """Load a FieldTypeDef from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadFieldTypeDefFromID", _args)
-        return FieldTypeDef(_ctx)
-
-    def load_file_from_id(self, id: FileID) -> File:
-        """Load a File from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadFileFromID", _args)
-        return File(_ctx)
-
-    def load_function_arg_from_id(self, id: FunctionArgID) -> FunctionArg:
-        """Load a FunctionArg from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadFunctionArgFromID", _args)
-        return FunctionArg(_ctx)
-
-    def load_function_call_arg_value_from_id(
-        self, id: FunctionCallArgValueID
-    ) -> FunctionCallArgValue:
-        """Load a FunctionCallArgValue from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadFunctionCallArgValueFromID", _args)
-        return FunctionCallArgValue(_ctx)
-
-    def load_function_call_from_id(self, id: FunctionCallID) -> FunctionCall:
-        """Load a FunctionCall from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadFunctionCallFromID", _args)
-        return FunctionCall(_ctx)
-
-    def load_function_from_id(self, id: FunctionID) -> Function:
-        """Load a Function from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadFunctionFromID", _args)
-        return Function(_ctx)
-
-    def load_generated_code_from_id(self, id: GeneratedCodeID) -> GeneratedCode:
-        """Load a GeneratedCode from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadGeneratedCodeFromID", _args)
-        return GeneratedCode(_ctx)
-
-    def load_git_module_source_from_id(self, id: GitModuleSourceID) -> GitModuleSource:
-        """Load a GitModuleSource from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadGitModuleSourceFromID", _args)
-        return GitModuleSource(_ctx)
-
-    def load_git_ref_from_id(self, id: GitRefID) -> GitRef:
-        """Load a GitRef from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadGitRefFromID", _args)
-        return GitRef(_ctx)
-
-    def load_git_repository_from_id(self, id: GitRepositoryID) -> GitRepository:
-        """Load a GitRepository from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadGitRepositoryFromID", _args)
-        return GitRepository(_ctx)
-
-    def load_host_from_id(self, id: HostID) -> Host:
-        """Load a Host from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadHostFromID", _args)
-        return Host(_ctx)
-
-    def load_input_type_def_from_id(self, id: InputTypeDefID) -> InputTypeDef:
-        """Load a InputTypeDef from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadInputTypeDefFromID", _args)
-        return InputTypeDef(_ctx)
-
-    def load_interface_type_def_from_id(
-        self, id: InterfaceTypeDefID
-    ) -> InterfaceTypeDef:
-        """Load a InterfaceTypeDef from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadInterfaceTypeDefFromID", _args)
-        return InterfaceTypeDef(_ctx)
-
-    def load_label_from_id(self, id: LabelID) -> Label:
-        """Load a Label from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadLabelFromID", _args)
-        return Label(_ctx)
-
-    def load_list_type_def_from_id(self, id: ListTypeDefID) -> ListTypeDef:
-        """Load a ListTypeDef from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadListTypeDefFromID", _args)
-        return ListTypeDef(_ctx)
-
-    def load_local_module_source_from_id(
-        self, id: LocalModuleSourceID
-    ) -> LocalModuleSource:
-        """Load a LocalModuleSource from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadLocalModuleSourceFromID", _args)
-        return LocalModuleSource(_ctx)
-
-    def load_module_dependency_from_id(
-        self, id: ModuleDependencyID
-    ) -> ModuleDependency:
-        """Load a ModuleDependency from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadModuleDependencyFromID", _args)
-        return ModuleDependency(_ctx)
-
-    def load_module_from_id(self, id: ModuleID) -> Module:
-        """Load a Module from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadModuleFromID", _args)
-        return Module(_ctx)
-
-    def load_module_source_from_id(self, id: ModuleSourceID) -> ModuleSource:
-        """Load a ModuleSource from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadModuleSourceFromID", _args)
-        return ModuleSource(_ctx)
-
-    def load_module_source_view_from_id(
-        self, id: ModuleSourceViewID
-    ) -> ModuleSourceView:
-        """Load a ModuleSourceView from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadModuleSourceViewFromID", _args)
-        return ModuleSourceView(_ctx)
-
-    def load_object_type_def_from_id(self, id: ObjectTypeDefID) -> ObjectTypeDef:
-        """Load a ObjectTypeDef from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadObjectTypeDefFromID", _args)
-        return ObjectTypeDef(_ctx)
-
-    def load_port_from_id(self, id: PortID) -> Port:
-        """Load a Port from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadPortFromID", _args)
-        return Port(_ctx)
-
-    def load_sdk_config_from_id(self, id: SDKConfigID) -> "SDKConfig":
-        """Load a SDKConfig from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadSDKConfigFromID", _args)
-        return SDKConfig(_ctx)
-
-    def load_scalar_type_def_from_id(self, id: ScalarTypeDefID) -> "ScalarTypeDef":
-        """Load a ScalarTypeDef from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadScalarTypeDefFromID", _args)
-        return ScalarTypeDef(_ctx)
-
-    def load_secret_from_id(self, id: SecretID) -> "Secret":
-        """Load a Secret from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadSecretFromID", _args)
-        return Secret(_ctx)
-
-    def load_secret_from_name(
-        self,
-        name: str,
-        *,
-        accessor: str | None = None,
-    ) -> "Secret":
-        """Load a Secret from its Name."""
-        _args = [
-            Arg("name", name),
-            Arg("accessor", accessor, None),
-        ]
-        _ctx = self._select("loadSecretFromName", _args)
-        return Secret(_ctx)
-
-    def load_service_from_id(self, id: ServiceID) -> "Service":
-        """Load a Service from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadServiceFromID", _args)
-        return Service(_ctx)
-
-    def load_socket_from_id(self, id: SocketID) -> "Socket":
-        """Load a Socket from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadSocketFromID", _args)
-        return Socket(_ctx)
-
-    def load_source_map_from_id(self, id: SourceMapID) -> "SourceMap":
-        """Load a SourceMap from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadSourceMapFromID", _args)
-        return SourceMap(_ctx)
-
-    def load_terminal_from_id(self, id: TerminalID) -> "Terminal":
-        """Load a Terminal from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadTerminalFromID", _args)
-        return Terminal(_ctx)
-
-    def load_type_def_from_id(self, id: TypeDefID) -> "TypeDef":
-        """Load a TypeDef from its ID."""
-        _args = [
-            Arg("id", id),
-        ]
-        _ctx = self._select("loadTypeDefFromID", _args)
-        return TypeDef(_ctx)
-
-    def module(self) -> Module:
-        """Create a new module."""
-        _args: list[Arg] = []
-        _ctx = self._select("module", _args)
-        return Module(_ctx)
-
-    def module_dependency(
-        self,
-        source: ModuleSource,
-        *,
-        name: str | None = "",
-    ) -> ModuleDependency:
-        """Create a new module dependency configuration from a module source and
-        name
-
-        Parameters
-        ----------
-        source:
-            The source of the dependency
-        name:
-            If set, the name to use for the dependency. Otherwise, once
-            installed to a parent module, the name of the dependency module
-            will be used by default.
-        """
-        _args = [
-            Arg("source", source),
-            Arg("name", name, ""),
-        ]
-        _ctx = self._select("moduleDependency", _args)
-        return ModuleDependency(_ctx)
-
-    def module_source(
-        self,
-        ref_string: str,
-        *,
-        ref_pin: str | None = "",
-        stable: bool | None = False,
-        rel_host_path: str | None = "",
-    ) -> ModuleSource:
-        """Create a new module source instance from a source ref string.
-
-        Parameters
-        ----------
-        ref_string:
-            The string ref representation of the module source
-        ref_pin:
-            The pinned version of the module source
-        stable:
-            If true, enforce that the source is a stable version for source
-            kinds that support versioning.
-        rel_host_path:
-            The relative path to the module root from the host directory
-        """
-        _args = [
-            Arg("refString", ref_string),
-            Arg("refPin", ref_pin, ""),
-            Arg("stable", stable, False),
-            Arg("relHostPath", rel_host_path, ""),
-        ]
-        _ctx = self._select("moduleSource", _args)
-        return ModuleSource(_ctx)
-
-    def secret(self, uri: str) -> "Secret":
-        """Creates a new secret.
-
-        Parameters
-        ----------
-        uri:
-            The URI of the secret store
-        """
-        _args = [
-            Arg("uri", uri),
-        ]
-        _ctx = self._select("secret", _args)
-        return Secret(_ctx)
-
-    def set_secret(self, name: str, plaintext: str) -> "Secret":
-        """Sets a secret given a user defined name to its plaintext and returns
-        the secret.
-
-        The plaintext value is limited to a size of 128000 bytes.
-
-        Parameters
-        ----------
-        name:
-            The user defined name for this secret
-        plaintext:
-            The plaintext of the secret
-        """
-        _args = [
-            Arg("name", name),
-            Arg("plaintext", plaintext),
-        ]
-        _ctx = self._select("setSecret", _args)
-        return Secret(_ctx)
-
-    def source_map(
-        self,
-        filename: str,
-        line: int,
-        column: int,
-    ) -> "SourceMap":
-        """Creates source map metadata.
-
-        Parameters
-        ----------
-        filename:
-            The filename from the module source.
-        line:
-            The line number within the filename.
-        column:
-            The column number within the line.
-        """
-        _args = [
-            Arg("filename", filename),
-            Arg("line", line),
-            Arg("column", column),
-        ]
-        _ctx = self._select("sourceMap", _args)
-        return SourceMap(_ctx)
-
-    def type_def(self) -> "TypeDef":
-        """Create a new TypeDef."""
-        _args: list[Arg] = []
-        _ctx = self._select("typeDef", _args)
-        return TypeDef(_ctx)
-
-    async def version(self) -> str:
-        """Get the current Dagger Engine version.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("version", _args)
-        return await _ctx.execute(str)
-
-
-@typecheck
-class SDKConfig(Type):
-    """The SDK config of the module."""
-
-    async def id(self) -> SDKConfigID:
-        """A unique identifier for this SDKConfig.
-
-        Note
-        ----
-        This is lazily evaluated, no operation is actually run.
-
-        Returns
-        -------
-        SDKConfigID
-            The `SDKConfigID` scalar type represents an identifier for an
-            object of type SDKConfig.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("id", _args)
-        return await _ctx.execute(SDKConfigID)
-
-    async def source(self) -> str:
-        """Source of the SDK. Either a name of a builtin SDK or a module source
-        ref string pointing to the SDK's implementation.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("source", _args)
-        return await _ctx.execute(str)
-
-
-@typecheck
 class ScalarTypeDef(Type):
     """A definition of a custom scalar defined in a Module."""
 
@@ -7792,7 +6824,8 @@ class ScalarTypeDef(Type):
 @typecheck
 class Secret(Type):
     """A reference to a secret value, which can be handled more safely
-    than the value itself."""
+    than the value itself.
+    """
 
     async def id(self) -> SecretID:
         """A unique identifier for this Secret.
@@ -7858,27 +6891,6 @@ class Secret(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("plaintext", _args)
-        return await _ctx.execute(str)
-
-    async def uri(self) -> str:
-        """The URI of this secret.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("uri", _args)
         return await _ctx.execute(str)
 
 
@@ -8594,109 +7606,3 @@ class TypeDef(Type):
         This is useful for reusability and readability by not breaking the calling chain.
         """
         return cb(self)
-
-
-dag = Client()
-"""The global client instance."""
-
-__all__ = [
-    "JSON",
-    "BuildArg",
-    "CacheSharingMode",
-    "CacheVolume",
-    "CacheVolumeID",
-    "Client",
-    "Container",
-    "ContainerID",
-    "CurrentModule",
-    "CurrentModuleID",
-    "Directory",
-    "DirectoryID",
-    "Engine",
-    "EngineCache",
-    "EngineCacheEntry",
-    "EngineCacheEntryID",
-    "EngineCacheEntrySet",
-    "EngineCacheEntrySetID",
-    "EngineCacheID",
-    "EngineID",
-    "EnumTypeDef",
-    "EnumTypeDefID",
-    "EnumValueTypeDef",
-    "EnumValueTypeDefID",
-    "EnvVariable",
-    "EnvVariableID",
-    "Error",
-    "ErrorID",
-    "FieldTypeDef",
-    "FieldTypeDefID",
-    "File",
-    "FileID",
-    "Function",
-    "FunctionArg",
-    "FunctionArgID",
-    "FunctionCall",
-    "FunctionCallArgValue",
-    "FunctionCallArgValueID",
-    "FunctionCallID",
-    "FunctionID",
-    "GeneratedCode",
-    "GeneratedCodeID",
-    "GitModuleSource",
-    "GitModuleSourceID",
-    "GitRef",
-    "GitRefID",
-    "GitRepository",
-    "GitRepositoryID",
-    "Host",
-    "HostID",
-    "ImageLayerCompression",
-    "ImageMediaTypes",
-    "InputTypeDef",
-    "InputTypeDefID",
-    "InterfaceTypeDef",
-    "InterfaceTypeDefID",
-    "Label",
-    "LabelID",
-    "ListTypeDef",
-    "ListTypeDefID",
-    "LocalModuleSource",
-    "LocalModuleSourceID",
-    "Module",
-    "ModuleDependency",
-    "ModuleDependencyID",
-    "ModuleID",
-    "ModuleSource",
-    "ModuleSourceID",
-    "ModuleSourceKind",
-    "ModuleSourceView",
-    "ModuleSourceViewID",
-    "NetworkProtocol",
-    "ObjectTypeDef",
-    "ObjectTypeDefID",
-    "PipelineLabel",
-    "Platform",
-    "Port",
-    "PortForward",
-    "PortID",
-    "ReturnType",
-    "SDKConfig",
-    "SDKConfigID",
-    "ScalarTypeDef",
-    "ScalarTypeDefID",
-    "Secret",
-    "SecretID",
-    "Service",
-    "ServiceID",
-    "Socket",
-    "SocketID",
-    "SourceMap",
-    "SourceMapID",
-    "Terminal",
-    "TerminalID",
-    "TypeDef",
-    "TypeDefID",
-    "TypeDefKind",
-    "Void",
-    "dag",
-]
