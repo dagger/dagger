@@ -3,9 +3,10 @@ import logging
 from typing import TYPE_CHECKING
 
 from dagger import telemetry
-from dagger._engine.config import Config
-from dagger._engine.provision import Engine, provision_engine
 from dagger._managers import ResourceManager
+
+from ._config import Config
+from ._engine import Engine, provision_engine
 
 if TYPE_CHECKING:
     from dagger import Client

@@ -30,7 +30,7 @@ from dagger import (
     TransportError,
 )
 from dagger._exceptions import _query_error_from_transport
-from dagger.client._session import BaseConnection, SharedConnection
+from dagger.client._session import BaseConnection
 from dagger.client.base import Type
 
 from ._guards import (
@@ -240,24 +240,3 @@ def make_converter(ctx: Context):
     )
 
     return conv
-
-
-class Root(Type):
-    """Top level query object type (a.k.a. Query)."""
-
-    @classmethod
-    def _graphql_name(cls) -> str:
-        return "Query"
-
-    @classmethod
-    def from_context(cls, ctx: Context):
-        return cls(replace(ctx, selections=deque()))
-
-    @classmethod
-    def from_connection(cls, conn: BaseConnection):
-        return cls(Context(conn))
-
-    def __init__(self, ctx: Context | None = None):
-        # Since SharedConnection is a singleton, we could make Context optional
-        # in every Type like here, but let's keep it only for the root object for now.
-        super().__init__(ctx or Context(SharedConnection()))
