@@ -1,7 +1,7 @@
-Module
-======
+Modules
+=======
 
-Experimental Dagger modules support.
+Dagger Modules support.
 
 .. currentmodule:: dagger
 
