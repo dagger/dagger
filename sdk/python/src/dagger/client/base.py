@@ -4,7 +4,7 @@ import enum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ._core import Context
+    from dagger.client._core import Context
 
 
 class Scalar(str):
