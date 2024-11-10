@@ -5,10 +5,6 @@ import os
 from typing_extensions import Self
 
 import dagger
-from dagger._engine.config import Config
-from dagger._engine.download import Downloader
-from dagger._engine.progress import Progress
-from dagger._engine.session import start_cli_session
 from dagger.client._session import (
     BaseConnection,
     ConnectConfig,
@@ -16,6 +12,12 @@ from dagger.client._session import (
     SharedConnection,
     SingleConnection,
 )
+
+from ._config import Config
+from ._download import Downloader
+from ._exceptions import ProvisionError
+from ._progress import Progress
+from ._session import start_cli_session
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +52,7 @@ class Engine:
                 "(please use --workdir or host.directory "
                 "with absolute paths instead)."
             )
-            raise dagger.ProvisionError(msg)
+            raise ProvisionError(msg)
 
         if not connect_params:
             self.has_provisioned = True
