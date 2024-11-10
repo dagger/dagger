@@ -1,6 +1,7 @@
 import contextlib
 import logging
 import os
+import typing
 
 from typing_extensions import Self
 
@@ -20,6 +21,9 @@ from ._progress import Progress
 from ._session import start_cli_session
 
 logger = logging.getLogger(__name__)
+
+if typing.TYPE_CHECKING:
+    from dagger import Client
 
 
 @contextlib.asynccontextmanager
@@ -82,7 +86,7 @@ class Engine:
         # Get from cache or download.
         return await Downloader(progress=self.progress)
 
-    async def setup_client(self, conn: BaseConnection) -> dagger.Client:
+    async def setup_client(self, conn: BaseConnection) -> "Client":
         """Setup client instance from connection."""
         await self.progress.update("Establishing connection to the API server")
         conn = await self.stack.enter_async_context(conn)
@@ -111,7 +115,7 @@ class Engine:
             self.connect_config,
         )
 
-    async def verify(self, client: dagger.Client) -> dagger.Client:
+    async def verify(self, client: "Client") -> "Client":
         """Check if the Dagger CLI version is compatible with the engine."""
         await self.progress.update("Checking version compatibility")
         try:

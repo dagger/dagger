@@ -641,22 +641,7 @@ class Container(Type):
         """Retrieves the list of environment variables passed to commands."""
         _args: list[Arg] = []
         _ctx = self._select("envVariables", _args)
-        _ctx = EnvVariable(_ctx)._select("id", [])
-
-        @dataclass
-        class Response:
-            id: EnvVariableID
-
-        _ids = await _ctx.execute(list[Response])
-        return [
-            EnvVariable(
-                Client.from_context(_ctx)._select(
-                    "loadEnvVariableFromID",
-                    [Arg("id", v.id)],
-                )
-            )
-            for v in _ids
-        ]
+        return await _ctx.execute_object_list(EnvVariable)
 
     async def exit_code(self) -> int:
         """The exit code of the last executed command.
@@ -788,22 +773,7 @@ class Container(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("exposedPorts", _args)
-        _ctx = Port(_ctx)._select("id", [])
-
-        @dataclass
-        class Response:
-            id: PortID
-
-        _ids = await _ctx.execute(list[Response])
-        return [
-            Port(
-                Client.from_context(_ctx)._select(
-                    "loadPortFromID",
-                    [Arg("id", v.id)],
-                )
-            )
-            for v in _ids
-        ]
+        return await _ctx.execute_object_list(Port)
 
     def file(
         self,
@@ -949,22 +919,7 @@ class Container(Type):
         """Retrieves the list of labels passed to container."""
         _args: list[Arg] = []
         _ctx = self._select("labels", _args)
-        _ctx = Label(_ctx)._select("id", [])
-
-        @dataclass
-        class Response:
-            id: LabelID
-
-        _ids = await _ctx.execute(list[Response])
-        return [
-            Label(
-                Client.from_context(_ctx)._select(
-                    "loadLabelFromID",
-                    [Arg("id", v.id)],
-                )
-            )
-            for v in _ids
-        ]
+        return await _ctx.execute_object_list(Label)
 
     async def mounts(self) -> list[str]:
         """Retrieves the list of paths where a directory is mounted.
@@ -1136,13 +1091,7 @@ class Container(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
-        _ctx = self._select("sync", _args)
-        _id = await _ctx.execute(ContainerID)
-        _ctx = Client.from_context(_ctx)._select(
-            "loadContainerFromID", [Arg("id", _id)]
-        )
-        return Container(_ctx)
+        return await self._ctx.execute_sync(self)
 
     def __await__(self):
         return self.sync().__await__()
@@ -2666,13 +2615,7 @@ class Directory(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
-        _ctx = self._select("sync", _args)
-        _id = await _ctx.execute(DirectoryID)
-        _ctx = Client.from_context(_ctx)._select(
-            "loadDirectoryFromID", [Arg("id", _id)]
-        )
-        return Directory(_ctx)
+        return await self._ctx.execute_sync(self)
 
     def __await__(self):
         return self.sync().__await__()
@@ -3262,22 +3205,7 @@ class EngineCacheEntrySet(Type):
         """The list of individual cache entries in the set"""
         _args: list[Arg] = []
         _ctx = self._select("entries", _args)
-        _ctx = EngineCacheEntry(_ctx)._select("id", [])
-
-        @dataclass
-        class Response:
-            id: EngineCacheEntryID
-
-        _ids = await _ctx.execute(list[Response])
-        return [
-            EngineCacheEntry(
-                Client.from_context(_ctx)._select(
-                    "loadEngineCacheEntryFromID",
-                    [Arg("id", v.id)],
-                )
-            )
-            for v in _ids
-        ]
+        return await _ctx.execute_object_list(EngineCacheEntry)
 
     async def entry_count(self) -> int:
         """The number of cache entries in this set.
@@ -3427,22 +3355,7 @@ class EnumTypeDef(Type):
         """The values of the enum."""
         _args: list[Arg] = []
         _ctx = self._select("values", _args)
-        _ctx = EnumValueTypeDef(_ctx)._select("id", [])
-
-        @dataclass
-        class Response:
-            id: EnumValueTypeDefID
-
-        _ids = await _ctx.execute(list[Response])
-        return [
-            EnumValueTypeDef(
-                Client.from_context(_ctx)._select(
-                    "loadEnumValueTypeDefFromID",
-                    [Arg("id", v.id)],
-                )
-            )
-            for v in _ids
-        ]
+        return await _ctx.execute_object_list(EnumValueTypeDef)
 
 
 @typecheck
@@ -3853,11 +3766,7 @@ class File(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
-        _ctx = self._select("sync", _args)
-        _id = await _ctx.execute(FileID)
-        _ctx = Client.from_context(_ctx)._select("loadFileFromID", [Arg("id", _id)])
-        return File(_ctx)
+        return await self._ctx.execute_sync(self)
 
     def __await__(self):
         return self.sync().__await__()
@@ -3911,22 +3820,7 @@ class Function(Type):
         """Arguments accepted by the function, if any."""
         _args: list[Arg] = []
         _ctx = self._select("args", _args)
-        _ctx = FunctionArg(_ctx)._select("id", [])
-
-        @dataclass
-        class Response:
-            id: FunctionArgID
-
-        _ids = await _ctx.execute(list[Response])
-        return [
-            FunctionArg(
-                Client.from_context(_ctx)._select(
-                    "loadFunctionArgFromID",
-                    [Arg("id", v.id)],
-                )
-            )
-            for v in _ids
-        ]
+        return await _ctx.execute_object_list(FunctionArg)
 
     async def description(self) -> str:
         """A doc string for the function, if any.
@@ -4268,22 +4162,7 @@ class FunctionCall(Type):
         """The argument values the function is being invoked with."""
         _args: list[Arg] = []
         _ctx = self._select("inputArgs", _args)
-        _ctx = FunctionCallArgValue(_ctx)._select("id", [])
-
-        @dataclass
-        class Response:
-            id: FunctionCallArgValueID
-
-        _ids = await _ctx.execute(list[Response])
-        return [
-            FunctionCallArgValue(
-                Client.from_context(_ctx)._select(
-                    "loadFunctionCallArgValueFromID",
-                    [Arg("id", v.id)],
-                )
-            )
-            for v in _ids
-        ]
+        return await _ctx.execute_object_list(FunctionCallArgValue)
 
     async def name(self) -> str:
         """The name of the function being called.
@@ -5146,22 +5025,7 @@ class InputTypeDef(Type):
         """Static fields defined on this input object, if any."""
         _args: list[Arg] = []
         _ctx = self._select("fields", _args)
-        _ctx = FieldTypeDef(_ctx)._select("id", [])
-
-        @dataclass
-        class Response:
-            id: FieldTypeDefID
-
-        _ids = await _ctx.execute(list[Response])
-        return [
-            FieldTypeDef(
-                Client.from_context(_ctx)._select(
-                    "loadFieldTypeDefFromID",
-                    [Arg("id", v.id)],
-                )
-            )
-            for v in _ids
-        ]
+        return await _ctx.execute_object_list(FieldTypeDef)
 
     async def id(self) -> InputTypeDefID:
         """A unique identifier for this InputTypeDef.
@@ -5238,22 +5102,7 @@ class InterfaceTypeDef(Type):
         """Functions defined on this interface, if any."""
         _args: list[Arg] = []
         _ctx = self._select("functions", _args)
-        _ctx = Function(_ctx)._select("id", [])
-
-        @dataclass
-        class Response:
-            id: FunctionID
-
-        _ids = await _ctx.execute(list[Response])
-        return [
-            Function(
-                Client.from_context(_ctx)._select(
-                    "loadFunctionFromID",
-                    [Arg("id", v.id)],
-                )
-            )
-            for v in _ids
-        ]
+        return await _ctx.execute_object_list(Function)
 
     async def id(self) -> InterfaceTypeDefID:
         """A unique identifier for this InterfaceTypeDef.
@@ -5526,43 +5375,13 @@ class Module(Type):
         """Modules used by this module."""
         _args: list[Arg] = []
         _ctx = self._select("dependencies", _args)
-        _ctx = Module(_ctx)._select("id", [])
-
-        @dataclass
-        class Response:
-            id: ModuleID
-
-        _ids = await _ctx.execute(list[Response])
-        return [
-            Module(
-                Client.from_context(_ctx)._select(
-                    "loadModuleFromID",
-                    [Arg("id", v.id)],
-                )
-            )
-            for v in _ids
-        ]
+        return await _ctx.execute_object_list(Module)
 
     async def dependency_config(self) -> list["ModuleDependency"]:
         """The dependencies as configured by the module."""
         _args: list[Arg] = []
         _ctx = self._select("dependencyConfig", _args)
-        _ctx = ModuleDependency(_ctx)._select("id", [])
-
-        @dataclass
-        class Response:
-            id: ModuleDependencyID
-
-        _ids = await _ctx.execute(list[Response])
-        return [
-            ModuleDependency(
-                Client.from_context(_ctx)._select(
-                    "loadModuleDependencyFromID",
-                    [Arg("id", v.id)],
-                )
-            )
-            for v in _ids
-        ]
+        return await _ctx.execute_object_list(ModuleDependency)
 
     async def description(self) -> str:
         """The doc string of the module, if any
@@ -5589,22 +5408,7 @@ class Module(Type):
         """Enumerations served by this module."""
         _args: list[Arg] = []
         _ctx = self._select("enums", _args)
-        _ctx = TypeDef(_ctx)._select("id", [])
-
-        @dataclass
-        class Response:
-            id: TypeDefID
-
-        _ids = await _ctx.execute(list[Response])
-        return [
-            TypeDef(
-                Client.from_context(_ctx)._select(
-                    "loadTypeDefFromID",
-                    [Arg("id", v.id)],
-                )
-            )
-            for v in _ids
-        ]
+        return await _ctx.execute_object_list(TypeDef)
 
     def generated_context_diff(self) -> Directory:
         """The generated files and directories made on top of the module source's
@@ -5656,22 +5460,7 @@ class Module(Type):
         """Interfaces served by this module."""
         _args: list[Arg] = []
         _ctx = self._select("interfaces", _args)
-        _ctx = TypeDef(_ctx)._select("id", [])
-
-        @dataclass
-        class Response:
-            id: TypeDefID
-
-        _ids = await _ctx.execute(list[Response])
-        return [
-            TypeDef(
-                Client.from_context(_ctx)._select(
-                    "loadTypeDefFromID",
-                    [Arg("id", v.id)],
-                )
-            )
-            for v in _ids
-        ]
+        return await _ctx.execute_object_list(TypeDef)
 
     async def name(self) -> str:
         """The name of the module
@@ -5698,22 +5487,7 @@ class Module(Type):
         """Objects served by this module."""
         _args: list[Arg] = []
         _ctx = self._select("objects", _args)
-        _ctx = TypeDef(_ctx)._select("id", [])
-
-        @dataclass
-        class Response:
-            id: TypeDefID
-
-        _ids = await _ctx.execute(list[Response])
-        return [
-            TypeDef(
-                Client.from_context(_ctx)._select(
-                    "loadTypeDefFromID",
-                    [Arg("id", v.id)],
-                )
-            )
-            for v in _ids
-        ]
+        return await _ctx.execute_object_list(TypeDef)
 
     def runtime(self) -> Container:
         """The container that runs the module's entrypoint. It will fail to
@@ -5989,22 +5763,7 @@ class ModuleSource(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("dependencies", _args)
-        _ctx = ModuleDependency(_ctx)._select("id", [])
-
-        @dataclass
-        class Response:
-            id: ModuleDependencyID
-
-        _ids = await _ctx.execute(list[Response])
-        return [
-            ModuleDependency(
-                Client.from_context(_ctx)._select(
-                    "loadModuleDependencyFromID",
-                    [Arg("id", v.id)],
-                )
-            )
-            for v in _ids
-        ]
+        return await _ctx.execute_object_list(ModuleDependency)
 
     async def digest(self) -> str:
         """Return the module source's content digest. The format of the digest is
@@ -6268,22 +6027,7 @@ class ModuleSource(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("views", _args)
-        _ctx = ModuleSourceView(_ctx)._select("id", [])
-
-        @dataclass
-        class Response:
-            id: ModuleSourceViewID
-
-        _ids = await _ctx.execute(list[Response])
-        return [
-            ModuleSourceView(
-                Client.from_context(_ctx)._select(
-                    "loadModuleSourceViewFromID",
-                    [Arg("id", v.id)],
-                )
-            )
-            for v in _ids
-        ]
+        return await _ctx.execute_object_list(ModuleSourceView)
 
     def with_context_directory(self, dir: Directory) -> Self:
         """Update the module source with a new context directory. Only valid for
@@ -6507,43 +6251,13 @@ class ObjectTypeDef(Type):
         """Static fields defined on this object, if any."""
         _args: list[Arg] = []
         _ctx = self._select("fields", _args)
-        _ctx = FieldTypeDef(_ctx)._select("id", [])
-
-        @dataclass
-        class Response:
-            id: FieldTypeDefID
-
-        _ids = await _ctx.execute(list[Response])
-        return [
-            FieldTypeDef(
-                Client.from_context(_ctx)._select(
-                    "loadFieldTypeDefFromID",
-                    [Arg("id", v.id)],
-                )
-            )
-            for v in _ids
-        ]
+        return await _ctx.execute_object_list(FieldTypeDef)
 
     async def functions(self) -> list[Function]:
         """Functions defined on this object, if any."""
         _args: list[Arg] = []
         _ctx = self._select("functions", _args)
-        _ctx = Function(_ctx)._select("id", [])
-
-        @dataclass
-        class Response:
-            id: FunctionID
-
-        _ids = await _ctx.execute(list[Response])
-        return [
-            Function(
-                Client.from_context(_ctx)._select(
-                    "loadFunctionFromID",
-                    [Arg("id", v.id)],
-                )
-            )
-            for v in _ids
-        ]
+        return await _ctx.execute_object_list(Function)
 
     async def id(self) -> ObjectTypeDefID:
         """A unique identifier for this ObjectTypeDef.
@@ -6990,22 +6704,7 @@ class Service(Type):
         """Retrieves the list of ports provided by the service."""
         _args: list[Arg] = []
         _ctx = self._select("ports", _args)
-        _ctx = Port(_ctx)._select("id", [])
-
-        @dataclass
-        class Response:
-            id: PortID
-
-        _ids = await _ctx.execute(list[Response])
-        return [
-            Port(
-                Client.from_context(_ctx)._select(
-                    "loadPortFromID",
-                    [Arg("id", v.id)],
-                )
-            )
-            for v in _ids
-        ]
+        return await _ctx.execute_object_list(Port)
 
     async def start(self) -> Self:
         """Start the service and wait for its health checks to succeed.
@@ -7020,10 +6719,7 @@ class Service(Type):
             If the API returns an error.
         """
         _args: list[Arg] = []
-        _ctx = self._select("start", _args)
-        _id = await _ctx.execute(ServiceID)
-        _ctx = Client.from_context(_ctx)._select("loadServiceFromID", [Arg("id", _id)])
-        return Service(_ctx)
+        return await self._ctx.execute_sync(self, "start", _args)
 
     async def stop(self, *, kill: bool | None = False) -> Self:
         """Stop the service.
@@ -7043,10 +6739,7 @@ class Service(Type):
         _args = [
             Arg("kill", kill, False),
         ]
-        _ctx = self._select("stop", _args)
-        _id = await _ctx.execute(ServiceID)
-        _ctx = Client.from_context(_ctx)._select("loadServiceFromID", [Arg("id", _id)])
-        return Service(_ctx)
+        return await self._ctx.execute_sync(self, "stop", _args)
 
     async def up(
         self,
@@ -7291,11 +6984,7 @@ class Terminal(Type):
         QueryError
             If the API returns an error.
         """
-        _args: list[Arg] = []
-        _ctx = self._select("sync", _args)
-        _id = await _ctx.execute(TerminalID)
-        _ctx = Client.from_context(_ctx)._select("loadTerminalFromID", [Arg("id", _id)])
-        return Terminal(_ctx)
+        return await self._ctx.execute_sync(self)
 
     def __await__(self):
         return self.sync().__await__()
