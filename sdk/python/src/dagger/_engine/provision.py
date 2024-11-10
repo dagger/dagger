@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import contextlib
 import logging
 import os
@@ -7,6 +5,10 @@ import os
 from typing_extensions import Self
 
 import dagger
+from dagger._engine.config import Config
+from dagger._engine.download import Downloader
+from dagger._engine.progress import Progress
+from dagger._engine.session import start_cli_session
 from dagger.client._session import (
     BaseConnection,
     ConnectConfig,
@@ -15,15 +17,11 @@ from dagger.client._session import (
     SingleConnection,
 )
 
-from .download import Downloader
-from .progress import Progress
-from .session import start_cli_session
-
 logger = logging.getLogger(__name__)
 
 
 @contextlib.asynccontextmanager
-async def provision_engine(cfg: dagger.Config):
+async def provision_engine(cfg: Config):
     """Provision a new engine session."""
     async with contextlib.AsyncExitStack() as stack:
         logger.debug("Provisioning engine")
@@ -34,7 +32,7 @@ async def provision_engine(cfg: dagger.Config):
 class Engine:
     """Start engine session, provisioning if needed."""
 
-    def __init__(self, cfg: dagger.Config, stack: contextlib.AsyncExitStack) -> None:
+    def __init__(self, cfg: Config, stack: contextlib.AsyncExitStack) -> None:
         super().__init__()
         self.cfg = cfg
         self.stack = stack

@@ -2,8 +2,8 @@ import pytest
 
 import dagger
 from dagger import dag
-from dagger._connection import SharedConnection
-from dagger._engine.conn import provision_engine
+from dagger._engine.provision import provision_engine
+from dagger.client._connection import SharedConnection
 
 pytestmark = [
     pytest.mark.anyio,

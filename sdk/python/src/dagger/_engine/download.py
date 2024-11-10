@@ -1,4 +1,5 @@
 import contextlib
+import dataclasses
 import functools
 import hashlib
 import io
@@ -11,7 +12,6 @@ import tempfile
 import typing
 import zipfile
 from collections.abc import Iterator
-from dataclasses import dataclass, field
 from pathlib import Path, PurePath
 from typing import IO, ClassVar
 
@@ -21,9 +21,8 @@ import httpx
 import platformdirs
 
 import dagger
-
-from ._version import CLI_VERSION
-from .progress import Progress
+from dagger._engine._version import CLI_VERSION
+from dagger._engine.progress import Progress
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +114,7 @@ class StreamReader(IO[bytes]):
         return self.hasher.hexdigest()
 
 
-@dataclass
+@dataclasses.dataclass
 class Downloader:
     """Download the dagger CLI binary."""
 
@@ -123,8 +122,8 @@ class Downloader:
     CLI_BIN_PREFIX: ClassVar[str] = "dagger-"
 
     version: str = CLI_VERSION
-    platform: Platform = field(default_factory=get_platform, kw_only=True)
-    progress: Progress = field(default_factory=Progress, kw_only=True)
+    platform: Platform = dataclasses.field(default_factory=get_platform, kw_only=True)
+    progress: Progress = dataclasses.field(default_factory=Progress, kw_only=True)
 
     def _create_url(self, file_name: str):
         return httpx.URL(

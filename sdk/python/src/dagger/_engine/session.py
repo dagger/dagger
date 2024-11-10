@@ -9,9 +9,9 @@ from pathlib import Path
 from typing import cast
 
 import dagger
+from dagger._engine.config import Config
 from dagger._managers import SyncResource
-
-from .conn import ConnectParams
+from dagger.client._session import ConnectParams
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +26,7 @@ def get_sdk_version():
         return "n/a"
 
 
-def start_cli_session(cfg: dagger.Config, path: str):
+def start_cli_session(cfg: Config, path: str):
     # TODO: Convert calling session subprocess to async.
     return SyncResource(start_cli_session_sync(cfg, path))
 
@@ -67,7 +67,7 @@ class Pclose(contextlib.AbstractContextManager):
 
 
 @contextlib.contextmanager
-def start_cli_session_sync(cfg: dagger.Config, path: str):
+def start_cli_session_sync(cfg: Config, path: str):
     """Start an engine session with a provided CLI path."""
     logger.debug("Starting session using %s", path)
     try:
@@ -80,7 +80,7 @@ def start_cli_session_sync(cfg: dagger.Config, path: str):
         raise dagger.SessionError(e) from e
 
 
-def run(cfg: dagger.Config, path: str) -> subprocess.Popen[str]:
+def run(cfg: Config, path: str) -> subprocess.Popen[str]:
     args = [
         path,
         "session",
