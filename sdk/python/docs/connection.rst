@@ -10,3 +10,9 @@ Connection
 
 .. autoclass:: Config
    :no-show-inheritance:
+
+.. autoclass:: Timeout
+   :no-show-inheritance:
+   
+.. autoclass:: Retry
+   :no-show-inheritance:

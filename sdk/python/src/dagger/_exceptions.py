@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+import dataclasses
 from typing import Any
 
 import cattrs
@@ -58,7 +58,7 @@ class InvalidQueryError(ClientError):
     """Misuse of the query builder."""
 
 
-@dataclass(slots=True)
+@dataclasses.dataclass(slots=True)
 class QueryErrorLocation:
     """Error location returned by the API."""
 
@@ -66,14 +66,14 @@ class QueryErrorLocation:
     column: int
 
 
-@dataclass(slots=True)
+@dataclasses.dataclass(slots=True)
 class QueryErrorValue:
     """An error value returned by the API."""
 
     message: str
     locations: list[QueryErrorLocation] | None = None
     path: list[str] | None = None
-    extensions: dict[str, Any] = field(default_factory=dict)
+    extensions: dict[str, Any] = dataclasses.field(default_factory=dict)
 
     def __str__(self) -> str:
         return self.message

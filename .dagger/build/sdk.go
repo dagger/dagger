@@ -46,6 +46,9 @@ func (build *Builder) pythonSDKContent(ctx context.Context) (*sdkContent, error)
 			"LICENSE",
 			"README.md",
 		},
+		Exclude: []string{
+			"src/dagger/_engine/",
+		},
 	})
 
 	sdkCtrTarball := dag.Container().
