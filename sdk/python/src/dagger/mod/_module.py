@@ -14,7 +14,6 @@ import anyio
 import anyio.to_thread
 import cattrs
 import cattrs.gen
-from rich.console import Console
 from typing_extensions import Self, dataclass_transform, overload
 
 import dagger
@@ -47,7 +46,6 @@ from dagger.mod._utils import (
     to_pascal_case,
 )
 
-errors = Console(stderr=True, style="bold red")
 logger = logging.getLogger(__name__)
 
 OBJECT_DEF_KEY: typing.Final[str] = "__dagger_object__"

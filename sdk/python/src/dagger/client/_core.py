@@ -30,6 +30,7 @@ from dagger import (
     TransportError,
 )
 from dagger._exceptions import _query_error_from_transport
+from dagger.client._session import BaseConnection, SharedConnection
 from dagger.client.base import Type
 
 from ._guards import (
@@ -37,7 +38,6 @@ from ._guards import (
     is_id_type,
     is_id_type_sequence,
 )
-from ._session import BaseConnection, SharedConnection
 
 logger = logging.getLogger(__name__)
 

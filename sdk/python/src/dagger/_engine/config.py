@@ -1,62 +1,31 @@
-from collections.abc import Callable
-from dataclasses import dataclass, field
+import dataclasses
 from os import PathLike
-from typing import Any, TextIO, TypeVar
+from typing import Any, TextIO
 
-import httpx
 from rich.console import Console
 
-__all__ = [
-    "Config",
-    "Retry",
-    "Timeout",
-]
-
-_CallableT = TypeVar("_CallableT", bound=Callable[..., Any])
-_Decorator = Callable[[_CallableT], _CallableT]
-
-
-@dataclass(slots=True, kw_only=True)
-class Retry:
-    """Retry parameters for connecting to the Dagger API server."""
-
-    connect: bool | _Decorator = True
-    execute: bool | _Decorator = True
-
-
-class Timeout(httpx.Timeout):
-    @classmethod
-    def default(cls) -> "Timeout":
-        return cls(None, connect=10.0)
-
-
-Timeout.__doc__ = httpx.Timeout.__doc__
-
-
-@dataclass(slots=True, kw_only=True)
-class ConnectConfig:
-    timeout: Timeout | None = field(default_factory=Timeout.default)
-    retry: Retry | None = field(default_factory=Retry)
-
+from dagger.client._config import ConnectConfig, Timeout
 
 UNSET = object()
 
 
-@dataclass(slots=True, kw_only=True)
+@dataclasses.dataclass(slots=True, kw_only=True)
 class Config(ConnectConfig):
     """Options for connecting to the Dagger engine.
 
     Parameters
     ----------
+    timeout:
+        The maximum time in seconds for establishing a connection to the server,
+        or None to disable. Defaults to 10 seconds.
+    retry:
+        Retry parameters for connecting to the Dagger API server.
     workdir:
         The host workdir loaded into dagger.
     config_path:
         Project config file.
     log_output:
         A TextIO object to send the logs from the engine.
-    timeout:
-        The maximum time in seconds for establishing a connection to the server,
-        or None to disable. Defaults to 10 seconds.
     execute_timeout:
         The maximum time in seconds for the execution of a request before an
         ExecuteTimeoutError is raised. Passing None results in waiting forever for a
@@ -67,7 +36,7 @@ class Config(ConnectConfig):
     config_path: PathLike[str] | str = ""
     log_output: TextIO | None = None
     execute_timeout: Any = UNSET
-    console: Console = field(init=False)
+    console: Console = dataclasses.field(init=False)
 
     def __post_init__(self):
         # Backwards compatibility for (expected) use of `timeout` config.
