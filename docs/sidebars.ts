@@ -109,6 +109,11 @@ module.exports = {
             "api/module-structure",
             "api/remote-modules",
             "api/publish",
+            {
+              "type": "link",
+              "label": "Module Configuration File Reference",
+              "href": "https://docs.dagger.io/reference/dagger.schema.json"
+            }
           ]
         },
         {

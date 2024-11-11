@@ -7,11 +7,16 @@ import TabItem from "@theme/TabItem";
 
 # Modules
 
-## Alternative runtimes
+Modules can be configured by editing their `dagger.json` file. The configuration in there contains all module metadata - from the name of the module and the SDK it uses, to the dependencies it requires. An initial configuration is automatically generated when using `dagger init` or `dagger develop` for the first time, and is kept up-to-date with `dagger config`/`dagger install`/etc.
 
-:::important
-The information in this section is only applicable to the TypeScript SDK. Alternative runtimes are not currently supported in the Python and Go SDKs.
-:::
+For more information, refer to the [JSON schema for the Dagger module configuration file](https://docs.dagger.io/reference/dagger.schema.json).
+
+## TypeScript
+
+TypeScript-specific SDK settings can be configured using the standard
+`package.json` file.
+
+### Alternative runtimes
 
 TypeScript is supported by multiple runtimes: [Node.js](https://nodejs.org/en) (via `tsx`), [Deno](https://deno.com/) (natively) and [Bun](https://bun.sh/) (natively). However, the Dagger TypeScript SDK only supports Node.js (stable) and Bun (experimental).
 
@@ -19,7 +24,7 @@ By default, the TypeScript SDK executes functions using the Node.js runtime, but
 
 To change the TypeScript SDK runtime, set the field `dagger.runtime` in your Dagger module's `package.json` file.
 
-### Node.js
+#### Node.js
 
 Set the field to `node` to use the Node.js runtime. Node.js is also the default runtime used if this field is omitted.
 
@@ -37,7 +42,7 @@ You can also set a specific version with a suffix (e.g., `node@20.15.0`).
   }
 ```
 
-### Bun
+#### Bun
 
 Set the field to `bun` to use the Bun runtime.
 
@@ -59,7 +64,7 @@ You can also set a specific version with a suffix (e.g., `bun@1.0.11`).
 Bun runtime support is still experimental. Unexpected results may occur in some cases.
 :::
 
-### Automatic detection
+#### Automatic detection
 
 When a runtime is not explicitly defined within the `package.json` file, Dagger automatically identifies the appropriate runtime by examining the project's lock files inside the project's `dagger` directory.
 
@@ -71,17 +76,13 @@ When a runtime is not explicitly defined within the `package.json` file, Dagger 
 This behavior however should be seen as a sensible fallback and not as an explicit configuration.
 :::
 
-## Alternative package managers
-
-:::important
-The information in this section is only applicable to the TypeScript SDK. Alternative runtimes are not currently supported in the Python and Go SDKs.
-:::
+### Alternative package managers
 
 TypeScript can manage dependencies using multiple package managers. The [Node.js](https://nodejs.org/en) runtime supports [`npm`](https://www.npmjs.com/), [`pnpm`](https://pnpm.io/) and [`yarn`](https://yarnpkg.com/). The [Bun](https://bun.sh/) runtime supports `bun`.
 
 By default, the TypeScript SDK executes functions using the Node.js runtime with [yarn v1.22.22](https://yarnpkg.com/), but you can configure an alternative package manager or version in your Dagger module's `package.json` file by setting the `packageManager` property.
 
-### Npm
+#### Npm
 
 Set the `packageManager` property to `npm` to use the `npm` package manager. You can also set a specific version with a suffix, as shown below:
 
@@ -91,7 +92,7 @@ Set the `packageManager` property to `npm` to use the `npm` package manager. You
 
 If no version is specified, `npm@10.7.0` is used by default.
 
-### Yarn
+#### Yarn
 
 Set the `packageManager` property to `yarn` to use the Yarn package manager. You can also set a specific version with a suffix, as shown below:
 
@@ -107,7 +108,7 @@ If you use Yarn 3.0 or above, the TypeScript SDK will also generate a `.yarnrc.y
 nodeLinker: node-modules
 ```
 
-### Pnpm
+#### Pnpm
 
 Set the `packageManager` property to `pnpm` to use the Pnpm package manager. You can also set a specific version with a suffix, e.g.:
 
@@ -124,7 +125,7 @@ packages:
   - './sdk'
 ```
 
-### Bun
+#### Bun
 
 :::warning
 Bun runtime support is still experimental. Unexpected results may occur in some cases.
@@ -138,7 +139,7 @@ Setting the `runtime` property to `bun` will use the Bun runtime and its package
   }
 ```
 
-### Automatic detection
+#### Automatic detection
 
 When a package manager is not explicitly defined within the `package.json` file, Dagger automatically identifies the appropriate package manager by examining the project's lock files inside the project's `.dagger` directory.
 
