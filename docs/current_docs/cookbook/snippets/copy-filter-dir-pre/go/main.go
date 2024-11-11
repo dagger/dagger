@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"dagger/my-module/internal/dagger"
+	"main/internal/dagger"
 )
 
 type MyModule struct{}
