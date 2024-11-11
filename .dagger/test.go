@@ -87,7 +87,7 @@ func (t *Test) Telemetry(
 	devEngineSvc := devEngine.
 		WithServiceBinding("registry", registrySvc).
 		WithServiceBinding("privateregistry", privateRegistry()).
-		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
+		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
 		WithMountedCache(distconsts.EngineDefaultStateDir, dag.CacheVolume("dagger-dev-engine-test-state"+identity.NewID())).
 		WithExec(nil, dagger.ContainerWithExecOpts{
 			UseEntrypoint:            true,
