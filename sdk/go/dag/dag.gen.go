@@ -104,6 +104,12 @@ func Engine() *dagger.Engine {
 	return client.Engine()
 }
 
+// Create a new error.
+func Error(message string) *dagger.Error {
+	client := initClient()
+	return client.Error(message)
+}
+
 // Creates a function.
 func Function(name string, returnType *dagger.TypeDef) *dagger.Function {
 	client := initClient()
@@ -198,6 +204,12 @@ func LoadEnumValueTypeDefFromID(id dagger.EnumValueTypeDefID) *dagger.EnumValueT
 func LoadEnvVariableFromID(id dagger.EnvVariableID) *dagger.EnvVariable {
 	client := initClient()
 	return client.LoadEnvVariableFromID(id)
+}
+
+// Load a Error from its ID.
+func LoadErrorFromID(id dagger.ErrorID) *dagger.Error {
+	client := initClient()
+	return client.LoadErrorFromID(id)
 }
 
 // Load a FieldTypeDef from its ID.

@@ -775,6 +775,11 @@ export type EnumValueTypeDefID = string & { __EnumValueTypeDefID: never }
 export type EnvVariableID = string & { __EnvVariableID: never }
 
 /**
+ * The `ErrorID` scalar type represents an identifier for an object of type Error.
+ */
+export type ErrorID = string & { __ErrorID: never }
+
+/**
  * The `FieldTypeDefID` scalar type represents an identifier for an object of type FieldTypeDef.
  */
 export type FieldTypeDefID = string & { __FieldTypeDefID: never }
@@ -4564,6 +4569,67 @@ export class EnvVariable extends BaseClient {
   }
 }
 
+export class Error extends BaseClient {
+  private readonly _id?: ErrorID = undefined
+  private readonly _message?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: ErrorID,
+    _message?: string,
+  ) {
+    super(parent)
+
+    this._id = _id
+    this._message = _message
+  }
+
+  /**
+   * A unique identifier for this Error.
+   */
+  id = async (): Promise<ErrorID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<ErrorID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * A description of the error.
+   */
+  message = async (): Promise<string> => {
+    if (this._message) {
+      return this._message
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "message",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+}
+
 /**
  * A definition of a field on a custom object defined in a Module.
  *
@@ -5342,6 +5408,7 @@ export class FunctionCall extends BaseClient {
   private readonly _name?: string = undefined
   private readonly _parent?: JSON = undefined
   private readonly _parentName?: string = undefined
+  private readonly _returnError?: Void = undefined
   private readonly _returnValue?: Void = undefined
 
   /**
@@ -5353,6 +5420,7 @@ export class FunctionCall extends BaseClient {
     _name?: string,
     _parent?: JSON,
     _parentName?: string,
+    _returnError?: Void,
     _returnValue?: Void,
   ) {
     super(parent)
@@ -5361,6 +5429,7 @@ export class FunctionCall extends BaseClient {
     this._name = _name
     this._parent = _parent
     this._parentName = _parentName
+    this._returnError = _returnError
     this._returnValue = _returnValue
   }
 
@@ -5484,6 +5553,27 @@ export class FunctionCall extends BaseClient {
     )
 
     return response
+  }
+
+  /**
+   * Return an error from the function.
+   * @param error The error to return.
+   */
+  returnError = async (error: Error): Promise<void> => {
+    if (this._returnError) {
+      return
+    }
+
+    await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "returnError",
+          args: { error },
+        },
+      ],
+      await this._ctx.connection(),
+    )
   }
 
   /**
@@ -8737,6 +8827,23 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Create a new error.
+   * @param message A brief description of the error.
+   */
+  error = (message: string): Error => {
+    return new Error({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "error",
+          args: { message },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
    * Creates a function.
    * @param name Name of the function, in its original format from the implementation language.
    * @param returnType Return type of the function.
@@ -8999,6 +9106,22 @@ export class Client extends BaseClient {
         ...this._queryTree,
         {
           operation: "loadEnvVariableFromID",
+          args: { id },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Load a Error from its ID.
+   */
+  loadErrorFromID = (id: ErrorID): Error => {
+    return new Error({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "loadErrorFromID",
           args: { id },
         },
       ],
