@@ -3,6 +3,7 @@ import * as fs from "fs";
 
 @object()
 class MyModule {
+  // Copy a file to the Dagger module runtime container for custom processing
   @func()
   async copyFile(source: File) {
     await source.export('foo.txt')

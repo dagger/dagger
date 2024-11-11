@@ -9,7 +9,7 @@ import (
 
 type MyModule struct{}
 
-// Copy a file to the Dagger Engine runtime container for custom processing
+// Copy a file to the Dagger module runtime container for custom processing
 func (m *MyModule) CopyFile(ctx context.Context, source *dagger.File) {
 	source.Export(ctx, "foo.txt")
 	// your custom logic here
