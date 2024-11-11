@@ -816,6 +816,39 @@ Start and stop a Redis service:
 dagger call redis-service
 ```
 
+### Create interdependent services
+
+The following Dagger Function runs two services, service A and service B, that depend on each other. The services are set up with custom hostnames, `svca` and `svcb`, allowing each service to communicate with the other by hostname.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=../api/snippets/services/create-interdependent-services/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=../api/snippets/services/create-interdependent-services/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=../api/snippets/services/create-interdependent-services/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Start two inter-dependent services:
+
+```shell
+dagger call services up --ports 8080:80
+```
+
 ## Just-in-time artifacts
 
 ### Publish a container image to a private registry
