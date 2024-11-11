@@ -611,30 +611,6 @@ export type CurrentModuleWorkdirOpts = {
  */
 export type CurrentModuleID = string & { __CurrentModuleID: never }
 
-/**
- * The `DaggerEngineCacheEntryID` scalar type represents an identifier for an object of type DaggerEngineCacheEntry.
- */
-export type DaggerEngineCacheEntryID = string & {
-  __DaggerEngineCacheEntryID: never
-}
-
-/**
- * The `DaggerEngineCacheEntrySetID` scalar type represents an identifier for an object of type DaggerEngineCacheEntrySet.
- */
-export type DaggerEngineCacheEntrySetID = string & {
-  __DaggerEngineCacheEntrySetID: never
-}
-
-/**
- * The `DaggerEngineCacheID` scalar type represents an identifier for an object of type DaggerEngineCache.
- */
-export type DaggerEngineCacheID = string & { __DaggerEngineCacheID: never }
-
-/**
- * The `DaggerEngineID` scalar type represents an identifier for an object of type DaggerEngine.
- */
-export type DaggerEngineID = string & { __DaggerEngineID: never }
-
 export type DirectoryAsModuleOpts = {
   /**
    * An optional subpath of the directory which contains the module's configuration file.
@@ -764,6 +740,26 @@ export type DirectoryWithNewFileOpts = {
 export type DirectoryID = string & { __DirectoryID: never }
 
 /**
+ * The `EngineCacheEntryID` scalar type represents an identifier for an object of type EngineCacheEntry.
+ */
+export type EngineCacheEntryID = string & { __EngineCacheEntryID: never }
+
+/**
+ * The `EngineCacheEntrySetID` scalar type represents an identifier for an object of type EngineCacheEntrySet.
+ */
+export type EngineCacheEntrySetID = string & { __EngineCacheEntrySetID: never }
+
+/**
+ * The `EngineCacheID` scalar type represents an identifier for an object of type EngineCache.
+ */
+export type EngineCacheID = string & { __EngineCacheID: never }
+
+/**
+ * The `EngineID` scalar type represents an identifier for an object of type Engine.
+ */
+export type EngineID = string & { __EngineID: never }
+
+/**
  * The `EnumTypeDefID` scalar type represents an identifier for an object of type EnumTypeDef.
  */
 export type EnumTypeDefID = string & { __EnumTypeDefID: never }
@@ -777,11 +773,6 @@ export type EnumValueTypeDefID = string & { __EnumValueTypeDefID: never }
  * The `EnvVariableID` scalar type represents an identifier for an object of type EnvVariable.
  */
 export type EnvVariableID = string & { __EnvVariableID: never }
-
-/**
- * The `ErrorID` scalar type represents an identifier for an object of type Error.
- */
-export type ErrorID = string & { __ErrorID: never }
 
 /**
  * The `FieldTypeDefID` scalar type represents an identifier for an object of type FieldTypeDef.
@@ -2471,21 +2462,6 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Indicate that subsequent operations should be featured more prominently in the UI.
-   */
-  withFocus = (): Container => {
-    return new Container({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "withFocus",
-        },
-      ],
-      ctx: this._ctx,
-    })
-  }
-
-  /**
    * Retrieves this container plus the given label.
    * @param name The name of the label (e.g., "org.opencontainers.artifact.created").
    * @param value The value of the label (e.g., "2023-01-01T00:00:00Z").
@@ -2976,23 +2952,6 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Indicate that subsequent operations should not be featured more prominently in the UI.
-   *
-   * This is the initial state of all containers.
-   */
-  withoutFocus = (): Container => {
-    return new Container({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "withoutFocus",
-        },
-      ],
-      ctx: this._ctx,
-    })
-  }
-
-  /**
    * Retrieves this container minus the given environment label.
    * @param name The name of the label to remove (e.g., "org.opencontainers.artifact.created").
    */
@@ -3264,517 +3223,6 @@ export class CurrentModule extends BaseClient {
       ],
       ctx: this._ctx,
     })
-  }
-}
-
-/**
- * The Dagger engine configuration and state
- */
-export class DaggerEngine extends BaseClient {
-  private readonly _id?: DaggerEngineID = undefined
-
-  /**
-   * Constructor is used for internal usage only, do not create object from it.
-   */
-  constructor(
-    parent?: { queryTree?: QueryTree[]; ctx: Context },
-    _id?: DaggerEngineID,
-  ) {
-    super(parent)
-
-    this._id = _id
-  }
-
-  /**
-   * A unique identifier for this DaggerEngine.
-   */
-  id = async (): Promise<DaggerEngineID> => {
-    if (this._id) {
-      return this._id
-    }
-
-    const response: Awaited<DaggerEngineID> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "id",
-        },
-      ],
-      await this._ctx.connection(),
-    )
-
-    return response
-  }
-
-  /**
-   * The local (on-disk) cache for the Dagger engine
-   */
-  localCache = (): DaggerEngineCache => {
-    return new DaggerEngineCache({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "localCache",
-        },
-      ],
-      ctx: this._ctx,
-    })
-  }
-}
-
-/**
- * A cache storage for the Dagger engine
- */
-export class DaggerEngineCache extends BaseClient {
-  private readonly _id?: DaggerEngineCacheID = undefined
-  private readonly _keepBytes?: number = undefined
-  private readonly _maxUsedSpace?: number = undefined
-  private readonly _minFreeSpace?: number = undefined
-  private readonly _prune?: Void = undefined
-  private readonly _reservedSpace?: number = undefined
-
-  /**
-   * Constructor is used for internal usage only, do not create object from it.
-   */
-  constructor(
-    parent?: { queryTree?: QueryTree[]; ctx: Context },
-    _id?: DaggerEngineCacheID,
-    _keepBytes?: number,
-    _maxUsedSpace?: number,
-    _minFreeSpace?: number,
-    _prune?: Void,
-    _reservedSpace?: number,
-  ) {
-    super(parent)
-
-    this._id = _id
-    this._keepBytes = _keepBytes
-    this._maxUsedSpace = _maxUsedSpace
-    this._minFreeSpace = _minFreeSpace
-    this._prune = _prune
-    this._reservedSpace = _reservedSpace
-  }
-
-  /**
-   * A unique identifier for this DaggerEngineCache.
-   */
-  id = async (): Promise<DaggerEngineCacheID> => {
-    if (this._id) {
-      return this._id
-    }
-
-    const response: Awaited<DaggerEngineCacheID> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "id",
-        },
-      ],
-      await this._ctx.connection(),
-    )
-
-    return response
-  }
-
-  /**
-   * The current set of entries in the cache
-   */
-  entrySet = (): DaggerEngineCacheEntrySet => {
-    return new DaggerEngineCacheEntrySet({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "entrySet",
-        },
-      ],
-      ctx: this._ctx,
-    })
-  }
-
-  /**
-   * The maximum bytes to keep in the cache without pruning, after which automatic pruning may kick in.
-   * @deprecated Use minFreeSpace instead.
-   */
-  keepBytes = async (): Promise<number> => {
-    if (this._keepBytes) {
-      return this._keepBytes
-    }
-
-    const response: Awaited<number> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "keepBytes",
-        },
-      ],
-      await this._ctx.connection(),
-    )
-
-    return response
-  }
-
-  /**
-   * The maximum bytes to keep in the cache without pruning.
-   */
-  maxUsedSpace = async (): Promise<number> => {
-    if (this._maxUsedSpace) {
-      return this._maxUsedSpace
-    }
-
-    const response: Awaited<number> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "maxUsedSpace",
-        },
-      ],
-      await this._ctx.connection(),
-    )
-
-    return response
-  }
-
-  /**
-   * The target amount of free disk space the garbage collector will attempt to leave.
-   */
-  minFreeSpace = async (): Promise<number> => {
-    if (this._minFreeSpace) {
-      return this._minFreeSpace
-    }
-
-    const response: Awaited<number> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "minFreeSpace",
-        },
-      ],
-      await this._ctx.connection(),
-    )
-
-    return response
-  }
-
-  /**
-   * Prune the cache of releaseable entries
-   */
-  prune = async (): Promise<void> => {
-    if (this._prune) {
-      return
-    }
-
-    await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "prune",
-        },
-      ],
-      await this._ctx.connection(),
-    )
-  }
-  reservedSpace = async (): Promise<number> => {
-    if (this._reservedSpace) {
-      return this._reservedSpace
-    }
-
-    const response: Awaited<number> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "reservedSpace",
-        },
-      ],
-      await this._ctx.connection(),
-    )
-
-    return response
-  }
-}
-
-/**
- * An individual cache entry in a cache entry set
- */
-export class DaggerEngineCacheEntry extends BaseClient {
-  private readonly _id?: DaggerEngineCacheEntryID = undefined
-  private readonly _activelyUsed?: boolean = undefined
-  private readonly _createdTimeUnixNano?: number = undefined
-  private readonly _description?: string = undefined
-  private readonly _diskSpaceBytes?: number = undefined
-  private readonly _mostRecentUseTimeUnixNano?: number = undefined
-
-  /**
-   * Constructor is used for internal usage only, do not create object from it.
-   */
-  constructor(
-    parent?: { queryTree?: QueryTree[]; ctx: Context },
-    _id?: DaggerEngineCacheEntryID,
-    _activelyUsed?: boolean,
-    _createdTimeUnixNano?: number,
-    _description?: string,
-    _diskSpaceBytes?: number,
-    _mostRecentUseTimeUnixNano?: number,
-  ) {
-    super(parent)
-
-    this._id = _id
-    this._activelyUsed = _activelyUsed
-    this._createdTimeUnixNano = _createdTimeUnixNano
-    this._description = _description
-    this._diskSpaceBytes = _diskSpaceBytes
-    this._mostRecentUseTimeUnixNano = _mostRecentUseTimeUnixNano
-  }
-
-  /**
-   * A unique identifier for this DaggerEngineCacheEntry.
-   */
-  id = async (): Promise<DaggerEngineCacheEntryID> => {
-    if (this._id) {
-      return this._id
-    }
-
-    const response: Awaited<DaggerEngineCacheEntryID> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "id",
-        },
-      ],
-      await this._ctx.connection(),
-    )
-
-    return response
-  }
-
-  /**
-   * Whether the cache entry is actively being used.
-   */
-  activelyUsed = async (): Promise<boolean> => {
-    if (this._activelyUsed) {
-      return this._activelyUsed
-    }
-
-    const response: Awaited<boolean> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "activelyUsed",
-        },
-      ],
-      await this._ctx.connection(),
-    )
-
-    return response
-  }
-
-  /**
-   * The time the cache entry was created, in Unix nanoseconds.
-   */
-  createdTimeUnixNano = async (): Promise<number> => {
-    if (this._createdTimeUnixNano) {
-      return this._createdTimeUnixNano
-    }
-
-    const response: Awaited<number> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "createdTimeUnixNano",
-        },
-      ],
-      await this._ctx.connection(),
-    )
-
-    return response
-  }
-
-  /**
-   * The description of the cache entry.
-   */
-  description = async (): Promise<string> => {
-    if (this._description) {
-      return this._description
-    }
-
-    const response: Awaited<string> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "description",
-        },
-      ],
-      await this._ctx.connection(),
-    )
-
-    return response
-  }
-
-  /**
-   * The disk space used by the cache entry.
-   */
-  diskSpaceBytes = async (): Promise<number> => {
-    if (this._diskSpaceBytes) {
-      return this._diskSpaceBytes
-    }
-
-    const response: Awaited<number> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "diskSpaceBytes",
-        },
-      ],
-      await this._ctx.connection(),
-    )
-
-    return response
-  }
-
-  /**
-   * The most recent time the cache entry was used, in Unix nanoseconds.
-   */
-  mostRecentUseTimeUnixNano = async (): Promise<number> => {
-    if (this._mostRecentUseTimeUnixNano) {
-      return this._mostRecentUseTimeUnixNano
-    }
-
-    const response: Awaited<number> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "mostRecentUseTimeUnixNano",
-        },
-      ],
-      await this._ctx.connection(),
-    )
-
-    return response
-  }
-}
-
-/**
- * A set of cache entries returned by a query to a cache
- */
-export class DaggerEngineCacheEntrySet extends BaseClient {
-  private readonly _id?: DaggerEngineCacheEntrySetID = undefined
-  private readonly _diskSpaceBytes?: number = undefined
-  private readonly _entryCount?: number = undefined
-
-  /**
-   * Constructor is used for internal usage only, do not create object from it.
-   */
-  constructor(
-    parent?: { queryTree?: QueryTree[]; ctx: Context },
-    _id?: DaggerEngineCacheEntrySetID,
-    _diskSpaceBytes?: number,
-    _entryCount?: number,
-  ) {
-    super(parent)
-
-    this._id = _id
-    this._diskSpaceBytes = _diskSpaceBytes
-    this._entryCount = _entryCount
-  }
-
-  /**
-   * A unique identifier for this DaggerEngineCacheEntrySet.
-   */
-  id = async (): Promise<DaggerEngineCacheEntrySetID> => {
-    if (this._id) {
-      return this._id
-    }
-
-    const response: Awaited<DaggerEngineCacheEntrySetID> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "id",
-        },
-      ],
-      await this._ctx.connection(),
-    )
-
-    return response
-  }
-
-  /**
-   * The total disk space used by the cache entries in this set.
-   */
-  diskSpaceBytes = async (): Promise<number> => {
-    if (this._diskSpaceBytes) {
-      return this._diskSpaceBytes
-    }
-
-    const response: Awaited<number> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "diskSpaceBytes",
-        },
-      ],
-      await this._ctx.connection(),
-    )
-
-    return response
-  }
-
-  /**
-   * The list of individual cache entries in the set
-   */
-  entries = async (): Promise<DaggerEngineCacheEntry[]> => {
-    type entries = {
-      id: DaggerEngineCacheEntryID
-    }
-
-    const response: Awaited<entries[]> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "entries",
-        },
-        {
-          operation: "id",
-        },
-      ],
-      await this._ctx.connection(),
-    )
-
-    return response.map(
-      (r) =>
-        new DaggerEngineCacheEntry(
-          {
-            queryTree: [
-              {
-                operation: "loadDaggerEngineCacheEntryFromID",
-                args: { id: r.id },
-              },
-            ],
-            ctx: this._ctx,
-          },
-          r.id,
-        ),
-    )
-  }
-
-  /**
-   * The number of cache entries in this set.
-   */
-  entryCount = async (): Promise<number> => {
-    if (this._entryCount) {
-      return this._entryCount
-    }
-
-    const response: Awaited<number> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "entryCount",
-        },
-      ],
-      await this._ctx.connection(),
-    )
-
-    return response
   }
 }
 
@@ -4250,6 +3698,517 @@ export class Directory extends BaseClient {
 }
 
 /**
+ * The Dagger engine configuration and state
+ */
+export class Engine extends BaseClient {
+  private readonly _id?: EngineID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: EngineID,
+  ) {
+    super(parent)
+
+    this._id = _id
+  }
+
+  /**
+   * A unique identifier for this Engine.
+   */
+  id = async (): Promise<EngineID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<EngineID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * The local (on-disk) cache for the Dagger engine
+   */
+  localCache = (): EngineCache => {
+    return new EngineCache({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "localCache",
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+}
+
+/**
+ * A cache storage for the Dagger engine
+ */
+export class EngineCache extends BaseClient {
+  private readonly _id?: EngineCacheID = undefined
+  private readonly _keepBytes?: number = undefined
+  private readonly _maxUsedSpace?: number = undefined
+  private readonly _minFreeSpace?: number = undefined
+  private readonly _prune?: Void = undefined
+  private readonly _reservedSpace?: number = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: EngineCacheID,
+    _keepBytes?: number,
+    _maxUsedSpace?: number,
+    _minFreeSpace?: number,
+    _prune?: Void,
+    _reservedSpace?: number,
+  ) {
+    super(parent)
+
+    this._id = _id
+    this._keepBytes = _keepBytes
+    this._maxUsedSpace = _maxUsedSpace
+    this._minFreeSpace = _minFreeSpace
+    this._prune = _prune
+    this._reservedSpace = _reservedSpace
+  }
+
+  /**
+   * A unique identifier for this EngineCache.
+   */
+  id = async (): Promise<EngineCacheID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<EngineCacheID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * The current set of entries in the cache
+   */
+  entrySet = (): EngineCacheEntrySet => {
+    return new EngineCacheEntrySet({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "entrySet",
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * The maximum bytes to keep in the cache without pruning, after which automatic pruning may kick in.
+   * @deprecated Use minFreeSpace instead.
+   */
+  keepBytes = async (): Promise<number> => {
+    if (this._keepBytes) {
+      return this._keepBytes
+    }
+
+    const response: Awaited<number> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "keepBytes",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * The maximum bytes to keep in the cache without pruning.
+   */
+  maxUsedSpace = async (): Promise<number> => {
+    if (this._maxUsedSpace) {
+      return this._maxUsedSpace
+    }
+
+    const response: Awaited<number> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "maxUsedSpace",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * The target amount of free disk space the garbage collector will attempt to leave.
+   */
+  minFreeSpace = async (): Promise<number> => {
+    if (this._minFreeSpace) {
+      return this._minFreeSpace
+    }
+
+    const response: Awaited<number> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "minFreeSpace",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * Prune the cache of releaseable entries
+   */
+  prune = async (): Promise<void> => {
+    if (this._prune) {
+      return
+    }
+
+    await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "prune",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+  }
+  reservedSpace = async (): Promise<number> => {
+    if (this._reservedSpace) {
+      return this._reservedSpace
+    }
+
+    const response: Awaited<number> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "reservedSpace",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+}
+
+/**
+ * An individual cache entry in a cache entry set
+ */
+export class EngineCacheEntry extends BaseClient {
+  private readonly _id?: EngineCacheEntryID = undefined
+  private readonly _activelyUsed?: boolean = undefined
+  private readonly _createdTimeUnixNano?: number = undefined
+  private readonly _description?: string = undefined
+  private readonly _diskSpaceBytes?: number = undefined
+  private readonly _mostRecentUseTimeUnixNano?: number = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: EngineCacheEntryID,
+    _activelyUsed?: boolean,
+    _createdTimeUnixNano?: number,
+    _description?: string,
+    _diskSpaceBytes?: number,
+    _mostRecentUseTimeUnixNano?: number,
+  ) {
+    super(parent)
+
+    this._id = _id
+    this._activelyUsed = _activelyUsed
+    this._createdTimeUnixNano = _createdTimeUnixNano
+    this._description = _description
+    this._diskSpaceBytes = _diskSpaceBytes
+    this._mostRecentUseTimeUnixNano = _mostRecentUseTimeUnixNano
+  }
+
+  /**
+   * A unique identifier for this EngineCacheEntry.
+   */
+  id = async (): Promise<EngineCacheEntryID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<EngineCacheEntryID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * Whether the cache entry is actively being used.
+   */
+  activelyUsed = async (): Promise<boolean> => {
+    if (this._activelyUsed) {
+      return this._activelyUsed
+    }
+
+    const response: Awaited<boolean> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "activelyUsed",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * The time the cache entry was created, in Unix nanoseconds.
+   */
+  createdTimeUnixNano = async (): Promise<number> => {
+    if (this._createdTimeUnixNano) {
+      return this._createdTimeUnixNano
+    }
+
+    const response: Awaited<number> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "createdTimeUnixNano",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * The description of the cache entry.
+   */
+  description = async (): Promise<string> => {
+    if (this._description) {
+      return this._description
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "description",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * The disk space used by the cache entry.
+   */
+  diskSpaceBytes = async (): Promise<number> => {
+    if (this._diskSpaceBytes) {
+      return this._diskSpaceBytes
+    }
+
+    const response: Awaited<number> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "diskSpaceBytes",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * The most recent time the cache entry was used, in Unix nanoseconds.
+   */
+  mostRecentUseTimeUnixNano = async (): Promise<number> => {
+    if (this._mostRecentUseTimeUnixNano) {
+      return this._mostRecentUseTimeUnixNano
+    }
+
+    const response: Awaited<number> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "mostRecentUseTimeUnixNano",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+}
+
+/**
+ * A set of cache entries returned by a query to a cache
+ */
+export class EngineCacheEntrySet extends BaseClient {
+  private readonly _id?: EngineCacheEntrySetID = undefined
+  private readonly _diskSpaceBytes?: number = undefined
+  private readonly _entryCount?: number = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; ctx: Context },
+    _id?: EngineCacheEntrySetID,
+    _diskSpaceBytes?: number,
+    _entryCount?: number,
+  ) {
+    super(parent)
+
+    this._id = _id
+    this._diskSpaceBytes = _diskSpaceBytes
+    this._entryCount = _entryCount
+  }
+
+  /**
+   * A unique identifier for this EngineCacheEntrySet.
+   */
+  id = async (): Promise<EngineCacheEntrySetID> => {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<EngineCacheEntrySetID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * The total disk space used by the cache entries in this set.
+   */
+  diskSpaceBytes = async (): Promise<number> => {
+    if (this._diskSpaceBytes) {
+      return this._diskSpaceBytes
+    }
+
+    const response: Awaited<number> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "diskSpaceBytes",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+
+  /**
+   * The list of individual cache entries in the set
+   */
+  entries = async (): Promise<EngineCacheEntry[]> => {
+    type entries = {
+      id: EngineCacheEntryID
+    }
+
+    const response: Awaited<entries[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "entries",
+        },
+        {
+          operation: "id",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response.map(
+      (r) =>
+        new EngineCacheEntry(
+          {
+            queryTree: [
+              {
+                operation: "loadEngineCacheEntryFromID",
+                args: { id: r.id },
+              },
+            ],
+            ctx: this._ctx,
+          },
+          r.id,
+        ),
+    )
+  }
+
+  /**
+   * The number of cache entries in this set.
+   */
+  entryCount = async (): Promise<number> => {
+    if (this._entryCount) {
+      return this._entryCount
+    }
+
+    const response: Awaited<number> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "entryCount",
+        },
+      ],
+      await this._ctx.connection(),
+    )
+
+    return response
+  }
+}
+
+/**
  * A definition of a custom enum defined in a Module.
  */
 export class EnumTypeDef extends BaseClient {
@@ -4596,67 +4555,6 @@ export class EnvVariable extends BaseClient {
         ...this._queryTree,
         {
           operation: "value",
-        },
-      ],
-      await this._ctx.connection(),
-    )
-
-    return response
-  }
-}
-
-export class Error extends BaseClient {
-  private readonly _id?: ErrorID = undefined
-  private readonly _message?: string = undefined
-
-  /**
-   * Constructor is used for internal usage only, do not create object from it.
-   */
-  constructor(
-    parent?: { queryTree?: QueryTree[]; ctx: Context },
-    _id?: ErrorID,
-    _message?: string,
-  ) {
-    super(parent)
-
-    this._id = _id
-    this._message = _message
-  }
-
-  /**
-   * A unique identifier for this Error.
-   */
-  id = async (): Promise<ErrorID> => {
-    if (this._id) {
-      return this._id
-    }
-
-    const response: Awaited<ErrorID> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "id",
-        },
-      ],
-      await this._ctx.connection(),
-    )
-
-    return response
-  }
-
-  /**
-   * A description of the error.
-   */
-  message = async (): Promise<string> => {
-    if (this._message) {
-      return this._message
-    }
-
-    const response: Awaited<string> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "message",
         },
       ],
       await this._ctx.connection(),
@@ -5444,7 +5342,6 @@ export class FunctionCall extends BaseClient {
   private readonly _name?: string = undefined
   private readonly _parent?: JSON = undefined
   private readonly _parentName?: string = undefined
-  private readonly _returnError?: Void = undefined
   private readonly _returnValue?: Void = undefined
 
   /**
@@ -5456,7 +5353,6 @@ export class FunctionCall extends BaseClient {
     _name?: string,
     _parent?: JSON,
     _parentName?: string,
-    _returnError?: Void,
     _returnValue?: Void,
   ) {
     super(parent)
@@ -5465,7 +5361,6 @@ export class FunctionCall extends BaseClient {
     this._name = _name
     this._parent = _parent
     this._parentName = _parentName
-    this._returnError = _returnError
     this._returnValue = _returnValue
   }
 
@@ -5589,27 +5484,6 @@ export class FunctionCall extends BaseClient {
     )
 
     return response
-  }
-
-  /**
-   * Return an error from the function.
-   * @param error The error to return.
-   */
-  returnError = async (error: Error): Promise<void> => {
-    if (this._returnError) {
-      return
-    }
-
-    await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "returnError",
-          args: { error },
-        },
-      ],
-      await this._ctx.connection(),
-    )
   }
 
   /**
@@ -8816,21 +8690,6 @@ export class Client extends BaseClient {
   }
 
   /**
-   * The Dagger engine container configuration and state
-   */
-  daggerEngine = (): DaggerEngine => {
-    return new DaggerEngine({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "daggerEngine",
-        },
-      ],
-      ctx: this._ctx,
-    })
-  }
-
-  /**
    * The default platform of the engine.
    */
   defaultPlatform = async (): Promise<Platform> => {
@@ -8863,16 +8722,14 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Create a new error.
-   * @param message A brief description of the error.
+   * The Dagger engine container configuration and state
    */
-  error = (message: string): Error => {
-    return new Error({
+  engine = (): Engine => {
+    return new Engine({
       queryTree: [
         ...this._queryTree,
         {
-          operation: "error",
-          args: { message },
+          operation: "engine",
         },
       ],
       ctx: this._ctx,
@@ -9020,76 +8877,6 @@ export class Client extends BaseClient {
   }
 
   /**
-   * Load a DaggerEngineCacheEntry from its ID.
-   */
-  loadDaggerEngineCacheEntryFromID = (
-    id: DaggerEngineCacheEntryID,
-  ): DaggerEngineCacheEntry => {
-    return new DaggerEngineCacheEntry({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "loadDaggerEngineCacheEntryFromID",
-          args: { id },
-        },
-      ],
-      ctx: this._ctx,
-    })
-  }
-
-  /**
-   * Load a DaggerEngineCacheEntrySet from its ID.
-   */
-  loadDaggerEngineCacheEntrySetFromID = (
-    id: DaggerEngineCacheEntrySetID,
-  ): DaggerEngineCacheEntrySet => {
-    return new DaggerEngineCacheEntrySet({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "loadDaggerEngineCacheEntrySetFromID",
-          args: { id },
-        },
-      ],
-      ctx: this._ctx,
-    })
-  }
-
-  /**
-   * Load a DaggerEngineCache from its ID.
-   */
-  loadDaggerEngineCacheFromID = (
-    id: DaggerEngineCacheID,
-  ): DaggerEngineCache => {
-    return new DaggerEngineCache({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "loadDaggerEngineCacheFromID",
-          args: { id },
-        },
-      ],
-      ctx: this._ctx,
-    })
-  }
-
-  /**
-   * Load a DaggerEngine from its ID.
-   */
-  loadDaggerEngineFromID = (id: DaggerEngineID): DaggerEngine => {
-    return new DaggerEngine({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "loadDaggerEngineFromID",
-          args: { id },
-        },
-      ],
-      ctx: this._ctx,
-    })
-  }
-
-  /**
    * Load a Directory from its ID.
    */
   loadDirectoryFromID = (id: DirectoryID): Directory => {
@@ -9098,6 +8885,72 @@ export class Client extends BaseClient {
         ...this._queryTree,
         {
           operation: "loadDirectoryFromID",
+          args: { id },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Load a EngineCacheEntry from its ID.
+   */
+  loadEngineCacheEntryFromID = (id: EngineCacheEntryID): EngineCacheEntry => {
+    return new EngineCacheEntry({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "loadEngineCacheEntryFromID",
+          args: { id },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Load a EngineCacheEntrySet from its ID.
+   */
+  loadEngineCacheEntrySetFromID = (
+    id: EngineCacheEntrySetID,
+  ): EngineCacheEntrySet => {
+    return new EngineCacheEntrySet({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "loadEngineCacheEntrySetFromID",
+          args: { id },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Load a EngineCache from its ID.
+   */
+  loadEngineCacheFromID = (id: EngineCacheID): EngineCache => {
+    return new EngineCache({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "loadEngineCacheFromID",
+          args: { id },
+        },
+      ],
+      ctx: this._ctx,
+    })
+  }
+
+  /**
+   * Load a Engine from its ID.
+   */
+  loadEngineFromID = (id: EngineID): Engine => {
+    return new Engine({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "loadEngineFromID",
           args: { id },
         },
       ],
@@ -9146,22 +8999,6 @@ export class Client extends BaseClient {
         ...this._queryTree,
         {
           operation: "loadEnvVariableFromID",
-          args: { id },
-        },
-      ],
-      ctx: this._ctx,
-    })
-  }
-
-  /**
-   * Load a Error from its ID.
-   */
-  loadErrorFromID = (id: ErrorID): Error => {
-    return new Error({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "loadErrorFromID",
           args: { id },
         },
       ],

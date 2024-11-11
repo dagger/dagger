@@ -118,20 +118,20 @@ type ContainerID string
 // The `CurrentModuleID` scalar type represents an identifier for an object of type CurrentModule.
 type CurrentModuleID string
 
-// The `DaggerEngineCacheEntryID` scalar type represents an identifier for an object of type DaggerEngineCacheEntry.
-type DaggerEngineCacheEntryID string
-
-// The `DaggerEngineCacheEntrySetID` scalar type represents an identifier for an object of type DaggerEngineCacheEntrySet.
-type DaggerEngineCacheEntrySetID string
-
-// The `DaggerEngineCacheID` scalar type represents an identifier for an object of type DaggerEngineCache.
-type DaggerEngineCacheID string
-
-// The `DaggerEngineID` scalar type represents an identifier for an object of type DaggerEngine.
-type DaggerEngineID string
-
 // The `DirectoryID` scalar type represents an identifier for an object of type Directory.
 type DirectoryID string
+
+// The `EngineCacheEntryID` scalar type represents an identifier for an object of type EngineCacheEntry.
+type EngineCacheEntryID string
+
+// The `EngineCacheEntrySetID` scalar type represents an identifier for an object of type EngineCacheEntrySet.
+type EngineCacheEntrySetID string
+
+// The `EngineCacheID` scalar type represents an identifier for an object of type EngineCache.
+type EngineCacheID string
+
+// The `EngineID` scalar type represents an identifier for an object of type Engine.
+type EngineID string
 
 // The `EnumTypeDefID` scalar type represents an identifier for an object of type EnumTypeDef.
 type EnumTypeDefID string
@@ -141,9 +141,6 @@ type EnumValueTypeDefID string
 
 // The `EnvVariableID` scalar type represents an identifier for an object of type EnvVariable.
 type EnvVariableID string
-
-// The `ErrorID` scalar type represents an identifier for an object of type Error.
-type ErrorID string
 
 // The `FieldTypeDefID` scalar type represents an identifier for an object of type FieldTypeDef.
 type FieldTypeDefID string
@@ -1374,15 +1371,6 @@ func (r *Container) WithFiles(path string, sources []*File, opts ...ContainerWit
 	}
 }
 
-// Indicate that subsequent operations should be featured more prominently in the UI.
-func (r *Container) WithFocus() *Container {
-	q := r.query.Select("withFocus")
-
-	return &Container{
-		query: q,
-	}
-}
-
 // Retrieves this container plus the given label.
 func (r *Container) WithLabel(name string, value string) *Container {
 	q := r.query.Select("withLabel")
@@ -1877,17 +1865,6 @@ func (r *Container) WithoutFiles(paths []string, opts ...ContainerWithoutFilesOp
 	}
 }
 
-// Indicate that subsequent operations should not be featured more prominently in the UI.
-//
-// This is the initial state of all containers.
-func (r *Container) WithoutFocus() *Container {
-	q := r.query.Select("withoutFocus")
-
-	return &Container{
-		query: q,
-	}
-}
-
 // Retrieves this container minus the given environment label.
 func (r *Container) WithoutLabel(name string) *Container {
 	q := r.query.Select("withoutLabel")
@@ -2109,435 +2086,6 @@ func (r *CurrentModule) WorkdirFile(path string) *File {
 	return &File{
 		query: q,
 	}
-}
-
-// The Dagger engine configuration and state
-type DaggerEngine struct {
-	query *querybuilder.Selection
-
-	id *DaggerEngineID
-}
-
-func (r *DaggerEngine) WithGraphQLQuery(q *querybuilder.Selection) *DaggerEngine {
-	return &DaggerEngine{
-		query: q,
-	}
-}
-
-// A unique identifier for this DaggerEngine.
-func (r *DaggerEngine) ID(ctx context.Context) (DaggerEngineID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response DaggerEngineID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *DaggerEngine) XXX_GraphQLType() string {
-	return "DaggerEngine"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *DaggerEngine) XXX_GraphQLIDType() string {
-	return "DaggerEngineID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *DaggerEngine) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *DaggerEngine) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-
-// The local (on-disk) cache for the Dagger engine
-func (r *DaggerEngine) LocalCache() *DaggerEngineCache {
-	q := r.query.Select("localCache")
-
-	return &DaggerEngineCache{
-		query: q,
-	}
-}
-
-// A cache storage for the Dagger engine
-type DaggerEngineCache struct {
-	query *querybuilder.Selection
-
-	id            *DaggerEngineCacheID
-	keepBytes     *int
-	maxUsedSpace  *int
-	minFreeSpace  *int
-	prune         *Void
-	reservedSpace *int
-}
-
-func (r *DaggerEngineCache) WithGraphQLQuery(q *querybuilder.Selection) *DaggerEngineCache {
-	return &DaggerEngineCache{
-		query: q,
-	}
-}
-
-// The current set of entries in the cache
-func (r *DaggerEngineCache) EntrySet() *DaggerEngineCacheEntrySet {
-	q := r.query.Select("entrySet")
-
-	return &DaggerEngineCacheEntrySet{
-		query: q,
-	}
-}
-
-// A unique identifier for this DaggerEngineCache.
-func (r *DaggerEngineCache) ID(ctx context.Context) (DaggerEngineCacheID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response DaggerEngineCacheID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *DaggerEngineCache) XXX_GraphQLType() string {
-	return "DaggerEngineCache"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *DaggerEngineCache) XXX_GraphQLIDType() string {
-	return "DaggerEngineCacheID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *DaggerEngineCache) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *DaggerEngineCache) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-
-// The maximum bytes to keep in the cache without pruning, after which automatic pruning may kick in.
-//
-// Deprecated: Use minFreeSpace instead.
-func (r *DaggerEngineCache) KeepBytes(ctx context.Context) (int, error) {
-	if r.keepBytes != nil {
-		return *r.keepBytes, nil
-	}
-	q := r.query.Select("keepBytes")
-
-	var response int
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// The maximum bytes to keep in the cache without pruning.
-func (r *DaggerEngineCache) MaxUsedSpace(ctx context.Context) (int, error) {
-	if r.maxUsedSpace != nil {
-		return *r.maxUsedSpace, nil
-	}
-	q := r.query.Select("maxUsedSpace")
-
-	var response int
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// The target amount of free disk space the garbage collector will attempt to leave.
-func (r *DaggerEngineCache) MinFreeSpace(ctx context.Context) (int, error) {
-	if r.minFreeSpace != nil {
-		return *r.minFreeSpace, nil
-	}
-	q := r.query.Select("minFreeSpace")
-
-	var response int
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// Prune the cache of releaseable entries
-func (r *DaggerEngineCache) Prune(ctx context.Context) error {
-	if r.prune != nil {
-		return nil
-	}
-	q := r.query.Select("prune")
-
-	return q.Execute(ctx)
-}
-
-func (r *DaggerEngineCache) ReservedSpace(ctx context.Context) (int, error) {
-	if r.reservedSpace != nil {
-		return *r.reservedSpace, nil
-	}
-	q := r.query.Select("reservedSpace")
-
-	var response int
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// An individual cache entry in a cache entry set
-type DaggerEngineCacheEntry struct {
-	query *querybuilder.Selection
-
-	activelyUsed              *bool
-	createdTimeUnixNano       *int
-	description               *string
-	diskSpaceBytes            *int
-	id                        *DaggerEngineCacheEntryID
-	mostRecentUseTimeUnixNano *int
-}
-
-func (r *DaggerEngineCacheEntry) WithGraphQLQuery(q *querybuilder.Selection) *DaggerEngineCacheEntry {
-	return &DaggerEngineCacheEntry{
-		query: q,
-	}
-}
-
-// Whether the cache entry is actively being used.
-func (r *DaggerEngineCacheEntry) ActivelyUsed(ctx context.Context) (bool, error) {
-	if r.activelyUsed != nil {
-		return *r.activelyUsed, nil
-	}
-	q := r.query.Select("activelyUsed")
-
-	var response bool
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// The time the cache entry was created, in Unix nanoseconds.
-func (r *DaggerEngineCacheEntry) CreatedTimeUnixNano(ctx context.Context) (int, error) {
-	if r.createdTimeUnixNano != nil {
-		return *r.createdTimeUnixNano, nil
-	}
-	q := r.query.Select("createdTimeUnixNano")
-
-	var response int
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// The description of the cache entry.
-func (r *DaggerEngineCacheEntry) Description(ctx context.Context) (string, error) {
-	if r.description != nil {
-		return *r.description, nil
-	}
-	q := r.query.Select("description")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// The disk space used by the cache entry.
-func (r *DaggerEngineCacheEntry) DiskSpaceBytes(ctx context.Context) (int, error) {
-	if r.diskSpaceBytes != nil {
-		return *r.diskSpaceBytes, nil
-	}
-	q := r.query.Select("diskSpaceBytes")
-
-	var response int
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// A unique identifier for this DaggerEngineCacheEntry.
-func (r *DaggerEngineCacheEntry) ID(ctx context.Context) (DaggerEngineCacheEntryID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response DaggerEngineCacheEntryID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *DaggerEngineCacheEntry) XXX_GraphQLType() string {
-	return "DaggerEngineCacheEntry"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *DaggerEngineCacheEntry) XXX_GraphQLIDType() string {
-	return "DaggerEngineCacheEntryID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *DaggerEngineCacheEntry) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *DaggerEngineCacheEntry) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-
-// The most recent time the cache entry was used, in Unix nanoseconds.
-func (r *DaggerEngineCacheEntry) MostRecentUseTimeUnixNano(ctx context.Context) (int, error) {
-	if r.mostRecentUseTimeUnixNano != nil {
-		return *r.mostRecentUseTimeUnixNano, nil
-	}
-	q := r.query.Select("mostRecentUseTimeUnixNano")
-
-	var response int
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// A set of cache entries returned by a query to a cache
-type DaggerEngineCacheEntrySet struct {
-	query *querybuilder.Selection
-
-	diskSpaceBytes *int
-	entryCount     *int
-	id             *DaggerEngineCacheEntrySetID
-}
-
-func (r *DaggerEngineCacheEntrySet) WithGraphQLQuery(q *querybuilder.Selection) *DaggerEngineCacheEntrySet {
-	return &DaggerEngineCacheEntrySet{
-		query: q,
-	}
-}
-
-// The total disk space used by the cache entries in this set.
-func (r *DaggerEngineCacheEntrySet) DiskSpaceBytes(ctx context.Context) (int, error) {
-	if r.diskSpaceBytes != nil {
-		return *r.diskSpaceBytes, nil
-	}
-	q := r.query.Select("diskSpaceBytes")
-
-	var response int
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// The list of individual cache entries in the set
-func (r *DaggerEngineCacheEntrySet) Entries(ctx context.Context) ([]DaggerEngineCacheEntry, error) {
-	q := r.query.Select("entries")
-
-	q = q.Select("id")
-
-	type entries struct {
-		Id DaggerEngineCacheEntryID
-	}
-
-	convert := func(fields []entries) []DaggerEngineCacheEntry {
-		out := []DaggerEngineCacheEntry{}
-
-		for i := range fields {
-			val := DaggerEngineCacheEntry{id: &fields[i].Id}
-			val.query = q.Root().Select("loadDaggerEngineCacheEntryFromID").Arg("id", fields[i].Id)
-			out = append(out, val)
-		}
-
-		return out
-	}
-	var response []entries
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
-}
-
-// The number of cache entries in this set.
-func (r *DaggerEngineCacheEntrySet) EntryCount(ctx context.Context) (int, error) {
-	if r.entryCount != nil {
-		return *r.entryCount, nil
-	}
-	q := r.query.Select("entryCount")
-
-	var response int
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// A unique identifier for this DaggerEngineCacheEntrySet.
-func (r *DaggerEngineCacheEntrySet) ID(ctx context.Context) (DaggerEngineCacheEntrySetID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response DaggerEngineCacheEntrySetID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *DaggerEngineCacheEntrySet) XXX_GraphQLType() string {
-	return "DaggerEngineCacheEntrySet"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *DaggerEngineCacheEntrySet) XXX_GraphQLIDType() string {
-	return "DaggerEngineCacheEntrySetID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *DaggerEngineCacheEntrySet) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *DaggerEngineCacheEntrySet) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
 }
 
 // A directory.
@@ -3001,6 +2549,435 @@ func (r *Directory) WithoutFiles(paths []string) *Directory {
 	}
 }
 
+// The Dagger engine configuration and state
+type Engine struct {
+	query *querybuilder.Selection
+
+	id *EngineID
+}
+
+func (r *Engine) WithGraphQLQuery(q *querybuilder.Selection) *Engine {
+	return &Engine{
+		query: q,
+	}
+}
+
+// A unique identifier for this Engine.
+func (r *Engine) ID(ctx context.Context) (EngineID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response EngineID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Engine) XXX_GraphQLType() string {
+	return "Engine"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Engine) XXX_GraphQLIDType() string {
+	return "EngineID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Engine) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Engine) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The local (on-disk) cache for the Dagger engine
+func (r *Engine) LocalCache() *EngineCache {
+	q := r.query.Select("localCache")
+
+	return &EngineCache{
+		query: q,
+	}
+}
+
+// A cache storage for the Dagger engine
+type EngineCache struct {
+	query *querybuilder.Selection
+
+	id            *EngineCacheID
+	keepBytes     *int
+	maxUsedSpace  *int
+	minFreeSpace  *int
+	prune         *Void
+	reservedSpace *int
+}
+
+func (r *EngineCache) WithGraphQLQuery(q *querybuilder.Selection) *EngineCache {
+	return &EngineCache{
+		query: q,
+	}
+}
+
+// The current set of entries in the cache
+func (r *EngineCache) EntrySet() *EngineCacheEntrySet {
+	q := r.query.Select("entrySet")
+
+	return &EngineCacheEntrySet{
+		query: q,
+	}
+}
+
+// A unique identifier for this EngineCache.
+func (r *EngineCache) ID(ctx context.Context) (EngineCacheID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response EngineCacheID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *EngineCache) XXX_GraphQLType() string {
+	return "EngineCache"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *EngineCache) XXX_GraphQLIDType() string {
+	return "EngineCacheID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *EngineCache) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *EngineCache) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The maximum bytes to keep in the cache without pruning, after which automatic pruning may kick in.
+//
+// Deprecated: Use minFreeSpace instead.
+func (r *EngineCache) KeepBytes(ctx context.Context) (int, error) {
+	if r.keepBytes != nil {
+		return *r.keepBytes, nil
+	}
+	q := r.query.Select("keepBytes")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The maximum bytes to keep in the cache without pruning.
+func (r *EngineCache) MaxUsedSpace(ctx context.Context) (int, error) {
+	if r.maxUsedSpace != nil {
+		return *r.maxUsedSpace, nil
+	}
+	q := r.query.Select("maxUsedSpace")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The target amount of free disk space the garbage collector will attempt to leave.
+func (r *EngineCache) MinFreeSpace(ctx context.Context) (int, error) {
+	if r.minFreeSpace != nil {
+		return *r.minFreeSpace, nil
+	}
+	q := r.query.Select("minFreeSpace")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// Prune the cache of releaseable entries
+func (r *EngineCache) Prune(ctx context.Context) error {
+	if r.prune != nil {
+		return nil
+	}
+	q := r.query.Select("prune")
+
+	return q.Execute(ctx)
+}
+
+func (r *EngineCache) ReservedSpace(ctx context.Context) (int, error) {
+	if r.reservedSpace != nil {
+		return *r.reservedSpace, nil
+	}
+	q := r.query.Select("reservedSpace")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// An individual cache entry in a cache entry set
+type EngineCacheEntry struct {
+	query *querybuilder.Selection
+
+	activelyUsed              *bool
+	createdTimeUnixNano       *int
+	description               *string
+	diskSpaceBytes            *int
+	id                        *EngineCacheEntryID
+	mostRecentUseTimeUnixNano *int
+}
+
+func (r *EngineCacheEntry) WithGraphQLQuery(q *querybuilder.Selection) *EngineCacheEntry {
+	return &EngineCacheEntry{
+		query: q,
+	}
+}
+
+// Whether the cache entry is actively being used.
+func (r *EngineCacheEntry) ActivelyUsed(ctx context.Context) (bool, error) {
+	if r.activelyUsed != nil {
+		return *r.activelyUsed, nil
+	}
+	q := r.query.Select("activelyUsed")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The time the cache entry was created, in Unix nanoseconds.
+func (r *EngineCacheEntry) CreatedTimeUnixNano(ctx context.Context) (int, error) {
+	if r.createdTimeUnixNano != nil {
+		return *r.createdTimeUnixNano, nil
+	}
+	q := r.query.Select("createdTimeUnixNano")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The description of the cache entry.
+func (r *EngineCacheEntry) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.query.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The disk space used by the cache entry.
+func (r *EngineCacheEntry) DiskSpaceBytes(ctx context.Context) (int, error) {
+	if r.diskSpaceBytes != nil {
+		return *r.diskSpaceBytes, nil
+	}
+	q := r.query.Select("diskSpaceBytes")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this EngineCacheEntry.
+func (r *EngineCacheEntry) ID(ctx context.Context) (EngineCacheEntryID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response EngineCacheEntryID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *EngineCacheEntry) XXX_GraphQLType() string {
+	return "EngineCacheEntry"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *EngineCacheEntry) XXX_GraphQLIDType() string {
+	return "EngineCacheEntryID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *EngineCacheEntry) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *EngineCacheEntry) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// The most recent time the cache entry was used, in Unix nanoseconds.
+func (r *EngineCacheEntry) MostRecentUseTimeUnixNano(ctx context.Context) (int, error) {
+	if r.mostRecentUseTimeUnixNano != nil {
+		return *r.mostRecentUseTimeUnixNano, nil
+	}
+	q := r.query.Select("mostRecentUseTimeUnixNano")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A set of cache entries returned by a query to a cache
+type EngineCacheEntrySet struct {
+	query *querybuilder.Selection
+
+	diskSpaceBytes *int
+	entryCount     *int
+	id             *EngineCacheEntrySetID
+}
+
+func (r *EngineCacheEntrySet) WithGraphQLQuery(q *querybuilder.Selection) *EngineCacheEntrySet {
+	return &EngineCacheEntrySet{
+		query: q,
+	}
+}
+
+// The total disk space used by the cache entries in this set.
+func (r *EngineCacheEntrySet) DiskSpaceBytes(ctx context.Context) (int, error) {
+	if r.diskSpaceBytes != nil {
+		return *r.diskSpaceBytes, nil
+	}
+	q := r.query.Select("diskSpaceBytes")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// The list of individual cache entries in the set
+func (r *EngineCacheEntrySet) Entries(ctx context.Context) ([]EngineCacheEntry, error) {
+	q := r.query.Select("entries")
+
+	q = q.Select("id")
+
+	type entries struct {
+		Id EngineCacheEntryID
+	}
+
+	convert := func(fields []entries) []EngineCacheEntry {
+		out := []EngineCacheEntry{}
+
+		for i := range fields {
+			val := EngineCacheEntry{id: &fields[i].Id}
+			val.query = q.Root().Select("loadEngineCacheEntryFromID").Arg("id", fields[i].Id)
+			out = append(out, val)
+		}
+
+		return out
+	}
+	var response []entries
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// The number of cache entries in this set.
+func (r *EngineCacheEntrySet) EntryCount(ctx context.Context) (int, error) {
+	if r.entryCount != nil {
+		return *r.entryCount, nil
+	}
+	q := r.query.Select("entryCount")
+
+	var response int
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// A unique identifier for this EngineCacheEntrySet.
+func (r *EngineCacheEntrySet) ID(ctx context.Context) (EngineCacheEntrySetID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response EngineCacheEntrySetID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *EngineCacheEntrySet) XXX_GraphQLType() string {
+	return "EngineCacheEntrySet"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *EngineCacheEntrySet) XXX_GraphQLIDType() string {
+	return "EngineCacheEntrySetID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *EngineCacheEntrySet) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *EngineCacheEntrySet) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
 // A definition of a custom enum defined in a Module.
 type EnumTypeDef struct {
 	query *querybuilder.Selection
@@ -3302,72 +3279,6 @@ func (r *EnvVariable) Value(ctx context.Context) (string, error) {
 		return *r.value, nil
 	}
 	q := r.query.Select("value")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-type Error struct {
-	query *querybuilder.Selection
-
-	id      *ErrorID
-	message *string
-}
-
-func (r *Error) WithGraphQLQuery(q *querybuilder.Selection) *Error {
-	return &Error{
-		query: q,
-	}
-}
-
-// A unique identifier for this Error.
-func (r *Error) ID(ctx context.Context) (ErrorID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.query.Select("id")
-
-	var response ErrorID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *Error) XXX_GraphQLType() string {
-	return "Error"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *Error) XXX_GraphQLIDType() string {
-	return "ErrorID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *Error) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-func (r *Error) MarshalJSON() ([]byte, error) {
-	id, err := r.ID(marshalCtx)
-	if err != nil {
-		return nil, err
-	}
-	return json.Marshal(id)
-}
-
-// A description of the error.
-func (r *Error) Message(ctx context.Context) (string, error) {
-	if r.message != nil {
-		return *r.message, nil
-	}
-	q := r.query.Select("message")
 
 	var response string
 
@@ -4024,7 +3935,6 @@ type FunctionCall struct {
 	name        *string
 	parent      *JSON
 	parentName  *string
-	returnError *Void
 	returnValue *Void
 }
 
@@ -4144,18 +4054,6 @@ func (r *FunctionCall) ParentName(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
-}
-
-// Return an error from the function.
-func (r *FunctionCall) ReturnError(ctx context.Context, error *Error) error {
-	assertNotNil("error", error)
-	if r.returnError != nil {
-		return nil
-	}
-	q := r.query.Select("returnError")
-	q = q.Arg("error", error)
-
-	return q.Execute(ctx)
 }
 
 // Set the return value of the function call to the provided value.
@@ -6809,15 +6707,6 @@ func (r *Client) CurrentTypeDefs(ctx context.Context) ([]TypeDef, error) {
 	return convert(response), nil
 }
 
-// The Dagger engine container configuration and state
-func (r *Client) DaggerEngine() *DaggerEngine {
-	q := r.query.Select("daggerEngine")
-
-	return &DaggerEngine{
-		query: q,
-	}
-}
-
 // The default platform of the engine.
 func (r *Client) DefaultPlatform(ctx context.Context) (Platform, error) {
 	q := r.query.Select("defaultPlatform")
@@ -6837,12 +6726,11 @@ func (r *Client) Directory() *Directory {
 	}
 }
 
-// Create a new error.
-func (r *Client) Error(message string) *Error {
-	q := r.query.Select("error")
-	q = q.Arg("message", message)
+// The Dagger engine container configuration and state
+func (r *Client) Engine() *Engine {
+	q := r.query.Select("engine")
 
-	return &Error{
+	return &Engine{
 		query: q,
 	}
 }
@@ -6971,52 +6859,52 @@ func (r *Client) LoadCurrentModuleFromID(id CurrentModuleID) *CurrentModule {
 	}
 }
 
-// Load a DaggerEngineCacheEntry from its ID.
-func (r *Client) LoadDaggerEngineCacheEntryFromID(id DaggerEngineCacheEntryID) *DaggerEngineCacheEntry {
-	q := r.query.Select("loadDaggerEngineCacheEntryFromID")
-	q = q.Arg("id", id)
-
-	return &DaggerEngineCacheEntry{
-		query: q,
-	}
-}
-
-// Load a DaggerEngineCacheEntrySet from its ID.
-func (r *Client) LoadDaggerEngineCacheEntrySetFromID(id DaggerEngineCacheEntrySetID) *DaggerEngineCacheEntrySet {
-	q := r.query.Select("loadDaggerEngineCacheEntrySetFromID")
-	q = q.Arg("id", id)
-
-	return &DaggerEngineCacheEntrySet{
-		query: q,
-	}
-}
-
-// Load a DaggerEngineCache from its ID.
-func (r *Client) LoadDaggerEngineCacheFromID(id DaggerEngineCacheID) *DaggerEngineCache {
-	q := r.query.Select("loadDaggerEngineCacheFromID")
-	q = q.Arg("id", id)
-
-	return &DaggerEngineCache{
-		query: q,
-	}
-}
-
-// Load a DaggerEngine from its ID.
-func (r *Client) LoadDaggerEngineFromID(id DaggerEngineID) *DaggerEngine {
-	q := r.query.Select("loadDaggerEngineFromID")
-	q = q.Arg("id", id)
-
-	return &DaggerEngine{
-		query: q,
-	}
-}
-
 // Load a Directory from its ID.
 func (r *Client) LoadDirectoryFromID(id DirectoryID) *Directory {
 	q := r.query.Select("loadDirectoryFromID")
 	q = q.Arg("id", id)
 
 	return &Directory{
+		query: q,
+	}
+}
+
+// Load a EngineCacheEntry from its ID.
+func (r *Client) LoadEngineCacheEntryFromID(id EngineCacheEntryID) *EngineCacheEntry {
+	q := r.query.Select("loadEngineCacheEntryFromID")
+	q = q.Arg("id", id)
+
+	return &EngineCacheEntry{
+		query: q,
+	}
+}
+
+// Load a EngineCacheEntrySet from its ID.
+func (r *Client) LoadEngineCacheEntrySetFromID(id EngineCacheEntrySetID) *EngineCacheEntrySet {
+	q := r.query.Select("loadEngineCacheEntrySetFromID")
+	q = q.Arg("id", id)
+
+	return &EngineCacheEntrySet{
+		query: q,
+	}
+}
+
+// Load a EngineCache from its ID.
+func (r *Client) LoadEngineCacheFromID(id EngineCacheID) *EngineCache {
+	q := r.query.Select("loadEngineCacheFromID")
+	q = q.Arg("id", id)
+
+	return &EngineCache{
+		query: q,
+	}
+}
+
+// Load a Engine from its ID.
+func (r *Client) LoadEngineFromID(id EngineID) *Engine {
+	q := r.query.Select("loadEngineFromID")
+	q = q.Arg("id", id)
+
+	return &Engine{
 		query: q,
 	}
 }
@@ -7047,16 +6935,6 @@ func (r *Client) LoadEnvVariableFromID(id EnvVariableID) *EnvVariable {
 	q = q.Arg("id", id)
 
 	return &EnvVariable{
-		query: q,
-	}
-}
-
-// Load a Error from its ID.
-func (r *Client) LoadErrorFromID(id ErrorID) *Error {
-	q := r.query.Select("loadErrorFromID")
-	q = q.Arg("id", id)
-
-	return &Error{
 		query: q,
 	}
 }

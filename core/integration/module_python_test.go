@@ -15,8 +15,6 @@ import (
 	"dagger.io/dagger"
 )
 
-const pythonSourcePath = "src/main/__init__.py"
-
 // Group all tests that are specific to Python only.
 type PythonSuite struct{}
 
@@ -79,7 +77,7 @@ func (PythonSuite) TestInit(ctx context.Context, t *testctx.T) {
 
 		out, err := daggerCliBase(t, c).
 			With(daggerInitPython("--name=hello-world")).
-			With(pythonSource(`
+			With(fileContents("src/hello_world/__init__.py", `
                 from dagger import field, function, object_type
 
                 @object_type
@@ -170,6 +168,140 @@ func (PythonSuite) TestInit(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.JSONEq(t, `{"bare":{"containerEcho":{"stdout":"hello\n"}}}`, out)
 	})
+
+	t.Run("specify a custom location for the main object", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithNewFile("pyproject.toml", `
+[project]
+name = "hello-world"
+version = "0.0.0"
+dependencies = ["dagger-io"]
+
+[tool.uv.sources]
+dagger-io = { path = "sdk", editable = true }
+
+[project.entry-points."dagger.mod"]
+main_object = "hello_world.main:HelloWorld"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+`,
+			).
+			WithNewFile("src/hello_world/__init__.py", "# No main object import").
+			WithNewFile("src/hello_world/main.py", `import dagger
+
+@dagger.object_type
+class HelloWorld:
+    my_name: str = dagger.field(default="World")
+
+    @dagger.function
+    def message(self) -> str:
+        return f"Hello, {self.my_name}!"
+`,
+			).
+			With(daggerExec("init", "--name=hello-world", "--sdk=python", "--source=."))
+
+		out, err := modGen.With(daggerQuery(`{helloWorld{message}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"helloWorld":{"message":"Hello, World!"}}`, out)
+	})
+
+	t.Run("different dagger and python project names", func(ctx context.Context, t *testctx.T) {
+		// Name in dagger.json: "test"
+		// Name in pyproject.toml: "hello-world"
+		// Expected main object name: "Test"
+		// Expected import package name: "hello_world"
+
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithNewFile("pyproject.toml", `
+[project]
+name = "hello-world"
+version = "0.0.0"
+dependencies = ["dagger-io"]
+
+[tool.uv.sources]
+dagger-io = { path = "sdk", editable = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+`,
+			).
+			WithNewFile("src/hello_world/__init__.py", "from .main import Test as Test").
+			WithNewFile("src/hello_world/main.py", `import dagger
+
+@dagger.object_type
+class Test:
+    my_name: str = dagger.field(default="World")
+
+    @dagger.function
+    def message(self) -> str:
+        return f"Hello, {self.my_name}!"
+`,
+			).
+			With(daggerExec("init", "--name=test", "--sdk=python", "--source=."))
+
+		out, err := modGen.With(daggerQuery(`{test{message}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"test":{"message":"Hello, World!"}}`, out)
+	})
+
+	t.Run("fallback to main import package name", func(ctx context.Context, t *testctx.T) {
+		// Name in dagger.json: "test"
+		// Name in pyproject.toml: "hello-world"
+		// Source code in `src/main/__init__.py`
+		// Expected main object name: "Test"
+		// Expected import package name: "hello_world", but fallback to "main"
+
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithNewFile("pyproject.toml", `
+[project]
+name = "hello-world"
+version = "0.0.0"
+dependencies = ["dagger-io"]
+
+[tool.uv.sources]
+dagger-io = { path = "sdk", editable = true }
+
+# See https://hatch.pypa.io/latest/config/build/#packages
+[tool.hatch.build.targets.wheel]
+packages = ["src/main"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+`,
+			).
+			WithNewFile("src/main/__init__.py", `import dagger
+
+@dagger.object_type
+class Test:
+    my_name: str = dagger.field(default="World")
+
+    @dagger.function
+    def message(self) -> str:
+        return f"Hello, {self.my_name}!"
+`,
+			).
+			With(daggerExec("init", "--name=test", "--sdk=python", "--source=."))
+
+		out, err := modGen.With(daggerQuery(`{test{message}}`)).Stdout(ctx)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"test":{"message":"Hello, World!"}}`, out)
+	})
 }
 
 func (PythonSuite) TestProjectLayout(ctx context.Context, t *testctx.T) {
@@ -183,10 +315,10 @@ func (PythonSuite) TestProjectLayout(ctx context.Context, t *testctx.T) {
 	}{
 		{
 			name: "setuptools",
-			path: "src/main/__init__.py",
+			path: "src/test/__init__.py",
 			conf: `
 [project]
-name = "main"
+name = "test"
 version = "0.0.0"
 dependencies = ["dagger-io"]
 
@@ -198,12 +330,11 @@ dagger-io = { path = "sdk", editable = true }
 `,
 		},
 		{
-			// This is the old template layout.
 			name: "setuptools",
 			path: "src/main.py",
 			conf: `
 [project]
-name = "main"
+name = "test"
 version = "0.0.0"
 dependencies = ["dagger-io"]
 
@@ -216,10 +347,10 @@ dagger-io = { path = "sdk", editable = true }
 		},
 		{
 			name: "setuptools",
-			path: "main/__init__.py",
+			path: "test/__init__.py",
 			conf: `
 [project]
-name = "main"
+name = "test"
 version = "0.0.0"
 dependencies = ["dagger-io"]
 
@@ -230,7 +361,7 @@ package = true
 dagger-io = { path = "sdk", editable = true }
 
 [tool.setuptools]
-packages = ["main"]
+packages = ["test"]
 `,
 		},
 		{
@@ -238,7 +369,7 @@ packages = ["main"]
 			path: "main.py",
 			conf: `
 [project]
-name = "main"
+name = "test"
 version = "0.0.0"
 dependencies = ["dagger-io"]
 
@@ -253,12 +384,11 @@ py-modules = ["main"]
 `,
 		},
 		{
-			// This is the **current** template layout.
 			name: "hatch",
-			path: "src/main/__init__.py",
+			path: "src/test/__init__.py",
 			conf: `
 [project]
-name = "main"
+name = "test"
 version = "0.0.0"
 dependencies = ["dagger-io"]
 
@@ -275,7 +405,7 @@ build-backend = "hatchling.build"
 			path: "src/main.py",
 			conf: `
 [project]
-name = "main"
+name = "test"
 version = "0.0.0"
 dependencies = ["dagger-io"]
 
@@ -292,10 +422,10 @@ packages = ["src/main.py"]
 		},
 		{
 			name: "hatch",
-			path: "main/__init__.py",
+			path: "test/__init__.py",
 			conf: `
 [project]
-name = "main"
+name = "test"
 version = "0.0.0"
 dependencies = ["dagger-io"]
 
@@ -307,7 +437,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["main"]
+packages = ["test"]
 `,
 		},
 		{
@@ -315,7 +445,7 @@ packages = ["main"]
 			path: "main.py",
 			conf: `
 [project]
-name = "main"
+name = "test"
 version = "0.0.0"
 dependencies = ["dagger-io"]
 
@@ -332,10 +462,10 @@ packages = ["main.py"]
 		},
 		{
 			name: "poetry",
-			path: "src/main/__init__.py",
+			path: "src/test/__init__.py",
 			conf: `
 [tool.poetry]
-name = "main"
+name = "test"
 version = "0.0.0"
 authors = []
 description = ""
@@ -350,10 +480,11 @@ build-backend = "poetry.core.masonry.api"
 			path: "src/main.py",
 			conf: `
 [tool.poetry]
-name = "main"
+name = "test"
 version = "0.0.0"
 authors = []
 description = ""
+packages = [{include = "main.py", from = "src"}]
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
@@ -362,10 +493,10 @@ build-backend = "poetry.core.masonry.api"
 		},
 		{
 			name: "poetry",
-			path: "main/__init__.py",
+			path: "test/__init__.py",
 			conf: `
 [tool.poetry]
-name = "main"
+name = "test"
 version = "0.0.0"
 authors = []
 description = ""
@@ -380,10 +511,11 @@ build-backend = "poetry.core.masonry.api"
 			path: "main.py",
 			conf: `
 [tool.poetry]
-name = "main"
+name = "test"
 version = "0.0.0"
 authors = []
 description = ""
+packages = [{include = "main.py"}]
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
@@ -670,7 +802,7 @@ func (PythonSuite) TestUv(ctx context.Context, t *testctx.T) {
 			Stdout(ctx)
 
 		t.Logf("out: %s", out)
-		require.ErrorContains(t, err, "pip is looking at multiple versions of main")
+		require.ErrorContains(t, err, "pip is looking at multiple versions of test")
 		require.ErrorContains(t, err, "requires a different Python")
 	})
 
@@ -739,8 +871,29 @@ class Test:
 			out, err := daggerCliBase(t, c).
 				With(source).
 				With(pyprojectExtra(nil, `
+                    [[tool.uv.index]]
+                    url = "https://test.pypi.org/simple"
+                    default = true
+
+                    [[tool.uv.index]]
+                    url = "https://pypi.org/simple"
+                `)).
+				With(daggerInitPython()).
+				With(daggerCall("urls")).
+				Stdout(ctx)
+
+			require.NoError(t, err)
+			require.Equal(t, "https://test.pypi.org/simple\nhttps://pypi.org/simple\n", out)
+		})
+
+		t.Run("backwards compat", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			out, err := daggerCliBase(t, c).
+				With(source).
+				With(pyprojectExtra(nil, `
                     [tool.uv]
-                    index-url = "https://pypi.org/simple"
+                    index-url = "https://test.pypi.org/simple"
                     extra-index-url = "https://pypi.org/simple"
                 `)).
 				With(daggerInitPython()).
@@ -748,7 +901,32 @@ class Test:
 				Stdout(ctx)
 
 			require.NoError(t, err)
-			require.Equal(t, "https://pypi.org/simple\nhttps://pypi.org/simple\n", out)
+			require.Equal(t, "https://test.pypi.org/simple\nhttps://pypi.org/simple\n", out)
+		})
+
+		t.Run("preference", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+
+			out, err := daggerCliBase(t, c).
+				With(source).
+				With(pyprojectExtra(nil, `
+                    [tool.uv]
+                    index-url = "https://test.example.org/simple"
+                    extra-index-url = "https://example.org/simple"
+
+                    [[tool.uv.index]]
+                    url = "https://test.pypi.org/simple"
+                    default = true
+
+                    [[tool.uv.index]]
+                    url = "https://pypi.org/simple"
+                `)).
+				With(daggerInitPython()).
+				With(daggerCall("urls")).
+				Stdout(ctx)
+
+			require.NoError(t, err)
+			require.Equal(t, "https://test.pypi.org/simple\nhttps://pypi.org/simple\n", out)
 		})
 
 		t.Run("without", func(ctx context.Context, t *testctx.T) {
@@ -770,8 +948,9 @@ class Test:
 			_, err := daggerCliBase(t, c).
 				With(source).
 				With(pyprojectExtra(nil, `
-                    [tool.uv]
-                    index-url = "https://pypi.example.com/simple"
+                    [[tool.uv.index]]
+                    url = "https://pypi.example.com/simple"
+                    default = true
                 `)).
 				With(daggerInitPython()).
 				Sync(ctx)
@@ -1422,16 +1601,16 @@ func (PythonSuite) TestWithOtherModuleTypes(ctx context.Context, t *testctx.T) {
 	ctr := goGitBase(t, c).
 		WithWorkdir("/work/dep").
 		With(daggerInitPython("--name=dep")).
-		With(pythonSource(`
-            from dagger import field, function, object_type
+		With(fileContents("src/dep/__init__.py", `
+            import dagger
 
-            @object_type
+            @dagger.object_type
             class Obj:
-                foo: str = field()
+                foo: str = dagger.field()
 
-            @object_type
+            @dagger.object_type
             class Dep:
-                @function
+                @dagger.function
                 def fn(self) -> Obj:
                     return Obj(foo="foo")
         `)).
@@ -1599,7 +1778,7 @@ func pythonSource(contents string) dagger.WithContainerFunc {
 }
 
 func pythonSourceAt(modPath, contents string) dagger.WithContainerFunc {
-	return fileContents(path.Join(modPath, pythonSourcePath), contents)
+	return fileContents(path.Join(modPath, "src/test/__init__.py"), contents)
 }
 
 func pythonModInit(t testing.TB, c *dagger.Client, source string) *dagger.Container {
@@ -1625,7 +1804,7 @@ build-backend = "hatchling.build"
 dagger-io = { path = "sdk", editable = true }
 
 [project]
-name = "main"
+name = "test"
 version = "0.0.0"
 `
 	return fileContents("pyproject.toml", base+depLine+"\n"+contents)

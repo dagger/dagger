@@ -106,6 +106,7 @@ func (cli *gitCLI) run(ctx context.Context, args ...string) (_ *bytes.Buffer, er
 			"GIT_TERMINAL_PROMPT=0",
 			"GIT_SSH_COMMAND=" + GetGitSSHCommand(cli.knownHosts),
 			//	"GIT_TRACE=1",
+			"GIT_ASKPASS=echo",      // ensure git does not ask for a password (avoids cryptic error message)
 			"GIT_CONFIG_NOSYSTEM=1", // Disable reading from system gitconfig.
 			"HOME=/dev/null",        // Disable reading from user gitconfig.
 			"LC_ALL=C",              // Ensure consistent output.

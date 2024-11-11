@@ -445,11 +445,6 @@
   status = 301
 
 [[redirects]]
-  from = "/integrations/github-actions"
-  to = "/integrations/github"
-  status = 301
-
-[[redirects]]
   from = "/integrations/:docid/:slug"
   to = "/integrations/:slug"
   status = 301
@@ -1188,21 +1183,6 @@
 
 ###### end: redirects for specific v0.9 pages ######
 
-
-
-# redirect to the playground's embed to maintain same origin
-# see https://github.com/dagger/dagger/pull/4753
-# used for 0.9 archive
-[[redirects]]
-  from = "/embed/*"
-  to = "https://play.dagger.cloud/embed/:splat"
-  status = 200
-
-# redirect to the playground's Next.js build artifacts
-[[redirects]]
-  from = "/_next/*"
-  to = "https://play.dagger.cloud/_next/:splat"
-  status = 200
 
 [[headers]]
   for = "/*"

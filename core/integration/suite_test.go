@@ -19,6 +19,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/sync/errgroup"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
@@ -298,4 +299,33 @@ func limitTicker(interval time.Duration, limit int) <-chan time.Time {
 		}
 	}()
 	return ch
+}
+
+// ensure the cache mount doesn't get pruned in the middle of the test by having a container
+// run throughout with the cache mounted
+func preventCacheMountPrune(ctx context.Context, t *testctx.T, c *dagger.Client, cache *dagger.CacheVolume, opts ...dagger.ContainerWithMountedCacheOpts) func() error {
+	t.Helper()
+	ctx, cancel := context.WithCancelCause(ctx)
+	cancelErr := errors.New("test done")
+	t.Cleanup(func() {
+		cancel(cancelErr)
+	})
+	defer cancel(cancelErr)
+	var eg errgroup.Group
+	eg.Go(func() error {
+		_, err := c.Container().
+			From(alpineImage).
+			WithMountedCache("/cache", cache, opts...).
+			WithExec([]string{"sh", "-c", "sleep 9999"}).
+			Sync(ctx)
+		if errors.Is(err, cancelErr) {
+			return nil
+		}
+		return err
+	})
+
+	return func() error {
+		cancel(cancelErr)
+		return eg.Wait()
+	}
 }

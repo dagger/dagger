@@ -2,6 +2,7 @@ package resources
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -77,8 +78,11 @@ func (s *cpuStatSampler) sample(ctx context.Context) error {
 	}
 
 	bs, err := os.ReadFile(s.cpuStatFilePath)
-	if err != nil {
-		return fmt.Errorf("failed to read cpu.stat file: %w", err)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return nil
+	case err != nil:
+		return fmt.Errorf("failed to read %s: %w", s.cpuStatFilePath, err)
 	}
 
 	for key, value := range flatKeyValuesInt64(bs) {
@@ -145,8 +149,11 @@ func (s *cpuPressureSampler) sample(ctx context.Context) error {
 	}
 
 	bs, err := os.ReadFile(s.cpuPressureFilePath)
-	if err != nil {
-		return fmt.Errorf("failed to read cpu.pressure file: %w", err)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return nil
+	case err != nil:
+		return fmt.Errorf("failed to read %s: %w", s.cpuPressureFilePath, err)
 	}
 
 	p := parsePressure(bs)

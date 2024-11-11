@@ -1,5 +1,6 @@
 {
   "name": "python-sdk-dev",
+  "engineVersion": "v0.13.7",
   "sdk": "python",
   "exclude": [
     "**/.venv",
@@ -9,13 +10,14 @@
   "dependencies": [
     {
       "name": "dockerd",
-      "source": "github.com/kpenfound/dagger-modules/dockerd@57352e06a1cfbcb5307c009d37c0201b2719b935"
+      "source": "github.com/kpenfound/dagger-modules/dockerd@57352e06a1cfbcb5307c009d37c0201b2719b935",
+      "pin": "57352e06a1cfbcb5307c009d37c0201b2719b935"
     },
     {
       "name": "wolfi",
-      "source": "../../../modules/wolfi"
+      "source": "../../../modules/wolfi",
+      "pin": ""
     }
   ],
-  "source": ".",
-  "engineVersion": "v0.13.5"
+  "source": "."
 }

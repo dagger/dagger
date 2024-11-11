@@ -7,5 +7,3 @@ query {
   }
 }
 ```
-
-<a href="https://play.dagger.cloud/playground/JqqwzSV0wBO" target="_blank">Try it in the API Playground!</a>

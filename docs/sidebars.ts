@@ -156,6 +156,7 @@ module.exports = {
         "integrations/aws-codebuild",
         "integrations/azure-pipelines",
         "integrations/circleci",
+        "integrations/github-actions",
         "integrations/github",
         "integrations/gitlab",
         "integrations/google-cloud-run",
@@ -185,6 +186,7 @@ module.exports = {
         "configuration/proxy",
         "configuration/cloud",
         "configuration/modules",
+        "configuration/cache",
       ],
     },
     {

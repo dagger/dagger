@@ -263,7 +263,13 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 		}
 	}()
 
-	mod, err := initializeModule(ctx, fc.c.Dagger(), !fc.DisableModuleLoad)
+	var mod *moduleDef
+	var err error
+	if fc.DisableModuleLoad {
+		mod, err = initializeCore(ctx, fc.c.Dagger())
+	} else {
+		mod, err = initializeModule(ctx, fc.c.Dagger())
+	}
 	if err != nil {
 		return err
 	}
@@ -290,44 +296,71 @@ func (fc *FuncCommand) execute(c *cobra.Command, a []string) (rerr error) {
 	return cmd.RunE(cmd, flags)
 }
 
-// initializeModule loads the module's type definitions.
-func initializeModule(ctx context.Context, dag *dagger.Client, loadModule bool) (rdef *moduleDef, rerr error) {
+// initializeCore loads the core type definitions.
+func initializeCore(ctx context.Context, dag *dagger.Client) (rdef *moduleDef, rerr error) {
 	def := &moduleDef{}
 
-	ctx, span := Tracer().Start(ctx, "initialize")
+	ctx, loadSpan := Tracer().Start(ctx, "inspecting core types", telemetry.Encapsulate())
+	defer telemetry.End(loadSpan, func() error { return rerr })
+
+	if err := def.loadTypeDefs(ctx, dag); err != nil {
+		return nil, err
+	}
+
+	return def, nil
+}
+
+// initializeModule loads the module's type definitions.
+func initializeModule(ctx context.Context, dag *dagger.Client) (*moduleDef, error) {
+	modRef, _ := getExplicitModuleSourceRef()
+	return maybeInitializeModule(ctx, dag, modRef, false)
+}
+
+// maybeInitializeModule optionally loads the module's type definitions.
+func maybeInitializeModule(ctx context.Context, dag *dagger.Client, srcRef string, optional bool) (rdef *moduleDef, rerr error) {
+	def := &moduleDef{}
+
+	ctx, span := Tracer().Start(ctx, "loading module")
 	defer telemetry.End(span, func() error { return rerr })
 
-	if loadModule {
-		resolveCtx, resolveSpan := Tracer().Start(ctx, "resolving module ref", telemetry.Encapsulate())
-		defer telemetry.End(resolveSpan, func() error { return rerr })
-		modConf, err := getDefaultModuleConfiguration(resolveCtx, dag, true, true)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get configured module: %w", err)
-		}
-		if !modConf.FullyInitialized() {
-			return nil, fmt.Errorf("module at source dir %q doesn't exist or is invalid", modConf.LocalRootSourcePath)
-		}
-		resolveSpan.End()
+	resolveCtx, resolveSpan := Tracer().Start(ctx, "finding module configuration", telemetry.Encapsulate())
+	defer telemetry.End(resolveSpan, func() error { return rerr })
 
-		def.Source = modConf.Source
-		mod := modConf.Source.AsModule().Initialize()
+	// the user explicitly set the `-m,--mod` flag
+	modRefSet := srcRef != ""
 
-		serveCtx, serveSpan := Tracer().Start(ctx, "installing module", telemetry.Encapsulate())
-		err = mod.Serve(serveCtx)
-		telemetry.End(serveSpan, func() error { return err })
-		if err != nil {
-			return nil, err
-		}
-
-		ctx, loadSpan := Tracer().Start(ctx, "analyzing module", telemetry.Encapsulate())
-		defer telemetry.End(loadSpan, func() error { return rerr })
-
-		name, err := mod.Name(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("get module name: %w", err)
-		}
-		def.Name = name
+	if !modRefSet {
+		srcRef = moduleURLDefault
 	}
+
+	modConf, err := getModuleConfigurationForSourceRef(resolveCtx, dag, srcRef, true, true)
+	if err != nil && (modRefSet || !optional) {
+		return nil, fmt.Errorf("failed to get configured module: %w", err)
+	}
+	resolveSpan.End()
+
+	if modConf == nil || !modConf.FullyInitialized() {
+		return initializeCore(ctx, dag)
+	}
+
+	def.Source = modConf.Source
+	mod := modConf.Source.AsModule().Initialize()
+
+	serveCtx, serveSpan := Tracer().Start(ctx, "serving module", telemetry.Encapsulate())
+	err = mod.Serve(serveCtx)
+	telemetry.End(serveSpan, func() error { return err })
+	if err != nil {
+		return nil, fmt.Errorf("failed to serve module: %w", err)
+	}
+
+	ctx, loadSpan := Tracer().Start(ctx, "inspecting module", telemetry.Encapsulate())
+	defer telemetry.End(loadSpan, func() error { return rerr })
+
+	name, err := mod.Name(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get module name: %w", err)
+	}
+	def.Name = name
 
 	if err := def.loadTypeDefs(ctx, dag); err != nil {
 		return nil, err
@@ -344,7 +377,7 @@ func initializeModule(ctx context.Context, dag *dagger.Client, loadModule bool) 
 func (fc *FuncCommand) loadCommand(c *cobra.Command, a []string) (rcmd *cobra.Command, rargs []string, rerr error) {
 	ctx := c.Context()
 
-	spanCtx, span := Tracer().Start(ctx, "prepare", telemetry.Encapsulate())
+	spanCtx, span := Tracer().Start(ctx, "parsing command line arguments", telemetry.Encapsulate())
 	defer telemetry.End(span, func() error { return rerr })
 	fc.ctx = spanCtx
 
@@ -504,7 +537,7 @@ func (fc *FuncCommand) addSubCommands(ctx context.Context, cmd *cobra.Command, t
 func (fc *FuncCommand) makeSubCmd(ctx context.Context, fn *modFunction) *cobra.Command {
 	newCmd := &cobra.Command{
 		Use:                   cliName(fn.Name),
-		Short:                 strings.SplitN(fn.Description, "\n", 2)[0],
+		Short:                 fn.Short(),
 		Long:                  fn.Description,
 		GroupID:               funcGroup.ID,
 		DisableFlagsInUseLine: true,

@@ -1710,16 +1710,16 @@
         },
         {
             "name": "symfony/process",
-            "version": "v7.1.3",
+            "version": "v7.1.7",
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/process.git",
-                "reference": "7f2f542c668ad6c313dc4a5e9c3321f733197eca"
+                "reference": "9b8a40b7289767aa7117e957573c2a535efe6585"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/symfony/process/zipball/7f2f542c668ad6c313dc4a5e9c3321f733197eca",
-                "reference": "7f2f542c668ad6c313dc4a5e9c3321f733197eca",
+                "url": "https://api.github.com/repos/symfony/process/zipball/9b8a40b7289767aa7117e957573c2a535efe6585",
+                "reference": "9b8a40b7289767aa7117e957573c2a535efe6585",
                 "shasum": ""
             },
             "require": {
@@ -1751,7 +1751,7 @@
             "description": "Executes commands in sub-processes",
             "homepage": "https://symfony.com",
             "support": {
-                "source": "https://github.com/symfony/process/tree/v7.1.3"
+                "source": "https://github.com/symfony/process/tree/v7.1.7"
             },
             "funding": [
                 {
@@ -1767,7 +1767,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2024-07-26T12:44:47+00:00"
+            "time": "2024-11-06T09:25:12+00:00"
         },
         {
             "name": "symfony/service-contracts",
@@ -3878,12 +3878,12 @@
     ],
     "aliases": [],
     "minimum-stability": "stable",
-    "stability-flags": [],
+    "stability-flags": {},
     "prefer-stable": false,
     "prefer-lowest": false,
     "platform": {
         "php": ">=8.2"
     },
-    "platform-dev": [],
-    "plugin-api-version": "2.3.0"
+    "platform-dev": {},
+    "plugin-api-version": "2.6.0"
 }

@@ -20,5 +20,3 @@ query {
   }
 }
 ```
-
-<a href="https://play.dagger.cloud/playground/Ai-Fnu3Q4vo" target="_blank">Try it in the API Playground!</a>

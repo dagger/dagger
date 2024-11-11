@@ -92,8 +92,6 @@ query {
 }
 ```
 
-[Try it in the API Playground](https://play.dagger.cloud/playground/8I0c_SMKQbj)
-
 The return value of the previous query is an ID representing the state of the current directory on the host
 
 By using object IDs to represesent object state, Dagger's GraphQL API enables some very powerful features. For example, you can save this state and reference it elsewhere (even in a different Dagger Function). You can then continue updating the state from the point you left off, or use it an input to another query.
@@ -111,8 +109,6 @@ query {
   }
 }
 ```
-
-[Try it in the API Playground](https://play.dagger.cloud/playground/PE1GJrfZODq)
 
 This query instructs Dagger to:
 
@@ -133,8 +129,6 @@ query {
   }
 }
 ```
-
-[Try it in the API Playground](https://play.dagger.cloud/playground/DKUH7PI5Yt0)
 
 This second query instructs Dagger to:
 
@@ -170,8 +164,6 @@ query {
 }
 ```
 
-[Try it in the API Playground](https://play.dagger.cloud/playground/NuLZcSHaNno)
-
 This query instructs Dagger to:
 
 - initialize a container from the `alpine:latest` image (this resolves the `from` field);
@@ -198,8 +190,6 @@ query {
   }
 }
 ```
-
-[Try it in the API Playground](https://play.dagger.cloud/playground/SLtXQ4lvqNS)
 
 This time, Dagger both prepares and executes the plan, because that is the only way to resolve the `stdout` field. Check the Webhook.site dashboard and the HTTP request sent by the `curl` command will be visible in the request log, as shown below:
 

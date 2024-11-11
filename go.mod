@@ -171,7 +171,6 @@ require (
 	github.com/docker/go-connections v0.5.0 // indirect
 	github.com/docker/go-metrics v0.0.1 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
-	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
 	github.com/felixge/fgprof v0.9.3 // indirect
@@ -275,8 +274,9 @@ require (
 )
 
 require (
-	dagger.io/dagger v0.13.6
-	github.com/dagger/dagger/engine/distconsts v0.13.6
+	dagger.io/dagger v0.13.7
+	github.com/dagger/dagger/engine/distconsts v0.13.7
+	github.com/dustin/go-humanize v1.0.1
 )
 
 require (

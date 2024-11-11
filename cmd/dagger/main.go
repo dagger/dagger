@@ -441,23 +441,54 @@ func flagUsagesWrapped(flags *pflag.FlagSet) string {
 //
 // Ideally `c.Short` fields should be as short as possible.
 func cmdShortWrapped(c *cobra.Command) string {
+	return wrapCmdDescription(c.Name(), c.Short, c.NamePadding())
+}
+
+func wrapCmdDescription(name, short string, padding int) string {
 	width := getViewWidth()
 
 	// Produce the same string length for all sibling commands by padding to
 	// the right based on the longest name. Add two extra spaces to the left
 	// of the screen, and three extra spaces before the description.
-	nameFormat := fmt.Sprintf("  %%-%ds   ", c.NamePadding())
-	name := fmt.Sprintf(nameFormat, c.Name())
-
-	description := c.Short
-	if len(name)+len(description) >= width {
-		wrapped := wordwrap.String(c.Short, width-len(name))
+	nameFormat := fmt.Sprintf("  %%-%ds   ", padding)
+	name = fmt.Sprintf(nameFormat, name)
+	if len(name)+len(short) >= width {
+		wrapped := wordwrap.String(short, width-len(name))
 		indented := indent.String(wrapped, uint(len(name)))
 		// first line shouldn't be indented since we're going to prepend the name
-		description = strings.TrimLeftFunc(indented, unicode.IsSpace)
+		short = strings.TrimLeftFunc(indented, unicode.IsSpace)
+	}
+	return name + short
+}
+
+func nameShortWrapped[S ~[]E, E any](s S, f func(e E) (string, string)) string {
+	minPadding := 11
+	maxLen := 0
+	lines := []string{}
+
+	for _, e := range s {
+		name, short := f(e)
+		nameLen := len(name)
+		if nameLen > maxLen {
+			maxLen = nameLen
+		}
+		// This special character will be replaced with spacing once the
+		// correct alignment is calculated
+		lines = append(lines, fmt.Sprintf("%s\x00%s", name, short))
 	}
 
-	return name + description
+	padding := maxLen
+	if minPadding > maxLen {
+		padding = minPadding
+	}
+
+	sb := new(strings.Builder)
+	for _, line := range lines {
+		s := strings.SplitN(line, "\x00", 2)
+		sb.WriteString(wrapCmdDescription(s[0], s[1], padding))
+		sb.WriteString("\n")
+	}
+	return sb.String()
 }
 
 // toUpperBold returns the given string in uppercase and bold.

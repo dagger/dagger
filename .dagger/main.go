@@ -147,8 +147,8 @@ func (gtc *GoToolchain) Lint(
 }
 
 // Develop the Dagger engine container
-func (dev *DaggerDev) Engine() *Engine {
-	return &Engine{Dagger: dev}
+func (dev *DaggerDev) Engine() *DEngine {
+	return &DEngine{Dagger: dev}
 }
 
 // Develop the Dagger documentation
@@ -276,7 +276,7 @@ func (dev *DaggerDev) DevExport(
 	}
 	engineTar := engineCtr.AsTarball(dagger.ContainerAsTarballOpts{
 		// use gzip to avoid incompatibility w/ older docker versions
-		ForcedCompression: dagger.Gzip,
+		ForcedCompression: dagger.ImageLayerCompressionGzip,
 	})
 
 	cli := dev.CLI()

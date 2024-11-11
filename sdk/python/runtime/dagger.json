@@ -1,6 +1,6 @@
 {
   "name": "python-sdk",
+  "engineVersion": "v0.13.7",
   "sdk": "go",
-  "source": ".",
-  "engineVersion": "v0.13.0"
+  "source": "."
 }

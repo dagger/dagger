@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	daggerVersion      = "v0.13.6"
+	daggerVersion      = "v0.13.7"
 	upstreamRepository = "dagger/dagger"
 	defaultRunner      = "ubuntu-latest"
 	publicToken        = "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
@@ -44,7 +44,7 @@ func New() *CI {
 			}),
 			WorkflowDefaults: dag.Gha().Workflow("", dagger.GhaWorkflowOpts{
 				PullRequestConcurrency:      "preempt",
-				Permissions:                 []dagger.GhaPermission{dagger.ReadContents},
+				Permissions:                 []dagger.GhaPermission{dagger.GhaPermissionReadContents},
 				OnPushBranches:              []string{"main"},
 				OnPullRequestOpened:         true,
 				OnPullRequestReopened:       true,
@@ -77,7 +77,8 @@ func New() *CI {
 			"elixir",
 			"rust",
 			"php",
-		)
+		).
+		withPrepareReleaseWorkflow()
 }
 
 // Generate Github Actions workflows to call our Dagger workflows
@@ -138,6 +139,35 @@ func (ci *CI) withSDKWorkflows(runner *dagger.Gha, name string, sdks ...string) 
 	}
 
 	ci.Workflows = ci.Workflows.WithWorkflow(w)
+	return ci
+}
+
+func (ci *CI) withPrepareReleaseWorkflow() *CI {
+	gha := dag.Gha(dagger.GhaOpts{
+		JobDefaults: dag.Gha().Job("", "", dagger.GhaJobOpts{
+			Runner:         []string{BronzeRunner(false)},
+			DaggerVersion:  daggerVersion,
+			TimeoutMinutes: timeoutMinutes,
+		}),
+		WorkflowDefaults: dag.Gha().Workflow("", dagger.GhaWorkflowOpts{
+			PullRequestConcurrency: "queue",
+			Permissions:            []dagger.GhaPermission{dagger.GhaPermissionReadContents},
+			OnPullRequestOpened:    true,
+			OnPullRequestPaths:     []string{"/CHANGELOG.md", "/.changes"},
+		}),
+	})
+	w := gha.
+		Workflow("daggerverse-preview").
+		WithJob(gha.Job(
+			"deploy",
+			"deploy-preview-with-dagger-main --github-token=env:DAGGER_CI_GITHUB_TOKEN",
+			dagger.GhaJobOpts{
+				Secrets: []string{"DAGGER_CI_GITHUB_TOKEN"},
+				Module:  "modules/daggerverse",
+			}))
+
+	ci.Workflows = ci.Workflows.WithWorkflow(w)
+
 	return ci
 }
 

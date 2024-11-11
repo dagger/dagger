@@ -38,10 +38,10 @@ func (FutureSuite) TestGoScopedEnumValues(ctx context.Context, t *testctx.T) {
 	//
 	// Ensure that new dagger unscoped enum values are removed.
 
-	c := futureClient(ctx, t, "v0.14.0")
+	c := futureClient(ctx, t, "v0.15.0")
 	c = c.
 		WithExec([]string{"dagger", "init", "--name=test", "--sdk=go", "--source=."}).
-		WithNewFile("dagger.json", `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.14.0"}`).
+		WithNewFile("dagger.json", `{"name": "test", "sdk": "go", "source": ".", "engineVersion": "v0.15.0"}`).
 		WithNewFile("main.go", `package main
 
 import "dagger/test/internal/dagger"

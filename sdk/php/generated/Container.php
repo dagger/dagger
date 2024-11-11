@@ -634,15 +634,6 @@ class Container extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * Indicate that subsequent operations should be featured more prominently in the UI.
-     */
-    public function withFocus(): Container
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withFocus');
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
      * Retrieves this container plus the given label.
      */
     public function withLabel(string $name, string $value): Container
@@ -974,17 +965,6 @@ class Container extends Client\AbstractObject implements Client\IdAble
         if (null !== $expand) {
         $innerQueryBuilder->setArgument('expand', $expand);
         }
-        return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
-    }
-
-    /**
-     * Indicate that subsequent operations should not be featured more prominently in the UI.
-     *
-     * This is the initial state of all containers.
-     */
-    public function withoutFocus(): Container
-    {
-        $innerQueryBuilder = new \Dagger\Client\QueryBuilder('withoutFocus');
         return new \Dagger\Container($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

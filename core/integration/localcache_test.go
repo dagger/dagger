@@ -70,7 +70,7 @@ func (EngineSuite) TestLocalCacheGCKeepBytesConfig(ctx context.Context, t *testc
 			require.NoError(t, err)
 			t.Cleanup(func() { c2.Close() })
 
-			cache := c2.DaggerEngine().LocalCache()
+			cache := c2.Engine().LocalCache()
 
 			if tc.keepStorage != "" {
 				expectedKeepBytes := getEngineBytesFromSpec(ctx, t, c2, tc.keepStorage)
@@ -155,7 +155,7 @@ func (EngineSuite) TestLocalCacheAutomaticGC(ctx context.Context, t *testctx.T) 
 
 			target := getEngineBytesFromSpec(ctx, t, c2, tc.target)
 
-			cacheEnts := c2.DaggerEngine().LocalCache().EntrySet()
+			cacheEnts := c2.Engine().LocalCache().EntrySet()
 			previousUsedBytes, err := cacheEnts.DiskSpaceBytes(ctx)
 			require.NoError(t, err)
 
@@ -166,7 +166,7 @@ func (EngineSuite) TestLocalCacheAutomaticGC(ctx context.Context, t *testctx.T) 
 			require.NoError(t, err)
 			require.NoError(t, c3.Close())
 
-			cacheEnts = c2.DaggerEngine().LocalCache().EntrySet()
+			cacheEnts = c2.Engine().LocalCache().EntrySet()
 			newUsedBytes, err := cacheEnts.DiskSpaceBytes(ctx)
 			require.NoError(t, err)
 			require.Greater(t, newUsedBytes, previousUsedBytes)
@@ -178,7 +178,7 @@ func (EngineSuite) TestLocalCacheAutomaticGC(ctx context.Context, t *testctx.T) 
 			_, err = c4.Container().From(alpineImage).WithExec([]string{"dd", "if=/dev/zero", "of=/bigfile", "bs=1M", "count=2048"}).Sync(ctx)
 			require.NoError(t, err)
 
-			cacheEnts = c2.DaggerEngine().LocalCache().EntrySet()
+			cacheEnts = c2.Engine().LocalCache().EntrySet()
 			newUsedBytes, err = cacheEnts.DiskSpaceBytes(ctx)
 			require.NoError(t, err)
 			require.Greater(t, newUsedBytes, previousUsedBytes)
@@ -189,7 +189,7 @@ func (EngineSuite) TestLocalCacheAutomaticGC(ctx context.Context, t *testctx.T) 
 			require.NoError(t, c4.Close())
 			tryCount := 300
 			for i := range tryCount {
-				cacheEnts = c2.DaggerEngine().LocalCache().EntrySet()
+				cacheEnts = c2.Engine().LocalCache().EntrySet()
 				newUsedBytes, err = cacheEnts.DiskSpaceBytes(ctx)
 				require.NoError(t, err)
 
@@ -271,7 +271,7 @@ type cacheEntryVals struct {
 	ActivelyUsed              bool
 }
 
-func getCacheEntryVals(ctx context.Context, t *testctx.T, ent dagger.DaggerEngineCacheEntry) *cacheEntryVals {
+func getCacheEntryVals(ctx context.Context, t *testctx.T, ent dagger.EngineCacheEntry) *cacheEntryVals {
 	t.Helper()
 
 	vals := &cacheEntryVals{}

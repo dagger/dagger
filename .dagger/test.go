@@ -35,8 +35,10 @@ func (t *Test) All(
 	timeout string,
 	// +optional
 	race bool,
+	// +optional
+	verbose bool,
 ) error {
-	return t.test(ctx, "", "", "./...", failfast, parallel, timeout, race, 1)
+	return t.test(ctx, "", "", "./...", failfast, parallel, timeout, race, 1, verbose)
 }
 
 // Run telemetry tests
@@ -60,6 +62,8 @@ func (t *Test) Telemetry(
 	race bool,
 	// +default=1
 	count int,
+	// +optional
+	verbose bool,
 ) (*dagger.Directory, error) {
 	engine := t.Dagger.Engine().
 		WithConfig(`registry."registry:5000"`, `http = true`).
@@ -119,7 +123,7 @@ func (t *Test) Telemetry(
 		tests = tests.WithMountedSecret("/root/.docker/config.json", t.Dagger.DockerCfg)
 	}
 
-	ran := t.goTest(tests, run, skip, "./dagql/idtui/", failfast, parallel, timeout, race, count, update)
+	ran := t.goTest(tests, run, skip, "./dagql/idtui/", failfast, parallel, timeout, race, count, update, verbose)
 	ran, err = ran.Sync(ctx)
 	if err != nil {
 		return nil, err
@@ -168,8 +172,11 @@ func (t *Test) Specific(
 	// +default=1
 	// +optional
 	count int,
+	// Enable verbose output
+	// +optional
+	verbose bool,
 ) error {
-	return t.test(ctx, run, skip, pkg, failfast, parallel, timeout, race, count)
+	return t.test(ctx, run, skip, pkg, failfast, parallel, timeout, race, count, verbose)
 }
 
 func (t *Test) test(
@@ -182,6 +189,7 @@ func (t *Test) test(
 	timeout string,
 	race bool,
 	count int,
+	verbose bool,
 ) error {
 	cmd, err := t.testCmd(ctx)
 	if err != nil {
@@ -189,7 +197,16 @@ func (t *Test) test(
 	}
 	_, err = t.goTest(
 		cmd,
-		runTestRegex, skipTestRegex, pkg, failfast, parallel, timeout, race, count, false,
+		runTestRegex,
+		skipTestRegex,
+		pkg,
+		failfast,
+		parallel,
+		timeout,
+		race,
+		count,
+		false, // -update
+		verbose,
 	).Sync(ctx)
 	return err
 }
@@ -205,11 +222,17 @@ func (t *Test) goTest(
 	race bool,
 	count int,
 	update bool,
+	verbose bool,
 ) *dagger.Container {
 	cgoEnabledEnv := "0"
 	args := []string{
 		"go",
 		"test",
+	}
+
+	// allow verbose
+	if verbose {
+		args = append(args, "-v")
 	}
 
 	// Add ldflags
@@ -304,7 +327,7 @@ func (t *Test) testCmd(ctx context.Context) (*dagger.Container, error) {
 	devEngineSvc := devEngine.
 		WithServiceBinding("registry", registrySvc).
 		WithServiceBinding("privateregistry", privateRegistry()).
-		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
+		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
 		WithMountedCache(distconsts.EngineDefaultStateDir, dag.CacheVolume("dagger-dev-engine-test-state"+identity.NewID())).
 		WithExec(nil, dagger.ContainerWithExecOpts{
 			UseEntrypoint:            true,
@@ -342,7 +365,7 @@ func (t *Test) testCmd(ctx context.Context) (*dagger.Container, error) {
 func registry() *dagger.Service {
 	return dag.Container().
 		From("registry:2").
-		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
+		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
 		WithExec(nil, dagger.ContainerWithExecOpts{
 			UseEntrypoint: true,
 		}).
@@ -357,7 +380,7 @@ func privateRegistry() *dagger.Service {
 		WithEnvVariable("REGISTRY_AUTH", "htpasswd").
 		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_REALM", "Registry Realm").
 		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_PATH", "/auth/htpasswd").
-		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
+		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
 		WithExec(nil, dagger.ContainerWithExecOpts{
 			UseEntrypoint: true,
 		}).

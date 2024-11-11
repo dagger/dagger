@@ -152,7 +152,8 @@ func (ClientSuite) TestWaitsForEngine(ctx context.Context, t *testctx.T) {
 	clientCtr := engineClientContainer(ctx, t, c, devEngine.AsService())
 	_, err := clientCtr.
 		WithNewFile("/query.graphql", `{ version }`). // arbitrary valid query
-		WithExec([]string{"dagger", "query", "--debug", "--doc", "/query.graphql"}).Sync(ctx)
+		WithExec([]string{"dagger", "query", "--doc", "/query.graphql"}).Sync(ctx)
+
 	require.NoError(t, err)
 }
 
@@ -171,7 +172,7 @@ func (EngineSuite) TestSetsNameFromEnv(ctx context.Context, t *testctx.T) {
 
 	clientCtr = clientCtr.
 		WithNewFile("/query.graphql", `{ version }`).
-		WithExec([]string{"dagger", "query", "--debug", "--doc", "/query.graphql"})
+		WithExec([]string{"dagger", "query", "--doc", "/query.graphql"})
 	stdout, err := clientCtr.Stdout(ctx)
 	require.NoError(t, err)
 	stderr, err := clientCtr.Stderr(ctx)
@@ -449,11 +450,11 @@ func (EngineSuite) TestVersionCompat(ctx context.Context, t *testctx.T) {
 			if tc.errs == nil {
 				clientCtr = clientCtr.
 					WithNewFile("/query.graphql", `{ version }`).
-					WithExec([]string{"sh", "-c", "dagger version && dagger query --debug --doc /query.graphql"})
+					WithExec([]string{"sh", "-c", "dagger version && dagger query --doc /query.graphql"})
 			} else {
 				clientCtr = clientCtr.
 					WithNewFile("/query.graphql", `{ version }`).
-					WithExec([]string{"sh", "-c", "! dagger query --debug --doc /query.graphql"})
+					WithExec([]string{"sh", "-c", "! dagger query --doc /query.graphql"})
 			}
 
 			if tc.errs == nil {
@@ -567,10 +568,10 @@ func (EngineSuite) TestModuleVersionCompat(ctx context.Context, t *testctx.T) {
 
 			if tc.errs == nil {
 				clientCtr = clientCtr.
-					WithExec([]string{"sh", "-c", "dagger query --debug --doc /query.graphql"})
+					WithExec([]string{"sh", "-c", "dagger query --doc /query.graphql"})
 			} else {
 				clientCtr = clientCtr.
-					WithExec([]string{"sh", "-c", "! dagger query --debug --doc /query.graphql"})
+					WithExec([]string{"sh", "-c", "! dagger query --doc /query.graphql"})
 			}
 
 			stderr, err := clientCtr.Stderr(ctx)

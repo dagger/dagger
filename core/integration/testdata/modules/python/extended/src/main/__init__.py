@@ -14,7 +14,7 @@ class ExtPythonSdk:
     ) -> dagger.GeneratedCode:
         sdk = self.common(mod_source, introspection_json).with_updates()
         return (
-            dag.generated_code(sdk.container().directory(await sdk.source_path()))
+            dag.generated_code(sdk.container().directory(await sdk.context_dir_path()))
             .with_vcs_generated_paths(["sdk/**"])
             .with_vcs_ignored_paths(["sdk"])
         )

@@ -1,0 +1,41 @@
+name: dagger
+on:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Test
+        uses: dagger/dagger-for-github@v6
+        with:
+          version: "latest"
+          verb: call
+          module: github.com/kpenfound/dagger-modules/golang@v0.2.0
+          args: test --source=.
+          # assumes the Dagger Cloud token is in
+          # a repository secret named DAGGER_CLOUD_TOKEN
+          # set via the GitHub UI/CLI
+          cloud-token: ${{ secrets.DAGGER_CLOUD_TOKEN }}
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Call Dagger Function
+        uses: dagger/dagger-for-github@v6
+        with:
+          version: "latest"
+          verb: call
+          module: github.com/kpenfound/dagger-modules/golang@v0.2.0
+          args: build-container --source=. --args=. publish --address=ttl.sh/my-app-$RANDOM
+          # assumes the Dagger Cloud token is in
+          # a repository secret named DAGGER_CLOUD_TOKEN
+          # set via the GitHub UI/CLI
+          cloud-token: ${{ secrets.DAGGER_CLOUD_TOKEN }}

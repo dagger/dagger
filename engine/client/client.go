@@ -349,6 +349,8 @@ func (c *Client) startSession(ctx context.Context) (rerr error) {
 		session.NewTunnelListenerAttachable(ctx, nil),
 		// terminal
 		session.NewTerminalAttachable(ctx, c.Params.WithTerminal),
+		// Git credentials
+		session.NewGitCredentialAttachable(ctx),
 	}
 	// filesync
 	if !c.DisableHostRW {

@@ -975,7 +975,7 @@ func (m *Test) Fn(ctx context.Context, sock *dagger.Socket) error {
 `), 0o644)
 		require.NoError(t, err)
 
-		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "init", "--source=.", "--name=test", "--sdk=go")
+		_, err = hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
 		require.NoError(t, err)
 
 		sockPath, cleanup := getHostSocket(t)
@@ -1018,7 +1018,7 @@ func (m *Dep) Fn(ctx context.Context, sock *dagger.Socket) error {
 `), 0o644)
 		require.NoError(t, err)
 
-		_, err = hostDaggerExec(ctx, t, depModDir, "--debug", "init", "--source=.", "--name=dep", "--sdk=go")
+		_, err = hostDaggerExec(ctx, t, depModDir, "init", "--source=.", "--name=dep", "--sdk=go")
 		require.NoError(t, err)
 
 		err = os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
@@ -1037,10 +1037,10 @@ func (m *Test) Fn(ctx context.Context, sock *dagger.Socket) error {
 `), 0o644)
 		require.NoError(t, err)
 
-		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "init", "--source=.", "--name=test", "--sdk=go")
+		_, err = hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
 		require.NoError(t, err)
 
-		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "install", depModDir)
+		_, err = hostDaggerExec(ctx, t, modDir, "install", depModDir)
 		require.NoError(t, err)
 
 		sockPath, cleanup := getHostSocket(t)
@@ -1079,7 +1079,7 @@ func (m *Dep) Fn(ctx context.Context, ctr *dagger.Container) error {
 `), 0o644)
 		require.NoError(t, err)
 
-		_, err = hostDaggerExec(ctx, t, depModDir, "--debug", "init", "--source=.", "--name=dep", "--sdk=go")
+		_, err = hostDaggerExec(ctx, t, depModDir, "init", "--source=.", "--name=dep", "--sdk=go")
 		require.NoError(t, err)
 
 		err = os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
@@ -1103,10 +1103,10 @@ func (m *Test) Fn(ctx context.Context, sock *dagger.Socket) error {
 `), 0o644)
 		require.NoError(t, err)
 
-		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "init", "--source=.", "--name=test", "--sdk=go")
+		_, err = hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
 		require.NoError(t, err)
 
-		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "install", depModDir)
+		_, err = hostDaggerExec(ctx, t, modDir, "install", depModDir)
 		require.NoError(t, err)
 
 		sockPath, cleanup := getHostSocket(t)
@@ -1140,7 +1140,7 @@ func (m *Dep) Fn(ctr *dagger.Container, sock *dagger.Socket) *dagger.Container {
 `), 0o644)
 		require.NoError(t, err)
 
-		_, err = hostDaggerExec(ctx, t, depModDir, "--debug", "init", "--source=.", "--name=dep", "--sdk=go")
+		_, err = hostDaggerExec(ctx, t, depModDir, "init", "--source=.", "--name=dep", "--sdk=go")
 		require.NoError(t, err)
 
 		err = os.WriteFile(filepath.Join(modDir, "main.go"), []byte(`package main
@@ -1171,10 +1171,10 @@ func (m *Test) Fn(ctx context.Context, sock *dagger.Socket) error {
 `), 0o644)
 		require.NoError(t, err)
 
-		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "init", "--source=.", "--name=test", "--sdk=go")
+		_, err = hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
 		require.NoError(t, err)
 
-		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "install", depModDir)
+		_, err = hostDaggerExec(ctx, t, modDir, "install", depModDir)
 		require.NoError(t, err)
 
 		sockPath, cleanup := getHostSocket(t)
@@ -1296,7 +1296,7 @@ func (m *Test) Fn(ctx context.Context, sockPath string, runContainerQuery string
 `), 0o644)
 		require.NoError(t, err)
 
-		_, err = hostDaggerExec(ctx, t, modDir, "--debug", "init", "--source=.", "--name=test", "--sdk=go")
+		_, err = hostDaggerExec(ctx, t, modDir, "init", "--source=.", "--name=test", "--sdk=go")
 		require.NoError(t, err)
 
 		sockPath, cleanup := getHostSocket(t)

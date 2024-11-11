@@ -1,0 +1,13 @@
+{
+  "name": "daggerverse",
+  "sdk": "go",
+  "dependencies": [
+    {
+      "name": "gh",
+      "source": "github.com/sagikazarmark/daggerverse/gh",
+      "pin": "68e9daa611183f5334b4059bac6f4aad62da7a37"
+    }
+  ],
+  "source": ".",
+  "engineVersion": "v0.13.6"
+}

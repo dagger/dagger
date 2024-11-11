@@ -645,11 +645,6 @@ type Container {
     sources: [FileID!]!
   ): Container!
 
-  """
-  Indicate that subsequent operations should be featured more prominently in the UI.
-  """
-  withFocus: Container!
-
   """Retrieves this container plus the given label."""
   withLabel(
     """The name of the label (e.g., "org.opencontainers.artifact.created")."""
@@ -890,13 +885,6 @@ type Container {
     paths: [String!]!
   ): Container!
 
-  """
-  Indicate that subsequent operations should not be featured more prominently in the UI.
-  
-  This is the initial state of all containers.
-  """
-  withoutFocus: Container!
-
   """Retrieves this container minus the given environment label."""
   withoutLabel(
     """
@@ -1120,97 +1108,6 @@ type CurrentModule {
 The `CurrentModuleID` scalar type represents an identifier for an object of type CurrentModule.
 """
 scalar CurrentModuleID
-
-"""The Dagger engine configuration and state"""
-type DaggerEngine {
-  """A unique identifier for this DaggerEngine."""
-  id: DaggerEngineID!
-
-  """The local (on-disk) cache for the Dagger engine"""
-  localCache: DaggerEngineCache!
-}
-
-"""A cache storage for the Dagger engine"""
-type DaggerEngineCache {
-  """The current set of entries in the cache"""
-  entrySet: DaggerEngineCacheEntrySet!
-
-  """A unique identifier for this DaggerEngineCache."""
-  id: DaggerEngineCacheID!
-
-  """
-  The maximum bytes to keep in the cache without pruning, after which automatic pruning may kick in.
-  """
-  keepBytes: Int! @deprecated(reason: "Use minFreeSpace instead.")
-
-  """The maximum bytes to keep in the cache without pruning."""
-  maxUsedSpace: Int!
-
-  """
-  The target amount of free disk space the garbage collector will attempt to leave.
-  """
-  minFreeSpace: Int!
-
-  """Prune the cache of releaseable entries"""
-  prune: Void
-  reservedSpace: Int!
-}
-
-"""An individual cache entry in a cache entry set"""
-type DaggerEngineCacheEntry {
-  """Whether the cache entry is actively being used."""
-  activelyUsed: Boolean!
-
-  """The time the cache entry was created, in Unix nanoseconds."""
-  createdTimeUnixNano: Int!
-
-  """The description of the cache entry."""
-  description: String!
-
-  """The disk space used by the cache entry."""
-  diskSpaceBytes: Int!
-
-  """A unique identifier for this DaggerEngineCacheEntry."""
-  id: DaggerEngineCacheEntryID!
-
-  """The most recent time the cache entry was used, in Unix nanoseconds."""
-  mostRecentUseTimeUnixNano: Int!
-}
-
-"""
-The `DaggerEngineCacheEntryID` scalar type represents an identifier for an object of type DaggerEngineCacheEntry.
-"""
-scalar DaggerEngineCacheEntryID
-
-"""A set of cache entries returned by a query to a cache"""
-type DaggerEngineCacheEntrySet {
-  """The total disk space used by the cache entries in this set."""
-  diskSpaceBytes: Int!
-
-  """The list of individual cache entries in the set"""
-  entries: [DaggerEngineCacheEntry!]!
-
-  """The number of cache entries in this set."""
-  entryCount: Int!
-
-  """A unique identifier for this DaggerEngineCacheEntrySet."""
-  id: DaggerEngineCacheEntrySetID!
-}
-
-"""
-The `DaggerEngineCacheEntrySetID` scalar type represents an identifier for an object of type DaggerEngineCacheEntrySet.
-"""
-scalar DaggerEngineCacheEntrySetID
-
-"""
-The `DaggerEngineCacheID` scalar type represents an identifier for an object of type DaggerEngineCache.
-"""
-scalar DaggerEngineCacheID
-
-"""
-The `DaggerEngineID` scalar type represents an identifier for an object of type DaggerEngine.
-"""
-scalar DaggerEngineID
 
 """A directory."""
 type Directory {
@@ -1448,6 +1345,97 @@ The `DirectoryID` scalar type represents an identifier for an object of type Dir
 """
 scalar DirectoryID
 
+"""The Dagger engine configuration and state"""
+type Engine {
+  """A unique identifier for this Engine."""
+  id: EngineID!
+
+  """The local (on-disk) cache for the Dagger engine"""
+  localCache: EngineCache!
+}
+
+"""A cache storage for the Dagger engine"""
+type EngineCache {
+  """The current set of entries in the cache"""
+  entrySet: EngineCacheEntrySet!
+
+  """A unique identifier for this EngineCache."""
+  id: EngineCacheID!
+
+  """
+  The maximum bytes to keep in the cache without pruning, after which automatic pruning may kick in.
+  """
+  keepBytes: Int! @deprecated(reason: "Use minFreeSpace instead.")
+
+  """The maximum bytes to keep in the cache without pruning."""
+  maxUsedSpace: Int!
+
+  """
+  The target amount of free disk space the garbage collector will attempt to leave.
+  """
+  minFreeSpace: Int!
+
+  """Prune the cache of releaseable entries"""
+  prune: Void
+  reservedSpace: Int!
+}
+
+"""An individual cache entry in a cache entry set"""
+type EngineCacheEntry {
+  """Whether the cache entry is actively being used."""
+  activelyUsed: Boolean!
+
+  """The time the cache entry was created, in Unix nanoseconds."""
+  createdTimeUnixNano: Int!
+
+  """The description of the cache entry."""
+  description: String!
+
+  """The disk space used by the cache entry."""
+  diskSpaceBytes: Int!
+
+  """A unique identifier for this EngineCacheEntry."""
+  id: EngineCacheEntryID!
+
+  """The most recent time the cache entry was used, in Unix nanoseconds."""
+  mostRecentUseTimeUnixNano: Int!
+}
+
+"""
+The `EngineCacheEntryID` scalar type represents an identifier for an object of type EngineCacheEntry.
+"""
+scalar EngineCacheEntryID
+
+"""A set of cache entries returned by a query to a cache"""
+type EngineCacheEntrySet {
+  """The total disk space used by the cache entries in this set."""
+  diskSpaceBytes: Int!
+
+  """The list of individual cache entries in the set"""
+  entries: [EngineCacheEntry!]!
+
+  """The number of cache entries in this set."""
+  entryCount: Int!
+
+  """A unique identifier for this EngineCacheEntrySet."""
+  id: EngineCacheEntrySetID!
+}
+
+"""
+The `EngineCacheEntrySetID` scalar type represents an identifier for an object of type EngineCacheEntrySet.
+"""
+scalar EngineCacheEntrySetID
+
+"""
+The `EngineCacheID` scalar type represents an identifier for an object of type EngineCache.
+"""
+scalar EngineCacheID
+
+"""
+The `EngineID` scalar type represents an identifier for an object of type Engine.
+"""
+scalar EngineID
+
 """A definition of a custom enum defined in a Module."""
 type EnumTypeDef {
   """A doc string for the enum, if any."""
@@ -1512,19 +1500,6 @@ type EnvVariable {
 The `EnvVariableID` scalar type represents an identifier for an object of type EnvVariable.
 """
 scalar EnvVariableID
-
-type Error {
-  """A unique identifier for this Error."""
-  id: ErrorID!
-
-  """A description of the error."""
-  message: String!
-}
-
-"""
-The `ErrorID` scalar type represents an identifier for an object of type Error.
-"""
-scalar ErrorID
 
 """
 A definition of a field on a custom object defined in a Module.
@@ -1747,12 +1722,6 @@ type FunctionCall {
   top-level to the module, this is the name of the module.
   """
   parentName: String!
-
-  """Return an error from the function."""
-  returnError(
-    """The error to return."""
-    error: ErrorID!
-  ): Void
 
   """Set the return value of the function call to the provided value."""
   returnValue(
@@ -2616,20 +2585,14 @@ type Query {
   """
   currentTypeDefs: [TypeDef!]!
 
-  """The Dagger engine container configuration and state"""
-  daggerEngine: DaggerEngine!
-
   """The default platform of the engine."""
   defaultPlatform: Platform!
 
   """Creates an empty directory."""
   directory: Directory!
 
-  """Create a new error."""
-  error(
-    """A brief description of the error."""
-    message: String!
-  ): Error!
+  """The Dagger engine container configuration and state"""
+  engine: Engine!
 
   """Creates a function."""
   function(
@@ -2692,20 +2655,20 @@ type Query {
   """Load a CurrentModule from its ID."""
   loadCurrentModuleFromID(id: CurrentModuleID!): CurrentModule!
 
-  """Load a DaggerEngineCacheEntry from its ID."""
-  loadDaggerEngineCacheEntryFromID(id: DaggerEngineCacheEntryID!): DaggerEngineCacheEntry!
-
-  """Load a DaggerEngineCacheEntrySet from its ID."""
-  loadDaggerEngineCacheEntrySetFromID(id: DaggerEngineCacheEntrySetID!): DaggerEngineCacheEntrySet!
-
-  """Load a DaggerEngineCache from its ID."""
-  loadDaggerEngineCacheFromID(id: DaggerEngineCacheID!): DaggerEngineCache!
-
-  """Load a DaggerEngine from its ID."""
-  loadDaggerEngineFromID(id: DaggerEngineID!): DaggerEngine!
-
   """Load a Directory from its ID."""
   loadDirectoryFromID(id: DirectoryID!): Directory!
+
+  """Load a EngineCacheEntry from its ID."""
+  loadEngineCacheEntryFromID(id: EngineCacheEntryID!): EngineCacheEntry!
+
+  """Load a EngineCacheEntrySet from its ID."""
+  loadEngineCacheEntrySetFromID(id: EngineCacheEntrySetID!): EngineCacheEntrySet!
+
+  """Load a EngineCache from its ID."""
+  loadEngineCacheFromID(id: EngineCacheID!): EngineCache!
+
+  """Load a Engine from its ID."""
+  loadEngineFromID(id: EngineID!): Engine!
 
   """Load a EnumTypeDef from its ID."""
   loadEnumTypeDefFromID(id: EnumTypeDefID!): EnumTypeDef!
@@ -2715,9 +2678,6 @@ type Query {
 
   """Load a EnvVariable from its ID."""
   loadEnvVariableFromID(id: EnvVariableID!): EnvVariable!
-
-  """Load a Error from its ID."""
-  loadErrorFromID(id: ErrorID!): Error!
 
   """Load a FieldTypeDef from its ID."""
   loadFieldTypeDefFromID(id: FieldTypeDefID!): FieldTypeDef!

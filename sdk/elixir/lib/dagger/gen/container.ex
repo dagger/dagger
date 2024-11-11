@@ -724,18 +724,6 @@ defmodule Dagger.Container do
     }
   end
 
-  @doc "Indicate that subsequent operations should be featured more prominently in the UI."
-  @spec with_focus(t()) :: Dagger.Container.t()
-  def with_focus(%__MODULE__{} = container) do
-    query_builder =
-      container.query_builder |> QB.select("withFocus")
-
-    %Dagger.Container{
-      query_builder: query_builder,
-      client: container.client
-    }
-  end
-
   @doc "Retrieves this container plus the given label."
   @spec with_label(t(), String.t(), String.t()) :: Dagger.Container.t()
   def with_label(%__MODULE__{} = container, name, value) do
@@ -1095,22 +1083,6 @@ defmodule Dagger.Container do
       |> QB.select("withoutFiles")
       |> QB.put_arg("paths", paths)
       |> QB.maybe_put_arg("expand", optional_args[:expand])
-
-    %Dagger.Container{
-      query_builder: query_builder,
-      client: container.client
-    }
-  end
-
-  @doc """
-  Indicate that subsequent operations should not be featured more prominently in the UI.
-
-  This is the initial state of all containers.
-  """
-  @spec without_focus(t()) :: Dagger.Container.t()
-  def without_focus(%__MODULE__{} = container) do
-    query_builder =
-      container.query_builder |> QB.select("withoutFocus")
 
     %Dagger.Container{
       query_builder: query_builder,

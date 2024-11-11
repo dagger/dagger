@@ -562,7 +562,7 @@ func (m *Test) Greet(ctx context.Context) (string, error) {
 		).
 		WithWorkdir("/work/dep").
 		With(daggerExec("init", "--name=dep", "--sdk=python")).
-		With(sdkSource("python", `import dagger
+		With(fileContents("src/dep/__init__.py", `import dagger
 
 @dagger.object_type
 class Dep:
@@ -708,4 +708,29 @@ func (m *Test) NewProto(proto dagger.NetworkProtocol) dagger.NetworkProtocol {
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "UDP")
+}
+
+func (LegacySuite) TestContainerWithFocus(ctx context.Context, t *testctx.T) {
+	// Changed in dagger/dagger#8647
+	//
+	// Ensure that the old schemas still have withFocus/withoutFocus.
+
+	var res any
+	err := testutil.Query(t,
+		`{
+			container {
+				from(address: "alpine") {
+					withFocus {
+						withoutFocus {
+							withExec(args: ["echo", "hello world"]) {
+								sync
+							}
+						}
+					}
+				}
+			}
+		}`, &res, &testutil.QueryOptions{
+			Version: "v0.13.3",
+		})
+	require.NoError(t, err)
 }

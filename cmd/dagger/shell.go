@@ -11,8 +11,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
-	"text/tabwriter"
 
 	"dagger.io/dagger"
 	"dagger.io/dagger/querybuilder"
@@ -21,6 +22,8 @@ import (
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/mattn/go-isatty"
+	"github.com/muesli/reflow/indent"
+	"github.com/muesli/reflow/wordwrap"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"go.opentelemetry.io/otel/codes"
@@ -28,16 +31,37 @@ import (
 	"mvdan.cc/sh/v3/syntax"
 )
 
+const (
+	// shellStatePrefix is the prefix that identifies a shell state in input/output
+	shellStatePrefix = "DSH:"
+	helpIndent       = uint(2)
+	shellHandlerExit = 200
+)
+
+var coreGroup = &cobra.Group{
+	ID:    "core",
+	Title: "Dagger Core Commands",
+}
+
+var shellGroups = []*cobra.Group{
+	moduleGroup,
+	coreGroup,
+	cloudGroup,
+	{
+		ID:    "",
+		Title: "Additional Commands",
+	},
+}
+
 // shellCode is the code to be executed in the shell command
-var shellCode string
-
-// shellStatePrefix is the prefix that identifies a shell state in input/output
-const shellStatePrefix = "DSH:"
-
-const shellHandlerExit = 200
+var (
+	shellCode         string
+	shellNoLoadModule bool
+)
 
 func init() {
 	shellCmd.Flags().StringVarP(&shellCode, "code", "c", "", "command to be executed")
+	shellCmd.Flags().BoolVar(&shellNoLoadModule, "no-load", false, "don't load module during shell startup")
 }
 
 var shellCmd = &cobra.Command{
@@ -46,17 +70,8 @@ var shellCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return withEngine(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
 			dag := engineClient.Dagger()
-			// TODO: this should be moved into the handler to avoid the unnecessary
-			// work on certain cases (e.g., the .help builtin), but also probably
-			// needs to be scoped by module when we support calling from a dependency,
-			// since its types are different.
-			modDef, err := initializeModule(ctx, dag, true)
-			if err != nil {
-				return fmt.Errorf("error initializing module: %w", err)
-			}
 			handler := &shellCallHandler{
 				dag:    dag,
-				mod:    modDef,
 				stdin:  cmd.InOrStdin(),
 				stdout: cmd.OutOrStdout(),
 				stderr: cmd.ErrOrStderr(),
@@ -98,6 +113,8 @@ type shellCallHandler struct {
 	// debug writes to the handler context's stderr what the arguments, input,
 	// and output are for each command that the exec handler processes
 	debug bool
+
+	builtins []*ShellCommand
 }
 
 // RunAll is the entry point for the shell command
@@ -125,21 +142,18 @@ func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
 		// slightly in order to resolve naming conflicts. For example, "echo"
 		// is an interpreter builtin but can also be a Dagger function.
 		interp.CallHandler(func(ctx context.Context, args []string) ([]string, error) {
-			if isFirstShellCommand(ctx) {
-				// When there's a Dagger function with a name that conflicts
-				// with an interpreter builtin, the Dagger function is favored.
-				// To force the builtin to execute instead, prefix the command
-				// with "..". For example: "container | from $(..echo alpine)".
-				if strings.HasPrefix(args[0], "..") {
-					args[0] = strings.TrimPrefix(args[0], "..")
-					return args, nil
-				}
-				// If the command is an interpreter builtin but has a matching
-				// module or core function, prepend `.dag` to bypass interpreter
-				// builtins ensure the exec handler is executed.
-				if isInterpBuiltin(args[0]) && (h.mod.HasFunction(args[0]) || h.mod.HasCoreFunction(args[0])) {
-					return append([]string{".dag"}, args...), nil
-				}
+			// When there's a Dagger function with a name that conflicts
+			// with an interpreter builtin, the Dagger function is favored.
+			// To force the builtin to execute instead, prefix the command
+			// with "..". For example: "container | from $(..echo alpine)".
+			if strings.HasPrefix(args[0], "..") {
+				args[0] = strings.TrimPrefix(args[0], "..")
+				return args, nil
+			}
+			// If the command is an interpreter builtin, bypass the interpreter
+			// builtins to ensure the exec handler is executed.
+			if isInterpBuiltin(args[0]) {
+				return append([]string{".dag"}, args...), nil
 			}
 			return args, nil
 		}),
@@ -149,6 +163,19 @@ func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
 		return err
 	}
 	h.runner = r
+
+	var modDef *moduleDef
+	if shellNoLoadModule {
+		modDef, err = initializeCore(ctx, h.dag)
+	} else {
+		modRef, _ := getExplicitModuleSourceRef()
+		modDef, err = maybeInitializeModule(ctx, h.dag, modRef, true)
+	}
+	if err != nil {
+		return err
+	}
+	h.mod = modDef
+	h.registerBuiltins()
 
 	// Example: `dagger shell -c 'container | workdir'`
 	if shellCode != "" {
@@ -272,7 +299,7 @@ func (h *shellCallHandler) runPath(ctx context.Context, path string) error {
 // runInteractive executes the runner on a REPL (Read-Eval-Print Loop)
 func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 	h.withTerminal(func(_ io.Reader, _, stderr io.Writer) error {
-		fmt.Fprintln(stderr, `Dagger interactive shell. Type ".help" for more information.`)
+		fmt.Fprintln(stderr, `Dagger interactive shell. Type ".help" for more information. Press Ctrl+D to exit.`)
 		return nil
 	})
 
@@ -353,6 +380,25 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 	return nil
 }
 
+func loadReadlineConfig() (*readline.Config, error) {
+	dataRoot := filepath.Join(xdg.DataHome, "dagger")
+	err := os.MkdirAll(dataRoot, 0o700)
+	if err != nil {
+		return nil, err
+	}
+
+	return &readline.Config{
+		// We need a prompt that conveys the unique nature of the Dagger shell. Per gpt4:
+		// The ⋈ symbol, known as the bowtie, has deep roots in relational databases and set theory,
+		// where it denotes a join operation. This makes it especially fitting for a DAG environment,
+		// as it suggests the idea of dependencies, intersections, and points where separate paths
+		// or data sets come together.
+		Prompt:       "⋈ ",
+		HistoryFile:  filepath.Join(dataRoot, "histfile"),
+		HistoryLimit: 1000,
+	}, nil
+}
+
 // withTerminal handles using stdin, stdout, and stderr when the TUI is runnin
 func (h *shellCallHandler) withTerminal(fn func(stdin io.Reader, stdout, stderr io.Writer) error) error {
 	if h.term {
@@ -409,11 +455,14 @@ func (h *shellCallHandler) cmd(ctx context.Context, args []string) error {
 	var st *ShellState
 	var err error
 
+	builtin, err := h.BuiltinCommand(args[0])
+	if err != nil {
+		return err
+	}
+
 	if isFirstShellCommand(ctx) {
-		// Our builtin commands start with a period, but should only be the
-		// first command in a pipeline.
-		if len(args[0]) > 1 && strings.HasPrefix(args[0], ".") {
-			return h.Builtin(ctx, args)
+		if builtin != nil {
+			return builtin.Execute(ctx, args[1:], nil)
 		}
 		st, err = h.entrypointCall(ctx, args)
 		if err != nil {
@@ -437,6 +486,10 @@ func (h *shellCallHandler) cmd(ctx context.Context, args []string) error {
 		shellLogf(ctx, "[DBG] IN(%v): %v\n", args, st)
 	}
 
+	if builtin != nil {
+		return builtin.Execute(ctx, args[1:], st)
+	}
+
 	st, err = h.functionCall(ctx, st, args[0], args[1:])
 	if err != nil {
 		return err
@@ -456,7 +509,8 @@ func (h *shellCallHandler) entrypointCall(ctx context.Context, args []string) (*
 	}
 
 	// 1. Same-module call (eg. 'build')
-	if h.mod.HasFunction(args[0]) {
+	//
+	if h.IsModuleLoaded() && h.mod.HasFunction(h.mod.MainObject.AsFunctionProvider(), args[0]) {
 		fn := h.mod.MainObject.AsObject.Constructor
 		expected := len(fn.RequiredArgs())
 		actual := len(h.cfg)
@@ -508,7 +562,7 @@ func (h *shellCallHandler) parseArgumentValues(ctx context.Context, fn *modFunct
 			break
 		}
 		if i >= len(req) {
-			return nil, fmt.Errorf("too many positional arguments: expected %d", len(req))
+			return nil, fmt.Errorf("accepts at most %d positional argument(s)", len(req))
 		}
 		pos = append(pos, "--"+req[i].FlagName(), arg)
 	}
@@ -588,7 +642,7 @@ func (h *shellCallHandler) parseArgumentValues(ctx context.Context, fn *modFunct
 
 	// Finally, get the values from the flags that haven't been resolved yet.
 	for _, a := range fn.Args {
-		if _, exists := values[a.Name]; exists || a.IsUnsupportedFlag() {
+		if _, exists := values[a.Name]; exists {
 			continue
 		}
 		flag, err := a.GetFlag(flags)
@@ -691,11 +745,6 @@ func shellLogf(ctx context.Context, msg string, args ...any) {
 	fmt.Fprintf(hctx.Stderr, msg, args...)
 }
 
-func shellWrite(ctx context.Context, msg string) {
-	hctx := interp.HandlerCtx(ctx)
-	fmt.Fprint(hctx.Stdout, msg)
-}
-
 // First command in pipeline: e.g., `cmd1 | cmd2 | cmd3`
 func isFirstShellCommand(ctx context.Context) bool {
 	return interp.HandlerCtx(ctx).Stdin == nil
@@ -754,8 +803,8 @@ type ShellState struct {
 	Error *string        `json:"error,omitempty"`
 }
 
-func (s ShellState) IsError() bool {
-	return s.Error != nil
+func (st ShellState) IsError() bool {
+	return st.Error != nil
 }
 
 // FunctionCall represents a querybyilder.Selection
@@ -771,11 +820,11 @@ type FunctionCall struct {
 }
 
 // Write serializes the shell state to the current exec handler's stdout
-func (s ShellState) Write(ctx context.Context) error {
-	return s.WriteTo(interp.HandlerCtx(ctx).Stdout)
+func (st ShellState) Write(ctx context.Context) error {
+	return st.WriteTo(interp.HandlerCtx(ctx).Stdout)
 }
 
-func (s ShellState) WriteTo(w io.Writer) error {
+func (st ShellState) WriteTo(w io.Writer) error {
 	var buf bytes.Buffer
 
 	// Encode state in base64 to avoid issues with spaces being turned into
@@ -783,7 +832,7 @@ func (s ShellState) WriteTo(w io.Writer) error {
 	bEnc := base64.NewEncoder(base64.StdEncoding, &buf)
 	jEnc := json.NewEncoder(bEnc)
 
-	if err := jEnc.Encode(s); err != nil {
+	if err := jEnc.Encode(st); err != nil {
 		return err
 	}
 	if err := bEnc.Close(); err != nil {
@@ -797,21 +846,21 @@ func (s ShellState) WriteTo(w io.Writer) error {
 }
 
 // Function returns the last function in the chain, if not empty
-func (s ShellState) Function() FunctionCall {
-	if len(s.Calls) == 0 {
+func (st ShellState) Function() FunctionCall {
+	if len(st.Calls) == 0 {
 		// The first call is a field under Query.
 		return FunctionCall{
 			ReturnObject: "Query",
 		}
 	}
-	return s.Calls[len(s.Calls)-1]
+	return st.Calls[len(st.Calls)-1]
 }
 
 // WithCall returns a new state with the given function call added to the chain
-func (s ShellState) WithCall(fn *modFunction, argValues map[string]any) *ShellState {
-	prev := s.Function()
+func (st ShellState) WithCall(fn *modFunction, argValues map[string]any) *ShellState {
+	prev := st.Function()
 	return &ShellState{
-		Calls: append(s.Calls, FunctionCall{
+		Calls: append(st.Calls, FunctionCall{
 			Object:       prev.ReturnObject,
 			Name:         fn.Name,
 			ReturnObject: fn.ReturnType.Name(),
@@ -821,9 +870,9 @@ func (s ShellState) WithCall(fn *modFunction, argValues map[string]any) *ShellSt
 }
 
 // QueryBuilder returns a querybuilder.Selection from the shell state
-func (s ShellState) QueryBuilder(dag *dagger.Client) *querybuilder.Selection {
+func (st ShellState) QueryBuilder(dag *dagger.Client) *querybuilder.Selection {
 	q := querybuilder.Query().Client(dag.GraphQLClient())
-	for _, call := range s.Calls {
+	for _, call := range st.Calls {
 		q = q.Select(call.Name)
 		for n, v := range call.Arguments {
 			q = q.Arg(n, v)
@@ -832,173 +881,690 @@ func (s ShellState) QueryBuilder(dag *dagger.Client) *querybuilder.Selection {
 	return q
 }
 
+// GetTypeDef returns the introspection definition for the return type of the last function call
+func (st *ShellState) GetTypeDef(modDef *moduleDef) (*modTypeDef, error) {
+	fn, err := st.GetDef(modDef)
+	return fn.ReturnType, err
+}
+
+// GetDef returns the introspection definition for the last function call
+func (st *ShellState) GetDef(modDef *moduleDef) (*modFunction, error) {
+	if st == nil {
+		return modDef.MainObject.AsObject.Constructor, nil
+	}
+	return st.Function().GetDef(modDef)
+}
+
 // GetDef returns the introspection definition for this function call
 func (f FunctionCall) GetDef(modDef *moduleDef) (*modFunction, error) {
-	return modDef.GetObjectFunction(f.Object, f.Name)
+	return modDef.GetObjectFunction(f.Object, cliName(f.Name))
 }
 
 // GetNextDef returns the introspection definition for the next function call, based on
 // the current return type and name of the next function
 func (f FunctionCall) GetNextDef(modDef *moduleDef, name string) (*modFunction, error) {
 	if f.ReturnObject == "" {
-		return nil, fmt.Errorf("cannot chain %q after %q returning a non-object type", name, f.Name)
+		return nil, fmt.Errorf("cannot pipe %q after %q returning a non-object type", name, f.Name)
 	}
 	return modDef.GetObjectFunction(f.ReturnObject, name)
 }
 
-// Re-execute the dagger command (hack)
-func reexec(ctx context.Context, args []string) error {
-	hctx := interp.HandlerCtx(ctx)
-	cmd := exec.CommandContext(ctx, "dagger", args...)
-	cmd.Stdout = hctx.Stdout
-	cmd.Stderr = hctx.Stderr
-	cmd.Stdin = hctx.Stdin
-	return cmd.Run()
+// ShellCommand is a Dagger Shell builtin command
+type ShellCommand struct {
+	// Use is the one-line usage message.
+	Use string
+
+	// Short is the short description shown in the '.help' output.
+	Short string
+
+	// Expected arguments
+	Args PositionalArgs
+
+	// Run is the function that will be executed if it's the first command
+	// in the pipeline and RunState is not defined.
+	Run func(cmd *ShellCommand, args []string) error
+
+	// RunState is the function for executing a command that can be chained
+	// in a pipeline.
+	//
+	// If defined, it's always used, even if it's the first command in the
+	// pipeline. For commands that should only be the first, define `Run` instead.
+	RunState func(cmd *ShellCommand, args []string, st *ShellState) error
+
+	HelpFunc func(cmd *ShellCommand) string
+
+	// The group id under which this command is grouped in the '.help' output
+	GroupID string
+
+	// Hidden hides the command from `.help`.
+	Hidden bool
+
+	RequiresModule bool
+
+	ctx    context.Context
+	out    io.Writer
+	outErr io.Writer
 }
 
-// TODO: Some builtins may make sense only in certain cases, for example, only
-// when in interactive, or only as a first argument vs anywhere in the chain.
-func (h *shellCallHandler) Builtin(ctx context.Context, args []string) error {
-	if len(args) < 1 {
-		return fmt.Errorf("no specified builtin")
+// CleanName is the command name without the "." prefix.
+func (c *ShellCommand) CleanName() string {
+	return strings.TrimPrefix(c.Name(), ".")
+}
+
+// Name is the command name.
+func (c *ShellCommand) Name() string {
+	name := c.Use
+	i := strings.Index(name, " ")
+	if i >= 0 {
+		name = name[:i]
 	}
-	args[0] = strings.TrimPrefix(args[0], ".")
-	switch args[0] {
-	case "help":
-		shellWrite(ctx, `
-.config       set module constructor options
-.container    create a new container
-.core         load a core Dagger type
-.deps         list dependencies
-.directory    create a new directory
-.functions    list available functions
-.git          load a directory from a git URL
-.help         print this help message
-.http         download a file over http
-.install      install a dependency
-.login        login to Dagger Cloud
-.logout       logout from Dagger Cloud
-.uninstall    uninstall a dependency
-`[1:])
+	return name
+}
+
+func (c *ShellCommand) Help() string {
+	if c.HelpFunc != nil {
+		return c.HelpFunc(c)
+	}
+
+	var doc ShellDoc
+
+	if c.Short != "" {
+		doc.Add("", c.Short)
+	}
+
+	doc.Add("Usage", c.Use)
+
+	return doc.String()
+}
+
+func (c *ShellCommand) Print(a ...any) error {
+	_, err := fmt.Fprint(c.out, a...)
+	return err
+}
+
+func (c *ShellCommand) Println(a ...any) error {
+	_, err := fmt.Fprintln(c.out, a...)
+	return err
+}
+
+func (c *ShellCommand) Printf(format string, a ...any) error {
+	_, err := fmt.Fprintf(c.out, format, a...)
+	return err
+}
+
+func (c *ShellCommand) SetContext(ctx context.Context) {
+	c.ctx = ctx
+	c.out = interp.HandlerCtx(ctx).Stdout
+	c.outErr = interp.HandlerCtx(ctx).Stderr
+}
+
+func (c *ShellCommand) Context() context.Context {
+	return c.ctx
+}
+
+// Send writes the state to the command's stdout.
+func (c *ShellCommand) Send(st *ShellState) error {
+	return st.WriteTo(c.out)
+}
+
+func (c *ShellCommand) Printer() io.Writer {
+	return c.out
+}
+
+type PositionalArgs func(args []string) error
+
+func MinimumArgs(n int) PositionalArgs {
+	return func(args []string) error {
+		if len(args) < n {
+			return fmt.Errorf("requires at least %d arg(s), received %d", n, len(args))
+		}
 		return nil
-	case "git":
-		if len(args) < 2 {
-			return fmt.Errorf("usage: .git <url>")
-		}
-		gitURL, err := parseGitURL(args[1])
-		if err != nil {
-			return err
-		}
-		gitDir := makeGitDirectory(gitURL, h.dag)
+	}
+}
 
-		// It would be nice to get the querybuilder from `dagger.Directory`
-		// instance. That way we could return the object directly instead
-		// of via the ID.
-		id, err := gitDir.ID(ctx)
-		if err != nil {
-			return err
+func MaximumArgs(n int) PositionalArgs {
+	return func(args []string) error {
+		if len(args) > n {
+			return fmt.Errorf("accepts at most %d arg(s), received %d", n, len(args))
 		}
+		return nil
+	}
+}
 
-		core := ShellState{}
-
-		// Could use h.functionCall but this avoids passing the id through
-		// h.parseArgumentValues which adds unnecessary complication to
-		// bypass the flag parsing.
-		fn, err := core.Function().GetNextDef(h.mod, "load-directory-from-id")
-		if err != nil {
-			return err
+func ExactArgs(n int) PositionalArgs {
+	return func(args []string) error {
+		if len(args) < n {
+			return fmt.Errorf("missing %d positional argument(s)", n-len(args))
 		}
-
-		values := map[string]any{"id": string(id)}
-		return core.WithCall(fn, values).Write(ctx)
-
-	case "install", "uninstall":
-		if len(args) < 1 {
-			return fmt.Errorf("usage: .%s <module>", args[0])
+		if len(args) > n {
+			return fmt.Errorf("accepts at most %d positional argument(s), received %d", n, len(args))
 		}
-		return reexec(ctx, args)
-	case "login", "logout":
-		return reexec(ctx, args)
-	case "deps":
-		deps, err := h.mod.Source.AsModule().Dependencies(ctx)
-		if err != nil {
-			return err
+		return nil
+	}
+}
+
+func NoArgs(args []string) error {
+	if len(args) > 0 {
+		return fmt.Errorf("received unknown %d args", len(args))
+	}
+	return nil
+}
+
+func (c *ShellCommand) Execute(ctx context.Context, args []string, st *ShellState) error {
+	if st != nil && c.RunState == nil {
+		return fmt.Errorf("command %q cannot be chained", c.Name())
+	}
+	if c.Args != nil {
+		if err := c.Args(args); err != nil {
+			return fmt.Errorf("command %q %w\nusage: %s", c.Name(), err, c.Use)
 		}
-		w := tabwriter.NewWriter(interp.HandlerCtx(ctx).Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "NAME\tDESCRIPTION")
-		fmt.Fprintln(w, " \t ")
-		for _, dep := range deps {
-			name, err := dep.Name(ctx)
-			if err != nil {
-				return err
+	}
+	c.SetContext(ctx)
+	if c.RunState != nil {
+		return c.RunState(c, args, st)
+	}
+	return c.Run(c, args)
+}
+
+func (h *shellCallHandler) functionUseLine(fp functionProvider, fn *modFunction) string {
+	sb := new(strings.Builder)
+
+	if fp != nil && fp.ProviderName() == "Query" && h.mod.HasFunction(fp, fn.CmdName()) {
+		sb.WriteString(".")
+	}
+
+	sb.WriteString(fn.CmdName())
+
+	for _, arg := range fn.RequiredArgs() {
+		sb.WriteString(" <")
+		sb.WriteString(arg.FlagName())
+		sb.WriteString(">")
+	}
+
+	if len(fn.OptionalArgs()) > 0 {
+		sb.WriteString(" [options]")
+	}
+
+	return sb.String()
+}
+
+func (h *shellCallHandler) HasBuiltin(name string) bool {
+	return h.getBuiltin(name) != nil
+}
+
+func (h *shellCallHandler) getBuiltin(name string) *ShellCommand {
+	for _, c := range h.builtins {
+		if c.RequiresModule && !h.IsModuleLoaded() {
+			continue
+		}
+		if c.Name() == name {
+			return c
+		}
+	}
+	return nil
+}
+
+func (h *shellCallHandler) BuiltinCommand(name string) (*ShellCommand, error) {
+	if !strings.HasPrefix(name, ".") {
+		return nil, nil
+	}
+	cmd := h.getBuiltin(name)
+	if cmd == nil {
+		return nil, fmt.Errorf("no such command %q", name)
+	}
+	return cmd, nil
+}
+
+func (h *shellCallHandler) GroupBuiltins(groupID string) []*ShellCommand {
+	l := make([]*ShellCommand, 0, len(h.builtins))
+	for _, c := range h.Builtins() {
+		if c.GroupID == groupID {
+			l = append(l, c)
+		}
+	}
+	return l
+}
+
+func (h *shellCallHandler) Builtins() []*ShellCommand {
+	l := make([]*ShellCommand, 0, len(h.builtins))
+	for _, c := range h.builtins {
+		if c.RequiresModule && !h.IsModuleLoaded() {
+			continue
+		}
+		if !c.Hidden {
+			l = append(l, c)
+		}
+	}
+	return l
+}
+
+func (h *shellCallHandler) addBuiltin(cmds ...*ShellCommand) {
+	h.builtins = append(h.builtins, cmds...)
+}
+
+type ShellDoc struct {
+	Groups []ShellDocSection
+}
+
+type ShellDocSection struct {
+	Title string
+	Body  string
+}
+
+func (d *ShellDoc) Add(title, body string) {
+	d.Groups = append(d.Groups, ShellDocSection{Title: title, Body: body})
+}
+
+func (d ShellDoc) String() string {
+	width := getViewWidth()
+
+	sb := new(strings.Builder)
+	for i, grp := range d.Groups {
+		body := grp.Body
+
+		if grp.Title != "" {
+			sb.WriteString(toUpperBold(grp.Title))
+			sb.WriteString("\n")
+
+			// Pad body if there's a title
+			if !strings.HasPrefix(body, strings.Repeat(" ", int(helpIndent))) {
+				wrapped := wordwrap.String(grp.Body, width-int(helpIndent))
+				body = indent.String(wrapped, helpIndent)
 			}
-			desc, err := dep.Description(ctx)
-			if err != nil {
-				return err
-			}
-			shortDesc := strings.SplitN(desc, "\n", 2)[0]
-			fmt.Fprintf(w, "%s\t%s\n", name, shortDesc)
 		}
-		return w.Flush()
+		sb.WriteString(body)
+		if !strings.HasSuffix(body, "\n") {
+			sb.WriteString("\n")
+		}
+		// Extra new line between groups
+		if i < len(d.Groups)-1 {
+			sb.WriteString("\n")
+		}
+	}
+	return sb.String()
+}
 
-	case "core":
-		if len(args) < 2 {
-			return functionListRun(
-				h.mod.GetFunctionProvider("Query"),
-				interp.HandlerCtx(ctx).Stdout,
-				false,
+func (h *shellCallHandler) FunctionDoc(fp functionProvider, fn *modFunction) string {
+	var doc ShellDoc
+
+	if fn.Description != "" {
+		doc.Add("", fn.Description)
+	}
+
+	usage := h.functionUseLine(fp, fn)
+	if usage != "" {
+		doc.Add("Usage", usage)
+	}
+
+	if args := fn.RequiredArgs(); len(args) > 0 {
+		doc.Add(
+			"Required Arguments",
+			nameShortWrapped(args, func(a *modFunctionArg) (string, string) {
+				return strings.TrimPrefix(a.Usage(), "--"), a.Long()
+			}),
+		)
+	}
+
+	if args := fn.OptionalArgs(); len(args) > 0 {
+		doc.Add(
+			"Optional Arguments",
+			nameShortWrapped(args, func(a *modFunctionArg) (string, string) {
+				return a.Usage(), a.Long()
+			}),
+		)
+	}
+
+	if rettype := fn.ReturnType.Short(); rettype != "" {
+		doc.Add("Returns", rettype)
+	}
+
+	if fn.ReturnType.AsFunctionProvider() != nil {
+		usage := strings.TrimSuffix(usage, " [options]")
+		usage += " | .doc"
+		doc.Add("", fmt.Sprintf("Use %q for available functions.", usage))
+	}
+
+	return doc.String()
+}
+
+func (h *shellCallHandler) TypeDoc(t *modTypeDef) string {
+	var doc ShellDoc
+
+	doc.Add("Type: "+t.KindDisplay(), t.Long())
+
+	fp := t.AsFunctionProvider()
+	if fp == nil {
+		// If not an object, only have the type to show.
+		return doc.String()
+	}
+
+	// The module constructor creates the main object instance
+	if !fp.IsCore() && fp.ProviderName() == h.mod.MainObject.Name() {
+		fn := h.mod.MainObject.AsObject.Constructor
+
+		var constructor string
+		if len(fn.Args) > 0 {
+			constructor = ".config" + strings.TrimPrefix(h.functionUseLine(fp, fn), fn.CmdName())
+		}
+		if fn.Description != "" {
+			constructor += "\n\n" + fn.Description
+		}
+		if constructor != "" {
+			doc.Add("Constructor", constructor)
+		}
+		if args := fn.RequiredArgs(); len(args) > 0 {
+			doc.Add(
+				"Required Arguments",
+				nameShortWrapped(args, func(a *modFunctionArg) (string, string) {
+					return strings.TrimPrefix(a.Usage(), "--"), a.Long()
+				}),
 			)
 		}
-		s := &ShellState{}
-		s, err := h.functionCall(ctx, s, args[1], args[2:])
-		if err != nil {
-			return err
+		if args := fn.OptionalArgs(); len(args) > 0 {
+			doc.Add(
+				"Optional Arguments",
+				nameShortWrapped(args, func(a *modFunctionArg) (string, string) {
+					return a.Usage(), a.Long()
+				}),
+			)
 		}
-		return s.Write(ctx)
-	case "container", "directory", "http":
-		s := &ShellState{}
-		s, err := h.functionCall(ctx, s, args[0], args[1:])
-		if err != nil {
-			return err
-		}
-		return s.Write(ctx)
-	case "config":
-		if len(args) < 2 {
-			return fmt.Errorf("usage: .config [options]")
-		}
-		cfg, err := h.parseArgumentValues(ctx, h.mod.MainObject.AsObject.Constructor, args[1:])
-		if err != nil {
-			return err
-		}
-		h.cfg = cfg
-		return nil
-
-	case "functions":
-		return functionListRun(
-			h.mod.MainObject.AsFunctionProvider(),
-			interp.HandlerCtx(ctx).Stdout,
-			false,
-		)
-	case "debug":
-		// Toggles debug mode, which can be useful when in interactive mode
-		h.debug = !h.debug
-		return nil
-
-	default:
-		return fmt.Errorf("no such command: %s", args[0])
 	}
+
+	if fns := fp.GetFunctions(); len(fns) > 0 {
+		doc.Add(
+			"Available Functions",
+			nameShortWrapped(fns, func(f *modFunction) (string, string) {
+				return f.CmdName(), f.Short()
+			}),
+		)
+
+		usage := ".doc <function>"
+		doc.Add("", fmt.Sprintf("Use %q for more information on a function.\n", usage))
+	}
+
+	return doc.String()
 }
 
-func loadReadlineConfig() (*readline.Config, error) {
-	dataRoot := filepath.Join(xdg.DataHome, "dagger")
-	err := os.MkdirAll(dataRoot, 0o700)
-	if err != nil {
-		return nil, err
+func (h *shellCallHandler) IsModuleLoaded() bool {
+	return h.mod.MainObject.Name() != "Query"
+}
+
+func (h *shellCallHandler) registerBuiltins() { //nolint: gocyclo
+	h.addBuiltin(
+		&ShellCommand{
+			Use:    ".debug",
+			Hidden: true,
+			Args:   NoArgs,
+			Run: func(cmd *ShellCommand, args []string) error {
+				// Toggles debug mode, which can be useful when in interactive mode
+				h.debug = !h.debug
+				return nil
+			},
+		},
+		&ShellCommand{
+			Use:   ".help [command]",
+			Short: "Print this help message",
+			Args:  MaximumArgs(1),
+			Run: func(cmd *ShellCommand, args []string) error {
+				if len(args) == 1 {
+					c, err := h.BuiltinCommand(args[0])
+					if err != nil {
+						return err
+					}
+					if c == nil {
+						if !strings.HasPrefix(args[0], ".") && h.HasBuiltin("."+args[0]) {
+							return fmt.Errorf("no such command %q, did you mean %q?", args[0], "."+args[0])
+						}
+						return fmt.Errorf("no such command %q", args[0])
+					}
+					return cmd.Println(c.Help())
+				}
+
+				var doc ShellDoc
+
+				for _, group := range shellGroups {
+					cmds := h.GroupBuiltins(group.ID)
+					if len(cmds) == 0 {
+						continue
+					}
+					doc.Add(
+						group.Title,
+						nameShortWrapped(cmds, func(c *ShellCommand) (string, string) {
+							return c.Name(), c.Short
+						}),
+					)
+				}
+
+				doc.Add("", `Use ".help <command>" for more information.`)
+
+				return cmd.Println(doc.String())
+			},
+		},
+		&ShellCommand{
+			Use:   ".doc [function]",
+			Short: "Show documentation for a type, or a function",
+			Args:  MaximumArgs(1),
+			RunState: func(cmd *ShellCommand, args []string, st *ShellState) error {
+				if st == nil && !h.IsModuleLoaded() {
+					return fmt.Errorf(`module not loaded, use ".load" to load it or ".help" for core functions`)
+				}
+
+				t, err := st.GetTypeDef(h.mod)
+				if err != nil {
+					return err
+				}
+
+				if len(args) == 0 {
+					return cmd.Println(h.TypeDoc(t))
+				}
+
+				fp := t.AsFunctionProvider()
+				if fp == nil {
+					return fmt.Errorf("type %q does not provide functions", t.String())
+				}
+				fn, err := h.mod.GetFunction(fp, args[0])
+				if err != nil {
+					return err
+				}
+
+				return cmd.Println(h.FunctionDoc(fp, fn))
+			},
+		},
+		// TODO: Implement RequiresModule so that .load can recreate those commands
+		// &ShellCommand{
+		// 	Use:     ".load [module]",
+		// 	Short:   "Load a module",
+		// 	GroupID: moduleGroup.ID,
+		// 	Args:    MaximumArgs(1),
+		// 	Run: func(cmd *ShellCommand, args []string) error {
+		// 		if len(args) == 0 {
+		// 			modRef, _ := getExplicitModuleSourceRef()
+		// 			args = []string{modRef}
+		// 		}
+		// 		def, err := maybeInitializeModule(cmd.Context(), h.dag, args[0], true)
+		// 		if err != nil {
+		// 			return err
+		// 		}
+		// 		h.mod = def
+		// 		cmd.Println(`Module loaded. Use ".doc" to get started.`)
+		// 		return nil
+		// 	},
+		// },
+		&ShellCommand{
+			Use:   ".core [function]",
+			Short: "Load a core Dagger type",
+			// On the "Additional" command group on purpose
+			GroupID: "",
+			Run: func(cmd *ShellCommand, args []string) error {
+				ctx := cmd.Context()
+
+				if len(args) == 0 {
+					var doc ShellDoc
+
+					fp := h.mod.GetFunctionProvider("Query")
+
+					doc.Add(
+						"Available Functions",
+						nameShortWrapped(fp.GetFunctions(), func(f *modFunction) (string, string) {
+							return f.CmdName(), f.Short()
+						}),
+					)
+
+					return cmd.Println(doc.String())
+				}
+
+				st := &ShellState{}
+				st, err := h.functionCall(ctx, st, args[0], args[1:])
+				if err != nil {
+					return err
+				}
+
+				return cmd.Send(st)
+			},
+		},
+	)
+
+	if h.IsModuleLoaded() {
+		if fn := h.mod.MainObject.AsObject.Constructor; len(fn.Args) > 0 {
+			fp := h.mod.MainObject.AsFunctionProvider()
+			h.addBuiltin(
+				&ShellCommand{
+					Use:     ".config" + strings.TrimPrefix(h.functionUseLine(fp, fn), fn.CmdName()),
+					Short:   "Set module constructor options",
+					GroupID: moduleGroup.ID,
+					Args:    ExactArgs(len(fn.RequiredArgs())),
+					Run: func(cmd *ShellCommand, args []string) error {
+						// TODO: allow .config (without args) to print current values
+						cfg, err := h.parseArgumentValues(cmd.Context(), fn, args)
+						if err != nil {
+							return err
+						}
+						h.cfg = cfg
+						return nil
+					},
+				},
+			)
+		}
+		h.addBuiltin(
+			&ShellCommand{
+				Use:     ".deps",
+				Short:   "List module dependencies",
+				GroupID: moduleGroup.ID,
+				Args:    NoArgs,
+				Run: func(cmd *ShellCommand, args []string) error {
+					ctx := cmd.Context()
+					deps, err := h.mod.Source.AsModule().Dependencies(ctx)
+					if err != nil {
+						return err
+					}
+
+					// Get the Name and Description of each dependency beforehand
+					// because nameShortWrapped doesn't handle errors.
+					lines := make([]string, 0, len(deps))
+					for _, dep := range deps {
+						name, err := dep.Name(ctx)
+						if err != nil {
+							return err
+						}
+						desc, err := dep.Description(ctx)
+						if err != nil {
+							return err
+						}
+						shortDesc := strings.SplitN(desc, "\n", 2)[0]
+						if shortDesc == "" {
+							shortDesc = "-"
+						}
+						lines = append(lines, name+"\x00"+shortDesc)
+					}
+
+					var doc ShellDoc
+
+					doc.Add(
+						"Module Dependencies",
+						nameShortWrapped(lines, func(line string) (string, string) {
+							s := strings.SplitN(line, "\x00", 2)
+							return s[0], s[1]
+						}),
+					)
+
+					return cmd.Println(doc.String())
+				},
+			},
+		)
 	}
 
-	return &readline.Config{
-		Prompt:       "> ",
-		HistoryFile:  filepath.Join(dataRoot, "histfile"),
-		HistoryLimit: 1000,
-	}, nil
+	rootType := h.mod.GetFunctionProvider("Query")
+	for _, fn := range rootType.GetFunctions() {
+		var hidden bool
+		// TODO: Don't hardcode this list.
+		forSDKs := []string{
+			"function",
+			"module",
+			"module-dependency",
+			"module-source",
+			"source-map",
+		}
+		if (strings.HasPrefix(fn.CmdName(), "load-") && strings.HasSuffix(fn.CmdName(), "-from-id")) || slices.Contains(forSDKs, fn.CmdName()) {
+			hidden = true
+		}
+
+		h.addBuiltin(
+			&ShellCommand{
+				Use:     h.functionUseLine(rootType, fn),
+				Short:   fn.Short(),
+				GroupID: coreGroup.ID,
+				Hidden:  hidden,
+				Args:    ExactArgs(len(fn.RequiredArgs())),
+				HelpFunc: func(cmd *ShellCommand) string {
+					return h.FunctionDoc(rootType, fn)
+				},
+				Run: func(cmd *ShellCommand, args []string) error {
+					ctx := cmd.Context()
+
+					st := &ShellState{}
+					st, err := h.functionCall(ctx, st, fn.CmdName(), args)
+					if err != nil {
+						return err
+					}
+
+					return cmd.Send(st)
+				},
+			},
+		)
+	}
+
+	cobraCmds := []*cobra.Command{
+		loginCmd,
+		logoutCmd,
+	}
+
+	if h.IsModuleLoaded() {
+		// TODO: Add uninstall command when available.
+		cobraCmds = append([]*cobra.Command{moduleInstallCmd}, cobraCmds...)
+	}
+
+	for _, c := range cobraCmds {
+		h.addBuiltin(
+			&ShellCommand{
+				Use:     "." + c.Use,
+				Short:   c.Short,
+				GroupID: c.GroupID,
+				Run: func(cmd *ShellCommand, args []string) error {
+					// Re-execute the dagger command (hack)
+					args = append([]string{cmd.Name()}, args...)
+					ctx := cmd.Context()
+					hctx := interp.HandlerCtx(ctx)
+					c := exec.CommandContext(ctx, "dagger", args...)
+					c.Stdout = hctx.Stdout
+					c.Stderr = hctx.Stderr
+					c.Stdin = hctx.Stdin
+					return c.Run()
+				},
+			},
+		)
+	}
+
+	sort.Slice(h.builtins, func(i, j int) bool {
+		return h.builtins[i].Use < h.builtins[j].Use
+	})
 }

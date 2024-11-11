@@ -10,6 +10,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/dustin/go-humanize"
 	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
 	"go.opentelemetry.io/otel/log"
@@ -403,14 +404,14 @@ func (r renderer) renderMetrics(out *termenv.Output, span *dagui.Span) {
 	if dataPoints := span.MetricsByName[telemetry.IOStatDiskReadBytes]; len(dataPoints) > 0 {
 		lastPoint := dataPoints[len(dataPoints)-1]
 		fmt.Fprint(out, " | ")
-		displayMetric := out.String(fmt.Sprintf("Disk Read Bytes: %d", lastPoint.Value))
+		displayMetric := out.String(fmt.Sprintf("Disk Read: %s", humanize.Bytes(uint64(lastPoint.Value))))
 		displayMetric = displayMetric.Foreground(termenv.ANSIGreen)
 		fmt.Fprint(out, displayMetric)
 	}
 	if dataPoints := span.MetricsByName[telemetry.IOStatDiskWriteBytes]; len(dataPoints) > 0 {
 		lastPoint := dataPoints[len(dataPoints)-1]
 		fmt.Fprint(out, " | ")
-		displayMetric := out.String(fmt.Sprintf("Disk Write Bytes: %d", lastPoint.Value))
+		displayMetric := out.String(fmt.Sprintf("Disk Write: %s", humanize.Bytes(uint64(lastPoint.Value))))
 		displayMetric = displayMetric.Foreground(termenv.ANSIGreen)
 		fmt.Fprint(out, displayMetric)
 	}
@@ -418,7 +419,7 @@ func (r renderer) renderMetrics(out *termenv.Output, span *dagui.Span) {
 		lastPoint := dataPoints[len(dataPoints)-1]
 		if lastPoint.Value != 0 {
 			fmt.Fprint(out, " | ")
-			displayMetric := out.String(fmt.Sprintf("IO Pressure: %dµs", lastPoint.Value))
+			displayMetric := out.String(fmt.Sprintf("IO Pressure: %s", durationString(lastPoint.Value)))
 			displayMetric = displayMetric.Foreground(termenv.ANSIGreen)
 			fmt.Fprint(out, displayMetric)
 		}
@@ -427,17 +428,22 @@ func (r renderer) renderMetrics(out *termenv.Output, span *dagui.Span) {
 	if dataPoints := span.MetricsByName[telemetry.CPUStatPressureSomeTotal]; len(dataPoints) > 0 {
 		lastPoint := dataPoints[len(dataPoints)-1]
 		fmt.Fprint(out, " | ")
-		displayMetric := out.String(fmt.Sprintf("CPU Pressure (some): %dµs", lastPoint.Value))
+		displayMetric := out.String(fmt.Sprintf("CPU Pressure (some): %s", durationString(lastPoint.Value)))
 		displayMetric = displayMetric.Foreground(termenv.ANSIGreen)
 		fmt.Fprint(out, displayMetric)
 	}
 	if dataPoints := span.MetricsByName[telemetry.CPUStatPressureFullTotal]; len(dataPoints) > 0 {
 		lastPoint := dataPoints[len(dataPoints)-1]
 		fmt.Fprint(out, " | ")
-		displayMetric := out.String(fmt.Sprintf("CPU Pressure (full): %dµs", lastPoint.Value))
+		displayMetric := out.String(fmt.Sprintf("CPU Pressure (full): %s", durationString(lastPoint.Value)))
 		displayMetric = displayMetric.Foreground(termenv.ANSIGreen)
 		fmt.Fprint(out, displayMetric)
 	}
+}
+
+func durationString(microseconds int64) string {
+	duration := time.Duration(microseconds) * time.Microsecond
+	return duration.String()
 }
 
 // var (
