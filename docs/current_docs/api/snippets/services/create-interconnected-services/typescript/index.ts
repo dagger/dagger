@@ -1,7 +1,8 @@
-import { object, func, dag, Service } from "@dagger.io/dagger"
+import { object, func, Service } from "@dagger.io/dagger"
 
 @object()
 class MyModule {
+  // Run two services which are dependent on each other
   @func()
   async services(): Promise<Service> {
     const svcA = dag
