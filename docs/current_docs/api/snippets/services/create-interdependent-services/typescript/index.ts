@@ -9,7 +9,11 @@ class MyModule {
       .container()
       .from("nginx")
       .withExposedPort(80)
-      .withExec(["sh", "-c", `nginx & while true; do curl svcb:80 && sleep 1; done`])
+      .withExec([
+        "sh",
+        "-c",
+        `nginx & while true; do curl svcb:80 && sleep 1; done`
+      ])
       .asService()
       .withHostname("svca")
 
@@ -19,7 +23,11 @@ class MyModule {
       .container()
       .from("nginx")
       .withExposedPort(80)
-      .withExec(["sh", "-c", `nginx & while true; do curl svca:80 && sleep 1; done`])
+      .withExec([
+        "sh",
+        "-c",
+        `nginx & while true; do curl svca:80 && sleep 1; done`
+      ])
       .asService()
       .withHostname("svcb")
 

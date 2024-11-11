@@ -1,29 +1,29 @@
-import { object, func, dag, Service } from "@dagger.io/dagger"
+import { dag, object, func, Service } from "@dagger.io/dagger"
 
 @object()
 class MyModule {
+  /**
+   * Send a query to a MariaDB service and returns the response
+   */
   @func()
-  async services(): Promise<Service> {
-    const svcA = dag
+  async userList(
+    /**
+     * Host service
+     */
+    svc: Service,
+  ): Promise<string> {
+    return await dag
       .container()
-      .from("nginx")
-      .withExposedPort(80)
-      .withExec(["sh", "-c", `nginx & while true; do curl svcb:80 && sleep 1; done`])
-      .asService()
-      .withHostname("svca")
-
-    await svcA.start()
-
-    const svcB = dag
-      .container()
-      .from("nginx")
-      .withExposedPort(80)
-      .withExec(["sh", "-c", `nginx & while true; do curl svca:80 && sleep 1; done`])
-      .asService()
-      .withHostname("svcb")
-
-    await svcB.start()
-
-    return svcB
+      .from("mariadb:10.11.2")
+      .withServiceBinding("db", svc)
+      .withExec([
+        "/usr/bin/mysql",
+        "--user=root",
+        "--password=secret",
+        "--host=db",
+        "-e",
+        "SELECT Host, User FROM mysql.user",
+      ])
+      .stdout()
   }
 }
