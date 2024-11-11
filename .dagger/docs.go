@@ -19,7 +19,7 @@ const (
 	generatedSchemaPath           = "docs/docs-graphql/schema.graphqls"
 	generatedCliZenPath           = "docs/current_docs/reference/cli.mdx"
 	generatedAPIReferencePath     = "docs/static/api/reference/index.html"
-	generatedDaggerJSONSchemaPath = "docs/current_docs/reference/dagger.schema.json"
+	generatedDaggerJSONSchemaPath = "docs/static/reference/dagger.schema.json"
 )
 
 const cliZenFrontmatter = `---
