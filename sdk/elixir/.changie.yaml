@@ -31,18 +31,19 @@ kinds:
   - label: Fixed
   - label: Security
   - label: Dependencies
-headerFormat: |
+headerFormat: |-
   This SDK uses 🚙 Engine + 🚗 CLI version `{{.Env.ENGINE_VERSION}}`. [See what changed in that release](https://github.com/dagger/dagger/releases/tag/{{.Env.ENGINE_VERSION}}).
 
   🧪 https://hex.pm/packages/dagger
   📖 https://hexdocs.pm/dagger/Dagger.html
-footerFormat: |
+footerFormat: |-
   ### What to do next
   - Join our [Discord server](https://discord.gg/dagger-io)
   - Follow us on [Twitter](https://twitter.com/dagger_io)
 newlines:
-  beforeChangelogVersion: 3
-  afterVersion: 1
+  beforeChangelogVersion: 1
   beforeKind: 1
   beforeFooterTemplate: 1
+  beforeHeaderTemplate: 1
+  endOfVersion: 1
 envPrefix: CHANGIE_
