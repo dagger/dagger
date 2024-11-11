@@ -12,7 +12,7 @@ class MyModule {
       .withExec([
         "sh",
         "-c",
-        `nginx & while true; do curl svcb:80 && sleep 1; done`
+        `nginx & while true; do curl svcb:80 && sleep 1; done`,
       ])
       .asService()
       .withHostname("svca")
@@ -26,7 +26,7 @@ class MyModule {
       .withExec([
         "sh",
         "-c",
-        `nginx & while true; do curl svca:80 && sleep 1; done`
+        `nginx & while true; do curl svca:80 && sleep 1; done`,
       ])
       .asService()
       .withHostname("svcb")
