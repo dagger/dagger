@@ -147,8 +147,8 @@ func (gtc *GoToolchain) Lint(
 }
 
 // Develop the Dagger engine container
-func (dev *DaggerDev) Engine() *DEngine {
-	return &DEngine{Dagger: dev}
+func (dev *DaggerDev) Engine() *DaggerEngine {
+	return &DaggerEngine{Dagger: dev}
 }
 
 // Develop the Dagger documentation

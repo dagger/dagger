@@ -217,7 +217,7 @@ git add docs sdk helm
 git commit -s -m "chore: bump dependencies to $ENGINE_VERSION"
 ```
 
-- [ ] Push and open the PR as a draft, and capture the PR number:
+- [ ] Push to `dagger/dagger` - we need access to secrets that PRs coming from forks will not have. Open the PR as a draft and capture the PR number:
 
 ```console
 gh pr create --draft --title "chore: prep for v0.13.7" --body "" | tee /tmp/prep-pr.txt

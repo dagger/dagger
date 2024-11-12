@@ -24,7 +24,7 @@ const (
 	DistroUbuntu = "ubuntu"
 )
 
-type DEngine struct {
+type DaggerEngine struct {
 	Dagger *DaggerDev // +private
 
 	Args   []string // +private
@@ -35,28 +35,28 @@ type DEngine struct {
 	Race bool // +private
 }
 
-func (e *DEngine) WithConfig(key, value string) *DEngine {
+func (e *DaggerEngine) WithConfig(key, value string) *DaggerEngine {
 	e.Config = append(e.Config, key+"="+value)
 	return e
 }
 
-func (e *DEngine) WithArg(key, value string) *DEngine {
+func (e *DaggerEngine) WithArg(key, value string) *DaggerEngine {
 	e.Args = append(e.Args, key+"="+value)
 	return e
 }
 
-func (e *DEngine) WithRace() *DEngine {
+func (e *DaggerEngine) WithRace() *DaggerEngine {
 	e.Race = true
 	return e
 }
 
-func (e *DEngine) WithTrace() *DEngine {
+func (e *DaggerEngine) WithTrace() *DaggerEngine {
 	e.Trace = true
 	return e
 }
 
 // Build the engine container
-func (e *DEngine) Container(
+func (e *DaggerEngine) Container(
 	ctx context.Context,
 
 	// +optional
@@ -123,7 +123,7 @@ func (e *DEngine) Container(
 }
 
 // Create a test engine service
-func (e *DEngine) Service(
+func (e *DaggerEngine) Service(
 	ctx context.Context,
 	name string,
 	// +optional
@@ -174,7 +174,7 @@ func (e *DEngine) Service(
 }
 
 // Lint the engine
-func (e *DEngine) Lint(
+func (e *DaggerEngine) Lint(
 	ctx context.Context,
 ) error {
 	eg, ctx := errgroup.WithContext(ctx)
@@ -208,7 +208,7 @@ func (e *DEngine) Lint(
 
 // Generate any engine-related files
 // Note: this is codegen of the 'go generate' variety, not 'dagger develop'
-func (e *DEngine) Generate() *dagger.Directory {
+func (e *DaggerEngine) Generate() *dagger.Directory {
 	generated := e.Dagger.Go().Env().
 		WithoutDirectory("sdk") // sdk generation happens separately
 
@@ -225,7 +225,7 @@ func (e *DEngine) Generate() *dagger.Directory {
 }
 
 // Lint any generated engine-related files
-func (e *DEngine) LintGenerate(ctx context.Context) error {
+func (e *DaggerEngine) LintGenerate(ctx context.Context) error {
 	before := e.Dagger.Go().Env().WithoutDirectory("sdk").Directory(".")
 	after := e.Generate()
 	return dag.Dirdiff().AssertEqual(ctx, before, after, []string{"."})
@@ -267,7 +267,7 @@ var targets = []struct {
 }
 
 // Publish all engine images to a registry
-func (e *DEngine) Publish(
+func (e *DaggerEngine) Publish(
 	ctx context.Context,
 
 	// Image target to push to
@@ -375,7 +375,7 @@ func (e *DEngine) Publish(
 	return nil
 }
 
-func (e *DEngine) Scan(ctx context.Context) error {
+func (e *DaggerEngine) Scan(ctx context.Context) error {
 	ignoreFiles := dag.Directory().WithDirectory("/", e.Dagger.Source(), dagger.DirectoryWithDirectoryOpts{
 		Include: []string{
 			".trivyignore",
