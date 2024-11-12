@@ -90,10 +90,9 @@ func (ShellSuite) TestNoModule(ctx context.Context, t *testctx.T) {
 		require.Equal(t, "Container", gjson.Get(out, "_type").String())
 	})
 
-	t.Run("no module commands", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerShell(".help")).Stdout(ctx)
-		require.NoError(t, err)
-		require.NotContains(t, out, ".install")
+	t.Run("module builtin does not work", func(ctx context.Context, t *testctx.T) {
+		_, err := modGen.With(daggerShell(".config")).Sync(ctx)
+		require.ErrorContains(t, err, "module not loaded")
 	})
 
 	t.Run("no main object doc", func(ctx context.Context, t *testctx.T) {
