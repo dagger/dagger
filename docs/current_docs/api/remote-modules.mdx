@@ -66,7 +66,7 @@ If this works, Dagger will be able to use the same credentials to access your pr
 - **Azure DevOps**: Use [Git Credential Manager](https://learn.microsoft.com/en-us/azure/devops/repos/git/set-up-credential-managers)
 - BitBucket: Use [Git Credential Manager](https://github.com/git-ecosystem/git-credential-manager)
 
-### SSH Authentication
+### SSH authentication
 
 Dagger mounts the socket specified by your host's `SSH_AUTH_SOCK` environment variable to the Dagger Engine. This is essential for SSH refs, as most Git servers use your SSH key for authentication and tracking purposes, even when cloning public repositories.
 
