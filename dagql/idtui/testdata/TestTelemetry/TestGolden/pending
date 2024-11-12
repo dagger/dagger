@@ -5,12 +5,12 @@ Expected stderr:
 │ ✔ connecting to engine X.Xs
 │ ✔ starting session X.Xs
 
-✔ initialize X.Xs
-│ ✔ resolving module ref X.Xs
-│ ✔ installing module X.Xs
-│ ✔ analyzing module X.Xs
+✔ loading module X.Xs
+│ ✔ finding module configuration X.Xs
+│ ✔ serving module X.Xs
+│ ✔ inspecting module X.Xs
 
-✔ prepare X.Xs
+✔ parsing command line arguments X.Xs
 
 ✔ viztest: Viztest! X.Xs
 ✘ .pending: Void X.Xs
