@@ -50,11 +50,23 @@ Dagger caches two types of data:
     EOF
     ```
 
-## Cache pruning
+## Garbage collection
 
-The layer cache size configuration is managed by [BuildKit's garbage collector](https://github.com/moby/buildkit/blob/v0.17.0/docs/buildkitd.toml.md?plain=1#L66-L82).
+The cache garbage collector runs in the background of the dagger engine,
+looking for unused layers and artifacts, and clears them up once they exceed
+the storage allowed by the cache policy.
 
-To free up disk space used by the cache, use the following command:
+The default cache policy attempts to keep the long-term cache storage under 75%
+of the total disk, while also ensuring that at least 20% of the disk remains
+free for other applications and tools.
+
+The cache policy can be manually configured by editing the `engine.toml` file in the engine
+(which uses [BuildKit's syntax config](https://github.com/moby/buildkit/blob/v0.17.0/docs/buildkitd.toml.md?plain=1#L66-L82)).
+See the [Custom Runner](./custom-runner.mdx) docs for more information.
+
+## Manual pruning
+
+To manually free up disk space used by the cache, use the following command:
 
 ```shell
 dagger query <<EOF

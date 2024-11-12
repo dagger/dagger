@@ -57,7 +57,7 @@ Where `ci.exs` contains Elixir script above.
 The SDK support the Dagger Function by initiate it with:
 
 ```shell
-$ dagger init --sdk=github.com/dagger/dagger/sdk/elixir/runtime <name>
+$ dagger init --sdk=elixir <name>
 ```
 
 **CAUTIONS**: Please note that `dagger` version 0.11.6 and earlier are not

@@ -15,6 +15,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -3176,9 +3177,19 @@ func (ContainerSuite) TestImport(ctx context.Context, t *testctx.T) {
 func (ContainerSuite) TestFromImagePlatform(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	var desiredPlatform dagger.Platform = "linux/arm64"
+	imageRef := alpineAmd
+	var desiredPlatform dagger.Platform = "linux/amd64"
+	targetPlatform := desiredPlatform
+	if runtime.GOARCH == "amd64" {
+		// need a platform that doesn't match the host
+		imageRef = alpineArm
+		desiredPlatform = "linux/arm64"
+		targetPlatform = "linux/arm64/v8"
+	}
 
-	ctr := c.Container().From(alpineArm)
+	ctr := c.Container(dagger.ContainerOpts{
+		Platform: targetPlatform,
+	}).From(imageRef)
 	ctrPlatform, err := ctr.Platform(ctx)
 	require.NoError(t, err)
 	require.Equal(t, desiredPlatform, ctrPlatform)

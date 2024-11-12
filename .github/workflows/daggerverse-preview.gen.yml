@@ -6,8 +6,7 @@ name: daggerverse-preview
             - paths
             - opened
         paths:
-            - /CHANGELOG.md
-            - /.changes
+            - .changes/.next
     workflow_dispatch: {}
 permissions:
     contents: read
@@ -16,7 +15,7 @@ concurrency:
 jobs:
     deploy:
         runs-on:
-            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-13-7-4c' || 'ubuntu-latest' }}
+            - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-14-0-4c' || 'ubuntu-latest' }}
         name: deploy
         steps:
             - name: Checkout
@@ -46,7 +45,7 @@ jobs:
                 # The install.sh script creates path ${prefix_dir}/bin
                 curl -fsS https://dl.dagger.io/dagger/install.sh | BIN_DIR=${prefix_dir}/bin sh
               env:
-                DAGGER_VERSION: v0.13.7
+                DAGGER_VERSION: v0.14.0
               shell: bash
             - name: scripts/warm-engine.sh
               id: warm-engine

@@ -2445,14 +2445,14 @@ func (ModuleSuite) TestEngineError(ctx context.Context, t *testctx.T) {
  			)
  			type Test struct {}
  			func (m *Test) Fn(ctx context.Context) error {
- 				_, _ = dag.DaggerEngine().LocalCache().EntrySet().Entries(ctx)
+ 				_, _ = dag.Engine().LocalCache().EntrySet().Entries(ctx)
 				return nil
  			}
  			`,
 		).
 		With(daggerCall("fn")).
 		Sync(ctx)
-	require.ErrorContains(t, err, "dag.DaggerEngine undefined")
+	require.ErrorContains(t, err, "dag.Engine undefined")
 }
 
 func (ModuleSuite) TestDaggerListen(ctx context.Context, t *testctx.T) {

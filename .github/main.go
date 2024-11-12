@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	daggerVersion      = "v0.13.7"
+	daggerVersion      = "v0.14.0"
 	upstreamRepository = "dagger/dagger"
 	defaultRunner      = "ubuntu-latest"
 	publicToken        = "dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw"
@@ -153,7 +153,7 @@ func (ci *CI) withPrepareReleaseWorkflow() *CI {
 			PullRequestConcurrency: "queue",
 			Permissions:            []dagger.GhaPermission{dagger.GhaPermissionReadContents},
 			OnPullRequestOpened:    true,
-			OnPullRequestPaths:     []string{"/CHANGELOG.md", "/.changes"},
+			OnPullRequestPaths:     []string{".changes/.next"},
 		}),
 	})
 	w := gha.

@@ -274,8 +274,8 @@ require (
 )
 
 require (
-	dagger.io/dagger v0.13.7
-	github.com/dagger/dagger/engine/distconsts v0.13.7
+	dagger.io/dagger v0.14.0
+	github.com/dagger/dagger/engine/distconsts v0.14.0
 	github.com/dustin/go-humanize v1.0.1
 )
 

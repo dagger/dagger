@@ -761,7 +761,7 @@ func (s *containerSchema) from(ctx context.Context, parent dagql.Instance[*core.
 		},
 	})
 	if err != nil {
-		return inst, fmt.Errorf("failed to resolve image %s: %w", refName.String(), err)
+		return inst, fmt.Errorf("failed to resolve image %q (platform: %q): %w", refName.String(), platform.Format(), err)
 	}
 	refName, err = reference.WithDigest(refName, digest)
 	if err != nil {

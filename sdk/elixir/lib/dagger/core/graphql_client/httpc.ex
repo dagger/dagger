@@ -3,13 +3,8 @@ defmodule Dagger.Core.GraphQLClient.Httpc do
   `:httpc` HTTP adapter for GraphQL client.
   """
 
-  def request(url, session_token, request_body, http_opts) do
-    token = [session_token, ":"] |> IO.iodata_to_binary() |> Base.encode64()
-
-    headers = [
-      {~c"authorization", ["Basic ", token]}
-    ]
-
+  def request(url, request_body, headers, http_opts) do
+    headers = Enum.map(headers, fn {k, v} -> {String.to_charlist(k), v} end)
     content_type = ~c"application/json"
     request = {url, headers, content_type, request_body}
     options = []

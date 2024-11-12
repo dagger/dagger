@@ -154,6 +154,43 @@ localhost       mariadb.sys
 localhost       root
 ```
 
+## Create interdependent services
+
+Global hostnames can be assigned to services. This feature is especially valuable for complex networking configurations, such as circular dependencies between services, by allowing services to reference each other by predefined hostnames, without requiring an explicit service binding.
+
+Custom hostnames follow a structured format (`<host>.<module id>.<session id>.dagger.local`), ensuring unique identifiers across modules and sessions.
+
+For example, you can now run two services that depend on each other, each using a hostname to refer to the other by name:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/services/create-interdependent-services/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/services/create-interdependent-services/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/services/create-interdependent-services/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+In this example, service A and service B are set up with custom hostnames `svca` and `svcb`, allowing each service to communicate with the other by hostname. This capability provides enhanced flexibility for managing service dependencies and interconnections within modular workflows, making it easier to handle complex setups in Dagger.
+
+Here is an example call for this Dagger Function:
+
+```shell
+dagger call services up --ports 8080:80
+```
+
 ## Persist service state
 
 Dagger cancels each service run after a 10 second grace period to avoid frequent restarts. To avoid relying on the grace period, use a cache volume to persist a service's data, as in the following example:

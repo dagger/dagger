@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -98,6 +99,7 @@ func New(ctx context.Context, t *testing.T) *T {
 	return &T{
 		T:   t,
 		ctx: ctx,
+		mu:  new(sync.Mutex),
 	}
 }
 
@@ -109,6 +111,7 @@ type T struct {
 	logger     func(*T, string)
 	beforeEach []func(*T) *T
 	errors     []string
+	mu         *sync.Mutex
 }
 
 func (t *T) BaseName() string {
@@ -186,26 +189,34 @@ func (t *T) Logf(format string, vals ...any) {
 
 func (t *T) Error(vals ...any) {
 	msg := fmt.Sprint(vals...)
+	t.mu.Lock()
 	t.errors = append(t.errors, msg)
+	t.mu.Unlock()
 	t.log(msg)
 	t.T.Error(vals...)
 }
 
 func (t *T) Errorf(format string, vals ...any) {
 	t.logf(format, vals...)
+	t.mu.Lock()
 	t.errors = append(t.errors, fmt.Sprintf(format, vals...))
+	t.mu.Unlock()
 	t.T.Errorf(format, vals...)
 }
 
 func (t *T) Fatal(vals ...any) {
 	t.log(fmt.Sprintln(vals...))
+	t.mu.Lock()
 	t.errors = append(t.errors, fmt.Sprint(vals...))
+	t.mu.Unlock()
 	t.T.Fatal(vals...)
 }
 
 func (t *T) Fatalf(format string, vals ...any) {
 	t.logf(format, vals...)
+	t.mu.Lock()
 	t.errors = append(t.errors, fmt.Sprintf(format, vals...))
+	t.mu.Unlock()
 	t.T.Fatalf(format, vals...)
 }
 
@@ -220,6 +231,8 @@ func (t *T) Skipf(format string, vals ...any) {
 }
 
 func (t *T) Errors() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	return strings.Join(t.errors, "\n")
 }
 
