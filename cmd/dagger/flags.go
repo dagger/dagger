@@ -318,7 +318,7 @@ func (v *directoryValue) Get(ctx context.Context, dag *dagger.Client, modSrc *da
 	gitURL, err := parseGitURL(v.String())
 	if err == nil {
 		// TODO: use modArg.Ignore if not empty
-		return makeGitDirectory(gitURL, dag), nil
+		return makeGitDirectory(gitURL, dag, modArg.Ignore), nil
 	}
 
 	// Otherwise it's a local dir path. Allow `file://` scheme or no scheme.
@@ -354,7 +354,7 @@ func (v *directoryValue) Get(ctx context.Context, dag *dagger.Client, modSrc *da
 }
 
 // makeGitDirectory creates a dagger.Directory object from a parsed gitutil.GitURL
-func makeGitDirectory(gitURL *gitutil.GitURL, dag *dagger.Client) *dagger.Directory {
+func makeGitDirectory(gitURL *gitutil.GitURL, dag *dagger.Client, ignorePattern []string) *dagger.Directory {
 	gitOpts := dagger.GitOpts{
 		KeepGitDir: true,
 	}
@@ -372,7 +372,12 @@ func makeGitDirectory(gitURL *gitutil.GitURL, dag *dagger.Client) *dagger.Direct
 	if subdir := gitURL.Fragment.Subdir; subdir != "" {
 		gitDir = gitDir.Directory(subdir)
 	}
-	return gitDir
+	return dag.Directory().WithDirectory(
+		"/",
+		gitDir,
+		dagger.DirectoryWithDirectoryOpts{
+			Exclude: ignorePattern,
+		})
 }
 
 func parseGitURL(url string) (*gitutil.GitURL, error) {
