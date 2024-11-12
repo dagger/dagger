@@ -153,7 +153,7 @@ func (ci *CI) withPrepareReleaseWorkflow() *CI {
 			PullRequestConcurrency: "queue",
 			Permissions:            []dagger.GhaPermission{dagger.GhaPermissionReadContents},
 			OnPullRequestOpened:    true,
-			OnPullRequestPaths:     []string{"/CHANGELOG.md", "/.changes"},
+			OnPullRequestPaths:     []string{".changes/.next"},
 		}),
 	})
 	w := gha.

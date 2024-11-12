@@ -6,8 +6,7 @@ name: daggerverse-preview
             - paths
             - opened
         paths:
-            - /CHANGELOG.md
-            - /.changes
+            - .changes/.next
     workflow_dispatch: {}
 permissions:
     contents: read
