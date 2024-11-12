@@ -305,7 +305,7 @@ func (container *Container) FromRefString(ctx context.Context, addr string) (*Co
 		},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve image %s: %w", refName.String(), err)
+		return nil, fmt.Errorf("failed to resolve image %q (platform: %q): %w", refName.String(), platform.Format(), err)
 	}
 	canonRefName, err := reference.WithDigest(refName, digest)
 	if err != nil {
@@ -343,7 +343,7 @@ func (container *Container) FromCanonicalRef(
 			},
 		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve image %s: %w", refStr, err)
+			return nil, fmt.Errorf("failed to resolve image %q (platform: %q): %w", refStr, platform.Format(), err)
 		}
 	}
 

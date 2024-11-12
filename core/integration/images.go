@@ -9,6 +9,7 @@ const (
 	debianImage  = "debian:bookworm"
 	rhelImage    = "registry.access.redhat.com/ubi9/ubi"
 	alpineArm    = "arm64v8/alpine"
+	alpineAmd    = "amd64/alpine"
 
 	// TODO: use these
 	// registryImage   = "registry:2"
