@@ -332,7 +332,6 @@ func (v *directoryValue) Get(ctx context.Context, dag *dagger.Client, modSrc *da
 
 	// The core module doesn't have a ModuleSource.
 	if modSrc == nil {
-		// TODO: use modArg.Ignore if not empty
 		return dag.Host().Directory(path), nil
 	}
 
