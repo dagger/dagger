@@ -5,8 +5,8 @@ defmodule Dagger.Core.GraphQLClient do
 
   @callback request(
               url :: String.t(),
-              session_token :: String.t(),
               request_body :: iodata(),
+              headers :: [tuple()],
               opts :: keyword()
             ) :: {:ok, status :: non_neg_integer(), response :: map()} | {:error, term()}
 
@@ -20,8 +20,13 @@ defmodule Dagger.Core.GraphQLClient do
     timeout = Keyword.get(opts, :timeout, :infinity)
     request = %{query: query, variables: variables}
 
+    headers =
+      []
+      |> with_basic_auth(session_token)
+      |> with_traceparent()
+
     with {:ok, request} <- json.encode(request),
-         {:ok, status, result} <- client.request(url, session_token, request, timeout: timeout),
+         {:ok, status, result} <- client.request(url, request, headers, timeout: timeout),
          {:ok, map} <- json.decode(result) do
       response = Response.from_map(map)
 
@@ -32,6 +37,21 @@ defmodule Dagger.Core.GraphQLClient do
     else
       otherwise ->
         otherwise
+    end
+  end
+
+  defp with_basic_auth(headers, session_token) when is_binary(session_token) do
+    token = [session_token, ?:] |> IO.iodata_to_binary() |> Base.encode64()
+    [{"authorization", ["Basic ", token]} | headers]
+  end
+
+  defp with_traceparent(headers, traceparent \\ System.get_env("TRACEPARENT")) do
+    case traceparent do
+      nil ->
+        headers
+
+      traceparent ->
+        [{"traceparent", traceparent} | headers]
     end
   end
 end
