@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"path"
 	"regexp"
 	"strings"
 
@@ -24,7 +25,7 @@ type JavaSDK struct {
 
 // Lint the Java SDK
 func (t JavaSDK) Lint(ctx context.Context) error {
-	_, err := t.javaBase().
+	_, err := t.Maven().
 		WithExec([]string{"mvn", "fmt:check"}).
 		Sync(ctx)
 	return err
@@ -37,7 +38,7 @@ func (t JavaSDK) Test(ctx context.Context) error {
 		return err
 	}
 
-	_, err = t.javaBase().
+	_, err = t.Maven().
 		With(installer).
 		WithExec([]string{"mvn", "clean", "verify", "-Ddaggerengine.version=local"}).
 		Sync(ctx)
@@ -51,7 +52,7 @@ func (t JavaSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 		return nil, err
 	}
 
-	base := t.javaBase().With(installer)
+	base := t.Maven().With(installer)
 
 	generatedSchema, err := base.
 		WithExec([]string{"mvn", "clean", "install", "-pl", "dagger-codegen-maven-plugin"}).
@@ -95,7 +96,7 @@ func (t JavaSDK) Publish(
 		skipDeploy = "true"
 	}
 
-	_, err := t.javaBase().
+	_, err := t.Maven().
 		WithExec([]string{"apt-get", "update"}).
 		WithExec([]string{"apt-get", "-y", "install", "gpg"}).
 		WithExec([]string{"mvn", "versions:set", fmt.Sprintf("-DnewVersion=%s", version)}).
@@ -121,13 +122,34 @@ func (t JavaSDK) Bump(ctx context.Context, version string) (*dagger.Directory, e
 	return dir, nil
 }
 
-func (t JavaSDK) javaBase() *dagger.Container {
+// Bump dependencies in the Java SDK
+func (t JavaSDK) BumpDeps() *dagger.Directory {
+	poms := []string{
+		"/sdk/java/dagger-codegen-maven-plugin/pom.xml",
+		"/sdk/java/dagger-java-sdk/pom.xml",
+		"/sdk/java/dagger-java-samples/pom.xml",
+		"/sdk/java/pom.xml",
+	}
+	bumpCtr := t.Maven()
+	for _, pom := range poms {
+		bumpCtr = bumpCtr.
+			WithWorkdir(path.Dir(pom)).
+			WithExec([]string{"mvn", "versions:update-properties"})
+	}
+	bumped := dag.Directory()
+	for _, pom := range poms {
+		bumped = bumped.WithFile(pom, bumpCtr.File(pom))
+	}
+	return bumped
+}
+
+func (t JavaSDK) Maven() *dagger.Container {
 	src := t.Dagger.Source().Directory(javaSDKPath)
 	mountPath := "/" + javaSDKPath
 
 	return dag.Container().
 		From(fmt.Sprintf("maven:%s-eclipse-temurin-%s", mavenVersion, javaVersion)).
+		WithMountedCache("/root/.m2", dag.CacheVolume("maven-cache")).
 		WithWorkdir(mountPath).
-		WithDirectory(mountPath, src).
-		WithMountedCache("/root/.m2", dag.CacheVolume("maven-cache"))
+		WithDirectory(mountPath, src)
 }
