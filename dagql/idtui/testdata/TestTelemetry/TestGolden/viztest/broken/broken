@@ -1,0 +1,37 @@
+Expected stderr:
+
+✔ connect X.Xs
+│ ✔ starting engine X.Xs
+│ ✔ connecting to engine X.Xs
+│ ✔ starting session X.Xs
+
+✘ loading module X.Xs
+! failed to serve module: input: module.withSource.initialize failed to initialize module: failed to call module "broken" to get functions: call constructor: process "go build -ldflags -s -w -o /runtime ." did not complete successfully: exit code: 1
+│ ✔ finding module configuration X.Xs
+│ ✘ serving module X.Xs
+│ ! input: module.withSource.initialize failed to initialize module: failed to call module "broken" to get functions: call constructor: process "go build -ldflags -s -w -o /runtime ." did not complete successfully: exit code: 1
+│ │ $ ModuleSource.resolveFromCaller: ModuleSource! X.Xs CACHED
+│ │ │ ✔ upload /XXX/XXX/XXX from XXXXXXXXXXX (client id: XXXXXXXXXXX, session id: XXXXXXXXXXX) (include: XXXXXXXXXXX) (exclude: XXXXXXXXXXX) X.Xs
+│ │ ✘ .asModule: Module! X.Xs
+│ │ ! process "go build -ldflags -s -w -o /runtime ." did not complete successfully: exit code: 1
+│ │ │ ✘ Module.withSource(
+│ │ │ │ │ source: $ ModuleSource.resolveFromCaller: ModuleSource! X.Xs CACHED
+│ │ │ │ ): Module! X.Xs
+│ │ │ ! process "go build -ldflags -s -w -o /runtime ." did not complete successfully: exit code: 1
+│ │ │ │ ✔ initialize dependencies X.Xs
+│ │ │ │ ✔ build module X.Xs
+│ │ │ │ │ ✘ Container.withExec(args: ["go", "build", "-ldflags", "-s -w", "-o", "/runtime", "."]): Container! X.Xs
+│ │ │ │ │ ┃ # dagger/broken
+│ │ │ │ │ ┃ ./main.go:6:6: undefined: ctx
+│ │ │ │ │ ! process "go build -ldflags -s -w -o /runtime ." did not complete successfully: exit code: 1
+│ │ ✘ .initialize: Module! X.Xs
+│ │ ! failed to initialize module: failed to call module "broken" to get functions: call constructor: process "go build -ldflags -s -w -o /runtime ." did not complete successfully: exit code: 1
+
+Error logs:
+
+✘ Container.withExec(args: ["go", "build", "-ldflags", "-s -w", "-o", "/runtime", "."]): Container! X.Xs
+# dagger/broken
+./main.go:6:6: undefined: ctx
+! process "go build -ldflags -s -w -o /runtime ." did not complete successfully: exit code: 1
+
+Setup tracing at https://dagger.cloud/traces/setup. To hide: export NOTHANKS=1

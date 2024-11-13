@@ -694,7 +694,7 @@ func makeRequest(ctx context.Context, q *querybuilder.Selection, response any) e
 	q = q.Bind(&response)
 
 	if err := q.Execute(ctx); err != nil {
-		return fmt.Errorf("response from query: %w", err)
+		return err
 	}
 
 	return nil

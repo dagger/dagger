@@ -66,6 +66,11 @@ class EnvVariableID(Scalar):
     object of type EnvVariable."""
 
 
+class ErrorID(Scalar):
+    """The `ErrorID` scalar type represents an identifier for an object of
+    type Error."""
+
+
 class FieldTypeDefID(Scalar):
     """The `FieldTypeDefID` scalar type represents an identifier for an
     object of type FieldTypeDef."""
@@ -3552,6 +3557,54 @@ class EnvVariable(Type):
 
 
 @typecheck
+class Error(Type):
+    async def id(self) -> ErrorID:
+        """A unique identifier for this Error.
+
+        Note
+        ----
+        This is lazily evaluated, no operation is actually run.
+
+        Returns
+        -------
+        ErrorID
+            The `ErrorID` scalar type represents an identifier for an object
+            of type Error.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(ErrorID)
+
+    async def message(self) -> str:
+        """A description of the error.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("message", _args)
+        return await _ctx.execute(str)
+
+
+@typecheck
 class FieldTypeDef(Type):
     """A definition of a field on a custom object defined in a Module.  A
     field on an object has a static value, as opposed to a function on an
@@ -4302,6 +4355,33 @@ class FunctionCall(Type):
         _args: list[Arg] = []
         _ctx = self._select("parentName", _args)
         return await _ctx.execute(str)
+
+    async def return_error(self, error: Error) -> Void | None:
+        """Return an error from the function.
+
+        Parameters
+        ----------
+        error:
+            The error to return.
+
+        Returns
+        -------
+        Void | None
+            The absence of a value.  A Null Void is used as a placeholder for
+            resolvers that do not return anything.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("error", error),
+        ]
+        _ctx = self._select("returnError", _args)
+        await _ctx.execute()
 
     async def return_value(self, value: JSON) -> Void | None:
         """Set the return value of the function call to the provided value.
@@ -6836,6 +6916,20 @@ class Client(Root):
         _ctx = self._select("engine", _args)
         return Engine(_ctx)
 
+    def error(self, message: str) -> Error:
+        """Create a new error.
+
+        Parameters
+        ----------
+        message:
+            A brief description of the error.
+        """
+        _args = [
+            Arg("message", message),
+        ]
+        _ctx = self._select("error", _args)
+        return Error(_ctx)
+
     def function(self, name: str, return_type: "TypeDef") -> Function:
         """Creates a function.
 
@@ -7022,6 +7116,14 @@ class Client(Root):
         ]
         _ctx = self._select("loadEnvVariableFromID", _args)
         return EnvVariable(_ctx)
+
+    def load_error_from_id(self, id: ErrorID) -> Error:
+        """Load a Error from its ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("loadErrorFromID", _args)
+        return Error(_ctx)
 
     def load_field_type_def_from_id(self, id: FieldTypeDefID) -> FieldTypeDef:
         """Load a FieldTypeDef from its ID."""
@@ -8322,6 +8424,8 @@ __all__ = [
     "EnumValueTypeDefID",
     "EnvVariable",
     "EnvVariableID",
+    "Error",
+    "ErrorID",
     "FieldTypeDef",
     "FieldTypeDefID",
     "File",

@@ -3,17 +3,22 @@ package core
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
 
-	"dagger.io/dagger/telemetry"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/identity"
+	bksession "github.com/moby/buildkit/session"
+	bksolver "github.com/moby/buildkit/solver"
+	solvererror "github.com/moby/buildkit/solver/errdefs"
+	llberror "github.com/moby/buildkit/solver/llbsolver/errdefs"
+	bksolverpb "github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/bklog"
+	bkworker "github.com/moby/buildkit/worker"
 	"github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
-	"go.opentelemetry.io/otel/propagation"
 
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/dagql"
@@ -188,7 +193,7 @@ func (fn *ModuleFunction) setCallInputs(ctx context.Context, opts *CallOpts) ([]
 	return callInputs, nil
 }
 
-func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typed, rerr error) {
+func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typed, rerr error) { //nolint: gocyclo
 	mod := fn.mod
 
 	lg := bklog.G(ctx).WithField("module", mod.Name()).WithField("function", fn.metadata.Name)
@@ -226,9 +231,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		CachePerSession: !opts.Cache,
 		CacheByCall:     true, // scope the cache key to the function arguments+receiver values
 		Internal:        true,
-		SpanContext:     propagation.MapCarrier{},
 	}
-	telemetry.Propagator.Inject(ctx, execMD.SpanContext)
 
 	if opts.ParentTyped != nil {
 		// collect any client resources stored in parent fields (secrets/sockets/etc.) and grant
@@ -288,8 +291,26 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		return nil, fmt.Errorf("failed to exec function: %w", err)
 	}
 
+	bk, err := fn.root.Buildkit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+
 	_, err = ctr.Evaluate(ctx)
 	if err != nil {
+		id, ok, extractErr := extractError(ctx, bk, err)
+		if extractErr != nil {
+			// if the module hasn't provided us with a nice error, just return the
+			// original error
+			return nil, err
+		}
+		if ok {
+			errInst, err := id.Load(ctx, opts.Server)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load error instance: %w", err)
+			}
+			return nil, errors.New(errInst.Self.Message)
+		}
 		if fn.metadata.OriginalName == "" {
 			return nil, fmt.Errorf("call constructor: %w", err)
 		} else {
@@ -360,6 +381,69 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 	}
 
 	return returnValueTyped, nil
+}
+
+func extractError(ctx context.Context, client *buildkit.Client, baseErr error) (dagql.ID[*Error], bool, error) {
+	var id dagql.ID[*Error]
+
+	var execErr *llberror.ExecError
+	if errors.As(baseErr, &execErr) {
+		defer func() {
+			execErr.Release()
+			execErr.OwnerBorrowed = true
+		}()
+	}
+
+	var opErr *solvererror.OpError
+	if !errors.As(baseErr, &opErr) {
+		return id, false, nil
+	}
+	op := opErr.Op
+	if op == nil || op.Op == nil {
+		return id, false, nil
+	}
+	execOp, ok := op.Op.(*bksolverpb.Op_Exec)
+	if !ok {
+		return id, false, nil
+	}
+
+	// This was an exec error, we will retrieve the exec's output and include
+	// it in the error message
+
+	// get the mnt containing module response data (in this case, the error ID)
+	var metaMountResult bksolver.Result
+	var foundMounts []string
+	for i, mnt := range execOp.Exec.Mounts {
+		foundMounts = append(foundMounts, mnt.Dest)
+		if mnt.Dest == modMetaDirPath {
+			metaMountResult = execErr.Mounts[i]
+			break
+		}
+	}
+	if metaMountResult == nil {
+		slog.Warn("failed to find meta mount", "mounts", foundMounts, "want", modMetaDirPath)
+		return id, false, nil
+	}
+
+	workerRef, ok := metaMountResult.Sys().(*bkworker.WorkerRef)
+	if !ok {
+		return id, false, errors.Join(baseErr, fmt.Errorf("invalid ref type: %T", metaMountResult.Sys()))
+	}
+	mntable, err := workerRef.ImmutableRef.Mount(ctx, true, bksession.NewGroup(client.ID()))
+	if err != nil {
+		return id, false, errors.Join(err, baseErr)
+	}
+
+	idBytes, err := buildkit.ReadSnapshotPath(ctx, client, mntable, modMetaErrorPath)
+	if err != nil {
+		return id, false, errors.Join(err, baseErr)
+	}
+
+	if err := id.Decode(string(idBytes)); err != nil {
+		return id, false, errors.Join(err, baseErr)
+	}
+
+	return id, true, nil
 }
 
 func (fn *ModuleFunction) ReturnType() (ModType, error) {

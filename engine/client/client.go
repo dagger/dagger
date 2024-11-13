@@ -72,6 +72,9 @@ type Params struct {
 
 	DisableHostRW bool
 
+	// Enable collecting Stdout and Stderr for failed execs.
+	ExecErrorOutput bool
+
 	EngineCallback   func(context.Context, string, string, string)
 	CloudURLCallback func(context.Context, string, string, bool)
 
@@ -186,6 +189,9 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		c.nestedSessionPort = nestedSessionPort
 		c.SecretToken = os.Getenv("DAGGER_SESSION_TOKEN")
 		c.httpClient = c.newHTTPClient()
+		if err := c.init(connectCtx); err != nil {
+			return nil, nil, fmt.Errorf("initialize nested client: %w", err)
+		}
 		if err := c.subscribeTelemetry(connectCtx); err != nil {
 			return nil, nil, fmt.Errorf("subscribe to telemetry: %w", err)
 		}
@@ -328,7 +334,7 @@ func (c *Client) subscribeTelemetry(ctx context.Context) (rerr error) {
 }
 
 func (c *Client) startSession(ctx context.Context) (rerr error) {
-	ctx, sessionSpan := Tracer(ctx).Start(ctx, "starting session")
+	ctx, sessionSpan := Tracer(ctx).Start(ctx, "starting session", telemetry.Encapsulate())
 	defer telemetry.End(sessionSpan, func() error { return rerr })
 
 	clientMetadata := c.clientMetadata()
@@ -689,7 +695,7 @@ func (c *Client) exportLogs(ctx context.Context, httpClient *httpClient) error {
 		if err := protojson.Unmarshal(data, &req); err != nil {
 			return fmt.Errorf("unmarshal spans: %w", err)
 		}
-		if err := enginetel.ReexportLogsFromPB(ctx, c.EngineLogs, &req); err != nil {
+		if err := telemetry.ReexportLogsFromPB(ctx, c.EngineLogs, &req); err != nil {
 			return fmt.Errorf("re-export logs: %w", err)
 		}
 		return nil
@@ -719,6 +725,25 @@ func (c *Client) exportMetrics(ctx context.Context, httpClient *httpClient) erro
 		}
 		return nil
 	})
+}
+
+func (c *Client) init(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", "http://dagger"+engine.InitEndpoint, nil)
+	if err != nil {
+		return fmt.Errorf("new request: %w", err)
+	}
+
+	req.SetBasicAuth(c.SecretToken, "")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("do shutdown: %w", err)
+	}
+
+	return resp.Body.Close()
 }
 
 func (c *Client) shutdownServer() error {
@@ -1100,6 +1125,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		Interactive:               c.Interactive,
 		InteractiveCommand:        c.InteractiveCommand,
 		SSHAuthSocketPath:         sshAuthSock,
+		ExecErrorOutput:           c.ExecErrorOutput,
 	}
 }
 

@@ -142,6 +142,9 @@ type EnumValueTypeDefID string
 // The `EnvVariableID` scalar type represents an identifier for an object of type EnvVariable.
 type EnvVariableID string
 
+// The `ErrorID` scalar type represents an identifier for an object of type Error.
+type ErrorID string
+
 // The `FieldTypeDefID` scalar type represents an identifier for an object of type FieldTypeDef.
 type FieldTypeDefID string
 
@@ -3286,6 +3289,72 @@ func (r *EnvVariable) Value(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx)
 }
 
+type Error struct {
+	query *querybuilder.Selection
+
+	id      *ErrorID
+	message *string
+}
+
+func (r *Error) WithGraphQLQuery(q *querybuilder.Selection) *Error {
+	return &Error{
+		query: q,
+	}
+}
+
+// A unique identifier for this Error.
+func (r *Error) ID(ctx context.Context) (ErrorID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.query.Select("id")
+
+	var response ErrorID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Error) XXX_GraphQLType() string {
+	return "Error"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Error) XXX_GraphQLIDType() string {
+	return "ErrorID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Error) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+func (r *Error) MarshalJSON() ([]byte, error) {
+	id, err := r.ID(marshalCtx)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(id)
+}
+
+// A description of the error.
+func (r *Error) Message(ctx context.Context) (string, error) {
+	if r.message != nil {
+		return *r.message, nil
+	}
+	q := r.query.Select("message")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx)
+}
+
 // A definition of a field on a custom object defined in a Module.
 //
 // A field on an object has a static value, as opposed to a function on an object whose value is computed by invoking code (and can accept arguments).
@@ -3935,6 +4004,7 @@ type FunctionCall struct {
 	name        *string
 	parent      *JSON
 	parentName  *string
+	returnError *Void
 	returnValue *Void
 }
 
@@ -4054,6 +4124,18 @@ func (r *FunctionCall) ParentName(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx)
+}
+
+// Return an error from the function.
+func (r *FunctionCall) ReturnError(ctx context.Context, error *Error) error {
+	assertNotNil("error", error)
+	if r.returnError != nil {
+		return nil
+	}
+	q := r.query.Select("returnError")
+	q = q.Arg("error", error)
+
+	return q.Execute(ctx)
 }
 
 // Set the return value of the function call to the provided value.
@@ -6735,6 +6817,16 @@ func (r *Client) Engine() *Engine {
 	}
 }
 
+// Create a new error.
+func (r *Client) Error(message string) *Error {
+	q := r.query.Select("error")
+	q = q.Arg("message", message)
+
+	return &Error{
+		query: q,
+	}
+}
+
 // Creates a function.
 func (r *Client) Function(name string, returnType *TypeDef) *Function {
 	assertNotNil("returnType", returnType)
@@ -6935,6 +7027,16 @@ func (r *Client) LoadEnvVariableFromID(id EnvVariableID) *EnvVariable {
 	q = q.Arg("id", id)
 
 	return &EnvVariable{
+		query: q,
+	}
+}
+
+// Load a Error from its ID.
+func (r *Client) LoadErrorFromID(id ErrorID) *Error {
+	q := r.query.Select("loadErrorFromID")
+	q = q.Arg("id", id)
+
+	return &Error{
 		query: q,
 	}
 }

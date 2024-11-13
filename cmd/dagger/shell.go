@@ -19,6 +19,7 @@ import (
 	"dagger.io/dagger/querybuilder"
 	"github.com/adrg/xdg"
 	"github.com/chzyer/readline"
+	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/mattn/go-isatty"
 	"github.com/muesli/reflow/indent"
@@ -26,7 +27,6 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
 	"mvdan.cc/sh/v3/interp"
 	"mvdan.cc/sh/v3/syntax"
 )
@@ -312,7 +312,7 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 
 	var runErr error
 	for {
-		Frontend.SetPrimary(trace.SpanID{})
+		Frontend.SetPrimary(dagui.SpanID{})
 		Frontend.Opts().CustomExit = func() {}
 
 		if runErr != nil {
@@ -368,7 +368,7 @@ func (h *shellCallHandler) runInteractive(ctx context.Context) error {
 
 		ctx, span := Tracer().Start(ctx, line)
 		ctx, cancel := context.WithCancel(ctx)
-		Frontend.SetPrimary(span.SpanContext().SpanID())
+		Frontend.SetPrimary(dagui.SpanID{SpanID: span.SpanContext().SpanID()})
 		Frontend.Opts().CustomExit = cancel
 		runErr = h.run(ctx, strings.NewReader(line), "")
 		if runErr != nil {

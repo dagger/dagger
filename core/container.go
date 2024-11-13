@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/images"
 	"github.com/containerd/containerd/pkg/transfer/archive"
@@ -29,6 +30,7 @@ import (
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	"github.com/vektah/gqlparser/v2/ast"
+	"go.opentelemetry.io/otel/propagation"
 
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
@@ -356,6 +358,8 @@ func (container *Container) FromCanonicalRef(
 		refStr,
 		llb.WithCustomNamef("pull %s", refStr),
 		resolveMode,
+		buildkit.WithTracePropagation(ctx),
+		buildkit.WithPassthrough(),
 	)
 
 	def, err := fsSt.Marshal(ctx, llb.Platform(platform.Spec()))
@@ -483,7 +487,31 @@ func (container *Container) Build(
 		return nil, err
 	}
 
-	container.FS = def.ToPB()
+	dag, err := buildkit.DefToDAG(def.ToPB())
+	if err != nil {
+		return nil, err
+	}
+	if err := dag.Walk(func(dag *buildkit.OpDAG) error {
+		// forcibly inject our trace context into each op, since st.Marshal
+		// isn't strong enough to do so
+		desc := dag.Metadata.Description
+		if desc == nil {
+			desc = map[string]string{}
+		}
+		if desc["traceparent"] == "" {
+			telemetry.Propagator.Inject(ctx,
+				propagation.MapCarrier(desc))
+		}
+		dag.Metadata.Description = desc
+		return nil
+	}); err != nil {
+		return nil, fmt.Errorf("walk DAG: %w", err)
+	}
+	newDef, err := dag.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	container.FS = newDef
 	container.FS.Source = nil
 
 	cfgBytes, found := res.Metadata[exptypes.ExporterImageConfigKey]
@@ -1495,6 +1523,7 @@ func (container *Container) Import(
 		fmt.Sprintf("%s@%s", dummyRepo, manifestDesc.Digest),
 		llb.OCIStore("", buildkit.OCIStoreName),
 		llb.Platform(container.Platform.Spec()),
+		buildkit.WithTracePropagation(ctx),
 	)
 
 	execDef, err := st.Marshal(ctx, llb.Platform(container.Platform.Spec()))
@@ -1627,7 +1656,7 @@ func (container *Container) ImageRefOrErr(ctx context.Context) (string, error) {
 	return "", errors.Errorf("Image reference can only be retrieved immediately after the 'Container.From' call. Error in fetching imageRef as the container image is changed")
 }
 
-func (container *Container) Service(ctx context.Context) (*Service, error) {
+func (container *Container) AsService(ctx context.Context) (*Service, error) {
 	if container.Meta == nil {
 		var err error
 		container, err = container.WithExec(ctx, ContainerExecOpts{

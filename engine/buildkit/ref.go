@@ -12,6 +12,7 @@ import (
 	"github.com/containerd/containerd/leases"
 	"github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/dagql/idtui"
+	"github.com/dagger/dagger/engine"
 	bkcache "github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/cache/contenthash"
 	cacheutil "github.com/moby/buildkit/cache/util"
@@ -118,7 +119,7 @@ func (r *ref) Evaluate(ctx context.Context) error {
 }
 
 func (r *ref) ReadFile(ctx context.Context, req bkgw.ReadRequest) ([]byte, error) {
-	ctx = withOutgoingContext(ctx)
+	ctx = withOutgoingContext(r.c, ctx)
 	mnt, err := r.getMountable(ctx)
 	if err != nil {
 		return nil, err
@@ -136,7 +137,7 @@ func (r *ref) ReadFile(ctx context.Context, req bkgw.ReadRequest) ([]byte, error
 }
 
 func (r *ref) ReadDir(ctx context.Context, req bkgw.ReadDirRequest) ([]*fstypes.Stat, error) {
-	ctx = withOutgoingContext(ctx)
+	ctx = withOutgoingContext(r.c, ctx)
 	mnt, err := r.getMountable(ctx)
 	if err != nil {
 		return nil, err
@@ -149,7 +150,7 @@ func (r *ref) ReadDir(ctx context.Context, req bkgw.ReadDirRequest) ([]*fstypes.
 }
 
 func (r *ref) WalkDir(ctx context.Context, req WalkDirRequest) error {
-	ctx = withOutgoingContext(ctx)
+	ctx = withOutgoingContext(r.c, ctx)
 	mnt, err := r.getMountable(ctx)
 	if err != nil {
 		return err
@@ -159,7 +160,7 @@ func (r *ref) WalkDir(ctx context.Context, req WalkDirRequest) error {
 }
 
 func (r *ref) StatFile(ctx context.Context, req bkgw.StatRequest) (*fstypes.Stat, error) {
-	ctx = withOutgoingContext(ctx)
+	ctx = withOutgoingContext(r.c, ctx)
 	mnt, err := r.getMountable(ctx)
 	if err != nil {
 		return nil, err
@@ -168,7 +169,7 @@ func (r *ref) StatFile(ctx context.Context, req bkgw.StatRequest) (*fstypes.Stat
 }
 
 func (r *ref) AddDependencyBlobs(ctx context.Context, blobs map[digest.Digest]*ocispecs.Descriptor) error {
-	ctx = withOutgoingContext(ctx)
+	ctx = withOutgoingContext(r.c, ctx)
 
 	cacheRef, err := r.CacheRef(ctx)
 	if err != nil {
@@ -226,7 +227,7 @@ func (r *ref) Result(ctx context.Context) (bksolver.CachedResult, error) {
 	if r == nil {
 		return nil, nil
 	}
-	ctx = withOutgoingContext(ctx)
+	ctx = withOutgoingContext(r.c, ctx)
 	res, err := r.resultProxy.Result(ctx)
 	if err != nil {
 		// writing log w/ %+v so that we can see stack traces embedded in err by buildkit's usage of pkg/errors
@@ -286,6 +287,11 @@ func ConvertToWorkerCacheResult(ctx context.Context, res *solverresult.Result[*r
 }
 
 func wrapError(ctx context.Context, baseErr error, client *Client) error {
+	clientMeta, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get client metadata: %w", err)
+	}
+
 	var slowCacheErr *bksolver.SlowCacheError
 	if errors.As(baseErr, &slowCacheErr) {
 		if slowCacheErr.Result != nil {
@@ -349,16 +355,19 @@ func wrapError(ctx context.Context, baseErr error, client *Client) error {
 		return errors.Join(err, baseErr)
 	}
 
-	stdoutBytes, err := getExecMetaFile(ctx, mntable, MetaMountStdoutPath)
-	if err != nil {
-		return errors.Join(err, baseErr)
-	}
-	stderrBytes, err := getExecMetaFile(ctx, mntable, MetaMountStderrPath)
-	if err != nil {
-		return errors.Join(err, baseErr)
+	var stdoutBytes, stderrBytes []byte
+	if clientMeta.ExecErrorOutput {
+		stdoutBytes, err = getExecMetaFile(ctx, client, mntable, MetaMountStdoutPath)
+		if err != nil {
+			return errors.Join(err, baseErr)
+		}
+		stderrBytes, err = getExecMetaFile(ctx, client, mntable, MetaMountStderrPath)
+		if err != nil {
+			return errors.Join(err, baseErr)
+		}
 	}
 
-	exitCodeBytes, err := getExecMetaFile(ctx, mntable, MetaMountExitCodePath)
+	exitCodeBytes, err := getExecMetaFile(ctx, client, mntable, MetaMountExitCodePath)
 	if err != nil {
 		return errors.Join(err, baseErr)
 	}
@@ -502,13 +511,16 @@ func debugContainer(ctx context.Context, execOp *bksolverpb.ExecOp, execErr *llb
 	return term.Close(termExitCode)
 }
 
-func getExecMetaFile(ctx context.Context, mntable snapshot.Mountable, fileName string) ([]byte, error) {
-	ctx = withOutgoingContext(ctx)
-	filePath := path.Join(MetaMountDestPath, fileName)
+func getExecMetaFile(ctx context.Context, c *Client, mntable snapshot.Mountable, fileName string) ([]byte, error) {
+	return ReadSnapshotPath(ctx, c, mntable, path.Join(MetaMountDestPath, fileName))
+}
+
+func ReadSnapshotPath(ctx context.Context, c *Client, mntable snapshot.Mountable, filePath string) ([]byte, error) {
+	ctx = withOutgoingContext(c, ctx)
 	stat, err := cacheutil.StatFile(ctx, mntable, filePath)
 	if err != nil {
 		// TODO: would be better to verify this is a "not exists" error, return err if not
-		bklog.G(ctx).Debugf("getExecMetaFile: failed to stat file: %v", err)
+		bklog.G(ctx).Debugf("ReadSnapshotPath: failed to stat file: %v", err)
 		return nil, nil
 	}
 

@@ -610,7 +610,9 @@ func (srv *Server) initializeDaggerClient(
 	tracerOpts := []sdktrace.TracerProviderOption{
 		// install a span processor that modifies spans created by Buildkit to
 		// fit our ideal format
-		sdktrace.WithSpanProcessor(buildkit.SpanProcessor{}),
+		sdktrace.WithSpanProcessor(buildkit.NewSpanProcessor(
+			client.bkClient,
+		)),
 		// save to our own client's DB
 		sdktrace.WithSpanProcessor(telemetry.NewLiveSpanProcessor(
 			srv.telemetryPubSub.Spans(client),
@@ -977,6 +979,7 @@ func (srv *Server) serveHTTPToClient(w http.ResponseWriter, r *http.Request, opt
 
 		mux.Handle(engine.SessionAttachablesEndpoint, httpHandlerFunc(srv.serveSessionAttachables, client))
 		mux.Handle(engine.QueryEndpoint, httpHandlerFunc(srv.serveQuery, client))
+		mux.Handle(engine.InitEndpoint, httpHandlerFunc(srv.serveInit, client))
 		mux.Handle(engine.ShutdownEndpoint, httpHandlerFunc(srv.serveShutdown, client))
 		sess.endpointMu.RLock()
 		for path, handler := range sess.endpoints {
@@ -1112,6 +1115,22 @@ func (srv *Server) serveQuery(w http.ResponseWriter, r *http.Request, client *da
 	}()
 
 	gqlSrv.ServeHTTP(w, r)
+	return nil
+}
+
+func (srv *Server) serveInit(w http.ResponseWriter, _ *http.Request, client *daggerClient) (rerr error) {
+	sess := client.daggerSession
+	slog := slog.With(
+		"isMainClient", client.clientID == sess.mainClientCallerID,
+		"sessionID", sess.sessionID,
+		"clientID", client.clientID,
+		"mainClientID", sess.mainClientCallerID)
+
+	slog.Trace("initialized client")
+
+	// nothing to actually do, client was passed in
+	w.WriteHeader(http.StatusNoContent)
+
 	return nil
 }
 
@@ -1410,7 +1429,12 @@ func httpHandlerFunc[T any](fn func(http.ResponseWriter, *http.Request, T) error
 		if err == nil {
 			return
 		}
-		bklog.G(r.Context()).WithError(err).Error("failed to serve request")
+
+		bklog.G(r.Context()).
+			WithField("method", r.Method).
+			WithField("path", r.URL.Path).
+			WithError(err).Error("failed to serve request")
+
 		// check whether this is a hijacked connection, if so we can't write any http errors to it
 		if _, testErr := w.Write(nil); testErr == http.ErrHijacked {
 			return

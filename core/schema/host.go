@@ -60,7 +60,7 @@ func (s *hostSchema) Install() {
 					// implementation
 					labels.LabelUncompressed: uncompressedDig.String(),
 				},
-			}).Marshal(ctx)
+			}).Marshal(ctx, buildkit.WithTracePropagation(ctx))
 			if err != nil {
 				return nil, fmt.Errorf("failed to marshal blob source: %w", err)
 			}
@@ -74,6 +74,7 @@ func (s *hostSchema) Install() {
 				fmt.Sprintf("dagger/import@%s", args.Digest),
 				llb.OCIStore("", buildkit.BuiltinContentOCIStoreName),
 				llb.Platform(parent.Platform().Spec()),
+				buildkit.WithTracePropagation(ctx),
 			)
 
 			ctrDef, err := st.Marshal(ctx, llb.Platform(parent.Platform().Spec()))

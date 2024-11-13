@@ -32,4 +32,5 @@ const (
 	IconSkipped         = "∅"
 	IconSuccess         = "✔"
 	IconFailure         = "✘"
+	IconCached          = "$" // cache money
 )

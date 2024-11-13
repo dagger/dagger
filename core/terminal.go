@@ -72,7 +72,7 @@ func (container *Container) Terminal(
 	if err != nil {
 		return fmt.Errorf("failed to create container for interactive terminal: %w", err)
 	}
-	svc, err := container.Service(ctx)
+	svc, err := container.AsService(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to create service for interactive terminal: %w", err)
 	}

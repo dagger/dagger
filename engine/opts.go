@@ -82,6 +82,10 @@ type ClientMetadata struct {
 
 	// SSH auth socket path
 	SSHAuthSocketPath string
+
+	// ExecErrorOutput determines whether to collect stdout/stderr for failed
+	// execs.
+	ExecErrorOutput bool
 }
 
 type clientMetadataCtxKey struct{}

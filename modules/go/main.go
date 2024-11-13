@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
-	"go.opentelemetry.io/otel/codes"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/modules/go/internal/dagger"
+	"github.com/dagger/dagger/modules/go/internal/telemetry"
 )
 
 const (
@@ -398,9 +398,9 @@ func (p Go) Lint(
 ) error {
 	eg, ctx := errgroup.WithContext(ctx)
 	for _, pkg := range packages {
-		eg.Go(func() error {
+		eg.Go(func() (rerr error) {
 			ctx, span := Tracer().Start(ctx, "lint "+path.Clean(pkg))
-			defer span.End()
+			defer telemetry.End(span, func() error { return rerr })
 			return dag.
 				Golangci().
 				Lint(p.Source, dagger.GolangciLintOpts{
@@ -410,16 +410,12 @@ func (p Go) Lint(
 				}).
 				Assert(ctx)
 		})
-		eg.Go(func() error {
+		eg.Go(func() (rerr error) {
 			ctx, span := Tracer().Start(ctx, "tidy "+path.Clean(pkg))
-			defer span.End()
+			defer telemetry.End(span, func() error { return rerr })
 			beforeTidy := p.Source.Directory(pkg)
 			afterTidy := p.Env(defaultPlatform).WithWorkdir(pkg).WithExec([]string{"go", "mod", "tidy"}).Directory(".")
-			err := dag.Dirdiff().AssertEqual(ctx, beforeTidy, afterTidy, []string{"go.mod", "go.sum"})
-			if err != nil {
-				span.SetStatus(codes.Error, err.Error())
-			}
-			return err
+			return dag.Dirdiff().AssertEqual(ctx, beforeTidy, afterTidy, []string{"go.mod", "go.sum"})
 		})
 	}
 	return eg.Wait()

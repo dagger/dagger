@@ -1,6 +1,8 @@
 package dagui
 
-import "time"
+import (
+	"time"
+)
 
 type FrontendOpts struct {
 	// Debug tells the frontend to show everything and do one big final render.
@@ -21,10 +23,6 @@ type FrontendOpts struct {
 	// Open web browser with the trace URL as soon as pipeline starts.
 	OpenWeb bool
 
-	// RevealAllSpans tells the frontend to show all spans, not just the spans
-	// beneath the primary span.
-	RevealAllSpans bool
-
 	// Leave the TUI running instead of exiting after completion.
 	NoExit bool
 
@@ -39,6 +37,13 @@ type FrontendOpts struct {
 
 	// DotShowInternal indicates whether to include internal steps in the DOT output
 	DotShowInternal bool
+
+	// ZoomedSpan configures a span to be zoomed in on, revealing
+	// its child spans.
+	ZoomedSpan SpanID
+
+	// FocusedSpan is the currently selected span, i.e. the cursor position.
+	FocusedSpan SpanID
 }
 
 const (
@@ -51,33 +56,46 @@ const (
 	ShowDigestsVerbosity      = 4
 )
 
-func (opts FrontendOpts) ShouldShow(tree *TraceTree) bool {
+func (opts FrontendOpts) ShouldShow(span *Span) bool {
 	if opts.Debug {
 		// debug reveals all
 		return true
 	}
-	span := tree.Span
-	if span.IsInternal() && opts.Verbosity < ShowInternalVerbosity {
-		// internal steps are hidden by default
-		return false
-	}
-	if tree.Parent != nil && (span.Encapsulated || tree.Parent.Span.Encapsulate) && tree.Parent.Span.Err() == nil && opts.Verbosity < ShowEncapsulatedVerbosity {
-		// encapsulated steps are hidden (even on error) unless their parent errors
-		return false
-	}
-	if span.Err() != nil {
-		// show errors
+	if opts.FocusedSpan == span.ID {
+		// prevent focused span from disappearing
 		return true
 	}
-	if tree.IsRunningOrChildRunning {
-		// show running steps
-		return true
-	}
-	if tree.Parent != nil && (opts.TooFastThreshold > 0 && span.ActiveDuration(time.Now()) < opts.TooFastThreshold && opts.Verbosity < ShowSpammyVerbosity) {
-		// ignore fast steps; signal:noise is too poor
+	if span.Ignore {
+		// absolutely 100% boring spans, like 'id' and 'sync'
+		//
+		// this is ahead of failed check because 'sync' is often failed and is
+		// _still_ not interesting
 		return false
 	}
-	if opts.GCThreshold > 0 && time.Since(span.EndTime()) > opts.GCThreshold && opts.Verbosity < ShowCompletedVerbosity {
+	if span.IsFailedOrCausedFailure() {
+		// prioritize showing failed things, even if they're internal
+		return true
+	}
+	if span.Hidden(opts) {
+		return false
+	}
+	if span.IsPending() {
+		// reveal pending spans so the user can see what's queued to run
+		return true
+	}
+	if span.IsRunningOrLinksRunning() {
+		return true
+	}
+	// TODO: avoid breaking chains
+	// if opts.TooFastThreshold > 0 &&
+	// 	span.ActiveDuration(time.Now()) < opts.TooFastThreshold &&
+	// 	opts.Verbosity < ShowSpammyVerbosity {
+	// 	// ignore fast steps; signal:noise is too poor
+	// 	return false
+	// }
+	if opts.GCThreshold > 0 &&
+		time.Since(span.EndTime) > opts.GCThreshold &&
+		opts.Verbosity < ShowCompletedVerbosity {
 		// stop showing steps that ended after a given threshold
 		return false
 	}

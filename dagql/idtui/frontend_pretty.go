@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"sync"
@@ -14,7 +15,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 	"github.com/pkg/browser"
-	"go.opentelemetry.io/otel/codes"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -28,6 +28,9 @@ import (
 
 type frontendPretty struct {
 	dagui.FrontendOpts
+
+	// don't show live progress; just print a full report at the end
+	reportOnly bool
 
 	// updated by Run
 	program     *tea.Program
@@ -45,8 +48,7 @@ type frontendPretty struct {
 	eof          bool
 	backgrounded bool
 	autoFocus    bool
-	focused      trace.SpanID
-	zoomed       trace.SpanID
+	debugged     dagui.SpanID
 	focusedIdx   int
 	rowsView     *dagui.RowsView
 	rows         *dagui.Rows
@@ -71,8 +73,17 @@ type frontendPretty struct {
 	msgPreFinalRender strings.Builder
 }
 
-func New() Frontend {
-	db := dagui.NewDB()
+func NewPretty() Frontend {
+	return NewWithDB(dagui.NewDB())
+}
+
+func NewReporter() Frontend {
+	fe := NewWithDB(dagui.NewDB())
+	fe.reportOnly = true
+	return fe
+}
+
+func NewWithDB(db *dagui.DB) *frontendPretty {
 	profile := ColorProfile()
 	view := new(strings.Builder)
 	return &frontendPretty{
@@ -82,7 +93,7 @@ func New() Frontend {
 
 		// set empty initial row state to avoid nil checks
 		rowsView: &dagui.RowsView{},
-		rows:     &dagui.Rows{BySpan: map[trace.SpanID]*dagui.TraceRow{}},
+		rows:     &dagui.Rows{BySpan: map[dagui.SpanID]*dagui.TraceRow{}},
 
 		// initial TUI state
 		window:     tea.WindowSizeMsg{Width: -1, Height: -1}, // be clear that it's not set
@@ -145,34 +156,40 @@ func (fe *frontendPretty) Run(ctx context.Context, opts dagui.FrontendOpts, run 
 	}
 	fe.FrontendOpts = opts
 
-	// run the function wrapped in the TUI
-	runErr := fe.runWithTUI(ctx, run)
+	if fe.reportOnly {
+		fe.err = run(ctx)
+	} else {
+		// run the function wrapped in the TUI
+		fe.err = fe.runWithTUI(ctx, run)
+	}
 
 	// print the final output display to stderr
-	if renderErr := fe.finalRender(); renderErr != nil {
+	if renderErr := fe.FinalRender(os.Stderr); renderErr != nil {
 		return renderErr
 	}
 
 	fe.db.WriteDot(opts.DotOutputFilePath, opts.DotFocusField, opts.DotShowInternal)
 
 	// return original err
-	return runErr
+	return fe.err
 }
 
 func (fe *frontendPretty) Opts() *dagui.FrontendOpts {
 	return &fe.FrontendOpts
 }
 
-func (fe *frontendPretty) SetPrimary(spanID trace.SpanID) {
+func (fe *frontendPretty) SetPrimary(spanID dagui.SpanID) {
 	fe.mu.Lock()
 	fe.db.SetPrimarySpan(spanID)
-	fe.zoomed = spanID
+	fe.ZoomedSpan = spanID
+	fe.FocusedSpan = spanID
+	fe.recalculateViewLocked()
 	fe.mu.Unlock()
 }
 
-func (fe *frontendPretty) SetRevealAllSpans(val bool) {
+func (fe *frontendPretty) RevealAllSpans() {
 	fe.mu.Lock()
-	fe.FrontendOpts.RevealAllSpans = val
+	fe.ZoomedSpan = dagui.SpanID{}
 	fe.mu.Unlock()
 }
 
@@ -217,28 +234,80 @@ func (fe *frontendPretty) runWithTUI(ctx context.Context, run func(context.Conte
 	return fe.err
 }
 
-// finalRender is called after the program has finished running and prints the
+func (fe *frontendPretty) renderErrorLogs(out *termenv.Output, r *renderer) bool {
+	if fe.rowsView == nil {
+		return false
+	}
+	rowsView := fe.db.RowsView(dagui.FrontendOpts{
+		ZoomedSpan: fe.db.PrimarySpan,
+		Verbosity:  dagui.ShowCompletedVerbosity,
+	})
+	errTree := fe.db.CollectErrors(rowsView)
+	var anyHasLogs bool
+	dagui.WalkTree(errTree, func(row *dagui.TraceTree, _ int) bool {
+		logs := fe.logs.Logs[row.Span.ID]
+		if logs != nil && logs.UsedHeight() > 0 {
+			anyHasLogs = true
+			return true
+		}
+		return false
+	})
+	if anyHasLogs {
+		fmt.Fprintln(out)
+		fmt.Fprintln(out, out.String("Error logs:").Bold())
+	}
+	dagui.WalkTree(errTree, func(tree *dagui.TraceTree, _ int) bool {
+		logs := fe.logs.Logs[tree.Span.ID]
+		if logs != nil && logs.UsedHeight() > 0 {
+			fmt.Fprintln(out)
+			fe.renderStep(out, r, tree.Span, tree.Chained, 0, "")
+			fe.renderLogs(out, r, logs, -1, logs.UsedHeight(), "")
+			fe.renderStepError(out, r, tree.Span, 0, "")
+		}
+		return false
+	})
+	return len(errTree) > 0
+}
+
+// FinalRender is called after the program has finished running and prints the
 // final output after the TUI has exited.
-func (fe *frontendPretty) finalRender() error {
+func (fe *frontendPretty) FinalRender(w io.Writer) error {
 	fe.mu.Lock()
 	defer fe.mu.Unlock()
 
 	// Render the full trace.
-	fe.zoomed = fe.db.PrimarySpan
-	fe.focused = trace.SpanID{}
-	fe.focusedIdx = -1
+	fe.ZoomedSpan = fe.db.PrimarySpan
+	if fe.reportOnly && fe.Verbosity < dagui.ExpandCompletedVerbosity {
+		fe.Verbosity = dagui.ExpandCompletedVerbosity
+	}
 	fe.recalculateViewLocked()
 
+	// Unfocus for the final render.
+	fe.FocusedSpan = dagui.SpanID{}
+
+	r := newRenderer(fe.db, fe.window.Width, fe.FrontendOpts)
+
+	out := NewOutput(w, termenv.WithProfile(fe.profile))
+
 	if fe.Debug || fe.Verbosity >= dagui.ShowCompletedVerbosity || fe.err != nil {
-		// Render progress to stderr so stdout stays clean.
-		out := NewOutput(os.Stderr, termenv.WithProfile(fe.profile))
-		fe.renderProgress(out, true, fe.window.Height, "")
+		fe.renderProgress(out, r, true, fe.window.Height, "")
 
 		if fe.msgPreFinalRender.Len() > 0 {
-			fmt.Fprint(os.Stderr, "\n"+fe.msgPreFinalRender.String()+"\n")
+			defer func() {
+				fmt.Fprintln(os.Stderr)
+				fmt.Fprintln(os.Stderr, fe.msgPreFinalRender.String())
+			}()
 		}
+	}
 
-		fmt.Fprintln(os.Stderr)
+	// If there are errors, show log output.
+	if fe.err != nil {
+		// Counter-intuitively, we don't want to render the primary output
+		// when there's an error, because the error is better represented by
+		// the progress output and error summary.
+		if fe.renderErrorLogs(out, r) {
+			return nil
+		}
 	}
 
 	// Replay the primary output log to stdout/stderr.
@@ -365,7 +434,8 @@ func (fe *frontendPretty) renderKeymap(out *termenv.Output, style lipgloss.Style
 		{"first", []string{"home"}, true},
 		{"last", []string{"end", " "}, true},
 		{"zoom", []string{"enter"}, true},
-		{"unzoom", []string{"esc"}, fe.zoomed.IsValid() && fe.zoomed != fe.db.PrimarySpan},
+		{"unzoom", []string{"esc"}, fe.ZoomedSpan.IsValid() &&
+			fe.ZoomedSpan != fe.db.PrimarySpan},
 		{fmt.Sprintf("verbosity=%d", fe.Verbosity), []string{"+/-", "+", "-"}, true},
 		{quitMsg, []string{"q", "ctrl+c"}, true},
 	} {
@@ -397,9 +467,11 @@ func (fe *frontendPretty) renderKeymap(out *termenv.Output, style lipgloss.Style
 func (fe *frontendPretty) Render(out *termenv.Output) error {
 	progHeight := fe.window.Height
 
+	r := newRenderer(fe.db, fe.window.Width, fe.FrontendOpts)
+
 	var progPrefix string
 	if fe.rowsView != nil && fe.rowsView.Zoomed != nil && fe.rowsView.Zoomed.ID != fe.db.PrimarySpan {
-		fe.renderStep(out, fe.rowsView.Zoomed, 0, "")
+		fe.renderStep(out, r, fe.rowsView.Zoomed, false, 0, "")
 		progHeight -= 1
 		progPrefix = "  "
 	}
@@ -415,15 +487,15 @@ func (fe *frontendPretty) Render(out *termenv.Output) error {
 		fmt.Fprint(countOut, KeymapStyle.Render(strings.Repeat(HorizBar, rest)))
 	}
 
-	if logs := fe.logs.Logs[fe.zoomed]; logs != nil && logs.UsedHeight() > 0 {
+	if logs := fe.logs.Logs[fe.ZoomedSpan]; logs != nil && logs.UsedHeight() > 0 {
 		fmt.Fprintln(below)
-		fe.renderLogs(countOut, logs, -1, fe.window.Height/3, progPrefix)
+		fe.renderLogs(countOut, r, logs, -1, fe.window.Height/3, progPrefix)
 	}
 
 	belowOut := strings.TrimRight(below.String(), "\n")
 	progHeight -= lipgloss.Height(belowOut)
 
-	fe.renderProgress(out, false, progHeight, progPrefix)
+	fe.renderProgress(out, r, false, progHeight, progPrefix)
 	fmt.Fprintln(out)
 
 	fmt.Fprint(out, belowOut)
@@ -431,23 +503,37 @@ func (fe *frontendPretty) Render(out *termenv.Output) error {
 }
 
 func (fe *frontendPretty) recalculateViewLocked() {
-	if fe.RevealAllSpans {
-		fe.rowsView = fe.db.RowsViewAll()
-	} else {
-		fe.rowsView = fe.db.RowsView(fe.zoomed)
-	}
+	fe.rowsView = fe.db.RowsView(fe.FrontendOpts)
 	fe.rows = fe.rowsView.Rows(fe.FrontendOpts)
-	fe.focus(fe.rows.BySpan[fe.focused])
+	if len(fe.rows.Order) == 0 {
+		fe.focusedIdx = -1
+		fe.FocusedSpan = dagui.SpanID{}
+		return
+	}
+	if len(fe.rows.Order) < fe.focusedIdx {
+		// durability: everything disappeared?
+		fe.autoFocus = true
+	}
+	if fe.autoFocus {
+		fe.focusedIdx = len(fe.rows.Order) - 1
+		fe.FocusedSpan = fe.rows.Order[fe.focusedIdx].Span.ID
+	} else if row := fe.rows.BySpan[fe.FocusedSpan]; row != nil {
+		fe.focusedIdx = row.Index
+	} else {
+		// lost focus somehow
+		fe.autoFocus = true
+		fe.recalculateViewLocked()
+	}
 }
 
-func (fe *frontendPretty) renderedRowLines(row *dagui.TraceRow, prefix string) []string {
+func (fe *frontendPretty) renderedRowLines(r *renderer, row *dagui.TraceRow, prefix string) []string {
 	buf := new(strings.Builder)
 	out := NewOutput(buf, termenv.WithProfile(fe.profile))
-	fe.renderRow(out, row, false, prefix)
+	fe.renderRow(out, r, row, prefix)
 	return strings.Split(strings.TrimSuffix(buf.String(), "\n"), "\n")
 }
 
-func (fe *frontendPretty) renderProgress(out *termenv.Output, full bool, height int, prefix string) {
+func (fe *frontendPretty) renderProgress(out *termenv.Output, r *renderer, full bool, height int, prefix string) {
 	if fe.rowsView == nil {
 		return
 	}
@@ -456,60 +542,43 @@ func (fe *frontendPretty) renderProgress(out *termenv.Output, full bool, height 
 
 	if full {
 		for _, row := range rows.Order {
-			fe.renderRow(out, row, full, "")
+			fe.renderRow(out, r, row, "")
 		}
 		return
 	}
 
-	if !fe.autoFocus {
-		// must be manually focused
-		// NOTE: it's possible for the focused span to go away
-		lostFocus := true
-		if row := rows.BySpan[fe.focused]; row != nil {
-			fe.focusedIdx = row.Index
-			lostFocus = false
-		}
-		if lostFocus {
-			fe.autoFocus = true
-		}
-	}
-
-	if len(rows.Order) < fe.focusedIdx {
-		// durability: everything disappeared?
-		fe.autoFocus = true
-	}
-
-	if len(rows.Order) == 0 {
-		// NB: this is a bit redundant with above, but feels better to decouple
-		return
-	}
-
-	if fe.autoFocus && len(rows.Order) > 0 {
-		fe.focusedIdx = len(rows.Order) - 1
-		fe.focused = rows.Order[fe.focusedIdx].Span.ID
-	}
-
-	lines := fe.renderLines(height, prefix)
+	lines := fe.renderLines(r, height, prefix)
 
 	fmt.Fprint(out, strings.Join(lines, "\n"))
 }
 
-func (fe *frontendPretty) renderLines(height int, prefix string) []string {
+func (fe *frontendPretty) renderLines(r *renderer, height int, prefix string) []string {
 	rows := fe.rows
-	before, focused, after := rows.Order[:fe.focusedIdx], rows.Order[fe.focusedIdx], rows.Order[fe.focusedIdx+1:]
+	if len(rows.Order) == 0 {
+		return []string{}
+	}
+	if fe.focusedIdx == -1 {
+		fe.autoFocus = true
+		fe.focusedIdx = len(rows.Order) - 1
+	}
+
+	before, focused, after :=
+		rows.Order[:fe.focusedIdx],
+		rows.Order[fe.focusedIdx],
+		rows.Order[fe.focusedIdx+1:]
 
 	beforeLines := []string{}
-	focusedLines := fe.renderedRowLines(focused, prefix)
+	focusedLines := fe.renderedRowLines(r, focused, prefix)
 	afterLines := []string{}
 	renderBefore := func() {
 		row := before[len(before)-1]
 		before = before[:len(before)-1]
-		beforeLines = append(fe.renderedRowLines(row, prefix), beforeLines...)
+		beforeLines = append(fe.renderedRowLines(r, row, prefix), beforeLines...)
 	}
 	renderAfter := func() {
 		row := after[0]
 		after = after[1:]
-		afterLines = append(afterLines, fe.renderedRowLines(row, prefix)...)
+		afterLines = append(afterLines, fe.renderedRowLines(r, row, prefix)...)
 	}
 	totalLines := func() int {
 		return len(beforeLines) + len(focusedLines) + len(afterLines)
@@ -581,8 +650,9 @@ func (fe *frontendPretty) focus(row *dagui.TraceRow) {
 	if row == nil {
 		return
 	}
-	fe.focused = row.Span.ID
+	fe.FocusedSpan = row.Span.ID
 	fe.focusedIdx = row.Index
+	fe.recalculateViewLocked()
 }
 
 func (fe *frontendPretty) Init() tea.Cmd {
@@ -751,7 +821,7 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 			fe.pressedKeyAt = time.Now()
 			return fe, nil
 		case "esc":
-			fe.zoomed = fe.db.PrimarySpan
+			fe.ZoomedSpan = fe.db.PrimarySpan
 			fe.recalculateViewLocked()
 			return fe, nil
 		case "+", "=":
@@ -770,8 +840,11 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 				return fe, nil
 			}
 			url := fe.cloudURL
-			if fe.zoomed.IsValid() && fe.zoomed != fe.db.PrimarySpan {
-				url += "?span=" + fe.zoomed.String()
+			if fe.ZoomedSpan.IsValid() && fe.ZoomedSpan != fe.db.PrimarySpan {
+				url += "?span=" + fe.ZoomedSpan.String()
+			}
+			if fe.FocusedSpan.IsValid() && fe.FocusedSpan != fe.db.PrimarySpan {
+				url += "#" + fe.FocusedSpan.String()
 			}
 			return fe, func() tea.Msg {
 				if err := browser.OpenURL(url); err != nil {
@@ -782,8 +855,11 @@ func (fe *frontendPretty) update(msg tea.Msg) (*frontendPretty, tea.Cmd) { //nol
 				}
 				return nil
 			}
+		case "?":
+			fe.debugged = fe.FocusedSpan
+			return fe, nil
 		case "enter":
-			fe.zoomed = fe.focused
+			fe.ZoomedSpan = fe.FocusedSpan
 			fe.recalculateViewLocked()
 			return fe, nil
 		}
@@ -851,21 +927,20 @@ func (fe *frontendPretty) goDown() {
 
 func (fe *frontendPretty) goOut() {
 	fe.autoFocus = false
-	focused := fe.db.Spans[fe.focused]
-	if focused.ParentSpan == nil {
+	focused := fe.db.Spans.Map[fe.FocusedSpan]
+	if focused == nil {
 		return
 	}
-	fe.focused = focused.ParentSpan.ID
-	if fe.focused == fe.zoomed {
-		// targeted the zoomed span; zoom on its parent isntead
-		zoomedParent := fe.db.Spans[fe.zoomed].ParentSpan
-		for zoomedParent != nil && zoomedParent.Passthrough {
-			zoomedParent = zoomedParent.ParentSpan
-		}
+	parent := focused.VisibleParent(fe.FrontendOpts)
+	if parent == nil {
+		return
+	}
+	fe.FocusedSpan = parent.ID
+	// targeted the zoomed span; zoom on its parent instead
+	if fe.FocusedSpan == fe.ZoomedSpan {
+		zoomedParent := parent.VisibleParent(fe.FrontendOpts)
 		if zoomedParent != nil {
-			fe.zoomed = zoomedParent.ID
-		} else {
-			fe.zoomed = trace.SpanID{}
+			fe.ZoomedSpan = zoomedParent.ID
 		}
 	}
 	fe.recalculateViewLocked()
@@ -897,76 +972,153 @@ func (fe *frontendPretty) renderLocked() {
 	fe.Render(fe.viewOut)
 }
 
-func (fe *frontendPretty) renderRow(out *termenv.Output, row *dagui.TraceRow, full bool, prefix string) {
-	fe.renderStep(out, row.Span, row.Depth, prefix)
-	if row.IsRunningOrChildRunning || row.Span.Failed() || fe.Verbosity >= dagui.ShowSpammyVerbosity {
+func (fe *frontendPretty) renderRow(out *termenv.Output, r *renderer, row *dagui.TraceRow, prefix string) {
+	if row.Previous != nil &&
+		row.Previous.Depth >= row.Depth &&
+		!row.Chained &&
+		(row.Previous.Depth > row.Depth || row.Span.Call != nil ||
+			(row.Previous.Span.Call != nil && row.Span.Call == nil)) {
+		fmt.Fprint(out, prefix)
+		r.indent(out, row.Depth)
+		fmt.Fprintln(out)
+	}
+	fe.renderStep(out, r, row.Span, row.Chained, row.Depth, prefix)
+	fe.renderStepLogs(out, r, row, prefix)
+	fe.renderStepError(out, r, row.Span, row.Depth, prefix)
+}
+
+func (fe *frontendPretty) renderStepLogs(out *termenv.Output, r *renderer, row *dagui.TraceRow, prefix string) {
+	if row.IsRunningOrChildRunning || row.Span.IsFailedOrCausedFailure() || fe.Verbosity >= dagui.ExpandCompletedVerbosity {
 		if logs := fe.logs.Logs[row.Span.ID]; logs != nil {
-			logLimit := fe.window.Height / 3
-			if full {
-				logLimit = logs.UsedHeight()
-			}
-			fe.renderLogs(out,
+			fe.renderLogs(out, r,
 				logs,
 				row.Depth,
-				logLimit,
+				fe.window.Height/3,
 				prefix,
 			)
 		}
 	}
 }
 
-func (fe *frontendPretty) renderStep(out *termenv.Output, span *dagui.Span, depth int, prefix string) error {
-	r := newRenderer(fe.db, fe.window.Width, fe.FrontendOpts)
+func (fe *frontendPretty) renderStepError(out *termenv.Output, r *renderer, span *dagui.Span, depth int, prefix string) {
+	for _, span := range span.Errors().Order {
+		// only print the first line
+		for _, line := range strings.Split(span.Status.Description, "\n") {
+			if line == "" {
+				continue
+			}
+			fmt.Fprint(out, prefix)
+			r.indent(out, depth)
+			fmt.Fprintf(out,
+				out.String("! %s").Foreground(termenv.ANSIYellow).String(),
+				line,
+			)
+			fmt.Fprintln(out)
+		}
+	}
+}
 
-	isFocused := span.ID == fe.focused
+func (fe *frontendPretty) renderStep(out *termenv.Output, r *renderer, span *dagui.Span, chained bool, depth int, prefix string) error {
+	isFocused := span.ID == fe.FocusedSpan
 
 	id := span.Call
 	if id != nil {
-		if err := r.renderCall(out, span, id, prefix, depth, false, span.Internal, isFocused); err != nil {
+		if err := r.renderCall(out, span, id, prefix, chained, depth, false, span.Internal, isFocused); err != nil {
 			return err
 		}
 	} else if span != nil {
-		if err := r.renderSpan(out, span, span.Name(), prefix, depth, isFocused); err != nil {
+		if err := r.renderSpan(out, span, span.Name, prefix, depth, isFocused); err != nil {
 			return err
 		}
 	}
 	fmt.Fprintln(out)
 
-	if span.Status().Code == codes.Error && span.Status().Description != "" {
-		// only print the first line
-		line := strings.Split(span.Status().Description, "\n")[0]
-		fmt.Fprint(out, prefix)
-		r.indent(out, depth)
-		fmt.Fprintf(out,
-			out.String("! %s").Foreground(termenv.ANSIYellow).String(),
-			line,
-		)
-		fmt.Fprintln(out)
+	if span.ID == fe.debugged {
+		r.indent(out, depth+1)
+		fmt.Fprintf(out, prefix+"? encapsulate: %v\n", span.Encapsulate)
+		r.indent(out, depth+1)
+		fmt.Fprintf(out, prefix+"? encapsulated: %v\n", span.Encapsulated)
+		r.indent(out, depth+1)
+		fmt.Fprintf(out, prefix+"? internal: %v\n", span.Internal)
+		r.indent(out, depth+1)
+		fmt.Fprintf(out, prefix+"? canceled: %v\n", span.Canceled)
+		r.indent(out, depth+1)
+		fmt.Fprintf(out, prefix+"? passthrough: %v\n", span.Passthrough)
+		r.indent(out, depth+1)
+		fmt.Fprintf(out, prefix+"? ignore: %v\n", span.Ignore)
+		pending, reasons := span.PendingReason()
+		r.indent(out, depth+1)
+		fmt.Fprintf(out, prefix+"? pending: %v\n", pending)
+		for _, reason := range reasons {
+			r.indent(out, depth+1)
+			fmt.Fprintln(out, prefix+"- "+reason)
+		}
+		cached, reasons := span.CachedReason()
+		r.indent(out, depth+1)
+		fmt.Fprintf(out, prefix+"? cached: %v\n", cached)
+		for _, reason := range reasons {
+			r.indent(out, depth+1)
+			fmt.Fprintln(out, prefix+"- "+reason)
+		}
+		failed, reasons := span.FailedReason()
+		r.indent(out, depth+1)
+		fmt.Fprintf(out, prefix+"? failed: %v\n", failed)
+		for _, reason := range reasons {
+			r.indent(out, depth+1)
+			fmt.Fprintln(out, prefix+"- "+reason)
+		}
+		if span.EffectID != "" {
+			r.indent(out, depth+1)
+			fmt.Fprintf(out, prefix+"? is effect: %s\n", span.EffectID)
+		}
+		if len(span.EffectIDs) > 0 {
+			r.indent(out, depth+1)
+			fmt.Fprintf(out, prefix+"? installed effects: %d\n", len(span.EffectIDs))
+			for _, id := range span.EffectIDs {
+				r.indent(out, depth+1)
+				fmt.Fprintln(out, prefix+" - "+id)
+				if spans := fe.db.EffectSpans[id]; spans != nil {
+					for _, effect := range spans.Order {
+						r.indent(out, depth+1)
+						fmt.Fprintln(out, prefix+"   - "+effect.Name)
+					}
+				}
+			}
+		}
 	}
 
 	return nil
 }
 
-func (fe *frontendPretty) renderLogs(out *termenv.Output, logs *Vterm, depth int, height int, prefix string) {
+func (fe *frontendPretty) renderLogs(out *termenv.Output, r *renderer, logs *Vterm, depth int, height int, prefix string) {
 	pipe := out.String(VertBoldBar).Foreground(termenv.ANSIBrightBlack)
 	if depth == -1 {
 		// clear prefix when zoomed
 		logs.SetPrefix(prefix)
 	} else {
-		logs.SetPrefix(prefix + strings.Repeat("  ", depth) + pipe.String() + " ")
+		buf := new(strings.Builder)
+		fmt.Fprint(buf, prefix)
+		indentOut := NewOutput(buf, termenv.WithProfile(fe.profile))
+		r.indent(indentOut, depth)
+		fmt.Fprint(indentOut, pipe.String()+" ")
+		logs.SetPrefix(buf.String())
 	}
-	logs.SetHeight(height)
+	if height <= 0 {
+		logs.SetHeight(logs.UsedHeight())
+	} else {
+		logs.SetHeight(height)
+	}
 	fmt.Fprint(out, logs.View())
 }
 
 type prettyLogs struct {
-	Logs     map[trace.SpanID]*Vterm
+	Logs     map[dagui.SpanID]*Vterm
 	LogWidth int
 }
 
 func newPrettyLogs() *prettyLogs {
 	return &prettyLogs{
-		Logs:     make(map[trace.SpanID]*Vterm),
+		Logs:     make(map[dagui.SpanID]*Vterm),
 		LogWidth: -1,
 	}
 }
@@ -980,13 +1132,14 @@ func (l *prettyLogs) Export(ctx context.Context, logs []sdklog.Record) error {
 }
 
 func (l *prettyLogs) spanLogs(id trace.SpanID) *Vterm {
-	term, found := l.Logs[id]
+	spanID := dagui.SpanID{SpanID: id}
+	term, found := l.Logs[spanID]
 	if !found {
 		term = NewVterm()
 		if l.LogWidth > -1 {
 			term.SetWidth(l.LogWidth)
 		}
-		l.Logs[id] = term
+		l.Logs[spanID] = term
 	}
 	return term
 }

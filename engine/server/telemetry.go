@@ -133,7 +133,7 @@ func (ps *PubSub) LogsHandler(rw http.ResponseWriter, r *http.Request) {
 	eg := new(errgroup.Group)
 	for _, c := range append([]*daggerClient{client}, client.parents...) {
 		eg.Go(func() error {
-			if err := enginetel.ReexportLogsFromPB(r.Context(), ps.Logs(c), &req); err != nil {
+			if err := telemetry.ReexportLogsFromPB(r.Context(), ps.Logs(c), &req); err != nil {
 				return fmt.Errorf("export to %s: %w", c.clientID, err)
 			}
 			return nil

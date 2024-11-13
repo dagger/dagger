@@ -67,6 +67,20 @@ defmodule Dagger.FunctionCall do
     Client.execute(function_call.client, query_builder)
   end
 
+  @doc "Return an error from the function."
+  @spec return_error(t(), Dagger.Error.t()) :: :ok | {:error, term()}
+  def return_error(%__MODULE__{} = function_call, error) do
+    query_builder =
+      function_call.query_builder
+      |> QB.select("returnError")
+      |> QB.put_arg("error", Dagger.ID.id!(error))
+
+    case Client.execute(function_call.client, query_builder) do
+      {:ok, _} -> :ok
+      error -> error
+    end
+  end
+
   @doc "Set the return value of the function call to the provided value."
   @spec return_value(t(), Dagger.JSON.t()) :: :ok | {:error, term()}
   def return_value(%__MODULE__{} = function_call, value) do

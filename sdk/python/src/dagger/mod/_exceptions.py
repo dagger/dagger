@@ -45,9 +45,6 @@ class NameConflictError(UserError):
 class FunctionError(UserError):
     """An error while executing a user function."""
 
-    def __str__(self):
-        return f"Function execution error: {super().__str__()}"
-
 
 @dataclasses.dataclass(slots=True)
 class ConversionError(Exception):

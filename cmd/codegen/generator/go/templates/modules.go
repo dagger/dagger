@@ -288,7 +288,13 @@ const (
 // "invoke" func, which is the mostly dynamically generated code that actually
 // calls the user's functions.
 func mainSrc(checkVersionCompatibility func(string) bool) string {
-	main := `func main() {
+	// Ensure compatibility with modules that predate Void return value handling
+	voidRet := `err`
+	if !checkVersionCompatibility("v0.12.0") {
+		voidRet = `_, err`
+	}
+
+	return `func main() {
 	ctx := context.Background()
 
 	// Direct slog to the new stderr. This is only for dev time debugging, and
@@ -298,12 +304,11 @@ func mainSrc(checkVersionCompatibility func(string) bool) string {
 	})))
 
 	if err := dispatch(ctx); err != nil {
-		fmt.Println(err.Error())
 		os.Exit(2)
 	}
 }
 
-func dispatch(ctx context.Context) error {
+func dispatch(ctx context.Context) (rerr error) {
 	ctx = telemetry.InitEmbedded(ctx, resource.NewWithAttributes(
 		semconv.SchemaURL,
 		semconv.ServiceNameKey.String("dagger-go-sdk"),
@@ -317,6 +322,14 @@ func dispatch(ctx context.Context) error {
 	setMarshalContext(ctx)
 
 	fnCall := dag.CurrentFunctionCall()
+	defer func() {
+		if rerr != nil {
+			if ` + voidRet + ` := fnCall.ReturnError(ctx, dag.Error(rerr.Error())); err != nil {
+				fmt.Println("failed to return error:", err)
+			}
+		}
+	}()
+
 	parentName, err := fnCall.ParentName(ctx)
 	if err != nil {
 		return fmt.Errorf("get parent name: %w", err)
@@ -349,28 +362,22 @@ func dispatch(ctx context.Context) error {
 
 	result, err := invoke(ctx, []byte(parentJson), parentName, fnName, inputArgs)
 	if err != nil {
-		return fmt.Errorf("invoke: %w", err)
+		var exec *dagger.ExecError
+		if errors.As(err, &exec) {
+			return exec.Unwrap()
+		}
+		return err
 	}
 	resultBytes, err := json.Marshal(result)
 	if err != nil {
 		return fmt.Errorf("marshal: %w", err)
-	}`
-
-	if checkVersionCompatibility("v0.12.0") {
-		main += `
-	if err = fnCall.ReturnValue(ctx, dagger.JSON(resultBytes)); err != nil {
-		return fmt.Errorf("store return value: %w", err)
-	}`
-	} else {
-		main += `
-	if _, err = fnCall.ReturnValue(ctx, dagger.JSON(resultBytes)); err != nil {
-		return fmt.Errorf("store return value: %w", err)
-	}`
 	}
-	main += `
+
+	if ` + voidRet + ` := fnCall.ReturnValue(ctx, dagger.JSON(resultBytes)); err != nil {
+		return fmt.Errorf("store return value: %w", err)
+	}
 	return nil
 }`
-	return main
 }
 
 // the source code of the invoke func, which is the mostly dynamically generated code that actually calls the user's functions

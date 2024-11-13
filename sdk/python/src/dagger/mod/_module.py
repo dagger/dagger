@@ -83,11 +83,15 @@ class Module:
         self.name = await dag.current_module().name()
         self._main = self.get_object(to_pascal_case(self.name))
 
-        # If parent_name is empty it means we need to register the type definitions.
-        if parent_name := await dag.current_function_call().parent_name():
-            result = await self._invoke(parent_name)
-        else:
-            result = await self._register()
+        try:
+            if parent_name := await dag.current_function_call().parent_name():
+                result = await self._invoke(parent_name)
+            else:
+                result = await self._register()
+        except FunctionError as e:
+            logger.exception("Error while executing function")
+            await dag.current_function_call().return_error(dag.error(str(e)))
+            raise SystemExit(2) from None
 
         try:
             output = json.dumps(result)

@@ -41,6 +41,99 @@ func (t *Test) All(
 	return t.test(ctx, "", "", "./...", failfast, parallel, timeout, race, 1, verbose)
 }
 
+// Run telemetry tests
+func (t *Test) Telemetry(
+	ctx context.Context,
+	// Only run these tests
+	// +optional
+	run string,
+	// Skip these tests
+	// +optional
+	skip string,
+	// +optional
+	update bool,
+	// +optional
+	failfast bool,
+	// +optional
+	parallel int,
+	// +optional
+	timeout string,
+	// +optional
+	race bool,
+	// +default=1
+	count int,
+	// +optional
+	verbose bool,
+) (*dagger.Directory, error) {
+	engine := t.Dagger.Engine().
+		WithConfig(`registry."registry:5000"`, `http = true`).
+		WithConfig(`registry."privateregistry:5000"`, `http = true`).
+		WithConfig(`registry."docker.io"`, `mirrors = ["mirror.gcr.io"]`).
+		WithConfig(`grpc`, `address=["unix:///var/run/buildkit/buildkitd.sock", "tcp://0.0.0.0:1234"]`).
+		WithArg(`network-name`, `dagger-dev`).
+		WithArg(`network-cidr`, `10.88.0.0/16`).
+		WithArg(`debugaddr`, `0.0.0.0:6060`)
+	devEngine, err := engine.Container(ctx, "", nil, false)
+	if err != nil {
+		return nil, err
+	}
+
+	devBinary, err := t.Dagger.CLI().Binary(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+
+	registrySvc := registry()
+	devEngineSvc := devEngine.
+		WithServiceBinding("registry", registrySvc).
+		WithServiceBinding("privateregistry", privateRegistry()).
+		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.NetworkProtocolTcp}).
+		WithMountedCache(distconsts.EngineDefaultStateDir, dag.CacheVolume("dagger-dev-engine-test-state"+identity.NewID())).
+		WithExec(nil, dagger.ContainerWithExecOpts{
+			UseEntrypoint:            true,
+			InsecureRootCapabilities: true,
+		}).
+		AsService()
+
+	endpoint, err := devEngineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
+	if err != nil {
+		return nil, err
+	}
+
+	// installed into $PATH
+	cliBinPath := "/usr/local/bin/dagger"
+
+	tests := t.Dagger.Go().Env().
+		WithServiceBinding("dagger-engine", devEngineSvc).
+		WithServiceBinding("registry", registrySvc)
+
+	if t.CacheConfig != "" {
+		tests = tests.WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", t.CacheConfig)
+	}
+
+	tests = tests.
+		WithMountedFile(cliBinPath, devBinary).
+		WithEnvVariable("PATH", "/usr/local/bin:${PATH}", dagger.ContainerWithEnvVariableOpts{
+			Expand: true,
+		}).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint)
+	if t.Dagger.DockerCfg != nil {
+		// this avoids rate limiting in our ci tests
+		tests = tests.WithMountedSecret("/root/.docker/config.json", t.Dagger.DockerCfg)
+	}
+
+	ran := t.goTest(tests, run, skip, "./dagql/idtui/", failfast, parallel, timeout, race, count, update, verbose)
+	ran, err = ran.Sync(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return dag.Directory().WithDirectory(
+		"./dagql/idtui/testdata/",
+		ran.Directory("./dagql/idtui/testdata/"),
+	), nil
+}
+
 // List all tests
 func (t *Test) List(ctx context.Context) (string, error) {
 	cmd, err := t.testCmd(ctx)
@@ -98,6 +191,39 @@ func (t *Test) test(
 	count int,
 	verbose bool,
 ) error {
+	cmd, err := t.testCmd(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = t.goTest(
+		cmd,
+		runTestRegex,
+		skipTestRegex,
+		pkg,
+		failfast,
+		parallel,
+		timeout,
+		race,
+		count,
+		false, // -update
+		verbose,
+	).Sync(ctx)
+	return err
+}
+
+func (t *Test) goTest(
+	cmd *dagger.Container,
+	runTestRegex string,
+	skipTestRegex string,
+	pkg string,
+	failfast bool,
+	parallel int,
+	timeout string,
+	race bool,
+	count int,
+	update bool,
+	verbose bool,
+) *dagger.Container {
 	cgoEnabledEnv := "0"
 	args := []string{
 		"go",
@@ -151,16 +277,13 @@ func (t *Test) test(
 
 	args = append(args, pkg)
 
-	cmd, err := t.testCmd(ctx)
-	if err != nil {
-		return err
+	if update {
+		args = append(args, "-update")
 	}
 
-	_, err = cmd.
+	return cmd.
 		WithEnvVariable("CGO_ENABLED", cgoEnabledEnv).
-		WithExec(args).
-		Sync(ctx)
-	return err
+		WithExec(args)
 }
 
 func (t *Test) testCmd(ctx context.Context) (*dagger.Container, error) {

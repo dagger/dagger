@@ -25,6 +25,7 @@ import (
 	"github.com/moby/buildkit/util/entitlements"
 	bkworker "github.com/moby/buildkit/worker"
 	"github.com/opencontainers/go-digest"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/metadata"
 
@@ -33,8 +34,6 @@ import (
 )
 
 const (
-	InternalPrefix = "[internal] "
-
 	// from buildkit, cannot change
 	EntitlementsJobKey = "llb.entitlements"
 
@@ -79,6 +78,14 @@ type Client struct {
 	cancel   context.CancelCauseFunc
 	closeMu  sync.RWMutex
 	execMap  sync.Map
+
+	ops   map[digest.Digest]opCtx
+	opsmu sync.RWMutex
+}
+
+type opCtx struct {
+	od  *OpDAG
+	ctx trace.SpanContext
 }
 
 func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
@@ -89,6 +96,7 @@ func NewClient(ctx context.Context, opts *Opts) (*Client, error) {
 		closeCtx: ctx,
 		cancel:   cancel,
 		execMap:  sync.Map{},
+		ops:      make(map[digest.Digest]opCtx),
 	}
 
 	return client, nil
@@ -123,7 +131,35 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 		return nil, err
 	}
 	defer cancel(errors.New("solve done"))
-	ctx = withOutgoingContext(ctx)
+	ctx = withOutgoingContext(c, ctx)
+
+	recordOp := func(def *bksolverpb.Definition) error {
+		dag, err := DefToDAG(def)
+		if err != nil {
+			return err
+		}
+		spanCtx := trace.SpanContextFromContext(ctx)
+		c.opsmu.Lock()
+		_ = dag.Walk(func(od *OpDAG) error {
+			c.ops[*od.OpDigest] = opCtx{
+				od:  od,
+				ctx: spanCtx,
+			}
+			return nil
+		})
+		c.opsmu.Unlock()
+		return nil
+	}
+	if req.Definition != nil {
+		if err := recordOp(req.Definition); err != nil {
+			return nil, fmt.Errorf("record def ops: %w", err)
+		}
+	}
+	for name, def := range req.FrontendInputs {
+		if err := recordOp(def); err != nil {
+			return nil, fmt.Errorf("record frontend input %s ops: %w", name, err)
+		}
+	}
 
 	// include upstream cache imports, if any
 	req.CacheImports = c.UpstreamCacheImports
@@ -159,13 +195,20 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 	return res, nil
 }
 
+func (c *Client) LookupOp(vertex digest.Digest) (*OpDAG, trace.SpanContext, bool) {
+	c.opsmu.Lock()
+	opCtx, ok := c.ops[vertex]
+	c.opsmu.Unlock()
+	return opCtx.od, opCtx.ctx, ok
+}
+
 func (c *Client) ResolveImageConfig(ctx context.Context, ref string, opt sourceresolver.Opt) (string, digest.Digest, []byte, error) {
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
 	if err != nil {
 		return "", "", nil, err
 	}
 	defer cancel(errors.New("resolve image config done"))
-	ctx = withOutgoingContext(ctx)
+	ctx = withOutgoingContext(c, ctx)
 
 	imr := sourceresolver.NewImageMetaResolver(c.LLBBridge)
 	return imr.ResolveImageConfig(ctx, ref, opt)
@@ -177,7 +220,7 @@ func (c *Client) ResolveSourceMetadata(ctx context.Context, op *bksolverpb.Sourc
 		return nil, err
 	}
 	defer cancel(errors.New("resolve source metadata done"))
-	ctx = withOutgoingContext(ctx)
+	ctx = withOutgoingContext(c, ctx)
 
 	return c.LLBBridge.ResolveSourceMetadata(ctx, op, opt)
 }
@@ -212,7 +255,7 @@ func (c *Client) NewContainer(ctx context.Context, req NewContainerRequest) (*Co
 		return nil, err
 	}
 	defer cancel(errors.New("new container done"))
-	ctx = withOutgoingContext(ctx)
+	ctx = withOutgoingContext(c, ctx)
 	ctrReq := bkcontainer.NewContainerRequest{
 		ContainerID: containerID,
 		Hostname:    req.Hostname,
@@ -265,7 +308,10 @@ func (c *Client) NewContainer(ctx context.Context, req NewContainerRequest) (*Co
 	ctr, err := bkcontainer.NewContainer(
 		context.WithoutCancel(ctx),
 		c.Worker.CacheManager(),
-		c.Worker.withExecMD(req.ExecutionMetadata), // also implements Executor
+		c.Worker.execWorker(
+			trace.SpanContextFromContext(ctx),
+			req.ExecutionMetadata,
+		), // also implements Executor
 		c.SessionManager,
 		bksession.NewGroup(c.ID()),
 		ctrReq,
@@ -715,12 +761,12 @@ func (c *Client) OpenTerminal(
 	}, nil
 }
 
-func withOutgoingContext(ctx context.Context) context.Context {
+func withOutgoingContext(c *Client, ctx context.Context) context.Context {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if ok {
 		ctx = metadata.NewOutgoingContext(ctx, md)
 	}
-	ctx = buildkitTelemetryContext(ctx)
+	ctx = buildkitTelemetryProvider(c, ctx)
 	return ctx
 }
 

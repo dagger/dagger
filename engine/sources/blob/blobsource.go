@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/containerd/containerd/labels"
 	"github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/client/llb"
@@ -63,10 +64,18 @@ func LLB(desc ocispecs.Descriptor) llb.State {
 			attrs[k] = v
 		}
 	}
+	llb.WithCustomName(desc.Digest.String())
+	sourceID := fmt.Sprintf("%s://%s", BlobScheme, desc.Digest.String())
 	return llb.NewState(llb.NewSource(
-		fmt.Sprintf("%s://%s", BlobScheme, desc.Digest.String()),
+		sourceID,
 		attrs,
-		llb.Constraints{},
+		llb.Constraints{
+			Metadata: pb.OpMetadata{
+				Description: map[string]string{
+					telemetry.UIPassthroughAttr: "true",
+				},
+			},
+		},
 	).Output())
 }
 

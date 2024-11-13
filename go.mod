@@ -9,8 +9,8 @@ require (
 	github.com/Netflix/go-expect v0.0.0-20220104043353-73e0943537d2
 	github.com/adrg/xdg v0.5.1
 	github.com/cenkalti/backoff/v4 v4.3.0
-	github.com/charmbracelet/bubbletea v1.1.1
-	github.com/charmbracelet/lipgloss v0.13.0
+	github.com/charmbracelet/bubbletea v1.2.0
+	github.com/charmbracelet/lipgloss v1.0.0
 	github.com/chzyer/readline v1.5.1
 	github.com/containerd/console v1.0.4
 	github.com/containerd/containerd v1.7.23
@@ -78,7 +78,7 @@ require (
 	github.com/urfave/cli v1.22.16
 	github.com/vektah/gqlparser/v2 v2.5.17
 	github.com/vito/go-sse v1.1.2
-	github.com/vito/midterm v0.1.5-0.20240307214207-d0271a7ca452
+	github.com/vito/midterm v0.2.1-0.20241012205340-d5c6540bf1e1
 	github.com/zeebo/xxh3 v1.0.2
 	go.etcd.io/bbolt v1.3.11
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.52.0
@@ -150,7 +150,7 @@ require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/charmbracelet/x/ansi v0.2.3 // indirect
+	github.com/charmbracelet/x/ansi v0.4.5 // indirect
 	github.com/charmbracelet/x/term v0.2.0 // indirect
 	github.com/cloudflare/circl v1.3.7 // indirect
 	github.com/containerd/cgroups v1.1.0 // indirect
@@ -277,6 +277,13 @@ require (
 	dagger.io/dagger v0.14.0
 	github.com/dagger/dagger/engine/distconsts v0.14.0
 	github.com/dustin/go-humanize v1.0.1
+)
+
+require (
+	github.com/danielgatis/go-ansicode v1.0.6 // indirect
+	github.com/danielgatis/go-iterator v0.0.1 // indirect
+	github.com/danielgatis/go-utf8 v1.0.0 // indirect
+	github.com/danielgatis/go-vte v1.0.8 // indirect
 )
 
 replace (

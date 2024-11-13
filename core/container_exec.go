@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
@@ -17,7 +16,6 @@ import (
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/identity"
 	"github.com/pkg/errors"
-	"go.opentelemetry.io/otel/propagation"
 )
 
 var ErrNoCommand = errors.New("no command has been set")
@@ -73,10 +71,10 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		return nil, err
 	}
 
-	spanName := fmt.Sprintf("exec %s", strings.Join(args, " "))
-
 	runOpts := []llb.RunOption{
 		llb.Args(args),
+		buildkit.WithTracePropagation(ctx),
+		buildkit.WithPassthrough(),
 	}
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
@@ -122,22 +120,6 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		}
 	}
 
-	// associate logs and telemetry to the withExec span
-	//
-	// Buildkit will still generate a span of its own from the scheduler,
-	// which we'll just hide, but use for calculating the time cost of this exec
-	// via cause/effect tracking.
-	if len(execMD.SpanContext) == 0 {
-		execMD.SpanContext = propagation.MapCarrier{}
-		telemetry.Propagator.Inject(ctx, execMD.SpanContext)
-	}
-
-	// directing telemetry to another span (i.e. a function call).
-	if len(execMD.SpanContext) > 0 {
-		// hide the exec span
-		spanName = buildkit.InternalPrefix + spanName
-	}
-
 	// this allows executed containers to communicate back to this API
 	if opts.ExperimentalPrivilegedNesting {
 		// establish new client ID for the nested client
@@ -160,9 +142,7 @@ func (container *Container) WithExec(ctx context.Context, opts ContainerExecOpts
 		runOpts = append(runOpts, llb.AddEnv(buildkit.DaggerCallDigestEnv, string(dagql.CurrentID(ctx).Digest())))
 	}
 
-	runOpts = append(runOpts, llb.WithCustomName(spanName))
-
-	metaSt, metaSourcePath := metaMount(opts.Stdin)
+	metaSt, metaSourcePath := metaMount(ctx, opts.Stdin)
 
 	// create mount point for the executor to write stdout/stderr/exitcode to
 	runOpts = append(runOpts,
@@ -407,7 +387,7 @@ func (container *Container) metaFileContents(ctx context.Context, filePath strin
 	return string(content), nil
 }
 
-func metaMount(stdin string) (llb.State, string) {
+func metaMount(ctx context.Context, stdin string) (llb.State, string) {
 	meta := llb.Mkdir(buildkit.MetaMountDestPath, 0o777)
 	if stdin != "" {
 		meta = meta.Mkfile(path.Join(buildkit.MetaMountDestPath, buildkit.MetaMountStdinPath), 0o666, []byte(stdin))
@@ -415,7 +395,8 @@ func metaMount(stdin string) (llb.State, string) {
 
 	return llb.Scratch().File(
 			meta,
-			llb.WithCustomName(buildkit.InternalPrefix+"creating dagger metadata"),
+			buildkit.WithTracePropagation(ctx),
+			buildkit.WithPassthrough(),
 		),
 		buildkit.MetaMountDestPath
 }

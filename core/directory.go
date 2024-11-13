@@ -130,7 +130,11 @@ func (dir *Directory) StateWithSourcePath() (llb.State, error) {
 }
 
 func (dir *Directory) SetState(ctx context.Context, st llb.State) error {
-	def, err := st.Marshal(ctx, llb.Platform(dir.Platform.Spec()))
+	def, err := st.Marshal(ctx,
+		llb.Platform(dir.Platform.Spec()),
+		buildkit.WithTracePropagation(ctx),
+		buildkit.WithPassthrough(), // these spans aren't particularly interesting
+	)
 	if err != nil {
 		return nil
 	}
@@ -608,7 +612,7 @@ func mergeStates(input mergeStateInput) llb.State {
 			input.Src, path.Join(input.SrcDir, input.SrcFileName), path.Join(input.DestDir, input.DestFileName), copyInfo,
 		)))
 	}
-	return llb.Merge(mergeStates, llb.WithCustomName(buildkit.InternalPrefix+"merge"))
+	return llb.Merge(mergeStates)
 }
 
 func (dir *Directory) WithTimestamps(ctx context.Context, unix int) (*Directory, error) {

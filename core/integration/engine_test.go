@@ -81,19 +81,17 @@ func engineWithConfig(ctx context.Context, t *testctx.T, cfgFns ...func(context.
 	}
 }
 
-func engineClientContainer(ctx context.Context, t *testctx.T, c *dagger.Client, devEngine *dagger.Service) (*dagger.Container, error) {
+func engineClientContainer(ctx context.Context, t *testctx.T, c *dagger.Client, devEngine *dagger.Service) *dagger.Container {
 	daggerCli := daggerCliFile(t, c)
 
 	cliBinPath := "/bin/dagger"
 	endpoint, err := devEngine.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
-	if err != nil {
-		return nil, err
-	}
+	require.NoError(t, err)
 	return c.Container().From(alpineImage).
 		WithServiceBinding("dev-engine", devEngine).
 		WithMountedFile(cliBinPath, daggerCli).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint), nil
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint)
 }
 
 func (EngineSuite) TestExitsZeroOnSignal(ctx context.Context, t *testctx.T) {
@@ -151,9 +149,8 @@ func (ClientSuite) TestWaitsForEngine(ctx context.Context, t *testctx.T) {
 			WithEntrypoint([]string{"/usr/local/bin/slow-entrypoint.sh"})
 	})
 
-	clientCtr, err := engineClientContainer(ctx, t, c, devEngine.AsService())
-	require.NoError(t, err)
-	_, err = clientCtr.
+	clientCtr := engineClientContainer(ctx, t, c, devEngine.AsService())
+	_, err := clientCtr.
 		WithNewFile("/query.graphql", `{ version }`). // arbitrary valid query
 		WithExec([]string{"dagger", "query", "--doc", "/query.graphql"}).Sync(ctx)
 
@@ -171,8 +168,7 @@ func (EngineSuite) TestSetsNameFromEnv(ctx context.Context, t *testctx.T) {
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", engineVersion)
 	}).AsService()
 
-	clientCtr, err := engineClientContainer(ctx, t, c, devEngineSvc)
-	require.NoError(t, err)
+	clientCtr := engineClientContainer(ctx, t, c, devEngineSvc)
 
 	clientCtr = clientCtr.
 		WithNewFile("/query.graphql", `{ version }`).
@@ -192,9 +188,7 @@ func (EngineSuite) TestDaggerRun(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	devEngine := devEngineContainer(c).AsService()
-
-	clientCtr, err := engineClientContainer(ctx, t, c, devEngine)
-	require.NoError(t, err)
+	clientCtr := engineClientContainer(ctx, t, c, devEngine)
 
 	runCommand := fmt.Sprintf(`
 		export NO_COLOR=1
@@ -447,8 +441,7 @@ func (EngineSuite) TestVersionCompat(ctx context.Context, t *testctx.T) {
 			}
 			enginesMu.Unlock()
 
-			clientCtr, err := engineClientContainer(ctx, t, c, devEngineSvc)
-			require.NoError(t, err)
+			clientCtr := engineClientContainer(ctx, t, c, devEngineSvc)
 
 			clientCtr = clientCtr.
 				WithEnvVariable("_EXPERIMENTAL_DAGGER_VERSION", tc.clientVersion).
@@ -560,8 +553,8 @@ func (EngineSuite) TestModuleVersionCompat(ctx context.Context, t *testctx.T) {
 			}
 			enginesMu.Unlock()
 
-			clientCtr, err := engineClientContainer(ctx, t, c, devEngineSvc)
-			require.NoError(t, err)
+			clientCtr := engineClientContainer(ctx, t, c, devEngineSvc)
+
 			clientCtr = clientCtr.
 				WithWorkdir("/work").
 				// set version to empty, this makes it the latest, we don't want to

@@ -650,6 +650,10 @@ func (w *Worker) setupOTel(ctx context.Context, state *execState) error {
 		return nil
 	}
 
+	if w.causeCtx.IsValid() {
+		ctx = trace.ContextWithSpanContext(ctx, w.causeCtx)
+	}
+
 	var destSession string
 	var destClientID string
 	if w.execMD != nil { // NB: this seems to be _always_ set
@@ -660,10 +664,6 @@ func (w *Worker) setupOTel(ctx context.Context, state *execState) error {
 		// If you set ClientID here, nested dagger CLI calls made against an engine running
 		// as a service in Dagger will end up in a loop sending logs to themselves.
 		destClientID = w.execMD.CallerClientID
-
-		if len(w.execMD.SpanContext) > 0 {
-			ctx = telemetry.Propagator.Extract(ctx, w.execMD.SpanContext)
-		}
 	}
 
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
@@ -918,10 +918,8 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 		w.execMD.Hostname = state.spec.Hostname
 	}
 
-	if len(w.execMD.SpanContext) > 0 {
-		// propagate trace ctx to session attachables
-		ctx = telemetry.Propagator.Extract(ctx, w.execMD.SpanContext)
-	}
+	// propagate trace ctx to session attachables
+	ctx = trace.ContextWithSpanContext(ctx, w.causeCtx)
 
 	state.spec.Process.Env = append(state.spec.Process.Env, DaggerSessionTokenEnv+"="+w.execMD.SecretToken)
 

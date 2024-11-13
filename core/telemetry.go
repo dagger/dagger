@@ -6,18 +6,44 @@ import (
 	"strings"
 
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/slog"
+	"github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
 )
+
+func collectDefs(ctx context.Context, val dagql.Typed) []*pb.Definition {
+	if val, ok := val.(dagql.Wrapper); ok {
+		return collectDefs(ctx, val.Unwrap())
+	}
+	if hasPBs, ok := val.(HasPBDefinitions); ok {
+		if defs, err := hasPBs.PBDefinitions(ctx); err != nil {
+			slog.Warn("failed to get LLB definitions", "err", err)
+			return nil
+		} else {
+			return defs
+		}
+	}
+	return nil
+}
 
 func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Context, func(res dagql.Typed, cached bool, rerr error)) {
 	if isIntrospection(id) {
 		return ctx, dagql.NoopDone
+	}
+
+	// Keep track of which effects were already installed prior to the call so we
+	// only see new ones.
+	seenEffects := make(map[digest.Digest]bool)
+	for _, def := range collectDefs(ctx, self) {
+		for _, op := range def.Def {
+			seenEffects[digest.FromBytes(op)] = true
+		}
 	}
 
 	var base string
@@ -46,6 +72,7 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 		}
 		attrs = append(attrs, attribute.StringSlice(telemetry.DagInputsAttr, inputs))
 	}
+
 	if dagql.IsInternal(ctx) {
 		attrs = append(attrs, attribute.Bool(telemetry.UIInternalAttr, true))
 	}
@@ -57,13 +84,23 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 		defer telemetry.End(span, func() error { return err })
 
 		if cached {
-			// TODO maybe this should be an event?
+			// NOTE: this is never actually called on cache hits, but might be in the
+			// future.
 			span.SetAttributes(attribute.Bool(telemetry.CachedAttr, true))
 		}
 
-		if err != nil {
-			// NB: we do +id.Display() instead of setting it as a field to avoid
-			// double quoting
+		if ctx.Err() != nil {
+			// If the request was canceled, reflect it on the span.
+			span.SetAttributes(attribute.Bool(telemetry.CanceledAttr, true))
+		}
+
+		if err == nil {
+			// It is important to set an Ok status here so functions can encapsulate
+			// any internal errors.
+			span.SetStatus(codes.Ok, "")
+		} else {
+			// append id.Display() instead of setting it as a field to avoid double
+			// quoting
 			slog.Warn("error resolving "+id.Display(), "error", err)
 		}
 
@@ -86,30 +123,39 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 			}
 		}
 
-		// Record any LLB op digests that the value depends on.
+		// Record LLB op digests installed by this call so that we can know that it
+		// has pending work.
 		//
-		// This allows the UI to track the 'cause and effect' between lazy
-		// operations and their eventual execution. The listed digests will be
-		// correlated to spans coming from Buildkit which set the matching digest
-		// as the 'vertex' span attribute.
-		if hasPBs, ok := res.(HasPBDefinitions); ok {
-			if defs, err := hasPBs.PBDefinitions(ctx); err != nil {
-				slog.Warn("failed to get LLB definitions", "err", err)
-			} else {
-				seen := make(map[digest.Digest]bool)
-				var ops []string
-				for _, def := range defs {
-					for _, op := range def.Def {
-						dig := digest.FromBytes(op)
-						if seen[dig] {
-							continue
-						}
-						seen[dig] = true
-						ops = append(ops, dig.String())
-					}
+		// Effects will become complete as spans appear from Buildkit with a
+		// corresponding effect ID.
+		var effectIDs []string
+		for _, def := range collectDefs(ctx, res) {
+			for _, opBytes := range def.Def {
+				dig := digest.FromBytes(opBytes)
+				if seenEffects[dig] {
+					continue
 				}
-				span.SetAttributes(attribute.StringSlice(telemetry.EffectIDsAttr, ops))
+				seenEffects[dig] = true
+
+				var pbOp pb.Op
+				err := pbOp.Unmarshal(opBytes)
+				if err != nil {
+					slog.Warn("failed to unmarshal LLB", "err", err)
+					continue
+				}
+				if pbOp.Op == nil {
+					// The last def should always be an empty op with the previous as
+					// an input. We never actually see a span for this, so skip it,
+					// otherwise the span will look like it still has pending
+					// effects.
+					continue
+				}
+
+				effectIDs = append(effectIDs, dig.String())
 			}
+		}
+		if len(effectIDs) > 0 {
+			span.SetAttributes(attribute.StringSlice(telemetry.EffectIDsAttr, effectIDs))
 		}
 	}
 }
@@ -133,13 +179,4 @@ func isIntrospection(id *call.ID) bool {
 	} else {
 		return isIntrospection(id.Receiver())
 	}
-}
-
-func serviceEffect(id *call.ID) string {
-	return id.Digest().String() + "-service"
-}
-
-// Tell telemetry about the associated effect for when the service starts.
-func connectServiceEffect(ctx context.Context) {
-	trace.SpanFromContext(ctx).SetAttributes(attribute.StringSlice(telemetry.EffectIDsAttr, []string{serviceEffect(dagql.CurrentID(ctx))}))
 }
