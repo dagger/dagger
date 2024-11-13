@@ -20,8 +20,8 @@
     },
     {
       "name": "gh",
-      "source": "github.com/sagikazarmark/daggerverse/gh",
-      "pin": "68e9daa611183f5334b4059bac6f4aad62da7a37"
+      "source": "github.com/sagikazarmark/daggerverse/gh@main",
+      "pin": "5a5ab8cce801ad62f2618f50a4e859e2f7fcacb9"
     },
     {
       "name": "go",
