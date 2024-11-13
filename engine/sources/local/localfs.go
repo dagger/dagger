@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	"io/fs"
 	gofs "io/fs"
 	"os"
 	"path/filepath"
@@ -73,17 +74,17 @@ func (local *localFS) Sync(ctx context.Context, remote ReadFS) (rerr error) {
 			// TODO: handle parent dir mod times
 			switch {
 			case upperStat.IsDir():
-				return local.Mkdir(ctx, path, lowerStat, upperStat)
+				return local.Mkdir(ctx, path, upperStat)
 			case upperStat.Mode&uint32(os.ModeDevice) != 0 || upperStat.Mode&uint32(os.ModeNamedPipe) != 0:
 				// TODO: return local.Mknode(ctx, path, gofs.FileMode(upperStat.Mode), uint32(upperStat.Devmajor), uint32(upperStat.Devminor))
 			case upperStat.Mode&uint32(os.ModeSymlink) != 0:
-				return local.Symlink(ctx, path, lowerStat, upperStat)
+				return local.Symlink(ctx, path, upperStat)
 			case upperStat.Linkname != "":
-				return local.Hardlink(ctx, path, lowerStat, upperStat)
+				return local.Hardlink(ctx, path, upperStat)
 			default:
 				eg.Go(func() error {
 					// TODO: DOUBLE CHECK IF YOU NEED TO COPY STAT OBJS SINCE THIS IS ASYNC
-					return local.WriteFile(ctx, path, lowerStat, upperStat, remote)
+					return local.WriteFile(ctx, path, upperStat, remote)
 				})
 			}
 
@@ -117,19 +118,24 @@ func (local *localFS) toRootPath(path string) string {
 func (local *localFS) mutate(
 	ctx context.Context,
 	path string,
-	lowerStat, upperStat *types.Stat,
-	fn func(ctx context.Context, fullPath string, h hash.Hash) error,
+	upperStat *types.Stat,
+	fn func(ctx context.Context, fullPath string, lowerStat fs.FileInfo, h hash.Hash) error,
 ) error {
 	rootPath := local.toRootPath(path)
 	fullPath := local.toFullPath(path)
 	_, err := local.g.Do(ctx, rootPath, func(ctx context.Context) (*struct{}, error) {
 		switch {
-		case upperStat != nil: // NOTE: at the moment contenthash doesn't care if it's Add vs. Modify
+		case upperStat != nil: // add or modify, NOTE: at the moment contenthash doesn't care if it's Add vs. Modify
+			lowerStat, err := os.Lstat(fullPath)
+			if err != nil && !os.IsNotExist(err) {
+				return nil, fmt.Errorf("failed to stat existing path: %w", err)
+			}
+
 			h, err := contenthash.NewFromStat(upperStat)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create content hash: %w", err)
 			}
-			err = fn(ctx, fullPath, h)
+			err = fn(ctx, fullPath, lowerStat, h)
 			if err != nil {
 				return nil, err
 			}
@@ -138,8 +144,8 @@ func (local *localFS) mutate(
 				return nil, err
 			}
 
-		default:
-			err := fn(ctx, fullPath, nil)
+		default: // delete
+			err := fn(ctx, fullPath, nil, nil)
 			if err != nil {
 				return nil, err
 			}
@@ -154,13 +160,13 @@ func (local *localFS) mutate(
 }
 
 func (local *localFS) RemoveAll(ctx context.Context, path string) error {
-	return local.mutate(ctx, path, nil, nil, func(ctx context.Context, fullPath string, _ hash.Hash) error {
+	return local.mutate(ctx, path, nil, func(ctx context.Context, fullPath string, _ fs.FileInfo, _ hash.Hash) error {
 		return os.RemoveAll(fullPath)
 	})
 }
 
-func (local *localFS) Mkdir(ctx context.Context, path string, lowerStat, upperStat *types.Stat) error {
-	return local.mutate(ctx, path, lowerStat, upperStat, func(ctx context.Context, fullPath string, _ hash.Hash) error {
+func (local *localFS) Mkdir(ctx context.Context, path string, upperStat *types.Stat) error {
+	return local.mutate(ctx, path, upperStat, func(ctx context.Context, fullPath string, lowerStat fs.FileInfo, _ hash.Hash) error {
 		isNewDir := lowerStat == nil
 		replacesNonDir := lowerStat != nil && !lowerStat.IsDir()
 
@@ -184,8 +190,8 @@ func (local *localFS) Mkdir(ctx context.Context, path string, lowerStat, upperSt
 	})
 }
 
-func (local *localFS) Symlink(ctx context.Context, path string, lowerStat, upperStat *types.Stat) error {
-	return local.mutate(ctx, path, lowerStat, upperStat, func(ctx context.Context, fullPath string, h hash.Hash) error {
+func (local *localFS) Symlink(ctx context.Context, path string, upperStat *types.Stat) error {
+	return local.mutate(ctx, path, upperStat, func(ctx context.Context, fullPath string, lowerStat fs.FileInfo, _ hash.Hash) error {
 		if lowerStat != nil {
 			if err := os.RemoveAll(fullPath); err != nil {
 				return fmt.Errorf("failed to remove existing file: %w", err)
@@ -200,8 +206,8 @@ func (local *localFS) Symlink(ctx context.Context, path string, lowerStat, upper
 	})
 }
 
-func (local *localFS) Hardlink(ctx context.Context, path string, lowerStat, upperStat *types.Stat) error {
-	return local.mutate(ctx, path, lowerStat, upperStat, func(ctx context.Context, fullPath string, h hash.Hash) error {
+func (local *localFS) Hardlink(ctx context.Context, path string, upperStat *types.Stat) error {
+	return local.mutate(ctx, path, upperStat, func(ctx context.Context, fullPath string, lowerStat fs.FileInfo, _ hash.Hash) error {
 		if lowerStat != nil {
 			if err := os.RemoveAll(fullPath); err != nil {
 				return fmt.Errorf("failed to remove existing file: %w", err)
@@ -218,8 +224,8 @@ func (local *localFS) Hardlink(ctx context.Context, path string, lowerStat, uppe
 	})
 }
 
-func (local *localFS) WriteFile(ctx context.Context, path string, lowerStat, upperStat *types.Stat, upperFS ReadFS) error {
-	return local.mutate(ctx, path, lowerStat, upperStat, func(ctx context.Context, fullPath string, h hash.Hash) error {
+func (local *localFS) WriteFile(ctx context.Context, path string, upperStat *types.Stat, upperFS ReadFS) error {
+	return local.mutate(ctx, path, upperStat, func(ctx context.Context, fullPath string, lowerStat fs.FileInfo, h hash.Hash) error {
 		reader, err := upperFS.ReadFile(ctx, path)
 		if err != nil {
 			return fmt.Errorf("failed to read file: %w", err)
