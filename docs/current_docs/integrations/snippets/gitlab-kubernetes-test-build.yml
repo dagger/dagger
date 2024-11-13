@@ -12,14 +12,8 @@ test:
   extends: [.dagger]
   script:
     - dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call test --source=.
-    # for ephemeral runners only: override the default docker stop timeout and
-    # give the Dagger Engine more time to push cache data to Dagger Cloud
-    - docker stop -t 300 $(docker ps --filter name="dagger-engine-*" -q)
 build:
   extends: [.dagger]
   needs: ["test"]
   script:
     - dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call build-container --source=. --args=. publish --address=ttl.sh/my-app-$RANDOM
-    # for ephemeral runners only: override the default docker stop timeout and
-    # give the Dagger Engine more time to push cache data to Dagger Cloud
-    - docker stop -t 300 $(docker ps --filter name="dagger-engine-*" -q)

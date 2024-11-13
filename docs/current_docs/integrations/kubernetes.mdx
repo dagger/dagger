@@ -21,7 +21,7 @@ Running Dagger in Kubernetes is generally a good choice for:
 
 This section describe a few common architecture patterns to consider when setting up a Continuous Integration (CI) environment using Dagger on Kubernetes.
 
-#### Base pattern: Persistent nodes
+#### Persistent nodes
 
 The base pattern consists of persistent Kubernetes nodes with ephemeral CI runners.
 
@@ -45,33 +45,18 @@ In this architecture:
 
 ![Kubernetes base architecture](/img/current_docs/integrations/kubernetes-pattern-base.png)
 
-#### Optimization 1: Ephemeral, auto-scaled nodes
+#### Ephemeral, auto-scaled nodes
 
 The base architecture pattern described previously can be optimized by the addition of a *node auto-scaler*. This can automatically adjust the size of node groups based on the current workload. If there are a lot of CI jobs running, the auto-scaler can automatically add more runner nodes to the cluster to handle the increased workload. Conversely, if there are few jobs running, it can remove unnecessary runner nodes.
 
-This optimization reduces the total compute cost since runner nodes are added & removed based on the number of concurrent CI jobs.
+This optimization reduces the total compute cost since runner nodes are added & removed based on the number of concurrent CI jobs. The trade-off is that we lose all Dagger Engine state stored on the runner node that is de-provisioned. Configuring persistent volumes is worth considering if the platform supports it.
 
 In this architecture:
 
 - Kubernetes nodes provisioned on-demand start with a "clean" Dagger Engine containing no cached data.
-- Cached build artifacts from subsequent runs will persist only for the lifetime of the runner node.
+- Cached build artifacts from previous runs will be lost when the runner node gets de-provisioned (can be mitigated via persistent volumes).
 
 ![Kubernetes architecture with ephmeral nodes](/img/current_docs/integrations/kubernetes-pattern-ephemeral.png)
-
-#### Optimization 2: Shared Cloud Cache
-
-The previous pattern makes it possible to scale the Dagger deployment, but comes with the following trade-offs:
-
-1. Runner nodes are automatically de-provisioned when they are not needed. During de-provisioning, the Dagger Engines get deleted too. As a result, data and operations cached in previous runs will be deleted and subsequent runs will not benefit from previous runs. To resolve this, the cached data and operations are stored in a *cloud caching service* and made available to new Dagger Engines when they are provisioned.
-2. The deployment will only scale to a certain point, given that each Dagger Engine can only scale vertically to provide better performance. In order to make the system horizontally scalable, a caching service makes the same data and operations available to as many Dagger Engines as needed.
-
-In this architecture:
-
-- A shared cloud cache stores data from all Dagger Engines running in the cluster. This diagram below references Dagger's experimental Cloud Cache service.
-In the future, other providers will be availabe to store the cache outside Dagger's infrastructure.
-- Auto-provisioned nodes start with access to cached data of previous runs.
-
-![Kubernetes architecture with shared cache](/img/current_docs/integrations/kubernetes-pattern-cache.png)
 
 ### Recommendations
 
