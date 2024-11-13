@@ -24,6 +24,7 @@ type cliSessionConn struct {
 	childCancel context.CancelCauseFunc
 	childProc   *exec.Cmd
 	stderrBuf   *safeBuffer
+	ioWait      *sync.WaitGroup
 }
 
 func (c *cliSessionConn) Host() string {
@@ -35,13 +36,12 @@ func (c *cliSessionConn) Close() error {
 		c.childCancel(errors.New("client closed"))
 		err := c.childProc.Wait()
 		if err != nil {
-			if errors.Is(err, context.Canceled) {
-				// expected
-				return nil
+			// only context canceled is expected
+			if !errors.Is(err, context.Canceled) {
+				return fmt.Errorf("close: %w\nstderr:\n%s", err, c.stderrBuf.String())
 			}
-
-			return fmt.Errorf("close: %w\nstderr:\n%s", err, c.stderrBuf.String())
 		}
+		c.ioWait.Wait()
 	}
 	return nil
 }
@@ -124,6 +124,7 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 	var stdout io.ReadCloser
 	var stderrBuf *safeBuffer
 	var childStdin io.WriteCloser
+	var ioWait *sync.WaitGroup
 
 	if cfg.LogOutput != nil {
 		fmt.Fprintf(cfg.LogOutput, "Creating new Engine session... ")
@@ -155,7 +156,12 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 		// the user has to enable log output to see anything.
 		stderrBuf = &safeBuffer{}
 		discardableBuf := &discardableWriter{w: stderrBuf}
-		go io.Copy(io.MultiWriter(cfg.LogOutput, discardableBuf), stderrPipe)
+		ioWait = new(sync.WaitGroup)
+		ioWait.Add(1)
+		go func() {
+			defer ioWait.Done()
+			io.Copy(io.MultiWriter(cfg.LogOutput, discardableBuf), stderrPipe)
+		}()
 		defer discardableBuf.Discard()
 
 		// Open a stdin pipe with the child process. The engine-session shutsdown
@@ -255,6 +261,7 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 		childCancel: cmdCancel,
 		childProc:   proc,
 		stderrBuf:   stderrBuf,
+		ioWait:      ioWait,
 	}, nil
 }
 

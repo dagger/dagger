@@ -12,12 +12,6 @@ jobs:
       - run:
           name: Test
           command: dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call test --source=.
-      # for ephemeral runners only: override the default docker stop timeout and
-      # give the Dagger Engine more time to push cache data to Dagger Cloud
-      - run:
-          name: Stop Dagger Engine
-          command: docker stop -t 300 $(docker ps --filter name="dagger-engine-*" -q)
-          when: always
   build:
     docker:
       - image: cimg/base:2024.09
@@ -30,12 +24,6 @@ jobs:
       - run:
           name: Build
           command: dagger -m github.com/kpenfound/dagger-modules/golang@v0.2.0 call build-container --source=https://github.com/golang/example#master:hello --args=. publish --address=ttl.sh/my-app-$RANDOM
-      # for ephemeral runners only: override the default docker stop timeout and
-      # give the Dagger Engine more time to push cache data to Dagger Cloud
-      - run:
-          name: Stop Dagger Engine
-          command: docker stop -t 300 $(docker ps --filter name="dagger-engine-*" -q)
-          when: always
 workflows:
   dagger:
     jobs:

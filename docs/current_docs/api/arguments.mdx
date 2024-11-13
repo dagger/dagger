@@ -182,15 +182,15 @@ The result will look like this:
 
 ### Remote repositories
 
-Dagger supports the use of HTTP and SSH protocols for accessing remote repositories, compatible with all major Git hosting platforms such as GitHub, GitLab, BitBucket, Azure DevOps, Codeberg, and Sourcehut. For SSH references ("refs"), Dagger employs a unified authentication approach.
+Dagger supports the use of HTTP and SSH protocols for accessing remote repositories, compatible with all major Git hosting platforms such as GitHub, GitLab, BitBucket, Azure DevOps, Codeberg, and Sourcehut. Dagger supports authentication via both HTTPS (using Git credential managers) and SSH (using a unified authentication approach).
 
 Dagger supports the following reference schemes for directory arguments:
 
-| Protocol | Scheme     | Public repositories | Private repositories | Example |
-|----------|------------|---------------------|----------------------|---------|
-| HTTP(S)  | Git HTTP   | Supported | In progress | `https://github.com/username/repo.git[#version[:subdir]]` |
-| SSH      | Explicit   | Supported | Supported | `ssh://git@github.com/username/repo.git[#version[:subdir]]` |
-| SSH      | SCP-like   | Supported | Supported | `git@github.com:username/repo.git[#version[:subdir]]`     |
+| Protocol | Scheme     | Authentication | Example |
+|----------|------------|----------------|---------|
+| HTTP(S)  | Git HTTP   | Git credential manager | `https://github.com/username/repo.git[#version[:subdir]]` |
+| SSH      | Explicit   | SSH keys | `ssh://git@github.com/username/repo.git[#version[:subdir]]` |
+| SSH      | SCP-like   | SSH keys | `git@github.com:username/repo.git[#version[:subdir]]`     |
 
 :::note
 The reference scheme for directory arguments is currently under discussion [here](https://github.com/dagger/dagger/issues/6957) and [here](https://github.com/dagger/dagger/issues/6944) and may change in future.
@@ -215,7 +215,7 @@ dagger core container \
   stdout
 ```
 
-In addition to supporting HTTP(S) access for public repositories, Dagger also supports the use of SSH for both public and private repositories. Note that this requires [SSH authentication to be properly configured](./remote-modules.mdx#configuring-ssh-authentication) on your Dagger host. Here is the same example, this time using SSH:
+The same repository can also be accessed using SSH. Note that this requires [SSH authentication to be properly configured](./remote-modules.mdx#ssh-authentication) on your Dagger host. Here is the same example, this time using SSH:
 
 ```shell
 dagger core container \
@@ -225,7 +225,7 @@ dagger core container \
   stdout
 ```
 
-For more information, refer to the [documentation on configuring SSH authentication for remote repositories, best practices, and current limitations](./remote-modules.mdx).
+For more information about authentication methods, best practices, and current limitations, refer to the [documentation on using modules from remote repositories](./remote-modules.mdx).
 
 ## Container arguments
 
