@@ -23,6 +23,7 @@ import (
 	"github.com/containerd/continuity/fs"
 	runc "github.com/containerd/go-runc"
 	"github.com/dagger/dagger/engine/buildkit/resources"
+	"github.com/dagger/dagger/engine/slog"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/moby/buildkit/executor"
 	"github.com/moby/buildkit/executor/oci"
@@ -685,7 +686,7 @@ func (w *Worker) setupOTel(ctx context.Context, state *execState) error {
 			r.Header.Set("X-Dagger-Client-ID", destClientID)
 			w.telemetryPubSub.ServeHTTP(rw, r)
 		}),
-		ReadHeaderTimeout: 10 * time.Second, // for gocritic
+		ReadHeaderTimeout: 5 * time.Second, // for gocritic
 	}
 	listenerPool := pool.New().WithErrors()
 	listenerPool.Go(func() error {
@@ -697,11 +698,18 @@ func (w *Worker) setupOTel(ctx context.Context, state *execState) error {
 		}
 		return nil
 	})
-	state.cleanups.Add("shutdown otel proxy", func() error {
+	state.cleanups.Add("shutdown otel proxy", Infallible(func() {
 		shutdownCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
-		return otelSrv.Shutdown(shutdownCtx)
-	})
+		switch err := otelSrv.Shutdown(shutdownCtx); {
+		case err == nil:
+			return
+		case errors.Is(err, context.DeadlineExceeded):
+			slog.ErrorContext(ctx, "timeout waiting for OTel proxy to shutdown", err)
+		default:
+			slog.ErrorContext(ctx, "failed to shutdown OTel proxy", err)
+		}
+	}))
 
 	// Configure our OpenTelemetry proxy. A lot.
 	otelProto := "http/protobuf"
