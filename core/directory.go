@@ -178,7 +178,10 @@ func (dir *Directory) Evaluate(ctx context.Context) (*buildkit.Result, error) {
 func (dir *Directory) Digest(ctx context.Context) (string, error) {
 	result, err := dir.Evaluate(ctx)
 	if err != nil {
-		return "", fmt.Errorf("failed to evaluate file: %w", err)
+		return "", fmt.Errorf("failed to evaluate directory: %w", err)
+	}
+	if result == nil {
+		return "", fmt.Errorf("failed to evaluate null directory")
 	}
 
 	digest, err := result.Ref.Digest(ctx, dir.Dir)
