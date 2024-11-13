@@ -348,40 +348,8 @@ func (ls *localSourceHandler) sync(ctx context.Context, ref *filesyncCacheRef, c
 	ctx, syncSpan := newSpan(ctx, "sync")
 	defer syncSpan.End()
 
-	// TODO: hack
-	// TODO: hack
-	// TODO: hack, fix with proper sync of parent dirs
-	_, err := os.Lstat(filepath.Join(ref.mntPath, clientPath))
-	if os.IsNotExist(err) {
-		statCtx := engine.LocalImportOpts{
-			Path:              clientPath,
-			StatPathOnly:      true,
-			StatReturnAbsPath: true,
-		}.AppendToOutgoingContext(ctx)
-
-		diffCopyClient, err := filesync.NewFileSyncClient(caller.Conn()).DiffCopy(statCtx)
-		if err != nil {
-			return fmt.Errorf("failed to create diff copy client: %w", err)
-		}
-		var statMsg fstypes.Stat
-		if err := diffCopyClient.RecvMsg(&statMsg); err != nil {
-			diffCopyClient.CloseSend()
-			return fmt.Errorf("failed to receive stat message: %w", err)
-		}
-		diffCopyClient.CloseSend()
-
-		if err := os.MkdirAll(filepath.Join(ref.mntPath, clientPath), os.FileMode(statMsg.Mode)); err != nil {
-			return fmt.Errorf("failed to create directory: %w", err)
-		}
-		h, err := contenthash.NewFromStat(&statMsg)
-		if err != nil {
-			return fmt.Errorf("failed to create content hash: %w", err)
-		}
-		dgst := digest.NewDigest(digest.SHA256, h)
-		statInfo := &HashedStatInfo{StatInfo: StatInfo{&statMsg}, dgst: dgst}
-		if err := ref.cacheCtx.HandleChange(fsutil.ChangeKindAdd, clientPath, statInfo, nil); err != nil {
-			return fmt.Errorf("failed to handle change: %w", err)
-		}
+	if err := ls.syncParentDirs(ctx, ref, clientPath, caller); err != nil {
+		return fmt.Errorf("failed to sync parent dirs: %w", err)
 	}
 
 	ctx, cancel := context.WithCancelCause(ctx)
@@ -400,6 +368,36 @@ func (ls *localSourceHandler) sync(ctx context.Context, ref *filesyncCacheRef, c
 	}()
 
 	local, err := NewLocalFS(ref.sharedState, clientPath, ls.src.IncludePatterns, ls.src.ExcludePatterns)
+	if err != nil {
+		return fmt.Errorf("failed to create local fs: %w", err)
+	}
+	err = local.Sync(ctx, remote)
+	if err != nil {
+		return fmt.Errorf("failed to sync to local fs: %w", err)
+	}
+
+	return nil
+}
+
+func (ls *localSourceHandler) syncParentDirs(ctx context.Context, ref *filesyncCacheRef, clientPath string, caller session.Caller) (rerr error) {
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer func() {
+		cancel(rerr)
+	}()
+
+	includes := []string{strings.TrimPrefix(clientPath, "/")}
+
+	remote, err := newRemoteFS(ctx, caller, "/", includes, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create remote fs: %w", err)
+	}
+	defer func() {
+		if err := remote.Close(); err != nil {
+			rerr = errors.Join(rerr, fmt.Errorf("failed to close remote fs: %w", err))
+		}
+	}()
+
+	local, err := NewLocalFS(ref.sharedState, "/", includes, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create local fs: %w", err)
 	}

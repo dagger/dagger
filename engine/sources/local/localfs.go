@@ -125,7 +125,7 @@ func (local *localFS) mutate(
 	fullPath := local.toFullPath(path)
 	_, err := local.g.Do(ctx, rootPath, func(ctx context.Context) (*struct{}, error) {
 		switch {
-		case upperStat != nil: // add or modify, NOTE: at the moment contenthash doesn't care if it's Add vs. Modify
+		case upperStat != nil: // add or modify
 			lowerStat, err := os.Lstat(fullPath)
 			if err != nil && !os.IsNotExist(err) {
 				return nil, fmt.Errorf("failed to stat existing path: %w", err)
@@ -140,6 +140,7 @@ func (local *localFS) mutate(
 				return nil, err
 			}
 			hashStat := &HashedStatInfo{StatInfo{upperStat}, digest.NewDigest(digest.SHA256, h)}
+			// NOTE: at the moment contenthash doesn't care if it's Add vs. Modify
 			if err := local.contentHasher(ChangeKindAdd, rootPath, hashStat, nil); err != nil {
 				return nil, err
 			}
