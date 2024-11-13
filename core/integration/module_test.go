@@ -2934,6 +2934,92 @@ func (m *Test) Test(ctx context.Context) (string, error) {
 			require.Equal(t, "HELLO FROM FOO", out)
 		})
 
+		t.Run("double nested and called repeatedly", func(ctx context.Context, t *testctx.T) {
+			c := connect(ctx, t)
+			ctr := c.Container().From(golangImage).
+				WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
+
+			// Set up the base generator module
+			ctr = ctr.
+				WithWorkdir("/work/keychain/generator").
+				With(daggerExec("init", "--name=generator", "--sdk=go", "--source=.")).
+				WithNewFile("main.go", `package main
+
+import (
+    "context"
+    "dagger/generator/internal/dagger"
+)
+
+type Generator struct {
+    // +private
+    Password *dagger.Secret
+}
+
+func New() *Generator {
+    return &Generator{
+        Password: dag.SetSecret("pass", "admin"),
+    }
+}
+
+func (m *Generator) Gen(ctx context.Context, name string) error {
+    _, err := m.Password.Plaintext(ctx)
+    return err
+}
+`)
+
+			// Set up the keychain module that depends on generator
+			ctr = ctr.
+				WithWorkdir("/work/keychain").
+				With(daggerExec("init", "--name=keychain", "--sdk=go", "--source=.")).
+				With(daggerExec("install", "./generator")).
+				WithNewFile("main.go", `package main
+
+import (
+    "context"
+)
+
+type Keychain struct{}
+
+func (m *Keychain) Get(ctx context.Context, name string) error {
+    return dag.Generator().Gen(ctx, name)
+}
+`)
+
+			// Set up the main module that uses keychain
+			ctr = ctr.
+				WithWorkdir("/work").
+				With(daggerExec("init", "--name=mymodule", "--sdk=go", "--source=.")).
+				With(daggerExec("install", "./keychain")).
+				WithNewFile("main.go", `package main
+
+import (
+    "context"
+    "fmt"
+)
+
+type Mymodule struct{}
+
+func (m *Mymodule) Issue(ctx context.Context) error {
+    kc := dag.Keychain()
+
+    err := kc.Get(ctx, "a")
+    if err != nil {
+        return fmt.Errorf("first get: %w", err)
+    }
+
+    err = kc.Get(ctx, "b")
+    if err != nil {
+        return fmt.Errorf("second get: %w", err)
+    }
+    return nil
+}
+`)
+
+			// Test that repeated calls work correctly
+			_, err := ctr.With(daggerCall("issue")).Sync(ctx)
+			require.NoError(t, err)
+		})
+
 		t.Run("cached", func(ctx context.Context, t *testctx.T) {
 			c := connect(ctx, t)
 			ctr := c.Container().From(golangImage).
