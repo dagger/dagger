@@ -437,8 +437,9 @@ production deployment via Netlify as follows:
 
 ## 🌌 Daggerverse ⏱ `2mins`
 
-- [ ] Mention in the release thread on Discord that Daggerverse can be updated
-      to the just-released version. cc @marcosnils @matipan @grouville
+- [ ] Merge the newly opened PR in the dagger.io repository (this is created by
+      the publish workflow). If anything fails, cc the following in the release thread
+      on Discord: cc @jpadams @kpenfound @matipan @gerhard
 
 ## 🌥️ Dagger Cloud ⏱ `2mins`
 
