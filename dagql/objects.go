@@ -197,25 +197,10 @@ func (cls Class[T]) ParseField(ctx context.Context, view string, astField *ast.F
 			return Selector{}, nil, fmt.Errorf("%s.%s has no such argument: %q", cls.TypeName(), field.Spec.Name, arg.Name)
 		}
 
-		if argDef, ok := argSpec.Type.(Definitive); ok {
-			def := argDef.TypeDefinition(view)
-			if def.Kind == ast.Enum && (arg.Value.Kind == ast.BooleanValue || arg.Value.Kind == ast.NullValue) {
-				// enum values can sometimes be mis-parsed as true/false/null
-				// https://github.com/vektah/gqlparser/blob/v2.5.16/parser/query.go#L271-L279
-				argClone := *arg
-				arg = &argClone
-				arg.Value.Kind = ast.EnumValue
-			}
-		}
-
 		val, err := arg.Value.Value(vars)
 		if err != nil {
 			return Selector{}, nil, err
 		}
-		if val == nil {
-			continue
-		}
-
 		input, err := argSpec.Type.Decoder().DecodeInput(val)
 		if err != nil {
 			return Selector{}, nil, fmt.Errorf("init arg %q value as %T (%s) using %T: %w", arg.Name, argSpec.Type, argSpec.Type.Type(), argSpec.Type.Decoder(), err)

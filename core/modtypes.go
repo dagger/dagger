@@ -40,7 +40,11 @@ type PrimitiveType struct {
 
 func (t *PrimitiveType) ConvertFromSDKResult(ctx context.Context, value any) (dagql.Typed, error) {
 	// NB: we lean on the fact that all primitive types are also dagql.Inputs
-	return t.Def.ToInput().Decoder().DecodeInput(value)
+	input := t.Def.ToInput()
+	if value == nil {
+		return input, nil
+	}
+	return input.Decoder().DecodeInput(value)
 }
 
 func (t *PrimitiveType) ConvertToSDKInput(ctx context.Context, value dagql.Typed) (any, error) {

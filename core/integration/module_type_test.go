@@ -9,6 +9,8 @@ import (
 	"github.com/dagger/dagger/testctx"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
+
+	"dagger.io/dagger"
 )
 
 type TypeSuite struct{}
@@ -1402,14 +1404,7 @@ func (m *Dep) Thing(f MyEnum) MyEnum {
 }
 `
 
-		type testCase struct {
-			sdk    string
-			source string
-		}
-		for _, tc := range []testCase{
-			{
-				sdk: "go",
-				source: `package main
+		src := `package main
 
 import (
 	"context"
@@ -1419,37 +1414,49 @@ import (
 
 type Test struct{}
 
-func (m *Test) Test(ctx context.Context) (string, error) {
+func (m *Test) TestBool(ctx context.Context) (string, error) {
 	f, err := dag.Dep().Thing(ctx, dagger.DepMyEnumFalse)
 	if err != nil {
 		return "", err
 	}
-	t, err := dag.Dep().Thing(ctx, dagger.DepMyEnumTrue)
-	if err != nil {
-		return "", err
-	}
-	n, err := dag.Dep().Thing(ctx, dagger.DepMyEnumNull)
-	if err != nil {
-		return "", err
-	}
-	return fmt.Sprint(f, t, n), nil
+	return fmt.Sprint(f), nil
 }
-`,
-			},
-		} {
-			tc := tc
 
-			t.Run(tc.sdk, func(ctx context.Context, t *testctx.T) {
-				c := connect(ctx, t)
+func (m *Test) TestNull(ctx context.Context) (string, error) {
+	f, err := dag.Dep().Thing(ctx, dagger.DepMyEnumNull)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprint(f), nil
+}
+`
 
-				modGen := modInit(t, c, tc.sdk, tc.source).
-					With(withModInitAt("./dep", "go", depSrc)).
-					With(daggerExec("install", "./dep"))
+		t.Run("bool", func(ctx context.Context, t *testctx.T) {
+			var logs safeBuffer
+			c := connect(ctx, t, dagger.WithLogOutput(&logs))
 
-				out, err := modGen.With(daggerQuery(`{test{test}}`)).Stdout(ctx)
-				require.NoError(t, err)
-				require.Equal(t, "falsetruenull", gjson.Get(out, "test.test").String())
-			})
-		}
+			modGen := modInit(t, c, "go", src).
+				With(withModInitAt("./dep", "go", depSrc)).
+				With(daggerExec("install", "./dep"))
+
+			_, err := modGen.With(daggerQuery(`{test{testBool}}`)).Stdout(ctx)
+			require.Error(t, err)
+			require.NoError(t, c.Close())
+			require.Contains(t, logs.String(), "invalid enum value false")
+		})
+
+		t.Run("null", func(ctx context.Context, t *testctx.T) {
+			var logs safeBuffer
+			c := connect(ctx, t, dagger.WithLogOutput(&logs))
+
+			modGen := modInit(t, c, "go", src).
+				With(withModInitAt("./dep", "go", depSrc)).
+				With(daggerExec("install", "./dep"))
+
+			_, err := modGen.With(daggerQuery(`{test{testNull}}`)).Stdout(ctx)
+			require.Error(t, err)
+			require.NoError(t, c.Close())
+			require.Contains(t, logs.String(), "invalid enum value null")
+		})
 	})
 }

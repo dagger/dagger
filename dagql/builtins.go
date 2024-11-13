@@ -173,9 +173,6 @@ type DynamicArrayInput struct {
 var _ InputDecoder = DynamicArrayInput{}
 
 func (d DynamicArrayInput) DecodeInput(val any) (Input, error) {
-	if val == nil {
-		val = []any{}
-	}
 	switch x := val.(type) {
 	case []any:
 		arr := DynamicArrayInput{

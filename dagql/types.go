@@ -142,8 +142,6 @@ func (i Int) TypeDefinition(views ...string) *ast.Definition {
 
 func (Int) DecodeInput(val any) (Input, error) {
 	switch x := val.(type) {
-	case nil:
-		return NewInt(0), nil
 	case int:
 		return NewInt(x), nil
 	case int32:
@@ -241,8 +239,6 @@ func (f Float) TypeDefinition(views ...string) *ast.Definition {
 
 func (Float) DecodeInput(val any) (Input, error) {
 	switch x := val.(type) {
-	case nil:
-		return NewFloat(float64(0)), nil
 	case float32:
 		return NewFloat(float64(x)), nil
 	case float64:
@@ -344,8 +340,6 @@ func (b Boolean) TypeDefinition(views ...string) *ast.Definition {
 
 func (Boolean) DecodeInput(val any) (Input, error) {
 	switch x := val.(type) {
-	case nil:
-		return NewBoolean(false), nil
 	case bool:
 		return NewBoolean(x), nil
 	case string: // from default
@@ -431,8 +425,6 @@ func (s String) TypeDefinition(views ...string) *ast.Definition {
 
 func (String) DecodeInput(val any) (Input, error) {
 	switch x := val.(type) {
-	case nil:
-		return NewString(""), nil
 	case string:
 		return NewString(x), nil
 	default:
@@ -766,14 +758,11 @@ func (a ArrayInput[S]) Decoder() InputDecoder {
 var _ InputDecoder = ArrayInput[Input]{}
 
 func (a ArrayInput[I]) DecodeInput(val any) (Input, error) {
-	var zero I
-	decoder := zero.Decoder()
-
-	if val == nil {
-		val = []any{}
-	}
 	switch x := val.(type) {
 	case []any:
+		var zero I
+		decoder := zero.Decoder()
+
 		arr := make(ArrayInput[I], len(x))
 		for i, val := range x {
 			elem, err := decoder.DecodeInput(val)
@@ -996,6 +985,10 @@ func (e *EnumValueName) DecodeInput(val any) (Input, error) {
 		return &EnumValueName{Enum: e.Enum, Value: x.Value}, nil
 	case string:
 		return &EnumValueName{Enum: e.Enum, Value: x}, nil
+	case bool:
+		return nil, fmt.Errorf("invalid enum value %t", x)
+	case nil:
+		return nil, fmt.Errorf("invalid enum value null")
 	default:
 		return nil, fmt.Errorf("cannot create enum name from %T", x)
 	}
