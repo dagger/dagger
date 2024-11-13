@@ -287,6 +287,7 @@ export class DaggerModule {
       return
     }
 
+    // Scalar are defined with string intersection such as `type MyScalar = string & { __MyScalar: never }`
     if (
       type.flags & ts.TypeFlags.Intersection ||
       type.flags & ts.TypeFlags.Union

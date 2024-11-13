@@ -1348,13 +1348,13 @@ import { object, func } from "@dagger.io/dagger"
  */
 export enum TestEnum {
     /**
-		 * A
-		 */
+     * A
+     */
     A = "a",
 
-		/**
-		 * B
-		 */
+    /**
+     * B
+     */
     B = "b",
 }
 
@@ -1540,15 +1540,15 @@ import { func, object } from "@dagger.io/dagger"
  * Test Person
  */
 export type Person = {
-	/**
-	 * Age
-	 */
+  /**
+   * Age
+   */
   age: number
   
-	/**
-	 * Name
-	 */
-	name: string
+  /**
+   * Name
+   */
+  name: string
 }
 
 @object()
