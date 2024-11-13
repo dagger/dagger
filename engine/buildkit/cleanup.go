@@ -2,6 +2,7 @@ package buildkit
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -23,6 +24,7 @@ func (c *Cleanups) Add(msg string, f func() error) CleanupFunc {
 		err := f()
 		if err != nil {
 			slog.Error("cleanup failed", "msg", msg, "err", err, "duration", time.Since(start))
+			err = fmt.Errorf("cleanup failed: %q: %w", msg, err)
 		} else {
 			slog.ExtraDebug("cleanup succeeded", "msg", msg, "duration", time.Since(start))
 		}
