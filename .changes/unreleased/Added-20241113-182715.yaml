@@ -1,0 +1,6 @@
+kind: Added
+body: Alias `fs` to `functions` so that pro CLI users can run `d fs` (they all have `d` aliased to `dagger`)
+time: 2024-11-13T18:27:15.063641Z
+custom:
+    Author: gerhard
+    PR: "8945"

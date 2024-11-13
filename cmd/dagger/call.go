@@ -49,8 +49,9 @@ var callModCmd = &FuncCommand{
 }
 
 var funcListCmd = &cobra.Command{
-	Use:   "functions [options] [function]...",
-	Short: `List available functions`,
+	Use:     "functions [options] [function]...",
+	Aliases: []string{"fs"},
+	Short:   `List available functions`,
 	Long: strings.ReplaceAll(`List available functions in a module.
 
 This is similar to ´dagger call --help´, but only focused on showing the
