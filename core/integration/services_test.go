@@ -400,7 +400,7 @@ func (m *Hoster) Run(ctx context.Context) error {
 		WithExec([]string{"httpd", "-v", "-f"}).
 		WithExposedPort(80).
 		AsService().
-		WithHostname("wwwhatsup")
+		WithHostname("wwwhatsup0")
 	
 	_, err := srv.Start(ctx)
 	if err != nil {
@@ -409,7 +409,7 @@ func (m *Hoster) Run(ctx context.Context) error {
 
 	resp, err := dag.Container().
 		From("`+busyboxImage+`").
-		WithExec([]string{"wget", "-O-", "http://wwwhatsup"}).
+		WithExec([]string{"wget", "-O-", "http://wwwhatsup0"}).
 		Stdout(ctx)
 	if err != nil {
 		return err
@@ -448,7 +448,7 @@ func (m *Caller) Run(ctx context.Context) error {
 	resp, err := dag.Container().
 		From("`+busyboxImage+`").
 		WithEnvVariable("NOW", time.Now().String()).
-		WithExec([]string{"wget", "-O-", "http://wwwhatsup"}).
+		WithExec([]string{"wget", "-O-", "http://wwwhatsup1"}).
 		Stdout(ctx)
 	if err == nil {
 		return fmt.Errorf("should not have been able to reach service")
@@ -461,7 +461,7 @@ func (m *Caller) Run(ctx context.Context) error {
 		WithExec([]string{"httpd", "-v", "-f"}).
 		WithExposedPort(80).
 		AsService().
-		WithHostname("wwwhatsup")
+		WithHostname("wwwhatsup1")
 	
 	_, err = srv.Start(ctx)
 	if err != nil {
@@ -471,7 +471,7 @@ func (m *Caller) Run(ctx context.Context) error {
 	resp, err = dag.Container().
 		From("`+busyboxImage+`").
 		WithEnvVariable("NOW", time.Now().String()).
-		WithExec([]string{"wget", "-O-", "http://wwwhatsup"}).
+		WithExec([]string{"wget", "-O-", "http://wwwhatsup1"}).
 		Stdout(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to reach service: %w", err)
@@ -504,7 +504,7 @@ func (m *Hoster) Run(ctx context.Context) error {
 		WithExec([]string{"httpd", "-v", "-f"}).
 		WithExposedPort(80).
 		AsService().
-		WithHostname("wwwhatsup")
+		WithHostname("wwwhatsup1")
 	
 	_, err := srv.Start(ctx)
 	if err != nil {
@@ -519,7 +519,7 @@ func (m *Hoster) Run(ctx context.Context) error {
 	resp, err := dag.Container().
 		From("`+busyboxImage+`").
 		WithEnvVariable("NOW", time.Now().String()).
-		WithExec([]string{"wget", "-O-", "http://wwwhatsup"}).
+		WithExec([]string{"wget", "-O-", "http://wwwhatsup1"}).
 		Stdout(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to reach service: %w", err)
