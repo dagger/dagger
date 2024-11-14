@@ -255,7 +255,7 @@ func (w *Worker) newNetNS(ctx context.Context, hostname string) (_ *networkNames
 	if err != nil {
 		return nil, fmt.Errorf("failed to create network namespace: %w", err)
 	}
-	cleanup.Add("close netns", netNS.Close)
+	cleanup.Add(ctx, "close netns", netNS.Close)
 
 	state := &execState{
 		done:             make(chan struct{}),
@@ -263,7 +263,7 @@ func (w *Worker) newNetNS(ctx context.Context, hostname string) (_ *networkNames
 		netNSJobs:        make(chan func()),
 		cleanups:         cleanup,
 	}
-	cleanup.Add("mark run state done", Infallible(func() {
+	cleanup.Add(ctx, "mark run state done", Infallible(func() {
 		close(state.done)
 	}))
 
@@ -275,7 +275,7 @@ func (w *Worker) newNetNS(ctx context.Context, hostname string) (_ *networkNames
 	w.mu.Lock()
 	w.running[id] = state
 	w.mu.Unlock()
-	cleanup.Add("delete run state", Infallible(func() {
+	cleanup.Add(ctx, "delete run state", Infallible(func() {
 		w.mu.Lock()
 		delete(w.running, id)
 		w.mu.Unlock()

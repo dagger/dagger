@@ -34,6 +34,7 @@ import (
 	bknetwork "github.com/moby/buildkit/util/network"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/sourcegraph/conc/pool"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/net/http2"
@@ -153,7 +154,7 @@ func (w *Worker) setupNetwork(ctx context.Context, state *execState) error {
 	if err != nil {
 		return fmt.Errorf("create network namespace: %w", err)
 	}
-	state.cleanups.Add("close network namespace", networkNamespace.Close)
+	state.cleanups.Add(ctx, "close network namespace", networkNamespace.Close)
 	state.networkNamespace = networkNamespace
 
 	if state.procInfo.Meta.NetMode == pb.NetMode_UNSET {
@@ -175,7 +176,7 @@ func (w *Worker) setupNetwork(ctx context.Context, state *execState) error {
 		return fmt.Errorf("get base hosts file: %w", err)
 	}
 	if cleanupBaseHosts != nil {
-		state.cleanups.Add("cleanup base hosts file", Infallible(cleanupBaseHosts))
+		state.cleanups.Add(ctx, "cleanup base hosts file", Infallible(cleanupBaseHosts))
 	}
 
 	if w.execMD == nil || w.execMD.SessionID == "" {
@@ -203,7 +204,7 @@ func (w *Worker) setupNetwork(ctx context.Context, state *execState) error {
 	}
 	defer ctrResolvFile.Close()
 	state.resolvConfPath = ctrResolvFile.Name()
-	state.cleanups.Add("remove resolv.conf", func() error {
+	state.cleanups.Add(ctx, "remove resolv.conf", func() error {
 		return os.RemoveAll(state.resolvConfPath)
 	})
 
@@ -259,7 +260,7 @@ func (w *Worker) setupNetwork(ctx context.Context, state *execState) error {
 	}
 	defer ctrHostsFile.Close()
 	state.hostsFilePath = ctrHostsFile.Name()
-	state.cleanups.Add("remove hosts file", func() error {
+	state.cleanups.Add(ctx, "remove hosts file", func() error {
 		return os.RemoveAll(state.hostsFilePath)
 	})
 
@@ -375,7 +376,7 @@ func (w *Worker) generateBaseSpec(ctx context.Context, state *execState) error {
 	if err != nil {
 		return err
 	}
-	state.cleanups.Add("base OCI spec cleanup", Infallible(ociSpecCleanup))
+	state.cleanups.Add(ctx, "base OCI spec cleanup", Infallible(ociSpecCleanup))
 
 	state.spec = baseSpec
 	return nil
@@ -405,7 +406,7 @@ func (w *Worker) setupRootfs(ctx context.Context, state *execState) error {
 	if err != nil {
 		return fmt.Errorf("create rootfs temp dir: %w", err)
 	}
-	state.cleanups.Add("remove rootfs temp dir", func() error {
+	state.cleanups.Add(ctx, "remove rootfs temp dir", func() error {
 		return os.RemoveAll(state.rootfsPath)
 	})
 	state.spec.Root.Path = state.rootfsPath
@@ -419,12 +420,12 @@ func (w *Worker) setupRootfs(ctx context.Context, state *execState) error {
 		return fmt.Errorf("get rootfs mount: %w", err)
 	}
 	if releaseRootMount != nil {
-		state.cleanups.Add("release rootfs mount", releaseRootMount)
+		state.cleanups.Add(ctx, "release rootfs mount", releaseRootMount)
 	}
 	if err := mount.All(rootMnts, state.rootfsPath); err != nil {
 		return fmt.Errorf("mount rootfs: %w", err)
 	}
-	state.cleanups.Add("unmount rootfs", func() error {
+	state.cleanups.Add(ctx, "unmount rootfs", func() error {
 		return mount.Unmount(state.rootfsPath, 0)
 	})
 
@@ -458,7 +459,7 @@ func (w *Worker) setupRootfs(ctx context.Context, state *execState) error {
 	}
 	state.spec.Mounts = filteredMounts
 
-	state.cleanups.Add("cleanup rootfs stubs", Infallible(executor.MountStubsCleaner(
+	state.cleanups.Add(ctx, "cleanup rootfs stubs", Infallible(executor.MountStubsCleaner(
 		ctx,
 		state.rootfsPath,
 		state.mounts,
@@ -500,7 +501,7 @@ func (w *Worker) setupRootfs(ctx context.Context, state *execState) error {
 		if err := mnt.Mount(state.rootfsPath); err != nil {
 			return fmt.Errorf("mount to rootfs %s: %w", mnt.Target, err)
 		}
-		state.cleanups.Add("unmount from rootfs "+mnt.Target, func() error {
+		state.cleanups.Add(ctx, "unmount from rootfs "+mnt.Target, func() error {
 			return mount.Unmount(dstPath, 0)
 		})
 	}
@@ -543,7 +544,7 @@ func (w *Worker) setExitCodePath(_ context.Context, state *execState) error {
 	return nil
 }
 
-func (w *Worker) setupStdio(_ context.Context, state *execState) error {
+func (w *Worker) setupStdio(ctx context.Context, state *execState) error {
 	if state.procInfo.Meta.Tty {
 		state.spec.Process.Terminal = true
 		// no more stdio setup needed
@@ -557,7 +558,7 @@ func (w *Worker) setupStdio(_ context.Context, state *execState) error {
 	stdinFile, err := os.Open(stdinPath)
 	switch {
 	case err == nil:
-		state.cleanups.Add("close container stdin file", stdinFile.Close)
+		state.cleanups.Add(ctx, "close container stdin file", stdinFile.Close)
 		state.procInfo.Stdin = stdinFile
 	case os.IsNotExist(err):
 		// no stdin to send
@@ -574,7 +575,7 @@ func (w *Worker) setupStdio(_ context.Context, state *execState) error {
 	if err != nil {
 		return fmt.Errorf("open stdout file: %w", err)
 	}
-	state.cleanups.Add("close container stdout file", stdoutFile.Close)
+	state.cleanups.Add(ctx, "close container stdout file", stdoutFile.Close)
 	stdoutWriters = append(stdoutWriters, stdoutFile)
 
 	var stderrWriters []io.Writer
@@ -586,7 +587,7 @@ func (w *Worker) setupStdio(_ context.Context, state *execState) error {
 	if err != nil {
 		return fmt.Errorf("open stderr file: %w", err)
 	}
-	state.cleanups.Add("close container stderr file", stderrFile.Close)
+	state.cleanups.Add(ctx, "close container stderr file", stderrFile.Close)
 	stderrWriters = append(stderrWriters, stderrFile)
 
 	if w.execMD != nil && (w.execMD.RedirectStdoutPath != "" || w.execMD.RedirectStderrPath != "") {
@@ -612,7 +613,7 @@ func (w *Worker) setupStdio(_ context.Context, state *execState) error {
 			if err != nil {
 				return fmt.Errorf("open redirect stdout file: %w", err)
 			}
-			state.cleanups.Add("close redirect stdout file", redirectStdoutFile.Close)
+			state.cleanups.Add(ctx, "close redirect stdout file", redirectStdoutFile.Close)
 			if err := redirectStdoutFile.Chown(int(state.spec.Process.User.UID), int(state.spec.Process.User.GID)); err != nil {
 				return fmt.Errorf("chown redirect stdout file: %w", err)
 			}
@@ -628,7 +629,7 @@ func (w *Worker) setupStdio(_ context.Context, state *execState) error {
 			if err != nil {
 				return fmt.Errorf("open redirect stderr file: %w", err)
 			}
-			state.cleanups.Add("close redirect stderr file", redirectStderrFile.Close)
+			state.cleanups.Add(ctx, "close redirect stderr file", redirectStderrFile.Close)
 			if err := redirectStderrFile.Chown(int(state.spec.Process.User.UID), int(state.spec.Process.User.GID)); err != nil {
 				return fmt.Errorf("chown redirect stderr file: %w", err)
 			}
@@ -650,6 +651,14 @@ func (w *Worker) setupOTel(ctx context.Context, state *execState) error {
 		return nil
 	}
 
+	engineTracer := telemetry.Tracer(ctx, "dagger.io/engine")
+	otelCtx, otelSpan := engineTracer.Start(ctx,
+		fmt.Sprintf("setupOTel: %s", strings.Join(state.procInfo.Meta.Args, " ")))
+	state.cleanups.Add(ctx, "end OTel span", func() error {
+		otelSpan.End()
+		return nil
+	})
+
 	if w.causeCtx.IsValid() {
 		ctx = trace.ContextWithSpanContext(ctx, w.causeCtx)
 	}
@@ -667,7 +676,7 @@ func (w *Worker) setupOTel(ctx context.Context, state *execState) error {
 	}
 
 	stdio := telemetry.SpanStdio(ctx, InstrumentationLibrary)
-	state.cleanups.Add("close logs", stdio.Close)
+	state.cleanups.Add(ctx, "close logs", stdio.Close)
 	state.procInfo.Stdout = nopCloser{io.MultiWriter(stdio.Stdout, state.procInfo.Stdout)}
 	state.procInfo.Stderr = nopCloser{io.MultiWriter(stdio.Stderr, state.procInfo.Stderr)}
 
@@ -678,27 +687,30 @@ func (w *Worker) setupOTel(ctx context.Context, state *execState) error {
 		return fmt.Errorf("otel tcp proxy listen: %w", err)
 	}
 	otelSrv := &http.Server{
-		Handler: http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		BaseContext: func(_ net.Listener) context.Context {
+			return otelCtx
+		},
+		Handler: otelhttp.NewHandler(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 			if r.Header == nil {
 				r.Header = http.Header{}
 			}
 			r.Header.Set("X-Dagger-Session-ID", destSession)
 			r.Header.Set("X-Dagger-Client-ID", destClientID)
 			w.telemetryPubSub.ServeHTTP(rw, r)
-		}),
+		}), "proxy OTel"),
 		ReadHeaderTimeout: 5 * time.Second, // for gocritic
 	}
 	listenerPool := pool.New().WithErrors()
 	listenerPool.Go(func() error {
 		return otelSrv.Serve(listener)
 	})
-	state.cleanups.Add("wait for otel proxy", func() error {
+	state.cleanups.Add(ctx, "wait for otel proxy", func() error {
 		if err := listenerPool.Wait(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			return err
 		}
 		return nil
 	})
-	state.cleanups.Add("shutdown otel proxy", Infallible(func() {
+	state.cleanups.Add(ctx, "shutdown otel proxy", Infallible(func() {
 		shutdownCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
 		switch err := otelSrv.Shutdown(shutdownCtx); {
@@ -798,11 +810,11 @@ func (w *Worker) setupSecretScrubbing(ctx context.Context, state *execState) err
 		io.Copy(finalStderr, stderrScrubReader)
 	}()
 
-	state.cleanups.Add("close secret scrub stderr reader", stderrR.Close)
-	state.cleanups.Add("close secret scrub stdout reader", stdoutR.Close)
-	state.cleanups.Add("wait for secret scrubber pipes", Infallible(pipeWg.Wait))
-	state.cleanups.Add("close secret scrub stderr writer", stderrW.Close)
-	state.cleanups.Add("close secret scrub stdout writer", stdoutW.Close)
+	state.cleanups.Add(ctx, "close secret scrub stderr reader", stderrR.Close)
+	state.cleanups.Add(ctx, "close secret scrub stdout reader", stdoutR.Close)
+	state.cleanups.Add(ctx, "wait for secret scrubber pipes", Infallible(pipeWg.Wait))
+	state.cleanups.Add(ctx, "close secret scrub stderr writer", stderrW.Close)
+	state.cleanups.Add(ctx, "close secret scrub stdout writer", stdoutW.Close)
 
 	return nil
 }
@@ -1008,14 +1020,14 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	}
 
 	sessionClientConn, sessionSrvConn := net.Pipe()
-	state.cleanups.Add("close session client conn", sessionClientConn.Close)
-	state.cleanups.Add("close session server conn", sessionSrvConn.Close)
+	state.cleanups.Add(ctx, "close session client conn", sessionClientConn.Close)
+	state.cleanups.Add(ctx, "close session server conn", sessionSrvConn.Close)
 
 	sessionSrv := client.NewBuildkitSessionServer(ctx, sessionClientConn, attachables...)
-	stopSessionSrv := state.cleanups.Add("stop session server", Infallible(sessionSrv.Stop))
+	stopSessionSrv := state.cleanups.Add(ctx, "stop session server", Infallible(sessionSrv.Stop))
 
 	srvCtx, srvCancel := context.WithCancelCause(ctx)
-	state.cleanups.Add("cancel session server", Infallible(func() {
+	state.cleanups.Add(ctx, "cancel session server", Infallible(func() {
 		srvCancel(errors.New("container cleanup"))
 	}))
 	srvPool := pool.New().WithContext(srvCtx).WithCancelOnError()
@@ -1038,7 +1050,7 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 	if err != nil {
 		return fmt.Errorf("listen for nested client: %w", err)
 	}
-	state.cleanups.Add("close nested client listener", IgnoreErrs(httpListener.Close, net.ErrClosed))
+	state.cleanups.Add(ctx, "close nested client listener", IgnoreErrs(httpListener.Close, net.ErrClosed))
 
 	tcpAddr, ok := httpListener.Addr().(*net.TCPAddr)
 	if !ok {
@@ -1065,10 +1077,10 @@ func (w *Worker) setupNestedClient(ctx context.Context, state *execState) (rerr 
 		return nil
 	})
 
-	state.cleanups.Add("wait for nested client server pool", srvPool.Wait)
+	state.cleanups.Add(ctx, "wait for nested client server pool", srvPool.Wait)
 	state.cleanups.ReAdd(stopSessionSrv)
-	state.cleanups.Add("close nested client http server", httpSrv.Close)
-	state.cleanups.Add("cancel nested client server pool", Infallible(func() {
+	state.cleanups.Add(ctx, "close nested client http server", httpSrv.Close)
+	state.cleanups.Add(ctx, "cancel nested client server pool", Infallible(func() {
 		srvCancel(errors.New("container cleanup"))
 	}))
 
@@ -1137,7 +1149,7 @@ func (w *Worker) installCACerts(ctx context.Context, state *execState) error {
 	err = caInstaller.Install(ctx)
 	switch {
 	case err == nil:
-		state.cleanups.Add("uninstall CA certs", func() error {
+		state.cleanups.Add(ctx, "uninstall CA certs", func() error {
 			return caInstaller.Uninstall(ctx)
 		})
 	case errors.As(err, new(cacerts.CleanupErr)):
@@ -1157,7 +1169,7 @@ func (w *Worker) runContainer(ctx context.Context, state *execState) (rerr error
 	if err := os.Mkdir(bundle, 0o711); err != nil {
 		return err
 	}
-	state.cleanups.Add("remove bundle", func() error {
+	state.cleanups.Add(ctx, "remove bundle", func() error {
 		return os.RemoveAll(bundle)
 	})
 
@@ -1192,7 +1204,7 @@ func (w *Worker) runContainer(ctx context.Context, state *execState) (rerr error
 
 	trace.SpanFromContext(ctx).AddEvent("Container created")
 
-	state.cleanups.Add("runc delete container", func() error {
+	state.cleanups.Add(ctx, "runc delete container", func() error {
 		return w.runc.Delete(context.WithoutCancel(ctx), state.id, &runc.DeleteOpts{})
 	})
 
@@ -1223,7 +1235,7 @@ func (w *Worker) runContainer(ctx context.Context, state *execState) (rerr error
 		cgroupSamplerCtx, cgroupSamplerCancel := context.WithCancelCause(context.WithoutCancel(ctx))
 		cgroupSamplerPool := pool.New()
 
-		state.cleanups.Add("cancel cgroup sampler", Infallible(func() {
+		state.cleanups.Add(ctx, "cancel cgroup sampler", Infallible(func() {
 			cgroupSamplerCancel(fmt.Errorf("container cleanup: %w", context.Canceled))
 			cgroupSamplerPool.Wait()
 		}))

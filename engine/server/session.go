@@ -219,6 +219,7 @@ func (sess *daggerSession) FlushTelemetry(ctx context.Context) error {
 
 // requires that sess.stateMu is held
 func (srv *Server) initializeDaggerSession(
+	ctx context.Context,
 	clientMetadata *engine.ClientMetadata,
 	sess *daggerSession,
 	failureCleanups *buildkit.Cleanups,
@@ -253,7 +254,7 @@ func (srv *Server) initializeDaggerSession(
 			),
 		CloudToken: clientMetadata.CloudToken,
 	})
-	failureCleanups.Add("close session analytics", sess.analytics.Close)
+	failureCleanups.Add(ctx, "close session analytics", sess.analytics.Close)
 
 	for _, cacheImportCfg := range clientMetadata.UpstreamCacheImportConfig {
 		_, ok := srv.cacheImporters[cacheImportCfg.Type]
@@ -456,7 +457,7 @@ func (srv *Server) initializeDaggerClient(
 	if err != nil {
 		return fmt.Errorf("failed to create llbsolver: %w", err)
 	}
-	failureCleanups.Add("close llb solver", client.llbSolver.Close)
+	failureCleanups.Add(ctx, "close llb solver", client.llbSolver.Close)
 
 	client.getMainClientCaller = sync.OnceValues(func() (bksession.Caller, error) {
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
@@ -468,14 +469,14 @@ func (srv *Server) initializeDaggerClient(
 	if err != nil {
 		return fmt.Errorf("failed to create buildkit session: %w", err)
 	}
-	failureCleanups.Add("close buildkit session", client.buildkitSession.Close)
+	failureCleanups.Add(ctx, "close buildkit session", client.buildkitSession.Close)
 
 	client.job, err = srv.solver.NewJob(client.buildkitSession.ID())
 	if err != nil {
 		return fmt.Errorf("failed to create buildkit job: %w", err)
 	}
-	failureCleanups.Add("discard solver job", client.job.Discard)
-	failureCleanups.Add("stop solver progress", buildkit.Infallible(client.job.CloseProgress))
+	failureCleanups.Add(ctx, "discard solver job", client.job.Discard)
+	failureCleanups.Add(ctx, "stop solver progress", buildkit.Infallible(client.job.CloseProgress))
 
 	client.job.SessionID = client.buildkitSession.ID()
 	client.job.SetValue(buildkit.EntitlementsJobKey, srv.entitlements)
@@ -737,7 +738,7 @@ func (srv *Server) getOrInitClient(
 		}
 		srv.daggerSessions[sessionID] = sess
 
-		failureCleanups.Add("delete session ID", func() error {
+		failureCleanups.Add(ctx, "delete session ID", func() error {
 			srv.daggerSessionsMu.Lock()
 			delete(srv.daggerSessions, sessionID)
 			srv.daggerSessionsMu.Unlock()
@@ -750,7 +751,7 @@ func (srv *Server) getOrInitClient(
 	defer sess.stateMu.Unlock()
 	switch sess.state {
 	case sessionStateUninitialized:
-		if err := srv.initializeDaggerSession(opts.ClientMetadata, sess, failureCleanups); err != nil {
+		if err := srv.initializeDaggerSession(ctx, opts.ClientMetadata, sess, failureCleanups); err != nil {
 			return nil, nil, fmt.Errorf("initialize session: %w", err)
 		}
 	case sessionStateInitialized:
@@ -788,7 +789,7 @@ func (srv *Server) getOrInitClient(
 			client.parents = append(client.parents, parent)
 		}
 
-		failureCleanups.Add("delete client ID", func() error {
+		failureCleanups.Add(ctx, "delete client ID", func() error {
 			sess.clientMu.Lock()
 			delete(sess.clients, clientID)
 			sess.clientMu.Unlock()
