@@ -25,7 +25,43 @@ import (
 type localFSSharedState struct {
 	rootPath      string
 	contentHasher func(ChangeKind, string, os.FileInfo, error) error
-	g             flightcontrol.Group[*struct{}]
+	g             flightcontrol.CachedGroup[*ChangeWithStat]
+}
+
+type ChangeWithStat struct {
+	kind ChangeKind
+	stat *types.Stat
+}
+
+func (c *ChangeWithStat) IsEqual(other *ChangeWithStat) bool {
+	// TODO: MORE ROBUST
+	if c.kind != other.kind {
+		return false
+	}
+	if c.stat == nil && other.stat == nil {
+		return true
+	}
+	if c.stat == nil && other.stat != nil {
+		return false
+	}
+	if c.stat != nil && other.stat == nil {
+		return false
+	}
+	if c.stat.Mode != other.stat.Mode {
+		return false
+	}
+	return true
+}
+
+type ErrConflict struct {
+	Path string
+	Old  *ChangeWithStat
+	New  *ChangeWithStat
+}
+
+func (e *ErrConflict) Error() string {
+	// TODO: MAKE HUMAN READABLE
+	return fmt.Sprintf("conflict at %s: %+v vs. %+v", e.Path, e.Old, e.New)
 }
 
 type localFS struct {
@@ -107,25 +143,19 @@ func (local *localFS) toRootPath(path string) string {
 	return filepath.Join(local.subdir, path)
 }
 
-// TODO:
-// TODO:
-// TODO:
-// TODO:
-// Probably need atomic renames for everything to be 100% resilient against every possible race condition
-// Although that can't handle replacing a file with a directory or vice versa, unless you can rely on RENAME_EXCHANGE
-// Exists since 3.15? https://stackoverflow.com/questions/27862057/atomically-swap-contents-of-two-files-on-linux#comment130691510_27862160
-
 func (local *localFS) mutate(
 	ctx context.Context,
 	path string,
 	upperStat *types.Stat,
 	fn func(ctx context.Context, fullPath string, lowerStat fs.FileInfo, h hash.Hash) error,
-) error {
+) (*ChangeWithStat, error) {
 	rootPath := local.toRootPath(path)
 	fullPath := local.toFullPath(path)
-	_, err := local.g.Do(ctx, rootPath, func(ctx context.Context) (*struct{}, error) {
+	return local.g.Do(ctx, rootPath, func(ctx context.Context) (*ChangeWithStat, error) {
+		var changeKind ChangeKind
 		switch {
 		case upperStat != nil: // add or modify
+			changeKind = ChangeKindAdd // TODO: explain, or make better
 			lowerStat, err := os.Lstat(fullPath)
 			if err != nil && !os.IsNotExist(err) {
 				return nil, fmt.Errorf("failed to stat existing path: %w", err)
@@ -146,6 +176,7 @@ func (local *localFS) mutate(
 			}
 
 		default: // delete
+			changeKind = ChangeKindDelete
 			err := fn(ctx, fullPath, nil, nil)
 			if err != nil {
 				return nil, err
@@ -155,19 +186,26 @@ func (local *localFS) mutate(
 			}
 		}
 
-		return nil, nil
+		return &ChangeWithStat{kind: changeKind, stat: upperStat}, nil
 	})
-	return err
 }
 
 func (local *localFS) RemoveAll(ctx context.Context, path string) error {
-	return local.mutate(ctx, path, nil, func(ctx context.Context, fullPath string, _ fs.FileInfo, _ hash.Hash) error {
+	appliedChange, err := local.mutate(ctx, path, nil, func(ctx context.Context, fullPath string, _ fs.FileInfo, _ hash.Hash) error {
 		return os.RemoveAll(fullPath)
 	})
+	if err != nil {
+		return err
+	}
+	expectedChange := &ChangeWithStat{kind: ChangeKindDelete, stat: nil}
+	if !appliedChange.IsEqual(expectedChange) {
+		return &ErrConflict{Path: path, Old: appliedChange, New: expectedChange}
+	}
+	return nil
 }
 
 func (local *localFS) Mkdir(ctx context.Context, path string, upperStat *types.Stat) error {
-	return local.mutate(ctx, path, upperStat, func(ctx context.Context, fullPath string, lowerStat fs.FileInfo, _ hash.Hash) error {
+	appliedChange, err := local.mutate(ctx, path, upperStat, func(ctx context.Context, fullPath string, lowerStat fs.FileInfo, _ hash.Hash) error {
 		isNewDir := lowerStat == nil
 		replacesNonDir := lowerStat != nil && !lowerStat.IsDir()
 
@@ -189,27 +227,51 @@ func (local *localFS) Mkdir(ctx context.Context, path string, upperStat *types.S
 
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	expectedChange := &ChangeWithStat{kind: ChangeKindAdd, stat: upperStat}
+	if !appliedChange.IsEqual(expectedChange) {
+		return &ErrConflict{Path: path, Old: appliedChange, New: expectedChange}
+	}
+	return nil
 }
 
 func (local *localFS) Symlink(ctx context.Context, path string, upperStat *types.Stat) error {
-	return local.mutate(ctx, path, upperStat, func(ctx context.Context, fullPath string, lowerStat fs.FileInfo, _ hash.Hash) error {
-		if lowerStat != nil {
+	appliedChange, err := local.mutate(ctx, path, upperStat, func(ctx context.Context, fullPath string, lowerStat fs.FileInfo, _ hash.Hash) error {
+		isNewSymlink := lowerStat == nil
+		replacesNonSymlink := lowerStat != nil && lowerStat.Mode()&fs.ModeSymlink == 0
+
+		if replacesNonSymlink {
 			if err := os.RemoveAll(fullPath); err != nil {
 				return fmt.Errorf("failed to remove existing file: %w", err)
 			}
 		}
 
-		if err := os.Symlink(upperStat.Linkname, fullPath); err != nil {
-			return fmt.Errorf("failed to create symlink: %w", err)
+		if isNewSymlink || replacesNonSymlink {
+			if err := os.Symlink(upperStat.Linkname, fullPath); err != nil {
+				return fmt.Errorf("failed to create symlink: %w", err)
+			}
 		}
 
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	expectedChange := &ChangeWithStat{kind: ChangeKindAdd, stat: upperStat}
+	if !appliedChange.IsEqual(expectedChange) {
+		return &ErrConflict{Path: path, Old: appliedChange, New: expectedChange}
+	}
+	return nil
 }
 
 func (local *localFS) Hardlink(ctx context.Context, path string, upperStat *types.Stat) error {
-	return local.mutate(ctx, path, upperStat, func(ctx context.Context, fullPath string, lowerStat fs.FileInfo, _ hash.Hash) error {
-		if lowerStat != nil {
+	appliedChange, err := local.mutate(ctx, path, upperStat, func(ctx context.Context, fullPath string, lowerStat fs.FileInfo, _ hash.Hash) error {
+		// TODO: this is incomplete, should remove in all cases unless it's already the same hardlink (due to concurrency, but that's probably better fixed more generally elsewhere)
+		isNewLink := lowerStat == nil
+
+		if isNewLink {
 			if err := os.RemoveAll(fullPath); err != nil {
 				return fmt.Errorf("failed to remove existing file: %w", err)
 			}
@@ -223,10 +285,18 @@ func (local *localFS) Hardlink(ctx context.Context, path string, upperStat *type
 
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	expectedChange := &ChangeWithStat{kind: ChangeKindAdd, stat: upperStat}
+	if !appliedChange.IsEqual(expectedChange) {
+		return &ErrConflict{Path: path, Old: appliedChange, New: expectedChange}
+	}
+	return nil
 }
 
 func (local *localFS) WriteFile(ctx context.Context, path string, upperStat *types.Stat, upperFS ReadFS) error {
-	return local.mutate(ctx, path, upperStat, func(ctx context.Context, fullPath string, lowerStat fs.FileInfo, h hash.Hash) error {
+	appliedChange, err := local.mutate(ctx, path, upperStat, func(ctx context.Context, fullPath string, lowerStat fs.FileInfo, h hash.Hash) error {
 		reader, err := upperFS.ReadFile(ctx, path)
 		if err != nil {
 			return fmt.Errorf("failed to read file: %w", err)
@@ -258,6 +328,14 @@ func (local *localFS) WriteFile(ctx context.Context, path string, upperStat *typ
 
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	expectedChange := &ChangeWithStat{kind: ChangeKindAdd, stat: upperStat}
+	if !appliedChange.IsEqual(expectedChange) {
+		return &ErrConflict{Path: path, Old: appliedChange, New: expectedChange}
+	}
+	return nil
 }
 
 func (local *localFS) Walk(ctx context.Context, path string, walkFn gofs.WalkDirFunc) error {
