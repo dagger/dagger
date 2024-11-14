@@ -317,8 +317,13 @@ func (v *directoryValue) Get(ctx context.Context, dag *dagger.Client, modSrc *da
 	// Try parsing as a Git URL
 	gitURL, err := parseGitURL(v.String())
 	if err == nil {
-		// TODO: use modArg.Ignore if not empty
-		return makeGitDirectory(gitURL, dag), nil
+		return dag.Directory().
+			WithDirectory(
+				"/",
+				makeGitDirectory(gitURL, dag),
+				dagger.DirectoryWithDirectoryOpts{
+					Exclude: modArg.Ignore,
+				}), nil
 	}
 
 	// Otherwise it's a local dir path. Allow `file://` scheme or no scheme.
@@ -327,7 +332,6 @@ func (v *directoryValue) Get(ctx context.Context, dag *dagger.Client, modSrc *da
 
 	// The core module doesn't have a ModuleSource.
 	if modSrc == nil {
-		// TODO: use modArg.Ignore if not empty
 		return dag.Host().Directory(path), nil
 	}
 

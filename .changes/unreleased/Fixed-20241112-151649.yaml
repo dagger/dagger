@@ -1,0 +1,6 @@
+kind: Fixed
+body: Correctly apply ignore pattern when pulling a directory from git
+time: 2024-11-12T15:16:49.67229+01:00
+custom:
+  Author: TomChv
+  PR: "8931"
