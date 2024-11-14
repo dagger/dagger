@@ -23,7 +23,6 @@ import (
 	"github.com/containerd/continuity/fs"
 	runc "github.com/containerd/go-runc"
 	"github.com/dagger/dagger/engine/buildkit/resources"
-	"github.com/dagger/dagger/engine/slog"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/moby/buildkit/executor"
 	"github.com/moby/buildkit/executor/oci"
@@ -710,18 +709,11 @@ func (w *Worker) setupOTel(ctx context.Context, state *execState) error {
 		}
 		return nil
 	})
-	state.cleanups.Add(ctx, "shutdown otel proxy", Infallible(func() {
+	state.cleanups.Add(ctx, "shutdown otel proxy", func() error {
 		shutdownCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
-		switch err := otelSrv.Shutdown(shutdownCtx); {
-		case err == nil:
-			return
-		case errors.Is(err, context.DeadlineExceeded):
-			slog.ErrorContext(ctx, "timeout waiting for OTel proxy to shutdown", err)
-		default:
-			slog.ErrorContext(ctx, "failed to shutdown OTel proxy", err)
-		}
-	}))
+		return otelSrv.Shutdown(shutdownCtx)
+	})
 
 	// Configure our OpenTelemetry proxy. A lot.
 	otelProto := "http/protobuf"
