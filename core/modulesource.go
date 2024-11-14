@@ -518,6 +518,10 @@ func callerHostFindUpContext(
 	if err == nil {
 		return curDirPath, true, nil
 	}
+	_, err = bk.StatCallerHostPath(ctx, filepath.Join(curDirPath, ".dagger-root"), false)
+	if err == nil {
+		return curDirPath, true, nil
+	}
 	// TODO: remove the strings.Contains check here (which aren't cross-platform),
 	// since we now set NotFound (since v0.11.2)
 	if status.Code(err) != codes.NotFound && !strings.Contains(err.Error(), "no such file or directory") {
