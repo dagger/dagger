@@ -1,0 +1,43 @@
+name: Dagger on Depot - CLI provisioned
+
+on:
+  workflow_call:
+    inputs:
+      function:
+        description: "Dagger function"
+        type: string
+        required: true
+      size:
+        description: "Runner size"
+        type: number
+        required: true
+      timeout:
+        description: "Timeout if not finished after this many minutes"
+        type: number
+        default: 10
+        required: false
+      dev:
+        description: "Use a development version of Dagger"
+        type: string
+        default: "false"
+        required: false
+      ubuntu:
+        description: "Ubuntu version"
+        type: string
+        default: "24.04"
+        required: false
+
+jobs:
+  cli-provisioned-dagger-no-cache:
+    if: ${{ github.repository == 'dagger/on-depot' }}
+    runs-on: depot-ubuntu-${{ inputs.ubuntu }}-${{ inputs.size }}
+    timeout-minutes: ${{ inputs.timeout }}
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+      - name: ${{ inputs.function }}
+        uses: ./.github/actions/call
+        with:
+          function: ${{ inputs.function }}
+          version: v${{ inputs.dagger }}
+          dev-engine: ${{ inputs.dev }}
