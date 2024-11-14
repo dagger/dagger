@@ -9,6 +9,7 @@ import (
 
 	"github.com/containerd/platforms"
 	"github.com/dagger/dagger/.dagger/internal/dagger"
+	"golang.org/x/sync/errgroup"
 )
 
 // A dev environment for the DaggerDev Engine
@@ -162,6 +163,37 @@ func (dev *DaggerDev) Scripts() *Scripts {
 // Run all tests
 func (dev *DaggerDev) Test() *Test {
 	return &Test{Dagger: dev}
+}
+
+// Run all code generation - SDKs, docs, etc
+func (dev *DaggerDev) Generate(ctx context.Context) (*dagger.Directory, error) {
+	var docs, sdks, engine *dagger.Directory
+	var eg errgroup.Group
+
+	eg.Go(func() error {
+		var err error
+		docs, err = dev.Docs().Generate(ctx)
+		return err
+	})
+
+	eg.Go(func() error {
+		var err error
+		sdks, err = dev.SDK().All().Generate(ctx)
+		return err
+	})
+
+	eg.Go(func() error {
+		engine = dev.Engine().Generate()
+		return nil
+	})
+
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+
+	return docs.
+		WithDirectory(".", sdks).
+		WithDirectory(".", engine), nil
 }
 
 // Develop Dagger SDKs
