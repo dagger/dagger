@@ -142,7 +142,7 @@ func (TypescriptSuite) TestInit(ctx context.Context, t *testctx.T) {
         export class ExistingSource {
           @func()
           helloWorld(stringArg: string): Container {
-          return dag.container().from("alpine:latest").withExec(["echo", stringArg])
+          return dag.container().from("` + alpineImage + `").withExec(["echo", stringArg])
           }
         }
 
@@ -243,7 +243,7 @@ func (TypescriptSuite) TestInit(ctx context.Context, t *testctx.T) {
         class ExistingSource {
           @func()
           helloWorld(stringArg: string): Container {
-          return dag.container().from("alpine:latest").withExec(["echo", stringArg])
+          return dag.container().from("` + alpineImage + `").withExec(["echo", stringArg])
           }
         }
 
