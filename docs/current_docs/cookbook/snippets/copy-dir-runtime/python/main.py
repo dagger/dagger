@@ -1,3 +1,5 @@
+import anyio
+
 import dagger
 from dagger import function, object_type
 
@@ -10,4 +12,4 @@ class MyModule:
         await source.export("foo.txt")
         # your custom logic here
         # for example, read and print the file in the Dagger Engine container
-        print(open("foo.txt").read())
+        print(await anyio.Path("foo.txt").read_text())
