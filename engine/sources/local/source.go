@@ -511,6 +511,12 @@ func (ls *localSourceHandler) getRef(
 		ref.sharedState = &localFSSharedState{
 			rootPath: ref.mntPath,
 			contentHasher: func(kind ChangeKind, path string, fi os.FileInfo, err error) error {
+				// TODO:
+				// TODO:
+				// TODO:
+				// TODO:
+				bklog.G(ctx).Debugf("CONTENT HASH CB: %s %s %v %v", kind, path, fi, err)
+
 				return ref.cacheCtx.HandleChange(fsutil.ChangeKind(kind), path, fi, err)
 			},
 		}
@@ -522,6 +528,7 @@ func (ls *localSourceHandler) getRef(
 	ref.usageCount++
 
 	return ref, func(ctx context.Context) (rerr error) {
+		/* TODO:
 		ls.perClientMu.Lock(clientKey)
 		defer ls.perClientMu.Unlock(clientKey)
 		ref.usageCount--
@@ -546,6 +553,7 @@ func (ls *localSourceHandler) getRef(
 		if err := ref.mutRef.Release(ctx); err != nil {
 			rerr = errors.Join(rerr, fmt.Errorf("failed to release ref: %w", err))
 		}
+		*/
 		return rerr
 	}, nil
 }
