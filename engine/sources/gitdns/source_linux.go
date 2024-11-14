@@ -1,5 +1,4 @@
-//go:build !windows
-// +build !windows
+//go:build !windows && !darwin
 
 package gitdns
 
@@ -20,6 +19,14 @@ import (
 	"github.com/pkg/errors"
 	"golang.org/x/sys/unix"
 )
+
+func (cli *gitCLI) initConfig(dnsConf *oci.DNSConfig) error {
+	if dnsConf == nil {
+		return nil
+	}
+
+	return cli.generateResolv(dnsConf)
+}
 
 func runWithStandardUmaskAndNetOverride(ctx context.Context, cmd *exec.Cmd, hosts, resolv string) error {
 	errCh := make(chan error)
@@ -90,14 +97,6 @@ func overrideNetworkConfig(hostsOverride, resolvOverride string) error {
 	}
 
 	return nil
-}
-
-func (cli *gitCLI) initConfig(dnsConf *oci.DNSConfig) error {
-	if dnsConf == nil {
-		return nil
-	}
-
-	return cli.generateResolv(dnsConf)
 }
 
 func (cli *gitCLI) generateResolv(dns *oci.DNSConfig) error {

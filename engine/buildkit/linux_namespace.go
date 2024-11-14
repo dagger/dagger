@@ -1,3 +1,5 @@
+//go:build !darwin && !windows
+
 package buildkit
 
 import (
