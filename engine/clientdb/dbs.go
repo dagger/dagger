@@ -57,7 +57,7 @@ func (dbs *DBs) Open(clientID string) (*sql.DB, error) {
 			"_pragma": []string{
 				"foreign_keys=ON",    // we don't use em yet, but makes sense anyway
 				"journal_mode=WAL",   // readers don't block writers and vice versa
-				"synchronous=NORMAL", // cargo culted; "reasonable" syncing behavior
+				"synchronous=OFF",    // we don't care about durability and don't want to be surprised by syncs
 				"busy_timeout=10000", // wait up to 10s when there are concurrent writers
 			},
 			"_txlock": []string{"immediate"}, // use BEGIN IMMEDIATE for transactions
