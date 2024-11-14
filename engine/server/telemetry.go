@@ -321,10 +321,24 @@ func (ps *PubSub) Spans(client *daggerClient) sdktrace.SpanExporter {
 	}
 }
 
+func spanNames(spans []sdktrace.ReadOnlySpan) []string {
+	names := make([]string, len(spans))
+	for i, span := range spans {
+		names[i] = span.Name()
+	}
+	return names
+}
+
 func (ps SpansPubSub) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
 	slog.ExtraDebug("pubsub exporting spans", "client", ps.client.clientID, "count", len(spans))
 
-	queries := clientdb.New(ps.client.db)
+	tx, err := ps.client.db.Begin()
+	if err != nil {
+		return fmt.Errorf("export spans %+v: begin tx: %w", spanNames(spans), err)
+	}
+	defer tx.Rollback()
+
+	queries := clientdb.New(tx)
 
 	for _, span := range spans {
 		traceID := span.SpanContext().TraceID().String()
@@ -403,6 +417,10 @@ func (ps SpansPubSub) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnly
 		}
 	}
 
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
+	}
+
 	return nil
 }
 
@@ -424,7 +442,13 @@ type LogsPubSub struct {
 func (ps LogsPubSub) Export(ctx context.Context, logs []sdklog.Record) error {
 	slog.ExtraDebug("pubsub exporting logs", "client", ps.client.clientID, "count", len(logs))
 
-	queries := clientdb.New(ps.client.db)
+	tx, err := ps.client.db.Begin()
+	if err != nil {
+		return fmt.Errorf("export logs %+v: begin tx: %w", logs, err)
+	}
+	defer tx.Rollback()
+
+	queries := clientdb.New(tx)
 
 	for _, rec := range logs {
 		traceID := rec.TraceID().String()
@@ -433,7 +457,6 @@ func (ps LogsPubSub) Export(ctx context.Context, logs []sdklog.Record) error {
 		severity := int64(rec.Severity())
 
 		var body []byte
-		var err error
 		if !rec.Body().Empty() {
 			body, err = proto.Marshal(telemetry.LogValueToPB(rec.Body()))
 			if err != nil {
@@ -492,6 +515,10 @@ func (ps LogsPubSub) Export(ctx context.Context, logs []sdklog.Record) error {
 		}
 	}
 
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
+	}
+
 	return nil
 }
 
@@ -516,7 +543,13 @@ func (ps MetricsPubSub) Export(ctx context.Context, metrics *metricdata.Resource
 		return nil
 	}
 
-	queries := clientdb.New(ps.client.db)
+	tx, err := ps.client.db.Begin()
+	if err != nil {
+		return fmt.Errorf("export metrics %+v: begin tx: %w", metrics, err)
+	}
+	defer tx.Rollback()
+
+	queries := clientdb.New(tx)
 
 	pbMetrics, err := telemetry.ResourceMetricsToPB(metrics)
 	if err != nil {
@@ -531,6 +564,10 @@ func (ps MetricsPubSub) Export(ctx context.Context, metrics *metricdata.Resource
 	_, err = queries.InsertMetric(ctx, metricsPBBytes)
 	if err != nil {
 		return fmt.Errorf("insert metrics: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
 	}
 
 	return nil
