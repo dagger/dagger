@@ -47,6 +47,10 @@ func (c *Client) DefToBlob(
 	}
 	ref := workerRef.ImmutableRef
 
+	if err := ref.Finalize(ctx); err != nil {
+		return "", fmt.Errorf("failed to finalize ref: %w", err)
+	}
+
 	// TODO: weird to import local here, split out to separate shared pkg
 	md := local.CacheRefMetadata{RefMetadata: ref}
 	dgst, ok := md.GetContentHashKey()

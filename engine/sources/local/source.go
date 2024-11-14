@@ -258,6 +258,11 @@ func (ls *localSourceHandler) snapshot(ctx context.Context, session session.Grou
 	}
 	checksumSpan.End()
 
+	// TODO:
+	// TODO:
+	// TODO:
+	bklog.G(ctx).Debugf("CONTENT HASH: %s", dgst)
+
 	// TODO: dedupe concurrent requests for same dgst
 
 	searchCtx, searchSpan := newSpan(ctx, "searchContentHash")
@@ -269,6 +274,11 @@ func (ls *localSourceHandler) snapshot(ctx context.Context, session session.Grou
 	for _, si := range sis {
 		finalRef, err := ls.cm.Get(searchCtx, si.ID(), nil)
 		if err == nil {
+			// TODO:
+			// TODO:
+			// TODO:
+			bklog.G(ctx).Debugf("REUSING COPY REF: %s", finalRef.ID())
+
 			searchSpan.End()
 			return finalRef, nil
 		} else {
@@ -335,6 +345,9 @@ func (ls *localSourceHandler) snapshot(ctx context.Context, session session.Grou
 	finalRef, err := copyRef.Commit(copyCtx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to commit: %w", err)
+	}
+	if err := finalRef.Finalize(copyCtx); err != nil {
+		return nil, fmt.Errorf("failed to finalize: %w", err)
 	}
 
 	if err := (CacheRefMetadata{finalRef}).SetContentHashKey(dgst); err != nil {
