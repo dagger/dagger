@@ -251,7 +251,9 @@ func (t *TypescriptSdk) Base() (*dagger.Container, error) {
 
 	switch runtime {
 	case Bun:
-		if version != "" {
+		if image != "" {
+			ctr = ctr.From(image)
+		} else if version != "" {
 			ctr = ctr.From(fmt.Sprintf("oven/%s:%s-alpine", Bun, version))
 		} else {
 			ctr = ctr.From(bunImageRef)
