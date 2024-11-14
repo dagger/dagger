@@ -86,15 +86,10 @@ func (ps *PubSub) TracesHandler(rw http.ResponseWriter, r *http.Request) {
 	spans := telemetry.SpansFromPB(req.ResourceSpans)
 	slog.Debug("exporting spans to clients", "spans", len(spans), "clients", len(client.parents)+1)
 
-	ctx := r.Context()
-	engineTracer := telemetry.Tracer(ctx, "dagger.io/engine")
-
 	eg := new(errgroup.Group)
 	for _, c := range append([]*daggerClient{client}, client.parents...) {
-		eg.Go(func() (rerr error) {
-			ctx, span := engineTracer.Start(ctx, "export to "+c.clientID)
-			defer telemetry.End(span, func() error { return rerr })
-			if err := ps.Spans(c).ExportSpans(ctx, spans); err != nil {
+		eg.Go(func() error {
+			if err := ps.Spans(c).ExportSpans(r.Context(), spans); err != nil {
 				return fmt.Errorf("export to %s: %w", c.clientID, err)
 			}
 			return nil
@@ -135,15 +130,10 @@ func (ps *PubSub) LogsHandler(rw http.ResponseWriter, r *http.Request) {
 
 	slog.Debug("exporting logs to clients", "clients", len(client.parents)+1)
 
-	ctx := r.Context()
-	engineTracer := telemetry.Tracer(ctx, "dagger.io/engine")
-
 	eg := new(errgroup.Group)
 	for _, c := range append([]*daggerClient{client}, client.parents...) {
-		eg.Go(func() (rerr error) {
-			ctx, span := engineTracer.Start(ctx, "export to "+c.clientID)
-			defer telemetry.End(span, func() error { return rerr })
-			if err := telemetry.ReexportLogsFromPB(ctx, ps.Logs(c), &req); err != nil {
+		eg.Go(func() error {
+			if err := telemetry.ReexportLogsFromPB(r.Context(), ps.Logs(c), &req); err != nil {
 				return fmt.Errorf("export to %s: %w", c.clientID, err)
 			}
 			return nil
@@ -184,15 +174,10 @@ func (ps *PubSub) MetricsHandler(rw http.ResponseWriter, r *http.Request) {
 
 	slog.Debug("exporting metrics to clients", "clients", len(client.parents)+1)
 
-	ctx := r.Context()
-	engineTracer := telemetry.Tracer(ctx, "dagger.io/engine")
-
 	eg := new(errgroup.Group)
 	for _, c := range append([]*daggerClient{client}, client.parents...) {
-		eg.Go(func() (rerr error) {
-			ctx, span := engineTracer.Start(ctx, "export to "+c.clientID)
-			defer telemetry.End(span, func() error { return rerr })
-			if err := enginetel.ReexportMetricsFromPB(ctx, []sdkmetric.Exporter{ps.Metrics(c)}, &req); err != nil {
+		eg.Go(func() error {
+			if err := enginetel.ReexportMetricsFromPB(r.Context(), []sdkmetric.Exporter{ps.Metrics(c)}, &req); err != nil {
 				return fmt.Errorf("export to %s: %w", c.clientID, err)
 			}
 			return nil

@@ -1,13 +1,11 @@
 package buildkit
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"sync"
 	"time"
 
-	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/engine/slog"
 )
 
@@ -19,10 +17,8 @@ type CleanupFunc struct {
 	fn func() error
 }
 
-func (c *Cleanups) Add(ctx context.Context, msg string, f func() error) CleanupFunc {
-	fOnce := sync.OnceValue(func() (rerr error) {
-		_, span := telemetry.Tracer(ctx, "dagger.io/engine").Start(ctx, "cleanup: "+msg)
-		defer telemetry.End(span, func() error { return rerr })
+func (c *Cleanups) Add(msg string, f func() error) CleanupFunc {
+	fOnce := sync.OnceValue(func() error {
 		slog.ExtraDebug("running cleanup", "msg", msg)
 		start := time.Now()
 		err := f()
