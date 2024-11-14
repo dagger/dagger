@@ -330,6 +330,12 @@ var scrubs = []scrubber{
 		"docker.io/library/alpine:latest@sha256:beefdbd8a1da6d2915566fde36db9db0b524eb737fc57cd1367effd16dc0d06d",
 		"sha256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
 	},
+	// Bytes
+	{
+		regexp.MustCompile(`\d+(\.\d+)?\s(B|kB|MB|GB|TB)`),
+		"9.3 kB",
+		"X.X B",
+	},
 }
 
 func TestScrubbers(t *testing.T) {
