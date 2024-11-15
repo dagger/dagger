@@ -197,6 +197,17 @@
   status = 301
 
 [[redirects]]
+  from = "/manuals/developer/overview/942201/execution-environment"
+  to = "/api/custom-functions"
+  status = 301
+
+[[redirects]]
+  from = "/manuals/developer/python/640201/documentation"
+  to = "/api/documentation"
+  status = 301
+
+
+[[redirects]]
   from = "/manuals/developer/go"
   to = "/api"
   status = 301
@@ -354,6 +365,11 @@
 
 [[redirects]]
   from = "/manuals/user/tui"
+  to = "/api/terminal"
+  status = 301
+
+[[redirects]]
+  from = "/manuals/user/919011/tui"
   to = "/api/terminal"
   status = 301
 
