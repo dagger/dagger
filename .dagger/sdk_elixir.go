@@ -48,8 +48,7 @@ func (t ElixirSDK) Lint(ctx context.Context) error {
 			return err
 		}
 
-		sdkDev := dag.ElixirSDKDev()
-		ctr := sdkDev.WithBase(t.Dagger.Source().Directory(elixirSDKPath)).With(installer)
+		sdkDev, ctr := t.base(installer)
 		_, err = sdkDev.Lint(ctr).Sync(ctx)
 		return err
 	})
@@ -78,8 +77,7 @@ func (t ElixirSDK) Test(ctx context.Context) error {
 		return err
 	}
 
-	sdkDev := dag.ElixirSDKDev()
-	ctr := sdkDev.WithBase(t.Dagger.Source().Directory(elixirSDKPath)).With(installer)
+	sdkDev, ctr := t.base(installer)
 	_, err = sdkDev.Test(ctr).Sync(ctx)
 	return err
 }
@@ -94,16 +92,10 @@ func (t ElixirSDK) Generate(ctx context.Context) (*dagger.Directory, error) {
 	if err != nil {
 		return nil, err
 	}
-	gen := t.elixirBase(elixirVersions[elixirLatestVersion]).
-		With(installer).
-		WithWorkdir("dagger_codegen").
-		WithMountedFile("/schema.json", introspection).
-		WithExec([]string{"mix", "dagger.codegen", "generate", "--introspection", "/schema.json", "--outdir", "gen"}).
-		WithExec([]string{"mix", "format", "gen/*.ex"}).
-		Directory("gen")
 
-	dir := dag.Directory().WithDirectory("sdk/elixir/lib/dagger/gen", gen)
-	return dir, nil
+	sdkDev, _ := t.base(installer)
+	ctr := sdkDev.WithBase(t.Dagger.Source().Directory(elixirSDKPath)).With(installer)
+	return sdkDev.Generate(ctr, introspection), nil
 }
 
 // Test the publishing process
@@ -184,6 +176,12 @@ func (t ElixirSDK) Bump(ctx context.Context, version string) (*dagger.Directory,
 	newContents := elixirVersionRe.ReplaceAllString(contents, newVersion)
 
 	return dag.Directory().WithNewFile(elixirSDKVersionFilePath, newContents), nil
+}
+
+func (t ElixirSDK) base(installer func(*dagger.Container) *dagger.Container) (*dagger.ElixirSDKDev, *dagger.Container) {
+	sdkDev := dag.ElixirSDKDev()
+	ctr := sdkDev.WithBase(t.Dagger.Source().Directory(elixirSDKPath)).With(installer)
+	return sdkDev, ctr
 }
 
 func (t ElixirSDK) elixirBase(baseImage string) *dagger.Container {

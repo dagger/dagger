@@ -24,6 +24,26 @@ defmodule ElixirSdkDev do
     |> Dagger.Container.with_exec(~w"mix credo")
   end
 
+  @doc """
+  Generate the SDK API.
+  """
+  defn generate(container: Dagger.Container.t(), introspection_json: Dagger.File.t()) ::
+         Dagger.Directory.t() do
+    gen =
+      container
+      |> with_codegen()
+      |> Dagger.Container.with_mounted_file("/schema.json", introspection_json)
+      |> Dagger.Container.with_exec(
+        ~w"mix dagger.codegen generate --introspection /schema.json --outdir gen"
+      )
+      |> Dagger.Container.with_exec(~w"mix format gen/*.ex")
+      |> Dagger.Container.directory("gen")
+
+    dag()
+    |> Dagger.Client.directory()
+    |> Dagger.Directory.with_directory("sdk/elixir/lib/dagger/gen", gen)
+  end
+
   defn sdk_test(container: Dagger.Container.t()) :: Dagger.Container.t() do
     container
     |> Dagger.Container.with_exec(~w"mix test")
@@ -31,8 +51,7 @@ defmodule ElixirSdkDev do
 
   defn codegen_test(container: Dagger.Container.t()) :: Dagger.Container.t() do
     container
-    |> Dagger.Container.with_workdir("dagger_codegen")
-    |> Dagger.Container.with_exec(~w"mix deps.get")
+    |> with_codegen()
     |> Dagger.Container.with_exec(~w"mix test")
   end
 
@@ -45,6 +64,12 @@ defmodule ElixirSdkDev do
     |> Dagger.Container.with_directory(".", source)
     |> Dagger.Container.with_exec(~w"mix local.hex --force")
     |> Dagger.Container.with_exec(~w"mix local.rebar --force")
+    |> Dagger.Container.with_exec(~w"mix deps.get")
+  end
+
+  defn with_codegen(container: Dagger.Container.t()) :: Dagger.Container.t() do
+    container
+    |> Dagger.Container.with_workdir("dagger_codegen")
     |> Dagger.Container.with_exec(~w"mix deps.get")
   end
 end
