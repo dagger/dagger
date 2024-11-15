@@ -6,7 +6,6 @@ import (
 	"regexp"
 	"strings"
 
-	"dagger.io/dagger/telemetry"
 	"go.opentelemetry.io/otel/codes"
 	"golang.org/x/mod/semver"
 	"golang.org/x/sync/errgroup"
@@ -80,42 +79,10 @@ func (t ElixirSDK) Test(ctx context.Context) error {
 		return err
 	}
 
-	allGroup, ctx := errgroup.WithContext(ctx)
-
-	for elixirVersion, baseImage := range elixirVersions {
-		ctr := t.elixirBase(baseImage).With(installer)
-
-		allGroup.Go(func() (rerr error) {
-			ctx, span := Tracer().Start(ctx, "test - elixir/"+elixirVersion)
-			defer telemetry.End(span, func() error { return rerr })
-
-			eg, ctx := errgroup.WithContext(ctx)
-			eg.Go(func() (rerr error) {
-				ctx, span := Tracer().Start(ctx, "dagger")
-				defer telemetry.End(span, func() error { return rerr })
-				_, err := ctr.
-					WithExec([]string{"mix", "test"}).
-					Sync(ctx)
-				return err
-			})
-
-			if elixirVersion == elixirLatestVersion {
-				eg.Go(func() (rerr error) {
-					ctx, span := Tracer().Start(ctx, "dagger_codegen")
-					defer telemetry.End(span, func() error { return rerr })
-					_, err := ctr.
-						WithWorkdir("dagger_codegen").
-						WithExec([]string{"mix", "deps.get"}).
-						WithExec([]string{"mix", "test"}).
-						Sync(ctx)
-					return err
-				})
-			}
-			return eg.Wait()
-		})
-	}
-
-	return allGroup.Wait()
+	sdkDev := dag.ElixirSDKDev()
+	ctr := sdkDev.WithBase(t.Dagger.Source().Directory(elixirSDKPath)).With(installer)
+	_, err = sdkDev.Test(ctr).Sync(ctx)
+	return err
 }
 
 // Regenerate the Elixir SDK API
