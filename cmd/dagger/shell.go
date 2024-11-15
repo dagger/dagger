@@ -1369,7 +1369,7 @@ func shellTypeDoc(m *moduleDef, t *modTypeDef) string {
 				}),
 			)
 		}
-	} else {
+	} else if fp.ProviderName() != "Query" {
 		doc.Add(t.KindDisplay(), t.Long())
 	}
 
@@ -1469,10 +1469,7 @@ func (h *shellCallHandler) registerBuiltins() { //nolint:gocyclo
 			Short: "Show documentation for a type, or a function",
 			Args:  MaximumArgs(1),
 			RunState: func(cmd *ShellCommand, args []string, st *ShellState) error {
-				def, err := h.GetModuleDef(st)
-				if err != nil {
-					return err
-				}
+				def := h.modDef(st)
 
 				t, err := st.GetTypeDef(def)
 				if err != nil {
