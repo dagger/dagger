@@ -3,27 +3,17 @@ name: Trace GitHub Actions Workflows
 on:
   workflow_run:
     workflows:
+      - "Alternative CI Runners"
+      - "Benchmark"
+      - "daggerverse-preview"
       - "Docs"
-      - "Engine & CLI"
       - "Engine & CLI split"
+      - "Engine & CLI"
+      - "Github"
       - "Helm"
       - "Publish"
-      - "SDK"
-      - "Benchmark"
-      - "elixir-dev"
-      - "elixir"
-      - "go-dev"
-      - "go"
-      - "java-dev"
-      - "java"
-      - "php-dev"
-      - "php"
-      - "python-dev"
-      - "python"
-      - "rust-dev"
-      - "rust"
-      - "typescript-dev"
-      - "typescript"
+      - "Publish Rust SDK"
+      - "SDKs"
     types:
       - completed
 
