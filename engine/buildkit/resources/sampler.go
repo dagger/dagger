@@ -23,6 +23,9 @@ type Sampler struct {
 
 	cpuStat     *cpuStatSampler
 	cpuPressure *cpuPressureSampler
+
+	memoryCurrent *memoryCurrentSampler
+	memoryPeak    *memoryPeakSampler
 }
 
 func NewSampler(
@@ -56,6 +59,16 @@ func NewSampler(
 		return nil, fmt.Errorf("failed to create cpuPressure sampler: %w", err)
 	}
 
+	s.memoryCurrent, err = newMemoryCurrentSampler(s.cgroupPath, meter, s.commonAttrs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create memoryCurrentSampler sampler: %w", err)
+	}
+
+	s.memoryPeak, err = newMemoryPeakSampler(s.cgroupPath, meter, s.commonAttrs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create memoryCurrentSampler sampler: %w", err)
+	}
+
 	return s, nil
 }
 
@@ -76,6 +89,14 @@ func (s *Sampler) Sample(ctx context.Context) error {
 
 	eg.Go(func() error {
 		return s.cpuPressure.sample(ctx)
+	})
+
+	eg.Go(func() error {
+		return s.memoryCurrent.sample(ctx)
+	})
+
+	eg.Go(func() error {
+		return s.memoryPeak.sample(ctx)
 	})
 
 	return eg.Wait()

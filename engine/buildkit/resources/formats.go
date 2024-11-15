@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"iter"
 	"strconv"
+	"strings"
 )
 
 // utils for parsing cgroup+pressure files
@@ -147,4 +148,8 @@ func lines(bs []byte) func(yield func([]byte) bool) {
 			}
 		}
 	}
+}
+
+func singleValue(bs []byte) (int64, error) {
+	return strconv.ParseInt(strings.TrimSpace(string(bs)), 10, 64)
 }
