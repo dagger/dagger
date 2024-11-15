@@ -25,7 +25,7 @@ on:
 
 jobs:
   pre-provisioned-dagger-with-cache:
-    if: ${{ github.repository == 'dagger/on-depot' }}
+    if: ${{ github.repository == 'dagger/dagger' }}
     runs-on: depot-ubuntu-${{ inputs.ubuntu }},dagger=${{ inputs.dagger }}
     timeout-minutes: ${{ inputs.timeout }}
     steps:
