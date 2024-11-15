@@ -94,6 +94,12 @@ func newRemoteFS(
 				pkt.Stat.Path = path
 				pkt.Stat.Linkname = filepath.FromSlash(pkt.Stat.Linkname)
 
+				// TODO:
+				// TODO:
+				// TODO:
+				// TODO:
+				bklog.G(ctx).Debugf("RECV STAT %s", pkt.Stat.Path)
+
 				if os.FileMode(pkt.Stat.Mode)&os.ModeType == 0 {
 					fs.filesMu.Lock()
 					r, w := io.Pipe()

@@ -198,6 +198,10 @@ func newSpan(ctx context.Context, name string) (context.Context, trace.Span) {
 	return tr.Start(ctx, name)
 }
 
+/* TODO:
+* Be sure to test case where Dir is modified, make sure that doesn't invalidate the whole cachecontext tree
+ */
+
 func (ls *localSourceHandler) snapshot(ctx context.Context, session session.Group, caller session.Caller) (_ cache.ImmutableRef, rerr error) {
 	ctx, span := newSpan(ctx, "filesync")
 	defer span.End()
@@ -350,6 +354,10 @@ func (ls *localSourceHandler) snapshot(ctx context.Context, session session.Grou
 		return nil, fmt.Errorf("failed to finalize: %w", err)
 	}
 
+	// TODO: Put buildkit's cachecontext md on this ref so solver reuses it
+	// TODO: Put buildkit's cachecontext md on this ref so solver reuses it
+	// TODO: Put buildkit's cachecontext md on this ref so solver reuses it
+	// TODO: Put buildkit's cachecontext md on this ref so solver reuses it
 	if err := (CacheRefMetadata{finalRef}).SetContentHashKey(dgst); err != nil {
 		return nil, fmt.Errorf("failed to set content hash key: %w", err)
 	}
@@ -398,9 +406,16 @@ func (ls *localSourceHandler) syncParentDirs(ctx context.Context, ref *filesyncC
 		cancel(rerr)
 	}()
 
-	includes := []string{strings.TrimPrefix(clientPath, "/")}
+	ctx = bklog.WithLogger(ctx, bklog.G(ctx).
+		WithField("parentSync", "y"),
+	)
 
-	remote, err := newRemoteFS(ctx, caller, "/", includes, nil)
+	include := strings.TrimPrefix(strings.TrimSuffix(clientPath, "/"), "/")
+	includes := []string{include}
+	exclude := include + "/*"
+	excludes := []string{exclude}
+
+	remote, err := newRemoteFS(ctx, caller, "/", includes, excludes)
 	if err != nil {
 		return fmt.Errorf("failed to create remote fs: %w", err)
 	}
@@ -410,7 +425,7 @@ func (ls *localSourceHandler) syncParentDirs(ctx context.Context, ref *filesyncC
 		}
 	}()
 
-	local, err := NewLocalFS(ref.sharedState, "/", includes, nil)
+	local, err := NewLocalFS(ref.sharedState, "/", includes, excludes)
 	if err != nil {
 		return fmt.Errorf("failed to create local fs: %w", err)
 	}
@@ -528,7 +543,6 @@ func (ls *localSourceHandler) getRef(
 	ref.usageCount++
 
 	return ref, func(ctx context.Context) (rerr error) {
-		/* TODO:
 		ls.perClientMu.Lock(clientKey)
 		defer ls.perClientMu.Unlock(clientKey)
 		ref.usageCount--
@@ -553,7 +567,6 @@ func (ls *localSourceHandler) getRef(
 		if err := ref.mutRef.Release(ctx); err != nil {
 			rerr = errors.Join(rerr, fmt.Errorf("failed to release ref: %w", err))
 		}
-		*/
 		return rerr
 	}, nil
 }
