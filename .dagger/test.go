@@ -36,9 +36,9 @@ func (t *Test) All(
 	// +optional
 	race bool,
 	// +optional
-	verbose bool,
+	testVerbose bool,
 ) error {
-	return t.test(ctx, "", "", "./...", failfast, parallel, timeout, race, 1, verbose)
+	return t.test(ctx, "", "", "./...", failfast, parallel, timeout, race, 1, testVerbose)
 }
 
 // Run telemetry tests
@@ -170,9 +170,9 @@ func (t *Test) Specific(
 	count int,
 	// Enable verbose output
 	// +optional
-	verbose bool,
+	testVerbose bool,
 ) error {
-	return t.test(ctx, run, skip, pkg, failfast, parallel, timeout, race, count, verbose)
+	return t.test(ctx, run, skip, pkg, failfast, parallel, timeout, race, count, testVerbose)
 }
 
 func (t *Test) test(
@@ -185,7 +185,7 @@ func (t *Test) test(
 	timeout string,
 	race bool,
 	count int,
-	verbose bool,
+	testVerbose bool,
 ) error {
 	cmd, err := t.testCmd(ctx)
 	if err != nil {
@@ -202,7 +202,7 @@ func (t *Test) test(
 		race,
 		count,
 		false, // -update
-		verbose,
+		testVerbose,
 	).Sync(ctx)
 	return err
 }
@@ -218,7 +218,7 @@ func (t *Test) goTest(
 	race bool,
 	count int,
 	update bool,
-	verbose bool,
+	testVerbose bool,
 ) *dagger.Container {
 	cgoEnabledEnv := "0"
 	args := []string{
@@ -227,7 +227,7 @@ func (t *Test) goTest(
 	}
 
 	// allow verbose
-	if verbose {
+	if testVerbose {
 		args = append(args, "-v")
 	}
 
