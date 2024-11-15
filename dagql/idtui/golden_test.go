@@ -330,11 +330,17 @@ var scrubs = []scrubber{
 		"docker.io/library/alpine:latest@sha256:beefdbd8a1da6d2915566fde36db9db0b524eb737fc57cd1367effd16dc0d06d",
 		"sha256:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
 	},
-	// Bytes
+	// Memory Bytes telemetry
 	{
-		regexp.MustCompile(`\d+(\.\d+)?\s(B|kB|MB|GB|TB)`),
-		"9.3 kB",
-		"X.X B",
+		regexp.MustCompile(`\s?\| Memory Bytes \((current|peak)\): \d+(\.\d+)?\s(B|kB|MB|GB|TB)`),
+		" | Memory Bytes (current): 9.3 kB",
+		"",
+	},
+	// Disk IO telemetry
+	{
+		regexp.MustCompile(`\s?\| (Disk Read|Disk Write): \d+(\.\d+)?\s(B|kB|MB|GB|TB)`),
+		" | Disk Read: 9.3 kB",
+		"",
 	},
 }
 
