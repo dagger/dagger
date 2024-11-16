@@ -111,6 +111,13 @@ func (id *ID) IsTainted() bool {
 	return false
 }
 
+// Tainted returns the ID, marked tainted.
+func (id ID) Tainted() *ID {
+	id.pb = proto.Clone(id.pb).(*callpbv1.Call)
+	id.pb.Tainted = true
+	return &id
+}
+
 // The module that provides the implementation of the field, if any.
 func (id *ID) Module() *Module {
 	return id.module

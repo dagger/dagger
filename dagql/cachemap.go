@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"github.com/opencontainers/go-digest"
 )
@@ -81,11 +82,13 @@ func (m *cacheMap[K, T]) GetOrInitializeOnHit(ctx context.Context, key K, fn fun
 	m.calls[key] = c
 	m.l.Unlock()
 
+	purity := purityTrackerFromContext(ctx)
+
 	ctx = context.WithValue(ctx, cacheMapContextKey[K, T]{key: key, m: m}, struct{}{})
 	c.val, c.err = fn(ctx)
 	c.wg.Done()
 
-	if c.err != nil {
+	if c.err != nil || (purity != nil && purity.IsTainted()) {
 		m.l.Lock()
 		delete(m.calls, key)
 		m.l.Unlock()
@@ -120,4 +123,39 @@ func (m *cacheMap[K, T]) Keys() []K {
 	}
 	m.l.Unlock()
 	return keys
+}
+
+type purityTracker struct {
+	Pure atomic.Bool
+}
+
+type purityKey struct{}
+
+func (t *purityTracker) Taint() {
+	t.Pure.Store(true)
+}
+
+func (t *purityTracker) IsTainted() bool {
+	return t.Pure.Load()
+}
+
+// Taint marks the current context as tainted, meaning that the result of the
+// current operation is impure and should not be cached.
+func Taint(ctx context.Context) {
+	if t, ok := ctx.Value(purityKey{}).(*purityTracker); ok {
+		t.Taint()
+	}
+}
+
+func purityTrackerFromContext(ctx context.Context) *purityTracker {
+	if val := ctx.Value(purityKey{}); val != nil {
+		return val.(*purityTracker)
+	}
+	return nil
+}
+
+func trackPurity(ctx context.Context) (context.Context, *purityTracker) {
+	tracker := &purityTracker{}
+	ctx = context.WithValue(ctx, purityKey{}, tracker)
+	return ctx, tracker
 }

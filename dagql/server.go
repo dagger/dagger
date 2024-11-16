@@ -641,6 +641,7 @@ func (s *Server) cachedSelect(ctx context.Context, self Object, sel Selector) (r
 		}
 		return self.Select(ctx, sel)
 	}
+	ctx, purity := trackPurity(ctx)
 	if chainedID.IsTainted() {
 		val, err = doSelect(ctx)
 	} else {
@@ -648,6 +649,9 @@ func (s *Server) cachedSelect(ctx context.Context, self Object, sel Selector) (r
 	}
 	if err != nil {
 		return nil, nil, err
+	}
+	if purity.IsTainted() {
+		chainedID = chainedID.Tainted()
 	}
 	return val, chainedID, nil
 }

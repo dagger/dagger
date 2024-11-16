@@ -17,6 +17,7 @@ func TestCacheMapConcurrent(t *testing.T) {
 
 	commonKey := 42
 	initialized := map[int]bool{}
+	mu := new(sync.Mutex)
 
 	wg := new(sync.WaitGroup)
 	for i := 0; i < 100; i++ {
@@ -25,11 +26,15 @@ func TestCacheMapConcurrent(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			val, _, err := c.GetOrInitialize(ctx, commonKey, func(_ context.Context) (int, error) {
+				mu.Lock()
 				initialized[i] = true
+				mu.Unlock()
 				return i, nil
 			})
 			assert.NilError(t, err)
+			mu.Lock()
 			assert.Assert(t, initialized[val])
+			mu.Unlock()
 		}()
 	}
 

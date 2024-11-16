@@ -846,6 +846,64 @@ func TestImpureIDsReEvaluate(t *testing.T) {
 	assert.Equal(t, called, 2)
 }
 
+func TestImpureIDsReEvaluateDynamic(t *testing.T) {
+	srv := dagql.NewServer(Query{})
+	points.Install[Query](srv)
+
+	gql := client.New(handler.NewDefaultServer(srv))
+
+	called := 0
+	dagql.Fields[*points.Point]{
+		dagql.Func("snitch", func(ctx context.Context, self *points.Point, _ struct{}) (*points.Point, error) {
+			dagql.Taint(ctx) // mark the operation as impure
+			called++
+			return self, nil
+		}),
+	}.Install(srv)
+
+	var res struct {
+		Point struct {
+			Snitch struct {
+				ID string
+			}
+		}
+	}
+	req(t, gql, `query {
+		point(x: 6, y: 7) {
+			snitch {
+				id
+			}
+		}
+	}`, &res)
+
+	assert.Equal(t, called, 1)
+
+	var id call.ID
+	err := id.Decode(res.Point.Snitch.ID)
+	assert.NilError(t, err)
+	assert.Equal(t, true, id.IsTainted())
+
+	var loaded struct {
+		LoadPointFromID struct {
+			ID string
+			X  int
+			Y  int
+		}
+	}
+	req(t, gql, `query {
+		loadPointFromID(id: "`+res.Point.Snitch.ID+`") {
+			id
+			x
+			y
+		}
+	}`, &loaded)
+	assert.Equal(t, loaded.LoadPointFromID.ID, res.Point.Snitch.ID)
+	assert.Equal(t, loaded.LoadPointFromID.X, 6)
+	assert.Equal(t, loaded.LoadPointFromID.Y, 7)
+
+	assert.Equal(t, called, 2)
+}
+
 func TestPassingObjectsAround(t *testing.T) {
 	srv := dagql.NewServer(Query{})
 	points.Install[Query](srv)
