@@ -155,37 +155,22 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 		}
 		authSock = sock.Self
 	} else if remote.Scheme == "ssh" && clientMetadata != nil && clientMetadata.SSHAuthSocketPath != "" {
-		// For SSH refs, try to load client's SSH socket if no explicit socket was provided
-		socketStore, err := parent.Self.Sockets(ctx)
-		if err != nil {
-			return inst, fmt.Errorf("failed to get socket store: %w", err)
-		}
-
-		accessor, err := core.GetClientResourceAccessor(ctx, parent.Self, clientMetadata.SSHAuthSocketPath)
-		if err != nil {
-			return inst, fmt.Errorf("failed to get client resource name: %w", err)
-		}
-
 		var sockInst dagql.Instance[*core.Socket]
 		if err := s.srv.Select(ctx, s.srv.Root(), &sockInst,
 			dagql.Selector{
 				Field: "host",
 			},
 			dagql.Selector{
-				Field: "__internalSocket",
+				Field: "unixSocket",
 				Args: []dagql.NamedInput{
 					{
-						Name:  "accessor",
-						Value: dagql.NewString(accessor),
+						Name:  "path",
+						Value: dagql.NewString(clientMetadata.SSHAuthSocketPath),
 					},
 				},
 			},
 		); err != nil {
 			return inst, fmt.Errorf("failed to select internal socket: %w", err)
-		}
-
-		if err := socketStore.AddUnixSocket(sockInst.Self, clientMetadata.ClientID, clientMetadata.SSHAuthSocketPath); err != nil {
-			return inst, fmt.Errorf("failed to add unix socket to store: %w", err)
 		}
 		authSock = sockInst.Self
 	}

@@ -187,13 +187,15 @@ func (s *hostSchema) Install() {
 			Doc(`Accesses a file on the host.`).
 			ArgDoc("path", `Location of the file to retrieve (e.g., "README.md").`),
 
-		dagql.Func("unixSocket", s.socket).
+		dagql.NodeFunc("unixSocket", s.unixSocket).
 			Doc(`Accesses a Unix socket on the host.`).
-			Impure("Value depends on the caller as it points to their host.").
 			ArgDoc("path", `Location of the Unix socket (e.g., "/var/run/docker.sock").`),
 
-		dagql.Func("__internalSocket", s.internalSocket).
-			Doc(`(Internal-only) Accesses a socket on the host (unix or ip) with the given internal client resource name.`),
+		dagql.NodeFunc("ipSocket", s.ipSocket).
+			Doc(`Accesses a IP socket on the host.`).
+			ArgDoc("host", `Hostname or IP address for the socket to dial.`).
+			ArgDoc("port", `Port number for the socket to dial.`).
+			ArgDoc("protocol", `Network protocol of the socket.`),
 
 		dagql.Func("tunnel", s.tunnel).
 			Doc(`Creates a tunnel that forwards traffic from the host to a service.`).
@@ -258,45 +260,120 @@ func (s *hostSchema) directory(ctx context.Context, host *core.Host, args hostDi
 
 type hostSocketArgs struct {
 	Path string
+	// Accessor is the scoped per-module name, which should guarantee uniqueness.
+	// It is used to ensure the dagql ID digest is unique per module; the digest is what's
+	// used as the actual key for the socket store.
+	Accessor string `default:""`
 }
 
-func (s *hostSchema) socket(ctx context.Context, host *core.Host, args hostSocketArgs) (inst dagql.Instance[*core.Socket], err error) {
-	socketStore, err := host.Query.Sockets(ctx)
+func (s *hostSchema) unixSocket(ctx context.Context, parent dagql.Instance[*core.Host], args hostSocketArgs) (inst dagql.Instance[*core.Socket], err error) {
+	socketStore, err := parent.Self.Query.Sockets(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get socket store: %w", err)
 	}
 
-	accessor, err := core.GetClientResourceAccessor(ctx, host.Query, args.Path)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get client resource name: %w", err)
-	}
-
-	if err := s.srv.Select(ctx, s.srv.Root(), &inst,
-		dagql.Selector{
-			Field: "host",
-		},
-		dagql.Selector{
-			Field: "__internalSocket",
-			Args: []dagql.NamedInput{
-				{
-					Name:  "accessor",
-					Value: dagql.NewString(accessor),
+	if args.Accessor == "" {
+		dagql.Taint(ctx)
+		accessor, err := core.GetClientResourceAccessor(ctx, parent.Self.Query, args.Path)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get client resource name: %w", err)
+		}
+		err = s.srv.Select(ctx, parent, &inst,
+			dagql.Selector{
+				Field: "unixSocket",
+				Args: []dagql.NamedInput{
+					{
+						Name:  "path",
+						Value: dagql.NewString(args.Path),
+					},
+					{
+						Name:  "accessor",
+						Value: dagql.NewString(accessor),
+					},
 				},
 			},
-		},
-	); err != nil {
-		return inst, fmt.Errorf("failed to select internal socket: %w", err)
+		)
+		return inst, err
 	}
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get client metadata: %w", err)
 	}
-	if err := socketStore.AddUnixSocket(inst.Self, clientMetadata.ClientID, args.Path); err != nil {
+
+	socket := &core.Socket{
+		IDDigest: dagql.CurrentID(ctx).Digest(),
+	}
+
+	if err := socketStore.AddUnixSocket(socket, clientMetadata.ClientID, args.Path); err != nil {
 		return inst, fmt.Errorf("failed to add unix socket to store: %w", err)
 	}
 
-	return inst, nil
+	return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, socket)
+}
+
+func (s *hostSchema) ipSocket(ctx context.Context, parent dagql.Instance[*core.Host], args struct {
+	Host     string
+	Port     int
+	Protocol core.NetworkProtocol `default:"TCP"`
+	Accessor string               `default:""`
+}) (inst dagql.Instance[*core.Socket], err error) {
+	socketStore, err := parent.Self.Query.Sockets(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get socket store: %w", err)
+	}
+
+	port := core.PortForward{
+		Backend:  args.Port,
+		Protocol: args.Protocol,
+	}
+
+	if args.Accessor == "" {
+		dagql.Taint(ctx)
+		accessor, err := core.GetHostIPSocketAccessor(ctx, parent.Self.Query, args.Host, port)
+		if err != nil {
+			return inst, fmt.Errorf("failed to get host ip socket accessor: %w", err)
+		}
+		err = s.srv.Select(ctx, parent, &inst,
+			dagql.Selector{
+				Field: "ipSocket",
+				Args: []dagql.NamedInput{
+					{
+						Name:  "host",
+						Value: dagql.NewString(args.Host),
+					},
+					{
+						Name:  "port",
+						Value: dagql.NewInt(args.Port),
+					},
+					{
+						Name:  "protocol",
+						Value: args.Protocol,
+					},
+					{
+						Name:  "accessor",
+						Value: dagql.NewString(accessor),
+					},
+				},
+			},
+		)
+		return inst, err
+	}
+
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return inst, fmt.Errorf("failed to get client metadata: %w", err)
+	}
+
+	socket := &core.Socket{
+		IDDigest: dagql.CurrentID(ctx).Digest(),
+	}
+
+	if err := socketStore.AddIPSocket(socket, clientMetadata.ClientID, args.Host, port); err != nil {
+		return inst, fmt.Errorf("failed to add ip socket to store: %w", err)
+	}
+
+	return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, socket)
 }
 
 type hostFileArgs struct {
@@ -369,45 +446,34 @@ func (s *hostSchema) service(ctx context.Context, parent *core.Host, args hostSe
 		return inst, errors.New("no ports specified")
 	}
 
-	socketStore, err := parent.Query.Sockets(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get socket store: %w", err)
-	}
-
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return inst, fmt.Errorf("failed to get client metadata: %w", err)
-	}
-
 	ports := collectInputsSlice(args.Ports)
 	sockIDs := make([]dagql.ID[*core.Socket], 0, len(ports))
 	for _, port := range ports {
-		accessor, err := core.GetHostIPSocketAccessor(ctx, parent.Query, args.Host, port)
-		if err != nil {
-			return inst, fmt.Errorf("failed to get host ip socket accessor: %w", err)
-		}
-
 		var sockInst dagql.Instance[*core.Socket]
 		err = s.srv.Select(ctx, s.srv.Root(), &sockInst,
 			dagql.Selector{
 				Field: "host",
 			},
 			dagql.Selector{
-				Field: "__internalSocket",
+				Field: "ipSocket",
 				Args: []dagql.NamedInput{
 					{
-						Name:  "accessor",
-						Value: dagql.NewString(accessor),
+						Name:  "host",
+						Value: dagql.NewString(args.Host),
+					},
+					{
+						Name:  "port",
+						Value: dagql.NewInt(port.Backend),
+					},
+					{
+						Name:  "protocol",
+						Value: port.Protocol,
 					},
 				},
 			},
 		)
 		if err != nil {
 			return inst, fmt.Errorf("failed to select internal socket: %w", err)
-		}
-
-		if err := socketStore.AddIPSocket(sockInst.Self, clientMetadata.ClientID, args.Host, port); err != nil {
-			return inst, fmt.Errorf("failed to add ip socket to store: %w", err)
 		}
 
 		sockIDs = append(sockIDs, dagql.NewID[*core.Socket](sockInst.ID()))
@@ -449,18 +515,4 @@ func (s *hostSchema) internalService(ctx context.Context, parent *core.Host, arg
 	}
 
 	return parent.Query.NewHostService(ctx, socks), nil
-}
-
-type hostInternalSocketArgs struct {
-	// Accessor is the scoped per-module name, which should guarantee uniqueness.
-	// It is used to ensure the dagql ID digest is unique per module; the digest is what's
-	// used as the actual key for the socket store.
-	Accessor string
-}
-
-func (s *hostSchema) internalSocket(ctx context.Context, host *core.Host, args hostInternalSocketArgs) (*core.Socket, error) {
-	if args.Accessor == "" {
-		return nil, errors.New("socket accessor must be provided")
-	}
-	return &core.Socket{IDDigest: dagql.CurrentID(ctx).Digest()}, nil
 }
