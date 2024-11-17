@@ -170,7 +170,7 @@ func (s *hostSchema) Install() {
 
 	dagql.Fields[*core.Host]{
 		dagql.Func("directory", s.directory).
-			Impure("The `directory` field loads data from the local machine.",
+			Impure("Loads data from the local machine.",
 				`Despite being impure, this field returns a pure Directory object. It
 				does this by uploading the requested path to the internal content store
 				and returning a content-addressed Directory using the `+"`blob()` API.").
@@ -180,7 +180,7 @@ func (s *hostSchema) Install() {
 			ArgDoc("include", `Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).`),
 
 		dagql.Func("file", s.file).
-			Impure("The `field` field loads data from the local machine.",
+			Impure("Loads data from the local machine.",
 				`Despite being impure, this field returns a pure File object. It does
 				this by uploading the requested path to the internal content store and
 				returning a content-addressed File using from the `+"`blob()` API.").

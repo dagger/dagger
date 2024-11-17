@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"sync"
 
 	"github.com/containerd/containerd/content"
 	bkclient "github.com/moby/buildkit/client"
@@ -92,10 +91,6 @@ type Server interface {
 
 	// The default local cache policy to use for automatic local cache GC.
 	EngineLocalCachePolicy() bkclient.PruneInfo
-
-	// A map of unique IDs for the result of a given cache entry set query, allowing further queries on the result
-	// to operate on a stable result rather than the live state.
-	EngineCacheEntrySetMap(context.Context) (*sync.Map, error)
 
 	// The nearest ancestor client that is not a module (either a caller from the host like the CLI
 	// or a nested exec). Useful for figuring out where local sources should be resolved from through
