@@ -13,7 +13,6 @@ import (
 
 	"github.com/containerd/continuity/sysx"
 	"github.com/moby/buildkit/cache/contenthash"
-	"github.com/moby/buildkit/util/bklog"
 	"github.com/moby/buildkit/util/flightcontrol"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/tonistiigi/fsutil"
@@ -97,11 +96,13 @@ func (local *localFS) Sync(ctx context.Context, remote ReadFS) (rerr error) {
 
 	eg.Go(func() error {
 		return doubleWalkDiff(ctx, local, remote, func(kind ChangeKind, path string, lowerStat, upperStat *types.Stat) error {
-			// TODO:
-			// TODO:
-			// TODO:
-			// TODO:
-			bklog.G(ctx).Debugf("DIFF %s %s (%s) (%s)", kind, path, local.toRootPath(path), local.toFullPath(path))
+			/*
+				// TODO:
+				// TODO:
+				// TODO:
+				// TODO:
+				bklog.G(ctx).Debugf("DIFF %s %s (%s) (%s)", kind, path, local.toRootPath(path), local.toFullPath(path))
+			*/
 
 			if kind == ChangeKindDelete {
 				return local.RemoveAll(ctx, path)

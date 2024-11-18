@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/moby/buildkit/util/bklog"
 	"github.com/tonistiigi/fsutil"
 	"github.com/tonistiigi/fsutil/types"
 	"golang.org/x/sync/errgroup"
@@ -71,19 +70,21 @@ func doubleWalkDiff(ctx context.Context, lower, upper WalkFS, changeFn ChangeFun
 			k, p := pathChange(lowerPath, upperPath)
 			switch k {
 			case ChangeKindAdd:
-				// TODO:
-				// TODO:
-				// TODO:
-				// TODO:
-				lg := bklog.G(ctx).
-					WithField("rmdir", rmdir).
-					WithField("upper", upperPath.path)
-				if lowerPath != nil {
-					lg = lg.WithField("lower", lowerPath.path)
-				} else {
-					lg = lg.WithField("lower", "NIL")
-				}
-				lg.Debug("ADD")
+				/*
+					// TODO:
+					// TODO:
+					// TODO:
+					// TODO:
+					lg := bklog.G(ctx).
+						WithField("rmdir", rmdir).
+						WithField("upper", upperPath.path)
+					if lowerPath != nil {
+						lg = lg.WithField("lower", lowerPath.path)
+					} else {
+						lg = lg.WithField("lower", "NIL")
+					}
+					lg.Debug("ADD")
+				*/
 
 				if rmdir != "" {
 					rmdir = ""

@@ -526,11 +526,13 @@ func (ls *localSourceHandler) getRef(
 		ref.sharedState = &localFSSharedState{
 			rootPath: ref.mntPath,
 			contentHasher: func(kind ChangeKind, path string, fi os.FileInfo, err error) error {
-				// TODO:
-				// TODO:
-				// TODO:
-				// TODO:
-				bklog.G(ctx).Debugf("CONTENT HASH CB: %s %s %v %v", kind, path, fi, err)
+				/*
+					// TODO:
+					// TODO:
+					// TODO:
+					// TODO:
+					bklog.G(ctx).Debugf("CONTENT HASH CB: %s %s %v %v", kind, path, fi, err)
+				*/
 
 				return ref.cacheCtx.HandleChange(fsutil.ChangeKind(kind), path, fi, err)
 			},

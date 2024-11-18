@@ -14,7 +14,6 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/filesync"
-	"github.com/moby/buildkit/util/bklog"
 	"github.com/tonistiigi/fsutil/types"
 	"golang.org/x/sync/errgroup"
 )
@@ -94,11 +93,13 @@ func newRemoteFS(
 				pkt.Stat.Path = path
 				pkt.Stat.Linkname = filepath.FromSlash(pkt.Stat.Linkname)
 
-				// TODO:
-				// TODO:
-				// TODO:
-				// TODO:
-				bklog.G(ctx).Debugf("RECV STAT %s", pkt.Stat.Path)
+				/*
+					// TODO:
+					// TODO:
+					// TODO:
+					// TODO:
+					bklog.G(ctx).Debugf("RECV STAT %s", pkt.Stat.Path)
+				*/
 
 				if os.FileMode(pkt.Stat.Mode)&os.ModeType == 0 {
 					fs.filesMu.Lock()
@@ -130,7 +131,9 @@ func newRemoteFS(
 				}
 
 			case types.PACKET_DATA:
+				/* TODO:
 				bklog.G(ctx).Debugf("RECV DATA %d", pkt.ID)
+				*/
 				fs.filesMu.RLock()
 				rFile, ok := fs.filesByID[pkt.ID]
 				fs.filesMu.RUnlock()
@@ -138,7 +141,9 @@ func newRemoteFS(
 					return fmt.Errorf("invalid file request %d", pkt.ID)
 				}
 				if len(pkt.Data) == 0 {
+					/* TODO:
 					bklog.G(ctx).Debugf("CLOSING PIPE %d", pkt.ID)
+					*/
 
 					if err := rFile.w.Close(); err != nil {
 						return fmt.Errorf("failed to close pipe %d: %w", pkt.ID, err)
