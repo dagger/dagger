@@ -859,6 +859,40 @@ export class Test {
 	}
 }
 
+func (TypeSuite) TestArgNull(ctx context.Context, t *testctx.T) {
+	src := `package main
+
+import "strings"
+
+type Test struct {}
+
+func (m *Test) UpperOpt(
+	a string, // +optional
+) string {
+	return strings.ToUpper(a)
+}
+
+func (m *Test) UpperReq(
+	a string,
+) string {
+	return strings.ToUpper(a)
+}
+`
+
+	var logs safeBuffer
+	c := connect(ctx, t, dagger.WithLogOutput(&logs))
+	modGen := modInit(t, c, "go", src)
+
+	out, err := modGen.With(daggerQuery(`{test{upperOpt(a: null)}}`)).Stdout(ctx)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"test":{"upperOpt":""}}`, out)
+
+	_, err = modGen.With(daggerQuery(`{test{upperReq(a: null)}}`)).Stdout(ctx)
+	require.Error(t, err)
+	require.NoError(t, c.Close())
+	require.Contains(t, logs.String(), "cannot create String from <nil>")
+}
+
 func (TypeSuite) TestScalarType(ctx context.Context, t *testctx.T) {
 	type testCase struct {
 		sdk    string
