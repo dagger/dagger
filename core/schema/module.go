@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"dagger.io/dagger/telemetry"
 	"golang.org/x/sync/errgroup"
@@ -1125,6 +1126,7 @@ func (s *moduleSchema) updateCodegenAndRuntime(
 				// already has some config for the file
 				continue
 			}
+			fileName := strings.TrimPrefix(fileName, "/")
 			gitAttrsContents = append(gitAttrsContents,
 				[]byte(fmt.Sprintf("/%s linguist-generated\n", fileName))...,
 			)
