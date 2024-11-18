@@ -75,17 +75,9 @@ func (g *GoGenerator) Generate(ctx context.Context, schema *introspection.Schema
 
 	genSt := &generator.GeneratedState{
 		Overlay: overlay,
-		PostCommands: []*exec.Cmd{
-			// run 'go mod tidy' after generating to fix and prune dependencies
-			exec.Command("go", "mod", "tidy"),
-		},
-	}
-	if _, err := os.Stat(filepath.Join(g.Config.OutputDir, "go.work")); err == nil {
-		// run "go work use ." after generating if we had a go.work at the root
-		genSt.PostCommands = append(genSt.PostCommands, exec.Command("go", "work", "use", "."))
 	}
 
-	pkgInfo, partial, err := g.bootstrapMod(ctx, mfs)
+	pkgInfo, partial, err := g.bootstrapMod(ctx, mfs, genSt)
 	if err != nil {
 		return nil, fmt.Errorf("bootstrap package: %w", err)
 	}
@@ -151,7 +143,7 @@ type PackageInfo struct {
 	PackageImport string // import path of package in which this file appears
 }
 
-func (g *GoGenerator) bootstrapMod(ctx context.Context, mfs *memfs.FS) (*PackageInfo, bool, error) {
+func (g *GoGenerator) bootstrapMod(ctx context.Context, mfs *memfs.FS, genSt *generator.GeneratedState) (*PackageInfo, bool, error) {
 	// don't mess around go.mod if we're not building modules
 	if g.Config.ModuleName == "" {
 		if pkg, _, err := loadPackage(ctx, g.Config.OutputDir); err == nil {
@@ -239,11 +231,40 @@ func (g *GoGenerator) bootstrapMod(ctx context.Context, mfs *memfs.FS) (*Package
 		modRequires[minReq.Mod.Path] = minReq
 		mod.AddNewRequire(minReq.Mod.Path, minReq.Mod.Version, minReq.Indirect)
 	}
+
+	modDir := filepath.Join(g.Config.OutputDir, modPath)
+
+	// if there is a go.work, we need to also set overrides there, otherwise
+	// modules will have individually conflicting replace directives
+	goWork, err := goEnv(modDir, "GOWORK")
+	if err != nil {
+		return nil, false, fmt.Errorf("find go.work: %w", err)
+	}
+
 	// preserve any replace directives in sdk/go's go.mod (e.g. pre-1.0 packages)
 	for _, minReq := range sdkMod.Replace {
-		if _, ok := modRequires[minReq.New.Path]; ok { // ignore anything that's sdk/go only
-			mod.AddReplace(minReq.Old.Path, minReq.Old.Version, minReq.New.Path, minReq.New.Version)
+		if _, ok := modRequires[minReq.New.Path]; !ok {
+			// ignore anything that's sdk/go only
+			continue
 		}
+		genSt.PostCommands = append(genSt.PostCommands,
+			exec.Command("go", "mod", "edit", "-replace", minReq.Old.Path+"="+minReq.New.Path+"@"+minReq.New.Version))
+		if goWork != "" {
+			genSt.PostCommands = append(genSt.PostCommands,
+				exec.Command("go", "work", "edit", "-replace", minReq.Old.Path+"="+minReq.New.Path+"@"+minReq.New.Version))
+		}
+	}
+
+	genSt.PostCommands = append(genSt.PostCommands,
+		// run 'go mod tidy' after generating to fix and prune dependencies
+		//
+		// NOTE: this has to happen before 'go work use' to synchronize Go version
+		// bumps
+		exec.Command("go", "mod", "tidy"))
+
+	if goWork != "" {
+		// run "go work use ." after generating if we had a go.work at the root
+		genSt.PostCommands = append(genSt.PostCommands, exec.Command("go", "work", "use", "."))
 	}
 
 	// try and find a go.sum next to the go.mod, and use that to pin
@@ -447,4 +468,16 @@ func (m *%[1]s) GrepDir(ctx context.Context, directoryArg *dagger.Directory, pat
 		Stdout(ctx)
 }
 `, moduleStructName, pkgInfo.PackageImport)
+}
+
+func goEnv(dir string, env string) (string, error) {
+	buf := new(bytes.Buffer)
+	findGoWork := exec.Command("go", "env", env)
+	findGoWork.Dir = dir
+	findGoWork.Stdout = buf
+	findGoWork.Stderr = os.Stderr
+	if err := findGoWork.Run(); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(buf.String()), nil
 }
