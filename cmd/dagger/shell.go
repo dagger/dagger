@@ -145,7 +145,7 @@ func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
 
 	r, err := interp.New(
 		interp.StdIO(nil, h.stdoutBuf, h.stderrBuf),
-		// interp.Params("-e", "-u", "-o", "pipefail"),
+		interp.Params("-e", "-u", "-o", "pipefail"),
 
 		// The "Interactive" option is useful even when not running dagger shell
 		// in interactive mode. It expands aliases and maybe more in the future.
@@ -761,6 +761,13 @@ func (h *shellCallHandler) parseStateArgument(ctx context.Context, arg *modFunct
 
 // Result handles making the final request and printing the response
 func (h *shellCallHandler) Result(ctx context.Context, st *ShellState) error {
+	if h.debug {
+		withTerminal(func(_ io.Reader, _, stderr io.Writer) error {
+			fmt.Fprintf(stderr, "[DBG] Result state: %+v\n", st)
+			return nil
+		})
+	}
+
 	def := h.modDef(st)
 
 	if def.HasModule() && st.ModRef != nil && len(st.Calls) == 0 {
