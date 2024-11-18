@@ -11,6 +11,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/.dagger/internal/dagger"
+	"github.com/dagger/dagger/.dagger/internal/telemetry"
 )
 
 const (
