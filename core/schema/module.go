@@ -1175,6 +1175,7 @@ func (s *moduleSchema) updateCodegenAndRuntime(
 			if bytes.Contains(gitIgnoreContents, []byte(fileName)) {
 				continue
 			}
+			fileName := strings.TrimPrefix(fileName, "/")
 			gitIgnoreContents = append(gitIgnoreContents,
 				[]byte(fmt.Sprintf("/%s\n", fileName))...,
 			)
