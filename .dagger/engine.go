@@ -423,8 +423,10 @@ func (e *DaggerEngine) Scan(ctx context.Context) error {
 
 		// HACK: filter out directories that present occasional issues
 		src := e.Dagger.Source()
-		src = src.WithoutDirectory("docs")
-		src = src.WithoutDirectory("sdk/rust/crates/dagger-sdk/examples")
+		src = src.
+			WithoutDirectory("docs").
+			WithoutDirectory("sdk/rust/crates/dagger-sdk/examples").
+			WithoutDirectory("dagql/idtui/viztest")
 
 		_, err := ctr.
 			WithMountedDirectory("/mnt/src", src).
