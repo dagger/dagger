@@ -55,10 +55,16 @@ abstract class Connection
     protected static function createGraphQlClient(int $port, string $token): Client
     {
         $encodedToken = base64_encode("{$token}:");
-
-        return new Client("http://127.0.0.1:{$port}/query", [
+        $headers = [
             'Authorization' => "Basic {$encodedToken}",
-        ]);
+        ];
+
+        $traceparent = getenv('TRACEPARENT');
+        if ($traceparent) {
+            $headers = array_merge($headers, ['Traceparent' => $traceparent]);
+        }
+
+        return new Client("http://127.0.0.1:{$port}/query", $headers);
     }
 
     abstract public function connect(): Client;
