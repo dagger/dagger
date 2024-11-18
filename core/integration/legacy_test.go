@@ -130,16 +130,27 @@ func (t *Test) Debug() *dagger.Terminal {
 		err = cmd.Start()
 		require.NoError(t, err)
 
+		prompt := fmt.Sprintf("/coolworkdir%s $ ", resetSeq)
+
+		_, err = console.ExpectString(prompt)
+		require.NoError(t, err)
+
 		_, err = console.SendLine("pwd")
 		require.NoError(t, err)
 
-		_, err = console.ExpectString("/coolworkdir")
+		_, err = console.ExpectString("/coolworkdir\r\n")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString(prompt)
 		require.NoError(t, err)
 
 		_, err = console.SendLine("echo $COOLENV")
 		require.NoError(t, err)
 
-		err = console.ExpectLineRegex(ctx, "woo")
+		_, err = console.ExpectString("woo\r\n")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString(prompt)
 		require.NoError(t, err)
 
 		_, err = console.SendLine("exit")
@@ -186,16 +197,27 @@ func (t *Test) Debug() *dagger.Terminal {
 		err = cmd.Start()
 		require.NoError(t, err)
 
+		prompt := fmt.Sprintf("/coolworkdir%s $ ", resetSeq)
+
+		_, err = console.ExpectString(prompt)
+		require.NoError(t, err)
+
 		_, err = console.SendLine("pwd")
 		require.NoError(t, err)
 
-		_, err = console.ExpectString("/coolworkdir")
+		_, err = console.ExpectString("/coolworkdir\r\n")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString(prompt)
 		require.NoError(t, err)
 
 		_, err = console.SendLine("echo $COOLENV")
 		require.NoError(t, err)
 
-		err = console.ExpectLineRegex(ctx, "woo")
+		_, err = console.ExpectString("woo\r\n")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString(prompt)
 		require.NoError(t, err)
 
 		_, err = console.SendLine("exit")

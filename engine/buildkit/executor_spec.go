@@ -477,21 +477,31 @@ func (w *Worker) setupRootfs(ctx context.Context, state *execState) error {
 			return fmt.Errorf("mount %s points to invalid target: %w", mnt.Target, err)
 		}
 
-		// ref: https://github.com/opencontainers/runc/blob/9d02c20df7faf7b356a632e35dfccf332fc7efed/libcontainer/rootfs_linux.go#L1173
 		if _, err := os.Stat(dstPath); err != nil {
 			if !os.IsNotExist(err) {
 				return fmt.Errorf("stat mount target %s: %w", dstPath, err)
 			}
-			srcStat, err := os.Stat(mnt.Source)
-			if err != nil {
-				return fmt.Errorf("stat mount source %s: %w", mnt.Source, err)
+
+			// Need to check if the source is a directory or file so we can create the stub for the mount
+			// with the correct type. Only bind mounts can be files (as far as we are concerned), so look
+			// for that option and otherwise assume it is a directory (i.e. overlay).
+			srcIsDir := true
+			for _, opt := range mnt.Options {
+				if opt == "bind" || opt == "rbind" {
+					srcStat, err := os.Stat(mnt.Source)
+					if err != nil {
+						return fmt.Errorf("stat mount source %s: %w", mnt.Source, err)
+					}
+					srcIsDir = srcStat.IsDir()
+					break
+				}
 			}
-			switch srcStat.Mode() & os.ModeType {
-			case os.ModeDir:
+
+			if srcIsDir {
 				if err := os.MkdirAll(dstPath, 0o755); err != nil {
 					return fmt.Errorf("create mount target dir %s: %w", dstPath, err)
 				}
-			default:
+			} else {
 				if err := os.MkdirAll(filepath.Dir(dstPath), 0o755); err != nil {
 					return fmt.Errorf("create mount target parent dir %s: %w", dstPath, err)
 				}

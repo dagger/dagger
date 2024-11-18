@@ -15,12 +15,18 @@ import (
 	"github.com/creack/pty"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/dagger/testctx"
+	"github.com/muesli/termenv"
 	"github.com/stretchr/testify/require"
 )
 
 // Terminal tests are run directly on the host rather than in exec containers because we want to
 // directly interact with the dagger shell tui without resorting to embedding more go code
 // into a container for driving it.
+
+const (
+	// this is used in some shell prompts
+	resetSeq = termenv.CSI + termenv.ResetSeq + "m"
+)
 
 func (ModuleSuite) TestDaggerTerminal(ctx context.Context, t *testctx.T) {
 	t.Run("default arg /bin/sh", func(ctx context.Context, t *testctx.T) {
@@ -74,16 +80,27 @@ type Test struct {
 		err = cmd.Start()
 		require.NoError(t, err)
 
+		prompt := fmt.Sprintf("/coolworkdir%s $ ", resetSeq)
+
+		_, err = console.ExpectString(prompt)
+		require.NoError(t, err)
+
 		_, err = console.SendLine("pwd")
 		require.NoError(t, err)
 
-		_, err = console.ExpectString("/coolworkdir")
+		_, err = console.ExpectString("/coolworkdir\r\n")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString(prompt)
 		require.NoError(t, err)
 
 		_, err = console.SendLine("echo $COOLENV")
 		require.NoError(t, err)
 
-		err = console.ExpectLineRegex(ctx, "woo")
+		_, err = console.ExpectString("woo\r\n")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString(prompt)
 		require.NoError(t, err)
 
 		_, err = console.SendLine("exit")
@@ -148,19 +165,27 @@ type Test struct {
 		err = cmd.Start()
 		require.NoError(t, err)
 
-		_, err = console.ExpectString(" $ ")
+		prompt := fmt.Sprintf("/coolworkdir%s $ ", resetSeq)
+
+		_, err = console.ExpectString(prompt)
 		require.NoError(t, err)
 
 		_, err = console.SendLine("pwd")
 		require.NoError(t, err)
 
-		_, err = console.ExpectString("/coolworkdir")
+		_, err = console.ExpectString("/coolworkdir\r\n")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString(prompt)
 		require.NoError(t, err)
 
 		_, err = console.SendLine("echo $COOLENV")
 		require.NoError(t, err)
 
-		err = console.ExpectLineRegex(ctx, "woo")
+		_, err = console.ExpectString("woo\r\n")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString(prompt)
 		require.NoError(t, err)
 
 		_, err = console.SendLine("exit")
@@ -229,19 +254,27 @@ type Test struct {
 		err = cmd.Start()
 		require.NoError(t, err)
 
-		_, err = console.ExpectString(" $ ")
+		prompt := fmt.Sprintf("/coolworkdir%s $ ", resetSeq)
+
+		_, err = console.ExpectString(prompt)
 		require.NoError(t, err)
 
 		_, err = console.SendLine("pwd")
 		require.NoError(t, err)
 
-		_, err = console.ExpectString("/coolworkdir")
+		_, err = console.ExpectString("/coolworkdir\r\n")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString(prompt)
 		require.NoError(t, err)
 
 		_, err = console.SendLine("echo $COOLENV")
 		require.NoError(t, err)
 
-		err = console.ExpectLineRegex(ctx, "xoo")
+		_, err = console.ExpectString("xoo\r\n")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString(prompt)
 		require.NoError(t, err)
 
 		_, err = console.SendLine("exit")
@@ -314,7 +347,10 @@ type Test struct {
 		_, err = console.SendLine("os.environ['COOLENV']")
 		require.NoError(t, err)
 
-		err = console.ExpectLineRegex(ctx, "'woo'")
+		_, err = console.ExpectString("'woo'")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString(">>> ")
 		require.NoError(t, err)
 
 		_, err = console.SendLine("exit()")
@@ -428,7 +464,7 @@ func New(ctx context.Context) *Test {
 	return &Test{
 		Dir: dag.
 			Directory().
-			WithNewFile("test", "hello world"),
+			WithNewFile("test", "hello world\n"),
 	}
 }
 
@@ -466,10 +502,18 @@ type Test struct {
 		err = cmd.Start()
 		require.NoError(t, err)
 
+		prompt := fmt.Sprintf("/src%s $ ", resetSeq)
+
+		_, err = console.ExpectString(prompt)
+		require.NoError(t, err)
+
 		_, err = console.SendLine("cat test")
 		require.NoError(t, err)
 
-		_, err = console.ExpectString("hello world")
+		_, err = console.ExpectString("hello world\r\n")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString(prompt)
 		require.NoError(t, err)
 
 		_, err = console.SendLine("exit")
@@ -531,10 +575,18 @@ type Test struct {
 		err = cmd.Start()
 		require.NoError(t, err)
 
+		prompt := "/ # "
+
+		_, err = console.ExpectString(prompt)
+		require.NoError(t, err)
+
 		_, err = console.SendLine("cat /fail")
 		require.NoError(t, err)
 
-		err = console.ExpectLineRegex(ctx, "breakpoint")
+		_, err = console.ExpectString("breakpoint\r\n")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString(prompt)
 		require.NoError(t, err)
 
 		_, err = console.SendLine("exit")
@@ -583,11 +635,6 @@ func newTUIConsole(t *testctx.T, expectLineTimeout time.Duration) (*tuiConsole, 
 		expectLineTimeout: expectLineTimeout,
 		output:            output,
 	}, nil
-}
-
-func (e *tuiConsole) ExpectLineRegex(ctx context.Context, pattern string) error {
-	_, _, err := e.MatchLine(ctx, pattern)
-	return err
 }
 
 func (e *tuiConsole) MatchLine(ctx context.Context, pattern string) (string, []string, error) {
