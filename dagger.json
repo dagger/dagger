@@ -19,6 +19,11 @@
       "pin": "e494cec1aa8f9faab1e0f12b2e5eea4a2321f2de"
     },
     {
+      "name": "elixir-sdk-dev",
+      "source": "sdk/elixir/dev",
+      "pin": ""
+    },
+    {
       "name": "gh",
       "source": "github.com/sagikazarmark/daggerverse/gh",
       "pin": "68e9daa611183f5334b4059bac6f4aad62da7a37"
