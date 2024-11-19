@@ -824,12 +824,13 @@ func optionalModCmdWrapper(
 
 // moduleDef is a representation of a dagger module.
 type moduleDef struct {
-	Name       string
-	MainObject *modTypeDef
-	Objects    []*modTypeDef
-	Interfaces []*modTypeDef
-	Enums      []*modTypeDef
-	Inputs     []*modTypeDef
+	Name        string
+	Description string
+	MainObject  *modTypeDef
+	Objects     []*modTypeDef
+	Interfaces  []*modTypeDef
+	Enums       []*modTypeDef
+	Inputs      []*modTypeDef
 
 	// the ModuleSource definition for the module, needed by some arg types
 	// applying module-specific configs to the arg value.
@@ -866,7 +867,7 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client) error 
 			// FIXME: we could get the real constructor's name through the field
 			// in Query which would avoid the need to convert the module name,
 			// but the Query TypeDef is loaded before the module so the module
-			// isn't not available in its functions list.
+			// isn't available in its functions list.
 			if name == gqlObjectName(obj.Name) {
 				m.MainObject = typeDef
 
@@ -894,7 +895,21 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client) error 
 
 	m.LoadFunctionTypeDefs(m.MainObject.AsObject.Constructor)
 
+	// FIXME: the API doesn't return the module constructor in the Query object
+	rootObj := m.GetObject("Query")
+	if !rootObj.HasFunction(m.MainObject.AsObject.Constructor) {
+		rootObj.Functions = append(rootObj.Functions, m.MainObject.AsObject.Constructor)
+	}
+
 	return nil
+}
+
+func (m *moduleDef) Long() string {
+	s := m.Name
+	if m.Description != "" {
+		return s + "\n\n" + m.Description
+	}
+	return s
 }
 
 func (m *moduleDef) AsFunctionProviders() []functionProvider {
@@ -1000,6 +1015,11 @@ func (m *moduleDef) GetEnum(name string) *modEnum {
 	return nil
 }
 
+// GetRoot retrieves the root object of the API (i.e., Query).
+func (m *moduleDef) GetRoot() functionProvider {
+	return m.GetFunctionProvider("Query")
+}
+
 // GetFunctionProvider retrieves a saved object or interface type definition from the module as a functionProvider.
 func (m *moduleDef) GetFunctionProvider(name string) functionProvider {
 	if obj := m.GetObject(name); obj != nil {
@@ -1022,10 +1042,33 @@ func (m *moduleDef) GetInput(name string) *modInput {
 	return nil
 }
 
-// HasCoreFunction checks if there's a core function (under Query) with the given name.
+// HasModule checks if a module's definitions are loaded
+func (m *moduleDef) HasModule() bool {
+	return m.Name != ""
+}
+
+func (m *moduleDef) GetCoreFunctions() []*modFunction {
+	all := m.GetFunctionProvider("Query").GetFunctions()
+	fns := make([]*modFunction, 0, len(all))
+
+	for _, fn := range all {
+		if fn.ReturnType.AsObject != nil && !fn.ReturnType.AsObject.IsCore() {
+			continue
+		}
+		fns = append(fns, fn)
+	}
+
+	return fns
+}
+
+// HasCoreFunction checks if there's a core function with the given name.
 func (m *moduleDef) HasCoreFunction(name string) bool {
-	fp := m.GetFunctionProvider("Query")
-	return m.HasFunction(fp, name)
+	for _, fn := range m.GetCoreFunctions() {
+		if fn.Name == name || fn.CmdName() == name {
+			return true
+		}
+	}
+	return false
 }
 
 // HasFunction checks if an object has a function with the given name.
@@ -1037,8 +1080,9 @@ func (m *moduleDef) HasFunction(fp functionProvider, name string) bool {
 	return fn != nil
 }
 
-func (m *moduleDef) IsConstructor(name string) bool {
-	return m.HasCoreFunction(name) || m.MainObject.AsObject.Constructor.CmdName() == name
+func (m *moduleDef) IsModuleConstructor(fn *modFunction) bool {
+	fp := fn.ReturnType.AsFunctionProvider()
+	return fp != nil && !fp.IsCore()
 }
 
 // LoadTypeDef attempts to replace a function's return object type or argument's
@@ -1178,7 +1222,7 @@ func (t *modTypeDef) Description() string {
 func (t *modTypeDef) Short() string {
 	s := t.String()
 	if d := t.Description(); d != "" {
-		s = fmt.Sprintf("%s - %s", s, strings.SplitN(d, "\n", 2)[0])
+		return s + " - " + strings.SplitN(d, "\n", 2)[0]
 	}
 	return s
 }
@@ -1186,7 +1230,7 @@ func (t *modTypeDef) Short() string {
 func (t *modTypeDef) Long() string {
 	s := t.String()
 	if d := t.Description(); d != "" {
-		s = fmt.Sprintf("%s - %s", s, d)
+		return s + "\n\n" + d
 	}
 	return s
 }
@@ -1197,14 +1241,55 @@ type functionProvider interface {
 	IsCore() bool
 }
 
-func HasAvailableFunctions(o functionProvider) bool {
-	if o == nil {
-		return false
-	}
-	for _, fn := range o.GetFunctions() {
-		if !fn.IsUnsupported() {
-			return true
+func GetSupportedFunctions(fp functionProvider) ([]*modFunction, []string) {
+	allFns := fp.GetFunctions()
+	fns := make([]*modFunction, 0, len(allFns))
+	skipped := make([]string, 0, len(allFns))
+	for _, fn := range allFns {
+		if skipFunction(fp.ProviderName(), fn.Name) || fn.HasUnsupportedFlags() {
+			skipped = append(skipped, fn.CmdName())
+		} else {
+			fns = append(fns, fn)
 		}
+	}
+	return fns, skipped
+}
+
+func GetSupportedFunction(md *moduleDef, fp functionProvider, name string) (*modFunction, error) {
+	fn, err := md.GetFunction(fp, name)
+	if err != nil {
+		return nil, err
+	}
+	_, skipped := GetSupportedFunctions(fp)
+	if slices.Contains(skipped, fn.CmdName()) {
+		return nil, fmt.Errorf("function %q in type %q is not supported", name, fp.ProviderName())
+	}
+	return fn, nil
+}
+
+func skipFunction(obj, field string) bool {
+	// TODO: make this configurable in the API but may not be easy to
+	// generalize because an "internal" field may still need to exist in
+	// codegen, for example. Could expose if internal via the TypeDefs though.
+	skip := map[string][]string{
+		"Query": {
+			// for SDKs only
+			"builtinContainer",
+			"generatedCode",
+			"currentFunctionCall",
+			"currentModule",
+			"typeDef",
+			// not useful until the CLI accepts ID inputs
+			"cacheVolume",
+			"setSecret",
+			// for tests only
+			"secret",
+			// deprecated
+			"pipeline",
+		},
+	}
+	if fields, ok := skip[obj]; ok {
+		return slices.Contains(fields, field)
 	}
 	return false
 }
@@ -1317,44 +1402,10 @@ func (o *modObject) IsCore() bool {
 	return o.SourceModuleName == ""
 }
 
-func skipFunction(obj, field string) bool {
-	// TODO: make this configurable in the API but may not be easy to
-	// generalize because an "internal" field may still need to exist in
-	// codegen, for example. Could expose if internal via the TypeDefs though.
-	skip := map[string][]string{
-		"Query": {
-			// for SDKs only
-			"builtinContainer",
-			"generatedCode",
-			"currentFunctionCall",
-			"currentModule",
-			"typeDef",
-			// not useful until the CLI accepts ID inputs
-			"cacheVolume",
-			"setSecret",
-			// for tests only
-			"secret",
-			// deprecated
-			"pipeline",
-		},
-	}
-	if fields, ok := skip[obj]; ok {
-		return slices.Contains(fields, field)
-	}
-	return false
-}
-
 // GetFunctions returns the object's function definitions including the fields,
 // which are treated as functions with no arguments.
 func (o *modObject) GetFunctions() []*modFunction {
-	fns := make([]*modFunction, 0, len(o.Fields)+len(o.Functions))
-	fns = append(fns, o.GetFieldFunctions()...)
-	for _, f := range o.Functions {
-		if !skipFunction(o.Name, f.Name) {
-			fns = append(fns, f)
-		}
-	}
-	return fns
+	return append(o.GetFieldFunctions(), o.Functions...)
 }
 
 func (o *modObject) GetFieldFunctions() []*modFunction {
@@ -1363,6 +1414,15 @@ func (o *modObject) GetFieldFunctions() []*modFunction {
 		fns = append(fns, f.AsFunction())
 	}
 	return fns
+}
+
+func (o *modObject) HasFunction(f *modFunction) bool {
+	for _, fn := range o.Functions {
+		if fn.Name == f.Name {
+			return true
+		}
+	}
+	return false
 }
 
 type modInterface struct {
@@ -1383,13 +1443,7 @@ func (o *modInterface) IsCore() bool {
 }
 
 func (o *modInterface) GetFunctions() []*modFunction {
-	fns := make([]*modFunction, 0, len(o.Functions))
-	for _, f := range o.Functions {
-		if !skipFunction(o.Name, f.Name) {
-			fns = append(fns, f)
-		}
-	}
-	return fns
+	return o.Functions
 }
 
 type modScalar struct {
@@ -1515,7 +1569,7 @@ func (f *modFunction) SupportedArgs() []*modFunctionArg {
 	return args
 }
 
-func (f *modFunction) IsUnsupported() bool {
+func (f *modFunction) HasUnsupportedFlags() bool {
 	for _, arg := range f.Args {
 		if arg.IsRequired() && arg.IsUnsupportedFlag() {
 			return true

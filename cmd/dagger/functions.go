@@ -362,6 +362,12 @@ func maybeInitializeModule(ctx context.Context, dag *dagger.Client, srcRef strin
 	}
 	def.Name = name
 
+	desc, err := mod.Description(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get module name: %w", err)
+	}
+	def.Description = desc
+
 	if err := def.loadTypeDefs(ctx, dag); err != nil {
 		return nil, err
 	}
@@ -513,13 +519,9 @@ func (fc *FuncCommand) addSubCommands(ctx context.Context, cmd *cobra.Command, t
 
 	cmd.AddGroup(funcGroup)
 
-	skipped := make([]string, 0)
+	fns, skipped := GetSupportedFunctions(fnProvider)
 
-	for _, fn := range fnProvider.GetFunctions() {
-		if fn.IsUnsupported() {
-			skipped = append(skipped, fn.CmdName())
-			continue
-		}
+	for _, fn := range fns {
 		subCmd := fc.makeSubCmd(ctx, fn)
 		cmd.AddCommand(subCmd)
 	}
