@@ -33,12 +33,16 @@ class MyModule {
    */
   @func()
   async runAllTests(source: Directory): Promise<string> {
-    const results = await Promise.all([
-      this.lint(source),
-      this.typecheck(source),
-      this.test(source),
-    ])
-    return results.join("\n")
+    try {
+      const [testResult, lintResult, typecheckResult] = await Promise.all([
+        this.test(source),
+        this.lint(source),
+        this.typecheck(source)
+      ])
+      return [testResult, lintResult, typecheckResult].join("\n")
+    } catch (error) {
+      throw new Error(`Error: ${error}`)
+    }
   }
 
   /**
