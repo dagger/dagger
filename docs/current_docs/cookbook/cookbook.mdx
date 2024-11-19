@@ -1134,7 +1134,6 @@ dagger call set-env-vars
 
 The following Dagger Function uses a cache volume to persist a Redis service's data across Dagger Function runs.
 
-
 <Tabs groupId="language">
 <TabItem value="Go">
 
@@ -1169,6 +1168,39 @@ Retrieve the value of the key `foo` after recreating the service state from the 
 ```shell
 # returns "123"
 dagger call get --key=foo
+```
+
+### Execute functions concurrently
+
+The following Dagger Function demonstrates how to use native-language concurrency features ([errgroups](https://pkg.go.dev/golang.org/x/sync/errgroup) in Go, [task groups](https://anyio.readthedocs.io/en/stable/tasks.html) in Python), and [promises](https://basarat.gitbook.io/typescript/future-javascript/promise) in TypeScript to execute other Dagger Functions concurrently. If any of the concurrently-running functions fails, the remaining ones will be immediately cancelled.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/execute-concurrently/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/execute-concurrently/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/execute-concurrently/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Example
+
+Execute a Dagger Function which performs different types of tests by executing other Dagger Functions concurrently.
+
+```shell
+dagger call --source=. run-all-tests
 ```
 
 ## Error handling
