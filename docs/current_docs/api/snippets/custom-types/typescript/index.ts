@@ -42,7 +42,7 @@ class Github {
       members: [
         new Account("jane", "jane@example.com"),
         new Account("john", "john@example.com"),
-      ]
+      ],
     }
 
     return organization
