@@ -4,9 +4,6 @@ import { dag, Container, Directory, object, func } from "@dagger.io/dagger"
 class MyModule {
   source: Directory
 
-  /**
-   * Constructor
-   */
   constructor(source: Directory) {
     this.source = source
   }

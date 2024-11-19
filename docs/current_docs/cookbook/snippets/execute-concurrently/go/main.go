@@ -45,37 +45,30 @@ func (m *MyModule) Typecheck(ctx context.Context) (string, error) {
 
 // Run linter, type-checker, unit tests concurrently
 func (m *MyModule) RunAllTests(ctx context.Context) error {
-	var testErr, lintErr, typecheckErr error
-
 	// Create error group
 	eg, gctx := errgroup.WithContext(ctx)
 
 	// Run linter
 	eg.Go(func() error {
-		_, lintErr = m.Lint(gctx)
-		return lintErr
+		_, err := m.Lint(gctx)
+		return err
 	})
 
 	// Run type-checker
 	eg.Go(func() error {
-		_, typecheckErr = m.Typecheck(gctx)
-		return typecheckErr
+		_, err := m.Typecheck(gctx)
+		return err
 	})
 
 	// Run unit tests
 	eg.Go(func() error {
-		_, testErr = m.Test(gctx)
-		return testErr
+		_, err := m.Test(gctx)
+		return err
 	})
 
 	// Wait for all tests to complete
-	// If any test fails, return the error
-	if err := eg.Wait(); err != nil {
-		return fmt.Errorf("error: %w", err)
-	}
-
-	// If all tests succeed, return
-	return nil
+	// If any test fails, the error will be returned
+	return eg.Wait()
 }
 
 // Build a ready-to-use development environment
