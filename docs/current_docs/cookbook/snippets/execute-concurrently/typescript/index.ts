@@ -17,9 +17,7 @@ class MyModule {
    */
   @func()
   async lint(source: Directory): Promise<string> {
-    return this.buildEnv(source)
-      .withExec(["npm", "run", "lint"])
-      .stdout()
+    return this.buildEnv(source).withExec(["npm", "run", "lint"]).stdout()
   }
 
   /**
@@ -27,9 +25,7 @@ class MyModule {
    */
   @func()
   async typecheck(source: Directory): Promise<string> {
-    return this.buildEnv(source)
-      .withExec(["npm", "run", "typecheck"])
-      .stdout()
+    return this.buildEnv(source).withExec(["npm", "run", "typecheck"]).stdout()
   }
 
   /**

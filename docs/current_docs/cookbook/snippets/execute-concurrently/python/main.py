@@ -6,7 +6,6 @@ from dagger import dag, function, object_type
 
 @object_type
 class MyModule:
-
     @function
     async def test(self, source: dagger.Directory) -> str:
         """Return the result of running unit tests"""
@@ -20,18 +19,14 @@ class MyModule:
     async def typecheck(self, source: dagger.Directory) -> str:
         """Return the result of running the type checker"""
         return await (
-            self.build_env(source)
-            .with_exec(["npm", "run", "type-check"])
-            .stdout()
+            self.build_env(source).with_exec(["npm", "run", "type-check"]).stdout()
         )
 
     @function
     async def lint(self, source: dagger.Directory) -> str:
         """Return the result of running the linter"""
         return await (
-            self.build_env(source)
-            .with_exec(["npm", "run", "lint"])
-            .stdout()
+            self.build_env(source).with_exec(["npm", "run", "lint"]).stdout()
         )
 
     @function
