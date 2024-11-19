@@ -253,7 +253,7 @@ func githubRelease(ctx context.Context, git *dagger.VersionGit, opts githubRelea
 		dagger.GhReleaseCreateOpts{
 			Target:    commit,
 			NotesFile: opts.notes,
-			Latest:    dagger.GhLatestFalse,
+			Latest:    dagger.GhLatestLatestFalse,
 		},
 	)
 }
