@@ -398,10 +398,6 @@ func (w *Workflow) asWorkflow() api.Workflow {
 			RunsOn:         job.Runner,
 			Steps:          steps,
 			TimeoutMinutes: job.TimeoutMinutes,
-			Outputs: map[string]string{
-				"stdout": "${{ steps.exec.outputs.stdout }}",
-				"stderr": "${{ steps.exec.outputs.stderr }}", // FIXME: max output size is 1MB
-			},
 		}
 	}
 	return api.Workflow{

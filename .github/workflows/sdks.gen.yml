@@ -81,7 +81,6 @@ jobs:
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
                 fi
 
-                GITHUB_OUTPUT="${GITHUB_OUTPUT:=github-output.txt}"
                 GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
                 export NO_COLOR="${NO_COLOR:=1}" # Disable colors in dagger logs
 
@@ -113,17 +112,6 @@ jobs:
 
                 # Extra trace URL
                 TRACE_URL=$(sed -En 's/^Full trace at (.*)/\1/p' < $tmp/stderr.txt)
-
-                # Expose the outputs as GitHub Actions step outputs directly from the files
-                # Multi-line outputs are handled with the '<<EOF' syntax
-                {
-                    echo 'stdout<<EOF'
-                    cat "$tmp/stdout.txt"
-                    echo 'EOF'
-                    echo 'stderr<<EOF'
-                    cat "$tmp/stderr.txt"
-                    echo 'EOF'
-                } > "${GITHUB_OUTPUT}"
 
                 {
                 cat <<'.'
@@ -200,9 +188,6 @@ jobs:
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
               shell: bash
         timeout-minutes: 10
-        outputs:
-            stderr: ${{ steps.exec.outputs.stderr }}
-            stdout: ${{ steps.exec.outputs.stdout }}
     elixir-dev:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-14-0-8c-dind' || 'ubuntu-latest' }}
@@ -310,7 +295,6 @@ jobs:
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
                 fi
 
-                GITHUB_OUTPUT="${GITHUB_OUTPUT:=github-output.txt}"
                 GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
                 export NO_COLOR="${NO_COLOR:=1}" # Disable colors in dagger logs
 
@@ -342,17 +326,6 @@ jobs:
 
                 # Extra trace URL
                 TRACE_URL=$(sed -En 's/^Full trace at (.*)/\1/p' < $tmp/stderr.txt)
-
-                # Expose the outputs as GitHub Actions step outputs directly from the files
-                # Multi-line outputs are handled with the '<<EOF' syntax
-                {
-                    echo 'stdout<<EOF'
-                    cat "$tmp/stdout.txt"
-                    echo 'EOF'
-                    echo 'stderr<<EOF'
-                    cat "$tmp/stderr.txt"
-                    echo 'EOF'
-                } > "${GITHUB_OUTPUT}"
 
                 {
                 cat <<'.'
@@ -429,9 +402,6 @@ jobs:
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
               shell: bash
         timeout-minutes: 10
-        outputs:
-            stderr: ${{ steps.exec.outputs.stderr }}
-            stdout: ${{ steps.exec.outputs.stdout }}
     go:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-14-0-4c' || 'ubuntu-latest' }}
@@ -496,7 +466,6 @@ jobs:
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
                 fi
 
-                GITHUB_OUTPUT="${GITHUB_OUTPUT:=github-output.txt}"
                 GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
                 export NO_COLOR="${NO_COLOR:=1}" # Disable colors in dagger logs
 
@@ -528,17 +497,6 @@ jobs:
 
                 # Extra trace URL
                 TRACE_URL=$(sed -En 's/^Full trace at (.*)/\1/p' < $tmp/stderr.txt)
-
-                # Expose the outputs as GitHub Actions step outputs directly from the files
-                # Multi-line outputs are handled with the '<<EOF' syntax
-                {
-                    echo 'stdout<<EOF'
-                    cat "$tmp/stdout.txt"
-                    echo 'EOF'
-                    echo 'stderr<<EOF'
-                    cat "$tmp/stderr.txt"
-                    echo 'EOF'
-                } > "${GITHUB_OUTPUT}"
 
                 {
                 cat <<'.'
@@ -615,9 +573,6 @@ jobs:
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
               shell: bash
         timeout-minutes: 10
-        outputs:
-            stderr: ${{ steps.exec.outputs.stderr }}
-            stdout: ${{ steps.exec.outputs.stdout }}
     go-dev:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-14-0-8c-dind' || 'ubuntu-latest' }}
@@ -725,7 +680,6 @@ jobs:
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
                 fi
 
-                GITHUB_OUTPUT="${GITHUB_OUTPUT:=github-output.txt}"
                 GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
                 export NO_COLOR="${NO_COLOR:=1}" # Disable colors in dagger logs
 
@@ -757,17 +711,6 @@ jobs:
 
                 # Extra trace URL
                 TRACE_URL=$(sed -En 's/^Full trace at (.*)/\1/p' < $tmp/stderr.txt)
-
-                # Expose the outputs as GitHub Actions step outputs directly from the files
-                # Multi-line outputs are handled with the '<<EOF' syntax
-                {
-                    echo 'stdout<<EOF'
-                    cat "$tmp/stdout.txt"
-                    echo 'EOF'
-                    echo 'stderr<<EOF'
-                    cat "$tmp/stderr.txt"
-                    echo 'EOF'
-                } > "${GITHUB_OUTPUT}"
 
                 {
                 cat <<'.'
@@ -844,9 +787,6 @@ jobs:
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
               shell: bash
         timeout-minutes: 10
-        outputs:
-            stderr: ${{ steps.exec.outputs.stderr }}
-            stdout: ${{ steps.exec.outputs.stdout }}
     java:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-14-0-4c' || 'ubuntu-latest' }}
@@ -911,7 +851,6 @@ jobs:
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
                 fi
 
-                GITHUB_OUTPUT="${GITHUB_OUTPUT:=github-output.txt}"
                 GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
                 export NO_COLOR="${NO_COLOR:=1}" # Disable colors in dagger logs
 
@@ -943,17 +882,6 @@ jobs:
 
                 # Extra trace URL
                 TRACE_URL=$(sed -En 's/^Full trace at (.*)/\1/p' < $tmp/stderr.txt)
-
-                # Expose the outputs as GitHub Actions step outputs directly from the files
-                # Multi-line outputs are handled with the '<<EOF' syntax
-                {
-                    echo 'stdout<<EOF'
-                    cat "$tmp/stdout.txt"
-                    echo 'EOF'
-                    echo 'stderr<<EOF'
-                    cat "$tmp/stderr.txt"
-                    echo 'EOF'
-                } > "${GITHUB_OUTPUT}"
 
                 {
                 cat <<'.'
@@ -1030,9 +958,6 @@ jobs:
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
               shell: bash
         timeout-minutes: 10
-        outputs:
-            stderr: ${{ steps.exec.outputs.stderr }}
-            stdout: ${{ steps.exec.outputs.stdout }}
     java-dev:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-14-0-8c-dind' || 'ubuntu-latest' }}
@@ -1140,7 +1065,6 @@ jobs:
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
                 fi
 
-                GITHUB_OUTPUT="${GITHUB_OUTPUT:=github-output.txt}"
                 GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
                 export NO_COLOR="${NO_COLOR:=1}" # Disable colors in dagger logs
 
@@ -1172,17 +1096,6 @@ jobs:
 
                 # Extra trace URL
                 TRACE_URL=$(sed -En 's/^Full trace at (.*)/\1/p' < $tmp/stderr.txt)
-
-                # Expose the outputs as GitHub Actions step outputs directly from the files
-                # Multi-line outputs are handled with the '<<EOF' syntax
-                {
-                    echo 'stdout<<EOF'
-                    cat "$tmp/stdout.txt"
-                    echo 'EOF'
-                    echo 'stderr<<EOF'
-                    cat "$tmp/stderr.txt"
-                    echo 'EOF'
-                } > "${GITHUB_OUTPUT}"
 
                 {
                 cat <<'.'
@@ -1259,9 +1172,6 @@ jobs:
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
               shell: bash
         timeout-minutes: 10
-        outputs:
-            stderr: ${{ steps.exec.outputs.stderr }}
-            stdout: ${{ steps.exec.outputs.stdout }}
     php:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-14-0-4c' || 'ubuntu-latest' }}
@@ -1326,7 +1236,6 @@ jobs:
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
                 fi
 
-                GITHUB_OUTPUT="${GITHUB_OUTPUT:=github-output.txt}"
                 GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
                 export NO_COLOR="${NO_COLOR:=1}" # Disable colors in dagger logs
 
@@ -1358,17 +1267,6 @@ jobs:
 
                 # Extra trace URL
                 TRACE_URL=$(sed -En 's/^Full trace at (.*)/\1/p' < $tmp/stderr.txt)
-
-                # Expose the outputs as GitHub Actions step outputs directly from the files
-                # Multi-line outputs are handled with the '<<EOF' syntax
-                {
-                    echo 'stdout<<EOF'
-                    cat "$tmp/stdout.txt"
-                    echo 'EOF'
-                    echo 'stderr<<EOF'
-                    cat "$tmp/stderr.txt"
-                    echo 'EOF'
-                } > "${GITHUB_OUTPUT}"
 
                 {
                 cat <<'.'
@@ -1445,9 +1343,6 @@ jobs:
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
               shell: bash
         timeout-minutes: 10
-        outputs:
-            stderr: ${{ steps.exec.outputs.stderr }}
-            stdout: ${{ steps.exec.outputs.stdout }}
     php-dev:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-14-0-8c-dind' || 'ubuntu-latest' }}
@@ -1555,7 +1450,6 @@ jobs:
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
                 fi
 
-                GITHUB_OUTPUT="${GITHUB_OUTPUT:=github-output.txt}"
                 GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
                 export NO_COLOR="${NO_COLOR:=1}" # Disable colors in dagger logs
 
@@ -1587,17 +1481,6 @@ jobs:
 
                 # Extra trace URL
                 TRACE_URL=$(sed -En 's/^Full trace at (.*)/\1/p' < $tmp/stderr.txt)
-
-                # Expose the outputs as GitHub Actions step outputs directly from the files
-                # Multi-line outputs are handled with the '<<EOF' syntax
-                {
-                    echo 'stdout<<EOF'
-                    cat "$tmp/stdout.txt"
-                    echo 'EOF'
-                    echo 'stderr<<EOF'
-                    cat "$tmp/stderr.txt"
-                    echo 'EOF'
-                } > "${GITHUB_OUTPUT}"
 
                 {
                 cat <<'.'
@@ -1674,9 +1557,6 @@ jobs:
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
               shell: bash
         timeout-minutes: 10
-        outputs:
-            stderr: ${{ steps.exec.outputs.stderr }}
-            stdout: ${{ steps.exec.outputs.stdout }}
     python:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-14-0-4c' || 'ubuntu-latest' }}
@@ -1741,7 +1621,6 @@ jobs:
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
                 fi
 
-                GITHUB_OUTPUT="${GITHUB_OUTPUT:=github-output.txt}"
                 GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
                 export NO_COLOR="${NO_COLOR:=1}" # Disable colors in dagger logs
 
@@ -1773,17 +1652,6 @@ jobs:
 
                 # Extra trace URL
                 TRACE_URL=$(sed -En 's/^Full trace at (.*)/\1/p' < $tmp/stderr.txt)
-
-                # Expose the outputs as GitHub Actions step outputs directly from the files
-                # Multi-line outputs are handled with the '<<EOF' syntax
-                {
-                    echo 'stdout<<EOF'
-                    cat "$tmp/stdout.txt"
-                    echo 'EOF'
-                    echo 'stderr<<EOF'
-                    cat "$tmp/stderr.txt"
-                    echo 'EOF'
-                } > "${GITHUB_OUTPUT}"
 
                 {
                 cat <<'.'
@@ -1860,9 +1728,6 @@ jobs:
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
               shell: bash
         timeout-minutes: 10
-        outputs:
-            stderr: ${{ steps.exec.outputs.stderr }}
-            stdout: ${{ steps.exec.outputs.stdout }}
     python-dev:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-14-0-8c-dind' || 'ubuntu-latest' }}
@@ -1970,7 +1835,6 @@ jobs:
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
                 fi
 
-                GITHUB_OUTPUT="${GITHUB_OUTPUT:=github-output.txt}"
                 GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
                 export NO_COLOR="${NO_COLOR:=1}" # Disable colors in dagger logs
 
@@ -2002,17 +1866,6 @@ jobs:
 
                 # Extra trace URL
                 TRACE_URL=$(sed -En 's/^Full trace at (.*)/\1/p' < $tmp/stderr.txt)
-
-                # Expose the outputs as GitHub Actions step outputs directly from the files
-                # Multi-line outputs are handled with the '<<EOF' syntax
-                {
-                    echo 'stdout<<EOF'
-                    cat "$tmp/stdout.txt"
-                    echo 'EOF'
-                    echo 'stderr<<EOF'
-                    cat "$tmp/stderr.txt"
-                    echo 'EOF'
-                } > "${GITHUB_OUTPUT}"
 
                 {
                 cat <<'.'
@@ -2089,9 +1942,6 @@ jobs:
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
               shell: bash
         timeout-minutes: 10
-        outputs:
-            stderr: ${{ steps.exec.outputs.stderr }}
-            stdout: ${{ steps.exec.outputs.stdout }}
     rust:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-14-0-4c' || 'ubuntu-latest' }}
@@ -2156,7 +2006,6 @@ jobs:
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
                 fi
 
-                GITHUB_OUTPUT="${GITHUB_OUTPUT:=github-output.txt}"
                 GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
                 export NO_COLOR="${NO_COLOR:=1}" # Disable colors in dagger logs
 
@@ -2188,17 +2037,6 @@ jobs:
 
                 # Extra trace URL
                 TRACE_URL=$(sed -En 's/^Full trace at (.*)/\1/p' < $tmp/stderr.txt)
-
-                # Expose the outputs as GitHub Actions step outputs directly from the files
-                # Multi-line outputs are handled with the '<<EOF' syntax
-                {
-                    echo 'stdout<<EOF'
-                    cat "$tmp/stdout.txt"
-                    echo 'EOF'
-                    echo 'stderr<<EOF'
-                    cat "$tmp/stderr.txt"
-                    echo 'EOF'
-                } > "${GITHUB_OUTPUT}"
 
                 {
                 cat <<'.'
@@ -2275,9 +2113,6 @@ jobs:
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
               shell: bash
         timeout-minutes: 10
-        outputs:
-            stderr: ${{ steps.exec.outputs.stderr }}
-            stdout: ${{ steps.exec.outputs.stdout }}
     rust-dev:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-14-0-8c-dind' || 'ubuntu-latest' }}
@@ -2385,7 +2220,6 @@ jobs:
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
                 fi
 
-                GITHUB_OUTPUT="${GITHUB_OUTPUT:=github-output.txt}"
                 GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
                 export NO_COLOR="${NO_COLOR:=1}" # Disable colors in dagger logs
 
@@ -2417,17 +2251,6 @@ jobs:
 
                 # Extra trace URL
                 TRACE_URL=$(sed -En 's/^Full trace at (.*)/\1/p' < $tmp/stderr.txt)
-
-                # Expose the outputs as GitHub Actions step outputs directly from the files
-                # Multi-line outputs are handled with the '<<EOF' syntax
-                {
-                    echo 'stdout<<EOF'
-                    cat "$tmp/stdout.txt"
-                    echo 'EOF'
-                    echo 'stderr<<EOF'
-                    cat "$tmp/stderr.txt"
-                    echo 'EOF'
-                } > "${GITHUB_OUTPUT}"
 
                 {
                 cat <<'.'
@@ -2504,9 +2327,6 @@ jobs:
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
               shell: bash
         timeout-minutes: 10
-        outputs:
-            stderr: ${{ steps.exec.outputs.stderr }}
-            stdout: ${{ steps.exec.outputs.stdout }}
     typescript:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-14-0-4c' || 'ubuntu-latest' }}
@@ -2571,7 +2391,6 @@ jobs:
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
                 fi
 
-                GITHUB_OUTPUT="${GITHUB_OUTPUT:=github-output.txt}"
                 GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
                 export NO_COLOR="${NO_COLOR:=1}" # Disable colors in dagger logs
 
@@ -2603,17 +2422,6 @@ jobs:
 
                 # Extra trace URL
                 TRACE_URL=$(sed -En 's/^Full trace at (.*)/\1/p' < $tmp/stderr.txt)
-
-                # Expose the outputs as GitHub Actions step outputs directly from the files
-                # Multi-line outputs are handled with the '<<EOF' syntax
-                {
-                    echo 'stdout<<EOF'
-                    cat "$tmp/stdout.txt"
-                    echo 'EOF'
-                    echo 'stderr<<EOF'
-                    cat "$tmp/stderr.txt"
-                    echo 'EOF'
-                } > "${GITHUB_OUTPUT}"
 
                 {
                 cat <<'.'
@@ -2690,9 +2498,6 @@ jobs:
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
               shell: bash
         timeout-minutes: 10
-        outputs:
-            stderr: ${{ steps.exec.outputs.stderr }}
-            stdout: ${{ steps.exec.outputs.stdout }}
     typescript-dev:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-14-0-8c-dind' || 'ubuntu-latest' }}
@@ -2800,7 +2605,6 @@ jobs:
                     export PATH=$(dirname "$_EXPERIMENTAL_DAGGER_CLI_BIN"):$PATH
                 fi
 
-                GITHUB_OUTPUT="${GITHUB_OUTPUT:=github-output.txt}"
                 GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY:=github-summary.md}"
                 export NO_COLOR="${NO_COLOR:=1}" # Disable colors in dagger logs
 
@@ -2832,17 +2636,6 @@ jobs:
 
                 # Extra trace URL
                 TRACE_URL=$(sed -En 's/^Full trace at (.*)/\1/p' < $tmp/stderr.txt)
-
-                # Expose the outputs as GitHub Actions step outputs directly from the files
-                # Multi-line outputs are handled with the '<<EOF' syntax
-                {
-                    echo 'stdout<<EOF'
-                    cat "$tmp/stdout.txt"
-                    echo 'EOF'
-                    echo 'stderr<<EOF'
-                    cat "$tmp/stderr.txt"
-                    echo 'EOF'
-                } > "${GITHUB_OUTPUT}"
 
                 {
                 cat <<'.'
@@ -2919,6 +2712,3 @@ jobs:
                 DAGGER_CLOUD_TOKEN: dag_dagger_sBIv6DsjNerWvTqt2bSFeigBUqWxp9bhh3ONSSgeFnw
               shell: bash
         timeout-minutes: 10
-        outputs:
-            stderr: ${{ steps.exec.outputs.stderr }}
-            stdout: ${{ steps.exec.outputs.stdout }}
