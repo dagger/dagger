@@ -247,15 +247,9 @@ func (dev *DaggerDev) Dev(
 	if err != nil {
 		return nil, err
 	}
-
-	client, err := dev.CLI().Binary(ctx, "")
-	if err != nil {
-		return nil, err
-	}
-
 	return dev.Go().Env().
 		WithMountedDirectory("/mnt", target).
-		WithMountedFile("/usr/bin/dagger", client).
+		WithMountedFile("/usr/bin/dagger", dag.DaggerCli().Binary()).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", "/usr/bin/dagger").
 		WithServiceBinding("dagger-engine", svc).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
@@ -309,19 +303,14 @@ func (dev *DaggerDev) DevExport(
 		ForcedCompression: dagger.ImageLayerCompressionGzip,
 	})
 
-	cli := dev.CLI()
-	cliBin, err := cli.Binary(ctx, platform)
-	if err != nil {
-		return nil, err
-	}
+	// FIXME: get path from the cli file (windows is already handled)
 	cliPath := "dagger"
 	if platformSpec.OS == "windows" {
 		cliPath += ".exe"
 	}
-
 	dir := dag.Directory().
 		WithFile("engine.tar", engineTar).
-		WithFile(cliPath, cliBin)
+		WithFile(cliPath, dag.DaggerCli().Binary(dagger.DaggerCliBinaryOpts{Platform: platform}))
 	return dir, nil
 }
 

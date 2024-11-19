@@ -17,19 +17,10 @@ type CLI struct {
 
 // Build the CLI binary
 func (cli *CLI) Binary(
-	ctx context.Context,
-
 	// +optional
 	platform dagger.Platform,
-) (*dagger.File, error) {
-	builder, err := build.NewBuilder(ctx, cli.Dagger.Source())
-	if err != nil {
-		return nil, err
-	}
-	if platform != "" {
-		builder = builder.WithPlatform(platform)
-	}
-	return builder.CLI(ctx)
+) *dagger.File {
+	return dag.DaggerCli().Binary(dagger.DaggerCliBinaryOpts{Platform: platform})
 }
 
 const (

@@ -9,6 +9,11 @@
       "pin": ""
     },
     {
+      "name": "dagger-cli",
+      "source": "cmd/dagger",
+      "pin": ""
+    },
+    {
       "name": "dirdiff",
       "source": "modules/dirdiff",
       "pin": ""

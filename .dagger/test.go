@@ -78,11 +78,7 @@ func (t *Test) Telemetry(
 		return nil, err
 	}
 
-	devBinary, err := t.Dagger.CLI().Binary(ctx, "")
-	if err != nil {
-		return nil, err
-	}
-
+	devBinary := dag.DaggerCli().Binary()
 	registrySvc := registry()
 	devEngineSvc := devEngine.
 		WithServiceBinding("registry", registrySvc).
@@ -305,11 +301,7 @@ func (t *Test) testCmd(ctx context.Context) (*dagger.Container, error) {
 	devEngine = devEngine.
 		WithEnvVariable("_DAGGER_ENGINE_SYSTEMENV_GODEBUG", "goindex=0")
 
-	devBinary, err := t.Dagger.CLI().Binary(ctx, "")
-	if err != nil {
-		return nil, err
-	}
-
+	devBinary := dag.DaggerCli().Binary()
 	// This creates an engine.tar container file that can be used by the integration tests.
 	// In particular, it is used by core/integration/remotecache_test.go to create a
 	// dev engine that can be used to test remote caching.

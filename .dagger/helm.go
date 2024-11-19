@@ -29,11 +29,7 @@ func (h *Helm) Lint(ctx context.Context) error {
 }
 
 func (h *Helm) Test(ctx context.Context) error {
-	cli, err := h.Dagger.CLI().Binary(ctx, "")
-	if err != nil {
-		return err
-	}
-
+	cli := dag.DaggerCli().Binary()
 	k3s := dag.K3S("helm-test")
 
 	// NOTE: force starting here - without this, the config won't be generated
