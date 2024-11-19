@@ -19,15 +19,14 @@ class Account {
   }
 }
 
-@object()
-class Organization {
-  @func()
+/**
+ * Organization has no specific methods, only exposed fields so
+ * we can define it with `type` instead of `class` to
+ * avoid the boilerplate of defining a constructor.
+ */
+export type Organization = {
   url: string
-
-  @func()
   repositories: GitRepository[]
-
-  @func()
   members: Account[]
 }
 
@@ -35,14 +34,16 @@ class Organization {
 class Github {
   @func()
   daggerOrganization(): Organization {
-    const organization = new Organization()
+    const url = "https://github.com/dagger"
 
-    organization.url = "https://github.com/dagger"
-    organization.repositories = [dag.git(`${organization.url}/dagger`)]
-    organization.members = [
-      new Account("jane", "jane@example.com"),
-      new Account("john", "john@example.com"),
-    ]
+    const organization: Organization = {
+      url,
+      repositories: [dag.git(`${url}/dagger`)],
+      members: [
+        new Account("jane", "jane@example.com"),
+        new Account("john", "john@example.com"),
+      ],
+    }
 
     return organization
   }

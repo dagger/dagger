@@ -40,7 +40,7 @@ that returns a custom `Organization` type, itself containing a collection of
 ```typescript file=./snippets/custom-types/typescript/index.ts
 ```
 
-TypeScript has multiple ways to support complex data types. However, the Dagger TypeScript SDK only supports it through fields (decorated with `@func()`) inside classes because `type` and `interface` keywords do not allows decorators.
+TypeScript has multiple ways to support complex data types. Use a `class` when you need methods and privacy, use `type` for plain data objects with only public fields.
 </TabItem>
 </Tabs>
 
