@@ -149,10 +149,10 @@ module.exports = {
     },
     {
       "type": "category",
-      "label": "Integrations",
+      "label": "Integrating with CI",
       "link": {
         "type": "doc",
-        "id": "integrations/index"
+        "id": "integrations/ci"
       },
       "collapsible": true,
       "collapsed": true,
@@ -162,17 +162,29 @@ module.exports = {
         "integrations/azure-pipelines",
         "integrations/circleci",
         "integrations/github-actions",
-        "integrations/github",
         "integrations/gitlab",
+        "integrations/jenkins",
+        "integrations/tekton",
+      ]
+    },
+    {
+      "type": "category",
+      "label": "Integrations",
+      "link": {
+        "type": "doc",
+        "id": "integrations/index"
+      },
+      "collapsible": true,
+      "collapsed": true,
+      "items": [
+        "integrations/github",
         "integrations/google-cloud-run",
         "integrations/java",
-        "integrations/jenkins",
         "integrations/kubernetes",
         "integrations/nerdctl",
         "integrations/openshift",
         "integrations/php",
         "integrations/podman",
-        "integrations/tekton",
       ]
     },
     {
