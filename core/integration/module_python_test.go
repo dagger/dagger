@@ -211,6 +211,19 @@ class HelloWorld:
 		require.JSONEq(t, `{"helloWorld":{"message":"Hello, World!"}}`, out)
 	})
 
+	t.Run("module name with number", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		out, err := daggerCliBase(t, c).
+			With(daggerExec("init", "--sdk=python", "project2")).
+			WithExec([]string{"test", "-f", "project2/src/project_2/main.py"}).
+			With(daggerCallAt("project2", "container-echo", "--string-arg", "hello", "stdout")).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "hello\n", out)
+	})
+
 	t.Run("different dagger and python project names", func(ctx context.Context, t *testctx.T) {
 		// Name in dagger.json: "test"
 		// Name in pyproject.toml: "hello-world"

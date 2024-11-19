@@ -29,6 +29,7 @@ func TestProjectNameNormalization(t *testing.T) {
 		// require.Equal(t, "friendly-bard",  NormalizeProjectName(input)
 		require.Equalf(t, "friendly-bard", NormalizeProjectNameFromModule(input), "input: %s", input)
 	}
+	require.Equal(t, "friendly-2", NormalizeProjectNameFromModule("friendly2"))
 }
 
 func TestPackageNameNormalization(t *testing.T) {
@@ -46,4 +47,5 @@ func TestPackageNameNormalization(t *testing.T) {
 		// require.Equal(t, "friendly-bard",  NormalizeProjectName(input)
 		require.Equalf(t, "friendly_bard", NormalizePackageName(input), "input: %s", input)
 	}
+	require.Equal(t, "friendly_2", NormalizePackageName("friendly-2"))
 }
