@@ -8,7 +8,6 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/testctx"
 	"github.com/stretchr/testify/require"
-	"github.com/tidwall/gjson"
 )
 
 type ShellSuite struct{}
@@ -31,17 +30,6 @@ func daggerShellNoLoad(script string) dagger.WithContainerFunc {
 			ExperimentalPrivilegedNesting: true,
 		})
 	}
-}
-
-func (ShellSuite) TestFallbackToCore(ctx context.Context, t *testctx.T) {
-	c := connect(ctx, t)
-
-	script := fmt.Sprintf("container | from %s | with-exec apk,add,git | with-workdir /src | with-exec git,clone,https://github.com/dagger/dagger.git,.,--depth=1 | file README.md | contents", alpineImage)
-	out, err := modInit(t, c, "go", "").
-		With(daggerShell(script)).
-		Stdout(ctx)
-	require.NoError(t, err)
-	require.Contains(t, out, "What is Dagger?")
 }
 
 func (ShellSuite) TestDefaultToModule(ctx context.Context, t *testctx.T) {
@@ -92,10 +80,9 @@ func (ShellSuite) TestNoModule(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	modGen := daggerCliBase(t, c)
 
-	t.Run("first command fallback to core", func(ctx context.Context, t *testctx.T) {
-		out, err := modGen.With(daggerShell("container")).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "Container", gjson.Get(out, "_type").String())
+	t.Run("first command no fallback to core", func(ctx context.Context, t *testctx.T) {
+		_, err := modGen.With(daggerShell("container")).Sync(ctx)
+		require.ErrorContains(t, err, "module not loaded")
 	})
 
 	t.Run("module builtin does not work", func(ctx context.Context, t *testctx.T) {
@@ -208,6 +195,14 @@ type Foo struct{
 		require.NoError(t, err)
 		require.Equal(t, "testbar", out)
 	})
+}
+
+func (ShellSuite) TestNotExists(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+	_, err := modInit(t, c, "go", "").
+		With(daggerShell("container")).
+		Sync(ctx)
+	require.ErrorContains(t, err, "no such function")
 }
 
 func (ShellSuite) TestExport(ctx context.Context, t *testctx.T) {

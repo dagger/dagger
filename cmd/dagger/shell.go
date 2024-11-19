@@ -544,22 +544,20 @@ func (h *shellCallHandler) entrypointCall(ctx context.Context, args []string) (*
 		shellLogf(ctx, "[DBG] └ Entrypoint(%v)\n", args)
 	}
 
-	def := h.modDef(nil)
+	def, err := h.GetModuleDef(nil)
+	if err != nil {
+		return nil, err
+	}
 	st := h.newState()
 
-	// 1. Same-module call (eg. 'build')
+	// Same-module call (eg. 'build')
 	if def.HasModule() && def.HasFunction(def.MainObject.AsFunctionProvider(), args[0]) {
 		return h.constructorCall(def, st)
 	}
 
-	// 2. Core function call (eg. 'git')
-	if def.HasCoreFunction(args[0]) {
-		return st, nil
-	}
+	// TODO: Dependency short name (eg. 'wolfi container')
 
-	// TODO: 3. Dependency short name (eg. 'wolfi container')
-
-	return nil, fmt.Errorf("no such module or core function: %q", args[0])
+	return nil, fmt.Errorf("no such function: %q", args[0])
 }
 
 func (h *shellCallHandler) constructorCall(md *moduleDef, st *ShellState) (*ShellState, error) {
