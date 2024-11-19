@@ -184,10 +184,10 @@ func (d Docs) Generate(ctx context.Context) (*dagger.Directory, error) {
 
 // Regenerate the CLI reference docs
 func (d Docs) GenerateCli() *dagger.Directory {
-	// Should we keep `--include-experimental`?
-	generated := d.Dagger.Go().Env().
-		WithExec([]string{"go", "run", "./cmd/dagger", "gen", "--frontmatter=" + cliZenFrontmatter, "--output=cli.mdx", "--include-experimental"}).
-		File("cli.mdx")
+	generated := dag.DaggerCli().Reference(dagger.DaggerCliReferenceOpts{
+		Frontmatter:         cliZenFrontmatter,
+		IncludeExperimental: true,
+	})
 	return dag.Directory().WithFile(generatedCliZenPath, generated)
 }
 

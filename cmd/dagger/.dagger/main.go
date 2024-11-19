@@ -66,7 +66,7 @@ func (cli DaggerCli) Reference(
 		cmd = append(cmd, "--include-experimental")
 	}
 	if frontmatter != "" {
-		cmd = append(cmd, "--frontmatter", frontmatter)
+		cmd = append(cmd, "--frontmatter="+frontmatter)
 	}
 	return cli.Gomod.
 		Env().
