@@ -10,6 +10,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// Constructor
 func New(
 	source *dagger.Directory,
 ) *MyModule {
