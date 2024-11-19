@@ -34,24 +34,19 @@ class MyModule {
    */
   @func()
   async typecheck(): Promise<string> {
-    return this.buildEnv().withExec(["npm", "run", "typecheck"]).stdout()
+    return this.buildEnv().withExec(["npm", "run", "type-check"]).stdout()
   }
 
   /**
    * Run linter, type-checker, unit tests concurrently
    */
   @func()
-  async runAllTests(): Promise<string> {
-    try {
-      const [testResult, lintResult, typecheckResult] = await Promise.all([
-        this.test(),
-        this.lint(),
-        this.typecheck()
-      ])
-      return [testResult, lintResult, typecheckResult].join("\n")
-    } catch (error) {
-      throw new Error(`Error: ${error}`)
-    }
+  async runAllTests(): Promise<void> {
+    await Promise.all([
+      this.test(),
+      this.lint(),
+      this.typecheck()
+    ])
   }
 
   /**
