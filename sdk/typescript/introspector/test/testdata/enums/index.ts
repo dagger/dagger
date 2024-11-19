@@ -1,10 +1,15 @@
-import { func, object, field, enumType } from "../../../decorators/decorators.js"
+import {
+  enumType,
+  field,
+  func,
+  object,
+} from "../../../decorators/decorators.js"
 
 /**
  * Enum for Status
  */
 @enumType()
-class Status {
+export class Status {
   /**
    * Active status
    */

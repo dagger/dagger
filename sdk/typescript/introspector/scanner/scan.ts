@@ -1,31 +1,21 @@
-import ts from "typescript"
+import { IntrospectionError } from "../../common/errors/IntrospectionError.js"
+import { load } from "../../entrypoint/load.js"
+import { convertToPascalCase } from "./case_convertor.js"
+import { DaggerModule } from "./dagger_module/module.js"
+import { AST } from "./typescript_module/ast.js"
 
-import { DaggerModule } from "./abtractions/module.js"
-
-/**
- * Scan the list of TypeScript File using the TypeScript compiler API.
- *
- * This function introspect files and returns metadata of their class and
- * functions that should be exposed to the Dagger API.
- *
- * WARNING(28/11/23): This does NOT include arrow style function.
- *
- * @param files List of TypeScript files to introspect.
- * @param moduleName The name of the module to introspect.
- */
-export function scan(files: string[], moduleName = ""): DaggerModule {
+export async function scan(files: string[], moduleName = "") {
   if (files.length === 0) {
-    throw new Error("no files to introspect found")
+    throw new IntrospectionError("no files to introspect found")
   }
+
+  const formattedModuleName = convertToPascalCase(moduleName)
+  const userModule = await load(files)
 
   // Interpret the given typescript source files.
-  const program = ts.createProgram(files, { experimentalDecorators: true })
-  const checker = program.getTypeChecker()
+  const ast = new AST(files, userModule)
 
-  const module = new DaggerModule(checker, moduleName, program.getSourceFiles())
-  if (Object.keys(module.objects).length === 0) {
-    throw new Error("no objects found in the module")
-  }
+  const module = new DaggerModule(formattedModuleName, userModule, ast)
 
   return module
 }

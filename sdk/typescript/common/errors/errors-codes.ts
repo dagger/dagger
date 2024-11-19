@@ -48,6 +48,11 @@ export const ERROR_CODES = {
    * (@link ExecError}
    */
   ExecError: "D109",
+
+  /**
+   * {@link IntrospectionError}
+   */
+  IntrospectionError: "D110",
 } as const
 
 type ErrorCodesType = typeof ERROR_CODES

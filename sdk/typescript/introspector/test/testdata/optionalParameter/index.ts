@@ -39,7 +39,7 @@ export class OptionalParameter {
 
   @func()
   array(
-    a: string[],
+    a: string[] = ["a", "b", "c", "d"],
     b: (string | null)[],
     c: (string | null)[] | null,
   ): string {

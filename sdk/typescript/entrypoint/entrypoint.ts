@@ -28,7 +28,7 @@ export async function entrypoint() {
       const moduleName = await dag.currentModule().name()
       const parentName = await fnCall.parentName()
 
-      const scanResult = scan(files, moduleName)
+      const scanResult = await scan(files, moduleName)
 
       // Pre allocate the result, we got one in both case.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -50,7 +50,7 @@ export async function entrypoint() {
         }
 
         const modules = await load(files)
-        const executor = new Executor(modules)
+        const executor = new Executor(modules, scanResult)
 
         try {
           result = await invoke(executor, scanResult, {

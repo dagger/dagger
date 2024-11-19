@@ -2,15 +2,19 @@
 import Module from "node:module"
 
 import { FunctionNotFound } from "../../common/errors/FunctionNotFound.js"
+import { DaggerModule } from "../scanner/dagger_module/module.js"
 
 export type State = { [property: string]: any }
 
 export type Args = Record<string, unknown>
 
 export class Executor {
-  constructor(public readonly modules: Module[]) {}
+  constructor(
+    public readonly modules: Module[],
+    private readonly daggerModule: DaggerModule,
+  ) {}
 
-  private getObject(object: string): any {
+  private getExportedObject(object: string): any {
     const key = object as keyof Module
     const module = this.modules.find((m) => m[key] !== undefined)
     if (!module) {
@@ -21,12 +25,26 @@ export class Executor {
   }
 
   buildClass(object: string, state: State): any {
-    const obj = this.getObject(object)
+    const daggerObject = this.daggerModule.objects[object]
+    if (!daggerObject) {
+      throw new FunctionNotFound(
+        `Object ${object} not found in the introspection`,
+      )
+    }
 
-    const instanciatedClass = Object.create(obj.prototype)
-    Object.assign(instanciatedClass, state)
+    switch (daggerObject.kind()) {
+      case "class": {
+        const obj = this.getExportedObject(object)
 
-    return instanciatedClass
+        const instanciatedClass = Object.create(obj.prototype)
+        Object.assign(instanciatedClass, state)
+
+        return instanciatedClass
+      }
+      case "object": {
+        return state
+      }
+    }
   }
 
   async getResult(
@@ -35,7 +53,7 @@ export class Executor {
     state: State,
     inputs: Args,
   ): Promise<any> {
-    const obj = this.getObject(object)
+    const obj = this.getExportedObject(object)
 
     if (method === "") {
       return new obj(...Object.values(inputs))

@@ -4,10 +4,10 @@
 import { func, object } from "../../../decorators/decorators.js"
 
 /**
- * HelloWorld class
+ * Constructor class
  */
 @object()
-export class HelloWorld {
+export class Constructor {
   name: string
 
   constructor(name: string = "world") {

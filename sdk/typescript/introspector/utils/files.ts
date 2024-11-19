@@ -27,7 +27,7 @@ export async function listFiles(dir = "."): Promise<string[]> {
 
       const ext = path.extname(filepath)
       if (allowedExtensions.find((allowedExt) => allowedExt === ext)) {
-        return [`${dir}/${file}`]
+        return [path.join(dir, file)]
       }
 
       return []

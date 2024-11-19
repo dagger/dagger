@@ -1,4 +1,4 @@
-import { object, func } from "@dagger.io/dagger";
+import { func, object } from "../../../decorators/decorators.js"
 
 /**
  * This is the Minimal object

@@ -30,9 +30,9 @@ describe("Invoke typescript function", function () {
 
     // Load function
     const modules = await load(files)
-    const executor = new Executor(modules)
 
-    const scanResult = scan(files)
+    const scanResult = await scan(files, "helloWorld")
+    const executor = new Executor(modules, scanResult)
 
     // Mocking the fetch from the dagger API
     const input = {
@@ -55,9 +55,8 @@ describe("Invoke typescript function", function () {
 
     // Load function
     const modules = await load(files)
-    const executor = new Executor(modules)
-
-    const scanResult = scan(files)
+    const scanResult = await scan(files, "multipleObjects")
+    const executor = new Executor(modules, scanResult)
 
     // Mocking the fetch from the dagger API
     const input = {
@@ -86,9 +85,8 @@ describe("Invoke typescript function", function () {
 
     // Load function
     const modules = await load(files)
-    const executor = new Executor(modules)
-
-    const scanResult = scan(files)
+    const scanResult = await scan(files, "multiArgs")
+    const executor = new Executor(modules, scanResult)
 
     // Mocking the fetch from the dagger API
     const input = {
@@ -118,9 +116,8 @@ describe("Invoke typescript function", function () {
 
     // Load function
     const modules = await load(files)
-    const executor = new Executor(modules)
-
-    const scanResult = scan(files)
+    const scanResult = await scan(files, "state")
+    const executor = new Executor(modules, scanResult)
 
     // We wrap the execution into a Dagger connection
     await connection(
@@ -194,9 +191,8 @@ describe("Invoke typescript function", function () {
 
     // Load function
     const modules = await load(files)
-    const executor = new Executor(modules)
-
-    const scanResult = scan(files)
+    const scanResult = await scan(files, "multipleObjectsAsFields")
+    const executor = new Executor(modules, scanResult)
 
     const constructorInput = {
       parentName: "MultipleObjectsAsFields",
@@ -300,9 +296,8 @@ describe("Invoke typescript function", function () {
 
         // Load function
         const modules = await load(files)
-        const executor = new Executor(modules)
-
-        const scanResult = scan(files)
+        const scanResult = await scan(files, "variadic")
+        const executor = new Executor(modules, scanResult)
 
         // We wrap the execution into a Dagger connection
         await connection(async () => {
@@ -324,9 +319,8 @@ describe("Invoke typescript function", function () {
 
       // Load function
       const modules = await load(files)
-      const executor = new Executor(modules)
-
-      const scanResult = scan(files)
+      const scanResult = await scan(files, "alias")
+      const executor = new Executor(modules, scanResult)
 
       // We wrap the execution into a Dagger connection
       await connection(async () => {
@@ -368,9 +362,9 @@ describe("Invoke typescript function", function () {
 
       // Load function
       const modules = await load(files)
-      const executor = new Executor(modules)
+      const scanResult = await scan(files, "alias")
+      const executor = new Executor(modules, scanResult)
 
-      const scanResult = scan(files)
       await connection(async () => {
         const constructorInput = {
           parentName: "Alias", // class name
@@ -412,9 +406,8 @@ describe("Invoke typescript function", function () {
 
       // Load function
       const modules = await load(files)
-      const executor = new Executor(modules)
-
-      const scanResult = scan(files)
+      const scanResult = await scan(files, "optionalParameter")
+      const executor = new Executor(modules, scanResult)
 
       // Mocking the fetch from the dagger API
       const input = {
@@ -437,9 +430,8 @@ describe("Invoke typescript function", function () {
 
       // Load function
       const modules = await load(files)
-      const executor = new Executor(modules)
-
-      const scanResult = scan(files)
+      const scanResult = await scan(files, "optionalParameter")
+      const executor = new Executor(modules, scanResult)
 
       // Mocking the fetch from the dagger API
       const input = {
@@ -469,9 +461,8 @@ describe("Invoke typescript function", function () {
 
     // Load function
     const modules = await load(files)
-    const executor = new Executor(modules)
-
-    const scanResult = scan(files)
+    const scanResult = await scan(files, "objectParam")
+    const executor = new Executor(modules, scanResult)
 
     const inputUpper = {
       parentName: "ObjectParam",
@@ -517,9 +508,8 @@ describe("Invoke typescript function", function () {
 
     // Load function
     const modules = await load(files)
-    const executor = new Executor(modules)
-
-    const scanResult = scan(files)
+    const scanResult = await scan(files, "list")
+    const executor = new Executor(modules, scanResult)
 
     const input = {
       parentName: "List",
@@ -549,8 +539,8 @@ describe("Invoke typescript function", function () {
       assert.fail("failed to load files")
     }
 
-    const executor = new Executor(modules)
-    const module = scan(files)
+    const module = await scan(files, "enums")
+    const executor = new Executor(modules, module)
 
     const inputDefault = {
       parentName: "Enums",

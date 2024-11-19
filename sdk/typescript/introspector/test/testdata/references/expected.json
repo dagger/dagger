@@ -1,0 +1,183 @@
+{
+  "name": "References",
+  "objects": {
+    "References": {
+      "name": "References",
+      "description": "References class\n\ntest",
+      "constructor": {
+        "arguments": {
+          "data": {
+            "name": "data",
+            "description": "",
+            "type": {
+              "kind": "LIST_KIND",
+              "typeDef": {
+                "kind": "OBJECT_KIND",
+                "name": "Data"
+              }
+            },
+            "isVariadic": false,
+            "isNullable": false,
+            "isOptional": false,
+            "defaultValue": []
+          }
+        }
+      },
+      "methods": {
+        "appendData": {
+          "name": "addData",
+          "description": "",
+          "alias": "appendData",
+          "arguments": {
+            "data": {
+              "name": "data",
+              "description": "",
+              "type": {
+                "kind": "LIST_KIND",
+                "typeDef": {
+                  "kind": "OBJECT_KIND",
+                  "name": "Data"
+                }
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false
+            }
+          },
+          "returnType": {
+            "kind": "OBJECT_KIND",
+            "name": "References"
+          }
+        },
+        "dumpDatas": {
+          "name": "dumpDatas",
+          "description": "",
+          "arguments": {},
+          "returnType": {
+            "kind": "LIST_KIND",
+            "typeDef": {
+              "kind": "OBJECT_KIND",
+              "name": "Data"
+            }
+          }
+        },
+        "testEnum": {
+          "name": "testEnum",
+          "description": "",
+          "arguments": {
+            "test": {
+              "name": "test",
+              "description": "",
+              "type": {
+                "kind": "ENUM_KIND",
+                "name": "TestEnum"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false,
+              "defaultValue": "b"
+            }
+          },
+          "returnType": {
+            "kind": "ENUM_KIND",
+            "name": "TestEnum"
+          }
+        },
+        "testEnumStatic": {
+          "name": "testEnumStatic",
+          "description": "",
+          "arguments": {
+            "test": {
+              "name": "test",
+              "description": "",
+              "type": {
+                "kind": "ENUM_KIND",
+                "name": "TestEnum"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false,
+              "defaultValue": "a"
+            }
+          },
+          "returnType": {
+            "kind": "ENUM_KIND",
+            "name": "TestEnum"
+          }
+        },
+        "testDefaultValue": {
+          "name": "testDefaultValue",
+          "description": "Doc\n\nfoo",
+          "arguments": {
+            "foo": {
+              "name": "foo",
+              "description": "Doc\n\ntest",
+              "type": {
+                "kind": "STRING_KIND"
+              },
+              "isVariadic": false,
+              "isNullable": false,
+              "isOptional": false,
+              "defaultValue": "a"
+            }
+          },
+          "returnType": {
+            "kind": "STRING_KIND"
+          }
+        }
+      },
+      "properties": {
+        "data": {
+          "name": "data",
+          "description": "",
+          "type": {
+            "kind": "LIST_KIND",
+            "typeDef": {
+              "kind": "OBJECT_KIND",
+              "name": "Data"
+            }
+          },
+          "isExposed": true
+        }
+      }
+    },
+    "Data": {
+      "name": "Data",
+      "description": "Data",
+      "properties": {
+        "item1": {
+          "name": "item1",
+          "description": "Item 1",
+          "type": {
+            "kind": "STRING_KIND"
+          },
+          "isExposed": true
+        },
+        "item2": {
+          "name": "item2",
+          "description": "",
+          "type": {
+            "kind": "INTEGER_KIND"
+          },
+          "isExposed": true
+        }
+      }
+    }
+  },
+  "enums": {
+    "TestEnum": {
+      "name": "TestEnum",
+      "description": "Test Enum",
+      "values": {
+        "A": {
+          "name": "a",
+          "description": "Field A"
+        },
+        "B": {
+          "name": "b",
+          "description": "Field B"
+        }
+      }
+    }
+  }
+}

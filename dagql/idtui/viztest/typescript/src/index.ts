@@ -4,7 +4,7 @@ import { getTracer } from "@dagger.io/dagger/telemetry"
 let now = new Date().toISOString()
 
 @object()
-class Typescript {
+export class Typescript {
   @func()
   echo(msg: string): Promise<string> {
     return dag.

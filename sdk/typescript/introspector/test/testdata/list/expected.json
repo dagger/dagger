@@ -5,7 +5,7 @@
       "name": "Integer",
       "description": "",
       "constructor": {
-        "args": {
+        "arguments": {
           "value": {
             "name": "value",
             "description": "",
