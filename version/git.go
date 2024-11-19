@@ -310,7 +310,8 @@ func (git *Git) status(ctx context.Context) (string, error) {
 
 	args := []string{"git", "status", "--porcelain", "--"}
 	for _, ignore := range ignores {
-		args = append(args, ":(exclude)"+ignore)
+		pathspec := ":(exclude)" + ignore
+		args = append(args, pathspec, pathspec+"/**")
 	}
 	result, err := git.Container.WithExec(args).Stdout(ctx)
 	if err != nil {
