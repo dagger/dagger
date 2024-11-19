@@ -1421,6 +1421,14 @@ export class Test {
 }
   `))
 
+	t.Run("check default value in doc", func(ctx context.Context, t *testctx.T) {
+		schema := inspectModule(ctx, t, modGen)
+
+		require.Equal(t, "\"world\"", schema.Get("objects.#.asObject|#(name=Test).functions.#(name=str).args.#(name=s).defaultValue").String())
+		require.Equal(t, "4", schema.Get("objects.#.asObject|#(name=Test).functions.#(name=integer).args.#(name=n).defaultValue").String())
+		require.Equal(t, "true", schema.Get("objects.#.asObject|#(name=Test).functions.#(name=bool).args.#(name=b).defaultValue").String())
+	})
+
 	t.Run("string variable default value", func(ctx context.Context, t *testctx.T) {
 		out, err := modGen.With(daggerCall("str")).Stdout(ctx)
 		require.NoError(t, err)
