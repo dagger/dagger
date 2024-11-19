@@ -307,8 +307,8 @@ export class AST {
       case "bigint":
       case "boolean":
       case "object":
-        // Value will be jsonified on registration so it must be a string.
-        return `${value}`
+        // Value will be jsonified on registration.
+        return value
       default:
         // If we cannot resolve the value, we skip it and let the value be resolved automatically by the runtime
         return undefined
