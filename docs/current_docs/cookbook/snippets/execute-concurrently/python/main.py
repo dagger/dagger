@@ -12,24 +12,18 @@ class MyModule:
     async def test(self) -> str:
         """Return the result of running unit tests"""
         return await (
-            self.build_env()
-            .with_exec(["npm", "run", "test:unit", "run"])
-            .stdout()
+            self.build_env().with_exec(["npm", "run", "test:unit", "run"]).stdout()
         )
 
     @function
     async def typecheck(self) -> str:
         """Return the result of running the type checker"""
-        return await (
-            self.build_env().with_exec(["npm", "run", "type-check"]).stdout()
-        )
+        return await self.build_env().with_exec(["npm", "run", "type-check"]).stdout()
 
     @function
     async def lint(self) -> str:
         """Return the result of running the linter"""
-        return await (
-            self.build_env().with_exec(["npm", "run", "lint"]).stdout()
-        )
+        return await self.build_env().with_exec(["npm", "run", "lint"]).stdout()
 
     @function
     async def run_all_tests(self):

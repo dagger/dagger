@@ -16,9 +16,7 @@ class MyModule {
    */
   @func()
   async test(): Promise<string> {
-    return this.buildEnv()
-      .withExec(["npm", "run", "test:unit", "run"])
-      .stdout()
+    return this.buildEnv().withExec(["npm", "run", "test:unit", "run"]).stdout()
   }
 
   /**
@@ -42,11 +40,7 @@ class MyModule {
    */
   @func()
   async runAllTests(): Promise<void> {
-    await Promise.all([
-      this.test(),
-      this.lint(),
-      this.typecheck()
-    ])
+    await Promise.all([this.test(), this.lint(), this.typecheck()])
   }
 
   /**
