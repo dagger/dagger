@@ -1,10 +1,11 @@
 name: Alternative CI Runners
 
 on:
-  # Run the workflow every day at 1AM UTC
-  # That's 2AM CET, 8PM EST & 5PM PST
+  # Run the workflow every day TWICE:
+  # 1. 9:06AM UTC (low activity)
+  # 2. 9:16AM UTC (cache test - high chance of no code changes)
   schedule:
-    - cron: "0 1 * * *"
+    - cron: "0 6,16 9 * *"
   # Enable manual trigger for on-demand runs - helps when debugging
   workflow_dispatch:
 
