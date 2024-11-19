@@ -125,6 +125,18 @@ func (ShellSuite) TestNoLoadModule(ctx context.Context, t *testctx.T) {
 	})
 }
 
+func (ShellSuite) TestExport(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	script := ".directory | with-new-file foo bar | export mydir"
+	out, err := daggerCliBase(t, c).
+		With(daggerShell(script)).
+		File("mydir/foo").
+		Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "bar", out)
+}
+
 func (ShellSuite) TestBasicGit(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
