@@ -149,7 +149,7 @@ module.exports = {
     },
     {
       "type": "category",
-      "label": "Integrating Dagger with CI",
+      "label": "Integrating with CI",
       "link": {
         "type": "doc",
         "id": "integrations/ci"
