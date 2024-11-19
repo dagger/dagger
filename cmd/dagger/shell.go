@@ -221,7 +221,7 @@ func litWord(s string) *syntax.Word {
 
 // run parses code and and executes the interpreter's Runner
 func (h *shellCallHandler) run(ctx context.Context, reader io.Reader, name string) error {
-	file, err := syntax.NewParser().Parse(reader, name)
+	file, err := syntax.NewParser(syntax.Variant(syntax.LangPOSIX)).Parse(reader, name)
 	if err != nil {
 		return err
 	}
