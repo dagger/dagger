@@ -11,20 +11,24 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/internal/cloud/auth"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"golang.org/x/oauth2"
 )
 
 var (
-	configuredCloudSpanExporter  sdktrace.SpanExporter
-	configuredCloudLogsExporter  sdklog.Exporter
-	configuredCloudTelemetry     bool
-	configuredCloudExportersOnce sync.Once
+	configuredCloudSpanExporter    sdktrace.SpanExporter
+	configuredCloudLogsExporter    sdklog.Exporter
+	configuredCloudMetricsExporter sdkmetric.Exporter
+	configuredCloudTelemetry       bool
+	configuredCloudExportersOnce   sync.Once
 )
 
-func ConfiguredCloudExporters(ctx context.Context) (sdktrace.SpanExporter, sdklog.Exporter, bool) {
+func ConfiguredCloudExporters(ctx context.Context) (sdktrace.SpanExporter, sdklog.Exporter, sdkmetric.Exporter, bool) {
 	configuredCloudExportersOnce.Do(func() {
 		var (
 			authHeader string
@@ -69,6 +73,7 @@ func ConfiguredCloudExporters(ctx context.Context) (sdktrace.SpanExporter, sdklo
 
 		tracesURL := cloudEndpoint.JoinPath("v1", "traces")
 		logsURL := cloudEndpoint.JoinPath("v1", "logs")
+		metricsURL := cloudEndpoint.JoinPath("v1", "metrics")
 
 		headers := map[string]string{
 			"Authorization": authHeader,
@@ -90,6 +95,14 @@ func ConfiguredCloudExporters(ctx context.Context) (sdktrace.SpanExporter, sdklo
 			otlploghttp.WithHeaders(headers))
 		if err != nil {
 			slog.Warn("failed to configure cloud tracing", "error", err)
+			return
+		}
+
+		configuredCloudMetricsExporter, err = otlpmetrichttp.New(ctx,
+			otlpmetrichttp.WithEndpointURL(metricsURL.String()),
+			otlpmetrichttp.WithHeaders(headers))
+		if err != nil {
+			slog.Warn("failed to configure cloud metrics", "error", err)
 			return
 		}
 
@@ -126,6 +139,21 @@ func ConfiguredCloudExporters(ctx context.Context) (sdktrace.SpanExporter, sdklo
 				token: token,
 				exp:   configuredCloudLogsExporter,
 			}
+			configuredCloudMetricsExporter = &refreshingMetricExporter{
+				Factory: func(token *oauth2.Token) (sdkmetric.Exporter, error) {
+					authHeader := token.Type() + " " + token.AccessToken
+					newHeaders := map[string]string{}
+					for k, v := range headers {
+						newHeaders[k] = v
+					}
+					newHeaders["Authorization"] = authHeader
+					return otlpmetrichttp.New(ctx,
+						otlpmetrichttp.WithEndpointURL(metricsURL.String()),
+						otlpmetrichttp.WithHeaders(newHeaders))
+				},
+				token: token,
+				exp:   configuredCloudMetricsExporter,
+			}
 		}
 
 		configuredCloudTelemetry = true
@@ -133,6 +161,7 @@ func ConfiguredCloudExporters(ctx context.Context) (sdktrace.SpanExporter, sdklo
 
 	return NewSpanHeartbeater(configuredCloudSpanExporter),
 		configuredCloudLogsExporter,
+		configuredCloudMetricsExporter,
 		configuredCloudTelemetry
 }
 
@@ -223,6 +252,71 @@ func (e *refreshingLogExporter) ForceFlush(ctx context.Context) error {
 }
 
 func (e *refreshingLogExporter) refreshIfNecessary(ctx context.Context) error {
+	if e.token.Valid() {
+		return nil
+	}
+	if err := e.exp.Shutdown(ctx); err != nil {
+		return fmt.Errorf("shutdown old exporter: %w", err)
+	}
+	var err error
+	e.token, err = auth.Token(ctx)
+	if err != nil {
+		return fmt.Errorf("get new token: %w", err)
+	}
+	e.exp, err = e.Factory(e.token)
+	if err != nil {
+		return fmt.Errorf("create new exporter: %w", err)
+	}
+	return nil
+}
+
+type refreshingMetricExporter struct {
+	Factory func(*oauth2.Token) (sdkmetric.Exporter, error)
+
+	token *oauth2.Token
+	exp   sdkmetric.Exporter
+
+	mu sync.Mutex
+}
+
+var _ sdkmetric.Exporter = (*refreshingMetricExporter)(nil)
+
+func (e *refreshingMetricExporter) Temporality(ik sdkmetric.InstrumentKind) metricdata.Temporality {
+	return e.exp.Temporality(ik)
+}
+
+func (e *refreshingMetricExporter) Aggregation(ik sdkmetric.InstrumentKind) sdkmetric.Aggregation {
+	return e.exp.Aggregation(ik)
+}
+
+func (e *refreshingMetricExporter) Export(ctx context.Context, metrics *metricdata.ResourceMetrics) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if err := e.refreshIfNecessary(ctx); err != nil {
+		return fmt.Errorf("refresh exporter: %w", err)
+	}
+	return e.exp.Export(ctx, metrics)
+}
+
+func (e *refreshingMetricExporter) Shutdown(ctx context.Context) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if err := e.refreshIfNecessary(ctx); err != nil {
+		return fmt.Errorf("refresh exporter: %w", err)
+	}
+	return e.exp.Shutdown(ctx)
+}
+
+func (e *refreshingMetricExporter) ForceFlush(ctx context.Context) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if err := e.refreshIfNecessary(ctx); err != nil {
+		return fmt.Errorf("refresh exporter: %w", err)
+	}
+	return e.exp.ForceFlush(ctx)
+}
+
+func (e *refreshingMetricExporter) refreshIfNecessary(ctx context.Context) error {
 	if e.token.Valid() {
 		return nil
 	}

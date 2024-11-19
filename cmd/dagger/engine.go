@@ -74,10 +74,10 @@ func initEngineTelemetry(ctx context.Context) (context.Context, func(error)) {
 		LiveLogExporters:    []sdklog.Exporter{Frontend.LogExporter()},
 		LiveMetricExporters: []sdkmetric.Exporter{Frontend.MetricExporter()},
 	}
-	if spans, logs, ok := enginetel.ConfiguredCloudExporters(ctx); ok {
+	if spans, logs, metrics, ok := enginetel.ConfiguredCloudExporters(ctx); ok {
 		telemetryCfg.LiveTraceExporters = append(telemetryCfg.LiveTraceExporters, spans)
 		telemetryCfg.LiveLogExporters = append(telemetryCfg.LiveLogExporters, logs)
-		// TODO: metrics to cloud
+		telemetryCfg.LiveMetricExporters = append(telemetryCfg.LiveMetricExporters, metrics)
 	}
 	ctx = telemetry.Init(ctx, telemetryCfg)
 
