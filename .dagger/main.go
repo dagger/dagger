@@ -27,6 +27,12 @@ type DaggerDev struct {
 	// Can be used by nested clients to forward docker credentials to avoid
 	// rate limits
 	DockerCfg *dagger.Secret // +private
+
+	// github event file
+	GithubEventFile *dagger.File
+
+	// tags to associate the runs
+	Tags []string
 }
 
 func New(
@@ -38,6 +44,12 @@ func New(
 
 	// +optional
 	dockerCfg *dagger.Secret,
+
+	// +optional
+	githubEventFile *dagger.File,
+
+	// +optional
+	tags []string,
 ) (*DaggerDev, error) {
 	v := dag.Version()
 	version, err := v.Version(ctx)
@@ -50,11 +62,13 @@ func New(
 	}
 
 	dev := &DaggerDev{
-		Src:       source,
-		Tag:       tag,
-		Git:       v.Git(),
-		Version:   version,
-		DockerCfg: dockerCfg,
+		Src:             source,
+		Tag:             tag,
+		Git:             v.Git(),
+		Version:         version,
+		DockerCfg:       dockerCfg,
+		GithubEventFile: githubEventFile,
+		Tags:            tags,
 	}
 
 	modules, err := dev.containing(ctx, "dagger.json")

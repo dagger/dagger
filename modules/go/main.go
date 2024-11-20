@@ -81,6 +81,7 @@ func New(
 				// The specific version is dictated by Dagger's own requirement
 				// FIXME: make this optional with overlay support
 				"protoc~3.21.12",
+				"curl",
 			}}).
 			WithEnvVariable("GOLANG_VERSION", version).
 			WithEnvVariable("GOPATH", "/go").
@@ -89,6 +90,7 @@ func New(
 			// Configure caches
 			WithMountedCache("/go/pkg/mod", moduleCache).
 			WithMountedCache("/root/.cache/go-build", buildCache).
+			WithExec([]string{"go", "install", "gotest.tools/gotestsum@v1.12.0"}).
 			WithWorkdir("/app")
 	}
 	return Go{
