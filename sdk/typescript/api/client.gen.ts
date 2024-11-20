@@ -739,6 +739,10 @@ export type DirectoryWithNewFileOpts = {
  */
 export type DirectoryID = string & { __DirectoryID: never }
 
+export type EngineCacheEntrySetOpts = {
+  key?: string
+}
+
 /**
  * The `EngineCacheEntryID` scalar type represents an identifier for an object of type EngineCacheEntry.
  */
@@ -3814,12 +3818,13 @@ export class EngineCache extends BaseClient {
   /**
    * The current set of entries in the cache
    */
-  entrySet = (): EngineCacheEntrySet => {
+  entrySet = (opts?: EngineCacheEntrySetOpts): EngineCacheEntrySet => {
     return new EngineCacheEntrySet({
       queryTree: [
         ...this._queryTree,
         {
           operation: "entrySet",
+          args: { ...opts },
         },
       ],
       ctx: this._ctx,
