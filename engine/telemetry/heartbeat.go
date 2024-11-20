@@ -85,7 +85,7 @@ func (p *SpanHeartbeater) heartbeat() {
 				stayinAlive = append(stayinAlive, span)
 			}
 			if len(stayinAlive) > 0 {
-				if err := p.SpanExporter.ExportSpans(p.heartbeatCtx, stayinAlive); err != nil {
+				if err := p.SpanExporter.ExportSpans(p.heartbeatCtx, stayinAlive); err != nil && !errors.Is(err, context.Canceled) {
 					slog.Warn("failed to heartbeat live spans", "error", err)
 				}
 			}
