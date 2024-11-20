@@ -259,9 +259,6 @@ func (d DynamicID) TypeName() string {
 var _ dagql.InputDecoder = DynamicID{}
 
 func (d DynamicID) DecodeInput(val any) (dagql.Input, error) {
-	if val == nil {
-		val = ""
-	}
 	switch x := val.(type) {
 	case string:
 		var idp call.ID

@@ -43,10 +43,6 @@ func (p Void) ToLiteral() call.Literal {
 var _ dagql.ScalarType = Void{}
 
 func (Void) DecodeInput(val any) (dagql.Input, error) {
-	switch val.(type) {
-	case nil:
-		return nil, nil
-	default:
-		return nil, fmt.Errorf("cannot convert %T to Void", val)
-	}
+	// void types cannot be constructed - they have no corresponding valid values
+	return nil, fmt.Errorf("cannot convert %T to Void", val)
 }
