@@ -191,9 +191,10 @@ func (dev *DaggerDev) Generate(ctx context.Context) (*dagger.Directory, error) {
 		return nil, err
 	}
 
-	return docs.
-		WithDirectory(".", sdks).
-		WithDirectory(".", engine), nil
+	return dag.Directory().
+		WithDirectory("", docs).
+		WithDirectory("", sdks).
+		WithDirectory("", engine), nil
 }
 
 // Develop Dagger SDKs
