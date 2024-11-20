@@ -681,8 +681,8 @@ func (c *Client) OpenTerminal(
 	)
 
 	forwardFD := func(r io.Reader, fn func([]byte) *session.SessionRequest) error {
+		b := make([]byte, 2048)
 		for {
-			b := make([]byte, 2048)
 			n, err := r.Read(b)
 			if err != nil {
 				if err == io.EOF || err == io.ErrClosedPipe {
