@@ -162,30 +162,34 @@ The following Dagger Function accepts a `File` argument representing the host fi
     dagger call copy-file --f=/home/admin/archives.zip directory --path=/src entries
     ```
 
-### Copy a subset of a directory or remote repository to a container
+### Copy a subset of a directory or remote repository to a container using filters specified at run-time
 
-The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or from a [remote Git repository](../api/arguments.mdx#remote-repositories). It copies the specified directory to the `/src` path in a container, using wildcard patterns to exclude specified sub-directories and files, and returns the modified container.
+The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or a [remote Git repository](../api/arguments.mdx#remote-repositories). It copies the specified directory to the `/src` path in a container, using filter patterns specified at call-time to exclude specified sub-directories and files, and returns the modified container.
 
 :::note
 When working with private Git repositories, ensure that [SSH authentication is properly configured](../api/remote-modules.mdx#configuring-ssh-authentication) on your Dagger host.
 :::
 
+:::note
+This is an example of [post-call filtering](../api/fs-filters.mdx#post-call-filtering) with [directory filters](../api/fs-filters.mdx).
+:::
+
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./snippets/copy-filter-dir/go/main.go
+```go file=./snippets/copy-filter-dir-post/go/main.go
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./snippets/copy-filter-dir/python/main.py
+```python file=./snippets/copy-filter-dir-post/python/main.py
 ```
 
 </TabItem>
 <TabItem value="TypeScript">
 
-```typescript file=./snippets/copy-filter-dir/typescript/index.ts
+```typescript file=./snippets/copy-filter-dir-post/typescript/index.ts
 ```
 
 </TabItem>
@@ -242,6 +246,53 @@ Copy the `data.json` host file to the runtime container and process it:
 ```shell
 dagger call copy-file --source=../data.json
 ```
+
+### Copy a subset of a directory or remote repository to a container using pre-defined filters
+
+The following Dagger Function accepts a `Directory` argument, which could reference either a directory from the local filesystem or a [remote Git repository](../api/arguments.mdx#remote-repositories). It copies the specified directory to the `/src` path in a container, using pre-defined filter patterns to exclude specified sub-directories and files, and returns the modified container.
+
+:::note
+When working with private Git repositories, ensure that [SSH authentication is properly configured](../api/remote-modules.mdx#configuring-ssh-authentication) on your Dagger host.
+:::
+
+:::note
+This is an example of [pre-call filtering](../api/fs-filters.mdx#pre-call-filtering) with [directory filters](../api/fs-filters.mdx).
+:::
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/copy-filter-dir-pre/go/main.go
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/copy-filter-dir-pre/python/main.py
+```
+
+</TabItem>
+<TabItem value="TypeScript">
+
+```typescript file=./snippets/copy-filter-dir-pre/typescript/index.ts
+```
+
+</TabItem>
+</Tabs>
+
+#### Examples
+
+- Copy the specified host directory to `/src` in the container, excluding everything except Markdown files, and return the modified container:
+
+    ```shell
+    dagger call copy-directory-with-exclusions --source=../docs
+    ```
+
+- Copy the public `dagger/dagger` GitHub repository to `/src` in the container, excluding everything except Markdown files, and list the contents of the `/src` directory in the container:
+
+    ```shell
+    dagger call copy-directory-with-exclusions --source=https://github.com/dagger/dagger#main directory --path=/src entries
+    ```
 
 ## Builds
 
