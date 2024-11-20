@@ -34,6 +34,7 @@ import (
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/tonistiigi/fsutil"
 	fstypes "github.com/tonistiigi/fsutil/types"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -457,6 +458,8 @@ func debugContainer(ctx context.Context, execOp *bksolverpb.ExecOp, execErr *llb
 	if err != nil {
 		return err
 	}
+	// always close term; it's wrapped in a once so it won't be called multiple times
+	defer term.Close(bkgwpb.UnknownExitStatus)
 
 	output := idtui.NewOutput(term.Stderr)
 	fmt.Fprint(term.Stderr,
@@ -477,6 +480,8 @@ func debugContainer(ctx context.Context, execOp *bksolverpb.ExecOp, execErr *llb
 		debugCommand = client.Opts.InteractiveCommand
 	}
 
+	eg, ctx := errgroup.WithContext(ctx)
+
 	dbgShell, err := dbgCtr.Start(ctx, bkgw.StartRequest{
 		Args: debugCommand,
 
@@ -494,21 +499,38 @@ func debugContainer(ctx context.Context, execOp *bksolverpb.ExecOp, execErr *llb
 	if err != nil {
 		return err
 	}
-	go func() {
+
+	eg.Go(func() error {
+		err := <-term.ErrCh
+		if err != nil {
+			return fmt.Errorf("terminal error: %w", err)
+		}
+		return nil
+	})
+	eg.Go(func() error {
 		for resize := range term.ResizeCh {
-			dbgShell.Resize(ctx, resize)
+			err := dbgShell.Resize(ctx, resize)
+			if err != nil {
+				return fmt.Errorf("failed to resize terminal: %w", err)
+			}
 		}
-	}()
-	waitErr := dbgShell.Wait()
-	termExitCode := 0
-	if waitErr != nil {
-		termExitCode = 1
-		var exitErr *bkgwpb.ExitError
-		if errors.As(waitErr, &exitErr) {
-			termExitCode = int(exitErr.ExitCode)
+		return nil
+	})
+	eg.Go(func() error {
+		waitErr := dbgShell.Wait()
+		termExitCode := 0
+		if waitErr != nil {
+			termExitCode = 1
+			var exitErr *bkgwpb.ExitError
+			if errors.As(waitErr, &exitErr) {
+				termExitCode = int(exitErr.ExitCode)
+			}
 		}
-	}
-	return term.Close(termExitCode)
+
+		return term.Close(termExitCode)
+	})
+
+	return eg.Wait()
 }
 
 func getExecMetaFile(ctx context.Context, c *Client, mntable snapshot.Mountable, fileName string) ([]byte, error) {

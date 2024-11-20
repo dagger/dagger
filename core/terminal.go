@@ -42,10 +42,14 @@ func (container *Container) Terminal(
 	if err != nil {
 		return fmt.Errorf("failed to get buildkit client: %w", err)
 	}
+
 	term, err := bk.OpenTerminal(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to open terminal: %w", err)
 	}
+	// always close term; it's wrapped in a once so it won't be called multiple times
+	defer term.Close(bkgwpb.UnknownExitStatus)
+
 	output := idtui.NewOutput(term.Stderr)
 	fmt.Fprint(
 		term.Stderr,
