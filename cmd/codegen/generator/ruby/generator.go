@@ -63,7 +63,7 @@ func (g *RubyGenerator) Generate(_ context.Context, schema *introspection.Schema
 
 	target := ClientGenFile
 	if g.Config.ModuleName != "" {
-		target = filepath.Join(g.Config.ModuleContextPath, "lib/dagger/gen", ClientGenFile)
+		target = filepath.Join(g.Config.ModuleContextPath, "lib/dagger", ClientGenFile)
 	}
 	if err := mfs.MkdirAll(filepath.Dir(target), 0700); err != nil {
 		return nil, err

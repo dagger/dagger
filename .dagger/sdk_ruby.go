@@ -3,11 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
-	"go.opentelemetry.io/otel/codes"
-	"golang.org/x/sync/errgroup"
 	"path"
 	"path/filepath"
 	"strings"
+
+	"go.opentelemetry.io/otel/codes"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/dagger/dagger/.dagger/build"
 	"github.com/dagger/dagger/.dagger/internal/dagger"
@@ -18,8 +19,8 @@ import (
 const (
 	rubyRuntimeSubdir    = "sdk/ruby/runtime"
 	rubySdkSubdir        = "sdk/ruby"
-	rubyGeneratedAPIDir  = "sdk/ruby/lib/dagger/gen"
-	rubyGeneratedAPIPath = "sdk/ruby/lib/dagger/gen/client.gen.rb"
+	rubyGeneratedAPIDir  = "sdk/ruby/lib/dagger"
+	rubyGeneratedAPIPath = "sdk/ruby/lib/dagger/client.gen.rb"
 
 	rubyVersion = "3.3.6"
 )

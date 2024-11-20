@@ -14,7 +14,7 @@ const (
 	RubyImage        = "ruby:3.3.6-alpine3.20"
 	RubyDigest       = "sha256:caeab43b356463e63f87af54a03de1ae4687b36da708e6d37025c557ade450f8"
 	ModSourceDirPath = "/src"
-	GenPath          = "lib/dagger/gen"
+	GenPath          = "lib/dagger"
 	codegenBinPath   = "/codegen"
 	schemaPath       = "/schema.json"
 )
@@ -127,7 +127,7 @@ func (m *RubySdk) CodegenBase(
 				"lib",
 			},
 			Exclude: []string{
-				"lib/dagger/gen/client.gen.rb",
+				"lib/dagger/client.gen.rb",
 			},
 		}).
 		WithDirectory(filepath.Join(m.moduleConfig.modulePath(), GenPath), sdk, dagger.ContainerWithDirectoryOpts{

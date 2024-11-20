@@ -65,14 +65,4 @@ module Dagger
       node.value(res)
     end
   end
-
-  def connect
-    @connect ||= Client.new(nil, gqlclient, '')
-  end
-  module_function :connect
-
-  def gqlclient
-    @gqlclient ||= GraphQLClient.new
-  end
-  module_function :gqlclient
 end
