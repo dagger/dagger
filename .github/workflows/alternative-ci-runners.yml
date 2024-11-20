@@ -1,10 +1,11 @@
 name: Alternative CI Runners
 
 on:
-  # Run the workflow every day at 1AM UTC
-  # That's 2AM CET, 8PM EST & 5PM PST
+  # Run the workflow every day TWICE:
+  # 1. 9:06AM UTC (low activity)
+  # 2. 9:16AM UTC (cache test - high chance of no code changes)
   schedule:
-    - cron: "0 1 * * *"
+    - cron: "0 6,16 9 * *"
   # Enable manual trigger for on-demand runs - helps when debugging
   workflow_dispatch:
 
@@ -12,21 +13,21 @@ permissions:
   contents: read
 
 jobs:
-  engine-lint-on-depot:
-    uses: ./.github/workflows/_dagger_on_depot_pre-provisioned_with_cache.yml
-    with:
-      function: engine lint
-  engine-test-on-depot:
-    uses: ./.github/workflows/_dagger_on_depot_pre-provisioned_with_cache.yml
-    with:
-      function: test all --race=true --parallel=16
-      timeout: 30
-  engine-testdev-on-depot:
-    uses: ./.github/workflows/_dagger_on_depot_cli_provisioned.yml
-    with:
-      function: test specific --run='TestModule|TestGo|TestPython|TestTypescript|TestElixir|TestPHP|TestContainer' --skip='TestDev' --race=true --parallel=16
-      size: 32
-      timeout: 30
+  # engine-lint-on-depot:
+  #   uses: ./.github/workflows/_dagger_on_depot_pre-provisioned_with_cache.yml
+  #   with:
+  #     function: engine lint
+  # engine-test-on-depot:
+  #   uses: ./.github/workflows/_dagger_on_depot_pre-provisioned_with_cache.yml
+  #   with:
+  #     function: test all --race=true --parallel=16
+  #     timeout: 30
+  # engine-testdev-on-depot:
+  #   uses: ./.github/workflows/_dagger_on_depot_cli_provisioned.yml
+  #   with:
+  #     function: test specific --run='TestModule|TestGo|TestPython|TestTypescript|TestElixir|TestPHP|TestContainer' --skip='TestDev' --race=true --parallel=16
+  #     size: 32
+  #     timeout: 60
 
   scripts-lint-on-depot:
     uses: ./.github/workflows/_dagger_on_depot_pre-provisioned_with_cache.yml
@@ -47,16 +48,16 @@ jobs:
     with:
       function: helm publish --dry-run=true --tag=main
 
-  sdk-elixir-on-depot:
-    uses: ./.github/workflows/_dagger_on_depot_pre-provisioned_with_cache.yml
-    with:
-      function: check --targets=sdk/elixir
-  sdk-elixir-dev-on-depot:
-    uses: ./.github/workflows/_dagger_on_depot_cli_provisioned.yml
-    with:
-      function: check --targets=sdk/elixir
-      size: 16
-      dev: true
+  # sdk-elixir-on-depot:
+  #   uses: ./.github/workflows/_dagger_on_depot_pre-provisioned_with_cache.yml
+  #   with:
+  #     function: check --targets=sdk/elixir
+  # sdk-elixir-dev-on-depot:
+  #   uses: ./.github/workflows/_dagger_on_depot_cli_provisioned.yml
+  #   with:
+  #     function: check --targets=sdk/elixir
+  #     size: 16
+  #     dev: true
 
   sdk-go-on-depot:
     uses: ./.github/workflows/_dagger_on_depot_pre-provisioned_with_cache.yml
@@ -69,27 +70,27 @@ jobs:
       size: 4
       dev: true
 
-  sdk-java-on-depot:
-    uses: ./.github/workflows/_dagger_on_depot_pre-provisioned_with_cache.yml
-    with:
-      function: check --targets=sdk/java
-  sdk-java-dev-on-depot:
-    uses: ./.github/workflows/_dagger_on_depot_cli_provisioned.yml
-    with:
-      function: check --targets=sdk/java
-      size: 8
-      dev: true
+  # sdk-java-on-depot:
+  #   uses: ./.github/workflows/_dagger_on_depot_pre-provisioned_with_cache.yml
+  #   with:
+  #     function: check --targets=sdk/java
+  # sdk-java-dev-on-depot:
+  #   uses: ./.github/workflows/_dagger_on_depot_cli_provisioned.yml
+  #   with:
+  #     function: check --targets=sdk/java
+  #     size: 8
+  #     dev: true
 
-  sdk-php-on-depot:
-    uses: ./.github/workflows/_dagger_on_depot_pre-provisioned_with_cache.yml
-    with:
-      function: check --targets=sdk/php
-  sdk-php-dev-on-depot:
-    uses: ./.github/workflows/_dagger_on_depot_cli_provisioned.yml
-    with:
-      function: check --targets=sdk/php
-      size: 4
-      dev: true
+  # sdk-php-on-depot:
+  #   uses: ./.github/workflows/_dagger_on_depot_pre-provisioned_with_cache.yml
+  #   with:
+  #     function: check --targets=sdk/php
+  # sdk-php-dev-on-depot:
+  #   uses: ./.github/workflows/_dagger_on_depot_cli_provisioned.yml
+  #   with:
+  #     function: check --targets=sdk/php
+  #     size: 4
+  #     dev: true
 
   sdk-python-on-depot:
     uses: ./.github/workflows/_dagger_on_depot_pre-provisioned_with_cache.yml
@@ -102,16 +103,16 @@ jobs:
       size: 4
       dev: true
 
-  sdk-rust-on-depot:
-    uses: ./.github/workflows/_dagger_on_depot_pre-provisioned_with_cache.yml
-    with:
-      function: check --targets=sdk/rust
-  sdk-rust-dev-on-depot:
-    uses: ./.github/workflows/_dagger_on_depot_cli_provisioned.yml
-    with:
-      function: check --targets=sdk/rust
-      size: 16
-      dev: true
+  # sdk-rust-on-depot:
+  #   uses: ./.github/workflows/_dagger_on_depot_pre-provisioned_with_cache.yml
+  #   with:
+  #     function: check --targets=sdk/rust
+  # sdk-rust-dev-on-depot:
+  #   uses: ./.github/workflows/_dagger_on_depot_cli_provisioned.yml
+  #   with:
+  #     function: check --targets=sdk/rust
+  #     size: 16
+  #     dev: true
 
   sdk-typescript-on-depot:
     uses: ./.github/workflows/_dagger_on_depot_pre-provisioned_with_cache.yml
