@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -13,7 +12,6 @@ import (
 
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/moby/buildkit/cache"
-	"github.com/moby/buildkit/cache/contenthash"
 	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/filesync"
@@ -27,7 +25,6 @@ import (
 	"github.com/moby/locker"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/tonistiigi/fsutil"
-	fscopy "github.com/tonistiigi/fsutil/copy"
 	fstypes "github.com/tonistiigi/fsutil/types"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/time/rate"
@@ -241,136 +238,26 @@ func (ls *localSourceHandler) snapshot(ctx context.Context, session session.Grou
 		clientPath = statMsg.Path
 	}
 
-	if err := ls.sync(ctx, ref, clientPath, caller); err != nil {
+	finalRef, err := ls.sync(ctx, ref, clientPath, session, caller)
+	if err != nil {
 		return nil, fmt.Errorf("failed to sync: %w", err)
-	}
-
-	checksumCtx, checksumSpan := newSpan(ctx, "checksum")
-	dgst, err := ref.cacheCtx.Checksum(
-		checksumCtx,
-		ref.mutRef, // TODO: think through this again, should be fine?
-		clientPath,
-		contenthash.ChecksumOpts{
-			IncludePatterns: ls.src.IncludePatterns,
-			ExcludePatterns: ls.src.ExcludePatterns,
-		},
-		session,
-	)
-	if err != nil {
-		checksumSpan.End()
-		return nil, fmt.Errorf("failed to checksum: %w", err)
-	}
-	checksumSpan.End()
-
-	// TODO:
-	// TODO:
-	// TODO:
-	bklog.G(ctx).Debugf("CONTENT HASH: %s", dgst)
-
-	// TODO: dedupe concurrent requests for same dgst
-
-	searchCtx, searchSpan := newSpan(ctx, "searchContentHash")
-	sis, err := SearchContentHash(searchCtx, ls.cm, dgst)
-	if err != nil {
-		searchSpan.End()
-		return nil, fmt.Errorf("failed to search content hash: %w", err)
-	}
-	for _, si := range sis {
-		finalRef, err := ls.cm.Get(searchCtx, si.ID(), nil)
-		if err == nil {
-			// TODO:
-			// TODO:
-			// TODO:
-			bklog.G(ctx).Debugf("REUSING COPY REF: %s", finalRef.ID())
-
-			searchSpan.End()
-			return finalRef, nil
-		} else {
-			bklog.G(searchCtx).Debugf("failed to get cache ref: %v", err)
-		}
-	}
-	searchSpan.End()
-
-	copyCtx, copySpan := newSpan(ctx, "copy")
-	defer copySpan.End()
-	copyRef, err := ls.cm.New(copyCtx, nil, session)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create new cache ref: %w", err)
-	}
-	// TODO: RELEASE IN ERROR CASES
-	// TODO: RELEASE IN ERROR CASES
-	// TODO: RELEASE IN ERROR CASES
-
-	copyRefMntable, err := copyRef.Mount(copyCtx, false, session)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get mountable: %w", err)
-	}
-	copyRefMnter := snapshot.LocalMounter(copyRefMntable)
-	copyRefMntPath, err := copyRefMnter.Mount()
-	if err != nil {
-		return nil, fmt.Errorf("failed to mount: %w", err)
-	}
-	// TODO: UNMOUNT IN ERROR CASES
-	// TODO: UNMOUNT IN ERROR CASES
-	// TODO: UNMOUNT IN ERROR CASES
-
-	copyOpts := []fscopy.Opt{
-		func(ci *fscopy.CopyInfo) {
-			ci.IncludePatterns = ls.src.IncludePatterns
-			ci.ExcludePatterns = ls.src.ExcludePatterns
-
-			ci.CopyDirContents = true
-		},
-		fscopy.WithXAttrErrorHandler(func(dst, src, key string, err error) error {
-			bklog.G(copyCtx).Debugf("xattr error: %v", err)
-			return nil
-		}),
-	}
-
-	/* TODO: equivalent of this
-	defer func() {
-		var osErr *os.PathError
-		if errors.As(err, &osErr) {
-			// remove system root from error path if present
-			osErr.Path = strings.TrimPrefix(osErr.Path, src)
-			osErr.Path = strings.TrimPrefix(osErr.Path, dest)
-		}
-	}()
-	*/
-
-	if err := fscopy.Copy(copyCtx, ref.mntPath, clientPath, copyRefMntPath, "/", copyOpts...); err != nil {
-		return nil, fmt.Errorf("failed to copy %q: %w", clientPath, err)
-	}
-
-	if err := copyRefMnter.Unmount(); err != nil {
-		return nil, fmt.Errorf("failed to unmount: %w", err)
-	}
-
-	finalRef, err := copyRef.Commit(copyCtx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to commit: %w", err)
-	}
-	if err := finalRef.Finalize(copyCtx); err != nil {
-		return nil, fmt.Errorf("failed to finalize: %w", err)
-	}
-
-	// TODO: Put buildkit's cachecontext md on this ref so solver reuses it
-	// TODO: Put buildkit's cachecontext md on this ref so solver reuses it
-	// TODO: Put buildkit's cachecontext md on this ref so solver reuses it
-	// TODO: Put buildkit's cachecontext md on this ref so solver reuses it
-	if err := (CacheRefMetadata{finalRef}).SetContentHashKey(dgst); err != nil {
-		return nil, fmt.Errorf("failed to set content hash key: %w", err)
 	}
 
 	return finalRef, nil
 }
 
-func (ls *localSourceHandler) sync(ctx context.Context, ref *filesyncCacheRef, clientPath string, caller session.Caller) (rerr error) {
+func (ls *localSourceHandler) sync(
+	ctx context.Context,
+	ref *filesyncCacheRef,
+	clientPath string,
+	session session.Group,
+	caller session.Caller,
+) (_ cache.ImmutableRef, rerr error) {
 	ctx, syncSpan := newSpan(ctx, "sync")
 	defer syncSpan.End()
 
 	if err := ls.syncParentDirs(ctx, ref, clientPath, caller); err != nil {
-		return fmt.Errorf("failed to sync parent dirs: %w", err)
+		return nil, fmt.Errorf("failed to sync parent dirs: %w", err)
 	}
 
 	ctx, cancel := context.WithCancelCause(ctx)
@@ -380,7 +267,7 @@ func (ls *localSourceHandler) sync(ctx context.Context, ref *filesyncCacheRef, c
 
 	remote, err := newRemoteFS(ctx, caller, clientPath, ls.src.IncludePatterns, ls.src.ExcludePatterns)
 	if err != nil {
-		return fmt.Errorf("failed to create remote fs: %w", err)
+		return nil, fmt.Errorf("failed to create remote fs: %w", err)
 	}
 	defer func() {
 		if err := remote.Close(); err != nil {
@@ -390,17 +277,17 @@ func (ls *localSourceHandler) sync(ctx context.Context, ref *filesyncCacheRef, c
 
 	local, err := NewLocalFS(ref.sharedState, clientPath, ls.src.IncludePatterns, ls.src.ExcludePatterns)
 	if err != nil {
-		return fmt.Errorf("failed to create local fs: %w", err)
+		return nil, fmt.Errorf("failed to create local fs: %w", err)
 	}
-	err = local.Sync(ctx, remote)
-	if err != nil {
-		return fmt.Errorf("failed to sync to local fs: %w", err)
-	}
-
-	return nil
+	return local.Sync(ctx, remote, ls.cm, session, false)
 }
 
-func (ls *localSourceHandler) syncParentDirs(ctx context.Context, ref *filesyncCacheRef, clientPath string, caller session.Caller) (rerr error) {
+func (ls *localSourceHandler) syncParentDirs(
+	ctx context.Context,
+	ref *filesyncCacheRef,
+	clientPath string,
+	caller session.Caller,
+) (rerr error) {
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer func() {
 		cancel(rerr)
@@ -429,7 +316,7 @@ func (ls *localSourceHandler) syncParentDirs(ctx context.Context, ref *filesyncC
 	if err != nil {
 		return fmt.Errorf("failed to create local fs: %w", err)
 	}
-	err = local.Sync(ctx, remote)
+	_, err = local.Sync(ctx, remote, ls.cm, nil, true)
 	if err != nil {
 		return fmt.Errorf("failed to sync to local fs: %w", err)
 	}
@@ -445,8 +332,6 @@ type filesyncCacheRef struct {
 	idmap   *idtools.IdentityMapping
 
 	sharedState *localFSSharedState
-
-	cacheCtx contenthash.CacheContext
 
 	usageCount int
 }
@@ -518,24 +403,8 @@ func (ls *localSourceHandler) getRef(
 
 		ref.idmap = mntable.IdentityMapping()
 
-		ref.cacheCtx, err = contenthash.GetCacheContext(ctx, ref.mutRef)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to get cache context: %w", err)
-		}
-
 		ref.sharedState = &localFSSharedState{
 			rootPath: ref.mntPath,
-			contentHasher: func(kind ChangeKind, path string, fi os.FileInfo, err error) error {
-				/*
-					// TODO:
-					// TODO:
-					// TODO:
-					// TODO:
-					bklog.G(ctx).Debugf("CONTENT HASH CB: %s %s %v %v", kind, path, fi, err)
-				*/
-
-				return ref.cacheCtx.HandleChange(fsutil.ChangeKind(kind), path, fi, err)
-			},
 		}
 
 		ls.mu.Lock()
@@ -557,12 +426,6 @@ func (ls *localSourceHandler) getRef(
 		ls.mu.Unlock()
 
 		ctx = context.WithoutCancel(ctx)
-		// TODO: think through error cases where cache context should be cleared
-		// TODO: think through error cases where cache context should be cleared
-		// TODO: think through error cases where cache context should be cleared
-		if err := contenthash.SetCacheContext(ctx, ref.mutRef, ref.cacheCtx); err != nil {
-			rerr = errors.Join(rerr, fmt.Errorf("failed to set cache context: %w", err))
-		}
 		if err := ref.mounter.Unmount(); err != nil {
 			rerr = errors.Join(rerr, fmt.Errorf("failed to unmount: %w", err))
 		}

@@ -17,8 +17,9 @@ type ChangeKind = fsutil.ChangeKind
 
 const (
 	ChangeKindAdd    ChangeKind = fsutil.ChangeKindAdd
-	ChangeKindDelete ChangeKind = fsutil.ChangeKindDelete
 	ChangeKindModify ChangeKind = fsutil.ChangeKindModify
+	ChangeKindDelete ChangeKind = fsutil.ChangeKindDelete
+	ChangeKindNone   ChangeKind = fsutil.ChangeKindDelete + 1
 )
 
 type ChangeFunc func(kind ChangeKind, path string, lowerStat, upperStat *types.Stat) error
@@ -116,7 +117,7 @@ func doubleWalkDiff(ctx context.Context, lower, upper WalkFS, changeFn ChangeFun
 				lowerPath = nil
 				upperPath = nil
 				if same {
-					continue
+					k = ChangeKindNone
 				}
 			}
 			if err := changeFn(k, p, lowerStat, upperStat); err != nil {
