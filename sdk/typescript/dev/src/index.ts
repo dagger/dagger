@@ -1,10 +1,4 @@
-import {
-  dag,
-  Container,
-  object,
-  func,
-  Directory,
-} from "@dagger.io/dagger"
+import { dag, Container, object, func, Directory } from "@dagger.io/dagger"
 
 @object()
 class TypescriptSdkDev {
@@ -17,21 +11,21 @@ class TypescriptSdkDev {
   project: Container
 
   constructor(source: Directory) {
-    // Extract package.json and yarn.lock to a temporary directory
+    // Extract packageon and yarn.lock to a temporary directory
     const dependencyFiles = dag
       .directory()
-      .withFile("package.json", source.file("package.json"))
+      .withFile("packageon", source.file("packageon"))
       .withFile("yarn.lock", source.file("yarn.lock"))
 
     // Get source without generated files nor useless files.
     const sourceCode = dag.directory().withDirectory("/", source, {
       include: [
         "**/*.ts",
-        "tsconfig.json",
-        "package.json",
+        "tsconfigon",
+        "packageon",
         "yarn.lock",
-        ".mocharc.json",
-        "eslint.config.js",
+        ".mocharcon",
+        "eslint.config",
         ".prettierrc.cjs",
       ],
       exclude: ["node_modules", "dist", "dev"],

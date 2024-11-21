@@ -84,8 +84,10 @@ func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, er
 			"**/test",
 			"**/*.spec.ts",
 			"dev",
+			"src/provisioning/library",
 		},
 	})
+
 	sdkCtrTarball := dag.Container().
 		WithRootfs(rootfs).
 		WithFile("/codegen", build.CodegenBinary()).

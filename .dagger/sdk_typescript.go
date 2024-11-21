@@ -19,7 +19,7 @@ import (
 
 const (
 	typescriptRuntimeSubdir    = "sdk/typescript/runtime"
-	typescriptGeneratedAPIPath = "sdk/typescript/api/client.gen.ts"
+	typescriptGeneratedAPIPath = "sdk/typescript/src/api/client.gen.ts"
 
 	nodePreviousLTS = "20.18.1"
 	nodeCurrentLTS  = "22.11.0"
@@ -243,7 +243,7 @@ func (t TypescriptSDK) Bump(ctx context.Context, version string) (*dagger.Direct
 
 	// NOTE: if you change this path, be sure to update .github/workflows/publish.yml so that
 	// provision tests run whenever this file changes.
-	return dag.Directory().WithNewFile("sdk/typescript/provisioning/default.ts", engineReference), nil
+	return dag.Directory().WithNewFile("sdk/typescript/src/provisioning/default.ts", engineReference), nil
 }
 
 func (t TypescriptSDK) nodeJsBase() *dagger.Container {
