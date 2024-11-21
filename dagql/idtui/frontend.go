@@ -410,6 +410,10 @@ func (r renderer) renderMetrics(out *termenv.Output, span *dagui.Span) {
 	r.renderMetricIfNonzero(out, span, telemetry.CPUStatPressureSomeTotal, "CPU Pressure (some)", durationString)
 	r.renderMetricIfNonzero(out, span, telemetry.CPUStatPressureFullTotal, "CPU Pressure (full)", durationString)
 
+	// Memory Stats
+	r.renderMetric(out, span, telemetry.MemoryCurrentBytes, "Memory Bytes (current)", humanizeBytes)
+	r.renderMetric(out, span, telemetry.MemoryPeakBytes, "Memory Bytes (peak)", humanizeBytes)
+
 	// Network Stats
 	r.renderNetworkMetric(out, span, telemetry.NetstatRxBytes, telemetry.NetstatRxDropped, telemetry.NetstatRxPackets, "Network Rx")
 	r.renderNetworkMetric(out, span, telemetry.NetstatTxBytes, telemetry.NetstatTxDropped, telemetry.NetstatTxPackets, "Network Tx")
@@ -456,22 +460,6 @@ func renderPacketLoss(out *termenv.Output, span *dagui.Span, droppedMetric, pack
 				}
 			}
 		}
-	}
-
-	if dataPoints := span.MetricsByName[telemetry.MemoryCurrentBytes]; len(dataPoints) > 0 {
-		lastPoint := dataPoints[len(dataPoints)-1]
-		fmt.Fprint(out, " | ")
-		displayMetric := out.String(fmt.Sprintf("Memory Bytes (current): %s", humanize.Bytes(uint64(lastPoint.Value))))
-		displayMetric = displayMetric.Foreground(termenv.ANSIGreen)
-		fmt.Fprint(out, displayMetric)
-	}
-
-	if dataPoints := span.MetricsByName[telemetry.MemoryPeakBytes]; len(dataPoints) > 0 {
-		lastPoint := dataPoints[len(dataPoints)-1]
-		fmt.Fprint(out, " | ")
-		displayMetric := out.String(fmt.Sprintf("Memory Bytes (peak): %s", humanize.Bytes(uint64(lastPoint.Value))))
-		displayMetric = displayMetric.Foreground(termenv.ANSIGreen)
-		fmt.Fprint(out, displayMetric)
 	}
 }
 
