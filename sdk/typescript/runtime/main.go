@@ -244,9 +244,9 @@ func (t *TypescriptSdk) moduleConfigFiles(path string) []string {
 // Base returns a Node or Bun container with cache setup for node package managers or bun
 func (t *TypescriptSdk) Base() (*dagger.Container, error) {
 	ctr := dag.Container().From(t.moduleConfig.image)
-	
+
 	runtime := t.moduleConfig.runtime
-	version := t.moduleConfig.runtimeVersion	
+	version := t.moduleConfig.runtimeVersion
 
 	switch runtime {
 	case Bun:
@@ -439,7 +439,7 @@ func (t *TypescriptSdk) detectRuntime(ctx context.Context) error {
 
 				return nil
 			default:
-				return fmt.Errorf("unsupported runtime %s", runtime, "please use `dagger.baseImage` to specify a custom base image different from bun or node")
+				return fmt.Errorf("unsupported runtime %s: please use `dagger.baseImage` to specify a custom base image different from bun or node", runtime)
 			}
 		}
 	}
