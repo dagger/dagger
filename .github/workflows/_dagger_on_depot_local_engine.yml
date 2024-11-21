@@ -1,4 +1,4 @@
-name: Dagger on Depot - CLI provisioned
+name: Dagger on Depot - Local Engine
 
 on:
   workflow_call:
@@ -28,7 +28,7 @@ on:
         required: false
 
 jobs:
-  cli-provisioned-dagger-no-cache:
+  local-dagger-engine:
     if: ${{ github.repository == 'dagger/dagger' }}
     runs-on: depot-ubuntu-${{ inputs.ubuntu }}-${{ inputs.size }}
     timeout-minutes: ${{ inputs.timeout }}
@@ -39,5 +39,9 @@ jobs:
         uses: ./.github/actions/call
         with:
           function: ${{ inputs.function }}
-          version: v${{ inputs.dagger }}
+          dev-engine: ${{ inputs.dev }}
+      - name: ${{ inputs.function }} (CACHE TEST)
+        uses: ./.github/actions/call
+        with:
+          function: ${{ inputs.function }}
           dev-engine: ${{ inputs.dev }}

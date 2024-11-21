@@ -1,4 +1,4 @@
-name: Dagger on Depot - Pre-provisioned with Cache
+name: Dagger on Depot - Remote Engine
 
 on:
   workflow_call:
@@ -24,7 +24,7 @@ on:
         required: false
 
 jobs:
-  pre-provisioned-dagger-with-cache:
+  remote-dagger-engine:
     if: ${{ github.repository == 'dagger/dagger' }}
     runs-on: depot-ubuntu-${{ inputs.ubuntu }},dagger=${{ inputs.dagger }}
     timeout-minutes: ${{ inputs.timeout }}
@@ -32,6 +32,12 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
       - name: ${{ inputs.function }}
+        uses: ./.github/actions/call
+        with:
+          function: ${{ inputs.function }}
+          version: v${{ inputs.dagger }}
+          dev-engine: ${{ inputs.dev }}
+      - name: ${{ inputs.function }} (CACHE TEST)
         uses: ./.github/actions/call
         with:
           function: ${{ inputs.function }}
