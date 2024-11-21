@@ -28,7 +28,8 @@ func (s *engineSchema) Install() {
 
 	dagql.Fields[*core.EngineCache]{
 		dagql.NodeFunc("entrySet", s.cacheEntrySet).
-			Doc("The current set of entries in the cache"),
+			Doc("The current set of entries in the cache").
+			Impure("Cache is changing asynchronously in the background"),
 		dagql.Func("prune", s.cachePrune).
 			Impure("Mutates mutable state").
 			Doc("Prune the cache of releaseable entries"),
@@ -68,12 +69,12 @@ func (s *engineSchema) cacheEntrySet(ctx context.Context, parent dagql.Instance[
 	}
 
 	if args.Key == "" {
-		dagql.Taint(ctx)
-		// redirect to a pure value with a unique key so chained queries run
-		// against the same value
 		err := s.srv.Select(ctx, parent, &inst,
 			dagql.Selector{
 				Field: "entrySet",
+				// redirect to a pure value with a unique key so chained queries run
+				// against the same value
+				Pure: true,
 				Args: []dagql.NamedInput{
 					{
 						Name:  "key",
