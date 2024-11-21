@@ -228,7 +228,7 @@ func (d *Discovery) loadModInfo(ctx context.Context, m *PythonSdk) error {
 		m.ModName = modName
 		m.MainObjectName = NormalizeObjectName(modName)
 		m.ProjectName = NormalizeProjectNameFromModule(modName)
-		m.PackageName = NormalizePackageName(modName)
+		m.PackageName = NormalizePackageName(m.ProjectName)
 		d.mu.Unlock()
 		return nil
 	})

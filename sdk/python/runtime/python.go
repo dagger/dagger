@@ -46,8 +46,10 @@ func NormalizeProjectNameFromModule(n string) string {
 
 // NormalizePackageName normalizes the name of the directory where the
 // source files will be imported from
+//
+// Assumes input is the normalized project name.
 func NormalizePackageName(n string) string {
-	return strings.ReplaceAll(NormalizeProjectName(n), "-", "_")
+	return strings.ReplaceAll(n, "-", "_")
 }
 
 // NormalizeObjectName normalizes the name of the class that is the main
