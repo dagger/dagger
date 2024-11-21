@@ -166,7 +166,7 @@ func (CLISuite) TestDaggerInitLICENSE(ctx context.Context, t *testctx.T) {
 		require.Contains(t, content, "Apache License, Version 2.0")
 	})
 
-	t.Run("do not boostrap LICENSE file if license is set empty", func(ctx context.Context, t *testctx.T) {
+	t.Run("do not bootstrap LICENSE file if license is set empty", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		modGen := c.Container().From(golangImage).
@@ -215,7 +215,7 @@ func (CLISuite) TestDaggerInitLICENSE(ctx context.Context, t *testctx.T) {
 			require.Contains(t, content, "Apache License, Version 2.0")
 		})
 
-		t.Run("boostrap custom LICENSE file if sdk and license are specified", func(ctx context.Context, t *testctx.T) {
+		t.Run("bootstrap custom LICENSE file if sdk and license are specified", func(ctx context.Context, t *testctx.T) {
 			modGen := modGen.With(daggerExec("develop", "--sdk=go", `--license=MIT`))
 
 			content, err := modGen.File("LICENSE").Contents(ctx)

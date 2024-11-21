@@ -1126,7 +1126,7 @@ func (w *Worker) installCACerts(ctx context.Context, state *execState) error {
 		}
 
 		// copy the spec by doing a json ser/deser round (this could be more efficient, but
-		// probably not a bottlneck)
+		// probably not a bottleneck)
 		bs, err := json.Marshal(state.spec)
 		if err != nil {
 			return fmt.Errorf("marshal spec: %w", err)

@@ -239,7 +239,7 @@ func litWord(s string) *syntax.Word {
 	return &syntax.Word{Parts: []syntax.WordPart{&syntax.Lit{Value: s}}}
 }
 
-// run parses code and and executes the interpreter's Runner
+// run parses code and executes the interpreter's Runner
 func (h *shellCallHandler) run(ctx context.Context, reader io.Reader, name string) error {
 	file, err := syntax.NewParser(syntax.Variant(syntax.LangPOSIX)).Parse(reader, name)
 	if err != nil {
