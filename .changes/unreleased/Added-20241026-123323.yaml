@@ -1,0 +1,6 @@
+kind: Added
+body: added dagger uninstall command to remove a dependency
+time: 2024-10-26T12:33:23.212344+05:30
+custom:
+    Author: rajatjindal
+    PR: "8745"

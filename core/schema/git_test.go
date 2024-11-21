@@ -23,6 +23,9 @@ func TestMatchVersion(t *testing.T) {
 
 	_, err = matchVersion(vers, "v2.0.1", "/")
 	require.Error(t, err)
+
+	_, err = matchVersion([]string{"hello/v0.3.0"}, "v0.3.0", "/hello")
+	require.NoError(t, err)
 }
 
 func TestIsSemver(t *testing.T) {

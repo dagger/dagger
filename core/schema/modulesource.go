@@ -17,6 +17,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/dagql"
+	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/dagger/dagger/engine/vcs"
@@ -455,6 +456,64 @@ func (s *moduleSchema) moduleSourceWithName(
 	return src, nil
 }
 
+func (s *moduleSchema) filterUnInstalledDeps(ctx context.Context, bk *buildkit.Client, currentDeps []*modules.ModuleConfigDependency, filterDeps []string) ([]*modules.ModuleConfigDependency, error) {
+	if len(filterDeps) == 0 {
+		return currentDeps, nil
+	}
+
+	filterDepsMap := map[string]parsedRefString{}
+	for _, filterDep := range filterDeps {
+		filterDepParsed := parseRefString(ctx, bk, filterDep)
+
+		// for scenario where user tries to uninstall using relative path
+		var cleanDepPath = filepath.Clean(filterDepParsed.modPath)
+
+		filterDepsMap[cleanDepPath] = filterDepParsed
+	}
+
+	effectiveDependencies := []*modules.ModuleConfigDependency{}
+	for _, currentDep := range currentDeps {
+		currentDepParsed := parseRefString(ctx, bk, currentDep.Source)
+
+		uninstalled := false
+		for cleanDepPath, filterDepParsed := range filterDepsMap {
+			// filter by mod path (git source dependency or local path) or dependency name as configured in dagger.json
+			if currentDepParsed.modPath != filterDepParsed.modPath && currentDep.Name != cleanDepPath {
+				continue
+			}
+
+			// return error if the version number was specified to uninstall, but that version is not installed
+			// TODO(rajatjindal): we should possibly resolve commit from a version if current dep has no version specified and
+			// see if we can match Pin() with that commit. But that would mean resolving the commit here.
+			if filterDepParsed.hasVersion && !currentDepParsed.hasVersion {
+				return nil, fmt.Errorf("version %q was requested to be uninstalled but the dependency %q was originally installed without a specific version. Try re-running the uninstall command without specifying the version number", filterDepParsed.modVersion, currentDepParsed.modPath)
+			}
+
+			if filterDepParsed.hasVersion {
+				_, err := matchVersion([]string{currentDepParsed.modVersion}, filterDepParsed.modVersion, filterDepParsed.repoRootSubdir)
+				if err != nil {
+					// if the requested version has prefix of repoRootSubDir, then send the error as it is
+					// but if it does not, remove the repoRootSubDir from currentDepParsed.modVersion to avoid confusion.
+					currentModVersion := currentDepParsed.modVersion
+					if !strings.HasPrefix(filterDepParsed.modVersion, filterDepParsed.repoRootSubdir) {
+						currentModVersion, _ = strings.CutPrefix(currentModVersion, filterDepParsed.repoRootSubdir+"/")
+					}
+					return nil, fmt.Errorf("version %q was requested to be uninstalled but the installed version is %q", filterDepParsed.modVersion, currentModVersion)
+				}
+			}
+
+			uninstalled = true
+			continue
+		}
+
+		if !uninstalled {
+			effectiveDependencies = append(effectiveDependencies, currentDep)
+		}
+	}
+
+	return effectiveDependencies, nil
+}
+
 func (s *moduleSchema) moduleSourceDependencies(
 	ctx context.Context,
 	src dagql.Instance[*core.ModuleSource],
@@ -466,10 +525,20 @@ func (s *moduleSchema) moduleSourceDependencies(
 	}
 
 	var existingDeps []dagql.Instance[*core.ModuleDependency]
-	if ok && len(modCfg.Dependencies) > 0 {
-		existingDeps = make([]dagql.Instance[*core.ModuleDependency], len(modCfg.Dependencies))
+	if ok {
+		bk, err := src.Self.Query.Buildkit(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get buildkit client: %w", err)
+		}
+
+		filteredDeps, err := s.filterUnInstalledDeps(ctx, bk, modCfg.Dependencies, src.Self.WithoutDependencies)
+		if err != nil {
+			return nil, err
+		}
+
+		existingDeps = make([]dagql.Instance[*core.ModuleDependency], len(filteredDeps))
 		var eg errgroup.Group
-		for i, depCfg := range modCfg.Dependencies {
+		for i, depCfg := range filteredDeps {
 			eg.Go(func() error {
 				var depSrc dagql.Instance[*core.ModuleSource]
 				err := s.dag.Select(ctx, s.dag.Root(), &depSrc,
@@ -597,6 +666,18 @@ func (s *moduleSchema) moduleSourceWithDependencies(
 		return nil, fmt.Errorf("failed to load module source dependencies from ids: %w", err)
 	}
 	src.WithDependencies = append(src.WithDependencies, newDeps...)
+	return src, nil
+}
+
+func (s *moduleSchema) moduleSourceWithoutDependencies(
+	ctx context.Context,
+	src *core.ModuleSource,
+	args struct {
+		Dependencies []string
+	},
+) (*core.ModuleSource, error) {
+	src = src.Clone()
+	src.WithoutDependencies = args.Dependencies
 	return src, nil
 }
 
@@ -1051,6 +1132,21 @@ func (s *moduleSchema) normalizeCallerLoadedSource(
 			return inst, fmt.Errorf("failed to set dependency: %w", err)
 		}
 	}
+
+	if len(src.WithoutDependencies) > 0 {
+		err = s.dag.Select(ctx, inst, &inst,
+			dagql.Selector{
+				Field: "withoutDependencies",
+				Args: []dagql.NamedInput{
+					{Name: "dependencies", Value: dagql.ArrayInput[dagql.String](dagql.NewStringArray(src.WithoutDependencies...))},
+				},
+			},
+		)
+		if err != nil {
+			return inst, fmt.Errorf("failed to set dependency: %w", err)
+		}
+	}
+
 	if src.WithViews != nil {
 		for _, view := range src.WithViews {
 			err = s.dag.Select(ctx, inst, &inst,
@@ -1183,6 +1279,26 @@ func (s *moduleSchema) collectCallerLocalDeps(
 			if parsed.kind != core.ModuleSourceKindLocal {
 				continue
 			}
+
+			// dont load dependency module source during uninstallation
+			// as it may have been removed before calling the uninstall
+			uninstallRequested := false
+			for _, removedDep := range src.WithoutDependencies {
+				var cleanPath = filepath.Clean(removedDep)
+
+				// ignore the dependency that we are currently uninstalling
+				if depCfg.Source == cleanPath || depCfg.Name == cleanPath {
+					uninstallRequested = true
+					break
+				}
+			}
+
+			// this dependency has been requested to be uninstalled.
+			// skip loading it
+			if uninstallRequested {
+				continue
+			}
+
 			depAbsPath := filepath.Join(sourceRootAbsPath, parsed.modPath)
 			err = s.collectCallerLocalDeps(ctx, query, contextAbsPath, depAbsPath, false, src, collectedDeps)
 			if err != nil {

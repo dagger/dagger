@@ -79,7 +79,7 @@ defmodule Dagger.ModuleSource do
     }
   end
 
-  @doc "The dependencies of the module source. Includes dependencies from the configuration and any extras from withDependencies calls."
+  @doc "The effective module source dependencies from the configuration, and calls to withDependencies and withoutDependencies."
   @spec dependencies(t()) :: {:ok, [Dagger.ModuleDependency.t()]} | {:error, term()}
   def dependencies(%__MODULE__{} = module_source) do
     query_builder =
@@ -349,6 +349,20 @@ defmodule Dagger.ModuleSource do
       |> QB.select("withView")
       |> QB.put_arg("name", name)
       |> QB.put_arg("patterns", patterns)
+
+    %Dagger.ModuleSource{
+      query_builder: query_builder,
+      client: module_source.client
+    }
+  end
+
+  @doc "Remove the provided dependencies from the module source's dependency list."
+  @spec without_dependencies(t(), [String.t()]) :: Dagger.ModuleSource.t()
+  def without_dependencies(%__MODULE__{} = module_source, dependencies) do
+    query_builder =
+      module_source.query_builder
+      |> QB.select("withoutDependencies")
+      |> QB.put_arg("dependencies", dependencies)
 
     %Dagger.ModuleSource{
       query_builder: query_builder,
