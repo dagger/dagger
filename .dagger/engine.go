@@ -214,6 +214,7 @@ func (e *DaggerEngine) Lint(
 func (e *DaggerEngine) Generate() *dagger.Directory {
 	generated := e.Dagger.Go().Env().
 		WithoutDirectory("sdk") // sdk generation happens separately
+	original := generated.Directory(".")
 
 	// protobuf dependencies
 	generated = generated.
@@ -224,13 +225,13 @@ func (e *DaggerEngine) Generate() *dagger.Directory {
 	generated = generated.
 		WithExec([]string{"go", "generate", "-v", "./..."})
 
-	return generated.Directory(".")
+	return original.Diff(generated.Directory("."))
 }
 
 // Lint any generated engine-related files
 func (e *DaggerEngine) LintGenerate(ctx context.Context) error {
 	before := e.Dagger.Go().Env().WithoutDirectory("sdk").Directory(".")
-	after := e.Generate()
+	after := before.WithDirectory(".", e.Generate())
 	return dag.Dirdiff().AssertEqual(ctx, before, after, []string{"."})
 }
 
