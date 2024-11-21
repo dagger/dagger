@@ -243,36 +243,19 @@ func (t *TypescriptSdk) moduleConfigFiles(path string) []string {
 
 // Base returns a Node or Bun container with cache setup for node package managers or bun
 func (t *TypescriptSdk) Base() (*dagger.Container, error) {
-	ctr := dag.Container()
-
+	ctr := dag.Container().From(t.moduleConfig.image)
+	
 	runtime := t.moduleConfig.runtime
-	version := t.moduleConfig.runtimeVersion
-	image := t.moduleConfig.image
+	version := t.moduleConfig.runtimeVersion	
 
 	switch runtime {
 	case Bun:
-		if image != "" {
-			ctr = ctr.From(image)
-		} else if version != "" {
-			ctr = ctr.From(fmt.Sprintf("oven/%s:%s-alpine", Bun, version))
-		} else {
-			ctr = ctr.From(bunImageRef)
-		}
-
 		return ctr.
 			WithoutEntrypoint().
 			WithMountedCache("/root/.bun/install/cache", dag.CacheVolume(fmt.Sprintf("mod-bun-cache-%s", bunVersion)), dagger.ContainerWithMountedCacheOpts{
 				Sharing: dagger.Private,
 			}), nil
 	case Node:
-		if image != "" {
-			ctr = ctr.From(image)
-		} else if version != "" {
-			ctr = ctr.From(fmt.Sprintf("%s:%s-alpine", Node, version))
-		} else {
-			ctr = ctr.From(nodeImageRef)
-		}
-
 		return ctr.
 			WithoutEntrypoint().
 			// Install default CA certificates and configure node to use them instead of its compiled in CA bundle.
@@ -385,6 +368,49 @@ func (t *TypescriptSdk) generateClient(ctr *dagger.Container, introspectionJSON 
 		Directory(t.moduleConfig.sdkPath())
 }
 
+// detectBaseImageRef return the base image ref of the runtime
+// based on the user's module config.
+//
+// If set in the `dagger.baseImage` field of the module's package.json, the
+// runtime use that ref.
+// If not set, it return the default base image ref based on the detected runtime and
+// it's version.
+//
+// Note: This function must be called after `detectRuntime`.
+func (t *TypescriptSdk) detectBaseImageRef(ctx context.Context) (string, error) {
+	runtime := t.moduleConfig.runtime
+	version := t.moduleConfig.runtimeVersion
+
+	if t.moduleConfig.hasFile("package.json") {
+		json, err := t.moduleConfig.source.File("package.json").Contents(ctx)
+		if err != nil {
+			return "", fmt.Errorf("failed to read package.json: %w", err)
+		}
+
+		value := gjson.Get(json, "dagger.baseImage").String()
+		if value != "" {
+			return value, nil
+		}
+	}
+
+	switch runtime {
+	case Bun:
+		if version != "" {
+			return fmt.Sprintf("oven/%s:%s-alpine", Bun, version), nil
+		}
+
+		return bunImageRef, nil
+	case Node:
+		if version != "" {
+			return fmt.Sprintf("%s:%s-alpine", Node, version), nil
+		}
+
+		return nodeImageRef, nil
+	default:
+		return "", fmt.Errorf("unknown runtime: %s ; please use `dagger.baseImage` to specify a custom base image different from bun or node", runtime)
+	}
+}
+
 // DetectRuntime returns the runtime(bun or node) detected for the user's module
 // If a runtime is specfied inside the package.json, it will be used.
 // If a package-lock.json, yarn.lock, or pnpm-lock.yaml is present, node will be used.
@@ -412,10 +438,8 @@ func (t *TypescriptSdk) detectRuntime(ctx context.Context) error {
 				t.moduleConfig.runtimeVersion = version
 
 				return nil
-			// Custom base image different from node or bun
 			default:
-				t.moduleConfig.runtime = Node
-				t.moduleConfig.image = value
+				return fmt.Errorf("unsupported runtime %s", runtime, "please use `dagger.baseImage` to specify a custom base image different from bun or node")
 			}
 		}
 	}
@@ -612,6 +636,11 @@ func (t *TypescriptSdk) analyzeModuleConfig(ctx context.Context, modSource *dagg
 	t.moduleConfig.packageManager, t.moduleConfig.packageManagerVersion, err = t.detectPackageManager(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to detect package manager: %w", err)
+	}
+
+	t.moduleConfig.image, err = t.detectBaseImageRef(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to detect base image ref: %w", err)
 	}
 
 	return nil

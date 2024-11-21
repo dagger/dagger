@@ -760,40 +760,80 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
 }
 
 func (TypescriptSuite) TestCustomBaseImage(ctx context.Context, t *testctx.T) {
-	t.Run("should use custom base image if different than node or bun", func(ctx context.Context, t *testctx.T) {
+	t.Run("should use custom base image if base image is set - bun", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			WithNewFile("package.json", `{
-			"dagger": {
-				"runtime": "vasektechnology/node-alpine:test@sha256:ce757edbc0509ede4ef9d2d9e1b329dc43762fa55ccf55be00b51fe2da0fa473"
-			}
-		}`).
-			With(daggerExec("init", "--name=custom-base-image", "--sdk=typescript", "--source=."))
+      "dagger": {
+        "baseImage": "oven/bun:1-alpine@sha256:937b2625ab04b95531cb776a7dd39970ede04b406b63f964654edc67308900b2",
+        "runtime": "bun"
+      }
+    }`).
+			With(sdkSource("typescript", `
+    import { object, func } from "@dagger.io/dagger"
+    
+    @object()
+    export class Test {
+      @func()
+      runtime(): string {
+        const isBunRuntime = typeof Bun === "object";
+        const runtime = isBunRuntime ? "bun" : "node";
+    
+        switch (runtime) {
+          case "bun":
+            return runtime + "@" + Bun.version
+          case "node":
+            return runtime + "@" + process.versions.node
+        }
+      }
+    }
+      `)).
+			With(daggerExec("init", "--name=test", "--sdk=typescript", "--source=."))
 
-		out, err := modGen.With(daggerCall("container-echo", "--string-arg", "hello", "stdout")).Stdout(ctx)
+		out, err := modGen.With(daggerCall("runtime")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "hello\n", out)
+		require.Equal(t, "bun@1.1.36", out)
 	})
 
-	t.Run("should use custom base image if different than node or bun", func(ctx context.Context, t *testctx.T) {
+	t.Run("should use custom base image if base image is set - node", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 
 		modGen := c.Container().From(golangImage).
 			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 			WithWorkdir("/work").
 			WithNewFile("package.json", `{
-			"dagger": {
-				"runtime": "vasektechnology/node-alpine:test"
-			}
-		}`).
-			With(daggerExec("init", "--name=custom-base-image", "--sdk=typescript", "--source=."))
+      "dagger": {
+        "baseImage": "node:23.2.0-alpine@sha256:ecefaffd4706c5879af52e022fdb8ea30cbd6590e2a30d05347790d690727c6c",
+        "runtime": "node"
+      }
+    }`).
+			With(sdkSource("typescript", `
+import { object, func } from "@dagger.io/dagger"
 
-		out, err := modGen.With(daggerCall("container-echo", "--string-arg", "hello", "stdout")).Stdout(ctx)
+@object()
+export class Test {
+  @func()
+  runtime(): string {
+    const isBunRuntime = typeof Bun === "object";
+    const runtime = isBunRuntime ? "bun" : "node";
+
+    switch (runtime) {
+      case "bun":
+        return runtime + "@" + Bun.version
+      case "node":
+        return runtime + "@" + process.versions.node
+    }
+  }
+}
+  `)).
+			With(daggerExec("init", "--name=test", "--sdk=typescript", "--source=."))
+
+		out, err := modGen.With(daggerCall("runtime")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "hello\n", out)
+		require.Equal(t, "node@23.2.0", out)
 	})
 }
 
