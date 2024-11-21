@@ -127,6 +127,47 @@ func (build *Builder) typescriptSDKContent(ctx context.Context) (*sdkContent, er
 	}, nil
 }
 
+func (build *Builder) rubySDKContent(ctx context.Context) (*sdkContent, error) {
+	rootfs := dag.Directory().WithDirectory("/", build.source.Directory("sdk/ruby"), dagger.DirectoryWithDirectoryOpts{
+		Include: []string{
+			"runtime",
+			"Gemfile",
+			"lib",
+		},
+	})
+	sdkCtrTarball := dag.Container().
+		WithRootfs(rootfs).
+		WithFile("/codegen", build.CodegenBinary()).
+		AsTarball(dagger.ContainerAsTarballOpts{
+			ForcedCompression: dagger.ImageLayerCompressionZstd,
+		})
+
+	sdkDir := dag.
+		Alpine(dagger.AlpineOpts{
+			Branch: consts.AlpineVersion,
+		}).
+		Container().
+		WithMountedDirectory("/out", dag.Directory()).
+		WithMountedFile("/sdk.tar", sdkCtrTarball).
+		WithExec([]string{"tar", "xf", "/sdk.tar", "-C", "/out"}).
+		Directory("/out")
+
+	var index ocispecs.Index
+	indexContents, err := sdkDir.File("index.json").Contents(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal([]byte(indexContents), &index); err != nil {
+		return nil, err
+	}
+
+	return &sdkContent{
+		index:   index,
+		sdkDir:  sdkDir,
+		envName: distconsts.RubySDKManifestDigestEnvName,
+	}, nil
+}
+
 func (build *Builder) goSDKContent(ctx context.Context) (*sdkContent, error) {
 	base := dag.Container(dagger.ContainerOpts{Platform: build.platform}).
 		From(consts.GolangImage).

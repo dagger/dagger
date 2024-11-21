@@ -11,6 +11,7 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/cmd/codegen/generator"
 	gogenerator "github.com/dagger/dagger/cmd/codegen/generator/go"
+	rubygenerator "github.com/dagger/dagger/cmd/codegen/generator/ruby"
 	typescriptgenerator "github.com/dagger/dagger/cmd/codegen/generator/typescript"
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 )
@@ -89,11 +90,16 @@ func generate(ctx context.Context, introspectionSchema *introspection.Schema, in
 		gen = &typescriptgenerator.TypeScriptGenerator{
 			Config: cfg,
 		}
+	case generator.SDKLangRuby:
+		gen = &rubygenerator.RubyGenerator{
+			Config: cfg,
+		}
 
 	default:
 		sdks := []string{
 			string(generator.SDKLangGo),
 			string(generator.SDKLangTypeScript),
+			string(generator.SDKLangRuby),
 		}
 		return nil, fmt.Errorf("use target SDK language: %s: %w", sdks, generator.ErrUnknownSDKLang)
 	}

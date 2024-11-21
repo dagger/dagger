@@ -1,0 +1,16 @@
+Layout/LineLength:
+  Enabled: false
+Metrics/MethodLength:
+  Enabled: false
+Metrics/ClassLength:
+  Enabled: false
+Metrics/ParameterLists:
+  Enabled: false
+Metrics/AbcSize:
+  Enabled: false
+Naming/ClassAndModuleCamelCase:
+  Enabled: false
+Metrics/CyclomaticComplexity:
+  Enabled: false
+Metrics/PerceivedComplexity:
+  Enabled: false
