@@ -1670,18 +1670,20 @@ func (h *shellCallHandler) registerBuiltins() { //nolint:gocyclo
 	def := h.modDef(nil)
 
 	for _, fn := range def.GetCoreFunctions() {
-		var hidden bool
 		// TODO: Don't hardcode this list.
-		forSDKs := []string{
-			"function",
-			"module",
-			"module-dependency",
-			"module-source",
-			"source-map",
+		promoted := []string{
+			"cache-volume",
+			"container",
+			"directory",
+			"engine",
+			"git",
+			"host",
+			"http",
+			"set-secret",
+			"version",
 		}
-		if (strings.HasPrefix(fn.CmdName(), "load-") && strings.HasSuffix(fn.CmdName(), "-from-id")) || slices.Contains(forSDKs, fn.CmdName()) {
-			hidden = true
-		}
+
+		hidden := !slices.Contains(promoted, fn.CmdName())
 
 		h.addBuiltin(
 			&ShellCommand{
