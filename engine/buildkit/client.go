@@ -680,12 +680,13 @@ func (c *Client) OpenTerminal(
 		stdinR, stdinW   = io.Pipe()
 	)
 
-	forwardFD := func(r io.Reader, fn func([]byte) *session.SessionRequest) error {
+	forwardFD := func(r io.ReadCloser, fn func([]byte) *session.SessionRequest) error {
+		defer r.Close()
+		b := make([]byte, 2048)
 		for {
-			b := make([]byte, 2048)
 			n, err := r.Read(b)
 			if err != nil {
-				if err == io.EOF || err == io.ErrClosedPipe {
+				if errors.Is(err, io.EOF) || errors.Is(err, io.ErrClosedPipe) {
 					return nil
 				}
 				return fmt.Errorf("error reading fd: %w", err)
@@ -709,9 +710,10 @@ func (c *Client) OpenTerminal(
 		}
 	})
 
-	errCh := make(chan error)
+	errCh := make(chan error, 1)
 	resizeCh := make(chan bkgw.WinSize)
 	go func() {
+		defer stdinW.Close()
 		defer close(errCh)
 		defer close(resizeCh)
 		for {
@@ -746,8 +748,10 @@ func (c *Client) OpenTerminal(
 		Stderr:   stderrW,
 		ErrCh:    errCh,
 		ResizeCh: resizeCh,
-		Close: func(exitCode int) error {
-			defer stdinW.Close()
+		Close: onceValueWithArg(func(exitCode int) error {
+			defer stdinR.Close()
+			defer stdoutW.Close()
+			defer stderrW.Close()
 			defer term.CloseSend()
 
 			err := term.Send(&session.SessionRequest{
@@ -757,8 +761,37 @@ func (c *Client) OpenTerminal(
 				return fmt.Errorf("failed to close terminal: %w", err)
 			}
 			return nil
-		},
+		}),
 	}, nil
+}
+
+// like sync.OnceValue but accepts an arg
+func onceValueWithArg[A any, R any](f func(A) R) func(A) R {
+	var (
+		once   sync.Once
+		valid  bool
+		p      any
+		result R
+	)
+	g := func(a A) {
+		defer func() {
+			p = recover()
+			if !valid {
+				panic(p)
+			}
+		}()
+		result = f(a)
+		valid = true
+	}
+	return func(a A) R {
+		once.Do(func() {
+			g(a)
+		})
+		if !valid {
+			panic(p)
+		}
+		return result
+	}
 }
 
 func withOutgoingContext(c *Client, ctx context.Context) context.Context {

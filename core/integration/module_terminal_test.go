@@ -597,13 +597,25 @@ type Test struct {
 		err = cmd.Wait()
 		require.Error(t, err)
 
-		//  We try again with an invalid shell to confirm we replaced the default command
+		// We try again with an invalid shell to confirm we replaced the default command
+		// We have to set a TTY though or else the error will just be that the --interactive flag doesn't work without a terminal
+		console, err = newTUIConsole(t, 60*time.Second)
+		require.NoError(t, err)
+		defer console.Close()
+		tty = console.Tty()
+		err = pty.Setsize(tty, &pty.Winsize{Rows: 6, Cols: 16})
+		require.NoError(t, err)
 		cmd = hostDaggerCommand(ctx, t, modDir, "--interactive", "--interactive-command", "/bin/noexist", "call", "ctr")
+		cmd.Stdin = tty
+		cmd.Stdout = tty
+		cmd.Stderr = tty
 
 		err = cmd.Start()
 		require.NoError(t, err)
 
-		// We expect the command to fail
+		_, err = console.ExpectString("/bin/noexist: No such file or directory")
+		require.NoError(t, err)
+
 		err = cmd.Wait()
 		require.Error(t, err)
 	})
