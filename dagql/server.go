@@ -71,7 +71,7 @@ type TypeDef interface {
 
 // NewServer returns a new Server with the given root object.
 func NewServer[T Typed](root T) *Server {
-	rootClass := NewClass[T](ClassOpts[T]{
+	rootClass := NewClass(ClassOpts[T]{
 		// NB: there's nothing actually stopping this from being a thing, except it
 		// currently confuses the Dagger Go SDK. could be a nifty way to pass
 		// around global config I suppose.
@@ -846,6 +846,9 @@ type Selector struct {
 	Args  []NamedInput
 	Nth   int
 	View  string
+
+	// Override the default purity of the API call.
+	Pure bool
 }
 
 func (sel Selector) String() string {
@@ -868,7 +871,7 @@ func (sel Selector) String() string {
 
 func (sel Selector) AppendTo(id *call.ID, spec FieldSpec) *call.ID {
 	astType := spec.Type.Type()
-	tainted := spec.ImpurityReason != ""
+	tainted := !sel.Pure && spec.ImpurityReason != ""
 	idArgs := make([]*call.Argument, 0, len(sel.Args))
 	for _, arg := range sel.Args {
 		if arg.Value == nil {

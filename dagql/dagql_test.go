@@ -846,6 +846,66 @@ func TestImpureIDsReEvaluate(t *testing.T) {
 	assert.Equal(t, called, 2)
 }
 
+func TestPurityOverride(t *testing.T) {
+	srv := dagql.NewServer(Query{})
+	points.Install[Query](srv)
+
+	called := 0
+	dagql.Fields[*points.Point]{
+		dagql.Func("snitch", func(ctx context.Context, self *points.Point, _ struct{}) (*points.Point, error) {
+			called++
+			return self, nil
+		}).Impure("Increments internal state on each call."),
+	}.Install(srv)
+
+	ctx := context.Background()
+
+	var id dagql.ID[*points.Point]
+	err := srv.Select(ctx, srv.Root(), &id, dagql.Selector{
+		Field: "point",
+		Args: []dagql.NamedInput{
+			{
+				Name:  "x",
+				Value: dagql.NewInt(6),
+			},
+			{
+				Name:  "y",
+				Value: dagql.NewInt(7),
+			},
+		},
+	}, dagql.Selector{
+		Field: "snitch",
+	}, dagql.Selector{
+		Field: "id",
+	})
+	assert.NilError(t, err)
+
+	assert.NilError(t, err)
+	assert.Equal(t, true, id.ID().IsTainted())
+
+	err = srv.Select(ctx, srv.Root(), &id, dagql.Selector{
+		Field: "point",
+		Args: []dagql.NamedInput{
+			{
+				Name:  "x",
+				Value: dagql.NewInt(6),
+			},
+			{
+				Name:  "y",
+				Value: dagql.NewInt(7),
+			},
+		},
+	}, dagql.Selector{
+		Field: "snitch",
+		Pure:  true,
+	}, dagql.Selector{
+		Field: "id",
+	})
+	assert.NilError(t, err)
+
+	assert.Equal(t, false, id.ID().IsTainted())
+}
+
 func TestPassingObjectsAround(t *testing.T) {
 	srv := dagql.NewServer(Query{})
 	points.Install[Query](srv)
