@@ -298,3 +298,15 @@ func (m *Test) FooBar() string {
 	require.Contains(t, out, "Usage: .config <foo> <bar>\n  \n  The entrypoint for the module")
 	require.Regexp(t, "foo-bar +Some function", out)
 }
+
+func (ShellSuite) TestInstall(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	_, err := modInit(t, c, "go", "").
+		With(daggerExec("init", "--sdk=go", "dep")).
+		With(daggerShell(".install dep")).
+		WithExec([]string{"grep", "dep", "dagger.json"}).
+		Sync(ctx)
+
+	require.NoError(t, err)
+}

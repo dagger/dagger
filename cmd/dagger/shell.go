@@ -1727,7 +1727,7 @@ func cobraToShellCommand(c *cobra.Command) *ShellCommand {
 		GroupID: c.GroupID,
 		Run: func(cmd *ShellCommand, args []string) error {
 			// Re-execute the dagger command (hack)
-			args = append([]string{cmd.Name()}, args...)
+			args = append([]string{cmd.CleanName()}, args...)
 			ctx := cmd.Context()
 			hctx := interp.HandlerCtx(ctx)
 			c := exec.CommandContext(ctx, "dagger", args...)
