@@ -113,6 +113,11 @@ module.exports = {
               "type": "link",
               "label": "Module Configuration File Reference",
               "href": "https://docs.dagger.io/reference/dagger.schema.json"
+            },
+            {
+              "type": "link",
+              "label": "Engine Configuration File Reference",
+              "href": "https://docs.dagger.io/reference/engine.schema.json"
             }
           ]
         },
@@ -197,8 +202,8 @@ module.exports = {
       "collapsible": true,
       "collapsed": true,
       "items": [
+        "configuration/engine",
         "configuration/custom-runner",
-        "configuration/custom-registry",
         "configuration/custom-ca",
         "configuration/proxy",
         "configuration/cloud",

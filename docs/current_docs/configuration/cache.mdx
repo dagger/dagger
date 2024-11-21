@@ -60,9 +60,7 @@ The default cache policy attempts to keep the long-term cache storage under 75%
 of the total disk, while also ensuring that at least 20% of the disk remains
 free for other applications and tools.
 
-The cache policy can be manually configured by editing the `engine.toml` file in the engine
-(which uses [BuildKit's syntax config](https://github.com/moby/buildkit/blob/v0.17.0/docs/buildkitd.toml.md?plain=1#L66-L82)).
-See the [Custom Runner](./custom-runner.mdx) docs for more information.
+The cache policy can be manually configured using the [engine config](./engine.mdx).
 
 ## Manual pruning
 

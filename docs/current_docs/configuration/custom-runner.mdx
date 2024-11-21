@@ -17,8 +17,11 @@ The runner is distributed as a container image, making it easy to run on various
 
 The consolidated steps to use a custom runner are:
 
-- Determine the runner version required by checking the release notes of the CLI or SDK you intend to use.
-- If changes to the base image are needed, make those and push them to a registry. If no changes are needed, just use it as is.
+- Determine the runner version by using the same version as the CLI or SDK you
+  are using - e.g. if you are using the `v0.14.0` Python SDK, you should use
+  `v0.14.0` of the engine.
+- If changes to the base image are needed, make those and push them to a
+  registry. If no changes are needed, just use it as is.
 - Start the runner image in your target of choice, [requirements](#execution-requirements) and [configuration](#configuration) in mind.
 - Export the `_EXPERIMENTAL_DAGGER_RUNNER_HOST` environment variable with a [a value pointing to your target](#connection-interface).
 - Call `dagger call` or execute SDK code directly with that environment variable set.
@@ -41,28 +44,19 @@ The runner is distributed as a container image at `registry.dagger.io/engine`.
     - Otherwise runner execution may be extremely slow. This is due to the fact that it relies on overlayfs mounts for efficient operation, which isn't possible when `/var/lib/dagger` is itself an overlayfs.
     - For example, this can be provided to a `docker run` command as `-v dagger-engine:/var/lib/dagger`.
 1. The container image comes with a default entrypoint which should be used to start the runner; no extra arguments are needed.
-1. The container image comes with a default config file at `/etc/dagger/engine.toml`
-    - The `insecure-entitlements = ["security.insecure"]` setting enables use of the `InsecureRootCapabilities` flag in `WithExec`. Removing that line will result in an error when trying to use that flag.
 
 ## Configuration
 
-### Custom CA certificates
+To configure a manually started engine, see the [engine configuration documentation](./engine.mdx).
 
-If any extra CA certificates are to be included in order to - for example - push images to a private registry, they can be included under `/usr/local/share/ca-certificates` in the runner image.
+## Connection Interface
 
-This can be accomplished by building a custom image using the Dagger image as a base, or by mounting them into a container created from the Dagger image at runtime.
+After the runner starts up, the CLI needs to connect to it. In the default
+situation, this will happen automatically.
 
-### Privileged execution
-
-By default, Dagger allows execs to run with root capabilities when the `InsecureRootCapabilities` field is set to true in the `WithExec` API.
-
-This can be disabled by overriding the default engine config at `/etc/dagger/engine.toml` to remove the line `insecure-entitlements = ["security.insecure"]`.
-
-### Connection Interface
-
-After the runner starts up, the CLI needs to connect to it. In the default situation, this will happen automatically.
-
-However, if the `_EXPERIMENTAL_DAGGER_RUNNER_HOST` environment variable is set, then the CLI will instead connect to the endpoint specified there. This environment variable currently accepts values in the following format:
+However, if the `_EXPERIMENTAL_DAGGER_RUNNER_HOST` environment variable is set,
+then the CLI will instead connect to the endpoint specified there. This
+environment variable currently accepts values in the following format:
 
 1. `docker-container://<container name>` - Connect to the runner inside the given Docker container.
     - Requires the `docker` CLI to be present and usable. Will result in shelling out to `docker exec`.
@@ -75,5 +69,10 @@ However, if the `_EXPERIMENTAL_DAGGER_RUNNER_HOST` environment variable is set, 
 1. `tcp://<address:port>` - Connect to the runner over TCP using the provided address and port.
 
 :::warning
-Dagger itself does not set up any encryption of data sent "over the wire". It relies on the underlying connection type to implement this when needed. If you are using a connection type that does not provide encryption, then all queries and responses will be sent in plaintext over the wire from the Dagger CLI to the runner.
+Dagger itself does not set up any encryption of data sent "over the wire". It
+relies on the underlying connection type to implement this when needed. If you
+are using a connection type that does not provide encryption, then all queries
+and responses will be sent in plaintext over the wire from the Dagger CLI to
+the runner.
 :::
+
