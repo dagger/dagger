@@ -135,84 +135,83 @@ func (local *localFS) Sync(
 
 	eg, egCtx := errgroup.WithContext(ctx)
 
-	eg.Go(func() error {
-		return doubleWalkDiff(egCtx, local, remote, func(kind ChangeKind, path string, lowerStat, upperStat *types.Stat) error {
-			/*
+	doubleWalkDiff(egCtx, eg, local, remote, func(kind ChangeKind, path string, lowerStat, upperStat *types.Stat) error {
+		/*
+			// TODO:
+			// TODO:
+			// TODO:
+			// TODO:
+			bklog.G(egCtx).Debugf("DIFF %s %s (%s) (%s)", kind, path, local.toRootPath(path), local.toFullPath(path))
+		*/
+
+		var appliedChange *ChangeWithStat
+		var err error
+		switch kind {
+		case ChangeKindAdd, ChangeKindModify:
+			switch {
+			case upperStat.IsDir():
+				// TODO: handle parent dir mod times
+				appliedChange, err = local.Mkdir(egCtx, path, upperStat)
+
+			case upperStat.Mode&uint32(os.ModeDevice) != 0 || upperStat.Mode&uint32(os.ModeNamedPipe) != 0:
 				// TODO:
-				// TODO:
-				// TODO:
-				// TODO:
-				bklog.G(egCtx).Debugf("DIFF %s %s (%s) (%s)", kind, path, local.toRootPath(path), local.toFullPath(path))
-			*/
 
-			var appliedChange *ChangeWithStat
-			var err error
-			switch kind {
-			case ChangeKindAdd, ChangeKindModify:
-				switch {
-				case upperStat.IsDir():
-					// TODO: handle parent dir mod times
-					appliedChange, err = local.Mkdir(egCtx, path, upperStat)
+			case upperStat.Mode&uint32(os.ModeSymlink) != 0:
+				appliedChange, err = local.Symlink(egCtx, path, upperStat)
 
-				case upperStat.Mode&uint32(os.ModeDevice) != 0 || upperStat.Mode&uint32(os.ModeNamedPipe) != 0:
-					// TODO:
-
-				case upperStat.Mode&uint32(os.ModeSymlink) != 0:
-					appliedChange, err = local.Symlink(egCtx, path, upperStat)
-
-				case upperStat.Linkname != "":
-					appliedChange, err = local.Hardlink(egCtx, path, upperStat)
-
-				default:
-					eg.Go(func() error {
-						// TODO: DOUBLE CHECK IF YOU NEED TO COPY STAT OBJS SINCE THIS IS ASYNC
-						appliedChange, err := local.WriteFile(egCtx, path, upperStat, remote)
-						if err != nil {
-							return err
-						}
-						if cacheCtx != nil {
-							// TODO:
-							// TODO:
-							// TODO:
-							// bklog.G(ctx).Debugf("CACHECTX HANDLE CHANGE FILE %s %s %+v", appliedChange.kind, path, appliedChange.stat)
-
-							if err := cacheCtx.HandleChange(appliedChange.kind, path, appliedChange.stat, nil); err != nil {
-								return fmt.Errorf("failed to handle change in content hasher: %w", err)
-							}
-						}
-
-						return nil
-					})
-					return nil
-				}
-
-			case ChangeKindDelete:
-				// TODO: do we even need to apply this to the cacheCtx? May actually cause an error, consider skipping that
-				appliedChange, err = local.RemoveAll(egCtx, path)
-
-			case ChangeKindNone:
-				appliedChange, err = local.getPreviousChange(path)
+			case upperStat.Linkname != "":
+				appliedChange, err = local.Hardlink(egCtx, path, upperStat)
 
 			default:
-				return fmt.Errorf("unsupported change kind: %s", kind)
-			}
-			if err != nil {
-				return err
-			}
-			if cacheCtx != nil {
-				// TODO:
-				// TODO:
-				// TODO:
-				// bklog.G(ctx).Debugf("CACHECTX HANDLE CHANGE %s %s %+v", appliedChange.kind, path, appliedChange.stat)
+				eg.Go(func() error {
+					// TODO: DOUBLE CHECK IF YOU NEED TO COPY STAT OBJS SINCE THIS IS ASYNC
+					appliedChange, err := local.WriteFile(egCtx, path, upperStat, remote)
+					if err != nil {
+						return err
+					}
+					if cacheCtx != nil {
+						// TODO:
+						// TODO:
+						// TODO:
+						// bklog.G(ctx).Debugf("CACHECTX HANDLE CHANGE FILE %s %s %+v", appliedChange.kind, path, appliedChange.stat)
 
-				if err := cacheCtx.HandleChange(appliedChange.kind, path, appliedChange.stat, nil); err != nil {
-					return fmt.Errorf("failed to handle change in content hasher: %w", err)
-				}
+						if err := cacheCtx.HandleChange(appliedChange.kind, path, appliedChange.stat, nil); err != nil {
+							return fmt.Errorf("failed to handle change in content hasher: %w", err)
+						}
+					}
+
+					return nil
+				})
+				return nil
 			}
 
-			return nil
-		})
+		case ChangeKindDelete:
+			// TODO: do we even need to apply this to the cacheCtx? May actually cause an error, consider skipping that
+			appliedChange, err = local.RemoveAll(egCtx, path)
+
+		case ChangeKindNone:
+			appliedChange, err = local.getPreviousChange(path)
+
+		default:
+			return fmt.Errorf("unsupported change kind: %s", kind)
+		}
+		if err != nil {
+			return err
+		}
+		if cacheCtx != nil {
+			// TODO:
+			// TODO:
+			// TODO:
+			// bklog.G(ctx).Debugf("CACHECTX HANDLE CHANGE %s %s %+v", appliedChange.kind, path, appliedChange.stat)
+
+			if err := cacheCtx.HandleChange(appliedChange.kind, path, appliedChange.stat, nil); err != nil {
+				return fmt.Errorf("failed to handle change in content hasher: %w", err)
+			}
+		}
+
+		return nil
 	})
+
 	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
@@ -535,7 +534,7 @@ func (local *localFS) WriteFile(ctx context.Context, path string, upperStat *typ
 	appliedChange, err := local.mutate(ctx, path, upperStat, func(ctx context.Context, fullPath string, lowerStat fs.FileInfo, h hash.Hash) error {
 		reader, err := upperFS.ReadFile(ctx, path)
 		if err != nil {
-			return fmt.Errorf("failed to read file: %w", err)
+			return fmt.Errorf("failed to read file %q: %w", path, err)
 		}
 		defer reader.Close()
 

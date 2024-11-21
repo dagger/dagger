@@ -265,15 +265,7 @@ func (ls *localSourceHandler) sync(
 		cancel(rerr)
 	}()
 
-	remote, err := newRemoteFS(ctx, caller, clientPath, ls.src.IncludePatterns, ls.src.ExcludePatterns)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create remote fs: %w", err)
-	}
-	defer func() {
-		if err := remote.Close(); err != nil {
-			rerr = errors.Join(rerr, fmt.Errorf("failed to close remote fs: %w", err))
-		}
-	}()
+	remote := newRemoteFS(caller, clientPath, ls.src.IncludePatterns, ls.src.ExcludePatterns)
 
 	local, err := NewLocalFS(ref.sharedState, clientPath, ls.src.IncludePatterns, ls.src.ExcludePatterns)
 	if err != nil {
@@ -302,15 +294,7 @@ func (ls *localSourceHandler) syncParentDirs(
 	exclude := include + "/*"
 	excludes := []string{exclude}
 
-	remote, err := newRemoteFS(ctx, caller, "/", includes, excludes)
-	if err != nil {
-		return fmt.Errorf("failed to create remote fs: %w", err)
-	}
-	defer func() {
-		if err := remote.Close(); err != nil {
-			rerr = errors.Join(rerr, fmt.Errorf("failed to close remote fs: %w", err))
-		}
-	}()
+	remote := newRemoteFS(caller, "/", includes, excludes)
 
 	local, err := NewLocalFS(ref.sharedState, "/", includes, excludes)
 	if err != nil {

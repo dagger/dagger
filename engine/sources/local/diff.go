@@ -24,9 +24,7 @@ const (
 
 type ChangeFunc func(kind ChangeKind, path string, lowerStat, upperStat *types.Stat) error
 
-func doubleWalkDiff(ctx context.Context, lower, upper WalkFS, changeFn ChangeFunc) (err error) {
-	g, ctx := errgroup.WithContext(ctx)
-
+func doubleWalkDiff(ctx context.Context, eg *errgroup.Group, lower, upper WalkFS, changeFn ChangeFunc) {
 	var (
 		lowerPathCh = make(chan *currentPath, 128)
 		upperPathCh = make(chan *currentPath, 128)
@@ -34,15 +32,16 @@ func doubleWalkDiff(ctx context.Context, lower, upper WalkFS, changeFn ChangeFun
 		lowerPath, upperPath *currentPath
 		rmdir                string
 	)
-	g.Go(func() error {
+	eg.Go(func() error {
 		defer close(lowerPathCh)
 		return pathWalk(ctx, lower, lowerPathCh)
 	})
-	g.Go(func() error {
+	eg.Go(func() error {
 		defer close(upperPathCh)
 		return pathWalk(ctx, upper, upperPathCh)
 	})
-	g.Go(func() error {
+	eg.Go(func() error {
+		var err error
 		for lowerPathCh != nil || upperPathCh != nil {
 			if lowerPath == nil && lowerPathCh != nil {
 				lowerPath, err = nextPath(ctx, lowerPathCh)
@@ -126,8 +125,6 @@ func doubleWalkDiff(ctx context.Context, lower, upper WalkFS, changeFn ChangeFun
 		}
 		return nil
 	})
-
-	return g.Wait()
 }
 
 func pathChange(lower, upper *currentPath) (ChangeKind, string) {

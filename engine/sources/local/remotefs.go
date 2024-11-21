@@ -2,7 +2,6 @@ package local
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -19,55 +18,76 @@ import (
 )
 
 type remoteFS struct {
-	client filesync.FileSync_DiffCopyClient
+	caller     session.Caller
+	clientPath string
+	includes   []string
+	excludes   []string
 
-	eg errgroup.Group
-
-	walkCh chan *currentPath
-
+	startOnce   sync.Once
+	client      filesync.FileSync_DiffCopyClient
+	eg          errgroup.Group
+	filesMu     sync.RWMutex
 	filesByPath map[string]*remoteFile
 	filesByID   map[uint32]*remoteFile
-	filesMu     sync.RWMutex
-}
-
-type remoteFile struct {
-	id uint32
-	r  io.ReadCloser
-	w  io.WriteCloser
 }
 
 func newRemoteFS(
-	ctx context.Context,
 	caller session.Caller,
 	clientPath string,
 	includes, excludes []string,
-) (*remoteFS, error) {
-	ctx = engine.LocalImportOpts{
-		Path:            clientPath,
-		IncludePatterns: includes,
-		ExcludePatterns: excludes,
-	}.AppendToOutgoingContext(ctx)
+) *remoteFS {
+	return &remoteFS{
+		caller:     caller,
+		clientPath: clientPath,
+		includes:   includes,
+		excludes:   excludes,
+	}
+}
 
-	diffCopyClient, err := filesync.NewFileSyncClient(caller.Conn()).DiffCopy(ctx)
+func (fs *remoteFS) Walk(ctx context.Context, path string, walkFn fs.WalkDirFunc) error {
+	var started bool
+	fs.startOnce.Do(func() {
+		started = true
+	})
+	if !started {
+		return fmt.Errorf("walk already started")
+	}
+
+	var err error
+	fs.client, err = filesync.NewFileSyncClient(fs.caller.Conn()).DiffCopy(engine.LocalImportOpts{
+		Path:            fs.clientPath,
+		IncludePatterns: fs.includes,
+		ExcludePatterns: fs.excludes,
+	}.AppendToOutgoingContext(ctx))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create diff copy client: %w", err)
+		return fmt.Errorf("failed to create diff copy client: %w", err)
 	}
 
-	fs := &remoteFS{
-		client: diffCopyClient,
+	fs.filesByPath = make(map[string]*remoteFile)
+	fs.filesByID = make(map[uint32]*remoteFile)
 
-		walkCh: make(chan *currentPath, 128),
+	walkCh := make(chan *currentPath, 128)
+	closeWalkCh := sync.OnceFunc(func() { close(walkCh) })
 
-		filesByPath: make(map[string]*remoteFile),
-		filesByID:   make(map[uint32]*remoteFile),
-	}
+	errCh := make(chan error, 1)
+	go func() (rerr error) {
+		defer func() {
+			if rerr != nil {
+				errCh <- rerr
+			}
+			close(errCh)
 
-	fs.eg.Go(func() error {
-		closeWalkCh := sync.OnceFunc(func() { close(fs.walkCh) })
-		defer closeWalkCh()
+			closeWalkCh()
+
+			fs.filesMu.Lock()
+			for _, rFile := range fs.filesByPath {
+				rFile.CloseWrite(rerr)
+			}
+			fs.filesMu.Unlock()
+		}()
 
 		var pkt types.Packet
-		var nextFileID uint32
+		var curFileID uint32
 		for {
 			pkt = types.Packet{Data: pkt.Data[:0]}
 			if err := fs.client.RecvMsg(&pkt); err != nil {
@@ -93,47 +113,27 @@ func newRemoteFS(
 				pkt.Stat.Path = path
 				pkt.Stat.Linkname = filepath.FromSlash(pkt.Stat.Linkname)
 
-				/*
-					// TODO:
-					// TODO:
-					// TODO:
-					// TODO:
-					bklog.G(ctx).Debugf("RECV STAT %s", pkt.Stat.Path)
-				*/
-
 				if os.FileMode(pkt.Stat.Mode)&os.ModeType == 0 {
-					fs.filesMu.Lock()
 					r, w := io.Pipe()
 					rFile := &remoteFile{
-						id: nextFileID,
+						id: curFileID,
 						r:  r,
 						w:  w,
 					}
+					fs.filesMu.Lock()
 					fs.filesByPath[pkt.Stat.Path] = rFile
-					fs.filesByID[nextFileID] = rFile
+					fs.filesByID[curFileID] = rFile
 					fs.filesMu.Unlock()
 				}
-				nextFileID++
-
-				/* TODO: ? if we trust client do we need these?
-				if err := r.orderValidator.HandleChange(ChangeKindAdd, cp.path, &StatInfo{cp.stat}, nil); err != nil {
-					return err
-				}
-				if err := r.hlValidator.HandleChange(ChangeKindAdd, cp.path, &StatInfo{cp.stat}, nil); err != nil {
-					return err
-				}
-				*/
+				curFileID++
 
 				select {
 				case <-ctx.Done():
 					return context.Cause(ctx)
-				case fs.walkCh <- &currentPath{path: path, stat: pkt.Stat}:
+				case walkCh <- &currentPath{path: path, stat: pkt.Stat}:
 				}
 
 			case types.PACKET_DATA:
-				/* TODO:
-				bklog.G(ctx).Debugf("RECV DATA %d", pkt.ID)
-				*/
 				fs.filesMu.RLock()
 				rFile, ok := fs.filesByID[pkt.ID]
 				fs.filesMu.RUnlock()
@@ -141,67 +141,41 @@ func newRemoteFS(
 					return fmt.Errorf("invalid file request %d", pkt.ID)
 				}
 				if len(pkt.Data) == 0 {
-					/* TODO:
-					bklog.G(ctx).Debugf("CLOSING PIPE %d", pkt.ID)
-					*/
-
-					if err := rFile.w.Close(); err != nil {
+					if err := rFile.CloseWrite(nil); err != nil {
 						return fmt.Errorf("failed to close pipe %d: %w", pkt.ID, err)
 					}
 				} else {
-					n, err := rFile.w.Write(pkt.Data)
+					n, err := rFile.Write(pkt.Data)
 					if err != nil {
-						return fmt.Errorf("failed to write to pipe %d: %w", pkt.ID, err)
+						err = fmt.Errorf("failed to write to pipe %d: %w", pkt.ID, err)
+						rFile.CloseWrite(err)
+						return err
 					}
 					if n != len(pkt.Data) {
-						return fmt.Errorf("short write %d/%d", n, len(pkt.Data))
-					}
-				}
-
-			case types.PACKET_FIN:
-				for {
-					var pkt types.Packet
-					if err := fs.client.RecvMsg(&pkt); err != nil {
-						if errors.Is(err, io.EOF) {
-							return nil
-						}
-						return fmt.Errorf("failed to receive message after fin: %w", err)
+						err := fmt.Errorf("short write %d/%d", n, len(pkt.Data))
+						rFile.CloseWrite(err)
+						return err
 					}
 				}
 			}
 		}
-	})
+	}()
 
-	return fs, nil
-}
-
-func (fs *remoteFS) Close() error {
-	err := fs.client.SendMsg(&types.Packet{Type: types.PACKET_FIN})
-	if err != nil {
-		return fmt.Errorf("failed to send fin packet: %w", err)
+	for cp := range walkCh {
+		if err := walkFn(cp.path, &StatInfo{cp.stat}, nil); err != nil {
+			return err
+		}
 	}
-	return fs.eg.Wait()
-}
-
-func (fs *remoteFS) Walk(ctx context.Context, path string, walkFn fs.WalkDirFunc) error {
-	for {
-		select {
-		case <-ctx.Done():
-			return context.Cause(ctx)
-		case cp, ok := <-fs.walkCh:
-			if !ok {
-				return nil
-			}
-			if err := walkFn(cp.path, &StatInfo{cp.stat}, nil); err != nil {
-				return err
-			}
-		}
+	select {
+	case err := <-errCh:
+		return fmt.Errorf("receive failed: %w", err)
+	default:
+		return nil
 	}
 }
 
 func (fs *remoteFS) ReadFile(ctx context.Context, path string) (io.ReadCloser, error) {
 	fs.filesMu.RLock()
-	// TODO : should we bother deleting from this map?
 	rFile, ok := fs.filesByPath[path]
 	fs.filesMu.RUnlock()
 	if !ok {
@@ -209,8 +183,31 @@ func (fs *remoteFS) ReadFile(ctx context.Context, path string) (io.ReadCloser, e
 	}
 
 	if err := fs.client.SendMsg(&types.Packet{ID: rFile.id, Type: types.PACKET_REQ}); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to send request for file contents: %w", err)
 	}
 
-	return rFile.r, nil
+	return rFile, nil
+}
+
+type remoteFile struct {
+	id uint32
+
+	r *io.PipeReader
+	w *io.PipeWriter
+}
+
+func (f *remoteFile) Read(p []byte) (n int, err error) {
+	return f.r.Read(p)
+}
+
+func (f *remoteFile) Write(p []byte) (n int, err error) {
+	return f.w.Write(p)
+}
+
+func (f *remoteFile) CloseWrite(closeErr error) error {
+	return f.w.CloseWithError(closeErr)
+}
+
+func (f *remoteFile) Close() error {
+	return f.r.Close()
 }
