@@ -315,7 +315,7 @@ func (w *Workflow) onPush(
 
 // Add a trigger to execute a Dagger workflow on a schedule time
 func (w *Workflow) onSchedule(
-	// Cron exressions from https://pubs.opengroup.org/onlinepubs/9699919799/utilities/crontab.html#tag_20_25_07.
+	// Cron expressions from https://pubs.opengroup.org/onlinepubs/9699919799/utilities/crontab.html#tag_20_25_07.
 	// +optional
 	expressions []string,
 ) *Workflow {
