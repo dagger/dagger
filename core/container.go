@@ -1874,21 +1874,21 @@ func (expect ReturnTypes) ToLiteral() call.Literal {
 
 // ReturnCodes gets the valid exit codes allowed for a specific return status
 //
-// NOTE: exit status codes above 127 are likely from exiting via a signal - we
+// NOTE: exit status codes above 128 are likely from exiting via a signal - we
 // shouldn't try and handle these.
 func (expect ReturnTypes) ReturnCodes() []int {
 	switch expect {
 	case ReturnSuccess:
 		return []int{0}
 	case ReturnFailure:
-		codes := make([]int, 0, 127)
-		for i := 1; i <= 127; i++ {
+		codes := make([]int, 0, 128)
+		for i := 1; i <= 128; i++ {
 			codes = append(codes, i)
 		}
 		return codes
 	case ReturnAny:
-		codes := make([]int, 0, 128)
-		for i := 0; i <= 127; i++ {
+		codes := make([]int, 0, 129)
+		for i := 0; i <= 128; i++ {
 			codes = append(codes, i)
 		}
 		return codes
