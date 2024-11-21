@@ -17,10 +17,10 @@ concurrency:
     group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
     cancel-in-progress: true
 jobs:
-    github:
+    check:
         runs-on:
             - ${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-14-0-4c' || 'ubuntu-latest' }}
-        name: Github
+        name: check
         steps:
             - name: Checkout
               uses: actions/checkout@v4

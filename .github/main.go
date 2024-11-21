@@ -67,6 +67,18 @@ func New() *CI {
 			"Docs",
 			"docs lint",
 		).
+		withWorkflow(
+			ci.DaggerRunner,
+			false,
+			"Helm",
+			"helm lint",
+			"helm test",
+			"helm publish --dry-run=true --tag=main",
+		).
+		withTestWorkflows(
+			ci.DaggerRunner,
+			"Engine & CLI",
+		).
 		withSDKWorkflows(
 			ci.DaggerRunner,
 			"SDKs",
@@ -101,26 +113,52 @@ func (ci *CI) Check(ctx context.Context,
 }
 
 // Add a workflow with our project-specific defaults
-func (ci *CI) withWorkflow(runner *dagger.Gha, devEngine bool, name string, command string) *CI {
+func (ci *CI) withWorkflow(runner *dagger.Gha, devEngine bool, name string, commands ...string) *CI {
 	jobOpts := dagger.GhaJobOpts{}
 	if devEngine {
 		jobOpts.DaggerVersion = "."
 	}
-	w := runner.
-		Workflow(name).
-		WithJob(runner.Job(name, daggerCommand(command), jobOpts))
+	w := runner.Workflow(name)
+	for _, command := range commands {
+		w = w.WithJob(runner.Job(daggerName(command), daggerCommand(command), jobOpts))
+	}
 
 	ci.Workflows = ci.Workflows.WithWorkflow(w)
 	return ci
 }
 
 // Add a general workflow
-func (ci *CI) withModuleWorkflow(runner *dagger.Gha, module string, name string, command string) *CI {
-	w := runner.
-		Workflow(name).
-		WithJob(runner.Job(name, command, dagger.GhaJobOpts{
+func (ci *CI) withModuleWorkflow(runner *dagger.Gha, module string, name string, commands ...string) *CI {
+	w := runner.Workflow(name)
+	for _, command := range commands {
+		w = w.WithJob(runner.Job(command, command, dagger.GhaJobOpts{
 			Module: module,
 		}))
+	}
+
+	ci.Workflows = ci.Workflows.WithWorkflow(w)
+	return ci
+}
+
+func (ci *CI) withTestWorkflows(runner *dagger.Gha, name string) *CI {
+	w := runner.
+		Workflow(name).
+		WithJob(runner.Job("engine-lint", "engine lint", dagger.GhaJobOpts{
+			Runner: []string{SilverRunner(false)},
+		})).
+		WithJob(runner.Job("scripts-lint", "scripts lint")).
+		WithJob(runner.Job("test", "test all --race=true --parallel=16", dagger.GhaJobOpts{
+			Runner:         []string{GoldRunner(false)},
+			TimeoutMinutes: 30,
+		})).
+		WithJob(runner.Job("testdev", "test specific --run='TestModule|TestGo|TestPython|TestTypescript|TestElixir|TestPHP|TestContainer' --skip='TestDev' --race=true --parallel=16", dagger.GhaJobOpts{
+			DaggerVersion:  ".", // dev engine
+			Runner:         []string{PlatinumRunner(true)},
+			TimeoutMinutes: 30,
+		})).
+		WithJob(runner.Job("cli-publish", "cli test-publish")).
+		WithJob(runner.Job("engine-publish", "engine publish --image=dagger-engine.dev --tag=main --dry-run")).
+		WithJob(runner.Job("scan-engine", "engine scan"))
 
 	ci.Workflows = ci.Workflows.WithWorkflow(w)
 	return ci
@@ -133,7 +171,7 @@ func (ci *CI) withSDKWorkflows(runner *dagger.Gha, name string, sdks ...string) 
 		w = w.
 			WithJob(runner.Job(sdk, command)).
 			WithJob(runner.Job(sdk+"-dev", command, dagger.GhaJobOpts{
-				DaggerVersion: ".",
+				DaggerVersion: ".", // dev engine
 				Runner:        []string{SilverRunner(true)},
 			}))
 	}
@@ -169,6 +207,14 @@ func (ci *CI) withPrepareReleaseWorkflow() *CI {
 	ci.Workflows = ci.Workflows.WithWorkflow(w)
 
 	return ci
+}
+
+func daggerName(command string) string {
+	if idx := strings.Index(command, " -"); idx != -1 {
+		// return up to the first flag
+		return command[:idx]
+	}
+	return command
 }
 
 func daggerCommand(command string) string {
