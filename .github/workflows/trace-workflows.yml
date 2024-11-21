@@ -7,7 +7,6 @@ on:
       - "Benchmark"
       - "daggerverse-preview"
       - "Docs"
-      - "Engine & CLI split"
       - "Engine & CLI"
       - "Github"
       - "Helm"

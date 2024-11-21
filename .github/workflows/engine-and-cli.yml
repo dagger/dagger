@@ -35,32 +35,6 @@ jobs:
         with:
           function: "scripts lint"
 
-  test:
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-14-0-16c-st' || 'ubuntu-latest' }}"
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - name: "test"
-        uses: ./.github/actions/call
-        with:
-          function: "test all --race=true --parallel=16"
-          upload-logs: true
-
-  # Run Engine tests in dev Engine so that we can spot integration failures early
-  # Only run a subset of important test cases since we just need to verify basic
-  # functionality rather than repeat every test already run in the other targets.
-  testdev:
-    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-14-0-32c-dind-st' || 'ubuntu-latest' }}"
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - name: "testdev"
-        uses: ./.github/actions/call
-        with:
-          function: "test specific --run='TestModule|TestGo|TestPython|TestTypescript|TestElixir|TestPHP|TestContainer' --skip='TestDev' --race=true --parallel=16"
-          dev-engine: true
-          upload-logs: true
-
   test-publish:
     runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-14-0-16c' || 'ubuntu-latest' }}"
     timeout-minutes: 20
@@ -84,3 +58,111 @@ jobs:
         uses: ./.github/actions/call
         with:
           function: "engine scan"
+
+  # TEMPORARILY DISABLED. Context: https://github.com/dagger/dagger/pull/8998#issuecomment-2491426455
+  # test:
+  #   runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-14-0-16c-st' || 'ubuntu-latest' }}"
+  #   timeout-minutes: 30
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: "test"
+  #       uses: ./.github/actions/call
+  #       with:
+  #         function: "test all --race=true --parallel=16"
+  #         upload-logs: true
+  test-modules:
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-14-0-16c-st' || 'ubuntu-latest' }}"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: "test"
+        uses: ./.github/actions/call
+        with:
+          function: "test specific --run=TestModule --race=true --parallel=16"
+          upload-logs: true
+
+  test-module-runtimes:
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-14-0-16c-st' || 'ubuntu-latest' }}"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: "test"
+        uses: ./.github/actions/call
+        with:
+          function: "test specific --run='TestGo|TestPython|TestTypescript|TestElixir|TestPHP' --race=true --parallel=16"
+          upload-logs: true
+
+  test-cli-engine:
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-14-0-16c-st' || 'ubuntu-latest' }}"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: "test"
+        uses: ./.github/actions/call
+        with:
+          function: "test specific --run='TestCLI|TestEngine' --race=true --parallel=16"
+          upload-logs: true
+
+  test-everything-else:
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-14-0-16c-st' || 'ubuntu-latest' }}"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: "test"
+        uses: ./.github/actions/call
+        with:
+          function: "test specific --skip='TestModule|TestGo|TestPython|TestTypescript|TestElixir|TestPHP|TestCLI|TestEngine' --race=true --parallel=16"
+          upload-logs: true
+
+  # Run Engine tests in dev Engine so that we can spot integration failures early
+  # Only run a subset of important test cases since we just need to verify basic
+  # functionality rather than repeat every test already run in the other targets.
+  #
+  # TEMPORARILY DISABLED. Context: https://github.com/dagger/dagger/pull/8998#issuecomment-2491426455
+  # testdev:
+  #   runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-14-0-32c-dind-st' || 'ubuntu-latest' }}"
+  #   timeout-minutes: 30
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: "testdev"
+  #       uses: ./.github/actions/call
+  #       with:
+  #         function: "test specific --run='TestModule|TestGo|TestPython|TestTypescript|TestElixir|TestPHP|TestContainer' --skip='TestDev' --race=true --parallel=16"
+  #         dev-engine: true
+  #         upload-logs: true
+
+  testdev-modules:
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-14-0-32c-dind-st' || 'ubuntu-latest' }}"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: "testdev"
+        uses: ./.github/actions/call
+        with:
+          function: "test specific --run='TestModule' --skip='TestDev' --race=true --parallel=16"
+          dev-engine: true
+          upload-logs: true
+
+  testdev-module-runtimes:
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-14-0-32c-dind-st' || 'ubuntu-latest' }}"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: "testdev"
+        uses: ./.github/actions/call
+        with:
+          function: "test specific --run='TestGo|TestPython|TestTypescript|TestElixir|TestPHP' --skip='TestDev' --race=true --parallel=16"
+          dev-engine: true
+          upload-logs: true
+
+  testdev-container:
+    runs-on: "${{ github.repository == 'dagger/dagger' && 'dagger-g2-v0-14-0-32c-dind-st' || 'ubuntu-latest' }}"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: "testdev"
+        uses: ./.github/actions/call
+        with:
+          function: "test specific --run='TestContainer' --skip='TestDev' --race=true --parallel=16"
+          dev-engine: true
+          upload-logs: true
