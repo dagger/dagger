@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -176,11 +177,16 @@ func gitPublish(ctx context.Context, git *dagger.VersionGit, opts gitPublishOpts
 			WithExec([]string{"git", "rev-parse", "HEAD"}).
 			Stdout(ctx)
 		if err != nil {
-			if strings.Contains(err.Error(), "invalid reference: "+opts.destTag) {
-				// this is a ref that only exists in the source, and not in the
-				// dest, so no overwriting will occur
-				return nil
+			var execErr *dagger.ExecError
+			if errors.As(err, &execErr) {
+				if strings.Contains(execErr.Stderr, "invalid reference: "+opts.destTag) {
+					// this is a ref that only exists in the source, and not in the
+					// dest, so no overwriting will occur
+					return nil
+				}
+				panic(execErr.Stderr)
 			}
+			panic(err)
 			return err
 		}
 		destCommit = strings.TrimSpace(destCommit)
