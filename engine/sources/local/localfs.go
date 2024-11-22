@@ -359,12 +359,7 @@ func (local *localFS) getPreviousChange(ctx context.Context, path string) (*Chan
 			return &ChangeWithStat{kind: ChangeKindAdd, stat: hashStat}, nil
 		}
 
-		h, err := NewFromStat(fsStat)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create content hash: %w", err)
-		}
-
-		hashStat := &HashedStatInfo{StatInfo{fsStat}, digest.NewDigest(XXH3, h)}
+		hashStat := &HashedStatInfo{StatInfo{fsStat}, digest.NewDigest(XXH3, newHashFromStat(fsStat))}
 		return &ChangeWithStat{kind: ChangeKindAdd, stat: hashStat}, nil
 	})
 }
@@ -387,10 +382,7 @@ func (local *localFS) mutate(
 				return nil, fmt.Errorf("failed to stat existing path: %w", err)
 			}
 
-			h, err := NewFromStat(upperStat)
-			if err != nil {
-				return nil, fmt.Errorf("failed to create content hash: %w", err)
-			}
+			h := newHashFromStat(upperStat)
 			setXattr, err := fn(ctx, fullPath, lowerStat, h)
 			if err != nil {
 				return nil, err
