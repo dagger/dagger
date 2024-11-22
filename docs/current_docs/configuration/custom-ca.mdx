@@ -30,7 +30,7 @@ Dagger startup if found in that directory.
 {`    registry.dagger.io/engine:${daggerVersion}`}
 </CodeBlock>
 
-## Configuration Applied to User Containers
+## Configuration applied to user containers
 
 As mentioned above, there is *best-effort* support for automatically installing
 Dagger's custom CAs in all containers created by user pipelines (i.e. those
@@ -42,7 +42,7 @@ custom CAs in order to operate in your network where those CAs may be strictly
 required.
 
 The support is best-effort because CAs are not standardized, which means the
-exact way they are configured depends on base image of the container.
+exact way they are configured depends on the base image of the container.
 
 Currently, Dagger supports automatically installing custom CAs in images with
 the following base distributions:
