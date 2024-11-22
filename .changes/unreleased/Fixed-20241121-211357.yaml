@@ -1,0 +1,7 @@
+kind: Fixed
+body: |
+  Fix cache mounts not being included in interactive debug containers.
+time: 2024-11-21T21:13:57.27419464-08:00
+custom:
+  Author: sipsma
+  PR: "9034"
