@@ -312,7 +312,7 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 			return nil, errors.New(errInst.Self.Message)
 		}
 		if fn.metadata.OriginalName == "" {
-			return nil, fmt.Errorf("call constructor: %w", err)
+			return nil, fmt.Errorf("call constructor: %w\n\n%s", err, InspectError(err))
 		} else {
 			return nil, fmt.Errorf("call function %q: %w", fn.metadata.OriginalName, err)
 		}

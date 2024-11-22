@@ -308,6 +308,18 @@ func mainSrc(checkVersionCompatibility func(string) bool) string {
 	}
 }
 
+func unwrapError(rerr error) string {
+	var execErr *dagger.ExecError
+	if errors.As(rerr, &execErr) {
+		return execErr.Message()
+	}
+	var gqlErr *gqlerror.Error
+	if errors.As(rerr, &gqlErr) {
+		return gqlErr.Message
+	}
+	return rerr.Error()
+}
+
 func dispatch(ctx context.Context) (rerr error) {
 	ctx = telemetry.InitEmbedded(ctx, resource.NewWithAttributes(
 		semconv.SchemaURL,
@@ -324,7 +336,7 @@ func dispatch(ctx context.Context) (rerr error) {
 	fnCall := dag.CurrentFunctionCall()
 	defer func() {
 		if rerr != nil {
-			if ` + voidRet + ` := fnCall.ReturnError(ctx, dag.Error(rerr.Error())); err != nil {
+			if ` + voidRet + ` := fnCall.ReturnError(ctx, dag.Error(unwrapError(rerr))); err != nil {
 				fmt.Println("failed to return error:", err)
 			}
 		}

@@ -1125,7 +1125,7 @@ func (c *Client) clientMetadata() engine.ClientMetadata {
 		Interactive:               c.Interactive,
 		InteractiveCommand:        c.InteractiveCommand,
 		SSHAuthSocketPath:         sshAuthSock,
-		ExecErrorOutput:           c.ExecErrorOutput,
+		ExecErrorOutput:           true, //c.ExecErrorOutput,
 	}
 }
 
