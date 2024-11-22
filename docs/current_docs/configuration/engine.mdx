@@ -9,48 +9,49 @@ import { daggerVersion } from "../partials/version";
 
 # Engine
 
-The dagger engine is designed to be run out-of-the-box with sensible defaults.
-However, even with these defaults, it's sometimes needed to tweak various
+Dagger is designed to be run out-of-the-box with sensible defaults.
+However, even with these defaults, it may sometimes be necessary to modify various
 settings.
 
 TODO: update version when base PR is merged
 
-To do so, there are two config mechanisms: using dagger's `engine.json` file
-(introduced in v0.14.X), or using the legacy buildkit-style `engine.toml` file.
-The `engine.json` file is a configuration file that follows the [Engine config schema](https://docs.dagger.io/reference/engine.schema.json),
-while the legacy `engine.toml` file uses [BuildKit's config syntax](https://github.com/moby/buildkit/blob/v0.17.0/docs/buildkitd.toml.md)).
+To do so, there are two configuration mechanisms: using Dagger's `engine.json`
+file (introduced in v0.14.X), or using the legacy BuildKit-style `engine.toml`
+file. The `engine.json` file is a configuration file that follows the [Engine configuration file schema](https://docs.dagger.io/reference/engine.schema.json),
+while the legacy `engine.toml` file uses [BuildKit's configuration syntax](https://github.com/moby/buildkit/blob/v0.17.0/docs/buildkitd.toml.md)).
 
 :::note
 Some options are not yet supported by the newer `engine.json`, so the legacy
 `engine.toml` will need to be used for those.
 :::
 
-If an option is specified in *both* `engine.json` and in `engine.toml`, then
+If an option is specified in both `engine.json` and in `engine.toml`, then
 the `engine.json` settings will take precedence.
 
 ## Configuration
 
 <Tabs>
 
-<TabItem value=".">
+<TabItem value="engine.json">
 
-To configure `engine.json` when using an automatically provisioned engine (the
-default), you should write your desired JSON config to `~/.config/dagger/engine.json`
-(or to `$XDG_CONFIG_HOME/dagger/engine.json` if set).
+To configure `engine.json` when using an automatically provisioned Dagger
+Engine (the default), you should write your desired JSON config to
+`~/.config/dagger/engine.json` (or to `$XDG_CONFIG_HOME/dagger/engine.json` if
+set).
 
-Then, when an engine is automatically started from a `dagger` command, it will
-pull in that config - changes after the engine has already been created and
-is running will **not** automatically apply to the new engine. To reapply the
-config after changing it, you'll need to manually stop the engine.
+Then, when the Dagger Rngine is automatically started from a `dagger` command,
+it will pull in that configuration. Changes after the Dagger Engine has already
+been created and is running will not automatically apply to the new Engine. To
+reapply the config after changing it, you'll need to manually stop the engine.
 
 ```shell
 docker rm -f $(docker ps -q --filter "name=dagger-engine-*")
 ```
 
-If you are not using an automatically provisioned engine, and have followed the
-steps to setup a [custom runner](./custom-runner), then you'll need to manually
-mount your `engine.json` to the engine container's filesystem at
-`/etc/dagger/engine.json`. For example:
+If you are not using an automatically provisioned Dagger Engine, and have
+followed the steps to setup a [custom runner](./custom-runner.mdx), then you'll
+need to manually mount your `engine.json` to the engine container's filesystem
+at `/etc/dagger/engine.json`. For example:
 
 <CodeBlock language="shell">
 {`docker run --rm \\\n`}
@@ -65,8 +66,8 @@ mount your `engine.json` to the engine container's filesystem at
 
 <TabItem value="engine.toml">
 
-To configure `engine.toml`, a [custom runner](./custom-runner) is required -
-unlike with `engine.json`, the config is **not** automatically mounted to the
+To configure `engine.toml`, a [custom runner](./custom-runner.mdx) is required -
+unlike with `engine.json`, the configuration is not automatically mounted to the
 engine.
 
 To configure with `engine.toml`, the `engine.toml` file needs to be manually
@@ -81,13 +82,15 @@ mounted to `/etc/dagger/engine.toml`. For example:
 {`    registry.dagger.io/engine:${daggerVersion}`}
 </CodeBlock>
 
-Note, that by default, the engine container itself contains a default
-`engine.toml` configuration - when mounting `engine.toml`, you may
+:::note
+The `registry.dagger.io/engine` container itself contains a default
+`engine.toml` configuration. When mounting `engine.toml`, you may
 want to extend the default configuration:
 
 <CodeBlock language="shell">
 {`docker run --rm --entrypoint sh registry.dagger.io/engine:${daggerVersion} cat /etc/dagger/engine.toml`}
 </CodeBlock>
+:::
 
 </TabItem>
 
@@ -97,7 +100,7 @@ want to extend the default configuration:
 
 ### Logging
 
-The dagger engine supports various log verbosity levels - the default level is to enable `debug`.
+Dagger supports various log verbosity levels. The default level is to enable `debug`.
 
 <Tabs>
 
@@ -154,11 +157,11 @@ trace = false
 
 ### Security
 
-The engine by default has an open security policy. This policy allows exec
+By default, Dagger has an open security policy. This policy allows exec
 operations to access the `insecureRootCapabilities` options, which effectively
 allows all operations root access (similar to [`docker run`'s --privileged` flag](https://docs.docker.com/reference/cli/docker/container/run/#privileged).
 
-This capability can be disabled to lock down a dagger installation.
+This capability can be disabled to lock down a Dagger installation.
 
 <Tabs>
 
@@ -206,10 +209,10 @@ insecure-entitlements = []
 
 ### Garbage collection
 
-The dagger engine [caches various operations](./cache.mdx) to improve speed on
+The Dagger Engine [caches various operations](./cache.mdx) to improve speed on
 subsequent runs of the same pipeline.
 
-The garbage collector runs in the background of the dagger engine,
+The Dagger garbage collector runs in the background,
 looking for unused layers and artifacts, and clears them up once they exceed
 the storage allowed by the cache policy. This prevents the cache from getting
 too large and consuming too much of the available disk space.
@@ -217,7 +220,7 @@ too large and consuming too much of the available disk space.
 :::warning
 Take care when configuring the garbage collector manually, and ensure not to
 accidentally configure it to clean up *all* cache, since this will severely
-impact dagger's performance.
+impact performance.
 :::
 
 <Tabs>
@@ -415,11 +418,11 @@ instead of from Docker Hub.
 
 ### Custom proxy
 
-Currently, custom configuration authorities cannot be configured through
-`engine.json` or `engine.toml`, and must be configured [separately](./proxy.mdx).
+Currently, custom proxies cannot be configured through `engine.json` or
+`engine.toml`, and must be configured [separately](./proxy.mdx).
 
-### Custom Certificate Authorities
+### Custom certificate authorities
 
-Currently, custom configuration authorities cannot be configured through
+Currently, custom certificate authorities cannot be configured through
 `engine.json` or `engine.toml`, and must be configured [separately](./custom-ca.mdx).
 
