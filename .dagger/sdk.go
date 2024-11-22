@@ -184,9 +184,7 @@ func gitPublish(ctx context.Context, git *dagger.VersionGit, opts gitPublishOpts
 					// dest, so no overwriting will occur
 					return nil
 				}
-				panic(execErr.Stderr)
 			}
-			panic(err)
 			return err
 		}
 		destCommit = strings.TrimSpace(destCommit)
