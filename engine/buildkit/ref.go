@@ -419,14 +419,34 @@ func debugContainer(ctx context.Context, execOp *bksolverpb.ExecOp, execErr *llb
 		return nil
 	}
 
+	// relevant buildkit code we need to contend with here:
+	// https://github.com/moby/buildkit/blob/44504feda1ce39bb8578537a6e6a93f90bdf4220/solver/llbsolver/ops/exec.go#L386-L409
 	mounts := []ContainerMount{}
 	for i, m := range execOp.Mounts {
-		mountID := execErr.Mounts[i]
-		if mountID == nil {
+		if m.Input == -1 {
+			mounts = append(mounts, ContainerMount{
+				Mount: &bkgw.Mount{
+					Dest:      m.Dest,
+					Selector:  m.Selector,
+					Readonly:  m.Readonly,
+					MountType: m.MountType,
+					CacheOpt:  m.CacheOpt,
+					SecretOpt: m.SecretOpt,
+					SSHOpt:    m.SSHOpt,
+				},
+			})
 			continue
 		}
 
-		workerRef, ok := mountID.Sys().(*bkworker.WorkerRef)
+		// sanity check we don't panic
+		if i >= len(execErr.Mounts) {
+			return fmt.Errorf("exec error mount index out of bounds: %d", i)
+		}
+		errMnt := execErr.Mounts[i]
+		if errMnt == nil {
+			continue
+		}
+		workerRef, ok := errMnt.Sys().(*bkworker.WorkerRef)
 		if !ok {
 			continue
 		}
@@ -441,7 +461,7 @@ func debugContainer(ctx context.Context, execOp *bksolverpb.ExecOp, execErr *llb
 				CacheOpt:  m.CacheOpt,
 				SecretOpt: m.SecretOpt,
 				SSHOpt:    m.SSHOpt,
-				ResultID:  mountID.ID(),
+				ResultID:  errMnt.ID(),
 			},
 		})
 	}

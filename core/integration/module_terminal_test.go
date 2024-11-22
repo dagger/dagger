@@ -122,11 +122,17 @@ type Test struct {
 	)
 
 	func New(ctx context.Context) *Test {
+		d1 := dag.Directory().WithNewFile("foo", "FOO\n")
+		d2 := dag.Directory().WithNewFile("bar", "BAR\n")
+
 		return &Test{
 			Ctr: dag.Container().
 				From("%s").
 				WithEnvVariable("COOLENV", "woo").
 				WithWorkdir("/coolworkdir").
+				WithMountedDirectory("/a_mnt", d1).
+				WithMountedCache("/cachemnt", dag.CacheVolume("whateverbrah")).
+				WithMountedDirectory("/z_mnt", d2).
 				WithDefaultTerminalCmd([]string{"/bin/sh"}),
 		}
 	}
@@ -174,6 +180,33 @@ type Test struct {
 		require.NoError(t, err)
 
 		_, err = console.ExpectString("/coolworkdir\r\n")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString(prompt)
+		require.NoError(t, err)
+
+		_, err = console.SendLine("cat /a_mnt/foo")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString("FOO\r\n")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString(prompt)
+		require.NoError(t, err)
+
+		_, err = console.SendLine("stat /cachemnt")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString("File: /cachemnt\r\n")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString(prompt)
+		require.NoError(t, err)
+
+		_, err = console.SendLine("cat /z_mnt/bar")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString("BAR\r\n")
 		require.NoError(t, err)
 
 		_, err = console.ExpectString(prompt)
@@ -534,10 +567,18 @@ type Test struct {
 	)
 
 	func New(ctx context.Context) *Test {
+		d1 := dag.Directory().WithNewFile("foo", "FOO\n")
+		d2 := dag.Directory().WithNewFile("bar", "BAR\n")
+
 		return &Test{
 			Ctr: dag.Container().
 				From("%s").
-				WithExec([]string{"sh", "-c", "echo breakpoint > /fail && exit 42"}),
+				WithMountedDirectory("/a_mnt", d1).
+				WithMountedCache("/cachemnt", dag.CacheVolume("somethingoranother")).
+				WithMountedDirectory("/z_mnt", d2).
+				WithExec([]string{"sh", "-c", 
+					"echo breakpoint > /fail && echo FOOFOO > /a_mnt/foo && echo BARBAR > /z_mnt/bar && exit 42",
+				}),
 		}
 	}
 
@@ -584,6 +625,33 @@ type Test struct {
 		require.NoError(t, err)
 
 		_, err = console.ExpectString("breakpoint\r\n")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString(prompt)
+		require.NoError(t, err)
+
+		_, err = console.SendLine("cat /a_mnt/foo")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString("FOOFOO\r\n")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString(prompt)
+		require.NoError(t, err)
+
+		_, err = console.SendLine("stat /cachemnt")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString("File: /cachemnt\r\n")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString(prompt)
+		require.NoError(t, err)
+
+		_, err = console.SendLine("cat /z_mnt/bar")
+		require.NoError(t, err)
+
+		_, err = console.ExpectString("BARBAR\r\n")
 		require.NoError(t, err)
 
 		_, err = console.ExpectString(prompt)
