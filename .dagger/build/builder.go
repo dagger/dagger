@@ -342,7 +342,7 @@ func (build *Builder) runcBin() *dagger.File {
 		WithEnvVariable("TARGETPLATFORM", string(build.platform)).
 		WithEnvVariable("CGO_ENABLED", "1").
 		WithExec([]string{"apk", "add", "clang", "lld", "git", "pkgconf"}).
-		WithDirectory("/", dag.Container().From("tonistiigi/xx:1.2.1").Rootfs()).
+		WithDirectory("/", dag.Container().From(consts.XxImage).Rootfs()).
 		WithExec([]string{"xx-apk", "update"}).
 		WithExec([]string{"xx-apk", "add", "build-base", "pkgconf", "libseccomp-dev", "libseccomp-static"}).
 		WithMountedCache("/go/pkg/mod", dag.CacheVolume("go-mod")).
