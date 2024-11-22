@@ -1,0 +1,69 @@
+name: Alternative CI Runners 2
+
+on:
+  # Run the workflow every day TWICE:
+  # 1. 9:06AM UTC (low activity)
+  # 2. 9:26AM UTC (cache test - high chance of no code changes)
+  schedule:
+    - cron: "6,26 9 * * *"
+  # Enable manual trigger for on-demand runs - helps when debugging
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  docs-lint-on-namespace-remote-engine:
+    uses: ./.github/workflows/_dagger_on_namespace_remote_engine.yml
+    with:
+      function: docs lint
+      timeout: 20
+  docs-lint-on-namespace-local-engine:
+    uses: ./.github/workflows/_dagger_on_namespace_local_engine.yml
+    with:
+      function: docs lint
+      dev: true
+      timeout: 20
+
+  test-cli-engine-on-namespace-remote-engine:
+    needs: docs-lint-on-namespace-remote-engine
+    uses: ./.github/workflows/_dagger_on_namespace_remote_engine.yml
+    with:
+      function: test specific --run='TestCLI|TestEngine' --race=true --parallel=16
+      timeout: 20
+
+  sdk-go-on-namespace-remote-engine:
+    needs: docs-lint-on-namespace-remote-engine
+    uses: ./.github/workflows/_dagger_on_namespace_remote_engine.yml
+    with:
+      function: check --targets=sdk/go
+  sdk-go-dev-on-namespace-local-engine:
+    needs: sdk-go-on-namespace-remote-engine
+    uses: ./.github/workflows/_dagger_on_namespace_local_engine.yml
+    with:
+      function: check --targets=sdk/go
+      dev: true
+
+  sdk-python-on-namespace-remote-engine:
+    needs: docs-lint-on-namespace-remote-engine
+    uses: ./.github/workflows/_dagger_on_namespace_remote_engine.yml
+    with:
+      function: check --targets=sdk/python
+  sdk-python-dev-on-namespace-local-engine:
+    needs: sdk-python-on-namespace-remote-engine
+    uses: ./.github/workflows/_dagger_on_namespace_local_engine.yml
+    with:
+      function: check --targets=sdk/python
+      dev: true
+
+  sdk-typescript-on-namespace-remote-engine:
+    needs: docs-lint-on-namespace-remote-engine
+    uses: ./.github/workflows/_dagger_on_namespace_remote_engine.yml
+    with:
+      function: check --targets=sdk/typescript
+  sdk-typescript-dev-on-namespace-local-engine:
+    needs: sdk-typescript-on-namespace-remote-engine
+    uses: ./.github/workflows/_dagger_on_namespace_local_engine.yml
+    with:
+      function: check --targets=sdk/typescript
+      dev: true

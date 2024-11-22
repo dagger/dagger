@@ -1,4 +1,4 @@
-name: Dagger on Depot - Local Engine
+name: Dagger on Namespace - Remote Engine
 
 on:
   workflow_call:
@@ -8,7 +8,7 @@ on:
         type: string
         required: true
       size:
-        description: "Runner size"
+        description: "Runner size - used by the Dagger Engine too"
         type: number
         default: 16
         required: false
@@ -17,10 +17,10 @@ on:
         type: number
         default: 10
         required: false
-      dev:
-        description: "Use a development version of Dagger"
+      dagger:
+        description: "Dagger version"
         type: string
-        default: "false"
+        default: "0.15.0"
         required: false
       ubuntu:
         description: "Ubuntu version"
@@ -29,9 +29,11 @@ on:
         required: false
 
 jobs:
-  local-dagger-engine:
+  remote-dagger-engine:
     if: ${{ github.repository == 'dagger/dagger' }}
-    runs-on: depot-ubuntu-${{ inputs.ubuntu }}-${{ inputs.size }}
+    runs-on:
+      - nscloud-ubuntu-${{ inputs.ubuntu }}-amd64-${{ inputs.size }}x32
+      - namespace-experiments:dagger.integration=enabled;dagger.version=${{ inputs.dagger }}
     timeout-minutes: ${{ inputs.timeout }}
     steps:
       - name: Checkout repo
@@ -40,9 +42,11 @@ jobs:
         uses: ./.github/actions/call
         with:
           function: ${{ inputs.function }}
+          version: v${{ inputs.dagger }}
           dev-engine: ${{ inputs.dev }}
       - name: ${{ inputs.function }} (CACHE TEST)
         uses: ./.github/actions/call
         with:
           function: ${{ inputs.function }}
+          version: v${{ inputs.dagger }}
           dev-engine: ${{ inputs.dev }}
