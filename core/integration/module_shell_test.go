@@ -205,6 +205,17 @@ func (ShellSuite) TestNotExists(ctx context.Context, t *testctx.T) {
 	require.ErrorContains(t, err, "no such function")
 }
 
+func (ShellSuite) TestIntegerArg(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	script := ".container | with-exposed-port 80 | exposed-ports | port"
+	out, err := daggerCliBase(t, c).
+		With(daggerShell(script)).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "80\n", out)
+}
+
 func (ShellSuite) TestExport(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 

@@ -129,7 +129,7 @@ func marshalValue(ctx context.Context, v reflect.Value) (string, error) {
 		}
 		return fmt.Sprintf("{%s}", strings.Join(nonNullElems, ",")), nil
 	default:
-		panic(fmt.Errorf("unsupported argument of kind %s", t.Kind()))
+		return "", fmt.Errorf("unsupported argument of kind %s", t.Kind())
 	}
 }
 
