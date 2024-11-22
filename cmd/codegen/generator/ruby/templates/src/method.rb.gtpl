@@ -11,6 +11,7 @@
 		{{- $parentName = "Client" }}
 	{{- end }}
 	{{- template "method_comment" . -}}
+	{{- template "method_signature" . -}}
 {{ "" }}    def {{ .Name | FormatMethod }}
     {{- if gt (len .Args) 0 }}({{ end }}
 		{{- $maxReqIndex := Subtract (len $required) 1 }}
@@ -18,12 +19,8 @@
 			{{- .Name | FormatArg }}:
 			{{- if ne $index $maxReqIndex }}, {{ end }}
 		{{- end }}
-		{{- if and $required $optionals }}, {{end}}
-		{{- $maxOptsIndex := Subtract (len $optionals) 1 }}
-		{{- range $index, $value := $optionals }}
-			{{- .Name | FormatArg }}: nil
-			{{- if ne $index $maxOptsIndex }}, {{ end }}
-		{{- end }}
+		{{- if and $required $optionals }}, {{ end }}
+		{{- if $optionals }}opts: nil{{ end }}
 	{{- if gt (len .Args) 0 }}){{ end }}
 	{{- range $index, $value := $required }}
       assert_not_nil(:{{.Name | FormatArg}}, {{.Name | FormatArg}})
@@ -37,22 +34,26 @@
 		{{- end }}
 	{{- else }}
 		{{- if eq (len $required) 0 }}
-      args = {}
+      dag_node_args = {}
 		{{- else }}
-      args = {
+      dag_node_args = {
 		{{- range $index, $value := $required }}
         '{{ .Name }}' => {{ .Name | FormatArg }}{{- if ne $index $maxReqIndex }},{{ end }}
 		{{- end }}
       }
 		{{- end }}
+		{{- if $optionals }}
+      unless opts.nil?
 		{{- range $index, $value := $optionals }}
-      args['{{ .Name }}'] = {{ .Name | FormatArg }} unless {{ .Name | FormatArg }}.nil?
+        dag_node_args['{{ .Name }}'] = opts.{{ .Name | FormatArg }} unless opts.{{ .Name | FormatArg }}.nil?
+		{{- end }}
+      end
 		{{- end }}
 		{{- if Solve . }}
-      n = {{$outputType}}.new(self, @client, '{{.Name}}', args)
+      n = {{$outputType}}.new(self, @client, '{{.Name}}', dag_node_args)
       @client.invoke(n)
 		{{- else }}
-      {{$outputType}}.new(self, @client, '{{.Name}}', args)
+      {{$outputType}}.new(self, @client, '{{.Name}}', dag_node_args)
 		{{- end }}
 	{{- end }}
     end

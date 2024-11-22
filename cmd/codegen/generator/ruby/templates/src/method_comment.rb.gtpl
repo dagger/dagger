@@ -23,7 +23,7 @@
 			{{- range $i, $line := $desc }}
 				{{- /* If it's the first line, add the JSDoc tag, otherwise treat it as a simple line */ -}}
 				{{- if (eq $i 0) }}
-    # @param {{ $arg.Name | FormatArg }} [{{ $typeRef | FormatInputType }}]{{ $line }}
+    # @param {{ $arg.Name | FormatArg }} -{{ $line }}
 				{{- else }}
     #{{ $line }}
 				{{- end }}
@@ -32,26 +32,9 @@
 		{{- end }}
 	{{- end }}
 
-	{{- if ArgsHaveDescription $optionals }}
-		{{- range $optionals }}
-			{{- $typeRef := .TypeRef }}
-			{{- if .Description }}
-				{{- /* Reference current arg to access it in range */ -}}
-				{{- $arg := . }}
-				{{- /* Write argument description */ -}}
-				{{- $desc := CommentToLines .Description }}
-				{{- range $i, $line := $desc }}
-					{{- /* If it's the first line, add the JSDoc tag, otherwise treat it as a simple line */ -}}
-					{{- if (eq $i 0) }}
-    # @param {{ $arg.Name | FormatArg }} [{{ $typeRef | FormatInputType }}, nil]{{ $line }}
-					{{- else }}
-    #{{ $line }}
-					{{- end }}
-				{{- end }}
-			{{- end }}
-		{{- end }}
+	{{- if $optionals }}
+    # @param opts - Optional arguments
 	{{- end }}
-    # @return [{{ .TypeRef | FormatOutputType }}]
 
 	{{- /* Write deprecation message. */ -}}
 	{{- if .IsDeprecated }}
@@ -59,5 +42,4 @@
     #{{ . }}
 		{{- end }}
 	{{- end }}
-{{ "" }}
 {{- end }}

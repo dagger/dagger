@@ -45,6 +45,24 @@ func (r RubySDK) Lint(ctx context.Context) (rerr error) {
 		return err
 	})
 
+	//eg.Go(func() (rerr error) {
+	//	ctx, span := Tracer().Start(ctx, "lint Sorbet types")
+	//	defer func() {
+	//		if rerr != nil {
+	//			span.SetStatus(codes.Error, rerr.Error())
+	//		}
+	//		span.End()
+	//	}()
+	//	_, err := r.
+	//		rubyBase().
+	//		WithExec([]string{"apk", "add", "build-base", "ruby-dev", "bash"}).
+	//		WithWorkdir("/" + rubySdkSubdir).
+	//		WithExec([]string{"bundle", "install"}).
+	//		WithExec([]string{"bundle", "exec", "srb", "tc"}).
+	//		Sync(ctx)
+	//	return err
+	//})
+
 	eg.Go(func() (rerr error) {
 		ctx, span := Tracer().Start(ctx, "check that the generated client library is up-to-date")
 		defer func() {
@@ -120,7 +138,7 @@ func (r RubySDK) Publish(
 	// +optional
 	dryRun bool,
 	// +optional
-	npmToken *dagger.Secret,
+	token *dagger.Secret,
 
 	// +optional
 	// +default="https://github.com/dagger/dagger.git"

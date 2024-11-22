@@ -2,6 +2,3 @@
 
 source 'https://rubygems.org'
 gemspec
-
-gem 'ostruct'
-gem 'base64'

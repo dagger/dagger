@@ -2,6 +2,8 @@ Layout/LineLength:
   Enabled: false
 Metrics/MethodLength:
   Enabled: false
+Metrics/ModuleLength:
+  Enabled: false
 Metrics/ClassLength:
   Enabled: false
 Metrics/ParameterLists:
@@ -13,4 +15,8 @@ Naming/ClassAndModuleCamelCase:
 Metrics/CyclomaticComplexity:
   Enabled: false
 Metrics/PerceivedComplexity:
+  Enabled: false
+Style/SoleNestedConditional:
+  Enabled: false
+Style/IfUnlessModifier:
   Enabled: false

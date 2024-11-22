@@ -2,6 +2,7 @@ package templates
 
 import (
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"text/template"
@@ -33,10 +34,101 @@ func TypescriptTemplateFuncs(
 		"Solve":               solve,
 		"IsSelfChainable":     commonFunc.IsSelfChainable,
 		"ValidTypes":          validTypes,
+		"IsCustomScalar":      isCustomScalar,
+		"IsEnum":              isEnum,
+		"SortEnumFields":      sortEnumFields,
+		"FormatEnum":          formatEnum,
+		"FormatEnumValue":     formatEnumValue,
+		"PascalCase":          pascalCase,
+		"SortInputFields":     sortInputFields,
+		"CustomScalars":       customScalars,
+		"Enums":               enums,
+		"Nodes":               nodes,
+		"Inputs":              inputs,
+		"NodesWithOpts":       nodesWithOpts,
 	}
 }
 
+// pascalCase change a type name into pascalCase
+func pascalCase(name string) string {
+	return strcase.ToCamel(name)
+}
+
+// formatEnum formats a GraphQL enum into a TS equivalent
+func formatEnum(s string) string {
+	s = strings.ToLower(s)
+	return strcase.ToCamel(s)
+}
+
+func formatEnumValue(s string) string {
+	return strings.ToUpper(strcase.ToSnake(s))
+}
+
+// isCustomScalar checks if the type is actually custom.
+func isCustomScalar(t *introspection.Type) bool {
+	switch introspection.Scalar(t.Name) {
+	case introspection.ScalarString, introspection.ScalarInt, introspection.ScalarFloat, introspection.ScalarBoolean:
+		return false
+	default:
+		return t.Kind == introspection.TypeKindScalar
+	}
+}
+
+// isEnum checks if the type is actually custom.
+func isEnum(t *introspection.Type) bool {
+	return t.Kind == introspection.TypeKindEnum &&
+		// We ignore the internal GraphQL enums
+		!strings.HasPrefix(t.Name, "_")
+}
+
+func sortEnumFields(s []introspection.EnumValue) []introspection.EnumValue {
+	sort.SliceStable(s, func(i, j int) bool {
+		return s[i].Name < s[j].Name
+	})
+	return s
+}
+
 func validTypes(types introspection.Types) introspection.Types {
+	var res introspection.Types
+	for _, t := range types {
+		if strings.HasPrefix(t.Name, "_") {
+			continue
+		}
+		res = append(res, t)
+	}
+	slices.SortStableFunc(res, func(a, b *introspection.Type) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+	return res
+}
+
+func customScalars(types introspection.Types) introspection.Types {
+	var res introspection.Types
+	for _, t := range types {
+		if isCustomScalar(t) {
+			res = append(res, t)
+		}
+	}
+	slices.SortStableFunc(res, func(a, b *introspection.Type) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+	return res
+}
+
+func enums(types introspection.Types) introspection.Types {
+	var res introspection.Types
+	for _, t := range types {
+		if isEnum(t) {
+			res = append(res, t)
+		}
+	}
+	slices.SortStableFunc(res, func(a, b *introspection.Type) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+	return res
+}
+
+func nodes(types introspection.Types) introspection.Types {
 	var res introspection.Types
 	for _, t := range types {
 		if strings.HasPrefix(t.Name, "_") {
@@ -46,6 +138,42 @@ func validTypes(types introspection.Types) introspection.Types {
 			continue
 		}
 		res = append(res, t)
+	}
+	slices.SortStableFunc(res, func(a, b *introspection.Type) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+	return res
+}
+
+func nodesWithOpts(types introspection.Types) introspection.Types {
+	var res introspection.Types
+	n := nodes(types)
+	for _, t := range n {
+		for _, f := range t.Fields {
+			if len(getOptionalArgs(f.Args)) > 0 {
+				res = append(res, &introspection.Type{
+					Kind:        t.Kind,
+					Name:        t.Name,
+					Description: t.Description,
+					Fields: []*introspection.Field{
+						f,
+					},
+				})
+			}
+		}
+	}
+	slices.SortStableFunc(res, func(a, b *introspection.Type) int {
+		return strings.Compare(a.Name+a.Fields[0].Name, b.Name+b.Fields[0].Name)
+	})
+	return res
+}
+
+func inputs(types introspection.Types) introspection.Types {
+	var res introspection.Types
+	for _, t := range types {
+		if len(t.InputFields) > 0 {
+			res = append(res, t)
+		}
 	}
 	return res
 }

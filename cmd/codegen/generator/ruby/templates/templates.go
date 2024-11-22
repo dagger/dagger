@@ -13,7 +13,7 @@ var srcs embed.FS
 func New(schemaVersion string) *template.Template {
 	topLevelTemplate := "api"
 	templateDeps := []string{
-		topLevelTemplate, "objects", "object", "method", "method_comment",
+		topLevelTemplate, "object", "method", "method_comment", "method_signature", "types", "enums",
 	}
 
 	fileNames := make([]string, 0, len(templateDeps))

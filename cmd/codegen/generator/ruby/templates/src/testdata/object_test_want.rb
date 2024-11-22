@@ -1,15 +1,22 @@
+  # Container class
   class Container < Node
-    # @return [Container]
-    def exec(args: nil, stdin: nil, redirect_stdout: nil, redirect_stderr: nil)
-      args = {}
-      args['args'] = args unless args.nil?
-      args['stdin'] = stdin unless stdin.nil?
-      args['redirectStdout'] = redirect_stdout unless redirect_stdout.nil?
-      args['redirectStderr'] = redirect_stderr unless redirect_stderr.nil?
-      Container.new(self, @client, 'exec', args)
+    extend T::Sig
+
+    # @param opts - Optional arguments
+    sig { params(opts: T.nilable(ContainerExecOpts)).returns(Container) }
+    def exec(opts: nil)
+      dag_node_args = {}
+      unless opts.nil?
+        dag_node_args['args'] = opts.args unless opts.args.nil?
+        dag_node_args['stdin'] = opts.stdin unless opts.stdin.nil?
+        dag_node_args['redirectStdout'] = opts.redirect_stdout unless opts.redirect_stdout.nil?
+        dag_node_args['redirectStderr'] = opts.redirect_stderr unless opts.redirect_stderr.nil?
+      end
+      Container.new(self, @client, 'exec', dag_node_args)
     end
 
-    def with(fun)
-      fun.call(self)
+    sig { params(_blk: ContainerChain).returns(Container) }
+    def with(&_blk)
+      yield self
     end
   end

@@ -7,7 +7,7 @@ import (
 )
 
 // FormatTypeFunc is an implementation of generator.FormatTypeFuncs interface
-// to format GraphQL type into Typescript.
+// to format GraphQL type into Ruby.
 type FormatTypeFunc struct {
 	scope string
 }
@@ -22,26 +22,26 @@ func (f *FormatTypeFunc) WithScope(scope string) generator.FormatTypeFuncs {
 }
 
 func (f *FormatTypeFunc) FormatKindList(representation string) string {
-	return "Array<" + representation + ">"
+	return "T::Array[" + representation + "]"
 }
 
 func (f *FormatTypeFunc) FormatKindScalarString(representation string) string {
-	representation += "string"
+	representation += "String"
 	return representation
 }
 
 func (f *FormatTypeFunc) FormatKindScalarInt(representation string) string {
-	representation += "number"
+	representation += "Integer"
 	return representation
 }
 
 func (f *FormatTypeFunc) FormatKindScalarFloat(representation string) string {
-	representation += "number"
+	representation += "Float"
 	return representation
 }
 
 func (f *FormatTypeFunc) FormatKindScalarBoolean(representation string) string {
-	representation += "boolean"
+	representation += "T::Boolean"
 	return representation
 }
 
