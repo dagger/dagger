@@ -122,6 +122,10 @@ func (s TerminalAttachable) sendSize(srv Terminal_SessionServer, stdout io.Write
 }
 
 func (s TerminalAttachable) forwardStdin(ctx context.Context, srv Terminal_SessionServer, stdin io.Reader) {
+	if stdin == nil {
+		return
+	}
+
 	// In order to stop reading from stdin when the context is cancelled,
 	// we proxy the reads through a Pipe which we can close without closing
 	// the underlying stdin.

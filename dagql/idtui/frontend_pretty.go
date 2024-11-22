@@ -202,12 +202,20 @@ func (fe *frontendPretty) runWithTUI(ctx context.Context, run func(context.Conte
 	opts := []tea.ProgramOption{
 		tea.WithMouseCellMotion(),
 	}
+
 	in, out := findTTYs()
-	if in != nil {
-		opts = append(opts, tea.WithInput(in))
-	} else {
-		opts = append(opts, tea.WithInput(nil))
+	if in == nil {
+		tty, err := openInputTTY()
+		if err != nil {
+			return err
+		}
+		if tty != nil {
+			in = tty
+			defer tty.Close()
+		}
 	}
+	opts = append(opts, tea.WithInput(in))
+
 	if out != nil {
 		opts = append(opts, tea.WithOutput(out))
 	}
@@ -1155,7 +1163,7 @@ func (l *prettyLogs) Shutdown(ctx context.Context) error {
 	return nil
 }
 
-func findTTYs() (in *os.File, out *os.File) {
+func findTTYs() (in io.Reader, out io.Writer) {
 	if term.IsTerminal(int(os.Stdin.Fd())) {
 		in = os.Stdin
 	}
