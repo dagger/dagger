@@ -178,13 +178,8 @@ class ExecError(QueryError):
         self.stderr = ext["stderr"]
 
     def __str__(self):
-        """Prints the error message with stdout and stderr."""
-        msg = self.message
-        if self.stdout:
-            msg += f"\nStdout:\n{self.stdout}"
-        if self.stderr:
-            msg += f"\nStderr:\n{self.stderr}"
-        return msg
+        """Prints the original error message."""
+        return self.message
 
 
 __all__ = [

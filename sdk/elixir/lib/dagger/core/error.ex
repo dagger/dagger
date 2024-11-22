@@ -20,36 +20,6 @@ defmodule Dagger.Core.ExecError do
 
   @impl true
   def message(exception) do
-    stdout =
-      if String.trim(exception.stdout) != "" do
-        [
-          "Stdout:",
-          ?\n,
-          exception.stdout
-        ]
-      else
-        ""
-      end
-
-    stderr =
-      if String.trim(exception.stderr) != "" do
-        [
-          "Stderr:",
-          ?\n,
-          exception.stderr
-        ]
-      else
-        ""
-      end
-
-    [
-      Exception.message(exception.original_error),
-      ?\n,
-      stdout,
-      ?\n,
-      stderr,
-      ?\n
-    ]
-    |> IO.iodata_to_binary()
+    Exception.message(exception.original_error)
   end
 end
