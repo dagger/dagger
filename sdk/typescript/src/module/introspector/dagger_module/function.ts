@@ -1,6 +1,6 @@
 import ts from "typescript"
 
-import { TypeDefKind } from "../../../api/client.gen"
+import { TypeDefKind } from "../../../api/client.gen.js"
 import { IntrospectionError } from "../../../common/errors/index.js"
 import { TypeDef } from "../typedef.js"
 import {
