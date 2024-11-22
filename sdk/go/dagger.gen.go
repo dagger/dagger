@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"strings"
 
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"go.opentelemetry.io/otel"
@@ -89,16 +88,7 @@ type ExecError struct {
 }
 
 func (e *ExecError) Error() string {
-	// As a default when just printing the error, include the stdout
-	// and stderr for visibility
-	msg := e.Message()
-	if strings.TrimSpace(e.Stdout) != "" {
-		msg += "\nStdout:\n" + e.Stdout
-	}
-	if strings.TrimSpace(e.Stderr) != "" {
-		msg += "\nStderr:\n" + e.Stderr
-	}
-	return msg
+	return e.Message()
 }
 
 func (e *ExecError) Message() string {
