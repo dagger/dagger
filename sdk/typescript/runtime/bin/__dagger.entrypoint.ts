@@ -5,7 +5,7 @@ import * as path from "path"
 
 const allowedExtensions = [".ts", ".mts"]
 
-function listTsFilesInModule(dir = "."): string[] {
+function listTsFilesInModule(dir = import.meta.dirname): string[] {
   const res = fs.readdirSync(dir).map((file) => {
     const filepath = path.join(dir, file)
 
@@ -23,7 +23,10 @@ function listTsFilesInModule(dir = "."): string[] {
     return []
   })
 
-  return res.reduce((p, c) => [...c, ...p], [])
+  return res.reduce(
+    (p, c) => [...c, ...p],
+    [`${import.meta.dirname}/../sdk/src/api/client.gen.ts`],
+  )
 }
 
 const files = listTsFilesInModule()
