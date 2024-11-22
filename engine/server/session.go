@@ -1044,6 +1044,11 @@ func (srv *Server) serveSessionAttachables(w http.ResponseWriter, r *http.Reques
 	}
 
 	ctx = client.daggerSession.withShutdownCancel(ctx)
+
+	// Disable collecting otel metrics on these grpc connections for now. We don't use them and
+	// they add noticeable memory allocation overhead, especially for heavy filesync use cases.
+	ctx = trace.ContextWithSpan(ctx, trace.SpanFromContext(nil))
+
 	err = srv.bkSessionManager.HandleConn(ctx, conn, map[string][]string{
 		engine.SessionIDMetaKey:         {client.clientID},
 		engine.SessionNameMetaKey:       {client.clientID},

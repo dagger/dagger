@@ -10,6 +10,7 @@ import (
 	gofs "io/fs"
 	"os"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 
@@ -19,7 +20,6 @@ import (
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/snapshot"
 	"github.com/moby/buildkit/util/bklog"
-	"github.com/moby/buildkit/util/flightcontrol"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/tonistiigi/fsutil"
 	fscopy "github.com/tonistiigi/fsutil/copy"
@@ -28,9 +28,16 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+var copyBufferPool = &sync.Pool{
+	New: func() interface{} {
+		buffer := make([]byte, 32*1024)
+		return &buffer
+	},
+}
+
 type localFSSharedState struct {
 	rootPath string
-	g        flightcontrol.CachedGroup[*ChangeWithStat]
+	g        CachedSingleFlightGroup[string, *ChangeWithStat]
 }
 
 type ChangeWithStat struct {
@@ -84,7 +91,6 @@ func NewLocalFS(sharedState *localFSSharedState, subdir string, includes, exclud
 	if err != nil {
 		return nil, fmt.Errorf("failed to create base fs: %w", err)
 	}
-	// TODO: slight optimization by skipping this FS if no include/exclude?
 	filterFS, err := fsutil.NewFilterFS(baseFS, &fsutil.FilterOpt{
 		IncludePatterns: includes,
 		ExcludePatterns: excludes,
@@ -136,14 +142,6 @@ func (local *localFS) Sync(
 	eg, egCtx := errgroup.WithContext(ctx)
 
 	doubleWalkDiff(egCtx, eg, local, remote, func(kind ChangeKind, path string, lowerStat, upperStat *types.Stat) error {
-		/*
-			// TODO:
-			// TODO:
-			// TODO:
-			// TODO:
-			bklog.G(egCtx).Debugf("DIFF %s %s (%s) (%s)", kind, path, local.toRootPath(path), local.toFullPath(path))
-		*/
-
 		var appliedChange *ChangeWithStat
 		var err error
 		switch kind {
@@ -170,11 +168,6 @@ func (local *localFS) Sync(
 						return err
 					}
 					if cacheCtx != nil {
-						// TODO:
-						// TODO:
-						// TODO:
-						// bklog.G(ctx).Debugf("CACHECTX HANDLE CHANGE FILE %s %s %+v", appliedChange.kind, path, appliedChange.stat)
-
 						if err := cacheCtx.HandleChange(appliedChange.kind, path, appliedChange.stat, nil); err != nil {
 							return fmt.Errorf("failed to handle change in content hasher: %w", err)
 						}
@@ -190,7 +183,7 @@ func (local *localFS) Sync(
 			appliedChange, err = local.RemoveAll(egCtx, path)
 
 		case ChangeKindNone:
-			appliedChange, err = local.getPreviousChange(path)
+			appliedChange, err = local.getPreviousChange(egCtx, path)
 
 		default:
 			return fmt.Errorf("unsupported change kind: %s", kind)
@@ -199,11 +192,6 @@ func (local *localFS) Sync(
 			return err
 		}
 		if cacheCtx != nil {
-			// TODO:
-			// TODO:
-			// TODO:
-			// bklog.G(ctx).Debugf("CACHECTX HANDLE CHANGE %s %s %+v", appliedChange.kind, path, appliedChange.stat)
-
 			if err := cacheCtx.HandleChange(appliedChange.kind, path, appliedChange.stat, nil); err != nil {
 				return fmt.Errorf("failed to handle change in content hasher: %w", err)
 			}
@@ -348,45 +336,44 @@ func (local *localFS) toRootPath(path string) string {
 	return filepath.Join(local.subdir, path)
 }
 
-func (local *localFS) getPreviousChange(path string) (*ChangeWithStat, error) {
-	// TODO: optimize with separate non-cached flightcontrol group? LRU type cache would maybe be even better
+func (local *localFS) getPreviousChange(ctx context.Context, path string) (*ChangeWithStat, error) {
 	fullPath := local.toFullPath(path)
-
-	// TODO: there's some util somewhere that would go right to fsStat, right?
-	stat, err := os.Lstat(fullPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to stat path: %w", err)
-	}
-	fsStat, err := fsStatFromOs(fullPath, stat)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert stat: %w", err)
-	}
-
-	if stat.Mode().IsRegular() {
-		dgstBytes, err := sysx.Getxattr(fullPath, "user.daggerContentHash")
+	rootPath := local.toRootPath(path)
+	return local.g.Do(context.TODO(), rootPath, func(ctx context.Context) (*ChangeWithStat, error) {
+		// TODO: there's some util somewhere that would go right to fsStat, right?
+		stat, err := os.Lstat(fullPath)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get content hash xattr: %w", err)
+			return nil, fmt.Errorf("failed to stat path: %w", err)
 		}
-		hashStat := &HashedStatInfo{StatInfo{fsStat}, digest.Digest(dgstBytes)}
+		fsStat, err := fsStatFromOs(fullPath, stat)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert stat: %w", err)
+		}
+
+		if stat.Mode().IsRegular() {
+			dgstBytes, err := sysx.Getxattr(fullPath, "user.daggerContentHash")
+			if err != nil {
+				return nil, fmt.Errorf("failed to get content hash xattr: %w", err)
+			}
+			hashStat := &HashedStatInfo{StatInfo{fsStat}, digest.Digest(dgstBytes)}
+			return &ChangeWithStat{kind: ChangeKindAdd, stat: hashStat}, nil
+		}
+
+		h, err := NewFromStat(fsStat)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create content hash: %w", err)
+		}
+
+		hashStat := &HashedStatInfo{StatInfo{fsStat}, digest.NewDigest(XXH3, h)}
 		return &ChangeWithStat{kind: ChangeKindAdd, stat: hashStat}, nil
-	}
-
-	// TODO: can avoid this on directory types too since they allow xattrs
-
-	h, err := contenthash.NewFromStat(fsStat)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create content hash: %w", err)
-	}
-
-	hashStat := &HashedStatInfo{StatInfo{fsStat}, digest.NewDigest(digest.SHA256, h)}
-	return &ChangeWithStat{kind: ChangeKindAdd, stat: hashStat}, nil
+	})
 }
 
 func (local *localFS) mutate(
 	ctx context.Context,
 	path string,
 	upperStat *types.Stat,
-	fn func(ctx context.Context, fullPath string, lowerStat fs.FileInfo, h hash.Hash) error,
+	fn func(ctx context.Context, fullPath string, lowerStat fs.FileInfo, h hash.Hash) (bool, error),
 ) (*ChangeWithStat, error) {
 	rootPath := local.toRootPath(path)
 	fullPath := local.toFullPath(path)
@@ -400,20 +387,29 @@ func (local *localFS) mutate(
 				return nil, fmt.Errorf("failed to stat existing path: %w", err)
 			}
 
-			h, err := contenthash.NewFromStat(upperStat)
+			h, err := NewFromStat(upperStat)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create content hash: %w", err)
 			}
-			err = fn(ctx, fullPath, lowerStat, h)
+			setXattr, err := fn(ctx, fullPath, lowerStat, h)
 			if err != nil {
 				return nil, err
 			}
-			hashStat := &HashedStatInfo{StatInfo{upperStat}, digest.NewDigest(digest.SHA256, h)}
+
+			dgst := digest.NewDigest(XXH3, h)
+			if setXattr {
+				// TODO: dedupe; constify
+				if err := sysx.Setxattr(fullPath, "user.daggerContentHash", []byte(dgst.String()), 0); err != nil {
+					return nil, fmt.Errorf("failed to set content hash xattr: %w", err)
+				}
+			}
+
+			hashStat := &HashedStatInfo{StatInfo{upperStat}, dgst}
 			return &ChangeWithStat{kind: changeKind, stat: hashStat}, nil
 
 		default: // delete
 			changeKind = ChangeKindDelete
-			err := fn(ctx, fullPath, nil, nil)
+			_, err := fn(ctx, fullPath, nil, nil)
 			if err != nil {
 				return nil, err
 			}
@@ -424,8 +420,8 @@ func (local *localFS) mutate(
 }
 
 func (local *localFS) RemoveAll(ctx context.Context, path string) (*ChangeWithStat, error) {
-	appliedChange, err := local.mutate(ctx, path, nil, func(ctx context.Context, fullPath string, _ fs.FileInfo, _ hash.Hash) error {
-		return os.RemoveAll(fullPath)
+	appliedChange, err := local.mutate(ctx, path, nil, func(ctx context.Context, fullPath string, _ fs.FileInfo, _ hash.Hash) (bool, error) {
+		return false, os.RemoveAll(fullPath)
 	})
 	if err != nil {
 		return nil, err
@@ -438,27 +434,27 @@ func (local *localFS) RemoveAll(ctx context.Context, path string) (*ChangeWithSt
 }
 
 func (local *localFS) Mkdir(ctx context.Context, path string, upperStat *types.Stat) (*ChangeWithStat, error) {
-	appliedChange, err := local.mutate(ctx, path, upperStat, func(ctx context.Context, fullPath string, lowerStat fs.FileInfo, _ hash.Hash) error {
+	appliedChange, err := local.mutate(ctx, path, upperStat, func(ctx context.Context, fullPath string, lowerStat fs.FileInfo, _ hash.Hash) (bool, error) {
 		isNewDir := lowerStat == nil
 		replacesNonDir := lowerStat != nil && !lowerStat.IsDir()
 
 		if replacesNonDir {
 			if err := os.Remove(fullPath); err != nil {
-				return fmt.Errorf("failed to remove existing file: %w", err)
+				return false, fmt.Errorf("failed to remove existing file: %w", err)
 			}
 		}
 
 		if isNewDir || replacesNonDir {
 			if err := os.Mkdir(fullPath, os.FileMode(upperStat.Mode)&os.ModePerm); err != nil {
-				return fmt.Errorf("failed to create directory: %w", err)
+				return false, fmt.Errorf("failed to create directory: %w", err)
 			}
 		}
 
 		if err := rewriteMetadata(fullPath, upperStat); err != nil {
-			return fmt.Errorf("failed to rewrite directory metadata: %w", err)
+			return false, fmt.Errorf("failed to rewrite directory metadata: %w", err)
 		}
 
-		return nil
+		return false, nil
 	})
 	if err != nil {
 		return nil, err
@@ -473,23 +469,23 @@ func (local *localFS) Mkdir(ctx context.Context, path string, upperStat *types.S
 }
 
 func (local *localFS) Symlink(ctx context.Context, path string, upperStat *types.Stat) (*ChangeWithStat, error) {
-	appliedChange, err := local.mutate(ctx, path, upperStat, func(ctx context.Context, fullPath string, lowerStat fs.FileInfo, _ hash.Hash) error {
+	appliedChange, err := local.mutate(ctx, path, upperStat, func(ctx context.Context, fullPath string, lowerStat fs.FileInfo, _ hash.Hash) (bool, error) {
 		isNewSymlink := lowerStat == nil
 		replacesNonSymlink := lowerStat != nil && lowerStat.Mode()&fs.ModeSymlink == 0
 
 		if replacesNonSymlink {
 			if err := os.RemoveAll(fullPath); err != nil {
-				return fmt.Errorf("failed to remove existing file: %w", err)
+				return false, fmt.Errorf("failed to remove existing file: %w", err)
 			}
 		}
 
 		if isNewSymlink || replacesNonSymlink {
 			if err := os.Symlink(upperStat.Linkname, fullPath); err != nil {
-				return fmt.Errorf("failed to create symlink: %w", err)
+				return false, fmt.Errorf("failed to create symlink: %w", err)
 			}
 		}
 
-		return nil
+		return false, nil
 	})
 	if err != nil {
 		return nil, err
@@ -502,23 +498,23 @@ func (local *localFS) Symlink(ctx context.Context, path string, upperStat *types
 }
 
 func (local *localFS) Hardlink(ctx context.Context, path string, upperStat *types.Stat) (*ChangeWithStat, error) {
-	appliedChange, err := local.mutate(ctx, path, upperStat, func(ctx context.Context, fullPath string, lowerStat fs.FileInfo, _ hash.Hash) error {
+	appliedChange, err := local.mutate(ctx, path, upperStat, func(ctx context.Context, fullPath string, lowerStat fs.FileInfo, _ hash.Hash) (bool, error) {
 		// TODO: this is incomplete, should remove in all cases unless it's already the same hardlink (due to concurrency, but that's probably better fixed more generally elsewhere)
 		isNewLink := lowerStat == nil
 
 		if isNewLink {
 			if err := os.RemoveAll(fullPath); err != nil {
-				return fmt.Errorf("failed to remove existing file: %w", err)
+				return false, fmt.Errorf("failed to remove existing file: %w", err)
 			}
 		}
 
 		// TODO: worth a double check on the path joining logic here
 		// TODO: at least worst case it can't cross the mount
 		if err := os.Link(local.toFullPath(upperStat.Linkname), fullPath); err != nil {
-			return fmt.Errorf("failed to create symlink: %w", err)
+			return false, fmt.Errorf("failed to create symlink: %w", err)
 		}
 
-		return nil
+		return false, nil
 	})
 	if err != nil {
 		return nil, err
@@ -531,43 +527,40 @@ func (local *localFS) Hardlink(ctx context.Context, path string, upperStat *type
 }
 
 func (local *localFS) WriteFile(ctx context.Context, path string, upperStat *types.Stat, upperFS ReadFS) (*ChangeWithStat, error) {
-	appliedChange, err := local.mutate(ctx, path, upperStat, func(ctx context.Context, fullPath string, lowerStat fs.FileInfo, h hash.Hash) error {
+	appliedChange, err := local.mutate(ctx, path, upperStat, func(ctx context.Context, fullPath string, lowerStat fs.FileInfo, h hash.Hash) (bool, error) {
 		reader, err := upperFS.ReadFile(ctx, path)
 		if err != nil {
-			return fmt.Errorf("failed to read file %q: %w", path, err)
+			return false, fmt.Errorf("failed to read file %q: %w", path, err)
 		}
 		defer reader.Close()
 
 		if lowerStat != nil {
 			if err := os.RemoveAll(fullPath); err != nil {
-				return fmt.Errorf("failed to remove existing file: %w", err)
+				return false, fmt.Errorf("failed to remove existing file: %w", err)
 			}
 		}
 
 		f, err := os.OpenFile(fullPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(upperStat.Mode)&os.ModePerm)
 		if err != nil {
-			return err
+			return false, err
 		}
 		defer f.Close()
 
-		if _, err := io.Copy(io.MultiWriter(f, h), reader); err != nil {
-			return fmt.Errorf("failed to copy contents: %w", err)
+		copyBuf := copyBufferPool.Get().(*[]byte)
+		_, err = io.CopyBuffer(io.MultiWriter(f, h), reader, *copyBuf)
+		copyBufferPool.Put(copyBuf)
+		if err != nil {
+			return false, fmt.Errorf("failed to copy contents: %w", err)
 		}
 		if err := f.Close(); err != nil {
-			return fmt.Errorf("failed to close file: %w", err)
+			return false, fmt.Errorf("failed to close file: %w", err)
 		}
 
 		if err := rewriteMetadata(fullPath, upperStat); err != nil {
-			return fmt.Errorf("failed to rewrite file metadata: %w", err)
+			return false, fmt.Errorf("failed to rewrite file metadata: %w", err)
 		}
 
-		dgst := digest.NewDigest(digest.SHA256, h)
-		// TODO: dedupe; constify
-		if err := sysx.Setxattr(fullPath, "user.daggerContentHash", []byte(dgst.String()), 0); err != nil {
-			return fmt.Errorf("failed to set content hash xattr: %w", err)
-		}
-
-		return nil
+		return true, nil
 	})
 	if err != nil {
 		return nil, err

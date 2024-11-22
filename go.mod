@@ -276,6 +276,7 @@ require (
 	dagger.io/dagger v0.14.0
 	github.com/dagger/dagger/engine/distconsts v0.14.0
 	github.com/dustin/go-humanize v1.0.1
+	resenje.org/singleflight v0.4.3
 )
 
 require (
