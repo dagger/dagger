@@ -2,23 +2,19 @@ package core
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"reflect"
 	"strings"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
-	"dagger.io/dagger"
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/dagql/call"
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
-	"github.com/vektah/gqlparser/v2/gqlerror"
 )
 
 func collectDefs(ctx context.Context, val dagql.Typed) []*pb.Definition {
@@ -34,18 +30,6 @@ func collectDefs(ctx context.Context, val dagql.Typed) []*pb.Definition {
 		}
 	}
 	return nil
-}
-
-func unwrapError(rerr error) string {
-	var execErr *dagger.ExecError
-	if errors.As(rerr, &execErr) {
-		return execErr.Message()
-	}
-	var gqlErr *gqlerror.Error
-	if errors.As(rerr, &gqlErr) {
-		return gqlErr.Message
-	}
-	return rerr.Error()
 }
 
 func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Context, func(res dagql.Typed, cached bool, rerr error)) {
@@ -97,12 +81,7 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 		Start(ctx, spanName, trace.WithAttributes(attrs...))
 
 	return ctx, func(res dagql.Typed, cached bool, err error) {
-		defer telemetry.End(span, func() error {
-			if err != nil {
-				return errors.New(unwrapError(err) + "\n\n" + InspectError(err))
-			}
-			return nil
-		})
+		defer telemetry.End(span, func() error { return err })
 
 		if cached {
 			// NOTE: this is never actually called on cache hits, but might be in the
@@ -200,59 +179,4 @@ func isIntrospection(id *call.ID) bool {
 	} else {
 		return isIntrospection(id.Receiver())
 	}
-}
-
-// InspectError deeply analyzes an error, unwrapping all layers and printing
-// detailed information about each error in the chain. It returns a string
-// containing the full error analysis.
-func InspectError(err error) string {
-	if err == nil {
-		return "nil error"
-	}
-
-	var builder strings.Builder
-	builder.WriteString("Error Chain Analysis:\n")
-
-	// Track depth for indentation
-	depth := 0
-
-	// Examine current error
-	current := err
-	for current != nil {
-		// Create indentation based on depth
-		indent := strings.Repeat("  ", depth)
-
-		// Get error type
-		errType := reflect.TypeOf(current)
-		if errType.Kind() == reflect.Ptr {
-			errType = errType.Elem()
-		}
-
-		// Write error information
-		fmt.Fprintf(&builder, "%s→ Type: %v\n", indent, errType)
-		fmt.Fprintf(&builder, "%s  Message: %v\n", indent, current.Error())
-
-		// Check for additional error details
-		if unwrapped := errors.Unwrap(current); unwrapped != nil {
-			current = unwrapped
-			depth++
-		} else {
-			// Check for multiple wrapped errors using errors.As
-			switch v := current.(type) {
-			case interface{ Unwrap() []error }:
-				if errs := v.Unwrap(); len(errs) > 0 {
-					fmt.Fprintf(&builder, "%s  Multiple wrapped errors found (%d):\n", indent, len(errs))
-					for i, e := range errs {
-						depth++
-						fmt.Fprintf(&builder, "%s  Branch %d:\n", indent, i+1)
-						fmt.Fprintf(&builder, "%s%s", indent, InspectError(e))
-						depth--
-					}
-				}
-			}
-			break
-		}
-	}
-
-	return builder.String()
 }
