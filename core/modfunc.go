@@ -330,10 +330,6 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		return nil, fmt.Errorf("function returned nil result")
 	}
 
-	// TODO: if any error happens below, we should really prune the cache of the result, otherwise
-	// we can end up in a state where we have a cached result with a dependency blob that we don't
-	// guarantee the continued existence of...
-
 	// Read the output of the function
 	outputBytes, err := result.Ref.ReadFile(ctx, bkgw.ReadRequest{
 		Filename: modMetaOutputPath,
@@ -375,9 +371,10 @@ func (fn *ModuleFunction) Call(ctx context.Context, opts *CallOpts) (t dagql.Typ
 		}
 	}
 
-	if err := fn.linkDependencyBlobs(ctx, result, returnValueTyped); err != nil {
-		return nil, fmt.Errorf("failed to link dependency blobs: %w", err)
-	}
+	// NOTE: once generalized function caching is enabled we need to ensure that any non-reproducible
+	// cache entries are linked to the result of this call.
+	// See the previous implementation of this for a reference:
+	// https://github.com/dagger/dagger/blob/7c31db76e07c9a17fcdb3f3c4513c915344c1da8/core/modfunc.go#L483
 
 	return returnValueTyped, nil
 }
@@ -477,49 +474,6 @@ func moduleAnalyticsProps(mod *Module, prefix string, props map[string]string) {
 		props[prefix+"git_commit"] = git.Commit
 		props[prefix+"git_html_repo_url"] = git.HTMLRepoURL
 	}
-}
-
-// If the result of a Function call contains IDs of resources, we need to
-// ensure that the cache entry for the Function call is linked for the cache
-// entries of those resources if those entries aren't reproducible. Right now,
-// the only unreproducible output are local dir imports, which are represented
-// as blob:// sources. linkDependencyBlobs finds all such blob:// sources and
-// adds a cache lease on that blob in the content store to the cacheResult of
-// the function call.
-//
-// If we didn't do this, then it would be possible for Buildkit to prune the
-// content pointed to by the blob:// source without pruning the function call
-// cache entry. That would result callers being able to evaluate the result of
-// a function call but hitting an error about missing content.
-func (fn *ModuleFunction) linkDependencyBlobs(ctx context.Context, cacheResult *buildkit.Result, value dagql.Typed) error {
-	/* TODO: update
-	if value == nil {
-		return nil
-	}
-	pbDefs, err := collectPBDefinitions(ctx, value)
-	if err != nil {
-		return fmt.Errorf("failed to collect pb definitions: %w", err)
-	}
-	dependencyBlobs := map[digest.Digest]*ocispecs.Descriptor{}
-	for _, pbDef := range pbDefs {
-		dag, err := buildkit.DefToDAG(pbDef)
-		if err != nil {
-			return fmt.Errorf("failed to convert pb definition to dag: %w", err)
-		}
-		blobs, err := dag.BlobDependencies()
-		if err != nil {
-			return fmt.Errorf("failed to get blob dependencies: %w", err)
-		}
-		for k, v := range blobs {
-			dependencyBlobs[k] = v
-		}
-	}
-	if err := cacheResult.Ref.AddDependencyBlobs(ctx, dependencyBlobs); err != nil {
-		return fmt.Errorf("failed to add dependency blob: %w", err)
-	}
-	return nil
-	*/
-	return nil
 }
 
 // loadContextualArg loads a contextual argument from the module context directory.

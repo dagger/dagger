@@ -219,27 +219,6 @@ func (dag *OpDAG) marshal(def *pb.Definition, memo map[digest.Digest]digest.Dige
 	return def, newOpDigest, nil
 }
 
-/* TODO: update
-func (dag *OpDAG) BlobDependencies() (map[digest.Digest]*ocispecs.Descriptor, error) {
-	dependencyBlobs := map[digest.Digest]*ocispecs.Descriptor{}
-	if err := dag.Walk(func(dag *OpDAG) error {
-		blobOp, ok := dag.AsBlob()
-		if !ok {
-			return nil
-		}
-		dgst, err := blobOp.Digest()
-		if err != nil {
-			return fmt.Errorf("failed to get blob descriptor: %w", err)
-		}
-		dependencyBlobs[dgst] = &dgst
-		return nil
-	}); err != nil {
-		return nil, fmt.Errorf("failed to walk pb definition dag: %w", err)
-	}
-	return dependencyBlobs, nil
-}
-*/
-
 type ExecOp struct {
 	*OpDAG
 	*pb.ExecOp
