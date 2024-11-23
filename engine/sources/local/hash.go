@@ -41,7 +41,7 @@ func (h *statHash) Reset() {
 	// https://github.com/moby/buildkit/blob/44504feda1ce39bb8578537a6e6a93f90bdf4220/cache/contenthash/filehash.go#L42-L42
 
 	// skip name of file since contenthash includes that on its own
-	// skip mtime since upstream does not include it and we don't care about it for the content hash
+	// skip mtime since all relevant metadata + file contents that impact modtime are included in the hash
 	// skip size since it will inherently be included when writing file contents to the hash
 
 	buf := *(statHashBufPool.Get().(*[]byte))

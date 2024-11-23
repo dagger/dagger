@@ -4,10 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"hash"
 	"io"
 	"io/fs"
-	gofs "io/fs"
 	"os"
 	"path/filepath"
 	"sync"
@@ -28,13 +26,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-var copyBufferPool = &sync.Pool{
-	New: func() interface{} {
-		buffer := make([]byte, 32*1024)
-		return &buffer
-	},
-}
-
 type localFSSharedState struct {
 	rootPath string
 	g        CachedSingleFlightGroup[string, *ChangeWithStat]
@@ -43,37 +34,6 @@ type localFSSharedState struct {
 type ChangeWithStat struct {
 	kind ChangeKind
 	stat *HashedStatInfo
-}
-
-func (c *ChangeWithStat) IsEqual(other *ChangeWithStat) bool {
-	// TODO: MORE ROBUST
-	if c.kind != other.kind {
-		return false
-	}
-	if c.stat == nil && other.stat == nil {
-		return true
-	}
-	if c.stat == nil && other.stat != nil {
-		return false
-	}
-	if c.stat != nil && other.stat == nil {
-		return false
-	}
-	if c.stat.Mode() != other.stat.Mode() {
-		return false
-	}
-	return true
-}
-
-type ErrConflict struct {
-	Path string
-	Old  *ChangeWithStat
-	New  *ChangeWithStat
-}
-
-func (e *ErrConflict) Error() string {
-	// TODO: MAKE HUMAN READABLE
-	return fmt.Sprintf("conflict at %s: %+v vs. %+v", e.Path, e.Old, e.New)
 }
 
 type localFS struct {
@@ -108,6 +68,9 @@ func NewLocalFS(sharedState *localFSSharedState, subdir string, includes, exclud
 	}, nil
 }
 
+// NOTE: This currently does not handle resetting parent dir modtimes to match the client. This matches
+// upstream for now and avoids extra performance overhead + complication until a need for those modtimes
+// matching the client's is proven.
 func (local *localFS) Sync(
 	ctx context.Context,
 	remote ReadFS,
@@ -148,22 +111,21 @@ func (local *localFS) Sync(
 		case ChangeKindAdd, ChangeKindModify:
 			switch {
 			case upperStat.IsDir():
-				// TODO: handle parent dir mod times
-				appliedChange, err = local.Mkdir(egCtx, path, upperStat)
+				appliedChange, err = local.Mkdir(egCtx, kind, path, upperStat)
 
 			case upperStat.Mode&uint32(os.ModeDevice) != 0 || upperStat.Mode&uint32(os.ModeNamedPipe) != 0:
 				// TODO:
 
 			case upperStat.Mode&uint32(os.ModeSymlink) != 0:
-				appliedChange, err = local.Symlink(egCtx, path, upperStat)
+				appliedChange, err = local.Symlink(egCtx, kind, path, upperStat)
 
 			case upperStat.Linkname != "":
-				appliedChange, err = local.Hardlink(egCtx, path, upperStat)
+				appliedChange, err = local.Hardlink(egCtx, kind, path, upperStat)
 
 			default:
 				eg.Go(func() error {
 					// TODO: DOUBLE CHECK IF YOU NEED TO COPY STAT OBJS SINCE THIS IS ASYNC
-					appliedChange, err := local.WriteFile(egCtx, path, upperStat, remote)
+					appliedChange, err := local.WriteFile(egCtx, kind, path, upperStat, remote)
 					if err != nil {
 						return err
 					}
@@ -179,11 +141,15 @@ func (local *localFS) Sync(
 			}
 
 		case ChangeKindDelete:
-			// TODO: do we even need to apply this to the cacheCtx? May actually cause an error, consider skipping that
-			appliedChange, err = local.RemoveAll(egCtx, path)
+			_, err = local.RemoveAll(egCtx, path)
+			if err != nil {
+				return err
+			}
+			// no need to apply removals to the cacheCtx
+			return nil
 
 		case ChangeKindNone:
-			appliedChange, err = local.getPreviousChange(egCtx, path)
+			appliedChange, err = local.GetPreviousChange(egCtx, path, lowerStat)
 
 		default:
 			return fmt.Errorf("unsupported change kind: %s", kind)
@@ -260,17 +226,6 @@ func (local *localFS) Sync(
 		}),
 	}
 
-	/* TODO: equivalent of this
-	defer func() {
-		var osErr *os.PathError
-		if errors.As(err, &osErr) {
-			// remove system root from error path if present
-			osErr.Path = strings.TrimPrefix(osErr.Path, src)
-			osErr.Path = strings.TrimPrefix(osErr.Path, dest)
-		}
-	}()
-	*/
-
 	if err := fscopy.Copy(ctx,
 		local.rootPath, local.subdir,
 		copyRefMntPath, "/",
@@ -326,245 +281,267 @@ func (local *localFS) Sync(
 
 // the full absolute path on the local filesystem
 func (local *localFS) toFullPath(path string) string {
-	// TODO: use fs.RootPath to be extra safe?
 	return filepath.Join(local.rootPath, local.subdir, path)
 }
 
 // the absolute path under local.rootPath
 func (local *localFS) toRootPath(path string) string {
-	// TODO: use fs.RootPath to be extra safe?
 	return filepath.Join(local.subdir, path)
 }
 
-func (local *localFS) getPreviousChange(ctx context.Context, path string) (*ChangeWithStat, error) {
-	fullPath := local.toFullPath(path)
+// TODO: comment on the logic here, a bit subtle (i.e. why we don't verifyExpectedChange)
+func (local *localFS) GetPreviousChange(ctx context.Context, path string, stat *types.Stat) (*ChangeWithStat, error) {
 	rootPath := local.toRootPath(path)
-	return local.g.Do(context.TODO(), rootPath, func(ctx context.Context) (*ChangeWithStat, error) {
-		// TODO: there's some util somewhere that would go right to fsStat, right?
-		stat, err := os.Lstat(fullPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to stat path: %w", err)
-		}
-		fsStat, err := fsStatFromOs(fullPath, stat)
-		if err != nil {
-			return nil, fmt.Errorf("failed to convert stat: %w", err)
-		}
+	return local.g.Do(ctx, rootPath, func(_ context.Context) (*ChangeWithStat, error) {
+		fullPath := local.toFullPath(path)
 
-		if stat.Mode().IsRegular() {
+		isRegular := stat.Mode&uint32(os.ModeType) == 0
+		if isRegular {
 			dgstBytes, err := sysx.Getxattr(fullPath, "user.daggerContentHash")
 			if err != nil {
 				return nil, fmt.Errorf("failed to get content hash xattr: %w", err)
 			}
-			hashStat := &HashedStatInfo{StatInfo{fsStat}, digest.Digest(dgstBytes)}
-			return &ChangeWithStat{kind: ChangeKindAdd, stat: hashStat}, nil
+			return &ChangeWithStat{
+				kind: ChangeKindNone,
+				stat: &HashedStatInfo{
+					StatInfo: StatInfo{stat},
+					dgst:     digest.Digest(dgstBytes),
+				},
+			}, nil
 		}
 
-		hashStat := &HashedStatInfo{StatInfo{fsStat}, digest.NewDigest(XXH3, newHashFromStat(fsStat))}
-		return &ChangeWithStat{kind: ChangeKindAdd, stat: hashStat}, nil
-	})
-}
-
-func (local *localFS) mutate(
-	ctx context.Context,
-	path string,
-	upperStat *types.Stat,
-	fn func(ctx context.Context, fullPath string, lowerStat fs.FileInfo, h hash.Hash) (bool, error),
-) (*ChangeWithStat, error) {
-	rootPath := local.toRootPath(path)
-	fullPath := local.toFullPath(path)
-	return local.g.Do(ctx, rootPath, func(ctx context.Context) (*ChangeWithStat, error) {
-		var changeKind ChangeKind
-		switch {
-		case upperStat != nil: // add or modify
-			changeKind = ChangeKindAdd // TODO: explain, or make better
-			lowerStat, err := os.Lstat(fullPath)
-			if err != nil && !os.IsNotExist(err) {
-				return nil, fmt.Errorf("failed to stat existing path: %w", err)
-			}
-
-			h := newHashFromStat(upperStat)
-			setXattr, err := fn(ctx, fullPath, lowerStat, h)
-			if err != nil {
-				return nil, err
-			}
-
-			dgst := digest.NewDigest(XXH3, h)
-			if setXattr {
-				// TODO: dedupe; constify
-				if err := sysx.Setxattr(fullPath, "user.daggerContentHash", []byte(dgst.String()), 0); err != nil {
-					return nil, fmt.Errorf("failed to set content hash xattr: %w", err)
-				}
-			}
-
-			hashStat := &HashedStatInfo{StatInfo{upperStat}, dgst}
-			return &ChangeWithStat{kind: changeKind, stat: hashStat}, nil
-
-		default: // delete
-			changeKind = ChangeKindDelete
-			_, err := fn(ctx, fullPath, nil, nil)
-			if err != nil {
-				return nil, err
-			}
-
-			return &ChangeWithStat{kind: changeKind, stat: nil}, nil
-		}
+		return &ChangeWithStat{
+			kind: ChangeKindNone,
+			stat: &HashedStatInfo{
+				StatInfo: StatInfo{stat},
+				dgst:     digest.NewDigest(XXH3, newHashFromStat(stat)),
+			},
+		}, nil
 	})
 }
 
 func (local *localFS) RemoveAll(ctx context.Context, path string) (*ChangeWithStat, error) {
-	appliedChange, err := local.mutate(ctx, path, nil, func(ctx context.Context, fullPath string, _ fs.FileInfo, _ hash.Hash) (bool, error) {
-		return false, os.RemoveAll(fullPath)
+	appliedChange, err := local.g.Do(ctx, local.toRootPath(path), func(ctx context.Context) (*ChangeWithStat, error) {
+		fullPath := local.toFullPath(path)
+		if err := os.RemoveAll(fullPath); err != nil {
+			return nil, err
+		}
+		return &ChangeWithStat{kind: ChangeKindDelete}, nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	expectedChange := &ChangeWithStat{kind: ChangeKindDelete, stat: nil}
-	if !appliedChange.IsEqual(expectedChange) {
-		return nil, &ErrConflict{Path: path, Old: appliedChange, New: expectedChange}
+
+	if err := verifyExpectedChange(path, appliedChange, ChangeKindDelete, nil); err != nil {
+		return nil, err
 	}
 	return appliedChange, nil
 }
 
-func (local *localFS) Mkdir(ctx context.Context, path string, upperStat *types.Stat) (*ChangeWithStat, error) {
-	appliedChange, err := local.mutate(ctx, path, upperStat, func(ctx context.Context, fullPath string, lowerStat fs.FileInfo, _ hash.Hash) (bool, error) {
+func (local *localFS) Mkdir(ctx context.Context, expectedChangeKind ChangeKind, path string, upperStat *types.Stat) (*ChangeWithStat, error) {
+	appliedChange, err := local.g.Do(ctx, local.toRootPath(path), func(ctx context.Context) (*ChangeWithStat, error) {
+		fullPath := local.toFullPath(path)
+
+		lowerStat, err := os.Lstat(fullPath)
+		if err != nil && !os.IsNotExist(err) {
+			return nil, fmt.Errorf("failed to stat existing path: %w", err)
+		}
+
 		isNewDir := lowerStat == nil
 		replacesNonDir := lowerStat != nil && !lowerStat.IsDir()
 
 		if replacesNonDir {
 			if err := os.Remove(fullPath); err != nil {
-				return false, fmt.Errorf("failed to remove existing file: %w", err)
+				return nil, fmt.Errorf("failed to remove existing file: %w", err)
 			}
 		}
 
 		if isNewDir || replacesNonDir {
 			if err := os.Mkdir(fullPath, os.FileMode(upperStat.Mode)&os.ModePerm); err != nil {
-				return false, fmt.Errorf("failed to create directory: %w", err)
+				return nil, fmt.Errorf("failed to create directory: %w", err)
 			}
 		}
 
 		if err := rewriteMetadata(fullPath, upperStat); err != nil {
-			return false, fmt.Errorf("failed to rewrite directory metadata: %w", err)
+			return nil, fmt.Errorf("failed to rewrite directory metadata: %w", err)
 		}
 
-		return false, nil
+		return &ChangeWithStat{
+			kind: expectedChangeKind,
+			stat: &HashedStatInfo{
+				StatInfo: StatInfo{upperStat},
+				dgst:     digest.NewDigest(XXH3, newHashFromStat(upperStat)),
+			},
+		}, nil
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	// TODO: here and elsewhere, making a HashedStatInfo with no digest is ugly
-	expectedChange := &ChangeWithStat{kind: ChangeKindAdd, stat: &HashedStatInfo{StatInfo: StatInfo{upperStat}}}
-	if !appliedChange.IsEqual(expectedChange) {
-		return nil, &ErrConflict{Path: path, Old: appliedChange, New: expectedChange}
+	if err := verifyExpectedChange(path, appliedChange, expectedChangeKind, upperStat); err != nil {
+		return nil, err
 	}
 	return appliedChange, nil
 }
 
-func (local *localFS) Symlink(ctx context.Context, path string, upperStat *types.Stat) (*ChangeWithStat, error) {
-	appliedChange, err := local.mutate(ctx, path, upperStat, func(ctx context.Context, fullPath string, lowerStat fs.FileInfo, _ hash.Hash) (bool, error) {
+func (local *localFS) Symlink(ctx context.Context, expectedChangeKind ChangeKind, path string, upperStat *types.Stat) (*ChangeWithStat, error) {
+	appliedChange, err := local.g.Do(ctx, local.toRootPath(path), func(ctx context.Context) (*ChangeWithStat, error) {
+		fullPath := local.toFullPath(path)
+
+		lowerStat, err := os.Lstat(fullPath)
+		if err != nil && !os.IsNotExist(err) {
+			return nil, fmt.Errorf("failed to stat existing path: %w", err)
+		}
+
 		isNewSymlink := lowerStat == nil
 		replacesNonSymlink := lowerStat != nil && lowerStat.Mode()&fs.ModeSymlink == 0
 
 		if replacesNonSymlink {
 			if err := os.RemoveAll(fullPath); err != nil {
-				return false, fmt.Errorf("failed to remove existing file: %w", err)
+				return nil, fmt.Errorf("failed to remove existing file: %w", err)
 			}
 		}
 
 		if isNewSymlink || replacesNonSymlink {
 			if err := os.Symlink(upperStat.Linkname, fullPath); err != nil {
-				return false, fmt.Errorf("failed to create symlink: %w", err)
+				return nil, fmt.Errorf("failed to create symlink: %w", err)
 			}
 		}
 
-		return false, nil
+		return &ChangeWithStat{
+			kind: expectedChangeKind,
+			stat: &HashedStatInfo{
+				StatInfo: StatInfo{upperStat},
+				dgst:     digest.NewDigest(XXH3, newHashFromStat(upperStat)),
+			},
+		}, nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	expectedChange := &ChangeWithStat{kind: ChangeKindAdd, stat: &HashedStatInfo{StatInfo: StatInfo{upperStat}}}
-	if !appliedChange.IsEqual(expectedChange) {
-		return nil, &ErrConflict{Path: path, Old: appliedChange, New: expectedChange}
+
+	if err := verifyExpectedChange(path, appliedChange, expectedChangeKind, upperStat); err != nil {
+		return nil, err
 	}
 	return appliedChange, nil
 }
 
-func (local *localFS) Hardlink(ctx context.Context, path string, upperStat *types.Stat) (*ChangeWithStat, error) {
-	appliedChange, err := local.mutate(ctx, path, upperStat, func(ctx context.Context, fullPath string, lowerStat fs.FileInfo, _ hash.Hash) (bool, error) {
-		// TODO: this is incomplete, should remove in all cases unless it's already the same hardlink (due to concurrency, but that's probably better fixed more generally elsewhere)
-		isNewLink := lowerStat == nil
+func (local *localFS) Hardlink(ctx context.Context, expectedChangeKind ChangeKind, path string, upperStat *types.Stat) (*ChangeWithStat, error) {
+	appliedChange, err := local.g.Do(ctx, local.toRootPath(path), func(ctx context.Context) (*ChangeWithStat, error) {
+		fullPath := local.toFullPath(path)
 
-		if isNewLink {
+		lowerStat, err := os.Lstat(fullPath)
+		if err != nil && !os.IsNotExist(err) {
+			return nil, fmt.Errorf("failed to stat existing path: %w", err)
+		}
+
+		replacesExisting := lowerStat != nil
+
+		if replacesExisting {
 			if err := os.RemoveAll(fullPath); err != nil {
-				return false, fmt.Errorf("failed to remove existing file: %w", err)
+				return nil, fmt.Errorf("failed to remove existing file: %w", err)
 			}
 		}
 
-		// TODO: worth a double check on the path joining logic here
-		// TODO: at least worst case it can't cross the mount
 		if err := os.Link(local.toFullPath(upperStat.Linkname), fullPath); err != nil {
-			return false, fmt.Errorf("failed to create symlink: %w", err)
+			return nil, fmt.Errorf("failed to create hardlink: %w", err)
 		}
 
-		return false, nil
+		return &ChangeWithStat{
+			kind: expectedChangeKind,
+			stat: &HashedStatInfo{
+				StatInfo: StatInfo{upperStat},
+				dgst:     digest.NewDigest(XXH3, newHashFromStat(upperStat)),
+			},
+		}, nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	expectedChange := &ChangeWithStat{kind: ChangeKindAdd, stat: &HashedStatInfo{StatInfo: StatInfo{upperStat}}}
-	if !appliedChange.IsEqual(expectedChange) {
-		return nil, &ErrConflict{Path: path, Old: appliedChange, New: expectedChange}
+
+	if err := verifyExpectedChange(path, appliedChange, expectedChangeKind, upperStat); err != nil {
+		return nil, err
 	}
 	return appliedChange, nil
 }
 
-func (local *localFS) WriteFile(ctx context.Context, path string, upperStat *types.Stat, upperFS ReadFS) (*ChangeWithStat, error) {
-	appliedChange, err := local.mutate(ctx, path, upperStat, func(ctx context.Context, fullPath string, lowerStat fs.FileInfo, h hash.Hash) (bool, error) {
+var copyBufferPool = &sync.Pool{
+	New: func() interface{} {
+		buffer := make([]byte, 32*1024)
+		return &buffer
+	},
+}
+
+func (local *localFS) WriteFile(ctx context.Context, expectedChangeKind ChangeKind, path string, upperStat *types.Stat, upperFS ReadFS) (*ChangeWithStat, error) {
+	appliedChange, err := local.g.Do(ctx, local.toRootPath(path), func(ctx context.Context) (*ChangeWithStat, error) {
 		reader, err := upperFS.ReadFile(ctx, path)
 		if err != nil {
-			return false, fmt.Errorf("failed to read file %q: %w", path, err)
+			return nil, fmt.Errorf("failed to read file %q: %w", path, err)
 		}
 		defer reader.Close()
 
-		if lowerStat != nil {
+		fullPath := local.toFullPath(path)
+
+		lowerStat, err := os.Lstat(fullPath)
+		if err != nil && !os.IsNotExist(err) {
+			return nil, fmt.Errorf("failed to stat existing path: %w", err)
+		}
+
+		replacesExisting := lowerStat != nil
+
+		if replacesExisting {
 			if err := os.RemoveAll(fullPath); err != nil {
-				return false, fmt.Errorf("failed to remove existing file: %w", err)
+				return nil, fmt.Errorf("failed to remove existing file: %w", err)
 			}
 		}
 
 		f, err := os.OpenFile(fullPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(upperStat.Mode)&os.ModePerm)
 		if err != nil {
-			return false, err
+			return nil, err
 		}
 		defer f.Close()
+
+		h := newHashFromStat(upperStat)
 
 		copyBuf := copyBufferPool.Get().(*[]byte)
 		_, err = io.CopyBuffer(io.MultiWriter(f, h), reader, *copyBuf)
 		copyBufferPool.Put(copyBuf)
 		if err != nil {
-			return false, fmt.Errorf("failed to copy contents: %w", err)
+			return nil, fmt.Errorf("failed to copy contents: %w", err)
 		}
 		if err := f.Close(); err != nil {
-			return false, fmt.Errorf("failed to close file: %w", err)
+			return nil, fmt.Errorf("failed to close file: %w", err)
 		}
 
 		if err := rewriteMetadata(fullPath, upperStat); err != nil {
-			return false, fmt.Errorf("failed to rewrite file metadata: %w", err)
+			return nil, fmt.Errorf("failed to rewrite file metadata: %w", err)
 		}
 
-		return true, nil
+		dgst := digest.NewDigest(XXH3, h)
+		// TODO: dedupe; constify
+		if err := sysx.Setxattr(fullPath, "user.daggerContentHash", []byte(dgst.String()), 0); err != nil {
+			return nil, fmt.Errorf("failed to set content hash xattr: %w", err)
+		}
+
+		return &ChangeWithStat{
+			kind: expectedChangeKind,
+			stat: &HashedStatInfo{
+				StatInfo: StatInfo{upperStat},
+				dgst:     dgst,
+			},
+		}, nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	expectedChange := &ChangeWithStat{kind: ChangeKindAdd, stat: &HashedStatInfo{StatInfo: StatInfo{upperStat}}}
-	if !appliedChange.IsEqual(expectedChange) {
-		return nil, &ErrConflict{Path: path, Old: appliedChange, New: expectedChange}
+
+	if err := verifyExpectedChange(path, appliedChange, expectedChangeKind, upperStat); err != nil {
+		return nil, err
 	}
 	return appliedChange, nil
 }
 
-func (local *localFS) Walk(ctx context.Context, path string, walkFn gofs.WalkDirFunc) error {
+func (local *localFS) Walk(ctx context.Context, path string, walkFn fs.WalkDirFunc) error {
 	return local.filterFS.Walk(ctx, path, walkFn)
 }
 
@@ -596,11 +573,11 @@ func (s *StatInfo) Sys() interface{} {
 	return s.Stat
 }
 
-func (s *StatInfo) Type() gofs.FileMode {
-	return gofs.FileMode(s.Stat.Mode)
+func (s *StatInfo) Type() fs.FileMode {
+	return fs.FileMode(s.Stat.Mode)
 }
 
-func (s *StatInfo) Info() (gofs.FileInfo, error) {
+func (s *StatInfo) Info() (fs.FileInfo, error) {
 	return s, nil
 }
 
@@ -703,4 +680,62 @@ func chtimes(path string, un int64) error {
 	}
 
 	return nil
+}
+
+// TODO: need to handle .String() for ChangeKindNone
+func verifyExpectedChange(path string, appliedChange *ChangeWithStat, expectedKind ChangeKind, expectedStat *types.Stat) error {
+	if appliedChange.kind == ChangeKindDelete || expectedKind == ChangeKindDelete {
+		if appliedChange.kind != expectedKind {
+			return &ErrConflict{Path: path, FieldName: "change kind", OldVal: appliedChange.kind.String(), NewVal: expectedKind.String()}
+		}
+		// nothing else to compare for deletes
+		return nil
+	}
+
+	if uint32(appliedChange.stat.Mode()) != expectedStat.Mode {
+		return &ErrConflict{Path: path, FieldName: "mode", OldVal: fmt.Sprintf("%o", appliedChange.stat.Mode()), NewVal: fmt.Sprintf("%o", expectedStat.Mode)}
+	}
+	if appliedChange.stat.Uid != expectedStat.Uid {
+		return &ErrConflict{Path: path, FieldName: "uid", OldVal: fmt.Sprintf("%d", appliedChange.stat.Uid), NewVal: fmt.Sprintf("%d", expectedStat.Uid)}
+	}
+	if appliedChange.stat.Gid != expectedStat.Gid {
+		return &ErrConflict{Path: path, FieldName: "gid", OldVal: fmt.Sprintf("%d", appliedChange.stat.Gid), NewVal: fmt.Sprintf("%d", expectedStat.Gid)}
+	}
+	if appliedChange.stat.Size_ != expectedStat.Size_ {
+		return &ErrConflict{Path: path, FieldName: "size", OldVal: fmt.Sprintf("%d", appliedChange.stat.Size()), NewVal: fmt.Sprintf("%d", expectedStat.Size_)}
+	}
+	if appliedChange.stat.Linkname != expectedStat.Linkname {
+		return &ErrConflict{Path: path, FieldName: "linkname", OldVal: appliedChange.stat.Linkname, NewVal: expectedStat.Linkname}
+	}
+	if appliedChange.stat.Devmajor != expectedStat.Devmajor {
+		return &ErrConflict{Path: path, FieldName: "devmajor", OldVal: fmt.Sprintf("%d", appliedChange.stat.Devmajor), NewVal: fmt.Sprintf("%d", expectedStat.Devmajor)}
+	}
+	if appliedChange.stat.Devminor != expectedStat.Devminor {
+		return &ErrConflict{Path: path, FieldName: "devminor", OldVal: fmt.Sprintf("%d", appliedChange.stat.Devminor), NewVal: fmt.Sprintf("%d", expectedStat.Devminor)}
+	}
+
+	// Match the differ logic by only comparing modtime for regular files (as a heuristic to
+	// expensive avoid content comparisons for ever file that appears in a diff, using the
+	// modtime as a proxy instead).
+	//
+	// We don't want to compare modtimes for directories right now since we explicitly don't
+	// attempt to reset parent dir modtimes when a dirent is synced in or removed.
+	if appliedChange.stat.Mode().IsRegular() {
+		if appliedChange.stat.ModTime().UnixNano() != expectedStat.ModTime {
+			return &ErrConflict{Path: path, FieldName: "mod time", OldVal: fmt.Sprintf("%d", appliedChange.stat.ModTime().UnixNano()), NewVal: fmt.Sprintf("%d", expectedStat.ModTime)}
+		}
+	}
+
+	return nil
+}
+
+type ErrConflict struct {
+	Path      string
+	FieldName string
+	OldVal    string
+	NewVal    string
+}
+
+func (e *ErrConflict) Error() string {
+	return fmt.Sprintf("conflict at %s: %s changed from %s to %s", e.Path, e.FieldName, e.OldVal, e.NewVal)
 }
