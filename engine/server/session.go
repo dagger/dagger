@@ -89,8 +89,7 @@ type daggerSession struct {
 	containers   map[bkgw.Container]struct{}
 	containersMu sync.Mutex
 
-	dagqlCache       dagql.Cache
-	cacheEntrySetMap *sync.Map
+	dagqlCache dagql.Cache
 
 	interactive        bool
 	interactiveCommand []string
@@ -236,7 +235,6 @@ func (srv *Server) initializeDaggerSession(
 	sess.refs = map[buildkit.Reference]struct{}{}
 	sess.containers = map[bkgw.Container]struct{}{}
 	sess.dagqlCache = dagql.NewCache()
-	sess.cacheEntrySetMap = &sync.Map{}
 	sess.telemetryPubSub = srv.telemetryPubSub
 	sess.interactive = clientMetadata.Interactive
 	sess.interactiveCommand = clientMetadata.InteractiveCommand
@@ -1304,16 +1302,6 @@ func (srv *Server) Sockets(ctx context.Context) (*core.SocketStore, error) {
 		return nil, err
 	}
 	return client.socketStore, nil
-}
-
-// A map of unique IDs for the result of a given cache entry set query, allowing further queries on the result
-// to operate on a stable result rather than the live state.
-func (srv *Server) EngineCacheEntrySetMap(ctx context.Context) (*sync.Map, error) {
-	client, err := srv.clientFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return client.daggerSession.cacheEntrySetMap, nil
 }
 
 // The auth provider for the current client

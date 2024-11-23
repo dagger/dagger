@@ -4561,10 +4561,35 @@ pub struct EngineCache {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct EngineCacheEntrySetOpts<'a> {
+    #[builder(setter(into, strip_option), default)]
+    pub key: Option<&'a str>,
+}
 impl EngineCache {
     /// The current set of entries in the cache
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn entry_set(&self) -> EngineCacheEntrySet {
         let query = self.selection.select("entrySet");
+        EngineCacheEntrySet {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }
+    }
+    /// The current set of entries in the cache
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn entry_set_opts<'a>(&self, opts: EngineCacheEntrySetOpts<'a>) -> EngineCacheEntrySet {
+        let mut query = self.selection.select("entrySet");
+        if let Some(key) = opts.key {
+            query = query.arg("key", key);
+        }
         EngineCacheEntrySet {
             proc: self.proc.clone(),
             selection: query,

@@ -71,7 +71,7 @@ type TypeDef interface {
 
 // NewServer returns a new Server with the given root object.
 func NewServer[T Typed](root T) *Server {
-	rootClass := NewClass[T](ClassOpts[T]{
+	rootClass := NewClass(ClassOpts[T]{
 		// NB: there's nothing actually stopping this from being a thing, except it
 		// currently confuses the Dagger Go SDK. could be a nifty way to pass
 		// around global config I suppose.
@@ -846,6 +846,17 @@ type Selector struct {
 	Args  []NamedInput
 	Nth   int
 	View  string
+
+	// Override the default purity of the field. Typically used so that an impure
+	// resolver call can return a pure result, by calling to itself or another
+	// field with pure arguments.
+	//
+	// If Pure is false, and the field is marked Impure, the selection will not
+	// be cached and the object's ID will be tainted.
+	//
+	// If Pure is true, the selection will be cached regardless of the field's
+	// purity, and the object's ID will be untainted.
+	Pure bool
 }
 
 func (sel Selector) String() string {
@@ -868,7 +879,7 @@ func (sel Selector) String() string {
 
 func (sel Selector) AppendTo(id *call.ID, spec FieldSpec) *call.ID {
 	astType := spec.Type.Type()
-	tainted := spec.ImpurityReason != ""
+	tainted := !sel.Pure && spec.ImpurityReason != ""
 	idArgs := make([]*call.Argument, 0, len(sel.Args))
 	for _, arg := range sel.Args {
 		if arg.Value == nil {

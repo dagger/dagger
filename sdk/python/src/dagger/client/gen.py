@@ -2921,9 +2921,11 @@ class Engine(Type):
 class EngineCache(Type):
     """A cache storage for the Dagger engine"""
 
-    def entry_set(self) -> "EngineCacheEntrySet":
+    def entry_set(self, *, key: str | None = "") -> "EngineCacheEntrySet":
         """The current set of entries in the cache"""
-        _args: list[Arg] = []
+        _args = [
+            Arg("key", key, ""),
+        ]
         _ctx = self._select("entrySet", _args)
         return EngineCacheEntrySet(_ctx)
 

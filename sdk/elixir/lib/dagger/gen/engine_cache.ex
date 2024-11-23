@@ -12,10 +12,12 @@ defmodule Dagger.EngineCache do
   @type t() :: %__MODULE__{}
 
   @doc "The current set of entries in the cache"
-  @spec entry_set(t()) :: Dagger.EngineCacheEntrySet.t()
-  def entry_set(%__MODULE__{} = engine_cache) do
+  @spec entry_set(t(), [{:key, String.t() | nil}]) :: Dagger.EngineCacheEntrySet.t()
+  def entry_set(%__MODULE__{} = engine_cache, optional_args \\ []) do
     query_builder =
-      engine_cache.query_builder |> QB.select("entrySet")
+      engine_cache.query_builder
+      |> QB.select("entrySet")
+      |> QB.maybe_put_arg("key", optional_args[:key])
 
     %Dagger.EngineCacheEntrySet{
       query_builder: query_builder,

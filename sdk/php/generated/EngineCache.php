@@ -16,9 +16,12 @@ class EngineCache extends Client\AbstractObject implements Client\IdAble
     /**
      * The current set of entries in the cache
      */
-    public function entrySet(): EngineCacheEntrySet
+    public function entrySet(?string $key = ''): EngineCacheEntrySet
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('entrySet');
+        if (null !== $key) {
+        $innerQueryBuilder->setArgument('key', $key);
+        }
         return new \Dagger\EngineCacheEntrySet($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

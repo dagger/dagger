@@ -1357,7 +1357,7 @@ type Engine {
 """A cache storage for the Dagger engine"""
 type EngineCache {
   """The current set of entries in the cache"""
-  entrySet: EngineCacheEntrySet!
+  entrySet(key: String = ""): EngineCacheEntrySet!
 
   """A unique identifier for this EngineCache."""
   id: EngineCacheID!
