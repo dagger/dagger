@@ -3,16 +3,24 @@ package core
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
+	"testing"
 
 	"dagger.io/dagger"
+	"github.com/containerd/continuity/fs/fstest"
 	"github.com/dagger/dagger/testctx"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 )
 
-func (DirectorySuite) TestLocalImportsAcrossSessions(ctx context.Context, t *testctx.T) {
+type LocalDirSuite struct{}
+
+func TestLocalDir(t *testing.T) {
+	testctx.Run(testCtx, t, LocalDirSuite{}, Middleware()...)
+}
+
+func (LocalDirSuite) TestLocalImportsAcrossSessions(ctx context.Context, t *testctx.T) {
 	tmpdir := t.TempDir()
 
 	c1 := connect(ctx, t)
@@ -54,88 +62,221 @@ func (DirectorySuite) TestLocalImportsAcrossSessions(ctx context.Context, t *tes
 }
 
 /* TODO: new tests
+* load + modify in single session
+* load + modify in separate sessions (serial)
+* load + modify in separate sessions (parallel)
+* include/exclude (serial)
+* include/exclude (parallel)
+* concurrent change during load? if possible?
 * Ensure include/exclude can't escape synced dir
-* Excluding a file doesn't remove it from cache (tough, but very nice to have)
  */
 
-func (DirectorySuite) TestTODO(ctx context.Context, t *testctx.T) {
-	tmpdir := t.TempDir()
+func (LocalDirSuite) TestLocalImportParallel(ctx context.Context, t *testctx.T) {
+	// TODO: throw in some symlinks and hardlinks for fun
+	fullDir := fstest.Apply(
+		fstest.CreateDir("/a1", 0o755),
+		fstest.CreateFile("/a1/f1.txt", []byte("1"), 0o644),
+		fstest.CreateDir("/a1/b1", 0o755),
+		fstest.CreateFile("/a1/b1/f1.zip", []byte("2"), 0o644),
+		fstest.CreateFile("/a1/b1/f2.rar", []byte("3"), 0o644),
+		fstest.CreateDir("/a1/b2", 0o755),
+		fstest.CreateFile("/a1/b2/f3.txt", []byte("4"), 0o644),
+		fstest.CreateFile("/a1/b2/f4.zip", []byte("5"), 0o644),
 
-	require.NoError(t, os.WriteFile(filepath.Join(tmpdir, "FOOFOO"), []byte("1"), 0o644))
-	require.NoError(t, os.WriteFile(filepath.Join(tmpdir, "BARBAR"), []byte("2"), 0o644))
+		fstest.CreateDir("/a2", 0o755),
+		fstest.CreateFile("/a2/f1.zip", []byte("6"), 0o644),
+		fstest.CreateDir("/a2/b1", 0o755),
+		fstest.CreateFile("/a2/b1/f1.txt", []byte("7"), 0o644),
+		fstest.CreateFile("/a2/b1/f2.txt", []byte("8"), 0o644),
+		fstest.CreateDir("/a2/b2", 0o755),
+		fstest.CreateFile("/a2/b2/f3.rar", []byte("9"), 0o644),
+		fstest.CreateFile("/a2/b2/f4.zip", []byte("10"), 0o644),
+	)
 
-	c := connect(ctx, t)
-
-	hostDir1 := c.Host().Directory(tmpdir)
-	out1, err := c.Container().From(alpineImage).
-		WithMountedDirectory("/mnt", hostDir1).
-		WithExec([]string{"ls", "/mnt"}).
-		Stdout(ctx)
+	root := t.TempDir()
+	err := fullDir.Apply(root)
 	require.NoError(t, err)
-	var _ = out1
 
-	out, err := exec.CommandContext(ctx, "docker", "exec", "dagger-engine.dev", "sh", "-c",
-		"ls -la /var/lib/dagger/worker/snapshots/snapshots/2/fs/tmp/*/*",
-	).CombinedOutput()
-	t.Log(string(out))
+	c1 := connect(ctx, t)
+	c2 := connect(ctx, t)
 
-	require.NoError(t, c.Close())
-	c = connect(ctx, t)
+	// TODO: calc digest of loaded dirs and compare?
+	// TODO: use exclude too
 
-	hostDir2 := c.Host().Directory(tmpdir, dagger.HostDirectoryOpts{
-		Exclude: []string{"FOOFOO"},
+	var eg errgroup.Group
+	startCh := make(chan struct{})
+
+	eg.Go(func() error {
+		<-startCh
+
+		outDir := t.TempDir()
+		_, err := c1.Host().Directory(root).Export(ctx, outDir)
+		if err != nil {
+			return err
+		}
+
+		return fstest.CheckDirectoryEqualWithApplier(outDir, fullDir)
 	})
-	out2, err := c.Container().From(alpineImage).
-		WithMountedDirectory("/mnt", hostDir2).
-		WithExec([]string{"ls", "/mnt"}).
-		Stdout(ctx)
-	require.NoError(t, err)
-	var _ = out2
+	eg.Go(func() error {
+		<-startCh
 
-	out, err = exec.CommandContext(ctx, "docker", "exec", "dagger-engine.dev", "sh", "-c",
-		"ls -la /var/lib/dagger/worker/snapshots/snapshots/2/fs/tmp/*/*",
-	).CombinedOutput()
-	t.Log(string(out))
+		outDir := t.TempDir()
+		_, err := c1.Host().Directory(root, dagger.HostDirectoryOpts{
+			Include: []string{"**.txt"},
+		}).Export(ctx, outDir)
+		if err != nil {
+			return err
+		}
 
-	require.NotEqual(t, out1, out2)
+		return fstest.CheckDirectoryEqualWithApplier(outDir, fstest.Apply(
+			fstest.CreateDir("/a1", 0o755),
+			fstest.CreateFile("/a1/f1.txt", []byte("1"), 0o644),
+			fstest.CreateDir("/a1/b2", 0o755),
+			fstest.CreateFile("/a1/b2/f3.txt", []byte("4"), 0o644),
 
-	require.NoError(t, c.Close())
-	c = connect(ctx, t)
-
-	require.NoError(t, os.Remove(filepath.Join(tmpdir, "FOOFOO")))
-
-	hostDir3 := c.Host().Directory(tmpdir, dagger.HostDirectoryOpts{
-		Exclude: []string{"FOOFOO"},
+			fstest.CreateDir("/a2", 0o755),
+			fstest.CreateDir("/a2/b1", 0o755),
+			fstest.CreateFile("/a2/b1/f1.txt", []byte("7"), 0o644),
+			fstest.CreateFile("/a2/b1/f2.txt", []byte("8"), 0o644),
+		))
 	})
-	out3, err := c.Container().From(alpineImage).
-		WithMountedDirectory("/mnt", hostDir3).
-		WithExec([]string{"ls", "/mnt"}).
-		Stdout(ctx)
+	eg.Go(func() error {
+		<-startCh
+
+		outDir := t.TempDir()
+		_, err := c1.Host().Directory(filepath.Join(root, "a1/b1")).Export(ctx, outDir)
+		if err != nil {
+			return err
+		}
+
+		return fstest.CheckDirectoryEqualWithApplier(outDir, fstest.Apply(
+			fstest.CreateFile("f1.zip", []byte("2"), 0o644),
+			fstest.CreateFile("f2.rar", []byte("3"), 0o644),
+		))
+	})
+	eg.Go(func() error {
+		<-startCh
+
+		outDir := t.TempDir()
+		_, err := c1.Host().Directory(filepath.Join(root, "a2")).Export(ctx, outDir)
+		if err != nil {
+			return err
+		}
+
+		return fstest.CheckDirectoryEqualWithApplier(outDir, fstest.Apply(
+			fstest.CreateFile("f1.zip", []byte("6"), 0o644),
+			fstest.CreateDir("b1", 0o755),
+			fstest.CreateFile("b1/f1.txt", []byte("7"), 0o644),
+			fstest.CreateFile("b1/f2.txt", []byte("8"), 0o644),
+			fstest.CreateDir("b2", 0o755),
+			fstest.CreateFile("b2/f3.rar", []byte("9"), 0o644),
+			fstest.CreateFile("b2/f4.zip", []byte("10"), 0o644),
+		))
+	})
+	eg.Go(func() error {
+		<-startCh
+
+		outDir := t.TempDir()
+		_, err := c1.Host().Directory(filepath.Join(root, "a1"), dagger.HostDirectoryOpts{
+			Include: []string{"**.rar"},
+		}).Export(ctx, outDir)
+		if err != nil {
+			return err
+		}
+
+		return fstest.CheckDirectoryEqualWithApplier(outDir, fstest.Apply(
+			fstest.CreateDir("b1", 0o755),
+			fstest.CreateFile("b1/f2.rar", []byte("3"), 0o644),
+		))
+	})
+
+	eg.Go(func() error {
+		<-startCh
+
+		outDir := t.TempDir()
+		_, err := c2.Host().Directory(root).Export(ctx, outDir)
+		if err != nil {
+			return err
+		}
+
+		return fstest.CheckDirectoryEqualWithApplier(outDir, fullDir)
+	})
+	eg.Go(func() error {
+		<-startCh
+
+		outDir := t.TempDir()
+		_, err := c2.Host().Directory(root, dagger.HostDirectoryOpts{
+			Include: []string{"**.zip"},
+		}).Export(ctx, outDir)
+		if err != nil {
+			return err
+		}
+
+		return fstest.CheckDirectoryEqualWithApplier(outDir, fstest.Apply(
+			fstest.CreateDir("/a1", 0o755),
+			fstest.CreateDir("/a1/b1", 0o755),
+			fstest.CreateFile("/a1/b1/f1.zip", []byte("2"), 0o644),
+			fstest.CreateDir("/a1/b2", 0o755),
+			fstest.CreateFile("/a1/b2/f4.zip", []byte("5"), 0o644),
+
+			fstest.CreateDir("/a2", 0o755),
+			fstest.CreateFile("/a2/f1.zip", []byte("6"), 0o644),
+			fstest.CreateDir("/a2/b2", 0o755),
+			fstest.CreateFile("/a2/b2/f4.zip", []byte("10"), 0o644),
+		))
+	})
+	eg.Go(func() error {
+		<-startCh
+
+		outDir := t.TempDir()
+		_, err := c2.Host().Directory(filepath.Join(root, "a2/b1")).Export(ctx, outDir)
+		if err != nil {
+			return err
+		}
+
+		return fstest.CheckDirectoryEqualWithApplier(outDir, fstest.Apply(
+			fstest.CreateFile("f1.txt", []byte("7"), 0o644),
+			fstest.CreateFile("f2.txt", []byte("8"), 0o644),
+		))
+	})
+	eg.Go(func() error {
+		<-startCh
+
+		outDir := t.TempDir()
+		_, err := c2.Host().Directory(filepath.Join(root, "a1")).Export(ctx, outDir)
+		if err != nil {
+			return err
+		}
+
+		return fstest.CheckDirectoryEqualWithApplier(outDir, fstest.Apply(
+			fstest.CreateFile("f1.txt", []byte("1"), 0o644),
+			fstest.CreateDir("b1", 0o755),
+			fstest.CreateFile("b1/f1.zip", []byte("2"), 0o644),
+			fstest.CreateFile("b1/f2.rar", []byte("3"), 0o644),
+			fstest.CreateDir("b2", 0o755),
+			fstest.CreateFile("b2/f3.txt", []byte("4"), 0o644),
+			fstest.CreateFile("b2/f4.zip", []byte("5"), 0o644),
+		))
+	})
+	eg.Go(func() error {
+		<-startCh
+
+		outDir := t.TempDir()
+		_, err := c2.Host().Directory(filepath.Join(root, "a2"), dagger.HostDirectoryOpts{
+			Include: []string{"**.zip"},
+		}).Export(ctx, outDir)
+		if err != nil {
+			return err
+		}
+
+		return fstest.CheckDirectoryEqualWithApplier(outDir, fstest.Apply(
+			fstest.CreateFile("f1.zip", []byte("6"), 0o644),
+			fstest.CreateDir("b2", 0o755),
+			fstest.CreateFile("b2/f4.zip", []byte("10"), 0o644),
+		))
+	})
+
+	close(startCh)
+	err = eg.Wait()
 	require.NoError(t, err)
-	var _ = out3
-
-	out, err = exec.CommandContext(ctx, "docker", "exec", "dagger-engine.dev", "sh", "-c",
-		"ls -la /var/lib/dagger/worker/snapshots/snapshots/2/fs/tmp/*/*",
-	).CombinedOutput()
-	t.Log(string(out))
-
-	require.Equal(t, out2, out3)
-
-	require.NoError(t, c.Close())
-	c = connect(ctx, t)
-
-	hostDir4 := c.Host().Directory(tmpdir)
-	out4, err := c.Container().From(alpineImage).
-		WithMountedDirectory("/mnt", hostDir4).
-		WithExec([]string{"ls", "/mnt"}).
-		Stdout(ctx)
-	require.NoError(t, err)
-	var _ = out4
-
-	out, err = exec.CommandContext(ctx, "docker", "exec", "dagger-engine.dev", "sh", "-c",
-		"ls -la /var/lib/dagger/worker/snapshots/snapshots/2/fs/tmp/*/*",
-	).CombinedOutput()
-	t.Log(string(out))
-
-	require.Equal(t, out2, out4)
 }
