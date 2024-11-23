@@ -16,6 +16,14 @@ defmodule ElixirSdkDev do
     |> codegen_test()
   end
 
+  @doc """
+  Lint the SDK.
+  """
+  defn lint(container: Dagger.Container.t()) :: Dagger.Container.t() do
+    container
+    |> Dagger.Container.with_exec(~w"mix credo")
+  end
+
   defn sdk_test(container: Dagger.Container.t()) :: Dagger.Container.t() do
     container
     |> Dagger.Container.with_exec(~w"mix test")

@@ -48,10 +48,9 @@ func (t ElixirSDK) Lint(ctx context.Context) error {
 			return err
 		}
 
-		_, err = t.elixirBase(elixirVersions[elixirLatestVersion]).
-			With(installer).
-			WithExec([]string{"mix", "lint"}).
-			Sync(ctx)
+		sdkDev := dag.ElixirSDKDev()
+		ctr := sdkDev.WithBase(t.Dagger.Source().Directory(elixirSDKPath)).With(installer)
+		_, err = sdkDev.Lint(ctr).Sync(ctx)
 		return err
 	})
 	eg.Go(func() (rerr error) {
