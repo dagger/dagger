@@ -277,7 +277,6 @@ func (h *shellCallHandler) run(ctx context.Context, reader io.Reader, name strin
 		})
 	}()
 
-	h.runner.Reset()
 	var handlerError bool
 
 	err = h.runner.Run(ctx, file)
@@ -313,6 +312,7 @@ func (h *shellCallHandler) runPath(ctx context.Context, path string) error {
 		return err
 	}
 	defer f.Close()
+	h.runner.Reset()
 	return h.run(ctx, f, path)
 }
 
