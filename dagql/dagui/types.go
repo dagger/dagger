@@ -109,6 +109,9 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans []*Span, f func(*TraceTree)) {
 				span.Base.Digest == lastTree.Span.Output
 			lastTree.Final = !tree.Chained
 		}
+		if lastTree != nil && lastTree.Span.Call != nil && tree.Span.Call == nil {
+			lastTree.Final = true
+		}
 		if span.IsRunningOrLinksRunning() {
 			tree.setRunning()
 		}
