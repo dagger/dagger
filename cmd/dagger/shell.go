@@ -842,9 +842,11 @@ func readShellState(r io.Reader) (*ShellState, []byte, error) {
 	}
 	encoded := bytes.TrimPrefix(b, p)
 	decoder := base64.NewDecoder(base64.StdEncoding, bytes.NewReader(encoded))
+	jsonDec := json.NewDecoder(decoder)
+	jsonDec.UseNumber()
 
 	var s ShellState
-	if err := json.NewDecoder(decoder).Decode(&s); err != nil {
+	if err := jsonDec.Decode(&s); err != nil {
 		return nil, b, fmt.Errorf("decode state: %w", err)
 	}
 	if s.IsError() {
