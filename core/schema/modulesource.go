@@ -661,12 +661,20 @@ func (s *moduleSchema) moduleSourceDependencies(
 					return fmt.Errorf("failed to resolve dependency: %w", err)
 				}
 
+				name := depCfg.Name
+				if name == "" {
+					name, err = resolvedDepSrc.Self.ModuleName(ctx)
+					if err != nil {
+						return fmt.Errorf("failed to load module name: %w", err)
+					}
+				}
+
 				err = s.dag.Select(ctx, s.dag.Root(), &existingDeps[i],
 					dagql.Selector{
 						Field: "moduleDependency",
 						Args: []dagql.NamedInput{
 							{Name: "source", Value: dagql.NewID[*core.ModuleSource](resolvedDepSrc.ID())},
-							{Name: "name", Value: dagql.String(depCfg.Name)},
+							{Name: "name", Value: dagql.String(name)},
 						},
 					},
 				)
@@ -698,12 +706,20 @@ func (s *moduleSchema) moduleSourceDependencies(
 				return fmt.Errorf("failed to resolve dependency: %w", err)
 			}
 
+			name := dep.Self.Name
+			if name == "" {
+				name, err = resolvedDepSrc.Self.ModuleName(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to load module name: %w", err)
+				}
+			}
+
 			err = s.dag.Select(ctx, s.dag.Root(), &newDeps[i],
 				dagql.Selector{
 					Field: "moduleDependency",
 					Args: []dagql.NamedInput{
 						{Name: "source", Value: dagql.NewID[*core.ModuleSource](resolvedDepSrc.ID())},
-						{Name: "name", Value: dagql.String(dep.Self.Name)},
+						{Name: "name", Value: dagql.String(name)},
 					},
 				},
 			)

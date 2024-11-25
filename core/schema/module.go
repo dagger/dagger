@@ -1035,14 +1035,8 @@ func (s *moduleSchema) updateDeps(
 			return fmt.Errorf("unsupported dependency source kind: %s", dep.Source.Self.Kind)
 		}
 
-		depName := dep.Name
-		if dep.Name == "" {
-			// fill in default dep names if missing with the name of the module
-			depName = mod.DependenciesField[i].Self.Name()
-		}
-
 		modCfg.Dependencies[i] = &modules.ModuleConfigDependency{
-			Name:   depName,
+			Name:   dep.Name,
 			Source: srcStr,
 			Pin:    pinStr,
 		}
