@@ -442,13 +442,10 @@ func Init(ctx context.Context, cfg Config) context.Context {
 			sdkmetric.WithResource(cfg.Resource),
 		}
 		const metricsExportInterval = 1 * time.Second
-		const metricsExportTimeout = 1 * time.Second
 		for _, exp := range cfg.LiveMetricExporters {
 			MetricExporters = append(MetricExporters, exp)
 			reader := sdkmetric.NewPeriodicReader(exp,
-				sdkmetric.WithInterval(metricsExportInterval),
-				sdkmetric.WithTimeout(metricsExportTimeout),
-			)
+				sdkmetric.WithInterval(metricsExportInterval))
 			meterOpts = append(meterOpts, sdkmetric.WithReader(reader))
 		}
 		ctx = WithMeterProvider(ctx, sdkmetric.NewMeterProvider(meterOpts...))
