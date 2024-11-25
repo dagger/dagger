@@ -1051,11 +1051,6 @@ func (m *moduleDef) GetEnum(name string) *modEnum {
 	return nil
 }
 
-// GetRoot retrieves the root object of the API (i.e., Query).
-func (m *moduleDef) GetRoot() functionProvider {
-	return m.GetFunctionProvider("Query")
-}
-
 // GetFunctionProvider retrieves a saved object or interface type definition from the module as a functionProvider.
 func (m *moduleDef) GetFunctionProvider(name string) functionProvider {
 	if obj := m.GetObject(name); obj != nil {

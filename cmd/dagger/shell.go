@@ -115,7 +115,7 @@ type shellCallHandler struct {
 
 	// switch to Frontend.Background for rendering output while the TUI is
 	// running when in interactive mode
-	term bool
+	tui bool
 
 	// stdoutBuf is used to capture the final stdout that the runner produces
 	stdoutBuf *bytes.Buffer
@@ -138,7 +138,7 @@ type shellCallHandler struct {
 // - File: when a file path is provided as an argument
 // - Code: when code is passed inline using the `-c,--code` flag or via stdin
 func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
-	h.term = !silent && (hasTTY && progress == "auto" || progress == "tty")
+	h.tui = !silent && (hasTTY && progress == "auto" || progress == "tty")
 
 	h.stdoutBuf = new(bytes.Buffer)
 	h.stderrBuf = new(bytes.Buffer)
@@ -187,7 +187,7 @@ func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
 		ref, _ = getExplicitModuleSourceRef()
 		def, err = maybeInitializeModule(ctx, h.dag, ref, true)
 		if ref == "" {
-			ref = "."
+			ref = moduleURLDefault
 		}
 	}
 	if err != nil {
@@ -209,7 +209,7 @@ func (h *shellCallHandler) RunAll(ctx context.Context, args []string) error {
 			return h.runInteractive(ctx)
 		}
 		// Example: `echo 'container | workdir' | dagger shell`
-		return h.run(ctx, os.Stdin, "")
+		return h.run(ctx, os.Stdin, "-")
 	}
 
 	// Example: `dagger shell job1.dsh job2.dsh`
@@ -437,7 +437,7 @@ func (h *shellCallHandler) ps1() string {
 
 // withTerminal handles using stdin, stdout, and stderr when the TUI is runnin
 func (h *shellCallHandler) withTerminal(fn func(stdin io.Reader, stdout, stderr io.Writer) error) error {
-	if h.term {
+	if h.tui {
 		return Frontend.Background(&terminalSession{
 			fn: func(stdin io.Reader, stdout, stderr io.Writer) error {
 				return fn(stdin, stdout, stderr)
@@ -1512,7 +1512,7 @@ func (h *shellCallHandler) registerBuiltins() { //nolint:gocyclo
 
 				modRef := ref
 				if modRef == "" {
-					modRef = "."
+					modRef = moduleURLDefault
 				}
 
 				// TODO: Add a `--force` flag to force loading  again?

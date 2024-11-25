@@ -364,7 +364,7 @@ func maybeInitializeModule(ctx context.Context, dag *dagger.Client, srcRef strin
 
 	desc, err := mod.Description(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("get module name: %w", err)
+		return nil, fmt.Errorf("get module description: %w", err)
 	}
 	def.Description = desc
 
