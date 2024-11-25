@@ -177,6 +177,12 @@ func (db *DB) SpanSnapshots(id SpanID) []SpanSnapshot {
 	return snaps
 }
 
+func (db *DB) RemainingSnapshots() []SpanSnapshot {
+	return snapshotSpans(db.Spans.Order, func(span *Span) bool {
+		return !db.hasSeen(span.ID)
+	})
+}
+
 var _ sdktrace.SpanExporter = (*DB)(nil)
 
 func (db *DB) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
