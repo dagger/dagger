@@ -346,6 +346,11 @@ func (span *Span) VisibleParent(opts FrontendOpts) *Span {
 }
 
 func (span *Span) Hidden(opts FrontendOpts) bool {
+	if span.Passthrough {
+		// we never hide passthrough spans; we pretend they don't exist, but their
+		// children do
+		return false
+	}
 	if span.IsInternal() && opts.Verbosity < ShowInternalVerbosity {
 		// internal spans are hidden by default
 		return true
