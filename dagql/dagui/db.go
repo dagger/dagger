@@ -303,12 +303,13 @@ func (db *DB) newSpan(spanID SpanID) *Span {
 		SpanSnapshot: SpanSnapshot{
 			ID: spanID,
 		},
-		ChildSpans:   NewSpanSet(),
-		LinkedFrom:   NewSpanSet(),
-		LinksTo:      NewSpanSet(),
-		RunningSpans: NewSpanSet(),
-		FailedLinks:  NewSpanSet(),
-		db:           db,
+		ChildSpans:      NewSpanSet(),
+		RunningSpans:    NewSpanSet(),
+		FailedLinks:     NewSpanSet(),
+		causesViaLinks:  NewSpanSet(),
+		effectsViaLinks: NewSpanSet(),
+		effectsViaAttrs: map[string]SpanSet{},
+		db:              db,
 	}
 }
 
@@ -520,12 +521,9 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 	for _, linkedCtx := range span.Links {
 		linked := db.initSpan(linkedCtx.SpanID)
 		linked.ChildSpans.Add(span)
-		linked.LinkedFrom.Add(span)
-		span.LinksTo.Add(linked)
+		linked.effectsViaLinks.Add(span)
+		span.causesViaLinks.Add(linked)
 	}
-
-	// update span states, propagating them up through parents, too
-	span.PropagateStatusToParentsAndLinks()
 
 	// keep track of intervals seen for a digest
 	if span.CallDigest != "" {
@@ -602,12 +600,24 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 			db.FailedEffects[span.EffectID] = true
 		}
 		causes := db.CauseSpans[span.EffectID]
-		if causes != nil {
-			for _, cause := range causes.Order {
-				// update any causal spans
-				db.updatedSpans.Add(cause)
-			}
+		if causes == nil {
+			causes = NewSpanSet()
+			db.CauseSpans[span.EffectID] = causes
 		}
+		for _, cause := range causes.Order {
+			// update any causal spans
+			db.updatedSpans.Add(cause)
+		}
+		span.causesViaAttrs = causes
+	}
+
+	for _, id := range span.EffectIDs {
+		effects := db.EffectSpans[id]
+		if effects == nil {
+			effects = NewSpanSet()
+			db.EffectSpans[id] = effects
+		}
+		span.effectsViaAttrs[id] = effects
 	}
 
 	for _, dig := range span.EffectsCompleted {
@@ -634,6 +644,9 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 		}
 		db.CauseSpans[id].Add(span)
 	}
+
+	// update span states, propagating them up through parents, too
+	span.PropagateStatusToParentsAndLinks()
 
 	// finally, install the span if we don't already have it
 	//

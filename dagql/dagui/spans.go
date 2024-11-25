@@ -19,15 +19,19 @@ type SpanSet = *OrderedSet[SpanID, *Span]
 type Span struct {
 	SpanSnapshot
 
-	// populated by wireUpSpan
 	ParentSpan   *Span          `json:"-"`
 	ChildSpans   SpanSet        `json:"-"`
-	LinkedFrom   SpanSet        `json:"-"`
-	LinksTo      SpanSet        `json:"-"`
 	RunningSpans SpanSet        `json:"-"`
 	FailedLinks  SpanSet        `json:"-"`
 	Call         *callpbv1.Call `json:"-"`
 	Base         *callpbv1.Call `json:"-"`
+
+	// v0.15+
+	causesViaLinks  SpanSet `json:"-"`
+	effectsViaLinks SpanSet `json:"-"`
+	// v0.14 and below
+	causesViaAttrs  SpanSet            `json:"-"`
+	effectsViaAttrs map[string]SpanSet `json:"-"`
 
 	// NOTE: this is hard coded for Gauge int64 metricdata essentially right now,
 	// needs generalization as more metric types get added
@@ -137,10 +141,6 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) {
 	case telemetry.UIEncapsulatedAttr:
 		snapshot.Encapsulated = val.(bool)
 
-	// encapsulate any gRPC activity by default
-	case "rpc.service":
-		snapshot.Encapsulated = true
-
 	case telemetry.UIInternalAttr:
 		snapshot.Internal = val.(bool)
 
@@ -161,6 +161,11 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) {
 
 	case telemetry.EffectIDAttr:
 		snapshot.EffectID = val.(string)
+
+	case "rpc.service", "buildkit":
+		// encapsulate these by default; we only maybe want to see these if their
+		// parent failed, since some happy paths might involve _expected_ failures
+		snapshot.Encapsulated = true
 	}
 }
 
@@ -194,27 +199,27 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 		}
 	}
 
-	for _, linked := range span.LinksTo.Order {
+	for causal := range span.CausalSpans {
 		var changed bool
 		if span.IsRunning() {
-			changed = linked.RunningSpans.Add(span)
+			changed = causal.RunningSpans.Add(span)
 		} else {
-			changed = linked.RunningSpans.Remove(span)
+			changed = causal.RunningSpans.Remove(span)
 		}
 
 		if span.IsFailed() {
-			linked.FailedLinks.Add(span)
+			causal.FailedLinks.Add(span)
 		}
 
-		if linked.Activity.Add(span) {
+		if causal.Activity.Add(span) {
 			changed = true
 		}
 
 		if changed {
-			span.db.updatedSpans.Add(linked)
+			span.db.updatedSpans.Add(causal)
 		}
 
-		for parent := range linked.Parents {
+		for parent := range causal.Parents {
 			var changed bool
 			if span.IsRunning() {
 				changed = parent.RunningSpans.Add(span)
@@ -333,10 +338,9 @@ func (span *Span) VisibleParent(opts FrontendOpts) *Span {
 	if span.ParentSpan.Passthrough {
 		return span.ParentSpan.VisibleParent(opts)
 	}
-	links := span.LinksTo.Order
-	if len(links) > 0 {
+	for link := range span.CausalSpans {
 		// prioritize causal spans over the unlazier
-		return links[0]
+		return link
 	}
 	return span.ParentSpan
 }
@@ -360,12 +364,48 @@ func (span *Span) IsRunning() bool {
 	return span.EndTime.Before(span.StartTime)
 }
 
+func (span *Span) CausalSpans(f func(*Span) bool) {
+	if len(span.causesViaLinks.Order) > 0 {
+		for _, span := range span.causesViaLinks.Order {
+			if !f(span) {
+				return
+			}
+		}
+		return
+	}
+	if span.causesViaAttrs != nil {
+		for _, span := range span.causesViaAttrs.Order {
+			if !f(span) {
+				return
+			}
+		}
+	}
+}
+
+func (span *Span) EffectSpans(f func(*Span) bool) {
+	if len(span.effectsViaLinks.Order) > 0 {
+		for _, span := range span.effectsViaLinks.Order {
+			if !f(span) {
+				return
+			}
+		}
+		return
+	}
+	for _, set := range span.effectsViaAttrs {
+		for _, span := range set.Order {
+			if !f(span) {
+				return
+			}
+		}
+	}
+}
+
 func (span *Span) IsRunningOrLinksRunning() bool {
 	if span.IsRunning() {
 		return true
 	}
-	for _, link := range span.LinkedFrom.Order {
-		if link.IsRunning() {
+	for effect := range span.EffectSpans {
+		if effect.IsRunning() {
 			return true
 		}
 	}
@@ -490,7 +530,7 @@ func (span *Span) EndTimeOrFallback(fallbackEnd time.Time) time.Time {
 		return fallbackEnd
 	}
 	maxTime := span.EndTime
-	for _, effect := range span.LinkedFrom.Order {
+	for effect := range span.EffectSpans {
 		if effect.EndTime.After(maxTime) {
 			maxTime = effect.EndTime
 		}
