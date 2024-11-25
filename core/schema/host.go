@@ -188,10 +188,18 @@ func (s *hostSchema) Install() {
 			ArgDoc("path", `Location of the file to retrieve (e.g., "README.md").`),
 
 		dagql.NodeFunc("unixSocket", s.unixSocket).
+			Impure("Accesses a Unix Socket on the host.",
+				`Despite being impure, this field returns a pure Socket object. It does
+				this by uploading the requested path to the internal content store and
+				returning a content-addressed File using from the `+"`blob()` API.").
 			Doc(`Accesses a Unix socket on the host.`).
 			ArgDoc("path", `Location of the Unix socket (e.g., "/var/run/docker.sock").`),
 
 		dagql.NodeFunc("ipSocket", s.ipSocket).
+			Impure("Accesses a TCP Socket on the host.",
+				`Despite being impure, this field returns a pure Socket object. It does
+				this by uploading the requested path to the internal content store and
+				returning a content-addressed File using from the `+"`blob()` API.").
 			Doc(`Accesses a IP socket on the host.`).
 			ArgDoc("host", `Hostname or IP address for the socket to dial.`).
 			ArgDoc("port", `Port number for the socket to dial.`).
@@ -273,7 +281,6 @@ func (s *hostSchema) unixSocket(ctx context.Context, parent dagql.Instance[*core
 	}
 
 	if args.Accessor == "" {
-		dagql.Taint(ctx)
 		accessor, err := core.GetClientResourceAccessor(ctx, parent.Self.Query, args.Path)
 		if err != nil {
 			return inst, fmt.Errorf("failed to get client resource name: %w", err)
@@ -291,6 +298,7 @@ func (s *hostSchema) unixSocket(ctx context.Context, parent dagql.Instance[*core
 						Value: dagql.NewString(accessor),
 					},
 				},
+				Pure: true,
 			},
 		)
 		return inst, err
@@ -329,7 +337,6 @@ func (s *hostSchema) ipSocket(ctx context.Context, parent dagql.Instance[*core.H
 	}
 
 	if args.Accessor == "" {
-		dagql.Taint(ctx)
 		accessor, err := core.GetHostIPSocketAccessor(ctx, parent.Self.Query, args.Host, port)
 		if err != nil {
 			return inst, fmt.Errorf("failed to get host ip socket accessor: %w", err)
@@ -355,6 +362,7 @@ func (s *hostSchema) ipSocket(ctx context.Context, parent dagql.Instance[*core.H
 						Value: dagql.NewString(accessor),
 					},
 				},
+				Pure: true,
 			},
 		)
 		return inst, err

@@ -153,6 +153,7 @@ func (host *Host) SetSecretFile(ctx context.Context, srv *dagql.Server, secretNa
 				Value: dagql.Opt(dagql.NewString(accessor)),
 			},
 		},
+		Pure: true,
 	})
 	if err != nil {
 		return i, fmt.Errorf("failed to select secret: %w", err)

@@ -22,6 +22,7 @@ import (
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/storage/memory"
+	"github.com/moby/buildkit/util/bklog"
 	"github.com/moby/buildkit/util/gitutil"
 )
 
@@ -34,6 +35,7 @@ type gitSchema struct {
 func (s *gitSchema) Install() {
 	dagql.Fields[*core.Query]{
 		dagql.NodeFunc("git", s.git).
+			Impure("test", "toto").
 			View(AllVersion).
 			Doc(`Queries a Git repository.`).
 			ArgDoc("url",
@@ -138,6 +140,8 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 	var authSock *core.Socket = nil
 	var authToken dagql.Instance[*core.Secret]
 
+	bklog.G(ctx).Debugf("🎃 REF: |%+v|\n", args.URL)
+
 	// First parse the ref scheme to determine auth strategy
 	remote, err := gitutil.ParseURL(args.URL)
 	if errors.Is(err, gitutil.ErrUnknownProtocol) {
@@ -168,6 +172,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 						Value: dagql.NewString(clientMetadata.SSHAuthSocketPath),
 					},
 				},
+				Pure: true,
 			},
 		); err != nil {
 			return inst, fmt.Errorf("failed to select internal socket: %w", err)
@@ -217,6 +222,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 									Value: dagql.NewString(credentials.Password),
 								},
 							},
+							Pure: true,
 						},
 					); err != nil {
 						return inst, fmt.Errorf("failed to create a new secret with the git auth token: %w", err)
@@ -244,30 +250,10 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 		SSHAuthSocket: authSock,
 		Services:      svcs,
 		Platform:      parent.Self.Platform(),
+		AuthToken:     authToken.Self,
 	})
 	if err != nil {
 		return inst, fmt.Errorf("failed to create GitRepository instance: %w", err)
-	}
-
-	// set the auth token by selecting withAuthToken so that it shows up in the dagql call
-	// as a secret and can thus be passed to functions
-	if authToken.Self != nil {
-		var instWithToken dagql.Instance[*core.GitRepository]
-		err := s.srv.Select(ctx, inst, &instWithToken,
-			dagql.Selector{
-				Field: "withAuthToken",
-				Args: []dagql.NamedInput{
-					{
-						Name:  "token",
-						Value: dagql.NewID[*core.Secret](authToken.ID()),
-					},
-				},
-			},
-		)
-		if err != nil {
-			return inst, fmt.Errorf("failed to set auth token: %w", err)
-		}
-		inst = instWithToken
 	}
 
 	return inst, nil
