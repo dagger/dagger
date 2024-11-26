@@ -944,7 +944,7 @@ func (ContainerSuite) TestExecServicesError(ctx context.Context, t *testctx.T) {
 
 	_, err = client.Sync(ctx)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "start "+host+" (aliased as www): exited:")
+	requireErrOut(t, err, "start "+host+" (aliased as www): exited:")
 }
 
 func (ContainerSuite) TestServiceNoExec(ctx context.Context, t *testctx.T) {
@@ -967,7 +967,7 @@ func (ContainerSuite) TestServiceNoExec(ctx context.Context, t *testctx.T) {
 
 	_, err = client.Sync(ctx)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "start "+host+" (aliased as www)")
+	requireErrOut(t, err, "start "+host+" (aliased as www)")
 }
 
 //go:embed testdata/udp-service.go
@@ -1557,7 +1557,7 @@ func (FileSuite) TestServiceSync(ctx context.Context, t *testctx.T) {
 		}).Sync(ctx)
 
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "status 404")
+		requireErrOut(t, err, "status 404")
 	})
 
 	t.Run("with chaining", func(ctx context.Context, t *testctx.T) {
