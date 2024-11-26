@@ -148,13 +148,10 @@ func (r RustSDK) Publish(
 	}
 
 	if semver.IsValid(version) {
-		if err := githubRelease(ctx, r.Dagger.Git, githubReleaseOpts{
-			tag:         "sdk/rust/" + version,
-			target:      tag,
-			notes:       changeNotes(r.Dagger.Src, "sdk/rust", version),
-			gitRepo:     gitRepoSource,
-			githubToken: githubToken,
-			dryRun:      dryRun,
+		if err := dag.Releaser().GithubRelease(ctx, gitRepoSource, "sdk/rust/"+version, tag, dagger.ReleaserGithubReleaseOpts{
+			Notes:  dag.Releaser().ChangeNotes("sdk/rust", version),
+			Token:  githubToken,
+			DryRun: dryRun,
 		}); err != nil {
 			return err
 		}

@@ -177,13 +177,10 @@ func (t PythonSDK) Publish(
 	}
 
 	if semver.IsValid(version) {
-		if err := githubRelease(ctx, t.Dagger.Git, githubReleaseOpts{
-			tag:         "sdk/python/" + version,
-			target:      tag,
-			notes:       changeNotes(t.Dagger.Src, "sdk/python", version),
-			gitRepo:     gitRepoSource,
-			githubToken: githubToken,
-			dryRun:      dryRun,
+		if err := dag.Releaser().GithubRelease(ctx, gitRepoSource, "sdk/python/"+version, tag, dagger.ReleaserGithubReleaseOpts{
+			Notes:  dag.Releaser().ChangeNotes("sdk/python", version),
+			Token:  githubToken,
+			DryRun: dryRun,
 		}); err != nil {
 			return err
 		}

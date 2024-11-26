@@ -147,13 +147,10 @@ func (t PHPSDK) Publish(
 	}
 
 	if semver.IsValid(version) {
-		if err := githubRelease(ctx, t.Dagger.Git, githubReleaseOpts{
-			tag:         "sdk/php/" + version,
-			target:      tag,
-			notes:       changeNotes(t.Dagger.Src, "sdk/php", version),
-			gitRepo:     gitRepoSource,
-			githubToken: githubToken,
-			dryRun:      dryRun,
+		if err := dag.Releaser().GithubRelease(ctx, gitRepoSource, "sdk/php/"+version, tag, dagger.ReleaserGithubReleaseOpts{
+			Notes:  dag.Releaser().ChangeNotes("sdk/php", version),
+			Token:  githubToken,
+			DryRun: dryRun,
 		}); err != nil {
 			return err
 		}

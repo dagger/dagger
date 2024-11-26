@@ -141,13 +141,10 @@ func (t GoSDK) Publish(
 	}
 
 	if semver.IsValid(version) {
-		if err := githubRelease(ctx, t.Dagger.Git, githubReleaseOpts{
-			tag:         "sdk/go/" + version,
-			target:      tag,
-			notes:       changeNotes(t.Dagger.Src, "sdk/go", version),
-			gitRepo:     gitRepoSource,
-			githubToken: githubToken,
-			dryRun:      dryRun,
+		if err := dag.Releaser().GithubRelease(ctx, gitRepoSource, "sdk/go/"+version, tag, dagger.ReleaserGithubReleaseOpts{
+			Notes:  dag.Releaser().ChangeNotes("sdk/go", version),
+			Token:  githubToken,
+			DryRun: dryRun,
 		}); err != nil {
 			return err
 		}

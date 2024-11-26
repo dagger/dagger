@@ -1,0 +1,18 @@
+{
+  "name": "releaser",
+  "engineVersion": "v0.14.0",
+  "sdk": "go",
+  "dependencies": [
+    {
+      "name": "gh",
+      "source": "github.com/sagikazarmark/daggerverse/gh@main",
+      "pin": "5a5ab8cce801ad62f2618f50a4e859e2f7fcacb9"
+    },
+    {
+      "name": "version",
+      "source": "../version",
+      "pin": ""
+    }
+  ],
+  "source": ".dagger"
+}

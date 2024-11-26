@@ -166,13 +166,10 @@ func (h *Helm) Publish(
 	}
 
 	if semver.IsValid(version) {
-		if err := githubRelease(ctx, h.Dagger.Git, githubReleaseOpts{
-			tag:         "helm/chart/" + version,
-			target:      tag,
-			notes:       changeNotes(h.Dagger.Src, "helm/dagger", version),
-			gitRepo:     gitRepoSource,
-			githubToken: githubToken,
-			dryRun:      dryRun,
+		if err := dag.Releaser().GithubRelease(ctx, gitRepoSource, "helm/chart/"+version, tag, dagger.ReleaserGithubReleaseOpts{
+			Notes:  dag.Releaser().ChangeNotes("helm/dagger", version),
+			Token:  githubToken,
+			DryRun: dryRun,
 		}); err != nil {
 			return err
 		}
