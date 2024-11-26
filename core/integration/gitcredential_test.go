@@ -219,4 +219,50 @@ func (m *Test) Fn(ctx context.Context, dir *dagger.Directory) ([]string, error) 
 		require.Error(t, err)
 		require.ErrorContains(t, err, "Authentication failed")
 	})
+
+	t.Run("private git directory passed to module via SSH", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		mountedSocket, cleanup := mountedPrivateRepoSocket(c, t)
+		defer cleanup()
+
+		ctr := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			With(mountedSocket).
+			WithWorkdir("/work/dep").
+			With(daggerExec("init", "--source=.", "--name=dep", "--sdk=go")).
+			WithNewFile("/work/dep/main.go", `package main
+
+import (
+    "context"
+    "dagger/dep/internal/dagger"
+)
+
+type Dep struct{}
+
+func (m *Dep) ListFiles(ctx context.Context, dir *dagger.Directory) ([]string, error) {
+    return dir.Entries(ctx)
+}
+`).
+			WithWorkdir("/work").
+			With(daggerExec("init", "--source=.", "--name=test", "--sdk=go")).
+			WithNewFile("/work/main.go", `package main
+
+import (
+    "context"
+    "dagger/test/internal/dagger"
+)
+
+type Test struct{}
+
+func (m *Test) Fn(ctx context.Context, dir *dagger.Directory) ([]string, error) {
+    return dag.Dep().ListFiles(ctx, dir)
+}
+`).With(daggerExec("install", "./dep"))
+
+		repoURL := "git@gitlab.com:dagger-modules/private/test/more/dagger-test-modules-private.git"
+
+		out, err := ctr.With(daggerExec("call", "fn", "--dir", repoURL)).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, string(out), "ts")
+	})
 }
