@@ -184,8 +184,6 @@ func (ls *localSourceHandler) snapshotWithAnySession(ctx context.Context, g sess
 	return ref, err
 }
 
-// TODO: cleanup trace/span stuff
-// TODO: ^ including putting all the span ends in defers everywhere
 func curTracer(ctx context.Context) trace.Tracer {
 	return trace.SpanFromContext(ctx).TracerProvider().Tracer("dagger.io/filesync")
 }
@@ -195,21 +193,14 @@ func newSpan(ctx context.Context, name string) (context.Context, trace.Span) {
 	return tr.Start(ctx, name)
 }
 
-/* TODO:
-* Be sure to test case where Dir is modified, make sure that doesn't invalidate the whole cachecontext tree
- */
-
 func (ls *localSourceHandler) snapshot(ctx context.Context, session session.Group, caller session.Caller) (_ cache.ImmutableRef, rerr error) {
 	ctx, span := newSpan(ctx, "filesync")
 	defer span.End()
 
-	getRefCtx, getRefSpan := newSpan(ctx, "getRef")
-	ref, release, err := ls.getRef(getRefCtx, session, caller)
+	ref, release, err := ls.getRef(ctx, session, caller)
 	if err != nil {
-		getRefSpan.End()
 		return nil, err
 	}
-	getRefSpan.End()
 	defer func() {
 		if err := release(ctx); err != nil {
 			rerr = errors.Join(rerr, fmt.Errorf("failed to release ref: %w", err))
@@ -253,9 +244,6 @@ func (ls *localSourceHandler) sync(
 	session session.Group,
 	caller session.Caller,
 ) (_ cache.ImmutableRef, rerr error) {
-	ctx, syncSpan := newSpan(ctx, "sync")
-	defer syncSpan.End()
-
 	if err := ls.syncParentDirs(ctx, ref, clientPath, caller); err != nil {
 		return nil, fmt.Errorf("failed to sync parent dirs: %w", err)
 	}

@@ -26,6 +26,10 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+const (
+	hashXattrKey = "user.daggerContentHash"
+)
+
 type localFSSharedState struct {
 	rootPath string
 	g        CachedSingleFlightGroup[string, *ChangeWithStat]
@@ -141,7 +145,6 @@ func (local *localFS) Sync(
 
 			default:
 				eg.Go(func() error {
-					// TODO: DOUBLE CHECK IF YOU NEED TO COPY STAT OBJS SINCE THIS IS ASYNC
 					appliedChange, err := local.WriteFile(egCtx, kind, path, upperStat, remote)
 					if err != nil {
 						return err
@@ -203,6 +206,9 @@ func (local *localFS) Sync(
 		return nil, nil
 	}
 
+	ctx, copySpan := newSpan(ctx, "copy")
+	defer copySpan.End()
+
 	dgst, err := cacheCtx.Checksum(ctx, newCopyRef, "/", contenthash.ChecksumOpts{}, session)
 	if err != nil {
 		return nil, fmt.Errorf("failed to checksum: %w", err)
@@ -215,10 +221,7 @@ func (local *localFS) Sync(
 	for _, si := range sis {
 		finalRef, err := cacheManager.Get(ctx, si.ID(), nil)
 		if err == nil {
-			// TODO:
-			// TODO:
-			// TODO:
-			bklog.G(ctx).Debugf("REUSING COPY REF: %s", finalRef.ID())
+			bklog.G(ctx).Debugf("reusing copy ref %s", si.ID())
 			return finalRef, nil
 		} else {
 			bklog.G(ctx).Debugf("failed to get cache ref: %v", err)
@@ -342,7 +345,7 @@ func (local *localFS) GetPreviousChange(ctx context.Context, path string, stat *
 
 		isRegular := stat.Mode&uint32(os.ModeType) == 0
 		if isRegular {
-			dgstBytes, err := sysx.Getxattr(fullPath, "user.daggerContentHash")
+			dgstBytes, err := sysx.Getxattr(fullPath, hashXattrKey)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get content hash xattr: %w", err)
 			}
@@ -560,8 +563,7 @@ func (local *localFS) WriteFile(ctx context.Context, expectedChangeKind ChangeKi
 		}
 
 		dgst := digest.NewDigest(XXH3, h)
-		// TODO: dedupe; constify
-		if err := sysx.Setxattr(fullPath, "user.daggerContentHash", []byte(dgst.String()), 0); err != nil {
+		if err := sysx.Setxattr(fullPath, hashXattrKey, []byte(dgst.String()), 0); err != nil {
 			return nil, fmt.Errorf("failed to set content hash xattr: %w", err)
 		}
 
@@ -724,11 +726,10 @@ func chtimes(path string, un int64) error {
 	return nil
 }
 
-// TODO: need to handle .String() for ChangeKindNone
 func verifyExpectedChange(path string, appliedChange *ChangeWithStat, expectedKind ChangeKind, expectedStat *types.Stat) error {
 	if appliedChange.kind == ChangeKindDelete || expectedKind == ChangeKindDelete {
 		if appliedChange.kind != expectedKind {
-			return &ErrConflict{Path: path, FieldName: "change kind", OldVal: appliedChange.kind.String(), NewVal: expectedKind.String()}
+			return &ErrConflict{Path: path, FieldName: "change kind", OldVal: changeKindString(appliedChange.kind), NewVal: expectedKind.String()}
 		}
 		// nothing else to compare for deletes
 		return nil

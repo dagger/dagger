@@ -11,22 +11,17 @@ import (
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	bksolverpb "github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/bklog"
-	"github.com/moby/buildkit/util/flightcontrol"
 	bkworker "github.com/moby/buildkit/worker"
 	"github.com/opencontainers/go-digest"
+	"go.opentelemetry.io/otel/trace"
+	"resenje.org/singleflight"
 )
 
-// TODO: find best way to avoid global here
-var checksumG flightcontrol.Group[digest.Digest]
+var checksumG singleflight.Group[string, digest.Digest]
 
 // DefToBlob converts the given llb definition to a content addressed blob valid for the
 // duration of the current session. It's useful for converting unstable sources like local
 // dir imports into stable, content-defined sources.
-// NOTE: it's currently assumed that the provided definition is a single layer. Definitions
-// can be squashed into a single layer by copying from them to scratch.
-// TODO: update above docs ^
-// TODO: update above docs ^
-// TODO: update above docs ^
 func (c *Client) DefToBlob(
 	ctx context.Context,
 	pbDef *bksolverpb.Definition,
@@ -52,7 +47,7 @@ func (c *Client) DefToBlob(
 	}
 	ref := workerRef.ImmutableRef
 
-	return checksumG.Do(ctx, ref.ID(), func(ctx context.Context) (digest.Digest, error) {
+	dgst, _, err := checksumG.Do(ctx, ref.ID(), func(ctx context.Context) (digest.Digest, error) {
 		if err := ref.Finalize(ctx); err != nil {
 			return "", fmt.Errorf("failed to finalize ref: %w", err)
 		}
@@ -61,14 +56,13 @@ func (c *Client) DefToBlob(
 		md := local.CacheRefMetadata{RefMetadata: ref}
 		dgst, ok := md.GetContentHashKey()
 		if ok {
-			// TODO:
-			// TODO:
-			// TODO:
-			bklog.G(ctx).Debugf("DEFTOBLOB REUSE, DGST: %s, REF: %s", dgst, ref.ID())
+			bklog.G(ctx).Debugf("DefToBlob reusing ref %s with digest %s", ref.ID(), dgst)
 			return dgst, nil
 		}
 
-		// TODO: wrap with internal span so we can catch slowness
+		ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("checksum def: %s", ref.ID()), trace.WithSpanKind(trace.SpanKindInternal))
+		defer span.End()
+
 		dgst, err = contenthash.Checksum(ctx, ref, "/", contenthash.ChecksumOpts{}, nil)
 		if err != nil {
 			return "", fmt.Errorf("failed to checksum ref: %w", err)
@@ -77,13 +71,11 @@ func (c *Client) DefToBlob(
 			return "", fmt.Errorf("failed to set content hash key: %w", err)
 		}
 
-		// TODO:
-		// TODO:
-		// TODO:
-		bklog.G(ctx).Debugf("DEFTOBLOB NEW, DGST: %s, REF: %s", dgst, ref.ID())
+		bklog.G(ctx).Debugf("DefToBlob setting ref %s with digest %s", ref.ID(), dgst)
 
 		return dgst, nil
 	})
+	return dgst, err
 }
 
 func (c *Client) BytesToBlob(

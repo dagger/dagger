@@ -112,10 +112,6 @@ type blobSourceInstance struct {
 }
 
 func (bs *blobSourceInstance) CacheKey(context.Context, session.Group, int) (string, string, solver.CacheOpts, bool, error) {
-	// TODO: reassess the below in our new world
-	// TODO: reassess the below in our new world
-	// TODO: reassess the below in our new world
-
 	// HACK: ideally, we should return a "session:" prefix (turning into a "random:"
 	// digest), which ensures that we don't upload the local directory into the cache.
 	// However, this is currently unavoidable, since we already upload the local

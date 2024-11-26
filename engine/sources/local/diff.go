@@ -22,6 +22,15 @@ const (
 	ChangeKindNone   ChangeKind = fsutil.ChangeKindDelete + 1
 )
 
+func changeKindString(kind ChangeKind) string {
+	switch kind {
+	case ChangeKindNone:
+		return "none"
+	default:
+		return kind.String()
+	}
+}
+
 type ChangeFunc func(kind ChangeKind, path string, lowerStat, upperStat *types.Stat) error
 
 func doubleWalkDiff(ctx context.Context, eg *errgroup.Group, lower, upper WalkFS, changeFn ChangeFunc) {
