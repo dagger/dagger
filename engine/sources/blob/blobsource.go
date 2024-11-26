@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"dagger.io/dagger/telemetry"
-	"github.com/dagger/dagger/engine/sources/local"
 	"github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/session"
@@ -16,6 +14,9 @@ import (
 	"github.com/moby/buildkit/source"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/opencontainers/go-digest"
+
+	"dagger.io/dagger/telemetry"
+	"github.com/dagger/dagger/engine/contenthash"
 )
 
 const (
@@ -129,9 +130,7 @@ func (bs *blobSourceInstance) CacheKey(context.Context, session.Group, int) (str
 }
 
 func (bs *blobSourceInstance) Snapshot(ctx context.Context, _ session.Group) (cache.ImmutableRef, error) {
-	// TODO: weird to import local, create separate shared pkg
-
-	mds, err := local.SearchContentHash(ctx, bs.cache, bs.id.Digest)
+	mds, err := contenthash.SearchContentHash(ctx, bs.cache, bs.id.Digest)
 	if err != nil {
 		return nil, fmt.Errorf("searching for blob %s: %w", bs.id.Digest, err)
 	}

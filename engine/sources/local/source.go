@@ -21,13 +21,11 @@ import (
 	"github.com/moby/buildkit/source"
 	srctypes "github.com/moby/buildkit/source/types"
 	"github.com/moby/buildkit/util/bklog"
-	"github.com/moby/buildkit/util/progress"
 	"github.com/moby/locker"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/tonistiigi/fsutil"
 	fstypes "github.com/tonistiigi/fsutil/types"
 	"go.opentelemetry.io/otel/trace"
-	"golang.org/x/time/rate"
 
 	"github.com/dagger/dagger/engine"
 )
@@ -408,53 +406,14 @@ func (ls *localSourceHandler) getRef(
 	}, nil
 }
 
-func newProgressHandler(ctx context.Context, id string) func(int, bool) {
-	limiter := rate.NewLimiter(rate.Every(100*time.Millisecond), 1)
-	pw, _, _ := progress.NewFromContext(ctx)
-	now := time.Now()
-	st := progress.Status{
-		Started: &now,
-		Action:  "transferring",
-	}
-	pw.Write(id, st)
-	return func(s int, last bool) {
-		if last || limiter.Allow() {
-			st.Current = s
-			if last {
-				now := time.Now()
-				st.Completed = &now
-			}
-			pw.Write(id, st)
-			if last {
-				pw.Close()
-			}
-		}
-	}
-}
-
 const (
 	keySharedKey   = "local.sharedKey"
 	sharedKeyIndex = keySharedKey + ":"
-
-	keyContentHashKey = "local.contentHashKey"
-	contentHashIndex  = keyContentHashKey + ":"
 )
 
 func searchSharedKey(ctx context.Context, store cache.MetadataStore, k string) ([]CacheRefMetadata, error) {
 	var results []CacheRefMetadata
 	mds, err := store.Search(ctx, sharedKeyIndex+k, false)
-	if err != nil {
-		return nil, err
-	}
-	for _, md := range mds {
-		results = append(results, CacheRefMetadata{md})
-	}
-	return results, nil
-}
-
-func SearchContentHash(ctx context.Context, store cache.MetadataStore, dgst digest.Digest) ([]CacheRefMetadata, error) {
-	var results []CacheRefMetadata
-	mds, err := store.Search(ctx, contentHashIndex+dgst.Encoded(), false)
 	if err != nil {
 		return nil, err
 	}
@@ -474,16 +433,4 @@ func (md CacheRefMetadata) getSharedKey() string {
 
 func (md CacheRefMetadata) setSharedKey(key string) error {
 	return md.SetString(keySharedKey, key, sharedKeyIndex+key)
-}
-
-func (md CacheRefMetadata) GetContentHashKey() (digest.Digest, bool) {
-	dgstStr := md.GetString(keyContentHashKey)
-	if dgstStr == "" {
-		return "", false
-	}
-	return digest.Digest(string(digest.Canonical) + ":" + dgstStr), true
-}
-
-func (md CacheRefMetadata) SetContentHashKey(dgst digest.Digest) error {
-	return md.SetString(keyContentHashKey, dgst.Encoded(), contentHashIndex+dgst.Encoded())
 }

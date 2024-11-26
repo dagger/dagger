@@ -5,8 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 
-	"github.com/dagger/dagger/engine/sources/local"
-	"github.com/moby/buildkit/cache/contenthash"
+	bkcontenthash "github.com/moby/buildkit/cache/contenthash"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	bksolverpb "github.com/moby/buildkit/solver/pb"
@@ -15,6 +14,8 @@ import (
 	"github.com/opencontainers/go-digest"
 	"go.opentelemetry.io/otel/trace"
 	"resenje.org/singleflight"
+
+	"github.com/dagger/dagger/engine/contenthash"
 )
 
 var checksumG singleflight.Group[string, digest.Digest]
@@ -52,8 +53,7 @@ func (c *Client) DefToBlob(
 			return "", fmt.Errorf("failed to finalize ref: %w", err)
 		}
 
-		// TODO: weird to import local here, split out to separate shared pkg
-		md := local.CacheRefMetadata{RefMetadata: ref}
+		md := contenthash.CacheRefMetadata{RefMetadata: ref}
 		dgst, ok := md.GetContentHashKey()
 		if ok {
 			bklog.G(ctx).Debugf("DefToBlob reusing ref %s with digest %s", ref.ID(), dgst)
@@ -63,7 +63,7 @@ func (c *Client) DefToBlob(
 		ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("checksum def: %s", ref.ID()), trace.WithSpanKind(trace.SpanKindInternal))
 		defer span.End()
 
-		dgst, err = contenthash.Checksum(ctx, ref, "/", contenthash.ChecksumOpts{}, nil)
+		dgst, err = bkcontenthash.Checksum(ctx, ref, "/", bkcontenthash.ChecksumOpts{}, nil)
 		if err != nil {
 			return "", fmt.Errorf("failed to checksum ref: %w", err)
 		}

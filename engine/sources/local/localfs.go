@@ -13,8 +13,9 @@ import (
 	"time"
 
 	"github.com/containerd/continuity/sysx"
+	"github.com/dagger/dagger/engine/contenthash"
 	"github.com/moby/buildkit/cache"
-	"github.com/moby/buildkit/cache/contenthash"
+	bkcontenthash "github.com/moby/buildkit/cache/contenthash"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/snapshot"
 	"github.com/moby/buildkit/util/bklog"
@@ -84,7 +85,7 @@ func (local *localFS) Sync(
 	forParents bool,
 ) (_ cache.ImmutableRef, rerr error) {
 	var newCopyRef cache.MutableRef
-	var cacheCtx contenthash.CacheContext
+	var cacheCtx bkcontenthash.CacheContext
 	if !forParents {
 		var err error
 		newCopyRef, err = cacheManager.New(ctx, nil, nil)
@@ -100,7 +101,7 @@ func (local *localFS) Sync(
 			}
 		}()
 
-		cacheCtx, err = contenthash.GetCacheContext(ctx, newCopyRef)
+		cacheCtx, err = bkcontenthash.GetCacheContext(ctx, newCopyRef)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get cache context: %w", err)
 		}
@@ -209,12 +210,12 @@ func (local *localFS) Sync(
 	ctx, copySpan := newSpan(ctx, "copy")
 	defer copySpan.End()
 
-	dgst, err := cacheCtx.Checksum(ctx, newCopyRef, "/", contenthash.ChecksumOpts{}, session)
+	dgst, err := cacheCtx.Checksum(ctx, newCopyRef, "/", bkcontenthash.ChecksumOpts{}, session)
 	if err != nil {
 		return nil, fmt.Errorf("failed to checksum: %w", err)
 	}
 
-	sis, err := SearchContentHash(ctx, cacheManager, dgst)
+	sis, err := contenthash.SearchContentHash(ctx, cacheManager, dgst)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search content hash: %w", err)
 	}
@@ -295,18 +296,18 @@ func (local *localFS) Sync(
 	// only hit by some code paths. This is probably a bug. To coerce it into actually storing
 	// the cacheCtx on finalRef, we have to do this little dance of setting it (so it's in the LRU)
 	// and then getting it+setting again.
-	if err := contenthash.SetCacheContext(ctx, finalRef, cacheCtx); err != nil {
+	if err := bkcontenthash.SetCacheContext(ctx, finalRef, cacheCtx); err != nil {
 		return nil, fmt.Errorf("failed to set cache context: %w", err)
 	}
-	cacheCtx, err = contenthash.GetCacheContext(ctx, finalRef)
+	cacheCtx, err = bkcontenthash.GetCacheContext(ctx, finalRef)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get cache context: %w", err)
 	}
-	if err := contenthash.SetCacheContext(ctx, finalRef, cacheCtx); err != nil {
+	if err := bkcontenthash.SetCacheContext(ctx, finalRef, cacheCtx); err != nil {
 		return nil, fmt.Errorf("failed to set cache context: %w", err)
 	}
 
-	if err := (CacheRefMetadata{finalRef}).SetContentHashKey(dgst); err != nil {
+	if err := (contenthash.CacheRefMetadata{finalRef}).SetContentHashKey(dgst); err != nil {
 		return nil, fmt.Errorf("failed to set content hash key: %w", err)
 	}
 	if err := finalRef.SetDescription(fmt.Sprintf("local dir %s (include: %v) (exclude %v)", local.subdir, local.includes, local.excludes)); err != nil {
