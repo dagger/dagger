@@ -105,13 +105,13 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 					}))
 
 				_, err := base.With(daggerCall("container-echo", "--string-arg", "plz fail")).Sync(ctx)
-				require.ErrorContains(t, err, `local module source path ".." escapes context "/work"`)
+				requireErrOut(t, err, `local module source path ".." escapes context "/work"`)
 
 				_, err = base.With(daggerExec("develop")).Sync(ctx)
-				require.ErrorContains(t, err, `local module source path ".." escapes context "/work"`)
+				requireErrOut(t, err, `local module source path ".." escapes context "/work"`)
 
 				_, err = base.With(daggerExec("install", "./dep")).Sync(ctx)
-				require.ErrorContains(t, err, `local module source path ".." escapes context "/work"`)
+				requireErrOut(t, err, `local module source path ".." escapes context "/work"`)
 			})
 
 			t.Run("local with absolute path", func(ctx context.Context, t *testctx.T) {
@@ -125,13 +125,13 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 					}))
 
 				_, err := base.With(daggerCall("container-echo", "--string-arg", "plz fail")).Sync(ctx)
-				require.ErrorContains(t, err, `source path "/tmp" contains parent directory components`)
+				requireErrOut(t, err, `source path "/tmp" contains parent directory components`)
 
 				_, err = base.With(daggerExec("develop")).Sync(ctx)
-				require.ErrorContains(t, err, `source path "/tmp" contains parent directory components`)
+				requireErrOut(t, err, `source path "/tmp" contains parent directory components`)
 
 				_, err = base.With(daggerExec("install", "./dep")).Sync(ctx)
-				require.ErrorContains(t, err, `source path "/tmp" contains parent directory components`)
+				requireErrOut(t, err, `source path "/tmp" contains parent directory components`)
 			})
 
 			testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
@@ -141,7 +141,7 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 					defer cleanup()
 
 					_, err := baseCtr(t, c).With(mountedSocket).With(daggerCallAt(testGitModuleRef(tc, "invalid/bad-source"), "container-echo", "--string-arg", "plz fail")).Sync(ctx)
-					require.ErrorContains(t, err, `source path "../../../" contains parent directory components`)
+					requireErrOut(t, err, `source path "../../../" contains parent directory components`)
 				})
 			})
 		})
@@ -160,13 +160,13 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 					}))
 
 				_, err := base.With(daggerCall("container-echo", "--string-arg", "plz fail")).Sync(ctx)
-				require.ErrorContains(t, err, `local module dep source path ".." escapes context "/work"`)
+				requireErrOut(t, err, `local module dep source path ".." escapes context "/work"`)
 
 				_, err = base.With(daggerExec("develop")).Sync(ctx)
-				require.ErrorContains(t, err, `local module dep source path ".." escapes context "/work"`)
+				requireErrOut(t, err, `local module dep source path ".." escapes context "/work"`)
 
 				_, err = base.With(daggerExec("install", "./dep")).Sync(ctx)
-				require.ErrorContains(t, err, `local module dep source path ".." escapes context "/work"`)
+				requireErrOut(t, err, `local module dep source path ".." escapes context "/work"`)
 
 				base = base.
 					With(configFile(".", &modules.ModuleConfig{
@@ -179,13 +179,13 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 					}))
 
 				_, err = base.With(daggerCall("container-echo", "--string-arg", "plz fail")).Sync(ctx)
-				require.ErrorContains(t, err, `module dep source root path "../work/dep" escapes root`)
+				requireErrOut(t, err, `module dep source root path "../work/dep" escapes root`)
 
 				_, err = base.With(daggerExec("develop")).Sync(ctx)
-				require.ErrorContains(t, err, `module dep source root path "../work/dep" escapes root`)
+				requireErrOut(t, err, `module dep source root path "../work/dep" escapes root`)
 
 				_, err = base.With(daggerExec("install", "./dep")).Sync(ctx)
-				require.ErrorContains(t, err, `module dep source root path "../work/dep" escapes root`)
+				requireErrOut(t, err, `module dep source root path "../work/dep" escapes root`)
 			})
 
 			t.Run("local with absolute path", func(ctx context.Context, t *testctx.T) {
@@ -202,13 +202,13 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 					}))
 
 				_, err := base.With(daggerCall("container-echo", "--string-arg", "plz fail")).Sync(ctx)
-				require.ErrorContains(t, err, `missing config file /work/tmp/foo/dagger.json`)
+				requireErrOut(t, err, `missing config file /work/tmp/foo/dagger.json`)
 
 				_, err = base.With(daggerExec("develop")).Sync(ctx)
-				require.ErrorContains(t, err, `missing config file /work/tmp/foo/dagger.json`)
+				requireErrOut(t, err, `missing config file /work/tmp/foo/dagger.json`)
 
 				_, err = base.With(daggerExec("install", "./dep")).Sync(ctx)
-				require.ErrorContains(t, err, `missing config file /work/tmp/foo/dagger.json`)
+				requireErrOut(t, err, `missing config file /work/tmp/foo/dagger.json`)
 
 				base = base.
 					With(configFile(".", &modules.ModuleConfig{
@@ -221,13 +221,13 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 					}))
 
 				_, err = base.With(daggerCall("container-echo", "--string-arg", "plz fail")).Sync(ctx)
-				require.ErrorContains(t, err, `module dep source root path "../dep" escapes root`)
+				requireErrOut(t, err, `module dep source root path "../dep" escapes root`)
 
 				_, err = base.With(daggerExec("develop")).Sync(ctx)
-				require.ErrorContains(t, err, `module dep source root path "../dep" escapes root`)
+				requireErrOut(t, err, `module dep source root path "../dep" escapes root`)
 
 				_, err = base.With(daggerExec("install", "./dep")).Sync(ctx)
-				require.ErrorContains(t, err, `module dep source root path "../dep" escapes root`)
+				requireErrOut(t, err, `module dep source root path "../dep" escapes root`)
 			})
 
 			testOnMultipleVCS(t, func(ctx context.Context, t *testctx.T, tc vcsTestCase) {
@@ -237,7 +237,7 @@ func (ConfigSuite) TestConfigs(ctx context.Context, t *testctx.T) {
 					defer cleanup()
 
 					_, err := baseCtr(t, c).With(mountedSocket).With(daggerCallAt(testGitModuleRef(tc, "invalid/bad-dep"), "container-echo", "--string-arg", "plz fail")).Sync(ctx)
-					require.ErrorContains(t, err, `module dep source root path "../../../foo" escapes root`)
+					requireErrOut(t, err, `module dep source root path "../../../foo" escapes root`)
 				})
 			})
 		})
@@ -1004,7 +1004,7 @@ func (ConfigSuite) TestDaggerGitRefs(ctx context.Context, t *testctx.T) {
 			_, err := c.ModuleSource(tc.gitTestRepoRef, dagger.ModuleSourceOpts{
 				Stable: true,
 			}).AsString(ctx)
-			require.ErrorContains(t, err, fmt.Sprintf(`no version provided for stable remote ref: %s`, tc.gitTestRepoRef))
+			requireErrOut(t, err, fmt.Sprintf(`no version provided for stable remote ref: %s`, tc.gitTestRepoRef))
 
 			_, err = c.ModuleSource(testGitModuleRef(tc, "top-level"), dagger.ModuleSourceOpts{
 				Stable: true,
@@ -1249,7 +1249,7 @@ func (m *Test) Fn(dir *dagger.Directory) *dagger.Directory {
 	require.Contains(t, strings.TrimSpace(out), `View "mean-view" removed`)
 
 	_, err = ctr.With(daggerExec("config", "views", "-n", "mean-view")).Stdout(ctx)
-	require.ErrorContains(t, err, `view "mean-view" not found`)
+	requireErrOut(t, err, `view "mean-view" not found`)
 
 	out, err = ctr.With(daggerExec("config", "views")).Stdout(ctx)
 	require.NoError(t, err)

@@ -505,7 +505,7 @@ func (m *Test) Insecure(ctx context.Context, token *dagger.Secret) (string, erro
 			})
 			t.Run("sad", func(ctx context.Context, t *testctx.T) {
 				_, err := modGen.With(daggerCall("insecure", "--token", "env:NOWHERETOBEFOUND")).Stdout(ctx)
-				require.ErrorContains(t, err, `secret env var not found: "NOW..."`)
+				requireErrOut(t, err, `secret env var not found: "NOW..."`)
 			})
 		})
 
@@ -517,7 +517,7 @@ func (m *Test) Insecure(ctx context.Context, token *dagger.Secret) (string, erro
 			})
 			t.Run("sad", func(ctx context.Context, t *testctx.T) {
 				_, err := modGen.With(daggerCall("insecure", "--token", "NOWHERETOBEFOUND")).Stdout(ctx)
-				require.ErrorContains(t, err, `secret env var not found: "NOW..."`)
+				requireErrOut(t, err, `secret env var not found: "NOW..."`)
 			})
 		})
 
@@ -533,7 +533,7 @@ func (m *Test) Insecure(ctx context.Context, token *dagger.Secret) (string, erro
 			})
 			t.Run("sad", func(ctx context.Context, t *testctx.T) {
 				_, err := modGen.With(daggerCall("insecure", "--token", "file:/nowheretobefound")).Stdout(ctx)
-				require.ErrorContains(t, err, `failed to read secret file "/nowheretobefound": open /nowheretobefound: no such file or directory`)
+				requireErrOut(t, err, `failed to read secret file "/nowheretobefound": open /nowheretobefound: no such file or directory`)
 			})
 		})
 
@@ -545,13 +545,13 @@ func (m *Test) Insecure(ctx context.Context, token *dagger.Secret) (string, erro
 			})
 			t.Run("sad", func(ctx context.Context, t *testctx.T) {
 				_, err := modGen.With(daggerCall("insecure", "--token", "cmd:exit 1")).Stdout(ctx)
-				require.ErrorContains(t, err, `failed to run secret command "exit 1": exit status 1`)
+				requireErrOut(t, err, `failed to run secret command "exit 1": exit status 1`)
 			})
 		})
 
 		t.Run("invalid source", func(ctx context.Context, t *testctx.T) {
 			_, err := modGen.With(daggerCall("insecure", "--token", "wtf:HUH")).Stdout(ctx)
-			require.ErrorContains(t, err, `unsupported secret arg source: "wtf"`)
+			requireErrOut(t, err, `unsupported secret arg source: "wtf"`)
 		})
 	})
 
@@ -638,7 +638,7 @@ func (m *Test) ToPlatform(platform string) dagger.Platform {
 
 		t.Run("invalid input", func(ctx context.Context, t *testctx.T) {
 			_, err := modGen.With(daggerCall("from-platform", "--platform", "invalid")).Stdout(ctx)
-			require.ErrorContains(t, err, "unknown operating system or architecture")
+			requireErrOut(t, err, "unknown operating system or architecture")
 		})
 
 		t.Run("valid output", func(ctx context.Context, t *testctx.T) {
@@ -649,7 +649,7 @@ func (m *Test) ToPlatform(platform string) dagger.Platform {
 
 		t.Run("invalid output", func(ctx context.Context, t *testctx.T) {
 			_, err := modGen.With(daggerCall("to-platform", "--platform", "invalid")).Stdout(ctx)
-			require.ErrorContains(t, err, "unknown operating system or architecture")
+			requireErrOut(t, err, "unknown operating system or architecture")
 		})
 	})
 
@@ -708,7 +708,7 @@ func (m *Test) ToPlatforms(platforms []string) []dagger.Platform {
 
 		t.Run("invalid input", func(ctx context.Context, t *testctx.T) {
 			_, err := modGen.With(daggerCall("from-platforms", "--platforms", "invalid")).Stdout(ctx)
-			require.ErrorContains(t, err, "unknown operating system or architecture")
+			requireErrOut(t, err, "unknown operating system or architecture")
 		})
 
 		t.Run("valid output", func(ctx context.Context, t *testctx.T) {
@@ -719,7 +719,7 @@ func (m *Test) ToPlatforms(platforms []string) []dagger.Platform {
 
 		t.Run("invalid output", func(ctx context.Context, t *testctx.T) {
 			_, err := modGen.With(daggerCall("to-platforms", "--platforms", "invalid")).Stdout(ctx)
-			require.ErrorContains(t, err, "unknown operating system or architecture")
+			requireErrOut(t, err, "unknown operating system or architecture")
 		})
 	})
 
@@ -757,9 +757,9 @@ func (m *Test) ToProto(proto string) dagger.NetworkProtocol {
 
 		t.Run("invalid input", func(ctx context.Context, t *testctx.T) {
 			_, err := modGen.With(daggerCall("from-proto", "--proto", "INVALID")).Stdout(ctx)
-			require.ErrorContains(t, err, "value should be one of")
-			require.ErrorContains(t, err, "TCP")
-			require.ErrorContains(t, err, "UDP")
+			requireErrOut(t, err, "value should be one of")
+			requireErrOut(t, err, "TCP")
+			requireErrOut(t, err, "UDP")
 		})
 
 		t.Run("default input value", func(ctx context.Context, t *testctx.T) {
@@ -776,7 +776,7 @@ func (m *Test) ToProto(proto string) dagger.NetworkProtocol {
 
 		t.Run("invalid output", func(ctx context.Context, t *testctx.T) {
 			_, err := modGen.With(daggerCall("to-proto", "--proto", "INVALID")).Stdout(ctx)
-			require.ErrorContains(t, err, "invalid enum value")
+			requireErrOut(t, err, "invalid enum value")
 		})
 
 		t.Run("choices in help", func(ctx context.Context, t *testctx.T) {
@@ -826,9 +826,9 @@ func (m *Test) ToStatus(status string) Status {
 
 		t.Run("invalid input", func(ctx context.Context, t *testctx.T) {
 			_, err := modGen.With(daggerCall("from-status", "--status", "INVALID")).Stdout(ctx)
-			require.ErrorContains(t, err, "value should be one of")
-			require.ErrorContains(t, err, "ACTIVE")
-			require.ErrorContains(t, err, "INACTIVE")
+			requireErrOut(t, err, "value should be one of")
+			requireErrOut(t, err, "ACTIVE")
+			requireErrOut(t, err, "INACTIVE")
 		})
 
 		t.Run("default input value", func(ctx context.Context, t *testctx.T) {
@@ -845,7 +845,7 @@ func (m *Test) ToStatus(status string) Status {
 
 		t.Run("invalid output", func(ctx context.Context, t *testctx.T) {
 			_, err := modGen.With(daggerCall("to-status", "--status", "INVALID")).Stdout(ctx)
-			require.ErrorContains(t, err, "invalid enum value")
+			requireErrOut(t, err, "invalid enum value")
 		})
 
 		t.Run("choices in help", func(ctx context.Context, t *testctx.T) {
@@ -1410,7 +1410,7 @@ func (m *Test) Fail() *dagger.Container {
 		t.Run("exec", func(ctx context.Context, t *testctx.T) {
 			// Container doesn't show output but executes withExecs
 			out, err := modGen.With(daggerCall("fail")).Stdout(ctx)
-			require.ErrorContains(t, err, "goodbye")
+			requireErrOut(t, err, "goodbye")
 			require.NotContains(t, out, "goodbye")
 		})
 
@@ -1826,7 +1826,7 @@ func (t *Test) File() *dagger.File {
 
 	t.Run("not a file", func(ctx context.Context, t *testctx.T) {
 		_, err := modGen.With(daggerCall("hello", "-o", ".")).Sync(ctx)
-		require.ErrorContains(t, err, "is a directory")
+		requireErrOut(t, err, "is a directory")
 	})
 
 	t.Run("allow dir for file", func(ctx context.Context, t *testctx.T) {
@@ -2038,7 +2038,7 @@ func (CallSuite) TestByName(ctx context.Context, t *testctx.T) {
 		// call main module at /work path
 		_, err := ctr.With(daggerCallAt("foo", "fn")).Stdout(ctx)
 		require.Error(t, err)
-		require.ErrorContains(t, err, `local module dep source path "../outside/mod-a" escapes context "/work"`)
+		requireErrOut(t, err, `local module dep source path "../outside/mod-a" escapes context "/work"`)
 	})
 
 	t.Run("local ref with @", func(ctx context.Context, t *testctx.T) {
@@ -2247,12 +2247,12 @@ func (m *Chain) Echo(msg string) string {
 
 	t.Run("no sub-command", func(ctx context.Context, t *testctx.T) {
 		_, err := modGen.With(daggerCall("fn-a")).Sync(ctx)
-		require.ErrorContains(t, err, `unknown command "fn-a"`)
+		requireErrOut(t, err, `unknown command "fn-a"`)
 	})
 
 	t.Run("no flag", func(ctx context.Context, t *testctx.T) {
 		_, err := modGen.With(daggerCall("fn-b", "--msg", "hello", "--matrix", "")).Sync(ctx)
-		require.ErrorContains(t, err, `unknown flag: --matrix`)
+		requireErrOut(t, err, `unknown flag: --matrix`)
 	})
 }
 
@@ -2282,7 +2282,7 @@ func (m *Test) ToStatus(status string) Status {
 	`)
 
 		_, err := modGen.With(daggerCall("--help")).Stdout(ctx)
-		require.ErrorContains(t, err, `enum value "ACTIVE" is already defined`)
+		requireErrOut(t, err, `enum value "ACTIVE" is already defined`)
 	})
 
 	t.Run("invalid value", func(ctx context.Context, t *testctx.T) {
@@ -2332,7 +2332,7 @@ func (m *Test) FromStatus(status Status) string {
 `, tc.enumValue))
 
 				_, err := modGen.With(daggerCall("--help")).Stdout(ctx)
-				require.ErrorContains(t, err, fmt.Sprintf("enum value %q is not valid", tc.enumValue))
+				requireErrOut(t, err, fmt.Sprintf("enum value %q is not valid", tc.enumValue))
 			})
 		}
 	})
@@ -2356,7 +2356,7 @@ func (m *Test) FromStatus(status Status) string {
 `)
 
 		_, err := modGen.With(daggerCall("--help")).Stdout(ctx)
-		require.ErrorContains(t, err, "enum value must not be empty")
+		requireErrOut(t, err, "enum value must not be empty")
 	})
 }
 
@@ -2478,8 +2478,8 @@ export class Test {
 
 			t.Run("sad input", func(ctx context.Context, t *testctx.T) {
 				_, err := modGen.With(daggerCall("faves", "--langs", "GO,FOO,BAR")).Sync(ctx)
-				require.ErrorContains(t, err, "invalid argument")
-				require.ErrorContains(t, err, "should be one of GO,PYTHON,TYPESCRIPT,PHP,ELIXIR")
+				requireErrOut(t, err, "invalid argument")
+				requireErrOut(t, err, "should be one of GO,PYTHON,TYPESCRIPT,PHP,ELIXIR")
 			})
 
 			t.Run("output", func(ctx context.Context, t *testctx.T) {

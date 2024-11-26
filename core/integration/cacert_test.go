@@ -101,7 +101,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 
 			// verify no system CAs are leftover
 			_, err := ctr.Directory("/usr/local/share/ca-certificates").Entries(ctx)
-			require.ErrorContains(t, err, "no such file or directory")
+			requireErrOut(t, err, "no such file or directory")
 
 			bundleContents, err := ctr.File("/etc/ssl/certs/ca-certificates.crt").Contents(ctx)
 			require.NoError(t, err)
@@ -143,7 +143,7 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 
 			// verify no system CAs are leftover
 			_, err = ctr.Directory("/usr/local/share/ca-certificates").Entries(ctx)
-			require.ErrorContains(t, err, "no such file or directory")
+			requireErrOut(t, err, "no such file or directory")
 
 			bundleContents, err = ctr.File("/etc/ssl/certs/ca-certificates.crt").Contents(ctx)
 			require.NoError(t, err)
@@ -268,10 +268,10 @@ func (ContainerSuite) TestSystemCACerts(ctx context.Context, t *testctx.T) {
 
 			// verify no system CAs are leftover
 			_, err = ctr.Directory("/usr/local/share/ca-certificates").Entries(ctx)
-			require.ErrorContains(t, err, "no such file or directory")
+			requireErrOut(t, err, "no such file or directory")
 
 			_, err = ctr.File("/etc/ssl/certs/ca-certificates.crt").Contents(ctx)
-			require.ErrorContains(t, err, "no such file or directory")
+			requireErrOut(t, err, "no such file or directory")
 		}},
 
 		caCertsTest{"rhel basic", func(t *testctx.T, c *dagger.Client, f caCertsTestFixtures) {

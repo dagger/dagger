@@ -393,7 +393,7 @@ export class Test {
 			require.JSONEq(t, `{"test":{"set":{"foo": "abc"}}}`, out)
 
 			_, err = modGen.With(daggerQuery(`{test{set(foo: "abc", bar: "xyz"){bar}}}`)).Stdout(ctx)
-			require.ErrorContains(t, err, `Test has no such field: "bar"`)
+			requireErrOut(t, err, `Test has no such field: "bar"`)
 		})
 	}
 }
@@ -949,7 +949,7 @@ func (ModuleSuite) TestUseLocal(ctx context.Context, t *testctx.T) {
 			// cannot use transitive dependency directly
 			_, err = modGen.With(daggerQuery(`{dep{hello}}`)).Stdout(ctx)
 			require.Error(t, err)
-			require.ErrorContains(t, err, `Query has no such field: "dep"`)
+			requireErrOut(t, err, `Query has no such field: "dep"`)
 		})
 	}
 }
@@ -1955,7 +1955,7 @@ func (ModuleSuite) TestLoops(ctx context.Context, t *testctx.T) {
 		With(daggerExec("install", "-m=depB", "./depA")).
 		With(daggerExec("install", "-m=depA", "./depC")).
 		Sync(ctx)
-	require.ErrorContains(t, err, `local module at "/work/depA" has a circular dependency`)
+	requireErrOut(t, err, `local module at "/work/depA" has a circular dependency`)
 }
 
 //go:embed testdata/modules/go/id/arg/main.go
@@ -2046,7 +2046,7 @@ func (ModuleSuite) TestReservedWords(ctx context.Context, t *testctx.T) {
 						With(daggerQuery(`{test{fn{id}}}`)).
 						Sync(ctx)
 
-					require.ErrorContains(t, err, "cannot define field with reserved name \"id\"")
+					requireErrOut(t, err, "cannot define field with reserved name \"id\"")
 				})
 			}
 		})
@@ -2079,7 +2079,7 @@ func (ModuleSuite) TestReservedWords(ctx context.Context, t *testctx.T) {
 						With(daggerQuery(`{test{id}}`)).
 						Sync(ctx)
 
-					require.ErrorContains(t, err, "cannot define function with reserved name \"id\"")
+					requireErrOut(t, err, "cannot define function with reserved name \"id\"")
 				})
 			}
 		})
@@ -2296,22 +2296,22 @@ func (ModuleSuite) TestCurrentModuleAPI(ctx context.Context, t *testctx.T) {
 			_, err := ctr.
 				With(daggerCall("escape-file", "contents")).
 				Stdout(ctx)
-			require.ErrorContains(t, err, `workdir path "../rootfile.txt" escapes workdir`)
+			requireErrOut(t, err, `workdir path "../rootfile.txt" escapes workdir`)
 
 			_, err = ctr.
 				With(daggerCall("escape-file-abs", "contents")).
 				Stdout(ctx)
-			require.ErrorContains(t, err, `workdir path "/rootfile.txt" escapes workdir`)
+			requireErrOut(t, err, `workdir path "/rootfile.txt" escapes workdir`)
 
 			_, err = ctr.
 				With(daggerCall("escape-dir", "entries")).
 				Stdout(ctx)
-			require.ErrorContains(t, err, `workdir path "../foo" escapes workdir`)
+			requireErrOut(t, err, `workdir path "../foo" escapes workdir`)
 
 			_, err = ctr.
 				With(daggerCall("escape-dir-abs", "entries")).
 				Stdout(ctx)
-			require.ErrorContains(t, err, `workdir path "/foo" escapes workdir`)
+			requireErrOut(t, err, `workdir path "/foo" escapes workdir`)
 		})
 	})
 }
@@ -2428,7 +2428,7 @@ func (ModuleSuite) TestHostError(ctx context.Context, t *testctx.T) {
 		).
 		With(daggerCall("fn")).
 		Sync(ctx)
-	require.ErrorContains(t, err, "dag.Host undefined")
+	requireErrOut(t, err, "dag.Host undefined")
 }
 
 // TestModuleEngineError verifies the engine api is not exposed to modules
@@ -2452,7 +2452,7 @@ func (ModuleSuite) TestEngineError(ctx context.Context, t *testctx.T) {
 		).
 		With(daggerCall("fn")).
 		Sync(ctx)
-	require.ErrorContains(t, err, "dag.Engine undefined")
+	requireErrOut(t, err, "dag.Engine undefined")
 }
 
 func (ModuleSuite) TestDaggerListen(ctx context.Context, t *testctx.T) {
@@ -4700,28 +4700,28 @@ export class Test {
 					out, err := modGen.With(daggerCall("too-high-relative-dir-path")).Stdout(ctx)
 					require.Empty(t, out)
 					require.Error(t, err)
-					require.ErrorContains(t, err, `path should be relative to the context directory`)
+					requireErrOut(t, err, `path should be relative to the context directory`)
 				})
 
 				t.Run("too high relative context file path", func(ctx context.Context, t *testctx.T) {
 					out, err := modGen.With(daggerCall("too-high-relative-file-path")).Stdout(ctx)
 					require.Empty(t, out)
 					require.Error(t, err)
-					require.ErrorContains(t, err, `path should be relative to the context directory`)
+					requireErrOut(t, err, `path should be relative to the context directory`)
 				})
 
 				t.Run("non existing dir path", func(ctx context.Context, t *testctx.T) {
 					out, err := modGen.With(daggerCall("non-existing-path")).Stdout(ctx)
 					require.Empty(t, out)
 					require.Error(t, err)
-					require.ErrorContains(t, err, "no such file or directory")
+					requireErrOut(t, err, "no such file or directory")
 				})
 
 				t.Run("non existing file", func(ctx context.Context, t *testctx.T) {
 					out, err := modGen.With(daggerCall("non-existing-file")).Stdout(ctx)
 					require.Empty(t, out)
 					require.Error(t, err)
-					require.ErrorContains(t, err, "no such file or directory")
+					requireErrOut(t, err, "no such file or directory")
 				})
 			})
 		}

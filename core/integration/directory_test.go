@@ -1158,7 +1158,7 @@ func (DirectorySuite) TestGlob(ctx context.Context, t *testctx.T) {
 
 	t.Run("directory doesn't exist", func(ctx context.Context, t *testctx.T) {
 		_, err := c.Directory().Directory("foo").Glob(ctx, "**/*")
-		require.ErrorContains(t, err, "no such file or directory")
+		requireErrOut(t, err, "no such file or directory")
 	})
 }
 

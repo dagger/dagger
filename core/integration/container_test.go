@@ -445,14 +445,14 @@ func (ContainerSuite) TestExecStdoutStderr(ctx context.Context, t *testctx.T) {
 		_, err := c.Container().
 			From(alpineImage).
 			Stdout(ctx)
-		require.ErrorContains(t, err, "no command has been set")
+		requireErrOut(t, err, "no command has been set")
 	})
 
 	t.Run("stderr without exec", func(ctx context.Context, t *testctx.T) {
 		_, err := c.Container().
 			From(alpineImage).
 			Stderr(ctx)
-		require.ErrorContains(t, err, "no command has been set")
+		requireErrOut(t, err, "no command has been set")
 	})
 }
 
@@ -754,7 +754,7 @@ func (ContainerSuite) TestExecWithEntrypoint(ctx context.Context, t *testctx.T) 
 			UseEntrypoint: true,
 		}).Sync(ctx)
 		require.Error(t, err)
-		require.ErrorContains(t, err, "can't open 'sh'")
+		requireErrOut(t, err, "can't open 'sh'")
 	})
 
 	t.Run("skipped", func(ctx context.Context, t *testctx.T) {
@@ -821,7 +821,7 @@ func (ContainerSuite) TestExecWithoutEntrypoint(ctx context.Context, t *testctx.
 			WithDefaultArgs([]string{"echo", "-n", "foobar"}).
 			WithoutEntrypoint().
 			Stdout(ctx)
-		require.ErrorContains(t, err, "no command has been set")
+		requireErrOut(t, err, "no command has been set")
 		require.Empty(t, res)
 	})
 
@@ -3579,7 +3579,7 @@ func (ContainerSuite) TestBuildNilContextError(ctx context.Context, t *testctx.T
 				}
 			}
 		}`, &map[any]any{}, nil)
-	require.ErrorContains(t, err, "cannot decode empty string as ID")
+	requireErrOut(t, err, "cannot decode empty string as ID")
 }
 
 func (ContainerSuite) TestInsecureRootCapabilites(ctx context.Context, t *testctx.T) {
@@ -4471,7 +4471,7 @@ func (ContainerSuite) TestExecExpect(ctx context.Context, t *testctx.T) {
 				}
 			}
 		}`, &res, nil)
-		require.ErrorContains(t, err, "exit code: 1")
+		requireErrOut(t, err, "exit code: 1")
 	})
 
 	t.Run("failure", func(ctx context.Context, t *testctx.T) {
@@ -4495,7 +4495,7 @@ func (ContainerSuite) TestExecExpect(ctx context.Context, t *testctx.T) {
 				}
 			}
 		}`, &res, nil)
-		require.ErrorContains(t, err, "exit code: 0")
+		requireErrOut(t, err, "exit code: 0")
 
 		err = testutil.Query(t,
 			`{
@@ -4651,7 +4651,7 @@ func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
 			).
 			WithExec([]string{"ls", "/some-path/bar"}).Stdout(ctx)
 
-		require.ErrorContains(t, err, "ls: /some-path/bar: No such file or directory")
+		requireErrOut(t, err, "ls: /some-path/bar: No such file or directory")
 	})
 
 	t.Run("env variable is expanded in WithoutFile", func(ctx context.Context, t *testctx.T) {
@@ -4665,7 +4665,7 @@ func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
 			WithoutFile("/some-path/${foo}/some-file.txt", dagger.ContainerWithoutFileOpts{Expand: true}).
 			WithExec([]string{"ls", "/some-path/bar/some-file.txt"}).Stdout(ctx)
 
-		require.ErrorContains(t, err, "ls: /some-path/bar/some-file.txt: No such file or directory")
+		requireErrOut(t, err, "ls: /some-path/bar/some-file.txt: No such file or directory")
 	})
 
 	t.Run("env variable is expanded in WithoutFiles", func(ctx context.Context, t *testctx.T) {
@@ -4679,7 +4679,7 @@ func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
 			WithoutFiles([]string{"/some-path/${foo}/some-file.txt"}, dagger.ContainerWithoutFilesOpts{Expand: true}).
 			WithExec([]string{"ls", "/some-path/bar/some-file.txt"}).Stdout(ctx)
 
-		require.ErrorContains(t, err, "ls: /some-path/bar/some-file.txt: No such file or directory")
+		requireErrOut(t, err, "ls: /some-path/bar/some-file.txt: No such file or directory")
 	})
 
 	t.Run("env variable is expanded in WithExec", func(ctx context.Context, t *testctx.T) {
@@ -4791,7 +4791,7 @@ func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
 			WithExec([]string{"sh", "-c", "test ${GITEA_TOKEN} = \"password\""}, dagger.ContainerWithExecOpts{Expand: true}).
 			Sync(ctx)
 
-		require.ErrorContains(t, err, "expand cannot be used with secret env variable \"GITEA_TOKEN\"")
+		requireErrOut(t, err, "expand cannot be used with secret env variable \"GITEA_TOKEN\"")
 	})
 
 	t.Run("env variable is expanded in Export", func(ctx context.Context, t *testctx.T) {
