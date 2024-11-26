@@ -31,18 +31,16 @@ the `engine.json` settings will take precedence.
 ## Configuration
 
 <Tabs>
-
 <TabItem value="engine.json">
-
 To configure `engine.json` when using an automatically provisioned Dagger
 Engine (the default), you should write your desired JSON config to
 `~/.config/dagger/engine.json` (or to `$XDG_CONFIG_HOME/dagger/engine.json` if
 set).
 
-Then, when the Dagger Rngine is automatically started from a `dagger` command,
+Then, when the Dagger Engine is automatically started from a `dagger` command,
 it will pull in that configuration. Changes after the Dagger Engine has already
 been created and is running will not automatically apply to the new Engine. To
-reapply the config after changing it, you'll need to manually stop the engine.
+reapply the config after changing it, you'll need to manually stop the Engine.
 
 ```shell
 docker rm -f $(docker ps -q --filter "name=dagger-engine-*")
@@ -63,9 +61,7 @@ at `/etc/dagger/engine.json`. For example:
 </CodeBlock>
 
 </TabItem>
-
 <TabItem value="engine.toml">
-
 To configure `engine.toml`, a [custom runner](./custom-runner.mdx) is required -
 unlike with `engine.json`, the configuration is not automatically mounted to the
 engine.
@@ -93,7 +89,6 @@ want to extend the default configuration:
 :::
 
 </TabItem>
-
 </Tabs>
 
 ## Options
@@ -103,9 +98,7 @@ want to extend the default configuration:
 Dagger supports various log verbosity levels. The default level is to enable `debug`.
 
 <Tabs>
-
 <TabItem value="engine.json">
-
 The supported levels are (in ascending levels of verbosity, with the quietest
 first, and the noisiest last):
 - `error`
@@ -124,9 +117,7 @@ For example, to only show logs of level `warn` and above:
 ```
 
 </TabItem>
-
 <TabItem value="engine.toml">
-
 To explicitly enable debug logging (the default):
 
 ```toml
@@ -152,7 +143,6 @@ trace = false
 ```
 
 </TabItem>
-
 </Tabs>
 
 ### Security
@@ -164,9 +154,7 @@ allows all operations root access (similar to [`docker run`'s --privileged` flag
 This capability can be disabled to lock down a Dagger installation.
 
 <Tabs>
-
 <TabItem value="engine.json">
-
 To explicitly enable the use of `insecureRootCapabilities` (the default):
 
 ```json
@@ -188,9 +176,7 @@ To disable the use of `insecureRootCapabilities`:
 ```
 
 </TabItem>
-
 <TabItem value="engine.toml">
-
 To explicitly enable the use of `insecureRootCapabilities`:
 
 ```toml
@@ -204,7 +190,6 @@ insecure-entitlements = []
 ```
 
 </TabItem>
-
 </Tabs>
 
 ### Garbage collection
@@ -226,7 +211,6 @@ impact performance.
 <Tabs>
 
 <TabItem value="engine.json">
-
 To disable the garbage collector:
 
 ```json
@@ -238,9 +222,7 @@ To disable the garbage collector:
 ```
 
 </TabItem>
-
 <TabItem value="engine.toml">
-
 To disable the garbage collector:
 
 ```toml
@@ -249,7 +231,6 @@ gc = false
 ```
 
 </TabItem>
-
 </Tabs>
 
 The default cache policy attempts to keep the long-term cache storage under 75%
@@ -274,9 +255,7 @@ string with a unit (e.g. `"512MB"`), or a string percentage
 of the total disk space (e.g. `"10%"`)
 
 <Tabs>
-
 <TabItem value="engine.json">
-
 To adjust the garbage collector default parameters:
 
 ```json
@@ -290,9 +269,7 @@ To adjust the garbage collector default parameters:
 ```
 
 </TabItem>
-
 <TabItem value="engine.toml">
-
 To adjust the garbage collector default parameters:
 
 ```toml
@@ -303,12 +280,11 @@ minFreeSpace = "20%"
 ```
 
 </TabItem>
-
 </Tabs>
 
 The top level configuration fields (as defined above) for the garbage collector
-set the *default* policy - more specific fine-grained policies are then
-generated from this. These more fine-grained policies can also be specified -
+set the default policy - more specific fine-grained policies are then
+generated from this. These more fine-grained policies can also be specified;
 however, the defaults for this are generally reasonable for most use-cases.
 
 Each policy takes the same disk space parameters as above, as well as the
@@ -318,10 +294,8 @@ following filtering tools:
   amount (e.g. `30s`, `5m`, `4h`).
 
 <Tabs>
-
 <TabItem value="engine.json">
-
-To adjust the garbage collector fine-grained policies:
+To adjust the garbage collector's fine-grained policies:
 
 ```json
 {
@@ -345,10 +319,8 @@ To adjust the garbage collector fine-grained policies:
 ```
 
 </TabItem>
-
 <TabItem value="engine.toml">
-
-To adjust the garbage collector fine-grained policies:
+To adjust the garbage collector's fine-grained policies:
 
 ```toml
 [worker.oci]
@@ -365,7 +337,6 @@ To adjust the garbage collector fine-grained policies:
 ```
 
 </TabItem>
-
 </Tabs>
 
 ### Custom registries
@@ -375,7 +346,6 @@ URL. This allows container images that refer to one registry to instead be
 redirected to a different one.
 
 <Tabs>
-
 <TabItem value="engine.json">
 
 :::warning
@@ -383,9 +353,7 @@ Custom registries cannot currently be configured from `engine.json`.
 :::
 
 </TabItem>
-
 <TabItem value="engine.toml">
-
 For example, to mirror the default Docker Hub `docker.io` registry to `mirror.gcr.io`:
 
 ```toml
@@ -413,7 +381,6 @@ The specified `hello-world` container will now be pulled from the mirror
 instead of from Docker Hub.
 
 </TabItem>
-
 </Tabs>
 
 ### Custom proxy
@@ -425,4 +392,3 @@ Currently, custom proxies cannot be configured through `engine.json` or
 
 Currently, custom certificate authorities cannot be configured through
 `engine.json` or `engine.toml`, and must be configured [separately](./custom-ca.mdx).
-
