@@ -49,16 +49,18 @@ jobs:
             --goreleaser-key=env:GORELEASER_KEY \
             --aws-access-key-id=env:AWS_ACCESS_KEY_ID \
             --aws-secret-access-key=env:AWS_SECRET_ACCESS_KEY \
-            --aws-region=env:AWS_REGION \
-            --aws-bucket=env:AWS_BUCKET \
+            --aws-region="$AWS_REGION" \
+            --aws-bucket="$AWS_BUCKET" \
+            --aws-cloudfront-distribution="$AWS_CLOUDFRONT_DISTRIBUTION" \
             --artefacts-fqdn="$ARTEFACTS_FQDN"
         env:
           GH_ORG_NAME: ${{ vars.GH_ORG_NAME }}
           GITHUB_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
           AWS_ACCESS_KEY_ID: ${{ secrets.RELEASE_AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.RELEASE_AWS_SECRET_ACCESS_KEY }}
-          AWS_REGION: ${{ secrets.RELEASE_AWS_REGION }}
-          AWS_BUCKET: ${{ secrets.RELEASE_AWS_BUCKET }}
+          AWS_REGION: ${{ vars.RELEASE_AWS_REGION }}
+          AWS_BUCKET: ${{ vars.RELEASE_AWS_BUCKET }}
+          AWS_CLOUDFRONT_DISTRIBUTION: ${{ vars.RELEASE_AWS_CLOUDFRONT_DISTRIBUTION }}
           ARTEFACTS_FQDN: ${{ vars.RELEASE_FQDN }}
           GORELEASER_KEY: ${{ secrets.GORELEASER_PRO_LICENSE_KEY }}
       - name: "Notify"
