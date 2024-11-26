@@ -311,7 +311,7 @@ func (ls *localSourceHandler) getRef(
 	session session.Group,
 	caller session.Caller,
 ) (_ *filesyncCacheRef, _ func(context.Context) error, rerr error) {
-	clientKey := ls.src.SharedKeyHint + ":" + caller.SharedKey()
+	clientKey := ls.src.SharedKeyHint
 	ls.perClientMu.Lock(clientKey)
 	defer ls.perClientMu.Unlock(clientKey)
 
