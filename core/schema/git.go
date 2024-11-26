@@ -22,7 +22,6 @@ import (
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/storage/memory"
-	"github.com/moby/buildkit/util/bklog"
 	"github.com/moby/buildkit/util/gitutil"
 )
 
@@ -35,7 +34,6 @@ type gitSchema struct {
 func (s *gitSchema) Install() {
 	dagql.Fields[*core.Query]{
 		dagql.NodeFunc("git", s.git).
-			Impure("test", "toto").
 			View(AllVersion).
 			Doc(`Queries a Git repository.`).
 			ArgDoc("url",
@@ -84,6 +82,8 @@ func (s *gitSchema) Install() {
 		dagql.Func("withAuthHeader", s.withAuthHeader).
 			Doc(`Header to authenticate the remote with.`).
 			ArgDoc("header", `Secret used to populate the Authorization HTTP header`),
+		dagql.Func("__internalwithSSHSocket", s.withSSHSocket).
+			Doc(`(Internal-only) Socket used to authenticate the remote with.`),
 	}.Install(s.srv)
 
 	dagql.Fields[*core.GitRef]{
@@ -137,10 +137,8 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 	}
 
 	// 3. Setup authentication
-	var authSock *core.Socket = nil
+	var authSock dagql.Instance[*core.Socket]
 	var authToken dagql.Instance[*core.Secret]
-
-	bklog.G(ctx).Debugf("🎃 REF: |%+v|\n", args.URL)
 
 	// First parse the ref scheme to determine auth strategy
 	remote, err := gitutil.ParseURL(args.URL)
@@ -157,7 +155,7 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 		if err != nil {
 			return inst, err
 		}
-		authSock = sock.Self
+		authSock = sock
 	} else if remote.Scheme == "ssh" && clientMetadata != nil && clientMetadata.SSHAuthSocketPath != "" {
 		var sockInst dagql.Instance[*core.Socket]
 		if err := s.srv.Select(ctx, s.srv.Root(), &sockInst,
@@ -172,12 +170,11 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 						Value: dagql.NewString(clientMetadata.SSHAuthSocketPath),
 					},
 				},
-				Pure: true,
 			},
 		); err != nil {
 			return inst, fmt.Errorf("failed to select internal socket: %w", err)
 		}
-		authSock = sockInst.Self
+		authSock = sockInst
 	}
 
 	// For HTTP(S) refs, handle PAT auth if we're the main client
@@ -222,7 +219,6 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 									Value: dagql.NewString(credentials.Password),
 								},
 							},
-							Pure: true,
 						},
 					); err != nil {
 						return inst, fmt.Errorf("failed to create a new secret with the git auth token: %w", err)
@@ -247,13 +243,55 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 		URL:           args.URL,
 		DiscardGitDir: discardGitDir,
 		SSHKnownHosts: args.SSHKnownHosts,
-		SSHAuthSocket: authSock,
+		SSHAuthSocket: authSock.Self,
 		Services:      svcs,
 		Platform:      parent.Self.Platform(),
 		AuthToken:     authToken.Self,
 	})
 	if err != nil {
 		return inst, fmt.Errorf("failed to create GitRepository instance: %w", err)
+	}
+
+	// set the auth token by selecting withAuthToken so that it shows up in the dagql call
+	// as a secret and can thus be passed to functions
+	if authToken.Self != nil {
+		var instWithToken dagql.Instance[*core.GitRepository]
+		err := s.srv.Select(ctx, inst, &instWithToken,
+			dagql.Selector{
+				Field: "withAuthToken",
+				Args: []dagql.NamedInput{
+					{
+						Name:  "token",
+						Value: dagql.NewID[*core.Secret](authToken.ID()),
+					},
+				},
+			},
+		)
+		if err != nil {
+			return inst, fmt.Errorf("failed to set auth token: %w", err)
+		}
+		inst = instWithToken
+	}
+
+	// set the auth socket by selecting withAuthToken so that it shows up in the dagql call
+	// as a secret and can thus be passed to functions
+	if authSock.Self != nil {
+		var instWithSocket dagql.Instance[*core.GitRepository]
+		err := s.srv.Select(ctx, inst, &instWithSocket,
+			dagql.Selector{
+				Field: "__internalwithSSHSocket",
+				Args: []dagql.NamedInput{
+					{
+						Name:  "socket",
+						Value: dagql.NewID[*core.Socket](authSock.ID()),
+					},
+				},
+			},
+		)
+		if err != nil {
+			return inst, fmt.Errorf("failed to set auth token: %w", err)
+		}
+		inst = instWithSocket
 	}
 
 	return inst, nil
@@ -458,6 +496,20 @@ func (s *gitSchema) withAuthToken(ctx context.Context, parent *core.GitRepositor
 	}
 	repo := *parent
 	repo.AuthToken = token.Self
+	return &repo, nil
+}
+
+type withSSHSocketArgs struct {
+	Socket core.SocketID
+}
+
+func (s *gitSchema) withSSHSocket(ctx context.Context, parent *core.GitRepository, args withSSHSocketArgs) (*core.GitRepository, error) {
+	sock, err := args.Socket.Load(ctx, s.srv)
+	if err != nil {
+		return nil, err
+	}
+	repo := *parent
+	repo.SSHAuthSocket = sock.Self
 	return &repo, nil
 }
 
