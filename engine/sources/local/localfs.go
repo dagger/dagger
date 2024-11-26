@@ -104,6 +104,14 @@ func (local *localFS) Sync(
 
 	eg, egCtx := errgroup.WithContext(ctx)
 
+	type hardlinkChange struct {
+		kind      ChangeKind
+		path      string
+		upperStat *types.Stat
+	}
+	var hardlinks []*hardlinkChange
+	var hardlinkMu sync.Mutex
+
 	doubleWalkDiff(egCtx, eg, local, remote, func(kind ChangeKind, path string, lowerStat, upperStat *types.Stat) error {
 		var appliedChange *ChangeWithStat
 		var err error
@@ -120,7 +128,15 @@ func (local *localFS) Sync(
 				appliedChange, err = local.Symlink(egCtx, kind, path, upperStat)
 
 			case upperStat.Linkname != "":
-				appliedChange, err = local.Hardlink(egCtx, kind, path, upperStat)
+				// delay hardlinks until after everything else so we know the source of the link exists
+				hardlinkMu.Lock()
+				hardlinks = append(hardlinks, &hardlinkChange{
+					kind:      kind,
+					path:      path,
+					upperStat: upperStat,
+				})
+				hardlinkMu.Unlock()
+				return nil
 
 			default:
 				eg.Go(func() error {
@@ -168,6 +184,18 @@ func (local *localFS) Sync(
 
 	if err := eg.Wait(); err != nil {
 		return nil, err
+	}
+
+	for _, hardlink := range hardlinks {
+		appliedChange, err := local.Hardlink(ctx, hardlink.kind, hardlink.path, hardlink.upperStat)
+		if err != nil {
+			return nil, err
+		}
+		if cacheCtx != nil {
+			if err := cacheCtx.HandleChange(appliedChange.kind, hardlink.path, appliedChange.stat, nil); err != nil {
+				return nil, fmt.Errorf("failed to handle change in content hasher: %w", err)
+			}
+		}
 	}
 
 	if forParents {
@@ -394,18 +422,15 @@ func (local *localFS) Symlink(ctx context.Context, expectedChangeKind ChangeKind
 		}
 
 		isNewSymlink := lowerStat == nil
-		replacesNonSymlink := lowerStat != nil && lowerStat.Mode()&fs.ModeSymlink == 0
 
-		if replacesNonSymlink {
+		if !isNewSymlink {
 			if err := os.RemoveAll(fullPath); err != nil {
 				return nil, fmt.Errorf("failed to remove existing file: %w", err)
 			}
 		}
 
-		if isNewSymlink || replacesNonSymlink {
-			if err := os.Symlink(upperStat.Linkname, fullPath); err != nil {
-				return nil, fmt.Errorf("failed to create symlink: %w", err)
-			}
+		if err := os.Symlink(upperStat.Linkname, fullPath); err != nil {
+			return nil, fmt.Errorf("failed to create symlink: %w", err)
 		}
 
 		return &ChangeWithStat{
@@ -467,7 +492,7 @@ func (local *localFS) Hardlink(ctx context.Context, expectedChangeKind ChangeKin
 
 var copyBufferPool = &sync.Pool{
 	New: func() interface{} {
-		buffer := make([]byte, 32*1024)
+		buffer := make([]byte, 32*1024) // same default size as io.Copy
 		return &buffer
 	},
 }
@@ -704,9 +729,6 @@ func verifyExpectedChange(path string, appliedChange *ChangeWithStat, expectedKi
 	if appliedChange.stat.Size_ != expectedStat.Size_ {
 		return &ErrConflict{Path: path, FieldName: "size", OldVal: fmt.Sprintf("%d", appliedChange.stat.Size()), NewVal: fmt.Sprintf("%d", expectedStat.Size_)}
 	}
-	if appliedChange.stat.Linkname != expectedStat.Linkname {
-		return &ErrConflict{Path: path, FieldName: "linkname", OldVal: appliedChange.stat.Linkname, NewVal: expectedStat.Linkname}
-	}
 	if appliedChange.stat.Devmajor != expectedStat.Devmajor {
 		return &ErrConflict{Path: path, FieldName: "devmajor", OldVal: fmt.Sprintf("%d", appliedChange.stat.Devmajor), NewVal: fmt.Sprintf("%d", expectedStat.Devmajor)}
 	}
@@ -714,8 +736,17 @@ func verifyExpectedChange(path string, appliedChange *ChangeWithStat, expectedKi
 		return &ErrConflict{Path: path, FieldName: "devminor", OldVal: fmt.Sprintf("%d", appliedChange.stat.Devminor), NewVal: fmt.Sprintf("%d", expectedStat.Devminor)}
 	}
 
+	// Only compare link name when it's a symlink, not a hardlink. For hardlinks, whether the Linkname field
+	// is set depends on whether or not the source of the link was included in the sync, which can vary between
+	// different include/exclude settings on the same dir.
+	if appliedChange.stat.Mode()&os.ModeType == os.ModeSymlink {
+		if appliedChange.stat.Linkname != expectedStat.Linkname {
+			return &ErrConflict{Path: path, FieldName: "linkname", OldVal: appliedChange.stat.Linkname, NewVal: expectedStat.Linkname}
+		}
+	}
+
 	// Match the differ logic by only comparing modtime for regular files (as a heuristic to
-	// expensive avoid content comparisons for ever file that appears in a diff, using the
+	// expensive avoid content comparisons for every file that appears in a diff, using the
 	// modtime as a proxy instead).
 	//
 	// We don't want to compare modtimes for directories right now since we explicitly don't
@@ -737,5 +768,5 @@ type ErrConflict struct {
 }
 
 func (e *ErrConflict) Error() string {
-	return fmt.Sprintf("conflict at %s: %s changed from %s to %s", e.Path, e.FieldName, e.OldVal, e.NewVal)
+	return fmt.Sprintf("conflict at %q: %s changed from %q to %q during sync", e.Path, e.FieldName, e.OldVal, e.NewVal)
 }
