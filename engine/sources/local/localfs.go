@@ -83,7 +83,7 @@ func (local *localFS) Sync(
 	var cacheCtx contenthash.CacheContext
 	if !forParents {
 		var err error
-		newCopyRef, err = cacheManager.New(ctx, nil, nil) // TODO: any opts? description? don't forget to set Retain once known
+		newCopyRef, err = cacheManager.New(ctx, nil, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create new copy ref: %w", err)
 		}
@@ -122,7 +122,8 @@ func (local *localFS) Sync(
 				appliedChange, err = local.Mkdir(egCtx, kind, path, upperStat)
 
 			case upperStat.Mode&uint32(os.ModeDevice) != 0 || upperStat.Mode&uint32(os.ModeNamedPipe) != 0:
-				// TODO:
+				// NOTE: not handling devices for now since they are extremely non-portable and dubious in terms
+				// of real utility vs. enabling bizarre hacks
 
 			case upperStat.Mode&uint32(os.ModeSymlink) != 0:
 				appliedChange, err = local.Symlink(egCtx, kind, path, upperStat)
@@ -202,7 +203,6 @@ func (local *localFS) Sync(
 		return nil, nil
 	}
 
-	// TODO: should probably provide ref impl that just errors if mount is attempted; should never be needed
 	dgst, err := cacheCtx.Checksum(ctx, newCopyRef, "/", contenthash.ChecksumOpts{}, session)
 	if err != nil {
 		return nil, fmt.Errorf("failed to checksum: %w", err)
@@ -286,17 +286,34 @@ func (local *localFS) Sync(
 	if err := finalRef.Finalize(ctx); err != nil {
 		return nil, fmt.Errorf("failed to finalize: %w", err)
 	}
+
+	// FIXME: when the ID of the ref given to SetCacheContext is different from the ID of the
+	// ref the cacheCtx was created with, buildkit just stores it in a in-memory LRU that's
+	// only hit by some code paths. This is probably a bug. To coerce it into actually storing
+	// the cacheCtx on finalRef, we have to do this little dance of setting it (so it's in the LRU)
+	// and then getting it+setting again.
 	if err := contenthash.SetCacheContext(ctx, finalRef, cacheCtx); err != nil {
 		return nil, fmt.Errorf("failed to set cache context: %w", err)
 	}
+	cacheCtx, err = contenthash.GetCacheContext(ctx, finalRef)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cache context: %w", err)
+	}
+	if err := contenthash.SetCacheContext(ctx, finalRef, cacheCtx); err != nil {
+		return nil, fmt.Errorf("failed to set cache context: %w", err)
+	}
+
 	if err := (CacheRefMetadata{finalRef}).SetContentHashKey(dgst); err != nil {
 		return nil, fmt.Errorf("failed to set content hash key: %w", err)
 	}
+	if err := finalRef.SetDescription(fmt.Sprintf("local dir %s (include: %v) (exclude %v)", local.subdir, local.includes, local.excludes)); err != nil {
+		return nil, fmt.Errorf("failed to set description: %w", err)
+	}
+
 	if err := finalRef.SetCachePolicyRetain(); err != nil {
 		return nil, fmt.Errorf("failed to set cache policy: %w", err)
 	}
-
-	// NOTE: this MUST be after setting cache policy retain or bk cache manager decides to
+	// NOTE: this MUST be released after setting cache policy retain or bk cache manager decides to
 	// remove finalRef...
 	if err := newCopyRef.Release(ctx); err != nil {
 		newCopyRef = nil
