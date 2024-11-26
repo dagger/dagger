@@ -740,7 +740,7 @@ func (dir *Directory) Export(ctx context.Context, destPath string, merge bool) (
 	}
 
 	var defPB *pb.Definition
-	if dir.Dir != "" {
+	if dir.Dir != "" && dir.Dir != "/" {
 		src, err := dir.State()
 		if err != nil {
 			return err
