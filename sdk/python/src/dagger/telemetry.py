@@ -35,8 +35,8 @@ from opentelemetry.semconv.trace import SpanAttributes
 from opentelemetry.trace import get_tracer_provider, propagation
 
 __all__ = [
-    "initialize",
     "get_tracer",
+    "initialize",
     "otel_configured",
     "otel_enabled",
 ]

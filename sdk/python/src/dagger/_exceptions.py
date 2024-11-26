@@ -188,16 +188,16 @@ class ExecError(QueryError):
 
 
 __all__ = [
-    "VersionMismatch",
-    "DaggerError",
-    "ProvisionError",
-    "DownloadError",
-    "SessionError",
-    "ClientError",
     "ClientConnectionError",
-    "TransportError",
+    "ClientError",
+    "DaggerError",
+    "DownloadError",
+    "ExecError",
     "ExecuteTimeoutError",
     "InvalidQueryError",
+    "ProvisionError",
     "QueryError",
-    "ExecError",
+    "SessionError",
+    "TransportError",
+    "VersionMismatch",
 ]

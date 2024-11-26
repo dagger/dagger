@@ -968,7 +968,8 @@ class Test:
 				With(daggerInitPython()).
 				Sync(ctx)
 
-			require.ErrorContains(t, err, "Failed to prepare distributions")
+				// hatchling is a build requirement so it will fail to build if the index is unreachable
+			require.ErrorContains(t, err, "hatchling")
 		})
 	})
 }
