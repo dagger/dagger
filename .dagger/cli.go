@@ -39,9 +39,10 @@ func (cli *CLI) Publish(
 
 	awsAccessKeyID *dagger.Secret,
 	awsSecretAccessKey *dagger.Secret,
-	awsRegion *dagger.Secret,
-	awsBucket *dagger.Secret,
 
+	awsRegion string,
+	awsBucket string,
+	awsCloudfrontDistribution string,
 	artefactsFQDN string,
 ) error {
 	ctr, err := publishEnv(ctx)
@@ -84,8 +85,9 @@ func (cli *CLI) Publish(
 		WithSecretVariable("GORELEASER_KEY", goreleaserKey).
 		WithSecretVariable("AWS_ACCESS_KEY_ID", awsAccessKeyID).
 		WithSecretVariable("AWS_SECRET_ACCESS_KEY", awsSecretAccessKey).
-		WithSecretVariable("AWS_REGION", awsRegion).
-		WithSecretVariable("AWS_BUCKET", awsBucket).
+		WithEnvVariable("AWS_REGION", awsRegion).
+		WithEnvVariable("AWS_BUCKET", awsBucket).
+		WithEnvVariable("AWS_CLOUDFRONT_DISTRIBUTION_ID", awsCloudfrontDistribution).
 		WithEnvVariable("ARTEFACTS_FQDN", artefactsFQDN).
 		WithEnvVariable("ENGINE_VERSION", cli.Dagger.Version).
 		WithEnvVariable("ENGINE_TAG", cli.Dagger.Tag).
