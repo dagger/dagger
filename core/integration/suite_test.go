@@ -348,3 +348,22 @@ func requireErrOut(t *testctx.T, err error, out string) {
 	}
 	require.ErrorContains(t, err, out)
 }
+
+// requireErrRegexp is the same as require.Regexp against err.Error(), except
+// it also looks in the Stdout/Stderr of a *dagger.ExecErr, since that's
+// something we do a lot in tests.
+//
+// TODO: A better alternative might be to record the log output and assert
+// against what the user sees there, but that's a bigger lift.
+func requireErrRegexp(t *testctx.T, err error, re string) {
+	var execErr *dagger.ExecError
+	if errors.As(err, &execErr) {
+		require.Regexp(
+			t,
+			re,
+			fmt.Sprintf("%s\nStdout: %s\nStderr: %s", err, execErr.Stdout, execErr.Stderr),
+		)
+		return
+	}
+	require.Regexp(t, re, err.Error())
+}

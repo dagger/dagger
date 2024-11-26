@@ -948,10 +948,10 @@ export class Foo {}
 				With(daggerFunctions()).
 				Stdout(ctx)
 			require.Error(t, err)
-			require.Regexp(t, fmt.Sprintf(
+			requireErrRegexp(t, err, fmt.Sprintf(
 				`object\s+%q\s+function\s+%q\s+cannot\s+return\s+external\s+type\s+from\s+dependency\s+module\s+%q`,
 				"Test", "fn", "dep",
-			), err.Error())
+			))
 		})
 
 		t.Run("list", func(ctx context.Context, t *testctx.T) {
@@ -969,10 +969,10 @@ export class Foo {}
 				With(daggerFunctions()).
 				Stdout(ctx)
 			require.Error(t, err)
-			require.Regexp(t, fmt.Sprintf(
+			requireErrRegexp(t, err, fmt.Sprintf(
 				`object\s+%q\s+function\s+%q\s+cannot\s+return\s+external\s+type\s+from\s+dependency\s+module\s+%q`,
 				"Test", "fn", "dep",
-			), err.Error())
+			))
 		})
 	})
 
@@ -990,10 +990,10 @@ export class Test {
 				With(daggerFunctions()).
 				Stdout(ctx)
 			require.Error(t, err)
-			require.Regexp(t, fmt.Sprintf(
+			requireErrRegexp(t, err, fmt.Sprintf(
 				`object\s+%q\s+function\s+%q\s+arg\s+%q\s+cannot\s+reference\s+external\s+type\s+from\s+dependency\s+module\s+%q`,
 				"Test", "fn", "obj", "dep",
-			), err.Error())
+			))
 		})
 
 		t.Run("list", func(ctx context.Context, t *testctx.T) {
@@ -1010,10 +1010,10 @@ export class Test {
 				With(daggerFunctions()).
 				Stdout(ctx)
 			require.Error(t, err)
-			require.Regexp(t, fmt.Sprintf(
+			requireErrRegexp(t, err, fmt.Sprintf(
 				`object\s+%q\s+function\s+%q\s+arg\s+%q\s+cannot\s+reference\s+external\s+type\s+from\s+dependency\s+module\s+%q`,
 				"Test", "fn", "obj", "dep",
-			), err.Error())
+			))
 		})
 	})
 
@@ -1040,10 +1040,10 @@ export class Obj {
 				With(daggerFunctions()).
 				Stdout(ctx)
 			require.Error(t, err)
-			require.Regexp(t, fmt.Sprintf(
+			requireErrRegexp(t, err, fmt.Sprintf(
 				`object\s+%q\s+field\s+%q\s+cannot\s+reference\s+external\s+type\s+from\s+dependency\s+module\s+%q`,
 				"Obj", "foo", "dep",
-			), err.Error())
+			))
 		})
 
 		t.Run("list", func(ctx context.Context, t *testctx.T) {
@@ -1068,10 +1068,10 @@ export class Obj {
 				With(daggerFunctions()).
 				Stdout(ctx)
 			require.Error(t, err)
-			require.Regexp(t, fmt.Sprintf(
+			requireErrRegexp(t, err, fmt.Sprintf(
 				`object\s+%q\s+field\s+%q\s+cannot\s+reference\s+external\s+type\s+from\s+dependency\s+module\s+%q`,
 				"Obj", "foo", "dep",
-			), err.Error())
+			))
 		})
 	})
 }
