@@ -3007,9 +3007,14 @@ func (m *Mymodule) Issue(ctx context.Context) error {
         return fmt.Errorf("first get: %w", err)
     }
 
+    err = kc.Get(ctx, "a")
+    if err != nil {
+        return fmt.Errorf("second get, same args: %w", err)
+    }
+
     err = kc.Get(ctx, "b")
     if err != nil {
-        return fmt.Errorf("second get: %w", err)
+        return fmt.Errorf("third get: %w", err)
     }
     return nil
 }
