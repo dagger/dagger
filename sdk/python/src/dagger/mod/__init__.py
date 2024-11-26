@@ -23,8 +23,8 @@ def default_module() -> Module:
 __all__ = [
     "DefaultPath",
     "Doc",  # Only re-exported because it's in `typing_extensions`.
-    "Ignore",
     "Enum",
+    "Ignore",
     "Name",
     "enum_type",
     "field",

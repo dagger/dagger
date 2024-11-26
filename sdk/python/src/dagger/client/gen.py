@@ -8416,6 +8416,7 @@ dag = Client()
 """The global client instance."""
 
 __all__ = [
+    "JSON",
     "BuildArg",
     "CacheSharingMode",
     "CacheVolume",
@@ -8471,7 +8472,6 @@ __all__ = [
     "InputTypeDefID",
     "InterfaceTypeDef",
     "InterfaceTypeDefID",
-    "JSON",
     "Label",
     "LabelID",
     "ListTypeDef",
