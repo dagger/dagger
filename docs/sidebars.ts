@@ -98,6 +98,7 @@ module.exports = {
             "api/interfaces",
             "api/custom-types",
             "api/state",
+            "api/engine",
           ]
         },
         {
