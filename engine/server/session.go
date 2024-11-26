@@ -627,14 +627,12 @@ func (srv *Server) initializeDaggerClient(
 	}
 
 	const metricReaderInterval = 1 * time.Second
-	const metricReaderTimeout = 1 * time.Second
 
 	meterOpts := []sdkmetric.Option{
 		sdkmetric.WithResource(telemetry.Resource),
 		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(
 			srv.telemetryPubSub.Metrics(client),
 			sdkmetric.WithInterval(metricReaderInterval),
-			sdkmetric.WithTimeout(metricReaderTimeout),
 		)),
 	}
 
@@ -655,7 +653,6 @@ func (srv *Server) initializeDaggerClient(
 			sdkmetric.NewPeriodicReader(
 				srv.telemetryPubSub.Metrics(parent),
 				sdkmetric.WithInterval(metricReaderInterval),
-				sdkmetric.WithTimeout(metricReaderTimeout),
 			),
 		))
 	}
