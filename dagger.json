@@ -29,11 +29,6 @@
       "pin": ""
     },
     {
-      "name": "gh",
-      "source": "github.com/sagikazarmark/daggerverse/gh@main",
-      "pin": "5a5ab8cce801ad62f2618f50a4e859e2f7fcacb9"
-    },
-    {
       "name": "go",
       "source": "modules/go",
       "pin": ""
@@ -61,6 +56,11 @@
     {
       "name": "python-sdk-dev",
       "source": "sdk/python/dev",
+      "pin": ""
+    },
+    {
+      "name": "releaser",
+      "source": "releaser",
       "pin": ""
     },
     {
