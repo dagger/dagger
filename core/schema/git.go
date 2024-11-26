@@ -273,8 +273,8 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 		inst = instWithToken
 	}
 
-	// set the auth socket by selecting withAuthToken so that it shows up in the dagql call
-	// as a secret and can thus be passed to functions
+	// set the auth socket by selecting __internalwithSSHSocket so that it shows up in the dagql call
+	// as a socket and can thus be passed to functions
 	if authSock.Self != nil {
 		var instWithSocket dagql.Instance[*core.GitRepository]
 		err := s.srv.Select(ctx, inst, &instWithSocket,
