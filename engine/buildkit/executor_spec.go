@@ -1195,7 +1195,7 @@ func (w *Worker) runContainer(ctx context.Context, state *execState) (rerr error
 	if w.execMD != nil {
 		lg = lg.WithField("caller_client_id", w.execMD.CallerClientID)
 		if w.execMD.CallID != nil {
-			lg = lg.WithField("call_id", w.execMD.CallID.Display())
+			lg = lg.WithField("call_id", w.execMD.CallID.Digest)
 		}
 		if w.execMD.ClientID != "" {
 			lg = lg.WithField("nested_client_id", w.execMD.ClientID)
