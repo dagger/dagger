@@ -269,16 +269,26 @@ func Tracer() trace.Tracer {
 	return otel.Tracer("dagger.io/cli")
 }
 
-func Resource() *resource.Resource {
+func Resource(ctx context.Context) *resource.Resource {
 	attrs := []attribute.KeyValue{
 		semconv.ServiceName("dagger-cli"),
 		semconv.ServiceVersion(engine.Version),
-		semconv.ProcessCommandArgs(os.Args...),
 	}
 	for k, v := range enginetel.LoadDefaultLabels(workdir, engine.Version) {
 		attrs = append(attrs, attribute.String(k, v))
 	}
-	return resource.NewWithAttributes(semconv.SchemaURL, attrs...)
+	res, err := resource.New(ctx,
+		resource.WithSchemaURL(semconv.SchemaURL),
+		resource.WithAttributes(attrs...),
+		resource.WithFromEnv(),
+		resource.WithOSType(),
+		resource.WithContainer(),
+		resource.WithProcessCommandArgs(),
+	)
+	if err != nil {
+		slog.Warn("failed to set up OTel resource", "error", err)
+	}
+	return res
 }
 
 // ExitError is an error that indicates a command should exit with a specific

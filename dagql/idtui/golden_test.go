@@ -18,9 +18,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/vito/midterm"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
 	"go.opentelemetry.io/otel/trace"
 	collogspb "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
@@ -80,7 +82,20 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 		{Function: "fail-log-native", Fail: true},
 		{Function: "encapsulate"},
 		{Function: "pending", Fail: true},
-		{Function: "custom-span"},
+		{
+			Function: "custom-span",
+			Env: []string{
+				"OTEL_RESOURCE_ATTRIBUTES=foo=bar,fizz=buzz",
+			},
+			DBTest: func(t *testctx.T, db *dagui.DB) {
+				require.NotEmpty(t, db.Spans.Order)
+				resource := db.FindResource(semconv.ServiceName("dagger-cli"))
+				require.NotNil(t, resource)
+				attrs := resource.Attributes()
+				require.Contains(t, attrs, attribute.String("foo", "bar"))
+				require.Contains(t, attrs, attribute.String("fizz", "buzz"))
+			},
+		},
 		{Function: "use-exec-service"},
 		{Function: "use-no-exec-service"},
 		{Function: "docker-build", Args: []string{
@@ -109,7 +124,7 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 		{Module: "./viztest/typescript", Function: "custom-span"},
 	} {
 		t.Run(path.Join(ex.Module, ex.Function), func(ctx context.Context, t *testctx.T) {
-			out, _ := ex.Run(ctx, t, s)
+			out, db := ex.Run(ctx, t, s)
 			if ex.Flaky != "" {
 				cmp := golden.String(out, t.Name())()
 				if !cmp.Success() {
@@ -118,6 +133,9 @@ func (s TelemetrySuite) TestGolden(ctx context.Context, t *testctx.T) {
 				}
 			} else {
 				golden.Assert(t, out, t.Name())
+			}
+			if ex.DBTest != nil {
+				ex.DBTest(t, db)
 			}
 		})
 	}
@@ -129,6 +147,8 @@ type Example struct {
 	Args     []string
 	Fail     bool
 	Flaky    string
+	Env      []string
+	DBTest   func(*testctx.T, *dagui.DB)
 }
 
 func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (string, *dagui.DB) {
@@ -160,6 +180,7 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 			fmt.Sprintf("HOME=%s", s.Home), // ignore any local Dagger Cloud auth
 		)
 		warmup.Env = append(warmup.Env, telemetry.PropagationEnv(ctx)...)
+		warmup.Env = append(warmup.Env, ex.Env...)
 		warmupBuf := new(bytes.Buffer)
 		defer func() {
 			if t.Failed() {
@@ -186,6 +207,7 @@ func (ex Example) Run(ctx context.Context, t *testctx.T, s TelemetrySuite) (stri
 		fmt.Sprintf("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://%s/v1/logs", otlpL.Addr().String()),
 	)
 	cmd.Env = append(cmd.Env, telemetry.PropagationEnv(ctx)...)
+	cmd.Env = append(cmd.Env, ex.Env...)
 
 	errBuf := new(bytes.Buffer)
 	outBuf := new(bytes.Buffer)
@@ -368,10 +390,13 @@ func testDB(t *testctx.T) (*dagui.DB, net.Listener) {
 	db := dagui.NewDB()
 	l, err := net.Listen("tcp", ":0")
 	require.NoError(t, err)
-	t.Cleanup(func() { l.Close() })
 
-	srv := newReceiver(t, db, db.LogExporter())
-	go http.Serve(l, srv)
+	srv := &http.Server{
+		Handler: newReceiver(t, db, db.LogExporter()),
+	}
+	go srv.Serve(l)
+
+	t.Cleanup(func() { srv.Close() })
 
 	return db, l
 }

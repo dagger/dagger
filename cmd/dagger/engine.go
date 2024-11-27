@@ -68,7 +68,7 @@ func initEngineTelemetry(ctx context.Context) (context.Context, func(error)) {
 	// Setup telemetry config
 	telemetryCfg := telemetry.Config{
 		Detect:   true,
-		Resource: Resource(),
+		Resource: Resource(ctx),
 
 		LiveTraceExporters:  []sdktrace.SpanExporter{Frontend.SpanExporter()},
 		LiveLogExporters:    []sdklog.Exporter{Frontend.LogExporter()},

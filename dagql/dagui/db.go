@@ -8,9 +8,11 @@ import (
 	"sort"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 
@@ -27,6 +29,8 @@ type DB struct {
 
 	Spans    *OrderedSet[SpanID, *Span]
 	RootSpan *Span
+
+	Resources map[attribute.Distinct]*resource.Resource
 
 	Calls     map[string]*callpbv1.Call
 	Outputs   map[string]map[string]struct{}
@@ -54,7 +58,8 @@ func NewDB() *DB {
 	return &DB{
 		PrimaryLogs: make(map[SpanID][]sdklog.Record),
 
-		Spans: NewSpanSet(),
+		Spans:     NewSpanSet(),
+		Resources: make(map[attribute.Distinct]*resource.Resource),
 
 		Calls:     make(map[string]*callpbv1.Call),
 		OutputOf:  make(map[string]map[string]struct{}),
@@ -325,6 +330,10 @@ func (db *DB) recordOTelSpan(span sdktrace.ReadOnlySpan) {
 			TraceID: TraceID{link.SpanContext.TraceID()},
 			SpanID:  SpanID{link.SpanContext.SpanID()},
 		}
+	}
+
+	if resource := span.Resource(); resource != nil {
+		db.Resources[resource.Equivalent()] = resource
 	}
 
 	// populate snapshot from otel attributes
@@ -842,6 +851,17 @@ func (db *DB) CollectErrors(rows *RowsView) []*TraceTree {
 	}
 
 	return collectParents(rows.Body, reveal)
+}
+
+func (db *DB) FindResource(filter attribute.KeyValue) *resource.Resource {
+	for _, res := range db.Resources {
+		for _, kv := range res.Attributes() {
+			if kv.Key == filter.Key && kv.Value == filter.Value {
+				return res
+			}
+		}
+	}
+	return nil
 }
 
 func collectParents(rows []*TraceTree, targets map[*TraceTree]struct{}) []*TraceTree {
