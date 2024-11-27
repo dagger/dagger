@@ -1153,6 +1153,14 @@ func (srv *Server) serveShutdown(w http.ResponseWriter, r *http.Request, client 
 		sess.services.StopSessionServices(ctx, sess.sessionID)
 
 		if len(sess.cacheExporterCfgs) > 0 {
+			ctx = context.WithoutCancel(ctx)
+			t := client.tracerProvider.Tracer(InstrumentationLibrary)
+			ctx, span := t.Start(ctx, "cache export", telemetry.Encapsulate())
+			defer span.End()
+
+			// create an internal span so we hide exporter children spans which are quite noisy
+			ctx, cInternal := t.Start(ctx, "cache export internal", telemetry.Internal())
+			defer cInternal.End()
 			bklog.G(ctx).Debugf("running cache export for client %s", client.clientID)
 			cacheExporterFuncs := make([]buildkit.ResolveCacheExporterFunc, len(sess.cacheExporterCfgs))
 			for i, cacheExportCfg := range sess.cacheExporterCfgs {
