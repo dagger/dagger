@@ -59,18 +59,18 @@ func New(
 
 type packageJsonConfig struct {
 	PackageManager string `json:"packageManager"`
-	Dagger *struct {
+	Dagger         *struct {
 		BaseImage string `json:"baseImage"`
-		Runtime string `json:"runtime"`
+		Runtime   string `json:"runtime"`
 	} `json:"dagger"`
 }
 
 type moduleConfig struct {
-	runtime SupportedTSRuntime
+	runtime        SupportedTSRuntime
 	runtimeVersion string
 
 	// Custom base image
-	image          string
+	image             string
 	packageJsonConfig *packageJsonConfig
 
 	packageManager        SupportedPackageManager
@@ -596,8 +596,8 @@ func (t *TypescriptSdk) installDependencies(ctr *dagger.Container) (*dagger.Cont
 func (t *TypescriptSdk) analyzeModuleConfig(ctx context.Context, modSource *dagger.ModuleSource) (err error) {
 	if t.moduleConfig == nil {
 		t.moduleConfig = &moduleConfig{
-			entries: make(map[string]bool),
-			runtime: Node,
+			entries:           make(map[string]bool),
+			runtime:           Node,
 			packageJsonConfig: nil,
 		}
 	}
