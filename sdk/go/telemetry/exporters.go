@@ -89,7 +89,7 @@ func (m LogForwarder) Export(ctx context.Context, logs []sdklog.Record) error {
 		e := e
 		eg.Go(func() error {
 			for _, log := range logs {
-				_ = e.OnEmit(ctx, log)
+				_ = e.OnEmit(ctx, &log)
 			}
 			return nil
 		})
