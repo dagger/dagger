@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"main/internal/dagger"
 	"path"
@@ -10,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/iancoleman/strcase"
-	"github.com/tidwall/gjson"
 	"golang.org/x/mod/semver"
 )
 
@@ -57,12 +57,21 @@ func New(
 	}
 }
 
+type packageJsonConfig struct {
+	PackageManager string `json:"packageManager"`
+	Dagger *struct {
+		BaseImage string `json:"baseImage"`
+		Runtime string `json:"runtime"`
+	} `json:"dagger"`
+}
+
 type moduleConfig struct {
 	runtime SupportedTSRuntime
+	runtimeVersion string
 
 	// Custom base image
 	image          string
-	runtimeVersion string
+	packageJsonConfig *packageJsonConfig
 
 	packageManager        SupportedPackageManager
 	packageManagerVersion string
@@ -321,7 +330,7 @@ func (t *TypescriptSdk) configureModule(ctr *dagger.Container) *dagger.Container
 
 	// If there's a package.json, run the tsconfig updator script and install the genDir.
 	// else, copy the template config files.
-	if t.moduleConfig.hasFile("package.json") {
+	if t.moduleConfig.packageJsonConfig != nil {
 		if runtime == Bun {
 			ctr = ctr.
 				WithExec([]string{"bun", "/opt/module/bin/__tsconfig.updator.ts"}).
@@ -381,13 +390,8 @@ func (t *TypescriptSdk) detectBaseImageRef(ctx context.Context) (string, error) 
 	runtime := t.moduleConfig.runtime
 	version := t.moduleConfig.runtimeVersion
 
-	if t.moduleConfig.hasFile("package.json") {
-		json, err := t.moduleConfig.source.File("package.json").Contents(ctx)
-		if err != nil {
-			return "", fmt.Errorf("failed to read package.json: %w", err)
-		}
-
-		value := gjson.Get(json, "dagger.baseImage").String()
+	if t.moduleConfig.packageJsonConfig != nil && t.moduleConfig.packageJsonConfig.Dagger != nil {
+		value := t.moduleConfig.packageJsonConfig.Dagger.BaseImage
 		if value != "" {
 			return value, nil
 		}
@@ -407,7 +411,7 @@ func (t *TypescriptSdk) detectBaseImageRef(ctx context.Context) (string, error) 
 
 		return nodeImageRef, nil
 	default:
-		return "", fmt.Errorf("unknown runtime: %s ; please use `dagger.baseImage` to specify a custom base image different from bun or node", runtime)
+		return "", fmt.Errorf("unknown runtime: %s", runtime)
 	}
 }
 
@@ -420,13 +424,8 @@ func (t *TypescriptSdk) detectBaseImageRef(ctx context.Context) (string, error) 
 // If the runtime is detected and pinned to a specific version, it will also return the pinned version.
 func (t *TypescriptSdk) detectRuntime(ctx context.Context) error {
 	// If we find a package.json, we check if the runtime is specified in `dagger.runtime` field.
-	if t.moduleConfig.hasFile("package.json") {
-		json, err := t.moduleConfig.source.File("package.json").Contents(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to read package.json: %w", err)
-		}
-
-		value := gjson.Get(json, "dagger.runtime").String()
+	if t.moduleConfig.packageJsonConfig != nil && t.moduleConfig.packageJsonConfig.Dagger != nil {
+		value := t.moduleConfig.packageJsonConfig.Dagger.Runtime
 		if value != "" {
 			// Retrieve the runtime and version from the value (e.g., node@lts, bun@1)
 			// If version isn't specified, version will be an empty string and only the runtime will be used in Base.
@@ -439,7 +438,7 @@ func (t *TypescriptSdk) detectRuntime(ctx context.Context) error {
 
 				return nil
 			default:
-				return fmt.Errorf("unsupported runtime %s: please use `dagger.baseImage` to specify a custom base image different from bun or node", runtime)
+				return fmt.Errorf("unsupported runtime %s", runtime)
 			}
 		}
 	}
@@ -478,13 +477,8 @@ func (t *TypescriptSdk) detectPackageManager(ctx context.Context) (SupportedPack
 	}
 
 	// If we find a package.json, we check if the packageManager is specified in `packageManager` field.
-	if t.moduleConfig.hasFile("package.json") {
-		json, err := t.moduleConfig.source.File("package.json").Contents(ctx)
-		if err != nil {
-			return "", "", fmt.Errorf("failed to read package.json: %w", err)
-		}
-
-		value := gjson.Get(json, "packageManager").String()
+	if t.moduleConfig.packageJsonConfig != nil {
+		value := t.moduleConfig.packageJsonConfig.PackageManager
 		if value != "" {
 			// Retrieve the package manager and version from the value (e.g., yarn@4.2.0, pnpm@8.5.1)
 			packageManager, version, _ := strings.Cut(value, "@")
@@ -604,6 +598,7 @@ func (t *TypescriptSdk) analyzeModuleConfig(ctx context.Context, modSource *dagg
 		t.moduleConfig = &moduleConfig{
 			entries: make(map[string]bool),
 			runtime: Node,
+			packageJsonConfig: nil,
 		}
 	}
 
@@ -627,6 +622,21 @@ func (t *TypescriptSdk) analyzeModuleConfig(ctx context.Context, modSource *dagg
 		for _, entry := range configEntries {
 			t.moduleConfig.entries[entry] = true
 		}
+	}
+
+	if t.moduleConfig.hasFile("package.json") {
+		var packageJsonConfig packageJsonConfig
+
+		content, err := t.moduleConfig.source.File("package.json").Contents(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to read package.json: %w", err)
+		}
+
+		if err := json.Unmarshal([]byte(content), &packageJsonConfig); err != nil {
+			return fmt.Errorf("failed to unmarshal package.json: %w", err)
+		}
+
+		t.moduleConfig.packageJsonConfig = &packageJsonConfig
 	}
 
 	if err := t.detectRuntime(ctx); err != nil {

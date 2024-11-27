@@ -760,19 +760,7 @@ func (TypescriptSuite) TestRuntimeDetection(ctx context.Context, t *testctx.T) {
 }
 
 func (TypescriptSuite) TestCustomBaseImage(ctx context.Context, t *testctx.T) {
-	t.Run("should use custom base image if base image is set - bun", func(ctx context.Context, t *testctx.T) {
-		c := connect(ctx, t)
-
-		modGen := c.Container().From(golangImage).
-			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-			WithWorkdir("/work").
-			WithNewFile("package.json", `{
-      "dagger": {
-        "baseImage": "oven/bun:1-alpine@sha256:937b2625ab04b95531cb776a7dd39970ede04b406b63f964654edc67308900b2",
-        "runtime": "bun"
-      }
-    }`).
-			With(sdkSource("typescript", `
+	script := `
     import { object, func } from "@dagger.io/dagger"
     
     @object()
@@ -790,12 +778,26 @@ func (TypescriptSuite) TestCustomBaseImage(ctx context.Context, t *testctx.T) {
         }
       }
     }
-      `)).
+      `
+
+	t.Run("should use custom base image if base image is set - bun", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+
+		modGen := c.Container().From(golangImage).
+			WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+			WithWorkdir("/work").
+			WithNewFile("package.json", `{
+      "dagger": {
+        "baseImage": "oven/bun:1.1.25-alpine@sha256:2d9027f7dd57d5343d787eae23d5bfa80cc8480154893e156d39ccc86df05cb4",
+        "runtime": "bun"
+      }
+    }`).
+			With(sdkSource("typescript", script)).
 			With(daggerExec("init", "--name=test", "--sdk=typescript", "--source=."))
 
 		out, err := modGen.With(daggerCall("runtime")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "bun@1.1.36", out)
+		require.Equal(t, "bun@1.1.25", out)
 	})
 
 	t.Run("should use custom base image if base image is set - node", func(ctx context.Context, t *testctx.T) {
@@ -806,34 +808,16 @@ func (TypescriptSuite) TestCustomBaseImage(ctx context.Context, t *testctx.T) {
 			WithWorkdir("/work").
 			WithNewFile("package.json", `{
       "dagger": {
-        "baseImage": "node:23.2.0-alpine@sha256:ecefaffd4706c5879af52e022fdb8ea30cbd6590e2a30d05347790d690727c6c",
+        "baseImage": "node:20.18.0-alpine@sha256:b1e0880c3af955867bc2f1944b49d20187beb7afa3f30173e15a97149ab7f5f1",
         "runtime": "node"
       }
     }`).
-			With(sdkSource("typescript", `
-import { object, func } from "@dagger.io/dagger"
-
-@object()
-export class Test {
-  @func()
-  runtime(): string {
-    const isBunRuntime = typeof Bun === "object";
-    const runtime = isBunRuntime ? "bun" : "node";
-
-    switch (runtime) {
-      case "bun":
-        return runtime + "@" + Bun.version
-      case "node":
-        return runtime + "@" + process.versions.node
-    }
-  }
-}
-  `)).
+			With(sdkSource("typescript", script)).
 			With(daggerExec("init", "--name=test", "--sdk=typescript", "--source=."))
 
 		out, err := modGen.With(daggerCall("runtime")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "node@23.2.0", out)
+		require.Equal(t, "node@20.18.0", out)
 	})
 }
 
