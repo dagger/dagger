@@ -249,8 +249,8 @@ describe("TypeScript SDK api", function () {
           assert.strictEqual(e.exitCode, 127)
           assert.strictEqual(e.stdout, stdout)
           assert.strictEqual(e.stderr, stderr)
-          assert(e.toString().includes(stdout))
-          assert(e.toString().includes(stderr))
+          assert(!e.toString().includes(stdout))
+          assert(!e.toString().includes(stderr))
           assert(!e.message.includes(stdout))
           assert(!e.message.includes(stderr))
         } else {
