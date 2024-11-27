@@ -195,7 +195,7 @@ func (ls *localSourceHandler) snapshot(ctx context.Context, session session.Grou
 	ctx, span := newSpan(ctx, "filesync")
 	defer span.End()
 
-	ref, release, err := ls.getRef(ctx, session, caller)
+	ref, release, err := ls.getRef(ctx, session)
 	if err != nil {
 		return nil, err
 	}
@@ -253,7 +253,7 @@ func (ls *localSourceHandler) sync(
 
 	remote := newRemoteFS(caller, clientPath, ls.src.IncludePatterns, ls.src.ExcludePatterns)
 
-	local, err := NewLocalFS(ref.sharedState, clientPath, ls.src.IncludePatterns, ls.src.ExcludePatterns)
+	local, err := newLocalFS(ref.sharedState, clientPath, ls.src.IncludePatterns, ls.src.ExcludePatterns)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create local fs: %w", err)
 	}
@@ -282,7 +282,7 @@ func (ls *localSourceHandler) syncParentDirs(
 
 	remote := newRemoteFS(caller, "/", includes, excludes)
 
-	local, err := NewLocalFS(ref.sharedState, "/", includes, excludes)
+	local, err := newLocalFS(ref.sharedState, "/", includes, excludes)
 	if err != nil {
 		return fmt.Errorf("failed to create local fs: %w", err)
 	}
@@ -309,7 +309,6 @@ type filesyncCacheRef struct {
 func (ls *localSourceHandler) getRef(
 	ctx context.Context,
 	session session.Group,
-	caller session.Caller,
 ) (_ *filesyncCacheRef, _ func(context.Context) error, rerr error) {
 	clientKey := ls.src.SharedKeyHint
 	ls.perClientMu.Lock(clientKey)

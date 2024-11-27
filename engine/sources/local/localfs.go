@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/containerd/continuity/sysx"
@@ -51,7 +50,7 @@ type localFS struct {
 	excludes []string
 }
 
-func NewLocalFS(sharedState *localFSSharedState, subdir string, includes, excludes []string) (*localFS, error) {
+func newLocalFS(sharedState *localFSSharedState, subdir string, includes, excludes []string) (*localFS, error) {
 	baseFS, err := fsutil.NewFS(filepath.Join(sharedState.rootPath, subdir))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create base fs: %w", err)
@@ -677,64 +676,6 @@ func (s *StatInfo) Info() (fs.FileInfo, error) {
 	return s, nil
 }
 
-func fsStatFromOs(fullPath string, fi os.FileInfo) (*types.Stat, error) {
-	var link string
-	if fi.Mode()&os.ModeSymlink != 0 {
-		var err error
-		link, err = os.Readlink(fullPath)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	stat := &types.Stat{
-		Mode:     uint32(fi.Mode()),
-		Size_:    fi.Size(),
-		ModTime:  fi.ModTime().UnixNano(),
-		Linkname: link,
-	}
-
-	if fi.Mode()&os.ModeSymlink != 0 {
-		stat.Mode = stat.Mode | 0777
-	}
-
-	if err := setUnixOpt(fullPath, fi, stat); err != nil {
-		return nil, err
-	}
-
-	return stat, nil
-}
-
-func setUnixOpt(path string, fi os.FileInfo, stat *types.Stat) error {
-	s := fi.Sys().(*syscall.Stat_t)
-
-	stat.Uid = s.Uid
-	stat.Gid = s.Gid
-
-	if !fi.IsDir() {
-		if s.Mode&syscall.S_IFLNK == 0 && (s.Mode&syscall.S_IFBLK != 0 ||
-			s.Mode&syscall.S_IFCHR != 0) {
-			stat.Devmajor = int64(unix.Major(uint64(s.Rdev)))
-			stat.Devminor = int64(unix.Minor(uint64(s.Rdev)))
-		}
-	}
-
-	attrs, err := sysx.LListxattr(path)
-	if err != nil {
-		return err
-	}
-	if len(attrs) > 0 {
-		stat.Xattrs = map[string][]byte{}
-		for _, attr := range attrs {
-			v, err := sysx.LGetxattr(path, attr)
-			if err == nil {
-				stat.Xattrs[attr] = v
-			}
-		}
-	}
-	return nil
-}
-
 type HashedStatInfo struct {
 	StatInfo
 	dgst digest.Digest
@@ -759,19 +700,11 @@ func rewriteMetadata(p string, upperStat *types.Stat) error {
 		}
 	}
 
-	if err := chtimes(p, upperStat.ModTime); err != nil {
-		return fmt.Errorf("failed to change mod time: %w", err)
-	}
-
-	return nil
-}
-
-func chtimes(path string, un int64) error {
 	var utimes [2]unix.Timespec
-	utimes[0] = unix.NsecToTimespec(un)
+	utimes[0] = unix.NsecToTimespec(upperStat.ModTime)
 	utimes[1] = utimes[0]
 
-	if err := unix.UtimesNanoAt(unix.AT_FDCWD, path, utimes[0:], unix.AT_SYMLINK_NOFOLLOW); err != nil {
+	if err := unix.UtimesNanoAt(unix.AT_FDCWD, p, utimes[0:], unix.AT_SYMLINK_NOFOLLOW); err != nil {
 		return fmt.Errorf("failed to call utimes: %w", err)
 	}
 
