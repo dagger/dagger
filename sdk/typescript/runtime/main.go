@@ -57,7 +57,7 @@ func New(
 	}
 }
 
-type packageJsonConfig struct {
+type packageJSONConfig struct {
 	PackageManager string `json:"packageManager"`
 	Dagger         *struct {
 		BaseImage string `json:"baseImage"`
@@ -71,7 +71,7 @@ type moduleConfig struct {
 
 	// Custom base image
 	image             string
-	packageJsonConfig *packageJsonConfig
+	packageJSONConfig *packageJSONConfig
 
 	packageManager        SupportedPackageManager
 	packageManagerVersion string
@@ -330,7 +330,7 @@ func (t *TypescriptSdk) configureModule(ctr *dagger.Container) *dagger.Container
 
 	// If there's a package.json, run the tsconfig updator script and install the genDir.
 	// else, copy the template config files.
-	if t.moduleConfig.packageJsonConfig != nil {
+	if t.moduleConfig.packageJSONConfig != nil {
 		if runtime == Bun {
 			ctr = ctr.
 				WithExec([]string{"bun", "/opt/module/bin/__tsconfig.updator.ts"}).
@@ -386,12 +386,12 @@ func (t *TypescriptSdk) generateClient(ctr *dagger.Container, introspectionJSON 
 // it's version.
 //
 // Note: This function must be called after `detectRuntime`.
-func (t *TypescriptSdk) detectBaseImageRef(ctx context.Context) (string, error) {
+func (t *TypescriptSdk) detectBaseImageRef() (string, error) {
 	runtime := t.moduleConfig.runtime
 	version := t.moduleConfig.runtimeVersion
 
-	if t.moduleConfig.packageJsonConfig != nil && t.moduleConfig.packageJsonConfig.Dagger != nil {
-		value := t.moduleConfig.packageJsonConfig.Dagger.BaseImage
+	if t.moduleConfig.packageJSONConfig != nil && t.moduleConfig.packageJSONConfig.Dagger != nil {
+		value := t.moduleConfig.packageJSONConfig.Dagger.BaseImage
 		if value != "" {
 			return value, nil
 		}
@@ -422,10 +422,10 @@ func (t *TypescriptSdk) detectBaseImageRef(ctx context.Context) (string, error) 
 // If none of the above is present, node will be used.
 //
 // If the runtime is detected and pinned to a specific version, it will also return the pinned version.
-func (t *TypescriptSdk) detectRuntime(ctx context.Context) error {
+func (t *TypescriptSdk) detectRuntime() error {
 	// If we find a package.json, we check if the runtime is specified in `dagger.runtime` field.
-	if t.moduleConfig.packageJsonConfig != nil && t.moduleConfig.packageJsonConfig.Dagger != nil {
-		value := t.moduleConfig.packageJsonConfig.Dagger.Runtime
+	if t.moduleConfig.packageJSONConfig != nil && t.moduleConfig.packageJSONConfig.Dagger != nil {
+		value := t.moduleConfig.packageJSONConfig.Dagger.Runtime
 		if value != "" {
 			// Retrieve the runtime and version from the value (e.g., node@lts, bun@1)
 			// If version isn't specified, version will be an empty string and only the runtime will be used in Base.
@@ -470,15 +470,15 @@ func (t *TypescriptSdk) detectRuntime(ctx context.Context) error {
 //
 // Except if the package.json has an invalid value in field "packageManager", this
 // function should never return an error.
-func (t *TypescriptSdk) detectPackageManager(ctx context.Context) (SupportedPackageManager, string, error) {
+func (t *TypescriptSdk) detectPackageManager() (SupportedPackageManager, string, error) {
 	// If the runtime is Bun, we should use BunManager
 	if t.moduleConfig.runtime == Bun {
 		return BunManager, "", nil
 	}
 
 	// If we find a package.json, we check if the packageManager is specified in `packageManager` field.
-	if t.moduleConfig.packageJsonConfig != nil {
-		value := t.moduleConfig.packageJsonConfig.PackageManager
+	if t.moduleConfig.packageJSONConfig != nil {
+		value := t.moduleConfig.packageJSONConfig.PackageManager
 		if value != "" {
 			// Retrieve the package manager and version from the value (e.g., yarn@4.2.0, pnpm@8.5.1)
 			packageManager, version, _ := strings.Cut(value, "@")
@@ -598,7 +598,7 @@ func (t *TypescriptSdk) analyzeModuleConfig(ctx context.Context, modSource *dagg
 		t.moduleConfig = &moduleConfig{
 			entries:           make(map[string]bool),
 			runtime:           Node,
-			packageJsonConfig: nil,
+			packageJSONConfig: nil,
 		}
 	}
 
@@ -625,30 +625,30 @@ func (t *TypescriptSdk) analyzeModuleConfig(ctx context.Context, modSource *dagg
 	}
 
 	if t.moduleConfig.hasFile("package.json") {
-		var packageJsonConfig packageJsonConfig
+		var packageJSONConfig packageJSONConfig
 
 		content, err := t.moduleConfig.source.File("package.json").Contents(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to read package.json: %w", err)
 		}
 
-		if err := json.Unmarshal([]byte(content), &packageJsonConfig); err != nil {
+		if err := json.Unmarshal([]byte(content), &packageJSONConfig); err != nil {
 			return fmt.Errorf("failed to unmarshal package.json: %w", err)
 		}
 
-		t.moduleConfig.packageJsonConfig = &packageJsonConfig
+		t.moduleConfig.packageJSONConfig = &packageJSONConfig
 	}
 
-	if err := t.detectRuntime(ctx); err != nil {
+	if err := t.detectRuntime(); err != nil {
 		return fmt.Errorf("failed to detect module runtime: %w", err)
 	}
 
-	t.moduleConfig.packageManager, t.moduleConfig.packageManagerVersion, err = t.detectPackageManager(ctx)
+	t.moduleConfig.packageManager, t.moduleConfig.packageManagerVersion, err = t.detectPackageManager()
 	if err != nil {
 		return fmt.Errorf("failed to detect package manager: %w", err)
 	}
 
-	t.moduleConfig.image, err = t.detectBaseImageRef(ctx)
+	t.moduleConfig.image, err = t.detectBaseImageRef()
 	if err != nil {
 		return fmt.Errorf("failed to detect base image ref: %w", err)
 	}
