@@ -425,10 +425,6 @@ type CacheRefMetadata struct {
 	cache.RefMetadata
 }
 
-func (md CacheRefMetadata) getSharedKey() string {
-	return md.GetString(keySharedKey)
-}
-
 func (md CacheRefMetadata) setSharedKey(key string) error {
 	return md.SetString(keySharedKey, key, sharedKeyIndex+key)
 }

@@ -55,7 +55,7 @@ func (srv *Server) newBuildkitSession(ctx context.Context, c *daggerClient) (*bk
 
 			// Disable collecting otel metrics on these grpc connections for now. We don't use them and
 			// they add noticeable memory allocation overhead, especially for heavy filesync use cases.
-			ctx = trace.ContextWithSpan(ctx, trace.SpanFromContext(nil))
+			ctx = trace.ContextWithSpan(ctx, trace.SpanFromContext(nil)) //nolint:staticcheck // we have to provide a nil context...
 
 			err := srv.bkSessionManager.HandleConn(ctx, serverConn, meta)
 			if err != nil {

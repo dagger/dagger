@@ -68,7 +68,7 @@ func IdentifierFromPB(op *pb.SourceOp) (*SourceIdentifier, error) {
 		return nil, fmt.Errorf("invalid blob source identifier %q", op.Identifier)
 	}
 	bs := &blobSource{}
-	return bs.identifier(ref, op.GetAttrs(), nil)
+	return bs.identifier(ref)
 }
 
 func NewSource(opt Opt) (source.Source, error) {
@@ -83,10 +83,10 @@ func (bs *blobSource) Schemes() []string {
 }
 
 func (bs *blobSource) Identifier(scheme, ref string, sourceAttrs map[string]string, p *pb.Platform) (source.Identifier, error) {
-	return bs.identifier(ref, sourceAttrs, p)
+	return bs.identifier(ref)
 }
 
-func (bs *blobSource) identifier(ref string, sourceAttrs map[string]string, _ *pb.Platform) (*SourceIdentifier, error) {
+func (bs *blobSource) identifier(ref string) (*SourceIdentifier, error) {
 	dgst, err := digest.Parse(ref)
 	if err != nil {
 		return nil, fmt.Errorf("invalid blob digest %q: %w", ref, err)

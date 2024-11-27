@@ -736,8 +736,8 @@ func (LocalDirSuite) TestLocalHardlinks(ctx context.Context, t *testctx.T) {
 		fstest.Link("dirB/b", "c"),
 
 		// NOTE: due to the fact that content digests don't account for hardlink status, just the actual
-		// file contents whether or not it is hardlinked elsewhere, we actually end up with the same digest
-		// as the previous load and thus still export the hardlinked "z" file as opposed to the standalone
+		// file contents whether or not it is hardlink'd elsewhere, we actually end up with the same digest
+		// as the previous load and thus still export the hardlink'd "z" file as opposed to the standalone
 		// one (which is otherwise identical).
 		//
 		// This is debatable behavior but given the various inconstencies around how hardlinks are handled

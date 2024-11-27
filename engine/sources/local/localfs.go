@@ -80,7 +80,7 @@ func newLocalFS(sharedState *localFSSharedState, subdir string, includes, exclud
 // NOTE: This currently does not handle resetting parent dir modtimes to match the client. This matches
 // upstream for now and avoids extra performance overhead + complication until a need for those modtimes
 // matching the client's is proven.
-func (local *localFS) Sync(
+func (local *localFS) Sync( //nolint:gocyclo
 	ctx context.Context,
 	remote ReadFS,
 	cacheManager cache.Accessor,
