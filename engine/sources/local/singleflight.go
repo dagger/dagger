@@ -5,8 +5,9 @@ import (
 	"sync"
 )
 
-// TODO: doc why (bk's has too much overhead, need cache ref counting + context handling)
-// TODO: consolidate w/ dagql.CacheMap someday
+// SingleflightGroup is similar to sync.Singleflight but:
+// 1. Handles context cancellation (ctx provided to callback is only cancelled once no one is waiting on the result)
+// 2. Caches results until all returned CachedResults are released
 type SingleflightGroup[K comparable, V any] struct {
 	mu    sync.Mutex
 	calls map[K]*CachedResult[K, V]

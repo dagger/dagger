@@ -14,7 +14,6 @@ import (
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/filesync"
 	"github.com/tonistiigi/fsutil/types"
-	"golang.org/x/sync/errgroup"
 )
 
 type remoteFS struct {
@@ -25,7 +24,6 @@ type remoteFS struct {
 
 	startOnce   sync.Once
 	client      filesync.FileSync_DiffCopyClient
-	eg          errgroup.Group
 	filesMu     sync.RWMutex
 	filesByPath map[string]*remoteFile
 	filesByID   map[uint32]*remoteFile
@@ -44,6 +42,14 @@ func newRemoteFS(
 	}
 }
 
+// Walk implements WalkFS for the remote client's filesystem. It can only be called once for a given remoteFS instance.
+// The protocol is talking to an fsutil client. The gist of the idea is:
+//   - The client starts walking its filesystem and sending stats for every path it hits. We receive those msgs in the same
+//     order they were sent.
+//   - It keeps track of an int ID for each file it sends a stat for, which can be consistent between us and the client due
+//     the ordering guarantee mentioned above.
+//   - We can ask for the contents of a given file by sending a msg to it with type PACKET_REQ and the ID of the file we want.
+//     It will then send the file contents in chunks with type PACKET_DATA and the ID of the file.
 func (fs *remoteFS) Walk(ctx context.Context, path string, walkFn fs.WalkDirFunc) error {
 	var started bool
 	fs.startOnce.Do(func() {
@@ -104,7 +110,7 @@ func (fs *remoteFS) Walk(ctx context.Context, path string, walkFn fs.WalkDirFunc
 					continue
 				}
 
-				// normalize unix wire-specific paths to platform-specific paths
+				// handle windows paths
 				path := filepath.FromSlash(pkt.Stat.Path)
 				if filepath.ToSlash(path) != pkt.Stat.Path {
 					// e.g. a linux path foo/bar\baz cannot be represented on windows
@@ -174,6 +180,7 @@ func (fs *remoteFS) Walk(ctx context.Context, path string, walkFn fs.WalkDirFunc
 	}
 }
 
+// ReadFile implements ReadFS for the remote client's filesystem. It can only be called while a Walk is in progress.
 func (fs *remoteFS) ReadFile(ctx context.Context, path string) (io.ReadCloser, error) {
 	fs.filesMu.RLock()
 	rFile, ok := fs.filesByPath[path]

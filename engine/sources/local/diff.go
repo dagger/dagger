@@ -33,6 +33,18 @@ func changeKindString(kind ChangeKind) string {
 
 type ChangeFunc func(kind ChangeKind, path string, lowerStat, upperStat *types.Stat) error
 
+// This is based on a combination of containerd's diff implementation and buildkit's (which is itself
+// based on containerd's). Main change is to accept WalkFS interfaces.
+// https://github.com/tonistiigi/fsutil/blob/0789dc562bd7099bec7be479164e261ac5334f5f/diff_containerd.go#L15
+// https://github.com/containerd/continuity/blob/44e2adf7e9cd87330f3ad656e7a006ef91ed8c1e/fs/diff.go#L273
+//
+// The gist of the idea is that the lower+upper filesystems are walked in the same order with the same
+// include/exclude rules applied. For a given walk iteration:
+// - If the next paths from each walk are not the same, there must be either an addition or deletion
+// - If the next paths from each walk *are* the same, then stats are compared to determine if any changes exist between the two
+//
+// When comparing regular files, the file size + modtime are used as a proxy for file contents, which avoids the client needing
+// to make expensive file content hashes everytime.
 func doubleWalkDiff(ctx context.Context, eg *errgroup.Group, lower, upper WalkFS, changeFn ChangeFunc) {
 	var (
 		lowerPathCh = make(chan *currentPath, 128)
@@ -144,7 +156,6 @@ func pathChange(lower, upper *currentPath) (ChangeKind, string) {
 }
 
 func comparePath(p1, p2 string) int {
-	// byte-by-byte comparison to be compatible with str<>str
 	min := min(len(p1), len(p2))
 	for i := 0; i < min; i++ {
 		switch {

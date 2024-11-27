@@ -72,6 +72,11 @@ func newLocalFS(sharedState *localFSSharedState, subdir string, includes, exclud
 	}, nil
 }
 
+// Sync the given remote fs into the local fs, returning an immutable cache ref containing the files+dirs
+// as they appear in the client at the synced in path.
+//
+// If forParents is true, only the parent directories are synced and no cache ref is returned.
+//
 // NOTE: This currently does not handle resetting parent dir modtimes to match the client. This matches
 // upstream for now and avoids extra performance overhead + complication until a need for those modtimes
 // matching the client's is proven.
@@ -80,11 +85,12 @@ func (local *localFS) Sync(
 	remote ReadFS,
 	cacheManager cache.Accessor,
 	session session.Group,
-	// TODO: ugly af
 	forParents bool,
 ) (_ cache.ImmutableRef, rerr error) {
-	var newCopyRef cache.MutableRef
-	var cacheCtx bkcontenthash.CacheContext
+	var newCopyRef cache.MutableRef         // the mutable ref we will copy into with the frozen files+dirs if needed
+	var cacheCtx bkcontenthash.CacheContext // track file+dir hashes
+
+	// skip creating a cache ref if we're only syncing parent dirs
 	if !forParents {
 		var err error
 		newCopyRef, err = cacheManager.New(ctx, nil, nil)
@@ -108,6 +114,15 @@ func (local *localFS) Sync(
 
 	eg, egCtx := errgroup.WithContext(ctx)
 
+	// When a file or dir is added, modified, or deleted, we need to apply the change to the local fs. The local.g
+	// keeps track of which modifications we have made during this sync on a per-path basis. This is shared between
+	// all syncs to the local fs cache ref. That allows us to both de-dupe equivalent changes and to know when
+	// conflicting changes are being applied (due to the client filesystem changing during this sync), which would
+	// otherwise create inconsistent synced filesystems.
+	//
+	// We need to release all the cache results from local.g once we are done here to indicate that we no longer
+	// care about any future changes made to the paths we hit during the sync, allowing any future changes made
+	// on the client filesystem to be synced in without a conflict error.
 	var cachedResults []*CachedResult[string, *ChangeWithStat]
 	var cachedResultsMu sync.Mutex
 	defer func() {
@@ -116,6 +131,9 @@ func (local *localFS) Sync(
 		}
 	}()
 
+	// Hardlinks are a bit hard; we can't create them until their source file exists but we sync in files asynchronously.
+	// To deal with this we keep track of the hardlinks we need to make and apply them all at once after everything else
+	// is done.
 	type hardlinkChange struct {
 		kind      ChangeKind
 		path      string
@@ -205,7 +223,7 @@ func (local *localFS) Sync(
 			cachedResultsMu.Lock()
 			cachedResults = append(cachedResults, appliedChange)
 			cachedResultsMu.Unlock()
-			// no need to apply removals to the cacheCtx
+			// no need to apply removals to the cacheCtx since it starts empty every Sync call.
 			return nil
 
 		case ChangeKindNone:
@@ -249,6 +267,7 @@ func (local *localFS) Sync(
 	}
 
 	if forParents {
+		// we created the parent dirs, nothing else to do now
 		return nil, nil
 	}
 
@@ -260,6 +279,8 @@ func (local *localFS) Sync(
 		return nil, fmt.Errorf("failed to checksum: %w", err)
 	}
 
+	// If we have already created a cache ref with the same content hash, use that instead of copying
+	// another equivalent one.
 	sis, err := contenthash.SearchContentHash(ctx, cacheManager, dgst)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search content hash: %w", err)
@@ -383,7 +404,16 @@ func (local *localFS) toRootPath(path string) string {
 	return filepath.Join(local.subdir, path)
 }
 
-// TODO: comment on the logic here, a bit subtle (i.e. why we don't verifyExpectedChange)
+// GetPreviousChange is called when the differ indentifies that our cache and the client's cache match at this path.
+// We still need to put this into the cacheCtx object we are accumulating so that the path contributes to the content
+// hash.
+//
+// For non-regular files (dirs, symlinks, etc.) we just base the hash on the stat, which we already have from the differ.
+//
+// For regular files, we also need to include the content hash of the file contents, which would be expensive to re-run.
+// Instead, the WriteFile method stores the hash in an xattr, which we just read here.
+//
+// Unlike other methods below, we don't need to verifyExpectedChange since there was no change applied to the path.
 func (local *localFS) GetPreviousChange(ctx context.Context, path string, stat *types.Stat) (*CachedResult[string, *ChangeWithStat], error) {
 	rootPath := local.toRootPath(path)
 	return local.g.Do(ctx, rootPath, func(_ context.Context) (*ChangeWithStat, error) {
@@ -562,7 +592,7 @@ func (local *localFS) Hardlink(ctx context.Context, expectedChangeKind ChangeKin
 
 var copyBufferPool = &sync.Pool{
 	New: func() interface{} {
-		buffer := make([]byte, 32*1024) // same default size as io.Copy
+		buffer := make([]byte, 32*1024) // same size that fsutil.Send chunks files into
 		return &buffer
 	},
 }
@@ -612,6 +642,7 @@ func (local *localFS) WriteFile(ctx context.Context, expectedChangeKind ChangeKi
 			return nil, fmt.Errorf("failed to rewrite file metadata: %w", err)
 		}
 
+		// store the hash in an xattr so GetPreviousChange above can use that instead of re-hashing the file
 		dgst := digest.NewDigest(XXH3, h)
 		if err := sysx.Setxattr(fullPath, hashXattrKey, []byte(dgst.String()), 0); err != nil {
 			return nil, fmt.Errorf("failed to set content hash xattr: %w", err)
@@ -711,6 +742,8 @@ func rewriteMetadata(p string, upperStat *types.Stat) error {
 	return nil
 }
 
+// Check that the change applied by mutating methods is actually the one we thought we were applying. If not, the client
+// filesystem changed during the sync and we need to error out to avoid inconsistencies.
 func verifyExpectedChange(path string, appliedChange *ChangeWithStat, expectedKind ChangeKind, expectedStat *types.Stat) error {
 	if appliedChange.kind == ChangeKindDelete || expectedKind == ChangeKindDelete {
 		if appliedChange.kind != expectedKind {

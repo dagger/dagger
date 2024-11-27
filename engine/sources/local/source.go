@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/docker/docker/pkg/idtools"
 	"github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/session"
@@ -146,6 +145,7 @@ func (ls *localSourceHandler) CacheKey(ctx context.Context, g session.Group, ind
 func (ls *localSourceHandler) Snapshot(ctx context.Context, g session.Group) (cache.ImmutableRef, error) {
 	sessionID := ls.src.SessionID
 	if sessionID == "" {
+		// should only happen in Dockerfile cases
 		return ls.snapshotWithAnySession(ctx, g)
 	}
 
@@ -155,16 +155,12 @@ func (ls *localSourceHandler) Snapshot(ctx context.Context, g session.Group) (ca
 
 	caller, err := ls.sm.Get(timeoutCtx, sessionID, false)
 	if err != nil {
-		return ls.snapshotWithAnySession(ctx, g)
+		return nil, fmt.Errorf("failed to get session: %w", err)
 	}
 
 	ref, err := ls.snapshot(ctx, g, caller)
 	if err != nil {
-		var serr filesync.InvalidSessionError
-		if errors.As(err, &serr) {
-			return ls.snapshotWithAnySession(ctx, g)
-		}
-		return nil, err
+		return nil, fmt.Errorf("failed to get snapshot: %w", err)
 	}
 	return ref, nil
 }
@@ -206,6 +202,7 @@ func (ls *localSourceHandler) snapshot(ctx context.Context, session session.Grou
 	}()
 
 	clientPath := ls.src.Name
+	// We need the full abs path since the cache ref we sync into holds every dir from this client's root
 	// TODO: IsAbs is probably wrong for windows clients
 	if !filepath.IsAbs(clientPath) {
 		statCtx := engine.LocalImportOpts{
@@ -242,6 +239,7 @@ func (ls *localSourceHandler) sync(
 	session session.Group,
 	caller session.Caller,
 ) (_ cache.ImmutableRef, rerr error) {
+	// first ensure that all the parent dirs under the client's rootfs (above the given clientPath) are synced in correctly
 	if err := ls.syncParentDirs(ctx, ref, clientPath, caller); err != nil {
 		return nil, fmt.Errorf("failed to sync parent dirs: %w", err)
 	}
@@ -251,8 +249,8 @@ func (ls *localSourceHandler) sync(
 		cancel(rerr)
 	}()
 
+	// now sync in the clientPath dir
 	remote := newRemoteFS(caller, clientPath, ls.src.IncludePatterns, ls.src.ExcludePatterns)
-
 	local, err := newLocalFS(ref.sharedState, clientPath, ls.src.IncludePatterns, ls.src.ExcludePatterns)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create local fs: %w", err)
@@ -275,6 +273,9 @@ func (ls *localSourceHandler) syncParentDirs(
 		WithField("parentSync", "y"),
 	)
 
+	// include *just* the parent dirs, nothing else
+	// TODO: the client side implementation of all this isn't incredibly efficient, it stats every dirent under the
+	// the root rather than just sending us the stats of the parent dirs. Not a huge bottleneck most likely.
 	include := strings.TrimPrefix(strings.TrimSuffix(clientPath, "/"), "/")
 	includes := []string{include}
 	exclude := include + "/*"
@@ -299,18 +300,18 @@ type filesyncCacheRef struct {
 
 	mounter snapshot.Mounter
 	mntPath string
-	idmap   *idtools.IdentityMapping
 
 	sharedState *localFSSharedState
 
 	usageCount int
 }
 
+// get the cache ref for the client, loading it if not already
 func (ls *localSourceHandler) getRef(
 	ctx context.Context,
 	session session.Group,
 ) (_ *filesyncCacheRef, _ func(context.Context) error, rerr error) {
-	clientKey := ls.src.SharedKeyHint
+	clientKey := ls.src.SharedKeyHint // this is the clientMetadata.ClientStableID
 	ls.perClientMu.Lock(clientKey)
 	defer ls.perClientMu.Unlock(clientKey)
 
@@ -369,8 +370,6 @@ func (ls *localSourceHandler) getRef(
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to mount: %w", err)
 		}
-
-		ref.idmap = mntable.IdentityMapping()
 
 		ref.sharedState = &localFSSharedState{
 			rootPath: ref.mntPath,
