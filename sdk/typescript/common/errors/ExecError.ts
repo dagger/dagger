@@ -45,8 +45,4 @@ export class ExecError extends DaggerSDKError {
     this.stdout = options.stdout
     this.stderr = options.stderr
   }
-
-  toString(): string {
-    return `${super.toString()}\nStdout:\n${this.stdout}\nStderr:\n${this.stderr}`
-  }
 }

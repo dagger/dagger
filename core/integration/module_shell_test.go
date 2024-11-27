@@ -82,17 +82,17 @@ func (ShellSuite) TestNoModule(ctx context.Context, t *testctx.T) {
 
 	t.Run("first command no fallback to core", func(ctx context.Context, t *testctx.T) {
 		_, err := modGen.With(daggerShell("container")).Sync(ctx)
-		require.ErrorContains(t, err, "module not loaded")
+		requireErrOut(t, err, "module not loaded")
 	})
 
 	t.Run("module builtin does not work", func(ctx context.Context, t *testctx.T) {
 		_, err := modGen.With(daggerShell(".config")).Sync(ctx)
-		require.ErrorContains(t, err, "module not loaded")
+		requireErrOut(t, err, "module not loaded")
 	})
 
 	t.Run("no main object doc", func(ctx context.Context, t *testctx.T) {
 		_, err := modGen.With(daggerShell(".config")).Sync(ctx)
-		require.ErrorContains(t, err, "module not loaded")
+		requireErrOut(t, err, "module not loaded")
 	})
 }
 
@@ -111,7 +111,7 @@ func (ShellSuite) TestNoLoadModule(ctx context.Context, t *testctx.T) {
 		_, err := modInit(t, c, "go", "").
 			With(daggerShellNoLoad(".config")).
 			Sync(ctx)
-		require.ErrorContains(t, err, "module not loaded")
+		requireErrOut(t, err, "module not loaded")
 	})
 
 	t.Run("dynamically loaded", func(ctx context.Context, t *testctx.T) {
@@ -202,7 +202,7 @@ func (ShellSuite) TestNotExists(ctx context.Context, t *testctx.T) {
 	_, err := modInit(t, c, "go", "").
 		With(daggerShell("container")).
 		Sync(ctx)
-	require.ErrorContains(t, err, "no such function")
+	requireErrOut(t, err, "no such function")
 }
 
 func (ShellSuite) TestIntegerArg(ctx context.Context, t *testctx.T) {

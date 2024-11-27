@@ -116,7 +116,7 @@ func (GoSuite) TestInit(ctx context.Context, t *testctx.T) {
 
 		t.Run("no new go.mod", func(ctx context.Context, t *testctx.T) {
 			_, err := modGen.File("dagger/go.mod").Contents(ctx)
-			require.ErrorContains(t, err, "no such file or directory")
+			requireErrOut(t, err, "no such file or directory")
 		})
 	})
 
@@ -465,7 +465,7 @@ func main() {
 			With(daggerQuery(`{hasGoMod{containerEcho(stringArg:"hello"){stdout}}}`)).
 			Stdout(ctx)
 		require.Error(t, err)
-		require.Regexp(t, "existing go.mod does not", err.Error())
+		requireErrOut(t, err, "existing go.mod does not")
 	})
 
 	t.Run("do not merge go.mod with parent", func(ctx context.Context, t *testctx.T) {
@@ -1567,7 +1567,7 @@ func (m *Test) Fn() (*dagger.DepObj, error) {
 				With(daggerFunctions()).
 				Stdout(ctx)
 			require.Error(t, err)
-			require.ErrorContains(t, err, fmt.Sprintf(
+			requireErrOut(t, err, fmt.Sprintf(
 				"object %q function %q cannot return external type from dependency module %q",
 				"Test", "Fn", "dep",
 			))
@@ -1589,7 +1589,7 @@ func (m *Test) Fn() ([]*dagger.DepObj, error) {
 				With(daggerFunctions()).
 				Stdout(ctx)
 			require.Error(t, err)
-			require.ErrorContains(t, err, fmt.Sprintf(
+			requireErrOut(t, err, fmt.Sprintf(
 				"object %q function %q cannot return external type from dependency module %q",
 				"Test", "Fn", "dep",
 			))
@@ -1612,7 +1612,7 @@ func (m *Test) Fn(obj *dagger.DepObj) error {
 				With(daggerFunctions()).
 				Stdout(ctx)
 			require.Error(t, err)
-			require.ErrorContains(t, err, fmt.Sprintf(
+			requireErrOut(t, err, fmt.Sprintf(
 				"object %q function %q arg %q cannot reference external type from dependency module %q",
 				"Test", "Fn", "obj", "dep",
 			))
@@ -1633,7 +1633,7 @@ func (m *Test) Fn(obj []*dagger.DepObj) error {
 				With(daggerFunctions()).
 				Stdout(ctx)
 			require.Error(t, err)
-			require.ErrorContains(t, err, fmt.Sprintf(
+			requireErrOut(t, err, fmt.Sprintf(
 				"object %q function %q arg %q cannot reference external type from dependency module %q",
 				"Test", "Fn", "obj", "dep",
 			))
@@ -1661,7 +1661,7 @@ func (m *Test) Fn() (*Obj, error) {
 				With(daggerFunctions()).
 				Stdout(ctx)
 			require.Error(t, err)
-			require.ErrorContains(t, err, fmt.Sprintf(
+			requireErrOut(t, err, fmt.Sprintf(
 				"object %q field %q cannot reference external type from dependency module %q",
 				"Obj", "Foo", "dep",
 			))
@@ -1687,7 +1687,7 @@ func (m *Test) Fn() (*Obj, error) {
 				With(daggerFunctions()).
 				Stdout(ctx)
 			require.Error(t, err)
-			require.ErrorContains(t, err, fmt.Sprintf(
+			requireErrOut(t, err, fmt.Sprintf(
 				"object %q field %q cannot reference external type from dependency module %q",
 				"Obj", "Foo", "dep",
 			))

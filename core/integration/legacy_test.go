@@ -411,10 +411,10 @@ func (m *Test) NoExec(ctx context.Context) *dagger.Container {
 	require.JSONEq(t, `{"test": {"stdout": "hello\n", "stderr": "goodbye\n"}}`, out)
 
 	_, err = modGen.With(daggerCall("no-exec", "stdout")).Stdout(ctx)
-	require.ErrorContains(t, err, "no command has been set")
+	requireErrOut(t, err, "no command has been set")
 
 	_, err = modGen.With(daggerCall("no-exec", "stderr")).Stdout(ctx)
-	require.ErrorContains(t, err, "no command has been set")
+	requireErrOut(t, err, "no command has been set")
 }
 
 func (LegacySuite) TestReturnVoid(ctx context.Context, t *testctx.T) {
@@ -676,7 +676,7 @@ func (m *Test) GetContents(ctx context.Context, cmtID string) (string, error) {
 		}`, &res, &testutil.QueryOptions{
 			Version: "v0.12.6",
 		})
-	require.ErrorContains(t, err, ".git/HEAD: no such file or directory")
+	requireErrOut(t, err, ".git/HEAD: no such file or directory")
 }
 
 func (LegacySuite) TestGoUnscopedEnumValues(ctx context.Context, t *testctx.T) {

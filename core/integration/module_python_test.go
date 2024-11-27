@@ -69,7 +69,7 @@ func (PythonSuite) TestInit(ctx context.Context, t *testctx.T) {
 			With(daggerExec("develop", "--sdk=python", "--source=.")).
 			Sync(ctx)
 
-		require.ErrorContains(t, err, "no python files found")
+		requireErrOut(t, err, "no python files found")
 	})
 
 	t.Run("uses expected field casing", func(ctx context.Context, t *testctx.T) {
@@ -114,7 +114,7 @@ func (PythonSuite) TestInit(ctx context.Context, t *testctx.T) {
 			With(daggerQuery(`{helloWorld(myName: "Monde"){message}}`)).
 			Stdout(ctx)
 
-		require.ErrorContains(t, err, "merge is only supported")
+		requireErrOut(t, err, "merge is only supported")
 	})
 
 	t.Run("init module in .dagger if files present in current dir", func(ctx context.Context, t *testctx.T) {
@@ -815,8 +815,8 @@ func (PythonSuite) TestUv(ctx context.Context, t *testctx.T) {
 			Stdout(ctx)
 
 		t.Logf("out: %s", out)
-		require.ErrorContains(t, err, "pip is looking at multiple versions of test")
-		require.ErrorContains(t, err, "requires a different Python")
+		requireErrOut(t, err, "pip is looking at multiple versions of test")
+		requireErrOut(t, err, "requires a different Python")
 	})
 
 	t.Run("pinned version", func(ctx context.Context, t *testctx.T) {
@@ -968,8 +968,9 @@ class Test:
 				With(daggerInitPython()).
 				Sync(ctx)
 
-				// hatchling is a build requirement so it will fail to build if the index is unreachable
-			require.ErrorContains(t, err, "hatchling")
+			// hatchling is a build requirement so it will fail to build if the index
+			// is unreachable
+			requireErrOut(t, err, "hatchling")
 		})
 	})
 }
@@ -1415,7 +1416,7 @@ func (PythonSuite) TestDocs(ctx context.Context, t *testctx.T) {
         `)
 
 		_, err := modGen.With(daggerCall("--help")).Sync(ctx)
-		require.ErrorContains(t, err, "InitVar[typing.Annotated[str, Doc('A URL')]]")
+		requireErrOut(t, err, "InitVar[typing.Annotated[str, Doc('A URL')]]")
 	})
 
 	t.Run("alternative constructor", func(ctx context.Context, t *testctx.T) {
@@ -1647,7 +1648,7 @@ func (PythonSuite) TestWithOtherModuleTypes(ctx context.Context, t *testctx.T) {
 				With(daggerFunctions()).
 				Sync(ctx)
 			require.Error(t, err)
-			require.ErrorContains(t, err, fmt.Sprintf(
+			requireErrOut(t, err, fmt.Sprintf(
 				"object %q function %q cannot return external type from dependency module %q",
 				"Test", "fn", "dep",
 			))
@@ -1667,7 +1668,7 @@ func (PythonSuite) TestWithOtherModuleTypes(ctx context.Context, t *testctx.T) {
 				With(daggerFunctions()).
 				Sync(ctx)
 			require.Error(t, err)
-			require.ErrorContains(t, err, fmt.Sprintf(
+			requireErrOut(t, err, fmt.Sprintf(
 				"object %q function %q cannot return external type from dependency module %q",
 				"Test", "fn", "dep",
 			))
@@ -1688,7 +1689,7 @@ func (PythonSuite) TestWithOtherModuleTypes(ctx context.Context, t *testctx.T) {
 				With(daggerFunctions()).
 				Sync(ctx)
 			require.Error(t, err)
-			require.ErrorContains(t, err, fmt.Sprintf(
+			requireErrOut(t, err, fmt.Sprintf(
 				"object %q function %q arg %q cannot reference external type from dependency module %q",
 				"Test", "fn", "obj", "dep",
 			))
@@ -1707,7 +1708,7 @@ func (PythonSuite) TestWithOtherModuleTypes(ctx context.Context, t *testctx.T) {
 				With(daggerFunctions()).
 				Sync(ctx)
 			require.Error(t, err)
-			require.ErrorContains(t, err, fmt.Sprintf(
+			requireErrOut(t, err, fmt.Sprintf(
 				"object %q function %q arg %q cannot reference external type from dependency module %q",
 				"Test", "fn", "obj", "dep",
 			))
@@ -1733,7 +1734,7 @@ func (PythonSuite) TestWithOtherModuleTypes(ctx context.Context, t *testctx.T) {
 				With(daggerFunctions()).
 				Sync(ctx)
 			require.Error(t, err)
-			require.ErrorContains(t, err, fmt.Sprintf(
+			requireErrOut(t, err, fmt.Sprintf(
 				"object %q field %q cannot reference external type from dependency module %q",
 				"Obj", "foo", "dep",
 			))
@@ -1757,7 +1758,7 @@ func (PythonSuite) TestWithOtherModuleTypes(ctx context.Context, t *testctx.T) {
 				With(daggerFunctions()).
 				Sync(ctx)
 			require.Error(t, err)
-			require.ErrorContains(t, err, fmt.Sprintf(
+			requireErrOut(t, err, fmt.Sprintf(
 				"object %q field %q cannot reference external type from dependency module %q",
 				"Obj", "foo", "dep",
 			))

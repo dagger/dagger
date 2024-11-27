@@ -227,7 +227,7 @@ func (TypescriptSuite) TestInit(ctx context.Context, t *testctx.T) {
 		_, err := modGen.
 			With(daggerQuery(`{hasPkgJson{containerEcho(stringArg:"hello"){stdout}}}`)).
 			Stdout(ctx)
-		require.ErrorContains(t, err, "merge is only supported")
+		requireErrOut(t, err, "merge is only supported")
 	})
 
 	t.Run("init module in .dagger if files present in current dir", func(ctx context.Context, t *testctx.T) {
@@ -948,10 +948,10 @@ export class Foo {}
 				With(daggerFunctions()).
 				Stdout(ctx)
 			require.Error(t, err)
-			require.Regexp(t, fmt.Sprintf(
+			requireErrRegexp(t, err, fmt.Sprintf(
 				`object\s+%q\s+function\s+%q\s+cannot\s+return\s+external\s+type\s+from\s+dependency\s+module\s+%q`,
 				"Test", "fn", "dep",
-			), err.Error())
+			))
 		})
 
 		t.Run("list", func(ctx context.Context, t *testctx.T) {
@@ -969,10 +969,10 @@ export class Foo {}
 				With(daggerFunctions()).
 				Stdout(ctx)
 			require.Error(t, err)
-			require.Regexp(t, fmt.Sprintf(
+			requireErrRegexp(t, err, fmt.Sprintf(
 				`object\s+%q\s+function\s+%q\s+cannot\s+return\s+external\s+type\s+from\s+dependency\s+module\s+%q`,
 				"Test", "fn", "dep",
-			), err.Error())
+			))
 		})
 	})
 
@@ -990,10 +990,10 @@ export class Test {
 				With(daggerFunctions()).
 				Stdout(ctx)
 			require.Error(t, err)
-			require.Regexp(t, fmt.Sprintf(
+			requireErrRegexp(t, err, fmt.Sprintf(
 				`object\s+%q\s+function\s+%q\s+arg\s+%q\s+cannot\s+reference\s+external\s+type\s+from\s+dependency\s+module\s+%q`,
 				"Test", "fn", "obj", "dep",
-			), err.Error())
+			))
 		})
 
 		t.Run("list", func(ctx context.Context, t *testctx.T) {
@@ -1010,10 +1010,10 @@ export class Test {
 				With(daggerFunctions()).
 				Stdout(ctx)
 			require.Error(t, err)
-			require.Regexp(t, fmt.Sprintf(
+			requireErrRegexp(t, err, fmt.Sprintf(
 				`object\s+%q\s+function\s+%q\s+arg\s+%q\s+cannot\s+reference\s+external\s+type\s+from\s+dependency\s+module\s+%q`,
 				"Test", "fn", "obj", "dep",
-			), err.Error())
+			))
 		})
 	})
 
@@ -1040,10 +1040,10 @@ export class Obj {
 				With(daggerFunctions()).
 				Stdout(ctx)
 			require.Error(t, err)
-			require.Regexp(t, fmt.Sprintf(
+			requireErrRegexp(t, err, fmt.Sprintf(
 				`object\s+%q\s+field\s+%q\s+cannot\s+reference\s+external\s+type\s+from\s+dependency\s+module\s+%q`,
 				"Obj", "foo", "dep",
-			), err.Error())
+			))
 		})
 
 		t.Run("list", func(ctx context.Context, t *testctx.T) {
@@ -1068,10 +1068,10 @@ export class Obj {
 				With(daggerFunctions()).
 				Stdout(ctx)
 			require.Error(t, err)
-			require.Regexp(t, fmt.Sprintf(
+			requireErrRegexp(t, err, fmt.Sprintf(
 				`object\s+%q\s+field\s+%q\s+cannot\s+reference\s+external\s+type\s+from\s+dependency\s+module\s+%q`,
 				"Obj", "foo", "dep",
-			), err.Error())
+			))
 		})
 	})
 }
@@ -1283,7 +1283,7 @@ export class Test {
 `))
 
 		_, err := modGen.With(daggerQuery(`{test{str("hello")}}`)).Stdout(ctx)
-		require.ErrorContains(t, err, "Use of primitive 'String' type detected, please use 'string' instead.")
+		requireErrOut(t, err, "Use of primitive 'String' type detected, please use 'string' instead.")
 	})
 
 	t.Run("should throw error on Number", func(ctx context.Context, t *testctx.T) {
@@ -1306,7 +1306,7 @@ export class Test {
 `))
 
 		_, err := modGen.With(daggerQuery(`{test{integer(4)}}`)).Stdout(ctx)
-		require.ErrorContains(t, err, "Use of primitive 'Number' type detected, please use 'number' instead.")
+		requireErrOut(t, err, "Use of primitive 'Number' type detected, please use 'number' instead.")
 	})
 
 	t.Run("should throw error on Boolean", func(ctx context.Context, t *testctx.T) {
@@ -1329,7 +1329,7 @@ export class Test {
 `))
 
 		_, err := modGen.With(daggerQuery(`{test{bool(false)}}`)).Stdout(ctx)
-		require.ErrorContains(t, err, "Use of primitive 'Boolean' type detected, please use 'boolean' instead.")
+		requireErrOut(t, err, "Use of primitive 'Boolean' type detected, please use 'boolean' instead.")
 	})
 }
 

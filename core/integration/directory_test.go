@@ -896,7 +896,7 @@ func (DirectorySuite) TestWithNewFileExceedingLength(ctx context.Context, t *tes
 			}
 		}`, &res, nil)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "File name length exceeds the maximum supported 255 characters")
+	requireErrOut(t, err, "File name length exceeds the maximum supported 255 characters")
 }
 
 func (DirectorySuite) TestWithFileExceedingLength(ctx context.Context, t *testctx.T) {
@@ -921,7 +921,7 @@ func (DirectorySuite) TestWithFileExceedingLength(ctx context.Context, t *testct
 			}
 		}`, &res, nil)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "File name length exceeds the maximum supported 255 characters")
+	requireErrOut(t, err, "File name length exceeds the maximum supported 255 characters")
 }
 
 func (DirectorySuite) TestDirectMerge(ctx context.Context, t *testctx.T) {
@@ -1008,11 +1008,11 @@ func (DirectorySuite) TestSync(ctx context.Context, t *testctx.T) {
 	t.Run("triggers error", func(ctx context.Context, t *testctx.T) {
 		_, err := c.Directory().Directory("/foo").Sync(ctx)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "no such file or directory")
+		requireErrOut(t, err, "no such file or directory")
 
 		_, err = c.Container().From(alpineImage).Directory("/bar").Sync(ctx)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "no such file or directory")
+		requireErrOut(t, err, "no such file or directory")
 	})
 
 	t.Run("allows chaining", func(ctx context.Context, t *testctx.T) {
@@ -1158,7 +1158,7 @@ func (DirectorySuite) TestGlob(ctx context.Context, t *testctx.T) {
 
 	t.Run("directory doesn't exist", func(ctx context.Context, t *testctx.T) {
 		_, err := c.Directory().Directory("foo").Glob(ctx, "**/*")
-		require.ErrorContains(t, err, "no such file or directory")
+		requireErrOut(t, err, "no such file or directory")
 	})
 }
 

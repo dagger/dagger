@@ -995,27 +995,27 @@ export class Test {
 			require.NoError(t, err)
 			require.Equal(t, "linux/amd64", gjson.Get(out, "test.fromPlatform").String())
 			_, err = modGen.With(daggerQuery(`{test{fromPlatform(platform: "invalid")}}`)).Stdout(ctx)
-			require.ErrorContains(t, err, "unknown operating system or architecture")
+			requireErrOut(t, err, "unknown operating system or architecture")
 
 			out, err = modGen.With(daggerQuery(`{test{toPlatform(platform: "linux/amd64")}}`)).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "linux/amd64", gjson.Get(out, "test.toPlatform").String())
 			_, err = modGen.With(daggerQuery(`{test{toPlatform(platform: "invalid")}}`)).Sync(ctx)
-			require.ErrorContains(t, err, "unknown operating system or architecture")
+			requireErrOut(t, err, "unknown operating system or architecture")
 
 			out, err = modGen.With(daggerQuery(`{test{fromPlatforms(platform: ["linux/amd64"])}}`)).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, 1, len(gjson.Get(out, "test.fromPlatforms").Array()))
 			require.Equal(t, "linux/amd64", gjson.Get(out, "test.fromPlatforms.0").String())
 			_, err = modGen.With(daggerQuery(`{test{fromPlatforms(platform: ["invalid"])}}`)).Stdout(ctx)
-			require.ErrorContains(t, err, "unknown operating system or architecture")
+			requireErrOut(t, err, "unknown operating system or architecture")
 
 			out, err = modGen.With(daggerQuery(`{test{toPlatforms(platform: ["linux/amd64"])}}`)).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, 1, len(gjson.Get(out, "test.toPlatforms.0").Array()))
 			require.Equal(t, "linux/amd64", gjson.Get(out, "test.toPlatforms.0").String())
 			_, err = modGen.With(daggerQuery(`{test{toPlatforms(platform: ["invalid"])}}`)).Sync(ctx)
-			require.ErrorContains(t, err, "unknown operating system or architecture")
+			requireErrOut(t, err, "unknown operating system or architecture")
 		})
 	}
 }
@@ -1097,14 +1097,14 @@ export class Test {
 			require.Equal(t, "TCP", gjson.Get(out, "test.fromProto").String())
 
 			_, err = modGen.With(daggerQuery(`{test{fromProto(proto: "INVALID")}}`)).Stdout(ctx)
-			require.ErrorContains(t, err, "invalid enum value")
+			requireErrOut(t, err, "invalid enum value")
 
 			out, err = modGen.With(daggerQuery(`{test{toProto(proto: "TCP")}}`)).Stdout(ctx)
 			require.NoError(t, err)
 			require.Equal(t, "TCP", gjson.Get(out, "test.toProto").String())
 
 			_, err = modGen.With(daggerQuery(`{test{toProto(proto: "INVALID")}}`)).Sync(ctx)
-			require.ErrorContains(t, err, "invalid enum value")
+			requireErrOut(t, err, "invalid enum value")
 		})
 	}
 }
@@ -1260,7 +1260,7 @@ export class Test {
 				require.Equal(t, "INACTIVE", gjson.Get(out, "test.status").String())
 
 				_, err = modGen.With(daggerQuery(`{test{fromStatus(status: "INVALID")}}`)).Stdout(ctx)
-				require.ErrorContains(t, err, "invalid enum value")
+				requireErrOut(t, err, "invalid enum value")
 
 				// fromStatusOpt
 				out, err = modGen.With(daggerQuery(`{test{fromStatusOpt}}`)).Stdout(ctx)
@@ -1272,7 +1272,7 @@ export class Test {
 				require.Equal(t, "ACTIVE", gjson.Get(out, "test.fromStatusOpt").String())
 
 				_, err = modGen.With(daggerQuery(`{test{fromStatusOpt(status: "INVALID")}}`)).Stdout(ctx)
-				require.ErrorContains(t, err, "invalid enum value")
+				requireErrOut(t, err, "invalid enum value")
 
 				// toStatus
 				out, err = modGen.With(daggerQuery(`{test{toStatus(status: "INACTIVE")}}`)).Stdout(ctx)
@@ -1280,7 +1280,7 @@ export class Test {
 				require.Equal(t, "INACTIVE", gjson.Get(out, "test.toStatus").String())
 
 				_, err = modGen.With(daggerQuery(`{test{toStatus(status: "INVALID")}}`)).Sync(ctx)
-				require.ErrorContains(t, err, "invalid enum value")
+				requireErrOut(t, err, "invalid enum value")
 
 				// introspection
 				mod := inspectModule(ctx, t, modGen)

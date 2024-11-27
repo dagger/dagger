@@ -194,7 +194,7 @@ func (PlatformSuite) TestInvalid(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
 	_, err := c.Container(dagger.ContainerOpts{Platform: "windows98"}).ID(ctx)
-	require.ErrorContains(t, err, "unknown operating system or architecture")
+	requireErrOut(t, err, "unknown operating system or architecture")
 }
 
 func (PlatformSuite) TestWindows(ctx context.Context, t *testctx.T) {

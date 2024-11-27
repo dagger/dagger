@@ -444,11 +444,11 @@ func (FileSuite) TestSync(ctx context.Context, t *testctx.T) {
 	t.Run("triggers error", func(ctx context.Context, t *testctx.T) {
 		_, err := c.Directory().File("baz").Sync(ctx)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "no such file")
+		requireErrOut(t, err, "no such file")
 
 		_, err = c.Container().From(alpineImage).File("/bar").Sync(ctx)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "no such file")
+		requireErrOut(t, err, "no such file")
 	})
 
 	t.Run("allows chaining", func(ctx context.Context, t *testctx.T) {

@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/dagger/dagger/engine/slog"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
+	"github.com/vektah/gqlparser/v2/gqlerror"
 )
 
 func collectDefs(ctx context.Context, val dagql.Typed) []*pb.Definition {
@@ -81,7 +83,12 @@ func AroundFunc(ctx context.Context, self dagql.Object, id *call.ID) (context.Co
 		Start(ctx, spanName, trace.WithAttributes(attrs...))
 
 	return ctx, func(res dagql.Typed, cached bool, err error) {
-		defer telemetry.End(span, func() error { return err })
+		defer telemetry.End(span, func() error {
+			if err != nil {
+				return errors.New(unwrapError(err))
+			}
+			return nil
+		})
 
 		if cached {
 			// NOTE: this is never actually called on cache hits, but might be in the
@@ -179,4 +186,15 @@ func isIntrospection(id *call.ID) bool {
 	} else {
 		return isIntrospection(id.Receiver())
 	}
+}
+
+// trim down unnecessary details from the error; we don't want to pollute
+// telemetry errors with large chains like container.withExec.withExec since
+// that info is better represented by the trace itself
+func unwrapError(rerr error) string {
+	var gqlErr *gqlerror.Error
+	if errors.As(rerr, &gqlErr) {
+		return gqlErr.Message
+	}
+	return rerr.Error()
 }

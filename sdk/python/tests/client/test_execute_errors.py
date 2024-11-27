@@ -125,4 +125,3 @@ async def test_exec_error(client: dagger.Client, httpx_mock: HTTPXMock):
     assert exc.stdout == ""
 
     assert "command not found" in str(exc)
-    assert "spam: not found" in str(exc)

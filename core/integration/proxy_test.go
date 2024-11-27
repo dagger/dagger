@@ -349,7 +349,7 @@ func (ContainerSuite) TestSystemProxies(ctx context.Context, t *testctx.T) {
 					WithExec([]string{"curl", "-v", f.httpsServerURL.String()}).
 					Stderr(ctx)
 				// curl WON'T exit 0 if it gets a 407 when using TLS, so DO expect an error
-				require.ErrorContains(t, err, "< HTTP/1.1 407 Proxy Authentication Required")
+				requireErrOut(t, err, "< HTTP/1.1 407 Proxy Authentication Required")
 			}},
 		)
 	})

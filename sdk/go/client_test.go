@@ -240,8 +240,6 @@ func TestExecError(t *testing.T) {
 		require.Equal(t, outMsg, exErr.Stdout)
 		require.Equal(t, errMsg, exErr.Stderr)
 
-		require.Contains(t, exErr.Error(), outMsg)
-		require.Contains(t, exErr.Error(), errMsg)
 		require.NotContains(t, exErr.Message(), outMsg)
 		require.NotContains(t, exErr.Message(), errMsg)
 

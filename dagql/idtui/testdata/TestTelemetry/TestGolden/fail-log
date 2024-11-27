@@ -14,7 +14,7 @@ Expected stderr:
 
 ✔ viztest: Viztest! X.Xs
 ✘ .failLog: Void X.Xs
-! input: container.from.withEnvVariable.withExec.sync process "sh -c echo im doing a lot of work; echo and then failing; exit 1" did not complete successfully: exit code: 1
+! process "sh -c echo im doing a lot of work; echo and then failing; exit 1" did not complete successfully: exit code: 1
 │ ✔ container: Container! X.Xs
 │ $ .from(address: "alpine"): Container! X.Xs CACHED
 │ │ ✔ resolving docker.io/library/alpine:latest X.Xs

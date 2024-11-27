@@ -295,7 +295,7 @@ func (GitSuite) TestGitTagsSSH(ctx context.Context, t *testctx.T) {
 	t.Run("without SSH auth", func(ctx context.Context, t *testctx.T) {
 		_, err := c.Git(repoURL).Tags(ctx)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "Permission denied (publickey)")
+		requireErrOut(t, err, "Permission denied (publickey)")
 	})
 }
 
@@ -374,8 +374,8 @@ func (GitSuite) TestAuthProviders(ctx context.Context, t *testctx.T) {
 			File("README.md").
 			Contents(ctx)
 		require.Error(t, err)
-		require.ErrorContains(t, err, "git error")
-		require.ErrorContains(t, err, "Authentication failed for 'https://github.com/grouville/daggerverse-private.git/'")
+		requireErrOut(t, err, "git error")
+		requireErrOut(t, err, "Authentication failed for 'https://github.com/grouville/daggerverse-private.git/'")
 	})
 }
 
@@ -389,8 +389,8 @@ func (GitSuite) TestAuth(ctx context.Context, t *testctx.T) {
 			Tree().
 			File("README.md").
 			Contents(ctx)
-		require.ErrorContains(t, err, "git error")
-		require.ErrorContains(t, err, "failed to fetch remote")
+		requireErrOut(t, err, "git error")
+		requireErrOut(t, err, "failed to fetch remote")
 	})
 
 	t.Run("incorrect auth", func(ctx context.Context, t *testctx.T) {
@@ -400,8 +400,8 @@ func (GitSuite) TestAuth(ctx context.Context, t *testctx.T) {
 			Tree().
 			File("README.md").
 			Contents(ctx)
-		require.ErrorContains(t, err, "git error")
-		require.ErrorContains(t, err, "failed to fetch remote")
+		requireErrOut(t, err, "git error")
+		requireErrOut(t, err, "failed to fetch remote")
 	})
 
 	t.Run("token auth", func(ctx context.Context, t *testctx.T) {

@@ -417,7 +417,7 @@ func (ContainerSuite) TestExecSync(ctx context.Context, t *testctx.T) {
 				}
 			}
 		}`, nil, nil)
-	require.Contains(t, err.Error(), `process "false" did not complete successfully`)
+	requireErrOut(t, err, `process "false" did not complete successfully`)
 }
 
 func (ContainerSuite) TestExecStdoutStderr(ctx context.Context, t *testctx.T) {
@@ -445,14 +445,14 @@ func (ContainerSuite) TestExecStdoutStderr(ctx context.Context, t *testctx.T) {
 		_, err := c.Container().
 			From(alpineImage).
 			Stdout(ctx)
-		require.ErrorContains(t, err, "no command has been set")
+		requireErrOut(t, err, "no command has been set")
 	})
 
 	t.Run("stderr without exec", func(ctx context.Context, t *testctx.T) {
 		_, err := c.Container().
 			From(alpineImage).
 			Stderr(ctx)
-		require.ErrorContains(t, err, "no command has been set")
+		requireErrOut(t, err, "no command has been set")
 	})
 }
 
@@ -754,7 +754,7 @@ func (ContainerSuite) TestExecWithEntrypoint(ctx context.Context, t *testctx.T) 
 			UseEntrypoint: true,
 		}).Sync(ctx)
 		require.Error(t, err)
-		require.ErrorContains(t, err, "can't open 'sh'")
+		requireErrOut(t, err, "can't open 'sh'")
 	})
 
 	t.Run("skipped", func(ctx context.Context, t *testctx.T) {
@@ -821,7 +821,7 @@ func (ContainerSuite) TestExecWithoutEntrypoint(ctx context.Context, t *testctx.
 			WithDefaultArgs([]string{"echo", "-n", "foobar"}).
 			WithoutEntrypoint().
 			Stdout(ctx)
-		require.ErrorContains(t, err, "no command has been set")
+		requireErrOut(t, err, "no command has been set")
 		require.Empty(t, res)
 	})
 
@@ -2231,7 +2231,7 @@ func (ContainerSuite) TestDirectoryErrors(ctx context.Context, t *testctx.T) {
 			"id": id,
 		}})
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "path /mnt/dir/some-file is a file, not a directory")
+	requireErrOut(t, err, "path /mnt/dir/some-file is a file, not a directory")
 
 	err = testutil.Query(t,
 		`query Test($id: DirectoryID!) {
@@ -2248,7 +2248,7 @@ func (ContainerSuite) TestDirectoryErrors(ctx context.Context, t *testctx.T) {
 			"id": id,
 		}})
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "bogus: no such file or directory")
+	requireErrOut(t, err, "bogus: no such file or directory")
 
 	err = testutil.Query(t,
 		`{
@@ -2263,7 +2263,7 @@ func (ContainerSuite) TestDirectoryErrors(ctx context.Context, t *testctx.T) {
 			}
 		}`, nil, nil)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "bogus: cannot retrieve path from tmpfs")
+	requireErrOut(t, err, "bogus: cannot retrieve path from tmpfs")
 
 	cacheID := newCache(t)
 	err = testutil.Query(t,
@@ -2281,7 +2281,7 @@ func (ContainerSuite) TestDirectoryErrors(ctx context.Context, t *testctx.T) {
 			"cache": cacheID,
 		}})
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "bogus: cannot retrieve path from cache")
+	requireErrOut(t, err, "bogus: cannot retrieve path from cache")
 }
 
 func (ContainerSuite) TestDirectorySourcePath(ctx context.Context, t *testctx.T) {
@@ -2461,7 +2461,7 @@ func (ContainerSuite) TestFileErrors(ctx context.Context, t *testctx.T) {
 				"id": id,
 			}})
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "bogus: no such file or directory")
+		requireErrOut(t, err, "bogus: no such file or directory")
 	})
 
 	t.Run("get directory as file", func(ctx context.Context, t *testctx.T) {
@@ -2480,7 +2480,7 @@ func (ContainerSuite) TestFileErrors(ctx context.Context, t *testctx.T) {
 				"id": id,
 			}})
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "path /mnt/dir is a directory, not a file")
+		requireErrOut(t, err, "path /mnt/dir is a directory, not a file")
 	})
 
 	t.Run("get path under tmpfs", func(ctx context.Context, t *testctx.T) {
@@ -2497,7 +2497,7 @@ func (ContainerSuite) TestFileErrors(ctx context.Context, t *testctx.T) {
 			}
 		}`, nil, nil)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "bogus: cannot retrieve path from tmpfs")
+		requireErrOut(t, err, "bogus: cannot retrieve path from tmpfs")
 	})
 
 	t.Run("get path under cache", func(ctx context.Context, t *testctx.T) {
@@ -2517,7 +2517,7 @@ func (ContainerSuite) TestFileErrors(ctx context.Context, t *testctx.T) {
 				"cache": cacheID,
 			}})
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "bogus: cannot retrieve path from cache")
+		requireErrOut(t, err, "bogus: cannot retrieve path from cache")
 	})
 
 	t.Run("get secret mount contents", func(ctx context.Context, t *testctx.T) {
@@ -2536,7 +2536,7 @@ func (ContainerSuite) TestFileErrors(ctx context.Context, t *testctx.T) {
 				"secret": "some-secret",
 			}})
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "sekret: no such file or directory")
+		requireErrOut(t, err, "sekret: no such file or directory")
 	})
 }
 
@@ -3523,7 +3523,7 @@ func (ContainerSuite) TestImageRef(ctx context.Context, t *testctx.T) {
 				}
 			}`, &res, nil)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "Image reference can only be retrieved immediately after the 'Container.From' call. Error in fetching imageRef as the container image is changed")
+		requireErrOut(t, err, "Image reference can only be retrieved immediately after the 'Container.From' call. Error in fetching imageRef as the container image is changed")
 	})
 
 	t.Run("should throw error after the container image modification with exec", func(ctx context.Context, t *testctx.T) {
@@ -3546,7 +3546,7 @@ func (ContainerSuite) TestImageRef(ctx context.Context, t *testctx.T) {
 				}
 			}`, &res, nil)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "Image reference can only be retrieved immediately after the 'Container.From' call. Error in fetching imageRef as the container image is changed")
+		requireErrOut(t, err, "Image reference can only be retrieved immediately after the 'Container.From' call. Error in fetching imageRef as the container image is changed")
 	})
 
 	t.Run("should throw error after the container image modification with directory", func(ctx context.Context, t *testctx.T) {
@@ -3565,7 +3565,7 @@ func (ContainerSuite) TestImageRef(ctx context.Context, t *testctx.T) {
 		_, err := ctr.ImageRef(ctx)
 
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "Image reference can only be retrieved immediately after the 'Container.From' call. Error in fetching imageRef as the container image is changed")
+		requireErrOut(t, err, "Image reference can only be retrieved immediately after the 'Container.From' call. Error in fetching imageRef as the container image is changed")
 	})
 }
 
@@ -3579,7 +3579,7 @@ func (ContainerSuite) TestBuildNilContextError(ctx context.Context, t *testctx.T
 				}
 			}
 		}`, &map[any]any{}, nil)
-	require.ErrorContains(t, err, "cannot decode empty string as ID")
+	requireErrOut(t, err, "cannot decode empty string as ID")
 }
 
 func (ContainerSuite) TestInsecureRootCapabilites(ctx context.Context, t *testctx.T) {
@@ -4471,7 +4471,7 @@ func (ContainerSuite) TestExecExpect(ctx context.Context, t *testctx.T) {
 				}
 			}
 		}`, &res, nil)
-		require.ErrorContains(t, err, "exit code: 1")
+		requireErrOut(t, err, "exit code: 1")
 	})
 
 	t.Run("failure", func(ctx context.Context, t *testctx.T) {
@@ -4495,7 +4495,7 @@ func (ContainerSuite) TestExecExpect(ctx context.Context, t *testctx.T) {
 				}
 			}
 		}`, &res, nil)
-		require.ErrorContains(t, err, "exit code: 0")
+		requireErrOut(t, err, "exit code: 0")
 
 		err = testutil.Query(t,
 			`{
@@ -4651,7 +4651,7 @@ func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
 			).
 			WithExec([]string{"ls", "/some-path/bar"}).Stdout(ctx)
 
-		require.ErrorContains(t, err, "ls: /some-path/bar: No such file or directory")
+		requireErrOut(t, err, "ls: /some-path/bar: No such file or directory")
 	})
 
 	t.Run("env variable is expanded in WithoutFile", func(ctx context.Context, t *testctx.T) {
@@ -4665,7 +4665,7 @@ func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
 			WithoutFile("/some-path/${foo}/some-file.txt", dagger.ContainerWithoutFileOpts{Expand: true}).
 			WithExec([]string{"ls", "/some-path/bar/some-file.txt"}).Stdout(ctx)
 
-		require.ErrorContains(t, err, "ls: /some-path/bar/some-file.txt: No such file or directory")
+		requireErrOut(t, err, "ls: /some-path/bar/some-file.txt: No such file or directory")
 	})
 
 	t.Run("env variable is expanded in WithoutFiles", func(ctx context.Context, t *testctx.T) {
@@ -4679,7 +4679,7 @@ func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
 			WithoutFiles([]string{"/some-path/${foo}/some-file.txt"}, dagger.ContainerWithoutFilesOpts{Expand: true}).
 			WithExec([]string{"ls", "/some-path/bar/some-file.txt"}).Stdout(ctx)
 
-		require.ErrorContains(t, err, "ls: /some-path/bar/some-file.txt: No such file or directory")
+		requireErrOut(t, err, "ls: /some-path/bar/some-file.txt: No such file or directory")
 	})
 
 	t.Run("env variable is expanded in WithExec", func(ctx context.Context, t *testctx.T) {
@@ -4703,7 +4703,7 @@ func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
 			Stdout(ctx)
 
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "ls: /mnt/bar: No such file or directory")
+		requireErrOut(t, err, "ls: /mnt/bar: No such file or directory")
 	})
 
 	t.Run("env variable is expanded in WithUnixSocket", func(ctx context.Context, t *testctx.T) {
@@ -4744,7 +4744,7 @@ func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
 			Stdout(ctx)
 
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "ls: /opt/bar.sock: No such file or directory")
+		requireErrOut(t, err, "ls: /opt/bar.sock: No such file or directory")
 	})
 
 	t.Run("env variable is expanded in WithMountedSecret", func(ctx context.Context, t *testctx.T) {
@@ -4791,7 +4791,7 @@ func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {
 			WithExec([]string{"sh", "-c", "test ${GITEA_TOKEN} = \"password\""}, dagger.ContainerWithExecOpts{Expand: true}).
 			Sync(ctx)
 
-		require.ErrorContains(t, err, "expand cannot be used with secret env variable \"GITEA_TOKEN\"")
+		requireErrOut(t, err, "expand cannot be used with secret env variable \"GITEA_TOKEN\"")
 	})
 
 	t.Run("env variable is expanded in Export", func(ctx context.Context, t *testctx.T) {

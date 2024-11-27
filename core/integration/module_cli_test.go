@@ -149,7 +149,7 @@ func (CLISuite) TestDaggerInit(ctx context.Context, t *testctx.T) {
 
 		_, err := ctr.Stdout(ctx)
 		require.Error(t, err)
-		require.ErrorContains(t, err, "source subdir path \"../..\" escapes context")
+		requireErrOut(t, err, "source subdir path \"../..\" escapes context")
 	})
 }
 
@@ -381,7 +381,7 @@ func (CLISuite) TestDaggerInitGit(ctx context.Context, t *testctx.T) {
 					With(daggerExec("develop", "--sdk=go"))
 
 				_, err = modGen.File(".gitignore").Contents(ctx)
-				require.ErrorContains(t, err, "no such file or directory")
+				requireErrOut(t, err, "no such file or directory")
 			})
 		})
 	}
@@ -449,10 +449,10 @@ func (CLISuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 				// currently, we don't support renaming or re-sdking a module, make sure that errors comprehensibly
 
 				_, err = ctr.With(daggerExec("develop", "--sdk", "python")).Sync(ctx)
-				require.ErrorContains(t, err, `cannot update module SDK that has already been set to "go"`)
+				requireErrOut(t, err, `cannot update module SDK that has already been set to "go"`)
 
 				_, err = ctr.With(daggerExec("develop", "--source", "blahblahblaha/blah")).Sync(ctx)
-				require.ErrorContains(t, err, `cannot update module source path that has already been set to "cool/subdir"`)
+				requireErrOut(t, err, `cannot update module source path that has already been set to "cool/subdir"`)
 			})
 		}
 	})
@@ -514,7 +514,7 @@ func (CLISuite) TestDaggerDevelop(ctx context.Context, t *testctx.T) {
 				With(mountedSocket).
 				With(daggerExec("develop", "-m", testGitModuleRef(tc, "top-level"))).
 				Sync(ctx)
-			require.ErrorContains(t, err, `module must be local`)
+			requireErrOut(t, err, `module must be local`)
 		})
 	})
 
@@ -806,7 +806,7 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 				WithWorkdir("/work/test").
 				With(daggerExec("install", "../../play/dep")).
 				Sync(ctx)
-			require.ErrorContains(t, err, `local module dep source path "../play/dep" escapes context "/work"`)
+			requireErrOut(t, err, `local module dep source path "../play/dep" escapes context "/work"`)
 		})
 
 		t.Run("from src dir with absolute path", func(ctx context.Context, t *testctx.T) {
@@ -814,7 +814,7 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 				WithWorkdir("/work/test").
 				With(daggerExec("install", "/play/dep")).
 				Sync(ctx)
-			require.ErrorContains(t, err, `local module dep source path "../play/dep" escapes context "/work"`)
+			requireErrOut(t, err, `local module dep source path "../play/dep" escapes context "/work"`)
 		})
 
 		t.Run("from dep dir", func(ctx context.Context, t *testctx.T) {
@@ -822,7 +822,7 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 				WithWorkdir("/play/dep").
 				With(daggerExec("install", "-m=../../work/test", ".")).
 				Sync(ctx)
-			require.ErrorContains(t, err, `module dep source path "../play/dep" escapes context "/work"`)
+			requireErrOut(t, err, `module dep source path "../play/dep" escapes context "/work"`)
 		})
 
 		t.Run("from dep dir with absolute path", func(ctx context.Context, t *testctx.T) {
@@ -830,7 +830,7 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 				WithWorkdir("/play/dep").
 				With(daggerExec("install", "-m=/work/test", ".")).
 				Sync(ctx)
-			require.ErrorContains(t, err, `module dep source path "../play/dep" escapes context "/work"`)
+			requireErrOut(t, err, `module dep source path "../play/dep" escapes context "/work"`)
 		})
 
 		t.Run("from root", func(ctx context.Context, t *testctx.T) {
@@ -838,7 +838,7 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 				WithWorkdir("/").
 				With(daggerExec("install", "-m=work/test", "play/dep")).
 				Sync(ctx)
-			require.ErrorContains(t, err, `module dep source path "../play/dep" escapes context "/work"`)
+			requireErrOut(t, err, `module dep source path "../play/dep" escapes context "/work"`)
 		})
 
 		t.Run("from root with absolute path", func(ctx context.Context, t *testctx.T) {
@@ -846,7 +846,7 @@ func (CLISuite) TestDaggerInstall(ctx context.Context, t *testctx.T) {
 				WithWorkdir("/").
 				With(daggerExec("install", "-m=/work/test", "play/dep")).
 				Sync(ctx)
-			require.ErrorContains(t, err, `module dep source path "../play/dep" escapes context "/work"`)
+			requireErrOut(t, err, `module dep source path "../play/dep" escapes context "/work"`)
 		})
 	})
 
@@ -890,7 +890,7 @@ func (m *Test) Fn(ctx context.Context) (string, error) {
 					With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
 					With(daggerExec("install", testGitModuleRef(tc, "../../"))).
 					Sync(ctx)
-				require.ErrorContains(t, err, `git module source subpath points out of root: "../.."`)
+				requireErrOut(t, err, `git module source subpath points out of root: "../.."`)
 
 				_, err = goGitBase(t, c).
 					With(mountedSocket).
@@ -898,7 +898,7 @@ func (m *Test) Fn(ctx context.Context) (string, error) {
 					With(daggerExec("init", "--name=test", "--sdk=go", "--source=.")).
 					With(daggerExec("install", testGitModuleRef(tc, "this/just/does/not/exist"))).
 					Sync(ctx)
-				require.ErrorContains(t, err, `module "test" dependency "" with source root path "this/just/does/not/exist" does not exist or does not have a configuration file`)
+				requireErrOut(t, err, `module "test" dependency "" with source root path "this/just/does/not/exist" does not exist or does not have a configuration file`)
 			})
 
 			t.Run("unpinned gets pinned", func(ctx context.Context, t *testctx.T) {
@@ -1037,7 +1037,7 @@ func (m *OtherObj) FnE() *dagger.Container {
 
 	t.Run("return primitive", func(ctx context.Context, t *testctx.T) {
 		_, err := ctr.With(daggerFunctions("prim")).Stdout(ctx)
-		require.ErrorContains(t, err, `function "prim" returns type "STRING_KIND" with no further functions available`)
+		requireErrOut(t, err, `function "prim" returns type "STRING_KIND" with no further functions available`)
 	})
 
 	t.Run("alt casing", func(ctx context.Context, t *testctx.T) {
@@ -1291,7 +1291,7 @@ func (f *Foo) ContainerEcho(ctx context.Context, input string) (string, error) {
 					File("dagger.json").Contents(ctx)
 
 				if tc.expectedError != "" {
-					require.ErrorContains(t, err, tc.expectedError)
+					requireErrOut(t, err, tc.expectedError)
 				} else {
 					require.NoError(t, err)
 					require.NotContains(t, daggerjson, "hello")
