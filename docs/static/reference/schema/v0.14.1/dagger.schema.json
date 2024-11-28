@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dagger/dagger/core/modules/module-config",
+  "$ref": "#/$defs/ModuleConfig",
+  "$defs": {
+    "ModuleCodegenConfig": {
+      "properties": {
+        "automaticGitignore": {
+          "type": "boolean",
+          "description": "Whether to automatically generate a .gitignore file for this module."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "ModuleConfig": {
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The name of the module."
+        },
+        "engineVersion": {
+          "type": "string",
+          "description": "The version of the engine this module was last updated with."
+        },
+        "sdk": {
+          "type": "string",
+          "description": "The SDK this module uses"
+        },
+        "include": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Paths to explicitly include from the module, relative to the configuration file."
+        },
+        "exclude": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "Paths to explicitly exclude from the module, relative to the configuration file."
+        },
+        "dependencies": {
+          "items": {
+            "$ref": "#/$defs/ModuleConfigDependency"
+          },
+          "type": "array",
+          "description": "The modules this module depends on."
+        },
+        "source": {
+          "type": "string",
+          "description": "The path, relative to this config file, to the subdir containing the module's implementation source code."
+        },
+        "views": {
+          "items": {
+            "$ref": "#/$defs/ModuleConfigView"
+          },
+          "type": "array",
+          "description": "Named views defined for this module, which are sets of directory filters that can be applied to\ndirectory arguments provided to functions."
+        },
+        "codegen": {
+          "$ref": "#/$defs/ModuleCodegenConfig",
+          "description": "Codegen configuration for this module."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "name",
+        "engineVersion"
+      ],
+      "description": "ModuleConfig is the config for a single module as loaded from a dagger.json file."
+    },
+    "ModuleConfigDependency": {
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The name to use for this dependency. By default, the same as the dependency module's name,\nbut can also be overridden to use a different name."
+        },
+        "source": {
+          "type": "string",
+          "description": "The source ref of the module dependency."
+        },
+        "pin": {
+          "type": "string",
+          "description": "The pinned version of the module dependency."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "name",
+        "source",
+        "pin"
+      ]
+    },
+    "ModuleConfigView": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "patterns": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "name"
+      ]
+    }
+  }
+}

@@ -1197,6 +1197,12 @@
   to = "/quickstart/428201/custom-function"
   status = 301
 
+[[redirects]]
+  # redirect schema to the versioned one
+  from = "/reference/dagger.schema.json"
+  to = "/reference/schemas/v0.14.0/dagger.schema.json"
+  status = 301
+
 ###### end: redirects for specific v0.9 pages ######
 
 

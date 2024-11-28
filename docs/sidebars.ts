@@ -1,3 +1,4 @@
+import { daggerVersion } from './current_docs/partials/version.js';
 
 module.exports = {
   "current": [
@@ -112,7 +113,7 @@ module.exports = {
             {
               "type": "link",
               "label": "Module Configuration File Reference",
-              "href": "https://docs.dagger.io/reference/dagger.schema.json"
+              "href": `https://docs.dagger.io/reference/schema/${daggerVersion}/dagger.schema.json`
             }
           ]
         },
