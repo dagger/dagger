@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"go.opentelemetry.io/otel/trace"
+	"dagger.io/dagger/telemetry"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -238,7 +238,7 @@ type buildkitClient interface {
 // - if not, try to isolate root of git repo from the ref
 // - if nothing worked, fallback as local ref, as before
 func parseRefString(ctx context.Context, bk buildkitClient, refString string) parsedRefString {
-	ctx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("parseRefString: %s", refString), trace.WithSpanKind(trace.SpanKindInternal))
+	ctx, span := core.Tracer(ctx).Start(ctx, fmt.Sprintf("parseRefString: %s", refString), telemetry.Internal())
 	defer span.End()
 	localParsed := parsedRefString{
 		modPath: refString,
