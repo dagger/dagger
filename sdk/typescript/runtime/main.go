@@ -411,7 +411,7 @@ func (t *TypescriptSdk) detectBaseImageRef() (string, error) {
 
 		return nodeImageRef, nil
 	default:
-		return "", fmt.Errorf("unknown runtime: %s", runtime)
+		return "", fmt.Errorf("unknown runtime: %q", runtime)
 	}
 }
 
@@ -438,7 +438,7 @@ func (t *TypescriptSdk) detectRuntime() error {
 
 				return nil
 			default:
-				return fmt.Errorf("unsupported runtime %s", runtime)
+				return fmt.Errorf("unsupported runtime %q", runtime)
 			}
 		}
 	}
