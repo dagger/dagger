@@ -12,6 +12,7 @@ const Filename = "dagger.json"
 const EngineVersionLatest string = "latest"
 
 // ModuleConfig is the config for a single module as loaded from a dagger.json file.
+// Only contains fields that are set/edited by dagger utilities.
 type ModuleConfig struct {
 	// The name of the module.
 	Name string `json:"name"`
@@ -42,6 +43,18 @@ type ModuleConfig struct {
 	Codegen *ModuleCodegenConfig `json:"codegen,omitempty"`
 }
 
+type ModuleConfigUserFields struct {
+	// The self-describing json $schema
+	Schema string `json:"$schema,omitempty"`
+}
+
+// ModuleConfigWithUserFields is the config for a single module as loaded from a dagger.json file.
+// Includes additional fields that should only be set by the user.
+type ModuleConfigWithUserFields struct {
+	ModuleConfigUserFields
+	ModuleConfig
+}
+
 func (modCfg *ModuleConfig) UnmarshalJSON(data []byte) error {
 	if modCfg == nil {
 		return fmt.Errorf("cannot unmarshal into nil ModuleConfig")
@@ -63,6 +76,24 @@ func (modCfg *ModuleConfig) UnmarshalJSON(data []byte) error {
 	}
 
 	*modCfg = ModuleConfig(tmp)
+	return nil
+}
+
+func (modCfg *ModuleConfigUserFields) UnmarshalJSON(data []byte) error {
+	if modCfg == nil {
+		return fmt.Errorf("cannot unmarshal into nil ModuleConfigUserFields")
+	}
+	if len(data) == 0 {
+		return nil
+	}
+
+	type alias ModuleConfigUserFields // lets us use the default json unmashaler
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return fmt.Errorf("unmarshal module config: %w", err)
+	}
+
+	*modCfg = ModuleConfigUserFields(tmp)
 	return nil
 }
 
