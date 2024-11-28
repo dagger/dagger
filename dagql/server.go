@@ -921,7 +921,8 @@ func (sel Selector) AppendTo(id *call.ID, spec FieldSpec) *call.ID {
 	if sel.Nth != 0 {
 		astType = astType.Elem
 	}
-	return id.Append(
+
+	idx := id.Append(
 		astType,
 		sel.Field,
 		sel.View,
@@ -930,6 +931,8 @@ func (sel Selector) AppendTo(id *call.ID, spec FieldSpec) *call.ID {
 		sel.Nth,
 		idArgs...,
 	)
+
+	return idx
 }
 
 type Inputs []NamedInput

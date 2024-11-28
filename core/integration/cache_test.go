@@ -207,21 +207,27 @@ func (CacheSuite) TestCacheVolumePassedAcrossModules(ctx context.Context, t *tes
 	session := connect(ctx, t)
 
 	fooTmpl := `package main
-	import (
-		"context"
-	)
+import (
+	"context"
+	"dagger/foo/internal/dagger"
+	"fmt"
+)
 
-	type Foo struct {}
-	func (f *Foo) UseCacheVolume(ctx context.Context) (string, error) {
-		id, err := dag.CacheVolume("cache-name").ID(ctx)
-		return string(id), err
-	}
+type Foo struct {}
+	
+func (f *Foo) Populate(ctx context.Context, input string) (*dagger.Container, error) {
+	return dag.Container().
+		From("alpine").
+		WithMountedCache("/tmp-cache-mount", dag.CacheVolume("cache-name")).
+		WithExec([]string{"sh", "-c", fmt.Sprintf("echo '%s' > /tmp-cache-mount/input.txt", input)}).
+		Sync(ctx)
+}
 
-	func (f *Foo) PassCacheVolume(ctx context.Context) (string, error) {
-		cache := dag.CacheVolume("cache-name")
-		return dag.Bar().UseCacheVolume(ctx, cache)
-	}
-	`
+func (f *Foo) Fetch(ctx context.Context) (string, error) {
+	cache := dag.CacheVolume("cache-name")
+	return dag.Bar().Fetch(ctx, cache)
+}
+`
 
 	barTmpl := `package main
 	import (
@@ -230,11 +236,23 @@ func (CacheSuite) TestCacheVolumePassedAcrossModules(ctx context.Context, t *tes
 	)
 
 	type Bar struct {}
-	func (f *Bar) UseCacheVolume(ctx context.Context, vol *dagger.CacheVolume) (string, error) {
-		id, err := vol.ID(ctx)
-		return string(id), err
-	}
-	`
+func (f *Bar) Fetch(ctx context.Context, vol *dagger.CacheVolume) (string, error) {
+	return dag.Container().
+		From("alpine").
+		WithMountedCache("/tmp-cache-mount", vol).
+		WithExec([]string{"sh", "-c", "cat /tmp-cache-mount/input.txt"}).
+		Stdout(ctx)
+}
+
+func (f *Bar) FetchDirect(ctx context.Context) (string, error) {
+vol := dag.CacheVolume("cache-name")
+	return dag.Container().
+		From("alpine").
+		WithMountedCache("/tmp-cache-mount", vol).
+		WithExec([]string{"sh", "-c", "cat /tmp-cache-mount/input.txt"}).
+		Stdout(ctx)
+}
+`
 
 	ctr := session.Container().
 		From(golangImage).
@@ -247,18 +265,26 @@ func (CacheSuite) TestCacheVolumePassedAcrossModules(ctx context.Context, t *tes
 		WithNewFile("main.go", fooTmpl).
 		With(daggerExec("use", "./bar"))
 
-	fooID, err := ctr.
+	content := "some-foo-bar-content"
+	_, err := ctr.
 		WithWorkdir("/work").
-		With(daggerExec("call", "use-cache-volume")).
+		With(daggerExec("call", "populate", "--input", content)).
 		Stdout(ctx)
 	require.NoError(t, err)
 
-	fooIDViaBar, err := ctr.
+	fetchedFromCache, err := ctr.
 		WithWorkdir("/work").
-		With(daggerExec("call", "pass-cache-volume")).
+		With(daggerExec("call", "fetch")).
 		Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, fooID, fooIDViaBar)
+	require.Equal(t, content, strings.TrimSpace(fetchedFromCache))
+
+	fetchedFromCacheInBar, err := ctr.
+		WithWorkdir("/work/bar").
+		With(daggerExec("call", "fetch-direct")).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.NotEqual(t, content, strings.TrimSpace(fetchedFromCacheInBar))
 }
 
 func (CacheSuite) TestCacheNotImpactedByChangeInModuleSource(ctx context.Context, t *testctx.T) {
