@@ -16,9 +16,9 @@ import (
 
 const (
 	bunVersion  = "1.1.26"
-	nodeVersion = "20" // LTS version, IRON (https://nodejs.org/en/about/previous-releases)
+	nodeVersion = "20.18.1" // LTS version, IRON (https://nodejs.org/en/about/previous-releases)
 
-	nodeImageDigest = "sha256:df01469346db2bf1cfc1f7261aeab86b2960efa840fe2bd46d83ff339f463665"
+	nodeImageDigest = "sha256:b5b9467fe7b33aad47f1ec3f6e0646a658f85f05c18d4243024212a91f3b7554"
 	bunImageDigest  = "sha256:f344713375598be5f0b40e478cdb70578cc255135a37f9c98179edb1ceb3b4f0"
 
 	nodeImageRef = "node:" + nodeVersion + "-alpine@" + nodeImageDigest
