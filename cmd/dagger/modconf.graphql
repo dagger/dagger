@@ -1,0 +1,16 @@
+query ModuleConfig($source: ModuleSourceID!) {
+  source: loadModuleSourceFromID(id: $source) {
+    asString
+    module: asModule {
+      name
+      description
+      dependencies {
+        name
+        description
+        source {
+          asString
+        }
+      }
+    }
+  }
+}
