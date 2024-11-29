@@ -21,7 +21,6 @@ Expected stderr:
 ✔ .customSpan: String! X.Xs
 │ ✔ custom span X.Xs
 │ │ $ Container.from(address: "alpine:latest"): Container! X.Xs CACHED
-│ │ │ ✔ resolving docker.io/library/alpine:latest X.Xs
 │ │ ✔ .withExec(args: ["echo", "hello from TypeScript! it is currently XXXX-XX-XXTXX:XX:XX.XXXZ"]): Container! X.Xs
 │ │ ┃ hello from TypeScript! it is currently XXXX-XX-XXTXX:XX:XX.XXXZ
 │ │ ✔ .stdout: String! X.Xs

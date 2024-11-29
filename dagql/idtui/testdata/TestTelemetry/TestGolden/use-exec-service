@@ -16,7 +16,6 @@ Expected stderr:
 ✔ .useExecService: Void X.Xs
 │ ✔ container: Container! X.Xs
 │ $ .from(address: "busybox"): Container! X.Xs CACHED
-│ │ ✔ resolving docker.io/library/busybox:latest X.Xs
 │ ✔ .withNewFile(contents: "<h1>hello, world!</h1><p>the time is 20XX-XX-XX XX:XX:XX.XXXX +XXXX UTC m=+X.X</p>", path: "/srv/index.html"): Container! X.Xs
 │ ✔ .withExec(args: ["httpd", "-v", "-h", "/srv", "-f"]): Container! X.Xs
 │ ✔ .withExposedPort(port: 80): Container! X.Xs
@@ -24,7 +23,6 @@ Expected stderr:
 │ ┃ [::ffff:10.XX.XX.XX]:XXXXX: response:200
 │
 │ $ Container.from(address: "alpine"): Container! X.Xs CACHED
-│ │ ✔ resolving docker.io/library/alpine:latest X.Xs
 │ ✔ .withServiceBinding(
 │ │ │ alias: "exec-service"
 │ │ │ service: ✔ Container.asService: Service! X.Xs

@@ -162,7 +162,7 @@ func (snapshot *SpanSnapshot) ProcessAttribute(name string, val any) {
 	case telemetry.EffectIDAttr:
 		snapshot.EffectID = val.(string)
 
-	case "rpc.service", "buildkit":
+	case "rpc.service":
 		// encapsulate these by default; we only maybe want to see these if their
 		// parent failed, since some happy paths might involve _expected_ failures
 		snapshot.Encapsulated = true
