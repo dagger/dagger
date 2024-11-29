@@ -21,6 +21,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"dagger.io/dagger"
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/analytics"
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/engine/client"
@@ -858,6 +859,95 @@ func optionalModCmdWrapper(
 	}
 }
 
+// initializeCore loads the core type definitions.
+func initializeCore(ctx context.Context, dag *dagger.Client) (rdef *moduleDef, rerr error) {
+	def := &moduleDef{}
+
+	if err := def.loadTypeDefs(ctx, dag); err != nil {
+		return nil, err
+	}
+
+	return def, nil
+}
+
+// initializeDefaultModule loads the module's type definitions.
+func initializeDefaultModule(ctx context.Context, dag *dagger.Client) (*moduleDef, error) {
+	modRef, _ := getExplicitModuleSourceRef()
+	if modRef == "" {
+		modRef = moduleURLDefault
+	}
+	return initializeModule(ctx, dag, modRef)
+}
+
+func maybeInitializeDefaultModule(ctx context.Context, dag *dagger.Client) (*moduleDef, string, error) {
+	modRef, _ := getExplicitModuleSourceRef()
+	if modRef == "" {
+		modRef = moduleURLDefault
+	}
+	return maybeInitializeModule(ctx, dag, modRef)
+}
+
+func initializeModule(ctx context.Context, dag *dagger.Client, srcRef string) (rdef *moduleDef, rerr error) {
+	ctx, span := Tracer().Start(ctx, "load module")
+	defer telemetry.End(span, func() error { return rerr })
+
+	findCtx, findSpan := Tracer().Start(ctx, "finding module configuration", telemetry.Encapsulate())
+	conf, err := getModuleConfigurationForSourceRef(findCtx, dag, srcRef, true, true)
+	defer telemetry.End(findSpan, func() error { return err })
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get configured module: %w", err)
+	}
+	if !conf.FullyInitialized() {
+		return nil, fmt.Errorf("module must be fully initialized")
+	}
+
+	return initializeModuleConfig(ctx, dag, conf)
+}
+
+// maybeInitializeModule optionally loads the module's type definitions.
+func maybeInitializeModule(ctx context.Context, dag *dagger.Client, srcRef string) (rdef *moduleDef, modRef string, rerr error) {
+	if def, err := tryInitializeModule(ctx, dag, srcRef); def != nil || err != nil {
+		return def, srcRef, err
+	}
+
+	def, err := initializeCore(ctx, dag)
+	return def, "", err
+}
+
+func tryInitializeModule(ctx context.Context, dag *dagger.Client, srcRef string) (rdef *moduleDef, rerr error) {
+	ctx, span := Tracer().Start(ctx, "looking for module")
+	defer telemetry.End(span, func() error { return rerr })
+
+	findCtx, findSpan := Tracer().Start(ctx, "finding module configuration", telemetry.Encapsulate())
+	conf, _ := getModuleConfigurationForSourceRef(findCtx, dag, srcRef, true, true)
+	findSpan.End()
+
+	if conf == nil || !conf.FullyInitialized() {
+		return nil, nil
+	}
+
+	span.SetName("load module")
+
+	return initializeModuleConfig(ctx, dag, conf)
+}
+
+func initializeModuleConfig(ctx context.Context, dag *dagger.Client, conf *configuredModule) (rdef *moduleDef, rerr error) {
+	serveCtx, serveSpan := Tracer().Start(ctx, "initializing module", telemetry.Encapsulate())
+	err := conf.Source.AsModule().Initialize().Serve(serveCtx)
+	telemetry.End(serveSpan, func() error { return err })
+	if err != nil {
+		return nil, fmt.Errorf("failed to serve module: %w", err)
+	}
+
+	def, err := inspectModule(ctx, dag, conf.Source)
+	if err != nil {
+		return nil, err
+	}
+
+	return def, def.loadTypeDefs(ctx, dag)
+}
+
 // moduleDef is a representation of a dagger module.
 type moduleDef struct {
 	Name        string
@@ -871,13 +961,101 @@ type moduleDef struct {
 	// the ModuleSource definition for the module, needed by some arg types
 	// applying module-specific configs to the arg value.
 	Source *dagger.ModuleSource
+	ModRef string
+
+	Dependencies []*moduleDependency
 }
+
+type moduleDependency struct {
+	Name        string
+	Description string
+	Source      *dagger.ModuleSource
+	ModRef      string
+}
+
+func (m *moduleDependency) Short() string {
+	s := m.Description
+	if s == "" {
+		s = "-"
+	}
+	return strings.SplitN(s, "\n", 2)[0]
+}
+
+//go:embed modconf.graphql
+var loadModConfQuery string
 
 //go:embed typedefs.graphql
 var loadTypeDefsQuery string
 
+func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.ModuleSource) (rdef *moduleDef, rerr error) {
+	ctx, span := Tracer().Start(ctx, "inspecting module metadata", telemetry.Encapsulate())
+	defer telemetry.End(span, func() error { return rerr })
+
+	// NB: All we need most of the time is the name of the dependencies.
+	// We need the descriptions when listing the dependencies, and the source
+	// ref if we need to load a specific dependency. However getting the refs
+	// and descriptions here, at module load, doesn't add much overhead and
+	// makes it easier (and faster) later.
+
+	var res struct {
+		Source struct {
+			AsString string
+			Module   struct {
+				Name         string
+				Description  string
+				Dependencies []struct {
+					Name        string
+					Description string
+					Source      struct {
+						AsString string
+					}
+				}
+			}
+		}
+	}
+
+	id, err := source.ID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	err = dag.Do(ctx, &dagger.Request{
+		Query: loadModConfQuery,
+		Variables: map[string]any{
+			"source": id,
+		},
+	}, &dagger.Response{
+		Data: &res,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("query module metadata: %w", err)
+	}
+
+	deps := make([]*moduleDependency, 0, len(res.Source.Module.Dependencies))
+	for _, dep := range res.Source.Module.Dependencies {
+		deps = append(deps, &moduleDependency{
+			Name:        dep.Name,
+			Description: dep.Description,
+			ModRef:      dep.Source.AsString,
+		})
+	}
+
+	def := &moduleDef{
+		Source:       source,
+		ModRef:       res.Source.AsString,
+		Name:         res.Source.Module.Name,
+		Description:  res.Source.Module.Description,
+		Dependencies: deps,
+	}
+
+	return def, nil
+}
+
 // loadModTypeDefs loads the objects defined by the given module in an easier to use data structure.
-func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client) error {
+func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client) (rerr error) {
+	ctx, loadSpan := Tracer().Start(ctx, "loading type definitions", telemetry.Encapsulate())
+	defer telemetry.End(loadSpan, func() error { return rerr })
+
 	var res struct {
 		TypeDefs []*modTypeDef
 	}
@@ -927,6 +1105,10 @@ func (m *moduleDef) loadTypeDefs(ctx context.Context, dag *dagger.Client) error 
 		case dagger.TypeDefKindInputKind:
 			m.Inputs = append(m.Inputs, typeDef)
 		}
+	}
+
+	if m.MainObject == nil {
+		return fmt.Errorf("main object not found, check that your module's name and main object match")
 	}
 
 	m.LoadFunctionTypeDefs(m.MainObject.AsObject.Constructor)
@@ -1073,6 +1255,15 @@ func (m *moduleDef) GetInput(name string) *modInput {
 	return nil
 }
 
+func (m *moduleDef) GetDependency(name string) *moduleDependency {
+	for _, dep := range m.Dependencies {
+		if dep.Name == name {
+			return dep
+		}
+	}
+	return nil
+}
+
 // HasModule checks if a module's definitions are loaded
 func (m *moduleDef) HasModule() bool {
 	return m.Name != ""
@@ -1100,6 +1291,10 @@ func (m *moduleDef) HasCoreFunction(name string) bool {
 		}
 	}
 	return false
+}
+
+func (m *moduleDef) HasMainFunction(name string) bool {
+	return m.HasFunction(m.MainObject.AsFunctionProvider(), name)
 }
 
 // HasFunction checks if an object has a function with the given name.
