@@ -1,0 +1,173 @@
+---
+slug: /api/shell
+---
+
+# Dagger Shell
+
+The Dagger shell lets you call both the core and extended Dagger API (the core APIs plus the new APIs provided by Dagger Functions) interactively or non-interactively via the `dagger shell` command.
+
+## Basic usage
+
+The Dagger shell needs to run in the context of a module, either a local module in the current directory or a remote module referenced using the `-m`, `--mod` flag. The `.help` built-in provides a list of available commands.
+
+Here's an example of running the shell in the context of a local module:
+
+```shell
+dagger shell
+Dagger interactive shell. Type ".help" for more information. Press Ctrl+D to exit.
+⋈ .help
+DAGGER MODULE COMMANDS
+  .deps         List module dependencies
+  .install      Install a dependency
+
+DAGGER CORE COMMANDS
+  .blob                Retrieves a content-addressed blob.
+  .container           Creates a scratch container.
+  .current-type-defs   The TypeDef representations of the objects currently being served in the
+                       session.
+  .default-platform    The default platform of the engine.
+  .directory           Creates an empty directory.
+  .engine              The Dagger engine container configuration and state
+  .git                 Queries a Git repository.
+  .host                Queries the host environment.
+  .http                Returns a file containing an http remote url content.
+  .version             Get the current Dagger Engine version.
+
+DAGGER CLOUD COMMANDS
+  .login        Log in to Dagger Cloud
+  .logout       Log out from Dagger Cloud
+
+ADDITIONAL COMMANDS
+  .core         Load a core Dagger type
+  .doc          Show documentation for a type, or a function
+  .help         Print this help message
+
+Use ".help <command>" for more information.
+```
+
+Once a module has loaded, the `.doc` built-in command provides an easy way to discover and navigate available Dagger Functions in the module.
+
+Here's an example of using the `.doc` command with a remote module:
+
+```
+dagger shell -m https://github.com/jpadams/daggerverse/trivy
+Dagger interactive shell. Type ".help" for more information. Press Ctrl+D to exit.
+⋈ .doc
+TYPE: OBJECT
+  Trivy
+
+AVAILABLE FUNCTIONS
+  base             Return a Container from the official trivy image.
+  scan-image       Scan an image ref.
+  scan-container   Scan a Dagger Container.
+
+Use ".doc <function>" for more information on a function.
+
+⋈ .doc scan-image
+Scan an image ref.
+
+USAGE
+  scan-image <image-ref> [options]
+
+REQUIRED ARGUMENTS
+  image-ref string
+
+OPTIONAL ARGUMENTS
+  --severity string          (default: "UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL")
+  --exit-code int            (default: 0)
+  --format string            (default: "table")
+  --trivy-image-tag string   (default: "latest")
+
+RETURNS
+  string - Primitive type.
+```
+
+## Commands and arguments
+
+[Core](./types.mdx) and [custom](./functions.mdx) Dagger Functions are available as commands:
+
+```shell
+dagger shell -m https://github.com/jpadams/daggerverse/trivy
+⋈ base
+```
+
+[Required arguments](./arguments.mdx) are positional, so specifying their flags is not necessary. For [optional arguments](./arguments.mdx#optional-arguments), flags are still required.
+
+```shell
+dagger shell -m https://github.com/jpadams/daggerverse/trivy
+⋈ scan-image index.docker.io/alpine --format=json
+```
+
+## Chaining
+
+Functions can be [chained](./chaining.mdx) together using the pipe operator (`|`):
+
+```shell
+dagger shell
+⋈ container | from alpine | file /etc/os-release | contents
+```
+
+## Non-interactive mode
+
+Commands can be run non-interactively with the `-c` flag:
+
+```shell
+dagger shell -c 'container | from alpine | file /etc/os-release | contents'
+```
+
+or
+
+```shell
+dagger shell -m https://github.com/jpadams/daggerverse/trivy -c 'scan-image index.docker.io/alpine --format=json'
+```
+
+Commands and arguments can also be passed from standard input:
+
+```shell
+echo 'container | from alpine | file /etc/os-release | contents' | dagger shell
+```
+
+or
+
+```shell
+dagger shell -m https://github.com/jpadams/daggerverse/trivy <<<'scan-image index.docker.io/alpine --format=json'
+```
+
+Commands can be saved and run from an external file:
+
+```shell
+cat << 'EOF' > foo.dsh
+container | from alpine | file /etc/os-release | contents
+EOF
+dagger shell foo.dsh
+```
+
+or
+
+```shell
+cat << 'EOF' > foo.dsh
+scan-image index.docker.io/alpine --format=json
+EOF
+dagger shell -m https://github.com/jpadams/daggerverse/trivy foo.dsh
+```
+
+## Command expansion
+
+You can use the result of a command as the value of an argument:
+
+```shell
+dagger shell
+⋈ directory | with-new-file /foo $(container | from alpine | with-exec "apk","add","curl" | with-exec "curl","https://jsonplaceholder.typicode.com/todos/1" | stdout) | file /foo | contents
+```
+
+## Variable expansion
+
+Variables are supported as well:
+
+```shell
+dagger shell
+⋈ URL="https://jsonplaceholder.typicode.com/todos/1"; container | from alpine | with-exec "apk","add","curl" | with-exec "curl",$URL | stdout
+```
+
+:::note
+In interactive mode, each prompt is considered separately so variables are not preserved when using multiple prompts (this is a temporary limitation). This limitation does not exist in non-interactive mode.
