@@ -21,10 +21,10 @@ const (
 	typescriptRuntimeSubdir    = "sdk/typescript/runtime"
 	typescriptGeneratedAPIPath = "sdk/typescript/api/client.gen.ts"
 
-	nodeVersionMaintenance = "18"
-	nodeVersionLTS         = "20"
+	nodeVersionMaintenance = "20.18.1"
+	nodeVersionLTS         = "22.11.0"
 
-	bunVersion = "1.1.26"
+	bunVersion = "1.1.38"
 )
 
 type TypescriptSDK struct {

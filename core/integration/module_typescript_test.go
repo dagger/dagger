@@ -808,7 +808,7 @@ func (TypescriptSuite) TestCustomBaseImage(ctx context.Context, t *testctx.T) {
 			WithWorkdir("/work").
 			WithNewFile("package.json", `{
       "dagger": {
-        "baseImage": "node:20.18.0-alpine@sha256:b1e0880c3af955867bc2f1944b49d20187beb7afa3f30173e15a97149ab7f5f1",
+        "baseImage": "node:22.10.0-alpine@sha256:fc95a044b87e95507c60c1f8c829e5d98ddf46401034932499db370c494ef0ff",
         "runtime": "node"
       }
     }`).
@@ -817,7 +817,7 @@ func (TypescriptSuite) TestCustomBaseImage(ctx context.Context, t *testctx.T) {
 
 		out, err := modGen.With(daggerCall("runtime")).Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "node@20.18.0", out)
+		require.Equal(t, "node@22.10.0", out)
 	})
 }
 
