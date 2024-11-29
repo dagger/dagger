@@ -39,10 +39,6 @@ We use telemetry for aggregate analysis, and do not tie telemetry events to a sp
 
 Dagger implements the [Console Do Not Track (DNT) standard](https://consoledonottrack.com/). As a result, you can disable the telemetry by setting the environment variable `DO_NOT_TRACK=1` before running the Dagger CLI.
 
-### Can I run the Dagger Engine as a "rootless" container?
-
-No. "Rootless mode" means running the Dagger Engine as a container without the `--privileged` flag. In this case, the container would not run as the "root" user of the system. Currently, the Dagger Engine cannot be run as a rootless container; network and filesystem constraints related to rootless usage would significantly limit its capabilities and performance. This also means that Dagger is not compatible with platforms which do not support privileged containers, such as AWS Fargate and GKE Autopilot. [Read more about these constraints](https://github.com/dagger/dagger/blob/main/core/docs/d7yxc-operator_manual.md).
-
 ### Can I configure the Dagger Engine?
 
 Yes. [Read more about Dagger Engine configuration](https://github.com/dagger/dagger/blob/main/core/docs/d7yxc-operator_manual.md).
