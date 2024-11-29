@@ -1,0 +1,41 @@
+---
+slug: /features/shell
+description: "Speed up pipelines with built-in intelligent caching"
+---
+
+# Shell
+
+Dagger provides an alternative Bash-like syntax for defining a Dagger pipeline. This provides a simpler and more powerful way to call Dagger functions from the CLI.
+
+This can be used in two ways:
+- Non-interactive mode: Scripts written in this syntax can be saved and reused, exactly like other shell scripts.
+- Interactive mode: An interactive shell is also available with a REPL (Read-Eval-Print loop), offering a fast feedback loop to explore, prototype, or debug.
+
+Key features of the Dagger shell include:
+
+- Bash-like syntax, with dagger functions available as if commands in the $PATH
+- No need to specify flags for required arguments, similar to SDKs
+- Support for command expansion to feed the output of one command as an argument to another
+- Reuse of the same Dagger Engine session for the same script
+- Interactive mode (REPL) with persistent command history
+- Support for non-interactive one-liners or multi-line scripts
+- Ability to execute core and custom Dagger functions
+- Includes built-in commands to help navigate or manage a module, or as pipeline helpers
+
+Here's an example of creating and running a simple pipeline in interactive mode.
+
+TODO
+
+And here's an example of running the same pipeline (saved as a script) non-interactively:
+
+TODO
+
+The `.help` built-in provides a list of available commands, as shown below:
+
+TODO
+
+The Dagger shell needs to run in the context of a module, either a local module in the current directory or a remote module referenced using the `-m`, `--mod` flag. The `.doc` built-in command provides documentation on available functions in the module.
+
+Here's an example of exploring a remote module and executing a custom function from it:
+
+TODO
