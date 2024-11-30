@@ -465,6 +465,16 @@ func (activity *Activity) Add(span *Span) bool {
 	return true
 }
 
+func (activity *Activity) EndTime(now time.Time) time.Time {
+	if !activity.EarliestRunning.IsZero() {
+		return now
+	}
+	if len(activity.CompletedIntervals) == 0 {
+		return time.Time{}
+	}
+	return activity.CompletedIntervals[len(activity.CompletedIntervals)-1].End
+}
+
 // mergeIntervals merges overlapping intervals in the activity.
 func (activity *Activity) mergeIntervals() {
 	merged := []Interval{}
