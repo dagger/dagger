@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/containerd/continuity/sysx"
-	"github.com/dagger/dagger/engine/contenthash"
 	"github.com/moby/buildkit/cache"
 	bkcontenthash "github.com/moby/buildkit/cache/contenthash"
 	"github.com/moby/buildkit/session"
@@ -24,15 +23,24 @@ import (
 	"github.com/tonistiigi/fsutil/types"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
+
+	"dagger.io/dagger/telemetry"
+	"github.com/dagger/dagger/engine/contenthash"
 )
 
 const (
 	hashXattrKey = "user.daggerContentHash"
 )
 
+// localFSSharedState is the state shared between all syncs for a given client
 type localFSSharedState struct {
+	// rootPath is the abs path to the mounted cache ref that we sync all files/dirs for
+	// a given client
 	rootPath string
-	g        SingleflightGroup[string, *ChangeWithStat]
+
+	// g is the singleflight group we use to dedupe/cache changes made to the local fs across
+	// different syncs (see docs on localFS.Sync for more info)
+	g SingleflightGroup[string, *ChangeWithStat]
 }
 
 type ChangeWithStat struct {
@@ -40,14 +48,19 @@ type ChangeWithStat struct {
 	stat *HashedStatInfo
 }
 
+// localFS holds the state for a single sync of a client's fs into our cache
 type localFS struct {
 	*localFSSharedState
 
+	// the subdir under rootPath that we are syncing, e.g. if the client is syncing in their
+	// /foo/bar/ dir this will be /foo/bar and we will be syncing into <rootPath>/foo/bar
 	subdir string
 
+	// filterFS is the fs that applies the include/exclude patterns to our view of the current
+	// cache filesystem at <rootPath>/<subdir>
 	filterFS fsutil.FS
-	includes []string
-	excludes []string
+	includes []string // the include patterns we're using for this sync
+	excludes []string // the exclude patterns we're using for this sync
 }
 
 func newLocalFS(sharedState *localFSSharedState, subdir string, includes, excludes []string) (*localFS, error) {
@@ -76,6 +89,16 @@ func newLocalFS(sharedState *localFSSharedState, subdir string, includes, exclud
 // as they appear in the client at the synced in path.
 //
 // If forParents is true, only the parent directories are synced and no cache ref is returned.
+//
+// To handle concurrent syncs, this relies on the local.g singleflight group:
+//   - Equivalent operations on the same path running in parallel will be deduped
+//   - The caching of results of mutations saves repeating work and allows us to identify when the client
+//     filesystem is changing in the middle of a sync in such a way that we'd potentially create inconsistent
+//     syncs. If we call a mutation op and get a cached result that doesn't match what we applied, we know
+//     there was a conflicting change and can error out.
+//   - The fact that cache results are held only for the duration of the sync and .Released at the end allows
+//     operations on paths to only be cached as long as needed. That way, if the client filesystem changes after
+//     a sync in done (which is safe) we won't use cached results and hit an unnecessary conflict error.
 //
 // NOTE: This currently does not handle resetting parent dir modtimes to match the client. This matches
 // upstream for now and avoids extra performance overhead + complication until a need for those modtimes
@@ -165,6 +188,7 @@ func (local *localFS) Sync( //nolint:gocyclo
 			case upperStat.Mode&uint32(os.ModeDevice) != 0 || upperStat.Mode&uint32(os.ModeNamedPipe) != 0:
 				// NOTE: not handling devices for now since they are extremely non-portable and dubious in terms
 				// of real utility vs. enabling bizarre hacks
+				bklog.G(ctx).Warnf("skipping device file %q", path)
 				return nil
 
 			case upperStat.Mode&uint32(os.ModeSymlink) != 0:
@@ -272,7 +296,7 @@ func (local *localFS) Sync( //nolint:gocyclo
 	}
 
 	ctx, copySpan := newSpan(ctx, "copy")
-	defer copySpan.End()
+	defer telemetry.End(copySpan, func() error { return rerr })
 
 	dgst, err := cacheCtx.Checksum(ctx, newCopyRef, "/", bkcontenthash.ChecksumOpts{}, session)
 	if err != nil {
@@ -404,7 +428,7 @@ func (local *localFS) toRootPath(path string) string {
 	return filepath.Join(local.subdir, path)
 }
 
-// GetPreviousChange is called when the differ indentifies that our cache and the client's cache match at this path.
+// GetPreviousChange is called when the differ identifies that our cache and the client's filesystem match at this path.
 // We still need to put this into the cacheCtx object we are accumulating so that the path contributes to the content
 // hash.
 //

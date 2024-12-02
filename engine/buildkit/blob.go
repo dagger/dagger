@@ -12,9 +12,9 @@ import (
 	"github.com/moby/buildkit/util/bklog"
 	bkworker "github.com/moby/buildkit/worker"
 	"github.com/opencontainers/go-digest"
-	"go.opentelemetry.io/otel/trace"
 	"resenje.org/singleflight"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/engine/contenthash"
 )
 
@@ -48,7 +48,7 @@ func (c *Client) DefToBlob(
 	}
 	ref := workerRef.ImmutableRef
 
-	dgst, _, err := checksumG.Do(ctx, ref.ID(), func(ctx context.Context) (digest.Digest, error) {
+	dgst, _, err := checksumG.Do(ctx, ref.ID(), func(ctx context.Context) (_ digest.Digest, rerr error) {
 		if err := ref.Finalize(ctx); err != nil {
 			return "", fmt.Errorf("failed to finalize ref: %w", err)
 		}
@@ -60,8 +60,11 @@ func (c *Client) DefToBlob(
 			return dgst, nil
 		}
 
-		ctx, span := Tracer(ctx).Start(ctx, fmt.Sprintf("checksum def: %s", ref.ID()), trace.WithSpanKind(trace.SpanKindInternal))
-		defer span.End()
+		ctx, span := Tracer(ctx).Start(ctx,
+			fmt.Sprintf("checksum def: %s", ref.ID()),
+			telemetry.Internal(),
+		)
+		defer telemetry.End(span, func() error { return rerr })
 
 		dgst, err = bkcontenthash.Checksum(ctx, ref, "/", bkcontenthash.ChecksumOpts{}, nil)
 		if err != nil {

@@ -151,7 +151,7 @@ func (fs *remoteFS) Walk(ctx context.Context, path string, walkFn fs.WalkDirFunc
 						return fmt.Errorf("failed to close pipe %d: %w", pkt.ID, err)
 					}
 				} else {
-					n, err := rFile.Write(pkt.Data)
+					n, err := rFile.write(pkt.Data)
 					if err != nil {
 						err = fmt.Errorf("failed to write to pipe %d: %w", pkt.ID, err)
 						rFile.CloseWrite(err)
@@ -207,7 +207,7 @@ func (f *remoteFile) Read(p []byte) (n int, err error) {
 	return f.r.Read(p)
 }
 
-func (f *remoteFile) Write(p []byte) (n int, err error) {
+func (f *remoteFile) write(p []byte) (n int, err error) {
 	return f.w.Write(p)
 }
 

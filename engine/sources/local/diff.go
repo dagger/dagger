@@ -156,8 +156,8 @@ func pathChange(lower, upper *currentPath) (ChangeKind, string) {
 }
 
 func comparePath(p1, p2 string) int {
-	min := min(len(p1), len(p2))
-	for i := 0; i < min; i++ {
+	minLenPath := min(len(p1), len(p2))
+	for i := 0; i < minLenPath; i++ {
 		switch {
 		case p1[i] == p2[i]:
 			continue
@@ -168,13 +168,6 @@ func comparePath(p1, p2 string) int {
 		}
 	}
 	return len(p1) - len(p2)
-}
-
-func min(x, y int) int {
-	if x < y {
-		return x
-	}
-	return y
 }
 
 func sameFile(f1, f2 *types.Stat) bool {

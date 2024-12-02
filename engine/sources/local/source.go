@@ -17,6 +17,7 @@ import (
 	"github.com/moby/buildkit/solver"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/source"
+	upstreamlocal "github.com/moby/buildkit/source/local"
 	srctypes "github.com/moby/buildkit/source/types"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/moby/locker"
@@ -25,6 +26,7 @@ import (
 	fstypes "github.com/tonistiigi/fsutil/types"
 	"go.opentelemetry.io/otel/trace"
 
+	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/engine"
 )
 
@@ -54,7 +56,7 @@ func (ls *localSource) Schemes() []string {
 }
 
 func (ls *localSource) Identifier(scheme, ref string, attrs map[string]string, platform *pb.Platform) (source.Identifier, error) {
-	id, err := NewLocalIdentifier(ref)
+	id, err := upstreamlocal.NewLocalIdentifier(ref)
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +103,7 @@ func (ls *localSource) Identifier(scheme, ref string, attrs map[string]string, p
 }
 
 func (ls *localSource) Resolve(ctx context.Context, id source.Identifier, sm *session.Manager, _ solver.Vertex) (source.SourceInstance, error) {
-	localIdentifier, ok := id.(*LocalIdentifier)
+	localIdentifier, ok := id.(*upstreamlocal.LocalIdentifier)
 	if !ok {
 		return nil, fmt.Errorf("invalid local identifier %v", id)
 	}
@@ -114,7 +116,7 @@ func (ls *localSource) Resolve(ctx context.Context, id source.Identifier, sm *se
 }
 
 type localSourceHandler struct {
-	src LocalIdentifier
+	src upstreamlocal.LocalIdentifier
 	sm  *session.Manager
 	*localSource
 }
@@ -188,7 +190,7 @@ func newSpan(ctx context.Context, name string) (context.Context, trace.Span) {
 
 func (ls *localSourceHandler) snapshot(ctx context.Context, session session.Group, caller session.Caller) (_ cache.ImmutableRef, rerr error) {
 	ctx, span := newSpan(ctx, "filesync")
-	defer span.End()
+	defer telemetry.End(span, func() error { return rerr })
 
 	ref, release, err := ls.getRef(ctx, session)
 	if err != nil {
