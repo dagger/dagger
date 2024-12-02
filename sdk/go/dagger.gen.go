@@ -2105,6 +2105,15 @@ func (r *Directory) WithGraphQLQuery(q *querybuilder.Selection) *Directory {
 	}
 }
 
+// XXX
+func (r *Directory) AsGit() *GitRepository {
+	q := r.query.Select("asGit")
+
+	return &GitRepository{
+		query: q,
+	}
+}
+
 // DirectoryAsModuleOpts contains options for Directory.AsModule
 type DirectoryAsModuleOpts struct {
 	// An optional subpath of the directory which contains the module's configuration file.
