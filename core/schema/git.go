@@ -1,23 +1,18 @@
 package schema
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"os"
-	"os/exec"
-	"strings"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/dagql"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/server/resource"
 	"github.com/dagger/dagger/engine/slog"
-	"github.com/dagger/dagger/engine/sources/gitdns"
+
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing/transport"
@@ -85,7 +80,7 @@ func (s *gitSchema) Install() {
 	}.Install(s.srv)
 
 	dagql.Fields[*core.GitRef]{
-		dagql.Func("tree", s.tree).
+		dagql.NodeFunc("tree", DagOpDirectoryWrapper(s.srv, s.tree)).
 			View(AllVersion).
 			Doc(`The filesystem tree at this ref.`).
 			ArgDoc("discardGitDir", `Set to true to discard .git directory.`),
@@ -95,7 +90,7 @@ func (s *gitSchema) Install() {
 			ArgDoc("discardGitDir", `Set to true to discard .git directory.`).
 			ArgDeprecated("sshKnownHosts", "This option should be passed to `git` instead.").
 			ArgDeprecated("sshAuthSocket", "This option should be passed to `git` instead."),
-		dagql.Func("commit", s.fetchCommit).
+		dagql.NodeFunc("commit", DagOpWrapper(s.srv, s.fetchCommit)).
 			Doc(`The resolved commit id at this ref.`),
 	}.Install(s.srv)
 }
@@ -110,7 +105,7 @@ type gitArgs struct {
 }
 
 //nolint:gocyclo
-func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query], args gitArgs) (inst dagql.Instance[*core.GitRepository], err error) {
+func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query], args gitArgs) (inst dagql.Instance[*core.GitRepository], _ error) {
 	// 1. Setup experimental service host
 	var svcs core.ServiceBindings
 	if args.ExperimentalServiceHost.Valid {
@@ -267,13 +262,15 @@ func (s *gitSchema) git(ctx context.Context, parent dagql.Instance[*core.Query],
 	}
 
 	inst, err = dagql.NewInstanceForCurrentID(ctx, s.srv, parent, &core.GitRepository{
-		Query:         parent.Self,
-		URL:           args.URL,
+		Backend: &core.RemoteGitRepository{
+			Query:         parent.Self,
+			URL:           args.URL,
+			SSHKnownHosts: args.SSHKnownHosts,
+			SSHAuthSocket: authSock,
+			Services:      svcs,
+			Platform:      parent.Self.Platform(),
+		},
 		DiscardGitDir: discardGitDir,
-		SSHKnownHosts: args.SSHKnownHosts,
-		SSHAuthSocket: authSock,
-		Services:      svcs,
-		Platform:      parent.Self.Platform(),
 	})
 	if err != nil {
 		return inst, fmt.Errorf("failed to create GitRepository instance: %w", err)
@@ -333,10 +330,7 @@ func (s *gitSchema) gitLegacy(ctx context.Context, parent dagql.Instance[*core.Q
 }
 
 func (s *gitSchema) head(ctx context.Context, parent *core.GitRepository, args struct{}) (*core.GitRef, error) {
-	return &core.GitRef{
-		Query: parent.Query,
-		Repo:  parent,
-	}, nil
+	return parent.Head(ctx)
 }
 
 type refArgs struct {
@@ -344,11 +338,7 @@ type refArgs struct {
 }
 
 func (s *gitSchema) ref(ctx context.Context, parent *core.GitRepository, args refArgs) (*core.GitRef, error) {
-	return &core.GitRef{
-		Query: parent.Query,
-		Ref:   args.Name,
-		Repo:  parent,
-	}, nil
+	return parent.Ref(ctx, args.Name)
 }
 
 type commitArgs struct {
@@ -356,11 +346,7 @@ type commitArgs struct {
 }
 
 func (s *gitSchema) commit(ctx context.Context, parent *core.GitRepository, args commitArgs) (*core.GitRef, error) {
-	return &core.GitRef{
-		Query: parent.Query,
-		Ref:   args.ID,
-		Repo:  parent,
-	}, nil
+	return parent.Ref(ctx, args.ID)
 }
 
 type branchArgs struct {
@@ -368,11 +354,7 @@ type branchArgs struct {
 }
 
 func (s *gitSchema) branch(ctx context.Context, parent *core.GitRepository, args branchArgs) (*core.GitRef, error) {
-	return &core.GitRef{
-		Query: parent.Query,
-		Ref:   args.Name,
-		Repo:  parent,
-	}, nil
+	return parent.Ref(ctx, args.Name)
 }
 
 type tagArgs struct {
@@ -380,11 +362,7 @@ type tagArgs struct {
 }
 
 func (s *gitSchema) tag(ctx context.Context, parent *core.GitRepository, args tagArgs) (*core.GitRef, error) {
-	return &core.GitRef{
-		Query: parent.Query,
-		Ref:   args.Name,
-		Repo:  parent,
-	}, nil
+	return parent.Ref(ctx, args.Name)
 }
 
 type tagsArgs struct {
@@ -392,113 +370,13 @@ type tagsArgs struct {
 }
 
 func (s *gitSchema) tags(ctx context.Context, parent *core.GitRepository, args tagsArgs) ([]string, error) {
-	// standardize to the same ref that goes into the state (see llb.Git)
-	remote, err := gitutil.ParseURL(parent.URL)
-	if errors.Is(err, gitutil.ErrUnknownProtocol) {
-		remote, err = gitutil.ParseURL("https://" + parent.URL)
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	queryArgs := []string{
-		"ls-remote",
-		"--tags", // we only want tags
-		"--refs", // we don't want to include ^{} entries for annotated tags
-		remote.Remote,
-	}
-
+	var patterns []string
 	if args.Patterns.Valid {
-		val := args.Patterns.Value.ToArray()
-
-		for _, p := range val {
-			queryArgs = append(queryArgs, p.String())
+		for _, pattern := range args.Patterns.Value {
+			patterns = append(patterns, pattern.String())
 		}
 	}
-	cmd := exec.CommandContext(ctx, "git", queryArgs...)
-
-	if parent.SSHAuthSocket != nil {
-		socketStore, err := parent.Query.Sockets(ctx)
-		if err == nil {
-			sockpath, cleanup, err := socketStore.MountSocket(ctx, parent.SSHAuthSocket.IDDigest)
-			if err != nil {
-				return nil, fmt.Errorf("failed to mount SSH socket: %w", err)
-			}
-			defer func() {
-				err := cleanup()
-				if err != nil {
-					slog.Error("failed to cleanup SSH socket", "error", err)
-				}
-			}()
-
-			cmd.Env = append(cmd.Env, "SSH_AUTH_SOCK="+sockpath)
-		}
-	}
-
-	// Handle known hosts
-	var knownHostsPath string
-	if parent.SSHKnownHosts != "" {
-		var err error
-		knownHostsPath, err = mountKnownHosts(parent.SSHKnownHosts)
-		if err != nil {
-			return nil, fmt.Errorf("failed to mount known hosts: %w", err)
-		}
-		defer os.Remove(knownHostsPath)
-	}
-
-	// Set GIT_SSH_COMMAND
-	cmd.Env = append(cmd.Env, "GIT_SSH_COMMAND="+gitdns.GetGitSSHCommand(knownHostsPath))
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	err = cmd.Run()
-	if err != nil {
-		return nil, fmt.Errorf("git command failed: %w\nstdout: %s\nstderr: %s", err, stdout.String(), stderr.String())
-	}
-
-	tags := []string{}
-	scanner := bufio.NewScanner(&stdout)
-	for scanner.Scan() {
-		fields := strings.Fields(scanner.Text())
-		if len(fields) < 2 {
-			continue
-		}
-
-		// this API is to fetch tags, not refs, so we can drop the `refs/tags/`
-		// prefix
-		tag := strings.TrimPrefix(fields[1], "refs/tags/")
-
-		tags = append(tags, tag)
-	}
-
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error scanning git output: %w", err)
-	}
-
-	return tags, nil
-}
-
-func mountKnownHosts(knownHosts string) (string, error) {
-	tempFile, err := os.CreateTemp("", "known_hosts")
-	if err != nil {
-		return "", fmt.Errorf("failed to create temporary known_hosts file: %w", err)
-	}
-
-	_, err = tempFile.WriteString(knownHosts)
-	if err != nil {
-		os.Remove(tempFile.Name())
-		return "", fmt.Errorf("failed to write known_hosts content: %w", err)
-	}
-
-	err = tempFile.Close()
-	if err != nil {
-		os.Remove(tempFile.Name())
-		return "", fmt.Errorf("failed to close temporary known_hosts file: %w", err)
-	}
-
-	return tempFile.Name(), nil
+	return parent.Tags(ctx, patterns)
 }
 
 type withAuthTokenArgs struct {
@@ -511,7 +389,11 @@ func (s *gitSchema) withAuthToken(ctx context.Context, parent *core.GitRepositor
 		return nil, err
 	}
 	repo := *parent
-	repo.AuthToken = token.Self
+	if remote, ok := repo.Backend.(*core.RemoteGitRepository); ok {
+		remote := *remote
+		remote.AuthToken = token.Self
+		repo.Backend = &remote
+	}
 	return &repo, nil
 }
 
@@ -525,7 +407,11 @@ func (s *gitSchema) withAuthHeader(ctx context.Context, parent *core.GitReposito
 		return nil, err
 	}
 	repo := *parent
-	repo.AuthHeader = header.Self
+	if remote, ok := repo.Backend.(*core.RemoteGitRepository); ok {
+		remote := *remote
+		remote.AuthHeader = header.Self
+		repo.Backend = &remote
+	}
 	return &repo, nil
 }
 
@@ -533,8 +419,12 @@ type treeArgs struct {
 	DiscardGitDir bool `default:"false"`
 }
 
-func (s *gitSchema) tree(ctx context.Context, parent *core.GitRef, args treeArgs) (*core.Directory, error) {
-	return parent.Tree(ctx, args.DiscardGitDir)
+func (s *gitSchema) tree(ctx context.Context, parent dagql.Instance[*core.GitRef], args treeArgs) (inst dagql.Instance[*core.Directory], _ error) {
+	dir, err := parent.Self.Tree(ctx, s.srv, args.DiscardGitDir)
+	if err != nil {
+		return inst, err
+	}
+	return dagql.NewInstanceForCurrentID(ctx, s.srv, parent, dir)
 }
 
 type treeArgsLegacy struct {
@@ -555,16 +445,20 @@ func (s *gitSchema) treeLegacy(ctx context.Context, parent *core.GitRef, args tr
 	}
 	res := parent
 	if args.SSHKnownHosts.Valid || args.SSHAuthSocket.Valid {
-		cp := *res.Repo
-		cp.SSHKnownHosts = args.SSHKnownHosts.GetOr("").String()
-		cp.SSHAuthSocket = authSock
-		res.Repo = &cp
+		repo := *res.Repo
+		if remote, ok := repo.Backend.(*core.RemoteGitRepository); ok {
+			remote := *remote
+			remote.SSHKnownHosts = args.SSHKnownHosts.GetOr("").String()
+			remote.SSHAuthSocket = authSock
+			repo.Backend = &remote
+		}
+		res.Repo = &repo
 	}
-	return res.Tree(ctx, args.DiscardGitDir)
+	return res.Tree(ctx, s.srv, args.DiscardGitDir)
 }
 
-func (s *gitSchema) fetchCommit(ctx context.Context, parent *core.GitRef, _ struct{}) (dagql.String, error) {
-	str, err := parent.Commit(ctx)
+func (s *gitSchema) fetchCommit(ctx context.Context, parent dagql.Instance[*core.GitRef], _ struct{}) (dagql.String, error) {
+	str, err := parent.Self.Commit(ctx)
 	if err != nil {
 		return "", err
 	}

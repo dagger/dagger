@@ -1902,10 +1902,7 @@ func (s *containerSchema) asTarball(
 	if err != nil {
 		return inst, fmt.Errorf("container image to tarball file conversion failed: %w", err)
 	}
-	localDef, err := llb.Local(tmpDir,
-		llb.SessionID(bk.ID()), // see engine/server/bk_session.go, we have a special session that points to our engine host
-		llb.SharedKeyHint(bk.ID()),
-		llb.IncludePatterns([]string{fileName}),
+	localDef, err := core.ImportFromHost(bk, tmpDir, []string{fileName},
 		llb.WithCustomName(fmt.Sprintf("container-image-to-tarball-%s", fileName)),
 		buildkit.WithTracePropagation(ctx),
 	).Marshal(ctx, llb.Platform(engineHostPlatform.Spec()))

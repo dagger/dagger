@@ -159,6 +159,15 @@ func (r *ref) WalkDir(ctx context.Context, req WalkDirRequest) error {
 	return walkDir(ctx, mnt, req)
 }
 
+func (r *ref) Mount(ctx context.Context, f func(path string) error) error {
+	ctx = withOutgoingContext(ctx)
+	mnt, err := r.getMountable(ctx)
+	if err != nil {
+		return err
+	}
+	return withMount(mnt, f)
+}
+
 func (r *ref) StatFile(ctx context.Context, req bkgw.StatRequest) (*fstypes.Stat, error) {
 	ctx = withOutgoingContext(ctx)
 	mnt, err := r.getMountable(ctx)
