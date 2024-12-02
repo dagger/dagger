@@ -992,16 +992,11 @@ type ShellCommand struct {
 	// Expected arguments
 	Args PositionalArgs
 
-	// Run is the function that will be executed if it's the first command
-	// in the pipeline and RunState is not defined.
-	Run func(cmd *ShellCommand, args []string) error
+	// Expected state
+	State StateArg
 
-	// RunState is the function for executing a command that can be chained
-	// in a pipeline.
-	//
-	// If defined, it's always used, even if it's the first command in the
-	// pipeline. For commands that should only be the first, define `Run` instead.
-	RunState func(cmd *ShellCommand, args []string, st *ShellState) error
+	// Run is the function that will be executed.
+	Run func(cmd *ShellCommand, args []string, st *ShellState) error
 
 	HelpFunc func(cmd *ShellCommand) string
 
@@ -1133,9 +1128,25 @@ func NoArgs(args []string) error {
 	return nil
 }
 
+type StateArg uint
+
+const (
+	AnyState StateArg = iota
+	RequiredState
+	NoState
+)
+
 func (c *ShellCommand) Execute(ctx context.Context, args []string, st *ShellState) error {
-	if st != nil && c.RunState == nil {
-		return fmt.Errorf("command %q cannot be piped", c.Name())
+	switch c.State {
+	case AnyState:
+	case RequiredState:
+		if st == nil {
+			return fmt.Errorf("command %q must be piped\nusage: %s", c.Name(), c.Use)
+		}
+	case NoState:
+		if st != nil {
+			return fmt.Errorf("command %q cannot be piped\nusage: %s", c.Name(), c.Use)
+		}
 	}
 	if c.Args != nil {
 		if err := c.Args(args); err != nil {
@@ -1143,10 +1154,7 @@ func (c *ShellCommand) Execute(ctx context.Context, args []string, st *ShellStat
 		}
 	}
 	c.SetContext(ctx)
-	if c.RunState != nil {
-		return c.RunState(c, args, st)
-	}
-	return c.Run(c, args)
+	return c.Run(c, args, st)
 }
 
 func shellFunctionUseLine(md *moduleDef, fn *modFunction) string {
@@ -1425,7 +1433,8 @@ func (h *shellCallHandler) registerBuiltins() { //nolint:gocyclo
 			Use:    ".debug",
 			Hidden: true,
 			Args:   NoArgs,
-			Run: func(cmd *ShellCommand, args []string) error {
+			State:  NoState,
+			Run: func(cmd *ShellCommand, args []string, _ *ShellState) error {
 				// Toggles debug mode, which can be useful when in interactive mode
 				h.debug = !h.debug
 				return nil
@@ -1435,7 +1444,8 @@ func (h *shellCallHandler) registerBuiltins() { //nolint:gocyclo
 			Use:   ".help [command]",
 			Short: "Print this help message",
 			Args:  MaximumArgs(1),
-			Run: func(cmd *ShellCommand, args []string) error {
+			State: NoState,
+			Run: func(cmd *ShellCommand, args []string, _ *ShellState) error {
 				if len(args) == 1 {
 					c, err := h.BuiltinCommand(args[0])
 					if err != nil {
@@ -1475,7 +1485,7 @@ func (h *shellCallHandler) registerBuiltins() { //nolint:gocyclo
 			Use:   ".doc [function]",
 			Short: "Show documentation for a type, or a function",
 			Args:  MaximumArgs(1),
-			RunState: func(cmd *ShellCommand, args []string, st *ShellState) error {
+			Run: func(cmd *ShellCommand, args []string, st *ShellState) error {
 				def := h.modDef(st)
 
 				t, err := st.GetTypeDef(def)
@@ -1504,7 +1514,8 @@ func (h *shellCallHandler) registerBuiltins() { //nolint:gocyclo
 			Short:   "Load a module",
 			GroupID: moduleGroup.ID,
 			Args:    MaximumArgs(1),
-			Run: func(cmd *ShellCommand, args []string) error {
+			State:   NoState,
+			Run: func(cmd *ShellCommand, args []string, _ *ShellState) error {
 				var ref string
 				if len(args) == 0 {
 					ref, _ = getExplicitModuleSourceRef()
@@ -1534,11 +1545,8 @@ func (h *shellCallHandler) registerBuiltins() { //nolint:gocyclo
 			Short:   "Set a loaded module as the default for the session",
 			GroupID: moduleGroup.ID,
 			Args:    NoArgs,
-			RunState: func(cmd *ShellCommand, args []string, st *ShellState) error {
-				if st == nil {
-					return fmt.Errorf("usage: .load [module] | .use")
-				}
-
+			State:   RequiredState,
+			Run: func(cmd *ShellCommand, args []string, st *ShellState) error {
 				if st.ModRef != nil && *st.ModRef != h.modRef {
 					h.modRef = *st.ModRef
 				}
@@ -1559,7 +1567,7 @@ func (h *shellCallHandler) registerBuiltins() { //nolint:gocyclo
 				}
 				return shellFunctionDoc(def, def.MainObject.AsObject.Constructor)
 			},
-			RunState: func(cmd *ShellCommand, args []string, st *ShellState) error {
+			Run: func(cmd *ShellCommand, args []string, st *ShellState) error {
 				def, err := h.GetModuleDef(st)
 				if err != nil {
 					return err
@@ -1591,7 +1599,7 @@ func (h *shellCallHandler) registerBuiltins() { //nolint:gocyclo
 			Short:   "List module dependencies",
 			GroupID: moduleGroup.ID,
 			Args:    NoArgs,
-			RunState: func(cmd *ShellCommand, args []string, st *ShellState) error {
+			Run: func(cmd *ShellCommand, args []string, st *ShellState) error {
 				def, err := h.GetModuleDef(st)
 				if err != nil {
 					return err
@@ -1641,7 +1649,8 @@ func (h *shellCallHandler) registerBuiltins() { //nolint:gocyclo
 			Short: "Load a core Dagger type",
 			// On the "Additional" command group on purpose
 			GroupID: "",
-			Run: func(cmd *ShellCommand, args []string) error {
+			State:   NoState,
+			Run: func(cmd *ShellCommand, args []string, _ *ShellState) error {
 				ctx := cmd.Context()
 
 				if len(args) == 0 {
@@ -1693,10 +1702,11 @@ func (h *shellCallHandler) registerBuiltins() { //nolint:gocyclo
 				Short:   fn.Short(),
 				GroupID: coreGroup.ID,
 				Hidden:  hidden,
+				State:   NoState,
 				HelpFunc: func(cmd *ShellCommand) string {
 					return shellFunctionDoc(def, fn)
 				},
-				Run: func(cmd *ShellCommand, args []string) error {
+				Run: func(cmd *ShellCommand, args []string, _ *ShellState) error {
 					ctx := cmd.Context()
 
 					st := h.newState()
@@ -1728,7 +1738,8 @@ func cobraToShellCommand(c *cobra.Command) *ShellCommand {
 		Use:     "." + c.Use,
 		Short:   c.Short,
 		GroupID: c.GroupID,
-		Run: func(cmd *ShellCommand, args []string) error {
+		State:   NoState,
+		Run: func(cmd *ShellCommand, args []string, _ *ShellState) error {
 			// Re-execute the dagger command (hack)
 			args = append([]string{cmd.CleanName()}, args...)
 			ctx := cmd.Context()
