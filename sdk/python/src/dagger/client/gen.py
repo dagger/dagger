@@ -2450,6 +2450,12 @@ class CurrentModule(Type):
 class Directory(Type):
     """A directory."""
 
+    def as_git(self) -> "GitRepository":
+        """Converts this directory into a git repository"""
+        _args: list[Arg] = []
+        _ctx = self._select("asGit", _args)
+        return GitRepository(_ctx)
+
     def as_module(
         self,
         *,

@@ -102,7 +102,7 @@ func DagOpDirectoryWrapper[T dagql.Typed, A any](srv *dagql.Server, fn func(ctx 
 						Value: dagql.String(""),
 					},
 					{
-						Name:  "source",
+						Name:  "directory",
 						Value: dagql.NewID[*core.Directory](currentIDForDagOp(ctx)),
 					},
 				},
