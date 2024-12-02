@@ -59,7 +59,7 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 
 			relPath, err := client.LexicalRelativePath(cwdStat.Path, parsed.modPath)
 			if err != nil {
-				return nil, fmt.Errorf("failed to make path relative: %w", err)
+				return nil, err
 			}
 
 			parsed.modPath = relPath

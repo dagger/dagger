@@ -37,7 +37,11 @@ func LexicalRelativePath(cwdPath, modPath string) (string, error) {
 func normalizePath(path string) string {
 	path = filepath.Clean(path)
 	path = strings.ReplaceAll(path, "\\", "/")
-	return strings.TrimSuffix(path, "/")
+	path = strings.TrimSuffix(path, "/")
+	if path == "" {
+		path = "/"
+	}
+	return path
 }
 
 // getDrive extracts the drive letter or UNC share from a path.

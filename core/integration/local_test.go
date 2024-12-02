@@ -753,3 +753,53 @@ func (LocalDirSuite) TestLocalHardlinks(ctx context.Context, t *testctx.T) {
 
 	require.NoError(t, c4.Close())
 }
+
+func (LocalDirSuite) TestLocalParentSymlinks(ctx context.Context, t *testctx.T) {
+	t.Run("basic", func(ctx context.Context, t *testctx.T) {
+		fullDir := fstest.Apply(
+			fstest.CreateDir("dirA", 0o755),
+			fstest.CreateDir("dirA/dirB", 0o755),
+			fstest.CreateFile("dirA/dirB/f", []byte("f"), 0o644),
+			fstest.Symlink("dirA", "dirALink"),
+			fstest.Symlink("../dirA/dirB", "dirA/dirBLink"),
+		)
+
+		root := t.TempDir()
+		require.NoError(t, fullDir.Apply(root))
+		c := connect(ctx, t)
+
+		inDir := c.Host().Directory(filepath.Join(root, "dirALink/dirBLink"))
+		outDir := t.TempDir()
+		_, err := inDir.Export(ctx, outDir)
+		require.NoError(t, err)
+
+		err = fstest.CheckDirectoryEqualWithApplier(outDir, fstest.Apply(
+			fstest.CreateFile("f", []byte("f"), 0o644),
+		))
+		require.NoError(t, err)
+	})
+
+	t.Run("nested symlinks", func(ctx context.Context, t *testctx.T) {
+		fullDir := fstest.Apply(
+			fstest.CreateDir("dirA", 0o755),
+			fstest.CreateDir("dirA/dirB", 0o755),
+			fstest.CreateFile("dirA/dirB/f", []byte("f"), 0o644),
+			fstest.Symlink("dirA", "dirALink"),
+			fstest.Symlink("../dirALink/dirB", "dirA/dirBLink"), // link points to a path with yet another symlink
+		)
+
+		root := t.TempDir()
+		require.NoError(t, fullDir.Apply(root))
+		c := connect(ctx, t)
+
+		inDir := c.Host().Directory(filepath.Join(root, "dirALink/dirBLink"))
+		outDir := t.TempDir()
+		_, err := inDir.Export(ctx, outDir)
+		require.NoError(t, err)
+
+		err = fstest.CheckDirectoryEqualWithApplier(outDir, fstest.Apply(
+			fstest.CreateFile("f", []byte("f"), 0o644),
+		))
+		require.NoError(t, err)
+	})
+}

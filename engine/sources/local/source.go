@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -202,27 +201,26 @@ func (ls *localSourceHandler) snapshot(ctx context.Context, session session.Grou
 	}()
 
 	clientPath := ls.src.Name
-	// We need the full abs path since the cache ref we sync into holds every dir from this client's root
-	// TODO: IsAbs is probably wrong for windows clients
-	if !filepath.IsAbs(clientPath) {
-		statCtx := engine.LocalImportOpts{
-			Path:              clientPath,
-			StatPathOnly:      true,
-			StatReturnAbsPath: true,
-		}.AppendToOutgoingContext(ctx)
 
-		diffCopyClient, err := filesync.NewFileSyncClient(caller.Conn()).DiffCopy(statCtx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create diff copy client: %w", err)
-		}
-		var statMsg fstypes.Stat
-		if err := diffCopyClient.RecvMsg(&statMsg); err != nil {
-			diffCopyClient.CloseSend()
-			return nil, fmt.Errorf("failed to receive stat message: %w", err)
-		}
-		diffCopyClient.CloseSend()
-		clientPath = statMsg.Path
+	// We need the full abs path since the cache ref we sync into holds every dir from this client's root
+	// We also need to evaluate all symlinks so we only create the actual parent dirs and not any symlinks as dirs
+	statCtx := engine.LocalImportOpts{
+		Path:              clientPath,
+		StatPathOnly:      true,
+		StatReturnAbsPath: true,
+		StatResolvePath:   true,
+	}.AppendToOutgoingContext(ctx)
+	diffCopyClient, err := filesync.NewFileSyncClient(caller.Conn()).DiffCopy(statCtx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create diff copy client: %w", err)
 	}
+	var statMsg fstypes.Stat
+	if err := diffCopyClient.RecvMsg(&statMsg); err != nil {
+		diffCopyClient.CloseSend()
+		return nil, fmt.Errorf("failed to receive stat message: %w", err)
+	}
+	diffCopyClient.CloseSend()
+	clientPath = statMsg.Path
 
 	finalRef, err := ls.sync(ctx, ref, clientPath, session, caller)
 	if err != nil {
