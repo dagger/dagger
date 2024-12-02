@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -779,6 +780,44 @@ func (dir *Directory) Root() (*Directory, error) {
 	dir = dir.Clone()
 	dir.Dir = "/"
 	return dir, nil
+}
+
+func (dir *Directory) mount(ctx context.Context, f func(string) error) error {
+	svcs, err := dir.Query.Services(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get services: %w", err)
+	}
+	bk, err := dir.Query.Buildkit(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get buildkit client: %w", err)
+	}
+	detach, _, err := svcs.StartBindings(ctx, dir.Services)
+	if err != nil {
+		return err
+	}
+	defer detach()
+
+	res, err := bk.Solve(ctx, bkgw.SolveRequest{
+		Definition: dir.LLB,
+	})
+	if err != nil {
+		return err
+	}
+
+	ref, err := res.SingleRef()
+	if err != nil {
+		return err
+	}
+	// empty directory, i.e. llb.Scratch()
+	if ref == nil {
+		tmp, err := os.MkdirTemp("", "mount")
+		if err != nil {
+			return err
+		}
+		defer os.RemoveAll(tmp)
+		return f(tmp)
+	}
+	return ref.Mount(ctx, f)
 }
 
 func validateFileName(file string) error {

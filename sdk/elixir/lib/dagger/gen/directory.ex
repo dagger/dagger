@@ -11,6 +11,18 @@ defmodule Dagger.Directory do
 
   @type t() :: %__MODULE__{}
 
+  @doc "Converts this directory into a git repository"
+  @spec as_git(t()) :: Dagger.GitRepository.t()
+  def as_git(%__MODULE__{} = directory) do
+    query_builder =
+      directory.query_builder |> QB.select("asGit")
+
+    %Dagger.GitRepository{
+      query_builder: query_builder,
+      client: directory.client
+    }
+  end
+
   @doc "Load the directory as a Dagger module source"
   @spec as_module(t(), [{:source_root_path, String.t() | nil}]) :: Dagger.Module.t()
   def as_module(%__MODULE__{} = directory, optional_args \\ []) do
