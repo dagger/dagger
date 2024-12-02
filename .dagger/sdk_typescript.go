@@ -21,8 +21,8 @@ const (
 	typescriptRuntimeSubdir    = "sdk/typescript/runtime"
 	typescriptGeneratedAPIPath = "sdk/typescript/api/client.gen.ts"
 
-	nodeVersionMaintenance = "20.18.1"
-	nodeVersionLTS         = "22.11.0"
+	nodePreviousLTS = "20.18.1"
+	nodeCurrentLTS  = "22.11.0"
 
 	bunVersion = "1.1.38"
 )
@@ -122,7 +122,7 @@ func (t TypescriptSDK) Test(ctx context.Context) (rerr error) {
 	eg, ctx := errgroup.WithContext(ctx)
 
 	// Loop over the LTS and Maintenance versions and test them
-	for _, version := range []string{nodeVersionLTS, nodeVersionMaintenance} {
+	for _, version := range []string{nodeCurrentLTS, nodePreviousLTS} {
 		base := t.nodeJsBaseFromVersion(version).With(installer)
 
 		eg.Go(func() error {
@@ -251,7 +251,7 @@ func (t TypescriptSDK) Bump(ctx context.Context, version string) (*dagger.Direct
 
 func (t TypescriptSDK) nodeJsBase() *dagger.Container {
 	// Use the LTS version by default
-	return t.nodeJsBaseFromVersion(nodeVersionMaintenance)
+	return t.nodeJsBaseFromVersion(nodePreviousLTS)
 }
 
 func (t TypescriptSDK) nodeJsBaseFromVersion(nodeVersion string) *dagger.Container {
