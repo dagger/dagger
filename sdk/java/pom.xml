@@ -12,7 +12,11 @@
     <modules>
         <module>dagger-codegen-maven-plugin</module>
         <module>dagger-java-sdk</module>
+
+        <module>dagger-java-module</module>
+
         <module>dagger-java-samples</module>
+        <module>dagger-java-annotation-processor</module>
     </modules>
 
     <dependencyManagement>
@@ -130,6 +134,12 @@
                 <artifactId>mockito-core</artifactId>
                 <version>${mockito-core.version}</version>
             </dependency>
+
+            <dependency>
+                <groupId>com.google.auto.service</groupId>
+                <artifactId>auto-service</artifactId>
+                <version>${auto-service.version}</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
@@ -160,6 +170,11 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-source-plugin</artifactId>
                     <version>${maven-source-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-shade-plugin</artifactId>
+                    <version>${maven-shade-plugin.version}</version>
                 </plugin>
                 <plugin>
                     <groupId>org.codehaus.mojo</groupId>
@@ -249,6 +264,7 @@
         <daggerengine.version>devel</daggerengine.version>
 
         <assertj-core.version>3.27.2</assertj-core.version>
+        <auto-service.version>1.1.1</auto-service.version>
         <commons-compress.version>1.27.1</commons-compress.version>
         <commons-lang.version>3.17.0</commons-lang.version>
         <exec-maven-plugin.version>3.5.0</exec-maven-plugin.version>
@@ -268,6 +284,7 @@
         <maven-plugin-annotations.version>3.15.1</maven-plugin-annotations.version>
         <maven-project.version>2.2.1</maven-project.version>
         <maven-resources-plugin.version>3.3.1</maven-resources-plugin.version>
+        <maven-shade-plugin.version>3.6.0</maven-shade-plugin.version>
         <maven-source-plugin.version>3.3.1</maven-source-plugin.version>
         <versions-maven-plugin.version>2.18.0</versions-maven-plugin.version>
         <mockito-core.version>5.15.2</mockito-core.version>

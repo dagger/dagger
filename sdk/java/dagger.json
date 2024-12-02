@@ -1,0 +1,6 @@
+{
+  "name": "java-sdk",
+  "sdk": "go",
+  "engineVersion": "v0.14.0",
+  "source": "."
+}
