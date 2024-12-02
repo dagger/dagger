@@ -244,25 +244,10 @@ func litWord(s string) *syntax.Word {
 
 // run parses code and executes the interpreter's Runner
 func (h *shellCallHandler) run(ctx context.Context, reader io.Reader, name string) error {
-	file, err := syntax.NewParser(syntax.Variant(syntax.LangPOSIX)).Parse(reader, name)
+	file, err := parseShell(reader, name)
 	if err != nil {
 		return err
 	}
-
-	syntax.Walk(file, func(node syntax.Node) bool {
-		if node, ok := node.(*syntax.CmdSubst); ok {
-			// Rewrite command substitutions from $(foo; bar) to $(exec <&-; foo; bar)
-			// so that all the original commands run with a closed (nil) standard input.
-			node.Stmts = append([]*syntax.Stmt{{
-				Cmd: &syntax.CallExpr{Args: []*syntax.Word{litWord("..exec")}},
-				Redirs: []*syntax.Redirect{{
-					Op:   syntax.DplIn,
-					Word: litWord("-"),
-				}},
-			}}, node.Stmts...)
-		}
-		return true
-	})
 
 	h.stdoutBuf.Reset()
 	h.stderrBuf.Reset()
@@ -306,6 +291,29 @@ func (h *shellCallHandler) run(ctx context.Context, reader io.Reader, name strin
 		}
 		return nil
 	})
+}
+
+func parseShell(reader io.Reader, name string) (*syntax.File, error) {
+	file, err := syntax.NewParser(syntax.Variant(syntax.LangPOSIX)).Parse(reader, name)
+	if err != nil {
+		return nil, err
+	}
+
+	syntax.Walk(file, func(node syntax.Node) bool {
+		if node, ok := node.(*syntax.CmdSubst); ok {
+			// Rewrite command substitutions from $(foo; bar) to $(exec <&-; foo; bar)
+			// so that all the original commands run with a closed (nil) standard input.
+			node.Stmts = append([]*syntax.Stmt{{
+				Cmd: &syntax.CallExpr{Args: []*syntax.Word{litWord("..exec")}},
+				Redirs: []*syntax.Redirect{{
+					Op:   syntax.DplIn,
+					Word: litWord("-"),
+				}},
+			}}, node.Stmts...)
+		}
+		return true
+	})
+	return file, nil
 }
 
 // runPath executes code from a file
@@ -423,6 +431,7 @@ func (h *shellCallHandler) loadReadlineConfig(prompt string) (*readline.Config, 
 		Prompt:       prompt,
 		HistoryFile:  filepath.Join(dataRoot, "histfile"),
 		HistoryLimit: 1000,
+		AutoComplete: &shellAutoComplete{h},
 	}, nil
 }
 
@@ -1248,6 +1257,9 @@ type ShellCommand struct {
 
 	// Run is the function that will be executed.
 	Run func(cmd *ShellCommand, args []string, st *ShellState) error
+
+	// Complete provides builtin completions
+	Complete func(ctx *CompletionContext, args []string) *CompletionContext
 
 	// HelpFunc is a custom function for customizing the help output
 	HelpFunc func(cmd *ShellCommand) string
@@ -2152,6 +2164,12 @@ to the currently loaded module.
 					}
 
 					return cmd.Send(st)
+				},
+				Complete: func(ctx *CompletionContext, args []string) *CompletionContext {
+					return &CompletionContext{
+						Completer:   ctx.Completer,
+						ModFunction: fn,
+					}
 				},
 			},
 		)
