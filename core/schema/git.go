@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"regexp"
 	"strings"
 
 	"github.com/dagger/dagger/core"
@@ -570,32 +569,4 @@ func (s *gitSchema) fetchCommit(ctx context.Context, parent *core.GitRef, _ stru
 		return "", err
 	}
 	return dagql.NewString(str), nil
-}
-
-func isSemver(ver string) bool {
-	re := regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
-	return re.MatchString(ver)
-}
-
-// Match a version string in a list of versions with optional subPath
-// e.g. github.com/foo/daggerverse/mod@mod/v1.0.0
-// e.g. github.com/foo/mod@v1.0.0
-// TODO smarter matching logic, e.g. v1 == v1.0.0
-func matchVersion(versions []string, match, subPath string) (string, error) {
-	// If theres a subPath, first match on {subPath}/{match} for monorepo tags
-	if subPath != "/" {
-		rawSubPath, _ := strings.CutPrefix(subPath, "/")
-		matched, err := matchVersion(versions, fmt.Sprintf("%s/%s", rawSubPath, match), "/")
-		// no error means there's a match with subpath/match
-		if err == nil {
-			return matched, nil
-		}
-	}
-
-	for _, v := range versions {
-		if v == match {
-			return v, nil
-		}
-	}
-	return "", fmt.Errorf("unable to find version %s", match)
 }
