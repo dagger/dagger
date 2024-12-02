@@ -15,11 +15,11 @@ import (
 )
 
 const (
-	bunVersion  = "1.1.26"
-	nodeVersion = "20.18.1" // LTS version, IRON (https://nodejs.org/en/about/previous-releases)
+	bunVersion  = "1.1.38"
+	nodeVersion = "22.11.0" // LTS version, JOD (https://nodejs.org/en/about/previous-releases)
 
-	nodeImageDigest = "sha256:b5b9467fe7b33aad47f1ec3f6e0646a658f85f05c18d4243024212a91f3b7554"
-	bunImageDigest  = "sha256:f344713375598be5f0b40e478cdb70578cc255135a37f9c98179edb1ceb3b4f0"
+	nodeImageDigest = "sha256:b64ced2e7cd0a4816699fe308ce6e8a08ccba463c757c00c14cd372e3d2c763e"
+	bunImageDigest  = "sha256:5148f6742ac31fac28e6eab391ab1f11f6dfc0c8512c7a3679b374ec470f5982"
 
 	nodeImageRef = "node:" + nodeVersion + "-alpine@" + nodeImageDigest
 	bunImageRef  = "oven/bun:" + bunVersion + "-alpine@" + bunImageDigest
