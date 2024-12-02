@@ -1693,7 +1693,6 @@ func (h *shellCallHandler) registerBuiltins() { //nolint:gocyclo
 				Short:   fn.Short(),
 				GroupID: coreGroup.ID,
 				Hidden:  hidden,
-				Args:    ExactArgs(len(fn.RequiredArgs())),
 				HelpFunc: func(cmd *ShellCommand) string {
 					return shellFunctionDoc(def, fn)
 				},
