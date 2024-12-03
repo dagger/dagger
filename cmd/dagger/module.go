@@ -1001,8 +1001,10 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 		Source struct {
 			AsString string
 			Module   struct {
-				Name         string
-				Description  string
+				Name       string
+				Initialize struct {
+					Description string
+				}
 				Dependencies []struct {
 					Name        string
 					Description string
@@ -1044,7 +1046,7 @@ func inspectModule(ctx context.Context, dag *dagger.Client, source *dagger.Modul
 		Source:       source,
 		ModRef:       res.Source.AsString,
 		Name:         res.Source.Module.Name,
-		Description:  res.Source.Module.Description,
+		Description:  res.Source.Module.Initialize.Description,
 		Dependencies: deps,
 	}
 
