@@ -574,29 +574,31 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 		} else {
 			span.Call = &call
 
-			// Seeing loadFooFromID is only really interesting if it actually
-			// resulted in evaluating the ID, so we set Passthrough, which will only
-			// show its children.
-			if call.Field == fmt.Sprintf("load%sFromID", call.Type.ToAST().Name()) {
-				span.Passthrough = true
-			}
-
-			// We also don't care about seeing the id field selection itself, since
-			// it's more noisy and confusing than helpful. We'll still show all the
-			// spans leading up to it, just not the ID selection.
-			if call.Field == "id" {
-				span.Ignore = true
-			}
-
-			// We don't care about seeing the sync span itself - all relevant info
-			// should show up somewhere more familiar.
-			if call.Field == "sync" {
-				span.Passthrough = true
-			}
-
 			if span.CallDigest != "" {
 				db.Calls[span.CallDigest] = &call
 			}
+		}
+	}
+
+	if call := span.Call; call != nil {
+		// Seeing loadFooFromID is only really interesting if it actually
+		// resulted in evaluating the ID, so we set Passthrough, which will only
+		// show its children.
+		if call.Field == fmt.Sprintf("load%sFromID", call.Type.ToAST().Name()) {
+			span.Passthrough = true
+		}
+
+		// We also don't care about seeing the id field selection itself, since
+		// it's more noisy and confusing than helpful. We'll still show all the
+		// spans leading up to it, just not the ID selection.
+		if call.Field == "id" {
+			span.Ignore = true
+		}
+
+		// We don't care about seeing the sync span itself - all relevant info
+		// should show up somewhere more familiar.
+		if call.Field == "sync" {
+			span.Passthrough = true
 		}
 	}
 
