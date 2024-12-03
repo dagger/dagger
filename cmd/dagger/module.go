@@ -961,6 +961,7 @@ type moduleDef struct {
 	// the ModuleSource definition for the module, needed by some arg types
 	// applying module-specific configs to the arg value.
 	Source *dagger.ModuleSource
+
 	ModRef string
 
 	Dependencies []*moduleDependency
