@@ -371,9 +371,8 @@ func (span *Span) CausalSpans(f func(*Span) bool) {
 	}
 	if span.causesViaAttrs != nil {
 		for _, span := range span.causesViaAttrs.Order {
-			if !f(span) {
-				return
-			}
+			f(span)
+			return
 		}
 	}
 }
