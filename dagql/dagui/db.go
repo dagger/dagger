@@ -137,6 +137,11 @@ func (db *DB) ImportSnapshots(snapshots []SpanSnapshot) {
 	}
 }
 
+func (db *DB) update(span *Span) {
+	span.Version++
+	db.updatedSpans.Add(span)
+}
+
 // Matches returns true if the span matches the filter, looking through
 // Passthrough span parents until a match is found or a non-Passthrough span
 // is reached.
@@ -507,7 +512,7 @@ func (activity *Activity) mergeIntervals() {
 func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 	// track the span's own interval
 	span.Activity.Add(span)
-	db.updatedSpans.Add(span)
+	db.update(span)
 
 	// keep track of the time boundary
 	if db.Epoch.IsZero() ||
@@ -526,7 +531,10 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 		// "unlazying" point), but no use case right now.
 		len(span.Links) == 0 {
 		span.ParentSpan = db.initSpan(span.ParentID)
-		span.ParentSpan.ChildSpans.Add(span)
+		if span.ParentSpan.ChildSpans.Add(span) {
+			// if we're a new child, take a new snapshot for ChildCount
+			db.update(span.ParentSpan)
+		}
 	}
 	for _, linkedCtx := range span.Links {
 		linked := db.initSpan(linkedCtx.SpanID)
@@ -613,10 +621,6 @@ func (db *DB) integrateSpan(span *Span) { //nolint: gocyclo
 		if causes == nil {
 			causes = NewSpanSet()
 			db.CauseSpans[span.EffectID] = causes
-		}
-		for _, cause := range causes.Order {
-			// update any causal spans
-			db.updatedSpans.Add(cause)
 		}
 		span.causesViaAttrs = causes
 	}

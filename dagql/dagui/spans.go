@@ -47,7 +47,6 @@ type Span struct {
 // Snapshot returns a snapshot of the span's current state, incrementing its
 // Version with every call.
 func (span *Span) Snapshot() SpanSnapshot {
-	span.Version++
 	span.ChildCount = countChildren(span.ChildSpans)
 	span.Failed = span.IsFailedOrCausedFailure()
 	span.Cached = span.IsCached()
@@ -60,10 +59,7 @@ func countChildren(set SpanSet) int {
 	for _, child := range set.Order {
 		if child.Passthrough {
 			count += countChildren(child.ChildSpans)
-		} else if !child.Hidden(FrontendOpts{
-			// TODO: this should reflect the client side setting
-			Verbosity: ShowInternalVerbosity - 1,
-		}) {
+		} else {
 			count += 1
 		}
 	}
@@ -195,7 +191,7 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 			changed = parent.RunningSpans.Remove(span)
 		}
 		if changed {
-			span.db.updatedSpans.Add(parent)
+			span.db.update(parent)
 		}
 	}
 
@@ -216,7 +212,7 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 		}
 
 		if changed {
-			span.db.updatedSpans.Add(causal)
+			span.db.update(causal)
 		}
 
 		for parent := range causal.Parents {
@@ -230,7 +226,7 @@ func (span *Span) PropagateStatusToParentsAndLinks() {
 				changed = true
 			}
 			if changed {
-				span.db.updatedSpans.Add(parent)
+				span.db.update(parent)
 			}
 		}
 	}
