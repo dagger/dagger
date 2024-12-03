@@ -88,7 +88,7 @@ var shellCmd = &cobra.Command{
 				stdin:  cmd.InOrStdin(),
 				stdout: cmd.OutOrStdout(),
 				stderr: cmd.ErrOrStderr(),
-				debug:  true,
+				debug:  debug,
 			}
 			return handler.RunAll(ctx, args)
 		})
@@ -1440,8 +1440,6 @@ func shellModuleDoc(m *moduleDef) string {
 		doc.Add("Module", meta.String())
 	}
 
-	doc.Add("Reference", m.ModRef)
-
 	fn := m.MainObject.AsObject.Constructor
 	if len(fn.Args) > 0 {
 		constructor := new(strings.Builder)
@@ -1557,7 +1555,7 @@ func shellFunctionDoc(md *moduleDef, fn *modFunction) string {
 }
 
 func (h *shellCallHandler) isDefaultState(st ShellState) bool {
-	return st.Cmd == "" && (st.ModRef == "" || st.ModRef == h.modRef)
+	return st.ModRef == "" || st.ModRef == h.modRef
 }
 
 func (h *shellCallHandler) newModState(ref string) *ShellState {

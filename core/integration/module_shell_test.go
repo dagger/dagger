@@ -70,7 +70,7 @@ func (m *Test) Container() *dagger.Container {
 }
 `,
 	).
-		With(daggerShell(fmt.Sprintf(".container | from %s | with-exec cat,/etc/os-release | stdout", alpineImage))).
+		With(daggerShell(fmt.Sprintf(".stdlib | container | from %s | with-exec cat,/etc/os-release | stdout", alpineImage))).
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "Alpine Linux")
@@ -80,19 +80,14 @@ func (ShellSuite) TestNoModule(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	modGen := daggerCliBase(t, c)
 
-	t.Run("first command no fallback to core", func(ctx context.Context, t *testctx.T) {
-		_, err := modGen.With(daggerShell("container")).Sync(ctx)
-		requireErrOut(t, err, "module not loaded")
-	})
-
 	t.Run("module builtin does not work", func(ctx context.Context, t *testctx.T) {
-		_, err := modGen.With(daggerShell(".config")).Sync(ctx)
+		_, err := modGen.With(daggerShell(".deps")).Sync(ctx)
 		requireErrOut(t, err, "module not loaded")
 	})
 
-	t.Run("no main object doc", func(ctx context.Context, t *testctx.T) {
-		_, err := modGen.With(daggerShell(".config")).Sync(ctx)
-		requireErrOut(t, err, "module not loaded")
+	t.Run("no default module doc", func(ctx context.Context, t *testctx.T) {
+		_, err := modGen.With(daggerShell(".doc .")).Sync(ctx)
+		requireErrOut(t, err, "not found")
 	})
 }
 
@@ -109,7 +104,7 @@ func (ShellSuite) TestNoLoadModule(ctx context.Context, t *testctx.T) {
 	t.Run("forced no load", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		_, err := modInit(t, c, "go", "").
-			With(daggerShellNoLoad(".config")).
+			With(daggerShellNoLoad(".deps")).
 			Sync(ctx)
 		requireErrOut(t, err, "module not loaded")
 	})
@@ -117,7 +112,7 @@ func (ShellSuite) TestNoLoadModule(ctx context.Context, t *testctx.T) {
 	t.Run("dynamically loaded", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		out, err := modInit(t, c, "go", "").
-			With(daggerShellNoLoad(".load | .use; .doc")).
+			With(daggerShellNoLoad(".use .; .doc")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "container-echo")
@@ -126,7 +121,16 @@ func (ShellSuite) TestNoLoadModule(ctx context.Context, t *testctx.T) {
 	t.Run("stateless load", func(ctx context.Context, t *testctx.T) {
 		c := connect(ctx, t)
 		out, err := modInit(t, c, "go", "").
-			With(daggerShellNoLoad(".load | .doc")).
+			With(daggerShellNoLoad(". | .doc container-echo")).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, out, "echoes whatever string argument")
+	})
+
+	t.Run("stateless .doc load", func(ctx context.Context, t *testctx.T) {
+		c := connect(ctx, t)
+		out, err := modInit(t, c, "go", "").
+			With(daggerShellNoLoad(".doc .")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "container-echo")
@@ -160,7 +164,7 @@ type Foo struct{
 		out, err := modInit(t, c, "go", test).
 			With(daggerExec("init", "--sdk=go", "--source=foo", "foo")).
 			With(sdkSourceAt("foo", "go", foo)).
-			With(daggerShell(".load foo")).
+			With(daggerShell("foo")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.JSONEq(t, `{"_type": "Foo", "bar": "foobar"}`, out)
@@ -171,7 +175,7 @@ type Foo struct{
 		out, err := modInit(t, c, "go", test).
 			With(daggerExec("init", "--sdk=go", "--source=foo", "foo")).
 			With(sdkSourceAt("foo", "go", foo)).
-			With(daggerShell(".load foo | .use; bar")).
+			With(daggerShell(".use foo; bar")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, out, "foobar")
@@ -184,7 +188,7 @@ type Foo struct{
 			With(sdkSourceAt("foo", "go", foo))
 
 		out, err := modGen.
-			With(daggerShell(".load foo | bar")).
+			With(daggerShell("foo | bar")).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "foobar", out)
@@ -200,15 +204,15 @@ type Foo struct{
 func (ShellSuite) TestNotExists(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 	_, err := modInit(t, c, "go", "").
-		With(daggerShell("container")).
+		With(daggerShell("load-container-from-id")).
 		Sync(ctx)
-	requireErrOut(t, err, "no such function")
+	requireErrOut(t, err, "not found")
 }
 
 func (ShellSuite) TestIntegerArg(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	script := ".container | with-exposed-port 80 | exposed-ports | port"
+	script := "container | with-exposed-port 80 | exposed-ports | port"
 	out, err := daggerCliBase(t, c).
 		With(daggerShell(script)).
 		Stdout(ctx)
@@ -219,7 +223,7 @@ func (ShellSuite) TestIntegerArg(ctx context.Context, t *testctx.T) {
 func (ShellSuite) TestExport(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	script := ".directory | with-new-file foo bar | export mydir"
+	script := "directory | with-new-file foo bar | export mydir"
 	out, err := daggerCliBase(t, c).
 		With(daggerShell(script)).
 		File("mydir/foo").
@@ -231,7 +235,7 @@ func (ShellSuite) TestExport(ctx context.Context, t *testctx.T) {
 func (ShellSuite) TestBasicGit(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	script := ".git https://github.com/dagger/dagger | head | tree | file README.md | contents"
+	script := "git https://github.com/dagger/dagger | head | tree | file README.md | contents"
 	out, err := daggerCliBase(t, c).
 		With(withModInit("go", "")).
 		With(daggerShell(script)).
@@ -266,7 +270,7 @@ func (m *Test) DirectoryID(ctx context.Context) (string, error) {
 	return string(id), err
 }
 `
-	script := ".load-directory-from-id $(directory-id) | file foo | contents"
+	script := ".core load-directory-from-id $(directory-id) | file foo | contents"
 
 	out, err := modInit(t, c, "go", source).
 		With(daggerShell(script)).
@@ -306,7 +310,7 @@ func (m *Test) FooBar() string {
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Contains(t, out, "\n  test\n  \n  This is a test module")
-	require.Contains(t, out, "Usage: .config <foo> <bar>\n  \n  The entrypoint for the module")
+	require.Contains(t, out, "Usage: ./. <foo> <bar>\n  \n  The entrypoint for the module")
 	require.Regexp(t, "foo-bar +Some function", out)
 }
 
