@@ -363,7 +363,6 @@ func (db *DB) recordOTelSpan(span sdktrace.ReadOnlySpan) {
 type Activity struct {
 	CompletedIntervals []Interval
 	EarliestRunning    time.Time
-	EarliestRunningID  SpanID
 
 	// Keep track of the full set of running spans so we can update
 	// EarliestRunning as they complete.
@@ -466,7 +465,7 @@ func (activity *Activity) Add(span *Span) bool {
 }
 
 func (activity *Activity) IsRunning() bool {
-	return activity.EarliestRunningID.IsValid()
+	return !activity.EarliestRunning.IsZero()
 }
 
 func (activity *Activity) EndTimeOrFallback(now time.Time) time.Time {
@@ -481,16 +480,14 @@ func (activity *Activity) EndTimeOrFallback(now time.Time) time.Time {
 
 func (activity *Activity) updateEarliest() (changed bool) {
 	if len(activity.AllRunning) > 0 {
-		for id, t := range activity.AllRunning {
+		for _, t := range activity.AllRunning {
 			if activity.EarliestRunning.IsZero() || t.Before(activity.EarliestRunning) {
 				activity.EarliestRunning = t
-				activity.EarliestRunningID = id
 				changed = true
 			}
 		}
-	} else if activity.EarliestRunningID.IsValid() {
+	} else if !activity.EarliestRunning.IsZero() {
 		activity.EarliestRunning = time.Time{}
-		activity.EarliestRunningID = SpanID{}
 		changed = true
 	}
 	return
