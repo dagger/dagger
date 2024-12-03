@@ -17,7 +17,6 @@ import (
 	"golang.org/x/crypto/ssh/agent"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/internal/testutil"
 	"github.com/dagger/testctx"
 )
 
@@ -28,106 +27,63 @@ func TestGit(t *testing.T) {
 }
 
 func (GitSuite) TestGit(ctx context.Context, t *testctx.T) {
-	type result struct {
-		Commit string
-		Tree   struct {
-			File struct {
-				Contents string
-			}
-		}
-	}
+	c := connect(ctx, t)
 
-	res := struct {
-		Git struct {
-			Head         result
-			Ref          result
-			Commit       result
-			Branch       result
-			Tag          result
-			HiddenCommit result
-		}
-	}{}
-
-	err := testutil.Query(t,
-		`{
-			git(url: "github.com/dagger/dagger") {
-				head {
-					commit
-					tree {
-						file(path: "README.md") {
-							contents
-						}
-					}
-				}
-				ref(name: "refs/heads/main") {
-					commit
-					tree {
-						file(path: "README.md") {
-							contents
-						}
-					}
-				}
-				commit(id: "c80ac2c13df7d573a069938e01ca13f7a81f0345") {
-					commit
-					tree {
-						file(path: "README.md") {
-							contents
-						}
-					}
-				}
-				branch(name: "main") {
-					commit
-					tree {
-						file(path: "README.md") {
-							contents
-						}
-					}
-				}
-				tag(name: "v0.9.5") {
-					commit
-					tree {
-						file(path: "README.md") {
-							contents
-						}
-					}
-				}
-				hiddenCommit: commit(id: "318970484f692d7a76cfa533c5d47458631c9654") {
-					commit
-					tree {
-						file(path: "README.md") {
-							contents
-						}
-					}
-				}
-			}
-		}`, &res, nil)
-	require.NoError(t, err)
+	git := c.Git("https://github.com/dagger/dagger")
 
 	// head
-	require.NotEmpty(t, res.Git.Head.Commit)
-	require.Contains(t, res.Git.Head.Tree.File.Contents, "Dagger")
-	mainCommit := res.Git.Head.Commit
-
-	// refs/heads/main
-	require.Equal(t, mainCommit, res.Git.Ref.Commit)
-	require.Contains(t, res.Git.Ref.Tree.File.Contents, "Dagger")
-
-	// c80ac2c13df7d573a069938e01ca13f7a81f0345
-	require.Equal(t, res.Git.Commit.Commit, "c80ac2c13df7d573a069938e01ca13f7a81f0345")
-	require.Contains(t, res.Git.Commit.Tree.File.Contents, "Dagger")
+	byHead := git.Head()
+	mainCommit, err := byHead.Commit(ctx)
+	require.NoError(t, err)
+	readme, err := byHead.Tree().File("README.md").Contents(ctx)
+	require.NoError(t, err)
+	require.Contains(t, readme, "Dagger")
 
 	// main
-	require.NotEmpty(t, mainCommit, res.Git.Branch.Commit)
-	require.Contains(t, res.Git.Branch.Tree.File.Contents, "Dagger")
+	byBranch := git.Branch("main")
+	commit, err := byBranch.Commit(ctx)
+	require.NoError(t, err)
+	require.Equal(t, mainCommit, commit)
+	readme, err = byBranch.Tree().File("README.md").Contents(ctx)
+	require.NoError(t, err)
+	require.Contains(t, readme, "Dagger")
 
 	// v0.9.5
-	require.Equal(t, res.Git.Tag.Commit, "9ea5ea7c848fef2a2c47cce0716d5fcb8d6bedeb")
-	require.Contains(t, res.Git.Tag.Tree.File.Contents, "Dagger")
+	byTag := git.Tag("v0.9.5")
+	commit, err = byTag.Commit(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "9ea5ea7c848fef2a2c47cce0716d5fcb8d6bedeb", commit)
+	readme, err = byTag.Tree().File("README.md").Contents(ctx)
+	require.NoError(t, err)
+	require.Contains(t, readme, "Dagger")
+
+	// c80ac2c13df7d573a069938e01ca13f7a81f0345
+	byCommit := git.Commit("c80ac2c13df7d573a069938e01ca13f7a81f0345")
+	commit, err = byCommit.Commit(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "c80ac2c13df7d573a069938e01ca13f7a81f0345", commit)
+	readme, err = byCommit.Tree().File("README.md").Contents(ctx)
+	require.NoError(t, err)
+	require.Contains(t, readme, "Dagger")
+
+	// refs/heads/main
+	byHeadMain := git.Ref("refs/heads/main")
+	commit, err = byHeadMain.Commit(ctx)
+	require.NoError(t, err)
+	require.Equal(t, mainCommit, commit)
+	readme, err = byHeadMain.Tree().File("README.md").Contents(ctx)
+	require.NoError(t, err)
+	require.Contains(t, readme, "Dagger")
 
 	// $ git ls-remote https://github.com/dagger/dagger.git | grep pull/8735
 	// 318970484f692d7a76cfa533c5d47458631c9654	refs/pull/8735/head
-	require.Equal(t, res.Git.HiddenCommit.Commit, "318970484f692d7a76cfa533c5d47458631c9654")
-	require.Contains(t, res.Git.HiddenCommit.Tree.File.Contents, "Dagger")
+	byHiddenCommit := git.Tag("318970484f692d7a76cfa533c5d47458631c9654")
+	commit, err = byHiddenCommit.Commit(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "318970484f692d7a76cfa533c5d47458631c9654", commit)
+	readme, err = byHiddenCommit.Tree().File("README.md").Contents(ctx)
+	require.NoError(t, err)
+	require.Contains(t, readme, "Dagger")
 }
 
 func (GitSuite) TestDiscardGitDir(ctx context.Context, t *testctx.T) {
