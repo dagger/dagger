@@ -522,24 +522,12 @@ func (span *Span) IsInternal() bool {
 	return span.Internal
 }
 
-func (span *Span) SelfDuration(fallbackEnd time.Time) time.Duration {
-	if span.IsRunningOrLinksRunning() {
-		return fallbackEnd.Sub(span.StartTime)
-	}
-	return span.EndTimeOrFallback(fallbackEnd).Sub(span.StartTime)
+func (span *Span) IsCanceled() bool {
+	return span.Canceled || (!span.db.RootSpan.IsRunning() && span.IsRunningOrLinksRunning())
 }
 
 func (span *Span) EndTimeOrFallback(fallbackEnd time.Time) time.Time {
-	if span.IsRunningOrLinksRunning() {
-		return fallbackEnd
-	}
-	maxTime := span.EndTime
-	for effect := range span.EffectSpans {
-		if effect.EndTime.After(maxTime) {
-			maxTime = effect.EndTime
-		}
-	}
-	return maxTime
+	return span.Activity.EndTimeOrFallback(fallbackEnd)
 }
 
 func (span *Span) EndTimeOrNow() time.Time {
