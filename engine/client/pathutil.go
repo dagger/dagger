@@ -14,8 +14,8 @@ func LexicalRelativePath(cwdPath, modPath string) (string, error) {
 	cwdPath = normalizePath(cwdPath)
 	modPath = normalizePath(modPath)
 
-	cwdDrive := getDrive(cwdPath)
-	modDrive := getDrive(modPath)
+	cwdDrive := GetDrive(cwdPath)
+	modDrive := GetDrive(modPath)
 	if cwdDrive != modDrive {
 		return "", fmt.Errorf("cannot make paths on different drives relative: %s and %s", cwdDrive, modDrive)
 	}
@@ -44,8 +44,8 @@ func normalizePath(path string) string {
 	return path
 }
 
-// getDrive extracts the drive letter or UNC share from a path.
-func getDrive(path string) string {
+// GetDrive extracts the drive letter or UNC share from a path.
+func GetDrive(path string) string {
 	// Check for drive letter (e.g., "C:")
 	if len(path) >= 2 && path[1] == ':' {
 		return strings.ToUpper(path[:2])

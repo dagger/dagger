@@ -5,12 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/moby/buildkit/cache"
-	"github.com/moby/buildkit/client"
+	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/filesync"
 	"github.com/moby/buildkit/snapshot"
@@ -28,6 +29,7 @@ import (
 
 	"dagger.io/dagger/telemetry"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/client"
 )
 
 type Opt struct {
@@ -192,20 +194,11 @@ func (ls *localSourceHandler) snapshot(ctx context.Context, session session.Grou
 	ctx, span := newSpan(ctx, "filesync")
 	defer telemetry.End(span, func() error { return rerr })
 
-	ref, release, err := ls.getRef(ctx, session)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if err := release(ctx); err != nil {
-			rerr = errors.Join(rerr, fmt.Errorf("failed to release ref: %w", err))
-		}
-	}()
-
 	clientPath := ls.src.Name
 
-	// We need the full abs path since the cache ref we sync into holds every dir from this client's root
-	// We also need to evaluate all symlinks so we only create the actual parent dirs and not any symlinks as dirs
+	// We need the full abs path since the cache ref we sync into holds every dir from this client's root.
+	// We also need to evaluate all symlinks so we only create the actual parent dirs and not any symlinks as dirs.
+	// Additionally, we need to see if this is a Windows client and thus needs drive handling
 	statCtx := engine.LocalImportOpts{
 		Path:              clientPath,
 		StatPathOnly:      true,
@@ -222,9 +215,23 @@ func (ls *localSourceHandler) snapshot(ctx context.Context, session session.Grou
 		return nil, fmt.Errorf("failed to receive stat message: %w", err)
 	}
 	diffCopyClient.CloseSend()
-	clientPath = statMsg.Path
+	clientPath = filepath.Clean(statMsg.Path)
+	drive := client.GetDrive(clientPath)
+	if drive != "" {
+		clientPath = clientPath[len(drive):]
+	}
 
-	finalRef, err := ls.sync(ctx, ref, clientPath, session, caller)
+	ref, release, err := ls.getRef(ctx, session, drive)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := release(ctx); err != nil {
+			rerr = errors.Join(rerr, fmt.Errorf("failed to release ref: %w", err))
+		}
+	}()
+
+	finalRef, err := ls.sync(ctx, ref, clientPath, drive, session, caller)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sync: %w", err)
 	}
@@ -236,11 +243,12 @@ func (ls *localSourceHandler) sync(
 	ctx context.Context,
 	ref *filesyncCacheRef,
 	clientPath string,
+	drive string, // only set for windows clients, otherwise ""
 	session session.Group,
 	caller session.Caller,
 ) (_ cache.ImmutableRef, rerr error) {
 	// first ensure that all the parent dirs under the client's rootfs (above the given clientPath) are synced in correctly
-	if err := ls.syncParentDirs(ctx, ref, clientPath, caller); err != nil {
+	if err := ls.syncParentDirs(ctx, ref, clientPath, drive, caller); err != nil {
 		return nil, fmt.Errorf("failed to sync parent dirs: %w", err)
 	}
 
@@ -250,7 +258,7 @@ func (ls *localSourceHandler) sync(
 	}()
 
 	// now sync in the clientPath dir
-	remote := newRemoteFS(caller, clientPath, ls.src.IncludePatterns, ls.src.ExcludePatterns)
+	remote := newRemoteFS(caller, drive+clientPath, ls.src.IncludePatterns, ls.src.ExcludePatterns)
 	local, err := newLocalFS(ref.sharedState, clientPath, ls.src.IncludePatterns, ls.src.ExcludePatterns)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create local fs: %w", err)
@@ -262,6 +270,7 @@ func (ls *localSourceHandler) syncParentDirs(
 	ctx context.Context,
 	ref *filesyncCacheRef,
 	clientPath string,
+	drive string, // only set for windows clients, otherwise ""
 	caller session.Caller,
 ) (rerr error) {
 	ctx, cancel := context.WithCancelCause(ctx)
@@ -281,7 +290,11 @@ func (ls *localSourceHandler) syncParentDirs(
 	exclude := include + "/*"
 	excludes := []string{exclude}
 
-	remote := newRemoteFS(caller, "/", includes, excludes)
+	root := "/"
+	if drive != "" {
+		root = drive + "/"
+	}
+	remote := newRemoteFS(caller, root, includes, excludes)
 
 	local, err := newLocalFS(ref.sharedState, "/", includes, excludes)
 	if err != nil {
@@ -310,8 +323,12 @@ type filesyncCacheRef struct {
 func (ls *localSourceHandler) getRef(
 	ctx context.Context,
 	session session.Group,
+	drive string, // only set for windows clients, otherwise ""
 ) (_ *filesyncCacheRef, _ func(context.Context) error, rerr error) {
 	clientKey := ls.src.SharedKeyHint // this is the clientMetadata.ClientStableID
+	if drive != "" {
+		clientKey = drive + clientKey
+	}
 	ls.perClientMu.Lock(clientKey)
 	defer ls.perClientMu.Unlock(clientKey)
 
@@ -348,7 +365,7 @@ func (ls *localSourceHandler) getRef(
 		if ref.mutRef == nil {
 			ref.mutRef, err = ls.cm.New(ctx, nil, nil,
 				cache.CachePolicyRetain,
-				cache.WithRecordType(client.UsageRecordTypeLocalSource),
+				cache.WithRecordType(bkclient.UsageRecordTypeLocalSource),
 				cache.WithDescription(fmt.Sprintf("local source for %s", ls.src.SharedKeyHint)),
 			)
 			if err != nil {

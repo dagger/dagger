@@ -116,6 +116,7 @@ func (fs *remoteFS) Walk(ctx context.Context, path string, walkFn fs.WalkDirFunc
 					// e.g. a linux path foo/bar\baz cannot be represented on windows
 					return &os.PathError{Path: pkt.Stat.Path, Err: syscall.EINVAL, Op: "unrepresentable path"}
 				}
+
 				pkt.Stat.Path = path
 				pkt.Stat.Linkname = filepath.FromSlash(pkt.Stat.Linkname)
 
