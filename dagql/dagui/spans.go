@@ -457,6 +457,12 @@ func (span *Span) CachedReason() (bool, []string) {
 	if span.Cached {
 		return true, []string{"span is cached"}
 	}
+	if span.ChildCount > 0 {
+		return false, []string{"span has children"}
+	}
+	if span.HasLogs {
+		return false, []string{"span has logs"}
+	}
 	states := map[bool]int{}
 	reasons := []string{}
 	track := func(effect string, cached bool) {
