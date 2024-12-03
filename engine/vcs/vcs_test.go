@@ -184,6 +184,14 @@ func TestRepoRootForImportPath(t *testing.T) {
 				Root: "gitlab.com/testguigui1/dagger-public-sub/mywork.git",
 			},
 		},
+		{
+			"gitlab.com/dagger-modules/test/more/dagger-test-modules-public/../../..",
+			&RepoRoot{
+				VCS:  vcsGit,
+				Repo: "https://gitlab.com/dagger-modules/test/more/dagger-test-modules-public",
+				Root: "gitlab.com/dagger-modules/test/more/dagger-test-modules-public",
+			},
+		},
 		// GitLab private repo
 		// behavior of private GitLab repos is different from public ones
 		// https://gitlab.com/gitlab-org/gitlab-foss/-/blob/master/lib/gitlab/middleware/go.rb#L114-126
