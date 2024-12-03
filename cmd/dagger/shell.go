@@ -1760,13 +1760,16 @@ func (h *shellCallHandler) registerCommands() { //nolint:gocyclo
 			},
 		},
 		&ShellCommand{
-			Use:         ".use",
-			Description: "Set a loaded module as the default for the session",
+			Use:         ".use <module>",
+			Description: "Set a module as the default for the session",
 			GroupID:     moduleGroup.ID,
-			Args:        NoArgs,
-			RunState: func(cmd *ShellCommand, _ []string, st *ShellState) error {
-				if st == nil {
-					return fmt.Errorf("usage: <module> | .use")
+			Args:        ExactArgs(1),
+			Run: func(cmd *ShellCommand, args []string) error {
+				st, err := h.getOrInitDefState(args[0], func() (*moduleDef, error) {
+					return initializeModule(cmd.Context(), h.dag, args[0])
+				})
+				if err != nil {
+					return err
 				}
 
 				if st.ModRef != h.modRef {
