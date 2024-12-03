@@ -364,7 +364,15 @@ type Activity struct {
 	CompletedIntervals []Interval
 	EarliestRunning    time.Time
 	EarliestRunningID  SpanID
-	allRunning         SpanSet
+
+	// Keep track of the full set of running spans so we can update
+	// EarliestRunning as they complete.
+	//
+	// This needs to be synced to the frontend so it doesn't lose track of the
+	// running status in updateEarliest. We exclude from JSON marshalling since
+	// the map key is incompatible. Syncing to the frontend uses encoding/gob,
+	// which accepts the map key type.
+	AllRunning map[SpanID]time.Time `json:"-"`
 }
 
 func (activity *Activity) Intervals(now time.Time) iter.Seq[Interval] {
@@ -402,29 +410,16 @@ type Interval struct {
 	End   time.Time
 }
 
-func (activity *Activity) updateEarliest() (changed bool) {
-	if len(activity.allRunning.Order) > 0 {
-		earliest := activity.allRunning.Order[0]
-		activity.EarliestRunning = earliest.StartTime
-		activity.EarliestRunningID = earliest.ID
-		changed = true
-	} else if activity.EarliestRunningID.IsValid() {
-		activity.EarliestRunning = time.Time{}
-		activity.EarliestRunningID = SpanID{}
-		changed = true
-	}
-	return
-}
-
 func (activity *Activity) Add(span *Span) bool {
-	if activity.allRunning == nil {
-		activity.allRunning = NewSpanSet()
-	}
-
 	if span.IsRunning() {
+		if activity.AllRunning == nil {
+			activity.AllRunning = map[SpanID]time.Time{}
+		}
+
 		var changed bool
 		// written a little awkwardly to avoid short-circuiting
-		if activity.allRunning.Add(span) {
+		if _, found := activity.AllRunning[span.ID]; !found {
+			activity.AllRunning[span.ID] = span.StartTime
 			changed = true
 		}
 		if activity.updateEarliest() {
@@ -433,7 +428,7 @@ func (activity *Activity) Add(span *Span) bool {
 		return changed
 	}
 
-	activity.allRunning.Remove(span)
+	delete(activity.AllRunning, span.ID)
 	activity.updateEarliest()
 
 	ival := Interval{
@@ -470,7 +465,11 @@ func (activity *Activity) Add(span *Span) bool {
 	return true
 }
 
-func (activity *Activity) EndTime(now time.Time) time.Time {
+func (activity *Activity) IsRunning() bool {
+	return activity.EarliestRunningID.IsValid()
+}
+
+func (activity *Activity) EndTimeOrFallback(now time.Time) time.Time {
 	if !activity.EarliestRunning.IsZero() {
 		return now
 	}
@@ -478,6 +477,23 @@ func (activity *Activity) EndTime(now time.Time) time.Time {
 		return time.Time{}
 	}
 	return activity.CompletedIntervals[len(activity.CompletedIntervals)-1].End
+}
+
+func (activity *Activity) updateEarliest() (changed bool) {
+	if len(activity.AllRunning) > 0 {
+		for id, t := range activity.AllRunning {
+			if activity.EarliestRunning.IsZero() || t.Before(activity.EarliestRunning) {
+				activity.EarliestRunning = t
+				activity.EarliestRunningID = id
+				changed = true
+			}
+		}
+	} else if activity.EarliestRunningID.IsValid() {
+		activity.EarliestRunning = time.Time{}
+		activity.EarliestRunningID = SpanID{}
+		changed = true
+	}
+	return
 }
 
 // mergeIntervals merges overlapping intervals in the activity.

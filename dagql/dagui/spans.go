@@ -399,6 +399,9 @@ func (span *Span) IsRunningOrLinksRunning() bool {
 	if span.IsRunning() {
 		return true
 	}
+	if span.Activity.IsRunning() {
+		return true
+	}
 	for effect := range span.EffectSpans {
 		if effect.IsRunning() {
 			return true
