@@ -1,29 +1,12 @@
 #!/usr/bin/env ruby
 
-require 'bundler/setup'
+$LOAD_PATH.unshift('sdk', 'lib')
 
-require 'dagger'
-require_relative './dagger'
+require 'dagger_module'
 
-class HelloDagger
-  def hello_world(str)
-    @dag
-      .container
-      .from(address: "alpine:latest")
-      .with_exec(args: ["echo", "hello #{str}"])
-      .stdout
-  end
-
-  def grep_dir(dir, pattern)
-    mount_dir = @dag
-      .host
-      .directory(path: dir)
-    @dag
-      .container
-      .from(address: "alpine:latest")
-      .with_mounted_directory(path: "/mnt", directory: mount_dir)
-      .with_workdir(path: "/mnt")
-      .with_exec(args: ["grep", "-R", pattern, "."])
-      .stdout
-  end
+def run(args)
+  name = args.shift
+  puts DaggerModule.new.send(name.gsub('-', '_'), *args)
 end
+
+run(ARGV)

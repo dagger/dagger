@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
+	"path"
 	"path/filepath"
+	"slices"
 
 	"ruby-sdk/internal/dagger"
 
@@ -15,6 +17,7 @@ const (
 	RubyDigest       = "sha256:caeab43b356463e63f87af54a03de1ae4687b36da708e6d37025c557ade450f8"
 	ModSourceDirPath = "/src"
 	GenPath          = "lib/dagger"
+	SdkPath          = "sdk/dagger"
 	codegenBinPath   = "/codegen"
 	schemaPath       = "/schema.json"
 )
@@ -41,7 +44,6 @@ func (c *moduleConfig) sdkPath() string {
 func New(
 	// Directory with the ruby SDK source code.
 	// +optional
-	// +ignore=["**", "!**/*.rb", "!Gemfile"]
 	sdkSourceDir *dagger.Directory,
 ) (*RubySdk, error) {
 	if sdkSourceDir == nil {
@@ -94,70 +96,58 @@ func (m *RubySdk) Codegen(
 		codegen,
 	).
 		WithVCSGeneratedPaths([]string{
-			GenPath + "/**",
+			SdkPath + "/**",
+			"entrypoint.rb",
 		}).
 		WithVCSIgnoredPaths([]string{
-			GenPath,
+			SdkPath,
+			SdkPath + ".rb",
+			"entrypoint.rb",
 		}), nil
 }
 
 func (m *RubySdk) CodegenBase(
-	_ context.Context,
+	ctx context.Context,
 	modSource *dagger.ModuleSource,
 	introspectionJSON *dagger.File,
 ) (*dagger.Container, error) {
 	base := m.base()
 
-	// Get a directory with the SDK sources and the generated client.
-	sdk := m.SDKSourceDir.
-		WithoutDirectory("codegen").
-		WithoutDirectory("runtime").
-		WithDirectory(".", m.generateClient(base, introspectionJSON))
-
 	base = base.
 		WithMountedDirectory("/opt/module", dag.CurrentModule().Source().Directory(".")).
 		WithDirectory(ModSourceDirPath, modSource.ContextDirectory()).
-		// WithDirectory(ModSourceDirPath,
-		//	dag.Directory().WithDirectory("/", modSource.ContextDirectory(), dagger.DirectoryWithDirectoryOpts{
-		//		Include: m.moduleConfigFiles(m.moduleConfig.subPath),
-		//	})).
-		WithDirectory(m.moduleConfig.modulePath(), m.SDKSourceDir, dagger.ContainerWithDirectoryOpts{
-			Include: []string{
-				"Gemfile",
-				"lib",
-			},
-			Exclude: []string{
-				"lib/dagger/client.gen.rb",
-			},
-		}).
-		WithDirectory(filepath.Join(m.moduleConfig.modulePath(), GenPath), sdk, dagger.ContainerWithDirectoryOpts{
-			Include: []string{
-				"client.gen.rb",
-			},
-		}).
+		With(m.generatedSDK(introspectionJSON)).
+		WithDirectory(
+			ModSourceDirPath,
+			dag.Directory().WithDirectory("/", modSource.ContextDirectory(), dagger.DirectoryWithDirectoryOpts{
+				Exclude: []string{
+					filepath.Join(m.moduleConfig.subPath, "entrypoint.rb"),
+					filepath.Join(m.moduleConfig.subPath, "sdk"),
+				},
+			}),
+		).
 		WithWorkdir(m.moduleConfig.modulePath())
-	// add template files
-	base = base.
-		WithDirectory(".", base.Directory("/opt/module/template"), dagger.ContainerWithDirectoryOpts{
-			Include: []string{
-				"dagger.rb",
-				"dagger.gemspec",
-				"main.rb",
-			},
-		}).
-		WithExec([]string{"sed", "-i", "-e", fmt.Sprintf("s/HelloDagger/%s/g", strcase.ToCamel(m.moduleConfig.name)), "dagger.rb"}).
-		WithExec([]string{"sed", "-i", "-e", fmt.Sprintf("s/HelloDagger/%s/g", strcase.ToCamel(m.moduleConfig.name)), "dagger.gemspec"}).
-		WithExec([]string{"sed", "-i", "-e", fmt.Sprintf("s/HelloDagger/%s/g", strcase.ToCamel(m.moduleConfig.name)), "main.rb"}).
-		WithExec([]string{"bundle", "install"})
+	base, err := m.template(ctx, base)
 
-	return base, nil
+	return base, err
 }
 
 func (m *RubySdk) base() *dagger.Container {
 	return dag.
 		Container().
 		From(fmt.Sprintf("%s@%s", RubyImage, RubyDigest)).
-		WithExec([]string{"apk", "add", "git", "openssh", "curl"})
+		WithExec([]string{"apk", "add", "git", "openssh", "curl", "build-base", "pkgconf", "ruby-dev", "bash"}).
+		WithExec([]string{"gem", "install", "bundler"})
+}
+
+func (m *RubySdk) generateSDKDirectory(
+	ctr *dagger.Container,
+	introspectionJSON *dagger.File,
+) *dagger.Directory {
+	return m.SDKSourceDir.
+		WithoutDirectory("codegen").
+		WithoutDirectory("runtime").
+		WithDirectory(".", m.generateClient(ctr, introspectionJSON))
 }
 
 func (m *RubySdk) generateClient(
@@ -183,6 +173,69 @@ func (m *RubySdk) generateClient(
 		Directory(m.moduleConfig.sdkPath())
 }
 
+func (m *RubySdk) generatedSDK(
+	introspectionJSON *dagger.File,
+) dagger.WithContainerFunc {
+	return func(ctr *dagger.Container) *dagger.Container {
+		sdk := m.generateSDKDirectory(ctr, introspectionJSON)
+		return ctr.
+			WithDirectory(
+				filepath.Join(m.moduleConfig.modulePath(), "sdk"),
+				m.SDKSourceDir.Directory("lib/")).
+			WithDirectory(filepath.Join(m.moduleConfig.modulePath(), "sdk/dagger"), sdk, dagger.ContainerWithDirectoryOpts{
+				Include: []string{
+					"client.gen.rb",
+				},
+			})
+	}
+}
+
+func (m *RubySdk) template(
+	ctx context.Context,
+	ctr *dagger.Container,
+) (*dagger.Container, error) {
+	moduleName := m.moduleConfig.name
+	camelModuleName := strcase.ToCamel(moduleName)
+	snakeModuleName := strcase.ToSnake(moduleName)
+	tmplModuleFileName := filepath.Join("lib", "module.rb")
+	moduleFileName := filepath.Join("lib", snakeModuleName+".rb")
+	entryPointFile := filepath.Join(m.moduleConfig.modulePath(), "entrypoint.rb")
+	moduleFiles, err := ctr.Directory(".").Entries(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("could not list module source entries: %w", err)
+	}
+	if !slices.Contains(moduleFiles, "lib") {
+		ctr = ctr.WithDirectory("lib", dag.Directory())
+	}
+	moduleSourceFiles, err := ctr.Directory("lib").Entries(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("could not list module source entries: %w", err)
+	}
+	if !slices.ContainsFunc(moduleSourceFiles, func(s string) bool {
+		return path.Ext(s) == ".rb"
+	}) {
+		ctr = ctr.
+			WithDirectory(filepath.Dir(moduleFileName), ctr.Directory("/opt/module/template"), dagger.ContainerWithDirectoryOpts{
+				Include: []string{
+					"module.rb",
+				},
+			}).
+			WithExec([]string{"sed", "-i", "-e", fmt.Sprintf("s/DaggerModule/%s/g", camelModuleName), tmplModuleFileName}).
+			WithExec([]string{"mv", tmplModuleFileName, moduleFileName})
+	}
+	ctr = ctr.
+		WithDirectory(".", ctr.Directory("/opt/module/template"), dagger.ContainerWithDirectoryOpts{
+			Include: []string{
+				"Gemfile",
+				"entrypoint.rb",
+			},
+		}).
+		WithExec([]string{"sed", "-i", "-e", fmt.Sprintf("s/DaggerModule/%s/g", camelModuleName), entryPointFile}).
+		WithExec([]string{"sed", "-i", "-e", fmt.Sprintf("s/dagger_module/%s/g", snakeModuleName), entryPointFile}).
+		WithExec([]string{"bundle", "install"})
+	return ctr, nil
+}
+
 func (m *RubySdk) ModuleRuntime(
 	ctx context.Context,
 	modSource *dagger.ModuleSource,
@@ -191,5 +244,14 @@ func (m *RubySdk) ModuleRuntime(
 	if err := m.setModuleConfig(ctx, modSource); err != nil {
 		return nil, err
 	}
-	return m.CodegenBase(ctx, modSource, introspectionJSON)
+	ctr, err := m.CodegenBase(ctx, modSource, introspectionJSON)
+	if err != nil {
+		return nil, err
+	}
+
+	entryPointFile := filepath.Join(m.moduleConfig.modulePath(), "entrypoint.rb")
+	ctr = ctr.
+		WithEntrypoint([]string{"/bin/sh", "-c", "(cd " + m.moduleConfig.modulePath() + "; bundle exec ruby " + entryPointFile + ")"})
+
+	return ctr, nil
 }
