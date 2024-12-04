@@ -426,6 +426,8 @@ The result will look like this:
 Hello, world
 ```
 
+Passing null to an optional argument signals that no default value should be used.
+
 ### Directories and files
 
 It is possible to automatically load a filesystem path as a `Directory` or `File` object in a Dagger Function, by passing it as a "default path" to the corresponding argument. The `Directory` or `File` loaded in this manner is not merely a string, but it is the actual filesystem state of the specified directory or file, managed by the Dagger Engine and handled in code just like any another variable.
