@@ -79,16 +79,6 @@ It's typically run persistently, as opposed to sessions which only last for the 
 
 ## FAQ
 
-### What are the steps for using a custom runner?
-
-There are more [details](#runner-details) worth reviewing, but the consolidated steps are:
-
-1. Determine the runner version required by checking the release notes of the SDK you intend to use.
-1. If changes to the base image are needed, make those and push them somewhere. If no changes are needed, just use it as is.
-1. Start the runner image in your target of choice, keeping the [requirements](#execution-requirements) and [configuration](#configuration) in mind.
-1. Export the `_EXPERIMENTAL_DAGGER_RUNNER_HOST` environment variable with [a value pointing to your target](#connection-interface).
-1. Call `dagger run` or execute SDK code directly with that environment variable set.
-
 ### What compatibility is there between SDK, CLI and Runner versions?
 
 This is only needed if you are using a custom provisioned runner or a pre-installed CLI. If you are just using an SDK directly a CLI and runner will be provisioned automatically at compatible versions.
@@ -119,104 +109,6 @@ Running the Dagger Engine in rootless mode constrains network management due to 
 It is possible to use userspace TCP/IP implementations such as [slirp](https://github.com/rootless-containers/slirp4netns) as a workaround, but they often significantly decrease network performance. This [comparison table of network drivers](https://github.com/rootless-containers/rootlesskit/blob/master/docs/network.md#network-drivers) shows that `slirp` is at least five times slower than a root-privileged network driver.
 
 Newer options for more performant userspace network stacks have arisen in recent years, but they are generally either reliant on relatively recent kernel versions or in a nascent stage that would require significant validation around robustness+security.
-
-## Runner Details
-
-### Execution Requirements
-
-1. The runner container currently needs root capabilities, including among others `CAP_SYS_ADMIN`, in order to execute pipelines.
-   - For example, this will be granted when using the `--privileged` flag of `docker run`.
-   - There is an issue for [supporting rootless execution](https://github.com/dagger/dagger/issues/1287).
-1. The runner container should be given a volume at `/var/lib/dagger`.
-   - Otherwise runner execution may be extremely slow. This is due to the fact that it relies on overlayfs mounts for efficient operation, which isn't possible when `/var/lib/dagger` is itself an overlayfs.
-   - For example, this can be provided to a `docker run` command as `-v dagger-engine:/var/lib/dagger`
-1. The container image comes with a default entrypoint which should be used to start the runner, no extra args are needed.
-1. The container image comes with a default config file at `/etc/dagger/engine.toml`
-   - The `insecure-entitlements = ["security.insecure"]` setting enables use of the `InsecureRootCapabilities` flag in `WithExec`. Removing that line will result in an error when trying to use that flag.
-
-### Configuration
-
-Right now very few configuration knobs are supported as we are still working out the best interface for exposing them.
-
-Currently supported is:
-
-#### Custom CA Certs
-
-If you need any extra CA certs to be included in order to, e.g. push images to a private registry, they can be included under `/etc/ssl/certs` in the runner image.
-
-This can be accomplished by building a custom engine image using ours as a base or by mounting them into a container created from our image at runtime.
-
-#### Disabling Privileged Execs
-
-By default, the Dagger engine allows execs to run with root capabilities when the `InsecureRootCapabilities` field is set to true in the `WithExec` API.
-
-This can be disabled by overriding the default engine config at `/etc/dagger/engine.toml` to remove the line `insecure-entitlements = ["security.insecure"]`
-
-#### Registry Mirrors
-
-If you want to use a registry mirror, you can append the configuration to `/etc/dagger/engine.toml` using this format:
-
-```toml
-[registry."docker.io"]
-  mirrors = ["mirror.gcr.io"]
-```
-
-You can repeat that for as many registries and mirrors you want, e.g.
-
-```toml
-[registry."docker.io"]
-  mirrors = ["mirror.a.com", "mirror.b.com"]
-
-[registry."some.other.registry.com"]
-  mirrors = ["mirror.foo.com", "mirror.bar.com"]
-```
-
-### Connection Interface
-
-After the runner starts up, the CLI needs to connect to it. In the default path, this will all happen automatically.
-
-However if the `_EXPERIMENTAL_DAGGER_RUNNER_HOST` env var is set, then the CLI will instead connect to the endpoint specified there. It currently accepts values in the following format:
-
-1. `docker-container://<container name>` - Connect to the runner inside the given docker container.
-   - Requires the docker CLI be present and usable. Will result in shelling out to `docker exec`.
-1. `docker-image://<container image reference>` - Start the runner in docker using the provided container image, pulling it locally if needed
-   - Requires the docker CLI be present and usable.
-1. `podman-container://<container name>` - Connect to the runner inside the given podman container.
-1. `kube-pod://<podname>?context=<context>&namespace=<namespace>&container=<container>` - Connect to the runner inside the given k8s pod. Query strings params like context and namespace are optional.
-1. `unix://<path to unix socket>` - Connect to the runner over the provided unix socket.
-1. `tcp://<addr:port>` - Connect to the runner over tcp to the provided addr+port. No encryption will be setup.
-
-> **Warning**
-> Dagger itself does not setup any encryption of data sent on this wire, so it relies on the underlying connection type to implement this when needed. If you are using a connection type that does not layer encryption then all queries and responses will be sent in plaintext over the wire from the CLI to the Runner.
-
-### Examples
-
-This example demonstrates how to configure the Dagger Engine to use a different registry mirror for container images instead of the default (Docker Hub)
-
-1. Create a file named `engine.toml` that contains the registry mirror.
-
-```
-debug = true
-insecure-entitlements = ["security.insecure"]
-
-[registry."docker.io"]
-  mirrors = ["mirror.gcr.io"]
-```
-
-2. Manually starts the engine with the custom `engine.toml`:
-
-```shell
-docker run --rm --name customized-dagger-engine --privileged --volume $PWD/engine.toml:/etc/dagger/engine.toml registry.dagger.io/engine:v0.8.8
-```
-
-3. Test the configuration:
-
-```shell
-export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://customized-dagger-engine
-dagger query --progress=plain <<< '{ container { from(address:"hello-world") { stdout } } }'
-```
-
-You should see the specified `hello-world` container being pulled from the mirror instead of from Docker Hub.
 
 # Appendix
 
