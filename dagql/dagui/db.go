@@ -708,7 +708,7 @@ func (db *DB) MostInterestingSpan(dig string) *Span {
 	for _, span := range db.Intervals[dig] {
 		// a running vertex is always most interesting, and these are already in
 		// order
-		if span.IsRunningOrLinksRunning() {
+		if span.IsRunningOrEffectsRunning() {
 			return span
 		}
 		switch {

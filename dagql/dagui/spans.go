@@ -185,7 +185,7 @@ func sliceOf[T any](val any) []T {
 func (span *Span) PropagateStatusToParentsAndLinks() {
 	for parent := range span.Parents {
 		var changed bool
-		if span.IsRunningOrLinksRunning() {
+		if span.IsRunningOrEffectsRunning() {
 			changed = parent.RunningSpans.Add(span)
 		} else {
 			changed = parent.RunningSpans.Remove(span)
@@ -395,7 +395,7 @@ func (span *Span) EffectSpans(f func(*Span) bool) {
 	}
 }
 
-func (span *Span) IsRunningOrLinksRunning() bool {
+func (span *Span) IsRunningOrEffectsRunning() bool {
 	if span.IsRunning() {
 		return true
 	}
@@ -416,7 +416,7 @@ func (span *Span) IsPending() bool {
 }
 
 func (span *Span) PendingReason() (bool, []string) {
-	if span.IsRunningOrLinksRunning() {
+	if span.IsRunningOrEffectsRunning() {
 		var reasons []string
 		if span.IsRunning() {
 			reasons = append(reasons, "span is running")

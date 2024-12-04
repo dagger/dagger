@@ -83,7 +83,7 @@ func (opts FrontendOpts) ShouldShow(span *Span) bool {
 		// reveal pending spans so the user can see what's queued to run
 		return true
 	}
-	if span.IsRunningOrLinksRunning() {
+	if span.IsRunningOrEffectsRunning() {
 		return true
 	}
 	// TODO: avoid breaking chains

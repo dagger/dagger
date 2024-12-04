@@ -112,7 +112,7 @@ func (db *DB) WalkSpans(opts FrontendOpts, spans []*Span, f func(*TraceTree)) {
 		if lastTree != nil && lastTree.Span.Call != nil && tree.Span.Call == nil {
 			lastTree.Final = true
 		}
-		if span.IsRunningOrLinksRunning() {
+		if span.IsRunningOrEffectsRunning() {
 			tree.setRunning()
 		}
 		f(tree)
