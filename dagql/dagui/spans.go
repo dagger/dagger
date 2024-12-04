@@ -48,10 +48,13 @@ type Span struct {
 // Version with every call.
 func (span *Span) Snapshot() SpanSnapshot {
 	span.ChildCount = countChildren(span.ChildSpans)
-	span.Failed = span.IsFailedOrCausedFailure()
-	span.Cached = span.IsCached()
-	span.Pending = span.IsPending()
-	return span.SpanSnapshot
+	span.Failed_, span.FailedReason_ = span.FailedReason()
+	span.Cached_, span.CachedReason_ = span.CachedReason()
+	span.Pending_, span.PendingReason_ = span.PendingReason()
+	span.Canceled_, span.CanceledReason_ = span.CanceledReason()
+	snapshot := span.SpanSnapshot
+	snapshot.Remote = true // NOTE: applied to copy
+	return snapshot
 }
 
 func countChildren(set SpanSet) int {
@@ -70,6 +73,10 @@ type SpanSnapshot struct {
 	// Monotonically increasing number for each update seen for this span.
 	Version int
 
+	// Indicates that this snapshot came from a remote server and that its state
+	// should be trusted over any state derived from the local state.
+	Remote bool
+
 	ID        SpanID
 	Name      string
 	StartTime time.Time
@@ -82,12 +89,22 @@ type SpanSnapshot struct {
 
 	Status sdktrace.Status `json:",omitempty"`
 
-	Failed   bool `json:",omitempty"` // includes links/caused failures
-	Internal bool `json:",omitempty"`
-	Cached   bool `json:",omitempty"`
-	Pending  bool `json:",omitempty"`
-	Canceled bool `json:",omitempty"`
+	// statuses derived from span and its effects
+	Failed_         bool     `json:",omitempty"`
+	FailedReason_   []string `json:",omitempty"`
+	Cached_         bool     `json:",omitempty"`
+	CachedReason_   []string `json:",omitempty"`
+	Pending_        bool     `json:",omitempty"`
+	PendingReason_  []string `json:",omitempty"`
+	Canceled_       bool     `json:",omitempty"`
+	CanceledReason_ []string `json:",omitempty"`
 
+	// statuses reported by the span via attributes
+	Canceled bool `json:",omitempty"`
+	Cached   bool `json:",omitempty"`
+
+	// UI preferences reported by the span, or applied to it (sync=>passthrough)
+	Internal     bool `json:",omitempty"`
 	Encapsulate  bool `json:",omitempty"`
 	Encapsulated bool `json:",omitempty"`
 	Mask         bool `json:",omitempty"`
@@ -244,23 +261,6 @@ func (span *Span) IsUnset() bool {
 	return span.Status.Code == codes.Unset
 }
 
-func (span *Span) IsFailedOrCausedFailure() bool {
-	if span.Failed {
-		// snapshotted, likely based on the following checks
-		return true
-	}
-	if span.Status.Code == codes.Error ||
-		len(span.FailedLinks.Order) > 0 {
-		return true
-	}
-	for _, effect := range span.EffectIDs {
-		if span.db.FailedEffects[effect] {
-			return true
-		}
-	}
-	return false
-}
-
 // Errors returns the individual errored spans contributing to the span's
 // Failed or CausedFailure status.
 func (span *Span) Errors() SpanSet {
@@ -291,7 +291,26 @@ func (span *Span) Errors() SpanSet {
 	return errs
 }
 
+func (span *Span) IsFailedOrCausedFailure() bool {
+	if span.Remote {
+		return span.Failed_
+	}
+	if span.Status.Code == codes.Error ||
+		len(span.FailedLinks.Order) > 0 {
+		return true
+	}
+	for _, effect := range span.EffectIDs {
+		if span.db.FailedEffects[effect] {
+			return true
+		}
+	}
+	return false
+}
+
 func (span *Span) FailedReason() (bool, []string) {
+	if span.Remote {
+		return span.Failed_, span.FailedReason_
+	}
 	var reasons []string
 	if span.Status.Code == codes.Error {
 		reasons = append(reasons, "span itself errored")
@@ -396,10 +415,10 @@ func (span *Span) EffectSpans(f func(*Span) bool) {
 }
 
 func (span *Span) IsRunningOrEffectsRunning() bool {
-	if span.IsRunning() {
-		return true
+	if span.Remote {
+		return span.Activity.IsRunning()
 	}
-	if span.Activity.IsRunning() {
+	if span.IsRunning() {
 		return true
 	}
 	for effect := range span.EffectSpans {
@@ -416,6 +435,9 @@ func (span *Span) IsPending() bool {
 }
 
 func (span *Span) PendingReason() (bool, []string) {
+	if span.Remote {
+		return span.Pending_, span.PendingReason_
+	}
 	if span.IsRunningOrEffectsRunning() {
 		var reasons []string
 		if span.IsRunning() {
@@ -454,8 +476,11 @@ func (span *Span) IsCached() bool {
 }
 
 func (span *Span) CachedReason() (bool, []string) {
+	if span.Remote {
+		return span.Cached_, span.CachedReason_
+	}
 	if span.Cached {
-		return true, []string{"span is cached"}
+		return true, []string{"span says it is cached"}
 	}
 	if span.ChildCount > 0 {
 		return false, []string{"span has children"}
@@ -523,7 +548,22 @@ func (span *Span) IsInternal() bool {
 }
 
 func (span *Span) IsCanceled() bool {
-	return span.Canceled || (!span.db.RootSpan.IsRunning() && span.IsRunningOrLinksRunning())
+	canceled, _ := span.CanceledReason()
+	return canceled
+}
+
+func (span *Span) CanceledReason() (bool, []string) {
+	if span.Remote {
+		return span.Canceled_, span.CanceledReason_
+	}
+	var reasons []string
+	if span.Canceled {
+		reasons = append(reasons, "span says it is canceled")
+	}
+	if !span.db.RootSpan.IsRunning() && span.IsRunningOrEffectsRunning() {
+		reasons = append(reasons, "root span completed, leaving span running")
+	}
+	return len(reasons) > 0, reasons
 }
 
 func (span *Span) EndTimeOrFallback(fallbackEnd time.Time) time.Time {
