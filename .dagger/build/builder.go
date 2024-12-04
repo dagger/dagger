@@ -436,19 +436,17 @@ func (build *Builder) cniPlugins() []*dagger.File {
 func (build *Builder) dumbInit() *dagger.File {
 	// dumb init is static, so we can use it on any base image
 	return dag.
-		Alpine(dagger.AlpineOpts{
-			Branch: consts.AlpineVersion,
-			Packages: []string{
-				"bash",
-				"build-base",
-				"clang",
-			},
-		}).
 		Container().
+		From(consts.AlpineImage).
 		WithDirectory("/", dag.Container().From(consts.XxImage).Rootfs()).
+		WithEnvVariable("BUILDPLATFORM", "linux/"+runtime.GOARCH).
+		WithEnvVariable("TARGETPLATFORM", string(build.platform)).
+		WithExec([]string{"apk", "add", "build-base", "bash", "clang", "lld"}).
+		WithExec([]string{"xx-apk", "add", "gcc", "musl-dev"}).
 		WithMountedDirectory("/src", dag.Git("github.com/yelp/dumb-init").Ref(consts.DumbInitVersion).Tree()).
 		WithWorkdir("/src").
-		WithExec([]string{"make", "CC=xx-cc"}).
+		WithEnvVariable("CC", "xx-clang").
+		WithExec([]string{"make"}).
 		File("dumb-init")
 }
 
