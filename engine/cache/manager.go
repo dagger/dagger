@@ -511,7 +511,6 @@ func (m *manager) descriptorProviderPair(layerMetadata remotecache.CacheLayer) (
 type Manager interface {
 	solver.CacheManager
 	StartCacheMountSynchronization(context.Context) error
-	ReleaseUnreferenced(context.Context) error
 	Close(context.Context) error
 }
 
@@ -526,13 +525,7 @@ func (defaultCacheManager) StartCacheMountSynchronization(ctx context.Context) e
 }
 
 func (c defaultCacheManager) ReleaseUnreferenced(ctx context.Context) error {
-	// this method isn't in the solver.CacheManager interface (this is how buildkit calls it upstream too)
-	if c, ok := c.CacheManager.(interface {
-		ReleaseUnreferenced(context.Context) error
-	}); ok {
-		return c.ReleaseUnreferenced(ctx)
-	}
-	return nil
+	return c.CacheManager.ReleaseUnreferenced(ctx)
 }
 
 func (defaultCacheManager) Close(context.Context) error {

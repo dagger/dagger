@@ -134,6 +134,7 @@ func (srv *Server) gc() {
 	}
 	if size > 0 {
 		bklog.G(ctx).Debugf("gc cleaned up %d bytes", size)
+		go srv.throttledReleaseUnreferenced()
 	}
 }
 

@@ -299,4 +299,4 @@ replace (
 	go.opentelemetry.io/otel/sdk/log => go.opentelemetry.io/otel/sdk/log v0.3.0
 )
 
-replace github.com/moby/buildkit => github.com/dagger/buildkit v0.0.0-20241115192416-09d1f0bb38d1
+replace github.com/moby/buildkit => github.com/dagger/buildkit v0.0.0-20241204003515-0345b9a97709

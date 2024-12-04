@@ -161,8 +161,9 @@ type Server struct {
 	//
 	// gc related
 	//
-	throttledGC func()
-	gcmu        sync.Mutex
+	throttledGC                  func()
+	throttledReleaseUnreferenced func()
+	gcmu                         sync.Mutex
 
 	//
 	// session+client state
@@ -546,6 +547,8 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	})
 
 	srv.throttledGC = throttle.After(time.Minute, srv.gc)
+	// use longer interval for releaseUnreferencedCache deleting links quickly is less important
+	srv.throttledReleaseUnreferenced = throttle.After(5*time.Minute, func() { srv.SolverCache.ReleaseUnreferenced(context.Background()) })
 	defer func() {
 		time.AfterFunc(time.Second, srv.throttledGC)
 	}()
