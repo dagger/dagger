@@ -2281,9 +2281,7 @@ type ModuleSource {
   """Returns whether the module source has a configuration file."""
   configExists: Boolean!
 
-  """
-  The directory containing everything needed to load load and use the module.
-  """
+  """The directory containing everything needed to load and use the module."""
   contextDirectory: Directory!
 
   """
@@ -2560,15 +2558,6 @@ type Query {
   blob(
     """Digest of the blob"""
     digest: String!
-
-    """Media type of the blob"""
-    mediaType: String!
-
-    """Size of the blob"""
-    size: Int!
-
-    """Digest of the uncompressed blob"""
-    uncompressed: String!
   ): Directory!
 
   """Retrieves a container builtin to the engine."""

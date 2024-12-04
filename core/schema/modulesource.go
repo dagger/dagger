@@ -59,7 +59,7 @@ func (s *moduleSchema) moduleSource(ctx context.Context, query *core.Query, args
 
 			relPath, err := client.LexicalRelativePath(cwdStat.Path, parsed.modPath)
 			if err != nil {
-				return nil, fmt.Errorf("failed to make path relative: %w", err)
+				return nil, err
 			}
 
 			parsed.modPath = relPath
@@ -1023,7 +1023,7 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
-	_, desc, err := bk.LocalImport(
+	dgst, err := bk.LocalImport(
 		ctx,
 		src.Query.Platform().Spec(),
 		contextAbsPath,
@@ -1033,7 +1033,7 @@ func (s *moduleSchema) moduleSourceResolveFromCaller(
 	if err != nil {
 		return inst, fmt.Errorf("failed to import local module source: %w", err)
 	}
-	loadedDir, err := core.LoadBlob(ctx, s.dag, desc)
+	loadedDir, err := core.LoadBlob(ctx, s.dag, dgst)
 	if err != nil {
 		return inst, fmt.Errorf("failed to load local module source: %w", err)
 	}
@@ -1433,7 +1433,7 @@ func (s *moduleSchema) moduleSourceResolveDirectoryFromCaller(
 		excludes = append(excludes, args.Ignore...)
 	}
 
-	_, desc, err := bk.LocalImport(
+	dgst, err := bk.LocalImport(
 		ctx, src.Query.Platform().Spec(),
 		path,
 		excludes,
@@ -1442,7 +1442,7 @@ func (s *moduleSchema) moduleSourceResolveDirectoryFromCaller(
 	if err != nil {
 		return inst, fmt.Errorf("failed to import local directory module arg: %w", err)
 	}
-	return core.LoadBlob(ctx, s.dag, desc)
+	return core.LoadBlob(ctx, s.dag, dgst)
 }
 
 func (s *moduleSchema) moduleSourceViews(

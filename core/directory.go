@@ -12,7 +12,6 @@ import (
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
-	"github.com/moby/buildkit/util/compression"
 	"github.com/moby/patternmatcher"
 	"github.com/pkg/errors"
 	fstypes "github.com/tonistiigi/fsutil/types"
@@ -741,7 +740,7 @@ func (dir *Directory) Export(ctx context.Context, destPath string, merge bool) (
 	}
 
 	var defPB *pb.Definition
-	if dir.Dir != "" {
+	if dir.Dir != "" && dir.Dir != "/" {
 		src, err := dir.State()
 		if err != nil {
 			return err
@@ -803,12 +802,12 @@ func (dir *Directory) AsBlob(
 	if err != nil {
 		return inst, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
-	_, desc, err := bk.DefToBlob(ctx, pbDef, compression.Zstd)
+	dgst, err := bk.DefToBlob(ctx, pbDef)
 	if err != nil {
 		return inst, fmt.Errorf("failed to get blob descriptor: %w", err)
 	}
 
-	inst, err = LoadBlob(ctx, srv, desc)
+	inst, err = LoadBlob(ctx, srv, dgst)
 	if err != nil {
 		return inst, fmt.Errorf("failed to load blob: %w", err)
 	}

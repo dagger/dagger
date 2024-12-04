@@ -96,17 +96,13 @@ func (s FilesyncSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error 
 		return fmt.Errorf("get local import opts: %w", err)
 	}
 
-	absPath, baseName, err := Filesyncer(s).fullRootPathAndBaseName(opts.Path)
+	absPath, err := Filesyncer(s).fullRootPathAndBaseName(opts.Path, opts.StatResolvePath)
 	if err != nil {
 		return fmt.Errorf("get full root path: %w", err)
 	}
 
 	switch {
 	case opts.StatPathOnly:
-		// fsutil.Stat is actually Lstat, so be sure to not evaluate baseName in case
-		// it's a symlink. Also important to note that the returned stat.Path is just the
-		// base name of the path, not the full path provided.
-		absPath = filepath.Join(filepath.Dir(absPath), baseName)
 		stat, err := fsutil.Stat(absPath)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
@@ -176,7 +172,7 @@ func (t FilesyncTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr 
 		return fmt.Errorf("get local export opts: %w", err)
 	}
 
-	absPath, _, err := Filesyncer(t).fullRootPathAndBaseName(opts.Path)
+	absPath, err := Filesyncer(t).fullRootPathAndBaseName(opts.Path, false)
 	if err != nil {
 		return fmt.Errorf("get full root path: %w", err)
 	}
@@ -282,31 +278,42 @@ func (t FilesyncTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr 
 	}
 }
 
-func (f Filesyncer) fullRootPathAndBaseName(reqPath string) (rootPath string, baseName string, err error) {
+func (f Filesyncer) fullRootPathAndBaseName(reqPath string, fullyResolvePath bool) (_ string, err error) {
 	// NOTE: filepath.Clean also handles calling FromSlash (relevant when this is a Windows client)
 	reqPath = filepath.Clean(reqPath)
 
 	if f.rootDir == "" {
-		// rootDir is "" when we are a Windows client and when we are NOT a client running in a nested exec
-		rootPath, err = filepath.Abs(reqPath)
+		// rootDir is "" when we are NOT a client running in a nested exec (so we could be Linux, Windows, MacOS)
+
+		rootPath, err := Abs(reqPath)
 		if err != nil {
-			return "", "", fmt.Errorf("get abs path: %w", err)
+			return "", fmt.Errorf("get abs path: %w", err)
 		}
-		return rootPath, filepath.Base(rootPath), nil
+		if fullyResolvePath {
+			rootPath, err = filepath.EvalSymlinks(rootPath)
+			if err != nil {
+				return "", fmt.Errorf("eval symlinks: %w", err)
+			}
+		}
+		return rootPath, nil
 	}
 
 	// We are serving a nested exec whose rootDir is set to some path in the engine container.
-	// We can safely assume we are handling Linux paths.
+	// We can safely assume we are running on Linux.
 	// Resolve the full path on the system, *including* the rootDir, evaluating and bounding
 	// symlinks under the rootDir
 	if !filepath.IsAbs(reqPath) {
 		reqPath = filepath.Join(f.cwdRelPath, reqPath)
 	}
-	baseName = filepath.Base(reqPath) // save this now since fs.RootPath will resolve all symlinks
 
-	rootPath, err = fs.RootPath(f.rootDir, reqPath)
+	baseName := filepath.Base(reqPath) // save this now since fs.RootPath will resolve all symlinks
+	rootPath, err := fs.RootPath(f.rootDir, reqPath)
 	if err != nil {
-		return "", "", fmt.Errorf("get full root path: %w", err)
+		return "", fmt.Errorf("get full root path: %w", err)
 	}
-	return rootPath, baseName, nil
+	if !fullyResolvePath && rootPath != f.rootDir {
+		rootPath = filepath.Join(filepath.Dir(rootPath), baseName)
+	}
+
+	return rootPath, nil
 }

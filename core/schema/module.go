@@ -98,7 +98,7 @@ func (s *moduleSchema) Install() {
 
 	dagql.Fields[*core.ModuleSource]{
 		dagql.Func("contextDirectory", s.moduleSourceContextDirectory).
-			Doc(`The directory containing everything needed to load load and use the module.`),
+			Doc(`The directory containing everything needed to load and use the module.`),
 
 		dagql.Func("withContextDirectory", s.moduleSourceWithContextDirectory).
 			Doc(`Update the module source with a new context directory. Only valid for local sources.`).

@@ -362,12 +362,12 @@ func (src *ModuleSource) LoadContext(ctx context.Context, dag *dagql.Server, pat
 			return inst, fmt.Errorf("path %q is outside of context directory %q, path should be relative to the context directory", path, ctxPath)
 		}
 
-		_, desc, err := bk.LocalImport(localSourceCtx, src.Query.Platform().Spec(), path, ignore, []string{})
+		dgst, err := bk.LocalImport(localSourceCtx, src.Query.Platform().Spec(), path, ignore, []string{})
 		if err != nil {
 			return inst, fmt.Errorf("failed to import local module src: %w", err)
 		}
 
-		inst, err = LoadBlob(localSourceCtx, dag, desc)
+		inst, err = LoadBlob(localSourceCtx, dag, dgst)
 		if err != nil {
 			return inst, fmt.Errorf("failed to load local module src: %w", err)
 		}
@@ -515,9 +515,11 @@ func callerHostFindUpContext(
 	bk *buildkit.Client,
 	curDirPath string,
 ) (string, bool, error) {
-	_, err := bk.StatCallerHostPath(ctx, filepath.Join(curDirPath, ".git"), false)
+	stat, err := bk.StatCallerHostPath(ctx, filepath.Join(curDirPath, ".git"), true)
 	if err == nil {
-		return curDirPath, true, nil
+		// NOTE: important that we use stat.Path here rather than curDirPath since the stat also
+		// does some normalization of paths when the client is using case-insensitive filesystems
+		return filepath.Dir(stat.Path), true, nil
 	}
 	// TODO: remove the strings.Contains check here (which aren't cross-platform),
 	// since we now set NotFound (since v0.11.2)

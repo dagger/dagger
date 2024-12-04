@@ -16,13 +16,10 @@ class Client extends Client\AbstractClient
     /**
      * Retrieves a content-addressed blob.
      */
-    public function blob(string $digest, int $size, string $mediaType, string $uncompressed): Directory
+    public function blob(string $digest): Directory
     {
         $innerQueryBuilder = new \Dagger\Client\QueryBuilder('blob');
         $innerQueryBuilder->setArgument('digest', $digest);
-        $innerQueryBuilder->setArgument('size', $size);
-        $innerQueryBuilder->setArgument('mediaType', $mediaType);
-        $innerQueryBuilder->setArgument('uncompressed', $uncompressed);
         return new \Dagger\Directory($this->client, $this->queryBuilderChain->chain($innerQueryBuilder));
     }
 

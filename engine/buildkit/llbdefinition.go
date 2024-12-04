@@ -7,7 +7,6 @@ import (
 	"github.com/moby/buildkit/solver/pb"
 	srctypes "github.com/moby/buildkit/source/types"
 	"github.com/opencontainers/go-digest"
-	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 
 	"github.com/dagger/dagger/engine/sources/blob"
@@ -218,25 +217,6 @@ func (dag *OpDAG) marshal(def *pb.Definition, memo map[digest.Digest]digest.Dige
 	def.Def = append(def.Def, newOpBytes)
 	def.Metadata[newOpDigest] = *dag.Metadata
 	return def, newOpDigest, nil
-}
-
-func (dag *OpDAG) BlobDependencies() (map[digest.Digest]*ocispecs.Descriptor, error) {
-	dependencyBlobs := map[digest.Digest]*ocispecs.Descriptor{}
-	if err := dag.Walk(func(dag *OpDAG) error {
-		blobOp, ok := dag.AsBlob()
-		if !ok {
-			return nil
-		}
-		desc, err := blobOp.OCIDescriptor()
-		if err != nil {
-			return fmt.Errorf("failed to get blob descriptor: %w", err)
-		}
-		dependencyBlobs[desc.Digest] = &desc
-		return nil
-	}); err != nil {
-		return nil, fmt.Errorf("failed to walk pb definition dag: %w", err)
-	}
-	return dependencyBlobs, nil
 }
 
 type ExecOp struct {
@@ -493,10 +473,10 @@ func (dag *OpDAG) AsBlob() (*BlobOp, bool) {
 	return op, true
 }
 
-func (op *BlobOp) OCIDescriptor() (ocispecs.Descriptor, error) {
+func (op *BlobOp) Digest() (digest.Digest, error) {
 	id, err := blob.IdentifierFromPB(op.SourceOp)
 	if err != nil {
-		return ocispecs.Descriptor{}, err
+		return "", err
 	}
-	return id.Descriptor, nil
+	return id.Digest, nil
 }

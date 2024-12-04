@@ -16,6 +16,7 @@ import (
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	bksolverpb "github.com/moby/buildkit/solver/pb"
 	solverresult "github.com/moby/buildkit/solver/result"
+	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 
 	"github.com/dagger/dagger/engine"
@@ -127,17 +128,17 @@ func (c *Client) ContainerImageToTarball(
 	fileName string,
 	inputByPlatform map[string]ContainerExport,
 	opts map[string]string,
-) (*bksolverpb.Definition, error) {
+) (digest.Digest, error) {
 	ctx = buildkitTelemetryProvider(c, ctx)
 	ctx, cancel, err := c.withClientCloseCancel(ctx)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	defer cancel(errors.New("container image to tarball done"))
 
 	combinedResult, err := c.getContainerResult(ctx, inputByPlatform)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
 	exporterName := bkclient.ExporterDocker
@@ -147,17 +148,17 @@ func (c *Client) ContainerImageToTarball(
 
 	exporter, err := c.Worker.Exporter(exporterName, c.SessionManager)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
 	expInstance, err := exporter.Resolve(ctx, 0, opts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve exporter: %w", err)
+		return "", fmt.Errorf("failed to resolve exporter: %w", err)
 	}
 
 	tmpDir, err := os.MkdirTemp("", "dagger-tarball")
 	if err != nil {
-		return nil, fmt.Errorf("failed to create temp dir for tarball export: %w", err)
+		return "", fmt.Errorf("failed to create temp dir for tarball export: %w", err)
 	}
 	defer os.RemoveAll(tmpDir)
 	destPath := path.Join(tmpDir, fileName)
@@ -169,17 +170,17 @@ func (c *Client) ContainerImageToTarball(
 
 	_, descRef, err := expInstance.Export(ctx, combinedResult, nil, c.ID())
 	if err != nil {
-		return nil, fmt.Errorf("failed to export: %w", err)
+		return "", fmt.Errorf("failed to export: %w", err)
 	}
 	if descRef != nil {
 		defer descRef.Release()
 	}
 
-	pbDef, _, err := c.EngineContainerLocalImport(ctx, engineHostPlatform, tmpDir, nil, []string{fileName})
+	dgst, err := c.EngineContainerLocalImport(ctx, engineHostPlatform, tmpDir, nil, []string{fileName})
 	if err != nil {
-		return nil, fmt.Errorf("failed to import container tarball from engine container filesystem: %w", err)
+		return "", fmt.Errorf("failed to import container tarball from engine container filesystem: %w", err)
 	}
-	return pbDef, nil
+	return dgst, nil
 }
 
 func (c *Client) getContainerResult(

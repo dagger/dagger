@@ -1,0 +1,11 @@
+kind: Added
+body: |
+  Filesync performance is improved
+
+  The engine now re-uses previously loaded data more reliably and in more cases, which speeds up repeated reloads of the same or similar (i.e. overlapping data).
+
+  Uncached filesyncs of large amounts of data is also faster and uses less memory in the engine.
+time: 2024-11-26T20:33:35.827404235-08:00
+custom:
+  Author: sipsma
+  PR: "8818"

@@ -5,8 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/containerd/containerd/labels"
-	specs "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 
 	"github.com/dagger/dagger/dagql"
@@ -32,7 +31,7 @@ type CopyFilter struct {
 	Include []string `default:"[]"`
 }
 
-func LoadBlob(ctx context.Context, srv *dagql.Server, desc specs.Descriptor) (i dagql.Instance[*Directory], err error) {
+func LoadBlob(ctx context.Context, srv *dagql.Server, dgst digest.Digest) (i dagql.Instance[*Directory], err error) {
 	// Instead of directly returning a Directory, which would get "stamped" with
 	// an impure ID that cannot be passed between modules, we fetch the Directory
 	// we just uploaded by its blob, which yields a pure ID.
@@ -41,19 +40,7 @@ func LoadBlob(ctx context.Context, srv *dagql.Server, desc specs.Descriptor) (i 
 		Args: []dagql.NamedInput{
 			{
 				Name:  "digest",
-				Value: dagql.NewString(desc.Digest.String()),
-			},
-			{
-				Name:  "size",
-				Value: dagql.NewInt(desc.Size),
-			},
-			{
-				Name:  "mediaType",
-				Value: dagql.NewString(desc.MediaType),
-			},
-			{
-				Name:  "uncompressed",
-				Value: dagql.NewString(desc.Annotations[labels.LabelUncompressed]),
+				Value: dagql.NewString(dgst.String()),
 			},
 		},
 	})
@@ -76,7 +63,7 @@ func (host *Host) Directory(
 	}
 
 	// Create a sub-pipeline to group llb.Local instructions
-	_, desc, err := bk.LocalImport(
+	dgst, err := bk.LocalImport(
 		ctx,
 		host.Query.Platform().Spec(),
 		dirPath,
@@ -86,7 +73,7 @@ func (host *Host) Directory(
 	if err != nil {
 		return i, fmt.Errorf("host directory %s: %w", dirPath, err)
 	}
-	return LoadBlob(ctx, srv, desc)
+	return LoadBlob(ctx, srv, dgst)
 }
 
 func (host *Host) File(ctx context.Context, srv *dagql.Server, filePath string) (dagql.Instance[*File], error) {

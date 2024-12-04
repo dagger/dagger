@@ -1382,6 +1382,7 @@ func (container *Container) Export(
 
 func (container *Container) AsTarball(
 	ctx context.Context,
+	srv *dagql.Server,
 	platformVariants []*Container,
 	forcedCompression ImageLayerCompression,
 	mediaTypes ImageMediaTypes,
@@ -1464,11 +1465,29 @@ func (container *Container) AsTarball(
 	defer detach()
 
 	fileName := identity.NewID() + ".tar"
-	pbDef, err := bk.ContainerImageToTarball(ctx, engineHostPlatform.Spec(), fileName, inputByPlatform, opts)
+
+	dgst, err := bk.ContainerImageToTarball(ctx, engineHostPlatform.Spec(), fileName, inputByPlatform, opts)
 	if err != nil {
 		return nil, fmt.Errorf("container image to tarball file conversion failed: %w", err)
 	}
-	return NewFile(container.Query, pbDef, fileName, engineHostPlatform, nil), nil
+	dirInst, err := LoadBlob(ctx, srv, dgst)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load tarball file blob: %w", err)
+	}
+
+	var fileInst dagql.Instance[*File]
+	if err := srv.Select(ctx, dirInst, &fileInst,
+		dagql.Selector{
+			Field: "file",
+			Args: []dagql.NamedInput{
+				{Name: "path", Value: dagql.String(fileName)},
+			},
+		},
+	); err != nil {
+		return nil, fmt.Errorf("failed to select tarball file: %w", err)
+	}
+
+	return fileInst.Self, nil
 }
 
 func (container *Container) Import(

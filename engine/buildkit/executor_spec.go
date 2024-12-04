@@ -658,8 +658,6 @@ func (w *Worker) setupStdio(_ context.Context, state *execState) error {
 	return nil
 }
 
-const InstrumentationLibrary = "dagger.io/engine.buildkit"
-
 func (w *Worker) setupOTel(ctx context.Context, state *execState) error {
 	if state.procInfo.Meta.NetMode != pb.NetMode_UNSET {
 		// align with setupNetwork; otherwise we hang waiting for a netNS worker

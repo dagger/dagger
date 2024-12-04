@@ -62,7 +62,7 @@ class ModuleSource extends Client\AbstractObject implements Client\IdAble
     }
 
     /**
-     * The directory containing everything needed to load load and use the module.
+     * The directory containing everything needed to load and use the module.
      */
     public function contextDirectory(): Directory
     {

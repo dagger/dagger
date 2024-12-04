@@ -6010,9 +6010,7 @@ class ModuleSource(Type):
         return await _ctx.execute(bool)
 
     def context_directory(self) -> Directory:
-        """The directory containing everything needed to load load and use the
-        module.
-        """
+        """The directory containing everything needed to load and use the module."""
         _args: list[Arg] = []
         _ctx = self._select("contextDirectory", _args)
         return Directory(_ctx)
@@ -6780,31 +6778,16 @@ class Port(Type):
 class Client(Root):
     """The root of the DAG."""
 
-    def blob(
-        self,
-        digest: str,
-        size: int,
-        media_type: str,
-        uncompressed: str,
-    ) -> Directory:
+    def blob(self, digest: str) -> Directory:
         """Retrieves a content-addressed blob.
 
         Parameters
         ----------
         digest:
             Digest of the blob
-        size:
-            Size of the blob
-        media_type:
-            Media type of the blob
-        uncompressed:
-            Digest of the uncompressed blob
         """
         _args = [
             Arg("digest", digest),
-            Arg("size", size),
-            Arg("mediaType", media_type),
-            Arg("uncompressed", uncompressed),
         ]
         _ctx = self._select("blob", _args)
         return Directory(_ctx)

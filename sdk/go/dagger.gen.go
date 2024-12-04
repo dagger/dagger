@@ -5952,7 +5952,7 @@ func (r *ModuleSource) ConfigExists(ctx context.Context) (bool, error) {
 	return response, q.Execute(ctx)
 }
 
-// The directory containing everything needed to load load and use the module.
+// The directory containing everything needed to load and use the module.
 func (r *ModuleSource) ContextDirectory() *Directory {
 	q := r.query.Select("contextDirectory")
 
@@ -6692,12 +6692,9 @@ func (r *Client) WithGraphQLQuery(q *querybuilder.Selection) *Client {
 }
 
 // Retrieves a content-addressed blob.
-func (r *Client) Blob(digest string, size int, mediaType string, uncompressed string) *Directory {
+func (r *Client) Blob(digest string) *Directory {
 	q := r.query.Select("blob")
 	q = q.Arg("digest", digest)
-	q = q.Arg("size", size)
-	q = q.Arg("mediaType", mediaType)
-	q = q.Arg("uncompressed", uncompressed)
 
 	return &Directory{
 		query: q,

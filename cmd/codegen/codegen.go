@@ -15,7 +15,7 @@ import (
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 )
 
-func Generate(ctx context.Context, cfg generator.Config, dag *dagger.Client) (err error) {
+func Generate(ctx context.Context, cfg generator.Config) (err error) {
 	logsW := os.Stdout
 
 	if cfg.ModuleName != "" {
@@ -34,6 +34,10 @@ func Generate(ctx context.Context, cfg generator.Config, dag *dagger.Client) (er
 		introspectionSchema = resp.Schema
 		introspectionSchemaVersion = resp.SchemaVersion
 	} else {
+		dag, err := dagger.Connect(ctx)
+		if err != nil {
+			return err
+		}
 		introspectionSchema, introspectionSchemaVersion, err = generator.Introspect(ctx, dag)
 		if err != nil {
 			return err

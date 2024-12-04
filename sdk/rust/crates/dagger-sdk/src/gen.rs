@@ -6324,7 +6324,7 @@ impl ModuleSource {
         let query = self.selection.select("configExists");
         query.execute(self.graphql_client.clone()).await
     }
-    /// The directory containing everything needed to load load and use the module.
+    /// The directory containing everything needed to load and use the module.
     pub fn context_directory(&self) -> Directory {
         let query = self.selection.select("contextDirectory");
         Directory {
@@ -6822,21 +6822,9 @@ impl Query {
     /// # Arguments
     ///
     /// * `digest` - Digest of the blob
-    /// * `size` - Size of the blob
-    /// * `media_type` - Media type of the blob
-    /// * `uncompressed` - Digest of the uncompressed blob
-    pub fn blob(
-        &self,
-        digest: impl Into<String>,
-        size: isize,
-        media_type: impl Into<String>,
-        uncompressed: impl Into<String>,
-    ) -> Directory {
+    pub fn blob(&self, digest: impl Into<String>) -> Directory {
         let mut query = self.selection.select("blob");
         query = query.arg("digest", digest.into());
-        query = query.arg("size", size);
-        query = query.arg("mediaType", media_type.into());
-        query = query.arg("uncompressed", uncompressed.into());
         Directory {
             proc: self.proc.clone(),
             selection: query,

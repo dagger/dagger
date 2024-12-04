@@ -9,7 +9,6 @@ import (
 	"github.com/dagger/dagger/cmd/codegen/introspection"
 	"github.com/dagger/dagger/dagql"
 	dagintro "github.com/dagger/dagger/dagql/introspection"
-	"github.com/moby/buildkit/util/compression"
 )
 
 const (
@@ -244,18 +243,15 @@ func (d *ModDeps) lazilyLoadSchema(ctx context.Context) (
 		return nil, loadedSchemaJSONFile, fmt.Errorf("failed to get buildkit client: %w", err)
 	}
 
-	_, schemaJSONDesc, err := bk.BytesToBlob(ctx,
+	schemaJSONDgst, err := bk.BytesToBlob(ctx,
 		schemaJSONFilename,
 		0644,
 		moduleSchemaJSON,
-		// don't bother compressing these in the content store, they aren't quite *that* big that we
-		// need to save on disk space in exchange for CPU time
-		compression.Uncompressed,
 	)
 	if err != nil {
 		return nil, loadedSchemaJSONFile, fmt.Errorf("failed to create blob for introspection JSON: %w", err)
 	}
-	dirInst, err := LoadBlob(ctx, dag, schemaJSONDesc)
+	dirInst, err := LoadBlob(ctx, dag, schemaJSONDgst)
 	if err != nil {
 		return nil, loadedSchemaJSONFile, fmt.Errorf("failed to load introspection JSON blob: %w", err)
 	}
