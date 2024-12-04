@@ -23,12 +23,21 @@ The TUI renders a tree of Dagger API calls, represented as GraphQL queries. A pa
 - A red X or green check indicates whether the call succeeded or failed.
 - A call's duration is rendered after its name.
 
+The TUI also provides real-time telemetry to give you a complete view of your pipeline's performance. It allows you to monitor:
+- CPU resource usage: Identify when CPU contention occurs, such as when all threads are blocked waiting for CPU access, and diagnose performance bottlenecks related to CPU resource constraints.
+- Network activity: See how much data is sent and received and track packet drop rates to identify potential bottlenecks in your pipelines.
+- Memory usage: Keep an eye on current and peak memory consumption, helping you optimize resource utilization.
+
 The CLI has tiered verbosity: `-v`, `-vv`, `-vvv` (just like `curl`):
 - `-v` keeps spans visible after they complete, rather than disappearing after a brief pause;
 - `-vv` reveals internal and encapsulated spans;
 - `-vvv` reveals sub-100ms spans.
 
 For additional debugging information, add the `--debug` flag to the `dagger call` command.
+
+:::note
+Dagger automatically detects OpenTelemetry resource attributes. By utilizing the standard `OTEL_RESOURCE_ATTRIBUTES` environment variable, operators can now set custom resource attributes to annotate Traces, providing more detailed and contextual information for monitoring and debugging. This improvement aligns Dagger’s observability capabilities with industry standards, facilitating better integration with existing monitoring tools and workflows.
+:::
 
 ## Traces
 
