@@ -441,13 +441,14 @@ func (build *Builder) dumbInit() *dagger.File {
 			Packages: []string{
 				"bash",
 				"build-base",
+				"clang",
 			},
-			Arch: build.platformSpec.Architecture,
 		}).
 		Container().
+		WithDirectory("/", dag.Container().From(consts.XxImage).Rootfs()).
 		WithMountedDirectory("/src", dag.Git("github.com/yelp/dumb-init").Ref(consts.DumbInitVersion).Tree()).
 		WithWorkdir("/src").
-		WithExec([]string{"make"}).
+		WithExec([]string{"make", "CC=xx-cc"}).
 		File("dumb-init")
 }
 
