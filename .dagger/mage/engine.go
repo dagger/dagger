@@ -126,6 +126,12 @@ func (t Engine) Dev(ctx context.Context) error {
 	}
 
 	fmt.Println("export _EXPERIMENTAL_DAGGER_CLI_BIN=" + binDest)
+
+	if runtime.GOOS != "linux" {
+		linuxBinDest := filepath.Join(binDir, "dagger-linux")
+		fmt.Println("export _TEST_DAGGER_CLI_LINUX_BIN=" + linuxBinDest)
+	}
+
 	fmt.Println("export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://" + containerName)
 	fmt.Println("export _DAGGER_TESTS_ENGINE_TAR=" + filepath.Join(binDir, "engine.tar"))
 	fmt.Println("export PATH=" + binDir + ":$PATH")
@@ -146,6 +152,12 @@ func (t Engine) DevEnv(ctx context.Context) {
 	}
 
 	fmt.Println("export _EXPERIMENTAL_DAGGER_CLI_BIN=" + binDest)
+
+	if runtime.GOOS != "linux" {
+		linuxBinDest := filepath.Join(binDir, "dagger-linux")
+		fmt.Println("export _TEST_DAGGER_CLI_LINUX_BIN=" + linuxBinDest)
+	}
+
 	fmt.Println("export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://" + EngineContainerName)
 	fmt.Println("export _DAGGER_TESTS_ENGINE_TAR=" + filepath.Join(binDir, "engine.tar"))
 	fmt.Println("export PATH=" + binDir + ":$PATH")
