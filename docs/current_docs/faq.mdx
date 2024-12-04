@@ -16,86 +16,9 @@ import TabItem from "@theme/TabItem";
 
 We're building the devops operating system, an integrated platform to orchestrate the delivery of applications to the cloud from start to finish. The Dagger Platform includes the Dagger Engine, Dagger Cloud, and the Dagger SDKs. Soon we will deliver the capability to publish and leverage prebuilt modules to further accelerate the adoption of Dagger across an organization's pipelines.
 
-### How do I install Dagger?
+### How do I install, update, or uninstall Dagger?
 
-Refer to the documentation for information on how to install the [Dagger CLI](./install.mdx).
-
-### How do I update Dagger?
-
-To install a Dagger CLI that matches your OS & architecture, run the following:
-
-```shell
-curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
-```
-
-This installs `dagger` in `$HOME/.local/bin`:
-
-Homebrew users can alternatively use the following commands:
-
-```shell
-brew update
-brew upgrade dagger
-```
-
-### How do I uninstall Dagger?
-
-1. Remove the Dagger CLI using the following command:
-
-    ```shell
-    sudo rm /usr/local/bin/dagger
-    ```
-
-    Homebrew users can alternatively use the following command:
-
-    ```shell
-    brew uninstall dagger
-    ```
-
-1. Remove the Dagger container using the following commands:
-
-    ```shell
-    docker rm --force --volumes "$(docker ps --quiet --filter='name=^dagger-engine-')"
-    ```
-
-1. Remove the `dagger` sub-directory of your local cache and configuration directories (`$XDG_CACHE_HOME` and `$XDG_CONFIG_HOME` on Linux or the equivalent for other platforms):
-
-    <Tabs>
-    <TabItem value="macOS">
-
-    ```shell
-    rm -rf ~/Library/Caches/dagger
-    rm -rf ~/Library/Application\ Support/dagger
-    ```
-
-    </TabItem>
-    <TabItem value="Linux">
-
-    ```shell
-    rm -rf ~/.cache/dagger
-    rm -rf ~/.config/dagger
-    ```
-
-    </TabItem>
-    </Tabs>
-
-    :::note
-    The paths listed above are defaults and may require adjustment for your specific environment. The third-party packages Dagger uses to determine these paths are listed below:
-      - Go (SDK and CLI): [https://github.com/adrg/xdg](https://github.com/adrg/xdg)
-      - Node.js: [https://github.com/sindresorhus/env-paths](https://github.com/sindresorhus/env-paths)
-      - Python: [https://github.com/platformdirs/platformdirs](https://github.com/platformdirs/platformdirs)
-    :::
-
-
-### What compatibility is there between the Dagger Engine, Dagger SDKs and Dagger CLI versions?
-
-- The Dagger CLI is released in tandem with the Dagger Engine and thus shares a version number with it.
-- Dagger SDKs automatically provision a Dagger Engine at a compatible version.
-
-Each release notes the compatible Dagger Engine version in its release notes. If running from the CLI, or providing a CLI for the SDK to use via the `_EXPERIMENTAL_DAGGER_CLI_BIN` variable, check the release notes of the SDK, which indicate the required CLI and Engine versions.
-
-The image below shows an example of the compatibility information available in the release notes:
-
-![Release information](/img/current_docs/faq/release-notes.png)
+Refer to the [installation documentation](./install.mdx).
 
 ### Does Dagger send telemetry?
 

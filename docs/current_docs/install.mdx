@@ -7,3 +7,104 @@ import PartialInstallCli from './partials/_install-cli.mdx';
 # Installation
 
 <PartialInstallCli />
+
+## Update
+
+<Tabs>
+<TabItem value="macOS">
+
+Homebrew users can use the following commands:
+
+```shell
+brew update
+brew upgrade dagger
+```
+
+If you do not have Homebrew installed, you can use [install.sh](https://github.com/dagger/dagger/blob/main/install.sh):
+
+<CodeBlock language="shell">
+{`curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=/usr/local/bin sh`}
+</CodeBlock>
+</TabItem>
+<TabItem value="Linux">
+
+To update the Dagger CLI, run the following:
+
+```shell
+curl -fsSL https://dl.dagger.io/dagger/install.sh | BIN_DIR=$HOME/.local/bin sh
+```
+
+This updates and reinstalls `dagger` in `$HOME/.local/bin`:
+
+</TabItem>
+<TabItem value="Windows">
+
+To update the Dagger CLI, run the following PowerShell 7.0 script.
+
+```powershell
+Invoke-WebRequest -UseBasicParsing -Uri https://dl.dagger.io/dagger/install.ps1 | Invoke-Expression; Install-Dagger
+```
+
+This updates and reinstalls `dagger` in `<your home folder>\dagger` directory:
+</TabItem>
+</Tabs>
+
+## Uninstallation
+
+Remove the Dagger CLI using the following command:
+
+```shell
+sudo rm /usr/local/bin/dagger
+```
+
+Homebrew users can alternatively use the following command:
+
+```shell
+brew uninstall dagger
+```
+
+Next, remove the Dagger container using the following commands:
+
+```shell
+docker rm --force --volumes "$(docker ps --quiet --filter='name=^dagger-engine-')"
+```
+
+Finally, remove the `dagger` sub-directory of your local cache and configuration directories (`$XDG_CACHE_HOME` and `$XDG_CONFIG_HOME` on Linux or the equivalent for other platforms):
+
+<Tabs>
+<TabItem value="macOS">
+
+```shell
+rm -rf ~/Library/Caches/dagger
+rm -rf ~/Library/Application\ Support/dagger
+```
+
+</TabItem>
+<TabItem value="Linux">
+
+```shell
+rm -rf ~/.cache/dagger
+rm -rf ~/.config/dagger
+```
+
+</TabItem>
+</Tabs>
+
+:::note
+The paths listed above are defaults and may require adjustment for your specific environment. The third-party packages Dagger uses to determine these paths are listed below:
+  - Go (SDK and CLI): [https://github.com/adrg/xdg](https://github.com/adrg/xdg)
+  - Node.js: [https://github.com/sindresorhus/env-paths](https://github.com/sindresorhus/env-paths)
+  - Python: [https://github.com/platformdirs/platformdirs](https://github.com/platformdirs/platformdirs)
+:::
+
+## Versioning
+
+The Dagger CLI is released in tandem with the Dagger Engine and thus shares a version number with it. Dagger SDKs automatically provision a Dagger Engine at a compatible version.
+
+The Dagger Engine runner is distributed as a container image at `registry.dagger.io/engine`. Tags are made for the version of each release. For example, the `0.14.0` release has a corresponding image at `registry.dagger.io/engine:v0.14.0`.
+
+Each release notes the compatible Dagger Engine version in its release notes. If running from the CLI, or providing a CLI for the SDK to use via the `_EXPERIMENTAL_DAGGER_CLI_BIN` variable, check the release notes of the SDK, which indicate the required CLI and Engine versions.
+
+The image below shows an example of the compatibility information available in the release notes:
+
+![Release information](/img/current_docs/install/release-notes.png)

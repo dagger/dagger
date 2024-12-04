@@ -98,8 +98,8 @@ The CLI+Runner share a version number. SDKs have their own version number, but t
 To ensure that an SDK will be used with a compatible CLI and runner:
 
 1. Check the release notes of the SDK, which will point to the required CLI+Runner version.
-1. If using a custom provisioned runner, use the base image at that version as detailed in [Distribution and Versioning].
-1. If using a pre-installed CLI, install the CLI at that version as detailed in [Versioning](#versioning).
+1. If using a custom provisioned runner, use the base image at that version as detailed in the [Dagger installation documentation](https://docs.dagger.io/install).
+1. If using a pre-installed CLI, install the CLI at that version as detailed in the [Dagger installation documentation](https://docs.dagger.io/install).
 1. Once the runner and/or CLI are setup, you are safe to upgrade your SDK to the newest version.
 
 ### Can I run the Dagger Engine as a "rootless" container?
@@ -121,13 +121,6 @@ It is possible to use userspace TCP/IP implementations such as [slirp](https://g
 Newer options for more performant userspace network stacks have arisen in recent years, but they are generally either reliant on relatively recent kernel versions or in a nascent stage that would require significant validation around robustness+security.
 
 ## Runner Details
-
-### Distribution and Versioning
-
-The runner is distributed as a container image at `registry.dagger.io/engine`.
-
-- Tags are made for the version of each release.
-- For example, the [`v0.3.7` release](https://github.com/dagger/dagger/releases/tag/v0.3.7) has a corresponding image at `registry.dagger.io/engine:v0.3.7`
 
 ### Execution Requirements
 
@@ -224,16 +217,6 @@ dagger query --progress=plain <<< '{ container { from(address:"hello-world") { s
 ```
 
 You should see the specified `hello-world` container being pulled from the mirror instead of from Docker Hub.
-
-## CLI Details
-
-### Versioning
-
-The CLI is released in tandem with the runner and thus shares a version number with it.
-
-As of right now, each CLI version is expected to be used only with a runner image at the corresponding version. Backwards/forwards compatibility is not guaranteed yet.
-
-Instructions on installing the CLI, including at a particular version, can be found in [our docs](https://docs.dagger.io/cli/465058/install).
 
 # Appendix
 
