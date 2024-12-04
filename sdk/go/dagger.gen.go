@@ -8477,23 +8477,11 @@ const (
 	// Shares the cache volume amongst many build pipelines, but will serialize the writes
 	CacheSharingModeLocked CacheSharingMode = "LOCKED"
 
-	// Shares the cache volume amongst many build pipelines, but will serialize the writes
-	// Deprecated: use CacheSharingModeLocked instead
-	Locked CacheSharingMode = CacheSharingModeLocked
-
 	// Keeps a cache volume for a single build pipeline
 	CacheSharingModePrivate CacheSharingMode = "PRIVATE"
 
-	// Keeps a cache volume for a single build pipeline
-	// Deprecated: use CacheSharingModePrivate instead
-	Private CacheSharingMode = CacheSharingModePrivate
-
 	// Shares the cache volume amongst many build pipelines
 	CacheSharingModeShared CacheSharingMode = "SHARED"
-
-	// Shares the cache volume amongst many build pipelines
-	// Deprecated: use CacheSharingModeShared instead
-	Shared CacheSharingMode = CacheSharingModeShared
 )
 
 // Compression algorithm to use for image layers.
@@ -8504,23 +8492,11 @@ func (ImageLayerCompression) IsEnum() {}
 const (
 	ImageLayerCompressionEstarGz ImageLayerCompression = "EStarGZ"
 
-	// Deprecated: use ImageLayerCompressionEstarGz instead
-	Estargz ImageLayerCompression = ImageLayerCompressionEstarGz
-
 	ImageLayerCompressionGzip ImageLayerCompression = "Gzip"
-
-	// Deprecated: use ImageLayerCompressionGzip instead
-	Gzip ImageLayerCompression = ImageLayerCompressionGzip
 
 	ImageLayerCompressionUncompressed ImageLayerCompression = "Uncompressed"
 
-	// Deprecated: use ImageLayerCompressionUncompressed instead
-	Uncompressed ImageLayerCompression = ImageLayerCompressionUncompressed
-
 	ImageLayerCompressionZstd ImageLayerCompression = "Zstd"
-
-	// Deprecated: use ImageLayerCompressionZstd instead
-	Zstd ImageLayerCompression = ImageLayerCompressionZstd
 )
 
 // Mediatypes to use in published or exported image metadata.
@@ -8531,13 +8507,7 @@ func (ImageMediaTypes) IsEnum() {}
 const (
 	ImageMediaTypesDockerMediaTypes ImageMediaTypes = "DockerMediaTypes"
 
-	// Deprecated: use ImageMediaTypesDockerMediaTypes instead
-	Dockermediatypes ImageMediaTypes = ImageMediaTypesDockerMediaTypes
-
 	ImageMediaTypesOcimediaTypes ImageMediaTypes = "OCIMediaTypes"
-
-	// Deprecated: use ImageMediaTypesOcimediaTypes instead
-	Ocimediatypes ImageMediaTypes = ImageMediaTypesOcimediaTypes
 )
 
 // The kind of module source.
@@ -8548,13 +8518,7 @@ func (ModuleSourceKind) IsEnum() {}
 const (
 	ModuleSourceKindGitSource ModuleSourceKind = "GIT_SOURCE"
 
-	// Deprecated: use ModuleSourceKindGitSource instead
-	GitSource ModuleSourceKind = ModuleSourceKindGitSource
-
 	ModuleSourceKindLocalSource ModuleSourceKind = "LOCAL_SOURCE"
-
-	// Deprecated: use ModuleSourceKindLocalSource instead
-	LocalSource ModuleSourceKind = ModuleSourceKindLocalSource
 )
 
 // Transport layer network protocol associated to a port.
@@ -8565,13 +8529,7 @@ func (NetworkProtocol) IsEnum() {}
 const (
 	NetworkProtocolTcp NetworkProtocol = "TCP"
 
-	// Deprecated: use NetworkProtocolTcp instead
-	Tcp NetworkProtocol = NetworkProtocolTcp
-
 	NetworkProtocolUdp NetworkProtocol = "UDP"
-
-	// Deprecated: use NetworkProtocolUdp instead
-	Udp NetworkProtocol = NetworkProtocolUdp
 )
 
 // Expected return type of an execution
@@ -8583,23 +8541,11 @@ const (
 	// Any execution (exit codes 0-127)
 	ReturnTypeAny ReturnType = "ANY"
 
-	// Any execution (exit codes 0-127)
-	// Deprecated: use ReturnTypeAny instead
-	Any ReturnType = ReturnTypeAny
-
 	// A failed execution (exit codes 1-127)
 	ReturnTypeFailure ReturnType = "FAILURE"
 
-	// A failed execution (exit codes 1-127)
-	// Deprecated: use ReturnTypeFailure instead
-	Failure ReturnType = ReturnTypeFailure
-
 	// A successful execution (exit code 0)
 	ReturnTypeSuccess ReturnType = "SUCCESS"
-
-	// A successful execution (exit code 0)
-	// Deprecated: use ReturnTypeSuccess instead
-	Success ReturnType = ReturnTypeSuccess
 )
 
 // Distinguishes the different kinds of TypeDefs.
@@ -8611,90 +8557,40 @@ const (
 	// A boolean value.
 	TypeDefKindBooleanKind TypeDefKind = "BOOLEAN_KIND"
 
-	// A boolean value.
-	// Deprecated: use TypeDefKindBooleanKind instead
-	BooleanKind TypeDefKind = TypeDefKindBooleanKind
-
 	// A GraphQL enum type and its values
 	//
 	// Always paired with an EnumTypeDef.
 	TypeDefKindEnumKind TypeDefKind = "ENUM_KIND"
 
-	// A GraphQL enum type and its values
-	//
-	// Always paired with an EnumTypeDef.
-	// Deprecated: use TypeDefKindEnumKind instead
-	EnumKind TypeDefKind = TypeDefKindEnumKind
-
 	// A graphql input type, used only when representing the core API via TypeDefs.
 	TypeDefKindInputKind TypeDefKind = "INPUT_KIND"
 
-	// A graphql input type, used only when representing the core API via TypeDefs.
-	// Deprecated: use TypeDefKindInputKind instead
-	InputKind TypeDefKind = TypeDefKindInputKind
-
 	// An integer value.
 	TypeDefKindIntegerKind TypeDefKind = "INTEGER_KIND"
-
-	// An integer value.
-	// Deprecated: use TypeDefKindIntegerKind instead
-	IntegerKind TypeDefKind = TypeDefKindIntegerKind
 
 	// A named type of functions that can be matched+implemented by other objects+interfaces.
 	//
 	// Always paired with an InterfaceTypeDef.
 	TypeDefKindInterfaceKind TypeDefKind = "INTERFACE_KIND"
 
-	// A named type of functions that can be matched+implemented by other objects+interfaces.
-	//
-	// Always paired with an InterfaceTypeDef.
-	// Deprecated: use TypeDefKindInterfaceKind instead
-	InterfaceKind TypeDefKind = TypeDefKindInterfaceKind
-
 	// A list of values all having the same type.
 	//
 	// Always paired with a ListTypeDef.
 	TypeDefKindListKind TypeDefKind = "LIST_KIND"
-
-	// A list of values all having the same type.
-	//
-	// Always paired with a ListTypeDef.
-	// Deprecated: use TypeDefKindListKind instead
-	ListKind TypeDefKind = TypeDefKindListKind
 
 	// A named type defined in the GraphQL schema, with fields and functions.
 	//
 	// Always paired with an ObjectTypeDef.
 	TypeDefKindObjectKind TypeDefKind = "OBJECT_KIND"
 
-	// A named type defined in the GraphQL schema, with fields and functions.
-	//
-	// Always paired with an ObjectTypeDef.
-	// Deprecated: use TypeDefKindObjectKind instead
-	ObjectKind TypeDefKind = TypeDefKindObjectKind
-
 	// A scalar value of any basic kind.
 	TypeDefKindScalarKind TypeDefKind = "SCALAR_KIND"
 
-	// A scalar value of any basic kind.
-	// Deprecated: use TypeDefKindScalarKind instead
-	ScalarKind TypeDefKind = TypeDefKindScalarKind
-
 	// A string value.
 	TypeDefKindStringKind TypeDefKind = "STRING_KIND"
-
-	// A string value.
-	// Deprecated: use TypeDefKindStringKind instead
-	StringKind TypeDefKind = TypeDefKindStringKind
 
 	// A special kind used to signify that no value is returned.
 	//
 	// This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
 	TypeDefKindVoidKind TypeDefKind = "VOID_KIND"
-
-	// A special kind used to signify that no value is returned.
-	//
-	// This is used for functions that have no return value. The outer TypeDef specifying this Kind is always Optional, as the Void is never actually represented.
-	// Deprecated: use TypeDefKindVoidKind instead
-	VoidKind TypeDefKind = TypeDefKindVoidKind
 )

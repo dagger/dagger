@@ -176,26 +176,28 @@ func (e *DaggerEngine) Service(
 // Lint the engine
 func (e *DaggerEngine) Lint(
 	ctx context.Context,
+	pkgs []string, // +optional
 ) error {
 	eg, ctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
-		allPkgs, err := e.Dagger.containing(ctx, "go.mod")
-		if err != nil {
-			return err
-		}
+		if len(pkgs) == 0 {
+			allPkgs, err := e.Dagger.containing(ctx, "go.mod")
+			if err != nil {
+				return err
+			}
 
-		var pkgs []string
-		for _, pkg := range allPkgs {
-			if strings.HasPrefix(pkg, "docs/") {
-				continue
+			for _, pkg := range allPkgs {
+				if strings.HasPrefix(pkg, "docs/") {
+					continue
+				}
+				if strings.HasPrefix(pkg, "core/integration/") {
+					continue
+				}
+				if strings.HasPrefix(pkg, "dagql/idtui/viztest/broken/") {
+					continue
+				}
+				pkgs = append(pkgs, pkg)
 			}
-			if strings.HasPrefix(pkg, "core/integration/") {
-				continue
-			}
-			if strings.HasPrefix(pkg, "dagql/idtui/viztest/broken/") {
-				continue
-			}
-			pkgs = append(pkgs, pkg)
 		}
 
 		return dag.

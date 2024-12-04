@@ -3630,7 +3630,7 @@ func (ContainerSuite) TestInsecureRootCapabilitesWithService(ctx context.Context
 	// them.
 	dockerd := c.Container().From("docker:23.0.1-dind").
 		WithMountedCache("/var/lib/docker", c.CacheVolume("docker-lib"), dagger.ContainerWithMountedCacheOpts{
-			Sharing: dagger.Private,
+			Sharing: dagger.CacheSharingModePrivate,
 		}).
 		WithMountedCache("/tmp", c.CacheVolume("share-tmp")).
 		WithExposedPort(2375).
@@ -4236,7 +4236,7 @@ func (ContainerSuite) TestImageLoadCompatibility(ctx context.Context, t *testctx
 		port := 2375 + i
 		dockerd := c.Container().From(fmt.Sprintf("docker:%s-dind", dockerVersion)).
 			WithMountedCache("/var/lib/docker", c.CacheVolume(t.Name()+"-"+dockerVersion+"-docker-lib"), dagger.ContainerWithMountedCacheOpts{
-				Sharing: dagger.Private,
+				Sharing: dagger.CacheSharingModePrivate,
 			}).
 			WithExposedPort(port).
 			WithExec([]string{
