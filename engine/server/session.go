@@ -434,7 +434,7 @@ func (srv *Server) initializeDaggerClient(
 		// of the caller
 		for _, id := range opts.ParentIDs {
 			if err := srv.addClientResourcesFromID(ctx, client, id, opts.CallerClientID, false); err != nil {
-				return fmt.Errorf("failed to add client resources from ID: %w", err)
+				return fmt.Errorf("failed to add parent client resources from ID: %w", err)
 			}
 		}
 	}
