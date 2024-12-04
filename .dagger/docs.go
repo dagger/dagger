@@ -103,7 +103,13 @@ func (d Docs) Lint(ctx context.Context) (rerr error) {
 		if err != nil {
 			return err
 		}
-		return dag.Dirdiff().AssertEqual(ctx, before, after, []string{generatedSchemaPath, generatedCliZenPath, generatedAPIReferencePath})
+		return dag.Dirdiff().AssertEqual(ctx, before, after, []string{
+			generatedSchemaPath,
+			generatedCliZenPath,
+			generatedAPIReferencePath,
+			generatedDaggerJSONSchemaPath,
+			generatedEngineJSONSchemaPath,
+		})
 	})
 
 	eg.Go(func() (rerr error) {
