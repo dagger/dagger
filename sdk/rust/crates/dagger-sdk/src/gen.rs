@@ -2888,7 +2888,7 @@ impl Container {
     ///
     /// # Arguments
     ///
-    /// * `path` - Location of the cache directory (e.g., "/cache/node_modules").
+    /// * `path` - Location of the cache directory (e.g., "/root/.npm").
     /// * `cache` - Identifier of the cache volume to mount.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_mounted_cache(
@@ -2915,7 +2915,7 @@ impl Container {
     ///
     /// # Arguments
     ///
-    /// * `path` - Location of the cache directory (e.g., "/cache/node_modules").
+    /// * `path` - Location of the cache directory (e.g., "/root/.npm").
     /// * `cache` - Identifier of the cache volume to mount.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_mounted_cache_opts<'a>(
@@ -3681,7 +3681,7 @@ impl Container {
     ///
     /// # Arguments
     ///
-    /// * `path` - Location of the cache directory (e.g., "/cache/node_modules").
+    /// * `path` - Location of the cache directory (e.g., "/root/.npm").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn without_mount(&self, path: impl Into<String>) -> Container {
         let mut query = self.selection.select("withoutMount");
@@ -3696,7 +3696,7 @@ impl Container {
     ///
     /// # Arguments
     ///
-    /// * `path` - Location of the cache directory (e.g., "/cache/node_modules").
+    /// * `path` - Location of the cache directory (e.g., "/root/.npm").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn without_mount_opts(
         &self,
