@@ -283,9 +283,9 @@ func (f Filesyncer) fullRootPathAndBaseName(reqPath string, fullyResolvePath boo
 	reqPath = filepath.Clean(reqPath)
 
 	if f.rootDir == "" {
-		// rootDir is "" when we are a Windows client and when we are NOT a client running in a nested exec
+		// rootDir is "" when we are NOT a client running in a nested exec (so we could be Linux, Windows, MacOS)
 
-		rootPath, err := filepath.Abs(reqPath)
+		rootPath, err := Abs(reqPath)
 		if err != nil {
 			return "", fmt.Errorf("get abs path: %w", err)
 		}
@@ -299,7 +299,7 @@ func (f Filesyncer) fullRootPathAndBaseName(reqPath string, fullyResolvePath boo
 	}
 
 	// We are serving a nested exec whose rootDir is set to some path in the engine container.
-	// We can safely assume we are handling Linux paths.
+	// We can safely assume we are running on Linux.
 	// Resolve the full path on the system, *including* the rootDir, evaluating and bounding
 	// symlinks under the rootDir
 	if !filepath.IsAbs(reqPath) {

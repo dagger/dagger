@@ -455,7 +455,7 @@ func (v *fileValue) Get(_ context.Context, dag *dagger.Client, _ *dagger.ModuleS
 		if err != nil {
 			return nil, fmt.Errorf("failed to expand home directory: %w", err)
 		}
-		vStr, err = filepath.Abs(vStr)
+		vStr, err = client.Abs(vStr)
 		if err != nil {
 			return nil, fmt.Errorf("failed to resolve absolute path: %w", err)
 		}

@@ -788,7 +788,7 @@ func handleResponse(returnType *modTypeDef, response any, o, e io.Writer) error 
 		if err := writeOutputFile(outputPath, buf); err != nil {
 			return fmt.Errorf("couldn't write output to file: %w", err)
 		}
-		path, err := filepath.Abs(outputPath)
+		path, err := client.Abs(outputPath)
 		if err != nil {
 			// don't fail because at this point the output has been saved successfully
 			slog.Warn("Failed to get absolute path", "error", err)

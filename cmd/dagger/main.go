@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"runtime/pprof"
 	runtimetrace "runtime/trace"
 	"sort"
@@ -34,6 +33,7 @@ import (
 	"github.com/dagger/dagger/dagql/dagui"
 	"github.com/dagger/dagger/dagql/idtui"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/client"
 	"github.com/dagger/dagger/engine/slog"
 	enginetel "github.com/dagger/dagger/engine/telemetry"
 )
@@ -387,12 +387,12 @@ func NormalizeWorkdir(workdir string) (string, error) {
 
 	if workdir == "" {
 		var err error
-		workdir, err = os.Getwd()
+		workdir, err = client.Getwd()
 		if err != nil {
 			return "", err
 		}
 	}
-	workdir, err := filepath.Abs(workdir)
+	workdir, err := client.Abs(workdir)
 	if err != nil {
 		return "", err
 	}
