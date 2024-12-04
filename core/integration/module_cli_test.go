@@ -12,6 +12,7 @@ import (
 	"github.com/dagger/dagger/core/modules"
 	"github.com/dagger/dagger/testctx"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 type CLISuite struct{}
@@ -943,6 +944,62 @@ func (m *Test) Fn(ctx context.Context) (string, error) {
 			})
 		})
 	})
+}
+
+func (CLISuite) TestDaggerInstallOrder(ctx context.Context, t *testctx.T) {
+	c := connect(ctx, t)
+
+	base := goGitBase(t, c).
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithWorkdir("/work/dep-abc").
+		With(daggerExec("init", "--source=.", "--name=dep-abc", "--sdk=go")).
+		WithNewFile("/work/dep-abc/main.go", `package main
+
+			import "context"
+
+			type DepAbc struct {}
+
+			func (m *DepAbc) DepFn(ctx context.Context, str string) string { return str }
+			`,
+		).
+		WithWorkdir("/work/dep-xyz").
+		With(daggerExec("init", "--source=.", "--name=dep-xyz", "--sdk=go")).
+		WithNewFile("/work/dep-xyz/main.go", `package main
+
+			import "context"
+
+			type DepXyz struct {}
+
+			func (m *DepXyz) DepFn(ctx context.Context, str string) string { return str }
+			`,
+		).
+		WithWorkdir("/work").
+		With(daggerExec("init", "--source=test", "--name=test", "--sdk=go"))
+
+	daggerJSON, err := base.
+		With(daggerExec("install", "./dep-abc")).
+		With(daggerExec("install", "./dep-xyz")).
+		File("dagger.json").
+		Contents(ctx)
+	require.NoError(t, err)
+	names := []string{}
+	for _, name := range gjson.Get(daggerJSON, "dependencies.#.name").Array() {
+		names = append(names, name.String())
+	}
+	require.Equal(t, []string{"dep-abc", "dep-xyz"}, names)
+
+	daggerJSON, err = base.
+		// switch the installation order
+		With(daggerExec("install", "./dep-xyz")).
+		With(daggerExec("install", "./dep-abc")).
+		File("dagger.json").
+		Contents(ctx)
+	require.NoError(t, err)
+	names = []string{}
+	for _, name := range gjson.Get(daggerJSON, "dependencies.#.name").Array() {
+		names = append(names, name.String())
+	}
+	require.Equal(t, []string{"dep-abc", "dep-xyz"}, names)
 }
 
 func (CLISuite) TestCLIFunctions(ctx context.Context, t *testctx.T) {
