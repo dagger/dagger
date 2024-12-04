@@ -4,23 +4,23 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/dagger/dagger/engine/server"
-	"github.com/moby/buildkit/cmd/buildkitd/config"
+	bkconfig "github.com/moby/buildkit/cmd/buildkitd/config"
 	"github.com/moby/buildkit/util/disk"
 	"github.com/pkg/errors"
 )
 
-func gcConfigToString(cfg config.GCConfig, dstat disk.DiskStat) string {
-	if cfg.IsUnset() {
+func gcConfigToString(bkcfg bkconfig.GCConfig, dstat disk.DiskStat) string {
+	if bkcfg.IsUnset() {
 		//nolint:staticcheck // used for backward compatibility
-		cfg.GCReservedSpace = cfg.GCKeepStorage
+		bkcfg.GCReservedSpace = bkcfg.GCKeepStorage
 	}
-	if cfg.IsUnset() {
-		cfg = server.DetectDefaultGCCap(dstat)
+	if bkcfg.IsUnset() {
+		// we'll handle this later in dagger
+		return ""
 	}
-	out := []int64{cfg.GCReservedSpace.AsBytes(disk.DiskStat{}) / 1e6}
-	free := cfg.GCMinFreeSpace.AsBytes(dstat) / 1e6
-	max := cfg.GCMaxUsedSpace.AsBytes(dstat) / 1e6
+	out := []int64{bkcfg.GCReservedSpace.AsBytes(disk.DiskStat{}) / 1e6}
+	free := bkcfg.GCMinFreeSpace.AsBytes(dstat) / 1e6
+	max := bkcfg.GCMaxUsedSpace.AsBytes(dstat) / 1e6
 	if free != 0 || max != 0 {
 		out = append(out, free)
 		if max != 0 {
@@ -38,8 +38,8 @@ func int64ToString(in []int64) []string {
 	return out
 }
 
-func stringToGCConfig(in string) (config.GCConfig, error) {
-	var cfg config.GCConfig
+func stringToGCConfig(in string) (bkconfig.GCConfig, error) {
+	var cfg bkconfig.GCConfig
 	if in == "" {
 		return cfg, nil
 	}
@@ -48,7 +48,7 @@ func stringToGCConfig(in string) (config.GCConfig, error) {
 	if err != nil {
 		return cfg, errors.Wrapf(err, "failed to parse storage %q", in)
 	}
-	cfg.GCReservedSpace = config.DiskSpace{Bytes: reserved * 1e6}
+	cfg.GCReservedSpace = bkconfig.DiskSpace{Bytes: reserved * 1e6}
 	if len(parts) == 1 {
 		return cfg, nil
 	}
@@ -56,7 +56,7 @@ func stringToGCConfig(in string) (config.GCConfig, error) {
 	if err != nil {
 		return cfg, errors.Wrapf(err, "failed to parse free storage %q", in)
 	}
-	cfg.GCMinFreeSpace = config.DiskSpace{Bytes: free * 1e6}
+	cfg.GCMinFreeSpace = bkconfig.DiskSpace{Bytes: free * 1e6}
 	if len(parts) == 2 {
 		return cfg, nil
 	}
@@ -64,6 +64,6 @@ func stringToGCConfig(in string) (config.GCConfig, error) {
 	if err != nil {
 		return cfg, errors.Wrapf(err, "failed to parse max storage %q", in)
 	}
-	cfg.GCMaxUsedSpace = config.DiskSpace{Bytes: max * 1e6}
+	cfg.GCMaxUsedSpace = bkconfig.DiskSpace{Bytes: max * 1e6}
 	return cfg, nil
 }

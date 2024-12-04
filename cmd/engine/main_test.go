@@ -5,7 +5,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/moby/buildkit/cmd/buildkitd/config"
+	bkconfig "github.com/moby/buildkit/cmd/buildkitd/config"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli"
 )
@@ -15,7 +15,7 @@ func TestParallelismFlag(t *testing.T) {
 	app := cli.NewApp()
 	addFlags(app)
 
-	cfg := &config.Config{}
+	cfg := &bkconfig.Config{}
 	app.Action = func(c *cli.Context) error {
 		err := applyMainFlags(c, cfg)
 		if err != nil {
@@ -51,7 +51,7 @@ func TestEngineNameLabel(t *testing.T) {
 
 	t.Run("default to hostname", func(t *testing.T) {
 		enableRunc := true
-		cfg := &config.Config{}
+		cfg := &bkconfig.Config{}
 		cfg.Root = t.TempDir()
 		cfg.Workers.OCI.Enabled = &enableRunc
 		cfg.Workers.OCI.Binary = "/proc/self/exe"

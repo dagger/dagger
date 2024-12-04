@@ -16,7 +16,6 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -3625,34 +3624,16 @@ func (ContainerSuite) TestInsecureRootCapabilites(ctx context.Context, t *testct
 func (ContainerSuite) TestInsecureRootCapabilitesWithService(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
+	middleware := func(ctr *dagger.Container) *dagger.Container {
+		return ctr.WithMountedCache("/tmp", c.CacheVolume("share-tmp"))
+	}
+
 	// verify the root capabilities setting works by executing dockerd with it and
 	// testing it can startup, create containers and bind mount from its filesystem to
 	// them.
-	dockerd := c.Container().From("docker:23.0.1-dind").
-		WithMountedCache("/var/lib/docker", c.CacheVolume("docker-lib"), dagger.ContainerWithMountedCacheOpts{
-			Sharing: dagger.CacheSharingModePrivate,
-		}).
-		WithMountedCache("/tmp", c.CacheVolume("share-tmp")).
-		WithExposedPort(2375).
-		WithExec([]string{
-			"dockerd",
-			"--host=tcp://0.0.0.0:2375",
-			"--tls=false",
-		}, dagger.ContainerWithExecOpts{
-			InsecureRootCapabilities: true,
-		}).AsService()
-
-	dockerHost, err := dockerd.Endpoint(ctx, dagger.ServiceEndpointOpts{
-		Scheme: "tcp",
-	})
-	require.NoError(t, err)
-
 	randID := identity.NewID()
-	out, err := c.Container().From("docker:23.0.1-cli").
-		WithMountedCache("/tmp", c.CacheVolume("share-tmp")).
-		WithServiceBinding("docker", dockerd).
-		WithEnvVariable("DOCKER_HOST", dockerHost).
-		With(mountDockerConfig(c)).
+	dockerd := dockerService(t, c, "23.0.1", middleware)
+	out, err := dockerClient(ctx, t, c, dockerd, "23.0.1", middleware).
 		WithExec([]string{"sh", "-e", "-c", strings.Join([]string{
 			fmt.Sprintf("echo %s-from-outside > /tmp/from-outside", randID),
 			"docker run --rm -v /tmp:/tmp alpine cat /tmp/from-outside",
@@ -4231,27 +4212,8 @@ func (ContainerSuite) TestFromMergesWithParent(ctx context.Context, t *testctx.T
 func (ContainerSuite) TestImageLoadCompatibility(ctx context.Context, t *testctx.T) {
 	c := connect(ctx, t)
 
-	for i, dockerVersion := range []string{"20.10", "23.0", "24.0"} {
-		dockerVersion := dockerVersion
-		port := 2375 + i
-		dockerd := c.Container().From(fmt.Sprintf("docker:%s-dind", dockerVersion)).
-			WithMountedCache("/var/lib/docker", c.CacheVolume(t.Name()+"-"+dockerVersion+"-docker-lib"), dagger.ContainerWithMountedCacheOpts{
-				Sharing: dagger.CacheSharingModePrivate,
-			}).
-			WithExposedPort(port).
-			WithExec([]string{
-				"dockerd",
-				"--host=tcp://0.0.0.0:" + strconv.Itoa(port),
-				"--tls=false",
-			}, dagger.ContainerWithExecOpts{
-				InsecureRootCapabilities: true,
-			}).
-			AsService()
-
-		dockerHost, err := dockerd.Endpoint(ctx, dagger.ServiceEndpointOpts{
-			Scheme: "tcp",
-		})
-		require.NoError(t, err)
+	for _, dockerVersion := range []string{"20.10", "23.0", "24.0"} {
+		dockerd := dockerService(t, c, dockerVersion, nil)
 
 		for _, mediaType := range []dagger.ImageMediaTypes{dagger.ImageMediaTypesOcimediaTypes, dagger.ImageMediaTypesDockerMediaTypes} {
 			mediaType := mediaType
@@ -4269,11 +4231,7 @@ func (ContainerSuite) TestImageLoadCompatibility(ctx context.Context, t *testctx
 						})
 					require.NoError(t, err)
 
-					randID := identity.NewID()
-					ctr := c.Container().From(fmt.Sprintf("docker:%s-cli", dockerVersion)).
-						WithEnvVariable("CACHEBUST", randID).
-						WithServiceBinding("docker", dockerd).
-						WithEnvVariable("DOCKER_HOST", dockerHost).
+					ctr := dockerClient(ctx, t, c, dockerd, dockerVersion, nil).
 						WithMountedFile(path.Join("/", path.Base(tmpfile)), c.Host().File(tmpfile)).
 						WithExec([]string{"docker", "load", "-i", "/" + path.Base(tmpfile)})
 
@@ -4510,25 +4468,6 @@ func (ContainerSuite) TestExecExpect(ctx context.Context, t *testctx.T) {
 		require.NoError(t, err)
 		require.Equal(t, 1, res.Container.From.WithExec.ExitCode)
 	})
-}
-
-// mountDockerConfig is a helper for mounting the host's docker config if it exists
-func mountDockerConfig(dag *dagger.Client) dagger.WithContainerFunc {
-	return func(ctr *dagger.Container) *dagger.Container {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return ctr
-		}
-		content, err := os.ReadFile(filepath.Join(home, ".docker/config.json"))
-		if err != nil {
-			return ctr
-		}
-
-		return ctr.WithMountedSecret(
-			"/root/.docker/config.json",
-			dag.SetSecret("docker-config-"+identity.NewID(), string(content)),
-		)
-	}
 }
 
 func (ContainerSuite) TestEnvExpand(ctx context.Context, t *testctx.T) {

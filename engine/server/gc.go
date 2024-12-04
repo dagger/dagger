@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/dagger/dagger/engine/config"
 	bkclient "github.com/moby/buildkit/client"
-	"github.com/moby/buildkit/cmd/buildkitd/config"
+	bkconfig "github.com/moby/buildkit/cmd/buildkitd/config"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/moby/buildkit/util/disk"
 	"github.com/moby/buildkit/util/imageutil"
@@ -136,59 +137,108 @@ func (srv *Server) gc() {
 	}
 }
 
-func getGCPolicy(cfg config.GCConfig, root string) []bkclient.PruneInfo {
-	if cfg.GC != nil && !*cfg.GC {
+func getGCPolicy(cfg config.Config, bkcfg bkconfig.GCConfig, root string) []bkclient.PruneInfo {
+	if cfg.GC.Enabled != nil && !*cfg.GC.Enabled {
 		return nil
 	}
-	dstat, _ := disk.GetDiskStat(root)
-	if len(cfg.GCPolicy) == 0 {
-		cfg.GCPolicy = defaultGCPolicy(cfg, dstat)
+	if bkcfg.GC != nil && !*bkcfg.GC {
+		return nil
 	}
-	out := make([]bkclient.PruneInfo, 0, len(cfg.GCPolicy))
-	for _, rule := range cfg.GCPolicy {
-		//nolint:staticcheck
-		if rule.ReservedSpace == (config.DiskSpace{}) && rule.KeepBytes != (config.DiskSpace{}) {
-			rule.ReservedSpace = rule.KeepBytes
-		}
+
+	dstat, _ := disk.GetDiskStat(root)
+
+	policies := cfg.GC.Policies
+	if len(policies) == 0 {
+		policies = convertBkPolicies(bkcfg.GCPolicy)
+	}
+	if len(policies) == 0 {
+		policies = defaultGCPolicy(cfg, bkcfg, dstat)
+	}
+
+	out := make([]bkclient.PruneInfo, 0, len(bkcfg.GCPolicy))
+	for _, policy := range policies {
 		out = append(out, bkclient.PruneInfo{
-			Filter:        rule.Filters,
-			All:           rule.All,
-			KeepDuration:  rule.KeepDuration.Duration,
-			ReservedSpace: rule.ReservedSpace.AsBytes(dstat),
-			MaxUsedSpace:  rule.MaxUsedSpace.AsBytes(dstat),
-			MinFreeSpace:  rule.MinFreeSpace.AsBytes(dstat),
+			Filter:        policy.Filters,
+			All:           policy.All,
+			KeepDuration:  policy.KeepDuration.Duration,
+			ReservedSpace: policy.ReservedSpace.AsBytes(dstat),
+			MaxUsedSpace:  policy.MaxUsedSpace.AsBytes(dstat),
+			MinFreeSpace:  policy.MinFreeSpace.AsBytes(dstat),
 		})
 	}
 	return out
 }
 
-func getDefaultGCPolicy(cfg config.GCConfig, root string) bkclient.PruneInfo {
+func getDefaultGCPolicy(cfg config.Config, bkcfg bkconfig.GCConfig, root string) bkclient.PruneInfo {
 	// the last policy is the default one
-	policies := getGCPolicy(cfg, root)
+	policies := getGCPolicy(cfg, bkcfg, root)
 	return policies[len(policies)-1]
 }
 
-func defaultGCPolicy(cfg config.GCConfig, dstat disk.DiskStat) []config.GCPolicy {
-	if cfg.IsUnset() {
-		cfg.GCReservedSpace = cfg.GCKeepStorage //nolint: staticcheck // backwards-compat
+func defaultGCPolicy(cfg config.Config, bkcfg bkconfig.GCConfig, dstat disk.DiskStat) []config.GCPolicy {
+	space := cfg.GC.GCSpace
+	if space.IsUnset() {
+		space = convertBkSpaceFromConfig(bkcfg)
 	}
-	if cfg.IsUnset() {
-		// use our own default caps, so we can configure the limits ourselves
-		cfg = DetectDefaultGCCap(dstat)
+	if space.IsUnset() {
+		space = DetectDefaultGCCap(dstat)
 	}
-	return config.DefaultGCPolicy(cfg, dstat)
+
+	return convertBkPolicies(bkconfig.DefaultGCPolicy(bkconfig.GCConfig{
+		GCMinFreeSpace:  bkconfig.DiskSpace(space.MinFreeSpace),
+		GCReservedSpace: bkconfig.DiskSpace(space.ReservedSpace),
+		GCMaxUsedSpace:  bkconfig.DiskSpace(space.MaxUsedSpace),
+	}, dstat))
 }
 
-func DetectDefaultGCCap(dstat disk.DiskStat) config.GCConfig {
+func DetectDefaultGCCap(dstat disk.DiskStat) config.GCSpace {
 	reserve := config.DiskSpace{Percentage: diskSpaceReservePercentage}
 	if reserve.AsBytes(dstat) > diskSpaceReserveBytes {
 		reserve = config.DiskSpace{Bytes: diskSpaceReserveBytes}
 	}
-	return config.GCConfig{
-		GCReservedSpace: reserve,
-		GCMinFreeSpace:  config.DiskSpace{Percentage: diskSpaceFreePercentage},
-		GCMaxUsedSpace:  config.DiskSpace{Percentage: diskSpaceMaxPercentage},
+	return config.GCSpace{
+		ReservedSpace: reserve,
+		MinFreeSpace:  config.DiskSpace{Percentage: diskSpaceFreePercentage},
+		MaxUsedSpace:  config.DiskSpace{Percentage: diskSpaceMaxPercentage},
 	}
+}
+
+func convertBkPolicies(bkpolicies []bkconfig.GCPolicy) (policies []config.GCPolicy) {
+	for _, policy := range bkpolicies {
+		policies = append(policies, config.GCPolicy{
+			All:          policy.All,
+			Filters:      policy.Filters,
+			KeepDuration: config.Duration(policy.KeepDuration),
+			GCSpace:      convertBkSpaceFromPolicy(policy),
+		})
+	}
+	return policies
+}
+
+func convertBkSpaceFromPolicy(policy bkconfig.GCPolicy) config.GCSpace {
+	space := config.GCSpace{
+		ReservedSpace: config.DiskSpace(policy.ReservedSpace),
+		MaxUsedSpace:  config.DiskSpace(policy.MaxUsedSpace),
+		MinFreeSpace:  config.DiskSpace(policy.MinFreeSpace),
+	}
+	//nolint:staticcheck
+	if space.ReservedSpace == (config.DiskSpace{}) && policy.KeepBytes != (bkconfig.DiskSpace{}) {
+		space.ReservedSpace = config.DiskSpace(policy.KeepBytes)
+	}
+	return space
+}
+
+func convertBkSpaceFromConfig(cfg bkconfig.GCConfig) config.GCSpace {
+	space := config.GCSpace{
+		ReservedSpace: config.DiskSpace(cfg.GCReservedSpace),
+		MaxUsedSpace:  config.DiskSpace(cfg.GCMaxUsedSpace),
+		MinFreeSpace:  config.DiskSpace(cfg.GCMinFreeSpace),
+	}
+	//nolint:staticcheck
+	if space.ReservedSpace == (config.DiskSpace{}) && cfg.GCKeepStorage != (bkconfig.DiskSpace{}) {
+		space.ReservedSpace = config.DiskSpace(cfg.GCKeepStorage)
+	}
+	return space
 }
 
 const (

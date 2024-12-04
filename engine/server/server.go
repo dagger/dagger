@@ -21,6 +21,7 @@ import (
 	ctdsnapshot "github.com/containerd/containerd/snapshots"
 	"github.com/containerd/go-runc"
 	"github.com/containerd/platforms"
+	"github.com/dagger/dagger/engine/config"
 	controlapi "github.com/moby/buildkit/api/services/control"
 	apitypes "github.com/moby/buildkit/api/types"
 	bkcache "github.com/moby/buildkit/cache"
@@ -33,7 +34,7 @@ import (
 	registryremotecache "github.com/moby/buildkit/cache/remotecache/registry"
 	s3remotecache "github.com/moby/buildkit/cache/remotecache/s3"
 	bkclient "github.com/moby/buildkit/client"
-	"github.com/moby/buildkit/cmd/buildkitd/config"
+	bkconfig "github.com/moby/buildkit/cmd/buildkitd/config"
 	"github.com/moby/buildkit/executor/oci"
 	"github.com/moby/buildkit/frontend"
 	dockerfile "github.com/moby/buildkit/frontend/dockerfile/builder"
@@ -115,10 +116,9 @@ type Server struct {
 
 	bkSessionManager *bksession.Manager
 
-	solver        *solver.Solver
-	solverCacheDB *bboltcachestorage.Store
-	SolverCache   daggercache.Manager
-
+	solver               *solver.Solver
+	solverCacheDB        *bboltcachestorage.Store
+	SolverCache          daggercache.Manager
 	containerdMetaBoltDB *bolt.DB
 	containerdMetaDB     *ctdmetadata.DB
 	localContentStore    content.Store
@@ -172,19 +172,21 @@ type Server struct {
 }
 
 type NewServerOpts struct {
-	Config *config.Config
-	Name   string
+	Name           string
+	Config         *config.Config
+	BuildkitConfig *bkconfig.Config
 }
 
 //nolint:gocyclo
 func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	cfg := opts.Config
-	ociCfg := cfg.Workers.OCI
+	bkcfg := opts.BuildkitConfig
+	ociCfg := bkcfg.Workers.OCI
 
 	srv := &Server{
 		engineName: opts.Name,
 
-		rootDir: cfg.Root,
+		rootDir: bkcfg.Root,
 
 		frontends: map[string]frontend.Frontend{},
 
@@ -194,9 +196,9 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		selinux:         ociCfg.SELinux,
 		entitlements:    entitlements.Set{},
 		dns: &oci.DNSConfig{
-			Nameservers:   cfg.DNS.Nameservers,
-			Options:       cfg.DNS.Options,
-			SearchDomains: cfg.DNS.SearchDomains,
+			Nameservers:   bkcfg.DNS.Nameservers,
+			Options:       bkcfg.DNS.Options,
+			SearchDomains: bkcfg.DNS.SearchDomains,
 		},
 
 		daggerSessions: make(map[string]*daggerSession),
@@ -244,12 +246,20 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	// setup config derived from engine config
 	//
 
-	for _, entStr := range cfg.Entitlements {
+	for _, entStr := range bkcfg.Entitlements {
 		ent, err := entitlements.Parse(entStr)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse entitlement %s: %w", entStr, err)
 		}
 		srv.entitlements[ent] = struct{}{}
+	}
+	if cfg.Security.InsecureRootCapabilities != nil {
+		// override from engine.toml if we set it in *our* config
+		if *cfg.Security.InsecureRootCapabilities {
+			srv.entitlements[entitlements.EntitlementSecurityInsecure] = struct{}{}
+		} else {
+			delete(srv.entitlements, entitlements.EntitlementSecurityInsecure)
+		}
 	}
 
 	srv.defaultPlatform = platforms.Normalize(platforms.DefaultSpec())
@@ -264,7 +274,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		srv.enabledPlatforms = []ocispecs.Platform{srv.defaultPlatform}
 	}
 
-	srv.registryHosts = resolver.NewRegistryConfig(cfg.Registries)
+	srv.registryHosts = resolver.NewRegistryConfig(bkcfg.Registries)
 
 	if slog.Default().Enabled(ctx, slog.LevelExtraDebug) {
 		srv.buildkitLogSink = os.Stderr
@@ -323,12 +333,12 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 
 	var npResolvedMode string
 	srv.networkProviders, npResolvedMode, err = netproviders.Providers(netproviders.Opt{
-		Mode: cfg.Workers.OCI.NetworkConfig.Mode,
+		Mode: bkcfg.Workers.OCI.NetworkConfig.Mode,
 		CNI: cniprovider.Opt{
 			Root:       srv.rootDir,
-			ConfigPath: cfg.Workers.OCI.CNIConfigPath,
-			BinaryDir:  cfg.Workers.OCI.CNIBinaryPath,
-			PoolSize:   cfg.Workers.OCI.CNIPoolSize,
+			ConfigPath: bkcfg.Workers.OCI.CNIConfigPath,
+			BinaryDir:  bkcfg.Workers.OCI.CNIBinaryPath,
+			PoolSize:   bkcfg.Workers.OCI.CNIPoolSize,
 		},
 	})
 	if err != nil {
@@ -367,7 +377,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 		ID:        workerID,
 		Labels:    baseLabels,
 		Platforms: srv.enabledPlatforms,
-		GCPolicy:  getGCPolicy(ociCfg.GCConfig, srv.rootDir),
+		GCPolicy:  getGCPolicy(*cfg, ociCfg.GCConfig, srv.rootDir),
 		BuildkitVersion: bkclient.BuildkitVersion{
 			Package:  version.Package,
 			Version:  version.Version,
@@ -400,7 +410,7 @@ func NewServer(ctx context.Context, opts *NewServerOpts) (*Server, error) {
 	}
 	srv.workerCache = srv.baseWorker.CacheMgr
 	srv.workerSourceManager = srv.baseWorker.SourceManager
-	srv.workerDefaultGCPolicy = getDefaultGCPolicy(ociCfg.GCConfig, srv.rootDir)
+	srv.workerDefaultGCPolicy = getDefaultGCPolicy(*cfg, ociCfg.GCConfig, srv.rootDir)
 
 	logrus.Infof("found worker %q, labels=%v, platforms=%v", workerID, baseLabels, FormatPlatforms(srv.enabledPlatforms))
 	archutil.WarnIfUnsupported(srv.enabledPlatforms)

@@ -57,7 +57,7 @@
             "$ref": "#/$defs/ModuleConfigView"
           },
           "type": "array",
-          "description": "Named views defined for this module, which are sets of directory filters that can be applied to\ndirectory arguments provided to functions."
+          "description": "Named views defined for this module, which are sets of directory filters that can be applied to directory arguments provided to functions."
         },
         "codegen": {
           "$ref": "#/$defs/ModuleCodegenConfig",
@@ -76,7 +76,7 @@
       "properties": {
         "name": {
           "type": "string",
-          "description": "The name to use for this dependency. By default, the same as the dependency module's name,\nbut can also be overridden to use a different name."
+          "description": "The name to use for this dependency. By default, the same as the dependency module's name, but can also be overridden to use a different name."
         },
         "source": {
           "type": "string",

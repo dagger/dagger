@@ -20,6 +20,7 @@ const (
 	generatedCliZenPath           = "docs/current_docs/reference/cli.mdx"
 	generatedAPIReferencePath     = "docs/static/api/reference/index.html"
 	generatedDaggerJSONSchemaPath = "docs/static/reference/dagger.schema.json"
+	generatedEngineJSONSchemaPath = "docs/static/reference/engine.schema.json"
 )
 
 const cliZenFrontmatter = `---
@@ -102,7 +103,13 @@ func (d Docs) Lint(ctx context.Context) (rerr error) {
 		if err != nil {
 			return err
 		}
-		return dag.Dirdiff().AssertEqual(ctx, before, after, []string{generatedSchemaPath, generatedCliZenPath, generatedAPIReferencePath})
+		return dag.Dirdiff().AssertEqual(ctx, before, after, []string{
+			generatedSchemaPath,
+			generatedCliZenPath,
+			generatedAPIReferencePath,
+			generatedDaggerJSONSchemaPath,
+			generatedEngineJSONSchemaPath,
+		})
 	})
 
 	eg.Go(func() (rerr error) {
@@ -220,16 +227,22 @@ func (d Docs) GenerateSchemaReference() *dagger.Directory {
 
 // Regenerate the config schemas
 func (d Docs) GenerateConfigSchemas() *dagger.Directory {
-	daggerJSONSchema := dag.
-		Go(d.Dagger.Source()).
-		Env().
+	ctr := dag.Go(d.Dagger.Source()).Env()
+
+	daggerJSONSchema := ctr.
 		WithExec([]string{"go", "run", "./cmd/json-schema", "dagger.json"}, dagger.ContainerWithExecOpts{
 			RedirectStdout: "dagger.schema.json",
 		}).
 		File("dagger.schema.json")
+	engineJSONSchema := ctr.
+		WithExec([]string{"go", "run", "./cmd/json-schema", "engine.json"}, dagger.ContainerWithExecOpts{
+			RedirectStdout: "engine.schema.json",
+		}).
+		File("engine.schema.json")
 	return dag.
 		Directory().
-		WithFile(generatedDaggerJSONSchemaPath, daggerJSONSchema)
+		WithFile(generatedDaggerJSONSchemaPath, daggerJSONSchema).
+		WithFile(generatedEngineJSONSchemaPath, engineJSONSchema)
 }
 
 // Bump the Go SDK's Engine dependency

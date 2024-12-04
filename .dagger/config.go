@@ -46,7 +46,6 @@ exec {{.EngineBin}} --config {{.EngineConfig}} {{ range $key := .EntrypointArgKe
 `
 
 const engineConfigTmpl = `
-debug = true
 trace = {{.Trace}}
 insecure-entitlements = ["security.insecure"]
 {{ range $key := .ConfigKeys }}
